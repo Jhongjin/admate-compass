@@ -272,12 +272,30 @@ async function processQueue() {
       // 인코딩/청킹/임베딩/저장
       const processResult = await ragProcessor.processDocument(docData, true /* skipDuplicate */);
 
-      // 처리 결과 반영
+      // 실제 저장된 청크 개수 재확인 (saveChunksToDatabase에서 이미 업데이트했지만, 큐 워커에서도 확인)
+      const { count: actualChunkCount } = await supabase
+        .from('document_chunks')
+        .select('*', { count: 'exact', head: true })
+        .eq('document_id', job.document_id);
+      
+      const finalChunkCount = actualChunkCount || processResult.chunkCount;
+      
+      // chunk_count가 이미 saveChunksToDatabase에서 업데이트되었지만, 큐 워커에서도 동기화
+      // (실제 저장된 개수와 processResult.chunkCount가 다른 경우 대비)
       const { error: docUpdateErr } = await supabase
         .from('documents')
-        .update({ status: processResult.success ? 'indexed' : 'failed', chunk_count: processResult.chunkCount, updated_at: nowIso })
+        .update({ 
+          status: processResult.success ? 'indexed' : 'failed', 
+          chunk_count: finalChunkCount, 
+          updated_at: nowIso 
+        })
         .eq('id', job.document_id);
       if (docUpdateErr) throw docUpdateErr;
+      
+      // 불일치 경고
+      if (finalChunkCount !== processResult.chunkCount) {
+        console.warn(`⚠️ 청크 개수 불일치 감지: processResult=${processResult.chunkCount}, 실제=${finalChunkCount}`);
+      }
 
       const finishedResult = { note: 'processed', jobType: job.job_type, chunks: processResult.chunkCount };
       const { error: finishErr } = await supabase

@@ -359,8 +359,9 @@ export class RAGProcessor {
 
   /**
    * 청크를 Supabase에 저장
+   * @returns 실제 저장된 청크 개수
    */
-  async saveChunksToDatabase(chunks: ChunkData[]): Promise<void> {
+  async saveChunksToDatabase(chunks: ChunkData[]): Promise<number> {
     try {
       console.log('💾 청크 저장 시작:', chunks.length, '개 청크');
       const supabase = await this.getSupabaseClient();
@@ -368,7 +369,7 @@ export class RAGProcessor {
       // Supabase 연결 확인
       if (!supabase) {
         console.warn('⚠️ Supabase 연결 없음. 청크 저장 건너뛰기');
-        return;
+        return 0;
       }
 
       // 청크 데이터 준비 (id는 SERIAL이므로 제외)
@@ -411,15 +412,29 @@ export class RAGProcessor {
         }
       }
 
-      console.log('✅ 청크 저장 완료:', chunks.length, '개 청크');
+      console.log('✅ 청크 저장 완료:', savedCount, '개 청크 (시도:', chunks.length, '개)');
 
-      // 문서의 chunk_count 업데이트
-      if (chunks.length > 0) {
-        const documentId = chunks[0].metadata.document_id;
+      // 실제 저장된 청크 개수 확인 (DB에서 재확인)
+      const documentId = chunks[0].metadata.document_id;
+      const { count: actualSavedCount, error: countError } = await supabase
+        .from('document_chunks')
+        .select('*', { count: 'exact', head: true })
+        .eq('document_id', documentId);
+      
+      const finalCount = actualSavedCount || savedCount;
+      
+      if (countError) {
+        console.warn('⚠️ 저장된 청크 개수 확인 오류:', countError);
+      } else if (finalCount !== savedCount) {
+        console.warn(`⚠️ 저장 개수 불일치: 예상 ${savedCount}개, 실제 ${finalCount}개`);
+      }
+
+      // 문서의 chunk_count 업데이트 (실제 저장된 개수 사용)
+      if (finalCount > 0) {
         const { error: updateError } = await supabase
           .from('documents')
           .update({ 
-            chunk_count: chunks.length,
+            chunk_count: finalCount,
             status: 'indexed',
             updated_at: new Date().toISOString()
           })
@@ -428,15 +443,15 @@ export class RAGProcessor {
         if (updateError) {
           console.error('❌ 문서 chunk_count 업데이트 오류:', updateError);
         } else {
-          console.log('✅ 문서 chunk_count 업데이트 완료:', chunks.length, '개 청크');
+          console.log('✅ 문서 chunk_count 업데이트 완료:', finalCount, '개 청크');
         }
 
         // document_metadata의 chunk_count와 embedding_count도 업데이트
         const { error: metadataUpdateError } = await supabase
           .from('document_metadata')
           .update({ 
-            chunk_count: chunks.length,
-            embedding_count: chunks.length,
+            chunk_count: finalCount,
+            embedding_count: finalCount,
             status: 'completed',
             updated_at: new Date().toISOString()
           })
@@ -449,8 +464,40 @@ export class RAGProcessor {
         }
       }
 
+      return finalCount;
+
     } catch (error) {
       console.error('❌ 청크 저장 오류:', error);
+      // 저장 실패 시 실제 저장된 청크 개수 확인
+      try {
+        if (chunks.length > 0) {
+          const documentId = chunks[0].metadata.document_id;
+          const { count: actualSavedCount } = await supabase
+            .from('document_chunks')
+            .select('*', { count: 'exact', head: true })
+            .eq('document_id', documentId);
+          
+          const savedCount = actualSavedCount || 0;
+          console.warn(`⚠️ 청크 저장 실패, 실제 저장된 청크: ${savedCount}개`);
+          
+          // 부분적으로 저장된 경우 chunk_count 업데이트
+          if (savedCount > 0) {
+            await supabase
+              .from('documents')
+              .update({ 
+                chunk_count: savedCount,
+                status: 'indexed',
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', documentId);
+          }
+          
+          return savedCount;
+        }
+      } catch (recoveryError) {
+        console.error('❌ 청크 개수 복구 시도 실패:', recoveryError);
+      }
+      
       throw new Error(`청크 저장 실패: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
@@ -715,9 +762,14 @@ export class RAGProcessor {
           await this.saveDocumentToDatabase(document, originalBinaryData);
           console.log('✅ 문서 데이터베이스 저장 완료');
 
-          // 청크 저장
-          await this.saveChunksToDatabase(chunksWithEmbeddings);
-          console.log('✅ 청크 데이터베이스 저장 완료');
+          // 청크 저장 (실제 저장된 개수 반환)
+          const savedChunkCount = await this.saveChunksToDatabase(chunksWithEmbeddings);
+          console.log('✅ 청크 데이터베이스 저장 완료:', savedChunkCount, '개 청크');
+          
+          // 저장된 청크 개수가 생성된 청크 개수와 다른 경우 경고
+          if (savedChunkCount !== chunks.length) {
+            console.warn(`⚠️ 청크 저장 불일치: 생성 ${chunks.length}개, 저장 ${savedChunkCount}개`);
+          }
         } catch (error) {
           console.error('❌ 데이터베이스 저장 실패:', error);
           console.error('❌ 저장 실패 상세:', {
@@ -730,15 +782,29 @@ export class RAGProcessor {
         console.log('⚠️ Supabase 연결 없음, 메모리 모드');
       }
 
+      // 실제 저장된 청크 개수 확인 (saveChunksToDatabase에서 반환된 값 사용)
+      let actualSavedChunkCount = chunks.length;
+      if (supabase) {
+        try {
+          const { count } = await supabase
+            .from('document_chunks')
+            .select('*', { count: 'exact', head: true })
+            .eq('document_id', document.id);
+          actualSavedChunkCount = count || 0;
+        } catch (countError) {
+          console.warn('⚠️ 저장된 청크 개수 확인 실패:', countError);
+        }
+      }
+
       console.log('✅ RAG 문서 처리 완료:', {
         documentId: document.id,
-        chunkCount: chunks.length,
+        chunkCount: actualSavedChunkCount,
         success: true
       });
 
       return {
         documentId: document.id,
-        chunkCount: chunks.length,
+        chunkCount: actualSavedChunkCount, // 실제 저장된 청크 개수 사용
         success: true,
       };
     } catch (error) {
