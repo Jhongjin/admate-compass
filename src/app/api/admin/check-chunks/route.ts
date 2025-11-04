@@ -6,6 +6,8 @@ import { NextRequest, NextResponse } from 'next/server';
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 export const maxDuration = 60;
+export const revalidate = 0;
+export const fetchCache = 'force-no-store';
 
 export async function GET(request: NextRequest) {
   try {
@@ -96,7 +98,7 @@ export async function GET(request: NextRequest) {
 
     console.log('✅ 청크 데이터 확인 완료');
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       success: true,
       data: {
         documents: documentChunks,
@@ -110,6 +112,13 @@ export async function GET(request: NextRequest) {
         }
       }
     });
+
+    // 캐싱 방지 헤더 추가
+    response.headers.set('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    response.headers.set('Pragma', 'no-cache');
+    response.headers.set('Expires', '0');
+
+    return response;
 
   } catch (error) {
     console.error('❌ 청크 데이터 확인 오류:', error);
