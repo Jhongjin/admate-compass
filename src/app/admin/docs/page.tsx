@@ -2386,28 +2386,62 @@ function DocumentDetailDialog({ detail, onClose, onRefetch }: { detail: any | nu
                 <div className="space-y-2 max-h-64 overflow-y-auto custom-scrollbar">
                   {jobs && jobs.length > 0 ? (
                     jobs.map((j: any, i: number) => (
-                      <div key={i} className="p-3 bg-gray-800/30 rounded-lg border border-gray-600 text-xs">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
+                      <div key={i} className={`p-3 rounded-lg border text-xs ${
+                        j.status === 'failed' 
+                          ? 'bg-red-500/10 border-red-500/30' 
+                          : j.status === 'completed'
+                          ? 'bg-green-500/10 border-green-500/30'
+                          : 'bg-gray-800/30 border-gray-600'
+                      }`}>
+                        <div className="grid grid-cols-2 gap-2 mb-2">
+                          <div className="text-muted-enhanced">작업 타입</div>
+                          <div className="text-primary-enhanced">{j.job_type}</div>
+                          <div className="text-muted-enhanced">상태</div>
+                          <div className="text-primary-enhanced">
                             <Badge className={`${
-                              j.status === 'completed'
-                                ? 'bg-green-500/20 text-green-300 border-green-400/30'
-                                : j.status === 'processing'
-                                ? 'bg-yellow-500/20 text-yellow-300 border-yellow-400/30'
-                                : j.status === 'failed'
-                                ? 'bg-red-500/20 text-red-300 border-red-400/30'
-                                : 'bg-gray-500/20 text-gray-300 border-gray-400/30'
-                            } font-semibold`}>
+                              j.status === 'completed' ? 'bg-green-500/20 text-green-300 border-green-400/30' :
+                              j.status === 'failed' ? 'bg-red-500/20 text-red-300 border-red-400/30' :
+                              j.status === 'processing' ? 'bg-yellow-500/20 text-yellow-300 border-yellow-400/30' :
+                              j.status === 'queued' ? 'bg-blue-500/20 text-blue-300 border-blue-400/30' :
+                              'bg-gray-500/20 text-gray-300 border-gray-400/30'
+                            } font-semibold text-xs`}>
                               {j.status}
                             </Badge>
-                            <span className="text-secondary-enhanced">{j.job_type}</span>
                           </div>
-                          <div className="text-muted-enhanced">{new Date(j.created_at).toLocaleString()}</div>
+                          <div className="text-muted-enhanced">시도 횟수</div>
+                          <div className="text-primary-enhanced">{j.attempts || 0} / {j.max_attempts || 3}</div>
+                          <div className="text-muted-enhanced">우선순위</div>
+                          <div className="text-primary-enhanced">{j.priority || '-'}</div>
+                          <div className="text-muted-enhanced">생성일</div>
+                          <div className="text-primary-enhanced">{j.created_at ? new Date(j.created_at).toLocaleString() : '-'}</div>
+                          {j.started_at && (
+                            <>
+                              <div className="text-muted-enhanced">시작일</div>
+                              <div className="text-primary-enhanced">{new Date(j.started_at).toLocaleString()}</div>
+                            </>
+                          )}
+                          {j.finished_at && (
+                            <>
+                              <div className="text-muted-enhanced">완료일</div>
+                              <div className="text-primary-enhanced">{new Date(j.finished_at).toLocaleString()}</div>
+                            </>
+                          )}
                         </div>
                         {j.error && (
-                          <div className="mt-1 text-red-400 text-[11px]">오류: {j.error}</div>
-                        )}
+                          <div className="mt-2 p-2 bg-red-500/20 border border-red-400/30 rounded text-xs">
+                            <div className="text-red-300 font-semibold mb-1">❌ 에러 메시지:</div>
+                            <div className="text-red-200 whitespace-pre-wrap break-words">{j.error}</div>
                           </div>
+                        )}
+                        {j.result && typeof j.result === 'object' && (
+                          <div className="mt-2 p-2 bg-blue-500/10 border border-blue-400/20 rounded text-xs">
+                            <div className="text-blue-300 font-semibold mb-1">📊 처리 결과:</div>
+                            <div className="text-blue-200 font-mono text-[10px] whitespace-pre-wrap break-words">
+                              {JSON.stringify(j.result, null, 2)}
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     ))
                   ) : (
                     <div className="text-sm text-muted-enhanced">작업 이력이 없습니다.</div>
