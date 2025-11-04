@@ -239,6 +239,196 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
       setUploadStep('uploading');
       setUploadProgress(0);
       
+      // 클라이언트에서 파일 크기 확인 (Vercel 함수 페이로드 제한: 4.5MB)
+      // 안전하게 5MB 이상이면 Storage에 직접 업로드 후 큐 등록
+      const FILE_SIZE_LIMIT = 5 * 1024 * 1024; // 5MB
+      
+      if (uploadFile.size > FILE_SIZE_LIMIT) {
+        console.log('📋 대용량 파일 감지 - Storage에 직접 업로드 후 큐 등록:', {
+          fileName: uploadFile.name,
+          fileSize: uploadFile.size,
+          fileSizeMB: (uploadFile.size / (1024 * 1024)).toFixed(2) + 'MB'
+        });
+        
+        setUploadStep('uploading');
+        setUploadProgress(10);
+        
+        // UI 벤더 이름을 DB 값으로 변환
+        const dbVendor = convertVendorsToDB([vendors[0] || "Meta"])[0] || "META";
+        const documentId = `doc_${Date.now()}`;
+        
+        // Storage에 직접 업로드
+        const supabaseClient = createClient();
+        const cleanFileName = uploadFile.name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 180);
+        const storagePath = `${documentId}/${Date.now()}_${cleanFileName}`;
+        
+        setUploadProgress(20);
+        
+        const { data: uploadData, error: uploadError } = await supabaseClient.storage
+          .from('documents')
+          .upload(storagePath, uploadFile, {
+            contentType: uploadFile.type || 'application/octet-stream',
+            upsert: true,
+          });
+        
+        if (uploadError) {
+          throw new Error(`Storage 업로드 실패: ${uploadError.message}`);
+        }
+        
+        setUploadProgress(40);
+        setUploadStep('saving');
+        
+        // 큐에 처리 작업 등록
+        const jobType = uploadFile.type === 'application/pdf' 
+          ? 'PDF_PARSE' 
+          : uploadFile.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+          ? 'DOCX_PARSE'
+          : 'PDF_PARSE'; // 기본값
+        
+        const { data: jobData, error: jobError } = await supabaseClient
+          .from('processing_jobs')
+          .insert({
+            document_id: documentId,
+            job_type: jobType,
+            status: 'queued',
+            priority: 7,
+            payload: {
+              fileName: cleanFileName,
+              fileSize: uploadFile.size,
+              fileType: uploadFile.type,
+              storage: {
+                bucket: 'documents',
+                path: storagePath,
+                contentType: uploadFile.type,
+                size: uploadFile.size,
+              },
+              vendor: dbVendor,
+            },
+            scheduled_at: new Date().toISOString(),
+            max_attempts: 3,
+          })
+          .select()
+          .single();
+        
+        if (jobError) {
+          throw new Error(`큐 등록 실패: ${jobError.message}`);
+        }
+        
+        setUploadProgress(60);
+        console.log('✅ Storage 업로드 및 큐 등록 완료:', { jobId: jobData.id, documentId });
+        
+        // 문서 레코드 생성 (큐에서 처리할 때 업데이트됨)
+        await supabaseClient
+          .from('documents')
+          .insert({
+            id: documentId,
+            title: cleanFileName,
+            type: uploadFile.type === 'application/pdf' ? 'pdf' : 
+                  uploadFile.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ? 'docx' : 'txt',
+            status: 'queued',
+            chunk_count: 0,
+            file_size: uploadFile.size,
+            file_type: uploadFile.type,
+            source_vendor: dbVendor,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          });
+        
+        setUploadProgress(85);
+        
+        // 큐 상태 폴링 시작
+        const pollQueueStatus = async (jobId: string, documentId: string) => {
+          const maxAttempts = 60; // 최대 5분 (5초 간격)
+          let attempts = 0;
+          
+          const poll = async () => {
+            try {
+              attempts++;
+              const { data: job, error } = await supabaseClient
+                .from('processing_jobs')
+                .select('status, error, attempts')
+                .eq('id', jobId)
+                .single();
+              
+              if (error) {
+                console.error('큐 상태 조회 오류:', error);
+                if (attempts >= maxAttempts) {
+                  throw new Error('큐 상태 확인 시간 초과');
+                }
+                setTimeout(poll, 5000);
+                return;
+              }
+              
+              console.log(`📊 큐 상태 (${attempts}/${maxAttempts}):`, job);
+              
+              if (job.status === 'queued') {
+                setUploadStep('saving');
+                setUploadProgress(85 + (attempts / maxAttempts) * 10); // 85-95%
+              } else if (job.status === 'processing') {
+                setUploadStep('saving');
+                setUploadProgress(95 + (attempts / maxAttempts) * 3); // 95-98%
+              } else if (job.status === 'completed') {
+                setUploadStep('completed');
+                setUploadProgress(100);
+                setUploadSuccess(true);
+                setSelectedFileName(null);
+                console.log('✅ 큐 처리 완료');
+                if (typeof window !== 'undefined') {
+                  window.dispatchEvent(new CustomEvent('docs-refresh'));
+                }
+                setTimeout(() => {
+                  setUploadSuccess(false);
+                  setUploadStep('idle');
+                  setUploadProgress(0);
+                }, 3000);
+                return;
+              } else if (job.status === 'failed') {
+                throw new Error(job.error || '큐 처리 실패');
+              }
+              
+              if (attempts < maxAttempts) {
+                setTimeout(poll, 5000);
+              } else {
+                console.warn('⚠️ 큐 처리 시간 초과 - 작업을 failed 상태로 업데이트합니다');
+                try {
+                  await supabaseClient
+                    .from('processing_jobs')
+                    .update({ 
+                      status: 'failed', 
+                      error: '큐 처리 시간 초과 (5분)',
+                      finished_at: new Date().toISOString()
+                    })
+                    .eq('id', jobId)
+                    .in('status', ['queued', 'processing']);
+                  
+                  await supabaseClient
+                    .from('documents')
+                    .update({ 
+                      status: 'failed',
+                      updated_at: new Date().toISOString()
+                    })
+                    .eq('id', documentId);
+                } catch (updateError) {
+                  console.error('큐 상태 업데이트 실패:', updateError);
+                }
+                throw new Error('큐 처리 시간 초과');
+              }
+            } catch (error) {
+              console.error('폴링 오류:', error);
+              setUploadStep('error');
+              setUploadError(error instanceof Error ? error.message : String(error));
+              setUploadProgress(0);
+              setUploading(false);
+            }
+          };
+          poll();
+        };
+        
+        pollQueueStatus(jobData.id, documentId);
+        return;
+      }
+      
+      // 5MB 이하 파일은 기존 방식대로 API로 전송
       // 시뮬레이션된 진행 단계 (실제 API 호출 전)
       const simulateProgress = () => {
         const steps: { step: UploadStep; progress: number; delay: number }[] = [
