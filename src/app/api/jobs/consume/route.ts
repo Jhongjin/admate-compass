@@ -215,6 +215,17 @@ async function processQueue() {
         
         extractedText = docData.content || '';
         console.log(`✅ 재처리: documents.content에서 텍스트 가져옴 (${extractedText.length}자)`);
+        
+        // 재처리 모드에서 텍스트가 비어있으면 에러
+        const cleanedLength = (extractedText || '').replace(/\s+/g, ' ').trim().length;
+        if (cleanedLength === 0) {
+          throw new Error('재처리: documents.content에 텍스트가 없습니다. 원본 파일을 다시 업로드해주세요.');
+        }
+        
+        if (cleanedLength < 100) {
+          console.warn(`⚠️ 재처리: 텍스트가 매우 짧습니다 (${cleanedLength}자). 청킹 결과가 제한적일 수 있습니다.`);
+        }
+        
         // 재처리 모드에서는 dlMs와 parseMs는 0으로 유지
       } else {
         // 일반 처리: Storage에서 파일 다운로드
@@ -411,22 +422,41 @@ async function processQueue() {
     try {
       // 실패 시 상태를 failed로 기록하여 stuck 방지
       const message = err instanceof Error ? err.message : String(err);
-      const { data: lastJob } = await supabase
+      
+      // 처리 중인 job 조회 (lastJob 대신 현재 처리 중인 job 사용)
+      const { data: processingJob } = await supabase
         .from('processing_jobs')
-        .select('id, status')
+        .select('id, document_id, status')
+        .eq('status', 'processing')
         .order('updated_at', { ascending: false })
         .limit(1)
         .maybeSingle();
-      if (lastJob?.id) {
+      
+      if (processingJob?.id) {
+        // processing_jobs 상태를 failed로 업데이트
         await supabase
           .from('processing_jobs')
           .update({ status: 'failed', error: message, finished_at: new Date().toISOString() })
-          .eq('id', lastJob.id)
+          .eq('id', processingJob.id)
           .eq('status', 'processing');
+        
+        // documents 테이블도 failed 상태로 업데이트
+        if (processingJob.document_id) {
+          await supabase
+            .from('documents')
+            .update({ 
+              status: 'failed',
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', processingJob.document_id);
+        }
       }
-    } catch (_) {
+    } catch (recoveryError) {
       // ignore secondary errors
+      console.error('❌ 실패 상태 업데이트 오류:', recoveryError);
     }
+    
+    console.error('❌ 큐 처리 실패:', err);
     return NextResponse.json(
       { success: false, error: 'Consumer 처리 오류', details: err instanceof Error ? err.message : String(err) },
       { status: 500 }
