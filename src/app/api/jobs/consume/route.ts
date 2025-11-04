@@ -189,28 +189,53 @@ async function processQueue() {
     let extractedText = '';
     const storage = job?.payload?.storage as { bucket: string; path: string; contentType?: string; size?: number } | undefined;
     const fileName = (job?.payload?.fileName as string) || job.document_id;
+    const isReprocess = job?.payload?.reprocess === true;
 
     if ((job.job_type === 'PDF_PARSE' || job.job_type === 'DOCX_PARSE')) {
-      if (!storage?.bucket || !storage?.path) {
-        throw new Error('missing storage location in job payload');
-      }
-      // 저장소에서 파일 다운로드
-      const dlStart = Date.now();
-      const fileBuffer = await downloadFromStorage(supabase, storage.bucket, storage.path);
-      const dlMs = Date.now() - dlStart;
-      if (!fileBuffer || fileBuffer.length === 0) {
-        throw new Error(`downloaded empty file from storage: ${storage.bucket}/${storage.path}`);
-      }
-      let parseMs = 0;
-      if (job.job_type === 'PDF_PARSE') {
-        const p0 = Date.now();
-        extractedText = await processPdfBuffer(fileBuffer);
-        parseMs = Date.now() - p0;
-      }
-      if (job.job_type === 'DOCX_PARSE') {
-        const p0 = Date.now();
-        extractedText = await processDocxBuffer(fileBuffer);
-        parseMs = Date.now() - p0;
+      // 재처리인 경우: Storage 파일이 없으면 문서의 content 필드에서 텍스트 가져오기
+      if (isReprocess && (!storage?.bucket || !storage?.path)) {
+        console.log('🔄 재처리 모드: Storage 없음, documents.content에서 텍스트 가져오기');
+        const { data: docData, error: docError } = await supabase
+          .from('documents')
+          .select('content, title, file_type, file_size')
+          .eq('id', job.document_id)
+          .single();
+        
+        if (docError || !docData) {
+          throw new Error(`재처리: 문서를 찾을 수 없습니다: ${docError?.message || 'Unknown error'}`);
+        }
+        
+        // content가 BINARY_DATA로 시작하면 Storage에서 다운로드 시도
+        if (docData.content && docData.content.startsWith('BINARY_DATA:')) {
+          // BINARY_DATA는 재처리할 수 없음
+          throw new Error('재처리: 바이너리 데이터는 재처리할 수 없습니다. 원본 파일을 다시 업로드해주세요.');
+        }
+        
+        extractedText = docData.content || '';
+        console.log(`✅ 재처리: documents.content에서 텍스트 가져옴 (${extractedText.length}자)`);
+      } else {
+        // 일반 처리: Storage에서 파일 다운로드
+        if (!storage?.bucket || !storage?.path) {
+          throw new Error('missing storage location in job payload');
+        }
+        // 저장소에서 파일 다운로드
+        const dlStart = Date.now();
+        const fileBuffer = await downloadFromStorage(supabase, storage.bucket, storage.path);
+        const dlMs = Date.now() - dlStart;
+        if (!fileBuffer || fileBuffer.length === 0) {
+          throw new Error(`downloaded empty file from storage: ${storage.bucket}/${storage.path}`);
+        }
+        let parseMs = 0;
+        if (job.job_type === 'PDF_PARSE') {
+          const p0 = Date.now();
+          extractedText = await processPdfBuffer(fileBuffer);
+          parseMs = Date.now() - p0;
+        }
+        if (job.job_type === 'DOCX_PARSE') {
+          const p0 = Date.now();
+          extractedText = await processDocxBuffer(fileBuffer);
+          parseMs = Date.now() - p0;
+        }
       }
 
       // 텍스트 추출이 너무 적으면 OCR로 폴백 Job 생성
