@@ -278,7 +278,33 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
         setUploadProgress(40);
         setUploadStep('saving');
         
-        // 큐에 처리 작업 등록
+        // 문서 레코드를 먼저 생성 (외래키 제약조건 해결)
+        const documentType = uploadFile.type === 'application/pdf' ? 'pdf' : 
+                             uploadFile.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ? 'docx' : 'txt';
+        
+        const { error: docError } = await supabaseClient
+          .from('documents')
+          .insert({
+            id: documentId,
+            title: cleanFileName,
+            type: documentType,
+            status: 'queued',
+            chunk_count: 0,
+            file_size: uploadFile.size,
+            file_type: uploadFile.type,
+            source_vendor: dbVendor,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString(),
+          });
+        
+        if (docError) {
+          throw new Error(`문서 레코드 생성 실패: ${docError.message}`);
+        }
+        
+        setUploadProgress(50);
+        console.log('✅ 문서 레코드 생성 완료:', documentId);
+        
+        // 큐에 처리 작업 등록 (문서 레코드가 존재하므로 외래키 제약조건 통과)
         const jobType = uploadFile.type === 'application/pdf' 
           ? 'PDF_PARSE' 
           : uploadFile.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
@@ -316,23 +342,6 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
         
         setUploadProgress(60);
         console.log('✅ Storage 업로드 및 큐 등록 완료:', { jobId: jobData.id, documentId });
-        
-        // 문서 레코드 생성 (큐에서 처리할 때 업데이트됨)
-        await supabaseClient
-          .from('documents')
-          .insert({
-            id: documentId,
-            title: cleanFileName,
-            type: uploadFile.type === 'application/pdf' ? 'pdf' : 
-                  uploadFile.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ? 'docx' : 'txt',
-            status: 'queued',
-            chunk_count: 0,
-            file_size: uploadFile.size,
-            file_type: uploadFile.type,
-            source_vendor: dbVendor,
-            created_at: new Date().toISOString(),
-            updated_at: new Date().toISOString(),
-          });
         
         setUploadProgress(85);
         
