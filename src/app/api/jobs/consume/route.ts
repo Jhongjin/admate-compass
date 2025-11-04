@@ -281,15 +281,20 @@ async function processQueue() {
       const normalizedText = normalizeTablesToMarkdown(extractedText);
 
       // 문서 레코드 불러오기(없을 경우 기본 메타 구성)
-      const { data: docs } = await supabase.from('documents').select('id, title, file_size, file_type, created_at, updated_at').eq('id', job.document_id).limit(1);
+      const { data: docs } = await supabase.from('documents').select('id, title, file_size, file_type, created_at, updated_at, source_vendor').eq('id', job.document_id).limit(1);
       const nowIso = new Date().toISOString();
+      
+      // 재처리인 경우 기존 문서 정보 사용, 아니면 payload에서 가져오기
+      const vendor = (job?.payload?.vendor as string) || docs?.[0]?.source_vendor || 'META';
+      
       const docData: DocumentData = {
         id: job.document_id,
         title: docs?.[0]?.title || fileName,
         content: normalizedText,
         type: job.job_type === 'PDF_PARSE' ? 'pdf' : 'docx',
-        file_size: storage?.size || docs?.[0]?.file_size || fileBuffer.length,
+        file_size: storage?.size || docs?.[0]?.file_size || 0,
         file_type: storage?.contentType || docs?.[0]?.file_type || (job.job_type === 'PDF_PARSE' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'),
+        source_vendor: vendor,
         created_at: docs?.[0]?.created_at || nowIso,
         updated_at: nowIso,
       };
