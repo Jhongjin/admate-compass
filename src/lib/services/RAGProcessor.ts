@@ -362,15 +362,16 @@ export class RAGProcessor {
    * @returns 실제 저장된 청크 개수
    */
   async saveChunksToDatabase(chunks: ChunkData[]): Promise<number> {
+    let supabase = await this.getSupabaseClient();
+    
+    // Supabase 연결 확인
+    if (!supabase) {
+      console.warn('⚠️ Supabase 연결 없음. 청크 저장 건너뛰기');
+      return 0;
+    }
+    
     try {
       console.log('💾 청크 저장 시작:', chunks.length, '개 청크');
-      const supabase = await this.getSupabaseClient();
-
-      // Supabase 연결 확인
-      if (!supabase) {
-        console.warn('⚠️ Supabase 연결 없음. 청크 저장 건너뛰기');
-        return 0;
-      }
 
       // 청크 데이터 준비 (id는 SERIAL이므로 제외)
       const chunkInserts = chunks.map((chunk, index) => ({
@@ -470,7 +471,7 @@ export class RAGProcessor {
       console.error('❌ 청크 저장 오류:', error);
       // 저장 실패 시 실제 저장된 청크 개수 확인
       try {
-        if (chunks.length > 0) {
+        if (chunks.length > 0 && supabase) {
           const documentId = chunks[0].metadata.document_id;
           const { count: actualSavedCount } = await supabase
             .from('document_chunks')
