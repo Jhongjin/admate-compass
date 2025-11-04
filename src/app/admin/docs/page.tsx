@@ -1932,6 +1932,26 @@ function DocumentDetailDialog({ detail, onClose, onRefetch }: { detail: any | nu
         .select("*")
         .eq("id", detail.id)
         .single();
+      
+      // 청크 데이터 확인
+      if (data) {
+        const { count: actualChunkCount } = await supabase
+          .from("document_chunks")
+          .select("*", { count: "exact", head: true })
+          .eq("document_id", detail.id);
+        
+        const { count: chunksWithEmbedding } = await supabase
+          .from("document_chunks")
+          .select("*", { count: "exact", head: true })
+          .eq("document_id", detail.id)
+          .not("embedding", "is", null);
+        
+        return {
+          ...data,
+          actualChunkCount: actualChunkCount || 0,
+          chunksWithEmbedding: chunksWithEmbedding || 0,
+        };
+      }
       if (error) throw error;
       return data;
     },
@@ -2070,8 +2090,29 @@ function DocumentDetailDialog({ detail, onClose, onRefetch }: { detail: any | nu
                     </div>
                   <div className="space-y-1">
                     <div className="text-secondary-enhanced font-semibold">청크 수</div>
-                    <div className="text-primary-enhanced">{fullDoc?.chunk_count || detail.chunk_count || 0}</div>
+                    <div className="text-primary-enhanced">
+                      {fullDoc?.actualChunkCount !== undefined ? (
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2">
+                            <span>DB 기록: {fullDoc.chunk_count || 0}</span>
+                            {fullDoc.chunk_count !== fullDoc.actualChunkCount && (
+                              <Badge variant="outline" className="bg-yellow-500/20 text-yellow-300 border-yellow-400/30 text-xs">
+                                불일치
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="text-xs text-muted-enhanced">
+                            실제 청크: {fullDoc.actualChunkCount}개
+                            {fullDoc.chunksWithEmbedding > 0 && (
+                              <span className="ml-2">(임베딩: {fullDoc.chunksWithEmbedding}개)</span>
+                            )}
+                          </div>
+                        </div>
+                      ) : (
+                        <span>{fullDoc?.chunk_count || detail.chunk_count || 0}</span>
+                      )}
                     </div>
+                  </div>
                   <div className="space-y-1">
                     <div className="text-secondary-enhanced font-semibold">생성일</div>
                     <div className="text-xs text-primary-enhanced">{fullDoc?.created_at ? new Date(fullDoc.created_at).toLocaleString() : '-'}</div>
