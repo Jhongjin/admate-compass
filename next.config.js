@@ -13,15 +13,30 @@ const nextConfig = {
   },
   // Next.js 14.x 안정성 설정
   experimental: {
-    serverComponentsExternalPackages: ['@supabase/supabase-js'],
+    serverComponentsExternalPackages: ['@supabase/supabase-js', 'pdf-parse'],
+    optimizeCss: true, // CSS 최적화 (Pro 플랜)
+    optimizePackageImports: [
+      '@radix-ui/react-dialog',
+      '@radix-ui/react-dropdown-menu',
+      '@radix-ui/react-tooltip',
+      '@radix-ui/react-accordion',
+      'lucide-react',
+      '@tanstack/react-query',
+    ],
   },
   
-  // API 라우트 설정
-  api: {
-    bodyParser: {
-      sizeLimit: '50mb', // 50MB 파일 업로드 제한
-    },
+  // 프로덕션 빌드 최적화
+  productionBrowserSourceMaps: false,
+  
+  // 컴파일러 최적화
+  compiler: {
+    removeConsole: process.env.NODE_ENV === 'production' ? {
+      exclude: ['error', 'warn'],
+    } : false,
   },
+  
+  // API 라우트 bodyParser는 Next.js 14에서 자동으로 처리됨
+  // 파일 크기 제한은 route.ts에서 export const maxDuration으로 설정
   
   // Webpack 설정 단순화
   webpack: (config, { isServer }) => {

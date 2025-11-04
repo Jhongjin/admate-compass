@@ -53,3 +53,7 @@ curl "http://localhost:3000/api/test/detailed-sync-check"
 ```
 
 이 마이그레이션을 적용하면 향후 모든 회원탈퇴에서 자동으로 관련 데이터가 정리되어 동기화 문제가 발생하지 않습니다.
+
+
+
+

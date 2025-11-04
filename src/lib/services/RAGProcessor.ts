@@ -7,6 +7,8 @@ import { RecursiveCharacterTextSplitter } from 'langchain/text_splitter';
 import { createClient } from '@supabase/supabase-js';
 import { createPureClient } from '../supabase/server';
 import { processTextEncoding, TextEncodingResult } from '../utils/textEncoding';
+import { adaptiveChunkingService, AdaptiveChunkingConfig } from './AdaptiveChunkingService';
+import { contentTypeDetector } from './ContentTypeDetector';
 
 export interface ChunkData {
   id: string;
@@ -28,6 +30,7 @@ export interface DocumentData {
   file_size: number;
   file_type: string;
   url?: string; // URL 필드 추가
+  source_vendor?: string; // 벤더 정보 추가
   created_at: string;
   updated_at: string;
 }
@@ -276,6 +279,7 @@ export class RAGProcessor {
             file_size: document.file_size,
             file_type: document.file_type,
             url: document.url || null,
+            source_vendor: document.source_vendor || 'META', // 벤더 정보 저장 (기본값: META)
             created_at: document.created_at,
             updated_at: document.updated_at,
           }),
@@ -466,44 +470,26 @@ export class RAGProcessor {
       
       switch (fileExtension) {
         case 'pdf':
-          // PDF 텍스트 추출 비활성화 (원본 바이너리 데이터만 저장)
-          console.log(`📄 PDF 텍스트 추출 비활성화: ${fileName}`);
-          console.log(`📄 원본 바이너리 데이터만 저장하여 다운로드 가능`);
-          
-          // PDF 텍스트 추출 없이 플레이스홀더 반환
-          // 원본 바이너리 데이터는 업로드 API에서 저장됨
-          const pdfPlaceholder = `PDF 문서: ${fileName}
-          
-PDF 텍스트 추출이 비활성화되었습니다.
-원본 PDF 파일은 정상적으로 저장되었으며, 다운로드 시 원본 파일을 받을 수 있습니다.
-
-파일 크기: ${fileBuffer.length} bytes
-저장 시간: ${new Date().toLocaleString('ko-KR')}`;
-          
-          return processTextEncoding(pdfPlaceholder, { 
-            strictMode: true,
-            preserveOriginal: true 
-          });
+          try {
+            const pdfParse = (await import('pdf-parse')).default as (buf: Buffer) => Promise<{ text: string }>; 
+            const parsed = await pdfParse(fileBuffer);
+            return processTextEncoding(parsed?.text ?? '', { strictMode: true, preserveOriginal: true });
+          } catch (err) {
+            console.warn(`PDF 텍스트 추출 실패, 플레이스홀더로 폴백: ${fileName}`, err);
+            const pdfPlaceholder = `PDF 문서: ${fileName}\n\n텍스트 추출에 실패했습니다. 원본은 저장되어 있으며, 관리자에게 문의하세요.\n\n파일 크기: ${fileBuffer.length} bytes\n저장 시간: ${new Date().toLocaleString('ko-KR')}`;
+            return processTextEncoding(pdfPlaceholder, { strictMode: true, preserveOriginal: true });
+          }
           
         case 'docx':
-          // DOCX 텍스트 추출 비활성화 (원본 바이너리 데이터만 저장)
-          console.log(`📄 DOCX 텍스트 추출 비활성화: ${fileName}`);
-          console.log(`📄 원본 바이너리 데이터만 저장하여 다운로드 가능`);
-          
-          // DOCX 텍스트 추출 없이 플레이스홀더 반환
-          // 원본 바이너리 데이터는 업로드 API에서 저장됨
-          const docxPlaceholder = `DOCX 문서: ${fileName}
-          
-DOCX 텍스트 추출이 비활성화되었습니다.
-원본 DOCX 파일은 정상적으로 저장되었으며, 다운로드 시 원본 파일을 받을 수 있습니다.
-
-파일 크기: ${fileBuffer.length} bytes
-저장 시간: ${new Date().toLocaleString('ko-KR')}`;
-          
-          return processTextEncoding(docxPlaceholder, { 
-            strictMode: true,
-            preserveOriginal: true 
-          });
+          try {
+            const mammothMod = (await import('mammoth')).default as { extractRawText: (args: { buffer: Buffer }) => Promise<{ value: string }> };
+            const result = await mammothMod.extractRawText({ buffer: fileBuffer });
+            return processTextEncoding(result?.value ?? '', { strictMode: true, preserveOriginal: true });
+          } catch (err) {
+            console.warn(`DOCX 텍스트 추출 실패, 플레이스홀더로 폴백: ${fileName}`, err);
+            const docxPlaceholder = `DOCX 문서: ${fileName}\n\n텍스트 추출에 실패했습니다. 원본은 저장되어 있으며, 관리자에게 문의하세요.\n\n파일 크기: ${fileBuffer.length} bytes\n저장 시간: ${new Date().toLocaleString('ko-KR')}`;
+            return processTextEncoding(docxPlaceholder, { strictMode: true, preserveOriginal: true });
+          }
           
         case 'txt':
           // TXT 파일은 다양한 인코딩 시도
@@ -616,10 +602,12 @@ DOCX 텍스트 추출이 비활성화되었습니다.
         const isDuplicate = await this.checkDuplicateDocument(document.title);
         if (isDuplicate) {
           console.warn('⚠️ 중복 문서 발견:', document.title);
+          // 중복 문서는 에러가 아니라 정상적인 상황 - 사용자에게 알림
           return {
             documentId: document.id,
             chunkCount: 0,
             success: false,
+            error: 'duplicate', // 중복 문서임을 명시
           };
         }
         console.log('✅ 중복 검사 통과');
@@ -630,9 +618,42 @@ DOCX 텍스트 추출이 비활성화되었습니다.
       // 1. 문서 청킹 (간단한 구현)
       console.log('📄 문서 청킹 시작...');
       
-      // PDF 바이너리 데이터인 경우 텍스트 추출 없이 청킹 건너뛰기
+      // PDF 바이너리 데이터인 경우 텍스트 추출 없이 청킹 건너뛰기 (하지만 문서는 저장)
       if (document.content && document.content.startsWith('BINARY_DATA:')) {
-        console.log('⚠️ PDF 바이너리 데이터 감지 - 청킹 건너뛰기');
+        console.log('⚠️ PDF 바이너리 데이터 감지 - 청킹 건너뛰기, 문서만 저장');
+        
+        // 문서는 저장 (청크 없이)
+        const supabase = await this.getSupabaseClient();
+        if (supabase) {
+          try {
+            await this.saveDocumentToDatabase(document, originalBinaryData);
+            console.log('✅ PDF 문서 저장 완료 (청크 없음)');
+            
+            // 문서 상태를 indexed로 업데이트 (청크 없어도 저장 완료)
+            const { error: updateError } = await supabase
+              .from('documents')
+              .update({ 
+                status: 'indexed',
+                chunk_count: 0,
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', document.id);
+            
+            if (updateError) {
+              console.error('❌ 문서 상태 업데이트 실패:', updateError);
+            } else {
+              console.log('✅ 문서 상태 업데이트 완료: indexed');
+            }
+          } catch (error) {
+            console.error('❌ PDF 문서 저장 실패:', error);
+            return {
+              documentId: document.id,
+              chunkCount: 0,
+              success: false,
+            };
+          }
+        }
+        
         return {
           documentId: document.id,
           chunkCount: 0,
@@ -664,7 +685,7 @@ DOCX 텍스트 추출이 비활성화되었습니다.
         content: processedContent
       };
       
-      const chunks = this.simpleChunkDocument(processedDocument);
+      const chunks = await this.simpleChunkDocument(processedDocument);
       console.log('✅ 문서 청킹 완료:', chunks.length, '개 청크');
 
       if (chunks.length === 0) {
@@ -729,13 +750,15 @@ DOCX 텍스트 추출이 비활성화되었습니다.
   }
 
   /**
-   * 간단한 문서 청킹 (LangChain 없이)
+   * 적응적 문서 청킹 (개선된 버전)
+   * 문서 유형, 크기, 내용에 따라 최적화된 청킹 전략 사용
    */
-  private simpleChunkDocument(document: DocumentData): ChunkData[] {
+  private async simpleChunkDocument(document: DocumentData): Promise<ChunkData[]> {
     try {
-      console.log('📄 청킹 시작:', {
+      console.log('📄 적응적 청킹 시작:', {
         contentLength: document.content.length,
-        title: document.title
+        title: document.title,
+        type: document.type
       });
 
       // 내용이 비어있으면 빈 청크 반환
@@ -744,92 +767,130 @@ DOCX 텍스트 추출이 비활성화되었습니다.
         return [];
       }
 
-      // UTF-8 인코딩 보장
-      let content = document.content;
-      try {
-        content = Buffer.from(document.content, 'utf-8').toString('utf-8');
-      } catch (error) {
-        console.warn('⚠️ 텍스트 인코딩 변환 실패, 원본 사용:', error);
-        content = document.content;
-      }
+      // 콘텐츠 타입 자동 감지
+      const contentTypeResult = contentTypeDetector.detectContentType(
+        document.content,
+        document.title
+      );
+      console.log('🔍 콘텐츠 타입 감지:', contentTypeResult);
 
-      // 문서 내용에 따른 적응적 청킹
+      // 문서 유형 결정 (file_type 또는 type에서 추출)
+      const docType = (document.file_type || document.type || 'txt').toLowerCase();
+      let documentType: 'pdf' | 'docx' | 'txt' | 'url' = 'txt';
+      if (docType.includes('pdf')) documentType = 'pdf';
+      else if (docType.includes('docx') || docType.includes('doc')) documentType = 'docx';
+      else if (docType.includes('url') || document.url) documentType = 'url';
+      else documentType = 'txt';
+
+      // 언어 감지 (간단한 버전)
+      const koreanCharCount = (document.content.match(/[가-힣]/g) || []).length;
+      const englishCharCount = (document.content.match(/[a-zA-Z]/g) || []).length;
+      const language: 'ko' | 'en' | 'mixed' = 
+        koreanCharCount > englishCharCount ? 'ko' :
+        englishCharCount > koreanCharCount * 2 ? 'en' : 'mixed';
+
+      // 적응적 청킹 설정
+      const chunkingConfig: AdaptiveChunkingConfig = {
+        documentType,
+        contentLength: document.content.length,
+        language,
+        contentType: contentTypeResult.type !== 'general' ? contentTypeResult.type : undefined
+      };
+
+      // 적응적 청킹 서비스 사용
+      const adaptiveChunks = await adaptiveChunkingService.chunkDocument(
+        document.content,
+        document.id,
+        document.title,
+        chunkingConfig
+      );
+
+      // ChunkData 형식으로 변환
+      const chunkData: ChunkData[] = adaptiveChunks.map((chunk) => ({
+        id: chunk.id,
+        content: chunk.content,
+        metadata: {
+          document_id: chunk.metadata.documentId,
+          chunk_index: chunk.metadata.chunkIndex,
+          source: chunk.metadata.documentTitle,
+          created_at: new Date().toISOString(),
+          // 추가 메타데이터 확장
+          chunk_type: chunk.metadata.chunkType,
+          section_title: chunk.metadata.sectionTitle,
+          keywords: chunk.metadata.keywords,
+          importance: chunk.metadata.importance,
+          confidence: chunk.metadata.confidence,
+        } as any, // 타입 확장을 위해 any 사용
+      }));
+
+      console.log('📄 적응적 청킹 완료:', {
+        chunkCount: chunkData.length,
+        contentType: contentTypeResult.type,
+        confidence: contentTypeResult.confidence,
+        averageChunkSize: Math.round(
+          chunkData.reduce((sum, c) => sum + c.content.length, 0) / chunkData.length
+        )
+      });
+
+      return chunkData;
+    } catch (error) {
+      console.error('❌ 적응적 청킹 실패, 기본 청킹으로 폴백:', error);
+      // 에러 발생 시 기본 청킹으로 폴백
+      return this.fallbackChunkDocument(document);
+    }
+  }
+
+  /**
+   * 기본 청킹 (폴백용)
+   */
+  private fallbackChunkDocument(document: DocumentData): ChunkData[] {
+    try {
+      const content = document.content;
       const contentLength = content.length;
-      let chunkSize, overlap, maxChunks;
       
-      // 문서 크기에 따른 청킹 전략 조정
+      let chunkSize = 800;
+      let overlap = 100;
+      
       if (contentLength < 1000) {
-        // 작은 문서: 작은 청크, 적은 겹침
         chunkSize = 200;
         overlap = 20;
-        maxChunks = 50;
       } else if (contentLength < 10000) {
-        // 중간 문서: 중간 청크
         chunkSize = 500;
         overlap = 50;
-        maxChunks = 100;
-      } else if (contentLength < 100000) {
-        // 큰 문서: 큰 청크
-        chunkSize = 1000;
-        overlap = 100;
-        maxChunks = 200;
-      } else {
-        // 매우 큰 문서: 매우 큰 청크
+      } else if (contentLength > 100000) {
         chunkSize = 2000;
         overlap = 200;
-        maxChunks = 500;
       }
-      
-      console.log(`📄 청킹 전략:`, {
-        contentLength,
-        chunkSize,
-        overlap,
-        maxChunks
-      });
       
       const chunks: string[] = [];
       let start = 0;
-      let iterationCount = 0;
-      const maxIterations = Math.min(maxChunks * 2, 10000); // 최대 반복 수 제한
       
-      while (start < content.length && iterationCount < maxIterations && chunks.length < maxChunks) {
+      while (start < content.length && chunks.length < 500) {
         const end = Math.min(start + chunkSize, content.length);
         let chunk = content.slice(start, end);
         
-        // 문장 경계에서 자르기 (큰 청크에만 적용)
-        if (chunkSize > 500 && end < content.length) {
-          const lastSentenceEnd = chunk.lastIndexOf('.');
-          const lastParagraphEnd = chunk.lastIndexOf('\n\n');
-          
-          // 문단 경계 우선, 문장 경계 차선
-          if (lastParagraphEnd > chunkSize * 0.3) {
-            chunk = chunk.slice(0, lastParagraphEnd);
-          } else if (lastSentenceEnd > chunkSize * 0.5) {
-            chunk = chunk.slice(0, lastSentenceEnd + 1);
+        // 문장 경계에서 자르기
+        if (end < content.length) {
+          const lastSentenceEnd = Math.max(
+            chunk.lastIndexOf('. '),
+            chunk.lastIndexOf('! '),
+            chunk.lastIndexOf('? ')
+          );
+          if (lastSentenceEnd > chunkSize * 0.5) {
+            chunk = chunk.slice(0, lastSentenceEnd + 2);
           }
         }
         
         const trimmedChunk = chunk.trim();
-        if (trimmedChunk.length > 50) { // 최소 청크 크기 보장
+        if (trimmedChunk.length > 50) {
           chunks.push(trimmedChunk);
         }
         
-        // 다음 청크 시작 위치 계산
-        const nextStart = end - overlap;
-        start = Math.max(nextStart, start + 1); // 최소 1자씩은 진행
-        
-        iterationCount++;
+        start = end - overlap;
+        if (start <= 0) start = end;
       }
       
-      // 무한 루프 감지
-      if (iterationCount >= maxIterations) {
-        console.warn('⚠️ 최대 반복 수에 도달했습니다. 청킹을 중단합니다.');
-      }
-      
-      console.log(`📄 청킹 완료: ${chunks.length}개 청크`);
-
-      // 청크 데이터 생성
-      const chunkData = chunks.map((chunk, index) => ({
+      return chunks.map((chunk, index) => ({
         id: `${document.id}_chunk_${index}`,
         content: chunk,
         metadata: {
@@ -839,21 +900,24 @@ DOCX 텍스트 추출이 비활성화되었습니다.
           created_at: new Date().toISOString(),
         },
       }));
-
-      console.log('📄 청크 데이터 생성 완료:', chunkData.length, '개');
-      return chunkData;
     } catch (error) {
-      console.error('❌ 청킹 실패:', error);
+      console.error('❌ 폴백 청킹도 실패:', error);
       return [];
     }
   }
 
   /**
    * 벡터 검색 수행 (수정된 search_documents 함수 사용)
+   * @param query 검색 질문
+   * @param limit 결과 개수 제한
+   * @param vendorFilter 벤더 필터 배열 (예: ['META', 'GOOGLE']) - null이면 전체 검색
    */
-  async searchSimilarChunks(query: string, limit: number = 5): Promise<ChunkData[]> {
+  async searchSimilarChunks(query: string, limit: number = 5, vendorFilter: string[] | null = null): Promise<ChunkData[]> {
     try {
       console.log('🔍 벡터 검색 시작:', query);
+      if (vendorFilter && vendorFilter.length > 0) {
+        console.log('🏷️ 벤더 필터 적용:', vendorFilter);
+      }
       const supabase = await this.getSupabaseClient();
 
       if (!supabase) {
@@ -866,11 +930,17 @@ DOCX 텍스트 추출이 비활성화되었습니다.
       const queryEmbedding = this.generateSimpleEmbedding(query);
       console.log('✅ 쿼리 임베딩 생성 완료:', queryEmbedding.length, '차원');
 
-      // 새로운 search_documents 함수 사용
+      // 벤더 필터를 대문자로 변환 (ENUM과 매칭)
+      const normalizedVendorFilter = vendorFilter && vendorFilter.length > 0
+        ? vendorFilter.map(v => v.toUpperCase())
+        : null;
+
+      // 새로운 search_documents 함수 사용 (vendor_filter 파라미터 추가)
       const { data, error } = await supabase.rpc('search_documents', {
         query_embedding: queryEmbedding,
         match_threshold: 0.7,
         match_count: limit,
+        vendor_filter: normalizedVendorFilter,
       });
 
       if (error) {
@@ -889,6 +959,7 @@ DOCX 텍스트 추출이 비활성화되었습니다.
           chunk_index: item.metadata?.chunk_index || 0,
           source: item.title || item.metadata?.source || 'Unknown',
           created_at: item.metadata?.created_at || new Date().toISOString(),
+          source_vendor: item.source_vendor || item.metadata?.source_vendor || null,
         },
         similarity: item.similarity,
       }));

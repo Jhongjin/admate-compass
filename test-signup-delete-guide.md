@@ -151,3 +151,7 @@ WHERE constraint_type = 'FOREIGN KEY'
 ## 정리
 
 테스트 완료 후 생성된 테스트 API들은 실제 운영 환경에서는 제거해야 합니다. 이 테스트를 통해 Supabase와의 동기화가 정상적으로 작동하는지 확인할 수 있습니다.
+
+
+
+

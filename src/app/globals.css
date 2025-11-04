@@ -378,6 +378,27 @@
     text-overflow: ellipsis; /* placeholder-shown:text-ellipsis */
   }
 
+  /* 질문 입력 필드 플레이스홀더 스타일 */
+  .placeholder-white::placeholder {
+    color: #ffffff !important;
+    opacity: 1 !important;
+  }
+
+  .placeholder-white::-webkit-input-placeholder {
+    color: #ffffff !important;
+    opacity: 1 !important;
+  }
+
+  .placeholder-white::-moz-placeholder {
+    color: #ffffff !important;
+    opacity: 1 !important;
+  }
+
+  .placeholder-white:-ms-input-placeholder {
+    color: #ffffff !important;
+    opacity: 1 !important;
+  }
+
   .chatbox-textarea:focus {
     background-color: transparent; /* focus:bg-transparent */
     box-shadow: none; /* focus-visible:ring-0 focus-visible:ring-offset-0 */

@@ -8,10 +8,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { newDocumentProcessor } from '@/lib/services/NewDocumentProcessor';
 import { ragProcessor, DocumentData, RAGProcessor } from '@/lib/services/RAGProcessor';
 import { createPureClient } from '@/lib/supabase/server';
+import { getSupabaseServer } from '@/lib/supabase/server';
 
 // Vercel 설정 - 서버 안정성 개선
 export const runtime = 'nodejs';
-export const maxDuration = 120; // 타임아웃 증가
+export const maxDuration = 300; // Pro 플랜: 300초 타임아웃
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
@@ -31,6 +32,110 @@ interface Document {
 
 // 메모리에 문서 저장
 let documents: Document[] = [];
+
+const STORAGE_BUCKET = 'documents';
+
+function sanitizeFileName(name: string) {
+  // keep letters, numbers, dash, underscore, dot
+  return name
+    .trim()
+    .replace(/\s+/g, '_')
+    .replace(/[^a-zA-Z0-9._-]+/g, '_')
+    .replace(/_+/g, '_')
+    .slice(0, 180);
+}
+
+async function uploadToStorage(file: File, docId: string, cleanFileName: string) {
+  const supabase = await createPureClient();
+  if (!supabase) throw new Error('Supabase 클라이언트를 생성할 수 없습니다.');
+  const arrayBuffer = await file.arrayBuffer();
+  const buffer = Buffer.from(arrayBuffer);
+  const safeName = sanitizeFileName(cleanFileName || `file_${Date.now()}`);
+  const ext = safeName.split('.').pop()?.toLowerCase() || 'bin';
+  const path = `${docId}/${Date.now()}_${safeName}`;
+  const { error: upErr } = await supabase.storage.from(STORAGE_BUCKET).upload(path, buffer, {
+    contentType: file.type || `application/octet-stream`,
+    upsert: true,
+  });
+  if (upErr) {
+    console.error('❌ Storage 업로드 오류:', {
+      bucket: STORAGE_BUCKET,
+      path,
+      error: upErr.message || upErr.name || upErr
+    });
+    throw new Error(`STORAGE_UPLOAD_FAILED:${upErr.message || upErr}`);
+  }
+  return { bucket: STORAGE_BUCKET, path, contentType: file.type, size: file.size, ext };
+}
+
+async function enqueueProcessingJob(params: { documentId: string; jobType: 'PDF_PARSE' | 'DOCX_PARSE' | 'OCR' | 'CRAWL' | 'EMBEDDING'; priority?: number; payload?: Record<string, unknown> }) {
+  const supabase = await createPureClient();
+  if (!supabase) throw new Error('Supabase 클라이언트를 생성할 수 없습니다.');
+  // 문서 stub 생성 (없으면)
+  const vendor = (params.payload as any)?.vendor || 'META';
+  const { error: insertDocErr } = await supabase
+    .from('documents')
+    .upsert({
+      id: params.documentId,
+      title: (params.payload as any)?.fileName ?? params.documentId,
+      // documents.type 은 CHECK (IN ('file','url')) 제약이 있으므로 반드시 'file' 로 기록
+      type: 'file',
+      status: 'processing',
+      chunk_count: 0,
+      source_vendor: vendor, // 벤더 정보 저장
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    });
+  if (insertDocErr) {
+    console.error('❌ documents upsert 실패:', JSON.stringify(insertDocErr));
+    throw new Error(insertDocErr.message || 'documents upsert failed');
+  }
+
+  // 메타데이터 테이블에도 기록 (존재하는 경우)
+  const fileSize = (params.payload as any)?.fileSize ?? 0;
+  const fileType = (params.payload as any)?.fileType ?? 'unknown';
+  try {
+    const { error: metaErr } = await supabase
+      .from('document_metadata')
+      .upsert({
+        id: params.documentId,
+        title: (params.payload as any)?.fileName ?? params.documentId,
+        type: ((params.jobType === 'PDF_PARSE') ? 'pdf' : (params.jobType === 'DOCX_PARSE' ? 'docx' : 'file')),
+        size: fileSize,
+        uploaded_at: new Date().toISOString(),
+        processed_at: null,
+        status: 'pending',
+        chunk_count: 0,
+        embedding_count: 0,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      });
+    if (metaErr) {
+      console.error('❌ document_metadata upsert 실패:', JSON.stringify(metaErr));
+    }
+  } catch (e) {
+    console.warn('document_metadata upsert 경고:', e);
+  }
+  const { data, error } = await supabase
+    .from('processing_jobs')
+    .insert({
+      document_id: params.documentId,
+      job_type: params.jobType,
+      status: 'queued',
+      priority: params.priority ?? 5,
+      payload: params.payload ?? {},
+      attempts: 0,
+      max_attempts: 3,
+      scheduled_at: new Date().toISOString(),
+    })
+    .select('id')
+    .single();
+  if (error) {
+    console.error('❌ processing_jobs insert 실패:', JSON.stringify(error));
+    throw new Error(error.message || 'processing_jobs insert failed');
+  }
+  return data.id as string;
+}
 
     /**
      * 파일명 중복 검사 (Supabase 기반, 폴백 포함)
@@ -177,6 +282,7 @@ export async function POST(request: NextRequest) {
     if (contentType?.includes('multipart/form-data')) {
       const formData = await request.formData();
       const file = formData.get('file') as File;
+      const vendor = formData.get('vendor') as string | null; // 벤더 정보 받기
       
       if (!file) {
         return NextResponse.json(
@@ -233,6 +339,53 @@ export async function POST(request: NextRequest) {
         console.log('🔍 파일 처리 시작:', file.name);
       
       if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+        // 대용량/서버리스 제약 시 큐 오프로딩
+        if (file.size > 10 * 1024 * 1024) {
+          console.log('📋 대용량 파일 감지 - 큐로 오프로딩:', {
+            fileName: cleanFileName,
+            fileSize: file.size,
+            fileSizeMB: (file.size / (1024 * 1024)).toFixed(2) + 'MB'
+          });
+          
+          const documentId = `doc_${Date.now()}`;
+          
+          // 벤더 정보 정규화
+          const vendor = formData.get('vendor') as string | null;
+          const normalizedVendor = vendor ? vendor.toUpperCase() : 'META';
+          
+          // 원본을 Storage에 업로드
+          let storageInfo;
+          try {
+            storageInfo = await uploadToStorage(file, documentId, cleanFileName);
+            console.log('✅ Storage 업로드 완료:', storageInfo);
+          } catch (storageError) {
+            console.error('❌ Storage 업로드 실패:', storageError);
+            // Storage 업로드 실패 시에도 큐에 등록 (벤더 정보 포함)
+          }
+          
+          const jobId = await enqueueProcessingJob({
+            documentId,
+            jobType: 'PDF_PARSE',
+            priority: 7,
+            payload: { 
+              fileName: cleanFileName, 
+              fileSize: file.size, 
+              fileType: file.type, 
+              storage: storageInfo,
+              vendor: normalizedVendor // 벤더 정보 추가
+            }
+          });
+          
+          console.log('✅ 큐 등록 완료:', { jobId, documentId, vendor: normalizedVendor });
+          
+          return NextResponse.json({ 
+            success: true, 
+            queued: true, 
+            jobId, 
+            documentId, 
+            message: '대용량 PDF는 백그라운드에서 처리됩니다.' 
+          }, { status: 202 });
+        }
         // PDF 파일은 바이너리로 저장 (텍스트 추출 비활성화)
         const arrayBuffer = await file.arrayBuffer();
         const fileBuffer = Buffer.from(arrayBuffer);
@@ -268,18 +421,73 @@ export async function POST(request: NextRequest) {
         }
         
         originalBinaryData = fileBuffer.toString('base64');
-        fileContent = `BINARY_DATA:${originalBinaryData}`;
-        extractedText = ''; // 텍스트 추출 비활성화
         
-        console.log(`📄 PDF 파일 바이너리 저장:`, {
+        // Pro 플랜에서 PDF 텍스트 추출 활성화
+        console.log('📄 PDF 텍스트 추출 시작 (Pro 플랜 활성화)...');
+        try {
+          // pdf-parse를 동적 import로 사용 (extract-pdf API와 동일한 방식)
+          const pdfPromise = (async () => {
+            const pdf = (await import('pdf-parse')).default;
+            // Buffer를 직접 전달 (파일 경로가 아닌)
+            return await pdf(fileBuffer);
+          })();
+          
+          // 타임아웃 설정 (Pro 플랜: 300초 중 60초 할당)
+          const timeoutPromise = new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('PDF extraction timeout')), 60000)
+          );
+          
+          const pdfData: any = await Promise.race([pdfPromise, timeoutPromise]);
+          
+          extractedText = pdfData.text || '';
+          fileContent = extractedText; // 텍스트로 저장
+          
+          console.log(`✅ PDF 텍스트 추출 완료:`, {
+            fileName: file.name,
+            extractedTextLength: extractedText.length,
+            pages: pdfData.numpages,
+            hasText: extractedText.length > 0
+          });
+          
+          // 텍스트가 없으면 경고
+          if (!extractedText || extractedText.trim().length === 0) {
+            console.warn('⚠️ PDF에서 텍스트를 추출할 수 없습니다. 바이너리로 저장합니다.');
+            fileContent = `BINARY_DATA:${originalBinaryData}`;
+            extractedText = '';
+          }
+        } catch (pdfError: any) {
+          console.error('❌ PDF 텍스트 추출 실패, 바이너리로 저장:', {
+            error: pdfError?.message || pdfError,
+            code: pdfError?.code,
+            fileName: file.name
+          });
+          // 에러 발생 시 바이너리로 저장
+          fileContent = `BINARY_DATA:${originalBinaryData}`;
+          extractedText = '';
+        }
+        
+        console.log(`📄 PDF 파일 처리 완료:`, {
           fileName: file.name,
           fileSize: file.size,
           binaryDataLength: originalBinaryData.length,
+          textLength: extractedText.length,
           pdfSignature: pdfSignature,
-          isValidPdf: isValidPdf
+          isValidPdf: isValidPdf,
+          hasExtractedText: extractedText.length > 0
         });
       } else if (file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || 
                  file.name.toLowerCase().endsWith('.docx')) {
+        if (file.size > 12 * 1024 * 1024) {
+          const documentId = `doc_${Date.now()}`;
+          const storageInfo = await uploadToStorage(file, documentId, cleanFileName);
+          const jobId = await enqueueProcessingJob({
+            documentId,
+            jobType: 'DOCX_PARSE',
+            priority: 7,
+            payload: { fileName: cleanFileName, fileSize: file.size, fileType: file.type, storage: storageInfo }
+          });
+          return NextResponse.json({ success: true, queued: true, jobId, documentId, message: '대용량 DOCX는 백그라운드에서 처리됩니다.' }, { status: 202 });
+        }
         // DOCX 파일 바이너리 처리 (완전히 새로운 방식)
         console.log('📄 DOCX 파일 바이너리 처리 시작:', {
           fileName: file.name,
@@ -383,6 +591,10 @@ export async function POST(request: NextRequest) {
       // 추출된 텍스트 사용 (서버사이드 처리 결과)
       let processedContent = fileContent;
 
+      // 벤더 정보 정규화 (대문자로 변환, 기본값: META)
+      const normalizedVendor = vendor ? vendor.toUpperCase() : 'META';
+      console.log('🏷️ 벤더 정보:', { original: vendor, normalized: normalizedVendor });
+      
       // 문서 생성
       const documentId = `doc_${Date.now()}`;
       const documentData: DocumentData = {
@@ -392,6 +604,7 @@ export async function POST(request: NextRequest) {
         type: getFileTypeFromExtension(cleanFileName), // 정리된 파일명으로 타입 결정
         file_size: file.size,
         file_type: file.type,
+        source_vendor: normalizedVendor, // 벤더 정보 추가
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       };
@@ -424,6 +637,21 @@ export async function POST(request: NextRequest) {
         });
         
         if (!ragResult.success) {
+          // 중복 문서인 경우 다른 에러 메시지
+          const isDuplicate = (ragResult as any).error === 'duplicate';
+          if (isDuplicate) {
+            console.warn('⚠️ 중복 문서 업로드 시도:', cleanFileName);
+            return NextResponse.json(
+              { 
+                success: false, 
+                error: '이미 동일한 이름의 문서가 존재합니다. 다른 이름으로 업로드하거나 기존 문서를 삭제 후 다시 시도해주세요.',
+                fileName: cleanFileName,
+                isDuplicate: true
+              },
+              { status: 409 } // 409 Conflict
+            );
+          }
+          
           console.error('❌ RAG 처리 실패: 문서 처리 중 오류가 발생했습니다.');
           return NextResponse.json(
             { 
@@ -470,16 +698,17 @@ export async function POST(request: NextRequest) {
       });
 
     } catch (error) {
+      const message = (error && typeof error === 'object') ? (error as any).message || JSON.stringify(error) : String(error);
       console.error('❌ 파일 업로드 중 오류 발생:', {
         fileName: file.name,
-        error: error instanceof Error ? error.message : String(error),
+        error: message,
         stack: error instanceof Error ? error.stack : undefined
       });
       
       return NextResponse.json(
         { 
           success: false, 
-          error: `파일 업로드 중 오류가 발생했습니다: ${error instanceof Error ? error.message : String(error)}`,
+          error: `파일 업로드 중 오류가 발생했습니다: ${message}`,
           fileName: file.name
         },
         { status: 500 }
@@ -749,8 +978,9 @@ export async function GET(request: NextRequest) {
     const offset = parseInt(searchParams.get('offset') || '0');
     const status = searchParams.get('status');
     const type = searchParams.get('type');
+    const vendor = searchParams.get('vendor'); // 벤더 필터 추가
 
-    console.log('📋 문서 목록 조회 (Supabase 기반):', { limit, offset, status, type });
+    console.log('📋 문서 목록 조회 (Supabase 기반):', { limit, offset, status, type, vendor });
 
     // Supabase 클라이언트 생성
     const { createClient } = await import('@supabase/supabase-js');
@@ -774,7 +1004,7 @@ export async function GET(request: NextRequest) {
     // Supabase에서 문서 목록 조회 (최적화)
     let query = supabase
       .from('documents')
-      .select('id, title, type, status, chunk_count, file_size, file_type, created_at, updated_at, document_url, url, size')
+      .select('id, title, type, status, chunk_count, file_size, file_type, created_at, updated_at, document_url, url, size, source_vendor')
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);
 
@@ -785,6 +1015,13 @@ export async function GET(request: NextRequest) {
 
     if (type) {
       query = query.eq('type', type);
+    }
+
+    // 벤더 필터 적용
+    if (vendor) {
+      const normalizedVendor = vendor.toUpperCase();
+      query = query.eq('source_vendor', normalizedVendor);
+      console.log('🏷️ 벤더 필터 적용:', normalizedVendor);
     }
 
     const { data: documents, error: documentsError } = await query;
@@ -812,6 +1049,12 @@ export async function GET(request: NextRequest) {
 
     if (type) {
       countQuery = countQuery.eq('type', type);
+    }
+
+    // 벤더 필터 적용 (통계 조회에도)
+    if (vendor) {
+      const normalizedVendor = vendor.toUpperCase();
+      countQuery = countQuery.eq('source_vendor', normalizedVendor);
     }
 
     const { count: totalCount, error: countError } = await countQuery;
@@ -873,7 +1116,8 @@ export async function GET(request: NextRequest) {
       updated_at: doc.updated_at,
       document_url: doc.document_url,
       url: doc.url,
-      size: doc.size
+      size: doc.size,
+      source_vendor: doc.source_vendor || 'META' // 벤더 정보 포함
       // content 필드는 제외 (너무 크고 UI에서 사용하지 않음)
     }));
     

@@ -59,7 +59,8 @@ interface ChatResponse {
  */
 async function searchSimilarChunks(
   query: string,
-  limit: number = 5
+  limit: number = 5,
+  vendorFilter: string[] | null = null
 ): Promise<SearchResult[]> {
   try {
     console.log(`🔍 RAG 검색 시작: "${query}"`);
@@ -80,7 +81,7 @@ async function searchSimilarChunks(
     
     try {
       const { ragProcessor } = await import('@/lib/services/RAGProcessor');
-      const chunks = await ragProcessor.searchSimilarChunks(query, limit);
+      const chunks = await ragProcessor.searchSimilarChunks(query, limit, vendorFilter);
 
       if (!chunks || chunks.length === 0) {
         console.log('⚠️ 벡터 검색 결과 없음. Fallback 데이터 사용');
@@ -823,7 +824,7 @@ export async function POST(request: NextRequest) {
       );
     }
     
-    const { message, conversationHistory } = requestBody;
+    const { message, conversationHistory, vendors } = requestBody;
     
     if (!message || typeof message !== 'string') {
       return NextResponse.json(
@@ -832,6 +833,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // 벤더 필터 처리 (선택적)
+    const vendorFilter = vendors && Array.isArray(vendors) && vendors.length > 0
+      ? vendors.map((v: any) => String(v).toUpperCase())
+      : null;
+
     // 환경변수 상태 확인
     console.log('🔧 환경변수 상태:');
     console.log('- GOOGLE_API_KEY:', process.env.GOOGLE_API_KEY ? '✅ 설정됨' : '❌ 미설정');
@@ -839,9 +845,12 @@ export async function POST(request: NextRequest) {
     console.log('- SUPABASE_SERVICE_ROLE_KEY:', process.env.SUPABASE_SERVICE_ROLE_KEY ? '✅ 설정됨' : '❌ 미설정');
 
     console.log(`🚀 RAG 챗봇 응답 생성 시작: "${message}"`);
+    if (vendorFilter) {
+      console.log(`🏷️ 벤더 필터 적용: ${vendorFilter.join(', ')}`);
+    }
 
-    // 1. RAG 검색 (출처 수 제한)
-    const searchResults = await searchSimilarChunks(message, 3);
+    // 1. RAG 검색 (출처 수 제한, 벤더 필터 적용)
+    const searchResults = await searchSimilarChunks(message, 3, vendorFilter);
     console.log(`📊 검색 결과: ${searchResults.length}개`);
 
     // 2. 검색 결과가 없거나 유사도가 낮으면 관련 내용 없음 응답

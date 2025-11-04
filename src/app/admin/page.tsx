@@ -201,6 +201,16 @@ export default function AdminDashboardPage() {
       trend: "+0%"
     },
     {
+      title: "처리 큐 모니터링",
+      description: "processing_jobs 상태 확인 및 수동 처리",
+      href: "/admin/queues",
+      icon: <Activity className="w-6 h-6" />,
+      color: "from-teal-500 to-cyan-600",
+      hoverColor: "from-teal-600 to-cyan-700",
+      stats: "큐 상태 보기",
+      trend: "+0%"
+    },
+    {
       title: "사용자 관리",
       description: "사용자 권한 및 접근 설정 관리",
       href: "/admin/users",

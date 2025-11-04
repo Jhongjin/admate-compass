@@ -172,3 +172,7 @@ SELECT
     'Migration 완료' as status,
     NOW() as timestamp,
     'Auth 사용자 삭제 시 자동 정리 트리거가 설정되었습니다.' as message;
+
+
+
+

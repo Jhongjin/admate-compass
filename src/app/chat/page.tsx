@@ -45,6 +45,7 @@ function ChatPageContent() {
   const { user, loading } = useAuth();
   const searchParams = useSearchParams();
   const [messages, setMessages] = useState<Message[]>([]);
+  const [vendorFilter, setVendorFilter] = useState<string[] | null>(null);
   const [isInitialized, setIsInitialized] = useState(false);
   const [inputValue, setInputValue] = useState("");
   const [isLoading, setIsLoading] = useState(false);
@@ -141,6 +142,14 @@ function ChatPageContent() {
 
   useEffect(() => {
     const question = searchParams?.get('q');
+    const vendorsParam = searchParams?.get('vendors');
+    
+    // 벤더 필터 파라미터 처리
+    if (vendorsParam) {
+      const vendors = vendorsParam.split(',').map(v => v.trim()).filter(Boolean);
+      setVendorFilter(vendors.length > 0 ? vendors : null);
+    }
+    
     if (question && question.trim() && isInitialized && messages.length === 1 && user && !hasProcessedInitialQuestion) {
       // 초기화 완료 후 초기 메시지만 있을 때만 실행 (중복 방지)
       setHasProcessedInitialQuestion(true);
@@ -149,6 +158,7 @@ function ChatPageContent() {
         handleSendMessageWithQuestion(question);
         const url = new URL(window.location.href);
         url.searchParams.delete('q');
+        url.searchParams.delete('vendors');
         window.history.replaceState({}, '', url.toString());
       }, 200);
     }
@@ -335,6 +345,7 @@ function ChatPageContent() {
         body: JSON.stringify({
           message: question.trim(),
           conversationHistory: messages.slice(-10), // 사용자 메시지 추가 전의 메시지들
+          vendors: vendorFilter, // 벤더 필터 추가
         }),
       });
 
@@ -464,6 +475,7 @@ function ChatPageContent() {
         body: JSON.stringify({
           message: currentInput,
           conversationHistory: messages.slice(-10), // 사용자 메시지 추가 전의 메시지들
+          vendors: vendorFilter, // 벤더 필터 추가
         }),
       });
 
