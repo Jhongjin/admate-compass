@@ -1659,6 +1659,9 @@ function DocsTable({
 
 function QueueMiniPanel({ vendors }: { vendors: string[] }) {
   const supabase = useMemo(() => createClient(), []);
+  const [processingOne, setProcessingOne] = useState(false);
+  const [retryingFailed, setRetryingFailed] = useState(false);
+  
   const { data, refetch } = useQuery({
     queryKey: ["queue-mini", vendors],
     queryFn: async () => {
@@ -1702,11 +1705,27 @@ function QueueMiniPanel({ vendors }: { vendors: string[] }) {
           <Button 
             variant="secondary" 
             className="bg-gray-700/50 border-gray-600 text-secondary-enhanced hover:bg-gray-700 hover:text-white flex-1"
+            disabled={processingOne || queued === 0}
             onClick={async () => {
+              if (processingOne || queued === 0) return;
+              
+              setProcessingOne(true);
               try {
                 const res = await fetch('/api/jobs/consume', { method: 'POST' });
                 const result = await res.json();
-                console.log('큐 처리 결과:', result);
+                
+                if (res.ok && result.success) {
+                  toast.success('큐 처리 완료', {
+                    description: result.message || '작업이 처리되었습니다.',
+                    duration: 3000,
+                  });
+                } else {
+                  toast.error('큐 처리 실패', {
+                    description: result.error || result.details || '작업 처리 중 오류가 발생했습니다.',
+                    duration: 5000,
+                  });
+                }
+                
                 refetch(); // 큐 상태 새로고침
                 // 문서 목록도 새로고침
                 if (typeof window !== 'undefined') {
@@ -1714,32 +1733,129 @@ function QueueMiniPanel({ vendors }: { vendors: string[] }) {
                 }
               } catch (error) {
                 console.error('큐 처리 오류:', error);
+                toast.error('큐 처리 오류', {
+                  description: error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.',
+                  duration: 5000,
+                });
+              } finally {
+                setProcessingOne(false);
               }
             }}
           >
-            <RefreshCw className="w-4 h-4 mr-1" /> 
-            1건 처리
+            {processingOne ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                처리 중...
+              </>
+            ) : (
+              <>
+                <RefreshCw className="w-4 h-4 mr-1" /> 
+                1건 처리
+              </>
+            )}
           </Button>
           <Button 
             variant="secondary" 
             className="bg-gray-700/50 border-gray-600 text-secondary-enhanced hover:bg-gray-700 hover:text-white flex-1"
+            disabled={retryingFailed || failed === 0}
             onClick={async () => {
+              if (retryingFailed || failed === 0) return;
+              
+              setRetryingFailed(true);
               try {
-                // 실패한 작업 재시도 로직 (추후 구현)
-                const res = await fetch('/api/jobs/action', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ action: 'retry_failed' })
-                });
-                await res.json();
-                refetch();
+                // 실패한 작업들 조회
+                const { data: failedJobs, error: fetchError } = await supabase
+                  .from('processing_jobs')
+                  .select('id, attempts, max_attempts')
+                  .eq('status', 'failed')
+                  .limit(10); // 최대 10개까지
+                
+                if (fetchError) {
+                  throw new Error(`실패한 작업 조회 실패: ${fetchError.message}`);
+                }
+                
+                if (!failedJobs || failedJobs.length === 0) {
+                  toast.info('재시도할 작업이 없습니다', {
+                    description: '실패한 작업이 없습니다.',
+                    duration: 3000,
+                  });
+                  return;
+                }
+                
+                // 각 작업을 재시도 큐에 등록
+                let successCount = 0;
+                let failCount = 0;
+                
+                for (const job of failedJobs) {
+                  const attempts = (job.attempts || 0) + 1;
+                  const maxAttempts = job.max_attempts || 3;
+                  
+                  if (attempts >= maxAttempts) {
+                    failCount++;
+                    continue; // 최대 시도 횟수 초과
+                  }
+                  
+                  const backoffMs = Math.min(60000, 1000 * Math.pow(2, attempts));
+                  const scheduledAt = new Date(Date.now() + backoffMs).toISOString();
+                  
+                  const { error: updateError } = await supabase
+                    .from('processing_jobs')
+                    .update({ 
+                      status: 'queued', 
+                      attempts, 
+                      scheduled_at: scheduledAt, 
+                      finished_at: null, 
+                      started_at: null,
+                      error: null
+                    })
+                    .eq('id', job.id)
+                    .eq('status', 'failed');
+                  
+                  if (updateError) {
+                    console.error(`작업 ${job.id} 재시도 실패:`, updateError);
+                    failCount++;
+                  } else {
+                    successCount++;
+                  }
+                }
+                
+                if (successCount > 0) {
+                  toast.success('재시도 완료', {
+                    description: `${successCount}개 작업을 큐에 다시 등록했습니다.`,
+                    duration: 3000,
+                  });
+                }
+                
+                if (failCount > 0) {
+                  toast.warning('일부 재시도 실패', {
+                    description: `${failCount}개 작업은 재시도할 수 없습니다 (최대 시도 횟수 초과).`,
+                    duration: 5000,
+                  });
+                }
+                
+                refetch(); // 큐 상태 새로고침
               } catch (error) {
                 console.error('재시도 오류:', error);
+                toast.error('재시도 오류', {
+                  description: error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.',
+                  duration: 5000,
+                });
+              } finally {
+                setRetryingFailed(false);
               }
             }}
           >
-            <XCircle className="w-4 h-4 mr-1" /> 
-            실패 재시도
+            {retryingFailed ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-1 animate-spin" />
+                재시도 중...
+              </>
+            ) : (
+              <>
+                <XCircle className="w-4 h-4 mr-1" /> 
+                실패 재시도
+              </>
+            )}
           </Button>
         </div>
       </CardContent>
