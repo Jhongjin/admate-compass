@@ -3,6 +3,10 @@ import { NextRequest, NextResponse } from 'next/server';
 /**
  * 청크 데이터 확인 API (디버깅용)
  */
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+export const maxDuration = 60;
+
 export async function GET(request: NextRequest) {
   try {
     console.log('🔍 청크 데이터 확인 시작...');
@@ -14,24 +18,33 @@ export async function GET(request: NextRequest) {
       process.env.SUPABASE_SERVICE_ROLE_KEY!
     );
 
-    // 1. 문서 목록 조회
+    // 1. 문서 목록 조회 (content 제외하여 응답 크기 제한)
     const { data: documents, error: docsError } = await supabase
       .from('documents')
-      .select('id, title, content, status, chunk_count')
-      .order('created_at', { ascending: false });
+      .select('id, title, status, chunk_count')
+      .order('created_at', { ascending: false })
+      .limit(50); // 최대 50개 문서로 제한
 
     if (docsError) {
       throw new Error(`문서 조회 오류: ${docsError.message}`);
     }
 
-    // 2. 각 문서의 청크 데이터 조회
+    // 2. 각 문서의 청크 데이터 조회 (큰 데이터 제외하여 응답 크기 제한)
     const documentChunks = [];
     for (const doc of documents || []) {
+      // 청크 개수만 먼저 확인
+      const { count: chunkCount, error: countError } = await supabase
+        .from('document_chunks')
+        .select('*', { count: 'exact', head: true })
+        .eq('document_id', doc.id);
+      
+      // 메타데이터만 조회 (content, embedding 제외)
       const { data: chunks, error: chunksError } = await supabase
         .from('document_chunks')
-        .select('id, chunk_id, content, embedding, metadata')
+        .select('id, chunk_id, metadata')
         .eq('document_id', doc.id)
-        .order('chunk_id', { ascending: true });
+        .order('chunk_id', { ascending: true })
+        .limit(100); // 최대 100개로 제한
 
       if (chunksError) {
         console.warn(`문서 ${doc.id} 청크 조회 오류:`, chunksError);
@@ -39,32 +52,46 @@ export async function GET(request: NextRequest) {
       }
 
       documentChunks.push({
-        document: doc,
-        chunks: chunks || [],
-        actualChunkCount: chunks?.length || 0
+        document: {
+          id: doc.id,
+          title: doc.title,
+          status: doc.status,
+          chunk_count: doc.chunk_count,
+          // content는 제외 (너무 큼)
+        },
+        chunks: (chunks || []).map(chunk => ({
+          id: chunk.id,
+          chunk_id: chunk.chunk_id,
+          metadata: chunk.metadata,
+          // content와 embedding은 제외 (응답 크기 제한)
+        })),
+        actualChunkCount: chunkCount || 0
       });
     }
 
-    // 3. 임베딩 데이터 확인
+    // 3. 임베딩 데이터 확인 (임베딩 벡터는 제외, 메타데이터만)
     const { data: allChunks, error: allChunksError } = await supabase
       .from('document_chunks')
-      .select('id, document_id, chunk_id, content, embedding')
+      .select('id, document_id, chunk_id')
       .limit(5);
 
     if (allChunksError) {
       console.warn('전체 청크 조회 오류:', allChunksError);
     }
 
-    // 4. 임베딩 벡터 분석
+    // 4. 임베딩 벡터 분석 (임베딩 데이터는 직접 조회하지 않음)
+    const { data: embeddingStats, error: embeddingStatsError } = await supabase
+      .from('document_chunks')
+      .select('id, document_id, chunk_id')
+      .not('embedding', 'is', null)
+      .limit(5);
+    
     const embeddingAnalysis = (allChunks || []).map(chunk => ({
       id: chunk.id,
       document_id: chunk.document_id,
       chunk_id: chunk.chunk_id,
-      content_length: chunk.content?.length || 0,
-      content_preview: chunk.content?.substring(0, 100) + '...',
-      has_embedding: !!chunk.embedding,
-      embedding_length: chunk.embedding?.length || 0,
-      embedding_type: Array.isArray(chunk.embedding) ? 'array' : typeof chunk.embedding
+      has_embedding: embeddingStats?.some(s => s.id === chunk.id) || false,
+      // embedding 데이터는 제외 (응답 크기 제한)
     }));
 
     console.log('✅ 청크 데이터 확인 완료');
@@ -78,7 +105,7 @@ export async function GET(request: NextRequest) {
           totalDocuments: documents?.length || 0,
           totalChunks: documentChunks.reduce((sum, doc) => sum + doc.actualChunkCount, 0),
           documentsWithEmbeddings: documentChunks.filter(doc => 
-            doc.chunks.some(chunk => chunk.embedding && chunk.embedding.length > 0)
+            doc.chunks.length > 0
           ).length
         }
       }
