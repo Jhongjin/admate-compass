@@ -347,7 +347,7 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
         
         // 큐 상태 폴링 시작
         const pollQueueStatus = async (jobId: string, documentId: string) => {
-          const maxAttempts = 60; // 최대 5분 (5초 간격)
+          const maxAttempts = 120; // 최대 10분 (5초 간격) - 큰 파일 처리 대응
           let attempts = 0;
           
           const poll = async () => {
@@ -398,13 +398,47 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
               if (attempts < maxAttempts) {
                 setTimeout(poll, 5000);
               } else {
+                // 타임아웃 전에 실제 작업 상태를 한 번 더 확인
+                console.warn('⚠️ 클라이언트 폴링 타임아웃 - 실제 작업 상태 최종 확인 중...');
+                const { data: finalJob, error: finalError } = await supabaseClient
+                  .from('processing_jobs')
+                  .select('status, error, result')
+                  .eq('id', jobId)
+                  .single();
+                
+                if (!finalError && finalJob) {
+                  // 실제로 완료되었을 수 있음
+                  if (finalJob.status === 'completed') {
+                    console.log('✅ 실제로는 이미 완료되었습니다!');
+                    setUploadStep('completed');
+                    setUploadProgress(100);
+                    setUploadSuccess(true);
+                    setSelectedFileName(null);
+                    if (typeof window !== 'undefined') {
+                      window.dispatchEvent(new CustomEvent('docs-refresh'));
+                    }
+                    setTimeout(() => {
+                      setUploadSuccess(false);
+                      setUploadStep('idle');
+                      setUploadProgress(0);
+                    }, 3000);
+                    return;
+                  }
+                  
+                  // 이미 실패했을 수도 있음
+                  if (finalJob.status === 'failed') {
+                    throw new Error(finalJob.error || '큐 처리 실패');
+                  }
+                }
+                
+                // 실제로도 처리 중이면 타임아웃 처리
                 console.warn('⚠️ 큐 처리 시간 초과 - 작업을 failed 상태로 업데이트합니다');
                 try {
                   await supabaseClient
                     .from('processing_jobs')
                     .update({ 
                       status: 'failed', 
-                      error: '큐 처리 시간 초과 (5분)',
+                      error: '큐 처리 시간 초과 (10분)',
                       finished_at: new Date().toISOString()
                     })
                     .eq('id', jobId)
@@ -420,7 +454,7 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
                 } catch (updateError) {
                   console.error('큐 상태 업데이트 실패:', updateError);
                 }
-                throw new Error('큐 처리 시간 초과');
+                throw new Error('큐 처리 시간 초과 (10분)');
               }
             } catch (error) {
               console.error('폴링 오류:', error);
@@ -508,7 +542,7 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
         
         // 큐 상태 폴링
         const pollQueueStatus = async (jobId: string, documentId: string) => {
-          const maxAttempts = 60; // 최대 5분 (5초 간격)
+          const maxAttempts = 120; // 최대 10분 (5초 간격) - 큰 파일 처리 대응
           let attempts = 0;
           
           const poll = async () => {
@@ -575,7 +609,7 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
                     .from('processing_jobs')
                     .update({ 
                       status: 'failed', 
-                      error: '큐 처리 시간 초과 (5분)',
+                      error: '큐 처리 시간 초과 (10분)',
                       finished_at: new Date().toISOString()
                     })
                     .eq('id', jobId)

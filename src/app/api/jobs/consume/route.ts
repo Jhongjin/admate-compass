@@ -3,7 +3,7 @@ import { createPureClient } from '@/lib/supabase/server';
 import { ragProcessor, DocumentData } from '@/lib/services/RAGProcessor';
 
 export const runtime = 'nodejs';
-export const maxDuration = 60;
+export const maxDuration = 300; // Pro 플랜: 최대 5분 (큰 파일 처리 지원)
 export const dynamic = 'force-dynamic';
 
 /**

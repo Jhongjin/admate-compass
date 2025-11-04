@@ -32,6 +32,9 @@
     },
     "src/app/api/puppeteer-crawl/route.ts": {
       "maxDuration": 300
+    },
+    "src/app/api/jobs/consume/route.ts": {
+      "maxDuration": 300
     }
   },
   "regions": ["icn1"],
