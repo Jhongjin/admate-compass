@@ -187,6 +187,8 @@ async function processQueue() {
 
     // 3) 실제 처리 로직
     let extractedText = '';
+    let dlMs = 0;
+    let parseMs = 0;
     const storage = job?.payload?.storage as { bucket: string; path: string; contentType?: string; size?: number } | undefined;
     const fileName = (job?.payload?.fileName as string) || job.document_id;
     const isReprocess = job?.payload?.reprocess === true;
@@ -213,6 +215,7 @@ async function processQueue() {
         
         extractedText = docData.content || '';
         console.log(`✅ 재처리: documents.content에서 텍스트 가져옴 (${extractedText.length}자)`);
+        // 재처리 모드에서는 dlMs와 parseMs는 0으로 유지
       } else {
         // 일반 처리: Storage에서 파일 다운로드
         if (!storage?.bucket || !storage?.path) {
@@ -221,11 +224,10 @@ async function processQueue() {
         // 저장소에서 파일 다운로드
         const dlStart = Date.now();
         const fileBuffer = await downloadFromStorage(supabase, storage.bucket, storage.path);
-        const dlMs = Date.now() - dlStart;
+        dlMs = Date.now() - dlStart;
         if (!fileBuffer || fileBuffer.length === 0) {
           throw new Error(`downloaded empty file from storage: ${storage.bucket}/${storage.path}`);
         }
-        let parseMs = 0;
         if (job.job_type === 'PDF_PARSE') {
           const p0 = Date.now();
           extractedText = await processPdfBuffer(fileBuffer);
@@ -262,8 +264,8 @@ async function processQueue() {
             job_id: job.id,
             document_id: job.document_id,
             bytes: bytes,
-            dl_ms: dlMs || 0,
-            parse_ms: parseMs || 0,
+            dl_ms: dlMs,
+            parse_ms: parseMs,
             total_ms: totalMs,
             text_length: cleanedLength,
             note: 'deferred_to_ocr'
@@ -271,7 +273,7 @@ async function processQueue() {
 
         const { error: markDone } = await supabase
           .from('processing_jobs')
-          .update({ status: 'completed', finished_at: new Date().toISOString(), result: { note: 'deferred_to_ocr', cleanedLength, dlMs: dlMs || 0, parseMs: parseMs || 0, totalMs, bytes } })
+          .update({ status: 'completed', finished_at: new Date().toISOString(), result: { note: 'deferred_to_ocr', cleanedLength, dlMs, parseMs, totalMs, bytes } })
           .eq('id', job.id)
           .eq('status', 'processing');
         if (markDone) throw markDone;
