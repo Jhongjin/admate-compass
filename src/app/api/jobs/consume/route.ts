@@ -6,6 +6,31 @@ export const runtime = 'nodejs';
 export const maxDuration = 60;
 export const dynamic = 'force-dynamic';
 
+/**
+ * CRON_SECRET 검증 함수
+ * Vercel Cron Jobs는 Authorization 헤더에 Bearer 토큰을 포함합니다
+ */
+function verifyCronSecret(request: NextRequest): boolean {
+  // CRON_SECRET이 설정되지 않은 경우 개발 환경에서는 허용
+  if (!process.env.CRON_SECRET) {
+    console.warn('⚠️ CRON_SECRET이 설정되지 않았습니다. 개발 환경에서는 허용됩니다.');
+    return true;
+  }
+
+  const authHeader = request.headers.get('authorization');
+  const expectedToken = `Bearer ${process.env.CRON_SECRET}`;
+  
+  if (authHeader !== expectedToken) {
+    console.warn('❌ CRON_SECRET 검증 실패:', {
+      received: authHeader ? 'present' : 'missing',
+      expected: 'Bearer [CRON_SECRET]'
+    });
+    return false;
+  }
+
+  return true;
+}
+
 // 테스트용 간단 Consumer: queued 상태 1건을 processing → completed 처리
 async function downloadFromStorage(supabase: any, bucket: string, path: string) {
   const { data, error } = await supabase.storage.from(bucket).download(path);
@@ -125,7 +150,10 @@ function normalizeTablesToMarkdown(text: string): string {
   return out.join('\n');
 }
 
-export async function POST(request: NextRequest) {
+/**
+ * 큐 처리 핵심 로직 (GET/POST 공통)
+ */
+async function processQueue() {
   const supabase = await createPureClient();
   try {
     const jobStartMs = Date.now();
@@ -353,6 +381,40 @@ export async function POST(request: NextRequest) {
       { status: 500 }
     );
   }
+}
+
+/**
+ * GET 핸들러 (Vercel Cron Jobs가 사용)
+ */
+export async function GET(request: NextRequest) {
+  // CRON_SECRET 검증
+  if (!verifyCronSecret(request)) {
+    return NextResponse.json(
+      { error: 'Unauthorized' },
+      { status: 401 }
+    );
+  }
+
+  // 큐 처리 실행
+  return processQueue();
+}
+
+/**
+ * POST 핸들러 (수동 호출 또는 외부 서비스용)
+ */
+export async function POST(request: NextRequest) {
+  // CRON_SECRET 검증 (POST 요청의 경우 선택적 - 수동 호출 허용)
+  // Authorization 헤더가 있는 경우에만 검증
+  const authHeader = request.headers.get('authorization');
+  if (authHeader && !verifyCronSecret(request)) {
+    return NextResponse.json(
+      { error: 'Unauthorized' },
+      { status: 401 }
+    );
+  }
+
+  // 큐 처리 실행
+  return processQueue();
 }
 
 

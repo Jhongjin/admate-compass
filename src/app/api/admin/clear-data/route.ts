@@ -3,6 +3,8 @@ import { NextRequest, NextResponse } from 'next/server';
 /**
  * 모든 문서 데이터 삭제 (테스트용)
  */
+export const dynamic = 'force-dynamic';
+
 export async function DELETE(request: NextRequest) {
   try {
     console.log('🗑️ 모든 문서 데이터 삭제 시작...');

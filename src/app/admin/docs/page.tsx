@@ -15,10 +15,12 @@ import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Check, CheckCircle, Download, FileText, Globe, Loader2, RefreshCw, Search, Upload, XCircle, File, Link2, ArrowUp, ArrowDown, ArrowUpDown, FileSearch, Sparkles, Database } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
+import { toast } from "sonner";
 
 const ALL_VENDORS = ["Meta", "Naver", "Kakao", "Google", "X(Twitter)"] as const;
 
@@ -269,10 +271,34 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
       form.append("vendor", dbVendor);
       
       const res = await fetch("/api/admin/upload-new", { method: "POST", body: form });
-      const result = await res.json();
+      
+      // 응답 본문을 먼저 텍스트로 읽기 (한 번만 읽을 수 있음)
+      const responseText = await res.text();
+      
+      // 응답이 JSON인지 확인
+      const contentType = res.headers.get('content-type');
+      const isJson = contentType?.includes('application/json');
+      
+      let result: any;
+      if (isJson) {
+        try {
+          result = JSON.parse(responseText);
+        } catch (jsonError) {
+          // JSON 파싱 실패
+          console.error('JSON 파싱 오류:', jsonError, '응답:', responseText.substring(0, 200));
+          throw new Error(`서버 응답 파싱 오류: ${responseText.substring(0, 100)}`);
+        }
+      } else {
+        // JSON이 아닌 경우
+        if (!res.ok) {
+          throw new Error(responseText || `HTTP ${res.status} ${res.statusText}`);
+        }
+        // 성공 응답이지만 JSON이 아닌 경우
+        result = { success: true, message: responseText };
+      }
       
       if (!res.ok) {
-        throw new Error(result.error || await res.text());
+        throw new Error(result.error || result.message || responseText || `HTTP ${res.status}: ${res.statusText}`);
       }
       
       // 큐에 등록된 경우 (202 Accepted)
@@ -417,9 +443,15 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
     } catch (e) {
       console.error("upload error", e);
       setUploadStep('error');
-      setUploadError(e instanceof Error ? e.message : String(e));
+      const errorMessage = e instanceof Error ? e.message : String(e);
+      setUploadError(errorMessage);
       setUploadProgress(0);
-      alert(`업로드 실패: ${e instanceof Error ? e.message : String(e)}`);
+      
+      // toast 알림 사용 (alert 대신)
+      toast.error('파일 업로드 실패', {
+        description: errorMessage,
+        duration: 5000,
+      });
     } finally {
       setUploading(false);
     }
@@ -1094,11 +1126,64 @@ function DocsTable({
     })));
   };
 
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
   const handleBulkDelete = async () => {
     if (!selectedIds.length) return;
-    await supabase.from("documents").delete().in("id", selectedIds);
-    setSelected({});
-    refetch();
+    setShowDeleteConfirm(true);
+  };
+
+  const confirmBulkDelete = async () => {
+    if (!selectedIds.length) return;
+    
+    setDeleting(true);
+    try {
+      // 삭제 전 청크 개수 확인
+      const { count: chunkCount } = await supabase
+        .from('document_chunks')
+        .select('*', { count: 'exact', head: true })
+        .in('document_id', selectedIds);
+      const documentCount = selectedIds.length;
+
+      // 문서 및 관련 청크 삭제
+      const { error: chunksError } = await supabase
+        .from('document_chunks')
+        .delete()
+        .in('document_id', selectedIds);
+
+      if (chunksError) {
+        console.warn('청크 삭제 오류:', chunksError);
+      }
+
+      const { error: docError } = await supabase
+        .from('documents')
+        .delete()
+        .in('id', selectedIds);
+
+      if (docError) {
+        throw new Error(docError.message);
+      }
+
+      setSelected({});
+      setShowDeleteConfirm(false);
+      
+      // 성공 알림
+      toast.success('문서 삭제 완료', {
+        description: `${documentCount}개 문서와 ${chunkCount}개 청크가 삭제되었습니다.`,
+        duration: 3000,
+      });
+      
+      refetch();
+    } catch (error) {
+      console.error('문서 삭제 오류:', error);
+      toast.error('문서 삭제 실패', {
+        description: error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.',
+        duration: 5000,
+      });
+    } finally {
+      setDeleting(false);
+    }
   };
 
   return (
@@ -1336,6 +1421,38 @@ function DocsTable({
         )}
       </CardContent>
     </Card>
+    
+    {/* 일괄 삭제 확인 다이얼로그 */}
+    <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>문서 삭제 확인</AlertDialogTitle>
+          <AlertDialogDescription>
+            선택한 <strong>{selectedIds.length}개 문서</strong>를 삭제하시겠습니까?
+            <br /><br />
+            이 작업은 되돌릴 수 없으며, 관련된 모든 청크와 임베딩 데이터도 함께 삭제됩니다.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={deleting}>취소</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={confirmBulkDelete}
+            disabled={deleting}
+            className="bg-red-600 hover:bg-red-700"
+          >
+            {deleting ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                삭제 중...
+              </>
+            ) : (
+              '삭제'
+            )}
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    
     <DocumentDetailDialog detail={detail} onClose={() => setDetail(null)} onRefetch={refetch} />
     </>
   );
@@ -1488,6 +1605,8 @@ function Metric({ title, value }: { title: string; value: string }) {
 
 function DocumentDetailDialog({ detail, onClose, onRefetch }: { detail: any | null; onClose: () => void; onRefetch: () => void }) {
   const supabase = useMemo(() => createClient(), []);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   
   const { data: fullDoc, isLoading: loadingDoc } = useQuery({
     queryKey: ["doc-detail", detail?.id],
@@ -1672,13 +1791,11 @@ function DocumentDetailDialog({ detail, onClose, onRefetch }: { detail: any | nu
                       </Button>
                   <Button 
                     variant="destructive" 
-                    onClick={async () => {
-                      await supabase.from('documents').delete().eq('id', detail.id);
-                      onClose();
-                      onRefetch();
-                    }}
+                    onClick={() => setShowDeleteConfirm(true)}
+                    disabled={deleting}
                     className="bg-red-600/20 border-red-500/30 text-red-300 hover:bg-red-600/30 hover:text-red-200"
                   >
+                    {deleting ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : null}
                     삭제
                   </Button>
                       </div>
@@ -1775,6 +1892,86 @@ function DocumentDetailDialog({ detail, onClose, onRefetch }: { detail: any | nu
           </TabsContent>
         </Tabs>
       </DialogContent>
+      
+      {/* 단일 문서 삭제 확인 다이얼로그 */}
+      <AlertDialog open={showDeleteConfirm} onOpenChange={setShowDeleteConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>문서 삭제 확인</AlertDialogTitle>
+            <AlertDialogDescription>
+              <strong>"{detail?.title || detail?.id}"</strong> 문서를 삭제하시겠습니까?
+              <br /><br />
+              이 작업은 되돌릴 수 없으며, 관련된 모든 청크와 임베딩 데이터도 함께 삭제됩니다.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>취소</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={async () => {
+                if (!detail?.id) return;
+                
+                setDeleting(true);
+                try {
+                  // 삭제 전 청크 개수 확인
+                  const { count: chunkCount } = await supabase
+                    .from('document_chunks')
+                    .select('*', { count: 'exact', head: true })
+                    .eq('document_id', detail.id);
+                  
+                  // 문서 및 관련 청크 삭제
+                  const { error: chunksError } = await supabase
+                    .from('document_chunks')
+                    .delete()
+                    .eq('document_id', detail.id);
+
+                  if (chunksError) {
+                    console.warn('청크 삭제 오류:', chunksError);
+                  }
+
+                  const { error: docError } = await supabase
+                    .from('documents')
+                    .delete()
+                    .eq('id', detail.id);
+
+                  if (docError) {
+                    throw new Error(docError.message);
+                  }
+
+                  setShowDeleteConfirm(false);
+                  
+                  // 성공 알림
+                  toast.success('문서 삭제 완료', {
+                    description: `"${detail?.title || detail?.id}" 문서와 ${chunkCount || 0}개 청크가 삭제되었습니다.`,
+                    duration: 3000,
+                  });
+                  
+                  onClose();
+                  onRefetch();
+                } catch (error) {
+                  console.error('문서 삭제 오류:', error);
+                  toast.error('문서 삭제 실패', {
+                    description: error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.',
+                    duration: 5000,
+                  });
+                } finally {
+                  setDeleting(false);
+                }
+              }}
+              disabled={deleting}
+              className="bg-red-600 hover:bg-red-700"
+            >
+              {deleting ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  삭제 중...
+                </>
+              ) : (
+                '삭제'
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </Dialog>
   );
 }
