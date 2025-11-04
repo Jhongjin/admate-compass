@@ -2100,7 +2100,7 @@ function DocumentDetailDialog({ detail, onClose, onRefetch }: { detail: any | nu
       if (!detail?.id) return null;
       const { data, error } = await supabase
         .from("processing_jobs")
-        .select("*")
+        .select("id, document_id, job_type, status, priority, attempts, max_attempts, error, result, created_at, scheduled_at, started_at, finished_at")
         .eq("document_id", detail.id)
         .order("created_at", { ascending: false })
         .limit(10);
