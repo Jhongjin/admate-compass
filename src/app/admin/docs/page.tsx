@@ -288,7 +288,7 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
             id: documentId,
             title: cleanFileName,
             type: documentType,
-            status: 'queued',
+            status: 'pending', // documents 테이블은 'pending', 'processing', 'indexed', 'completed', 'failed', 'error'만 허용
             chunk_count: 0,
             file_size: uploadFile.size,
             file_type: uploadFile.type,
