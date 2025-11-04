@@ -1318,11 +1318,100 @@ function DocsTable({
   };
 
   const handleBulkReprocess = async () => {
-    await Promise.all(selectedIds.map(id => fetch("/api/jobs/enqueue", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ jobType: "REINDEX_DOCUMENT", priority: 5, payload: { documentId: id } })
-    })));
+    if (!selectedIds.length) {
+      toast.info('문서를 선택해주세요', { duration: 3000 });
+      return;
+    }
+    
+    try {
+      // 각 문서 정보 가져오기
+      const { data: docs, error: docsError } = await supabase
+        .from('documents')
+        .select('id, file_type, type, title, source_vendor')
+        .in('id', selectedIds);
+      
+      if (docsError || !docs || docs.length === 0) {
+        toast.error('문서 정보 조회 실패', {
+          description: docsError?.message || '선택한 문서를 찾을 수 없습니다.',
+          duration: 5000,
+        });
+        return;
+      }
+      
+      // 각 문서에 대해 재처리 작업 등록
+      const results = await Promise.allSettled(
+        docs.map(async (doc) => {
+          // 파일 타입에 따라 적절한 jobType 결정
+          let jobType: 'PDF_PARSE' | 'DOCX_PARSE' = 'PDF_PARSE';
+          if (doc.file_type?.includes('docx') || doc.type === 'docx') {
+            jobType = 'DOCX_PARSE';
+          }
+          
+          // 기존 청크 삭제
+          await supabase
+            .from('document_chunks')
+            .delete()
+            .eq('document_id', doc.id);
+          
+          // 문서 상태를 pending으로 변경
+          await supabase
+            .from('documents')
+            .update({ 
+              status: 'pending',
+              chunk_count: 0,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', doc.id);
+          
+          // 큐에 재처리 작업 등록
+          const res = await fetch('/api/jobs/enqueue', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              documentId: doc.id,
+              jobType,
+              priority: 7,
+              payload: {
+                fileName: doc.title,
+                vendor: doc.source_vendor || 'META',
+                reprocess: true
+              }
+            })
+          });
+          
+          return await res.json();
+        })
+      );
+      
+      const successCount = results.filter(r => r.status === 'fulfilled' && r.value.success).length;
+      const failCount = results.length - successCount;
+      
+      if (successCount > 0) {
+        toast.success('재처리 시작', {
+          description: `${successCount}개 문서가 큐에 등록되었습니다.`,
+          duration: 3000,
+        });
+      }
+      
+      if (failCount > 0) {
+        toast.warning('일부 재처리 실패', {
+          description: `${failCount}개 문서의 재처리 등록에 실패했습니다.`,
+          duration: 5000,
+        });
+      }
+      
+      // 문서 목록 새로고침
+      refetch();
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('docs-refresh'));
+      }
+    } catch (error) {
+      console.error('일괄 재처리 오류:', error);
+      toast.error('일괄 재처리 오류', {
+        description: error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.',
+        duration: 5000,
+      });
+    }
   };
 
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -2138,8 +2227,89 @@ function DocumentDetailDialog({ detail, onClose, onRefetch }: { detail: any | nu
                 <div className="flex items-center gap-2">
                       <Button
                     onClick={async () => {
-                      await fetch('/api/jobs/enqueue', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ jobType: 'REINDEX_DOCUMENT', priority: 5, payload: { documentId: detail.id } }) });
-                      onRefetch();
+                      try {
+                        // 문서 정보 가져오기
+                        const { data: docData, error: docError } = await supabase
+                          .from('documents')
+                          .select('id, file_type, type, title, source_vendor')
+                          .eq('id', detail.id)
+                          .single();
+                        
+                        if (docError || !docData) {
+                          toast.error('문서 정보 조회 실패', {
+                            description: docError?.message || '문서를 찾을 수 없습니다.',
+                            duration: 5000,
+                          });
+                          return;
+                        }
+                        
+                        // 파일 타입에 따라 적절한 jobType 결정
+                        let jobType: 'PDF_PARSE' | 'DOCX_PARSE' = 'PDF_PARSE';
+                        if (docData.file_type?.includes('docx') || docData.type === 'docx') {
+                          jobType = 'DOCX_PARSE';
+                        }
+                        
+                        // 기존 청크 삭제
+                        const { error: deleteChunksError } = await supabase
+                          .from('document_chunks')
+                          .delete()
+                          .eq('document_id', detail.id);
+                        
+                        if (deleteChunksError) {
+                          console.warn('기존 청크 삭제 실패 (무시):', deleteChunksError);
+                        }
+                        
+                        // 문서 상태를 pending으로 변경
+                        await supabase
+                          .from('documents')
+                          .update({ 
+                            status: 'pending',
+                            chunk_count: 0,
+                            updated_at: new Date().toISOString()
+                          })
+                          .eq('id', detail.id);
+                        
+                        // 큐에 재처리 작업 등록
+                        const res = await fetch('/api/jobs/enqueue', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({
+                            documentId: detail.id,
+                            jobType,
+                            priority: 7,
+                            payload: {
+                              fileName: docData.title,
+                              vendor: docData.source_vendor || 'META',
+                              reprocess: true
+                            }
+                          })
+                        });
+                        
+                        const result = await res.json();
+                        
+                        if (res.ok && result.success) {
+                          toast.success('재처리 시작', {
+                            description: '문서가 큐에 등록되었습니다. 처리 중입니다...',
+                            duration: 3000,
+                          });
+                          onRefetch();
+                          // 문서 목록 새로고침
+                          if (typeof window !== 'undefined') {
+                            window.dispatchEvent(new CustomEvent('docs-refresh'));
+                          }
+                        } else {
+                          toast.error('재처리 실패', {
+                            description: result.error || result.details || '재처리 작업 등록에 실패했습니다.',
+                            duration: 5000,
+                          });
+                        }
+                      } catch (error) {
+                        console.error('재처리 오류:', error);
+                        toast.error('재처리 오류', {
+                          description: error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.',
+                          duration: 5000,
+                        });
+                      }
                     }}
                     className="btn-enhanced"
                   >
