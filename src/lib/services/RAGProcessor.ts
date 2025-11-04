@@ -547,6 +547,7 @@ export class RAGProcessor {
     documentId: string;
     chunkCount: number;
     success: boolean;
+    error?: string;
   }> {
     try {
       console.log('🚀 RAG 문서 처리 시작:', document.title);
@@ -593,6 +594,7 @@ export class RAGProcessor {
     documentId: string;
     chunkCount: number;
     success: boolean;
+    error?: string;
   }> {
     try {
 

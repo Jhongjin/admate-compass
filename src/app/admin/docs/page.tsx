@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import AdminLayout from "@/components/layouts/AdminLayout";
@@ -45,7 +45,7 @@ function convertVendorsToDB(vendors: string[]): string[] {
   return vendors.map(v => VENDOR_TO_DB_MAP[v] || "META").filter(Boolean);
 }
 
-export default function AdminDocsPage() {
+function AdminDocsPageContent() {
   const router = useRouter();
   const params = useSearchParams();
 
@@ -154,6 +154,20 @@ export default function AdminDocsPage() {
         <MetricsSummary vendors={selectedVendors} />
       </motion.div>
     </AdminLayout>
+  );
+}
+
+export default function AdminDocsPage() {
+  return (
+    <Suspense fallback={
+      <AdminLayout currentPage="docs">
+        <div className="flex items-center justify-center min-h-[400px]">
+          <Loader2 className="w-8 h-8 animate-spin text-blue-500" />
+        </div>
+      </AdminLayout>
+    }>
+      <AdminDocsPageContent />
+    </Suspense>
   );
 }
 

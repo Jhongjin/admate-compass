@@ -3,7 +3,7 @@
     "lib": [
       "dom",
       "dom.iterable",
-      "es6"
+      "es2018"
     ],
     "allowJs": true,
     "skipLibCheck": true,
@@ -27,7 +27,7 @@
         "./src/*"
       ]
     },
-    "target": "ES2017"
+    "target": "ES2018"
   },
   "include": [
     "next-env.d.ts",
@@ -36,6 +36,7 @@
     ".next/types/**/*.ts"
   ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    "supabase/functions/**/*"
   ]
 }

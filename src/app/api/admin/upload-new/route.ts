@@ -8,7 +8,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { newDocumentProcessor } from '@/lib/services/NewDocumentProcessor';
 import { ragProcessor, DocumentData, RAGProcessor } from '@/lib/services/RAGProcessor';
 import { createPureClient } from '@/lib/supabase/server';
-import { getSupabaseServer } from '@/lib/supabase/server';
 
 // Vercel 설정 - 서버 안정성 개선
 export const runtime = 'nodejs';

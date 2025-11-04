@@ -14,7 +14,7 @@ const nextConfig = {
   // Next.js 14.x 안정성 설정
   experimental: {
     serverComponentsExternalPackages: ['@supabase/supabase-js', 'pdf-parse'],
-    optimizeCss: true, // CSS 최적화 (Pro 플랜)
+    optimizeCss: true, // Vercel Pro 플랜 사용 중이므로 활성화
     optimizePackageImports: [
       '@radix-ui/react-dialog',
       '@radix-ui/react-dropdown-menu',

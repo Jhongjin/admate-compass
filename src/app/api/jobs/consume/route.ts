@@ -27,6 +27,11 @@ async function processDocxBuffer(buffer: Buffer): Promise<string> {
 }
 
 async function ocrPdfWithTesseract(buffer: Buffer): Promise<string> {
+  // OCR 기능은 현재 비활성화됨 (필요시 패키지 설치 필요: canvas, pdfjs-dist, tesseract.js)
+  // 서버리스 환경에서 바이너리 의존성으로 인한 빌드 문제 방지
+  throw new Error('OCR 기능은 현재 비활성화되어 있습니다. 텍스트 추출이 실패한 경우 다른 방법을 사용해주세요.');
+  
+  /* OCR 구현 코드 (주석 처리)
   // Lazy imports to keep cold start small
   const { createCanvas } = await import('canvas');
   // pdfjs-dist legacy build works better on Node
@@ -72,6 +77,7 @@ async function ocrPdfWithTesseract(buffer: Buffer): Promise<string> {
   const workers = Array.from({ length: CONCURRENCY }, () => worker());
   await Promise.all(workers);
   return out;
+  */
 }
 
 function normalizeTablesToMarkdown(text: string): string {

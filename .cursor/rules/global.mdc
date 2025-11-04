@@ -161,11 +161,23 @@ use following libraries for specific functionalities:
   $ npx shadcn@latest add dialog
   ```
 
+## Platform & Infrastructure
+
+- **Vercel Pro**: Pro 플랜을 사용 중이므로 모든 Pro 기능 사용 가능
+  - `optimizeCss: true` 설정 사용 가능
+  - Extended function execution time (최대 300초)
+  - Advanced analytics and monitoring
+- **Supabase Pro**: Pro 플랜을 사용 중이므로 모든 Pro 기능 사용 가능
+  - Extended database limits
+  - Advanced features and optimizations available
+  - Production-ready infrastructure
+
 ## Supabase
 
 - if you need to add new table, please create migration. I'll paste it into supabase.
 - do not run supabase locally
 - store migration query for `.sql` file. in /supabase/migrations/
+- **Pro 플랜 사용 중**: Pro 기능 활용 가능
 
 ## Package Manager
 

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSupabaseServer } from '@/lib/supabase/server';
+import { createPureClient } from '@/lib/supabase/server';
 
 export const runtime = 'nodejs';
 export const maxDuration = 30;
@@ -22,7 +22,7 @@ export async function POST(request: NextRequest) {
     const priority = typeof body.priority === 'number' ? Math.min(Math.max(body.priority, 1), 10) : 5;
     const payload = body.payload ?? {};
 
-    const supabase = getSupabaseServer();
+    const supabase = await createPureClient();
 
     // 중복 방지: 같은 문서/타입이 대기 또는 처리 중이면 기존 레코드 반환
     const { data: existing, error: existingError } = await supabase
@@ -71,6 +71,7 @@ export async function POST(request: NextRequest) {
     );
   }
 }
+
 
 
 
