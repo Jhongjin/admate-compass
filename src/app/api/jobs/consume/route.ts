@@ -238,9 +238,9 @@ async function processQueue() {
         }
       }
 
-      // 텍스트 추출이 너무 적으면 OCR로 폴백 Job 생성
+      // 텍스트 추출이 너무 적으면 OCR로 폴백 Job 생성 (재처리 모드가 아니고 Storage가 있는 경우만)
       const cleanedLength = (extractedText || '').replace(/\s+/g, ' ').trim().length;
-      if (cleanedLength < 500) {
+      if (cleanedLength < 500 && !isReprocess && storage?.bucket && storage?.path) {
         const { error: ocrEnqErr } = await supabase
           .from('processing_jobs')
           .insert({
@@ -254,15 +254,16 @@ async function processQueue() {
         if (ocrEnqErr) throw ocrEnqErr;
 
         const totalMs = Date.now() - jobStartMs;
-        // persist metrics row
+        // persist metrics row (재처리 모드가 아니면 fileBuffer가 있음)
+        const bytes = storage?.size || 0;
         await supabase
           .from('processing_metrics')
           .insert({
             job_id: job.id,
             document_id: job.document_id,
-            bytes: fileBuffer.length,
-            dl_ms: dlMs,
-            parse_ms: parseMs,
+            bytes: bytes,
+            dl_ms: dlMs || 0,
+            parse_ms: parseMs || 0,
             total_ms: totalMs,
             text_length: cleanedLength,
             note: 'deferred_to_ocr'
@@ -270,7 +271,7 @@ async function processQueue() {
 
         const { error: markDone } = await supabase
           .from('processing_jobs')
-          .update({ status: 'completed', finished_at: new Date().toISOString(), result: { note: 'deferred_to_ocr', cleanedLength, dlMs, parseMs, totalMs, bytes: fileBuffer.length } })
+          .update({ status: 'completed', finished_at: new Date().toISOString(), result: { note: 'deferred_to_ocr', cleanedLength, dlMs: dlMs || 0, parseMs: parseMs || 0, totalMs, bytes } })
           .eq('id', job.id)
           .eq('status', 'processing');
         if (markDone) throw markDone;
