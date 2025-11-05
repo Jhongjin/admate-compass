@@ -223,21 +223,35 @@ async function processQueue() {
         
         // Storage에서 파일 목록 조회
         try {
+          console.log(`🔍 Storage에서 파일 검색 시작: ${STORAGE_BUCKET}/${job.document_id}`);
           const { data: files, error: listError } = await supabase.storage
             .from(STORAGE_BUCKET)
-            .list(job.document_id, { limit: 10, sortBy: { column: 'created_at', order: 'desc' } });
+            .list(job.document_id, { 
+              limit: 10, 
+              sortBy: { column: 'created_at', order: 'desc' },
+              search: ''
+            });
           
-          if (!listError && files && files.length > 0) {
-            // 가장 최근 파일 선택
-            const latestFile = files[0];
+          if (listError) {
+            console.error('❌ Storage 목록 조회 에러:', listError);
+            // 폴더가 없을 수도 있으므로 에러는 무시하고 계속 진행
+          } else if (files && files.length > 0) {
+            // PDF 또는 DOCX 파일 찾기
+            const targetFile = files.find(f => 
+              f.name.toLowerCase().endsWith('.pdf') || 
+              f.name.toLowerCase().endsWith('.docx')
+            ) || files[0]; // PDF/DOCX가 없으면 첫 번째 파일
+            
             foundFile = {
-              path: `${job.document_id}/${latestFile.name}`,
-              size: latestFile.metadata?.size || 0
+              path: `${job.document_id}/${targetFile.name}`,
+              size: targetFile.metadata?.size || 0
             };
-            console.log(`✅ Storage에서 파일 발견: ${foundFile.path}`);
+            console.log(`✅ Storage에서 파일 발견: ${foundFile.path} (${foundFile.size} bytes)`);
+          } else {
+            console.warn(`⚠️ Storage에 파일이 없습니다: ${STORAGE_BUCKET}/${job.document_id}`);
           }
         } catch (storageError) {
-          console.warn('⚠️ Storage 목록 조회 실패:', storageError);
+          console.error('❌ Storage 목록 조회 예외:', storageError);
         }
         
         // Storage에서 파일을 찾았으면 다운로드
