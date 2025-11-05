@@ -1318,6 +1318,33 @@ function DocsTable({
     };
   }, [refetch]);
 
+  // 페이지 복귀 시 진행 중인 문서 확인 및 알림
+  useEffect(() => {
+    const handleFocus = () => {
+      // 페이지에 돌아왔을 때 진행 중인 문서 확인
+      if (data && data.length > 0) {
+        const processingDocs = data.filter(
+          (doc: any) => doc.status === 'processing' || doc.status === 'pending'
+        );
+        if (processingDocs.length > 0) {
+          console.log(`📋 진행 중인 문서 ${processingDocs.length}개 발견`);
+          // 진행 중인 문서가 있으면 알림 표시
+          toast.info('문서 처리 진행 중', {
+            description: `${processingDocs.length}개 문서가 처리 중입니다. 문서 처리는 백그라운드에서 계속 진행됩니다.`,
+            duration: 5000,
+          });
+          // 자동으로 문서 목록 새로고침
+          refetch();
+        }
+      }
+    };
+    
+    if (typeof window !== 'undefined') {
+      window.addEventListener('focus', handleFocus);
+      return () => window.removeEventListener('focus', handleFocus);
+    }
+  }, [data, refetch]);
+
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [detail, setDetail] = useState<any | null>(null);
   const [sortColumn, setSortColumn] = useState<string | null>(null);
