@@ -1,6 +1,7 @@
--- RLS 정책 성능 분석 및 최적화 확인 쿼리
+-- RLS 정책 성능 분석 및 최적화 확인 쿼리 (안전 버전)
 -- 작성일: 2025-01-31
 -- 목적: RLS 정책 성능 모니터링 및 최적화 포인트 파악
+-- 주의: PostgreSQL 버전 호환성 고려 (pg_stat_user_policies 제외)
 
 -- 1. 현재 RLS 정책 목록 조회
 SELECT 
@@ -71,38 +72,7 @@ WHERE p.schemaname = 'public'
   AND (p.qual LIKE '%SELECT%' OR p.qual LIKE '%EXISTS%' OR p.qual LIKE '%IN%')
 ORDER BY p.tablename, p.policyname;
 
--- 6. RLS 정책 성능 통계 확인
--- 주의: pg_stat_user_policies는 PostgreSQL 13 이상에서만 사용 가능합니다.
--- Supabase에서는 사용 불가능할 수 있으므로 대체 방법 사용
-
--- 6-1. pg_stat_statements 확장 확인 (성능 통계 대체 방법)
-SELECT 
-  CASE 
-    WHEN EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_stat_statements') 
-    THEN 'pg_stat_statements 확장이 활성화되어 있습니다. 쿼리 성능 분석 가능.'
-    ELSE 'pg_stat_statements 확장이 비활성화되어 있습니다. 성능 통계 확인 불가능.'
-  END as stat_statements_status;
-
--- 6-2. pg_stat_user_policies 뷰 존재 여부 확인 (참고용)
--- 주의: 이 뷰가 없어도 에러가 발생하지 않도록 조건부 실행
-DO $$
-BEGIN
-  IF EXISTS (
-    SELECT 1 FROM pg_views 
-    WHERE schemaname = 'pg_catalog' 
-    AND viewname = 'pg_stat_user_policies'
-  ) THEN
-    RAISE NOTICE '=== pg_stat_user_policies 뷰가 존재합니다 (PostgreSQL 13+) ===';
-    RAISE NOTICE '아래 쿼리를 실행하여 성능 통계를 확인할 수 있습니다:';
-    RAISE NOTICE 'SELECT schemaname, tablename, policyname, total_checks, total_checks_time FROM pg_stat_user_policies WHERE schemaname = ''public'';';
-  ELSE
-    RAISE NOTICE '=== pg_stat_user_policies 뷰가 없습니다 (PostgreSQL 13 미만 또는 비활성화) ===';
-    RAISE NOTICE '성능 통계는 PostgreSQL 13 이상에서만 사용 가능합니다.';
-    RAISE NOTICE '대신 정책 구조와 복잡도를 분석하여 최적화 포인트를 파악하세요.';
-  END IF;
-END $$;
-
--- 7. 인덱스가 있는 컬럼을 사용하는 RLS 정책 확인
+-- 6. 인덱스가 있는 컬럼을 사용하는 RLS 정책 확인
 -- (성능 최적화 가능한 정책)
 SELECT 
   p.tablename,
@@ -137,7 +107,7 @@ WHERE p.schemaname = 'public'
   )
 ORDER BY p.tablename, p.policyname;
 
--- 8. RLS 정책 최적화 권장사항
+-- 7. RLS 정책 최적화 권장사항
 -- 불필요하거나 중복된 정책 식별
 SELECT 
   tablename,
@@ -151,4 +121,16 @@ SELECT
 FROM pg_policies
 WHERE schemaname = 'public'
 ORDER BY tablename, policyname;
+
+-- 8. pg_stat_statements 확장 확인 (성능 통계 대체 방법)
+SELECT 
+  CASE 
+    WHEN EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'pg_stat_statements') 
+    THEN 'pg_stat_statements 확장이 활성화되어 있습니다. 쿼리 성능 분석 가능.'
+    ELSE 'pg_stat_statements 확장이 비활성화되어 있습니다. 성능 통계 확인 불가능.'
+  END as stat_statements_status;
+
+-- 참고: pg_stat_user_policies는 PostgreSQL 13 이상에서만 사용 가능합니다.
+-- Supabase의 PostgreSQL 버전이 13 미만인 경우 이 뷰를 사용할 수 없습니다.
+-- 대신 위의 쿼리들을 통해 정책 구조와 복잡도를 분석할 수 있습니다.
 
