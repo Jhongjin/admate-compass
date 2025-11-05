@@ -460,21 +460,44 @@ async function processQueue() {
     try {
       // 실패 시 상태를 failed로 기록하여 stuck 방지
       const message = err instanceof Error ? err.message : String(err);
+      const errorStack = err instanceof Error ? err.stack : undefined;
       
       // 처리 중인 job 조회 (lastJob 대신 현재 처리 중인 job 사용)
       const { data: processingJob } = await supabase
         .from('processing_jobs')
-        .select('id, document_id, status')
+        .select('id, document_id, status, payload')
         .eq('status', 'processing')
         .order('updated_at', { ascending: false })
         .limit(1)
         .maybeSingle();
       
+      // 에러 로그에 파일 정보 포함
+      const fileSize = (processingJob?.payload as any)?.fileSize || (processingJob?.payload as any)?.storage?.size || 0;
+      const fileName = (processingJob?.payload as any)?.fileName || 'unknown';
+      const fileSizeMB = fileSize > 0 ? (fileSize / (1024 * 1024)).toFixed(2) : 'unknown';
+      
+      console.error('❌ 큐 처리 실패:', {
+        jobId: processingJob?.id,
+        documentId: processingJob?.document_id,
+        fileName,
+        fileSizeMB: `${fileSizeMB}MB`,
+        error: message,
+        stack: errorStack,
+      });
+      
       if (processingJob?.id) {
-        // processing_jobs 상태를 failed로 업데이트
+        // processing_jobs 상태를 failed로 업데이트 (에러 메시지에 파일 정보 포함)
+        const errorMessage = fileSizeMB !== 'unknown' 
+          ? `${message} (파일: ${fileName}, 크기: ${fileSizeMB}MB)`
+          : message;
+          
         await supabase
           .from('processing_jobs')
-          .update({ status: 'failed', error: message, finished_at: new Date().toISOString() })
+          .update({ 
+            status: 'failed', 
+            error: errorMessage, 
+            finished_at: new Date().toISOString() 
+          })
           .eq('id', processingJob.id)
           .eq('status', 'processing');
         
@@ -494,7 +517,6 @@ async function processQueue() {
       console.error('❌ 실패 상태 업데이트 오류:', recoveryError);
     }
     
-    console.error('❌ 큐 처리 실패:', err);
     return NextResponse.json(
       { success: false, error: 'Consumer 처리 오류', details: err instanceof Error ? err.message : String(err) },
       { status: 500 }
