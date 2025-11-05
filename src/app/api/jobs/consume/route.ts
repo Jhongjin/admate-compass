@@ -315,6 +315,8 @@ async function processQueue() {
 
       // 표/CSV 정규화 (간단 규칙)
       const normalizedText = normalizeTablesToMarkdown(extractedText);
+      const normalizedLengthKB = (normalizedText.length / 1024).toFixed(2);
+      console.log(`📝 텍스트 정규화 완료: ${normalizedLengthKB}KB`);
 
       // 문서 레코드 불러오기(없을 경우 기본 메타 구성)
       const { data: docs } = await supabase.from('documents').select('id, title, file_size, file_type, created_at, updated_at, source_vendor').eq('id', job.document_id).limit(1);
@@ -335,8 +337,22 @@ async function processQueue() {
         updated_at: nowIso,
       };
 
+      // 큰 문서 처리 시 중간 로그
+      const textLengthKB = (docData.content.length / 1024).toFixed(2);
+      if (docData.content.length > 500 * 1024) {
+        console.log(`🔮 큰 문서 처리 시작: ${textLengthKB}KB 텍스트, 청킹 및 임베딩 생성 중...`);
+      }
+      
       // 인코딩/청킹/임베딩/저장
+      const processStartMs = Date.now();
       const processResult = await ragProcessor.processDocument(docData, true /* skipDuplicate */);
+      const processMs = Date.now() - processStartMs;
+      
+      if (processResult.success) {
+        console.log(`✅ 문서 처리 완료: ${processResult.chunkCount}개 청크 생성 (${processMs}ms)`);
+      } else {
+        console.warn(`⚠️ 문서 처리 실패: ${processResult.error || 'Unknown error'} (${processMs}ms)`);
+      }
 
       // 실제 저장된 청크 개수 재확인 (saveChunksToDatabase에서 이미 업데이트했지만, 큐 워커에서도 확인)
       const { count: actualChunkCount } = await supabase
