@@ -528,7 +528,9 @@ async function processQueue() {
       
       // 인코딩/청킹/임베딩/저장 (타임아웃 보호)
       const processStartMs = Date.now();
-      const MAX_PROCESS_TIME = 540000; // 9분 (10분 타임아웃의 90% - 큰 파일 처리 여유 확보)
+      // 타임아웃을 더 여유있게 설정: 8분 (10분 타임아웃의 80%)
+      // 재시도 로직이 있으므로 더 짧게 설정하여 빠른 재시도 가능
+      const MAX_PROCESS_TIME = 480000; // 8분 (9분 → 8분으로 감소)
       
       // 전체 처리 시간 측정을 위한 단계별 시간 추적
       const stepTimings = {

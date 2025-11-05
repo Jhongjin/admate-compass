@@ -647,7 +647,8 @@ export class RAGProcessor {
       
       // 대용량 파일 처리 시 타임아웃 설정
       const isLargeFile = document.file_size > 10 * 1024 * 1024; // 10MB 이상
-      const timeoutMs = isLargeFile ? 540000 : 120000; // 대용량: 9분 (큐 워커와 동기화), 일반: 2분
+      // 큐 워커의 MAX_PROCESS_TIME(8분)과 동기화
+      const timeoutMs = isLargeFile ? 480000 : 120000; // 대용량: 8분 (큐 워커와 동기화), 일반: 2분
       
       if (isLargeFile) {
         console.log('⚠️ 대용량 파일 처리 - 타임아웃 설정:', timeoutMs + 'ms');
@@ -803,8 +804,8 @@ export class RAGProcessor {
       
       if (isLargeFile) {
         // 큰 파일의 경우 배치 단위로 임베딩 생성 (메모리 효율성)
-        // 배치 크기 증가로 처리 시간 단축 (100 → 150)
-        const EMBEDDING_BATCH_SIZE = 150;
+        // 배치 크기 증가로 처리 시간 단축 (150 → 200)
+        const EMBEDDING_BATCH_SIZE = 200;
         console.log(`📦 큰 파일 감지 - 배치 단위로 임베딩 생성 (${chunks.length}개 청크, 배치 크기: ${EMBEDDING_BATCH_SIZE})`);
         
         for (let i = 0; i < chunks.length; i += EMBEDDING_BATCH_SIZE) {
@@ -818,9 +819,9 @@ export class RAGProcessor {
           
           chunksWithEmbeddings.push(...batchWithEmbeddings);
           
-          // 배치 간 짧은 대기 (CPU 부하 방지)
+          // 배치 간 짧은 대기 (CPU 부하 방지, 대기 시간 감소로 처리 시간 단축)
           if (i + EMBEDDING_BATCH_SIZE < chunks.length) {
-            await new Promise(resolve => setTimeout(resolve, 10));
+            await new Promise(resolve => setTimeout(resolve, 5)); // 10ms → 5ms
           }
         }
         
@@ -855,8 +856,8 @@ export class RAGProcessor {
           if (isLargeFile) {
             console.log(`💾 큰 파일 - 청크 저장을 배치로 처리 (${chunksWithEmbeddings.length}개 청크)`);
             // 큰 파일의 경우 청크 저장도 배치 단위로 나누어 처리
-            // 배치 크기 증가로 처리 시간 단축 (50 → 100)
-            const SAVE_BATCH_SIZE = 100;
+            // 배치 크기 증가로 처리 시간 단축 (100 → 150)
+            const SAVE_BATCH_SIZE = 150;
             for (let i = 0; i < chunksWithEmbeddings.length; i += SAVE_BATCH_SIZE) {
               const batch = chunksWithEmbeddings.slice(i, i + SAVE_BATCH_SIZE);
               console.log(`💾 청크 저장 배치: ${i + 1}-${Math.min(i + SAVE_BATCH_SIZE, chunksWithEmbeddings.length)}/${chunksWithEmbeddings.length}`);
@@ -864,9 +865,9 @@ export class RAGProcessor {
               const batchSaved = await this.saveChunksToDatabase(batch);
               savedChunkCount += batchSaved;
               
-              // 배치 간 짧은 대기
+              // 배치 간 짧은 대기 (대기 시간 감소로 처리 시간 단축)
               if (i + SAVE_BATCH_SIZE < chunksWithEmbeddings.length) {
-                await new Promise(resolve => setTimeout(resolve, 50));
+                await new Promise(resolve => setTimeout(resolve, 20)); // 50ms → 20ms
               }
             }
             const savingMs = Date.now() - savingStartMs;

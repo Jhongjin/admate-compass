@@ -259,16 +259,17 @@ export class AdaptiveChunkingService {
     let iterationCount = 0;
     // 큰 파일 처리: 최대 청크 수 제한 증가 및 청크 크기 최적화
     // 매우 큰 파일은 더 큰 청크로 분할하여 청크 수를 줄임
-    const isVeryLarge = content.length > 2000000; // 2MB 이상
+    const isVeryLarge = content.length > 1500000; // 1.5MB 이상
     let adjustedChunkSize = strategy.chunkSize;
     
     if (isVeryLarge) {
-      // 매우 큰 파일은 청크 크기를 50% 증가 (청크 수 감소)
-      adjustedChunkSize = Math.floor(strategy.chunkSize * 1.5);
-      console.log(`📏 매우 큰 파일 감지 - 청크 크기 조정: ${strategy.chunkSize} → ${adjustedChunkSize}자`);
+      // 매우 큰 파일은 청크 크기를 100% 증가 (청크 수 50% 감소)
+      adjustedChunkSize = Math.floor(strategy.chunkSize * 2.0);
+      console.log(`📏 매우 큰 파일 감지 - 청크 크기 조정: ${strategy.chunkSize} → ${adjustedChunkSize}자 (청크 수 50% 감소 예상)`);
     }
     
-    const maxChunks = strategy.maxChunks || (content.length > 1000000 ? 1000 : 500); // 1MB 이상이면 1000개까지 (2000 → 1000으로 감소)
+    // 최대 청크 수 제한: 큰 파일은 800개로 제한 (임베딩/저장 시간 단축)
+    const maxChunks = strategy.maxChunks || (content.length > 1000000 ? 800 : 500); // 1MB 이상이면 800개까지 (1000 → 800으로 감소)
     const maxIterations = maxChunks * 2;
 
     while (start < content.length && iterationCount < maxIterations) {

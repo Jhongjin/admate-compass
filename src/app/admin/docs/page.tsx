@@ -106,7 +106,6 @@ function AdminDocsPageContent() {
               업로드 / URL 크롤링 / 벤더별 관리 / 처리 큐 / 메트릭
             </motion.p>
           </div>
-          <DeleteAllDocumentsButton />
         </div>
       </motion.div>
 
@@ -858,6 +857,9 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
                   <p className="text-xs text-muted-enhanced mt-1">
                     PDF, DOCX, TXT 파일 지원
                   </p>
+                  <p className="text-xs text-yellow-400 mt-1 font-medium">
+                    최대 파일 크기: 15MB
+                  </p>
                 </div>
                 {selectedFileName && (
                   <p className="text-xs text-blue-300 font-medium mt-1">
@@ -1318,9 +1320,27 @@ function DocsTable({
     };
   }, [refetch]);
 
-  // 페이지 복귀 시 진행 중인 문서 확인 및 알림
+  // 페이지 복귀 시 진행 중인 문서 확인 및 알림 (다시보지 않기 옵션 포함)
   useEffect(() => {
     const handleFocus = () => {
+      // localStorage에서 "다시보지 않기" 설정 확인
+      const dontShowAgain = typeof window !== 'undefined' 
+        ? localStorage.getItem('dontShowProcessingToast') === 'true'
+        : false;
+      
+      if (dontShowAgain) {
+        // 다시보지 않기 설정이 있으면 알림 표시 안 함 (단, 문서 목록은 새로고침)
+        if (data && data.length > 0) {
+          const processingDocs = data.filter(
+            (doc: any) => doc.status === 'processing' || doc.status === 'pending'
+          );
+          if (processingDocs.length > 0) {
+            refetch(); // 알림 없이 문서 목록만 새로고침
+          }
+        }
+        return;
+      }
+      
       // 페이지에 돌아왔을 때 진행 중인 문서 확인
       if (data && data.length > 0) {
         const processingDocs = data.filter(
@@ -1328,11 +1348,20 @@ function DocsTable({
         );
         if (processingDocs.length > 0) {
           console.log(`📋 진행 중인 문서 ${processingDocs.length}개 발견`);
-          // 진행 중인 문서가 있으면 알림 표시
-          toast.info('문서 처리 진행 중', {
+          
+          // 진행 중인 문서가 있으면 알림 표시 (다시보지 않기 옵션 포함)
+          const toastId = toast.info('문서 처리 진행 중', {
             description: `${processingDocs.length}개 문서가 처리 중입니다. 문서 처리는 백그라운드에서 계속 진행됩니다.`,
-            duration: 5000,
-          });
+            duration: 7000,
+            action: {
+              label: '다시 보지 않기',
+              onClick: () => {
+                localStorage.setItem('dontShowProcessingToast', 'true');
+                toast.dismiss(toastId);
+              }
+            },
+          } as any);
+          
           // 자동으로 문서 목록 새로고침
           refetch();
         }
