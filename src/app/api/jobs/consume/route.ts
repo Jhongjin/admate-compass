@@ -3,7 +3,7 @@ import { createPureClient } from '@/lib/supabase/server';
 import { ragProcessor, DocumentData } from '@/lib/services/RAGProcessor';
 
 export const runtime = 'nodejs';
-export const maxDuration = 300; // Pro 플랜: 최대 5분 (큰 파일 처리 지원)
+export const maxDuration = 600; // Pro 플랜: 최대 10분 (큰 파일 처리 지원 - 13MB+ 파일 처리 가능)
 export const dynamic = 'force-dynamic';
 
 /**
@@ -359,7 +359,7 @@ async function processQueue() {
       
       // 인코딩/청킹/임베딩/저장 (타임아웃 보호)
       const processStartMs = Date.now();
-      const MAX_PROCESS_TIME = 240000; // 4분 (5분 타임아웃의 80%)
+      const MAX_PROCESS_TIME = 540000; // 9분 (10분 타임아웃의 90% - 큰 파일 처리 여유 확보)
       
       // 큰 파일의 경우 타임아웃 전에 중간 상태를 업데이트하는 로직
       let processResult;
@@ -367,14 +367,19 @@ async function processQueue() {
         // 큰 파일은 타임아웃 전에 중간 상태 확인
         const processPromise = ragProcessor.processDocument(docData, true /* skipDuplicate */);
         const timeoutPromise = new Promise((_, reject) => {
-          setTimeout(() => reject(new Error('문서 처리 시간 초과 (4분)')), MAX_PROCESS_TIME);
+          setTimeout(() => reject(new Error(`큐 처리 시간 초과 (${Math.round(MAX_PROCESS_TIME / 60000)}분)`)), MAX_PROCESS_TIME);
         });
         
         try {
           processResult = await Promise.race([processPromise, timeoutPromise]) as any;
         } catch (timeoutError) {
-          // 타임아웃 발생 시 진행 상황을 저장하고 나머지는 별도 job으로 분할
-          console.warn('⚠️ 큰 파일 처리 타임아웃 - 부분 처리 완료, 나머지는 별도 job으로 분할');
+          // 타임아웃 발생 시 진행 상황 로깅
+          console.error('❌ 큰 파일 처리 타임아웃:', {
+            fileSize: fileSizeMB,
+            textLength: docData.content.length,
+            elapsedTime: Date.now() - processStartMs,
+            error: timeoutError instanceof Error ? timeoutError.message : String(timeoutError)
+          });
           throw timeoutError;
         }
       } else {

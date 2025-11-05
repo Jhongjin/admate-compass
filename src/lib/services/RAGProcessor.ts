@@ -647,7 +647,7 @@ export class RAGProcessor {
       
       // 대용량 파일 처리 시 타임아웃 설정
       const isLargeFile = document.file_size > 10 * 1024 * 1024; // 10MB 이상
-      const timeoutMs = isLargeFile ? 300000 : 60000; // 대용량: 5분, 일반: 1분
+      const timeoutMs = isLargeFile ? 540000 : 120000; // 대용량: 9분 (큐 워커와 동기화), 일반: 2분
       
       if (isLargeFile) {
         console.log('⚠️ 대용량 파일 처리 - 타임아웃 설정:', timeoutMs + 'ms');
@@ -1060,6 +1060,9 @@ export class RAGProcessor {
           chunk_index: index,
           source: document.title,
           created_at: new Date().toISOString(),
+          // 폴백 청킹에서도 기본 계층 정보 포함
+          hierarchy_level: 'paragraph', // 기본값
+          parent_chunk_id: index > 0 ? `${document.id}_chunk_${index - 1}` : undefined,
         },
       }));
     } catch (error) {

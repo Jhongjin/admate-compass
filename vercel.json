@@ -34,7 +34,7 @@
       "maxDuration": 300
     },
     "src/app/api/jobs/consume/route.ts": {
-      "maxDuration": 300
+      "maxDuration": 600
     }
   },
   "regions": ["icn1"],

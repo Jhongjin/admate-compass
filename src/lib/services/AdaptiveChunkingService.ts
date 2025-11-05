@@ -257,7 +257,9 @@ export class AdaptiveChunkingService {
     const chunks: string[] = [];
     let start = 0;
     let iterationCount = 0;
-    const maxIterations = (strategy.maxChunks || 500) * 2;
+    // 큰 파일 처리: 최대 청크 수 제한 증가 (10MB 이상 파일 대응)
+    const maxChunks = strategy.maxChunks || (content.length > 1000000 ? 2000 : 500); // 1MB 이상이면 2000개까지
+    const maxIterations = maxChunks * 2;
 
     while (start < content.length && iterationCount < maxIterations) {
       const end = Math.min(start + strategy.chunkSize, content.length);
@@ -310,9 +312,25 @@ export class AdaptiveChunkingService {
       iterationCount++;
 
       // 최대 청크 수 제한
-      if (chunks.length >= (strategy.maxChunks || 500)) {
+      if (chunks.length >= maxChunks) {
+        console.warn(`⚠️ 최대 청크 수 도달 (${maxChunks}), 청킹 중단`);
         break;
       }
+      
+      // 큰 파일 처리: 진행 상황 로깅 (100개 청크마다)
+      if (chunks.length % 100 === 0 && chunks.length > 0) {
+        console.log(`📊 청킹 진행 중: ${chunks.length}개 청크 생성 (${Math.round((start / content.length) * 100)}% 완료)`);
+      }
+    }
+
+    if (iterationCount >= maxIterations) {
+      console.warn(`⚠️ 최대 반복 횟수 도달 (${maxIterations}), 청킹 중단. 생성된 청크: ${chunks.length}개`);
+    }
+    
+    if (chunks.length === 0 && content.length > 0) {
+      console.warn('⚠️ 청킹 결과가 비어있습니다. 최소 크기 제한으로 인한 것일 수 있습니다.');
+      // 최소 크기 제한을 무시하고 최소한 1개 청크는 생성
+      chunks.push(content.trim());
     }
 
     return chunks;
@@ -757,7 +775,7 @@ export class AdaptiveChunkingService {
           chunks.push(chunk);
         }
       } else {
-        // 일반 청킹 결과 사용
+        // 일반 청킹 결과 사용 (계층 정보도 포함)
         let currentCharIndex = 0;
 
         for (let i = 0; i < chunkTexts.length; i++) {
@@ -776,6 +794,11 @@ export class AdaptiveChunkingService {
           // 키워드 추출
           const keywords = this.extractKeywords(chunkText, 5);
 
+          // 계층 레벨 결정 (섹션에 속하면 section, 아니면 paragraph)
+          const hierarchyLevel = relatedSection 
+            ? 'section' 
+            : (chunkText.includes('\n\n') ? 'paragraph' : 'sentence');
+
           const chunk: AdaptiveChunk = {
             id: `${documentId}_chunk_${i}`,
             content: chunkText,
@@ -793,6 +816,10 @@ export class AdaptiveChunkingService {
               keywords,
               importance: this.calculateImportance(chunkText, chunkType),
               confidence: 0.8, // 기본 신뢰도 (향후 개선 가능)
+              // 계층 정보 추가 (일반 청킹에서도 계층 정보 포함)
+              hierarchyLevel: hierarchyLevel as 'document' | 'section' | 'paragraph' | 'sentence',
+              // 첫 번째 청크는 최상위, 나머지는 이전 청크를 부모로 설정 (간단한 계층 구조)
+              parentChunkId: i > 0 ? `${documentId}_chunk_${i - 1}` : undefined,
             }
           };
 

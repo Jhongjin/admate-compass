@@ -2439,47 +2439,57 @@ function DocumentDetailDialog({ detail, onClose, onRefetch }: { detail: any | nu
                   </div>
                   
                   {/* 계층 구조 정보 */}
-                  {hierarchyStats && hierarchyStats.hasHierarchy && (
+                  {hierarchyStats && (
                     <>
                       <div className="col-span-2 space-y-2 mt-4 pt-4 border-t border-gray-700">
                         <div className="text-secondary-enhanced font-semibold flex items-center gap-2">
                           <Database className="w-4 h-4" />
                           계층 구조 정보
                         </div>
-                        <div className="grid grid-cols-2 gap-4 text-sm">
-                          <div className="space-y-2">
-                            <div className="text-xs text-muted-enhanced">계층 레벨별 분포</div>
-                            <div className="space-y-1">
-                              {Object.entries(hierarchyStats.levelCounts).map(([level, count]) => (
-                                <div key={level} className="flex items-center justify-between">
-                                  <span className="text-primary-enhanced">
-                                    {level === 'none' ? '계층 없음' : level}
-                                  </span>
-                                  <Badge variant="outline" className="bg-blue-500/20 text-blue-300 border-blue-400/30">
-                                    {count as number}개
+                        {hierarchyStats.hasHierarchy ? (
+                          <div className="grid grid-cols-2 gap-4 text-sm">
+                            <div className="space-y-2">
+                              <div className="text-xs text-muted-enhanced">계층 레벨별 분포</div>
+                              <div className="space-y-1">
+                                {Object.entries(hierarchyStats.levelCounts).map(([level, count]) => (
+                                  <div key={level} className="flex items-center justify-between">
+                                    <span className="text-primary-enhanced">
+                                      {level === 'none' ? '계층 없음' : level}
+                                    </span>
+                                    <Badge variant="outline" className="bg-blue-500/20 text-blue-300 border-blue-400/30">
+                                      {count as number}개
+                                    </Badge>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                            <div className="space-y-2">
+                              <div className="text-xs text-muted-enhanced">부모-자식 관계</div>
+                              <div className="space-y-1">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-primary-enhanced">부모 있는 청크</span>
+                                  <Badge variant="outline" className="bg-green-500/20 text-green-300 border-green-400/30">
+                                    {hierarchyStats.chunksWithParent}개
                                   </Badge>
                                 </div>
-                              ))}
-                            </div>
-                          </div>
-                          <div className="space-y-2">
-                            <div className="text-xs text-muted-enhanced">부모-자식 관계</div>
-                            <div className="space-y-1">
-                              <div className="flex items-center justify-between">
-                                <span className="text-primary-enhanced">부모 있는 청크</span>
-                                <Badge variant="outline" className="bg-green-500/20 text-green-300 border-green-400/30">
-                                  {hierarchyStats.chunksWithParent}개
-                                </Badge>
-                              </div>
-                              <div className="flex items-center justify-between">
-                                <span className="text-primary-enhanced">최상위 청크</span>
-                                <Badge variant="outline" className="bg-purple-500/20 text-purple-300 border-purple-400/30">
-                                  {hierarchyStats.chunksWithoutParent}개
-                                </Badge>
+                                <div className="flex items-center justify-between">
+                                  <span className="text-primary-enhanced">최상위 청크</span>
+                                  <Badge variant="outline" className="bg-purple-500/20 text-purple-300 border-purple-400/30">
+                                    {hierarchyStats.chunksWithoutParent}개
+                                  </Badge>
+                                </div>
                               </div>
                             </div>
                           </div>
-                        </div>
+                        ) : (
+                          <div className="text-sm text-muted-enhanced">
+                            계층 구조가 생성되지 않았습니다. 
+                            <br />
+                            <span className="text-xs">
+                              가능한 원인: 문서가 너무 작거나 구조가 단순함, 청킹 실패
+                            </span>
+                          </div>
+                        )}
                       </div>
                     </>
                   )}
