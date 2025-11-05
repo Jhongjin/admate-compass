@@ -747,13 +747,43 @@ export class RAGProcessor {
         };
       }
 
-      // 2. 임베딩 생성
+      // 2. 임베딩 생성 (큰 파일의 경우 배치 처리)
       console.log('🔮 임베딩 생성 시작...');
-      const chunksWithEmbeddings = chunks.map(chunk => ({
-        ...chunk,
-        embedding: this.generateSimpleEmbedding(chunk.content),
-      }));
-      console.log('✅ 임베딩 생성 완료:', chunksWithEmbeddings.length, '개 청크');
+      const isLargeFile = document.file_size > 10 * 1024 * 1024 || chunks.length > 1000;
+      const chunksWithEmbeddings: ChunkData[] = [];
+      
+      if (isLargeFile) {
+        // 큰 파일의 경우 배치 단위로 임베딩 생성 (메모리 효율성)
+        const EMBEDDING_BATCH_SIZE = 100;
+        console.log(`📦 큰 파일 감지 - 배치 단위로 임베딩 생성 (${chunks.length}개 청크, 배치 크기: ${EMBEDDING_BATCH_SIZE})`);
+        
+        for (let i = 0; i < chunks.length; i += EMBEDDING_BATCH_SIZE) {
+          const batch = chunks.slice(i, i + EMBEDDING_BATCH_SIZE);
+          console.log(`🔮 임베딩 배치 생성 중: ${i + 1}-${Math.min(i + EMBEDDING_BATCH_SIZE, chunks.length)}/${chunks.length}`);
+          
+          const batchWithEmbeddings = batch.map(chunk => ({
+            ...chunk,
+            embedding: this.generateSimpleEmbedding(chunk.content),
+          }));
+          
+          chunksWithEmbeddings.push(...batchWithEmbeddings);
+          
+          // 배치 간 짧은 대기 (CPU 부하 방지)
+          if (i + EMBEDDING_BATCH_SIZE < chunks.length) {
+            await new Promise(resolve => setTimeout(resolve, 10));
+          }
+        }
+        
+        console.log(`✅ 임베딩 생성 완료: ${chunksWithEmbeddings.length}개 청크 (배치 처리)`);
+      } else {
+        // 일반 파일은 한 번에 처리
+        const mapped = chunks.map(chunk => ({
+          ...chunk,
+          embedding: this.generateSimpleEmbedding(chunk.content),
+        }));
+        chunksWithEmbeddings.push(...mapped);
+        console.log('✅ 임베딩 생성 완료:', chunksWithEmbeddings.length, '개 청크');
+      }
 
       // 3. Supabase에 저장
       const supabase = await this.getSupabaseClient();

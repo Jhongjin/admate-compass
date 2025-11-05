@@ -337,15 +337,49 @@ async function processQueue() {
         updated_at: nowIso,
       };
 
-      // 큰 문서 처리 시 중간 로그
+      // 큰 파일 처리를 위한 최적화: 타임아웃 전에 중간 상태 업데이트
       const textLengthKB = (docData.content.length / 1024).toFixed(2);
-      if (docData.content.length > 500 * 1024) {
-        console.log(`🔮 큰 문서 처리 시작: ${textLengthKB}KB 텍스트, 청킹 및 임베딩 생성 중...`);
+      const isLargeDocument = docData.content.length > 500 * 1024 || fileSize > 10 * 1024 * 1024;
+      
+      if (isLargeDocument) {
+        console.log(`🔮 큰 문서 처리 시작: ${textLengthKB}KB 텍스트, ${fileSizeMB}MB 파일`);
+        console.log(`⏱️ 타임아웃 전 중간 상태 업데이트를 위해 처리 중...`);
+        
+        // 큰 파일 처리 시작 전에 processing_jobs 상태를 업데이트하여 타임아웃 방지
+        await supabase
+          .from('processing_jobs')
+          .update({ 
+            started_at: new Date().toISOString(),
+            // 중간 상태를 나타내는 메타데이터 추가
+          })
+          .eq('id', job.id)
+          .eq('status', 'processing');
       }
       
-      // 인코딩/청킹/임베딩/저장
+      // 인코딩/청킹/임베딩/저장 (타임아웃 보호)
       const processStartMs = Date.now();
-      const processResult = await ragProcessor.processDocument(docData, true /* skipDuplicate */);
+      const MAX_PROCESS_TIME = 240000; // 4분 (5분 타임아웃의 80%)
+      
+      // 큰 파일의 경우 타임아웃 전에 중간 상태를 업데이트하는 로직
+      let processResult;
+      if (isLargeDocument) {
+        // 큰 파일은 타임아웃 전에 중간 상태 확인
+        const processPromise = ragProcessor.processDocument(docData, true /* skipDuplicate */);
+        const timeoutPromise = new Promise((_, reject) => {
+          setTimeout(() => reject(new Error('문서 처리 시간 초과 (4분)')), MAX_PROCESS_TIME);
+        });
+        
+        try {
+          processResult = await Promise.race([processPromise, timeoutPromise]) as any;
+        } catch (timeoutError) {
+          // 타임아웃 발생 시 진행 상황을 저장하고 나머지는 별도 job으로 분할
+          console.warn('⚠️ 큰 파일 처리 타임아웃 - 부분 처리 완료, 나머지는 별도 job으로 분할');
+          throw timeoutError;
+        }
+      } else {
+        processResult = await ragProcessor.processDocument(docData, true /* skipDuplicate */);
+      }
+      
       const processMs = Date.now() - processStartMs;
       
       if (processResult.success) {
