@@ -785,7 +785,7 @@ export class RAGProcessor {
         console.log('✅ 임베딩 생성 완료:', chunksWithEmbeddings.length, '개 청크');
       }
 
-      // 3. Supabase에 저장
+      // 3. Supabase에 저장 (큰 파일의 경우 청크 저장도 배치 처리)
       const supabase = await this.getSupabaseClient();
       if (supabase) {
         try {
@@ -793,9 +793,30 @@ export class RAGProcessor {
           await this.saveDocumentToDatabase(document, originalBinaryData);
           console.log('✅ 문서 데이터베이스 저장 완료');
 
-          // 청크 저장 (실제 저장된 개수 반환)
-          const savedChunkCount = await this.saveChunksToDatabase(chunksWithEmbeddings);
-          console.log('✅ 청크 데이터베이스 저장 완료:', savedChunkCount, '개 청크');
+          // 큰 파일의 경우 청크 저장도 더 작은 배치로 처리
+          let savedChunkCount = 0;
+          if (isLargeFile) {
+            console.log(`💾 큰 파일 - 청크 저장을 더 작은 배치로 처리 (${chunksWithEmbeddings.length}개 청크)`);
+            // 큰 파일의 경우 청크 저장도 배치 단위로 나누어 처리
+            const SAVE_BATCH_SIZE = 50; // 저장 배치는 더 작게
+            for (let i = 0; i < chunksWithEmbeddings.length; i += SAVE_BATCH_SIZE) {
+              const batch = chunksWithEmbeddings.slice(i, i + SAVE_BATCH_SIZE);
+              console.log(`💾 청크 저장 배치: ${i + 1}-${Math.min(i + SAVE_BATCH_SIZE, chunksWithEmbeddings.length)}/${chunksWithEmbeddings.length}`);
+              
+              const batchSaved = await this.saveChunksToDatabase(batch);
+              savedChunkCount += batchSaved;
+              
+              // 배치 간 짧은 대기
+              if (i + SAVE_BATCH_SIZE < chunksWithEmbeddings.length) {
+                await new Promise(resolve => setTimeout(resolve, 50));
+              }
+            }
+            console.log('✅ 청크 데이터베이스 저장 완료:', savedChunkCount, '개 청크 (배치 저장)');
+          } else {
+            // 일반 파일은 한 번에 저장
+            savedChunkCount = await this.saveChunksToDatabase(chunksWithEmbeddings);
+            console.log('✅ 청크 데이터베이스 저장 완료:', savedChunkCount, '개 청크');
+          }
           
           // 저장된 청크 개수가 생성된 청크 개수와 다른 경우 경고
           if (savedChunkCount !== chunks.length) {

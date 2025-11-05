@@ -193,11 +193,12 @@ async function processQueue() {
     const fileName = (job?.payload?.fileName as string) || job.document_id;
     const fileSize = storage?.size || (job?.payload?.fileSize as number) || 0;
     const isReprocess = job?.payload?.reprocess === true;
+    const fileSizeMB = fileSize > 0 ? (fileSize / (1024 * 1024)).toFixed(2) : '0';
     
     // 큰 파일 처리 시작 로그
     if (fileSize > 10 * 1024 * 1024) {
-      const fileSizeMB = (fileSize / (1024 * 1024)).toFixed(2);
       console.log(`📦 큰 파일 처리 시작: ${fileName} (${fileSizeMB}MB)`);
+      console.log(`⏱️ 예상 처리 시간: 3-5분 (큰 파일은 더 오래 걸릴 수 있습니다)`);
     }
 
     if ((job.job_type === 'PDF_PARSE' || job.job_type === 'DOCX_PARSE')) {
