@@ -106,6 +106,7 @@ function AdminDocsPageContent() {
               업로드 / URL 크롤링 / 벤더별 관리 / 처리 큐 / 메트릭
             </motion.p>
           </div>
+          <DeleteAllDocumentsButton />
         </div>
       </motion.div>
 
@@ -2043,6 +2044,104 @@ function QueueMiniPanel({ vendors }: { vendors: string[] }) {
   );
 }
 
+function DeleteAllDocumentsButton() {
+  const [showConfirm, setShowConfirm] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deletingStatus, setDeletingStatus] = useState<string | null>(null);
+
+  const handleDeleteAll = async () => {
+    try {
+      setDeleting(true);
+      setDeletingStatus('삭제 중...');
+      
+      const res = await fetch('/api/admin/delete-all-documents', {
+        method: 'DELETE',
+      });
+
+      const data = await res.json();
+
+      if (data.success) {
+        toast.success('모든 문서 삭제 완료', {
+          description: `문서: ${data.deletedCounts?.documents || 0}개, 청크: ${data.deletedCounts?.chunks || 0}개 삭제되었습니다.`,
+          duration: 5000,
+        });
+        setShowConfirm(false);
+        // 페이지 새로고침하여 목록 업데이트
+        window.location.reload();
+      } else {
+        toast.error('삭제 실패', {
+          description: data.error || '알 수 없는 오류가 발생했습니다.',
+          duration: 5000,
+        });
+      }
+    } catch (error) {
+      console.error('삭제 오류:', error);
+      toast.error('삭제 오류', {
+        description: error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.',
+        duration: 5000,
+      });
+    } finally {
+      setDeleting(false);
+      setDeletingStatus(null);
+    }
+  };
+
+  return (
+    <>
+      <Button
+        variant="destructive"
+        size="sm"
+        onClick={() => setShowConfirm(true)}
+        className="bg-red-600 hover:bg-red-700 text-white"
+      >
+        <XCircle className="w-4 h-4 mr-2" />
+        전체 삭제
+      </Button>
+
+      <AlertDialog open={showConfirm} onOpenChange={setShowConfirm}>
+        <AlertDialogContent className="bg-gray-900 border-gray-700">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-red-400">⚠️ 모든 문서 삭제</AlertDialogTitle>
+            <AlertDialogDescription className="text-gray-300">
+              이 작업은 <strong className="text-red-400">되돌릴 수 없습니다</strong>.
+              <br />
+              <br />
+              다음 데이터가 모두 삭제됩니다:
+              <ul className="list-disc list-inside mt-2 space-y-1 text-sm">
+                <li>모든 문서</li>
+                <li>모든 청크</li>
+                <li>모든 메타데이터</li>
+                <li>모든 처리 로그</li>
+              </ul>
+              <br />
+              정말로 모든 문서를 삭제하시겠습니까?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting} className="bg-gray-800 border-gray-700 text-gray-300 hover:bg-gray-700">
+              취소
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteAll}
+              disabled={deleting}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              {deleting ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  {deletingStatus || '삭제 중...'}
+                </>
+              ) : (
+                '삭제'
+              )}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+}
+
 function MiniStat({ title, value, color }: { title: string; value: string; color: string }) {
   return (
     <div className={`rounded-xl p-3 border ${color}`}>
@@ -2201,6 +2300,47 @@ function DocumentDetailDialog({ detail, onClose, onRefetch }: { detail: any | nu
     enabled: !!detail?.id,
   });
 
+  const { data: hierarchyStats } = useQuery({
+    queryKey: ["doc-hierarchy-stats", detail?.id],
+    queryFn: async () => {
+      if (!detail?.id) return null;
+      
+      // 계층 레벨별 통계
+      const { data: levelStats, error: levelError } = await supabase
+        .from("document_chunks")
+        .select("hierarchy_level")
+        .eq("document_id", detail.id);
+      
+      if (levelError || !levelStats) return null;
+      
+      const levelCounts = levelStats.reduce((acc: Record<string, number>, chunk: any) => {
+        const level = chunk.hierarchy_level || 'none';
+        acc[level] = (acc[level] || 0) + 1;
+        return acc;
+      }, {});
+      
+      // 부모-자식 관계 통계
+      const { data: parentChildStats, error: parentError } = await supabase
+        .from("document_chunks")
+        .select("parent_chunk_id")
+        .eq("document_id", detail.id);
+      
+      if (parentError || !parentChildStats) return { levelCounts, hasHierarchy: false };
+      
+      const hasParent = parentChildStats.some((chunk: any) => chunk.parent_chunk_id !== null);
+      const parentCount = parentChildStats.filter((chunk: any) => chunk.parent_chunk_id !== null).length;
+      
+      return {
+        levelCounts,
+        hasHierarchy: hasParent || Object.keys(levelCounts).some(k => k !== 'none'),
+        totalChunks: levelStats.length,
+        chunksWithParent: parentCount,
+        chunksWithoutParent: levelStats.length - parentCount,
+      };
+    },
+    enabled: !!detail?.id && !!fullDoc?.actualChunkCount && fullDoc.actualChunkCount > 0,
+  });
+
   if (!detail) return null;
 
   return (
@@ -2297,6 +2437,52 @@ function DocumentDetailDialog({ detail, onClose, onRefetch }: { detail: any | nu
                     <div className="text-secondary-enhanced font-semibold">생성일</div>
                     <div className="text-xs text-primary-enhanced">{fullDoc?.created_at ? new Date(fullDoc.created_at).toLocaleString() : '-'}</div>
                   </div>
+                  
+                  {/* 계층 구조 정보 */}
+                  {hierarchyStats && hierarchyStats.hasHierarchy && (
+                    <>
+                      <div className="col-span-2 space-y-2 mt-4 pt-4 border-t border-gray-700">
+                        <div className="text-secondary-enhanced font-semibold flex items-center gap-2">
+                          <Database className="w-4 h-4" />
+                          계층 구조 정보
+                        </div>
+                        <div className="grid grid-cols-2 gap-4 text-sm">
+                          <div className="space-y-2">
+                            <div className="text-xs text-muted-enhanced">계층 레벨별 분포</div>
+                            <div className="space-y-1">
+                              {Object.entries(hierarchyStats.levelCounts).map(([level, count]) => (
+                                <div key={level} className="flex items-center justify-between">
+                                  <span className="text-primary-enhanced">
+                                    {level === 'none' ? '계층 없음' : level}
+                                  </span>
+                                  <Badge variant="outline" className="bg-blue-500/20 text-blue-300 border-blue-400/30">
+                                    {count as number}개
+                                  </Badge>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                          <div className="space-y-2">
+                            <div className="text-xs text-muted-enhanced">부모-자식 관계</div>
+                            <div className="space-y-1">
+                              <div className="flex items-center justify-between">
+                                <span className="text-primary-enhanced">부모 있는 청크</span>
+                                <Badge variant="outline" className="bg-green-500/20 text-green-300 border-green-400/30">
+                                  {hierarchyStats.chunksWithParent}개
+                                </Badge>
+                              </div>
+                              <div className="flex items-center justify-between">
+                                <span className="text-primary-enhanced">최상위 청크</span>
+                                <Badge variant="outline" className="bg-purple-500/20 text-purple-300 border-purple-400/30">
+                                  {hierarchyStats.chunksWithoutParent}개
+                                </Badge>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </>
+                  )}
                   <div className="space-y-1">
                     <div className="text-secondary-enhanced font-semibold">수정일</div>
                     <div className="text-xs text-primary-enhanced">{fullDoc?.updated_at ? new Date(fullDoc.updated_at).toLocaleString() : '-'}</div>

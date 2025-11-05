@@ -62,9 +62,8 @@ export async function createPureClient() {
   }
 
   // Pro 플랜 최적화: 서버 사이드 연결 풀링 최적화
-  // - persistSession: false - 서버 사이드에서는 세션 불필요
-  // - autoRefreshToken: false - Service Role Key 사용 시 토큰 갱신 불필요
-  // - db.schema: 'public' - 명시적 스키마 지정으로 성능 향상
+  // createServerClient는 cookies 옵션만 지원하므로 기본 설정 사용
+  // Service Role Key는 서버 사이드에서만 사용되므로 추가 설정 불필요
   return createServerClient(
     supabaseUrl,
     supabaseKey,
@@ -75,20 +74,6 @@ export async function createPureClient() {
         },
         setAll() {},
       },
-      {
-        auth: {
-          persistSession: false, // 서버 사이드에서는 세션 불필요
-          autoRefreshToken: false, // Service Role Key 사용 시 토큰 갱신 불필요
-        },
-        db: {
-          schema: 'public', // 명시적 스키마 지정으로 성능 향상
-        },
-        global: {
-          headers: {
-            'x-client-info': 'meta-faq-chatbot-server', // 클라이언트 식별
-          },
-        },
-      }
     }
   );
 }

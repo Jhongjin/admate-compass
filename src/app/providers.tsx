@@ -39,7 +39,7 @@ export default function Providers({ children }: { children: React.ReactNode }) {
       defaultOptions: {
         queries: {
           staleTime: 5 * 60 * 1000, // 5분 (Pro 플랜에서 더 긴 캐싱 가능)
-          cacheTime: 30 * 60 * 1000, // 30분 (캐시 보관 시간)
+          gcTime: 30 * 60 * 1000, // 30분 (캐시 보관 시간, React Query v5에서 cacheTime → gcTime으로 변경)
           retry: 1, // Only retry once
           refetchOnWindowFocus: false, // Disable refetch on window focus
         },

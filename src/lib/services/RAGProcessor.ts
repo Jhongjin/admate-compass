@@ -18,6 +18,18 @@ export interface ChunkData {
     chunk_index: number;
     source: string;
     created_at: string;
+    // 확장 메타데이터 (선택적)
+    chunk_type?: string;
+    section_title?: string;
+    keywords?: string[];
+    importance?: number;
+    confidence?: number;
+    // 계층 정보 (선택적)
+    hierarchy_level?: string;
+    parent_chunk_id?: string;
+    children_chunk_ids?: string[];
+    // 벤더 정보 (선택적)
+    source_vendor?: string;
   };
   embedding?: number[];
 }
@@ -374,18 +386,38 @@ export class RAGProcessor {
       console.log('💾 청크 저장 시작:', chunks.length, '개 청크');
 
       // 청크 데이터 준비 (id는 SERIAL이므로 제외)
-      const chunkInserts = chunks.map((chunk, index) => ({
-        id: chunk.id, // 문자열 ID는 id 필드에 저장
-        document_id: chunk.metadata.document_id,
-        chunk_id: index, // chunk_id는 정수 인덱스
-        content: chunk.content.replace(/\0/g, ''), // null 바이트 제거
-        metadata: {
-          chunk_index: chunk.metadata.chunk_index,
-          source: chunk.metadata.source,
-          created_at: chunk.metadata.created_at,
-        },
-        embedding: chunk.embedding,
-      }));
+      const chunkInserts = chunks.map((chunk, index) => {
+        // chunk_id 생성: id의 마지막 부분 사용 또는 index 사용
+        const chunkIdFromMetadata = chunk.metadata.chunk_index !== undefined 
+          ? String(chunk.metadata.chunk_index) 
+          : chunk.id.split('_').pop() || String(index);
+        
+        return {
+          id: chunk.id, // 문자열 ID는 id 필드에 저장
+          document_id: chunk.metadata.document_id,
+          chunk_id: chunkIdFromMetadata, // chunk_id는 문자열
+          content: chunk.content.replace(/\0/g, ''), // null 바이트 제거
+          metadata: {
+            chunk_index: chunk.metadata.chunk_index,
+            source: chunk.metadata.source,
+            created_at: chunk.metadata.created_at,
+            // 확장 메타데이터
+            chunk_type: chunk.metadata.chunk_type,
+            section_title: chunk.metadata.section_title,
+            keywords: chunk.metadata.keywords,
+            importance: chunk.metadata.importance,
+            confidence: chunk.metadata.confidence,
+            // 계층 정보
+            hierarchy_level: chunk.metadata.hierarchy_level,
+            parent_chunk_id: chunk.metadata.parent_chunk_id,
+            children_chunk_ids: chunk.metadata.children_chunk_ids,
+          },
+          embedding: chunk.embedding,
+          // 계층 정보 (테이블 컬럼에 직접 저장 - 마이그레이션 후)
+          parent_chunk_id: chunk.metadata.parent_chunk_id || null,
+          hierarchy_level: chunk.metadata.hierarchy_level || null,
+        };
+      });
 
       // 배치 처리로 청크 저장 (큰 파일의 경우 더 작은 배치 사용)
       const isLargeBatch = chunkInserts.length > 500;
@@ -946,6 +978,10 @@ export class RAGProcessor {
           keywords: chunk.metadata.keywords,
           importance: chunk.metadata.importance,
           confidence: chunk.metadata.confidence,
+          // 계층 정보
+          hierarchy_level: chunk.metadata.hierarchyLevel,
+          parent_chunk_id: chunk.metadata.parentChunkId,
+          children_chunk_ids: chunk.metadata.childrenChunkIds,
         } as any, // 타입 확장을 위해 any 사용
       }));
 

@@ -1,5 +1,7 @@
 import { RecursiveCharacterTextSplitter } from 'langchain/text_splitter';
 import { processTextEncoding } from '../utils/textEncoding';
+import { semanticChunkingService, SemanticChunkingConfig } from './SemanticChunkingService';
+import { hierarchicalChunkingService, HierarchicalChunk } from './HierarchicalChunkingService';
 
 /**
  * 적응적 청킹 서비스
@@ -41,6 +43,11 @@ export interface EnhancedChunkMetadata {
   startChar: number;
   endChar: number;
   originalLength: number;
+  
+  // 계층 정보
+  hierarchyLevel?: 'document' | 'section' | 'paragraph' | 'sentence';
+  parentChunkId?: string;
+  childrenChunkIds?: string[];
 }
 
 export interface AdaptiveChunk {
@@ -197,9 +204,53 @@ export class AdaptiveChunkingService {
   }
 
   /**
-   * 의미 기반 청킹 (문장 경계 우선 고려)
+   * 의미 기반 청킹 (하이브리드: 규칙 기반 + 의미 기반)
+   * 큰 문서는 규칙 기반, 작은 문서는 의미 기반 사용
    */
-  private chunkBySemanticBoundaries(
+  private async chunkBySemanticBoundaries(
+    content: string,
+    strategy: ChunkingStrategy
+  ): Promise<string[]> {
+    // 큰 문서는 규칙 기반 청킹 사용 (성능 최적화)
+    const useSemanticChunking = content.length < 50000; // 50KB 미만만 의미 기반 사용
+    
+    if (useSemanticChunking) {
+      try {
+        console.log('🔮 의미 기반 청킹 시도 (문서 크기:', content.length, '자)');
+        
+        const semanticConfig: SemanticChunkingConfig = {
+          minChunkSize: strategy.minChunkSize || 50,
+          maxChunkSize: strategy.chunkSize,
+          minSimilarity: 0.7, // 유사도가 0.7 미만이면 경계로 간주
+          sentenceOverlap: Math.floor(strategy.chunkOverlap / 100), // 청크 간 겹치는 문장 수
+        };
+        
+        const semanticChunks = await semanticChunkingService.chunkBySemanticBoundaries(
+          content,
+          semanticConfig
+        );
+        
+        if (semanticChunks.length > 0) {
+          console.log('✅ 의미 기반 청킹 성공:', semanticChunks.length, '개 청크');
+          return semanticChunks;
+        } else {
+          console.log('⚠️ 의미 기반 청킹 결과 없음, 규칙 기반으로 폴백');
+        }
+      } catch (error) {
+        console.warn('⚠️ 의미 기반 청킹 실패, 규칙 기반으로 폴백:', error);
+      }
+    } else {
+      console.log('📏 큰 문서 감지 - 규칙 기반 청킹 사용 (문서 크기:', content.length, '자)');
+    }
+    
+    // 규칙 기반 청킹 (폴백 또는 큰 문서용)
+    return this.chunkByRuleBoundaries(content, strategy);
+  }
+
+  /**
+   * 규칙 기반 청킹 (문장 경계 우선 고려)
+   */
+  private chunkByRuleBoundaries(
     content: string,
     strategy: ChunkingStrategy
   ): string[] {
@@ -268,84 +319,270 @@ export class AdaptiveChunkingService {
   }
 
   /**
-   * FAQ 문서 특화 청킹 (질문-답변 쌍 유지)
+   * FAQ 문서 특화 청킹 (질문-답변 쌍 유지) - 개선 버전
    */
   private chunkFAQDocument(content: string): string[] {
     const chunks: string[] = [];
     
-    // FAQ 패턴 감지
+    // 개선된 FAQ 패턴 감지 (다중 언어 지원)
     const qaPatterns = [
-      /(?:Q|질문)[:\s]*(.+?)(?:\n\n|\nA|답변|$)/gis,
-      /(?:Q|질문)[:\s]*(.+?)(?:A|답변)[:\s]*(.+?)(?=\n\n(?:Q|질문)|$)/gis,
+      // 한국어 패턴
+      /(?:^|\n)(?:Q|질문|Q\.|질문\.)[:\s]*\d*[\.\)]?\s*(.+?)\s*(?:\n\s*(?:A|답변|A\.|답변\.)[:\s]*\s*(.+?)(?=\n\s*(?:Q|질문)|$))/gims,
+      /(?:^|\n)(?:Q|질문)[:\s]*(.+?)\s*(?:\n\s*(?:A|답변)[:\s]*(.+?)(?=\n\s*(?:Q|질문)|$))/gims,
+      // 영어 패턴
+      /(?:^|\n)(?:Q|Question|Q\.)[:\s]*\d*[\.\)]?\s*(.+?)\s*(?:\n\s*(?:A|Answer|A\.)[:\s]*\s*(.+?)(?=\n\s*(?:Q|Question)|$))/gims,
+      // 번호 패턴 (1. 질문 2. 답변 형식)
+      /(?:^|\n)\d+[\.\)]\s*(.+?)\s*\?\s*(?:\n\s*\d+[\.\)]\s*(.+?)(?=\n\s*\d+[\.\)]|$))/gims,
+      // 마크다운 형식 (### Q: ... ### A: ...)
+      /(?:^|\n)###\s*(?:Q|질문)[:\s]*(.+?)\s*###\s*(?:A|답변)[:\s]*(.+?)(?=\n###|$)/gims,
     ];
 
-    let match;
+    const matchedPairs = new Set<string>(); // 중복 제거용
+
     for (const pattern of qaPatterns) {
       pattern.lastIndex = 0;
+      let match;
       while ((match = pattern.exec(content)) !== null) {
-        const qaPair = match[0].trim();
-        if (qaPair.length > 100) { // 최소 길이 보장
-          chunks.push(qaPair);
+        const question = match[1]?.trim() || '';
+        const answer = match[2]?.trim() || '';
+        
+        if (question && answer) {
+          const qaPair = `Q: ${question}\n\nA: ${answer}`;
+          const pairKey = `${question.slice(0, 50)}_${answer.slice(0, 50)}`; // 중복 검사용 키
+          
+          if (!matchedPairs.has(pairKey) && qaPair.length > 100) {
+            chunks.push(qaPair);
+            matchedPairs.add(pairKey);
+          }
+        } else if (match[0]) {
+          // 질문과 답변이 한 번에 매칭된 경우
+          const qaPair = match[0].trim();
+          if (qaPair.length > 100 && !matchedPairs.has(qaPair.slice(0, 100))) {
+            chunks.push(qaPair);
+            matchedPairs.add(qaPair.slice(0, 100));
+          }
         }
       }
     }
 
-    // 패턴 매칭 실패 시 일반 청킹으로 폴백
-    if (chunks.length === 0) {
-      return this.chunkBySemanticBoundaries(content, this.getFAQStrategy(content.length));
+    // 질문-답변 쌍 완전성 검증 및 정리
+    const validatedChunks: string[] = [];
+    for (const chunk of chunks) {
+      const hasQuestion = /(?:^|\n)(?:Q|질문|Question|Q\.)[:\s]/.test(chunk);
+      const hasAnswer = /(?:^|\n)(?:A|답변|Answer|A\.)[:\s]/.test(chunk);
+      
+      if (hasQuestion && hasAnswer) {
+        validatedChunks.push(chunk);
+      } else if (chunk.includes('?') && chunk.length > 200) {
+        // 질문 마크가 없어도 ?가 있고 충분한 길이면 포함
+        validatedChunks.push(chunk);
+      }
     }
 
-    return chunks;
+    console.log(`📋 FAQ 청킹 결과: ${validatedChunks.length}개 질문-답변 쌍 발견`);
+
+    // 패턴 매칭 실패 또는 결과가 적으면 일반 청킹으로 폴백
+    if (validatedChunks.length === 0 || validatedChunks.length < chunks.length * 0.3) {
+      console.log('⚠️ FAQ 패턴 매칭 결과 부족, 일반 청킹으로 폴백');
+      return this.chunkByRuleBoundaries(content, this.getFAQStrategy(content.length));
+    }
+
+    return validatedChunks;
   }
 
   /**
-   * 정책 문서 특화 청킹 (조항별)
+   * 정책 문서 특화 청킹 (조항별) - 개선 버전
    */
   private chunkPolicyDocument(content: string): string[] {
     const chunks: string[] = [];
     
-    // 조항 패턴 감지
-    const articlePattern = /(?:제\s*\d+\s*조|제\s*\d+\s*장|제\s*\d+\s*절)[:\s]*(.+?)(?=(?:제\s*\d+\s*(?:조|장|절))|$)/gis;
+    // 개선된 조항 패턴 감지 (장/절/항/목 계층 구조 인식)
+    const articlePatterns = [
+      // 장 제목 패턴
+      /(?:^|\n)(제\s*\d+\s*장)[:\s]*(.+?)(?=\n(?:제\s*\d+\s*(?:절|조))|$)/gims,
+      // 절 제목 패턴
+      /(?:^|\n)(제\s*\d+\s*절)[:\s]*(.+?)(?=\n(?:제\s*\d+\s*(?:조|절))|$)/gims,
+      // 조 항목 패턴
+      /(?:^|\n)(제\s*\d+\s*조)[:\s]*(.+?)(?=\n(?:제\s*\d+\s*(?:조|장|절))|$)/gims,
+      // 항 목 패턴
+      /(?:^|\n)(제\s*\d+\s*항)[:\s]*(.+?)(?=\n(?:제\s*\d+\s*(?:항|조|목))|$)/gims,
+      // 목 패턴
+      /(?:^|\n)(제\s*\d+\s*목)[:\s]*(.+?)(?=\n(?:제\s*\d+\s*(?:목|항|조))|$)/gims,
+      // 영어 패턴 (Article, Chapter, Section)
+      /(?:^|\n)(?:Article|Chapter|Section)\s*\d+[:\s]*(.+?)(?=\n(?:Article|Chapter|Section)\s*\d+|$)/gims,
+    ];
 
-    let match;
-    while ((match = articlePattern.exec(content)) !== null) {
-      const article = match[0].trim();
-      if (article.length > 200) {
-        chunks.push(article);
+    const matchedArticles = new Map<string, { content: string; level: number; number: number }>();
+
+    for (const pattern of articlePatterns) {
+      pattern.lastIndex = 0;
+      let match;
+      while ((match = pattern.exec(content)) !== null) {
+        const fullMatch = match[0].trim();
+        const level = this.determinePolicyLevel(fullMatch);
+        const number = this.extractPolicyNumber(fullMatch);
+        const articleKey = `${level}_${number}`;
+        
+        if (fullMatch.length > 200 && !matchedArticles.has(articleKey)) {
+          matchedArticles.set(articleKey, {
+            content: fullMatch,
+            level,
+            number,
+          });
+        }
       }
     }
 
+    // 법률 용어 감지 및 가중치 적용
+    const legalTerms = ['법', '규칙', '법령', '법률', '규정', '법규', '조례', '시행령', '시행규칙'];
+    const chunksWithTerms = Array.from(matchedArticles.values())
+      .map(article => {
+        const termCount = legalTerms.filter(term => 
+          article.content.toLowerCase().includes(term)
+        ).length;
+        return {
+          ...article,
+          termWeight: termCount,
+        };
+      })
+      .sort((a, b) => {
+        // 레벨 우선 정렬 (낮은 레벨 = 높은 우선순위)
+        if (a.level !== b.level) return a.level - b.level;
+        // 번호 순 정렬
+        if (a.number !== b.number) return a.number - b.number;
+        // 용어 가중치
+        return b.termWeight - a.termWeight;
+      });
+
+    chunks.push(...chunksWithTerms.map(a => a.content));
+
+    console.log(`📜 정책 문서 청킹 결과: ${chunks.length}개 조항 발견 (장/절/조/항/목)`);
+
     // 패턴 매칭 실패 시 일반 청킹으로 폴백
     if (chunks.length === 0) {
-      return this.chunkBySemanticBoundaries(content, this.getPolicyStrategy(content.length));
+      console.log('⚠️ 정책 문서 패턴 매칭 실패, 일반 청킹으로 폴백');
+      return this.chunkByRuleBoundaries(content, this.getPolicyStrategy(content.length));
     }
 
     return chunks;
   }
 
   /**
-   * 마케팅 문서 특화 청킹 (섹션별)
+   * 정책 문서 레벨 결정 (1: 장, 2: 절, 3: 조, 4: 항, 5: 목)
+   */
+  private determinePolicyLevel(text: string): number {
+    if (/제\s*\d+\s*장/.test(text)) return 1;
+    if (/제\s*\d+\s*절/.test(text)) return 2;
+    if (/제\s*\d+\s*조/.test(text)) return 3;
+    if (/제\s*\d+\s*항/.test(text)) return 4;
+    if (/제\s*\d+\s*목/.test(text)) return 5;
+    if (/Chapter\s*\d+/i.test(text)) return 1;
+    if (/Section\s*\d+/i.test(text)) return 2;
+    if (/Article\s*\d+/i.test(text)) return 3;
+    return 3; // 기본값: 조
+  }
+
+  /**
+   * 정책 문서 번호 추출
+   */
+  private extractPolicyNumber(text: string): number {
+    const match = text.match(/(?:제\s*)?(\d+)\s*(?:장|절|조|항|목|Chapter|Section|Article)/i);
+    return match ? parseInt(match[1], 10) : 0;
+  }
+
+  /**
+   * 마케팅 문서 특화 청킹 (섹션별) - 개선 버전
    */
   private chunkMarketingDocument(content: string): string[] {
     const chunks: string[] = [];
     
-    // 섹션 패턴 감지 (마크다운 헤딩)
-    const sectionPattern = /(?:^#{1,6}\s+.+$)/gm;
-    const sections = content.split(sectionPattern);
+    // 개선된 섹션 패턴 감지 (마크다운 헤딩 + CTA 섹션)
+    const headingPattern = /^(#{1,6})\s+(.+)$/gm;
+    const headings: Array<{ level: number; title: string; position: number }> = [];
+    
+    let match;
+    while ((match = headingPattern.exec(content)) !== null) {
+      headings.push({
+        level: match[1].length,
+        title: match[2].trim(),
+        position: match.index || 0,
+      });
+    }
 
-    for (let i = 0; i < sections.length; i++) {
-      const section = sections[i].trim();
-      if (section.length > 200) {
-        chunks.push(section);
+    // 섹션별로 분할
+    for (let i = 0; i < headings.length; i++) {
+      const heading = headings[i];
+      const nextHeading = headings[i + 1];
+      const startPos = heading.position;
+      const endPos = nextHeading ? nextHeading.position : content.length;
+      
+      let sectionContent = content.substring(startPos, endPos).trim();
+      
+      // CTA (Call to Action) 섹션 감지
+      const ctaPatterns = [
+        /(?:지금|지금 바로|바로|즉시|지금 즉시|당장)\s*(?:주문|구매|신청|가입|시작|체험|다운로드)/g,
+        /(?:click|order|buy|apply|join|start|try|download)\s*(?:now|here|today)/gi,
+        /(?:무료|무료로|무료 체험|무료 다운로드)/g,
+        /(?:지금|Now)\s*(?:시작|Start)/g,
+      ];
+      
+      const hasCTA = ctaPatterns.some(pattern => pattern.test(sectionContent));
+      
+      // 섹션 내용 정리
+      if (sectionContent.length > 200) {
+        // CTA가 있는 섹션은 중요도 높게 표시
+        if (hasCTA) {
+          sectionContent = `[CTA 섹션] ${sectionContent}`;
+        }
+        chunks.push(sectionContent);
       }
     }
 
-    // 패턴 매칭 실패 시 일반 청킹으로 폴백
+    // 헤딩이 없는 경우 문단 기반 분할
     if (chunks.length === 0) {
-      return this.chunkBySemanticBoundaries(content, this.getMarketingStrategy(content.length));
+      const paragraphs = content.split(/\n\n+/);
+      for (const para of paragraphs) {
+        const trimmed = para.trim();
+        if (trimmed.length > 200) {
+          chunks.push(trimmed);
+        }
+      }
     }
 
-    return chunks;
+    // 섹션별 중요도 계산
+    const chunksWithImportance = chunks.map(chunk => {
+      let importance = 0.5;
+      
+      // CTA 포함 여부
+      if (/\[CTA 섹션\]/.test(chunk)) {
+        importance += 0.3;
+      }
+      
+      // 마케팅 키워드 포함 여부
+      const marketingKeywords = ['프로모션', '할인', '이벤트', '특가', '혜택', '신규', '추천'];
+      const keywordCount = marketingKeywords.filter(kw => 
+        chunk.toLowerCase().includes(kw)
+      ).length;
+      importance += keywordCount * 0.05;
+      
+      return {
+        content: chunk,
+        importance: Math.min(importance, 1.0),
+      };
+    });
+
+    // 중요도 순 정렬
+    chunksWithImportance.sort((a, b) => b.importance - a.importance);
+
+    console.log(`📢 마케팅 문서 청킹 결과: ${chunksWithImportance.length}개 섹션 발견`);
+
+    // 패턴 매칭 실패 시 일반 청킹으로 폴백
+    if (chunksWithImportance.length === 0) {
+      console.log('⚠️ 마케팅 문서 패턴 매칭 실패, 일반 청킹으로 폴백');
+      return this.chunkByRuleBoundaries(content, this.getMarketingStrategy(content.length));
+    }
+
+    return chunksWithImportance.map(c => c.content);
   }
 
   /**
@@ -435,63 +672,133 @@ export class AdaptiveChunkingService {
       // 문서 구조 분석
       const structure = this.analyzeDocumentStructure(cleanContent);
 
-      // 콘텐츠 유형별 특화 청킹
-      let chunkTexts: string[];
-      
-      if (config.contentType === 'faq') {
-        chunkTexts = this.chunkFAQDocument(cleanContent);
-      } else if (config.contentType === 'policy') {
-        chunkTexts = this.chunkPolicyDocument(cleanContent);
-      } else if (config.contentType === 'marketing') {
-        chunkTexts = this.chunkMarketingDocument(cleanContent);
-      } else {
-        // 일반 적응적 청킹
-        const strategy = this.getChunkingStrategy(config);
-        chunkTexts = this.chunkBySemanticBoundaries(cleanContent, strategy);
+      // 계층적 청킹 사용 여부 결정
+      // 큰 문서이거나 구조가 명확한 문서는 계층적 청킹 사용
+      const useHierarchicalChunking = 
+        cleanContent.length > 5000 || // 5KB 이상
+        structure.sections.length > 0 || // 섹션이 있는 경우
+        config.contentType === 'policy' || // 정책 문서
+        config.contentType === 'marketing'; // 마케팅 문서
+
+      let chunkTexts: string[] = [];
+      let hierarchicalChunks: HierarchicalChunk[] = [];
+      let useHierarchical = false;
+
+      if (useHierarchicalChunking) {
+        try {
+          console.log('📊 계층적 청킹 시도 (문서 크기:', cleanContent.length, '자, 섹션:', structure.sections.length, '개)');
+          
+          hierarchicalChunks = hierarchicalChunkingService.createHierarchicalChunks(
+            cleanContent,
+            documentId,
+            documentTitle
+          );
+          
+          if (hierarchicalChunks.length > 0) {
+            chunkTexts = hierarchicalChunks.map(c => c.content);
+            useHierarchical = true;
+            console.log('✅ 계층적 청킹 성공:', hierarchicalChunks.length, '개 청크');
+          } else {
+            console.log('⚠️ 계층적 청킹 결과 없음, 일반 청킹으로 폴백');
+          }
+        } catch (error) {
+          console.warn('⚠️ 계층적 청킹 실패, 일반 청킹으로 폴백:', error);
+        }
+      }
+
+      // 계층적 청킹 실패 또는 사용하지 않는 경우 일반 청킹
+      if (!useHierarchical) {
+        if (config.contentType === 'faq') {
+          chunkTexts = this.chunkFAQDocument(cleanContent);
+        } else if (config.contentType === 'policy') {
+          chunkTexts = this.chunkPolicyDocument(cleanContent);
+        } else if (config.contentType === 'marketing') {
+          chunkTexts = this.chunkMarketingDocument(cleanContent);
+        } else {
+          // 일반 적응적 청킹 (의미 기반 + 규칙 기반 하이브리드)
+          const strategy = this.getChunkingStrategy(config);
+          chunkTexts = await this.chunkBySemanticBoundaries(cleanContent, strategy);
+        }
       }
 
       // 청크 메타데이터 생성
       const chunks: AdaptiveChunk[] = [];
-      let currentCharIndex = 0;
 
-      for (let i = 0; i < chunkTexts.length; i++) {
-        const chunkText = chunkTexts[i];
-        const startChar = cleanContent.indexOf(chunkText, currentCharIndex);
-        const endChar = startChar + chunkText.length;
+      if (useHierarchical && hierarchicalChunks.length > 0) {
+        // 계층적 청킹 결과 사용
+        for (const hierarchicalChunk of hierarchicalChunks) {
+          const chunkType = this.classifyChunkType(hierarchicalChunk.content);
+          const keywords = this.extractKeywords(hierarchicalChunk.content, 5);
 
-        // 청크 타입 분류
-        const chunkType = this.classifyChunkType(chunkText);
+          const chunk: AdaptiveChunk = {
+            id: hierarchicalChunk.id,
+            content: hierarchicalChunk.content,
+            metadata: {
+              documentId,
+              documentTitle,
+              documentType: config.documentType,
+              chunkIndex: hierarchicalChunk.metadata.chunkIndex,
+              chunkType,
+              startChar: hierarchicalChunk.metadata.startChar,
+              endChar: hierarchicalChunk.metadata.endChar,
+              originalLength: hierarchicalChunk.content.length,
+              sectionTitle: hierarchicalChunk.metadata.sectionTitle,
+              headingLevel: hierarchicalChunk.metadata.headingLevel,
+              paragraphIndex: hierarchicalChunk.metadata.paragraphIndex,
+              keywords,
+              importance: hierarchicalChunk.metadata.importance || this.calculateImportance(hierarchicalChunk.content, chunkType),
+              confidence: hierarchicalChunk.metadata.confidence || 0.8,
+              hierarchyLevel: hierarchicalChunk.hierarchyLevel,
+              parentChunkId: hierarchicalChunk.parentId,
+              childrenChunkIds: hierarchicalChunk.children,
+            }
+          };
 
-        // 관련 섹션 찾기
-        const relatedSection = structure.sections.find(
-          s => s.start <= startChar && s.end >= endChar
-        );
+          chunks.push(chunk);
+        }
+      } else {
+        // 일반 청킹 결과 사용
+        let currentCharIndex = 0;
 
-        // 키워드 추출
-        const keywords = this.extractKeywords(chunkText, 5);
+        for (let i = 0; i < chunkTexts.length; i++) {
+          const chunkText = chunkTexts[i];
+          const startChar = cleanContent.indexOf(chunkText, currentCharIndex);
+          const endChar = startChar + chunkText.length;
 
-        const chunk: AdaptiveChunk = {
-          id: `${documentId}_chunk_${i}`,
-          content: chunkText,
-          metadata: {
-            documentId,
-            documentTitle,
-            documentType: config.documentType,
-            chunkIndex: i,
-            chunkType,
-            startChar,
-            endChar,
-            originalLength: chunkText.length,
-            sectionTitle: relatedSection?.title,
-            headingLevel: relatedSection?.level,
-            keywords,
-            importance: this.calculateImportance(chunkText, chunkType),
-            confidence: 0.8, // 기본 신뢰도 (향후 개선 가능)
-          }
-        };
+          // 청크 타입 분류
+          const chunkType = this.classifyChunkType(chunkText);
 
-        chunks.push(chunk);
-        currentCharIndex = endChar;
+          // 관련 섹션 찾기
+          const relatedSection = structure.sections.find(
+            s => s.start <= startChar && s.end >= endChar
+          );
+
+          // 키워드 추출
+          const keywords = this.extractKeywords(chunkText, 5);
+
+          const chunk: AdaptiveChunk = {
+            id: `${documentId}_chunk_${i}`,
+            content: chunkText,
+            metadata: {
+              documentId,
+              documentTitle,
+              documentType: config.documentType,
+              chunkIndex: i,
+              chunkType,
+              startChar,
+              endChar,
+              originalLength: chunkText.length,
+              sectionTitle: relatedSection?.title,
+              headingLevel: relatedSection?.level,
+              keywords,
+              importance: this.calculateImportance(chunkText, chunkType),
+              confidence: 0.8, // 기본 신뢰도 (향후 개선 가능)
+            }
+          };
+
+          chunks.push(chunk);
+          currentCharIndex = endChar;
+        }
       }
 
       console.log(`📄 적응적 청킹 완료: ${chunks.length}개 청크 생성`, {
