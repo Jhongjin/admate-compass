@@ -239,8 +239,8 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
       setUploadStep('uploading');
       setUploadProgress(0);
       
-      // 파일 크기 제한 설정 (최대 50MB)
-      const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+      // 파일 크기 제한 설정 (최대 30MB)
+      const MAX_FILE_SIZE = 30 * 1024 * 1024; // 30MB
       const FILE_SIZE_LIMIT = 5 * 1024 * 1024; // 5MB 이상은 큐로 처리
       
       // 파일 크기 초과 검증
