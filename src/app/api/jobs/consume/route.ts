@@ -188,10 +188,11 @@ async function processQueue() {
   try {
     const jobStartMs = Date.now();
     // 1) 픽업할 잡 조회 (우선순위 높은 순, 예약시각 이른 순)
+    // retrying 상태도 포함하여 재시도 작업 처리
     const { data: job, error: pickErr } = await supabase
       .from('processing_jobs')
       .select('id, document_id, job_type, status, attempts, max_attempts, priority, payload')
-      .eq('status', 'queued')
+      .in('status', ['queued', 'retrying']) // retrying 상태도 처리
       .order('priority', { ascending: false })
       .order('scheduled_at', { ascending: true })
       .limit(1)
@@ -205,11 +206,12 @@ async function processQueue() {
     }
 
     // 2) processing 진입(낙관적 업데이트)
+    // queued 또는 retrying 상태에서 processing으로 전환
     const { error: toProcessingErr } = await supabase
       .from('processing_jobs')
       .update({ status: 'processing', started_at: new Date().toISOString() })
       .eq('id', job.id)
-      .eq('status', 'queued');
+      .in('status', ['queued', 'retrying']); // retrying 상태도 처리
 
     if (toProcessingErr) {
       return NextResponse.json({ success: false, error: 'processing 전환 실패', details: toProcessingErr.message }, { status: 409 });
@@ -581,7 +583,46 @@ async function processQueue() {
             },
             error: timeoutError instanceof Error ? timeoutError.message : String(timeoutError)
           });
-          throw timeoutError;
+          
+          // 재시도 가능 여부 확인
+          const currentAttempts = job.attempts || 0;
+          const maxAttempts = job.max_attempts || 3;
+          
+          if (currentAttempts < maxAttempts) {
+            // 재시도 가능: retrying 상태로 변경하고 다음 실행 시 재시도
+            console.log(`🔄 타임아웃 발생 - 재시도 예약 (${currentAttempts + 1}/${maxAttempts})`);
+            await supabase
+              .from('processing_jobs')
+              .update({
+                status: 'retrying',
+                attempts: currentAttempts + 1,
+                error: `큐 처리 시간 초과 - 재시도 예약 (${currentAttempts + 1}/${maxAttempts})`,
+                scheduled_at: new Date(Date.now() + 60000).toISOString() // 1분 후 재시도
+              })
+              .eq('id', job.id)
+              .eq('status', 'processing');
+            
+            // 문서 상태도 retrying으로 업데이트
+            await supabase
+              .from('documents')
+              .update({
+                status: 'pending', // 재시도를 위해 pending으로 복구
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', job.document_id);
+            
+            return NextResponse.json({
+              success: false,
+              error: '큐 처리 시간 초과 - 재시도 예약됨',
+              retryScheduled: true,
+              attempts: currentAttempts + 1,
+              maxAttempts
+            }, { status: 202 });
+          } else {
+            // 최대 시도 횟수 초과: failed 상태
+            console.error(`❌ 최대 시도 횟수 초과 (${maxAttempts}/${maxAttempts}) - 실패 처리`);
+            throw timeoutError;
+          }
         }
       } else {
         processResult = await ragProcessor.processDocument(docData, true /* skipDuplicate */);

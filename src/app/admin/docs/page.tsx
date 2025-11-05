@@ -240,8 +240,8 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
       setUploadStep('uploading');
       setUploadProgress(0);
       
-      // 파일 크기 제한 설정 (최대 20MB - 더 안정적인 처리)
-      const MAX_FILE_SIZE = 20 * 1024 * 1024; // 20MB (30MB → 20MB로 조정)
+      // 파일 크기 제한 설정 (최대 15MB - 타임아웃 방지)
+      const MAX_FILE_SIZE = 15 * 1024 * 1024; // 15MB (20MB → 15MB로 조정)
       const FILE_SIZE_LIMIT = 5 * 1024 * 1024; // 5MB 이상은 큐로 처리
       
       // 파일 크기 초과 검증
@@ -258,8 +258,8 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
         return;
       }
       
-      // 큰 파일 경고 (15MB 이상)
-      if (uploadFile.size > 15 * 1024 * 1024) {
+      // 큰 파일 경고 (10MB 이상)
+      if (uploadFile.size > 10 * 1024 * 1024) {
         const fileSizeMB = (uploadFile.size / (1024 * 1024)).toFixed(2);
         toast.warning('큰 파일 감지', {
           description: `파일 크기가 ${fileSizeMB}MB입니다. 처리에 시간이 오래 걸릴 수 있습니다 (최대 10분 소요 가능).`,

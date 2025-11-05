@@ -803,7 +803,8 @@ export class RAGProcessor {
       
       if (isLargeFile) {
         // 큰 파일의 경우 배치 단위로 임베딩 생성 (메모리 효율성)
-        const EMBEDDING_BATCH_SIZE = 100;
+        // 배치 크기 증가로 처리 시간 단축 (100 → 150)
+        const EMBEDDING_BATCH_SIZE = 150;
         console.log(`📦 큰 파일 감지 - 배치 단위로 임베딩 생성 (${chunks.length}개 청크, 배치 크기: ${EMBEDDING_BATCH_SIZE})`);
         
         for (let i = 0; i < chunks.length; i += EMBEDDING_BATCH_SIZE) {
@@ -852,9 +853,10 @@ export class RAGProcessor {
           // 큰 파일의 경우 청크 저장도 더 작은 배치로 처리
           let savedChunkCount = 0;
           if (isLargeFile) {
-            console.log(`💾 큰 파일 - 청크 저장을 더 작은 배치로 처리 (${chunksWithEmbeddings.length}개 청크)`);
+            console.log(`💾 큰 파일 - 청크 저장을 배치로 처리 (${chunksWithEmbeddings.length}개 청크)`);
             // 큰 파일의 경우 청크 저장도 배치 단위로 나누어 처리
-            const SAVE_BATCH_SIZE = 50; // 저장 배치는 더 작게
+            // 배치 크기 증가로 처리 시간 단축 (50 → 100)
+            const SAVE_BATCH_SIZE = 100;
             for (let i = 0; i < chunksWithEmbeddings.length; i += SAVE_BATCH_SIZE) {
               const batch = chunksWithEmbeddings.slice(i, i + SAVE_BATCH_SIZE);
               console.log(`💾 청크 저장 배치: ${i + 1}-${Math.min(i + SAVE_BATCH_SIZE, chunksWithEmbeddings.length)}/${chunksWithEmbeddings.length}`);

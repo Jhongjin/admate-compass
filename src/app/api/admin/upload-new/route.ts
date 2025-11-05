@@ -301,7 +301,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json(
           {
             success: false,
-            error: `파일 크기가 ${Math.round(maxFileSize / 1024 / 1024)}MB를 초과합니다. 최대 20MB까지 업로드 가능합니다. (큰 파일은 처리 시간이 오래 걸릴 수 있습니다)`,
+            error: `파일 크기가 ${Math.round(maxFileSize / 1024 / 1024)}MB를 초과합니다. 최대 15MB까지 업로드 가능합니다. (큰 파일은 처리 시간이 오래 걸려 타임아웃될 수 있습니다)`,
             fileSize: file.size,
             maxSize: maxFileSize
           },
@@ -752,7 +752,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json(
           { 
             success: false, 
-            error: `파일 크기가 ${Math.round(maxFileSize / 1024 / 1024)}MB를 초과합니다. 최대 20MB까지 업로드 가능합니다. (큰 파일은 처리 시간이 오래 걸릴 수 있습니다)`,
+            error: `파일 크기가 ${Math.round(maxFileSize / 1024 / 1024)}MB를 초과합니다. 최대 15MB까지 업로드 가능합니다. (큰 파일은 처리 시간이 오래 걸려 타임아웃될 수 있습니다)`,
             fileSize: fileSize,
             maxSize: maxFileSize
           },
