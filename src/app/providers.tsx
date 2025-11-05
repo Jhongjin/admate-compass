@@ -33,11 +33,13 @@ export default function Providers({ children }: { children: React.ReactNode }) {
   }, []);
 
   // Create a stable QueryClient instance with robust error handling
+  // Pro 플랜 최적화: 더 긴 캐싱 시간으로 서버 부하 감소 및 성능 향상
   const [queryClient] = useState(
     () => new QueryClient({
       defaultOptions: {
         queries: {
-          staleTime: 60 * 1000, // 1 minute
+          staleTime: 5 * 60 * 1000, // 5분 (Pro 플랜에서 더 긴 캐싱 가능)
+          cacheTime: 30 * 60 * 1000, // 30분 (캐시 보관 시간)
           retry: 1, // Only retry once
           refetchOnWindowFocus: false, // Disable refetch on window focus
         },

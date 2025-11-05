@@ -172,10 +172,16 @@ export async function GET(request: NextRequest) {
       teamQuestionStats: teamQuestionStats || []
     };
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       success: true,
       data: dashboardData
     });
+
+    // Pro 플랜 최적화: Edge 캐싱 헤더 추가 (읽기 전용 API)
+    // 5분간 캐시, 10분간 stale-while-revalidate 허용
+    response.headers.set('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=600');
+
+    return response;
 
   } catch (error) {
     console.error('❌ 대시보드 통계 API 오류:', error);

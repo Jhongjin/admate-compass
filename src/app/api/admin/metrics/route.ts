@@ -83,7 +83,13 @@ export async function GET(request: Request) {
       maxEmbMs: max(arr.map(x=>Number(x.emb_ms||0))),
     }));
 
-    return NextResponse.json({ data: rows, overall, vendorAggregates }, { status: 200 });
+    const response = NextResponse.json({ data: rows, overall, vendorAggregates }, { status: 200 });
+
+    // Pro 플랜 최적화: Edge 캐싱 헤더 추가 (읽기 전용 API)
+    // 5분간 캐시, 10분간 stale-while-revalidate 허용
+    response.headers.set('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=600');
+
+    return response;
   } catch (e: any) {
     return NextResponse.json({ error: e?.message || 'unknown' }, { status: 500 });
   }
