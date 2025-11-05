@@ -191,7 +191,14 @@ async function processQueue() {
     let parseMs = 0;
     const storage = job?.payload?.storage as { bucket: string; path: string; contentType?: string; size?: number } | undefined;
     const fileName = (job?.payload?.fileName as string) || job.document_id;
+    const fileSize = storage?.size || (job?.payload?.fileSize as number) || 0;
     const isReprocess = job?.payload?.reprocess === true;
+    
+    // 큰 파일 처리 시작 로그
+    if (fileSize > 10 * 1024 * 1024) {
+      const fileSizeMB = (fileSize / (1024 * 1024)).toFixed(2);
+      console.log(`📦 큰 파일 처리 시작: ${fileName} (${fileSizeMB}MB)`);
+    }
 
     if ((job.job_type === 'PDF_PARSE' || job.job_type === 'DOCX_PARSE')) {
       // 재처리인 경우: Storage 파일이 없으면 문서의 content 필드에서 텍스트 가져오기
@@ -234,20 +241,35 @@ async function processQueue() {
         }
         // 저장소에서 파일 다운로드
         const dlStart = Date.now();
+        console.log(`⬇️ Storage에서 파일 다운로드 시작: ${storage.bucket}/${storage.path}`);
         const fileBuffer = await downloadFromStorage(supabase, storage.bucket, storage.path);
         dlMs = Date.now() - dlStart;
+        
         if (!fileBuffer || fileBuffer.length === 0) {
           throw new Error(`downloaded empty file from storage: ${storage.bucket}/${storage.path}`);
         }
+        
+        const downloadedSizeMB = (fileBuffer.length / (1024 * 1024)).toFixed(2);
+        console.log(`✅ 파일 다운로드 완료: ${downloadedSizeMB}MB (${dlMs}ms)`);
+        
+        // 큰 파일 처리 시 중간 상태 업데이트 (타임아웃 방지)
+        if (fileBuffer.length > 10 * 1024 * 1024) {
+          console.log(`📄 큰 파일 텍스트 추출 시작... (${downloadedSizeMB}MB)`);
+        }
+        
         if (job.job_type === 'PDF_PARSE') {
           const p0 = Date.now();
           extractedText = await processPdfBuffer(fileBuffer);
           parseMs = Date.now() - p0;
+          const textLengthKB = (extractedText.length / 1024).toFixed(2);
+          console.log(`✅ PDF 텍스트 추출 완료: ${textLengthKB}KB (${parseMs}ms)`);
         }
         if (job.job_type === 'DOCX_PARSE') {
           const p0 = Date.now();
           extractedText = await processDocxBuffer(fileBuffer);
           parseMs = Date.now() - p0;
+          const textLengthKB = (extractedText.length / 1024).toFixed(2);
+          console.log(`✅ DOCX 텍스트 추출 완료: ${textLengthKB}KB (${parseMs}ms)`);
         }
       }
 

@@ -239,10 +239,34 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
       setUploadStep('uploading');
       setUploadProgress(0);
       
-      // 클라이언트에서 파일 크기 확인 (Vercel 함수 페이로드 제한: 4.5MB)
-      // 안전하게 5MB 이상이면 Storage에 직접 업로드 후 큐 등록
-      const FILE_SIZE_LIMIT = 5 * 1024 * 1024; // 5MB
+      // 파일 크기 제한 설정 (최대 50MB)
+      const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50MB
+      const FILE_SIZE_LIMIT = 5 * 1024 * 1024; // 5MB 이상은 큐로 처리
       
+      // 파일 크기 초과 검증
+      if (uploadFile.size > MAX_FILE_SIZE) {
+        const fileSizeMB = (uploadFile.size / (1024 * 1024)).toFixed(2);
+        const maxSizeMB = (MAX_FILE_SIZE / (1024 * 1024)).toFixed(0);
+        toast.error('파일 크기 초과', {
+          description: `파일 크기가 ${fileSizeMB}MB입니다. 최대 ${maxSizeMB}MB까지 업로드 가능합니다.`,
+          duration: 5000,
+        });
+        setUploading(false);
+        setUploadStep('idle');
+        setUploadProgress(0);
+        return;
+      }
+      
+      // 큰 파일 경고 (20MB 이상)
+      if (uploadFile.size > 20 * 1024 * 1024) {
+        const fileSizeMB = (uploadFile.size / (1024 * 1024)).toFixed(2);
+        toast.warning('큰 파일 감지', {
+          description: `파일 크기가 ${fileSizeMB}MB입니다. 처리에 시간이 오래 걸릴 수 있습니다.`,
+          duration: 5000,
+        });
+      }
+      
+      // 5MB 이상이면 Storage에 직접 업로드 후 큐 등록
       if (uploadFile.size > FILE_SIZE_LIMIT) {
         console.log('📋 대용량 파일 감지 - Storage에 직접 업로드 후 큐 등록:', {
           fileName: uploadFile.name,
