@@ -289,28 +289,88 @@ async function processQueue() {
             throw new Error(`재처리: Storage 파일 다운로드 실패. 원본 파일을 다시 업로드해주세요. (${downloadError instanceof Error ? downloadError.message : String(downloadError)})`);
           }
         } else {
-          // Storage에서 파일을 찾지 못한 경우 documents.content에서 텍스트 가져오기
-          console.log('🔄 재처리 모드: Storage 파일 없음, documents.content에서 텍스트 가져오기');
+          // Storage에서 파일을 찾지 못한 경우
+          console.log('🔄 재처리 모드: Storage 파일 없음');
           
-          // content가 BINARY_DATA로 시작하면 재처리 불가
+          // content가 BINARY_DATA로 시작하는 경우
           if (docData.content && docData.content.startsWith('BINARY_DATA:')) {
-            throw new Error('재처리: 바이너리 데이터는 재처리할 수 없습니다. Storage에서 원본 파일을 찾을 수 없습니다. 원본 파일을 다시 업로드해주세요.');
+            // Storage에서 파일을 다시 한 번 더 시도 (다른 경로 검색)
+            console.log('🔍 BINARY_DATA 감지 - Storage 전체 검색 시도');
+            
+            try {
+              // Storage 루트에서 파일 검색 (문서 ID 포함 파일명)
+              const { data: allFiles, error: searchError } = await supabase.storage
+                .from(STORAGE_BUCKET)
+                .list('', { 
+                  limit: 100,
+                  search: job.document_id
+                });
+              
+              if (!searchError && allFiles && allFiles.length > 0) {
+                // 문서 ID가 포함된 파일 찾기
+                const matchingFile = allFiles.find(f => 
+                  f.name.includes(job.document_id) && 
+                  (f.name.toLowerCase().endsWith('.pdf') || f.name.toLowerCase().endsWith('.docx'))
+                );
+                
+                if (matchingFile) {
+                  foundFile = {
+                    path: matchingFile.name,
+                    size: matchingFile.metadata?.size || 0
+                  };
+                  console.log(`✅ Storage 전체 검색으로 파일 발견: ${foundFile.path}`);
+                  
+                  // 파일 다운로드 및 텍스트 추출
+                  const dlStart = Date.now();
+                  const fileBuffer = await downloadFromStorage(supabase, STORAGE_BUCKET, foundFile.path);
+                  dlMs = Date.now() - dlStart;
+                  
+                  if (fileBuffer && fileBuffer.length > 0) {
+                    const downloadedSizeMB = (fileBuffer.length / (1024 * 1024)).toFixed(2);
+                    console.log(`✅ 재처리: 파일 다운로드 완료: ${downloadedSizeMB}MB (${dlMs}ms)`);
+                    
+                    if (job.job_type === 'PDF_PARSE') {
+                      const p0 = Date.now();
+                      extractedText = await processPdfBuffer(fileBuffer);
+                      parseMs = Date.now() - p0;
+                      const textLengthKB = (extractedText.length / 1024).toFixed(2);
+                      console.log(`✅ 재처리: PDF 텍스트 추출 완료: ${textLengthKB}KB (${parseMs}ms)`);
+                    } else if (job.job_type === 'DOCX_PARSE') {
+                      const p0 = Date.now();
+                      extractedText = await processDocxBuffer(fileBuffer);
+                      parseMs = Date.now() - p0;
+                      const textLengthKB = (extractedText.length / 1024).toFixed(2);
+                      console.log(`✅ 재처리: DOCX 텍스트 추출 완료: ${textLengthKB}KB (${parseMs}ms)`);
+                    }
+                  }
+                }
+              }
+            } catch (searchError) {
+              console.error('❌ Storage 전체 검색 실패:', searchError);
+            }
+            
+            // 여전히 파일을 찾지 못한 경우
+            if (!extractedText || extractedText.length === 0) {
+              throw new Error('재처리: 바이너리 데이터는 재처리할 수 없습니다. Storage에서 원본 파일을 찾을 수 없습니다. 원본 파일을 다시 업로드해주세요.');
+            }
+          } else {
+            // BINARY_DATA가 아닌 경우 documents.content에서 텍스트 가져오기
+            console.log('🔄 재처리 모드: documents.content에서 텍스트 가져오기');
+            extractedText = docData.content || '';
+            console.log(`✅ 재처리: documents.content에서 텍스트 가져옴 (${extractedText.length}자)`);
+            
+            // 재처리 모드에서 텍스트가 비어있으면 에러
+            const cleanedLength = (extractedText || '').replace(/\s+/g, ' ').trim().length;
+            if (cleanedLength === 0) {
+              throw new Error('재처리: documents.content에 텍스트가 없고 Storage에서도 파일을 찾을 수 없습니다. 원본 파일을 다시 업로드해주세요.');
+            }
+            
+            if (cleanedLength < 100) {
+              console.warn(`⚠️ 재처리: 텍스트가 매우 짧습니다 (${cleanedLength}자). 청킹 결과가 제한적일 수 있습니다.`);
+            }
+            
+            // 재처리 모드에서는 dlMs와 parseMs는 0으로 유지
           }
-          
-          extractedText = docData.content || '';
-          console.log(`✅ 재처리: documents.content에서 텍스트 가져옴 (${extractedText.length}자)`);
-          
-          // 재처리 모드에서 텍스트가 비어있으면 에러
-          const cleanedLength = (extractedText || '').replace(/\s+/g, ' ').trim().length;
-          if (cleanedLength === 0) {
-            throw new Error('재처리: documents.content에 텍스트가 없고 Storage에서도 파일을 찾을 수 없습니다. 원본 파일을 다시 업로드해주세요.');
-          }
-          
-          if (cleanedLength < 100) {
-            console.warn(`⚠️ 재처리: 텍스트가 매우 짧습니다 (${cleanedLength}자). 청킹 결과가 제한적일 수 있습니다.`);
-          }
-          
-          // 재처리 모드에서는 dlMs와 parseMs는 0으로 유지
         }
       } else {
         // 일반 처리: Storage에서 파일 다운로드
