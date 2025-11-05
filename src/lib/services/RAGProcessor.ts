@@ -704,7 +704,11 @@ export class RAGProcessor {
       }
 
       // 1. 문서 청킹 (간단한 구현)
-      console.log('📄 문서 청킹 시작...');
+      const chunkingStartMs = Date.now();
+      console.log('📄 문서 청킹 시작...', {
+        contentLength: document.content.length,
+        contentLengthKB: (document.content.length / 1024).toFixed(2)
+      });
       
       // PDF 바이너리 데이터인 경우 텍스트 추출 없이 청킹 건너뛰기 (하지만 문서는 저장)
       if (document.content && document.content.startsWith('BINARY_DATA:')) {
@@ -774,7 +778,12 @@ export class RAGProcessor {
       };
       
       const chunks = await this.simpleChunkDocument(processedDocument);
-      console.log('✅ 문서 청킹 완료:', chunks.length, '개 청크');
+      const chunkingMs = Date.now() - chunkingStartMs;
+      console.log('✅ 문서 청킹 완료:', {
+        chunkCount: chunks.length,
+        time: `${chunkingMs}ms (${(chunkingMs / 1000).toFixed(1)}초)`,
+        avgChunkSize: chunks.length > 0 ? Math.round(chunks.reduce((sum, c) => sum + c.content.length, 0) / chunks.length) : 0
+      });
 
       if (chunks.length === 0) {
         console.warn('⚠️ 청킹 결과가 비어있습니다.');
@@ -786,7 +795,8 @@ export class RAGProcessor {
       }
 
       // 2. 임베딩 생성 (큰 파일의 경우 배치 처리)
-      console.log('🔮 임베딩 생성 시작...');
+      const embeddingStartMs = Date.now();
+      console.log('🔮 임베딩 생성 시작...', { chunkCount: chunks.length });
       const isLargeFile = document.file_size > 10 * 1024 * 1024 || chunks.length > 1000;
       const chunksWithEmbeddings: ChunkData[] = [];
       
@@ -812,7 +822,8 @@ export class RAGProcessor {
           }
         }
         
-        console.log(`✅ 임베딩 생성 완료: ${chunksWithEmbeddings.length}개 청크 (배치 처리)`);
+        const embeddingMs = Date.now() - embeddingStartMs;
+        console.log(`✅ 임베딩 생성 완료: ${chunksWithEmbeddings.length}개 청크 (배치 처리, ${(embeddingMs / 1000).toFixed(1)}초)`);
       } else {
         // 일반 파일은 한 번에 처리
         const mapped = chunks.map(chunk => ({
@@ -820,16 +831,22 @@ export class RAGProcessor {
           embedding: this.generateSimpleEmbedding(chunk.content),
         }));
         chunksWithEmbeddings.push(...mapped);
-        console.log('✅ 임베딩 생성 완료:', chunksWithEmbeddings.length, '개 청크');
+        const embeddingMs = Date.now() - embeddingStartMs;
+        console.log('✅ 임베딩 생성 완료:', {
+          chunkCount: chunksWithEmbeddings.length,
+          time: `${embeddingMs}ms (${(embeddingMs / 1000).toFixed(1)}초)`
+        });
       }
 
       // 3. Supabase에 저장 (큰 파일의 경우 청크 저장도 배치 처리)
+      const savingStartMs = Date.now();
       const supabase = await this.getSupabaseClient();
       if (supabase) {
         try {
           // 문서 저장
           await this.saveDocumentToDatabase(document, originalBinaryData);
-          console.log('✅ 문서 데이터베이스 저장 완료');
+          const docSaveMs = Date.now() - savingStartMs;
+          console.log('✅ 문서 데이터베이스 저장 완료', { time: `${docSaveMs}ms` });
 
           // 큰 파일의 경우 청크 저장도 더 작은 배치로 처리
           let savedChunkCount = 0;
@@ -849,11 +866,20 @@ export class RAGProcessor {
                 await new Promise(resolve => setTimeout(resolve, 50));
               }
             }
-            console.log('✅ 청크 데이터베이스 저장 완료:', savedChunkCount, '개 청크 (배치 저장)');
+            const savingMs = Date.now() - savingStartMs;
+            console.log('✅ 청크 데이터베이스 저장 완료:', {
+              chunkCount: savedChunkCount,
+              time: `${savingMs}ms (${(savingMs / 1000).toFixed(1)}초)`,
+              batchSaved: true
+            });
           } else {
             // 일반 파일은 한 번에 저장
             savedChunkCount = await this.saveChunksToDatabase(chunksWithEmbeddings);
-            console.log('✅ 청크 데이터베이스 저장 완료:', savedChunkCount, '개 청크');
+            const savingMs = Date.now() - savingStartMs;
+            console.log('✅ 청크 데이터베이스 저장 완료:', {
+              chunkCount: savedChunkCount,
+              time: `${savingMs}ms (${(savingMs / 1000).toFixed(1)}초)`
+            });
           }
           
           // 저장된 청크 개수가 생성된 청크 개수와 다른 경우 경고
@@ -885,10 +911,13 @@ export class RAGProcessor {
           console.warn('⚠️ 저장된 청크 개수 확인 실패:', countError);
         }
       }
-
+      
+      // 전체 처리 시간 요약
+      const totalProcessingMs = Date.now() - processDocumentStartMs;
       console.log('✅ RAG 문서 처리 완료:', {
         documentId: document.id,
         chunkCount: actualSavedChunkCount,
+        totalTime: `${(totalProcessingMs / 1000).toFixed(1)}초 (${(totalProcessingMs / 60000).toFixed(2)}분)`,
         success: true
       });
 

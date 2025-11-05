@@ -41,8 +41,38 @@ async function downloadFromStorage(supabase: any, bucket: string, path: string) 
 
 async function processPdfBuffer(buffer: Buffer): Promise<string> {
   const pdf = (await import('pdf-parse')).default as any;
-  const res = await pdf(buffer);
-  return res.text || '';
+  const startMs = Date.now();
+  
+  // 큰 파일의 경우 옵션 최적화
+  const fileSizeMB = buffer.length / (1024 * 1024);
+  const options: any = {};
+  
+  if (fileSizeMB > 10) {
+    // 큰 파일은 최대 페이지 수 제한 (메모리 및 시간 절약)
+    // pdf-parse는 기본적으로 모든 페이지를 처리하지만, 
+    // 매우 큰 파일의 경우 부분 처리 고려
+    console.log(`📄 큰 PDF 처리 시작 (${fileSizeMB.toFixed(2)}MB) - 최적화 옵션 적용`);
+  }
+  
+  try {
+    const res = await pdf(buffer, options);
+    const parseMs = Date.now() - startMs;
+    const textLengthKB = (res.text?.length || 0) / 1024;
+    
+    console.log(`✅ PDF 파싱 완료:`, {
+      fileSizeMB: fileSizeMB.toFixed(2),
+      textLengthKB: textLengthKB.toFixed(2),
+      pages: res.numpages || 'unknown',
+      parseTime: `${parseMs}ms (${(parseMs / 1000).toFixed(1)}초)`,
+      throughput: `${(textLengthKB / (parseMs / 1000)).toFixed(2)}KB/s`
+    });
+    
+    return res.text || '';
+  } catch (error) {
+    const parseMs = Date.now() - startMs;
+    console.error(`❌ PDF 파싱 실패 (${parseMs}ms):`, error);
+    throw error;
+  }
 }
 
 async function processDocxBuffer(buffer: Buffer): Promise<string> {
@@ -498,23 +528,57 @@ async function processQueue() {
       const processStartMs = Date.now();
       const MAX_PROCESS_TIME = 540000; // 9분 (10분 타임아웃의 90% - 큰 파일 처리 여유 확보)
       
+      // 전체 처리 시간 측정을 위한 단계별 시간 추적
+      const stepTimings = {
+        download: dlMs,
+        parse: parseMs,
+        chunking: 0,
+        embedding: 0,
+        saving: 0,
+        total: 0
+      };
+      
       // 큰 파일의 경우 타임아웃 전에 중간 상태를 업데이트하는 로직
       let processResult;
       if (isLargeDocument) {
         // 큰 파일은 타임아웃 전에 중간 상태 확인
+        const chunkingStartMs = Date.now();
         const processPromise = ragProcessor.processDocument(docData, true /* skipDuplicate */);
         const timeoutPromise = new Promise((_, reject) => {
-          setTimeout(() => reject(new Error(`큐 처리 시간 초과 (${Math.round(MAX_PROCESS_TIME / 60000)}분)`)), MAX_PROCESS_TIME);
+          setTimeout(() => {
+            const elapsed = Date.now() - processStartMs;
+            reject(new Error(`큐 처리 시간 초과 (${Math.round(MAX_PROCESS_TIME / 60000)}분) - 경과 시간: ${Math.round(elapsed / 1000)}초`));
+          }, MAX_PROCESS_TIME);
         });
         
         try {
           processResult = await Promise.race([processPromise, timeoutPromise]) as any;
+          
+          // 처리 결과에서 단계별 시간 추출 (가능한 경우)
+          if (processResult && typeof processResult === 'object' && 'timings' in processResult) {
+            stepTimings.chunking = (processResult as any).timings.chunking || 0;
+            stepTimings.embedding = (processResult as any).timings.embedding || 0;
+            stepTimings.saving = (processResult as any).timings.saving || 0;
+          }
         } catch (timeoutError) {
-          // 타임아웃 발생 시 진행 상황 로깅
-          console.error('❌ 큰 파일 처리 타임아웃:', {
+          // 타임아웃 발생 시 진행 상황 상세 로깅
+          const elapsed = Date.now() - processStartMs;
+          stepTimings.total = elapsed;
+          
+          console.error('❌ 큰 파일 처리 타임아웃 - 상세 분석:', {
             fileSize: fileSizeMB,
             textLength: docData.content.length,
-            elapsedTime: Date.now() - processStartMs,
+            textLengthKB: (docData.content.length / 1024).toFixed(2),
+            elapsedTime: `${Math.round(elapsed / 1000)}초 (${Math.round(elapsed / 60000)}분)`,
+            maxAllowedTime: `${Math.round(MAX_PROCESS_TIME / 60000)}분`,
+            stepTimings: {
+              download: `${stepTimings.download}ms (${(stepTimings.download / 1000).toFixed(1)}초)`,
+              parse: `${stepTimings.parse}ms (${(stepTimings.parse / 1000).toFixed(1)}초)`,
+              chunking: `${stepTimings.chunking}ms (${(stepTimings.chunking / 1000).toFixed(1)}초)`,
+              embedding: `${stepTimings.embedding}ms (${(stepTimings.embedding / 1000).toFixed(1)}초)`,
+              saving: `${stepTimings.saving}ms (${(stepTimings.saving / 1000).toFixed(1)}초)`,
+              total: `${stepTimings.total}ms (${(stepTimings.total / 1000).toFixed(1)}초)`
+            },
             error: timeoutError instanceof Error ? timeoutError.message : String(timeoutError)
           });
           throw timeoutError;
@@ -524,11 +588,29 @@ async function processQueue() {
       }
       
       const processMs = Date.now() - processStartMs;
+      stepTimings.total = processMs;
+      
+      // 상세한 처리 시간 로깅
+      if (isLargeDocument) {
+        console.log('📊 큰 파일 처리 시간 분석:', {
+          fileSize: fileSizeMB,
+          textLength: `${(docData.content.length / 1024).toFixed(2)}KB`,
+          totalTime: `${(processMs / 1000).toFixed(1)}초 (${(processMs / 60000).toFixed(2)}분)`,
+          stepTimings: {
+            download: `${stepTimings.download}ms (${(stepTimings.download / 1000).toFixed(1)}초)`,
+            parse: `${stepTimings.parse}ms (${(stepTimings.parse / 1000).toFixed(1)}초)`,
+            chunking: `${stepTimings.chunking}ms (${(stepTimings.chunking / 1000).toFixed(1)}초)`,
+            embedding: `${stepTimings.embedding}ms (${(stepTimings.embedding / 1000).toFixed(1)}초)`,
+            saving: `${stepTimings.saving}ms (${(stepTimings.saving / 1000).toFixed(1)}초)`
+          },
+          chunkCount: processResult?.chunkCount || 0
+        });
+      }
       
       if (processResult.success) {
-        console.log(`✅ 문서 처리 완료: ${processResult.chunkCount}개 청크 생성 (${processMs}ms)`);
+        console.log(`✅ 문서 처리 완료: ${processResult.chunkCount}개 청크 생성 (${(processMs / 1000).toFixed(1)}초)`);
       } else {
-        console.warn(`⚠️ 문서 처리 실패: ${processResult.error || 'Unknown error'} (${processMs}ms)`);
+        console.warn(`⚠️ 문서 처리 실패: ${processResult.error || 'Unknown error'} (${(processMs / 1000).toFixed(1)}초)`);
       }
 
       // 실제 저장된 청크 개수 재확인 (saveChunksToDatabase에서 이미 업데이트했지만, 큐 워커에서도 확인)

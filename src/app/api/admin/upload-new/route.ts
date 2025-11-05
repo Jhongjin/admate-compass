@@ -290,8 +290,8 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // 파일 크기 검사 (30MB 제한)
-      const maxFileSize = parseInt(process.env.MAX_FILE_SIZE || '31457280'); // 30MB
+      // 파일 크기 검사 (20MB 제한 - 더 안정적인 처리)
+      const maxFileSize = parseInt(process.env.MAX_FILE_SIZE || '20971520'); // 20MB (30MB → 20MB로 조정)
       if (file.size > maxFileSize) {
         console.error('❌ 파일 크기 초과:', {
           fileName: file.name,
@@ -301,7 +301,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json(
           {
             success: false,
-            error: `파일 크기가 ${Math.round(maxFileSize / 1024 / 1024)}MB를 초과합니다. 최대 30MB까지 업로드 가능합니다.`,
+            error: `파일 크기가 ${Math.round(maxFileSize / 1024 / 1024)}MB를 초과합니다. 최대 20MB까지 업로드 가능합니다. (큰 파일은 처리 시간이 오래 걸릴 수 있습니다)`,
             fileSize: file.size,
             maxSize: maxFileSize
           },
@@ -752,7 +752,7 @@ export async function POST(request: NextRequest) {
         return NextResponse.json(
           { 
             success: false, 
-            error: `파일 크기가 ${Math.round(maxFileSize / 1024 / 1024)}MB를 초과합니다. 최대 30MB까지 업로드 가능합니다.`,
+            error: `파일 크기가 ${Math.round(maxFileSize / 1024 / 1024)}MB를 초과합니다. 최대 20MB까지 업로드 가능합니다. (큰 파일은 처리 시간이 오래 걸릴 수 있습니다)`,
             fileSize: fileSize,
             maxSize: maxFileSize
           },

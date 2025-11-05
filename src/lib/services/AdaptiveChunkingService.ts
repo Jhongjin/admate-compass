@@ -257,12 +257,22 @@ export class AdaptiveChunkingService {
     const chunks: string[] = [];
     let start = 0;
     let iterationCount = 0;
-    // 큰 파일 처리: 최대 청크 수 제한 증가 (10MB 이상 파일 대응)
-    const maxChunks = strategy.maxChunks || (content.length > 1000000 ? 2000 : 500); // 1MB 이상이면 2000개까지
+    // 큰 파일 처리: 최대 청크 수 제한 증가 및 청크 크기 최적화
+    // 매우 큰 파일은 더 큰 청크로 분할하여 청크 수를 줄임
+    const isVeryLarge = content.length > 2000000; // 2MB 이상
+    let adjustedChunkSize = strategy.chunkSize;
+    
+    if (isVeryLarge) {
+      // 매우 큰 파일은 청크 크기를 50% 증가 (청크 수 감소)
+      adjustedChunkSize = Math.floor(strategy.chunkSize * 1.5);
+      console.log(`📏 매우 큰 파일 감지 - 청크 크기 조정: ${strategy.chunkSize} → ${adjustedChunkSize}자`);
+    }
+    
+    const maxChunks = strategy.maxChunks || (content.length > 1000000 ? 1000 : 500); // 1MB 이상이면 1000개까지 (2000 → 1000으로 감소)
     const maxIterations = maxChunks * 2;
 
     while (start < content.length && iterationCount < maxIterations) {
-      const end = Math.min(start + strategy.chunkSize, content.length);
+      const end = Math.min(start + adjustedChunkSize, content.length);
       let chunk = content.slice(start, end);
 
       // 의미적 경계 찾기 (문단 > 문장 > 단어)
@@ -285,11 +295,11 @@ export class AdaptiveChunkingService {
 
         // 우선순위에 따라 자르기
         let cutPoint = -1;
-        if (lastParagraphEnd > strategy.chunkSize * 0.3) {
+        if (lastParagraphEnd > adjustedChunkSize * 0.3) {
           cutPoint = lastParagraphEnd;
-        } else if (lastSentenceEnd > strategy.chunkSize * 0.5) {
+        } else if (lastSentenceEnd > adjustedChunkSize * 0.5) {
           cutPoint = lastSentenceEnd;
-        } else if (lastLineEnd > strategy.chunkSize * 0.7) {
+        } else if (lastLineEnd > adjustedChunkSize * 0.7) {
           cutPoint = lastLineEnd;
         }
 
