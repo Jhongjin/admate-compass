@@ -387,12 +387,17 @@ export class RAGProcessor {
         embedding: chunk.embedding,
       }));
 
-      // 배치 처리로 청크 저장 (한 번에 100개씩)
-      const batchSize = 100;
+      // 배치 처리로 청크 저장 (큰 파일의 경우 더 작은 배치 사용)
+      const isLargeBatch = chunkInserts.length > 500;
+      const batchSize = isLargeBatch ? 50 : 100; // 큰 배치는 50개씩
       let savedCount = 0;
+      
+      console.log(`💾 청크 저장 시작: ${chunkInserts.length}개 청크, 배치 크기: ${batchSize}`);
       
       for (let i = 0; i < chunkInserts.length; i += batchSize) {
         const batch = chunkInserts.slice(i, i + batchSize);
+        const batchStartMs = Date.now();
+        
         console.log(`💾 청크 배치 저장 중: ${i + 1}-${Math.min(i + batchSize, chunkInserts.length)}/${chunkInserts.length}`);
         
         const { error } = await supabase
@@ -405,11 +410,12 @@ export class RAGProcessor {
         }
         
         savedCount += batch.length;
-        console.log(`✅ 청크 배치 저장 완료: ${savedCount}/${chunkInserts.length}`);
+        const batchMs = Date.now() - batchStartMs;
+        console.log(`✅ 청크 배치 저장 완료: ${savedCount}/${chunkInserts.length} (${batchMs}ms)`);
         
-        // 배치 간 짧은 대기 (데이터베이스 부하 방지)
+        // 배치 간 짧은 대기 (데이터베이스 부하 방지, 큰 배치는 더 긴 대기)
         if (i + batchSize < chunkInserts.length) {
-          await new Promise(resolve => setTimeout(resolve, 100));
+          await new Promise(resolve => setTimeout(resolve, isLargeBatch ? 200 : 100));
         }
       }
 
