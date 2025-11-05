@@ -746,8 +746,8 @@ export async function POST(request: NextRequest) {
         );
       }
 
-      // 파일 크기 검사 (30MB 제한)
-      const maxFileSize = parseInt(process.env.MAX_FILE_SIZE || '31457280'); // 30MB
+      // 파일 크기 검사 (20MB 제한 - 더 안정적인 처리)
+      const maxFileSize = parseInt(process.env.MAX_FILE_SIZE || '20971520'); // 20MB (30MB → 20MB로 조정)
       if (fileSize > maxFileSize) {
         return NextResponse.json(
           { 
