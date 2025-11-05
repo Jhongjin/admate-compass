@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic';
 
 type EnqueueBody = {
   documentId: string;
-  jobType: 'OCR' | 'PDF_PARSE' | 'DOCX_PARSE' | 'CRAWL' | 'EMBEDDING';
+  jobType: 'OCR' | 'PDF_PARSE' | 'DOCX_PARSE' | 'CRAWL' | 'EMBEDDING' | 'CHUNK_PROCESS';
   priority?: number;
   payload?: Record<string, unknown>;
 };
