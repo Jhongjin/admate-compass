@@ -682,6 +682,7 @@ export class RAGProcessor {
     success: boolean;
     error?: string;
   }> {
+    const processDocumentStartMs = Date.now();
     try {
 
       // 0. 중복 검사 (skipDuplicate가 false인 경우에만)
@@ -916,7 +917,9 @@ export class RAGProcessor {
       const totalProcessingMs = Date.now() - processDocumentStartMs;
       console.log('✅ RAG 문서 처리 완료:', {
         documentId: document.id,
+        title: document.title.substring(0, 50),
         chunkCount: actualSavedChunkCount,
+        fileSize: `${(document.file_size / (1024 * 1024)).toFixed(2)}MB`,
         totalTime: `${(totalProcessingMs / 1000).toFixed(1)}초 (${(totalProcessingMs / 60000).toFixed(2)}분)`,
         success: true
       });
