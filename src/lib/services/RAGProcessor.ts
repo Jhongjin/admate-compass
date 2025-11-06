@@ -285,23 +285,47 @@ export class RAGProcessor {
         console.log('💡 해결책: Supabase Storage 또는 AWS S3 사용 권장');
       }
       
+      // 먼저 기존 문서가 있는지 확인
+      const { data: existingDoc, error: checkError } = await supabase
+        .from('documents')
+        .select('id')
+        .eq('id', document.id)
+        .maybeSingle();
+
+      if (checkError && checkError.code !== 'PGRST116') { // PGRST116은 "no rows returned" 에러 (정상)
+        console.error('❌ 문서 존재 확인 오류:', checkError);
+        throw checkError;
+      }
+
+      const isUpdate = !!existingDoc;
+      const documentData = {
+        id: document.id,
+        title: document.title,
+        content: contentForStorage,
+        type: document.type,
+        status: 'processing',
+        chunk_count: 0,
+        file_size: document.file_size,
+        file_type: document.file_type,
+        url: document.url || null,
+        source_vendor: document.source_vendor || 'META', // 벤더 정보 저장 (기본값: META)
+        updated_at: document.updated_at,
+      };
+
+      // 기존 문서가 없으면 created_at 포함, 있으면 제외 (업데이트 시 created_at은 변경하지 않음)
+      if (!isUpdate) {
+        (documentData as any).created_at = document.created_at;
+      }
+
       const { error } = await Promise.race([
-        supabase
-          .from('documents')
-          .insert({
-            id: document.id,
-            title: document.title,
-            content: contentForStorage,
-            type: document.type,
-            status: 'processing',
-            chunk_count: 0,
-            file_size: document.file_size,
-            file_type: document.file_type,
-            url: document.url || null,
-            source_vendor: document.source_vendor || 'META', // 벤더 정보 저장 (기본값: META)
-            created_at: document.created_at,
-            updated_at: document.updated_at,
-          }),
+        isUpdate
+          ? supabase
+              .from('documents')
+              .update(documentData)
+              .eq('id', document.id)
+          : supabase
+              .from('documents')
+              .insert(documentData),
         new Promise((_, reject) => 
           setTimeout(() => reject(new Error('Database operation timeout')), timeoutMs)
         )
@@ -314,12 +338,14 @@ export class RAGProcessor {
           title: document.title,
           errorCode: error.code,
           errorMessage: error.message,
-          errorDetails: error.details
+          errorDetails: error.details,
+          isUpdate,
+          existingDoc: !!existingDoc
         });
         throw error;
       }
 
-      console.log('✅ 문서 저장 완료:', document.title);
+      console.log(`✅ 문서 ${isUpdate ? '업데이트' : '저장'} 완료:`, document.title);
 
       // document_metadata 테이블에도 저장
       const fileType = document.file_type?.split('/')[1] || 'pdf';
@@ -360,14 +386,26 @@ export class RAGProcessor {
         });
       }
       
-      const { error: metadataError } = await supabase
+      // document_metadata도 UPSERT 방식으로 처리
+      const { data: existingMetadata } = await supabase
         .from('document_metadata')
-        .insert(metadataRecord);
+        .select('id')
+        .eq('id', document.id)
+        .maybeSingle();
+
+      const { error: metadataError } = existingMetadata
+        ? await supabase
+            .from('document_metadata')
+            .update(metadataRecord)
+            .eq('id', document.id)
+        : await supabase
+            .from('document_metadata')
+            .insert(metadataRecord);
 
       if (metadataError) {
         console.error('❌ 문서 메타데이터 저장 오류:', metadataError);
       } else {
-        console.log('✅ 문서 메타데이터 저장 완료');
+        console.log(`✅ 문서 메타데이터 ${existingMetadata ? '업데이트' : '저장'} 완료`);
       }
 
     } catch (error) {

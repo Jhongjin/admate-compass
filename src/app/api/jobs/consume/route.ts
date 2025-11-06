@@ -418,10 +418,17 @@ async function processQueue() {
               console.log(`✅ 재처리: PDF 텍스트 추출 완료: ${textLengthKB}KB (${parseMs}ms)`);
             } else if (job.job_type === 'DOCX_PARSE') {
               const p0 = Date.now();
-              extractedText = await processDocxBuffer(fileBuffer);
-              parseMs = Date.now() - p0;
-              const textLengthKB = (extractedText.length / 1024).toFixed(2);
-              console.log(`✅ 재처리: DOCX 텍스트 추출 완료: ${textLengthKB}KB (${parseMs}ms)`);
+              try {
+                extractedText = await processDocxBuffer(fileBuffer);
+                parseMs = Date.now() - p0;
+                const textLengthKB = (extractedText.length / 1024).toFixed(2);
+                console.log(`✅ 재처리: DOCX 텍스트 추출 완료: ${textLengthKB}KB (${parseMs}ms)`);
+              } catch (parseError) {
+                parseMs = Date.now() - p0;
+                const errorMsg = parseError instanceof Error ? parseError.message : String(parseError);
+                console.error(`❌ 재처리: DOCX 파싱 실패 (${parseMs}ms):`, errorMsg);
+                throw new Error(`재처리: DOCX 파일 파싱 실패: 파일이 손상되었거나 유효한 DOCX 파일이 아닙니다. (${errorMsg})`);
+              }
             }
           } catch (downloadError) {
             console.error('❌ 재처리: Storage 다운로드 실패:', downloadError);
@@ -477,10 +484,17 @@ async function processQueue() {
                       console.log(`✅ 재처리: PDF 텍스트 추출 완료: ${textLengthKB}KB (${parseMs}ms)`);
                     } else if (job.job_type === 'DOCX_PARSE') {
                       const p0 = Date.now();
-                      extractedText = await processDocxBuffer(fileBuffer);
-                      parseMs = Date.now() - p0;
-                      const textLengthKB = (extractedText.length / 1024).toFixed(2);
-                      console.log(`✅ 재처리: DOCX 텍스트 추출 완료: ${textLengthKB}KB (${parseMs}ms)`);
+                      try {
+                        extractedText = await processDocxBuffer(fileBuffer);
+                        parseMs = Date.now() - p0;
+                        const textLengthKB = (extractedText.length / 1024).toFixed(2);
+                        console.log(`✅ 재처리: DOCX 텍스트 추출 완료: ${textLengthKB}KB (${parseMs}ms)`);
+                      } catch (parseError) {
+                        parseMs = Date.now() - p0;
+                        const errorMsg = parseError instanceof Error ? parseError.message : String(parseError);
+                        console.error(`❌ 재처리: DOCX 파싱 실패 (${parseMs}ms):`, errorMsg);
+                        throw new Error(`재처리: DOCX 파일 파싱 실패: 파일이 손상되었거나 유효한 DOCX 파일이 아닙니다. (${errorMsg})`);
+                      }
                     }
                   }
                 }
@@ -544,15 +558,26 @@ async function processQueue() {
         }
         if (job.job_type === 'DOCX_PARSE') {
           const p0 = Date.now();
-          extractedText = await processDocxBuffer(fileBuffer);
-          parseMs = Date.now() - p0;
-          const textLengthKB = (extractedText.length / 1024).toFixed(2);
-          console.log(`✅ DOCX 텍스트 추출 완료: ${textLengthKB}KB (${parseMs}ms)`);
+          try {
+            extractedText = await processDocxBuffer(fileBuffer);
+            parseMs = Date.now() - p0;
+            const textLengthKB = (extractedText.length / 1024).toFixed(2);
+            console.log(`✅ DOCX 텍스트 추출 완료: ${textLengthKB}KB (${parseMs}ms)`);
+          } catch (parseError) {
+            parseMs = Date.now() - p0;
+            const errorMsg = parseError instanceof Error ? parseError.message : String(parseError);
+            console.error(`❌ DOCX 파싱 실패 (${parseMs}ms):`, errorMsg);
+            throw new Error(`DOCX 파일 파싱 실패: 파일이 손상되었거나 유효한 DOCX 파일이 아닙니다. (${errorMsg})`);
+          }
         }
       }
 
       // 텍스트 추출 결과 검증 및 로깅
-      const cleanedLength = (extractedText || '').replace(/\s+/g, ' ').trim().length;
+      if (!extractedText || typeof extractedText !== 'string') {
+        throw new Error(`텍스트 추출 실패: extractedText가 유효하지 않습니다. (${job.job_type})`);
+      }
+      
+      const cleanedLength = extractedText.replace(/\s+/g, ' ').trim().length;
       console.log(`📊 텍스트 추출 검증:`, {
         rawLength: extractedText.length,
         cleanedLength: cleanedLength,
