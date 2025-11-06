@@ -475,18 +475,25 @@ export async function POST(request: NextRequest) {
           hasExtractedText: extractedText.length > 0
         });
       } else if (file.type === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || 
-                 file.name.toLowerCase().endsWith('.docx')) {
-        if (file.size > 12 * 1024 * 1024) {
-          const documentId = `doc_${Date.now()}`;
-          const storageInfo = await uploadToStorage(file, documentId, cleanFileName);
-          const jobId = await enqueueProcessingJob({
-            documentId,
-            jobType: 'DOCX_PARSE',
-            priority: 7,
-            payload: { fileName: cleanFileName, fileSize: file.size, fileType: file.type, storage: storageInfo }
-          });
-          return NextResponse.json({ success: true, queued: true, jobId, documentId, message: '대용량 DOCX는 백그라운드에서 처리됩니다.' }, { status: 202 });
-        }
+                 file.name.toLowerCase().endsWith('.docx') ||
+                 // 확장자가 잘못된 경우 MIME 타입으로 확인
+                 (file.type === 'application/octet-stream' && 
+                  (file.name.toLowerCase().includes('docx') || 
+                   file.name.toLowerCase().endsWith('.d') ||
+                   file.name.toLowerCase().endsWith('.doc')))) {
+        // DOCX 파일은 모든 크기에 대해 큐로 처리 (텍스트 추출을 큐에서 수행)
+        const documentId = `doc_${Date.now()}`;
+        const storageInfo = await uploadToStorage(file, documentId, cleanFileName);
+        const jobId = await enqueueProcessingJob({
+          documentId,
+          jobType: 'DOCX_PARSE',
+          priority: 7,
+          payload: { fileName: cleanFileName, fileSize: file.size, fileType: file.type, storage: storageInfo }
+        });
+        return NextResponse.json({ success: true, queued: true, jobId, documentId, message: 'DOCX 파일은 백그라운드에서 처리됩니다.' }, { status: 202 });
+        
+        /* 기존 바이너리 처리 로직 제거 - 큐에서 텍스트 추출 수행 */
+        /*
         // DOCX 파일 바이너리 처리 (완전히 새로운 방식)
         console.log('📄 DOCX 파일 바이너리 처리 시작:', {
           fileName: file.name,
