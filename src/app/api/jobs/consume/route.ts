@@ -690,8 +690,28 @@ export async function processQueue() {
         // 저장소에서 파일 다운로드
         const dlStart = Date.now();
         console.log(`⬇️ Storage에서 파일 다운로드 시작: ${storage.bucket}/${storage.path}`);
-        const fileBuffer = await downloadFromStorage(supabase, storage.bucket, storage.path);
-        dlMs = Date.now() - dlStart;
+        
+        let fileBuffer: Buffer;
+        try {
+          fileBuffer = await downloadFromStorage(supabase, storage.bucket, storage.path);
+          dlMs = Date.now() - dlStart;
+        } catch (downloadError) {
+          dlMs = Date.now() - dlStart;
+          const errorMsg = downloadError instanceof Error ? downloadError.message : String(downloadError);
+          console.error(`❌ Storage 다운로드 실패 (일반 처리 모드):`, {
+            error: errorMsg,
+            bucket: storage.bucket,
+            path: storage.path,
+            fileName: fileName,
+            fileSize: fileSize,
+            elapsedMs: dlMs,
+            note: '일반 처리 모드에서는 Storage 다운로드 실패 시 documents.content로 폴백하지 않습니다. 재처리 모드를 사용하거나 파일을 다시 업로드해주세요.'
+          });
+          
+          // 일반 처리 모드에서는 Storage 다운로드 실패 시 즉시 에러 throw
+          // 재처리 모드가 아니므로 documents.content로 폴백하지 않음
+          throw new Error(`Storage 다운로드 실패: ${errorMsg}. 일반 처리 모드에서는 Storage에서 파일을 다운로드할 수 없으면 처리를 중단합니다. 재처리 모드를 사용하거나 파일을 다시 업로드해주세요.`);
+        }
         
         if (!fileBuffer || fileBuffer.length === 0) {
           throw new Error(`downloaded empty file from storage: ${storage.bucket}/${storage.path}`);
