@@ -87,10 +87,11 @@ async function processDocxBuffer(buffer: Buffer): Promise<string> {
     const extractedText = res.value || '';
     const textLengthKB = (extractedText.length / 1024).toFixed(2);
     
-    // 빈 텍스트 체크 및 경고
+    // 빈 텍스트 체크 및 에러 throw
     if (!extractedText || extractedText.trim().length === 0) {
-      console.warn('⚠️ DOCX에서 텍스트를 추출할 수 없습니다. 빈 텍스트 반환');
-      return '';
+      const errorMsg = 'DOCX에서 텍스트를 추출할 수 없습니다. 파일이 손상되었거나 텍스트가 없습니다.';
+      console.error(`❌ ${errorMsg}`);
+      throw new Error(errorMsg);
     }
     
     console.log(`✅ DOCX 파싱 완료:`, {
@@ -487,6 +488,13 @@ async function processQueue() {
         fileName: fileName
       });
       
+      // DOCX 텍스트 추출 실패 검증 (빈 텍스트)
+      if (cleanedLength === 0 && job.job_type === 'DOCX_PARSE') {
+        const errorMsg = 'DOCX에서 텍스트를 추출할 수 없습니다. 파일이 손상되었거나 텍스트가 없습니다.';
+        console.error(`❌ ${errorMsg}`);
+        throw new Error(errorMsg);
+      }
+      
       // 텍스트 추출이 너무 적으면 OCR로 폴백 Job 생성 (재처리 모드가 아니고 Storage가 있는 경우만)
       // DOCX의 경우 텍스트가 있어도 OCR로 폴백하지 않도록 수정 (PDF만 OCR 폴백)
       if (cleanedLength < 500 && !isReprocess && storage?.bucket && storage?.path && job.job_type === 'PDF_PARSE') {
@@ -701,9 +709,9 @@ async function processQueue() {
       
       // 인코딩/청킹/임베딩/저장 (타임아웃 보호)
       const processStartMs = Date.now();
-      // 타임아웃을 더 여유있게 설정: 8분 (10분 타임아웃의 80%)
-      // 재시도 로직이 있으므로 더 짧게 설정하여 빠른 재시도 가능
-      const MAX_PROCESS_TIME = 480000; // 8분 (9분 → 8분으로 감소)
+      // 타임아웃 설정: PDF 파싱(5-8분) + 분할 처리(2-5분)를 고려하여 10분으로 증가
+      // Vercel Pro 최대 10분이므로 10분으로 설정
+      const MAX_PROCESS_TIME = 600000; // 10분 (8분 → 10분으로 증가, PDF 파싱 시간 고려)
       
       // 전체 처리 시간 측정을 위한 단계별 시간 추적
       const stepTimings = {
@@ -839,10 +847,12 @@ async function processQueue() {
       
       // chunk_count가 이미 saveChunksToDatabase에서 업데이트되었지만, 큐 워커에서도 동기화
       // (실제 저장된 개수와 processResult.chunkCount가 다른 경우 대비)
+      // 청크 0개인 경우 failed 상태로 설정 (근본 원인 수정)
+      const finalStatus = (processResult.success && finalChunkCount > 0) ? 'indexed' : 'failed';
       const { error: docUpdateErr } = await supabase
         .from('documents')
         .update({ 
-          status: processResult.success ? 'indexed' : 'failed', 
+          status: finalStatus,
           chunk_count: finalChunkCount, 
           updated_at: nowIso 
         })
