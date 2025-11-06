@@ -33,36 +33,76 @@ function verifyCronSecret(request: NextRequest): boolean {
 }
 
 // 테스트용 간단 Consumer: queued 상태 1건을 processing → completed 처리
-async function downloadFromStorage(supabase: any, bucket: string, path: string) {
+async function downloadFromStorage(supabase: any, bucket: string, path: string, retries: number = 3): Promise<Buffer> {
   const downloadStartMs = Date.now();
-  console.log(`📥 Storage 다운로드 시작: ${bucket}/${path}`);
+  console.log(`📥 Storage 다운로드 시작: ${bucket}/${path} (재시도 ${retries}회)`);
   
-  // Storage 다운로드 타임아웃 설정 (5분)
-  const DOWNLOAD_TIMEOUT = 300000; // 5분
-  const downloadPromise = (async () => {
-    const { data, error } = await supabase.storage.from(bucket).download(path);
-    if (error) throw error;
-    const arrayBuffer = await data.arrayBuffer();
-    return Buffer.from(arrayBuffer);
-  })();
+  // Storage 다운로드 타임아웃 설정 (60초 - Supabase Gateway Timeout 대응)
+  const DOWNLOAD_TIMEOUT = 60000; // 60초 (504 Gateway Timeout 대응)
   
-  const timeoutPromise = new Promise<never>((_, reject) => {
-    setTimeout(() => {
-      reject(new Error(`Storage 다운로드 타임아웃 (${DOWNLOAD_TIMEOUT / 60000}분): ${bucket}/${path}`));
-    }, DOWNLOAD_TIMEOUT);
-  });
-  
-  try {
-    const buffer = await Promise.race([downloadPromise, timeoutPromise]);
-    const downloadMs = Date.now() - downloadStartMs;
-    const sizeMB = (buffer.length / (1024 * 1024)).toFixed(2);
-    console.log(`✅ Storage 다운로드 완료: ${sizeMB}MB (${downloadMs}ms)`);
-    return buffer;
-  } catch (error) {
-    const downloadMs = Date.now() - downloadStartMs;
-    console.error(`❌ Storage 다운로드 실패 (${downloadMs}ms):`, error);
-    throw error;
+  for (let attempt = 1; attempt <= retries; attempt++) {
+    try {
+      const downloadPromise = (async () => {
+        const { data, error } = await supabase.storage.from(bucket).download(path);
+        if (error) {
+          // Supabase Storage 에러를 더 자세히 로깅
+          console.error(`❌ Supabase Storage 에러 (시도 ${attempt}/${retries}):`, {
+            error: error.message || error,
+            status: error.statusCode || 'unknown',
+            originalError: error.originalError || error
+          });
+          throw error;
+        }
+        if (!data) {
+          throw new Error('Storage에서 데이터를 받지 못했습니다.');
+        }
+        const arrayBuffer = await data.arrayBuffer();
+        return Buffer.from(arrayBuffer);
+      })();
+      
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => {
+          reject(new Error(`Storage 다운로드 타임아웃 (${DOWNLOAD_TIMEOUT / 1000}초): ${bucket}/${path}`));
+        }, DOWNLOAD_TIMEOUT);
+      });
+      
+      const buffer = await Promise.race([downloadPromise, timeoutPromise]);
+      const downloadMs = Date.now() - downloadStartMs;
+      const sizeMB = (buffer.length / (1024 * 1024)).toFixed(2);
+      console.log(`✅ Storage 다운로드 완료: ${sizeMB}MB (${downloadMs}ms, 시도 ${attempt}/${retries})`);
+      return buffer;
+    } catch (error: any) {
+      const downloadMs = Date.now() - downloadStartMs;
+      const isLastAttempt = attempt === retries;
+      const isTimeout = error?.message?.includes('타임아웃') || error?.originalError?.status === 504;
+      const isGatewayTimeout = error?.originalError?.status === 504 || error?.status === 504;
+      
+      console.error(`❌ Storage 다운로드 실패 (시도 ${attempt}/${retries}, ${downloadMs}ms):`, {
+        error: error?.message || error,
+        status: error?.status || error?.originalError?.status,
+        isTimeout,
+        isGatewayTimeout,
+        isLastAttempt
+      });
+      
+      // 마지막 시도이거나 타임아웃이 아닌 경우 즉시 실패
+      if (isLastAttempt) {
+        // Gateway Timeout인 경우 더 명확한 에러 메시지
+        if (isGatewayTimeout) {
+          throw new Error(`Storage 다운로드 실패: Supabase Gateway Timeout (504). 파일이 너무 크거나 네트워크 문제일 수 있습니다. 경로: ${bucket}/${path}`);
+        }
+        throw error;
+      }
+      
+      // 재시도 전 대기 (지수 백오프)
+      const backoffMs = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
+      console.log(`⏳ 재시도 전 대기: ${backoffMs}ms...`);
+      await new Promise(resolve => setTimeout(resolve, backoffMs));
+    }
   }
+  
+  // 이 코드는 실행되지 않아야 하지만 TypeScript를 위해 필요
+  throw new Error('Storage 다운로드 실패: 모든 재시도 실패');
 }
 
 async function processPdfBuffer(buffer: Buffer): Promise<string> {
