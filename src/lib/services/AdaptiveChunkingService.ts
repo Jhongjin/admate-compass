@@ -316,18 +316,43 @@ export class AdaptiveChunkingService {
       const trimmedChunk = chunk.trim();
       const minSize = strategy.minChunkSize || 50;
       
+      // 청크 추가 여부 추적
+      let chunkAdded = false;
+      
       // 최소 크기보다 작은 청크도 허용 (마지막 청크인 경우)
       if (trimmedChunk.length >= minSize) {
         chunks.push(trimmedChunk);
+        chunkAdded = true;
       } else if (trimmedChunk.length > 0 && (end >= content.length || chunks.length === 0)) {
         // 마지막 청크이거나 아직 청크가 없는 경우 최소 크기보다 작아도 허용
         console.log(`📝 최소 크기보다 작은 청크 추가 (${trimmedChunk.length}자, 최소: ${minSize}자) - 마지막 청크 또는 첫 청크`);
         chunks.push(trimmedChunk);
+        chunkAdded = true;
+      } else if (trimmedChunk.length > 0) {
+        // 최소 크기보다 작지만 내용이 있는 경우, 이전 청크에 병합 시도
+        if (chunks.length > 0) {
+          // 이전 청크에 병합
+          chunks[chunks.length - 1] += ' ' + trimmedChunk;
+          chunkAdded = true;
+          console.log(`📝 작은 청크를 이전 청크에 병합 (${trimmedChunk.length}자)`);
+        } else {
+          // 첫 청크인 경우 최소 크기보다 작아도 추가
+          chunks.push(trimmedChunk);
+          chunkAdded = true;
+          console.log(`📝 첫 청크 추가 (최소 크기 미만, ${trimmedChunk.length}자)`);
+        }
       }
 
       // 다음 청크 시작 위치 (overlap 고려)
-      const nextStart = start + chunk.length - strategy.chunkOverlap;
-      start = Math.max(nextStart, start + 1);
+      // 청크가 추가되었거나 마지막인 경우에만 start 이동
+      if (chunkAdded || end >= content.length) {
+        const nextStart = start + chunk.length - strategy.chunkOverlap;
+        start = Math.max(nextStart, start + 1);
+      } else {
+        // 청크가 추가되지 않은 경우 최소한 1자씩은 이동 (무한 루프 방지)
+        start = Math.max(start + 1, start + Math.floor(adjustedChunkSize * 0.1));
+        console.warn(`⚠️ 청크 추가 실패 - start 위치 강제 이동: ${start}`);
+      }
 
       iterationCount++;
 
@@ -351,6 +376,43 @@ export class AdaptiveChunkingService {
       console.warn('⚠️ 청킹 결과가 비어있습니다. 최소 크기 제한으로 인한 것일 수 있습니다.');
       // 최소 크기 제한을 무시하고 최소한 1개 청크는 생성
       chunks.push(content.trim());
+    }
+    
+    // 청크가 1개만 생성되었는데 내용이 긴 경우 경고 및 강제 분할
+    if (chunks.length === 1 && content.length > 10000) {
+      console.error('❌ 청킹 최적화 실패: 내용이 긴데 청크가 1개만 생성되었습니다.', {
+        contentLength: content.length,
+        chunkSize: chunks[0]?.length || 0,
+        strategy: {
+          chunkSize: strategy.chunkSize,
+          adjustedChunkSize,
+          maxChunks,
+          minChunkSize: strategy.minChunkSize
+        },
+        iterationCount,
+        maxIterations
+      });
+      
+      // 강제로 여러 청크로 분할 시도
+      const forcedChunks: string[] = [];
+      const forcedChunkSize = Math.max(strategy.chunkSize, 1000); // 최소 1000자
+      for (let i = 0; i < content.length; i += forcedChunkSize) {
+        const forcedChunk = content.slice(i, i + forcedChunkSize).trim();
+        if (forcedChunk.length > 0) {
+          forcedChunks.push(forcedChunk);
+        }
+      }
+      
+      if (forcedChunks.length > 1) {
+        console.log(`✅ 강제 청킹 완료: ${forcedChunks.length}개 청크 생성`);
+        return forcedChunks;
+      }
+    }
+    
+    // 최종 청크 수 로깅
+    if (chunks.length > 0) {
+      const avgChunkSize = Math.round(chunks.reduce((sum, c) => sum + c.length, 0) / chunks.length);
+      console.log(`📊 청킹 완료: ${chunks.length}개 청크 생성 (평균 ${avgChunkSize}자/청크, 전체 ${content.length}자)`);
     }
 
     return chunks;
