@@ -34,10 +34,35 @@ function verifyCronSecret(request: NextRequest): boolean {
 
 // 테스트용 간단 Consumer: queued 상태 1건을 processing → completed 처리
 async function downloadFromStorage(supabase: any, bucket: string, path: string) {
-  const { data, error } = await supabase.storage.from(bucket).download(path);
-  if (error) throw error;
-  const arrayBuffer = await data.arrayBuffer();
-  return Buffer.from(arrayBuffer);
+  const downloadStartMs = Date.now();
+  console.log(`📥 Storage 다운로드 시작: ${bucket}/${path}`);
+  
+  // Storage 다운로드 타임아웃 설정 (5분)
+  const DOWNLOAD_TIMEOUT = 300000; // 5분
+  const downloadPromise = (async () => {
+    const { data, error } = await supabase.storage.from(bucket).download(path);
+    if (error) throw error;
+    const arrayBuffer = await data.arrayBuffer();
+    return Buffer.from(arrayBuffer);
+  })();
+  
+  const timeoutPromise = new Promise<never>((_, reject) => {
+    setTimeout(() => {
+      reject(new Error(`Storage 다운로드 타임아웃 (${DOWNLOAD_TIMEOUT / 60000}분): ${bucket}/${path}`));
+    }, DOWNLOAD_TIMEOUT);
+  });
+  
+  try {
+    const buffer = await Promise.race([downloadPromise, timeoutPromise]);
+    const downloadMs = Date.now() - downloadStartMs;
+    const sizeMB = (buffer.length / (1024 * 1024)).toFixed(2);
+    console.log(`✅ Storage 다운로드 완료: ${sizeMB}MB (${downloadMs}ms)`);
+    return buffer;
+  } catch (error) {
+    const downloadMs = Date.now() - downloadStartMs;
+    console.error(`❌ Storage 다운로드 실패 (${downloadMs}ms):`, error);
+    throw error;
+  }
 }
 
 async function processPdfBuffer(buffer: Buffer): Promise<string> {
@@ -89,10 +114,21 @@ async function processPdfBuffer(buffer: Buffer): Promise<string> {
 async function processDocxBuffer(buffer: Buffer): Promise<string> {
   const mammoth = (await import('mammoth')).default as any;
   const startMs = Date.now();
+  const bufferSizeMB = (buffer.length / (1024 * 1024)).toFixed(2);
+  
+  console.log(`📄 DOCX 파싱 시작: ${bufferSizeMB}MB`);
   
   try {
-    // DOCX 텍스트 추출 (extractRawText는 텍스트만 추출)
-    const res = await mammoth.extractRawText({ buffer });
+    // DOCX 파싱 타임아웃 설정 (2분 - 작은 파일은 매우 빠르게 처리되어야 함)
+    const DOCX_PARSE_TIMEOUT = 120000; // 2분
+    const parsePromise = mammoth.extractRawText({ buffer });
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => {
+        reject(new Error(`DOCX 파싱 타임아웃 (${DOCX_PARSE_TIMEOUT / 60000}분) - 파일 크기: ${bufferSizeMB}MB`));
+      }, DOCX_PARSE_TIMEOUT);
+    });
+    
+    const res = await Promise.race([parsePromise, timeoutPromise]);
     const parseMs = Date.now() - startMs;
     const extractedText = res.value || '';
     const textLengthKB = (extractedText.length / 1024).toFixed(2);
@@ -107,7 +143,8 @@ async function processDocxBuffer(buffer: Buffer): Promise<string> {
     console.log(`✅ DOCX 파싱 완료:`, {
       textLengthKB: textLengthKB,
       parseTime: `${parseMs}ms (${(parseMs / 1000).toFixed(1)}초)`,
-      throughput: `${(parseFloat(textLengthKB) / (parseMs / 1000)).toFixed(2)}KB/s`
+      throughput: `${(parseFloat(textLengthKB) / (parseMs / 1000)).toFixed(2)}KB/s`,
+      bufferSizeMB: bufferSizeMB
     });
     
     return extractedText;
@@ -120,7 +157,8 @@ async function processDocxBuffer(buffer: Buffer): Promise<string> {
       error: error instanceof Error ? error.message : String(error),
       stack: error instanceof Error ? error.stack : undefined,
       bufferSize: buffer.length,
-      bufferSizeMB: (buffer.length / (1024 * 1024)).toFixed(2)
+      bufferSizeMB: bufferSizeMB,
+      elapsedTime: `${(parseMs / 1000).toFixed(1)}초`
     });
     
     throw error;
@@ -231,10 +269,14 @@ function normalizeTablesToMarkdown(text: string): string {
  */
 async function processQueue() {
   const supabase = await createPureClient();
+  const queueStartMs = Date.now();
+  console.log(`🚀 큐 처리 시작: ${new Date().toISOString()}`);
+  
   try {
     const jobStartMs = Date.now();
     // 1) 픽업할 잡 조회 (우선순위 높은 순, 예약시각 이른 순)
     // retrying 상태도 포함하여 재시도 작업 처리
+    console.log(`🔍 큐에서 작업 조회 중...`);
     const { data: job, error: pickErr } = await supabase
       .from('processing_jobs')
       .select('id, document_id, job_type, status, attempts, max_attempts, priority, payload')
@@ -243,13 +285,33 @@ async function processQueue() {
       .order('scheduled_at', { ascending: true })
       .limit(1)
       .maybeSingle();
+    
+    const pickMs = Date.now() - jobStartMs;
+    console.log(`📋 작업 조회 완료: ${pickMs}ms`, {
+      found: !!job,
+      jobId: job?.id,
+      jobType: job?.job_type,
+      documentId: job?.document_id
+    });
 
     if (pickErr) {
+      console.error(`❌ 작업 조회 실패:`, pickErr);
       return NextResponse.json({ success: false, error: '잡 조회 실패', details: pickErr.message }, { status: 500 });
     }
     if (!job) {
+      const totalMs = Date.now() - queueStartMs;
+      console.log(`ℹ️ 대기 중인 작업 없음 (${totalMs}ms)`);
       return NextResponse.json({ success: true, message: '대기 중인 잡이 없습니다.' }, { status: 200 });
     }
+    
+    console.log(`✅ 작업 선택됨:`, {
+      jobId: job.id,
+      documentId: job.document_id,
+      jobType: job.job_type,
+      status: job.status,
+      attempts: job.attempts,
+      maxAttempts: job.max_attempts
+    });
 
     // 2) processing 진입(낙관적 업데이트)
     // queued 또는 retrying 상태에서 processing으로 전환
