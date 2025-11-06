@@ -267,7 +267,7 @@ function normalizeTablesToMarkdown(text: string): string {
 /**
  * 큐 처리 핵심 로직 (GET/POST 공통)
  */
-async function processQueue() {
+export async function processQueue() {
   const supabase = await createPureClient();
   const queueStartMs = Date.now();
   console.log(`🚀 큐 처리 시작: ${new Date().toISOString()}`);

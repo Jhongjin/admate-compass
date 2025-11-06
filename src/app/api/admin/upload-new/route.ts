@@ -69,38 +69,38 @@ async function uploadToStorage(file: File, docId: string, cleanFileName: string)
 
 /**
  * 큐 워커를 백그라운드에서 즉시 트리거하는 함수
- * 실패해도 무시 (Cron Job이 처리할 수 있음)
+ * processQueue를 직접 import하여 호출 (더 안정적)
  */
 async function triggerQueueWorker(): Promise<void> {
   try {
-    const baseUrl = process.env.VERCEL_URL 
-      ? `https://${process.env.VERCEL_URL}` 
-      : process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
+    console.log('🚀 큐 워커 즉시 트리거 시작...');
     
-    const cronSecret = process.env.CRON_SECRET;
-    const headers: HeadersInit = {
-      'Content-Type': 'application/json',
-    };
+    // processQueue를 직접 import하여 호출 (외부 HTTP 호출보다 안정적)
+    const { processQueue } = await import('@/app/api/jobs/consume/route');
     
-    // CRON_SECRET이 있으면 Authorization 헤더 추가
-    if (cronSecret) {
-      headers['Authorization'] = `Bearer ${cronSecret}`;
-    }
+    // 백그라운드에서 비동기로 실행 (await 하지 않음)
+    processQueue()
+      .then(result => {
+        console.log('✅ 큐 워커 처리 완료:', {
+          success: result instanceof Response ? result.status : 'unknown',
+          type: result instanceof Response ? 'Response' : typeof result
+        });
+      })
+      .catch(err => {
+        console.error('❌ 큐 워커 처리 실패:', {
+          error: err instanceof Error ? err.message : String(err),
+          stack: err instanceof Error ? err.stack : undefined
+        });
+      });
     
-    // 백그라운드에서 비동기로 호출 (await 하지 않음)
-    fetch(`${baseUrl}/api/jobs/consume`, {
-      method: 'POST',
-      headers,
-      // signal 없음 - 즉시 응답을 기다리지 않음
-    }).catch(err => {
-      // fetch 자체가 실패해도 무시
-      console.warn('⚠️ 큐 워커 fetch 실패:', err);
-    });
-    
+    console.log('✅ 큐 워커 트리거 완료 (백그라운드 실행 중)');
     // 함수는 즉시 반환 (백그라운드 처리)
   } catch (err) {
     // 에러 발생해도 무시
-    console.warn('⚠️ 큐 워커 트리거 에러:', err);
+    console.error('❌ 큐 워커 트리거 에러:', {
+      error: err instanceof Error ? err.message : String(err),
+      stack: err instanceof Error ? err.stack : undefined
+    });
   }
 }
 
