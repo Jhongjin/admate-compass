@@ -424,17 +424,37 @@ export class AdaptiveChunkingService {
       const targetChunkCount = Math.max(10, Math.min(50, Math.floor(content.length / 1000)));
       const forcedChunkSize = Math.max(500, Math.min(2000, Math.floor(content.length / targetChunkCount)));
       
-      console.log(`📏 강제 청킹 설정: 목표 ${targetChunkCount}개 청크, 청크 크기 ${forcedChunkSize}자`);
+      console.log(`📏 AdaptiveChunkingService: 강제 청킹 설정:`, {
+        targetChunkCount,
+        forcedChunkSize,
+        contentLength: content.length,
+        calculation: `Math.max(10, Math.min(50, Math.floor(${content.length} / 1000))) = ${targetChunkCount}, Math.max(500, Math.min(2000, Math.floor(${content.length} / ${targetChunkCount}))) = ${forcedChunkSize}`
+      });
       
+      let loopCount = 0;
       for (let i = 0; i < content.length; i += forcedChunkSize) {
+        loopCount++;
         const forcedChunk = content.slice(i, i + forcedChunkSize).trim();
         if (forcedChunk.length > 0) {
           forcedChunks.push(forcedChunk);
         }
       }
       
+      console.log(`📊 AdaptiveChunkingService: 강제 청킹 루프 완료:`, {
+        loopCount,
+        forcedChunksLength: forcedChunks.length,
+        contentLength: content.length,
+        forcedChunkSize,
+        expectedChunks: Math.ceil(content.length / forcedChunkSize)
+      });
+      
       if (forcedChunks.length > 1) {
-        console.log(`✅ 강제 청킹 완료: ${forcedChunks.length}개 청크 생성 (기존: ${chunks.length}개, 목표: ${targetChunkCount}개)`);
+        console.log(`✅ AdaptiveChunkingService: 강제 청킹 완료: ${forcedChunks.length}개 청크 생성 (기존: ${chunks.length}개, 목표: ${targetChunkCount}개)`, {
+          beforeChunkCount: chunks.length,
+          afterChunkCount: forcedChunks.length,
+          targetChunkCount,
+          contentLength: content.length
+        });
         return forcedChunks;
       } else {
         console.warn('⚠️ 강제 청킹 실패: 여전히 1개 청크만 생성됨. 더 작은 청크 크기로 재시도...');

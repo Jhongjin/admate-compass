@@ -1369,8 +1369,16 @@ export class RAGProcessor {
       );
       
       console.log('📦 적응적 청킹 결과:', {
+        documentId: document.id,
+        title: document.title,
         chunkCount: adaptiveChunks.length,
-        firstChunkPreview: adaptiveChunks[0]?.content?.substring(0, 100) || '없음'
+        firstChunkPreview: adaptiveChunks[0]?.content?.substring(0, 100) || '없음',
+        contentLength: document.content.length,
+        note: adaptiveChunks.length === 1 && document.content.length > 10000
+          ? '⚠️ 1개 청크만 반환됨 - RAGProcessor에서 강제 재청킹 필요'
+          : adaptiveChunks.length > 1
+          ? '✅ 여러 청크 반환됨 (정상)'
+          : '⚠️ 청크가 없음'
       });
 
       // ChunkData 형식으로 변환
