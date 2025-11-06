@@ -1351,16 +1351,26 @@ function DocsTable({
           
           // 진행 중인 문서가 있으면 알림 표시 (다시보지 않기 옵션 포함)
           const toastId = toast.info('문서 처리 진행 중', {
-            description: `${processingDocs.length}개 문서가 처리 중입니다. 문서 처리는 백그라운드에서 계속 진행됩니다.`,
+            description: (
+              <div className="space-y-2">
+                <p className="text-sm">{processingDocs.length}개 문서가 처리 중입니다. 문서 처리는 백그라운드에서 계속 진행됩니다.</p>
+                <label className="flex items-center space-x-2 cursor-pointer text-xs text-gray-400 hover:text-gray-300">
+                  <input
+                    type="checkbox"
+                    className="w-3 h-3 rounded border-gray-400 text-blue-600 focus:ring-blue-500"
+                    onChange={(e) => {
+                      if (e.target.checked) {
+                        localStorage.setItem('dontShowProcessingToast', 'true');
+                        toast.dismiss(toastId);
+                      }
+                    }}
+                  />
+                  <span>다시 보지 않기</span>
+                </label>
+              </div>
+            ),
             duration: 7000,
-            action: {
-              label: '다시 보지 않기',
-              onClick: () => {
-                localStorage.setItem('dontShowProcessingToast', 'true');
-                toast.dismiss(toastId);
-              }
-            },
-          } as any);
+          });
           
           // 자동으로 문서 목록 새로고침
           refetch();

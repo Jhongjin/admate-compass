@@ -956,7 +956,42 @@ export class RAGProcessor {
 
       // 내용이 비어있으면 빈 청크 반환
       if (!document.content || document.content.trim() === '') {
-        console.warn('⚠️ 문서 내용이 비어있습니다.');
+        console.warn('⚠️ 문서 내용이 비어있습니다.', {
+          contentLength: document.content?.length || 0,
+          title: document.title,
+          type: document.type
+        });
+        return [];
+      }
+      
+      // 텍스트 길이 확인 및 경고
+      const trimmedContent = document.content.trim();
+      if (trimmedContent.length < 50) {
+        console.warn('⚠️ 문서 내용이 너무 짧습니다 (최소 청크 크기 50자 미만):', {
+          contentLength: trimmedContent.length,
+          contentPreview: trimmedContent.substring(0, 100),
+          title: document.title,
+          type: document.type
+        });
+        // 내용이 너무 짧어도 최소 1개 청크는 생성하도록 함
+        if (trimmedContent.length > 0) {
+          return [{
+            id: `${document.id}_chunk_0`,
+            document_id: document.id,
+            content: trimmedContent,
+            metadata: {
+              chunk_index: 0,
+              document_id: document.id,
+              document_title: document.title,
+              document_type: document.type || 'unknown',
+              chunk_type: 'text',
+              start_char: 0,
+              end_char: trimmedContent.length,
+              original_length: trimmedContent.length,
+              hierarchy_level: 'paragraph',
+            }
+          }];
+        }
         return [];
       }
 

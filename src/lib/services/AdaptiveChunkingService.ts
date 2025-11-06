@@ -312,7 +312,12 @@ export class AdaptiveChunkingService {
       const trimmedChunk = chunk.trim();
       const minSize = strategy.minChunkSize || 50;
       
+      // 최소 크기보다 작은 청크도 허용 (마지막 청크인 경우)
       if (trimmedChunk.length >= minSize) {
+        chunks.push(trimmedChunk);
+      } else if (trimmedChunk.length > 0 && (end >= content.length || chunks.length === 0)) {
+        // 마지막 청크이거나 아직 청크가 없는 경우 최소 크기보다 작아도 허용
+        console.log(`📝 최소 크기보다 작은 청크 추가 (${trimmedChunk.length}자, 최소: ${minSize}자) - 마지막 청크 또는 첫 청크`);
         chunks.push(trimmedChunk);
       }
 

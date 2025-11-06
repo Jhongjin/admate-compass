@@ -77,8 +77,42 @@ async function processPdfBuffer(buffer: Buffer): Promise<string> {
 
 async function processDocxBuffer(buffer: Buffer): Promise<string> {
   const mammoth = (await import('mammoth')).default as any;
-  const res = await mammoth.extractRawText({ buffer });
-  return res.value || '';
+  const startMs = Date.now();
+  
+  try {
+    // DOCX 텍스트 추출 (extractRawText는 텍스트만 추출)
+    const res = await mammoth.extractRawText({ buffer });
+    const parseMs = Date.now() - startMs;
+    const extractedText = res.value || '';
+    const textLengthKB = (extractedText.length / 1024).toFixed(2);
+    
+    // 빈 텍스트 체크 및 경고
+    if (!extractedText || extractedText.trim().length === 0) {
+      console.warn('⚠️ DOCX에서 텍스트를 추출할 수 없습니다. 빈 텍스트 반환');
+      return '';
+    }
+    
+    console.log(`✅ DOCX 파싱 완료:`, {
+      textLengthKB: textLengthKB,
+      parseTime: `${parseMs}ms (${(parseMs / 1000).toFixed(1)}초)`,
+      throughput: `${(parseFloat(textLengthKB) / (parseMs / 1000)).toFixed(2)}KB/s`
+    });
+    
+    return extractedText;
+  } catch (error) {
+    const parseMs = Date.now() - startMs;
+    console.error(`❌ DOCX 파싱 실패 (${parseMs}ms):`, error);
+    
+    // 에러 발생 시 상세 정보 로깅
+    console.error('❌ DOCX 파싱 에러 상세:', {
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+      bufferSize: buffer.length,
+      bufferSizeMB: (buffer.length / (1024 * 1024)).toFixed(2)
+    });
+    
+    throw error;
+  }
 }
 
 async function ocrPdfWithTesseract(buffer: Buffer): Promise<string> {
@@ -443,9 +477,18 @@ async function processQueue() {
         }
       }
 
-      // 텍스트 추출이 너무 적으면 OCR로 폴백 Job 생성 (재처리 모드가 아니고 Storage가 있는 경우만)
+      // 텍스트 추출 결과 검증 및 로깅
       const cleanedLength = (extractedText || '').replace(/\s+/g, ' ').trim().length;
-      if (cleanedLength < 500 && !isReprocess && storage?.bucket && storage?.path) {
+      console.log(`📊 텍스트 추출 검증:`, {
+        rawLength: extractedText.length,
+        cleanedLength: cleanedLength,
+        fileType: job.job_type,
+        fileName: fileName
+      });
+      
+      // 텍스트 추출이 너무 적으면 OCR로 폴백 Job 생성 (재처리 모드가 아니고 Storage가 있는 경우만)
+      // DOCX의 경우 텍스트가 있어도 OCR로 폴백하지 않도록 수정 (PDF만 OCR 폴백)
+      if (cleanedLength < 500 && !isReprocess && storage?.bucket && storage?.path && job.job_type === 'PDF_PARSE') {
         const { error: ocrEnqErr } = await supabase
           .from('processing_jobs')
           .insert({
