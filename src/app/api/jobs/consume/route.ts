@@ -533,8 +533,9 @@ async function processQueue() {
       console.log(`📝 텍스트 정규화 완료: ${normalizedLengthKB}KB`);
 
       // 🔥 Phase 2: 큰 파일 감지 및 분할 처리
+      // RAG 품질 유지를 위해 충분한 크기로 분할 (500KB)
       const LARGE_FILE_THRESHOLD = 10 * 1024 * 1024; // 10MB
-      const LARGE_TEXT_THRESHOLD = 300 * 1024; // 300KB 텍스트 (500KB → 300KB로 완화)
+      const LARGE_TEXT_THRESHOLD = 500 * 1024; // 500KB 텍스트 (RAG 품질 유지)
       const isLargeFile = fileSize > LARGE_FILE_THRESHOLD || normalizedText.length > LARGE_TEXT_THRESHOLD;
       
       if (isLargeFile) {
@@ -546,9 +547,10 @@ async function processQueue() {
         });
         
         try {
-          // 1. 텍스트 분할 (200KB 단위 - 타임아웃 방지)
+          // 1. 텍스트 분할 (500KB 단위 - RAG 품질 유지)
+          // 분할 크기는 충분히 크게 유지하여 문맥 보존
           const splits = simpleTextSplitter.splitByFixedSize(normalizedText, {
-            maxSize: 200 * 1024 // 200KB (500KB → 200KB로 축소)
+            maxSize: 500 * 1024 // 500KB (RAG 품질 유지)
           });
           
           const stats = simpleTextSplitter.getSplitStats(splits);

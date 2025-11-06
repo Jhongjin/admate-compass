@@ -653,15 +653,16 @@ export class RAGProcessor {
       });
       
       // 대용량 파일 처리 시 타임아웃 설정
-      // CHUNK_PROCESS는 분할된 작은 텍스트이므로 타임아웃을 더 짧게 설정
+      // CHUNK_PROCESS는 분할된 텍스트(500KB)이지만 충분한 처리 시간 필요
       const isChunkProcess = document.title?.includes('분할');
       const isLargeFile = document.file_size > 10 * 1024 * 1024; // 10MB 이상
       // 큐 워커의 MAX_PROCESS_TIME(8분)과 동기화
-      // 분할 처리(200KB)는 3분, 일반 대용량 파일은 8분, 일반 파일은 2분
-      const timeoutMs = isChunkProcess ? 180000 : (isLargeFile ? 480000 : 120000); // 분할: 3분, 대용량: 8분, 일반: 2분
+      // 분할 처리(500KB)는 5분, 일반 대용량 파일은 8분, 일반 파일은 2분
+      // 분할 처리 시 청킹/임베딩 최적화로 처리 시간 단축, 타임아웃은 여유있게 설정
+      const timeoutMs = isChunkProcess ? 300000 : (isLargeFile ? 480000 : 120000); // 분할: 5분, 대용량: 8분, 일반: 2분
       
       if (isChunkProcess) {
-        console.log('⚠️ 분할 처리 - 타임아웃 설정:', timeoutMs + 'ms (3분)');
+        console.log('⚠️ 분할 처리 - 타임아웃 설정:', timeoutMs + 'ms (5분)');
       } else if (isLargeFile) {
         console.log('⚠️ 대용량 파일 처리 - 타임아웃 설정:', timeoutMs + 'ms (8분)');
       }
@@ -811,13 +812,14 @@ export class RAGProcessor {
       // 2. 임베딩 생성 (큰 파일의 경우 배치 처리)
       const embeddingStartMs = Date.now();
       console.log('🔮 임베딩 생성 시작...', { chunkCount: chunks.length });
+      const isChunkProcess = document.title?.includes('분할');
       const isLargeFile = document.file_size > 10 * 1024 * 1024 || chunks.length > 1000;
       const chunksWithEmbeddings: ChunkData[] = [];
       
-      if (isLargeFile) {
-        // 큰 파일의 경우 배치 단위로 임베딩 생성 (메모리 효율성)
-        // 배치 크기 증가로 처리 시간 단축 (150 → 200)
-        const EMBEDDING_BATCH_SIZE = 200;
+      if (isLargeFile || isChunkProcess) {
+        // 큰 파일 또는 분할 처리의 경우 배치 단위로 임베딩 생성
+        // 분할 처리 시 배치 크기 증가로 처리 시간 단축 (200 → 300)
+        const EMBEDDING_BATCH_SIZE = isChunkProcess ? 300 : 200;
         console.log(`📦 큰 파일 감지 - 배치 단위로 임베딩 생성 (${chunks.length}개 청크, 배치 크기: ${EMBEDDING_BATCH_SIZE})`);
         
         for (let i = 0; i < chunks.length; i += EMBEDDING_BATCH_SIZE) {
@@ -831,9 +833,13 @@ export class RAGProcessor {
           
           chunksWithEmbeddings.push(...batchWithEmbeddings);
           
-          // 배치 간 짧은 대기 (CPU 부하 방지, 대기 시간 감소로 처리 시간 단축)
+              // 배치 간 짧은 대기 (CPU 부하 방지, 분할 처리 시 지연 제거)
           if (i + EMBEDDING_BATCH_SIZE < chunks.length) {
-            await new Promise(resolve => setTimeout(resolve, 5)); // 10ms → 5ms
+            // 분할 처리 시 지연 없이 처리 (이미 충분히 작은 단위)
+            const delay = isChunkProcess ? 0 : 5;
+            if (delay > 0) {
+              await new Promise(resolve => setTimeout(resolve, delay));
+            }
           }
         }
         
@@ -865,11 +871,11 @@ export class RAGProcessor {
 
           // 큰 파일의 경우 청크 저장도 더 작은 배치로 처리
           let savedChunkCount = 0;
-          if (isLargeFile) {
-            console.log(`💾 큰 파일 - 청크 저장을 배치로 처리 (${chunksWithEmbeddings.length}개 청크)`);
-            // 큰 파일의 경우 청크 저장도 배치 단위로 나누어 처리
-            // 배치 크기 증가로 처리 시간 단축 (100 → 150)
-            const SAVE_BATCH_SIZE = 150;
+          if (isLargeFile || isChunkProcess) {
+            console.log(`💾 ${isChunkProcess ? '분할 처리' : '큰 파일'} - 청크 저장을 배치로 처리 (${chunksWithEmbeddings.length}개 청크)`);
+            // 큰 파일 또는 분할 처리의 경우 청크 저장도 배치 단위로 나누어 처리
+            // 분할 처리 시 배치 크기 증가로 처리 시간 단축 (150 → 200)
+            const SAVE_BATCH_SIZE = isChunkProcess ? 200 : 150;
             for (let i = 0; i < chunksWithEmbeddings.length; i += SAVE_BATCH_SIZE) {
               const batch = chunksWithEmbeddings.slice(i, i + SAVE_BATCH_SIZE);
               console.log(`💾 청크 저장 배치: ${i + 1}-${Math.min(i + SAVE_BATCH_SIZE, chunksWithEmbeddings.length)}/${chunksWithEmbeddings.length}`);
@@ -877,9 +883,13 @@ export class RAGProcessor {
               const batchSaved = await this.saveChunksToDatabase(batch);
               savedChunkCount += batchSaved;
               
-              // 배치 간 짧은 대기 (대기 시간 감소로 처리 시간 단축)
+              // 배치 간 짧은 대기 (분할 처리 시 지연 제거)
               if (i + SAVE_BATCH_SIZE < chunksWithEmbeddings.length) {
-                await new Promise(resolve => setTimeout(resolve, 20)); // 50ms → 20ms
+                // 분할 처리 시 지연 없이 처리 (이미 충분히 작은 단위)
+                const delay = isChunkProcess ? 0 : 20;
+                if (delay > 0) {
+                  await new Promise(resolve => setTimeout(resolve, delay));
+                }
               }
             }
             const savingMs = Date.now() - savingStartMs;
@@ -1030,12 +1040,18 @@ export class RAGProcessor {
         koreanCharCount > englishCharCount ? 'ko' :
         englishCharCount > koreanCharCount * 2 ? 'en' : 'mixed';
 
+      // 분할 처리 감지 (제목에 "분할" 포함)
+      const isChunkProcess = document.title?.includes('분할');
+      
       // 적응적 청킹 설정
+      // 분할 처리 시: 더 큰 청크 크기로 청킹하여 청크 수 감소 (처리 시간 단축)
       const chunkingConfig: AdaptiveChunkingConfig = {
         documentType,
         contentLength: document.content.length,
         language,
-        contentType: contentTypeResult.type !== 'general' ? contentTypeResult.type : undefined
+        contentType: contentTypeResult.type !== 'general' ? contentTypeResult.type : undefined,
+        // 분할 처리 시 최적화 플래그 추가
+        optimizeForSpeed: isChunkProcess // 분할 처리 시 속도 최적화
       };
 
       // 적응적 청킹 서비스 사용

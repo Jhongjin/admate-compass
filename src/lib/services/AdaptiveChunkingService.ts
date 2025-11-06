@@ -14,6 +14,7 @@ export interface AdaptiveChunkingConfig {
   contentLength: number;
   language: 'ko' | 'en' | 'mixed';
   contentType?: 'technical' | 'marketing' | 'policy' | 'faq' | 'general';
+  optimizeForSpeed?: boolean; // 분할 처리 시 속도 최적화 (더 큰 청크 크기)
 }
 
 export interface EnhancedChunkMetadata {
@@ -69,50 +70,53 @@ export class AdaptiveChunkingService {
    * 문서 유형에 따른 청킹 전략 결정
    */
   getChunkingStrategy(config: AdaptiveChunkingConfig): ChunkingStrategy {
-    const { documentType, contentLength, contentType, language } = config;
+    const { documentType, contentLength, contentType, language, optimizeForSpeed } = config;
+
+    // 분할 처리 최적화: 더 큰 청크 크기로 청크 수 감소 (처리 시간 단축)
+    const speedMultiplier = optimizeForSpeed ? 1.5 : 1.0; // 50% 증가
 
     // 콘텐츠 유형별 특화 전략
     if (contentType === 'faq') {
-      return this.getFAQStrategy(contentLength);
+      return this.getFAQStrategy(contentLength, speedMultiplier);
     }
     
     if (contentType === 'policy') {
-      return this.getPolicyStrategy(contentLength);
+      return this.getPolicyStrategy(contentLength, speedMultiplier);
     }
     
     if (contentType === 'marketing') {
-      return this.getMarketingStrategy(contentLength);
+      return this.getMarketingStrategy(contentLength, speedMultiplier);
     }
 
-    // 문서 크기에 따른 기본 전략
+    // 문서 크기에 따른 기본 전략 (분할 처리 최적화 적용)
     if (contentLength < 1000) {
       return {
-        chunkSize: 200,
-        chunkOverlap: 20,
+        chunkSize: Math.floor(200 * speedMultiplier),
+        chunkOverlap: Math.floor(20 * speedMultiplier),
         separators: ['\n\n', '\n', '. ', '! ', '? ', ' '],
         maxChunks: 50,
         minChunkSize: 50
       };
     } else if (contentLength < 10000) {
       return {
-        chunkSize: 500,
-        chunkOverlap: 50,
+        chunkSize: Math.floor(500 * speedMultiplier),
+        chunkOverlap: Math.floor(50 * speedMultiplier),
         separators: ['\n\n', '\n', '. ', '! ', '? ', '; ', ' '],
         maxChunks: 100,
         minChunkSize: 100
       };
     } else if (contentLength < 100000) {
       return {
-        chunkSize: 1000,
-        chunkOverlap: 100,
+        chunkSize: Math.floor(1000 * speedMultiplier),
+        chunkOverlap: Math.floor(100 * speedMultiplier),
         separators: ['\n\n', '\n', '. ', '! ', '? ', '; ', ' '],
         maxChunks: 200,
         minChunkSize: 200
       };
     } else {
       return {
-        chunkSize: 2000,
-        chunkOverlap: 200,
+        chunkSize: Math.floor(2000 * speedMultiplier),
+        chunkOverlap: Math.floor(200 * speedMultiplier),
         separators: ['\n\n', '\n', '. ', '! ', '? ', '; ', ' '],
         maxChunks: 500,
         minChunkSize: 400
@@ -124,12 +128,12 @@ export class AdaptiveChunkingService {
    * FAQ 문서 전용 청킹 전략
    * 질문-답변 쌍을 하나의 청크로 유지
    */
-  private getFAQStrategy(contentLength: number): ChunkingStrategy {
+  private getFAQStrategy(contentLength: number, speedMultiplier: number = 1.0): ChunkingStrategy {
     return {
-      chunkSize: 800,
-      chunkOverlap: 100,
+      chunkSize: Math.floor(800 * speedMultiplier),
+      chunkOverlap: Math.floor(100 * speedMultiplier),
       separators: ['\n\n', '\n', 'Q:', 'A:', '질문:', '답변:', '. ', '! ', '? '],
-      maxChunks: Math.ceil(contentLength / 800),
+      maxChunks: Math.ceil(contentLength / (800 * speedMultiplier)),
       minChunkSize: 200
     };
   }
@@ -138,12 +142,12 @@ export class AdaptiveChunkingService {
    * 정책 문서 전용 청킹 전략
    * 조항별로 청킹
    */
-  private getPolicyStrategy(contentLength: number): ChunkingStrategy {
+  private getPolicyStrategy(contentLength: number, speedMultiplier: number = 1.0): ChunkingStrategy {
     return {
-      chunkSize: 1200,
-      chunkOverlap: 150,
+      chunkSize: Math.floor(1200 * speedMultiplier),
+      chunkOverlap: Math.floor(150 * speedMultiplier),
       separators: ['\n\n', '제', '조', '항', '장', '절', '\n', '. ', '! ', '? '],
-      maxChunks: Math.ceil(contentLength / 1200),
+      maxChunks: Math.ceil(contentLength / (1200 * speedMultiplier)),
       minChunkSize: 300
     };
   }
@@ -152,12 +156,12 @@ export class AdaptiveChunkingService {
    * 마케팅 문서 전용 청킹 전략
    * 섹션별로 청킹
    */
-  private getMarketingStrategy(contentLength: number): ChunkingStrategy {
+  private getMarketingStrategy(contentLength: number, speedMultiplier: number = 1.0): ChunkingStrategy {
     return {
-      chunkSize: 1000,
-      chunkOverlap: 100,
+      chunkSize: Math.floor(1000 * speedMultiplier),
+      chunkOverlap: Math.floor(100 * speedMultiplier),
       separators: ['\n\n', '##', '###', '# ', '\n', '. ', '! ', '? '],
-      maxChunks: Math.ceil(contentLength / 1000),
+      maxChunks: Math.ceil(contentLength / (1000 * speedMultiplier)),
       minChunkSize: 200
     };
   }
