@@ -348,7 +348,34 @@ export class RAGProcessor {
       console.log(`✅ 문서 ${isUpdate ? '업데이트' : '저장'} 완료:`, document.title);
 
       // document_metadata 테이블에도 저장
-      const fileType = document.file_type?.split('/')[1] || 'pdf';
+      // MIME type에서 실제 파일 확장자 추출 (예: application/pdf -> pdf, application/vnd.openxmlformats-officedocument.wordprocessingml.document -> docx)
+      let fileType = 'pdf'; // 기본값
+      if (document.file_type) {
+        if (document.file_type.includes('pdf')) {
+          fileType = 'pdf';
+        } else if (document.file_type.includes('wordprocessingml') || document.file_type.includes('msword')) {
+          fileType = 'docx';
+        } else if (document.file_type.includes('plain')) {
+          fileType = 'txt';
+        } else {
+          // MIME type의 마지막 부분 사용 (예: application/pdf -> pdf)
+          const parts = document.file_type.split('/');
+          if (parts.length > 1) {
+            const mimePart = parts[1];
+            // 복잡한 MIME type 처리 (예: vnd.openxmlformats-officedocument.wordprocessingml.document -> docx)
+            if (mimePart.includes('wordprocessingml') || mimePart.includes('msword')) {
+              fileType = 'docx';
+            } else if (mimePart.includes('pdf')) {
+              fileType = 'pdf';
+            } else if (mimePart.includes('plain')) {
+              fileType = 'txt';
+            } else {
+              // 간단한 경우: application/pdf -> pdf
+              fileType = mimePart.split(';')[0].trim(); // charset 등 제거
+            }
+          }
+        }
+      }
       const metadataRecord: any = {
         id: document.id,
         title: document.title,
