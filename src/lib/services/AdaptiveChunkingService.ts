@@ -399,9 +399,13 @@ export class AdaptiveChunkingService {
     
     // 청크가 1개만 생성되었는데 내용이 긴 경우 경고 및 강제 분할
     if (chunks.length === 1 && content.length > 10000) {
+      const firstChunkSize = chunks[0]?.length || 0;
+      const coverage = content.length > 0 ? (firstChunkSize / content.length) * 100 : 0;
+      
       console.error('❌ 청킹 최적화 실패: 내용이 긴데 청크가 1개만 생성되었습니다.', {
         contentLength: content.length,
-        chunkSize: chunks[0]?.length || 0,
+        chunkSize: firstChunkSize,
+        coverage: `${coverage.toFixed(1)}%`,
         strategy: {
           chunkSize: strategy.chunkSize,
           adjustedChunkSize,
@@ -412,9 +416,16 @@ export class AdaptiveChunkingService {
         maxIterations
       });
       
-      // 강제로 여러 청크로 분할 시도
+      // 강제로 여러 청크로 분할 시도 (더 작은 청크 크기로)
+      console.log('🔄 AdaptiveChunkingService: 강제 청킹 시도...');
       const forcedChunks: string[] = [];
-      const forcedChunkSize = Math.max(strategy.chunkSize, 1000); // 최소 1000자
+      // 내용 길이에 따라 동적으로 청크 크기 결정 (최소 500자, 최대 2000자)
+      // 목표: 최소 10개 이상의 청크 생성
+      const targetChunkCount = Math.max(10, Math.min(50, Math.floor(content.length / 1000)));
+      const forcedChunkSize = Math.max(500, Math.min(2000, Math.floor(content.length / targetChunkCount)));
+      
+      console.log(`📏 강제 청킹 설정: 목표 ${targetChunkCount}개 청크, 청크 크기 ${forcedChunkSize}자`);
+      
       for (let i = 0; i < content.length; i += forcedChunkSize) {
         const forcedChunk = content.slice(i, i + forcedChunkSize).trim();
         if (forcedChunk.length > 0) {
@@ -423,8 +434,24 @@ export class AdaptiveChunkingService {
       }
       
       if (forcedChunks.length > 1) {
-        console.log(`✅ 강제 청킹 완료: ${forcedChunks.length}개 청크 생성`);
+        console.log(`✅ 강제 청킹 완료: ${forcedChunks.length}개 청크 생성 (기존: ${chunks.length}개, 목표: ${targetChunkCount}개)`);
         return forcedChunks;
+      } else {
+        console.warn('⚠️ 강제 청킹 실패: 여전히 1개 청크만 생성됨. 더 작은 청크 크기로 재시도...');
+        // 더 작은 청크 크기로 재시도
+        const smallerChunkSize = Math.max(200, Math.floor(forcedChunkSize / 2));
+        const smallerForcedChunks: string[] = [];
+        for (let i = 0; i < content.length; i += smallerChunkSize) {
+          const smallerChunk = content.slice(i, i + smallerChunkSize).trim();
+          if (smallerChunk.length > 0) {
+            smallerForcedChunks.push(smallerChunk);
+          }
+        }
+        
+        if (smallerForcedChunks.length > 1) {
+          console.log(`✅ 강제 청킹 재시도 성공: ${smallerForcedChunks.length}개 청크 생성`);
+          return smallerForcedChunks;
+        }
       }
     }
     

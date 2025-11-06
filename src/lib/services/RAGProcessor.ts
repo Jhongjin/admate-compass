@@ -898,50 +898,86 @@ export class RAGProcessor {
         coverage: chunks.length > 0 ? `${((totalChunkSize / processedContent.length) * 100).toFixed(1)}%` : '0%'
       });
       
-      // 청킹 결과 검증: 내용이 긴데 청크가 1개만 생성된 경우에만 경고 및 강제 재청킹
-      // AdaptiveChunkingService에서 이미 강제 분할을 시도했을 수 있으므로, 
-      // 실제로 1개만 있는 경우에만 처리
+      // 청킹 결과 검증: 내용이 긴데 청크가 1개만 생성된 경우 강제 재청킹
+      // AdaptiveChunkingService에서 이미 강제 분할을 시도했을 수 있지만, 
+      // 여전히 1개만 있다면 RAGProcessor에서도 강제 재청킹 시도
       if (chunks.length === 1 && processedContent.length > 10000) {
         const firstChunkSize = chunks[0]?.content?.length || 0;
         const coverage = processedContent.length > 0 ? (firstChunkSize / processedContent.length) * 100 : 0;
         
-        // 첫 번째 청크가 전체 내용의 90% 이상을 차지하는 경우에만 문제로 판단
-        if (coverage > 90) {
-          console.error('❌ 청킹 최적화 실패: 내용이 긴데 청크가 1개만 생성되었습니다.', {
-            documentId: document.id,
-            title: document.title,
-            contentLength: processedContent.length,
-            contentLengthKB: (processedContent.length / 1024).toFixed(2),
-            chunkSize: firstChunkSize,
-            chunkSizeKB: (firstChunkSize / 1024).toFixed(2),
-            coverage: `${coverage.toFixed(1)}%`,
-            contentPreview: processedContent.substring(0, 500),
-            fileSize: document.file_size,
-            fileSizeMB: document.file_size ? (document.file_size / (1024 * 1024)).toFixed(2) : 'unknown'
-          });
+        console.error('❌ 청킹 최적화 실패: 내용이 긴데 청크가 1개만 생성되었습니다.', {
+          documentId: document.id,
+          title: document.title,
+          contentLength: processedContent.length,
+          contentLengthKB: (processedContent.length / 1024).toFixed(2),
+          chunkSize: firstChunkSize,
+          chunkSizeKB: (firstChunkSize / 1024).toFixed(2),
+          coverage: `${coverage.toFixed(1)}%`,
+          contentPreview: processedContent.substring(0, 500),
+          fileSize: document.file_size,
+          fileSizeMB: document.file_size ? (document.file_size / (1024 * 1024)).toFixed(2) : 'unknown'
+        });
+        
+        // 강제 재청킹 시도 (무조건 실행, coverage 조건 제거)
+        console.log('🔄 RAGProcessor: 강제 재청킹 시도 (무조건 실행)...');
+        try {
+          // 내용 길이에 따라 동적으로 청크 크기 결정
+          // 목표: 최소 10개 이상의 청크 생성
+          const targetChunkCount = Math.max(10, Math.min(50, Math.floor(processedContent.length / 1000)));
+          const forcedChunkSize = Math.max(500, Math.min(2000, Math.floor(processedContent.length / targetChunkCount)));
           
-          // 강제 재청킹 시도 (더 작은 청크 크기로)
-          console.log('🔄 강제 재청킹 시도 (더 작은 청크 크기로)...');
-          try {
-            // 간단한 고정 크기 청킹으로 재시도
-            const forcedChunks: ChunkData[] = [];
-            const forcedChunkSize = 1000; // 1000자 단위로 강제 분할
-            for (let i = 0; i < processedContent.length; i += forcedChunkSize) {
-              const chunkContent = processedContent.slice(i, i + forcedChunkSize).trim();
-              if (chunkContent.length > 0) {
-                forcedChunks.push({
-                  id: `${document.id}_chunk_${forcedChunks.length}`,
-                  content: chunkContent,
+          console.log(`📏 강제 재청킹 설정: 목표 ${targetChunkCount}개 청크, 청크 크기 ${forcedChunkSize}자`);
+          
+          const forcedChunks: ChunkData[] = [];
+          for (let i = 0; i < processedContent.length; i += forcedChunkSize) {
+            const chunkContent = processedContent.slice(i, i + forcedChunkSize).trim();
+            if (chunkContent.length > 0) {
+              forcedChunks.push({
+                id: `${document.id}_chunk_${forcedChunks.length}`,
+                content: chunkContent,
+                metadata: {
+                  document_id: document.id,
+                  chunk_index: forcedChunks.length,
+                  source: document.title,
+                  created_at: new Date().toISOString(),
+                  document_title: document.title,
+                  document_type: document.type || 'unknown',
+                  chunk_type: 'text',
+                  start_char: i,
+                  end_char: i + chunkContent.length,
+                  original_length: processedContent.length,
+                  hierarchy_level: 'paragraph',
+                }
+              });
+            }
+          }
+          
+          if (forcedChunks.length > 1) {
+            console.log(`✅ 강제 재청킹 완료: ${forcedChunks.length}개 청크 생성 (기존: ${chunks.length}개, 목표: ${targetChunkCount}개)`);
+            // 강제 청킹 결과로 대체
+            chunks.length = 0;
+            chunks.push(...forcedChunks);
+          } else {
+            console.warn('⚠️ 강제 재청킹 실패: 여전히 1개 청크만 생성됨. 더 작은 청크 크기로 재시도...');
+            // 더 작은 청크 크기로 재시도
+            const smallerChunkSize = Math.max(200, Math.floor(forcedChunkSize / 2));
+            const smallerForcedChunks: ChunkData[] = [];
+            for (let i = 0; i < processedContent.length; i += smallerChunkSize) {
+              const smallerChunk = processedContent.slice(i, i + smallerChunkSize).trim();
+              if (smallerChunk.length > 0) {
+                smallerForcedChunks.push({
+                  id: `${document.id}_chunk_${smallerForcedChunks.length}`,
+                  content: smallerChunk,
                   metadata: {
                     document_id: document.id,
-                    chunk_index: forcedChunks.length,
+                    chunk_index: smallerForcedChunks.length,
                     source: document.title,
                     created_at: new Date().toISOString(),
                     document_title: document.title,
                     document_type: document.type || 'unknown',
                     chunk_type: 'text',
                     start_char: i,
-                    end_char: i + chunkContent.length,
+                    end_char: i + smallerChunk.length,
                     original_length: processedContent.length,
                     hierarchy_level: 'paragraph',
                   }
@@ -949,20 +985,16 @@ export class RAGProcessor {
               }
             }
             
-            if (forcedChunks.length > 1) {
-              console.log(`✅ 강제 재청킹 완료: ${forcedChunks.length}개 청크 생성 (기존: ${chunks.length}개)`);
-              // 강제 청킹 결과로 대체
+            if (smallerForcedChunks.length > 1) {
+              console.log(`✅ 강제 재청킹 재시도 성공: ${smallerForcedChunks.length}개 청크 생성`);
               chunks.length = 0;
-              chunks.push(...forcedChunks);
+              chunks.push(...smallerForcedChunks);
             } else {
-              console.warn('⚠️ 강제 재청킹도 실패: 여전히 1개 청크만 생성됨');
+              console.error('❌ 강제 재청킹 재시도도 실패: 여전히 1개 청크만 생성됨. 내용을 확인해주세요.');
             }
-          } catch (forceError) {
-            console.error('❌ 강제 재청킹 실패:', forceError);
           }
-        } else {
-          // 첫 번째 청크가 전체 내용의 일부만 차지하는 경우 (나머지 청크가 있을 수 있음)
-          console.log(`ℹ️ 청크가 1개로 표시되지만 실제로는 더 많은 청크가 있을 수 있습니다. (첫 청크 커버리지: ${coverage.toFixed(1)}%)`);
+        } catch (forceError) {
+          console.error('❌ 강제 재청킹 실패:', forceError);
         }
       } else if (chunks.length > 1) {
         // 여러 청크가 생성된 경우 정상
