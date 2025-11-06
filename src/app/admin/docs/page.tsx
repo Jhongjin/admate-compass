@@ -367,6 +367,18 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
         setUploadProgress(60);
         console.log('✅ Storage 업로드 및 큐 등록 완료:', { jobId: jobData.id, documentId });
         
+        // 큐에 등록 후 즉시 큐 워커 트리거 (수동 처리 버튼과 동일한 방식)
+        setUploadProgress(70);
+        try {
+          console.log('🚀 큐 워커 즉시 트리거 시작...');
+          const consumeRes = await fetch('/api/jobs/consume', { method: 'POST' });
+          const consumeResult = await consumeRes.json();
+          console.log('✅ 큐 워커 트리거 완료:', consumeResult);
+        } catch (consumeError) {
+          console.warn('⚠️ 큐 워커 트리거 실패 (Cron Job이 처리할 수 있음):', consumeError);
+          // 에러가 발생해도 폴링은 계속 진행
+        }
+        
         setUploadProgress(85);
         
         // 큐 상태 폴링 시작
