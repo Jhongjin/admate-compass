@@ -573,6 +573,7 @@ export async function POST(request: NextRequest) {
           isValidDocx: isValidDocx,
           isValidBase64: isValidBase64
         });
+        */
       } else {
         // TXT 파일은 기존 방식 사용하되 인코딩 처리 개선
         const textContent = await file.text();
