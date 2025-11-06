@@ -762,6 +762,27 @@ export async function processQueue() {
       const normalizedText = normalizeTablesToMarkdown(extractedText);
       const normalizedLengthKB = (normalizedText.length / 1024).toFixed(2);
       console.log(`📝 텍스트 정규화 완료: ${normalizedLengthKB}KB`);
+      
+      // 텍스트 길이 검증 및 경고
+      if (normalizedText.length < 100 && fileSize > 100 * 1024) {
+        // 파일 크기는 큰데 텍스트가 매우 짧은 경우 (PDF 파싱 실패 가능성)
+        console.error('❌ 텍스트 추출 의심: 파일 크기는 크지만 텍스트가 매우 짧습니다.', {
+          fileName,
+          fileSizeMB: fileSizeMB,
+          extractedLength: extractedText.length,
+          normalizedLength: normalizedText.length,
+          textPreview: normalizedText.substring(0, 500)
+        });
+      } else if (normalizedText.length < 1000 && fileSize > 1024 * 1024) {
+        // 파일 크기가 1MB 이상인데 텍스트가 1KB 미만인 경우 경고
+        console.warn('⚠️ 텍스트 추출 경고: 파일 크기에 비해 텍스트가 짧습니다.', {
+          fileName,
+          fileSizeMB: fileSizeMB,
+          normalizedLength: normalizedText.length,
+          normalizedLengthKB,
+          textPreview: normalizedText.substring(0, 200)
+        });
+      }
 
       // 🔥 Phase 2: 큰 파일 감지 및 분할 처리
       // 파일 크기와 텍스트 길이를 모두 고려하여 큰 파일 판단

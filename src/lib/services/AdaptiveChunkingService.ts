@@ -113,13 +113,32 @@ export class AdaptiveChunkingService {
         maxChunks: 200,
         minChunkSize: 200
       };
-    } else {
+    } else if (contentLength < 500000) {
+      // 10만자 ~ 50만자: 중간 크기 문서
+      return {
+        chunkSize: Math.floor(1500 * speedMultiplier),
+        chunkOverlap: Math.floor(150 * speedMultiplier),
+        separators: ['\n\n', '\n', '. ', '! ', '? ', '; ', ' '],
+        maxChunks: 400,
+        minChunkSize: 300
+      };
+    } else if (contentLength < 2000000) {
+      // 50만자 ~ 200만자: 큰 문서
       return {
         chunkSize: Math.floor(2000 * speedMultiplier),
         chunkOverlap: Math.floor(200 * speedMultiplier),
         separators: ['\n\n', '\n', '. ', '! ', '? ', '; ', ' '],
-        maxChunks: 500,
+        maxChunks: 800,
         minChunkSize: 400
+      };
+    } else {
+      // 200만자 이상: 매우 큰 문서
+      return {
+        chunkSize: Math.floor(3000 * speedMultiplier),
+        chunkOverlap: Math.floor(300 * speedMultiplier),
+        separators: ['\n\n', '\n', '. ', '! ', '? ', '; ', ' '],
+        maxChunks: 1000,
+        minChunkSize: 500
       };
     }
   }
