@@ -427,6 +427,11 @@ async function processQueue() {
                                    foundFile.path.toLowerCase().endsWith('.docx') ? 'docx' : 
                                    foundFile.path.toLowerCase().endsWith('.doc') ? 'docx' : 'unknown';
             
+            // 실제 파일 타입 (MIME type) 결정
+            const actualFileType = actualExtension === 'pdf' ? 'application/pdf' :
+                                  actualExtension === 'docx' ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' :
+                                  'application/octet-stream';
+            
             // 파일 타입에 따라 텍스트 추출 (실제 파일 확장자 우선, 없으면 job_type 사용)
             const fileTypeToUse = actualExtension !== 'unknown' ? actualExtension : 
                                  (job.job_type === 'PDF_PARSE' ? 'pdf' : 'docx');
@@ -434,6 +439,13 @@ async function processQueue() {
             if (actualExtension !== 'unknown' && actualExtension !== fileTypeToUse && job.job_type) {
               const expectedType = job.job_type === 'PDF_PARSE' ? 'pdf' : 'docx';
               console.warn(`⚠️ 재처리: 파일 타입 불일치 - job_type=${job.job_type}, 실제 파일=${actualExtension}, 실제 파일 타입으로 처리합니다.`);
+            }
+            
+            // file_type을 실제 파일 확장자에 맞게 업데이트 (docData 생성 시 사용)
+            if (actualExtension !== 'unknown') {
+              storage = storage || {};
+              storage.contentType = actualFileType;
+              console.log(`📝 재처리: file_type 업데이트 - ${actualExtension} (${actualFileType})`);
             }
             
             if (fileTypeToUse === 'pdf') {
@@ -866,13 +878,41 @@ async function processQueue() {
         throw new Error(errorMsg);
       }
       
+      // 실제 파일 확장자 확인 (Storage 파일 경로 또는 파일명 기준)
+      let actualFileType = storage?.contentType || docs?.[0]?.file_type;
+      if (!actualFileType || (isReprocess && storage)) {
+        // 재처리 모드에서 Storage 파일 경로 확인
+        const storagePath = storage?.path || '';
+        if (storagePath.toLowerCase().endsWith('.docx') || storagePath.toLowerCase().endsWith('.doc')) {
+          actualFileType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+        } else if (storagePath.toLowerCase().endsWith('.pdf')) {
+          actualFileType = 'application/pdf';
+        } else if (fileName.toLowerCase().endsWith('.docx') || fileName.toLowerCase().endsWith('.doc')) {
+          actualFileType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+        } else if (fileName.toLowerCase().endsWith('.pdf')) {
+          actualFileType = 'application/pdf';
+        } else {
+          // 기본값은 job_type 기반
+          actualFileType = job.job_type === 'PDF_PARSE' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+        }
+      }
+      
+      // type도 실제 파일 확장자에 맞게 설정
+      const actualType = actualFileType.includes('wordprocessingml') ? 'docx' : 
+                        actualFileType.includes('pdf') ? 'pdf' : 
+                        (job.job_type === 'PDF_PARSE' ? 'pdf' : 'docx');
+      
+      if (isReprocess && actualFileType !== (job.job_type === 'PDF_PARSE' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')) {
+        console.warn(`⚠️ 재처리: file_type 불일치 감지 - job_type=${job.job_type}, 실제 file_type=${actualFileType}, 실제 타입으로 업데이트합니다.`);
+      }
+      
       const docData: DocumentData = {
         id: job.document_id,
         title: docs?.[0]?.title || fileName,
         content: normalizedText,
-        type: job.job_type === 'PDF_PARSE' ? 'pdf' : 'docx',
+        type: actualType,
         file_size: storage?.size || docs?.[0]?.file_size || 0,
-        file_type: storage?.contentType || docs?.[0]?.file_type || (job.job_type === 'PDF_PARSE' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'),
+        file_type: actualFileType,
         source_vendor: vendor,
         created_at: docs?.[0]?.created_at || nowIso,
         updated_at: nowIso,

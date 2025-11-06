@@ -379,10 +379,13 @@ export class RAGProcessor {
           fileDataStart: originalBinaryData.substring(0, 50)
         });
       } else {
-        console.warn('⚠️ originalBinaryData가 없습니다:', {
+        // originalBinaryData가 없는 것은 재처리 모드에서 정상입니다 (원본 파일은 Storage에 있음)
+        // 경고 대신 정보 로그로 변경 (재처리 모드에서는 원본 파일이 Storage에 있으므로 불필요)
+        console.log('ℹ️ originalBinaryData 없음 (재처리 모드 또는 텍스트 전용 처리):', {
           documentId: document.id,
           title: document.title,
-          fileType: document.file_type
+          fileType: document.file_type,
+          note: '재처리 모드에서는 원본 파일이 Storage에 있으므로 originalBinaryData가 없어도 정상입니다.'
         });
       }
       
