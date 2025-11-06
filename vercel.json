@@ -8,7 +8,7 @@
     },
     {
       "path": "/api/jobs/consume",
-      "schedule": "*/30 * * * * *"
+      "schedule": "*/1 * * * *"
     }
   ],
   "functions": {
