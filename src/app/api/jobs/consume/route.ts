@@ -443,7 +443,13 @@ async function processQueue() {
             
             // file_type을 실제 파일 확장자에 맞게 업데이트 (docData 생성 시 사용)
             if (actualExtension !== 'unknown') {
-              storage = storage || {};
+              if (!storage) {
+                // storage가 없으면 새 객체 생성 (필수 속성 포함)
+                storage = {
+                  bucket: STORAGE_BUCKET,
+                  path: foundFile.path
+                };
+              }
               storage.contentType = actualFileType;
               console.log(`📝 재처리: file_type 업데이트 - ${actualExtension} (${actualFileType})`);
             }
