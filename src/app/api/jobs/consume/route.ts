@@ -376,17 +376,30 @@ async function processQueue() {
             console.error('❌ Storage 목록 조회 에러:', listError);
             // 폴더가 없을 수도 있으므로 에러는 무시하고 계속 진행
           } else if (files && files.length > 0) {
-            // PDF 또는 DOCX 파일 찾기
+            // job_type에 맞는 파일 우선 찾기, 없으면 다른 타입 파일 찾기
+            const jobTypeExtension = job.job_type === 'PDF_PARSE' ? '.pdf' : '.docx';
             const targetFile = files.find(f => 
+              f.name.toLowerCase().endsWith(jobTypeExtension)
+            ) || files.find(f => 
               f.name.toLowerCase().endsWith('.pdf') || 
               f.name.toLowerCase().endsWith('.docx')
-            ) || files[0]; // PDF/DOCX가 없으면 첫 번째 파일
+            ) || files[0]; // job_type에 맞는 파일 우선, 없으면 다른 타입, 그래도 없으면 첫 번째 파일
             
             foundFile = {
               path: `${job.document_id}/${targetFile.name}`,
               size: targetFile.metadata?.size || 0
             };
-            console.log(`✅ Storage에서 파일 발견: ${foundFile.path} (${foundFile.size} bytes)`);
+            
+            // 실제 파일 확장자 확인 및 경고
+            const actualExtension = targetFile.name.toLowerCase().endsWith('.pdf') ? '.pdf' : 
+                                   targetFile.name.toLowerCase().endsWith('.docx') ? '.docx' : 'unknown';
+            const expectedExtension = jobTypeExtension;
+            
+            if (actualExtension !== expectedExtension) {
+              console.warn(`⚠️ 파일 타입 불일치: job_type=${job.job_type}, 실제 파일=${actualExtension}, 예상=${expectedExtension}`);
+            }
+            
+            console.log(`✅ Storage에서 파일 발견: ${foundFile.path} (${foundFile.size} bytes, 실제 확장자: ${actualExtension})`);
           } else {
             console.warn(`⚠️ Storage에 파일이 없습니다: ${STORAGE_BUCKET}/${job.document_id}`);
           }
@@ -409,14 +422,34 @@ async function processQueue() {
             const downloadedSizeMB = (fileBuffer.length / (1024 * 1024)).toFixed(2);
             console.log(`✅ 재처리: 파일 다운로드 완료: ${downloadedSizeMB}MB (${dlMs}ms)`);
             
-            // 파일 타입에 따라 텍스트 추출
-            if (job.job_type === 'PDF_PARSE') {
+            // 실제 파일 확장자 확인 (Storage 파일명 기준)
+            const actualExtension = foundFile.path.toLowerCase().endsWith('.pdf') ? 'pdf' : 
+                                   foundFile.path.toLowerCase().endsWith('.docx') ? 'docx' : 
+                                   foundFile.path.toLowerCase().endsWith('.doc') ? 'docx' : 'unknown';
+            
+            // 파일 타입에 따라 텍스트 추출 (실제 파일 확장자 우선, 없으면 job_type 사용)
+            const fileTypeToUse = actualExtension !== 'unknown' ? actualExtension : 
+                                 (job.job_type === 'PDF_PARSE' ? 'pdf' : 'docx');
+            
+            if (actualExtension !== 'unknown' && actualExtension !== fileTypeToUse && job.job_type) {
+              const expectedType = job.job_type === 'PDF_PARSE' ? 'pdf' : 'docx';
+              console.warn(`⚠️ 재처리: 파일 타입 불일치 - job_type=${job.job_type}, 실제 파일=${actualExtension}, 실제 파일 타입으로 처리합니다.`);
+            }
+            
+            if (fileTypeToUse === 'pdf') {
               const p0 = Date.now();
-              extractedText = await processPdfBuffer(fileBuffer);
-              parseMs = Date.now() - p0;
-              const textLengthKB = (extractedText.length / 1024).toFixed(2);
-              console.log(`✅ 재처리: PDF 텍스트 추출 완료: ${textLengthKB}KB (${parseMs}ms)`);
-            } else if (job.job_type === 'DOCX_PARSE') {
+              try {
+                extractedText = await processPdfBuffer(fileBuffer);
+                parseMs = Date.now() - p0;
+                const textLengthKB = (extractedText.length / 1024).toFixed(2);
+                console.log(`✅ 재처리: PDF 텍스트 추출 완료: ${textLengthKB}KB (${parseMs}ms)`);
+              } catch (parseError) {
+                parseMs = Date.now() - p0;
+                const errorMsg = parseError instanceof Error ? parseError.message : String(parseError);
+                console.error(`❌ 재처리: PDF 파싱 실패 (${parseMs}ms):`, errorMsg);
+                throw new Error(`재처리: PDF 파일 파싱 실패: 파일이 손상되었거나 유효한 PDF 파일이 아닙니다. (${errorMsg})`);
+              }
+            } else if (fileTypeToUse === 'docx') {
               const p0 = Date.now();
               try {
                 extractedText = await processDocxBuffer(fileBuffer);
@@ -429,6 +462,8 @@ async function processQueue() {
                 console.error(`❌ 재처리: DOCX 파싱 실패 (${parseMs}ms):`, errorMsg);
                 throw new Error(`재처리: DOCX 파일 파싱 실패: 파일이 손상되었거나 유효한 DOCX 파일이 아닙니다. (${errorMsg})`);
               }
+            } else {
+              throw new Error(`재처리: 지원하지 않는 파일 타입입니다. (실제 파일: ${actualExtension}, job_type: ${job.job_type})`);
             }
           } catch (downloadError) {
             console.error('❌ 재처리: Storage 다운로드 실패:', downloadError);
@@ -476,13 +511,34 @@ async function processQueue() {
                     const downloadedSizeMB = (fileBuffer.length / (1024 * 1024)).toFixed(2);
                     console.log(`✅ 재처리: 파일 다운로드 완료: ${downloadedSizeMB}MB (${dlMs}ms)`);
                     
-                    if (job.job_type === 'PDF_PARSE') {
+                    // 실제 파일 확장자 확인 (Storage 파일명 기준)
+                    const actualExtension = foundFile.path.toLowerCase().endsWith('.pdf') ? 'pdf' : 
+                                           foundFile.path.toLowerCase().endsWith('.docx') ? 'docx' : 
+                                           foundFile.path.toLowerCase().endsWith('.doc') ? 'docx' : 'unknown';
+                    
+                    // 파일 타입에 따라 텍스트 추출 (실제 파일 확장자 우선, 없으면 job_type 사용)
+                    const fileTypeToUse = actualExtension !== 'unknown' ? actualExtension : 
+                                         (job.job_type === 'PDF_PARSE' ? 'pdf' : 'docx');
+                    
+                    if (actualExtension !== 'unknown' && actualExtension !== fileTypeToUse && job.job_type) {
+                      const expectedType = job.job_type === 'PDF_PARSE' ? 'pdf' : 'docx';
+                      console.warn(`⚠️ 재처리: 파일 타입 불일치 - job_type=${job.job_type}, 실제 파일=${actualExtension}, 실제 파일 타입으로 처리합니다.`);
+                    }
+                    
+                    if (fileTypeToUse === 'pdf') {
                       const p0 = Date.now();
-                      extractedText = await processPdfBuffer(fileBuffer);
-                      parseMs = Date.now() - p0;
-                      const textLengthKB = (extractedText.length / 1024).toFixed(2);
-                      console.log(`✅ 재처리: PDF 텍스트 추출 완료: ${textLengthKB}KB (${parseMs}ms)`);
-                    } else if (job.job_type === 'DOCX_PARSE') {
+                      try {
+                        extractedText = await processPdfBuffer(fileBuffer);
+                        parseMs = Date.now() - p0;
+                        const textLengthKB = (extractedText.length / 1024).toFixed(2);
+                        console.log(`✅ 재처리: PDF 텍스트 추출 완료: ${textLengthKB}KB (${parseMs}ms)`);
+                      } catch (parseError) {
+                        parseMs = Date.now() - p0;
+                        const errorMsg = parseError instanceof Error ? parseError.message : String(parseError);
+                        console.error(`❌ 재처리: PDF 파싱 실패 (${parseMs}ms):`, errorMsg);
+                        throw new Error(`재처리: PDF 파일 파싱 실패: 파일이 손상되었거나 유효한 PDF 파일이 아닙니다. (${errorMsg})`);
+                      }
+                    } else if (fileTypeToUse === 'docx') {
                       const p0 = Date.now();
                       try {
                         extractedText = await processDocxBuffer(fileBuffer);
@@ -495,6 +551,8 @@ async function processQueue() {
                         console.error(`❌ 재처리: DOCX 파싱 실패 (${parseMs}ms):`, errorMsg);
                         throw new Error(`재처리: DOCX 파일 파싱 실패: 파일이 손상되었거나 유효한 DOCX 파일이 아닙니다. (${errorMsg})`);
                       }
+                    } else {
+                      throw new Error(`재처리: 지원하지 않는 파일 타입입니다. (실제 파일: ${actualExtension}, job_type: ${job.job_type})`);
                     }
                   }
                 }
