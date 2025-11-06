@@ -52,14 +52,32 @@ ORDER BY ordinal_position;
 -- ============================================
 -- 1.4 document_splits CHECK 제약조건 확인
 -- ============================================
+-- 테이블이 존재하는 경우에만 확인
+DO $$
+BEGIN
+  IF EXISTS (
+    SELECT FROM information_schema.tables 
+    WHERE table_schema = 'public' 
+    AND table_name = 'document_splits'
+  ) THEN
+    RAISE NOTICE 'document_splits 테이블 존재 - CHECK 제약조건 확인';
+  ELSE
+    RAISE NOTICE 'document_splits 테이블이 존재하지 않습니다. 마이그레이션을 먼저 적용해주세요.';
+  END IF;
+END $$;
+
 SELECT 
   conname AS constraint_name,
   pg_get_constraintdef(oid) AS constraint_definition
 FROM pg_constraint
-WHERE conrelid = 'public.document_splits'::regclass
-  AND contype = 'c'; -- CHECK constraint
+WHERE conrelid = (
+  SELECT oid FROM pg_class WHERE relname = 'document_splits' AND relnamespace = 'public'::regnamespace
+)
+  AND contype = 'c' -- CHECK constraint
+LIMIT 1;
 
 -- 예상 결과: status IN ('pending', 'processing', 'completed', 'failed')
+-- 테이블이 없으면 결과 없음 (에러 없음)
 
 -- ============================================
 -- 1.5 document_splits 인덱스 확인
@@ -75,6 +93,8 @@ WHERE tablename = 'document_splits'
 -- - idx_document_splits_document_id
 -- - idx_document_splits_status
 -- - idx_document_splits_job_id (선택)
+
+-- 테이블이 없으면 결과 없음 (에러 없음)
 
 -- ============================================
 -- 1.6 documents.split_status 컬럼 확인
@@ -108,11 +128,17 @@ JOIN information_schema.constraint_column_usage AS ccu
   ON ccu.constraint_name = tc.constraint_name
   AND ccu.table_schema = tc.table_schema
 WHERE tc.constraint_type = 'FOREIGN KEY'
-  AND tc.table_name = 'document_splits';
+  AND tc.table_name = 'document_splits'
+  AND EXISTS (
+    SELECT FROM information_schema.tables 
+    WHERE table_schema = 'public' 
+    AND table_name = 'document_splits'
+  );
 
 -- 예상 결과:
 -- - document_id -> documents.id
 -- - job_id -> processing_jobs.id
+-- 테이블이 없으면 결과 없음 (에러 없음)
 
 -- ============================================
 -- 1.8 RLS (Row Level Security) 확인
@@ -125,6 +151,7 @@ WHERE schemaname = 'public'
   AND tablename = 'document_splits';
 
 -- 예상 결과: rowsecurity = true
+-- 테이블이 없으면 결과 없음 (에러 없음)
 
 -- ============================================
 -- 종합 확인 결과
