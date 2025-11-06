@@ -561,10 +561,15 @@ async function processQueue() {
       console.log(`📝 텍스트 정규화 완료: ${normalizedLengthKB}KB`);
 
       // 🔥 Phase 2: 큰 파일 감지 및 분할 처리
-      // RAG 품질 유지를 위해 충분한 크기로 분할 (500KB)
+      // 파일 크기와 텍스트 길이를 모두 고려하여 큰 파일 판단
+      // DOCX 파일은 텍스트 양이 파일 크기보다 클 수 있으므로 파일 크기 기준 우선
       const LARGE_FILE_THRESHOLD = 10 * 1024 * 1024; // 10MB
-      const LARGE_TEXT_THRESHOLD = 500 * 1024; // 500KB 텍스트 (RAG 품질 유지)
-      const isLargeFile = fileSize > LARGE_FILE_THRESHOLD || normalizedText.length > LARGE_TEXT_THRESHOLD;
+      const LARGE_TEXT_THRESHOLD = 2 * 1024 * 1024; // 2MB 텍스트 (파일 크기와 함께 고려)
+      // 파일 크기와 텍스트 길이 모두 큰 경우에만 큰 파일로 분류
+      // DOCX 파일의 경우 파일 크기만으로 판단 (텍스트 양이 파일 크기보다 클 수 있음)
+      const isLargeFile = job.job_type === 'DOCX_PARSE' 
+        ? fileSize > LARGE_FILE_THRESHOLD
+        : (fileSize > LARGE_FILE_THRESHOLD && normalizedText.length > LARGE_TEXT_THRESHOLD);
       
       if (isLargeFile) {
         console.log('📦 큰 파일 감지 - 분할 처리 시작:', {
@@ -730,7 +735,10 @@ async function processQueue() {
 
       // 큰 파일 처리를 위한 최적화: 타임아웃 전에 중간 상태 업데이트
       const textLengthKB = (docData.content.length / 1024).toFixed(2);
-      const isLargeDocument = docData.content.length > 500 * 1024 || fileSize > 10 * 1024 * 1024;
+      // DOCX 파일은 파일 크기 기준으로만 판단 (텍스트 양이 파일 크기보다 클 수 있음)
+      const isLargeDocument = job.job_type === 'DOCX_PARSE'
+        ? fileSize > 10 * 1024 * 1024
+        : (docData.content.length > 2 * 1024 * 1024 || fileSize > 10 * 1024 * 1024);
       
       // DOCX 처리 경로 로깅 (디버깅용)
       console.log(`📄 DOCX 처리 준비:`, {
@@ -759,9 +767,13 @@ async function processQueue() {
       
       // 인코딩/청킹/임베딩/저장 (타임아웃 보호)
       const processStartMs = Date.now();
-      // 타임아웃 설정: PDF 파싱(5-8분) + 분할 처리(2-5분)를 고려하여 10분으로 증가
-      // Vercel Pro 최대 10분이므로 10분으로 설정
-      const MAX_PROCESS_TIME = 600000; // 10분 (8분 → 10분으로 증가, PDF 파싱 시간 고려)
+      // 타임아웃 설정: 파일 크기와 타입에 따라 동적 설정
+      // 작은 파일: 2분, 중간 파일: 5분, 큰 파일: 10분
+      // DOCX 파일은 파일 크기 기준으로만 판단
+      const MAX_PROCESS_TIME = 
+        fileSize < 5 * 1024 * 1024 ? 120000 :  // 5MB 미만: 2분
+        fileSize < 10 * 1024 * 1024 ? 300000 : // 10MB 미만: 5분
+        600000; // 10MB 이상: 10분 (Vercel Pro 최대)
       
       // 전체 처리 시간 측정을 위한 단계별 시간 추적
       const stepTimings = {
