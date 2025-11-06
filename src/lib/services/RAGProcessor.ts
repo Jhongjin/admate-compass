@@ -653,12 +653,17 @@ export class RAGProcessor {
       });
       
       // 대용량 파일 처리 시 타임아웃 설정
+      // CHUNK_PROCESS는 분할된 작은 텍스트이므로 타임아웃을 더 짧게 설정
+      const isChunkProcess = document.title?.includes('분할');
       const isLargeFile = document.file_size > 10 * 1024 * 1024; // 10MB 이상
       // 큐 워커의 MAX_PROCESS_TIME(8분)과 동기화
-      const timeoutMs = isLargeFile ? 480000 : 120000; // 대용량: 8분 (큐 워커와 동기화), 일반: 2분
+      // 분할 처리(200KB)는 3분, 일반 대용량 파일은 8분, 일반 파일은 2분
+      const timeoutMs = isChunkProcess ? 180000 : (isLargeFile ? 480000 : 120000); // 분할: 3분, 대용량: 8분, 일반: 2분
       
-      if (isLargeFile) {
-        console.log('⚠️ 대용량 파일 처리 - 타임아웃 설정:', timeoutMs + 'ms');
+      if (isChunkProcess) {
+        console.log('⚠️ 분할 처리 - 타임아웃 설정:', timeoutMs + 'ms (3분)');
+      } else if (isLargeFile) {
+        console.log('⚠️ 대용량 파일 처리 - 타임아웃 설정:', timeoutMs + 'ms (8분)');
       }
       
       // 타임아웃 설정
