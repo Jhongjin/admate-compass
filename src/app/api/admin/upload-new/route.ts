@@ -68,35 +68,41 @@ async function uploadToStorage(file: File, docId: string, cleanFileName: string)
 }
 
 /**
- * 큐 워커를 백그라운드에서 즉시 트리거하는 함수
- * processQueue를 직접 import하여 호출 (더 안정적)
+ * 큐 워커를 즉시 트리거하는 함수
+ * processQueue를 직접 호출하여 수동 처리와 동일하게 동작
  */
 async function triggerQueueWorker(): Promise<void> {
   try {
     console.log('🚀 큐 워커 즉시 트리거 시작...');
     
-    // processQueue를 직접 import하여 호출 (외부 HTTP 호출보다 안정적)
+    // processQueue를 직접 import하여 호출 (수동 처리와 동일한 로직)
     const { processQueue } = await import('@/app/api/jobs/consume/route');
     
-    // 백그라운드에서 비동기로 실행 (await 하지 않음)
-    processQueue()
-      .then(result => {
-        console.log('✅ 큐 워커 처리 완료:', {
-          success: result instanceof Response ? result.status : 'unknown',
-          type: result instanceof Response ? 'Response' : typeof result
-        });
-      })
-      .catch(err => {
-        console.error('❌ 큐 워커 처리 실패:', {
-          error: err instanceof Error ? err.message : String(err),
-          stack: err instanceof Error ? err.stack : undefined
-        });
-      });
+    // 즉시 실행 (await하여 실제로 처리 완료까지 기다림)
+    // 업로드 응답은 이미 반환되었으므로 지연 없음
+    const result = await processQueue();
     
-    console.log('✅ 큐 워커 트리거 완료 (백그라운드 실행 중)');
-    // 함수는 즉시 반환 (백그라운드 처리)
+    if (result instanceof Response) {
+      const text = await result.text();
+      try {
+        const json = JSON.parse(text);
+        console.log('✅ 큐 워커 처리 완료:', {
+          status: result.status,
+          success: json.success,
+          message: json.message,
+          jobId: json.jobId
+        });
+      } catch {
+        console.log('✅ 큐 워커 처리 완료:', {
+          status: result.status,
+          response: text.substring(0, 200)
+        });
+      }
+    } else {
+      console.log('✅ 큐 워커 처리 완료:', result);
+    }
   } catch (err) {
-    // 에러 발생해도 무시
+    // 에러 발생해도 무시 (Cron Job이 처리할 수 있음)
     console.error('❌ 큐 워커 트리거 에러:', {
       error: err instanceof Error ? err.message : String(err),
       stack: err instanceof Error ? err.stack : undefined
