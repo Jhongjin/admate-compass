@@ -426,36 +426,56 @@ export class RAGProcessor {
         };
       });
 
-      // 배치 처리로 청크 저장 (큰 파일의 경우 더 작은 배치 사용)
+      // 작은 파일은 배치 처리 없이 한 번에 저장, 큰 파일만 배치 처리
       const isLargeBatch = chunkInserts.length > 500;
-      const batchSize = isLargeBatch ? 50 : 100; // 큰 배치는 50개씩
       let savedCount = 0;
       
-      console.log(`💾 청크 저장 시작: ${chunkInserts.length}개 청크, 배치 크기: ${batchSize}`);
-      
-      for (let i = 0; i < chunkInserts.length; i += batchSize) {
-        const batch = chunkInserts.slice(i, i + batchSize);
-        const batchStartMs = Date.now();
+      if (isLargeBatch) {
+        // 큰 파일만 배치 처리 (500개 초과)
+        const batchSize = 50; // 큰 배치는 50개씩
+        console.log(`💾 큰 파일 청크 저장 시작: ${chunkInserts.length}개 청크, 배치 크기: ${batchSize}`);
         
-        console.log(`💾 청크 배치 저장 중: ${i + 1}-${Math.min(i + batchSize, chunkInserts.length)}/${chunkInserts.length}`);
+        for (let i = 0; i < chunkInserts.length; i += batchSize) {
+          const batch = chunkInserts.slice(i, i + batchSize);
+          const batchStartMs = Date.now();
+          
+          console.log(`💾 청크 배치 저장 중: ${i + 1}-${Math.min(i + batchSize, chunkInserts.length)}/${chunkInserts.length}`);
+          
+          const { error } = await supabase
+            .from('document_chunks')
+            .insert(batch);
+
+          if (error) {
+            console.error('❌ 청크 배치 저장 오류:', error);
+            throw error;
+          }
+          
+          savedCount += batch.length;
+          const batchMs = Date.now() - batchStartMs;
+          console.log(`✅ 청크 배치 저장 완료: ${savedCount}/${chunkInserts.length} (${batchMs}ms)`);
+          
+          // 배치 간 짧은 대기 (데이터베이스 부하 방지)
+          if (i + batchSize < chunkInserts.length) {
+            await new Promise(resolve => setTimeout(resolve, 200));
+          }
+        }
+      } else {
+        // 작은 파일은 한 번에 저장 (지연 없음)
+        console.log(`💾 작은 파일 청크 저장 시작: ${chunkInserts.length}개 청크 (한 번에 저장)`);
+        const saveStartMs = Date.now();
         
         const { error } = await supabase
           .from('document_chunks')
-          .insert(batch);
+          .insert(chunkInserts);
 
         if (error) {
-          console.error('❌ 청크 배치 저장 오류:', error);
+          console.error('❌ 청크 저장 오류:', error);
           throw error;
         }
         
-        savedCount += batch.length;
-        const batchMs = Date.now() - batchStartMs;
-        console.log(`✅ 청크 배치 저장 완료: ${savedCount}/${chunkInserts.length} (${batchMs}ms)`);
-        
-        // 배치 간 짧은 대기 (데이터베이스 부하 방지, 큰 배치는 더 긴 대기)
-        if (i + batchSize < chunkInserts.length) {
-          await new Promise(resolve => setTimeout(resolve, isLargeBatch ? 200 : 100));
-        }
+        savedCount = chunkInserts.length;
+        const saveMs = Date.now() - saveStartMs;
+        console.log(`✅ 청크 저장 완료: ${savedCount}개 청크 (${saveMs}ms)`);
       }
 
       console.log('✅ 청크 저장 완료:', savedCount, '개 청크 (시도:', chunks.length, '개)');
@@ -820,7 +840,7 @@ export class RAGProcessor {
         };
       }
 
-      // 2. 임베딩 생성 (큰 파일의 경우 배치 처리)
+      // 2. 임베딩 생성 (큰 파일의 경우만 배치 처리)
       const embeddingStartMs = Date.now();
       console.log('🔮 임베딩 생성 시작...', { chunkCount: chunks.length });
       const isChunkProcess = document.title?.includes('분할');
@@ -835,6 +855,7 @@ export class RAGProcessor {
         
         for (let i = 0; i < chunks.length; i += EMBEDDING_BATCH_SIZE) {
           const batch = chunks.slice(i, i + EMBEDDING_BATCH_SIZE);
+          const batchStartMs = Date.now();
           console.log(`🔮 임베딩 배치 생성 중: ${i + 1}-${Math.min(i + EMBEDDING_BATCH_SIZE, chunks.length)}/${chunks.length}`);
           
           const batchWithEmbeddings = batch.map(chunk => ({
@@ -844,7 +865,10 @@ export class RAGProcessor {
           
           chunksWithEmbeddings.push(...batchWithEmbeddings);
           
-              // 배치 간 짧은 대기 (CPU 부하 방지, 분할 처리 시 지연 제거)
+          const batchMs = Date.now() - batchStartMs;
+          console.log(`✅ 임베딩 배치 생성 완료: ${i + 1}-${Math.min(i + EMBEDDING_BATCH_SIZE, chunks.length)}/${chunks.length} (${batchMs}ms)`);
+          
+          // 배치 간 짧은 대기 (CPU 부하 방지, 분할 처리 시 지연 제거)
           if (i + EMBEDDING_BATCH_SIZE < chunks.length) {
             // 분할 처리 시 지연 없이 처리 (이미 충분히 작은 단위)
             const delay = isChunkProcess ? 0 : 5;
@@ -857,7 +881,8 @@ export class RAGProcessor {
         const embeddingMs = Date.now() - embeddingStartMs;
         console.log(`✅ 임베딩 생성 완료: ${chunksWithEmbeddings.length}개 청크 (배치 처리, ${(embeddingMs / 1000).toFixed(1)}초)`);
       } else {
-        // 일반 파일은 한 번에 처리
+        // 작은 파일은 한 번에 처리 (지연 없음)
+        const mappingStartMs = Date.now();
         const mapped = chunks.map(chunk => ({
           ...chunk,
           embedding: this.generateSimpleEmbedding(chunk.content),
@@ -866,7 +891,8 @@ export class RAGProcessor {
         const embeddingMs = Date.now() - embeddingStartMs;
         console.log('✅ 임베딩 생성 완료:', {
           chunkCount: chunksWithEmbeddings.length,
-          time: `${embeddingMs}ms (${(embeddingMs / 1000).toFixed(1)}초)`
+          time: `${embeddingMs}ms (${(embeddingMs / 1000).toFixed(1)}초)`,
+          avgTimePerChunk: `${(embeddingMs / chunks.length).toFixed(1)}ms`
         });
       }
 
@@ -876,11 +902,13 @@ export class RAGProcessor {
       if (supabase) {
         try {
           // 문서 저장
+          const docSaveStartMs = Date.now();
           await this.saveDocumentToDatabase(document, originalBinaryData);
-          const docSaveMs = Date.now() - savingStartMs;
+          const docSaveMs = Date.now() - docSaveStartMs;
           console.log('✅ 문서 데이터베이스 저장 완료', { time: `${docSaveMs}ms` });
 
           // 큰 파일의 경우 청크 저장도 더 작은 배치로 처리
+          const chunkSaveStartMs = Date.now();
           let savedChunkCount = 0;
           if (isLargeFile || isChunkProcess) {
             console.log(`💾 ${isChunkProcess ? '분할 처리' : '큰 파일'} - 청크 저장을 배치로 처리 (${chunksWithEmbeddings.length}개 청크)`);
@@ -889,10 +917,14 @@ export class RAGProcessor {
             const SAVE_BATCH_SIZE = isChunkProcess ? 200 : 150;
             for (let i = 0; i < chunksWithEmbeddings.length; i += SAVE_BATCH_SIZE) {
               const batch = chunksWithEmbeddings.slice(i, i + SAVE_BATCH_SIZE);
+              const batchSaveStartMs = Date.now();
               console.log(`💾 청크 저장 배치: ${i + 1}-${Math.min(i + SAVE_BATCH_SIZE, chunksWithEmbeddings.length)}/${chunksWithEmbeddings.length}`);
               
               const batchSaved = await this.saveChunksToDatabase(batch);
               savedChunkCount += batchSaved;
+              
+              const batchSaveMs = Date.now() - batchSaveStartMs;
+              console.log(`✅ 청크 저장 배치 완료: ${savedChunkCount}/${chunksWithEmbeddings.length} (${batchSaveMs}ms)`);
               
               // 배치 간 짧은 대기 (분할 처리 시 지연 제거)
               if (i + SAVE_BATCH_SIZE < chunksWithEmbeddings.length) {
@@ -903,19 +935,21 @@ export class RAGProcessor {
                 }
               }
             }
-            const savingMs = Date.now() - savingStartMs;
+            const chunkSaveMs = Date.now() - chunkSaveStartMs;
             console.log('✅ 청크 데이터베이스 저장 완료:', {
               chunkCount: savedChunkCount,
-              time: `${savingMs}ms (${(savingMs / 1000).toFixed(1)}초)`,
-              batchSaved: true
+              time: `${chunkSaveMs}ms (${(chunkSaveMs / 1000).toFixed(1)}초)`,
+              batchSaved: true,
+              avgTimePerChunk: `${(chunkSaveMs / savedChunkCount).toFixed(1)}ms`
             });
           } else {
-            // 일반 파일은 한 번에 저장
+            // 작은 파일은 한 번에 저장 (지연 없음)
             savedChunkCount = await this.saveChunksToDatabase(chunksWithEmbeddings);
-            const savingMs = Date.now() - savingStartMs;
+            const chunkSaveMs = Date.now() - chunkSaveStartMs;
             console.log('✅ 청크 데이터베이스 저장 완료:', {
               chunkCount: savedChunkCount,
-              time: `${savingMs}ms (${(savingMs / 1000).toFixed(1)}초)`
+              time: `${chunkSaveMs}ms (${(chunkSaveMs / 1000).toFixed(1)}초)`,
+              avgTimePerChunk: savedChunkCount > 0 ? `${(chunkSaveMs / savedChunkCount).toFixed(1)}ms` : 'N/A'
             });
           }
           
