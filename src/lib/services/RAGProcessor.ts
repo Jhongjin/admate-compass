@@ -918,11 +918,21 @@ export class RAGProcessor {
           coverage: `${coverage.toFixed(1)}%`,
           contentPreview: processedContent.substring(0, 500),
           fileSize: document.file_size,
-          fileSizeMB: document.file_size ? (document.file_size / (1024 * 1024)).toFixed(2) : 'unknown'
+          fileSizeMB: document.file_size ? (document.file_size / (1024 * 1024)).toFixed(2) : 'unknown',
+          chunksLength: chunks.length,
+          processedContentLength: processedContent.length,
+          willForceRechunk: true
         });
         
         // 강제 재청킹 시도 (무조건 실행, coverage 조건 제거)
-        console.log('🔄 RAGProcessor: 강제 재청킹 시도 (무조건 실행)...');
+        console.log('🔄 RAGProcessor: 강제 재청킹 시도 (무조건 실행)...', {
+          documentId: document.id,
+          title: document.title,
+          currentChunkCount: chunks.length,
+          contentLength: processedContent.length,
+          condition: `chunks.length === ${chunks.length} && processedContent.length (${processedContent.length}) > 10000`
+        });
+        
         try {
           // 내용 길이에 따라 동적으로 청크 크기 결정
           // 목표: 최소 10개 이상의 청크 생성
@@ -955,14 +965,36 @@ export class RAGProcessor {
             }
           }
           
+          console.log(`📊 강제 재청킹 루프 완료:`, {
+            documentId: document.id,
+            loopCount,
+            forcedChunksLength: forcedChunks.length,
+            contentLength: processedContent.length,
+            forcedChunkSize,
+            expectedChunks: Math.ceil(processedContent.length / forcedChunkSize)
+          });
+          
           if (forcedChunks.length > 1) {
-            console.log(`✅ 강제 재청킹 완료: ${forcedChunks.length}개 청크 생성 (기존: ${chunks.length}개, 목표: ${targetChunkCount}개)`);
+            console.log(`✅ 강제 재청킹 완료: ${forcedChunks.length}개 청크 생성 (기존: ${chunks.length}개, 목표: ${targetChunkCount}개)`, {
+              documentId: document.id,
+              title: document.title,
+              beforeChunkCount: chunks.length,
+              afterChunkCount: forcedChunks.length,
+              targetChunkCount
+            });
             // 강제 청킹 결과로 대체
             chunks.length = 0;
             chunks.push(...forcedChunks);
             wasForcedRechunking = true;
           } else {
-            console.warn('⚠️ 강제 재청킹 실패: 여전히 1개 청크만 생성됨. 더 작은 청크 크기로 재시도...');
+            console.warn('⚠️ 강제 재청킹 실패: 여전히 1개 청크만 생성됨. 더 작은 청크 크기로 재시도...', {
+              documentId: document.id,
+              title: document.title,
+              forcedChunksLength: forcedChunks.length,
+              contentLength: processedContent.length,
+              forcedChunkSize,
+              loopCount
+            });
             // 더 작은 청크 크기로 재시도
             const smallerChunkSize = Math.max(200, Math.floor(forcedChunkSize / 2));
             const smallerForcedChunks: ChunkData[] = [];
