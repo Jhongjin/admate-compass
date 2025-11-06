@@ -329,7 +329,7 @@ async function processQueue() {
     let extractedText = '';
     let dlMs = 0;
     let parseMs = 0;
-    const storage = job?.payload?.storage as { bucket: string; path: string; contentType?: string; size?: number } | undefined;
+    let storage = job?.payload?.storage as { bucket: string; path: string; contentType?: string; size?: number } | undefined;
     const fileName = (job?.payload?.fileName as string) || job.document_id;
     const fileSize = storage?.size || (job?.payload?.fileSize as number) || 0;
     const isReprocess = job?.payload?.reprocess === true;
