@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createPureClient } from '@/lib/supabase/server';
 import { ragProcessor, DocumentData } from '@/lib/services/RAGProcessor';
+import { simpleTextSplitter, TextSplit } from '@/lib/services/SimpleTextSplitter';
 
 export const runtime = 'nodejs';
 export const maxDuration = 600; // Pro 플랜: 최대 10분 (큰 파일 처리 지원 - 13MB+ 파일 처리 가능)
@@ -531,6 +532,133 @@ async function processQueue() {
       const normalizedLengthKB = (normalizedText.length / 1024).toFixed(2);
       console.log(`📝 텍스트 정규화 완료: ${normalizedLengthKB}KB`);
 
+      // 🔥 Phase 2: 큰 파일 감지 및 분할 처리
+      const LARGE_FILE_THRESHOLD = 10 * 1024 * 1024; // 10MB
+      const LARGE_TEXT_THRESHOLD = 500 * 1024; // 500KB 텍스트
+      const isLargeFile = fileSize > LARGE_FILE_THRESHOLD || normalizedText.length > LARGE_TEXT_THRESHOLD;
+      
+      if (isLargeFile) {
+        console.log('📦 큰 파일 감지 - 분할 처리 시작:', {
+          fileName,
+          fileSizeMB: fileSizeMB,
+          textLength: normalizedText.length,
+          textLengthKB: normalizedLengthKB
+        });
+        
+        try {
+          // 1. 텍스트 분할 (500KB 단위)
+          const splits = simpleTextSplitter.splitByFixedSize(normalizedText, {
+            maxSize: 500 * 1024 // 500KB
+          });
+          
+          const stats = simpleTextSplitter.getSplitStats(splits);
+          console.log('✂️ 텍스트 분할 완료:', {
+            totalSplits: splits.length,
+            avgSizeKB: (stats.avgSizeBytes / 1024).toFixed(2),
+            totalSizeKB: (stats.totalSizeBytes / 1024).toFixed(2),
+            minSizeKB: (stats.minSizeBytes / 1024).toFixed(2),
+            maxSizeKB: (stats.maxSizeBytes / 1024).toFixed(2)
+          });
+          
+          // 2. document_splits 테이블에 분할 저장
+          const splitInserts = splits.map((split, idx) => ({
+            document_id: job.document_id,
+            split_index: idx,
+            split_count: splits.length,
+            content: split.content,
+            start_char: split.startChar,
+            end_char: split.endChar,
+            status: 'pending'
+          }));
+          
+          const { data: insertedSplits, error: splitInsertError } = await supabase
+            .from('document_splits')
+            .insert(splitInserts)
+            .select('id');
+          
+          if (splitInsertError) {
+            throw new Error(`분할 저장 실패: ${splitInsertError.message}`);
+          }
+          
+          console.log('💾 분할 저장 완료:', insertedSplits?.length || 0, '개');
+          
+          // 3. 각 분할에 대해 CHUNK_PROCESS job 등록
+          const chunkJobs = insertedSplits!.map((split, idx) => ({
+            document_id: job.document_id,
+            job_type: 'CHUNK_PROCESS',
+            status: 'queued',
+            priority: 5, // 일반 우선순위
+            payload: {
+              split_id: split.id,
+              split_index: idx,
+              original_job_id: job.id,
+              original_job_type: job.job_type,
+              fileName: fileName,
+              fileSize: fileSize
+            },
+            attempts: 0,
+            max_attempts: 3,
+            scheduled_at: new Date().toISOString()
+          }));
+          
+          const { data: insertedJobs, error: jobInsertError } = await supabase
+            .from('processing_jobs')
+            .insert(chunkJobs)
+            .select('id');
+          
+          if (jobInsertError) {
+            throw new Error(`CHUNK_PROCESS job 등록 실패: ${jobInsertError.message}`);
+          }
+          
+          console.log('📋 CHUNK_PROCESS job 등록 완료:', insertedJobs?.length || 0, '개');
+          
+          // 4. documents 테이블 상태 업데이트
+          await supabase
+            .from('documents')
+            .update({
+              split_status: {
+                total_splits: splits.length,
+                completed_splits: 0,
+                failed_splits: 0,
+                method: 'fixed-size'
+              },
+              status: 'processing'
+            })
+            .eq('id', job.document_id);
+          
+          // 5. 원본 PDF_PARSE/DOCX_PARSE job 완료 처리
+          await supabase
+            .from('processing_jobs')
+            .update({
+              status: 'completed',
+              finished_at: new Date().toISOString(),
+              result: {
+                note: 'split_into_chunks',
+                total_splits: splits.length,
+                fileSize: fileSize,
+                textLength: normalizedText.length
+              }
+            })
+            .eq('id', job.id)
+            .eq('status', 'processing');
+          
+          console.log('✅ 큰 파일 분할 완료 - CHUNK_PROCESS job들이 큐에 등록됨');
+          
+          return NextResponse.json({
+            success: true,
+            message: `큰 파일을 ${splits.length}개 분할로 처리했습니다.`,
+            splits: splits.length
+          }, { status: 200 });
+          
+        } catch (splitError: any) {
+          console.error('❌ 큰 파일 분할 실패:', splitError);
+          
+          // 분할 실패 시 기존 방식으로 폴백 (전체 파일 처리 시도)
+          console.log('⚠️ 분할 실패 - 기존 방식으로 폴백');
+          // ... 기존 처리 로직 계속 ...
+        }
+      }
+
       // 문서 레코드 불러오기(없을 경우 기본 메타 구성)
       const { data: docs } = await supabase.from('documents').select('id, title, file_size, file_type, created_at, updated_at, source_vendor').eq('id', job.document_id).limit(1);
       const nowIso = new Date().toISOString();
@@ -733,6 +861,232 @@ async function processQueue() {
       if (finishErr) throw finishErr;
 
       return NextResponse.json({ success: true, jobId: job.id, status: 'completed', result: finishedResult }, { status: 200 });
+    }
+
+    // 🔥 Phase 2: CHUNK_PROCESS job 처리
+    if (job.job_type === 'CHUNK_PROCESS') {
+      console.log('🔧 CHUNK_PROCESS job 처리 시작:', {
+        jobId: job.id,
+        documentId: job.document_id,
+        splitIndex: job.payload?.split_index
+      });
+      
+      try {
+        const splitId = job.payload?.split_id as string;
+        const splitIndex = job.payload?.split_index as number;
+        let splitContent = job.payload?.content as string;
+        
+        if (!splitId) {
+          throw new Error('CHUNK_PROCESS job payload에 split_id가 없습니다.');
+        }
+        
+        // payload에 content가 없으면 document_splits에서 조회
+        if (!splitContent) {
+          const { data: splitData, error: splitFetchError } = await supabase
+            .from('document_splits')
+            .select('content')
+            .eq('id', splitId)
+            .single();
+          
+          if (splitFetchError || !splitData) {
+            throw new Error(`분할 콘텐츠 조회 실패: ${splitFetchError?.message || '분할 데이터 없음'}`);
+          }
+          
+          splitContent = splitData.content;
+        }
+        
+        if (!splitContent || splitContent.length === 0) {
+          throw new Error('CHUNK_PROCESS job payload에 content가 없거나 비어있습니다.');
+        }
+        
+        // 1. document_splits 상태를 processing으로 업데이트
+        await supabase
+          .from('document_splits')
+          .update({
+            status: 'processing',
+            job_id: job.id,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', splitId)
+          .eq('status', 'pending');
+        
+        // 2. 문서 정보 조회
+        const { data: doc, error: docError } = await supabase
+          .from('documents')
+          .select('id, title, type, created_at, updated_at, source_vendor')
+          .eq('id', job.document_id)
+          .single();
+        
+        if (docError || !doc) {
+          throw new Error(`문서 조회 실패: ${docError?.message || '문서 없음'}`);
+        }
+        
+        // 3. DocumentData 준비 (분할 콘텐츠만 포함)
+        const docData: DocumentData = {
+          id: doc.id,
+          title: `${doc.title} (분할 ${splitIndex + 1})`,
+          content: splitContent,
+          type: doc.type || 'pdf',
+          file_size: Buffer.byteLength(splitContent, 'utf8'),
+          file_type: doc.type === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          source_vendor: doc.source_vendor || 'META',
+          created_at: doc.created_at || new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        };
+        
+        // 4. RAG 처리 (청킹, 임베딩, 저장)
+        const processStartMs = Date.now();
+        const result = await ragProcessor.processDocument(docData, true);
+        const processMs = Date.now() - processStartMs;
+        
+        if (!result.success) {
+          throw new Error(`RAG 처리 실패: ${result.error || '알 수 없는 오류'}`);
+        }
+        
+        console.log('✅ 분할 처리 완료:', {
+          splitIndex,
+          chunkCount: result.chunkCount,
+          processTimeMs: processMs
+        });
+        
+        // 5. document_splits 상태를 completed로 업데이트
+        await supabase
+          .from('document_splits')
+          .update({
+            status: 'completed',
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', splitId)
+          .eq('status', 'processing');
+        
+        // 6. 문서 전체 완료 여부 확인
+        const { count: completedCount, error: countError } = await supabase
+          .from('document_splits')
+          .select('*', { count: 'exact', head: true })
+          .eq('document_id', job.document_id)
+          .eq('status', 'completed');
+        
+        const { count: totalCount } = await supabase
+          .from('document_splits')
+          .select('*', { count: 'exact', head: true })
+          .eq('document_id', job.document_id);
+        
+        if (countError) {
+          console.warn('⚠️ 분할 완료 수 조회 실패:', countError);
+        }
+        
+        // 7. 모든 분할 완료 시 문서 상태 업데이트
+        if (completedCount === totalCount && totalCount! > 0) {
+          // 전체 청크 수 조회
+          const { count: totalChunks } = await supabase
+            .from('document_chunks')
+            .select('*', { count: 'exact', head: true })
+            .eq('document_id', job.document_id);
+          
+          await supabase
+            .from('documents')
+            .update({
+              status: 'indexed',
+              chunk_count: totalChunks || 0,
+              split_status: {
+                total_splits: totalCount,
+                completed_splits: completedCount,
+                failed_splits: 0,
+                method: 'fixed-size'
+              },
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', job.document_id);
+          
+          console.log('🎉 모든 분할 처리 완료 - 문서 인덱싱 완료:', {
+            documentId: job.document_id,
+            totalSplits: totalCount,
+            totalChunks: totalChunks || 0
+          });
+        } else {
+          // 부분 완료 상태 업데이트
+          const { count: failedCount } = await supabase
+            .from('document_splits')
+            .select('*', { count: 'exact', head: true })
+            .eq('document_id', job.document_id)
+            .eq('status', 'failed');
+          
+          await supabase
+            .from('documents')
+            .update({
+              split_status: {
+                total_splits: totalCount,
+                completed_splits: completedCount,
+                failed_splits: failedCount || 0,
+                method: 'fixed-size'
+              }
+            })
+            .eq('id', job.document_id);
+        }
+        
+        // 8. CHUNK_PROCESS job 완료 처리
+        await supabase
+          .from('processing_jobs')
+          .update({
+            status: 'completed',
+            finished_at: new Date().toISOString(),
+            result: {
+              note: 'chunk_process_completed',
+              split_index: splitIndex,
+              chunk_count: result.chunkCount,
+              process_time_ms: processMs
+            }
+          })
+          .eq('id', job.id)
+          .eq('status', 'processing');
+        
+        return NextResponse.json({
+          success: true,
+          message: `분할 ${splitIndex + 1} 처리 완료`,
+          chunkCount: result.chunkCount
+        }, { status: 200 });
+        
+      } catch (error: any) {
+        console.error('❌ CHUNK_PROCESS 처리 실패:', error);
+        
+        // document_splits 상태를 failed로 업데이트
+        const splitId = job.payload?.split_id as string;
+        if (splitId) {
+          await supabase
+            .from('document_splits')
+            .update({
+              status: 'failed',
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', splitId);
+        }
+        
+        // documents.split_status 업데이트 (failed_splits 증가)
+        const { count: failedCount } = await supabase
+          .from('document_splits')
+          .select('*', { count: 'exact', head: true })
+          .eq('document_id', job.document_id)
+          .eq('status', 'failed');
+        
+        const { count: totalCount } = await supabase
+          .from('document_splits')
+          .select('*', { count: 'exact', head: true })
+          .eq('document_id', job.document_id);
+        
+        await supabase
+          .from('documents')
+          .update({
+            split_status: {
+              total_splits: totalCount,
+              failed_splits: failedCount,
+              method: 'fixed-size'
+            }
+          })
+          .eq('id', job.document_id);
+        
+        // job 실패 처리 (재시도 로직은 기존과 동일)
+        throw error;
+      }
     }
 
     // OCR 처리 분기
