@@ -67,6 +67,43 @@ async function uploadToStorage(file: File, docId: string, cleanFileName: string)
   return { bucket: STORAGE_BUCKET, path, contentType: file.type, size: file.size, ext };
 }
 
+/**
+ * 큐 워커를 백그라운드에서 즉시 트리거하는 함수
+ * 실패해도 무시 (Cron Job이 처리할 수 있음)
+ */
+async function triggerQueueWorker(): Promise<void> {
+  try {
+    const baseUrl = process.env.VERCEL_URL 
+      ? `https://${process.env.VERCEL_URL}` 
+      : process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
+    
+    const cronSecret = process.env.CRON_SECRET;
+    const headers: HeadersInit = {
+      'Content-Type': 'application/json',
+    };
+    
+    // CRON_SECRET이 있으면 Authorization 헤더 추가
+    if (cronSecret) {
+      headers['Authorization'] = `Bearer ${cronSecret}`;
+    }
+    
+    // 백그라운드에서 비동기로 호출 (await 하지 않음)
+    fetch(`${baseUrl}/api/jobs/consume`, {
+      method: 'POST',
+      headers,
+      // signal 없음 - 즉시 응답을 기다리지 않음
+    }).catch(err => {
+      // fetch 자체가 실패해도 무시
+      console.warn('⚠️ 큐 워커 fetch 실패:', err);
+    });
+    
+    // 함수는 즉시 반환 (백그라운드 처리)
+  } catch (err) {
+    // 에러 발생해도 무시
+    console.warn('⚠️ 큐 워커 트리거 에러:', err);
+  }
+}
+
 async function enqueueProcessingJob(params: { documentId: string; jobType: 'PDF_PARSE' | 'DOCX_PARSE' | 'OCR' | 'CRAWL' | 'EMBEDDING'; priority?: number; payload?: Record<string, unknown> }) {
   const supabase = await createPureClient();
   if (!supabase) throw new Error('Supabase 클라이언트를 생성할 수 없습니다.');
@@ -377,6 +414,11 @@ export async function POST(request: NextRequest) {
           
           console.log('✅ 큐 등록 완료:', { jobId, documentId, vendor: normalizedVendor });
           
+          // 큐에 등록 후 즉시 큐 워커 트리거 (백그라운드, 실패해도 무시)
+          triggerQueueWorker().catch(err => {
+            console.warn('⚠️ 큐 워커 즉시 트리거 실패 (Cron Job이 처리할 수 있음):', err);
+          });
+          
           return NextResponse.json({ 
             success: true, 
             queued: true, 
@@ -490,6 +532,12 @@ export async function POST(request: NextRequest) {
           priority: 7,
           payload: { fileName: cleanFileName, fileSize: file.size, fileType: file.type, storage: storageInfo }
         });
+        
+        // 큐에 등록 후 즉시 큐 워커 트리거 (백그라운드, 실패해도 무시)
+        triggerQueueWorker().catch(err => {
+          console.warn('⚠️ 큐 워커 즉시 트리거 실패 (Cron Job이 처리할 수 있음):', err);
+        });
+        
         return NextResponse.json({ success: true, queued: true, jobId, documentId, message: 'DOCX 파일은 백그라운드에서 처리됩니다.' }, { status: 202 });
         
         /* 기존 바이너리 처리 로직 제거 - 큐에서 텍스트 추출 수행 */
