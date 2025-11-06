@@ -30,6 +30,13 @@ export interface ChunkData {
     children_chunk_ids?: string[];
     // 벤더 정보 (선택적)
     source_vendor?: string;
+    // 문서 정보 (선택적)
+    document_title?: string;
+    document_type?: string;
+    // 추가 필드 (선택적)
+    start_char?: number;
+    end_char?: number;
+    original_length?: number;
   };
   embedding?: number[];
 }
@@ -977,11 +984,12 @@ export class RAGProcessor {
         if (trimmedContent.length > 0) {
           return [{
             id: `${document.id}_chunk_0`,
-            document_id: document.id,
             content: trimmedContent,
             metadata: {
-              chunk_index: 0,
               document_id: document.id,
+              chunk_index: 0,
+              source: document.title,
+              created_at: new Date().toISOString(),
               document_title: document.title,
               document_type: document.type || 'unknown',
               chunk_type: 'text',
