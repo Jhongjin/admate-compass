@@ -942,7 +942,9 @@ export class RAGProcessor {
           console.log(`📏 강제 재청킹 설정: 목표 ${targetChunkCount}개 청크, 청크 크기 ${forcedChunkSize}자`);
           
           const forcedChunks: ChunkData[] = [];
+          let loopCount = 0;
           for (let i = 0; i < processedContent.length; i += forcedChunkSize) {
+            loopCount++;
             const chunkContent = processedContent.slice(i, i + forcedChunkSize).trim();
             if (chunkContent.length > 0) {
               forcedChunks.push({
