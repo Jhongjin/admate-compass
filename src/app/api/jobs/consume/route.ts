@@ -124,6 +124,20 @@ async function processPdfBuffer(buffer: Buffer): Promise<string> {
     // PDF 파싱 타임아웃 설정 (5분)
     // 큰 파일(13MB+) 파싱에 5-8분 소요 가능하므로 타임아웃 설정
     const PDF_PARSE_TIMEOUT = 300000; // 5분
+    
+    // 경고 메시지 필터링 (TT: undefined function 경고는 무시)
+    const originalWarn = console.warn;
+    const warnings: string[] = [];
+    console.warn = (...args: any[]) => {
+      const message = args.join(' ');
+      if (message.includes('TT: undefined function')) {
+        // PDF 폰트 경고는 무시 (이미지 기반 PDF에서 흔히 발생)
+        warnings.push(message);
+      } else {
+        originalWarn.apply(console, args);
+      }
+    };
+    
     const parsePromise = pdf(buffer, options);
     const timeoutPromise = new Promise<never>((_, reject) => {
       setTimeout(() => {
@@ -132,18 +146,44 @@ async function processPdfBuffer(buffer: Buffer): Promise<string> {
     });
     
     const res = await Promise.race([parsePromise, timeoutPromise]);
+    
+    // 원래 console.warn 복원
+    console.warn = originalWarn;
+    
     const parseMs = Date.now() - startMs;
     const textLengthKB = (res.text?.length || 0) / 1024;
+    
+    // 폰트 경고가 있었는지 확인
+    if (warnings.length > 0) {
+      console.warn(`⚠️ PDF 폰트 경고 ${warnings.length}건 발생 (이미지 기반 PDF일 수 있음):`, {
+        uniqueWarnings: [...new Set(warnings)].slice(0, 3), // 중복 제거 후 최대 3개만 표시
+        textLength: res.text?.length || 0,
+        pages: res.numpages || 'unknown'
+      });
+    }
+    
+    // 텍스트 추출이 매우 짧은 경우 경고 (파일명만 추출된 경우)
+    const extractedText = res.text || '';
+    if (extractedText.length < 100 && fileSizeMB > 0.1) {
+      console.warn(`⚠️ PDF 텍스트 추출이 매우 짧습니다 (${extractedText.length}자). 이미지 기반 PDF이거나 텍스트 추출이 실패했을 수 있습니다.`, {
+        fileSizeMB: fileSizeMB.toFixed(2),
+        textLength: extractedText.length,
+        textPreview: extractedText.substring(0, 200),
+        pages: res.numpages || 'unknown',
+        note: '이미지 기반 PDF의 경우 OCR이 필요하지만 현재 OCR 기능은 비활성화되어 있습니다.'
+      });
+    }
     
     console.log(`✅ PDF 파싱 완료:`, {
       fileSizeMB: fileSizeMB.toFixed(2),
       textLengthKB: textLengthKB.toFixed(2),
       pages: res.numpages || 'unknown',
       parseTime: `${parseMs}ms (${(parseMs / 1000).toFixed(1)}초)`,
-      throughput: `${(textLengthKB / (parseMs / 1000)).toFixed(2)}KB/s`
+      throughput: `${(textLengthKB / (parseMs / 1000)).toFixed(2)}KB/s`,
+      fontWarnings: warnings.length > 0 ? `${warnings.length}건` : '없음'
     });
     
-    return res.text || '';
+    return extractedText;
   } catch (error) {
     const parseMs = Date.now() - startMs;
     console.error(`❌ PDF 파싱 실패 (${parseMs}ms):`, error);
@@ -718,9 +758,32 @@ export async function processQueue() {
         console.warn(`⚠️ DOCX 텍스트가 매우 짧습니다 (${cleanedLength}자). 청킹 결과가 제한적일 수 있습니다.`);
       }
       
-      // 텍스트 추출이 너무 적으면 OCR로 폴백 Job 생성 (재처리 모드가 아니고 Storage가 있는 경우만)
+      // 텍스트 추출이 너무 적으면 경고 및 처리
       // DOCX의 경우 텍스트가 있어도 OCR로 폴백하지 않도록 수정 (PDF만 OCR 폴백)
       if (cleanedLength < 500 && !isReprocess && storage?.bucket && storage?.path && job.job_type === 'PDF_PARSE') {
+        // 텍스트가 매우 짧은 경우 (파일명만 추출된 경우 등)
+        const isVeryShort = cleanedLength < 100;
+        const textPreview = extractedText.substring(0, 200);
+        
+        if (isVeryShort) {
+          console.error('❌ PDF 텍스트 추출 실패: 이미지 기반 PDF이거나 텍스트 추출이 거의 실패했습니다.', {
+            fileName,
+            fileSizeMB: fileSizeMB,
+            extractedLength: extractedText.length,
+            cleanedLength,
+            textPreview,
+            note: 'OCR 기능이 필요하지만 현재 비활성화되어 있습니다. 이미지 기반 PDF는 텍스트 추출이 제한적입니다.'
+          });
+        } else {
+          console.warn('⚠️ PDF 텍스트 추출이 짧습니다. OCR 폴백을 시도하지만 현재 OCR 기능은 비활성화되어 있습니다.', {
+            fileName,
+            fileSizeMB: fileSizeMB,
+            cleanedLength,
+            textPreview
+          });
+        }
+        
+        // OCR 폴백 Job 생성 (현재 OCR 기능은 비활성화되어 있지만, 향후 활성화 대비)
         const { error: ocrEnqErr } = await supabase
           .from('processing_jobs')
           .insert({
@@ -728,10 +791,12 @@ export async function processQueue() {
             job_type: 'OCR',
             status: 'queued',
             priority: Math.max((job.priority || 5) - 1, 1),
-            payload: { storage, reason: 'pdf_text_too_short', sourceJobId: job.id },
+            payload: { storage, reason: 'pdf_text_too_short', sourceJobId: job.id, isVeryShort },
             scheduled_at: new Date().toISOString()
           });
-        if (ocrEnqErr) throw ocrEnqErr;
+        if (ocrEnqErr) {
+          console.warn('⚠️ OCR Job 생성 실패 (OCR 기능이 비활성화되어 있을 수 있음):', ocrEnqErr);
+        }
 
         const totalMs = Date.now() - jobStartMs;
         // persist metrics row (재처리 모드가 아니면 fileBuffer가 있음)
@@ -746,16 +811,16 @@ export async function processQueue() {
             parse_ms: parseMs,
             total_ms: totalMs,
             text_length: cleanedLength,
-            note: 'deferred_to_ocr'
+            note: isVeryShort ? 'deferred_to_ocr_very_short' : 'deferred_to_ocr'
           });
 
         const { error: markDone } = await supabase
           .from('processing_jobs')
-          .update({ status: 'completed', finished_at: new Date().toISOString(), result: { note: 'deferred_to_ocr', cleanedLength, dlMs, parseMs, totalMs, bytes } })
+          .update({ status: 'completed', finished_at: new Date().toISOString(), result: { note: isVeryShort ? 'deferred_to_ocr_very_short' : 'deferred_to_ocr', cleanedLength, dlMs, parseMs, totalMs, bytes, isVeryShort } })
           .eq('id', job.id)
           .eq('status', 'processing');
         if (markDone) throw markDone;
-        return NextResponse.json({ success: true, jobId: job.id, status: 'completed', result: { note: 'deferred_to_ocr' } }, { status: 200 });
+        return NextResponse.json({ success: true, jobId: job.id, status: 'completed', result: { note: isVeryShort ? 'deferred_to_ocr_very_short' : 'deferred_to_ocr', isVeryShort } }, { status: 200 });
       }
 
       // 표/CSV 정규화 (간단 규칙)
