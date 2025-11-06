@@ -72,7 +72,7 @@ ORDER BY split_index;
 -- ============================================
 SELECT 
   COUNT(*) as actual_chunk_count,
-  COUNT(*) FILTER (WHERE embedding IS NOT NULL AND jsonb_array_length(embedding::jsonb) > 0) as chunks_with_embedding
+  COUNT(*) FILTER (WHERE embedding IS NOT NULL) as chunks_with_embedding
 FROM document_chunks
 WHERE document_id = 'doc_1762397028761';  -- 여기에 문서 ID 입력
 
