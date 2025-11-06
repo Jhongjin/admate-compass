@@ -56,7 +56,17 @@ async function processPdfBuffer(buffer: Buffer): Promise<string> {
   }
   
   try {
-    const res = await pdf(buffer, options);
+    // PDF 파싱 타임아웃 설정 (5분)
+    // 큰 파일(13MB+) 파싱에 5-8분 소요 가능하므로 타임아웃 설정
+    const PDF_PARSE_TIMEOUT = 300000; // 5분
+    const parsePromise = pdf(buffer, options);
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => {
+        reject(new Error(`PDF 파싱 타임아웃 (${PDF_PARSE_TIMEOUT / 60000}분) - 파일 크기: ${fileSizeMB.toFixed(2)}MB`));
+      }, PDF_PARSE_TIMEOUT);
+    });
+    
+    const res = await Promise.race([parsePromise, timeoutPromise]);
     const parseMs = Date.now() - startMs;
     const textLengthKB = (res.text?.length || 0) / 1024;
     
@@ -485,14 +495,24 @@ async function processQueue() {
         rawLength: extractedText.length,
         cleanedLength: cleanedLength,
         fileType: job.job_type,
-        fileName: fileName
+        fileName: fileName,
+        textPreview: extractedText.substring(0, 200) // 텍스트 미리보기 추가
       });
       
       // DOCX 텍스트 추출 실패 검증 (빈 텍스트)
       if (cleanedLength === 0 && job.job_type === 'DOCX_PARSE') {
         const errorMsg = 'DOCX에서 텍스트를 추출할 수 없습니다. 파일이 손상되었거나 텍스트가 없습니다.';
-        console.error(`❌ ${errorMsg}`);
+        console.error(`❌ ${errorMsg}`, {
+          fileName: fileName,
+          fileSize: fileSize,
+          bufferSize: extractedText.length
+        });
         throw new Error(errorMsg);
+      }
+      
+      // DOCX 텍스트가 너무 짧은 경우 경고 (텍스트는 있지만 청킹 결과가 제한적일 수 있음)
+      if (cleanedLength > 0 && cleanedLength < 100 && job.job_type === 'DOCX_PARSE') {
+        console.warn(`⚠️ DOCX 텍스트가 매우 짧습니다 (${cleanedLength}자). 청킹 결과가 제한적일 수 있습니다.`);
       }
       
       // 텍스트 추출이 너무 적으면 OCR로 폴백 Job 생성 (재처리 모드가 아니고 Storage가 있는 경우만)
@@ -662,10 +682,18 @@ async function processQueue() {
           
         } catch (splitError: any) {
           console.error('❌ 큰 파일 분할 실패:', splitError);
+          console.error('❌ 분할 실패 상세:', {
+            error: splitError instanceof Error ? splitError.message : String(splitError),
+            stack: splitError instanceof Error ? splitError.stack : undefined,
+            documentId: job.document_id,
+            fileName: fileName,
+            fileSize: fileSize,
+            textLength: normalizedText.length
+          });
           
           // 분할 실패 시 기존 방식으로 폴백 (전체 파일 처리 시도)
           console.log('⚠️ 분할 실패 - 기존 방식으로 폴백');
-          // ... 기존 처리 로직 계속 ...
+          // 폴백: 분할 없이 전체 파일 처리 계속 진행 (아래 일반 처리 로직 사용)
         }
       }
 
@@ -675,6 +703,18 @@ async function processQueue() {
       
       // 재처리인 경우 기존 문서 정보 사용, 아니면 payload에서 가져오기
       const vendor = (job?.payload?.vendor as string) || docs?.[0]?.source_vendor || 'META';
+      
+      // normalizedText 검증 (DOCX 처리 경로 확인)
+      if (!normalizedText || normalizedText.trim().length === 0) {
+        const errorMsg = `텍스트 정규화 후 빈 텍스트입니다. 원본 텍스트 길이: ${extractedText.length}자`;
+        console.error(`❌ ${errorMsg}`, {
+          fileName: fileName,
+          fileType: job.job_type,
+          extractedTextLength: extractedText.length,
+          normalizedTextLength: normalizedText.length
+        });
+        throw new Error(errorMsg);
+      }
       
       const docData: DocumentData = {
         id: job.document_id,
@@ -691,6 +731,16 @@ async function processQueue() {
       // 큰 파일 처리를 위한 최적화: 타임아웃 전에 중간 상태 업데이트
       const textLengthKB = (docData.content.length / 1024).toFixed(2);
       const isLargeDocument = docData.content.length > 500 * 1024 || fileSize > 10 * 1024 * 1024;
+      
+      // DOCX 처리 경로 로깅 (디버깅용)
+      console.log(`📄 DOCX 처리 준비:`, {
+        fileName: fileName,
+        contentLength: docData.content.length,
+        textLengthKB: textLengthKB,
+        isLargeDocument: isLargeDocument,
+        willSplit: isLargeFile,
+        willProcessNormally: !isLargeFile
+      });
       
       if (isLargeDocument) {
         console.log(`🔮 큰 문서 처리 시작: ${textLengthKB}KB 텍스트, ${fileSizeMB}MB 파일`);

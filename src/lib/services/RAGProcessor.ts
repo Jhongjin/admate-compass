@@ -797,15 +797,26 @@ export class RAGProcessor {
       console.log('✅ 문서 청킹 완료:', {
         chunkCount: chunks.length,
         time: `${chunkingMs}ms (${(chunkingMs / 1000).toFixed(1)}초)`,
-        avgChunkSize: chunks.length > 0 ? Math.round(chunks.reduce((sum, c) => sum + c.content.length, 0) / chunks.length) : 0
+        avgChunkSize: chunks.length > 0 ? Math.round(chunks.reduce((sum, c) => sum + c.content.length, 0) / chunks.length) : 0,
+        documentTitle: document.title,
+        documentType: document.type,
+        contentLength: processedContent.length
       });
 
       if (chunks.length === 0) {
-        console.warn('⚠️ 청킹 결과가 비어있습니다.');
+        console.error('❌ 청킹 결과가 비어있습니다. 상세 정보:', {
+          documentId: document.id,
+          title: document.title,
+          type: document.type,
+          contentLength: processedContent.length,
+          contentPreview: processedContent.substring(0, 500),
+          trimmedContentLength: processedContent.trim().length
+        });
         return {
           documentId: document.id,
           chunkCount: 0,
           success: false,
+          error: '청킹 결과가 비어있습니다. 문서 내용을 확인해주세요.'
         };
       }
 
@@ -978,10 +989,15 @@ export class RAGProcessor {
 
       // 내용이 비어있으면 빈 청크 반환
       if (!document.content || document.content.trim() === '') {
-        console.warn('⚠️ 문서 내용이 비어있습니다.', {
+        console.error('❌ 문서 내용이 비어있습니다. 상세 정보:', {
+          documentId: document.id,
           contentLength: document.content?.length || 0,
           title: document.title,
-          type: document.type
+          type: document.type,
+          fileType: document.file_type,
+          contentIsNull: document.content === null,
+          contentIsEmpty: document.content === '',
+          contentIsWhitespace: document.content?.trim() === ''
         });
         return [];
       }
@@ -1055,12 +1071,25 @@ export class RAGProcessor {
       };
 
       // 적응적 청킹 서비스 사용
+      console.log('🔧 적응적 청킹 서비스 호출:', {
+        contentLength: document.content.length,
+        documentType: documentType,
+        contentType: contentTypeResult.type,
+        language: language,
+        optimizeForSpeed: isChunkProcess
+      });
+      
       const adaptiveChunks = await adaptiveChunkingService.chunkDocument(
         document.content,
         document.id,
         document.title,
         chunkingConfig
       );
+      
+      console.log('📦 적응적 청킹 결과:', {
+        chunkCount: adaptiveChunks.length,
+        firstChunkPreview: adaptiveChunks[0]?.content?.substring(0, 100) || '없음'
+      });
 
       // ChunkData 형식으로 변환
       const chunkData: ChunkData[] = adaptiveChunks.map((chunk) => ({
