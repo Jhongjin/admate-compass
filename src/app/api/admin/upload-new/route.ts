@@ -69,45 +69,49 @@ async function uploadToStorage(file: File, docId: string, cleanFileName: string)
 
 /**
  * 큐 워커를 즉시 트리거하는 함수
- * processQueue를 직접 호출하여 수동 처리와 동일하게 동작
+ * processQueue를 백그라운드로 실행 (await 없이)
+ * Vercel serverless 환경에서 응답 반환 후에도 실행되도록 보장
  */
-async function triggerQueueWorker(): Promise<void> {
-  try {
-    console.log('🚀 큐 워커 즉시 트리거 시작...');
-    
-    // processQueue를 직접 import하여 호출 (수동 처리와 동일한 로직)
-    const { processQueue } = await import('@/app/api/jobs/consume/route');
-    
-    // 즉시 실행 (await하여 실제로 처리 완료까지 기다림)
-    // 업로드 응답은 이미 반환되었으므로 지연 없음
-    const result = await processQueue();
-    
-    if (result instanceof Response) {
-      const text = await result.text();
-      try {
-        const json = JSON.parse(text);
-        console.log('✅ 큐 워커 처리 완료:', {
-          status: result.status,
-          success: json.success,
-          message: json.message,
-          jobId: json.jobId
+function triggerQueueWorker(): void {
+  console.log('🚀 큐 워커 즉시 트리거 시작 (백그라운드 실행)...');
+  
+  // processQueue를 백그라운드로 실행 (await 없이)
+  import('@/app/api/jobs/consume/route')
+    .then(({ processQueue }) => {
+      console.log('📦 processQueue import 완료, 실행 시작...');
+      return processQueue();
+    })
+    .then(result => {
+      if (result instanceof Response) {
+        return result.text().then(text => {
+          try {
+            const json = JSON.parse(text);
+            console.log('✅ 큐 워커 처리 완료:', {
+              status: result.status,
+              success: json.success,
+              message: json.message,
+              jobId: json.jobId
+            });
+          } catch {
+            console.log('✅ 큐 워커 처리 완료:', {
+              status: result.status,
+              response: text.substring(0, 200)
+            });
+          }
         });
-      } catch {
-        console.log('✅ 큐 워커 처리 완료:', {
-          status: result.status,
-          response: text.substring(0, 200)
-        });
+      } else {
+        console.log('✅ 큐 워커 처리 완료:', result);
       }
-    } else {
-      console.log('✅ 큐 워커 처리 완료:', result);
-    }
-  } catch (err) {
-    // 에러 발생해도 무시 (Cron Job이 처리할 수 있음)
-    console.error('❌ 큐 워커 트리거 에러:', {
-      error: err instanceof Error ? err.message : String(err),
-      stack: err instanceof Error ? err.stack : undefined
+    })
+    .catch(err => {
+      // 에러 발생해도 무시 (Cron Job이 처리할 수 있음)
+      console.error('❌ 큐 워커 트리거 에러:', {
+        error: err instanceof Error ? err.message : String(err),
+        stack: err instanceof Error ? err.stack : undefined
+      });
     });
-  }
+  
+  console.log('✅ 큐 워커 트리거 완료 (백그라운드 실행 중)');
 }
 
 async function enqueueProcessingJob(params: { documentId: string; jobType: 'PDF_PARSE' | 'DOCX_PARSE' | 'OCR' | 'CRAWL' | 'EMBEDDING'; priority?: number; payload?: Record<string, unknown> }) {
@@ -420,11 +424,10 @@ export async function POST(request: NextRequest) {
           
           console.log('✅ 큐 등록 완료:', { jobId, documentId, vendor: normalizedVendor });
           
-          // 큐에 등록 후 즉시 큐 워커 트리거 (백그라운드, 실패해도 무시)
-          triggerQueueWorker().catch(err => {
-            console.warn('⚠️ 큐 워커 즉시 트리거 실패 (Cron Job이 처리할 수 있음):', err);
-          });
+          // 큐에 등록 후 즉시 큐 워커 트리거 (응답 반환 전에 호출하여 실행 보장)
+          triggerQueueWorker();
           
+          // 응답 반환 (큐 워커는 백그라운드에서 계속 실행)
           return NextResponse.json({ 
             success: true, 
             queued: true, 
@@ -539,11 +542,12 @@ export async function POST(request: NextRequest) {
           payload: { fileName: cleanFileName, fileSize: file.size, fileType: file.type, storage: storageInfo }
         });
         
-        // 큐에 등록 후 즉시 큐 워커 트리거 (백그라운드, 실패해도 무시)
-        triggerQueueWorker().catch(err => {
-          console.warn('⚠️ 큐 워커 즉시 트리거 실패 (Cron Job이 처리할 수 있음):', err);
-        });
+        console.log('✅ DOCX 큐 등록 완료:', { jobId, documentId });
         
+        // 큐에 등록 후 즉시 큐 워커 트리거 (응답 반환 전에 호출하여 실행 보장)
+        triggerQueueWorker();
+        
+        // 응답 반환 (큐 워커는 백그라운드에서 계속 실행)
         return NextResponse.json({ success: true, queued: true, jobId, documentId, message: 'DOCX 파일은 백그라운드에서 처리됩니다.' }, { status: 202 });
         
         /* 기존 바이너리 처리 로직 제거 - 큐에서 텍스트 추출 수행 */
