@@ -252,6 +252,7 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
   const [uploadStep, setUploadStep] = useState<UploadStep>('idle');
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [crawlJobId, setCrawlJobId] = useState<string | null>(null);
   
   // URL 크롤링 옵션 상태 관리
   type CrawlOptions = {
@@ -1012,8 +1013,16 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
       }
 
       const result = await response.json();
+      const jobId = result.jobId;
       
-      toast.success('크롤링 작업이 큐에 등록되었습니다', { duration: 3000 });
+      if (jobId) {
+        setCrawlJobId(jobId);
+        toast.success('크롤링 작업이 큐에 등록되었습니다', { duration: 3000 });
+      } else {
+        toast.error('작업 ID를 받지 못했습니다', { duration: 3000 });
+        setCrawling(false);
+        return;
+      }
       
       // URL 입력 필드 초기화
       if (urlInput) {
@@ -1035,12 +1044,18 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
             description: consumeResult.message || '큐 워커가 작업을 처리 중입니다.',
             duration: 4000,
           });
+          
+          // 크롤링 진행 상황 폴링 시작
+          pollCrawlStatus(jobId);
         } else {
           const fallbackMessage = consumeResult?.error || consumeResult?.details || `HTTP ${consumeRes.status}`;
           toast.warning('큐 워커 실행 경고', {
             description: fallbackMessage,
             duration: 5000,
           });
+          
+          // 폴백: Cron Job이 처리할 수 있으므로 폴링 시작
+          pollCrawlStatus(jobId);
         }
 
         if (typeof window !== 'undefined') {
@@ -1054,6 +1069,9 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
           description: 'Cron Job이 곧 처리할 예정입니다.',
           duration: 4000,
         });
+        
+        // 폴백: Cron Job이 처리할 수 있으므로 폴링 시작
+        pollCrawlStatus(jobId);
       }
     } catch (e) {
       console.error("crawl enqueue error", e);
