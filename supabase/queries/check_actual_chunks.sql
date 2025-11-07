@@ -25,7 +25,7 @@ GROUP BY d.id, d.title, d.chunk_count, d.status, d.file_size, d.content, d.creat
 SELECT 
   chunk_id,
   document_id,
-  chunk_index,
+  metadata->>'chunk_index' as chunk_index,
   LENGTH(content) as chunk_length,
   hierarchy_level,
   parent_chunk_id,
@@ -33,7 +33,7 @@ SELECT
   created_at
 FROM document_chunks
 WHERE document_id = 'doc_1762491910669'
-ORDER BY chunk_index
+ORDER BY (metadata->>'chunk_index')::INTEGER
 LIMIT 10;
 
 -- 청크 통계
