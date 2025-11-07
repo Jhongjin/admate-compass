@@ -6,7 +6,7 @@ import { motion } from "framer-motion";
 import AdminLayout from "@/components/layouts/AdminLayout";
 import "@/app/admin/globals.admin.css";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -17,7 +17,9 @@ import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Check, CheckCircle, Download, FileText, Globe, Loader2, RefreshCw, Search, Upload, XCircle, File, Link2, ArrowUp, ArrowDown, ArrowUpDown, FileSearch, Sparkles, Database, Info } from "lucide-react";
+import { Progress } from "@/components/ui/progress";
+import type { LucideIcon } from "lucide-react";
+import { Check, CheckCircle, Download, FileText, Globe, Loader2, RefreshCw, Search, Upload, XCircle, File, Link2, ArrowUp, ArrowDown, ArrowUpDown, FileSearch, Sparkles, Database, Info, Clock3, AlertTriangle, Settings } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
@@ -253,6 +255,14 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [crawlJobId, setCrawlJobId] = useState<string | null>(null);
+  const [crawlProgressValue, setCrawlProgressValue] = useState(0);
+  const [crawlProgressLabel, setCrawlProgressLabel] = useState('');
+  const [crawlResult, setCrawlResult] = useState<any>(null);
+  const [extractSubPages, setExtractSubPages] = useState(() => {
+    if (typeof window === 'undefined') return true;
+    const saved = window.localStorage.getItem('adminDocsExtractSubPages');
+    return saved === null ? true : saved === 'true';
+  });
   
   // URL 크롤링 옵션 상태 관리
   type CrawlOptions = {
@@ -287,6 +297,23 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
     window.localStorage.setItem('adminCrawlOptions', JSON.stringify(crawlOptions));
   }, [crawlOptions]);
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem('adminDocsExtractSubPages', String(extractSubPages));
+  }, [extractSubPages]);
+
+  useEffect(() => {
+    if (crawlProgressValue === 100 || crawlResult?.error) {
+      const timer = setTimeout(() => {
+        setCrawlProgressValue(0);
+        setCrawlProgressLabel('');
+        setCrawlResult(null);
+      }, 8000);
+      return () => clearTimeout(timer);
+    }
+    return undefined;
+  }, [crawlProgressValue, crawlResult]);
+
   // 크롤링 진행 상황 폴링 함수
   const pollCrawlStatus = async (jobId: string) => {
     const supabaseClient = createClient();
@@ -309,6 +336,8 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
             toast.error('크롤링 상태 확인 시간 초과', { duration: 5000 });
             setCrawling(false);
             setCrawlJobId(null);
+            setCrawlProgressLabel('상태 확인 실패');
+            setCrawlProgressValue(0);
             return;
           }
           setTimeout(poll, 5000);
@@ -320,10 +349,30 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
             toast.error('크롤링 작업을 찾을 수 없습니다', { duration: 5000 });
             setCrawling(false);
             setCrawlJobId(null);
+            setCrawlProgressLabel('작업을 찾을 수 없습니다');
+            setCrawlProgressValue(0);
             return;
           }
           setTimeout(poll, 5000);
           return;
+        }
+
+        if (job.status === 'queued') {
+          setCrawlProgressLabel('큐에서 작업 대기 중...');
+          setCrawlProgressValue((prev) => Math.min(prev + 5, 45));
+        }
+
+        if (job.status === 'processing') {
+          const progressInfo = (job.result as any)?.subPageProgress;
+          if (progressInfo && typeof progressInfo.total === 'number') {
+            const ratio = progressInfo.total === 0 ? 1 : Math.min(1, progressInfo.processed / progressInfo.total);
+            const computed = 70 + ratio * 20;
+            setCrawlProgressLabel(`하위 페이지 처리 중... (${progressInfo.processed}/${progressInfo.total})`);
+            setCrawlProgressValue((prev) => Math.max(prev, Math.round(Math.min(95, computed))));
+          } else {
+            setCrawlProgressLabel('문서 다운로드 및 청킹 중...');
+            setCrawlProgressValue((prev) => Math.max(prev, 70));
+          }
         }
 
         if (job.status === 'completed') {
@@ -333,11 +382,13 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
             duration: 5000,
           });
           
-          // 문서 리스트 새로고침
           if (typeof window !== 'undefined') {
             window.dispatchEvent(new CustomEvent('docs-refresh'));
           }
           
+          setCrawlProgressLabel('크롤링이 완료되었습니다.');
+          setCrawlProgressValue(100);
+          setCrawlResult(result);
           setCrawling(false);
           setCrawlJobId(null);
           return;
@@ -348,6 +399,9 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
             description: job.error || '알 수 없는 오류가 발생했습니다.',
             duration: 5000,
           });
+          setCrawlProgressLabel('크롤링 실패');
+          setCrawlProgressValue(100);
+          setCrawlResult({ error: job.error });
           setCrawling(false);
           setCrawlJobId(null);
           return;
@@ -359,6 +413,8 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
             description: '백그라운드에서 계속 처리 중입니다.',
             duration: 5000,
           });
+          setCrawlProgressLabel('크롤링 처리 시간이 지연되고 있습니다.');
+          setCrawlProgressValue(90);
           setCrawling(false);
           setCrawlJobId(null);
           return;
@@ -368,6 +424,8 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
       } catch (pollError) {
         console.error('크롤링 상태 폴링 오류:', pollError);
         if (pollCount >= maxPolls) {
+          setCrawlProgressLabel('크롤링 상태 확인 중 오류가 발생했습니다.');
+          setCrawlProgressValue(0);
           setCrawling(false);
           setCrawlJobId(null);
           return;
@@ -592,6 +650,7 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
                     resolve(); // 다음 파일로 진행
                     return;
                   }
+                  
                   // 마지막 파일인 경우에만 완전히 종료
                   setSelectedFiles([]);
                   setTimeout(() => {
@@ -1061,12 +1120,17 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
   const handleCrawl = async () => {
     try {
       setCrawling(true);
+      setCrawlProgressValue(12);
+      setCrawlProgressLabel('작업 준비 중...');
+      setCrawlResult(null);
       const urlInput = document.getElementById("seed-url-input") as HTMLInputElement | null;
       const url = urlInput?.value?.trim();
       
       if (!url) {
         toast.error('URL을 입력해주세요', { duration: 3000 });
         setCrawling(false);
+        setCrawlProgressValue(0);
+        setCrawlProgressLabel('');
         return;
       }
 
@@ -1076,6 +1140,8 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
       } catch {
         toast.error('유효한 URL을 입력해주세요', { duration: 3000 });
         setCrawling(false);
+        setCrawlProgressValue(0);
+        setCrawlProgressLabel('');
         return;
       }
 
@@ -1094,7 +1160,8 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
             vendors: dbVendors,
             domainLimit: crawlOptions.domainLimit,
             respectRobots: crawlOptions.respectRobots,
-            maxDepth: parseInt(crawlOptions.maxDepth, 10)
+            maxDepth: parseInt(crawlOptions.maxDepth, 10),
+            extractSubPages,
           },
         }),
       });
@@ -1107,12 +1174,18 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
       const result = await response.json();
       const jobId = result.jobId;
       
+      setCrawlProgressValue(15);
+      setCrawlProgressLabel('큐에 작업을 등록했습니다. 워커를 호출 중...');
+      setCrawlResult(null);
+      
       if (jobId) {
         setCrawlJobId(jobId);
         toast.success('크롤링 작업이 큐에 등록되었습니다', { duration: 3000 });
       } else {
         toast.error('작업 ID를 받지 못했습니다', { duration: 3000 });
         setCrawling(false);
+        setCrawlProgressLabel('작업 ID 수신 실패');
+        setCrawlProgressValue(0);
         return;
       }
       
@@ -1136,6 +1209,8 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
             description: consumeResult.message || '큐 워커가 작업을 처리 중입니다.',
             duration: 4000,
           });
+          setCrawlProgressValue(30);
+          setCrawlProgressLabel('큐 워커가 작업을 처리 중입니다. 상태 확인 중...');
           
           // 크롤링 진행 상황 폴링 시작
           pollCrawlStatus(jobId);
@@ -1145,6 +1220,8 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
             description: fallbackMessage,
             duration: 5000,
           });
+          setCrawlProgressLabel('큐 워커 실행 상태를 확인 중입니다...');
+          setCrawlProgressValue(25);
           
           // 폴백: Cron Job이 처리할 수 있으므로 폴링 시작
           pollCrawlStatus(jobId);
@@ -1161,6 +1238,8 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
           description: 'Cron Job이 곧 처리할 예정입니다.',
           duration: 4000,
         });
+        setCrawlProgressLabel('Cron Job이 작업을 처리하도록 대기 중입니다...');
+        setCrawlProgressValue(20);
         
         // 폴백: Cron Job이 처리할 수 있으므로 폴링 시작
         pollCrawlStatus(jobId);
@@ -1169,6 +1248,9 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
       console.error("crawl enqueue error", e);
       const errorMessage = e instanceof Error ? e.message : '크롤링 작업 등록에 실패했습니다';
       toast.error(errorMessage, { duration: 5000 });
+      setCrawlProgressLabel('크롤링 실패');
+      setCrawlProgressValue(0);
+      setCrawlResult({ error: errorMessage });
     } finally {
       setCrawling(false);
     }
@@ -1352,7 +1434,7 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
             <Input 
               id="seed-url-input" 
               placeholder="Seed URL을 입력하세요 (예: https://example.com/policy)" 
-              className="bg-gray-800/50 border-gray-600 text-white placeholder-gray-400 focus:border-blue-400 focus:ring-blue-400/20"
+              className="h-11 rounded-xl border border-white/10 bg-gray-900/70 text-sm text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-blue-500/60 focus:border-transparent transition"
             />
             {/* 그리드 헤더 형태 */}
             <div className="hidden sm:grid grid-cols-3 gap-3 px-1 mb-1 text-center">
@@ -1410,6 +1492,86 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
                 </Select>
               </div>
             </div>
+
+            <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-slate-900/80 via-slate-900/60 to-slate-950/90 px-5 py-4 flex items-center justify-between shadow-lg">
+              <div className="flex items-start gap-3">
+                <div className="h-10 w-10 rounded-xl bg-purple-500/25 flex items-center justify-center text-purple-200 shadow-inner">
+                  <Settings className="w-5 h-5" />
+                </div>
+                <div>
+                  <div className="text-sm font-semibold text-white">하위 페이지 자동 추출 (사이트맵 기반)</div>
+                  <p className="text-xs text-white/60 mt-1">
+                    활성화하면 선택된 URL의 하위 페이지를 사이트맵/링크 기반으로 탐색하여 함께 인덱싱합니다.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-3">
+                <Badge variant="outline" className={`px-3 py-1 text-xs ${extractSubPages ? 'text-purple-200 border-purple-400/40' : 'text-gray-300 border-gray-500/40'}`}>
+                  {extractSubPages ? '활성화' : '비활성화'}
+                </Badge>
+                <Switch 
+                  checked={extractSubPages}
+                  onCheckedChange={(checked) => setExtractSubPages(checked as boolean)}
+                  className="scale-90"
+                />
+              </div>
+            </div>
+
+            {(crawlJobId || crawlProgressValue > 0 || crawlResult) && (
+              <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-gray-900/85 via-gray-900/60 to-gray-950/90 px-5 py-5 space-y-4 shadow-xl">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h4 className="text-sm font-semibold text-white">실시간 크롤링 진행 상태</h4>
+                    <p className="text-xs text-white/60 mt-1">큐 작업 상태와 하위 페이지 처리 현황을 확인할 수 있습니다.</p>
+                  </div>
+                  <Badge variant="outline" className="text-xs text-blue-200 border-blue-400/40 px-3 py-1">
+                    {crawlProgressValue}%
+                  </Badge>
+                </div>
+                <Progress value={crawlProgressValue} className="h-2" />
+                <div className="flex items-center gap-2 text-sm text-white/70">
+                  <Loader2 className={`w-4 h-4 ${crawlProgressValue >= 100 ? 'text-emerald-300' : 'text-blue-300 animate-spin'}`} />
+                  <span>{crawlProgressLabel || '대기 중'}</span>
+                </div>
+                {crawlResult && (
+                  <div className="space-y-3 rounded-xl bg-gray-800/40 border border-gray-700/50 p-4">
+                    {crawlResult.error ? (
+                      <div className="text-sm text-red-300 font-semibold">{crawlResult.error}</div>
+                    ) : (
+                      <div className="space-y-2 text-sm text-white/80">
+                        <div className="font-semibold text-white">{crawlResult.title || '크롤링 결과'}</div>
+                        <div className="flex flex-wrap items-center gap-3 text-xs text-white/60">
+                          <span>주요 URL: <span className="text-blue-200">{crawlResult.url}</span></span>
+                          <span>청크 수: <span className="text-emerald-300 font-semibold">{crawlResult.chunkCount ?? 0}</span></span>
+                          {crawlResult.subPageCount !== undefined && (
+                            <span>하위 페이지: <span className="text-emerald-300 font-semibold">{crawlResult.subPageCount}</span></span>
+                          )}
+                        </div>
+                        {crawlResult.subPages && Array.isArray(crawlResult.subPages) && crawlResult.subPages.length > 0 && (
+                          <div className="space-y-2">
+                            <div className="text-xs text-white/60">처리된 하위 페이지 목록</div>
+                            <div className="max-h-40 overflow-y-auto space-y-2">
+                              {crawlResult.subPages.map((sub: any, idx: number) => (
+                                <div
+                                  key={sub.url ?? idx}
+                                  className="flex items-center justify-between gap-3 px-3 py-2 rounded-lg bg-gray-900/60 border border-gray-700/60"
+                                >
+                                  <span className="text-xs text-white/70 truncate flex-1">{sub.url}</span>
+                                  <span className={`text-xs font-semibold ${sub.success ? 'text-emerald-300' : 'text-red-300'}`}>
+                                    {sub.success ? `${sub.chunkCount ?? 0} chunks` : '실패'}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="flex items-center gap-3">
               <Button 
                 disabled={isCrawling} 
@@ -1458,21 +1620,26 @@ function DocsToolbar({
   searchQuery: string;
   onSearchQueryChange: (value: string) => void;
 }) {
+  const toolbarButtonClass = "inline-flex items-center justify-center gap-2 h-11 px-5 rounded-xl bg-gradient-to-r from-blue-500/85 via-blue-500/70 to-indigo-500/85 text-white font-semibold shadow-sm hover:shadow-xl hover:-translate-y-0.5 transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed";
+  const exportButtonClass = "inline-flex items-center justify-center gap-2 h-11 px-5 rounded-xl bg-gradient-to-r from-emerald-500/85 to-teal-500/85 text-white font-semibold shadow-sm hover:shadow-xl hover:-translate-y-0.5 transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed";
+  const searchInputClass = "h-11 rounded-xl border border-white/10 bg-gradient-to-r from-gray-900/80 via-gray-900/60 to-gray-900/80 pl-11 pr-4 text-sm text-white placeholder-gray-500 shadow-inner focus:outline-none focus:ring-2 focus:ring-blue-500/60 focus:border-transparent transition-all";
+  const selectTriggerClass = "h-11 rounded-xl border border-white/10 bg-gray-900/70 text-sm text-white hover:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500/60 focus:border-transparent transition-all";
+
   return (
     <Card className="card-enhanced">
       <CardContent className="py-3">
         <div className="flex flex-wrap items-center gap-3">
           <div className="relative flex-1 min-w-[200px]">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-300/70" />
             <Input 
-              className="pl-9 bg-gray-800/50 border-gray-600 text-white placeholder-gray-400 focus:border-blue-400 focus:ring-blue-400/20" 
-              placeholder="제목, URL, 메타데이터 검색" 
+              className={searchInputClass}
+              placeholder="문서 제목, URL, 메타데이터 검색" 
               value={searchQuery}
               onChange={(e) => onSearchQueryChange(e.target.value)}
             />
           </div>
           <Select value={statusFilter} onValueChange={onStatusFilterChange}>
-            <SelectTrigger className="w-36 bg-gray-800/50 border-gray-600 text-white">
+            <SelectTrigger className={selectTriggerClass}>
               <SelectValue placeholder="상태" />
             </SelectTrigger>
             <SelectContent>
@@ -1483,7 +1650,7 @@ function DocsToolbar({
             </SelectContent>
           </Select>
           <Select value={typeFilter} onValueChange={onTypeFilterChange}>
-            <SelectTrigger className="w-32 bg-gray-800/50 border-gray-600 text-white">
+            <SelectTrigger className={selectTriggerClass}>
               <SelectValue placeholder="유형" />
             </SelectTrigger>
             <SelectContent>
@@ -1495,7 +1662,7 @@ function DocsToolbar({
             </SelectContent>
           </Select>
           <Select value={viewMode} onValueChange={(v) => onViewModeChange(v as any)}>
-            <SelectTrigger className="w-32 bg-gray-800/50 border-gray-600 text-white">
+            <SelectTrigger className={selectTriggerClass}>
               <SelectValue placeholder="보기" />
             </SelectTrigger>
             <SelectContent>
@@ -1505,31 +1672,27 @@ function DocsToolbar({
           </Select>
           <div className="ml-auto flex items-center gap-2">
             <Button 
-              variant="secondary" 
-              className="bg-gray-700/50 border-gray-600 text-secondary-enhanced hover:bg-gray-700 hover:text-white"
+              className={toolbarButtonClass}
               onClick={() => {
-                // 전역 이벤트로 새로고침 요청
                 if (typeof window !== 'undefined') {
                   window.dispatchEvent(new CustomEvent('docs-refresh-click'));
-                  toast.success('문서 목록을 새로고침했습니다', { duration: 2000 });
+                  toast.success('문서 목록을 새로 고침했습니다', { duration: 2000 });
                 }
               }}
             >
-              <RefreshCw className="w-4 h-4 mr-1" /> 
-              새로고침
+              <RefreshCw className="w-4 h-4" /> 
+              새로 고침
             </Button>
             <Button 
-              variant="secondary" 
-              className="bg-gray-700/50 border-gray-600 text-secondary-enhanced hover:bg-gray-700 hover:text-white"
+              className={exportButtonClass}
               onClick={() => {
-                // 내보내기: 전역 이벤트로 전달 → DocsTable에서 처리
                 if (typeof window !== 'undefined') {
                   window.dispatchEvent(new CustomEvent('docs-export'));
                 }
               }}
             >
-              <Download className="w-4 h-4 mr-1" /> 
-              내보내기
+              <Download className="w-4 h-4" /> 
+              데이터 내보내기
             </Button>
           </div>
         </div>
@@ -2374,16 +2537,13 @@ function QueueMiniPanel({ vendors }: { vendors: string[] }) {
       const out: Record<string, number> = { queued: 0, processing: 0, failed: 0, retrying: 0 };
       for (const s of statuses) {
         let q = supabase.from("processing_jobs").select("id", { count: "exact", head: true }).eq("status", s);
-        // vendor 필터링은 현재 processing_jobs 테이블에 vendor 컬럼이 없으므로 제외
-        // payload에 vendor 정보가 있지만, JSONB 쿼리는 복잡하므로 전체 조회
         const { count } = await q;
         out[s] = count || 0;
       }
-      // retrying도 processing으로 카운트 (사용자에게는 처리 중으로 보임)
       out.processing += out.retrying;
       return out;
     },
-    refetchInterval: 5000, // 5초마다 자동 새로고침
+    refetchInterval: 5000,
   });
 
   useEffect(() => {
@@ -2396,27 +2556,47 @@ function QueueMiniPanel({ vendors }: { vendors: string[] }) {
   const processing = data?.processing ?? 0;
   const failed = data?.failed ?? 0;
 
+  const queueActionClass = "flex-1 h-11 rounded-xl bg-gradient-to-r from-sky-500/85 via-sky-500/70 to-indigo-500/85 text-white font-semibold shadow-sm hover:shadow-xl hover:-translate-y-0.5 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed";
+  const retryActionClass = "flex-1 h-11 rounded-xl bg-gradient-to-r from-rose-500/85 via-rose-500/70 to-amber-500/85 text-white font-semibold shadow-sm hover:shadow-xl hover:-translate-y-0.5 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed";
+
   return (
-    <Card className="card-enhanced">
+    <Card className="bg-gradient-to-br from-slate-900/80 via-slate-900/60 to-slate-950/90 border border-white/10 shadow-xl">
       <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-primary-enhanced">
-          <RefreshCw className="w-5 h-5" />
+        <CardTitle className="flex items-center gap-2 text-white">
+          <RefreshCw className="w-5 h-5 text-blue-300" />
           처리 큐 (요약)
         </CardTitle>
       </CardHeader>
       <CardContent>
-        <div className="text-sm text-secondary-enhanced mb-3 font-semibold">
+        <div className="text-sm text-gray-300 mb-3 font-semibold">
           선택 벤더: <span className="text-blue-300">{vendors.join(", ") || "(없음)"}</span>
         </div>
-        <div className="grid grid-cols-3 gap-3">
-          <MiniStat title="Queued" value={String(queued)} color="bg-blue-500/30 border-blue-400/30" />
-          <MiniStat title="Processing" value={String(processing)} color="bg-indigo-500/30 border-indigo-400/30" />
-          <MiniStat title="Failed" value={String(failed)} color="bg-rose-500/30 border-rose-400/30" />
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <MiniStat
+            title="대기"
+            value={String(queued)}
+            gradient="bg-gradient-to-br from-blue-500/25 via-blue-500/10 to-blue-900/30 border border-blue-500/20"
+            accent="bg-blue-500/40 text-white"
+            icon={Clock3}
+          />
+          <MiniStat
+            title="진행 중"
+            value={String(processing)}
+            gradient="bg-gradient-to-br from-indigo-500/25 via-indigo-500/10 to-purple-900/30 border border-indigo-500/20"
+            accent="bg-indigo-500/40 text-white"
+            icon={Loader2}
+          />
+          <MiniStat
+            title="실패"
+            value={String(failed)}
+            gradient="bg-gradient-to-br from-rose-500/25 via-rose-500/10 to-rose-900/30 border border-rose-500/20"
+            accent="bg-rose-500/40 text-white"
+            icon={AlertTriangle}
+          />
         </div>
-        <div className="mt-4 flex items-center gap-2">
+        <div className="mt-4 flex flex-col sm:flex-row items-stretch gap-2">
           <Button 
-            variant="secondary" 
-            className="bg-gray-700/50 border-gray-600 text-secondary-enhanced hover:bg-gray-700 hover:text-white flex-1"
+            className={queueActionClass}
             disabled={processingOne || queued === 0}
             onClick={async () => {
               if (processingOne || queued === 0) return;
@@ -2438,8 +2618,7 @@ function QueueMiniPanel({ vendors }: { vendors: string[] }) {
                   });
                 }
                 
-                refetch(); // 큐 상태 새로고침
-                // 문서 목록도 새로고침
+                refetch();
                 if (typeof window !== 'undefined') {
                   window.dispatchEvent(new CustomEvent('docs-refresh'));
                 }
@@ -2462,25 +2641,23 @@ function QueueMiniPanel({ vendors }: { vendors: string[] }) {
             ) : (
               <>
                 <RefreshCw className="w-4 h-4 mr-1" /> 
-                1건 처리
+                즉시 처리
               </>
             )}
           </Button>
           <Button 
-            variant="secondary" 
-            className="bg-gray-700/50 border-gray-600 text-secondary-enhanced hover:bg-gray-700 hover:text-white flex-1"
+            className={retryActionClass}
             disabled={retryingFailed || failed === 0}
             onClick={async () => {
               if (retryingFailed || failed === 0) return;
               
               setRetryingFailed(true);
               try {
-                // 실패한 작업들 조회
                 const { data: failedJobs, error: fetchError } = await supabase
                   .from('processing_jobs')
                   .select('id, attempts, max_attempts')
                   .eq('status', 'failed')
-                  .limit(10); // 최대 10개까지
+                  .limit(10);
                 
                 if (fetchError) {
                   throw new Error(`실패한 작업 조회 실패: ${fetchError.message}`);
@@ -2494,61 +2671,33 @@ function QueueMiniPanel({ vendors }: { vendors: string[] }) {
                   return;
                 }
                 
-                // 각 작업을 재시도 큐에 등록
-                let successCount = 0;
-                let failCount = 0;
-                
-                for (const job of failedJobs) {
-                  const attempts = (job.attempts || 0) + 1;
-                  const maxAttempts = job.max_attempts || 3;
-                  
-                  if (attempts >= maxAttempts) {
-                    failCount++;
-                    continue; // 최대 시도 횟수 초과
-                  }
-                  
-                  const backoffMs = Math.min(60000, 1000 * Math.pow(2, attempts));
-                  const scheduledAt = new Date(Date.now() + backoffMs).toISOString();
-                  
+                const retryResults: string[] = [];
+                for (const jobItem of failedJobs) {
                   const { error: updateError } = await supabase
                     .from('processing_jobs')
-                    .update({ 
-                      status: 'queued', 
-                      attempts, 
-                      scheduled_at: scheduledAt, 
-                      finished_at: null, 
-                      started_at: null,
-                      error: null
-                    })
-                    .eq('id', job.id)
-                    .eq('status', 'failed');
+                    .update({ status: 'queued', error: null })
+                    .eq('id', jobItem.id);
                   
                   if (updateError) {
-                    console.error(`작업 ${job.id} 재시도 실패:`, updateError);
-                    failCount++;
+                    retryResults.push(`실패 (${jobItem.id})`);
                   } else {
-                    successCount++;
+                    retryResults.push(`성공 (${jobItem.id})`);
                   }
                 }
                 
-                if (successCount > 0) {
-                  toast.success('재시도 완료', {
-                    description: `${successCount}개 작업을 큐에 다시 등록했습니다.`,
-                    duration: 3000,
-                  });
-                }
+                toast.success('실패한 작업을 재시작했습니다', {
+                  description: retryResults.join(', '),
+                  duration: 4000,
+                });
                 
-                if (failCount > 0) {
-                  toast.warning('일부 재시도 실패', {
-                    description: `${failCount}개 작업은 재시도할 수 없습니다 (최대 시도 횟수 초과).`,
-                    duration: 5000,
-                  });
+                refetch();
+                if (typeof window !== 'undefined') {
+                  window.dispatchEvent(new CustomEvent('queue-refresh'));
+                  window.dispatchEvent(new CustomEvent('docs-refresh'));
                 }
-                
-                refetch(); // 큐 상태 새로고침
               } catch (error) {
                 console.error('재시도 오류:', error);
-                toast.error('재시도 오류', {
+                toast.error('재시작 실패', {
                   description: error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.',
                   duration: 5000,
                 });
@@ -2560,12 +2709,12 @@ function QueueMiniPanel({ vendors }: { vendors: string[] }) {
             {retryingFailed ? (
               <>
                 <Loader2 className="w-4 h-4 mr-1 animate-spin" />
-                재시도 중...
+                재시작 중...
               </>
             ) : (
               <>
-                <XCircle className="w-4 h-4 mr-1" /> 
-                실패 재시도
+                <AlertTriangle className="w-4 h-4 mr-1" /> 
+                실패 재시작
               </>
             )}
           </Button>
@@ -2673,11 +2822,19 @@ function DeleteAllDocumentsButton() {
   );
 }
 
-function MiniStat({ title, value, color }: { title: string; value: string; color: string }) {
+function MiniStat({ title, value, gradient, accent, icon: Icon }: { title: string; value: string; gradient: string; accent: string; icon: LucideIcon }) {
   return (
-    <div className={`rounded-xl p-3 border ${color}`}>
-      <div className="text-xs text-secondary-enhanced font-semibold">{title}</div>
-      <div className="text-xl font-bold text-primary-enhanced mt-1">{value}</div>
+    <div className={`relative overflow-hidden rounded-2xl p-4 shadow-lg ${gradient}`}>
+      <div className="absolute inset-0 bg-gradient-to-br from-white/20 via-white/5 to-transparent opacity-20" />
+      <div className="relative flex items-center justify-between">
+        <div>
+          <div className="text-xs uppercase tracking-wide text-white/70 font-semibold">{title}</div>
+          <div className="mt-2 text-2xl font-bold text-white">{value}</div>
+        </div>
+        <div className={`h-11 w-11 rounded-xl flex items-center justify-center shadow-inner ${accent}`}>
+          <Icon className="w-5 h-5 text-white" />
+        </div>
+      </div>
     </div>
   );
 }
@@ -2691,24 +2848,20 @@ function MetricsSummary({ vendors }: { vendors: string[] }) {
       const now = new Date();
       const last24h = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
       
-      // 총 문서 수
       const { count: totalCount } = await supabase
         .from('documents')
         .select('*', { count: 'exact', head: true });
       
-      // 최근 24시간 업로드된 문서 수
       const { count: recentCount } = await supabase
         .from('documents')
         .select('*', { count: 'exact', head: true })
         .gte('created_at', last24h);
       
-      // 처리 중인 문서 수
       const { count: processingCount } = await supabase
         .from('documents')
         .select('*', { count: 'exact', head: true })
         .in('status', ['pending', 'processing']);
       
-      // 실패한 문서 수 (최근 7일)
       const last7d = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
       const { count: failedCount } = await supabase
         .from('documents')
@@ -2723,40 +2876,68 @@ function MetricsSummary({ vendors }: { vendors: string[] }) {
         failed7d: failedCount || 0,
       };
     },
-    refetchInterval: 10000, // 10초마다 갱신
+    refetchInterval: 10000,
   });
+  
+  const summary = data || { total: 0, recent24h: 0, processing: 0, failed7d: 0 };
+  const metrics = [
+    {
+      title: '총 문서 수',
+      value: isLoading ? '-' : summary.total.toLocaleString(),
+      icon: FileText,
+      gradient: 'bg-gradient-to-br from-blue-500/25 via-blue-500/10 to-blue-900/30 border border-blue-500/20',
+      accent: 'bg-blue-500/45 text-white',
+      label: '전체 인덱싱 문서'
+    },
+    {
+      title: '최근 24시간',
+      value: isLoading ? '-' : summary.recent24h.toLocaleString(),
+      icon: Sparkles,
+      gradient: 'bg-gradient-to-br from-violet-500/25 via-violet-500/10 to-violet-900/30 border border-violet-500/20',
+      accent: 'bg-violet-500/45 text-white',
+      label: '최근 업로드 수'
+    },
+    {
+      title: '처리 중',
+      value: isLoading ? '-' : summary.processing.toLocaleString(),
+      icon: RefreshCw,
+      gradient: 'bg-gradient-to-br from-sky-500/25 via-sky-500/10 to-sky-900/30 border border-sky-500/20',
+      accent: 'bg-sky-500/45 text-white',
+      label: '대기 및 진행 중'
+    },
+    {
+      title: '실패 (7일)',
+      value: isLoading ? '-' : summary.failed7d.toLocaleString(),
+      icon: XCircle,
+      gradient: 'bg-gradient-to-br from-rose-500/25 via-rose-500/10 to-rose-900/30 border border-rose-500/20',
+      accent: 'bg-rose-500/45 text-white',
+      label: '최근 7일 실패 문서'
+    },
+  ];
   
   return (
     <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-      <Card className="card-enhanced">
-        <CardContent className="py-4">
-          <Metric title="총 문서 수" value={isLoading ? "-" : String(data?.total ?? 0)} />
-        </CardContent>
-      </Card>
-      <Card className="card-enhanced">
-        <CardContent className="py-4">
-          <Metric title="최근 24시간" value={isLoading ? "-" : String(data?.recent24h ?? 0)} />
-        </CardContent>
-      </Card>
-      <Card className="card-enhanced">
-        <CardContent className="py-4">
-          <Metric title="처리 중" value={isLoading ? "-" : String(data?.processing ?? 0)} />
-        </CardContent>
-      </Card>
-      <Card className="card-enhanced">
-        <CardContent className="py-4">
-          <Metric title="실패 (7일)" value={isLoading ? "-" : String(data?.failed7d ?? 0)} />
-        </CardContent>
-      </Card>
+      {metrics.map((metric) => (
+        <Metric key={metric.title} {...metric} />
+      ))}
     </div>
   );
 }
 
-function Metric({ title, value }: { title: string; value: string }) {
+function Metric({ title, value, icon: Icon, gradient, accent, label }: { title: string; value: string; icon: LucideIcon; gradient: string; accent: string; label?: string }) {
   return (
-    <div>
-      <div className="text-xs text-secondary-enhanced font-semibold">{title}</div>
-      <div className="text-2xl font-bold text-primary-enhanced mt-1">{value}</div>
+    <div className={`relative overflow-hidden rounded-2xl p-5 shadow-xl ${gradient}`}>
+      <div className="absolute inset-0 bg-gradient-to-tr from-white/25 via-white/10 to-transparent opacity-20" />
+      <div className="relative flex items-start justify-between">
+        <div>
+          <div className="text-xs uppercase tracking-wider text-white/70 font-semibold">{title}</div>
+          <div className="mt-2 text-3xl font-semibold text-white">{value}</div>
+          {label && <div className="mt-1 text-xs text-white/60">{label}</div>}
+        </div>
+        <div className={`h-12 w-12 rounded-xl flex items-center justify-center shadow-inner ${accent}`}>
+          <Icon className="w-5 h-5" />
+        </div>
+      </div>
     </div>
   );
 }

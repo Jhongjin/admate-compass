@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createPureClient } from '@/lib/supabase/server';
 import { ragProcessor, DocumentData } from '@/lib/services/RAGProcessor';
 import { simpleTextSplitter, TextSplit } from '@/lib/services/SimpleTextSplitter';
+import { sitemapDiscoveryService } from '@/lib/services/SitemapDiscoveryService';
 
 export const runtime = 'nodejs';
 export const maxDuration = 600; // Pro 플랜: 최대 10분 (큰 파일 처리 지원 - 13MB+ 파일 처리 가능)
@@ -1282,21 +1283,25 @@ export async function processQueue() {
         vendors: job.payload?.vendors,
         domainLimit: job.payload?.domainLimit,
         respectRobots: job.payload?.respectRobots,
-        maxDepth: job.payload?.maxDepth
+        maxDepth: job.payload?.maxDepth,
+        extractSubPages: job.payload?.extractSubPages
       });
+
+      const crawlStartMs = Date.now();
 
       try {
         const url = job.payload?.url as string;
         const vendors = (job.payload?.vendors as string[]) || [];
         const domainLimit = job.payload?.domainLimit as boolean ?? true;
         const respectRobots = job.payload?.respectRobots as boolean ?? true;
-        const maxDepth = (job.payload?.maxDepth as number) || 2;
+        const maxDepthRaw = Number(job.payload?.maxDepth);
+        const maxDepth = Number.isFinite(maxDepthRaw) && maxDepthRaw > 0 ? maxDepthRaw : 2;
+        const extractSubPages = job.payload?.extractSubPages === true;
 
         if (!url) {
           throw new Error('CRAWL_SEED job payload에 url이 없습니다.');
         }
 
-        // URL 유효성 검사
         let seedUrl: URL;
         try {
           seedUrl = new URL(url);
@@ -1304,64 +1309,51 @@ export async function processQueue() {
           throw new Error(`유효하지 않은 URL: ${url}`);
         }
 
-        console.log('📥 URL 크롤링 시작:', {
-          url,
-          domain: seedUrl.hostname,
-          maxDepth,
-          domainLimit,
-          respectRobots
-        });
+        const dbVendor = vendors[0] || 'META';
+        const documentId = job.document_id || `doc_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
-        // 1. Seed URL 크롤링 (간단한 HTML 텍스트 추출)
-        const crawlStartMs = Date.now();
-        let htmlContent = '';
-        let pageTitle = '';
+        const commonHeaders = {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+          'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
+          'Accept-Encoding': 'gzip, deflate, br',
+          'Connection': 'keep-alive',
+          'Upgrade-Insecure-Requests': '1',
+          'Sec-Fetch-Dest': 'document',
+          'Sec-Fetch-Mode': 'navigate',
+          'Sec-Fetch-Site': 'none',
+        } as Record<string, string>;
 
-        try {
-          // 더 나은 브라우저 헤더 설정 (일부 사이트가 봇을 차단할 수 있음)
-          const response = await fetch(url, {
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-              'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
-              'Accept-Encoding': 'gzip, deflate, br',
-              'Connection': 'keep-alive',
-              'Upgrade-Insecure-Requests': '1',
-              'Sec-Fetch-Dest': 'document',
-              'Sec-Fetch-Mode': 'navigate',
-              'Sec-Fetch-Site': 'none',
-            },
-            signal: AbortSignal.timeout(30000), // 30초 타임아웃
-            redirect: 'follow', // 리다이렉트 자동 따라가기
+        const fetchPageContent = async (targetUrl: string) => {
+          console.log('🌍 페이지 다운로드 요청:', targetUrl);
+          const response = await fetch(targetUrl, {
+            headers: commonHeaders,
+            signal: AbortSignal.timeout(30000),
+            redirect: 'follow',
           });
 
           if (!response.ok) {
-            // 에러 응답 본문도 읽어서 더 자세한 정보 제공
             let errorBody = '';
             try {
               errorBody = await response.text();
-              // 에러 본문이 너무 길면 잘라내기
               if (errorBody.length > 500) {
-                errorBody = errorBody.substring(0, 500) + '...';
+                errorBody = `${errorBody.substring(0, 500)}...`;
               }
             } catch {
-              // 에러 본문 읽기 실패는 무시
+              // ignore body read errors
             }
-            
-            const errorDetails = errorBody 
-              ? `응답: ${errorBody.substring(0, 200)}`
-              : response.statusText;
-            
+            const errorDetails = errorBody ? `응답: ${errorBody.substring(0, 200)}` : response.statusText;
             throw new Error(`HTTP ${response.status}: ${errorDetails}`);
           }
 
-          htmlContent = await response.text();
-          
-          // 간단한 제목 추출
-          const titleMatch = htmlContent.match(/<title[^>]*>([^<]+)<\/title>/i);
-          pageTitle = titleMatch ? titleMatch[1].trim() : seedUrl.pathname || seedUrl.hostname;
+          const htmlContent = await response.text();
 
-          // HTML에서 텍스트 추출 (간단한 방식)
+          if (/계속하려면\s*로그인/gi.test(htmlContent) && targetUrl.includes('facebook.com')) {
+            throw new Error('Facebook 로그인 페이지로 리디렉션되어 크롤링할 수 없습니다. 공개 접근 가능한 URL을 제공해주세요.');
+          }
+
+          const titleMatch = htmlContent.match(/<title[^>]*>([^<]+)<\/title>/i);
+          const pageTitle = titleMatch ? titleMatch[1].trim() : new URL(targetUrl).pathname || targetUrl;
           const textContent = htmlContent
             .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
             .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
@@ -1370,104 +1362,194 @@ export async function processQueue() {
             .trim();
 
           if (!textContent || textContent.length < 100) {
-            throw new Error('크롤링된 콘텐츠가 너무 짧거나 비어있습니다.');
+            throw new Error('크롤링된 콘텐츠가 너무 짧거나 비어있습니다. 접근 권한 또는 공개 여부를 확인해주세요.');
           }
 
-          console.log('✅ URL 크롤링 완료:', {
-            url,
-            title: pageTitle,
-            contentLength: textContent.length,
-            elapsedMs: Date.now() - crawlStartMs
-          });
+          return { textContent, pageTitle };
+        };
 
-          // 2. 문서 생성
-          const documentId = `doc_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-          const dbVendor = vendors[0] || 'META';
+        const upsertAndProcessDocument = async ({ targetUrl, title, content, documentIdOverride }: { targetUrl: string; title: string; content: string; documentIdOverride?: string; }) => {
           const nowIso = new Date().toISOString();
+          const fileSize = Buffer.byteLength(content, 'utf8');
 
-          const { error: docInsertError } = await supabase
+          const { data: existingDoc, error: existingError } = await supabase
             .from('documents')
-            .insert({
-              id: documentId,
-              title: pageTitle,
-              type: 'url',
-              status: 'processing',
-              chunk_count: 0,
-              file_size: Buffer.byteLength(textContent, 'utf8'),
-              file_type: 'text/html',
-              source_vendor: dbVendor,
-              content: textContent,
-              url: url,
-              created_at: nowIso,
-              updated_at: nowIso,
-            });
+            .select('id, chunk_count, created_at')
+            .eq('url', targetUrl)
+            .maybeSingle();
 
-          if (docInsertError) {
-            throw new Error(`문서 생성 실패: ${docInsertError.message}`);
+          if (existingError) {
+            console.error('❌ 기존 문서 조회 실패:', existingError);
           }
 
-          console.log('✅ 문서 생성 완료:', { documentId, title: pageTitle });
+          const resolvedDocumentId = documentIdOverride || existingDoc?.id || `doc_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
-          // 3. RAG 처리 (청킹, 임베딩, 저장)
-          const docData: DocumentData = {
-            id: documentId,
-            title: pageTitle,
-            content: textContent,
+          if (existingDoc?.id && !documentIdOverride) {
+            await supabase
+              .from('documents')
+              .update({
+                title,
+                status: 'processing',
+                file_size: fileSize,
+                file_type: 'text/html',
+                source_vendor: dbVendor,
+                content,
+                url: targetUrl,
+                updated_at: nowIso,
+              })
+              .eq('id', existingDoc.id);
+          } else {
+            await supabase
+              .from('documents')
+              .insert({
+                id: resolvedDocumentId,
+                title,
+                type: 'url',
+                status: 'processing',
+                chunk_count: existingDoc?.chunk_count ?? 0,
+                file_size: fileSize,
+                file_type: 'text/html',
+                source_vendor: dbVendor,
+                content,
+                url: targetUrl,
+                created_at: nowIso,
+                updated_at: nowIso,
+              });
+          }
+
+          const ragResult = await ragProcessor.processDocument({
+            id: resolvedDocumentId,
+            title,
+            content,
             type: 'url',
-            file_size: Buffer.byteLength(textContent, 'utf8'),
+            file_size: fileSize,
             file_type: 'text/html',
             source_vendor: dbVendor,
-            created_at: nowIso,
+            created_at: existingDoc?.created_at || nowIso,
             updated_at: nowIso,
-          };
-
-          const ragStartMs = Date.now();
-          const ragResult = await ragProcessor.processDocument(docData, true);
-          const ragMs = Date.now() - ragStartMs;
-
-          if (!ragResult.success) {
-            throw new Error(`RAG 처리 실패: ${ragResult.error || '알 수 없는 오류'}`);
-          }
-
-          console.log('✅ RAG 처리 완료:', {
-            documentId,
-            chunkCount: ragResult.chunkCount,
-            elapsedMs: ragMs
           });
 
-          // 4. 작업 완료 처리
-          const finishedResult = {
-            url,
-            documentId,
-            title: pageTitle,
-            chunkCount: ragResult.chunkCount,
-            vendors,
-            domainLimit,
-            respectRobots,
-            maxDepth,
-            crawlTimeMs: Date.now() - crawlStartMs,
-            ragTimeMs: ragMs
-          };
+          await supabase
+            .from('documents')
+            .update({
+              status: ragResult.success ? 'indexed' : 'failed',
+              chunk_count: ragResult.chunkCount,
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', resolvedDocumentId);
 
+          return {
+            documentId: resolvedDocumentId,
+            chunkCount: ragResult.chunkCount,
+            success: ragResult.success,
+          };
+        };
+
+        const mainPage = await fetchPageContent(url);
+        const mainDocResult = await upsertAndProcessDocument({ targetUrl: url, title: mainPage.pageTitle, content: mainPage.textContent, documentIdOverride: documentId });
+
+        if (!job.document_id) {
           await supabase
             .from('processing_jobs')
-            .update({
-              status: 'completed',
-              finished_at: new Date().toISOString(),
-              result: finishedResult
-            })
+            .update({ document_id: documentId })
             .eq('id', job.id);
-
-          return NextResponse.json({ 
-            success: true, 
-            message: 'CRAWL_SEED 작업 완료', 
-            result: finishedResult 
-          }, { status: 200 });
-        } catch (fetchError) {
-          const errorMsg = fetchError instanceof Error ? fetchError.message : String(fetchError);
-          console.error('❌ URL 크롤링 실패:', errorMsg);
-          throw new Error(`URL 크롤링 실패: ${errorMsg}`);
         }
+
+        const subPageResults: Array<{ url: string; success: boolean; chunkCount?: number; error?: string }> = [];
+
+        if (extractSubPages) {
+          try {
+            const discoveryOptions = {
+              maxDepth: Math.max(1, Math.min(maxDepth, 3)),
+              maxUrls: 12,
+              respectRobotsTxt: respectRobots,
+              includeExternal: false,
+              allowedDomains: [seedUrl.hostname],
+            };
+
+            console.log('🔍 하위 페이지 탐색 옵션:', discoveryOptions);
+            const discovered = await sitemapDiscoveryService.discoverSubPages(url, discoveryOptions);
+            const candidateUrls = Array.from(new Set(
+              discovered
+                .map((entry) => entry.url)
+                .filter((entryUrl) => entryUrl && entryUrl !== url && !entryUrl.includes('#'))
+            )).slice(0, 8);
+
+            console.log('📄 하위 페이지 후보:', candidateUrls.length);
+            let processedCount = 0;
+
+            for (const subUrl of candidateUrls) {
+              if (!subUrl) continue;
+
+              try {
+                const page = await fetchPageContent(subUrl);
+                const result = await upsertAndProcessDocument({ targetUrl: subUrl, title: page.pageTitle, content: page.textContent });
+                subPageResults.push({ url: subUrl, success: result.success, chunkCount: result.chunkCount });
+              } catch (subError) {
+                console.error('❌ 하위 페이지 처리 실패:', subError);
+                subPageResults.push({
+                  url: subUrl,
+                  success: false,
+                  error: subError instanceof Error ? subError.message : String(subError),
+                });
+              }
+
+              processedCount += 1;
+              await supabase
+                .from('processing_jobs')
+                .update({
+                  result: {
+                    url,
+                    documentId,
+                    title: mainPage.pageTitle,
+                    chunkCount: mainDocResult.chunkCount,
+                    subPageProgress: { processed: processedCount, total: candidateUrls.length },
+                    subPages: subPageResults.slice(-3),
+                  },
+                })
+                .eq('id', job.id);
+            }
+          } catch (subDiscoveryError) {
+            console.error('❌ 하위 페이지 탐색 실패:', subDiscoveryError);
+            subPageResults.push({
+              url: url,
+              success: false,
+              error: subDiscoveryError instanceof Error ? subDiscoveryError.message : String(subDiscoveryError),
+            });
+          } finally {
+            await sitemapDiscoveryService.close().catch(() => {});
+          }
+        }
+
+        const finishedResult = {
+          url,
+          documentId,
+          title: mainPage.pageTitle,
+          chunkCount: mainDocResult.chunkCount,
+          vendors,
+          domainLimit,
+          respectRobots,
+          maxDepth,
+          extractSubPages,
+          subPageCount: subPageResults.filter((item) => item.success).length,
+          subPages: subPageResults,
+          crawlTimeMs: Date.now() - crawlStartMs,
+        };
+
+        await supabase
+          .from('processing_jobs')
+          .update({
+            status: 'completed',
+            finished_at: new Date().toISOString(),
+            result: finishedResult,
+          })
+          .eq('id', job.id);
+
+        return NextResponse.json({ 
+          success: true, 
+          message: 'CRAWL_SEED 작업 완료', 
+          result: finishedResult 
+        }, { status: 200 });
       } catch (crawlError) {
         console.error('❌ CRAWL_SEED 처리 오류:', crawlError);
         const errorMessage = crawlError instanceof Error ? crawlError.message : String(crawlError);
@@ -1477,7 +1559,8 @@ export async function processQueue() {
           .update({
             status: 'failed',
             error: errorMessage,
-            finished_at: new Date().toISOString()
+            finished_at: new Date().toISOString(),
+            result: { error: errorMessage },
           })
           .eq('id', job.id);
 
