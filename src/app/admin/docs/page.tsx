@@ -983,9 +983,9 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
               `}
               onClick={() => fileInputRef.current?.click()}
             >
-              <div className="flex flex-col items-center justify-center gap-3 text-center">
+              <div className="flex flex-col items-center justify-center gap-3 text-center w-full">
                 <Upload className={`w-8 h-8 ${dragActive ? 'text-blue-400' : 'text-gray-400'}`} />
-                <div>
+                <div className="w-full">
                   <p className="text-sm text-primary-enhanced font-semibold">
                     파일을 드래그하여 놓거나 클릭하여 선택하세요
                   </p>
@@ -997,13 +997,13 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
                   </p>
                 </div>
                 {selectedFiles.length > 0 && (
-                  <div className="mt-2 space-y-1">
+                  <div className="mt-2 space-y-1 w-full px-2">
                     <p className="text-xs text-blue-300 font-medium">
                       선택된 파일: {selectedFiles.length}개
                     </p>
-                    <div className="text-xs text-gray-400 max-h-20 overflow-y-auto">
+                    <div className="text-xs text-gray-400 max-h-20 overflow-y-auto w-full overflow-x-hidden">
                       {selectedFiles.map((f, idx) => (
-                        <div key={idx} className="truncate">• {f.name}</div>
+                        <div key={idx} className="truncate w-full text-left">• {f.name}</div>
                       ))}
                     </div>
                   </div>
@@ -2361,36 +2361,69 @@ function MiniStat({ title, value, color }: { title: string; value: string; color
 }
 
 function MetricsSummary({ vendors }: { vendors: string[] }) {
+  const supabase = useMemo(() => createClient(), []);
+  
   const { data, isLoading } = useQuery({
-    queryKey: ["metrics-summary", vendors],
+    queryKey: ["documents-summary", vendors],
     queryFn: async () => {
-      const hours = 168; // 7일
-      const res = await fetch(`/api/admin/metrics?hours=${hours}`);
-      if (!res.ok) throw new Error("metrics error");
-      return res.json();
+      const now = new Date();
+      const last24h = new Date(now.getTime() - 24 * 60 * 60 * 1000).toISOString();
+      
+      // 총 문서 수
+      const { count: totalCount } = await supabase
+        .from('documents')
+        .select('*', { count: 'exact', head: true });
+      
+      // 최근 24시간 업로드된 문서 수
+      const { count: recentCount } = await supabase
+        .from('documents')
+        .select('*', { count: 'exact', head: true })
+        .gte('created_at', last24h);
+      
+      // 처리 중인 문서 수
+      const { count: processingCount } = await supabase
+        .from('documents')
+        .select('*', { count: 'exact', head: true })
+        .in('status', ['pending', 'processing']);
+      
+      // 실패한 문서 수 (최근 7일)
+      const last7d = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000).toISOString();
+      const { count: failedCount } = await supabase
+        .from('documents')
+        .select('*', { count: 'exact', head: true })
+        .eq('status', 'failed')
+        .gte('created_at', last7d);
+      
+      return {
+        total: totalCount || 0,
+        recent24h: recentCount || 0,
+        processing: processingCount || 0,
+        failed7d: failedCount || 0,
+      };
     },
+    refetchInterval: 10000, // 10초마다 갱신
   });
-  const overall = data?.overall || {};
+  
   return (
     <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
       <Card className="card-enhanced">
         <CardContent className="py-4">
-          <Metric title="평균 처리(ms)" value={isLoading ? "-" : String(overall.avgTotalMs ?? "-")} />
+          <Metric title="총 문서 수" value={isLoading ? "-" : String(data?.total ?? 0)} />
         </CardContent>
       </Card>
       <Card className="card-enhanced">
         <CardContent className="py-4">
-          <Metric title="p95(ms)" value={isLoading ? "-" : String(overall.p95TotalMs ?? "-")} />
+          <Metric title="최근 24시간" value={isLoading ? "-" : String(data?.recent24h ?? 0)} />
         </CardContent>
       </Card>
       <Card className="card-enhanced">
         <CardContent className="py-4">
-          <Metric title="p99(ms)" value={isLoading ? "-" : String(overall.p99TotalMs ?? "-")} />
+          <Metric title="처리 중" value={isLoading ? "-" : String(data?.processing ?? 0)} />
         </CardContent>
       </Card>
       <Card className="card-enhanced">
         <CardContent className="py-4">
-          <Metric title="실패율" value={isLoading ? "-" : String(data?.failedRate ?? "-")} />
+          <Metric title="실패 (7일)" value={isLoading ? "-" : String(data?.failed7d ?? 0)} />
         </CardContent>
       </Card>
     </div>
