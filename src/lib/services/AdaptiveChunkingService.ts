@@ -402,7 +402,8 @@ export class AdaptiveChunkingService {
       const firstChunkSize = chunks[0]?.length || 0;
       const coverage = content.length > 0 ? (firstChunkSize / content.length) * 100 : 0;
       
-      console.error('❌ AdaptiveChunkingService: 청킹 최적화 실패: 내용이 긴데 청크가 1개만 생성되었습니다.', {
+      // CRITICAL: 이 로그는 반드시 출력되어야 함
+      console.error('[CRITICAL] ❌ AdaptiveChunkingService: 청킹 최적화 실패: 내용이 긴데 청크가 1개만 생성되었습니다.', {
         contentLength: content.length,
         contentLengthKB: (content.length / 1024).toFixed(2),
         chunkSize: firstChunkSize,
@@ -421,7 +422,8 @@ export class AdaptiveChunkingService {
       });
       
       // 강제로 여러 청크로 분할 시도 (더 작은 청크 크기로)
-      console.log('🔄 AdaptiveChunkingService: 강제 청킹 시도...', {
+      // CRITICAL: 이 로그는 반드시 출력되어야 함
+      console.error('[CRITICAL] 🔄 AdaptiveChunkingService: 강제 청킹 시도...', {
         contentLength: content.length,
         currentChunkCount: chunks.length,
         condition: `chunks.length (${chunks.length}) === 1 && content.length (${content.length}) > 10000`
@@ -457,11 +459,15 @@ export class AdaptiveChunkingService {
       });
       
       if (forcedChunks.length > 1) {
-        console.log(`✅ AdaptiveChunkingService: 강제 청킹 완료: ${forcedChunks.length}개 청크 생성 (기존: ${chunks.length}개, 목표: ${targetChunkCount}개)`, {
+        // CRITICAL: 이 로그는 반드시 출력되어야 함
+        console.error('[CRITICAL] ✅ AdaptiveChunkingService: 강제 청킹 완료:', {
           beforeChunkCount: chunks.length,
           afterChunkCount: forcedChunks.length,
           targetChunkCount,
-          contentLength: content.length
+          contentLength: content.length,
+          timestamp: new Date().toISOString(),
+          note: `강제 청킹으로 ${forcedChunks.length}개 청크 생성 (기존: ${chunks.length}개, 목표: ${targetChunkCount}개)`,
+          critical: '이 로그는 반드시 출력되어야 합니다.'
         });
         return forcedChunks;
       } else {
