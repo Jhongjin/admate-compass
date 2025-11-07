@@ -1203,22 +1203,34 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
                 />
               </div>
               <div className="border border-gray-600 rounded-md px-3 py-4 bg-gray-800/30 flex flex-col items-center justify-center min-h-[64px]">
-                <Select 
-                  value={crawlOptions.maxDepth}
-                  onValueChange={(value) => 
-                    setCrawlOptions(prev => ({ ...prev, maxDepth: value }))
-                  }
-                >
-                  <SelectTrigger className="w-24 bg-gray-700 border-gray-600 text-white">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="1">1</SelectItem>
-                    <SelectItem value="2">2</SelectItem>
-                    <SelectItem value="3">3</SelectItem>
-                    <SelectItem value="4">4</SelectItem>
-                  </SelectContent>
-                </Select>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div>
+                        <Select 
+                          value={crawlOptions.maxDepth}
+                          onValueChange={(value) => 
+                            setCrawlOptions(prev => ({ ...prev, maxDepth: value }))
+                          }
+                        >
+                          <SelectTrigger className="w-24 bg-gray-700 border-gray-600 text-white">
+                            <SelectValue />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="1">1</SelectItem>
+                            <SelectItem value="2">2</SelectItem>
+                            <SelectItem value="3">3</SelectItem>
+                            <SelectItem value="4">4</SelectItem>
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent>
+                      <p className="text-xs">최대 심도: Seed URL에서 몇 단계 깊이까지 크롤링할지 설정합니다.</p>
+                      <p className="text-xs mt-1">예: 심도 2 = Seed URL → 링크된 페이지 → 그 페이지의 링크까지</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
               </div>
             </div>
             <div className="flex items-center gap-3">
