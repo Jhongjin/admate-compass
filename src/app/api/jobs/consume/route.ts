@@ -1348,8 +1348,19 @@ export async function processQueue() {
 
           const htmlContent = await response.text();
 
-          if (/계속하려면\s*로그인/gi.test(htmlContent) && targetUrl.includes('facebook.com')) {
-            throw new Error('Facebook 로그인 페이지로 리디렉션되어 크롤링할 수 없습니다. 공개 접근 가능한 URL을 제공해주세요.');
+          const lowerHtml = htmlContent.toLowerCase();
+          const loginPatterns = [
+            '계속하려면 로그인',
+            'facebook에 로그인',
+            'login to facebook',
+            'instagram에 로그인',
+            'log in to instagram',
+            '로그인하여 계속',
+          ];
+          const isBlockedByLogin = loginPatterns.some((pattern) => lowerHtml.includes(pattern.toLowerCase()));
+
+          if (isBlockedByLogin && (targetUrl.includes('facebook.com') || targetUrl.includes('instagram.com'))) {
+            throw new Error('로그인 페이지가 반환되어 크롤링할 수 없습니다. 공개 접근이 가능한 문서를 사용해 주세요.');
           }
 
           const titleMatch = htmlContent.match(/<title[^>]*>([^<]+)<\/title>/i);
