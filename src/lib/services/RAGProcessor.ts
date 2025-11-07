@@ -943,7 +943,8 @@ export class RAGProcessor {
         });
         
         // 강제 재청킹 시도 (무조건 실행, coverage 조건 제거)
-        console.log('🔄 RAGProcessor: 강제 재청킹 시도 (무조건 실행)...', {
+        // CRITICAL: 이 로그는 반드시 출력되어야 함
+        console.error('[CRITICAL] 🔄 RAGProcessor: 강제 재청킹 시도 (무조건 실행)...', {
           documentId: document.id,
           title: document.title,
           currentChunkCount: chunks.length,
@@ -1075,7 +1076,8 @@ export class RAGProcessor {
       const finalTotalChunkSize = chunks.reduce((sum, c) => sum + c.content.length, 0);
       
       // 최종 청킹 결과 로깅 (항상 출력) - 이 로그는 반드시 출력되어야 함
-      console.log('📊 최종 청킹 결과 (반드시 출력):', {
+      // CRITICAL: 이 로그는 반드시 출력되어야 함
+      console.error('[CRITICAL] 📊 최종 청킹 결과 (반드시 출력):', {
         documentId: document.id,
         title: document.title,
         chunkCount: finalChunkCount,
@@ -1427,17 +1429,21 @@ export class RAGProcessor {
         chunkingConfig
       );
       
-      console.log('📦 적응적 청킹 결과:', {
+      // CRITICAL: 이 로그는 반드시 출력되어야 함
+      console.error('[CRITICAL] 📦 적응적 청킹 결과:', {
         documentId: document.id,
         title: document.title,
         chunkCount: adaptiveChunks.length,
         firstChunkPreview: adaptiveChunks[0]?.content?.substring(0, 100) || '없음',
+        lastChunkPreview: adaptiveChunks[adaptiveChunks.length - 1]?.content?.substring(0, 100) || '없음',
         contentLength: document.content.length,
+        timestamp: new Date().toISOString(),
         note: adaptiveChunks.length === 1 && document.content.length > 10000
           ? '⚠️ 1개 청크만 반환됨 - RAGProcessor에서 강제 재청킹 필요'
           : adaptiveChunks.length > 1
           ? '✅ 여러 청크 반환됨 (정상)'
-          : '⚠️ 청크가 없음'
+          : '⚠️ 청크가 없음',
+        critical: '이 로그는 반드시 출력되어야 합니다.'
       });
 
       // ChunkData 형식으로 변환
