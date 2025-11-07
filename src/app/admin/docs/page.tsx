@@ -958,7 +958,11 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
     try {
       setCrawling(true);
       const url = (document.getElementById("seed-url-input") as HTMLInputElement | null)?.value?.trim();
-      if (!url) return;
+      if (!url) {
+        toast.error('URL을 입력해주세요', { duration: 3000 });
+        setCrawling(false);
+        return;
+      }
       // UI 벤더 배열을 DB 값 배열로 변환
       const dbVendors = convertVendorsToDB(vendors);
       // 간단 큐 등록: jobType CRAWL_SEED
@@ -968,7 +972,13 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
         body: JSON.stringify({
           jobType: "CRAWL_SEED",
           priority: 5,
-          payload: { url, vendors: dbVendors },
+          payload: { 
+            url, 
+            vendors: dbVendors,
+            domainLimit: crawlOptions.domainLimit,
+            respectRobots: crawlOptions.respectRobots,
+            maxDepth: parseInt(crawlOptions.maxDepth, 10)
+          },
         }),
       });
     } catch (e) {
