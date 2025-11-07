@@ -287,6 +287,98 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
     window.localStorage.setItem('adminCrawlOptions', JSON.stringify(crawlOptions));
   }, [crawlOptions]);
 
+  // 크롤링 진행 상황 폴링 함수
+  const pollCrawlStatus = async (jobId: string) => {
+    const supabaseClient = createClient();
+    let pollCount = 0;
+    const maxPolls = 120; // 최대 10분 (5초 간격)
+    
+    const poll = async (): Promise<void> => {
+      pollCount++;
+      
+      try {
+        const { data: job, error } = await supabaseClient
+          .from('processing_jobs')
+          .select('id, status, result, error, finished_at')
+          .eq('id', jobId)
+          .single();
+
+        if (error) {
+          console.error('크롤링 상태 조회 오류:', error);
+          if (pollCount >= maxPolls) {
+            toast.error('크롤링 상태 확인 시간 초과', { duration: 5000 });
+            setCrawling(false);
+            setCrawlJobId(null);
+            return;
+          }
+          setTimeout(poll, 5000);
+          return;
+        }
+
+        if (!job) {
+          if (pollCount >= maxPolls) {
+            toast.error('크롤링 작업을 찾을 수 없습니다', { duration: 5000 });
+            setCrawling(false);
+            setCrawlJobId(null);
+            return;
+          }
+          setTimeout(poll, 5000);
+          return;
+        }
+
+        if (job.status === 'completed') {
+          const result = job.result as any;
+          toast.success('크롤링 완료', {
+            description: result?.title ? `${result.title} (청크 ${result.chunkCount || 0}개)` : '문서가 인덱싱되었습니다.',
+            duration: 5000,
+          });
+          
+          // 문서 리스트 새로고침
+          if (typeof window !== 'undefined') {
+            window.dispatchEvent(new CustomEvent('docs-refresh'));
+          }
+          
+          setCrawling(false);
+          setCrawlJobId(null);
+          return;
+        }
+
+        if (job.status === 'failed') {
+          toast.error('크롤링 실패', {
+            description: job.error || '알 수 없는 오류가 발생했습니다.',
+            duration: 5000,
+          });
+          setCrawling(false);
+          setCrawlJobId(null);
+          return;
+        }
+
+        // processing 또는 queued 상태면 계속 폴링
+        if (pollCount >= maxPolls) {
+          toast.warning('크롤링 처리 시간이 오래 걸리고 있습니다', {
+            description: '백그라운드에서 계속 처리 중입니다.',
+            duration: 5000,
+          });
+          setCrawling(false);
+          setCrawlJobId(null);
+          return;
+        }
+
+        setTimeout(poll, 5000);
+      } catch (pollError) {
+        console.error('크롤링 상태 폴링 오류:', pollError);
+        if (pollCount >= maxPolls) {
+          setCrawling(false);
+          setCrawlJobId(null);
+          return;
+        }
+        setTimeout(poll, 5000);
+      }
+    };
+
+    poll();
+  };
+
   const handleUpload = async (files?: File[]) => {
     try {
       const filesToUpload = files || (fileInputRef.current?.files ? Array.from(fileInputRef.current.files) : []);
