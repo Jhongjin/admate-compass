@@ -1318,15 +1318,41 @@ export async function processQueue() {
         let pageTitle = '';
 
         try {
+          // 더 나은 브라우저 헤더 설정 (일부 사이트가 봇을 차단할 수 있음)
           const response = await fetch(url, {
             headers: {
-              'User-Agent': 'Mozilla/5.0 (compatible; MetaFAQBot/1.0)',
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+              'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+              'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
+              'Accept-Encoding': 'gzip, deflate, br',
+              'Connection': 'keep-alive',
+              'Upgrade-Insecure-Requests': '1',
+              'Sec-Fetch-Dest': 'document',
+              'Sec-Fetch-Mode': 'navigate',
+              'Sec-Fetch-Site': 'none',
             },
             signal: AbortSignal.timeout(30000), // 30초 타임아웃
+            redirect: 'follow', // 리다이렉트 자동 따라가기
           });
 
           if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+            // 에러 응답 본문도 읽어서 더 자세한 정보 제공
+            let errorBody = '';
+            try {
+              errorBody = await response.text();
+              // 에러 본문이 너무 길면 잘라내기
+              if (errorBody.length > 500) {
+                errorBody = errorBody.substring(0, 500) + '...';
+              }
+            } catch {
+              // 에러 본문 읽기 실패는 무시
+            }
+            
+            const errorDetails = errorBody 
+              ? `응답: ${errorBody.substring(0, 200)}`
+              : response.statusText;
+            
+            throw new Error(`HTTP ${response.status}: ${errorDetails}`);
           }
 
           htmlContent = await response.text();
