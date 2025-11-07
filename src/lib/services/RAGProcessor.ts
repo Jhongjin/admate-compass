@@ -937,7 +937,9 @@ export class RAGProcessor {
           fileSizeMB: document.file_size ? (document.file_size / (1024 * 1024)).toFixed(2) : 'unknown',
           chunksLength: chunks.length,
           processedContentLength: processedContent.length,
-          willForceRechunk: true
+          willForceRechunk: true,
+          timestamp: new Date().toISOString(),
+          note: '이 로그 직후 강제 재청킹이 실행되어야 합니다.'
         });
         
         // 강제 재청킹 시도 (무조건 실행, coverage 조건 제거)
