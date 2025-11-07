@@ -968,16 +968,29 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
   const handleCrawl = async () => {
     try {
       setCrawling(true);
-      const url = (document.getElementById("seed-url-input") as HTMLInputElement | null)?.value?.trim();
+      const urlInput = document.getElementById("seed-url-input") as HTMLInputElement | null;
+      const url = urlInput?.value?.trim();
+      
       if (!url) {
         toast.error('URL을 입력해주세요', { duration: 3000 });
         setCrawling(false);
         return;
       }
+
+      // URL 유효성 검사
+      try {
+        new URL(url);
+      } catch {
+        toast.error('유효한 URL을 입력해주세요', { duration: 3000 });
+        setCrawling(false);
+        return;
+      }
+
       // UI 벤더 배열을 DB 값 배열로 변환
       const dbVendors = convertVendorsToDB(vendors);
-      // 간단 큐 등록: jobType CRAWL_SEED
-      await fetch("/api/jobs/enqueue", {
+      
+      // 큐 등록: jobType CRAWL_SEED
+      const response = await fetch("/api/jobs/enqueue", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -992,8 +1005,33 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
           },
         }),
       });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(errorData.error || `HTTP ${response.status}`);
+      }
+
+      const result = await response.json();
+      
+      toast.success('크롤링 작업이 큐에 등록되었습니다', { duration: 3000 });
+      
+      // URL 입력 필드 초기화
+      if (urlInput) {
+        urlInput.value = '';
+      }
+
+      // 큐 워커 즉시 트리거 (파일 업로드와 동일한 방식)
+      try {
+        const consumeRes = await fetch('/api/jobs/consume', { method: 'POST' });
+        const consumeResult = await consumeRes.json();
+        console.log('✅ 크롤링 큐 워커 트리거 완료:', consumeResult);
+      } catch (consumeError) {
+        console.warn('⚠️ 크롤링 큐 워커 트리거 실패 (Cron Job이 처리할 수 있음):', consumeError);
+      }
     } catch (e) {
       console.error("crawl enqueue error", e);
+      const errorMessage = e instanceof Error ? e.message : '크롤링 작업 등록에 실패했습니다';
+      toast.error(errorMessage, { duration: 5000 });
     } finally {
       setCrawling(false);
     }
