@@ -365,12 +365,30 @@ export class AdaptiveChunkingService {
       // 다음 청크 시작 위치 (overlap 고려)
       // 청크가 추가되었거나 마지막인 경우에만 start 이동
       if (chunkAdded || end >= content.length) {
-        const nextStart = start + chunk.length - strategy.chunkOverlap;
+        // BUGFIX: trimmedChunk의 실제 길이를 사용하여 start 업데이트
+        // 원본 chunk.length가 아니라 실제로 추가된 trimmedChunk.length를 사용해야 함
+        const actualChunkLength = trimmedChunk.length;
+        const nextStart = start + actualChunkLength - strategy.chunkOverlap;
+        const oldStart = start;
         start = Math.max(nextStart, start + 1);
+        
+        // 디버깅: start 위치 업데이트 로그 (처음 몇 개만)
+        if (chunks.length <= 3) {
+          console.log(`🔍 청크 ${chunks.length} 추가 후 start 위치 업데이트:`, {
+            oldStart,
+            actualChunkLength,
+            chunkOverlap: strategy.chunkOverlap,
+            nextStart,
+            newStart: start,
+            remainingContent: content.length - start,
+            progress: `${((start / content.length) * 100).toFixed(1)}%`
+          });
+        }
       } else {
         // 청크가 추가되지 않은 경우 최소한 1자씩은 이동 (무한 루프 방지)
+        const oldStart = start;
         start = Math.max(start + 1, start + Math.floor(adjustedChunkSize * 0.1));
-        console.warn(`⚠️ 청크 추가 실패 - start 위치 강제 이동: ${start}`);
+        console.warn(`⚠️ 청크 추가 실패 - start 위치 강제 이동: ${oldStart} → ${start}`);
       }
 
       iterationCount++;
