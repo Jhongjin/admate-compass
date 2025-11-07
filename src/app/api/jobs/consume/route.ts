@@ -1393,6 +1393,7 @@ export async function processQueue() {
             console.error('❌ 기존 문서 조회 실패:', existingError);
           }
 
+          const wasExistingDocument = !!existingDoc;
           const resolvedDocumentId = documentIdOverride || existingDoc?.id || `doc_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
           if (existingDoc?.id && !documentIdOverride) {
@@ -1409,7 +1410,7 @@ export async function processQueue() {
                 updated_at: nowIso,
               })
               .eq('id', existingDoc.id);
-          } else {
+          } else if (!wasExistingDocument) {
             await supabase
               .from('documents')
               .insert({
@@ -1417,7 +1418,7 @@ export async function processQueue() {
                 title,
                 type: 'url',
                 status: 'processing',
-                chunk_count: existingDoc?.chunk_count ?? 0,
+                chunk_count: 0,
                 file_size: fileSize,
                 file_type: 'text/html',
                 source_vendor: dbVendor,
@@ -1440,14 +1441,29 @@ export async function processQueue() {
             updated_at: nowIso,
           });
 
-          await supabase
-            .from('documents')
-            .update({
-              status: ragResult.success ? 'indexed' : 'failed',
-              chunk_count: ragResult.chunkCount,
-              updated_at: new Date().toISOString(),
-            })
-            .eq('id', resolvedDocumentId);
+          if (ragResult.success) {
+            await supabase
+              .from('documents')
+              .update({
+                status: 'indexed',
+                chunk_count: ragResult.chunkCount,
+                updated_at: new Date().toISOString(),
+              })
+              .eq('id', resolvedDocumentId);
+          } else {
+            console.warn('⚠️ RAG 처리 실패 - 문서를 제거합니다:', resolvedDocumentId);
+            if (!wasExistingDocument) {
+              await supabase
+                .from('documents')
+                .delete()
+                .eq('id', resolvedDocumentId);
+            } else {
+              await supabase
+                .from('documents')
+                .update({ status: 'failed', updated_at: new Date().toISOString() })
+                .eq('id', resolvedDocumentId);
+            }
+          }
 
           return {
             documentId: resolvedDocumentId,
