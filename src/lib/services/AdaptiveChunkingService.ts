@@ -234,8 +234,27 @@ export class AdaptiveChunkingService {
     content: string,
     strategy: ChunkingStrategy
   ): Promise<string[]> {
+    // CRITICAL: 이 함수가 호출되었는지 확인
+    console.error('[CRITICAL] 🔧 chunkBySemanticBoundaries 호출됨:', {
+      contentLength: content.length,
+      strategy: {
+        chunkSize: strategy.chunkSize,
+        chunkOverlap: strategy.chunkOverlap,
+        minChunkSize: strategy.minChunkSize
+      },
+      timestamp: new Date().toISOString()
+    });
+    
     // 큰 문서는 규칙 기반 청킹 사용 (성능 최적화)
     const useSemanticChunking = content.length < 50000; // 50KB 미만만 의미 기반 사용
+    
+    console.error('[CRITICAL] 🔍 useSemanticChunking 결정:', {
+      contentLength: content.length,
+      threshold: 50000,
+      useSemanticChunking,
+      willUseSemantic: useSemanticChunking,
+      willUseRuleBased: !useSemanticChunking
+    });
     
     if (useSemanticChunking) {
       try {
@@ -277,6 +296,18 @@ export class AdaptiveChunkingService {
     content: string,
     strategy: ChunkingStrategy
   ): string[] {
+    // CRITICAL: 이 함수가 호출되었는지 확인
+    console.error('[CRITICAL] 🔧 chunkByRuleBoundaries 호출됨:', {
+      contentLength: content.length,
+      strategy: {
+        chunkSize: strategy.chunkSize,
+        chunkOverlap: strategy.chunkOverlap,
+        minChunkSize: strategy.minChunkSize,
+        maxChunks: strategy.maxChunks
+      },
+      timestamp: new Date().toISOString()
+    });
+    
     const chunks: string[] = [];
     let start = 0;
     let iterationCount = 0;
