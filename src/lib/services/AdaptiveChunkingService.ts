@@ -162,11 +162,22 @@ export class AdaptiveChunkingService {
    * 조항별로 청킹
    */
   private getPolicyStrategy(contentLength: number, speedMultiplier: number = 1.0): ChunkingStrategy {
+    const chunkSize = Math.floor(1200 * speedMultiplier);
+    const chunkOverlap = Math.floor(150 * speedMultiplier);
+    
+    // BUGFIX: maxChunks를 문서 길이에 따라 동적으로 계산
+    // - 짧은 문서: 최소 10개
+    // - 중간 문서: 기본 계산값
+    // - 긴 문서: 충분한 청크 수 (Coverage 100% 목표, overlap 80% 고려)
+    // - 최대 제한 없음 (RAG 검색은 상위 k개만 사용하므로 전체 청크 수는 영향 없음)
+    const baseMaxChunks = Math.ceil(contentLength / (chunkSize * 0.8)); // 80% overlap 고려
+    const maxChunks = Math.max(10, baseMaxChunks); // 최소 10개 보장
+    
     return {
-      chunkSize: Math.floor(1200 * speedMultiplier),
-      chunkOverlap: Math.floor(150 * speedMultiplier),
+      chunkSize,
+      chunkOverlap,
       separators: ['\n\n', '제', '조', '항', '장', '절', '\n', '. ', '! ', '? '],
-      maxChunks: Math.ceil(contentLength / (1200 * speedMultiplier)),
+      maxChunks, // 동적 계산값 사용
       minChunkSize: 300
     };
   }
