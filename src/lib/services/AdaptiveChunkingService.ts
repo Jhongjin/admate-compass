@@ -402,9 +402,11 @@ export class AdaptiveChunkingService {
       const firstChunkSize = chunks[0]?.length || 0;
       const coverage = content.length > 0 ? (firstChunkSize / content.length) * 100 : 0;
       
-      console.error('❌ 청킹 최적화 실패: 내용이 긴데 청크가 1개만 생성되었습니다.', {
+      console.error('❌ AdaptiveChunkingService: 청킹 최적화 실패: 내용이 긴데 청크가 1개만 생성되었습니다.', {
         contentLength: content.length,
+        contentLengthKB: (content.length / 1024).toFixed(2),
         chunkSize: firstChunkSize,
+        chunkSizeKB: (firstChunkSize / 1024).toFixed(2),
         coverage: `${coverage.toFixed(1)}%`,
         strategy: {
           chunkSize: strategy.chunkSize,
@@ -413,11 +415,17 @@ export class AdaptiveChunkingService {
           minChunkSize: strategy.minChunkSize
         },
         iterationCount,
-        maxIterations
+        maxIterations,
+        willForceChunk: true,
+        condition: `chunks.length (${chunks.length}) === 1 && content.length (${content.length}) > 10000`
       });
       
       // 강제로 여러 청크로 분할 시도 (더 작은 청크 크기로)
-      console.log('🔄 AdaptiveChunkingService: 강제 청킹 시도...');
+      console.log('🔄 AdaptiveChunkingService: 강제 청킹 시도...', {
+        contentLength: content.length,
+        currentChunkCount: chunks.length,
+        condition: `chunks.length (${chunks.length}) === 1 && content.length (${content.length}) > 10000`
+      });
       const forcedChunks: string[] = [];
       // 내용 길이에 따라 동적으로 청크 크기 결정 (최소 500자, 최대 2000자)
       // 목표: 최소 10개 이상의 청크 생성
@@ -469,16 +477,33 @@ export class AdaptiveChunkingService {
         }
         
         if (smallerForcedChunks.length > 1) {
-          console.log(`✅ 강제 청킹 재시도 성공: ${smallerForcedChunks.length}개 청크 생성`);
+          console.log(`✅ AdaptiveChunkingService: 강제 청킹 재시도 성공: ${smallerForcedChunks.length}개 청크 생성`, {
+            beforeChunkCount: chunks.length,
+            afterChunkCount: smallerForcedChunks.length,
+            contentLength: content.length,
+            smallerChunkSize
+          });
           return smallerForcedChunks;
+        } else {
+          console.error('❌ AdaptiveChunkingService: 강제 청킹 재시도도 실패: 여전히 1개 청크만 생성됨', {
+            smallerForcedChunksLength: smallerForcedChunks.length,
+            contentLength: content.length,
+            smallerChunkSize
+          });
         }
       }
     }
     
-    // 최종 청크 수 로깅
+    // 최종 청크 수 로깅 (강제 청킹이 실행되지 않았거나 실패한 경우)
     if (chunks.length > 0) {
       const avgChunkSize = Math.round(chunks.reduce((sum, c) => sum + c.length, 0) / chunks.length);
-      console.log(`📊 청킹 완료: ${chunks.length}개 청크 생성 (평균 ${avgChunkSize}자/청크, 전체 ${content.length}자)`);
+      const wasForcedChunking = chunks.length === 1 && content.length > 10000;
+      console.log(`📊 AdaptiveChunkingService: 청킹 완료: ${chunks.length}개 청크 생성 (평균 ${avgChunkSize}자/청크, 전체 ${content.length}자)`, {
+        chunkCount: chunks.length,
+        contentLength: content.length,
+        avgChunkSize,
+        wasForcedChunking: wasForcedChunking ? '⚠️ 강제 청킹이 실행되지 않았거나 실패함' : '✅ 정상'
+      });
     }
 
     return chunks;
