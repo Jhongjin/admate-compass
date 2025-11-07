@@ -1189,7 +1189,7 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
                   type="button"
                   onClick={() => {
                     toast.info('최대 심도', {
-                      description: 'Seed URL에서 몇 단계 깊이까지 크롤링할지 설정합니다. 예: 심도 2 = Seed URL → 링크된 페이지 → 그 페이지의 링크까지',
+                      description: 'Seed URL에서 몇 단계 깊이까지 크롤링할지 설정합니다.\n• 심도 1: Seed URL만\n• 심도 2: Seed URL → 링크된 페이지\n• 심도 3: Seed URL → 링크된 페이지 → 그 페이지의 링크',
                       duration: 5000,
                     });
                   }}
