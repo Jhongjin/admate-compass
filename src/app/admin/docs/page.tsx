@@ -254,14 +254,25 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
   const [uploadError, setUploadError] = useState<string | null>(null);
   
   // URL 크롤링 옵션 상태 관리
-  const [crawlOptions, setCrawlOptions] = useState(() => {
+  type CrawlOptions = {
+    domainLimit: boolean;
+    respectRobots: boolean;
+    maxDepth: string;
+  };
+  
+  const [crawlOptions, setCrawlOptions] = useState<CrawlOptions>(() => {
     if (typeof window === 'undefined') {
       return { domainLimit: true, respectRobots: true, maxDepth: '2' };
     }
     const saved = window.localStorage.getItem('adminCrawlOptions');
     if (saved) {
       try {
-        return JSON.parse(saved);
+        const parsed = JSON.parse(saved) as CrawlOptions;
+        return {
+          domainLimit: typeof parsed.domainLimit === 'boolean' ? parsed.domainLimit : true,
+          respectRobots: typeof parsed.respectRobots === 'boolean' ? parsed.respectRobots : true,
+          maxDepth: typeof parsed.maxDepth === 'string' ? parsed.maxDepth : '2',
+        };
       } catch {
         return { domainLimit: true, respectRobots: true, maxDepth: '2' };
       }
