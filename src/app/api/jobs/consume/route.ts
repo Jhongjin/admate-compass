@@ -1297,46 +1297,151 @@ export async function processQueue() {
         }
 
         // URL 유효성 검사
+        let seedUrl: URL;
         try {
-          new URL(url);
+          seedUrl = new URL(url);
         } catch {
           throw new Error(`유효하지 않은 URL: ${url}`);
         }
 
-        // TODO: 실제 URL 크롤링 로직 구현
-        // 현재는 작업을 completed로 표시하고 로그만 남김
-        console.log('📝 URL 크롤링 작업 등록 완료:', {
+        console.log('📥 URL 크롤링 시작:', {
           url,
-          vendors,
+          domain: seedUrl.hostname,
+          maxDepth,
           domainLimit,
-          respectRobots,
-          maxDepth
+          respectRobots
         });
 
-        // 작업 완료 처리
-        const finishedResult = {
-          url,
-          vendors,
-          domainLimit,
-          respectRobots,
-          maxDepth,
-          message: 'URL 크롤링 작업이 등록되었습니다. (실제 크롤링 로직은 향후 구현 예정)'
-        };
+        // 1. Seed URL 크롤링 (간단한 HTML 텍스트 추출)
+        const crawlStartMs = Date.now();
+        let htmlContent = '';
+        let pageTitle = '';
 
-        await supabase
-          .from('processing_jobs')
-          .update({
-            status: 'completed',
-            finished_at: new Date().toISOString(),
-            result: finishedResult
-          })
-          .eq('id', job.id);
+        try {
+          const response = await fetch(url, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (compatible; MetaFAQBot/1.0)',
+            },
+            signal: AbortSignal.timeout(30000), // 30초 타임아웃
+          });
 
-        return NextResponse.json({ 
-          success: true, 
-          message: 'CRAWL_SEED 작업 완료', 
-          result: finishedResult 
-        }, { status: 200 });
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+          }
+
+          htmlContent = await response.text();
+          
+          // 간단한 제목 추출
+          const titleMatch = htmlContent.match(/<title[^>]*>([^<]+)<\/title>/i);
+          pageTitle = titleMatch ? titleMatch[1].trim() : seedUrl.pathname || seedUrl.hostname;
+
+          // HTML에서 텍스트 추출 (간단한 방식)
+          const textContent = htmlContent
+            .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+            .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+            .replace(/<[^>]+>/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+
+          if (!textContent || textContent.length < 100) {
+            throw new Error('크롤링된 콘텐츠가 너무 짧거나 비어있습니다.');
+          }
+
+          console.log('✅ URL 크롤링 완료:', {
+            url,
+            title: pageTitle,
+            contentLength: textContent.length,
+            elapsedMs: Date.now() - crawlStartMs
+          });
+
+          // 2. 문서 생성
+          const documentId = `doc_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+          const dbVendor = vendors[0] || 'META';
+          const nowIso = new Date().toISOString();
+
+          const { error: docInsertError } = await supabase
+            .from('documents')
+            .insert({
+              id: documentId,
+              title: pageTitle,
+              type: 'url',
+              status: 'processing',
+              chunk_count: 0,
+              file_size: Buffer.byteLength(textContent, 'utf8'),
+              file_type: 'text/html',
+              source_vendor: dbVendor,
+              content: textContent,
+              url: url,
+              created_at: nowIso,
+              updated_at: nowIso,
+            });
+
+          if (docInsertError) {
+            throw new Error(`문서 생성 실패: ${docInsertError.message}`);
+          }
+
+          console.log('✅ 문서 생성 완료:', { documentId, title: pageTitle });
+
+          // 3. RAG 처리 (청킹, 임베딩, 저장)
+          const docData: DocumentData = {
+            id: documentId,
+            title: pageTitle,
+            content: textContent,
+            type: 'url',
+            file_size: Buffer.byteLength(textContent, 'utf8'),
+            file_type: 'text/html',
+            source_vendor: dbVendor,
+            created_at: nowIso,
+            updated_at: nowIso,
+          };
+
+          const ragStartMs = Date.now();
+          const ragResult = await ragProcessor.processDocument(docData, true);
+          const ragMs = Date.now() - ragStartMs;
+
+          if (!ragResult.success) {
+            throw new Error(`RAG 처리 실패: ${ragResult.error || '알 수 없는 오류'}`);
+          }
+
+          console.log('✅ RAG 처리 완료:', {
+            documentId,
+            chunkCount: ragResult.chunkCount,
+            elapsedMs: ragMs
+          });
+
+          // 4. 작업 완료 처리
+          const finishedResult = {
+            url,
+            documentId,
+            title: pageTitle,
+            chunkCount: ragResult.chunkCount,
+            vendors,
+            domainLimit,
+            respectRobots,
+            maxDepth,
+            crawlTimeMs: Date.now() - crawlStartMs,
+            ragTimeMs: ragMs
+          };
+
+          await supabase
+            .from('processing_jobs')
+            .update({
+              status: 'completed',
+              finished_at: new Date().toISOString(),
+              result: finishedResult
+            })
+            .eq('id', job.id);
+
+          return NextResponse.json({ 
+            success: true, 
+            message: 'CRAWL_SEED 작업 완료', 
+            result: finishedResult 
+          }, { status: 200 });
+        } catch (fetchError) {
+          const errorMsg = fetchError instanceof Error ? fetchError.message : String(fetchError);
+          console.error('❌ URL 크롤링 실패:', errorMsg);
+          throw new Error(`URL 크롤링 실패: ${errorMsg}`);
+        }
       } catch (crawlError) {
         console.error('❌ CRAWL_SEED 처리 오류:', crawlError);
         const errorMessage = crawlError instanceof Error ? crawlError.message : String(crawlError);
