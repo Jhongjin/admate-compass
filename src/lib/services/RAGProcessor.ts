@@ -1404,12 +1404,20 @@ export class RAGProcessor {
       }));
 
       console.log('📄 적응적 청킹 완료:', {
+        documentId: document.id,
+        title: document.title,
         chunkCount: chunkData.length,
         contentType: contentTypeResult.type,
         confidence: contentTypeResult.confidence,
         averageChunkSize: Math.round(
           chunkData.reduce((sum, c) => sum + c.content.length, 0) / chunkData.length
-        )
+        ),
+        contentLength: document.content.length,
+        note: chunkData.length === 1 && document.content.length > 10000
+          ? '⚠️ 1개 청크만 반환됨 - RAGProcessor에서 강제 재청킹 필요'
+          : chunkData.length > 1
+          ? '✅ 여러 청크 반환됨 (정상)'
+          : '⚠️ 청크가 없음'
       });
 
       return chunkData;
