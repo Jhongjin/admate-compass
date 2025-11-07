@@ -888,12 +888,13 @@ export class RAGProcessor {
       // 초기 청킹 결과 로깅 (강제 재청킹 전)
       const initialChunkCount = chunks.length;
       console.log('✅ 문서 청킹 완료 (초기):', {
+        documentId: document.id,
+        title: document.title,
         chunkCount: initialChunkCount,
         time: `${chunkingMs}ms (${(chunkingMs / 1000).toFixed(1)}초)`,
         avgChunkSize: initialChunkCount > 0 ? avgChunkSize : 0,
         totalChunkSize,
         totalChunkSizeKB: (totalChunkSize / 1024).toFixed(2),
-        documentTitle: document.title,
         documentType: document.type,
         contentLength: processedContent.length,
         contentLengthKB: (processedContent.length / 1024).toFixed(2),
@@ -902,7 +903,8 @@ export class RAGProcessor {
           ? '⚠️ 1개 청크만 생성됨 - 강제 재청킹 필요' 
           : initialChunkCount > 1 
           ? '✅ 여러 청크 생성됨 (정상)' 
-          : '⚠️ 청크가 없음'
+          : '⚠️ 청크가 없음',
+        willCheckForcedRechunking: initialChunkCount === 1 && processedContent.length > 10000
       });
       
       // 청킹 결과 검증: 내용이 긴데 청크가 1개만 생성된 경우 강제 재청킹
