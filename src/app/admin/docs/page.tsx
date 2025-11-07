@@ -1186,13 +1186,18 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
               <div className="text-[11px] text-secondary-enhanced font-semibold flex items-center justify-center gap-1">
                 최대 심도
                 <TooltipProvider>
-                  <Tooltip>
+                  <Tooltip delayDuration={200}>
                     <TooltipTrigger asChild>
                       <Info className="w-3 h-3 text-gray-400 hover:text-blue-400 cursor-help" />
                     </TooltipTrigger>
-                    <TooltipContent side="top" className="max-w-xs z-50">
-                      <p className="text-xs">최대 심도: Seed URL에서 몇 단계 깊이까지 크롤링할지 설정합니다.</p>
-                      <p className="text-xs mt-1">예: 심도 2 = Seed URL → 링크된 페이지 → 그 페이지의 링크까지</p>
+                    <TooltipContent 
+                      side="top" 
+                      align="center"
+                      className="max-w-xs z-[9999] bg-gray-900 border border-gray-700 text-white shadow-none"
+                      sideOffset={8}
+                    >
+                      <p className="text-xs leading-relaxed">최대 심도: Seed URL에서 몇 단계 깊이까지 크롤링할지 설정합니다.</p>
+                      <p className="text-xs mt-1 leading-relaxed">예: 심도 2 = Seed URL → 링크된 페이지 → 그 페이지의 링크까지</p>
                     </TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
