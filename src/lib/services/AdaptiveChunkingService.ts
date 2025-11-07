@@ -900,6 +900,21 @@ export class AdaptiveChunkingService {
     documentTitle: string,
     config: AdaptiveChunkingConfig
   ): Promise<AdaptiveChunk[]> {
+    // CRITICAL: chunkDocument 시작 로그
+    console.error('[CRITICAL] 🚀 AdaptiveChunkingService.chunkDocument 시작:', {
+      documentId,
+      documentTitle,
+      contentLength: content.length,
+      config: {
+        documentType: config.documentType,
+        contentLength: config.contentLength,
+        contentType: config.contentType,
+        language: config.language,
+        optimizeForSpeed: config.optimizeForSpeed
+      },
+      timestamp: new Date().toISOString()
+    });
+    
     try {
       // UTF-8 인코딩 보장
       let cleanContent = content;
@@ -925,6 +940,21 @@ export class AdaptiveChunkingService {
         structure.sections.length > 0 || // 섹션이 있는 경우
         config.contentType === 'policy' || // 정책 문서
         config.contentType === 'marketing'; // 마케팅 문서
+
+      // CRITICAL: 계층적 청킹 결정 로그
+      console.error('[CRITICAL] 🔍 계층적 청킹 사용 여부 결정:', {
+        cleanContentLength: cleanContent.length,
+        sectionsCount: structure.sections.length,
+        contentType: config.contentType,
+        useHierarchicalChunking,
+        conditions: {
+          lengthOver5KB: cleanContent.length > 5000,
+          hasSections: structure.sections.length > 0,
+          isPolicy: config.contentType === 'policy',
+          isMarketing: config.contentType === 'marketing'
+        },
+        timestamp: new Date().toISOString()
+      });
 
       let chunkTexts: string[] = [];
       let hierarchicalChunks: HierarchicalChunk[] = [];
@@ -954,17 +984,39 @@ export class AdaptiveChunkingService {
 
       // 계층적 청킹 실패 또는 사용하지 않는 경우 일반 청킹
       if (!useHierarchical) {
+        // CRITICAL: 일반 청킹 경로 결정 로그
+        console.error('[CRITICAL] 🔍 일반 청킹 경로 결정:', {
+          contentType: config.contentType,
+          willUseFAQ: config.contentType === 'faq',
+          willUsePolicy: config.contentType === 'policy',
+          willUseMarketing: config.contentType === 'marketing',
+          willUseSemanticBoundaries: !['faq', 'policy', 'marketing'].includes(config.contentType || ''),
+          timestamp: new Date().toISOString()
+        });
+        
         if (config.contentType === 'faq') {
+          console.error('[CRITICAL] 📋 FAQ 문서 특화 청킹 사용');
           chunkTexts = this.chunkFAQDocument(cleanContent);
         } else if (config.contentType === 'policy') {
+          console.error('[CRITICAL] 📋 정책 문서 특화 청킹 사용');
           chunkTexts = this.chunkPolicyDocument(cleanContent);
         } else if (config.contentType === 'marketing') {
+          console.error('[CRITICAL] 📋 마케팅 문서 특화 청킹 사용');
           chunkTexts = this.chunkMarketingDocument(cleanContent);
         } else {
           // 일반 적응적 청킹 (의미 기반 + 규칙 기반 하이브리드)
+          console.error('[CRITICAL] 📋 일반 적응적 청킹 사용 (chunkBySemanticBoundaries 호출)');
           const strategy = this.getChunkingStrategy(config);
           chunkTexts = await this.chunkBySemanticBoundaries(cleanContent, strategy);
         }
+        
+        // CRITICAL: 일반 청킹 결과 로그
+        console.error('[CRITICAL] 📊 일반 청킹 결과:', {
+          chunkTextsLength: chunkTexts.length,
+          firstChunkPreview: chunkTexts[0]?.substring(0, 100) || '없음',
+          lastChunkPreview: chunkTexts[chunkTexts.length - 1]?.substring(0, 100) || '없음',
+          timestamp: new Date().toISOString()
+        });
       }
 
       // 청크 메타데이터 생성
