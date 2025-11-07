@@ -180,30 +180,34 @@ function VendorScopeBar({ selected, onChange }: { selected: string[]; onChange: 
   };
 
   return (
-    <Card className="card-enhanced">
-      <CardContent className="py-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-sm text-secondary-enhanced mr-2 font-semibold">벤더 스코프</span>
+    <div className="flex items-center gap-3 px-4 py-3 bg-gray-800/50 rounded-lg border border-gray-700/50">
+      <div className="flex items-center gap-2">
+        <span className="text-xs text-gray-400 font-medium uppercase tracking-wider">Vendor</span>
+        <div className="flex items-center gap-1.5">
           {ALL_VENDORS.map(v => (
             <button
               key={v}
               onClick={() => toggle(v)}
-              className={`px-3 py-1.5 rounded-full text-sm border transition font-medium ${
+              className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-200 ${
                 selected.includes(v) 
-                  ? "bg-blue-600 text-white border-blue-500 shadow-lg shadow-blue-500/30" 
-                  : "bg-transparent text-secondary-enhanced border-gray-600 hover:bg-white/10 hover:text-white"
+                  ? "bg-blue-600 text-white shadow-md shadow-blue-500/20" 
+                  : "bg-gray-700/50 text-gray-300 hover:bg-gray-700 hover:text-white"
               }`}
             >
               {v}
             </button>
           ))}
-          <Separator orientation="vertical" className="mx-2 h-6 bg-gray-700" />
-          <Badge variant="secondary" className="bg-blue-500/20 text-blue-300 border-blue-400/30 font-semibold">
-            선택 {selected.length}개
-          </Badge>
         </div>
-      </CardContent>
-    </Card>
+      </div>
+      {selected.length > 0 && (
+        <>
+          <Separator orientation="vertical" className="h-4 bg-gray-600" />
+          <span className="text-xs text-gray-400">
+            <span className="text-blue-400 font-semibold">{selected.length}</span> selected
+          </span>
+        </>
+      )}
+    </div>
   );
 }
 
@@ -223,21 +227,35 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploadSuccess, setUploadSuccess] = useState(false);
   const [dragActive, setDragActive] = useState(false);
-  const [selectedFileName, setSelectedFileName] = useState<string | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [uploadStep, setUploadStep] = useState<UploadStep>('idle');
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadError, setUploadError] = useState<string | null>(null);
 
-  const handleUpload = async (file?: File) => {
+  const handleUpload = async (files?: File[]) => {
     try {
-      const uploadFile = file || (fileInputRef.current?.files?.[0]);
-      if (!uploadFile) return;
+      const filesToUpload = files || (fileInputRef.current?.files ? Array.from(fileInputRef.current.files) : []);
+      if (filesToUpload.length === 0) return;
       
       setUploading(true);
       setUploadSuccess(false);
       setUploadError(null);
-      setUploadStep('uploading');
-      setUploadProgress(0);
+      
+      // 첫 번째 파일부터 순차적으로 업로드
+      for (let i = 0; i < filesToUpload.length; i++) {
+        const uploadFile = filesToUpload[i];
+        if (!uploadFile) continue;
+        
+        // 멀티 파일 업로드 시 진행 상황 표시
+        if (filesToUpload.length > 1) {
+          toast.info(`파일 업로드 중 (${i + 1}/${filesToUpload.length})`, {
+            description: uploadFile.name,
+            duration: 2000,
+          });
+        }
+      
+        setUploadStep('uploading');
+        setUploadProgress(0);
       
       // 파일 크기 제한 설정 (최대 15MB - 타임아웃 방지)
       const MAX_FILE_SIZE = 15 * 1024 * 1024; // 15MB (20MB → 15MB로 조정)
@@ -416,10 +434,14 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
                 setUploadStep('completed');
                 setUploadProgress(100);
                 setUploadSuccess(true);
-                setSelectedFileName(null);
+                setSelectedFiles([]);
                 console.log('✅ 큐 처리 완료');
                 if (typeof window !== 'undefined') {
                   window.dispatchEvent(new CustomEvent('docs-refresh'));
+                }
+                // 마지막 파일이 아니면 계속 진행
+                if (i < filesToUpload.length - 1) {
+                  continue;
                 }
                 setTimeout(() => {
                   setUploadSuccess(false);
@@ -449,7 +471,7 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
                     setUploadStep('completed');
                     setUploadProgress(100);
                     setUploadSuccess(true);
-                    setSelectedFileName(null);
+                    setSelectedFiles([]);
                     if (typeof window !== 'undefined') {
                       window.dispatchEvent(new CustomEvent('docs-refresh'));
                     }
@@ -672,7 +694,7 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
                     setUploadStep('completed');
                     setUploadProgress(100);
                     setUploadSuccess(true);
-                    setSelectedFileName(null);
+                    setSelectedFiles([]);
                     if (typeof window !== 'undefined') {
                       window.dispatchEvent(new CustomEvent('docs-refresh'));
                     }
@@ -742,7 +764,13 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
       setUploadStep('completed');
       setUploadProgress(100);
       setUploadSuccess(true);
-      setSelectedFileName(null);
+      
+      // 마지막 파일이 아니면 계속 진행
+      if (i < filesToUpload.length - 1) {
+        continue;
+      }
+      
+      setSelectedFiles([]);
       console.log('✅ 업로드 성공:', result);
       
       // 파일 입력 초기화
@@ -794,16 +822,29 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
     e.stopPropagation();
     setDragActive(false);
     
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      const file = e.dataTransfer.files[0];
-      setSelectedFileName(file.name);
-      handleUpload(file);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      const files = Array.from(e.dataTransfer.files);
+      // PDF, DOCX, TXT 파일만 필터링
+      const validFiles = files.filter(f => {
+        const ext = f.name.toLowerCase().split('.').pop();
+        return ['pdf', 'docx', 'txt'].includes(ext || '');
+      });
+      
+      if (validFiles.length > 0) {
+        setSelectedFiles(validFiles);
+        handleUpload(validFiles);
+      } else {
+        toast.error('지원하지 않는 파일 형식', {
+          description: 'PDF, DOCX, TXT 파일만 업로드 가능합니다.',
+        });
+      }
     }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) {
-      setSelectedFileName(e.target.files[0].name);
+    if (e.target.files && e.target.files.length > 0) {
+      const files = Array.from(e.target.files);
+      setSelectedFiles(files);
     }
   };
 
@@ -886,32 +927,40 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
                     파일을 드래그하여 놓거나 클릭하여 선택하세요
                   </p>
                   <p className="text-xs text-muted-enhanced mt-1">
-                    PDF, DOCX, TXT 파일 지원
+                    PDF, DOCX, TXT 파일 지원 (멀티 파일 선택 가능)
                   </p>
                   <p className="text-xs text-yellow-400 mt-1 font-medium">
                     최대 파일 크기: 15MB
                   </p>
                 </div>
-                {selectedFileName && (
-                  <p className="text-xs text-blue-300 font-medium mt-1">
-                    선택된 파일: {selectedFileName}
-                  </p>
+                {selectedFiles.length > 0 && (
+                  <div className="mt-2 space-y-1">
+                    <p className="text-xs text-blue-300 font-medium">
+                      선택된 파일: {selectedFiles.length}개
+                    </p>
+                    <div className="text-xs text-gray-400 max-h-20 overflow-y-auto">
+                      {selectedFiles.map((f, idx) => (
+                        <div key={idx} className="truncate">• {f.name}</div>
+                      ))}
+                    </div>
+                  </div>
                 )}
               </div>
               
               {/* 숨겨진 파일 입력 */}
-              <input 
+                <input 
                 ref={fileInputRef} 
                 type="file" 
                 onChange={handleFileChange}
                 accept=".pdf,.docx,.txt"
+                multiple
                 className="hidden"
               />
             </div>
             
             <div className="flex items-center gap-3">
               <Button 
-                disabled={isUploading || !selectedFileName} 
+                disabled={isUploading || selectedFiles.length === 0} 
                 onClick={() => handleUpload()}
                 className="btn-enhanced flex-1"
               >

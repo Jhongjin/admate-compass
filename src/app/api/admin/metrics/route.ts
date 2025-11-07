@@ -83,7 +83,35 @@ export async function GET(request: Request) {
       maxEmbMs: max(arr.map(x=>Number(x.emb_ms||0))),
     }));
 
-    const response = NextResponse.json({ data: rows, overall, vendorAggregates }, { status: 200 });
+    // 실패율 계산: processing_jobs 테이블에서 최근 N시간 내 실패한 작업 수 / 전체 작업 수
+    let failedRate = "-";
+    if (hoursParam > 0) {
+      const gte = new Date(Date.now() - hoursParam * 3600 * 1000).toISOString();
+      const { data: jobsData } = await supabase
+        .from('processing_jobs')
+        .select('status')
+        .gte('created_at', gte);
+      
+      if (jobsData && jobsData.length > 0) {
+        const total = jobsData.length;
+        const failed = jobsData.filter(j => j.status === 'failed' || j.status === 'error').length;
+        failedRate = total > 0 ? ((failed / total) * 100).toFixed(1) + '%' : '0%';
+      }
+    } else {
+      // 전체 기간 기준
+      const { data: jobsData } = await supabase
+        .from('processing_jobs')
+        .select('status')
+        .limit(1000);
+      
+      if (jobsData && jobsData.length > 0) {
+        const total = jobsData.length;
+        const failed = jobsData.filter(j => j.status === 'failed' || j.status === 'error').length;
+        failedRate = total > 0 ? ((failed / total) * 100).toFixed(1) + '%' : '0%';
+      }
+    }
+
+    const response = NextResponse.json({ data: rows, overall, vendorAggregates, failedRate }, { status: 200 });
 
     // Pro 플랜 최적화: Edge 캐싱 헤더 추가 (읽기 전용 API)
     // 5분간 캐시, 10분간 stale-while-revalidate 허용
