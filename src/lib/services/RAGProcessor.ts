@@ -1074,8 +1074,8 @@ export class RAGProcessor {
       const finalAvgChunkSize = finalChunkCount > 0 ? Math.round(chunks.reduce((sum, c) => sum + c.content.length, 0) / finalChunkCount) : 0;
       const finalTotalChunkSize = chunks.reduce((sum, c) => sum + c.content.length, 0);
       
-      // 최종 청킹 결과 로깅 (항상 출력)
-      console.log('📊 최종 청킹 결과:', {
+      // 최종 청킹 결과 로깅 (항상 출력) - 이 로그는 반드시 출력되어야 함
+      console.log('📊 최종 청킹 결과 (반드시 출력):', {
         documentId: document.id,
         title: document.title,
         chunkCount: finalChunkCount,
