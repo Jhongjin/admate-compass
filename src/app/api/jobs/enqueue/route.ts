@@ -6,8 +6,8 @@ export const maxDuration = 30;
 export const dynamic = 'force-dynamic';
 
 type EnqueueBody = {
-  documentId: string;
-  jobType: 'OCR' | 'PDF_PARSE' | 'DOCX_PARSE' | 'CRAWL' | 'EMBEDDING' | 'CHUNK_PROCESS';
+  documentId?: string | null;
+  jobType: 'OCR' | 'PDF_PARSE' | 'DOCX_PARSE' | 'CRAWL' | 'CRAWL_SEED' | 'EMBEDDING' | 'CHUNK_PROCESS';
   priority?: number;
   payload?: Record<string, unknown>;
 };
@@ -15,8 +15,14 @@ type EnqueueBody = {
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as EnqueueBody;
-    if (!body?.documentId || !body?.jobType) {
-      return NextResponse.json({ success: false, error: 'documentId와 jobType은 필수입니다.' }, { status: 400 });
+    if (!body?.jobType) {
+      return NextResponse.json({ success: false, error: 'jobType은 필수입니다.' }, { status: 400 });
+    }
+
+    // CRAWL_SEED는 documentId가 없을 수 있음
+    const requiresDocumentId = !['CRAWL_SEED'].includes(body.jobType);
+    if (requiresDocumentId && !body?.documentId) {
+      return NextResponse.json({ success: false, error: 'documentId는 필수입니다.' }, { status: 400 });
     }
 
     const priority = typeof body.priority === 'number' ? Math.min(Math.max(body.priority, 1), 10) : 5;
@@ -25,17 +31,51 @@ export async function POST(request: NextRequest) {
     const supabase = await createPureClient();
 
     // 중복 방지: 같은 문서/타입이 대기 또는 처리 중이면 기존 레코드 반환
-    const { data: existing, error: existingError } = await supabase
-      .from('processing_jobs')
-      .select('id, status')
-      .eq('document_id', body.documentId)
-      .eq('job_type', body.jobType)
-      .in('status', ['queued', 'processing', 'retrying'])
-      .limit(1)
-      .maybeSingle();
+    // CRAWL_SEED의 경우 documentId가 없으므로 payload의 url로 중복 체크
+    let existing = null;
+    if (body.documentId) {
+      const { data: existingData, error: existingError } = await supabase
+        .from('processing_jobs')
+        .select('id, status')
+        .eq('document_id', body.documentId)
+        .eq('job_type', body.jobType)
+        .in('status', ['queued', 'processing', 'retrying'])
+        .limit(1)
+        .maybeSingle();
 
-    if (existingError) {
-      console.error('중복 조회 오류:', existingError);
+      if (existingError) {
+        console.error('중복 조회 오류:', existingError);
+      }
+      existing = existingData;
+    } else if (body.jobType === 'CRAWL_SEED' && payload.url) {
+      // CRAWL_SEED의 경우 같은 URL이 이미 큐에 있으면 중복으로 간주
+      const { data: existingData, error: existingError } = await supabase
+        .from('processing_jobs')
+        .select('id, status')
+        .eq('job_type', body.jobType)
+        .is('document_id', null)
+        .in('status', ['queued', 'processing', 'retrying'])
+        .limit(10)
+        .maybeSingle();
+
+      if (existingError) {
+        console.error('중복 조회 오류:', existingError);
+      }
+      
+      // payload.url이 같은 작업 찾기
+      if (existingData) {
+        const { data: jobs } = await supabase
+          .from('processing_jobs')
+          .select('id, status, payload')
+          .eq('job_type', body.jobType)
+          .is('document_id', null)
+          .in('status', ['queued', 'processing', 'retrying']);
+        
+        const matchingJob = jobs?.find(j => (j.payload as any)?.url === payload.url);
+        if (matchingJob) {
+          existing = matchingJob;
+        }
+      }
     }
 
     if (existing) {
@@ -45,7 +85,7 @@ export async function POST(request: NextRequest) {
     const { data, error } = await supabase
       .from('processing_jobs')
       .insert({
-        document_id: body.documentId,
+        document_id: body.documentId || null,
         job_type: body.jobType,
         status: 'queued',
         priority,
