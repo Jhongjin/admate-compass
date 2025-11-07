@@ -55,9 +55,16 @@ function AdminDocsPageContent() {
     const fromUrl = params.get("vendors");
     return fromUrl ? decodeURIComponent(fromUrl).split(",").filter(Boolean) : ["Meta"]; // default
   });
-  const [statusFilter, setStatusFilter] = useState<string>("all");
-  const [typeFilter, setTypeFilter] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<string>(() => {
+    if (typeof window === 'undefined') return "all";
+    return window.localStorage.getItem('adminDocsStatusFilter') || "all";
+  });
+  const [typeFilter, setTypeFilter] = useState<string>(() => {
+    if (typeof window === 'undefined') return "all";
+    return window.localStorage.getItem('adminDocsTypeFilter') || "all";
+  });
   const [viewMode, setViewMode] = useState<"card" | "list">("card");
+  const [searchQuery, setSearchQuery] = useState<string>("");
 
   // 보기 모드 로컬 스토리지에서 복원
   useEffect(() => {
@@ -72,6 +79,17 @@ function AdminDocsPageContent() {
     if (typeof window === 'undefined') return;
     window.localStorage.setItem('adminDocsViewMode', viewMode);
   }, [viewMode]);
+
+  // 필터 설정 localStorage 저장
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem('adminDocsStatusFilter', statusFilter);
+  }, [statusFilter]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem('adminDocsTypeFilter', typeFilter);
+  }, [typeFilter]);
 
   useEffect(() => {
     const q = selectedVendors.length ? `?vendors=${encodeURIComponent(selectedVendors.join(","))}` : "";
@@ -136,12 +154,15 @@ function AdminDocsPageContent() {
               typeFilter={typeFilter}
               viewMode={viewMode}
               onViewModeChange={setViewMode}
+              searchQuery={searchQuery}
+              onSearchQueryChange={setSearchQuery}
             />
             <DocsTable 
               vendors={selectedVendors} 
               statusFilter={statusFilter}
               typeFilter={typeFilter}
               viewMode={viewMode}
+              searchQuery={searchQuery}
             />
           </div>
       </div>
@@ -231,6 +252,28 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
   const [uploadStep, setUploadStep] = useState<UploadStep>('idle');
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  
+  // URL 크롤링 옵션 상태 관리
+  const [crawlOptions, setCrawlOptions] = useState(() => {
+    if (typeof window === 'undefined') {
+      return { domainLimit: true, respectRobots: true, maxDepth: '2' };
+    }
+    const saved = window.localStorage.getItem('adminCrawlOptions');
+    if (saved) {
+      try {
+        return JSON.parse(saved);
+      } catch {
+        return { domainLimit: true, respectRobots: true, maxDepth: '2' };
+      }
+    }
+    return { domainLimit: true, respectRobots: true, maxDepth: '2' };
+  });
+  
+  // 크롤링 옵션 localStorage 저장
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    window.localStorage.setItem('adminCrawlOptions', JSON.stringify(crawlOptions));
+  }, [crawlOptions]);
 
   const handleUpload = async (files?: File[]) => {
     try {
@@ -1123,13 +1166,28 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="border border-gray-600 rounded-md px-3 py-4 bg-gray-800/30 flex flex-col items-center justify-center min-h-[64px]">
-                <Switch defaultChecked />
+                <Switch 
+                  checked={crawlOptions.domainLimit}
+                  onCheckedChange={(checked) => 
+                    setCrawlOptions(prev => ({ ...prev, domainLimit: checked }))
+                  }
+                />
               </div>
               <div className="border border-gray-600 rounded-md px-3 py-4 bg-gray-800/30 flex flex-col items-center justify-center min-h-[64px]">
-                <Switch defaultChecked />
+                <Switch 
+                  checked={crawlOptions.respectRobots}
+                  onCheckedChange={(checked) => 
+                    setCrawlOptions(prev => ({ ...prev, respectRobots: checked }))
+                  }
+                />
               </div>
               <div className="border border-gray-600 rounded-md px-3 py-4 bg-gray-800/30 flex flex-col items-center justify-center min-h-[64px]">
-                <Select defaultValue="2">
+                <Select 
+                  value={crawlOptions.maxDepth}
+                  onValueChange={(value) => 
+                    setCrawlOptions(prev => ({ ...prev, maxDepth: value }))
+                  }
+                >
                   <SelectTrigger className="w-24 bg-gray-700 border-gray-600 text-white">
                     <SelectValue />
                   </SelectTrigger>
@@ -1176,7 +1234,9 @@ function DocsToolbar({
   onStatusFilterChange, 
   onTypeFilterChange,
   viewMode,
-  onViewModeChange
+  onViewModeChange,
+  searchQuery,
+  onSearchQueryChange
 }: { 
   vendors: string[];
   statusFilter: string;
@@ -1185,6 +1245,8 @@ function DocsToolbar({
   onTypeFilterChange: (value: string) => void;
   viewMode: "card" | "list";
   onViewModeChange: (v: "card" | "list") => void;
+  searchQuery: string;
+  onSearchQueryChange: (value: string) => void;
 }) {
   return (
     <Card className="card-enhanced">
@@ -1195,6 +1257,8 @@ function DocsToolbar({
             <Input 
               className="pl-9 bg-gray-800/50 border-gray-600 text-white placeholder-gray-400 focus:border-blue-400 focus:ring-blue-400/20" 
               placeholder="제목, URL, 메타데이터 검색" 
+              value={searchQuery}
+              onChange={(e) => onSearchQueryChange(e.target.value)}
             />
           </div>
           <Select value={statusFilter} onValueChange={onStatusFilterChange}>
@@ -1233,6 +1297,13 @@ function DocsToolbar({
             <Button 
               variant="secondary" 
               className="bg-gray-700/50 border-gray-600 text-secondary-enhanced hover:bg-gray-700 hover:text-white"
+              onClick={() => {
+                // 전역 이벤트로 새로고침 요청
+                if (typeof window !== 'undefined') {
+                  window.dispatchEvent(new CustomEvent('docs-refresh-click'));
+                  toast.success('문서 목록을 새로고침했습니다', { duration: 2000 });
+                }
+              }}
             >
               <RefreshCw className="w-4 h-4 mr-1" /> 
               새로고침
@@ -1261,12 +1332,14 @@ function DocsTable({
   vendors, 
   statusFilter, 
   typeFilter,
-  viewMode
+  viewMode,
+  searchQuery
 }: { 
   vendors: string[];
   statusFilter: string;
   typeFilter: string;
   viewMode: "card" | "list";
+  searchQuery: string;
 }) {
   const supabase = useMemo(() => createClient(), []);
   
@@ -1290,7 +1363,7 @@ function DocsTable({
   });
   
   const { data, isLoading, refetch } = useQuery({
-    queryKey: ["admin-docs", vendors, statusFilter, typeFilter],
+    queryKey: ["admin-docs", vendors, statusFilter, typeFilter, searchQuery],
     queryFn: async () => {
       let q = supabase.from("documents").select("id,title,type,status,updated_at,chunk_count,source_vendor,url").order("updated_at", { ascending: false }).limit(60);
       
@@ -1367,13 +1440,29 @@ function DocsTable({
     return t?.toUpperCase() || 'FILE';
   };
 
-  // 클라이언트 측 유형 필터링 (pdf/docx/txt) + 큐 처리 중 문서 제외
+  // 클라이언트 측 유형 필터링 (pdf/docx/txt) + 큐 처리 중 문서 제외 + 검색 필터링
   const filteredData = useMemo(() => {
     let rows = data || [];
     
     // 유형 필터
     if (typeFilter && typeFilter !== "all" && typeFilter !== "url") {
       rows = rows.filter((row: any) => getDocumentFileType(row) === typeFilter);
+    }
+    
+    // 검색 필터 (제목, URL, 메타데이터)
+    if (searchQuery && searchQuery.trim()) {
+      const query = searchQuery.toLowerCase().trim();
+      rows = rows.filter((row: any) => {
+        const title = (row.title || '').toLowerCase();
+        const url = (row.url || '').toLowerCase();
+        const id = (row.id || '').toLowerCase();
+        const vendor = (row.source_vendor || '').toLowerCase();
+        
+        return title.includes(query) || 
+               url.includes(query) || 
+               id.includes(query) ||
+               vendor.includes(query);
+      });
     }
     
     // 큐 처리 중인 문서 제외 (chunk_count가 0이고 큐에 등록된 문서)
@@ -1393,7 +1482,7 @@ function DocsTable({
     });
     
     return rows;
-  }, [data, typeFilter, queuedDocumentIds]);
+  }, [data, typeFilter, queuedDocumentIds, searchQuery]);
 
   // 필터된 목록의 총 청크 수
   const totalChunks = useMemo(() => {
@@ -1459,6 +1548,22 @@ function DocsTable({
     return () => {
       if (typeof window !== 'undefined') {
         window.removeEventListener('docs-refresh', handler as EventListener);
+      }
+    };
+  }, [refetch]);
+
+  // 새로고침 버튼 클릭 이벤트 수신
+  useEffect(() => {
+    const handler = () => {
+      console.log('🔄 새로고침 버튼 클릭됨');
+      refetch();
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('docs-refresh-click', handler as EventListener);
+    }
+    return () => {
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('docs-refresh-click', handler as EventListener);
       }
     };
   }, [refetch]);
