@@ -89,55 +89,74 @@ export class AdaptiveChunkingService {
     }
 
     // 문서 크기에 따른 기본 전략 (분할 처리 최적화 적용)
+    // BUGFIX: maxChunks를 문서 길이에 따라 동적으로 계산 (Coverage 100% 목표)
     if (contentLength < 1000) {
+      const chunkSize = Math.floor(200 * speedMultiplier);
+      const chunkOverlap = Math.floor(20 * speedMultiplier);
+      const baseMaxChunks = Math.ceil(contentLength / (chunkSize * 0.8)); // 80% overlap 고려
       return {
-        chunkSize: Math.floor(200 * speedMultiplier),
-        chunkOverlap: Math.floor(20 * speedMultiplier),
+        chunkSize,
+        chunkOverlap,
         separators: ['\n\n', '\n', '. ', '! ', '? ', ' '],
-        maxChunks: 50,
+        maxChunks: Math.max(10, baseMaxChunks), // 최소 10개 보장
         minChunkSize: 50
       };
     } else if (contentLength < 10000) {
+      const chunkSize = Math.floor(500 * speedMultiplier);
+      const chunkOverlap = Math.floor(50 * speedMultiplier);
+      const baseMaxChunks = Math.ceil(contentLength / (chunkSize * 0.8)); // 80% overlap 고려
       return {
-        chunkSize: Math.floor(500 * speedMultiplier),
-        chunkOverlap: Math.floor(50 * speedMultiplier),
+        chunkSize,
+        chunkOverlap,
         separators: ['\n\n', '\n', '. ', '! ', '? ', '; ', ' '],
-        maxChunks: 100,
+        maxChunks: Math.max(10, baseMaxChunks), // 최소 10개 보장
         minChunkSize: 100
       };
     } else if (contentLength < 100000) {
+      const chunkSize = Math.floor(1000 * speedMultiplier);
+      const chunkOverlap = Math.floor(100 * speedMultiplier);
+      const baseMaxChunks = Math.ceil(contentLength / (chunkSize * 0.8)); // 80% overlap 고려
       return {
-        chunkSize: Math.floor(1000 * speedMultiplier),
-        chunkOverlap: Math.floor(100 * speedMultiplier),
+        chunkSize,
+        chunkOverlap,
         separators: ['\n\n', '\n', '. ', '! ', '? ', '; ', ' '],
-        maxChunks: 200,
+        maxChunks: Math.max(10, baseMaxChunks), // 최소 10개 보장
         minChunkSize: 200
       };
     } else if (contentLength < 500000) {
       // 10만자 ~ 50만자: 중간 크기 문서
+      const chunkSize = Math.floor(1500 * speedMultiplier);
+      const chunkOverlap = Math.floor(150 * speedMultiplier);
+      const baseMaxChunks = Math.ceil(contentLength / (chunkSize * 0.8)); // 80% overlap 고려
       return {
-        chunkSize: Math.floor(1500 * speedMultiplier),
-        chunkOverlap: Math.floor(150 * speedMultiplier),
+        chunkSize,
+        chunkOverlap,
         separators: ['\n\n', '\n', '. ', '! ', '? ', '; ', ' '],
-        maxChunks: 400,
+        maxChunks: Math.max(10, baseMaxChunks), // 최소 10개 보장
         minChunkSize: 300
       };
     } else if (contentLength < 2000000) {
       // 50만자 ~ 200만자: 큰 문서
+      const chunkSize = Math.floor(2000 * speedMultiplier);
+      const chunkOverlap = Math.floor(200 * speedMultiplier);
+      const baseMaxChunks = Math.ceil(contentLength / (chunkSize * 0.8)); // 80% overlap 고려
       return {
-        chunkSize: Math.floor(2000 * speedMultiplier),
-        chunkOverlap: Math.floor(200 * speedMultiplier),
+        chunkSize,
+        chunkOverlap,
         separators: ['\n\n', '\n', '. ', '! ', '? ', '; ', ' '],
-        maxChunks: 800,
+        maxChunks: Math.max(10, baseMaxChunks), // 최소 10개 보장
         minChunkSize: 400
       };
     } else {
       // 200만자 이상: 매우 큰 문서
+      const chunkSize = Math.floor(3000 * speedMultiplier);
+      const chunkOverlap = Math.floor(300 * speedMultiplier);
+      const baseMaxChunks = Math.ceil(contentLength / (chunkSize * 0.8)); // 80% overlap 고려
       return {
-        chunkSize: Math.floor(3000 * speedMultiplier),
-        chunkOverlap: Math.floor(300 * speedMultiplier),
+        chunkSize,
+        chunkOverlap,
         separators: ['\n\n', '\n', '. ', '! ', '? ', '; ', ' '],
-        maxChunks: 1000,
+        maxChunks: Math.max(10, baseMaxChunks), // 최소 10개 보장
         minChunkSize: 500
       };
     }
@@ -148,11 +167,21 @@ export class AdaptiveChunkingService {
    * 질문-답변 쌍을 하나의 청크로 유지
    */
   private getFAQStrategy(contentLength: number, speedMultiplier: number = 1.0): ChunkingStrategy {
+    const chunkSize = Math.floor(800 * speedMultiplier);
+    const chunkOverlap = Math.floor(100 * speedMultiplier);
+    
+    // BUGFIX: maxChunks를 문서 길이에 따라 동적으로 계산
+    // - 짧은 문서: 최소 10개
+    // - 긴 문서: 충분한 청크 수 (Coverage 100% 목표, overlap 80% 고려)
+    // - 최대 제한 없음 (RAG 검색은 상위 k개만 사용하므로 전체 청크 수는 영향 없음)
+    const baseMaxChunks = Math.ceil(contentLength / (chunkSize * 0.8)); // 80% overlap 고려
+    const maxChunks = Math.max(10, baseMaxChunks); // 최소 10개 보장
+    
     return {
-      chunkSize: Math.floor(800 * speedMultiplier),
-      chunkOverlap: Math.floor(100 * speedMultiplier),
+      chunkSize,
+      chunkOverlap,
       separators: ['\n\n', '\n', 'Q:', 'A:', '질문:', '답변:', '. ', '! ', '? '],
-      maxChunks: Math.ceil(contentLength / (800 * speedMultiplier)),
+      maxChunks, // 동적 계산값 사용
       minChunkSize: 200
     };
   }
@@ -187,11 +216,21 @@ export class AdaptiveChunkingService {
    * 섹션별로 청킹
    */
   private getMarketingStrategy(contentLength: number, speedMultiplier: number = 1.0): ChunkingStrategy {
+    const chunkSize = Math.floor(1000 * speedMultiplier);
+    const chunkOverlap = Math.floor(100 * speedMultiplier);
+    
+    // BUGFIX: maxChunks를 문서 길이에 따라 동적으로 계산
+    // - 짧은 문서: 최소 10개
+    // - 긴 문서: 충분한 청크 수 (Coverage 100% 목표, overlap 80% 고려)
+    // - 최대 제한 없음 (RAG 검색은 상위 k개만 사용하므로 전체 청크 수는 영향 없음)
+    const baseMaxChunks = Math.ceil(contentLength / (chunkSize * 0.8)); // 80% overlap 고려
+    const maxChunks = Math.max(10, baseMaxChunks); // 최소 10개 보장
+    
     return {
-      chunkSize: Math.floor(1000 * speedMultiplier),
-      chunkOverlap: Math.floor(100 * speedMultiplier),
+      chunkSize,
+      chunkOverlap,
       separators: ['\n\n', '##', '###', '# ', '\n', '. ', '! ', '? '],
-      maxChunks: Math.ceil(contentLength / (1000 * speedMultiplier)),
+      maxChunks, // 동적 계산값 사용
       minChunkSize: 200
     };
   }
