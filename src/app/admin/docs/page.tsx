@@ -241,14 +241,11 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
       setUploadSuccess(false);
       setUploadError(null);
       
-      // 첫 번째 파일부터 순차적으로 업로드
-      for (let i = 0; i < filesToUpload.length; i++) {
-        const uploadFile = filesToUpload[i];
-        if (!uploadFile) continue;
-        
+      // 각 파일을 순차적으로 업로드하는 헬퍼 함수
+      const uploadSingleFile = async (uploadFile: File, fileIndex: number, totalFiles: number): Promise<void> => {
         // 멀티 파일 업로드 시 진행 상황 표시
-        if (filesToUpload.length > 1) {
-          toast.info(`파일 업로드 중 (${i + 1}/${filesToUpload.length})`, {
+        if (totalFiles > 1) {
+          toast.info(`파일 업로드 중 (${fileIndex + 1}/${totalFiles})`, {
             description: uploadFile.name,
             duration: 2000,
           });
@@ -400,58 +397,67 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
         setUploadProgress(85);
         
         // 큐 상태 폴링 시작
-        const pollQueueStatus = async (jobId: string, documentId: string) => {
-          const maxAttempts = 120; // 최대 10분 (5초 간격) - 큰 파일 처리 대응
-          let attempts = 0;
-          
-          const poll = async () => {
-            try {
-              attempts++;
-              const { data: job, error } = await supabaseClient
-                .from('processing_jobs')
-                .select('status, error, attempts')
-                .eq('id', jobId)
-                .single();
-              
-              if (error) {
-                console.error('큐 상태 조회 오류:', error);
-                if (attempts >= maxAttempts) {
-                  throw new Error('큐 상태 확인 시간 초과');
+        const pollQueueStatus = async (jobId: string, documentId: string, currentFileIndex: number, totalFilesCount: number): Promise<void> => {
+          return new Promise((resolve, reject) => {
+            const maxAttempts = 120; // 최대 10분 (5초 간격) - 큰 파일 처리 대응
+            let attempts = 0;
+            
+            const poll = async () => {
+              try {
+                attempts++;
+                const { data: job, error } = await supabaseClient
+                  .from('processing_jobs')
+                  .select('status, error, attempts')
+                  .eq('id', jobId)
+                  .single();
+                
+                if (error) {
+                  console.error('큐 상태 조회 오류:', error);
+                  if (attempts >= maxAttempts) {
+                    reject(new Error('큐 상태 확인 시간 초과'));
+                    return;
+                  }
+                  setTimeout(poll, 5000);
+                  return;
                 }
-                setTimeout(poll, 5000);
-                return;
-              }
-              
-              console.log(`📊 큐 상태 (${attempts}/${maxAttempts}):`, job);
-              
-              if (job.status === 'queued') {
-                setUploadStep('saving');
-                setUploadProgress(85 + (attempts / maxAttempts) * 10); // 85-95%
-              } else if (job.status === 'processing') {
-                setUploadStep('saving');
-                setUploadProgress(95 + (attempts / maxAttempts) * 3); // 95-98%
-              } else if (job.status === 'completed') {
-                setUploadStep('completed');
-                setUploadProgress(100);
-                setUploadSuccess(true);
-                setSelectedFiles([]);
-                console.log('✅ 큐 처리 완료');
-                if (typeof window !== 'undefined') {
-                  window.dispatchEvent(new CustomEvent('docs-refresh'));
+                
+                console.log(`📊 큐 상태 (${attempts}/${maxAttempts}):`, job);
+                
+                if (job.status === 'queued') {
+                  setUploadStep('saving');
+                  setUploadProgress(85 + (attempts / maxAttempts) * 10); // 85-95%
+                } else if (job.status === 'processing') {
+                  setUploadStep('saving');
+                  setUploadProgress(95 + (attempts / maxAttempts) * 3); // 95-98%
+                } else if (job.status === 'completed') {
+                  setUploadStep('completed');
+                  setUploadProgress(100);
+                  setUploadSuccess(true);
+                  console.log('✅ 큐 처리 완료');
+                  if (typeof window !== 'undefined') {
+                    window.dispatchEvent(new CustomEvent('docs-refresh'));
+                  }
+                  // 마지막 파일이 아니면 상태만 초기화하고 계속 진행
+                  if (currentFileIndex < totalFilesCount - 1) {
+                    setUploadSuccess(false);
+                    setUploadStep('idle');
+                    setUploadProgress(0);
+                    resolve(); // 다음 파일로 진행
+                    return;
+                  }
+                  // 마지막 파일인 경우에만 완전히 종료
+                  setSelectedFiles([]);
+                  setTimeout(() => {
+                    setUploadSuccess(false);
+                    setUploadStep('idle');
+                    setUploadProgress(0);
+                  }, 3000);
+                  resolve();
+                  return;
+                } else if (job.status === 'failed') {
+                  reject(new Error(job.error || '큐 처리 실패'));
+                  return;
                 }
-                // 마지막 파일이 아니면 계속 진행
-                if (i < filesToUpload.length - 1) {
-                  continue;
-                }
-                setTimeout(() => {
-                  setUploadSuccess(false);
-                  setUploadStep('idle');
-                  setUploadProgress(0);
-                }, 3000);
-                return;
-              } else if (job.status === 'failed') {
-                throw new Error(job.error || '큐 처리 실패');
-              }
               
               if (attempts < maxAttempts) {
                 setTimeout(poll, 5000);
@@ -471,6 +477,17 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
                     setUploadStep('completed');
                     setUploadProgress(100);
                     setUploadSuccess(true);
+                    
+                    // 마지막 파일이 아니면 상태만 초기화하고 계속 진행
+                    if (currentFileIndex < totalFilesCount - 1) {
+                      setUploadSuccess(false);
+                      setUploadStep('idle');
+                      setUploadProgress(0);
+                      resolve(); // 다음 파일로 진행
+                      return;
+                    }
+                    
+                    // 마지막 파일인 경우에만 완전히 종료
                     setSelectedFiles([]);
                     if (typeof window !== 'undefined') {
                       window.dispatchEvent(new CustomEvent('docs-refresh'));
@@ -480,12 +497,14 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
                       setUploadStep('idle');
                       setUploadProgress(0);
                     }, 3000);
+                    resolve();
                     return;
                   }
                   
                   // 이미 실패했을 수도 있음
                   if (finalJob.status === 'failed') {
-                    throw new Error(finalJob.error || '큐 처리 실패');
+                    reject(new Error(finalJob.error || '큐 처리 실패'));
+                    return;
                   }
                 }
                 
@@ -512,7 +531,7 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
                 } catch (updateError) {
                   console.error('큐 상태 업데이트 실패:', updateError);
                 }
-                throw new Error('큐 처리 시간 초과 (10분)');
+                reject(new Error('큐 처리 시간 초과 (10분)'));
               }
             } catch (error) {
               console.error('폴링 오류:', error);
@@ -520,13 +539,15 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
               setUploadError(error instanceof Error ? error.message : String(error));
               setUploadProgress(0);
               setUploading(false);
+              reject(error);
             }
           };
           poll();
+          });
         };
         
-        pollQueueStatus(jobData.id, documentId);
-        return;
+        await pollQueueStatus(jobData.id, documentId, fileIndex, totalFiles);
+        return; // 이 파일 업로드 완료, 다음 파일로 진행
       }
       
       // 5MB 이하 파일은 기존 방식대로 API로 전송
@@ -618,140 +639,170 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
         setUploadProgress(85);
         
         // 큐 상태 폴링
-        const pollQueueStatus = async (jobId: string, documentId: string) => {
-          const maxAttempts = 120; // 최대 10분 (5초 간격) - 큰 파일 처리 대응
-          let attempts = 0;
-          
-          const poll = async () => {
-            try {
-              attempts++;
-              
-              // processing_jobs 테이블에서 상태 확인
-              const supabaseClient = createClient();
-              const { data: job, error } = await supabaseClient
-                .from('processing_jobs')
-                .select('status, error, attempts')
-                .eq('id', jobId)
-                .single();
-              
-              if (error) {
-                console.error('큐 상태 조회 오류:', error);
-                if (attempts >= maxAttempts) {
-                  throw new Error('큐 상태 확인 시간 초과');
-                }
-                setTimeout(poll, 5000);
-                return;
-              }
-              
-              console.log(`📊 큐 상태 (${attempts}/${maxAttempts}):`, job);
-              
-              // 상태 업데이트
-              if (job.status === 'queued') {
-                setUploadStep('saving');
-                setUploadProgress(90 + (attempts / maxAttempts) * 5); // 90-95%
-              } else if (job.status === 'processing') {
-                setUploadStep('saving');
-                setUploadProgress(95 + (attempts / maxAttempts) * 3); // 95-98%
-              } else if (job.status === 'completed') {
-                setUploadStep('completed');
-                setUploadProgress(100);
-                setUploadSuccess(true);
-                setSelectedFileName(null);
-                console.log('✅ 큐 처리 완료');
+        const pollQueueStatus = async (jobId: string, documentId: string, currentFileIndex: number, totalFilesCount: number): Promise<void> => {
+          return new Promise((resolve, reject) => {
+            const maxAttempts = 120; // 최대 10분 (5초 간격) - 큰 파일 처리 대응
+            let attempts = 0;
+            
+            const poll = async () => {
+              try {
+                attempts++;
                 
-                // 문서 목록 새로고침
-                if (typeof window !== 'undefined') {
-                  window.dispatchEvent(new CustomEvent('docs-refresh'));
-                }
-                
-                // 3초 후 상태 초기화
-                setTimeout(() => {
-                  setUploadSuccess(false);
-                  setUploadStep('idle');
-                  setUploadProgress(0);
-                }, 3000);
-                return;
-              } else if (job.status === 'failed') {
-                throw new Error(job.error || '큐 처리 실패');
-              }
-              
-              // 계속 폴링
-              if (attempts < maxAttempts) {
-                setTimeout(poll, 5000); // 5초마다 확인
-              } else {
-                // 타임아웃 전에 실제 작업 상태를 한 번 더 확인
-                console.warn('⚠️ 클라이언트 폴링 타임아웃 - 실제 작업 상태 최종 확인 중...');
-                const { data: finalJob, error: finalError } = await supabaseClient
+                // processing_jobs 테이블에서 상태 확인
+                const supabaseClient = createClient();
+                const { data: job, error } = await supabaseClient
                   .from('processing_jobs')
-                  .select('status, error, result')
+                  .select('status, error, attempts')
                   .eq('id', jobId)
                   .single();
                 
-                if (!finalError && finalJob) {
-                  // 실제로 완료되었을 수 있음
-                  if (finalJob.status === 'completed') {
-                    console.log('✅ 실제로는 이미 완료되었습니다!');
-                    setUploadStep('completed');
-                    setUploadProgress(100);
-                    setUploadSuccess(true);
-                    setSelectedFiles([]);
-                    if (typeof window !== 'undefined') {
-                      window.dispatchEvent(new CustomEvent('docs-refresh'));
-                    }
-                    setTimeout(() => {
-                      setUploadSuccess(false);
-                      setUploadStep('idle');
-                      setUploadProgress(0);
-                    }, 3000);
+                if (error) {
+                  console.error('큐 상태 조회 오류:', error);
+                  if (attempts >= maxAttempts) {
+                    reject(new Error('큐 상태 확인 시간 초과'));
+                    return;
+                  }
+                  setTimeout(poll, 5000);
+                  return;
+                }
+                
+                console.log(`📊 큐 상태 (${attempts}/${maxAttempts}):`, job);
+                
+                // 상태 업데이트
+                if (job.status === 'queued') {
+                  setUploadStep('saving');
+                  setUploadProgress(90 + (attempts / maxAttempts) * 5); // 90-95%
+                } else if (job.status === 'processing') {
+                  setUploadStep('saving');
+                  setUploadProgress(95 + (attempts / maxAttempts) * 3); // 95-98%
+                } else if (job.status === 'completed') {
+                  setUploadStep('completed');
+                  setUploadProgress(100);
+                  setUploadSuccess(true);
+                  console.log('✅ 큐 처리 완료');
+                  
+                  // 문서 목록 새로고침
+                  if (typeof window !== 'undefined') {
+                    window.dispatchEvent(new CustomEvent('docs-refresh'));
+                  }
+                  
+                  // 마지막 파일이 아니면 상태만 초기화하고 계속 진행
+                  if (currentFileIndex < totalFilesCount - 1) {
+                    setUploadSuccess(false);
+                    setUploadStep('idle');
+                    setUploadProgress(0);
+                    resolve(); // 다음 파일로 진행
                     return;
                   }
                   
-                  // 이미 실패했을 수도 있음
-                  if (finalJob.status === 'failed') {
-                    throw new Error(finalJob.error || '큐 처리 실패');
-                  }
+                  // 마지막 파일인 경우에만 완전히 종료
+                  setSelectedFiles([]);
+                  
+                  // 3초 후 상태 초기화
+                  setTimeout(() => {
+                    setUploadSuccess(false);
+                    setUploadStep('idle');
+                    setUploadProgress(0);
+                  }, 3000);
+                  resolve();
+                  return;
+                } else if (job.status === 'failed') {
+                  reject(new Error(job.error || '큐 처리 실패'));
+                  return;
                 }
                 
-                // 실제로도 처리 중이면 타임아웃 처리
-                console.warn('⚠️ 큐 처리 시간 초과 - 작업을 failed 상태로 업데이트합니다');
-                try {
-                  await supabaseClient
+                // 계속 폴링
+                if (attempts < maxAttempts) {
+                  setTimeout(poll, 5000); // 5초마다 확인
+                } else {
+                  // 타임아웃 전에 실제 작업 상태를 한 번 더 확인
+                  console.warn('⚠️ 클라이언트 폴링 타임아웃 - 실제 작업 상태 최종 확인 중...');
+                  const { data: finalJob, error: finalError } = await supabaseClient
                     .from('processing_jobs')
-                    .update({ 
-                      status: 'failed', 
-                      error: '큐 처리 시간 초과 (10분)',
-                      finished_at: new Date().toISOString()
-                    })
+                    .select('status, error, result')
                     .eq('id', jobId)
-                    .in('status', ['queued', 'processing']);
+                    .single();
                   
-                  // 문서 상태도 failed로 업데이트
-                  await supabaseClient
-                    .from('documents')
-                    .update({ 
-                      status: 'failed',
-                      updated_at: new Date().toISOString()
-                    })
-                    .eq('id', documentId);
-                } catch (updateError) {
-                  console.error('큐 상태 업데이트 실패:', updateError);
+                  if (!finalError && finalJob) {
+                    // 실제로 완료되었을 수 있음
+                    if (finalJob.status === 'completed') {
+                      console.log('✅ 실제로는 이미 완료되었습니다!');
+                      setUploadStep('completed');
+                      setUploadProgress(100);
+                      setUploadSuccess(true);
+                      
+                      // 마지막 파일이 아니면 상태만 초기화하고 계속 진행
+                      if (currentFileIndex < totalFilesCount - 1) {
+                        setUploadSuccess(false);
+                        setUploadStep('idle');
+                        setUploadProgress(0);
+                        resolve(); // 다음 파일로 진행
+                        return;
+                      }
+                      
+                      // 마지막 파일인 경우에만 완전히 종료
+                      setSelectedFiles([]);
+                      if (typeof window !== 'undefined') {
+                        window.dispatchEvent(new CustomEvent('docs-refresh'));
+                      }
+                      setTimeout(() => {
+                        setUploadSuccess(false);
+                        setUploadStep('idle');
+                        setUploadProgress(0);
+                      }, 3000);
+                      resolve();
+                      return;
+                    }
+                    
+                    // 이미 실패했을 수도 있음
+                    if (finalJob.status === 'failed') {
+                      reject(new Error(finalJob.error || '큐 처리 실패'));
+                      return;
+                    }
+                  }
+                  
+                  // 실제로도 처리 중이면 타임아웃 처리
+                  console.warn('⚠️ 큐 처리 시간 초과 - 작업을 failed 상태로 업데이트합니다');
+                  try {
+                    await supabaseClient
+                      .from('processing_jobs')
+                      .update({ 
+                        status: 'failed', 
+                        error: '큐 처리 시간 초과 (10분)',
+                        finished_at: new Date().toISOString()
+                      })
+                      .eq('id', jobId)
+                      .in('status', ['queued', 'processing']);
+                    
+                    // 문서 상태도 failed로 업데이트
+                    await supabaseClient
+                      .from('documents')
+                      .update({ 
+                        status: 'failed',
+                        updated_at: new Date().toISOString()
+                      })
+                      .eq('id', documentId);
+                  } catch (updateError) {
+                    console.error('큐 상태 업데이트 실패:', updateError);
+                  }
+                  reject(new Error('큐 처리 시간 초과 (10분)'));
                 }
-                throw new Error('큐 처리 시간 초과 (10분)');
+              } catch (error) {
+                console.error('폴링 오류:', error);
+                setUploadStep('error');
+                setUploadError(error instanceof Error ? error.message : String(error));
+                setUploadProgress(0);
+                setUploading(false);
+                reject(error);
               }
-            } catch (error) {
-              console.error('폴링 오류:', error);
-              setUploadStep('error');
-              setUploadError(error instanceof Error ? error.message : String(error));
-              setUploadProgress(0);
-              setUploading(false);
-            }
-          };
-          
-          poll();
+            };
+            
+            poll();
+          });
         };
         
         if (result.jobId && result.documentId) {
-          pollQueueStatus(result.jobId, result.documentId);
+          await pollQueueStatus(result.jobId, result.documentId, fileIndex, totalFiles);
         } else {
           // jobId가 없으면 일반 완료로 처리
           setUploadStep('completed');
@@ -764,23 +815,27 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
       setUploadStep('completed');
       setUploadProgress(100);
       setUploadSuccess(true);
-      
-      // 마지막 파일이 아니면 계속 진행
-      if (i < filesToUpload.length - 1) {
-        continue;
-      }
-      
-      setSelectedFiles([]);
       console.log('✅ 업로드 성공:', result);
-      
-      // 파일 입력 초기화
-      if (fileInputRef.current) {
-        fileInputRef.current.value = '';
-      }
       
       // 문서 목록 새로고침 트리거 (전역 이벤트)
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('docs-refresh'));
+      }
+      
+      // 마지막 파일이 아니면 상태만 초기화하고 계속 진행
+      if (fileIndex < totalFiles - 1) {
+        setUploadSuccess(false);
+        setUploadStep('idle');
+        setUploadProgress(0);
+        return; // 다음 파일로 진행
+      }
+      
+      // 마지막 파일인 경우에만 완전히 종료
+      setSelectedFiles([]);
+      
+      // 파일 입력 초기화
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
       }
       
       // 3초 후 성공 메시지 및 진행 상태 숨김
@@ -789,6 +844,14 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
         setUploadStep('idle');
         setUploadProgress(0);
       }, 3000);
+      };
+      
+      // 모든 파일을 순차적으로 업로드
+      for (let i = 0; i < filesToUpload.length; i++) {
+        const uploadFile = filesToUpload[i];
+        if (!uploadFile) continue;
+        await uploadSingleFile(uploadFile, i, filesToUpload.length);
+      }
     } catch (e) {
       console.error("upload error", e);
       setUploadStep('error');
