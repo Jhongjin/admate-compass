@@ -326,6 +326,34 @@ export async function POST(request: NextRequest) {
 
     // FormData 처리
     if (contentType?.includes('multipart/form-data')) {
+      // BUGFIX: Vercel payload 제한(4.5MB) 초과 방지
+      // Content-Length 헤더를 먼저 확인하여 4MB 이상이면 FormData 파싱 전에 큐로 오프로드
+      const contentLength = request.headers.get('content-length');
+      const VERCEL_PAYLOAD_LIMIT = 4 * 1024 * 1024; // 4MB (안전 마진 포함)
+      
+      if (contentLength && parseInt(contentLength) > VERCEL_PAYLOAD_LIMIT) {
+        console.log('⚠️ Vercel payload 제한 초과 감지 - 스트리밍 방식으로 처리:', {
+          contentLength: parseInt(contentLength),
+          contentLengthMB: (parseInt(contentLength) / (1024 * 1024)).toFixed(2) + 'MB',
+          limit: VERCEL_PAYLOAD_LIMIT,
+          limitMB: (VERCEL_PAYLOAD_LIMIT / (1024 * 1024)).toFixed(2) + 'MB'
+        });
+        
+        // FormData를 스트리밍으로 읽어서 파일 정보만 추출
+        // 주의: 이 방법은 파일명과 벤더 정보만 추출하고, 파일 본문은 Storage에 직접 업로드해야 함
+        // 하지만 FormData 스트리밍 파싱은 복잡하므로, 클라이언트 측에서 4MB 이상 파일은 다른 엔드포인트로 보내도록 안내
+        return NextResponse.json(
+          {
+            success: false,
+            error: `파일 크기가 너무 큽니다 (${(parseInt(contentLength) / (1024 * 1024)).toFixed(2)}MB). 4MB 이상 파일은 클라이언트에서 직접 Storage에 업로드하거나, 파일을 분할하여 업로드해주세요.`,
+            contentLength: parseInt(contentLength),
+            limit: VERCEL_PAYLOAD_LIMIT,
+            code: 'FUNCTION_PAYLOAD_TOO_LARGE'
+          },
+          { status: 413 } // 413 Payload Too Large
+        );
+      }
+      
       const formData = await request.formData();
       const file = formData.get('file') as File;
       const vendor = formData.get('vendor') as string | null; // 벤더 정보 받기
@@ -354,6 +382,77 @@ export async function POST(request: NextRequest) {
           },
           { status: 400 }
         );
+      }
+      
+      // BUGFIX: 4MB 이상 파일은 FormData 파싱 후에도 즉시 큐로 오프로드 (Vercel payload 제한 방지)
+      const VERCEL_SAFE_LIMIT = 3.5 * 1024 * 1024; // 3.5MB (안전 마진)
+      if (file.size > VERCEL_SAFE_LIMIT) {
+        console.log('📋 Vercel payload 제한 고려 - 큐로 오프로딩:', {
+          fileName: file.name,
+          fileSize: file.size,
+          fileSizeMB: (file.size / (1024 * 1024)).toFixed(2) + 'MB',
+          safeLimit: VERCEL_SAFE_LIMIT,
+          safeLimitMB: (VERCEL_SAFE_LIMIT / (1024 * 1024)).toFixed(2) + 'MB'
+        });
+        
+        // PDF/DOCX 모두 큐로 오프로드
+        const documentId = `doc_${Date.now()}`;
+        const normalizedVendor = vendor ? vendor.toUpperCase() : 'META';
+        
+        // 파일을 Storage에 업로드
+        let storageInfo;
+        try {
+          storageInfo = await uploadToStorage(file, documentId, file.name);
+          console.log('✅ Storage 업로드 완료:', storageInfo);
+        } catch (storageError) {
+          console.error('❌ Storage 업로드 실패:', storageError);
+          return NextResponse.json(
+            {
+              success: false,
+              error: `Storage 업로드 실패: ${storageError instanceof Error ? storageError.message : String(storageError)}`,
+              code: 'STORAGE_UPLOAD_FAILED'
+            },
+            { status: 500 }
+          );
+        }
+        
+        // 파일 타입에 따라 jobType 결정
+        const fileType = file.type || '';
+        const fileName = file.name.toLowerCase();
+        let jobType: 'PDF_PARSE' | 'DOCX_PARSE' = 'PDF_PARSE';
+        
+        if (fileType === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' ||
+            fileName.endsWith('.docx') ||
+            fileName.endsWith('.doc') ||
+            (fileType === 'application/octet-stream' && (fileName.includes('docx') || fileName.endsWith('.d')))) {
+          jobType = 'DOCX_PARSE';
+        }
+        
+        const jobId = await enqueueProcessingJob({
+          documentId,
+          jobType,
+          priority: 7,
+          payload: {
+            fileName: file.name,
+            fileSize: file.size,
+            fileType: file.type,
+            storage: storageInfo,
+            vendor: normalizedVendor
+          }
+        });
+        
+        console.log('✅ 큐 등록 완료 (Vercel payload 제한 회피):', { jobId, documentId, vendor: normalizedVendor });
+        
+        // 큐에 등록 후 즉시 큐 워커 트리거
+        triggerQueueWorker();
+        
+        return NextResponse.json({
+          success: true,
+          queued: true,
+          jobId,
+          documentId,
+          message: '파일이 큐로 오프로드되어 백그라운드에서 처리됩니다.'
+        }, { status: 202 });
       }
 
       // 파일명 정리 (확장자 중복 제거)
