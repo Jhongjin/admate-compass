@@ -144,8 +144,37 @@ export class HierarchicalChunkingService {
     documentId: string,
     documentTitle: string
   ): HierarchicalChunk[] {
+    // CRITICAL: 계층적 청킹 시작 로그
+    console.error('[CRITICAL] 🚀 HierarchicalChunkingService.createHierarchicalChunks 시작:', {
+      documentId,
+      documentTitle,
+      contentLength: content.length,
+      timestamp: new Date().toISOString()
+    });
+    
     const chunks: HierarchicalChunk[] = [];
     const structure = this.analyzeDocumentStructure(content);
+    
+    // CRITICAL: 문서 구조 분석 결과 로그
+    console.error('[CRITICAL] 📊 문서 구조 분석 결과:', {
+      sectionsCount: structure.sections.length,
+      paragraphsCount: structure.paragraphs.length,
+      sections: structure.sections.map(s => ({
+        title: s.title,
+        start: s.start,
+        end: s.end,
+        level: s.level,
+        paragraphsCount: s.paragraphs.length
+      })),
+      paragraphs: structure.paragraphs.slice(0, 5).map((p, i) => ({
+        index: i,
+        start: p.start,
+        end: p.end,
+        length: p.end - p.start,
+        sentencesCount: p.sentences.length
+      })),
+      timestamp: new Date().toISOString()
+    });
     
     let chunkIndex = 0;
     const chunkMap = new Map<string, HierarchicalChunk>();
@@ -265,9 +294,19 @@ export class HierarchicalChunkingService {
 
     // 섹션이 없는 경우: 문단만 생성
     if (structure.sections.length === 0) {
+      // CRITICAL: 섹션이 없어서 문단만 생성하는 경로
+      console.error('[CRITICAL] 📋 섹션이 없어서 문단만 생성하는 경로:', {
+        paragraphsCount: structure.paragraphs.length,
+        willProcessParagraphs: structure.paragraphs.length > 0,
+        timestamp: new Date().toISOString()
+      });
+      
       for (const paragraph of structure.paragraphs) {
         const paraContent = content.substring(paragraph.start, paragraph.end).trim();
-        if (paraContent.length < 50) continue;
+        if (paraContent.length < 50) {
+          console.log(`⚠️ 문단 건너뜀 (길이 ${paraContent.length}자 < 50자)`);
+          continue;
+        }
 
         const paragraphChunk: HierarchicalChunk = {
           id: `${documentId}_para_${chunkIndex}`,
@@ -293,11 +332,17 @@ export class HierarchicalChunkingService {
       }
     }
 
-    console.log(`📊 계층적 청킹 완료: ${chunks.length}개 청크 생성`, {
+    // CRITICAL: 계층적 청킹 완료 로그
+    console.error('[CRITICAL] 📊 계층적 청킹 완료:', {
+      totalChunks: chunks.length,
       document: chunks.filter(c => c.hierarchyLevel === 'document').length,
       sections: chunks.filter(c => c.hierarchyLevel === 'section').length,
       paragraphs: chunks.filter(c => c.hierarchyLevel === 'paragraph').length,
       sentences: chunks.filter(c => c.hierarchyLevel === 'sentence').length,
+      firstChunkPreview: chunks[0]?.content?.substring(0, 100) || '없음',
+      lastChunkPreview: chunks[chunks.length - 1]?.content?.substring(0, 100) || '없음',
+      timestamp: new Date().toISOString(),
+      note: chunks.length === 1 ? '⚠️ 1개만 생성됨 - 문단 감지 실패 가능성' : '✅ 정상'
     });
 
     return chunks;
