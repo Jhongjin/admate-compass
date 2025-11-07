@@ -1068,7 +1068,29 @@ export class RAGProcessor {
         });
       } else if (finalChunkCount > 1) {
         // 여러 청크가 생성된 경우 정상
-        console.log(`✅ 청킹 성공: ${finalChunkCount}개 청크 생성 (평균 ${finalAvgChunkSize}자/청크)`);
+        console.log(`✅ 청킹 성공: ${finalChunkCount}개 청크 생성 (평균 ${finalAvgChunkSize}자/청크)`, {
+          documentId: document.id,
+          title: document.title,
+          chunkCount: finalChunkCount,
+          initialChunkCount,
+          avgChunkSize: finalAvgChunkSize,
+          totalChunkSize: finalTotalChunkSize,
+          totalChunkSizeKB: (finalTotalChunkSize / 1024).toFixed(2),
+          coverage: finalChunkCount > 0 ? `${((finalTotalChunkSize / processedContent.length) * 100).toFixed(1)}%` : '0%',
+          wasForcedRechunking: false,
+          note: 'AdaptiveChunkingService에서 이미 여러 청크를 생성하여 강제 재청킹이 필요하지 않았음'
+        });
+      } else {
+        // 1개 청크인데 강제 재청킹이 실행되지 않은 경우 (이상한 경우)
+        console.warn('⚠️ 청킹 결과 이상: 1개 청크만 생성되었지만 강제 재청킹이 실행되지 않았습니다.', {
+          documentId: document.id,
+          title: document.title,
+          chunkCount: finalChunkCount,
+          initialChunkCount,
+          contentLength: processedContent.length,
+          wasForcedRechunking,
+          note: '이 경우는 발생하지 않아야 합니다. AdaptiveChunkingService에서 강제 청킹이 실행되었거나 RAGProcessor에서 강제 재청킹이 실행되어야 합니다.'
+        });
       }
 
       if (chunks.length === 0) {
