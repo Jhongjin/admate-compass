@@ -971,9 +971,22 @@ export class AdaptiveChunkingService {
           );
           
           if (hierarchicalChunks.length > 0) {
-            chunkTexts = hierarchicalChunks.map(c => c.content);
-            useHierarchical = true;
-            console.log('✅ 계층적 청킹 성공:', hierarchicalChunks.length, '개 청크');
+            // BUGFIX: 계층적 청킹이 1개만 반환하면 일반 청킹으로 폴백
+            // (문단/섹션 감지 실패로 인해 문서 레벨 청크 1개만 생성된 경우)
+            if (hierarchicalChunks.length === 1 && cleanContent.length > 10000) {
+              console.error('[CRITICAL] ⚠️ 계층적 청킹이 1개만 반환됨 (문단/섹션 감지 실패), 일반 청킹으로 폴백:', {
+                hierarchicalChunksLength: hierarchicalChunks.length,
+                cleanContentLength: cleanContent.length,
+                sectionsCount: structure.sections.length,
+                paragraphsCount: structure.paragraphs.length,
+                timestamp: new Date().toISOString()
+              });
+              useHierarchical = false; // 일반 청킹으로 폴백
+            } else {
+              chunkTexts = hierarchicalChunks.map(c => c.content);
+              useHierarchical = true;
+              console.log('✅ 계층적 청킹 성공:', hierarchicalChunks.length, '개 청크');
+            }
           } else {
             console.log('⚠️ 계층적 청킹 결과 없음, 일반 청킹으로 폴백');
           }
