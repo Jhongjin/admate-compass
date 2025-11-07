@@ -1274,6 +1274,90 @@ export async function processQueue() {
       return NextResponse.json({ success: true, jobId: job.id, status: 'completed', result: finishedResult }, { status: 200 });
     }
 
+    // 🔥 CRAWL_SEED job 처리
+    if (job.job_type === 'CRAWL_SEED') {
+      console.log('🌐 CRAWL_SEED job 처리 시작:', {
+        jobId: job.id,
+        url: job.payload?.url,
+        vendors: job.payload?.vendors,
+        domainLimit: job.payload?.domainLimit,
+        respectRobots: job.payload?.respectRobots,
+        maxDepth: job.payload?.maxDepth
+      });
+
+      try {
+        const url = job.payload?.url as string;
+        const vendors = (job.payload?.vendors as string[]) || [];
+        const domainLimit = job.payload?.domainLimit as boolean ?? true;
+        const respectRobots = job.payload?.respectRobots as boolean ?? true;
+        const maxDepth = (job.payload?.maxDepth as number) || 2;
+
+        if (!url) {
+          throw new Error('CRAWL_SEED job payload에 url이 없습니다.');
+        }
+
+        // URL 유효성 검사
+        try {
+          new URL(url);
+        } catch {
+          throw new Error(`유효하지 않은 URL: ${url}`);
+        }
+
+        // TODO: 실제 URL 크롤링 로직 구현
+        // 현재는 작업을 completed로 표시하고 로그만 남김
+        console.log('📝 URL 크롤링 작업 등록 완료:', {
+          url,
+          vendors,
+          domainLimit,
+          respectRobots,
+          maxDepth
+        });
+
+        // 작업 완료 처리
+        const finishedResult = {
+          url,
+          vendors,
+          domainLimit,
+          respectRobots,
+          maxDepth,
+          message: 'URL 크롤링 작업이 등록되었습니다. (실제 크롤링 로직은 향후 구현 예정)'
+        };
+
+        await supabase
+          .from('processing_jobs')
+          .update({
+            status: 'completed',
+            finished_at: new Date().toISOString(),
+            result: finishedResult
+          })
+          .eq('id', job.id);
+
+        return NextResponse.json({ 
+          success: true, 
+          message: 'CRAWL_SEED 작업 완료', 
+          result: finishedResult 
+        }, { status: 200 });
+      } catch (crawlError) {
+        console.error('❌ CRAWL_SEED 처리 오류:', crawlError);
+        const errorMessage = crawlError instanceof Error ? crawlError.message : String(crawlError);
+        
+        await supabase
+          .from('processing_jobs')
+          .update({
+            status: 'failed',
+            error: errorMessage,
+            finished_at: new Date().toISOString()
+          })
+          .eq('id', job.id);
+
+        return NextResponse.json({ 
+          success: false, 
+          error: 'CRAWL_SEED 처리 실패', 
+          details: errorMessage 
+        }, { status: 500 });
+      }
+    }
+
     // 🔥 Phase 2: CHUNK_PROCESS job 처리
     if (job.job_type === 'CHUNK_PROCESS') {
       console.log('🔧 CHUNK_PROCESS job 처리 시작:', {
