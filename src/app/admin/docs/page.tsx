@@ -948,9 +948,8 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
                       
                       // 마지막 파일인 경우에만 완전히 종료
                       setSelectedFiles([]);
-                      if (typeof window !== 'undefined') {
-                        window.dispatchEvent(new CustomEvent('docs-refresh'));
-                      }
+                      
+                      // 3초 후 상태 초기화
                       setTimeout(() => {
                         setUploadSuccess(false);
                         setUploadStep('idle');
@@ -2575,22 +2574,19 @@ function QueueMiniPanel({ vendors }: { vendors: string[] }) {
           <MiniStat
             title="대기"
             value={String(queued)}
-            gradient="bg-gradient-to-br from-blue-500/25 via-blue-500/10 to-blue-900/30 border border-blue-500/20"
-            accent="bg-blue-500/40 text-white"
+            accent="bg-blue-500/45"
             icon={Clock3}
           />
           <MiniStat
             title="진행 중"
             value={String(processing)}
-            gradient="bg-gradient-to-br from-indigo-500/25 via-indigo-500/10 to-purple-900/30 border border-indigo-500/20"
-            accent="bg-indigo-500/40 text-white"
+            accent="bg-indigo-500/45"
             icon={Loader2}
           />
           <MiniStat
             title="실패"
             value={String(failed)}
-            gradient="bg-gradient-to-br from-rose-500/25 via-rose-500/10 to-rose-900/30 border border-rose-500/20"
-            accent="bg-rose-500/40 text-white"
+            accent="bg-rose-500/45"
             icon={AlertTriangle}
           />
         </div>
@@ -2822,10 +2818,10 @@ function DeleteAllDocumentsButton() {
   );
 }
 
-function MiniStat({ title, value, gradient, accent, icon: Icon }: { title: string; value: string; gradient: string; accent: string; icon: LucideIcon }) {
+function MiniStat({ title, value, accent, icon: Icon }: { title: string; value: string; accent: string; icon: LucideIcon }) {
   return (
-    <div className={`relative overflow-hidden rounded-2xl p-4 shadow-lg ${gradient}`}>
-      <div className="absolute inset-0 bg-gradient-to-br from-white/20 via-white/5 to-transparent opacity-20" />
+    <div className="relative overflow-hidden rounded-2xl p-4 shadow-lg bg-gradient-to-br from-slate-900/85 via-slate-900/70 to-slate-950/90 border border-white/10">
+      <div className="absolute inset-0 bg-gradient-to-br from-white/15 via-transparent to-transparent opacity-20" />
       <div className="relative flex items-center justify-between">
         <div>
           <div className="text-xs uppercase tracking-wide text-white/70 font-semibold">{title}</div>
@@ -2885,32 +2881,28 @@ function MetricsSummary({ vendors }: { vendors: string[] }) {
       title: '총 문서 수',
       value: isLoading ? '-' : summary.total.toLocaleString(),
       icon: FileText,
-      gradient: 'bg-gradient-to-br from-blue-500/25 via-blue-500/10 to-blue-900/30 border border-blue-500/20',
-      accent: 'bg-blue-500/45 text-white',
+      accent: 'bg-blue-500/45',
       label: '전체 인덱싱 문서'
     },
     {
       title: '최근 24시간',
       value: isLoading ? '-' : summary.recent24h.toLocaleString(),
       icon: Sparkles,
-      gradient: 'bg-gradient-to-br from-violet-500/25 via-violet-500/10 to-violet-900/30 border border-violet-500/20',
-      accent: 'bg-violet-500/45 text-white',
+      accent: 'bg-violet-500/45',
       label: '최근 업로드 수'
     },
     {
       title: '처리 중',
       value: isLoading ? '-' : summary.processing.toLocaleString(),
       icon: RefreshCw,
-      gradient: 'bg-gradient-to-br from-sky-500/25 via-sky-500/10 to-sky-900/30 border border-sky-500/20',
-      accent: 'bg-sky-500/45 text-white',
+      accent: 'bg-sky-500/45',
       label: '대기 및 진행 중'
     },
     {
       title: '실패 (7일)',
       value: isLoading ? '-' : summary.failed7d.toLocaleString(),
       icon: XCircle,
-      gradient: 'bg-gradient-to-br from-rose-500/25 via-rose-500/10 to-rose-900/30 border border-rose-500/20',
-      accent: 'bg-rose-500/45 text-white',
+      accent: 'bg-rose-500/45',
       label: '최근 7일 실패 문서'
     },
   ];
@@ -2924,17 +2916,17 @@ function MetricsSummary({ vendors }: { vendors: string[] }) {
   );
 }
 
-function Metric({ title, value, icon: Icon, gradient, accent, label }: { title: string; value: string; icon: LucideIcon; gradient: string; accent: string; label?: string }) {
+function Metric({ title, value, icon: Icon, accent, label }: { title: string; value: string; icon: LucideIcon; accent: string; label?: string }) {
   return (
-    <div className={`relative overflow-hidden rounded-2xl p-5 shadow-xl ${gradient}`}>
-      <div className="absolute inset-0 bg-gradient-to-tr from-white/25 via-white/10 to-transparent opacity-20" />
+    <div className="relative overflow-hidden rounded-2xl p-5 shadow-xl bg-gradient-to-br from-slate-900/85 via-slate-900/70 to-slate-950/90 border border-white/10">
+      <div className="absolute inset-0 bg-gradient-to-tr from-white/20 via-transparent to-transparent opacity-20" />
       <div className="relative flex items-start justify-between">
         <div>
           <div className="text-xs uppercase tracking-wider text-white/70 font-semibold">{title}</div>
           <div className="mt-2 text-3xl font-semibold text-white">{value}</div>
           {label && <div className="mt-1 text-xs text-white/60">{label}</div>}
         </div>
-        <div className={`h-12 w-12 rounded-xl flex items-center justify-center shadow-inner ${accent}`}>
+        <div className={`h-12 w-12 rounded-xl flex items-center justify-center shadow-inner ${accent} text-white`}>
           <Icon className="w-5 h-5" />
         </div>
       </div>
