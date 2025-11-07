@@ -1047,14 +1047,41 @@ export class RAGProcessor {
             }
           }
         } catch (forceError) {
-          console.error('❌ 강제 재청킹 실패:', forceError);
+          console.error('❌ 강제 재청킹 실패:', {
+            documentId: document.id,
+            title: document.title,
+            error: forceError instanceof Error ? forceError.message : String(forceError),
+            stack: forceError instanceof Error ? forceError.stack : undefined,
+            currentChunkCount: chunks.length,
+            contentLength: processedContent.length
+          });
         }
       }
       
       // 최종 청킹 결과 로깅 (강제 재청킹 후)
+      // 강제 재청킹이 실행되었는지 여부와 관계없이 항상 최종 결과 로깅
       const finalChunkCount = chunks.length;
       const finalAvgChunkSize = finalChunkCount > 0 ? Math.round(chunks.reduce((sum, c) => sum + c.content.length, 0) / finalChunkCount) : 0;
       const finalTotalChunkSize = chunks.reduce((sum, c) => sum + c.content.length, 0);
+      
+      // 최종 청킹 결과 로깅 (항상 출력)
+      console.log('📊 최종 청킹 결과:', {
+        documentId: document.id,
+        title: document.title,
+        chunkCount: finalChunkCount,
+        initialChunkCount,
+        avgChunkSize: finalAvgChunkSize,
+        totalChunkSize: finalTotalChunkSize,
+        totalChunkSizeKB: (finalTotalChunkSize / 1024).toFixed(2),
+        coverage: finalChunkCount > 0 ? `${((finalTotalChunkSize / processedContent.length) * 100).toFixed(1)}%` : '0%',
+        wasForcedRechunking,
+        contentLength: processedContent.length,
+        note: wasForcedRechunking 
+          ? `✅ 강제 재청킹 실행됨: ${initialChunkCount}개 → ${finalChunkCount}개`
+          : finalChunkCount > 1
+          ? '✅ AdaptiveChunkingService에서 이미 여러 청크 생성됨'
+          : '⚠️ 1개 청크만 생성됨 (강제 재청킹 필요했지만 실행되지 않음)'
+      });
       
       if (wasForcedRechunking) {
         console.log('✅ 최종 청킹 결과 (강제 재청킹 후):', {
