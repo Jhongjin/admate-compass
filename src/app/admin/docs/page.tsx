@@ -1023,10 +1023,37 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
       // 큐 워커 즉시 트리거 (파일 업로드와 동일한 방식)
       try {
         const consumeRes = await fetch('/api/jobs/consume', { method: 'POST' });
-        const consumeResult = await consumeRes.json();
+        let consumeResult: any = null;
+        try {
+          consumeResult = await consumeRes.clone().json();
+        } catch {
+          consumeResult = null;
+        }
+
+        if (consumeRes.ok && consumeResult?.success) {
+          toast.success('URL 크롤링 작업 처리 시작', {
+            description: consumeResult.message || '큐 워커가 작업을 처리 중입니다.',
+            duration: 4000,
+          });
+        } else {
+          const fallbackMessage = consumeResult?.error || consumeResult?.details || `HTTP ${consumeRes.status}`;
+          toast.warning('큐 워커 실행 경고', {
+            description: fallbackMessage,
+            duration: 5000,
+          });
+        }
+
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('queue-refresh'));
+        }
+
         console.log('✅ 크롤링 큐 워커 트리거 완료:', consumeResult);
       } catch (consumeError) {
         console.warn('⚠️ 크롤링 큐 워커 트리거 실패 (Cron Job이 처리할 수 있음):', consumeError);
+        toast.info('큐 워커 실행을 곧 자동으로 재시도합니다', {
+          description: 'Cron Job이 곧 처리할 예정입니다.',
+          duration: 4000,
+        });
       }
     } catch (e) {
       console.error("crawl enqueue error", e);
@@ -2248,6 +2275,13 @@ function QueueMiniPanel({ vendors }: { vendors: string[] }) {
     },
     refetchInterval: 5000, // 5초마다 자동 새로고침
   });
+
+  useEffect(() => {
+    const handler = () => refetch();
+    window.addEventListener('queue-refresh', handler);
+    return () => window.removeEventListener('queue-refresh', handler);
+  }, [refetch]);
+
   const queued = data?.queued ?? 0;
   const processing = data?.processing ?? 0;
   const failed = data?.failed ?? 0;
