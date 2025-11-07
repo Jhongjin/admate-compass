@@ -946,7 +946,8 @@ export class RAGProcessor {
           title: document.title,
           currentChunkCount: chunks.length,
           contentLength: processedContent.length,
-          condition: `chunks.length === ${chunks.length} && processedContent.length (${processedContent.length}) > 10000`
+          condition: `chunks.length === ${chunks.length} && processedContent.length (${processedContent.length}) > 10000`,
+          timestamp: new Date().toISOString()
         });
         
         try {
@@ -998,11 +999,16 @@ export class RAGProcessor {
               title: document.title,
               beforeChunkCount: chunks.length,
               afterChunkCount: forcedChunks.length,
-              targetChunkCount
+              targetChunkCount,
+              forcedChunkSize,
+              contentLength: processedContent.length,
+              timestamp: new Date().toISOString()
             });
             // 강제 청킹 결과로 대체
+            console.log(`🔄 chunks 배열 교체 전: ${chunks.length}개 → 교체 후: ${forcedChunks.length}개`);
             chunks.length = 0;
             chunks.push(...forcedChunks);
+            console.log(`✅ chunks 배열 교체 완료: 현재 ${chunks.length}개`);
             wasForcedRechunking = true;
           } else {
             console.warn('⚠️ 강제 재청킹 실패: 여전히 1개 청크만 생성됨. 더 작은 청크 크기로 재시도...', {
