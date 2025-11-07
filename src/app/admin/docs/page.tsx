@@ -17,7 +17,7 @@ import { Separator } from "@/components/ui/separator";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Check, CheckCircle, Download, FileText, Globe, Loader2, RefreshCw, Search, Upload, XCircle, File, Link2, ArrowUp, ArrowDown, ArrowUpDown, FileSearch, Sparkles, Database } from "lucide-react";
+import { Check, CheckCircle, Download, FileText, Globe, Loader2, RefreshCw, Search, Upload, XCircle, File, Link2, ArrowUp, ArrowDown, ArrowUpDown, FileSearch, Sparkles, Database, Info } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
@@ -1183,7 +1183,20 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
             <div className="hidden sm:grid grid-cols-3 gap-3 px-1 mb-1 text-center">
               <div className="text-[11px] text-secondary-enhanced font-semibold">도메인 한정</div>
               <div className="text-[11px] text-secondary-enhanced font-semibold">robots.txt 준수</div>
-              <div className="text-[11px] text-secondary-enhanced font-semibold">최대 심도</div>
+              <div className="text-[11px] text-secondary-enhanced font-semibold flex items-center justify-center gap-1">
+                최대 심도
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <Info className="w-3 h-3 text-gray-400 hover:text-blue-400 cursor-help" />
+                    </TooltipTrigger>
+                    <TooltipContent side="top" className="max-w-xs z-50">
+                      <p className="text-xs">최대 심도: Seed URL에서 몇 단계 깊이까지 크롤링할지 설정합니다.</p>
+                      <p className="text-xs mt-1">예: 심도 2 = Seed URL → 링크된 페이지 → 그 페이지의 링크까지</p>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
             </div>
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
               <div className="border border-gray-600 rounded-md px-3 py-4 bg-gray-800/30 flex flex-col items-center justify-center min-h-[64px]">
@@ -1203,34 +1216,22 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
                 />
               </div>
               <div className="border border-gray-600 rounded-md px-3 py-4 bg-gray-800/30 flex flex-col items-center justify-center min-h-[64px]">
-                <TooltipProvider>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <div>
-                        <Select 
-                          value={crawlOptions.maxDepth}
-                          onValueChange={(value) => 
-                            setCrawlOptions(prev => ({ ...prev, maxDepth: value }))
-                          }
-                        >
-                          <SelectTrigger className="w-24 bg-gray-700 border-gray-600 text-white">
-                            <SelectValue />
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectItem value="1">1</SelectItem>
-                            <SelectItem value="2">2</SelectItem>
-                            <SelectItem value="3">3</SelectItem>
-                            <SelectItem value="4">4</SelectItem>
-                          </SelectContent>
-                        </Select>
-                      </div>
-                    </TooltipTrigger>
-                    <TooltipContent>
-                      <p className="text-xs">최대 심도: Seed URL에서 몇 단계 깊이까지 크롤링할지 설정합니다.</p>
-                      <p className="text-xs mt-1">예: 심도 2 = Seed URL → 링크된 페이지 → 그 페이지의 링크까지</p>
-                    </TooltipContent>
-                  </Tooltip>
-                </TooltipProvider>
+                <Select 
+                  value={crawlOptions.maxDepth}
+                  onValueChange={(value) => 
+                    setCrawlOptions(prev => ({ ...prev, maxDepth: value }))
+                  }
+                >
+                  <SelectTrigger className="w-24 bg-gray-700 border-gray-600 text-white">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1">1</SelectItem>
+                    <SelectItem value="2">2</SelectItem>
+                    <SelectItem value="3">3</SelectItem>
+                    <SelectItem value="4">4</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
             </div>
             <div className="flex items-center gap-3">
