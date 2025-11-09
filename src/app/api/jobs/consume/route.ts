@@ -1369,50 +1369,48 @@ export async function processQueue() {
           // 개선된 텍스트 추출: 주요 콘텐츠 영역 우선 추출
           let textContent = '';
           
-          // 1. 주요 콘텐츠 영역 찾기 (main, article, [role="main"] 등)
-          const contentSelectors = [
-            'main',
-            'article',
-            '[role="main"]',
-            '.content',
-            '.main-content',
-            '.page-content',
-            '#content',
-            '#main-content'
+          // 1. 주요 콘텐츠 영역 찾기 (더 간단하고 효과적인 패턴)
+          const contentPatterns = [
+            /<main[^>]*>([\s\S]*?)<\/main>/gi,
+            /<article[^>]*>([\s\S]*?)<\/article>/gi,
+            /<div[^>]*role=["']main["'][^>]*>([\s\S]*?)<\/div>/gi,
+            /<div[^>]*class=["'][^"']*content[^"']*["'][^>]*>([\s\S]*?)<\/div>/gi,
+            /<div[^>]*id=["']content["'][^>]*>([\s\S]*?)<\/div>/gi,
+            /<div[^>]*id=["']main-content["'][^>]*>([\s\S]*?)<\/div>/gi,
           ];
           
           let foundContent = false;
-          for (const selector of contentSelectors) {
-            const regex = new RegExp(`<${selector.replace(/[\[\]\.#]/g, (m) => {
-              if (m === '[') return '\\[';
-              if (m === ']') return '\\]';
-              if (m === '.') return '\\.';
-              if (m === '#') return '#';
-              return m;
-            })}[^>]*>([\\s\\S]*?)<\\/${selector.split(/[\[\]\.#]/)[0]}>`, 'gi');
-            const match = htmlContent.match(regex);
-            if (match && match[0]) {
-              const contentHtml = match[0];
-              textContent = contentHtml
-                .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-                .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-                .replace(/<nav[^>]*>[\s\S]*?<\/nav>/gi, '')
-                .replace(/<footer[^>]*>[\s\S]*?<\/footer>/gi, '')
-                .replace(/<header[^>]*>[\s\S]*?<\/header>/gi, '')
-                .replace(/<aside[^>]*>[\s\S]*?<\/aside>/gi, '')
-                .replace(/<[^>]+>/g, ' ')
-                .replace(/\s+/g, ' ')
-                .trim();
-              if (textContent.length > 500) {
-                foundContent = true;
-                break;
+          for (const pattern of contentPatterns) {
+            const matches = [...htmlContent.matchAll(pattern)];
+            for (const match of matches) {
+              if (match[1]) {
+                const contentHtml = match[1];
+                const extracted = contentHtml
+                  .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+                  .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+                  .replace(/<nav[^>]*>[\s\S]*?<\/nav>/gi, '')
+                  .replace(/<footer[^>]*>[\s\S]*?<\/footer>/gi, '')
+                  .replace(/<header[^>]*>[\s\S]*?<\/header>/gi, '')
+                  .replace(/<aside[^>]*>[\s\S]*?<\/aside>/gi, '')
+                  .replace(/<[^>]+>/g, ' ')
+                  .replace(/\s+/g, ' ')
+                  .trim();
+                if (extracted.length > textContent.length) {
+                  textContent = extracted;
+                  foundContent = true;
+                }
               }
             }
+            if (textContent.length > 1000) break; // 충분한 콘텐츠를 찾으면 중단
           }
           
-          // 2. 주요 콘텐츠 영역을 찾지 못한 경우 body 전체에서 추출
-          if (!foundContent) {
-            textContent = htmlContent
+          // 2. 주요 콘텐츠 영역을 찾지 못했거나 너무 짧은 경우 body 전체에서 추출
+          if (!foundContent || textContent.length < 500) {
+            // body 태그 찾기
+            const bodyMatch = htmlContent.match(/<body[^>]*>([\s\S]*?)<\/body>/gi);
+            const htmlToProcess = bodyMatch ? bodyMatch[0] : htmlContent;
+            
+            const fullText = htmlToProcess
               .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
               .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
               .replace(/<nav[^>]*>[\s\S]*?<\/nav>/gi, '')
@@ -1422,6 +1420,11 @@ export async function processQueue() {
               .replace(/<[^>]+>/g, ' ')
               .replace(/\s+/g, ' ')
               .trim();
+            
+            // 더 긴 텍스트를 선택
+            if (fullText.length > textContent.length) {
+              textContent = fullText;
+            }
           }
 
           if (!textContent || textContent.length < 100) {

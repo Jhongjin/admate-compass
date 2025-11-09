@@ -903,28 +903,31 @@ export class RAGProcessor {
         contentLength: processedContent.length,
         contentLengthKB: (processedContent.length / 1024).toFixed(2),
         coverage: initialChunkCount > 0 ? `${((totalChunkSize / processedContent.length) * 100).toFixed(1)}%` : '0%',
-        note: initialChunkCount === 1 && processedContent.length > 10000 
+        note: initialChunkCount === 1 && processedContent.length > 500 
           ? '⚠️ 1개 청크만 생성됨 - 강제 재청킹 필요' 
           : initialChunkCount > 1 
           ? '✅ 여러 청크 생성됨 (정상)' 
           : '⚠️ 청크가 없음',
-        willCheckForcedRechunking: initialChunkCount === 1 && processedContent.length > 10000
+        willCheckForcedRechunking: initialChunkCount === 1 && processedContent.length > 500
       });
       
       // 청킹 결과 검증: 내용이 긴데 청크가 1개만 생성된 경우 강제 재청킹
       // AdaptiveChunkingService에서 이미 강제 분할을 시도했을 수 있지만, 
       // 여전히 1개만 있다면 RAGProcessor에서도 강제 재청킹 시도
+      // 조건 완화: 500자 이상이면 재청킹 시도 (기존: 10000자)
       let wasForcedRechunking = false;
+      const shouldForceRechunk = chunks.length === 1 && processedContent.length > 500;
+      
       console.log('🔍 청킹 결과 검증:', {
         documentId: document.id,
         title: document.title,
         chunksLength: chunks.length,
         processedContentLength: processedContent.length,
-        willCheckForcedRechunking: chunks.length === 1 && processedContent.length > 10000,
-        condition: `chunks.length (${chunks.length}) === 1 && processedContent.length (${processedContent.length}) > 10000`
+        willCheckForcedRechunking: shouldForceRechunk,
+        condition: `chunks.length (${chunks.length}) === 1 && processedContent.length (${processedContent.length}) > 500`
       });
       
-      if (chunks.length === 1 && processedContent.length > 10000) {
+      if (shouldForceRechunk) {
         const firstChunkSize = chunks[0]?.content?.length || 0;
         const coverage = processedContent.length > 0 ? (firstChunkSize / processedContent.length) * 100 : 0;
         
@@ -953,15 +956,16 @@ export class RAGProcessor {
           title: document.title,
           currentChunkCount: chunks.length,
           contentLength: processedContent.length,
-          condition: `chunks.length === ${chunks.length} && processedContent.length (${processedContent.length}) > 10000`,
+          condition: `chunks.length === ${chunks.length} && processedContent.length (${processedContent.length}) > 500`,
           timestamp: new Date().toISOString()
         });
         
         try {
           // 내용 길이에 따라 동적으로 청크 크기 결정
-          // 목표: 최소 10개 이상의 청크 생성
-          const targetChunkCount = Math.max(10, Math.min(50, Math.floor(processedContent.length / 1000)));
-          const forcedChunkSize = Math.max(500, Math.min(2000, Math.floor(processedContent.length / targetChunkCount)));
+          // 목표: 최소 3개 이상의 청크 생성 (짧은 문서의 경우)
+          // 긴 문서는 최대 50개까지
+          const targetChunkCount = Math.max(3, Math.min(50, Math.floor(processedContent.length / 500)));
+          const forcedChunkSize = Math.max(300, Math.min(2000, Math.floor(processedContent.length / targetChunkCount)));
           
           console.log(`📏 강제 재청킹 설정: 목표 ${targetChunkCount}개 청크, 청크 크기 ${forcedChunkSize}자`);
           
