@@ -70,9 +70,15 @@ export class SitemapDiscoveryService {
     options: Partial<DiscoveryOptions> = {}
   ): Promise<DiscoveredUrl[]> {
     const config = { ...this.defaultOptions, ...options };
-    
-    if (!this.browser) {
-      await this.initialize();
+
+    // Puppeteer 초기화 시도 (실패해도 계속 진행)
+    try {
+      if (!this.browser) {
+        await this.initialize();
+      }
+    } catch (initError) {
+      console.warn('⚠️ Puppeteer 초기화 실패, fetch fallback만 사용합니다:', initError);
+      // 초기화 실패해도 계속 진행 (fetch fallback 사용)
     }
 
     console.log(`🔍 하위 페이지 발견 시작: ${baseUrl}`);
@@ -83,7 +89,7 @@ export class SitemapDiscoveryService {
     const baseDomain = this.extractDomain(baseUrl);
 
     try {
-      // 1. Sitemap.xml에서 URL 발견
+      // 1. Sitemap.xml에서 URL 발견 (Puppeteer 불필요)
       const sitemapUrls = await this.discoverFromSitemap(baseUrl, config);
       sitemapUrls.forEach(url => {
         if (!discoveredUrls.has(url.url)) {
@@ -94,7 +100,7 @@ export class SitemapDiscoveryService {
 
       console.log(`📄 Sitemap에서 발견: ${sitemapUrls.length}개`);
 
-      // 2. 페이지 링크에서 URL 발견
+      // 2. 페이지 링크에서 URL 발견 (Puppeteer 우선, 실패 시 fetch fallback)
       const linkUrls = await this.discoverFromLinks(baseUrl, config);
       linkUrls.forEach(url => {
         if (!discoveredUrls.has(url.url)) {
@@ -113,7 +119,8 @@ export class SitemapDiscoveryService {
 
     } catch (error) {
       console.error('❌ 하위 페이지 발견 실패:', error);
-      return [];
+      // 일부 실패해도 발견된 URL은 반환
+      return discoveredPages.slice(0, config.maxUrls);
     }
   }
 
@@ -222,79 +229,159 @@ export class SitemapDiscoveryService {
   }
 
   /**
-   * 페이지 링크에서 URL 발견
+   * 페이지 링크에서 URL 발견 (Puppeteer 우선, 실패 시 fetch fallback)
    */
   private async discoverFromLinks(
     baseUrl: string, 
     config: DiscoveryOptions
   ): Promise<DiscoveredUrl[]> {
-    if (!this.browser) {
-      await this.initialize();
-    }
-
     const discoveredUrls: DiscoveredUrl[] = [];
     const baseDomain = this.extractDomain(baseUrl);
 
+    // Puppeteer를 사용한 링크 추출 시도
     try {
-      const page = await this.browser!.newPage();
-      await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
-      await page.setViewport({ width: 1920, height: 1080 });
+      if (!this.browser) {
+        await this.initialize();
+      }
 
-      await page.goto(baseUrl, { 
-        waitUntil: 'networkidle2',
-        timeout: 30000 
-      });
+      if (this.browser) {
+        const page = await this.browser.newPage();
+        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+        await page.setViewport({ width: 1920, height: 1080 });
 
-      // 페이지에서 링크 추출
-      const links = await page.evaluate((baseDomain) => {
-        const linkElements = document.querySelectorAll('a[href]');
-        const links: Array<{url: string, title: string}> = [];
-        
-        linkElements.forEach(link => {
-          const href = link.getAttribute('href');
-          if (!href) return;
+        await page.goto(baseUrl, { 
+          waitUntil: 'networkidle2',
+          timeout: 30000 
+        });
+
+        // 페이지에서 링크 추출
+        const links = await page.evaluate((baseDomain) => {
+          const linkElements = document.querySelectorAll('a[href]');
+          const links: Array<{url: string, title: string}> = [];
           
-          try {
-            const fullUrl = new URL(href, window.location.href).href;
-            const urlDomain = new URL(fullUrl).hostname;
+          linkElements.forEach(link => {
+            const href = link.getAttribute('href');
+            if (!href) return;
             
-            // 같은 도메인이고 다른 경로인 경우만 포함
-            if (urlDomain === baseDomain && 
-                fullUrl !== window.location.href &&
-                !fullUrl.includes('#') && 
-                !fullUrl.includes('?') &&
-                !fullUrl.includes('javascript:') &&
-                !fullUrl.includes('mailto:')) {
-              links.push({
-                url: fullUrl,
-                title: link.textContent?.trim() || ''
-              });
+            try {
+              const fullUrl = new URL(href, window.location.href).href;
+              const urlDomain = new URL(fullUrl).hostname;
+              
+              // 같은 도메인이고 다른 경로인 경우만 포함
+              if (urlDomain === baseDomain && 
+                  fullUrl !== window.location.href &&
+                  !fullUrl.includes('#') && 
+                  !fullUrl.includes('?') &&
+                  !fullUrl.includes('javascript:') &&
+                  !fullUrl.includes('mailto:')) {
+                links.push({
+                  url: fullUrl,
+                  title: link.textContent?.trim() || ''
+                });
+              }
+            } catch (e) {
+              // URL 파싱 실패 시 무시
             }
-          } catch (e) {
-            // URL 파싱 실패 시 무시
+          });
+          
+          return links;
+        }, baseDomain);
+
+        // 링크를 DiscoveredUrl 형태로 변환
+        links.forEach(link => {
+          if (this.isValidUrl(link.url, baseDomain, config)) {
+            discoveredUrls.push({
+              url: link.url,
+              title: link.title || undefined,
+              source: 'links',
+              depth: 1
+            });
           }
         });
-        
-        return links;
-      }, baseDomain);
 
-      // 링크를 DiscoveredUrl 형태로 변환
-      links.forEach(link => {
-        if (this.isValidUrl(link.url, baseDomain, config)) {
-          discoveredUrls.push({
-            url: link.url,
-            title: link.title || undefined,
-            source: 'links',
-            depth: 1
-          });
-        }
+        await page.close();
+        console.log(`🔗 페이지 링크에서 발견 (Puppeteer): ${discoveredUrls.length}개`);
+        return discoveredUrls;
+      }
+    } catch (puppeteerError) {
+      // Puppeteer 실패 시 fetch fallback 사용
+      if (puppeteerError instanceof Error && puppeteerError.message.includes('Chrome')) {
+        console.warn('⚠️ Puppeteer 사용 불가, fetch fallback으로 전환');
+      } else {
+        console.warn('⚠️ Puppeteer 링크 추출 실패, fetch fallback으로 전환:', puppeteerError);
+      }
+    }
+
+    // Fetch fallback: HTML을 가져와서 정규식으로 링크 추출
+    try {
+      const response = await fetch(baseUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'ko-KR,ko;q=0.9,en;q=0.8',
+        },
+        redirect: 'follow',
       });
 
-      await page.close();
-      console.log(`🔗 페이지 링크에서 발견: ${discoveredUrls.length}개`);
+      if (!response.ok) {
+        console.warn(`⚠️ HTML 가져오기 실패: ${baseUrl} - ${response.status}`);
+        return discoveredUrls;
+      }
 
-    } catch (error) {
-      console.error('❌ 페이지 링크 발견 실패:', error);
+      const htmlContent = await response.text();
+      const baseUrlObj = new URL(baseUrl);
+      const baseOrigin = `${baseUrlObj.protocol}//${baseUrlObj.host}`;
+
+      // 정규식으로 링크 추출
+      const linkRegex = /<a[^>]+href=["']([^"']+)["'][^>]*>(.*?)<\/a>/gi;
+      const links = new Set<string>();
+      
+      let match;
+      while ((match = linkRegex.exec(htmlContent)) !== null && links.size < 200) {
+        const href = match[1].trim();
+        if (!href || href.startsWith('#') || href.startsWith('javascript:') || href.startsWith('mailto:')) {
+          continue;
+        }
+
+        try {
+          let fullUrl: string;
+          if (href.startsWith('http://') || href.startsWith('https://')) {
+            fullUrl = href;
+          } else if (href.startsWith('/')) {
+            fullUrl = `${baseOrigin}${href}`;
+          } else {
+            fullUrl = new URL(href, baseUrl).href;
+          }
+
+          const urlObj = new URL(fullUrl);
+          const urlDomain = urlObj.hostname;
+
+          // 같은 도메인이고 다른 경로인 경우만 포함
+          if (urlDomain === baseDomain && 
+              fullUrl !== baseUrl &&
+              !fullUrl.includes('#') && 
+              !urlObj.search && // 쿼리 파라미터 제외
+              this.isValidUrl(fullUrl, baseDomain, config)) {
+            links.add(fullUrl);
+          }
+        } catch (e) {
+          // URL 파싱 실패 시 무시
+        }
+      }
+
+      // DiscoveredUrl 형태로 변환
+      links.forEach(url => {
+        discoveredUrls.push({
+          url,
+          source: 'links',
+          depth: 1
+        });
+      });
+
+      console.log(`🔗 페이지 링크에서 발견 (fetch fallback): ${discoveredUrls.length}개`);
+
+    } catch (fetchError) {
+      console.error('❌ fetch fallback 링크 추출 실패:', fetchError);
     }
 
     return discoveredUrls;

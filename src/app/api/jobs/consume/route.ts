@@ -1545,7 +1545,7 @@ export async function processQueue() {
           try {
             const discoveryOptions = {
               maxDepth: Math.max(1, Math.min(maxDepth, 3)),
-              maxUrls: 12,
+              maxUrls: 50, // 하위 페이지 발견 개수 증가 (기존: 12)
               respectRobotsTxt: respectRobots,
               includeExternal: false,
               allowedDomains: [seedUrl.hostname],
@@ -1554,21 +1554,19 @@ export async function processQueue() {
             console.log('🔍 하위 페이지 탐색 옵션:', discoveryOptions);
             let discovered: Array<{ url: string; title?: string; source: string; depth: number }> = [];
             try {
+              // SitemapDiscoveryService가 Puppeteer 실패 시 fetch fallback을 자동으로 사용
               discovered = await sitemapDiscoveryService.discoverSubPages(url, discoveryOptions);
-            } catch (puppeteerError) {
-              // Puppeteer 초기화 실패 시 하위 페이지 탐색 건너뛰기
-              if (puppeteerError instanceof Error && puppeteerError.message.includes('Chrome')) {
-                console.warn('⚠️ Puppeteer를 사용할 수 없어 하위 페이지 탐색을 건너뜁니다. 메인 페이지만 처리합니다.');
-                console.warn('💡 Vercel 환경에서는 Puppeteer를 사용할 수 없습니다. 하위 페이지 탐색 기능을 비활성화하거나 외부 서비스를 사용하세요.');
-              } else {
-                throw puppeteerError;
-              }
+              console.log(`✅ 하위 페이지 발견 완료: ${discovered.length}개 (Sitemap + fetch fallback 사용)`);
+            } catch (discoveryError) {
+              // 전체 탐색 실패 시에도 메인 페이지는 계속 처리
+              console.warn('⚠️ 하위 페이지 탐색 중 오류 발생, 메인 페이지만 처리합니다:', discoveryError);
+              discovered = [];
             }
             const candidateUrls = Array.from(new Set(
               discovered
                 .map((entry) => entry.url)
                 .filter((entryUrl) => entryUrl && entryUrl !== url && !entryUrl.includes('#'))
-            )).slice(0, 8);
+            )).slice(0, 30); // 처리할 하위 페이지 개수 증가 (기존: 8)
 
             console.log('📄 하위 페이지 후보:', candidateUrls.length);
             let processedCount = 0;
