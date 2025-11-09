@@ -2555,8 +2555,8 @@ function QueueMiniPanel({ vendors }: { vendors: string[] }) {
   const processing = data?.processing ?? 0;
   const failed = data?.failed ?? 0;
 
-  const queueActionClass = "flex-1 h-11 rounded-xl bg-gradient-to-r from-sky-500/85 via-sky-500/70 to-indigo-500/85 text-white font-semibold shadow-sm hover:shadow-xl hover:-translate-y-0.5 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed";
-  const retryActionClass = "flex-1 h-11 rounded-xl bg-gradient-to-r from-rose-500/85 via-rose-500/70 to-amber-500/85 text-white font-semibold shadow-sm hover:shadow-xl hover:-translate-y-0.5 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed";
+  const queueActionClass = "flex-1 h-11 rounded-xl bg-sky-600/90 hover:bg-sky-600 text-white font-semibold shadow-sm hover:shadow-xl hover:-translate-y-0.5 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed";
+  const retryActionClass = "flex-1 h-11 rounded-xl bg-rose-600/90 hover:bg-rose-600 text-white font-semibold shadow-sm hover:shadow-xl hover:-translate-y-0.5 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed";
 
   return (
     <Card className="bg-gradient-to-br from-slate-900/80 via-slate-900/60 to-slate-950/90 border border-white/10 shadow-xl">
@@ -2827,8 +2827,8 @@ function MiniStat({ title, value, accent, icon: Icon }: { title: string; value: 
           <div className="text-xs uppercase tracking-wide text-white/70 font-semibold">{title}</div>
           <div className="mt-2 text-2xl font-bold text-white">{value}</div>
         </div>
-        <div className={`h-11 w-11 rounded-xl flex items-center justify-center shadow-inner ${accent}`}>
-          <Icon className="w-5 h-5 text-white" />
+        <div className={`h-9 w-9 rounded-lg flex items-center justify-center shadow-inner ${accent}`}>
+          <Icon className="w-4 h-4 text-white" />
         </div>
       </div>
     </div>

@@ -1365,16 +1365,70 @@ export async function processQueue() {
 
           const titleMatch = htmlContent.match(/<title[^>]*>([^<]+)<\/title>/i);
           const pageTitle = titleMatch ? titleMatch[1].trim() : new URL(targetUrl).pathname || targetUrl;
-          const textContent = htmlContent
-            .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-            .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-            .replace(/<[^>]+>/g, ' ')
-            .replace(/\s+/g, ' ')
-            .trim();
+          
+          // 개선된 텍스트 추출: 주요 콘텐츠 영역 우선 추출
+          let textContent = '';
+          
+          // 1. 주요 콘텐츠 영역 찾기 (main, article, [role="main"] 등)
+          const contentSelectors = [
+            'main',
+            'article',
+            '[role="main"]',
+            '.content',
+            '.main-content',
+            '.page-content',
+            '#content',
+            '#main-content'
+          ];
+          
+          let foundContent = false;
+          for (const selector of contentSelectors) {
+            const regex = new RegExp(`<${selector.replace(/[\[\]\.#]/g, (m) => {
+              if (m === '[') return '\\[';
+              if (m === ']') return '\\]';
+              if (m === '.') return '\\.';
+              if (m === '#') return '#';
+              return m;
+            })}[^>]*>([\\s\\S]*?)<\\/${selector.split(/[\[\]\.#]/)[0]}>`, 'gi');
+            const match = htmlContent.match(regex);
+            if (match && match[0]) {
+              const contentHtml = match[0];
+              textContent = contentHtml
+                .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+                .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+                .replace(/<nav[^>]*>[\s\S]*?<\/nav>/gi, '')
+                .replace(/<footer[^>]*>[\s\S]*?<\/footer>/gi, '')
+                .replace(/<header[^>]*>[\s\S]*?<\/header>/gi, '')
+                .replace(/<aside[^>]*>[\s\S]*?<\/aside>/gi, '')
+                .replace(/<[^>]+>/g, ' ')
+                .replace(/\s+/g, ' ')
+                .trim();
+              if (textContent.length > 500) {
+                foundContent = true;
+                break;
+              }
+            }
+          }
+          
+          // 2. 주요 콘텐츠 영역을 찾지 못한 경우 body 전체에서 추출
+          if (!foundContent) {
+            textContent = htmlContent
+              .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+              .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+              .replace(/<nav[^>]*>[\s\S]*?<\/nav>/gi, '')
+              .replace(/<footer[^>]*>[\s\S]*?<\/footer>/gi, '')
+              .replace(/<header[^>]*>[\s\S]*?<\/header>/gi, '')
+              .replace(/<aside[^>]*>[\s\S]*?<\/aside>/gi, '')
+              .replace(/<[^>]+>/g, ' ')
+              .replace(/\s+/g, ' ')
+              .trim();
+          }
 
           if (!textContent || textContent.length < 100) {
             throw new Error('크롤링된 콘텐츠가 너무 짧거나 비어있습니다. 접근 권한 또는 공개 여부를 확인해주세요.');
           }
+
+          console.log(`📄 추출된 텍스트 길이: ${textContent.length}자 (원본 HTML: ${htmlContent.length}자)`);
 
           return { textContent, pageTitle };
         };
@@ -1495,7 +1549,18 @@ export async function processQueue() {
             };
 
             console.log('🔍 하위 페이지 탐색 옵션:', discoveryOptions);
-            const discovered = await sitemapDiscoveryService.discoverSubPages(url, discoveryOptions);
+            let discovered: Array<{ url: string; title?: string; source: string; depth: number }> = [];
+            try {
+              discovered = await sitemapDiscoveryService.discoverSubPages(url, discoveryOptions);
+            } catch (puppeteerError) {
+              // Puppeteer 초기화 실패 시 하위 페이지 탐색 건너뛰기
+              if (puppeteerError instanceof Error && puppeteerError.message.includes('Chrome')) {
+                console.warn('⚠️ Puppeteer를 사용할 수 없어 하위 페이지 탐색을 건너뜁니다. 메인 페이지만 처리합니다.');
+                console.warn('💡 Vercel 환경에서는 Puppeteer를 사용할 수 없습니다. 하위 페이지 탐색 기능을 비활성화하거나 외부 서비스를 사용하세요.');
+              } else {
+                throw puppeteerError;
+              }
+            }
             const candidateUrls = Array.from(new Set(
               discovered
                 .map((entry) => entry.url)

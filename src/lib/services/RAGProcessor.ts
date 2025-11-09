@@ -350,12 +350,16 @@ export class RAGProcessor {
       // document_metadata 테이블에도 저장
       // MIME type에서 실제 파일 확장자 추출 (예: application/pdf -> pdf, application/vnd.openxmlformats-officedocument.wordprocessingml.document -> docx)
       let fileType = 'pdf'; // 기본값
-      if (document.file_type) {
+      
+      // URL 타입 문서는 txt로 처리 (document_metadata.type 제약 조건 준수)
+      if (document.type === 'url') {
+        fileType = 'txt';
+      } else if (document.file_type) {
         if (document.file_type.includes('pdf')) {
           fileType = 'pdf';
         } else if (document.file_type.includes('wordprocessingml') || document.file_type.includes('msword')) {
           fileType = 'docx';
-        } else if (document.file_type.includes('plain')) {
+        } else if (document.file_type.includes('plain') || document.file_type.includes('html')) {
           fileType = 'txt';
         } else {
           // MIME type의 마지막 부분 사용 (예: application/pdf -> pdf)
@@ -367,7 +371,7 @@ export class RAGProcessor {
               fileType = 'docx';
             } else if (mimePart.includes('pdf')) {
               fileType = 'pdf';
-            } else if (mimePart.includes('plain')) {
+            } else if (mimePart.includes('plain') || mimePart.includes('html')) {
               fileType = 'txt';
             } else {
               // 간단한 경우: application/pdf -> pdf
