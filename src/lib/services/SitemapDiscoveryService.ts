@@ -40,14 +40,23 @@ export class SitemapDiscoveryService {
       
       if (isVercel) {
         // Vercel 환경: @sparticuz/chromium 사용
-        // @sparticuz/chromium의 args는 배열입니다
-        this.browser = await puppeteer.launch({
-          args: chromium.args as string[],
-          defaultViewport: chromium.defaultViewport,
-          executablePath: await chromium.executablePath(),
-          headless: chromium.headless,
-        });
-        console.log('✅ SitemapDiscoveryService 브라우저 초기화 완료 (Vercel 환경: @sparticuz/chromium)');
+        try {
+          // @sparticuz/chromium의 executablePath()가 실패할 수 있으므로 try-catch
+          const executablePath = await chromium.executablePath();
+          
+          this.browser = await puppeteer.launch({
+            args: chromium.args as string[],
+            defaultViewport: chromium.defaultViewport,
+            executablePath: executablePath,
+            headless: chromium.headless,
+          });
+          console.log('✅ SitemapDiscoveryService 브라우저 초기화 완료 (Vercel 환경: @sparticuz/chromium)');
+        } catch (chromiumError) {
+          // @sparticuz/chromium 초기화 실패 시 Puppeteer 없이 진행 (Cheerio만 사용)
+          console.warn('⚠️ @sparticuz/chromium 초기화 실패, Puppeteer 없이 진행 (Cheerio만 사용):', chromiumError);
+          this.browser = null; // 브라우저를 null로 유지하여 Cheerio만 사용
+          return; // 에러를 throw하지 않고 정상 종료
+        }
       } else {
         // 로컬 환경: 일반 Puppeteer 사용
         this.browser = await puppeteer.launch({
@@ -66,8 +75,9 @@ export class SitemapDiscoveryService {
         console.log('✅ SitemapDiscoveryService 브라우저 초기화 완료 (로컬 환경)');
       }
     } catch (error) {
-      console.error('❌ SitemapDiscoveryService 브라우저 초기화 실패:', error);
-      throw error;
+      // 일반적인 초기화 실패 시에도 에러를 throw하지 않고 Cheerio만 사용
+      console.warn('⚠️ Puppeteer 초기화 실패, fetch fallback만 사용합니다:', error);
+      this.browser = null; // 브라우저를 null로 유지하여 Cheerio만 사용
     }
   }
 
