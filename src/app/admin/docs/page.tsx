@@ -1156,7 +1156,8 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
       });
       
       // extractSubPages를 명시적으로 boolean으로 변환
-      const extractSubPagesBoolean = extractSubPages === true || extractSubPages === 'true';
+      // 타입 안전성을 위해 타입 가드 사용
+      const extractSubPagesBoolean = extractSubPages === true || String(extractSubPages) === 'true';
       
       const payload = { 
         url, 
