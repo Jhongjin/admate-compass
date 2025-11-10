@@ -1382,8 +1382,23 @@ export async function processQueue() {
             // 스크립트, 스타일, 네비게이션 등 제거
             $clone.find('script, style, nav, footer, header, aside').remove();
             
-            // 블록 요소 앞뒤에 줄바꿈 추가 (먼저 처리하여 구조 유지)
-            const blockElements = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'div', 'li', 'td', 'th', 'tr'];
+            // 링크는 텍스트만 표시 (먼저 처리)
+            $clone.find('a').each((_, el) => {
+              const $el = $(el);
+              const href = $el.attr('href');
+              const text = $el.text().trim();
+              if (text && href && !href.startsWith('#')) {
+                // 링크 텍스트만 표시 (URL은 제거하여 가독성 향상)
+                $el.replaceWith(` ${text} `);
+              } else if (text) {
+                $el.replaceWith(` ${text} `);
+              } else {
+                $el.replaceWith(' ');
+              }
+            });
+            
+            // 블록 요소를 줄바꿈으로 변환 (먼저 처리)
+            const blockElements = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'div', 'li', 'td', 'th', 'tr', 'section', 'article', 'main'];
             blockElements.forEach(tag => {
               $clone.find(tag).each((_, el) => {
                 const $el = $(el);
@@ -1396,25 +1411,34 @@ export async function processQueue() {
               });
             });
             
-            // 링크는 텍스트만 표시 (URL은 제거하여 가독성 향상)
-            // 또는 링크를 줄바꿈으로 구분하여 표시
-            $clone.find('a').each((_, el) => {
+            // <br> 태그는 줄바꿈으로 변환
+            $clone.find('br').each((_, el) => {
+              $(el).replaceWith('\n');
+            });
+            
+            // 인라인 요소는 공백으로 변환
+            $clone.find('span, strong, em, b, i, code').each((_, el) => {
               const $el = $(el);
-              const href = $el.attr('href');
               const text = $el.text().trim();
-              if (text && href && !href.startsWith('#')) {
-                // 링크 텍스트만 표시 (URL은 제거하여 가독성 향상)
-                // 필요시 주석을 해제하여 URL 포함: `${text} (${absoluteUrl})`
+              if (text) {
                 $el.replaceWith(` ${text} `);
-              } else if (text) {
-                $el.replaceWith(` ${text} `);
-              } else {
-                $el.replaceWith(' ');
               }
             });
             
-            // 최종 텍스트 추출 및 정리
-            let text = $clone.text();
+            // 최종 텍스트 추출: HTML을 가져와서 남은 태그 제거
+            const html = $clone.html() || '';
+            
+            // 남은 HTML 태그를 공백으로 변환하고 엔티티 디코딩
+            let text = html
+              .replace(/<[^>]+>/g, ' ') // 모든 태그를 공백으로 변환
+              .replace(/&nbsp;/g, ' ') // HTML 엔티티 디코딩
+              .replace(/&amp;/g, '&')
+              .replace(/&lt;/g, '<')
+              .replace(/&gt;/g, '>')
+              .replace(/&quot;/g, '"')
+              .replace(/&#39;/g, "'")
+              .replace(/&apos;/g, "'");
+            
             // 연속된 공백을 하나로, 연속된 줄바꿈을 두 개로 제한
             text = text.replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
             return text;
