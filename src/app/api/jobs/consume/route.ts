@@ -1371,8 +1371,57 @@ export async function processQueue() {
           const titleMatch = $('title').text() || htmlContent.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1];
           const pageTitle = titleMatch ? titleMatch.trim() : new URL(targetUrl).pathname || targetUrl;
           
-          // 개선된 텍스트 추출: Cheerio를 사용한 정확한 파싱
+          // 개선된 텍스트 추출: 구조를 유지하면서 텍스트 추출
           let textContent = '';
+          
+          // 텍스트 추출 헬퍼 함수: 줄바꿈과 공백을 적절히 유지
+          const extractTextWithStructure = ($element: cheerio.Cheerio<cheerio.Element>): string => {
+            // 클론 생성 (원본 보존)
+            const $clone = $element.clone();
+            
+            // 스크립트, 스타일, 네비게이션 등 제거
+            $clone.find('script, style, nav, footer, header, aside').remove();
+            
+            // 링크는 텍스트와 URL을 함께 표시 (먼저 처리)
+            $clone.find('a').each((_, el) => {
+              const $el = $(el);
+              const href = $el.attr('href');
+              const text = $el.text().trim();
+              if (text && href && !href.startsWith('#')) {
+                // 절대 URL로 변환
+                try {
+                  const absoluteUrl = new URL(href, targetUrl).href;
+                  $el.replaceWith(`${text} (${absoluteUrl})`);
+                } catch {
+                  $el.replaceWith(text);
+                }
+              } else if (text) {
+                $el.replaceWith(text);
+              } else {
+                $el.replaceWith('');
+              }
+            });
+            
+            // 블록 요소 앞뒤에 줄바꿈 추가
+            const blockElements = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'div', 'li', 'td', 'th', 'tr'];
+            blockElements.forEach(tag => {
+              $clone.find(tag).each((_, el) => {
+                const $el = $(el);
+                const text = $el.text().trim();
+                if (text) {
+                  $el.replaceWith(`\n${text}\n`);
+                } else {
+                  $el.replaceWith('\n');
+                }
+              });
+            });
+            
+            // 최종 텍스트 추출 및 정리
+            let text = $clone.text();
+            // 연속된 공백을 하나로, 연속된 줄바꿈을 두 개로 제한
+            text = text.replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+            return text;
+          };
           
           // 1. 주요 콘텐츠 영역 우선 추출 (Cheerio 사용)
           const contentSelectors = [
@@ -1390,9 +1439,7 @@ export async function processQueue() {
           for (const selector of contentSelectors) {
             const $content = $(selector).first();
             if ($content.length > 0) {
-              // 스크립트, 스타일, 네비게이션 등 제거
-              $content.find('script, style, nav, footer, header, aside').remove();
-              const extracted = $content.text().replace(/\s+/g, ' ').trim();
+              const extracted = extractTextWithStructure($content.clone());
               
               if (extracted.length > textContent.length) {
                 textContent = extracted;
@@ -1407,9 +1454,7 @@ export async function processQueue() {
           if (!foundContent || textContent.length < 500) {
             const $body = $('body');
             if ($body.length > 0) {
-              // 스크립트, 스타일, 네비게이션 등 제거
-              $body.find('script, style, nav, footer, header, aside').remove();
-              const fullText = $body.text().replace(/\s+/g, ' ').trim();
+              const fullText = extractTextWithStructure($body.clone());
               
               // 더 긴 텍스트를 선택
               if (fullText.length > textContent.length) {
@@ -1556,20 +1601,39 @@ export async function processQueue() {
             let discovered: Array<{ url: string; title?: string; source: string; depth: number }> = [];
             try {
               // SitemapDiscoveryService가 Puppeteer 실패 시 fetch fallback을 자동으로 사용
+              console.log(`🔍 하위 페이지 탐색 시작: ${url}`);
               discovered = await sitemapDiscoveryService.discoverSubPages(url, discoveryOptions);
               console.log(`✅ 하위 페이지 발견 완료: ${discovered.length}개 (Sitemap + fetch fallback 사용)`);
+              
+              // 발견된 페이지 상세 로그
+              if (discovered.length > 0) {
+                console.log('📋 발견된 하위 페이지 목록:');
+                discovered.slice(0, 10).forEach((page, idx) => {
+                  console.log(`  ${idx + 1}. ${page.url} (${page.source}, depth: ${page.depth})`);
+                });
+                if (discovered.length > 10) {
+                  console.log(`  ... 외 ${discovered.length - 10}개`);
+                }
+              } else {
+                console.log('⚠️ 하위 페이지가 발견되지 않았습니다. Sitemap 또는 링크 추출이 실패했을 수 있습니다.');
+              }
             } catch (discoveryError) {
               // 전체 탐색 실패 시에도 메인 페이지는 계속 처리
               console.warn('⚠️ 하위 페이지 탐색 중 오류 발생, 메인 페이지만 처리합니다:', discoveryError);
               discovered = [];
             }
+            
             const candidateUrls = Array.from(new Set(
               discovered
                 .map((entry) => entry.url)
                 .filter((entryUrl) => entryUrl && entryUrl !== url && !entryUrl.includes('#'))
             )).slice(0, 30); // 처리할 하위 페이지 개수 증가 (기존: 8)
 
-            console.log('📄 하위 페이지 후보:', candidateUrls.length);
+            console.log(`📄 하위 페이지 후보: ${candidateUrls.length}개 (발견: ${discovered.length}개, 필터링 후: ${candidateUrls.length}개)`);
+            
+            if (candidateUrls.length === 0 && discovered.length > 0) {
+              console.warn('⚠️ 발견된 하위 페이지가 모두 필터링되었습니다. 필터 조건을 확인해주세요.');
+            }
             let processedCount = 0;
 
             for (const subUrl of candidateUrls) {
