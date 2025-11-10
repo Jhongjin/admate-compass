@@ -2009,7 +2009,7 @@ function DocsTable({
   const [sortColumn, setSortColumn] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
   const [expandedSubPages, setExpandedSubPages] = useState<Record<string, boolean>>({});
-  const [subPagesCache, setSubPagesCache] = useState<Record<string, Array<{ url: string; title?: string; success: boolean }>>({});
+  const [subPagesCache, setSubPagesCache] = useState<Record<string, { url: string; title?: string; success: boolean }[]>>({});
   const [loadingSubPages, setLoadingSubPages] = useState<Record<string, boolean>>({});
 
   // 정렬된 데이터
