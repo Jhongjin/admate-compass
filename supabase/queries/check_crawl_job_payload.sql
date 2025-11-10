@@ -24,13 +24,14 @@ SELECT
 FROM processing_jobs pj
 WHERE pj.job_type = 'CRAWL_SEED'
   AND (
-    pj.document_id LIKE 'doc_1762759985%'
-    OR pj.result->>'documentId' LIKE 'doc_1762759985%'
-    OR pj.result->>'url' = 'https://developers.facebook.com/docs/marketing-api'
-    OR pj.payload->>'url' = 'https://developers.facebook.com/docs/marketing-api'
+    pj.document_id LIKE 'doc_1762761570%'
+    OR pj.result->>'documentId' LIKE 'doc_1762761570%'
+    OR pj.result->>'url' LIKE '%developers.facebook.com%'
+    OR pj.payload->>'url' LIKE '%developers.facebook.com%'
+    OR pj.created_at >= NOW() - INTERVAL '1 hour'
   )
 ORDER BY pj.created_at DESC
-LIMIT 5;
+LIMIT 10;
 
 -- extractSubPages가 false인 최근 작업들 확인
 SELECT 
