@@ -19,7 +19,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Checkbox } from "@/components/ui/checkbox";
 import { Progress } from "@/components/ui/progress";
 import type { LucideIcon } from "lucide-react";
-import { Check, CheckCircle, Download, FileText, Globe, Loader2, RefreshCw, Search, Upload, XCircle, File, Link2, ArrowUp, ArrowDown, ArrowUpDown, FileSearch, Sparkles, Database, Info, Clock3, AlertTriangle, Settings, ChevronDown, ChevronRight } from "lucide-react";
+import { Check, CheckCircle, Download, FileText, Globe, Loader2, RefreshCw, Search, Upload, XCircle, File, Link2, ArrowUp, ArrowDown, ArrowUpDown, FileSearch, Sparkles, Database, Info, Clock3, AlertTriangle, Settings, ChevronDown, ChevronRight, AlertCircle } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
@@ -2098,7 +2098,7 @@ function DocsTable({
     }
   };
 
-  // 서브 페이지 정보 조회 함수
+  // 서브 페이지 정보 조회 함수 (개선: documents 테이블에서 실제 문서 정보도 함께 조회)
   const fetchSubPages = async (documentId: string, documentUrl: string) => {
     // 캐시에 있으면 반환
     if (subPagesCache[documentId]) {
@@ -2106,6 +2106,8 @@ function DocsTable({
     }
 
     try {
+      let subPagesFromJob: Array<{ url: string; title?: string; success: boolean; chunkCount?: number }> = [];
+
       // 방법 1: document_id로 직접 조회 (가장 정확)
       const { data: jobByDocId, error: errorByDocId } = await supabase
         .from('processing_jobs')
@@ -2120,39 +2122,77 @@ function DocsTable({
       if (!errorByDocId && jobByDocId) {
         const result = jobByDocId.result as any;
         if (result?.subPages && Array.isArray(result.subPages)) {
-          const subPages = result.subPages as Array<{ url: string; title?: string; success: boolean }>;
-          setSubPagesCache(prev => ({ ...prev, [documentId]: subPages }));
-          return subPages;
+          subPagesFromJob = result.subPages as Array<{ url: string; title?: string; success: boolean; chunkCount?: number }>;
         }
       }
 
       // 방법 2: URL로 조회 (fallback)
-      const { data: jobs, error } = await supabase
-        .from('processing_jobs')
-        .select('result, created_at')
-        .eq('job_type', 'CRAWL_SEED')
-        .eq('status', 'completed')
-        .order('created_at', { ascending: false })
-        .limit(20);
+      if (subPagesFromJob.length === 0) {
+        const { data: jobs, error } = await supabase
+          .from('processing_jobs')
+          .select('result, created_at')
+          .eq('job_type', 'CRAWL_SEED')
+          .eq('status', 'completed')
+          .order('created_at', { ascending: false })
+          .limit(20);
 
-      if (error) {
-        console.error('서브 페이지 조회 오류:', error);
-        return [];
-      }
-
-      // 문서 URL과 일치하는 작업 결과 찾기
-      for (const job of jobs || []) {
-        const result = job.result as any;
-        if (result?.url === documentUrl && result?.subPages && Array.isArray(result.subPages)) {
-          const subPages = result.subPages as Array<{ url: string; title?: string; success: boolean }>;
-          setSubPagesCache(prev => ({ ...prev, [documentId]: subPages }));
-          return subPages;
+        if (!error && jobs) {
+          // 문서 URL과 일치하는 작업 결과 찾기
+          for (const job of jobs) {
+            const result = job.result as any;
+            if (result?.url === documentUrl && result?.subPages && Array.isArray(result.subPages)) {
+              subPagesFromJob = result.subPages as Array<{ url: string; title?: string; success: boolean; chunkCount?: number }>;
+              break;
+            }
+          }
         }
       }
 
-      // 서브 페이지 정보가 없으면 빈 배열 반환
-      setSubPagesCache(prev => ({ ...prev, [documentId]: [] }));
-      return [];
+      // 하위 페이지 URL 목록 추출
+      const subPageUrls = subPagesFromJob
+        .filter(sp => sp.success && sp.url)
+        .map(sp => sp.url);
+
+      // documents 테이블에서 실제 하위 페이지 문서 정보 조회
+      let actualDocuments: Record<string, { id: string; title: string; status: string; chunk_count: number }> = {};
+      if (subPageUrls.length > 0) {
+        const { data: actualDocs, error: docsError } = await supabase
+          .from('documents')
+          .select('id, title, status, chunk_count, url')
+          .in('url', subPageUrls)
+          .eq('type', 'url');
+
+        if (!docsError && actualDocs) {
+          actualDocuments = actualDocs.reduce((acc, doc) => {
+            if (doc.url) {
+              acc[doc.url] = {
+                id: doc.id,
+                title: doc.title,
+                status: doc.status,
+                chunk_count: doc.chunk_count || 0,
+              };
+            }
+            return acc;
+          }, {} as Record<string, { id: string; title: string; status: string; chunk_count: number }>);
+        }
+      }
+
+      // 하위 페이지 정보 병합 (job 정보 + 실제 documents 정보)
+      const enrichedSubPages = subPagesFromJob.map(sp => {
+        const actualDoc = sp.url ? actualDocuments[sp.url] : null;
+        return {
+          url: sp.url,
+          title: actualDoc?.title || sp.title || sp.url,
+          success: sp.success,
+          chunkCount: actualDoc?.chunk_count || sp.chunkCount || 0,
+          documentId: actualDoc?.id,
+          status: actualDoc?.status,
+          isStored: !!actualDoc, // documents 테이블에 실제로 저장되었는지 여부
+        };
+      });
+
+      setSubPagesCache(prev => ({ ...prev, [documentId]: enrichedSubPages }));
+      return enrichedSubPages;
     } catch (error) {
       console.error('서브 페이지 조회 오류:', error);
       setSubPagesCache(prev => ({ ...prev, [documentId]: [] }));
@@ -2511,28 +2551,67 @@ function DocsTable({
                                 <span>서브 페이지 정보를 불러오는 중...</span>
                               </div>
                             ) : subPagesCache[row.id]?.length > 0 ? (
-                              subPagesCache[row.id].map((subPage, idx) => (
+                              subPagesCache[row.id].map((subPage: any, idx) => (
                                 <div
                                   key={idx}
-                                  className={`flex items-center gap-2 text-xs p-1.5 rounded ${
-                                    subPage.success
+                                  className={`flex items-start gap-2 text-xs p-2 rounded ${
+                                    subPage.success && subPage.isStored
                                       ? 'bg-green-500/10 border border-green-500/20'
+                                      : subPage.success && !subPage.isStored
+                                      ? 'bg-yellow-500/10 border border-yellow-500/20'
                                       : 'bg-red-500/10 border border-red-500/20'
                                   }`}
                                 >
-                                  <a
-                                    href={subPage.url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    onClick={(e) => e.stopPropagation()}
-                                    className="flex-1 min-w-0 truncate text-blue-400 hover:text-blue-300"
-                                  >
-                                    {subPage.title || subPage.url}
-                                  </a>
-                                  {subPage.success ? (
-                                    <CheckCircle className="w-3 h-3 text-green-400 flex-shrink-0" />
+                                  <div className="flex-1 min-w-0">
+                                    <a
+                                      href={subPage.url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      onClick={(e) => e.stopPropagation()}
+                                      className="block text-blue-400 hover:text-blue-300 font-medium truncate mb-1"
+                                    >
+                                      {subPage.title || subPage.url}
+                                    </a>
+                                    <div className="flex items-center gap-2 text-[10px] text-gray-400">
+                                      {subPage.isStored ? (
+                                        <>
+                                          <Badge className="bg-green-500/20 text-green-300 border-green-400/30 px-1 py-0 text-[10px]">
+                                            저장됨
+                                          </Badge>
+                                          {subPage.status && (
+                                            <Badge className={`${
+                                              subPage.status === 'indexed' 
+                                                ? 'bg-green-500/20 text-green-300 border-green-400/30'
+                                                : subPage.status === 'processing'
+                                                ? 'bg-yellow-500/20 text-yellow-300 border-yellow-400/30'
+                                                : 'bg-red-500/20 text-red-300 border-red-400/30'
+                                            } px-1 py-0 text-[10px]`}>
+                                              {subPage.status}
+                                            </Badge>
+                                          )}
+                                          {subPage.chunkCount > 0 && (
+                                            <span className="text-gray-400">
+                                              {subPage.chunkCount}개 청크
+                                            </span>
+                                          )}
+                                        </>
+                                      ) : subPage.success ? (
+                                        <Badge className="bg-yellow-500/20 text-yellow-300 border-yellow-400/30 px-1 py-0 text-[10px]">
+                                          크롤링 성공 (저장 확인 필요)
+                                        </Badge>
+                                      ) : (
+                                        <Badge className="bg-red-500/20 text-red-300 border-red-400/30 px-1 py-0 text-[10px]">
+                                          크롤링 실패
+                                        </Badge>
+                                      )}
+                                    </div>
+                                  </div>
+                                  {subPage.success && subPage.isStored ? (
+                                    <CheckCircle className="w-4 h-4 text-green-400 flex-shrink-0 mt-0.5" />
+                                  ) : subPage.success ? (
+                                    <AlertCircle className="w-4 h-4 text-yellow-400 flex-shrink-0 mt-0.5" />
                                   ) : (
-                                    <XCircle className="w-3 h-3 text-red-400 flex-shrink-0" />
+                                    <XCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
                                   )}
                                 </div>
                               ))
@@ -2657,27 +2736,66 @@ function DocsTable({
                                 <span>서브 페이지 정보를 불러오는 중...</span>
                               </div>
                             ) : subPagesCache[row.id]?.length > 0 ? (
-                              subPagesCache[row.id].map((subPage, idx) => (
+                              subPagesCache[row.id].map((subPage: any, idx) => (
                                 <div
                                   key={idx}
-                                  className={`flex items-center gap-2 text-xs p-2 rounded ${
-                                    subPage.success
+                                  className={`flex items-start gap-2 text-xs p-2 rounded ${
+                                    subPage.success && subPage.isStored
                                       ? 'bg-green-500/10 border border-green-500/20'
+                                      : subPage.success && !subPage.isStored
+                                      ? 'bg-yellow-500/10 border border-yellow-500/20'
                                       : 'bg-red-500/10 border border-red-500/20'
                                   }`}
                                 >
-                                  <a
-                                    href={subPage.url}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="flex-1 min-w-0 truncate text-blue-400 hover:text-blue-300"
-                                  >
-                                    {subPage.title || subPage.url}
-                                  </a>
-                                  {subPage.success ? (
-                                    <CheckCircle className="w-3 h-3 text-green-400 flex-shrink-0" />
+                                  <div className="flex-1 min-w-0">
+                                    <a
+                                      href={subPage.url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="block text-blue-400 hover:text-blue-300 font-medium truncate mb-1"
+                                    >
+                                      {subPage.title || subPage.url}
+                                    </a>
+                                    <div className="flex items-center gap-2 text-[10px] text-gray-400">
+                                      {subPage.isStored ? (
+                                        <>
+                                          <Badge className="bg-green-500/20 text-green-300 border-green-400/30 px-1 py-0 text-[10px]">
+                                            저장됨
+                                          </Badge>
+                                          {subPage.status && (
+                                            <Badge className={`${
+                                              subPage.status === 'indexed' 
+                                                ? 'bg-green-500/20 text-green-300 border-green-400/30'
+                                                : subPage.status === 'processing'
+                                                ? 'bg-yellow-500/20 text-yellow-300 border-yellow-400/30'
+                                                : 'bg-red-500/20 text-red-300 border-red-400/30'
+                                            } px-1 py-0 text-[10px]`}>
+                                              {subPage.status}
+                                            </Badge>
+                                          )}
+                                          {subPage.chunkCount > 0 && (
+                                            <span className="text-gray-400">
+                                              {subPage.chunkCount}개 청크
+                                            </span>
+                                          )}
+                                        </>
+                                      ) : subPage.success ? (
+                                        <Badge className="bg-yellow-500/20 text-yellow-300 border-yellow-400/30 px-1 py-0 text-[10px]">
+                                          크롤링 성공 (저장 확인 필요)
+                                        </Badge>
+                                      ) : (
+                                        <Badge className="bg-red-500/20 text-red-300 border-red-400/30 px-1 py-0 text-[10px]">
+                                          크롤링 실패
+                                        </Badge>
+                                      )}
+                                    </div>
+                                  </div>
+                                  {subPage.success && subPage.isStored ? (
+                                    <CheckCircle className="w-4 h-4 text-green-400 flex-shrink-0 mt-0.5" />
+                                  ) : subPage.success ? (
+                                    <AlertCircle className="w-4 h-4 text-yellow-400 flex-shrink-0 mt-0.5" />
                                   ) : (
-                                    <XCircle className="w-3 h-3 text-red-400 flex-shrink-0" />
+                                    <XCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
                                   )}
                                 </div>
                               ))

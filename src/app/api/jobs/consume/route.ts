@@ -1285,7 +1285,9 @@ export async function processQueue() {
         domainLimit: job.payload?.domainLimit,
         respectRobots: job.payload?.respectRobots,
         maxDepth: job.payload?.maxDepth,
-        extractSubPages: job.payload?.extractSubPages
+        extractSubPages: job.payload?.extractSubPages,
+        payloadType: typeof job.payload?.extractSubPages,
+        payloadRaw: job.payload
       });
 
       const crawlStartMs = Date.now();
@@ -1298,6 +1300,17 @@ export async function processQueue() {
         const maxDepthRaw = Number(job.payload?.maxDepth);
         const maxDepth = Number.isFinite(maxDepthRaw) && maxDepthRaw > 0 ? maxDepthRaw : 2;
         const extractSubPages = job.payload?.extractSubPages === true;
+
+        console.log('🔍 CRAWL_SEED 파라미터 확인:', {
+          url,
+          extractSubPages,
+          extractSubPagesRaw: job.payload?.extractSubPages,
+          extractSubPagesType: typeof job.payload?.extractSubPages,
+          maxDepth,
+          domainLimit,
+          respectRobots,
+          vendors
+        });
 
         if (!url) {
           throw new Error('CRAWL_SEED job payload에 url이 없습니다.');
@@ -1608,7 +1621,14 @@ export async function processQueue() {
 
         const subPageResults: Array<{ url: string; success: boolean; chunkCount?: number; error?: string }> = [];
 
+        console.log('🔍 하위 페이지 크롤링 여부 확인:', {
+          extractSubPages,
+          willCrawlSubPages: extractSubPages === true,
+          condition: `extractSubPages (${extractSubPages}) === true`
+        });
+
         if (extractSubPages) {
+          console.log('✅ 하위 페이지 크롤링 시작 - extractSubPages가 true입니다.');
           try {
             const discoveryOptions = {
               maxDepth: Math.max(1, Math.min(maxDepth, 3)),
@@ -1698,6 +1718,11 @@ export async function processQueue() {
           } finally {
             await sitemapDiscoveryService.close().catch(() => {});
           }
+        } else {
+          console.log('⚠️ 하위 페이지 크롤링 건너뜀 - extractSubPages가 false입니다.', {
+            extractSubPages,
+            payloadExtractSubPages: job.payload?.extractSubPages
+          });
         }
 
         const finishedResult = {
