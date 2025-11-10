@@ -159,8 +159,14 @@ export class HierarchicalChunkingService {
       const isLongWord = word.length > longWordThreshold;
       const hasComma = word.includes(',');
       
+      // 단어 끝에 조사가 붙은 경우도 감지 (예: "API는", "마케팅은")
+      const hasEndingParticle = /(는|은|와|과|를|을|가|이|에|에서|로|으로|의|부터|까지|이다|입니다|합니다|됩니다)$/.test(word);
+      
+      // 동사/형용사 어미가 붙은 경우도 감지 (예: "광고하는", "사용할", "있는", "된", "한다")
+      const hasVerbEnding = /(하는|할|있는|된|한다)$/.test(word);
+      
       // 문장이 시작되었는지 확인
-      if (isSentenceStart || hasSentenceEnd || (isLongWord && i > 5) || hasComma) {
+      if (isSentenceStart || hasSentenceEnd || hasEndingParticle || hasVerbEnding || (isLongWord && i > 5) || hasComma) {
         sentenceStarted = true;
         
         // 제목 후보가 있고, 길이가 적절하면 섹션으로 추가
