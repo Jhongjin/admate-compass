@@ -1625,12 +1625,21 @@ export async function processQueue() {
 
         const subPageResults: Array<{ url: string; success: boolean; chunkCount?: number; error?: string }> = [];
 
-        console.log('[CRITICAL] 🔍 하위 페이지 크롤링 여부 확인:', {
+        // extractSubPages 값 재확인 (메인 문서 처리 후)
+        const extractSubPagesAfterMain = extractSubPagesRaw === true || extractSubPagesRaw === 'true';
+        console.log('[CRITICAL] 🔍 하위 페이지 크롤링 여부 확인 (메인 문서 처리 후):', {
           extractSubPages,
+          extractSubPagesAfterMain,
+          extractSubPagesRaw,
+          extractSubPagesType: typeof extractSubPagesRaw,
           willCrawlSubPages: extractSubPages === true,
           condition: `extractSubPages (${extractSubPages}) === true`,
           url,
-          documentId
+          documentId,
+          mainDocResult: {
+            success: mainDocResult.success,
+            chunkCount: mainDocResult.chunkCount
+          }
         });
 
         if (extractSubPages) {
