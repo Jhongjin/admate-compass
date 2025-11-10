@@ -1155,16 +1155,25 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
         url
       });
       
+      // extractSubPages를 명시적으로 boolean으로 변환
+      const extractSubPagesBoolean = extractSubPages === true || extractSubPages === 'true';
+      
       const payload = { 
         url, 
         vendors: dbVendors,
         domainLimit: crawlOptions.domainLimit,
         respectRobots: crawlOptions.respectRobots,
         maxDepth: parseInt(crawlOptions.maxDepth, 10),
-        extractSubPages,
+        extractSubPages: extractSubPagesBoolean, // 명시적으로 boolean으로 변환
       };
       
-      console.log('📤 CRAWL_SEED payload:', payload);
+      console.log('📤 CRAWL_SEED payload:', {
+        ...payload,
+        extractSubPagesOriginal: extractSubPages,
+        extractSubPagesType: typeof extractSubPages,
+        extractSubPagesBoolean,
+        extractSubPagesBooleanType: typeof extractSubPagesBoolean
+      });
       
       // 큐 등록: jobType CRAWL_SEED
       const response = await fetch("/api/jobs/enqueue", {

@@ -1299,17 +1299,21 @@ export async function processQueue() {
         const respectRobots = job.payload?.respectRobots as boolean ?? true;
         const maxDepthRaw = Number(job.payload?.maxDepth);
         const maxDepth = Number.isFinite(maxDepthRaw) && maxDepthRaw > 0 ? maxDepthRaw : 2;
-        const extractSubPages = job.payload?.extractSubPages === true;
+        // extractSubPages를 명시적으로 boolean으로 변환 (문자열 "true"도 처리)
+        const extractSubPagesRaw = job.payload?.extractSubPages;
+        const extractSubPages = extractSubPagesRaw === true || extractSubPagesRaw === 'true';
 
-        console.log('🔍 CRAWL_SEED 파라미터 확인:', {
+        console.log('[CRITICAL] 🔍 CRAWL_SEED 파라미터 확인:', {
           url,
           extractSubPages,
-          extractSubPagesRaw: job.payload?.extractSubPages,
-          extractSubPagesType: typeof job.payload?.extractSubPages,
+          extractSubPagesRaw,
+          extractSubPagesType: typeof extractSubPagesRaw,
+          extractSubPagesBoolean: extractSubPages,
           maxDepth,
           domainLimit,
           respectRobots,
-          vendors
+          vendors,
+          documentId
         });
 
         if (!url) {
