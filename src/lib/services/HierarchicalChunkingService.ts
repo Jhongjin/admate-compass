@@ -132,50 +132,19 @@ export class HierarchicalChunkingService {
       currentPos = lineEnd + 1; // +1 for \n
     }
     
-    // 1-2. 공백으로 구분된 짧은 구문을 제목으로 감지 (단순화: 각 구문을 개별 제목으로)
+    // 1-2. 텍스트 앞부분의 짧은 구문을 제목으로 감지 (문장 시작 전까지만)
     // 예: "마케팅 API 개요 시작하기 광고 크리에이티브 Bidding..." -> 각각을 제목으로
-    // 패턴: 문장 끝이 없고, 짧은 구문(2-30자)을 제목으로 간주
-    const phrases = content.split(/\s{2,}|\n/); // 연속된 공백이나 줄바꿈으로 구분
-    let phrasePos = 0;
-    
-    for (let i = 0; i < phrases.length; i++) {
-      const phrase = phrases[i].trim();
-      if (phrase.length === 0) continue;
-      
-      const phraseStart = content.indexOf(phrase, phrasePos);
-      const phraseEnd = phraseStart + phrase.length;
-      
-      // 짧은 구문(2-30자)이고, 문장 끝이 없으면 제목으로 간주
-      const isShortPhrase = phrase.length >= 2 && phrase.length <= 30;
-      const hasNoSentenceEnd = !phrase.match(/[.!?]$/);
-      const isCapitalized = /^[A-Z가-힣]/.test(phrase);
-      const hasNoLongWords = !phrase.split(/\s+/).some(w => w.length > 15); // 긴 단어가 없어야 함
-      
-      if (isShortPhrase && hasNoSentenceEnd && isCapitalized && hasNoLongWords) {
-        // 이미 감지된 섹션과 겹치지 않는지 확인
-        const overlaps = sections.some(s => 
-          (phraseStart >= s.start && phraseStart < s.end) ||
-          (phraseEnd > s.start && phraseEnd <= s.end)
-        );
-        
-        if (!overlaps) {
-          sections.push({
-            title: phrase,
-            start: phraseStart,
-            end: phraseEnd,
-            level: 3, // 하위 레벨
-            paragraphs: [],
-          });
-        }
-      }
-      
-      phrasePos = phraseEnd;
-    }
-    
-    // 1-3. 공백으로 구분된 단일 단어도 제목으로 감지 (추가)
-    // 예: "마케팅 API" -> "마케팅", "API" 각각도 제목으로
+    // 문장이 시작되면 제목 감지 중단
     const words = content.split(/\s+/);
     let wordPos = 0;
+    let potentialHeading = '';
+    let potentialHeadingStart = 0;
+    let sentenceStarted = false; // 문장이 시작되었는지 여부
+    
+    // 문장 시작을 나타내는 패턴 (조사, 문장 끝 등)
+    const sentenceStartPattern = /^(는|은|와|과|를|을|가|이|에|에서|로|으로|의|부터|까지|이다|입니다|합니다|됩니다)$/;
+    const sentenceEndPattern = /[.!?]$/;
+    const longWordThreshold = 12; // 긴 단어로 간주하는 길이 (조사가 붙은 단어 포함)
     
     for (let i = 0; i < words.length; i++) {
       const word = words[i].trim();
@@ -184,30 +153,114 @@ export class HierarchicalChunkingService {
       const wordStart = content.indexOf(word, wordPos);
       const wordEnd = wordStart + word.length;
       
-      // 짧은 단어(2-15자)이고, 문장 끝이 없고, 대문자/한글로 시작하면 제목으로 간주
-      const isShortWord = word.length >= 2 && word.length <= 15;
-      const hasNoSentenceEnd = !word.match(/[.!?]$/);
-      const isCapitalized = /^[A-Z가-힣]/.test(word);
+      // 문장 시작 감지
+      const isSentenceStart = sentenceStartPattern.test(word);
+      const hasSentenceEnd = sentenceEndPattern.test(word);
+      const isLongWord = word.length > longWordThreshold;
+      const hasComma = word.includes(',');
       
-      if (isShortWord && hasNoSentenceEnd && isCapitalized) {
-        // 이미 감지된 섹션과 겹치지 않는지 확인
-        const overlaps = sections.some(s => 
-          (wordStart >= s.start && wordStart < s.end) ||
-          (wordEnd > s.start && wordEnd <= s.end)
-        );
+      // 문장이 시작되었는지 확인
+      if (isSentenceStart || hasSentenceEnd || (isLongWord && i > 5) || hasComma) {
+        sentenceStarted = true;
         
-        if (!overlaps) {
-          sections.push({
-            title: word,
-            start: wordStart,
-            end: wordEnd,
-            level: 4, // 최하위 레벨
-            paragraphs: [],
-          });
+        // 제목 후보가 있고, 길이가 적절하면 섹션으로 추가
+        if (potentialHeading.length >= 2 && potentialHeading.length <= 40) {
+          const headingEnd = wordStart;
+          
+          // 이미 감지된 섹션과 겹치지 않는지 확인
+          const overlaps = sections.some(s => 
+            (potentialHeadingStart >= s.start && potentialHeadingStart < s.end) ||
+            (headingEnd > s.start && headingEnd <= s.end)
+          );
+          
+          if (!overlaps) {
+            sections.push({
+              title: potentialHeading,
+              start: potentialHeadingStart,
+              end: headingEnd,
+              level: 2, // 제목 레벨
+              paragraphs: [],
+            });
+          }
+        }
+        potentialHeading = '';
+      } else if (!sentenceStarted) {
+        // 문장이 시작되기 전의 짧은 구문만 제목 후보로 간주
+        const isShortWord = word.length >= 2 && word.length <= 15;
+        const isCapitalized = /^[A-Z가-힣]/.test(word);
+        const hasNoSentenceEnd = !word.match(/[.!?]$/);
+        
+        if (isShortWord && isCapitalized && hasNoSentenceEnd) {
+          if (potentialHeading === '') {
+            potentialHeading = word;
+            potentialHeadingStart = wordStart;
+          } else {
+            potentialHeading += ' ' + word;
+          }
+          
+          // 제목이 너무 길어지면 (40자 이상) 섹션으로 추가하고 새로 시작
+          if (potentialHeading.length > 40) {
+            const headingEnd = wordStart;
+            const overlaps = sections.some(s => 
+              (potentialHeadingStart >= s.start && potentialHeadingStart < s.end) ||
+              (headingEnd > s.start && headingEnd <= s.end)
+            );
+            
+            if (!overlaps) {
+              sections.push({
+                title: potentialHeading.substring(0, potentialHeading.lastIndexOf(' ')),
+                start: potentialHeadingStart,
+                end: headingEnd - word.length - 1,
+                level: 2,
+                paragraphs: [],
+              });
+            }
+            potentialHeading = word;
+            potentialHeadingStart = wordStart;
+          }
+        } else {
+          // 제목 후보가 있고, 길이가 적절하면 섹션으로 추가
+          if (potentialHeading.length >= 2 && potentialHeading.length <= 40) {
+            const headingEnd = wordStart;
+            const overlaps = sections.some(s => 
+              (potentialHeadingStart >= s.start && potentialHeadingStart < s.end) ||
+              (headingEnd > s.start && headingEnd <= s.end)
+            );
+            
+            if (!overlaps) {
+              sections.push({
+                title: potentialHeading,
+                start: potentialHeadingStart,
+                end: headingEnd,
+                level: 2,
+                paragraphs: [],
+              });
+            }
+          }
+          potentialHeading = '';
         }
       }
       
       wordPos = wordEnd;
+    }
+    
+    // 마지막 제목 후보 처리 (문장이 시작되지 않은 경우)
+    if (!sentenceStarted && potentialHeading.length >= 2 && potentialHeading.length <= 40) {
+      const headingEnd = content.length;
+      const overlaps = sections.some(s => 
+        (potentialHeadingStart >= s.start && potentialHeadingStart < s.end) ||
+        (headingEnd > s.start && headingEnd <= s.end)
+      );
+      
+      if (!overlaps) {
+        sections.push({
+          title: potentialHeading,
+          start: potentialHeadingStart,
+          end: headingEnd,
+          level: 2,
+          paragraphs: [],
+        });
+      }
     }
 
     // 섹션을 시작 위치순으로 정렬
