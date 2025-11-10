@@ -90,38 +90,130 @@ export class HierarchicalChunkingService {
       }
     }
 
-    // 섹션을 시작 위치순으로 정렬
-    sections.sort((a, b) => a.start - b.start);
-
-    // 2. 문단 구분 찾기
-    const paragraphMatches = Array.from(content.matchAll(/\n\n+/g));
-    const paragraphStarts: number[] = paragraphMatches.map(m => m.index || 0);
-    
-    // 각 문단의 시작과 끝 위치 계산
-    for (let i = 0; i < paragraphStarts.length; i++) {
-      const start = paragraphStarts[i];
-      const end = i < paragraphStarts.length - 1 
-        ? paragraphStarts[i + 1] 
-        : content.length;
+    // 1-1. 줄바꿈으로 구분된 짧은 줄을 제목으로 감지 (URL 크롤링 텍스트용)
+    // 줄바꿈으로 시작하는 짧은 줄(50자 이하)을 제목으로 간주
+    const lines = content.split('\n');
+    let currentPos = 0;
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      const lineStart = currentPos;
+      const lineEnd = currentPos + lines[i].length;
       
-      // 문장 경계 찾기
-      const sentences: number[] = [];
-      const sentenceEndings = ['. ', '! ', '? ', '。', '！', '？', '\n'];
-      
-      for (let j = start; j < end; j++) {
-        for (const ending of sentenceEndings) {
-          if (content.substring(j, j + ending.length) === ending) {
-            sentences.push(j + ending.length);
-            break;
+      // 짧은 줄이고, 다음 줄이 비어있지 않으면 제목으로 간주
+      if (line.length > 0 && line.length <= 50 && line.length < 100) {
+        const nextLine = i < lines.length - 1 ? lines[i + 1].trim() : '';
+        const prevLine = i > 0 ? lines[i - 1].trim() : '';
+        
+        // 다음 줄이 비어있거나, 이전 줄이 비어있으면 제목 가능성 높음
+        // 또는 줄이 짧고 다음 줄이 긴 경우
+        if (
+          (nextLine === '' || prevLine === '') ||
+          (nextLine.length > line.length * 2) ||
+          (line.match(/^[A-Z가-힣][^.!?]*$/) && !line.match(/[.!?]$/))
+        ) {
+          // 이미 감지된 섹션과 겹치지 않는지 확인
+          const overlaps = sections.some(s => 
+            (lineStart >= s.start && lineStart < s.end) ||
+            (lineEnd > s.start && lineEnd <= s.end)
+          );
+          
+          if (!overlaps) {
+            sections.push({
+              title: line,
+              start: lineStart,
+              end: lineEnd,
+              level: 2, // 기본 레벨 2
+              paragraphs: [],
+            });
           }
         }
       }
       
-      paragraphs.push({
-        start,
-        end,
-        sentences,
-      });
+      currentPos = lineEnd + 1; // +1 for \n
+    }
+
+    // 섹션을 시작 위치순으로 정렬
+    sections.sort((a, b) => a.start - b.start);
+
+    // 2. 문단 구분 찾기 (개선: 단일 줄바꿈도 인식)
+    // 연속된 줄바꿈(\n\n+) 또는 단일 줄바꿈(\n)으로 구분된 블록을 문단으로 인식
+    const lines2 = content.split('\n');
+    let paragraphStart = 0;
+    
+    // 각 줄의 시작 위치를 미리 계산
+    const lineStarts: number[] = [0];
+    for (let k = 0; k < lines2.length - 1; k++) {
+      lineStarts.push(lineStarts[k] + lines2[k].length + 1); // +1 for \n
+    }
+    
+    for (let i = 0; i < lines2.length; i++) {
+      const line = lines2[i];
+      const lineTrimmed = line.trim();
+      const isLastLine = i === lines2.length - 1;
+      const nextLine = i < lines2.length - 1 ? lines2[i + 1].trim() : '';
+      
+      // 빈 줄이거나, 다음 줄이 비어있으면 문단 끝
+      if (lineTrimmed === '' || (nextLine === '' && !isLastLine)) {
+        if (paragraphStart < i) {
+          // 이전 줄까지가 하나의 문단
+          const paragraphLines = lines2.slice(paragraphStart, i);
+          const paragraphContent = paragraphLines.join('\n');
+          
+          if (paragraphContent.trim().length > 0) {
+            const start = lineStarts[paragraphStart];
+            const end = start + paragraphContent.length;
+            
+            // 문장 경계 찾기
+            const sentences: number[] = [];
+            const sentenceEndings = ['. ', '! ', '? ', '。', '！', '？', '\n'];
+            
+            for (let j = start; j < end; j++) {
+              for (const ending of sentenceEndings) {
+                if (content.substring(j, j + ending.length) === ending) {
+                  sentences.push(j + ending.length);
+                  break;
+                }
+              }
+            }
+            
+            paragraphs.push({
+              start,
+              end,
+              sentences,
+            });
+          }
+        }
+        paragraphStart = i + 1;
+      }
+    }
+    
+    // 마지막 문단 처리
+    if (paragraphStart < lines2.length) {
+      const paragraphLines = lines2.slice(paragraphStart);
+      const paragraphContent = paragraphLines.join('\n');
+      
+      if (paragraphContent.trim().length > 0) {
+        const start = lineStarts[paragraphStart];
+        const end = start + paragraphContent.length;
+        
+        const sentences: number[] = [];
+        const sentenceEndings = ['. ', '! ', '? ', '。', '！', '？', '\n'];
+        
+        for (let j = start; j < end; j++) {
+          for (const ending of sentenceEndings) {
+            if (content.substring(j, j + ending.length) === ending) {
+              sentences.push(j + ending.length);
+              break;
+            }
+          }
+        }
+        
+        paragraphs.push({
+          start,
+          end,
+          sentences,
+        });
+      }
     }
 
     // 3. 섹션별 문단 매핑
