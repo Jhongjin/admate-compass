@@ -40,9 +40,9 @@ export class SitemapDiscoveryService {
       
       if (isVercel) {
         // Vercel 환경: @sparticuz/chromium 사용
-        chromium.setGraphicsMode(false);
+        // @sparticuz/chromium의 args는 배열입니다
         this.browser = await puppeteer.launch({
-          args: chromium.args,
+          args: chromium.args as string[],
           defaultViewport: chromium.defaultViewport,
           executablePath: await chromium.executablePath(),
           headless: chromium.headless,
