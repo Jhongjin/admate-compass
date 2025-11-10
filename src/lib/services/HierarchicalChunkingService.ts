@@ -91,7 +91,6 @@ export class HierarchicalChunkingService {
     }
 
     // 1-1. 줄바꿈으로 구분된 짧은 줄을 제목으로 감지 (URL 크롤링 텍스트용)
-    // 줄바꿈으로 시작하는 짧은 줄(50자 이하)을 제목으로 간주
     const lines = content.split('\n');
     let currentPos = 0;
     for (let i = 0; i < lines.length; i++) {
@@ -99,18 +98,19 @@ export class HierarchicalChunkingService {
       const lineStart = currentPos;
       const lineEnd = currentPos + lines[i].length;
       
-      // 짧은 줄이고, 다음 줄이 비어있지 않으면 제목으로 간주
-      if (line.length > 0 && line.length <= 50 && line.length < 100) {
+      // 짧은 줄(50자 이하)을 제목 후보로 간주
+      if (line.length > 0 && line.length <= 50) {
         const nextLine = i < lines.length - 1 ? lines[i + 1].trim() : '';
         const prevLine = i > 0 ? lines[i - 1].trim() : '';
         
-        // 다음 줄이 비어있거나, 이전 줄이 비어있으면 제목 가능성 높음
-        // 또는 줄이 짧고 다음 줄이 긴 경우
-        if (
+        // 제목 조건: 다음 줄이 비어있거나, 이전 줄이 비어있거나, 줄이 짧고 다음 줄이 긴 경우
+        // 또는 문장 끝이 없는 짧은 구문 (제목 특징)
+        const isLikelyHeading = 
           (nextLine === '' || prevLine === '') ||
           (nextLine.length > line.length * 2) ||
-          (line.match(/^[A-Z가-힣][^.!?]*$/) && !line.match(/[.!?]$/))
-        ) {
+          (line.match(/^[A-Z가-힣][^.!?]*$/) && !line.match(/[.!?]$/) && line.length <= 30);
+        
+        if (isLikelyHeading) {
           // 이미 감지된 섹션과 겹치지 않는지 확인
           const overlaps = sections.some(s => 
             (lineStart >= s.start && lineStart < s.end) ||
@@ -130,6 +130,33 @@ export class HierarchicalChunkingService {
       }
       
       currentPos = lineEnd + 1; // +1 for \n
+    }
+    
+    // 1-2. 문장 끝이 없는 짧은 구문을 제목으로 감지 (공백으로 구분된 경우)
+    // 예: "마케팅 API 개요 시작하기 광고 크리에이티브 Bidding..." -> 각각을 제목으로
+    // 패턴: 문장 끝(., !, ?)이 없고, 짧은 구문(2-30자)이 연속으로 나오는 경우
+    const headingPattern = /([A-Z가-힣][^\s.!?]{1,30}(?:\s+[A-Z가-힣][^\s.!?]{1,30})*)(?=\s+[A-Z가-힣][^\s.!?]{20,})/g;
+    let headingMatch;
+    while ((headingMatch = headingPattern.exec(content)) !== null) {
+      const headingText = headingMatch[1].trim();
+      const headingStart = headingMatch.index;
+      const headingEnd = headingStart + headingMatch[0].length;
+      
+      // 이미 감지된 섹션과 겹치지 않는지 확인
+      const overlaps = sections.some(s => 
+        (headingStart >= s.start && headingStart < s.end) ||
+        (headingEnd > s.start && headingEnd <= s.end)
+      );
+      
+      if (!overlaps && headingText.length >= 2 && headingText.length <= 50) {
+        sections.push({
+          title: headingText,
+          start: headingStart,
+          end: headingEnd,
+          level: 3, // 하위 레벨
+          paragraphs: [],
+        });
+      }
     }
 
     // 섹션을 시작 위치순으로 정렬
