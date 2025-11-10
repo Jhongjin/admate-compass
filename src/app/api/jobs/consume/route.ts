@@ -1621,14 +1621,16 @@ export async function processQueue() {
 
         const subPageResults: Array<{ url: string; success: boolean; chunkCount?: number; error?: string }> = [];
 
-        console.log('🔍 하위 페이지 크롤링 여부 확인:', {
+        console.log('[CRITICAL] 🔍 하위 페이지 크롤링 여부 확인:', {
           extractSubPages,
           willCrawlSubPages: extractSubPages === true,
-          condition: `extractSubPages (${extractSubPages}) === true`
+          condition: `extractSubPages (${extractSubPages}) === true`,
+          url,
+          documentId
         });
 
         if (extractSubPages) {
-          console.log('✅ 하위 페이지 크롤링 시작 - extractSubPages가 true입니다.');
+          console.log('[CRITICAL] ✅ 하위 페이지 크롤링 시작 - extractSubPages가 true입니다.');
           try {
             const discoveryOptions = {
               maxDepth: Math.max(1, Math.min(maxDepth, 3)),
@@ -1638,13 +1640,19 @@ export async function processQueue() {
               allowedDomains: [seedUrl.hostname],
             };
 
-            console.log('🔍 하위 페이지 탐색 옵션:', discoveryOptions);
+            console.log('[CRITICAL] 🔍 하위 페이지 탐색 옵션:', {
+              ...discoveryOptions,
+              url,
+              documentId
+            });
             let discovered: Array<{ url: string; title?: string; source: string; depth: number }> = [];
             try {
               // SitemapDiscoveryService가 Puppeteer 실패 시 fetch fallback을 자동으로 사용
-              console.log(`🔍 하위 페이지 탐색 시작: ${url}`);
+              console.log(`[CRITICAL] 🔍 하위 페이지 탐색 시작: ${url}`);
+              const discoveryStartMs = Date.now();
               discovered = await sitemapDiscoveryService.discoverSubPages(url, discoveryOptions);
-              console.log(`✅ 하위 페이지 발견 완료: ${discovered.length}개 (Sitemap + fetch fallback 사용)`);
+              const discoveryEndMs = Date.now();
+              console.log(`[CRITICAL] ✅ 하위 페이지 발견 완료: ${discovered.length}개 (소요 시간: ${discoveryEndMs - discoveryStartMs}ms)`);
               
               // 발견된 페이지 상세 로그
               if (discovered.length > 0) {
@@ -1656,11 +1664,20 @@ export async function processQueue() {
                   console.log(`  ... 외 ${discovered.length - 10}개`);
                 }
               } else {
-                console.log('⚠️ 하위 페이지가 발견되지 않았습니다. Sitemap 또는 링크 추출이 실패했을 수 있습니다.');
+                console.log('[CRITICAL] ⚠️ 하위 페이지가 발견되지 않았습니다. Sitemap 또는 링크 추출이 실패했을 수 있습니다.', {
+                  url,
+                  documentId,
+                  discoveryOptions
+                });
               }
             } catch (discoveryError) {
               // 전체 탐색 실패 시에도 메인 페이지는 계속 처리
-              console.warn('⚠️ 하위 페이지 탐색 중 오류 발생, 메인 페이지만 처리합니다:', discoveryError);
+              console.error('[CRITICAL] ⚠️ 하위 페이지 탐색 중 오류 발생, 메인 페이지만 처리합니다:', {
+                error: discoveryError,
+                url,
+                documentId,
+                discoveryOptions
+              });
               discovered = [];
             }
             
@@ -1670,22 +1687,44 @@ export async function processQueue() {
                 .filter((entryUrl) => entryUrl && entryUrl !== url && !entryUrl.includes('#'))
             )).slice(0, 30); // 처리할 하위 페이지 개수 증가 (기존: 8)
 
-            console.log(`📄 하위 페이지 후보: ${candidateUrls.length}개 (발견: ${discovered.length}개, 필터링 후: ${candidateUrls.length}개)`);
+            console.log(`[CRITICAL] 📄 하위 페이지 후보: ${candidateUrls.length}개 (발견: ${discovered.length}개, 필터링 후: ${candidateUrls.length}개)`, {
+              url,
+              documentId,
+              discoveredUrls: discovered.map(d => d.url).slice(0, 10),
+              candidateUrls: candidateUrls.slice(0, 10)
+            });
             
             if (candidateUrls.length === 0 && discovered.length > 0) {
-              console.warn('⚠️ 발견된 하위 페이지가 모두 필터링되었습니다. 필터 조건을 확인해주세요.');
+              console.warn('[CRITICAL] ⚠️ 발견된 하위 페이지가 모두 필터링되었습니다. 필터 조건을 확인해주세요.', {
+                url,
+                documentId,
+                discoveredCount: discovered.length,
+                discoveredUrls: discovered.map(d => d.url)
+              });
             }
             let processedCount = 0;
+
+            console.log(`[CRITICAL] 🔄 하위 페이지 크롤링 시작: ${candidateUrls.length}개`, {
+              url,
+              documentId,
+              candidateUrls: candidateUrls.slice(0, 5)
+            });
 
             for (const subUrl of candidateUrls) {
               if (!subUrl) continue;
 
               try {
+                console.log(`[CRITICAL] 📄 하위 페이지 처리 중 (${processedCount + 1}/${candidateUrls.length}): ${subUrl}`);
                 const page = await fetchPageContent(subUrl);
                 const result = await upsertAndProcessDocument({ targetUrl: subUrl, title: page.pageTitle, content: page.textContent });
                 subPageResults.push({ url: subUrl, success: result.success, chunkCount: result.chunkCount });
+                console.log(`[CRITICAL] ✅ 하위 페이지 처리 완료: ${subUrl} (청크: ${result.chunkCount}개)`);
               } catch (subError) {
-                console.error('❌ 하위 페이지 처리 실패:', subError);
+                console.error('[CRITICAL] ❌ 하위 페이지 처리 실패:', {
+                  url: subUrl,
+                  error: subError,
+                  documentId
+                });
                 subPageResults.push({
                   url: subUrl,
                   success: false,
@@ -1719,9 +1758,11 @@ export async function processQueue() {
             await sitemapDiscoveryService.close().catch(() => {});
           }
         } else {
-          console.log('⚠️ 하위 페이지 크롤링 건너뜀 - extractSubPages가 false입니다.', {
+          console.log('[CRITICAL] ⚠️ 하위 페이지 크롤링 건너뜀 - extractSubPages가 false입니다.', {
             extractSubPages,
-            payloadExtractSubPages: job.payload?.extractSubPages
+            payloadExtractSubPages: job.payload?.extractSubPages,
+            url,
+            documentId
           });
         }
 
