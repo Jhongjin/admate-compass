@@ -342,8 +342,8 @@ export class SitemapDiscoveryService {
           timeout: 30000 
         });
 
-        // 페이지가 완전히 로드될 때까지 대기
-        await page.waitForTimeout(2000); // JavaScript 실행 대기
+        // 페이지가 완전히 로드될 때까지 대기 (waitForTimeout 대체)
+        await new Promise(resolve => setTimeout(resolve, 2000)); // JavaScript 실행 대기
 
         // 페이지에서 링크 추출
         const links = await page.evaluate((baseDomain) => {
