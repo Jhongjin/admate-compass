@@ -1382,27 +1382,7 @@ export async function processQueue() {
             // 스크립트, 스타일, 네비게이션 등 제거
             $clone.find('script, style, nav, footer, header, aside').remove();
             
-            // 링크는 텍스트와 URL을 함께 표시 (먼저 처리)
-            $clone.find('a').each((_, el) => {
-              const $el = $(el);
-              const href = $el.attr('href');
-              const text = $el.text().trim();
-              if (text && href && !href.startsWith('#')) {
-                // 절대 URL로 변환
-                try {
-                  const absoluteUrl = new URL(href, targetUrl).href;
-                  $el.replaceWith(`${text} (${absoluteUrl})`);
-                } catch {
-                  $el.replaceWith(text);
-                }
-              } else if (text) {
-                $el.replaceWith(text);
-              } else {
-                $el.replaceWith('');
-              }
-            });
-            
-            // 블록 요소 앞뒤에 줄바꿈 추가
+            // 블록 요소 앞뒤에 줄바꿈 추가 (먼저 처리하여 구조 유지)
             const blockElements = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'div', 'li', 'td', 'th', 'tr'];
             blockElements.forEach(tag => {
               $clone.find(tag).each((_, el) => {
@@ -1414,6 +1394,23 @@ export async function processQueue() {
                   $el.replaceWith('\n');
                 }
               });
+            });
+            
+            // 링크는 텍스트만 표시 (URL은 제거하여 가독성 향상)
+            // 또는 링크를 줄바꿈으로 구분하여 표시
+            $clone.find('a').each((_, el) => {
+              const $el = $(el);
+              const href = $el.attr('href');
+              const text = $el.text().trim();
+              if (text && href && !href.startsWith('#')) {
+                // 링크 텍스트만 표시 (URL은 제거하여 가독성 향상)
+                // 필요시 주석을 해제하여 URL 포함: `${text} (${absoluteUrl})`
+                $el.replaceWith(` ${text} `);
+              } else if (text) {
+                $el.replaceWith(` ${text} `);
+              } else {
+                $el.replaceWith(' ');
+              }
             });
             
             // 최종 텍스트 추출 및 정리
