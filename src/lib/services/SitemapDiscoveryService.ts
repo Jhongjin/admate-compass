@@ -282,12 +282,17 @@ export class SitemapDiscoveryService {
         const baseOrigin = `${baseUrlObj.protocol}//${baseUrlObj.host}`;
 
         // Cheerio로 링크 추출
+        let totalLinks = 0;
+        let validLinks = 0;
+        let filteredLinks = 0;
+        
         $('a[href]').each((_, element) => {
           const href = $(element).attr('href');
           if (!href || href.startsWith('#') || href.startsWith('javascript:') || href.startsWith('mailto:')) {
             return;
           }
 
+          totalLinks++;
           try {
             let fullUrl: string;
             if (href.startsWith('http://') || href.startsWith('https://')) {
@@ -301,23 +306,31 @@ export class SitemapDiscoveryService {
             const urlObj = new URL(fullUrl);
             const urlDomain = urlObj.hostname;
 
+            // 쿼리 파라미터 정규화 (트래킹 파라미터 제거)
+            const normalizedUrl = this.normalizeUrl(fullUrl);
+
             // 같은 도메인이고 다른 경로인 경우만 포함
             if (urlDomain === baseDomain && 
-                fullUrl !== baseUrl &&
-                !fullUrl.includes('#') && 
-                !urlObj.search && // 쿼리 파라미터 제외
-                this.isValidUrl(fullUrl, baseDomain, config)) {
-              discoveredUrls.push({
-                url: fullUrl,
-                title: $(element).text().trim() || undefined,
-                source: 'links',
-                depth: 1
-              });
+                normalizedUrl !== baseUrl &&
+                !normalizedUrl.includes('#')) {
+              validLinks++;
+              if (this.isValidUrl(normalizedUrl, baseDomain, config)) {
+                discoveredUrls.push({
+                  url: normalizedUrl,
+                  title: $(element).text().trim() || undefined,
+                  source: 'links',
+                  depth: 1
+                });
+              } else {
+                filteredLinks++;
+              }
             }
           } catch (e) {
             // URL 파싱 실패 시 무시
           }
         });
+        
+        console.log(`📊 링크 추출 통계 (Cheerio): 총 ${totalLinks}개 → 유효 ${validLinks}개 → 최종 ${discoveredUrls.length}개 (필터링: ${filteredLinks}개)`);
 
         // 콘텐츠가 충분한지 확인 (정적 HTML로 충분한 경우)
         const bodyText = $('body').text().trim();
@@ -367,10 +380,10 @@ export class SitemapDiscoveryService {
               const urlDomain = new URL(fullUrl).hostname;
               
               // 같은 도메인이고 다른 경로인 경우만 포함
+              // 쿼리 파라미터는 허용 (정규화는 서버 측에서 수행)
               if (urlDomain === baseDomain && 
                   fullUrl !== window.location.href &&
                   !fullUrl.includes('#') && 
-                  !fullUrl.includes('?') &&
                   !fullUrl.includes('javascript:') &&
                   !fullUrl.includes('mailto:')) {
                 links.push({
@@ -386,17 +399,19 @@ export class SitemapDiscoveryService {
           return links;
         }, baseDomain);
 
-        // Puppeteer로 발견한 링크 추가 (중복 제거)
+        // Puppeteer로 발견한 링크 추가 (중복 제거, URL 정규화)
         const existingUrls = new Set(discoveredUrls.map(u => u.url));
         links.forEach(link => {
-          if (!existingUrls.has(link.url) && this.isValidUrl(link.url, baseDomain, config)) {
+          // 쿼리 파라미터 정규화 (트래킹 파라미터 제거)
+          const normalizedUrl = this.normalizeUrl(link.url);
+          if (!existingUrls.has(normalizedUrl) && this.isValidUrl(normalizedUrl, baseDomain, config)) {
             discoveredUrls.push({
-              url: link.url,
+              url: normalizedUrl,
               title: link.title || undefined,
               source: 'links',
               depth: 1
             });
-            existingUrls.add(link.url);
+            existingUrls.add(normalizedUrl);
           }
         });
 
@@ -410,6 +425,44 @@ export class SitemapDiscoveryService {
     }
 
     return discoveredUrls;
+  }
+
+  /**
+   * URL 정규화 (트래킹 파라미터 제거, 중요한 파라미터 유지)
+   */
+  private normalizeUrl(url: string): string {
+    try {
+      const urlObj = new URL(url);
+      
+      // 트래킹 파라미터 목록 (제거할 파라미터)
+      const trackingParams = [
+        'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
+        'fbclid', 'gclid', 'ref', 'source', 'campaign_id',
+        '_ga', '_gid', 'mc_cid', 'mc_eid'
+      ];
+      
+      // 중요한 파라미터 목록 (유지할 파라미터)
+      const importantParams = ['locale', 'lang', 'language', 'version', 'id'];
+      
+      // 쿼리 파라미터 필터링
+      const filteredParams = new URLSearchParams();
+      urlObj.searchParams.forEach((value, key) => {
+        const lowerKey = key.toLowerCase();
+        // 트래킹 파라미터는 제거
+        if (trackingParams.some(tp => lowerKey.startsWith(tp.toLowerCase()))) {
+          return;
+        }
+        // 중요한 파라미터나 기타 파라미터는 유지
+        filteredParams.append(key, value);
+      });
+      
+      // 정규화된 URL 생성
+      urlObj.search = filteredParams.toString();
+      return urlObj.href;
+    } catch (e) {
+      // URL 파싱 실패 시 원본 반환
+      return url;
+    }
   }
 
   /**
@@ -451,15 +504,26 @@ export class SitemapDiscoveryService {
     baseDomain: string, 
     config: DiscoveryOptions
   ): DiscoveredUrl[] {
-    // 중복 제거
-    const uniquePages = pages.filter((page, index, self) => 
+    // URL 정규화 적용 (트래킹 파라미터 제거)
+    const normalizedPages = pages.map(page => ({
+      ...page,
+      url: this.normalizeUrl(page.url)
+    }));
+    
+    // 중복 제거 (정규화된 URL 기준)
+    const uniquePages = normalizedPages.filter((page, index, self) => 
       index === self.findIndex(p => p.url === page.url)
     );
     
+    console.log(`📊 필터링 전: ${pages.length}개 → 정규화 후: ${normalizedPages.length}개 → 중복 제거 후: ${uniquePages.length}개`);
+    
     // 도메인 필터링
+    const beforeDomainFilter = uniquePages.length;
     const filteredPages = uniquePages.filter(page => 
       this.isValidUrl(page.url, baseDomain, config)
     );
+    
+    console.log(`📊 도메인 필터링: ${beforeDomainFilter}개 → ${filteredPages.length}개 (제외: ${beforeDomainFilter - filteredPages.length}개)`);
     
     // 우선순위별 정렬 (sitemap > links > pattern)
     const sourcePriority = { sitemap: 1, robots: 1, links: 2, pattern: 3 };
