@@ -107,8 +107,8 @@ export class SitemapDiscoveryService {
       await this.initialize();
     }
 
-    console.log(`[CRITICAL] 🔍 하위 페이지 발견 시작: ${baseUrl}`);
-    console.log(`[CRITICAL] 📋 설정:`, config);
+    console.error(`[CRITICAL] 🔍 하위 페이지 발견 시작: ${baseUrl}`);
+    console.error(`[CRITICAL] 📋 설정:`, config);
 
     const discoveredUrls = new Set<string>();
     const discoveredPages: DiscoveredUrl[] = [];
@@ -116,7 +116,7 @@ export class SitemapDiscoveryService {
 
     try {
       // 1. Sitemap.xml에서 URL 발견 (Puppeteer 불필요)
-      console.log(`[CRITICAL] 📄 Sitemap 탐색 시작: ${baseUrl}`);
+      console.error(`[CRITICAL] 📄 Sitemap 탐색 시작: ${baseUrl}`);
       const sitemapStartMs = Date.now();
       const sitemapUrls = await this.discoverFromSitemap(baseUrl, config);
       const sitemapEndMs = Date.now();
@@ -127,10 +127,10 @@ export class SitemapDiscoveryService {
         }
       });
 
-      console.log(`[CRITICAL] 📄 Sitemap에서 발견: ${sitemapUrls.length}개 (소요 시간: ${sitemapEndMs - sitemapStartMs}ms)`);
+      console.error(`[CRITICAL] 📄 Sitemap에서 발견: ${sitemapUrls.length}개 (소요 시간: ${sitemapEndMs - sitemapStartMs}ms)`);
 
       // 2. 페이지 링크에서 URL 발견 (Puppeteer 우선, 실패 시 fetch fallback)
-      console.log(`[CRITICAL] 🔗 링크 탐색 시작: ${baseUrl}`);
+      console.error(`[CRITICAL] 🔗 링크 탐색 시작: ${baseUrl}`);
       const linkStartMs = Date.now();
       const linkUrls = await this.discoverFromLinks(baseUrl, config);
       const linkEndMs = Date.now();
@@ -141,15 +141,15 @@ export class SitemapDiscoveryService {
         }
       });
 
-      console.log(`[CRITICAL] 🔗 링크에서 발견: ${linkUrls.length}개 (소요 시간: ${linkEndMs - linkStartMs}ms)`);
+      console.error(`[CRITICAL] 🔗 링크에서 발견: ${linkUrls.length}개 (소요 시간: ${linkEndMs - linkStartMs}ms)`);
 
       // 3. 결과 필터링 및 정렬
-      console.log(`[CRITICAL] 🔍 필터링 시작: 총 ${discoveredPages.length}개 발견됨`);
+      console.error(`[CRITICAL] 🔍 필터링 시작: 총 ${discoveredPages.length}개 발견됨`);
       const filterStartMs = Date.now();
       const filteredPages = this.filterAndSortPages(discoveredPages, baseDomain, config);
       const filterEndMs = Date.now();
       
-      console.log(`[CRITICAL] ✅ 최종 발견된 하위 페이지: ${filteredPages.length}개 (필터링 소요 시간: ${filterEndMs - filterStartMs}ms)`);
+      console.error(`[CRITICAL] ✅ 최종 발견된 하위 페이지: ${filteredPages.length}개 (필터링 소요 시간: ${filterEndMs - filterStartMs}ms)`);
       if (filteredPages.length === 0 && discoveredPages.length > 0) {
         console.warn(`[CRITICAL] ⚠️ 발견된 ${discoveredPages.length}개 페이지가 모두 필터링되었습니다. 필터 조건을 확인해주세요.`);
       }
@@ -619,12 +619,12 @@ export class SitemapDiscoveryService {
     
     // 필터링된 URL 상세 로그 (처음 10개만)
     if (filteredOut.length > 0) {
-      console.log(`[CRITICAL] ⚠️ 필터링된 URL 샘플 (처음 10개):`);
+      console.error(`[CRITICAL] ⚠️ 필터링된 URL 샘플 (처음 10개):`);
       filteredOut.slice(0, 10).forEach((item, idx) => {
-        console.log(`[CRITICAL]   ${idx + 1}. ${item.url.substring(0, 80)}... (이유: ${item.reason})`);
+        console.error(`[CRITICAL]   ${idx + 1}. ${item.url.substring(0, 80)}... (이유: ${item.reason})`);
       });
       if (filteredOut.length > 10) {
-        console.log(`[CRITICAL]   ... 외 ${filteredOut.length - 10}개`);
+        console.error(`[CRITICAL]   ... 외 ${filteredOut.length - 10}개`);
       }
     }
     
