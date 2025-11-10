@@ -1303,19 +1303,6 @@ export async function processQueue() {
         const extractSubPagesRaw = job.payload?.extractSubPages;
         const extractSubPages = extractSubPagesRaw === true || extractSubPagesRaw === 'true';
 
-        console.log('[CRITICAL] 🔍 CRAWL_SEED 파라미터 확인:', {
-          url,
-          extractSubPages,
-          extractSubPagesRaw,
-          extractSubPagesType: typeof extractSubPagesRaw,
-          extractSubPagesBoolean: extractSubPages,
-          maxDepth,
-          domainLimit,
-          respectRobots,
-          vendors,
-          documentId
-        });
-
         if (!url) {
           throw new Error('CRAWL_SEED job payload에 url이 없습니다.');
         }
@@ -1329,6 +1316,19 @@ export async function processQueue() {
 
         const dbVendor = vendors[0] || 'META';
         const documentId = job.document_id || `doc_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+
+        console.log('[CRITICAL] 🔍 CRAWL_SEED 파라미터 확인:', {
+          url,
+          extractSubPages,
+          extractSubPagesRaw,
+          extractSubPagesType: typeof extractSubPagesRaw,
+          extractSubPagesBoolean: extractSubPages,
+          maxDepth,
+          domainLimit,
+          respectRobots,
+          vendors,
+          documentId
+        });
 
         const commonHeaders = {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
