@@ -1613,8 +1613,11 @@ export async function processQueue() {
           };
         };
 
+        console.log('[CRITICAL] 📄 메인 페이지 크롤링 시작:', { url, documentId, extractSubPages, extractSubPagesRaw });
         const mainPage = await fetchPageContent(url);
+        console.log('[CRITICAL] 📄 메인 페이지 크롤링 완료:', { url, title: mainPage.pageTitle, contentLength: mainPage.textContent.length });
         const mainDocResult = await upsertAndProcessDocument({ targetUrl: url, title: mainPage.pageTitle, content: mainPage.textContent, documentIdOverride: documentId });
+        console.log('[CRITICAL] 📄 메인 문서 처리 완료:', { documentId, success: mainDocResult.success, chunkCount: mainDocResult.chunkCount });
 
         if (!job.document_id) {
           await supabase
