@@ -1317,7 +1317,7 @@ export async function processQueue() {
         const dbVendor = vendors[0] || 'META';
         const documentId = job.document_id || `doc_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
-        console.log('[CRITICAL] 🔍 CRAWL_SEED 파라미터 확인:', {
+        console.error('[CRITICAL] 🔍 CRAWL_SEED 파라미터 확인:', {
           url,
           extractSubPages,
           extractSubPagesRaw,
@@ -1613,11 +1613,11 @@ export async function processQueue() {
           };
         };
 
-        console.log('[CRITICAL] 📄 메인 페이지 크롤링 시작:', { url, documentId, extractSubPages, extractSubPagesRaw });
+        console.error('[CRITICAL] 📄 메인 페이지 크롤링 시작:', { url, documentId, extractSubPages, extractSubPagesRaw });
         const mainPage = await fetchPageContent(url);
-        console.log('[CRITICAL] 📄 메인 페이지 크롤링 완료:', { url, title: mainPage.pageTitle, contentLength: mainPage.textContent.length });
+        console.error('[CRITICAL] 📄 메인 페이지 크롤링 완료:', { url, title: mainPage.pageTitle, contentLength: mainPage.textContent.length });
         const mainDocResult = await upsertAndProcessDocument({ targetUrl: url, title: mainPage.pageTitle, content: mainPage.textContent, documentIdOverride: documentId });
-        console.log('[CRITICAL] 📄 메인 문서 처리 완료:', { documentId, success: mainDocResult.success, chunkCount: mainDocResult.chunkCount });
+        console.error('[CRITICAL] 📄 메인 문서 처리 완료:', { documentId, success: mainDocResult.success, chunkCount: mainDocResult.chunkCount });
 
         if (!job.document_id) {
           await supabase
@@ -1630,7 +1630,7 @@ export async function processQueue() {
 
         // extractSubPages 값 재확인 (메인 문서 처리 후)
         const extractSubPagesAfterMain = extractSubPagesRaw === true || extractSubPagesRaw === 'true';
-        console.log('[CRITICAL] 🔍 하위 페이지 크롤링 여부 확인 (메인 문서 처리 후):', {
+        console.error('[CRITICAL] 🔍 하위 페이지 크롤링 여부 확인 (메인 문서 처리 후):', {
           extractSubPages,
           extractSubPagesAfterMain,
           extractSubPagesRaw,
@@ -1646,7 +1646,7 @@ export async function processQueue() {
         });
 
         if (extractSubPages) {
-          console.log('[CRITICAL] ✅ 하위 페이지 크롤링 시작 - extractSubPages가 true입니다.');
+          console.error('[CRITICAL] ✅ 하위 페이지 크롤링 시작 - extractSubPages가 true입니다.');
           try {
             const discoveryOptions = {
               maxDepth: Math.max(1, Math.min(maxDepth, 3)),
@@ -1656,7 +1656,7 @@ export async function processQueue() {
               allowedDomains: [seedUrl.hostname],
             };
 
-            console.log('[CRITICAL] 🔍 하위 페이지 탐색 옵션:', {
+            console.error('[CRITICAL] 🔍 하위 페이지 탐색 옵션:', {
               ...discoveryOptions,
               url,
               documentId
@@ -1680,7 +1680,7 @@ export async function processQueue() {
                   console.log(`  ... 외 ${discovered.length - 10}개`);
                 }
               } else {
-                console.log('[CRITICAL] ⚠️ 하위 페이지가 발견되지 않았습니다. Sitemap 또는 링크 추출이 실패했을 수 있습니다.', {
+                console.error('[CRITICAL] ⚠️ 하위 페이지가 발견되지 않았습니다. Sitemap 또는 링크 추출이 실패했을 수 있습니다.', {
                   url,
                   documentId,
                   discoveryOptions
@@ -1774,7 +1774,7 @@ export async function processQueue() {
             await sitemapDiscoveryService.close().catch(() => {});
           }
         } else {
-          console.log('[CRITICAL] ⚠️ 하위 페이지 크롤링 건너뜀 - extractSubPages가 false입니다.', {
+          console.error('[CRITICAL] ⚠️ 하위 페이지 크롤링 건너뜀 - extractSubPages가 false입니다.', {
             extractSubPages,
             payloadExtractSubPages: job.payload?.extractSubPages,
             url,
