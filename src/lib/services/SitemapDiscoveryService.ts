@@ -1,4 +1,6 @@
-import puppeteer, { Browser, Page } from 'puppeteer';
+import puppeteer, { Browser, Page } from 'puppeteer-core';
+import chromium from '@sparticuz/chromium';
+import * as cheerio from 'cheerio';
 import { parseStringPromise } from 'xml2js';
 
 export interface DiscoveredUrl {
@@ -33,21 +35,36 @@ export class SitemapDiscoveryService {
     try {
       console.log('🔧 SitemapDiscoveryService 브라우저 초기화 중...');
       
-      this.browser = await puppeteer.launch({
-        headless: true,
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-blink-features=AutomationControlled',
-          '--disable-web-security',
-          '--allow-running-insecure-content',
-          '--disable-features=VizDisplayCompositor'
-        ],
-        ignoreDefaultArgs: ['--enable-automation'],
-      });
-
-      console.log('✅ SitemapDiscoveryService 브라우저 초기화 완료');
+      // Vercel 환경에서 @sparticuz/chromium 사용
+      const isVercel = process.env.VERCEL === '1' || process.env.AWS_LAMBDA_FUNCTION_NAME;
+      
+      if (isVercel) {
+        // Vercel 환경: @sparticuz/chromium 사용
+        chromium.setGraphicsMode(false);
+        this.browser = await puppeteer.launch({
+          args: chromium.args,
+          defaultViewport: chromium.defaultViewport,
+          executablePath: await chromium.executablePath(),
+          headless: chromium.headless,
+        });
+        console.log('✅ SitemapDiscoveryService 브라우저 초기화 완료 (Vercel 환경: @sparticuz/chromium)');
+      } else {
+        // 로컬 환경: 일반 Puppeteer 사용
+        this.browser = await puppeteer.launch({
+          headless: true,
+          args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-blink-features=AutomationControlled',
+            '--disable-web-security',
+            '--allow-running-insecure-content',
+            '--disable-features=VizDisplayCompositor'
+          ],
+          ignoreDefaultArgs: ['--enable-automation'],
+        });
+        console.log('✅ SitemapDiscoveryService 브라우저 초기화 완료 (로컬 환경)');
+      }
     } catch (error) {
       console.error('❌ SitemapDiscoveryService 브라우저 초기화 실패:', error);
       throw error;
@@ -229,7 +246,7 @@ export class SitemapDiscoveryService {
   }
 
   /**
-   * 페이지 링크에서 URL 발견 (Puppeteer 우선, 실패 시 fetch fallback)
+   * 페이지 링크에서 URL 발견 (하이브리드: Cheerio 우선, 필요 시 Puppeteer)
    */
   private async discoverFromLinks(
     baseUrl: string, 
@@ -238,7 +255,78 @@ export class SitemapDiscoveryService {
     const discoveredUrls: DiscoveredUrl[] = [];
     const baseDomain = this.extractDomain(baseUrl);
 
-    // Puppeteer를 사용한 링크 추출 시도
+    // 1단계: Fetch + Cheerio로 빠르게 시도 (정적 HTML)
+    try {
+      const response = await fetch(baseUrl, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+          'Accept-Language': 'ko-KR,ko;q=0.9,en;q=0.8',
+        },
+        redirect: 'follow',
+        signal: AbortSignal.timeout(10000), // 10초 타임아웃
+      });
+
+      if (response.ok) {
+        const htmlContent = await response.text();
+        const $ = cheerio.load(htmlContent);
+        const baseUrlObj = new URL(baseUrl);
+        const baseOrigin = `${baseUrlObj.protocol}//${baseUrlObj.host}`;
+
+        // Cheerio로 링크 추출
+        $('a[href]').each((_, element) => {
+          const href = $(element).attr('href');
+          if (!href || href.startsWith('#') || href.startsWith('javascript:') || href.startsWith('mailto:')) {
+            return;
+          }
+
+          try {
+            let fullUrl: string;
+            if (href.startsWith('http://') || href.startsWith('https://')) {
+              fullUrl = href;
+            } else if (href.startsWith('/')) {
+              fullUrl = `${baseOrigin}${href}`;
+            } else {
+              fullUrl = new URL(href, baseUrl).href;
+            }
+
+            const urlObj = new URL(fullUrl);
+            const urlDomain = urlObj.hostname;
+
+            // 같은 도메인이고 다른 경로인 경우만 포함
+            if (urlDomain === baseDomain && 
+                fullUrl !== baseUrl &&
+                !fullUrl.includes('#') && 
+                !urlObj.search && // 쿼리 파라미터 제외
+                this.isValidUrl(fullUrl, baseDomain, config)) {
+              discoveredUrls.push({
+                url: fullUrl,
+                title: $(element).text().trim() || undefined,
+                source: 'links',
+                depth: 1
+              });
+            }
+          } catch (e) {
+            // URL 파싱 실패 시 무시
+          }
+        });
+
+        // 콘텐츠가 충분한지 확인 (정적 HTML로 충분한 경우)
+        const bodyText = $('body').text().trim();
+        const hasSubstantialContent = bodyText.length > 500; // 500자 이상의 텍스트가 있으면 정적 HTML로 판단
+        
+        if (hasSubstantialContent && discoveredUrls.length > 0) {
+          console.log(`🔗 페이지 링크에서 발견 (Cheerio): ${discoveredUrls.length}개`);
+          return discoveredUrls;
+        } else {
+          console.log(`⚠️ Cheerio로 충분한 콘텐츠를 찾지 못함 (텍스트: ${bodyText.length}자, 링크: ${discoveredUrls.length}개), Puppeteer 시도`);
+        }
+      }
+    } catch (fetchError) {
+      console.warn('⚠️ Fetch + Cheerio 실패, Puppeteer 시도:', fetchError);
+    }
+
+    // 2단계: Puppeteer 사용 (JavaScript 렌더링이 필요한 경우)
     try {
       if (!this.browser) {
         await this.initialize();
@@ -253,6 +341,9 @@ export class SitemapDiscoveryService {
           waitUntil: 'networkidle2',
           timeout: 30000 
         });
+
+        // 페이지가 완전히 로드될 때까지 대기
+        await page.waitForTimeout(2000); // JavaScript 실행 대기
 
         // 페이지에서 링크 추출
         const links = await page.evaluate((baseDomain) => {
@@ -287,101 +378,30 @@ export class SitemapDiscoveryService {
           return links;
         }, baseDomain);
 
-        // 링크를 DiscoveredUrl 형태로 변환
+        // Puppeteer로 발견한 링크 추가 (중복 제거)
+        const existingUrls = new Set(discoveredUrls.map(u => u.url));
         links.forEach(link => {
-          if (this.isValidUrl(link.url, baseDomain, config)) {
+          if (!existingUrls.has(link.url) && this.isValidUrl(link.url, baseDomain, config)) {
             discoveredUrls.push({
               url: link.url,
               title: link.title || undefined,
               source: 'links',
               depth: 1
             });
+            existingUrls.add(link.url);
           }
         });
 
         await page.close();
-        console.log(`🔗 페이지 링크에서 발견 (Puppeteer): ${discoveredUrls.length}개`);
-        return discoveredUrls;
+        console.log(`🔗 페이지 링크에서 발견 (Puppeteer 추가): 총 ${discoveredUrls.length}개`);
       }
     } catch (puppeteerError) {
-      // Puppeteer 실패 시 fetch fallback 사용
+      // Puppeteer 실패 시에도 Cheerio로 발견한 링크는 반환
       if (puppeteerError instanceof Error && puppeteerError.message.includes('Chrome')) {
-        console.warn('⚠️ Puppeteer 사용 불가, fetch fallback으로 전환');
+        console.warn('⚠️ Puppeteer 사용 불가, Cheerio 결과만 사용');
       } else {
-        console.warn('⚠️ Puppeteer 링크 추출 실패, fetch fallback으로 전환:', puppeteerError);
+        console.warn('⚠️ Puppeteer 링크 추출 실패, Cheerio 결과만 사용:', puppeteerError);
       }
-    }
-
-    // Fetch fallback: HTML을 가져와서 정규식으로 링크 추출
-    try {
-      const response = await fetch(baseUrl, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-          'Accept-Language': 'ko-KR,ko;q=0.9,en;q=0.8',
-        },
-        redirect: 'follow',
-      });
-
-      if (!response.ok) {
-        console.warn(`⚠️ HTML 가져오기 실패: ${baseUrl} - ${response.status}`);
-        return discoveredUrls;
-      }
-
-      const htmlContent = await response.text();
-      const baseUrlObj = new URL(baseUrl);
-      const baseOrigin = `${baseUrlObj.protocol}//${baseUrlObj.host}`;
-
-      // 정규식으로 링크 추출
-      const linkRegex = /<a[^>]+href=["']([^"']+)["'][^>]*>(.*?)<\/a>/gi;
-      const links = new Set<string>();
-      
-      let match;
-      while ((match = linkRegex.exec(htmlContent)) !== null && links.size < 200) {
-        const href = match[1].trim();
-        if (!href || href.startsWith('#') || href.startsWith('javascript:') || href.startsWith('mailto:')) {
-          continue;
-        }
-
-        try {
-          let fullUrl: string;
-          if (href.startsWith('http://') || href.startsWith('https://')) {
-            fullUrl = href;
-          } else if (href.startsWith('/')) {
-            fullUrl = `${baseOrigin}${href}`;
-          } else {
-            fullUrl = new URL(href, baseUrl).href;
-          }
-
-          const urlObj = new URL(fullUrl);
-          const urlDomain = urlObj.hostname;
-
-          // 같은 도메인이고 다른 경로인 경우만 포함
-          if (urlDomain === baseDomain && 
-              fullUrl !== baseUrl &&
-              !fullUrl.includes('#') && 
-              !urlObj.search && // 쿼리 파라미터 제외
-              this.isValidUrl(fullUrl, baseDomain, config)) {
-            links.add(fullUrl);
-          }
-        } catch (e) {
-          // URL 파싱 실패 시 무시
-        }
-      }
-
-      // DiscoveredUrl 형태로 변환
-      links.forEach(url => {
-        discoveredUrls.push({
-          url,
-          source: 'links',
-          depth: 1
-        });
-      });
-
-      console.log(`🔗 페이지 링크에서 발견 (fetch fallback): ${discoveredUrls.length}개`);
-
-    } catch (fetchError) {
-      console.error('❌ fetch fallback 링크 추출 실패:', fetchError);
     }
 
     return discoveredUrls;

@@ -3,6 +3,7 @@ import { createPureClient } from '@/lib/supabase/server';
 import { ragProcessor, DocumentData } from '@/lib/services/RAGProcessor';
 import { simpleTextSplitter, TextSplit } from '@/lib/services/SimpleTextSplitter';
 import { sitemapDiscoveryService } from '@/lib/services/SitemapDiscoveryService';
+import * as cheerio from 'cheerio';
 
 export const runtime = 'nodejs';
 export const maxDuration = 600; // Pro 플랜: 최대 10분 (큰 파일 처리 지원 - 13MB+ 파일 처리 가능)
@@ -1363,75 +1364,75 @@ export async function processQueue() {
             throw new Error('로그인 페이지가 반환되어 크롤링할 수 없습니다. 공개 접근이 가능한 문서를 사용해 주세요.');
           }
 
-          const titleMatch = htmlContent.match(/<title[^>]*>([^<]+)<\/title>/i);
-          const pageTitle = titleMatch ? titleMatch[1].trim() : new URL(targetUrl).pathname || targetUrl;
+          // Cheerio로 HTML 파싱
+          const $ = cheerio.load(htmlContent);
           
-          // 개선된 텍스트 추출: 주요 콘텐츠 영역 우선 추출
+          // 제목 추출
+          const titleMatch = $('title').text() || htmlContent.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1];
+          const pageTitle = titleMatch ? titleMatch.trim() : new URL(targetUrl).pathname || targetUrl;
+          
+          // 개선된 텍스트 추출: Cheerio를 사용한 정확한 파싱
           let textContent = '';
           
-          // 1. 주요 콘텐츠 영역 찾기 (더 간단하고 효과적인 패턴)
-          const contentPatterns = [
-            /<main[^>]*>([\s\S]*?)<\/main>/gi,
-            /<article[^>]*>([\s\S]*?)<\/article>/gi,
-            /<div[^>]*role=["']main["'][^>]*>([\s\S]*?)<\/div>/gi,
-            /<div[^>]*class=["'][^"']*content[^"']*["'][^>]*>([\s\S]*?)<\/div>/gi,
-            /<div[^>]*id=["']content["'][^>]*>([\s\S]*?)<\/div>/gi,
-            /<div[^>]*id=["']main-content["'][^>]*>([\s\S]*?)<\/div>/gi,
+          // 1. 주요 콘텐츠 영역 우선 추출 (Cheerio 사용)
+          const contentSelectors = [
+            'main',
+            'article',
+            '[role="main"]',
+            '.content',
+            '.main-content',
+            '.page-content',
+            '#content',
+            '#main-content'
           ];
           
           let foundContent = false;
-          for (const pattern of contentPatterns) {
-            const matches = [...htmlContent.matchAll(pattern)];
-            for (const match of matches) {
-              if (match[1]) {
-                const contentHtml = match[1];
-                const extracted = contentHtml
-                  .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-                  .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-                  .replace(/<nav[^>]*>[\s\S]*?<\/nav>/gi, '')
-                  .replace(/<footer[^>]*>[\s\S]*?<\/footer>/gi, '')
-                  .replace(/<header[^>]*>[\s\S]*?<\/header>/gi, '')
-                  .replace(/<aside[^>]*>[\s\S]*?<\/aside>/gi, '')
-                  .replace(/<[^>]+>/g, ' ')
-                  .replace(/\s+/g, ' ')
-                  .trim();
-                if (extracted.length > textContent.length) {
-                  textContent = extracted;
-                  foundContent = true;
-                }
+          for (const selector of contentSelectors) {
+            const $content = $(selector).first();
+            if ($content.length > 0) {
+              // 스크립트, 스타일, 네비게이션 등 제거
+              $content.find('script, style, nav, footer, header, aside').remove();
+              const extracted = $content.text().replace(/\s+/g, ' ').trim();
+              
+              if (extracted.length > textContent.length) {
+                textContent = extracted;
+                foundContent = true;
               }
+              
+              if (textContent.length > 1000) break; // 충분한 콘텐츠를 찾으면 중단
             }
-            if (textContent.length > 1000) break; // 충분한 콘텐츠를 찾으면 중단
           }
           
           // 2. 주요 콘텐츠 영역을 찾지 못했거나 너무 짧은 경우 body 전체에서 추출
           if (!foundContent || textContent.length < 500) {
-            // body 태그 찾기
-            const bodyMatch = htmlContent.match(/<body[^>]*>([\s\S]*?)<\/body>/gi);
-            const htmlToProcess = bodyMatch ? bodyMatch[0] : htmlContent;
-            
-            const fullText = htmlToProcess
-              .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-              .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-              .replace(/<nav[^>]*>[\s\S]*?<\/nav>/gi, '')
-              .replace(/<footer[^>]*>[\s\S]*?<\/footer>/gi, '')
-              .replace(/<header[^>]*>[\s\S]*?<\/header>/gi, '')
-              .replace(/<aside[^>]*>[\s\S]*?<\/aside>/gi, '')
-              .replace(/<[^>]+>/g, ' ')
-              .replace(/\s+/g, ' ')
-              .trim();
-            
-            // 더 긴 텍스트를 선택
-            if (fullText.length > textContent.length) {
-              textContent = fullText;
+            const $body = $('body');
+            if ($body.length > 0) {
+              // 스크립트, 스타일, 네비게이션 등 제거
+              $body.find('script, style, nav, footer, header, aside').remove();
+              const fullText = $body.text().replace(/\s+/g, ' ').trim();
+              
+              // 더 긴 텍스트를 선택
+              if (fullText.length > textContent.length) {
+                textContent = fullText;
+              }
             }
+          }
+
+          // 3. 콘텐츠가 충분하지 않은 경우 JavaScript 렌더링 필요 여부 확인
+          const hasSubstantialContent = textContent.length > 500;
+          const hasEmptyRoot = $('body').children().length === 0 || 
+                               ($('#root, #app').length > 0 && $('#root, #app').text().trim().length < 100);
+          
+          if (!hasSubstantialContent && hasEmptyRoot) {
+            console.warn(`⚠️ 정적 HTML로 충분한 콘텐츠를 찾지 못함 (${textContent.length}자). JavaScript 렌더링이 필요할 수 있습니다.`);
+            // Puppeteer를 사용한 크롤링은 별도로 처리 (현재는 경고만)
           }
 
           if (!textContent || textContent.length < 100) {
             throw new Error('크롤링된 콘텐츠가 너무 짧거나 비어있습니다. 접근 권한 또는 공개 여부를 확인해주세요.');
           }
 
-          console.log(`📄 추출된 텍스트 길이: ${textContent.length}자 (원본 HTML: ${htmlContent.length}자)`);
+          console.log(`📄 추출된 텍스트 길이: ${textContent.length}자 (원본 HTML: ${htmlContent.length}자, Cheerio 사용)`);
 
           return { textContent, pageTitle };
         };
