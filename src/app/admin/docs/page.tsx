@@ -1147,6 +1147,25 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
       // UI 벤더 배열을 DB 값 배열로 변환
       const dbVendors = convertVendorsToDB(vendors);
       
+      // 디버깅: extractSubPages 값 확인
+      console.log('🔍 크롤링 시작 전 extractSubPages 확인:', {
+        extractSubPages,
+        extractSubPagesType: typeof extractSubPages,
+        crawlOptions,
+        url
+      });
+      
+      const payload = { 
+        url, 
+        vendors: dbVendors,
+        domainLimit: crawlOptions.domainLimit,
+        respectRobots: crawlOptions.respectRobots,
+        maxDepth: parseInt(crawlOptions.maxDepth, 10),
+        extractSubPages,
+      };
+      
+      console.log('📤 CRAWL_SEED payload:', payload);
+      
       // 큐 등록: jobType CRAWL_SEED
       const response = await fetch("/api/jobs/enqueue", {
         method: "POST",
@@ -1154,14 +1173,7 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
         body: JSON.stringify({
           jobType: "CRAWL_SEED",
           priority: 5,
-          payload: { 
-            url, 
-            vendors: dbVendors,
-            domainLimit: crawlOptions.domainLimit,
-            respectRobots: crawlOptions.respectRobots,
-            maxDepth: parseInt(crawlOptions.maxDepth, 10),
-            extractSubPages,
-          },
+          payload,
         }),
       });
 
