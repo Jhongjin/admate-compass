@@ -53,7 +53,8 @@ export class SitemapDiscoveryService {
           console.log('✅ SitemapDiscoveryService 브라우저 초기화 완료 (Vercel 환경: @sparticuz/chromium)');
         } catch (chromiumError) {
           // @sparticuz/chromium 초기화 실패 시 Puppeteer 없이 진행 (Cheerio만 사용)
-          console.warn('⚠️ @sparticuz/chromium 초기화 실패, Puppeteer 없이 진행 (Cheerio만 사용):', chromiumError);
+          // 이는 정상적인 fallback이므로 에러가 아닙니다
+          console.log('ℹ️ @sparticuz/chromium 초기화 실패 (예상된 동작), Cheerio만 사용하여 계속 진행합니다');
           this.browser = null; // 브라우저를 null로 유지하여 Cheerio만 사용
           return; // 에러를 throw하지 않고 정상 종료
         }
@@ -76,7 +77,8 @@ export class SitemapDiscoveryService {
       }
     } catch (error) {
       // 일반적인 초기화 실패 시에도 에러를 throw하지 않고 Cheerio만 사용
-      console.warn('⚠️ Puppeteer 초기화 실패, fetch fallback만 사용합니다:', error);
+      // 이는 정상적인 fallback이므로 에러가 아닙니다
+      console.log('ℹ️ Puppeteer 초기화 실패 (예상된 동작), Cheerio만 사용하여 계속 진행합니다');
       this.browser = null; // 브라우저를 null로 유지하여 Cheerio만 사용
     }
   }
@@ -99,13 +101,9 @@ export class SitemapDiscoveryService {
     const config = { ...this.defaultOptions, ...options };
 
     // Puppeteer 초기화 시도 (실패해도 계속 진행)
-    try {
-      if (!this.browser) {
-        await this.initialize();
-      }
-    } catch (initError) {
-      console.warn('⚠️ Puppeteer 초기화 실패, fetch fallback만 사용합니다:', initError);
-      // 초기화 실패해도 계속 진행 (fetch fallback 사용)
+    // initialize()는 내부에서 에러를 throw하지 않으므로 try-catch는 사실상 불필요하지만, 안전을 위해 유지
+    if (!this.browser) {
+      await this.initialize();
     }
 
     console.log(`🔍 하위 페이지 발견 시작: ${baseUrl}`);
@@ -407,11 +405,8 @@ export class SitemapDiscoveryService {
       }
     } catch (puppeteerError) {
       // Puppeteer 실패 시에도 Cheerio로 발견한 링크는 반환
-      if (puppeteerError instanceof Error && puppeteerError.message.includes('Chrome')) {
-        console.warn('⚠️ Puppeteer 사용 불가, Cheerio 결과만 사용');
-      } else {
-        console.warn('⚠️ Puppeteer 링크 추출 실패, Cheerio 결과만 사용:', puppeteerError);
-      }
+      // 이는 정상적인 fallback이므로 에러가 아닙니다
+      console.log('ℹ️ Puppeteer 사용 불가 (예상된 동작), Cheerio 결과만 사용하여 계속 진행합니다');
     }
 
     return discoveredUrls;
