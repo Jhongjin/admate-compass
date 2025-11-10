@@ -24,8 +24,8 @@ SELECT
 FROM processing_jobs pj
 WHERE pj.job_type = 'CRAWL_SEED'
   AND (
-    pj.document_id LIKE 'doc_1762758367%'
-    OR pj.result->>'documentId' LIKE 'doc_1762758367%'
+    pj.document_id LIKE 'doc_1762759985%'
+    OR pj.result->>'documentId' LIKE 'doc_1762759985%'
     OR pj.result->>'url' = 'https://developers.facebook.com/docs/marketing-api'
     OR pj.payload->>'url' = 'https://developers.facebook.com/docs/marketing-api'
   )

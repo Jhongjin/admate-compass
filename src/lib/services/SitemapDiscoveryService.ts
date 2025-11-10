@@ -2,6 +2,7 @@ import puppeteer, { Browser, Page } from 'puppeteer-core';
 import chromium from '@sparticuz/chromium';
 import * as cheerio from 'cheerio';
 import { parseStringPromise } from 'xml2js';
+import { gunzipSync } from 'zlib';
 
 export interface DiscoveredUrl {
   url: string;
@@ -170,22 +171,35 @@ export class SitemapDiscoveryService {
         const sitemapMatches = robotsText.match(/Sitemap:\s*(.+)/gi);
         
         if (sitemapMatches) {
+          console.log(`[CRITICAL] 📋 robots.txt에서 ${sitemapMatches.length}개 Sitemap 발견`);
           for (const match of sitemapMatches) {
             const sitemapUrl = match.replace(/Sitemap:\s*/i, '').trim();
-            console.log(`📄 Sitemap 발견: ${sitemapUrl}`);
+            console.log(`[CRITICAL] 📄 Sitemap 처리 시작: ${sitemapUrl}`);
             
-            const sitemapUrls = await this.parseSitemap(sitemapUrl, baseDomain, config);
-            discoveredUrls.push(...sitemapUrls);
+            try {
+              const sitemapUrls = await this.parseSitemap(sitemapUrl, baseDomain, config);
+              discoveredUrls.push(...sitemapUrls);
+              console.log(`[CRITICAL] ✅ Sitemap 처리 완료: ${sitemapUrl} - ${sitemapUrls.length}개 URL 발견`);
+            } catch (sitemapError) {
+              console.error(`[CRITICAL] ❌ Sitemap 처리 실패 (계속 진행): ${sitemapUrl}`, sitemapError);
+              // 개별 sitemap 실패해도 계속 진행
+            }
           }
         }
       }
 
       // 기본 sitemap.xml 시도
       const defaultSitemapUrl = `${this.getBaseUrl(baseUrl)}/sitemap.xml`;
-      console.log(`📄 기본 sitemap.xml 시도: ${defaultSitemapUrl}`);
+      console.log(`[CRITICAL] 📄 기본 sitemap.xml 시도: ${defaultSitemapUrl}`);
       
-      const sitemapUrls = await this.parseSitemap(defaultSitemapUrl, baseDomain, config);
-      discoveredUrls.push(...sitemapUrls);
+      try {
+        const sitemapUrls = await this.parseSitemap(defaultSitemapUrl, baseDomain, config);
+        discoveredUrls.push(...sitemapUrls);
+        console.log(`[CRITICAL] ✅ 기본 sitemap.xml 처리 완료: ${sitemapUrls.length}개 URL 발견`);
+      } catch (sitemapError) {
+        console.error(`[CRITICAL] ❌ 기본 sitemap.xml 처리 실패 (계속 진행):`, sitemapError);
+        // 기본 sitemap 실패해도 계속 진행
+      }
 
     } catch (error) {
       console.error('❌ Sitemap 발견 실패:', error);
@@ -209,7 +223,33 @@ export class SitemapDiscoveryService {
         return [];
       }
 
-      const xmlContent = await response.text();
+      // Gzip 압축 파일 처리
+      let xmlContent: string;
+      const contentType = response.headers.get('content-type') || '';
+      const isGzip = sitemapUrl.endsWith('.gz') || contentType.includes('gzip') || contentType.includes('application/gzip');
+      
+      if (isGzip) {
+        console.log(`[CRITICAL] 📦 Gzip 압축 파일 감지: ${sitemapUrl} (Content-Type: ${contentType})`);
+        const arrayBuffer = await response.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+        try {
+          const decompressed = gunzipSync(buffer);
+          xmlContent = decompressed.toString('utf-8');
+          console.log(`[CRITICAL] ✅ Gzip 압축 해제 완료: ${sitemapUrl} (${xmlContent.length}자)`);
+        } catch (gzipError) {
+          console.error(`[CRITICAL] ❌ Gzip 압축 해제 실패: ${sitemapUrl}`, gzipError);
+          return [];
+        }
+      } else {
+        xmlContent = await response.text();
+        console.log(`[CRITICAL] 📄 일반 XML 파일: ${sitemapUrl} (${xmlContent.length}자)`);
+      }
+
+      if (!xmlContent || xmlContent.trim().length === 0) {
+        console.warn(`[CRITICAL] ⚠️ 빈 XML 콘텐츠: ${sitemapUrl}`);
+        return [];
+      }
+
       const result = await parseStringPromise(xmlContent);
       
       const discoveredUrls: DiscoveredUrl[] = [];
