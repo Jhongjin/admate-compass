@@ -141,7 +141,7 @@ export class HierarchicalChunkingService {
       const words = text.split(/\s+/);
       return words.some(w => {
         const hasConsecutiveCaseChange = /[A-Z][가-힣]|[가-힣][A-Z]/.test(w);
-        return hasConsecutiveCaseChange && w.length > 6;
+        return hasConsecutiveCaseChange && w.length > 5; // 6자 → 5자로 완화
       });
     };
     
@@ -209,14 +209,63 @@ export class HierarchicalChunkingService {
         // 공백 없이 붙어있는 단어 필터링 (예: "API마케팅", "마케팅API")
         // 영문 대문자와 한글이 공백 없이 붙어있는 경우 감지
         const hasConsecutiveCaseChange = /[A-Z][가-힣]|[가-힣][A-Z]/.test(word);
-        const isInvalidWord = hasConsecutiveCaseChange && word.length > 6;
+        const isInvalidWord = hasConsecutiveCaseChange && word.length > 5; // 6자 → 5자로 완화
         
-        if (isShortWord && isCapitalized && hasNoSentenceEnd && !isInvalidWord) {
+        // 공백 없이 붙어있는 단어는 제목 후보에 추가하지 않음
+        if (isInvalidWord) {
+          // 이전 제목 후보가 있으면 섹션으로 추가
+          if (potentialHeading.length >= 2 && potentialHeading.length <= 30) {
+            const headingEnd = wordStart;
+            const overlaps = sections.some(s => 
+              (potentialHeadingStart >= s.start && potentialHeadingStart < s.end) ||
+              (headingEnd > s.start && headingEnd <= s.end)
+            );
+            
+            if (!overlaps && !hasInvalidWord(potentialHeading)) {
+              sections.push({
+                title: potentialHeading,
+                start: potentialHeadingStart,
+                end: headingEnd,
+                level: 2,
+                paragraphs: [],
+              });
+            }
+          }
+          potentialHeading = '';
+          continue; // 이 단어는 건너뜀
+        }
+        
+        if (isShortWord && isCapitalized && hasNoSentenceEnd) {
           if (potentialHeading === '') {
             potentialHeading = word;
             potentialHeadingStart = wordStart;
           } else {
             potentialHeading += ' ' + word;
+          }
+          
+          // 제목 후보에 공백 없이 붙어있는 단어가 포함되어 있으면 제목 후보 초기화
+          if (hasInvalidWord(potentialHeading)) {
+            // 이전 제목 후보(현재 단어 제외)를 섹션으로 추가
+            const prevHeading = potentialHeading.substring(0, potentialHeading.length - word.length - 1).trim();
+            if (prevHeading.length >= 2 && prevHeading.length <= 30 && !hasInvalidWord(prevHeading)) {
+              const headingEnd = wordStart;
+              const overlaps = sections.some(s => 
+                (potentialHeadingStart >= s.start && potentialHeadingStart < s.end) ||
+                (headingEnd > s.start && headingEnd <= s.end)
+              );
+              
+              if (!overlaps) {
+                sections.push({
+                  title: prevHeading,
+                  start: potentialHeadingStart,
+                  end: headingEnd,
+                  level: 2,
+                  paragraphs: [],
+                });
+              }
+            }
+            potentialHeading = '';
+            continue; // 이 단어는 건너뜀
           }
           
           // 제목이 적절한 길이(20-30자)에 도달하면 섹션으로 추가하고 새로 시작
