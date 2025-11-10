@@ -132,28 +132,102 @@ export class HierarchicalChunkingService {
       currentPos = lineEnd + 1; // +1 for \n
     }
     
-    // 1-2. 문장 끝이 없는 짧은 구문을 제목으로 감지 (공백으로 구분된 경우)
+    // 1-2. 공백으로 구분된 짧은 구문을 제목으로 감지 (개선: 문장 시작 지점 감지)
     // 예: "마케팅 API 개요 시작하기 광고 크리에이티브 Bidding..." -> 각각을 제목으로
-    // 패턴: 문장 끝(., !, ?)이 없고, 짧은 구문(2-30자)이 연속으로 나오는 경우
-    const headingPattern = /([A-Z가-힣][^\s.!?]{1,30}(?:\s+[A-Z가-힣][^\s.!?]{1,30})*)(?=\s+[A-Z가-힣][^\s.!?]{20,})/g;
-    let headingMatch;
-    while ((headingMatch = headingPattern.exec(content)) !== null) {
-      const headingText = headingMatch[1].trim();
-      const headingStart = headingMatch.index;
-      const headingEnd = headingStart + headingMatch[0].length;
+    // 패턴: 문장 끝이 없고, 짧은 구문(2-40자) 다음에 긴 문장이 시작되는 경우
+    const words = content.split(/\s+/);
+    let currentPos = 0;
+    let potentialHeading = '';
+    let potentialHeadingStart = 0;
+    
+    // 문장 시작을 나타내는 패턴 (조사, 동사 등)
+    const sentenceStartPattern = /^(는|은|와|과|를|을|가|이|에|에서|로|으로|의|부터|까지)$/;
+    const longWordThreshold = 15; // 긴 단어로 간주하는 길이
+    
+    for (let i = 0; i < words.length; i++) {
+      const word = words[i];
+      const wordStart = content.indexOf(word, currentPos);
+      const wordEnd = wordStart + word.length;
       
-      // 이미 감지된 섹션과 겹치지 않는지 확인
+      // 단어가 짧고(20자 이하), 문장 끝이 없으면 제목 후보
+      const isShortWord = word.length <= 20;
+      const hasNoSentenceEnd = !word.match(/[.!?]$/);
+      const isCapitalized = /^[A-Z가-힣]/.test(word);
+      const isSentenceStart = sentenceStartPattern.test(word);
+      const isLongWord = word.length > longWordThreshold;
+      
+      // 문장이 시작되는 지점 감지 (조사가 나오거나, 긴 단어가 나오면 문장 시작)
+      if (isSentenceStart || (isLongWord && potentialHeading.length > 0)) {
+        // 제목 후보가 있고, 길이가 적절하면 섹션으로 추가
+        if (potentialHeading.length >= 2 && potentialHeading.length <= 40) {
+          const headingEnd = wordStart;
+          
+          // 이미 감지된 섹션과 겹치지 않는지 확인
+          const overlaps = sections.some(s => 
+            (potentialHeadingStart >= s.start && potentialHeadingStart < s.end) ||
+            (headingEnd > s.start && headingEnd <= s.end)
+          );
+          
+          if (!overlaps) {
+            sections.push({
+              title: potentialHeading,
+              start: potentialHeadingStart,
+              end: headingEnd,
+              level: 3, // 하위 레벨
+              paragraphs: [],
+            });
+          }
+        }
+        potentialHeading = '';
+      } else if (isShortWord && hasNoSentenceEnd && isCapitalized) {
+        // 제목 후보에 추가
+        if (potentialHeading === '') {
+          potentialHeading = word;
+          potentialHeadingStart = wordStart;
+        } else {
+          potentialHeading += ' ' + word;
+        }
+      } else {
+        // 제목 후보가 있고, 길이가 적절하면 섹션으로 추가
+        if (potentialHeading.length >= 2 && potentialHeading.length <= 40) {
+          const headingEnd = wordStart;
+          
+          // 이미 감지된 섹션과 겹치지 않는지 확인
+          const overlaps = sections.some(s => 
+            (potentialHeadingStart >= s.start && potentialHeadingStart < s.end) ||
+            (headingEnd > s.start && headingEnd <= s.end)
+          );
+          
+          if (!overlaps) {
+            sections.push({
+              title: potentialHeading,
+              start: potentialHeadingStart,
+              end: headingEnd,
+              level: 3, // 하위 레벨
+              paragraphs: [],
+            });
+          }
+        }
+        potentialHeading = '';
+      }
+      
+      currentPos = wordEnd;
+    }
+    
+    // 마지막 제목 후보 처리
+    if (potentialHeading.length >= 2 && potentialHeading.length <= 40) {
+      const headingEnd = content.length;
       const overlaps = sections.some(s => 
-        (headingStart >= s.start && headingStart < s.end) ||
+        (potentialHeadingStart >= s.start && potentialHeadingStart < s.end) ||
         (headingEnd > s.start && headingEnd <= s.end)
       );
       
-      if (!overlaps && headingText.length >= 2 && headingText.length <= 50) {
+      if (!overlaps) {
         sections.push({
-          title: headingText,
-          start: headingStart,
+          title: potentialHeading,
+          start: potentialHeadingStart,
           end: headingEnd,
-          level: 3, // 하위 레벨
+          level: 3,
           paragraphs: [],
         });
       }
@@ -161,6 +235,29 @@ export class HierarchicalChunkingService {
 
     // 섹션을 시작 위치순으로 정렬
     sections.sort((a, b) => a.start - b.start);
+    
+    // 디버깅: 감지된 섹션 로그
+    if (sections.length > 0) {
+      console.error('[CRITICAL] 🔍 감지된 섹션:', {
+        sectionsCount: sections.length,
+        sections: sections.map(s => ({
+          title: s.title,
+          start: s.start,
+          end: s.end,
+          level: s.level,
+          preview: content.substring(s.start, Math.min(s.end, s.start + 50))
+        })),
+        timestamp: new Date().toISOString()
+      });
+    } else {
+      console.error('[CRITICAL] ⚠️ 섹션 감지 실패:', {
+        contentLength: content.length,
+        contentPreview: content.substring(0, 200),
+        linesCount: content.split('\n').length,
+        wordsCount: content.split(/\s+/).length,
+        timestamp: new Date().toISOString()
+      });
+    }
 
     // 2. 문단 구분 찾기 (개선: 단일 줄바꿈도 인식)
     // 연속된 줄바꿈(\n\n+) 또는 단일 줄바꿈(\n)으로 구분된 블록을 문단으로 인식
