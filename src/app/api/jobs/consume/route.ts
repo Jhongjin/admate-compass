@@ -1375,7 +1375,7 @@ export async function processQueue() {
           let textContent = '';
           
           // 텍스트 추출 헬퍼 함수: 줄바꿈과 공백을 적절히 유지
-          const extractTextWithStructure = ($element: cheerio.Cheerio<cheerio.Element>): string => {
+          const extractTextWithStructure = ($element: cheerio.Cheerio): string => {
             // 클론 생성 (원본 보존)
             const $clone = $element.clone();
             
