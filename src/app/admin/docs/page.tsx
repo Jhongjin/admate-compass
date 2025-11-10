@@ -19,7 +19,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Checkbox } from "@/components/ui/checkbox";
 import { Progress } from "@/components/ui/progress";
 import type { LucideIcon } from "lucide-react";
-import { Check, CheckCircle, Download, FileText, Globe, Loader2, RefreshCw, Search, Upload, XCircle, File, Link2, ArrowUp, ArrowDown, ArrowUpDown, FileSearch, Sparkles, Database, Info, Clock3, AlertTriangle, Settings } from "lucide-react";
+import { Check, CheckCircle, Download, FileText, Globe, Loader2, RefreshCw, Search, Upload, XCircle, File, Link2, ArrowUp, ArrowDown, ArrowUpDown, FileSearch, Sparkles, Database, Info, Clock3, AlertTriangle, Settings, ChevronDown, ChevronRight } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
@@ -2008,6 +2008,9 @@ function DocsTable({
   const [detail, setDetail] = useState<any | null>(null);
   const [sortColumn, setSortColumn] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
+  const [expandedSubPages, setExpandedSubPages] = useState<Record<string, boolean>>({});
+  const [subPagesCache, setSubPagesCache] = useState<Record<string, Array<{ url: string; title?: string; success: boolean }>>({});
+  const [loadingSubPages, setLoadingSubPages] = useState<Record<string, boolean>>({});
 
   // 정렬된 데이터
   const sortedData = useMemo(() => {
@@ -2092,6 +2095,84 @@ function DocsTable({
         newSelected[row.id] = true;
       });
       setSelected(newSelected);
+    }
+  };
+
+  // 서브 페이지 정보 조회 함수
+  const fetchSubPages = async (documentId: string, documentUrl: string) => {
+    // 캐시에 있으면 반환
+    if (subPagesCache[documentId]) {
+      return subPagesCache[documentId];
+    }
+
+    try {
+      // 방법 1: document_id로 직접 조회 (가장 정확)
+      const { data: jobByDocId, error: errorByDocId } = await supabase
+        .from('processing_jobs')
+        .select('result, created_at')
+        .eq('document_id', documentId)
+        .eq('job_type', 'CRAWL_SEED')
+        .eq('status', 'completed')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (!errorByDocId && jobByDocId) {
+        const result = jobByDocId.result as any;
+        if (result?.subPages && Array.isArray(result.subPages)) {
+          const subPages = result.subPages as Array<{ url: string; title?: string; success: boolean }>;
+          setSubPagesCache(prev => ({ ...prev, [documentId]: subPages }));
+          return subPages;
+        }
+      }
+
+      // 방법 2: URL로 조회 (fallback)
+      const { data: jobs, error } = await supabase
+        .from('processing_jobs')
+        .select('result, created_at')
+        .eq('job_type', 'CRAWL_SEED')
+        .eq('status', 'completed')
+        .order('created_at', { ascending: false })
+        .limit(20);
+
+      if (error) {
+        console.error('서브 페이지 조회 오류:', error);
+        return [];
+      }
+
+      // 문서 URL과 일치하는 작업 결과 찾기
+      for (const job of jobs || []) {
+        const result = job.result as any;
+        if (result?.url === documentUrl && result?.subPages && Array.isArray(result.subPages)) {
+          const subPages = result.subPages as Array<{ url: string; title?: string; success: boolean }>;
+          setSubPagesCache(prev => ({ ...prev, [documentId]: subPages }));
+          return subPages;
+        }
+      }
+
+      // 서브 페이지 정보가 없으면 빈 배열 반환
+      setSubPagesCache(prev => ({ ...prev, [documentId]: [] }));
+      return [];
+    } catch (error) {
+      console.error('서브 페이지 조회 오류:', error);
+      setSubPagesCache(prev => ({ ...prev, [documentId]: [] }));
+      return [];
+    }
+  };
+
+  // 서브 페이지 확장 토글
+  const toggleSubPages = async (documentId: string, documentUrl: string) => {
+    const isExpanded = expandedSubPages[documentId];
+    setExpandedSubPages(prev => ({ ...prev, [documentId]: !isExpanded }));
+    
+    // 확장할 때 서브 페이지 정보 조회
+    if (!isExpanded && !subPagesCache[documentId]) {
+      setLoadingSubPages(prev => ({ ...prev, [documentId]: true }));
+      try {
+        await fetchSubPages(documentId, documentUrl);
+      } finally {
+        setLoadingSubPages(prev => ({ ...prev, [documentId]: false }));
+      }
     }
   };
 
@@ -2399,6 +2480,71 @@ function DocsTable({
                     <div className="mt-1 text-[11px] text-muted-enhanced">
                       {new Date(row.updated_at).toLocaleString()}
                     </div>
+                    {/* URL 타입 문서에 서브 페이지 정보 표시 */}
+                    {row.type === 'url' && row.url && (
+                      <div className="mt-2 border-t border-gray-700/50 pt-2">
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleSubPages(row.id, row.url);
+                          }}
+                          className="flex items-center gap-1 text-xs text-gray-400 hover:text-blue-400 transition-colors"
+                        >
+                          {expandedSubPages[row.id] ? (
+                            <ChevronDown className="w-3 h-3" />
+                          ) : (
+                            <ChevronRight className="w-3 h-3" />
+                          )}
+                          <Link2 className="w-3 h-3" />
+                          <span>서브 페이지</span>
+                          {subPagesCache[row.id] && (
+                            <Badge className="ml-1 bg-blue-500/20 text-blue-300 border-blue-400/30 text-[10px] px-1.5 py-0">
+                              {subPagesCache[row.id].filter(p => p.success).length}개
+                            </Badge>
+                          )}
+                        </button>
+                        {expandedSubPages[row.id] && (
+                          <div className="mt-2 space-y-1 max-h-48 overflow-y-auto">
+                            {loadingSubPages[row.id] ? (
+                              <div className="flex items-center justify-center gap-2 text-xs text-gray-400 py-3">
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                                <span>서브 페이지 정보를 불러오는 중...</span>
+                              </div>
+                            ) : subPagesCache[row.id]?.length > 0 ? (
+                              subPagesCache[row.id].map((subPage, idx) => (
+                                <div
+                                  key={idx}
+                                  className={`flex items-center gap-2 text-xs p-1.5 rounded ${
+                                    subPage.success
+                                      ? 'bg-green-500/10 border border-green-500/20'
+                                      : 'bg-red-500/10 border border-red-500/20'
+                                  }`}
+                                >
+                                  <a
+                                    href={subPage.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    onClick={(e) => e.stopPropagation()}
+                                    className="flex-1 min-w-0 truncate text-blue-400 hover:text-blue-300"
+                                  >
+                                    {subPage.title || subPage.url}
+                                  </a>
+                                  {subPage.success ? (
+                                    <CheckCircle className="w-3 h-3 text-green-400 flex-shrink-0" />
+                                  ) : (
+                                    <XCircle className="w-3 h-3 text-red-400 flex-shrink-0" />
+                                  )}
+                                </div>
+                              ))
+                            ) : (
+                              <div className="text-xs text-gray-500 text-center py-2">
+                                서브 페이지가 없거나 아직 크롤링되지 않았습니다.
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -2432,52 +2578,117 @@ function DocsTable({
                 </div>
                 <div className="divide-y divide-gray-700/60">
                   {(sortedData || []).map((row: any) => (
-                    <div key={row.id} className="grid grid-cols-12 items-center px-4 py-3 hover:bg-gray-800/40">
-                      <div className="col-span-7 flex items-center gap-2 min-w-0 pr-2">
-                        <Checkbox 
-                          checked={!!selected[row.id]} 
-                          onCheckedChange={() => toggleSelect(row.id)}
-                          className="flex-shrink-0"
-                        />
-                        <TooltipProvider>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <button onClick={() => setDetail(row)} className="text-left min-w-0 flex-1">
-                                <span className="text-primary-enhanced font-semibold truncate block">
+                    <div key={row.id}>
+                      <div className="grid grid-cols-12 items-center px-4 py-3 hover:bg-gray-800/40">
+                        <div className="col-span-7 flex items-center gap-2 min-w-0 pr-2">
+                          <Checkbox 
+                            checked={!!selected[row.id]} 
+                            onCheckedChange={() => toggleSelect(row.id)}
+                            className="flex-shrink-0"
+                          />
+                          {row.type === 'url' && row.url && (
+                            <button
+                              onClick={() => toggleSubPages(row.id, row.url)}
+                              className="flex-shrink-0 text-gray-400 hover:text-blue-400 transition-colors"
+                            >
+                              {expandedSubPages[row.id] ? (
+                                <ChevronDown className="w-4 h-4" />
+                              ) : (
+                                <ChevronRight className="w-4 h-4" />
+                              )}
+                            </button>
+                          )}
+                          <TooltipProvider>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <button onClick={() => setDetail(row)} className="text-left min-w-0 flex-1">
+                                  <span className="text-primary-enhanced font-semibold truncate block">
+                                    {row.title || row.id}
+                                  </span>
+                                </button>
+                              </TooltipTrigger>
+                              <TooltipContent>
+                                <div className="max-w-[640px] whitespace-pre-wrap break-words text-sm">
                                   {row.title || row.id}
-                                </span>
-                              </button>
-                            </TooltipTrigger>
-                            <TooltipContent>
-                              <div className="max-w-[640px] whitespace-pre-wrap break-words text-sm">
-                                {row.title || row.id}
+                                </div>
+                              </TooltipContent>
+                            </Tooltip>
+                          </TooltipProvider>
+                        </div>
+                        <div className="col-span-2">
+                          <Badge className={`${getTypeBadgeStyle(getDocumentFileType(row))} font-semibold text-[10px] px-2 py-0.5 inline-flex items-center gap-1 w-fit whitespace-nowrap`}>
+                            {getTypeIcon(getDocumentFileType(row))}
+                            {getTypeDisplayName(getDocumentFileType(row))}
+                          </Badge>
+                        </div>
+                        <div className="col-span-2">
+                          <Badge className={`${
+                            row.status === 'indexed' 
+                              ? 'bg-green-500/20 text-green-300 border-green-400/30'
+                              : row.status === 'processing'
+                              ? 'bg-yellow-500/20 text-yellow-300 border-yellow-400/30'
+                              : row.status === 'failed'
+                              ? 'bg-red-500/20 text-red-300 border-red-400/30'
+                              : 'bg-gray-500/20 text-gray-300 border-gray-400/30'
+                          } font-semibold w-fit whitespace-nowrap`}>
+                            {row.status}
+                          </Badge>
+                        </div>
+                        <div className="col-span-1 text-right text-[11px] text-muted-enhanced pr-2">
+                          {new Date(row.updated_at).toLocaleString()}
+                        </div>
+                      </div>
+                      {/* URL 타입 문서에 서브 페이지 정보 표시 (리스트 뷰) */}
+                      {row.type === 'url' && row.url && expandedSubPages[row.id] && (
+                        <div className="px-4 pb-3 bg-gray-800/20 border-t border-gray-700/50">
+                          <div className="flex items-center gap-2 mb-2 text-xs text-gray-400">
+                            <Link2 className="w-3 h-3" />
+                            <span>서브 페이지</span>
+                            {subPagesCache[row.id] && (
+                              <Badge className="bg-blue-500/20 text-blue-300 border-blue-400/30 text-[10px] px-1.5 py-0">
+                                {subPagesCache[row.id].filter(p => p.success).length}개 성공
+                              </Badge>
+                            )}
+                          </div>
+                          <div className="space-y-1 max-h-48 overflow-y-auto">
+                            {loadingSubPages[row.id] ? (
+                              <div className="flex items-center justify-center gap-2 text-xs text-gray-400 py-3">
+                                <Loader2 className="w-3 h-3 animate-spin" />
+                                <span>서브 페이지 정보를 불러오는 중...</span>
                               </div>
-                            </TooltipContent>
-                          </Tooltip>
-                        </TooltipProvider>
-                      </div>
-                      <div className="col-span-2">
-                        <Badge className={`${getTypeBadgeStyle(getDocumentFileType(row))} font-semibold text-[10px] px-2 py-0.5 inline-flex items-center gap-1 w-fit whitespace-nowrap`}>
-                          {getTypeIcon(getDocumentFileType(row))}
-                          {getTypeDisplayName(getDocumentFileType(row))}
-                        </Badge>
-                      </div>
-                      <div className="col-span-2">
-                        <Badge className={`${
-                          row.status === 'indexed' 
-                            ? 'bg-green-500/20 text-green-300 border-green-400/30'
-                            : row.status === 'processing'
-                            ? 'bg-yellow-500/20 text-yellow-300 border-yellow-400/30'
-                            : row.status === 'failed'
-                            ? 'bg-red-500/20 text-red-300 border-red-400/30'
-                            : 'bg-gray-500/20 text-gray-300 border-gray-400/30'
-                        } font-semibold w-fit whitespace-nowrap`}>
-                          {row.status}
-                        </Badge>
-                      </div>
-                      <div className="col-span-1 text-right text-[11px] text-muted-enhanced pr-2">
-                        {new Date(row.updated_at).toLocaleString()}
-                      </div>
+                            ) : subPagesCache[row.id]?.length > 0 ? (
+                              subPagesCache[row.id].map((subPage, idx) => (
+                                <div
+                                  key={idx}
+                                  className={`flex items-center gap-2 text-xs p-2 rounded ${
+                                    subPage.success
+                                      ? 'bg-green-500/10 border border-green-500/20'
+                                      : 'bg-red-500/10 border border-red-500/20'
+                                  }`}
+                                >
+                                  <a
+                                    href={subPage.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="flex-1 min-w-0 truncate text-blue-400 hover:text-blue-300"
+                                  >
+                                    {subPage.title || subPage.url}
+                                  </a>
+                                  {subPage.success ? (
+                                    <CheckCircle className="w-3 h-3 text-green-400 flex-shrink-0" />
+                                  ) : (
+                                    <XCircle className="w-3 h-3 text-red-400 flex-shrink-0" />
+                                  )}
+                                </div>
+                              ))
+                            ) : (
+                              <div className="text-xs text-gray-500 text-center py-2">
+                                서브 페이지가 없거나 아직 크롤링되지 않았습니다.
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
