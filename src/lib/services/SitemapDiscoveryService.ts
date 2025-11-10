@@ -527,17 +527,25 @@ export class SitemapDiscoveryService {
       
       // 같은 도메인인지 확인
       if (urlDomain !== baseDomain) {
-        return config.includeExternal;
-      }
-      
-      // 허용된 도메인 목록 확인
-      if (config.allowedDomains && !config.allowedDomains.includes(urlDomain)) {
+        if (config.includeExternal) {
+          return true;
+        }
+        // 도메인이 다르면 false 반환 (상세 로그는 filterAndSortPages에서 출력)
         return false;
       }
       
-      // 불필요한 확장자 제외
+      // 허용된 도메인 목록 확인
+      if (config.allowedDomains && config.allowedDomains.length > 0 && !config.allowedDomains.includes(urlDomain)) {
+        return false;
+      }
+      
+      // 불필요한 확장자 제외 (단, sitemap URL은 이미 파싱되어 URL 목록으로 변환되므로 영향 없음)
       const excludedExtensions = ['.pdf', '.jpg', '.jpeg', '.png', '.gif', '.css', '.js', '.xml'];
-      const hasExcludedExtension = excludedExtensions.some(ext => url.toLowerCase().includes(ext));
+      const hasExcludedExtension = excludedExtensions.some(ext => {
+        // 경로 끝에 확장자가 있는 경우만 제외 (URL 중간에 포함된 것은 허용)
+        const pathname = urlObj.pathname.toLowerCase();
+        return pathname.endsWith(ext);
+      });
       if (hasExcludedExtension) {
         return false;
       }
@@ -571,11 +579,54 @@ export class SitemapDiscoveryService {
     
     // 도메인 필터링
     const beforeDomainFilter = uniquePages.length;
-    const filteredPages = uniquePages.filter(page => 
-      this.isValidUrl(page.url, baseDomain, config)
-    );
+    const filteredPages: DiscoveredUrl[] = [];
+    const filteredOut: Array<{url: string, reason: string}> = [];
     
-    console.log(`📊 도메인 필터링: ${beforeDomainFilter}개 → ${filteredPages.length}개 (제외: ${beforeDomainFilter - filteredPages.length}개)`);
+    uniquePages.forEach(page => {
+      try {
+        const urlObj = new URL(page.url);
+        const urlDomain = urlObj.hostname;
+        
+        // 도메인 체크
+        if (urlDomain !== baseDomain) {
+          filteredOut.push({ url: page.url, reason: `도메인 불일치: ${urlDomain} !== ${baseDomain}` });
+          return;
+        }
+        
+        // allowedDomains 체크
+        if (config.allowedDomains && config.allowedDomains.length > 0 && !config.allowedDomains.includes(urlDomain)) {
+          filteredOut.push({ url: page.url, reason: `허용되지 않은 도메인: ${urlDomain} not in [${config.allowedDomains.join(', ')}]` });
+          return;
+        }
+        
+        // 확장자 체크
+        const excludedExtensions = ['.pdf', '.jpg', '.jpeg', '.png', '.gif', '.css', '.js', '.xml'];
+        const pathname = urlObj.pathname.toLowerCase();
+        const hasExcludedExtension = excludedExtensions.some(ext => pathname.endsWith(ext));
+        if (hasExcludedExtension) {
+          filteredOut.push({ url: page.url, reason: `제외된 확장자: ${pathname}` });
+          return;
+        }
+        
+        // 모든 체크 통과
+        filteredPages.push(page);
+      } catch (e) {
+        filteredOut.push({ url: page.url, reason: `URL 파싱 실패: ${e}` });
+      }
+    });
+    
+    console.log(`[CRITICAL] 📊 도메인 필터링: ${beforeDomainFilter}개 → ${filteredPages.length}개 (제외: ${beforeDomainFilter - filteredPages.length}개)`);
+    
+    // 필터링된 URL 상세 로그 (처음 10개만)
+    if (filteredOut.length > 0) {
+      console.log(`[CRITICAL] ⚠️ 필터링된 URL 샘플 (처음 10개):`);
+      filteredOut.slice(0, 10).forEach((item, idx) => {
+        console.log(`[CRITICAL]   ${idx + 1}. ${item.url.substring(0, 80)}... (이유: ${item.reason})`);
+      });
+      if (filteredOut.length > 10) {
+        console.log(`[CRITICAL]   ... 외 ${filteredOut.length - 10}개`);
+      }
+    }
     
     // 우선순위별 정렬 (sitemap > links > pattern)
     const sourcePriority = { sitemap: 1, robots: 1, links: 2, pattern: 3 };
