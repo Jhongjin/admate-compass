@@ -170,7 +170,7 @@ export class HierarchicalChunkingService {
         sentenceStarted = true;
         
         // 제목 후보가 있고, 길이가 적절하면 섹션으로 추가
-        if (potentialHeading.length >= 2 && potentialHeading.length <= 40) {
+        if (potentialHeading.length >= 2 && potentialHeading.length <= 30) {
           const headingEnd = wordStart;
           
           // 이미 감지된 섹션과 겹치지 않는지 확인
@@ -204,8 +204,34 @@ export class HierarchicalChunkingService {
             potentialHeading += ' ' + word;
           }
           
-          // 제목이 너무 길어지면 (40자 이상) 섹션으로 추가하고 새로 시작
-          if (potentialHeading.length > 40) {
+          // 제목이 적절한 길이(20-30자)에 도달하면 섹션으로 추가하고 새로 시작
+          // 너무 짧으면(5자 미만) 계속 추가, 너무 길면(30자 이상) 분리
+          if (potentialHeading.length >= 30) {
+            const headingEnd = wordStart;
+            const overlaps = sections.some(s => 
+              (potentialHeadingStart >= s.start && potentialHeadingStart < s.end) ||
+              (headingEnd > s.start && headingEnd <= s.end)
+            );
+            
+            if (!overlaps) {
+              // 마지막 단어를 제외한 제목으로 섹션 추가
+              const lastSpaceIndex = potentialHeading.lastIndexOf(' ');
+              const headingTitle = lastSpaceIndex > 0 
+                ? potentialHeading.substring(0, lastSpaceIndex)
+                : potentialHeading;
+              
+              sections.push({
+                title: headingTitle,
+                start: potentialHeadingStart,
+                end: headingEnd - word.length - 1,
+                level: 2,
+                paragraphs: [],
+              });
+            }
+            potentialHeading = word;
+            potentialHeadingStart = wordStart;
+          } else if (potentialHeading.length >= 20 && potentialHeading.split(' ').length >= 3) {
+            // 20자 이상이고 3개 이상의 단어로 구성된 경우 섹션으로 추가
             const headingEnd = wordStart;
             const overlaps = sections.some(s => 
               (potentialHeadingStart >= s.start && potentialHeadingStart < s.end) ||
@@ -214,9 +240,9 @@ export class HierarchicalChunkingService {
             
             if (!overlaps) {
               sections.push({
-                title: potentialHeading.substring(0, potentialHeading.lastIndexOf(' ')),
+                title: potentialHeading,
                 start: potentialHeadingStart,
-                end: headingEnd - word.length - 1,
+                end: headingEnd,
                 level: 2,
                 paragraphs: [],
               });
@@ -226,7 +252,7 @@ export class HierarchicalChunkingService {
           }
         } else {
           // 제목 후보가 있고, 길이가 적절하면 섹션으로 추가
-          if (potentialHeading.length >= 2 && potentialHeading.length <= 40) {
+          if (potentialHeading.length >= 2 && potentialHeading.length <= 30) {
             const headingEnd = wordStart;
             const overlaps = sections.some(s => 
               (potentialHeadingStart >= s.start && potentialHeadingStart < s.end) ||
@@ -251,7 +277,7 @@ export class HierarchicalChunkingService {
     }
     
     // 마지막 제목 후보 처리 (문장이 시작되지 않은 경우)
-    if (!sentenceStarted && potentialHeading.length >= 2 && potentialHeading.length <= 40) {
+    if (!sentenceStarted && potentialHeading.length >= 2 && potentialHeading.length <= 30) {
       const headingEnd = content.length;
       const overlaps = sections.some(s => 
         (potentialHeadingStart >= s.start && potentialHeadingStart < s.end) ||
