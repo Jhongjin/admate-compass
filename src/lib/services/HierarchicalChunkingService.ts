@@ -135,6 +135,16 @@ export class HierarchicalChunkingService {
     // 1-2. 텍스트 앞부분의 짧은 구문을 제목으로 감지 (문장 시작 전까지만)
     // 예: "마케팅 API 개요 시작하기 광고 크리에이티브 Bidding..." -> 각각을 제목으로
     // 문장이 시작되면 제목 감지 중단
+    
+    // 공백 없이 붙어있는 단어 필터링 헬퍼 함수
+    const hasInvalidWord = (text: string): boolean => {
+      const words = text.split(/\s+/);
+      return words.some(w => {
+        const hasConsecutiveCaseChange = /[A-Z][가-힣]|[가-힣][A-Z]/.test(w);
+        return hasConsecutiveCaseChange && w.length > 6;
+      });
+    };
+    
     const words = content.split(/\s+/);
     let wordPos = 0;
     let potentialHeading = '';
@@ -179,7 +189,7 @@ export class HierarchicalChunkingService {
             (headingEnd > s.start && headingEnd <= s.end)
           );
           
-          if (!overlaps) {
+          if (!overlaps && !hasInvalidWord(potentialHeading)) {
             sections.push({
               title: potentialHeading,
               start: potentialHeadingStart,
@@ -196,7 +206,12 @@ export class HierarchicalChunkingService {
         const isCapitalized = /^[A-Z가-힣]/.test(word);
         const hasNoSentenceEnd = !word.match(/[.!?]$/);
         
-        if (isShortWord && isCapitalized && hasNoSentenceEnd) {
+        // 공백 없이 붙어있는 단어 필터링 (예: "API마케팅", "마케팅API")
+        // 영문 대문자와 한글이 공백 없이 붙어있는 경우 감지
+        const hasConsecutiveCaseChange = /[A-Z][가-힣]|[가-힣][A-Z]/.test(word);
+        const isInvalidWord = hasConsecutiveCaseChange && word.length > 6;
+        
+        if (isShortWord && isCapitalized && hasNoSentenceEnd && !isInvalidWord) {
           if (potentialHeading === '') {
             potentialHeading = word;
             potentialHeadingStart = wordStart;
@@ -220,13 +235,16 @@ export class HierarchicalChunkingService {
                 ? potentialHeading.substring(0, lastSpaceIndex)
                 : potentialHeading;
               
-              sections.push({
-                title: headingTitle,
-                start: potentialHeadingStart,
-                end: headingEnd - word.length - 1,
-                level: 2,
-                paragraphs: [],
-              });
+              // 공백 없이 붙어있는 단어가 포함되어 있지 않은 경우만 추가
+              if (!hasInvalidWord(headingTitle)) {
+                sections.push({
+                  title: headingTitle,
+                  start: potentialHeadingStart,
+                  end: headingEnd - word.length - 1,
+                  level: 2,
+                  paragraphs: [],
+                });
+              }
             }
             potentialHeading = word;
             potentialHeadingStart = wordStart;
@@ -238,7 +256,7 @@ export class HierarchicalChunkingService {
               (headingEnd > s.start && headingEnd <= s.end)
             );
             
-            if (!overlaps) {
+            if (!overlaps && !hasInvalidWord(potentialHeading)) {
               sections.push({
                 title: potentialHeading,
                 start: potentialHeadingStart,
@@ -259,7 +277,7 @@ export class HierarchicalChunkingService {
               (headingEnd > s.start && headingEnd <= s.end)
             );
             
-            if (!overlaps) {
+            if (!overlaps && !hasInvalidWord(potentialHeading)) {
               sections.push({
                 title: potentialHeading,
                 start: potentialHeadingStart,
@@ -284,7 +302,7 @@ export class HierarchicalChunkingService {
         (headingEnd > s.start && headingEnd <= s.end)
       );
       
-      if (!overlaps) {
+      if (!overlaps && !hasInvalidWord(potentialHeading)) {
         sections.push({
           title: potentialHeading,
           start: potentialHeadingStart,
