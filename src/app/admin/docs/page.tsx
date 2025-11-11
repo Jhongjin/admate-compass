@@ -2084,17 +2084,62 @@ function DocsTable({
         firstRow: rows[0] ? { 
           id: rows[0].id, 
           type: rows[0].type, 
+          typeValue: String(rows[0].type),
+          typeIsUndefined: rows[0].type === undefined,
+          typeIsNull: rows[0].type === null,
           url: rows[0].url,
+          urlValue: String(rows[0].url || ''),
+          urlIsUndefined: rows[0].url === undefined,
+          urlIsNull: rows[0].url === null,
           mainUrl: (rows[0] as any).mainUrl,
           isMainUrl: (rows[0] as any).isMainUrl
-        } : null
+        } : null,
+        sampleRows: rows.slice(0, 5).map((r: any) => ({
+          id: r.id,
+          type: r.type,
+          typeValue: String(r.type || ''),
+          url: r.url,
+          urlValue: String(r.url || ''),
+          typeCheck: r.type === 'url',
+          urlCheck: !!r.url,
+          combinedCheck: r.type === 'url' && r.url
+        }))
       });
     }
     
-    const urlDocuments = rows.filter((row: any) => row.type === 'url' && row.url);
+    const urlDocuments = rows.filter((row: any) => {
+      const typeMatch = row.type === 'url';
+      const urlExists = !!row.url;
+      const combined = typeMatch && urlExists;
+      if (typeof window !== 'undefined' && !combined && row.url) {
+        console.log('[그룹화] ⚠️ URL 문서 필터링 실패:', {
+          id: row.id,
+          type: row.type,
+          typeValue: String(row.type || ''),
+          typeMatch,
+          url: row.url,
+          urlExists,
+          combined
+        });
+      }
+      return combined;
+    });
     const nonUrlDocuments = rows.filter((row: any) => row.type !== 'url' || !row.url);
     if (typeof window !== 'undefined') {
-      console.log('[그룹화] 📋 필터링 결과:', { urlDocuments: urlDocuments.length, nonUrlDocuments: nonUrlDocuments.length });
+      console.log('[그룹화] 📋 필터링 결과:', { 
+        urlDocuments: urlDocuments.length, 
+        nonUrlDocuments: nonUrlDocuments.length,
+        urlDocumentsSample: urlDocuments.slice(0, 3).map((d: any) => ({
+          id: d.id,
+          type: d.type,
+          url: d.url
+        })),
+        nonUrlDocumentsSample: nonUrlDocuments.slice(0, 3).map((d: any) => ({
+          id: d.id,
+          type: d.type,
+          url: d.url
+        }))
+      });
     }
     
     // 메인 URL 기준으로 그룹화
