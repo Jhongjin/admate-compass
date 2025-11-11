@@ -2385,29 +2385,25 @@ function DocsTable({
     if (groupDocumentsByParent && Array.isArray(groupDocumentsByParent)) {
       const groups = groupDocumentsByParent.filter((g: any) => g.isGroup && g.mainDoc && (g.subDocs?.length || 0) > 0);
       if (groups.length > 0) {
-        const newExpandedGroups = new Set<string>();
+        const defaultExpanded = new Set<string>();
         groups.forEach((g: any) => {
           if (g.mainDoc?.id) {
-            newExpandedGroups.add(g.mainDoc.id);
+            defaultExpanded.add(g.mainDoc.id);
           }
         });
-        setExpandedGroups(prev => {
-          // 기존에 펼쳐진 그룹은 유지하고, 새로운 그룹만 추가
-          const merged = new Set(prev);
-          newExpandedGroups.forEach(id => merged.add(id));
-          
-          // 디버깅: expandedGroups 업데이트 확인
+
+        setExpandedGroups((prev) => {
+          if (prev.size > 0) {
+            return prev;
+          }
+
           if (typeof window !== 'undefined') {
-            console.log('[그룹화] 🔄 expandedGroups 업데이트:', {
-              prevSize: prev.size,
-              newGroupsCount: newExpandedGroups.size,
-              mergedSize: merged.size,
-              newGroupIds: Array.from(newExpandedGroups),
-              allExpandedIds: Array.from(merged)
+            console.log('[그룹화] 🔄 expandedGroups 기본값 설정:', {
+              defaultExpandedIds: Array.from(defaultExpanded),
             });
           }
-          
-          return merged;
+
+          return new Set(defaultExpanded);
         });
       }
     }
