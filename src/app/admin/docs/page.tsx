@@ -1929,9 +1929,12 @@ function DocsTable({
 
   // 메인 페이지와 하위 페이지를 그룹화하는 함수 (정렬된 데이터 사용)
   const groupDocumentsByParent = useMemo(() => {
+    console.log('[그룹화] 🚀 그룹화 로직 시작', { sortedDataLength: sortedData?.length, sortedDataIsArray: Array.isArray(sortedData) });
     const rows = sortedData || [];
+    console.log('[그룹화] 📊 입력 데이터:', { totalRows: rows.length, firstRow: rows[0] ? { id: rows[0].id, type: rows[0].type, url: rows[0].url } : null });
     const urlDocuments = rows.filter((row: any) => row.type === 'url' && row.url);
     const nonUrlDocuments = rows.filter((row: any) => row.type !== 'url' || !row.url);
+    console.log('[그룹화] 📋 필터링 결과:', { urlDocuments: urlDocuments.length, nonUrlDocuments: nonUrlDocuments.length });
     
     // URL 문서들을 메인 페이지와 하위 페이지로 분류
     const mainPages: any[] = [];
@@ -1991,11 +1994,13 @@ function DocsTable({
             subPagesMap[parentUrl] = [];
           }
           subPagesMap[parentUrl].push(doc);
-          console.log('[그룹화] 하위 페이지 발견:', { 
+          console.log('[그룹화] ✅ 하위 페이지 발견:', { 
             child: doc.title, 
-            childUrl: doc.url, 
+            childUrl: doc.url,
+            childPathParts: pathParts,
             parent: urlDocuments.find(d => d.url === parentUrl)?.title,
-            parentUrl 
+            parentUrl,
+            parentPathParts: new URL(parentUrl).pathname.split('/').filter(Boolean)
           });
         }
       } catch {
@@ -2030,7 +2035,15 @@ function DocsTable({
     });
     
     // 디버깅: 그룹화 결과 로그
-    console.log('[그룹화] 총 문서:', rows.length, 'URL 문서:', urlDocuments.length, '메인 페이지:', mainPages.length, '그룹화된 그룹:', grouped.filter(g => g.isGroup).length);
+    console.log('[그룹화] 📊 최종 결과:', { 
+      totalRows: rows.length, 
+      urlDocuments: urlDocuments.length, 
+      mainPages: mainPages.length, 
+      groupedCount: grouped.length,
+      groupsWithSubPages: grouped.filter(g => g.isGroup).length,
+      subPagesMapKeys: Object.keys(subPagesMap).length,
+      totalSubPages: Object.values(subPagesMap).flat().length
+    });
     if (mainPages.length > 0) {
       console.log('[그룹화] 메인 페이지 예시:', mainPages.slice(0, 5).map(m => ({ 
         title: m.title, 
@@ -2039,19 +2052,24 @@ function DocsTable({
       })));
     }
     if (Object.keys(subPagesMap).length > 0) {
-      console.log('[그룹화] 하위 페이지 맵:', Object.keys(subPagesMap).slice(0, 5).map(url => ({ 
+      console.log('[그룹화] 🔗 하위 페이지 맵:', Object.keys(subPagesMap).slice(0, 5).map(url => ({ 
         parentUrl: url, 
         parentTitle: urlDocuments.find(d => d.url === url)?.title,
         subCount: subPagesMap[url].length,
-        subPages: subPagesMap[url].slice(0, 3).map(s => ({ title: s.title, url: s.url }))
+        subPages: subPagesMap[url].slice(0, 3).map(s => ({ 
+          title: s.title, 
+          url: s.url,
+          pathParts: new URL(s.url).pathname.split('/').filter(Boolean)
+        }))
       })));
     } else {
-      console.log('[그룹화] ⚠️ 하위 페이지가 발견되지 않았습니다. URL 경로 비교 로직을 확인하세요.');
+      console.log('[그룹화] ⚠️ 하위 페이지가 발견되지 않았습니다.');
       if (urlDocuments.length > 1) {
-        console.log('[그룹화] URL 문서 샘플 (처음 5개):', urlDocuments.slice(0, 5).map(d => ({
+        console.log('[그룹화] 🔍 URL 문서 샘플 (처음 5개):', urlDocuments.slice(0, 5).map(d => ({
           title: d.title,
           url: d.url,
-          pathParts: d.url ? new URL(d.url).pathname.split('/').filter(Boolean) : []
+          pathParts: d.url ? new URL(d.url).pathname.split('/').filter(Boolean) : [],
+          pathLength: d.url ? new URL(d.url).pathname.split('/').filter(Boolean).length : 0
         })));
       }
     }
