@@ -1782,45 +1782,84 @@ function DocsTable({
       
       // 메인 URL 정보를 processing_jobs에서 가져오기
       // CRAWL_SEED 작업의 document_id가 메인 문서 ID
-      const { data: mainUrlMap } = await supabase
+      const { data: mainUrlMap, error: mainUrlError } = await supabase
         .from("processing_jobs")
         .select("document_id, payload")
         .eq("job_type", "CRAWL_SEED")
         .eq("status", "completed")
         .not("document_id", "is", null);
       
+      if (mainUrlError) {
+        console.error('[그룹화] ❌ 메인 URL 조회 실패:', mainUrlError);
+      }
+      
       // document_id -> 메인 URL 매핑 생성
       const mainUrlById: Record<string, string> = {};
+      const mainUrlSet = new Set<string>(); // 빠른 검색을 위한 Set
+      
       if (mainUrlMap) {
         for (const job of mainUrlMap) {
           if (job.document_id && job.payload) {
-            const payload = typeof job.payload === 'string' ? JSON.parse(job.payload) : job.payload;
-            if (payload.url) {
-              mainUrlById[job.document_id] = payload.url;
+            try {
+              const payload = typeof job.payload === 'string' ? JSON.parse(job.payload) : job.payload;
+              if (payload.url) {
+                mainUrlById[job.document_id] = payload.url;
+                mainUrlSet.add(payload.url);
+              }
+            } catch (e) {
+              console.error('[그룹화] ⚠️ payload 파싱 실패:', job.document_id, e);
             }
           }
         }
       }
       
+      console.log('[그룹화] 📊 메인 URL 매핑:', {
+        mainUrlMapCount: mainUrlMap?.length || 0,
+        mainUrlByIdCount: Object.keys(mainUrlById).length,
+        mainUrlSetCount: mainUrlSet.size,
+        sampleMainUrls: Array.from(mainUrlSet).slice(0, 3)
+      });
+      
       // documents에 메인 URL 정보 추가
       const documentsWithMainUrl = (documents || []).map((doc: any) => {
-        // document_id가 메인 URL인 경우
+        // 1. document_id가 메인 문서 ID인 경우
         if (mainUrlById[doc.id]) {
-          return { ...doc, mainUrl: mainUrlById[doc.id], isMainUrl: true };
+          const mainUrl = mainUrlById[doc.id];
+          return { ...doc, mainUrl, isMainUrl: true, mainDocumentId: doc.id };
         }
-        // 하위 페이지인 경우: URL이 메인 URL로 시작하는지 확인
+        
+        // 2. 하위 페이지인 경우: URL이 메인 URL로 시작하는지 확인
         if (doc.url && doc.type === 'url') {
+          // 메인 URL과 정확히 일치하는 경우
+          if (mainUrlSet.has(doc.url)) {
+            // 메인 문서 ID 찾기
+            const mainDocId = Object.keys(mainUrlById).find(id => mainUrlById[id] === doc.url);
+            return { ...doc, mainUrl: doc.url, isMainUrl: true, mainDocumentId: mainDocId || doc.id };
+          }
+          
+          // 하위 페이지인 경우: URL이 메인 URL로 시작하는지 확인
           for (const [mainDocId, mainUrl] of Object.entries(mainUrlById)) {
             // URL 정규화: 슬래시로 끝나지 않는 경우 슬래시 추가하여 비교
             const normalizedMainUrl = mainUrl.endsWith('/') ? mainUrl : mainUrl + '/';
             const normalizedDocUrl = doc.url.endsWith('/') ? doc.url : doc.url + '/';
             // 정확한 매칭: 메인 URL과 정확히 같거나, 메인 URL + '/'로 시작하는 경우
-            if (doc.url === mainUrl || normalizedDocUrl.startsWith(normalizedMainUrl)) {
+            if (doc.url !== mainUrl && normalizedDocUrl.startsWith(normalizedMainUrl)) {
               return { ...doc, mainUrl, isMainUrl: false, mainDocumentId: mainDocId };
             }
           }
         }
+        
         return { ...doc, isMainUrl: false };
+      });
+      
+      // 디버깅: 메인 URL 정보가 추가된 문서 통계
+      const mainDocsCount = documentsWithMainUrl.filter(d => d.isMainUrl === true).length;
+      const subDocsCount = documentsWithMainUrl.filter(d => d.isMainUrl === false && d.mainUrl).length;
+      console.log('[그룹화] 📊 메인 URL 정보 추가 완료:', {
+        totalDocuments: documentsWithMainUrl.length,
+        mainDocsCount,
+        subDocsCount,
+        docsWithoutMainUrl: documentsWithMainUrl.length - mainDocsCount - subDocsCount
       });
       
       return documentsWithMainUrl;
