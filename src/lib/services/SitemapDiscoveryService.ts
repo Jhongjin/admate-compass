@@ -274,20 +274,29 @@ export class SitemapDiscoveryService {
       const result = await parseStringPromise(xmlContent);
       
       const discoveredUrls: DiscoveredUrl[] = [];
+      let sitemapIndexCount = 0;
+      let urlsetCount = 0;
+      let urlsetFilteredCount = 0;
       
       // sitemapindex인 경우
       if (result.sitemapindex) {
         const sitemaps = result.sitemapindex.sitemap || [];
+        sitemapIndexCount = sitemaps.length;
+        console.error(`[CRITICAL] 📋 Sitemap Index 발견: ${sitemapIndexCount}개 하위 sitemap`);
         for (const sitemap of sitemaps) {
           const subSitemapUrl = sitemap.loc[0];
+          console.error(`[CRITICAL] 📄 하위 Sitemap 처리: ${subSitemapUrl}`);
           const subUrls = await this.parseSitemap(subSitemapUrl, baseDomain, config);
           discoveredUrls.push(...subUrls);
+          console.error(`[CRITICAL] ✅ 하위 Sitemap 처리 완료: ${subSitemapUrl} - ${subUrls.length}개 URL`);
         }
       }
       
       // urlset인 경우
       if (result.urlset) {
         const urls = result.urlset.url || [];
+        urlsetCount = urls.length;
+        console.error(`[CRITICAL] 📋 URL Set 발견: ${urlsetCount}개 URL`);
         for (const url of urls) {
           const urlString = url.loc[0];
           const lastmod = url.lastmod ? url.lastmod[0] : undefined;
@@ -301,11 +310,19 @@ export class SitemapDiscoveryService {
               source: 'sitemap',
               depth: 1
             });
+          } else {
+            urlsetFilteredCount++;
           }
         }
+        console.error(`[CRITICAL] 📊 URL Set 필터링: ${urlsetCount}개 중 ${discoveredUrls.length}개 통과, ${urlsetFilteredCount}개 제외`);
       }
 
-      console.log(`📄 Sitemap 파싱 완료: ${sitemapUrl} - ${discoveredUrls.length}개 URL`);
+      if (!result.sitemapindex && !result.urlset) {
+        console.error(`[CRITICAL] ⚠️ Sitemap 형식 인식 실패: sitemapindex도 urlset도 아님`);
+        console.error(`[CRITICAL] 📄 Sitemap 내용 미리보기 (처음 500자): ${xmlContent.substring(0, 500)}`);
+      }
+
+      console.error(`[CRITICAL] 📄 Sitemap 파싱 완료: ${sitemapUrl} - ${discoveredUrls.length}개 URL (sitemapindex: ${sitemapIndexCount}개, urlset: ${urlsetCount}개, 필터링: ${urlsetFilteredCount}개)`);
       return discoveredUrls;
 
     } catch (error) {
@@ -326,6 +343,7 @@ export class SitemapDiscoveryService {
 
     // 1단계: Fetch + Cheerio로 빠르게 시도 (정적 HTML)
     try {
+      console.error(`[CRITICAL] 🔗 링크 추출 시작 (Cheerio): ${baseUrl}`);
       const response = await fetch(baseUrl, {
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -335,6 +353,8 @@ export class SitemapDiscoveryService {
         redirect: 'follow',
         signal: AbortSignal.timeout(10000), // 10초 타임아웃
       });
+
+      console.error(`[CRITICAL] 🔗 페이지 응답: ${response.status} ${response.statusText}, Content-Type: ${response.headers.get('content-type')}`);
 
       if (response.ok) {
         const htmlContent = await response.text();
@@ -684,3 +704,4 @@ export class SitemapDiscoveryService {
 
 // 싱글톤 인스턴스
 export const sitemapDiscoveryService = new SitemapDiscoveryService();
+
