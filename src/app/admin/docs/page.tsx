@@ -2021,8 +2021,17 @@ function DocsTable({
       grouped.push({ isGroup: false, doc });
     });
     
+    // 디버깅: 그룹화 결과 로그
+    console.log('[그룹화] 총 문서:', rows.length, 'URL 문서:', urlDocuments.length, '메인 페이지:', mainPages.length, '그룹화된 그룹:', grouped.filter(g => g.isGroup).length);
+    if (mainPages.length > 0) {
+      console.log('[그룹화] 메인 페이지 예시:', mainPages.slice(0, 3).map(m => ({ title: m.title, url: m.url })));
+    }
+    if (Object.keys(subPagesMap).length > 0) {
+      console.log('[그룹화] 하위 페이지 맵:', Object.keys(subPagesMap).slice(0, 3).map(url => ({ parentUrl: url, subCount: subPagesMap[url].length })));
+    }
+    
     return grouped;
-  }, [filteredData]);
+  }, [sortedData]);
 
   // 그룹화된 문서 목록에서 펼침/접힘 상태 관리
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
