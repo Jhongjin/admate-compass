@@ -1972,9 +1972,11 @@ function DocsTable({
             if (pathParts.length > otherPathParts.length) {
               const isSubPath = otherPathParts.every((part, idx) => part === pathParts[idx]);
               if (isSubPath) {
-                isMainPage = false;
-                parentUrl = otherDoc.url;
-                break;
+                // 가장 가까운 부모를 선택하기 위해 경로 길이 비교 (더 긴 경로 = 더 가까운 부모)
+                if (!parentUrl || otherPathParts.length > new URL(parentUrl).pathname.split('/').filter(Boolean).length) {
+                  isMainPage = false;
+                  parentUrl = otherDoc.url;
+                }
               }
             }
           } catch {
