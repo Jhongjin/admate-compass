@@ -1542,6 +1542,7 @@ export async function processQueue() {
               .from('documents')
               .update({
                 title,
+                type: 'url', // URL 크롤링 문서는 항상 'url' 타입으로 설정
                 status: 'processing',
                 file_size: fileSize,
                 file_type: 'text/html',
