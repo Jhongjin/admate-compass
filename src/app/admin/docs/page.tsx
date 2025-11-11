@@ -1737,6 +1737,20 @@ function DocsTable({
 }) {
   const supabase = useMemo(() => createClient(), []);
   
+  // 컴포넌트 마운트 시 즉시 로그 출력
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      console.log('[그룹화] 🔥 DocsTable 컴포넌트 마운트됨 (클라이언트)', {
+        timestamp: new Date().toISOString(),
+        vendors,
+        statusFilter,
+        typeFilter,
+        viewMode,
+        searchQuery
+      });
+    }
+  }, []);
+  
   // 큐 처리 중인 문서 ID 목록 조회
   const { data: queuedDocumentIds } = useQuery({
     queryKey: ["queued-documents"],
@@ -1977,11 +1991,27 @@ function DocsTable({
   // 컴포넌트 마운트 및 데이터 로딩 상태 확인
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      console.log('[그룹화] 🎯 컴포넌트 마운트/업데이트 (클라이언트):', {
+      console.log('[그룹화] 🎯 데이터 로딩 상태 (클라이언트):', {
         isLoading,
         dataLength: data?.length,
         dataIsArray: Array.isArray(data),
-        dataFirstItem: data?.[0] ? { id: data[0].id, type: data[0].type, url: data[0].url, mainUrl: (data[0] as any).mainUrl, isMainUrl: (data[0] as any).isMainUrl } : null,
+        dataIsUndefined: data === undefined,
+        dataIsNull: data === null,
+        dataFirstItem: data?.[0] ? { 
+          id: data[0].id, 
+          type: data[0].type, 
+          url: data[0].url, 
+          mainUrl: (data[0] as any).mainUrl, 
+          isMainUrl: (data[0] as any).isMainUrl,
+          mainDocumentId: (data[0] as any).mainDocumentId
+        } : null,
+        dataSample: data?.slice(0, 3).map((d: any) => ({
+          id: d.id,
+          title: d.title?.substring(0, 30),
+          url: d.url,
+          mainUrl: (d as any).mainUrl,
+          isMainUrl: (d as any).isMainUrl
+        })),
         timestamp: new Date().toISOString()
       });
     }
@@ -2036,7 +2066,15 @@ function DocsTable({
         sortedDataIsArray: Array.isArray(sortedData),
         sortedDataType: typeof sortedData,
         sortedDataIsUndefined: sortedData === undefined,
-        sortedDataIsNull: sortedData === null
+        sortedDataIsNull: sortedData === null,
+        sortedDataSample: sortedData?.slice(0, 3).map((d: any) => ({
+          id: d.id,
+          title: d.title?.substring(0, 30),
+          url: d.url,
+          mainUrl: (d as any).mainUrl,
+          isMainUrl: (d as any).isMainUrl,
+          mainDocumentId: (d as any).mainDocumentId
+        }))
       });
     }
     const rows = Array.isArray(sortedData) ? sortedData : [];
@@ -2991,8 +3029,23 @@ function DocsTable({
                         isArray, 
                         length, 
                         groupsCount,
-                        firstGroup: groupDocumentsByParent?.[0],
-                        sampleGroups: groupDocumentsByParent?.slice(0, 3)
+                        firstGroup: groupDocumentsByParent?.[0] ? {
+                          isGroup: groupDocumentsByParent[0].isGroup,
+                          mainDoc: groupDocumentsByParent[0].mainDoc ? {
+                            id: groupDocumentsByParent[0].mainDoc.id,
+                            title: groupDocumentsByParent[0].mainDoc.title?.substring(0, 30),
+                            url: groupDocumentsByParent[0].mainDoc.url,
+                            mainUrl: (groupDocumentsByParent[0].mainDoc as any).mainUrl,
+                            isMainUrl: (groupDocumentsByParent[0].mainDoc as any).isMainUrl
+                          } : null,
+                          subDocsCount: groupDocumentsByParent[0].subDocs?.length || 0
+                        } : null,
+                        sampleGroups: groupDocumentsByParent?.slice(0, 3).map((g: any) => ({
+                          isGroup: g.isGroup,
+                          mainDocId: g.mainDoc?.id,
+                          mainDocTitle: g.mainDoc?.title?.substring(0, 30),
+                          subDocsCount: g.subDocs?.length || 0
+                        }))
                       });
                     }
                     return isArray ? groupDocumentsByParent.map((group, groupIdx) => {
