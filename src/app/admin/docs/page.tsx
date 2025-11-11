@@ -1883,9 +1883,45 @@ function DocsTable({
     return (filteredData || []).reduce((sum: number, row: any) => sum + (row?.chunk_count ?? 0), 0);
   }, [filteredData]);
 
-  // 메인 페이지와 하위 페이지를 그룹화하는 함수
+  // 정렬된 데이터 (그룹화 전에 정렬)
+  const sortedData = useMemo(() => {
+    if (!sortColumn || !filteredData) return filteredData;
+    const sorted = [...filteredData];
+    sorted.sort((a, b) => {
+      let aVal: any;
+      let bVal: any;
+      
+      switch (sortColumn) {
+        case "title":
+          aVal = (a.title || a.id || "").toLowerCase();
+          bVal = (b.title || b.id || "").toLowerCase();
+          break;
+        case "type":
+          aVal = getDocumentFileType(a).toLowerCase();
+          bVal = getDocumentFileType(b).toLowerCase();
+          break;
+        case "status":
+          aVal = (a.status || "").toLowerCase();
+          bVal = (b.status || "").toLowerCase();
+          break;
+        case "updated_at":
+          aVal = new Date(a.updated_at || 0).getTime();
+          bVal = new Date(b.updated_at || 0).getTime();
+          break;
+        default:
+          return 0;
+      }
+      
+      if (aVal < bVal) return sortDirection === "asc" ? -1 : 1;
+      if (aVal > bVal) return sortDirection === "asc" ? 1 : -1;
+      return 0;
+    });
+    return sorted;
+  }, [filteredData, sortColumn, sortDirection]);
+
+  // 메인 페이지와 하위 페이지를 그룹화하는 함수 (정렬된 데이터 사용)
   const groupDocumentsByParent = useMemo(() => {
-    const rows = filteredData || [];
+    const rows = sortedData || [];
     const urlDocuments = rows.filter((row: any) => row.type === 'url' && row.url);
     const nonUrlDocuments = rows.filter((row: any) => row.type !== 'url' || !row.url);
     
@@ -1923,20 +1959,14 @@ function DocsTable({
             
             // 현재 문서가 다른 문서의 하위 경로인지 확인
             // 하위 페이지는 경로가 더 깁니다 (예: /docs/marketing-api/overview는 /docs/marketing-api의 하위)
+            // pathParts.length > otherPathParts.length: 현재 문서가 더 깊은 경로
+            // otherPathParts가 pathParts의 접두사인지 확인
             if (pathParts.length > otherPathParts.length) {
               const isSubPath = otherPathParts.every((part, idx) => part === pathParts[idx]);
               if (isSubPath) {
                 isMainPage = false;
                 parentUrl = otherDoc.url;
                 break;
-              }
-            }
-            // 반대로 다른 문서가 현재 문서의 하위 경로인 경우, 현재 문서는 메인 페이지
-            else if (otherPathParts.length > pathParts.length) {
-              const isOtherSubPath = pathParts.every((part, idx) => part === otherPathParts[idx]);
-              if (isOtherSubPath) {
-                // 현재 문서는 메인 페이지로 유지
-                // 다른 문서는 나중에 하위 페이지로 분류됨
               }
             }
           } catch {
@@ -2152,41 +2182,6 @@ function DocsTable({
   const [subPagesCache, setSubPagesCache] = useState<Record<string, { url: string; title?: string; success: boolean }[]>>({});
   const [loadingSubPages, setLoadingSubPages] = useState<Record<string, boolean>>({});
 
-  // 정렬된 데이터
-  const sortedData = useMemo(() => {
-    if (!sortColumn || !filteredData) return filteredData;
-    const sorted = [...filteredData];
-    sorted.sort((a, b) => {
-      let aVal: any;
-      let bVal: any;
-      
-      switch (sortColumn) {
-        case "title":
-          aVal = (a.title || a.id || "").toLowerCase();
-          bVal = (b.title || b.id || "").toLowerCase();
-          break;
-        case "type":
-          aVal = getDocumentFileType(a).toLowerCase();
-          bVal = getDocumentFileType(b).toLowerCase();
-          break;
-        case "status":
-          aVal = (a.status || "").toLowerCase();
-          bVal = (b.status || "").toLowerCase();
-          break;
-        case "updated_at":
-          aVal = new Date(a.updated_at || 0).getTime();
-          bVal = new Date(b.updated_at || 0).getTime();
-          break;
-        default:
-          return 0;
-      }
-      
-      if (aVal < bVal) return sortDirection === "asc" ? -1 : 1;
-      if (aVal > bVal) return sortDirection === "asc" ? 1 : -1;
-      return 0;
-    });
-    return sorted;
-  }, [filteredData, sortColumn, sortDirection]);
 
   // 정렬 토글 핸들러
   const handleSort = (column: string) => {
