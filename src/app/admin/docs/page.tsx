@@ -1893,7 +1893,10 @@ function DocsTable({
 
   // 정렬된 데이터 (그룹화 전에 정렬)
   const sortedData = useMemo(() => {
-    if (!sortColumn || !filteredData) return filteredData;
+    if (!sortColumn || !filteredData) {
+      console.log('[그룹화] 📋 sortedData 생성 (정렬 없음):', { filteredDataLength: filteredData?.length, sortColumn, filteredDataIsArray: Array.isArray(filteredData) });
+      return filteredData || [];
+    }
     const sorted = [...filteredData];
     sorted.sort((a, b) => {
       let aVal: any;
@@ -1929,8 +1932,14 @@ function DocsTable({
 
   // 메인 페이지와 하위 페이지를 그룹화하는 함수 (정렬된 데이터 사용)
   const groupDocumentsByParent = useMemo(() => {
-    console.log('[그룹화] 🚀 그룹화 로직 시작', { sortedDataLength: sortedData?.length, sortedDataIsArray: Array.isArray(sortedData) });
-    const rows = sortedData || [];
+    console.log('[그룹화] 🚀 그룹화 로직 시작', { 
+      sortedDataLength: sortedData?.length, 
+      sortedDataIsArray: Array.isArray(sortedData),
+      sortedDataType: typeof sortedData,
+      sortedDataIsUndefined: sortedData === undefined,
+      sortedDataIsNull: sortedData === null
+    });
+    const rows = Array.isArray(sortedData) ? sortedData : [];
     console.log('[그룹화] 📊 입력 데이터:', { totalRows: rows.length, firstRow: rows[0] ? { id: rows[0].id, type: rows[0].type, url: rows[0].url } : null });
     const urlDocuments = rows.filter((row: any) => row.type === 'url' && row.url);
     const nonUrlDocuments = rows.filter((row: any) => row.type !== 'url' || !row.url);
@@ -2076,6 +2085,17 @@ function DocsTable({
     
     return grouped;
   }, [sortedData]);
+
+  // 렌더링 시 그룹화 결과 로그
+  useEffect(() => {
+    console.log('[그룹화] 🎨 렌더링 준비:', { 
+      groupDocumentsByParentLength: groupDocumentsByParent?.length,
+      groupDocumentsByParentIsArray: Array.isArray(groupDocumentsByParent),
+      groupsWithSubPages: groupDocumentsByParent?.filter((g: any) => g.isGroup).length,
+      sortedDataLength: sortedData?.length,
+      filteredDataLength: filteredData?.length
+    });
+  }, [groupDocumentsByParent, sortedData, filteredData]);
 
   // 그룹화된 문서 목록에서 펼침/접힘 상태 관리
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
@@ -2843,7 +2863,18 @@ function DocsTable({
                   </button>
                 </div>
                 <div className="divide-y divide-gray-700/60">
-                  {groupDocumentsByParent.map((group, groupIdx) => {
+                  {(() => {
+                    const isArray = Array.isArray(groupDocumentsByParent);
+                    const length = groupDocumentsByParent?.length ?? 0;
+                    const groupsCount = groupDocumentsByParent?.filter((g: any) => g.isGroup).length ?? 0;
+                    console.log('[그룹화] 🎨 렌더링 시작:', { 
+                      isArray, 
+                      length, 
+                      groupsCount,
+                      firstGroup: groupDocumentsByParent?.[0],
+                      sampleGroups: groupDocumentsByParent?.slice(0, 3)
+                    });
+                    return isArray ? groupDocumentsByParent.map((group, groupIdx) => {
                     if (group.isGroup && group.mainDoc) {
                       // 그룹화된 메인 페이지와 하위 페이지들
                       const mainDoc = group.mainDoc;
@@ -3027,7 +3058,8 @@ function DocsTable({
                       );
                     }
                     return null;
-                  })}
+                  }) : null;
+                  })()}
                 </div>
               </div>
             )}
