@@ -1974,6 +1974,19 @@ function DocsTable({
   const [subPagesCache, setSubPagesCache] = useState<Record<string, { url: string; title?: string; success: boolean }[]>>({});
   const [loadingSubPages, setLoadingSubPages] = useState<Record<string, boolean>>({});
 
+  // 컴포넌트 마운트 및 데이터 로딩 상태 확인
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      console.log('[그룹화] 🎯 컴포넌트 마운트/업데이트 (클라이언트):', {
+        isLoading,
+        dataLength: data?.length,
+        dataIsArray: Array.isArray(data),
+        dataFirstItem: data?.[0] ? { id: data[0].id, type: data[0].type, url: data[0].url, mainUrl: (data[0] as any).mainUrl, isMainUrl: (data[0] as any).isMainUrl } : null,
+        timestamp: new Date().toISOString()
+      });
+    }
+  }, [isLoading, data]);
+
   // 정렬된 데이터 (그룹화 전에 정렬)
   const sortedData = useMemo(() => {
     if (!sortColumn || !filteredData) {
@@ -2015,16 +2028,34 @@ function DocsTable({
 
   // 메인 페이지와 하위 페이지를 그룹화하는 함수 (메인 URL 기준)
   const groupDocumentsByParent = useMemo(() => {
-    console.log('[그룹화] 🚀 그룹화 로직 시작 (메인 URL 기준)', { 
-      sortedDataLength: sortedData?.length, 
-      sortedDataIsArray: Array.isArray(sortedData)
-    });
+    if (typeof window !== 'undefined') {
+      console.log('[그룹화] 🚀 그룹화 로직 시작 (메인 URL 기준) - 클라이언트:', { 
+        sortedDataLength: sortedData?.length, 
+        sortedDataIsArray: Array.isArray(sortedData),
+        sortedDataType: typeof sortedData,
+        sortedDataIsUndefined: sortedData === undefined,
+        sortedDataIsNull: sortedData === null
+      });
+    }
     const rows = Array.isArray(sortedData) ? sortedData : [];
-    console.log('[그룹화] 📊 입력 데이터:', { totalRows: rows.length });
+    if (typeof window !== 'undefined') {
+      console.log('[그룹화] 📊 입력 데이터:', { 
+        totalRows: rows.length,
+        firstRow: rows[0] ? { 
+          id: rows[0].id, 
+          type: rows[0].type, 
+          url: rows[0].url,
+          mainUrl: (rows[0] as any).mainUrl,
+          isMainUrl: (rows[0] as any).isMainUrl
+        } : null
+      });
+    }
     
     const urlDocuments = rows.filter((row: any) => row.type === 'url' && row.url);
     const nonUrlDocuments = rows.filter((row: any) => row.type !== 'url' || !row.url);
-    console.log('[그룹화] 📋 필터링 결과:', { urlDocuments: urlDocuments.length, nonUrlDocuments: nonUrlDocuments.length });
+    if (typeof window !== 'undefined') {
+      console.log('[그룹화] 📋 필터링 결과:', { urlDocuments: urlDocuments.length, nonUrlDocuments: nonUrlDocuments.length });
+    }
     
     // 메인 URL 기준으로 그룹화
     // 1. 메인 URL 문서 찾기 (isMainUrl === true 또는 mainUrl이 자신의 URL과 같은 경우)
@@ -2038,24 +2069,28 @@ function DocsTable({
         if (!subPagesMap[doc.url]) {
           subPagesMap[doc.url] = [];
         }
-        console.log('[그룹화] ✅ 메인 페이지 발견:', { 
-          title: doc.title, 
-          url: doc.url,
-          mainUrl: doc.mainUrl,
-          isMainUrl: doc.isMainUrl
-        });
+        if (typeof window !== 'undefined') {
+          console.log('[그룹화] ✅ 메인 페이지 발견:', { 
+            title: doc.title, 
+            url: doc.url,
+            mainUrl: doc.mainUrl,
+            isMainUrl: doc.isMainUrl
+          });
+        }
       } else if (doc.mainUrl && doc.url !== doc.mainUrl) {
         // 하위 페이지 (mainUrl이 있고 자신의 URL과 다른 경우)
         if (!subPagesMap[doc.mainUrl]) {
           subPagesMap[doc.mainUrl] = [];
         }
         subPagesMap[doc.mainUrl].push(doc);
-        console.log('[그룹화] ✅ 하위 페이지 발견:', { 
-          child: doc.title, 
-          childUrl: doc.url,
-          mainUrl: doc.mainUrl,
-          mainDocumentId: doc.mainDocumentId
-        });
+        if (typeof window !== 'undefined') {
+          console.log('[그룹화] ✅ 하위 페이지 발견:', { 
+            child: doc.title, 
+            childUrl: doc.url,
+            mainUrl: doc.mainUrl,
+            mainDocumentId: doc.mainDocumentId
+          });
+        }
       } else {
         // mainUrl 정보가 없는 경우: URL 경로 비교로 추론 시도
         let foundParent = false;
@@ -2075,11 +2110,13 @@ function DocsTable({
                 }
                 subPagesMap[otherDoc.url].push(doc);
                 foundParent = true;
-                console.log('[그룹화] 🔍 하위 페이지 추론:', { 
-                  child: doc.title, 
-                  childUrl: doc.url,
-                  parentUrl: otherDoc.url
-                });
+                if (typeof window !== 'undefined') {
+                  console.log('[그룹화] 🔍 하위 페이지 추론:', { 
+                    child: doc.title, 
+                    childUrl: doc.url,
+                    parentUrl: otherDoc.url
+                  });
+                }
                 break;
               }
             }
@@ -2105,11 +2142,13 @@ function DocsTable({
       const subDocs = subPagesMap[mainDoc.url] || [];
       if (subDocs.length > 0) {
         grouped.push({ isGroup: true, mainDoc, subDocs });
-        console.log('[그룹화] 📦 그룹 생성:', { 
-          mainTitle: mainDoc.title,
-          mainUrl: mainDoc.url,
-          subCount: subDocs.length
-        });
+        if (typeof window !== 'undefined') {
+          console.log('[그룹화] 📦 그룹 생성:', { 
+            mainTitle: mainDoc.title,
+            mainUrl: mainDoc.url,
+            subCount: subDocs.length
+          });
+        }
       } else {
         grouped.push({ isGroup: false, doc: mainDoc });
       }
@@ -2128,33 +2167,35 @@ function DocsTable({
     });
     
     // 디버깅: 그룹화 결과 로그
-    console.log('[그룹화] 📊 최종 결과:', { 
-      totalRows: rows.length, 
-      urlDocuments: urlDocuments.length, 
-      mainPages: mainPages.length, 
-      groupedCount: grouped.length,
-      groupsWithSubPages: grouped.filter(g => g.isGroup).length,
-      totalSubPages: Object.values(subPagesMap).flat().length
-    });
-    if (mainPages.length > 0) {
-      console.log('[그룹화] 메인 페이지 예시:', mainPages.slice(0, 5).map(m => ({ 
-        title: m.title, 
-        url: m.url,
-        mainUrl: m.mainUrl
-      })));
-    }
-    if (Object.keys(subPagesMap).length > 0) {
-      console.log('[그룹화] 🔗 하위 페이지 맵:', Object.keys(subPagesMap).slice(0, 5).map(mainUrl => ({ 
-        mainUrl, 
-        mainTitle: urlDocuments.find(d => d.url === mainUrl)?.title,
-        subCount: subPagesMap[mainUrl].length,
-        subPages: subPagesMap[mainUrl].slice(0, 3).map(s => ({ 
-          title: s.title, 
-          url: s.url
-        }))
-      })));
-    } else {
-      console.log('[그룹화] ⚠️ 하위 페이지가 발견되지 않았습니다.');
+    if (typeof window !== 'undefined') {
+      console.log('[그룹화] 📊 최종 결과:', { 
+        totalRows: rows.length, 
+        urlDocuments: urlDocuments.length, 
+        mainPages: mainPages.length, 
+        groupedCount: grouped.length,
+        groupsWithSubPages: grouped.filter(g => g.isGroup).length,
+        totalSubPages: Object.values(subPagesMap).flat().length
+      });
+      if (mainPages.length > 0) {
+        console.log('[그룹화] 메인 페이지 예시:', mainPages.slice(0, 5).map(m => ({ 
+          title: m.title, 
+          url: m.url,
+          mainUrl: m.mainUrl
+        })));
+      }
+      if (Object.keys(subPagesMap).length > 0) {
+        console.log('[그룹화] 🔗 하위 페이지 맵:', Object.keys(subPagesMap).slice(0, 5).map(mainUrl => ({ 
+          mainUrl, 
+          mainTitle: urlDocuments.find(d => d.url === mainUrl)?.title,
+          subCount: subPagesMap[mainUrl].length,
+          subPages: subPagesMap[mainUrl].slice(0, 3).map(s => ({ 
+            title: s.title, 
+            url: s.url
+          }))
+        })));
+      } else {
+        console.log('[그룹화] ⚠️ 하위 페이지가 발견되지 않았습니다.');
+      }
     }
     
     return grouped;
@@ -2162,13 +2203,15 @@ function DocsTable({
 
   // 렌더링 시 그룹화 결과 로그
   useEffect(() => {
-    console.log('[그룹화] 🎨 렌더링 준비:', { 
-      groupDocumentsByParentLength: groupDocumentsByParent?.length,
-      groupDocumentsByParentIsArray: Array.isArray(groupDocumentsByParent),
-      groupsWithSubPages: groupDocumentsByParent?.filter((g: any) => g.isGroup).length,
-      sortedDataLength: sortedData?.length,
-      filteredDataLength: filteredData?.length
-    });
+    if (typeof window !== 'undefined') {
+      console.log('[그룹화] 🎨 렌더링 준비:', { 
+        groupDocumentsByParentLength: groupDocumentsByParent?.length,
+        groupDocumentsByParentIsArray: Array.isArray(groupDocumentsByParent),
+        groupsWithSubPages: groupDocumentsByParent?.filter((g: any) => g.isGroup).length,
+        sortedDataLength: sortedData?.length,
+        filteredDataLength: filteredData?.length
+      });
+    }
   }, [groupDocumentsByParent, sortedData, filteredData]);
 
   // 그룹화된 문서 목록에서 펼침/접힘 상태 관리
@@ -2941,13 +2984,15 @@ function DocsTable({
                     const isArray = Array.isArray(groupDocumentsByParent);
                     const length = groupDocumentsByParent?.length ?? 0;
                     const groupsCount = groupDocumentsByParent?.filter((g: any) => g.isGroup).length ?? 0;
-                    console.log('[그룹화] 🎨 렌더링 시작:', { 
-                      isArray, 
-                      length, 
-                      groupsCount,
-                      firstGroup: groupDocumentsByParent?.[0],
-                      sampleGroups: groupDocumentsByParent?.slice(0, 3)
-                    });
+                    if (typeof window !== 'undefined') {
+                      console.log('[그룹화] 🎨 렌더링 시작 (클라이언트):', { 
+                        isArray, 
+                        length, 
+                        groupsCount,
+                        firstGroup: groupDocumentsByParent?.[0],
+                        sampleGroups: groupDocumentsByParent?.slice(0, 3)
+                      });
+                    }
                     return isArray ? groupDocumentsByParent.map((group, groupIdx) => {
                     if (group.isGroup && group.mainDoc) {
                       // 그룹화된 메인 페이지와 하위 페이지들

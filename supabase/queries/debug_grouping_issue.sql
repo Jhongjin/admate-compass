@@ -51,34 +51,37 @@ sub_page_candidates AS (
   ORDER BY md.main_url_from_job, d.url
 )
 -- 4. 결과 출력
-SELECT 
-  '메인 문서' as type,
-  md.id as document_id,
-  md.title,
-  md.url,
-  md.main_url_from_job,
-  md.status,
-  md.updated_at,
-  NULL as potential_main_id,
-  NULL as potential_main_url
-FROM main_documents md
+SELECT * FROM (
+  SELECT 
+    '메인 문서' as type,
+    md.id as document_id,
+    md.title,
+    md.url,
+    md.main_url_from_job,
+    md.status,
+    md.updated_at,
+    NULL as potential_main_id,
+    NULL as potential_main_url,
+    1 as sort_order
+  FROM main_documents md
 
-UNION ALL
+  UNION ALL
 
-SELECT 
-  '하위 페이지 후보' as type,
-  spc.id as document_id,
-  spc.title,
-  spc.url,
-  NULL as main_url_from_job,
-  spc.status,
-  spc.updated_at,
-  spc.potential_main_id,
-  spc.potential_main_url
-FROM sub_page_candidates spc
-
+  SELECT 
+    '하위 페이지 후보' as type,
+    spc.id as document_id,
+    spc.title,
+    spc.url,
+    NULL as main_url_from_job,
+    spc.status,
+    spc.updated_at,
+    spc.potential_main_id,
+    spc.potential_main_url,
+    2 as sort_order
+  FROM sub_page_candidates spc
+) combined_results
 ORDER BY 
-  CASE WHEN type = '메인 문서' THEN 1 ELSE 2 END,
+  sort_order,
   potential_main_url,
   url;
 
