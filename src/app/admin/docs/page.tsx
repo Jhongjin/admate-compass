@@ -2270,18 +2270,49 @@ function DocsTable({
     
     // 메인 페이지와 그 하위 페이지들을 함께 추가
     mainPages.forEach((mainDoc) => {
-      const subDocs = subPagesMap[mainDoc.url] || [];
+      // mainDoc.url과 mainDoc.mainUrl 모두 확인 (URL 정규화 차이 대응)
+      const mainUrlKey = mainDoc.mainUrl || mainDoc.url;
+      const subDocs = subPagesMap[mainUrlKey] || subPagesMap[mainDoc.url] || [];
+      
+      if (typeof window !== 'undefined' && mainDoc.title?.includes('마케팅 API')) {
+        console.log('[그룹화] 🔍 그룹 생성 전 확인:', {
+          mainTitle: mainDoc.title,
+          mainDocUrl: mainDoc.url,
+          mainDocMainUrl: mainDoc.mainUrl,
+          mainUrlKey,
+          subPagesMapKeys: Object.keys(subPagesMap).slice(0, 5),
+          subDocsFromMainUrl: subPagesMap[mainUrlKey]?.length || 0,
+          subDocsFromUrl: subPagesMap[mainDoc.url]?.length || 0,
+          finalSubDocsLength: subDocs.length
+        });
+      }
+      
       if (subDocs.length > 0) {
         grouped.push({ isGroup: true, mainDoc, subDocs });
         if (typeof window !== 'undefined') {
           console.log('[그룹화] 📦 그룹 생성:', { 
             mainTitle: mainDoc.title,
             mainUrl: mainDoc.url,
-            subCount: subDocs.length
+            mainUrlKey,
+            subCount: subDocs.length,
+            subDocsSample: subDocs.slice(0, 3).map((s: any) => ({
+              title: s.title?.substring(0, 30),
+              url: s.url,
+              mainUrl: s.mainUrl
+            }))
           });
         }
       } else {
         grouped.push({ isGroup: false, doc: mainDoc });
+        if (typeof window !== 'undefined' && mainDoc.title?.includes('마케팅 API')) {
+          console.log('[그룹화] ⚠️ 그룹 생성 실패 - 하위 페이지 없음:', {
+            mainTitle: mainDoc.title,
+            mainDocUrl: mainDoc.url,
+            mainDocMainUrl: mainDoc.mainUrl,
+            subPagesMapKeys: Object.keys(subPagesMap),
+            subPagesMapValues: Object.values(subPagesMap).map(arr => arr.length)
+          });
+        }
       }
     });
     
