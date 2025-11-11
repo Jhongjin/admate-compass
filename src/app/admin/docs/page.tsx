@@ -1883,6 +1883,14 @@ function DocsTable({
     return (filteredData || []).reduce((sum: number, row: any) => sum + (row?.chunk_count ?? 0), 0);
   }, [filteredData]);
 
+  const [selected, setSelected] = useState<Record<string, boolean>>({});
+  const [detail, setDetail] = useState<any | null>(null);
+  const [sortColumn, setSortColumn] = useState<string | null>(null);
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
+  const [expandedSubPages, setExpandedSubPages] = useState<Record<string, boolean>>({});
+  const [subPagesCache, setSubPagesCache] = useState<Record<string, { url: string; title?: string; success: boolean }[]>>({});
+  const [loadingSubPages, setLoadingSubPages] = useState<Record<string, boolean>>({});
+
   // 정렬된 데이터 (그룹화 전에 정렬)
   const sortedData = useMemo(() => {
     if (!sortColumn || !filteredData) return filteredData;
@@ -2173,15 +2181,6 @@ function DocsTable({
       return () => window.removeEventListener('focus', handleFocus);
     }
   }, [data, refetch]);
-
-  const [selected, setSelected] = useState<Record<string, boolean>>({});
-  const [detail, setDetail] = useState<any | null>(null);
-  const [sortColumn, setSortColumn] = useState<string | null>(null);
-  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("desc");
-  const [expandedSubPages, setExpandedSubPages] = useState<Record<string, boolean>>({});
-  const [subPagesCache, setSubPagesCache] = useState<Record<string, { url: string; title?: string; success: boolean }[]>>({});
-  const [loadingSubPages, setLoadingSubPages] = useState<Record<string, boolean>>({});
-
 
   // 정렬 토글 핸들러
   const handleSort = (column: string) => {
