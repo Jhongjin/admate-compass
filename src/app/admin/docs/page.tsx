@@ -1794,6 +1794,24 @@ function DocsTable({
       const { data: documents, error } = await q;
       if (error) throw error;
       
+      // 디버깅: 쿼리 결과 확인
+      if (typeof window !== 'undefined' && documents && documents.length > 0) {
+        console.log('[그룹화] 🔍 데이터베이스 쿼리 결과:', {
+          totalDocuments: documents.length,
+          sampleDocument: {
+            id: documents[0].id,
+            type: documents[0].type,
+            url: documents[0].url,
+            urlIsNull: documents[0].url === null,
+            urlIsUndefined: documents[0].url === undefined,
+            urlValue: String(documents[0].url || ''),
+            hasUrlField: 'url' in documents[0]
+          },
+          documentsWithUrl: documents.filter((d: any) => d.url && d.url !== '').length,
+          documentsWithoutUrl: documents.filter((d: any) => !d.url || d.url === '').length
+        });
+      }
+      
       // 메인 URL 정보를 processing_jobs에서 가져오기
       // CRAWL_SEED 작업의 document_id가 메인 문서 ID
       const { data: mainUrlMap, error: mainUrlError } = await supabase
