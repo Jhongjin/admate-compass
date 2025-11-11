@@ -1989,6 +1989,12 @@ function DocsTable({
             subPagesMap[parentUrl] = [];
           }
           subPagesMap[parentUrl].push(doc);
+          console.log('[그룹화] 하위 페이지 발견:', { 
+            child: doc.title, 
+            childUrl: doc.url, 
+            parent: urlDocuments.find(d => d.url === parentUrl)?.title,
+            parentUrl 
+          });
         }
       } catch {
         // URL 파싱 실패 시 메인 페이지로 처리
@@ -2024,10 +2030,28 @@ function DocsTable({
     // 디버깅: 그룹화 결과 로그
     console.log('[그룹화] 총 문서:', rows.length, 'URL 문서:', urlDocuments.length, '메인 페이지:', mainPages.length, '그룹화된 그룹:', grouped.filter(g => g.isGroup).length);
     if (mainPages.length > 0) {
-      console.log('[그룹화] 메인 페이지 예시:', mainPages.slice(0, 3).map(m => ({ title: m.title, url: m.url })));
+      console.log('[그룹화] 메인 페이지 예시:', mainPages.slice(0, 5).map(m => ({ 
+        title: m.title, 
+        url: m.url,
+        pathParts: new URL(m.url).pathname.split('/').filter(Boolean)
+      })));
     }
     if (Object.keys(subPagesMap).length > 0) {
-      console.log('[그룹화] 하위 페이지 맵:', Object.keys(subPagesMap).slice(0, 3).map(url => ({ parentUrl: url, subCount: subPagesMap[url].length })));
+      console.log('[그룹화] 하위 페이지 맵:', Object.keys(subPagesMap).slice(0, 5).map(url => ({ 
+        parentUrl: url, 
+        parentTitle: urlDocuments.find(d => d.url === url)?.title,
+        subCount: subPagesMap[url].length,
+        subPages: subPagesMap[url].slice(0, 3).map(s => ({ title: s.title, url: s.url }))
+      })));
+    } else {
+      console.log('[그룹화] ⚠️ 하위 페이지가 발견되지 않았습니다. URL 경로 비교 로직을 확인하세요.');
+      if (urlDocuments.length > 1) {
+        console.log('[그룹화] URL 문서 샘플 (처음 5개):', urlDocuments.slice(0, 5).map(d => ({
+          title: d.title,
+          url: d.url,
+          pathParts: d.url ? new URL(d.url).pathname.split('/').filter(Boolean) : []
+        })));
+      }
     }
     
     return grouped;
