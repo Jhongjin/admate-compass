@@ -175,43 +175,52 @@ export class SitemapDiscoveryService {
     try {
       // robots.txt에서 sitemap 위치 찾기
       const robotsUrl = `${this.getBaseUrl(baseUrl)}/robots.txt`;
-      console.log(`🤖 robots.txt 확인: ${robotsUrl}`);
+      console.error(`[CRITICAL] 🤖 robots.txt 확인 시작: ${robotsUrl}`);
 
       const robotsResponse = await fetch(robotsUrl);
+      console.error(`[CRITICAL] 🤖 robots.txt 응답: ${robotsResponse.status} ${robotsResponse.statusText}`);
+      
       if (robotsResponse.ok) {
         const robotsText = await robotsResponse.text();
+        console.error(`[CRITICAL] 🤖 robots.txt 내용 길이: ${robotsText.length}자`);
         const sitemapMatches = robotsText.match(/Sitemap:\s*(.+)/gi);
         
-        if (sitemapMatches) {
-          console.log(`[CRITICAL] 📋 robots.txt에서 ${sitemapMatches.length}개 Sitemap 발견`);
+        if (sitemapMatches && sitemapMatches.length > 0) {
+          console.error(`[CRITICAL] 📋 robots.txt에서 ${sitemapMatches.length}개 Sitemap 발견`);
           for (const match of sitemapMatches) {
             const sitemapUrl = match.replace(/Sitemap:\s*/i, '').trim();
-            console.log(`[CRITICAL] 📄 Sitemap 처리 시작: ${sitemapUrl}`);
+            console.error(`[CRITICAL] 📄 Sitemap 처리 시작: ${sitemapUrl}`);
             
             try {
               const sitemapUrls = await this.parseSitemap(sitemapUrl, baseDomain, config);
               discoveredUrls.push(...sitemapUrls);
-              console.log(`[CRITICAL] ✅ Sitemap 처리 완료: ${sitemapUrl} - ${sitemapUrls.length}개 URL 발견`);
+              console.error(`[CRITICAL] ✅ Sitemap 처리 완료: ${sitemapUrl} - ${sitemapUrls.length}개 URL 발견`);
             } catch (sitemapError) {
               console.error(`[CRITICAL] ❌ Sitemap 처리 실패 (계속 진행): ${sitemapUrl}`, sitemapError);
               // 개별 sitemap 실패해도 계속 진행
             }
           }
+        } else {
+          console.error(`[CRITICAL] ⚠️ robots.txt에서 Sitemap을 찾지 못했습니다.`);
         }
+      } else {
+        console.error(`[CRITICAL] ⚠️ robots.txt 접근 실패: ${robotsResponse.status} ${robotsResponse.statusText}`);
       }
 
       // 기본 sitemap.xml 시도
       const defaultSitemapUrl = `${this.getBaseUrl(baseUrl)}/sitemap.xml`;
-      console.log(`[CRITICAL] 📄 기본 sitemap.xml 시도: ${defaultSitemapUrl}`);
+      console.error(`[CRITICAL] 📄 기본 sitemap.xml 시도: ${defaultSitemapUrl}`);
       
       try {
         const sitemapUrls = await this.parseSitemap(defaultSitemapUrl, baseDomain, config);
         discoveredUrls.push(...sitemapUrls);
-        console.log(`[CRITICAL] ✅ 기본 sitemap.xml 처리 완료: ${sitemapUrls.length}개 URL 발견`);
+        console.error(`[CRITICAL] ✅ 기본 sitemap.xml 처리 완료: ${sitemapUrls.length}개 URL 발견`);
       } catch (sitemapError) {
         console.error(`[CRITICAL] ❌ 기본 sitemap.xml 처리 실패 (계속 진행):`, sitemapError);
         // 기본 sitemap 실패해도 계속 진행
       }
+      
+      console.error(`[CRITICAL] 📊 Sitemap 탐색 최종 결과: ${discoveredUrls.length}개 URL 발견`);
 
     } catch (error) {
       console.error('❌ Sitemap 발견 실패:', error);
@@ -382,21 +391,21 @@ export class SitemapDiscoveryService {
           }
         });
         
-        console.log(`📊 링크 추출 통계 (Cheerio): 총 ${totalLinks}개 → 유효 ${validLinks}개 → 최종 ${discoveredUrls.length}개 (필터링: ${filteredLinks}개)`);
+        console.error(`[CRITICAL] 📊 링크 추출 통계 (Cheerio): 총 ${totalLinks}개 → 유효 ${validLinks}개 → 최종 ${discoveredUrls.length}개 (필터링: ${filteredLinks}개)`);
 
         // 콘텐츠가 충분한지 확인 (정적 HTML로 충분한 경우)
         const bodyText = $('body').text().trim();
         const hasSubstantialContent = bodyText.length > 500; // 500자 이상의 텍스트가 있으면 정적 HTML로 판단
         
         if (hasSubstantialContent && discoveredUrls.length > 0) {
-          console.log(`🔗 페이지 링크에서 발견 (Cheerio): ${discoveredUrls.length}개`);
+          console.error(`[CRITICAL] 🔗 페이지 링크에서 발견 (Cheerio): ${discoveredUrls.length}개`);
           return discoveredUrls;
         } else {
-          console.log(`⚠️ Cheerio로 충분한 콘텐츠를 찾지 못함 (텍스트: ${bodyText.length}자, 링크: ${discoveredUrls.length}개), Puppeteer 시도`);
+          console.error(`[CRITICAL] ⚠️ Cheerio로 충분한 콘텐츠를 찾지 못함 (텍스트: ${bodyText.length}자, 링크: ${discoveredUrls.length}개), Puppeteer 시도`);
         }
       }
     } catch (fetchError) {
-      console.warn('⚠️ Fetch + Cheerio 실패, Puppeteer 시도:', fetchError);
+      console.error(`[CRITICAL] ⚠️ Fetch + Cheerio 실패, Puppeteer 시도:`, fetchError);
     }
 
     // 2단계: Puppeteer 사용 (JavaScript 렌더링이 필요한 경우)
@@ -468,7 +477,7 @@ export class SitemapDiscoveryService {
         });
 
         await page.close();
-        console.log(`🔗 페이지 링크에서 발견 (Puppeteer 추가): 총 ${discoveredUrls.length}개`);
+        console.error(`[CRITICAL] 🔗 페이지 링크에서 발견 (Puppeteer 추가): 총 ${discoveredUrls.length}개`);
       }
     } catch (puppeteerError) {
       // Puppeteer 실패 시에도 Cheerio로 발견한 링크는 반환
