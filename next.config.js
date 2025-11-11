@@ -31,7 +31,7 @@ const nextConfig = {
   // 컴파일러 최적화
   compiler: {
     removeConsole: process.env.NODE_ENV === 'production' ? {
-      exclude: ['error', 'warn'],
+      exclude: ['error', 'warn', 'log'], // 디버깅을 위해 log도 제외
     } : false,
   },
   
