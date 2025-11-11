@@ -1589,6 +1589,7 @@ export async function processQueue() {
               .update({
                 status: 'indexed',
                 chunk_count: ragResult.chunkCount,
+                url: targetUrl, // URL 필드도 함께 업데이트
                 updated_at: new Date().toISOString(),
               })
               .eq('id', resolvedDocumentId);
