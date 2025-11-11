@@ -1990,7 +1990,9 @@ function DocsTable({
   // 정렬된 데이터 (그룹화 전에 정렬)
   const sortedData = useMemo(() => {
     if (!sortColumn || !filteredData) {
-      console.log('[그룹화] 📋 sortedData 생성 (정렬 없음):', { filteredDataLength: filteredData?.length, sortColumn, filteredDataIsArray: Array.isArray(filteredData) });
+      if (typeof window !== 'undefined') {
+        console.log('[그룹화] 📋 sortedData 생성 (정렬 없음):', { filteredDataLength: filteredData?.length, sortColumn, filteredDataIsArray: Array.isArray(filteredData) });
+      }
       return filteredData || [];
     }
     const sorted = [...filteredData];
