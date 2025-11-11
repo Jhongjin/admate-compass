@@ -2364,6 +2364,18 @@ function DocsTable({
           // 기존에 펼쳐진 그룹은 유지하고, 새로운 그룹만 추가
           const merged = new Set(prev);
           newExpandedGroups.forEach(id => merged.add(id));
+          
+          // 디버깅: expandedGroups 업데이트 확인
+          if (typeof window !== 'undefined') {
+            console.log('[그룹화] 🔄 expandedGroups 업데이트:', {
+              prevSize: prev.size,
+              newGroupsCount: newExpandedGroups.size,
+              mergedSize: merged.size,
+              newGroupIds: Array.from(newExpandedGroups),
+              allExpandedIds: Array.from(merged)
+            });
+          }
+          
           return merged;
         });
       }
@@ -3167,6 +3179,27 @@ function DocsTable({
                       const mainDoc = group.mainDoc;
                       const subDocs = group.subDocs || [];
                       const isExpanded = expandedGroups.has(mainDoc.id);
+                      
+                      // 디버깅: 렌더링 시점의 그룹 정보 확인
+                      if (typeof window !== 'undefined' && groupIdx === 0) {
+                        console.log('[그룹화] 🎯 그룹 렌더링:', {
+                          mainDocId: mainDoc.id,
+                          mainDocTitle: mainDoc.title?.substring(0, 50),
+                          mainDocUrl: mainDoc.url,
+                          subDocsLength: subDocs.length,
+                          subDocsSample: subDocs.slice(0, 3).map((s: any) => ({
+                            id: s.id,
+                            title: s.title?.substring(0, 30),
+                            url: s.url
+                          })),
+                          isExpanded,
+                          expandedGroupsSize: expandedGroups.size,
+                          expandedGroupsHasMainDoc: expandedGroups.has(mainDoc.id),
+                          groupIsGroup: group.isGroup,
+                          groupHasMainDoc: !!group.mainDoc,
+                          groupSubDocs: group.subDocs?.length || 0
+                        });
+                      }
                       
                       return (
                         <div key={mainDoc.id}>
