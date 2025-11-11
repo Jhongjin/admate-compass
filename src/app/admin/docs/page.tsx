@@ -1777,9 +1777,53 @@ function DocsTable({
         q = q.eq("type", "url");
       }
       
-      const { data, error } = await q;
+      const { data: documents, error } = await q;
       if (error) throw error;
-      return data || [];
+      
+      // 메인 URL 정보를 processing_jobs에서 가져오기
+      // CRAWL_SEED 작업의 document_id가 메인 문서 ID
+      const { data: mainUrlMap } = await supabase
+        .from("processing_jobs")
+        .select("document_id, payload")
+        .eq("job_type", "CRAWL_SEED")
+        .eq("status", "completed")
+        .not("document_id", "is", null);
+      
+      // document_id -> 메인 URL 매핑 생성
+      const mainUrlById: Record<string, string> = {};
+      if (mainUrlMap) {
+        for (const job of mainUrlMap) {
+          if (job.document_id && job.payload) {
+            const payload = typeof job.payload === 'string' ? JSON.parse(job.payload) : job.payload;
+            if (payload.url) {
+              mainUrlById[job.document_id] = payload.url;
+            }
+          }
+        }
+      }
+      
+      // documents에 메인 URL 정보 추가
+      const documentsWithMainUrl = (documents || []).map((doc: any) => {
+        // document_id가 메인 URL인 경우
+        if (mainUrlById[doc.id]) {
+          return { ...doc, mainUrl: mainUrlById[doc.id], isMainUrl: true };
+        }
+        // 하위 페이지인 경우: URL이 메인 URL로 시작하는지 확인
+        if (doc.url && doc.type === 'url') {
+          for (const [mainDocId, mainUrl] of Object.entries(mainUrlById)) {
+            // URL 정규화: 슬래시로 끝나지 않는 경우 슬래시 추가하여 비교
+            const normalizedMainUrl = mainUrl.endsWith('/') ? mainUrl : mainUrl + '/';
+            const normalizedDocUrl = doc.url.endsWith('/') ? doc.url : doc.url + '/';
+            // 정확한 매칭: 메인 URL과 정확히 같거나, 메인 URL + '/'로 시작하는 경우
+            if (doc.url === mainUrl || normalizedDocUrl.startsWith(normalizedMainUrl)) {
+              return { ...doc, mainUrl, isMainUrl: false, mainDocumentId: mainDocId };
+            }
+          }
+        }
+        return { ...doc, isMainUrl: false };
+      });
+      
+      return documentsWithMainUrl;
     },
     refetchInterval: 10000,
   });
@@ -1930,91 +1974,87 @@ function DocsTable({
     return sorted;
   }, [filteredData, sortColumn, sortDirection]);
 
-  // 메인 페이지와 하위 페이지를 그룹화하는 함수 (정렬된 데이터 사용)
+  // 메인 페이지와 하위 페이지를 그룹화하는 함수 (메인 URL 기준)
   const groupDocumentsByParent = useMemo(() => {
-    console.log('[그룹화] 🚀 그룹화 로직 시작', { 
+    console.log('[그룹화] 🚀 그룹화 로직 시작 (메인 URL 기준)', { 
       sortedDataLength: sortedData?.length, 
-      sortedDataIsArray: Array.isArray(sortedData),
-      sortedDataType: typeof sortedData,
-      sortedDataIsUndefined: sortedData === undefined,
-      sortedDataIsNull: sortedData === null
+      sortedDataIsArray: Array.isArray(sortedData)
     });
     const rows = Array.isArray(sortedData) ? sortedData : [];
-    console.log('[그룹화] 📊 입력 데이터:', { totalRows: rows.length, firstRow: rows[0] ? { id: rows[0].id, type: rows[0].type, url: rows[0].url } : null });
+    console.log('[그룹화] 📊 입력 데이터:', { totalRows: rows.length });
+    
     const urlDocuments = rows.filter((row: any) => row.type === 'url' && row.url);
     const nonUrlDocuments = rows.filter((row: any) => row.type !== 'url' || !row.url);
     console.log('[그룹화] 📋 필터링 결과:', { urlDocuments: urlDocuments.length, nonUrlDocuments: nonUrlDocuments.length });
     
-    // URL 문서들을 메인 페이지와 하위 페이지로 분류
+    // 메인 URL 기준으로 그룹화
+    // 1. 메인 URL 문서 찾기 (isMainUrl === true 또는 mainUrl이 자신의 URL과 같은 경우)
     const mainPages: any[] = [];
-    const subPagesMap: Record<string, any[]> = {};
+    const subPagesMap: Record<string, any[]> = {}; // mainUrl -> subPages[]
     
     urlDocuments.forEach((doc: any) => {
-      const url = doc.url;
-      if (!url) return;
-      
-      try {
-        const urlObj = new URL(url);
-        const pathname = urlObj.pathname;
-        
-        // 경로를 분리하여 메인 페이지인지 확인
-        // 예: /docs/marketing-api -> 메인, /docs/marketing-api/overview -> 하위
-        const pathParts = pathname.split('/').filter(Boolean);
-        
-        // 메인 페이지 후보: 경로가 짧거나, 다른 문서의 부모 경로인지 확인
-        let isMainPage = true;
-        let parentUrl: string | null = null;
-        
-        // 다른 URL 문서들과 비교하여 부모-자식 관계 확인
+      if (doc.isMainUrl === true || (doc.mainUrl && doc.url === doc.mainUrl)) {
+        // 메인 페이지
+        mainPages.push(doc);
+        if (!subPagesMap[doc.url]) {
+          subPagesMap[doc.url] = [];
+        }
+        console.log('[그룹화] ✅ 메인 페이지 발견:', { 
+          title: doc.title, 
+          url: doc.url,
+          mainUrl: doc.mainUrl,
+          isMainUrl: doc.isMainUrl
+        });
+      } else if (doc.mainUrl && doc.url !== doc.mainUrl) {
+        // 하위 페이지 (mainUrl이 있고 자신의 URL과 다른 경우)
+        if (!subPagesMap[doc.mainUrl]) {
+          subPagesMap[doc.mainUrl] = [];
+        }
+        subPagesMap[doc.mainUrl].push(doc);
+        console.log('[그룹화] ✅ 하위 페이지 발견:', { 
+          child: doc.title, 
+          childUrl: doc.url,
+          mainUrl: doc.mainUrl,
+          mainDocumentId: doc.mainDocumentId
+        });
+      } else {
+        // mainUrl 정보가 없는 경우: URL 경로 비교로 추론 시도
+        let foundParent = false;
         for (const otherDoc of urlDocuments) {
           if (otherDoc.id === doc.id || !otherDoc.url) continue;
-          
           try {
-            const otherUrlObj = new URL(otherDoc.url);
-            const otherPathname = otherUrlObj.pathname;
-            const otherPathParts = otherPathname.split('/').filter(Boolean);
-            
-            // 같은 도메인인지 확인
-            if (urlObj.origin !== otherUrlObj.origin) continue;
-            
-            // 현재 문서가 다른 문서의 하위 경로인지 확인
-            // 하위 페이지는 경로가 더 깁니다 (예: /docs/marketing-api/overview는 /docs/marketing-api의 하위)
-            // pathParts.length > otherPathParts.length: 현재 문서가 더 깊은 경로
-            // otherPathParts가 pathParts의 접두사인지 확인
-            if (pathParts.length > otherPathParts.length) {
-              const isSubPath = otherPathParts.every((part, idx) => part === pathParts[idx]);
-              if (isSubPath) {
-                // 가장 가까운 부모를 선택하기 위해 경로 길이 비교 (더 긴 경로 = 더 가까운 부모)
-                if (!parentUrl || otherPathParts.length > new URL(parentUrl).pathname.split('/').filter(Boolean).length) {
-                  isMainPage = false;
-                  parentUrl = otherDoc.url;
+            const docUrl = new URL(doc.url);
+            const otherUrl = new URL(otherDoc.url);
+            if (docUrl.origin === otherUrl.origin) {
+              // URL 정규화하여 비교
+              const normalizedOtherUrl = otherDoc.url.endsWith('/') ? otherDoc.url : otherDoc.url + '/';
+              const normalizedDocUrl = doc.url.endsWith('/') ? doc.url : doc.url + '/';
+              if (doc.url !== otherDoc.url && normalizedDocUrl.startsWith(normalizedOtherUrl)) {
+                // 하위 페이지로 추론
+                if (!subPagesMap[otherDoc.url]) {
+                  subPagesMap[otherDoc.url] = [];
                 }
+                subPagesMap[otherDoc.url].push(doc);
+                foundParent = true;
+                console.log('[그룹화] 🔍 하위 페이지 추론:', { 
+                  child: doc.title, 
+                  childUrl: doc.url,
+                  parentUrl: otherDoc.url
+                });
+                break;
               }
             }
           } catch {
             // URL 파싱 실패 시 무시
           }
         }
-        
-        if (isMainPage) {
+        if (!foundParent) {
+          // 부모를 찾지 못한 경우 메인 페이지로 처리
           mainPages.push(doc);
-        } else if (parentUrl) {
-          if (!subPagesMap[parentUrl]) {
-            subPagesMap[parentUrl] = [];
+          if (!subPagesMap[doc.url]) {
+            subPagesMap[doc.url] = [];
           }
-          subPagesMap[parentUrl].push(doc);
-          console.log('[그룹화] ✅ 하위 페이지 발견:', { 
-            child: doc.title, 
-            childUrl: doc.url,
-            childPathParts: pathParts,
-            parent: urlDocuments.find(d => d.url === parentUrl)?.title,
-            parentUrl,
-            parentPathParts: new URL(parentUrl).pathname.split('/').filter(Boolean)
-          });
         }
-      } catch {
-        // URL 파싱 실패 시 메인 페이지로 처리
-        mainPages.push(doc);
       }
     });
     
@@ -2026,12 +2066,17 @@ function DocsTable({
       const subDocs = subPagesMap[mainDoc.url] || [];
       if (subDocs.length > 0) {
         grouped.push({ isGroup: true, mainDoc, subDocs });
+        console.log('[그룹화] 📦 그룹 생성:', { 
+          mainTitle: mainDoc.title,
+          mainUrl: mainDoc.url,
+          subCount: subDocs.length
+        });
       } else {
         grouped.push({ isGroup: false, doc: mainDoc });
       }
     });
     
-    // 하위 페이지로 분류되지 않은 URL 문서들 추가 (혹시 모를 경우)
+    // 하위 페이지로 분류되지 않은 URL 문서들 추가
     urlDocuments.forEach((doc: any) => {
       if (!mainPages.find(m => m.id === doc.id) && !Object.values(subPagesMap).flat().find(s => s.id === doc.id)) {
         grouped.push({ isGroup: false, doc });
@@ -2050,37 +2095,27 @@ function DocsTable({
       mainPages: mainPages.length, 
       groupedCount: grouped.length,
       groupsWithSubPages: grouped.filter(g => g.isGroup).length,
-      subPagesMapKeys: Object.keys(subPagesMap).length,
       totalSubPages: Object.values(subPagesMap).flat().length
     });
     if (mainPages.length > 0) {
       console.log('[그룹화] 메인 페이지 예시:', mainPages.slice(0, 5).map(m => ({ 
         title: m.title, 
         url: m.url,
-        pathParts: new URL(m.url).pathname.split('/').filter(Boolean)
+        mainUrl: m.mainUrl
       })));
     }
     if (Object.keys(subPagesMap).length > 0) {
-      console.log('[그룹화] 🔗 하위 페이지 맵:', Object.keys(subPagesMap).slice(0, 5).map(url => ({ 
-        parentUrl: url, 
-        parentTitle: urlDocuments.find(d => d.url === url)?.title,
-        subCount: subPagesMap[url].length,
-        subPages: subPagesMap[url].slice(0, 3).map(s => ({ 
+      console.log('[그룹화] 🔗 하위 페이지 맵:', Object.keys(subPagesMap).slice(0, 5).map(mainUrl => ({ 
+        mainUrl, 
+        mainTitle: urlDocuments.find(d => d.url === mainUrl)?.title,
+        subCount: subPagesMap[mainUrl].length,
+        subPages: subPagesMap[mainUrl].slice(0, 3).map(s => ({ 
           title: s.title, 
-          url: s.url,
-          pathParts: new URL(s.url).pathname.split('/').filter(Boolean)
+          url: s.url
         }))
       })));
     } else {
       console.log('[그룹화] ⚠️ 하위 페이지가 발견되지 않았습니다.');
-      if (urlDocuments.length > 1) {
-        console.log('[그룹화] 🔍 URL 문서 샘플 (처음 5개):', urlDocuments.slice(0, 5).map(d => ({
-          title: d.title,
-          url: d.url,
-          pathParts: d.url ? new URL(d.url).pathname.split('/').filter(Boolean) : [],
-          pathLength: d.url ? new URL(d.url).pathname.split('/').filter(Boolean).length : 0
-        })));
-      }
     }
     
     return grouped;
