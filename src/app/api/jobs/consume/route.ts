@@ -1517,7 +1517,7 @@ export async function processQueue() {
 
           console.log(`📄 추출된 텍스트 길이: ${textContent.length}자 (원본 HTML: ${htmlContent.length}자, Cheerio 사용)`);
 
-          return { textContent, pageTitle };
+          return { textContent, pageTitle, htmlContent };
         };
 
         const upsertAndProcessDocument = async ({ targetUrl, title, content, documentIdOverride }: { targetUrl: string; title: string; content: string; documentIdOverride?: string; }) => {
@@ -1615,7 +1615,7 @@ export async function processQueue() {
 
         console.error('[CRITICAL] 📄 메인 페이지 크롤링 시작:', { url, documentId, extractSubPages, extractSubPagesRaw });
         const mainPage = await fetchPageContent(url);
-        console.error('[CRITICAL] 📄 메인 페이지 크롤링 완료:', { url, title: mainPage.pageTitle, contentLength: mainPage.textContent.length });
+        console.error('[CRITICAL] 📄 메인 페이지 크롤링 완료:', { url, title: mainPage.pageTitle, contentLength: mainPage.textContent.length, htmlLength: mainPage.htmlContent.length });
         const mainDocResult = await upsertAndProcessDocument({ targetUrl: url, title: mainPage.pageTitle, content: mainPage.textContent, documentIdOverride: documentId });
         console.error('[CRITICAL] 📄 메인 문서 처리 완료:', { documentId, success: mainDocResult.success, chunkCount: mainDocResult.chunkCount });
 
@@ -1666,7 +1666,8 @@ export async function processQueue() {
               // SitemapDiscoveryService가 Puppeteer 실패 시 fetch fallback을 자동으로 사용
               console.log(`[CRITICAL] 🔍 하위 페이지 탐색 시작: ${url}`);
               const discoveryStartMs = Date.now();
-              discovered = await sitemapDiscoveryService.discoverSubPages(url, discoveryOptions);
+              // 메인 페이지 HTML 재사용하여 중복 요청 방지 및 400 에러 회피
+              discovered = await sitemapDiscoveryService.discoverSubPages(url, discoveryOptions, mainPage.htmlContent);
               const discoveryEndMs = Date.now();
               console.log(`[CRITICAL] ✅ 하위 페이지 발견 완료: ${discovered.length}개 (소요 시간: ${discoveryEndMs - discoveryStartMs}ms)`);
               

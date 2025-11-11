@@ -97,7 +97,8 @@ export class SitemapDiscoveryService {
    */
   async discoverSubPages(
     baseUrl: string, 
-    options: Partial<DiscoveryOptions> = {}
+    options: Partial<DiscoveryOptions> = {},
+    preloadedHtml?: string
   ): Promise<DiscoveredUrl[]> {
     const config = { ...this.defaultOptions, ...options };
 
@@ -109,6 +110,9 @@ export class SitemapDiscoveryService {
 
     console.error(`[CRITICAL] 🔍 하위 페이지 발견 시작: ${baseUrl}`);
     console.error(`[CRITICAL] 📋 설정:`, config);
+    if (preloadedHtml) {
+      console.error(`[CRITICAL] ✅ 메인 페이지 HTML 재사용 (${preloadedHtml.length}자)`);
+    }
 
     const discoveredUrls = new Set<string>();
     const discoveredPages: DiscoveredUrl[] = [];
@@ -132,7 +136,7 @@ export class SitemapDiscoveryService {
       // 2. 페이지 링크에서 URL 발견 (Puppeteer 우선, 실패 시 fetch fallback)
       console.error(`[CRITICAL] 🔗 링크 탐색 시작: ${baseUrl}`);
       const linkStartMs = Date.now();
-      const linkUrls = await this.discoverFromLinks(baseUrl, config);
+      const linkUrls = await this.discoverFromLinks(baseUrl, config, preloadedHtml);
       const linkEndMs = Date.now();
       linkUrls.forEach(url => {
         if (!discoveredUrls.has(url.url)) {
@@ -336,28 +340,49 @@ export class SitemapDiscoveryService {
    */
   private async discoverFromLinks(
     baseUrl: string, 
-    config: DiscoveryOptions
+    config: DiscoveryOptions,
+    preloadedHtml?: string
   ): Promise<DiscoveredUrl[]> {
     const discoveredUrls: DiscoveredUrl[] = [];
     const baseDomain = this.extractDomain(baseUrl);
 
-    // 1단계: Fetch + Cheerio로 빠르게 시도 (정적 HTML)
+    // 1단계: 이미 로드된 HTML이 있으면 재사용, 없으면 Fetch + Cheerio로 시도
     try {
-      console.error(`[CRITICAL] 🔗 링크 추출 시작 (Cheerio): ${baseUrl}`);
-      const response = await fetch(baseUrl, {
-        headers: {
+      let htmlContent: string;
+      
+      if (preloadedHtml) {
+        console.error(`[CRITICAL] 🔗 링크 추출 시작 (Cheerio, HTML 재사용): ${baseUrl}`);
+        htmlContent = preloadedHtml;
+      } else {
+        console.error(`[CRITICAL] 🔗 링크 추출 시작 (Cheerio, 새로 요청): ${baseUrl}`);
+        const commonHeaders = {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-          'Accept-Language': 'ko-KR,ko;q=0.9,en;q=0.8',
-        },
-        redirect: 'follow',
-        signal: AbortSignal.timeout(10000), // 10초 타임아웃
-      });
+          'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+          'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
+          'Accept-Encoding': 'gzip, deflate, br',
+          'Connection': 'keep-alive',
+          'Upgrade-Insecure-Requests': '1',
+          'Sec-Fetch-Dest': 'document',
+          'Sec-Fetch-Mode': 'navigate',
+          'Sec-Fetch-Site': 'none',
+        } as Record<string, string>;
+        
+        const response = await fetch(baseUrl, {
+          headers: commonHeaders,
+          redirect: 'follow',
+          signal: AbortSignal.timeout(10000), // 10초 타임아웃
+        });
 
-      console.error(`[CRITICAL] 🔗 페이지 응답: ${response.status} ${response.statusText}, Content-Type: ${response.headers.get('content-type')}`);
+        console.error(`[CRITICAL] 🔗 페이지 응답: ${response.status} ${response.statusText}, Content-Type: ${response.headers.get('content-type')}`);
 
-      if (response.ok) {
-        const htmlContent = await response.text();
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        htmlContent = await response.text();
+      }
+
+      if (htmlContent) {
         const $ = cheerio.load(htmlContent);
         const baseUrlObj = new URL(baseUrl);
         const baseOrigin = `${baseUrlObj.protocol}//${baseUrlObj.host}`;
