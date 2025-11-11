@@ -1869,12 +1869,31 @@ function DocsTable({
       // 디버깅: 메인 URL 정보가 추가된 문서 통계
       const mainDocsCount = documentsWithMainUrl.filter(d => d.isMainUrl === true).length;
       const subDocsCount = documentsWithMainUrl.filter(d => d.isMainUrl === false && d.mainUrl).length;
-      console.log('[그룹화] 📊 메인 URL 정보 추가 완료:', {
-        totalDocuments: documentsWithMainUrl.length,
-        mainDocsCount,
-        subDocsCount,
-        docsWithoutMainUrl: documentsWithMainUrl.length - mainDocsCount - subDocsCount
-      });
+      const urlTypeDocs = documentsWithMainUrl.filter(d => d.type === 'url').length;
+      const urlTypeWithUrl = documentsWithMainUrl.filter(d => d.type === 'url' && d.url).length;
+      
+      if (typeof window !== 'undefined') {
+        console.log('[그룹화] 📊 메인 URL 정보 추가 완료:', {
+          totalDocuments: documentsWithMainUrl.length,
+          mainDocsCount,
+          subDocsCount,
+          docsWithoutMainUrl: documentsWithMainUrl.length - mainDocsCount - subDocsCount,
+          urlTypeDocs,
+          urlTypeWithUrl,
+          sampleDocs: documentsWithMainUrl.slice(0, 5).map((d: any) => ({
+            id: d.id,
+            type: d.type,
+            typeValue: String(d.type || ''),
+            url: d.url,
+            urlValue: String(d.url || ''),
+            isMainUrl: d.isMainUrl,
+            mainUrl: d.mainUrl,
+            typeCheck: d.type === 'url',
+            urlCheck: !!d.url,
+            combinedCheck: d.type === 'url' && d.url
+          }))
+        });
+      }
       
       return documentsWithMainUrl;
     },
@@ -2094,16 +2113,25 @@ function DocsTable({
           mainUrl: (rows[0] as any).mainUrl,
           isMainUrl: (rows[0] as any).isMainUrl
         } : null,
-        sampleRows: rows.slice(0, 5).map((r: any) => ({
-          id: r.id,
-          type: r.type,
-          typeValue: String(r.type || ''),
-          url: r.url,
-          urlValue: String(r.url || ''),
-          typeCheck: r.type === 'url',
-          urlCheck: !!r.url,
-          combinedCheck: r.type === 'url' && r.url
-        }))
+        sampleRows: rows.slice(0, 5).map((r: any) => {
+          const result = {
+            id: r.id,
+            type: r.type,
+            typeValue: String(r.type || ''),
+            url: r.url,
+            urlValue: String(r.url || ''),
+            typeCheck: r.type === 'url',
+            urlCheck: !!r.url,
+            combinedCheck: r.type === 'url' && r.url,
+            isMainUrl: (r as any).isMainUrl,
+            mainUrl: (r as any).mainUrl
+          };
+          // 각 sampleRow를 개별 로그로 출력하여 확실히 확인
+          if (typeof window !== 'undefined') {
+            console.log('[그룹화] 📋 sampleRow 상세:', result);
+          }
+          return result;
+        })
       });
     }
     
