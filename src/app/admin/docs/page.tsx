@@ -1883,6 +1883,124 @@ function DocsTable({
     return (filteredData || []).reduce((sum: number, row: any) => sum + (row?.chunk_count ?? 0), 0);
   }, [filteredData]);
 
+  // 메인 페이지와 하위 페이지를 그룹화하는 함수
+  const groupDocumentsByParent = useMemo(() => {
+    const rows = filteredData || [];
+    const urlDocuments = rows.filter((row: any) => row.type === 'url' && row.url);
+    const nonUrlDocuments = rows.filter((row: any) => row.type !== 'url' || !row.url);
+    
+    // URL 문서들을 메인 페이지와 하위 페이지로 분류
+    const mainPages: any[] = [];
+    const subPagesMap: Record<string, any[]> = {};
+    
+    urlDocuments.forEach((doc: any) => {
+      const url = doc.url;
+      if (!url) return;
+      
+      try {
+        const urlObj = new URL(url);
+        const pathname = urlObj.pathname;
+        
+        // 경로를 분리하여 메인 페이지인지 확인
+        // 예: /docs/marketing-api -> 메인, /docs/marketing-api/overview -> 하위
+        const pathParts = pathname.split('/').filter(Boolean);
+        
+        // 메인 페이지 후보: 경로가 짧거나, 다른 문서의 부모 경로인지 확인
+        let isMainPage = true;
+        let parentUrl: string | null = null;
+        
+        // 다른 URL 문서들과 비교하여 부모-자식 관계 확인
+        for (const otherDoc of urlDocuments) {
+          if (otherDoc.id === doc.id || !otherDoc.url) continue;
+          
+          try {
+            const otherUrlObj = new URL(otherDoc.url);
+            const otherPathname = otherUrlObj.pathname;
+            const otherPathParts = otherPathname.split('/').filter(Boolean);
+            
+            // 같은 도메인인지 확인
+            if (urlObj.origin !== otherUrlObj.origin) continue;
+            
+            // 현재 문서가 다른 문서의 하위 경로인지 확인
+            // 하위 페이지는 경로가 더 깁니다 (예: /docs/marketing-api/overview는 /docs/marketing-api의 하위)
+            if (pathParts.length > otherPathParts.length) {
+              const isSubPath = otherPathParts.every((part, idx) => part === pathParts[idx]);
+              if (isSubPath) {
+                isMainPage = false;
+                parentUrl = otherDoc.url;
+                break;
+              }
+            }
+            // 반대로 다른 문서가 현재 문서의 하위 경로인 경우, 현재 문서는 메인 페이지
+            else if (otherPathParts.length > pathParts.length) {
+              const isOtherSubPath = pathParts.every((part, idx) => part === otherPathParts[idx]);
+              if (isOtherSubPath) {
+                // 현재 문서는 메인 페이지로 유지
+                // 다른 문서는 나중에 하위 페이지로 분류됨
+              }
+            }
+          } catch {
+            // URL 파싱 실패 시 무시
+          }
+        }
+        
+        if (isMainPage) {
+          mainPages.push(doc);
+        } else if (parentUrl) {
+          if (!subPagesMap[parentUrl]) {
+            subPagesMap[parentUrl] = [];
+          }
+          subPagesMap[parentUrl].push(doc);
+        }
+      } catch {
+        // URL 파싱 실패 시 메인 페이지로 처리
+        mainPages.push(doc);
+      }
+    });
+    
+    // 그룹화된 결과 반환
+    const grouped: Array<{ isGroup: boolean; mainDoc?: any; subDocs?: any[]; doc?: any }> = [];
+    
+    // 메인 페이지와 그 하위 페이지들을 함께 추가
+    mainPages.forEach((mainDoc) => {
+      const subDocs = subPagesMap[mainDoc.url] || [];
+      if (subDocs.length > 0) {
+        grouped.push({ isGroup: true, mainDoc, subDocs });
+      } else {
+        grouped.push({ isGroup: false, doc: mainDoc });
+      }
+    });
+    
+    // 하위 페이지로 분류되지 않은 URL 문서들 추가 (혹시 모를 경우)
+    urlDocuments.forEach((doc: any) => {
+      if (!mainPages.find(m => m.id === doc.id) && !Object.values(subPagesMap).flat().find(s => s.id === doc.id)) {
+        grouped.push({ isGroup: false, doc });
+      }
+    });
+    
+    // URL이 아닌 문서들 추가
+    nonUrlDocuments.forEach((doc: any) => {
+      grouped.push({ isGroup: false, doc });
+    });
+    
+    return grouped;
+  }, [filteredData]);
+
+  // 그룹화된 문서 목록에서 펼침/접힘 상태 관리
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  
+  const toggleGroup = (mainDocId: string) => {
+    setExpandedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(mainDocId)) {
+        next.delete(mainDocId);
+      } else {
+        next.add(mainDocId);
+      }
+      return next;
+    });
+  };
+
   // CSV 내보내기 헬퍼
   const exportRowsToCSV = (rows: any[]) => {
     const headers = [
@@ -2678,159 +2796,191 @@ function DocsTable({
                   </button>
                 </div>
                 <div className="divide-y divide-gray-700/60">
-                  {(sortedData || []).map((row: any) => (
-                    <div key={row.id}>
-                      <div className="grid grid-cols-12 items-center px-4 py-3 hover:bg-gray-800/40">
-                        <div className="col-span-7 flex items-center gap-2 min-w-0 pr-2">
-                          <Checkbox 
-                            checked={!!selected[row.id]} 
-                            onCheckedChange={() => toggleSelect(row.id)}
-                            className="flex-shrink-0"
-                          />
-                          {row.type === 'url' && row.url && (
-                            <button
-                              onClick={() => toggleSubPages(row.id, row.url)}
-                              className="flex-shrink-0 text-gray-400 hover:text-blue-400 transition-colors"
-                            >
-                              {expandedSubPages[row.id] ? (
-                                <ChevronDown className="w-4 h-4" />
-                              ) : (
-                                <ChevronRight className="w-4 h-4" />
-                              )}
-                            </button>
-                          )}
-                          <TooltipProvider>
-                            <Tooltip>
-                              <TooltipTrigger asChild>
-                                <button onClick={() => setDetail(row)} className="text-left min-w-0 flex-1">
-                                  <span className="text-primary-enhanced font-semibold truncate block">
-                                    {row.title || row.id}
-                                  </span>
-                                </button>
-                              </TooltipTrigger>
-                              <TooltipContent>
-                                <div className="max-w-[640px] whitespace-pre-wrap break-words text-sm">
-                                  {row.title || row.id}
-                                </div>
-                              </TooltipContent>
-                            </Tooltip>
-                          </TooltipProvider>
-                        </div>
-                        <div className="col-span-2">
-                          <Badge className={`${getTypeBadgeStyle(getDocumentFileType(row))} font-semibold text-[10px] px-2 py-0.5 inline-flex items-center gap-1 w-fit whitespace-nowrap`}>
-                            {getTypeIcon(getDocumentFileType(row))}
-                            {getTypeDisplayName(getDocumentFileType(row))}
-                          </Badge>
-                        </div>
-                        <div className="col-span-2">
-                          <Badge className={`${
-                            row.status === 'indexed' 
-                              ? 'bg-green-500/20 text-green-300 border-green-400/30'
-                              : row.status === 'processing'
-                              ? 'bg-yellow-500/20 text-yellow-300 border-yellow-400/30'
-                              : row.status === 'failed'
-                              ? 'bg-red-500/20 text-red-300 border-red-400/30'
-                              : 'bg-gray-500/20 text-gray-300 border-gray-400/30'
-                          } font-semibold w-fit whitespace-nowrap`}>
-                            {row.status}
-                          </Badge>
-                        </div>
-                        <div className="col-span-1 text-right text-[11px] text-muted-enhanced pr-2">
-                          {new Date(row.updated_at).toLocaleString()}
-                        </div>
-                      </div>
-                      {/* URL 타입 문서에 서브 페이지 정보 표시 (리스트 뷰) */}
-                      {row.type === 'url' && row.url && expandedSubPages[row.id] && (
-                        <div className="px-4 pb-3 bg-gray-800/20 border-t border-gray-700/50">
-                          <div className="flex items-center gap-2 mb-2 text-xs text-gray-400">
-                            <Link2 className="w-3 h-3" />
-                            <span>서브 페이지</span>
-                            {subPagesCache[row.id] && (
-                              <Badge className="bg-blue-500/20 text-blue-300 border-blue-400/30 text-[10px] px-1.5 py-0">
-                                {subPagesCache[row.id].filter(p => p.success).length}개 성공
-                              </Badge>
-                            )}
-                          </div>
-                          <div className="space-y-1 max-h-48 overflow-y-auto">
-                            {loadingSubPages[row.id] ? (
-                              <div className="flex items-center justify-center gap-2 text-xs text-gray-400 py-3">
-                                <Loader2 className="w-3 h-3 animate-spin" />
-                                <span>서브 페이지 정보를 불러오는 중...</span>
-                              </div>
-                            ) : subPagesCache[row.id]?.length > 0 ? (
-                              subPagesCache[row.id].map((subPage: any, idx) => (
-                                <div
-                                  key={idx}
-                                  className={`flex items-start gap-2 text-xs p-2 rounded ${
-                                    subPage.success && subPage.isStored
-                                      ? 'bg-green-500/10 border border-green-500/20'
-                                      : subPage.success && !subPage.isStored
-                                      ? 'bg-yellow-500/10 border border-yellow-500/20'
-                                      : 'bg-red-500/10 border border-red-500/20'
-                                  }`}
-                                >
-                                  <div className="flex-1 min-w-0">
-                                    <a
-                                      href={subPage.url}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="block text-blue-400 hover:text-blue-300 font-medium truncate mb-1"
-                                    >
-                                      {subPage.title || subPage.url}
-                                    </a>
-                                    <div className="flex items-center gap-2 text-[10px] text-gray-400">
-                                      {subPage.isStored ? (
-                                        <>
-                                          <Badge className="bg-green-500/20 text-green-300 border-green-400/30 px-1 py-0 text-[10px]">
-                                            저장됨
-                                          </Badge>
-                                          {subPage.status && (
-                                            <Badge className={`${
-                                              subPage.status === 'indexed' 
-                                                ? 'bg-green-500/20 text-green-300 border-green-400/30'
-                                                : subPage.status === 'processing'
-                                                ? 'bg-yellow-500/20 text-yellow-300 border-yellow-400/30'
-                                                : 'bg-red-500/20 text-red-300 border-red-400/30'
-                                            } px-1 py-0 text-[10px]`}>
-                                              {subPage.status}
-                                            </Badge>
-                                          )}
-                                          {subPage.chunkCount > 0 && (
-                                            <span className="text-gray-400">
-                                              {subPage.chunkCount}개 청크
-                                            </span>
-                                          )}
-                                        </>
-                                      ) : subPage.success ? (
-                                        <Badge className="bg-yellow-500/20 text-yellow-300 border-yellow-400/30 px-1 py-0 text-[10px]">
-                                          크롤링 성공 (저장 확인 필요)
-                                        </Badge>
-                                      ) : (
-                                        <Badge className="bg-red-500/20 text-red-300 border-red-400/30 px-1 py-0 text-[10px]">
-                                          크롤링 실패
-                                        </Badge>
-                                      )}
+                  {groupDocumentsByParent.map((group, groupIdx) => {
+                    if (group.isGroup && group.mainDoc) {
+                      // 그룹화된 메인 페이지와 하위 페이지들
+                      const mainDoc = group.mainDoc;
+                      const subDocs = group.subDocs || [];
+                      const isExpanded = expandedGroups.has(mainDoc.id);
+                      
+                      return (
+                        <div key={mainDoc.id}>
+                          {/* 메인 페이지 행 */}
+                          <div className="grid grid-cols-12 items-center px-4 py-3 hover:bg-gray-800/40">
+                            <div className="col-span-7 flex items-center gap-2 min-w-0 pr-2">
+                              <Checkbox 
+                                checked={!!selected[mainDoc.id]} 
+                                onCheckedChange={() => toggleSelect(mainDoc.id)}
+                                className="flex-shrink-0"
+                              />
+                              <button
+                                onClick={() => toggleGroup(mainDoc.id)}
+                                className="flex-shrink-0 text-gray-400 hover:text-blue-400 transition-colors"
+                              >
+                                {isExpanded ? (
+                                  <ChevronDown className="w-4 h-4" />
+                                ) : (
+                                  <ChevronRight className="w-4 h-4" />
+                                )}
+                              </button>
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <button onClick={() => setDetail(mainDoc)} className="text-left min-w-0 flex-1">
+                                      <span className="text-primary-enhanced font-semibold truncate block">
+                                        {mainDoc.title || mainDoc.id}
+                                      </span>
+                                    </button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <div className="max-w-[640px] whitespace-pre-wrap break-words text-sm">
+                                      {mainDoc.title || mainDoc.id}
                                     </div>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            </div>
+                            <div className="col-span-2">
+                              <Badge className={`${getTypeBadgeStyle(getDocumentFileType(mainDoc))} font-semibold text-[10px] px-2 py-0.5 inline-flex items-center gap-1 w-fit whitespace-nowrap`}>
+                                {getTypeIcon(getDocumentFileType(mainDoc))}
+                                {getTypeDisplayName(getDocumentFileType(mainDoc))}
+                              </Badge>
+                            </div>
+                            <div className="col-span-2">
+                              <Badge className={`${
+                                mainDoc.status === 'indexed' 
+                                  ? 'bg-green-500/20 text-green-300 border-green-400/30'
+                                  : mainDoc.status === 'processing'
+                                  ? 'bg-yellow-500/20 text-yellow-300 border-yellow-400/30'
+                                  : mainDoc.status === 'failed'
+                                  ? 'bg-red-500/20 text-red-300 border-red-400/30'
+                                  : 'bg-gray-500/20 text-gray-300 border-gray-400/30'
+                              } font-semibold w-fit whitespace-nowrap`}>
+                                {mainDoc.status}
+                              </Badge>
+                            </div>
+                            <div className="col-span-1 text-right text-[11px] text-muted-enhanced pr-2">
+                              {new Date(mainDoc.updated_at).toLocaleString()}
+                            </div>
+                          </div>
+                          
+                          {/* 하위 페이지들 (펼쳐진 경우) */}
+                          {isExpanded && subDocs.length > 0 && (
+                            <div className="bg-gray-800/20 border-t border-gray-700/50">
+                              {subDocs.map((subDoc: any) => (
+                                <div key={subDoc.id} className="grid grid-cols-12 items-center px-4 py-2 pl-12 hover:bg-gray-800/30 border-b border-gray-700/30 last:border-b-0">
+                                  <div className="col-span-7 flex items-center gap-2 min-w-0 pr-2">
+                                    <Checkbox 
+                                      checked={!!selected[subDoc.id]} 
+                                      onCheckedChange={() => toggleSelect(subDoc.id)}
+                                      className="flex-shrink-0"
+                                    />
+                                    <div className="flex-shrink-0 w-4 h-4 flex items-center justify-center">
+                                      <div className="w-0.5 h-4 bg-gray-600"></div>
+                                    </div>
+                                    <TooltipProvider>
+                                      <Tooltip>
+                                        <TooltipTrigger asChild>
+                                          <button onClick={() => setDetail(subDoc)} className="text-left min-w-0 flex-1">
+                                            <span className="text-secondary-enhanced font-medium truncate block">
+                                              {subDoc.title || subDoc.id}
+                                            </span>
+                                          </button>
+                                        </TooltipTrigger>
+                                        <TooltipContent>
+                                          <div className="max-w-[640px] whitespace-pre-wrap break-words text-sm">
+                                            {subDoc.title || subDoc.id}
+                                          </div>
+                                        </TooltipContent>
+                                      </Tooltip>
+                                    </TooltipProvider>
                                   </div>
-                                  {subPage.success && subPage.isStored ? (
-                                    <CheckCircle className="w-4 h-4 text-green-400 flex-shrink-0 mt-0.5" />
-                                  ) : subPage.success ? (
-                                    <AlertCircle className="w-4 h-4 text-yellow-400 flex-shrink-0 mt-0.5" />
-                                  ) : (
-                                    <XCircle className="w-4 h-4 text-red-400 flex-shrink-0 mt-0.5" />
-                                  )}
+                                  <div className="col-span-2">
+                                    <Badge className={`${getTypeBadgeStyle(getDocumentFileType(subDoc))} font-semibold text-[10px] px-2 py-0.5 inline-flex items-center gap-1 w-fit whitespace-nowrap`}>
+                                      {getTypeIcon(getDocumentFileType(subDoc))}
+                                      {getTypeDisplayName(getDocumentFileType(subDoc))}
+                                    </Badge>
+                                  </div>
+                                  <div className="col-span-2">
+                                    <Badge className={`${
+                                      subDoc.status === 'indexed' 
+                                        ? 'bg-green-500/20 text-green-300 border-green-400/30'
+                                        : subDoc.status === 'processing'
+                                        ? 'bg-yellow-500/20 text-yellow-300 border-yellow-400/30'
+                                        : subDoc.status === 'failed'
+                                        ? 'bg-red-500/20 text-red-300 border-red-400/30'
+                                        : 'bg-gray-500/20 text-gray-300 border-gray-400/30'
+                                    } font-semibold w-fit whitespace-nowrap`}>
+                                      {subDoc.status}
+                                    </Badge>
+                                  </div>
+                                  <div className="col-span-1 text-right text-[11px] text-muted-enhanced pr-2">
+                                    {new Date(subDoc.updated_at).toLocaleString()}
+                                  </div>
                                 </div>
-                              ))
-                            ) : (
-                              <div className="text-xs text-gray-500 text-center py-2">
-                                서브 페이지가 없거나 아직 크롤링되지 않았습니다.
-                              </div>
-                            )}
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    } else if (group.doc) {
+                      // 단일 문서 (그룹화되지 않은 문서)
+                      const row = group.doc;
+                      return (
+                        <div key={row.id}>
+                          <div className="grid grid-cols-12 items-center px-4 py-3 hover:bg-gray-800/40">
+                            <div className="col-span-7 flex items-center gap-2 min-w-0 pr-2">
+                              <Checkbox 
+                                checked={!!selected[row.id]} 
+                                onCheckedChange={() => toggleSelect(row.id)}
+                                className="flex-shrink-0"
+                              />
+                              <div className="flex-shrink-0 w-4"></div>
+                              <TooltipProvider>
+                                <Tooltip>
+                                  <TooltipTrigger asChild>
+                                    <button onClick={() => setDetail(row)} className="text-left min-w-0 flex-1">
+                                      <span className="text-primary-enhanced font-semibold truncate block">
+                                        {row.title || row.id}
+                                      </span>
+                                    </button>
+                                  </TooltipTrigger>
+                                  <TooltipContent>
+                                    <div className="max-w-[640px] whitespace-pre-wrap break-words text-sm">
+                                      {row.title || row.id}
+                                    </div>
+                                  </TooltipContent>
+                                </Tooltip>
+                              </TooltipProvider>
+                            </div>
+                            <div className="col-span-2">
+                              <Badge className={`${getTypeBadgeStyle(getDocumentFileType(row))} font-semibold text-[10px] px-2 py-0.5 inline-flex items-center gap-1 w-fit whitespace-nowrap`}>
+                                {getTypeIcon(getDocumentFileType(row))}
+                                {getTypeDisplayName(getDocumentFileType(row))}
+                              </Badge>
+                            </div>
+                            <div className="col-span-2">
+                              <Badge className={`${
+                                row.status === 'indexed' 
+                                  ? 'bg-green-500/20 text-green-300 border-green-400/30'
+                                  : row.status === 'processing'
+                                  ? 'bg-yellow-500/20 text-yellow-300 border-yellow-400/30'
+                                  : row.status === 'failed'
+                                  ? 'bg-red-500/20 text-red-300 border-red-400/30'
+                                  : 'bg-gray-500/20 text-gray-300 border-gray-400/30'
+                              } font-semibold w-fit whitespace-nowrap`}>
+                                {row.status}
+                              </Badge>
+                            </div>
+                            <div className="col-span-1 text-right text-[11px] text-muted-enhanced pr-2">
+                              {new Date(row.updated_at).toLocaleString()}
+                            </div>
                           </div>
                         </div>
-                      )}
-                    </div>
-                  ))}
+                      );
+                    }
+                    return null;
+                  })}
                 </div>
               </div>
             )}
