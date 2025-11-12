@@ -37,6 +37,8 @@
   ],
   "exclude": [
     "node_modules",
-    "supabase/functions/**/*"
+    "supabase/functions/**/*",
+    "AdMate_전체코드완료_임시/**/*",
+    "backup/**/*"
   ]
 }

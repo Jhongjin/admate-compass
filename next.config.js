@@ -66,7 +66,26 @@ const nextConfig = {
       'onnxruntime-node': 'commonjs onnxruntime-node',
     });
 
+    // 임시 디렉토리 제외 (빌드 에러 방지)
+    config.watchOptions = {
+      ...config.watchOptions,
+      ignored: [
+        '**/node_modules/**',
+        '**/.next/**',
+        '**/AdMate_전체코드완료_임시/**',
+        '**/backup/**',
+      ],
+    };
+
     return config;
+  },
+  
+  // 빌드에서 제외할 디렉토리 설정
+  pageExtensions: ['tsx', 'ts', 'jsx', 'js'],
+  
+  // TypeScript 설정에서 임시 디렉토리 제외
+  typescript: {
+    ignoreBuildErrors: false,
   },
 };
 
