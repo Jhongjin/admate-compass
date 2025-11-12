@@ -106,7 +106,7 @@ export class UnifiedChunkingService {
 
       if (!cleanContent || cleanContent.trim().length === 0) {
         console.warn('⚠️ 문서 내용이 비어있습니다.');
-        const totalTime = Date.now() - startTime;
+        const totalTime = Date.now() - totalStartTime;
         return {
           chunks: [],
           metadata: {
