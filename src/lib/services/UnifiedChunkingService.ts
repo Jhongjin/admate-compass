@@ -106,6 +106,7 @@ export class UnifiedChunkingService {
 
       if (!cleanContent || cleanContent.trim().length === 0) {
         console.warn('⚠️ 문서 내용이 비어있습니다.');
+        const totalTime = Date.now() - startTime;
         return {
           chunks: [],
           metadata: {
@@ -113,7 +114,14 @@ export class UnifiedChunkingService {
             averageChunkSize: 0,
             originalLength: 0,
             coverage: 0,
-            processingTimeMs: Date.now() - startTime,
+            processingTimeMs: totalTime,
+            performance: {
+              encodingTimeMs: performanceMetrics.encodingTimeMs,
+              chunkingTimeMs: 0,
+              totalTimeMs: totalTime,
+              chunksPerSecond: 0,
+              memoryUsageMB: performanceMetrics.memoryUsageMB,
+            },
           },
         };
       }
