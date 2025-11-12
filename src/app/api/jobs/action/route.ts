@@ -7,15 +7,27 @@ export const dynamic = 'force-dynamic';
 
 type ActionBody = {
   jobId: string;
-  action: 'retry' | 'cancel' | 'reprocess';
+  action: 'retry' | 'cancel' | 'reprocess' | 'delete';
+  jobIds?: string[]; // 일괄 삭제용
 };
 
 export async function POST(request: NextRequest) {
   try {
     const body = (await request.json()) as ActionBody;
-    if (!body?.jobId || !body?.action) {
-      return NextResponse.json({ success: false, error: 'jobId, action 필수' }, { status: 400 });
+    if (!body?.action) {
+      return NextResponse.json({ success: false, error: 'action 필수' }, { status: 400 });
     }
+    
+    // delete 액션은 jobIds로 일괄 삭제 가능, 다른 액션은 jobId 필수
+    if (body.action !== 'delete' && !body?.jobId) {
+      return NextResponse.json({ success: false, error: 'jobId 필수' }, { status: 400 });
+    }
+    
+    // delete 액션은 jobId 또는 jobIds 중 하나는 필수
+    if (body.action === 'delete' && !body?.jobId && (!body?.jobIds || body.jobIds.length === 0)) {
+      return NextResponse.json({ success: false, error: 'jobId 또는 jobIds 필수' }, { status: 400 });
+    }
+    
     const supabase = await createPureClient();
 
     if (body.action === 'cancel') {
@@ -26,6 +38,27 @@ export async function POST(request: NextRequest) {
         .neq('status', 'completed');
       if (error) throw error;
       return NextResponse.json({ success: true, status: 'cancelled' }, { status: 200 });
+    }
+
+    if (body.action === 'delete') {
+      // 단일 삭제 또는 일괄 삭제
+      const jobIds = body.jobIds && body.jobIds.length > 0 ? body.jobIds : [body.jobId];
+      
+      // 삭제 가능한 상태만 삭제 (queued, failed, cancelled, retrying)
+      const { error } = await supabase
+        .from('processing_jobs')
+        .delete()
+        .in('id', jobIds)
+        .in('status', ['queued', 'failed', 'cancelled', 'retrying']);
+      
+      if (error) throw error;
+      
+      const deletedCount = jobIds.length;
+      return NextResponse.json({ 
+        success: true, 
+        deleted: deletedCount,
+        message: `${deletedCount}개 작업이 삭제되었습니다.`
+      }, { status: 200 });
     }
 
     if (body.action === 'retry' || body.action === 'reprocess') {

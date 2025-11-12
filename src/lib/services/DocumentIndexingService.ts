@@ -4,6 +4,7 @@
  */
 
 import { createClient } from '@supabase/supabase-js';
+import { unifiedChunkingService } from './UnifiedChunkingService';
 
 export interface DocumentMetadata {
   source: string;
@@ -61,9 +62,20 @@ export class DocumentIndexingService {
         throw new Error(`문서 저장 실패: ${docError.message}`);
       }
 
-      // 텍스트 청킹
-      const chunks = this.chunkText(content, url);
-      console.log(`📝 청크 생성: ${chunks.length}개`);
+      // 통합 청킹 서비스 사용
+      const chunkingResult = await unifiedChunkingService.chunkDocument(
+        content,
+        documentId,
+        title,
+        {
+          documentType: 'url',
+          chunkSize: 800,
+          chunkOverlap: 100,
+        }
+      );
+      
+      const chunks = chunkingResult.chunks.map(chunk => chunk.content);
+      console.log(`📝 통합 청킹 완료: ${chunks.length}개 청크 (평균 ${chunkingResult.metadata.averageChunkSize}자, 커버리지 ${chunkingResult.metadata.coverage}%)`);
 
       // 청크 배치 저장 (메모리 효율성 개선)
       const BATCH_SIZE = 20; // 배치 크기 제한 (메모리 보호)

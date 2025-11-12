@@ -23,6 +23,7 @@ import { Check, CheckCircle, Download, FileText, Globe, Loader2, RefreshCw, Sear
 import { useQuery } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
+import QueueMonitoringPanel from "@/components/admin/QueueMonitoringPanel";
 
 const ALL_VENDORS = ["Meta", "Naver", "Kakao", "Google", "X(Twitter)"] as const;
 
@@ -49,6 +50,28 @@ function convertVendorsToDB(vendors: string[]): string[] {
   return vendors.map(v => VENDOR_TO_DB_MAP[v] || "META").filter(Boolean);
 }
 
+const normalizeUrlForGrouping = (raw?: string | null): string | null => {
+  if (!raw) return null;
+
+  try {
+    const parsed = new URL(raw);
+    const origin = `${parsed.protocol}//${parsed.host}`;
+    const cleanedPath = parsed.pathname.replace(/\/+$/, "");
+    const finalPath = cleanedPath === "" ? "/" : `${cleanedPath}/`;
+    return `${origin}${finalPath}`;
+  } catch {
+    const sanitized = raw.split(/[?#]/)[0]?.trim();
+    if (!sanitized) {
+      return null;
+    }
+    const trimmed = sanitized.replace(/\/+$/, "");
+    if (trimmed === "") {
+      return "/";
+    }
+    return `${trimmed}/`;
+  }
+};
+
 function AdminDocsPageContent() {
   const router = useRouter();
   const params = useSearchParams();
@@ -67,6 +90,7 @@ function AdminDocsPageContent() {
   });
   const [viewMode, setViewMode] = useState<"card" | "list">("card");
   const [searchQuery, setSearchQuery] = useState<string>("");
+  const [toolbarRefreshLoading, setToolbarRefreshLoading] = useState(false);
 
   // 보기 모드 로컬 스토리지에서 복원
   useEffect(() => {
@@ -144,6 +168,7 @@ function AdminDocsPageContent() {
         <div className="space-y-6 xl:col-span-1">
           <UploadAndCrawlTabs vendors={selectedVendors} />
           <QueueMiniPanel vendors={selectedVendors} />
+          <QueueMonitoringPanel vendors={selectedVendors} defaultOpen={false} />
         </div>
 
           {/* Right: Document list */}
@@ -158,6 +183,7 @@ function AdminDocsPageContent() {
               onViewModeChange={setViewMode}
               searchQuery={searchQuery}
               onSearchQueryChange={setSearchQuery}
+              isLoading={toolbarRefreshLoading}
             />
             <DocsTable 
               vendors={selectedVendors} 
@@ -165,6 +191,7 @@ function AdminDocsPageContent() {
               typeFilter={typeFilter}
               viewMode={viewMode}
               searchQuery={searchQuery}
+              onRefreshStateChange={setToolbarRefreshLoading}
             />
           </div>
       </div>
@@ -255,6 +282,9 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
   const [uploadProgress, setUploadProgress] = useState(0);
   const [uploadError, setUploadError] = useState<string | null>(null);
   const [crawlJobId, setCrawlJobId] = useState<string | null>(null);
+  const [currentJobId, setCurrentJobId] = useState<string | null>(null);
+  const [currentDocumentId, setCurrentDocumentId] = useState<string | null>(null);
+  const pollingAbortControllerRef = useRef<AbortController | null>(null);
   const [crawlProgressValue, setCrawlProgressValue] = useState(0);
   const [crawlProgressLabel, setCrawlProgressLabel] = useState('');
   const [crawlResult, setCrawlResult] = useState<any>(null);
@@ -461,7 +491,7 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
       
       // 파일 크기 제한 설정 (최대 15MB - 타임아웃 방지)
       const MAX_FILE_SIZE = 15 * 1024 * 1024; // 15MB (20MB → 15MB로 조정)
-      const FILE_SIZE_LIMIT = 5 * 1024 * 1024; // 5MB 이상은 큐로 처리
+      const VERCEL_PAYLOAD_LIMIT = 4 * 1024 * 1024; // 4MB (Vercel payload 제한)
       
       // 파일 크기 초과 검증
       if (uploadFile.size > MAX_FILE_SIZE) {
@@ -471,10 +501,9 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
           description: `파일 크기가 ${fileSizeMB}MB입니다. 최대 ${maxSizeMB}MB까지 업로드 가능합니다.`,
           duration: 5000,
         });
-        setUploading(false);
         setUploadStep('idle');
         setUploadProgress(0);
-        return;
+        throw new Error(`파일 크기가 ${fileSizeMB}MB입니다. 최대 ${maxSizeMB}MB까지 업로드 가능합니다.`);
       }
       
       // 큰 파일 경고 (10MB 이상)
@@ -486,8 +515,8 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
         });
       }
       
-      // 5MB 이상이면 Storage에 직접 업로드 후 큐 등록
-      if (uploadFile.size > FILE_SIZE_LIMIT) {
+      // 4MB 이상이면 Storage에 직접 업로드 후 큐 등록 (Vercel payload 제한 회피)
+      if (uploadFile.size > VERCEL_PAYLOAD_LIMIT) {
         console.log('📋 대용량 파일 감지 - Storage에 직접 업로드 후 큐 등록:', {
           fileName: uploadFile.name,
           fileSize: uploadFile.size,
@@ -606,8 +635,80 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
           return new Promise((resolve, reject) => {
             const maxAttempts = 120; // 최대 10분 (5초 간격) - 큰 파일 처리 대응
             let attempts = 0;
+            let pollTimeout: NodeJS.Timeout | null = null;
+            let isCancelled = false;
+            
+            // 현재 작업 ID 저장
+            setCurrentJobId(jobId);
+            setCurrentDocumentId(documentId);
+            
+            // 취소 핸들러
+            const handleCancel = async () => {
+              if (isCancelled) return;
+              isCancelled = true;
+              
+              if (pollTimeout) {
+                clearTimeout(pollTimeout);
+                pollTimeout = null;
+              }
+              
+              try {
+                console.log('🛑 큐 처리 취소 요청:', jobId);
+                const cancelRes = await fetch('/api/jobs/action', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ jobId, action: 'cancel' })
+                });
+                
+                const cancelResult = await cancelRes.json();
+                if (cancelRes.ok && cancelResult.success) {
+                  console.log('✅ 큐 처리 취소 완료');
+                  setUploadStep('idle');
+                  setUploadProgress(0);
+                  setUploadError('사용자가 큐 처리를 취소했습니다.');
+                  setCurrentJobId(null);
+                  setCurrentDocumentId(null);
+                  
+                  toast.warning('큐 처리 취소', {
+                    description: '큐 처리가 취소되었습니다.',
+                    duration: 3000,
+                  });
+                  
+                  // 문서 상태도 cancelled로 업데이트
+                  await supabaseClient
+                    .from('documents')
+                    .update({ 
+                      status: 'failed',
+                      updated_at: new Date().toISOString()
+                    })
+                    .eq('id', documentId);
+                  
+                  reject(new Error('사용자가 큐 처리를 취소했습니다.'));
+                } else {
+                  throw new Error(cancelResult.error || '취소 실패');
+                }
+              } catch (cancelError) {
+                console.error('❌ 큐 처리 취소 실패:', cancelError);
+                toast.error('취소 실패', {
+                  description: cancelError instanceof Error ? cancelError.message : '큐 처리 취소에 실패했습니다.',
+                  duration: 3000,
+                });
+                // 취소 실패해도 폴링은 계속 진행
+                isCancelled = false;
+              }
+            };
+            
+            // AbortController에 취소 핸들러 저장
+            if (!pollingAbortControllerRef.current) {
+              pollingAbortControllerRef.current = new AbortController();
+            }
+            pollingAbortControllerRef.current.signal.addEventListener('abort', handleCancel);
             
             const poll = async () => {
+              if (isCancelled) {
+                return;
+              }
+              
               try {
                 attempts++;
                 const { data: job, error } = await supabaseClient
@@ -622,7 +723,9 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
                     reject(new Error('큐 상태 확인 시간 초과'));
                     return;
                   }
-                  setTimeout(poll, 5000);
+                  if (!isCancelled) {
+                    pollTimeout = setTimeout(poll, 5000);
+                  }
                   return;
                 }
                 
@@ -634,6 +737,14 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
                 } else if (job.status === 'processing') {
                   setUploadStep('saving');
                   setUploadProgress(95 + (attempts / maxAttempts) * 3); // 95-98%
+                } else if (job.status === 'cancelled') {
+                  setUploadStep('idle');
+                  setUploadProgress(0);
+                  setUploadError('큐 처리가 취소되었습니다.');
+                  setCurrentJobId(null);
+                  setCurrentDocumentId(null);
+                  reject(new Error('큐 처리가 취소되었습니다.'));
+                  return;
                 } else if (job.status === 'completed') {
                   setUploadStep('completed');
                   setUploadProgress(100);
@@ -653,6 +764,8 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
                   
                   // 마지막 파일인 경우에만 완전히 종료
                   setSelectedFiles([]);
+                  setCurrentJobId(null);
+                  setCurrentDocumentId(null);
                   setTimeout(() => {
                     setUploadSuccess(false);
                     setUploadStep('idle');
@@ -661,12 +774,14 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
                   resolve();
                   return;
                 } else if (job.status === 'failed') {
+                  setCurrentJobId(null);
+                  setCurrentDocumentId(null);
                   reject(new Error(job.error || '큐 처리 실패'));
                   return;
                 }
               
-              if (attempts < maxAttempts) {
-                setTimeout(poll, 5000);
+              if (attempts < maxAttempts && !isCancelled) {
+                pollTimeout = setTimeout(poll, 5000);
               } else {
                 // 타임아웃 전에 실제 작업 상태를 한 번 더 확인
                 console.warn('⚠️ 클라이언트 폴링 타임아웃 - 실제 작업 상태 최종 확인 중...');
@@ -740,15 +855,31 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
                 reject(new Error('큐 처리 시간 초과 (10분)'));
               }
             } catch (error) {
+              if (isCancelled) {
+                return;
+              }
               console.error('폴링 오류:', error);
               setUploadStep('error');
               setUploadError(error instanceof Error ? error.message : String(error));
               setUploadProgress(0);
               setUploading(false);
+              setCurrentJobId(null);
+              setCurrentDocumentId(null);
               reject(error);
             }
           };
+          
+          // 초기 폴링 시작
           poll();
+          
+          // 정리 함수 반환
+          return () => {
+            if (pollTimeout) {
+              clearTimeout(pollTimeout);
+            }
+            setCurrentJobId(null);
+            setCurrentDocumentId(null);
+          };
           });
         };
         
@@ -816,6 +947,11 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
       }
       
       if (!res.ok) {
+        // 413 에러는 특별 처리 (더 명확한 에러 메시지)
+        if (res.status === 413) {
+          const fileSizeMB = (uploadFile.size / (1024 * 1024)).toFixed(2);
+          throw new Error(`파일 크기가 너무 큽니다 (${fileSizeMB}MB). 4MB 이상 파일은 클라이언트에서 직접 Storage에 업로드하거나, 파일을 분할하여 업로드해주세요.`);
+        }
         throw new Error(result.error || result.message || responseText || `HTTP ${res.status}: ${res.statusText}`);
       }
       
@@ -849,8 +985,81 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
           return new Promise((resolve, reject) => {
             const maxAttempts = 120; // 최대 10분 (5초 간격) - 큰 파일 처리 대응
             let attempts = 0;
+            let pollTimeout: NodeJS.Timeout | null = null;
+            let isCancelled = false;
+            
+            // 현재 작업 ID 저장
+            setCurrentJobId(jobId);
+            setCurrentDocumentId(documentId);
+            
+            // 취소 핸들러
+            const handleCancel = async () => {
+              if (isCancelled) return;
+              isCancelled = true;
+              
+              if (pollTimeout) {
+                clearTimeout(pollTimeout);
+                pollTimeout = null;
+              }
+              
+              try {
+                console.log('🛑 큐 처리 취소 요청:', jobId);
+                const cancelRes = await fetch('/api/jobs/action', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ jobId, action: 'cancel' })
+                });
+                
+                const cancelResult = await cancelRes.json();
+                if (cancelRes.ok && cancelResult.success) {
+                  console.log('✅ 큐 처리 취소 완료');
+                  setUploadStep('idle');
+                  setUploadProgress(0);
+                  setUploadError('사용자가 큐 처리를 취소했습니다.');
+                  setCurrentJobId(null);
+                  setCurrentDocumentId(null);
+                  
+                  toast.warning('큐 처리 취소', {
+                    description: '큐 처리가 취소되었습니다.',
+                    duration: 3000,
+                  });
+                  
+                  // 문서 상태도 cancelled로 업데이트
+                  const supabaseClient = createClient();
+                  await supabaseClient
+                    .from('documents')
+                    .update({ 
+                      status: 'failed',
+                      updated_at: new Date().toISOString()
+                    })
+                    .eq('id', documentId);
+                  
+                  reject(new Error('사용자가 큐 처리를 취소했습니다.'));
+                } else {
+                  throw new Error(cancelResult.error || '취소 실패');
+                }
+              } catch (cancelError) {
+                console.error('❌ 큐 처리 취소 실패:', cancelError);
+                toast.error('취소 실패', {
+                  description: cancelError instanceof Error ? cancelError.message : '큐 처리 취소에 실패했습니다.',
+                  duration: 3000,
+                });
+                // 취소 실패해도 폴링은 계속 진행
+                isCancelled = false;
+              }
+            };
+            
+            // AbortController에 취소 핸들러 저장
+            if (!pollingAbortControllerRef.current) {
+              pollingAbortControllerRef.current = new AbortController();
+            }
+            pollingAbortControllerRef.current.signal.addEventListener('abort', handleCancel);
             
             const poll = async () => {
+              if (isCancelled) {
+                return;
+              }
+              
               try {
                 attempts++;
                 
@@ -868,7 +1077,9 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
                     reject(new Error('큐 상태 확인 시간 초과'));
                     return;
                   }
-                  setTimeout(poll, 5000);
+                  if (!isCancelled) {
+                    pollTimeout = setTimeout(poll, 5000);
+                  }
                   return;
                 }
                 
@@ -881,6 +1092,14 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
                 } else if (job.status === 'processing') {
                   setUploadStep('saving');
                   setUploadProgress(95 + (attempts / maxAttempts) * 3); // 95-98%
+                } else if (job.status === 'cancelled') {
+                  setUploadStep('idle');
+                  setUploadProgress(0);
+                  setUploadError('큐 처리가 취소되었습니다.');
+                  setCurrentJobId(null);
+                  setCurrentDocumentId(null);
+                  reject(new Error('큐 처리가 취소되었습니다.'));
+                  return;
                 } else if (job.status === 'completed') {
                   setUploadStep('completed');
                   setUploadProgress(100);
@@ -903,6 +1122,8 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
                   
                   // 마지막 파일인 경우에만 완전히 종료
                   setSelectedFiles([]);
+                  setCurrentJobId(null);
+                  setCurrentDocumentId(null);
                   
                   // 3초 후 상태 초기화
                   setTimeout(() => {
@@ -913,13 +1134,15 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
                   resolve();
                   return;
                 } else if (job.status === 'failed') {
+                  setCurrentJobId(null);
+                  setCurrentDocumentId(null);
                   reject(new Error(job.error || '큐 처리 실패'));
                   return;
                 }
                 
                 // 계속 폴링
-                if (attempts < maxAttempts) {
-                  setTimeout(poll, 5000); // 5초마다 확인
+                if (attempts < maxAttempts && !isCancelled) {
+                  pollTimeout = setTimeout(poll, 5000); // 5초마다 확인
                 } else {
                   // 타임아웃 전에 실제 작업 상태를 한 번 더 확인
                   console.warn('⚠️ 클라이언트 폴링 타임아웃 - 실제 작업 상태 최종 확인 중...');
@@ -948,6 +1171,8 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
                       
                       // 마지막 파일인 경우에만 완전히 종료
                       setSelectedFiles([]);
+                      setCurrentJobId(null);
+                      setCurrentDocumentId(null);
                       
                       // 3초 후 상태 초기화
                       setTimeout(() => {
@@ -961,6 +1186,8 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
                     
                     // 이미 실패했을 수도 있음
                     if (finalJob.status === 'failed') {
+                      setCurrentJobId(null);
+                      setCurrentDocumentId(null);
                       reject(new Error(finalJob.error || '큐 처리 실패'));
                       return;
                     }
@@ -990,19 +1217,36 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
                   } catch (updateError) {
                     console.error('큐 상태 업데이트 실패:', updateError);
                   }
+                  setCurrentJobId(null);
+                  setCurrentDocumentId(null);
                   reject(new Error('큐 처리 시간 초과 (10분)'));
                 }
               } catch (error) {
+                if (isCancelled) {
+                  return;
+                }
                 console.error('폴링 오류:', error);
                 setUploadStep('error');
                 setUploadError(error instanceof Error ? error.message : String(error));
                 setUploadProgress(0);
                 setUploading(false);
+                setCurrentJobId(null);
+                setCurrentDocumentId(null);
                 reject(error);
               }
             };
             
+            // 초기 폴링 시작
             poll();
+            
+            // 정리 함수 반환
+            return () => {
+              if (pollTimeout) {
+                clearTimeout(pollTimeout);
+              }
+              setCurrentJobId(null);
+              setCurrentDocumentId(null);
+            };
           });
         };
         
@@ -1052,20 +1296,80 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
       };
       
       // 모든 파일을 순차적으로 업로드
+      const uploadResults: Array<{ fileName: string; success: boolean; error?: string }> = [];
+      
       for (let i = 0; i < filesToUpload.length; i++) {
         const uploadFile = filesToUpload[i];
         if (!uploadFile) continue;
-        await uploadSingleFile(uploadFile, i, filesToUpload.length);
+        
+        try {
+          await uploadSingleFile(uploadFile, i, filesToUpload.length);
+          uploadResults.push({ fileName: uploadFile.name, success: true });
+        } catch (fileError) {
+          // 개별 파일 업로드 실패 시에도 다음 파일로 계속 진행
+          const errorMessage = fileError instanceof Error ? fileError.message : String(fileError);
+          console.error(`파일 업로드 실패 (${uploadFile.name}):`, fileError);
+          
+          uploadResults.push({ 
+            fileName: uploadFile.name, 
+            success: false, 
+            error: errorMessage 
+          });
+          
+          // 413 에러는 특별 처리 (파일 크기 초과)
+          if (errorMessage.includes('413') || errorMessage.includes('Payload Too Large') || errorMessage.includes('파일 크기가 너무 큽니다')) {
+            toast.error('파일 크기 초과', {
+              description: `${uploadFile.name}: 4MB 이상 파일은 Storage에 직접 업로드됩니다. (현재: ${(uploadFile.size / (1024 * 1024)).toFixed(2)}MB)`,
+              duration: 5000,
+            });
+          } else {
+            toast.error('파일 업로드 실패', {
+              description: `${uploadFile.name}: ${errorMessage}`,
+              duration: 5000,
+            });
+          }
+          
+          // 에러 발생 시 상태 초기화 (다음 파일을 위해)
+          setUploadStep('idle');
+          setUploadProgress(0);
+          setUploadError(null);
+          
+          // 다음 파일로 계속 진행
+          continue;
+        }
+      }
+      
+      // 모든 파일 처리 완료 후 결과 요약
+      const successCount = uploadResults.filter(r => r.success).length;
+      const failCount = uploadResults.filter(r => !r.success).length;
+      
+      if (successCount > 0 && failCount === 0) {
+        toast.success('모든 파일 업로드 완료', {
+          description: `${successCount}개 파일이 성공적으로 업로드되었습니다.`,
+          duration: 3000,
+        });
+      } else if (successCount > 0 && failCount > 0) {
+        toast.warning('일부 파일 업로드 실패', {
+          description: `${successCount}개 성공, ${failCount}개 실패`,
+          duration: 5000,
+        });
+      } else if (failCount > 0) {
+        toast.error('모든 파일 업로드 실패', {
+          description: `${failCount}개 파일 업로드에 실패했습니다.`,
+          duration: 5000,
+        });
+        setUploadStep('error');
+        setUploadError(`${failCount}개 파일 업로드 실패`);
       }
     } catch (e) {
+      // 예상치 못한 전체 업로드 프로세스 에러
       console.error("upload error", e);
       setUploadStep('error');
       const errorMessage = e instanceof Error ? e.message : String(e);
       setUploadError(errorMessage);
       setUploadProgress(0);
       
-      // toast 알림 사용 (alert 대신)
-      toast.error('파일 업로드 실패', {
+      toast.error('업로드 프로세스 오류', {
         description: errorMessage,
         duration: 5000,
       });
@@ -1367,7 +1671,7 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
               <Button 
                 disabled={isUploading || selectedFiles.length === 0} 
                 onClick={() => handleUpload()}
-                className="btn-enhanced flex-1"
+                className="flex-1 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
               >
                 {isUploading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Upload className="w-4 h-4 mr-2" />} 
                 업로드
@@ -1406,15 +1710,42 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
                 
                 {/* 단계별 상세 정보 */}
                 {uploadStep !== 'completed' && uploadStep !== 'error' && (
-                  <div className="flex items-center gap-2 text-xs text-muted-enhanced">
-                    <Loader2 className="w-3 h-3 animate-spin" />
-                    <span>
-                      {uploadStep === 'uploading' && '서버로 파일 전송 중...'}
-                      {uploadStep === 'extracting' && 'PDF/DOCX에서 텍스트 추출 중...'}
-                      {uploadStep === 'chunking' && '문서를 의미 단위로 분할 중...'}
-                      {uploadStep === 'embedding' && '벡터 임베딩 생성 중...'}
-                      {uploadStep === 'saving' && '큐에서 처리 중입니다. 잠시만 기다려주세요...'}
-                    </span>
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2 text-xs text-muted-enhanced">
+                      <Loader2 className="w-3 h-3 animate-spin" />
+                      <span>
+                        {uploadStep === 'uploading' && '서버로 파일 전송 중...'}
+                        {uploadStep === 'extracting' && 'PDF/DOCX에서 텍스트 추출 중...'}
+                        {uploadStep === 'chunking' && '문서를 의미 단위로 분할 중...'}
+                        {uploadStep === 'embedding' && '벡터 임베딩 생성 중...'}
+                        {uploadStep === 'saving' && '큐에서 처리 중입니다. 잠시만 기다려주세요...'}
+                      </span>
+                    </div>
+                    {/* 큐 처리 중일 때만 취소 버튼 표시 */}
+                    {uploadStep === 'saving' && currentJobId && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={async () => {
+                          if (!currentJobId || !pollingAbortControllerRef.current) return;
+                          
+                          try {
+                            // AbortController를 통해 취소 핸들러 트리거
+                            pollingAbortControllerRef.current.abort();
+                          } catch (error) {
+                            console.error('취소 버튼 클릭 오류:', error);
+                            toast.error('취소 실패', {
+                              description: '큐 처리 취소에 실패했습니다.',
+                              duration: 3000,
+                            });
+                          }
+                        }}
+                        className="h-7 px-3 text-xs bg-red-500/20 border-red-500/50 text-red-300 hover:bg-red-500/30 hover:text-red-200"
+                      >
+                        <XCircle className="w-3 h-3 mr-1" />
+                        취소
+                      </Button>
+                    )}
                   </div>
                 )}
                 
@@ -1597,7 +1928,7 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
               <Button 
                 disabled={isCrawling} 
                 onClick={handleCrawl}
-                className="btn-enhanced"
+                className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
               >
                 {isCrawling ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Globe className="w-4 h-4 mr-2" />} 
                 크롤 시작
@@ -1629,7 +1960,8 @@ function DocsToolbar({
   viewMode,
   onViewModeChange,
   searchQuery,
-  onSearchQueryChange
+  onSearchQueryChange,
+  isLoading
 }: { 
   vendors: string[];
   statusFilter: string;
@@ -1640,9 +1972,11 @@ function DocsToolbar({
   onViewModeChange: (v: "card" | "list") => void;
   searchQuery: string;
   onSearchQueryChange: (value: string) => void;
+  isLoading?: boolean;
 }) {
-  const toolbarButtonClass = "inline-flex items-center justify-center gap-2 h-11 px-5 rounded-xl bg-gradient-to-r from-blue-500/85 via-blue-500/70 to-indigo-500/85 text-white font-semibold shadow-sm hover:shadow-xl hover:-translate-y-0.5 transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed";
-  const exportButtonClass = "inline-flex items-center justify-center gap-2 h-11 px-5 rounded-xl bg-gradient-to-r from-emerald-500/85 to-teal-500/85 text-white font-semibold shadow-sm hover:shadow-xl hover:-translate-y-0.5 transition-all duration-200 disabled:opacity-60 disabled:cursor-not-allowed";
+  const isLoadingState = isLoading ?? false;
+  const toolbarButtonClass = "bg-gray-800/50 border-gray-600 text-white hover:bg-gray-700/50";
+  const exportButtonClass = "bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700";
   const searchInputClass = "h-11 rounded-xl border border-white/10 bg-gradient-to-r from-gray-900/80 via-gray-900/60 to-gray-900/80 pl-11 pr-4 text-sm text-white placeholder-gray-500 shadow-inner focus:outline-none focus:ring-2 focus:ring-blue-500/60 focus:border-transparent transition-all";
   const selectTriggerClass = "h-11 rounded-xl border border-white/10 bg-gray-900/70 text-sm text-white hover:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500/60 focus:border-transparent transition-all";
 
@@ -1693,7 +2027,9 @@ function DocsToolbar({
           </Select>
           <div className="ml-auto flex items-center gap-2">
             <Button 
+              variant="outline"
               className={toolbarButtonClass}
+              disabled={isLoadingState}
               onClick={() => {
                 if (typeof window !== 'undefined') {
                   window.dispatchEvent(new CustomEvent('docs-refresh-click'));
@@ -1701,8 +2037,8 @@ function DocsToolbar({
                 }
               }}
             >
-              <RefreshCw className="w-4 h-4" /> 
-              새로 고침
+              <RefreshCw className={`w-4 h-4 mr-2 ${isLoadingState ? 'animate-spin' : ''}`} /> 
+              새로고침
             </Button>
             <Button 
               className={exportButtonClass}
@@ -1712,8 +2048,8 @@ function DocsToolbar({
                 }
               }}
             >
-              <Download className="w-4 h-4" /> 
-              데이터 내보내기
+              <Download className="w-4 h-4 mr-2" /> 
+              내보내기
             </Button>
           </div>
         </div>
@@ -1727,13 +2063,15 @@ function DocsTable({
   statusFilter, 
   typeFilter,
   viewMode,
-  searchQuery
+  searchQuery,
+  onRefreshStateChange
 }: { 
   vendors: string[];
   statusFilter: string;
   typeFilter: string;
   viewMode: "card" | "list";
   searchQuery: string;
+  onRefreshStateChange?: (loading: boolean) => void;
 }) {
   const supabase = useMemo(() => createClient(), []);
   
@@ -1825,70 +2163,96 @@ function DocsTable({
         console.error('[그룹화] ❌ 메인 URL 조회 실패:', mainUrlError);
       }
       
-      // document_id -> 메인 URL 매핑 생성
-      const mainUrlById: Record<string, string> = {};
-      const mainUrlSet = new Set<string>(); // 빠른 검색을 위한 Set
-      
+      // document_id -> 메인 URL 매핑 생성 (정규화 정보 포함)
+      const mainUrlById: Record<string, { original: string; normalized: string | null }> = {};
       if (mainUrlMap) {
         for (const job of mainUrlMap) {
-          if (job.document_id && job.payload) {
-            try {
-              const payload = typeof job.payload === 'string' ? JSON.parse(job.payload) : job.payload;
-              if (payload.url) {
-                mainUrlById[job.document_id] = payload.url;
-                mainUrlSet.add(payload.url);
-              }
-            } catch (e) {
-              console.error('[그룹화] ⚠️ payload 파싱 실패:', job.document_id, e);
+          if (!job.document_id || !job.payload) continue;
+          try {
+            const payload = typeof job.payload === 'string' ? JSON.parse(job.payload) : job.payload;
+            if (payload?.url) {
+              const normalized = normalizeUrlForGrouping(payload.url);
+              mainUrlById[job.document_id] = {
+                original: payload.url,
+                normalized,
+              };
             }
+          } catch (e) {
+            console.error('[그룹화] ⚠️ payload 파싱 실패:', job.document_id, e);
           }
         }
       }
       
+      const mainUrlEntries = Object.entries(mainUrlById).map(([docId, info]) => ({
+        docId,
+        original: info.original,
+        normalized: info.normalized ?? normalizeUrlForGrouping(info.original),
+      }));
+      
       console.log('[그룹화] 📊 메인 URL 매핑:', {
         mainUrlMapCount: mainUrlMap?.length || 0,
         mainUrlByIdCount: Object.keys(mainUrlById).length,
-        mainUrlSetCount: mainUrlSet.size,
-        sampleMainUrls: Array.from(mainUrlSet).slice(0, 3)
+        normalizedMainUrlCount: mainUrlEntries.filter((entry) => !!entry.normalized).length,
+        sampleMainUrls: mainUrlEntries.slice(0, 3).map((entry) => ({
+          docId: entry.docId,
+          original: entry.original,
+          normalized: entry.normalized,
+        })),
       });
       
       // documents에 메인 URL 정보 추가
       const documentsWithMainUrl = (documents || []).map((doc: any) => {
-        // 1. document_id가 메인 문서 ID인 경우
-        if (mainUrlById[doc.id]) {
-          const mainUrl = mainUrlById[doc.id];
-          return { ...doc, mainUrl, isMainUrl: true, mainDocumentId: doc.id };
-        }
+        const normalizedUrl = normalizeUrlForGrouping(doc.url);
         
-        // 2. 하위 페이지인 경우: URL이 메인 URL로 시작하는지 확인
-        if (doc.url && doc.type === 'url') {
-          // 메인 URL과 정확히 일치하는 경우
-          if (mainUrlSet.has(doc.url)) {
-            // 메인 문서 ID 찾기
-            const mainDocId = Object.keys(mainUrlById).find(id => mainUrlById[id] === doc.url);
-            return { ...doc, mainUrl: doc.url, isMainUrl: true, mainDocumentId: mainDocId || doc.id };
+        let matchedEntry: { docId: string; original: string; normalized: string | null } | undefined;
+        let bestMatchLength = -1;
+        
+        for (const entry of mainUrlEntries) {
+          const normalizedMain = entry.normalized;
+          
+          if (doc.id === entry.docId) {
+            matchedEntry = entry;
+            bestMatchLength = normalizedMain?.length ?? Number.MAX_SAFE_INTEGER;
+            break;
           }
           
-          // 하위 페이지인 경우: URL이 메인 URL로 시작하는지 확인
-          for (const [mainDocId, mainUrl] of Object.entries(mainUrlById)) {
-            // URL 정규화: 슬래시로 끝나지 않는 경우 슬래시 추가하여 비교
-            const normalizedMainUrl = mainUrl.endsWith('/') ? mainUrl : mainUrl + '/';
-            const normalizedDocUrl = doc.url.endsWith('/') ? doc.url : doc.url + '/';
-            // 정확한 매칭: 메인 URL과 정확히 같거나, 메인 URL + '/'로 시작하는 경우
-            if (doc.url !== mainUrl && normalizedDocUrl.startsWith(normalizedMainUrl)) {
-              return { ...doc, mainUrl, isMainUrl: false, mainDocumentId: mainDocId };
+          if (normalizedUrl && normalizedMain && normalizedUrl.startsWith(normalizedMain)) {
+            const candidateLength = normalizedMain.length;
+            if (candidateLength > bestMatchLength) {
+              matchedEntry = entry;
+              bestMatchLength = candidateLength;
             }
           }
         }
         
-        return { ...doc, isMainUrl: false };
+        if (matchedEntry) {
+          const normalizedMain = matchedEntry.normalized;
+          const isExact =
+            doc.id === matchedEntry.docId ||
+            (!!normalizedUrl && !!normalizedMain && normalizedUrl === normalizedMain);
+          
+          return {
+            ...doc,
+            mainUrl: matchedEntry.original,
+            normalizedUrl,
+            normalizedMainUrl: normalizedMain,
+            isMainUrl: isExact,
+            mainDocumentId: matchedEntry.docId,
+          };
+        }
+        
+        return {
+          ...doc,
+          normalizedUrl,
+          isMainUrl: false,
+        };
       });
       
       // 디버깅: 메인 URL 정보가 추가된 문서 통계
       const mainDocsCount = documentsWithMainUrl.filter(d => d.isMainUrl === true).length;
-      const subDocsCount = documentsWithMainUrl.filter(d => d.isMainUrl === false && d.mainUrl).length;
+      const subDocsCount = documentsWithMainUrl.filter(d => d.isMainUrl === false && (d.mainUrl || d.normalizedMainUrl || d.mainDocumentId)).length;
       const urlTypeDocs = documentsWithMainUrl.filter(d => d.type === 'url').length;
-      const urlTypeWithUrl = documentsWithMainUrl.filter(d => d.type === 'url' && d.url).length;
+      const urlTypeWithUrl = documentsWithMainUrl.filter(d => d.type === 'url' && (d.url || d.normalizedUrl)).length;
       
       if (typeof window !== 'undefined') {
         console.log('[그룹화] 📊 메인 URL 정보 추가 완료:', {
@@ -1906,9 +2270,12 @@ function DocsTable({
             urlValue: String(d.url || ''),
             isMainUrl: d.isMainUrl,
             mainUrl: d.mainUrl,
+            normalizedUrl: d.normalizedUrl,
+            normalizedMainUrl: d.normalizedMainUrl,
+            mainDocumentId: d.mainDocumentId,
             typeCheck: d.type === 'url',
-            urlCheck: !!d.url,
-            combinedCheck: d.type === 'url' && d.url
+            urlCheck: !!(d.url || d.normalizedUrl),
+            combinedCheck: d.type === 'url' && !!(d.url || d.normalizedUrl)
           }))
         });
       }
@@ -2128,8 +2495,11 @@ function DocsTable({
           urlValue: String(rows[0].url || ''),
           urlIsUndefined: rows[0].url === undefined,
           urlIsNull: rows[0].url === null,
+          normalizedUrl: (rows[0] as any).normalizedUrl,
+          normalizedMainUrl: (rows[0] as any).normalizedMainUrl,
           mainUrl: (rows[0] as any).mainUrl,
-          isMainUrl: (rows[0] as any).isMainUrl
+          isMainUrl: (rows[0] as any).isMainUrl,
+          mainDocumentId: (rows[0] as any).mainDocumentId,
         } : null,
         sampleRows: rows.slice(0, 5).map((r: any) => {
           const result = {
@@ -2138,11 +2508,14 @@ function DocsTable({
             typeValue: String(r.type || ''),
             url: r.url,
             urlValue: String(r.url || ''),
+            normalizedUrl: r.normalizedUrl,
+            normalizedMainUrl: r.normalizedMainUrl,
             typeCheck: r.type === 'url',
-            urlCheck: !!r.url,
-            combinedCheck: r.type === 'url' && r.url,
+            urlCheck: !!(r.url || r.normalizedUrl),
+            combinedCheck: r.type === 'url' && !!(r.url || r.normalizedUrl),
             isMainUrl: (r as any).isMainUrl,
-            mainUrl: (r as any).mainUrl
+            mainUrl: (r as any).mainUrl,
+            mainDocumentId: (r as any).mainDocumentId,
           };
           // 각 sampleRow를 개별 로그로 출력하여 확실히 확인
           if (typeof window !== 'undefined') {
@@ -2155,22 +2528,23 @@ function DocsTable({
     
     const urlDocuments = rows.filter((row: any) => {
       const typeMatch = row.type === 'url';
-      const urlExists = !!row.url;
+      const urlExists = !!(row.url || row.normalizedUrl);
       const combined = typeMatch && urlExists;
-      if (typeof window !== 'undefined' && !combined && row.url) {
+      if (typeof window !== 'undefined' && !combined && (row.url || row.normalizedUrl)) {
         console.log('[그룹화] ⚠️ URL 문서 필터링 실패:', {
           id: row.id,
           type: row.type,
           typeValue: String(row.type || ''),
           typeMatch,
           url: row.url,
+          normalizedUrl: (row as any).normalizedUrl,
           urlExists,
-          combined
+          combined,
         });
       }
       return combined;
     });
-    const nonUrlDocuments = rows.filter((row: any) => row.type !== 'url' || !row.url);
+    const nonUrlDocuments = rows.filter((row: any) => row.type !== 'url' || !(row.url || row.normalizedUrl));
     if (typeof window !== 'undefined') {
       console.log('[그룹화] 📋 필터링 결과:', { 
         urlDocuments: urlDocuments.length, 
@@ -2178,185 +2552,274 @@ function DocsTable({
         urlDocumentsSample: urlDocuments.slice(0, 3).map((d: any) => ({
           id: d.id,
           type: d.type,
-          url: d.url
+          url: d.url,
+          normalizedUrl: d.normalizedUrl,
+          mainUrl: d.mainUrl,
+          mainDocumentId: d.mainDocumentId,
         })),
         nonUrlDocumentsSample: nonUrlDocuments.slice(0, 3).map((d: any) => ({
           id: d.id,
           type: d.type,
-          url: d.url
+          url: d.url,
         }))
       });
     }
     
-    // 메인 URL 기준으로 그룹화
-    // 1. 메인 URL 문서 찾기 (isMainUrl === true 또는 mainUrl이 자신의 URL과 같은 경우)
     const mainPages: any[] = [];
-    const subPagesMap: Record<string, any[]> = {}; // mainUrl -> subPages[]
+    const mainDocIds = new Set<string>();
+    const mainDocsById: Record<string, any> = {};
+    const subPagesByMainId: Record<string, any[]> = {};
+    const fallbackSubPagesByKey: Record<string, any[]> = {};
+    const rowOrder = new Map<string, number>();
+    rows.forEach((row: any, index: number) => {
+      if (row?.id) {
+        rowOrder.set(row.id, index);
+      }
+    });
     
+    // 1차: 명시적인 메인 문서 수집
     urlDocuments.forEach((doc: any) => {
-      if (doc.isMainUrl === true || (doc.mainUrl && doc.url === doc.mainUrl)) {
-        // 메인 페이지
-        mainPages.push(doc);
-        if (!subPagesMap[doc.url]) {
-          subPagesMap[doc.url] = [];
+      if (doc.isMainUrl === true) {
+        if (!mainDocIds.has(doc.id)) {
+          mainPages.push(doc);
+          mainDocIds.add(doc.id);
+        }
+        mainDocsById[doc.id] = doc;
+        if (!subPagesByMainId[doc.id]) {
+          subPagesByMainId[doc.id] = [];
+        }
+        const normalizedSelf = doc.normalizedUrl ?? (doc.url ? normalizeUrlForGrouping(doc.url) : null);
+        if (normalizedSelf) {
+          fallbackSubPagesByKey[normalizedSelf] = fallbackSubPagesByKey[normalizedSelf] || [];
         }
         if (typeof window !== 'undefined') {
-          console.log('[그룹화] ✅ 메인 페이지 발견:', { 
+          console.log('[그룹화] ✅ 메인 페이지 확정:', { 
             title: doc.title, 
             url: doc.url,
             mainUrl: doc.mainUrl,
-            isMainUrl: doc.isMainUrl
+            normalizedUrl: doc.normalizedUrl,
+            normalizedMainUrl: doc.normalizedMainUrl,
+            isMainUrl: doc.isMainUrl,
+            mainDocumentId: doc.mainDocumentId,
           });
-        }
-      } else if (doc.mainUrl && doc.url !== doc.mainUrl) {
-        // 하위 페이지 (mainUrl이 있고 자신의 URL과 다른 경우)
-        if (!subPagesMap[doc.mainUrl]) {
-          subPagesMap[doc.mainUrl] = [];
-        }
-        subPagesMap[doc.mainUrl].push(doc);
-        if (typeof window !== 'undefined') {
-          console.log('[그룹화] ✅ 하위 페이지 발견:', { 
-            child: doc.title, 
-            childUrl: doc.url,
-            mainUrl: doc.mainUrl,
-            mainDocumentId: doc.mainDocumentId
-          });
-        }
-      } else {
-        // mainUrl 정보가 없는 경우: URL 경로 비교로 추론 시도
-        let foundParent = false;
-        for (const otherDoc of urlDocuments) {
-          if (otherDoc.id === doc.id || !otherDoc.url) continue;
-          try {
-            const docUrl = new URL(doc.url);
-            const otherUrl = new URL(otherDoc.url);
-            if (docUrl.origin === otherUrl.origin) {
-              // URL 정규화하여 비교
-              const normalizedOtherUrl = otherDoc.url.endsWith('/') ? otherDoc.url : otherDoc.url + '/';
-              const normalizedDocUrl = doc.url.endsWith('/') ? doc.url : doc.url + '/';
-              if (doc.url !== otherDoc.url && normalizedDocUrl.startsWith(normalizedOtherUrl)) {
-                // 하위 페이지로 추론
-                if (!subPagesMap[otherDoc.url]) {
-                  subPagesMap[otherDoc.url] = [];
-                }
-                subPagesMap[otherDoc.url].push(doc);
-                foundParent = true;
-                if (typeof window !== 'undefined') {
-                  console.log('[그룹화] 🔍 하위 페이지 추론:', { 
-                    child: doc.title, 
-                    childUrl: doc.url,
-                    parentUrl: otherDoc.url
-                  });
-                }
-                break;
-              }
-            }
-          } catch {
-            // URL 파싱 실패 시 무시
-          }
-        }
-        if (!foundParent) {
-          // 부모를 찾지 못한 경우 메인 페이지로 처리
-          mainPages.push(doc);
-          if (!subPagesMap[doc.url]) {
-            subPagesMap[doc.url] = [];
-          }
         }
       }
     });
     
-    // 그룹화된 결과 반환
-    const grouped: Array<{ isGroup: boolean; mainDoc?: any; subDocs?: any[]; doc?: any }> = [];
-    
-    // 메인 페이지와 그 하위 페이지들을 함께 추가
-    mainPages.forEach((mainDoc) => {
-      // mainDoc.url과 mainDoc.mainUrl 모두 확인 (URL 정규화 차이 대응)
-      const mainUrlKey = mainDoc.mainUrl || mainDoc.url;
-      const subDocs = subPagesMap[mainUrlKey] || subPagesMap[mainDoc.url] || [];
+    // 2차: 하위 문서 연결 및 추가 메인 문서 판별
+    urlDocuments.forEach((doc: any) => {
+      if (doc.isMainUrl === true) return;
       
-      if (typeof window !== 'undefined' && mainDoc.title?.includes('마케팅 API')) {
-        console.log('[그룹화] 🔍 그룹 생성 전 확인:', {
-          mainTitle: mainDoc.title,
-          mainDocUrl: mainDoc.url,
-          mainDocMainUrl: mainDoc.mainUrl,
-          mainUrlKey,
-          subPagesMapKeys: Object.keys(subPagesMap).slice(0, 5),
-          subDocsFromMainUrl: subPagesMap[mainUrlKey]?.length || 0,
-          subDocsFromUrl: subPagesMap[mainDoc.url]?.length || 0,
-          finalSubDocsLength: subDocs.length
-        });
+      const parentId = typeof doc.mainDocumentId === 'string' ? doc.mainDocumentId : undefined;
+      const normalizedParentKey = doc.normalizedMainUrl ?? (doc.mainUrl ? normalizeUrlForGrouping(doc.mainUrl) : null);
+      const normalizedSelf = doc.normalizedUrl ?? (doc.url ? normalizeUrlForGrouping(doc.url) : null);
+      
+      if (parentId && subPagesByMainId[parentId]) {
+        subPagesByMainId[parentId].push(doc);
+        if (normalizedParentKey) {
+          fallbackSubPagesByKey[normalizedParentKey] = fallbackSubPagesByKey[normalizedParentKey] || [];
+          fallbackSubPagesByKey[normalizedParentKey].push(doc);
+        }
+        if (typeof window !== 'undefined') {
+          console.log('[그룹화] ✅ 하위 페이지 연결 (ID 매칭):', { 
+            child: doc.title, 
+            childUrl: doc.url,
+            normalizedChildUrl: normalizedSelf,
+            mainDocumentId: parentId,
+            normalizedMainUrl: normalizedParentKey,
+          });
+        }
+        return;
       }
       
-      if (subDocs.length > 0) {
-        grouped.push({ isGroup: true, mainDoc, subDocs });
+      if (normalizedParentKey) {
+        const matchedMain = mainPages.find((mainDoc: any) => {
+          if (!mainDoc) return false;
+          const mainNormalized = mainDoc.normalizedUrl ?? (mainDoc.url ? normalizeUrlForGrouping(mainDoc.url) : null);
+          return (
+            (parentId && mainDoc.id === parentId) ||
+            (mainNormalized && normalizedParentKey === mainNormalized) ||
+            (mainNormalized && normalizedSelf && normalizedSelf.startsWith(mainNormalized))
+          );
+        });
+        
+        if (matchedMain) {
+          const targetId = matchedMain.id;
+          subPagesByMainId[targetId] = subPagesByMainId[targetId] || [];
+          subPagesByMainId[targetId].push(doc);
+          fallbackSubPagesByKey[normalizedParentKey] = fallbackSubPagesByKey[normalizedParentKey] || [];
+          fallbackSubPagesByKey[normalizedParentKey].push(doc);
+          
+          if (typeof window !== 'undefined') {
+            console.log('[그룹화] ✅ 하위 페이지 연결 (정규화 매칭):', {
+              child: doc.title,
+              childUrl: doc.url,
+              normalizedChildUrl: normalizedSelf,
+              matchedMainTitle: matchedMain.title,
+              matchedMainUrl: matchedMain.url,
+              normalizedMainUrl: normalizedParentKey,
+            });
+          }
+          return;
+        }
+      }
+      
+      if (normalizedSelf) {
+        let matched = false;
+        for (const candidate of urlDocuments) {
+          if (candidate.id === doc.id) continue;
+          const candidateNormalized = candidate.normalizedUrl ?? (candidate.url ? normalizeUrlForGrouping(candidate.url) : null);
+          if (!candidateNormalized) continue;
+          if (normalizedSelf !== candidateNormalized && normalizedSelf.startsWith(candidateNormalized)) {
+            const parentCandidateId = candidate.mainDocumentId ?? candidate.id;
+            subPagesByMainId[parentCandidateId] = subPagesByMainId[parentCandidateId] || [];
+            subPagesByMainId[parentCandidateId].push(doc);
+            fallbackSubPagesByKey[candidateNormalized] = fallbackSubPagesByKey[candidateNormalized] || [];
+            fallbackSubPagesByKey[candidateNormalized].push(doc);
+            matched = true;
+            if (typeof window !== 'undefined') {
+              console.log('[그룹화] 🔍 하위 페이지 추론 (경로 기반):', {
+                child: doc.title,
+                childUrl: doc.url,
+                normalizedChildUrl: normalizedSelf,
+                parentCandidateTitle: candidate.title,
+                parentCandidateUrl: candidate.url,
+                parentCandidateNormalized: candidateNormalized,
+              });
+            }
+            break;
+          }
+        }
+        if (matched) {
+          return;
+        }
+      }
+      
+      if (!mainDocIds.has(doc.id)) {
+        mainPages.push(doc);
+        mainDocIds.add(doc.id);
+        mainDocsById[doc.id] = doc;
+        subPagesByMainId[doc.id] = subPagesByMainId[doc.id] || [];
+        if (normalizedSelf) {
+          fallbackSubPagesByKey[normalizedSelf] = fallbackSubPagesByKey[normalizedSelf] || [];
+        }
         if (typeof window !== 'undefined') {
-          console.log('[그룹화] 📦 그룹 생성:', { 
+          console.log('[그룹화] ⚠️ 메인 페이지로 승격 (부모 미발견):', {
+            title: doc.title,
+            url: doc.url,
+            normalizedUrl: normalizedSelf,
+            mainUrl: doc.mainUrl,
+            normalizedMainUrl: normalizedParentKey,
+          });
+        }
+      }
+    });
+    
+    const groupedDocIds = new Set<string>();
+    const grouped: Array<{ isGroup: boolean; mainDoc?: any; subDocs?: any[]; doc?: any }> = [];
+    
+    mainPages.sort((a, b) => {
+      const orderA = rowOrder.get(a.id) ?? Number.MAX_SAFE_INTEGER;
+      const orderB = rowOrder.get(b.id) ?? Number.MAX_SAFE_INTEGER;
+      return orderA - orderB;
+    });
+    
+    mainPages.forEach((mainDoc) => {
+      const normalizedKeys = [
+        mainDoc.normalizedMainUrl ?? null,
+        mainDoc.normalizedUrl ?? null,
+        mainDoc.mainUrl ? normalizeUrlForGrouping(mainDoc.mainUrl) : null,
+        mainDoc.url ? normalizeUrlForGrouping(mainDoc.url) : null,
+      ].filter(Boolean) as string[];
+      
+      const combinedSubDocs: any[] = [];
+      const directSubDocs = subPagesByMainId[mainDoc.id] || [];
+      directSubDocs.forEach((subDoc) => {
+        if (!combinedSubDocs.some((existing) => existing.id === subDoc.id)) {
+          combinedSubDocs.push(subDoc);
+        }
+      });
+      normalizedKeys.forEach((key) => {
+        const fallbackDocs = fallbackSubPagesByKey[key];
+        if (fallbackDocs) {
+          fallbackDocs.forEach((subDoc) => {
+            if (!combinedSubDocs.some((existing) => existing.id === subDoc.id)) {
+              combinedSubDocs.push(subDoc);
+            }
+          });
+        }
+      });
+      
+      combinedSubDocs.sort((a, b) => {
+        const orderA = rowOrder.get(a.id) ?? Number.MAX_SAFE_INTEGER;
+        const orderB = rowOrder.get(b.id) ?? Number.MAX_SAFE_INTEGER;
+        return orderA - orderB;
+      });
+      
+      if (combinedSubDocs.length > 0) {
+        grouped.push({ isGroup: true, mainDoc, subDocs: combinedSubDocs });
+        groupedDocIds.add(mainDoc.id);
+        combinedSubDocs.forEach((subDoc) => groupedDocIds.add(subDoc.id));
+        if (typeof window !== 'undefined') {
+          console.log('[그룹화] 📦 그룹 생성:', {
             mainTitle: mainDoc.title,
             mainUrl: mainDoc.url,
-            mainUrlKey,
-            subCount: subDocs.length,
-            subDocsSample: subDocs.slice(0, 3).map((s: any) => ({
+            normalizedMainUrl: mainDoc.normalizedMainUrl,
+            subCount: combinedSubDocs.length,
+            subDocsSample: combinedSubDocs.slice(0, 3).map((s: any) => ({
               title: s.title?.substring(0, 30),
               url: s.url,
-              mainUrl: s.mainUrl
-            }))
+              normalizedUrl: s.normalizedUrl,
+              mainDocumentId: s.mainDocumentId,
+            })),
           });
         }
       } else {
         grouped.push({ isGroup: false, doc: mainDoc });
-        if (typeof window !== 'undefined' && mainDoc.title?.includes('마케팅 API')) {
+        groupedDocIds.add(mainDoc.id);
+        if (typeof window !== 'undefined') {
           console.log('[그룹화] ⚠️ 그룹 생성 실패 - 하위 페이지 없음:', {
             mainTitle: mainDoc.title,
             mainDocUrl: mainDoc.url,
-            mainDocMainUrl: mainDoc.mainUrl,
-            subPagesMapKeys: Object.keys(subPagesMap),
-            subPagesMapValues: Object.values(subPagesMap).map(arr => arr.length)
+            normalizedMainUrl: mainDoc.normalizedMainUrl,
+            knownKeys: normalizedKeys,
           });
         }
       }
     });
     
-    // 하위 페이지로 분류되지 않은 URL 문서들 추가
     urlDocuments.forEach((doc: any) => {
-      if (!mainPages.find(m => m.id === doc.id) && !Object.values(subPagesMap).flat().find(s => s.id === doc.id)) {
+      if (!groupedDocIds.has(doc.id)) {
         grouped.push({ isGroup: false, doc });
+        groupedDocIds.add(doc.id);
       }
     });
     
-    // URL이 아닌 문서들 추가
     nonUrlDocuments.forEach((doc: any) => {
       grouped.push({ isGroup: false, doc });
     });
     
-    // 디버깅: 그룹화 결과 로그
     if (typeof window !== 'undefined') {
+      const groupCount = grouped.filter((g: any) => g.isGroup).length;
+      const totalSubPages = grouped
+        .filter((g: any) => g.isGroup)
+        .reduce((acc: number, g: any) => acc + (g.subDocs?.length || 0), 0);
       console.log('[그룹화] 📊 최종 결과:', { 
         totalRows: rows.length, 
         urlDocuments: urlDocuments.length, 
         mainPages: mainPages.length, 
         groupedCount: grouped.length,
-        groupsWithSubPages: grouped.filter(g => g.isGroup).length,
-        totalSubPages: Object.values(subPagesMap).flat().length
+        groupsWithSubPages: groupCount,
+        totalSubPages,
       });
       if (mainPages.length > 0) {
         console.log('[그룹화] 메인 페이지 예시:', mainPages.slice(0, 5).map(m => ({ 
           title: m.title, 
           url: m.url,
-          mainUrl: m.mainUrl
+          normalizedUrl: m.normalizedUrl,
+          normalizedMainUrl: m.normalizedMainUrl,
+          mainDocumentId: m.mainDocumentId,
         })));
-      }
-      if (Object.keys(subPagesMap).length > 0) {
-        console.log('[그룹화] 🔗 하위 페이지 맵:', Object.keys(subPagesMap).slice(0, 5).map(mainUrl => ({ 
-          mainUrl, 
-          mainTitle: urlDocuments.find(d => d.url === mainUrl)?.title,
-          subCount: subPagesMap[mainUrl].length,
-          subPages: subPagesMap[mainUrl].slice(0, 3).map(s => ({ 
-            title: s.title, 
-            url: s.url
-          }))
-        })));
-      } else {
-        console.log('[그룹화] ⚠️ 하위 페이지가 발견되지 않았습니다.');
       }
     }
     
@@ -2486,9 +2949,18 @@ function DocsTable({
 
   // 새로고침 버튼 클릭 이벤트 수신
   useEffect(() => {
-    const handler = () => {
+    const handler = async () => {
       console.log('🔄 새로고침 버튼 클릭됨');
-      refetch();
+      if (onRefreshStateChange) {
+        onRefreshStateChange(true);
+      }
+      try {
+        await refetch();
+      } finally {
+        if (onRefreshStateChange) {
+          onRefreshStateChange(false);
+        }
+      }
     };
     if (typeof window !== 'undefined') {
       window.addEventListener('docs-refresh-click', handler as EventListener);
@@ -2498,7 +2970,7 @@ function DocsTable({
         window.removeEventListener('docs-refresh-click', handler as EventListener);
       }
     };
-  }, [refetch]);
+  }, [refetch, onRefreshStateChange]);
 
   // 페이지 복귀 시 진행 중인 문서 확인 및 알림 (다시보지 않기 옵션 포함)
   useEffect(() => {
@@ -2949,12 +3421,25 @@ function DocsTable({
               </div>
             )}
             <Button 
-              variant="secondary" 
-              className="bg-gray-700/50 border-gray-600 text-secondary-enhanced hover:bg-gray-700 hover:text-white" 
-              onClick={() => refetch()}
+              variant="outline"
+              size="sm"
+              className="bg-gray-800/50 border-gray-600 text-white hover:bg-gray-700/50 h-8 px-2" 
+              disabled={isLoading}
+              onClick={async () => {
+                if (onRefreshStateChange) {
+                  onRefreshStateChange(true);
+                }
+                try {
+                  await refetch();
+                } finally {
+                  if (onRefreshStateChange) {
+                    onRefreshStateChange(false);
+                  }
+                }
+              }}
+              title="문서 목록 새로고침"
             >
-              <RefreshCw className="w-4 h-4 mr-1" /> 
-              새로고침
+              <RefreshCw className={`w-3.5 h-3.5 ${isLoading ? 'animate-spin' : ''}`} /> 
             </Button>
           </div>
         </div>
@@ -3482,8 +3967,8 @@ function QueueMiniPanel({ vendors }: { vendors: string[] }) {
   const processing = data?.processing ?? 0;
   const failed = data?.failed ?? 0;
 
-  const queueActionClass = "flex-1 h-11 rounded-xl bg-sky-600/90 hover:bg-sky-600 text-white font-semibold shadow-sm hover:shadow-xl hover:-translate-y-0.5 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed";
-  const retryActionClass = "flex-1 h-11 rounded-xl bg-rose-600/90 hover:bg-rose-600 text-white font-semibold shadow-sm hover:shadow-xl hover:-translate-y-0.5 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed";
+  const queueActionClass = "flex-1 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700";
+  const retryActionClass = "flex-1 bg-gray-800/50 border-gray-600 text-white hover:bg-gray-700/50";
 
   return (
     <Card className="bg-gradient-to-br from-slate-900/80 via-slate-900/60 to-slate-950/90 border border-white/10 shadow-xl">
@@ -3569,6 +4054,7 @@ function QueueMiniPanel({ vendors }: { vendors: string[] }) {
             )}
           </Button>
           <Button 
+            variant="outline"
             className={retryActionClass}
             disabled={retryingFailed || failed === 0}
             onClick={async () => {
@@ -3865,6 +4351,7 @@ function DocumentDetailDialog({ detail, onClose, onRefetch }: { detail: any | nu
   const supabase = useMemo(() => createClient(), []);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [fallbackUrl, setFallbackUrl] = useState<string | null>(null);
   
   const { data: fullDoc, isLoading: loadingDoc } = useQuery({
     queryKey: ["doc-detail", detail?.id],
@@ -3954,7 +4441,7 @@ function DocumentDetailDialog({ detail, onClose, onRefetch }: { detail: any | nu
       if (!detail?.id) return null;
       const { data, error } = await supabase
         .from("processing_jobs")
-        .select("id, document_id, job_type, status, priority, attempts, max_attempts, error, result, created_at, scheduled_at, started_at, finished_at")
+        .select("id, document_id, job_type, status, priority, attempts, max_attempts, error, result, payload, created_at, scheduled_at, started_at, finished_at")
         .eq("document_id", detail.id)
         .order("created_at", { ascending: false })
         .limit(10);
@@ -3963,6 +4450,192 @@ function DocumentDetailDialog({ detail, onClose, onRefetch }: { detail: any | nu
     },
     enabled: !!detail?.id,
   });
+
+  const resolvedDocumentUrl = useMemo(() => {
+    if (typeof window !== 'undefined') {
+      console.log('[미리보기] ✅ 상세 데이터 스냅샷:', {
+        fullDocUrl: fullDoc?.url,
+        detailUrl: detail?.url,
+        normalizedFullDocUrl: (fullDoc as any)?.normalizedUrl,
+        normalizedDetailUrl: (detail as any)?.normalizedUrl,
+        mainUrl: (detail as any)?.mainUrl,
+        normalizedMainUrl: (detail as any)?.normalizedMainUrl,
+        metadata: metadata,
+        jobs,
+      });
+    }
+
+    const metadataCandidates =
+      metadata && typeof metadata === 'object'
+        ? [
+            (metadata as any)?.source_url,
+            (metadata as any)?.original_url,
+            (metadata as any)?.url,
+            (metadata as any)?.raw_url,
+          ]
+        : [];
+
+    const docMetadataCandidates =
+      (fullDoc as any)?.metadata && typeof (fullDoc as any)?.metadata === 'object'
+        ? [
+            (fullDoc as any)?.metadata?.source_url,
+            (fullDoc as any)?.metadata?.url,
+            (fullDoc as any)?.metadata?.original_url,
+          ]
+        : [];
+
+    const jobCandidates = Array.isArray(jobs)
+      ? jobs.flatMap((job: any) => {
+          const jobPayload =
+            job?.payload && typeof job.payload === 'string'
+              ? (() => {
+                  try {
+                    return JSON.parse(job.payload);
+                  } catch {
+                    return null;
+                  }
+                })()
+              : job?.payload;
+
+          const payloadUrl = jobPayload && typeof jobPayload === 'object' ? (jobPayload as any)?.url : undefined;
+
+          return [
+            job?.result?.url,
+            job?.result?.mainUrl,
+            job?.result?.documentUrl,
+            job?.result?.resolvedUrl,
+            job?.result?.sourceUrl,
+            payloadUrl,
+          ];
+        })
+      : [];
+
+    const candidateValues: Array<string | null | undefined> = [
+      fullDoc?.url,
+      detail?.url,
+      (fullDoc as any)?.normalizedUrl,
+      (detail as any)?.normalizedUrl,
+      (detail as any)?.mainUrl,
+      (detail as any)?.normalizedMainUrl,
+      ...metadataCandidates,
+      ...docMetadataCandidates,
+      ...jobCandidates,
+    ];
+
+    const cleanedCandidates = candidateValues
+      .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+      .map((value) => value.trim());
+
+    if (typeof window !== 'undefined') {
+      console.log('[미리보기] 후보 URL 목록 (정제 전):', candidateValues);
+      console.log('[미리보기] 후보 URL 목록 (정제 후):', cleanedCandidates);
+    }
+
+    const absoluteUrl = cleanedCandidates.find((candidate) => /^https?:\/\//i.test(candidate));
+    if (absoluteUrl) {
+      if (typeof window !== 'undefined') {
+        console.log('[미리보기] 선택된 URL (절대 경로):', absoluteUrl);
+      }
+      return absoluteUrl;
+    }
+
+    const prefixedUrl = cleanedCandidates.find((candidate) => /^www\./i.test(candidate));
+    if (prefixedUrl) {
+      const normalized = `https://${prefixedUrl.replace(/^\s*www\./i, 'www.')}`;
+      if (typeof window !== 'undefined') {
+        console.log('[미리보기] 선택된 URL (www):', normalized);
+      }
+      return normalized;
+    }
+
+    const protocolRelative = cleanedCandidates.find((candidate) => /^\/\//.test(candidate));
+    if (protocolRelative) {
+      const normalized = `https:${protocolRelative}`;
+      if (typeof window !== 'undefined') {
+        console.log('[미리보기] 선택된 URL (protocol-relative):', normalized);
+      }
+      return normalized;
+    }
+
+    if (typeof window !== 'undefined') {
+      console.log('[미리보기] URL 후보 목록:', cleanedCandidates);
+      console.log('[미리보기] 선택된 URL 없음');
+    }
+
+    return null;
+  }, [fullDoc, detail, metadata, jobs]);
+
+  useEffect(() => {
+    setFallbackUrl(null);
+
+    const fetchFallbackUrl = async () => {
+      if (resolvedDocumentUrl || !detail?.id) return;
+      try {
+        const { data, error } = await supabase
+          .from('processing_jobs')
+          .select('payload, result')
+          .eq('document_id', detail.id)
+          .eq('job_type', 'CRAWL_SEED')
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+
+        if (error) {
+          console.error('[미리보기] Fallback URL 조회 실패:', error);
+          return;
+        }
+
+        if (data) {
+          const payload = typeof data.payload === 'string' ? (() => {
+            try {
+              return JSON.parse(data.payload);
+            } catch {
+              return null;
+            }
+          })() : data.payload;
+
+          const candidateList: Array<string | null | undefined> = [
+            payload?.url,
+            data.result?.url,
+            data.result?.mainUrl,
+            data.result?.documentUrl,
+            data.result?.resolvedUrl,
+            data.result?.sourceUrl,
+          ];
+
+          const cleaned = candidateList
+            .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+            .map((value) => value.trim());
+
+          if (cleaned.length > 0) {
+            const absolute = cleaned.find((candidate) => /^https?:\/\//i.test(candidate));
+            const withWww = cleaned.find((candidate) => /^www\./i.test(candidate));
+            const protocolRelative = cleaned.find((candidate) => /^\/\//.test(candidate));
+
+            const resolved =
+              absolute ??
+              (withWww ? `https://${withWww.replace(/^\s*www\./i, 'www.')}` : undefined) ??
+              (protocolRelative ? `https:${protocolRelative}` : undefined);
+
+            if (resolved) {
+              if (typeof window !== 'undefined') {
+                console.log('[미리보기] Fallback URL 선택:', resolved);
+              }
+              setFallbackUrl(resolved);
+            }
+          }
+
+          if (typeof window !== 'undefined') {
+            console.log('[미리보기] Fallback 후보 목록:', cleaned);
+          }
+        }
+      } catch (fallbackError) {
+        console.error('[미리보기] Fallback URL 처리 오류:', fallbackError);
+      }
+    };
+
+    fetchFallbackUrl();
+  }, [detail?.id, resolvedDocumentUrl, supabase]);
 
   const { data: hierarchyStats } = useQuery({
     queryKey: ["doc-hierarchy-stats", detail?.id],
@@ -4004,6 +4677,8 @@ function DocumentDetailDialog({ detail, onClose, onRefetch }: { detail: any | nu
     },
     enabled: !!detail?.id && !!fullDoc?.actualChunkCount && fullDoc.actualChunkCount > 0,
   });
+
+  const finalDocumentUrl = resolvedDocumentUrl ?? fallbackUrl;
 
   if (!detail) return null;
 
@@ -4262,7 +4937,7 @@ function DocumentDetailDialog({ detail, onClose, onRefetch }: { detail: any | nu
                         });
                       }
                     }}
-                    className="btn-enhanced"
+                    className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
                   >
                     재처리
                       </Button>
@@ -4285,11 +4960,22 @@ function DocumentDetailDialog({ detail, onClose, onRefetch }: { detail: any | nu
               <div className="space-y-2">
                 <div className="text-sm text-secondary-enhanced font-semibold">URL</div>
                 <div className="p-3 bg-gray-800/30 rounded-lg border border-gray-600">
-                  <a href={fullDoc.title || fullDoc.url} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline break-all">
-                    {fullDoc.title || fullDoc.url || '-'}
-                  </a>
-                      </div>
-                      </div>
+                  {finalDocumentUrl ? (
+                    <a
+                      href={finalDocumentUrl}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-400 hover:underline break-all"
+                    >
+                      {finalDocumentUrl}
+                    </a>
+                  ) : (
+                    <span className="text-muted-enhanced break-all">
+                      {fullDoc?.title || detail?.title || '-'}
+                    </span>
+                  )}
+                </div>
+              </div>
             ) : (
               <div className="space-y-2">
                 <div className="text-sm text-secondary-enhanced font-semibold">문서 내용 미리보기 (최대 5개 청크)</div>

@@ -9,6 +9,7 @@ import { createPureClient } from '../supabase/server';
 import { processTextEncoding, TextEncodingResult } from '../utils/textEncoding';
 import { adaptiveChunkingService, AdaptiveChunkingConfig } from './AdaptiveChunkingService';
 import { contentTypeDetector } from './ContentTypeDetector';
+import { unifiedChunkingService, UnifiedChunkingOptions } from './UnifiedChunkingService';
 
 export interface ChunkData {
   id: string;
@@ -884,7 +885,8 @@ export class RAGProcessor {
         content: processedContent
       };
       
-      const chunks = await this.simpleChunkDocument(processedDocument);
+      // 통합 청킹 서비스 사용
+      const chunks = await this.chunkDocumentWithUnifiedService(processedDocument);
       const chunkingMs = Date.now() - chunkingStartMs;
       const avgChunkSize = chunks.length > 0 ? Math.round(chunks.reduce((sum, c) => sum + c.content.length, 0) / chunks.length) : 0;
       const totalChunkSize = chunks.reduce((sum, c) => sum + c.content.length, 0);
@@ -1327,8 +1329,94 @@ export class RAGProcessor {
   }
 
   /**
+   * 통합 청킹 서비스를 사용한 문서 청킹
+   * 모든 청킹 로직을 통합 서비스로 위임
+   */
+  private async chunkDocumentWithUnifiedService(document: DocumentData): Promise<ChunkData[]> {
+    try {
+      console.log('📦 통합 청킹 서비스 사용:', {
+        documentId: document.id,
+        title: document.title,
+        contentLength: document.content.length,
+        type: document.type,
+      });
+
+      // 문서 타입 결정
+      const docType = (document.file_type || document.type || 'txt').toLowerCase();
+      let documentType: 'pdf' | 'docx' | 'txt' | 'url' = 'txt';
+      if (docType.includes('pdf')) documentType = 'pdf';
+      else if (docType.includes('docx') || docType.includes('doc')) documentType = 'docx';
+      else if (docType.includes('url') || document.url) documentType = 'url';
+      else documentType = 'txt';
+
+      // 분할 처리 감지
+      const isChunkProcess = document.title?.includes('분할');
+
+      // 통합 청킹 옵션 설정
+      const chunkingOptions: UnifiedChunkingOptions = {
+        documentType,
+        optimizeForSpeed: isChunkProcess,
+        chunkSize: 800, // 표준 청크 크기
+        chunkOverlap: 100, // 표준 Overlap
+      };
+
+      // 통합 청킹 서비스 호출
+      const result = await unifiedChunkingService.chunkDocument(
+        document.content,
+        document.id,
+        document.title,
+        chunkingOptions
+      );
+
+      // ChunkData 형식으로 변환
+      const chunkData: ChunkData[] = result.chunks.map((chunk) => ({
+        id: chunk.id,
+        content: chunk.content,
+        metadata: {
+          document_id: chunk.metadata.documentId,
+          chunk_index: chunk.metadata.chunkIndex,
+          source: chunk.metadata.documentTitle,
+          created_at: new Date().toISOString(),
+          chunk_type: chunk.metadata.chunkType,
+          section_title: chunk.metadata.sectionTitle,
+          keywords: chunk.metadata.keywords,
+          importance: chunk.metadata.importance,
+          hierarchy_level: chunk.metadata.hierarchyLevel,
+          start_char: chunk.metadata.startChar,
+          end_char: chunk.metadata.endChar,
+          original_length: chunk.metadata.endChar - chunk.metadata.startChar,
+        } as any,
+      }));
+
+      console.log('✅ 통합 청킹 완료:', {
+        documentId: document.id,
+        totalChunks: chunkData.length,
+        averageChunkSize: result.metadata.averageChunkSize,
+        coverage: `${result.metadata.coverage}%`,
+        processingTimeMs: result.metadata.processingTimeMs,
+        performance: {
+          encodingTime: `${result.metadata.performance.encodingTimeMs}ms`,
+          chunkingTime: `${result.metadata.performance.chunkingTimeMs}ms`,
+          totalTime: `${result.metadata.performance.totalTimeMs}ms`,
+          chunksPerSecond: result.metadata.performance.chunksPerSecond,
+          memoryUsage: result.metadata.performance.memoryUsageMB !== undefined
+            ? `${result.metadata.performance.memoryUsageMB}MB`
+            : 'N/A',
+        },
+      });
+
+      return chunkData;
+    } catch (error) {
+      console.error('❌ 통합 청킹 실패, 기존 방식으로 폴백:', error);
+      // 에러 발생 시 기존 simpleChunkDocument로 폴백
+      return this.simpleChunkDocument(document);
+    }
+  }
+
+  /**
    * 적응적 문서 청킹 (개선된 버전)
    * 문서 유형, 크기, 내용에 따라 최적화된 청킹 전략 사용
+   * @deprecated 통합 청킹 서비스 사용 권장 (chunkDocumentWithUnifiedService)
    */
   private async simpleChunkDocument(document: DocumentData): Promise<ChunkData[]> {
     try {
@@ -1509,18 +1597,20 @@ export class RAGProcessor {
       const content = document.content;
       const contentLength = content.length;
       
-      let chunkSize = 800;
-      let overlap = 100;
+      // 표준 청크 크기 사용 (800-1000자 범위)
+      let chunkSize = 800; // 표준 청크 크기
+      let overlap = 100; // 표준 겹침 크기
       
+      // 문서 크기에 따라 미세 조정 (표준 범위 내에서)
       if (contentLength < 1000) {
-        chunkSize = 200;
-        overlap = 20;
-      } else if (contentLength < 10000) {
-        chunkSize = 500;
+        chunkSize = 400; // 작은 문서: 400자 (표준 범위 내)
         overlap = 50;
+      } else if (contentLength < 10000) {
+        chunkSize = 600; // 중간 문서: 600자 (표준 범위 내)
+        overlap = 75;
       } else if (contentLength > 100000) {
-        chunkSize = 2000;
-        overlap = 200;
+        chunkSize = 1000; // 큰 문서: 1000자 (표준 범위 최대값)
+        overlap = 150;
       }
       
       const chunks: string[] = [];

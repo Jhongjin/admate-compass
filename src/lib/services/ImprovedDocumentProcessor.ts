@@ -1,6 +1,14 @@
 /**
  * 개선된 문서 처리 서비스
  * 원본 데이터 무결성을 보장하는 통합된 문서 처리
+ * 
+ * @deprecated 이 서비스는 현재 사용되지 않습니다.
+ * 대신 다음 서비스를 사용하세요:
+ * - 통합 청킹: unifiedChunkingService
+ * - 문서 처리: RAGProcessor
+ * - URL 크롤링: NewDocumentProcessor
+ * 
+ * 향후 필요시 재활성화할 수 있도록 보관 중입니다.
  */
 
 import { processTextEncoding, TextEncodingResult } from '@/lib/utils/textEncoding';
@@ -196,9 +204,9 @@ export class ImprovedDocumentProcessor {
     metadata: Record<string, any>
   ): Promise<Array<{ content: string; metadata: Record<string, any> }>> {
     try {
-      // 한국어 특화 청킹
-      const chunkSize = 1000;
-      const chunkOverlap = 200;
+      // 한국어 특화 청킹 (표준화)
+      const chunkSize = 800; // 표준 청크 크기 (800자)
+      const chunkOverlap = 100; // 표준 겹침 크기 (100자)
       
       const chunks: Array<{ content: string; metadata: Record<string, any> }> = [];
       let startIndex = 0;

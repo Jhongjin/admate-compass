@@ -32,8 +32,8 @@ export class TextChunkingService {
 
   constructor(options: ChunkingOptions = {}) {
     const {
-      chunkSize = 1000,
-      chunkOverlap = 200,
+      chunkSize = 800, // 표준 청크 크기 (800자)
+      chunkOverlap = 100, // 표준 겹침 크기 (100자)
       separators = [
         '\n\n', // 문단 구분
         '\n',   // 줄 구분

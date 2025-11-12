@@ -45,6 +45,7 @@ import {
 import Link from "next/link";
 import { dashboardDataService, DashboardStats } from "@/lib/services/DashboardDataService";
 import TeamStats from "@/components/admin/TeamStats";
+import QueueSummaryPanel from "@/components/admin/QueueSummaryPanel";
 
 export default function AdminDashboardPage() {
   const { user, loading } = useAuth();
@@ -351,10 +352,10 @@ export default function AdminDashboardPage() {
               disabled={isLoading}
               variant="outline"
               size="sm"
-              className="btn-enhanced border-blue-500/30 text-blue-300 hover:bg-blue-600 hover:text-white disabled:opacity-50"
+              className="bg-gray-800/50 border-gray-600 text-white hover:bg-gray-700/50 disabled:opacity-50"
             >
               <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
-              🔄 새로고침
+              새로고침
             </Button>
             <div className="flex items-center space-x-2 bg-gradient-to-r from-blue-500/10 to-purple-500/10 backdrop-blur-sm rounded-xl p-4 border border-blue-500/20">
               <Sparkles className="w-5 h-5 text-blue-400" />
@@ -790,7 +791,7 @@ export default function AdminDashboardPage() {
 
       {/* System Info */}
       <motion.div 
-        className="grid grid-cols-1 lg:grid-cols-2 gap-6"
+        className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-10 mt-8"
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, delay: 0.5 }}
@@ -852,7 +853,7 @@ export default function AdminDashboardPage() {
 
       {/* Team Statistics */}
       <motion.div 
-        className="mb-8"
+        className="mb-10 mt-8"
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5, delay: 0.3 }}
@@ -861,6 +862,16 @@ export default function AdminDashboardPage() {
           teamStats={dashboardStats?.teamStats || []} 
           teamQuestionStats={dashboardStats?.teamQuestionStats || []} 
         />
+      </motion.div>
+
+      {/* Queue Summary Panel */}
+      <motion.div 
+        className="mb-10 mt-8"
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, delay: 0.4 }}
+      >
+        <QueueSummaryPanel />
       </motion.div>
     </AdminLayout>
   );

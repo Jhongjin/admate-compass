@@ -4,6 +4,8 @@
  */
 
 import { createClient } from '@supabase/supabase-js';
+import { unifiedChunkingService, UnifiedChunkingOptions } from './UnifiedChunkingService';
+import * as cheerio from 'cheerio';
 
 export interface ProcessedDocument {
   id: string;
@@ -103,9 +105,32 @@ export class NewDocumentProcessor {
     const content = await this.crawlUrl(url);
     console.log(`📄 URL 내용 크롤링 완료: ${content.length}자`);
 
-    // 2. 문서 청킹
-    const chunks = await this.chunkText(content, url);
-    console.log(`✂️ 텍스트 청킹 완료: ${chunks.length}개 청크`);
+    // 2. 통합 청킹 서비스 사용
+    const chunkingResult = await unifiedChunkingService.chunkDocument(
+      content,
+      this.generateDocumentId(),
+      this.extractTitleFromUrl(url),
+      {
+        documentType: 'url',
+        chunkSize: 800,
+        chunkOverlap: 100,
+      }
+    );
+    
+    // DocumentChunk 형식으로 변환
+    const chunks = chunkingResult.chunks.map((chunk) => ({
+      id: chunk.id,
+      content: chunk.content,
+      embedding: [],
+      metadata: {
+        chunkIndex: chunk.metadata.chunkIndex,
+        startChar: chunk.metadata.startChar,
+        endChar: chunk.metadata.endChar,
+        chunkType: chunk.metadata.chunkType || 'text' as const,
+      },
+    }));
+    
+    console.log(`✂️ 통합 청킹 완료: ${chunks.length}개 청크 (평균 ${chunkingResult.metadata.averageChunkSize}자, 커버리지 ${chunkingResult.metadata.coverage}%)`);
 
     // 3. 임베딩 생성
     const chunksWithEmbeddings = await this.generateEmbeddings(chunks);
@@ -335,11 +360,11 @@ export class NewDocumentProcessor {
 
 
   /**
-   * URL 크롤링 (개선된 버전)
+   * URL 크롤링 (Cheerio 기반 개선 버전)
    */
   private async crawlUrl(url: string): Promise<string> {
     try {
-      console.log('🌐 URL 크롤링 시작:', url);
+      console.log('🌐 URL 크롤링 시작 (Cheerio 사용):', url);
       
       const response = await fetch(url, {
         method: 'GET',
@@ -356,7 +381,8 @@ export class NewDocumentProcessor {
           'Sec-Fetch-Site': 'none',
           'Cache-Control': 'max-age=0'
         },
-        redirect: 'follow'
+        redirect: 'follow',
+        signal: AbortSignal.timeout(30000), // 30초 타임아웃
       });
 
       if (!response.ok) {
@@ -364,14 +390,34 @@ export class NewDocumentProcessor {
         throw new Error(`HTTP ${response.status}: ${response.statusText} - ${errorText.substring(0, 200)}`);
       }
 
-      const html = await response.text();
-      console.log('✅ HTML 수신 완료:', url, `(${html.length}자)`);
+      const htmlContent = await response.text();
+      console.log('✅ HTML 수신 완료:', url, `(${htmlContent.length}자)`);
       
-      // 개선된 HTML 텍스트 추출
-      const text = this.extractTextFromHTML(html);
+      // 로그인 페이지 감지
+      const lowerHtml = htmlContent.toLowerCase();
+      const loginPatterns = [
+        '계속하려면 로그인',
+        'facebook에 로그인',
+        'login to facebook',
+        'instagram에 로그인',
+        'log in to instagram',
+        '로그인하여 계속',
+      ];
+      const isBlockedByLogin = loginPatterns.some((pattern) => lowerHtml.includes(pattern.toLowerCase()));
+
+      if (isBlockedByLogin && (url.includes('facebook.com') || url.includes('instagram.com'))) {
+        throw new Error('로그인 페이지가 반환되어 크롤링할 수 없습니다. 공개 접근이 가능한 문서를 사용해 주세요.');
+      }
+
+      // Cheerio로 HTML 파싱 및 텍스트 추출
+      const text = this.extractTextFromHTMLWithCheerio(htmlContent);
       
-      console.log('✅ 텍스트 추출 완료:', url, `(${text.length}자)`);
-      return text || `URL 크롤링 실패: ${url}`;
+      if (!text || text.length < 100) {
+        throw new Error('크롤링된 콘텐츠가 너무 짧거나 비어있습니다. 접근 권한 또는 공개 여부를 확인해주세요.');
+      }
+
+      console.log('✅ 텍스트 추출 완료 (Cheerio):', url, `(${text.length}자)`);
+      return text;
       
     } catch (error) {
       console.error(`❌ URL 크롤링 오류: ${url}`, error);
@@ -380,7 +426,124 @@ export class NewDocumentProcessor {
   }
 
   /**
-   * HTML에서 텍스트 추출 (개선된 버전)
+   * HTML에서 텍스트 추출 (Cheerio 기반 개선 버전)
+   * 구조를 유지하면서 텍스트 추출
+   */
+  private extractTextFromHTMLWithCheerio(html: string): string {
+    try {
+      const $ = cheerio.load(html);
+      
+      // 텍스트 추출 헬퍼 함수
+      const extractTextWithStructure = ($element: cheerio.Cheerio): string => {
+        const $clone = $element.clone();
+        
+        // 스크립트, 스타일, 네비게이션 등 제거
+        $clone.find('script, style, nav, footer, header, aside').remove();
+        
+        // 링크는 텍스트만 표시
+        $clone.find('a').each((_, el) => {
+          const $el = $(el);
+          const text = $el.text().trim();
+          if (text) {
+            $el.replaceWith(` ${text} `);
+          } else {
+            $el.replaceWith(' ');
+          }
+        });
+        
+        // 블록 요소를 줄바꿈으로 변환
+        const blockElements = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'div', 'li', 'td', 'th', 'tr', 'section', 'article', 'main'];
+        blockElements.forEach(tag => {
+          $clone.find(tag).each((_, el) => {
+            const $el = $(el);
+            const text = $el.text().trim();
+            if (text) {
+              $el.replaceWith(`\n${text}\n`);
+            } else {
+              $el.replaceWith('\n');
+            }
+          });
+        });
+        
+        // <br> 태그는 줄바꿈으로 변환
+        $clone.find('br').each((_, el) => {
+          $(el).replaceWith('\n');
+        });
+        
+        // 인라인 요소는 공백으로 변환
+        $clone.find('span, strong, em, b, i, code').each((_, el) => {
+          const $el = $(el);
+          const text = $el.text().trim();
+          if (text) {
+            $el.replaceWith(` ${text} `);
+          }
+        });
+        
+        // 최종 텍스트 추출
+        const html = $clone.html() || '';
+        let text = html
+          .replace(/<[^>]+>/g, ' ') // 모든 태그를 공백으로 변환
+          .replace(/&nbsp;/g, ' ') // HTML 엔티티 디코딩
+          .replace(/&amp;/g, '&')
+          .replace(/&lt;/g, '<')
+          .replace(/&gt;/g, '>')
+          .replace(/&quot;/g, '"')
+          .replace(/&#39;/g, "'")
+          .replace(/&apos;/g, "'");
+        
+        // 연속된 공백을 하나로, 연속된 줄바꿈을 두 개로 제한
+        text = text.replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+        return text;
+      };
+      
+      // 주요 콘텐츠 영역 우선 추출
+      const contentSelectors = [
+        'main',
+        'article',
+        '[role="main"]',
+        '.content',
+        '.main-content',
+        '.page-content',
+        '#content',
+        '#main-content'
+      ];
+      
+      let textContent = '';
+      let foundContent = false;
+      
+      for (const selector of contentSelectors) {
+        const $content = $(selector).first();
+        if ($content.length > 0) {
+          const extracted = extractTextWithStructure($content.clone());
+          if (extracted.length > textContent.length) {
+            textContent = extracted;
+            foundContent = true;
+          }
+          if (textContent.length > 1000) break; // 충분한 콘텐츠를 찾으면 중단
+        }
+      }
+      
+      // 주요 콘텐츠 영역을 찾지 못했거나 너무 짧은 경우 body 전체에서 추출
+      if (!foundContent || textContent.length < 500) {
+        const $body = $('body');
+        if ($body.length > 0) {
+          const fullText = extractTextWithStructure($body.clone());
+          if (fullText.length > textContent.length) {
+            textContent = fullText;
+          }
+        }
+      }
+      
+      return textContent;
+    } catch (error) {
+      console.error('❌ Cheerio 텍스트 추출 실패, 기본 방식으로 폴백:', error);
+      // 폴백: 기본 정규식 방식
+      return this.extractTextFromHTML(html);
+    }
+  }
+
+  /**
+   * HTML에서 텍스트 추출 (기본 버전 - 폴백용)
    */
   private extractTextFromHTML(html: string): string {
     // 스크립트와 스타일 태그 제거
@@ -406,151 +569,15 @@ export class NewDocumentProcessor {
   }
 
   /**
-   * 텍스트 청킹 (최적화된 버전)
+   * @deprecated 이 메서드들은 더 이상 사용되지 않습니다.
+   * 통합 청킹 서비스 (unifiedChunkingService)를 사용하세요.
+   * 
+   * 제거된 메서드:
+   * - chunkText(): 통합 청킹 서비스로 대체됨
+   * - mergeSmallChunks(): 통합 청킹 서비스로 대체됨
+   * - preprocessText(): 통합 청킹 서비스로 대체됨
+   * - classifyChunkType(): 통합 청킹 서비스로 대체됨
    */
-  private async chunkText(text: string, source: string): Promise<DocumentChunk[]> {
-    const chunks: DocumentChunk[] = [];
-    const chunkSize = 1000; // 청크 크기 (1000자로 증가)
-    const overlap = 100; // 겹침 크기 (100자로 조정)
-
-    let startIndex = 0;
-    let chunkIndex = 0;
-
-    // 텍스트 전처리
-    const processedText = this.preprocessText(text);
-    
-    console.log(`📊 텍스트 길이: ${processedText.length}자`);
-    
-    // 텍스트가 너무 짧으면 하나의 청크로 처리 (500자 이하)
-    if (processedText.length <= 500) {
-      console.log(`📝 짧은 텍스트 - 단일 청크로 처리`);
-      const chunk: DocumentChunk = {
-        id: `${this.generateDocumentId()}_chunk_${chunkIndex}`,
-        content: processedText,
-        embedding: [],
-        metadata: {
-          chunkIndex: 0,
-          startChar: 0,
-          endChar: processedText.length,
-          chunkType: this.classifyChunkType(processedText),
-        },
-      };
-      return [chunk];
-    }
-
-    while (startIndex < processedText.length) {
-      const endIndex = Math.min(startIndex + chunkSize, processedText.length);
-      let chunkText = processedText.slice(startIndex, endIndex).trim();
-
-      // 문장 경계에서 자르기 (더 자연스러운 청크)
-      if (endIndex < processedText.length) {
-        const lastSentenceEnd = chunkText.lastIndexOf('.');
-        const lastParagraphEnd = chunkText.lastIndexOf('\n\n');
-        const cutPoint = Math.max(lastSentenceEnd, lastParagraphEnd);
-        
-        if (cutPoint > chunkSize * 0.5) { // 최소 50%는 유지
-          chunkText = chunkText.substring(0, cutPoint + 1).trim();
-        }
-      }
-
-      if (chunkText.length > 100) { // 최소 100자 이상인 청크만 유효
-        const chunk: DocumentChunk = {
-          id: `${this.generateDocumentId()}_chunk_${chunkIndex}`,
-          content: chunkText,
-          embedding: [],
-          metadata: {
-            chunkIndex,
-            startChar: startIndex,
-            endChar: startIndex + chunkText.length,
-            chunkType: this.classifyChunkType(chunkText),
-          },
-        };
-
-        chunks.push(chunk);
-        chunkIndex++;
-        console.log(`📝 청크 ${chunkIndex} 생성: ${chunkText.length}자`);
-
-        // 최대 청크 수 제한 (메모리 절약) - 더 관대하게 조정
-        if (chunkIndex >= 20) {
-          console.warn(`문서가 너무 길어서 ${chunkIndex}개 청크로 제한했습니다.`);
-          break;
-        }
-      }
-
-      // 다음 청크 시작 위치 계산
-      startIndex = startIndex + chunkText.length - overlap;
-      if (startIndex >= processedText.length) break;
-    }
-
-    console.log(`📝 청크 생성 완료: ${chunks.length}개 (원본: ${text.length}자)`);
-    
-    // 청크 수가 너무 많으면 재조정
-    if (chunks.length > 15) {
-      console.log(`🔄 청크 수가 많아서 재조정합니다. (${chunks.length}개 -> 15개 이하)`);
-      return this.mergeSmallChunks(chunks, 15);
-    }
-    
-    return chunks;
-  }
-
-  /**
-   * 작은 청크들을 병합하여 청크 수 줄이기
-   */
-  private mergeSmallChunks(chunks: DocumentChunk[], targetCount: number): DocumentChunk[] {
-    if (chunks.length <= targetCount) return chunks;
-    
-    const mergedChunks: DocumentChunk[] = [];
-    const chunksPerGroup = Math.ceil(chunks.length / targetCount);
-    
-    for (let i = 0; i < chunks.length; i += chunksPerGroup) {
-      const group = chunks.slice(i, i + chunksPerGroup);
-      const mergedContent = group.map(chunk => chunk.content).join('\n\n');
-      
-      const mergedChunk: DocumentChunk = {
-        id: `${this.generateDocumentId()}_merged_${Math.floor(i / chunksPerGroup)}`,
-        content: mergedContent,
-        embedding: [],
-        metadata: {
-          chunkIndex: Math.floor(i / chunksPerGroup),
-          startChar: group[0].metadata.startChar,
-          endChar: group[group.length - 1].metadata.endChar,
-          chunkType: this.classifyChunkType(mergedContent),
-        },
-      };
-      
-      mergedChunks.push(mergedChunk);
-    }
-    
-    console.log(`🔄 청크 병합 완료: ${chunks.length}개 -> ${mergedChunks.length}개`);
-    return mergedChunks;
-  }
-
-  /**
-   * 텍스트 전처리
-   */
-  private preprocessText(text: string): string {
-    return text
-      .replace(/\r\n/g, '\n') // Windows 줄바꿈 통일
-      .replace(/\n{3,}/g, '\n\n') // 연속된 줄바꿈 정리
-      .replace(/[ \t]+/g, ' ') // 연속된 공백 정리
-      .trim();
-  }
-
-  /**
-   * 청크 타입 분류
-   */
-  private classifyChunkType(text: string): 'text' | 'title' | 'list' | 'table' {
-    if (text.startsWith('#') || text.startsWith('##') || text.startsWith('###')) {
-      return 'title';
-    }
-    if (text.includes('•') || text.includes('-') || text.includes('*')) {
-      return 'list';
-    }
-    if (text.includes('|') && text.includes('---')) {
-      return 'table';
-    }
-    return 'text';
-  }
 
   /**
    * 임베딩 생성 (즉시 처리 버전)
