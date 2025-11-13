@@ -104,10 +104,10 @@ export class EmbeddingService {
         throw new Error('생성된 임베딩이 비어있습니다.');
       }
 
-      // 차원 수 검증 (OpenAI text-embedding-3-small는 1536차원)
-      const expectedDimension = 1536;
+      // 차원 수 검증 (BGE-M3는 1024차원, OpenAI text-embedding-3-small는 1536차원)
+      const expectedDimension = this.currentModel === 'bge-m3' ? 1024 : 1536;
       if (embedding.length !== expectedDimension) {
-        console.warn(`⚠️ 임베딩 차원 수 불일치: ${embedding.length} (예상: ${expectedDimension})`);
+        console.warn(`⚠️ 임베딩 차원 수 불일치: ${embedding.length} (예상: ${expectedDimension}, 모델: ${this.currentModel})`);
         // 차원이 다르더라도 계속 진행 (호환성을 위해)
       }
 

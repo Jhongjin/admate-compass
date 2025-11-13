@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import Anthropic from '@anthropic-ai/sdk';
 
-// Gemini AI 초기화
-const genAI = process.env.GOOGLE_API_KEY ? new GoogleGenerativeAI(process.env.GOOGLE_API_KEY) : null;
+// 동적 렌더링 강제 (SSE 방지)
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
+// Claude AI 초기화
+const anthropic = process.env.ANTHROPIC_API_KEY 
+  ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+  : null;
 
 export async function POST(request: NextRequest) {
   try {
@@ -15,9 +21,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Gemini API가 설정되지 않은 경우 fallback 응답
-    if (!genAI) {
-      console.log('⚠️ Gemini API가 설정되지 않음. Fallback 요약 생성');
+    // Claude API가 설정되지 않은 경우 fallback 응답
+    if (!anthropic) {
+      console.log('⚠️ Claude API가 설정되지 않음. Fallback 요약 생성');
       const fallbackResponse = {
         keyPoints: [
           aiResponse.split('.')[0]?.trim() || '답변의 첫 번째 핵심 내용',
@@ -29,12 +35,14 @@ export async function POST(request: NextRequest) {
         ) || [],
         confidence: 0.7
       };
-      return NextResponse.json(fallbackResponse);
+      return NextResponse.json(fallbackResponse, {
+        headers: {
+          'Content-Type': 'application/json; charset=utf-8',
+        },
+      });
     }
 
-    // Gemini를 사용한 답변 요약 생성
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash-lite' });
-
+    // Claude를 사용한 답변 요약 생성
     const summaryPrompt = `다음 질문과 답변을 바탕으로 5줄 이하의 핵심 요약을 생성해주세요.
 
 질문: ${userQuestion}
@@ -61,12 +69,24 @@ ${sources?.map((source: any, index: number) =>
   "confidence": 0.85
 }`;
 
-    console.log('🤖 Gemini 요약 생성 시작');
-    const result = await model.generateContent(summaryPrompt);
-    const response = await result.response;
-    const summaryText = response.text();
+    console.log('🤖 Claude 요약 생성 시작');
+    const message = await anthropic.messages.create({
+      model: 'claude-3-5-haiku-20241022',
+      max_tokens: 1024,
+      messages: [
+        {
+          role: 'user',
+          content: summaryPrompt
+        }
+      ]
+    });
+
+    const summaryText = message.content
+      .filter((block: any) => block.type === 'text')
+      .map((block: any) => block.text)
+      .join('');
     
-    console.log('✅ Gemini 요약 생성 완료');
+    console.log('✅ Claude 요약 생성 완료');
     console.log('- 요약 길이:', summaryText.length);
     console.log('- 요약 미리보기:', summaryText.substring(0, 100) + '...');
 
@@ -91,7 +111,12 @@ ${sources?.map((source: any, index: number) =>
           : 0.8
       };
 
-      return NextResponse.json(validatedData);
+      // 응답 헤더 명시적으로 설정
+      return NextResponse.json(validatedData, {
+        headers: {
+          'Content-Type': 'application/json; charset=utf-8',
+        },
+      });
 
     } catch (parseError) {
       console.error('❌ JSON 파싱 오류:', parseError);
@@ -110,13 +135,17 @@ ${sources?.map((source: any, index: number) =>
         confidence: 0.7
       };
       
-      return NextResponse.json(fallbackResponse);
+      return NextResponse.json(fallbackResponse, {
+        headers: {
+          'Content-Type': 'application/json; charset=utf-8',
+        },
+      });
     }
 
   } catch (error) {
     console.error('❌ 요약 생성 오류:', error);
     
-    // Gemini API 오류 시 fallback 응답
+    // Claude API 오류 시 fallback 응답
     const fallbackResponse = {
       keyPoints: [
         '답변 요약을 생성할 수 없습니다.',
@@ -126,6 +155,10 @@ ${sources?.map((source: any, index: number) =>
       confidence: 0.3
     };
     
-    return NextResponse.json(fallbackResponse);
+    return NextResponse.json(fallbackResponse, {
+      headers: {
+        'Content-Type': 'application/json; charset=utf-8',
+      },
+    });
   }
 }

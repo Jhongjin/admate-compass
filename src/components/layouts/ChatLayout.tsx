@@ -49,7 +49,7 @@ export default function ChatLayout({ children }: ChatLayoutProps) {
               </Link>
               <div className="hidden sm:block">
                 <h1 className="text-base sm:text-lg font-semibold text-white truncate">
-                  메타 광고 FAQ 챗봇
+                  멀티 플랫폼 광고 FAQ 챗봇
                 </h1>
               </div>
             </div>

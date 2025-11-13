@@ -51,7 +51,20 @@ const nextConfig = {
         net: false,
         tls: false,
         dns: false,
+        process: require.resolve('process/browser'),
+        puppeteer: false,
+        'puppeteer-core': false,
+        '@sparticuz/chromium': false,
       };
+      
+      // process polyfill 추가
+      config.plugins = config.plugins || [];
+      const webpack = require('webpack');
+      config.plugins.push(
+        new webpack.ProvidePlugin({
+          process: 'process/browser',
+        })
+      );
     }
 
     // 바이너리 파일 처리 설정

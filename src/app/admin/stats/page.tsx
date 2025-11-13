@@ -13,10 +13,11 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/comp
 import { Progress } from "@/components/ui/progress";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { TrendingUp, TrendingDown, Users, MessageSquare, Clock, Star, Download, Calendar, Info, AlertTriangle, HelpCircle, Eye, RefreshCw, BarChart3, PieChart, Activity, Zap, ThumbsUp, ThumbsDown } from "lucide-react";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo, useCallback } from "react";
 import { useFeedbackStats } from "@/hooks/useFeedbackStats";
 import { useAuth } from "@/hooks/useAuth";
 import { downloadCSV, createStatsCSVData, createFeedbackCSVData } from "@/lib/utils/csvExport";
+import { logger } from "@/lib/utils/logger";
 
 export default function StatisticsPage() {
   const { user, loading } = useAuth();
@@ -25,7 +26,16 @@ export default function StatisticsPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [selectedTimeRange, setSelectedTimeRange] = useState("7d");
   const [activeTab, setActiveTab] = useState("overview");
-  const [statsData, setStatsData] = useState(null);
+  const [statsData, setStatsData] = useState<{
+    dashboard?: any;
+    chatbot?: any;
+    detailed?: {
+      userActivity?: Array<{ date: string; questions: number; users: number }>;
+      topQuestions?: Array<{ question: string; count: number; change: number }>;
+      userSegments?: Array<{ segment: string; users: number; questions: number; satisfaction: number }>;
+      documentStats?: Array<{ type: string; count: number; size: string; indexed: number }>;
+    } | null;
+  } | null>(null);
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null);
   const [isClient, setIsClient] = useState(false);
 
@@ -43,7 +53,7 @@ export default function StatisticsPage() {
   ];
 
   // 데이터 새로고침 함수
-  const refreshData = async () => {
+  const refreshData = useCallback(async () => {
     setIsLoading(true);
     try {
       // 피드백 통계 새로고침
@@ -51,76 +61,96 @@ export default function StatisticsPage() {
       // 실제 API 호출 시뮬레이션
       await new Promise(resolve => setTimeout(resolve, 1000));
       setLastUpdated(new Date());
-      console.log(`데이터 새로고침 완료: ${selectedTimeRange} 범위`);
+      logger.log(`데이터 새로고침 완료: ${selectedTimeRange} 범위`);
     } catch (error) {
-      console.error('데이터 새로고침 실패:', error);
+      logger.error('데이터 새로고침 실패:', error);
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [refetchFeedback, selectedTimeRange]);
 
   // 시간 범위 변경 핸들러
-  const handleTimeRangeChange = (value: string) => {
+  const handleTimeRangeChange = useCallback((value: string) => {
     setSelectedTimeRange(value);
     refreshData();
-  };
+  }, [refreshData]);
 
-  // 클라이언트 사이드 렌더링 확인
+  // 실제 통계 데이터 가져오기
   useEffect(() => {
     setIsClient(true);
     setLastUpdated(new Date());
     refreshData();
-  }, []);
+    
+    // 대시보드, 챗봇, 상세 통계 데이터 가져오기
+    const fetchStats = async () => {
+      try {
+        const [dashboardRes, chatbotRes, detailedRes] = await Promise.all([
+          fetch('/api/admin/dashboard'),
+          fetch('/api/chatbot'),
+          fetch(`/api/admin/stats/detailed?period=${selectedTimeRange}`)
+        ]);
+        
+        const dashboardData = await dashboardRes.json();
+        const chatbotData = await chatbotRes.json();
+        const detailedData = await detailedRes.json();
+        
+        setStatsData({
+          dashboard: dashboardData.success ? dashboardData.data : null,
+          chatbot: chatbotData.success ? chatbotData.stats : null,
+          detailed: detailedData.success ? detailedData.data : null
+        });
+      } catch (error) {
+        logger.error('통계 데이터 가져오기 실패:', error);
+      }
+    };
+    
+    fetchStats();
+  }, [selectedTimeRange]);
 
-  const overviewStats = {
-    totalQuestions: 1247,
-    activeUsers: 156,
-    avgResponseTime: "2.3초",
-    satisfactionRate: feedbackStats?.positivePercentage || 87,
-    totalDocuments: 45,
-    indexedDocuments: 42,
+  // 실제 데이터 기반 통계 계산
+  const dashboardStats = statsData?.dashboard;
+  const chatbotStats = statsData?.chatbot;
+  
+  const overviewStats = useMemo(() => ({
+    totalQuestions: chatbotStats?.totalQuestions || dashboardStats?.weeklyStats?.questions || 0,
+    activeUsers: dashboardStats?.weeklyStats?.users || 0,
+    avgResponseTime: chatbotStats && chatbotStats.averageResponseTime !== null && chatbotStats.averageResponseTime !== undefined
+      ? `${(chatbotStats.averageResponseTime / 1000).toFixed(1)}초` 
+      : "데이터 없음",
+    satisfactionRate: feedbackStats?.positivePercentage || Math.round((dashboardStats?.weeklyStats?.satisfaction || 0) * 100),
+    totalDocuments: dashboardStats?.totalDocuments || 0,
+    indexedDocuments: dashboardStats?.completedDocuments || 0,
     totalFeedback: feedbackStats?.total || 0,
     positiveFeedback: feedbackStats?.positive || 0,
     negativeFeedback: feedbackStats?.negative || 0,
     weeklyChange: {
-      questions: 12,
-      users: -3,
-      responseTime: -8,
-      satisfaction: 2,
+      questions: 0, // 실제로는 이전 주 대비 계산 필요
+      users: 0,
+      responseTime: 0,
+      satisfaction: 0,
     },
-  };
+  }), [chatbotStats, dashboardStats, feedbackStats]);
 
-  // 간단한 더미 데이터
-  const userActivity = [
-    { date: "월", questions: 45, users: 23 },
-    { date: "화", questions: 52, users: 28 },
-    { date: "수", questions: 38, users: 19 },
-    { date: "목", questions: 61, users: 31 },
-    { date: "금", questions: 49, users: 25 },
-    { date: "토", questions: 23, users: 12 },
-    { date: "일", questions: 18, users: 8 },
-  ];
+  // 실제 데이터 또는 기본값 사용
+  const detailedStats = statsData?.detailed;
+  const userActivity = useMemo(() => detailedStats?.userActivity || [
+    { date: "월", questions: 0, users: 0 },
+    { date: "화", questions: 0, users: 0 },
+    { date: "수", questions: 0, users: 0 },
+    { date: "목", questions: 0, users: 0 },
+    { date: "금", questions: 0, users: 0 },
+    { date: "토", questions: 0, users: 0 },
+    { date: "일", questions: 0, users: 0 },
+  ], [detailedStats?.userActivity]);
 
-  const topQuestions = [
-    { question: "광고 정책 변경사항", count: 45, change: 12 },
-    { question: "광고 계정 설정", count: 38, change: -5 },
-    { question: "스토리 광고 가이드", count: 32, change: 8 },
-  ];
+  const topQuestions = useMemo(() => detailedStats?.topQuestions || [], [detailedStats?.topQuestions]);
 
-  const userSegments = [
-    { segment: "마케팅팀", users: 45, questions: 234, satisfaction: 89 },
-    { segment: "퍼포먼스팀", users: 38, questions: 189, satisfaction: 85 },
-    { segment: "운영팀", users: 32, questions: 156, satisfaction: 82 },
-  ];
+  const userSegments = useMemo(() => detailedStats?.userSegments || [], [detailedStats?.userSegments]);
 
-  const documentStats = [
-    { type: "PDF", count: 28, size: "45.2 MB", indexed: 26 },
-    { type: "DOCX", count: 12, size: "18.7 MB", indexed: 11 },
-    { type: "TXT", count: 5, size: "2.1 MB", indexed: 5 },
-  ];
+  const documentStats = useMemo(() => detailedStats?.documentStats || [], [detailedStats?.documentStats]);
 
   // 개선된 CSV 내보내기 함수 (유틸리티 사용)
-  const exportToCSV = () => {
+  const exportToCSV = useCallback(() => {
     try {
       // 기본 통계 데이터 생성
       const statsData = createStatsCSVData(overviewStats);
@@ -156,15 +186,15 @@ export default function StatisticsPage() {
       downloadCSV(allData, filename, { includeBOM: true });
       
     } catch (error) {
-      console.error('CSV 내보내기 오류:', error);
+      logger.error('CSV 내보내기 오류:', error);
       // 폴백: 기본 CSV 내보내기
       const basicData = createStatsCSVData(overviewStats);
       downloadCSV(basicData, `통계_데이터_${new Date().toISOString().split('T')[0]}.csv`);
     }
-  };
+  }, [overviewStats, feedbackStats, userActivity, topQuestions]);
 
   // 개선된 PDF 내보내기 함수 (한글 지원)
-  const exportToPDF = async () => {
+  const exportToPDF = useCallback(async () => {
     try {
       // 동적 import로 라이브러리 로드
       const [{ default: jsPDF }, { default: html2canvas }] = await Promise.all([
@@ -358,14 +388,14 @@ export default function StatisticsPage() {
       pdf.save(fileName);
 
     } catch (error) {
-      console.error('PDF 생성 오류:', error);
+      logger.error('PDF 생성 오류:', error);
       // 폴백: 기본 인쇄 기능 사용
       window.print();
     }
-  };
+  }, [overviewStats, feedbackStats, documentStats]);
 
   // 개선된 JSON 내보내기 함수
-  const exportToJSON = () => {
+  const exportToJSON = useCallback(() => {
     const jsonData = {
       exportDate: new Date().toISOString(),
       exportInfo: {
@@ -400,7 +430,7 @@ export default function StatisticsPage() {
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
-  };
+  }, [overviewStats, feedbackStats, userActivity, topQuestions, userSegments, documentStats, selectedTimeRange, lastUpdated]);
 
   // 로딩 중이거나 로그인하지 않은 경우
   if (loading) {
@@ -455,10 +485,10 @@ export default function StatisticsPage() {
       <div className="mb-8">
         <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
           <div>
-            <h1 className="text-4xl font-bold text-white mb-3 bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
+            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold text-white mb-2 sm:mb-3 bg-gradient-to-r from-blue-400 to-purple-400 bg-clip-text text-transparent">
               📈 사용 통계 대시보드
             </h1>
-            <p className="text-gray-300 text-lg">
+            <p className="text-gray-300 text-sm sm:text-base lg:text-lg">
               시스템 사용 현황과 성과 지표를 분석하여 개선점을 파악하세요.
             </p>
           </div>
@@ -471,9 +501,10 @@ export default function StatisticsPage() {
                     onClick={refreshData}
                     disabled={isLoading}
                     className="bg-gray-800/50 border-gray-600 text-white hover:bg-gray-700/50"
+                    aria-label="통계 데이터 새로고침"
                   >
-                    <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
-                    새로고침
+                    <RefreshCw className={`w-4 h-4 sm:mr-2 ${isLoading ? 'animate-spin' : ''}`} aria-hidden="true" />
+                    <span className="hidden sm:inline">새로고침</span>
                   </Button>
                 </TooltipTrigger>
                 <TooltipContent>
@@ -482,7 +513,7 @@ export default function StatisticsPage() {
               </Tooltip>
             </TooltipProvider>
             <Select value={selectedTimeRange} onValueChange={handleTimeRangeChange}>
-              <SelectTrigger className="w-40 bg-gray-800/50 border-gray-600 text-white">
+              <SelectTrigger className="w-full sm:w-40 bg-gray-800/50 border-gray-600 text-white" aria-label="시간 범위 선택">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent className="bg-gray-800 border-gray-600">
@@ -494,31 +525,41 @@ export default function StatisticsPage() {
               </SelectContent>
             </Select>
             <div className="relative group">
-              <Button className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700">
-                <Download className="w-4 h-4 mr-2" />
-                내보내기
+              <Button 
+                className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
+                aria-label="데이터 내보내기 메뉴"
+                aria-expanded="false"
+              >
+                <Download className="w-4 h-4 sm:mr-2" aria-hidden="true" />
+                <span className="hidden sm:inline">내보내기</span>
               </Button>
-              <div className="absolute top-full left-0 mt-1 w-48 bg-gray-800 border border-gray-600 rounded-lg shadow-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-50">
+              <div className="absolute top-full left-0 mt-1 w-48 bg-gray-800 border border-gray-600 rounded-lg shadow-lg opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-50" role="menu" aria-label="내보내기 옵션">
                 <div className="p-2">
                   <button 
                     onClick={exportToCSV}
                     className="w-full text-left px-3 py-2 text-sm text-white hover:bg-gray-700 rounded flex items-center"
+                    role="menuitem"
+                    aria-label="CSV 형식으로 내보내기"
                   >
-                    <Download className="w-4 h-4 mr-2 text-blue-400" />
+                    <Download className="w-4 h-4 mr-2 text-blue-400" aria-hidden="true" />
                     CSV 다운로드
                   </button>
                   <button 
                     onClick={exportToPDF}
                     className="w-full text-left px-3 py-2 text-sm text-white hover:bg-gray-700 rounded flex items-center"
+                    role="menuitem"
+                    aria-label="PDF 리포트로 내보내기"
                   >
-                    <Download className="w-4 h-4 mr-2 text-green-400" />
+                    <Download className="w-4 h-4 mr-2 text-green-400" aria-hidden="true" />
                     PDF 리포트
                   </button>
                   <button 
                     onClick={exportToJSON}
                     className="w-full text-left px-3 py-2 text-sm text-white hover:bg-gray-700 rounded flex items-center"
+                    role="menuitem"
+                    aria-label="JSON 형식으로 내보내기"
                   >
-                    <Download className="w-4 h-4 mr-2 text-purple-400" />
+                    <Download className="w-4 h-4 mr-2 text-purple-400" aria-hidden="true" />
                     JSON 데이터
                   </button>
                 </div>
@@ -529,7 +570,7 @@ export default function StatisticsPage() {
       </div>
 
       {/* Overview Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 mb-6 sm:mb-8" role="region" aria-label="개요 통계">
         {isLoading ? (
           // Skeleton loading state
           Array.from({ length: 4 }).map((_, index) => (
@@ -653,31 +694,31 @@ export default function StatisticsPage() {
 
       {/* Charts and Detailed Stats with Tabs */}
       <Tabs value={activeTab} onValueChange={setActiveTab} className="mb-8">
-        <TabsList className="grid w-full grid-cols-5 bg-gray-800/50 border-gray-600">
-          <TabsTrigger value="overview" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white">
-            <BarChart3 className="w-4 h-4 mr-2" />
-            개요
+        <TabsList className="grid w-full grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 bg-gray-800/50 border-gray-600" role="tablist" aria-label="통계 탭 메뉴">
+          <TabsTrigger value="overview" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white" aria-label="개요 탭">
+            <BarChart3 className="w-4 h-4 sm:mr-2" aria-hidden="true" />
+            <span className="hidden sm:inline">개요</span>
           </TabsTrigger>
-          <TabsTrigger value="activity" className="data-[state=active]:bg-green-600 data-[state=active]:text-white">
-            <Activity className="w-4 h-4 mr-2" />
-            활동 현황
+          <TabsTrigger value="activity" className="data-[state=active]:bg-green-600 data-[state=active]:text-white" aria-label="활동 현황 탭">
+            <Activity className="w-4 h-4 sm:mr-2" aria-hidden="true" />
+            <span className="hidden sm:inline">활동 현황</span>
           </TabsTrigger>
-          <TabsTrigger value="feedback" className="data-[state=active]:bg-orange-600 data-[state=active]:text-white">
-            <ThumbsUp className="w-4 h-4 mr-2" />
-            피드백
+          <TabsTrigger value="feedback" className="data-[state=active]:bg-orange-600 data-[state=active]:text-white" aria-label="피드백 탭">
+            <ThumbsUp className="w-4 h-4 sm:mr-2" aria-hidden="true" />
+            <span className="hidden sm:inline">피드백</span>
           </TabsTrigger>
-          <TabsTrigger value="performance" className="data-[state=active]:bg-purple-600 data-[state=active]:text-white">
-            <Zap className="w-4 h-4 mr-2" />
-            성능 지표
+          <TabsTrigger value="performance" className="data-[state=active]:bg-purple-600 data-[state=active]:text-white" aria-label="성능 지표 탭">
+            <Zap className="w-4 h-4 sm:mr-2" aria-hidden="true" />
+            <span className="hidden sm:inline">성능 지표</span>
           </TabsTrigger>
-          <TabsTrigger value="analytics" className="data-[state=active]:bg-yellow-600 data-[state=active]:text-white">
-            <PieChart className="w-4 h-4 mr-2" />
-            분석
+          <TabsTrigger value="analytics" className="data-[state=active]:bg-yellow-600 data-[state=active]:text-white" aria-label="분석 탭">
+            <PieChart className="w-4 h-4 sm:mr-2" aria-hidden="true" />
+            <span className="hidden sm:inline">분석</span>
           </TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="mt-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 lg:gap-8" role="region" aria-label="개요 차트 및 테이블">
             {/* Weekly Activity Chart */}
             <Card className="bg-gray-800/50 border-gray-700">
               <CardHeader>
@@ -702,7 +743,7 @@ export default function StatisticsPage() {
                     </div>
                   </div>
                   
-                  <div className="grid grid-cols-7 gap-2">
+                  <div className="grid grid-cols-7 gap-1 sm:gap-2" role="region" aria-label="요일별 활동 차트">
                     {userActivity.map((day, index) => (
                       <div key={index} className="text-center">
                         <div className="text-xs text-gray-300 mb-2">{day.date}</div>
@@ -737,13 +778,13 @@ export default function StatisticsPage() {
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <Table>
+                <Table role="table" aria-label="인기 질문 목록">
                   <TableHeader>
                     <TableRow className="border-gray-700">
                       <TableHead className="w-12 text-gray-300">순위</TableHead>
                       <TableHead className="text-gray-300">질문</TableHead>
-                      <TableHead className="w-20 text-gray-300">질문 수</TableHead>
-                      <TableHead className="w-20 text-gray-300">변화율</TableHead>
+                      <TableHead className="hidden sm:table-cell w-20 text-gray-300">질문 수</TableHead>
+                      <TableHead className="hidden md:table-cell w-20 text-gray-300">변화율</TableHead>
                       <TableHead className="w-16 text-gray-300">액션</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -765,15 +806,15 @@ export default function StatisticsPage() {
                             <p className="text-sm font-medium text-white">{item.question}</p>
                           </div>
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="hidden sm:table-cell">
                           <span className="text-sm text-gray-300">{item.count}회</span>
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="hidden md:table-cell">
                           <div className="flex items-center space-x-1">
                             {item.change > 0 ? (
-                              <TrendingUp className="w-4 h-4 text-green-400" />
+                              <TrendingUp className="w-4 h-4 text-green-400" aria-hidden="true" />
                             ) : (
-                              <TrendingDown className="w-4 h-4 text-red-400" />
+                              <TrendingDown className="w-4 h-4 text-red-400" aria-hidden="true" />
                             )}
                             <span className={`text-xs font-medium ${
                               item.change > 0 ? "text-green-400" : "text-red-400"
@@ -786,8 +827,8 @@ export default function StatisticsPage() {
                           <TooltipProvider>
                             <Tooltip>
                               <TooltipTrigger asChild>
-                                <Button variant="ghost" size="sm" className="text-gray-300 hover:text-white hover:bg-gray-700">
-                                  <Eye className="w-4 h-4" />
+                                <Button variant="ghost" size="sm" className="text-gray-300 hover:text-white hover:bg-gray-700" aria-label={`${item.question} 상세 정보 보기`}>
+                                  <Eye className="w-4 h-4" aria-hidden="true" />
                                 </Button>
                               </TooltipTrigger>
                               <TooltipContent>
@@ -806,7 +847,7 @@ export default function StatisticsPage() {
         </TabsContent>
 
         <TabsContent value="activity" className="mt-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 lg:gap-8" role="region" aria-label="개요 차트 및 테이블">
             {/* Activity Chart */}
             <Card className="bg-gray-800/50 border-gray-700">
               <CardHeader>
@@ -857,7 +898,7 @@ export default function StatisticsPage() {
         </TabsContent>
 
         <TabsContent value="feedback" className="mt-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 lg:gap-8" role="region" aria-label="개요 차트 및 테이블">
             {/* 피드백 통계 카드 */}
             <Card className="bg-gray-800/50 border-gray-700">
               <CardHeader>
@@ -954,7 +995,7 @@ export default function StatisticsPage() {
                       </div>
                     </div>
                     
-                    <div className="grid grid-cols-7 gap-2">
+                    <div className="grid grid-cols-7 gap-1 sm:gap-2" role="region" aria-label="요일별 활동 차트">
                       {feedbackStats?.dailyStats?.slice(-7).map((day, index) => (
                         <div key={index} className="text-center">
                           <div className="text-xs text-gray-300 mb-2">
@@ -1059,7 +1100,7 @@ export default function StatisticsPage() {
         </TabsContent>
 
         <TabsContent value="performance" className="mt-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 lg:gap-8" role="region" aria-label="개요 차트 및 테이블">
             {/* Performance Charts */}
             <Card className="bg-gray-800/50 border-gray-700">
               <CardHeader>
@@ -1094,7 +1135,7 @@ export default function StatisticsPage() {
         </TabsContent>
 
         <TabsContent value="analytics" className="mt-6">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6 lg:gap-8" role="region" aria-label="개요 차트 및 테이블">
             {/* Resource Usage */}
             <Card className="bg-gray-800/50 border-gray-700">
               <CardHeader>
@@ -1166,7 +1207,7 @@ export default function StatisticsPage() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 sm:gap-6" role="region" aria-label="시스템 성능 지표">
             <div className="text-center p-4 bg-slate-700/60 rounded-lg border border-slate-600/50 hover:bg-slate-700/80 transition-all duration-300">
               <div className="text-3xl font-black text-white mb-1 text-enhanced">99.2%</div>
               <p className="text-sm text-secondary-enhanced font-semibold">시스템 가동률</p>
@@ -1208,7 +1249,7 @@ export default function StatisticsPage() {
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 sm:gap-4" role="region" aria-label="데이터 내보내기 옵션">
             <Button 
               variant="outline" 
               className="export-button h-24 flex-col space-y-2 bg-slate-700/60 border-slate-600/70 text-white hover:bg-slate-600/80 hover:border-slate-500/80"

@@ -7,6 +7,7 @@ import { Toaster } from "@/components/ui/toaster";
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
+import Image from "next/image";
 
 interface MainLayoutProps {
   children: React.ReactNode;
@@ -110,15 +111,22 @@ export default function MainLayout({ children, chatHeader }: MainLayoutProps) {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.5 }}
                 >
-                  <motion.img 
-                    src="/admate-logo.png" 
-                    alt="AdMate" 
-                    className="h-24 w-auto"
+                  <motion.div
                     whileHover={{
                       filter: "brightness(1.1) drop-shadow(0 4px 8px rgba(255, 107, 53, 0.3))",
                       transition: { duration: 0.2 }
                     }}
-                  />
+                  >
+                    <Image
+                      src="/admate-logo.png"
+                      alt="AdMate - AI 기반 멀티 벤더 광고 정책 챗봇"
+                      width={200}
+                      height={96}
+                      priority
+                      className="h-24 w-auto"
+                      style={{ height: '96px', width: 'auto' }}
+                    />
+                  </motion.div>
                 </motion.div>
               </Link>
             </div>

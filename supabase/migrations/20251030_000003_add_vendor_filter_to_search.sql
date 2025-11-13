@@ -15,8 +15,9 @@ BEGIN
   END IF;
 END $$;
 
--- 2) 기존 함수 삭제 (벤더 필터 없는 버전)
+-- 2) 기존 함수 삭제 (모든 오버로드 버전 삭제)
 DROP FUNCTION IF EXISTS search_documents(vector(1024), float, int);
+DROP FUNCTION IF EXISTS search_documents(vector(1024), float, int, TEXT[]);
 
 -- 3) 벤더 필터 지원 함수 생성
 CREATE OR REPLACE FUNCTION search_documents(
@@ -32,20 +33,22 @@ RETURNS TABLE (
     similarity float,
     document_id TEXT,
     title TEXT,
-    source_vendor TEXT
+    source_vendor TEXT,
+    document_type TEXT
 )
 LANGUAGE plpgsql
 AS $$
 BEGIN
     RETURN QUERY
     SELECT 
-        dc.chunk_id,
+        dc.chunk_id::TEXT,  -- 명시적으로 TEXT로 캐스팅
         dc.content,
         dc.metadata,
         1 - (dc.embedding <=> query_embedding) as similarity,
         dc.document_id,
         d.title,
-        COALESCE(d.source_vendor::TEXT, 'META') as source_vendor
+        COALESCE(d.source_vendor::TEXT, 'META') as source_vendor,
+        COALESCE(d.type::TEXT, 'file') as document_type
     FROM document_chunks dc
     JOIN documents d ON dc.document_id = d.id
     WHERE 1 - (dc.embedding <=> query_embedding) > match_threshold

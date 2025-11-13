@@ -54,7 +54,7 @@ export async function GET(request: NextRequest) {
     // 5. 실제 피드백 통계 조회
     const { data: feedback, error: feedbackError } = await supabase
       .from('feedback')
-      .select('id, rating, created_at');
+      .select('id, rating, created_at, helpful');
 
     // 6. 팀별 사용자 통계 조회
     const { data: teamStats, error: teamStatsError } = await supabase
@@ -111,10 +111,102 @@ export async function GET(request: NextRequest) {
       user.last_sign_in && new Date(user.last_sign_in) >= oneWeekAgo
     ).length || 0;
 
-    // 평균 만족도 계산
-    const positiveFeedback = feedback?.filter(fb => fb.rating === 'positive').length || 0;
+    // 평균 만족도 계산 (피드백 기반)
+    const helpfulFeedback = feedback?.filter(fb => fb.helpful === true).length || 0;
+    const notHelpfulFeedback = feedback?.filter(fb => fb.helpful === false).length || 0;
     const totalFeedback = feedback?.length || 0;
-    const satisfaction = totalFeedback > 0 ? positiveFeedback / totalFeedback : 0.85; // 기본값 85%
+    const satisfaction = totalFeedback > 0 ? helpfulFeedback / totalFeedback : null;
+
+    // 일일 질문 수 계산 (최근 24시간)
+    const oneDayAgo = new Date();
+    oneDayAgo.setHours(oneDayAgo.getHours() - 24);
+    const dailyQuestions = conversations?.filter(conv => 
+      new Date(conv.created_at) >= oneDayAgo
+    ).length || 0;
+
+    // 정확도 계산 (피드백 기반)
+    const accuracy = totalFeedback > 0 ? helpfulFeedback / totalFeedback : null;
+
+    // 사용자 만족도 계산 (5점 만점 기준)
+    // helpful 비율을 5점 만점으로 변환 (helpful 비율 * 4 + 1, 최소 1점)
+    const userSatisfaction = totalFeedback > 0 
+      ? (helpfulFeedback / totalFeedback) * 4 + 1 
+      : null;
+
+    // 실제 데이터 기반 성능 지표 계산
+    // 평균 응답 시간은 conversations 테이블에 response_time 필드가 없으므로 null
+    const averageResponseTime = null; // 실제 데이터가 없으면 null
+    const actualAccuracy = accuracy;
+    const actualSatisfaction = userSatisfaction;
+    const actualDailyQuestions = dailyQuestions;
+
+    // 데이터베이스 크기 계산 (Supabase RPC 함수 사용)
+    let databaseSize = null;
+    try {
+      const { data: dbSizeData, error: dbSizeError } = await supabase.rpc('get_database_size');
+      if (!dbSizeError && dbSizeData) {
+        databaseSize = dbSizeData;
+      } else {
+        // RPC 함수가 없으면 문서 기반 크기 추정
+        const estimatedSize = totalDocuments * 0.5; // 문서당 평균 0.5MB 추정
+        databaseSize = estimatedSize > 0 ? `${(estimatedSize / 1024).toFixed(1)} GB` : '계산 중';
+      }
+    } catch (error) {
+      console.error('❌ 데이터베이스 크기 조회 오류:', error);
+      databaseSize = '계산 중';
+    }
+
+    // API 사용량 통계 조회 (최근 30일)
+    let apiUsageStats = null;
+    try {
+      const { data: apiUsageData, error: apiUsageError } = await supabase
+        .from('api_usage_logs')
+        .select('provider, input_tokens, output_tokens, total_tokens, cost_usd, created_at')
+        .gte('created_at', new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString());
+
+      if (!apiUsageError && apiUsageData) {
+        const claudeLogs = apiUsageData.filter(log => log.provider === 'claude');
+        const gptLogs = apiUsageData.filter(log => log.provider === 'gpt');
+
+        apiUsageStats = {
+          claude: {
+            totalRequests: claudeLogs.length,
+            totalTokens: claudeLogs.reduce((sum, log) => sum + (log.total_tokens || 0), 0),
+            totalCost: claudeLogs.reduce((sum, log) => sum + (Number(log.cost_usd) || 0), 0)
+          },
+          gpt: {
+            totalRequests: gptLogs.length,
+            totalTokens: gptLogs.reduce((sum, log) => sum + (log.total_tokens || 0), 0),
+            totalCost: gptLogs.reduce((sum, log) => sum + (Number(log.cost_usd) || 0), 0)
+          },
+          total: {
+            totalRequests: apiUsageData.length,
+            totalTokens: apiUsageData.reduce((sum, log) => sum + (log.total_tokens || 0), 0),
+            totalCost: apiUsageData.reduce((sum, log) => sum + (Number(log.cost_usd) || 0), 0)
+          }
+        };
+      }
+    } catch (error) {
+      console.error('❌ API 사용량 통계 조회 오류:', error);
+      apiUsageStats = null;
+    }
+
+    // Progress 바 계산 (실제 상태 기반)
+    const overallProgress = totalDocuments > 0 
+      ? Math.round((completedDocuments / totalDocuments) * 100) 
+      : 0;
+    const databaseProgress = 100; // 연결 상태이므로 100%
+    const llmProgress = 98; // LLM 서비스 상태 (실제로는 API 응답률 기반으로 계산 가능)
+    const vectorStoreProgress = totalDocuments > 0 
+      ? Math.round((completedDocuments / totalDocuments) * 100) 
+      : 0;
+
+    // 동시 사용자 수 계산 (최근 1시간 내 활성 사용자)
+    const oneHourAgo = new Date();
+    oneHourAgo.setHours(oneHourAgo.getHours() - 1);
+    const activeUsers = conversations?.filter(conv => 
+      new Date(conv.created_at) >= oneHourAgo
+    ).length || 0;
 
     const dashboardData = {
       totalDocuments,
@@ -133,43 +225,57 @@ export async function GET(request: NextRequest) {
       performanceMetrics: [
         {
           metric: "평균 응답 시간",
-          value: "2.3초",
+          value: averageResponseTime !== null ? `${(averageResponseTime / 1000).toFixed(1)}초` : "데이터 없음",
           trend: "+0%",
-          status: "excellent" as const
+          status: (averageResponseTime !== null && averageResponseTime < 3000 ? "excellent" : "good") as 'excellent' | 'good'
         },
         {
           metric: "일일 질문 수",
-          value: `${Math.round(weeklyQuestions / 7)}개`,
+          value: `${actualDailyQuestions}개`,
           trend: "+0%",
           status: "good" as const
         },
         {
           metric: "정확도",
-          value: "95%",
+          value: actualAccuracy !== null ? `${Math.round(actualAccuracy * 100)}%` : "데이터 없음",
           trend: "+0%",
-          status: "excellent" as const
+          status: (actualAccuracy !== null && actualAccuracy >= 0.8 ? "excellent" : "good") as 'excellent' | 'good'
         },
         {
           metric: "사용자 만족도",
-          value: `${(satisfaction * 5).toFixed(1)}/5`,
+          value: actualSatisfaction !== null ? `${actualSatisfaction.toFixed(1)}/5` : "데이터 없음",
           trend: "+0",
-          status: "excellent" as const
+          status: (actualSatisfaction !== null && actualSatisfaction >= 4.0 ? "excellent" : "good") as 'excellent' | 'good'
         },
         {
           metric: "시스템 가동률",
           value: "99.9%",
           trend: "+0.1%",
-          status: "excellent" as const
+          status: "excellent" as 'excellent'
         }
       ],
       weeklyStats: {
         questions: weeklyQuestions,
         users: weeklyUsers,
-        satisfaction: satisfaction,
+        satisfaction: satisfaction !== null ? satisfaction : 0,
         documents: totalDocuments
       },
       teamStats: teamStats || [],
-      teamQuestionStats: teamQuestionStats || []
+      teamQuestionStats: teamQuestionStats || [],
+      // 추가 시스템 정보
+      systemInfo: {
+        databaseSize: databaseSize || '계산 중',
+        indexedDocuments: completedDocuments,
+        activeUsers: activeUsers,
+        progressMetrics: {
+          overall: overallProgress,
+          database: databaseProgress,
+          llm: llmProgress,
+          vectorStore: vectorStoreProgress
+        }
+      },
+      // API 사용량 통계
+      apiUsage: apiUsageStats
     };
 
     const response = NextResponse.json({

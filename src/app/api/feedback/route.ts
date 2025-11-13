@@ -23,13 +23,48 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const { userId, conversationId, messageId, helpful } = body;
+    const { userId, conversationId, messageId, helpful, sources } = body;
 
     if (!userId || !conversationId || !messageId || typeof helpful !== 'boolean') {
       return NextResponse.json(
         { error: '필수 필드가 누락되었습니다.' },
         { status: 400 }
       );
+    }
+
+    // sources 정보에서 document_id와 chunk_id 추출
+    let sourcesData: any[] = [];
+    if (sources && Array.isArray(sources) && sources.length > 0) {
+      sourcesData = sources.map((source: any) => {
+        // document_id 추출
+        const documentId = source.documentId || source.document_id || null;
+        
+        // chunk_id 추출 (여러 가능한 형식 지원)
+        let chunkId = null;
+        if (source.id) {
+          // source.id가 chunk_id 형식인지 확인
+          // 형식: "supabase-0", "chunk_xxx", 또는 실제 chunk_id
+          if (source.id.startsWith('supabase-')) {
+            // supabase-0 형식인 경우, 실제 chunk_id를 찾기 위해 conversations 테이블에서 조회 필요
+            // 일단 document_id와 함께 저장하고, 나중에 conversations에서 찾을 수 있도록 함
+            chunkId = source.id; // 임시로 source.id 사용
+          } else {
+            chunkId = source.id;
+          }
+        }
+        
+        return {
+          document_id: documentId,
+          chunk_id: chunkId,
+          title: source.title || null,
+          similarity: source.similarity || null
+        };
+      }).filter((s: any) => s.document_id); // document_id가 있으면 저장 (chunk_id는 선택사항)
+      
+      console.log(`📊 피드백 sources 정보: ${sourcesData.length}개 문서/청크`);
+      sourcesData.forEach((s, idx) => {
+        console.log(`  [${idx + 1}] document_id: ${s.document_id}, chunk_id: ${s.chunk_id || '없음'}`);
+      });
     }
 
     // 기존 피드백 확인
@@ -47,6 +82,7 @@ export async function POST(request: NextRequest) {
         .from('feedback')
         .update({
           helpful: helpful,
+          sources: sourcesData.length > 0 ? sourcesData : null,
           updated_at: new Date().toISOString()
         })
         .eq('user_id', userId)
@@ -63,6 +99,7 @@ export async function POST(request: NextRequest) {
       }
 
       result = data;
+      console.log(`✅ 피드백 업데이트 완료: messageId=${messageId}, helpful=${helpful}, sources=${sourcesData.length}개`);
     } else {
       // 새 피드백 생성
       const { data, error } = await supabase
@@ -72,6 +109,7 @@ export async function POST(request: NextRequest) {
           conversation_id: conversationId,
           message_id: messageId,
           helpful: helpful,
+          sources: sourcesData.length > 0 ? sourcesData : null,
           created_at: new Date().toISOString()
         })
         .select()
@@ -97,6 +135,7 @@ export async function POST(request: NextRequest) {
       }
 
       result = data;
+      console.log(`✅ 피드백 저장 완료: messageId=${messageId}, helpful=${helpful}, sources=${sourcesData.length}개`);
     }
 
     return NextResponse.json({

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, Suspense } from "react";
+import { useEffect, useMemo, useRef, useState, Suspense, useCallback } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { motion } from "framer-motion";
 import AdminLayout from "@/components/layouts/AdminLayout";
@@ -24,6 +24,7 @@ import { useQuery } from "@tanstack/react-query";
 import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
 import QueueMonitoringPanel from "@/components/admin/QueueMonitoringPanel";
+import { logger } from "@/lib/utils/logger";
 
 const ALL_VENDORS = ["Meta", "Naver", "Kakao", "Google", "X(Twitter)"] as const;
 
@@ -163,16 +164,16 @@ function AdminDocsPageContent() {
         <VendorScopeBar selected={selectedVendors} onChange={setSelectedVendors} />
       </motion.div>
 
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
         {/* Left: Upload/Crawl + Queue panel */}
-        <div className="space-y-6 xl:col-span-1">
+        <div className="space-y-4 sm:space-y-6 lg:col-span-1">
           <UploadAndCrawlTabs vendors={selectedVendors} />
           <QueueMiniPanel vendors={selectedVendors} />
           <QueueMonitoringPanel vendors={selectedVendors} defaultOpen={false} />
         </div>
 
           {/* Right: Document list */}
-          <div className="xl:col-span-2 space-y-6">
+          <div className="lg:col-span-2 space-y-4 sm:space-y-6">
             <DocsToolbar 
               vendors={selectedVendors} 
               onStatusFilterChange={setStatusFilter}
@@ -230,19 +231,20 @@ function VendorScopeBar({ selected, onChange }: { selected: string[]; onChange: 
   };
 
   return (
-    <div className="flex items-center gap-3 px-4 py-3 bg-gray-800/50 rounded-lg border border-gray-700/50">
-      <div className="flex items-center gap-2">
-        <span className="text-xs text-gray-400 font-medium uppercase tracking-wider">Vendor</span>
-        <div className="flex items-center gap-1.5">
+    <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 sm:py-3 bg-gray-800/50 rounded-lg border border-gray-700/50">
+      <div className="flex items-center gap-2 w-full sm:w-auto">
+        <span className="text-xs text-gray-400 font-medium uppercase tracking-wider whitespace-nowrap">Vendor</span>
+        <div className="flex items-center gap-1.5 flex-wrap sm:flex-nowrap overflow-x-auto sm:overflow-x-visible">
           {ALL_VENDORS.map(v => (
             <button
               key={v}
               onClick={() => toggle(v)}
-              className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-200 ${
+              className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-200 whitespace-nowrap ${
                 selected.includes(v) 
                   ? "bg-blue-600 text-white shadow-md shadow-blue-500/20" 
                   : "bg-gray-700/50 text-gray-300 hover:bg-gray-700 hover:text-white"
               }`}
+              aria-label={`${v} ${selected.includes(v) ? '선택됨' : '선택 안됨'}`}
             >
               {v}
             </button>
@@ -251,8 +253,9 @@ function VendorScopeBar({ selected, onChange }: { selected: string[]; onChange: 
       </div>
       {selected.length > 0 && (
         <>
-          <Separator orientation="vertical" className="h-4 bg-gray-600" />
-          <span className="text-xs text-gray-400">
+          <Separator orientation="vertical" className="hidden sm:block h-4 bg-gray-600" />
+          <Separator orientation="horizontal" className="sm:hidden w-full bg-gray-600" />
+          <span className="text-xs text-gray-400 whitespace-nowrap">
             <span className="text-blue-400 font-semibold">{selected.length}</span> selected
           </span>
         </>
@@ -345,7 +348,7 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
   }, [crawlProgressValue, crawlResult]);
 
   // 크롤링 진행 상황 폴링 함수
-  const pollCrawlStatus = async (jobId: string) => {
+  const pollCrawlStatus = useCallback(async (jobId: string) => {
     const supabaseClient = createClient();
     let pollCount = 0;
     const maxPolls = 120; // 최대 10분 (5초 간격)
@@ -361,7 +364,7 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
           .single();
 
         if (error) {
-          console.error('크롤링 상태 조회 오류:', error);
+          logger.error('크롤링 상태 조회 오류:', error);
           if (pollCount >= maxPolls) {
             toast.error('크롤링 상태 확인 시간 초과', { duration: 5000 });
             setCrawling(false);
@@ -452,7 +455,7 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
 
         setTimeout(poll, 5000);
       } catch (pollError) {
-        console.error('크롤링 상태 폴링 오류:', pollError);
+        logger.error('크롤링 상태 폴링 오류:', pollError);
         if (pollCount >= maxPolls) {
           setCrawlProgressLabel('크롤링 상태 확인 중 오류가 발생했습니다.');
           setCrawlProgressValue(0);
@@ -465,9 +468,9 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
     };
 
     poll();
-  };
+  }, []);
 
-  const handleUpload = async (files?: File[]) => {
+  const handleUpload = useCallback(async (files?: File[]) => {
     try {
       const filesToUpload = files || (fileInputRef.current?.files ? Array.from(fileInputRef.current.files) : []);
       if (filesToUpload.length === 0) return;
@@ -517,7 +520,7 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
       
       // 4MB 이상이면 Storage에 직접 업로드 후 큐 등록 (Vercel payload 제한 회피)
       if (uploadFile.size > VERCEL_PAYLOAD_LIMIT) {
-        console.log('📋 대용량 파일 감지 - Storage에 직접 업로드 후 큐 등록:', {
+        logger.log('📋 대용량 파일 감지 - Storage에 직접 업로드 후 큐 등록:', {
           fileName: uploadFile.name,
           fileSize: uploadFile.size,
           fileSizeMB: (uploadFile.size / (1024 * 1024)).toFixed(2) + 'MB'
@@ -575,7 +578,7 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
         }
         
         setUploadProgress(50);
-        console.log('✅ 문서 레코드 생성 완료:', documentId);
+        logger.log('✅ 문서 레코드 생성 완료:', documentId);
         
         // 큐에 처리 작업 등록 (문서 레코드가 존재하므로 외래키 제약조건 통과)
         const jobType = uploadFile.type === 'application/pdf' 
@@ -614,17 +617,17 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
         }
         
         setUploadProgress(60);
-        console.log('✅ Storage 업로드 및 큐 등록 완료:', { jobId: jobData.id, documentId });
+        logger.log('✅ Storage 업로드 및 큐 등록 완료:', { jobId: jobData.id, documentId });
         
         // 큐에 등록 후 즉시 큐 워커 트리거 (수동 처리 버튼과 동일한 방식)
         setUploadProgress(70);
         try {
-          console.log('🚀 큐 워커 즉시 트리거 시작...');
+          logger.log('🚀 큐 워커 즉시 트리거 시작...');
           const consumeRes = await fetch('/api/jobs/consume', { method: 'POST' });
           const consumeResult = await consumeRes.json();
-          console.log('✅ 큐 워커 트리거 완료:', consumeResult);
+          logger.log('✅ 큐 워커 트리거 완료:', consumeResult);
         } catch (consumeError) {
-          console.warn('⚠️ 큐 워커 트리거 실패 (Cron Job이 처리할 수 있음):', consumeError);
+          logger.warn('⚠️ 큐 워커 트리거 실패 (Cron Job이 처리할 수 있음):', consumeError);
           // 에러가 발생해도 폴링은 계속 진행
         }
         
@@ -653,7 +656,7 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
               }
               
               try {
-                console.log('🛑 큐 처리 취소 요청:', jobId);
+                logger.log('🛑 큐 처리 취소 요청:', jobId);
                 const cancelRes = await fetch('/api/jobs/action', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
@@ -662,7 +665,7 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
                 
                 const cancelResult = await cancelRes.json();
                 if (cancelRes.ok && cancelResult.success) {
-                  console.log('✅ 큐 처리 취소 완료');
+                  logger.log('✅ 큐 처리 취소 완료');
                   setUploadStep('idle');
                   setUploadProgress(0);
                   setUploadError('사용자가 큐 처리를 취소했습니다.');
@@ -688,7 +691,7 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
                   throw new Error(cancelResult.error || '취소 실패');
                 }
               } catch (cancelError) {
-                console.error('❌ 큐 처리 취소 실패:', cancelError);
+                logger.error('❌ 큐 처리 취소 실패:', cancelError);
                 toast.error('취소 실패', {
                   description: cancelError instanceof Error ? cancelError.message : '큐 처리 취소에 실패했습니다.',
                   duration: 3000,
@@ -718,7 +721,7 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
                   .single();
                 
                 if (error) {
-                  console.error('큐 상태 조회 오류:', error);
+                  logger.error('큐 상태 조회 오류:', error);
                   if (attempts >= maxAttempts) {
                     reject(new Error('큐 상태 확인 시간 초과'));
                     return;
@@ -729,7 +732,7 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
                   return;
                 }
                 
-                console.log(`📊 큐 상태 (${attempts}/${maxAttempts}):`, job);
+                logger.log(`📊 큐 상태 (${attempts}/${maxAttempts}):`, job);
                 
                 if (job.status === 'queued') {
                   setUploadStep('saving');
@@ -749,7 +752,7 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
                   setUploadStep('completed');
                   setUploadProgress(100);
                   setUploadSuccess(true);
-                  console.log('✅ 큐 처리 완료');
+                  logger.log('✅ 큐 처리 완료');
                   if (typeof window !== 'undefined') {
                     window.dispatchEvent(new CustomEvent('docs-refresh'));
                   }
@@ -784,7 +787,7 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
                 pollTimeout = setTimeout(poll, 5000);
               } else {
                 // 타임아웃 전에 실제 작업 상태를 한 번 더 확인
-                console.warn('⚠️ 클라이언트 폴링 타임아웃 - 실제 작업 상태 최종 확인 중...');
+                logger.warn('⚠️ 클라이언트 폴링 타임아웃 - 실제 작업 상태 최종 확인 중...');
                 const { data: finalJob, error: finalError } = await supabaseClient
                   .from('processing_jobs')
                   .select('status, error, result')
@@ -794,7 +797,7 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
                 if (!finalError && finalJob) {
                   // 실제로 완료되었을 수 있음
                   if (finalJob.status === 'completed') {
-                    console.log('✅ 실제로는 이미 완료되었습니다!');
+                    logger.log('✅ 실제로는 이미 완료되었습니다!');
                     setUploadStep('completed');
                     setUploadProgress(100);
                     setUploadSuccess(true);
@@ -830,7 +833,7 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
                 }
                 
                 // 실제로도 처리 중이면 타임아웃 처리
-                console.warn('⚠️ 큐 처리 시간 초과 - 작업을 failed 상태로 업데이트합니다');
+                logger.warn('⚠️ 큐 처리 시간 초과 - 작업을 failed 상태로 업데이트합니다');
                 try {
                   await supabaseClient
                     .from('processing_jobs')
@@ -850,7 +853,7 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
                     })
                     .eq('id', documentId);
                 } catch (updateError) {
-                  console.error('큐 상태 업데이트 실패:', updateError);
+                  logger.error('큐 상태 업데이트 실패:', updateError);
                 }
                 reject(new Error('큐 처리 시간 초과 (10분)'));
               }
@@ -858,7 +861,7 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
               if (isCancelled) {
                 return;
               }
-              console.error('폴링 오류:', error);
+              logger.error('폴링 오류:', error);
               setUploadStep('error');
               setUploadError(error instanceof Error ? error.message : String(error));
               setUploadProgress(0);
@@ -934,7 +937,7 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
           result = JSON.parse(responseText);
         } catch (jsonError) {
           // JSON 파싱 실패
-          console.error('JSON 파싱 오류:', jsonError, '응답:', responseText.substring(0, 200));
+          logger.error('JSON 파싱 오류:', jsonError, '응답:', responseText.substring(0, 200));
           throw new Error(`서버 응답 파싱 오류: ${responseText.substring(0, 100)}`);
         }
       } else {
@@ -957,24 +960,24 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
       
       // 큐에 등록된 경우 (202 Accepted)
       if (res.status === 202 && result.queued) {
-        console.log('📋 큐에 등록됨:', result);
+        logger.log('📋 큐에 등록됨:', result);
         setUploadStep('saving');
         setUploadProgress(70);
         
         // 큐에 등록 후 즉시 큐 워커 트리거 (수동 처리 버튼과 동일한 방식)
         try {
-          console.log('🚀 큐 워커 즉시 트리거 시작...');
+          logger.log('🚀 큐 워커 즉시 트리거 시작...');
           const consumeRes = await fetch('/api/jobs/consume', { method: 'POST' });
           const consumeResult = await consumeRes.json();
-          console.log('✅ 큐 워커 트리거 완료:', consumeResult);
+          logger.log('✅ 큐 워커 트리거 완료:', consumeResult);
           
           if (consumeRes.ok && consumeResult.success) {
-            console.log('✅ 큐 워커 처리 성공:', consumeResult.message || '작업이 처리되었습니다.');
+            logger.log('✅ 큐 워커 처리 성공:', consumeResult.message || '작업이 처리되었습니다.');
           } else {
-            console.warn('⚠️ 큐 워커 처리 실패:', consumeResult.error || consumeResult.details || '작업 처리 중 오류가 발생했습니다.');
+            logger.warn('⚠️ 큐 워커 처리 실패:', consumeResult.error || consumeResult.details || '작업 처리 중 오류가 발생했습니다.');
           }
         } catch (consumeError) {
-          console.warn('⚠️ 큐 워커 트리거 실패 (Cron Job이 처리할 수 있음):', consumeError);
+          logger.warn('⚠️ 큐 워커 트리거 실패 (Cron Job이 처리할 수 있음):', consumeError);
           // 에러가 발생해도 폴링은 계속 진행
         }
         
@@ -1003,7 +1006,7 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
               }
               
               try {
-                console.log('🛑 큐 처리 취소 요청:', jobId);
+                logger.log('🛑 큐 처리 취소 요청:', jobId);
                 const cancelRes = await fetch('/api/jobs/action', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' },
@@ -1012,7 +1015,7 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
                 
                 const cancelResult = await cancelRes.json();
                 if (cancelRes.ok && cancelResult.success) {
-                  console.log('✅ 큐 처리 취소 완료');
+                  logger.log('✅ 큐 처리 취소 완료');
                   setUploadStep('idle');
                   setUploadProgress(0);
                   setUploadError('사용자가 큐 처리를 취소했습니다.');
@@ -1039,7 +1042,7 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
                   throw new Error(cancelResult.error || '취소 실패');
                 }
               } catch (cancelError) {
-                console.error('❌ 큐 처리 취소 실패:', cancelError);
+                logger.error('❌ 큐 처리 취소 실패:', cancelError);
                 toast.error('취소 실패', {
                   description: cancelError instanceof Error ? cancelError.message : '큐 처리 취소에 실패했습니다.',
                   duration: 3000,
@@ -1072,7 +1075,7 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
                   .single();
                 
                 if (error) {
-                  console.error('큐 상태 조회 오류:', error);
+                  logger.error('큐 상태 조회 오류:', error);
                   if (attempts >= maxAttempts) {
                     reject(new Error('큐 상태 확인 시간 초과'));
                     return;
@@ -1083,7 +1086,7 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
                   return;
                 }
                 
-                console.log(`📊 큐 상태 (${attempts}/${maxAttempts}):`, job);
+                logger.log(`📊 큐 상태 (${attempts}/${maxAttempts}):`, job);
                 
                 // 상태 업데이트
                 if (job.status === 'queued') {
@@ -1104,7 +1107,7 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
                   setUploadStep('completed');
                   setUploadProgress(100);
                   setUploadSuccess(true);
-                  console.log('✅ 큐 처리 완료');
+                  logger.log('✅ 큐 처리 완료');
                   
                   // 문서 목록 새로고침
                   if (typeof window !== 'undefined') {
@@ -1145,7 +1148,7 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
                   pollTimeout = setTimeout(poll, 5000); // 5초마다 확인
                 } else {
                   // 타임아웃 전에 실제 작업 상태를 한 번 더 확인
-                  console.warn('⚠️ 클라이언트 폴링 타임아웃 - 실제 작업 상태 최종 확인 중...');
+                  logger.warn('⚠️ 클라이언트 폴링 타임아웃 - 실제 작업 상태 최종 확인 중...');
                   const { data: finalJob, error: finalError } = await supabaseClient
                     .from('processing_jobs')
                     .select('status, error, result')
@@ -1155,7 +1158,7 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
                   if (!finalError && finalJob) {
                     // 실제로 완료되었을 수 있음
                     if (finalJob.status === 'completed') {
-                      console.log('✅ 실제로는 이미 완료되었습니다!');
+                      logger.log('✅ 실제로는 이미 완료되었습니다!');
                       setUploadStep('completed');
                       setUploadProgress(100);
                       setUploadSuccess(true);
@@ -1194,7 +1197,7 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
                   }
                   
                   // 실제로도 처리 중이면 타임아웃 처리
-                  console.warn('⚠️ 큐 처리 시간 초과 - 작업을 failed 상태로 업데이트합니다');
+                  logger.warn('⚠️ 큐 처리 시간 초과 - 작업을 failed 상태로 업데이트합니다');
                   try {
                     await supabaseClient
                       .from('processing_jobs')
@@ -1215,7 +1218,7 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
                       })
                       .eq('id', documentId);
                   } catch (updateError) {
-                    console.error('큐 상태 업데이트 실패:', updateError);
+                    logger.error('큐 상태 업데이트 실패:', updateError);
                   }
                   setCurrentJobId(null);
                   setCurrentDocumentId(null);
@@ -1225,7 +1228,7 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
                 if (isCancelled) {
                   return;
                 }
-                console.error('폴링 오류:', error);
+                logger.error('폴링 오류:', error);
                 setUploadStep('error');
                 setUploadError(error instanceof Error ? error.message : String(error));
                 setUploadProgress(0);
@@ -1264,7 +1267,7 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
       setUploadStep('completed');
       setUploadProgress(100);
       setUploadSuccess(true);
-      console.log('✅ 업로드 성공:', result);
+      logger.log('✅ 업로드 성공:', result);
       
       // 문서 목록 새로고침 트리거 (전역 이벤트)
       if (typeof window !== 'undefined') {
@@ -1303,12 +1306,12 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
         if (!uploadFile) continue;
         
         try {
-          await uploadSingleFile(uploadFile, i, filesToUpload.length);
+        await uploadSingleFile(uploadFile, i, filesToUpload.length);
           uploadResults.push({ fileName: uploadFile.name, success: true });
         } catch (fileError) {
           // 개별 파일 업로드 실패 시에도 다음 파일로 계속 진행
           const errorMessage = fileError instanceof Error ? fileError.message : String(fileError);
-          console.error(`파일 업로드 실패 (${uploadFile.name}):`, fileError);
+          logger.error(`파일 업로드 실패 (${uploadFile.name}):`, fileError);
           
           uploadResults.push({ 
             fileName: uploadFile.name, 
@@ -1363,23 +1366,24 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
       }
     } catch (e) {
       // 예상치 못한 전체 업로드 프로세스 에러
-      console.error("upload error", e);
-      setUploadStep('error');
       const errorMessage = e instanceof Error ? e.message : String(e);
+      logger.error("upload error", e);
+      setUploadStep('error');
       setUploadError(errorMessage);
       setUploadProgress(0);
       
       toast.error('업로드 프로세스 오류', {
+        title: '파일 업로드 실패',
         description: errorMessage,
         duration: 5000,
       });
     } finally {
       setUploading(false);
     }
-  };
+  }, [vendors]);
 
   // 드래그 앤 드롭 핸들러
-  const handleDrag = (e: React.DragEvent) => {
+  const handleDrag = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     if (e.type === "dragenter" || e.type === "dragover") {
@@ -1387,9 +1391,9 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
     } else if (e.type === "dragleave") {
       setDragActive(false);
     }
-  };
+  }, []);
 
-  const handleDrop = (e: React.DragEvent) => {
+  const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     e.stopPropagation();
     setDragActive(false);
@@ -1411,16 +1415,16 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
         });
       }
     }
-  };
+  }, [handleUpload]);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
       const files = Array.from(e.target.files);
       setSelectedFiles(files);
     }
-  };
+  }, []);
 
-  const handleCrawl = async () => {
+  const handleCrawl = useCallback(async () => {
     try {
       setCrawling(true);
       setCrawlProgressValue(12);
@@ -1452,7 +1456,7 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
       const dbVendors = convertVendorsToDB(vendors);
       
       // 디버깅: extractSubPages 값 확인
-      console.log('🔍 크롤링 시작 전 extractSubPages 확인:', {
+      logger.log('🔍 크롤링 시작 전 extractSubPages 확인:', {
         extractSubPages,
         extractSubPagesType: typeof extractSubPages,
         crawlOptions,
@@ -1472,7 +1476,7 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
         extractSubPages: extractSubPagesBoolean, // 명시적으로 boolean으로 변환
       };
       
-      console.log('📤 CRAWL_SEED payload:', {
+      logger.log('📤 CRAWL_SEED payload:', {
         ...payload,
         extractSubPagesOriginal: extractSubPages,
         extractSubPagesType: typeof extractSubPages,
@@ -1556,9 +1560,9 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
           window.dispatchEvent(new CustomEvent('queue-refresh'));
         }
 
-        console.log('✅ 크롤링 큐 워커 트리거 완료:', consumeResult);
+        logger.log('✅ 크롤링 큐 워커 트리거 완료:', consumeResult);
       } catch (consumeError) {
-        console.warn('⚠️ 크롤링 큐 워커 트리거 실패 (Cron Job이 처리할 수 있음):', consumeError);
+        logger.warn('⚠️ 크롤링 큐 워커 트리거 실패 (Cron Job이 처리할 수 있음):', consumeError);
         toast.info('큐 워커 실행을 곧 자동으로 재시도합니다', {
           description: 'Cron Job이 곧 처리할 예정입니다.',
           duration: 4000,
@@ -1570,7 +1574,7 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
         pollCrawlStatus(jobId);
       }
     } catch (e) {
-      console.error("crawl enqueue error", e);
+      logger.error("crawl enqueue error", e);
       const errorMessage = e instanceof Error ? e.message : '크롤링 작업 등록에 실패했습니다';
       toast.error(errorMessage, { duration: 5000 });
       setCrawlProgressLabel('크롤링 실패');
@@ -1579,23 +1583,25 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
     } finally {
       setCrawling(false);
     }
-  };
+  }, [vendors, extractSubPages, crawlOptions, pollCrawlStatus]);
 
   return (
     <Tabs defaultValue="upload" className="w-full">
-      <TabsList className="grid grid-cols-2 w-full bg-gray-800/50 border-gray-700">
+      <TabsList className="grid grid-cols-2 w-full bg-gray-800/50 border-gray-700" role="tablist" aria-label="업로드 및 크롤링 탭">
         <TabsTrigger 
           value="upload" 
           className="flex items-center space-x-2 data-[state=active]:bg-blue-600 data-[state=active]:text-white"
+          aria-label="파일 업로드 탭"
         >
-          <Upload className="w-4 h-4" />
+          <Upload className="w-4 h-4" aria-hidden="true" />
           <span>파일 업로드</span>
         </TabsTrigger>
         <TabsTrigger 
           value="crawl" 
           className="flex items-center space-x-2 data-[state=active]:bg-blue-600 data-[state=active]:text-white"
+          aria-label="URL 크롤링 탭"
         >
-          <Globe className="w-4 h-4" />
+          <Globe className="w-4 h-4" aria-hidden="true" />
           <span>URL 크롤링</span>
         </TabsTrigger>
       </TabsList>
@@ -1711,15 +1717,15 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
                 {/* 단계별 상세 정보 */}
                 {uploadStep !== 'completed' && uploadStep !== 'error' && (
                   <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2 text-xs text-muted-enhanced">
-                      <Loader2 className="w-3 h-3 animate-spin" />
-                      <span>
-                        {uploadStep === 'uploading' && '서버로 파일 전송 중...'}
-                        {uploadStep === 'extracting' && 'PDF/DOCX에서 텍스트 추출 중...'}
-                        {uploadStep === 'chunking' && '문서를 의미 단위로 분할 중...'}
-                        {uploadStep === 'embedding' && '벡터 임베딩 생성 중...'}
-                        {uploadStep === 'saving' && '큐에서 처리 중입니다. 잠시만 기다려주세요...'}
-                      </span>
+                  <div className="flex items-center gap-2 text-xs text-muted-enhanced">
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    <span>
+                      {uploadStep === 'uploading' && '서버로 파일 전송 중...'}
+                      {uploadStep === 'extracting' && 'PDF/DOCX에서 텍스트 추출 중...'}
+                      {uploadStep === 'chunking' && '문서를 의미 단위로 분할 중...'}
+                      {uploadStep === 'embedding' && '벡터 임베딩 생성 중...'}
+                      {uploadStep === 'saving' && '큐에서 처리 중입니다. 잠시만 기다려주세요...'}
+                    </span>
                     </div>
                     {/* 큐 처리 중일 때만 취소 버튼 표시 */}
                     {uploadStep === 'saving' && currentJobId && (
@@ -1733,7 +1739,7 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
                             // AbortController를 통해 취소 핸들러 트리거
                             pollingAbortControllerRef.current.abort();
                           } catch (error) {
-                            console.error('취소 버튼 클릭 오류:', error);
+                            logger.error('취소 버튼 클릭 오류:', error);
                             toast.error('취소 실패', {
                               description: '큐 처리 취소에 실패했습니다.',
                               duration: 3000,
@@ -1977,58 +1983,61 @@ function DocsToolbar({
   const isLoadingState = isLoading ?? false;
   const toolbarButtonClass = "bg-gray-800/50 border-gray-600 text-white hover:bg-gray-700/50";
   const exportButtonClass = "bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700";
-  const searchInputClass = "h-11 rounded-xl border border-white/10 bg-gradient-to-r from-gray-900/80 via-gray-900/60 to-gray-900/80 pl-11 pr-4 text-sm text-white placeholder-gray-500 shadow-inner focus:outline-none focus:ring-2 focus:ring-blue-500/60 focus:border-transparent transition-all";
+  const searchInputClass = "h-11 rounded-xl border border-white/10 bg-gradient-to-r from-gray-900/80 via-gray-900/60 to-gray-900/80 pl-11 pr-4 text-sm text-white placeholder:text-gray-300 placeholder:opacity-80 shadow-inner focus:outline-none focus:ring-2 focus:ring-blue-500/60 focus:border-transparent transition-all";
   const selectTriggerClass = "h-11 rounded-xl border border-white/10 bg-gray-900/70 text-sm text-white hover:bg-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500/60 focus:border-transparent transition-all";
 
   return (
     <Card className="card-enhanced">
-      <CardContent className="py-3">
-        <div className="flex flex-wrap items-center gap-3">
-          <div className="relative flex-1 min-w-[200px]">
+      <CardContent className="py-3 sm:py-4">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
+          <div className="relative flex-1 min-w-0">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-300/70" />
             <Input 
               className={searchInputClass}
               placeholder="문서 제목, URL, 메타데이터 검색" 
               value={searchQuery}
               onChange={(e) => onSearchQueryChange(e.target.value)}
+              aria-label="문서 검색"
             />
           </div>
-          <Select value={statusFilter} onValueChange={onStatusFilterChange}>
-            <SelectTrigger className={selectTriggerClass}>
-              <SelectValue placeholder="상태" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">모두</SelectItem>
-              <SelectItem value="indexed">indexed</SelectItem>
-              <SelectItem value="processing">processing</SelectItem>
-              <SelectItem value="failed">failed</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select value={typeFilter} onValueChange={onTypeFilterChange}>
-            <SelectTrigger className={selectTriggerClass}>
-              <SelectValue placeholder="유형" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">모두</SelectItem>
-              <SelectItem value="pdf">pdf</SelectItem>
-              <SelectItem value="docx">docx</SelectItem>
-              <SelectItem value="txt">txt</SelectItem>
-              <SelectItem value="url">url</SelectItem>
-            </SelectContent>
-          </Select>
-          <Select value={viewMode} onValueChange={(v) => onViewModeChange(v as any)}>
-            <SelectTrigger className={selectTriggerClass}>
-              <SelectValue placeholder="보기" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="card">카드</SelectItem>
-              <SelectItem value="list">리스트</SelectItem>
-            </SelectContent>
-          </Select>
-          <div className="ml-auto flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+            <Select value={statusFilter} onValueChange={onStatusFilterChange}>
+              <SelectTrigger className={selectTriggerClass + " w-full sm:w-auto min-w-[120px]"} aria-label="상태 필터">
+                <SelectValue placeholder="상태" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">모두</SelectItem>
+                <SelectItem value="indexed">indexed</SelectItem>
+                <SelectItem value="processing">processing</SelectItem>
+                <SelectItem value="failed">failed</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={typeFilter} onValueChange={onTypeFilterChange}>
+              <SelectTrigger className={selectTriggerClass + " w-full sm:w-auto min-w-[120px]"} aria-label="유형 필터">
+                <SelectValue placeholder="유형" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">모두</SelectItem>
+                <SelectItem value="pdf">pdf</SelectItem>
+                <SelectItem value="docx">docx</SelectItem>
+                <SelectItem value="txt">txt</SelectItem>
+                <SelectItem value="url">url</SelectItem>
+              </SelectContent>
+            </Select>
+            <Select value={viewMode} onValueChange={(v) => onViewModeChange(v as any)}>
+              <SelectTrigger className={selectTriggerClass + " w-full sm:w-auto min-w-[120px]"} aria-label="보기 모드">
+                <SelectValue placeholder="보기" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="card">카드</SelectItem>
+                <SelectItem value="list">리스트</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex items-center gap-2 w-full sm:w-auto">
             <Button 
               variant="outline"
-              className={toolbarButtonClass}
+              className={toolbarButtonClass + " flex-1 sm:flex-initial"}
               disabled={isLoadingState}
               onClick={() => {
                 if (typeof window !== 'undefined') {
@@ -2036,20 +2045,22 @@ function DocsToolbar({
                   toast.success('문서 목록을 새로 고침했습니다', { duration: 2000 });
                 }
               }}
+              aria-label="문서 목록 새로고침"
             >
-              <RefreshCw className={`w-4 h-4 mr-2 ${isLoadingState ? 'animate-spin' : ''}`} /> 
-              새로고침
+              <RefreshCw className={`w-4 h-4 sm:mr-2 ${isLoadingState ? 'animate-spin' : ''}`} /> 
+              <span className="hidden sm:inline">새로고침</span>
             </Button>
             <Button 
-              className={exportButtonClass}
+              className={exportButtonClass + " flex-1 sm:flex-initial"}
               onClick={() => {
                 if (typeof window !== 'undefined') {
                   window.dispatchEvent(new CustomEvent('docs-export'));
                 }
               }}
+              aria-label="문서 내보내기"
             >
-              <Download className="w-4 h-4 mr-2" /> 
-              내보내기
+              <Download className="w-4 h-4 sm:mr-2" /> 
+              <span className="hidden sm:inline">내보내기</span>
             </Button>
           </div>
         </div>
@@ -2075,10 +2086,10 @@ function DocsTable({
 }) {
   const supabase = useMemo(() => createClient(), []);
   
-  // 컴포넌트 마운트 시 즉시 로그 출력
+  // 컴포넌트 마운트 시 디버그 로그 (개발 모드 전용)
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      console.log('[그룹화] 🔥 DocsTable 컴포넌트 마운트됨 (클라이언트)', {
+      logger.log('[그룹화] DocsTable 컴포넌트 마운트됨', {
         timestamp: new Date().toISOString(),
         vendors,
         statusFilter,
@@ -2087,7 +2098,7 @@ function DocsTable({
         searchQuery
       });
     }
-  }, []);
+  }, [vendors, statusFilter, typeFilter, viewMode, searchQuery]);
   
   // 큐 처리 중인 문서 ID 목록 조회
   const { data: queuedDocumentIds } = useQuery({
@@ -2099,7 +2110,7 @@ function DocsTable({
         .in("status", ["queued", "processing"]);
       
       if (error) {
-        console.error('큐 문서 조회 오류:', error);
+        logger.error('큐 문서 조회 오류:', error);
         return [];
       }
       
@@ -2134,7 +2145,7 @@ function DocsTable({
       
       // 디버깅: 쿼리 결과 확인
       if (typeof window !== 'undefined' && documents && documents.length > 0) {
-        console.log('[그룹화] 🔍 데이터베이스 쿼리 결과:', {
+        logger.log('[그룹화] 🔍 데이터베이스 쿼리 결과:', {
           totalDocuments: documents.length,
           sampleDocument: {
             id: documents[0].id,
@@ -2160,7 +2171,7 @@ function DocsTable({
         .not("document_id", "is", null);
       
       if (mainUrlError) {
-        console.error('[그룹화] ❌ 메인 URL 조회 실패:', mainUrlError);
+        logger.error('[그룹화] ❌ 메인 URL 조회 실패:', mainUrlError);
       }
       
       // document_id -> 메인 URL 매핑 생성 (정규화 정보 포함)
@@ -2178,7 +2189,7 @@ function DocsTable({
               };
             }
           } catch (e) {
-            console.error('[그룹화] ⚠️ payload 파싱 실패:', job.document_id, e);
+            logger.error('[그룹화] ⚠️ payload 파싱 실패:', job.document_id, e);
           }
         }
       }
@@ -2189,7 +2200,7 @@ function DocsTable({
         normalized: info.normalized ?? normalizeUrlForGrouping(info.original),
       }));
       
-      console.log('[그룹화] 📊 메인 URL 매핑:', {
+      logger.log('[그룹화] 📊 메인 URL 매핑:', {
         mainUrlMapCount: mainUrlMap?.length || 0,
         mainUrlByIdCount: Object.keys(mainUrlById).length,
         normalizedMainUrlCount: mainUrlEntries.filter((entry) => !!entry.normalized).length,
@@ -2255,7 +2266,7 @@ function DocsTable({
       const urlTypeWithUrl = documentsWithMainUrl.filter(d => d.type === 'url' && (d.url || d.normalizedUrl)).length;
       
       if (typeof window !== 'undefined') {
-        console.log('[그룹화] 📊 메인 URL 정보 추가 완료:', {
+        logger.log('[그룹화] 📊 메인 URL 정보 추가 완료:', {
           totalDocuments: documentsWithMainUrl.length,
           mainDocsCount,
           subDocsCount,
@@ -2395,7 +2406,7 @@ function DocsTable({
   // 컴포넌트 마운트 및 데이터 로딩 상태 확인
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      console.log('[그룹화] 🎯 데이터 로딩 상태 (클라이언트):', {
+      logger.log('[그룹화] 🎯 데이터 로딩 상태 (클라이언트):', {
         isLoading,
         dataLength: data?.length,
         dataIsArray: Array.isArray(data),
@@ -2425,7 +2436,7 @@ function DocsTable({
   const sortedData = useMemo(() => {
     if (!sortColumn || !filteredData) {
       if (typeof window !== 'undefined') {
-        console.log('[그룹화] 📋 sortedData 생성 (정렬 없음):', { filteredDataLength: filteredData?.length, sortColumn, filteredDataIsArray: Array.isArray(filteredData) });
+        logger.log('[그룹화] 📋 sortedData 생성 (정렬 없음):', { filteredDataLength: filteredData?.length, sortColumn, filteredDataIsArray: Array.isArray(filteredData) });
       }
       return filteredData || [];
     }
@@ -2465,7 +2476,7 @@ function DocsTable({
   // 메인 페이지와 하위 페이지를 그룹화하는 함수 (메인 URL 기준)
   const groupDocumentsByParent = useMemo(() => {
     if (typeof window !== 'undefined') {
-      console.log('[그룹화] 🚀 그룹화 로직 시작 (메인 URL 기준) - 클라이언트:', { 
+      logger.log('[그룹화] 🚀 그룹화 로직 시작 (메인 URL 기준) - 클라이언트:', { 
         sortedDataLength: sortedData?.length, 
         sortedDataIsArray: Array.isArray(sortedData),
         sortedDataType: typeof sortedData,
@@ -2483,7 +2494,7 @@ function DocsTable({
     }
     const rows = Array.isArray(sortedData) ? sortedData : [];
     if (typeof window !== 'undefined') {
-      console.log('[그룹화] 📊 입력 데이터:', { 
+      logger.log('[그룹화] 📊 입력 데이터:', { 
         totalRows: rows.length,
         firstRow: rows[0] ? { 
           id: rows[0].id, 
@@ -2519,7 +2530,7 @@ function DocsTable({
           };
           // 각 sampleRow를 개별 로그로 출력하여 확실히 확인
           if (typeof window !== 'undefined') {
-            console.log('[그룹화] 📋 sampleRow 상세:', result);
+            logger.log('[그룹화] 📋 sampleRow 상세:', result);
           }
           return result;
         })
@@ -2531,7 +2542,7 @@ function DocsTable({
       const urlExists = !!(row.url || row.normalizedUrl);
       const combined = typeMatch && urlExists;
       if (typeof window !== 'undefined' && !combined && (row.url || row.normalizedUrl)) {
-        console.log('[그룹화] ⚠️ URL 문서 필터링 실패:', {
+        logger.log('[그룹화] ⚠️ URL 문서 필터링 실패:', {
           id: row.id,
           type: row.type,
           typeValue: String(row.type || ''),
@@ -2546,7 +2557,7 @@ function DocsTable({
     });
     const nonUrlDocuments = rows.filter((row: any) => row.type !== 'url' || !(row.url || row.normalizedUrl));
     if (typeof window !== 'undefined') {
-      console.log('[그룹화] 📋 필터링 결과:', { 
+      logger.log('[그룹화] 📋 필터링 결과:', { 
         urlDocuments: urlDocuments.length, 
         nonUrlDocuments: nonUrlDocuments.length,
         urlDocumentsSample: urlDocuments.slice(0, 3).map((d: any) => ({
@@ -2593,7 +2604,7 @@ function DocsTable({
           fallbackSubPagesByKey[normalizedSelf] = fallbackSubPagesByKey[normalizedSelf] || [];
         }
         if (typeof window !== 'undefined') {
-          console.log('[그룹화] ✅ 메인 페이지 확정:', { 
+          logger.log('[그룹화] ✅ 메인 페이지 확정:', { 
             title: doc.title, 
             url: doc.url,
             mainUrl: doc.mainUrl,
@@ -2621,7 +2632,7 @@ function DocsTable({
           fallbackSubPagesByKey[normalizedParentKey].push(doc);
         }
         if (typeof window !== 'undefined') {
-          console.log('[그룹화] ✅ 하위 페이지 연결 (ID 매칭):', { 
+          logger.log('[그룹화] ✅ 하위 페이지 연결 (ID 매칭):', { 
             child: doc.title, 
             childUrl: doc.url,
             normalizedChildUrl: normalizedSelf,
@@ -2651,7 +2662,7 @@ function DocsTable({
           fallbackSubPagesByKey[normalizedParentKey].push(doc);
           
           if (typeof window !== 'undefined') {
-            console.log('[그룹화] ✅ 하위 페이지 연결 (정규화 매칭):', {
+            logger.log('[그룹화] ✅ 하위 페이지 연결 (정규화 매칭):', {
               child: doc.title,
               childUrl: doc.url,
               normalizedChildUrl: normalizedSelf,
@@ -2678,7 +2689,7 @@ function DocsTable({
             fallbackSubPagesByKey[candidateNormalized].push(doc);
             matched = true;
             if (typeof window !== 'undefined') {
-              console.log('[그룹화] 🔍 하위 페이지 추론 (경로 기반):', {
+              logger.log('[그룹화] 🔍 하위 페이지 추론 (경로 기반):', {
                 child: doc.title,
                 childUrl: doc.url,
                 normalizedChildUrl: normalizedSelf,
@@ -2704,7 +2715,7 @@ function DocsTable({
           fallbackSubPagesByKey[normalizedSelf] = fallbackSubPagesByKey[normalizedSelf] || [];
         }
         if (typeof window !== 'undefined') {
-          console.log('[그룹화] ⚠️ 메인 페이지로 승격 (부모 미발견):', {
+          logger.log('[그룹화] ⚠️ 메인 페이지로 승격 (부모 미발견):', {
             title: doc.title,
             url: doc.url,
             normalizedUrl: normalizedSelf,
@@ -2761,7 +2772,7 @@ function DocsTable({
         groupedDocIds.add(mainDoc.id);
         combinedSubDocs.forEach((subDoc) => groupedDocIds.add(subDoc.id));
         if (typeof window !== 'undefined') {
-          console.log('[그룹화] 📦 그룹 생성:', {
+          logger.log('[그룹화] 📦 그룹 생성:', {
             mainTitle: mainDoc.title,
             mainUrl: mainDoc.url,
             normalizedMainUrl: mainDoc.normalizedMainUrl,
@@ -2778,7 +2789,7 @@ function DocsTable({
         grouped.push({ isGroup: false, doc: mainDoc });
         groupedDocIds.add(mainDoc.id);
         if (typeof window !== 'undefined') {
-          console.log('[그룹화] ⚠️ 그룹 생성 실패 - 하위 페이지 없음:', {
+          logger.log('[그룹화] ⚠️ 그룹 생성 실패 - 하위 페이지 없음:', {
             mainTitle: mainDoc.title,
             mainDocUrl: mainDoc.url,
             normalizedMainUrl: mainDoc.normalizedMainUrl,
@@ -2804,7 +2815,7 @@ function DocsTable({
       const totalSubPages = grouped
         .filter((g: any) => g.isGroup)
         .reduce((acc: number, g: any) => acc + (g.subDocs?.length || 0), 0);
-      console.log('[그룹화] 📊 최종 결과:', { 
+      logger.log('[그룹화] 📊 최종 결과:', { 
         totalRows: rows.length, 
         urlDocuments: urlDocuments.length, 
         mainPages: mainPages.length, 
@@ -2813,7 +2824,7 @@ function DocsTable({
         totalSubPages,
       });
       if (mainPages.length > 0) {
-        console.log('[그룹화] 메인 페이지 예시:', mainPages.slice(0, 5).map(m => ({ 
+        logger.log('[그룹화] 메인 페이지 예시:', mainPages.slice(0, 5).map(m => ({ 
           title: m.title, 
           url: m.url,
           normalizedUrl: m.normalizedUrl,
@@ -2829,7 +2840,7 @@ function DocsTable({
   // 렌더링 시 그룹화 결과 로그
   useEffect(() => {
     if (typeof window !== 'undefined') {
-      console.log('[그룹화] 🎨 렌더링 준비:', { 
+      logger.log('[그룹화] 🎨 렌더링 준비:', { 
         groupDocumentsByParentLength: groupDocumentsByParent?.length,
         groupDocumentsByParentIsArray: Array.isArray(groupDocumentsByParent),
         groupsWithSubPages: groupDocumentsByParent?.filter((g: any) => g.isGroup).length,
@@ -2861,7 +2872,7 @@ function DocsTable({
           }
 
           if (typeof window !== 'undefined') {
-            console.log('[그룹화] 🔄 expandedGroups 기본값 설정:', {
+            logger.log('[그룹화] 🔄 expandedGroups 기본값 설정:', {
               defaultExpandedIds: Array.from(defaultExpanded),
             });
           }
@@ -2934,7 +2945,7 @@ function DocsTable({
   // 업로드 성공 후 문서 목록 새로고침 이벤트 수신
   useEffect(() => {
     const handler = () => {
-      console.log('🔄 문서 목록 새로고침 트리거됨');
+      logger.log('🔄 문서 목록 새로고침 트리거됨');
       refetch();
     };
     if (typeof window !== 'undefined') {
@@ -2950,7 +2961,7 @@ function DocsTable({
   // 새로고침 버튼 클릭 이벤트 수신
   useEffect(() => {
     const handler = async () => {
-      console.log('🔄 새로고침 버튼 클릭됨');
+      logger.log('🔄 새로고침 버튼 클릭됨');
       if (onRefreshStateChange) {
         onRefreshStateChange(true);
       }
@@ -2999,7 +3010,7 @@ function DocsTable({
           (doc: any) => doc.status === 'processing' || doc.status === 'pending'
         );
         if (processingDocs.length > 0) {
-          console.log(`📋 진행 중인 문서 ${processingDocs.length}개 발견`);
+          logger.log(`📋 진행 중인 문서 ${processingDocs.length}개 발견`);
           
           // 진행 중인 문서가 있으면 알림 표시 (다시보지 않기 옵션 포함)
           const toastId = toast.info('문서 처리 진행 중', {
@@ -3182,7 +3193,7 @@ function DocsTable({
       setSubPagesCache(prev => ({ ...prev, [documentId]: enrichedSubPages }));
       return enrichedSubPages;
     } catch (error) {
-      console.error('서브 페이지 조회 오류:', error);
+      logger.error('서브 페이지 조회 오류:', error);
       setSubPagesCache(prev => ({ ...prev, [documentId]: [] }));
       return [];
     }
@@ -3293,7 +3304,7 @@ function DocsTable({
         window.dispatchEvent(new CustomEvent('docs-refresh'));
       }
     } catch (error) {
-      console.error('일괄 재처리 오류:', error);
+      logger.error('일괄 재처리 오류:', error);
       toast.error('일괄 재처리 오류', {
         description: error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.',
         duration: 5000,
@@ -3328,7 +3339,7 @@ function DocsTable({
         .in('document_id', selectedIds);
 
       if (chunksError) {
-        console.warn('청크 삭제 오류:', chunksError);
+        logger.warn('청크 삭제 오류:', chunksError);
       }
 
       const { error: docError } = await supabase
@@ -3351,7 +3362,7 @@ function DocsTable({
       
       refetch();
     } catch (error) {
-      console.error('문서 삭제 오류:', error);
+      logger.error('문서 삭제 오류:', error);
       toast.error('문서 삭제 실패', {
         description: error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.',
         duration: 5000,
@@ -3662,7 +3673,7 @@ function DocsTable({
                     const length = groupDocumentsByParent?.length ?? 0;
                     const groupsCount = groupDocumentsByParent?.filter((g: any) => g.isGroup).length ?? 0;
                     if (typeof window !== 'undefined') {
-                      console.log('[그룹화] 🎨 렌더링 시작 (클라이언트):', { 
+                      logger.log('[그룹화] 🎨 렌더링 시작 (클라이언트):', { 
                         isArray, 
                         length, 
                         groupsCount,
@@ -3694,7 +3705,7 @@ function DocsTable({
                       
                       // 디버깅: 렌더링 시점의 그룹 정보 확인
                       if (typeof window !== 'undefined' && groupIdx === 0) {
-                        console.log('[그룹화] 🎯 그룹 렌더링:', {
+                        logger.log('[그룹화] 🎯 그룹 렌더링:', {
                           mainDocId: mainDoc.id,
                           mainDocTitle: mainDoc.title?.substring(0, 50),
                           mainDocUrl: mainDoc.url,
@@ -4031,7 +4042,7 @@ function QueueMiniPanel({ vendors }: { vendors: string[] }) {
                   window.dispatchEvent(new CustomEvent('docs-refresh'));
                 }
               } catch (error) {
-                console.error('큐 처리 오류:', error);
+                logger.error('큐 처리 오류:', error);
                 toast.error('큐 처리 오류', {
                   description: error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.',
                   duration: 5000,
@@ -4057,6 +4068,7 @@ function QueueMiniPanel({ vendors }: { vendors: string[] }) {
             variant="outline"
             className={retryActionClass}
             disabled={retryingFailed || failed === 0}
+            aria-label={failed === 0 ? "실패한 작업이 없습니다" : "실패한 작업 재시도"}
             onClick={async () => {
               if (retryingFailed || failed === 0) return;
               
@@ -4105,7 +4117,7 @@ function QueueMiniPanel({ vendors }: { vendors: string[] }) {
                   window.dispatchEvent(new CustomEvent('docs-refresh'));
                 }
               } catch (error) {
-                console.error('재시도 오류:', error);
+                logger.error('재시도 오류:', error);
                 toast.error('재시작 실패', {
                   description: error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.',
                   duration: 5000,
@@ -4164,7 +4176,7 @@ function DeleteAllDocumentsButton() {
         });
       }
     } catch (error) {
-      console.error('삭제 오류:', error);
+      logger.error('삭제 오류:', error);
       toast.error('삭제 오류', {
         description: error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.',
         duration: 5000,
@@ -4453,7 +4465,7 @@ function DocumentDetailDialog({ detail, onClose, onRefetch }: { detail: any | nu
 
   const resolvedDocumentUrl = useMemo(() => {
     if (typeof window !== 'undefined') {
-      console.log('[미리보기] ✅ 상세 데이터 스냅샷:', {
+      logger.log('[미리보기] ✅ 상세 데이터 스냅샷:', {
         fullDocUrl: fullDoc?.url,
         detailUrl: detail?.url,
         normalizedFullDocUrl: (fullDoc as any)?.normalizedUrl,
@@ -4527,14 +4539,14 @@ function DocumentDetailDialog({ detail, onClose, onRefetch }: { detail: any | nu
       .map((value) => value.trim());
 
     if (typeof window !== 'undefined') {
-      console.log('[미리보기] 후보 URL 목록 (정제 전):', candidateValues);
-      console.log('[미리보기] 후보 URL 목록 (정제 후):', cleanedCandidates);
+      logger.log('[미리보기] 후보 URL 목록 (정제 전):', candidateValues);
+      logger.log('[미리보기] 후보 URL 목록 (정제 후):', cleanedCandidates);
     }
 
     const absoluteUrl = cleanedCandidates.find((candidate) => /^https?:\/\//i.test(candidate));
     if (absoluteUrl) {
       if (typeof window !== 'undefined') {
-        console.log('[미리보기] 선택된 URL (절대 경로):', absoluteUrl);
+        logger.log('[미리보기] 선택된 URL (절대 경로):', absoluteUrl);
       }
       return absoluteUrl;
     }
@@ -4543,7 +4555,7 @@ function DocumentDetailDialog({ detail, onClose, onRefetch }: { detail: any | nu
     if (prefixedUrl) {
       const normalized = `https://${prefixedUrl.replace(/^\s*www\./i, 'www.')}`;
       if (typeof window !== 'undefined') {
-        console.log('[미리보기] 선택된 URL (www):', normalized);
+        logger.log('[미리보기] 선택된 URL (www):', normalized);
       }
       return normalized;
     }
@@ -4552,14 +4564,14 @@ function DocumentDetailDialog({ detail, onClose, onRefetch }: { detail: any | nu
     if (protocolRelative) {
       const normalized = `https:${protocolRelative}`;
       if (typeof window !== 'undefined') {
-        console.log('[미리보기] 선택된 URL (protocol-relative):', normalized);
+        logger.log('[미리보기] 선택된 URL (protocol-relative):', normalized);
       }
       return normalized;
     }
 
     if (typeof window !== 'undefined') {
-      console.log('[미리보기] URL 후보 목록:', cleanedCandidates);
-      console.log('[미리보기] 선택된 URL 없음');
+      logger.log('[미리보기] URL 후보 목록:', cleanedCandidates);
+      logger.log('[미리보기] 선택된 URL 없음');
     }
 
     return null;
@@ -4581,7 +4593,7 @@ function DocumentDetailDialog({ detail, onClose, onRefetch }: { detail: any | nu
           .maybeSingle();
 
         if (error) {
-          console.error('[미리보기] Fallback URL 조회 실패:', error);
+          logger.error('[미리보기] Fallback URL 조회 실패:', error);
           return;
         }
 
@@ -4619,18 +4631,18 @@ function DocumentDetailDialog({ detail, onClose, onRefetch }: { detail: any | nu
 
             if (resolved) {
               if (typeof window !== 'undefined') {
-                console.log('[미리보기] Fallback URL 선택:', resolved);
+                logger.log('[미리보기] Fallback URL 선택:', resolved);
               }
               setFallbackUrl(resolved);
             }
           }
 
           if (typeof window !== 'undefined') {
-            console.log('[미리보기] Fallback 후보 목록:', cleaned);
+            logger.log('[미리보기] Fallback 후보 목록:', cleaned);
           }
         }
       } catch (fallbackError) {
-        console.error('[미리보기] Fallback URL 처리 오류:', fallbackError);
+        logger.error('[미리보기] Fallback URL 처리 오류:', fallbackError);
       }
     };
 
@@ -4882,7 +4894,7 @@ function DocumentDetailDialog({ detail, onClose, onRefetch }: { detail: any | nu
                           .eq('document_id', detail.id);
                         
                         if (deleteChunksError) {
-                          console.warn('기존 청크 삭제 실패 (무시):', deleteChunksError);
+                          logger.warn('기존 청크 삭제 실패 (무시):', deleteChunksError);
                         }
                         
                         // 문서 상태를 pending으로 변경
@@ -4930,7 +4942,7 @@ function DocumentDetailDialog({ detail, onClose, onRefetch }: { detail: any | nu
                           });
                         }
                       } catch (error) {
-                        console.error('재처리 오류:', error);
+                        logger.error('재처리 오류:', error);
                         toast.error('재처리 오류', {
                           description: error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.',
                           duration: 5000,
@@ -5122,7 +5134,7 @@ function DocumentDetailDialog({ detail, onClose, onRefetch }: { detail: any | nu
                     .eq('document_id', detail.id);
 
                   if (chunksError) {
-                    console.warn('청크 삭제 오류:', chunksError);
+                    logger.warn('청크 삭제 오류:', chunksError);
                   }
 
                   const { error: docError } = await supabase
@@ -5145,7 +5157,7 @@ function DocumentDetailDialog({ detail, onClose, onRefetch }: { detail: any | nu
                   onClose();
                   onRefetch();
                 } catch (error) {
-                  console.error('문서 삭제 오류:', error);
+                  logger.error('문서 삭제 오류:', error);
                   toast.error('문서 삭제 실패', {
                     description: error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.',
                     duration: 5000,

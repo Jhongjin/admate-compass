@@ -3,7 +3,8 @@
  * Facebook/Instagram 등 JavaScript가 필요한 사이트 크롤링
  */
 
-import puppeteer, { Browser, Page } from 'puppeteer';
+import puppeteerCore, { Browser, Page } from 'puppeteer-core';
+import chromium from '@sparticuz/chromium';
 import { DocumentIndexingService } from './DocumentIndexingService';
 
 export interface CrawledDocumentData {
@@ -127,15 +128,25 @@ export class PuppeteerCrawlingService {
   async init(): Promise<void> {
     if (!this.browser) {
       console.log('🚀 Puppeteer 브라우저 초기화 중...');
-      this.browser = await puppeteer.launch({
+      
+      // Vercel 환경에서는 chromium을 사용, 로컬에서는 기본 실행 파일 사용
+      const isVercel = process.env.VERCEL === '1';
+      const executablePath = isVercel 
+        ? await chromium.executablePath()
+        : undefined;
+      
+      this.browser = await puppeteerCore.launch({
         headless: true,
-        args: [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-accelerated-2d-canvas',
-          '--no-first-run',
-          '--no-zygote',
+        executablePath,
+        args: isVercel 
+          ? chromium.args
+          : [
+              '--no-sandbox',
+              '--disable-setuid-sandbox',
+              '--disable-dev-shm-usage',
+              '--disable-accelerated-2d-canvas',
+              '--no-first-run',
+              '--no-zygote',
           '--disable-gpu',
           '--disable-web-security',
           '--disable-features=VizDisplayCompositor'

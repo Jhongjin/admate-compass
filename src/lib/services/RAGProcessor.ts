@@ -10,6 +10,7 @@ import { processTextEncoding, TextEncodingResult } from '../utils/textEncoding';
 import { adaptiveChunkingService, AdaptiveChunkingConfig } from './AdaptiveChunkingService';
 import { contentTypeDetector } from './ContentTypeDetector';
 import { unifiedChunkingService, UnifiedChunkingOptions } from './UnifiedChunkingService';
+import { EmbeddingService } from './EmbeddingService';
 
 export interface ChunkData {
   id: string;
@@ -40,6 +41,7 @@ export interface ChunkData {
     original_length?: number;
   };
   embedding?: number[];
+  similarity?: number; // 벡터 검색 결과의 유사도 점수
 }
 
 export interface DocumentData {
@@ -57,6 +59,8 @@ export interface DocumentData {
 
 export class RAGProcessor {
   private textSplitter: RecursiveCharacterTextSplitter;
+  private embeddingService: EmbeddingService | null = null;
+  private embeddingServiceInitialized = false;
 
   constructor() {
     // 텍스트 분할기 설정
@@ -65,6 +69,29 @@ export class RAGProcessor {
       chunkOverlap: 100, // 청크 간 겹침 (100자로 감소)
       separators: ['\n\n', '\n', '.', '!', '?', ';', ' ', ''], // 분할 기준
     });
+  }
+
+  /**
+   * 임베딩 서비스 초기화 (지연 로딩)
+   */
+  private async initializeEmbeddingService(): Promise<EmbeddingService | null> {
+    if (this.embeddingServiceInitialized) {
+      return this.embeddingService;
+    }
+
+    try {
+      console.log('🔄 임베딩 서비스 초기화 시도...');
+      this.embeddingService = new EmbeddingService();
+      await this.embeddingService.initialize('bge-m3');
+      this.embeddingServiceInitialized = true;
+      console.log('✅ 임베딩 서비스 초기화 성공 (BGE-M3)');
+      return this.embeddingService;
+    } catch (error) {
+      console.warn('⚠️ 임베딩 서비스 초기화 실패, 해시 기반 임베딩으로 fallback:', error);
+      this.embeddingService = null;
+      this.embeddingServiceInitialized = true; // 실패해도 재시도하지 않음
+      return null;
+    }
   }
 
   /**
@@ -113,25 +140,27 @@ export class RAGProcessor {
 
 
   /**
-   * 간단한 로컬 임베딩 생성 (API 키 없이)
+   * 간단한 해시 기반 임베딩 생성 (fallback용)
+   * ⚠️ 실제 의미적 유사도를 반영하지 않으므로 BGE-M3 사용을 권장합니다.
    */
   private generateSimpleEmbedding(text: string): number[] {
     try {
       // 환경변수에서 임베딩 차원 수 가져오기
       const embeddingDim = parseInt(process.env.EMBEDDING_DIM || '1024');
       
-      // 간단한 해시 기반 임베딩 생성 (실제 임베딩은 아니지만 테스트용)
+      // 간단한 해시 기반 임베딩 생성 (fallback용)
       const hash = this.simpleHash(text);
       const embedding = new Array(embeddingDim).fill(0);
       
-      // 해시값을 기반으로 임베딩 벡터 생성
+      // 해시값을 기반으로 임베딩 벡터 생성 (더 다양한 패턴)
       for (let i = 0; i < embeddingDim; i++) {
-        embedding[i] = Math.sin(hash + i) * 0.1;
+        const seed = (hash + i * 17) % 1000000; // 더 복잡한 패턴
+        embedding[i] = (Math.sin(seed) * 0.5 + 0.5) * 2 - 1; // -1 ~ 1 범위
       }
       
       return embedding;
     } catch (error) {
-      console.warn('⚠️ 임베딩 생성 실패, 기본값 반환:', error);
+      console.warn('⚠️ 해시 기반 임베딩 생성 실패, 기본값 반환:', error);
       const embeddingDim = parseInt(process.env.EMBEDDING_DIM || '1024');
       return new Array(embeddingDim).fill(0);
     }
@@ -195,45 +224,97 @@ export class RAGProcessor {
   }
 
   /**
-   * 청크에 대한 임베딩 생성 (로컬 버전)
+   * 청크에 대한 임베딩 생성 (BGE-M3 모델 사용, 실패 시 해시 기반 fallback)
    */
   async generateEmbeddings(chunks: ChunkData[]): Promise<ChunkData[]> {
     try {
-      console.log('🔮 임베딩 생성 시작 (로컬):', chunks.length, '개 청크');
+      console.log('🔮 임베딩 생성 시작:', chunks.length, '개 청크');
 
-      // 환경변수에서 임베딩 차원 수 가져오기
+      // 임베딩 서비스 초기화 시도
+      const embeddingService = await this.initializeEmbeddingService();
       const embeddingDim = parseInt(process.env.EMBEDDING_DIM || '1024');
-      console.log('📏 임베딩 차원 수:', embeddingDim);
 
-      // 각 청크에 대해 간단한 임베딩 생성
-      const chunksWithEmbeddings = chunks.map((chunk, index) => {
-        try {
-          return {
-            ...chunk,
-            embedding: this.generateSimpleEmbedding(chunk.content),
-          };
-        } catch (error) {
-          console.warn(`⚠️ 청크 ${index} 임베딩 생성 실패, 기본값 사용:`, error);
-          return {
-            ...chunk,
-            embedding: new Array(embeddingDim).fill(0), // 환경변수 기반 기본 임베딩
-          };
+      if (embeddingService) {
+        // BGE-M3 모델 사용
+        console.log('✅ BGE-M3 모델로 임베딩 생성 중...');
+        const chunksWithEmbeddings: ChunkData[] = [];
+        
+        // 배치 처리 (한 번에 너무 많이 처리하지 않도록)
+        const BATCH_SIZE = 10;
+        for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
+          const batch = chunks.slice(i, i + BATCH_SIZE);
+          console.log(`📦 임베딩 배치 처리: ${i + 1}-${Math.min(i + BATCH_SIZE, chunks.length)}/${chunks.length}`);
+          
+          const batchPromises = batch.map(async (chunk, batchIndex) => {
+            try {
+              const result = await embeddingService.generateEmbedding(chunk.content, {
+                model: 'bge-m3',
+                normalize: true
+              });
+              
+              // 차원 변환 (BGE-M3는 1024차원, 필요시 조정)
+              let embedding = result.embedding;
+              if (embedding.length !== embeddingDim) {
+                console.warn(`⚠️ 청크 ${i + batchIndex} 임베딩 차원 불일치: ${embedding.length} → ${embeddingDim}`);
+                // 차원이 다르면 해시 기반으로 fallback
+                embedding = this.generateSimpleEmbedding(chunk.content);
+              }
+              
+              return {
+                ...chunk,
+                embedding,
+              };
+            } catch (error) {
+              console.warn(`⚠️ 청크 ${i + batchIndex} BGE-M3 임베딩 생성 실패, 해시 기반으로 fallback:`, error);
+              return {
+                ...chunk,
+                embedding: this.generateSimpleEmbedding(chunk.content),
+              };
+            }
+          });
+          
+          const batchResults = await Promise.all(batchPromises);
+          chunksWithEmbeddings.push(...batchResults);
         }
-      });
 
-      console.log('✅ 임베딩 생성 완료 (로컬):', chunksWithEmbeddings.length, '개 청크');
-
-      return chunksWithEmbeddings;
+        console.log('✅ BGE-M3 임베딩 생성 완료:', chunksWithEmbeddings.length, '개 청크');
+        return chunksWithEmbeddings;
+      } else {
+        // 해시 기반 임베딩 fallback
+        console.log('⚠️ 해시 기반 임베딩 사용 (BGE-M3 초기화 실패)');
+        return this.generateEmbeddingsWithHash(chunks);
+      }
     } catch (error) {
       console.error('❌ 임베딩 생성 오류:', error);
-      // 오류 발생 시에도 기본 임베딩으로 반환
-      console.log('⚠️ 기본 임베딩으로 대체 처리');
-      const embeddingDim = parseInt(process.env.EMBEDDING_DIM || '1024');
-      return chunks.map(chunk => ({
-        ...chunk,
-        embedding: new Array(embeddingDim).fill(0),
-      }));
+      console.log('⚠️ 해시 기반 임베딩으로 fallback');
+      return this.generateEmbeddingsWithHash(chunks);
     }
+  }
+
+  /**
+   * 해시 기반 임베딩 생성 (fallback)
+   */
+  private generateEmbeddingsWithHash(chunks: ChunkData[]): ChunkData[] {
+    const embeddingDim = parseInt(process.env.EMBEDDING_DIM || '1024');
+    console.log('📏 해시 기반 임베딩 차원 수:', embeddingDim);
+
+    const chunksWithEmbeddings = chunks.map((chunk, index) => {
+      try {
+        return {
+          ...chunk,
+          embedding: this.generateSimpleEmbedding(chunk.content),
+        };
+      } catch (error) {
+        console.warn(`⚠️ 청크 ${index} 임베딩 생성 실패, 기본값 사용:`, error);
+        return {
+          ...chunk,
+          embedding: new Array(embeddingDim).fill(0),
+        };
+      }
+    });
+
+    console.log('✅ 해시 기반 임베딩 생성 완료:', chunksWithEmbeddings.length, '개 청크');
+    return chunksWithEmbeddings;
   }
 
   /**
@@ -1159,61 +1240,16 @@ export class RAGProcessor {
         };
       }
 
-      // 2. 임베딩 생성 (큰 파일의 경우만 배치 처리)
+      // 2. 임베딩 생성 (BGE-M3 모델 사용, 실패 시 해시 기반 fallback)
       const embeddingStartMs = Date.now();
       console.log('🔮 임베딩 생성 시작...', { chunkCount: chunks.length });
+      const chunksWithEmbeddings = await this.generateEmbeddings(chunks);
+      const embeddingMs = Date.now() - embeddingStartMs;
+      console.log(`✅ 임베딩 생성 완료: ${chunksWithEmbeddings.length}개 청크 (${(embeddingMs / 1000).toFixed(1)}초)`);
+
+      // 큰 파일 여부 확인 (저장 시 배치 처리용)
       const isChunkProcess = document.title?.includes('분할');
       const isLargeFile = document.file_size > 10 * 1024 * 1024 || chunks.length > 1000;
-      const chunksWithEmbeddings: ChunkData[] = [];
-      
-      if (isLargeFile || isChunkProcess) {
-        // 큰 파일 또는 분할 처리의 경우 배치 단위로 임베딩 생성
-        // 분할 처리 시 배치 크기 증가로 처리 시간 단축 (200 → 300)
-        const EMBEDDING_BATCH_SIZE = isChunkProcess ? 300 : 200;
-        console.log(`📦 큰 파일 감지 - 배치 단위로 임베딩 생성 (${chunks.length}개 청크, 배치 크기: ${EMBEDDING_BATCH_SIZE})`);
-        
-        for (let i = 0; i < chunks.length; i += EMBEDDING_BATCH_SIZE) {
-          const batch = chunks.slice(i, i + EMBEDDING_BATCH_SIZE);
-          const batchStartMs = Date.now();
-          console.log(`🔮 임베딩 배치 생성 중: ${i + 1}-${Math.min(i + EMBEDDING_BATCH_SIZE, chunks.length)}/${chunks.length}`);
-          
-          const batchWithEmbeddings = batch.map(chunk => ({
-            ...chunk,
-            embedding: this.generateSimpleEmbedding(chunk.content),
-          }));
-          
-          chunksWithEmbeddings.push(...batchWithEmbeddings);
-          
-          const batchMs = Date.now() - batchStartMs;
-          console.log(`✅ 임베딩 배치 생성 완료: ${i + 1}-${Math.min(i + EMBEDDING_BATCH_SIZE, chunks.length)}/${chunks.length} (${batchMs}ms)`);
-          
-          // 배치 간 짧은 대기 (CPU 부하 방지, 분할 처리 시 지연 제거)
-          if (i + EMBEDDING_BATCH_SIZE < chunks.length) {
-            // 분할 처리 시 지연 없이 처리 (이미 충분히 작은 단위)
-            const delay = isChunkProcess ? 0 : 5;
-            if (delay > 0) {
-              await new Promise(resolve => setTimeout(resolve, delay));
-            }
-          }
-        }
-        
-        const embeddingMs = Date.now() - embeddingStartMs;
-        console.log(`✅ 임베딩 생성 완료: ${chunksWithEmbeddings.length}개 청크 (배치 처리, ${(embeddingMs / 1000).toFixed(1)}초)`);
-      } else {
-        // 작은 파일은 한 번에 처리 (지연 없음)
-        const mappingStartMs = Date.now();
-        const mapped = chunks.map(chunk => ({
-          ...chunk,
-          embedding: this.generateSimpleEmbedding(chunk.content),
-        }));
-        chunksWithEmbeddings.push(...mapped);
-        const embeddingMs = Date.now() - embeddingStartMs;
-        console.log('✅ 임베딩 생성 완료:', {
-          chunkCount: chunksWithEmbeddings.length,
-          time: `${embeddingMs}ms (${(embeddingMs / 1000).toFixed(1)}초)`,
-          avgTimePerChunk: `${(embeddingMs / chunks.length).toFixed(1)}ms`
-        });
-      }
 
       // 3. Supabase에 저장 (큰 파일의 경우 청크 저장도 배치 처리)
       const savingStartMs = Date.now();
@@ -1679,44 +1715,150 @@ export class RAGProcessor {
         return [];
       }
 
-      // 쿼리에 대한 임베딩 생성 (BGE-M3 모델 사용)
+      // 쿼리 임베딩 생성 (BGE-M3 우선, 실패 시 해시 기반)
       console.log('🧠 쿼리 임베딩 생성 중...');
-      const queryEmbedding = this.generateSimpleEmbedding(query);
-      console.log('✅ 쿼리 임베딩 생성 완료:', queryEmbedding.length, '차원');
+      let queryEmbedding: number[];
+      const embeddingService = await this.initializeEmbeddingService();
+      
+      if (embeddingService) {
+        try {
+          console.log('🔄 BGE-M3로 쿼리 임베딩 생성 중...');
+          const result = await embeddingService.generateEmbedding(query, {
+            model: 'bge-m3',
+            normalize: true
+          });
+          queryEmbedding = result.embedding;
+          
+          // 차원 확인
+          const embeddingDim = parseInt(process.env.EMBEDDING_DIM || '1024');
+          if (queryEmbedding.length !== embeddingDim) {
+            console.warn(`⚠️ 쿼리 임베딩 차원 불일치: ${queryEmbedding.length} → 해시 기반으로 fallback`);
+            queryEmbedding = this.generateSimpleEmbedding(query);
+          } else {
+            console.log('✅ BGE-M3 쿼리 임베딩 생성 완료:', queryEmbedding.length, '차원');
+          }
+        } catch (error) {
+          console.warn('⚠️ BGE-M3 쿼리 임베딩 생성 실패, 해시 기반으로 fallback:', error);
+          queryEmbedding = this.generateSimpleEmbedding(query);
+          console.log('✅ 해시 기반 쿼리 임베딩 생성 완료:', queryEmbedding.length, '차원');
+        }
+      } else {
+        queryEmbedding = this.generateSimpleEmbedding(query);
+        console.log('✅ 해시 기반 쿼리 임베딩 생성 완료:', queryEmbedding.length, '차원');
+      }
 
       // 벤더 필터를 대문자로 변환 (ENUM과 매칭)
       const normalizedVendorFilter = vendorFilter && vendorFilter.length > 0
         ? vendorFilter.map(v => v.toUpperCase())
         : null;
 
-      // 새로운 search_documents 함수 사용 (vendor_filter 파라미터 추가)
-      const { data, error } = await supabase.rpc('search_documents', {
-        query_embedding: queryEmbedding,
-        match_threshold: 0.7,
-        match_count: limit,
-        vendor_filter: normalizedVendorFilter,
-      });
-
-      if (error) {
-        console.error('❌ 벡터 검색 오류:', error);
-        // Fallback: 키워드 검색 시도
-        console.log('🔄 키워드 검색으로 Fallback 시도...');
-        return await this.fallbackKeywordSearch(query, limit, supabase);
+      // 가중치 기반 검색 함수 사용 여부 확인
+      let useWeightedSearch = false;
+      try {
+        const testResult = await supabase.rpc('search_documents_with_weights', {
+          query_embedding: queryEmbedding,
+          match_threshold: 0.7,
+          match_count: 1,
+          vendor_filter: normalizedVendorFilter,
+        });
+        useWeightedSearch = !testResult.error;
+      } catch {
+        useWeightedSearch = false;
       }
 
-      // 결과를 ChunkData 형식으로 변환
-      const chunks: ChunkData[] = (data || []).map((item: any) => ({
-        id: item.chunk_id,
-        content: item.content,
-        metadata: {
-          document_id: item.document_id,
-          chunk_index: item.metadata?.chunk_index || 0,
-          source: item.title || item.metadata?.source || 'Unknown',
-          created_at: item.metadata?.created_at || new Date().toISOString(),
-          source_vendor: item.source_vendor || item.metadata?.source_vendor || null,
-        },
-        similarity: item.similarity,
-      }));
+      // 단계적 Fallback 검색 전략
+      // 1단계: 기본 임계값(0.7)으로 검색
+      let chunks = await this.performVectorSearch(
+        supabase,
+        queryEmbedding,
+        limit,
+        normalizedVendorFilter,
+        0.7,
+        useWeightedSearch
+      );
+
+      // 2단계: 결과가 없거나 유사도가 낮으면 임계값을 낮춰서 재검색 (0.4)
+      if (chunks.length === 0 || chunks.every(c => (c.similarity || 0) < 0.5)) {
+        console.log('⚠️ 1단계 검색 결과 부족 - 임계값을 0.4로 낮춰서 재검색');
+        const lowerThresholdChunks = await this.performVectorSearch(
+          supabase,
+          queryEmbedding,
+          limit,
+          normalizedVendorFilter,
+          0.4,
+          useWeightedSearch
+        );
+        
+        // 더 나은 결과가 있으면 사용
+        if (lowerThresholdChunks.length > 0 && 
+            lowerThresholdChunks.some(c => (c.similarity || 0) > 0.3)) {
+          console.log(`✅ 2단계 검색 성공: ${lowerThresholdChunks.length}개 결과 발견`);
+          chunks = lowerThresholdChunks;
+        }
+      }
+
+      // 2-1단계: 여전히 결과가 없으면 임계값을 더 낮춰서 재검색 (0.2)
+      if (chunks.length === 0 || chunks.every(c => (c.similarity || 0) < 0.3)) {
+        console.log('⚠️ 2단계 검색 결과 부족 - 임계값을 0.2로 낮춰서 재검색');
+        const veryLowThresholdChunks = await this.performVectorSearch(
+          supabase,
+          queryEmbedding,
+          limit * 2, // 더 많은 결과 가져오기
+          normalizedVendorFilter,
+          0.2,
+          useWeightedSearch
+        );
+        
+        // 더 나은 결과가 있으면 사용
+        if (veryLowThresholdChunks.length > 0) {
+          console.log(`✅ 2-1단계 검색 성공: ${veryLowThresholdChunks.length}개 결과 발견`);
+          chunks = veryLowThresholdChunks;
+        }
+      }
+
+      // 3단계: 벤더 필터가 적용된 상태에서 결과가 없으면 필터를 제거하고 재검색
+      if (chunks.length === 0 && normalizedVendorFilter) {
+        console.log('⚠️ 벤더 필터 적용 시 결과 없음 - 벤더 필터를 제거하고 재검색');
+        const noFilterChunks = await this.performVectorSearch(
+          supabase,
+          queryEmbedding,
+          limit * 2, // 더 많은 결과 가져오기
+          null, // 벤더 필터 제거
+          0.2, // 낮은 임계값 사용
+          useWeightedSearch
+        );
+        
+        if (noFilterChunks.length > 0) {
+          console.log(`✅ 3단계 검색 성공 (벤더 필터 제거): ${noFilterChunks.length}개 결과 발견`);
+          chunks = noFilterChunks;
+        }
+      }
+
+      // 최종 결과가 없으면 키워드 검색으로 Fallback
+      if (chunks.length === 0) {
+        console.log('🔄 벡터 검색 결과 없음 - 키워드 검색으로 Fallback 시도...');
+        return await this.fallbackKeywordSearch(query, limit, supabase, normalizedVendorFilter);
+      }
+
+      // 타입별 통계 로그
+      const urlChunks = chunks.filter(c => (c.metadata as any).sourceType === 'url');
+      const fileChunks = chunks.filter(c => (c.metadata as any).sourceType === 'file');
+      console.log(`📊 최종 검색 결과 타입별 통계: URL ${urlChunks.length}개, 파일 ${fileChunks.length}개 (총 ${chunks.length}개)`);
+      
+      // 유사도 분포 로그
+      const similarities = chunks.map(c => c.similarity || 0).filter(s => s > 0);
+      if (similarities.length > 0) {
+        const avgSimilarity = similarities.reduce((a, b) => a + b, 0) / similarities.length;
+        const maxSimilarity = Math.max(...similarities);
+        const minSimilarity = Math.min(...similarities);
+        console.log(`📊 유사도 분포: 평균 ${avgSimilarity.toFixed(3)}, 최대 ${maxSimilarity.toFixed(3)}, 최소 ${minSimilarity.toFixed(3)}`);
+      }
+      
+      if (urlChunks.length === 0 && fileChunks.length > 0) {
+        console.log('⚠️ 경고: URL 검색 결과가 없습니다. URL 문서가 검색되지 않았을 수 있습니다.');
+      } else if (fileChunks.length === 0 && urlChunks.length > 0) {
+        console.log('⚠️ 경고: 파일 검색 결과가 없습니다. 파일 문서가 검색되지 않았을 수 있습니다.');
+      }
 
       console.log('✅ 벡터 검색 완료:', chunks.length, '개 결과');
       return chunks;
@@ -1727,36 +1869,289 @@ export class RAGProcessor {
   }
 
   /**
-   * Fallback 키워드 검색
+   * 벡터 검색 수행 (내부 헬퍼 메서드)
    */
-  private async fallbackKeywordSearch(query: string, limit: number, supabase: any): Promise<ChunkData[]> {
+  private async performVectorSearch(
+    supabase: any,
+    queryEmbedding: number[],
+    limit: number,
+    vendorFilter: string[] | null,
+    threshold: number,
+    useWeightedSearch: boolean
+  ): Promise<ChunkData[]> {
     try {
-      console.log('🔍 키워드 검색 Fallback 실행:', query);
+      let data, error;
       
-      const { data, error } = await supabase
-        .from('document_chunks')
-        .select('chunk_id, content, metadata, document_id')
-        .or(`content.ilike.%${query}%,content.ilike.%${query.split(' ')[0]}%`)
-        .limit(limit);
+      if (useWeightedSearch) {
+        const result = await supabase.rpc('search_documents_with_weights', {
+          query_embedding: queryEmbedding,
+          match_threshold: threshold,
+          match_count: limit,
+          vendor_filter: vendorFilter,
+        });
+        data = result.data;
+        error = result.error;
+      } else {
+        const result = await supabase.rpc('search_documents', {
+          query_embedding: queryEmbedding,
+          match_threshold: threshold,
+          match_count: limit,
+          vendor_filter: vendorFilter,
+        });
+        data = result.data;
+        error = result.error;
+      }
 
       if (error) {
-        console.error('❌ 키워드 검색 오류:', error);
+        console.error('❌ 벡터 검색 오류:', error);
         return [];
       }
 
-      const chunks: ChunkData[] = (data || []).map((item: any) => ({
-        id: item.chunk_id,
-        content: item.content,
-        metadata: {
-          document_id: item.document_id,
-          chunk_index: item.metadata?.chunk_index || 0,
-          source: item.metadata?.source || 'Unknown',
-          created_at: item.metadata?.created_at || new Date().toISOString(),
-        },
-        similarity: 0.5, // 키워드 검색은 낮은 유사도로 설정
-      }));
+      // 결과를 ChunkData 형식으로 변환
+      const chunks: ChunkData[] = (data || []).map((item: any) => {
+        const documentType = item.document_type || item.metadata?.document_type || 'file';
+        const isUrl = documentType === 'url';
+        
+        const finalSimilarity = item.weighted_similarity !== undefined 
+          ? item.weighted_similarity 
+          : item.similarity;
+        
+        return {
+          id: item.chunk_id,
+          content: item.content,
+          metadata: {
+            document_id: item.document_id,
+            chunk_index: item.metadata?.chunk_index || 0,
+            source: item.title || item.metadata?.source || 'Unknown',
+            created_at: item.metadata?.created_at || new Date().toISOString(),
+            source_vendor: item.source_vendor || item.metadata?.source_vendor || null,
+            document_type: documentType,
+            sourceType: isUrl ? 'url' : 'file',
+            weight_score: item.weight_score || 1.0,
+            weighted_similarity: finalSimilarity,
+          },
+          similarity: finalSimilarity,
+        };
+      });
 
-      console.log('✅ 키워드 검색 완료:', chunks.length, '개 결과');
+      return chunks;
+    } catch (error) {
+      console.error('❌ 벡터 검색 수행 오류:', error);
+      return [];
+    }
+  }
+
+  /**
+   * Fallback 키워드 검색 (벤더 필터 지원, 복합 키워드 처리)
+   */
+  private async fallbackKeywordSearch(
+    query: string, 
+    limit: number, 
+    supabase: any,
+    vendorFilter: string[] | null = null
+  ): Promise<ChunkData[]> {
+    try {
+      console.log('🔍 키워드 검색 Fallback 실행:', query);
+      if (vendorFilter && vendorFilter.length > 0) {
+        console.log('🏷️ 키워드 검색에도 벤더 필터 적용:', vendorFilter);
+      }
+      
+      // 개선된 키워드 추출 (복합 키워드 지원)
+      const queryLower = query.toLowerCase();
+      
+      // 불용어 목록
+      const stopWords = ['에', '를', '을', '의', '와', '과', '에 대해', '에 대해 설명', '알려줘', '소개해줘', '설명해줘', '가이드', '가이드를', '알려', '소개', '설명', '에 대해', '설명해', '알려주', '소개해'];
+      
+      // 복합 키워드 패턴 (예: "전환API", "DV360", "포토뷰어")
+      const compoundPatterns = [
+        /전환\s*api/gi,
+        /dv\s*360/gi,
+        /포토\s*뷰어/gi,
+        /youtube\s*상품/gi,
+        /google\s*ads/gi,
+        /meta\s*ads/gi,
+        /conversion\s*api/gi,
+        /conversionapi/gi,
+      ];
+      
+      const queryKeywords: string[] = [];
+      
+      // 복합 키워드 먼저 추출
+      compoundPatterns.forEach(pattern => {
+        const matches = queryLower.match(pattern);
+        if (matches) {
+          matches.forEach(match => {
+            const cleaned = match.replace(/\s+/g, ''); // 공백 제거
+            if (cleaned.length > 1) {
+              queryKeywords.push(cleaned);
+            }
+          });
+        }
+      });
+      
+      // 나머지 단어 추출 (복합 키워드에 포함되지 않은 경우만)
+      const words = queryLower.split(/\s+/);
+      words.forEach(word => {
+        const cleaned = word.trim();
+        // 불용어가 아니고, 길이가 1보다 크며, 복합 키워드에 포함되지 않은 경우
+        if (cleaned.length > 1 && 
+            !stopWords.includes(cleaned) && 
+            !queryKeywords.some(kw => cleaned.includes(kw) || kw.includes(cleaned))) {
+          queryKeywords.push(cleaned);
+        }
+      });
+      
+      // 중복 제거
+      const searchTerms = Array.from(new Set(queryKeywords));
+      
+      if (searchTerms.length === 0) {
+        searchTerms.push(query); // 키워드가 없으면 전체 쿼리 사용
+      }
+      
+      console.log(`🔑 추출된 키워드: ${searchTerms.join(', ')}`);
+      
+      // 키워드 검색 쿼리 구성 (별도 쿼리로 분리하여 documents 테이블과 조인)
+      // 1단계: document_chunks에서 키워드로 검색 (대소문자 무시, 부분 일치)
+      const orConditions = searchTerms.map(term => `content.ilike.%${term}%`).join(',');
+      const { data: chunksData, error: chunksError } = await supabase
+        .from('document_chunks')
+        .select('chunk_id, content, metadata, document_id')
+        .or(orConditions)
+        .limit(limit * 3); // 더 많은 결과를 가져와서 벤더 필터 후에도 충분한 결과 확보
+      
+      if (chunksError) {
+        console.error('❌ 키워드 검색 (chunks) 오류:', chunksError);
+        return [];
+      }
+      
+      if (!chunksData || chunksData.length === 0) {
+        console.log('⚠️ 키워드 검색 결과 없음');
+        return [];
+      }
+      
+      console.log(`📊 키워드 검색으로 ${chunksData.length}개 청크 발견`);
+      
+      // 2단계: documents 테이블에서 문서 정보 조회 (벤더 필터 적용)
+      const documentIds = [...new Set(chunksData.map((c: any) => c.document_id))];
+      let documentsQuery = supabase
+        .from('documents')
+        .select('id, title, source_vendor, type, status')
+        .in('id', documentIds)
+        .eq('status', 'indexed');
+      
+      // 벤더 필터 적용
+      if (vendorFilter && vendorFilter.length > 0) {
+        const normalizedVendorFilter = vendorFilter.map(v => v.toUpperCase());
+        documentsQuery = documentsQuery.in('source_vendor', normalizedVendorFilter);
+      }
+      
+      const { data: documentsData, error: documentsError } = await documentsQuery;
+      
+      if (documentsError) {
+        console.error('❌ 키워드 검색 (documents) 오류:', documentsError);
+        return [];
+      }
+      
+      // 벤더 필터로 인해 결과가 없으면 필터를 완화하여 재검색
+      if (!documentsData || documentsData.length === 0) {
+        if (vendorFilter && vendorFilter.length > 0) {
+          console.log('⚠️ 벤더 필터로 인해 문서 정보 없음 - 벤더 필터를 제거하고 재검색');
+          // 벤더 필터 없이 재검색
+          const { data: allDocumentsData, error: allDocumentsError } = await supabase
+            .from('documents')
+            .select('id, title, source_vendor, type, status')
+            .in('id', documentIds)
+            .eq('status', 'indexed');
+          
+          if (allDocumentsError) {
+            console.error('❌ 키워드 검색 (documents, 필터 제거) 오류:', allDocumentsError);
+            return [];
+          }
+          
+          if (!allDocumentsData || allDocumentsData.length === 0) {
+            console.log('⚠️ 키워드 검색 결과 없음 (벤더 필터 제거 후에도)');
+            return [];
+          }
+          
+          // 벤더 필터 없이 결과 반환
+          const documentMap = new Map<string, any>(
+            allDocumentsData.map((d: any) => [d.id, d])
+          );
+          const data = chunksData
+            .filter((c: any) => documentMap.has(c.document_id))
+            .slice(0, limit);
+          
+          const chunks: ChunkData[] = (data || []).map((item: any) => {
+            const doc = documentMap.get(item.document_id);
+            if (!doc) return null;
+            
+            const documentType = doc.type || 'file';
+            const isUrl = documentType === 'url';
+            
+            return {
+              id: item.chunk_id,
+              content: item.content,
+              metadata: {
+                document_id: item.document_id,
+                chunk_index: item.metadata?.chunk_index || 0,
+                source: doc.title || item.metadata?.source || 'Unknown',
+                created_at: item.metadata?.created_at || new Date().toISOString(),
+                source_vendor: doc.source_vendor || item.metadata?.source_vendor || null,
+                document_type: documentType,
+                sourceType: isUrl ? 'url' : 'file',
+              },
+              similarity: 0.5,
+            };
+          }).filter((c: ChunkData | null): c is ChunkData => c !== null);
+          
+          console.log(`✅ 키워드 검색 완료 (벤더 필터 제거): ${chunks.length}개 결과`);
+          return chunks;
+        } else {
+          console.log('⚠️ 키워드 검색 결과 없음');
+          return [];
+        }
+      }
+      
+      // 3단계: chunks와 documents를 조인하여 최종 결과 생성
+      interface DocumentInfo {
+        id: string;
+        title: string;
+        source_vendor: string | null;
+        type: string;
+        status: string;
+      }
+      
+      const documentMap = new Map<string, DocumentInfo>(
+        documentsData.map((d: any) => [d.id, d as DocumentInfo])
+      );
+      const data = chunksData
+        .filter((c: any) => documentMap.has(c.document_id)) // 벤더 필터를 통과한 문서만
+        .slice(0, limit); // 최종 결과 제한
+
+      const chunks: ChunkData[] = (data || []).map((item: any) => {
+        const doc = documentMap.get(item.document_id);
+        if (!doc) return null; // 문서 정보가 없으면 제외
+        
+        const documentType = doc.type || 'file';
+        const isUrl = documentType === 'url';
+        
+        return {
+          id: item.chunk_id,
+          content: item.content,
+          metadata: {
+            document_id: item.document_id,
+            chunk_index: item.metadata?.chunk_index || 0,
+            source: doc.title || item.metadata?.source || 'Unknown',
+            created_at: item.metadata?.created_at || new Date().toISOString(),
+            source_vendor: doc.source_vendor || item.metadata?.source_vendor || null,
+            document_type: documentType,
+            sourceType: isUrl ? 'url' : 'file',
+          },
+          similarity: 0.5, // 키워드 검색은 낮은 유사도로 설정
+        };
+      }).filter((c: ChunkData | null): c is ChunkData => c !== null); // null 제거
+
+      console.log(`✅ 키워드 검색 완료: ${chunks.length}개 결과 (검색어: ${searchTerms.join(', ')})`);
       return chunks;
     } catch (error) {
       console.error('❌ 키워드 검색 오류:', error);

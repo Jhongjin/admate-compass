@@ -84,7 +84,7 @@ export default function AdminQueuesPage() {
         if (action === 'delete') {
           alert(result.message || '작업이 삭제되었습니다.');
         }
-        await loadJobs();
+      await loadJobs();
         setSelectedJobs(new Set());
       } else {
         alert(result.error || '작업 실행에 실패했습니다.');
@@ -269,7 +269,7 @@ export default function AdminQueuesPage() {
                 const isSelected = selectedJobs.has(j.id);
                 
                 return (
-                  <TableRow key={j.id} className="border-gray-700">
+                <TableRow key={j.id} className="border-gray-700">
                     <TableCell className="text-gray-300">
                       {isDeletable ? (
                         <input
@@ -282,26 +282,26 @@ export default function AdminQueuesPage() {
                         <span className="text-gray-500">-</span>
                       )}
                     </TableCell>
-                    <TableCell className="text-gray-300">{j.id.slice(0,8)}…</TableCell>
-                    <TableCell className="text-gray-300">{j.document_id}</TableCell>
-                    <TableCell className="text-gray-300">{j.job_type}</TableCell>
-                    <TableCell className="text-gray-300">
-                      <Badge variant={statusVariant(j.status)}>{j.status}</Badge>
-                    </TableCell>
-                    <TableCell className="text-gray-300">{j.priority}</TableCell>
-                    <TableCell className="text-gray-400 text-sm">{j.started_at ?? '-'}</TableCell>
-                    <TableCell className="text-gray-400 text-sm">
+                  <TableCell className="text-gray-300">{j.id.slice(0,8)}…</TableCell>
+                  <TableCell className="text-gray-300">{j.document_id}</TableCell>
+                  <TableCell className="text-gray-300">{j.job_type}</TableCell>
+                  <TableCell className="text-gray-300">
+                    <Badge variant={statusVariant(j.status)}>{j.status}</Badge>
+                  </TableCell>
+                  <TableCell className="text-gray-300">{j.priority}</TableCell>
+                  <TableCell className="text-gray-400 text-sm">{j.started_at ?? '-'}</TableCell>
+                  <TableCell className="text-gray-400 text-sm">
                       <div className="flex items-center gap-2 flex-wrap">
                         {j.status === 'queued' || j.status === 'retrying' ? (
-                          <Button variant="outline" size="sm" onClick={() => postAction(j.id, 'retry')}>
-                            <RotateCcw className="w-3 h-3 mr-1"/>재시도
-                          </Button>
+                      <Button variant="outline" size="sm" onClick={() => postAction(j.id, 'retry')}>
+                        <RotateCcw className="w-3 h-3 mr-1"/>재시도
+                      </Button>
                         ) : null}
                         {j.status === 'failed' ? (
                           <>
-                            <Button variant="outline" size="sm" onClick={() => postAction(j.id, 'reprocess')}>
-                              <Play className="w-3 h-3 mr-1"/>재처리
-                            </Button>
+                      <Button variant="outline" size="sm" onClick={() => postAction(j.id, 'reprocess')}>
+                        <Play className="w-3 h-3 mr-1"/>재처리
+                      </Button>
                             <Button variant="outline" size="sm" onClick={() => postAction(j.id, 'delete')} className="text-red-400 hover:text-red-300">
                               <Trash2 className="w-3 h-3 mr-1"/>삭제
                             </Button>
@@ -313,13 +313,13 @@ export default function AdminQueuesPage() {
                           </Button>
                         ) : null}
                         {j.status === 'queued' ? (
-                          <Button variant="outline" size="sm" onClick={() => postAction(j.id, 'cancel')}>
-                            <XCircle className="w-3 h-3 mr-1"/>취소
-                          </Button>
+                      <Button variant="outline" size="sm" onClick={() => postAction(j.id, 'cancel')}>
+                        <XCircle className="w-3 h-3 mr-1"/>취소
+                      </Button>
                         ) : null}
-                      </div>
-                    </TableCell>
-                  </TableRow>
+                    </div>
+                  </TableCell>
+                </TableRow>
                 );
               })}
             </TableBody>

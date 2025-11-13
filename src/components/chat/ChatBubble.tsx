@@ -1,12 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import { ThumbsUp, ThumbsDown, ExternalLink, Calendar, FileText, User, Download, Globe } from "lucide-react";
+import { ThumbsUp, ThumbsDown, ExternalLink, Calendar, FileText, User, Download, Globe, Copy, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { useToast } from "@/hooks/use-toast";
 
 // 커스텀 마크다운 컴포넌트
 const customMarkdownComponents = {
@@ -181,6 +182,29 @@ export default function ChatBubble({
   userQuestion,
 }: ChatBubbleProps) {
   const [showSources, setShowSources] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const { toast } = useToast();
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopied(true);
+      toast({
+        title: "복사 완료",
+        description: "답변이 클립보드에 복사되었습니다.",
+        duration: 2000,
+      });
+      setTimeout(() => setCopied(false), 2000);
+    } catch (error) {
+      console.error('복사 실패:', error);
+      toast({
+        title: "복사 실패",
+        description: "클립보드에 복사하는데 실패했습니다.",
+        variant: "destructive",
+        duration: 2000,
+      });
+    }
+  };
 
   const isUser = type === "user";
 
@@ -317,6 +341,25 @@ export default function ChatBubble({
               </div>
               
               <div className="flex-1 min-w-0">
+                <div className="flex items-start justify-between mb-2">
+                  <div className="flex-1"></div>
+                  {/* 복사 버튼 */}
+                  {content && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleCopy}
+                      className="h-6 w-6 p-0 text-gray-400 hover:text-white hover:bg-gray-700/50 transition-all"
+                      title="답변 복사"
+                    >
+                      {copied ? (
+                        <Check className="w-3 h-3 text-green-400" />
+                      ) : (
+                        <Copy className="w-3 h-3" />
+                      )}
+                    </Button>
+                  )}
+                </div>
                 <div className="text-sm sm:text-sm leading-relaxed text-white prose prose-invert prose-sm max-w-none">
                   <ReactMarkdown 
                     remarkPlugins={[remarkGfm]}
@@ -559,8 +602,8 @@ export default function ChatBubble({
                   </div>
                 )}
                 
-                {/* Contact option for no data found */}
-                {showContactOption && (
+                {/* Contact option for no data found - 항상 표시 (noDataFound일 때) */}
+                {(showContactOption || noDataFound) && (
                   <Card className="mt-3 border-orange-200 bg-orange-50 dark:border-orange-800 dark:bg-orange-950/50">
                     <CardContent className="p-4">
                       <div className="flex items-start space-x-3">
@@ -570,28 +613,47 @@ export default function ChatBubble({
                           </div>
                         </div>
                         <div className="flex-1 min-w-0">
-                          <h4 className="text-sm font-semibold text-orange-900 dark:text-orange-100 mb-1">
-                            페이스북 담당팀에 문의하시겠습니까?
-                          </h4>
-                          <p className="text-xs text-orange-700 dark:text-orange-300 mb-3">
-                            관련 정보가 없어 답변을 드릴 수 없습니다. 담당팀에 직접 문의하시면 더 정확한 답변을 받으실 수 있습니다.
-                          </p>
-                          <Button
-                            onClick={() => {
-                              // 직접 메일 발송 - 사용자의 실제 질문 사용
-                              if (typeof window !== 'undefined') {
-                                const actualQuestion = userQuestion || content;
-                                console.log('📧 메일 발송 요청:', actualQuestion);
-                                const event = new CustomEvent('sendContactEmail', { 
-                                  detail: { question: actualQuestion } 
-                                });
-                                window.dispatchEvent(event);
-                              }
-                            }}
-                            className="w-full bg-orange-500 hover:bg-orange-600 text-white text-sm py-2 transition-all duration-200 transform hover:scale-105 active:scale-95"
-                          >
-                            📧 담당팀에 문의하기
-                          </Button>
+                          {(() => {
+                            // 질문에서 벤더 감지
+                            const detectVendor = (text: string): string | null => {
+                              const lower = text.toLowerCase();
+                              if (lower.includes('네이버') || lower.includes('naver')) return '네이버';
+                              if (lower.includes('카카오') || lower.includes('kakao') || lower.includes('비즈보드')) return '카카오';
+                              if (lower.includes('구글') || lower.includes('google')) return '구글';
+                              if (lower.includes('트위터') || lower.includes('twitter') || lower.includes(' x ') || lower.includes('엑스')) return 'X';
+                              if (lower.includes('인스타') || lower.includes('instagram') || lower.includes('페이스북') || lower.includes('facebook') || lower.includes('meta')) return 'Meta';
+                              return null;
+                            };
+                            
+                            const vendorName = detectVendor(userQuestion || content) || '벤더';
+                            
+                            return (
+                              <>
+                                <h4 className="text-sm font-semibold text-orange-900 dark:text-orange-100 mb-1">
+                                  {vendorName} 담당팀에 문의하시겠습니까?
+                                </h4>
+                                <p className="text-xs text-orange-700 dark:text-orange-300 mb-3">
+                                  관련 정보가 없어 답변을 드릴 수 없습니다. {vendorName} 담당팀에 직접 문의하시면 더 정확한 답변을 받으실 수 있습니다.
+                                </p>
+                                <Button
+                                  onClick={() => {
+                                    // 직접 메일 발송 - 사용자의 실제 질문 사용
+                                    if (typeof window !== 'undefined') {
+                                      const actualQuestion = userQuestion || content;
+                                      console.log('📧 메일 발송 요청:', actualQuestion);
+                                      const event = new CustomEvent('sendContactEmail', { 
+                                        detail: { question: actualQuestion } 
+                                      });
+                                      window.dispatchEvent(event);
+                                    }
+                                  }}
+                                  className="w-full bg-orange-500 hover:bg-orange-600 text-white text-sm py-2 transition-all duration-200 transform hover:scale-105 active:scale-95"
+                                >
+                                  📧 담당팀에 문의하기
+                                </Button>
+                              </>
+                            );
+                          })()}
                         </div>
                       </div>
                     </CardContent>

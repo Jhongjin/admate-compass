@@ -48,6 +48,34 @@ export interface DashboardStats {
     questions_7d: number;
     avg_response_time: number | null;
   }>;
+  systemInfo?: {
+    databaseSize: string;
+    indexedDocuments: number;
+    activeUsers: number;
+    progressMetrics: {
+      overall: number;
+      database: number;
+      llm: number;
+      vectorStore: number;
+    };
+  };
+  apiUsage?: {
+    claude: {
+      totalRequests: number;
+      totalTokens: number;
+      totalCost: number;
+    };
+    gpt: {
+      totalRequests: number;
+      totalTokens: number;
+      totalCost: number;
+    };
+    total: {
+      totalRequests: number;
+      totalTokens: number;
+      totalCost: number;
+    };
+  } | null;
 }
 
 export class DashboardDataService {
