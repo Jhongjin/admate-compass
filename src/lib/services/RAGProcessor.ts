@@ -1369,6 +1369,7 @@ export class RAGProcessor {
       // 3. Supabase에 저장 (큰 파일의 경우 청크 저장도 배치 처리)
       const savingStartMs = Date.now();
       const supabase = await this.getSupabaseClient();
+      let savedChunkCount = 0; // 스코프를 밖으로 이동 (catch 블록에서도 접근 가능하도록)
       if (supabase) {
         try {
           // 문서 저장
@@ -1384,7 +1385,6 @@ export class RAGProcessor {
 
           // 큰 파일의 경우 청크 저장도 더 작은 배치로 처리
           const chunkSaveStartMs = Date.now();
-          let savedChunkCount = 0;
           if (isLargeFile || isChunkProcess) {
             console.log(`💾 ${isChunkProcess ? '분할 처리' : '큰 파일'} - 청크 저장을 배치로 처리 (${chunksWithEmbeddings.length}개 청크)`);
             // 큰 파일 또는 분할 처리의 경우 청크 저장도 배치 단위로 나누어 처리
