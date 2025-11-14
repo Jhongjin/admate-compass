@@ -39,8 +39,8 @@ async function downloadFromStorage(supabase: any, bucket: string, path: string, 
   const downloadStartMs = Date.now();
   console.log(`📥 Storage 다운로드 시작: ${bucket}/${path} (재시도 ${retries}회)`);
   
-  // Storage 다운로드 타임아웃 설정 (60초 - Supabase Gateway Timeout 대응)
-  const DOWNLOAD_TIMEOUT = 60000; // 60초 (504 Gateway Timeout 대응)
+  // Storage 다운로드 타임아웃 설정 (90초 - Supabase Gateway Timeout 및 네트워크 지연 대응)
+  const DOWNLOAD_TIMEOUT = 90000; // 90초 (504 Gateway Timeout 대응, 큰 파일 다운로드 고려)
   
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {

@@ -77,14 +77,16 @@ export class EmbeddingService {
       // 타임아웃을 5분으로 증가 (큰 모델 다운로드 시간 고려)
       const MODEL_INIT_TIMEOUT = 300000; // 5분 타임아웃
       
-      // 진행 상황 추적을 위한 하트비트 로깅
+      // 진행 상황 추적을 위한 하트비트 로깅 (더 자세한 정보 포함)
       const heartbeatInterval = setInterval(() => {
         const elapsed = Date.now() - modelInitStartMs;
         const elapsedSeconds = (elapsed / 1000).toFixed(1);
-        console.log(`⏳ BGE-M3 모델 초기화 진행 중... (경과: ${elapsedSeconds}초)`);
+        const remainingSeconds = ((MODEL_INIT_TIMEOUT - elapsed) / 1000).toFixed(1);
+        console.log(`⏳ BGE-M3 모델 초기화 진행 중... (경과: ${elapsedSeconds}초, 남은 시간: ${remainingSeconds}초, 캐시: ${cacheDir})`);
       }, 10000); // 10초마다 하트비트
       
       try {
+        console.log(`📥 BGE-M3 모델 다운로드/로딩 시작 (quantized: true, cache: ${cacheDir})`);
         const initPromise = pipeline('feature-extraction', 'Xenova/bge-m3', {
           // 모델 로딩 최적화
           quantized: true,
@@ -93,15 +95,23 @@ export class EmbeddingService {
           // 추가 옵션
           local_files_only: false,
           revision: 'main'
+        }).then((pipelineInstance) => {
+          console.log(`✅ BGE-M3 파이프라인 인스턴스 생성 완료`);
+          return pipelineInstance;
+        }).catch((error) => {
+          console.error(`❌ BGE-M3 파이프라인 생성 중 오류:`, error);
+          throw error;
         });
         
         const timeoutPromise = new Promise<never>((_, reject) => {
           setTimeout(() => {
             clearInterval(heartbeatInterval);
-            reject(new Error(`BGE-M3 모델 초기화 타임아웃 (${MODEL_INIT_TIMEOUT / 1000}초 초과)`));
+            const elapsed = Date.now() - modelInitStartMs;
+            reject(new Error(`BGE-M3 모델 초기화 타임아웃 (${MODEL_INIT_TIMEOUT / 1000}초 초과, 경과: ${(elapsed / 1000).toFixed(1)}초)`));
           }, MODEL_INIT_TIMEOUT);
         });
         
+        console.log(`⏱️ 타임아웃 설정 완료: ${MODEL_INIT_TIMEOUT / 1000}초`);
         this.pipeline = await Promise.race([initPromise, timeoutPromise]);
         clearInterval(heartbeatInterval);
         
@@ -109,6 +119,8 @@ export class EmbeddingService {
         console.log(`✅ BGE-M3 모델 초기화 완료: ${modelInitMs}ms (${(modelInitMs / 1000).toFixed(1)}초)`);
       } catch (error) {
         clearInterval(heartbeatInterval);
+        const elapsed = Date.now() - modelInitStartMs;
+        console.error(`❌ BGE-M3 모델 초기화 실패 (경과: ${(elapsed / 1000).toFixed(1)}초):`, error);
         throw error;
       }
       this.currentModel = model;
