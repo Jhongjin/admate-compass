@@ -433,9 +433,9 @@ export default function AdminDashboardPage() {
               <p className="text-xs text-muted-enhanced">시스템 전반 상태</p>
               <div className="mt-3 progress-with-percentage">
                 <div className="progress-enhanced progress-success">
-                  <div className="progress-fill" style={{ width: `${stats.systemInfo?.progressMetrics?.overall || 0}%` }}></div>
+                  <div className="progress-fill" style={{ width: `${systemStatus.overall === 'healthy' ? 100 : systemStatus.overall === 'warning' ? 70 : 0}%` }}></div>
                 </div>
-                <div className="progress-percentage">{stats.systemInfo?.progressMetrics?.overall || 0}%</div>
+                <div className="progress-percentage">{systemStatus.overall === 'healthy' ? 100 : systemStatus.overall === 'warning' ? 70 : 0}%</div>
               </div>
             </CardContent>
           </Card>
@@ -462,9 +462,9 @@ export default function AdminDashboardPage() {
               <p className="text-xs text-gray-400">PostgreSQL 연결 상태</p>
               <div className="mt-3 progress-with-percentage">
                 <div className="progress-enhanced progress-success">
-                  <div className="progress-fill" style={{ width: `${stats.systemInfo?.progressMetrics?.database || 100}%` }}></div>
+                  <div className="progress-fill" style={{ width: `${systemStatus.database === 'connected' ? 100 : 0}%` }}></div>
                 </div>
-                <div className="progress-percentage">{stats.systemInfo?.progressMetrics?.database || 100}%</div>
+                <div className="progress-percentage">{systemStatus.database === 'connected' ? 100 : 0}%</div>
               </div>
             </CardContent>
           </Card>
@@ -491,9 +491,9 @@ export default function AdminDashboardPage() {
               <p className="text-xs text-gray-400">AI 모델 응답 상태</p>
               <div className="mt-3 progress-with-percentage">
                 <div className="progress-enhanced progress-purple">
-                  <div className="progress-fill" style={{ width: `${stats.systemInfo?.progressMetrics?.llm || 98}%` }}></div>
+                  <div className="progress-fill" style={{ width: `${systemStatus.llm === 'operational' ? 98 : 0}%` }}></div>
                 </div>
-                <div className="progress-percentage">{stats.systemInfo?.progressMetrics?.llm || 98}%</div>
+                <div className="progress-percentage">{systemStatus.llm === 'operational' ? 98 : 0}%</div>
               </div>
             </CardContent>
           </Card>
@@ -520,9 +520,9 @@ export default function AdminDashboardPage() {
               <p className="text-xs text-gray-400">pgvector 인덱싱 상태</p>
               <div className="mt-3 progress-with-percentage">
                 <div className="progress-enhanced progress-warning">
-                  <div className="progress-fill" style={{ width: `${stats.systemInfo?.progressMetrics?.vectorStore || 0}%` }}></div>
+                  <div className="progress-fill" style={{ width: `${systemStatus.vectorStore === 'indexed' ? 100 : systemStatus.vectorStore === 'indexing' ? 50 : 0}%` }}></div>
                 </div>
-                <div className="progress-percentage">{stats.systemInfo?.progressMetrics?.vectorStore || 0}%</div>
+                <div className="progress-percentage">{systemStatus.vectorStore === 'indexed' ? 100 : systemStatus.vectorStore === 'indexing' ? 50 : 0}%</div>
               </div>
             </CardContent>
           </Card>
@@ -746,11 +746,11 @@ export default function AdminDashboardPage() {
             </div>
             <div className="flex justify-between items-center">
               <span className="text-sm text-secondary-enhanced font-semibold">데이터베이스 크기:</span>
-              <span className="text-sm font-bold text-primary-enhanced">{stats.systemInfo?.databaseSize || '계산 중'}</span>
+              <span className="text-sm font-bold text-primary-enhanced">계산 중</span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-sm text-secondary-enhanced font-semibold">인덱싱된 문서:</span>
-              <span className="text-sm font-bold text-primary-enhanced">{stats.systemInfo?.indexedDocuments || stats.completedDocuments || 0}개</span>
+              <span className="text-sm font-bold text-primary-enhanced">{stats.completedDocuments || 0}개</span>
             </div>
           </CardContent>
         </Card>
@@ -771,7 +771,7 @@ export default function AdminDashboardPage() {
             </div>
             <div className="flex justify-between items-center">
               <span className="text-sm text-secondary-enhanced font-semibold">동시 사용자:</span>
-              <span className="text-sm font-bold text-primary-enhanced">{stats.systemInfo?.activeUsers || 0}명</span>
+              <span className="text-sm font-bold text-primary-enhanced">{stats.weeklyStats?.users || 0}명</span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-sm text-secondary-enhanced font-semibold">CPU 사용률:</span>
