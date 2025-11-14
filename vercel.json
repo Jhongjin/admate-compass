@@ -13,7 +13,7 @@
   ],
   "functions": {
     "src/app/api/admin/upload-new/route.ts": {
-      "maxDuration": 300
+      "maxDuration": 600
     },
     "src/app/api/rag/route.ts": {
       "maxDuration": 120

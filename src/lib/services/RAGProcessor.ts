@@ -899,30 +899,46 @@ export class RAGProcessor {
         console.log('⚠️ 대용량 파일 처리 - 타임아웃 설정:', timeoutMs + 'ms (8분)');
       }
       
-      // 타임아웃 설정
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => {
-          reject(new Error(`문서 처리 타임아웃 (${timeoutMs}ms 초과)`));
-        }, timeoutMs);
-      });
+      // AbortController를 사용하여 타임아웃 시 실제로 작업 중단
+      const abortController = new AbortController();
+      const timeoutId = setTimeout(() => {
+        abortController.abort();
+      }, timeoutMs);
       
-      const processPromise = this.processDocumentInternal(document, skipDuplicate, originalBinaryData);
-      
-      // 타임아웃과 처리 작업을 경쟁시킴
-      const result = await Promise.race([processPromise, timeoutPromise]);
-      return result;
+      try {
+        const processPromise = this.processDocumentInternal(document, skipDuplicate, originalBinaryData, abortController.signal);
+        const result = await processPromise;
+        clearTimeout(timeoutId);
+        return result;
+      } catch (error) {
+        clearTimeout(timeoutId);
+        
+        // AbortError인 경우 타임아웃으로 처리
+        if (error instanceof Error && (error.name === 'AbortError' || abortController.signal.aborted)) {
+          throw new Error(`문서 처리 타임아웃 (${(timeoutMs / 1000).toFixed(0)}초 초과) - 파일 크기: ${(document.file_size / (1024 * 1024)).toFixed(2)}MB`);
+        }
+        throw error;
+      }
       
     } catch (error) {
       console.error('❌ RAG 문서 처리 실패:', error);
+      
+      // 타임아웃 에러인지 확인
+      const isTimeout = error instanceof Error && error.message.includes('타임아웃');
+      const errorMessage = isTimeout
+        ? `문서 처리 시간이 초과되었습니다. (파일 크기: ${(document.file_size / (1024 * 1024)).toFixed(2)}MB)`
+        : error instanceof Error ? error.message : '문서 처리 중 오류가 발생했습니다.';
+      
       return {
         documentId: document.id,
         chunkCount: 0,
         success: false,
+        error: errorMessage, // 에러 메시지 추가
       };
     }
   }
   
-  private async processDocumentInternal(document: DocumentData, skipDuplicate: boolean = false, originalBinaryData?: string): Promise<{
+  private async processDocumentInternal(document: DocumentData, skipDuplicate: boolean = false, originalBinaryData?: string, abortSignal?: AbortSignal): Promise<{
     documentId: string;
     chunkCount: number;
     success: boolean;

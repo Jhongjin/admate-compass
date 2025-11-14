@@ -11,7 +11,7 @@ import { createPureClient } from '@/lib/supabase/server';
 
 // Vercel 설정 - 서버 안정성 개선
 export const runtime = 'nodejs';
-export const maxDuration = 300; // Pro 플랜: 300초 타임아웃
+export const maxDuration = 600; // Pro 플랜: 600초 타임아웃 (10분 - 대용량 파일 처리 지원)
 export const dynamic = 'force-dynamic';
 export const revalidate = 0;
 
@@ -886,11 +886,13 @@ export async function POST(request: NextRequest) {
             );
           }
           
-          console.error('❌ RAG 처리 실패: 문서 처리 중 오류가 발생했습니다.');
+          // RAG 처리 실패 시 에러 메시지 전달
+          const errorMessage = (ragResult as any).error || '문서 처리 중 오류가 발생했습니다.';
+          console.error('❌ RAG 처리 실패:', errorMessage);
           return NextResponse.json(
             { 
               success: false, 
-              error: '문서 처리 중 오류가 발생했습니다.',
+              error: errorMessage,
               fileName: cleanFileName
             },
             { status: 500 }
