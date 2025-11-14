@@ -149,7 +149,7 @@ export default function AdminDashboardPage() {
       icon: <Users className="w-6 h-6" />,
       color: "from-green-500 to-green-600",
       hoverColor: "from-green-600 to-green-700",
-      stats: `${stats.systemInfo?.activeUsers || 0}명 활성`,
+      stats: `${stats.weeklyStats?.users || 0}명 활성`,
       trend: "+0%"
     },
     {
@@ -182,7 +182,7 @@ export default function AdminDashboardPage() {
       stats: "로그 조회",
       trend: "+0%"
     },
-  ], [stats.totalDocuments, stats.completedDocuments, stats.systemInfo?.activeUsers, stats.weeklyStats?.questions]);
+  ], [stats.totalDocuments, stats.completedDocuments, stats.weeklyStats?.users, stats.weeklyStats?.questions]);
 
   const performanceMetrics = useMemo(() => stats.performanceMetrics || [], [stats.performanceMetrics]);
 
