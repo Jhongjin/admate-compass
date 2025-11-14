@@ -87,8 +87,9 @@ export class RAGProcessor {
       
       // 이미 초기화되어 있으면 재초기화하지 않음
       if (!this.embeddingService.initialized) {
-        // 모델 초기화에 타임아웃 설정 (2분 내에 완료되지 않으면 실패로 처리)
-        const initTimeoutMs = 120000; // 2분
+        // 모델 초기화에 타임아웃 설정 (30초 내에 완료되지 않으면 실패로 처리)
+        // 서버리스 환경에서 모델 다운로드가 매우 느릴 수 있으므로 빠른 fallback이 중요
+        const initTimeoutMs = 30000; // 30초
         const initPromise = this.embeddingService.initialize('bge-m3');
         const timeoutPromise = new Promise<never>((_, reject) => {
           setTimeout(() => {
