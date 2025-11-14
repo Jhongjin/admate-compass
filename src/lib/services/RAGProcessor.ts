@@ -240,12 +240,18 @@ export class RAGProcessor {
       console.log('🔮 임베딩 생성 시작:', chunks.length, '개 청크');
 
       // 임베딩 서비스 초기화 시도
+      const embeddingInitStartMs = Date.now();
+      console.log('🔄 임베딩 서비스 초기화 시작...');
       const embeddingService = await this.initializeEmbeddingService();
+      const embeddingInitMs = Date.now() - embeddingInitStartMs;
+      console.log(`✅ 임베딩 서비스 초기화 완료: ${embeddingInitMs}ms (${(embeddingInitMs / 1000).toFixed(1)}초)`);
+      
       const embeddingDim = parseInt(process.env.EMBEDDING_DIM || '1024');
 
       if (embeddingService) {
         // BGE-M3 모델 사용
         console.log('✅ BGE-M3 모델로 임베딩 생성 중...');
+        console.log(`📊 임베딩 생성 대상: ${chunks.length}개 청크, 차원: ${embeddingDim}`);
         
         // 작은 청크(100자 이하)는 해시 기반 임베딩으로 빠르게 처리
         const SMALL_CHUNK_THRESHOLD = 100;
@@ -278,16 +284,25 @@ export class RAGProcessor {
         console.log(`📦 배치 생성 완료: ${batches.length}개 배치 (배치 크기: ${BATCH_SIZE})`);
         
         // 모든 배치를 동시에 처리 (병렬 처리)
+        const embeddingGenerationStartMs = Date.now();
+        console.log(`🚀 임베딩 생성 시작: ${batches.length}개 배치 병렬 처리`);
+        
         const allBatchPromises = batches.map(async (batch, batchIndex) => {
           const batchStartMs = Date.now();
           console.log(`📦 배치 ${batchIndex + 1}/${batches.length} 처리 시작: ${batch.length}개 청크`);
           
           const batchPromises = batch.map(async (chunk, chunkIndex) => {
             try {
+              const chunkEmbeddingStartMs = Date.now();
               const result = await embeddingService.generateEmbedding(chunk.content, {
                 model: 'bge-m3',
                 normalize: true
               });
+              const chunkEmbeddingMs = Date.now() - chunkEmbeddingStartMs;
+              
+              if (chunkIndex === 0) {
+                console.log(`✅ 배치 ${batchIndex + 1} 첫 청크 임베딩 완료: ${chunkEmbeddingMs}ms`);
+              }
               
               // 차원 변환 (BGE-M3는 1024차원, 필요시 조정)
               let embedding = result.embedding;
@@ -324,9 +339,13 @@ export class RAGProcessor {
         });
         
         // 모든 배치가 완료될 때까지 대기 (병렬 처리)
+        console.log(`⏳ 모든 배치 완료 대기 중... (${batches.length}개 배치)`);
         const allBatchResults = await Promise.all(allBatchPromises);
+        const embeddingGenerationMs = Date.now() - embeddingGenerationStartMs;
+        console.log(`✅ 모든 배치 완료: ${embeddingGenerationMs}ms (${(embeddingGenerationMs / 1000).toFixed(1)}초)`);
         
         // 결과 병합 (작은 청크 + 큰 청크)
+        console.log('📦 임베딩 결과 병합 중...');
         const chunksWithEmbeddings: ChunkData[] = [
           ...smallChunksWithEmbeddings,
           ...allBatchResults.flat()
@@ -340,7 +359,8 @@ export class RAGProcessor {
           total: orderedChunks.length,
           smallChunks: smallChunks.length,
           largeChunks: largeChunks.length,
-          batches: batches.length
+          batches: batches.length,
+          totalTime: `${embeddingGenerationMs}ms (${(embeddingGenerationMs / 1000).toFixed(1)}초)`
         });
         return orderedChunks;
       } else {
