@@ -126,7 +126,7 @@ export async function GET(request: NextRequest) {
     }
 
     // 팀별 만족도 계산을 위해 conversations와 profiles 조인 필요
-    const userSegments = (teamStats || []).map(team => {
+    const userSegments = (teamStats || []).map((team: any) => {
       const teamQuestions = teamQuestionStats?.find(tq => tq.team === team.team);
       const helpfulCount = feedback?.filter(fb => fb.helpful === true).length || 0;
       const totalFeedback = feedback?.length || 0;
@@ -197,4 +197,5 @@ export async function GET(request: NextRequest) {
     }, { status: 500 });
   }
 }
+
 
