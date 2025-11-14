@@ -337,8 +337,19 @@ export default function NewDocumentUpload({ onUpload }: NewDocumentUploadProps) 
       });
 
       // Base64 인코딩을 사용하여 파일 전송
-      const fileContent = await file.text();
-      const base64Content = btoa(unescape(encodeURIComponent(fileContent)));
+      // PDF/DOCX는 바이너리 파일이므로 arrayBuffer 사용 (file.text()는 텍스트 파일에만 작동)
+      const arrayBuffer = await file.arrayBuffer();
+      const uint8Array = new Uint8Array(arrayBuffer);
+      
+      // 브라우저 환경에서 Uint8Array를 Base64로 변환 (청크 단위로 처리하여 메모리 효율성 향상)
+      let base64Content = '';
+      const chunkSize = 8192; // 8KB 청크로 처리
+      for (let i = 0; i < uint8Array.length; i += chunkSize) {
+        const chunk = uint8Array.slice(i, i + chunkSize);
+        // Uint8Array를 문자열로 변환 후 Base64 인코딩
+        const binaryString = Array.from(chunk, byte => String.fromCharCode(byte)).join('');
+        base64Content += btoa(binaryString);
+      }
       
       const requestBody = {
         fileName: file.name,

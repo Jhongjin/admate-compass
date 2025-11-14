@@ -302,7 +302,13 @@ export class RAGProcessor {
                 embedding,
               };
             } catch (error) {
-              console.warn(`⚠️ 청크 BGE-M3 임베딩 생성 실패, 해시 기반으로 fallback:`, error);
+              const errorMessage = error instanceof Error ? error.message : String(error);
+              console.warn(`⚠️ 청크 BGE-M3 임베딩 생성 실패, 해시 기반으로 fallback:`, {
+                chunkId: chunk.id,
+                chunkIndex: chunk.metadata.chunk_index,
+                error: errorMessage,
+                note: '해시 기반 임베딩은 의미 검색에 부적합할 수 있습니다.'
+              });
               return {
                 ...chunk,
                 embedding: this.generateSimpleEmbedding(chunk.content),
@@ -973,16 +979,23 @@ export class RAGProcessor {
         contentLengthKB: (document.content.length / 1024).toFixed(2)
       });
       
-      // PDF 바이너리 데이터인 경우 텍스트 추출 없이 청킹 건너뛰기 (하지만 문서는 저장)
+      // PDF 바이너리 데이터인 경우 텍스트 추출 실패로 처리
       if (document.content && document.content.startsWith('BINARY_DATA:')) {
-        console.log('⚠️ PDF 바이너리 데이터 감지 - 청킹 건너뛰기, 문서만 저장');
+        console.error('❌ PDF 바이너리 데이터 감지 - 텍스트 추출 실패로 인해 청킹 불가');
+        console.error('❌ 상세 정보:', {
+          documentId: document.id,
+          title: document.title,
+          fileType: document.file_type,
+          fileSize: document.file_size,
+          note: 'PDF에서 텍스트를 추출하지 못했습니다. 파일이 손상되었거나 텍스트가 없는 이미지 기반 PDF일 수 있습니다.'
+        });
         
-        // 문서는 저장 (청크 없이)
+        // 문서는 저장 (청크 없이) - 다운로드용으로만 사용
         const supabase = await this.getSupabaseClient();
         if (supabase) {
           try {
             await this.saveDocumentToDatabase(document, originalBinaryData);
-            console.log('✅ PDF 문서 저장 완료 (청크 없음)');
+            console.log('✅ PDF 문서 저장 완료 (청크 없음 - 다운로드용으로만 사용)');
             
             // 문서 상태를 indexed로 업데이트 (청크 없어도 저장 완료)
             const { error: updateError } = await supabase
@@ -1005,14 +1018,17 @@ export class RAGProcessor {
               documentId: document.id,
               chunkCount: 0,
               success: false,
+              error: `PDF 문서 저장 실패: ${error instanceof Error ? error.message : 'Unknown error'}`
             };
           }
         }
         
+        // 텍스트 추출 실패 시 명확한 에러 메시지 반환
         return {
           documentId: document.id,
           chunkCount: 0,
-          success: true, // PDF는 다운로드용으로만 사용
+          success: false,
+          error: 'PDF에서 텍스트를 추출하지 못했습니다. 파일이 손상되었거나 텍스트가 없는 이미지 기반 PDF일 수 있습니다. AI 검색은 불가능하며 다운로드용으로만 저장되었습니다.'
         };
       }
       
@@ -1040,9 +1056,19 @@ export class RAGProcessor {
         content: processedContent
       };
       
+      // AbortSignal 체크
+      if (abortSignal?.aborted) {
+        throw new Error('문서 처리가 중단되었습니다.');
+      }
+      
       // 통합 청킹 서비스 사용
       const chunks = await this.chunkDocumentWithUnifiedService(processedDocument);
       const chunkingMs = Date.now() - chunkingStartMs;
+      
+      // AbortSignal 체크
+      if (abortSignal?.aborted) {
+        throw new Error('문서 처리가 중단되었습니다.');
+      }
       const avgChunkSize = chunks.length > 0 ? Math.round(chunks.reduce((sum, c) => sum + c.content.length, 0) / chunks.length) : 0;
       const totalChunkSize = chunks.reduce((sum, c) => sum + c.content.length, 0);
       
@@ -1314,17 +1340,32 @@ export class RAGProcessor {
         };
       }
 
+      // AbortSignal 체크
+      if (abortSignal?.aborted) {
+        throw new Error('문서 처리가 중단되었습니다.');
+      }
+      
       // 2. 임베딩 생성 (BGE-M3 모델 사용, 실패 시 해시 기반 fallback)
       const embeddingStartMs = Date.now();
       console.log('🔮 임베딩 생성 시작...', { chunkCount: chunks.length });
       const chunksWithEmbeddings = await this.generateEmbeddings(chunks);
       const embeddingMs = Date.now() - embeddingStartMs;
       console.log(`✅ 임베딩 생성 완료: ${chunksWithEmbeddings.length}개 청크 (${(embeddingMs / 1000).toFixed(1)}초)`);
+      
+      // AbortSignal 체크
+      if (abortSignal?.aborted) {
+        throw new Error('문서 처리가 중단되었습니다.');
+      }
 
       // 큰 파일 여부 확인 (저장 시 배치 처리용)
       const isChunkProcess = document.title?.includes('분할');
       const isLargeFile = document.file_size > 10 * 1024 * 1024 || chunks.length > 1000;
 
+      // AbortSignal 체크
+      if (abortSignal?.aborted) {
+        throw new Error('문서 처리가 중단되었습니다.');
+      }
+      
       // 3. Supabase에 저장 (큰 파일의 경우 청크 저장도 배치 처리)
       const savingStartMs = Date.now();
       const supabase = await this.getSupabaseClient();
@@ -1335,6 +1376,11 @@ export class RAGProcessor {
           await this.saveDocumentToDatabase(document, originalBinaryData);
           const docSaveMs = Date.now() - docSaveStartMs;
           console.log('✅ 문서 데이터베이스 저장 완료', { time: `${docSaveMs}ms` });
+          
+          // AbortSignal 체크
+          if (abortSignal?.aborted) {
+            throw new Error('문서 처리가 중단되었습니다.');
+          }
 
           // 큰 파일의 경우 청크 저장도 더 작은 배치로 처리
           const chunkSaveStartMs = Date.now();
@@ -1345,6 +1391,11 @@ export class RAGProcessor {
             // 분할 처리 시 배치 크기 증가로 처리 시간 단축 (150 → 200)
             const SAVE_BATCH_SIZE = isChunkProcess ? 200 : 150;
             for (let i = 0; i < chunksWithEmbeddings.length; i += SAVE_BATCH_SIZE) {
+              // AbortSignal 체크 (각 배치 전에)
+              if (abortSignal?.aborted) {
+                throw new Error('문서 처리가 중단되었습니다.');
+              }
+              
               const batch = chunksWithEmbeddings.slice(i, i + SAVE_BATCH_SIZE);
               const batchSaveStartMs = Date.now();
               console.log(`💾 청크 저장 배치: ${i + 1}-${Math.min(i + SAVE_BATCH_SIZE, chunksWithEmbeddings.length)}/${chunksWithEmbeddings.length}`);
@@ -1387,12 +1438,19 @@ export class RAGProcessor {
             console.warn(`⚠️ 청크 저장 불일치: 생성 ${chunks.length}개, 저장 ${savedChunkCount}개`);
           }
         } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
           console.error('❌ 데이터베이스 저장 실패:', error);
           console.error('❌ 저장 실패 상세:', {
             documentId: document.id,
             title: document.title,
-            error: error instanceof Error ? error.message : String(error)
+            error: errorMessage,
+            savedChunkCount,
+            totalChunks: chunks.length,
+            note: '부분 저장된 청크가 있을 수 있습니다. 데이터 일관성을 확인해주세요.'
           });
+          
+          // 에러를 다시 throw하여 상위로 전파
+          throw new Error(`데이터베이스 저장 실패: ${errorMessage}`);
         }
       } else {
         console.log('⚠️ Supabase 연결 없음, 메모리 모드');
