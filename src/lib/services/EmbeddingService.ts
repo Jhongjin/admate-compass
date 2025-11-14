@@ -74,11 +74,11 @@ export class EmbeddingService {
       const modelInitStartMs = Date.now();
       console.log('🔄 BGE-M3 모델 초기화 시작 (다운로드/로딩 중...)');
       
-      // 타임아웃을 30초로 설정 (서버리스 환경에서 모델 다운로드가 매우 느릴 경우 빠른 fallback을 위해)
+      // 타임아웃을 15초로 설정 (서버리스 환경에서 모델 다운로드가 매우 느릴 경우 빠른 fallback을 위해)
       // 모델이 캐시에 있으면 빠르게 로드되지만(보통 5-10초), 없으면 다운로드에 시간이 걸림
-      // 30초 내에 완료되지 않으면 해시 기반 임베딩으로 fallback
+      // 15초 내에 완료되지 않으면 해시 기반 임베딩으로 fallback
       // 서버리스 환경에서는 모델 다운로드가 매우 느릴 수 있으므로 빠른 fallback이 중요
-      const MODEL_INIT_TIMEOUT = 30000; // 30초 타임아웃 (빠른 fallback을 위해)
+      const MODEL_INIT_TIMEOUT = 15000; // 15초 타임아웃 (빠른 fallback을 위해)
       
       // 진행 상황 추적을 위한 하트비트 로깅 (더 자세한 정보 포함)
       let lastHeartbeatTime = modelInitStartMs;

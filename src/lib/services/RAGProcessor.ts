@@ -87,21 +87,36 @@ export class RAGProcessor {
       
       // 이미 초기화되어 있으면 재초기화하지 않음
       if (!this.embeddingService.initialized) {
-        // 모델 초기화에 타임아웃 설정 (30초 내에 완료되지 않으면 실패로 처리)
+        // 모델 초기화에 타임아웃 설정 (15초 내에 완료되지 않으면 실패로 처리)
         // 서버리스 환경에서 모델 다운로드가 매우 느릴 수 있으므로 빠른 fallback이 중요
-        const initTimeoutMs = 30000; // 30초
-        const initPromise = this.embeddingService.initialize('bge-m3');
+        const initTimeoutMs = 15000; // 15초 (빠른 fallback을 위해)
+        const initStartMs = Date.now();
+        console.log(`⏱️ 모델 초기화 타임아웃 설정: ${initTimeoutMs / 1000}초`);
+        
+        const initPromise = this.embeddingService.initialize('bge-m3').then(() => {
+          const elapsed = Date.now() - initStartMs;
+          console.log(`✅ 모델 초기화 완료: ${elapsed}ms (${(elapsed / 1000).toFixed(1)}초)`);
+        }).catch((error) => {
+          const elapsed = Date.now() - initStartMs;
+          console.error(`❌ 모델 초기화 중 오류 발생 (경과: ${(elapsed / 1000).toFixed(1)}초):`, error);
+          throw error;
+        });
+        
         const timeoutPromise = new Promise<never>((_, reject) => {
           setTimeout(() => {
+            const elapsed = Date.now() - initStartMs;
+            console.error(`⏰ 모델 초기화 타임아웃 발생: ${initTimeoutMs / 1000}초 초과 (경과: ${(elapsed / 1000).toFixed(1)}초)`);
             reject(new Error(`임베딩 모델 초기화 타임아웃 (${initTimeoutMs / 1000}초 초과)`));
           }, initTimeoutMs);
         });
         
         try {
           await Promise.race([initPromise, timeoutPromise]);
+          console.log('✅ 모델 초기화 성공적으로 완료');
         } catch (error) {
+          const elapsed = Date.now() - initStartMs;
           const errorMessage = error instanceof Error ? error.message : String(error);
-          console.warn(`⚠️ 임베딩 모델 초기화 타임아웃/실패 (${initTimeoutMs / 1000}초 초과), 해시 기반 임베딩으로 fallback:`, errorMessage);
+          console.warn(`⚠️ 임베딩 모델 초기화 타임아웃/실패 (경과: ${(elapsed / 1000).toFixed(1)}초), 해시 기반 임베딩으로 fallback:`, errorMessage);
           throw error; // 상위 catch에서 처리
         }
       } else {
