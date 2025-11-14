@@ -786,7 +786,7 @@ export default function AdminDashboardPage() {
       </motion.div>
 
       {/* API 사용량 통계 */}
-      {stats.apiUsage && (
+      {'apiUsage' in stats && stats.apiUsage && (
         <motion.div 
           className="mb-6 sm:mb-8"
           initial={{ opacity: 0, y: 20 }}
