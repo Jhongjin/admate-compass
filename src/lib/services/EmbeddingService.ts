@@ -74,8 +74,10 @@ export class EmbeddingService {
       const modelInitStartMs = Date.now();
       console.log('🔄 BGE-M3 모델 초기화 시작 (다운로드/로딩 중...)');
       
-      // 타임아웃을 10분으로 증가 (큰 모델 다운로드 시간 고려, Vercel Pro 플랜 maxDuration과 일치)
-      const MODEL_INIT_TIMEOUT = 600000; // 10분 타임아웃 (Vercel Pro 플랜 maxDuration과 일치)
+      // 타임아웃을 2분으로 설정 (서버리스 환경에서 모델 다운로드가 느릴 경우 빠른 fallback을 위해)
+      // 모델이 캐시에 있으면 빠르게 로드되지만, 없으면 다운로드에 시간이 걸림
+      // 2분 내에 완료되지 않으면 해시 기반 임베딩으로 fallback
+      const MODEL_INIT_TIMEOUT = 120000; // 2분 타임아웃 (빠른 fallback을 위해)
       
       // 진행 상황 추적을 위한 하트비트 로깅 (더 자세한 정보 포함)
       let lastHeartbeatTime = modelInitStartMs;

@@ -87,7 +87,22 @@ export class RAGProcessor {
       
       // 이미 초기화되어 있으면 재초기화하지 않음
       if (!this.embeddingService.initialized) {
-        await this.embeddingService.initialize('bge-m3');
+        // 모델 초기화에 타임아웃 설정 (2분 내에 완료되지 않으면 실패로 처리)
+        const initTimeoutMs = 120000; // 2분
+        const initPromise = this.embeddingService.initialize('bge-m3');
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          setTimeout(() => {
+            reject(new Error(`임베딩 모델 초기화 타임아웃 (${initTimeoutMs / 1000}초 초과)`));
+          }, initTimeoutMs);
+        });
+        
+        try {
+          await Promise.race([initPromise, timeoutPromise]);
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          console.warn(`⚠️ 임베딩 모델 초기화 타임아웃/실패 (${initTimeoutMs / 1000}초 초과), 해시 기반 임베딩으로 fallback:`, errorMessage);
+          throw error; // 상위 catch에서 처리
+        }
       } else {
         console.log('✅ 임베딩 서비스가 이미 초기화되어 있음 (캐시 재사용)');
       }
