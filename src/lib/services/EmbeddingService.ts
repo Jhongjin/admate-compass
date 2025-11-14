@@ -70,30 +70,47 @@ export class EmbeddingService {
       const importMs = Date.now() - initStartMs;
       console.log(`✅ 모듈 로딩 완료: ${importMs}ms`);
       
-      // BGE-M3 모델 초기화 (타임아웃 설정)
+      // BGE-M3 모델 초기화 (타임아웃 설정 + 진행 상황 추적)
       const modelInitStartMs = Date.now();
       console.log('🔄 BGE-M3 모델 초기화 시작 (다운로드/로딩 중...)');
       
-      const MODEL_INIT_TIMEOUT = 120000; // 2분 타임아웃
-      const initPromise = pipeline('feature-extraction', 'Xenova/bge-m3', {
-        // 모델 로딩 최적화
-        quantized: true,
-        // 캐시 사용 (Vercel 환경에서는 /tmp 사용)
-        cache_dir: cacheDir,
-        // 추가 옵션
-        local_files_only: false,
-        revision: 'main'
-      });
+      // 타임아웃을 5분으로 증가 (큰 모델 다운로드 시간 고려)
+      const MODEL_INIT_TIMEOUT = 300000; // 5분 타임아웃
       
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => {
-          reject(new Error(`BGE-M3 모델 초기화 타임아웃 (${MODEL_INIT_TIMEOUT / 1000}초 초과)`));
-        }, MODEL_INIT_TIMEOUT);
-      });
+      // 진행 상황 추적을 위한 하트비트 로깅
+      const heartbeatInterval = setInterval(() => {
+        const elapsed = Date.now() - modelInitStartMs;
+        const elapsedSeconds = (elapsed / 1000).toFixed(1);
+        console.log(`⏳ BGE-M3 모델 초기화 진행 중... (경과: ${elapsedSeconds}초)`);
+      }, 10000); // 10초마다 하트비트
       
-      this.pipeline = await Promise.race([initPromise, timeoutPromise]);
-      const modelInitMs = Date.now() - modelInitStartMs;
-      console.log(`✅ BGE-M3 모델 초기화 완료: ${modelInitMs}ms (${(modelInitMs / 1000).toFixed(1)}초)`);
+      try {
+        const initPromise = pipeline('feature-extraction', 'Xenova/bge-m3', {
+          // 모델 로딩 최적화
+          quantized: true,
+          // 캐시 사용 (Vercel 환경에서는 /tmp 사용)
+          cache_dir: cacheDir,
+          // 추가 옵션
+          local_files_only: false,
+          revision: 'main'
+        });
+        
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          setTimeout(() => {
+            clearInterval(heartbeatInterval);
+            reject(new Error(`BGE-M3 모델 초기화 타임아웃 (${MODEL_INIT_TIMEOUT / 1000}초 초과)`));
+          }, MODEL_INIT_TIMEOUT);
+        });
+        
+        this.pipeline = await Promise.race([initPromise, timeoutPromise]);
+        clearInterval(heartbeatInterval);
+        
+        const modelInitMs = Date.now() - modelInitStartMs;
+        console.log(`✅ BGE-M3 모델 초기화 완료: ${modelInitMs}ms (${(modelInitMs / 1000).toFixed(1)}초)`);
+      } catch (error) {
+        clearInterval(heartbeatInterval);
+        throw error;
+      }
       this.currentModel = model;
       this.isInitialized = true;
       
