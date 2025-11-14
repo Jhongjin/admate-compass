@@ -1372,8 +1372,7 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
       setUploadError(errorMessage);
       setUploadProgress(0);
       
-      toast.error('업로드 프로세스 오류', {
-        title: '파일 업로드 실패',
+      toast.error('파일 업로드 실패', {  
         description: errorMessage,
         duration: 5000,
       });
