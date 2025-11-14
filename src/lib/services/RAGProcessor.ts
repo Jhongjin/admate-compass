@@ -72,64 +72,66 @@ export class RAGProcessor {
   }
 
   /**
-   * 임베딩 서비스 초기화 (지연 로딩 + 싱글톤 캐싱)
+   * 임베딩 서비스 초기화 (비동기 백그라운드 초기화 + 즉시 fallback)
+   * 
+   * 옵션 1 구현: 모델 초기화를 비동기로 시작하되, 완료를 기다리지 않고 즉시 null을 반환하여
+   * 해시 기반 임베딩으로 문서 처리를 시작합니다. 모델 초기화는 백그라운드에서 진행되며,
+   * 완료 여부를 추적하고 로깅합니다.
    */
   private async initializeEmbeddingService(): Promise<EmbeddingService | null> {
+    // 이미 초기화 시도가 완료된 경우 (성공 또는 실패)
     if (this.embeddingServiceInitialized) {
-      return this.embeddingService;
+      // 모델이 정상적으로 초기화되었으면 반환
+      if (this.embeddingService && this.embeddingService.initialized) {
+        return this.embeddingService;
+      }
+      // 초기화 실패했거나 아직 진행 중이면 null 반환 (해시 기반 사용)
+      return null;
     }
 
     try {
-      console.log('🔄 임베딩 서비스 초기화 시도...');
+      console.log('🔄 임베딩 서비스 초기화 시도 (비동기 백그라운드 모드)...');
       
       // 싱글톤 인스턴스 사용 (서버리스 환경에서 모델 재사용)
       this.embeddingService = globalEmbeddingService;
       
-      // 이미 초기화되어 있으면 재초기화하지 않음
-      if (!this.embeddingService.initialized) {
-        // 모델 초기화에 타임아웃 설정 (15초 내에 완료되지 않으면 실패로 처리)
-        // 서버리스 환경에서 모델 다운로드가 매우 느릴 수 있으므로 빠른 fallback이 중요
-        const initTimeoutMs = 15000; // 15초 (빠른 fallback을 위해)
-        const initStartMs = Date.now();
-        console.log(`⏱️ 모델 초기화 타임아웃 설정: ${initTimeoutMs / 1000}초`);
-        
-        const initPromise = this.embeddingService.initialize('bge-m3').then(() => {
-          const elapsed = Date.now() - initStartMs;
-          console.log(`✅ 모델 초기화 완료: ${elapsed}ms (${(elapsed / 1000).toFixed(1)}초)`);
-        }).catch((error) => {
-          const elapsed = Date.now() - initStartMs;
-          console.error(`❌ 모델 초기화 중 오류 발생 (경과: ${(elapsed / 1000).toFixed(1)}초):`, error);
-          throw error;
-        });
-        
-        const timeoutPromise = new Promise<never>((_, reject) => {
-          setTimeout(() => {
-            const elapsed = Date.now() - initStartMs;
-            console.error(`⏰ 모델 초기화 타임아웃 발생: ${initTimeoutMs / 1000}초 초과 (경과: ${(elapsed / 1000).toFixed(1)}초)`);
-            reject(new Error(`임베딩 모델 초기화 타임아웃 (${initTimeoutMs / 1000}초 초과)`));
-          }, initTimeoutMs);
-        });
-        
-        try {
-          await Promise.race([initPromise, timeoutPromise]);
-          console.log('✅ 모델 초기화 성공적으로 완료');
-        } catch (error) {
-          const elapsed = Date.now() - initStartMs;
-          const errorMessage = error instanceof Error ? error.message : String(error);
-          console.warn(`⚠️ 임베딩 모델 초기화 타임아웃/실패 (경과: ${(elapsed / 1000).toFixed(1)}초), 해시 기반 임베딩으로 fallback:`, errorMessage);
-          throw error; // 상위 catch에서 처리
-        }
-      } else {
+      // 이미 초기화되어 있으면 즉시 반환
+      if (this.embeddingService.initialized) {
         console.log('✅ 임베딩 서비스가 이미 초기화되어 있음 (캐시 재사용)');
+        this.embeddingServiceInitialized = true;
+        return this.embeddingService;
       }
+
+      // 모델 초기화를 백그라운드에서 비동기로 시작 (await하지 않음)
+      // 문서 처리는 즉시 해시 기반 임베딩으로 시작
+      const initStartMs = Date.now();
+      console.log('🚀 BGE-M3 모델 초기화를 백그라운드에서 시작 (문서 처리는 즉시 해시 기반 임베딩으로 진행)');
+      console.log('📊 모델 초기화 완료 여부는 로그에서 확인 가능합니다.');
       
-      this.embeddingServiceInitialized = true;
-      console.log('✅ 임베딩 서비스 초기화 성공 (BGE-M3)');
-      return this.embeddingService;
+      // 백그라운드에서 모델 초기화 시작 (완료를 기다리지 않음)
+      this.embeddingService.initialize('bge-m3')
+        .then(() => {
+          const elapsed = Date.now() - initStartMs;
+          const elapsedSeconds = (elapsed / 1000).toFixed(1);
+          console.log(`✅ [백그라운드] BGE-M3 모델 초기화 완료: ${elapsed}ms (${elapsedSeconds}초)`);
+          console.log(`📊 [백그라운드] 모델 초기화 상태: 정상 완료 - 다음 요청부터 BGE-M3 임베딩 사용 가능`);
+        })
+        .catch((error) => {
+          const elapsed = Date.now() - initStartMs;
+          const elapsedSeconds = (elapsed / 1000).toFixed(1);
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          console.error(`❌ [백그라운드] BGE-M3 모델 초기화 실패 (경과: ${elapsedSeconds}초):`, errorMessage);
+          console.log(`📊 [백그라운드] 모델 초기화 상태: 실패 - 해시 기반 임베딩 계속 사용`);
+        });
+
+      // 즉시 null을 반환하여 해시 기반 임베딩으로 문서 처리 시작
+      this.embeddingServiceInitialized = true; // 초기화 시도 완료로 표시
+      console.log('⚡ 문서 처리는 즉시 해시 기반 임베딩으로 시작합니다.');
+      return null;
     } catch (error) {
-      console.warn('⚠️ 임베딩 서비스 초기화 실패, 해시 기반 임베딩으로 fallback:', error);
+      console.warn('⚠️ 임베딩 서비스 초기화 시도 중 오류, 해시 기반 임베딩으로 fallback:', error);
       this.embeddingService = null;
-      this.embeddingServiceInitialized = true; // 실패해도 재시도하지 않음
+      this.embeddingServiceInitialized = true;
       return null;
     }
   }
