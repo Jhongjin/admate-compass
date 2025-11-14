@@ -17,6 +17,11 @@ export class EmbeddingService {
   private pipeline: any = null;
   private currentModel: string | null = null;
   private isInitialized = false;
+  
+  // 초기화 상태 확인용 getter (서버리스 환경에서 캐싱 확인)
+  get initialized(): boolean {
+    return this.isInitialized;
+  }
 
   /**
    * 임베딩 모델 초기화

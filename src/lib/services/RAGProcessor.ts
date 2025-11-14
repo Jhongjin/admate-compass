@@ -10,7 +10,7 @@ import { processTextEncoding, TextEncodingResult } from '../utils/textEncoding';
 import { adaptiveChunkingService, AdaptiveChunkingConfig } from './AdaptiveChunkingService';
 import { contentTypeDetector } from './ContentTypeDetector';
 import { unifiedChunkingService, UnifiedChunkingOptions } from './UnifiedChunkingService';
-import { EmbeddingService } from './EmbeddingService';
+import { EmbeddingService, embeddingService as globalEmbeddingService } from './EmbeddingService';
 
 export interface ChunkData {
   id: string;
@@ -72,7 +72,7 @@ export class RAGProcessor {
   }
 
   /**
-   * 임베딩 서비스 초기화 (지연 로딩)
+   * 임베딩 서비스 초기화 (지연 로딩 + 싱글톤 캐싱)
    */
   private async initializeEmbeddingService(): Promise<EmbeddingService | null> {
     if (this.embeddingServiceInitialized) {
@@ -81,8 +81,17 @@ export class RAGProcessor {
 
     try {
       console.log('🔄 임베딩 서비스 초기화 시도...');
-      this.embeddingService = new EmbeddingService();
-      await this.embeddingService.initialize('bge-m3');
+      
+      // 싱글톤 인스턴스 사용 (서버리스 환경에서 모델 재사용)
+      this.embeddingService = globalEmbeddingService;
+      
+      // 이미 초기화되어 있으면 재초기화하지 않음
+      if (!this.embeddingService.initialized) {
+        await this.embeddingService.initialize('bge-m3');
+      } else {
+        console.log('✅ 임베딩 서비스가 이미 초기화되어 있음 (캐시 재사용)');
+      }
+      
       this.embeddingServiceInitialized = true;
       console.log('✅ 임베딩 서비스 초기화 성공 (BGE-M3)');
       return this.embeddingService;
@@ -237,15 +246,43 @@ export class RAGProcessor {
       if (embeddingService) {
         // BGE-M3 모델 사용
         console.log('✅ BGE-M3 모델로 임베딩 생성 중...');
-        const chunksWithEmbeddings: ChunkData[] = [];
         
-        // 배치 처리 (성능 최적화: 배치 크기 증가로 처리 시간 단축)
+        // 작은 청크(100자 이하)는 해시 기반 임베딩으로 빠르게 처리
+        const SMALL_CHUNK_THRESHOLD = 100;
+        const smallChunks: ChunkData[] = [];
+        const largeChunks: ChunkData[] = [];
+        
+        chunks.forEach(chunk => {
+          if (chunk.content.length <= SMALL_CHUNK_THRESHOLD) {
+            smallChunks.push(chunk);
+          } else {
+            largeChunks.push(chunk);
+          }
+        });
+        
+        console.log(`📊 청크 분류: 작은 청크 ${smallChunks.length}개, 큰 청크 ${largeChunks.length}개`);
+        
+        // 작은 청크는 해시 기반 임베딩으로 즉시 처리
+        const smallChunksWithEmbeddings = smallChunks.map(chunk => ({
+          ...chunk,
+          embedding: this.generateSimpleEmbedding(chunk.content),
+        }));
+        
+        // 큰 청크는 BGE-M3로 처리 (배치 간 병렬 처리)
         const BATCH_SIZE = 25;
-        for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
-          const batch = chunks.slice(i, i + BATCH_SIZE);
-          console.log(`📦 임베딩 배치 처리: ${i + 1}-${Math.min(i + BATCH_SIZE, chunks.length)}/${chunks.length}`);
+        const batches: ChunkData[][] = [];
+        for (let i = 0; i < largeChunks.length; i += BATCH_SIZE) {
+          batches.push(largeChunks.slice(i, i + BATCH_SIZE));
+        }
+        
+        console.log(`📦 배치 생성 완료: ${batches.length}개 배치 (배치 크기: ${BATCH_SIZE})`);
+        
+        // 모든 배치를 동시에 처리 (병렬 처리)
+        const allBatchPromises = batches.map(async (batch, batchIndex) => {
+          const batchStartMs = Date.now();
+          console.log(`📦 배치 ${batchIndex + 1}/${batches.length} 처리 시작: ${batch.length}개 청크`);
           
-          const batchPromises = batch.map(async (chunk, batchIndex) => {
+          const batchPromises = batch.map(async (chunk, chunkIndex) => {
             try {
               const result = await embeddingService.generateEmbedding(chunk.content, {
                 model: 'bge-m3',
@@ -255,7 +292,7 @@ export class RAGProcessor {
               // 차원 변환 (BGE-M3는 1024차원, 필요시 조정)
               let embedding = result.embedding;
               if (embedding.length !== embeddingDim) {
-                console.warn(`⚠️ 청크 ${i + batchIndex} 임베딩 차원 불일치: ${embedding.length} → ${embeddingDim}`);
+                console.warn(`⚠️ 청크 임베딩 차원 불일치: ${embedding.length} → ${embeddingDim}`);
                 // 차원이 다르면 해시 기반으로 fallback
                 embedding = this.generateSimpleEmbedding(chunk.content);
               }
@@ -265,7 +302,7 @@ export class RAGProcessor {
                 embedding,
               };
             } catch (error) {
-              console.warn(`⚠️ 청크 ${i + batchIndex} BGE-M3 임베딩 생성 실패, 해시 기반으로 fallback:`, error);
+              console.warn(`⚠️ 청크 BGE-M3 임베딩 생성 실패, 해시 기반으로 fallback:`, error);
               return {
                 ...chunk,
                 embedding: this.generateSimpleEmbedding(chunk.content),
@@ -274,11 +311,32 @@ export class RAGProcessor {
           });
           
           const batchResults = await Promise.all(batchPromises);
-          chunksWithEmbeddings.push(...batchResults);
-        }
+          const batchMs = Date.now() - batchStartMs;
+          console.log(`✅ 배치 ${batchIndex + 1}/${batches.length} 완료: ${batchResults.length}개 청크 (${batchMs}ms)`);
+          
+          return batchResults;
+        });
+        
+        // 모든 배치가 완료될 때까지 대기 (병렬 처리)
+        const allBatchResults = await Promise.all(allBatchPromises);
+        
+        // 결과 병합 (작은 청크 + 큰 청크)
+        const chunksWithEmbeddings: ChunkData[] = [
+          ...smallChunksWithEmbeddings,
+          ...allBatchResults.flat()
+        ];
+        
+        // 원본 순서 유지
+        const chunksMap = new Map(chunksWithEmbeddings.map(chunk => [chunk.id, chunk]));
+        const orderedChunks = chunks.map(chunk => chunksMap.get(chunk.id) || chunk);
 
-        console.log('✅ BGE-M3 임베딩 생성 완료:', chunksWithEmbeddings.length, '개 청크');
-        return chunksWithEmbeddings;
+        console.log('✅ BGE-M3 임베딩 생성 완료:', {
+          total: orderedChunks.length,
+          smallChunks: smallChunks.length,
+          largeChunks: largeChunks.length,
+          batches: batches.length
+        });
+        return orderedChunks;
       } else {
         // 해시 기반 임베딩 fallback
         console.log('⚠️ 해시 기반 임베딩 사용 (BGE-M3 초기화 실패)');
