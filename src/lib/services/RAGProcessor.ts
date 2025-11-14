@@ -397,8 +397,14 @@ export class RAGProcessor {
         });
         return orderedChunks;
       } else {
-        // 해시 기반 임베딩 fallback
-        console.log('⚠️ 해시 기반 임베딩 사용 (BGE-M3 초기화 실패)');
+        // 해시 기반 임베딩 사용 (BGE-M3 초기화가 아직 완료되지 않음 또는 실패)
+        const isModelInitializing = this.embeddingService && !this.embeddingService.initialized;
+        if (isModelInitializing) {
+          console.log('⚡ 해시 기반 임베딩 사용 (BGE-M3 모델 초기화 진행 중 - 백그라운드에서 계속 진행)');
+          console.log('📊 모델 초기화 완료 여부는 로그에서 확인 가능합니다.');
+        } else {
+          console.log('⚠️ 해시 기반 임베딩 사용 (BGE-M3 초기화 실패 또는 사용 불가)');
+        }
         return this.generateEmbeddingsWithHash(chunks);
       }
     } catch (error) {
