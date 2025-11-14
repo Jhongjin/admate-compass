@@ -74,15 +74,24 @@ export class EmbeddingService {
       const modelInitStartMs = Date.now();
       console.log('🔄 BGE-M3 모델 초기화 시작 (다운로드/로딩 중...)');
       
-      // 타임아웃을 5분으로 증가 (큰 모델 다운로드 시간 고려)
-      const MODEL_INIT_TIMEOUT = 300000; // 5분 타임아웃
+      // 타임아웃을 10분으로 증가 (큰 모델 다운로드 시간 고려, Vercel Pro 플랜 maxDuration과 일치)
+      const MODEL_INIT_TIMEOUT = 600000; // 10분 타임아웃 (Vercel Pro 플랜 maxDuration과 일치)
       
       // 진행 상황 추적을 위한 하트비트 로깅 (더 자세한 정보 포함)
+      let lastHeartbeatTime = modelInitStartMs;
       const heartbeatInterval = setInterval(() => {
-        const elapsed = Date.now() - modelInitStartMs;
+        const now = Date.now();
+        const elapsed = now - modelInitStartMs;
         const elapsedSeconds = (elapsed / 1000).toFixed(1);
         const remainingSeconds = ((MODEL_INIT_TIMEOUT - elapsed) / 1000).toFixed(1);
-        console.log(`⏳ BGE-M3 모델 초기화 진행 중... (경과: ${elapsedSeconds}초, 남은 시간: ${remainingSeconds}초, 캐시: ${cacheDir})`);
+        const timeSinceLastHeartbeat = ((now - lastHeartbeatTime) / 1000).toFixed(1);
+        console.log(`⏳ BGE-M3 모델 초기화 진행 중... (경과: ${elapsedSeconds}초, 남은 시간: ${remainingSeconds}초, 마지막 하트비트 이후: ${timeSinceLastHeartbeat}초, 캐시: ${cacheDir})`);
+        lastHeartbeatTime = now;
+        
+        // 1분마다 추가 정보 로깅
+        if (elapsed > 60000 && elapsed % 60000 < 10000) {
+          console.log(`📊 모델 초기화 상태: 다운로드/로딩 중 (${(elapsed / 60000).toFixed(1)}분 경과)`);
+        }
       }, 10000); // 10초마다 하트비트
       
       try {
