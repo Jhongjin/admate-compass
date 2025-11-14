@@ -35,6 +35,27 @@ export class EmbeddingService {
 
       console.log(`🔄 임베딩 모델 초기화 중: ${model} (처음 로드 시 시간이 걸릴 수 있습니다)`);
       
+      // Vercel 서버리스 환경 감지: /tmp 디렉토리 사용 가능 여부 확인
+      const isVercel = process.env.VERCEL === '1' || typeof process.env.VERCEL !== 'undefined';
+      const cacheDir = isVercel ? '/tmp/.cache/transformers' : './.cache/transformers';
+      
+      // 캐시 디렉토리 생성 (필요한 경우)
+      if (isVercel) {
+        try {
+          const fs = await import('fs');
+          const path = await import('path');
+          const cachePath = path.dirname(cacheDir);
+          if (!fs.existsSync(cachePath)) {
+            fs.mkdirSync(cachePath, { recursive: true });
+            console.log(`📁 캐시 디렉토리 생성: ${cachePath}`);
+          }
+        } catch (mkdirError) {
+          console.warn('⚠️ 캐시 디렉토리 생성 실패 (계속 진행):', mkdirError);
+        }
+      }
+      
+      console.log(`📂 임베딩 모델 캐시 경로: ${cacheDir} (Vercel: ${isVercel})`);
+      
       // 동적으로 pipeline을 import하여 빌드 시 오류 방지
       const { pipeline } = await import('@xenova/transformers');
       
@@ -42,8 +63,8 @@ export class EmbeddingService {
       this.pipeline = await pipeline('feature-extraction', 'Xenova/bge-m3', {
         // 모델 로딩 최적화
         quantized: true,
-        // 캐시 사용
-        cache_dir: './.cache/transformers',
+        // 캐시 사용 (Vercel 환경에서는 /tmp 사용)
+        cache_dir: cacheDir,
         // 추가 옵션
         local_files_only: false,
         revision: 'main'
