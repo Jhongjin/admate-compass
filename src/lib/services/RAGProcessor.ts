@@ -239,8 +239,8 @@ export class RAGProcessor {
         console.log('✅ BGE-M3 모델로 임베딩 생성 중...');
         const chunksWithEmbeddings: ChunkData[] = [];
         
-        // 배치 처리 (한 번에 너무 많이 처리하지 않도록)
-        const BATCH_SIZE = 10;
+        // 배치 처리 (성능 최적화: 배치 크기 증가로 처리 시간 단축)
+        const BATCH_SIZE = 25;
         for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
           const batch = chunks.slice(i, i + BATCH_SIZE);
           console.log(`📦 임베딩 배치 처리: ${i + 1}-${Math.min(i + BATCH_SIZE, chunks.length)}/${chunks.length}`);

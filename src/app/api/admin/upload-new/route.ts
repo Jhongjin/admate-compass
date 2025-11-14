@@ -631,23 +631,93 @@ export async function POST(request: NextRequest) {
                   (file.name.toLowerCase().includes('docx') || 
                    file.name.toLowerCase().endsWith('.d') ||
                    file.name.toLowerCase().endsWith('.doc')))) {
-        // DOCX 파일은 모든 크기에 대해 큐로 처리 (텍스트 추출을 큐에서 수행)
-        const documentId = `doc_${Date.now()}`;
-        const storageInfo = await uploadToStorage(file, documentId, cleanFileName);
-        const jobId = await enqueueProcessingJob({
-          documentId,
-          jobType: 'DOCX_PARSE',
-          priority: 7,
-          payload: { fileName: cleanFileName, fileSize: file.size, fileType: file.type, storage: storageInfo }
-        });
+        // 작은 DOCX 파일(5MB 이하)은 즉시 처리, 큰 파일은 큐로 오프로딩
+        const SMALL_DOCX_THRESHOLD = 5 * 1024 * 1024; // 5MB
         
-        console.log('✅ DOCX 큐 등록 완료:', { jobId, documentId });
-        
-        // 큐에 등록 후 즉시 큐 워커 트리거 (응답 반환 전에 호출하여 실행 보장)
-        triggerQueueWorker();
-        
-        // 응답 반환 (큐 워커는 백그라운드에서 계속 실행)
-        return NextResponse.json({ success: true, queued: true, jobId, documentId, message: 'DOCX 파일은 백그라운드에서 처리됩니다.' }, { status: 202 });
+        if (file.size <= SMALL_DOCX_THRESHOLD) {
+          // 작은 DOCX 파일 즉시 처리
+          console.log('📄 작은 DOCX 파일 즉시 처리:', {
+            fileName: cleanFileName,
+            fileSize: file.size,
+            fileSizeMB: (file.size / (1024 * 1024)).toFixed(2) + 'MB'
+          });
+          
+          try {
+            // DOCX 텍스트 추출 API 호출
+            const extractFormData = new FormData();
+            extractFormData.append('file', file);
+            
+            const extractResponse = await fetch(`${process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000'}/api/extract-docx`, {
+              method: 'POST',
+              body: extractFormData
+            });
+            
+            if (!extractResponse.ok) {
+              throw new Error(`DOCX 텍스트 추출 실패: ${extractResponse.status}`);
+            }
+            
+            const extractResult = await extractResponse.json();
+            
+            if (!extractResult.success || !extractResult.text) {
+              throw new Error('DOCX에서 텍스트를 추출할 수 없습니다.');
+            }
+            
+            extractedText = extractResult.text;
+            fileContent = extractedText;
+            
+            // 원본 바이너리 데이터 저장 (다운로드용)
+            const arrayBuffer = await file.arrayBuffer();
+            originalBinaryData = Buffer.from(arrayBuffer).toString('base64');
+            
+            console.log(`✅ DOCX 텍스트 추출 완료:`, {
+              fileName: file.name,
+              extractedTextLength: extractedText.length,
+              hasText: extractedText.length > 0
+            });
+          } catch (docxError: any) {
+            console.error('❌ DOCX 텍스트 추출 실패, 큐로 오프로딩:', {
+              error: docxError?.message || docxError,
+              fileName: file.name
+            });
+            
+            // 추출 실패 시 큐로 오프로딩
+            const documentId = `doc_${Date.now()}`;
+            const storageInfo = await uploadToStorage(file, documentId, cleanFileName);
+            const jobId = await enqueueProcessingJob({
+              documentId,
+              jobType: 'DOCX_PARSE',
+              priority: 7,
+              payload: { fileName: cleanFileName, fileSize: file.size, fileType: file.type, storage: storageInfo }
+            });
+            
+            triggerQueueWorker();
+            return NextResponse.json({ success: true, queued: true, jobId, documentId, message: 'DOCX 파일은 백그라운드에서 처리됩니다.' }, { status: 202 });
+          }
+        } else {
+          // 큰 DOCX 파일은 큐로 오프로딩
+          console.log('📋 큰 DOCX 파일 감지 - 큐로 오프로딩:', {
+            fileName: cleanFileName,
+            fileSize: file.size,
+            fileSizeMB: (file.size / (1024 * 1024)).toFixed(2) + 'MB'
+          });
+          
+          const documentId = `doc_${Date.now()}`;
+          const storageInfo = await uploadToStorage(file, documentId, cleanFileName);
+          const jobId = await enqueueProcessingJob({
+            documentId,
+            jobType: 'DOCX_PARSE',
+            priority: 7,
+            payload: { fileName: cleanFileName, fileSize: file.size, fileType: file.type, storage: storageInfo }
+          });
+          
+          console.log('✅ DOCX 큐 등록 완료:', { jobId, documentId });
+          
+          // 큐에 등록 후 즉시 큐 워커 트리거 (응답 반환 전에 호출하여 실행 보장)
+          triggerQueueWorker();
+          
+          // 응답 반환 (큐 워커는 백그라운드에서 계속 실행)
+          return NextResponse.json({ success: true, queued: true, jobId, documentId, message: '큰 DOCX 파일은 백그라운드에서 처리됩니다.' }, { status: 202 });
+        }
         
         /* 기존 바이너리 처리 로직 제거 - 큐에서 텍스트 추출 수행 */
         /*

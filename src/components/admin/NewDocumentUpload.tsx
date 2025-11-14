@@ -180,6 +180,149 @@ export default function NewDocumentUpload({ onUpload }: NewDocumentUploadProps) 
     fileMapRef.current.delete(fileId); // Map에서도 제거
   };
 
+  // 적응형 폴링 함수: 작업 상태를 확인하고 완료될 때까지 폴링
+  const pollJobStatus = async (jobId: string, documentId: string, fileId: string, fileName: string) => {
+    const MAX_POLL_ATTEMPTS = 120; // 최대 10분 (5초 * 120)
+    const INITIAL_POLL_INTERVAL = 2000; // 초기 2초
+    const MAX_POLL_INTERVAL = 5000; // 최대 5초
+    const MIN_POLL_INTERVAL = 2000; // 최소 2초
+    
+    let pollInterval = INITIAL_POLL_INTERVAL;
+    let attempts = 0;
+    let lastStatus = 'queued';
+    
+    const poll = async (): Promise<void> => {
+      if (attempts >= MAX_POLL_ATTEMPTS) {
+        console.error('⏱️ 폴링 타임아웃:', { jobId, documentId, attempts });
+        setFiles(prev => prev.map(f => 
+          f.id === fileId ? { 
+            ...f, 
+            status: "error", 
+            error: '처리 시간이 초과되었습니다. 나중에 다시 확인해주세요.' 
+          } : f
+        ));
+        toast({
+          title: "처리 타임아웃",
+          description: `${fileName} 파일 처리가 시간 초과되었습니다.`,
+          variant: "destructive"
+        });
+        return;
+      }
+      
+      attempts++;
+      
+      try {
+        // Supabase에서 작업 상태 확인
+        const { createClient } = await import('@supabase/supabase-js');
+        const supabase = createClient(
+          process.env.NEXT_PUBLIC_SUPABASE_URL!,
+          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+        );
+        
+        // 작업 상태 확인
+        const { data: job, error: jobError } = await supabase
+          .from('processing_jobs')
+          .select('status, error, result')
+          .eq('id', jobId)
+          .single();
+        
+        if (jobError) {
+          console.error('❌ 작업 상태 조회 실패:', jobError);
+          // 에러가 있어도 계속 폴링 (일시적 오류일 수 있음)
+        }
+        
+        // 문서 상태 확인 (작업이 완료되었을 수 있음)
+        const { data: document, error: docError } = await supabase
+          .from('documents')
+          .select('status, chunk_count')
+          .eq('id', documentId)
+          .single();
+        
+        if (docError && docError.code !== 'PGRST116') {
+          console.error('❌ 문서 상태 조회 실패:', docError);
+        }
+        
+        const currentStatus = job?.status || document?.status || 'unknown';
+        
+        // 상태 변경 감지 시 폴링 간격 조정
+        if (currentStatus !== lastStatus) {
+          console.log(`📊 상태 변경: ${lastStatus} → ${currentStatus}`);
+          lastStatus = currentStatus;
+          
+          // 처리 중이면 폴링 간격 증가 (처리 시간이 길어질 수 있음)
+          if (currentStatus === 'processing') {
+            pollInterval = Math.min(pollInterval + 500, MAX_POLL_INTERVAL);
+          } else {
+            // 대기 중이면 폴링 간격 감소 (빠르게 시작될 수 있음)
+            pollInterval = Math.max(pollInterval - 500, MIN_POLL_INTERVAL);
+          }
+        }
+        
+        // 진행률 업데이트 (상태에 따라)
+        if (currentStatus === 'processing') {
+          const progress = Math.min(30 + (attempts * 0.5), 90);
+          setFiles(prev => prev.map(f => 
+            f.id === fileId ? { ...f, status: "processing", progress } : f
+          ));
+        }
+        
+        // 완료 확인
+        if (currentStatus === 'completed' || document?.status === 'indexed') {
+          console.log('✅ 작업 완료:', { jobId, documentId, chunkCount: document?.chunk_count });
+          
+          setFiles(prev => prev.map(f => 
+            f.id === fileId ? { ...f, status: "success", progress: 100 } : f
+          ));
+          
+          toast({
+            title: "처리 완료",
+            description: `${fileName} 파일이 성공적으로 처리되었습니다.`,
+          });
+          
+          // 문서 목록 새로고침
+          setTimeout(() => {
+            fetchUploadedDocuments();
+          }, 1000);
+          
+          return;
+        }
+        
+        // 실패 확인
+        if (currentStatus === 'failed') {
+          const errorMessage = job?.error || '처리 중 오류가 발생했습니다.';
+          console.error('❌ 작업 실패:', { jobId, error: errorMessage });
+          
+          setFiles(prev => prev.map(f => 
+            f.id === fileId ? { 
+              ...f, 
+              status: "error", 
+              error: errorMessage 
+            } : f
+          ));
+          
+          toast({
+            title: "처리 실패",
+            description: `${fileName} 파일 처리 중 오류가 발생했습니다.`,
+            variant: "destructive"
+          });
+          
+          return;
+        }
+        
+        // 다음 폴링 예약
+        setTimeout(poll, pollInterval);
+        
+      } catch (error) {
+        console.error('❌ 폴링 오류:', error);
+        // 오류가 있어도 계속 폴링 (일시적 오류일 수 있음)
+        setTimeout(poll, pollInterval);
+      }
+    };
+    
+    // 첫 폴링 시작
+    setTimeout(poll, pollInterval);
+  };
+
   const uploadAndIndexDocument = async (file: File, fileId: string) => {
     try {
       // 1단계: 파일 업로드
@@ -247,6 +390,19 @@ export default function NewDocumentUpload({ onUpload }: NewDocumentUploadProps) 
         const errorMessage = result.error || `서버 오류 (${response.status})`;
         console.error('서버 오류 응답:', errorMessage);
         throw new Error(errorMessage);
+      }
+
+      // 큐로 오프로딩된 경우 폴링 시작
+      if (result.queued && result.jobId && result.documentId) {
+        console.log('📋 큐로 오프로딩됨, 폴링 시작:', { jobId: result.jobId, documentId: result.documentId });
+        
+        setFiles(prev => prev.map(f => 
+          f.id === fileId ? { ...f, status: "processing", progress: 30 } : f
+        ));
+        
+        // 적응형 폴링 시작
+        await pollJobStatus(result.jobId, result.documentId, fileId, file.name);
+        return; // 폴링이 완료되면 함수 종료
       }
 
       // RAG 처리 결과 확인
