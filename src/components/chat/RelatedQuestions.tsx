@@ -18,12 +18,14 @@ import { motion } from "framer-motion";
 interface RelatedQuestionsProps {
   userQuestion: string;
   aiResponse: string;
+  relatedQuestions?: string[];
   onQuestionClick?: (question: string) => void;
 }
 
 export default function RelatedQuestions({ 
   userQuestion, 
   aiResponse, 
+  relatedQuestions,
   onQuestionClick 
 }: RelatedQuestionsProps) {
   const [questions, setQuestions] = useState<string[]>([]);
@@ -276,6 +278,14 @@ export default function RelatedQuestions({
 
   useEffect(() => {
     if (userQuestion && aiResponse) {
+      // 백엔드에서 생성한 문서 기반 질문이 있으면 우선 사용
+      if (relatedQuestions && relatedQuestions.length > 0) {
+        setQuestions(relatedQuestions);
+        setIsLoading(false);
+        return;
+      }
+      
+      // 백엔드 질문이 없으면 클라이언트에서 생성 (fallback)
       setIsLoading(true);
       
       // 약간의 지연을 주어 자연스러운 로딩 효과
@@ -285,7 +295,7 @@ export default function RelatedQuestions({
         setIsLoading(false);
       }, 800);
     }
-  }, [userQuestion, aiResponse]);
+  }, [userQuestion, aiResponse, relatedQuestions]);
 
   const handleQuestionClick = (question: string) => {
     if (onQuestionClick) {
@@ -358,8 +368,8 @@ export default function RelatedQuestions({
                         <MessageCircle className="w-3 h-3 text-purple-600" />
                       </div>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="text-base text-gray-800 leading-relaxed group-hover:text-purple-800 transition-colors">
+                    <div className="flex-1 min-w-0 overflow-hidden">
+                      <p className="text-base text-gray-800 leading-relaxed group-hover:text-purple-800 transition-colors line-clamp-2 break-words">
                         {question}
                       </p>
                     </div>
@@ -380,7 +390,7 @@ export default function RelatedQuestions({
               </div>
               <div className="flex items-center space-x-1">
                 <TrendingUp className="w-3 h-3" />
-                <span>인기 키워드 기반</span>
+                <span>{relatedQuestions && relatedQuestions.length > 0 ? '문서 내용 기반' : '인기 키워드 기반'}</span>
               </div>
             </div>
           </div>
