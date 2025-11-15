@@ -54,6 +54,7 @@ interface RelatedResourcesProps {
     documentType?: string;
     similarity?: number;
   }>;
+  relatedQuestions?: string[];
   onQuestionClick?: (question: string) => void;
 }
 
@@ -108,6 +109,7 @@ export default function RelatedResources({
   userQuestion, 
   aiResponse, 
   sources = [],
+  relatedQuestions,
   onQuestionClick
 }: RelatedResourcesProps) {
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
@@ -443,6 +445,7 @@ export default function RelatedResources({
         <RelatedQuestions 
           userQuestion={userQuestion}
           aiResponse={aiResponse}
+          relatedQuestions={relatedQuestions}
           onQuestionClick={onQuestionClick}
         />
       )}
