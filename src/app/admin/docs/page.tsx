@@ -4309,10 +4309,10 @@ function QueueMiniPanel({ vendors }: { vendors: string[] }) {
   });
 
   useEffect(() => {
-    const handler = () => refetchDocuments();
+    const handler = () => refetch();
     window.addEventListener('queue-refresh', handler);
     return () => window.removeEventListener('queue-refresh', handler);
-  }, [refetchDocuments]);
+  }, [refetch]);
 
   const queued = data?.queued ?? 0;
   const processing = data?.processing ?? 0;
@@ -4377,7 +4377,6 @@ function QueueMiniPanel({ vendors }: { vendors: string[] }) {
                   });
                 }
                 
-                refetchDocuments();
                 if (typeof window !== 'undefined') {
                   window.dispatchEvent(new CustomEvent('docs-refresh'));
                 }
@@ -5112,7 +5111,7 @@ function DocumentDetailDialog({ detail, onClose, onRefetch }: { detail: any | nu
                                         toast.success('벤더 수정 완료', {
                                           description: `${vendor}로 변경되었습니다.`
                                         });
-                                        refetchDocuments();
+                                        onRefetch();
                                         if (fullDoc) {
                                           fullDoc.source_vendor = dbVendor;
                                         }
