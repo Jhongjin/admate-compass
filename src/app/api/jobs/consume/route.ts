@@ -1343,7 +1343,7 @@ export async function processQueue() {
           'Sec-Fetch-Site': 'none',
         } as Record<string, string>;
 
-        // Puppeteer 서비스 인스턴스 (필요시에만 생성)
+        // Puppeteer 서비스 인스턴스 (필요시에만 생성, 상위 스코프에 선언)
         let puppeteerService: PuppeteerCrawlingService | null = null;
 
         const fetchPageContent = async (targetUrl: string) => {
@@ -1805,7 +1805,7 @@ export async function processQueue() {
           } finally {
             await sitemapDiscoveryService.close().catch(() => {});
             // Puppeteer 서비스 정리
-            if (puppeteerService) {
+            if (puppeteerService !== null) {
               await puppeteerService.close().catch(() => {});
               puppeteerService = null;
             }
