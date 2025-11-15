@@ -129,11 +129,58 @@ export class PuppeteerCrawlingService {
     if (!this.browser) {
       console.log('🚀 Puppeteer 브라우저 초기화 중...');
       
-      // Vercel 환경에서는 chromium을 사용, 로컬에서는 기본 실행 파일 사용
+      // Vercel 환경에서는 chromium을 사용
       const isVercel = process.env.VERCEL === '1';
-      const executablePath = isVercel 
-        ? await chromium.executablePath()
-        : undefined;
+      let executablePath: string | undefined;
+      
+      if (isVercel) {
+        executablePath = await chromium.executablePath();
+      } else {
+        // 로컬 환경: 환경 변수 또는 일반적인 Chrome 경로 시도
+        executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+        
+        if (!executablePath) {
+          // Windows에서 일반적인 Chrome 경로들 시도
+          const os = require('os');
+          const platform = os.platform();
+          const fs = require('fs');
+          const path = require('path');
+          
+          const possiblePaths = [
+            // 환경 변수
+            process.env.PUPPETEER_EXECUTABLE_PATH,
+            // Windows 일반 경로
+            'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+            'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+            process.env.LOCALAPPDATA && path.join(process.env.LOCALAPPDATA, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+            // macOS 일반 경로
+            '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+            // Linux 일반 경로
+            '/usr/bin/google-chrome',
+            '/usr/bin/google-chrome-stable',
+            '/usr/bin/chromium',
+            '/usr/bin/chromium-browser',
+          ].filter(Boolean) as string[];
+          
+          // 존재하는 경로 찾기
+          for (const chromePath of possiblePaths) {
+            try {
+              if (chromePath && fs.existsSync(chromePath)) {
+                executablePath = chromePath;
+                console.log(`✅ Chrome 실행 파일 발견: ${chromePath}`);
+                break;
+              }
+            } catch (e) {
+              // 경로 확인 실패 시 다음 경로 시도
+            }
+          }
+        }
+        
+        if (!executablePath) {
+          console.warn('⚠️ Chrome 실행 파일을 찾을 수 없습니다. PUPPETEER_EXECUTABLE_PATH 환경 변수를 설정하거나 Chrome을 설치해주세요.');
+          throw new Error('Chrome 실행 파일을 찾을 수 없습니다. PUPPETEER_EXECUTABLE_PATH 환경 변수를 설정하거나 Chrome을 설치해주세요.');
+        }
+      }
       
       this.browser = await puppeteerCore.launch({
         headless: true,
@@ -147,10 +194,10 @@ export class PuppeteerCrawlingService {
               '--disable-accelerated-2d-canvas',
               '--no-first-run',
               '--no-zygote',
-          '--disable-gpu',
-          '--disable-web-security',
-          '--disable-features=VizDisplayCompositor'
-        ]
+              '--disable-gpu',
+              '--disable-web-security',
+              '--disable-features=VizDisplayCompositor'
+            ]
       });
       console.log('✅ Puppeteer 브라우저 초기화 완료');
     }
@@ -164,9 +211,9 @@ export class PuppeteerCrawlingService {
     }
   }
 
-  async crawlMetaPage(url: string, discoverSubPages: boolean = false): Promise<CrawledDocumentData | null> {
-    // URL 필터링 적용
-    if (!this.isAllowedUrl(url)) {
+  async crawlMetaPage(url: string, discoverSubPages: boolean = false, skipUrlCheck: boolean = false): Promise<CrawledDocumentData | null> {
+    // URL 필터링 적용 (skipUrlCheck가 true이면 체크 건너뛰기)
+    if (!skipUrlCheck && !this.isAllowedUrl(url)) {
       console.log(`🚫 크롤링 차단: ${url}`);
       return null;
     }
