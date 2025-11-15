@@ -2273,13 +2273,8 @@ export async function POST(request: NextRequest) {
           const relatedQuestions = await relatedQuestionsPromise;
           
           // 스트림 완료 후 최종 메타데이터 전송
-          const shouldShowContactOption = confidence < 0.5 || 
-            (fullAnswer && (
-              fullAnswer.includes('문서에서 찾을 수 없습니다') ||
-              fullAnswer.includes('제공된 문서에서') ||
-              fullAnswer.includes('담당팀에 문의') ||
-              fullAnswer.includes('관련 정보를 찾을 수 없습니다')
-            ));
+          // 담당자 문의 버튼은 항상 표시 (사용자가 추가 정보를 요청할 수 있도록)
+          const shouldShowContactOption = true;
           
           console.log(`📊 답변 품질 평가: confidence=${confidence}, shouldShowContactOption=${shouldShowContactOption}`);
           console.log(`💡 관련 질문 생성 완료: ${relatedQuestions.length}개`);

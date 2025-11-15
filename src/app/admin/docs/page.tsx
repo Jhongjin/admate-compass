@@ -2325,7 +2325,13 @@ function DocsTable({
       
       // 벤더 필터 (항상 적용)
       const dbVendors = convertVendorsToDB(vendors);
-      q = q.in("source_vendor", dbVendors);
+      if (dbVendors.length > 0) {
+        q = q.in("source_vendor", dbVendors);
+      } else {
+        // 벤더 변환 실패 시 빈 배열 반환
+        console.warn('⚠️ 벤더 변환 실패:', vendors);
+        return [];
+      }
       
       // 상태 필터
       if (statusFilter && statusFilter !== "all") {
