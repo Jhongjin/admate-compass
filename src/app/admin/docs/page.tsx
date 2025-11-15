@@ -2325,6 +2325,12 @@ function DocsTable({
       
       // 벤더 필터 (항상 적용)
       const dbVendors = convertVendorsToDB(vendors);
+      console.log('🔍 벤더 필터링 디버그:', { 
+        selectedVendors: vendors, 
+        dbVendors, 
+        mapping: vendors.map(v => ({ ui: v, db: VENDOR_TO_DB_MAP[v] }))
+      });
+      
       if (dbVendors.length > 0) {
         q = q.in("source_vendor", dbVendors);
       } else {
@@ -2344,7 +2350,23 @@ function DocsTable({
       }
       
       const { data: documents, error } = await q;
-      if (error) throw error;
+      
+      if (error) {
+        console.error('❌ 문서 조회 오류:', error);
+        throw error;
+      }
+      
+      console.log('📊 문서 조회 결과:', { 
+        count: documents?.length || 0, 
+        dbVendors,
+        selectedVendors: vendors,
+        documents: documents?.map((d: any) => ({ 
+          id: d.id, 
+          title: d.title, 
+          source_vendor: d.source_vendor,
+          status: d.status 
+        }))
+      });
       
       // 디버깅: 쿼리 결과 확인
       if (typeof window !== 'undefined' && documents && documents.length > 0) {
@@ -2553,13 +2575,24 @@ function DocsTable({
   const filteredData = useMemo(() => {
     let rows = data || [];
     
+    console.log('🔍 filteredData 시작:', { 
+      originalCount: rows.length, 
+      vendors, 
+      typeFilter, 
+      searchQuery,
+      sampleRows: rows.slice(0, 3).map((r: any) => ({ id: r.id, title: r.title, source_vendor: r.source_vendor, status: r.status, chunk_count: r.chunk_count }))
+    });
+    
     // 유형 필터
     if (typeFilter && typeFilter !== "all" && typeFilter !== "url") {
+      const beforeCount = rows.length;
       rows = rows.filter((row: any) => getDocumentFileType(row) === typeFilter);
+      console.log('📋 유형 필터 적용:', { beforeCount, afterCount: rows.length, typeFilter });
     }
     
     // 검색 필터 (제목, URL, 메타데이터)
     if (searchQuery && searchQuery.trim()) {
+      const beforeCount = rows.length;
       const query = searchQuery.toLowerCase().trim();
       rows = rows.filter((row: any) => {
         const title = (row.title || '').toLowerCase();
@@ -2572,10 +2605,12 @@ function DocsTable({
                id.includes(query) ||
                vendor.includes(query);
       });
+      console.log('🔎 검색 필터 적용:', { beforeCount, afterCount: rows.length, searchQuery });
     }
     
     // 큐 처리 중인 문서 제외 (chunk_count가 0이고 큐에 등록된 문서)
     const queuedIds = new Set(queuedDocumentIds || []);
+    const beforeCount = rows.length;
     rows = rows.filter((row: any) => {
       const isQueued = queuedIds.has(row.id);
       const hasNoChunks = (row.chunk_count || 0) === 0;
@@ -2589,9 +2624,15 @@ function DocsTable({
       // processing 상태이지만 청크가 있고 큐에 없는 경우는 정상 문서로 표시
       return true;
     });
+    console.log('📦 큐 필터 적용:', { beforeCount, afterCount: rows.length, queuedIds: Array.from(queuedIds) });
+    
+    console.log('✅ filteredData 최종 결과:', { 
+      finalCount: rows.length,
+      finalRows: rows.map((r: any) => ({ id: r.id, title: r.title, source_vendor: r.source_vendor }))
+    });
     
     return rows;
-  }, [data, typeFilter, queuedDocumentIds, searchQuery]);
+  }, [data, typeFilter, queuedDocumentIds, searchQuery, vendors]);
 
   // 필터된 목록의 총 청크 수
   const totalChunks = useMemo(() => {
