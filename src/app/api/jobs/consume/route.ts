@@ -1805,8 +1805,9 @@ export async function processQueue() {
           } finally {
             await sitemapDiscoveryService.close().catch(() => {});
             // Puppeteer 서비스 정리
-            if (puppeteerService !== null) {
-              await puppeteerService.close().catch(() => {});
+            const service = puppeteerService;
+            if (service !== null) {
+              await service.close().catch(() => {});
               puppeteerService = null;
             }
           }
