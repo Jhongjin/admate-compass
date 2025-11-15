@@ -3242,7 +3242,7 @@ function DocsTable({
   useEffect(() => {
     const handler = () => {
       logger.log('🔄 문서 목록 새로고침 트리거됨');
-      refetch();
+      refetchDocuments();
     };
     if (typeof window !== 'undefined') {
       window.addEventListener('docs-refresh', handler as EventListener);
@@ -3262,7 +3262,7 @@ function DocsTable({
         onRefreshStateChange(true);
       }
       try {
-        await refetch();
+        await refetchDocuments();
       } finally {
         if (onRefreshStateChange) {
           onRefreshStateChange(false);
@@ -3294,7 +3294,7 @@ function DocsTable({
             (doc: any) => doc.status === 'processing' || doc.status === 'pending'
           );
           if (processingDocs.length > 0) {
-            refetch(); // 알림 없이 문서 목록만 새로고침
+            refetchDocuments(); // 알림 없이 문서 목록만 새로고침
           }
         }
         return;
@@ -3332,7 +3332,7 @@ function DocsTable({
           });
           
           // 자동으로 문서 목록 새로고침
-          refetch();
+          refetchDocuments();
         }
       }
     };
@@ -3595,7 +3595,7 @@ function DocsTable({
       }
       
       // 문서 목록 새로고침
-      refetch();
+      refetchDocuments();
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('docs-refresh'));
       }
@@ -3656,7 +3656,7 @@ function DocsTable({
         duration: 3000,
       });
       
-      refetch();
+      refetchDocuments();
     } catch (error) {
       logger.error('문서 삭제 오류:', error);
       toast.error('문서 삭제 실패', {
@@ -3737,7 +3737,7 @@ function DocsTable({
                   onRefreshStateChange(true);
                 }
                 try {
-                  await refetch();
+                  await refetchDocuments();
                 } finally {
                   if (onRefreshStateChange) {
                     onRefreshStateChange(false);
@@ -4309,7 +4309,7 @@ function QueueMiniPanel({ vendors }: { vendors: string[] }) {
   });
 
   useEffect(() => {
-    const handler = () => refetch();
+    const handler = () => refetchDocuments();
     window.addEventListener('queue-refresh', handler);
     return () => window.removeEventListener('queue-refresh', handler);
   }, [refetch]);
@@ -4377,7 +4377,7 @@ function QueueMiniPanel({ vendors }: { vendors: string[] }) {
                   });
                 }
                 
-                refetch();
+                refetchDocuments();
                 if (typeof window !== 'undefined') {
                   window.dispatchEvent(new CustomEvent('docs-refresh'));
                 }
@@ -4451,7 +4451,7 @@ function QueueMiniPanel({ vendors }: { vendors: string[] }) {
                   duration: 4000,
                 });
                 
-                refetch();
+                refetchDocuments();
                 if (typeof window !== 'undefined') {
                   window.dispatchEvent(new CustomEvent('queue-refresh'));
                   window.dispatchEvent(new CustomEvent('docs-refresh'));
