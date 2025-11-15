@@ -9,11 +9,13 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -77,51 +79,82 @@ function AdminDocsPageContent() {
   const router = useRouter();
   const params = useSearchParams();
 
-  const [selectedVendors, setSelectedVendors] = useState<string[]>(() => {
-    const fromUrl = params.get("vendors");
-    return fromUrl ? decodeURIComponent(fromUrl).split(",").filter(Boolean) : ["Meta"]; // default
-  });
-  const [statusFilter, setStatusFilter] = useState<string>(() => {
-    if (typeof window === 'undefined') return "all";
-    return window.localStorage.getItem('adminDocsStatusFilter') || "all";
-  });
-  const [typeFilter, setTypeFilter] = useState<string>(() => {
-    if (typeof window === 'undefined') return "all";
-    return window.localStorage.getItem('adminDocsTypeFilter') || "all";
-  });
+  // Hydration 오류 방지: 초기값을 항상 동일하게 설정 (기본 벤더 없음)
+  const [selectedVendors, setSelectedVendors] = useState<string[]>([]);
+  // Hydration 오류 방지: 초기값을 항상 동일하게 설정하고, useEffect에서 localStorage 읽기
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [typeFilter, setTypeFilter] = useState<string>("all");
   const [viewMode, setViewMode] = useState<"card" | "list">("card");
   const [searchQuery, setSearchQuery] = useState<string>("");
   const [toolbarRefreshLoading, setToolbarRefreshLoading] = useState(false);
+  const [isClient, setIsClient] = useState(false);
 
-  // 보기 모드 로컬 스토리지에서 복원
+  // 클라이언트 마운트 확인 (Hydration 오류 방지)
   useEffect(() => {
-    if (typeof window === 'undefined') return;
-    const saved = window.localStorage.getItem('adminDocsViewMode');
-    if (saved === 'card' || saved === 'list') {
-      setViewMode(saved);
-    }
+    setIsClient(true);
   }, []);
+
+  // 보기 모드 및 필터 설정 localStorage에서 복원 (클라이언트에서만)
+  useEffect(() => {
+    if (!isClient || typeof window === 'undefined') return;
+    
+    // 보기 모드 복원 (유효한 값만 허용)
+    const savedViewMode = window.localStorage.getItem('adminDocsViewMode');
+    if (savedViewMode === 'card' || savedViewMode === 'list') {
+      setViewMode(savedViewMode);
+    } else if (savedViewMode) {
+      // 잘못된 값이 저장되어 있으면 'card'로 초기화하고 localStorage 업데이트
+      console.warn(`⚠️ 잘못된 viewMode 값 감지: "${savedViewMode}", 'card'로 초기화합니다.`);
+      setViewMode('card');
+      window.localStorage.setItem('adminDocsViewMode', 'card');
+    }
+    
+    // 필터 설정 복원
+    const savedStatusFilter = window.localStorage.getItem('adminDocsStatusFilter');
+    if (savedStatusFilter) {
+      setStatusFilter(savedStatusFilter);
+    }
+    
+    const savedTypeFilter = window.localStorage.getItem('adminDocsTypeFilter');
+    if (savedTypeFilter) {
+      setTypeFilter(savedTypeFilter);
+    }
+  }, [isClient]);
+
   // 변경 시 저장
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    if (!isClient || typeof window === 'undefined') return;
     window.localStorage.setItem('adminDocsViewMode', viewMode);
-  }, [viewMode]);
+  }, [viewMode, isClient]);
 
   // 필터 설정 localStorage 저장
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    if (!isClient || typeof window === 'undefined') return;
     window.localStorage.setItem('adminDocsStatusFilter', statusFilter);
-  }, [statusFilter]);
+  }, [statusFilter, isClient]);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    if (!isClient || typeof window === 'undefined') return;
     window.localStorage.setItem('adminDocsTypeFilter', typeFilter);
-  }, [typeFilter]);
+  }, [typeFilter, isClient]);
+
+  // URL 파라미터에서 vendors 읽기 (클라이언트에서만)
+  useEffect(() => {
+    if (!isClient) return;
+    const fromUrl = params.get("vendors");
+    if (fromUrl) {
+      const vendors = decodeURIComponent(fromUrl).split(",").filter(Boolean);
+      if (vendors.length > 0) {
+        setSelectedVendors(vendors);
+      }
+    }
+  }, [isClient, params]);
 
   useEffect(() => {
+    if (!isClient) return;
     const q = selectedVendors.length ? `?vendors=${encodeURIComponent(selectedVendors.join(","))}` : "";
     router.replace(`/admin/docs${q}`);
-  }, [selectedVendors, router]);
+  }, [selectedVendors, router, isClient]);
 
   return (
     <AdminLayout currentPage="docs">
@@ -167,7 +200,7 @@ function AdminDocsPageContent() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
         {/* Left: Upload/Crawl + Queue panel */}
         <div className="space-y-4 sm:space-y-6 lg:col-span-1">
-          <UploadAndCrawlTabs vendors={selectedVendors} />
+          <UploadAndCrawlTabs vendors={selectedVendors} onVendorsChange={setSelectedVendors} />
           <QueueMiniPanel vendors={selectedVendors} />
           <QueueMonitoringPanel vendors={selectedVendors} defaultOpen={false} />
         </div>
@@ -274,7 +307,7 @@ type UploadStep =
   | 'completed'
   | 'error';
 
-function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
+function UploadAndCrawlTabs({ vendors, onVendorsChange }: { vendors: string[]; onVendorsChange: (v: string[]) => void }) {
   const [isUploading, setUploading] = useState(false);
   const [isCrawling, setCrawling] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -291,11 +324,8 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
   const [crawlProgressValue, setCrawlProgressValue] = useState(0);
   const [crawlProgressLabel, setCrawlProgressLabel] = useState('');
   const [crawlResult, setCrawlResult] = useState<any>(null);
-  const [extractSubPages, setExtractSubPages] = useState(() => {
-    if (typeof window === 'undefined') return true;
-    const saved = window.localStorage.getItem('adminDocsExtractSubPages');
-    return saved === null ? true : saved === 'true';
-  });
+  // Hydration 오류 방지: 초기값을 항상 동일하게 설정
+  const [extractSubPages, setExtractSubPages] = useState(true);
   
   // URL 크롤링 옵션 상태 관리
   type CrawlOptions = {
@@ -304,36 +334,55 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
     maxDepth: string;
   };
   
-  const [crawlOptions, setCrawlOptions] = useState<CrawlOptions>(() => {
-    if (typeof window === 'undefined') {
-      return { domainLimit: true, respectRobots: true, maxDepth: '2' };
+  const [crawlOptions, setCrawlOptions] = useState<CrawlOptions>({
+    domainLimit: true,
+    respectRobots: true,
+    maxDepth: '2'
+  });
+  
+  // 클라이언트 마운트 확인 (Hydration 오류 방지)
+  const [isClient, setIsClient] = useState(false);
+  
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
+
+  // 크롤링 옵션 및 extractSubPages localStorage에서 복원 (클라이언트에서만)
+  useEffect(() => {
+    if (!isClient || typeof window === 'undefined') return;
+    
+    // extractSubPages 복원
+    const savedExtractSubPages = window.localStorage.getItem('adminDocsExtractSubPages');
+    if (savedExtractSubPages !== null) {
+      setExtractSubPages(savedExtractSubPages === 'true');
     }
-    const saved = window.localStorage.getItem('adminCrawlOptions');
-    if (saved) {
+    
+    // crawlOptions 복원
+    const savedCrawlOptions = window.localStorage.getItem('adminCrawlOptions');
+    if (savedCrawlOptions) {
       try {
-        const parsed = JSON.parse(saved) as CrawlOptions;
-        return {
+        const parsed = JSON.parse(savedCrawlOptions) as CrawlOptions;
+        setCrawlOptions({
           domainLimit: typeof parsed.domainLimit === 'boolean' ? parsed.domainLimit : true,
           respectRobots: typeof parsed.respectRobots === 'boolean' ? parsed.respectRobots : true,
           maxDepth: typeof parsed.maxDepth === 'string' ? parsed.maxDepth : '2',
-        };
+        });
       } catch {
-        return { domainLimit: true, respectRobots: true, maxDepth: '2' };
+        // 파싱 실패 시 기본값 유지
       }
     }
-    return { domainLimit: true, respectRobots: true, maxDepth: '2' };
-  });
-  
+  }, [isClient]);
+
   // 크롤링 옵션 localStorage 저장
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    if (!isClient || typeof window === 'undefined') return;
     window.localStorage.setItem('adminCrawlOptions', JSON.stringify(crawlOptions));
-  }, [crawlOptions]);
+  }, [crawlOptions, isClient]);
 
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    if (!isClient || typeof window === 'undefined') return;
     window.localStorage.setItem('adminDocsExtractSubPages', String(extractSubPages));
-  }, [extractSubPages]);
+  }, [extractSubPages, isClient]);
 
   useEffect(() => {
     if (crawlProgressValue === 100 || crawlResult?.error) {
@@ -475,6 +524,15 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
       const filesToUpload = files || (fileInputRef.current?.files ? Array.from(fileInputRef.current.files) : []);
       if (filesToUpload.length === 0) return;
       
+      // 벤더 선택 확인 (업로드 시작 전에 체크)
+      if (vendors.length === 0) {
+        toast.error('벤더를 선택해주세요', {
+          description: '파일 업로드 전에 벤더를 선택해야 합니다.',
+          duration: 4000,
+        });
+        return;
+      }
+      
       setUploading(true);
       setUploadSuccess(false);
       setUploadError(null);
@@ -529,8 +587,8 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
         setUploadStep('uploading');
         setUploadProgress(10);
         
-        // UI 벤더 이름을 DB 값으로 변환
-        const dbVendor = convertVendorsToDB([vendors[0] || "Meta"])[0] || "META";
+        // UI 벤더 이름을 DB 값으로 변환 (첫 번째 벤더 사용)
+        const dbVendor = convertVendorsToDB(vendors)[0] || "META";
         const documentId = `doc_${Date.now()}`;
         
         // Storage에 직접 업로드
@@ -918,8 +976,8 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
       
       const form = new FormData();
       form.append("file", uploadFile);
-      // UI 벤더 이름을 DB 값으로 변환
-      const dbVendor = convertVendorsToDB([vendors[0] || "Meta"])[0] || "META";
+      // UI 벤더 이름을 DB 값으로 변환 (첫 번째 벤더 사용)
+      const dbVendor = convertVendorsToDB(vendors)[0] || "META";
       form.append("vendor", dbVendor);
       
       const res = await fetch("/api/admin/upload-new", { method: "POST", body: form });
@@ -1397,6 +1455,15 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
     e.stopPropagation();
     setDragActive(false);
     
+    // 벤더 선택 확인
+    if (vendors.length === 0) {
+      toast.error('벤더를 선택해주세요', {
+        description: '파일 업로드 전에 벤더를 선택해야 합니다.',
+        duration: 4000,
+      });
+      return;
+    }
+    
     if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
       const files = Array.from(e.dataTransfer.files);
       // PDF, DOCX, TXT 파일만 필터링
@@ -1414,7 +1481,7 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
         });
       }
     }
-  }, [handleUpload]);
+  }, [handleUpload, vendors]);
 
   const handleFileChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files.length > 0) {
@@ -1434,6 +1501,18 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
       
       if (!url) {
         toast.error('URL을 입력해주세요', { duration: 3000 });
+        setCrawling(false);
+        setCrawlProgressValue(0);
+        setCrawlProgressLabel('');
+        return;
+      }
+
+      // 벤더 선택 확인
+      if (vendors.length === 0) {
+        toast.error('벤더를 선택해주세요', {
+          description: 'URL 크롤링 전에 벤더를 선택해야 합니다.',
+          duration: 4000,
+        });
         setCrawling(false);
         setCrawlProgressValue(0);
         setCrawlProgressLabel('');
@@ -1614,8 +1693,58 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="text-sm text-secondary-enhanced font-semibold">
-              선택 벤더: <span className="text-blue-300">{vendors.join(", ") || "(없음)"}</span>
+            {/* 벤더 선택 (Popover 멀티 선택) */}
+            <div className="space-y-2">
+              <Label className="text-sm font-semibold text-primary-enhanced">
+                벤더 선택 <span className="text-red-400">*</span>
+              </Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className="w-full justify-between h-10 bg-gray-900/70 border-white/10 text-white hover:bg-gray-800/70"
+                  >
+                    <span className="text-sm">
+                      {vendors.length === 0 
+                        ? "벤더를 선택하세요" 
+                        : vendors.length === 1
+                        ? vendors[0]
+                        : `${vendors.length}개 선택됨`}
+                    </span>
+                    <ChevronDown className="h-4 w-4 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-56 p-2 bg-gray-900 border-gray-700" align="start">
+                  <div className="space-y-2">
+                    {ALL_VENDORS.map((vendor) => (
+                      <div key={vendor} className="flex items-center space-x-2">
+                        <Checkbox
+                          id={`upload-vendor-${vendor}`}
+                          checked={vendors.includes(vendor)}
+                          onCheckedChange={(checked) => {
+                            if (checked) {
+                              onVendorsChange([...vendors, vendor]);
+                            } else {
+                              onVendorsChange(vendors.filter(v => v !== vendor));
+                            }
+                          }}
+                        />
+                        <Label
+                          htmlFor={`upload-vendor-${vendor}`}
+                          className="text-sm text-white cursor-pointer flex-1"
+                        >
+                          {vendor}
+                        </Label>
+                      </div>
+                    ))}
+                  </div>
+                </PopoverContent>
+              </Popover>
+              {vendors.length === 0 && (
+                <p className="text-xs text-yellow-400">
+                  파일 업로드 전에 벤더를 선택해야 합니다.
+                </p>
+              )}
             </div>
             
             {/* 드래그 앤 드롭 영역 */}
@@ -1631,8 +1760,18 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
                   : 'border-gray-600 bg-gray-800/30 hover:border-gray-500 hover:bg-gray-800/50'
                 }
                 ${isUploading ? 'opacity-50 pointer-events-none' : 'cursor-pointer'}
+                ${vendors.length === 0 ? 'border-yellow-500/50 bg-yellow-500/5' : ''}
               `}
-              onClick={() => fileInputRef.current?.click()}
+              onClick={() => {
+                if (vendors.length === 0) {
+                  toast.error('벤더를 선택해주세요', {
+                    description: '파일 업로드 전에 벤더를 선택해야 합니다.',
+                    duration: 4000,
+                  });
+                  return;
+                }
+                fileInputRef.current?.click();
+              }}
             >
               <div className="flex flex-col items-center justify-center gap-3 text-center w-full">
                 <Upload className={`w-8 h-8 ${dragActive ? 'text-blue-400' : 'text-gray-400'}`} />
@@ -1674,9 +1813,9 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
             
             <div className="flex items-center gap-3">
               <Button 
-                disabled={isUploading || selectedFiles.length === 0} 
+                disabled={isUploading || selectedFiles.length === 0 || vendors.length === 0} 
                 onClick={() => handleUpload()}
-                className="flex-1 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
+                className="flex-1 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isUploading ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Upload className="w-4 h-4 mr-2" />} 
                 업로드
@@ -1785,8 +1924,58 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="text-sm text-secondary-enhanced font-semibold">
-              선택 벤더: <span className="text-blue-300">{vendors.join(", ") || "(없음)"}</span>
+            {/* 벤더 선택 (Popover 멀티 선택) */}
+            <div className="space-y-2">
+              <Label className="text-sm font-semibold text-primary-enhanced">
+                벤더 선택 <span className="text-red-400">*</span>
+              </Label>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button
+                    variant="outline"
+                    className="w-full justify-between h-10 bg-gray-900/70 border-white/10 text-white hover:bg-gray-800/70"
+                  >
+                    <span className="text-sm">
+                      {vendors.length === 0 
+                        ? "벤더를 선택하세요" 
+                        : vendors.length === 1
+                        ? vendors[0]
+                        : `${vendors.length}개 선택됨`}
+                    </span>
+                    <ChevronDown className="h-4 w-4 opacity-50" />
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-56 p-2 bg-gray-900 border-gray-700" align="start">
+                  <div className="space-y-2">
+                    {ALL_VENDORS.map((vendor) => (
+                      <div key={vendor} className="flex items-center space-x-2">
+                        <Checkbox
+                          id={`crawl-vendor-${vendor}`}
+                          checked={vendors.includes(vendor)}
+                          onCheckedChange={(checked) => {
+                            if (checked) {
+                              onVendorsChange([...vendors, vendor]);
+                            } else {
+                              onVendorsChange(vendors.filter(v => v !== vendor));
+                            }
+                          }}
+                        />
+                        <Label
+                          htmlFor={`crawl-vendor-${vendor}`}
+                          className="text-sm text-white cursor-pointer flex-1"
+                        >
+                          {vendor}
+                        </Label>
+                      </div>
+                    ))}
+                  </div>
+                </PopoverContent>
+              </Popover>
+              {vendors.length === 0 && (
+                <p className="text-xs text-yellow-400">
+                  URL 크롤링 전에 벤더를 선택해야 합니다.
+                </p>
+              )}
             </div>
             <Input 
               id="seed-url-input" 
@@ -1931,9 +2120,9 @@ function UploadAndCrawlTabs({ vendors }: { vendors: string[] }) {
 
             <div className="flex items-center gap-3">
               <Button 
-                disabled={isCrawling} 
+                disabled={isCrawling || vendors.length === 0}
                 onClick={handleCrawl}
-                className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
+                className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isCrawling ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Globe className="w-4 h-4 mr-2" />} 
                 크롤 시작
@@ -2084,10 +2273,16 @@ function DocsTable({
   onRefreshStateChange?: (loading: boolean) => void;
 }) {
   const supabase = useMemo(() => createClient(), []);
+  const [isClient, setIsClient] = useState(false);
+  
+  // 클라이언트 마운트 확인 (Hydration 오류 방지)
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
   
   // 컴포넌트 마운트 시 디버그 로그 (개발 모드 전용)
   useEffect(() => {
-    if (typeof window !== 'undefined') {
+    if (isClient && typeof window !== 'undefined') {
       logger.log('[그룹화] DocsTable 컴포넌트 마운트됨', {
         timestamp: new Date().toISOString(),
         vendors,
@@ -2097,7 +2292,7 @@ function DocsTable({
         searchQuery
       });
     }
-  }, [vendors, statusFilter, typeFilter, viewMode, searchQuery]);
+  }, [isClient, vendors, statusFilter, typeFilter, viewMode, searchQuery]);
   
   // 큐 처리 중인 문서 ID 목록 조회
   const { data: queuedDocumentIds } = useQuery({
@@ -2121,13 +2316,16 @@ function DocsTable({
   const { data, isLoading, refetch } = useQuery({
     queryKey: ["admin-docs", vendors, statusFilter, typeFilter, searchQuery],
     queryFn: async () => {
+      // 벤더가 선택되지 않았으면 빈 배열 반환
+      if (!vendors || vendors.length === 0) {
+        return [];
+      }
+      
       let q = supabase.from("documents").select("id,title,type,status,updated_at,chunk_count,source_vendor,url").order("updated_at", { ascending: false }).limit(60);
       
-      // 벤더 필터
-      if (vendors.length) {
-        const dbVendors = convertVendorsToDB(vendors);
-        q = q.in("source_vendor", dbVendors);
-      }
+      // 벤더 필터 (항상 적용)
+      const dbVendors = convertVendorsToDB(vendors);
+      q = q.in("source_vendor", dbVendors);
       
       // 상태 필터
       if (statusFilter && statusFilter !== "all") {
@@ -3454,11 +3652,31 @@ function DocsTable({
           </div>
         </div>
 
-        {isLoading ? (
+        {!isClient || isLoading ? (
           <div className="text-sm text-muted-enhanced">불러오는 중...</div>
         ) : (
           <>
-            {viewMode === 'card' ? (
+            {(!vendors || vendors.length === 0) ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <AlertCircle className="w-12 h-12 text-yellow-400 mb-4" />
+                <p className="text-lg font-semibold text-primary-enhanced mb-2">
+                  벤더를 선택해주세요
+                </p>
+                <p className="text-sm text-secondary-enhanced">
+                  문서를 보려면 상단에서 벤더를 선택하세요.
+                </p>
+              </div>
+            ) : (filteredData || []).length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-12 text-center">
+                <FileSearch className="w-12 h-12 text-gray-400 mb-4" />
+                <p className="text-lg font-semibold text-primary-enhanced mb-2">
+                  문서가 없습니다
+                </p>
+                <p className="text-sm text-secondary-enhanced">
+                  선택한 벤더에 해당하는 문서가 없습니다.
+                </p>
+              </div>
+            ) : viewMode === 'card' ? (
               <div className="mt-1 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
                 {(filteredData || []).map((row: any) => (
                   <div 
@@ -3639,6 +3857,28 @@ function DocsTable({
                 ))}
               </div>
             ) : (
+              <>
+                {(!vendors || vendors.length === 0) ? (
+                  <div className="flex flex-col items-center justify-center py-12 text-center">
+                    <AlertCircle className="w-12 h-12 text-yellow-400 mb-4" />
+                    <p className="text-lg font-semibold text-primary-enhanced mb-2">
+                      벤더를 선택해주세요
+                    </p>
+                    <p className="text-sm text-secondary-enhanced">
+                      문서를 보려면 상단에서 벤더를 선택하세요.
+                    </p>
+                  </div>
+                ) : (filteredData || []).length === 0 ? (
+                  <div className="flex flex-col items-center justify-center py-12 text-center">
+                    <FileSearch className="w-12 h-12 text-gray-400 mb-4" />
+                    <p className="text-lg font-semibold text-primary-enhanced mb-2">
+                      문서가 없습니다
+                    </p>
+                    <p className="text-sm text-secondary-enhanced">
+                      선택한 벤더에 해당하는 문서가 없습니다.
+                    </p>
+                  </div>
+                ) : (
               <div className="mt-1 rounded-xl border border-gray-700 overflow-hidden">
                 <div className="grid grid-cols-12 bg-gray-800/60 text-gray-300 text-xs px-4 py-2">
                   <button 
@@ -3904,6 +4144,8 @@ function DocsTable({
                   })()}
                 </div>
               </div>
+                )}
+              </>
             )}
           </>
         )}

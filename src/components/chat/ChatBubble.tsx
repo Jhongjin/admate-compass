@@ -633,16 +633,24 @@ export default function ChatBubble({
                                   {vendorName} 담당팀에 문의하시겠습니까?
                                 </h4>
                                 <p className="text-xs text-orange-700 dark:text-orange-300 mb-3">
-                                  관련 정보가 없어 답변을 드릴 수 없습니다. {vendorName} 담당팀에 직접 문의하시면 더 정확한 답변을 받으실 수 있습니다.
+                                  {noDataFound ? (
+                                    // LLM이 정보를 제공하지 못한 경우
+                                    <>관련 정보가 없어 답변을 드릴 수 없습니다. {vendorName} 담당팀에 직접 문의하시면 더 정확한 답변을 받으실 수 있습니다.</>
+                                  ) : (
+                                    // LLM이 답변을 제공했지만 추가 정보가 필요할 수 있는 경우
+                                    <>추가 정보가 필요하시거나 더 자세한 답변을 원하시면 {vendorName} 담당팀에 직접 문의하시면 더 정확한 답변을 받으실 수 있습니다.</>
+                                  )}
                                 </p>
                                 <Button
                                   onClick={() => {
-                                    // 직접 메일 발송 - 사용자의 실제 질문 사용
+                                    // 직접 메일 발송 - 사용자의 실제 질문과 AI 답변 함께 전달
                                     if (typeof window !== 'undefined') {
-                                      const actualQuestion = userQuestion || content;
-                                      console.log('📧 메일 발송 요청:', actualQuestion);
+                                      const actualQuestion = userQuestion || '';
+                                      // showContactOption이 표시되는 것은 항상 assistant 메시지이므로 content가 AI 답변
+                                      const aiResponse = type === 'assistant' ? content : '';
+                                      console.log('📧 메일 발송 요청:', actualQuestion, 'AI 답변:', aiResponse.substring(0, 50));
                                       const event = new CustomEvent('sendContactEmail', { 
-                                        detail: { question: actualQuestion } 
+                                        detail: { question: actualQuestion, aiResponse } 
                                       });
                                       window.dispatchEvent(event);
                                     }

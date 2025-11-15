@@ -26,7 +26,9 @@ import {
   Brain,
   Info,
   AlertTriangle,
-  Rocket
+  Rocket,
+  Bell,
+  RefreshCw
 } from "lucide-react";
 import Link from "next/link";
 import { useState, useRef, useMemo, useEffect } from "react";
@@ -494,28 +496,37 @@ export default function HomePage() {
           viewport={{ once: true }}
         >
           <div className="relative">
-            {/* Background with gradient and glow effect */}
-            <div className="absolute inset-0 bg-gradient-to-r from-blue-500/20 via-indigo-500/20 to-purple-500/20 rounded-2xl blur-xl animate-enhanced-pulse"></div>
+            {/* Background with blue-indigo gradient (matching other sections) */}
+            <div className="absolute inset-0 bg-gradient-to-r from-blue-500/20 via-indigo-500/15 to-blue-500/10 rounded-3xl blur-2xl animate-enhanced-pulse"></div>
+            <div className="absolute inset-0 bg-gradient-to-br from-blue-600/5 via-transparent to-indigo-600/5 rounded-3xl"></div>
             
-            {/* Main container */}
-            <div className="relative card-enhanced rounded-2xl p-4 shadow-2xl hover:shadow-blue-500/25 transition-all duration-300 hover:scale-[1.02] group">
-              {/* Animated border */}
-              <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-blue-400/20 via-indigo-400/20 to-purple-400/20 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+            {/* Main container - matching card-premium style but with dark background */}
+            <div className="relative bg-gradient-to-br from-gray-800/90 via-gray-800/80 to-gray-900/90 backdrop-blur-sm rounded-3xl p-6 sm:p-8 shadow-2xl border border-blue-500/20 hover:border-blue-400/30 transition-all duration-500 hover:shadow-blue-500/20 group overflow-hidden">
+              {/* Animated gradient border on hover - blue-indigo */}
+              <div className="absolute inset-0 rounded-3xl bg-gradient-to-r from-blue-500/0 via-indigo-500/0 to-blue-500/0 opacity-0 group-hover:opacity-100 group-hover:from-blue-500/10 group-hover:via-indigo-500/10 group-hover:to-blue-500/10 transition-all duration-500"></div>
+              
+              {/* Subtle inner glow - blue-indigo */}
+              <div className="absolute inset-[1px] rounded-3xl bg-gradient-to-br from-blue-500/5 via-transparent to-indigo-500/5 pointer-events-none"></div>
               
               <div className="relative z-10">
-                {/* Header with icon and badge */}
-                <div className="flex items-start justify-between mb-4">
-                  <div className="flex items-start space-x-4">
+                {/* Enhanced Header */}
+                <div className="flex items-start justify-between mb-6">
+                  <div className="flex items-start space-x-3 flex-1">
                     <div className="relative flex-shrink-0">
-                      <div className="w-12 h-12 bg-gradient-to-br from-blue-500 to-indigo-500 rounded-xl flex items-center justify-center shadow-lg animate-enhanced-pulse">
-                        <Info className="w-6 h-6 text-white" />
+                      {/* Smaller, more refined icon */}
+                      <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-indigo-500 rounded-xl flex items-center justify-center shadow-lg shadow-blue-500/30 relative overflow-hidden">
+                        <div className="absolute inset-0 bg-gradient-to-br from-white/20 to-transparent"></div>
+                        <Bell className="w-5 h-5 text-white relative z-10 drop-shadow-lg" />
                       </div>
-                      <div className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 rounded-full animate-pulse"></div>
+                      {/* Smaller notification badge */}
+                      <div className="absolute -top-0.5 -right-0.5 w-3.5 h-3.5 bg-gradient-to-br from-red-500 to-red-600 rounded-full animate-pulse shadow-lg shadow-red-500/50 border-2 border-gray-900"></div>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center space-x-3 mb-2">
-                        <h3 className="text-xl font-bold font-nanum text-card-foreground">최신 업데이트</h3>
-                        <Badge className="bg-gradient-to-r from-blue-500/30 to-indigo-500/30 text-blue-200 border-blue-400/50 font-nanum shadow-lg text-xs">
+                    <div className="flex-1 min-w-0 pt-0.5">
+                      <div className="flex items-center flex-wrap gap-2 mb-1">
+                        <h3 className="text-xl font-bold font-nanum text-white">
+                          최신 업데이트
+                        </h3>
+                        <Badge className="bg-gradient-to-r from-blue-500/30 via-indigo-500/30 to-blue-500/30 text-blue-100 border-blue-400/40 font-nanum shadow-lg text-xs px-2.5 py-0.5 backdrop-blur-sm">
                           멀티 벤더
                         </Badge>
                       </div>
@@ -523,33 +534,35 @@ export default function HomePage() {
                   </div>
                   
                   {/* Date indicator */}
-                  <div className="text-right flex-shrink-0 ml-4">
-                    <div className="text-sm font-semibold text-enhanced font-nanum">
+                  <div className="text-right flex-shrink-0 ml-4 pt-0.5">
+                    <div className="text-sm font-semibold text-white font-nanum mb-0.5">
                       {vendorUpdatesData?.updatesWithDate?.[0]?.formattedDate || new Date().toLocaleDateString('ko-KR')}
                     </div>
-                    <div className="text-xs text-muted-enhanced font-nanum">업데이트</div>
+                    <div className="text-xs text-blue-300/70 font-nanum">업데이트</div>
                   </div>
                 </div>
                 
-                {/* Content - 벤더별 업데이트 스크롤 애니메이션 */}
-                <div className="space-y-3">
+                {/* Enhanced Content Area */}
+                <div className="space-y-4">
                   {vendorUpdatesLoading ? (
                     <div className="space-y-3">
-                      <Skeleton className="h-5 w-full" />
-                      <Skeleton className="h-4 w-4/5" />
+                      <Skeleton className="h-6 w-full bg-gray-700/50" />
+                      <Skeleton className="h-4 w-4/5 bg-gray-700/50" />
                     </div>
                   ) : vendorUpdatesError ? (
-                    <div className="bg-blue-500/10 rounded-lg p-4 border border-blue-400/20">
-                      <p className="text-blue-100 leading-relaxed font-nanum text-base text-center">
+                    <div className="bg-gradient-to-r from-red-500/10 to-orange-500/10 rounded-xl p-5 border border-red-400/20 backdrop-blur-sm">
+                      <p className="text-red-100 leading-relaxed font-nanum text-base text-center">
                         업데이트 정보를 불러올 수 없습니다.
                       </p>
                     </div>
                   ) : vendorUpdatesData?.updatesWithDate && vendorUpdatesData.updatesWithDate.length > 0 ? (
-                    <div className="relative h-14 overflow-hidden bg-blue-500/10 rounded-lg border border-blue-400/20" aria-live="polite" aria-atomic="true">
+                    <div className="relative h-16 overflow-hidden bg-gradient-to-br from-blue-500/10 via-indigo-500/10 to-blue-500/10 rounded-xl border border-blue-400/20 backdrop-blur-sm shadow-inner" aria-live="polite" aria-atomic="true">
+                      {/* Gradient overlay for fade effect */}
+                      <div className="absolute inset-0 bg-gradient-to-b from-transparent via-transparent to-blue-500/5 pointer-events-none z-10"></div>
                       <motion.div
                         className="flex flex-col"
                         animate={{
-                          y: [0, -(vendorUpdatesData.updatesWithDate.length * 56)],
+                          y: [0, -(vendorUpdatesData.updatesWithDate.length * 64)],
                         }}
                         transition={{
                           duration: vendorUpdatesData.updatesWithDate.length * 4,
@@ -558,34 +571,46 @@ export default function HomePage() {
                           repeatDelay: 0,
                         }}
                       >
-                        {[...vendorUpdatesData.updatesWithDate, ...vendorUpdatesData.updatesWithDate].map((vendor: VendorUpdate, index: number) => (
-                          <div
-                            key={`${vendor.vendor}-${index}`}
-                            className="h-14 flex items-center justify-center px-4 min-h-[56px]"
-                          >
-                            <p className="text-blue-100 leading-relaxed font-nanum text-base text-center">
-                              {vendor.message}
-                            </p>
-                          </div>
-                        ))}
+                        {[...vendorUpdatesData.updatesWithDate, ...vendorUpdatesData.updatesWithDate].map((vendor: VendorUpdate, index: number) => {
+                          const vendorIcon = vendorIcons[vendor.vendor];
+                          const vendorColor = vendorColors[vendor.vendor];
+                          return (
+                            <div
+                              key={`${vendor.vendor}-${index}`}
+                              className="h-16 flex items-center justify-center px-6 min-h-[64px]"
+                            >
+                              <p className="text-white/90 leading-relaxed font-nanum text-base text-center flex items-center gap-2">
+                                {vendorIcon && (
+                                  <span 
+                                    className="inline-block w-5 h-5 flex-shrink-0"
+                                    style={{ color: vendorColor }}
+                                    dangerouslySetInnerHTML={{ __html: vendorIcon.svg }}
+                                  />
+                                )}
+                                <span>{vendor.message}</span>
+                              </p>
+                            </div>
+                          );
+                        })}
                       </motion.div>
                     </div>
                   ) : (
-                    <div className="bg-blue-500/10 rounded-lg p-4 border border-blue-400/20">
+                    <div className="bg-gradient-to-r from-blue-500/10 to-indigo-500/10 rounded-xl p-5 border border-blue-400/20 backdrop-blur-sm">
                       <p className="text-blue-100 leading-relaxed font-nanum text-base text-center">
                         업데이트 정보를 불러오는 중입니다...
                       </p>
                     </div>
                   )}
                   
-                  {/* Feature indicator */}
-                  <div className="flex items-center justify-between">
+                  {/* Feature indicators */}
+                  <div className="flex items-center justify-between pt-2 border-t border-blue-500/20">
                     <div className="flex items-center space-x-2 text-blue-300">
-                      <Sparkles className="w-4 h-4" />
-                      <span className="text-sm font-nanum">멀티 플랫폼 지원</span>
+                      <Sparkles className="w-4 h-4 text-blue-400" />
+                      <span className="text-sm font-nanum font-medium">멀티 플랫폼 지원</span>
                     </div>
-                    <div className="text-xs text-blue-400/70 font-nanum">
-                      실시간 동기화
+                    <div className="flex items-center space-x-2 text-indigo-300">
+                      <Clock className="w-4 h-4 text-indigo-400" />
+                      <span className="text-xs font-nanum font-medium">실시간 동기화</span>
                     </div>
                   </div>
                 </div>
