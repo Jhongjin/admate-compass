@@ -3252,7 +3252,7 @@ function DocsTable({
         window.removeEventListener('docs-refresh', handler as EventListener);
       }
     };
-  }, [refetch]);
+  }, [refetchDocuments]);
 
   // 새로고침 버튼 클릭 이벤트 수신
   useEffect(() => {
@@ -3277,7 +3277,7 @@ function DocsTable({
         window.removeEventListener('docs-refresh-click', handler as EventListener);
       }
     };
-  }, [refetch, onRefreshStateChange]);
+  }, [refetchDocuments, onRefreshStateChange]);
 
   // 페이지 복귀 시 진행 중인 문서 확인 및 알림 (다시보지 않기 옵션 포함)
   useEffect(() => {
@@ -3341,7 +3341,7 @@ function DocsTable({
       window.addEventListener('focus', handleFocus);
       return () => window.removeEventListener('focus', handleFocus);
     }
-  }, [data, refetch]);
+  }, [data, refetchDocuments]);
 
   // 정렬 토글 핸들러
   const handleSort = (column: string) => {
@@ -4282,7 +4282,7 @@ function DocsTable({
       </AlertDialogContent>
     </AlertDialog>
     
-    <DocumentDetailDialog detail={detail} onClose={() => setDetail(null)} onRefetch={refetch} />
+    <DocumentDetailDialog detail={detail} onClose={() => setDetail(null)} onRefetch={refetchDocuments} />
     </>
   );
 }
@@ -4312,7 +4312,7 @@ function QueueMiniPanel({ vendors }: { vendors: string[] }) {
     const handler = () => refetchDocuments();
     window.addEventListener('queue-refresh', handler);
     return () => window.removeEventListener('queue-refresh', handler);
-  }, [refetch]);
+  }, [refetchDocuments]);
 
   const queued = data?.queued ?? 0;
   const processing = data?.processing ?? 0;
