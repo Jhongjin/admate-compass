@@ -2313,7 +2313,7 @@ function DocsTable({
     refetchInterval: 5000, // 5초마다 큐 상태 확인
   });
   
-  const { data, isLoading, refetch } = useQuery({
+  const { data, isLoading, refetch: refetchDocuments } = useQuery({
     queryKey: ["admin-docs", vendors, statusFilter, typeFilter, searchQuery],
     queryFn: async () => {
       // 벤더가 선택되지 않았으면 빈 배열 반환
@@ -5112,7 +5112,7 @@ function DocumentDetailDialog({ detail, onClose, onRefetch }: { detail: any | nu
                                         toast.success('벤더 수정 완료', {
                                           description: `${vendor}로 변경되었습니다.`
                                         });
-                                        refetch();
+                                        refetchDocuments();
                                         if (fullDoc) {
                                           fullDoc.source_vendor = dbVendor;
                                         }
