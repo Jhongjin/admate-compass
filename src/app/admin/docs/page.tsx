@@ -2354,13 +2354,11 @@ function DocsTable({
         return [];
       }
       
-      // 상태 필터 (기본적으로 indexed 상태만 표시)
+      // 상태 필터
       if (statusFilter && statusFilter !== "all") {
         q = q.eq("status", statusFilter);
-      } else {
-        // 기본적으로 indexed 상태만 표시 (처리 완료된 문서만)
-        q = q.eq("status", "indexed");
       }
+      // statusFilter가 "all"일 때는 상태 필터를 적용하지 않음 (모든 상태의 문서 표시)
       
       // 유형 필터 (url은 서버 필터, pdf/docx/txt는 클라이언트에서 파일명 확장자로 필터링)
       if (typeFilter && typeFilter !== "all" && typeFilter === "url") {
@@ -2371,6 +2369,18 @@ function DocsTable({
       
       if (error) {
         console.error('❌ 문서 조회 오류:', error);
+        console.error('❌ 쿼리 상세:', {
+          table: 'documents',
+          filters: {
+            source_vendor: dbVendors,
+            status: statusFilter === "all" ? "모든 상태" : statusFilter,
+            type: typeFilter === "all" ? "모든 타입" : typeFilter
+          },
+          error: error.message,
+          code: error.code,
+          details: error.details,
+          hint: error.hint
+        });
         throw error;
       }
       
@@ -2378,11 +2388,14 @@ function DocsTable({
         count: documents?.length || 0, 
         dbVendors,
         selectedVendors: vendors,
+        statusFilter,
+        typeFilter,
         documents: documents?.map((d: any) => ({ 
           id: d.id, 
           title: d.title, 
           source_vendor: d.source_vendor,
-          status: d.status 
+          status: d.status,
+          type: d.type
         }))
       });
       
