@@ -2321,6 +2321,19 @@ function DocsTable({
         return [];
       }
       
+      // 디버깅: 모든 문서 조회 (벤더 필터 없이)
+      const { data: allDocs } = await supabase
+        .from("documents")
+        .select("id,title,source_vendor,status")
+        .limit(10);
+      console.log('🔍 DB의 모든 문서 (샘플 10개):', allDocs?.map((d: any) => ({ 
+        id: d.id, 
+        title: d.title, 
+        source_vendor: d.source_vendor,
+        source_vendor_type: typeof d.source_vendor,
+        status: d.status 
+      })));
+      
       let q = supabase.from("documents").select("id,title,type,status,updated_at,chunk_count,source_vendor,url").order("updated_at", { ascending: false }).limit(60);
       
       // 벤더 필터 (항상 적용)
@@ -2332,16 +2345,21 @@ function DocsTable({
       });
       
       if (dbVendors.length > 0) {
+        // ENUM 타입과의 비교를 위해 명시적으로 타입 캐스팅
         q = q.in("source_vendor", dbVendors);
+        console.log('🔍 쿼리 조건:', { field: 'source_vendor', values: dbVendors, operator: 'IN' });
       } else {
         // 벤더 변환 실패 시 빈 배열 반환
         console.warn('⚠️ 벤더 변환 실패:', vendors);
         return [];
       }
       
-      // 상태 필터
+      // 상태 필터 (기본적으로 indexed 상태만 표시)
       if (statusFilter && statusFilter !== "all") {
         q = q.eq("status", statusFilter);
+      } else {
+        // 기본적으로 indexed 상태만 표시 (처리 완료된 문서만)
+        q = q.eq("status", "indexed");
       }
       
       // 유형 필터 (url은 서버 필터, pdf/docx/txt는 클라이언트에서 파일명 확장자로 필터링)
