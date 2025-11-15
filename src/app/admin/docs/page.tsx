@@ -2321,12 +2321,23 @@ function DocsTable({
         return [];
       }
       
-      // 디버깅: 모든 문서 조회 (벤더 필터 없이)
-      const { data: allDocs, error: allDocsError } = await supabase
+      // 디버깅: 모든 문서 조회 (벤더 필터 없이) - RLS 정책 확인용
+      const { data: allDocs, error: allDocsError, count: allDocsCount } = await supabase
         .from("documents")
-        .select("id,title,source_vendor,status,type")
+        .select("id,title,source_vendor,status,type", { count: 'exact' })
         .order("updated_at", { ascending: false })
         .limit(20);
+      
+      console.log('🔍 전체 문서 조회 결과:', {
+        count: allDocsCount,
+        returned: allDocs?.length || 0,
+        error: allDocsError ? {
+          message: allDocsError.message,
+          code: allDocsError.code,
+          details: allDocsError.details,
+          hint: allDocsError.hint
+        } : null
+      });
       
       if (allDocsError) {
         console.error('❌ 모든 문서 조회 오류:', allDocsError);
@@ -2340,19 +2351,23 @@ function DocsTable({
           type: d.type
         })));
         
-        // Naver 관련 문서 찾기
-        const naverDocs = allDocs?.filter((d: any) => 
-          d.source_vendor === 'NAVER' || 
-          d.source_vendor === 'Naver' || 
-          d.title?.toLowerCase().includes('naver') ||
-          d.title?.toLowerCase().includes('네이버')
-        );
-        console.log('🔍 Naver 관련 문서:', naverDocs?.map((d: any) => ({ 
-          id: d.id, 
-          title: d.title, 
-          source_vendor: d.source_vendor,
-          status: d.status
-        })));
+        // Naver 관련 문서 찾기 (대소문자 구분 없이)
+        const naverDocs = allDocs?.filter((d: any) => {
+          const vendor = String(d.source_vendor || '').toUpperCase();
+          const title = String(d.title || '').toLowerCase();
+          return vendor === 'NAVER' || 
+                 title.includes('naver') ||
+                 title.includes('네이버');
+        });
+        console.log('🔍 Naver 관련 문서 (필터링 결과):', {
+          count: naverDocs?.length || 0,
+          docs: naverDocs?.map((d: any) => ({ 
+            id: d.id, 
+            title: d.title, 
+            source_vendor: d.source_vendor,
+            status: d.status
+          }))
+        });
       }
       
       let q = supabase.from("documents").select("id,title,type,status,updated_at,chunk_count,source_vendor,url").order("updated_at", { ascending: false }).limit(60);
@@ -2368,12 +2383,28 @@ function DocsTable({
       if (dbVendors.length > 0) {
         // ENUM 타입과의 비교를 위해 명시적으로 타입 캐스팅
         q = q.in("source_vendor", dbVendors);
-        console.log('🔍 쿼리 조건:', { field: 'source_vendor', values: dbVendors, operator: 'IN' });
+        console.log('🔍 쿼리 조건:', { 
+          field: 'source_vendor', 
+          values: dbVendors, 
+          operator: 'IN',
+          queryString: `source_vendor IN (${dbVendors.map(v => `'${v}'`).join(', ')})`
+        });
       } else {
         // 벤더 변환 실패 시 빈 배열 반환
         console.warn('⚠️ 벤더 변환 실패:', vendors);
         return [];
       }
+      
+      // 디버깅: 쿼리 실행 전 최종 쿼리 확인
+      console.log('🔍 최종 쿼리 조건:', {
+        table: 'documents',
+        filters: {
+          source_vendor: dbVendors,
+          status: statusFilter === "all" ? "모든 상태" : statusFilter,
+          type: typeFilter === "all" ? "모든 타입" : typeFilter
+        },
+        limit: 60
+      });
       
       // 상태 필터
       if (statusFilter && statusFilter !== "all") {
@@ -2411,14 +2442,32 @@ function DocsTable({
         selectedVendors: vendors,
         statusFilter,
         typeFilter,
+        hasError: !!error,
         documents: documents?.map((d: any) => ({ 
           id: d.id, 
           title: d.title, 
           source_vendor: d.source_vendor,
+          source_vendor_raw: d.source_vendor,
           status: d.status,
           type: d.type
         }))
       });
+      
+      // 추가 디버깅: 벤더 매칭 확인
+      if (documents && documents.length > 0) {
+        const vendorMismatch = documents.filter((d: any) => {
+          const docVendor = String(d.source_vendor || '').toUpperCase();
+          return !dbVendors.some(v => String(v).toUpperCase() === docVendor);
+        });
+        if (vendorMismatch.length > 0) {
+          console.warn('⚠️ 벤더 불일치 문서 발견:', vendorMismatch.map((d: any) => ({
+            id: d.id,
+            title: d.title,
+            source_vendor: d.source_vendor,
+            expected: dbVendors
+          })));
+        }
+      }
       
       // 디버깅: 쿼리 결과 확인
       if (typeof window !== 'undefined' && documents && documents.length > 0) {
