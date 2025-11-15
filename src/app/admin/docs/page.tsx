@@ -4450,7 +4450,7 @@ function QueueMiniPanel({ vendors }: { vendors: string[] }) {
                   duration: 4000,
                 });
                 
-                refetchDocuments();
+                refetch();
                 if (typeof window !== 'undefined') {
                   window.dispatchEvent(new CustomEvent('queue-refresh'));
                   window.dispatchEvent(new CustomEvent('docs-refresh'));
