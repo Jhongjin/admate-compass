@@ -2322,17 +2322,38 @@ function DocsTable({
       }
       
       // 디버깅: 모든 문서 조회 (벤더 필터 없이)
-      const { data: allDocs } = await supabase
+      const { data: allDocs, error: allDocsError } = await supabase
         .from("documents")
-        .select("id,title,source_vendor,status")
-        .limit(10);
-      console.log('🔍 DB의 모든 문서 (샘플 10개):', allDocs?.map((d: any) => ({ 
-        id: d.id, 
-        title: d.title, 
-        source_vendor: d.source_vendor,
-        source_vendor_type: typeof d.source_vendor,
-        status: d.status 
-      })));
+        .select("id,title,source_vendor,status,type")
+        .order("updated_at", { ascending: false })
+        .limit(20);
+      
+      if (allDocsError) {
+        console.error('❌ 모든 문서 조회 오류:', allDocsError);
+      } else {
+        console.log('🔍 DB의 모든 문서 (최근 20개):', allDocs?.map((d: any) => ({ 
+          id: d.id, 
+          title: d.title, 
+          source_vendor: d.source_vendor,
+          source_vendor_type: typeof d.source_vendor,
+          status: d.status,
+          type: d.type
+        })));
+        
+        // Naver 관련 문서 찾기
+        const naverDocs = allDocs?.filter((d: any) => 
+          d.source_vendor === 'NAVER' || 
+          d.source_vendor === 'Naver' || 
+          d.title?.toLowerCase().includes('naver') ||
+          d.title?.toLowerCase().includes('네이버')
+        );
+        console.log('🔍 Naver 관련 문서:', naverDocs?.map((d: any) => ({ 
+          id: d.id, 
+          title: d.title, 
+          source_vendor: d.source_vendor,
+          status: d.status
+        })));
+      }
       
       let q = supabase.from("documents").select("id,title,type,status,updated_at,chunk_count,source_vendor,url").order("updated_at", { ascending: false }).limit(60);
       
@@ -5053,13 +5074,68 @@ function DocumentDetailDialog({ detail, onClose, onRefetch }: { detail: any | nu
                     <div className="font-mono text-xs break-all text-primary-enhanced">{fullDoc?.id || detail.id}</div>
             </div>
                   <div className="space-y-1">
-                    <div className="text-secondary-enhanced font-semibold">벤더</div>
+                    <div className="text-secondary-enhanced font-semibold flex items-center justify-between">
+                      <span>벤더</span>
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <Button variant="outline" size="sm" className="h-7 text-xs">
+                            수정
+                          </Button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-56 p-2 bg-gray-900 border-gray-700" align="end">
+                          <div className="space-y-1">
+                            {ALL_VENDORS.map((vendor) => {
+                              const currentVendor = fullDoc?.source_vendor || detail.source_vendor;
+                              const isSelected = VENDOR_TO_DB_MAP[vendor] === currentVendor;
+                              return (
+                                <label
+                                  key={vendor}
+                                  className="flex items-center gap-2 p-2 rounded hover:bg-gray-800 cursor-pointer"
+                                >
+                                  <input
+                                    type="radio"
+                                    name="vendor"
+                                    value={vendor}
+                                    checked={isSelected}
+                                    onChange={async () => {
+                                      const dbVendor = VENDOR_TO_DB_MAP[vendor];
+                                      const { error: updateError } = await supabase
+                                        .from('documents')
+                                        .update({ source_vendor: dbVendor })
+                                        .eq('id', detail.id);
+                                      
+                                      if (updateError) {
+                                        toast.error('벤더 수정 실패', {
+                                          description: updateError.message
+                                        });
+                                      } else {
+                                        toast.success('벤더 수정 완료', {
+                                          description: `${vendor}로 변경되었습니다.`
+                                        });
+                                        refetch();
+                                        if (fullDoc) {
+                                          fullDoc.source_vendor = dbVendor;
+                                        }
+                                      }
+                                    }}
+                                    className="w-4 h-4"
+                                  />
+                                  <span className={isSelected ? 'text-blue-400 font-semibold' : 'text-white'}>
+                                    {vendor}
+                                  </span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </PopoverContent>
+                      </Popover>
+                    </div>
                     <div className="text-primary-enhanced">
                       {(fullDoc?.source_vendor || detail.source_vendor) 
                         ? (DB_TO_VENDOR_MAP[fullDoc?.source_vendor || detail.source_vendor] || fullDoc?.source_vendor || detail.source_vendor)
                         : '-'}
-          </div>
-        </div>
+                    </div>
+                  </div>
                   <div className="space-y-1">
                     <div className="text-secondary-enhanced font-semibold">유형</div>
                     <div className="text-primary-enhanced">{fullDoc?.type || detail.type}</div>
