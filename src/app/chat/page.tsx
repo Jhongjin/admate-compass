@@ -40,6 +40,7 @@ interface Message {
   };
   noDataFound?: boolean;
   showContactOption?: boolean;
+  relatedQuestions?: string[];
 }
 
 function ChatPageContent() {
@@ -218,7 +219,7 @@ function ChatPageContent() {
             eventData.question.trim()) {
           
           logger.log('연락처 이메일 이벤트 처리:', eventData.question);
-          handleContactRequest(eventData.question);
+          handleContactRequest(eventData.question, eventData.aiResponse);
         } else {
           logger.warn('유효하지 않은 이벤트 데이터:', {
             hasEventData: !!eventData,
@@ -457,7 +458,8 @@ function ChatPageContent() {
                     content: fullContent,
                     sources: data.data?.sources || [],
                     noDataFound: data.data?.noDataFound || false,
-                    showContactOption: data.data?.showContactOption || false
+                    showContactOption: data.data?.showContactOption || false,
+                    relatedQuestions: data.data?.relatedQuestions || []
                   }
                 : msg
             ));
@@ -693,10 +695,18 @@ function ChatPageContent() {
     }
   }, [handleSendMessage]);
 
-  const handleContactRequest = useCallback(async (question: string) => {
+  const handleContactRequest = useCallback(async (question: string, aiResponse?: string) => {
     // 실제 질문 찾기 (마지막 사용자 메시지)
     const lastUserMessage = messages.filter(msg => msg.type === 'user').pop();
     const actualQuestion = lastUserMessage?.content || question;
+    
+    // AI 답변 찾기 (마지막 assistant 메시지)
+    const lastAiMessage = messages.filter(msg => msg.type === 'assistant').pop();
+    const actualAiResponse = aiResponse || lastAiMessage?.content || '';
+    
+    // 사용자 정보 가져오기
+    const userName = user?.user_metadata?.name || user?.email?.split('@')[0] || '사용자';
+    const userEmail = user?.email || '';
 
     setIsSendingEmail(true);
     
@@ -720,7 +730,10 @@ function ChatPageContent() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          question: actualQuestion
+          question: actualQuestion,
+          aiResponse: actualAiResponse,
+          userName,
+          userEmail
         }),
       });
 
@@ -779,7 +792,7 @@ function ChatPageContent() {
     } finally {
       setIsSendingEmail(false);
     }
-  }, [messages, toast]);
+  }, [messages, toast, user]);
 
   const handleNewChat = useCallback(async () => {
     if (isSaving) {
@@ -1354,6 +1367,7 @@ function ChatPageContent() {
                       userQuestion={messages[messages.length - 2]?.content}
                       aiResponse={messages[messages.length - 1]?.content}
                       sources={messages[messages.length - 1]?.sources ?? []}
+                      relatedQuestions={messages[messages.length - 1]?.relatedQuestions}
                       onQuestionClick={handleQuickQuestionClick}
                     />
                     {/* 빠른 질문 컴포넌트 - 하단 배치 (숨김 처리) */}
@@ -1420,6 +1434,7 @@ function ChatPageContent() {
                       userQuestion={messages[messages.length - 2]?.content}
                       aiResponse={messages[messages.length - 1]?.content}
                       sources={messages[messages.length - 1]?.sources ?? []}
+                      relatedQuestions={messages[messages.length - 1]?.relatedQuestions}
                       onQuestionClick={handleQuickQuestionClick}
                     />
                   ) : messages.length > 1 && isLoading ? (

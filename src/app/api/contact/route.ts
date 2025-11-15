@@ -3,7 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 /**
  * 최적화된 구조화된 이메일 내용 생성 (브라우저 호환성 고려)
  */
-function generateOptimizedEmailContent(question: string): string {
+function generateOptimizedEmailContent(question: string, aiResponse?: string, userName?: string, userEmail?: string): string {
   const now = new Date();
   const ticketId = `FAQ-${now.getFullYear()}${(now.getMonth() + 1).toString().padStart(2, '0')}${now.getDate().toString().padStart(2, '0')}-${now.getTime().toString().slice(-6)}`;
   const timestamp = now.toLocaleString('ko-KR', {
@@ -20,20 +20,22 @@ function generateOptimizedEmailContent(question: string): string {
   const category = categorizeQuestion(question);
   const priority = determinePriority(question);
 
-  return `Meta FAQ 챗봇 문의사항 접수
+  return `Ad-Mate 챗봇 문의사항 접수
 
 안녕하세요, 담당팀님
 
-Meta FAQ 챗봇을 통해 문의사항이 접수되었습니다.
+Ad-Mate 챗봇을 통해 문의사항이 접수되었습니다.
 
 [접수정보]
 티켓: ${ticketId}
 시간: ${timestamp}
 카테고리: ${category.name}
 우선순위: ${priority.level}
+${userName && userEmail ? `질문자: ${userName} (${userEmail})` : userEmail ? `질문자: ${userEmail}` : ''}
 
 [문의내용]
 ${formatQuestionContent(question)}
+${aiResponse ? `\n[AI 챗봇 답변]\n${formatQuestionContent(aiResponse)}\n` : ''}
 
 [시스템정보]
 검색결과: 관련 문서 없음
@@ -54,32 +56,34 @@ ${formatQuestionContent(question)}
 
 [연락처]
 회신: fb@nasmedia.co.kr
-관리: Meta FAQ 챗봇 관리팀
+관리: Ad-Mate 챗봇 관리팀
 
 자동생성: ${ticketId}
 
 감사합니다.
-Meta FAQ 챗봇`;
+Ad-Mate 챗봇`;
 }
 
 /**
  * 간소화된 이메일 내용 생성 (브라우저 호환성을 위해)
  */
-function generateSimplifiedEmailContent(question: string): string {
+function generateSimplifiedEmailContent(question: string, aiResponse?: string, userName?: string, userEmail?: string): string {
   const now = new Date();
   const timestamp = now.toLocaleString('ko-KR');
   
   return `안녕하세요,
 
-Meta FAQ 챗봇을 통해 문의사항이 접수되었습니다.
+Ad-Mate 챗봇을 통해 문의사항이 접수되었습니다.
 
 문의 시간: ${timestamp}
+${userName && userEmail ? `질문자: ${userName} (${userEmail})` : userEmail ? `질문자: ${userEmail}` : ''}
 문의 내용: ${question}
+${aiResponse ? `\nAI 챗봇 답변:\n${aiResponse}\n` : ''}
 
 위 문의사항에 대해 답변을 제공해 주시기 바랍니다.
 
 감사합니다.
-Meta FAQ 챗봇 시스템`;
+Ad-Mate 챗봇 시스템`;
 }
 
 /**
@@ -104,12 +108,12 @@ function generateStructuredEmailContent(question: string): string {
 
   return `
 ╔════════════════════════════════════════════════════════════════════════════════════╗
-║                           Meta FAQ 챗봇 문의사항 접수                                ║
+║                           Ad-Mate 챗봇 문의사항 접수                                ║
 ╚════════════════════════════════════════════════════════════════════════════════════╝
 
 안녕하세요, 담당팀님
 
-Meta FAQ 챗봇 시스템을 통해 새로운 문의사항이 접수되었습니다.
+Ad-Mate 챗봇 시스템을 통해 새로운 문의사항이 접수되었습니다.
 
 ┌─────────────────────────────────────────────────────────────────────────────────┐
 │                                📋 접수 정보                                       │
@@ -156,17 +160,17 @@ ${formatQuestionContent(question)}
 └─────────────────────────────────────────────────────────────────────────────────┘
 
 📧 회신 주소      : fb@nasmedia.co.kr
-🤖 시스템 관리     : Meta FAQ 챗봇 관리팀
+🤖 시스템 관리     : Ad-Mate 챗봇 관리팀
 📱 긴급 연락      : 시스템 장애 시 관리팀 연락 바랍니다
 
 ═══════════════════════════════════════════════════════════════════════════════════
 
-이 메일은 Meta FAQ 챗봇 시스템에서 자동으로 생성되었습니다.
+이 메일은 Ad-Mate 챗봇 시스템에서 자동으로 생성되었습니다.
 티켓 번호: ${ticketId}
 생성 시간: ${new Date().toISOString()}
 
 감사합니다.
-Meta FAQ 챗봇 시스템 🤖
+Ad-Mate 챗봇 시스템 🤖
   `.trim();
 }
 
@@ -259,7 +263,7 @@ function formatQuestionContent(question: string): string {
 
 export async function POST(request: NextRequest) {
   try {
-    const { question } = await request.json();
+    const { question, aiResponse, userName, userEmail } = await request.json();
 
     // 입력 검증
     if (!question) {
@@ -270,8 +274,8 @@ export async function POST(request: NextRequest) {
     }
 
     // 이메일 내용 구성 (구조화된 버전 - 브라우저 호환성 고려)
-    const emailSubject = `[Meta FAQ 챗봇] 문의사항: ${question.substring(0, 50)}...`;
-    const emailBody = generateOptimizedEmailContent(question);
+    const emailSubject = `[Ad-Mate 챗봇] 문의사항: ${question.substring(0, 50)}...`;
+    const emailBody = generateOptimizedEmailContent(question, aiResponse, userName, userEmail);
 
     // 이메일 링크 생성 (mailto:) - URL 길이 제한 고려
     const emailLink = `mailto:fb@nasmedia.co.kr?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(emailBody)}`;
@@ -284,7 +288,7 @@ export async function POST(request: NextRequest) {
     // URL 길이가 너무 길면 간소화된 버전 사용 (매우 엄격한 제한)
     if (emailLink.length > 1200) {
       console.log('⚠️ URL이 너무 길어서 간소화된 버전 사용');
-      const simplifiedBody = generateSimplifiedEmailContent(question);
+      const simplifiedBody = generateSimplifiedEmailContent(question, aiResponse, userName, userEmail);
       const simplifiedLink = `mailto:fb@nasmedia.co.kr?subject=${encodeURIComponent(emailSubject)}&body=${encodeURIComponent(simplifiedBody)}`;
       console.log(`📧 간소화된 링크 길이: ${simplifiedLink.length}자`);
       

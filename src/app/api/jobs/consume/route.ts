@@ -3,6 +3,7 @@ import { createPureClient } from '@/lib/supabase/server';
 import { ragProcessor, DocumentData } from '@/lib/services/RAGProcessor';
 import { simpleTextSplitter, TextSplit } from '@/lib/services/SimpleTextSplitter';
 import { sitemapDiscoveryService } from '@/lib/services/SitemapDiscoveryService';
+import { PuppeteerCrawlingService } from '@/lib/services/PuppeteerCrawlingService';
 import * as cheerio from 'cheerio';
 
 export const runtime = 'nodejs';
@@ -1342,6 +1343,9 @@ export async function processQueue() {
           'Sec-Fetch-Site': 'none',
         } as Record<string, string>;
 
+        // Puppeteer 서비스 인스턴스 (필요시에만 생성)
+        let puppeteerService: PuppeteerCrawlingService | null = null;
+
         const fetchPageContent = async (targetUrl: string) => {
           console.log('🌍 페이지 다운로드 요청:', targetUrl);
           const response = await fetch(targetUrl, {
@@ -1511,8 +1515,33 @@ export async function processQueue() {
             // Puppeteer를 사용한 크롤링은 별도로 처리 (현재는 경고만)
           }
 
+          // 콘텐츠가 짧은 경우 Puppeteer로 재시도 (JavaScript 렌더링 필요할 수 있음)
           if (!textContent || textContent.length < 100) {
-            throw new Error('크롤링된 콘텐츠가 너무 짧거나 비어있습니다. 접근 권한 또는 공개 여부를 확인해주세요.');
+            console.warn(`⚠️ Cheerio로 추출한 콘텐츠가 짧습니다 (${textContent.length}자). Puppeteer로 재시도합니다.`);
+            
+            try {
+              // PuppeteerCrawlingService 인스턴스 생성 (한 번만 생성)
+              if (!puppeteerService) {
+                puppeteerService = new PuppeteerCrawlingService();
+              }
+              
+              const puppeteerResult = await puppeteerService.crawlMetaPage(targetUrl, false, true); // skipUrlCheck=true로 모든 도메인 허용
+              
+              if (puppeteerResult && puppeteerResult.content && puppeteerResult.content.length >= 100) {
+                console.log(`✅ Puppeteer로 콘텐츠 추출 성공: ${puppeteerResult.content.length}자`);
+                return {
+                  textContent: puppeteerResult.content,
+                  pageTitle: puppeteerResult.title,
+                  htmlContent: htmlContent // 원본 HTML은 유지
+                };
+              } else {
+                console.warn(`⚠️ Puppeteer로도 충분한 콘텐츠를 추출하지 못했습니다 (${puppeteerResult?.content?.length || 0}자)`);
+                throw new Error('크롤링된 콘텐츠가 너무 짧거나 비어있습니다. 접근 권한 또는 공개 여부를 확인해주세요.');
+              }
+            } catch (puppeteerError) {
+              console.error(`❌ Puppeteer 재시도 실패:`, puppeteerError);
+              throw new Error(`크롤링된 콘텐츠가 너무 짧거나 비어있습니다 (Cheerio: ${textContent.length}자, Puppeteer 실패). 접근 권한 또는 공개 여부를 확인해주세요.`);
+            }
           }
 
           console.log(`📄 추출된 텍스트 길이: ${textContent.length}자 (원본 HTML: ${htmlContent.length}자, Cheerio 사용)`);
@@ -1775,6 +1804,11 @@ export async function processQueue() {
             });
           } finally {
             await sitemapDiscoveryService.close().catch(() => {});
+            // Puppeteer 서비스 정리
+            if (puppeteerService) {
+              await puppeteerService.close().catch(() => {});
+              puppeteerService = null;
+            }
           }
         } else {
           console.error('[CRITICAL] ⚠️ 하위 페이지 크롤링 건너뜀 - extractSubPages가 false입니다.', {
