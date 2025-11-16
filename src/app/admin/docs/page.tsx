@@ -5054,9 +5054,14 @@ function DocumentDetailDialog({ detail, onClose, onRefetch }: { detail: any | nu
       if (!detail?.id) return null;
       const { data, error } = await supabase
         .from("documents")
-        .select("*")
+        .select("id, title, type, status, chunk_count, file_size, file_type, created_at, updated_at, document_url, url, size, source_vendor, main_document_id, content")
         .eq("id", detail.id)
         .single();
+      
+      if (error) {
+        console.error('[미리보기] fullDoc 조회 오류:', error);
+        return null;
+      }
       
       // URL 필드 확인 로그
       if (data && typeof window !== 'undefined') {
@@ -5068,6 +5073,7 @@ function DocumentDetailDialog({ detail, onClose, onRefetch }: { detail: any | nu
           hasUrl: 'url' in data,
           urlExists: !!data.url,
           keys: Object.keys(data),
+          mainDocumentId: data.main_document_id,
         });
       }
       
@@ -5739,7 +5745,7 @@ function DocumentDetailDialog({ detail, onClose, onRefetch }: { detail: any | nu
                     </a>
                   ) : (
                     <span className="text-muted-enhanced break-all">
-                      {finalDocumentUrl || detail?.url || fullDoc?.url || detail?.title || fullDoc?.title || '-'}
+                      {detail?.url || fullDoc?.url || '-'}
                     </span>
                   )}
                 </div>
