@@ -1831,6 +1831,9 @@ export async function processQueue() {
             }
             let processedCount = 0;
 
+            // 병렬 처리: 최대 10개씩 동시에 처리 (성능 최적화)
+            const BATCH_SIZE = 10;
+            
             console.log(`[CRITICAL] 🔄 하위 페이지 크롤링 시작: ${candidateUrls.length}개 (병렬 처리: 최대 ${BATCH_SIZE}개 동시)`, {
               url,
               documentId,
@@ -1838,9 +1841,6 @@ export async function processQueue() {
               batchSize: BATCH_SIZE,
               totalBatches: Math.ceil(candidateUrls.length / BATCH_SIZE)
             });
-
-            // 병렬 처리: 최대 10개씩 동시에 처리 (성능 최적화)
-            const BATCH_SIZE = 10;
             let lastProgressUpdate = Date.now();
             const PROGRESS_UPDATE_INTERVAL = 3000; // 3초마다 진행 상황 업데이트
             
