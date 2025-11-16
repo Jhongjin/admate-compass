@@ -1388,9 +1388,17 @@ export async function processQueue() {
           // Cheerio로 HTML 파싱
           const $ = cheerio.load(htmlContent);
           
-          // 제목 추출
-          const titleMatch = $('title').text() || htmlContent.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1];
-          const pageTitle = titleMatch ? titleMatch.trim() : new URL(targetUrl).pathname || targetUrl;
+          // 제목 추출 (우선순위: h1 > title > og:title > pathname)
+          let pageTitle = $('h1').first().text().trim() || 
+                         $('title').text().trim() || 
+                         $('meta[property="og:title"]').attr('content')?.trim() ||
+                         htmlContent.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1]?.trim();
+          
+          // 제목이 없거나 너무 짧으면 URL 경로 사용
+          if (!pageTitle || pageTitle.length < 2) {
+            const urlPath = new URL(targetUrl).pathname;
+            pageTitle = urlPath && urlPath !== '/' ? urlPath.split('/').pop() || urlPath : targetUrl;
+          }
           
           // 개선된 텍스트 추출: 구조를 유지하면서 텍스트 추출
           let textContent = '';
