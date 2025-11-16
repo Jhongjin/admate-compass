@@ -5132,8 +5132,13 @@ function DocumentDetailDialog({ detail, onClose, onRefetch }: { detail: any | nu
   const resolvedDocumentUrl = useMemo(() => {
     if (typeof window !== 'undefined') {
       logger.log('[미리보기] ✅ 상세 데이터 스냅샷:', {
+        detailId: detail?.id,
+        detailTitle: detail?.title,
         fullDocUrl: fullDoc?.url,
         detailUrl: detail?.url,
+        detailUrlType: typeof detail?.url,
+        detailUrlExists: 'url' in (detail || {}),
+        detailKeys: detail ? Object.keys(detail) : [],
         normalizedFullDocUrl: (fullDoc as any)?.normalizedUrl,
         normalizedDetailUrl: (detail as any)?.normalizedUrl,
         mainUrl: (detail as any)?.mainUrl,
@@ -5704,7 +5709,7 @@ function DocumentDetailDialog({ detail, onClose, onRefetch }: { detail: any | nu
                     </a>
                   ) : (
                     <span className="text-muted-enhanced break-all">
-                      {detail?.url || fullDoc?.url || detail?.title || fullDoc?.title || '-'}
+                      {finalDocumentUrl || detail?.url || fullDoc?.url || detail?.title || fullDoc?.title || '-'}
                     </span>
                   )}
                 </div>
