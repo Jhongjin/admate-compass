@@ -1777,7 +1777,9 @@ export async function processQueue() {
           const ragProcessStartTime = Date.now();
           console.log(`[CRITICAL] 🚀 RAG 처리 시작: ${title} (콘텐츠 길이: ${content.length}자)`);
           
-          const ragResult = await ragProcessor.processDocument({
+          // RAG 처리 전체에 타임아웃 추가 (60초)
+          const ragProcessTimeout = 60000;
+          const ragProcessPromise = ragProcessor.processDocument({
             id: resolvedDocumentId,
             title,
             content,
@@ -1789,8 +1791,29 @@ export async function processQueue() {
             updated_at: nowIso,
           });
           
-          const ragProcessElapsed = Date.now() - ragProcessStartTime;
-          console.log(`[CRITICAL] ✅ RAG 처리 완료: ${title} (소요 시간: ${ragProcessElapsed}ms, 성공: ${ragResult.success}, 청크: ${ragResult.chunkCount}개)`);
+          const ragProcessTimeoutPromise = new Promise<never>((_, reject) => {
+            setTimeout(() => {
+              const elapsed = Date.now() - ragProcessStartTime;
+              reject(new Error(`RAG 처리 전체 타임아웃: ${ragProcessTimeout}ms 초과 (경과: ${elapsed}ms)`));
+            }, ragProcessTimeout);
+          });
+          
+          let ragResult;
+          try {
+            ragResult = await Promise.race([ragProcessPromise, ragProcessTimeoutPromise]);
+            const ragProcessElapsed = Date.now() - ragProcessStartTime;
+            console.log(`[CRITICAL] ✅ RAG 처리 완료: ${title} (소요 시간: ${ragProcessElapsed}ms, 성공: ${ragResult.success}, 청크: ${ragResult.chunkCount}개)`);
+          } catch (ragError) {
+            const ragProcessElapsed = Date.now() - ragProcessStartTime;
+            console.error(`[CRITICAL] ❌ RAG 처리 실패/타임아웃: ${title} (소요 시간: ${ragProcessElapsed}ms)`, ragError);
+            // 타임아웃 또는 에러 발생 시 실패 결과 반환
+            ragResult = {
+              documentId: resolvedDocumentId,
+              chunkCount: 0,
+              success: false,
+              error: ragError instanceof Error ? ragError.message : String(ragError),
+            };
+          }
 
           if (ragResult.success) {
             await supabase

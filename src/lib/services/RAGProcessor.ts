@@ -72,62 +72,59 @@ export class RAGProcessor {
   }
 
   /**
-   * 임베딩 서비스 초기화 (비동기 백그라운드 초기화 + 즉시 fallback)
+   * 임베딩 서비스 초기화 (동기 방식 + 명확한 타임아웃)
    * 
-   * 옵션 1 구현: 모델 초기화를 비동기로 시작하되, 완료를 기다리지 않고 즉시 null을 반환하여
-   * 해시 기반 임베딩으로 문서 처리를 시작합니다. 모델 초기화는 백그라운드에서 진행되며,
-   * 완료 여부를 추적하고 로깅합니다.
+   * 기존 방식으로 복원: 모델 초기화를 동기적으로 시도하되, 명확한 타임아웃(2분)을 설정하여
+   * 타임아웃 발생 시 즉시 해시 기반 임베딩으로 전환합니다.
    */
   private async initializeEmbeddingService(): Promise<EmbeddingService | null> {
-    // 이미 초기화 시도가 완료된 경우 (성공 또는 실패)
     if (this.embeddingServiceInitialized) {
-      // 모델이 정상적으로 초기화되었으면 반환
       if (this.embeddingService && this.embeddingService.initialized) {
-        return this.embeddingService;
+      return this.embeddingService;
       }
-      // 초기화 실패했거나 아직 진행 중이면 null 반환 (해시 기반 사용)
       return null;
     }
 
     try {
-      console.log('🔄 임베딩 서비스 초기화 시도 (비동기 백그라운드 모드)...');
+      console.log('🔄 임베딩 서비스 초기화 시도 (동기 방식, 타임아웃: 2분)...');
       
-      // 싱글톤 인스턴스 사용 (서버리스 환경에서 모델 재사용)
+      // 싱글톤 인스턴스 사용
       this.embeddingService = globalEmbeddingService;
       
       // 이미 초기화되어 있으면 즉시 반환
       if (this.embeddingService.initialized) {
         console.log('✅ 임베딩 서비스가 이미 초기화되어 있음 (캐시 재사용)');
-        this.embeddingServiceInitialized = true;
+      this.embeddingServiceInitialized = true;
         return this.embeddingService;
       }
 
-      // 모델 초기화를 백그라운드에서 비동기로 시작 (await하지 않음)
-      // 문서 처리는 즉시 해시 기반 임베딩으로 시작
+      // 모델 초기화 시도 (명확한 타임아웃 설정: 2분)
+      const initTimeoutMs = 120000; // 2분 타임아웃
       const initStartMs = Date.now();
-      console.log('🚀 BGE-M3 모델 초기화를 백그라운드에서 시작 (문서 처리는 즉시 해시 기반 임베딩으로 진행)');
-      console.log('📊 모델 초기화 완료 여부는 로그에서 확인 가능합니다.');
+      console.log(`⏱️ 모델 초기화 타임아웃 설정: ${initTimeoutMs / 1000}초`);
       
-      // 백그라운드에서 모델 초기화 시작 (완료를 기다리지 않음)
-      this.embeddingService.initialize('bge-m3')
-        .then(() => {
+      const initPromise = this.embeddingService.initialize('bge-m3');
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => {
           const elapsed = Date.now() - initStartMs;
-          const elapsedSeconds = (elapsed / 1000).toFixed(1);
-          console.log(`✅ [백그라운드] BGE-M3 모델 초기화 완료: ${elapsed}ms (${elapsedSeconds}초)`);
-          console.log(`📊 [백그라운드] 모델 초기화 상태: 정상 완료 - 다음 요청부터 BGE-M3 임베딩 사용 가능`);
-        })
-        .catch((error) => {
-          const elapsed = Date.now() - initStartMs;
-          const elapsedSeconds = (elapsed / 1000).toFixed(1);
-          const errorMessage = error instanceof Error ? error.message : String(error);
-          console.error(`❌ [백그라운드] BGE-M3 모델 초기화 실패 (경과: ${elapsedSeconds}초):`, errorMessage);
-          console.log(`📊 [백그라운드] 모델 초기화 상태: 실패 - 해시 기반 임베딩 계속 사용`);
-        });
-
-      // 즉시 null을 반환하여 해시 기반 임베딩으로 문서 처리 시작
-      this.embeddingServiceInitialized = true; // 초기화 시도 완료로 표시
-      console.log('⚡ 문서 처리는 즉시 해시 기반 임베딩으로 시작합니다.');
-      return null;
+          reject(new Error(`임베딩 모델 초기화 타임아웃 (${initTimeoutMs / 1000}초 초과, 경과: ${(elapsed / 1000).toFixed(1)}초)`));
+        }, initTimeoutMs);
+      });
+      
+      try {
+        await Promise.race([initPromise, timeoutPromise]);
+        const elapsed = Date.now() - initStartMs;
+        console.log(`✅ 임베딩 서비스 초기화 성공: ${elapsed}ms (${(elapsed / 1000).toFixed(1)}초)`);
+        this.embeddingServiceInitialized = true;
+      return this.embeddingService;
+    } catch (error) {
+        const elapsed = Date.now() - initStartMs;
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        console.warn(`⚠️ 임베딩 모델 초기화 타임아웃/실패 (경과: ${(elapsed / 1000).toFixed(1)}초), 해시 기반 임베딩으로 fallback:`, errorMessage);
+      this.embeddingService = null;
+        this.embeddingServiceInitialized = true;
+        return null;
+      }
     } catch (error) {
       console.warn('⚠️ 임베딩 서비스 초기화 시도 중 오류, 해시 기반 임베딩으로 fallback:', error);
       this.embeddingService = null;
@@ -445,7 +442,8 @@ export class RAGProcessor {
    */
   async saveDocumentToDatabase(document: DocumentData, originalBinaryData?: string): Promise<void> {
     try {
-      console.log('💾 문서 저장 시작:', document.title);
+      const docSaveStartTime = Date.now();
+      console.log(`[CRITICAL] 💾 문서 저장 시작: ${document.title} (문서 ID: ${document.id})`);
       const supabase = await this.getSupabaseClient();
 
       // Supabase 연결 확인
@@ -453,6 +451,8 @@ export class RAGProcessor {
         console.warn('⚠️ Supabase 연결 없음. 메모리 모드로 동작');
         return;
       }
+      
+      console.log(`[CRITICAL] ✅ Supabase 연결 확인 완료: ${document.title} (경과: ${Date.now() - docSaveStartTime}ms)`);
 
       // 원본 바이너리 데이터가 있으면 content에 저장, 없으면 텍스트 내용 저장
       let contentToStore = '';
@@ -522,6 +522,9 @@ export class RAGProcessor {
         (documentData as any).created_at = document.created_at;
       }
 
+      console.log(`[CRITICAL] 📝 DB ${isUpdate ? '업데이트' : '삽입'} 시작: ${document.title} (타임아웃: ${timeoutMs}ms)`);
+      const dbOpStartTime = Date.now();
+      
       const { error } = await Promise.race([
         isUpdate
           ? supabase
@@ -532,12 +535,17 @@ export class RAGProcessor {
               .from('documents')
               .insert(documentData),
         new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('Database operation timeout')), timeoutMs)
+          setTimeout(() => {
+            const elapsed = Date.now() - dbOpStartTime;
+            reject(new Error(`Database operation timeout: ${timeoutMs}ms 초과 (경과: ${elapsed}ms)`));
+          }, timeoutMs)
         )
       ]) as any;
 
+      const dbOpElapsed = Date.now() - dbOpStartTime;
+      
       if (error) {
-        console.error('❌ 문서 저장 오류:', error);
+        console.error(`[CRITICAL] ❌ 문서 저장 오류: ${document.title} (소요 시간: ${dbOpElapsed}ms)`, error);
         console.error('❌ 문서 저장 오류 상세:', {
           documentId: document.id,
           title: document.title,
@@ -545,12 +553,14 @@ export class RAGProcessor {
           errorMessage: error.message,
           errorDetails: error.details,
           isUpdate,
-          existingDoc: !!existingDoc
+          existingDoc: !!existingDoc,
+          elapsed: dbOpElapsed
         });
         throw error;
       }
 
-      console.log(`✅ 문서 ${isUpdate ? '업데이트' : '저장'} 완료:`, document.title);
+      const totalElapsed = Date.now() - docSaveStartTime;
+      console.log(`[CRITICAL] ✅ 문서 ${isUpdate ? '업데이트' : '저장'} 완료: ${document.title} (DB 작업: ${dbOpElapsed}ms, 전체: ${totalElapsed}ms)`);
 
       // document_metadata 테이블에도 저장
       // MIME type에서 실제 파일 확장자 추출 (예: application/pdf -> pdf, application/vnd.openxmlformats-officedocument.wordprocessingml.document -> docx)
@@ -667,7 +677,8 @@ export class RAGProcessor {
     }
     
     try {
-      console.log('💾 청크 저장 시작:', chunks.length, '개 청크');
+      const chunkSaveStartTime = Date.now();
+      console.log(`[CRITICAL] 💾 청크 저장 시작: ${chunks.length}개 청크 (문서 ID: ${chunks[0]?.metadata.document_id || 'unknown'})`);
 
       // 청크 데이터 준비 (id는 SERIAL이므로 제외)
       const chunkInserts = chunks.map((chunk, index) => {
@@ -687,7 +698,10 @@ export class RAGProcessor {
             created_at: chunk.metadata.created_at,
             // 확장 메타데이터
             chunk_type: chunk.metadata.chunk_type,
-            section_title: chunk.metadata.section_title,
+            // section_title 길이 제한 (인덱스 크기 제한 방지: 최대 200자)
+            section_title: chunk.metadata.section_title && chunk.metadata.section_title.length > 200
+              ? chunk.metadata.section_title.substring(0, 200)
+              : chunk.metadata.section_title,
             keywords: chunk.metadata.keywords,
             importance: chunk.metadata.importance,
             confidence: chunk.metadata.confidence,
@@ -752,10 +766,12 @@ export class RAGProcessor {
         
         savedCount = chunkInserts.length;
         const saveMs = Date.now() - saveStartMs;
-        console.log(`✅ 청크 저장 완료: ${savedCount}개 청크 (${saveMs}ms)`);
+        const chunkSaveElapsed = Date.now() - chunkSaveStartTime;
+        console.log(`[CRITICAL] ✅ 청크 저장 완료: ${savedCount}개 청크 (소요 시간: ${saveMs}ms, 전체: ${chunkSaveElapsed}ms)`);
       }
 
-      console.log('✅ 청크 저장 완료:', savedCount, '개 청크 (시도:', chunks.length, '개)');
+      const totalChunkSaveElapsed = Date.now() - chunkSaveStartTime;
+      console.log(`[CRITICAL] ✅ 청크 저장 완료: ${savedCount}개 청크 (시도: ${chunks.length}개, 전체 소요 시간: ${totalChunkSaveElapsed}ms)`);
 
       // 실제 저장된 청크 개수 확인 (DB에서 재확인)
       const documentId = chunks[0].metadata.document_id;
@@ -968,13 +984,13 @@ export class RAGProcessor {
       const abortController = new AbortController();
       const timeoutId = setTimeout(() => {
         abortController.abort();
-      }, timeoutMs);
+        }, timeoutMs);
       
       try {
         const processPromise = this.processDocumentInternal(document, skipDuplicate, originalBinaryData, abortController.signal);
         const result = await processPromise;
         clearTimeout(timeoutId);
-        return result;
+      return result;
       } catch (error) {
         clearTimeout(timeoutId);
         
@@ -1215,7 +1231,29 @@ export class RAGProcessor {
           let loopCount = 0;
           for (let i = 0; i < processedContent.length; i += forcedChunkSize) {
             loopCount++;
-            const chunkContent = processedContent.slice(i, i + forcedChunkSize).trim();
+            let chunkEnd = Math.min(i + forcedChunkSize, processedContent.length);
+            
+            // 숫자 패턴 보호: 잘린 숫자 방지
+            if (chunkEnd < processedContent.length) {
+              const nearEndText = processedContent.slice(Math.max(0, chunkEnd - 30), Math.min(processedContent.length, chunkEnd + 30));
+              const truncatedNumberPattern = /\d+\s*\|\s*\d+/;
+              
+              if (truncatedNumberPattern.test(nearEndText)) {
+                // 잘린 숫자 패턴 발견 - 완전한 숫자까지 포함하도록 조정
+                const beforeCut = processedContent.slice(i, chunkEnd);
+                const numberPattern = /(\d{1,3}(?:,\d{3})*(?:만|억|조|원|명|개|건|%|퍼센트)?)\s*$/;
+                const numberMatch = beforeCut.match(numberPattern);
+                if (numberMatch && numberMatch.index !== undefined) {
+                  const numberEnd = i + numberMatch.index + numberMatch[0].length;
+                  if (numberEnd > i + forcedChunkSize * 0.5 && numberEnd < i + forcedChunkSize * 1.5) {
+                    chunkEnd = numberEnd;
+                    console.log(`🔢 [RAGProcessor] 숫자 패턴 보호: 잘린 숫자 방지를 위해 chunkEnd 조정 ${chunkEnd}자`);
+                  }
+                }
+              }
+            }
+            
+            const chunkContent = processedContent.slice(i, chunkEnd).trim();
             if (chunkContent.length > 0) {
               forcedChunks.push({
                 id: `${document.id}_chunk_${forcedChunks.length}`,
@@ -1403,7 +1441,7 @@ export class RAGProcessor {
       if (abortSignal?.aborted) {
         throw new Error('문서 처리가 중단되었습니다.');
       }
-      
+
       // 2. 임베딩 생성 (BGE-M3 모델 사용, 실패 시 해시 기반 fallback)
       const embeddingStartMs = Date.now();
       console.log('🔮 임베딩 생성 시작...', { chunkCount: chunks.length });
@@ -1424,7 +1462,7 @@ export class RAGProcessor {
       if (abortSignal?.aborted) {
         throw new Error('문서 처리가 중단되었습니다.');
       }
-      
+
       // 3. Supabase에 저장 (큰 파일의 경우 청크 저장도 배치 처리)
       const savingStartMs = Date.now();
       const supabase = await this.getSupabaseClient();
@@ -1596,7 +1634,14 @@ export class RAGProcessor {
       );
 
       // ChunkData 형식으로 변환
-      const chunkData: ChunkData[] = result.chunks.map((chunk) => ({
+      const chunkData: ChunkData[] = result.chunks.map((chunk) => {
+        // section_title 길이 제한 (인덱스 크기 제한 방지: 최대 200자)
+        const sectionTitle = chunk.metadata.sectionTitle;
+        const limitedSectionTitle = sectionTitle && sectionTitle.length > 200 
+          ? sectionTitle.substring(0, 200) 
+          : sectionTitle;
+        
+        return {
         id: chunk.id,
         content: chunk.content,
         metadata: {
@@ -1605,7 +1650,7 @@ export class RAGProcessor {
           source: chunk.metadata.documentTitle,
           created_at: new Date().toISOString(),
           chunk_type: chunk.metadata.chunkType,
-          section_title: chunk.metadata.sectionTitle,
+            section_title: limitedSectionTitle,
           keywords: chunk.metadata.keywords,
           importance: chunk.metadata.importance,
           hierarchy_level: chunk.metadata.hierarchyLevel,
@@ -1613,7 +1658,8 @@ export class RAGProcessor {
           end_char: chunk.metadata.endChar,
           original_length: chunk.metadata.endChar - chunk.metadata.startChar,
         } as any,
-      }));
+        };
+      });
 
       console.log('✅ 통합 청킹 완료:', {
         documentId: document.id,
@@ -1632,9 +1678,30 @@ export class RAGProcessor {
         },
       });
 
+      // 청크가 0개인 경우 상세 로깅 및 폴백
+      if (chunkData.length === 0) {
+        console.error('❌ 통합 청킹 결과가 비어있습니다. 상세 정보:', {
+          documentId: document.id,
+          title: document.title,
+          contentLength: document.content.length,
+          contentPreview: document.content.substring(0, 500),
+          documentType,
+          note: '통합 청킹 서비스가 청크를 생성하지 못했습니다. 기존 방식으로 폴백합니다.'
+        });
+        // 기존 방식으로 폴백
+        return this.simpleChunkDocument(document);
+      }
+
       return chunkData;
     } catch (error) {
       console.error('❌ 통합 청킹 실패, 기존 방식으로 폴백:', error);
+      console.error('❌ 통합 청킹 실패 상세 정보:', {
+        documentId: document.id,
+        title: document.title,
+        contentLength: document.content?.length || 0,
+        error: error instanceof Error ? error.message : String(error),
+        stack: error instanceof Error ? error.stack : undefined
+      });
       // 에러 발생 시 기존 simpleChunkDocument로 폴백
       return this.simpleChunkDocument(document);
     }
@@ -1770,7 +1837,14 @@ export class RAGProcessor {
       });
 
       // ChunkData 형식으로 변환
-      const chunkData: ChunkData[] = adaptiveChunks.map((chunk) => ({
+      const chunkData: ChunkData[] = adaptiveChunks.map((chunk) => {
+        // section_title 길이 제한 (인덱스 크기 제한 방지: 최대 200자)
+        const sectionTitle = chunk.metadata.sectionTitle;
+        const limitedSectionTitle = sectionTitle && sectionTitle.length > 200 
+          ? sectionTitle.substring(0, 200) 
+          : sectionTitle;
+        
+        return {
         id: chunk.id,
         content: chunk.content,
         metadata: {
@@ -1780,7 +1854,7 @@ export class RAGProcessor {
           created_at: new Date().toISOString(),
           // 추가 메타데이터 확장
           chunk_type: chunk.metadata.chunkType,
-          section_title: chunk.metadata.sectionTitle,
+            section_title: limitedSectionTitle,
           keywords: chunk.metadata.keywords,
           importance: chunk.metadata.importance,
           confidence: chunk.metadata.confidence,
@@ -1789,7 +1863,8 @@ export class RAGProcessor {
           parent_chunk_id: chunk.metadata.parentChunkId,
           children_chunk_ids: chunk.metadata.childrenChunkIds,
         } as any, // 타입 확장을 위해 any 사용
-      }));
+        };
+      });
 
       console.log('📄 적응적 청킹 완료:', {
         documentId: document.id,
