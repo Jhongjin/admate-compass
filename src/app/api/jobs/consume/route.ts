@@ -1552,8 +1552,14 @@ export async function processQueue() {
                   };
                 }
                 
-                // Cheerio 결과도 없으면 에러 throw
-                throw new Error('크롤링된 콘텐츠가 너무 짧거나 비어있습니다. 접근 권한 또는 공개 여부를 확인해주세요.');
+                // Cheerio 결과도 없으면 최소한 빈 문서라도 반환 (에러 대신)
+                // 이렇게 하면 작업이 완전히 실패하지 않고, 빈 문서로 저장되어 사용자가 확인할 수 있음
+                console.warn(`⚠️ Cheerio와 Puppeteer 모두 실패했지만, 빈 문서로 저장하여 작업을 계속 진행합니다.`);
+                return {
+                  textContent: '', // 빈 콘텐츠
+                  pageTitle: pageTitle || targetUrl, // URL을 제목으로 사용
+                  htmlContent: htmlContent || '' // 빈 HTML
+                };
               }
             } catch (puppeteerError: any) {
               console.error(`❌ Puppeteer 재시도 실패:`, puppeteerError);
@@ -1568,8 +1574,13 @@ export async function processQueue() {
                 };
               }
               
-              // Cheerio 결과도 없으면 에러 throw
-              throw new Error(`크롤링된 콘텐츠가 너무 짧거나 비어있습니다 (Cheerio: ${textContent.length}자, Puppeteer 실패). 접근 권한 또는 공개 여부를 확인해주세요.`);
+              // Cheerio 결과도 없으면 최소한 빈 문서라도 반환 (에러 대신)
+              console.warn(`⚠️ Cheerio와 Puppeteer 모두 실패했지만, 빈 문서로 저장하여 작업을 계속 진행합니다.`);
+              return {
+                textContent: '', // 빈 콘텐츠
+                pageTitle: pageTitle || targetUrl, // URL을 제목으로 사용
+                htmlContent: htmlContent || '' // 빈 HTML
+              };
             }
           }
 
@@ -1627,6 +1638,26 @@ export async function processQueue() {
                 created_at: nowIso,
                 updated_at: nowIso,
               });
+          }
+
+          // 빈 콘텐츠인 경우 RAG 처리 건너뛰고 failed 상태로 표시
+          if (!content || content.trim().length === 0) {
+            console.warn(`⚠️ 빈 콘텐츠로 인해 RAG 처리를 건너뜁니다. 문서 상태를 'failed'로 설정합니다.`);
+            await supabase
+              .from('documents')
+              .update({
+                status: 'failed',
+                updated_at: nowIso,
+              })
+              .eq('id', resolvedDocumentId);
+            
+            // 작업은 완료로 표시하되, 문서는 failed 상태
+            return {
+              success: true, // 작업은 완료로 표시
+              chunkCount: 0,
+              documentId: resolvedDocumentId,
+              message: '크롤링된 콘텐츠가 비어있습니다. 페이지가 JavaScript로만 렌더링되거나 접근이 제한되었을 수 있습니다.'
+            };
           }
 
           const ragResult = await ragProcessor.processDocument({
