@@ -73,21 +73,22 @@ export class RAGProcessor {
       separators: ['\n\n', '\n', '.', '!', '?', ';', ' ', ''], // 분할 기준
     });
 
-    // 환경 변수에서 임베딩 제공자 선택 (기본값: bge-m3)
-    const provider = (process.env.EMBEDDING_PROVIDER || 'bge-m3').toLowerCase();
-    if (provider === 'openai') {
+    // 환경 변수에서 임베딩 제공자 선택 (기본값: openai - 서버리스 환경에서 더 안정적)
+    // BGE-M3는 서버리스 환경에서 모델 다운로드가 매우 느리거나 멈출 수 있으므로 OpenAI를 기본값으로 사용
+    const provider = (process.env.EMBEDDING_PROVIDER || 'openai').toLowerCase();
+    if (provider === 'bge-m3') {
+      this.embeddingProvider = 'bge-m3';
+      console.log('✅ BGE-M3 임베딩 사용 설정됨 (서버리스 환경에서는 느릴 수 있습니다)');
+    } else {
       this.embeddingProvider = 'openai';
       this.openAIEmbeddingService = openAIEmbeddingService;
-      console.log('✅ OpenAI Embeddings API 사용 설정됨');
-    } else {
-      this.embeddingProvider = 'bge-m3';
-      console.log('✅ BGE-M3 임베딩 사용 설정됨');
+      console.log('✅ OpenAI Embeddings API 사용 설정됨 (기본값 - 서버리스 환경에 최적화)');
     }
   }
 
   /**
    * 임베딩 서비스 초기화
-   * 정확도가 생명인 서비스이므로 타임아웃 없이 완료될 때까지 대기
+   * OpenAI는 즉시 사용 가능, BGE-M3는 타임아웃 설정 (서버리스 환경에서 멈출 수 있음)
    */
   private async initializeEmbeddingService(): Promise<EmbeddingService | null> {
     if (this.embeddingServiceInitialized) {
@@ -104,7 +105,7 @@ export class RAGProcessor {
     }
 
     try {
-      console.log('🔄 BGE-M3 임베딩 서비스 초기화 시작 (타임아웃 없음 - 완료될 때까지 대기)...');
+      console.log('🔄 BGE-M3 임베딩 서비스 초기화 시작 (타임아웃: 5분 - 서버리스 환경 고려)...');
       
       // 싱글톤 인스턴스 사용
       this.embeddingService = globalEmbeddingService;
@@ -116,11 +117,20 @@ export class RAGProcessor {
         return this.embeddingService;
       }
 
-      // 타임아웃 없이 완료될 때까지 대기 (정확도가 생명이므로)
+      // 타임아웃 설정: 5분 (서버리스 환경에서 모델 다운로드가 멈출 수 있으므로)
       const initStartMs = Date.now();
-      console.log('⏳ BGE-M3 모델 초기화 중... (다운로드 및 로딩에 시간이 걸릴 수 있습니다)');
+      const INIT_TIMEOUT = 5 * 60 * 1000; // 5분
+      console.log('⏳ BGE-M3 모델 초기화 중... (타임아웃: 5분, 서버리스 환경에서는 느릴 수 있습니다)');
       
-      await this.embeddingService.initialize('bge-m3');
+      const initPromise = this.embeddingService.initialize('bge-m3');
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => {
+          const elapsed = Date.now() - initStartMs;
+          reject(new Error(`BGE-M3 모델 초기화 타임아웃: 5분 초과 (경과: ${(elapsed / 1000).toFixed(1)}초). 서버리스 환경에서 모델 다운로드가 멈췄을 수 있습니다. OpenAI Embeddings API를 사용하려면 EMBEDDING_PROVIDER=openai 환경 변수를 설정하세요.`));
+        }, INIT_TIMEOUT);
+      });
+      
+      await Promise.race([initPromise, timeoutPromise]);
       
       const elapsed = Date.now() - initStartMs;
       console.log(`✅ BGE-M3 임베딩 서비스 초기화 성공: ${elapsed}ms (${(elapsed / 1000).toFixed(1)}초)`);
