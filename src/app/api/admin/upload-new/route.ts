@@ -1405,7 +1405,7 @@ export async function GET(request: NextRequest) {
       created_at: doc.created_at,
       updated_at: doc.updated_at,
       document_url: doc.document_url,
-      url: doc.url,
+      url: doc.url || null, // URL 필드 명시적 포함 (하위 페이지 URL 표시를 위해 필수)
       size: doc.size,
       source_vendor: doc.source_vendor || 'META', // 벤더 정보 포함
       // 그룹핑을 위한 필드들
