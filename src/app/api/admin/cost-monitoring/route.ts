@@ -91,11 +91,7 @@ export async function GET(request: NextRequest) {
     }
 
     // 1. Supabase 데이터베이스 크기 조회
-    const { data: dbSizeData, error: dbSizeError } = await supabase
-      .rpc('pg_database_size', { database_name: 'postgres' })
-      .single();
-    
-    // 대안: documents 및 chunks 테이블 크기 합산
+    // 대안: documents 및 chunks 테이블 크기 합산 (pg_database_size는 권한 문제로 실패할 수 있음)
     const { data: tableSizes, error: tableSizeError } = await supabase
       .from('documents')
       .select('file_size, chunk_count');
@@ -103,7 +99,7 @@ export async function GET(request: NextRequest) {
     let databaseSizeMB = 0;
     if (tableSizes) {
       const totalFileSize = tableSizes.reduce((sum, doc) => sum + (doc.file_size || 0), 0);
-      // 청크 데이터는 평균 1KB로 추정
+      // 청크 데이터는 평균 1KB로 추정 (임베딩 포함)
       const totalChunkSize = tableSizes.reduce((sum, doc) => sum + (doc.chunk_count || 0) * 1024, 0);
       databaseSizeMB = (totalFileSize + totalChunkSize) / (1024 * 1024);
     }
