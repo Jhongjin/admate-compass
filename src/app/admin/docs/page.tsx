@@ -480,7 +480,7 @@ function UploadAndCrawlTabs({ vendors, onVendorsChange }: { vendors: string[]; o
       try {
         const { data: job, error } = await supabaseClient
           .from('processing_jobs')
-          .select('id, status, result, error, finished_at')
+          .select('id, status, result, error, finished_at, started_at')
           .eq('id', jobId)
           .single();
 
