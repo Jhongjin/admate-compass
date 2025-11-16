@@ -1831,14 +1831,19 @@ export async function processQueue() {
             }
             let processedCount = 0;
 
-            console.log(`[CRITICAL] 🔄 하위 페이지 크롤링 시작: ${candidateUrls.length}개 (병렬 처리: 최대 5개 동시)`, {
+            console.log(`[CRITICAL] 🔄 하위 페이지 크롤링 시작: ${candidateUrls.length}개 (병렬 처리: 최대 ${BATCH_SIZE}개 동시)`, {
               url,
               documentId,
-              candidateUrls: candidateUrls.slice(0, 5)
+              candidateUrls: candidateUrls.slice(0, 5),
+              batchSize: BATCH_SIZE,
+              totalBatches: Math.ceil(candidateUrls.length / BATCH_SIZE)
             });
 
-            // 병렬 처리: 최대 5개씩 동시에 처리
-            const BATCH_SIZE = 5;
+            // 병렬 처리: 최대 10개씩 동시에 처리 (성능 최적화)
+            const BATCH_SIZE = 10;
+            let lastProgressUpdate = Date.now();
+            const PROGRESS_UPDATE_INTERVAL = 3000; // 3초마다 진행 상황 업데이트
+            
             for (let i = 0; i < candidateUrls.length; i += BATCH_SIZE) {
               const batch = candidateUrls.slice(i, i + BATCH_SIZE);
               
@@ -1911,7 +1916,31 @@ export async function processQueue() {
               
               processedCount = subPageResults.length; // 실제 처리된 개수로 업데이트
               
-              // 진행 상황 업데이트 (배치마다)
+              // 진행 상황 업데이트 (3초마다 또는 마지막 배치일 때만)
+              const now = Date.now();
+              const isLastBatch = i + BATCH_SIZE >= candidateUrls.length;
+              const shouldUpdate = isLastBatch || (now - lastProgressUpdate >= PROGRESS_UPDATE_INTERVAL);
+              
+              if (shouldUpdate) {
+                await supabase
+                  .from('processing_jobs')
+                  .update({
+                    result: {
+                      url,
+                      documentId,
+                      title: mainPage.pageTitle,
+                      chunkCount: mainDocResult.chunkCount,
+                      subPageProgress: { processed: processedCount, total: candidateUrls.length },
+                      subPages: subPageResults.slice(-3),
+                    },
+                  })
+                  .eq('id', job.id);
+                lastProgressUpdate = now;
+              }
+            }
+            
+            // 마지막 진행 상황 업데이트 (모든 배치 완료 후)
+            if (processedCount > 0) {
               await supabase
                 .from('processing_jobs')
                 .update({
