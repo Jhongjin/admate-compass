@@ -588,29 +588,57 @@ function UploadAndCrawlTabs({ vendors, onVendorsChange }: { vendors: string[]; o
           return;
         }
 
-        // 멈춘 작업 감지: processing 상태이지만 started_at이 10분 이상 지난 경우
+        // 멈춘 작업 감지: processing 상태이지만 started_at이 30분 이상 지난 경우
+        // BGE-M3 초기화(최대 90초) + RAG 처리(최대 5분) + 하위 페이지 처리 시간을 고려하여 30분으로 설정
         if (job.status === 'processing' && job.started_at) {
           const startedAt = new Date(job.started_at).getTime();
           const elapsed = Date.now() - startedAt;
-          const STUCK_THRESHOLD = 10 * 60 * 1000; // 10분
+          const STUCK_THRESHOLD = 30 * 60 * 1000; // 30분 (BGE-M3 초기화 + RAG 처리 시간 고려)
           
-          if (elapsed > STUCK_THRESHOLD) {
-            console.error('[CRITICAL] ⚠️ 크롤링 작업이 멈춘 것으로 감지됨:', {
+          // 하트비트 확인: result에 최근 업데이트가 있는지 확인
+          const result = job.result as any;
+          const hasRecentHeartbeat = result?.status && (
+            result.status === 'main_page_crawling' ||
+            result.status === 'main_page_rag_processing' ||
+            result.status === 'main_page_completed' ||
+            (result.subPageProgress && result.subPageProgress.processed < result.subPageProgress.total)
+          );
+          
+          // 하트비트가 있으면 진행 중으로 간주 (멈춘 것으로 판단하지 않음)
+          if (hasRecentHeartbeat) {
+            // 하트비트가 있으면 진행 중이므로 멈춘 것으로 판단하지 않음
+            // 단, 1시간 이상 진행 중이면 경고만 표시
+            const WARNING_THRESHOLD = 60 * 60 * 1000; // 1시간
+            if (elapsed > WARNING_THRESHOLD) {
+              console.warn('[CRITICAL] ⚠️ 크롤링 작업이 오래 걸리고 있습니다 (하트비트는 있음):', {
+                jobId: job.id,
+                status: job.status,
+                elapsed: `${Math.round(elapsed / 60000)}분`,
+                heartbeatStatus: result?.status,
+                subPageProgress: result?.subPageProgress
+              });
+              // 경고만 표시하고 계속 진행
+            }
+          } else if (elapsed > STUCK_THRESHOLD) {
+            // 하트비트가 없고 30분 이상 지났으면 멈춘 것으로 판단
+            console.error('[CRITICAL] ⚠️ 크롤링 작업이 멈춘 것으로 감지됨 (하트비트 없음):', {
               jobId: job.id,
               status: job.status,
               startedAt: job.started_at,
-              elapsed: `${Math.round(elapsed / 1000)}초`,
-              threshold: `${STUCK_THRESHOLD / 1000}초`
+              elapsed: `${Math.round(elapsed / 60000)}분`,
+              threshold: `${STUCK_THRESHOLD / 60000}분`,
+              hasHeartbeat: hasRecentHeartbeat,
+              result: result
             });
             
             toast.error('크롤링 작업이 멈춘 것으로 감지되었습니다', {
-              description: `작업이 ${Math.round(elapsed / 60000)}분 동안 진행 중입니다. 작업을 취소하고 다시 시도해주세요.`,
+              description: `작업이 ${Math.round(elapsed / 60000)}분 동안 진행 중이며 하트비트가 없습니다. 작업을 취소하고 다시 시도해주세요.`,
               duration: 8000,
             });
             
             setCrawlProgressLabel('크롤링 작업이 멈춘 것으로 감지됨');
             setCrawlProgressValue(0);
-            setCrawlResult({ error: `작업이 ${Math.round(elapsed / 60000)}분 동안 진행 중입니다. 작업을 취소하고 다시 시도해주세요.` });
+            setCrawlResult({ error: `작업이 ${Math.round(elapsed / 60000)}분 동안 진행 중이며 하트비트가 없습니다. 작업을 취소하고 다시 시도해주세요.` });
             setCrawling(false);
             setCrawlJobId(null);
             return;
