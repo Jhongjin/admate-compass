@@ -1538,8 +1538,20 @@ export async function processQueue() {
                 console.warn(`⚠️ Puppeteer로도 충분한 콘텐츠를 추출하지 못했습니다 (${puppeteerResult?.content?.length || 0}자)`);
                 throw new Error('크롤링된 콘텐츠가 너무 짧거나 비어있습니다. 접근 권한 또는 공개 여부를 확인해주세요.');
               }
-            } catch (puppeteerError) {
+            } catch (puppeteerError: any) {
               console.error(`❌ Puppeteer 재시도 실패:`, puppeteerError);
+              
+              // Puppeteer 실패 시 Cheerio 결과가 있으면 사용 (graceful fallback)
+              if (textContent && textContent.length > 0) {
+                console.warn(`⚠️ Puppeteer 실패했지만 Cheerio 결과 사용: ${textContent.length}자`);
+                return {
+                  textContent: textContent,
+                  pageTitle: pageTitle || '제목 없음',
+                  htmlContent: htmlContent
+                };
+              }
+              
+              // Cheerio 결과도 없으면 에러 throw
               throw new Error(`크롤링된 콘텐츠가 너무 짧거나 비어있습니다 (Cheerio: ${textContent.length}자, Puppeteer 실패). 접근 권한 또는 공개 여부를 확인해주세요.`);
             }
           }

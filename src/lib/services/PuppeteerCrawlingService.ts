@@ -129,77 +129,96 @@ export class PuppeteerCrawlingService {
     if (!this.browser) {
       console.log('🚀 Puppeteer 브라우저 초기화 중...');
       
-      // Vercel 환경에서는 chromium을 사용
-      const isVercel = process.env.VERCEL === '1';
-      let executablePath: string | undefined;
-      
-      if (isVercel) {
-        executablePath = await chromium.executablePath();
-      } else {
-        // 로컬 환경: 환경 변수 또는 일반적인 Chrome 경로 시도
-        executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+      try {
+        // Vercel 환경에서는 chromium을 사용
+        const isVercel = process.env.VERCEL === '1';
+        let executablePath: string | undefined;
         
-        if (!executablePath) {
-          // Windows에서 일반적인 Chrome 경로들 시도
-          const os = require('os');
-          const platform = os.platform();
-          const fs = require('fs');
-          const path = require('path');
-          
-          const possiblePaths = [
-            // 환경 변수
-            process.env.PUPPETEER_EXECUTABLE_PATH,
-            // Windows 일반 경로
-            'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-            'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-            process.env.LOCALAPPDATA && path.join(process.env.LOCALAPPDATA, 'Google', 'Chrome', 'Application', 'chrome.exe'),
-            // macOS 일반 경로
-            '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-            // Linux 일반 경로
-            '/usr/bin/google-chrome',
-            '/usr/bin/google-chrome-stable',
-            '/usr/bin/chromium',
-            '/usr/bin/chromium-browser',
-          ].filter(Boolean) as string[];
-          
-          // 존재하는 경로 찾기
-          for (const chromePath of possiblePaths) {
-            try {
-              if (chromePath && fs.existsSync(chromePath)) {
-                executablePath = chromePath;
-                console.log(`✅ Chrome 실행 파일 발견: ${chromePath}`);
-                break;
-              }
-            } catch (e) {
-              // 경로 확인 실패 시 다음 경로 시도
+        if (isVercel) {
+          try {
+            executablePath = await chromium.executablePath();
+            console.log(`📁 Chromium 실행 경로: ${executablePath}`);
+            
+            // 경로가 존재하는지 확인
+            const fs = require('fs');
+            if (executablePath && !fs.existsSync(executablePath)) {
+              console.warn(`⚠️ Chromium 실행 경로가 존재하지 않습니다: ${executablePath}`);
+              throw new Error(`Chromium 실행 경로가 존재하지 않습니다: ${executablePath}`);
             }
+          } catch (chromiumError: any) {
+            console.error('❌ @sparticuz/chromium 초기화 실패:', chromiumError.message);
+            throw new Error(`Chromium 초기화 실패: ${chromiumError.message}. Puppeteer를 사용할 수 없습니다.`);
+          }
+        } else {
+          // 로컬 환경: 환경 변수 또는 일반적인 Chrome 경로 시도
+          executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
+          
+          if (!executablePath) {
+            // Windows에서 일반적인 Chrome 경로들 시도
+            const os = require('os');
+            const platform = os.platform();
+            const fs = require('fs');
+            const path = require('path');
+            
+            const possiblePaths = [
+              // 환경 변수
+              process.env.PUPPETEER_EXECUTABLE_PATH,
+              // Windows 일반 경로
+              'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+              'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+              process.env.LOCALAPPDATA && path.join(process.env.LOCALAPPDATA, 'Google', 'Chrome', 'Application', 'chrome.exe'),
+              // macOS 일반 경로
+              '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+              // Linux 일반 경로
+              '/usr/bin/google-chrome',
+              '/usr/bin/google-chrome-stable',
+              '/usr/bin/chromium',
+              '/usr/bin/chromium-browser',
+            ].filter(Boolean) as string[];
+            
+            // 존재하는 경로 찾기
+            for (const chromePath of possiblePaths) {
+              try {
+                if (chromePath && fs.existsSync(chromePath)) {
+                  executablePath = chromePath;
+                  console.log(`✅ Chrome 실행 파일 발견: ${chromePath}`);
+                  break;
+                }
+              } catch (e) {
+                // 경로 확인 실패 시 다음 경로 시도
+              }
+            }
+          }
+          
+          if (!executablePath) {
+            throw new Error('Chrome 실행 파일을 찾을 수 없습니다. PUPPETEER_EXECUTABLE_PATH 환경 변수를 설정하거나 Chrome을 설치해주세요.');
           }
         }
         
-        if (!executablePath) {
-          console.warn('⚠️ Chrome 실행 파일을 찾을 수 없습니다. PUPPETEER_EXECUTABLE_PATH 환경 변수를 설정하거나 Chrome을 설치해주세요.');
-          throw new Error('Chrome 실행 파일을 찾을 수 없습니다. PUPPETEER_EXECUTABLE_PATH 환경 변수를 설정하거나 Chrome을 설치해주세요.');
-        }
+        this.browser = await puppeteerCore.launch({
+          headless: true,
+          executablePath,
+          args: isVercel 
+            ? chromium.args
+            : [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-accelerated-2d-canvas',
+                '--no-first-run',
+                '--no-zygote',
+                '--disable-gpu',
+                '--disable-web-security',
+                '--disable-features=VizDisplayCompositor'
+              ]
+        });
+        console.log('✅ Puppeteer 브라우저 초기화 완료');
+      } catch (error: any) {
+        console.error('❌ Puppeteer 브라우저 초기화 실패:', error.message);
+        // 에러를 throw하지 않고 null로 유지하여 Cheerio fallback 사용 가능하도록 함
+        this.browser = null;
+        throw error; // 호출자가 에러를 처리할 수 있도록 throw
       }
-      
-      this.browser = await puppeteerCore.launch({
-        headless: true,
-        executablePath,
-        args: isVercel 
-          ? chromium.args
-          : [
-              '--no-sandbox',
-              '--disable-setuid-sandbox',
-              '--disable-dev-shm-usage',
-              '--disable-accelerated-2d-canvas',
-              '--no-first-run',
-              '--no-zygote',
-              '--disable-gpu',
-              '--disable-web-security',
-              '--disable-features=VizDisplayCompositor'
-            ]
-      });
-      console.log('✅ Puppeteer 브라우저 초기화 완료');
     }
   }
 
@@ -218,11 +237,24 @@ export class PuppeteerCrawlingService {
       return null;
     }
 
+    // 브라우저 초기화 시도
     if (!this.browser) {
-      await this.init();
+      try {
+        await this.init();
+      } catch (initError: any) {
+        console.error(`❌ Puppeteer 초기화 실패로 크롤링 불가: ${initError.message}`);
+        // 초기화 실패 시 null 반환하여 호출자가 Cheerio fallback 사용 가능하도록 함
+        return null;
+      }
     }
 
-    const page = await this.browser!.newPage();
+    // 브라우저가 여전히 null이면 크롤링 불가
+    if (!this.browser) {
+      console.error('❌ Puppeteer 브라우저를 사용할 수 없습니다.');
+      return null;
+    }
+
+    const page = await this.browser.newPage();
     
     try {
       console.log(`🔍 Meta 페이지 크롤링 시작: ${url}`);
