@@ -1310,16 +1310,16 @@ export async function GET(request: NextRequest) {
     }
 
     // 통계 계산 (실제 문서 데이터 기반)
-    const fileDocuments = documents?.filter(doc => ['pdf', 'docx', 'txt'].includes(doc.type)) || [];
-    const urlDocuments = documents?.filter(doc => doc.type === 'url') || [];
+    const fileDocuments = mappedDocuments?.filter(doc => ['pdf', 'docx', 'txt'].includes(doc.type)) || [];
+    const urlDocuments = mappedDocuments?.filter(doc => doc.type === 'url') || [];
     
     const stats = {
       // 전체 통계 (기존 호환성 유지)
       totalDocuments: totalCount || 0,
-      completedDocuments: documents?.filter(doc => doc.status === 'indexed' || doc.status === 'completed').length || 0,
-      totalChunks: documents?.reduce((sum, doc) => sum + (doc.chunk_count || 0), 0) || 0,
-      pendingDocuments: documents?.filter(doc => doc.status === 'processing').length || 0,
-      failedDocuments: documents?.filter(doc => doc.status === 'failed').length || 0,
+      completedDocuments: mappedDocuments?.filter(doc => doc.status === 'indexed' || doc.status === 'completed').length || 0,
+      totalChunks: mappedDocuments?.reduce((sum, doc) => sum + (doc.chunk_count || 0), 0) || 0,
+      pendingDocuments: mappedDocuments?.filter(doc => doc.status === 'processing').length || 0,
+      failedDocuments: mappedDocuments?.filter(doc => doc.status === 'failed').length || 0,
       
       // 파일 문서 통계 (PDF, DOCX, TXT)
       fileStats: {
@@ -1341,15 +1341,16 @@ export async function GET(request: NextRequest) {
     };
 
     console.log('📊 문서 목록 조회 완료 (Supabase):', {
-      documentsCount: documents?.length || 0,
+      documentsCount: mappedDocuments?.length || 0,
       totalDocuments: totalCount || 0,
       stats: stats
     });
 
-    // documents 배열이 null이거나 undefined인 경우 빈 배열로 처리
-    const safeDocuments = documents || [];
+    // mappedDocuments 배열이 null이거나 undefined인 경우 빈 배열로 처리
+    const safeDocuments = mappedDocuments || [];
     
     // content 필드를 제거하여 응답 크기를 줄이고 직렬화 문제를 방지
+    // 그룹핑을 위한 필드들도 포함
     const documentsForResponse = safeDocuments.map(doc => ({
       id: doc.id,
       title: doc.title,
@@ -1363,7 +1364,12 @@ export async function GET(request: NextRequest) {
       document_url: doc.document_url,
       url: doc.url,
       size: doc.size,
-      source_vendor: doc.source_vendor || 'META' // 벤더 정보 포함
+      source_vendor: doc.source_vendor || 'META', // 벤더 정보 포함
+      // 그룹핑을 위한 필드들
+      mainDocumentId: doc.mainDocumentId || null,
+      normalizedUrl: doc.normalizedUrl || null,
+      normalizedMainUrl: doc.normalizedMainUrl || null,
+      isMainUrl: doc.isMainUrl || false
       // content 필드는 제외 (너무 크고 UI에서 사용하지 않음)
     }));
     
