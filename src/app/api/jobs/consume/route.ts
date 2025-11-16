@@ -1899,6 +1899,10 @@ export async function processQueue() {
               }
               
               const batch = candidateUrls.slice(i, i + BATCH_SIZE);
+              const batchStartTime = Date.now();
+              const BATCH_TIMEOUT = 300000; // 5분 타임아웃 (각 배치당)
+              
+              console.log(`[CRITICAL] 🔄 배치 ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(candidateUrls.length / BATCH_SIZE)} 시작: ${batch.length}개 페이지 (인덱스 ${i}~${i + batch.length - 1})`);
               
               // 배치 병렬 처리
               const batchPromises = batch.map(async (subUrl) => {
@@ -1920,7 +1924,13 @@ export async function processQueue() {
                   
                   let page;
                   try {
-                    page = await fetchPageContent(subUrl);
+                    // 페이지 다운로드에 타임아웃 추가 (30초)
+                    const fetchTimeout = 30000;
+                    const fetchPromise = fetchPageContent(subUrl);
+                    const fetchTimeoutPromise = new Promise((_, reject) => {
+                      setTimeout(() => reject(new Error(`페이지 다운로드 타임아웃: ${fetchTimeout}ms 초과`)), fetchTimeout);
+                    });
+                    page = await Promise.race([fetchPromise, fetchTimeoutPromise]) as Awaited<ReturnType<typeof fetchPageContent>>;
                   } catch (fetchError) {
                     console.error('[CRITICAL] ❌ 하위 페이지 다운로드 실패:', {
                       url: subUrl,
@@ -1966,12 +1976,18 @@ export async function processQueue() {
                   
                   let result;
                   try {
-                    result = await upsertAndProcessDocument({ 
+                    // RAG 처리에 타임아웃 추가 (2분)
+                    const ragTimeout = 120000;
+                    const ragPromise = upsertAndProcessDocument({ 
                       targetUrl: subUrl, 
                       title: finalTitle, 
                       content: page.textContent,
                       parentDocumentId: documentId // 부모 문서 ID 전달
                     });
+                    const ragTimeoutPromise = new Promise((_, reject) => {
+                      setTimeout(() => reject(new Error(`RAG 처리 타임아웃: ${ragTimeout}ms 초과`)), ragTimeout);
+                    });
+                    result = await Promise.race([ragPromise, ragTimeoutPromise]) as Awaited<ReturnType<typeof upsertAndProcessDocument>>;
                   } catch (processError) {
                     console.error('[CRITICAL] ❌ 하위 페이지 RAG 처리 실패:', {
                       url: subUrl,
@@ -2033,7 +2049,30 @@ export async function processQueue() {
               });
 
               // 배치 결과 대기 (각 Promise가 실패해도 전체가 실패하지 않도록 처리)
-              const batchResults = await Promise.allSettled(batchPromises);
+              // 타임아웃 추가: 배치 처리에 시간 제한 설정
+              let batchResults: PromiseSettledResult<any>[];
+              const batchTimeoutId = setTimeout(() => {
+                console.warn(`[CRITICAL] ⏱️ 배치 ${Math.floor(i / BATCH_SIZE) + 1} 타임아웃 경고: ${BATCH_TIMEOUT}ms 경과`);
+              }, BATCH_TIMEOUT);
+              
+              try {
+                batchResults = await Promise.allSettled(batchPromises);
+                clearTimeout(batchTimeoutId);
+              } catch (batchError) {
+                clearTimeout(batchTimeoutId);
+                console.error(`[CRITICAL] ❌ 배치 ${Math.floor(i / BATCH_SIZE) + 1} 처리 중 예상치 못한 에러:`, batchError);
+                // 에러 발생 시 현재까지 완료된 것만 처리
+                batchResults = await Promise.allSettled(
+                  batchPromises.map(p => p.catch(err => ({ error: err })))
+                );
+              }
+              
+              // 타임아웃 체크: 배치 처리 시간이 너무 오래 걸렸는지 확인
+              const batchElapsedTime = Date.now() - batchStartTime;
+              if (batchElapsedTime > BATCH_TIMEOUT) {
+                console.warn(`[CRITICAL] ⏱️ 배치 ${Math.floor(i / BATCH_SIZE) + 1} 처리 시간 초과: ${batchElapsedTime}ms (제한: ${BATCH_TIMEOUT}ms)`);
+              }
+              
               batchResults.forEach((settledResult, idx) => {
                 if (settledResult.status === 'fulfilled' && settledResult.value) {
                   subPageResults.push(settledResult.value);
@@ -2056,8 +2095,9 @@ export async function processQueue() {
                 }
               });
               
+              const batchElapsedTime = Date.now() - batchStartTime;
               processedCount = subPageResults.length; // 실제 처리된 개수로 업데이트
-              console.log(`[CRITICAL] 📊 배치 ${Math.floor(i / BATCH_SIZE) + 1} 완료: ${processedCount}/${candidateUrls.length} 처리됨`);
+              console.log(`[CRITICAL] 📊 배치 ${Math.floor(i / BATCH_SIZE) + 1} 완료: ${processedCount}/${candidateUrls.length} 처리됨 (소요 시간: ${batchElapsedTime}ms)`);
               
               // 취소 체크: 배치 처리 후에도 취소되었는지 확인
               const { data: currentJobAfterBatch } = await supabase
