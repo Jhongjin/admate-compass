@@ -19,16 +19,19 @@ interface CostMetrics {
       size: number; // MB
       sizeFormatted: string;
       estimatedCost: number; // 달러
+      estimatedCostFormatted: string;
     };
     storage: {
       size: number; // MB
       sizeFormatted: string;
       estimatedCost: number; // 달러
+      estimatedCostFormatted: string;
     };
     bandwidth: {
       usage: number; // GB
       usageFormatted: string;
       estimatedCost: number; // 달러
+      estimatedCostFormatted: string;
     };
     total: {
       estimatedCost: number; // 달러
@@ -39,11 +42,13 @@ interface CostMetrics {
     functionInvocations: {
       count: number;
       estimatedCost: number; // 달러
+      estimatedCostFormatted: string;
     };
     bandwidth: {
       usage: number; // GB
       usageFormatted: string;
       estimatedCost: number; // 달러
+      estimatedCostFormatted: string;
     };
     total: {
       estimatedCost: number; // 달러
