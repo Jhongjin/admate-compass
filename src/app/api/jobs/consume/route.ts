@@ -1302,6 +1302,11 @@ export async function processQueue() {
       const crawlStartMs = Date.now();
 
       try {
+        // payload 유효성 검증
+        if (!job.payload || typeof job.payload !== 'object') {
+          throw new Error('CRAWL_SEED job payload가 유효하지 않습니다.');
+        }
+
         const url = job.payload?.url as string;
         const vendors = (job.payload?.vendors as string[]) || [];
         const domainLimit = job.payload?.domainLimit as boolean ?? true;
@@ -1312,8 +1317,8 @@ export async function processQueue() {
         const extractSubPagesRaw = job.payload?.extractSubPages;
         const extractSubPages = extractSubPagesRaw === true || extractSubPagesRaw === 'true';
 
-        if (!url) {
-          throw new Error('CRAWL_SEED job payload에 url이 없습니다.');
+        if (!url || typeof url !== 'string' || url.trim().length === 0) {
+          throw new Error(`CRAWL_SEED job payload에 유효한 url이 없습니다. (url: ${url})`);
         }
 
         let seedUrl: URL;
