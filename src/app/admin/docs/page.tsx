@@ -5113,7 +5113,7 @@ function DocumentDetailDialog({ detail, onClose, onRefetch }: { detail: any | nu
           hasUrl: 'url' in data,
           urlExists: !!data.url,
           keys: Object.keys(data),
-          mainDocumentId: data.main_document_id,
+          mainDocumentId: (data as any).main_document_id || null,
         });
       }
       
