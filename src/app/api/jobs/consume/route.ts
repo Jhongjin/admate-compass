@@ -1946,7 +1946,7 @@ export async function processQueue() {
                     return {
                       url: subUrl,
                       success: false,
-                      error: result.error || 'RAG 처리 실패',
+                      error: (result as any).error || 'RAG 처리 실패',
                       chunkCount: result.chunkCount || 0,
                     };
                   }
