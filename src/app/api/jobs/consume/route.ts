@@ -407,7 +407,49 @@ export async function processQueue() {
       .single();
 
     if (toProcessingErr) {
-      return NextResponse.json({ success: false, error: 'processing 전환 실패', details: toProcessingErr.message }, { status: 409 });
+      // 현재 작업 상태 확인 (디버깅용)
+      const { data: currentJob } = await supabase
+        .from('processing_jobs')
+        .select('id, status, job_type, document_id, attempts')
+        .eq('id', job.id)
+        .maybeSingle();
+      
+      console.warn('⚠️ processing 전환 실패:', {
+        jobId: job.id,
+        expectedStatus: ['queued', 'retrying'],
+        currentStatus: currentJob?.status,
+        jobType: currentJob?.job_type,
+        documentId: currentJob?.document_id,
+        attempts: currentJob?.attempts,
+        error: toProcessingErr.message
+      });
+      
+      // 작업이 이미 processing 상태인 경우 (다른 워커가 처리 중)
+      if (currentJob?.status === 'processing') {
+        return NextResponse.json({ 
+          success: false, 
+          error: '작업이 이미 처리 중입니다. 다른 워커가 처리하고 있을 수 있습니다.',
+          currentStatus: currentJob.status,
+          details: toProcessingErr.message 
+        }, { status: 409 });
+      }
+      
+      // 작업이 completed, failed, cancelled 상태인 경우
+      if (currentJob && ['completed', 'failed', 'cancelled'].includes(currentJob.status)) {
+        return NextResponse.json({ 
+          success: false, 
+          error: `작업이 이미 ${currentJob.status} 상태입니다. 재처리가 필요하면 새로운 작업을 생성하거나 작업을 삭제하고 다시 시도해주세요.`,
+          currentStatus: currentJob.status,
+          details: toProcessingErr.message 
+        }, { status: 409 });
+      }
+      
+      return NextResponse.json({ 
+        success: false, 
+        error: 'processing 전환 실패', 
+        currentStatus: currentJob?.status || 'unknown',
+        details: toProcessingErr.message 
+      }, { status: 409 });
     }
 
     // 취소된 작업인지 확인 (다른 워커가 취소했을 수 있음)
