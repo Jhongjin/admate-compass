@@ -1864,7 +1864,7 @@ export async function processQueue() {
         
         // 하트비트 업데이트: 메인 페이지 처리 시작 (기존 result 유지)
         try {
-          const currentResult = (job.result as any) || {};
+          const currentResult = ((job as any).result as any) || {};
           await supabase
             .from('processing_jobs')
             .update({
@@ -1911,7 +1911,7 @@ export async function processQueue() {
 
         // 하트비트 업데이트: 메인 페이지 크롤링 완료, RAG 처리 시작 (기존 result 유지)
         try {
-          const currentResult = (job.result as any) || {};
+          const currentResult = ((job as any).result as any) || {};
           await supabase
             .from('processing_jobs')
             .update({
@@ -1973,7 +1973,7 @@ export async function processQueue() {
         
         // 하트비트 업데이트: 메인 페이지 처리 완료 (기존 result 유지)
         try {
-          const currentResult = (job.result as any) || {};
+          const currentResult = ((job as any).result as any) || {};
           await supabase
             .from('processing_jobs')
             .update({
