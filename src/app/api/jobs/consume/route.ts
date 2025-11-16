@@ -1605,7 +1605,7 @@ export async function processQueue() {
           return { textContent, pageTitle, htmlContent };
         };
 
-        const upsertAndProcessDocument = async ({ targetUrl, title, content, documentIdOverride }: { targetUrl: string; title: string; content: string; documentIdOverride?: string; }) => {
+        const upsertAndProcessDocument = async ({ targetUrl, title, content, documentIdOverride, parentDocumentId }: { targetUrl: string; title: string; content: string; documentIdOverride?: string; parentDocumentId?: string; }) => {
           const nowIso = new Date().toISOString();
           const fileSize = Buffer.byteLength(content, 'utf8');
 
@@ -1634,6 +1634,7 @@ export async function processQueue() {
                 source_vendor: dbVendor,
                 content,
                 url: targetUrl,
+                main_document_id: parentDocumentId || null, // 부모 문서 ID 설정
                 updated_at: nowIso,
               })
               .eq('id', existingDoc.id);
@@ -1651,6 +1652,7 @@ export async function processQueue() {
                 source_vendor: dbVendor,
                 content,
                 url: targetUrl,
+                main_document_id: parentDocumentId || null, // 부모 문서 ID 설정
                 created_at: nowIso,
                 updated_at: nowIso,
               });
@@ -1923,7 +1925,8 @@ export async function processQueue() {
                     result = await upsertAndProcessDocument({ 
                       targetUrl: subUrl, 
                       title: finalTitle, 
-                      content: page.textContent 
+                      content: page.textContent,
+                      parentDocumentId: documentId // 부모 문서 ID 전달
                     });
                   } catch (processError) {
                     console.error('[CRITICAL] ❌ 하위 페이지 RAG 처리 실패:', {

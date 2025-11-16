@@ -701,21 +701,21 @@ export async function POST(request: NextRequest) {
             fileSizeMB: (file.size / (1024 * 1024)).toFixed(2) + 'MB'
           });
           
-          const documentId = `doc_${Date.now()}`;
-          const storageInfo = await uploadToStorage(file, documentId, cleanFileName);
-          const jobId = await enqueueProcessingJob({
-            documentId,
-            jobType: 'DOCX_PARSE',
-            priority: 7,
-            payload: { fileName: cleanFileName, fileSize: file.size, fileType: file.type, storage: storageInfo }
-          });
-          
-          console.log('✅ DOCX 큐 등록 완료:', { jobId, documentId });
-          
-          // 큐에 등록 후 즉시 큐 워커 트리거 (응답 반환 전에 호출하여 실행 보장)
-          triggerQueueWorker();
-          
-          // 응답 반환 (큐 워커는 백그라운드에서 계속 실행)
+        const documentId = `doc_${Date.now()}`;
+        const storageInfo = await uploadToStorage(file, documentId, cleanFileName);
+        const jobId = await enqueueProcessingJob({
+          documentId,
+          jobType: 'DOCX_PARSE',
+          priority: 7,
+          payload: { fileName: cleanFileName, fileSize: file.size, fileType: file.type, storage: storageInfo }
+        });
+        
+        console.log('✅ DOCX 큐 등록 완료:', { jobId, documentId });
+        
+        // 큐에 등록 후 즉시 큐 워커 트리거 (응답 반환 전에 호출하여 실행 보장)
+        triggerQueueWorker();
+        
+        // 응답 반환 (큐 워커는 백그라운드에서 계속 실행)
           return NextResponse.json({ success: true, queued: true, jobId, documentId, message: '큰 DOCX 파일은 백그라운드에서 처리됩니다.' }, { status: 202 });
         }
         
@@ -1240,7 +1240,7 @@ export async function GET(request: NextRequest) {
     // Supabase에서 문서 목록 조회 (최적화)
     let query = supabase
       .from('documents')
-      .select('id, title, type, status, chunk_count, file_size, file_type, created_at, updated_at, document_url, url, size, source_vendor')
+      .select('id, title, type, status, chunk_count, file_size, file_type, created_at, updated_at, document_url, url, size, source_vendor, main_document_id')
       .order('created_at', { ascending: false })
       .range(offset, offset + limit - 1);
 
@@ -1267,10 +1267,20 @@ export async function GET(request: NextRequest) {
       throw new Error(`문서 조회 실패: ${documentsError.message}`);
     }
 
+    // main_document_id를 mainDocumentId로 매핑 (클라이언트 호환성)
+    const mappedDocuments = documents?.map((doc: any) => ({
+      ...doc,
+      mainDocumentId: doc.main_document_id || null,
+      // 그룹핑을 위한 정규화된 URL 계산
+      normalizedUrl: doc.url ? normalizeUrlForGrouping(doc.url) : null,
+      normalizedMainUrl: doc.main_document_id ? null : null, // 나중에 그룹핑 로직에서 계산
+      isMainUrl: !doc.main_document_id, // main_document_id가 없으면 메인 페이지
+    })) || [];
+
     console.log('📊 Supabase 쿼리 결과:', {
-      documents: documents,
-      documentsLength: documents?.length,
-      firstDocument: documents?.[0],
+      documents: mappedDocuments,
+      documentsLength: mappedDocuments?.length,
+      firstDocument: mappedDocuments?.[0],
       error: documentsError
     });
 
