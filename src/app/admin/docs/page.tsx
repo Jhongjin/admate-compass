@@ -3124,22 +3124,57 @@ function DocsTable({
       const normalizedParentKey = doc.normalizedMainUrl ?? (doc.mainUrl ? normalizeUrlForGrouping(doc.mainUrl) : null);
       const normalizedSelf = doc.normalizedUrl ?? (doc.url ? normalizeUrlForGrouping(doc.url) : null);
       
-      if (parentId && subPagesByMainId[parentId]) {
-        subPagesByMainId[parentId].push(doc);
-        if (normalizedParentKey) {
-          fallbackSubPagesByKey[normalizedParentKey] = fallbackSubPagesByKey[normalizedParentKey] || [];
-          fallbackSubPagesByKey[normalizedParentKey].push(doc);
+      // mainDocumentId가 있으면 부모 문서를 찾아서 그룹핑
+      if (parentId) {
+        // 부모 문서가 이미 mainPages에 있는지 확인
+        let parentDoc = mainDocsById[parentId];
+        
+        // mainPages에 없으면 urlDocuments에서 찾기
+        if (!parentDoc) {
+          parentDoc = urlDocuments.find((d: any) => d.id === parentId);
+          if (parentDoc) {
+            // 부모 문서를 mainPages에 추가
+            if (!mainDocIds.has(parentDoc.id)) {
+              mainPages.push(parentDoc);
+              mainDocIds.add(parentDoc.id);
+            }
+            mainDocsById[parentDoc.id] = parentDoc;
+            if (!subPagesByMainId[parentDoc.id]) {
+              subPagesByMainId[parentDoc.id] = [];
+            }
+            const parentNormalized = parentDoc.normalizedUrl ?? (parentDoc.url ? normalizeUrlForGrouping(parentDoc.url) : null);
+            if (parentNormalized) {
+              fallbackSubPagesByKey[parentNormalized] = fallbackSubPagesByKey[parentNormalized] || [];
+            }
+            if (typeof window !== 'undefined') {
+              logger.log('[그룹화] ✅ 부모 문서 발견 및 추가:', { 
+                parentTitle: parentDoc.title, 
+                parentUrl: parentDoc.url,
+                parentId: parentDoc.id,
+                childTitle: doc.title,
+              });
+            }
+          }
         }
-        if (typeof window !== 'undefined') {
-          logger.log('[그룹화] ✅ 하위 페이지 연결 (ID 매칭):', { 
-            child: doc.title, 
-            childUrl: doc.url,
-            normalizedChildUrl: normalizedSelf,
-            mainDocumentId: parentId,
-            normalizedMainUrl: normalizedParentKey,
-          });
+        
+        // 부모 문서를 찾았으면 하위 페이지로 연결
+        if (parentDoc && subPagesByMainId[parentId]) {
+          subPagesByMainId[parentId].push(doc);
+          if (normalizedParentKey) {
+            fallbackSubPagesByKey[normalizedParentKey] = fallbackSubPagesByKey[normalizedParentKey] || [];
+            fallbackSubPagesByKey[normalizedParentKey].push(doc);
+          }
+          if (typeof window !== 'undefined') {
+            logger.log('[그룹화] ✅ 하위 페이지 연결 (ID 매칭):', { 
+              child: doc.title, 
+              childUrl: doc.url,
+              normalizedChildUrl: normalizedSelf,
+              mainDocumentId: parentId,
+              normalizedMainUrl: normalizedParentKey,
+            });
+          }
+          return;
         }
-        return;
       }
       
       if (normalizedParentKey) {
