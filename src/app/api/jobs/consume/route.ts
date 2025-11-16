@@ -398,14 +398,22 @@ export async function processQueue() {
 
     // 2) processing 진입(낙관적 업데이트)
     // queued 또는 retrying 상태에서 processing으로 전환
-    const { error: toProcessingErr } = await supabase
+    const { error: toProcessingErr, data: updatedJob } = await supabase
       .from('processing_jobs')
       .update({ status: 'processing', started_at: new Date().toISOString() })
       .eq('id', job.id)
-      .in('status', ['queued', 'retrying']); // retrying 상태도 처리
+      .in('status', ['queued', 'retrying']) // retrying 상태도 처리
+      .select('status')
+      .single();
 
     if (toProcessingErr) {
       return NextResponse.json({ success: false, error: 'processing 전환 실패', details: toProcessingErr.message }, { status: 409 });
+    }
+
+    // 취소된 작업인지 확인 (다른 워커가 취소했을 수 있음)
+    if (updatedJob?.status === 'cancelled') {
+      console.log(`⚠️ 작업이 취소되었습니다: ${job.id}`);
+      return NextResponse.json({ success: true, message: '작업이 취소되었습니다.', status: 'cancelled' }, { status: 200 });
     }
 
     // 3) 실제 처리 로직
@@ -1845,6 +1853,18 @@ export async function processQueue() {
             const PROGRESS_UPDATE_INTERVAL = 3000; // 3초마다 진행 상황 업데이트
             
             for (let i = 0; i < candidateUrls.length; i += BATCH_SIZE) {
+              // 취소 체크: 배치 처리 전에 작업이 취소되었는지 확인
+              const { data: currentJob } = await supabase
+                .from('processing_jobs')
+                .select('status')
+                .eq('id', job.id)
+                .single();
+              
+              if (currentJob?.status === 'cancelled') {
+                console.log(`⚠️ 하위 페이지 처리 중 작업이 취소되었습니다: ${job.id}`);
+                throw new Error('작업이 취소되었습니다.');
+              }
+              
               const batch = candidateUrls.slice(i, i + BATCH_SIZE);
               
               // 배치 병렬 처리
@@ -1916,6 +1936,18 @@ export async function processQueue() {
               
               processedCount = subPageResults.length; // 실제 처리된 개수로 업데이트
               
+              // 취소 체크: 배치 처리 후에도 취소되었는지 확인
+              const { data: currentJobAfterBatch } = await supabase
+                .from('processing_jobs')
+                .select('status')
+                .eq('id', job.id)
+                .single();
+              
+              if (currentJobAfterBatch?.status === 'cancelled') {
+                console.log(`⚠️ 배치 처리 중 작업이 취소되었습니다: ${job.id}`);
+                throw new Error('작업이 취소되었습니다.');
+              }
+              
               // 진행 상황 업데이트 (3초마다 또는 마지막 배치일 때만)
               const now = Date.now();
               const isLastBatch = i + BATCH_SIZE >= candidateUrls.length;
@@ -1934,7 +1966,8 @@ export async function processQueue() {
                       subPages: subPageResults.slice(-3),
                     },
                   })
-                  .eq('id', job.id);
+                  .eq('id', job.id)
+                  .neq('status', 'cancelled'); // 취소된 작업은 업데이트하지 않음
                 lastProgressUpdate = now;
               }
             }
