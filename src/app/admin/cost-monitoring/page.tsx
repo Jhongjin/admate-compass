@@ -32,16 +32,19 @@ interface CostMetrics {
       size: number;
       sizeFormatted: string;
       estimatedCost: number;
+      estimatedCostFormatted: string;
     };
     storage: {
       size: number;
       sizeFormatted: string;
       estimatedCost: number;
+      estimatedCostFormatted: string;
     };
     bandwidth: {
       usage: number;
       usageFormatted: string;
       estimatedCost: number;
+      estimatedCostFormatted: string;
     };
     total: {
       estimatedCost: number;
@@ -52,11 +55,13 @@ interface CostMetrics {
     functionInvocations: {
       count: number;
       estimatedCost: number;
+      estimatedCostFormatted: string;
     };
     bandwidth: {
       usage: number;
       usageFormatted: string;
       estimatedCost: number;
+      estimatedCostFormatted: string;
     };
     total: {
       estimatedCost: number;
@@ -336,7 +341,7 @@ export default function CostMonitoringPage() {
                   {costMetrics.supabase.storage.sizeFormatted}
                 </div>
                 <div className="text-sm text-muted-enhanced">
-                  ${costMetrics.supabase.storage.estimatedCost.toFixed(2)}
+                  {costMetrics.supabase.storage.estimatedCostFormatted}
                 </div>
               </div>
               <div>
@@ -345,7 +350,7 @@ export default function CostMonitoringPage() {
                   {costMetrics.supabase.bandwidth.usageFormatted}
                 </div>
                 <div className="text-sm text-muted-enhanced">
-                  ${costMetrics.supabase.bandwidth.estimatedCost.toFixed(2)}
+                  {costMetrics.supabase.bandwidth.estimatedCostFormatted}
                 </div>
               </div>
               <div>
@@ -374,7 +379,7 @@ export default function CostMonitoringPage() {
                   {costMetrics.vercel.functionInvocations.count.toLocaleString()}회
                 </div>
                 <div className="text-sm text-muted-enhanced">
-                  ${costMetrics.vercel.functionInvocations.estimatedCost.toFixed(2)}
+                  {costMetrics.vercel.functionInvocations.estimatedCostFormatted}
                 </div>
               </div>
               <div>
@@ -383,7 +388,7 @@ export default function CostMonitoringPage() {
                   {costMetrics.vercel.bandwidth.usageFormatted}
                 </div>
                 <div className="text-sm text-muted-enhanced">
-                  ${costMetrics.vercel.bandwidth.estimatedCost.toFixed(2)}
+                  {costMetrics.vercel.bandwidth.estimatedCostFormatted}
                 </div>
               </div>
               <div>

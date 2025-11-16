@@ -205,17 +205,20 @@ export async function GET(request: NextRequest) {
         database: {
           size: databaseSizeMB,
           sizeFormatted: `${databaseSizeMB.toFixed(2)} MB`,
-          estimatedCost: supabaseDatabaseCost
+          estimatedCost: supabaseDatabaseCost,
+          estimatedCostFormatted: `$${supabaseDatabaseCost.toFixed(2)}`
         },
         storage: {
           size: storageSizeMB,
           sizeFormatted: `${storageSizeMB.toFixed(2)} MB`,
-          estimatedCost: supabaseStorageCost
+          estimatedCost: supabaseStorageCost,
+          estimatedCostFormatted: `$${supabaseStorageCost.toFixed(2)}`
         },
         bandwidth: {
           usage: 0, // 실제 사용량은 Supabase 대시보드에서 확인 필요
           usageFormatted: '0 GB',
-          estimatedCost: supabaseBandwidthCost
+          estimatedCost: supabaseBandwidthCost,
+          estimatedCostFormatted: `$${supabaseBandwidthCost.toFixed(2)}`
         },
         total: {
           estimatedCost: supabaseTotalCost,
@@ -225,12 +228,14 @@ export async function GET(request: NextRequest) {
       vercel: {
         functionInvocations: {
           count: jobCount || 0,
-          estimatedCost: vercelFunctionCost
+          estimatedCost: vercelFunctionCost,
+          estimatedCostFormatted: `$${vercelFunctionCost.toFixed(2)}`
         },
         bandwidth: {
           usage: 0, // 실제 사용량은 Vercel 대시보드에서 확인 필요
           usageFormatted: '0 GB',
-          estimatedCost: vercelBandwidthCost
+          estimatedCost: vercelBandwidthCost,
+          estimatedCostFormatted: `$${vercelBandwidthCost.toFixed(2)}`
         },
         total: {
           estimatedCost: vercelTotalCost,
