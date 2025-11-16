@@ -2029,6 +2029,8 @@ export async function processQueue() {
               const batchStartTime = Date.now();
               // 타임아웃 강화: 배치당 2분으로 감소 (무한 대기 방지)
               const BATCH_TIMEOUT = 120000; // 2분 타임아웃 (각 배치당, 기존: 3분)
+              // 개별 페이지 타임아웃: fetch (20초) + RAG (90초) + 여유 (20초) = 130초
+              const INDIVIDUAL_PAGE_TIMEOUT = 130000; // 130초 (개별 페이지당 최대 처리 시간)
               
               console.log(`[CRITICAL] 🔄 배치 ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(candidateUrls.length / BATCH_SIZE)} 시작: ${batch.length}개 페이지 (인덱스 ${i}~${i + batch.length - 1})`);
               
@@ -2199,19 +2201,19 @@ export async function processQueue() {
                 let timeoutId: NodeJS.Timeout | null = null;
                 let isResolved = false;
                 
-                // 타임아웃 Promise 생성
+                // 타임아웃 Promise 생성 (개별 페이지 타임아웃 사용)
                 const timeoutPromise = new Promise<any>((_, reject) => {
                   timeoutId = setTimeout(() => {
                     if (!isResolved) {
-                      console.warn(`[CRITICAL] ⏱️ 개별 페이지 타임아웃: ${subUrl} (${BATCH_TIMEOUT}ms 초과)`);
+                      console.warn(`[CRITICAL] ⏱️ 개별 페이지 타임아웃: ${subUrl} (${INDIVIDUAL_PAGE_TIMEOUT}ms 초과)`);
                       const errorStatusEntry = subPageStatusMap.get(subUrl);
                       if (errorStatusEntry && errorStatusEntry.status === 'processing') {
                         errorStatusEntry.status = 'failed';
-                        errorStatusEntry.error = `배치 타임아웃: ${BATCH_TIMEOUT}ms 초과`;
+                        errorStatusEntry.error = `개별 페이지 타임아웃: ${INDIVIDUAL_PAGE_TIMEOUT}ms 초과`;
                       }
-                      reject(new Error(`배치 타임아웃: ${BATCH_TIMEOUT}ms 초과`));
+                      reject(new Error(`개별 페이지 타임아웃: ${INDIVIDUAL_PAGE_TIMEOUT}ms 초과`));
                     }
-                  }, BATCH_TIMEOUT);
+                  }, INDIVIDUAL_PAGE_TIMEOUT);
                 });
                 
                 // Promise.race로 타임아웃 적용
@@ -2352,6 +2354,10 @@ export async function processQueue() {
                 const processingCount = Array.from(subPageStatusMap.values()).filter(s => s.status === 'processing').length;
                 const pendingCount = Array.from(subPageStatusMap.values()).filter(s => s.status === 'pending').length;
                 
+                // processedCount: 완료 + 실패 (실제로 처리 완료된 페이지 수)
+                // 이렇게 하면 진행률이 정확하게 표시됩니다 (처리 중인 페이지는 제외)
+                const processedCount = completedCount + failedCount;
+                
                 await supabase
                   .from('processing_jobs')
                   .update({
@@ -2360,13 +2366,20 @@ export async function processQueue() {
                       documentId,
                       title: mainPage.pageTitle,
                       chunkCount: mainDocResult.chunkCount,
-                      subPageProgress: { processed: processedCount, total: candidateUrls.length },
+                      subPageProgress: { 
+                        processed: processedCount, 
+                        total: candidateUrls.length,
+                        completed: completedCount,
+                        failed: failedCount,
+                        processing: processingCount,
+                        pending: pendingCount
+                      },
                       subPages: Array.from(subPageStatusMap.values()), // 모든 하위 페이지 상태 저장
                     },
                   })
                   .eq('id', job.id)
                   .neq('status', 'cancelled'); // 취소된 작업은 업데이트하지 않음
-                console.log(`[CRITICAL] 📊 진행 상황 업데이트: ${processedCount}/${candidateUrls.length} (배치 ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(candidateUrls.length / BATCH_SIZE)}) - 완료: ${completedCount}, 실패: ${failedCount}, 처리중: ${processingCount}, 대기: ${pendingCount}`);
+                console.log(`[CRITICAL] 📊 진행 상황 업데이트: ${processedCount}/${candidateUrls.length} (${Math.round((processedCount / candidateUrls.length) * 100)}%) - 완료: ${completedCount}, 실패: ${failedCount}, 처리중: ${processingCount}, 대기: ${pendingCount}`);
               } catch (updateError) {
                 console.error('[CRITICAL] ⚠️ 진행 상황 업데이트 실패 (계속 진행):', updateError);
               }
