@@ -1862,14 +1862,16 @@ export async function processQueue() {
         const MAIN_PAGE_TIMEOUT = 5 * 60 * 1000; // 5분
         const mainPageStartTime = Date.now();
         
-        // 하트비트 업데이트: 메인 페이지 처리 시작
+        // 하트비트 업데이트: 메인 페이지 처리 시작 (기존 result 유지)
         try {
+          const currentResult = (job.result as any) || {};
           await supabase
             .from('processing_jobs')
             .update({
               result: {
-                url,
-                documentId,
+                ...currentResult, // 기존 result 유지
+                url: url || currentResult.url,
+                documentId: documentId || currentResult.documentId,
                 status: 'main_page_crawling',
                 message: '메인 페이지 크롤링 중...'
               }
@@ -1906,17 +1908,19 @@ export async function processQueue() {
         }
         
         console.error('[CRITICAL] 📄 메인 페이지 크롤링 완료:', { url, title: mainPage.pageTitle, contentLength: mainPage.textContent.length, htmlLength: mainPage.htmlContent.length });
-        
-        // 하트비트 업데이트: 메인 페이지 크롤링 완료, RAG 처리 시작
+
+        // 하트비트 업데이트: 메인 페이지 크롤링 완료, RAG 처리 시작 (기존 result 유지)
         try {
+          const currentResult = (job.result as any) || {};
           await supabase
             .from('processing_jobs')
             .update({
               result: {
-                url,
-                documentId,
+                ...currentResult, // 기존 result 유지
+                url: url || currentResult.url,
+                documentId: documentId || currentResult.documentId,
                 status: 'main_page_rag_processing',
-                message: '메인 페이지 RAG 처리 중...',
+                message: '메인 페이지 RAG 처리 중... (임베딩 모델 초기화 포함)',
                 crawlElapsed: Date.now() - mainPageStartTime
               }
             })
@@ -1928,8 +1932,10 @@ export async function processQueue() {
         
         let mainDocResult;
         try {
-          // RAG 처리 타임아웃: 4분 30초 (메인 페이지 처리 전체 타임아웃에서 크롤링 시간 제외)
-          const ragTimeout = 4 * 60 * 1000 + 30 * 1000; // 4분 30초
+          // RAG 처리 타임아웃: 8분 (임베딩 모델 초기화 시간 고려 - Cold Start 시 40-90초 + 청킹 + 임베딩 생성)
+          // Vercel Pro 플랜 최대 실행 시간: 300초 (5분)이지만, 실제로는 더 길 수 있음
+          // 안전하게 8분으로 설정 (임베딩 모델 초기화 2분 + 청킹 10초 + 임베딩 생성 5분)
+          const ragTimeout = 8 * 60 * 1000; // 8분
           const ragStartTime = Date.now();
           const ragPromise = upsertAndProcessDocument({ targetUrl: url, title: mainPage.pageTitle, content: mainPage.textContent, documentIdOverride: documentId });
           const ragTimeoutPromise = new Promise<never>((_, reject) => {
@@ -1941,13 +1947,22 @@ export async function processQueue() {
           mainDocResult = await Promise.race([ragPromise, ragTimeoutPromise]) as Awaited<ReturnType<typeof upsertAndProcessDocument>>;
         } catch (upsertError) {
           console.error('[CRITICAL] ❌ 메인 문서 처리 실패:', upsertError);
+          // 타임아웃 에러인 경우 더 자세한 정보 제공
+          const isTimeout = upsertError instanceof Error && upsertError.message.includes('타임아웃');
+          if (isTimeout) {
+            console.error('[CRITICAL] ⏱️ RAG 처리 타임아웃 발생 - 임베딩 모델 초기화가 오래 걸리고 있을 수 있습니다.');
+          }
           // 실패 시 작업 상태 업데이트
           await supabase
             .from('processing_jobs')
             .update({
               status: 'failed',
               finished_at: new Date().toISOString(),
-              result: { error: `메인 문서 처리 실패: ${upsertError instanceof Error ? upsertError.message : String(upsertError)}` }
+              result: { 
+                error: `메인 문서 처리 실패: ${upsertError instanceof Error ? upsertError.message : String(upsertError)}`,
+                isTimeout: isTimeout,
+                suggestion: isTimeout ? '임베딩 모델 초기화가 오래 걸리고 있습니다. 잠시 후 다시 시도해주세요.' : undefined
+              }
             })
             .eq('id', job.id);
           throw new Error(`메인 문서 처리 실패: ${upsertError instanceof Error ? upsertError.message : String(upsertError)}`);
@@ -1956,14 +1971,16 @@ export async function processQueue() {
         const mainPageElapsed = Date.now() - mainPageStartTime;
         console.error('[CRITICAL] 📄 메인 문서 처리 완료:', { documentId, success: mainDocResult.success, chunkCount: mainDocResult.chunkCount, elapsed: mainPageElapsed });
         
-        // 하트비트 업데이트: 메인 페이지 처리 완료
+        // 하트비트 업데이트: 메인 페이지 처리 완료 (기존 result 유지)
         try {
+          const currentResult = (job.result as any) || {};
           await supabase
             .from('processing_jobs')
             .update({
               result: {
-                url,
-                documentId,
+                ...currentResult, // 기존 result 유지
+                url: url || currentResult.url,
+                documentId: documentId || currentResult.documentId,
                 status: 'main_page_completed',
                 message: '메인 페이지 처리 완료',
                 chunkCount: mainDocResult.chunkCount,
