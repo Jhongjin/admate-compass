@@ -1737,16 +1737,38 @@ export async function processQueue() {
         };
 
         console.error('[CRITICAL] 📄 메인 페이지 크롤링 시작:', { url, documentId, extractSubPages, extractSubPagesRaw });
-        const mainPage = await fetchPageContent(url);
+        
+        let mainPage;
+        try {
+          mainPage = await fetchPageContent(url);
+        } catch (fetchError) {
+          console.error('[CRITICAL] ❌ 메인 페이지 크롤링 실패:', fetchError);
+          throw new Error(`메인 페이지 크롤링 실패: ${fetchError instanceof Error ? fetchError.message : String(fetchError)}`);
+        }
+        
         console.error('[CRITICAL] 📄 메인 페이지 크롤링 완료:', { url, title: mainPage.pageTitle, contentLength: mainPage.textContent.length, htmlLength: mainPage.htmlContent.length });
-        const mainDocResult = await upsertAndProcessDocument({ targetUrl: url, title: mainPage.pageTitle, content: mainPage.textContent, documentIdOverride: documentId });
+        
+        let mainDocResult;
+        try {
+          mainDocResult = await upsertAndProcessDocument({ targetUrl: url, title: mainPage.pageTitle, content: mainPage.textContent, documentIdOverride: documentId });
+        } catch (upsertError) {
+          console.error('[CRITICAL] ❌ 메인 문서 처리 실패:', upsertError);
+          throw new Error(`메인 문서 처리 실패: ${upsertError instanceof Error ? upsertError.message : String(upsertError)}`);
+        }
+        
         console.error('[CRITICAL] 📄 메인 문서 처리 완료:', { documentId, success: mainDocResult.success, chunkCount: mainDocResult.chunkCount });
 
-        if (!job.document_id) {
-          await supabase
-            .from('processing_jobs')
-            .update({ document_id: documentId })
-            .eq('id', job.id);
+        // document_id가 없으면 생성된 documentId로 업데이트
+        if (!job.document_id && mainDocResult.documentId) {
+          try {
+            await supabase
+              .from('processing_jobs')
+              .update({ document_id: mainDocResult.documentId })
+              .eq('id', job.id);
+            console.log(`[CRITICAL] ✅ processing_jobs에 document_id 업데이트: ${mainDocResult.documentId}`);
+          } catch (updateError) {
+            console.warn('[CRITICAL] ⚠️ processing_jobs document_id 업데이트 실패 (계속 진행):', updateError);
+          }
         }
 
         const subPageResults: Array<{ url: string; success: boolean; chunkCount?: number; error?: string }> = [];
