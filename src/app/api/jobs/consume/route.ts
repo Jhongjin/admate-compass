@@ -1797,17 +1797,28 @@ export async function processQueue() {
               discovered = [];
             }
             
-            const candidateUrls = Array.from(new Set(
-              discovered
-                .map((entry) => entry.url)
-                .filter((entryUrl) => entryUrl && entryUrl !== url && !entryUrl.includes('#'))
-            )).slice(0, 30); // 처리할 하위 페이지 개수 증가 (기존: 8)
+            // URL과 title 정보를 함께 유지
+            const urlToTitleMap = new Map<string, string>();
+            const candidateUrlSet = new Set<string>();
+            
+            discovered.forEach(entry => {
+              if (entry.url && entry.url !== url && !entry.url.includes('#')) {
+                candidateUrlSet.add(entry.url);
+                // 링크 텍스트(메뉴명)가 있으면 저장
+                if (entry.title && entry.title.trim().length > 0) {
+                  urlToTitleMap.set(entry.url, entry.title.trim());
+                }
+              }
+            });
+
+            const candidateUrls = Array.from(candidateUrlSet).slice(0, 30); // 처리할 하위 페이지 개수 증가 (기존: 8)
 
             console.log(`[CRITICAL] 📄 하위 페이지 후보: ${candidateUrls.length}개 (발견: ${discovered.length}개, 필터링 후: ${candidateUrls.length}개)`, {
               url,
               documentId,
               discoveredUrls: discovered.map(d => d.url).slice(0, 10),
-              candidateUrls: candidateUrls.slice(0, 10)
+              candidateUrls: candidateUrls.slice(0, 10),
+              titleMapSample: Array.from(urlToTitleMap.entries()).slice(0, 5)
             });
             
             if (candidateUrls.length === 0 && discovered.length > 0) {
@@ -1820,35 +1831,87 @@ export async function processQueue() {
             }
             let processedCount = 0;
 
-            console.log(`[CRITICAL] 🔄 하위 페이지 크롤링 시작: ${candidateUrls.length}개`, {
+            console.log(`[CRITICAL] 🔄 하위 페이지 크롤링 시작: ${candidateUrls.length}개 (병렬 처리: 최대 5개 동시)`, {
               url,
               documentId,
               candidateUrls: candidateUrls.slice(0, 5)
             });
 
-            for (const subUrl of candidateUrls) {
-              if (!subUrl) continue;
+            // 병렬 처리: 최대 5개씩 동시에 처리
+            const BATCH_SIZE = 5;
+            for (let i = 0; i < candidateUrls.length; i += BATCH_SIZE) {
+              const batch = candidateUrls.slice(i, i + BATCH_SIZE);
+              
+              // 배치 병렬 처리
+              const batchPromises = batch.map(async (subUrl) => {
+                if (!subUrl) return null;
 
-              try {
-                console.log(`[CRITICAL] 📄 하위 페이지 처리 중 (${processedCount + 1}/${candidateUrls.length}): ${subUrl}`);
-                const page = await fetchPageContent(subUrl);
-                const result = await upsertAndProcessDocument({ targetUrl: subUrl, title: page.pageTitle, content: page.textContent });
-                subPageResults.push({ url: subUrl, success: result.success, chunkCount: result.chunkCount });
-                console.log(`[CRITICAL] ✅ 하위 페이지 처리 완료: ${subUrl} (청크: ${result.chunkCount}개)`);
-              } catch (subError) {
-                console.error('[CRITICAL] ❌ 하위 페이지 처리 실패:', {
-                  url: subUrl,
-                  error: subError,
-                  documentId
-                });
-                subPageResults.push({
-                  url: subUrl,
-                  success: false,
-                  error: subError instanceof Error ? subError.message : String(subError),
-                });
-              }
+                try {
+                  const linkTitle = urlToTitleMap.get(subUrl); // 링크 텍스트(메뉴명) 가져오기
+                  const currentIndex = candidateUrls.indexOf(subUrl) + 1;
+                  console.log(`[CRITICAL] 📄 하위 페이지 처리 중 (${currentIndex}/${candidateUrls.length}): ${subUrl}${linkTitle ? ` [링크제목: ${linkTitle}]` : ''}`);
+                  
+                  const page = await fetchPageContent(subUrl);
+                  
+                  // 제목 우선순위: 링크 텍스트(메뉴명) > 페이지 제목 > URL 경로
+                  let finalTitle = linkTitle || page.pageTitle;
+                  
+                  // 페이지 제목이 없거나 메인 페이지와 동일한 경우 링크 텍스트 또는 URL 경로 사용
+                  if (!finalTitle || finalTitle.length < 2 || finalTitle === mainPage.pageTitle) {
+                    if (linkTitle && linkTitle.length >= 2) {
+                      finalTitle = linkTitle;
+                    } else {
+                      // URL 경로에서 의미있는 제목 추출
+                      const urlPath = new URL(subUrl).pathname;
+                      if (urlPath && urlPath !== '/') {
+                        const pathParts = urlPath.split('/').filter(p => p.length > 0);
+                        if (pathParts.length > 0) {
+                          // 마지막 경로를 제목으로 사용 (한글화 가능하면 더 좋음)
+                          finalTitle = pathParts[pathParts.length - 1]
+                            .split('-')
+                            .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+                            .join(' ');
+                        }
+                      }
+                      if (!finalTitle || finalTitle.length < 2) {
+                        finalTitle = subUrl;
+                      }
+                    }
+                  }
+                  
+                  const result = await upsertAndProcessDocument({ 
+                    targetUrl: subUrl, 
+                    title: finalTitle, 
+                    content: page.textContent 
+                  });
+                  
+                  console.log(`[CRITICAL] ✅ 하위 페이지 처리 완료: ${subUrl} [제목: ${finalTitle}] (청크: ${result.chunkCount}개)`);
+                  return { url: subUrl, success: result.success, chunkCount: result.chunkCount };
+                } catch (subError) {
+                  console.error('[CRITICAL] ❌ 하위 페이지 처리 실패:', {
+                    url: subUrl,
+                    error: subError,
+                    documentId
+                  });
+                  return {
+                    url: subUrl,
+                    success: false,
+                    error: subError instanceof Error ? subError.message : String(subError),
+                  };
+                }
+              });
 
-              processedCount += 1;
+              // 배치 결과 대기
+              const batchResults = await Promise.all(batchPromises);
+              batchResults.forEach(result => {
+                if (result) {
+                  subPageResults.push(result);
+                }
+              });
+              
+              processedCount = subPageResults.length; // 실제 처리된 개수로 업데이트
+              
+              // 진행 상황 업데이트 (배치마다)
               await supabase
                 .from('processing_jobs')
                 .update({

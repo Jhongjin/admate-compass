@@ -340,6 +340,8 @@ function UploadAndCrawlTabs({ vendors, onVendorsChange }: { vendors: string[]; o
   const [currentJobId, setCurrentJobId] = useState<string | null>(null);
   const [currentDocumentId, setCurrentDocumentId] = useState<string | null>(null);
   const pollingAbortControllerRef = useRef<AbortController | null>(null);
+  const crawlPollingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const isCrawlCancelledRef = useRef(false);
   const [crawlProgressValue, setCrawlProgressValue] = useState(0);
   const [crawlProgressLabel, setCrawlProgressLabel] = useState('');
   const [crawlResult, setCrawlResult] = useState<any>(null);
@@ -415,13 +417,64 @@ function UploadAndCrawlTabs({ vendors, onVendorsChange }: { vendors: string[]; o
     return undefined;
   }, [crawlProgressValue, crawlResult]);
 
+  // 크롤링 취소 핸들러
+  const handleCancelCrawl = useCallback(async () => {
+    if (!crawlJobId) {
+      toast.error('취소할 작업이 없습니다', { duration: 3000 });
+      return;
+    }
+
+    try {
+      // 폴링 중지
+      if (crawlPollingTimeoutRef.current) {
+        clearTimeout(crawlPollingTimeoutRef.current);
+        crawlPollingTimeoutRef.current = null;
+      }
+      isCrawlCancelledRef.current = true;
+
+      // 취소 API 호출
+      const response = await fetch('/api/jobs/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'cancel',
+          jobId: crawlJobId,
+        }),
+      });
+
+      const result = await response.json();
+      
+      if (result.success) {
+        toast.success('크롤링이 취소되었습니다', { duration: 3000 });
+        setCrawlProgressLabel('크롤링이 취소되었습니다.');
+        setCrawlProgressValue(0);
+        setCrawlResult({ error: '사용자에 의해 취소되었습니다.' });
+        setCrawling(false);
+        setCrawlJobId(null);
+      } else {
+        toast.error(result.error || '크롤링 취소에 실패했습니다', { duration: 3000 });
+        isCrawlCancelledRef.current = false; // 취소 실패 시 플래그 리셋
+      }
+    } catch (error) {
+      logger.error('크롤링 취소 오류:', error);
+      toast.error('크롤링 취소 중 오류가 발생했습니다', { duration: 3000 });
+      isCrawlCancelledRef.current = false; // 취소 실패 시 플래그 리셋
+    }
+  }, [crawlJobId]);
+
   // 크롤링 진행 상황 폴링 함수
   const pollCrawlStatus = useCallback(async (jobId: string) => {
     const supabaseClient = createClient();
     let pollCount = 0;
     const maxPolls = 120; // 최대 10분 (5초 간격)
+    isCrawlCancelledRef.current = false; // 폴링 시작 시 취소 플래그 리셋
     
     const poll = async (): Promise<void> => {
+      // 취소되었으면 폴링 중지
+      if (isCrawlCancelledRef.current) {
+        return;
+      }
+
       pollCount++;
       
       try {
@@ -508,6 +561,21 @@ function UploadAndCrawlTabs({ vendors, onVendorsChange }: { vendors: string[]; o
           return;
         }
 
+        if (job.status === 'cancelled') {
+          toast.info('크롤링이 취소되었습니다', { duration: 3000 });
+          setCrawlProgressLabel('크롤링이 취소되었습니다.');
+          setCrawlProgressValue(0);
+          setCrawlResult({ error: '작업이 취소되었습니다.' });
+          setCrawling(false);
+          setCrawlJobId(null);
+          return;
+        }
+
+        // 취소되었으면 폴링 중지
+        if (isCrawlCancelledRef.current) {
+          return;
+        }
+
         // processing 또는 queued 상태면 계속 폴링
         if (pollCount >= maxPolls) {
           toast.warning('크롤링 처리 시간이 오래 걸리고 있습니다', {
@@ -521,9 +589,20 @@ function UploadAndCrawlTabs({ vendors, onVendorsChange }: { vendors: string[]; o
           return;
         }
 
-        setTimeout(poll, 5000);
+        // 취소되었으면 폴링 중지
+        if (isCrawlCancelledRef.current) {
+          return;
+        }
+
+        crawlPollingTimeoutRef.current = setTimeout(poll, 5000);
       } catch (pollError) {
         logger.error('크롤링 상태 폴링 오류:', pollError);
+        
+        // 취소되었으면 폴링 중지
+        if (isCrawlCancelledRef.current) {
+          return;
+        }
+
         if (pollCount >= maxPolls) {
           setCrawlProgressLabel('크롤링 상태 확인 중 오류가 발생했습니다.');
           setCrawlProgressValue(0);
@@ -531,7 +610,7 @@ function UploadAndCrawlTabs({ vendors, onVendorsChange }: { vendors: string[]; o
           setCrawlJobId(null);
           return;
         }
-        setTimeout(poll, 5000);
+        crawlPollingTimeoutRef.current = setTimeout(poll, 5000);
       }
     };
 
@@ -1638,8 +1717,11 @@ function UploadAndCrawlTabs({ vendors, onVendorsChange }: { vendors: string[]; o
           setCrawlProgressValue(30);
           setCrawlProgressLabel('큐 워커가 작업을 처리 중입니다. 상태 확인 중...');
           
-          // 크롤링 진행 상황 폴링 시작
+          // 크롤링 진행 상황 폴링 시작 (isCrawling은 true로 유지)
           pollCrawlStatus(jobId);
+          // finally 블록에서 setCrawling(false)를 호출하지 않도록 여기서 return하지 않음
+          // 폴링이 완료되면 pollCrawlStatus 내부에서 setCrawling(false) 호출
+          return;
         } else {
           const fallbackMessage = consumeResult?.error || consumeResult?.details || `HTTP ${consumeRes.status}`;
           toast.warning('큐 워커 실행 경고', {
@@ -1651,6 +1733,8 @@ function UploadAndCrawlTabs({ vendors, onVendorsChange }: { vendors: string[]; o
           
           // 폴백: Cron Job이 처리할 수 있으므로 폴링 시작
           pollCrawlStatus(jobId);
+          // 폴링 시작했으므로 isCrawling은 true로 유지
+          return;
         }
 
         if (typeof window !== 'undefined') {
@@ -1669,6 +1753,8 @@ function UploadAndCrawlTabs({ vendors, onVendorsChange }: { vendors: string[]; o
         
         // 폴백: Cron Job이 처리할 수 있으므로 폴링 시작
         pollCrawlStatus(jobId);
+        // 폴링 시작했으므로 isCrawling은 true로 유지
+        return;
       }
     } catch (e) {
       logger.error("crawl enqueue error", e);
@@ -1677,9 +1763,9 @@ function UploadAndCrawlTabs({ vendors, onVendorsChange }: { vendors: string[]; o
       setCrawlProgressLabel('크롤링 실패');
       setCrawlProgressValue(0);
       setCrawlResult({ error: errorMessage });
-    } finally {
-      setCrawling(false);
+      setCrawling(false); // 에러 발생 시에만 false로 설정
     }
+    // 성공적으로 폴링이 시작되면 finally에서 setCrawling(false)를 호출하지 않음
   }, [vendors, extractSubPages, crawlOptions, pollCrawlStatus]);
 
   return (
@@ -2146,6 +2232,16 @@ function UploadAndCrawlTabs({ vendors, onVendorsChange }: { vendors: string[]; o
                 {isCrawling ? <Loader2 className="w-4 h-4 animate-spin mr-2" /> : <Globe className="w-4 h-4 mr-2" />} 
                 크롤 시작
               </Button>
+              {isCrawling && crawlJobId && (
+                <Button 
+                  onClick={handleCancelCrawl}
+                  variant="destructive"
+                  className="bg-red-600 hover:bg-red-700 text-white"
+                >
+                  <XCircle className="w-4 h-4 mr-2" />
+                  크롤 취소
+                </Button>
+              )}
               <TooltipProvider>
                 <Tooltip>
                   <TooltipTrigger asChild>

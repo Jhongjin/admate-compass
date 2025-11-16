@@ -240,7 +240,31 @@ export default function GroupedDocumentList({
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => onSelectDocument(group.mainDocument.id)}
+                      onClick={() => {
+                        const isMainSelected = selectedDocuments?.has(group.mainDocument.id);
+                        const allSubPageIds = group.subPages.map(sub => sub.id);
+                        const allSubPagesSelected = allSubPageIds.every(id => selectedDocuments?.has(id));
+                        
+                        // 부모 선택/해제
+                        onSelectDocument(group.mainDocument.id);
+                        
+                        // 하위 페이지들도 함께 선택/해제
+                        if (!isMainSelected) {
+                          // 부모가 선택되지 않았으면 하위 전체 선택
+                          allSubPageIds.forEach(id => {
+                            if (!selectedDocuments?.has(id)) {
+                              onSelectDocument(id);
+                            }
+                          });
+                        } else {
+                          // 부모가 이미 선택되어 있으면 하위 전체 해제
+                          allSubPageIds.forEach(id => {
+                            if (selectedDocuments?.has(id)) {
+                              onSelectDocument(id);
+                            }
+                          });
+                        }
+                      }}
                       className="p-1 h-6 w-6 hover:bg-gray-700/50"
                     >
                       {selectedDocuments?.has(group.mainDocument.id) ? (
