@@ -1845,6 +1845,17 @@ export async function processQueue() {
             // 병렬 처리: 최대 10개씩 동시에 처리 (성능 최적화)
             const BATCH_SIZE = 10;
             
+            // 각 하위 페이지의 개별 상태 추적
+            const subPageStatusMap = new Map<string, { url: string; title?: string; status: 'pending' | 'processing' | 'completed' | 'failed'; chunkCount?: number; error?: string }>();
+            candidateUrls.forEach(subUrl => {
+              const linkTitle = urlToTitleMap.get(subUrl);
+              subPageStatusMap.set(subUrl, {
+                url: subUrl,
+                title: linkTitle,
+                status: 'pending'
+              });
+            });
+            
             console.log(`[CRITICAL] 🔄 하위 페이지 크롤링 시작: ${candidateUrls.length}개 (병렬 처리: 최대 ${BATCH_SIZE}개 동시)`, {
               url,
               documentId,
@@ -1852,6 +1863,27 @@ export async function processQueue() {
               batchSize: BATCH_SIZE,
               totalBatches: Math.ceil(candidateUrls.length / BATCH_SIZE)
             });
+            
+            // 초기 상태 저장 (모든 하위 페이지를 pending으로 설정)
+            try {
+              await supabase
+                .from('processing_jobs')
+                .update({
+                  result: {
+                    url,
+                    documentId,
+                    title: mainPage.pageTitle,
+                    chunkCount: mainDocResult.chunkCount,
+                    subPageProgress: { processed: 0, total: candidateUrls.length },
+                    subPages: Array.from(subPageStatusMap.values()),
+                  },
+                })
+                .eq('id', job.id)
+                .neq('status', 'cancelled');
+            } catch (initError) {
+              console.error('[CRITICAL] ⚠️ 초기 상태 업데이트 실패 (계속 진행):', initError);
+            }
+            
             // 진행 상황 업데이트: 각 배치 완료 시마다 즉시 업데이트
             for (let i = 0; i < candidateUrls.length; i += BATCH_SIZE) {
               // 취소 체크: 배치 처리 전에 작업이 취소되었는지 확인
@@ -1877,6 +1909,13 @@ export async function processQueue() {
                   const currentIndex = candidateUrls.indexOf(subUrl) + 1;
                   console.log(`[CRITICAL] 📄 하위 페이지 처리 중 (${currentIndex}/${candidateUrls.length}): ${subUrl}${linkTitle ? ` [링크제목: ${linkTitle}]` : ''}`);
                   
+                  // 상태를 'processing'으로 업데이트
+                  const statusEntry = subPageStatusMap.get(subUrl);
+                  if (statusEntry) {
+                    statusEntry.status = 'processing';
+                    statusEntry.title = linkTitle || statusEntry.title;
+                  }
+                  
                   let page;
                   try {
                     page = await fetchPageContent(subUrl);
@@ -1886,6 +1925,11 @@ export async function processQueue() {
                       error: fetchError,
                       documentId
                     });
+                    const statusEntry = subPageStatusMap.get(subUrl);
+                    if (statusEntry) {
+                      statusEntry.status = 'failed';
+                      statusEntry.error = fetchError instanceof Error ? fetchError.message : String(fetchError);
+                    }
                     return {
                       url: subUrl,
                       success: false,
@@ -1933,6 +1977,11 @@ export async function processQueue() {
                       error: processError,
                       documentId
                     });
+                    const statusEntry = subPageStatusMap.get(subUrl);
+                    if (statusEntry) {
+                      statusEntry.status = 'failed';
+                      statusEntry.error = processError instanceof Error ? processError.message : String(processError);
+                    }
                     return {
                       url: subUrl,
                       success: false,
@@ -1942,12 +1991,26 @@ export async function processQueue() {
                   
                   if (!result.success) {
                     console.warn(`[CRITICAL] ⚠️ 하위 페이지 처리 실패 (성공=false): ${subUrl} [제목: ${finalTitle}]`);
+                    const statusEntry = subPageStatusMap.get(subUrl);
+                    if (statusEntry) {
+                      statusEntry.status = 'failed';
+                      statusEntry.error = (result as any).error || 'RAG 처리 실패';
+                      statusEntry.chunkCount = result.chunkCount || 0;
+                    }
                     return {
                       url: subUrl,
                       success: false,
                       error: (result as any).error || 'RAG 처리 실패',
                       chunkCount: result.chunkCount || 0,
                     };
+                  }
+                  
+                  // 상태를 'completed'로 업데이트
+                  const statusEntry = subPageStatusMap.get(subUrl);
+                  if (statusEntry) {
+                    statusEntry.status = 'completed';
+                    statusEntry.chunkCount = result.chunkCount;
+                    statusEntry.title = finalTitle || statusEntry.title;
                   }
                   
                   console.log(`[CRITICAL] ✅ 하위 페이지 처리 완료: ${subUrl} [제목: ${finalTitle}] (청크: ${result.chunkCount}개)`);
@@ -1958,6 +2021,11 @@ export async function processQueue() {
                     error: subError,
                     documentId
                   });
+                  const statusEntry = subPageStatusMap.get(subUrl);
+                  if (statusEntry) {
+                    statusEntry.status = 'failed';
+                    statusEntry.error = subError instanceof Error ? subError.message : String(subError);
+                  }
                   return {
                     url: subUrl,
                     success: false,
@@ -1988,7 +2056,7 @@ export async function processQueue() {
                 throw new Error('작업이 취소되었습니다.');
               }
               
-              // 진행 상황 업데이트: 각 배치 완료 시마다 즉시 업데이트
+              // 진행 상황 업데이트: 각 배치 완료 시마다 즉시 업데이트 (모든 하위 페이지 상태 포함)
               try {
                 await supabase
                   .from('processing_jobs')
@@ -1999,7 +2067,7 @@ export async function processQueue() {
                       title: mainPage.pageTitle,
                       chunkCount: mainDocResult.chunkCount,
                       subPageProgress: { processed: processedCount, total: candidateUrls.length },
-                      subPages: subPageResults.slice(-3),
+                      subPages: Array.from(subPageStatusMap.values()), // 모든 하위 페이지 상태 저장
                     },
                   })
                   .eq('id', job.id)
@@ -2021,7 +2089,7 @@ export async function processQueue() {
                     title: mainPage.pageTitle,
                     chunkCount: mainDocResult.chunkCount,
                     subPageProgress: { processed: processedCount, total: candidateUrls.length },
-                    subPages: subPageResults.slice(-3),
+                    subPages: Array.from(subPageStatusMap.values()), // 모든 하위 페이지 상태 저장
                   },
                 })
                 .eq('id', job.id);
