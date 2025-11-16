@@ -426,6 +426,46 @@ export async function processQueue() {
     const isReprocess = job?.payload?.reprocess === true;
     const fileSizeMB = fileSize > 0 ? (fileSize / (1024 * 1024)).toFixed(2) : '0';
     
+    // PDF_PARSE/DOCX_PARSE 작업 처리 전에 문서 타입 확인
+    if ((job.job_type === 'PDF_PARSE' || job.job_type === 'DOCX_PARSE') && job.document_id) {
+      // 문서 타입 확인 (URL 크롤링 문서인지 확인)
+      const { data: docCheck, error: docCheckError } = await supabase
+        .from('documents')
+        .select('type, url, title')
+        .eq('id', job.document_id)
+        .maybeSingle();
+      
+      if (!docCheckError && docCheck && (docCheck.type === 'url' || docCheck.url)) {
+        // URL 크롤링 문서에 대해 PDF_PARSE/DOCX_PARSE 작업이 생성된 경우
+        const errorMessage = `잘못된 작업 타입: 이 문서는 URL 크롤링 문서입니다 (type: ${docCheck.type || 'url'}, title: ${docCheck.title || 'N/A'}). PDF_PARSE/DOCX_PARSE 작업으로는 처리할 수 없습니다. 이 작업을 취소하고 URL 크롤링 작업(CRAWL_SEED)을 생성하거나 문서를 삭제하고 다시 크롤링해주세요.`;
+        
+        console.error('❌ 잘못된 작업 타입 감지:', {
+          jobId: job.id,
+          jobType: job.job_type,
+          documentId: job.document_id,
+          documentType: docCheck.type,
+          documentUrl: docCheck.url,
+          documentTitle: docCheck.title
+        });
+        
+        // 작업을 failed 상태로 업데이트
+        await supabase
+          .from('processing_jobs')
+          .update({ 
+            status: 'failed', 
+            error: errorMessage,
+            finished_at: new Date().toISOString() 
+          })
+          .eq('id', job.id)
+          .eq('status', 'processing');
+        
+        return NextResponse.json(
+          { success: false, error: errorMessage },
+          { status: 400 }
+        );
+      }
+    }
+    
     // 큰 파일 처리 시작 로그
     if (fileSize > 10 * 1024 * 1024) {
       console.log(`📦 큰 파일 처리 시작: ${fileName} (${fileSizeMB}MB)`);
