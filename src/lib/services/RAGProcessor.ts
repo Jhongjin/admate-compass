@@ -237,48 +237,68 @@ export class RAGProcessor {
       // OpenAI Embeddings API 사용
       if (this.embeddingProvider === 'openai') {
         if (!this.openAIEmbeddingService || !this.openAIEmbeddingService.initialized) {
-          throw new Error('OpenAI Embeddings API가 초기화되지 않았습니다. OPENAI_API_KEY 환경 변수를 확인하세요.');
-        }
+          console.warn('⚠️ OpenAI Embeddings API가 초기화되지 않음. BGE-M3로 자동 전환합니다.');
+          // BGE-M3로 fallback
+        } else {
+          console.log('✅ OpenAI Embeddings API로 임베딩 생성 중...');
+          const embeddingGenerationStartMs = Date.now();
 
-        console.log('✅ OpenAI Embeddings API로 임베딩 생성 중...');
-        const embeddingGenerationStartMs = Date.now();
+          // OpenAI는 배치 처리 지원 (최대 2048개)
+          const BATCH_SIZE = 100;
+          const batches: ChunkData[][] = [];
+          for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
+            batches.push(chunks.slice(i, i + BATCH_SIZE));
+          }
 
-        // OpenAI는 배치 처리 지원 (최대 2048개)
-        const BATCH_SIZE = 100;
-        const batches: ChunkData[][] = [];
-        for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
-          batches.push(chunks.slice(i, i + BATCH_SIZE));
-        }
-
-        console.log(`📦 배치 생성 완료: ${batches.length}개 배치 (배치 크기: ${BATCH_SIZE})`);
-
-        const allBatchPromises = batches.map(async (batch, batchIndex) => {
-          const batchStartMs = Date.now();
-          console.log(`📦 배치 ${batchIndex + 1}/${batches.length} 처리 시작: ${batch.length}개 청크`);
+          console.log(`📦 배치 생성 완료: ${batches.length}개 배치 (배치 크기: ${BATCH_SIZE})`);
 
           try {
-            const texts = batch.map(chunk => chunk.content);
-            const results = await this.openAIEmbeddingService!.generateBatchEmbeddings(texts);
+            const allBatchPromises = batches.map(async (batch, batchIndex) => {
+              const batchStartMs = Date.now();
+              console.log(`📦 배치 ${batchIndex + 1}/${batches.length} 처리 시작: ${batch.length}개 청크`);
 
-            const batchResults = batch.map((chunk, index) => ({
-              ...chunk,
-              embedding: results[index].embedding,
-            }));
+              try {
+                const texts = batch.map(chunk => chunk.content);
+                const results = await this.openAIEmbeddingService!.generateBatchEmbeddings(texts);
 
-            const batchMs = Date.now() - batchStartMs;
-            console.log(`✅ 배치 ${batchIndex + 1}/${batches.length} 완료: ${batchResults.length}개 청크 (${batchMs}ms)`);
-            return batchResults;
-          } catch (error) {
-            console.error(`❌ 배치 ${batchIndex + 1} 처리 실패:`, error);
-            throw error;
+                const batchResults = batch.map((chunk, index) => ({
+                  ...chunk,
+                  embedding: results[index].embedding,
+                }));
+
+                const batchMs = Date.now() - batchStartMs;
+                console.log(`✅ 배치 ${batchIndex + 1}/${batches.length} 완료: ${batchResults.length}개 청크 (${batchMs}ms)`);
+                return batchResults;
+              } catch (error) {
+                console.error(`❌ 배치 ${batchIndex + 1} 처리 실패:`, error);
+                throw error;
+              }
+            });
+
+            const allBatchResults = await Promise.all(allBatchPromises);
+            const embeddingGenerationMs = Date.now() - embeddingGenerationStartMs;
+            console.log(`✅ OpenAI 임베딩 생성 완료: ${chunks.length}개 청크, ${embeddingGenerationMs}ms (${(embeddingGenerationMs / 1000).toFixed(1)}초)`);
+
+            return allBatchResults.flat();
+          } catch (openAIError: any) {
+            // OpenAI API 실패 시 BGE-M3로 자동 전환
+            const errorMessage = openAIError instanceof Error ? openAIError.message : String(openAIError);
+            const isQuotaError = errorMessage.includes('429') || 
+                                errorMessage.includes('quota') || 
+                                errorMessage.includes('insufficient_quota') ||
+                                (openAIError as any)?.status === 429 ||
+                                (openAIError as any)?.code === 'insufficient_quota';
+            
+            if (isQuotaError) {
+              console.error(`❌ OpenAI API 할당량 초과 (429). BGE-M3로 자동 전환합니다.`);
+              console.error(`   에러 상세: ${errorMessage}`);
+            } else {
+              console.error(`❌ OpenAI API 실패. BGE-M3로 자동 전환합니다.`);
+              console.error(`   에러 상세: ${errorMessage}`);
+            }
+            // BGE-M3로 fallback (아래 코드 계속 실행)
           }
-        });
-
-        const allBatchResults = await Promise.all(allBatchPromises);
-        const embeddingGenerationMs = Date.now() - embeddingGenerationStartMs;
-        console.log(`✅ OpenAI 임베딩 생성 완료: ${chunks.length}개 청크, ${embeddingGenerationMs}ms (${(embeddingGenerationMs / 1000).toFixed(1)}초)`);
-
-        return allBatchResults.flat();
+        }
       }
 
       // BGE-M3 사용
