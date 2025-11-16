@@ -1696,11 +1696,19 @@ export async function processQueue() {
               .update({
                 status: 'indexed',
                 chunk_count: ragResult.chunkCount,
-                url: targetUrl, // URL 필드도 함께 업데이트
+                url: targetUrl, // URL 필드도 함께 업데이트 (하위 페이지 URL 보존)
                 main_document_id: parentDocumentId || null, // main_document_id 유지 (RAG 처리 후에도 보존)
                 updated_at: new Date().toISOString(),
               })
               .eq('id', resolvedDocumentId);
+            
+            // URL 업데이트 확인 로그
+            console.log(`[CRITICAL] ✅ 하위 페이지 URL 업데이트 완료:`, {
+              documentId: resolvedDocumentId,
+              url: targetUrl,
+              parentDocumentId: parentDocumentId || null,
+              chunkCount: ragResult.chunkCount
+            });
           } else {
             console.warn('⚠️ RAG 처리 실패 - 문서를 제거합니다:', resolvedDocumentId);
             if (!wasExistingDocument) {
@@ -1822,7 +1830,7 @@ export async function processQueue() {
               }
             });
 
-            const candidateUrls = Array.from(candidateUrlSet).slice(0, 30); // 처리할 하위 페이지 개수 증가 (기존: 8)
+            const candidateUrls = Array.from(candidateUrlSet).slice(0, 50); // maxUrls와 일치하도록 50개로 증가 (기존: 30)
 
             console.log(`[CRITICAL] 📄 하위 페이지 후보: ${candidateUrls.length}개 (발견: ${discovered.length}개, 필터링 후: ${candidateUrls.length}개)`, {
               url,
