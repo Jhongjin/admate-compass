@@ -440,12 +440,17 @@ export async function processQueue() {
         // 문서 정보 조회
         const { data: docData, error: docError } = await supabase
           .from('documents')
-          .select('content, title, file_type, file_size, id')
+          .select('content, title, file_type, file_size, id, type, url')
           .eq('id', job.document_id)
           .single();
         
         if (docError || !docData) {
           throw new Error(`재처리: 문서를 찾을 수 없습니다: ${docError?.message || 'Unknown error'}`);
+        }
+
+        // URL 크롤링 문서인 경우 PDF_PARSE/DOCX_PARSE 로직을 건너뛰고 에러 반환
+        if (docData.type === 'url' || docData.url) {
+          throw new Error(`재처리: 이 문서는 URL 크롤링 문서입니다 (type: ${docData.type || 'url'}). PDF_PARSE/DOCX_PARSE 작업으로는 재처리할 수 없습니다. URL 크롤링 작업을 다시 생성하거나 문서를 삭제하고 다시 크롤링해주세요.`);
         }
         
         // Storage에서 파일 찾기 시도 (문서 ID 기반 경로)
