@@ -5052,13 +5052,53 @@ function DocumentDetailDialog({ detail, onClose, onRefetch }: { detail: any | nu
     queryKey: ["doc-detail", detail?.id],
     queryFn: async () => {
       if (!detail?.id) return null;
-      const { data, error } = await supabase
+      // main_document_id 컬럼이 없을 수 있으므로 먼저 기본 필드만 조회
+      let query = supabase
         .from("documents")
-        .select("id, title, type, status, chunk_count, file_size, file_type, created_at, updated_at, document_url, url, size, source_vendor, main_document_id, content")
+        .select("id, title, type, status, chunk_count, file_size, file_type, created_at, updated_at, document_url, url, size, source_vendor, content")
         .eq("id", detail.id)
         .single();
       
+      // main_document_id 컬럼이 있는지 확인 후 추가
+      try {
+        const { data: testData, error: testError } = await supabase
+          .from("documents")
+          .select("main_document_id")
+          .limit(1);
+        
+        if (!testError && testData) {
+          // main_document_id 컬럼이 존재하면 다시 조회
+          query = supabase
+            .from("documents")
+            .select("id, title, type, status, chunk_count, file_size, file_type, created_at, updated_at, document_url, url, size, source_vendor, main_document_id, content")
+            .eq("id", detail.id)
+            .single();
+        }
+      } catch (e) {
+        // main_document_id 컬럼이 없으면 기본 필드만 사용
+        console.warn('[미리보기] main_document_id 컬럼이 없습니다. 마이그레이션을 실행해주세요.');
+      }
+      
+      const { data, error } = await query;
+      
       if (error) {
+        // main_document_id 관련 에러인 경우 기본 필드만 다시 시도
+        if (error.message?.includes('main_document_id')) {
+          console.warn('[미리보기] main_document_id 컬럼이 없어 기본 필드만 조회합니다.');
+          const { data: fallbackData, error: fallbackError } = await supabase
+            .from("documents")
+            .select("id, title, type, status, chunk_count, file_size, file_type, created_at, updated_at, document_url, url, size, source_vendor, content")
+            .eq("id", detail.id)
+            .single();
+          
+          if (fallbackError) {
+            console.error('[미리보기] fullDoc 조회 오류:', fallbackError);
+            return null;
+          }
+          
+          return fallbackData;
+        }
+        
         console.error('[미리보기] fullDoc 조회 오류:', error);
         return null;
       }
