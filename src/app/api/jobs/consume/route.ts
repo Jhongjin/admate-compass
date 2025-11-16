@@ -479,9 +479,9 @@ export async function processQueue() {
       
       if (!docCheckError && docCheck && (docCheck.type === 'url' || docCheck.url)) {
         // URL 크롤링 문서에 대해 PDF_PARSE/DOCX_PARSE 작업이 생성된 경우
-        const errorMessage = `잘못된 작업 타입: 이 문서는 URL 크롤링 문서입니다 (type: ${docCheck.type || 'url'}, title: ${docCheck.title || 'N/A'}). PDF_PARSE/DOCX_PARSE 작업으로는 처리할 수 없습니다. 이 작업을 취소하고 URL 크롤링 작업(CRAWL_SEED)을 생성하거나 문서를 삭제하고 다시 크롤링해주세요.`;
+        const errorMessage = `잘못된 작업 타입: 이 문서는 URL 크롤링 문서입니다 (type: ${docCheck.type || 'url'}, title: ${docCheck.title || 'N/A'}). PDF_PARSE/DOCX_PARSE 작업으로는 처리할 수 없습니다. 작업을 자동으로 삭제했습니다. URL 크롤링 작업(CRAWL_SEED)을 생성하거나 문서를 삭제하고 다시 크롤링해주세요.`;
         
-        console.error('❌ 잘못된 작업 타입 감지:', {
+        console.error('❌ 잘못된 작업 타입 감지 - 작업 자동 삭제:', {
           jobId: job.id,
           jobType: job.job_type,
           documentId: job.document_id,
@@ -490,19 +490,22 @@ export async function processQueue() {
           documentTitle: docCheck.title
         });
         
-        // 작업을 failed 상태로 업데이트
+        // 작업을 자동으로 삭제 (failed 상태로 남겨두지 않음)
         await supabase
           .from('processing_jobs')
-          .update({ 
-            status: 'failed', 
-            error: errorMessage,
-            finished_at: new Date().toISOString() 
-          })
-          .eq('id', job.id)
-          .eq('status', 'processing');
+          .delete()
+          .eq('id', job.id);
+        
+        console.log(`✅ 잘못된 작업 타입 자동 삭제 완료: ${job.id}`);
         
         return NextResponse.json(
-          { success: false, error: errorMessage },
+          { 
+            success: false, 
+            error: errorMessage,
+            deleted: true,
+            documentType: docCheck.type,
+            documentTitle: docCheck.title
+          },
           { status: 400 }
         );
       }
