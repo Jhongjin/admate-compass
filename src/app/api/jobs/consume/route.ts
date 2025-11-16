@@ -1773,6 +1773,10 @@ export async function processQueue() {
             };
           }
 
+          // RAG 처리 시작 로깅
+          const ragProcessStartTime = Date.now();
+          console.log(`[CRITICAL] 🚀 RAG 처리 시작: ${title} (콘텐츠 길이: ${content.length}자)`);
+          
           const ragResult = await ragProcessor.processDocument({
             id: resolvedDocumentId,
             title,
@@ -1784,6 +1788,9 @@ export async function processQueue() {
             created_at: existingDoc?.created_at || nowIso,
             updated_at: nowIso,
           });
+          
+          const ragProcessElapsed = Date.now() - ragProcessStartTime;
+          console.log(`[CRITICAL] ✅ RAG 처리 완료: ${title} (소요 시간: ${ragProcessElapsed}ms, 성공: ${ragResult.success}, 청크: ${ragResult.chunkCount}개)`);
 
           if (ragResult.success) {
             await supabase

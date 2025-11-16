@@ -183,40 +183,71 @@ export class SemanticChunkingService {
       console.log(`📝 문장 분할 완료: ${sentences.length}개 문장`);
       
       // 2. 각 문장에 대한 임베딩 생성 (배치 처리로 최적화)
-      console.log('🔮 문장 임베딩 생성 중...');
+      console.log(`🔮 문장 임베딩 생성 시작: ${sentences.length}개 문장`);
       const embeddings: number[][] = [];
+      const embeddingStartTime = Date.now();
       
       // 큰 문서는 샘플링하여 성능 최적화
       const maxSentencesForEmbedding = 1000;
       const shouldSample = sentences.length > maxSentencesForEmbedding;
       
-      if (shouldSample) {
-        console.log(`⚠️ 문장 수가 많음 (${sentences.length}개) - 샘플링하여 처리`);
-        const sampleRate = Math.ceil(sentences.length / maxSentencesForEmbedding);
-        const sampledSentences = sentences.filter((_, index) => index % sampleRate === 0);
-        
-        for (const sentence of sampledSentences) {
-          const embedding = generateSimpleEmbedding(sentence.text);
-          embeddings.push(embedding);
-        }
-        
-        // 샘플링된 문장의 임베딩을 모든 문장에 매핑
-        const allEmbeddings: number[][] = [];
-        for (let i = 0; i < sentences.length; i++) {
-          const sampleIndex = Math.floor(i / sampleRate);
-          allEmbeddings.push(embeddings[sampleIndex] || embeddings[embeddings.length - 1]);
-        }
-        embeddings.length = 0;
-        embeddings.push(...allEmbeddings);
-      } else {
-        // 모든 문장에 대해 임베딩 생성
-        for (const sentence of sentences) {
-          const embedding = generateSimpleEmbedding(sentence.text);
-          embeddings.push(embedding);
-        }
-      }
+      // 임베딩 생성 타임아웃: 최대 30초 (문장이 많아도 30초 내에 완료되어야 함)
+      const EMBEDDING_TIMEOUT = 30000;
+      const embeddingTimeoutId = setTimeout(() => {
+        console.error(`[CRITICAL] ⏱️ 문장 임베딩 생성 타임아웃: ${EMBEDDING_TIMEOUT}ms 초과 (문장 수: ${sentences.length}개)`);
+      }, EMBEDDING_TIMEOUT);
       
-      console.log(`✅ 임베딩 생성 완료: ${embeddings.length}개`);
+      try {
+        if (shouldSample) {
+          console.log(`⚠️ 문장 수가 많음 (${sentences.length}개) - 샘플링하여 처리`);
+          const sampleRate = Math.ceil(sentences.length / maxSentencesForEmbedding);
+          const sampledSentences = sentences.filter((_, index) => index % sampleRate === 0);
+          
+          console.log(`📊 샘플링: ${sampledSentences.length}개 문장 선택 (sampleRate: ${sampleRate})`);
+          
+          for (let i = 0; i < sampledSentences.length; i++) {
+            const sentence = sampledSentences[i];
+            const embedding = generateSimpleEmbedding(sentence.text);
+            embeddings.push(embedding);
+            
+            // 진행 상황 로깅 (10개마다)
+            if ((i + 1) % 10 === 0 || i === sampledSentences.length - 1) {
+              const elapsed = Date.now() - embeddingStartTime;
+              console.log(`🔮 임베딩 생성 진행: ${i + 1}/${sampledSentences.length} (${Math.round((i + 1) / sampledSentences.length * 100)}%, 경과: ${elapsed}ms)`);
+            }
+          }
+          
+          // 샘플링된 문장의 임베딩을 모든 문장에 매핑
+          const allEmbeddings: number[][] = [];
+          for (let i = 0; i < sentences.length; i++) {
+            const sampleIndex = Math.floor(i / sampleRate);
+            allEmbeddings.push(embeddings[sampleIndex] || embeddings[embeddings.length - 1]);
+          }
+          embeddings.length = 0;
+          embeddings.push(...allEmbeddings);
+        } else {
+          // 모든 문장에 대해 임베딩 생성
+          for (let i = 0; i < sentences.length; i++) {
+            const sentence = sentences[i];
+            const embedding = generateSimpleEmbedding(sentence.text);
+            embeddings.push(embedding);
+            
+            // 진행 상황 로깅 (10개마다 또는 마지막)
+            if ((i + 1) % 10 === 0 || i === sentences.length - 1) {
+              const elapsed = Date.now() - embeddingStartTime;
+              console.log(`🔮 임베딩 생성 진행: ${i + 1}/${sentences.length} (${Math.round((i + 1) / sentences.length * 100)}%, 경과: ${elapsed}ms)`);
+            }
+          }
+        }
+        
+        clearTimeout(embeddingTimeoutId);
+        const embeddingElapsed = Date.now() - embeddingStartTime;
+        console.log(`✅ 임베딩 생성 완료: ${embeddings.length}개 (소요 시간: ${embeddingElapsed}ms)`);
+      } catch (embeddingError) {
+        clearTimeout(embeddingTimeoutId);
+        console.error(`[CRITICAL] ❌ 임베딩 생성 중 에러 발생:`, embeddingError);
+        throw embeddingError;
+      }
       
       // 3. 문장 간 유사도 계산
       const boundaries: SemanticBoundary[] = [];
