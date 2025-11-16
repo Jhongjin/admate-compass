@@ -2032,15 +2032,32 @@ export async function processQueue() {
                 }
               });
 
-              // 배치 결과 대기
-              const batchResults = await Promise.all(batchPromises);
-              batchResults.forEach(result => {
-                if (result) {
-                  subPageResults.push(result);
+              // 배치 결과 대기 (각 Promise가 실패해도 전체가 실패하지 않도록 처리)
+              const batchResults = await Promise.allSettled(batchPromises);
+              batchResults.forEach((settledResult, idx) => {
+                if (settledResult.status === 'fulfilled' && settledResult.value) {
+                  subPageResults.push(settledResult.value);
+                } else if (settledResult.status === 'rejected') {
+                  const subUrl = batch[idx];
+                  console.error(`[CRITICAL] ❌ 배치 처리 중 예상치 못한 에러 (하위 페이지 ${idx + 1}):`, {
+                    url: subUrl,
+                    error: settledResult.reason
+                  });
+                  const errorStatusEntry = subPageStatusMap.get(subUrl);
+                  if (errorStatusEntry) {
+                    errorStatusEntry.status = 'failed';
+                    errorStatusEntry.error = settledResult.reason instanceof Error ? settledResult.reason.message : String(settledResult.reason);
+                  }
+                  subPageResults.push({
+                    url: subUrl,
+                    success: false,
+                    error: settledResult.reason instanceof Error ? settledResult.reason.message : String(settledResult.reason),
+                  });
                 }
               });
               
               processedCount = subPageResults.length; // 실제 처리된 개수로 업데이트
+              console.log(`[CRITICAL] 📊 배치 ${Math.floor(i / BATCH_SIZE) + 1} 완료: ${processedCount}/${candidateUrls.length} 처리됨`);
               
               // 취소 체크: 배치 처리 후에도 취소되었는지 확인
               const { data: currentJobAfterBatch } = await supabase
@@ -2056,6 +2073,11 @@ export async function processQueue() {
               
               // 진행 상황 업데이트: 각 배치 완료 시마다 즉시 업데이트 (모든 하위 페이지 상태 포함)
               try {
+                const completedCount = Array.from(subPageStatusMap.values()).filter(s => s.status === 'completed').length;
+                const failedCount = Array.from(subPageStatusMap.values()).filter(s => s.status === 'failed').length;
+                const processingCount = Array.from(subPageStatusMap.values()).filter(s => s.status === 'processing').length;
+                const pendingCount = Array.from(subPageStatusMap.values()).filter(s => s.status === 'pending').length;
+                
                 await supabase
                   .from('processing_jobs')
                   .update({
@@ -2070,7 +2092,7 @@ export async function processQueue() {
                   })
                   .eq('id', job.id)
                   .neq('status', 'cancelled'); // 취소된 작업은 업데이트하지 않음
-                console.log(`[CRITICAL] 📊 진행 상황 업데이트: ${processedCount}/${candidateUrls.length} (배치 ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(candidateUrls.length / BATCH_SIZE)})`);
+                console.log(`[CRITICAL] 📊 진행 상황 업데이트: ${processedCount}/${candidateUrls.length} (배치 ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(candidateUrls.length / BATCH_SIZE)}) - 완료: ${completedCount}, 실패: ${failedCount}, 처리중: ${processingCount}, 대기: ${pendingCount}`);
               } catch (updateError) {
                 console.error('[CRITICAL] ⚠️ 진행 상황 업데이트 실패 (계속 진행):', updateError);
               }
