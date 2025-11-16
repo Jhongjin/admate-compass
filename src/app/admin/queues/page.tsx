@@ -310,7 +310,7 @@ export default function AdminQueuesPage() {
                 const isSelected = selectedJobs.has(j.id);
                 
                 return (
-                <TableRow key={j.id} className="border-gray-700">
+                <TableRow key={j.id} className="border-gray-700 hover:bg-gray-800/50 transition-colors">
                     <TableCell className="text-gray-300">
                       {isDeletable ? (
                         <input
@@ -347,7 +347,7 @@ export default function AdminQueuesPage() {
                           }
                         }}
                       >
-                        <CollapsibleTrigger className="flex items-center gap-1 text-xs hover:text-gray-300 transition-colors">
+                        <CollapsibleTrigger className="flex items-center gap-1 text-xs hover:text-blue-400 transition-colors cursor-pointer">
                           {expandedJobs.has(j.id) ? (
                             <ChevronDown className="w-3 h-3" />
                           ) : (
