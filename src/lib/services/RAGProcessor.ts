@@ -98,32 +98,52 @@ export class RAGProcessor {
         return this.embeddingService;
       }
 
-      // 모델 초기화 시도 (명확한 타임아웃 설정: 3분 - Cold Start 시 40-90초 + 안전 마진)
-      // Vercel 서버리스 환경에서는 모델 다운로드가 오래 걸릴 수 있으므로 3분으로 설정
-      const initTimeoutMs = 180000; // 3분 타임아웃 (기존: 2분)
+      // 모델 초기화 시도 (명확한 타임아웃 설정: 1분 30초 - 빠른 fallback을 위해 짧게 설정)
+      // Vercel 서버리스 환경에서는 모델 다운로드가 오래 걸릴 수 있으므로, 타임아웃 시 즉시 해시 기반 임베딩으로 전환
+      const initTimeoutMs = 90000; // 1분 30초 타임아웃 (빠른 fallback)
       const initStartMs = Date.now();
-      console.log(`⏱️ 모델 초기화 타임아웃 설정: ${initTimeoutMs / 1000}초`);
+      console.log(`⏱️ 모델 초기화 타임아웃 설정: ${initTimeoutMs / 1000}초 (타임아웃 시 해시 기반 임베딩으로 자동 전환)`);
       
-      const initPromise = this.embeddingService.initialize('bge-m3');
+      // 타임아웃 플래그를 사용하여 초기화가 완료되었는지 추적
+      let isInitialized = false;
+      let timeoutId: NodeJS.Timeout | null = null;
+      
+      const initPromise = this.embeddingService.initialize('bge-m3').then(() => {
+        isInitialized = true;
+        if (timeoutId) clearTimeout(timeoutId);
+        return this.embeddingService;
+      }).catch((error) => {
+        isInitialized = true;
+        if (timeoutId) clearTimeout(timeoutId);
+        throw error;
+      });
+      
       const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => {
-          const elapsed = Date.now() - initStartMs;
-          console.error(`[CRITICAL] ⏱️ 임베딩 모델 초기화 타임아웃 발생: ${initTimeoutMs / 1000}초 초과 (경과: ${(elapsed / 1000).toFixed(1)}초)`);
-          reject(new Error(`임베딩 모델 초기화 타임아웃 (${initTimeoutMs / 1000}초 초과, 경과: ${(elapsed / 1000).toFixed(1)}초)`));
+        timeoutId = setTimeout(() => {
+          if (!isInitialized) {
+            const elapsed = Date.now() - initStartMs;
+            console.error(`[CRITICAL] ⏱️ 임베딩 모델 초기화 타임아웃 발생: ${initTimeoutMs / 1000}초 초과 (경과: ${(elapsed / 1000).toFixed(1)}초) - 해시 기반 임베딩으로 즉시 전환`);
+            // 초기화를 강제로 중단하려고 시도 (하지만 실제로는 계속 실행될 수 있음)
+            isInitialized = true;
+            reject(new Error(`임베딩 모델 초기화 타임아웃 (${initTimeoutMs / 1000}초 초과, 경과: ${(elapsed / 1000).toFixed(1)}초)`));
+          }
         }, initTimeoutMs);
       });
       
       try {
-        await Promise.race([initPromise, timeoutPromise]);
+        const result = await Promise.race([initPromise, timeoutPromise]);
         const elapsed = Date.now() - initStartMs;
+        if (timeoutId) clearTimeout(timeoutId);
         console.log(`✅ 임베딩 서비스 초기화 성공: ${elapsed}ms (${(elapsed / 1000).toFixed(1)}초)`);
         this.embeddingServiceInitialized = true;
-      return this.embeddingService;
-    } catch (error) {
+        return result;
+      } catch (error) {
+        if (timeoutId) clearTimeout(timeoutId);
         const elapsed = Date.now() - initStartMs;
         const errorMessage = error instanceof Error ? error.message : String(error);
         console.warn(`⚠️ 임베딩 모델 초기화 타임아웃/실패 (경과: ${(elapsed / 1000).toFixed(1)}초), 해시 기반 임베딩으로 fallback:`, errorMessage);
-      this.embeddingService = null;
+        // 초기화 실패 시 서비스를 null로 설정하여 해시 기반 임베딩 사용
+        this.embeddingService = null;
         this.embeddingServiceInitialized = true;
         return null;
       }
