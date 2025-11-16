@@ -517,15 +517,27 @@ function UploadAndCrawlTabs({ vendors, onVendorsChange }: { vendors: string[]; o
         }
 
         if (job.status === 'processing') {
-          const progressInfo = (job.result as any)?.subPageProgress;
-          if (progressInfo && typeof progressInfo.total === 'number') {
-            const ratio = progressInfo.total === 0 ? 1 : Math.min(1, progressInfo.processed / progressInfo.total);
-            const computed = 70 + ratio * 20;
+          const result = job.result as any;
+          const progressInfo = result?.subPageProgress;
+          
+          // 하위 페이지 진행률이 있으면 하위 페이지 처리 중
+          if (progressInfo && typeof progressInfo.total === 'number' && progressInfo.total > 0) {
+            // 하위 페이지 처리 진행률: 20% (메인 페이지 완료) + (processed/total) * 80%
+            const ratio = Math.min(1, progressInfo.processed / progressInfo.total);
+            const computed = 20 + ratio * 80;
             setCrawlProgressLabel(`하위 페이지 처리 중... (${progressInfo.processed}/${progressInfo.total})`);
-            setCrawlProgressValue((prev) => Math.max(prev, Math.round(Math.min(95, computed))));
-          } else {
-            setCrawlProgressLabel('문서 다운로드 및 청킹 중...');
-            setCrawlProgressValue((prev) => Math.max(prev, 70));
+            setCrawlProgressValue((prev) => Math.max(prev, Math.round(Math.min(100, computed))));
+          } 
+          // documentId가 설정되었으면 메인 페이지 처리 완료, 하위 페이지 대기 중
+          else if (result?.documentId) {
+            setCrawlProgressLabel('하위 페이지 탐색 중...');
+            setCrawlProgressValue((prev) => Math.max(prev, 15));
+          }
+          // 메인 페이지 처리 중
+          else {
+            setCrawlProgressLabel('메인 페이지 다운로드 및 청킹 중...');
+            // 메인 페이지 처리 진행률: 0-15% (크롤링 0-5%, RAG 처리 5-15%)
+            setCrawlProgressValue((prev) => Math.max(prev, Math.min(15, prev + 2)));
           }
         }
 
