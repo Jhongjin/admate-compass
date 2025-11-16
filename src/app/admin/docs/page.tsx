@@ -5704,7 +5704,7 @@ function DocumentDetailDialog({ detail, onClose, onRefetch }: { detail: any | nu
                     </a>
                   ) : (
                     <span className="text-muted-enhanced break-all">
-                      {fullDoc?.title || detail?.title || '-'}
+                      {detail?.url || fullDoc?.url || detail?.title || fullDoc?.title || '-'}
                     </span>
                   )}
                 </div>
