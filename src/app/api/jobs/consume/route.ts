@@ -1852,9 +1852,7 @@ export async function processQueue() {
               batchSize: BATCH_SIZE,
               totalBatches: Math.ceil(candidateUrls.length / BATCH_SIZE)
             });
-            let lastProgressUpdate = Date.now();
-            const PROGRESS_UPDATE_INTERVAL = 3000; // 3초마다 진행 상황 업데이트
-            
+            // 진행 상황 업데이트: 각 배치 완료 시마다 즉시 업데이트
             for (let i = 0; i < candidateUrls.length; i += BATCH_SIZE) {
               // 취소 체크: 배치 처리 전에 작업이 취소되었는지 확인
               const { data: currentJob } = await supabase
@@ -1990,32 +1988,25 @@ export async function processQueue() {
                 throw new Error('작업이 취소되었습니다.');
               }
               
-              // 진행 상황 업데이트 (배치 완료 시마다 또는 3초마다)
-              const now = Date.now();
-              const isLastBatch = i + BATCH_SIZE >= candidateUrls.length;
-              const shouldUpdate = isLastBatch || (now - lastProgressUpdate >= PROGRESS_UPDATE_INTERVAL);
-              
-              if (shouldUpdate) {
-                try {
-                  await supabase
-                    .from('processing_jobs')
-                    .update({
-                      result: {
-                        url,
-                        documentId,
-                        title: mainPage.pageTitle,
-                        chunkCount: mainDocResult.chunkCount,
-                        subPageProgress: { processed: processedCount, total: candidateUrls.length },
-                        subPages: subPageResults.slice(-3),
-                      },
-                    })
-                    .eq('id', job.id)
-                    .neq('status', 'cancelled'); // 취소된 작업은 업데이트하지 않음
-                  lastProgressUpdate = now;
-                  console.log(`[CRITICAL] 📊 진행 상황 업데이트: ${processedCount}/${candidateUrls.length} (배치 ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(candidateUrls.length / BATCH_SIZE)})`);
-                } catch (updateError) {
-                  console.error('[CRITICAL] ⚠️ 진행 상황 업데이트 실패 (계속 진행):', updateError);
-                }
+              // 진행 상황 업데이트: 각 배치 완료 시마다 즉시 업데이트
+              try {
+                await supabase
+                  .from('processing_jobs')
+                  .update({
+                    result: {
+                      url,
+                      documentId,
+                      title: mainPage.pageTitle,
+                      chunkCount: mainDocResult.chunkCount,
+                      subPageProgress: { processed: processedCount, total: candidateUrls.length },
+                      subPages: subPageResults.slice(-3),
+                    },
+                  })
+                  .eq('id', job.id)
+                  .neq('status', 'cancelled'); // 취소된 작업은 업데이트하지 않음
+                console.log(`[CRITICAL] 📊 진행 상황 업데이트: ${processedCount}/${candidateUrls.length} (배치 ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(candidateUrls.length / BATCH_SIZE)})`);
+              } catch (updateError) {
+                console.error('[CRITICAL] ⚠️ 진행 상황 업데이트 실패 (계속 진행):', updateError);
               }
             }
             
