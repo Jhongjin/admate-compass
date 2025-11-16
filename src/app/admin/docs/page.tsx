@@ -3374,10 +3374,15 @@ function DocsTable({
             normalizedMainUrl: mainDoc.normalizedMainUrl,
             subCount: combinedSubDocs.length,
             subDocsSample: combinedSubDocs.slice(0, 3).map((s: any) => ({
+              id: s.id,
               title: s.title?.substring(0, 30),
               url: s.url,
+              urlType: typeof s.url,
+              hasUrl: 'url' in s,
+              urlExists: !!s.url,
               normalizedUrl: s.normalizedUrl,
               mainDocumentId: s.mainDocumentId,
+              keys: Object.keys(s),
             })),
           });
         }
@@ -4467,7 +4472,19 @@ function DocsTable({
                                     <TooltipProvider>
                                       <Tooltip>
                                         <TooltipTrigger asChild>
-                                          <button onClick={() => setDetail(subDoc)} className="text-left min-w-0 flex-1">
+                                          <button onClick={() => {
+                                            if (typeof window !== 'undefined') {
+                                              logger.log('[그룹화] 하위 페이지 클릭:', {
+                                                subDocId: subDoc.id,
+                                                subDocTitle: subDoc.title,
+                                                subDocUrl: subDoc.url,
+                                                subDocUrlType: typeof subDoc.url,
+                                                subDocKeys: Object.keys(subDoc),
+                                                hasUrl: 'url' in subDoc,
+                                              });
+                                            }
+                                            setDetail(subDoc);
+                                          }} className="text-left min-w-0 flex-1">
                                             <span className="text-secondary-enhanced font-medium truncate block">
                                               {subDoc.title || subDoc.id}
                                             </span>
