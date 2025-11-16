@@ -1990,27 +1990,32 @@ export async function processQueue() {
                 throw new Error('작업이 취소되었습니다.');
               }
               
-              // 진행 상황 업데이트 (3초마다 또는 마지막 배치일 때만)
+              // 진행 상황 업데이트 (배치 완료 시마다 또는 3초마다)
               const now = Date.now();
               const isLastBatch = i + BATCH_SIZE >= candidateUrls.length;
               const shouldUpdate = isLastBatch || (now - lastProgressUpdate >= PROGRESS_UPDATE_INTERVAL);
               
               if (shouldUpdate) {
-                await supabase
-                  .from('processing_jobs')
-                  .update({
-                    result: {
-                      url,
-                      documentId,
-                      title: mainPage.pageTitle,
-                      chunkCount: mainDocResult.chunkCount,
-                      subPageProgress: { processed: processedCount, total: candidateUrls.length },
-                      subPages: subPageResults.slice(-3),
-                    },
-                  })
-                  .eq('id', job.id)
-                  .neq('status', 'cancelled'); // 취소된 작업은 업데이트하지 않음
-                lastProgressUpdate = now;
+                try {
+                  await supabase
+                    .from('processing_jobs')
+                    .update({
+                      result: {
+                        url,
+                        documentId,
+                        title: mainPage.pageTitle,
+                        chunkCount: mainDocResult.chunkCount,
+                        subPageProgress: { processed: processedCount, total: candidateUrls.length },
+                        subPages: subPageResults.slice(-3),
+                      },
+                    })
+                    .eq('id', job.id)
+                    .neq('status', 'cancelled'); // 취소된 작업은 업데이트하지 않음
+                  lastProgressUpdate = now;
+                  console.log(`[CRITICAL] 📊 진행 상황 업데이트: ${processedCount}/${candidateUrls.length} (배치 ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(candidateUrls.length / BATCH_SIZE)})`);
+                } catch (updateError) {
+                  console.error('[CRITICAL] ⚠️ 진행 상황 업데이트 실패 (계속 진행):', updateError);
+                }
               }
             }
             

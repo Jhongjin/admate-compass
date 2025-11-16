@@ -5186,10 +5186,10 @@ function DocumentDetailDialog({ detail, onClose, onRefetch }: { detail: any | nu
       : [];
 
     const candidateValues: Array<string | null | undefined> = [
+      detail?.url, // detail.url을 최우선으로 사용
       fullDoc?.url,
-      detail?.url,
-      (fullDoc as any)?.normalizedUrl,
       (detail as any)?.normalizedUrl,
+      (fullDoc as any)?.normalizedUrl,
       (detail as any)?.mainUrl,
       (detail as any)?.normalizedMainUrl,
       ...metadataCandidates,
