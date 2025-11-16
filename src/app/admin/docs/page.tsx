@@ -5434,7 +5434,7 @@ function DocumentDetailDialog({ detail, onClose, onRefetch }: { detail: any | nu
         chunksWithoutParent: levelStats.length - parentCount,
       };
     },
-    enabled: !!detail?.id && !!fullDoc?.actualChunkCount && fullDoc.actualChunkCount > 0,
+    enabled: !!detail?.id && !!((fullDoc as any)?.actualChunkCount) && (fullDoc as any).actualChunkCount > 0,
   });
 
   const finalDocumentUrl = resolvedDocumentUrl ?? fallbackUrl;
