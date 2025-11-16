@@ -588,6 +588,35 @@ function UploadAndCrawlTabs({ vendors, onVendorsChange }: { vendors: string[]; o
           return;
         }
 
+        // 멈춘 작업 감지: processing 상태이지만 started_at이 10분 이상 지난 경우
+        if (job.status === 'processing' && job.started_at) {
+          const startedAt = new Date(job.started_at).getTime();
+          const elapsed = Date.now() - startedAt;
+          const STUCK_THRESHOLD = 10 * 60 * 1000; // 10분
+          
+          if (elapsed > STUCK_THRESHOLD) {
+            console.error('[CRITICAL] ⚠️ 크롤링 작업이 멈춘 것으로 감지됨:', {
+              jobId: job.id,
+              status: job.status,
+              startedAt: job.started_at,
+              elapsed: `${Math.round(elapsed / 1000)}초`,
+              threshold: `${STUCK_THRESHOLD / 1000}초`
+            });
+            
+            toast.error('크롤링 작업이 멈춘 것으로 감지되었습니다', {
+              description: `작업이 ${Math.round(elapsed / 60000)}분 동안 진행 중입니다. 작업을 취소하고 다시 시도해주세요.`,
+              duration: 8000,
+            });
+            
+            setCrawlProgressLabel('크롤링 작업이 멈춘 것으로 감지됨');
+            setCrawlProgressValue(0);
+            setCrawlResult({ error: `작업이 ${Math.round(elapsed / 60000)}분 동안 진행 중입니다. 작업을 취소하고 다시 시도해주세요.` });
+            setCrawling(false);
+            setCrawlJobId(null);
+            return;
+          }
+        }
+        
         // processing 또는 queued 상태면 계속 폴링
         if (pollCount >= maxPolls) {
           toast.warning('크롤링 처리 시간이 오래 걸리고 있습니다', {

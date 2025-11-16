@@ -1858,25 +1858,123 @@ export async function processQueue() {
 
         console.error('[CRITICAL] 📄 메인 페이지 크롤링 시작:', { url, documentId, extractSubPages, extractSubPagesRaw });
         
+        // 메인 페이지 처리 전체 타임아웃: 5분 (크롤링 30초 + RAG 처리 4분 30초)
+        const MAIN_PAGE_TIMEOUT = 5 * 60 * 1000; // 5분
+        const mainPageStartTime = Date.now();
+        
+        // 하트비트 업데이트: 메인 페이지 처리 시작
+        try {
+          await supabase
+            .from('processing_jobs')
+            .update({
+              result: {
+                url,
+                documentId,
+                status: 'main_page_crawling',
+                message: '메인 페이지 크롤링 중...'
+              }
+            })
+            .eq('id', job.id)
+            .neq('status', 'cancelled');
+        } catch (heartbeatError) {
+          console.warn('[CRITICAL] ⚠️ 하트비트 업데이트 실패 (계속 진행):', heartbeatError);
+        }
+        
         let mainPage;
         try {
-          mainPage = await fetchPageContent(url);
+          // 메인 페이지 크롤링 타임아웃: 30초
+          const fetchTimeout = 30000;
+          const fetchPromise = fetchPageContent(url);
+          const fetchTimeoutPromise = new Promise<never>((_, reject) => {
+            setTimeout(() => {
+              reject(new Error(`메인 페이지 크롤링 타임아웃: ${fetchTimeout}ms 초과`));
+            }, fetchTimeout);
+          });
+          mainPage = await Promise.race([fetchPromise, fetchTimeoutPromise]) as Awaited<ReturnType<typeof fetchPageContent>>;
         } catch (fetchError) {
           console.error('[CRITICAL] ❌ 메인 페이지 크롤링 실패:', fetchError);
+          // 실패 시 작업 상태 업데이트
+          await supabase
+            .from('processing_jobs')
+            .update({
+              status: 'failed',
+              finished_at: new Date().toISOString(),
+              result: { error: `메인 페이지 크롤링 실패: ${fetchError instanceof Error ? fetchError.message : String(fetchError)}` }
+            })
+            .eq('id', job.id);
           throw new Error(`메인 페이지 크롤링 실패: ${fetchError instanceof Error ? fetchError.message : String(fetchError)}`);
         }
         
         console.error('[CRITICAL] 📄 메인 페이지 크롤링 완료:', { url, title: mainPage.pageTitle, contentLength: mainPage.textContent.length, htmlLength: mainPage.htmlContent.length });
         
+        // 하트비트 업데이트: 메인 페이지 크롤링 완료, RAG 처리 시작
+        try {
+          await supabase
+            .from('processing_jobs')
+            .update({
+              result: {
+                url,
+                documentId,
+                status: 'main_page_rag_processing',
+                message: '메인 페이지 RAG 처리 중...',
+                crawlElapsed: Date.now() - mainPageStartTime
+              }
+            })
+            .eq('id', job.id)
+            .neq('status', 'cancelled');
+        } catch (heartbeatError) {
+          console.warn('[CRITICAL] ⚠️ 하트비트 업데이트 실패 (계속 진행):', heartbeatError);
+        }
+        
         let mainDocResult;
         try {
-          mainDocResult = await upsertAndProcessDocument({ targetUrl: url, title: mainPage.pageTitle, content: mainPage.textContent, documentIdOverride: documentId });
+          // RAG 처리 타임아웃: 4분 30초 (메인 페이지 처리 전체 타임아웃에서 크롤링 시간 제외)
+          const ragTimeout = 4 * 60 * 1000 + 30 * 1000; // 4분 30초
+          const ragStartTime = Date.now();
+          const ragPromise = upsertAndProcessDocument({ targetUrl: url, title: mainPage.pageTitle, content: mainPage.textContent, documentIdOverride: documentId });
+          const ragTimeoutPromise = new Promise<never>((_, reject) => {
+            setTimeout(() => {
+              const elapsed = Date.now() - ragStartTime;
+              reject(new Error(`메인 페이지 RAG 처리 타임아웃: ${ragTimeout}ms 초과 (경과: ${elapsed}ms)`));
+            }, ragTimeout);
+          });
+          mainDocResult = await Promise.race([ragPromise, ragTimeoutPromise]) as Awaited<ReturnType<typeof upsertAndProcessDocument>>;
         } catch (upsertError) {
           console.error('[CRITICAL] ❌ 메인 문서 처리 실패:', upsertError);
+          // 실패 시 작업 상태 업데이트
+          await supabase
+            .from('processing_jobs')
+            .update({
+              status: 'failed',
+              finished_at: new Date().toISOString(),
+              result: { error: `메인 문서 처리 실패: ${upsertError instanceof Error ? upsertError.message : String(upsertError)}` }
+            })
+            .eq('id', job.id);
           throw new Error(`메인 문서 처리 실패: ${upsertError instanceof Error ? upsertError.message : String(upsertError)}`);
         }
         
-        console.error('[CRITICAL] 📄 메인 문서 처리 완료:', { documentId, success: mainDocResult.success, chunkCount: mainDocResult.chunkCount });
+        const mainPageElapsed = Date.now() - mainPageStartTime;
+        console.error('[CRITICAL] 📄 메인 문서 처리 완료:', { documentId, success: mainDocResult.success, chunkCount: mainDocResult.chunkCount, elapsed: mainPageElapsed });
+        
+        // 하트비트 업데이트: 메인 페이지 처리 완료
+        try {
+          await supabase
+            .from('processing_jobs')
+            .update({
+              result: {
+                url,
+                documentId,
+                status: 'main_page_completed',
+                message: '메인 페이지 처리 완료',
+                chunkCount: mainDocResult.chunkCount,
+                mainPageElapsed
+              }
+            })
+            .eq('id', job.id)
+            .neq('status', 'cancelled');
+        } catch (heartbeatError) {
+          console.warn('[CRITICAL] ⚠️ 하트비트 업데이트 실패 (계속 진행):', heartbeatError);
+        }
 
         // document_id가 없으면 생성된 documentId로 업데이트
         if (!job.document_id && mainDocResult.documentId) {
