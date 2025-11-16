@@ -98,8 +98,9 @@ export class RAGProcessor {
         return this.embeddingService;
       }
 
-      // 모델 초기화 시도 (명확한 타임아웃 설정: 2분)
-      const initTimeoutMs = 120000; // 2분 타임아웃
+      // 모델 초기화 시도 (명확한 타임아웃 설정: 3분 - Cold Start 시 40-90초 + 안전 마진)
+      // Vercel 서버리스 환경에서는 모델 다운로드가 오래 걸릴 수 있으므로 3분으로 설정
+      const initTimeoutMs = 180000; // 3분 타임아웃 (기존: 2분)
       const initStartMs = Date.now();
       console.log(`⏱️ 모델 초기화 타임아웃 설정: ${initTimeoutMs / 1000}초`);
       
@@ -107,6 +108,7 @@ export class RAGProcessor {
       const timeoutPromise = new Promise<never>((_, reject) => {
         setTimeout(() => {
           const elapsed = Date.now() - initStartMs;
+          console.error(`[CRITICAL] ⏱️ 임베딩 모델 초기화 타임아웃 발생: ${initTimeoutMs / 1000}초 초과 (경과: ${(elapsed / 1000).toFixed(1)}초)`);
           reject(new Error(`임베딩 모델 초기화 타임아웃 (${initTimeoutMs / 1000}초 초과, 경과: ${(elapsed / 1000).toFixed(1)}초)`));
         }, initTimeoutMs);
       });

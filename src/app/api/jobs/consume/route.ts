@@ -1932,10 +1932,12 @@ export async function processQueue() {
         
         let mainDocResult;
         try {
-          // RAG 처리 타임아웃: 8분 (임베딩 모델 초기화 시간 고려 - Cold Start 시 40-90초 + 청킹 + 임베딩 생성)
-          // Vercel Pro 플랜 최대 실행 시간: 300초 (5분)이지만, 실제로는 더 길 수 있음
-          // 안전하게 8분으로 설정 (임베딩 모델 초기화 2분 + 청킹 10초 + 임베딩 생성 5분)
-          const ragTimeout = 8 * 60 * 1000; // 8분
+          // RAG 처리 타임아웃: 4분 30초 (Vercel Pro 플랜 최대 실행 시간 5분 내에서 안전하게 설정)
+          // 임베딩 모델 초기화: 최대 3분 (타임아웃 시 해시 기반 임베딩으로 fallback)
+          // 청킹: 10초
+          // 임베딩 생성: 1분 20초 (해시 기반 임베딩 사용 시 매우 빠름)
+          // 총: 4분 30초 (안전 마진 포함)
+          const ragTimeout = 4 * 60 * 1000 + 30 * 1000; // 4분 30초
           const ragStartTime = Date.now();
           const ragPromise = upsertAndProcessDocument({ targetUrl: url, title: mainPage.pageTitle, content: mainPage.textContent, documentIdOverride: documentId });
           const ragTimeoutPromise = new Promise<never>((_, reject) => {
