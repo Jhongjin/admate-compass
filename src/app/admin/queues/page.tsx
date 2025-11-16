@@ -20,6 +20,17 @@ type Job = {
   scheduled_at: string | null;
   started_at: string | null;
   finished_at: string | null;
+  result?: {
+    url?: string;
+    documentId?: string;
+    title?: string;
+    chunkCount?: number;
+    subPageProgress?: {
+      processed: number;
+      total: number;
+    };
+    subPages?: Array<{ url: string; success: boolean; chunkCount?: number; error?: string }>;
+  };
 };
 
 export default function AdminQueuesPage() {
@@ -34,7 +45,7 @@ export default function AdminQueuesPage() {
       setLoading(true);
       const { data, error } = await supabase
         .from('processing_jobs')
-        .select('id, document_id, job_type, status, attempts, max_attempts, priority, scheduled_at, started_at, finished_at')
+        .select('id, document_id, job_type, status, attempts, max_attempts, priority, scheduled_at, started_at, finished_at, result')
         .order('scheduled_at', { ascending: true })
         .limit(100);
       if (error) throw error;
@@ -43,6 +54,26 @@ export default function AdminQueuesPage() {
       console.error('큐 조회 오류:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // GMT+9 Seoul 시간으로 변환
+  const formatToSeoulTime = (dateString: string | null): string => {
+    if (!dateString) return '-';
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleString('ko-KR', {
+        timeZone: 'Asia/Seoul',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+      });
+    } catch {
+      return dateString;
     }
   };
 
@@ -254,13 +285,14 @@ export default function AdminQueuesPage() {
                 <TableHead className="text-white">상태</TableHead>
                 <TableHead className="text-white">우선순위</TableHead>
                 <TableHead className="text-white">시작</TableHead>
+                <TableHead className="text-white">진행 상황</TableHead>
                 <TableHead className="text-white">작업</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {jobs.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="text-gray-400">
+                  <TableCell colSpan={9} className="text-gray-400">
                     <div className="flex items-center gap-2"><AlertTriangle className="w-4 h-4"/>대기 중인 작업이 없습니다.</div>
                   </TableCell>
                 </TableRow>
@@ -289,7 +321,28 @@ export default function AdminQueuesPage() {
                     <Badge variant={statusVariant(j.status)}>{j.status}</Badge>
                   </TableCell>
                   <TableCell className="text-gray-300">{j.priority}</TableCell>
-                  <TableCell className="text-gray-400 text-sm">{j.started_at ?? '-'}</TableCell>
+                  <TableCell className="text-gray-400 text-sm">{formatToSeoulTime(j.started_at)}</TableCell>
+                  <TableCell className="text-gray-400 text-sm">
+                    {j.result?.subPageProgress ? (
+                      <div className="flex flex-col gap-1">
+                        <div className="text-xs">
+                          하위 페이지: {j.result.subPageProgress.processed}/{j.result.subPageProgress.total} ({Math.round((j.result.subPageProgress.processed / j.result.subPageProgress.total) * 100)}%)
+                        </div>
+                        {j.job_type === 'CRAWL_SEED' && j.status === 'processing' && (
+                          <div className="w-full bg-gray-700 rounded-full h-1.5">
+                            <div 
+                              className="bg-blue-500 h-1.5 rounded-full transition-all"
+                              style={{ width: `${(j.result.subPageProgress.processed / j.result.subPageProgress.total) * 100}%` }}
+                            />
+                          </div>
+                        )}
+                      </div>
+                    ) : j.status === 'processing' && j.job_type === 'CRAWL_SEED' ? (
+                      <span className="text-xs text-gray-500">진행 중...</span>
+                    ) : (
+                      '-'
+                    )}
+                  </TableCell>
                   <TableCell className="text-gray-400 text-sm">
                       <div className="flex items-center gap-2 flex-wrap">
                         {j.status === 'queued' || j.status === 'retrying' ? (

@@ -20,6 +20,17 @@ interface Job {
   scheduled_at: string | null;
   started_at: string | null;
   finished_at: string | null;
+  result?: {
+    url?: string;
+    documentId?: string;
+    title?: string;
+    chunkCount?: number;
+    subPageProgress?: {
+      processed: number;
+      total: number;
+    };
+    subPages?: Array<{ url: string; success: boolean; chunkCount?: number; error?: string }>;
+  };
 }
 
 interface QueueMonitoringPanelProps {
@@ -51,7 +62,7 @@ export default function QueueMonitoringPanel({ vendors = [], defaultOpen = false
       setLoading(true);
       const { data, error } = await supabase
         .from('processing_jobs')
-        .select('id, document_id, job_type, status, attempts, max_attempts, priority, scheduled_at, started_at, finished_at')
+        .select('id, document_id, job_type, status, attempts, max_attempts, priority, scheduled_at, started_at, finished_at, result')
         .order('scheduled_at', { ascending: true })
         .limit(100);
       if (error) throw error;
@@ -60,6 +71,26 @@ export default function QueueMonitoringPanel({ vendors = [], defaultOpen = false
       console.error('큐 조회 오류:', err);
     } finally {
       setLoading(false);
+    }
+  };
+
+  // GMT+9 Seoul 시간으로 변환
+  const formatToSeoulTime = (dateString: string | null): string => {
+    if (!dateString) return '-';
+    try {
+      const date = new Date(dateString);
+      return date.toLocaleString('ko-KR', {
+        timeZone: 'Asia/Seoul',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false
+      });
+    } catch {
+      return dateString;
     }
   };
 
@@ -121,21 +152,54 @@ export default function QueueMonitoringPanel({ vendors = [], defaultOpen = false
     }
 
     const jobIds = Array.from(selectedJobs);
-    const deletableJobs = jobs.filter(j => 
+    // 멈춘 작업 감지: processing 상태이지만 started_at이 30분 이상 지난 경우
+    const stuckJobs = jobs.filter(j => 
       jobIds.includes(j.id) && 
-      ['queued', 'failed', 'cancelled', 'retrying'].includes(j.status)
+      j.status === 'processing' && 
+      j.started_at && 
+      (Date.now() - new Date(j.started_at).getTime()) > 30 * 60 * 1000
     );
+    
+    const deletableJobs = jobs.filter(j => {
+      if (!jobIds.includes(j.id)) return false;
+      // 일반 삭제 가능한 상태
+      if (['queued', 'failed', 'cancelled', 'retrying'].includes(j.status)) return true;
+      // 멈춘 작업
+      if (j.status === 'processing' && j.started_at && 
+          (Date.now() - new Date(j.started_at).getTime()) > 30 * 60 * 1000) return true;
+      return false;
+    });
 
     if (deletableJobs.length === 0) {
-      alert('삭제 가능한 작업이 없습니다. (대기, 실패, 취소, 재시도 중인 작업만 삭제 가능)');
+      alert('삭제 가능한 작업이 없습니다. (대기, 실패, 취소, 재시도 중인 작업 또는 30분 이상 진행 중인 멈춘 작업만 삭제 가능)');
       return;
     }
 
-    if (!confirm(`${deletableJobs.length}개 작업을 삭제하시겠습니까?\n\n이 작업은 되돌릴 수 없습니다.`)) {
+    const stuckCount = stuckJobs.length;
+    const normalCount = deletableJobs.length - stuckCount;
+    const confirmMessage = stuckCount > 0
+      ? `${deletableJobs.length}개 작업을 삭제하시겠습니까?\n\n- 일반 작업: ${normalCount}개\n- 멈춘 작업: ${stuckCount}개\n\n이 작업은 되돌릴 수 없습니다.`
+      : `${deletableJobs.length}개 작업을 삭제하시겠습니까?\n\n이 작업은 되돌릴 수 없습니다.`;
+
+    if (!confirm(confirmMessage)) {
       return;
     }
 
     try {
+      // 멈춘 작업은 먼저 cancelled 상태로 변경 후 삭제
+      if (stuckCount > 0) {
+        const stuckJobIds = stuckJobs.map(j => j.id);
+        const { error: cancelError } = await supabase
+          .from('processing_jobs')
+          .update({ status: 'cancelled', finished_at: new Date().toISOString() })
+          .in('id', stuckJobIds)
+          .eq('status', 'processing');
+        
+        if (cancelError) {
+          console.warn('멈춘 작업 취소 오류:', cancelError);
+        }
+      }
+
       const res = await fetch('/api/jobs/action', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -173,7 +237,13 @@ export default function QueueMonitoringPanel({ vendors = [], defaultOpen = false
   const selectJobsByStatus = (status: string) => {
     const newSelected = new Set(selectedJobs);
     jobs.forEach(job => {
-      if (job.status === status && ['queued', 'failed', 'cancelled', 'retrying'].includes(job.status)) {
+      if (status === 'stuck') {
+        // 멈춘 작업 선택: processing 상태이지만 started_at이 30분 이상 지난 경우
+        if (job.status === 'processing' && job.started_at && 
+            (Date.now() - new Date(job.started_at).getTime()) > 30 * 60 * 1000) {
+          newSelected.add(job.id);
+        }
+      } else if (job.status === status && ['queued', 'failed', 'cancelled', 'retrying'].includes(job.status)) {
         newSelected.add(job.id);
       }
     });
@@ -196,6 +266,11 @@ export default function QueueMonitoringPanel({ vendors = [], defaultOpen = false
     queued: jobs.filter(j => ['queued', 'retrying'].includes(j.status)).length,
     processing: jobs.filter(j => j.status === 'processing').length,
     failed: jobs.filter(j => j.status === 'failed').length,
+    stuck: jobs.filter(j => 
+      j.status === 'processing' && 
+      j.started_at && 
+      (Date.now() - new Date(j.started_at).getTime()) > 30 * 60 * 1000
+    ).length,
   };
 
   return (
@@ -266,7 +341,7 @@ export default function QueueMonitoringPanel({ vendors = [], defaultOpen = false
             </div>
 
             {/* 상태별 일괄 선택 */}
-            {(queueStats.queued > 0 || queueStats.failed > 0) && (
+            {(queueStats.queued > 0 || queueStats.failed > 0 || queueStats.stuck > 0) && (
               <div className="flex gap-2 flex-wrap">
                 {queueStats.queued > 0 && (
                   <Button 
@@ -286,6 +361,16 @@ export default function QueueMonitoringPanel({ vendors = [], defaultOpen = false
                     className="text-xs"
                   >
                     실패 모두 선택
+                  </Button>
+                )}
+                {queueStats.stuck > 0 && (
+                  <Button 
+                    variant="outline" 
+                    size="sm"
+                    onClick={() => selectJobsByStatus('stuck')}
+                    className="text-xs text-orange-400 border-orange-500/50 hover:bg-orange-500/10"
+                  >
+                    멈춘 작업 모두 선택 ({queueStats.stuck})
                   </Button>
                 )}
                 {selectedJobs.size > 0 && (
@@ -320,11 +405,23 @@ export default function QueueMonitoringPanel({ vendors = [], defaultOpen = false
                     <TableHead className="text-white w-12">
                       <input
                         type="checkbox"
-                        checked={selectedJobs.size > 0 && selectedJobs.size === jobs.filter(j => ['queued', 'failed', 'cancelled', 'retrying'].includes(j.status)).length}
+                        checked={selectedJobs.size > 0 && selectedJobs.size === jobs.filter(j => {
+                          if (['queued', 'failed', 'cancelled', 'retrying'].includes(j.status)) return true;
+                          // 멈춘 작업도 포함
+                          if (j.status === 'processing' && j.started_at && 
+                              (Date.now() - new Date(j.started_at).getTime()) > 30 * 60 * 1000) return true;
+                          return false;
+                        }).length}
                         onChange={(e) => {
                           if (e.target.checked) {
                             const deletableJobIds = jobs
-                              .filter(j => ['queued', 'failed', 'cancelled', 'retrying'].includes(j.status))
+                              .filter(j => {
+                                if (['queued', 'failed', 'cancelled', 'retrying'].includes(j.status)) return true;
+                                // 멈춘 작업도 포함
+                                if (j.status === 'processing' && j.started_at && 
+                                    (Date.now() - new Date(j.started_at).getTime()) > 30 * 60 * 1000) return true;
+                                return false;
+                              })
                               .map(j => j.id);
                             setSelectedJobs(new Set(deletableJobIds));
                           } else {
@@ -351,7 +448,11 @@ export default function QueueMonitoringPanel({ vendors = [], defaultOpen = false
                       </TableCell>
                     </TableRow>
                   ) : jobs.map(j => {
-                    const isDeletable = ['queued', 'failed', 'cancelled', 'retrying'].includes(j.status);
+                    // 멈춘 작업 감지: processing 상태이지만 started_at이 30분 이상 지난 경우
+                    const isStuck = j.status === 'processing' && j.started_at && 
+                      (Date.now() - new Date(j.started_at).getTime()) > 30 * 60 * 1000; // 30분
+                    
+                    const isDeletable = ['queued', 'failed', 'cancelled', 'retrying'].includes(j.status) || isStuck;
                     const isSelected = selectedJobs.has(j.id);
                     
                     return (
@@ -373,6 +474,11 @@ export default function QueueMonitoringPanel({ vendors = [], defaultOpen = false
                         <TableCell className="text-gray-300">
                           <Badge variant={statusVariant(j.status)} className="text-xs">
                             {j.status}
+                            {isStuck && (
+                              <span className="ml-1 text-orange-400" title="30분 이상 진행 중인 멈춘 작업">
+                                (멈춤)
+                              </span>
+                            )}
                           </Badge>
                         </TableCell>
                         <TableCell className="text-gray-400 text-xs">
@@ -407,7 +513,18 @@ export default function QueueMonitoringPanel({ vendors = [], defaultOpen = false
                                 </Button>
                               </>
                             ) : null}
-                            {isDeletable && j.status !== 'failed' ? (
+                            {isStuck ? (
+                              <Button 
+                                variant="ghost" 
+                                size="sm" 
+                                onClick={() => postAction(j.id, 'delete')} 
+                                className="h-6 px-2 text-xs text-orange-400 hover:text-orange-300"
+                                title="멈춘 작업 삭제"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </Button>
+                            ) : null}
+                            {isDeletable && j.status !== 'failed' && !isStuck ? (
                               <Button 
                                 variant="ghost" 
                                 size="sm" 
