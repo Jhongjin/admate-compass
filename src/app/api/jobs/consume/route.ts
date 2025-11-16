@@ -2386,7 +2386,13 @@ export async function processQueue() {
             }
             
             // 마지막 진행 상황 업데이트 (모든 배치 완료 후)
-            if (processedCount > 0) {
+            const finalCompletedCount = Array.from(subPageStatusMap.values()).filter(s => s.status === 'completed').length;
+            const finalFailedCount = Array.from(subPageStatusMap.values()).filter(s => s.status === 'failed').length;
+            const finalProcessingCount = Array.from(subPageStatusMap.values()).filter(s => s.status === 'processing').length;
+            const finalPendingCount = Array.from(subPageStatusMap.values()).filter(s => s.status === 'pending').length;
+            const finalProcessedCount = finalCompletedCount + finalFailedCount;
+            
+            if (finalProcessedCount > 0 || candidateUrls.length > 0) {
               await supabase
                 .from('processing_jobs')
                 .update({
@@ -2395,11 +2401,19 @@ export async function processQueue() {
                     documentId,
                     title: mainPage.pageTitle,
                     chunkCount: mainDocResult.chunkCount,
-                    subPageProgress: { processed: processedCount, total: candidateUrls.length },
+                    subPageProgress: { 
+                      processed: finalProcessedCount, 
+                      total: candidateUrls.length,
+                      completed: finalCompletedCount,
+                      failed: finalFailedCount,
+                      processing: finalProcessingCount,
+                      pending: finalPendingCount
+                    },
                     subPages: Array.from(subPageStatusMap.values()), // 모든 하위 페이지 상태 저장
                   },
                 })
                 .eq('id', job.id);
+              console.log(`[CRITICAL] 📊 최종 진행 상황 업데이트: ${finalProcessedCount}/${candidateUrls.length} (${Math.round((finalProcessedCount / candidateUrls.length) * 100)}%) - 완료: ${finalCompletedCount}, 실패: ${finalFailedCount}, 처리중: ${finalProcessingCount}, 대기: ${finalPendingCount}`);
             }
           } catch (subDiscoveryError) {
             console.error('❌ 하위 페이지 탐색 실패:', subDiscoveryError);
