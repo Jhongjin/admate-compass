@@ -2099,15 +2099,20 @@ export async function processQueue() {
                 
                 // 완료되지 않은 Promise들을 실패로 표시
                 batchResults.forEach((settledResult, idx) => {
-                  if (settledResult.status === 'pending' || (settledResult.status === 'fulfilled' && !settledResult.value)) {
+                  // fulfilled이지만 값이 없거나, rejected인 경우 실패로 처리
+                  const isFailed = 
+                    (settledResult.status === 'fulfilled' && (!settledResult.value || (settledResult.value as any).success === false)) ||
+                    settledResult.status === 'rejected';
+                  
+                  if (isFailed) {
                     const subUrl = batch[idx];
                     const errorStatusEntry = subPageStatusMap.get(subUrl);
                     if (errorStatusEntry && errorStatusEntry.status === 'processing') {
                       errorStatusEntry.status = 'failed';
                       errorStatusEntry.error = '배치 타임아웃으로 인한 실패';
                     }
-                    // 결과에 실패 항목 추가
-                    if (settledResult.status === 'pending') {
+                    // 결과를 명시적으로 실패로 표시
+                    if (settledResult.status === 'fulfilled' && (!settledResult.value || (settledResult.value as any).success === false)) {
                       batchResults[idx] = {
                         status: 'rejected',
                         reason: new Error('배치 타임아웃으로 인한 실패')
