@@ -5058,6 +5058,19 @@ function DocumentDetailDialog({ detail, onClose, onRefetch }: { detail: any | nu
         .eq("id", detail.id)
         .single();
       
+      // URL 필드 확인 로그
+      if (data && typeof window !== 'undefined') {
+        logger.log('[미리보기] fullDoc 조회 결과:', {
+          id: data.id,
+          title: data.title,
+          url: data.url,
+          urlType: typeof data.url,
+          hasUrl: 'url' in data,
+          urlExists: !!data.url,
+          keys: Object.keys(data),
+        });
+      }
+      
       // 청크 데이터 확인
       if (data) {
         const { count: actualChunkCount } = await supabase
