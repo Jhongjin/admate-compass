@@ -146,9 +146,28 @@ function AdminDocsPageContent() {
       const vendors = decodeURIComponent(fromUrl).split(",").filter(Boolean);
       if (vendors.length > 0) {
         setSelectedVendors(vendors);
+        // 벤더가 변경되면 typeFilter를 'all'로 리셋하여 모든 문서 표시
+        if (typeFilter !== 'all') {
+          setTypeFilter('all');
+        }
       }
     }
   }, [isClient, params]);
+  
+  // 벤더 변경 시 typeFilter 자동 리셋
+  useEffect(() => {
+    if (!isClient) return;
+    // 벤더가 선택되었고 typeFilter가 'all'이 아니면 리셋
+    const currentTypeFilter = typeFilter;
+    if (selectedVendors.length > 0 && currentTypeFilter !== 'all') {
+      console.log('🔄 벤더 변경 감지, typeFilter를 "all"로 리셋:', { 
+        selectedVendors, 
+        previousTypeFilter: currentTypeFilter 
+      });
+      setTypeFilter('all');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedVendors, isClient]);
 
   useEffect(() => {
     if (!isClient) return;
@@ -2703,8 +2722,31 @@ function DocsTable({
     // 유형 필터 (모든 타입을 클라이언트에서 처리)
     if (typeFilter && typeFilter !== "all") {
       const beforeCount = rows.length;
-      rows = rows.filter((row: any) => getDocumentFileType(row) === typeFilter);
-      console.log('📋 유형 필터 적용:', { beforeCount, afterCount: rows.length, typeFilter });
+      
+      // typeFilter가 'url'일 때 특별 처리:
+      // 문서의 실제 type이 'file'이면 필터링하지 않음 (벤더 선택 시 모든 문서 표시)
+      // 이는 사용자가 벤더를 선택했을 때 해당 벤더의 모든 문서를 보고 싶어하기 때문
+      if (typeFilter === 'url') {
+        rows = rows.filter((row: any) => {
+          const detectedType = getDocumentFileType(row);
+          const actualType = row.type;
+          // type이 'url'이거나, 실제 type이 'file'이면 표시 (벤더 필터링 결과 유지)
+          return detectedType === 'url' || actualType === 'file';
+        });
+        console.log('📋 유형 필터 적용 (url - 특별 처리):', { 
+          beforeCount, 
+          afterCount: rows.length, 
+          typeFilter,
+          note: 'type이 file인 문서도 포함하여 표시'
+        });
+      } else {
+        // 다른 타입 필터는 정상적으로 처리
+        rows = rows.filter((row: any) => {
+          const detectedType = getDocumentFileType(row);
+          return detectedType === typeFilter;
+        });
+        console.log('📋 유형 필터 적용:', { beforeCount, afterCount: rows.length, typeFilter });
+      }
     }
     
     // 검색 필터 (제목, URL, 메타데이터)
