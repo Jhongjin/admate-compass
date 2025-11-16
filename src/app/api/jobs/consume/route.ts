@@ -1697,6 +1697,7 @@ export async function processQueue() {
                 status: 'indexed',
                 chunk_count: ragResult.chunkCount,
                 url: targetUrl, // URL 필드도 함께 업데이트
+                main_document_id: parentDocumentId || null, // main_document_id 유지 (RAG 처리 후에도 보존)
                 updated_at: new Date().toISOString(),
               })
               .eq('id', resolvedDocumentId);
