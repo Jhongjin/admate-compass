@@ -2049,21 +2049,52 @@ export async function processQueue() {
               });
 
               // 배치 결과 대기 (각 Promise가 실패해도 전체가 실패하지 않도록 처리)
-              // 타임아웃 추가: 배치 처리에 시간 제한 설정
+              // 타임아웃 추가: 배치 처리에 시간 제한 설정 - 타임아웃 시 강제 종료
               let batchResults: PromiseSettledResult<any>[];
-              const batchTimeoutId = setTimeout(() => {
-                console.warn(`[CRITICAL] ⏱️ 배치 ${Math.floor(i / BATCH_SIZE) + 1} 타임아웃 경고: ${BATCH_TIMEOUT}ms 경과`);
-              }, BATCH_TIMEOUT);
+              let batchTimedOut = false;
+              
+              const timeoutPromise = new Promise<never>((_, reject) => {
+                setTimeout(() => {
+                  batchTimedOut = true;
+                  reject(new Error(`배치 타임아웃: ${BATCH_TIMEOUT}ms 초과`));
+                }, BATCH_TIMEOUT);
+              });
+              
+              const allSettledPromise = Promise.allSettled(batchPromises);
               
               try {
-                batchResults = await Promise.allSettled(batchPromises);
-                clearTimeout(batchTimeoutId);
-              } catch (batchError) {
-                clearTimeout(batchTimeoutId);
-                console.error(`[CRITICAL] ❌ 배치 ${Math.floor(i / BATCH_SIZE) + 1} 처리 중 예상치 못한 에러:`, batchError);
-                // 에러 발생 시 현재까지 완료된 것만 처리
+                // Promise.race를 사용하여 타임아웃이 발생하면 즉시 종료
+                await Promise.race([allSettledPromise, timeoutPromise]);
+                // 타임아웃이 발생하지 않았다면 결과 가져오기
+                batchResults = await allSettledPromise;
+              } catch (timeoutError) {
+                // 타임아웃 발생 시 현재까지 완료된 것만 처리
+                console.warn(`[CRITICAL] ⏱️ 배치 ${Math.floor(i / BATCH_SIZE) + 1} 타임아웃 발생: ${BATCH_TIMEOUT}ms 초과 - 완료된 작업만 처리하고 계속 진행`);
+                
+                // 각 Promise의 상태를 확인하여 완료된 것만 결과에 포함
                 batchResults = await Promise.allSettled(
-                  batchPromises.map(p => p.catch(err => ({ error: err })))
+                  batchPromises.map(async (promise, idx) => {
+                    try {
+                      // 각 Promise에 개별 타임아웃을 적용하여 빠르게 확인
+                      const quickTimeout = new Promise<never>((_, reject) => {
+                        setTimeout(() => reject(new Error('개별 타임아웃')), 1000);
+                      });
+                      return await Promise.race([promise, quickTimeout]);
+                    } catch {
+                      // 타임아웃 또는 실패한 경우 실패로 표시
+                      const subUrl = batch[idx];
+                      const errorStatusEntry = subPageStatusMap.get(subUrl);
+                      if (errorStatusEntry) {
+                        errorStatusEntry.status = 'failed';
+                        errorStatusEntry.error = batchTimedOut ? '배치 타임아웃으로 인한 실패' : '처리 중 오류 발생';
+                      }
+                      return {
+                        url: subUrl,
+                        success: false,
+                        error: batchTimedOut ? '배치 타임아웃으로 인한 실패' : '처리 중 오류 발생',
+                      };
+                    }
+                  })
                 );
               }
               
