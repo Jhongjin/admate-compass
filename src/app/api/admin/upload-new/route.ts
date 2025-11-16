@@ -1268,14 +1268,34 @@ export async function GET(request: NextRequest) {
     }
 
     // main_document_id를 mainDocumentId로 매핑 (클라이언트 호환성)
-    const mappedDocuments = documents?.map((doc: any) => ({
-      ...doc,
-      mainDocumentId: doc.main_document_id || null,
-      // 그룹핑을 위한 정규화된 URL 계산
-      normalizedUrl: doc.url ? normalizeUrlForGrouping(doc.url) : null,
-      normalizedMainUrl: doc.main_document_id ? null : null, // 나중에 그룹핑 로직에서 계산
-      isMainUrl: !doc.main_document_id, // main_document_id가 없으면 메인 페이지
-    })) || [];
+    // 부모 문서 ID로 부모 문서 URL 조회 (normalizedMainUrl 계산용)
+    const parentDocumentIds = [...new Set(documents?.filter((d: any) => d.main_document_id).map((d: any) => d.main_document_id) || [])];
+    const parentDocumentsMap = new Map<string, any>();
+    
+    if (parentDocumentIds.length > 0) {
+      const { data: parentDocs } = await supabase
+        .from('documents')
+        .select('id, url')
+        .in('id', parentDocumentIds);
+      
+      parentDocs?.forEach((parent: any) => {
+        parentDocumentsMap.set(parent.id, parent);
+      });
+    }
+    
+    const mappedDocuments = documents?.map((doc: any) => {
+      const parentDoc = doc.main_document_id ? parentDocumentsMap.get(doc.main_document_id) : null;
+      const parentUrl = parentDoc?.url || null;
+      
+      return {
+        ...doc,
+        mainDocumentId: doc.main_document_id || null,
+        // 그룹핑을 위한 정규화된 URL 계산
+        normalizedUrl: doc.url ? normalizeUrlForGrouping(doc.url) : null,
+        normalizedMainUrl: parentUrl ? normalizeUrlForGrouping(parentUrl) : null,
+        isMainUrl: !doc.main_document_id, // main_document_id가 없으면 메인 페이지
+      };
+    }) || [];
 
     console.log('📊 Supabase 쿼리 결과:', {
       documents: mappedDocuments,
