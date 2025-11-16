@@ -36,7 +36,8 @@ import {
   Eye,
   RefreshCw,
   PieChart,
-  FileSearch
+  FileSearch,
+  DollarSign
 } from "lucide-react";
 import Link from "next/link";
 import { dashboardDataService, DashboardStats } from "@/lib/services/DashboardDataService";
@@ -180,6 +181,16 @@ export default function AdminDashboardPage() {
       color: "from-indigo-500 to-blue-600",
       hoverColor: "from-indigo-600 to-blue-700",
       stats: "로그 조회",
+      trend: "+0%"
+    },
+    {
+      title: "비용 모니터링",
+      description: "Supabase 및 Vercel 사용량 추적 및 예산 관리",
+      href: "/admin/cost-monitoring",
+      icon: <DollarSign className="w-6 h-6" />,
+      color: "from-emerald-500 to-green-600",
+      hoverColor: "from-emerald-600 to-green-700",
+      stats: "비용 확인",
       trend: "+0%"
     },
   ], [stats.totalDocuments, stats.completedDocuments, stats.weeklyStats?.users, stats.weeklyStats?.questions]);

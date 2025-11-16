@@ -1768,7 +1768,7 @@ export async function processQueue() {
           try {
             const discoveryOptions = {
               maxDepth: Math.max(1, Math.min(maxDepth, 3)),
-              maxUrls: 50, // 하위 페이지 발견 개수 증가 (기존: 12)
+              maxUrls: 150, // 하위 페이지 발견 개수 증가 (기존: 50 → 150)
               respectRobotsTxt: respectRobots,
               includeExternal: false,
               allowedDomains: [seedUrl.hostname],
@@ -1830,7 +1830,7 @@ export async function processQueue() {
               }
             });
 
-            const candidateUrls = Array.from(candidateUrlSet).slice(0, 50); // maxUrls와 일치하도록 50개로 증가 (기존: 30)
+            const candidateUrls = Array.from(candidateUrlSet).slice(0, 150); // maxUrls와 일치하도록 150개로 증가 (기존: 50)
 
             console.log(`[CRITICAL] 📄 하위 페이지 후보: ${candidateUrls.length}개 (발견: ${discovered.length}개, 필터링 후: ${candidateUrls.length}개)`, {
               url,
@@ -1850,8 +1850,10 @@ export async function processQueue() {
             }
             let processedCount = 0;
 
-            // 병렬 처리: 최대 10개씩 동시에 처리 (성능 최적화)
-            const BATCH_SIZE = 10;
+            // 병렬 처리: 메모리 최적화를 위해 배치 크기 조정 (150개 페이지 처리 시)
+            // 150개 페이지 = 15개 배치 (10개씩) 또는 10개 배치 (15개씩)
+            // 메모리 안정성을 위해 8개씩 처리 (기존: 10개)
+            const BATCH_SIZE = 8; // 메모리 최적화: 10 → 8로 감소
             
             // 각 하위 페이지의 개별 상태 추적
             const subPageStatusMap = new Map<string, { url: string; title?: string; status: 'pending' | 'processing' | 'completed' | 'failed'; chunkCount?: number; error?: string }>();
@@ -1908,7 +1910,8 @@ export async function processQueue() {
               
               const batch = candidateUrls.slice(i, i + BATCH_SIZE);
               const batchStartTime = Date.now();
-              const BATCH_TIMEOUT = 300000; // 5분 타임아웃 (각 배치당)
+              // 타임아웃 강화: 배치당 3분으로 감소 (메모리 및 안정성 개선)
+              const BATCH_TIMEOUT = 180000; // 3분 타임아웃 (각 배치당, 기존: 5분)
               
               console.log(`[CRITICAL] 🔄 배치 ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(candidateUrls.length / BATCH_SIZE)} 시작: ${batch.length}개 페이지 (인덱스 ${i}~${i + batch.length - 1})`);
               
@@ -2036,6 +2039,10 @@ export async function processQueue() {
                   }
                   
                   console.log(`[CRITICAL] ✅ 하위 페이지 처리 완료: ${subUrl} [제목: ${finalTitle}] (청크: ${result.chunkCount}개)`);
+                  
+                  // 메모리 최적화: 처리 완료된 페이지 데이터 즉시 해제
+                  page = null as any;
+                  
                   return { url: subUrl, success: result.success, chunkCount: result.chunkCount };
                 } catch (subError) {
                   console.error('[CRITICAL] ❌ 하위 페이지 처리 중 예상치 못한 에러:', {
