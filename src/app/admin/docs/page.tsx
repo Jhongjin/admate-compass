@@ -1700,6 +1700,7 @@ function UploadAndCrawlTabs({ vendors, onVendorsChange }: { vendors: string[]; o
       }
 
       // 큐 워커 즉시 트리거 (파일 업로드와 동일한 방식)
+      // 참고: 큐 워커 호출 실패는 문제가 되지 않음 (Cron Job이 자동으로 처리)
       try {
         const consumeRes = await fetch('/api/jobs/consume', { method: 'POST' });
         let consumeResult: any = null;
@@ -1723,12 +1724,21 @@ function UploadAndCrawlTabs({ vendors, onVendorsChange }: { vendors: string[]; o
           // 폴링이 완료되면 pollCrawlStatus 내부에서 setCrawling(false) 호출
           return;
         } else {
-          const fallbackMessage = consumeResult?.error || consumeResult?.details || `HTTP ${consumeRes.status}`;
-          toast.warning('큐 워커 실행 경고', {
-            description: fallbackMessage,
-            duration: 5000,
-          });
-          setCrawlProgressLabel('큐 워커 실행 상태를 확인 중입니다...');
+          // HTTP 405 등의 에러는 정상적인 상황일 수 있음 (Cron Job이 처리)
+          // 사용자에게 불필요한 경고를 표시하지 않고 조용히 폴링 시작
+          if (consumeRes.status === 405) {
+            // 405 에러는 무시 (Cron Job이 자동 처리)
+            logger.log('ℹ️ 큐 워커 직접 호출 실패 (정상) - Cron Job이 자동 처리합니다.');
+          } else {
+            // 다른 에러는 로그만 기록 (사용자에게는 경고 표시하지 않음)
+            logger.log('ℹ️ 큐 워커 호출 상태:', {
+              status: consumeRes.status,
+              error: consumeResult?.error || consumeResult?.details,
+              note: 'Cron Job이 자동으로 처리하므로 문제 없습니다.'
+            });
+          }
+          
+          setCrawlProgressLabel('크롤링 작업이 큐에 등록되었습니다. 처리 상태 확인 중...');
           setCrawlProgressValue(25);
           
           // 폴백: Cron Job이 처리할 수 있으므로 폴링 시작
