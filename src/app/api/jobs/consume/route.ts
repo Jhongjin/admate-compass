@@ -2057,26 +2057,32 @@ export async function processQueue() {
               const wrappedPromises = batchPromises.map((promise, idx) => {
                 const subUrl = batch[idx];
                 let timeoutId: NodeJS.Timeout | null = null;
+                let isResolved = false;
                 
                 // 타임아웃 Promise 생성
                 const timeoutPromise = new Promise<any>((_, reject) => {
                   timeoutId = setTimeout(() => {
-                    const errorStatusEntry = subPageStatusMap.get(subUrl);
-                    if (errorStatusEntry && errorStatusEntry.status === 'processing') {
-                      errorStatusEntry.status = 'failed';
-                      errorStatusEntry.error = `배치 타임아웃: ${BATCH_TIMEOUT}ms 초과`;
+                    if (!isResolved) {
+                      console.warn(`[CRITICAL] ⏱️ 개별 페이지 타임아웃: ${subUrl} (${BATCH_TIMEOUT}ms 초과)`);
+                      const errorStatusEntry = subPageStatusMap.get(subUrl);
+                      if (errorStatusEntry && errorStatusEntry.status === 'processing') {
+                        errorStatusEntry.status = 'failed';
+                        errorStatusEntry.error = `배치 타임아웃: ${BATCH_TIMEOUT}ms 초과`;
+                      }
+                      reject(new Error(`배치 타임아웃: ${BATCH_TIMEOUT}ms 초과`));
                     }
-                    reject(new Error(`배치 타임아웃: ${BATCH_TIMEOUT}ms 초과`));
                   }, BATCH_TIMEOUT);
                 });
                 
                 // Promise.race로 타임아웃 적용
                 return Promise.race([
                   promise.then(result => {
+                    isResolved = true;
                     // 성공 시 타임아웃 취소
                     if (timeoutId) clearTimeout(timeoutId);
                     return result;
                   }).catch(error => {
+                    isResolved = true;
                     // 실패 시 타임아웃 취소
                     if (timeoutId) clearTimeout(timeoutId);
                     throw error;
@@ -2084,6 +2090,8 @@ export async function processQueue() {
                   timeoutPromise
                 ]).catch(error => {
                   // 타임아웃 또는 기타 에러 발생 시 실패 결과 반환
+                  isResolved = true;
+                  if (timeoutId) clearTimeout(timeoutId);
                   return {
                     url: subUrl,
                     success: false,
@@ -2092,27 +2100,72 @@ export async function processQueue() {
                 });
               });
               
+              // Promise.allSettled에 타임아웃을 적용하여 무한 대기 방지
+              const allSettledPromise = Promise.allSettled(wrappedPromises);
+              const overallTimeoutPromise = new Promise<never>((_, reject) => {
+                setTimeout(() => {
+                  reject(new Error(`배치 전체 타임아웃: ${BATCH_TIMEOUT + 10000}ms 초과 (개별 타임아웃 ${BATCH_TIMEOUT}ms + 여유 10초)`));
+                }, BATCH_TIMEOUT + 10000); // 개별 타임아웃보다 10초 여유
+              });
+              
               try {
-                // 모든 Promise가 완료되거나 타임아웃될 때까지 대기
-                // 각 Promise에 타임아웃이 적용되어 있으므로 무한 대기하지 않음
-                batchResults = await Promise.allSettled(wrappedPromises);
+                // 전체 배치에 대한 타임아웃 적용
+                await Promise.race([allSettledPromise, overallTimeoutPromise]);
+                // 타임아웃이 발생하지 않았다면 결과 가져오기
+                batchResults = await allSettledPromise;
               } catch (batchError) {
-                console.error(`[CRITICAL] ❌ 배치 ${Math.floor(i / BATCH_SIZE) + 1} 처리 중 예상치 못한 에러:`, batchError);
-                // 에러 발생 시 현재까지 완료된 것만 처리
-                batchResults = await Promise.allSettled(
-                  wrappedPromises.map(p => p.catch(err => ({ error: err })))
-                );
+                console.error(`[CRITICAL] ❌ 배치 ${Math.floor(i / BATCH_SIZE) + 1} 전체 타임아웃 발생:`, batchError);
+                // 타임아웃 발생 시 현재까지 완료된 것만 처리
+                try {
+                  // 빠르게 완료된 것만 확인 (1초 대기)
+                  batchResults = await Promise.race([
+                    allSettledPromise,
+                    new Promise<PromiseSettledResult<any>[]>((resolve) => {
+                      setTimeout(() => {
+                        // 1초 내에 완료되지 않은 Promise들을 실패로 처리
+                        const partialResults: PromiseSettledResult<any>[] = [];
+                        wrappedPromises.forEach((p, idx) => {
+                          // Promise의 상태를 확인할 수 없으므로 모두 실패로 처리
+                          const subUrl = batch[idx];
+                          const errorStatusEntry = subPageStatusMap.get(subUrl);
+                          if (errorStatusEntry && errorStatusEntry.status === 'processing') {
+                            errorStatusEntry.status = 'failed';
+                            errorStatusEntry.error = '배치 전체 타임아웃으로 인한 실패';
+                          }
+                          partialResults.push({
+                            status: 'rejected',
+                            reason: new Error('배치 전체 타임아웃으로 인한 실패')
+                          } as PromiseRejectedResult);
+                        });
+                        resolve(partialResults);
+                      }, 1000);
+                    })
+                  ]);
+                } catch {
+                  // 완전 실패 시 모든 항목을 실패로 처리
+                  batchResults = batch.map((subUrl) => {
+                    const errorStatusEntry = subPageStatusMap.get(subUrl);
+                    if (errorStatusEntry && errorStatusEntry.status === 'processing') {
+                      errorStatusEntry.status = 'failed';
+                      errorStatusEntry.error = '배치 전체 타임아웃으로 인한 실패';
+                    }
+                    return {
+                      status: 'rejected',
+                      reason: new Error('배치 전체 타임아웃으로 인한 실패')
+                    } as PromiseRejectedResult;
+                  });
+                }
               }
               
               // 타임아웃으로 실패한 항목 확인 및 로깅
               const timedOutCount = batchResults.filter((result, idx) => {
                 if (result.status === 'rejected') {
                   const reason = result.reason;
-                  return reason instanceof Error && reason.message.includes('배치 타임아웃');
+                  return reason instanceof Error && (reason.message.includes('배치 타임아웃') || reason.message.includes('배치 전체 타임아웃'));
                 }
                 if (result.status === 'fulfilled' && result.value) {
                   const value = result.value as any;
-                  return value.error && value.error.includes('배치 타임아웃');
+                  return value.error && (value.error.includes('배치 타임아웃') || value.error.includes('배치 전체 타임아웃'));
                 }
                 return false;
               }).length;
