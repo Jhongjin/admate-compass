@@ -2381,7 +2381,8 @@ function DocsTable({
       });
       
       if (dbVendors.length > 0) {
-        // ENUM 타입과의 비교를 위해 명시적으로 타입 캐스팅
+        // ENUM 타입 필터링: .in() 메서드 사용
+        // ENUM 타입과의 호환성을 위해 명시적으로 배열로 전달
         q = q.in("source_vendor", dbVendors);
         console.log('🔍 쿼리 조건:', { 
           field: 'source_vendor', 
@@ -2436,14 +2437,30 @@ function DocsTable({
         throw error;
       }
       
+      // 클라이언트 측 벤더 필터링 (ENUM 타입 호환성 문제 대응)
+      // DB 쿼리에서 필터링이 제대로 작동하지 않을 경우를 대비하여
+      let filteredDocuments = documents || [];
+      if (dbVendors.length > 0 && filteredDocuments.length > 0) {
+        filteredDocuments = filteredDocuments.filter((d: any) => {
+          const docVendor = String(d.source_vendor || '').toUpperCase();
+          return dbVendors.some(v => String(v).toUpperCase() === docVendor);
+        });
+        console.log('🔍 클라이언트 측 벤더 필터링 결과:', {
+          before: documents?.length || 0,
+          after: filteredDocuments.length,
+          dbVendors,
+          filteredOut: (documents?.length || 0) - filteredDocuments.length
+        });
+      }
+      
       console.log('📊 문서 조회 결과:', { 
-        count: documents?.length || 0, 
+        count: filteredDocuments.length, 
         dbVendors,
         selectedVendors: vendors,
         statusFilter,
         typeFilter,
         hasError: !!error,
-        documents: documents?.map((d: any) => ({ 
+        documents: filteredDocuments.map((d: any) => ({ 
           id: d.id, 
           title: d.title, 
           source_vendor: d.source_vendor,
@@ -2454,8 +2471,8 @@ function DocsTable({
       });
       
       // 추가 디버깅: 벤더 매칭 확인
-      if (documents && documents.length > 0) {
-        const vendorMismatch = documents.filter((d: any) => {
+      if (filteredDocuments && filteredDocuments.length > 0) {
+        const vendorMismatch = filteredDocuments.filter((d: any) => {
           const docVendor = String(d.source_vendor || '').toUpperCase();
           return !dbVendors.some(v => String(v).toUpperCase() === docVendor);
         });
@@ -2470,20 +2487,20 @@ function DocsTable({
       }
       
       // 디버깅: 쿼리 결과 확인
-      if (typeof window !== 'undefined' && documents && documents.length > 0) {
+      if (typeof window !== 'undefined' && filteredDocuments && filteredDocuments.length > 0) {
         logger.log('[그룹화] 🔍 데이터베이스 쿼리 결과:', {
-          totalDocuments: documents.length,
+          totalDocuments: filteredDocuments.length,
           sampleDocument: {
-            id: documents[0].id,
-            type: documents[0].type,
-            url: documents[0].url,
-            urlIsNull: documents[0].url === null,
-            urlIsUndefined: documents[0].url === undefined,
-            urlValue: String(documents[0].url || ''),
-            hasUrlField: 'url' in documents[0]
+            id: filteredDocuments[0].id,
+            type: filteredDocuments[0].type,
+            url: filteredDocuments[0].url,
+            urlIsNull: filteredDocuments[0].url === null,
+            urlIsUndefined: filteredDocuments[0].url === undefined,
+            urlValue: String(filteredDocuments[0].url || ''),
+            hasUrlField: 'url' in filteredDocuments[0]
           },
-          documentsWithUrl: documents.filter((d: any) => d.url && d.url !== '').length,
-          documentsWithoutUrl: documents.filter((d: any) => !d.url || d.url === '').length
+          documentsWithUrl: filteredDocuments.filter((d: any) => d.url && d.url !== '').length,
+          documentsWithoutUrl: filteredDocuments.filter((d: any) => !d.url || d.url === '').length
         });
       }
       
@@ -2538,7 +2555,7 @@ function DocsTable({
       });
       
       // documents에 메인 URL 정보 추가
-      const documentsWithMainUrl = (documents || []).map((doc: any) => {
+      const documentsWithMainUrl = (filteredDocuments || []).map((doc: any) => {
         const normalizedUrl = normalizeUrlForGrouping(doc.url);
         
         let matchedEntry: { docId: string; original: string; normalized: string | null } | undefined;
