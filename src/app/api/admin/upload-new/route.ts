@@ -1416,9 +1416,21 @@ export async function GET(request: NextRequest) {
       // content 필드는 제외 (너무 크고 UI에서 사용하지 않음)
     }));
     
+    // 그룹핑 디버깅: mainDocumentId가 있는 문서 통계
+    const docsWithMainId = documentsForResponse.filter((d: any) => d.mainDocumentId);
+    const mainDocs = documentsForResponse.filter((d: any) => d.isMainUrl === true);
+    
     console.log('📤 API 응답 전송:', {
       success: true,
       documentsCount: documentsForResponse.length,
+      docsWithMainDocumentId: docsWithMainId.length,
+      mainDocsCount: mainDocs.length,
+      sampleWithMainId: docsWithMainId.slice(0, 3).map((d: any) => ({
+        id: d.id,
+        title: d.title?.substring(0, 30),
+        mainDocumentId: d.mainDocumentId,
+        isMainUrl: d.isMainUrl
+      })),
       firstDocument: documentsForResponse[0],
       stats: stats
     });

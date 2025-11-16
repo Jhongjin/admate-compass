@@ -3149,6 +3149,7 @@ function DocsTable({
               mainDocIds.add(parentDoc.id);
             }
             mainDocsById[parentDoc.id] = parentDoc;
+            // subPagesByMainId 초기화 (부모 문서를 찾았으면 반드시 초기화)
             if (!subPagesByMainId[parentDoc.id]) {
               subPagesByMainId[parentDoc.id] = [];
             }
@@ -3164,11 +3165,24 @@ function DocsTable({
                 childTitle: doc.title,
               });
             }
+          } else {
+            // 부모 문서를 찾지 못한 경우에도 subPagesByMainId 초기화 (나중에 부모 문서가 로드될 수 있음)
+            if (!subPagesByMainId[parentId]) {
+              subPagesByMainId[parentId] = [];
+            }
+            if (typeof window !== 'undefined') {
+              logger.log('[그룹화] ⚠️ 부모 문서를 찾지 못함 (임시 그룹 생성):', { 
+                parentId,
+                childTitle: doc.title,
+                childUrl: doc.url,
+                note: '부모 문서가 아직 로드되지 않았을 수 있습니다. 임시로 그룹을 생성합니다.'
+              });
+            }
           }
         }
         
-        // 부모 문서를 찾았으면 하위 페이지로 연결
-        if (parentDoc && subPagesByMainId[parentId]) {
+        // subPagesByMainId가 초기화되어 있으면 하위 페이지로 연결
+        if (subPagesByMainId[parentId]) {
           subPagesByMainId[parentId].push(doc);
           if (normalizedParentKey) {
             fallbackSubPagesByKey[normalizedParentKey] = fallbackSubPagesByKey[normalizedParentKey] || [];
@@ -3181,6 +3195,7 @@ function DocsTable({
               normalizedChildUrl: normalizedSelf,
               mainDocumentId: parentId,
               normalizedMainUrl: normalizedParentKey,
+              parentFound: !!parentDoc,
             });
           }
           return;
@@ -3272,6 +3287,40 @@ function DocsTable({
     
     const groupedDocIds = new Set<string>();
     const grouped: Array<{ isGroup: boolean; mainDoc?: any; subDocs?: any[]; doc?: any }> = [];
+    
+    // subPagesByMainId에 하위 문서가 있지만 부모 문서가 mainPages에 없는 경우 처리
+    Object.keys(subPagesByMainId).forEach((parentId) => {
+      if (subPagesByMainId[parentId].length > 0 && !mainDocsById[parentId]) {
+        // 부모 문서를 urlDocuments에서 찾기
+        const parentDoc = urlDocuments.find((d: any) => d.id === parentId);
+        if (parentDoc) {
+          // 부모 문서를 mainPages에 추가
+          if (!mainDocIds.has(parentDoc.id)) {
+            mainPages.push(parentDoc);
+            mainDocIds.add(parentDoc.id);
+          }
+          mainDocsById[parentDoc.id] = parentDoc;
+          if (typeof window !== 'undefined') {
+            logger.log('[그룹화] ✅ 누락된 부모 문서 발견 및 추가:', { 
+              parentTitle: parentDoc.title, 
+              parentUrl: parentDoc.url,
+              parentId: parentDoc.id,
+              subPagesCount: subPagesByMainId[parentId].length,
+            });
+          }
+        } else {
+          // 부모 문서를 찾지 못한 경우 로그만 기록 (하위 문서는 나중에 개별 문서로 표시됨)
+          if (typeof window !== 'undefined') {
+            logger.log('[그룹화] ⚠️ 부모 문서를 찾지 못함 (하위 문서 개별 표시):', { 
+              parentId,
+              subPagesCount: subPagesByMainId[parentId].length,
+              subPagesSample: subPagesByMainId[parentId].slice(0, 3).map((s: any) => s.title),
+              note: '부모 문서가 현재 페이지에 없습니다. 하위 문서는 개별 문서로 표시됩니다.'
+            });
+          }
+        }
+      }
+    });
     
     mainPages.sort((a, b) => {
       const orderA = rowOrder.get(a.id) ?? Number.MAX_SAFE_INTEGER;
