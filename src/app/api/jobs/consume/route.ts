@@ -1649,8 +1649,8 @@ export async function processQueue() {
                 // Puppeteer가 null을 반환하거나 콘텐츠가 짧은 경우
                 if (puppeteerResult === null) {
                   console.warn(`⚠️ Puppeteer 초기화 실패로 크롤링 불가, Cheerio 결과 확인 중...`);
-                } else {
-                  console.warn(`⚠️ Puppeteer로도 충분한 콘텐츠를 추출하지 못했습니다 (${puppeteerResult?.content?.length || 0}자)`);
+              } else {
+                console.warn(`⚠️ Puppeteer로도 충분한 콘텐츠를 추출하지 못했습니다 (${puppeteerResult?.content?.length || 0}자)`);
                 }
                 
                 // Puppeteer 실패 시 Cheerio 결과가 있으면 사용 (graceful fallback)
@@ -1851,10 +1851,10 @@ export async function processQueue() {
         // document_id가 없으면 생성된 documentId로 업데이트
         if (!job.document_id && mainDocResult.documentId) {
           try {
-            await supabase
-              .from('processing_jobs')
+          await supabase
+            .from('processing_jobs')
               .update({ document_id: mainDocResult.documentId })
-              .eq('id', job.id);
+            .eq('id', job.id);
             console.log(`[CRITICAL] ✅ processing_jobs에 document_id 업데이트: ${mainDocResult.documentId}`);
           } catch (updateError) {
             console.warn('[CRITICAL] ⚠️ processing_jobs document_id 업데이트 실패 (계속 진행):', updateError);
@@ -2027,10 +2027,10 @@ export async function processQueue() {
               
               const batch = candidateUrls.slice(i, i + BATCH_SIZE);
               const batchStartTime = Date.now();
-              // 타임아웃 강화: 배치당 2분으로 감소 (무한 대기 방지)
-              const BATCH_TIMEOUT = 120000; // 2분 타임아웃 (각 배치당, 기존: 3분)
-              // 개별 페이지 타임아웃: fetch (20초) + RAG (90초) + 여유 (20초) = 130초
-              const INDIVIDUAL_PAGE_TIMEOUT = 130000; // 130초 (개별 페이지당 최대 처리 시간)
+              // 타임아웃 강화: 배치당 90초로 단축 (무한 대기 방지)
+              const BATCH_TIMEOUT = 90000; // 90초 타임아웃 (각 배치당, 기존: 2분)
+              // 개별 페이지 타임아웃: fetch (20초) + RAG (60초) + 여유 (10초) = 90초
+              const INDIVIDUAL_PAGE_TIMEOUT = 90000; // 90초 (개별 페이지당 최대 처리 시간, 배치 타임아웃과 동일)
               
               console.log(`[CRITICAL] 🔄 배치 ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(candidateUrls.length / BATCH_SIZE)} 시작: ${batch.length}개 페이지 (인덱스 ${i}~${i + batch.length - 1})`);
               
@@ -2110,8 +2110,8 @@ export async function processQueue() {
                   
                   let result;
                   try {
-                    // RAG 처리에 타임아웃 추가 (90초로 단축)
-                    const ragTimeout = 90000; // 2분 → 90초로 단축
+                    // RAG 처리에 타임아웃 추가 (60초로 단축 - 배치 타임아웃 내에 완료되어야 함)
+                    const ragTimeout = 60000; // 90초 → 60초로 단축 (배치 타임아웃 90초 내에 완료되어야 함)
                     const ragStartTime = Date.now();
                     const ragPromise = upsertAndProcessDocument({ 
                       targetUrl: subUrl, 
@@ -2171,21 +2171,21 @@ export async function processQueue() {
                   page = null as any;
                   
                   return { url: subUrl, success: result.success, chunkCount: result.chunkCount };
-                } catch (subError) {
+              } catch (subError) {
                   console.error('[CRITICAL] ❌ 하위 페이지 처리 중 예상치 못한 에러:', {
-                    url: subUrl,
-                    error: subError,
-                    documentId
-                  });
+                  url: subUrl,
+                  error: subError,
+                  documentId
+                });
                   const errorStatusEntry = subPageStatusMap.get(subUrl);
                   if (errorStatusEntry) {
                     errorStatusEntry.status = 'failed';
                     errorStatusEntry.error = subError instanceof Error ? subError.message : String(subError);
                   }
                   return {
-                    url: subUrl,
-                    success: false,
-                    error: subError instanceof Error ? subError.message : String(subError),
+                  url: subUrl,
+                  success: false,
+                  error: subError instanceof Error ? subError.message : String(subError),
                   };
                 }
               });
@@ -2243,20 +2243,23 @@ export async function processQueue() {
               });
               
               // Promise.allSettled에 타임아웃을 적용하여 무한 대기 방지
+              // 중요: Promise.allSettled는 내부적으로 무한 대기할 수 있으므로, 
+              // 배치 타임아웃을 더 짧게 설정하고 타임아웃 발생 시 즉시 강제 종료
               const allSettledPromise = Promise.allSettled(wrappedPromises);
               const batchStartTimeForTimeout = Date.now();
               
               // 배치 전체 타임아웃: BATCH_TIMEOUT과 동일하게 설정하여 강제 종료 보장
+              // 타임아웃 발생 시 즉시 모든 미완료 작업을 실패로 처리하고 Promise.race가 타임아웃 Promise를 선택하도록 보장
               const overallTimeoutPromise = new Promise<PromiseSettledResult<any>[]>((resolve) => {
-                setTimeout(() => {
+                const timeoutId = setTimeout(() => {
                   const elapsed = Date.now() - batchStartTimeForTimeout;
-                  console.error(`[CRITICAL] ⏱️ 배치 ${Math.floor(i / BATCH_SIZE) + 1} 전체 타임아웃 발생: ${BATCH_TIMEOUT}ms 초과 (경과: ${elapsed}ms) - 미완료 작업을 실패로 처리`);
+                  console.error(`[CRITICAL] ⏱️ 배치 ${Math.floor(i / BATCH_SIZE) + 1} 전체 타임아웃 발생: ${BATCH_TIMEOUT}ms 초과 (경과: ${elapsed}ms) - 미완료 작업을 즉시 실패로 처리`);
                   
-                  // 타임아웃 발생 시 모든 미완료 작업을 실패로 처리
+                  // 타임아웃 발생 시 모든 미완료 작업을 즉시 실패로 처리
                   const timeoutResults: PromiseSettledResult<any>[] = [];
                   batch.forEach((subUrl) => {
                     const statusEntry = subPageStatusMap.get(subUrl);
-                    if (statusEntry && statusEntry.status === 'processing') {
+                    if (statusEntry && (statusEntry.status === 'processing' || statusEntry.status === 'pending')) {
                       statusEntry.status = 'failed';
                       statusEntry.error = `배치 전체 타임아웃: ${BATCH_TIMEOUT}ms 초과`;
                     }
@@ -2267,11 +2270,31 @@ export async function processQueue() {
                   });
                   resolve(timeoutResults);
                 }, BATCH_TIMEOUT);
+                
+                // allSettledPromise가 먼저 완료되면 타임아웃 취소
+                allSettledPromise.then(() => {
+                  clearTimeout(timeoutId);
+                }).catch(() => {
+                  clearTimeout(timeoutId);
+                });
               });
               
               try {
                 // 전체 배치에 대한 타임아웃 적용 (타임아웃 시 즉시 실패 처리)
+                // Promise.race는 먼저 완료되는 Promise를 반환하므로, 타임아웃이 발생하면 즉시 타임아웃 결과를 반환
                 batchResults = await Promise.race([allSettledPromise, overallTimeoutPromise]);
+                
+                // 타임아웃이 발생했는지 확인 (배치 타임아웃 메시지가 포함된 결과인지 확인)
+                const isTimeoutResult = batchResults.length > 0 && batchResults.every((result) => {
+                  if (result.status === 'rejected') {
+                    return result.reason instanceof Error && result.reason.message.includes('배치 전체 타임아웃');
+                  }
+                  return false;
+                });
+                
+                if (isTimeoutResult) {
+                  console.error(`[CRITICAL] ⚠️ 배치 ${Math.floor(i / BATCH_SIZE) + 1} 타임아웃으로 인해 모든 작업이 실패 처리되었습니다.`);
+                }
               } catch (batchError) {
                 console.error(`[CRITICAL] ❌ 배치 ${Math.floor(i / BATCH_SIZE) + 1} 처리 중 예상치 못한 에러:`, batchError);
                 // 에러 발생 시 모든 항목을 실패로 처리
@@ -2358,14 +2381,14 @@ export async function processQueue() {
                 // 이렇게 하면 진행률이 정확하게 표시됩니다 (처리 중인 페이지는 제외)
                 const processedCount = completedCount + failedCount;
                 
-                await supabase
-                  .from('processing_jobs')
-                  .update({
-                    result: {
-                      url,
-                      documentId,
-                      title: mainPage.pageTitle,
-                      chunkCount: mainDocResult.chunkCount,
+              await supabase
+                .from('processing_jobs')
+                .update({
+                  result: {
+                    url,
+                    documentId,
+                    title: mainPage.pageTitle,
+                    chunkCount: mainDocResult.chunkCount,
                       subPageProgress: { 
                         processed: processedCount, 
                         total: candidateUrls.length,
