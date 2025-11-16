@@ -1909,8 +1909,10 @@ export async function processQueue() {
                   const currentIndex = candidateUrls.indexOf(subUrl) + 1;
                   console.log(`[CRITICAL] 📄 하위 페이지 처리 중 (${currentIndex}/${candidateUrls.length}): ${subUrl}${linkTitle ? ` [링크제목: ${linkTitle}]` : ''}`);
                   
-                  // 상태를 'processing'으로 업데이트
+                  // 상태 엔트리 가져오기 (한 번만 선언하고 재사용)
                   const statusEntry = subPageStatusMap.get(subUrl);
+                  
+                  // 상태를 'processing'으로 업데이트
                   if (statusEntry) {
                     statusEntry.status = 'processing';
                     statusEntry.title = linkTitle || statusEntry.title;
@@ -1925,7 +1927,6 @@ export async function processQueue() {
                       error: fetchError,
                       documentId
                     });
-                    const statusEntry = subPageStatusMap.get(subUrl);
                     if (statusEntry) {
                       statusEntry.status = 'failed';
                       statusEntry.error = fetchError instanceof Error ? fetchError.message : String(fetchError);
@@ -1977,7 +1978,6 @@ export async function processQueue() {
                       error: processError,
                       documentId
                     });
-                    const statusEntry = subPageStatusMap.get(subUrl);
                     if (statusEntry) {
                       statusEntry.status = 'failed';
                       statusEntry.error = processError instanceof Error ? processError.message : String(processError);
@@ -1991,7 +1991,6 @@ export async function processQueue() {
                   
                   if (!result.success) {
                     console.warn(`[CRITICAL] ⚠️ 하위 페이지 처리 실패 (성공=false): ${subUrl} [제목: ${finalTitle}]`);
-                    const statusEntry = subPageStatusMap.get(subUrl);
                     if (statusEntry) {
                       statusEntry.status = 'failed';
                       statusEntry.error = (result as any).error || 'RAG 처리 실패';
@@ -2006,7 +2005,6 @@ export async function processQueue() {
                   }
                   
                   // 상태를 'completed'로 업데이트
-                  const statusEntry = subPageStatusMap.get(subUrl);
                   if (statusEntry) {
                     statusEntry.status = 'completed';
                     statusEntry.chunkCount = result.chunkCount;
@@ -2021,10 +2019,10 @@ export async function processQueue() {
                     error: subError,
                     documentId
                   });
-                  const statusEntry = subPageStatusMap.get(subUrl);
-                  if (statusEntry) {
-                    statusEntry.status = 'failed';
-                    statusEntry.error = subError instanceof Error ? subError.message : String(subError);
+                  const errorStatusEntry = subPageStatusMap.get(subUrl);
+                  if (errorStatusEntry) {
+                    errorStatusEntry.status = 'failed';
+                    errorStatusEntry.error = subError instanceof Error ? subError.message : String(subError);
                   }
                   return {
                     url: subUrl,
