@@ -243,25 +243,26 @@ export default function GroupedDocumentList({
                       onClick={() => {
                         const isMainSelected = selectedDocuments?.has(group.mainDocument.id);
                         const allSubPageIds = group.subPages.map(sub => sub.id);
-                        const allSubPagesSelected = allSubPageIds.every(id => selectedDocuments?.has(id));
                         
                         // 부모 선택/해제
                         onSelectDocument(group.mainDocument.id);
                         
-                        // 하위 페이지들도 함께 선택/해제
+                        // 하위 페이지들도 함께 선택/해제 (비동기 상태 업데이트를 고려하여 즉시 실행)
                         if (!isMainSelected) {
                           // 부모가 선택되지 않았으면 하위 전체 선택
+                          // 모든 하위 페이지 ID를 한 번에 처리
                           allSubPageIds.forEach(id => {
-                            if (!selectedDocuments?.has(id)) {
-                              onSelectDocument(id);
-                            }
+                            // selectedDocuments가 아직 업데이트되지 않았을 수 있으므로
+                            // 현재 상태를 확인하지 않고 바로 선택
+                            onSelectDocument(id);
                           });
                         } else {
                           // 부모가 이미 선택되어 있으면 하위 전체 해제
+                          // 모든 하위 페이지 ID를 한 번에 처리
                           allSubPageIds.forEach(id => {
-                            if (selectedDocuments?.has(id)) {
-                              onSelectDocument(id);
-                            }
+                            // selectedDocuments가 아직 업데이트되지 않았을 수 있으므로
+                            // 현재 상태를 확인하지 않고 바로 해제 (토글)
+                            onSelectDocument(id);
                           });
                         }
                       }}

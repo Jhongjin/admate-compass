@@ -4272,7 +4272,34 @@ function DocsTable({
                             <div className="col-span-7 flex items-center gap-2 min-w-0 pr-2">
                               <Checkbox 
                                 checked={!!selected[mainDoc.id]} 
-                                onCheckedChange={() => toggleSelect(mainDoc.id)}
+                                onCheckedChange={() => {
+                                  const isMainSelected = !!selected[mainDoc.id];
+                                  const subDocIds = subDocs.map((sub: any) => sub.id);
+                                  
+                                  // 부모 선택/해제
+                                  toggleSelect(mainDoc.id);
+                                  
+                                  // 하위 문서들도 함께 선택/해제
+                                  if (!isMainSelected) {
+                                    // 부모가 선택되지 않았으면 하위 전체 선택
+                                    setSelected(prev => {
+                                      const newSelected = { ...prev };
+                                      subDocIds.forEach(id => {
+                                        newSelected[id] = true;
+                                      });
+                                      return newSelected;
+                                    });
+                                  } else {
+                                    // 부모가 이미 선택되어 있으면 하위 전체 해제
+                                    setSelected(prev => {
+                                      const newSelected = { ...prev };
+                                      subDocIds.forEach(id => {
+                                        delete newSelected[id];
+                                      });
+                                      return newSelected;
+                                    });
+                                  }
+                                }}
                                 className="flex-shrink-0"
                               />
                               <button
