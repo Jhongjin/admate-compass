@@ -2067,12 +2067,6 @@ export async function processQueue() {
                 );
               }
               
-              // 타임아웃 체크: 배치 처리 시간이 너무 오래 걸렸는지 확인
-              const batchElapsedTime = Date.now() - batchStartTime;
-              if (batchElapsedTime > BATCH_TIMEOUT) {
-                console.warn(`[CRITICAL] ⏱️ 배치 ${Math.floor(i / BATCH_SIZE) + 1} 처리 시간 초과: ${batchElapsedTime}ms (제한: ${BATCH_TIMEOUT}ms)`);
-              }
-              
               batchResults.forEach((settledResult, idx) => {
                 if (settledResult.status === 'fulfilled' && settledResult.value) {
                   subPageResults.push(settledResult.value);
@@ -2095,7 +2089,11 @@ export async function processQueue() {
                 }
               });
               
+              // 타임아웃 체크 및 배치 완료 로그
               const batchElapsedTime = Date.now() - batchStartTime;
+              if (batchElapsedTime > BATCH_TIMEOUT) {
+                console.warn(`[CRITICAL] ⏱️ 배치 ${Math.floor(i / BATCH_SIZE) + 1} 처리 시간 초과: ${batchElapsedTime}ms (제한: ${BATCH_TIMEOUT}ms)`);
+              }
               processedCount = subPageResults.length; // 실제 처리된 개수로 업데이트
               console.log(`[CRITICAL] 📊 배치 ${Math.floor(i / BATCH_SIZE) + 1} 완료: ${processedCount}/${candidateUrls.length} 처리됨 (소요 시간: ${batchElapsedTime}ms)`);
               
