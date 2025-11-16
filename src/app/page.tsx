@@ -575,10 +575,10 @@ export default function HomePage() {
                           const vendorIcon = vendorIcons[vendor.vendor];
                           const vendorColor = vendorColors[vendor.vendor];
                           return (
-                            <div
-                              key={`${vendor.vendor}-${index}`}
+                          <div
+                            key={`${vendor.vendor}-${index}`}
                               className="h-16 flex items-center justify-center px-6 min-h-[64px]"
-                            >
+                          >
                               <p className="text-white/90 leading-relaxed font-nanum text-base text-center flex items-center gap-2">
                                 {vendorIcon && (
                                   <span 
@@ -588,8 +588,8 @@ export default function HomePage() {
                                   />
                                 )}
                                 <span>{vendor.message}</span>
-                              </p>
-                            </div>
+                            </p>
+                          </div>
                           );
                         })}
                       </motion.div>

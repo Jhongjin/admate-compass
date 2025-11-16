@@ -233,3 +233,6 @@ SELECT * FROM app_settings;
 - [Resend API 문서](https://resend.com/docs)
 - [SUPABASE_EMAIL_SETUP_INSTRUCTIONS.md](./SUPABASE_EMAIL_SETUP_INSTRUCTIONS.md)
 
+
+
+

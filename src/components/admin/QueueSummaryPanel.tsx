@@ -12,6 +12,7 @@ interface QueueStats {
   queued: number;
   processing: number;
   failed: number;
+  stuck?: number; // 멈춘 작업 개수 (30분 이상 진행 중인 processing 작업)
 }
 
 interface QueueSummaryPanelProps {
@@ -42,10 +43,18 @@ export default function QueueSummaryPanel({ selectedVendors = [] }: QueueSummary
           return !vendor || selectedVendors.includes(vendor);
         });
 
+        const now = Date.now();
+        const STUCK_THRESHOLD_MS = 30 * 60 * 1000; // 30분
+        
         return {
           queued: filteredJobs.filter(j => ['queued', 'retrying'].includes(j.status)).length,
           processing: filteredJobs.filter(j => j.status === 'processing').length,
           failed: filteredJobs.filter(j => j.status === 'failed').length,
+          stuck: filteredJobs.filter(j => 
+            j.status === 'processing' && 
+            j.payload?.started_at && 
+            (now - new Date(j.payload.started_at).getTime()) > STUCK_THRESHOLD_MS
+          ).length,
         };
       }
 
@@ -59,10 +68,27 @@ export default function QueueSummaryPanel({ selectedVendors = [] }: QueueSummary
         .select('status', { count: 'exact', head: true })
         .eq('status', 'failed');
 
+      // 멈춘 작업 개수 계산 (30분 이상 진행 중인 processing 작업)
+      const now = Date.now();
+      const STUCK_THRESHOLD_MS = 30 * 60 * 1000; // 30분
+      
+      const { data: processingJobsWithTime } = await supabase
+        .from('processing_jobs')
+        .select('id, started_at')
+        .eq('status', 'processing')
+        .not('started_at', 'is', null);
+      
+      const stuckCount = (processingJobsWithTime || []).filter(job => {
+        if (!job.started_at) return false;
+        const elapsed = now - new Date(job.started_at).getTime();
+        return elapsed > STUCK_THRESHOLD_MS;
+      }).length;
+
       return {
         queued: queuedData?.length || 0,
         processing: processingData?.length || 0,
         failed: failedData?.length || 0,
+        stuck: stuckCount,
       };
     },
     refetchInterval: 5000, // 5초마다 자동 갱신
@@ -205,7 +231,65 @@ export default function QueueSummaryPanel({ selectedVendors = [] }: QueueSummary
     }
   };
 
-  const queueStats = stats || { queued: 0, processing: 0, failed: 0 };
+  // 멈춘 작업 일괄 삭제 (30분 이상 진행 중인 processing 작업)
+  const handleDeleteStuck = async () => {
+    if (!confirm('30분 이상 진행 중인 멈춘 작업을 모두 삭제하시겠습니까?\n\n이 작업은 되돌릴 수 없습니다.')) {
+      return;
+    }
+
+    try {
+      setProcessing(true);
+      const now = Date.now();
+      const STUCK_THRESHOLD_MS = 30 * 60 * 1000; // 30분
+      
+      const { data: allProcessingJobs } = await supabase
+        .from('processing_jobs')
+        .select('id, started_at')
+        .eq('status', 'processing')
+        .not('started_at', 'is', null);
+
+      if (!allProcessingJobs || allProcessingJobs.length === 0) {
+        alert('삭제할 멈춘 작업이 없습니다.');
+        return;
+      }
+
+      const stuckJobs = allProcessingJobs.filter(job => {
+        if (!job.started_at) return false;
+        const elapsed = now - new Date(job.started_at).getTime();
+        return elapsed > STUCK_THRESHOLD_MS;
+      });
+
+      if (stuckJobs.length === 0) {
+        alert('30분 이상 진행 중인 멈춘 작업이 없습니다.');
+        return;
+      }
+
+      const res = await fetch('/api/jobs/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          jobId: stuckJobs[0].id,
+          action: 'delete',
+          jobIds: stuckJobs.map(j => j.id)
+        })
+      });
+
+      const result = await res.json();
+      if (result.success) {
+        alert(result.message || `${result.deleted}개 멈춘 작업이 삭제되었습니다.`);
+        await refetch();
+      } else {
+        alert(result.error || '삭제에 실패했습니다.');
+      }
+    } catch (err) {
+      console.error('멈춘 작업 삭제 오류:', err);
+      alert('삭제 중 오류가 발생했습니다.');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const queueStats = stats || { queued: 0, processing: 0, failed: 0, stuck: 0 };
 
   return (
     <Card className="card-enhanced bg-gradient-to-br from-slate-900/80 via-slate-900/60 to-slate-950/90 border border-white/10 shadow-xl">
@@ -296,6 +380,18 @@ export default function QueueSummaryPanel({ selectedVendors = [] }: QueueSummary
               실패 삭제
             </Button>
           </div>
+
+          {(queueStats.stuck ?? 0) > 0 && (
+            <Button
+              onClick={handleDeleteStuck}
+              disabled={processing}
+              variant="outline"
+              className="w-full bg-gray-800/50 border-orange-600/50 text-white hover:bg-orange-700/20 text-orange-300 hover:text-orange-200 h-10"
+            >
+              <Trash2 className="w-4 h-4 mr-2" />
+              멈춘 작업 삭제 ({queueStats.stuck ?? 0}개)
+            </Button>
+          )}
 
           {queueStats.queued > 0 && (
             <Button

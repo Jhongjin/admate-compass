@@ -41,3 +41,6 @@ GROUP BY type;
 
 
 
+
+
+

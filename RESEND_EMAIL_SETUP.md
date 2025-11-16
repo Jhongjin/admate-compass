@@ -194,3 +194,6 @@ ALERT_FROM_EMAIL=noreply@nasmedia.co.kr
 - [Resend DNS 설정 가이드](https://resend.com/docs/dashboard/domains/verify-your-domain)
 - [Supabase Secrets 문서](https://supabase.com/docs/guides/functions/secrets)
 
+
+
+

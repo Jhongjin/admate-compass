@@ -9,3 +9,6 @@ CREATE EXTENSION IF NOT EXISTS pg_net WITH SCHEMA extensions;
 COMMENT ON EXTENSION pg_net IS 
   'Supabase에서 Edge Functions를 호출하기 위한 네트워크 확장. HTTP 요청을 비동기로 처리합니다.';
 
+
+
+

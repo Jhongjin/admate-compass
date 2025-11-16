@@ -237,43 +237,125 @@ export class AdaptiveChunkingService {
 
   /**
    * 문서 구조 분석 (제목, 섹션, 문단 등)
+   * 개선: 더 많은 패턴을 감지하여 섹션과 문단을 정확히 식별
    */
   private analyzeDocumentStructure(content: string): {
     sections: Array<{ title: string; start: number; end: number; level: number }>;
     paragraphs: number[];
   } {
     const sections: Array<{ title: string; start: number; end: number; level: number }> = [];
-    const paragraphs: number[] = [];
+    const paragraphs: Array<{ start: number; end: number }> = [];
 
-    // 제목 패턴 감지 (마크다운, 번호 등)
+    // 제목 패턴 감지 (마크다운, 번호 등) - 확장된 패턴
     const headingPatterns = [
       /^#{1,6}\s+(.+)$/gm, // 마크다운 제목
       /^제\s*\d+\s*장\s*[:\s]*(.+)$/gmi, // 장 제목
       /^제\s*\d+\s*절\s*[:\s]*(.+)$/gmi, // 절 제목
       /^제\s*\d+\s*조\s*[:\s]*(.+)$/gmi, // 조 제목
+      /^[IVX]+\.\s+(.+)$/gmi, // 로마 숫자 제목
+      /^\d+\.\s+(.+)$/gm, // 번호 제목
+      /^[가-힣]+[:\s]+(.+)$/gm, // 한글 제목 (예: "개요:", "설명:")
     ];
 
     let match;
     for (const pattern of headingPatterns) {
       pattern.lastIndex = 0;
       while ((match = pattern.exec(content)) !== null) {
-        const level = match[0].match(/^#+/)?.[0]?.length || 3;
+        const level = match[0].match(/^#+/)?.[0]?.length || 
+                     (match[0].match(/^제\s*\d+\s*장/)) ? 1 :
+                     (match[0].match(/^제\s*\d+\s*절/)) ? 2 :
+                     (match[0].match(/^제\s*\d+\s*조/)) ? 3 : 3;
         sections.push({
           title: match[1]?.trim() || match[0],
-          start: match.index,
-          end: match.index + match[0].length,
+          start: match.index || 0,
+          end: (match.index || 0) + match[0].length,
           level
         });
       }
     }
 
-    // 문단 구분 찾기
-    const paragraphMatches = content.matchAll(/\n\n+/g);
-    for (const match of paragraphMatches) {
-      paragraphs.push(match.index || 0);
+    // 줄바꿈으로 구분된 짧은 줄을 제목으로 감지 (URL 크롤링 텍스트용)
+    const lines = content.split('\n');
+    let currentPos = 0;
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      const lineStart = currentPos;
+      const lineEnd = currentPos + lines[i].length;
+      
+      // 짧은 줄(50자 이하)을 제목 후보로 간주
+      if (line.length > 0 && line.length <= 50) {
+        const nextLine = i < lines.length - 1 ? lines[i + 1].trim() : '';
+        const prevLine = i > 0 ? lines[i - 1].trim() : '';
+        
+        // 제목 조건: 다음 줄이 비어있거나, 이전 줄이 비어있거나, 줄이 짧고 다음 줄이 긴 경우
+        const isLikelyHeading = 
+          (nextLine === '' || prevLine === '') ||
+          (nextLine.length > line.length * 2) ||
+          (line.match(/^[A-Z가-힣][^.!?]*$/) && !line.match(/[.!?]$/) && line.length <= 30);
+        
+        if (isLikelyHeading) {
+          // 이미 감지된 섹션과 겹치지 않는지 확인
+          const overlaps = sections.some(s => 
+            (lineStart >= s.start && lineStart < s.end) ||
+            (lineEnd > s.start && lineEnd <= s.end)
+          );
+          
+          if (!overlaps) {
+            sections.push({
+              title: line,
+              start: lineStart,
+              end: lineEnd,
+              level: 2, // 기본 레벨 2
+            });
+          }
+        }
+      }
+      
+      currentPos = lineEnd + 1; // +1 for \n
     }
 
-    return { sections, paragraphs };
+    // 섹션을 시작 위치순으로 정렬
+    sections.sort((a, b) => a.start - b.start);
+
+    // 문단 구분 찾기 - 개선: 단일 줄바꿈도 인식
+    const paragraphIndices: number[] = [];
+    
+    // 연속된 줄바꿈(\n\n+) 또는 단일 줄바꿈(\n)으로 구분된 블록을 문단으로 인식
+    const lines2 = content.split('\n');
+    let paragraphStart = -1;
+    
+    // 각 줄의 시작 위치를 미리 계산
+    const lineStarts: number[] = [0];
+    for (let k = 0; k < lines2.length - 1; k++) {
+      lineStarts.push(lineStarts[k] + lines2[k].length + 1); // +1 for \n
+    }
+    
+    for (let i = 0; i < lines2.length; i++) {
+      const line = lines2[i].trim();
+      const isEmpty = line.length === 0;
+      const lineStart = lineStarts[i];
+      
+      if (!isEmpty && paragraphStart === -1) {
+        // 문단 시작
+        paragraphStart = lineStart;
+      } else if (isEmpty && paragraphStart !== -1) {
+        // 문단 끝 (빈 줄 발견)
+        paragraphIndices.push(paragraphStart);
+        paragraphStart = -1;
+      }
+    }
+    
+    // 마지막 문단 처리 (문서 끝까지 문단이 이어지는 경우)
+    if (paragraphStart !== -1) {
+      paragraphIndices.push(paragraphStart);
+    }
+    
+    // 문단이 하나도 없으면 전체 문서를 하나의 문단으로 간주
+    if (paragraphIndices.length === 0 && content.trim().length > 0) {
+      paragraphIndices.push(0);
+    }
+
+    return { sections, paragraphs: paragraphIndices };
   }
 
   /**
@@ -408,7 +490,32 @@ export class AdaptiveChunkingService {
           cutPoint = lastLineEnd;
         }
 
+        // 숫자 패턴 보호: 잘린 숫자 방지
+        // "3,500만", "3,500만명" 같은 패턴이 잘리지 않도록 보호
         if (cutPoint > 0) {
+          const beforeCut = chunk.slice(0, cutPoint);
+          const afterCut = chunk.slice(cutPoint);
+          
+          // 숫자 패턴 감지: 천단위 구분자가 있는 숫자 (예: "3,500만")
+          const numberPattern = /(\d{1,3}(?:,\d{3})*(?:만|억|조|원|명|개|건|%|퍼센트)?)/g;
+          const matches = beforeCut.match(numberPattern);
+          
+          // 잘린 숫자 패턴 확인: cutPoint 근처에 불완전한 숫자가 있는지 확인
+          const nearCutText = chunk.slice(Math.max(0, cutPoint - 20), Math.min(chunk.length, cutPoint + 20));
+          const truncatedNumberPattern = /\d+\s*\|\s*\d+/;
+          
+          if (truncatedNumberPattern.test(nearCutText)) {
+            // 잘린 숫자 패턴 발견 - 더 앞으로 이동하여 완전한 숫자까지 포함
+            const numberMatch = beforeCut.match(/(\d{1,3}(?:,\d{3})*(?:만|억|조|원|명|개|건|%|퍼센트)?)\s*$/);
+            if (numberMatch && numberMatch.index !== undefined) {
+              const numberEnd = numberMatch.index + numberMatch[0].length;
+              if (numberEnd < cutPoint && numberEnd > adjustedChunkSize * 0.5) {
+                cutPoint = numberEnd;
+                console.log(`🔢 숫자 패턴 보호: 잘린 숫자 방지를 위해 cutPoint 조정 ${cutPoint}자`);
+              }
+            }
+          }
+          
           chunk = chunk.slice(0, cutPoint + 1);
         }
       }

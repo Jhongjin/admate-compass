@@ -17,7 +17,7 @@ export class EmbeddingService {
   private pipeline: any = null;
   private currentModel: string | null = null;
   private isInitialized = false;
-  
+
   // 초기화 상태 확인용 getter (서버리스 환경에서 캐싱 확인)
   get initialized(): boolean {
     return this.isInitialized;
@@ -70,10 +70,9 @@ export class EmbeddingService {
       const importMs = Date.now() - initStartMs;
       console.log(`✅ 모듈 로딩 완료: ${importMs}ms`);
       
-      // BGE-M3 모델 초기화 (백그라운드 모드 - 타임아웃 없이 진행)
-      // 백그라운드에서 실행되므로 타임아웃 없이 완료될 때까지 대기
+      // BGE-M3 모델 초기화 (동기 방식 + 진행 상황 추적)
       const modelInitStartMs = Date.now();
-      console.log('🔄 BGE-M3 모델 초기화 시작 (백그라운드 모드 - 타임아웃 없음)');
+      console.log('🔄 BGE-M3 모델 초기화 시작 (다운로드/로딩 중...)');
       console.log(`📂 캐시 디렉토리: ${cacheDir}`);
       
       // 진행 상황 추적을 위한 하트비트 로깅
@@ -83,48 +82,39 @@ export class EmbeddingService {
         const now = Date.now();
         const elapsed = now - modelInitStartMs;
         const elapsedSeconds = (elapsed / 1000).toFixed(1);
-        const elapsedMinutes = (elapsed / 60000).toFixed(1);
         const timeSinceLastHeartbeat = ((now - lastHeartbeatTime) / 1000).toFixed(1);
         heartbeatCount++;
         
         // 10초마다 하트비트
-        console.log(`⏳ [백그라운드] BGE-M3 모델 초기화 진행 중... (경과: ${elapsedSeconds}초 / ${elapsedMinutes}분, 하트비트: ${heartbeatCount}회, 캐시: ${cacheDir})`);
+        console.log(`⏳ BGE-M3 모델 초기화 진행 중... (경과: ${elapsedSeconds}초, 하트비트: ${heartbeatCount}회, 캐시: ${cacheDir})`);
         lastHeartbeatTime = now;
-        
-        // 1분마다 상세 정보 로깅
-        if (elapsed > 60000 && elapsed % 60000 < 15000) {
-          console.log(`📊 [백그라운드] 모델 초기화 상세 상태: 다운로드/로딩 중 (${elapsedMinutes}분 경과, 하트비트 ${heartbeatCount}회)`);
-        }
       }, 10000); // 10초마다 하트비트
       
       try {
-        console.log(`📥 [백그라운드] BGE-M3 모델 다운로드/로딩 시작 (quantized: true, cache: ${cacheDir})`);
-        console.log(`⏱️ [백그라운드] 타임아웃 없음 - 완료될 때까지 계속 진행`);
+        console.log(`📥 BGE-M3 모델 다운로드/로딩 시작 (quantized: true, cache: ${cacheDir})`);
         
-        // 타임아웃 없이 모델 초기화 진행 (백그라운드이므로 완료될 때까지 대기)
-        this.pipeline = await pipeline('feature-extraction', 'Xenova/bge-m3', {
-          // 모델 로딩 최적화
-          quantized: true,
+        // 모델 초기화 진행
+      this.pipeline = await pipeline('feature-extraction', 'Xenova/bge-m3', {
+        // 모델 로딩 최적화
+        quantized: true,
           // 캐시 사용 (Vercel 환경에서는 /tmp 사용)
           cache_dir: cacheDir,
-          // 추가 옵션
-          local_files_only: false,
-          revision: 'main'
-        });
+        // 추가 옵션
+        local_files_only: false,
+        revision: 'main'
+      });
         
         clearInterval(heartbeatInterval);
         
         const modelInitMs = Date.now() - modelInitStartMs;
         const modelInitSeconds = (modelInitMs / 1000).toFixed(1);
-        const modelInitMinutes = (modelInitMs / 60000).toFixed(1);
-        console.log(`✅ [백그라운드] BGE-M3 파이프라인 인스턴스 생성 완료`);
-        console.log(`✅ [백그라운드] BGE-M3 모델 초기화 완료: ${modelInitMs}ms (${modelInitSeconds}초 / ${modelInitMinutes}분)`);
+        console.log(`✅ BGE-M3 파이프라인 인스턴스 생성 완료`);
+        console.log(`✅ BGE-M3 모델 초기화 완료: ${modelInitMs}ms (${modelInitSeconds}초)`);
       } catch (error) {
         clearInterval(heartbeatInterval);
         const elapsed = Date.now() - modelInitStartMs;
         const elapsedSeconds = (elapsed / 1000).toFixed(1);
-        const elapsedMinutes = (elapsed / 60000).toFixed(1);
-        console.error(`❌ [백그라운드] BGE-M3 모델 초기화 실패 (경과: ${elapsedSeconds}초 / ${elapsedMinutes}분):`, error);
+        console.error(`❌ BGE-M3 모델 초기화 실패 (경과: ${elapsedSeconds}초):`, error);
         throw error;
       }
       this.currentModel = model;

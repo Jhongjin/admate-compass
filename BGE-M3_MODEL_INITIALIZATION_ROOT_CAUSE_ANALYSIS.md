@@ -191,3 +191,4 @@ this.embeddingService.initialize('bge-m3')
 
 **장기 해결책**: 외부 임베딩 서비스 도입 또는 별도 서버에서 모델 호스팅을 권장합니다.
 
+

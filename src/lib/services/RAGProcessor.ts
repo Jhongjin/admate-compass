@@ -11,6 +11,7 @@ import { adaptiveChunkingService, AdaptiveChunkingConfig } from './AdaptiveChunk
 import { contentTypeDetector } from './ContentTypeDetector';
 import { unifiedChunkingService, UnifiedChunkingOptions } from './UnifiedChunkingService';
 import { EmbeddingService, embeddingService as globalEmbeddingService } from './EmbeddingService';
+import { OpenAIEmbeddingService, openAIEmbeddingService } from './OpenAIEmbeddingService';
 
 export interface ChunkData {
   id: string;
@@ -60,7 +61,9 @@ export interface DocumentData {
 export class RAGProcessor {
   private textSplitter: RecursiveCharacterTextSplitter;
   private embeddingService: EmbeddingService | null = null;
+  private openAIEmbeddingService: OpenAIEmbeddingService | null = null;
   private embeddingServiceInitialized = false;
+  private embeddingProvider: 'bge-m3' | 'openai' = 'bge-m3';
 
   constructor() {
     // 텍스트 분할기 설정
@@ -69,89 +72,66 @@ export class RAGProcessor {
       chunkOverlap: 100, // 청크 간 겹침 (100자로 감소)
       separators: ['\n\n', '\n', '.', '!', '?', ';', ' ', ''], // 분할 기준
     });
+
+    // 환경 변수에서 임베딩 제공자 선택 (기본값: bge-m3)
+    const provider = (process.env.EMBEDDING_PROVIDER || 'bge-m3').toLowerCase();
+    if (provider === 'openai') {
+      this.embeddingProvider = 'openai';
+      this.openAIEmbeddingService = openAIEmbeddingService;
+      console.log('✅ OpenAI Embeddings API 사용 설정됨');
+    } else {
+      this.embeddingProvider = 'bge-m3';
+      console.log('✅ BGE-M3 임베딩 사용 설정됨');
+    }
   }
 
   /**
-   * 임베딩 서비스 초기화 (동기 방식 + 명확한 타임아웃)
-   * 
-   * 기존 방식으로 복원: 모델 초기화를 동기적으로 시도하되, 명확한 타임아웃(2분)을 설정하여
-   * 타임아웃 발생 시 즉시 해시 기반 임베딩으로 전환합니다.
+   * 임베딩 서비스 초기화
+   * 정확도가 생명인 서비스이므로 타임아웃 없이 완료될 때까지 대기
    */
   private async initializeEmbeddingService(): Promise<EmbeddingService | null> {
     if (this.embeddingServiceInitialized) {
       if (this.embeddingService && this.embeddingService.initialized) {
-      return this.embeddingService;
+        return this.embeddingService;
       }
       return null;
     }
 
+    // OpenAI를 사용하는 경우 초기화 불필요
+    if (this.embeddingProvider === 'openai') {
+      this.embeddingServiceInitialized = true;
+      return null; // OpenAI는 별도 서비스 사용
+    }
+
     try {
-      console.log('🔄 임베딩 서비스 초기화 시도 (동기 방식, 타임아웃: 2분)...');
+      console.log('🔄 BGE-M3 임베딩 서비스 초기화 시작 (타임아웃 없음 - 완료될 때까지 대기)...');
       
       // 싱글톤 인스턴스 사용
       this.embeddingService = globalEmbeddingService;
       
       // 이미 초기화되어 있으면 즉시 반환
       if (this.embeddingService.initialized) {
-        console.log('✅ 임베딩 서비스가 이미 초기화되어 있음 (캐시 재사용)');
-      this.embeddingServiceInitialized = true;
+        console.log('✅ BGE-M3 임베딩 서비스가 이미 초기화되어 있음 (캐시 재사용)');
+        this.embeddingServiceInitialized = true;
         return this.embeddingService;
       }
 
-      // 모델 초기화 시도 (명확한 타임아웃 설정: 1분 30초 - 빠른 fallback을 위해 짧게 설정)
-      // Vercel 서버리스 환경에서는 모델 다운로드가 오래 걸릴 수 있으므로, 타임아웃 시 즉시 해시 기반 임베딩으로 전환
-      const initTimeoutMs = 90000; // 1분 30초 타임아웃 (빠른 fallback)
+      // 타임아웃 없이 완료될 때까지 대기 (정확도가 생명이므로)
       const initStartMs = Date.now();
-      console.log(`⏱️ 모델 초기화 타임아웃 설정: ${initTimeoutMs / 1000}초 (타임아웃 시 해시 기반 임베딩으로 자동 전환)`);
+      console.log('⏳ BGE-M3 모델 초기화 중... (다운로드 및 로딩에 시간이 걸릴 수 있습니다)');
       
-      // 타임아웃 플래그를 사용하여 초기화가 완료되었는지 추적
-      let isInitialized = false;
-      let timeoutId: NodeJS.Timeout | null = null;
+      await this.embeddingService.initialize('bge-m3');
       
-      const initPromise = this.embeddingService.initialize('bge-m3').then(() => {
-        isInitialized = true;
-        if (timeoutId) clearTimeout(timeoutId);
-        return this.embeddingService;
-      }).catch((error) => {
-        isInitialized = true;
-        if (timeoutId) clearTimeout(timeoutId);
-        throw error;
-      });
-      
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        timeoutId = setTimeout(() => {
-          if (!isInitialized) {
-            const elapsed = Date.now() - initStartMs;
-            console.error(`[CRITICAL] ⏱️ 임베딩 모델 초기화 타임아웃 발생: ${initTimeoutMs / 1000}초 초과 (경과: ${(elapsed / 1000).toFixed(1)}초) - 해시 기반 임베딩으로 즉시 전환`);
-            // 초기화를 강제로 중단하려고 시도 (하지만 실제로는 계속 실행될 수 있음)
-            isInitialized = true;
-            reject(new Error(`임베딩 모델 초기화 타임아웃 (${initTimeoutMs / 1000}초 초과, 경과: ${(elapsed / 1000).toFixed(1)}초)`));
-          }
-        }, initTimeoutMs);
-      });
-      
-      try {
-        const result = await Promise.race([initPromise, timeoutPromise]);
-        const elapsed = Date.now() - initStartMs;
-        if (timeoutId) clearTimeout(timeoutId);
-        console.log(`✅ 임베딩 서비스 초기화 성공: ${elapsed}ms (${(elapsed / 1000).toFixed(1)}초)`);
-        this.embeddingServiceInitialized = true;
-        return result;
-      } catch (error) {
-        if (timeoutId) clearTimeout(timeoutId);
-        const elapsed = Date.now() - initStartMs;
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        console.warn(`⚠️ 임베딩 모델 초기화 타임아웃/실패 (경과: ${(elapsed / 1000).toFixed(1)}초), 해시 기반 임베딩으로 fallback:`, errorMessage);
-        // 초기화 실패 시 서비스를 null로 설정하여 해시 기반 임베딩 사용
-        this.embeddingService = null;
-        this.embeddingServiceInitialized = true;
-        return null;
-      }
-    } catch (error) {
-      console.warn('⚠️ 임베딩 서비스 초기화 시도 중 오류, 해시 기반 임베딩으로 fallback:', error);
-      this.embeddingService = null;
+      const elapsed = Date.now() - initStartMs;
+      console.log(`✅ BGE-M3 임베딩 서비스 초기화 성공: ${elapsed}ms (${(elapsed / 1000).toFixed(1)}초)`);
       this.embeddingServiceInitialized = true;
-      return null;
+      return this.embeddingService;
+    } catch (error) {
+      const elapsed = Date.now() - (this.embeddingService ? Date.now() : 0);
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.error(`❌ BGE-M3 임베딩 서비스 초기화 실패 (경과: ${(elapsed / 1000).toFixed(1)}초):`, errorMessage);
+      // 초기화 실패 시 에러를 던져서 사용자에게 알림
+      throw new Error(`BGE-M3 임베딩 서비스 초기화 실패: ${errorMessage}. OpenAI Embeddings API를 사용하려면 EMBEDDING_PROVIDER=openai 환경 변수를 설정하세요.`);
     }
   }
 
@@ -200,54 +180,6 @@ export class RAGProcessor {
   }
 
 
-  /**
-   * 간단한 해시 기반 임베딩 생성 (fallback용)
-   * ⚠️ 실제 의미적 유사도를 반영하지 않으므로 BGE-M3 사용을 권장합니다.
-   */
-  private generateSimpleEmbedding(text: string): number[] {
-    try {
-      // 환경변수에서 임베딩 차원 수 가져오기
-      const embeddingDim = parseInt(process.env.EMBEDDING_DIM || '1024');
-      
-      // 간단한 해시 기반 임베딩 생성 (fallback용)
-      const hash = this.simpleHash(text);
-      const embedding = new Array(embeddingDim).fill(0);
-      
-      // 해시값을 기반으로 임베딩 벡터 생성 (더 다양한 패턴)
-      for (let i = 0; i < embeddingDim; i++) {
-        const seed = (hash + i * 17) % 1000000; // 더 복잡한 패턴
-        embedding[i] = (Math.sin(seed) * 0.5 + 0.5) * 2 - 1; // -1 ~ 1 범위
-      }
-      
-      return embedding;
-    } catch (error) {
-      console.warn('⚠️ 해시 기반 임베딩 생성 실패, 기본값 반환:', error);
-      const embeddingDim = parseInt(process.env.EMBEDDING_DIM || '1024');
-      return new Array(embeddingDim).fill(0);
-    }
-  }
-
-  /**
-   * 간단한 해시 함수
-   */
-  private simpleHash(str: string): number {
-    try {
-      if (!str || typeof str !== 'string') {
-        return 0;
-      }
-      
-      let hash = 0;
-      for (let i = 0; i < str.length; i++) {
-        const char = str.charCodeAt(i);
-        hash = ((hash << 5) - hash) + char;
-        hash = hash & hash; // 32bit 정수로 변환
-      }
-      return Math.abs(hash);
-    } catch (error) {
-      console.warn('⚠️ 해시 생성 실패, 기본값 반환:', error);
-      return 12345; // 기본 해시값
-    }
-  }
 
   /**
    * 중복 문서 검사 (기본 버전)
@@ -285,179 +217,144 @@ export class RAGProcessor {
   }
 
   /**
-   * 청크에 대한 임베딩 생성 (BGE-M3 모델 사용, 실패 시 해시 기반 fallback)
+   * 청크에 대한 임베딩 생성
+   * 정확도가 생명인 서비스이므로 BGE-M3 또는 OpenAI만 사용 (해시 기반 제거)
    */
   async generateEmbeddings(chunks: ChunkData[]): Promise<ChunkData[]> {
     try {
-      console.log('🔮 임베딩 생성 시작:', chunks.length, '개 청크');
+      console.log(`🔮 임베딩 생성 시작: ${chunks.length}개 청크 (제공자: ${this.embeddingProvider})`);
 
-      // 임베딩 서비스 초기화 시도
-      const embeddingInitStartMs = Date.now();
-      console.log('🔄 임베딩 서비스 초기화 시작...');
-      const embeddingService = await this.initializeEmbeddingService();
-      const embeddingInitMs = Date.now() - embeddingInitStartMs;
-      console.log(`✅ 임베딩 서비스 초기화 완료: ${embeddingInitMs}ms (${(embeddingInitMs / 1000).toFixed(1)}초)`);
-      
-      const embeddingDim = parseInt(process.env.EMBEDDING_DIM || '1024');
-
-      if (embeddingService) {
-        // BGE-M3 모델 사용
-        console.log('✅ BGE-M3 모델로 임베딩 생성 중...');
-        console.log(`📊 임베딩 생성 대상: ${chunks.length}개 청크, 차원: ${embeddingDim}`);
-        
-        // 작은 청크(100자 이하)는 해시 기반 임베딩으로 빠르게 처리
-        const SMALL_CHUNK_THRESHOLD = 100;
-        const smallChunks: ChunkData[] = [];
-        const largeChunks: ChunkData[] = [];
-        
-        chunks.forEach(chunk => {
-          if (chunk.content.length <= SMALL_CHUNK_THRESHOLD) {
-            smallChunks.push(chunk);
-          } else {
-            largeChunks.push(chunk);
-          }
-        });
-        
-        console.log(`📊 청크 분류: 작은 청크 ${smallChunks.length}개, 큰 청크 ${largeChunks.length}개`);
-        
-        // 작은 청크는 해시 기반 임베딩으로 즉시 처리
-        const smallChunksWithEmbeddings = smallChunks.map(chunk => ({
-          ...chunk,
-          embedding: this.generateSimpleEmbedding(chunk.content),
-        }));
-        
-        // 큰 청크는 BGE-M3로 처리 (배치 간 병렬 처리)
-        const BATCH_SIZE = 25;
-        const batches: ChunkData[][] = [];
-        for (let i = 0; i < largeChunks.length; i += BATCH_SIZE) {
-          batches.push(largeChunks.slice(i, i + BATCH_SIZE));
+      // OpenAI Embeddings API 사용
+      if (this.embeddingProvider === 'openai') {
+        if (!this.openAIEmbeddingService || !this.openAIEmbeddingService.initialized) {
+          throw new Error('OpenAI Embeddings API가 초기화되지 않았습니다. OPENAI_API_KEY 환경 변수를 확인하세요.');
         }
-        
-        console.log(`📦 배치 생성 완료: ${batches.length}개 배치 (배치 크기: ${BATCH_SIZE})`);
-        
-        // 모든 배치를 동시에 처리 (병렬 처리)
+
+        console.log('✅ OpenAI Embeddings API로 임베딩 생성 중...');
         const embeddingGenerationStartMs = Date.now();
-        console.log(`🚀 임베딩 생성 시작: ${batches.length}개 배치 병렬 처리`);
-        
+
+        // OpenAI는 배치 처리 지원 (최대 2048개)
+        const BATCH_SIZE = 100;
+        const batches: ChunkData[][] = [];
+        for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
+          batches.push(chunks.slice(i, i + BATCH_SIZE));
+        }
+
+        console.log(`📦 배치 생성 완료: ${batches.length}개 배치 (배치 크기: ${BATCH_SIZE})`);
+
         const allBatchPromises = batches.map(async (batch, batchIndex) => {
           const batchStartMs = Date.now();
           console.log(`📦 배치 ${batchIndex + 1}/${batches.length} 처리 시작: ${batch.length}개 청크`);
-          
-          const batchPromises = batch.map(async (chunk, chunkIndex) => {
-            try {
-              const chunkEmbeddingStartMs = Date.now();
-              const result = await embeddingService.generateEmbedding(chunk.content, {
-                model: 'bge-m3',
-                normalize: true
-              });
-              const chunkEmbeddingMs = Date.now() - chunkEmbeddingStartMs;
-              
-              if (chunkIndex === 0) {
-                console.log(`✅ 배치 ${batchIndex + 1} 첫 청크 임베딩 완료: ${chunkEmbeddingMs}ms`);
-              }
-              
-              // 차원 변환 (BGE-M3는 1024차원, 필요시 조정)
-              let embedding = result.embedding;
-              if (embedding.length !== embeddingDim) {
-                console.warn(`⚠️ 청크 임베딩 차원 불일치: ${embedding.length} → ${embeddingDim}`);
-                // 차원이 다르면 해시 기반으로 fallback
-                embedding = this.generateSimpleEmbedding(chunk.content);
-              }
-              
-              return {
-                ...chunk,
-                embedding,
-              };
-            } catch (error) {
-              const errorMessage = error instanceof Error ? error.message : String(error);
-              console.warn(`⚠️ 청크 BGE-M3 임베딩 생성 실패, 해시 기반으로 fallback:`, {
-                chunkId: chunk.id,
-                chunkIndex: chunk.metadata.chunk_index,
-                error: errorMessage,
-                note: '해시 기반 임베딩은 의미 검색에 부적합할 수 있습니다.'
-              });
-              return {
-                ...chunk,
-                embedding: this.generateSimpleEmbedding(chunk.content),
-              };
-            }
-          });
-          
-          const batchResults = await Promise.all(batchPromises);
-          const batchMs = Date.now() - batchStartMs;
-          console.log(`✅ 배치 ${batchIndex + 1}/${batches.length} 완료: ${batchResults.length}개 청크 (${batchMs}ms)`);
-          
-          return batchResults;
+
+          try {
+            const texts = batch.map(chunk => chunk.content);
+            const results = await this.openAIEmbeddingService!.generateBatchEmbeddings(texts);
+
+            const batchResults = batch.map((chunk, index) => ({
+              ...chunk,
+              embedding: results[index].embedding,
+            }));
+
+            const batchMs = Date.now() - batchStartMs;
+            console.log(`✅ 배치 ${batchIndex + 1}/${batches.length} 완료: ${batchResults.length}개 청크 (${batchMs}ms)`);
+            return batchResults;
+          } catch (error) {
+            console.error(`❌ 배치 ${batchIndex + 1} 처리 실패:`, error);
+            throw error;
+          }
         });
-        
-        // 모든 배치가 완료될 때까지 대기 (병렬 처리)
-        console.log(`⏳ 모든 배치 완료 대기 중... (${batches.length}개 배치)`);
+
         const allBatchResults = await Promise.all(allBatchPromises);
         const embeddingGenerationMs = Date.now() - embeddingGenerationStartMs;
-        console.log(`✅ 모든 배치 완료: ${embeddingGenerationMs}ms (${(embeddingGenerationMs / 1000).toFixed(1)}초)`);
-        
-        // 결과 병합 (작은 청크 + 큰 청크)
-        console.log('📦 임베딩 결과 병합 중...');
-        const chunksWithEmbeddings: ChunkData[] = [
-          ...smallChunksWithEmbeddings,
-          ...allBatchResults.flat()
-        ];
-        
-        // 원본 순서 유지
-        const chunksMap = new Map(chunksWithEmbeddings.map(chunk => [chunk.id, chunk]));
-        const orderedChunks = chunks.map(chunk => chunksMap.get(chunk.id) || chunk);
+        console.log(`✅ OpenAI 임베딩 생성 완료: ${chunks.length}개 청크, ${embeddingGenerationMs}ms (${(embeddingGenerationMs / 1000).toFixed(1)}초)`);
 
-        console.log('✅ BGE-M3 임베딩 생성 완료:', {
-          total: orderedChunks.length,
-          smallChunks: smallChunks.length,
-          largeChunks: largeChunks.length,
-          batches: batches.length,
-          totalTime: `${embeddingGenerationMs}ms (${(embeddingGenerationMs / 1000).toFixed(1)}초)`
-        });
-        return orderedChunks;
-      } else {
-        // 해시 기반 임베딩 사용 (BGE-M3 초기화가 아직 완료되지 않음 또는 실패)
-        const isModelInitializing = this.embeddingService && !this.embeddingService.initialized;
-        if (isModelInitializing) {
-          console.log('⚡ 해시 기반 임베딩 사용 (BGE-M3 모델 초기화 진행 중 - 백그라운드에서 계속 진행)');
-          console.log('📊 모델 초기화 완료 여부는 로그에서 확인 가능합니다.');
-        } else {
-          console.log('⚠️ 해시 기반 임베딩 사용 (BGE-M3 초기화 실패 또는 사용 불가)');
-        }
-        return this.generateEmbeddingsWithHash(chunks);
+        return allBatchResults.flat();
       }
+
+      // BGE-M3 사용
+      const embeddingInitStartMs = Date.now();
+      console.log('🔄 BGE-M3 임베딩 서비스 초기화 시작...');
+      const embeddingService = await this.initializeEmbeddingService();
+      
+      if (!embeddingService) {
+        throw new Error('BGE-M3 임베딩 서비스 초기화 실패');
+      }
+
+      const embeddingInitMs = Date.now() - embeddingInitStartMs;
+      console.log(`✅ BGE-M3 임베딩 서비스 초기화 완료: ${embeddingInitMs}ms (${(embeddingInitMs / 1000).toFixed(1)}초)`);
+
+      const embeddingDim = parseInt(process.env.EMBEDDING_DIM || '1024');
+      console.log('✅ BGE-M3 모델로 임베딩 생성 중...');
+      console.log(`📊 임베딩 생성 대상: ${chunks.length}개 청크, 차원: ${embeddingDim}`);
+
+      // 모든 청크를 BGE-M3로 처리 (작은 청크도 포함)
+      const BATCH_SIZE = 25;
+      const batches: ChunkData[][] = [];
+      for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
+        batches.push(chunks.slice(i, i + BATCH_SIZE));
+      }
+
+      console.log(`📦 배치 생성 완료: ${batches.length}개 배치 (배치 크기: ${BATCH_SIZE})`);
+
+      const embeddingGenerationStartMs = Date.now();
+      console.log(`🚀 임베딩 생성 시작: ${batches.length}개 배치 병렬 처리`);
+
+      const allBatchPromises = batches.map(async (batch, batchIndex) => {
+        const batchStartMs = Date.now();
+        console.log(`📦 배치 ${batchIndex + 1}/${batches.length} 처리 시작: ${batch.length}개 청크`);
+
+        const batchPromises = batch.map(async (chunk, chunkIndex) => {
+          try {
+            const chunkEmbeddingStartMs = Date.now();
+            const result = await embeddingService.generateEmbedding(chunk.content, {
+              model: 'bge-m3',
+              normalize: true
+            });
+            const chunkEmbeddingMs = Date.now() - chunkEmbeddingStartMs;
+
+            if (chunkIndex === 0) {
+              console.log(`✅ 배치 ${batchIndex + 1} 첫 청크 임베딩 완료: ${chunkEmbeddingMs}ms`);
+            }
+
+            // 차원 검증
+            if (result.embedding.length !== embeddingDim) {
+              console.warn(`⚠️ 청크 임베딩 차원 불일치: ${result.embedding.length} (예상: ${embeddingDim})`);
+            }
+
+            return {
+              ...chunk,
+              embedding: result.embedding,
+            };
+          } catch (error) {
+            const errorMessage = error instanceof Error ? error.message : String(error);
+            console.error(`❌ 청크 BGE-M3 임베딩 생성 실패:`, {
+              chunkId: chunk.id,
+              chunkIndex: chunk.metadata.chunk_index,
+              error: errorMessage,
+            });
+            throw new Error(`청크 임베딩 생성 실패: ${errorMessage}`);
+          }
+        });
+
+        const batchResults = await Promise.all(batchPromises);
+        const batchMs = Date.now() - batchStartMs;
+        console.log(`✅ 배치 ${batchIndex + 1}/${batches.length} 완료: ${batchResults.length}개 청크 (${batchMs}ms)`);
+
+        return batchResults;
+      });
+
+      const allBatchResults = await Promise.all(allBatchPromises);
+      const embeddingGenerationMs = Date.now() - embeddingGenerationStartMs;
+      console.log(`✅ BGE-M3 임베딩 생성 완료: ${chunks.length}개 청크, ${embeddingGenerationMs}ms (${(embeddingGenerationMs / 1000).toFixed(1)}초)`);
+
+      return allBatchResults.flat();
     } catch (error) {
       console.error('❌ 임베딩 생성 오류:', error);
-      console.log('⚠️ 해시 기반 임베딩으로 fallback');
-      return this.generateEmbeddingsWithHash(chunks);
+      // 해시 기반 fallback 제거 - 에러를 그대로 던짐
+      throw new Error(`임베딩 생성 실패: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
-  /**
-   * 해시 기반 임베딩 생성 (fallback)
-   */
-  private generateEmbeddingsWithHash(chunks: ChunkData[]): ChunkData[] {
-    const embeddingDim = parseInt(process.env.EMBEDDING_DIM || '1024');
-    console.log('📏 해시 기반 임베딩 차원 수:', embeddingDim);
-
-    const chunksWithEmbeddings = chunks.map((chunk, index) => {
-      try {
-        return {
-          ...chunk,
-          embedding: this.generateSimpleEmbedding(chunk.content),
-        };
-      } catch (error) {
-        console.warn(`⚠️ 청크 ${index} 임베딩 생성 실패, 기본값 사용:`, error);
-        return {
-          ...chunk,
-          embedding: new Array(embeddingDim).fill(0),
-        };
-      }
-    });
-
-    console.log('✅ 해시 기반 임베딩 생성 완료:', chunksWithEmbeddings.length, '개 청크');
-    return chunksWithEmbeddings;
-  }
 
   /**
    * 문서를 Supabase에 저장
@@ -2003,36 +1900,41 @@ export class RAGProcessor {
         return [];
       }
 
-      // 쿼리 임베딩 생성 (BGE-M3 우선, 실패 시 해시 기반)
+      // 쿼리 임베딩 생성 (BGE-M3 또는 OpenAI만 사용)
       console.log('🧠 쿼리 임베딩 생성 중...');
       let queryEmbedding: number[];
-      const embeddingService = await this.initializeEmbeddingService();
       
-      if (embeddingService) {
-        try {
-          console.log('🔄 BGE-M3로 쿼리 임베딩 생성 중...');
-          const result = await embeddingService.generateEmbedding(query, {
-            model: 'bge-m3',
-            normalize: true
-          });
-          queryEmbedding = result.embedding;
-          
-          // 차원 확인
-          const embeddingDim = parseInt(process.env.EMBEDDING_DIM || '1024');
-          if (queryEmbedding.length !== embeddingDim) {
-            console.warn(`⚠️ 쿼리 임베딩 차원 불일치: ${queryEmbedding.length} → 해시 기반으로 fallback`);
-            queryEmbedding = this.generateSimpleEmbedding(query);
-          } else {
-            console.log('✅ BGE-M3 쿼리 임베딩 생성 완료:', queryEmbedding.length, '차원');
-          }
-        } catch (error) {
-          console.warn('⚠️ BGE-M3 쿼리 임베딩 생성 실패, 해시 기반으로 fallback:', error);
-          queryEmbedding = this.generateSimpleEmbedding(query);
-          console.log('✅ 해시 기반 쿼리 임베딩 생성 완료:', queryEmbedding.length, '차원');
+      // OpenAI Embeddings API 사용
+      if (this.embeddingProvider === 'openai') {
+        if (!this.openAIEmbeddingService || !this.openAIEmbeddingService.initialized) {
+          throw new Error('OpenAI Embeddings API가 초기화되지 않았습니다. OPENAI_API_KEY 환경 변수를 확인하세요.');
         }
+        
+        console.log('🔄 OpenAI로 쿼리 임베딩 생성 중...');
+        const result = await this.openAIEmbeddingService.generateEmbedding(query);
+        queryEmbedding = result.embedding;
+        console.log('✅ OpenAI 쿼리 임베딩 생성 완료:', queryEmbedding.length, '차원');
       } else {
-        queryEmbedding = this.generateSimpleEmbedding(query);
-        console.log('✅ 해시 기반 쿼리 임베딩 생성 완료:', queryEmbedding.length, '차원');
+        // BGE-M3 사용
+        const embeddingService = await this.initializeEmbeddingService();
+        
+        if (!embeddingService) {
+          throw new Error('BGE-M3 임베딩 서비스 초기화 실패');
+        }
+        
+        console.log('🔄 BGE-M3로 쿼리 임베딩 생성 중...');
+        const result = await embeddingService.generateEmbedding(query, {
+          model: 'bge-m3',
+          normalize: true
+        });
+        queryEmbedding = result.embedding;
+        
+        // 차원 확인
+        const embeddingDim = parseInt(process.env.EMBEDDING_DIM || '1024');
+        if (queryEmbedding.length !== embeddingDim) {
+          console.warn(`⚠️ 쿼리 임베딩 차원 불일치: ${queryEmbedding.length} (예상: ${embeddingDim})`);
+        }
+        console.log('✅ BGE-M3 쿼리 임베딩 생성 완료:', queryEmbedding.length, '차원');
       }
 
       // 벤더 필터를 대문자로 변환 (ENUM과 매칭)

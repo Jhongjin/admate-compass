@@ -105,14 +105,23 @@ export class UnifiedChunkingService {
       performanceMetrics.encodingTimeMs = Date.now() - encodingStartTime;
 
       if (!cleanContent || cleanContent.trim().length === 0) {
-        console.warn('⚠️ 문서 내용이 비어있습니다.');
+        console.error('❌ 문서 내용이 비어있습니다. 상세 정보:', {
+          documentId,
+          documentTitle,
+          originalContentLength: content?.length || 0,
+          cleanedContentLength: cleanContent?.length || 0,
+          encoding: encodingResult.encoding,
+          hasIssues: encodingResult.hasIssues,
+          issues: encodingResult.issues,
+          note: '텍스트 인코딩 후 내용이 비어있습니다. 원본 파일이 손상되었거나 텍스트가 없는 이미지 기반 문서일 수 있습니다.'
+        });
         const totalTime = Date.now() - totalStartTime;
         return {
           chunks: [],
           metadata: {
             totalChunks: 0,
             averageChunkSize: 0,
-            originalLength: 0,
+            originalLength: content?.length || 0,
             coverage: 0,
             processingTimeMs: totalTime,
             performance: {
@@ -278,6 +287,7 @@ export class UnifiedChunkingService {
         let chunkContent = content.slice(startIndex, endIndex).trim();
 
         // 문장 경계에서 자르기
+        let adjustedEnd = endIndex;
         if (endIndex < content.length) {
           const lastSentenceEnd = Math.max(
             chunkContent.lastIndexOf('. '),
@@ -287,9 +297,29 @@ export class UnifiedChunkingService {
           );
 
           if (lastSentenceEnd > chunkSize * 0.5) {
-            chunkContent = chunkContent.substring(0, lastSentenceEnd + 2).trim();
+            adjustedEnd = startIndex + lastSentenceEnd + 2;
           }
         }
+
+        // 숫자 패턴 보호: 잘린 숫자 방지
+        const beforeCut = content.slice(startIndex, adjustedEnd);
+        const nearCutText = content.slice(Math.max(0, adjustedEnd - 30), Math.min(content.length, adjustedEnd + 30));
+        const truncatedNumberPattern = /\d+\s*\|\s*\d+/;
+        
+        if (truncatedNumberPattern.test(nearCutText)) {
+          // 잘린 숫자 패턴 발견 - 완전한 숫자까지 포함하도록 조정
+          const numberPattern = /(\d{1,3}(?:,\d{3})*(?:만|억|조|원|명|개|건|%|퍼센트)?)\s*$/;
+          const numberMatch = beforeCut.match(numberPattern);
+          if (numberMatch && numberMatch.index !== undefined) {
+            const numberEnd = startIndex + numberMatch.index + numberMatch[0].length;
+            if (numberEnd > startIndex + chunkSize * 0.5 && numberEnd < startIndex + chunkSize * 1.5) {
+              adjustedEnd = numberEnd;
+              console.log(`🔢 [UnifiedChunking] 숫자 패턴 보호: 잘린 숫자 방지를 위해 adjustedEnd 조정 ${adjustedEnd}자`);
+          }
+        }
+        }
+
+        chunkContent = content.slice(startIndex, adjustedEnd).trim();
 
         if (chunkContent.length >= minChunkSize) {
           chunks.push({
