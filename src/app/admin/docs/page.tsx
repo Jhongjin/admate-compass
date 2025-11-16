@@ -2413,10 +2413,9 @@ function DocsTable({
       }
       // statusFilter가 "all"일 때는 상태 필터를 적용하지 않음 (모든 상태의 문서 표시)
       
-      // 유형 필터 (url은 서버 필터, pdf/docx/txt는 클라이언트에서 파일명 확장자로 필터링)
-      if (typeFilter && typeFilter !== "all" && typeFilter === "url") {
-        q = q.eq("type", "url");
-      }
+      // 유형 필터는 클라이언트 측에서 처리 (서버 쿼리에서는 제거)
+      // 모든 문서를 가져온 후 클라이언트에서 type에 따라 필터링
+      // 이렇게 하면 type이 'file'인 문서도 정상적으로 표시됨
       
       const { data: documents, error } = await q;
       
@@ -2701,8 +2700,8 @@ function DocsTable({
       sampleRows: rows.slice(0, 3).map((r: any) => ({ id: r.id, title: r.title, source_vendor: r.source_vendor, status: r.status, chunk_count: r.chunk_count }))
     });
     
-    // 유형 필터
-    if (typeFilter && typeFilter !== "all" && typeFilter !== "url") {
+    // 유형 필터 (모든 타입을 클라이언트에서 처리)
+    if (typeFilter && typeFilter !== "all") {
       const beforeCount = rows.length;
       rows = rows.filter((row: any) => getDocumentFileType(row) === typeFilter);
       console.log('📋 유형 필터 적용:', { beforeCount, afterCount: rows.length, typeFilter });
