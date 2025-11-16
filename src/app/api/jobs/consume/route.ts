@@ -1876,7 +1876,21 @@ export async function processQueue() {
                   const currentIndex = candidateUrls.indexOf(subUrl) + 1;
                   console.log(`[CRITICAL] 📄 하위 페이지 처리 중 (${currentIndex}/${candidateUrls.length}): ${subUrl}${linkTitle ? ` [링크제목: ${linkTitle}]` : ''}`);
                   
-                  const page = await fetchPageContent(subUrl);
+                  let page;
+                  try {
+                    page = await fetchPageContent(subUrl);
+                  } catch (fetchError) {
+                    console.error('[CRITICAL] ❌ 하위 페이지 다운로드 실패:', {
+                      url: subUrl,
+                      error: fetchError,
+                      documentId
+                    });
+                    return {
+                      url: subUrl,
+                      success: false,
+                      error: fetchError instanceof Error ? fetchError.message : String(fetchError),
+                    };
+                  }
                   
                   // 제목 우선순위: 링크 텍스트(메뉴명) > 페이지 제목 > URL 경로
                   let finalTitle = linkTitle || page.pageTitle;
@@ -1904,16 +1918,40 @@ export async function processQueue() {
                     }
                   }
                   
-                  const result = await upsertAndProcessDocument({ 
-                    targetUrl: subUrl, 
-                    title: finalTitle, 
-                    content: page.textContent 
-                  });
+                  let result;
+                  try {
+                    result = await upsertAndProcessDocument({ 
+                      targetUrl: subUrl, 
+                      title: finalTitle, 
+                      content: page.textContent 
+                    });
+                  } catch (processError) {
+                    console.error('[CRITICAL] ❌ 하위 페이지 RAG 처리 실패:', {
+                      url: subUrl,
+                      error: processError,
+                      documentId
+                    });
+                    return {
+                      url: subUrl,
+                      success: false,
+                      error: processError instanceof Error ? processError.message : String(processError),
+                    };
+                  }
+                  
+                  if (!result.success) {
+                    console.warn(`[CRITICAL] ⚠️ 하위 페이지 처리 실패 (성공=false): ${subUrl} [제목: ${finalTitle}]`);
+                    return {
+                      url: subUrl,
+                      success: false,
+                      error: result.error || 'RAG 처리 실패',
+                      chunkCount: result.chunkCount || 0,
+                    };
+                  }
                   
                   console.log(`[CRITICAL] ✅ 하위 페이지 처리 완료: ${subUrl} [제목: ${finalTitle}] (청크: ${result.chunkCount}개)`);
                   return { url: subUrl, success: result.success, chunkCount: result.chunkCount };
                 } catch (subError) {
-                  console.error('[CRITICAL] ❌ 하위 페이지 처리 실패:', {
+                  console.error('[CRITICAL] ❌ 하위 페이지 처리 중 예상치 못한 에러:', {
                     url: subUrl,
                     error: subError,
                     documentId
