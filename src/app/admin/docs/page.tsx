@@ -5564,20 +5564,20 @@ function DocumentDetailDialog({ detail, onClose, onRefetch }: { detail: any | nu
                   <div className="space-y-1">
                     <div className="text-secondary-enhanced font-semibold">청크 수</div>
                     <div className="text-primary-enhanced">
-                      {fullDoc?.actualChunkCount !== undefined ? (
+                      {(fullDoc as any)?.actualChunkCount !== undefined ? (
                         <div className="space-y-1">
                           <div className="flex items-center gap-2">
-                            <span>DB 기록: {fullDoc.chunk_count || 0}</span>
-                            {fullDoc.chunk_count !== fullDoc.actualChunkCount && (
+                            <span>DB 기록: {fullDoc?.chunk_count || 0}</span>
+                            {fullDoc?.chunk_count !== (fullDoc as any).actualChunkCount && (
                               <Badge variant="outline" className="bg-yellow-500/20 text-yellow-300 border-yellow-400/30 text-xs">
                                 불일치
                               </Badge>
                             )}
                           </div>
                           <div className="text-xs text-muted-enhanced">
-                            실제 청크: {fullDoc.actualChunkCount}개
-                            {fullDoc.chunksWithEmbedding > 0 && (
-                              <span className="ml-2">(임베딩: {fullDoc.chunksWithEmbedding}개)</span>
+                            실제 청크: {(fullDoc as any).actualChunkCount}개
+                            {(fullDoc as any).chunksWithEmbedding > 0 && (
+                              <span className="ml-2">(임베딩: {(fullDoc as any).chunksWithEmbedding}개)</span>
                             )}
                           </div>
                         </div>
