@@ -34,6 +34,29 @@ let documents: Document[] = [];
 
 const STORAGE_BUCKET = 'documents';
 
+// URL 정규화 함수 (그룹핑용)
+function normalizeUrlForGrouping(raw?: string | null): string | null {
+  if (!raw) return null;
+
+  try {
+    const parsed = new URL(raw);
+    const origin = `${parsed.protocol}//${parsed.host}`;
+    const cleanedPath = parsed.pathname.replace(/\/+$/, "");
+    const finalPath = cleanedPath === "" ? "/" : `${cleanedPath}/`;
+    return `${origin}${finalPath}`;
+  } catch {
+    const sanitized = raw.split(/[?#]/)[0]?.trim();
+    if (!sanitized) {
+      return null;
+    }
+    const trimmed = sanitized.replace(/\/+$/, "");
+    if (trimmed === "") {
+      return "/";
+    }
+    return `${trimmed}/`;
+  }
+}
+
 function sanitizeFileName(name: string) {
   // keep letters, numbers, dash, underscore, dot
   return name
