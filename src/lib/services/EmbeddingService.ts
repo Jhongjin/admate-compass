@@ -156,9 +156,13 @@ export class EmbeddingService {
       startHeartbeatInterval();
       
       // 폴백: setInterval이 실행되지 않는 경우를 대비하여 pipeline() 호출 중에도 주기적으로 확인
+      let fallbackCheckCount = 0;
       const fallbackHeartbeatCheck = setInterval(() => {
+        fallbackCheckCount++;
         const elapsed = Date.now() - modelInitStartMs;
         const timeSinceLastHeartbeat = elapsed - (lastHeartbeatTime - modelInitStartMs);
+        
+        console.log(`[CRITICAL] 🔍 폴백 체크 (${fallbackCheckCount}회): 경과 ${(elapsed / 1000).toFixed(1)}초, 마지막 하트비트로부터 ${(timeSinceLastHeartbeat / 1000).toFixed(1)}초 경과`);
         
         // 마지막 하트비트로부터 20초 이상 경과했으면 폴백 하트비트 실행
         if (timeSinceLastHeartbeat > 20000) {
@@ -168,6 +172,8 @@ export class EmbeddingService {
           });
         }
       }, 5000); // 5초마다 확인
+      
+      console.log(`[CRITICAL] 🔄 폴백 하트비트 체크 시작: 5초마다 확인, 20초 이상 경과 시 폴백 하트비트 실행`);
       
       try {
         console.log(`📥 BGE-M3 모델 다운로드/로딩 시작 (quantized: true, cache: ${cacheDir})`);
