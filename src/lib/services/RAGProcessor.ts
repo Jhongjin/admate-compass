@@ -133,24 +133,27 @@ export class RAGProcessor {
       console.log('   OpenAI API 할당량 초과로 인한 fallback이므로 초기화에 시간이 걸릴 수 있습니다.');
       
       // 진행 상황 모니터링을 위한 하트비트 (15초마다 DB 업데이트 + 로깅)
+      let heartbeatCount = 0; // 하트비트 카운트 (로깅 최적화용)
       const progressInterval = setInterval(async () => {
+        heartbeatCount++;
         const elapsed = Date.now() - initStartMs;
         const elapsedSeconds = (elapsed / 1000).toFixed(1);
         const remainingSeconds = ((INIT_TIMEOUT - elapsed) / 1000).toFixed(1);
-        console.log(`[CRITICAL] 🔄 BGE-M3 초기화 진행 중... (경과: ${elapsedSeconds}초, 타임아웃까지: ${remainingSeconds}초)`);
+        console.log(`[CRITICAL] 🔄 BGE-M3 초기화 진행 중... (경과: ${elapsedSeconds}초, 타임아웃까지: ${remainingSeconds}초, 하트비트: ${heartbeatCount}회)`);
         
         // jobId가 있으면 DB 업데이트 (BGE-M3 초기화 진행 상황 반영)
         if (this.currentJobId) {
           try {
             const supabase = await this.getSupabaseClient();
             if (supabase) {
+              const dbUpdateStartTime = Date.now();
               const currentResult = (await supabase
                 .from('processing_jobs')
                 .select('result')
                 .eq('id', this.currentJobId)
                 .maybeSingle())?.data?.result || {};
               
-              await supabase
+              const updateResult = await supabase
                 .from('processing_jobs')
                 .update({
                   result: {
@@ -165,10 +168,23 @@ export class RAGProcessor {
                 .eq('id', this.currentJobId)
                 .neq('status', 'cancelled');
               
-              console.log(`[CRITICAL] 💓 BGE-M3 초기화 하트비트 DB 업데이트: 경과 ${elapsedSeconds}초`);
+              const dbUpdateElapsed = Date.now() - dbUpdateStartTime;
+              
+              if (updateResult.error) {
+                console.warn(`[CRITICAL] ⚠️ BGE-M3 초기화 하트비트 DB 업데이트 실패:`, updateResult.error);
+              } else {
+                console.log(`[CRITICAL] 💓 BGE-M3 초기화 하트비트 DB 업데이트 완료: 경과 ${elapsedSeconds}초, DB 업데이트 소요: ${dbUpdateElapsed}ms, jobId: ${this.currentJobId}`);
+              }
+            } else {
+              console.warn('[CRITICAL] ⚠️ Supabase 클라이언트를 가져올 수 없음 (BGE-M3 하트비트 DB 업데이트 건너뜀)');
             }
           } catch (heartbeatError) {
             console.warn('[CRITICAL] ⚠️ BGE-M3 초기화 하트비트 DB 업데이트 실패 (계속 진행):', heartbeatError);
+          }
+        } else {
+          // jobId가 없으면 첫 번째 하트비트에서만 로그 (너무 많은 로그 방지)
+          if (heartbeatCount === 1) {
+            console.log(`[CRITICAL] ℹ️ BGE-M3 초기화 진행 중이지만 jobId가 설정되지 않음 (DB 업데이트 건너뜀, 로깅만 수행)`);
           }
         }
       }, 15000); // 15초마다 DB 업데이트 (더 자주 업데이트하여 진행 상황 확인 가능)

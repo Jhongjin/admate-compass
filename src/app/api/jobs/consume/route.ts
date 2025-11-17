@@ -1779,6 +1779,7 @@ export async function processQueue() {
           
           // BGE-M3 초기화 진행 상황 DB 업데이트를 위해 jobId 설정
           ragProcessor.setCurrentJobId(job.id);
+          console.log(`[CRITICAL] ✅ RAGProcessor에 jobId 설정 완료: ${job.id} (BGE-M3 초기화 하트비트 DB 업데이트 활성화)`);
           
           // RAG 처리 전체에 타임아웃 추가 (60초)
           const ragProcessTimeout = 60000;
