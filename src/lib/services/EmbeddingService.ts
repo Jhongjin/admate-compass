@@ -155,47 +155,39 @@ export class EmbeddingService {
       
       startHeartbeatInterval();
       
-      // 하트비트 루프: pipeline() 호출과 병렬로 실행되어 블로킹되지 않도록 함
-      // 서버리스 환경에서 setInterval이 신뢰성 있게 실행되지 않을 수 있으므로, 재귀적 setTimeout 사용
+      // 하트비트 루프: pipeline() 호출 중에도 주기적으로 하트비트 실행
+      // Promise.race를 사용하여 pipeline() 호출과 하트비트를 동시에 실행
       let heartbeatLoopActive = true;
       let heartbeatLoopCount = 0;
       
-      const runHeartbeatLoop = async (): Promise<void> => {
-        if (!heartbeatLoopActive) return;
-        
-        heartbeatLoopCount++;
-        const elapsed = Date.now() - modelInitStartMs;
-        const timeSinceLastHeartbeat = elapsed - (lastHeartbeatTime - modelInitStartMs);
-        
-        // 15초마다 하트비트 실행
-        if (timeSinceLastHeartbeat >= 15000) {
+      const runHeartbeatLoop = async (): Promise<never> => {
+        while (heartbeatLoopActive) {
+          await new Promise(resolve => setTimeout(resolve, 15000)); // 15초 대기
+          
+          if (!heartbeatLoopActive) break;
+          
+          heartbeatLoopCount++;
+          const elapsed = Date.now() - modelInitStartMs;
+          const timeSinceLastHeartbeat = elapsed - (lastHeartbeatTime - modelInitStartMs);
+          
           console.log(`[CRITICAL] 💓 하트비트 루프 실행 (${heartbeatLoopCount}회): 경과 ${(elapsed / 1000).toFixed(1)}초, 마지막 하트비트로부터 ${(timeSinceLastHeartbeat / 1000).toFixed(1)}초 경과`);
           await executeHeartbeat().catch((err) => {
             console.warn('[CRITICAL] ⚠️ 하트비트 루프 실행 실패:', err);
           });
         }
-        
-        // 다음 하트비트를 5초 후에 스케줄링 (재귀적 호출)
-        if (heartbeatLoopActive) {
-          setTimeout(() => runHeartbeatLoop(), 5000);
-        }
+        throw new Error('Heartbeat loop stopped'); // Promise.race를 위해 reject
       };
       
-      // 하트비트 루프 시작 (비동기로 실행되어 pipeline() 호출을 블로킹하지 않음)
-      runHeartbeatLoop().catch((err) => {
-        console.warn('[CRITICAL] ⚠️ 하트비트 루프 시작 실패:', err);
-      });
-      
-      console.log(`[CRITICAL] 🔄 하트비트 루프 시작: 5초마다 확인, 15초마다 정기 하트비트 실행 (pipeline() 호출과 병렬 실행)`);
+      console.log(`[CRITICAL] 🔄 하트비트 루프 시작: 15초마다 정기 하트비트 실행 (pipeline() 호출과 Promise.race로 실행)`);
       
       try {
         console.log(`📥 BGE-M3 모델 다운로드/로딩 시작 (quantized: true, cache: ${cacheDir})`);
-        console.log(`[CRITICAL] 📥 모델 다운로드 시작 - 하트비트는 pipeline() 호출과 병렬로 실행됩니다.`);
+        console.log(`[CRITICAL] 📥 모델 다운로드 시작 - 하트비트는 pipeline() 호출과 Promise.all로 동시 실행됩니다.`);
         console.log(`[CRITICAL] ⏱️ 예상 소요 시간: 40-90초 (서버리스 환경, 네트워크 상태에 따라 다름)`);
         
-        // 모델 초기화 진행 (하트비트 루프와 병렬로 실행)
+        // 모델 초기화 진행 (하트비트 루프와 Promise.all로 동시 실행)
         const pipelineStartTime = Date.now();
-        this.pipeline = await pipeline('feature-extraction', 'Xenova/bge-m3', {
+        const pipelinePromise = pipeline('feature-extraction', 'Xenova/bge-m3', {
           // 모델 로딩 최적화
           quantized: true,
           // 캐시 사용 (Vercel 환경에서는 /tmp 사용)
@@ -204,6 +196,24 @@ export class EmbeddingService {
           local_files_only: false,
           revision: 'main'
         });
+        
+        // 하트비트 루프 시작 (pipeline()과 병렬로 실행)
+        const heartbeatLoopPromise = runHeartbeatLoop();
+        
+        // pipeline()과 하트비트 루프를 동시에 실행
+        // pipeline()이 완료되면 하트비트 루프는 자동으로 중지됨
+        const [pipelineResult] = await Promise.all([
+          pipelinePromise.then((result) => {
+            heartbeatLoopActive = false;
+            return result;
+          }),
+          heartbeatLoopPromise.catch(() => {
+            // 하트비트 루프는 pipeline() 완료 시까지 계속 실행
+            // 에러는 무시 (정상 종료)
+          })
+        ]);
+        
+        this.pipeline = pipelineResult as any;
         
         const pipelineElapsed = Date.now() - pipelineStartTime;
         console.log(`[CRITICAL] ✅ pipeline() 호출 완료: ${pipelineElapsed}ms (${(pipelineElapsed / 1000).toFixed(1)}초)`);
