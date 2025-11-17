@@ -73,9 +73,9 @@ export class RAGProcessor {
       separators: ['\n\n', '\n', '.', '!', '?', ';', ' ', ''], // 분할 기준
     });
 
-    // 환경 변수에서 임베딩 제공자 선택 (기본값: openai - 서버리스 환경에서 더 안정적)
-    // BGE-M3는 서버리스 환경에서 모델 다운로드가 매우 느리거나 멈출 수 있으므로 OpenAI를 기본값으로 사용
-    const provider = (process.env.EMBEDDING_PROVIDER || 'openai').toLowerCase();
+    // 환경 변수에서 임베딩 제공자 선택 (기본값: bge-m3 - 정확도가 생명인 서비스)
+    // 정확도가 생명인 서비스이므로 BGE-M3를 기본값으로 사용
+    const provider = (process.env.EMBEDDING_PROVIDER || 'bge-m3').toLowerCase();
     if (provider === 'bge-m3') {
       this.embeddingProvider = 'bge-m3';
       console.log('✅ BGE-M3 임베딩 사용 설정됨 (서버리스 환경에서는 느릴 수 있습니다)');
