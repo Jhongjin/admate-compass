@@ -246,8 +246,14 @@ export class RAGProcessor {
       console.log(`[CRITICAL] ⏰ 하트비트 루프 시작... (jobId: ${this.currentJobId || 'none'})`);
       
       // 하트비트 루프 Promise (15초마다 하트비트 실행)
+      // 첫 하트비트는 이미 실행되었으므로, 루프를 즉시 시작하고 첫 번째 반복에서 15초 대기
       const heartbeatLoopPromise = new Promise<void>((resolve) => {
         const runHeartbeatLoop = async () => {
+          console.log(`[CRITICAL] 🚀 하트비트 루프 함수 시작됨 (첫 하트비트는 이미 실행되었으므로 15초 후 첫 반복 실행)`);
+          
+          // 첫 하트비트는 이미 실행되었으므로, 첫 번째 반복 전에 15초 대기
+          await new Promise(resolve => setTimeout(resolve, 15000));
+          
           while (!shouldStopHeartbeat) {
             const triggerTime = new Date().toISOString();
             const elapsedSinceInit = Date.now() - initStartMs;
@@ -280,10 +286,8 @@ export class RAGProcessor {
           resolve();
         };
         
-        // 첫 하트비트는 이미 실행되었으므로, 15초 후에 루프 시작
-        setTimeout(() => {
-          runHeartbeatLoop();
-        }, 15000);
+        // 루프를 즉시 시작 (첫 하트비트는 이미 실행되었으므로)
+        runHeartbeatLoop();
       });
       
       const initPromise = this.embeddingService.initialize('bge-m3').finally(() => {
