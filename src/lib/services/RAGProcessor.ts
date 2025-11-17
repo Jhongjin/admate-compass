@@ -161,24 +161,35 @@ export class RAGProcessor {
             const remainingSeconds = (remaining / 1000).toFixed(1);
             const dbUpdateStartTime = Date.now();
             
+            // 저장할 값 확인 (밀리초 단위)
+            console.log(`[CRITICAL] 📊 DB 업데이트 값 확인: elapsed=${elapsed}ms (${elapsedSeconds}초), remaining=${remaining}ms (${remainingSeconds}초)`);
+            
             const currentResult = (await supabase
               .from('processing_jobs')
               .select('result')
               .eq('id', this.currentJobId!)
               .maybeSingle())?.data?.result || {};
             
+            const updateData = {
+              result: {
+                ...currentResult,
+                status: 'main_page_rag_processing',
+                message: `BGE-M3 모델 초기화 중... (경과: ${elapsedSeconds}초, 남은 시간: ${remainingSeconds}초)`,
+                bgeM3InitElapsed: elapsed,  // 밀리초 단위
+                bgeM3InitRemaining: remaining  // 밀리초 단위
+              },
+              updated_at: new Date().toISOString()
+            };
+            
+            console.log(`[CRITICAL] 📤 DB 업데이트 데이터:`, {
+              bgeM3InitElapsed: updateData.result.bgeM3InitElapsed,
+              bgeM3InitRemaining: updateData.result.bgeM3InitRemaining,
+              message: updateData.result.message
+            });
+            
             const updateResult = await supabase
               .from('processing_jobs')
-              .update({
-                result: {
-                  ...currentResult,
-                  status: 'main_page_rag_processing',
-                  message: `BGE-M3 모델 초기화 중... (경과: ${elapsedSeconds}초, 남은 시간: ${remainingSeconds}초)`,
-                  bgeM3InitElapsed: elapsed,
-                  bgeM3InitRemaining: remaining
-                },
-                updated_at: new Date().toISOString()
-              })
+              .update(updateData)
               .eq('id', this.currentJobId!)
               .neq('status', 'cancelled')
               .select('id');
@@ -190,7 +201,7 @@ export class RAGProcessor {
             } else {
               const updatedCount = updateResult.data ? updateResult.data.length : 0;
               if (updatedCount > 0) {
-                console.log(`[CRITICAL] 💓 BGE-M3 초기화 하트비트 DB 업데이트 완료: 경과 ${elapsedSeconds}초, DB 업데이트 소요: ${dbUpdateElapsed}ms, 업데이트된 행: ${updatedCount}개, jobId: ${this.currentJobId}`);
+                console.log(`[CRITICAL] 💓 BGE-M3 초기화 하트비트 DB 업데이트 완료: 경과 ${elapsedSeconds}초 (${elapsed}ms), 남은 시간 ${remainingSeconds}초 (${remaining}ms), DB 업데이트 소요: ${dbUpdateElapsed}ms, 업데이트된 행: ${updatedCount}개, jobId: ${this.currentJobId}`);
               }
             }
           } catch (err) {
