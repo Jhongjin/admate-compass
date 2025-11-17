@@ -2653,6 +2653,78 @@ export async function processQueue() {
           });
         }
 
+        // 실패한 하위 페이지 자동 재처리 (해시 모드 활성화 시)
+        const failedSubPages = subPageResults.filter((item) => !item.success);
+        const reprocessedSubPages: Array<{ url: string; success: boolean; error?: string }> = [];
+        
+        if (failedSubPages.length > 0 && process.env.USE_HASH_EMBEDDING?.toLowerCase() !== 'false') {
+          console.log(`[CRITICAL] 🔄 실패한 하위 페이지 자동 재처리 시작: ${failedSubPages.length}개`);
+          
+          for (const failedPage of failedSubPages) {
+            try {
+              // 실패한 문서 ID 찾기
+              const { data: failedDoc } = await supabase
+                .from('documents')
+                .select('id, url, content, title, source_vendor, main_document_id, created_at')
+                .eq('url', failedPage.url)
+                .eq('type', 'url')
+                .maybeSingle();
+              
+              if (failedDoc && failedDoc.content && failedDoc.content.trim().length > 0) {
+                // RAG 재처리
+                ragProcessor.setCurrentJobId(job.id);
+                const reprocessResult = await ragProcessor.processDocument({
+                  id: failedDoc.id,
+                  title: failedDoc.title,
+                  content: failedDoc.content,
+                  type: 'url',
+                  file_size: Buffer.byteLength(failedDoc.content, 'utf8'),
+                  file_type: 'text/html',
+                  source_vendor: failedDoc.source_vendor || dbVendor,
+                  created_at: (failedDoc as any).created_at || new Date().toISOString(),
+                  updated_at: new Date().toISOString(),
+                });
+                
+                if (reprocessResult.success) {
+                  await supabase
+                    .from('documents')
+                    .update({
+                      status: 'indexed',
+                      chunk_count: reprocessResult.chunkCount,
+                      updated_at: new Date().toISOString(),
+                    })
+                    .eq('id', failedDoc.id);
+                  
+                  reprocessedSubPages.push({ url: failedPage.url, success: true });
+                  console.log(`[CRITICAL] ✅ 하위 페이지 재처리 성공: ${failedPage.url} (청크: ${reprocessResult.chunkCount}개)`);
+                } else {
+                  reprocessedSubPages.push({
+                    url: failedPage.url,
+                    success: false,
+                    error: reprocessResult.error || '재처리 실패',
+                  });
+                  console.warn(`[CRITICAL] ⚠️ 하위 페이지 재처리 실패: ${failedPage.url}`);
+                }
+              } else {
+                reprocessedSubPages.push({
+                  url: failedPage.url,
+                  success: false,
+                  error: '콘텐츠가 없어 재처리 불가',
+                });
+              }
+            } catch (reprocessError) {
+              reprocessedSubPages.push({
+                url: failedPage.url,
+                success: false,
+                error: reprocessError instanceof Error ? reprocessError.message : String(reprocessError),
+              });
+              console.error(`[CRITICAL] ❌ 하위 페이지 재처리 중 에러: ${failedPage.url}`, reprocessError);
+            }
+          }
+          
+          console.log(`[CRITICAL] 📊 하위 페이지 재처리 완료: ${reprocessedSubPages.filter(p => p.success).length}/${failedSubPages.length} 성공`);
+        }
+
         const finishedResult = {
           url,
           documentId,
@@ -2663,8 +2735,9 @@ export async function processQueue() {
           respectRobots,
           maxDepth,
           extractSubPages,
-          subPageCount: subPageResults.filter((item) => item.success).length,
+          subPageCount: subPageResults.filter((item) => item.success).length + reprocessedSubPages.filter((p) => p.success).length,
           subPages: subPageResults,
+          reprocessedSubPages: reprocessedSubPages.length > 0 ? reprocessedSubPages : undefined,
           crawlTimeMs: Date.now() - crawlStartMs,
         };
 

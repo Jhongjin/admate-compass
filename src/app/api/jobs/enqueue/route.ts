@@ -30,6 +30,28 @@ export async function POST(request: NextRequest) {
 
     const supabase = await createPureClient();
 
+    // PDF_PARSE/DOCX_PARSE 작업 생성 전에 문서 타입 확인 (URL 문서 방지)
+    if ((body.jobType === 'PDF_PARSE' || body.jobType === 'DOCX_PARSE') && body.documentId) {
+      const { data: docCheck, error: docCheckError } = await supabase
+        .from('documents')
+        .select('type, url, title')
+        .eq('id', body.documentId)
+        .maybeSingle();
+      
+      if (!docCheckError && docCheck && (docCheck.type === 'url' || docCheck.url)) {
+        return NextResponse.json(
+          {
+            success: false,
+            error: `이 문서는 URL 크롤링 문서입니다 (type: ${docCheck.type}, title: ${docCheck.title || 'N/A'}). PDF_PARSE/DOCX_PARSE 작업으로는 처리할 수 없습니다. URL 문서 재처리는 /api/jobs/reprocess-url API를 사용하세요.`,
+            documentType: docCheck.type,
+            documentTitle: docCheck.title,
+            suggestion: 'Use /api/jobs/reprocess-url for URL documents',
+          },
+          { status: 400 }
+        );
+      }
+    }
+
     // 중복 방지: 같은 문서/타입이 대기 또는 처리 중이면 기존 레코드 반환
     // CRAWL_SEED의 경우 documentId가 없으므로 payload의 url로 중복 체크
     let existing = null;
