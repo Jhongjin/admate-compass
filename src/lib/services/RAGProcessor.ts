@@ -132,9 +132,9 @@ export class RAGProcessor {
       console.log('⏳ BGE-M3 모델 초기화 중... (타임아웃: 10분, 서버리스 환경에서는 매우 느릴 수 있습니다)');
       console.log('   OpenAI API 할당량 초과로 인한 fallback이므로 초기화에 시간이 걸릴 수 있습니다.');
       
-      // 진행 상황 모니터링을 위한 하트비트 (15초마다 DB 업데이트 + 로깅)
+      // 진행 상황 모니터링을 위한 하트비트 함수 (재사용 가능하도록 분리)
       let heartbeatCount = 0; // 하트비트 카운트 (로깅 최적화용)
-      const progressInterval = setInterval(async () => {
+      const performHeartbeat = async () => {
         heartbeatCount++;
         const elapsed = Date.now() - initStartMs;
         const elapsedSeconds = (elapsed / 1000).toFixed(1);
@@ -210,6 +210,21 @@ export class RAGProcessor {
             console.log(`[CRITICAL] ℹ️ BGE-M3 초기화 진행 중이지만 jobId가 설정되지 않음 (DB 업데이트 건너뜀, 로깅만 수행)`);
           }
         }
+      };
+      
+      // 초기화 시작 시 즉시 첫 하트비트 실행 (진행 상황을 즉시 반영)
+      if (this.currentJobId) {
+        console.log(`[CRITICAL] 🚀 BGE-M3 초기화 시작 - 첫 하트비트 즉시 실행 (jobId: ${this.currentJobId})`);
+        performHeartbeat().catch((err) => {
+          console.warn('[CRITICAL] ⚠️ 첫 하트비트 실행 실패 (계속 진행):', err);
+        });
+      }
+      
+      // 이후 15초마다 하트비트 실행
+      const progressInterval = setInterval(() => {
+        performHeartbeat().catch((err) => {
+          console.warn('[CRITICAL] ⚠️ 하트비트 실행 실패 (계속 진행):', err);
+        });
       }, 15000); // 15초마다 DB 업데이트 (더 자주 업데이트하여 진행 상황 확인 가능)
       
       const initPromise = this.embeddingService.initialize('bge-m3').finally(() => {
