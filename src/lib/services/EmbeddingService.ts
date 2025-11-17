@@ -133,13 +133,41 @@ export class EmbeddingService {
       });
       
       // 15초마다 하트비트 실행
-      const heartbeatInterval = setInterval(async () => {
-        await executeHeartbeat().catch((err) => {
-          console.warn('[CRITICAL] ⚠️ 하트비트 실행 실패 (계속 진행):', err);
-        });
-      }, 15000);
+      let heartbeatIntervalId: NodeJS.Timeout | null = null;
+      let heartbeatIntervalCount = 0;
       
-      console.log(`[CRITICAL] ⏰ 하트비트 인터벌 설정 완료: 15초마다 실행 예정`);
+      const startHeartbeatInterval = () => {
+        heartbeatIntervalCount++;
+        console.log(`[CRITICAL] ⏰ 하트비트 인터벌 시작 (${heartbeatIntervalCount}번째 설정)`);
+        
+        heartbeatIntervalId = setInterval(async () => {
+          const triggerTime = new Date().toISOString();
+          const elapsedSinceInit = Date.now() - modelInitStartMs;
+          console.log(`[CRITICAL] ⏰ 하트비트 인터벌 트리거됨 (${triggerTime}, 경과: ${(elapsedSinceInit / 1000).toFixed(1)}초, 인터벌 카운트: ${heartbeatIntervalCount})`);
+          
+          await executeHeartbeat().catch((err) => {
+            console.warn('[CRITICAL] ⚠️ 하트비트 실행 실패 (계속 진행):', err);
+          });
+        }, 15000);
+        
+        console.log(`[CRITICAL] ⏰ 하트비트 인터벌 설정 완료: intervalId=${heartbeatIntervalId ? '설정됨' : 'NULL'}, 15초마다 실행 예정`);
+      };
+      
+      startHeartbeatInterval();
+      
+      // 폴백: setInterval이 실행되지 않는 경우를 대비하여 pipeline() 호출 중에도 주기적으로 확인
+      const fallbackHeartbeatCheck = setInterval(() => {
+        const elapsed = Date.now() - modelInitStartMs;
+        const timeSinceLastHeartbeat = elapsed - (lastHeartbeatTime - modelInitStartMs);
+        
+        // 마지막 하트비트로부터 20초 이상 경과했으면 폴백 하트비트 실행
+        if (timeSinceLastHeartbeat > 20000) {
+          console.warn(`[CRITICAL] ⚠️ 폴백 하트비트 실행: 마지막 하트비트로부터 ${(timeSinceLastHeartbeat / 1000).toFixed(1)}초 경과 (setInterval이 실행되지 않았을 수 있음)`);
+          executeHeartbeat().catch((err) => {
+            console.warn('[CRITICAL] ⚠️ 폴백 하트비트 실행 실패:', err);
+          });
+        }
+      }, 5000); // 5초마다 확인
       
       try {
         console.log(`📥 BGE-M3 모델 다운로드/로딩 시작 (quantized: true, cache: ${cacheDir})`);
@@ -163,14 +191,22 @@ export class EmbeddingService {
         const pipelineElapsed = Date.now() - pipelineStartTime;
         console.log(`[CRITICAL] ✅ pipeline() 호출 완료: ${pipelineElapsed}ms (${(pipelineElapsed / 1000).toFixed(1)}초)`);
         
-        clearInterval(heartbeatInterval);
+        if (heartbeatIntervalId) {
+          clearInterval(heartbeatIntervalId);
+          console.log(`[CRITICAL] 🧹 하트비트 인터벌 정리 완료`);
+        }
+        clearInterval(fallbackHeartbeatCheck);
         
         const modelInitMs = Date.now() - modelInitStartMs;
         const modelInitSeconds = (modelInitMs / 1000).toFixed(1);
         console.log(`✅ BGE-M3 파이프라인 인스턴스 생성 완료`);
         console.log(`✅ BGE-M3 모델 초기화 완료: ${modelInitMs}ms (${modelInitSeconds}초)`);
       } catch (error) {
-        clearInterval(heartbeatInterval);
+        if (heartbeatIntervalId) {
+          clearInterval(heartbeatIntervalId);
+          console.log(`[CRITICAL] 🧹 하트비트 인터벌 정리 완료 (에러 발생)`);
+        }
+        clearInterval(fallbackHeartbeatCheck);
         const elapsed = Date.now() - modelInitStartMs;
         const elapsedSeconds = (elapsed / 1000).toFixed(1);
         console.error(`❌ BGE-M3 모델 초기화 실패 (경과: ${elapsedSeconds}초):`, error);
