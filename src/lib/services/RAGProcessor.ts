@@ -124,9 +124,20 @@ export class RAGProcessor {
       console.log('⏳ BGE-M3 모델 초기화 중... (타임아웃: 10분, 서버리스 환경에서는 매우 느릴 수 있습니다)');
       console.log('   OpenAI API 할당량 초과로 인한 fallback이므로 초기화에 시간이 걸릴 수 있습니다.');
       
-      const initPromise = this.embeddingService.initialize('bge-m3');
+      // 진행 상황 모니터링을 위한 하트비트 (30초마다 로깅)
+      const progressInterval = setInterval(() => {
+        const elapsed = Date.now() - initStartMs;
+        const elapsedSeconds = (elapsed / 1000).toFixed(1);
+        console.log(`[CRITICAL] 🔄 BGE-M3 초기화 진행 중... (경과: ${elapsedSeconds}초, 타임아웃까지: ${((INIT_TIMEOUT - elapsed) / 1000).toFixed(1)}초)`);
+      }, 30000); // 30초마다 진행 상황 로깅
+      
+      const initPromise = this.embeddingService.initialize('bge-m3').finally(() => {
+        clearInterval(progressInterval);
+      });
+      
       const timeoutPromise = new Promise<never>((_, reject) => {
         setTimeout(() => {
+          clearInterval(progressInterval);
           const elapsed = Date.now() - initStartMs;
           reject(new Error(`BGE-M3 모델 초기화 타임아웃: 10분 초과 (경과: ${(elapsed / 1000).toFixed(1)}초). 서버리스 환경에서 모델 다운로드가 멈췄을 수 있습니다. OpenAI Embeddings API를 사용하려면 EMBEDDING_PROVIDER=openai 환경 변수를 설정하고 Pay-as-you-go 플랜으로 업그레이드하세요.`));
         }, INIT_TIMEOUT);

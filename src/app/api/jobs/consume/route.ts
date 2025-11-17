@@ -1940,9 +1940,44 @@ export async function processQueue() {
           // 총: 5분 (안전 마진 포함)
           const ragTimeout = 5 * 60 * 1000; // 5분
           const ragStartTime = Date.now();
-          const ragPromise = upsertAndProcessDocument({ targetUrl: url, title: mainPage.pageTitle, content: mainPage.textContent, documentIdOverride: documentId });
+          
+          // RAG 처리 진행 상황 모니터링을 위한 하트비트 (30초마다 업데이트)
+          const ragHeartbeatInterval = setInterval(async () => {
+            try {
+              const elapsed = Date.now() - ragStartTime;
+              const elapsedSeconds = (elapsed / 1000).toFixed(1);
+              const remainingSeconds = ((ragTimeout - elapsed) / 1000).toFixed(1);
+              
+              const currentResult = ((job as any).result as any) || {};
+              await supabase
+                .from('processing_jobs')
+                .update({
+                  result: {
+                    ...currentResult,
+                    url: url || currentResult.url,
+                    documentId: documentId || currentResult.documentId,
+                    status: 'main_page_rag_processing',
+                    message: `메인 페이지 RAG 처리 중... (경과: ${elapsedSeconds}초, 남은 시간: ${remainingSeconds}초)`,
+                    crawlElapsed: Date.now() - mainPageStartTime,
+                    ragElapsed: elapsed
+                  }
+                })
+                .eq('id', job.id)
+                .neq('status', 'cancelled');
+              
+              console.log(`[CRITICAL] 💓 RAG 처리 하트비트: 경과 ${elapsedSeconds}초, 남은 시간 ${remainingSeconds}초`);
+            } catch (heartbeatError) {
+              console.warn('[CRITICAL] ⚠️ RAG 처리 하트비트 업데이트 실패 (계속 진행):', heartbeatError);
+            }
+          }, 30000); // 30초마다 하트비트 업데이트
+          
+          const ragPromise = upsertAndProcessDocument({ targetUrl: url, title: mainPage.pageTitle, content: mainPage.textContent, documentIdOverride: documentId }).finally(() => {
+            clearInterval(ragHeartbeatInterval);
+          });
+          
           const ragTimeoutPromise = new Promise<never>((_, reject) => {
             setTimeout(() => {
+              clearInterval(ragHeartbeatInterval);
               const elapsed = Date.now() - ragStartTime;
               reject(new Error(`메인 페이지 RAG 처리 타임아웃: ${ragTimeout}ms 초과 (경과: ${elapsed}ms)`));
             }, ragTimeout);

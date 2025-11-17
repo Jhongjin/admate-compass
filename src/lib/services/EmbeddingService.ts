@@ -75,7 +75,7 @@ export class EmbeddingService {
       console.log('🔄 BGE-M3 모델 초기화 시작 (다운로드/로딩 중...)');
       console.log(`📂 캐시 디렉토리: ${cacheDir}`);
       
-      // 진행 상황 추적을 위한 하트비트 로깅
+      // 진행 상황 추적을 위한 하트비트 로깅 (5초마다 더 자주 로깅)
       let lastHeartbeatTime = modelInitStartMs;
       let heartbeatCount = 0;
       const heartbeatInterval = setInterval(() => {
@@ -85,10 +85,20 @@ export class EmbeddingService {
         const timeSinceLastHeartbeat = ((now - lastHeartbeatTime) / 1000).toFixed(1);
         heartbeatCount++;
         
-        // 10초마다 하트비트
+        // 5초마다 하트비트 (더 자주 로깅하여 진행 상황 확인)
         console.log(`⏳ BGE-M3 모델 초기화 진행 중... (경과: ${elapsedSeconds}초, 하트비트: ${heartbeatCount}회, 캐시: ${cacheDir})`);
         lastHeartbeatTime = now;
-      }, 10000); // 10초마다 하트비트
+        
+        // 30초 이상 경과 시 경고 로그 추가
+        if (elapsed > 30000) {
+          console.warn(`⚠️ BGE-M3 모델 초기화가 오래 걸리고 있습니다 (${elapsedSeconds}초 경과). 서버리스 환경에서 모델 다운로드가 느릴 수 있습니다.`);
+        }
+        
+        // 60초 이상 경과 시 추가 경고
+        if (elapsed > 60000) {
+          console.warn(`⚠️ BGE-M3 모델 초기화가 매우 오래 걸리고 있습니다 (${elapsedSeconds}초 경과). 네트워크 상태를 확인해주세요.`);
+        }
+      }, 5000); // 5초마다 하트비트 (더 자주 로깅)
       
       try {
         console.log(`📥 BGE-M3 모델 다운로드/로딩 시작 (quantized: true, cache: ${cacheDir})`);
