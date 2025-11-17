@@ -175,7 +175,7 @@ export class EmbeddingService {
             console.warn('[CRITICAL] ⚠️ 하트비트 루프 실행 실패:', err);
           });
         }
-        throw new Error('Heartbeat loop stopped'); // Promise.race를 위해 reject
+        throw new Error('Heartbeat loop stopped'); // Promise.all에서 catch로 처리
       };
       
       console.log(`[CRITICAL] 🔄 하트비트 루프 시작: 15초마다 정기 하트비트 실행 (pipeline() 호출과 Promise.all로 실행)`);
