@@ -243,8 +243,12 @@ export class RAGProcessor {
       }
       
       // 이후 15초마다 하트비트 실행
+      // Vercel 서버리스 환경에서는 setInterval이 함수 종료 시 정리될 수 있으므로,
+      // 명시적으로 인터벌이 설정되었음을 로그로 확인
+      console.log(`[CRITICAL] ⏰ 하트비트 인터벌 설정 완료: 15초마다 실행 예정 (jobId: ${this.currentJobId || 'none'})`);
       const progressInterval = setInterval(async () => {
-        console.log(`[CRITICAL] ⏰ 하트비트 인터벌 트리거됨 (shouldStopHeartbeat: ${shouldStopHeartbeat})`);
+        const triggerTime = new Date().toISOString();
+        console.log(`[CRITICAL] ⏰ 하트비트 인터벌 트리거됨 (${triggerTime}, shouldStopHeartbeat: ${shouldStopHeartbeat})`);
         if (shouldStopHeartbeat) {
           console.log(`[CRITICAL] ⏹️ 하트비트 중단 플래그가 설정되어 인터벌을 정리합니다.`);
           clearInterval(progressInterval);
