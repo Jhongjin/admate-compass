@@ -234,77 +234,97 @@ export class RAGProcessor {
         return true; // 하트비트 계속 진행
       };
       
-      // 재귀적 하트비트 스케줄링 함수 (performHeartbeat 내부에서 다음 하트비트를 스케줄링)
-      const scheduleNextHeartbeat = async (): Promise<void> => {
-        if (shouldStopHeartbeat) {
-          console.log(`[CRITICAL] ⏹️ 하트비트 중단 플래그가 설정되어 다음 하트비트를 스케줄링하지 않습니다.`);
-          return;
-        }
-        
-        // 15초 대기
-        await new Promise(resolve => setTimeout(resolve, 15000));
-        
-        if (shouldStopHeartbeat) {
-          console.log(`[CRITICAL] ⏹️ 하트비트 중단 플래그가 설정되어 하트비트를 실행하지 않습니다.`);
-          return;
-        }
-        
-        const triggerTime = new Date().toISOString();
-        const elapsedSinceInit = Date.now() - initStartMs;
-        console.log(`[CRITICAL] ⏰ 하트비트 스케줄러 트리거됨 (${triggerTime}, 경과: ${(elapsedSinceInit / 1000).toFixed(1)}초, 하트비트: ${heartbeatCount}회, shouldStopHeartbeat: ${shouldStopHeartbeat})`);
-        
-        try {
-          console.log(`[CRITICAL] 💓 하트비트 실행 시작...`);
-          const shouldContinue = await performHeartbeat().catch((err) => {
-            console.warn('[CRITICAL] ⚠️ 하트비트 실행 실패 (계속 진행):', err);
-            return true; // 에러 발생 시에도 계속 진행
-          });
-          
-          if (!shouldContinue) {
-            console.log(`[CRITICAL] ⏹️ 하트비트가 false를 반환하여 다음 하트비트를 스케줄링하지 않습니다.`);
+      // 하트비트 루프를 Promise로 감싸서 Promise.race에 포함시킴
+      // 하트비트 루프는 초기화가 완료될 때까지 계속 실행되어야 함
+      const heartbeatLoopPromise = new Promise<void>((resolve) => {
+        // 재귀적 하트비트 스케줄링 함수
+        const scheduleNextHeartbeat = async (): Promise<void> => {
+          if (shouldStopHeartbeat) {
+            console.log(`[CRITICAL] ⏹️ 하트비트 중단 플래그가 설정되어 하트비트 루프를 종료합니다.`);
+            resolve();
             return;
           }
           
-          console.log(`[CRITICAL] ✅ 하트비트 완료, 다음 하트비트를 15초 후에 스케줄링합니다.`);
+          // 15초 대기
+          await new Promise(resolve => setTimeout(resolve, 15000));
           
-          // 다음 하트비트 스케줄링 (재귀적)
-          scheduleNextHeartbeat().catch((err) => {
-            console.error(`[CRITICAL] ❌ 다음 하트비트 스케줄링 실패:`, err);
-          });
-        } catch (error) {
-          console.error(`[CRITICAL] ❌ 하트비트 스케줄러 오류:`, error);
-          // 에러 발생 시에도 다음 하트비트 스케줄링 시도
-          if (!shouldStopHeartbeat) {
-            scheduleNextHeartbeat().catch((err) => {
-              console.error(`[CRITICAL] ❌ 다음 하트비트 스케줄링 실패 (재시도):`, err);
-            });
+          if (shouldStopHeartbeat) {
+            console.log(`[CRITICAL] ⏹️ 하트비트 중단 플래그가 설정되어 하트비트를 실행하지 않습니다.`);
+            resolve();
+            return;
           }
-        }
-      };
-      
-      // 초기화 시작 시 즉시 첫 하트비트 실행 (진행 상황을 즉시 반영)
-      if (this.currentJobId) {
-        console.log(`[CRITICAL] 🚀 BGE-M3 초기화 시작 - 첫 하트비트 즉시 실행 (jobId: ${this.currentJobId})`);
-        performHeartbeat()
-          .then((shouldContinue) => {
-            if (shouldContinue && !shouldStopHeartbeat) {
-              console.log(`[CRITICAL] ✅ 첫 하트비트 완료, 다음 하트비트를 15초 후에 스케줄링합니다.`);
-              // 첫 하트비트 완료 후 다음 하트비트 스케줄링
-              scheduleNextHeartbeat().catch((err) => {
-                console.error(`[CRITICAL] ❌ 첫 하트비트 후 다음 하트비트 스케줄링 실패:`, err);
-              });
+          
+          const triggerTime = new Date().toISOString();
+          const elapsedSinceInit = Date.now() - initStartMs;
+          console.log(`[CRITICAL] ⏰ 하트비트 스케줄러 트리거됨 (${triggerTime}, 경과: ${(elapsedSinceInit / 1000).toFixed(1)}초, 하트비트: ${heartbeatCount}회, shouldStopHeartbeat: ${shouldStopHeartbeat})`);
+          
+          try {
+            console.log(`[CRITICAL] 💓 하트비트 실행 시작...`);
+            const shouldContinue = await performHeartbeat().catch((err) => {
+              console.warn('[CRITICAL] ⚠️ 하트비트 실행 실패 (계속 진행):', err);
+              return true; // 에러 발생 시에도 계속 진행
+            });
+            
+            if (!shouldContinue) {
+              console.log(`[CRITICAL] ⏹️ 하트비트가 false를 반환하여 하트비트 루프를 종료합니다.`);
+              resolve();
+              return;
             }
-          })
-          .catch((err) => {
-            console.warn('[CRITICAL] ⚠️ 첫 하트비트 실행 실패 (계속 진행):', err);
-            // 첫 하트비트 실패 시에도 다음 하트비트 스케줄링 시도
+            
+            console.log(`[CRITICAL] ✅ 하트비트 완료, 다음 하트비트를 15초 후에 스케줄링합니다.`);
+            
+            // 다음 하트비트 스케줄링 (재귀적)
+            scheduleNextHeartbeat().catch((err) => {
+              console.error(`[CRITICAL] ❌ 다음 하트비트 스케줄링 실패:`, err);
+              resolve(); // 에러 발생 시 루프 종료
+            });
+          } catch (error) {
+            console.error(`[CRITICAL] ❌ 하트비트 스케줄러 오류:`, error);
+            // 에러 발생 시에도 다음 하트비트 스케줄링 시도
             if (!shouldStopHeartbeat) {
               scheduleNextHeartbeat().catch((err) => {
-                console.error(`[CRITICAL] ❌ 첫 하트비트 실패 후 다음 하트비트 스케줄링 실패:`, err);
+                console.error(`[CRITICAL] ❌ 다음 하트비트 스케줄링 실패 (재시도):`, err);
+                resolve(); // 재시도 실패 시 루프 종료
               });
+            } else {
+              resolve();
             }
-          });
-      }
+          }
+        };
+        
+        // 초기화 시작 시 즉시 첫 하트비트 실행 (진행 상황을 즉시 반영)
+        if (this.currentJobId) {
+          console.log(`[CRITICAL] 🚀 BGE-M3 초기화 시작 - 첫 하트비트 즉시 실행 (jobId: ${this.currentJobId})`);
+          performHeartbeat()
+            .then((shouldContinue) => {
+              if (shouldContinue && !shouldStopHeartbeat) {
+                console.log(`[CRITICAL] ✅ 첫 하트비트 완료, 다음 하트비트를 15초 후에 스케줄링합니다.`);
+                // 첫 하트비트 완료 후 다음 하트비트 스케줄링
+                scheduleNextHeartbeat().catch((err) => {
+                  console.error(`[CRITICAL] ❌ 첫 하트비트 후 다음 하트비트 스케줄링 실패:`, err);
+                  resolve();
+                });
+              } else {
+                resolve();
+              }
+            })
+            .catch((err) => {
+              console.warn('[CRITICAL] ⚠️ 첫 하트비트 실행 실패 (계속 진행):', err);
+              // 첫 하트비트 실패 시에도 다음 하트비트 스케줄링 시도
+              if (!shouldStopHeartbeat) {
+                scheduleNextHeartbeat().catch((err) => {
+                  console.error(`[CRITICAL] ❌ 첫 하트비트 실패 후 다음 하트비트 스케줄링 실패:`, err);
+                  resolve();
+                });
+              } else {
+                resolve();
+              }
+            });
+        } else {
+          // jobId가 없으면 하트비트 루프를 시작하지 않음
+          resolve();
+        }
+      });
       
       const initPromise = this.embeddingService.initialize('bge-m3').finally(() => {
         console.log(`[CRITICAL] 🧹 BGE-M3 초기화 완료/실패 - 하트비트 중단`);
@@ -320,8 +340,20 @@ export class RAGProcessor {
         }, INIT_TIMEOUT);
       });
       
-      // 초기화 완료/타임아웃 대기
-      await Promise.race([initPromise, timeoutPromise]);
+      // 하트비트 루프와 초기화를 병렬로 실행
+      // Promise.all을 사용하여 두 Promise가 모두 완료될 때까지 기다림
+      // 하트비트 루프는 초기화가 완료되면 shouldStopHeartbeat가 true가 되어 종료됨
+      const initPromiseWithHeartbeat = Promise.race([initPromise, timeoutPromise]).then(() => {
+        console.log(`[CRITICAL] 🧹 초기화 완료 - 하트비트 루프 중단 신호 전송`);
+        shouldStopHeartbeat = true;
+      });
+      
+      await Promise.all([
+        initPromiseWithHeartbeat,
+        heartbeatLoopPromise.catch((err) => {
+          console.warn('[CRITICAL] ⚠️ 하트비트 루프 오류 (무시):', err);
+        })
+      ]);
       
       const elapsed = Date.now() - initStartMs;
       console.log(`✅ BGE-M3 임베딩 서비스 초기화 성공: ${elapsed}ms (${(elapsed / 1000).toFixed(1)}초)`);
