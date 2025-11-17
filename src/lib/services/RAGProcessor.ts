@@ -134,7 +134,13 @@ export class RAGProcessor {
       
       // 진행 상황 모니터링을 위한 하트비트 함수 (재사용 가능하도록 분리)
       let heartbeatCount = 0; // 하트비트 카운트 (로깅 최적화용)
-      const performHeartbeat = async () => {
+      let shouldStopHeartbeat = false; // 하트비트 중단 플래그
+      const performHeartbeat = async (): Promise<boolean> => {
+        // 하트비트가 중단되었으면 false 반환
+        if (shouldStopHeartbeat) {
+          return false;
+        }
+        
         heartbeatCount++;
         const elapsed = Date.now() - initStartMs;
         const elapsedSeconds = (elapsed / 1000).toFixed(1);
@@ -158,9 +164,8 @@ export class RAGProcessor {
               } else if (jobStatus?.status === 'cancelled') {
                 // 작업이 취소되었으면 하트비트 중단
                 console.log(`[CRITICAL] ⚠️ 작업이 취소되었습니다. BGE-M3 초기화 하트비트를 중단합니다. (jobId: ${this.currentJobId})`);
-                clearInterval(progressInterval);
-                // 초기화도 중단하려면 에러를 던져야 하지만, 현재는 하트비트만 중단
-                return;
+                shouldStopHeartbeat = true;
+                return false; // 하트비트 중단
               }
               
               const dbUpdateStartTime = Date.now();
@@ -183,19 +188,34 @@ export class RAGProcessor {
                   updated_at: new Date().toISOString() // updated_at 명시적 업데이트 (DB 업데이트 확인용)
                 })
                 .eq('id', this.currentJobId)
-                .neq('status', 'cancelled');
+                .neq('status', 'cancelled')
+                .select('id', { count: 'exact' }); // 업데이트된 행 수 확인을 위해 select 추가
               
               const dbUpdateElapsed = Date.now() - dbUpdateStartTime;
               
               if (updateResult.error) {
                 console.warn(`[CRITICAL] ⚠️ BGE-M3 초기화 하트비트 DB 업데이트 실패:`, updateResult.error);
               } else {
-                // 업데이트된 행 수 확인 (0이면 작업이 취소되었을 수 있음)
-                const updatedRows = updateResult.data || 0;
-                if (updatedRows === 0) {
-                  console.warn(`[CRITICAL] ⚠️ BGE-M3 초기화 하트비트 DB 업데이트: 업데이트된 행이 없음 (작업이 취소되었거나 존재하지 않음, jobId: ${this.currentJobId})`);
+                // 업데이트된 행 수 확인 (count 옵션 사용)
+                // Supabase의 update()는 data에 업데이트된 행을 반환하지 않으므로 count를 확인
+                const updatedCount = updateResult.count ?? (updateResult.data ? updateResult.data.length : 0);
+                if (updatedCount === 0) {
+                  // 업데이트된 행이 없으면 작업 상태를 다시 확인
+                  const { data: jobCheck } = await supabase
+                    .from('processing_jobs')
+                    .select('status')
+                    .eq('id', this.currentJobId)
+                    .maybeSingle();
+                  
+                  if (jobCheck?.status === 'cancelled') {
+                    console.log(`[CRITICAL] ℹ️ 작업이 취소되었습니다. 하트비트를 중단합니다. (jobId: ${this.currentJobId})`);
+                    shouldStopHeartbeat = true;
+                    return false; // 하트비트 중단
+                  } else {
+                    console.warn(`[CRITICAL] ⚠️ BGE-M3 초기화 하트비트 DB 업데이트: 업데이트된 행이 없음 (작업이 취소되었거나 존재하지 않음, jobId: ${this.currentJobId}, 현재 상태: ${jobCheck?.status || 'unknown'})`);
+                  }
                 } else {
-                  console.log(`[CRITICAL] 💓 BGE-M3 초기화 하트비트 DB 업데이트 완료: 경과 ${elapsedSeconds}초, DB 업데이트 소요: ${dbUpdateElapsed}ms, jobId: ${this.currentJobId}`);
+                  console.log(`[CRITICAL] 💓 BGE-M3 초기화 하트비트 DB 업데이트 완료: 경과 ${elapsedSeconds}초, DB 업데이트 소요: ${dbUpdateElapsed}ms, 업데이트된 행: ${updatedCount}개, jobId: ${this.currentJobId}`);
                 }
               }
             } else {
@@ -210,6 +230,8 @@ export class RAGProcessor {
             console.log(`[CRITICAL] ℹ️ BGE-M3 초기화 진행 중이지만 jobId가 설정되지 않음 (DB 업데이트 건너뜀, 로깅만 수행)`);
           }
         }
+        
+        return true; // 하트비트 계속 진행
       };
       
       // 초기화 시작 시 즉시 첫 하트비트 실행 (진행 상황을 즉시 반영)
@@ -221,10 +243,18 @@ export class RAGProcessor {
       }
       
       // 이후 15초마다 하트비트 실행
-      const progressInterval = setInterval(() => {
-        performHeartbeat().catch((err) => {
+      const progressInterval = setInterval(async () => {
+        if (shouldStopHeartbeat) {
+          clearInterval(progressInterval);
+          return;
+        }
+        const shouldContinue = await performHeartbeat().catch((err) => {
           console.warn('[CRITICAL] ⚠️ 하트비트 실행 실패 (계속 진행):', err);
+          return true; // 에러 발생 시에도 계속 진행
         });
+        if (!shouldContinue) {
+          clearInterval(progressInterval);
+        }
       }, 15000); // 15초마다 DB 업데이트 (더 자주 업데이트하여 진행 상황 확인 가능)
       
       const initPromise = this.embeddingService.initialize('bge-m3').finally(() => {
