@@ -117,16 +117,18 @@ export class RAGProcessor {
         return this.embeddingService;
       }
 
-      // 타임아웃 설정: 5분 (서버리스 환경에서 모델 다운로드가 멈출 수 있으므로)
+      // 타임아웃 설정: 10분 (서버리스 환경에서 모델 다운로드가 매우 느릴 수 있으므로)
+      // OpenAI API 할당량 초과 시 fallback이므로 충분한 시간 제공
       const initStartMs = Date.now();
-      const INIT_TIMEOUT = 5 * 60 * 1000; // 5분
-      console.log('⏳ BGE-M3 모델 초기화 중... (타임아웃: 5분, 서버리스 환경에서는 느릴 수 있습니다)');
+      const INIT_TIMEOUT = 10 * 60 * 1000; // 10분 (OpenAI fallback이므로 충분한 시간 제공)
+      console.log('⏳ BGE-M3 모델 초기화 중... (타임아웃: 10분, 서버리스 환경에서는 매우 느릴 수 있습니다)');
+      console.log('   OpenAI API 할당량 초과로 인한 fallback이므로 초기화에 시간이 걸릴 수 있습니다.');
       
       const initPromise = this.embeddingService.initialize('bge-m3');
       const timeoutPromise = new Promise<never>((_, reject) => {
         setTimeout(() => {
           const elapsed = Date.now() - initStartMs;
-          reject(new Error(`BGE-M3 모델 초기화 타임아웃: 5분 초과 (경과: ${(elapsed / 1000).toFixed(1)}초). 서버리스 환경에서 모델 다운로드가 멈췄을 수 있습니다. OpenAI Embeddings API를 사용하려면 EMBEDDING_PROVIDER=openai 환경 변수를 설정하세요.`));
+          reject(new Error(`BGE-M3 모델 초기화 타임아웃: 10분 초과 (경과: ${(elapsed / 1000).toFixed(1)}초). 서버리스 환경에서 모델 다운로드가 멈췄을 수 있습니다. OpenAI Embeddings API를 사용하려면 EMBEDDING_PROVIDER=openai 환경 변수를 설정하고 Pay-as-you-go 플랜으로 업그레이드하세요.`));
         }, INIT_TIMEOUT);
       });
       
@@ -139,9 +141,27 @@ export class RAGProcessor {
     } catch (error) {
       const elapsed = Date.now() - (this.embeddingService ? Date.now() : 0);
       const errorMessage = error instanceof Error ? error.message : String(error);
-      console.error(`❌ BGE-M3 임베딩 서비스 초기화 실패 (경과: ${(elapsed / 1000).toFixed(1)}초):`, errorMessage);
+      const errorStack = error instanceof Error ? error.stack : undefined;
+      
+      console.error(`[CRITICAL] ❌ BGE-M3 임베딩 서비스 초기화 실패 (경과: ${(elapsed / 1000).toFixed(1)}초):`, {
+        error: errorMessage,
+        errorType: error instanceof Error ? error.constructor.name : typeof error,
+        errorStack: errorStack,
+        elapsed: `${(elapsed / 1000).toFixed(1)}초`,
+        isTimeout: errorMessage.includes('타임아웃'),
+        isNetworkError: errorMessage.includes('network') || errorMessage.includes('fetch') || errorMessage.includes('ECONNREFUSED'),
+        isMemoryError: errorMessage.includes('memory') || errorMessage.includes('ENOMEM'),
+      });
+      
       // 초기화 실패 시 에러를 던져서 사용자에게 알림
-      throw new Error(`BGE-M3 임베딩 서비스 초기화 실패: ${errorMessage}. OpenAI Embeddings API를 사용하려면 EMBEDDING_PROVIDER=openai 환경 변수를 설정하세요.`);
+      throw new Error(`BGE-M3 임베딩 서비스 초기화 실패: ${errorMessage}. 
+      
+해결 방법:
+1. OpenAI Embeddings API 사용: EMBEDDING_PROVIDER=openai 환경 변수 설정 및 Pay-as-you-go 플랜으로 업그레이드
+2. BGE-M3 재시도: 잠시 후 다시 시도 (서버리스 환경에서 모델 다운로드가 느릴 수 있음)
+3. 로컬 환경에서 테스트: BGE-M3는 로컬 환경에서 더 안정적으로 작동합니다.
+
+에러 상세: ${errorStack || errorMessage}`);
     }
   }
 
@@ -301,13 +321,28 @@ export class RAGProcessor {
         }
       }
 
-      // BGE-M3 사용
+      // BGE-M3 사용 (OpenAI API 실패 시 fallback)
       const embeddingInitStartMs = Date.now();
-      console.log('🔄 BGE-M3 임베딩 서비스 초기화 시작...');
-      const embeddingService = await this.initializeEmbeddingService();
+      console.log('🔄 BGE-M3 임베딩 서비스 초기화 시작... (OpenAI API 실패로 인한 fallback)');
+      console.log('   서버리스 환경에서는 모델 다운로드에 시간이 걸릴 수 있습니다 (최대 10분).');
+      
+      let embeddingService: EmbeddingService | null;
+      try {
+        embeddingService = await this.initializeEmbeddingService();
+      } catch (initError) {
+        const elapsed = Date.now() - embeddingInitStartMs;
+        const errorMessage = initError instanceof Error ? initError.message : String(initError);
+        console.error(`[CRITICAL] ❌ BGE-M3 임베딩 서비스 초기화 중 예외 발생 (경과: ${(elapsed / 1000).toFixed(1)}초):`, {
+          error: errorMessage,
+          errorType: initError instanceof Error ? initError.constructor.name : typeof initError,
+          errorStack: initError instanceof Error ? initError.stack : undefined,
+        });
+        throw initError;
+      }
       
       if (!embeddingService) {
-        throw new Error('BGE-M3 임베딩 서비스 초기화 실패');
+        const elapsed = Date.now() - embeddingInitStartMs;
+        throw new Error(`BGE-M3 임베딩 서비스 초기화 실패: initializeEmbeddingService()가 null을 반환했습니다 (경과: ${(elapsed / 1000).toFixed(1)}초). 서버리스 환경에서 모델 다운로드가 실패했을 수 있습니다.`);
       }
 
       const embeddingInitMs = Date.now() - embeddingInitStartMs;
