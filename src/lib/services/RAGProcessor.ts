@@ -244,16 +244,22 @@ export class RAGProcessor {
       
       // 이후 15초마다 하트비트 실행
       const progressInterval = setInterval(async () => {
+        console.log(`[CRITICAL] ⏰ 하트비트 인터벌 트리거됨 (shouldStopHeartbeat: ${shouldStopHeartbeat})`);
         if (shouldStopHeartbeat) {
+          console.log(`[CRITICAL] ⏹️ 하트비트 중단 플래그가 설정되어 인터벌을 정리합니다.`);
           clearInterval(progressInterval);
           return;
         }
+        console.log(`[CRITICAL] 💓 하트비트 실행 시작...`);
         const shouldContinue = await performHeartbeat().catch((err) => {
           console.warn('[CRITICAL] ⚠️ 하트비트 실행 실패 (계속 진행):', err);
           return true; // 에러 발생 시에도 계속 진행
         });
         if (!shouldContinue) {
+          console.log(`[CRITICAL] ⏹️ 하트비트가 false를 반환하여 인터벌을 정리합니다.`);
           clearInterval(progressInterval);
+        } else {
+          console.log(`[CRITICAL] ✅ 하트비트 완료, 다음 하트비트는 15초 후 실행됩니다.`);
         }
       }, 15000); // 15초마다 DB 업데이트 (더 자주 업데이트하여 진행 상황 확인 가능)
       
