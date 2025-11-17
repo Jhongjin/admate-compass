@@ -189,16 +189,16 @@ export class RAGProcessor {
                 })
                 .eq('id', this.currentJobId)
                 .neq('status', 'cancelled')
-                .select('id', { count: 'exact' }); // 업데이트된 행 수 확인을 위해 select 추가
+                .select('id'); // 업데이트된 행 수 확인을 위해 select 추가
               
               const dbUpdateElapsed = Date.now() - dbUpdateStartTime;
               
               if (updateResult.error) {
                 console.warn(`[CRITICAL] ⚠️ BGE-M3 초기화 하트비트 DB 업데이트 실패:`, updateResult.error);
               } else {
-                // 업데이트된 행 수 확인 (count 옵션 사용)
-                // Supabase의 update()는 data에 업데이트된 행을 반환하지 않으므로 count를 확인
-                const updatedCount = updateResult.count ?? (updateResult.data ? updateResult.data.length : 0);
+                // 업데이트된 행 수 확인 (data 배열의 길이로 확인)
+                // Supabase의 update().select()는 업데이트된 행을 data 배열로 반환
+                const updatedCount = updateResult.data ? updateResult.data.length : 0;
                 if (updatedCount === 0) {
                   // 업데이트된 행이 없으면 작업 상태를 다시 확인
                   const { data: jobCheck } = await supabase
