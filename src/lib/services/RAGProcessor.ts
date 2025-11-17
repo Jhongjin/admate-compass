@@ -326,10 +326,20 @@ export class RAGProcessor {
       console.log('🔄 BGE-M3 임베딩 서비스 초기화 시작... (OpenAI API 실패로 인한 fallback)');
       console.log('   서버리스 환경에서는 모델 다운로드에 시간이 걸릴 수 있습니다 (최대 10분).');
       
+      // OpenAI API 실패로 인한 fallback이므로 embeddingProvider를 임시로 'bge-m3'로 변경
+      const originalProvider = this.embeddingProvider;
+      const originalInitialized = this.embeddingServiceInitialized;
+      this.embeddingProvider = 'bge-m3';
+      this.embeddingServiceInitialized = false; // BGE-M3 초기화를 위해 리셋
+      
       let embeddingService: EmbeddingService | null;
       try {
         embeddingService = await this.initializeEmbeddingService();
       } catch (initError) {
+        // 원래 상태로 복원
+        this.embeddingProvider = originalProvider;
+        this.embeddingServiceInitialized = originalInitialized;
+        
         const elapsed = Date.now() - embeddingInitStartMs;
         const errorMessage = initError instanceof Error ? initError.message : String(initError);
         console.error(`[CRITICAL] ❌ BGE-M3 임베딩 서비스 초기화 중 예외 발생 (경과: ${(elapsed / 1000).toFixed(1)}초):`, {
@@ -341,9 +351,16 @@ export class RAGProcessor {
       }
       
       if (!embeddingService) {
+        // 원래 상태로 복원
+        this.embeddingProvider = originalProvider;
+        this.embeddingServiceInitialized = originalInitialized;
+        
         const elapsed = Date.now() - embeddingInitStartMs;
         throw new Error(`BGE-M3 임베딩 서비스 초기화 실패: initializeEmbeddingService()가 null을 반환했습니다 (경과: ${(elapsed / 1000).toFixed(1)}초). 서버리스 환경에서 모델 다운로드가 실패했을 수 있습니다.`);
       }
+      
+      // BGE-M3 초기화 성공 시 provider는 'bge-m3'로 유지 (다음 요청에서도 BGE-M3 사용)
+      console.log(`✅ BGE-M3 임베딩 서비스 초기화 완료 - embeddingProvider를 'bge-m3'로 변경했습니다.`);
 
       const embeddingInitMs = Date.now() - embeddingInitStartMs;
       console.log(`✅ BGE-M3 임베딩 서비스 초기화 완료: ${embeddingInitMs}ms (${(embeddingInitMs / 1000).toFixed(1)}초)`);
