@@ -69,7 +69,7 @@ export class RAGProcessor {
   // 환경 변수가 명시적으로 'false'로 설정되지 않은 경우 항상 활성화
   private readonly useHashEmbedding: boolean =
     process.env.USE_HASH_EMBEDDING?.toLowerCase() !== 'false';
-  private readonly hashEmbeddingDimension: number = Number(process.env.HASH_EMBEDDING_DIM || '512');
+  private readonly hashEmbeddingDimension: number = Number(process.env.HASH_EMBEDDING_DIM || '1024');
   private readonly edgeEmbeddingUrl: string | null = process.env.SUPABASE_EMBEDDING_FUNCTION_URL || null;
   private readonly edgeEmbeddingToken: string | null = process.env.SUPABASE_EMBEDDING_FUNCTION_TOKEN || null;
   private readonly useEdgeEmbedding: boolean =

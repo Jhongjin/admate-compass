@@ -8,6 +8,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createPureClient } from '@/lib/supabase/server';
 import { RAGProcessor } from '@/lib/services/RAGProcessor';
+import * as cheerio from 'cheerio';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300; // 5분
@@ -61,17 +62,68 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 콘텐츠가 없는 경우 URL에서 다시 크롤링 필요
-    if (!document.content || document.content.trim().length === 0) {
-      return NextResponse.json(
-        {
-          success: false,
-          error: '문서 콘텐츠가 비어있습니다. URL 크롤링을 다시 시작해주세요.',
-          requiresCrawl: true,
-          url: document.url,
-        },
-        { status: 400 }
-      );
+    // 콘텐츠가 없는 경우 URL에서 다시 크롤링
+    let content = document.content;
+    if (!content || content.trim().length === 0) {
+      console.log(`🔄 문서 콘텐츠가 비어있어 URL에서 다시 크롤링합니다: ${document.url}`);
+      
+      try {
+        // URL에서 페이지 다운로드
+        const response = await fetch(document.url, {
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+          },
+          signal: AbortSignal.timeout(30000), // 30초 타임아웃
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+
+        const htmlContent = await response.text();
+        const $ = cheerio.load(htmlContent);
+
+        // 제목 추출
+        let pageTitle = $('h1').first().text().trim() || 
+                       $('title').text().trim() || 
+                       $('meta[property="og:title"]').attr('content')?.trim() ||
+                       document.title;
+
+        // 텍스트 추출
+        $('script, style, nav, footer, header, aside').remove();
+        const textContent = $('body').text()
+          .replace(/\s+/g, ' ')
+          .trim();
+
+        if (textContent.length === 0) {
+          throw new Error('크롤링된 콘텐츠가 비어있습니다.');
+        }
+
+        content = textContent;
+        
+        // 크롤링한 콘텐츠를 DB에 저장
+        await supabase
+          .from('documents')
+          .update({
+            content: content,
+            title: pageTitle,
+            updated_at: new Date().toISOString(),
+          })
+          .eq('id', documentId);
+
+        console.log(`✅ URL 크롤링 완료: ${content.length}자`);
+      } catch (crawlError) {
+        console.error('❌ URL 크롤링 실패:', crawlError);
+        return NextResponse.json(
+          {
+            success: false,
+            error: `URL 크롤링 실패: ${crawlError instanceof Error ? crawlError.message : String(crawlError)}`,
+            requiresCrawl: true,
+            url: document.url,
+          },
+          { status: 400 }
+        );
+      }
     }
 
     console.log(`🔄 URL 문서 재처리 시작: ${document.title} (${document.url})`);
@@ -90,9 +142,9 @@ export async function POST(request: NextRequest) {
     const ragResult = await ragProcessor.processDocument({
       id: document.id,
       title: document.title,
-      content: document.content,
+      content: content, // 크롤링한 콘텐츠 사용
       type: 'url',
-      file_size: Buffer.byteLength(document.content, 'utf8'),
+      file_size: Buffer.byteLength(content, 'utf8'),
       file_type: 'text/html',
       source_vendor: document.source_vendor || 'META',
       created_at: (document as any).created_at || new Date().toISOString(),
