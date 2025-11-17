@@ -156,6 +156,7 @@ export class EmbeddingService {
       startHeartbeatInterval();
       
       // 폴백: setInterval이 실행되지 않는 경우를 대비하여 pipeline() 호출 중에도 주기적으로 확인
+      // 서버리스 환경에서 setInterval이 신뢰성 있게 실행되지 않을 수 있으므로, 폴백을 주 하트비트 메커니즘으로 사용
       let fallbackCheckCount = 0;
       const fallbackHeartbeatCheck = setInterval(() => {
         fallbackCheckCount++;
@@ -164,16 +165,18 @@ export class EmbeddingService {
         
         console.log(`[CRITICAL] 🔍 폴백 체크 (${fallbackCheckCount}회): 경과 ${(elapsed / 1000).toFixed(1)}초, 마지막 하트비트로부터 ${(timeSinceLastHeartbeat / 1000).toFixed(1)}초 경과`);
         
-        // 마지막 하트비트로부터 20초 이상 경과했으면 폴백 하트비트 실행
-        if (timeSinceLastHeartbeat > 20000) {
-          console.warn(`[CRITICAL] ⚠️ 폴백 하트비트 실행: 마지막 하트비트로부터 ${(timeSinceLastHeartbeat / 1000).toFixed(1)}초 경과 (setInterval이 실행되지 않았을 수 있음)`);
+        // 15초마다 정기적으로 하트비트 실행 (메인 setInterval이 실행되지 않는 경우 대비)
+        // 또는 마지막 하트비트로부터 20초 이상 경과했으면 즉시 폴백 하트비트 실행
+        if (timeSinceLastHeartbeat >= 15000 || timeSinceLastHeartbeat > 20000) {
+          const reason = timeSinceLastHeartbeat >= 15000 ? '정기 하트비트 (15초 경과)' : `긴급 하트비트 (${(timeSinceLastHeartbeat / 1000).toFixed(1)}초 경과)`;
+          console.warn(`[CRITICAL] ⚠️ 폴백 하트비트 실행: ${reason} (메인 setInterval이 실행되지 않았을 수 있음)`);
           executeHeartbeat().catch((err) => {
             console.warn('[CRITICAL] ⚠️ 폴백 하트비트 실행 실패:', err);
           });
         }
-      }, 5000); // 5초마다 확인
+      }, 5000); // 5초마다 확인 (15초마다 하트비트 실행 보장)
       
-      console.log(`[CRITICAL] 🔄 폴백 하트비트 체크 시작: 5초마다 확인, 20초 이상 경과 시 폴백 하트비트 실행`);
+      console.log(`[CRITICAL] 🔄 폴백 하트비트 체크 시작: 5초마다 확인, 15초마다 정기 하트비트 실행 (메인 setInterval이 실행되지 않는 경우 대비)`);
       
       try {
         console.log(`📥 BGE-M3 모델 다운로드/로딩 시작 (quantized: true, cache: ${cacheDir})`);
