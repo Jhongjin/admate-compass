@@ -246,7 +246,6 @@ export class RAGProcessor {
       console.log(`[CRITICAL] ⏰ 하트비트 스케줄러 설정 시작... (jobId: ${this.currentJobId || 'none'})`);
       
       let timeoutId: NodeJS.Timeout | null = null;
-      let heartbeatCount = 0;
       
       // 재귀적 하트비트 함수
       const scheduleNextHeartbeat = async () => {
@@ -255,7 +254,6 @@ export class RAGProcessor {
           return;
         }
         
-        heartbeatCount++;
         const triggerTime = new Date().toISOString();
         const elapsedSinceInit = Date.now() - initStartMs;
         console.log(`[CRITICAL] ⏰ 하트비트 스케줄러 트리거됨 (${triggerTime}, 경과: ${(elapsedSinceInit / 1000).toFixed(1)}초, 하트비트: ${heartbeatCount}회, shouldStopHeartbeat: ${shouldStopHeartbeat})`);
