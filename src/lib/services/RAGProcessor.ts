@@ -64,6 +64,7 @@ export class RAGProcessor {
   private openAIEmbeddingService: OpenAIEmbeddingService | null = null;
   private embeddingServiceInitialized = false;
   private embeddingProvider: 'bge-m3' | 'openai' = 'bge-m3';
+  private currentJobId: string | null = null; // 현재 처리 중인 job ID (DB 업데이트용)
 
   constructor() {
     // 텍스트 분할기 설정
@@ -84,6 +85,13 @@ export class RAGProcessor {
       this.openAIEmbeddingService = openAIEmbeddingService;
       console.log('✅ OpenAI Embeddings API 사용 설정됨 (기본값 - 서버리스 환경에 최적화)');
     }
+  }
+
+  /**
+   * 현재 처리 중인 job ID 설정 (BGE-M3 초기화 진행 상황 DB 업데이트용)
+   */
+  setCurrentJobId(jobId: string | null): void {
+    this.currentJobId = jobId;
   }
 
   /**
@@ -124,12 +132,45 @@ export class RAGProcessor {
       console.log('⏳ BGE-M3 모델 초기화 중... (타임아웃: 10분, 서버리스 환경에서는 매우 느릴 수 있습니다)');
       console.log('   OpenAI API 할당량 초과로 인한 fallback이므로 초기화에 시간이 걸릴 수 있습니다.');
       
-      // 진행 상황 모니터링을 위한 하트비트 (30초마다 로깅)
-      const progressInterval = setInterval(() => {
+      // 진행 상황 모니터링을 위한 하트비트 (15초마다 DB 업데이트 + 로깅)
+      const progressInterval = setInterval(async () => {
         const elapsed = Date.now() - initStartMs;
         const elapsedSeconds = (elapsed / 1000).toFixed(1);
-        console.log(`[CRITICAL] 🔄 BGE-M3 초기화 진행 중... (경과: ${elapsedSeconds}초, 타임아웃까지: ${((INIT_TIMEOUT - elapsed) / 1000).toFixed(1)}초)`);
-      }, 30000); // 30초마다 진행 상황 로깅
+        const remainingSeconds = ((INIT_TIMEOUT - elapsed) / 1000).toFixed(1);
+        console.log(`[CRITICAL] 🔄 BGE-M3 초기화 진행 중... (경과: ${elapsedSeconds}초, 타임아웃까지: ${remainingSeconds}초)`);
+        
+        // jobId가 있으면 DB 업데이트 (BGE-M3 초기화 진행 상황 반영)
+        if (this.currentJobId) {
+          try {
+            const supabase = await this.getSupabaseClient();
+            if (supabase) {
+              const currentResult = (await supabase
+                .from('processing_jobs')
+                .select('result')
+                .eq('id', this.currentJobId)
+                .maybeSingle())?.data?.result || {};
+              
+              await supabase
+                .from('processing_jobs')
+                .update({
+                  result: {
+                    ...currentResult,
+                    status: 'main_page_rag_processing',
+                    message: `BGE-M3 모델 초기화 중... (경과: ${elapsedSeconds}초, 남은 시간: ${remainingSeconds}초)`,
+                    bgeM3InitElapsed: elapsed,
+                    bgeM3InitRemaining: INIT_TIMEOUT - elapsed
+                  }
+                })
+                .eq('id', this.currentJobId)
+                .neq('status', 'cancelled');
+              
+              console.log(`[CRITICAL] 💓 BGE-M3 초기화 하트비트 DB 업데이트: 경과 ${elapsedSeconds}초`);
+            }
+          } catch (heartbeatError) {
+            console.warn('[CRITICAL] ⚠️ BGE-M3 초기화 하트비트 DB 업데이트 실패 (계속 진행):', heartbeatError);
+          }
+        }
+      }, 15000); // 15초마다 DB 업데이트 (더 자주 업데이트하여 진행 상황 확인 가능)
       
       const initPromise = this.embeddingService.initialize('bge-m3').finally(() => {
         clearInterval(progressInterval);

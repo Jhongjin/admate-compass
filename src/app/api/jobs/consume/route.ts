@@ -1777,6 +1777,9 @@ export async function processQueue() {
           const ragProcessStartTime = Date.now();
           console.log(`[CRITICAL] 🚀 RAG 처리 시작: ${title} (콘텐츠 길이: ${content.length}자)`);
           
+          // BGE-M3 초기화 진행 상황 DB 업데이트를 위해 jobId 설정
+          ragProcessor.setCurrentJobId(job.id);
+          
           // RAG 처리 전체에 타임아웃 추가 (60초)
           const ragProcessTimeout = 60000;
           const ragProcessPromise = ragProcessor.processDocument({
@@ -1848,6 +1851,9 @@ export async function processQueue() {
                 .eq('id', resolvedDocumentId);
             }
           }
+
+          // jobId 해제 (다음 작업을 위해)
+          ragProcessor.setCurrentJobId(null);
 
           return {
             documentId: resolvedDocumentId,
