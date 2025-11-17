@@ -242,84 +242,74 @@ export class RAGProcessor {
         });
       }
       
-      // 재귀적 setTimeout 패턴 사용 (Vercel 서버리스 환경에서 setInterval이 동작하지 않을 수 있음)
-      console.log(`[CRITICAL] ⏰ 하트비트 스케줄러 설정 시작... (jobId: ${this.currentJobId || 'none'})`);
+      // 하트비트를 별도 Promise로 실행 (Promise.race와 병렬로 실행하여 함수가 종료되지 않도록 함)
+      console.log(`[CRITICAL] ⏰ 하트비트 루프 시작... (jobId: ${this.currentJobId || 'none'})`);
       
-      let timeoutId: NodeJS.Timeout | null = null;
-      
-      // 재귀적 하트비트 함수
-      const scheduleNextHeartbeat = async () => {
-        if (shouldStopHeartbeat) {
-          console.log(`[CRITICAL] ⏹️ 하트비트 중단 플래그가 설정되어 스케줄러를 정리합니다.`);
-          return;
-        }
+      // 하트비트 루프 Promise (15초마다 하트비트 실행)
+      const heartbeatLoopPromise = new Promise<void>((resolve) => {
+        const runHeartbeatLoop = async () => {
+          while (!shouldStopHeartbeat) {
+            const triggerTime = new Date().toISOString();
+            const elapsedSinceInit = Date.now() - initStartMs;
+            console.log(`[CRITICAL] ⏰ 하트비트 루프 트리거됨 (${triggerTime}, 경과: ${(elapsedSinceInit / 1000).toFixed(1)}초, 하트비트: ${heartbeatCount}회, shouldStopHeartbeat: ${shouldStopHeartbeat})`);
+            
+            try {
+              console.log(`[CRITICAL] 💓 하트비트 실행 시작...`);
+              const shouldContinue = await performHeartbeat().catch((err) => {
+                console.warn('[CRITICAL] ⚠️ 하트비트 실행 실패 (계속 진행):', err);
+                return true; // 에러 발생 시에도 계속 진행
+              });
+              
+              if (!shouldContinue) {
+                console.log(`[CRITICAL] ⏹️ 하트비트가 false를 반환하여 루프를 종료합니다.`);
+                shouldStopHeartbeat = true;
+                break;
+              }
+              
+              console.log(`[CRITICAL] ✅ 하트비트 완료, 다음 하트비트는 15초 후 실행됩니다.`);
+            } catch (error) {
+              console.error(`[CRITICAL] ❌ 하트비트 루프 오류:`, error);
+            }
+            
+            // 15초 대기 (하트비트가 중단되지 않았으면)
+            if (!shouldStopHeartbeat) {
+              await new Promise(resolve => setTimeout(resolve, 15000));
+            }
+          }
+          console.log(`[CRITICAL] 🧹 하트비트 루프 종료`);
+          resolve();
+        };
         
-        const triggerTime = new Date().toISOString();
-        const elapsedSinceInit = Date.now() - initStartMs;
-        console.log(`[CRITICAL] ⏰ 하트비트 스케줄러 트리거됨 (${triggerTime}, 경과: ${(elapsedSinceInit / 1000).toFixed(1)}초, 하트비트: ${heartbeatCount}회, shouldStopHeartbeat: ${shouldStopHeartbeat})`);
-        
-        try {
-          console.log(`[CRITICAL] 💓 하트비트 실행 시작...`);
-          const shouldContinue = await performHeartbeat().catch((err) => {
-            console.warn('[CRITICAL] ⚠️ 하트비트 실행 실패 (계속 진행):', err);
-            return true; // 에러 발생 시에도 계속 진행
-          });
-          
-          if (!shouldContinue) {
-            console.log(`[CRITICAL] ⏹️ 하트비트가 false를 반환하여 스케줄러를 정리합니다.`);
-            return;
-          }
-          
-          console.log(`[CRITICAL] ✅ 하트비트 완료, 다음 하트비트는 15초 후 실행됩니다.`);
-          
-          // 다음 하트비트 스케줄링 (재귀적 setTimeout)
-          if (!shouldStopHeartbeat) {
-            timeoutId = setTimeout(() => {
-              scheduleNextHeartbeat();
-            }, 15000); // 15초 후 다음 하트비트
-            console.log(`[CRITICAL] ⏰ 다음 하트비트 스케줄링 완료 (15초 후 실행 예정)`);
-          }
-        } catch (error) {
-          console.error(`[CRITICAL] ❌ 하트비트 스케줄러 오류:`, error);
-          // 에러 발생 시에도 다음 하트비트 스케줄링 시도
-          if (!shouldStopHeartbeat) {
-            timeoutId = setTimeout(() => {
-              scheduleNextHeartbeat();
-            }, 15000);
-          }
-        }
-      };
-      
-      // 첫 하트비트는 즉시 실행되었으므로, 다음 하트비트를 15초 후에 스케줄링
-      console.log(`[CRITICAL] ⏰ 첫 하트비트는 이미 실행되었으므로, 다음 하트비트를 15초 후에 스케줄링합니다.`);
-      timeoutId = setTimeout(() => {
-        scheduleNextHeartbeat();
-      }, 15000);
-      console.log(`[CRITICAL] ⏰ 하트비트 스케줄러 설정 완료: timeoutId=${timeoutId ? '설정됨' : 'null'}, 15초마다 실행 예정 (jobId: ${this.currentJobId || 'none'})`);
+        // 첫 하트비트는 이미 실행되었으므로, 15초 후에 루프 시작
+        setTimeout(() => {
+          runHeartbeatLoop();
+        }, 15000);
+      });
       
       const initPromise = this.embeddingService.initialize('bge-m3').finally(() => {
-        console.log(`[CRITICAL] 🧹 BGE-M3 초기화 완료/실패 - 하트비트 스케줄러 정리 (timeoutId: ${timeoutId ? '존재' : 'null'})`);
+        console.log(`[CRITICAL] 🧹 BGE-M3 초기화 완료/실패 - 하트비트 루프 중단`);
         shouldStopHeartbeat = true;
-        if (timeoutId) {
-          clearTimeout(timeoutId);
-          timeoutId = null;
-        }
       });
       
       const timeoutPromise = new Promise<never>((_, reject) => {
         setTimeout(() => {
-          console.log(`[CRITICAL] ⏱️ BGE-M3 초기화 타임아웃 발생 - 하트비트 스케줄러 정리 (timeoutId: ${timeoutId ? '존재' : 'null'})`);
+          console.log(`[CRITICAL] ⏱️ BGE-M3 초기화 타임아웃 발생 - 하트비트 루프 중단`);
           shouldStopHeartbeat = true;
-          if (timeoutId) {
-            clearTimeout(timeoutId);
-            timeoutId = null;
-          }
           const elapsed = Date.now() - initStartMs;
           reject(new Error(`BGE-M3 모델 초기화 타임아웃: 10분 초과 (경과: ${(elapsed / 1000).toFixed(1)}초). 서버리스 환경에서 모델 다운로드가 멈췄을 수 있습니다. OpenAI Embeddings API를 사용하려면 EMBEDDING_PROVIDER=openai 환경 변수를 설정하고 Pay-as-you-go 플랜으로 업그레이드하세요.`));
         }, INIT_TIMEOUT);
       });
       
+      // 하트비트 루프를 백그라운드에서 시작 (에러는 무시)
+      heartbeatLoopPromise.catch((err) => {
+        console.warn('[CRITICAL] ⚠️ 하트비트 루프 오류 (무시):', err);
+      });
+      
+      // 초기화 완료/타임아웃 대기 (하트비트 루프는 백그라운드에서 계속 실행)
       await Promise.race([initPromise, timeoutPromise]);
+      
+      // 초기화 완료 후 하트비트 루프 중단
+      shouldStopHeartbeat = true;
       
       const elapsed = Date.now() - initStartMs;
       console.log(`✅ BGE-M3 임베딩 서비스 초기화 성공: ${elapsed}ms (${(elapsed / 1000).toFixed(1)}초)`);
