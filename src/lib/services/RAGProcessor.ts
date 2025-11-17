@@ -132,228 +132,78 @@ export class RAGProcessor {
       console.log('⏳ BGE-M3 모델 초기화 중... (타임아웃: 10분, 서버리스 환경에서는 매우 느릴 수 있습니다)');
       console.log('   OpenAI API 할당량 초과로 인한 fallback이므로 초기화에 시간이 걸릴 수 있습니다.');
       
-      // 진행 상황 모니터링을 위한 하트비트 함수 (재사용 가능하도록 분리)
-      let heartbeatCount = 0; // 하트비트 카운트 (로깅 최적화용)
-      let shouldStopHeartbeat = false; // 하트비트 중단 플래그
-      const performHeartbeat = async (): Promise<boolean> => {
-        // 하트비트가 중단되었으면 false 반환
-        if (shouldStopHeartbeat) {
-          return false;
-        }
+      // 하트비트 콜백 설정 (EmbeddingService의 setInterval에서 호출됨)
+      if (this.currentJobId) {
+        console.log(`[CRITICAL] 🚀 BGE-M3 초기화 시작 - 하트비트 콜백 설정 (jobId: ${this.currentJobId})`);
         
-        heartbeatCount++;
-        const elapsed = Date.now() - initStartMs;
-        const elapsedSeconds = (elapsed / 1000).toFixed(1);
-        const remainingSeconds = ((INIT_TIMEOUT - elapsed) / 1000).toFixed(1);
-        console.log(`[CRITICAL] 🔄 BGE-M3 초기화 진행 중... (경과: ${elapsedSeconds}초, 타임아웃까지: ${remainingSeconds}초, 하트비트: ${heartbeatCount}회)`);
-        
-        // jobId가 있으면 DB 업데이트 (BGE-M3 초기화 진행 상황 반영)
-        if (this.currentJobId) {
+        this.embeddingService.setHeartbeatCallback(async (elapsed: number, remaining: number) => {
           try {
             const supabase = await this.getSupabaseClient();
-            if (supabase) {
-              // 먼저 작업 상태 확인 (취소되었는지 확인)
-              const { data: jobStatus, error: statusError } = await supabase
-                .from('processing_jobs')
-                .select('status')
-                .eq('id', this.currentJobId)
-                .maybeSingle();
-              
-              if (statusError) {
-                console.warn(`[CRITICAL] ⚠️ 작업 상태 확인 실패:`, statusError);
-              } else if (jobStatus?.status === 'cancelled') {
-                // 작업이 취소되었으면 하트비트 중단
-                console.log(`[CRITICAL] ⚠️ 작업이 취소되었습니다. BGE-M3 초기화 하트비트를 중단합니다. (jobId: ${this.currentJobId})`);
-                shouldStopHeartbeat = true;
-                return false; // 하트비트 중단
-              }
-              
-              const dbUpdateStartTime = Date.now();
-              const currentResult = (await supabase
-                .from('processing_jobs')
-                .select('result')
-                .eq('id', this.currentJobId)
-                .maybeSingle())?.data?.result || {};
-              
-              const updateResult = await supabase
-                .from('processing_jobs')
-                .update({
-                  result: {
-                    ...currentResult,
-                    status: 'main_page_rag_processing',
-                    message: `BGE-M3 모델 초기화 중... (경과: ${elapsedSeconds}초, 남은 시간: ${remainingSeconds}초)`,
-                    bgeM3InitElapsed: elapsed,
-                    bgeM3InitRemaining: INIT_TIMEOUT - elapsed
-                  },
-                  updated_at: new Date().toISOString() // updated_at 명시적 업데이트 (DB 업데이트 확인용)
-                })
-                .eq('id', this.currentJobId)
-                .neq('status', 'cancelled')
-                .select('id'); // 업데이트된 행 수 확인을 위해 select 추가
-              
-              const dbUpdateElapsed = Date.now() - dbUpdateStartTime;
-              
-              if (updateResult.error) {
-                console.warn(`[CRITICAL] ⚠️ BGE-M3 초기화 하트비트 DB 업데이트 실패:`, updateResult.error);
-              } else {
-                // 업데이트된 행 수 확인 (data 배열의 길이로 확인)
-                // Supabase의 update().select()는 업데이트된 행을 data 배열로 반환
-                const updatedCount = updateResult.data ? updateResult.data.length : 0;
-                if (updatedCount === 0) {
-                  // 업데이트된 행이 없으면 작업 상태를 다시 확인
-                  const { data: jobCheck } = await supabase
-                    .from('processing_jobs')
-                    .select('status')
-                    .eq('id', this.currentJobId)
-                    .maybeSingle();
-                  
-                  if (jobCheck?.status === 'cancelled') {
-                    console.log(`[CRITICAL] ℹ️ 작업이 취소되었습니다. 하트비트를 중단합니다. (jobId: ${this.currentJobId})`);
-                    shouldStopHeartbeat = true;
-                    return false; // 하트비트 중단
-                  } else {
-                    console.warn(`[CRITICAL] ⚠️ BGE-M3 초기화 하트비트 DB 업데이트: 업데이트된 행이 없음 (작업이 취소되었거나 존재하지 않음, jobId: ${this.currentJobId}, 현재 상태: ${jobCheck?.status || 'unknown'})`);
-                  }
-                } else {
-                  console.log(`[CRITICAL] 💓 BGE-M3 초기화 하트비트 DB 업데이트 완료: 경과 ${elapsedSeconds}초, DB 업데이트 소요: ${dbUpdateElapsed}ms, 업데이트된 행: ${updatedCount}개, jobId: ${this.currentJobId}`);
-                }
-              }
-            } else {
-              console.warn('[CRITICAL] ⚠️ Supabase 클라이언트를 가져올 수 없음 (BGE-M3 하트비트 DB 업데이트 건너뜀)');
-            }
-          } catch (heartbeatError) {
-            console.warn('[CRITICAL] ⚠️ BGE-M3 초기화 하트비트 DB 업데이트 실패 (계속 진행):', heartbeatError);
-          }
-        } else {
-          // jobId가 없으면 첫 번째 하트비트에서만 로그 (너무 많은 로그 방지)
-          if (heartbeatCount === 1) {
-            console.log(`[CRITICAL] ℹ️ BGE-M3 초기화 진행 중이지만 jobId가 설정되지 않음 (DB 업데이트 건너뜀, 로깅만 수행)`);
-          }
-        }
-        
-        return true; // 하트비트 계속 진행
-      };
-      
-      // 하트비트 루프를 Promise로 감싸서 Promise.race에 포함시킴
-      // 하트비트 루프는 초기화가 완료될 때까지 계속 실행되어야 함
-      const heartbeatLoopPromise = new Promise<void>((resolve) => {
-        // 재귀적 하트비트 스케줄링 함수
-        const scheduleNextHeartbeat = async (): Promise<void> => {
-          if (shouldStopHeartbeat) {
-            console.log(`[CRITICAL] ⏹️ 하트비트 중단 플래그가 설정되어 하트비트 루프를 종료합니다.`);
-            resolve();
-            return;
-          }
-          
-          // 15초 대기
-          await new Promise(resolve => setTimeout(resolve, 15000));
-          
-          if (shouldStopHeartbeat) {
-            console.log(`[CRITICAL] ⏹️ 하트비트 중단 플래그가 설정되어 하트비트를 실행하지 않습니다.`);
-            resolve();
-            return;
-          }
-          
-          const triggerTime = new Date().toISOString();
-          const elapsedSinceInit = Date.now() - initStartMs;
-          console.log(`[CRITICAL] ⏰ 하트비트 스케줄러 트리거됨 (${triggerTime}, 경과: ${(elapsedSinceInit / 1000).toFixed(1)}초, 하트비트: ${heartbeatCount}회, shouldStopHeartbeat: ${shouldStopHeartbeat})`);
-          
-          try {
-            console.log(`[CRITICAL] 💓 하트비트 실행 시작...`);
-            const shouldContinue = await performHeartbeat().catch((err) => {
-              console.warn('[CRITICAL] ⚠️ 하트비트 실행 실패 (계속 진행):', err);
-              return true; // 에러 발생 시에도 계속 진행
-            });
-            
-            if (!shouldContinue) {
-              console.log(`[CRITICAL] ⏹️ 하트비트가 false를 반환하여 하트비트 루프를 종료합니다.`);
-              resolve();
+            if (!supabase) {
               return;
             }
             
-            console.log(`[CRITICAL] ✅ 하트비트 완료, 다음 하트비트를 15초 후에 스케줄링합니다.`);
+            // 작업 상태 확인 (취소되었는지 확인)
+            const { data: jobStatus } = await supabase
+              .from('processing_jobs')
+              .select('status')
+              .eq('id', this.currentJobId!)
+              .maybeSingle();
             
-            // 다음 하트비트 스케줄링 (재귀적)
-            scheduleNextHeartbeat().catch((err) => {
-              console.error(`[CRITICAL] ❌ 다음 하트비트 스케줄링 실패:`, err);
-              resolve(); // 에러 발생 시 루프 종료
-            });
-          } catch (error) {
-            console.error(`[CRITICAL] ❌ 하트비트 스케줄러 오류:`, error);
-            // 에러 발생 시에도 다음 하트비트 스케줄링 시도
-            if (!shouldStopHeartbeat) {
-              scheduleNextHeartbeat().catch((err) => {
-                console.error(`[CRITICAL] ❌ 다음 하트비트 스케줄링 실패 (재시도):`, err);
-                resolve(); // 재시도 실패 시 루프 종료
-              });
-            } else {
-              resolve();
+            if (jobStatus?.status === 'cancelled') {
+              // 작업이 취소되었으면 하트비트 콜백 제거
+              console.log(`[CRITICAL] ⚠️ 작업이 취소되었습니다. 하트비트 콜백을 제거합니다. (jobId: ${this.currentJobId})`);
+              this.embeddingService?.setHeartbeatCallback(null);
+              return;
             }
+            
+            const elapsedSeconds = (elapsed / 1000).toFixed(1);
+            const remainingSeconds = (remaining / 1000).toFixed(1);
+            const dbUpdateStartTime = Date.now();
+            
+            const currentResult = (await supabase
+              .from('processing_jobs')
+              .select('result')
+              .eq('id', this.currentJobId!)
+              .maybeSingle())?.data?.result || {};
+            
+            const updateResult = await supabase
+              .from('processing_jobs')
+              .update({
+                result: {
+                  ...currentResult,
+                  status: 'main_page_rag_processing',
+                  message: `BGE-M3 모델 초기화 중... (경과: ${elapsedSeconds}초, 남은 시간: ${remainingSeconds}초)`,
+                  bgeM3InitElapsed: elapsed,
+                  bgeM3InitRemaining: remaining
+                },
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', this.currentJobId!)
+              .neq('status', 'cancelled')
+              .select('id');
+            
+            const dbUpdateElapsed = Date.now() - dbUpdateStartTime;
+            
+            if (updateResult.error) {
+              console.warn(`[CRITICAL] ⚠️ BGE-M3 초기화 하트비트 DB 업데이트 실패:`, updateResult.error);
+            } else {
+              const updatedCount = updateResult.data ? updateResult.data.length : 0;
+              if (updatedCount > 0) {
+                console.log(`[CRITICAL] 💓 BGE-M3 초기화 하트비트 DB 업데이트 완료: 경과 ${elapsedSeconds}초, DB 업데이트 소요: ${dbUpdateElapsed}ms, 업데이트된 행: ${updatedCount}개, jobId: ${this.currentJobId}`);
+              }
+            }
+          } catch (err) {
+            console.warn('[CRITICAL] ⚠️ 하트비트 콜백 실행 실패 (계속 진행):', err);
           }
-        };
-        
-        // 초기화 시작 시 즉시 첫 하트비트 실행 (진행 상황을 즉시 반영)
-        if (this.currentJobId) {
-          console.log(`[CRITICAL] 🚀 BGE-M3 초기화 시작 - 첫 하트비트 즉시 실행 (jobId: ${this.currentJobId})`);
-          performHeartbeat()
-            .then((shouldContinue) => {
-              if (shouldContinue && !shouldStopHeartbeat) {
-                console.log(`[CRITICAL] ✅ 첫 하트비트 완료, 다음 하트비트를 15초 후에 스케줄링합니다.`);
-                // 첫 하트비트 완료 후 다음 하트비트 스케줄링
-                scheduleNextHeartbeat().catch((err) => {
-                  console.error(`[CRITICAL] ❌ 첫 하트비트 후 다음 하트비트 스케줄링 실패:`, err);
-                  resolve();
-                });
-              } else {
-                resolve();
-              }
-            })
-            .catch((err) => {
-              console.warn('[CRITICAL] ⚠️ 첫 하트비트 실행 실패 (계속 진행):', err);
-              // 첫 하트비트 실패 시에도 다음 하트비트 스케줄링 시도
-              if (!shouldStopHeartbeat) {
-                scheduleNextHeartbeat().catch((err) => {
-                  console.error(`[CRITICAL] ❌ 첫 하트비트 실패 후 다음 하트비트 스케줄링 실패:`, err);
-                  resolve();
-                });
-              } else {
-                resolve();
-              }
-            });
-        } else {
-          // jobId가 없으면 하트비트 루프를 시작하지 않음
-          resolve();
-        }
-      });
+        });
+      }
       
-      const initPromise = this.embeddingService.initialize('bge-m3').finally(() => {
-        console.log(`[CRITICAL] 🧹 BGE-M3 초기화 완료/실패 - 하트비트 중단`);
-        shouldStopHeartbeat = true;
-      });
+      // 초기화 실행 (EmbeddingService 내부의 setInterval이 하트비트를 처리)
+      await this.embeddingService.initialize('bge-m3', INIT_TIMEOUT);
       
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => {
-          console.log(`[CRITICAL] ⏱️ BGE-M3 초기화 타임아웃 발생 - 하트비트 중단`);
-          shouldStopHeartbeat = true;
-          const elapsed = Date.now() - initStartMs;
-          reject(new Error(`BGE-M3 모델 초기화 타임아웃: 10분 초과 (경과: ${(elapsed / 1000).toFixed(1)}초). 서버리스 환경에서 모델 다운로드가 멈췄을 수 있습니다. OpenAI Embeddings API를 사용하려면 EMBEDDING_PROVIDER=openai 환경 변수를 설정하고 Pay-as-you-go 플랜으로 업그레이드하세요.`));
-        }, INIT_TIMEOUT);
-      });
-      
-      // 하트비트 루프와 초기화를 병렬로 실행
-      // Promise.all을 사용하여 두 Promise가 모두 완료될 때까지 기다림
-      // 하트비트 루프는 초기화가 완료되면 shouldStopHeartbeat가 true가 되어 종료됨
-      const initPromiseWithHeartbeat = Promise.race([initPromise, timeoutPromise]).then(() => {
-        console.log(`[CRITICAL] 🧹 초기화 완료 - 하트비트 루프 중단 신호 전송`);
-        shouldStopHeartbeat = true;
-      });
-      
-      await Promise.all([
-        initPromiseWithHeartbeat,
-        heartbeatLoopPromise.catch((err) => {
-          console.warn('[CRITICAL] ⚠️ 하트비트 루프 오류 (무시):', err);
-        })
-      ]);
+      // 초기화 완료 후 하트비트 콜백 제거
+      this.embeddingService.setHeartbeatCallback(null);
       
       const elapsed = Date.now() - initStartMs;
       console.log(`✅ BGE-M3 임베딩 서비스 초기화 성공: ${elapsed}ms (${(elapsed / 1000).toFixed(1)}초)`);

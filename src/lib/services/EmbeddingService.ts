@@ -13,10 +13,13 @@ export interface EmbeddingOptions {
   normalize?: boolean;
 }
 
+export type HeartbeatCallback = (elapsed: number, remaining: number) => Promise<void>;
+
 export class EmbeddingService {
   private pipeline: any = null;
   private currentModel: string | null = null;
   private isInitialized = false;
+  private heartbeatCallback: HeartbeatCallback | null = null;
 
   // 초기화 상태 확인용 getter (서버리스 환경에서 캐싱 확인)
   get initialized(): boolean {
@@ -24,9 +27,16 @@ export class EmbeddingService {
   }
 
   /**
+   * 하트비트 콜백 설정 (DB 업데이트용)
+   */
+  setHeartbeatCallback(callback: HeartbeatCallback | null): void {
+    this.heartbeatCallback = callback;
+  }
+
+  /**
    * 임베딩 모델 초기화
    */
-  async initialize(model: string = 'bge-m3'): Promise<void> {
+  async initialize(model: string = 'bge-m3', initTimeout: number = 10 * 60 * 1000): Promise<void> {
     try {
       if (this.isInitialized && this.currentModel === model) {
         console.log('임베딩 모델이 이미 초기화됨:', model);
@@ -75,19 +85,29 @@ export class EmbeddingService {
       console.log('🔄 BGE-M3 모델 초기화 시작 (다운로드/로딩 중...)');
       console.log(`📂 캐시 디렉토리: ${cacheDir}`);
       
-      // 진행 상황 추적을 위한 하트비트 로깅 (5초마다 더 자주 로깅)
+      // 진행 상황 추적을 위한 하트비트 로깅 및 DB 업데이트 (15초마다)
       let lastHeartbeatTime = modelInitStartMs;
       let heartbeatCount = 0;
-      const heartbeatInterval = setInterval(() => {
+      const heartbeatInterval = setInterval(async () => {
         const now = Date.now();
         const elapsed = now - modelInitStartMs;
         const elapsedSeconds = (elapsed / 1000).toFixed(1);
-        const timeSinceLastHeartbeat = ((now - lastHeartbeatTime) / 1000).toFixed(1);
+        const remaining = Math.max(0, initTimeout - elapsed);
+        const remainingSeconds = (remaining / 1000).toFixed(1);
         heartbeatCount++;
         
-        // 5초마다 하트비트 (더 자주 로깅하여 진행 상황 확인)
+        // 15초마다 하트비트 로깅 및 DB 업데이트
         console.log(`⏳ BGE-M3 모델 초기화 진행 중... (경과: ${elapsedSeconds}초, 하트비트: ${heartbeatCount}회, 캐시: ${cacheDir})`);
         lastHeartbeatTime = now;
+        
+        // DB 업데이트 콜백 실행 (있는 경우)
+        if (this.heartbeatCallback) {
+          try {
+            await this.heartbeatCallback(elapsed, remaining);
+          } catch (err) {
+            console.warn('[CRITICAL] ⚠️ 하트비트 콜백 실행 실패 (계속 진행):', err);
+          }
+        }
         
         // 30초 이상 경과 시 경고 로그 추가
         if (elapsed > 30000) {
@@ -98,7 +118,7 @@ export class EmbeddingService {
         if (elapsed > 60000) {
           console.warn(`⚠️ BGE-M3 모델 초기화가 매우 오래 걸리고 있습니다 (${elapsedSeconds}초 경과). 네트워크 상태를 확인해주세요.`);
         }
-      }, 5000); // 5초마다 하트비트 (더 자주 로깅)
+      }, 15000); // 15초마다 하트비트 및 DB 업데이트
       
       try {
         console.log(`📥 BGE-M3 모델 다운로드/로딩 시작 (quantized: true, cache: ${cacheDir})`);
