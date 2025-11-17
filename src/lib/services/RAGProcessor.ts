@@ -146,6 +146,23 @@ export class RAGProcessor {
           try {
             const supabase = await this.getSupabaseClient();
             if (supabase) {
+              // 먼저 작업 상태 확인 (취소되었는지 확인)
+              const { data: jobStatus, error: statusError } = await supabase
+                .from('processing_jobs')
+                .select('status')
+                .eq('id', this.currentJobId)
+                .maybeSingle();
+              
+              if (statusError) {
+                console.warn(`[CRITICAL] ⚠️ 작업 상태 확인 실패:`, statusError);
+              } else if (jobStatus?.status === 'cancelled') {
+                // 작업이 취소되었으면 하트비트 중단
+                console.log(`[CRITICAL] ⚠️ 작업이 취소되었습니다. BGE-M3 초기화 하트비트를 중단합니다. (jobId: ${this.currentJobId})`);
+                clearInterval(progressInterval);
+                // 초기화도 중단하려면 에러를 던져야 하지만, 현재는 하트비트만 중단
+                return;
+              }
+              
               const dbUpdateStartTime = Date.now();
               const currentResult = (await supabase
                 .from('processing_jobs')
@@ -173,7 +190,13 @@ export class RAGProcessor {
               if (updateResult.error) {
                 console.warn(`[CRITICAL] ⚠️ BGE-M3 초기화 하트비트 DB 업데이트 실패:`, updateResult.error);
               } else {
-                console.log(`[CRITICAL] 💓 BGE-M3 초기화 하트비트 DB 업데이트 완료: 경과 ${elapsedSeconds}초, DB 업데이트 소요: ${dbUpdateElapsed}ms, jobId: ${this.currentJobId}`);
+                // 업데이트된 행 수 확인 (0이면 작업이 취소되었을 수 있음)
+                const updatedRows = updateResult.data || 0;
+                if (updatedRows === 0) {
+                  console.warn(`[CRITICAL] ⚠️ BGE-M3 초기화 하트비트 DB 업데이트: 업데이트된 행이 없음 (작업이 취소되었거나 존재하지 않음, jobId: ${this.currentJobId})`);
+                } else {
+                  console.log(`[CRITICAL] 💓 BGE-M3 초기화 하트비트 DB 업데이트 완료: 경과 ${elapsedSeconds}초, DB 업데이트 소요: ${dbUpdateElapsed}ms, jobId: ${this.currentJobId}`);
+                }
               }
             } else {
               console.warn('[CRITICAL] ⚠️ Supabase 클라이언트를 가져올 수 없음 (BGE-M3 하트비트 DB 업데이트 건너뜀)');
