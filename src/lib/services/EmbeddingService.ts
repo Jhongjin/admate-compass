@@ -178,7 +178,7 @@ export class EmbeddingService {
         throw new Error('Heartbeat loop stopped'); // Promise.race를 위해 reject
       };
       
-      console.log(`[CRITICAL] 🔄 하트비트 루프 시작: 15초마다 정기 하트비트 실행 (pipeline() 호출과 Promise.race로 실행)`);
+      console.log(`[CRITICAL] 🔄 하트비트 루프 시작: 15초마다 정기 하트비트 실행 (pipeline() 호출과 Promise.all로 실행)`);
       
       try {
         console.log(`📥 BGE-M3 모델 다운로드/로딩 시작 (quantized: true, cache: ${cacheDir})`);
