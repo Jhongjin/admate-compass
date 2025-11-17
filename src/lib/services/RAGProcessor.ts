@@ -159,7 +159,8 @@ export class RAGProcessor {
                     message: `BGE-M3 모델 초기화 중... (경과: ${elapsedSeconds}초, 남은 시간: ${remainingSeconds}초)`,
                     bgeM3InitElapsed: elapsed,
                     bgeM3InitRemaining: INIT_TIMEOUT - elapsed
-                  }
+                  },
+                  updated_at: new Date().toISOString() // updated_at 명시적 업데이트 (DB 업데이트 확인용)
                 })
                 .eq('id', this.currentJobId)
                 .neq('status', 'cancelled');
