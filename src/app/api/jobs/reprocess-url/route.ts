@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
     // 문서 정보 조회
     const { data: document, error: docError } = await supabase
       .from('documents')
-      .select('id, title, content, url, type, source_vendor, main_document_id, status')
+      .select('id, title, content, url, type, source_vendor, main_document_id, status, created_at')
       .eq('id', documentId)
       .maybeSingle();
 
@@ -95,7 +95,7 @@ export async function POST(request: NextRequest) {
       file_size: Buffer.byteLength(document.content, 'utf8'),
       file_type: 'text/html',
       source_vendor: document.source_vendor || 'META',
-      created_at: document.created_at || new Date().toISOString(),
+      created_at: (document as any).created_at || new Date().toISOString(),
       updated_at: new Date().toISOString(),
     });
 
