@@ -155,37 +155,45 @@ export class EmbeddingService {
       
       startHeartbeatInterval();
       
-      // 폴백: setInterval이 실행되지 않는 경우를 대비하여 pipeline() 호출 중에도 주기적으로 확인
-      // 서버리스 환경에서 setInterval이 신뢰성 있게 실행되지 않을 수 있으므로, 폴백을 주 하트비트 메커니즘으로 사용
-      let fallbackCheckCount = 0;
-      const fallbackHeartbeatCheck = setInterval(() => {
-        fallbackCheckCount++;
+      // 하트비트 루프: pipeline() 호출과 병렬로 실행되어 블로킹되지 않도록 함
+      // 서버리스 환경에서 setInterval이 신뢰성 있게 실행되지 않을 수 있으므로, 재귀적 setTimeout 사용
+      let heartbeatLoopActive = true;
+      let heartbeatLoopCount = 0;
+      
+      const runHeartbeatLoop = async (): Promise<void> => {
+        if (!heartbeatLoopActive) return;
+        
+        heartbeatLoopCount++;
         const elapsed = Date.now() - modelInitStartMs;
         const timeSinceLastHeartbeat = elapsed - (lastHeartbeatTime - modelInitStartMs);
         
-        console.log(`[CRITICAL] 🔍 폴백 체크 (${fallbackCheckCount}회): 경과 ${(elapsed / 1000).toFixed(1)}초, 마지막 하트비트로부터 ${(timeSinceLastHeartbeat / 1000).toFixed(1)}초 경과`);
-        
-        // 15초마다 정기적으로 하트비트 실행 (메인 setInterval이 실행되지 않는 경우 대비)
-        // 또는 마지막 하트비트로부터 20초 이상 경과했으면 즉시 폴백 하트비트 실행
-        if (timeSinceLastHeartbeat >= 15000 || timeSinceLastHeartbeat > 20000) {
-          const reason = timeSinceLastHeartbeat >= 15000 ? '정기 하트비트 (15초 경과)' : `긴급 하트비트 (${(timeSinceLastHeartbeat / 1000).toFixed(1)}초 경과)`;
-          console.warn(`[CRITICAL] ⚠️ 폴백 하트비트 실행: ${reason} (메인 setInterval이 실행되지 않았을 수 있음)`);
-          executeHeartbeat().catch((err) => {
-            console.warn('[CRITICAL] ⚠️ 폴백 하트비트 실행 실패:', err);
+        // 15초마다 하트비트 실행
+        if (timeSinceLastHeartbeat >= 15000) {
+          console.log(`[CRITICAL] 💓 하트비트 루프 실행 (${heartbeatLoopCount}회): 경과 ${(elapsed / 1000).toFixed(1)}초, 마지막 하트비트로부터 ${(timeSinceLastHeartbeat / 1000).toFixed(1)}초 경과`);
+          await executeHeartbeat().catch((err) => {
+            console.warn('[CRITICAL] ⚠️ 하트비트 루프 실행 실패:', err);
           });
         }
-      }, 5000); // 5초마다 확인 (15초마다 하트비트 실행 보장)
+        
+        // 다음 하트비트를 5초 후에 스케줄링 (재귀적 호출)
+        if (heartbeatLoopActive) {
+          setTimeout(() => runHeartbeatLoop(), 5000);
+        }
+      };
       
-      console.log(`[CRITICAL] 🔄 폴백 하트비트 체크 시작: 5초마다 확인, 15초마다 정기 하트비트 실행 (메인 setInterval이 실행되지 않는 경우 대비)`);
+      // 하트비트 루프 시작 (비동기로 실행되어 pipeline() 호출을 블로킹하지 않음)
+      runHeartbeatLoop().catch((err) => {
+        console.warn('[CRITICAL] ⚠️ 하트비트 루프 시작 실패:', err);
+      });
+      
+      console.log(`[CRITICAL] 🔄 하트비트 루프 시작: 5초마다 확인, 15초마다 정기 하트비트 실행 (pipeline() 호출과 병렬 실행)`);
       
       try {
         console.log(`📥 BGE-M3 모델 다운로드/로딩 시작 (quantized: true, cache: ${cacheDir})`);
-        console.log(`[CRITICAL] 📥 모델 다운로드 시작 - 하트비트는 계속 발생하지만 실제 다운로드 진행 상황은 내부적으로 처리됩니다.`);
+        console.log(`[CRITICAL] 📥 모델 다운로드 시작 - 하트비트는 pipeline() 호출과 병렬로 실행됩니다.`);
         console.log(`[CRITICAL] ⏱️ 예상 소요 시간: 40-90초 (서버리스 환경, 네트워크 상태에 따라 다름)`);
         
-        // 모델 초기화 진행 (비동기 작업 - 하트비트는 계속 발생하지만 실제 다운로드는 내부적으로 처리)
-        // 주의: pipeline() 호출 자체는 Promise이므로, 실제 다운로드가 진행 중인지 확인하기 어렵습니다.
-        // 하트비트가 계속 발생하면 진행 중으로 간주합니다.
+        // 모델 초기화 진행 (하트비트 루프와 병렬로 실행)
         const pipelineStartTime = Date.now();
         this.pipeline = await pipeline('feature-extraction', 'Xenova/bge-m3', {
           // 모델 로딩 최적화
@@ -200,22 +208,24 @@ export class EmbeddingService {
         const pipelineElapsed = Date.now() - pipelineStartTime;
         console.log(`[CRITICAL] ✅ pipeline() 호출 완료: ${pipelineElapsed}ms (${(pipelineElapsed / 1000).toFixed(1)}초)`);
         
+        // pipeline() 완료 후 하트비트 루프 및 인터벌 정리
+        heartbeatLoopActive = false;
         if (heartbeatIntervalId) {
           clearInterval(heartbeatIntervalId);
           console.log(`[CRITICAL] 🧹 하트비트 인터벌 정리 완료`);
         }
-        clearInterval(fallbackHeartbeatCheck);
         
         const modelInitMs = Date.now() - modelInitStartMs;
         const modelInitSeconds = (modelInitMs / 1000).toFixed(1);
         console.log(`✅ BGE-M3 파이프라인 인스턴스 생성 완료`);
         console.log(`✅ BGE-M3 모델 초기화 완료: ${modelInitMs}ms (${modelInitSeconds}초)`);
       } catch (error) {
+        // 하트비트 루프 및 인터벌 정리
+        heartbeatLoopActive = false;
         if (heartbeatIntervalId) {
           clearInterval(heartbeatIntervalId);
           console.log(`[CRITICAL] 🧹 하트비트 인터벌 정리 완료 (에러 발생)`);
         }
-        clearInterval(fallbackHeartbeatCheck);
         const elapsed = Date.now() - modelInitStartMs;
         const elapsedSeconds = (elapsed / 1000).toFixed(1);
         console.error(`❌ BGE-M3 모델 초기화 실패 (경과: ${elapsedSeconds}초):`, error);
