@@ -102,17 +102,25 @@ export class EmbeddingService {
       
       try {
         console.log(`📥 BGE-M3 모델 다운로드/로딩 시작 (quantized: true, cache: ${cacheDir})`);
+        console.log(`[CRITICAL] 📥 모델 다운로드 시작 - 하트비트는 계속 발생하지만 실제 다운로드 진행 상황은 내부적으로 처리됩니다.`);
+        console.log(`[CRITICAL] ⏱️ 예상 소요 시간: 40-90초 (서버리스 환경, 네트워크 상태에 따라 다름)`);
         
-        // 모델 초기화 진행
-      this.pipeline = await pipeline('feature-extraction', 'Xenova/bge-m3', {
-        // 모델 로딩 최적화
-        quantized: true,
+        // 모델 초기화 진행 (비동기 작업 - 하트비트는 계속 발생하지만 실제 다운로드는 내부적으로 처리)
+        // 주의: pipeline() 호출 자체는 Promise이므로, 실제 다운로드가 진행 중인지 확인하기 어렵습니다.
+        // 하트비트가 계속 발생하면 진행 중으로 간주합니다.
+        const pipelineStartTime = Date.now();
+        this.pipeline = await pipeline('feature-extraction', 'Xenova/bge-m3', {
+          // 모델 로딩 최적화
+          quantized: true,
           // 캐시 사용 (Vercel 환경에서는 /tmp 사용)
           cache_dir: cacheDir,
-        // 추가 옵션
-        local_files_only: false,
-        revision: 'main'
-      });
+          // 추가 옵션
+          local_files_only: false,
+          revision: 'main'
+        });
+        
+        const pipelineElapsed = Date.now() - pipelineStartTime;
+        console.log(`[CRITICAL] ✅ pipeline() 호출 완료: ${pipelineElapsed}ms (${(pipelineElapsed / 1000).toFixed(1)}초)`);
         
         clearInterval(heartbeatInterval);
         
