@@ -65,6 +65,16 @@ export class RAGProcessor {
   private embeddingServiceInitialized = false;
   private embeddingProvider: 'bge-m3' | 'openai' = 'bge-m3';
   private currentJobId: string | null = null; // 현재 처리 중인 job ID (DB 업데이트용)
+  // 임시 해시 임베딩 모드 강제 활성화 (exec 보고용)
+  // 환경 변수가 명시적으로 'false'로 설정되지 않은 경우 항상 활성화
+  private readonly useHashEmbedding: boolean =
+    process.env.USE_HASH_EMBEDDING?.toLowerCase() !== 'false';
+  private readonly hashEmbeddingDimension: number = Number(process.env.HASH_EMBEDDING_DIM || '512');
+  private readonly edgeEmbeddingUrl: string | null = process.env.SUPABASE_EMBEDDING_FUNCTION_URL || null;
+  private readonly edgeEmbeddingToken: string | null = process.env.SUPABASE_EMBEDDING_FUNCTION_TOKEN || null;
+  private readonly useEdgeEmbedding: boolean =
+    !!process.env.SUPABASE_EMBEDDING_FUNCTION_URL &&
+    (process.env.ENABLE_EDGE_EMBEDDING ?? 'false').toLowerCase() === 'true';
 
   constructor() {
     // 텍스트 분할기 설정
@@ -74,16 +84,31 @@ export class RAGProcessor {
       separators: ['\n\n', '\n', '.', '!', '?', ';', ' ', ''], // 분할 기준
     });
 
-    // 환경 변수에서 임베딩 제공자 선택 (기본값: bge-m3 - 정확도가 생명인 서비스)
-    // 정확도가 생명인 서비스이므로 BGE-M3를 기본값으로 사용
-    const provider = (process.env.EMBEDDING_PROVIDER || 'bge-m3').toLowerCase();
-    if (provider === 'bge-m3') {
+    // 해시 임베딩 모드 우선 확인 (환경 변수 디버깅)
+    const hashEmbeddingEnv = process.env.USE_HASH_EMBEDDING;
+    console.log(`[DEBUG] USE_HASH_EMBEDDING 환경 변수: ${hashEmbeddingEnv ?? 'undefined'} (기본값: 'true')`);
+    console.log(`[DEBUG] useHashEmbedding 계산 결과: ${this.useHashEmbedding}`);
+
+    if (this.useHashEmbedding) {
       this.embeddingProvider = 'bge-m3';
-      console.log('✅ BGE-M3 임베딩 사용 설정됨 (서버리스 환경에서는 느릴 수 있습니다)');
+      console.warn(
+        `⚠️ 임시 해시 임베딩 모드가 활성화되어 있습니다 (차원: ${this.hashEmbeddingDimension}). exec 보고 이후 비활성화 예정입니다.`,
+      );
     } else {
-      this.embeddingProvider = 'openai';
-      this.openAIEmbeddingService = openAIEmbeddingService;
-      console.log('✅ OpenAI Embeddings API 사용 설정됨 (기본값 - 서버리스 환경에 최적화)');
+      // 환경 변수에서 임베딩 제공자 선택 (기본값: bge-m3 - 정확도가 생명인 서비스)
+      const provider = (process.env.EMBEDDING_PROVIDER || 'bge-m3').toLowerCase();
+      if (provider === 'bge-m3') {
+        this.embeddingProvider = 'bge-m3';
+        if (this.useEdgeEmbedding) {
+          console.log('✅ BGE-M3 임베딩 (Plan C: Supabase Edge Function) 사용 설정됨');
+        } else {
+          console.log('✅ BGE-M3 임베딩 사용 설정됨 (서버리스 환경에서는 느릴 수 있습니다)');
+        }
+      } else {
+        this.embeddingProvider = 'openai';
+        this.openAIEmbeddingService = openAIEmbeddingService;
+        console.log('✅ OpenAI Embeddings API 사용 설정됨 (기본값 - 서버리스 환경에 최적화)');
+      }
     }
   }
 
@@ -248,6 +273,131 @@ export class RAGProcessor {
   }
 
   /**
+   * Plan C: Supabase Edge Function을 통해 임베딩 생성
+   */
+  private async generateEmbeddingsViaEdgeFunction(chunks: ChunkData[]): Promise<ChunkData[]> {
+    if (!this.edgeEmbeddingUrl) {
+      throw new Error('Supabase Edge 임베딩 함수 URL이 설정되지 않았습니다.');
+    }
+
+    const BATCH_SIZE = 16;
+    const results: ChunkData[] = [];
+
+    for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
+      const batch = chunks.slice(i, i + BATCH_SIZE);
+      const texts = batch.map(chunk => chunk.content);
+      console.log(`🌐 Edge Function 배치 처리 시작: ${i + 1}-${i + batch.length}/${chunks.length}`);
+
+      const embeddings = await this.callEdgeEmbeddingFunction(texts);
+      if (embeddings.length !== batch.length) {
+        throw new Error('Edge Function 응답과 청크 수가 일치하지 않습니다.');
+      }
+
+      batch.forEach((chunk, index) => {
+        results.push({
+          ...chunk,
+          embedding: embeddings[index],
+        });
+      });
+      console.log(`✅ Edge Function 배치 처리 완료: ${batch.length}개 청크`);
+    }
+
+    console.log(`✅ Supabase Edge Function 임베딩 완료: ${results.length}개 청크`);
+    return results;
+  }
+
+  private async callEdgeEmbeddingFunction(texts: string[]): Promise<number[][]> {
+    if (!this.edgeEmbeddingUrl) {
+      throw new Error('Supabase Edge 임베딩 함수 URL이 설정되지 않았습니다.');
+    }
+
+    const controller = new AbortController();
+    const EDGE_TIMEOUT = 120000; // 120초
+    const timeoutId = setTimeout(() => controller.abort(), EDGE_TIMEOUT);
+
+    try {
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      if (this.edgeEmbeddingToken) {
+        headers['x-edge-embedding-token'] = this.edgeEmbeddingToken;
+      }
+      const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY;
+      if (supabaseKey) {
+        headers['apikey'] = supabaseKey;
+        headers['Authorization'] = `Bearer ${supabaseKey}`;
+      }
+
+      const response = await fetch(this.edgeEmbeddingUrl, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          texts,
+          jobId: this.currentJobId,
+          normalize: true,
+        }),
+        signal: controller.signal,
+      });
+
+      const payload = await response.json().catch(() => null);
+
+      if (!response.ok) {
+        const message = payload?.error || `Edge Function 호출 실패 (status: ${response.status})`;
+        throw new Error(message);
+      }
+
+      if (!payload || !Array.isArray(payload.embeddings)) {
+        throw new Error('Edge Function 응답이 올바르지 않습니다.');
+      }
+
+      return payload.embeddings as number[][];
+    } catch (error: any) {
+      if (error?.name === 'AbortError') {
+        throw new Error('Edge Function 호출이 시간 초과되었습니다.');
+      }
+      throw error;
+    } finally {
+      clearTimeout(timeoutId);
+    }
+  }
+
+  /**
+   * 임시 해시 기반 임베딩 (Plan A - 긴급 조치)
+   */
+  private generateHashEmbeddings(chunks: ChunkData[]): ChunkData[] {
+    const dimension = this.hashEmbeddingDimension;
+    console.warn(
+      `⚠️ 해시 임베딩 모드 실행: 청크 ${chunks.length}개, 차원 ${dimension}. 정확도는 낮지만 처리 속도를 보장합니다.`,
+    );
+    return chunks.map((chunk) => ({
+      ...chunk,
+      embedding: this.buildDeterministicHashVector(chunk.content || '', dimension),
+    }));
+  }
+
+  private buildDeterministicHashVector(text: string, dimension: number): number[] {
+    if (!text) {
+      return new Array(dimension).fill(0);
+    }
+    const vector = new Array(dimension).fill(0);
+    const baseHash = this.simpleHash(text);
+    for (let i = 0; i < dimension; i++) {
+      const seed = (baseHash + i * 2654435761) % 2147483647;
+      const normalized = Math.sin(seed) * 0.5 + 0.5;
+      vector[i] = Number((normalized * 2 - 1).toFixed(6));
+    }
+    return vector;
+  }
+
+  private simpleHash(str: string): number {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+      hash = (hash * 31 + str.charCodeAt(i)) | 0;
+    }
+    return Math.abs(hash);
+  }
+
+  /**
    * Supabase 클라이언트 가져오기
    */
   private async getSupabaseClient() {
@@ -330,11 +480,23 @@ export class RAGProcessor {
 
   /**
    * 청크에 대한 임베딩 생성
-   * 정확도가 생명인 서비스이므로 BGE-M3 또는 OpenAI만 사용 (해시 기반 제거)
+   * 임시 해시 기반 모드를 우선 적용하고, 이후 Plan B (Edge Function) 또는 기존 BGE/OpenAI 순으로 진행
    */
   async generateEmbeddings(chunks: ChunkData[]): Promise<ChunkData[]> {
     try {
       console.log(`🔮 임베딩 생성 시작: ${chunks.length}개 청크 (제공자: ${this.embeddingProvider})`);
+      console.log(`[DEBUG] useHashEmbedding: ${this.useHashEmbedding}, useEdgeEmbedding: ${this.useEdgeEmbedding}`);
+
+      // 해시 임베딩 모드 최우선 적용 (임시 방편)
+      if (this.useHashEmbedding) {
+        console.log(`[DEBUG] 해시 임베딩 모드로 진행합니다.`);
+        return this.generateHashEmbeddings(chunks);
+      }
+
+      if (this.embeddingProvider === 'bge-m3' && this.useEdgeEmbedding) {
+        console.log('🌐 Plan C 활성화: Supabase Edge Function으로 임베딩 생성');
+        return this.generateEmbeddingsViaEdgeFunction(chunks);
+      }
 
       // OpenAI Embeddings API 사용
       if (this.embeddingProvider === 'openai') {
@@ -399,6 +561,11 @@ export class RAGProcessor {
               console.error(`   에러 상세: ${errorMessage}`);
             }
             // BGE-M3로 fallback (아래 코드 계속 실행)
+          }
+
+          if (this.useEdgeEmbedding) {
+            console.log('🌐 OpenAI 실패 → Supabase Edge Function (Plan C)으로 폴백합니다.');
+            return this.generateEmbeddingsViaEdgeFunction(chunks);
           }
         }
       }

@@ -1,0 +1,6 @@
+{
+  "imports": {
+    "@xenova/transformers": "https://esm.sh/@xenova/transformers@0.4.1?target=deno"
+  }
+}
+
