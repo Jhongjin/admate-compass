@@ -304,16 +304,22 @@ export class RAGProcessor {
         }, INIT_TIMEOUT);
       });
       
-      // 하트비트 루프를 백그라운드에서 시작 (에러는 무시)
-      heartbeatLoopPromise.catch((err) => {
-        console.warn('[CRITICAL] ⚠️ 하트비트 루프 오류 (무시):', err);
+      // 하트비트 루프를 Promise.all에 포함시켜 함수가 종료되지 않도록 함
+      // 초기화가 완료되면 shouldStopHeartbeat를 true로 설정하여 하트비트 루프를 종료시킴
+      const initPromiseWithHeartbeat = Promise.race([initPromise, timeoutPromise]).then(() => {
+        console.log(`[CRITICAL] 🧹 초기화 완료 - 하트비트 루프 중단 신호 전송`);
+        shouldStopHeartbeat = true;
       });
       
-      // 초기화 완료/타임아웃 대기 (하트비트 루프는 백그라운드에서 계속 실행)
-      await Promise.race([initPromise, timeoutPromise]);
-      
-      // 초기화 완료 후 하트비트 루프 중단
-      shouldStopHeartbeat = true;
+      // 하트비트 루프와 초기화를 병렬로 실행
+      // Promise.all을 사용하여 두 Promise가 모두 완료될 때까지 기다림
+      // 하트비트 루프는 초기화가 완료되면 shouldStopHeartbeat가 true가 되어 종료됨
+      await Promise.all([
+        initPromiseWithHeartbeat,
+        heartbeatLoopPromise.catch((err) => {
+          console.warn('[CRITICAL] ⚠️ 하트비트 루프 오류 (무시):', err);
+        })
+      ]);
       
       const elapsed = Date.now() - initStartMs;
       console.log(`✅ BGE-M3 임베딩 서비스 초기화 성공: ${elapsed}ms (${(elapsed / 1000).toFixed(1)}초)`);
