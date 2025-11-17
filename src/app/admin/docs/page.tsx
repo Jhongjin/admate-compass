@@ -3895,7 +3895,7 @@ function DocsTable({
       // 각 문서 정보 가져오기
       const { data: docs, error: docsError } = await supabase
         .from('documents')
-        .select('id, file_type, type, title, source_vendor')
+        .select('id, file_type, type, title, source_vendor, url')
         .in('id', selectedIds);
       
       if (docsError || !docs || docs.length === 0) {
@@ -3909,6 +3909,20 @@ function DocsTable({
       // 각 문서에 대해 재처리 작업 등록
       const results = await Promise.allSettled(
         docs.map(async (doc) => {
+          // URL 문서인 경우 reprocess-url API 사용
+          if (doc.type === 'url' || doc.url) {
+            const res = await fetch('/api/jobs/reprocess-url', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                documentId: doc.id,
+              })
+            });
+            
+            return await res.json();
+          }
+          
+          // 파일 문서인 경우 기존 로직 사용
           // 파일 타입에 따라 적절한 jobType 결정
           let jobType: 'PDF_PARSE' | 'DOCX_PARSE' = 'PDF_PARSE';
           if (doc.file_type?.includes('docx') || doc.type === 'docx') {
@@ -5740,7 +5754,7 @@ function DocumentDetailDialog({ detail, onClose, onRefetch }: { detail: any | nu
                         // 문서 정보 가져오기
                         const { data: docData, error: docError } = await supabase
                           .from('documents')
-                          .select('id, file_type, type, title, source_vendor')
+                          .select('id, file_type, type, title, source_vendor, url, content')
                           .eq('id', detail.id)
                           .single();
                         
@@ -5752,6 +5766,37 @@ function DocumentDetailDialog({ detail, onClose, onRefetch }: { detail: any | nu
                           return;
                         }
                         
+                        // URL 문서인 경우 reprocess-url API 사용
+                        if (docData.type === 'url' || docData.url) {
+                          const res = await fetch('/api/jobs/reprocess-url', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              documentId: detail.id,
+                            })
+                          });
+                          
+                          const result = await res.json();
+                          
+                          if (res.ok && result.success) {
+                            toast.success('재처리 시작', {
+                              description: `URL 문서 재처리가 시작되었습니다. (청크: ${result.chunkCount || 0}개)`,
+                              duration: 3000,
+                            });
+                            onRefetch();
+                            if (typeof window !== 'undefined') {
+                              window.dispatchEvent(new CustomEvent('docs-refresh'));
+                            }
+                          } else {
+                            toast.error('재처리 실패', {
+                              description: result.error || result.details || 'URL 문서 재처리에 실패했습니다.',
+                              duration: 5000,
+                            });
+                          }
+                          return;
+                        }
+                        
+                        // 파일 문서인 경우 기존 로직 사용
                         // 파일 타입에 따라 적절한 jobType 결정
                         let jobType: 'PDF_PARSE' | 'DOCX_PARSE' = 'PDF_PARSE';
                         if (docData.file_type?.includes('docx') || docData.type === 'docx') {
