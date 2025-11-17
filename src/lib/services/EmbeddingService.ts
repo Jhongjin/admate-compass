@@ -88,7 +88,9 @@ export class EmbeddingService {
       // 진행 상황 추적을 위한 하트비트 로깅 및 DB 업데이트 (15초마다)
       let lastHeartbeatTime = modelInitStartMs;
       let heartbeatCount = 0;
-      const heartbeatInterval = setInterval(async () => {
+      
+      // 하트비트 실행 함수 (재사용)
+      const executeHeartbeat = async () => {
         const now = Date.now();
         const elapsed = now - modelInitStartMs;
         const elapsedSeconds = (elapsed / 1000).toFixed(1);
@@ -96,17 +98,21 @@ export class EmbeddingService {
         const remainingSeconds = (remaining / 1000).toFixed(1);
         heartbeatCount++;
         
-        // 15초마다 하트비트 로깅 및 DB 업데이트
+        // 하트비트 로깅 및 DB 업데이트
         console.log(`⏳ BGE-M3 모델 초기화 진행 중... (경과: ${elapsedSeconds}초, 하트비트: ${heartbeatCount}회, 캐시: ${cacheDir})`);
         lastHeartbeatTime = now;
         
         // DB 업데이트 콜백 실행 (있는 경우)
         if (this.heartbeatCallback) {
           try {
+            console.log(`[CRITICAL] 💓 하트비트 콜백 실행 시작... (경과: ${elapsedSeconds}초, 남은 시간: ${remainingSeconds}초)`);
             await this.heartbeatCallback(elapsed, remaining);
+            console.log(`[CRITICAL] ✅ 하트비트 콜백 실행 완료`);
           } catch (err) {
             console.warn('[CRITICAL] ⚠️ 하트비트 콜백 실행 실패 (계속 진행):', err);
           }
+        } else {
+          console.log(`[CRITICAL] ℹ️ 하트비트 콜백이 설정되지 않음 (jobId가 없거나 콜백이 제거됨)`);
         }
         
         // 30초 이상 경과 시 경고 로그 추가
@@ -118,7 +124,22 @@ export class EmbeddingService {
         if (elapsed > 60000) {
           console.warn(`⚠️ BGE-M3 모델 초기화가 매우 오래 걸리고 있습니다 (${elapsedSeconds}초 경과). 네트워크 상태를 확인해주세요.`);
         }
-      }, 15000); // 15초마다 하트비트 및 DB 업데이트
+      };
+      
+      // 즉시 첫 하트비트 실행 (진행 상황을 즉시 반영)
+      console.log(`[CRITICAL] 🚀 첫 하트비트 즉시 실행 (초기화 시작 직후)`);
+      await executeHeartbeat().catch((err) => {
+        console.warn('[CRITICAL] ⚠️ 첫 하트비트 실행 실패 (계속 진행):', err);
+      });
+      
+      // 15초마다 하트비트 실행
+      const heartbeatInterval = setInterval(async () => {
+        await executeHeartbeat().catch((err) => {
+          console.warn('[CRITICAL] ⚠️ 하트비트 실행 실패 (계속 진행):', err);
+        });
+      }, 15000);
+      
+      console.log(`[CRITICAL] ⏰ 하트비트 인터벌 설정 완료: 15초마다 실행 예정`);
       
       try {
         console.log(`📥 BGE-M3 모델 다운로드/로딩 시작 (quantized: true, cache: ${cacheDir})`);
