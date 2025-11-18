@@ -102,10 +102,21 @@ export class DocumentGroupingService {
     const mainDocumentMap = new Map<string, GroupedDocument>(); // main_document_id -> main document
     const subDocumentsByMainId = new Map<string, GroupedDocument[]>(); // main_document_id -> sub documents
 
+    // 디버깅: mainDocumentId 통계
+    const docsWithMainId = urlDocuments.filter(doc => doc.mainDocumentId !== undefined && doc.mainDocumentId !== null);
+    const docsWithoutMainId = urlDocuments.filter(doc => !doc.mainDocumentId || doc.mainDocumentId === null || doc.mainDocumentId === undefined);
+    console.log(`[CRITICAL] 📊 DocumentGroupingService 그룹화 시작:`, {
+      totalDocuments: urlDocuments.length,
+      docsWithMainId: docsWithMainId.length,
+      docsWithoutMainId: docsWithoutMainId.length,
+      sampleWithMainId: docsWithMainId.slice(0, 3).map(d => ({ id: d.id, title: d.title?.substring(0, 30), mainDocumentId: d.mainDocumentId }))
+    });
+
     // 1. main_document_id 기반 그룹화 (우선순위)
     // 먼저 모든 문서를 순회하여 메인 문서와 하위 문서를 분류
     urlDocuments.forEach(doc => {
-      if (doc.mainDocumentId) {
+      // mainDocumentId가 명시적으로 설정되어 있는 경우 (null이 아닌 경우)
+      if (doc.mainDocumentId !== undefined && doc.mainDocumentId !== null) {
         // 하위 문서 (main_document_id가 있음)
         if (!subDocumentsByMainId.has(doc.mainDocumentId)) {
           subDocumentsByMainId.set(doc.mainDocumentId, []);
@@ -115,6 +126,11 @@ export class DocumentGroupingService {
         // 메인 문서 (main_document_id가 없음)
         mainDocumentMap.set(doc.id, doc);
       }
+    });
+
+    console.log(`[CRITICAL] 📊 그룹화 분류 완료:`, {
+      mainDocuments: mainDocumentMap.size,
+      subDocumentsByMainId: Array.from(subDocumentsByMainId.entries()).map(([id, docs]) => ({ mainId: id, subCount: docs.length }))
     });
 
     // 2. main_document_id 기반 그룹 생성
