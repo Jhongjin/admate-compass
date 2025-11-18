@@ -367,16 +367,38 @@ export async function POST(request: NextRequest) {
     });
 
     if (ragResult.success) {
+      // RAG 처리 후 현재 문서의 main_document_id 확인
+      const { data: currentDoc } = await supabase
+        .from('documents')
+        .select('main_document_id')
+        .eq('id', documentId)
+        .maybeSingle();
+      
+      // main_document_id 우선순위: 1) 원본 문서 값, 2) 현재 DB 값
+      const finalMainDocumentId = document.main_document_id ?? currentDoc?.main_document_id ?? null;
+      
+      console.log(`[CRITICAL] 📌 최종 업데이트 전 main_document_id 확인:`, {
+        원본문서: document.main_document_id || 'null',
+        현재DB: currentDoc?.main_document_id || 'null',
+        최종값: finalMainDocumentId || 'null'
+      });
+      
       // 성공 시 문서 상태 업데이트 (main_document_id 유지)
-      await supabase
+      const { error: finalUpdateError } = await supabase
         .from('documents')
         .update({
           status: 'indexed',
           chunk_count: ragResult.chunkCount,
-          main_document_id: document.main_document_id, // 그룹 관계 유지
+          main_document_id: finalMainDocumentId, // 그룹 관계 유지
           updated_at: new Date().toISOString(),
         })
         .eq('id', documentId);
+
+      if (finalUpdateError) {
+        console.error(`[CRITICAL] ❌ 최종 업데이트 실패:`, finalUpdateError);
+      } else {
+        console.log(`[CRITICAL] ✅ 최종 업데이트 완료: main_document_id=${finalMainDocumentId || 'null'}`);
+      }
 
       console.log(`✅ URL 문서 재처리 완료: ${document.title} (청크: ${ragResult.chunkCount}개)`);
 
@@ -388,11 +410,20 @@ export async function POST(request: NextRequest) {
       });
     } else {
       // 실패 시 문서 상태 업데이트 (main_document_id 유지)
+      // 현재 문서의 main_document_id 확인
+      const { data: currentDoc } = await supabase
+        .from('documents')
+        .select('main_document_id')
+        .eq('id', documentId)
+        .maybeSingle();
+      
+      const finalMainDocumentId = document.main_document_id ?? currentDoc?.main_document_id ?? null;
+      
       await supabase
         .from('documents')
         .update({
           status: 'failed',
-          main_document_id: document.main_document_id, // 그룹 관계 유지
+          main_document_id: finalMainDocumentId, // 그룹 관계 유지
           updated_at: new Date().toISOString(),
         })
         .eq('id', documentId);
