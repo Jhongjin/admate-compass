@@ -215,7 +215,8 @@ export async function POST(request: NextRequest) {
           $('*').each((_, el) => {
             const $el = $(el);
             // script, style 제외
-            if (el.tagName === 'script' || el.tagName === 'style') return;
+            const tagName = (el as any).tagName || (el as any).name || '';
+            if (tagName === 'script' || tagName === 'style') return;
             
             const text = $el.text().trim();
             if (text && text.length > 10) { // 최소 10자 이상만
