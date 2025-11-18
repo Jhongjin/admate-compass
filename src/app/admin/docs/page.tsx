@@ -3390,19 +3390,26 @@ function DocsTable({
         }
         
         // 부모 문서가 이미 mainPages에 있는지 확인
-        let parentDoc = mainDocsById[parentId];
+        // 타입 일관성: parentId는 String이지만 mainDocsById의 키는 원본 타입일 수 있으므로 둘 다 시도
+        let parentDoc = mainDocsById[parentId] || mainDocsById[String(parentId)];
         
         // mainPages에 없으면 urlDocuments에서 찾기
         if (!parentDoc) {
-          parentDoc = urlDocuments.find((d: any) => d.id === parentId);
+          parentDoc = urlDocuments.find((d: any) => d.id === parentId || String(d.id) === parentId);
           if (parentDoc) {
             // 부모 문서를 mainPages에 추가
             if (!mainDocIds.has(parentDoc.id)) {
               mainPages.push(parentDoc);
               mainDocIds.add(parentDoc.id);
             }
+            // mainDocsById에 원본 ID와 String ID 모두 저장 (타입 일관성)
             mainDocsById[parentDoc.id] = parentDoc;
+            mainDocsById[String(parentDoc.id)] = parentDoc;
             // subPagesByMainId 초기화 (부모 문서를 찾았으면 반드시 초기화)
+            // 타입 일관성: parentId는 String이므로 String 키로 초기화, 원본 ID도 함께 초기화
+            if (!subPagesByMainId[parentId]) {
+              subPagesByMainId[parentId] = [];
+            }
             if (!subPagesByMainId[parentDoc.id]) {
               subPagesByMainId[parentDoc.id] = [];
             }
@@ -3456,27 +3463,54 @@ function DocsTable({
         }
         
         // subPagesByMainId가 초기화되어 있으면 하위 페이지로 연결
-        if (subPagesByMainId[parentId]) {
+        // 타입 일관성: parentId는 String이지만 원본 ID로도 확인
+        const subPagesArray = subPagesByMainId[parentId] || subPagesByMainId[parentDoc?.id] || [];
+        if (subPagesArray.length > 0 || subPagesByMainId[parentId] || subPagesByMainId[parentDoc?.id]) {
           // 디버깅: 하위 페이지 연결 전 확인
           if (typeof window !== 'undefined') {
             console.log('[CRITICAL] 🔗 하위 페이지 연결 준비:', {
               childId: doc.id,
               childTitle: doc.title?.substring(0, 30),
               parentId,
+              parentDocId: parentDoc?.id,
               subPagesByMainIdExists: !!subPagesByMainId[parentId],
-              currentSubPagesCount: subPagesByMainId[parentId].length,
-              alreadyExists: subPagesByMainId[parentId].some((existing: any) => existing.id === doc.id),
+              subPagesByMainIdWithOriginalId: !!subPagesByMainId[parentDoc?.id],
+              currentSubPagesCount: subPagesArray.length,
+              alreadyExists: subPagesArray.some((existing: any) => existing.id === doc.id),
             });
           }
+          // 타입 일관성: parentId (String)와 원본 ID 모두에 추가
+          const targetKeys = [parentId];
+          if (parentDoc?.id && String(parentDoc.id) !== parentId) {
+            targetKeys.push(String(parentDoc.id));
+          }
+          
           // 중복 체크: 같은 문서가 이미 추가되어 있지 않은 경우에만 추가
-          if (!subPagesByMainId[parentId].some((existing: any) => existing.id === doc.id)) {
-            subPagesByMainId[parentId].push(doc);
+          let alreadyAdded = false;
+          for (const key of targetKeys) {
+            if (!subPagesByMainId[key]) {
+              subPagesByMainId[key] = [];
+            }
+            if (subPagesByMainId[key].some((existing: any) => existing.id === doc.id)) {
+              alreadyAdded = true;
+              break;
+            }
+          }
+          
+          if (!alreadyAdded) {
+            for (const key of targetKeys) {
+              if (!subPagesByMainId[key]) {
+                subPagesByMainId[key] = [];
+              }
+              subPagesByMainId[key].push(doc);
+            }
           } else {
             if (typeof window !== 'undefined') {
               console.log('[CRITICAL] ⚠️ 하위 페이지 중복 추가 방지:', {
                 childId: doc.id,
                 childTitle: doc.title?.substring(0, 30),
                 parentId,
+                parentDocId: parentDoc?.id,
               });
             }
           }
@@ -3667,21 +3701,30 @@ function DocsTable({
       ].filter(Boolean) as string[];
       
       const combinedSubDocs: any[] = [];
-      const directSubDocs = subPagesByMainId[mainDoc.id] || [];
+      // 타입 일관성: subPagesByMainId의 키는 String(parentId)이므로 mainDoc.id도 String으로 변환
+      const mainDocIdString = String(mainDoc.id);
+      const directSubDocs = subPagesByMainId[mainDocIdString] || subPagesByMainId[mainDoc.id] || [];
       
       // 디버깅: subPagesByMainId 확인
       if (typeof window !== 'undefined') {
         console.log('[CRITICAL] 🔍 그룹 생성 전 subPagesByMainId 확인:', {
           mainDocId: mainDoc.id,
+          mainDocIdString,
           mainDocTitle: mainDoc.title?.substring(0, 30),
           directSubDocsCount: directSubDocs.length,
           directSubDocsIds: directSubDocs.map((s: any) => s.id),
           directSubDocsTitles: directSubDocs.map((s: any) => s.title?.substring(0, 20)),
           subPagesByMainIdKeys: Object.keys(subPagesByMainId),
-          allSubDocsWithThisMainId: urlDocuments.filter((d: any) => d.mainDocumentId === mainDoc.id).map((d: any) => ({
+          subPagesByMainIdWithStringKey: subPagesByMainId[mainDocIdString]?.length || 0,
+          subPagesByMainIdWithOriginalKey: subPagesByMainId[mainDoc.id]?.length || 0,
+          allSubDocsWithThisMainId: urlDocuments.filter((d: any) => {
+            const dMainDocId = d.mainDocumentId != null ? String(d.mainDocumentId) : null;
+            return dMainDocId === mainDocIdString || d.mainDocumentId === mainDoc.id;
+          }).map((d: any) => ({
             id: d.id,
             title: d.title?.substring(0, 20),
             mainDocumentId: d.mainDocumentId,
+            mainDocumentIdString: d.mainDocumentId != null ? String(d.mainDocumentId) : null,
           })),
         });
       }
@@ -3703,9 +3746,11 @@ function DocsTable({
       });
       
       // 누락된 하위 문서 보완: urlDocuments에서 mainDocumentId가 mainDoc.id와 일치하는 문서 찾기
+      // 타입 일관성: mainDoc.id를 String으로 변환해서 비교
       const missingSubDocs = urlDocuments.filter((d: any) => {
         const dMainDocId = d.mainDocumentId != null ? String(d.mainDocumentId) : null;
-        return dMainDocId === mainDoc.id && !combinedSubDocs.some((existing) => existing.id === d.id);
+        // String 변환된 값과 원본 값 모두 비교
+        return (dMainDocId === mainDocIdString || d.mainDocumentId === mainDoc.id) && !combinedSubDocs.some((existing) => existing.id === d.id);
       });
       
       if (missingSubDocs.length > 0) {
