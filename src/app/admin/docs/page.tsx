@@ -3116,6 +3116,21 @@ function DocsTable({
   // 메인 페이지와 하위 페이지를 그룹화하는 함수 (메인 URL 기준)
   const groupDocumentsByParent = useMemo(() => {
     if (typeof window !== 'undefined') {
+      console.log('[CRITICAL] 🚀 그룹화 로직 시작:', { 
+        sortedDataLength: sortedData?.length, 
+        sortedDataIsArray: Array.isArray(sortedData),
+        sortedDataType: typeof sortedData,
+        sortedDataIsUndefined: sortedData === undefined,
+        sortedDataIsNull: sortedData === null,
+        sortedDataSample: sortedData?.slice(0, 3).map((d: any) => ({
+          id: d.id,
+          title: d.title?.substring(0, 30),
+          url: d.url,
+          mainUrl: (d as any).mainUrl,
+          isMainUrl: (d as any).isMainUrl,
+          mainDocumentId: (d as any).mainDocumentId
+        }))
+      });
       logger.log('[그룹화] 🚀 그룹화 로직 시작 (메인 URL 기준) - 클라이언트:', { 
         sortedDataLength: sortedData?.length, 
         sortedDataIsArray: Array.isArray(sortedData),
