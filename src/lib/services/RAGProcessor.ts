@@ -925,7 +925,7 @@ export class RAGProcessor {
    * 청크를 Supabase에 저장
    * @returns 실제 저장된 청크 개수
    */
-  async saveChunksToDatabase(chunks: ChunkData[]): Promise<number> {
+  async saveChunksToDatabase(chunks: ChunkData[], document?: DocumentData): Promise<number> {
     let supabase = await this.getSupabaseClient();
     
     // Supabase 연결 확인
@@ -1062,7 +1062,7 @@ export class RAGProcessor {
         };
         
         // main_document_id 우선순위: 1) 전달받은 값, 2) 기존 문서의 값
-        if (document.main_document_id) {
+        if (document?.main_document_id) {
           updateData.main_document_id = document.main_document_id;
         } else if (existingDoc?.main_document_id) {
           updateData.main_document_id = existingDoc.main_document_id;
@@ -1129,7 +1129,7 @@ export class RAGProcessor {
             };
             
             // main_document_id 우선순위: 1) 전달받은 값, 2) 기존 문서의 값
-            if (document.main_document_id) {
+            if (document?.main_document_id) {
               updateData.main_document_id = document.main_document_id;
             } else if (existingDoc?.main_document_id) {
               updateData.main_document_id = existingDoc.main_document_id;
@@ -1803,7 +1803,7 @@ export class RAGProcessor {
               const batchSaveStartMs = Date.now();
               console.log(`💾 청크 저장 배치: ${i + 1}-${Math.min(i + SAVE_BATCH_SIZE, chunksWithEmbeddings.length)}/${chunksWithEmbeddings.length}`);
               
-              const batchSaved = await this.saveChunksToDatabase(batch);
+              const batchSaved = await this.saveChunksToDatabase(batch, document);
               savedChunkCount += batchSaved;
               
               const batchSaveMs = Date.now() - batchSaveStartMs;
@@ -1827,7 +1827,7 @@ export class RAGProcessor {
             });
           } else {
             // 작은 파일은 한 번에 저장 (지연 없음)
-            savedChunkCount = await this.saveChunksToDatabase(chunksWithEmbeddings);
+            savedChunkCount = await this.saveChunksToDatabase(chunksWithEmbeddings, document);
             const chunkSaveMs = Date.now() - chunkSaveStartMs;
             console.log('✅ 청크 데이터베이스 저장 완료:', {
               chunkCount: savedChunkCount,
