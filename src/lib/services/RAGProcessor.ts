@@ -54,6 +54,7 @@ export interface DocumentData {
   file_type: string;
   url?: string; // URL 필드 추가
   source_vendor?: string; // 벤더 정보 추가
+  main_document_id?: string; // 그룹 관계를 위한 부모 문서 ID
   created_at: string;
   updated_at: string;
 }
@@ -767,8 +768,10 @@ export class RAGProcessor {
         updated_at: document.updated_at,
       };
 
-      // 기존 문서가 있으면 main_document_id 유지 (그룹 관계 보존)
-      if (isUpdate && existingDoc?.main_document_id) {
+      // main_document_id 우선순위: 1) 전달받은 값, 2) 기존 문서의 값
+      if (document.main_document_id) {
+        documentData.main_document_id = document.main_document_id;
+      } else if (isUpdate && existingDoc?.main_document_id) {
         documentData.main_document_id = existingDoc.main_document_id;
       }
 
@@ -1045,7 +1048,7 @@ export class RAGProcessor {
 
       // 문서의 chunk_count 업데이트 (실제 저장된 개수 사용, main_document_id 유지)
       if (finalCount > 0) {
-        // 기존 문서의 main_document_id 조회
+        // main_document_id 우선순위: 1) 전달받은 값, 2) 기존 문서의 값
         const { data: existingDoc } = await supabase
           .from('documents')
           .select('main_document_id')
@@ -1058,8 +1061,10 @@ export class RAGProcessor {
           updated_at: new Date().toISOString()
         };
         
-        // main_document_id가 있으면 유지 (그룹 관계 보존)
-        if (existingDoc?.main_document_id) {
+        // main_document_id 우선순위: 1) 전달받은 값, 2) 기존 문서의 값
+        if (document.main_document_id) {
+          updateData.main_document_id = document.main_document_id;
+        } else if (existingDoc?.main_document_id) {
           updateData.main_document_id = existingDoc.main_document_id;
         }
         
@@ -1110,7 +1115,7 @@ export class RAGProcessor {
           
           // 부분적으로 저장된 경우 chunk_count 업데이트 (main_document_id 유지)
           if (savedCount > 0) {
-            // 기존 문서의 main_document_id 조회
+            // main_document_id 우선순위: 1) 전달받은 값, 2) 기존 문서의 값
             const { data: existingDoc } = await supabase
               .from('documents')
               .select('main_document_id')
@@ -1123,8 +1128,10 @@ export class RAGProcessor {
               updated_at: new Date().toISOString()
             };
             
-            // main_document_id가 있으면 유지 (그룹 관계 보존)
-            if (existingDoc?.main_document_id) {
+            // main_document_id 우선순위: 1) 전달받은 값, 2) 기존 문서의 값
+            if (document.main_document_id) {
+              updateData.main_document_id = document.main_document_id;
+            } else if (existingDoc?.main_document_id) {
               updateData.main_document_id = existingDoc.main_document_id;
             }
             
@@ -1356,7 +1363,7 @@ export class RAGProcessor {
             console.log('✅ PDF 문서 저장 완료 (청크 없음 - 다운로드용으로만 사용)');
             
             // 문서 상태를 indexed로 업데이트 (청크 없어도 저장 완료, main_document_id 유지)
-            // 기존 문서의 main_document_id 조회
+            // main_document_id 우선순위: 1) 전달받은 값, 2) 기존 문서의 값
             const { data: existingDoc } = await supabase
               .from('documents')
               .select('main_document_id')
@@ -1369,8 +1376,10 @@ export class RAGProcessor {
               updated_at: new Date().toISOString()
             };
             
-            // main_document_id가 있으면 유지 (그룹 관계 보존)
-            if (existingDoc?.main_document_id) {
+            // main_document_id 우선순위: 1) 전달받은 값, 2) 기존 문서의 값
+            if (document.main_document_id) {
+              updateData.main_document_id = document.main_document_id;
+            } else if (existingDoc?.main_document_id) {
               updateData.main_document_id = existingDoc.main_document_id;
             }
             

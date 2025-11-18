@@ -356,6 +356,7 @@ export async function POST(request: NextRequest) {
       file_size: Buffer.byteLength(content, 'utf8'),
       file_type: 'text/html',
       source_vendor: document.source_vendor || 'META',
+      main_document_id: document.main_document_id || undefined, // 그룹 관계 유지
       created_at: (document as any).created_at || new Date().toISOString(),
       updated_at: new Date().toISOString(),
     });
