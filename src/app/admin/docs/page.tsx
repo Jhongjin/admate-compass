@@ -2630,6 +2630,37 @@ function DocsTable({
         throw error;
       }
       
+      // 디버깅: main_document_id 필드 확인
+      if (typeof window !== 'undefined' && documents && documents.length > 0) {
+        const docsWithMainId = documents.filter((d: any) => d.main_document_id);
+        const docsWithNullMainId = documents.filter((d: any) => d.main_document_id === null);
+        const docsWithUndefinedMainId = documents.filter((d: any) => d.main_document_id === undefined);
+        console.log('[CRITICAL] 🔍 Supabase 쿼리 결과 - main_document_id 확인:', {
+          totalDocuments: documents.length,
+          docsWithMainId: docsWithMainId.length,
+          docsWithNullMainId: docsWithNullMainId.length,
+          docsWithUndefinedMainId: docsWithUndefinedMainId.length,
+          sampleWithMainId: docsWithMainId.slice(0, 3).map((d: any) => ({
+            id: d.id,
+            title: d.title?.substring(0, 30),
+            main_document_id: d.main_document_id,
+            main_document_idType: typeof d.main_document_id,
+          })),
+          sampleWithNull: docsWithNullMainId.slice(0, 3).map((d: any) => ({
+            id: d.id,
+            title: d.title?.substring(0, 30),
+            main_document_id: d.main_document_id,
+          })),
+          firstDocument: documents[0] ? {
+            id: documents[0].id,
+            title: documents[0].title?.substring(0, 30),
+            main_document_id: documents[0].main_document_id,
+            main_document_idType: typeof documents[0].main_document_id,
+            hasMainDocumentIdField: 'main_document_id' in documents[0],
+          } : null,
+        });
+      }
+      
       // 클라이언트 측 벤더 필터링 (ENUM 타입 호환성 문제 대응)
       // DB 쿼리에서 필터링이 제대로 작동하지 않을 경우를 대비하여
       let filteredDocuments = documents || [];
