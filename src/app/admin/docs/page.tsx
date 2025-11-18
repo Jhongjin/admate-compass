@@ -3422,9 +3422,21 @@ function DocsTable({
               parentId,
               subPagesByMainIdExists: !!subPagesByMainId[parentId],
               currentSubPagesCount: subPagesByMainId[parentId].length,
+              alreadyExists: subPagesByMainId[parentId].some((existing: any) => existing.id === doc.id),
             });
           }
-          subPagesByMainId[parentId].push(doc);
+          // 중복 체크: 같은 문서가 이미 추가되어 있지 않은 경우에만 추가
+          if (!subPagesByMainId[parentId].some((existing: any) => existing.id === doc.id)) {
+            subPagesByMainId[parentId].push(doc);
+          } else {
+            if (typeof window !== 'undefined') {
+              console.log('[CRITICAL] ⚠️ 하위 페이지 중복 추가 방지:', {
+                childId: doc.id,
+                childTitle: doc.title?.substring(0, 30),
+                parentId,
+              });
+            }
+          }
           if (normalizedParentKey) {
             fallbackSubPagesByKey[normalizedParentKey] = fallbackSubPagesByKey[normalizedParentKey] || [];
             fallbackSubPagesByKey[normalizedParentKey].push(doc);
@@ -3613,6 +3625,24 @@ function DocsTable({
       
       const combinedSubDocs: any[] = [];
       const directSubDocs = subPagesByMainId[mainDoc.id] || [];
+      
+      // 디버깅: subPagesByMainId 확인
+      if (typeof window !== 'undefined') {
+        console.log('[CRITICAL] 🔍 그룹 생성 전 subPagesByMainId 확인:', {
+          mainDocId: mainDoc.id,
+          mainDocTitle: mainDoc.title?.substring(0, 30),
+          directSubDocsCount: directSubDocs.length,
+          directSubDocsIds: directSubDocs.map((s: any) => s.id),
+          directSubDocsTitles: directSubDocs.map((s: any) => s.title?.substring(0, 20)),
+          subPagesByMainIdKeys: Object.keys(subPagesByMainId),
+          allSubDocsWithThisMainId: urlDocuments.filter((d: any) => d.mainDocumentId === mainDoc.id).map((d: any) => ({
+            id: d.id,
+            title: d.title?.substring(0, 20),
+            mainDocumentId: d.mainDocumentId,
+          })),
+        });
+      }
+      
       directSubDocs.forEach((subDoc) => {
         if (!combinedSubDocs.some((existing) => existing.id === subDoc.id)) {
           combinedSubDocs.push(subDoc);
@@ -3628,6 +3658,36 @@ function DocsTable({
           });
         }
       });
+      
+      // 누락된 하위 문서 보완: urlDocuments에서 mainDocumentId가 mainDoc.id와 일치하는 문서 찾기
+      const missingSubDocs = urlDocuments.filter((d: any) => {
+        const dMainDocId = d.mainDocumentId != null ? String(d.mainDocumentId) : null;
+        return dMainDocId === mainDoc.id && !combinedSubDocs.some((existing) => existing.id === d.id);
+      });
+      
+      if (missingSubDocs.length > 0) {
+        if (typeof window !== 'undefined') {
+          console.log('[CRITICAL] ⚠️ 누락된 하위 문서 발견 및 추가:', {
+            mainDocId: mainDoc.id,
+            mainDocTitle: mainDoc.title?.substring(0, 30),
+            missingCount: missingSubDocs.length,
+            missingIds: missingSubDocs.map((d: any) => d.id),
+            missingTitles: missingSubDocs.map((d: any) => d.title?.substring(0, 20)),
+            beforeCount: combinedSubDocs.length,
+          });
+        }
+        missingSubDocs.forEach((subDoc) => {
+          if (!combinedSubDocs.some((existing) => existing.id === subDoc.id)) {
+            combinedSubDocs.push(subDoc);
+          }
+        });
+        if (typeof window !== 'undefined') {
+          console.log('[CRITICAL] ✅ 누락된 하위 문서 추가 완료:', {
+            mainDocId: mainDoc.id,
+            afterCount: combinedSubDocs.length,
+          });
+        }
+      }
       
       combinedSubDocs.sort((a, b) => {
         const orderA = rowOrder.get(a.id) ?? Number.MAX_SAFE_INTEGER;
