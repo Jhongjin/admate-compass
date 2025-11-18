@@ -2748,6 +2748,19 @@ function DocsTable({
       });
       
       // documents에 메인 URL 정보 추가
+      // 디버깅: main_document_id 필드 확인
+      if (typeof window !== 'undefined' && filteredDocuments && filteredDocuments.length > 0) {
+        const sampleDoc = filteredDocuments[0];
+        console.log('[CRITICAL] 🔍 documentsWithMainUrl 매핑 전 샘플 문서:', {
+          id: sampleDoc.id,
+          title: sampleDoc.title?.substring(0, 30),
+          main_document_id: sampleDoc.main_document_id,
+          main_document_idType: typeof sampleDoc.main_document_id,
+          hasMainDocumentIdField: 'main_document_id' in sampleDoc,
+          url: sampleDoc.url,
+        });
+      }
+      
       const documentsWithMainUrl = (filteredDocuments || []).map((doc: any) => {
         const normalizedUrl = normalizeUrlForGrouping(doc.url);
         
@@ -2778,6 +2791,22 @@ function DocsTable({
             doc.id === matchedEntry.docId ||
             (!!normalizedUrl && !!normalizedMain && normalizedUrl === normalizedMain);
           
+          // main_document_id 우선 사용, 없으면 URL 매칭 결과 사용
+          const finalMainDocumentId = doc.main_document_id !== null && doc.main_document_id !== undefined 
+            ? doc.main_document_id 
+            : (isExact ? undefined : matchedEntry.docId);
+          
+          if (typeof window !== 'undefined' && doc.main_document_id) {
+            console.log('[CRITICAL] ✅ main_document_id 발견 (matchedEntry 있음):', {
+              docId: doc.id,
+              title: doc.title?.substring(0, 30),
+              main_document_id: doc.main_document_id,
+              finalMainDocumentId,
+              matchedEntryDocId: matchedEntry.docId,
+              isExact,
+            });
+          }
+          
           return {
             ...doc,
             mainUrl: matchedEntry.original,
@@ -2785,8 +2814,22 @@ function DocsTable({
             normalizedMainUrl: normalizedMain,
             isMainUrl: isExact,
             // main_document_id 필드를 mainDocumentId로 매핑 (URL 매칭보다 우선)
-            mainDocumentId: doc.main_document_id !== null && doc.main_document_id !== undefined ? doc.main_document_id : (isExact ? undefined : matchedEntry.docId),
+            mainDocumentId: finalMainDocumentId,
           };
+        }
+        
+        // main_document_id가 있으면 사용
+        const finalMainDocumentId = doc.main_document_id !== null && doc.main_document_id !== undefined 
+          ? doc.main_document_id 
+          : undefined;
+        
+        if (typeof window !== 'undefined' && doc.main_document_id) {
+          console.log('[CRITICAL] ✅ main_document_id 발견 (matchedEntry 없음):', {
+            docId: doc.id,
+            title: doc.title?.substring(0, 30),
+            main_document_id: doc.main_document_id,
+            finalMainDocumentId,
+          });
         }
         
         return {
@@ -2794,7 +2837,7 @@ function DocsTable({
           normalizedUrl,
           isMainUrl: false,
           // main_document_id 필드를 mainDocumentId로 매핑
-          mainDocumentId: doc.main_document_id !== null && doc.main_document_id !== undefined ? doc.main_document_id : undefined,
+          mainDocumentId: finalMainDocumentId,
         };
       });
       
@@ -2803,13 +2846,15 @@ function DocsTable({
       const subDocsCount = documentsWithMainUrl.filter(d => d.isMainUrl === false && (d.mainUrl || d.normalizedMainUrl || d.mainDocumentId)).length;
       const urlTypeDocs = documentsWithMainUrl.filter(d => d.type === 'url').length;
       const urlTypeWithUrl = documentsWithMainUrl.filter(d => d.type === 'url' && (d.url || d.normalizedUrl)).length;
+      const docsWithMainId = documentsWithMainUrl.filter((d: any) => d.mainDocumentId);
       
       if (typeof window !== 'undefined') {
-        logger.log('[그룹화] 📊 메인 URL 정보 추가 완료:', {
+        console.log('[CRITICAL] 📊 메인 URL 정보 추가 완료:', {
           totalDocuments: documentsWithMainUrl.length,
           mainDocsCount,
           subDocsCount,
           docsWithoutMainUrl: documentsWithMainUrl.length - mainDocsCount - subDocsCount,
+          docsWithMainDocumentId: docsWithMainId.length,
           urlTypeDocs,
           urlTypeWithUrl,
           sampleDocs: documentsWithMainUrl.slice(0, 5).map((d: any) => ({
@@ -2823,10 +2868,24 @@ function DocsTable({
             normalizedUrl: d.normalizedUrl,
             normalizedMainUrl: d.normalizedMainUrl,
             mainDocumentId: d.mainDocumentId,
+            mainDocumentIdType: typeof d.mainDocumentId,
+            main_document_id: d.main_document_id,
             typeCheck: d.type === 'url',
             urlCheck: !!(d.url || d.normalizedUrl),
             combinedCheck: d.type === 'url' && !!(d.url || d.normalizedUrl)
+          })),
+          sampleWithMainId: docsWithMainId.slice(0, 3).map((d: any) => ({
+            id: d.id,
+            title: d.title?.substring(0, 30),
+            mainDocumentId: d.mainDocumentId,
+            main_document_id: d.main_document_id,
           }))
+        });
+        logger.log('[그룹화] 📊 메인 URL 정보 추가 완료:', {
+          totalDocuments: documentsWithMainUrl.length,
+          mainDocsCount,
+          subDocsCount,
+          docsWithMainDocumentId: docsWithMainId.length,
         });
       }
       
