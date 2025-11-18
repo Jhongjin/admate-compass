@@ -2564,7 +2564,7 @@ function DocsTable({
         });
       }
       
-      let q = supabase.from("documents").select("id,title,type,status,updated_at,chunk_count,source_vendor,url").order("updated_at", { ascending: false }).limit(60);
+      let q = supabase.from("documents").select("id,title,type,status,updated_at,chunk_count,source_vendor,url,main_document_id").order("updated_at", { ascending: false }).limit(60);
       
       // 벤더 필터 (항상 적용)
       const dbVendors = convertVendorsToDB(vendors);
@@ -2784,7 +2784,8 @@ function DocsTable({
             normalizedUrl,
             normalizedMainUrl: normalizedMain,
             isMainUrl: isExact,
-            mainDocumentId: matchedEntry.docId,
+            // main_document_id 필드를 mainDocumentId로 매핑 (URL 매칭보다 우선)
+            mainDocumentId: doc.main_document_id !== null && doc.main_document_id !== undefined ? doc.main_document_id : (isExact ? undefined : matchedEntry.docId),
           };
         }
         
@@ -2792,6 +2793,8 @@ function DocsTable({
           ...doc,
           normalizedUrl,
           isMainUrl: false,
+          // main_document_id 필드를 mainDocumentId로 매핑
+          mainDocumentId: doc.main_document_id !== null && doc.main_document_id !== undefined ? doc.main_document_id : undefined,
         };
       });
       
