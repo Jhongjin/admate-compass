@@ -769,10 +769,19 @@ export class RAGProcessor {
       };
 
       // main_document_id 우선순위: 1) 전달받은 값, 2) 기존 문서의 값
-      if (document.main_document_id) {
+      // null도 유효한 값이므로 명시적으로 체크
+      if (document.main_document_id !== undefined && document.main_document_id !== null) {
         documentData.main_document_id = document.main_document_id;
+        console.log(`[CRITICAL] 📌 main_document_id 설정 (전달받은 값): ${document.main_document_id}`);
       } else if (isUpdate && existingDoc?.main_document_id) {
         documentData.main_document_id = existingDoc.main_document_id;
+        console.log(`[CRITICAL] 📌 main_document_id 설정 (기존 문서 값): ${existingDoc.main_document_id}`);
+      } else if (isUpdate && existingDoc?.main_document_id === null) {
+        // 기존에 null이었으면 명시적으로 null로 설정하여 그룹 밖으로 나가지 않도록
+        documentData.main_document_id = null;
+        console.log(`[CRITICAL] 📌 main_document_id 유지 (기존 null 값)`);
+      } else {
+        console.log(`[CRITICAL] ⚠️ main_document_id 없음: document.main_document_id=${document.main_document_id}, existingDoc?.main_document_id=${existingDoc?.main_document_id}`);
       }
 
       // 기존 문서가 없으면 created_at 포함, 있으면 제외 (업데이트 시 created_at은 변경하지 않음)
