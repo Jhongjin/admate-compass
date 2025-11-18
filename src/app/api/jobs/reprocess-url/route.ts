@@ -338,20 +338,35 @@ export async function POST(request: NextRequest) {
     console.log(`🔄 URL 문서 재처리 시작: ${document.title} (${document.url})`);
     console.log(`[CRITICAL] 📌 재처리 전 main_document_id: ${document.main_document_id || 'null'}`);
 
-    // 문서 상태를 processing으로 변경 (main_document_id 유지)
+    // 재처리 전 DB에서 현재 main_document_id 확인 (재처리 중 다른 프로세스가 변경했을 수 있음)
+    const { data: currentDocBeforeProcessing } = await supabase
+      .from('documents')
+      .select('main_document_id')
+      .eq('id', documentId)
+      .maybeSingle();
+    
+    // main_document_id 우선순위: 1) 원본 문서 값, 2) 현재 DB 값
+    const mainDocumentIdToPreserve = document.main_document_id ?? currentDocBeforeProcessing?.main_document_id ?? null;
+    
+    console.log(`[CRITICAL] 📌 main_document_id 보존 값 결정:`, {
+      원본문서값: document.main_document_id || 'null',
+      현재DB값: currentDocBeforeProcessing?.main_document_id || 'null',
+      최종보존값: mainDocumentIdToPreserve || 'null'
+    });
+
+    // 문서 상태를 processing으로 변경 (main_document_id 명시적으로 유지)
     await supabase
       .from('documents')
       .update({
         status: 'processing',
-        main_document_id: document.main_document_id || null, // 그룹 관계 유지
+        main_document_id: mainDocumentIdToPreserve, // 그룹 관계 명시적으로 유지
         updated_at: new Date().toISOString(),
       })
       .eq('id', documentId);
 
     // RAG 처리
-    // main_document_id는 null일 수도 있으므로 ?? 연산자 사용 (undefined일 때만 null로 변환)
-    const mainDocumentId = document.main_document_id ?? null;
-    console.log(`[CRITICAL] 📌 RAG 처리 전달 main_document_id: ${mainDocumentId || 'null'} (원본: ${document.main_document_id})`);
+    // 보존된 main_document_id를 RAG 처리에 전달
+    console.log(`[CRITICAL] 📌 RAG 처리 전달 main_document_id: ${mainDocumentIdToPreserve || 'null'} (원본: ${document.main_document_id || 'null'})`);
     const ragProcessor = new RAGProcessor();
     const ragResult = await ragProcessor.processDocument({
       id: document.id,
@@ -361,35 +376,37 @@ export async function POST(request: NextRequest) {
       file_size: Buffer.byteLength(content, 'utf8'),
       file_type: 'text/html',
       source_vendor: document.source_vendor || 'META',
-      main_document_id: mainDocumentId, // 그룹 관계 유지 (null도 유효한 값)
+      main_document_id: mainDocumentIdToPreserve, // 보존된 그룹 관계 전달 (null도 유효한 값)
       created_at: (document as any).created_at || new Date().toISOString(),
       updated_at: new Date().toISOString(),
     });
 
     if (ragResult.success) {
-      // RAG 처리 후 현재 문서의 main_document_id 확인
+      // RAG 처리 후 현재 문서의 main_document_id 확인 (RAG 처리 중 변경되었을 수 있음)
       const { data: currentDoc } = await supabase
         .from('documents')
         .select('main_document_id')
         .eq('id', documentId)
         .maybeSingle();
       
-      // main_document_id 우선순위: 1) 원본 문서 값, 2) 현재 DB 값
-      const finalMainDocumentId = document.main_document_id ?? currentDoc?.main_document_id ?? null;
+      // main_document_id 우선순위: 1) 보존된 값, 2) 현재 DB 값 (RAG 처리 중 변경되었을 수 있음)
+      // 보존된 값이 있으면 항상 우선 사용 (재처리 시 그룹 관계 유지)
+      const finalMainDocumentId = mainDocumentIdToPreserve ?? currentDoc?.main_document_id ?? null;
       
       console.log(`[CRITICAL] 📌 최종 업데이트 전 main_document_id 확인:`, {
+        보존된값: mainDocumentIdToPreserve || 'null',
         원본문서: document.main_document_id || 'null',
         현재DB: currentDoc?.main_document_id || 'null',
         최종값: finalMainDocumentId || 'null'
       });
       
-      // 성공 시 문서 상태 업데이트 (main_document_id 유지)
+      // 성공 시 문서 상태 업데이트 (보존된 main_document_id 명시적으로 유지)
       const { error: finalUpdateError } = await supabase
         .from('documents')
         .update({
           status: 'indexed',
           chunk_count: ragResult.chunkCount,
-          main_document_id: finalMainDocumentId, // 그룹 관계 유지
+          main_document_id: finalMainDocumentId, // 보존된 그룹 관계 명시적으로 유지
           updated_at: new Date().toISOString(),
         })
         .eq('id', documentId);
@@ -411,6 +428,7 @@ export async function POST(request: NextRequest) {
         } else {
           console.log(`[CRITICAL] 🔍 최종 저장된 값 확인:`, {
             documentId,
+            보존된값: mainDocumentIdToPreserve || 'null',
             원본문서값: document.main_document_id || 'null',
             최종설정값: finalMainDocumentId || 'null',
             실제저장값: finalDoc?.main_document_id || 'null',
@@ -426,7 +444,7 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      console.log(`✅ URL 문서 재처리 완료: ${document.title} (청크: ${ragResult.chunkCount}개)`);
+      console.log(`✅ URL 문서 재처리 완료: ${document.title} (청크: ${ragResult.chunkCount}개, main_document_id: ${finalMainDocumentId || 'null'})`);
 
       return NextResponse.json({
         success: true,
@@ -435,21 +453,28 @@ export async function POST(request: NextRequest) {
         chunkCount: ragResult.chunkCount,
       });
     } else {
-      // 실패 시 문서 상태 업데이트 (main_document_id 유지)
-      // 현재 문서의 main_document_id 확인
+      // 실패 시 문서 상태 업데이트 (보존된 main_document_id 명시적으로 유지)
+      // RAG 처리 중 변경되었을 수 있으므로 현재 DB 값 확인
       const { data: currentDoc } = await supabase
         .from('documents')
         .select('main_document_id')
         .eq('id', documentId)
         .maybeSingle();
       
-      const finalMainDocumentId = document.main_document_id ?? currentDoc?.main_document_id ?? null;
+      // 보존된 값이 있으면 항상 우선 사용 (재처리 시 그룹 관계 유지)
+      const finalMainDocumentId = mainDocumentIdToPreserve ?? currentDoc?.main_document_id ?? null;
+      
+      console.log(`[CRITICAL] 📌 실패 시 main_document_id 유지:`, {
+        보존된값: mainDocumentIdToPreserve || 'null',
+        현재DB값: currentDoc?.main_document_id || 'null',
+        최종값: finalMainDocumentId || 'null'
+      });
       
       await supabase
         .from('documents')
         .update({
           status: 'failed',
-          main_document_id: finalMainDocumentId, // 그룹 관계 유지
+          main_document_id: finalMainDocumentId, // 보존된 그룹 관계 명시적으로 유지
           updated_at: new Date().toISOString(),
         })
         .eq('id', documentId);
