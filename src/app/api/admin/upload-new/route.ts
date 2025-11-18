@@ -1422,18 +1422,30 @@ export async function GET(request: NextRequest) {
     const docsWithMainId = documentsForResponse.filter((d: any) => d.mainDocumentId);
     const mainDocs = documentsForResponse.filter((d: any) => d.isMainUrl === true);
     
+    // mainDocumentId 필드 확인을 위한 상세 로그
+    const sampleDocsWithMainId = docsWithMainId.slice(0, 5).map((d: any) => ({
+      id: d.id,
+      title: d.title?.substring(0, 30),
+      mainDocumentId: d.mainDocumentId,
+      mainDocumentIdType: typeof d.mainDocumentId,
+      mainDocumentIdIsNull: d.mainDocumentId === null,
+      mainDocumentIdIsUndefined: d.mainDocumentId === undefined,
+      isMainUrl: d.isMainUrl,
+    }));
+    
     console.log('📤 API 응답 전송:', {
       success: true,
       documentsCount: documentsForResponse.length,
       docsWithMainDocumentId: docsWithMainId.length,
       mainDocsCount: mainDocs.length,
-      sampleWithMainId: docsWithMainId.slice(0, 3).map((d: any) => ({
-        id: d.id,
-        title: d.title?.substring(0, 30),
-        mainDocumentId: d.mainDocumentId,
-        isMainUrl: d.isMainUrl
-      })),
-      firstDocument: documentsForResponse[0],
+      sampleWithMainId: sampleDocsWithMainId,
+      firstDocument: documentsForResponse[0] ? {
+        id: documentsForResponse[0].id,
+        title: documentsForResponse[0].title?.substring(0, 30),
+        mainDocumentId: documentsForResponse[0].mainDocumentId,
+        mainDocumentIdType: typeof documentsForResponse[0].mainDocumentId,
+        hasMainDocumentId: 'mainDocumentId' in documentsForResponse[0],
+      } : null,
       stats: stats
     });
 

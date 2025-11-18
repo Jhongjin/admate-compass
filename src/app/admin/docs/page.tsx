@@ -3168,7 +3168,10 @@ function DocsTable({
     
     // 1차: 명시적인 메인 문서 수집 (isMainUrl === true 또는 mainDocumentId가 없는 문서)
     urlDocuments.forEach((doc: any) => {
-      const isMain = doc.isMainUrl === true || !doc.mainDocumentId;
+      // mainDocumentId가 명시적으로 없거나 null인 경우만 메인 문서로 처리
+      // undefined는 필드가 없는 경우이므로 메인 문서로 처리
+      const hasMainDocumentId = doc.mainDocumentId !== undefined && doc.mainDocumentId !== null;
+      const isMain = doc.isMainUrl === true || !hasMainDocumentId;
       if (isMain) {
         if (!mainDocIds.has(doc.id)) {
           mainPages.push(doc);
@@ -3199,8 +3202,9 @@ function DocsTable({
     
     // 2차: 하위 문서 연결 및 추가 메인 문서 판별
     urlDocuments.forEach((doc: any) => {
-      // 이미 메인 문서로 처리된 경우 건너뛰기
-      if (doc.isMainUrl === true || !doc.mainDocumentId) return;
+      // mainDocumentId가 명시적으로 없거나 null인 경우는 메인 문서로 처리했으므로 건너뛰기
+      const hasMainDocumentId = doc.mainDocumentId !== undefined && doc.mainDocumentId !== null;
+      if (doc.isMainUrl === true || !hasMainDocumentId) return;
       
       const parentId = typeof doc.mainDocumentId === 'string' ? doc.mainDocumentId : undefined;
       const normalizedParentKey = doc.normalizedMainUrl ?? (doc.mainUrl ? normalizeUrlForGrouping(doc.mainUrl) : null);
