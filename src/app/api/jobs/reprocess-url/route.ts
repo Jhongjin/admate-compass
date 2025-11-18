@@ -398,6 +398,32 @@ export async function POST(request: NextRequest) {
         console.error(`[CRITICAL] ❌ 최종 업데이트 실패:`, finalUpdateError);
       } else {
         console.log(`[CRITICAL] ✅ 최종 업데이트 완료: main_document_id=${finalMainDocumentId || 'null'}`);
+        
+        // 최종 업데이트 후 실제로 저장된 main_document_id 확인
+        const { data: finalDoc, error: finalVerifyError } = await supabase
+          .from('documents')
+          .select('main_document_id, status, chunk_count')
+          .eq('id', documentId)
+          .maybeSingle();
+        
+        if (finalVerifyError) {
+          console.error(`[CRITICAL] ❌ 최종 저장된 main_document_id 확인 실패:`, finalVerifyError);
+        } else {
+          console.log(`[CRITICAL] 🔍 최종 저장된 값 확인:`, {
+            documentId,
+            원본문서값: document.main_document_id || 'null',
+            최종설정값: finalMainDocumentId || 'null',
+            실제저장값: finalDoc?.main_document_id || 'null',
+            상태: finalDoc?.status,
+            청크개수: finalDoc?.chunk_count,
+            일치여부: finalMainDocumentId === finalDoc?.main_document_id
+          });
+          
+          // 저장된 값이 예상과 다르면 경고
+          if (finalMainDocumentId !== finalDoc?.main_document_id) {
+            console.error(`[CRITICAL] ⚠️ 최종 main_document_id 불일치! 설정한 값: ${finalMainDocumentId || 'null'}, 실제 저장된 값: ${finalDoc?.main_document_id || 'null'}`);
+          }
+        }
       }
 
       console.log(`✅ URL 문서 재처리 완료: ${document.title} (청크: ${ragResult.chunkCount}개)`);

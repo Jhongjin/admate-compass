@@ -829,6 +829,32 @@ export class RAGProcessor {
       const totalElapsed = Date.now() - docSaveStartTime;
       console.log(`[CRITICAL] ✅ 문서 ${isUpdate ? '업데이트' : '저장'} 완료: ${document.title} (DB 작업: ${dbOpElapsed}ms, 전체: ${totalElapsed}ms)`);
 
+      // DB에 실제로 저장된 main_document_id 확인
+      const { data: savedDoc, error: verifyError } = await supabase
+        .from('documents')
+        .select('main_document_id')
+        .eq('id', document.id)
+        .maybeSingle();
+      
+      if (verifyError) {
+        console.error(`[CRITICAL] ❌ 저장된 main_document_id 확인 실패:`, verifyError);
+      } else {
+        console.log(`[CRITICAL] 🔍 저장된 main_document_id 확인:`, {
+          documentId: document.id,
+          전달받은값: document.main_document_id || 'null',
+          저장된값: savedDoc?.main_document_id || 'null',
+          일치여부: document.main_document_id === savedDoc?.main_document_id,
+          documentData에포함: documentData.main_document_id || 'null'
+        });
+        
+        // 저장된 값이 예상과 다르면 경고
+        if (document.main_document_id !== undefined && document.main_document_id !== null) {
+          if (savedDoc?.main_document_id !== document.main_document_id) {
+            console.error(`[CRITICAL] ⚠️ main_document_id 불일치! 전달받은 값: ${document.main_document_id}, 저장된 값: ${savedDoc?.main_document_id || 'null'}`);
+          }
+        }
+      }
+
       // document_metadata 테이블에도 저장
       // MIME type에서 실제 파일 확장자 추출 (예: application/pdf -> pdf, application/vnd.openxmlformats-officedocument.wordprocessingml.document -> docx)
       let fileType = 'pdf'; // 기본값
@@ -1092,6 +1118,34 @@ export class RAGProcessor {
           console.error('❌ 문서 chunk_count 업데이트 오류:', updateError);
         } else {
           console.log(`[CRITICAL] ✅ 문서 chunk_count 업데이트 완료: ${finalCount}개 청크, main_document_id: ${updateData.main_document_id || 'null'}`);
+          
+          // 업데이트 후 실제로 저장된 main_document_id 확인
+          const { data: updatedDoc, error: verifyError } = await supabase
+            .from('documents')
+            .select('main_document_id, chunk_count, status')
+            .eq('id', documentId)
+            .maybeSingle();
+          
+          if (verifyError) {
+            console.error(`[CRITICAL] ❌ chunk_count 업데이트 후 main_document_id 확인 실패:`, verifyError);
+          } else {
+            console.log(`[CRITICAL] 🔍 chunk_count 업데이트 후 저장된 값 확인:`, {
+              documentId,
+              전달받은값: document?.main_document_id || 'null',
+              설정한값: updateData.main_document_id || 'null',
+              실제저장값: updatedDoc?.main_document_id || 'null',
+              청크개수: updatedDoc?.chunk_count,
+              상태: updatedDoc?.status,
+              일치여부: updateData.main_document_id === updatedDoc?.main_document_id
+            });
+            
+            // 저장된 값이 예상과 다르면 경고
+            if (updateData.main_document_id !== undefined && updateData.main_document_id !== null) {
+              if (updatedDoc?.main_document_id !== updateData.main_document_id) {
+                console.error(`[CRITICAL] ⚠️ chunk_count 업데이트 시 main_document_id 불일치! 설정한 값: ${updateData.main_document_id}, 실제 저장된 값: ${updatedDoc?.main_document_id || 'null'}`);
+              }
+            }
+          }
         }
 
         // document_metadata의 chunk_count와 embedding_count도 업데이트
