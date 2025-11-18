@@ -3274,6 +3274,17 @@ function DocsTable({
       
       // mainDocumentId가 있으면 부모 문서를 찾아서 그룹핑
       if (parentId) {
+        if (typeof window !== 'undefined') {
+          console.log('[CRITICAL] 🔍 부모 문서 찾기 시작:', {
+            childId: doc.id,
+            childTitle: doc.title?.substring(0, 30),
+            parentId,
+            mainDocsByIdKeys: Object.keys(mainDocsById),
+            urlDocumentsCount: urlDocuments.length,
+            urlDocumentsIds: urlDocuments.slice(0, 5).map((d: any) => d.id),
+          });
+        }
+        
         // 부모 문서가 이미 mainPages에 있는지 확인
         let parentDoc = mainDocsById[parentId];
         
@@ -3296,6 +3307,12 @@ function DocsTable({
               fallbackSubPagesByKey[parentNormalized] = fallbackSubPagesByKey[parentNormalized] || [];
             }
             if (typeof window !== 'undefined') {
+              console.log('[CRITICAL] ✅ 부모 문서 발견 및 추가:', { 
+                parentTitle: parentDoc.title?.substring(0, 30), 
+                parentUrl: parentDoc.url,
+                parentId: parentDoc.id,
+                childTitle: doc.title?.substring(0, 30),
+              });
               logger.log('[그룹화] ✅ 부모 문서 발견 및 추가:', { 
                 parentTitle: parentDoc.title, 
                 parentUrl: parentDoc.url,
@@ -3309,6 +3326,13 @@ function DocsTable({
               subPagesByMainId[parentId] = [];
             }
             if (typeof window !== 'undefined') {
+              console.log('[CRITICAL] ⚠️ 부모 문서를 찾지 못함:', { 
+                parentId,
+                childTitle: doc.title?.substring(0, 30),
+                childUrl: doc.url,
+                urlDocumentsIds: urlDocuments.map((d: any) => d.id),
+                note: '부모 문서가 아직 로드되지 않았을 수 있습니다. 임시로 그룹을 생성합니다.'
+              });
               logger.log('[그룹화] ⚠️ 부모 문서를 찾지 못함 (임시 그룹 생성):', { 
                 parentId,
                 childTitle: doc.title,
@@ -3316,6 +3340,14 @@ function DocsTable({
                 note: '부모 문서가 아직 로드되지 않았을 수 있습니다. 임시로 그룹을 생성합니다.'
               });
             }
+          }
+        } else {
+          if (typeof window !== 'undefined') {
+            console.log('[CRITICAL] ✅ 부모 문서 이미 mainDocsById에 있음:', {
+              parentId,
+              parentTitle: parentDoc.title?.substring(0, 30),
+              childTitle: doc.title?.substring(0, 30),
+            });
           }
         }
         
@@ -3327,6 +3359,16 @@ function DocsTable({
             fallbackSubPagesByKey[normalizedParentKey].push(doc);
           }
           if (typeof window !== 'undefined') {
+            console.log('[CRITICAL] ✅ 하위 페이지 연결 (ID 매칭):', { 
+              child: doc.title?.substring(0, 30), 
+              childId: doc.id,
+              childUrl: doc.url,
+              normalizedChildUrl: normalizedSelf,
+              mainDocumentId: parentId,
+              normalizedMainUrl: normalizedParentKey,
+              parentFound: !!parentDoc,
+              subPagesCount: subPagesByMainId[parentId].length,
+            });
             logger.log('[그룹화] ✅ 하위 페이지 연결 (ID 매칭):', { 
               child: doc.title, 
               childUrl: doc.url,
@@ -3337,6 +3379,15 @@ function DocsTable({
             });
           }
           return;
+        } else {
+          if (typeof window !== 'undefined') {
+            console.log('[CRITICAL] ⚠️ subPagesByMainId[parentId]가 초기화되지 않음:', {
+              parentId,
+              childId: doc.id,
+              childTitle: doc.title?.substring(0, 30),
+              subPagesByMainIdKeys: Object.keys(subPagesByMainId),
+            });
+          }
         }
       }
       
@@ -3500,6 +3551,15 @@ function DocsTable({
       
       if (combinedSubDocs.length > 0) {
         grouped.push({ isGroup: true, mainDoc, subDocs: combinedSubDocs });
+        if (typeof window !== 'undefined') {
+          console.log('[CRITICAL] 📦 그룹 생성:', {
+            mainDocId: mainDoc.id,
+            mainDocTitle: mainDoc.title?.substring(0, 30),
+            subDocsCount: combinedSubDocs.length,
+            subDocsIds: combinedSubDocs.map((s: any) => s.id),
+            subDocsTitles: combinedSubDocs.map((s: any) => s.title?.substring(0, 20)),
+          });
+        }
         groupedDocIds.add(mainDoc.id);
         combinedSubDocs.forEach((subDoc) => groupedDocIds.add(subDoc.id));
         if (typeof window !== 'undefined') {
