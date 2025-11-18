@@ -2875,10 +2875,22 @@ function DocsTable({
           };
         }
         
-        // main_document_id가 있으면 사용
+        // main_document_id가 있으면 사용 (matchedEntry가 없어도 main_document_id로 그룹화)
         const finalMainDocumentId = doc.main_document_id !== null && doc.main_document_id !== undefined 
           ? doc.main_document_id 
           : undefined;
+        
+        // main_document_id가 있으면 부모 문서의 URL 정보도 찾아서 설정
+        let mainUrl: string | null = null;
+        let normalizedMainUrl: string | null = null;
+        if (finalMainDocumentId) {
+          // 부모 문서를 filteredDocuments에서 찾기
+          const parentDoc = filteredDocuments?.find((d: any) => d.id === finalMainDocumentId);
+          if (parentDoc && parentDoc.url) {
+            mainUrl = parentDoc.url;
+            normalizedMainUrl = normalizeUrlForGrouping(parentDoc.url);
+          }
+        }
         
         if (typeof window !== 'undefined' && doc.main_document_id) {
           console.log('[CRITICAL] ✅ main_document_id 발견 (matchedEntry 없음):', {
@@ -2886,14 +2898,19 @@ function DocsTable({
             title: doc.title?.substring(0, 30),
             main_document_id: doc.main_document_id,
             finalMainDocumentId,
+            parentDocFound: !!filteredDocuments?.find((d: any) => d.id === finalMainDocumentId),
+            mainUrl,
+            normalizedMainUrl,
           });
         }
         
         return {
           ...doc,
+          mainUrl: mainUrl || undefined,
           normalizedUrl,
+          normalizedMainUrl: normalizedMainUrl || undefined,
           isMainUrl: false,
-          // main_document_id 필드를 mainDocumentId로 매핑
+          // main_document_id 필드를 mainDocumentId로 매핑 (matchedEntry 없어도 그룹화 가능)
           mainDocumentId: finalMainDocumentId,
         };
       });
