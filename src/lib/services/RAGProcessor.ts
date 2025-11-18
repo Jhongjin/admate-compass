@@ -935,6 +935,7 @@ export class RAGProcessor {
    * @returns 실제 저장된 청크 개수
    */
   async saveChunksToDatabase(chunks: ChunkData[], document?: DocumentData): Promise<number> {
+    console.log(`[CRITICAL] 💾 saveChunksToDatabase 호출: 청크 ${chunks.length}개, document?.main_document_id=${document?.main_document_id || 'null'}`);
     let supabase = await this.getSupabaseClient();
     
     // Supabase 연결 확인
@@ -1071,12 +1072,17 @@ export class RAGProcessor {
         };
         
         // main_document_id 우선순위: 1) 전달받은 값, 2) 기존 문서의 값
-        if (document?.main_document_id) {
+        if (document?.main_document_id !== undefined && document?.main_document_id !== null) {
           updateData.main_document_id = document.main_document_id;
+          console.log(`[CRITICAL] 📌 chunk_count 업데이트 시 main_document_id 설정 (전달받은 값): ${document.main_document_id}`);
         } else if (existingDoc?.main_document_id) {
           updateData.main_document_id = existingDoc.main_document_id;
+          console.log(`[CRITICAL] 📌 chunk_count 업데이트 시 main_document_id 설정 (기존 문서 값): ${existingDoc.main_document_id}`);
+        } else {
+          console.log(`[CRITICAL] ⚠️ chunk_count 업데이트 시 main_document_id 없음: document?.main_document_id=${document?.main_document_id}, existingDoc?.main_document_id=${existingDoc?.main_document_id}`);
         }
         
+        console.log(`[CRITICAL] 📝 chunk_count 업데이트 데이터:`, { chunk_count: finalCount, main_document_id: updateData.main_document_id || 'null', documentId });
         const { error: updateError } = await supabase
           .from('documents')
           .update(updateData)
@@ -1085,7 +1091,7 @@ export class RAGProcessor {
         if (updateError) {
           console.error('❌ 문서 chunk_count 업데이트 오류:', updateError);
         } else {
-          console.log('✅ 문서 chunk_count 업데이트 완료:', finalCount, '개 청크');
+          console.log(`[CRITICAL] ✅ 문서 chunk_count 업데이트 완료: ${finalCount}개 청크, main_document_id: ${updateData.main_document_id || 'null'}`);
         }
 
         // document_metadata의 chunk_count와 embedding_count도 업데이트
