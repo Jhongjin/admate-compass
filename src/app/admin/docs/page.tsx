@@ -3626,6 +3626,21 @@ function DocsTable({
       const totalSubPages = grouped
         .filter((g: any) => g.isGroup)
         .reduce((acc: number, g: any) => acc + (g.subDocs?.length || 0), 0);
+      const groupsWithSubPages = grouped.filter((g: any) => g.isGroup && g.subDocs && g.subDocs.length > 0);
+      console.log('[CRITICAL] 📊 그룹화 완료:', {
+        totalRows: rows.length,
+        urlDocuments: urlDocuments.length,
+        mainPages: mainPages.length,
+        groupedCount: grouped.length,
+        groupsWithSubPages: groupsWithSubPages.length,
+        totalSubPages,
+        sampleGroups: groupsWithSubPages.slice(0, 3).map((g: any) => ({
+          mainDocId: g.mainDoc?.id,
+          mainDocTitle: g.mainDoc?.title?.substring(0, 30),
+          subDocsCount: g.subDocs?.length || 0,
+          subDocsIds: g.subDocs?.slice(0, 3).map((s: any) => s.id),
+        })),
+      });
       logger.log('[그룹화] 📊 최종 결과:', { 
         totalRows: rows.length, 
         urlDocuments: urlDocuments.length, 
