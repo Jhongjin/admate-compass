@@ -1043,15 +1043,29 @@ export class RAGProcessor {
         console.warn(`⚠️ 저장 개수 불일치: 예상 ${savedCount}개, 실제 ${finalCount}개`);
       }
 
-      // 문서의 chunk_count 업데이트 (실제 저장된 개수 사용)
+      // 문서의 chunk_count 업데이트 (실제 저장된 개수 사용, main_document_id 유지)
       if (finalCount > 0) {
+        // 기존 문서의 main_document_id 조회
+        const { data: existingDoc } = await supabase
+          .from('documents')
+          .select('main_document_id')
+          .eq('id', documentId)
+          .maybeSingle();
+        
+        const updateData: any = {
+          chunk_count: finalCount,
+          status: 'indexed',
+          updated_at: new Date().toISOString()
+        };
+        
+        // main_document_id가 있으면 유지 (그룹 관계 보존)
+        if (existingDoc?.main_document_id) {
+          updateData.main_document_id = existingDoc.main_document_id;
+        }
+        
         const { error: updateError } = await supabase
           .from('documents')
-          .update({ 
-            chunk_count: finalCount,
-            status: 'indexed',
-            updated_at: new Date().toISOString()
-          })
+          .update(updateData)
           .eq('id', documentId);
 
         if (updateError) {
@@ -1094,15 +1108,29 @@ export class RAGProcessor {
           const savedCount = actualSavedCount || 0;
           console.warn(`⚠️ 청크 저장 실패, 실제 저장된 청크: ${savedCount}개`);
           
-          // 부분적으로 저장된 경우 chunk_count 업데이트
+          // 부분적으로 저장된 경우 chunk_count 업데이트 (main_document_id 유지)
           if (savedCount > 0) {
+            // 기존 문서의 main_document_id 조회
+            const { data: existingDoc } = await supabase
+              .from('documents')
+              .select('main_document_id')
+              .eq('id', documentId)
+              .maybeSingle();
+            
+            const updateData: any = {
+              chunk_count: savedCount,
+              status: 'indexed',
+              updated_at: new Date().toISOString()
+            };
+            
+            // main_document_id가 있으면 유지 (그룹 관계 보존)
+            if (existingDoc?.main_document_id) {
+              updateData.main_document_id = existingDoc.main_document_id;
+            }
+            
             await supabase
               .from('documents')
-              .update({ 
-                chunk_count: savedCount,
-                status: 'indexed',
-                updated_at: new Date().toISOString()
-              })
+              .update(updateData)
               .eq('id', documentId);
           }
           
@@ -1327,14 +1355,28 @@ export class RAGProcessor {
             await this.saveDocumentToDatabase(document, originalBinaryData);
             console.log('✅ PDF 문서 저장 완료 (청크 없음 - 다운로드용으로만 사용)');
             
-            // 문서 상태를 indexed로 업데이트 (청크 없어도 저장 완료)
+            // 문서 상태를 indexed로 업데이트 (청크 없어도 저장 완료, main_document_id 유지)
+            // 기존 문서의 main_document_id 조회
+            const { data: existingDoc } = await supabase
+              .from('documents')
+              .select('main_document_id')
+              .eq('id', document.id)
+              .maybeSingle();
+            
+            const updateData: any = {
+              status: 'indexed',
+              chunk_count: 0,
+              updated_at: new Date().toISOString()
+            };
+            
+            // main_document_id가 있으면 유지 (그룹 관계 보존)
+            if (existingDoc?.main_document_id) {
+              updateData.main_document_id = existingDoc.main_document_id;
+            }
+            
             const { error: updateError } = await supabase
               .from('documents')
-              .update({ 
-                status: 'indexed',
-                chunk_count: 0,
-                updated_at: new Date().toISOString()
-              })
+              .update(updateData)
               .eq('id', document.id);
             
             if (updateError) {
