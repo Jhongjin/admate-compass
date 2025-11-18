@@ -740,10 +740,10 @@ export class RAGProcessor {
         console.log('💡 해결책: Supabase Storage 또는 AWS S3 사용 권장');
       }
       
-      // 먼저 기존 문서가 있는지 확인
+      // 먼저 기존 문서가 있는지 확인 (main_document_id 포함)
       const { data: existingDoc, error: checkError } = await supabase
         .from('documents')
-        .select('id')
+        .select('id, main_document_id')
         .eq('id', document.id)
         .maybeSingle();
 
@@ -753,7 +753,7 @@ export class RAGProcessor {
       }
 
       const isUpdate = !!existingDoc;
-      const documentData = {
+      const documentData: any = {
         id: document.id,
         title: document.title,
         content: contentForStorage,
@@ -766,6 +766,11 @@ export class RAGProcessor {
         source_vendor: document.source_vendor || 'META', // 벤더 정보 저장 (기본값: META)
         updated_at: document.updated_at,
       };
+
+      // 기존 문서가 있으면 main_document_id 유지 (그룹 관계 보존)
+      if (isUpdate && existingDoc?.main_document_id) {
+        documentData.main_document_id = existingDoc.main_document_id;
+      }
 
       // 기존 문서가 없으면 created_at 포함, 있으면 제외 (업데이트 시 created_at은 변경하지 않음)
       if (!isUpdate) {

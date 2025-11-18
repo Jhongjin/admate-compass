@@ -284,12 +284,13 @@ export async function POST(request: NextRequest) {
           textContent = pageTitle || document.title || document.url;
           console.warn(`⚠️ 크롤링된 콘텐츠가 비어있어 제목을 사용합니다: ${textContent}`);
           
-          // 제목만으로는 RAG 처리가 의미 없으므로, 실패로 처리
+          // 제목만으로는 RAG 처리가 의미 없으므로, 실패로 처리 (main_document_id 유지)
           await supabase
             .from('documents')
             .update({
               content: textContent,
               title: pageTitle,
+              main_document_id: document.main_document_id, // 그룹 관계 유지
               status: 'failed',
               updated_at: new Date().toISOString(),
             })
@@ -308,12 +309,13 @@ export async function POST(request: NextRequest) {
 
         content = textContent;
         
-        // 크롤링한 콘텐츠를 DB에 저장
+        // 크롤링한 콘텐츠를 DB에 저장 (main_document_id 유지)
         await supabase
           .from('documents')
           .update({
             content: content,
             title: pageTitle,
+            main_document_id: document.main_document_id, // 그룹 관계 유지
             updated_at: new Date().toISOString(),
           })
           .eq('id', documentId);
@@ -359,12 +361,13 @@ export async function POST(request: NextRequest) {
     });
 
     if (ragResult.success) {
-      // 성공 시 문서 상태 업데이트
+      // 성공 시 문서 상태 업데이트 (main_document_id 유지)
       await supabase
         .from('documents')
         .update({
           status: 'indexed',
           chunk_count: ragResult.chunkCount,
+          main_document_id: document.main_document_id, // 그룹 관계 유지
           updated_at: new Date().toISOString(),
         })
         .eq('id', documentId);
@@ -378,11 +381,12 @@ export async function POST(request: NextRequest) {
         chunkCount: ragResult.chunkCount,
       });
     } else {
-      // 실패 시 문서 상태 업데이트
+      // 실패 시 문서 상태 업데이트 (main_document_id 유지)
       await supabase
         .from('documents')
         .update({
           status: 'failed',
+          main_document_id: document.main_document_id, // 그룹 관계 유지
           updated_at: new Date().toISOString(),
         })
         .eq('id', documentId);
