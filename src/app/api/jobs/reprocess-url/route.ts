@@ -206,7 +206,47 @@ export async function POST(request: NextRequest) {
           }
         }
 
-        // 3. 콘텐츠가 짧은 경우 Puppeteer로 재시도
+        // 3. 여전히 콘텐츠가 없는 경우, 더 공격적인 텍스트 추출 시도
+        if (!textContent || textContent.trim().length === 0) {
+          console.warn(`⚠️ 일반적인 방법으로 텍스트를 추출하지 못했습니다. 대체 방법을 시도합니다.`);
+          
+          // 모든 텍스트 노드를 직접 추출
+          const allTextNodes: string[] = [];
+          $('*').each((_, el) => {
+            const $el = $(el);
+            // script, style 제외
+            if (el.tagName === 'script' || el.tagName === 'style') return;
+            
+            const text = $el.text().trim();
+            if (text && text.length > 10) { // 최소 10자 이상만
+              allTextNodes.push(text);
+            }
+          });
+          
+          if (allTextNodes.length > 0) {
+            // 중복 제거 및 정렬 (긴 텍스트 우선)
+            const uniqueTexts = Array.from(new Set(allTextNodes))
+              .sort((a, b) => b.length - a.length)
+              .slice(0, 20); // 상위 20개만 선택
+            
+            textContent = uniqueTexts.join('\n\n');
+            console.log(`✅ 대체 방법으로 텍스트 추출 성공: ${textContent.length}자`);
+          }
+          
+          // 여전히 없으면 메타데이터에서 추출
+          if (!textContent || textContent.trim().length === 0) {
+            const metaDescription = $('meta[name="description"]').attr('content') || 
+                                   $('meta[property="og:description"]').attr('content') ||
+                                   $('meta[name="keywords"]').attr('content');
+            
+            if (metaDescription) {
+              textContent = metaDescription;
+              console.log(`✅ 메타데이터에서 텍스트 추출: ${textContent.length}자`);
+            }
+          }
+        }
+
+        // 4. 콘텐츠가 짧은 경우 Puppeteer로 재시도 (Vercel 서버리스에서는 실패할 수 있음)
         if (!textContent || textContent.length < 100) {
           console.warn(`⚠️ Cheerio로 추출한 콘텐츠가 짧습니다 (${textContent.length}자). Puppeteer로 재시도합니다.`);
           
@@ -230,14 +270,39 @@ export async function POST(request: NextRequest) {
             await puppeteerService.close().catch(() => {});
           } catch (puppeteerError) {
             console.error(`❌ Puppeteer 재시도 실패:`, puppeteerError);
+            // Puppeteer 실패는 무시하고 기존 텍스트 사용 (있는 경우)
             if (textContent && textContent.length > 0) {
-              console.warn(`⚠️ Puppeteer 실패했지만 Cheerio 결과 사용: ${textContent.length}자`);
+              console.warn(`⚠️ Puppeteer 실패했지만 기존 텍스트 사용: ${textContent.length}자`);
             }
           }
         }
 
+        // 5. 최종 검증: 최소한의 텍스트라도 있어야 함
         if (!textContent || textContent.trim().length === 0) {
-          throw new Error('크롤링된 콘텐츠가 비어있습니다. 페이지가 JavaScript로만 렌더링되거나 접근이 제한되었을 수 있습니다.');
+          // 최소한 제목이라도 사용
+          textContent = pageTitle || document.title || document.url;
+          console.warn(`⚠️ 크롤링된 콘텐츠가 비어있어 제목을 사용합니다: ${textContent}`);
+          
+          // 제목만으로는 RAG 처리가 의미 없으므로, 실패로 처리
+          await supabase
+            .from('documents')
+            .update({
+              content: textContent,
+              title: pageTitle,
+              status: 'failed',
+              updated_at: new Date().toISOString(),
+            })
+            .eq('id', documentId);
+          
+          return NextResponse.json(
+            {
+              success: false,
+              error: '크롤링된 콘텐츠가 비어있습니다. 페이지가 JavaScript로만 렌더링되거나 접근이 제한되었을 수 있습니다.',
+              requiresCrawl: true,
+              url: document.url,
+            },
+            { status: 400 }
+          );
         }
 
         content = textContent;
