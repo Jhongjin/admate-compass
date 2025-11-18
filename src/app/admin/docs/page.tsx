@@ -2761,6 +2761,32 @@ function DocsTable({
         }
       }
       
+      // 재처리된 문서의 메인 문서를 mainUrlById에 추가
+      // filteredDocuments에서 main_document_id가 null인 문서(메인 문서)를 찾아서 추가
+      if (filteredDocuments) {
+        for (const doc of filteredDocuments) {
+          // main_document_id가 null이거나 undefined인 문서는 메인 문서
+          if ((doc.main_document_id === null || doc.main_document_id === undefined) && doc.url) {
+            // 이미 mainUrlById에 있으면 건너뛰기
+            if (!mainUrlById[doc.id]) {
+              const normalized = normalizeUrlForGrouping(doc.url);
+              mainUrlById[doc.id] = {
+                original: doc.url,
+                normalized,
+              };
+              if (typeof window !== 'undefined') {
+                console.log('[CRITICAL] ✅ 메인 문서를 mainUrlById에 추가:', {
+                  docId: doc.id,
+                  title: doc.title?.substring(0, 30),
+                  url: doc.url,
+                  normalized,
+                });
+              }
+            }
+          }
+        }
+      }
+      
       const mainUrlEntries = Object.entries(mainUrlById).map(([docId, info]) => ({
         docId,
         original: info.original,
