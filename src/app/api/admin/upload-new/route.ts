@@ -1312,7 +1312,8 @@ export async function GET(request: NextRequest) {
       
       return {
         ...doc,
-        mainDocumentId: doc.main_document_id || null,
+        // DocumentGroupingService에서 사용할 mainDocumentId 필드 (null이 아닌 경우만 설정)
+        mainDocumentId: doc.main_document_id || undefined,
         // 그룹핑을 위한 정규화된 URL 계산
         normalizedUrl: doc.url ? normalizeUrlForGrouping(doc.url) : null,
         normalizedMainUrl: parentUrl ? normalizeUrlForGrouping(parentUrl) : null,
