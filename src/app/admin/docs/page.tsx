@@ -3312,9 +3312,21 @@ function DocsTable({
     urlDocuments.forEach((doc: any) => {
       // mainDocumentId가 명시적으로 없거나 null인 경우는 메인 문서로 처리했으므로 건너뛰기
       const hasMainDocumentId = doc.mainDocumentId !== undefined && doc.mainDocumentId !== null;
-      if (doc.isMainUrl === true || !hasMainDocumentId) return;
+      if (doc.isMainUrl === true || !hasMainDocumentId) {
+        if (typeof window !== 'undefined' && hasMainDocumentId && doc.isMainUrl === true) {
+          console.log('[CRITICAL] ⚠️ 하위 문서 건너뛰기 (isMainUrl=true):', {
+            docId: doc.id,
+            title: doc.title?.substring(0, 30),
+            mainDocumentId: doc.mainDocumentId,
+            isMainUrl: doc.isMainUrl,
+            hasMainDocumentId,
+          });
+        }
+        return;
+      }
       
-      const parentId = typeof doc.mainDocumentId === 'string' ? doc.mainDocumentId : undefined;
+      // mainDocumentId를 문자열로 변환 (null/undefined 체크 후)
+      const parentId = doc.mainDocumentId != null ? String(doc.mainDocumentId) : undefined;
       const normalizedParentKey = doc.normalizedMainUrl ?? (doc.mainUrl ? normalizeUrlForGrouping(doc.mainUrl) : null);
       const normalizedSelf = doc.normalizedUrl ?? (doc.url ? normalizeUrlForGrouping(doc.url) : null);
       
@@ -3324,7 +3336,10 @@ function DocsTable({
           console.log('[CRITICAL] 🔍 부모 문서 찾기 시작:', {
             childId: doc.id,
             childTitle: doc.title?.substring(0, 30),
+            mainDocumentId: doc.mainDocumentId,
+            mainDocumentIdType: typeof doc.mainDocumentId,
             parentId,
+            parentIdType: typeof parentId,
             mainDocsByIdKeys: Object.keys(mainDocsById),
             urlDocumentsCount: urlDocuments.length,
             urlDocumentsIds: urlDocuments.slice(0, 5).map((d: any) => d.id),
@@ -3399,6 +3414,16 @@ function DocsTable({
         
         // subPagesByMainId가 초기화되어 있으면 하위 페이지로 연결
         if (subPagesByMainId[parentId]) {
+          // 디버깅: 하위 페이지 연결 전 확인
+          if (typeof window !== 'undefined') {
+            console.log('[CRITICAL] 🔗 하위 페이지 연결 준비:', {
+              childId: doc.id,
+              childTitle: doc.title?.substring(0, 30),
+              parentId,
+              subPagesByMainIdExists: !!subPagesByMainId[parentId],
+              currentSubPagesCount: subPagesByMainId[parentId].length,
+            });
+          }
           subPagesByMainId[parentId].push(doc);
           if (normalizedParentKey) {
             fallbackSubPagesByKey[normalizedParentKey] = fallbackSubPagesByKey[normalizedParentKey] || [];
@@ -3434,6 +3459,21 @@ function DocsTable({
               subPagesByMainIdKeys: Object.keys(subPagesByMainId),
             });
           }
+        }
+      } else {
+        // parentId가 없는 경우 (mainDocumentId가 문자열이 아니거나 null/undefined)
+        if (typeof window !== 'undefined') {
+          console.log('[CRITICAL] ⚠️ parentId가 없어서 하위 문서 연결 실패:', {
+            docId: doc.id,
+            title: doc.title?.substring(0, 30),
+            mainDocumentId: doc.mainDocumentId,
+            mainDocumentIdType: typeof doc.mainDocumentId,
+            mainDocumentIdIsNull: doc.mainDocumentId === null,
+            mainDocumentIdIsUndefined: doc.mainDocumentId === undefined,
+            parentId,
+            hasMainDocumentId,
+            isMainUrl: doc.isMainUrl,
+          });
         }
       }
       
