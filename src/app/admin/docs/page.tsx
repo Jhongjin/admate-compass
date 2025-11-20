@@ -1730,9 +1730,26 @@ function UploadAndCrawlTabs({ vendors, onVendorsChange }: { vendors: string[]; o
       const dbVendors = convertVendorsToDB(vendors);
       
       const maxDepthNum = parseInt(crawlOptions.maxDepth, 10);
-      const enableDepthSelection = typeof window !== 'undefined' 
-        ? window.localStorage.getItem('ENABLE_DEPTH_SELECTION_MODE') === 'true'
-        : false; // 서버 사이드에서는 false
+      // Feature flag 확인 (클라이언트 사이드 환경 변수 또는 localStorage)
+      // Next.js는 NEXT_PUBLIC_ 접두사가 있는 환경 변수만 클라이언트에서 접근 가능
+      const envFlag = typeof window !== 'undefined' 
+        ? (process.env.NEXT_PUBLIC_ENABLE_DEPTH_SELECTION_MODE === 'true')
+        : false;
+      const localStorageFlag = typeof window !== 'undefined'
+        ? (window.localStorage.getItem('ENABLE_DEPTH_SELECTION_MODE') === 'true')
+        : false;
+      const enableDepthSelection = envFlag || localStorageFlag;
+      
+      // 디버깅: Feature Flag 상태 로깅
+      if (typeof window !== 'undefined') {
+        logger.log('[DEPTH_SELECTION] Feature Flag 상태:', {
+          envFlag,
+          localStorageFlag,
+          enableDepthSelection,
+          maxDepth: maxDepthNum,
+          willUseDiscoveryMode: maxDepthNum >= 3 && enableDepthSelection,
+        });
+      }
       
       // maxDepth >= 3이고 feature flag가 활성화되어 있으면 탐색 모드로 전환
       if (maxDepthNum >= 3 && enableDepthSelection) {
