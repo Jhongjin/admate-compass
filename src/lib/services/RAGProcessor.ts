@@ -66,16 +66,21 @@ export class RAGProcessor {
   private embeddingServiceInitialized = false;
   private embeddingProvider: 'bge-m3' | 'openai' = 'bge-m3';
   private currentJobId: string | null = null; // 현재 처리 중인 job ID (DB 업데이트용)
-  // 임시 해시 임베딩 모드 강제 활성화 (exec 보고용)
-  // 환경 변수가 명시적으로 'false'로 설정되지 않은 경우 항상 활성화
+  // 임시 해시 임베딩 모드 (특정 상황에서만 환경 변수로 활성화)
   private readonly useHashEmbedding: boolean =
-    process.env.USE_HASH_EMBEDDING?.toLowerCase() !== 'false';
+    (process.env.USE_HASH_EMBEDDING ?? 'false').toLowerCase() === 'true';
   private readonly hashEmbeddingDimension: number = Number(process.env.HASH_EMBEDDING_DIM || '1024');
   private readonly edgeEmbeddingUrl: string | null = process.env.SUPABASE_EMBEDDING_FUNCTION_URL || null;
   private readonly edgeEmbeddingToken: string | null = process.env.SUPABASE_EMBEDDING_FUNCTION_TOKEN || null;
   private readonly useEdgeEmbedding: boolean =
     !!process.env.SUPABASE_EMBEDDING_FUNCTION_URL &&
     (process.env.ENABLE_EDGE_EMBEDDING ?? 'false').toLowerCase() === 'true';
+  private readonly allowBgeFallback: boolean =
+    (process.env.ENABLE_BGE_FALLBACK ?? 'true').toLowerCase() !== 'false';
+  private readonly OPENAI_CONTEXT_TOKEN_LIMIT = 8192;
+  private readonly OPENAI_BATCH_TOKEN_MARGIN = 300;
+  private readonly OPENAI_PER_CHUNK_TOKEN_LIMIT = 5500;
+  private readonly OPENAI_TOKENS_PER_CHAR = 1.2;
 
   constructor() {
     // 텍스트 분할기 설정
@@ -87,7 +92,7 @@ export class RAGProcessor {
 
     // 해시 임베딩 모드 우선 확인 (환경 변수 디버깅)
     const hashEmbeddingEnv = process.env.USE_HASH_EMBEDDING;
-    console.log(`[DEBUG] USE_HASH_EMBEDDING 환경 변수: ${hashEmbeddingEnv ?? 'undefined'} (기본값: 'true')`);
+    console.log(`[DEBUG] USE_HASH_EMBEDDING 환경 변수: ${hashEmbeddingEnv ?? 'undefined'} (기본값: 'false')`);
     console.log(`[DEBUG] useHashEmbedding 계산 결과: ${this.useHashEmbedding}`);
 
     if (this.useHashEmbedding) {
@@ -96,21 +101,204 @@ export class RAGProcessor {
         `⚠️ 임시 해시 임베딩 모드가 활성화되어 있습니다 (차원: ${this.hashEmbeddingDimension}). exec 보고 이후 비활성화 예정입니다.`,
       );
     } else {
-      // 환경 변수에서 임베딩 제공자 선택 (기본값: bge-m3 - 정확도가 생명인 서비스)
-      const provider = (process.env.EMBEDDING_PROVIDER || 'bge-m3').toLowerCase();
-      if (provider === 'bge-m3') {
+      const providerEnvRaw = process.env.EMBEDDING_PROVIDER;
+      const providerEnv = providerEnvRaw?.toLowerCase().trim();
+      const hasExplicitProvider = !!providerEnv && providerEnv !== 'auto';
+      const hasOpenAIKey = Boolean(process.env.OPENAI_EMBEDDING_API_KEY || process.env.OPENAI_API_KEY);
+
+      console.log(
+        `[DEBUG] EMBEDDING_PROVIDER: ${providerEnvRaw ?? 'undefined'} (해석값: ${
+          hasExplicitProvider ? providerEnv : 'auto'
+        }), OpenAIKeyPresent: ${hasOpenAIKey}`,
+      );
+
+      const useOpenAI =
+        (hasExplicitProvider && providerEnv === 'openai') || (!hasExplicitProvider && hasOpenAIKey);
+
+      if (useOpenAI) {
+        if (!hasOpenAIKey) {
+          console.warn(
+            '⚠️ EMBEDDING_PROVIDER=openai 로 설정되었지만 OPENAI_EMBEDDING_API_KEY/OPENAI_API_KEY 가 없습니다. BGE-M3로 대체합니다.',
+          );
+          this.embeddingProvider = 'bge-m3';
+        } else {
+          this.embeddingProvider = 'openai';
+          this.openAIEmbeddingService = openAIEmbeddingService;
+          console.log('✅ OpenAI Embeddings API 사용 설정됨 (자동 감지)');
+        }
+      } else {
         this.embeddingProvider = 'bge-m3';
-        if (this.useEdgeEmbedding) {
-          console.log('✅ BGE-M3 임베딩 (Plan C: Supabase Edge Function) 사용 설정됨');
+        if (!hasExplicitProvider && !hasOpenAIKey) {
+          console.log('✅ OpenAI 키를 찾지 못해 기본값(BGE-M3)으로 동작합니다.');
+        } else if (hasExplicitProvider && providerEnv === 'bge-m3') {
+          console.log('✅ BGE-M3 임베딩 사용 설정됨 (사용자 지정)');
         } else {
           console.log('✅ BGE-M3 임베딩 사용 설정됨 (서버리스 환경에서는 느릴 수 있습니다)');
         }
-      } else {
-        this.embeddingProvider = 'openai';
-        this.openAIEmbeddingService = openAIEmbeddingService;
-        console.log('✅ OpenAI Embeddings API 사용 설정됨 (기본값 - 서버리스 환경에 최적화)');
+        if (!this.allowBgeFallback && !hasOpenAIKey) {
+          console.warn(
+            '⚠️ ENABLE_BGE_FALLBACK=false 상태에서 OpenAI 키가 없어 BGE-M3만 사용 가능합니다. OpenAI 임베딩 키를 설정하거나 fallback을 허용해주세요.',
+          );
+        }
       }
     }
+    console.log(
+      `[DEBUG] ENABLE_BGE_FALLBACK: ${process.env.ENABLE_BGE_FALLBACK ?? 'undefined'} (허용 여부: ${
+        this.allowBgeFallback
+      })`,
+    );
+  }
+
+  private getOpenAIBatchTokenBudget(): number {
+    return this.OPENAI_CONTEXT_TOKEN_LIMIT - this.OPENAI_BATCH_TOKEN_MARGIN;
+  }
+
+  private getOpenAICharLimit(): number {
+    return Math.max(
+      400,
+      Math.floor(this.OPENAI_PER_CHUNK_TOKEN_LIMIT / this.OPENAI_TOKENS_PER_CHAR),
+    );
+  }
+
+  private estimateTokensForOpenAI(text: string): number {
+    if (!text) {
+      return 0;
+    }
+    return Math.ceil(text.length * this.OPENAI_TOKENS_PER_CHAR);
+  }
+
+  private splitTextByCharacterLimit(text: string, limit: number): string[] {
+    if (!text) {
+      return [];
+    }
+    if (text.length <= limit || limit <= 0) {
+      return [text.trim()];
+    }
+
+    const segments: string[] = [];
+    let start = 0;
+    while (start < text.length) {
+      let end = Math.min(text.length, start + limit);
+      const candidate = text.slice(start, end);
+      const newlineIdx = candidate.lastIndexOf('\n');
+      if (newlineIdx > limit * 0.3) {
+        end = start + newlineIdx + 1;
+      } else {
+        const sentenceIdx = candidate.lastIndexOf('. ');
+        if (sentenceIdx > limit * 0.3) {
+          end = start + sentenceIdx + 2;
+        }
+      }
+
+      if (end <= start) {
+        end = Math.min(text.length, start + limit);
+      }
+
+      const slice = text.slice(start, end).trim();
+      if (slice.length > 0) {
+        segments.push(slice);
+      }
+
+      if (end === start) {
+        break;
+      }
+      start = end;
+    }
+
+    return segments.length > 0 ? segments : [text.trim()];
+  }
+
+  private normalizeChunksForEmbeddingProvider(
+    chunks: ChunkData[],
+    document: DocumentData,
+  ): ChunkData[] {
+    if (this.embeddingProvider !== 'openai') {
+      return chunks;
+    }
+
+    const charLimit = this.getOpenAICharLimit();
+    if (!Number.isFinite(charLimit) || charLimit <= 0) {
+      return chunks;
+    }
+
+    // 배치 토큰 예산을 고려한 청크당 최대 문자 수 계산
+    // 배치 토큰 예산: 7892 토큰 (8192 - 300)
+    // 안전 마진을 고려하여 청크당 평균 최대 토큰: 3500 토큰 (약 2916자)
+    // 이렇게 하면 2개 청크를 합쳐도 약 7000 토큰으로 안전하게 배치에 포함 가능
+    const batchTokenBudget = this.getOpenAIBatchTokenBudget();
+    const safeChunksPerBatch = 2; // 최소 2개 청크는 한 배치에 포함 가능하도록
+    const maxTokensPerChunk = Math.floor(batchTokenBudget / safeChunksPerBatch) - 200; // 안전 마진 200 토큰
+    const maxCharsPerChunk = Math.floor(maxTokensPerChunk / this.OPENAI_TOKENS_PER_CHAR);
+    const effectiveCharLimit = Math.min(charLimit, maxCharsPerChunk);
+
+    console.log('[CRITICAL] 🔍 OpenAI 청크 정규화 검사:', {
+      documentId: document.id,
+      title: document.title?.substring(0, 50),
+      totalChunks: chunks.length,
+      charLimit,
+      batchTokenBudget,
+      maxTokensPerChunk,
+      maxCharsPerChunk,
+      effectiveCharLimit,
+      chunksInfo: chunks.map((c, i) => ({
+        index: i,
+        length: c.content.length,
+        estimatedTokens: this.estimateTokensForOpenAI(c.content),
+        needsSplit: c.content.length > effectiveCharLimit,
+      })),
+    });
+
+    let needsNormalization = false;
+    const normalized: ChunkData[] = [];
+
+    for (const chunk of chunks) {
+      const chunkTokens = this.estimateTokensForOpenAI(chunk.content);
+      if (chunk.content.length > effectiveCharLimit || chunkTokens > maxTokensPerChunk) {
+        needsNormalization = true;
+        const pieces = this.splitTextByCharacterLimit(chunk.content, effectiveCharLimit);
+        if (pieces.length === 0) {
+          pieces.push(chunk.content);
+        }
+        pieces.forEach((content) => {
+          normalized.push({
+            ...chunk,
+            content,
+          });
+        });
+      } else {
+        normalized.push(chunk);
+      }
+    }
+
+    if (!needsNormalization) {
+      console.log('[CRITICAL] ✅ OpenAI 청크 정규화 불필요: 모든 청크가 안전한 크기입니다.');
+      return chunks;
+    }
+
+    const result = normalized.map((chunk, index) => ({
+      ...chunk,
+      id: `${document.id}_chunk_${index}`,
+      metadata: {
+        ...chunk.metadata,
+        document_id: document.id,
+        chunk_index: index,
+      },
+    }));
+
+    console.log('[CRITICAL] ✂️ OpenAI 청크 정규화 완료:', {
+      documentId: document.id,
+      title: document.title?.substring(0, 50),
+      before: chunks.length,
+      after: result.length,
+      avgChunkSize: result.length > 0
+        ? Math.round(result.reduce((sum, c) => sum + c.content.length, 0) / result.length)
+        : 0,
+      maxEstimatedTokens: result.length > 0
+        ? Math.max(...result.map((c) => this.estimateTokensForOpenAI(c.content)))
+        : 0,
+    });
+
+    return result;
   }
 
   /**
@@ -503,19 +691,56 @@ export class RAGProcessor {
       if (this.embeddingProvider === 'openai') {
         if (!this.openAIEmbeddingService || !this.openAIEmbeddingService.initialized) {
           console.warn('⚠️ OpenAI Embeddings API가 초기화되지 않음. BGE-M3로 자동 전환합니다.');
+          if (!this.allowBgeFallback) {
+            throw new Error(
+              'OpenAI Embeddings API가 초기화되지 않았고 ENABLE_BGE_FALLBACK=false 입니다. 환경 변수를 확인하세요.',
+            );
+          }
           // BGE-M3로 fallback
         } else {
           console.log('✅ OpenAI Embeddings API로 임베딩 생성 중...');
           const embeddingGenerationStartMs = Date.now();
 
-          // OpenAI는 배치 처리 지원 (최대 2048개)
-          const BATCH_SIZE = 100;
+          const MAX_CHUNKS_PER_BATCH = 100;
+          const MAX_BATCH_TOKENS = this.getOpenAIBatchTokenBudget();
           const batches: ChunkData[][] = [];
-          for (let i = 0; i < chunks.length; i += BATCH_SIZE) {
-            batches.push(chunks.slice(i, i + BATCH_SIZE));
+          let currentBatch: ChunkData[] = [];
+          let currentBatchTokens = 0;
+
+          const flushBatch = () => {
+            if (currentBatch.length > 0) {
+              batches.push(currentBatch);
+              currentBatch = [];
+              currentBatchTokens = 0;
+            }
+          };
+
+          for (const chunk of chunks) {
+            const chunkTokens = this.estimateTokensForOpenAI(chunk.content);
+            if (
+              currentBatch.length > 0 &&
+              (currentBatch.length >= MAX_CHUNKS_PER_BATCH ||
+                currentBatchTokens + chunkTokens > MAX_BATCH_TOKENS)
+            ) {
+              flushBatch();
+            }
+
+            if (chunkTokens > MAX_BATCH_TOKENS) {
+              console.warn('[CRITICAL] ⚠️ 단일 청크 토큰 수가 OpenAI 한도에 근접합니다. 개별 요청으로 전송합니다.', {
+                chunkId: chunk.id,
+                chunkTokens,
+                maxBatchTokens: MAX_BATCH_TOKENS,
+              });
+              flushBatch();
+            }
+
+            currentBatch.push(chunk);
+            currentBatchTokens += chunkTokens;
           }
 
-          console.log(`📦 배치 생성 완료: ${batches.length}개 배치 (배치 크기: ${BATCH_SIZE})`);
+          flushBatch();
+
+          console.log(`📦 배치 생성 완료: ${batches.length}개 배치 (토큰 예산 기반)`);
 
           try {
             const allBatchPromises = batches.map(async (batch, batchIndex) => {
@@ -561,6 +786,17 @@ export class RAGProcessor {
               console.error(`❌ OpenAI API 실패. BGE-M3로 자동 전환합니다.`);
               console.error(`   에러 상세: ${errorMessage}`);
             }
+            const openAIErrorDetails = this.extractOpenAIErrorDetails(openAIError);
+            if (openAIErrorDetails) {
+              console.error('[CRITICAL] 🔎 OpenAI 에러 메타데이터:', openAIErrorDetails);
+            }
+            if (!this.allowBgeFallback) {
+              throw new Error(
+                `OpenAI 임베딩 실패 (BGE fallback 비활성화). 에러 상세: ${
+                  openAIErrorDetails ? JSON.stringify(openAIErrorDetails) : errorMessage
+                }`,
+              );
+            }
             // BGE-M3로 fallback (아래 코드 계속 실행)
           }
 
@@ -569,6 +805,10 @@ export class RAGProcessor {
             return this.generateEmbeddingsViaEdgeFunction(chunks);
           }
         }
+      }
+
+      if (!this.allowBgeFallback) {
+        throw new Error('BGE-M3 fallback이 비활성화되어 있어 OpenAI 임베딩 실패를 처리할 수 없습니다.');
       }
 
       // BGE-M3 사용 (OpenAI API 실패 시 fallback)
@@ -763,25 +1003,34 @@ export class RAGProcessor {
         chunk_count: 0,
         file_size: document.file_size,
         file_type: document.file_type,
-        url: document.url || null,
         source_vendor: document.source_vendor || 'META', // 벤더 정보 저장 (기본값: META)
         updated_at: document.updated_at,
       };
 
-      // main_document_id 우선순위: 1) 전달받은 값, 2) 기존 문서의 값
-      // null도 유효한 값이므로 명시적으로 체크
-      if (document.main_document_id !== undefined && document.main_document_id !== null) {
+      // URL은 전달된 값이 있을 때만 덮어쓰고, undefined면 기존 값을 유지한다.
+      if (document.url !== undefined) {
+        documentData.url = document.url;
+      } else if (!isUpdate) {
+        documentData.url = null;
+      }
+
+      // main_document_id 우선순위: 1) 전달받은 값 (null 포함), 2) 기존 문서의 값
+      // 재처리 시 명시적으로 전달된 main_document_id는 null이든 아니든 그대로 사용해야 함
+      if (document.main_document_id !== undefined) {
+        // undefined가 아니면 전달받은 값을 사용 (null도 유효한 값)
         documentData.main_document_id = document.main_document_id;
-        console.log(`[CRITICAL] 📌 main_document_id 설정 (전달받은 값): ${document.main_document_id}`);
-      } else if (isUpdate && existingDoc?.main_document_id) {
-        documentData.main_document_id = existingDoc.main_document_id;
-        console.log(`[CRITICAL] 📌 main_document_id 설정 (기존 문서 값): ${existingDoc.main_document_id}`);
-      } else if (isUpdate && existingDoc?.main_document_id === null) {
-        // 기존에 null이었으면 명시적으로 null로 설정하여 그룹 밖으로 나가지 않도록
-        documentData.main_document_id = null;
-        console.log(`[CRITICAL] 📌 main_document_id 유지 (기존 null 값)`);
+        console.log(`[CRITICAL] 📌 main_document_id 설정 (전달받은 값): ${document.main_document_id || 'null'}`);
+      } else if (isUpdate) {
+        // 전달받은 값이 undefined인 경우에만 기존 문서의 값 사용
+        if (existingDoc?.main_document_id !== undefined) {
+          documentData.main_document_id = existingDoc.main_document_id;
+          console.log(`[CRITICAL] 📌 main_document_id 설정 (기존 문서 값): ${existingDoc.main_document_id || 'null'}`);
+        } else {
+          console.log(`[CRITICAL] ⚠️ main_document_id 없음: document.main_document_id=${document.main_document_id}, existingDoc?.main_document_id=${existingDoc?.main_document_id}`);
+        }
       } else {
-        console.log(`[CRITICAL] ⚠️ main_document_id 없음: document.main_document_id=${document.main_document_id}, existingDoc?.main_document_id=${existingDoc?.main_document_id}`);
+        // 새 문서이고 main_document_id가 전달되지 않은 경우
+        console.log(`[CRITICAL] ⚠️ 새 문서에 main_document_id 없음: document.main_document_id=${document.main_document_id}`);
       }
 
       // 기존 문서가 없으면 created_at 포함, 있으면 제외 (업데이트 시 created_at은 변경하지 않음)
@@ -903,13 +1152,12 @@ export class RAGProcessor {
       };
       
       // 원본 바이너리 데이터가 있으면 metadata에 저장
+      const metadataPayload: Record<string, any> = {};
       if (originalBinaryData) {
-        metadataRecord.metadata = {
-          fileData: originalBinaryData,
-          originalFileName: document.title,
-          fileType: document.file_type,
-          uploadedAt: document.created_at
-        };
+        metadataPayload.fileData = originalBinaryData;
+        metadataPayload.originalFileName = document.title;
+        metadataPayload.fileType = document.file_type;
+        metadataPayload.uploadedAt = document.created_at;
         console.log('💾 원본 바이너리 데이터 저장:', {
           documentId: document.id,
           dataSize: originalBinaryData.length,
@@ -926,6 +1174,16 @@ export class RAGProcessor {
           fileType: document.file_type,
           note: '재처리 모드에서는 원본 파일이 Storage에 있으므로 originalBinaryData가 없어도 정상입니다.'
         });
+      }
+
+      if (document.type === 'url' && document.url) {
+        metadataPayload.source_url = document.url;
+        metadataPayload.document_url = document.url;
+        metadataPayload.source_type = 'url';
+      }
+
+      if (Object.keys(metadataPayload).length > 0) {
+        metadataRecord.metadata = metadataPayload;
       }
       
       // document_metadata도 UPSERT 방식으로 처리
@@ -1097,13 +1355,16 @@ export class RAGProcessor {
           updated_at: new Date().toISOString()
         };
         
-        // main_document_id 우선순위: 1) 전달받은 값, 2) 기존 문서의 값
-        if (document?.main_document_id !== undefined && document?.main_document_id !== null) {
+        // main_document_id 우선순위: 1) 전달받은 값 (null 포함), 2) 기존 문서의 값
+        // 재처리 시 명시적으로 전달된 main_document_id는 null이든 아니든 그대로 사용해야 함
+        if (document?.main_document_id !== undefined) {
+          // undefined가 아니면 전달받은 값을 사용 (null도 유효한 값)
           updateData.main_document_id = document.main_document_id;
-          console.log(`[CRITICAL] 📌 chunk_count 업데이트 시 main_document_id 설정 (전달받은 값): ${document.main_document_id}`);
-        } else if (existingDoc?.main_document_id) {
+          console.log(`[CRITICAL] 📌 chunk_count 업데이트 시 main_document_id 설정 (전달받은 값): ${document.main_document_id || 'null'}`);
+        } else if (existingDoc?.main_document_id !== undefined) {
+          // 전달받은 값이 undefined인 경우에만 기존 문서의 값 사용 (null도 유효한 값)
           updateData.main_document_id = existingDoc.main_document_id;
-          console.log(`[CRITICAL] 📌 chunk_count 업데이트 시 main_document_id 설정 (기존 문서 값): ${existingDoc.main_document_id}`);
+          console.log(`[CRITICAL] 📌 chunk_count 업데이트 시 main_document_id 설정 (기존 문서 값): ${existingDoc.main_document_id || 'null'}`);
         } else {
           console.log(`[CRITICAL] ⚠️ chunk_count 업데이트 시 main_document_id 없음: document?.main_document_id=${document?.main_document_id}, existingDoc?.main_document_id=${existingDoc?.main_document_id}`);
         }
@@ -1732,6 +1993,19 @@ export class RAGProcessor {
         }
       }
       
+      // OpenAI 임베딩 사용 시 청크 크기/토큰 제한을 맞추기 위해 마지막으로 보정
+      const providerAwareChunks = this.normalizeChunksForEmbeddingProvider(chunks, document);
+      if (providerAwareChunks !== chunks) {
+        console.log('[CRITICAL] ✂️ OpenAI 임베딩 제한에 맞춰 청크 재구성:', {
+          before: chunks.length,
+          after: providerAwareChunks.length,
+          documentId: document.id,
+          title: document.title,
+        });
+        chunks.length = 0;
+        chunks.push(...providerAwareChunks);
+      }
+
       // 최종 청킹 결과 로깅 (강제 재청킹 후)
       // 강제 재청킹이 실행되었는지 여부와 관계없이 항상 최종 결과 로깅
       const finalChunkCount = chunks.length;
@@ -2803,6 +3077,31 @@ export class RAGProcessor {
       console.error('❌ 키워드 검색 오류:', error);
       return [];
     }
+  }
+
+  private extractOpenAIErrorDetails(error: any) {
+    if (!error || typeof error !== 'object') {
+      return { raw: error };
+    }
+
+    const details: Record<string, unknown> = {};
+
+    if (error.message) details.message = error.message;
+    if (typeof error.status !== 'undefined') details.status = error.status;
+    if (typeof error.code !== 'undefined') details.code = error.code;
+    if (typeof error.type !== 'undefined') details.type = error.type;
+    if (typeof error.param !== 'undefined') details.param = error.param;
+    if (error.cause) details.cause = error.cause;
+    if (error.headers) details.headers = error.headers;
+
+    const response = (error as any).response;
+    if (response) {
+      details.responseStatus = response.status;
+      details.responseStatusText = response.statusText;
+      details.responseData = response.data;
+    }
+
+    return details;
   }
 }
 

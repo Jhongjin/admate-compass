@@ -16,7 +16,7 @@ import { Switch } from "@/components/ui/switch";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { Separator } from "@/components/ui/separator";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Progress } from "@/components/ui/progress";
@@ -2564,7 +2564,7 @@ function DocsTable({
         });
       }
       
-      let q = supabase.from("documents").select("id,title,type,status,updated_at,chunk_count,source_vendor,url,main_document_id").order("updated_at", { ascending: false }).limit(60);
+      let q = supabase.from("documents").select("id,title,type,status,updated_at,chunk_count,source_vendor,url,document_url,main_document_id").order("updated_at", { ascending: false }).limit(60);
       
       // 벤더 필터 (항상 적용)
       const dbVendors = convertVendorsToDB(vendors);
@@ -2629,6 +2629,87 @@ function DocsTable({
         });
         throw error;
       }
+      
+      // ===== FIX: 재크롤링 후 그룹 분리 문제 해결 =====
+      // limit(60) 때문에 재크롤링된 하위 문서는 조회되지만 부모 문서는 조회되지 않을 수 있음
+      // 부모 문서를 추가로 조회하여 그룹화가 정상 작동하도록 보장
+      if (documents && documents.length > 0) {
+        // 1. main_document_id를 가진 문서들의 부모 ID 추출
+        const mainDocumentIds = documents
+          .filter((doc: any) => doc.main_document_id !== null && doc.main_document_id !== undefined)
+          .map((doc: any) => doc.main_document_id)
+          .filter((id: string | null) => id !== null) as string[];
+
+        // 2. 중복 제거 및 현재 결과에 없는 부모 ID 필터링
+        const uniqueParentIds = [...new Set(mainDocumentIds)];
+        const existingDocIds = new Set(documents.map((doc: any) => doc.id));
+        const missingParentIds = uniqueParentIds.filter(
+          (parentId) => !existingDocIds.has(parentId)
+        );
+
+        // 3. 누락된 부모 문서가 있으면 추가 조회
+        if (missingParentIds.length > 0) {
+          if (typeof window !== 'undefined') {
+            console.log('[FIX] 🔄 누락된 부모 문서 조회:', {
+              missingCount: missingParentIds.length,
+              missingIds: missingParentIds,
+              totalDocuments: documents.length,
+              docsWithMainId: mainDocumentIds.length,
+            });
+          }
+
+        let parentQuery = supabase
+          .from("documents")
+          .select("id,title,type,status,updated_at,chunk_count,source_vendor,url,document_url,main_document_id")
+            .in("id", missingParentIds);
+
+          // 동일한 벤더 필터 적용
+          if (dbVendors.length > 0) {
+            parentQuery = parentQuery.in("source_vendor", dbVendors);
+          }
+
+          const { data: parentDocuments, error: parentError } = await parentQuery;
+
+          if (parentError) {
+            console.error('[FIX] ❌ 부모 문서 조회 오류:', parentError);
+            // 부모 문서 조회 실패해도 계속 진행 (기존 문서로 그룹화 시도)
+          } else if (parentDocuments && parentDocuments.length > 0) {
+            // 중복 제거: 이미 documents에 있는 문서는 추가하지 않음
+            const parentDocIds = new Set(parentDocuments.map((doc: any) => doc.id));
+            const newParentDocs = parentDocuments.filter(
+              (doc: any) => !existingDocIds.has(doc.id)
+            );
+            
+            if (newParentDocs.length > 0) {
+              documents.push(...newParentDocs);
+              if (typeof window !== 'undefined') {
+                console.log('[FIX] ✅ 부모 문서 추가:', {
+                  requested: missingParentIds.length,
+                  found: parentDocuments.length,
+                  added: newParentDocs.length,
+                  skipped: parentDocuments.length - newParentDocs.length,
+                  totalDocuments: documents.length,
+                });
+              }
+            } else {
+              if (typeof window !== 'undefined') {
+                console.log('[FIX] ⚠️ 부모 문서 조회했지만 모두 이미 존재:', {
+                  requested: missingParentIds.length,
+                  found: parentDocuments.length,
+                });
+              }
+            }
+          } else {
+            if (typeof window !== 'undefined') {
+              console.log('[FIX] ⚠️ 부모 문서 조회 결과 없음:', {
+                requested: missingParentIds.length,
+                found: 0,
+              });
+            }
+          }
+        }
+      }
+      // ===== FIX 끝 =====
       
       // 디버깅: main_document_id 필드 확인
       if (typeof window !== 'undefined' && documents && documents.length > 0) {
@@ -2819,7 +2900,12 @@ function DocsTable({
       }
       
       const documentsWithMainUrl = (filteredDocuments || []).map((doc: any) => {
-        const normalizedUrl = normalizeUrlForGrouping(doc.url);
+        const effectiveUrl =
+          doc.url ||
+          doc.document_url ||
+          (doc.documentUrl ? doc.documentUrl : undefined) ||
+          (doc.original_url ? doc.original_url : undefined);
+        const normalizedUrl = normalizeUrlForGrouping(effectiveUrl || doc.url);
         
         let matchedEntry: { docId: string; original: string; normalized: string | null } | undefined;
         let bestMatchLength = -1;
@@ -2848,44 +2934,59 @@ function DocsTable({
             doc.id === matchedEntry.docId ||
             (!!normalizedUrl && !!normalizedMain && normalizedUrl === normalizedMain);
           
-          // main_document_id 우선 사용, 없으면 URL 매칭 결과 사용
-          const finalMainDocumentId = doc.main_document_id !== null && doc.main_document_id !== undefined 
-            ? doc.main_document_id 
+          const hasExplicitParent = doc.main_document_id !== null && doc.main_document_id !== undefined;
+          
+          // main_document_id 우선 사용 (null이 아닌 경우), 없으면 URL 매칭 결과 사용
+          // 재처리 시 main_document_id가 명시적으로 전달되면 그 값을 사용해야 함
+          const candidateParentId = hasExplicitParent
+            ? doc.main_document_id
             : (isExact ? undefined : matchedEntry.docId);
+          const sanitizedParentId =
+            candidateParentId && candidateParentId !== doc.id ? candidateParentId : undefined;
+          // main_document_id가 있으면 무조건 하위 문서로 처리
+          const derivedIsMainUrl = hasExplicitParent ? false : isExact;
           
           if (typeof window !== 'undefined' && doc.main_document_id) {
             console.log('[CRITICAL] ✅ main_document_id 발견 (matchedEntry 있음):', {
               docId: doc.id,
               title: doc.title?.substring(0, 30),
               main_document_id: doc.main_document_id,
-              finalMainDocumentId,
+              finalMainDocumentId: sanitizedParentId,
               matchedEntryDocId: matchedEntry.docId,
               isExact,
+              derivedIsMainUrl,
+              hasExplicitParent,
             });
           }
           
           return {
             ...doc,
+            url: effectiveUrl || doc.url || null,
+            originalUrl: effectiveUrl || doc.url || null,
             mainUrl: matchedEntry.original,
             normalizedUrl,
             normalizedMainUrl: normalizedMain,
-            isMainUrl: isExact,
+            isMainUrl: derivedIsMainUrl,
             // main_document_id 필드를 mainDocumentId로 매핑 (URL 매칭보다 우선)
-            mainDocumentId: finalMainDocumentId,
+            // hasExplicitParent가 true이면 main_document_id를 사용, 아니면 sanitizedParentId 사용
+            mainDocumentId: hasExplicitParent ? (doc.main_document_id !== doc.id ? doc.main_document_id : undefined) : sanitizedParentId,
           };
         }
         
         // main_document_id가 있으면 사용 (matchedEntry가 없어도 main_document_id로 그룹화)
-        const finalMainDocumentId = doc.main_document_id !== null && doc.main_document_id !== undefined 
-          ? doc.main_document_id 
-          : undefined;
+        const explicitParentId =
+          doc.main_document_id !== null && doc.main_document_id !== undefined
+            ? doc.main_document_id
+            : undefined;
+        const sanitizedExplicitParentId =
+          explicitParentId && explicitParentId !== doc.id ? explicitParentId : undefined;
         
         // main_document_id가 있으면 부모 문서의 URL 정보도 찾아서 설정
         let mainUrl: string | null = null;
         let normalizedMainUrl: string | null = null;
-        if (finalMainDocumentId) {
+        if (sanitizedExplicitParentId) {
           // 부모 문서를 filteredDocuments에서 찾기
-          const parentDoc = filteredDocuments?.find((d: any) => d.id === finalMainDocumentId);
+          const parentDoc = filteredDocuments?.find((d: any) => d.id === sanitizedExplicitParentId);
           if (parentDoc && parentDoc.url) {
             mainUrl = parentDoc.url;
             normalizedMainUrl = normalizeUrlForGrouping(parentDoc.url);
@@ -2893,25 +2994,47 @@ function DocsTable({
         }
         
         if (typeof window !== 'undefined' && doc.main_document_id) {
+          const isTargetDoc = doc.id === 'doc_1763511717102_yq0ixkj' || doc.title?.includes('온라인 판매 목적');
           console.log('[CRITICAL] ✅ main_document_id 발견 (matchedEntry 없음):', {
             docId: doc.id,
             title: doc.title?.substring(0, 30),
             main_document_id: doc.main_document_id,
-            finalMainDocumentId,
-            parentDocFound: !!filteredDocuments?.find((d: any) => d.id === finalMainDocumentId),
+            finalMainDocumentId: sanitizedExplicitParentId,
+            parentDocFound: !!filteredDocuments?.find((d: any) => d.id === sanitizedExplicitParentId),
             mainUrl,
             normalizedMainUrl,
+            isTargetDoc,
+            explicitParentId,
+            sanitizedExplicitParentId,
+            willSetMainDocumentId: sanitizedExplicitParentId,
           });
+          
+          if (isTargetDoc) {
+            console.log('[CRITICAL] 🎯 "온라인 판매 목적" 문서 documentsWithMainUrl 매핑 결과:', {
+              docId: doc.id,
+              title: doc.title?.substring(0, 30),
+              main_document_id: doc.main_document_id,
+              explicitParentId,
+              sanitizedExplicitParentId,
+              finalMainDocumentId: sanitizedExplicitParentId,
+              parentDocFound: !!filteredDocuments?.find((d: any) => d.id === sanitizedExplicitParentId),
+              mainUrl,
+              normalizedMainUrl,
+              willReturnMainDocumentId: sanitizedExplicitParentId,
+            });
+          }
         }
         
         return {
           ...doc,
+          url: effectiveUrl || doc.url || null,
+          originalUrl: effectiveUrl || doc.url || null,
           mainUrl: mainUrl || undefined,
           normalizedUrl,
           normalizedMainUrl: normalizedMainUrl || undefined,
-          isMainUrl: false,
+          isMainUrl: sanitizedExplicitParentId ? false : doc.isMainUrl === true,
           // main_document_id 필드를 mainDocumentId로 매핑 (matchedEntry 없어도 그룹화 가능)
-          mainDocumentId: finalMainDocumentId,
+          mainDocumentId: sanitizedExplicitParentId,
         };
       });
       
@@ -3196,13 +3319,16 @@ function DocsTable({
         sortedDataType: typeof sortedData,
         sortedDataIsUndefined: sortedData === undefined,
         sortedDataIsNull: sortedData === null,
+        filteredDataLength: filteredData?.length,
+        filteredDataIsArray: Array.isArray(filteredData),
         sortedDataSample: sortedData?.slice(0, 3).map((d: any) => ({
           id: d.id,
           title: d.title?.substring(0, 30),
           url: d.url,
           mainUrl: (d as any).mainUrl,
           isMainUrl: (d as any).isMainUrl,
-          mainDocumentId: (d as any).mainDocumentId
+          mainDocumentId: (d as any).mainDocumentId,
+          mainDocumentIdType: typeof (d as any).mainDocumentId,
         }))
       });
       logger.log('[그룹화] 🚀 그룹화 로직 시작 (메인 URL 기준) - 클라이언트:', { 
@@ -3266,25 +3392,28 @@ function DocsTable({
       });
     }
     
-    const urlDocuments = rows.filter((row: any) => {
-      const typeMatch = row.type === 'url';
-      const urlExists = !!(row.url || row.normalizedUrl);
-      const combined = typeMatch && urlExists;
-      if (typeof window !== 'undefined' && !combined && (row.url || row.normalizedUrl)) {
-        logger.log('[그룹화] ⚠️ URL 문서 필터링 실패:', {
-          id: row.id,
-          type: row.type,
-          typeValue: String(row.type || ''),
-          typeMatch,
-          url: row.url,
-          normalizedUrl: (row as any).normalizedUrl,
-          urlExists,
-          combined,
-        });
-      }
-      return combined;
-    });
-    const nonUrlDocuments = rows.filter((row: any) => row.type !== 'url' || !(row.url || row.normalizedUrl));
+   const urlDocuments = rows.filter((row: any) => {
+     const typeMatch = row.type === 'url';
+     const urlExists = !!(row.url || row.normalizedUrl);
+     const hasMainDocumentId = row.mainDocumentId !== undefined && row.mainDocumentId !== null;
+     const combined = (typeMatch && urlExists) || hasMainDocumentId;
+     if (typeof window !== 'undefined' && !combined && (row.url || row.normalizedUrl || hasMainDocumentId)) {
+       logger.log('[그룹화] ⚠️ URL 문서 필터링 실패:', {
+         id: row.id,
+         type: row.type,
+         typeValue: String(row.type || ''),
+         typeMatch,
+         url: row.url,
+         normalizedUrl: (row as any).normalizedUrl,
+         urlExists,
+         hasMainDocumentId,
+         combined,
+       });
+     }
+     return combined;
+   });
+   const urlDocumentIds = new Set(urlDocuments.map((doc: any) => doc.id));
+   const nonUrlDocuments = rows.filter((row: any) => !urlDocumentIds.has(row.id));
     if (typeof window !== 'undefined') {
       logger.log('[그룹화] 📋 필터링 결과:', { 
         urlDocuments: urlDocuments.length, 
@@ -3353,23 +3482,65 @@ function DocsTable({
     
     // 2차: 하위 문서 연결 및 추가 메인 문서 판별
     urlDocuments.forEach((doc: any) => {
+      // 디버깅: 모든 문서의 mainDocumentId 확인
+      if (typeof window !== 'undefined') {
+        console.log('[CRITICAL] 🔍 하위 문서 연결 체크:', {
+          docId: doc.id,
+          title: doc.title?.substring(0, 30),
+          mainDocumentId: doc.mainDocumentId,
+          mainDocumentIdType: typeof doc.mainDocumentId,
+          mainDocumentIdIsNull: doc.mainDocumentId === null,
+          mainDocumentIdIsUndefined: doc.mainDocumentId === undefined,
+          isMainUrl: doc.isMainUrl,
+          main_document_id: doc.main_document_id,
+          hasMainDocumentIdField: 'mainDocumentId' in doc,
+        });
+      }
+      
       // mainDocumentId가 명시적으로 없거나 null인 경우는 메인 문서로 처리했으므로 건너뛰기
+      // CRITICAL: mainDocumentId가 있으면 무조건 하위 문서로 처리 (isMainUrl 값과 무관)
       const hasMainDocumentId = doc.mainDocumentId !== undefined && doc.mainDocumentId !== null;
-      if (doc.isMainUrl === true || !hasMainDocumentId) {
-        if (typeof window !== 'undefined' && hasMainDocumentId && doc.isMainUrl === true) {
-          console.log('[CRITICAL] ⚠️ 하위 문서 건너뛰기 (isMainUrl=true):', {
+      if (!hasMainDocumentId) {
+        // mainDocumentId가 없으면 메인 문서로 처리했으므로 건너뛰기
+        if (typeof window !== 'undefined') {
+          console.log('[CRITICAL] ⏭️ 메인 문서로 건너뛰기:', {
             docId: doc.id,
             title: doc.title?.substring(0, 30),
             mainDocumentId: doc.mainDocumentId,
-            isMainUrl: doc.isMainUrl,
             hasMainDocumentId,
           });
         }
         return;
       }
       
+      // mainDocumentId가 있는데 isMainUrl이 true인 경우 경고 (로직 오류 가능성)
+      if (doc.isMainUrl === true) {
+        if (typeof window !== 'undefined') {
+          console.log('[CRITICAL] ⚠️ 하위 문서인데 isMainUrl=true (로직 오류 가능성):', {
+            docId: doc.id,
+            title: doc.title?.substring(0, 30),
+            mainDocumentId: doc.mainDocumentId,
+            isMainUrl: doc.isMainUrl,
+            hasMainDocumentId,
+            note: 'mainDocumentId가 있으면 하위 문서로 처리해야 함',
+          });
+        }
+        // mainDocumentId가 있으면 무조건 하위 문서로 처리 (isMainUrl 값 무시)
+      }
+      
       // mainDocumentId를 문자열로 변환 (null/undefined 체크 후)
       const parentId = doc.mainDocumentId != null ? String(doc.mainDocumentId) : undefined;
+      
+      if (typeof window !== 'undefined') {
+        console.log('[CRITICAL] 🔍 parentId 변환 결과:', {
+          docId: doc.id,
+          title: doc.title?.substring(0, 30),
+          mainDocumentId: doc.mainDocumentId,
+          parentId,
+          parentIdType: typeof parentId,
+          parentIdIsUndefined: parentId === undefined,
+        });
+      }
       const normalizedParentKey = doc.normalizedMainUrl ?? (doc.mainUrl ? normalizeUrlForGrouping(doc.mainUrl) : null);
       const normalizedSelf = doc.normalizedUrl ?? (doc.url ? normalizeUrlForGrouping(doc.url) : null);
       
@@ -3432,9 +3603,27 @@ function DocsTable({
               });
             }
           } else {
-            // 부모 문서를 찾지 못한 경우에도 subPagesByMainId 초기화 (나중에 부모 문서가 로드될 수 있음)
+            // 부모 문서를 찾지 못한 경우에도 subPagesByMainId 초기화하고 하위 문서 추가
+            // 나중에 부모 문서가 로드되면 그룹에 포함될 수 있도록 함
             if (!subPagesByMainId[parentId]) {
               subPagesByMainId[parentId] = [];
+            }
+            // 하위 문서 추가 (부모 문서를 찾지 못했어도 mainDocumentId가 있으면 하위 문서로 처리)
+            if (!subPagesByMainId[parentId].some((existing: any) => existing.id === doc.id)) {
+              subPagesByMainId[parentId].push(doc);
+              if (normalizedParentKey) {
+                fallbackSubPagesByKey[normalizedParentKey] = fallbackSubPagesByKey[normalizedParentKey] || [];
+                fallbackSubPagesByKey[normalizedParentKey].push(doc);
+              }
+              if (typeof window !== 'undefined') {
+                console.log('[CRITICAL] ✅ 하위 문서 추가 (부모 문서 미발견, 나중에 그룹화):', { 
+                  child: doc.title?.substring(0, 30), 
+                  childId: doc.id,
+                  parentId,
+                  subPagesCount: subPagesByMainId[parentId].length,
+                });
+              }
+              return;
             }
             if (typeof window !== 'undefined') {
               console.log('[CRITICAL] ⚠️ 부모 문서를 찾지 못함:', { 
@@ -3462,57 +3651,48 @@ function DocsTable({
           }
         }
         
-        // subPagesByMainId가 초기화되어 있으면 하위 페이지로 연결
+        // 부모 문서를 찾았으면 무조건 하위 페이지로 연결
+        // subPagesByMainId가 초기화되지 않았으면 초기화하고 하위 문서 추가
         // 타입 일관성: parentId는 String이지만 원본 ID로도 확인
-        const subPagesArray = subPagesByMainId[parentId] || subPagesByMainId[parentDoc?.id] || [];
-        if (subPagesArray.length > 0 || subPagesByMainId[parentId] || subPagesByMainId[parentDoc?.id]) {
-          // 디버깅: 하위 페이지 연결 전 확인
-          if (typeof window !== 'undefined') {
-            console.log('[CRITICAL] 🔗 하위 페이지 연결 준비:', {
-              childId: doc.id,
-              childTitle: doc.title?.substring(0, 30),
-              parentId,
-              parentDocId: parentDoc?.id,
-              subPagesByMainIdExists: !!subPagesByMainId[parentId],
-              subPagesByMainIdWithOriginalId: !!subPagesByMainId[parentDoc?.id],
-              currentSubPagesCount: subPagesArray.length,
-              alreadyExists: subPagesArray.some((existing: any) => existing.id === doc.id),
-            });
+        const targetKeys = [parentId];
+        if (parentDoc?.id && String(parentDoc.id) !== parentId) {
+          targetKeys.push(String(parentDoc.id));
+        }
+        
+        // subPagesByMainId 초기화 (부모 문서를 찾았으면 반드시 초기화)
+        for (const key of targetKeys) {
+          if (!subPagesByMainId[key]) {
+            subPagesByMainId[key] = [];
           }
-          // 타입 일관성: parentId (String)와 원본 ID 모두에 추가
-          const targetKeys = [parentId];
-          if (parentDoc?.id && String(parentDoc.id) !== parentId) {
-            targetKeys.push(String(parentDoc.id));
+        }
+        
+        // 디버깅: 하위 페이지 연결 전 확인
+        if (typeof window !== 'undefined') {
+          console.log('[CRITICAL] 🔗 하위 페이지 연결 준비:', {
+            childId: doc.id,
+            childTitle: doc.title?.substring(0, 30),
+            parentId,
+            parentDocId: parentDoc?.id,
+            subPagesByMainIdExists: !!subPagesByMainId[parentId],
+            subPagesByMainIdWithOriginalId: !!subPagesByMainId[parentDoc?.id],
+            currentSubPagesCount: subPagesByMainId[parentId]?.length || 0,
+            alreadyExists: subPagesByMainId[parentId]?.some((existing: any) => existing.id === doc.id) || false,
+            targetKeys,
+          });
+        }
+        
+        // 중복 체크: 같은 문서가 이미 추가되어 있지 않은 경우에만 추가
+        let alreadyAdded = false;
+        for (const key of targetKeys) {
+          if (subPagesByMainId[key]?.some((existing: any) => existing.id === doc.id)) {
+            alreadyAdded = true;
+            break;
           }
-          
-          // 중복 체크: 같은 문서가 이미 추가되어 있지 않은 경우에만 추가
-          let alreadyAdded = false;
+        }
+        
+        if (!alreadyAdded) {
           for (const key of targetKeys) {
-            if (!subPagesByMainId[key]) {
-              subPagesByMainId[key] = [];
-            }
-            if (subPagesByMainId[key].some((existing: any) => existing.id === doc.id)) {
-              alreadyAdded = true;
-              break;
-            }
-          }
-          
-          if (!alreadyAdded) {
-            for (const key of targetKeys) {
-              if (!subPagesByMainId[key]) {
-                subPagesByMainId[key] = [];
-              }
-              subPagesByMainId[key].push(doc);
-            }
-          } else {
-            if (typeof window !== 'undefined') {
-              console.log('[CRITICAL] ⚠️ 하위 페이지 중복 추가 방지:', {
-                childId: doc.id,
-                childTitle: doc.title?.substring(0, 30),
-                parentId,
-                parentDocId: parentDoc?.id,
-              });
-            }
+            subPagesByMainId[key].push(doc);
           }
           if (normalizedParentKey) {
             fallbackSubPagesByKey[normalizedParentKey] = fallbackSubPagesByKey[normalizedParentKey] || [];
@@ -3527,7 +3707,7 @@ function DocsTable({
               mainDocumentId: parentId,
               normalizedMainUrl: normalizedParentKey,
               parentFound: !!parentDoc,
-              subPagesCount: subPagesByMainId[parentId].length,
+              subPagesCount: subPagesByMainId[parentId]?.length || 0,
             });
             logger.log('[그룹화] ✅ 하위 페이지 연결 (ID 매칭):', { 
               child: doc.title, 
@@ -3541,11 +3721,11 @@ function DocsTable({
           return;
         } else {
           if (typeof window !== 'undefined') {
-            console.log('[CRITICAL] ⚠️ subPagesByMainId[parentId]가 초기화되지 않음:', {
-              parentId,
+            console.log('[CRITICAL] ⚠️ 하위 페이지 중복 추가 방지:', {
               childId: doc.id,
               childTitle: doc.title?.substring(0, 30),
-              subPagesByMainIdKeys: Object.keys(subPagesByMainId),
+              parentId,
+              parentDocId: parentDoc?.id,
             });
           }
         }
@@ -3673,14 +3853,50 @@ function DocsTable({
             });
           }
         } else {
-          // 부모 문서를 찾지 못한 경우 로그만 기록 (하위 문서는 나중에 개별 문서로 표시됨)
-          if (typeof window !== 'undefined') {
-            logger.log('[그룹화] ⚠️ 부모 문서를 찾지 못함 (하위 문서 개별 표시):', { 
-              parentId,
-              subPagesCount: subPagesByMainId[parentId].length,
-              subPagesSample: subPagesByMainId[parentId].slice(0, 3).map((s: any) => s.title),
-              note: '부모 문서가 현재 페이지에 없습니다. 하위 문서는 개별 문서로 표시됩니다.'
+          // 부모 문서를 찾지 못한 경우 첫 번째 하위 문서를 메인 문서로 사용하여 그룹 생성
+          const subDocs = subPagesByMainId[parentId];
+          if (subDocs && subDocs.length > 0) {
+            const firstSubDoc = subDocs[0];
+            // 첫 번째 하위 문서를 메인 문서로 사용
+            if (!mainDocIds.has(firstSubDoc.id)) {
+              mainPages.push(firstSubDoc);
+              mainDocIds.add(firstSubDoc.id);
+            }
+            mainDocsById[firstSubDoc.id] = firstSubDoc;
+            // 나머지 하위 문서들을 subPagesByMainId에 유지
+            if (!subPagesByMainId[firstSubDoc.id]) {
+              subPagesByMainId[firstSubDoc.id] = [];
+            }
+            // 첫 번째는 메인으로 사용했으므로 나머지만 추가
+            subDocs.slice(1).forEach((subDoc) => {
+              if (!subPagesByMainId[firstSubDoc.id].some((existing: any) => existing.id === subDoc.id)) {
+                subPagesByMainId[firstSubDoc.id].push(subDoc);
+              }
             });
+            if (typeof window !== 'undefined') {
+              console.log('[CRITICAL] ✅ 부모 문서 미발견 - 첫 번째 하위 문서를 메인으로 사용:', {
+                parentId,
+                firstSubDocId: firstSubDoc.id,
+                firstSubDocTitle: firstSubDoc.title?.substring(0, 30),
+                totalSubDocs: subDocs.length,
+                remainingSubDocs: subDocs.slice(1).length,
+              });
+              logger.log('[그룹화] ✅ 부모 문서 미발견 - 첫 번째 하위 문서를 메인으로 사용:', { 
+                parentId,
+                firstSubDocTitle: firstSubDoc.title,
+                firstSubDocUrl: firstSubDoc.url,
+                totalSubDocs: subDocs.length,
+                remainingSubDocs: subDocs.slice(1).length,
+              });
+            }
+          } else {
+            // 하위 문서가 없는 경우 로그만 기록
+            if (typeof window !== 'undefined') {
+              logger.log('[그룹화] ⚠️ 부모 문서를 찾지 못함 (하위 문서 없음):', { 
+                parentId,
+                note: '부모 문서가 현재 페이지에 없고 하위 문서도 없습니다.'
+              });
+            }
           }
         }
       }
@@ -3692,7 +3908,64 @@ function DocsTable({
       return orderA - orderB;
     });
     
-    mainPages.forEach((mainDoc) => {
+    // mainPages.forEach 루프 이전에 모든 하위 문서를 subPagesByMainId에 포함시키기
+    // 이렇게 하면 그룹 생성 시 모든 하위 문서가 포함됨
+    const existingSubDocsInSubPagesByMainId = new Set<string>();
+    Object.values(subPagesByMainId).forEach((subDocs) => {
+      subDocs.forEach((subDoc) => {
+        if (subDoc?.id) {
+          existingSubDocsInSubPagesByMainId.add(subDoc.id);
+        }
+      });
+    });
+    
+    urlDocuments.forEach((doc: any) => {
+      const hasMainDocumentId = doc.mainDocumentId !== undefined && doc.mainDocumentId !== null;
+      if (hasMainDocumentId && !existingSubDocsInSubPagesByMainId.has(doc.id)) {
+        // mainDocumentId가 있지만 subPagesByMainId에 포함되지 않은 문서 발견
+        const parentId = String(doc.mainDocumentId);
+        if (!subPagesByMainId[parentId]) {
+          subPagesByMainId[parentId] = [];
+        }
+        // 중복 체크 후 추가
+        if (!subPagesByMainId[parentId].some((existing: any) => existing.id === doc.id)) {
+          subPagesByMainId[parentId].push(doc);
+          existingSubDocsInSubPagesByMainId.add(doc.id);
+          if (typeof window !== 'undefined') {
+            console.log('[CRITICAL] ✅ mainPages.forEach 전 누락된 하위 문서 보완:', {
+              docId: doc.id,
+              docTitle: doc.title?.substring(0, 30),
+              mainDocumentId: doc.mainDocumentId,
+              parentId,
+              subPagesByMainIdCount: subPagesByMainId[parentId].length,
+            });
+          }
+        }
+      }
+    });
+    
+    if (typeof window !== 'undefined') {
+      console.log('[CRITICAL] 🔄 mainPages.forEach 시작:', {
+        mainPagesCount: mainPages.length,
+        mainPagesIds: mainPages.map((m: any) => m.id),
+        mainPagesTitles: mainPages.map((m: any) => m.title?.substring(0, 30)),
+        subPagesByMainIdKeys: Object.keys(subPagesByMainId),
+        subPagesByMainIdCounts: Object.keys(subPagesByMainId).map((key) => ({
+          key,
+          count: subPagesByMainId[key]?.length || 0,
+        })),
+        totalSubDocsInSubPagesByMainId: Object.values(subPagesByMainId).reduce((sum, arr) => sum + arr.length, 0),
+      });
+    }
+    
+    mainPages.forEach((mainDoc, mainDocIdx) => {
+      if (typeof window !== 'undefined') {
+        console.log(`[CRITICAL] 🔄 mainPages.forEach 반복 ${mainDocIdx + 1}/${mainPages.length}:`, {
+          mainDocId: mainDoc.id,
+          mainDocTitle: mainDoc.title?.substring(0, 30),
+        });
+      }
+      
       const normalizedKeys = [
         mainDoc.normalizedMainUrl ?? null,
         mainDoc.normalizedUrl ?? null,
@@ -3703,37 +3976,82 @@ function DocsTable({
       const combinedSubDocs: any[] = [];
       // 타입 일관성: subPagesByMainId의 키는 String(parentId)이므로 mainDoc.id도 String으로 변환
       const mainDocIdString = String(mainDoc.id);
-      const directSubDocs = subPagesByMainId[mainDocIdString] || subPagesByMainId[mainDoc.id] || [];
       
-      // 디버깅: subPagesByMainId 확인
+      // CRITICAL: rows 전체를 순회하여 mainDocumentId가 mainDoc.id와 일치하는 모든 URL 문서 찾기
+      // urlDocuments는 일부만 포함할 수 있으므로 rows 전체에서 찾아서 누락 방지
+      // 단, URL 문서만 포함 (type === 'url' && (url || normalizedUrl))
+      const allSubDocsForThisMain = rows.filter((d: any) => {
+        if (!d || d.id === mainDoc.id) return false; // 자기 자신 제외
+        // URL 문서 후보 (mainDocumentId 기반으로 urlDocuments에 포함된 문서)
+        const isUrlDoc = urlDocumentIds.has(d.id);
+        if (!isUrlDoc) return false;
+        const hasMainDocumentId = d.mainDocumentId !== undefined && d.mainDocumentId !== null;
+        if (!hasMainDocumentId) return false;
+        const dMainDocId = d.mainDocumentId != null ? String(d.mainDocumentId) : null;
+        // String 변환된 값과 원본 값 모두 비교
+        const matches = dMainDocId === mainDocIdString || d.mainDocumentId === mainDoc.id;
+        
+        // 특정 문서 디버깅: "온라인 판매 목적" 문서 추적
+        if (typeof window !== 'undefined' && (d.id === 'doc_1763511717102_yq0ixkj' || d.title?.includes('온라인 판매 목적'))) {
+          console.log('[CRITICAL] 🔍 "온라인 판매 목적" 문서 필터링 체크:', {
+            docId: d.id,
+            docTitle: d.title?.substring(0, 30),
+            mainDocId: mainDoc.id,
+            mainDocIdString,
+            subDocMainDocumentId: d.mainDocumentId,
+            subDocMainDocumentIdString: dMainDocId,
+            hasMainDocumentId,
+            isUrlDoc,
+            matchByString: dMainDocId === mainDocIdString,
+            matchById: d.mainDocumentId === mainDoc.id,
+            matches,
+            inUrlDocuments: urlDocuments.some((ud: any) => ud.id === d.id),
+            inRows: rows.some((r: any) => r.id === d.id),
+            urlDocumentsCount: urlDocuments.length,
+            rowsCount: rows.length,
+          });
+        }
+        
+        if (matches && typeof window !== 'undefined') {
+          console.log('[CRITICAL] ✅ 하위 문서 매칭:', {
+            mainDocId: mainDoc.id,
+            mainDocIdString,
+            subDocId: d.id,
+            subDocTitle: d.title?.substring(0, 30),
+            subDocMainDocumentId: d.mainDocumentId,
+            subDocMainDocumentIdString: dMainDocId,
+            matchByString: dMainDocId === mainDocIdString,
+            matchById: d.mainDocumentId === mainDoc.id,
+            foundIn: urlDocuments.some((ud: any) => ud.id === d.id) ? 'urlDocuments' : 'rows only',
+          });
+        }
+        return matches;
+      });
+      
+      // 디버깅: 그룹 생성 전 확인
       if (typeof window !== 'undefined') {
-        console.log('[CRITICAL] 🔍 그룹 생성 전 subPagesByMainId 확인:', {
+        const directSubDocs = subPagesByMainId[mainDocIdString] || subPagesByMainId[mainDoc.id] || [];
+        console.log('[CRITICAL] 🔍 그룹 생성 전 확인:', {
           mainDocId: mainDoc.id,
           mainDocIdString,
           mainDocTitle: mainDoc.title?.substring(0, 30),
           directSubDocsCount: directSubDocs.length,
-          directSubDocsIds: directSubDocs.map((s: any) => s.id),
-          directSubDocsTitles: directSubDocs.map((s: any) => s.title?.substring(0, 20)),
-          subPagesByMainIdKeys: Object.keys(subPagesByMainId),
-          subPagesByMainIdWithStringKey: subPagesByMainId[mainDocIdString]?.length || 0,
-          subPagesByMainIdWithOriginalKey: subPagesByMainId[mainDoc.id]?.length || 0,
-          allSubDocsWithThisMainId: urlDocuments.filter((d: any) => {
-            const dMainDocId = d.mainDocumentId != null ? String(d.mainDocumentId) : null;
-            return dMainDocId === mainDocIdString || d.mainDocumentId === mainDoc.id;
-          }).map((d: any) => ({
-            id: d.id,
-            title: d.title?.substring(0, 20),
-            mainDocumentId: d.mainDocumentId,
-            mainDocumentIdString: d.mainDocumentId != null ? String(d.mainDocumentId) : null,
-          })),
+          allSubDocsForThisMainCount: allSubDocsForThisMain.length,
+          allSubDocsForThisMainIds: allSubDocsForThisMain.map((d: any) => d.id),
+          allSubDocsForThisMainTitles: allSubDocsForThisMain.map((d: any) => d.title?.substring(0, 20)),
+          urlDocumentsTotal: urlDocuments.length,
+          urlDocumentsWithMainId: urlDocuments.filter((d: any) => d.mainDocumentId !== undefined && d.mainDocumentId !== null).length,
         });
       }
       
-      directSubDocs.forEach((subDoc) => {
+      // urlDocuments에서 직접 찾은 모든 하위 문서를 combinedSubDocs에 추가
+      allSubDocsForThisMain.forEach((subDoc) => {
         if (!combinedSubDocs.some((existing) => existing.id === subDoc.id)) {
           combinedSubDocs.push(subDoc);
         }
       });
+      
+      // fallback 로직도 유지 (URL 패턴 기반 매칭)
       normalizedKeys.forEach((key) => {
         const fallbackDocs = fallbackSubPagesByKey[key];
         if (fallbackDocs) {
@@ -3745,38 +4063,6 @@ function DocsTable({
         }
       });
       
-      // 누락된 하위 문서 보완: urlDocuments에서 mainDocumentId가 mainDoc.id와 일치하는 문서 찾기
-      // 타입 일관성: mainDoc.id를 String으로 변환해서 비교
-      const missingSubDocs = urlDocuments.filter((d: any) => {
-        const dMainDocId = d.mainDocumentId != null ? String(d.mainDocumentId) : null;
-        // String 변환된 값과 원본 값 모두 비교
-        return (dMainDocId === mainDocIdString || d.mainDocumentId === mainDoc.id) && !combinedSubDocs.some((existing) => existing.id === d.id);
-      });
-      
-      if (missingSubDocs.length > 0) {
-        if (typeof window !== 'undefined') {
-          console.log('[CRITICAL] ⚠️ 누락된 하위 문서 발견 및 추가:', {
-            mainDocId: mainDoc.id,
-            mainDocTitle: mainDoc.title?.substring(0, 30),
-            missingCount: missingSubDocs.length,
-            missingIds: missingSubDocs.map((d: any) => d.id),
-            missingTitles: missingSubDocs.map((d: any) => d.title?.substring(0, 20)),
-            beforeCount: combinedSubDocs.length,
-          });
-        }
-        missingSubDocs.forEach((subDoc) => {
-          if (!combinedSubDocs.some((existing) => existing.id === subDoc.id)) {
-            combinedSubDocs.push(subDoc);
-          }
-        });
-        if (typeof window !== 'undefined') {
-          console.log('[CRITICAL] ✅ 누락된 하위 문서 추가 완료:', {
-            mainDocId: mainDoc.id,
-            afterCount: combinedSubDocs.length,
-          });
-        }
-      }
-      
       combinedSubDocs.sort((a, b) => {
         const orderA = rowOrder.get(a.id) ?? Number.MAX_SAFE_INTEGER;
         const orderB = rowOrder.get(b.id) ?? Number.MAX_SAFE_INTEGER;
@@ -3786,12 +4072,13 @@ function DocsTable({
       if (combinedSubDocs.length > 0) {
         grouped.push({ isGroup: true, mainDoc, subDocs: combinedSubDocs });
         if (typeof window !== 'undefined') {
-          console.log('[CRITICAL] 📦 그룹 생성:', {
+          console.log(`[CRITICAL] 📦 그룹 생성 (${mainDocIdx + 1}/${mainPages.length}):`, {
             mainDocId: mainDoc.id,
             mainDocTitle: mainDoc.title?.substring(0, 30),
             subDocsCount: combinedSubDocs.length,
             subDocsIds: combinedSubDocs.map((s: any) => s.id),
             subDocsTitles: combinedSubDocs.map((s: any) => s.title?.substring(0, 20)),
+            groupedLength: grouped.length,
           });
         }
         groupedDocIds.add(mainDoc.id);
@@ -3829,10 +4116,727 @@ function DocsTable({
       }
     });
     
+    // 누락된 하위 문서 보완: urlDocuments를 다시 순회하여 mainDocumentId가 있지만
+    // subPagesByMainId에 포함되지 않은 모든 문서를 찾아서 추가
+    const allSubDocsInSubPagesByMainId = new Set<string>();
+    Object.values(subPagesByMainId).forEach((subDocs) => {
+      subDocs.forEach((subDoc) => {
+        if (subDoc?.id) {
+          allSubDocsInSubPagesByMainId.add(subDoc.id);
+        }
+      });
+    });
+    
     urlDocuments.forEach((doc: any) => {
-      if (!groupedDocIds.has(doc.id)) {
+      const hasMainDocumentId = doc.mainDocumentId !== undefined && doc.mainDocumentId !== null;
+      if (hasMainDocumentId && !allSubDocsInSubPagesByMainId.has(doc.id)) {
+        // mainDocumentId가 있지만 subPagesByMainId에 포함되지 않은 문서 발견
+        const parentId = String(doc.mainDocumentId);
+        if (!subPagesByMainId[parentId]) {
+          subPagesByMainId[parentId] = [];
+        }
+        // 중복 체크 후 추가
+        if (!subPagesByMainId[parentId].some((existing: any) => existing.id === doc.id)) {
+          subPagesByMainId[parentId].push(doc);
+          allSubDocsInSubPagesByMainId.add(doc.id);
+          if (typeof window !== 'undefined') {
+            console.log('[CRITICAL] ✅ 누락된 하위 문서 보완:', {
+              docId: doc.id,
+              docTitle: doc.title?.substring(0, 30),
+              mainDocumentId: doc.mainDocumentId,
+              parentId,
+              subPagesByMainIdCount: subPagesByMainId[parentId].length,
+            });
+          }
+        }
+      }
+    });
+    
+    // subPagesByMainId에 있는 모든 하위 문서를 groupedDocIds에 추가
+    // 이렇게 하면 이미 그룹에 포함된 문서들이 단일 문서로 추가되지 않음
+    Object.values(subPagesByMainId).forEach((subDocs) => {
+      subDocs.forEach((subDoc) => {
+        if (subDoc?.id) {
+          groupedDocIds.add(subDoc.id);
+        }
+      });
+    });
+    
+    if (typeof window !== 'undefined') {
+      console.log('[CRITICAL] 📋 groupedDocIds 업데이트 완료:', {
+        groupedDocIdsSize: groupedDocIds.size,
+        subPagesByMainIdTotalSubDocs: Object.values(subPagesByMainId).reduce((sum, arr) => sum + arr.length, 0),
+        subPagesByMainIdKeys: Object.keys(subPagesByMainId),
+        allSubDocsInSubPagesByMainIdSize: allSubDocsInSubPagesByMainId.size,
+      });
+    }
+    
+    // 누락된 하위 문서를 기존 그룹에 추가
+    grouped.forEach((groupItem: any) => {
+      if (groupItem.isGroup && groupItem.mainDoc) {
+        const mainDocId = groupItem.mainDoc.id;
+        const mainDocIdString = String(mainDocId);
+        const subDocsInGroup = new Set((groupItem.subDocs || []).map((s: any) => s.id));
+        
+        // subPagesByMainId에서 해당 메인 문서의 모든 하위 문서 가져오기
+        const allSubDocsForMain = subPagesByMainId[mainDocIdString] || subPagesByMainId[mainDocId] || [];
+        
+        // 그룹에 포함되지 않은 하위 문서 찾기
+        const missingSubDocs = allSubDocsForMain.filter((subDoc: any) => !subDocsInGroup.has(subDoc.id));
+        
+        if (missingSubDocs.length > 0) {
+          if (typeof window !== 'undefined') {
+            console.log('[CRITICAL] ✅ 기존 그룹에 누락된 하위 문서 추가:', {
+              mainDocId,
+              mainDocTitle: groupItem.mainDoc.title?.substring(0, 30),
+              missingCount: missingSubDocs.length,
+              missingIds: missingSubDocs.map((s: any) => s.id),
+              beforeSubDocsCount: groupItem.subDocs?.length || 0,
+            });
+          }
+          // 누락된 하위 문서를 그룹에 추가
+          if (!groupItem.subDocs) {
+            groupItem.subDocs = [];
+          }
+          missingSubDocs.forEach((subDoc: any) => {
+            if (!groupItem.subDocs.some((existing: any) => existing.id === subDoc.id)) {
+              groupItem.subDocs.push(subDoc);
+              groupedDocIds.add(subDoc.id);
+            }
+          });
+          if (typeof window !== 'undefined') {
+            console.log('[CRITICAL] ✅ 기존 그룹에 누락된 하위 문서 추가 완료:', {
+              mainDocId,
+              afterSubDocsCount: groupItem.subDocs.length,
+            });
+          }
+        }
+      }
+    });
+    
+    // CRITICAL: mainDocumentId가 있지만 아직 그룹에 포함되지 않은 문서 처리
+    // 부모 문서를 rows (sortedData) 전체에서 찾아서 그룹에 포함시키기
+    // 이 루프는 mainPages.forEach 이후에 실행되므로, 이미 그룹이 생성된 경우 하위 문서를 추가해야 함
+    // FIX: urlDocuments만 순회하면 rows에 있지만 urlDocuments에 포함되지 않은 문서를 처리하지 못함
+    // 따라서 rows 전체를 순회하되, URL 문서만 처리하도록 필터링
+   const unprocessedDocs = rows.filter((row: any) => {
+     const isUrlDoc = urlDocumentIds.has(row.id);
+     const notInGroup = !groupedDocIds.has(row.id);
+     return isUrlDoc && notInGroup;
+   });
+    
+    if (typeof window !== 'undefined') {
+      console.log('[CRITICAL] 🔄 unprocessedDocs.forEach 루프 시작:', {
+        urlDocumentsCount: urlDocuments.length,
+        rowsCount: rows.length,
+        unprocessedDocsCount: unprocessedDocs.length,
+        groupedDocIdsSize: groupedDocIds.size,
+        groupedLength: grouped.length,
+        ungroupedDocs: unprocessedDocs.map((d: any) => ({
+          id: d.id,
+          title: d.title?.substring(0, 30),
+          mainDocumentId: d.mainDocumentId,
+          type: d.type,
+          hasUrl: !!(d.url || d.normalizedUrl),
+        })),
+      });
+    }
+    
+    unprocessedDocs.forEach((doc: any) => {
+      // 재처리된 문서 추적: mainDocumentId가 있는 문서는 재처리 후 그룹에서 제외될 수 있음
+      const hasMainDocumentId = doc.mainDocumentId !== undefined && doc.mainDocumentId !== null;
+      const isReprocessedDoc = hasMainDocumentId && !groupedDocIds.has(doc.id);
+      
+      // 재처리된 문서 추적 로그 (mainDocumentId가 있지만 아직 그룹에 포함되지 않은 문서)
+      if (typeof window !== 'undefined' && isReprocessedDoc) {
+        console.log(`[REPROCESS] 🔍 재처리된 문서 그룹화 처리 시작:`, {
+          docId: doc.id,
+          docTitle: doc.title?.substring(0, 50),
+          mainDocumentId: doc.mainDocumentId,
+          mainDocumentIdType: typeof doc.mainDocumentId,
+          hasMainDocumentId,
+          inGroupedDocIds: groupedDocIds.has(doc.id),
+          groupedDocIdsSize: groupedDocIds.size,
+          urlDocumentsCount: urlDocuments.length,
+          rowsCount: rows.length,
+          parentInRows: rows.some((d: any) => d.id === doc.mainDocumentId || String(d.id) === String(doc.mainDocumentId)),
+          updatedAt: doc.updated_at,
+          timestamp: new Date().toISOString(),
+        });
+      }
+      
+      if (groupedDocIds.has(doc.id)) {
+        // 이미 그룹에 포함된 문서는 건너뛰기
+        if (typeof window !== 'undefined' && (doc.id === 'doc_1763511717102_yq0ixkj' || doc.title?.includes('온라인 판매 목적'))) {
+          console.log('[CRITICAL] ⏭️ "온라인 판매 목적" 문서 이미 groupedDocIds에 있음, 건너뛰기:', {
+            docId: doc.id,
+            docTitle: doc.title?.substring(0, 30),
+            mainDocumentId: doc.mainDocumentId,
+          });
+        }
+        return;
+      }
+      
+      if (typeof window !== 'undefined') {
+        console.log('[CRITICAL] 🔍 urlDocuments.forEach 처리 중:', {
+          docId: doc.id,
+          docTitle: doc.title?.substring(0, 30),
+          mainDocumentId: doc.mainDocumentId,
+          hasMainDocumentId: doc.mainDocumentId !== undefined && doc.mainDocumentId !== null,
+        });
+      }
+      
+      // mainDocumentId가 있는 경우 부모 문서 찾기
+      if (hasMainDocumentId) {
+        const parentId = String(doc.mainDocumentId);
+        const parentIdOriginal = doc.mainDocumentId; // 원본 타입 유지
+        
+        // 재처리된 문서인 경우 부모 문서 검색 로그
+        if (typeof window !== 'undefined' && isReprocessedDoc) {
+          console.log(`[REPROCESS] 🔍 재처리된 문서 - 부모 문서 검색 시작:`, {
+            docId: doc.id,
+            docTitle: doc.title?.substring(0, 50),
+            mainDocumentId: doc.mainDocumentId,
+            parentId,
+            parentIdOriginal,
+            rowsCount: rows.length,
+            rowsIds: rows.map((d: any) => d.id).slice(0, 20),
+            rowsIdsString: rows.map((d: any) => String(d.id)).slice(0, 20),
+            timestamp: new Date().toISOString(),
+          });
+        }
+        
+        // 부모 문서를 rows 전체에서 찾기 (urlDocuments에 없을 수 있음)
+        const parentDoc = rows.find((d: any) => {
+          const dId = String(d.id);
+          const dIdOriginal = d.id;
+          return dId === parentId || 
+                 dIdOriginal === parentId || 
+                 dId === String(parentIdOriginal) ||
+                 dIdOriginal === parentIdOriginal;
+        });
+        
+        // 재처리된 문서인 경우 부모 문서 검색 결과 로그
+        if (typeof window !== 'undefined' && isReprocessedDoc) {
+          console.log(`[REPROCESS] 🔍 재처리된 문서 - 부모 문서 검색 결과:`, {
+            docId: doc.id,
+            docTitle: doc.title?.substring(0, 50),
+            mainDocumentId: doc.mainDocumentId,
+            parentId,
+            parentIdOriginal,
+            parentDocFound: !!parentDoc,
+            parentDocId: parentDoc?.id,
+            parentDocTitle: parentDoc?.title?.substring(0, 50),
+            timestamp: new Date().toISOString(),
+          });
+        }
+        
+        if (parentDoc) {
+          // ID 정규화: 모든 비교를 문자열로 통일
+          const normalizedParentId = String(parentDoc.id);
+          const normalizedParentIdOriginal = parentDoc.id;
+          
+          // 1순위: 부모 문서가 이미 그룹에 있는지 확인 (mainDoc.id로 매칭)
+          // 더 강력한 매칭: 모든 가능한 ID 형식 비교
+          // 재처리된 문서가 mainPages.forEach에서 누락되었을 수 있으므로
+          // 기존 그룹을 찾아서 추가하는 것이 중요함
+          let existingGroupIndex = grouped.findIndex((g: any) => {
+            if (!g.isGroup || !g.mainDoc) return false;
+            const mainDocId = String(g.mainDoc.id);
+            const mainDocIdOriginal = g.mainDoc.id;
+            const matches = mainDocId === parentId || 
+                   mainDocId === normalizedParentId ||
+                   mainDocIdOriginal === parentIdOriginal ||
+                   mainDocIdOriginal === normalizedParentIdOriginal ||
+                   String(mainDocIdOriginal) === parentId ||
+                   String(mainDocIdOriginal) === normalizedParentId;
+            
+            // 재처리된 문서 디버깅
+            if (typeof window !== 'undefined' && matches && (doc.id === 'doc_1763511717102_yq0ixkj' || doc.title?.includes('온라인 판매 목적'))) {
+              console.log('[CRITICAL] 🎯 "온라인 판매 목적" 문서 - 기존 그룹 발견 (1순위):', {
+                docId: doc.id,
+                docTitle: doc.title?.substring(0, 30),
+                parentId,
+                parentIdOriginal,
+                normalizedParentId,
+                mainDocId,
+                mainDocIdOriginal,
+                groupIndex: grouped.indexOf(g),
+                groupMainDocId: g.mainDoc.id,
+                groupSubDocsCount: g.subDocs?.length || 0,
+              });
+            }
+            
+            return matches;
+          });
+          
+          // 2순위: 부모 문서가 단일 문서로 추가된 경우 찾기
+          if (existingGroupIndex < 0) {
+            existingGroupIndex = grouped.findIndex((g: any) => {
+              if (g.isGroup || !g.doc) return false;
+              const docId = String(g.doc.id);
+              const docIdOriginal = g.doc.id;
+              return docId === parentId || 
+                     docId === normalizedParentId ||
+                     docIdOriginal === parentIdOriginal ||
+                     docIdOriginal === normalizedParentIdOriginal ||
+                     String(docIdOriginal) === parentId ||
+                     String(docIdOriginal) === normalizedParentId;
+            });
+            
+            if (existingGroupIndex >= 0) {
+              // 부모 문서가 단일 문서로 추가되어 있으면 그룹으로 변환
+              const parentSingleDoc = grouped[existingGroupIndex].doc;
+              grouped[existingGroupIndex] = {
+                isGroup: true,
+                mainDoc: parentSingleDoc,
+                subDocs: [doc]
+              };
+              groupedDocIds.add(doc.id);
+              if (typeof window !== 'undefined') {
+                console.log('[CRITICAL] ✅ 단일 문서를 그룹으로 변환 (부모 문서 발견):', {
+                  parentId,
+                  parentIdOriginal,
+                  normalizedParentId,
+                  parentTitle: parentDoc.title?.substring(0, 30),
+                  childId: doc.id,
+                  childTitle: doc.title?.substring(0, 30),
+                  groupIndex: existingGroupIndex,
+                });
+              }
+              return;
+            }
+          }
+          
+          // 3순위: 부모 문서가 그룹에 있으면 하위 문서로 추가
+          // 재처리된 문서가 mainPages.forEach에서 누락되었을 수 있으므로
+          // 기존 그룹에 반드시 추가해야 함
+          if (existingGroupIndex >= 0) {
+            const existingGroup = grouped[existingGroupIndex];
+            if (!existingGroup.subDocs) {
+              existingGroup.subDocs = [];
+            }
+            // 중복 체크
+            const alreadyInGroup = existingGroup.subDocs.some((existing: any) => existing.id === doc.id);
+            if (!alreadyInGroup) {
+              existingGroup.subDocs.push(doc);
+              groupedDocIds.add(doc.id);
+              if (typeof window !== 'undefined') {
+                // 재처리된 문서인 경우 추가 로그
+                if (isReprocessedDoc) {
+                  console.log(`[REPROCESS] ✅ 재처리된 문서 그룹에 추가 완료 (3순위):`, {
+                    docId: doc.id,
+                    docTitle: doc.title?.substring(0, 50),
+                    mainDocumentId: doc.mainDocumentId,
+                    groupIndex: existingGroupIndex,
+                    subDocsCount: existingGroup.subDocs.length,
+                    mainDocId: existingGroup.mainDoc?.id,
+                    mainDocTitle: existingGroup.mainDoc?.title?.substring(0, 50),
+                    timestamp: new Date().toISOString(),
+                  });
+                }
+                console.log('[CRITICAL] ✅ 기존 그룹에 하위 문서 추가 (부모 문서 발견):', {
+                  childId: doc.id,
+                  childTitle: doc.title?.substring(0, 30),
+                  parentId,
+                  parentIdOriginal,
+                  normalizedParentId,
+                  parentTitle: parentDoc.title?.substring(0, 30),
+                  groupIndex: existingGroupIndex,
+                  subDocsCount: existingGroup.subDocs.length,
+                  mainDocId: existingGroup.mainDoc?.id,
+                  wasInGroupedDocIds: groupedDocIds.has(doc.id),
+                  isReprocessedDoc: !groupedDocIds.has(doc.id), // 재처리된 문서는 groupedDocIds에 없음
+                });
+              }
+            } else {
+              // 이미 그룹에 포함되어 있으면 groupedDocIds에만 추가
+              if (!groupedDocIds.has(doc.id)) {
+                groupedDocIds.add(doc.id);
+                if (typeof window !== 'undefined') {
+                  console.log('[CRITICAL] ✅ 이미 그룹에 포함된 문서, groupedDocIds에만 추가:', {
+                    childId: doc.id,
+                    childTitle: doc.title?.substring(0, 30),
+                    groupIndex: existingGroupIndex,
+                  });
+                }
+              }
+            }
+            return;
+          }
+          
+          // 4순위: 재처리된 문서 처리 - 부모 문서가 rows에 있으면 기존 그룹을 다시 찾아서 추가
+          // 재처리된 문서는 mainPages.forEach에서 누락되었을 수 있으므로
+          // 부모 문서가 rows에 있으면 반드시 기존 그룹을 찾아야 함
+          // existingGroupIndex가 -1이면 그룹을 찾지 못한 것이므로 다시 검색
+          if (existingGroupIndex < 0 && parentDoc) {
+            let foundGroupIndex = -1;
+            // 모든 그룹을 순회하여 부모 문서를 mainDoc으로 가진 그룹 찾기
+            for (let i = 0; i < grouped.length; i++) {
+              const g = grouped[i];
+              if (g.isGroup && g.mainDoc) {
+                const mainDocId = String(g.mainDoc.id);
+                const mainDocIdOriginal = g.mainDoc.id;
+                // 부모가 mainDoc인지 확인
+                const parentIsMainDoc = mainDocId === parentId || 
+                                       mainDocId === normalizedParentId ||
+                                       mainDocIdOriginal === parentIdOriginal ||
+                                       mainDocIdOriginal === normalizedParentIdOriginal ||
+                                       String(mainDocIdOriginal) === parentId ||
+                                       String(mainDocIdOriginal) === normalizedParentId;
+                
+                if (parentIsMainDoc) {
+                  foundGroupIndex = i;
+                  break;
+                }
+              }
+            }
+            
+            if (foundGroupIndex >= 0) {
+              const foundGroup = grouped[foundGroupIndex];
+              if (!foundGroup.subDocs) {
+                foundGroup.subDocs = [];
+              }
+              if (!foundGroup.subDocs.some((existing: any) => existing.id === doc.id)) {
+                foundGroup.subDocs.push(doc);
+                groupedDocIds.add(doc.id);
+                if (typeof window !== 'undefined') {
+                  // 재처리된 문서인 경우 추가 로그
+                  if (isReprocessedDoc) {
+                    console.log(`[REPROCESS] ✅ 재처리된 문서 그룹에 추가 완료 (4순위):`, {
+                      docId: doc.id,
+                      docTitle: doc.title?.substring(0, 50),
+                      mainDocumentId: doc.mainDocumentId,
+                      groupIndex: foundGroupIndex,
+                      subDocsCount: foundGroup.subDocs.length,
+                      mainDocId: foundGroup.mainDoc?.id,
+                      mainDocTitle: foundGroup.mainDoc?.title?.substring(0, 50),
+                      timestamp: new Date().toISOString(),
+                    });
+                  }
+                  console.log('[CRITICAL] ✅ 재처리된 문서 - 기존 그룹에 추가 (부모 문서 발견, 4순위):', {
+                    childId: doc.id,
+                    childTitle: doc.title?.substring(0, 30),
+                    parentId,
+                    parentIdOriginal,
+                    normalizedParentId,
+                    parentTitle: parentDoc.title?.substring(0, 30),
+                    groupIndex: foundGroupIndex,
+                    subDocsCount: foundGroup.subDocs.length,
+                    mainDocId: foundGroup.mainDoc?.id,
+                    wasInGroupedDocIds: groupedDocIds.has(doc.id),
+                    isReprocessedDoc: true,
+                  });
+                }
+              }
+              return;
+            }
+          }
+          
+          // 5순위: 부모 문서가 groupedDocIds에 있지만 그룹을 찾지 못한 경우
+          // 모든 그룹을 순회하여 부모가 subDoc으로 포함되어 있는지 확인
+          if (groupedDocIds.has(parentDoc.id) || groupedDocIds.has(normalizedParentId)) {
+            let foundGroupIndex = -1;
+            for (let i = 0; i < grouped.length; i++) {
+              const g = grouped[i];
+              if (g.isGroup && g.subDocs) {
+                // 부모가 subDoc으로 포함되어 있는지 확인
+                const parentInSubDocs = g.subDocs.some((subDoc: any) => {
+                  const subDocId = String(subDoc.id);
+                  const subDocIdOriginal = subDoc.id;
+                  return subDocId === parentId || 
+                         subDocId === normalizedParentId ||
+                         subDocIdOriginal === parentIdOriginal ||
+                         subDocIdOriginal === normalizedParentIdOriginal;
+                });
+                
+                // 또는 부모가 mainDoc인지 확인 (이미 위에서 체크했지만 다시 확인)
+                const parentIsMainDoc = g.mainDoc && (
+                  String(g.mainDoc.id) === parentId ||
+                  String(g.mainDoc.id) === normalizedParentId ||
+                  g.mainDoc.id === parentIdOriginal ||
+                  g.mainDoc.id === normalizedParentIdOriginal
+                );
+                
+                if (parentInSubDocs || parentIsMainDoc) {
+                  foundGroupIndex = i;
+                  break;
+                }
+              }
+            }
+            
+            if (foundGroupIndex >= 0) {
+              const foundGroup = grouped[foundGroupIndex];
+              if (!foundGroup.subDocs) {
+                foundGroup.subDocs = [];
+              }
+              if (!foundGroup.subDocs.some((existing: any) => existing.id === doc.id)) {
+                foundGroup.subDocs.push(doc);
+                groupedDocIds.add(doc.id);
+                if (typeof window !== 'undefined') {
+                  console.log('[CRITICAL] ✅ 그룹 검색 후 하위 문서 추가 (부모 문서 발견):', {
+                    childId: doc.id,
+                    childTitle: doc.title?.substring(0, 30),
+                    parentId,
+                    parentIdOriginal,
+                    normalizedParentId,
+                    parentTitle: parentDoc.title?.substring(0, 30),
+                    groupIndex: foundGroupIndex,
+                    subDocsCount: foundGroup.subDocs.length,
+                    mainDocId: foundGroup.mainDoc?.id,
+                  });
+                }
+              }
+              return;
+            }
+          }
+          
+          // 6순위: 부모 문서가 아직 그룹에 없으면 부모를 메인으로 하는 새 그룹 생성
+          if (!groupedDocIds.has(parentDoc.id) && !groupedDocIds.has(normalizedParentId)) {
+            grouped.push({ 
+              isGroup: true, 
+              mainDoc: parentDoc, 
+              subDocs: [doc] 
+            });
+            groupedDocIds.add(parentDoc.id);
+            groupedDocIds.add(normalizedParentId);
+            groupedDocIds.add(doc.id);
+            if (typeof window !== 'undefined') {
+              console.log('[CRITICAL] ✅ 새 그룹 생성 (부모 문서 발견):', {
+                parentId,
+                parentIdOriginal,
+                normalizedParentId,
+                parentTitle: parentDoc.title?.substring(0, 30),
+                childId: doc.id,
+                childTitle: doc.title?.substring(0, 30),
+                groupedLength: grouped.length,
+              });
+            }
+            return;
+          }
+          
+          // 7순위: 부모 문서가 groupedDocIds에 있지만 그룹을 찾지 못한 경우
+          // 부모 문서를 메인으로 하는 새 그룹을 강제로 생성
+          // 이는 부모 문서가 이전 루프에서 단일 문서로 추가되었지만 그룹으로 변환되지 않은 경우를 처리
+          if (existingGroupIndex < 0) {
+            // 부모 문서가 이미 groupedDocIds에 있지만 그룹을 찾지 못한 경우
+            // 부모 문서를 메인으로 하는 새 그룹 생성
+            grouped.push({ 
+              isGroup: true, 
+              mainDoc: parentDoc, 
+              subDocs: [doc] 
+            });
+            // parentDoc.id는 이미 groupedDocIds에 있을 수 있으므로 중복 체크 없이 추가
+            if (!groupedDocIds.has(parentDoc.id)) {
+              groupedDocIds.add(parentDoc.id);
+            }
+            if (!groupedDocIds.has(normalizedParentId)) {
+              groupedDocIds.add(normalizedParentId);
+            }
+            groupedDocIds.add(doc.id);
+            if (typeof window !== 'undefined') {
+              console.log('[CRITICAL] ✅ 새 그룹 생성 (부모 문서 발견, groupedDocIds에 있지만 그룹 없음):', {
+                parentId,
+                parentIdOriginal,
+                normalizedParentId,
+                parentTitle: parentDoc.title?.substring(0, 30),
+                childId: doc.id,
+                childTitle: doc.title?.substring(0, 30),
+                groupedLength: grouped.length,
+                parentInGroupedDocIds: groupedDocIds.has(parentDoc.id) || groupedDocIds.has(normalizedParentId),
+                existingGroupIndex,
+              });
+            }
+            return;
+          }
+          
+          // 모든 시도 실패 - 상세 로그 (이 코드는 실행되지 않아야 함)
+          if (typeof window !== 'undefined') {
+            console.error('[CRITICAL] ❌ 부모 문서를 찾았지만 그룹에 추가 실패 (예상치 못한 경우):', {
+              childId: doc.id,
+              childTitle: doc.title?.substring(0, 30),
+              parentId,
+              parentIdOriginal,
+              normalizedParentId,
+              parentDocId: parentDoc.id,
+              parentDocIdString: String(parentDoc.id),
+              parentInGroupedDocIds: groupedDocIds.has(parentDoc.id) || groupedDocIds.has(normalizedParentId),
+              existingGroupIndex,
+              groupedLength: grouped.length,
+              allGroupMainDocIds: grouped.filter((g: any) => g.isGroup && g.mainDoc).map((g: any) => ({
+                id: g.mainDoc.id,
+                idString: String(g.mainDoc.id),
+              })),
+            });
+          }
+          
+          // 최종 fallback: 부모 문서를 메인으로 하는 새 그룹 강제 생성
+          // 이는 모든 시도가 실패했지만 부모 문서가 rows에 있는 경우를 처리
+          grouped.push({ 
+            isGroup: true, 
+            mainDoc: parentDoc, 
+            subDocs: [doc] 
+          });
+          groupedDocIds.add(parentDoc.id);
+          groupedDocIds.add(normalizedParentId);
+          groupedDocIds.add(doc.id);
+          if (typeof window !== 'undefined') {
+            console.log('[CRITICAL] ✅ 최종 fallback: 새 그룹 생성 (부모 문서 발견):', {
+              parentId,
+              parentIdOriginal,
+              normalizedParentId,
+              parentTitle: parentDoc.title?.substring(0, 30),
+              childId: doc.id,
+              childTitle: doc.title?.substring(0, 30),
+              groupedLength: grouped.length,
+            });
+          }
+          return;
+        } else {
+          // 부모 문서를 찾지 못한 경우: rows에 부모 문서가 없음
+          // 이 경우 mainDocumentId를 기반으로 기존 그룹을 찾아보기
+          const parentIdString = String(parentId);
+          let foundGroupByMainId = -1;
+          
+          // 특정 문서 디버깅: "상황별 맞춤 추천" 문서 추적
+          if (typeof window !== 'undefined' && (doc.id === 'doc_1763511716841_gt7fdj9' || doc.title?.includes('상황별 맞춤 추천'))) {
+            console.log('[CRITICAL] 🔍 "상황별 맞춤 추천" 문서 - 부모 문서를 rows에서 찾지 못함:', {
+              docId: doc.id,
+              docTitle: doc.title?.substring(0, 30),
+              mainDocumentId: doc.mainDocumentId,
+              parentId,
+              parentIdOriginal,
+              parentIdString,
+              rowsCount: rows.length,
+              rowsIds: rows.map((d: any) => d.id).slice(0, 20),
+              rowsIdsString: rows.map((d: any) => String(d.id)).slice(0, 20),
+              groupedCount: grouped.length,
+              allGroupMainDocIds: grouped.filter((g: any) => g.isGroup && g.mainDoc).map((g: any) => ({
+                id: g.mainDoc.id,
+                idString: String(g.mainDoc.id),
+              })),
+            });
+          }
+          
+          // 기존 그룹에서 mainDoc.id가 parentId와 일치하는 그룹 찾기
+          for (let i = 0; i < grouped.length; i++) {
+            const g = grouped[i];
+            if (g.isGroup && g.mainDoc) {
+              const mainDocId = String(g.mainDoc.id);
+              const mainDocIdOriginal = g.mainDoc.id;
+              // 모든 가능한 ID 형식 비교
+              if (mainDocId === parentIdString || 
+                  mainDocId === parentId || 
+                  mainDocIdOriginal === parentIdOriginal ||
+                  mainDocIdOriginal === parentId ||
+                  String(mainDocIdOriginal) === parentIdString ||
+                  String(mainDocIdOriginal) === parentId) {
+                foundGroupByMainId = i;
+                break;
+              }
+            }
+          }
+          
+          if (foundGroupByMainId >= 0) {
+            // 부모 그룹을 찾았으면 하위 문서로 추가
+            const foundGroup = grouped[foundGroupByMainId];
+            if (!foundGroup.subDocs) {
+              foundGroup.subDocs = [];
+            }
+            if (!foundGroup.subDocs.some((existing: any) => existing.id === doc.id)) {
+              foundGroup.subDocs.push(doc);
+              groupedDocIds.add(doc.id);
+              if (typeof window !== 'undefined') {
+                // 재처리된 문서인 경우 추가 로그
+                if (isReprocessedDoc) {
+                  console.log(`[REPROCESS] ✅ 재처리된 문서 그룹에 추가 완료 (mainDocumentId로 그룹 찾음):`, {
+                    docId: doc.id,
+                    docTitle: doc.title?.substring(0, 50),
+                    mainDocumentId: doc.mainDocumentId,
+                    groupIndex: foundGroupByMainId,
+                    mainDocId: foundGroup.mainDoc?.id,
+                    mainDocTitle: foundGroup.mainDoc?.title?.substring(0, 50),
+                    subDocsCount: foundGroup.subDocs.length,
+                    timestamp: new Date().toISOString(),
+                  });
+                }
+                console.log('[CRITICAL] ✅ mainDocumentId로 그룹 찾아 하위 문서 추가 (부모 문서는 rows에 없음):', {
+                  childId: doc.id,
+                  childTitle: doc.title?.substring(0, 30),
+                  mainDocumentId: doc.mainDocumentId,
+                  parentId,
+                  parentIdOriginal,
+                  groupIndex: foundGroupByMainId,
+                  mainDocId: foundGroup.mainDoc?.id,
+                  mainDocTitle: foundGroup.mainDoc?.title?.substring(0, 30),
+                  subDocsCount: foundGroup.subDocs.length,
+                });
+              }
+              return;
+            } else {
+              // 이미 그룹에 포함되어 있음
+              groupedDocIds.add(doc.id);
+              return;
+            }
+          }
+          
+          // 그룹도 찾지 못한 경우: 부모 문서가 rows에 없고 그룹도 없음
+          // CRITICAL FIX: mainDocumentId가 있으면 절대 단일 문서로 추가하지 않음
+          // 대신 mainDocumentId를 가진 임시 그룹을 생성하거나, 나중에 부모가 나타날 때까지 보류
+          // 하지만 현재 구조상 부모가 없으면 그룹을 만들 수 없으므로,
+          // 최소한 mainDocumentId 정보를 유지하면서 단일 문서로 추가하되,
+          // 나중에 부모가 나타나면 자동으로 그룹에 추가될 수 있도록 플래그 설정
+          if (typeof window !== 'undefined') {
+            console.error('[CRITICAL] ❌ 부모 문서를 찾지 못함 (rows 전체 검색 실패, 그룹도 없음):', {
+              childId: doc.id,
+              childTitle: doc.title?.substring(0, 30),
+              mainDocumentId: doc.mainDocumentId,
+              parentId,
+              parentIdOriginal,
+              rowsCount: rows.length,
+              rowsIds: rows.map((d: any) => d.id).slice(0, 20),
+              rowsIdsString: rows.map((d: any) => String(d.id)).slice(0, 20),
+              urlDocumentsCount: urlDocuments.length,
+              groupedCount: grouped.length,
+              allGroupMainDocIds: grouped.filter((g: any) => g.isGroup && g.mainDoc).map((g: any) => ({
+                id: g.mainDoc.id,
+                idString: String(g.mainDoc.id),
+              })),
+              note: 'mainDocumentId가 있지만 부모를 찾지 못해 단일 문서로 추가됨. 이는 데이터 불일치를 의미할 수 있음.',
+            });
+          }
+          // mainDocumentId가 있지만 부모를 찾지 못한 경우
+          // 이는 데이터 불일치이거나 부모 문서가 limit(60) 밖에 있는 경우일 수 있음
+          // 일단 mainDocumentId 정보를 유지하면서 단일 문서로 추가
+          // 하지만 이는 문제가 될 수 있으므로 로그에 기록
+        }
+      }
+      
+      // mainDocumentId가 없거나 부모를 찾지 못한 경우 단일 문서로 추가
+      // CRITICAL FIX: mainDocumentId가 있는 경우는 위에서 이미 처리되었으므로
+      // 여기서는 절대 단일 문서로 추가하지 않음 (이미 return되었어야 함)
+      if (!hasMainDocumentId) {
         grouped.push({ isGroup: false, doc });
         groupedDocIds.add(doc.id);
+      } else {
+        // mainDocumentId가 있지만 그룹에 추가되지 않은 경우
+        // 이는 위의 모든 로직이 실패한 경우이므로, 이는 심각한 문제임
+        // 하지만 현재 구조상 부모가 없으면 그룹을 만들 수 없으므로,
+        // 최소한 mainDocumentId 정보를 유지하면서 단일 문서로 추가
+        // 이 경우는 데이터 불일치이거나 부모 문서가 limit(60) 밖에 있는 경우일 수 있음
+        grouped.push({ isGroup: false, doc });
+        groupedDocIds.add(doc.id);
+        if (typeof window !== 'undefined') {
+          console.error('[CRITICAL] ❌ mainDocumentId가 있지만 그룹에 추가 실패, 단일 문서로 추가 (데이터 불일치 가능성):', {
+            docId: doc.id,
+            docTitle: doc.title?.substring(0, 30),
+            mainDocumentId: doc.mainDocumentId,
+            parentId: doc.mainDocumentId,
+            rowsCount: rows.length,
+            groupedCount: grouped.length,
+            note: '이 문서는 mainDocumentId가 있지만 부모 문서를 찾지 못해 단일 문서로 추가되었습니다. 부모 문서가 limit(60) 밖에 있거나 데이터 불일치일 수 있습니다.',
+          });
+        }
       }
     });
     
@@ -3840,7 +4844,31 @@ function DocsTable({
       grouped.push({ isGroup: false, doc });
     });
     
+    // 최종 검증: mainDocumentId가 있지만 단일 문서로 추가된 문서 확인
     if (typeof window !== 'undefined') {
+      const singleDocsWithMainId = grouped.filter((g: any) => 
+        !g.isGroup && g.doc && g.doc.mainDocumentId !== undefined && g.doc.mainDocumentId !== null
+      );
+      if (singleDocsWithMainId.length > 0) {
+        console.warn('[CRITICAL] ⚠️ mainDocumentId가 있지만 단일 문서로 추가된 문서 발견:', {
+          count: singleDocsWithMainId.length,
+          docs: singleDocsWithMainId.map((g: any) => ({
+            docId: g.doc.id,
+            docTitle: g.doc.title?.substring(0, 30),
+            mainDocumentId: g.doc.mainDocumentId,
+            parentExists: urlDocuments.some((d: any) => d.id === g.doc.mainDocumentId || String(d.id) === String(g.doc.mainDocumentId)),
+          })),
+        });
+      }
+    }
+    
+    if (typeof window !== 'undefined') {
+      console.log('[CRITICAL] 🔄 mainPages.forEach 완료:', {
+        mainPagesProcessed: mainPages.length,
+        groupedLength: grouped.length,
+        groupsCount: grouped.filter((g: any) => g.isGroup).length,
+        nonUrlDocsCount: nonUrlDocuments.length,
+      });
       const groupCount = grouped.filter((g: any) => g.isGroup).length;
       const totalSubPages = grouped
         .filter((g: any) => g.isGroup)
@@ -3853,11 +4881,30 @@ function DocsTable({
         groupedCount: grouped.length,
         groupsWithSubPages: groupsWithSubPages.length,
         totalSubPages,
+        singleDocsWithMainId: grouped.filter((g: any) => 
+          !g.isGroup && g.doc && g.doc.mainDocumentId !== undefined && g.doc.mainDocumentId !== null
+        ).length,
         sampleGroups: groupsWithSubPages.slice(0, 3).map((g: any) => ({
           mainDocId: g.mainDoc?.id,
           mainDocTitle: g.mainDoc?.title?.substring(0, 30),
           subDocsCount: g.subDocs?.length || 0,
           subDocsIds: g.subDocs?.slice(0, 3).map((s: any) => s.id),
+        })),
+        allGroupsDetail: grouped.map((g: any) => ({
+          isGroup: g.isGroup,
+          mainDocId: g.mainDoc?.id,
+          mainDocTitle: g.mainDoc?.title?.substring(0, 30),
+          subDocsCount: g.subDocs?.length || 0,
+          docId: g.doc?.id,
+          docTitle: g.doc?.title?.substring(0, 30),
+          docMainDocumentId: g.doc?.mainDocumentId,
+        })),
+        groupsWithSubPagesDetail: groupsWithSubPages.map((g: any) => ({
+          isGroup: g.isGroup,
+          mainDocId: g.mainDoc?.id,
+          mainDocTitle: g.mainDoc?.title?.substring(0, 30),
+          subDocsCount: g.subDocs?.length || 0,
+          subDocsIds: g.subDocs?.map((s: any) => s.id),
         })),
       });
       logger.log('[그룹화] 📊 최종 결과:', { 
@@ -3885,10 +4932,31 @@ function DocsTable({
   // 렌더링 시 그룹화 결과 로그
   useEffect(() => {
     if (typeof window !== 'undefined') {
+      const groupsWithSubPages = groupDocumentsByParent?.filter((g: any) => g.isGroup && g.mainDoc && (g.subDocs?.length || 0) > 0).length ?? 0;
+      console.log('[CRITICAL] 🎨 useMemo 결과 확인:', {
+        groupDocumentsByParentLength: groupDocumentsByParent?.length,
+        groupDocumentsByParentIsArray: Array.isArray(groupDocumentsByParent),
+        groupsCount: groupDocumentsByParent?.filter((g: any) => g.isGroup).length ?? 0,
+        groupsWithSubPages,
+        sortedDataLength: sortedData?.length,
+        filteredDataLength: filteredData?.length,
+        firstGroup: groupDocumentsByParent?.[0] ? {
+          isGroup: groupDocumentsByParent[0].isGroup,
+          mainDocId: groupDocumentsByParent[0].mainDoc?.id,
+          subDocsCount: groupDocumentsByParent[0].subDocs?.length || 0,
+          hasDoc: !!groupDocumentsByParent[0].doc,
+        } : null,
+        allGroups: groupDocumentsByParent?.map((g: any) => ({
+          isGroup: g.isGroup,
+          mainDocId: g.mainDoc?.id,
+          subDocsCount: g.subDocs?.length || 0,
+          hasDoc: !!g.doc,
+        })) || [],
+      });
       logger.log('[그룹화] 🎨 렌더링 준비:', { 
         groupDocumentsByParentLength: groupDocumentsByParent?.length,
         groupDocumentsByParentIsArray: Array.isArray(groupDocumentsByParent),
-        groupsWithSubPages: groupDocumentsByParent?.filter((g: any) => g.isGroup).length,
+        groupsWithSubPages,
         sortedDataLength: sortedData?.length,
         filteredDataLength: filteredData?.length
       });
@@ -4270,7 +5338,7 @@ function DocsTable({
       // 각 문서 정보 가져오기
       const { data: docs, error: docsError } = await supabase
         .from('documents')
-        .select('id, file_type, type, title, source_vendor, url')
+        .select('id, file_type, type, title, source_vendor, url, document_url')
         .in('id', selectedIds);
       
       if (docsError || !docs || docs.length === 0) {
@@ -4285,12 +5353,14 @@ function DocsTable({
       const results = await Promise.allSettled(
         docs.map(async (doc) => {
           // URL 문서인 경우 reprocess-url API 사용
-          if (doc.type === 'url' || doc.url) {
+          if (doc.type === 'url' || doc.url || doc.document_url) {
             const res = await fetch('/api/jobs/reprocess-url', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 documentId: doc.id,
+                url: doc.url || doc.document_url || null,
+                type: doc.type || 'url',
               })
             });
             
@@ -4773,11 +5843,44 @@ function DocsTable({
                     const isArray = Array.isArray(groupDocumentsByParent);
                     const length = groupDocumentsByParent?.length ?? 0;
                     const groupsCount = groupDocumentsByParent?.filter((g: any) => g.isGroup).length ?? 0;
+                    const groupsWithSubDocs = groupDocumentsByParent?.filter((g: any) => g.isGroup && g.mainDoc && (g.subDocs?.length || 0) > 0).length ?? 0;
                     if (typeof window !== 'undefined') {
+                      console.log('[CRITICAL] 🎨 렌더링 시작 (클라이언트):', { 
+                        isArray, 
+                        length, 
+                        groupsCount,
+                        groupsWithSubDocs,
+                        firstGroup: groupDocumentsByParent?.[0] ? {
+                          isGroup: groupDocumentsByParent[0].isGroup,
+                          mainDoc: groupDocumentsByParent[0].mainDoc ? {
+                            id: groupDocumentsByParent[0].mainDoc.id,
+                            title: groupDocumentsByParent[0].mainDoc.title?.substring(0, 30),
+                            url: groupDocumentsByParent[0].mainDoc.url,
+                            mainUrl: (groupDocumentsByParent[0].mainDoc as any).mainUrl,
+                            isMainUrl: (groupDocumentsByParent[0].mainDoc as any).isMainUrl
+                          } : null,
+                          subDocsCount: groupDocumentsByParent[0].subDocs?.length || 0
+                        } : null,
+                        sampleGroups: groupDocumentsByParent?.slice(0, 5).map((g: any) => ({
+                          isGroup: g.isGroup,
+                          mainDocId: g.mainDoc?.id,
+                          mainDocTitle: g.mainDoc?.title?.substring(0, 30),
+                          subDocsCount: g.subDocs?.length || 0,
+                          hasDoc: !!g.doc,
+                          docId: g.doc?.id,
+                        })),
+                        allGroups: groupDocumentsByParent?.map((g: any) => ({
+                          isGroup: g.isGroup,
+                          mainDocId: g.mainDoc?.id,
+                          subDocsCount: g.subDocs?.length || 0,
+                          hasDoc: !!g.doc,
+                        }))
+                      });
                       logger.log('[그룹화] 🎨 렌더링 시작 (클라이언트):', { 
                         isArray, 
                         length, 
                         groupsCount,
+                        groupsWithSubDocs,
                         firstGroup: groupDocumentsByParent?.[0] ? {
                           isGroup: groupDocumentsByParent[0].isGroup,
                           mainDoc: groupDocumentsByParent[0].mainDoc ? {
@@ -4797,7 +5900,43 @@ function DocsTable({
                         }))
                       });
                     }
+                    if (!isArray || length === 0) {
+                      console.error('[CRITICAL] ❌ groupDocumentsByParent가 배열이 아니거나 비어있음:', {
+                        isArray,
+                        length,
+                        type: typeof groupDocumentsByParent,
+                        value: groupDocumentsByParent,
+                      });
+                    }
+                    if (groupsCount === 0 && groupsWithSubDocs === 0) {
+                      console.warn('[CRITICAL] ⚠️ 그룹이 없음:', {
+                        groupsCount,
+                        groupsWithSubDocs,
+                        totalLength: length,
+                        sampleItems: groupDocumentsByParent?.slice(0, 5),
+                      });
+                    }
                     return isArray ? groupDocumentsByParent.map((group, groupIdx) => {
+                    // 디버깅: 모든 그룹의 상태 확인
+                    if (typeof window !== 'undefined') {
+                      console.log(`[CRITICAL] 🎯 그룹 렌더링 체크 ${groupIdx + 1}/${length}:`, {
+                        groupIdx,
+                        isGroup: group.isGroup,
+                        hasMainDoc: !!group.mainDoc,
+                        mainDocId: group.mainDoc?.id,
+                        mainDocTitle: group.mainDoc?.title?.substring(0, 30),
+                        subDocsCount: group.subDocs?.length || 0,
+                        hasDoc: !!group.doc,
+                        docId: group.doc?.id,
+                        docTitle: group.doc?.title?.substring(0, 30),
+                        condition: group.isGroup && group.mainDoc,
+                        willRender: group.isGroup && group.mainDoc,
+                        willRenderSingle: !!group.doc,
+                        groupKeys: Object.keys(group),
+                        groupType: typeof group,
+                      });
+                    }
+                    
                     if (group.isGroup && group.mainDoc) {
                       // 그룹화된 메인 페이지와 하위 페이지들
                       const mainDoc = group.mainDoc;
@@ -4805,7 +5944,24 @@ function DocsTable({
                       const isExpanded = expandedGroups.has(mainDoc.id);
                       
                       // 디버깅: 렌더링 시점의 그룹 정보 확인
-                      if (typeof window !== 'undefined' && groupIdx === 0) {
+                      if (typeof window !== 'undefined') {
+                        console.log(`[CRITICAL] ✅ 그룹 렌더링 시작 ${groupIdx + 1}/${length}:`, {
+                          mainDocId: mainDoc.id,
+                          mainDocTitle: mainDoc.title?.substring(0, 50),
+                          mainDocUrl: mainDoc.url,
+                          subDocsLength: subDocs.length,
+                          subDocsSample: subDocs.slice(0, 3).map((s: any) => ({
+                            id: s.id,
+                            title: s.title?.substring(0, 30),
+                            url: s.url
+                          })),
+                          isExpanded,
+                          expandedGroupsSize: expandedGroups.size,
+                          expandedGroupsHasMainDoc: expandedGroups.has(mainDoc.id),
+                          groupIsGroup: group.isGroup,
+                          groupHasMainDoc: !!group.mainDoc,
+                          groupSubDocs: group.subDocs?.length || 0
+                        });
                         logger.log('[그룹화] 🎯 그룹 렌더링:', {
                           mainDocId: mainDoc.id,
                           mainDocTitle: mainDoc.title?.substring(0, 50),
@@ -4987,6 +6143,16 @@ function DocsTable({
                     } else if (group.doc) {
                       // 단일 문서 (그룹화되지 않은 문서)
                       const row = group.doc;
+                      if (typeof window !== 'undefined') {
+                        console.log(`[CRITICAL] 📄 단일 문서 렌더링 ${groupIdx + 1}/${length}:`, {
+                          docId: row.id,
+                          docTitle: row.title?.substring(0, 30),
+                          docType: row.type,
+                          docStatus: row.status,
+                          hasMainDocumentId: !!row.mainDocumentId,
+                          mainDocumentId: row.mainDocumentId,
+                        });
+                      }
                       return (
                         <div key={row.id}>
                           <div className="grid grid-cols-12 items-center px-4 py-3 hover:bg-gray-800/40">
@@ -5505,6 +6671,37 @@ function DocumentDetailDialog({ detail, onClose, onRefetch }: { detail: any | nu
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [fallbackUrl, setFallbackUrl] = useState<string | null>(null);
+  const extractUrlsFromValue = useCallback((value: unknown, depth = 0): string[] => {
+    if (depth > 4 || value === null || value === undefined) {
+      return [];
+    }
+
+    if (typeof value === 'string') {
+      const trimmed = value.trim();
+      if (/^(https?:)?\/\//i.test(trimmed)) {
+        if (/^\/\//.test(trimmed)) {
+          return [`https:${trimmed}`];
+        }
+        return [trimmed];
+      }
+      if (/^www\./i.test(trimmed)) {
+        return [`https://${trimmed.replace(/^\s*www\./i, 'www.')}`];
+      }
+      return [];
+    }
+
+    if (Array.isArray(value)) {
+      return value.flatMap((item) => extractUrlsFromValue(item, depth + 1));
+    }
+
+    if (typeof value === 'object') {
+      return Object.values(value as Record<string, unknown>).flatMap((item) =>
+        extractUrlsFromValue(item, depth + 1)
+      );
+    }
+
+    return [];
+  }, []);
   
   const { data: fullDoc, isLoading: loadingDoc } = useQuery({
     queryKey: ["doc-detail", detail?.id],
@@ -5608,8 +6805,8 @@ function DocumentDetailDialog({ detail, onClose, onRefetch }: { detail: any | nu
         .from("document_metadata")
         .select("*")
         .eq("id", detail.id)
-        .single();
-      if (error && error.code !== 'PGRST116') return null;
+        .maybeSingle();
+      if (error) return null;
       return data;
     },
     enabled: !!detail?.id,
@@ -5664,6 +6861,16 @@ function DocumentDetailDialog({ detail, onClose, onRefetch }: { detail: any | nu
   });
 
   const resolvedDocumentUrl = useMemo(() => {
+    const metadataRecord = metadata && typeof metadata === 'object' ? metadata : undefined;
+    const metadataJson =
+      metadataRecord && typeof (metadataRecord as any).metadata === 'object'
+        ? (metadataRecord as any).metadata
+        : undefined;
+    const docMetadata =
+      fullDoc && typeof (fullDoc as any).metadata === 'object'
+        ? (fullDoc as any).metadata
+        : undefined;
+
     if (typeof window !== 'undefined') {
       logger.log('[미리보기] ✅ 상세 데이터 스냅샷:', {
         detailId: detail?.id,
@@ -5682,24 +6889,24 @@ function DocumentDetailDialog({ detail, onClose, onRefetch }: { detail: any | nu
       });
     }
 
-    const metadataCandidates =
-      metadata && typeof metadata === 'object'
-        ? [
-            (metadata as any)?.source_url,
-            (metadata as any)?.original_url,
-            (metadata as any)?.url,
-            (metadata as any)?.raw_url,
-          ]
-        : [];
+    const metadataCandidates = [
+      metadataRecord?.source_url,
+      metadataRecord?.original_url,
+      metadataRecord?.url,
+      metadataRecord?.raw_url,
+      metadataJson?.source_url,
+      metadataJson?.original_url,
+      metadataJson?.url,
+      metadataJson?.raw_url,
+      ...(metadataJson ? extractUrlsFromValue(metadataJson) : []),
+    ];
 
-    const docMetadataCandidates =
-      (fullDoc as any)?.metadata && typeof (fullDoc as any)?.metadata === 'object'
-        ? [
-            (fullDoc as any)?.metadata?.source_url,
-            (fullDoc as any)?.metadata?.url,
-            (fullDoc as any)?.metadata?.original_url,
-          ]
-        : [];
+    const docMetadataCandidates = [
+      docMetadata?.source_url,
+      docMetadata?.url,
+      docMetadata?.original_url,
+      ...(docMetadata ? extractUrlsFromValue(docMetadata) : []),
+    ];
 
     const jobCandidates = Array.isArray(jobs)
       ? jobs.flatMap((job: any) => {
@@ -5716,6 +6923,7 @@ function DocumentDetailDialog({ detail, onClose, onRefetch }: { detail: any | nu
 
           const payloadUrl = jobPayload && typeof jobPayload === 'object' ? (jobPayload as any)?.url : undefined;
 
+          const payloadUrls = extractUrlsFromValue(jobPayload);
           return [
             job?.result?.url,
             job?.result?.mainUrl,
@@ -5723,20 +6931,27 @@ function DocumentDetailDialog({ detail, onClose, onRefetch }: { detail: any | nu
             job?.result?.resolvedUrl,
             job?.result?.sourceUrl,
             payloadUrl,
+            ...(job?.result ? extractUrlsFromValue(job.result) : []),
+            ...payloadUrls,
           ];
         })
       : [];
 
     const candidateValues: Array<string | null | undefined> = [
-      detail?.url, // detail.url을 최우선으로 사용
+      // 메타데이터 기반 URL을 최우선으로 사용
+      ...metadataCandidates,
+      ...docMetadataCandidates,
+      ...jobCandidates,
+      // 문서 컬럼 기반 URL
+      fullDoc?.document_url,
+      detail?.document_url,
+      detail?.originalUrl,
       fullDoc?.url,
+      detail?.url,
       (detail as any)?.normalizedUrl,
       (fullDoc as any)?.normalizedUrl,
       (detail as any)?.mainUrl,
       (detail as any)?.normalizedMainUrl,
-      ...metadataCandidates,
-      ...docMetadataCandidates,
-      ...jobCandidates,
     ];
 
     const cleanedCandidates = candidateValues
@@ -5896,6 +7111,18 @@ function DocumentDetailDialog({ detail, onClose, onRefetch }: { detail: any | nu
   });
 
   const finalDocumentUrl = resolvedDocumentUrl ?? fallbackUrl;
+  const [overrideUrl, setOverrideUrl] = useState('');
+
+  useEffect(() => {
+    setOverrideUrl(
+      (resolvedDocumentUrl ??
+        fallbackUrl ??
+        detail?.originalUrl ??
+        detail?.url ??
+        (fullDoc as any)?.url ??
+        '') || ''
+    );
+  }, [detail?.id, resolvedDocumentUrl, fallbackUrl, detail?.url, detail?.originalUrl, fullDoc?.url]);
 
   if (!detail) return null;
 
@@ -5904,6 +7131,9 @@ function DocumentDetailDialog({ detail, onClose, onRefetch }: { detail: any | nu
       <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto bg-gray-900/95 backdrop-blur-md border-gray-700">
         <DialogHeader>
           <DialogTitle className="truncate text-primary-enhanced">{detail?.title || detail?.id}</DialogTitle>
+          <DialogDescription className="sr-only">
+            {detail?.title || detail?.id} 문서의 상세 정보와 재처리, 로그, 미리보기 데이터를 표시합니다.
+          </DialogDescription>
         </DialogHeader>
         
         <Tabs defaultValue="metadata" className="w-full">
@@ -6129,7 +7359,7 @@ function DocumentDetailDialog({ detail, onClose, onRefetch }: { detail: any | nu
                         // 문서 정보 가져오기
                         const { data: docData, error: docError } = await supabase
                           .from('documents')
-                          .select('id, file_type, type, title, source_vendor, url, content')
+                          .select('id, file_type, type, title, source_vendor, url, document_url, content')
                           .eq('id', detail.id)
                           .single();
                         
@@ -6142,12 +7372,18 @@ function DocumentDetailDialog({ detail, onClose, onRefetch }: { detail: any | nu
                         }
                         
                         // URL 문서인 경우 reprocess-url API 사용
-                        if (docData.type === 'url' || docData.url) {
+                        if (docData.type === 'url' || docData.url || docData.document_url) {
                           const res = await fetch('/api/jobs/reprocess-url', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
                               documentId: detail.id,
+                              url: (overrideUrl?.trim() ||
+                                docData.url ||
+                                docData.document_url ||
+                                detail?.originalUrl ||
+                                null),
+                              type: docData.type || detail?.type || 'url',
                             })
                           });
                           
@@ -6261,21 +7497,33 @@ function DocumentDetailDialog({ detail, onClose, onRefetch }: { detail: any | nu
           <TabsContent value="preview" className="space-y-4">
             {fullDoc?.type === 'url' ? (
               <div className="space-y-2">
-                <div className="text-sm text-secondary-enhanced font-semibold">URL</div>
-                <div className="p-3 bg-gray-800/30 rounded-lg border border-gray-600">
-                  {finalDocumentUrl ? (
-                    <a
-                      href={finalDocumentUrl}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="text-blue-400 hover:underline break-all"
+                <div className="flex items-center justify-between text-sm text-secondary-enhanced font-semibold">
+                  <span>URL (수정 가능)</span>
+                  {overrideUrl && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-xs text-blue-300 hover:text-blue-100"
+                      onClick={() => window.open(overrideUrl, '_blank', 'noopener,noreferrer')}
                     >
-                      {finalDocumentUrl}
-                    </a>
-                  ) : (
-                    <span className="text-muted-enhanced break-all">
-                      {detail?.url || fullDoc?.url || '-'}
-                    </span>
+                      새 창에서 열기
+                    </Button>
+                  )}
+                </div>
+                <div className="space-y-1">
+                  <Input
+                    value={overrideUrl}
+                    onChange={(e) => setOverrideUrl(e.target.value)}
+                    placeholder="https://example.com/path"
+                    className="bg-gray-800/30 border-gray-600 text-primary-enhanced placeholder:text-gray-500"
+                  />
+                  <p className="text-xs text-muted-enhanced">
+                    URL이 비어있거나 잘못된 경우 실제 하위 페이지 주소를 직접 입력한 뒤 재처리를 실행하세요.
+                  </p>
+                  {finalDocumentUrl && finalDocumentUrl !== overrideUrl && (
+                    <p className="text-[11px] text-blue-300 break-all">
+                      자동 감지된 URL: <span className="underline">{finalDocumentUrl}</span>
+                    </p>
                   )}
                 </div>
               </div>

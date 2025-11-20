@@ -1790,6 +1790,7 @@ export async function processQueue() {
             type: 'url',
             file_size: fileSize,
             file_type: 'text/html',
+            url: targetUrl,
             source_vendor: dbVendor,
             created_at: existingDoc?.created_at || nowIso,
             updated_at: nowIso,
@@ -2657,7 +2658,9 @@ export async function processQueue() {
         const failedSubPages = subPageResults.filter((item) => !item.success);
         const reprocessedSubPages: Array<{ url: string; success: boolean; error?: string }> = [];
         
-        if (failedSubPages.length > 0 && process.env.USE_HASH_EMBEDDING?.toLowerCase() !== 'false') {
+        const isHashEmbeddingEnabled =
+          (process.env.USE_HASH_EMBEDDING ?? 'false').toLowerCase() === 'true';
+        if (failedSubPages.length > 0 && isHashEmbeddingEnabled) {
           console.log(`[CRITICAL] 🔄 실패한 하위 페이지 자동 재처리 시작: ${failedSubPages.length}개`);
           
           for (const failedPage of failedSubPages) {
@@ -2680,6 +2683,7 @@ export async function processQueue() {
                   type: 'url',
                   file_size: Buffer.byteLength(failedDoc.content, 'utf8'),
                   file_type: 'text/html',
+                  url: failedPage.url || failedDoc.url || undefined,
                   source_vendor: failedDoc.source_vendor || dbVendor,
                   created_at: (failedDoc as any).created_at || new Date().toISOString(),
                   updated_at: new Date().toISOString(),

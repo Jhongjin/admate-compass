@@ -21,10 +21,15 @@ export class OpenAIEmbeddingService {
   private client: OpenAI | null = null;
   private apiKey: string | null = null;
   private defaultModel: string = 'text-embedding-3-small';
-  private defaultDimension: number = 1536;
+  // DB chunks 테이블의 embedding 컬럼이 1024 차원으로 정의되어 있으므로 1024 사용
+  // OpenAI text-embedding-3-small은 256~1536 차원 범위에서 조정 가능
+  private defaultDimension: number = 1024;
 
   constructor() {
-    this.apiKey = process.env.OPENAI_API_KEY || null;
+    this.apiKey =
+      process.env.OPENAI_EMBEDDING_API_KEY ||
+      process.env.OPENAI_API_KEY ||
+      null;
     if (this.apiKey) {
       this.client = new OpenAI({
         apiKey: this.apiKey,
@@ -101,6 +106,22 @@ export class OpenAIEmbeddingService {
       };
     } catch (error) {
       console.error('❌ OpenAI 임베딩 생성 실패:', error);
+      if (error instanceof OpenAI.APIError) {
+        console.error('❌ OpenAI API 응답 상세:', {
+          status: error.status,
+          code: error.code,
+          type: error.type,
+          param: error.param,
+          headers: error.headers,
+        });
+      } else if ((error as any)?.response) {
+        const err = error as any;
+        console.error('❌ OpenAI API HTTP 응답:', {
+          status: err.response?.status,
+          statusText: err.response?.statusText,
+          data: err.response?.data,
+        });
+      }
       throw new Error(`OpenAI 임베딩 생성 실패: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
@@ -160,6 +181,22 @@ export class OpenAIEmbeddingService {
       return results;
     } catch (error) {
       console.error('❌ OpenAI 배치 임베딩 생성 실패:', error);
+      if (error instanceof OpenAI.APIError) {
+        console.error('❌ OpenAI API 응답 상세:', {
+          status: error.status,
+          code: error.code,
+          type: error.type,
+          param: error.param,
+          headers: error.headers,
+        });
+      } else if ((error as any)?.response) {
+        const err = error as any;
+        console.error('❌ OpenAI API HTTP 응답:', {
+          status: err.response?.status,
+          statusText: err.response?.statusText,
+          data: err.response?.data,
+        });
+      }
       throw new Error(`OpenAI 배치 임베딩 생성 실패: ${error instanceof Error ? error.message : String(error)}`);
     }
   }

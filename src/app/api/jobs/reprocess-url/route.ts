@@ -18,7 +18,7 @@ export const dynamic = 'force-dynamic';
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { documentId } = body;
+    const { documentId, url: overrideUrl, type: overrideType } = body;
 
     if (!documentId) {
       return NextResponse.json(
@@ -32,7 +32,7 @@ export async function POST(request: NextRequest) {
     // 문서 정보 조회
     const { data: document, error: docError } = await supabase
       .from('documents')
-      .select('id, title, content, url, type, source_vendor, main_document_id, status, created_at')
+      .select('id, title, content, url, document_url, type, source_vendor, main_document_id, status, created_at')
       .eq('id', documentId)
       .maybeSingle();
 
@@ -51,16 +51,123 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // URL 문서인지 확인
-    if (document.type !== 'url' || !document.url) {
+    // URL 정보 및 타입 보정
+    let effectiveUrl = document.url || document.document_url || overrideUrl || null;
+    const effectiveType = document.type || overrideType || (document.url || document.document_url ? 'url' : null);
+
+    if (!effectiveUrl) {
+      const { data: metadataRow, error: metadataError } = await supabase
+        .from('document_metadata')
+        .select('metadata')
+        .eq('id', documentId)
+        .maybeSingle();
+
+      if (metadataError) {
+        console.error('⚠️ document_metadata 조회 실패:', metadataError);
+      }
+
+      if (metadataRow?.metadata) {
+        const metadata = metadataRow.metadata as Record<string, any>;
+        const metadataCandidates = [
+          metadata.source_url,
+          metadata.original_url,
+          metadata.document_url,
+          metadata.url,
+        ];
+        const foundUrl = metadataCandidates.find(
+          (candidate) => typeof candidate === 'string' && candidate.trim().length > 0,
+        );
+        if (foundUrl) {
+          effectiveUrl = foundUrl;
+        }
+      }
+    }
+
+    if (!effectiveUrl) {
+      const { data: jobRow, error: jobError } = await supabase
+        .from('processing_jobs')
+        .select('payload, result')
+        .eq('document_id', documentId)
+        .eq('job_type', 'CRAWL_SEED')
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (jobError) {
+        console.error('⚠️ processing_jobs 조회 실패:', jobError);
+      }
+
+      if (jobRow) {
+        const parsePayload = (raw: any) => {
+          if (!raw) return undefined;
+          if (typeof raw === 'string') {
+            try {
+              return JSON.parse(raw);
+            } catch {
+              return undefined;
+            }
+          }
+          return raw;
+        };
+
+        const payload = parsePayload(jobRow.payload);
+        const result = parsePayload(jobRow.result);
+
+        const jobCandidates = [
+          payload?.url,
+          result?.url,
+          result?.mainUrl,
+          result?.documentUrl,
+          result?.resolvedUrl,
+          result?.sourceUrl,
+        ];
+
+        const foundUrl = jobCandidates.find(
+          (candidate) => typeof candidate === 'string' && candidate.trim().length > 0,
+        );
+
+        if (foundUrl) {
+          effectiveUrl = foundUrl;
+        }
+      }
+    }
+
+    if (!effectiveUrl) {
       return NextResponse.json(
         {
           success: false,
-          error: `이 문서는 URL 크롤링 문서가 아닙니다 (type: ${document.type}). URL 문서만 재처리할 수 있습니다.`,
-          documentType: document.type,
+          error: '문서에 URL 정보가 없습니다. 메타데이터에도 URL이 없어 재처리할 수 없습니다.',
         },
         { status: 400 }
       );
+    }
+
+    // URL 문서인지 확인
+    if (effectiveType !== 'url') {
+      return NextResponse.json(
+        {
+          success: false,
+          error: `이 문서는 URL 크롤링 문서가 아닙니다 (type: ${effectiveType || document.type}). URL 문서만 재처리할 수 있습니다.`,
+          documentType: effectiveType || document.type,
+        },
+        { status: 400 }
+      );
+    }
+
+    if (!effectiveUrl) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: '문서 URL이 비어있습니다. URL 문서만 재처리할 수 있습니다.',
+          documentType: effectiveType || document.type,
+        },
+        { status: 400 }
+      );
+    }
+
+    document.url = effectiveUrl;
+    if (effectiveType && document.type !== effectiveType) {
+      document.type = effectiveType;
     }
 
     // 콘텐츠가 없는 경우 URL에서 다시 크롤링
@@ -348,6 +455,19 @@ export async function POST(request: NextRequest) {
     // main_document_id 우선순위: 1) 원본 문서 값, 2) 현재 DB 값
     const mainDocumentIdToPreserve = document.main_document_id ?? currentDocBeforeProcessing?.main_document_id ?? null;
     
+    // 재처리되는 문서 추적 로그 (그룹화 로직에서 사용)
+    console.log(`[REPROCESS] 🔄 문서 재처리 시작:`, {
+      documentId: document.id,
+      documentTitle: document.title?.substring(0, 50),
+      documentUrl: document.url,
+      mainDocumentId: mainDocumentIdToPreserve || 'null',
+      hasMainDocumentId: mainDocumentIdToPreserve !== null && mainDocumentIdToPreserve !== undefined,
+      원본문서값: document.main_document_id || 'null',
+      현재DB값: currentDocBeforeProcessing?.main_document_id || 'null',
+      보존값: mainDocumentIdToPreserve || 'null',
+      timestamp: new Date().toISOString(),
+    });
+    
     console.log(`[CRITICAL] 📌 main_document_id 보존 값 결정:`, {
       원본문서값: document.main_document_id || 'null',
       현재DB값: currentDocBeforeProcessing?.main_document_id || 'null',
@@ -375,6 +495,7 @@ export async function POST(request: NextRequest) {
       type: 'url',
       file_size: Buffer.byteLength(content, 'utf8'),
       file_type: 'text/html',
+      url: effectiveUrl,
       source_vendor: document.source_vendor || 'META',
       main_document_id: mainDocumentIdToPreserve, // 보존된 그룹 관계 전달 (null도 유효한 값)
       created_at: (document as any).created_at || new Date().toISOString(),
@@ -444,6 +565,15 @@ export async function POST(request: NextRequest) {
         }
       }
 
+      // 재처리 완료 로그
+      console.log(`[REPROCESS] ✅ 문서 재처리 완료:`, {
+        documentId: document.id,
+        documentTitle: document.title?.substring(0, 50),
+        mainDocumentId: finalMainDocumentId || 'null',
+        chunkCount: ragResult.chunkCount,
+        timestamp: new Date().toISOString(),
+      });
+      
       console.log(`✅ URL 문서 재처리 완료: ${document.title} (청크: ${ragResult.chunkCount}개, main_document_id: ${finalMainDocumentId || 'null'})`);
 
       return NextResponse.json({
