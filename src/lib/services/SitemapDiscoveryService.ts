@@ -13,6 +13,11 @@ export interface DiscoveredUrl {
   depth: number;
 }
 
+export interface DepthAwareDiscoveredUrl extends DiscoveredUrl {
+  parentUrl?: string; // 부모 URL (트리 구조 추적용)
+  path: string[]; // seed부터 현재까지 경로
+}
+
 export interface DiscoveryOptions {
   maxDepth: number;
   maxUrls: number;
@@ -164,6 +169,151 @@ export class SitemapDiscoveryService {
       // 일부 실패해도 발견된 URL은 반환
       return discoveredPages.slice(0, config.maxUrls);
     }
+  }
+
+  /**
+   * BFS를 사용한 depth 전파 탐색 (새 기능)
+   * 깊은 depth까지 탐색하되, 각 URL의 정확한 depth를 추적
+   */
+  async discoverSubPagesWithDepth(
+    baseUrl: string,
+    options: Partial<DiscoveryOptions> = {},
+    preloadedHtml?: string
+  ): Promise<DepthAwareDiscoveredUrl[]> {
+    const config = { ...this.defaultOptions, ...options };
+
+    if (!this.browser) {
+      await this.initialize();
+    }
+
+    console.error(`[CRITICAL] 🔍 BFS depth 탐색 시작: ${baseUrl}, maxDepth: ${config.maxDepth}`);
+    console.error(`[CRITICAL] 📋 설정:`, config);
+
+    const visitedUrls = new Set<string>(); // 방문한 URL 추적 (중복/루프 방지)
+    const discoveredPages: DepthAwareDiscoveredUrl[] = [];
+    const baseDomain = this.extractDomain(baseUrl);
+    const baseOrigin = this.getBaseUrl(baseUrl);
+
+    // BFS 큐: {url, depth, parentUrl, path}
+    interface QueueItem {
+      url: string;
+      depth: number;
+      parentUrl?: string;
+      path: string[];
+    }
+
+    const queue: QueueItem[] = [{ url: baseUrl, depth: 0, path: [baseUrl] }];
+    visitedUrls.add(this.normalizeUrl(baseUrl));
+
+    // Sitemap에서 먼저 발견한 URL들을 큐에 추가 (depth 1로 설정)
+    try {
+      const sitemapUrls = await this.discoverFromSitemap(baseUrl, config);
+      for (const sitemapUrl of sitemapUrls) {
+        const normalized = this.normalizeUrl(sitemapUrl.url);
+        if (!visitedUrls.has(normalized) && this.isValidUrl(sitemapUrl.url, baseDomain, config)) {
+          visitedUrls.add(normalized);
+          queue.push({
+            url: sitemapUrl.url,
+            depth: 1,
+            parentUrl: baseUrl,
+            path: [baseUrl, sitemapUrl.url],
+          });
+          discoveredPages.push({
+            ...sitemapUrl,
+            depth: 1,
+            parentUrl: baseUrl,
+            path: [baseUrl, sitemapUrl.url],
+          });
+        }
+      }
+      console.error(`[CRITICAL] 📄 Sitemap에서 ${sitemapUrls.length}개 발견, 큐에 추가됨`);
+    } catch (error) {
+      console.error(`[CRITICAL] ⚠️ Sitemap 탐색 실패 (계속 진행):`, error);
+    }
+
+    // BFS 루프
+    let processedCount = 0;
+    const maxProcessed = config.maxUrls * 2; // 최대 처리 개수 제한 (무한 루프 방지)
+
+    while (queue.length > 0 && discoveredPages.length < config.maxUrls && processedCount < maxProcessed) {
+      const current = queue.shift();
+      if (!current) break;
+
+      // maxDepth 도달 시 더 이상 탐색하지 않음
+      if (current.depth >= config.maxDepth) {
+        continue;
+      }
+
+      // 이미 충분히 발견했으면 중단
+      if (discoveredPages.length >= config.maxUrls) {
+        break;
+      }
+
+      processedCount++;
+
+      try {
+        // 현재 페이지에서 링크 추출
+        const nextDepth = current.depth + 1;
+        const linkUrls = await this.discoverFromLinks(current.url, config, current.depth === 0 ? preloadedHtml : undefined);
+
+        for (const linkUrl of linkUrls) {
+          const normalized = this.normalizeUrl(linkUrl.url);
+
+          // 이미 방문했거나 유효하지 않은 URL은 건너뛰기
+          if (visitedUrls.has(normalized) || !this.isValidUrl(linkUrl.url, baseDomain, config)) {
+            continue;
+          }
+
+          visitedUrls.add(normalized);
+
+          // 발견된 URL을 결과에 추가 (depth 재설정)
+          const newPath = [...current.path, linkUrl.url];
+          discoveredPages.push({
+            ...linkUrl,
+            depth: nextDepth, // discoverFromLinks가 반환한 depth: 1을 올바른 depth로 재설정
+            parentUrl: current.url,
+            path: newPath,
+          });
+
+          // 다음 depth 탐색을 위해 큐에 추가 (maxDepth 미만인 경우만)
+          if (nextDepth < config.maxDepth && discoveredPages.length < config.maxUrls) {
+            queue.push({
+              url: linkUrl.url,
+              depth: nextDepth,
+              parentUrl: current.url,
+              path: newPath,
+            });
+          }
+        }
+
+        // 진행 상황 로깅 (매 10개마다)
+        if (processedCount % 10 === 0) {
+          console.error(`[CRITICAL] 📊 BFS 진행: 처리 ${processedCount}개, 발견 ${discoveredPages.length}개, 큐 ${queue.length}개`);
+        }
+      } catch (error) {
+        console.error(`[CRITICAL] ⚠️ URL 처리 실패 (계속 진행): ${current.url}`, error);
+        // 개별 URL 실패해도 계속 진행
+      }
+    }
+
+    // 결과 필터링 및 정렬
+    const filteredPages = this.filterAndSortPages(discoveredPages, baseDomain, config) as DepthAwareDiscoveredUrl[];
+
+    console.error(`[CRITICAL] ✅ BFS depth 탐색 완료: 총 ${filteredPages.length}개 발견 (처리: ${processedCount}개)`);
+    console.error(`[CRITICAL] 📊 Depth별 통계:`, this.getDepthStatistics(filteredPages));
+
+    return filteredPages.slice(0, config.maxUrls);
+  }
+
+  /**
+   * Depth별 통계 계산
+   */
+  private getDepthStatistics(pages: DepthAwareDiscoveredUrl[]): Record<number, number> {
+    const stats: Record<number, number> = {};
+    for (const page of pages) {
+      stats[page.depth] = (stats[page.depth] || 0) + 1;
+    }
+    return stats;
   }
 
   /**

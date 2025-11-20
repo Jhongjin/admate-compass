@@ -27,6 +27,7 @@ import { createClient } from "@/lib/supabase/client";
 import { toast } from "sonner";
 import QueueMonitoringPanel from "@/components/admin/QueueMonitoringPanel";
 import { logger } from "@/lib/utils/logger";
+import { UrlDiscoveryPanel, type DiscoveredUrlItem } from "@/components/admin/UrlDiscoveryPanel";
 
 const ALL_VENDORS = ["Meta", "Naver", "Kakao", "Google", "X(Twitter)"] as const;
 
@@ -345,6 +346,34 @@ function UploadAndCrawlTabs({ vendors, onVendorsChange }: { vendors: string[]; o
   const [crawlProgressValue, setCrawlProgressValue] = useState(0);
   const [crawlProgressLabel, setCrawlProgressLabel] = useState('');
   const [crawlResult, setCrawlResult] = useState<any>(null);
+  
+  // URL 탐색 모드 관련 state
+  const [showDiscoveryPanel, setShowDiscoveryPanel] = useState(false);
+  const [discoveredUrls, setDiscoveredUrls] = useState<DiscoveredUrlItem[]>([]);
+  const [selectedUrls, setSelectedUrls] = useState<Set<string>>(new Set());
+  const [isDiscovering, setIsDiscovering] = useState(false);
+  const [discoveryJobId, setDiscoveryJobId] = useState<string | null>(null);
+
+  // URL 선택 핸들러
+  const handleUrlSelectionChange = useCallback((url: string, selected: boolean) => {
+    setSelectedUrls((prev) => {
+      const next = new Set(prev);
+      if (selected) {
+        next.add(url);
+      } else {
+        next.delete(url);
+      }
+      return next;
+    });
+  }, []);
+
+  const handleSelectAllUrls = useCallback(() => {
+    setSelectedUrls(new Set(discoveredUrls.map((item) => item.url)));
+  }, [discoveredUrls]);
+
+  const handleDeselectAllUrls = useCallback(() => {
+    setSelectedUrls(new Set());
+  }, []);
   // Hydration 오류 방지: 초기값을 항상 동일하게 설정
   const [extractSubPages, setExtractSubPages] = useState(true);
   
@@ -1700,6 +1729,70 @@ function UploadAndCrawlTabs({ vendors, onVendorsChange }: { vendors: string[]; o
       // UI 벤더 배열을 DB 값 배열로 변환
       const dbVendors = convertVendorsToDB(vendors);
       
+      const maxDepthNum = parseInt(crawlOptions.maxDepth, 10);
+      const enableDepthSelection = typeof window !== 'undefined' 
+        ? window.localStorage.getItem('ENABLE_DEPTH_SELECTION_MODE') === 'true'
+        : false; // 서버 사이드에서는 false
+      
+      // maxDepth >= 3이고 feature flag가 활성화되어 있으면 탐색 모드로 전환
+      if (maxDepthNum >= 3 && enableDepthSelection) {
+        logger.log('🔍 탐색 모드 활성화:', { maxDepth: maxDepthNum, url });
+        setIsDiscovering(true);
+        setCrawlProgressValue(10);
+        setCrawlProgressLabel('URL 탐색 중...');
+        setSelectedUrls(new Set());
+        setDiscoveredUrls([]);
+        
+        try {
+          // 탐색 API 호출
+          const discoverResponse = await fetch('/api/jobs/discover-urls', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              url,
+              maxDepth: maxDepthNum,
+              maxUrls: 200,
+              respectRobots: crawlOptions.respectRobots,
+              domainLimit: crawlOptions.domainLimit,
+            }),
+          });
+
+          if (!discoverResponse.ok) {
+            const errorData = await discoverResponse.json().catch(() => ({ error: 'Unknown error' }));
+            throw new Error(errorData.error || `탐색 실패: HTTP ${discoverResponse.status}`);
+          }
+
+          const discoverResult = await discoverResponse.json();
+          
+          if (!discoverResult.success) {
+            throw new Error(discoverResult.error || 'URL 탐색에 실패했습니다.');
+          }
+
+          setDiscoveredUrls(discoverResult.discoveredUrls || []);
+          setDiscoveryJobId(discoverResult.jobId);
+          setShowDiscoveryPanel(true);
+          setIsDiscovering(false);
+          setCrawlProgressValue(100);
+          setCrawlProgressLabel(`탐색 완료: ${discoverResult.totalCount}개 페이지 발견. 페이지를 선택해주세요.`);
+          toast.success(`${discoverResult.totalCount}개 페이지 발견`, {
+            description: '크롤링할 페이지를 선택해주세요.',
+            duration: 5000,
+          });
+          setCrawling(false); // 탐색 모드에서는 크롤링 상태 해제
+          return; // 탐색 모드에서는 여기서 종료, 사용자가 선택하면 별도 함수로 크롤 진행
+        } catch (error) {
+          logger.error('URL 탐색 실패:', error);
+          const errorMessage = error instanceof Error ? error.message : 'URL 탐색 중 오류가 발생했습니다.';
+          toast.error(errorMessage, { duration: 5000 });
+          setCrawlProgressLabel('탐색 실패');
+          setCrawlProgressValue(0);
+          setIsDiscovering(false);
+          setCrawling(false);
+          return;
+        }
+      }
+      
+      // 기존 크롤 로직 (maxDepth < 3이거나 feature flag 비활성화)
       // 디버깅: extractSubPages 값 확인
       logger.log('🔍 크롤링 시작 전 extractSubPages 확인:', {
         extractSubPages,
@@ -1717,7 +1810,7 @@ function UploadAndCrawlTabs({ vendors, onVendorsChange }: { vendors: string[]; o
         vendors: dbVendors,
         domainLimit: crawlOptions.domainLimit,
         respectRobots: crawlOptions.respectRobots,
-        maxDepth: parseInt(crawlOptions.maxDepth, 10),
+        maxDepth: maxDepthNum,
         extractSubPages: extractSubPagesBoolean, // 명시적으로 boolean으로 변환
       };
       
@@ -1846,6 +1939,150 @@ function UploadAndCrawlTabs({ vendors, onVendorsChange }: { vendors: string[]; o
     }
     // 성공적으로 폴링이 시작되면 finally에서 setCrawling(false)를 호출하지 않음
   }, [vendors, extractSubPages, crawlOptions, pollCrawlStatus]);
+
+  // 선택된 URL들만 크롤하는 함수
+  const handleCrawlSelectedUrls = useCallback(async () => {
+    if (selectedUrls.size === 0) {
+      toast.error('최소 1개 이상의 페이지를 선택해주세요.', { duration: 3000 });
+      return;
+    }
+
+    const urlInput = document.getElementById("seed-url-input") as HTMLInputElement | null;
+    if (!urlInput || !urlInput.value.trim()) {
+      toast.error("메인 URL이 필요합니다.", { duration: 3000 });
+      return;
+    }
+
+    const mainUrl = urlInput.value.trim();
+    const selectedUrlsArray = Array.from(selectedUrls);
+    setCrawling(true);
+    setShowDiscoveryPanel(false);
+    setCrawlProgressValue(0);
+    setCrawlProgressLabel('선택한 페이지 크롤링 시작...');
+    setCrawlResult(null);
+    isCrawlCancelledRef.current = false;
+
+    try {
+      const dbVendors = convertVendorsToDB(vendors);
+      
+      // 메인 문서 먼저 크롤 (extractSubPages: false)
+      const mainPayload = {
+        url: mainUrl,
+        vendors: dbVendors,
+        domainLimit: crawlOptions.domainLimit,
+        respectRobots: crawlOptions.respectRobots,
+        maxDepth: 1,
+        extractSubPages: false, // 메인 문서는 하위 페이지 자동 탐색 안 함
+      };
+
+      setCrawlProgressValue(5);
+      setCrawlProgressLabel('메인 문서 크롤 작업 등록 중...');
+
+      const mainResponse = await fetch("/api/jobs/enqueue", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          jobType: "CRAWL_SEED",
+          priority: 5,
+          payload: mainPayload,
+        }),
+      });
+
+      if (!mainResponse.ok) {
+        const errorData = await mainResponse.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(errorData.error || `HTTP ${mainResponse.status}`);
+      }
+
+      const mainResult = await mainResponse.json();
+      const mainJobId = mainResult.jobId;
+      
+      if (!mainJobId) {
+        throw new Error('메인 문서 작업 ID를 받지 못했습니다.');
+      }
+
+      setCrawlProgressValue(10);
+      setCrawlProgressLabel(`메인 문서 크롤링 등록 완료. 선택한 ${selectedUrlsArray.length}개 페이지 등록 중...`);
+
+      // 선택된 각 URL에 대해 크롤 작업 등록 (extractSubPages: false)
+      let successCount = 0;
+      const totalUrls = selectedUrlsArray.length;
+      
+      for (let i = 0; i < selectedUrlsArray.length; i++) {
+        const selectedUrl = selectedUrlsArray[i];
+        const urlPayload = {
+          url: selectedUrl,
+          vendors: dbVendors,
+          domainLimit: crawlOptions.domainLimit,
+          respectRobots: crawlOptions.respectRobots,
+          maxDepth: 1,
+          extractSubPages: false, // 선택된 URL은 추가 탐색 안 함
+        };
+
+        try {
+          const urlResponse = await fetch("/api/jobs/enqueue", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              jobType: "CRAWL_SEED",
+              priority: 5,
+              payload: urlPayload,
+            }),
+          });
+
+          if (urlResponse.ok) {
+            successCount++;
+          } else {
+            logger.warn(`URL 크롤 작업 등록 실패: ${selectedUrl}`, await urlResponse.json().catch(() => ({})));
+          }
+        } catch (error) {
+          logger.error(`URL 크롤 작업 등록 오류: ${selectedUrl}`, error);
+        }
+
+        const progress = 10 + Math.floor((i + 1) / totalUrls * 70);
+        setCrawlProgressValue(progress);
+        setCrawlProgressLabel(`크롤 작업 등록 중... (${i + 1}/${totalUrls})`);
+      }
+
+      setCrawlProgressValue(80);
+      setCrawlProgressLabel(`${successCount}개 작업 등록 완료. 처리 시작...`);
+
+      // 큐 워커 트리거
+      try {
+        await fetch('/api/jobs/consume', { method: 'POST' });
+      } catch (error) {
+        logger.warn('큐 워커 트리거 실패 (Cron Job이 처리):', error);
+      }
+
+      toast.success(`${successCount + 1}개 크롤 작업 등록 완료`, {
+        description: '작업이 처리 중입니다.',
+        duration: 4000,
+      });
+
+      setCrawlProgressValue(90);
+      setCrawlProgressLabel('크롤 작업 등록 완료. 상태 확인 중...');
+      
+      // 메인 작업 상태 폴링
+      if (mainJobId) {
+        setCrawlJobId(mainJobId);
+        pollCrawlStatus(mainJobId);
+      } else {
+        setCrawling(false);
+      }
+
+      // URL 입력 필드 초기화
+      if (urlInput) {
+        urlInput.value = '';
+      }
+    } catch (error) {
+      logger.error("선택된 URL 크롤링 실패", error);
+      const errorMessage = error instanceof Error ? error.message : '크롤링 작업 등록에 실패했습니다';
+      toast.error(errorMessage, { duration: 5000 });
+      setCrawlProgressLabel('크롤링 실패');
+      setCrawlProgressValue(0);
+      setCrawlResult({ error: errorMessage });
+      setCrawling(false);
+    }
+  }, [selectedUrls, vendors, crawlOptions, pollCrawlStatus]);
 
   return (
     <Tabs defaultValue="upload" className="w-full">
@@ -2335,6 +2572,37 @@ function UploadAndCrawlTabs({ vendors, onVendorsChange }: { vendors: string[]; o
           </CardContent>
         </Card>
       </TabsContent>
+
+      {/* URL 탐색 패널 Dialog */}
+      <Dialog open={showDiscoveryPanel} onOpenChange={setShowDiscoveryPanel}>
+        <DialogContent className="max-w-5xl max-h-[90vh] bg-gray-900/95 border-gray-700">
+          <DialogHeader>
+            <DialogTitle className="text-primary-enhanced">발견된 페이지 선택</DialogTitle>
+            <DialogDescription className="text-muted-enhanced">
+              크롤링할 페이지를 선택하세요. 선택하지 않은 페이지는 크롤링되지 않습니다.
+            </DialogDescription>
+          </DialogHeader>
+          <UrlDiscoveryPanel
+            discoveredUrls={discoveredUrls}
+            selectedUrls={selectedUrls}
+            onSelectionChange={handleUrlSelectionChange}
+            onSelectAll={handleSelectAllUrls}
+            onDeselectAll={handleDeselectAllUrls}
+            onConfirm={handleCrawlSelectedUrls}
+            onCancel={() => {
+              setShowDiscoveryPanel(false);
+              setCrawling(false);
+              setSelectedUrls(new Set());
+            }}
+            isLoading={isCrawling}
+            totalCount={discoveredUrls.length}
+            byDepth={discoveredUrls.reduce((acc: Record<number, number>, item: DiscoveredUrlItem) => {
+              acc[item.depth] = (acc[item.depth] || 0) + 1;
+              return acc;
+            }, {} as Record<number, number>)}
+          />
+        </DialogContent>
+      </Dialog>
     </Tabs>
   );
 }
@@ -7720,6 +7988,7 @@ function DocumentDetailDialog({ detail, onClose, onRefetch }: { detail: any | nu
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
     </Dialog>
   );
 }
