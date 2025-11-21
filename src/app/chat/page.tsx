@@ -13,7 +13,7 @@ import {
   Send, Bot, User, ThumbsUp, ThumbsDown, History, FileText, 
   MessageSquare, Clock, Settings, PanelRight, PanelLeft,
   ChevronRight, ChevronLeft, BookOpen, X, RefreshCw, Trash2,
-  AlertTriangle, HelpCircle
+  AlertTriangle, HelpCircle, Copy, Check
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
@@ -141,6 +141,7 @@ function GmailStyleLayout() {
   const [historyRefreshTrigger, setHistoryRefreshTrigger] = useState(0);
   const [vendorFilter, setVendorFilter] = useState<string[] | null>(null);
   const [isSendingEmail, setIsSendingEmail] = useState(false);
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   
   
   // 테마 및 설정 상태
@@ -891,6 +892,30 @@ function GmailStyleLayout() {
     }
   }, [user]);
 
+  // 복사 기능
+  const handleCopyMessage = useCallback(async (messageId: string, content: string) => {
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopiedMessageId(messageId);
+      toast({
+        title: "복사 완료",
+        description: "답변이 클립보드에 복사되었습니다.",
+        duration: 2000,
+      });
+      setTimeout(() => {
+        setCopiedMessageId(null);
+      }, 2000);
+    } catch (error) {
+      logger.error('복사 오류:', error);
+      toast({
+        title: "복사 실패",
+        description: "클립보드에 복사하는 중 오류가 발생했습니다.",
+        variant: "destructive",
+        duration: 3000,
+      });
+    }
+  }, [toast]);
+
   // 피드백 처리
   const handleFeedback = useCallback(async (messageId: string, helpful: boolean) => {
     if (!user) {
@@ -1494,7 +1519,24 @@ function GmailStyleLayout() {
                         variant="ghost" 
                         size="sm" 
                         className="h-7 px-2"
+                        onClick={() => handleCopyMessage(message.id, message.content)}
+                        title="답변 복사"
+                        style={{ 
+                          color: copiedMessageId === message.id ? theme.accent : theme.textSecondary 
+                        }}
+                      >
+                        {copiedMessageId === message.id ? (
+                          <Check className="w-3 h-3" />
+                        ) : (
+                          <Copy className="w-3 h-3" />
+                        )}
+                      </Button>
+                      <Button 
+                        variant="ghost" 
+                        size="sm" 
+                        className="h-7 px-2"
                         onClick={() => handleFeedback(message.id, true)}
+                        title="도움됨"
                         style={{ 
                           color: message.feedback?.helpful === true ? theme.accent : theme.textSecondary 
                         }}
@@ -1506,6 +1548,7 @@ function GmailStyleLayout() {
                         size="sm" 
                         className="h-7 px-2"
                         onClick={() => handleFeedback(message.id, false)}
+                        title="도움 안됨"
                         style={{ 
                           color: message.feedback?.helpful === false ? theme.accent : theme.textSecondary 
                         }}
