@@ -351,7 +351,7 @@ export default function HomePage() {
     <MainLayout>
       {/* Hero Section - 로고 배너 애니메이션 적용 */}
       <motion.div 
-        className="relative w-full min-h-[40vh] sm:min-h-[50vh] flex items-center justify-center overflow-hidden pt-12 sm:pt-16"
+        className="relative w-full min-h-[40vh] sm:min-h-[50vh] flex items-center justify-center overflow-hidden pt-20 sm:pt-24 md:pt-28"
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.8 }}
