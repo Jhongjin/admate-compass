@@ -15,7 +15,6 @@ import {
   ChevronRight, ChevronLeft, BookOpen, X, RefreshCw, Trash2,
   AlertTriangle, HelpCircle
 } from "lucide-react";
-import MainLayout from "@/components/layouts/MainLayout";
 import { useAuth } from "@/hooks/useAuth";
 import { useToast } from "@/hooks/use-toast";
 import { logger } from "@/lib/utils/logger";
@@ -133,7 +132,7 @@ function GmailStyleLayout() {
   const [inputValue, setInputValue] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [selectedMenu, setSelectedMenu] = useState("inbox");
+  const [selectedMenu, setSelectedMenu] = useState("history");
   const [rightPanelOpen, setRightPanelOpen] = useState(true);
   const [isLeftPanelCollapsed, setIsLeftPanelCollapsed] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
@@ -345,8 +344,7 @@ function GmailStyleLayout() {
       throw new Error('스트림을 읽을 수 없습니다.');
     }
 
-    setMessages(prev => [...prev, aiResponse]);
-
+    // aiResponse는 이미 handleSendMessage에서 추가되었으므로 여기서는 추가하지 않음
     let buffer = '';
     let fullContent = '';
 
@@ -1883,11 +1881,7 @@ function GmailStyleLayout() {
 export default function ChatPage() {
   return (
     <Suspense fallback={<div className="flex items-center justify-center h-screen text-white">Loading...</div>}>
-      <MainLayout>
-        <div className="h-[calc(100vh-8rem)] w-full overflow-hidden">
-          <GmailStyleLayout />
-        </div>
-      </MainLayout>
+      <GmailStyleLayout />
     </Suspense>
   );
 }
