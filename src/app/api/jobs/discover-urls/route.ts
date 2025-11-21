@@ -94,28 +94,53 @@ export async function POST(request: NextRequest) {
 
       // 탐색 결과를 discovered_urls 테이블에 저장 (선택사항)
       if (jobId && discoveredUrls.length > 0) {
-        const discoveredData = discoveredUrls.map((item) => ({
-          job_id: jobId,
-          url: item.url,
-          title: item.title || null,
-          depth: item.depth,
-          parent_url: item.parentUrl || null,
-          path: item.path || [],
-          source: item.source,
-          selected: false, // 기본값: 선택 안됨
-        }));
+        // 중복 체크: 같은 job_id와 url 조합이 이미 있는지 확인
+        const { data: existingUrls, error: checkError } = await supabase
+          .from('discovered_urls')
+          .select('url')
+          .eq('job_id', jobId);
 
-        // 배치로 삽입 (Supabase 한도 고려)
-        const BATCH_SIZE = 100;
-        for (let i = 0; i < discoveredData.length; i += BATCH_SIZE) {
-          const batch = discoveredData.slice(i, i + BATCH_SIZE);
-          const { error: insertError } = await supabase
-            .from('discovered_urls')
-            .insert(batch);
+        const existingUrlSet = new Set<string>();
+        if (!checkError && existingUrls) {
+          existingUrls.forEach((item) => {
+            if (item.url) {
+              existingUrlSet.add(item.url);
+            }
+          });
+        }
 
-          if (insertError) {
-            console.error(`[DISCOVER] ⚠️ 배치 ${i / BATCH_SIZE + 1} 저장 실패:`, insertError);
-            // 저장 실패해도 결과는 반환
+        // 중복 제거: 이미 저장된 URL은 제외
+        const uniqueDiscoveredUrls = discoveredUrls.filter((item) => !existingUrlSet.has(item.url));
+        const duplicateCount = discoveredUrls.length - uniqueDiscoveredUrls.length;
+
+        if (duplicateCount > 0) {
+          console.log(`[DISCOVER] 🔍 중복 URL 제거: ${duplicateCount}개 (총 ${discoveredUrls.length}개 중)`);
+        }
+
+        if (uniqueDiscoveredUrls.length > 0) {
+          const discoveredData = uniqueDiscoveredUrls.map((item) => ({
+            job_id: jobId,
+            url: item.url,
+            title: item.title || null,
+            depth: item.depth,
+            parent_url: item.parentUrl || null,
+            path: item.path || [],
+            source: item.source,
+            selected: false, // 기본값: 선택 안됨
+          }));
+
+          // 배치로 삽입 (Supabase 한도 고려)
+          const BATCH_SIZE = 100;
+          for (let i = 0; i < discoveredData.length; i += BATCH_SIZE) {
+            const batch = discoveredData.slice(i, i + BATCH_SIZE);
+            const { error: insertError } = await supabase
+              .from('discovered_urls')
+              .insert(batch);
+
+            if (insertError) {
+              console.error(`[DISCOVER] ⚠️ 배치 ${i / BATCH_SIZE + 1} 저장 실패:`, insertError);
+              // 저장 실패해도 결과는 반환
+            }
           }
         }
       }

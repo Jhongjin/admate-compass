@@ -1,14 +1,12 @@
 "use client";
 
 import { motion, AnimatePresence } from "framer-motion";
-import { useState, useRef, useEffect, useCallback, Suspense, useMemo } from "react";
-import { useSearchParams } from "next/navigation";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
-import { Sheet, SheetContent } from "@/components/ui/sheet";
 import { 
   Send, Bot, User, ThumbsUp, ThumbsDown, History, FileText, 
   MessageSquare, Clock, Settings, PanelRight, PanelLeft,
@@ -152,14 +150,9 @@ function GmailStyleLayout() {
   // 패널 폭 및 드래그 상태
   const [rightPanelWidth, setRightPanelWidth] = useState(360);
   const [isDragging, setIsDragging] = useState(false);
-  const [isMobile, setIsMobile] = useState(false);
-  const [isMobileLeftOpen, setIsMobileLeftOpen] = useState(false);
-  const [isMobileRightOpen, setIsMobileRightOpen] = useState(false);
-  const [hasProcessedInitialQuestion, setHasProcessedInitialQuestion] = useState(false);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const searchParams = useSearchParams();
 
   // 테마 적용
   useEffect(() => {
@@ -233,68 +226,12 @@ function GmailStyleLayout() {
     };
   }, []);
 
-  // 모바일 감지
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    const mediaQuery = window.matchMedia("(max-width: 1023px)");
-    const handleMediaChange = (event: MediaQueryListEvent) => {
-      setIsMobile(event.matches);
-    };
-
-    setIsMobile(mediaQuery.matches);
-
-    if (typeof mediaQuery.addEventListener === "function") {
-      mediaQuery.addEventListener("change", handleMediaChange);
-      return () => mediaQuery.removeEventListener("change", handleMediaChange);
-    }
-
-    mediaQuery.addListener(handleMediaChange);
-    return () => mediaQuery.removeListener(handleMediaChange);
-  }, []);
-
-  useEffect(() => {
-    if (isMobile) {
-      setRightPanelOpen(false);
-    } else {
-      setIsMobileLeftOpen(false);
-      setIsMobileRightOpen(false);
-    }
-  }, [isMobile]);
-
-  // 로그인 강제 리다이렉트
+  // 로그인 체크
   useEffect(() => {
     if (!loading && !user) {
-      window.location.href = '/';
+      // 로그인 체크 토스트는 제거 (UserProfileDropdown에서 처리)
     }
   }, [loading, user]);
-
-  // URL 파라미터 초기 질문 처리
-  useEffect(() => {
-    const question = searchParams?.get('q');
-    const vendorsParam = searchParams?.get('vendors');
-    
-    // 벤더 필터 파라미터 처리
-    if (vendorsParam) {
-      const vendors = vendorsParam.split(',').map(v => v.trim()).filter(Boolean);
-      setVendorFilter(vendors.length > 0 ? vendors : null);
-    }
-    
-    if (question && question.trim() && isInitialized && messages.length === 1 && user && !hasProcessedInitialQuestion) {
-      // 초기화 완료 후 초기 메시지만 있을 때만 실행 (중복 방지)
-      setHasProcessedInitialQuestion(true);
-      setInputValue(question);
-      setTimeout(() => {
-        handleSendMessageWithQuestion(question);
-        const url = new URL(window.location.href);
-        url.searchParams.delete('q');
-        url.searchParams.delete('vendors');
-        window.history.replaceState({}, '', url.toString());
-      }, 200);
-    }
-  }, [searchParams, isInitialized, user, hasProcessedInitialQuestion]);
 
   // 메시지 스크롤
   useEffect(() => {
@@ -479,54 +416,6 @@ function GmailStyleLayout() {
     return fullContent;
   };
 
-  // 초기 질문으로 메시지 전송
-  const handleSendMessageWithQuestion = useCallback(async (question: string) => {
-    if (!question.trim() || isLoading) {
-      return;
-    }
-    
-    if (!user) {
-      return;
-    }
-
-    const currentInput = question.trim();
-    setInputValue("");
-
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      type: "user",
-      content: currentInput,
-      timestamp: new Date().toLocaleTimeString('ko-KR', { 
-        hour: '2-digit', 
-        minute: '2-digit' 
-      }),
-    };
-
-    setIsLoading(true);
-    setError(null);
-
-    const aiResponseId = `ai_${Date.now()}`;
-    const aiResponse: Message = {
-      id: aiResponseId,
-      type: "assistant",
-      content: "",
-      timestamp: "생성 중...",
-      sources: [],
-    };
-
-    setMessages(prev => [...prev, userMessage, aiResponse]);
-
-    try {
-      await processStreamingResponse(currentInput, userMessage, aiResponseId, aiResponse, [...messages, userMessage]);
-    } catch (err) {
-      logger.error('메시지 전송 오류:', err);
-      setError(err instanceof Error ? err.message : '메시지를 전송하는 중 오류가 발생했습니다.');
-      setMessages(prev => prev.filter(msg => msg.id !== aiResponseId));
-    } finally {
-      setIsLoading(false);
-    }
-  }, [user, isLoading, messages, vendorFilter, processStreamingResponse]);
-
   // 메시지 전송
   const handleSendMessage = useCallback(async () => {
     if (!inputValue.trim() || isLoading) {
@@ -620,96 +509,7 @@ function GmailStyleLayout() {
     } finally {
       setIsLoading(false);
     }
-  }, [messages, vendorFilter, user, isLoading, inputValue, savedMessageIds, toast, processStreamingResponse]);
-
-  // 자동 저장을 위한 ref
-  const messagesRef = useRef(messages);
-  const savedMessageIdsRef = useRef(savedMessageIds);
-  const userRef = useRef(user);
-  const isSavingRef = useRef(false);
-
-  useEffect(() => {
-    messagesRef.current = messages;
-    savedMessageIdsRef.current = savedMessageIds;
-    userRef.current = user;
-  });
-
-  // 세션 종료 시 자동 저장
-  useEffect(() => {
-    let isUnmounting = false;
-    
-    const saveConversationOnUnmount = async () => {
-      if (isUnmounting || isSavingRef.current) {
-        return;
-      }
-      
-      isUnmounting = true;
-      
-      const currentUser = userRef.current;
-      const currentMessages = messagesRef.current;
-      const currentSavedIds = savedMessageIdsRef.current;
-      
-      if (currentUser && currentMessages.length > 1) {
-        try {
-          const userMessages = currentMessages.filter(msg => msg.type === 'user');
-          const aiMessages = currentMessages.filter(msg => msg.type === 'assistant');
-          
-          const conversationPairs = [];
-          for (let i = 0; i < Math.min(userMessages.length, aiMessages.length); i++) {
-            const userMsg = userMessages[i];
-            const aiMsg = aiMessages[i];
-            
-            if (!currentSavedIds.has(userMsg.id) && !currentSavedIds.has(aiMsg.id)) {
-              conversationPairs.push({ userMsg, aiMsg });
-            }
-          }
-          
-          if (conversationPairs.length === 0) {
-            return;
-          }
-          
-          let savedCount = 0;
-          for (const { userMsg, aiMsg } of conversationPairs) {
-            const uniqueId = `conv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${userMsg.id}_${aiMsg.id}`;
-            
-            const response = await fetch('/api/conversations', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                userId: currentUser.id,
-                conversationId: uniqueId,
-                userMessage: userMsg.content,
-                aiResponse: aiMsg.content,
-                sources: aiMsg.sources || [],
-              }),
-            });
-            
-            if (response.ok) {
-              const data = await response.json();
-              if (data.success) {
-                savedCount++;
-              }
-            }
-          }
-        } catch (error) {
-          logger.error('세션 종료 시 대화 히스토리 저장 오류:', error);
-        }
-      }
-    };
-
-    const handleBeforeUnload = () => {
-      saveConversationOnUnmount();
-    };
-
-    window.addEventListener('beforeunload', handleBeforeUnload);
-
-    return () => {
-      window.removeEventListener('beforeunload', handleBeforeUnload);
-      saveConversationOnUnmount();
-    };
-  }, []);
+  }, [messages, vendorFilter, user, isLoading, inputValue, savedMessageIds, toast]);
 
   const handleContactRequest = useCallback(async (question: string, aiResponse?: string) => {
     const lastUserMessage = messages.filter(msg => msg.type === 'user').pop();
@@ -813,19 +613,7 @@ function GmailStyleLayout() {
     setSavedMessageIds(new Set());
     setInputValue("");
     setHistoryRefreshTrigger(prev => prev + 1);
-    setSelectedMenu("history");
   }, []);
-
-  // 빠른 질문 클릭 처리
-  const handleQuickQuestionClick = useCallback((question: string) => {
-    if (!question.trim() || isLoading) {
-      return;
-    }
-    setInputValue(question);
-    setTimeout(() => {
-      handleSendMessageWithQuestion(question);
-    }, 100);
-  }, [isLoading, handleSendMessageWithQuestion]);
 
   // 대화 로드
   const handleLoadConversation = useCallback(async (conversation: any) => {
@@ -1709,7 +1497,7 @@ function GmailStyleLayout() {
         )}
       </AnimatePresence>
 
-      {!rightPanelOpen && !isMobile && (
+      {!rightPanelOpen && (
         <Button
           variant="ghost"
           size="sm"
@@ -1719,155 +1507,6 @@ function GmailStyleLayout() {
           <PanelRight className="w-4 h-4 mr-2" />
           관련 자료 열기
         </Button>
-      )}
-
-      {/* 모바일 좌측 패널 Sheet */}
-      {isMobile && (
-        <Sheet open={isMobileLeftOpen} onOpenChange={setIsMobileLeftOpen}>
-          <SheetContent side="left" className="w-[280px] sm:w-[320px] p-0">
-            <div className="h-full flex flex-col" style={{ backgroundColor: theme.bgSidebar }}>
-              <div className="p-4 border-b flex items-center justify-between" style={{ borderColor: theme.border }}>
-                <div>
-                  <p className="text-xs font-medium uppercase tracking-wide" style={{ color: theme.textSecondary }}>
-                    대화 목록
-                  </p>
-                  <p className="text-sm font-semibold" style={{ color: theme.textPrimary }}>
-                    최근 문의 내역
-                  </p>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setIsMobileLeftOpen(false)}
-                  className="h-9 w-9"
-                  style={{ color: theme.textSecondary }}
-                >
-                  <X className="w-4 h-4" />
-                </Button>
-              </div>
-              <div className="flex-1 overflow-y-auto py-2">
-                {selectedMenu === "history" && user && (
-                  <HistoryPanel 
-                    onLoadConversation={(conv) => {
-                      handleLoadConversation(conv);
-                      setIsMobileLeftOpen(false);
-                    }}
-                    onNewChat={() => {
-                      handleNewChat();
-                      setIsMobileLeftOpen(false);
-                    }}
-                    userId={user.id}
-                    isCollapsed={false}
-                    refreshTrigger={historyRefreshTrigger}
-                    filterMode="history"
-                    onFavoritesUpdated={() => setHistoryRefreshTrigger(prev => prev + 1)}
-                    theme={theme}
-                  />
-                )}
-                {selectedMenu === "saved" && user && (
-                  <HistoryPanel
-                    onLoadConversation={(conv) => {
-                      handleLoadConversation(conv);
-                      setIsMobileLeftOpen(false);
-                    }}
-                    onNewChat={() => {
-                      handleNewChat();
-                      setIsMobileLeftOpen(false);
-                    }}
-                    userId={user.id}
-                    isCollapsed={false}
-                    refreshTrigger={historyRefreshTrigger}
-                    filterMode="saved"
-                    onFavoritesUpdated={() => setHistoryRefreshTrigger(prev => prev + 1)}
-                    theme={theme}
-                  />
-                )}
-              </div>
-            </div>
-          </SheetContent>
-        </Sheet>
-      )}
-
-      {/* 모바일 우측 패널 Sheet */}
-      {isMobile && (
-        <Sheet open={isMobileRightOpen} onOpenChange={setIsMobileRightOpen}>
-          <SheetContent side="right" className="w-[90vw] sm:w-[400px] p-0">
-            <div className="h-full flex flex-col" style={{ backgroundColor: theme.bgSidebar }}>
-              <div className="p-4 border-b flex items-center justify-between" style={{ borderColor: theme.border }}>
-                <div>
-                  <h3 className="text-lg font-semibold" style={{ color: theme.textPrimary }}>관련 자료</h3>
-                  <p className="text-sm" style={{ color: theme.textSecondary }}>질문과 관련된 문서와 가이드라인</p>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setIsMobileRightOpen(false)}
-                  className="h-9 w-9"
-                  style={{ color: theme.textSecondary }}
-                >
-                  <X className="w-4 h-4" />
-                </Button>
-              </div>
-              <div className="flex-1 overflow-y-auto p-4">
-                {messages.length > 1 && !isLoading ? (
-                  <RelatedResources 
-                    userQuestion={messages[messages.length - 2]?.content}
-                    aiResponse={messages[messages.length - 1]?.content}
-                    sources={messages[messages.length - 1]?.sources?.map(s => ({
-                      ...s,
-                      updatedAt: s.updatedAt || new Date().toISOString(),
-                      excerpt: s.excerpt ?? ""
-                    })) ?? []}
-                    relatedQuestions={messages[messages.length - 1]?.relatedQuestions}
-                    onQuestionClick={handleQuickQuestionClick}
-                  />
-                ) : (
-                  <div className="flex flex-col items-center justify-center py-16 text-center">
-                    <div className="w-20 h-20 rounded-full flex items-center justify-center mb-6" style={{ backgroundColor: `${theme.accent}20` }}>
-                      <BookOpen className="w-10 h-10" style={{ color: theme.accent }} />
-                    </div>
-                    <h3 className="text-xl font-semibold mb-3" style={{ color: theme.textPrimary }}>질문을 시작해보세요</h3>
-                    <p className="text-sm max-w-sm leading-relaxed" style={{ color: theme.textSecondary }}>
-                      멀티 플랫폼 광고 정책, 타겟팅, 예산 설정 등에 대해 궁금한 점이 있으시면 
-                      좌측 채팅창에서 질문해주세요. 관련 자료와 유사한 질문들이 
-                      여기에 표시됩니다.
-                    </p>
-                  </div>
-                )}
-              </div>
-            </div>
-          </SheetContent>
-        </Sheet>
-      )}
-
-      {/* 모바일 히스토리 버튼 */}
-      {isMobile && (
-        <div className="fixed top-20 left-4 z-40">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setIsMobileLeftOpen(true)}
-            className="bg-gray-800/80 hover:bg-gray-700/80 text-white"
-            aria-label="대화 히스토리 열기"
-          >
-            <History className="w-4 h-4" />
-          </Button>
-        </div>
-      )}
-
-      {/* 모바일 관련 자료 버튼 */}
-      {isMobile && (
-        <div className="fixed top-20 right-4 z-40">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setIsMobileRightOpen(true)}
-            className="bg-gray-800/80 hover:bg-gray-700/80 text-white"
-            aria-label="관련 자료 열기"
-          >
-            <BookOpen className="w-4 h-4" />
-          </Button>
-        </div>
       )}
 
       {/* 인증 모달 */}
@@ -1880,14 +1519,10 @@ function GmailStyleLayout() {
   );
 }
 
-export default function ChatPage() {
+export default function GmailStyleLayoutPage() {
   return (
-    <Suspense fallback={<div className="flex items-center justify-center h-screen text-white">Loading...</div>}>
-      <MainLayout>
-        <div className="h-[calc(100vh-8rem)] w-full overflow-hidden">
-          <GmailStyleLayout />
-        </div>
-      </MainLayout>
-    </Suspense>
+    <div className="h-screen w-screen overflow-hidden">
+      <GmailStyleLayout />
+    </div>
   );
 }

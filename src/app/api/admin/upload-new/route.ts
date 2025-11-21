@@ -58,11 +58,12 @@ function normalizeUrlForGrouping(raw?: string | null): string | null {
 }
 
 function sanitizeFileName(name: string) {
-  // keep letters, numbers, dash, underscore, dot
+  // NFC 정규화 후, 전 세계 문자(특히 한글 자모 포함)와 안전한 특수문자만 허용
   return name
     .trim()
+    .normalize('NFC')
     .replace(/\s+/g, '_')
-    .replace(/[^a-zA-Z0-9._-]+/g, '_')
+    .replace(/[^\p{L}0-9._-]+/gu, '_')
     .replace(/_+/g, '_')
     .slice(0, 180);
 }
@@ -142,11 +143,16 @@ async function enqueueProcessingJob(params: { documentId: string; jobType: 'PDF_
   if (!supabase) throw new Error('Supabase 클라이언트를 생성할 수 없습니다.');
   // 문서 stub 생성 (없으면)
   const vendor = (params.payload as any)?.vendor || 'META';
+  const originalFileName = (params.payload as any)?.originalFileName || null;
+  const sanitizedFileName = (params.payload as any)?.sanitizedFileName || (params.payload as any)?.fileName || null;
+  const displayTitle = originalFileName || sanitizedFileName || params.documentId;
   const { error: insertDocErr } = await supabase
     .from('documents')
     .upsert({
       id: params.documentId,
-      title: (params.payload as any)?.fileName ?? params.documentId,
+      title: displayTitle,
+      original_file_name: originalFileName,
+      sanitized_file_name: sanitizedFileName,
       // documents.type 은 CHECK (IN ('file','url')) 제약이 있으므로 반드시 'file' 로 기록
       type: 'file',
       status: 'processing',
@@ -168,7 +174,8 @@ async function enqueueProcessingJob(params: { documentId: string; jobType: 'PDF_
       .from('document_metadata')
       .upsert({
         id: params.documentId,
-        title: (params.payload as any)?.fileName ?? params.documentId,
+        title: displayTitle,
+        original_file_name: originalFileName,
         type: ((params.jobType === 'PDF_PARSE') ? 'pdf' : (params.jobType === 'DOCX_PARSE' ? 'docx' : 'file')),
         size: fileSize,
         uploaded_at: new Date().toISOString(),
@@ -407,6 +414,23 @@ export async function POST(request: NextRequest) {
         );
       }
       
+      // 파일명 정리 (확장자 중복 제거)
+      const originalFileName = (file.name || '').trim() || `file_${Date.now()}`;
+      let cleanFileName = originalFileName;
+      
+      // 확장자 중복 제거 (여러 번 반복 가능)
+      while (cleanFileName.toLowerCase().match(/\.(pdf|docx|txt)\.\1$/i)) {
+        cleanFileName = cleanFileName.replace(/\.(pdf|docx|txt)\.\1$/i, '.$1');
+      }
+      
+      console.log('📁 파일명 정리:', {
+        original: file.name,
+        cleaned: cleanFileName,
+        hasDuplicateExtension: file.name !== cleanFileName
+      });
+
+      const sanitizedFileName = sanitizeFileName(cleanFileName || `file_${Date.now()}`);
+
       // BUGFIX: 4MB 이상 파일은 FormData 파싱 후에도 즉시 큐로 오프로드 (Vercel payload 제한 방지)
       const VERCEL_SAFE_LIMIT = 3.5 * 1024 * 1024; // 3.5MB (안전 마진)
       if (file.size > VERCEL_SAFE_LIMIT) {
@@ -424,8 +448,8 @@ export async function POST(request: NextRequest) {
         
         // 파일을 Storage에 업로드
         let storageInfo;
-        try {
-          storageInfo = await uploadToStorage(file, documentId, file.name);
+          try {
+            storageInfo = await uploadToStorage(file, documentId, sanitizedFileName);
           console.log('✅ Storage 업로드 완료:', storageInfo);
         } catch (storageError) {
           console.error('❌ Storage 업로드 실패:', storageError);
@@ -456,7 +480,9 @@ export async function POST(request: NextRequest) {
           jobType,
           priority: 7,
           payload: {
-            fileName: file.name,
+            fileName: sanitizedFileName,
+            originalFileName: originalFileName,
+            sanitizedFileName: sanitizedFileName,
             fileSize: file.size,
             fileType: file.type,
             storage: storageInfo,
@@ -477,20 +503,6 @@ export async function POST(request: NextRequest) {
           message: '파일이 큐로 오프로드되어 백그라운드에서 처리됩니다.'
         }, { status: 202 });
       }
-
-      // 파일명 정리 (확장자 중복 제거)
-      let cleanFileName = file.name;
-      
-      // 확장자 중복 제거 (여러 번 반복 가능)
-      while (cleanFileName.toLowerCase().match(/\.(pdf|docx|txt)\.\1$/i)) {
-        cleanFileName = cleanFileName.replace(/\.(pdf|docx|txt)\.\1$/i, '.$1');
-      }
-      
-      console.log('📁 파일명 정리:', {
-        original: file.name,
-        cleaned: cleanFileName,
-        hasDuplicateExtension: file.name !== cleanFileName
-      });
 
       console.log('📁 파일 업로드 시작:', {
         fileName: cleanFileName,
@@ -524,7 +536,7 @@ export async function POST(request: NextRequest) {
           // 원본을 Storage에 업로드
           let storageInfo;
           try {
-            storageInfo = await uploadToStorage(file, documentId, cleanFileName);
+            storageInfo = await uploadToStorage(file, documentId, sanitizedFileName);
             console.log('✅ Storage 업로드 완료:', storageInfo);
           } catch (storageError) {
             console.error('❌ Storage 업로드 실패:', storageError);
@@ -536,7 +548,9 @@ export async function POST(request: NextRequest) {
             jobType: 'PDF_PARSE',
             priority: 7,
             payload: { 
-              fileName: cleanFileName, 
+              fileName: sanitizedFileName,
+              originalFileName: originalFileName,
+              sanitizedFileName: sanitizedFileName,
               fileSize: file.size, 
               fileType: file.type, 
               storage: storageInfo,
@@ -705,12 +719,19 @@ export async function POST(request: NextRequest) {
             
             // 추출 실패 시 큐로 오프로딩
             const documentId = `doc_${Date.now()}`;
-            const storageInfo = await uploadToStorage(file, documentId, cleanFileName);
+            const storageInfo = await uploadToStorage(file, documentId, sanitizedFileName);
             const jobId = await enqueueProcessingJob({
               documentId,
               jobType: 'DOCX_PARSE',
               priority: 7,
-              payload: { fileName: cleanFileName, fileSize: file.size, fileType: file.type, storage: storageInfo }
+              payload: { 
+                fileName: sanitizedFileName,
+                originalFileName: originalFileName,
+                sanitizedFileName: sanitizedFileName,
+                fileSize: file.size, 
+                fileType: file.type, 
+                storage: storageInfo 
+              }
             });
             
             triggerQueueWorker();
@@ -725,12 +746,19 @@ export async function POST(request: NextRequest) {
           });
           
         const documentId = `doc_${Date.now()}`;
-        const storageInfo = await uploadToStorage(file, documentId, cleanFileName);
+        const storageInfo = await uploadToStorage(file, documentId, sanitizedFileName);
         const jobId = await enqueueProcessingJob({
           documentId,
           jobType: 'DOCX_PARSE',
           priority: 7,
-          payload: { fileName: cleanFileName, fileSize: file.size, fileType: file.type, storage: storageInfo }
+          payload: { 
+            fileName: sanitizedFileName,
+            originalFileName: originalFileName,
+            sanitizedFileName: sanitizedFileName,
+            fileSize: file.size, 
+            fileType: file.type, 
+            storage: storageInfo 
+          }
         });
         
         console.log('✅ DOCX 큐 등록 완료:', { jobId, documentId });
@@ -856,14 +884,16 @@ export async function POST(request: NextRequest) {
       const documentId = `doc_${Date.now()}`;
       const documentData: DocumentData = {
         id: documentId,
-        title: cleanFileName, // 정리된 파일명 사용
+        title: originalFileName || cleanFileName, // 원본 파일명 우선 사용
         content: processedContent,
         type: getFileTypeFromExtension(cleanFileName), // 정리된 파일명으로 타입 결정
         file_size: file.size,
         file_type: file.type,
         source_vendor: normalizedVendor, // 벤더 정보 추가
         created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+        updated_at: new Date().toISOString(),
+        original_file_name: originalFileName,
+        sanitized_file_name: sanitizedFileName,
       };
 
       // RAG 처리 (청킹 + 임베딩 + 저장)

@@ -463,7 +463,10 @@ export async function processQueue() {
     let dlMs = 0;
     let parseMs = 0;
     let storage = job?.payload?.storage as { bucket: string; path: string; contentType?: string; size?: number } | undefined;
-    const fileName = (job?.payload?.fileName as string) || job.document_id;
+    // 원본 파일명 우선 사용, 없으면 정리된 파일명, 그래도 없으면 document_id
+    const originalFileName = (job?.payload?.originalFileName as string) || null;
+    const sanitizedFileName = (job?.payload?.sanitizedFileName as string) || (job?.payload?.fileName as string) || null;
+    const fileName = originalFileName || sanitizedFileName || job.document_id;
     const fileSize = storage?.size || (job?.payload?.fileSize as number) || 0;
     const isReprocess = job?.payload?.reprocess === true;
     const fileSizeMB = fileSize > 0 ? (fileSize / (1024 * 1024)).toFixed(2) : '0';
@@ -1161,12 +1164,14 @@ export async function processQueue() {
       
       const docData: DocumentData = {
         id: job.document_id,
-        title: docs?.[0]?.title || fileName,
+        title: originalFileName || docs?.[0]?.title || fileName,
         content: normalizedText,
         type: actualType,
         file_size: storage?.size || docs?.[0]?.file_size || 0,
         file_type: actualFileType,
         source_vendor: vendor,
+        original_file_name: originalFileName || null,
+        sanitized_file_name: sanitizedFileName || null,
         created_at: docs?.[0]?.created_at || nowIso,
         updated_at: nowIso,
       };

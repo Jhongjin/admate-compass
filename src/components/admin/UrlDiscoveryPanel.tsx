@@ -18,6 +18,7 @@ import {
   Search,
   Loader2,
   AlertCircle,
+  Pencil,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -28,6 +29,8 @@ export interface DiscoveredUrlItem {
   parentUrl?: string;
   path: string[];
   source: string;
+  isAlreadyCrawled?: boolean; // 이미 크롤된 URL인지 여부
+  existingDocumentId?: string; // 기존 문서 ID (있는 경우)
 }
 
 interface UrlDiscoveryPanelProps {
@@ -41,6 +44,7 @@ interface UrlDiscoveryPanelProps {
   isLoading?: boolean;
   totalCount?: number;
   byDepth?: Record<number, number>;
+  onUpdateTitle?: (url: string, title: string) => void;
 }
 
 export function UrlDiscoveryPanel({
@@ -54,10 +58,32 @@ export function UrlDiscoveryPanel({
   isLoading = false,
   totalCount = 0,
   byDepth = {},
+  onUpdateTitle,
 }: UrlDiscoveryPanelProps) {
   const [expandedDepths, setExpandedDepths] = useState<Set<number>>(new Set([1, 2]));
   const [searchQuery, setSearchQuery] = useState("");
   const [filterDepth, setFilterDepth] = useState<number | null>(null);
+  const [editingUrl, setEditingUrl] = useState<string | null>(null);
+  const [tempTitle, setTempTitle] = useState("");
+
+  const startEditing = (item: DiscoveredUrlItem) => {
+    setEditingUrl(item.url);
+    setTempTitle(item.title ?? item.url);
+  };
+
+  const commitEditing = (item: DiscoveredUrlItem) => {
+    const trimmed = tempTitle.trim();
+    const nextTitle = trimmed.length > 0 ? trimmed : item.title ?? item.url;
+    if (nextTitle !== item.title) {
+      onUpdateTitle?.(item.url, nextTitle);
+    }
+    setEditingUrl(null);
+  };
+
+  const cancelEditing = () => {
+    setEditingUrl(null);
+    setTempTitle("");
+  };
 
   // Depth별로 그룹화
   const urlsByDepth = useMemo(() => {
@@ -125,18 +151,36 @@ export function UrlDiscoveryPanel({
           <span className="text-muted-enhanced">Depth별:</span>
           {Object.entries(byDepth)
             .sort(([a], [b]) => Number(a) - Number(b))
-            .map(([depth, count]) => (
-              <Badge
-                key={depth}
-                variant={filterDepth === Number(depth) ? "default" : "outline"}
-                className="cursor-pointer"
-                onClick={() =>
-                  setFilterDepth(filterDepth === Number(depth) ? null : Number(depth))
-                }
-              >
-                Depth {depth}: {count}개
-              </Badge>
-            ))}
+            .map(([depth, count]) => {
+              const isActive = filterDepth === Number(depth);
+              const total = count;
+              const depthLabel = `Depth ${depth}`;
+              return (
+                <Badge
+                  key={depth}
+                  variant="outline"
+                  className={cn(
+                    "cursor-pointer px-4 py-1.5 text-[13px] font-semibold tracking-[0.02em] uppercase border transition-all rounded-full flex items-center gap-2",
+                    isActive
+                      ? "bg-gradient-to-r from-blue-500/80 to-indigo-500/80 border-blue-200/70 text-white shadow-[0_0_18px_rgba(59,130,246,.5)]"
+                      : "bg-slate-900/80 border-slate-600/70 text-slate-200 hover:border-slate-400 hover:text-white"
+                  )}
+                  onClick={() =>
+                    setFilterDepth(isActive ? null : Number(depth))
+                  }
+                >
+                  <span
+                    className={cn(
+                      "text-[11px] font-bold px-2 py-0.5 rounded-full",
+                      isActive ? "bg-white/25 text-white" : "bg-slate-800 text-slate-200"
+                    )}
+                  >
+                    {depthLabel}
+                  </span>
+                  <span className="text-[13px] font-semibold">{total}개</span>
+                </Badge>
+              );
+            })}
           {filterDepth !== null && (
             <Button
               variant="ghost"
@@ -180,7 +224,7 @@ export function UrlDiscoveryPanel({
         <Separator className="bg-gray-700" />
 
         {/* URL 목록 */}
-        <ScrollArea className="h-[500px] w-full rounded-md border border-gray-700 bg-gray-800/20">
+        <ScrollArea className="h-[500px] w-full rounded-md border border-gray-700 bg-gray-800/20 overflow-x-hidden">
           <div className="p-4 space-y-2">
             {Object.entries(filteredUrlsByDepth)
               .sort(([a], [b]) => Number(a) - Number(b))
@@ -196,7 +240,7 @@ export function UrlDiscoveryPanel({
                   <div key={depth} className="space-y-1">
                     {/* Depth 헤더 */}
                     <div
-                      className="flex items-center gap-2 p-2 rounded-md bg-gray-800/40 hover:bg-gray-800/60 cursor-pointer transition-colors"
+                      className="flex items-center gap-2 p-2 rounded-2xl bg-[#111528]/80 border border-[#2A3350] hover:border-[#3A4680] hover:bg-[#141938]/90 cursor-pointer transition-colors shadow-[inset_0_1px_0_rgba(255,255,255,.03)]"
                       onClick={() => toggleDepth(depthNum)}
                     >
                       {isExpanded ? (
@@ -204,7 +248,10 @@ export function UrlDiscoveryPanel({
                       ) : (
                         <ChevronRight className="w-4 h-4 text-muted-enhanced" />
                       )}
-                      <Badge variant="outline" className="text-xs">
+                      <Badge
+                        variant="outline"
+                        className="text-[11px] font-bold tracking-wide uppercase px-3 py-0.5 rounded-full border-none bg-[#2F3A66] text-white shadow-[0_0_12px_rgba(59,130,246,.45)]"
+                      >
                         Depth {depth}
                       </Badge>
                       <span className="text-sm text-muted-enhanced flex-1">
@@ -236,14 +283,17 @@ export function UrlDiscoveryPanel({
                         ) : (
                           urls.map((item) => {
                             const isSelected = selectedUrls.has(item.url);
+                            const isAlreadyCrawled = item.isAlreadyCrawled === true;
                             return (
                               <div
                                 key={item.url}
                                 className={cn(
-                                  "flex items-start gap-2 p-2 rounded-md transition-colors",
+                                  "flex items-start gap-3 p-3 rounded-xl border transition-all duration-150 w-full",
                                   isSelected
-                                    ? "bg-blue-900/20 border border-blue-700/40"
-                                    : "bg-gray-800/20 hover:bg-gray-800/40 border border-transparent"
+                                    ? "bg-blue-900/30 border-blue-500/60 shadow-[0_0_18px_rgba(37,99,235,.25)]"
+                                    : isAlreadyCrawled
+                                    ? "bg-amber-900/10 border-amber-600/40 text-amber-100"
+                                    : "bg-slate-900/40 border-slate-700/60 hover:border-slate-400 hover:bg-slate-900/70"
                                 )}
                               >
                                 <Checkbox
@@ -251,21 +301,67 @@ export function UrlDiscoveryPanel({
                                   onCheckedChange={(checked) =>
                                     onSelectionChange(item.url, checked === true)
                                   }
-                                  className="mt-1"
+                                  className="mt-1 border-slate-500 data-[state=checked]:bg-blue-500"
+                                  disabled={isAlreadyCrawled}
                                 />
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-start gap-2">
-                                    <div className="flex-1 min-w-0">
-                                      {item.title ? (
-                                        <div className="text-sm font-medium text-primary-enhanced truncate">
-                                          {item.title}
-                                        </div>
-                                      ) : null}
-                                      <div className="text-xs text-muted-enhanced truncate mt-0.5">
-                                        {item.url}
+                                <div className="flex-1 min-w-0 text-sm">
+                                  <div className="flex items-start gap-3">
+                                    <div className="flex-1 min-w-0 space-y-1">
+                                      <div className="flex items-center gap-2">
+                                        {editingUrl === item.url ? (
+                                          <Input
+                                            value={tempTitle}
+                                            onChange={(e) => setTempTitle(e.target.value)}
+                                            onBlur={() => commitEditing(item)}
+                                            onKeyDown={(e) => {
+                                              if (e.key === "Enter") {
+                                                e.preventDefault();
+                                                commitEditing(item);
+                                              } else if (e.key === "Escape") {
+                                                e.preventDefault();
+                                                cancelEditing();
+                                              }
+                                            }}
+                                            autoFocus
+                                            className="h-8 text-sm bg-slate-800/80 border-slate-600 text-white"
+                                          />
+                                        ) : (
+                                          <>
+                                            <span className="text-base font-semibold text-white truncate">
+                                              {item.title || item.url}
+                                            </span>
+                                            <button
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                startEditing(item);
+                                              }}
+                                              className="inline-flex items-center justify-center rounded-full p-1 text-slate-300 hover:text-white hover:bg-slate-700/60 transition-colors"
+                                              aria-label="제목 편집"
+                                            >
+                                              <Pencil className="w-3.5 h-3.5" />
+                                            </button>
+                                          </>
+                                        )}
+                                        {isAlreadyCrawled && (
+                                          <Badge
+                                            variant="outline"
+                                            className="text-[11px] bg-amber-950/50 border-amber-500/50 text-amber-200"
+                                          >
+                                            이미 크롤됨
+                                          </Badge>
+                                        )}
                                       </div>
+                                      <a
+                                        href={item.url}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-xs text-blue-300 break-all underline-offset-2 hover:text-blue-200 transition-colors"
+                                      >
+                                        {item.url}
+                                      </a>
                                       {item.path.length > 1 && (
-                                        <div className="text-xs text-gray-500 mt-1">
+                                        <div className="text-[11px] text-slate-400">
                                           경로: {item.path.slice(0, 3).join(" → ")}
                                           {item.path.length > 3 && " → ..."}
                                         </div>
@@ -273,7 +369,7 @@ export function UrlDiscoveryPanel({
                                     </div>
                                     <Badge
                                       variant="outline"
-                                      className="text-xs shrink-0"
+                                      className="text-[11px] shrink-0 border-slate-600 text-slate-200 bg-slate-800/40"
                                     >
                                       {item.source}
                                     </Badge>

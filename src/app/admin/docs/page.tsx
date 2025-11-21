@@ -816,7 +816,7 @@ function UploadAndCrawlTabs({ vendors, onVendorsChange }: { vendors: string[]; o
           .from('documents')
           .insert({
             id: documentId,
-            title: cleanFileName,
+            title: uploadFile.name, // 원본 파일명 사용
             type: documentType,
             status: 'pending', // documents 테이블은 'pending', 'processing', 'indexed', 'completed', 'failed', 'error'만 허용
             chunk_count: 0,
@@ -825,6 +825,8 @@ function UploadAndCrawlTabs({ vendors, onVendorsChange }: { vendors: string[]; o
             source_vendor: dbVendor,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString(),
+            original_file_name: uploadFile.name,
+            sanitized_file_name: cleanFileName,
           });
         
         if (docError) {
@@ -850,6 +852,8 @@ function UploadAndCrawlTabs({ vendors, onVendorsChange }: { vendors: string[]; o
             priority: 7,
             payload: {
               fileName: cleanFileName,
+              originalFileName: uploadFile.name,
+              sanitizedFileName: cleanFileName,
               fileSize: uploadFile.size,
               fileType: uploadFile.type,
               storage: {
@@ -1785,14 +1789,57 @@ function UploadAndCrawlTabs({ vendors, onVendorsChange }: { vendors: string[]; o
             throw new Error(discoverResult.error || 'URL 탐색에 실패했습니다.');
           }
 
-          setDiscoveredUrls(discoverResult.discoveredUrls || []);
+          // 이미 크롤된 URL 확인
+          const discoveredUrlsList = discoverResult.discoveredUrls || [];
+          const discoveredUrlStrings = discoveredUrlsList.map((item: DiscoveredUrlItem) => item.url).filter(Boolean);
+          
+          let alreadyCrawledMap = new Map<string, { id: string; title: string; status: string }>();
+          if (discoveredUrlStrings.length > 0) {
+            const supabaseClient = createClient();
+            const { data: existingDocs, error: checkError } = await supabaseClient
+              .from('documents')
+              .select('id, url, title, status')
+              .in('url', discoveredUrlStrings)
+              .eq('type', 'url');
+
+            if (!checkError && existingDocs) {
+              existingDocs.forEach((doc) => {
+                if (doc.url && doc.status === 'indexed') {
+                  alreadyCrawledMap.set(doc.url, {
+                    id: doc.id,
+                    title: doc.title || doc.url,
+                    status: doc.status || 'unknown',
+                  });
+                }
+              });
+            }
+          }
+
+          // 이미 크롤된 URL 정보를 discoveredUrls에 추가
+          const enrichedDiscoveredUrls = discoveredUrlsList.map((item: DiscoveredUrlItem) => {
+            const existingDoc = alreadyCrawledMap.get(item.url);
+            return {
+              ...item,
+              isAlreadyCrawled: existingDoc !== undefined,
+              existingDocumentId: existingDoc?.id,
+            };
+          });
+
+          const alreadyCrawledCount = alreadyCrawledMap.size;
+          if (alreadyCrawledCount > 0) {
+            logger.log(`[DISCOVER] 🔍 이미 크롤된 URL 발견: ${alreadyCrawledCount}개`);
+          }
+
+          setDiscoveredUrls(enrichedDiscoveredUrls);
           setDiscoveryJobId(discoverResult.jobId);
           setShowDiscoveryPanel(true);
           setIsDiscovering(false);
           setCrawlProgressValue(100);
           setCrawlProgressLabel(`탐색 완료: ${discoverResult.totalCount}개 페이지 발견. 페이지를 선택해주세요.`);
           toast.success(`${discoverResult.totalCount}개 페이지 발견`, {
-            description: '크롤링할 페이지를 선택해주세요.',
+            description: alreadyCrawledCount > 0 
+              ? `${alreadyCrawledCount}개는 이미 크롤되어 있습니다.` 
+              : '크롤링할 페이지를 선택해주세요.',
             duration: 5000,
           });
           setCrawling(false); // 탐색 모드에서는 크롤링 상태 해제
@@ -2021,11 +2068,44 @@ function UploadAndCrawlTabs({ vendors, onVendorsChange }: { vendors: string[]; o
       setCrawlProgressLabel(`메인 문서 크롤링 등록 완료. 선택한 ${selectedUrlsArray.length}개 페이지 등록 중...`);
 
       // 선택된 각 URL에 대해 크롤 작업 등록 (extractSubPages: false)
+      // 먼저 이미 크롤된 URL 확인
+      const supabaseClient = createClient();
+      const { data: existingDocs, error: checkError } = await supabaseClient
+        .from('documents')
+        .select('id, url, title, status')
+        .in('url', selectedUrlsArray)
+        .eq('type', 'url');
+
+      const existingUrlMap = new Map<string, { id: string; title: string; status: string }>();
+      if (!checkError && existingDocs) {
+        existingDocs.forEach((doc) => {
+          if (doc.url) {
+            existingUrlMap.set(doc.url, {
+              id: doc.id,
+              title: doc.title || doc.url,
+              status: doc.status || 'unknown',
+            });
+          }
+        });
+      }
+
+      const alreadyCrawledUrls: string[] = [];
       let successCount = 0;
+      let skippedCount = 0;
       const totalUrls = selectedUrlsArray.length;
       
       for (let i = 0; i < selectedUrlsArray.length; i++) {
         const selectedUrl = selectedUrlsArray[i];
+        
+        // 이미 크롤된 URL인지 확인
+        const existingDoc = existingUrlMap.get(selectedUrl);
+        if (existingDoc && existingDoc.status === 'indexed') {
+          alreadyCrawledUrls.push(selectedUrl);
+          skippedCount++;
+          logger.log(`[DUPLICATE] ⏭️ 이미 크롤된 URL 건너뜀: ${selectedUrl} (문서 ID: ${existingDoc.id}, 상태: ${existingDoc.status})`);
+          continue;
+        }
+
         const urlPayload = {
           url: selectedUrl,
           vendors: dbVendors,
@@ -2058,6 +2138,14 @@ function UploadAndCrawlTabs({ vendors, onVendorsChange }: { vendors: string[]; o
         const progress = 10 + Math.floor((i + 1) / totalUrls * 70);
         setCrawlProgressValue(progress);
         setCrawlProgressLabel(`크롤 작업 등록 중... (${i + 1}/${totalUrls})`);
+      }
+
+      // 이미 크롤된 URL이 있으면 사용자에게 알림
+      if (alreadyCrawledUrls.length > 0) {
+        toast.info(`${alreadyCrawledUrls.length}개 URL이 이미 크롤되어 건너뛰었습니다`, {
+          description: alreadyCrawledUrls.slice(0, 3).join(', ') + (alreadyCrawledUrls.length > 3 ? '...' : ''),
+          duration: 5000,
+        });
       }
 
       setCrawlProgressValue(80);
@@ -2556,7 +2644,7 @@ function UploadAndCrawlTabs({ vendors, onVendorsChange }: { vendors: string[]; o
               </div>
             )}
 
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-3 justify-end">
               <Button 
                 disabled={isCrawling || vendors.length === 0}
                 onClick={handleCrawl}
@@ -2575,16 +2663,6 @@ function UploadAndCrawlTabs({ vendors, onVendorsChange }: { vendors: string[]; o
                   크롤 취소
                 </Button>
               )}
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger asChild>
-                    <Badge className="bg-blue-500/20 text-blue-300 border-blue-400/30">
-                      미리보기 0건
-                    </Badge>
-                  </TooltipTrigger>
-                  <TooltipContent>발견된 링크 미리보기는 크롤 후 표시됩니다.</TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
             </div>
           </CardContent>
         </Card>
@@ -2617,6 +2695,13 @@ function UploadAndCrawlTabs({ vendors, onVendorsChange }: { vendors: string[]; o
               acc[item.depth] = (acc[item.depth] || 0) + 1;
               return acc;
             }, {} as Record<number, number>)}
+            onUpdateTitle={(targetUrl, title) => {
+              setDiscoveredUrls((prev) =>
+                prev.map((item) =>
+                  item.url === targetUrl ? { ...item, title } : item
+                )
+              );
+            }}
           />
         </DialogContent>
       </Dialog>
@@ -2657,8 +2742,10 @@ function DocsToolbar({
     <Card className="card-enhanced">
       <CardContent className="py-3 sm:py-4">
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 sm:gap-3">
-          <div className="relative flex-1 min-w-0">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-300/70" />
+          <div className="relative flex-1 min-w-0 w-full">
+            <div className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3">
+              <Search className="w-4 h-4 text-blue-300/70" aria-hidden />
+            </div>
             <Input 
               className={searchInputClass}
               placeholder="문서 제목, URL, 메타데이터 검색" 
@@ -2849,7 +2936,11 @@ function DocsTable({
         });
       }
       
-      let q = supabase.from("documents").select("id,title,type,status,updated_at,chunk_count,source_vendor,url,document_url,main_document_id").order("updated_at", { ascending: false }).limit(60);
+      let q = supabase
+        .from("documents")
+        .select("id,title,type,status,updated_at,chunk_count,source_vendor,url,document_url,main_document_id,original_file_name,sanitized_file_name")
+        .order("updated_at", { ascending: false })
+        .limit(60);
       
       // 벤더 필터 (항상 적용)
       const dbVendors = convertVendorsToDB(vendors);
@@ -2945,7 +3036,7 @@ function DocsTable({
 
         let parentQuery = supabase
           .from("documents")
-          .select("id,title,type,status,updated_at,chunk_count,source_vendor,url,document_url,main_document_id")
+          .select("id,title,type,status,updated_at,chunk_count,source_vendor,url,document_url,main_document_id,original_file_name,sanitized_file_name")
             .in("id", missingParentIds);
 
           // 동일한 벤더 필터 적용
@@ -3185,6 +3276,9 @@ function DocsTable({
       }
       
       const documentsWithMainUrl = (filteredDocuments || []).map((doc: any) => {
+        const displayTitleCandidate = (doc.original_file_name || doc.title || doc.sanitized_file_name || '').trim();
+        const displayTitle = displayTitleCandidate.length > 0 ? displayTitleCandidate : (doc.title || doc.original_file_name || doc.sanitized_file_name);
+        const sanitizedTitle = doc.sanitized_file_name || doc.title;
         const effectiveUrl =
           doc.url ||
           doc.document_url ||
@@ -3246,6 +3340,11 @@ function DocsTable({
           
           return {
             ...doc,
+            title: displayTitle,
+            displayTitle,
+            rawTitle: doc.title,
+            originalFileName: doc.original_file_name,
+            sanitizedFileName: sanitizedTitle,
             url: effectiveUrl || doc.url || null,
             originalUrl: effectiveUrl || doc.url || null,
             mainUrl: matchedEntry.original,
@@ -3312,6 +3411,11 @@ function DocsTable({
         
         return {
           ...doc,
+          title: displayTitle,
+          displayTitle,
+          rawTitle: doc.title,
+          originalFileName: doc.original_file_name,
+          sanitizedFileName: sanitizedTitle,
           url: effectiveUrl || doc.url || null,
           originalUrl: effectiveUrl || doc.url || null,
           mainUrl: mainUrl || undefined,
@@ -5551,35 +5655,39 @@ function DocsTable({
         .map(sp => sp.url);
 
       // documents 테이블에서 실제 하위 페이지 문서 정보 조회
-      let actualDocuments: Record<string, { id: string; title: string; status: string; chunk_count: number }> = {};
+      let actualDocuments: Record<string, { id: string; title: string; status: string; chunk_count: number; original_file_name?: string | null; sanitized_file_name?: string | null }> = {};
       if (subPageUrls.length > 0) {
         const { data: actualDocs, error: docsError } = await supabase
           .from('documents')
-          .select('id, title, status, chunk_count, url')
+          .select('id, title, status, chunk_count, url, original_file_name, sanitized_file_name')
           .in('url', subPageUrls)
           .eq('type', 'url');
 
         if (!docsError && actualDocs) {
           actualDocuments = actualDocs.reduce((acc, doc) => {
             if (doc.url) {
+              const displayTitle = (doc.original_file_name || doc.title || doc.sanitized_file_name || '').trim() || doc.title;
               acc[doc.url] = {
                 id: doc.id,
-                title: doc.title,
+                title: displayTitle,
                 status: doc.status,
                 chunk_count: doc.chunk_count || 0,
+                original_file_name: doc.original_file_name,
+                sanitized_file_name: doc.sanitized_file_name,
               };
             }
             return acc;
-          }, {} as Record<string, { id: string; title: string; status: string; chunk_count: number }>);
+          }, {} as Record<string, { id: string; title: string; status: string; chunk_count: number; original_file_name?: string | null; sanitized_file_name?: string | null }>);
         }
       }
 
       // 하위 페이지 정보 병합 (job 정보 + 실제 documents 정보)
       const enrichedSubPages = subPagesFromJob.map(sp => {
         const actualDoc = sp.url ? actualDocuments[sp.url] : null;
+        const displayTitle = actualDoc?.original_file_name || actualDoc?.title || sp.title || sp.url;
         return {
           url: sp.url,
-          title: actualDoc?.title || sp.title || sp.url,
+          title: displayTitle,
           success: sp.success,
           chunkCount: actualDoc?.chunk_count || sp.chunkCount || 0,
           documentId: actualDoc?.id,
@@ -6995,7 +7103,7 @@ function DocumentDetailDialog({ detail, onClose, onRefetch }: { detail: any | nu
       // main_document_id 컬럼이 없을 수 있으므로 먼저 기본 필드만 조회
       let query = supabase
         .from("documents")
-        .select("id, title, type, status, chunk_count, file_size, file_type, created_at, updated_at, document_url, url, size, source_vendor, content")
+        .select("id, title, type, status, chunk_count, file_size, file_type, created_at, updated_at, document_url, url, size, source_vendor, content, original_file_name, sanitized_file_name")
         .eq("id", detail.id)
         .single();
       
@@ -7010,7 +7118,7 @@ function DocumentDetailDialog({ detail, onClose, onRefetch }: { detail: any | nu
           // main_document_id 컬럼이 존재하면 다시 조회
           query = supabase
             .from("documents")
-            .select("id, title, type, status, chunk_count, file_size, file_type, created_at, updated_at, document_url, url, size, source_vendor, main_document_id, content")
+            .select("id, title, type, status, chunk_count, file_size, file_type, created_at, updated_at, document_url, url, size, source_vendor, main_document_id, content, original_file_name, sanitized_file_name")
             .eq("id", detail.id)
             .single();
         }
@@ -7027,7 +7135,7 @@ function DocumentDetailDialog({ detail, onClose, onRefetch }: { detail: any | nu
           console.warn('[미리보기] main_document_id 컬럼이 없어 기본 필드만 조회합니다.');
           const { data: fallbackData, error: fallbackError } = await supabase
             .from("documents")
-            .select("id, title, type, status, chunk_count, file_size, file_type, created_at, updated_at, document_url, url, size, source_vendor, content")
+            .select("id, title, type, status, chunk_count, file_size, file_type, created_at, updated_at, document_url, url, size, source_vendor, content, original_file_name, sanitized_file_name")
             .eq("id", detail.id)
             .single();
           

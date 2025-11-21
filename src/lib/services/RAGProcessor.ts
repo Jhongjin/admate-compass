@@ -55,6 +55,8 @@ export interface DocumentData {
   url?: string; // URL 필드 추가
   source_vendor?: string; // 벤더 정보 추가
   main_document_id?: string; // 그룹 관계를 위한 부모 문서 ID
+  original_file_name?: string | null; // 업로드 시 사용자가 본래 입력한 파일명
+  sanitized_file_name?: string | null; // 저장/경로용 정리된 파일명
   created_at: string;
   updated_at: string;
 }
@@ -1033,6 +1035,18 @@ export class RAGProcessor {
         console.log(`[CRITICAL] ⚠️ 새 문서에 main_document_id 없음: document.main_document_id=${document.main_document_id}`);
       }
 
+      if (document.original_file_name !== undefined) {
+        documentData.original_file_name = document.original_file_name;
+      } else if (!isUpdate) {
+        documentData.original_file_name = null;
+      }
+
+      if (document.sanitized_file_name !== undefined) {
+        documentData.sanitized_file_name = document.sanitized_file_name;
+      } else if (!isUpdate) {
+        documentData.sanitized_file_name = null;
+      }
+
       // 기존 문서가 없으면 created_at 포함, 있으면 제외 (업데이트 시 created_at은 변경하지 않음)
       if (!isUpdate) {
         (documentData as any).created_at = document.created_at;
@@ -1149,13 +1163,14 @@ export class RAGProcessor {
         embedding_count: 0,
         created_at: document.created_at,
         updated_at: document.updated_at,
+        original_file_name: document.original_file_name ?? document.title,
       };
       
       // 원본 바이너리 데이터가 있으면 metadata에 저장
       const metadataPayload: Record<string, any> = {};
       if (originalBinaryData) {
         metadataPayload.fileData = originalBinaryData;
-        metadataPayload.originalFileName = document.title;
+        metadataPayload.originalFileName = document.original_file_name ?? document.title;
         metadataPayload.fileType = document.file_type;
         metadataPayload.uploadedAt = document.created_at;
         console.log('💾 원본 바이너리 데이터 저장:', {
