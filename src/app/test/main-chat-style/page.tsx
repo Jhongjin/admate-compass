@@ -361,9 +361,88 @@ export default function MainChatStylePage() {
     ];
   }, [dashboardStats, chatStats]);
 
+  // MainLayout의 배경색을 오버라이드하기 위한 useEffect
+  useEffect(() => {
+    // localStorage에 chat 테마 배경색 저장
+    localStorage.setItem('custom-background', chatTheme.bgMain);
+    document.documentElement.style.setProperty('--main-background', chatTheme.bgMain);
+    
+    // 전역 스타일 추가
+    const styleId = 'main-chat-style-override';
+    let styleElement = document.getElementById(styleId) as HTMLStyleElement;
+    
+    if (!styleElement) {
+      styleElement = document.createElement('style');
+      styleElement.id = styleId;
+      document.head.appendChild(styleElement);
+    }
+    
+    styleElement.textContent = `
+      body {
+        background-color: ${chatTheme.bgMain} !important;
+        background: ${chatTheme.bgMain} !important;
+      }
+      html {
+        background-color: ${chatTheme.bgMain} !important;
+        background: ${chatTheme.bgMain} !important;
+      }
+      #main-chat-style-page,
+      #main-chat-style-page .min-h-screen,
+      #main-chat-style-page > div {
+        background-color: ${chatTheme.bgMain} !important;
+        background: ${chatTheme.bgMain} !important;
+      }
+      #main-chat-style-page [style*="background"] {
+        background: ${chatTheme.bgMain} !important;
+        background-color: ${chatTheme.bgMain} !important;
+      }
+    `;
+    
+    // MainLayout의 배경색 직접 오버라이드
+    const updateBackgrounds = () => {
+      const mainLayoutDivs = document.querySelectorAll('#main-chat-style-page .min-h-screen');
+      mainLayoutDivs.forEach((div) => {
+        const htmlDiv = div as HTMLElement;
+        htmlDiv.style.background = chatTheme.bgMain;
+        htmlDiv.style.backgroundColor = chatTheme.bgMain;
+      });
+      
+      // body와 html 배경색도 통일
+      document.body.style.backgroundColor = chatTheme.bgMain;
+      document.body.style.background = chatTheme.bgMain;
+      document.documentElement.style.backgroundColor = chatTheme.bgMain;
+      document.documentElement.style.background = chatTheme.bgMain;
+    };
+    
+    // 초기 실행 및 주기적 업데이트
+    updateBackgrounds();
+    const interval = setInterval(updateBackgrounds, 100);
+    
+    // MutationObserver로 동적 변경 감지
+    const observer = new MutationObserver(updateBackgrounds);
+    observer.observe(document.body, { 
+      childList: true, 
+      subtree: true, 
+      attributes: true, 
+      attributeFilter: ['style', 'class'] 
+    });
+    
+    return () => {
+      clearInterval(interval);
+      observer.disconnect();
+      if (styleElement && styleElement.parentNode) {
+        styleElement.parentNode.removeChild(styleElement);
+      }
+    };
+  }, []);
+
   return (
-    <div style={{ backgroundColor: chatTheme.bgMain, color: chatTheme.textPrimary, minHeight: '100vh' }}>
+    <div 
+      id="main-chat-style-page"
+      style={{ backgroundColor: chatTheme.bgMain, color: chatTheme.textPrimary, minHeight: '100vh' }}
+    >
       <MainLayout>
+        <div className="min-h-screen" style={{ backgroundColor: chatTheme.bgMain, color: chatTheme.textPrimary }}>
         {/* Hero Section - Chat 스타일 적용 */}
         <motion.div 
           className="relative w-full min-h-[40vh] sm:min-h-[50vh] flex items-center justify-center overflow-hidden pt-20 sm:pt-24 md:pt-28"
@@ -1112,6 +1191,7 @@ export default function MainChatStylePage() {
               </div>
             </motion.div>
           </motion.div>
+        </div>
         </div>
       </MainLayout>
     </div>
