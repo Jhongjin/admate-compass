@@ -1135,7 +1135,7 @@ function GmailStyleLayout() {
         <div className="px-6 py-4 border-b" style={{ backgroundColor: theme.bgMain, borderColor: theme.border }}>
           <div className="max-w-4xl mx-auto">
             <h2 className="text-lg font-semibold mb-2" style={{ color: theme.textPrimary }}>
-              멀티 플랫폼 광고 FAQ AI 챗봇
+              멀티 광고 플랫폼 AI Agent
             </h2>
             <p className="text-sm" style={{ color: theme.textSecondary }}>
               챗봇 답변에 대한 만족도를 평가해주세요. 품질개선에 큰 도움이 됩니다.

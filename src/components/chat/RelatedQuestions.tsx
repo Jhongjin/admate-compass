@@ -359,7 +359,7 @@ export default function RelatedQuestions({
               >
                 <Button
                   variant="ghost"
-                  className="w-full justify-start text-left h-auto p-3 hover:bg-purple-100/50 transition-all duration-200 group"
+                  className="w-full justify-start text-left h-auto p-3 bg-white/80 border border-transparent hover:border-purple-300 hover:shadow-[0_6px_18px_rgba(168,85,247,0.15)] transition-all duration-200 group"
                   onClick={() => handleQuestionClick(question)}
                 >
                   <div className="flex items-start space-x-3 w-full">
@@ -369,12 +369,12 @@ export default function RelatedQuestions({
                       </div>
                     </div>
                     <div className="flex-1 min-w-0 overflow-hidden">
-                      <p className="text-base text-gray-800 leading-relaxed group-hover:text-purple-800 transition-colors line-clamp-2 break-words">
+                      <p className="text-base text-gray-800 leading-relaxed line-clamp-2 break-words">
                         {question}
                       </p>
                     </div>
                     <div className="flex-shrink-0 mt-1">
-                      <ArrowRight className="w-4 h-4 text-gray-400 group-hover:text-purple-600 group-hover:translate-x-1 transition-all" />
+                      <ArrowRight className="w-4 h-4 text-gray-400 transition-transform group-hover:translate-x-1" />
                     </div>
                   </div>
                 </Button>

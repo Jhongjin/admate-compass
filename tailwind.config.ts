@@ -19,7 +19,7 @@ const config = {
   	extend: {
   		fontFamily: {
   			sans: [
-  				'Inter',
+  				'Noto Sans KR',
   				'ui-sans-serif',
   				'system-ui',
   				'-apple-system',

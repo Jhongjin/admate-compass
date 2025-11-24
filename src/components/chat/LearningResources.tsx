@@ -409,11 +409,11 @@ export default function LearningResources({
               animate={{ opacity: 1, x: 0 }}
               transition={{ delay: index * 0.1 }}
             >
-              <Card className="bg-white/60 border-green-200/40 hover:bg-white/80 transition-all duration-200 group">
+              <Card className="bg-white/60 border border-gray-200/60 hover:border-green-300/70 transition-all duration-200 group shadow-sm hover:shadow-[0_10px_30px_rgba(16,185,129,0.15)]">
                 <CardContent className="p-4">
                   <div className="flex items-start space-x-3">
-                    <div className={`w-8 h-8 ${getTypeColor(resource.type)} rounded-full flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform`}>
-                      {getTypeIcon(resource.type)}
+                    <div className={`w-10 h-10 ${getTypeColor(resource.type)} rounded-lg border border-white/20 flex items-center justify-center flex-shrink-0 group-hover:scale-105 transition-all shadow-sm hover:shadow-md`}>
+                      <FileText className="w-5 h-5 text-white" />
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between mb-2">
