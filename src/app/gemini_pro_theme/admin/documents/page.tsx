@@ -239,9 +239,8 @@ export default function DocumentsPage() {
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap">
                                                 <Badge variant="outline" className={getStatusColor(doc.status)}>
-                                                    <Badge variant="outline" className={getStatusColor(doc.status)}>
-                                                        {getStatusText(doc.status)}
-                                                    </Badge>
+                                                    {getStatusText(doc.status)}
+                                                </Badge>
                                             </td>
                                             <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-400">
                                                 {formatSize(doc.file_size)}
