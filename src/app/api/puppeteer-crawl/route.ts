@@ -43,7 +43,8 @@ export async function POST(request: NextRequest) {
       
       for (const url of urls) {
         try {
-          const document = await puppeteerCrawlingService.crawlMetaPage(url, extractSubPages);
+          // 사용자 정의 URL 크롤링은 모든 도메인 허용 (skipUrlCheck=true)
+          const document = await puppeteerCrawlingService.crawlMetaPage(url, extractSubPages, true);
           if (document) {
             documents.push(document);
             
@@ -53,7 +54,8 @@ export async function POST(request: NextRequest) {
               
               for (const subPageInfo of document.discoveredUrls) {
                 try {
-                  const subDocument = await puppeteerCrawlingService.crawlMetaPage(subPageInfo.url, false);
+                  // 하위 페이지도 모든 도메인 허용 (skipUrlCheck=true)
+                  const subDocument = await puppeteerCrawlingService.crawlMetaPage(subPageInfo.url, false, true);
                   if (subDocument) {
                     documents.push(subDocument);
                     console.log(`✅ 하위 페이지 크롤링 완료: ${subDocument.title}`);
