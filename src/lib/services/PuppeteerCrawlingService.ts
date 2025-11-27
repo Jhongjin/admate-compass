@@ -131,22 +131,17 @@ export class PuppeteerCrawlingService {
       
       try {
       // Vercel 환경에서는 chromium을 사용
-      const isVercel = process.env.VERCEL === '1';
+      const isVercel = process.env.VERCEL === '1' || process.env.AWS_LAMBDA_FUNCTION_NAME;
       let executablePath: string | undefined;
       
       if (isVercel) {
           try {
-        executablePath = await chromium.executablePath();
+            // @sparticuz/chromium의 executablePath()가 실패할 수 있으므로 try-catch
+            executablePath = await chromium.executablePath();
             console.log(`📁 Chromium 실행 경로: ${executablePath}`);
-            
-            // 경로가 존재하는지 확인
-            const fs = require('fs');
-            if (executablePath && !fs.existsSync(executablePath)) {
-              console.warn(`⚠️ Chromium 실행 경로가 존재하지 않습니다: ${executablePath}`);
-              throw new Error(`Chromium 실행 경로가 존재하지 않습니다: ${executablePath}`);
-            }
           } catch (chromiumError: any) {
             console.error('❌ @sparticuz/chromium 초기화 실패:', chromiumError.message);
+            // Chromium 초기화 실패 시 에러를 throw하여 호출자가 처리할 수 있도록 함
             throw new Error(`Chromium 초기화 실패: ${chromiumError.message}. Puppeteer를 사용할 수 없습니다.`);
           }
       } else {
@@ -196,10 +191,10 @@ export class PuppeteerCrawlingService {
       }
       
       this.browser = await puppeteerCore.launch({
-        headless: true,
+        headless: isVercel ? chromium.headless : true,
         executablePath,
         args: isVercel 
-          ? chromium.args
+          ? chromium.args as string[]
           : [
               '--no-sandbox',
               '--disable-setuid-sandbox',
@@ -210,7 +205,8 @@ export class PuppeteerCrawlingService {
               '--disable-gpu',
               '--disable-web-security',
               '--disable-features=VizDisplayCompositor'
-            ]
+            ],
+        defaultViewport: isVercel ? chromium.defaultViewport : undefined
       });
       console.log('✅ Puppeteer 브라우저 초기화 완료');
       } catch (error: any) {
