@@ -136,15 +136,10 @@ export class PuppeteerCrawlingService {
       
       if (isVercel) {
           try {
-        executablePath = await chromium.executablePath();
+            // Vercel 서버리스 환경에서는 fs.existsSync() 체크를 건너뛰고 바로 실행
+            // 서버리스 환경에서는 파일 시스템 체크가 제대로 작동하지 않을 수 있음
+            executablePath = await chromium.executablePath();
             console.log(`📁 Chromium 실행 경로: ${executablePath}`);
-            
-            // 경로가 존재하는지 확인
-            const fs = require('fs');
-            if (executablePath && !fs.existsSync(executablePath)) {
-              console.warn(`⚠️ Chromium 실행 경로가 존재하지 않습니다: ${executablePath}`);
-              throw new Error(`Chromium 실행 경로가 존재하지 않습니다: ${executablePath}`);
-            }
           } catch (chromiumError: any) {
             console.error('❌ @sparticuz/chromium 초기화 실패:', chromiumError.message);
             throw new Error(`Chromium 초기화 실패: ${chromiumError.message}. Puppeteer를 사용할 수 없습니다.`);
