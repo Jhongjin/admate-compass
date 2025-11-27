@@ -136,11 +136,13 @@ export class PuppeteerCrawlingService {
       
       if (isVercel) {
           try {
-            // @sparticuz/chromium의 executablePath()가 실패할 수 있으므로 try-catch
+            // @sparticuz/chromium의 executablePath() 호출
+            // Vercel 서버리스 환경에서는 자동으로 Chromium 바이너리를 포함함
             executablePath = await chromium.executablePath();
             console.log(`📁 Chromium 실행 경로: ${executablePath}`);
           } catch (chromiumError: any) {
             console.error('❌ @sparticuz/chromium 초기화 실패:', chromiumError.message);
+            console.error('❌ Chromium 에러 상세:', chromiumError);
             // Chromium 초기화 실패 시 에러를 throw하여 호출자가 처리할 수 있도록 함
             throw new Error(`Chromium 초기화 실패: ${chromiumError.message}. Puppeteer를 사용할 수 없습니다.`);
           }
