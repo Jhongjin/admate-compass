@@ -21,6 +21,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Sparkles, Send, Search, Check } from "lucide-react";
+import { fetchWithTimeout } from "@/lib/utils/fetchWithTimeout";
 
 const VENDORS = ["Meta", "Naver", "Kakao", "Google", "X(Twitter)"] as const;
 const VENDOR_PRESETS = [
@@ -458,7 +459,7 @@ function Version5() {
     if (!manualOverride && value.trim().length > 3) {
       setIsDetecting(true);
       try {
-        const res = await fetch('/api/detect-vendors', {
+        const res = await fetchWithTimeout('/api/detect-vendors', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ query: value }),

@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { fetchWithTimeout } from "@/lib/utils/fetchWithTimeout";
 import { Badge } from "@/components/ui/badge";
 import { RefreshCw, AlertTriangle, Trash2, RotateCcw } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
@@ -98,7 +99,7 @@ export default function QueueSummaryPanel({ selectedVendors = [] }: QueueSummary
   const handleProcessImmediately = async () => {
     try {
       setProcessing(true);
-      const res = await fetch('/api/jobs/consume', { method: 'POST' });
+      const res = await fetchWithTimeout('/api/jobs/consume', { method: 'POST' });
       const result = await res.json();
       if (result.success) {
         await refetch();
@@ -128,7 +129,7 @@ export default function QueueSummaryPanel({ selectedVendors = [] }: QueueSummary
       }
 
       for (const job of failedJobs) {
-        await fetch('/api/jobs/action', {
+        await fetchWithTimeout('/api/jobs/action', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ jobId: job.id, action: 'retry' })
@@ -163,7 +164,7 @@ export default function QueueSummaryPanel({ selectedVendors = [] }: QueueSummary
         return;
       }
 
-      const res = await fetch('/api/jobs/action', {
+      const res = await fetchWithTimeout('/api/jobs/action', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -206,7 +207,7 @@ export default function QueueSummaryPanel({ selectedVendors = [] }: QueueSummary
         return;
       }
 
-      const res = await fetch('/api/jobs/action', {
+      const res = await fetchWithTimeout('/api/jobs/action', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -264,7 +265,7 @@ export default function QueueSummaryPanel({ selectedVendors = [] }: QueueSummary
         return;
       }
 
-      const res = await fetch('/api/jobs/action', {
+      const res = await fetchWithTimeout('/api/jobs/action', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -292,9 +293,9 @@ export default function QueueSummaryPanel({ selectedVendors = [] }: QueueSummary
   const queueStats = stats || { queued: 0, processing: 0, failed: 0, stuck: 0 };
 
   return (
-    <Card className="card-enhanced bg-gradient-to-br from-slate-900/80 via-slate-900/60 to-slate-950/90 border border-white/10 shadow-xl">
+    <Card className="card-enhanced bg-gradient-to-br from-slate-900/80 via-slate-900/60 to-slate-950/90 border border-white/10 shadow-xl text-sm text-gray-200">
       <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-4">
-        <CardTitle className="text-lg font-semibold text-white flex items-center gap-2">
+        <CardTitle className="text-base font-semibold text-white flex items-center gap-2">
           <RefreshCw className="w-5 h-5 text-blue-400" />
           처리 큐 (요약)
           <Button
@@ -308,16 +309,16 @@ export default function QueueSummaryPanel({ selectedVendors = [] }: QueueSummary
           </Button>
         </CardTitle>
       </CardHeader>
-      <CardContent className="space-y-5">
+      <CardContent className="space-y-5 text-sm">
         {selectedVendors.length > 0 && (
-          <div className="text-sm font-medium text-gray-300 mb-3 pb-3 border-b border-gray-700/50">
+          <div className="font-medium text-gray-300 mb-3 pb-3 border-b border-gray-700/50">
             선택 벤더: <span className="text-blue-300">{selectedVendors.join(', ')}</span>
           </div>
         )}
 
         {/* 상태 카드 */}
         <div className="grid grid-cols-3 gap-4">
-          <div className="flex items-center justify-between p-4 bg-blue-500/15 rounded-lg border border-blue-500/30 hover:border-blue-500/50 transition-all">
+          <div className="flex items-center justify-between p-4 bg-blue-500/15 rounded-lg border border-blue-500/30 hover:border-blue-500/50 transition-all text-sm">
             <div>
               <div className="text-3xl font-bold text-white mb-1">{queueStats.queued}</div>
               <div className="text-xs font-semibold text-gray-300 uppercase tracking-wide">대기</div>
@@ -327,7 +328,7 @@ export default function QueueSummaryPanel({ selectedVendors = [] }: QueueSummary
             </div>
           </div>
 
-          <div className="flex items-center justify-between p-4 bg-purple-500/15 rounded-lg border border-purple-500/30 hover:border-purple-500/50 transition-all">
+          <div className="flex items-center justify-between p-4 bg-purple-500/15 rounded-lg border border-purple-500/30 hover:border-purple-500/50 transition-all text-sm">
             <div>
               <div className="text-3xl font-bold text-white mb-1">{queueStats.processing}</div>
               <div className="text-xs font-semibold text-gray-300 uppercase tracking-wide">진행 중</div>
@@ -337,7 +338,7 @@ export default function QueueSummaryPanel({ selectedVendors = [] }: QueueSummary
             </div>
           </div>
 
-          <div className="flex items-center justify-between p-4 bg-red-500/15 rounded-lg border border-red-500/30 hover:border-red-500/50 transition-all">
+          <div className="flex items-center justify-between p-4 bg-red-500/15 rounded-lg border border-red-500/30 hover:border-red-500/50 transition-all text-sm">
             <div>
               <div className="text-3xl font-bold text-white mb-1">{queueStats.failed}</div>
               <div className="text-xs font-semibold text-gray-300 uppercase tracking-wide">실패</div>

@@ -1,4 +1,6 @@
-'use client';
+"use client";
+
+import { fetchWithTimeout } from "@/lib/utils/fetchWithTimeout";
 
 export interface DashboardStats {
   totalDocuments: number;
@@ -86,7 +88,7 @@ export class DashboardDataService {
    */
   async getDashboardStats(): Promise<DashboardStats> {
     try {
-      const response = await fetch(`${this.baseUrl}/dashboard`);
+      const response = await fetchWithTimeout(`${this.baseUrl}/dashboard`);
       const data = await response.json();
 
       if (!data.success) {

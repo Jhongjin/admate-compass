@@ -98,7 +98,18 @@ src/
 │   ├── services/          # 서비스 레이어
 │   └── supabase/          # Supabase 클라이언트
 └── types/                 # TypeScript 타입 정의
+
+fixtures/                  # 테스트/샘플 파일
+├── uploads/              # 문서 업로드 테스트용 샘플
+└── tests/                # RAG 파이프라인 테스트용 샘플
+
+temp/                      # 임시 작업 자산 (프로덕션 미사용)
+├── docs/                 # 임시 문서/메모
+├── scripts/              # 일회성 스크립트
+└── sql/                  # 수동 실행용 SQL 쿼리
 ```
+
+> **참고**: 샘플 파일 및 자산 관리 정책은 [자산 저장소 정책 문서](./docs/ASSET_STORAGE_POLICY.md)를 참조하세요.
 
 ## 🔧 주요 API 엔드포인트
 

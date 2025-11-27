@@ -30,7 +30,10 @@ import {
   Cpu,
   Share2,
   CheckCircle2,
-  Bot
+  Bot,
+  UserCircle,
+  LogOut,
+  ChevronDown
 } from "lucide-react";
 import Link from "next/link";
 import Image from "next/image";
@@ -370,6 +373,14 @@ export default function HomePage() {
   const [showDocsModal, setShowDocsModal] = useState(false);
   const [showSolutionsDropdown, setShowSolutionsDropdown] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
+  const profileMenuRef = useRef<HTMLDivElement>(null);
+  const [profileMenuOpen, setProfileMenuOpen] = useState(false);
+  const profileName = user?.user_metadata?.name || user?.email?.split("@")[0] || "사용자";
+  const profileEmail = user?.email || "이메일 정보 없음";
+  const avatarSeed = encodeURIComponent(profileName || "사용자");
+  const profileAvatar =
+    (user?.user_metadata?.avatar_url as string | undefined) ||
+    `https://picsum.photos/seed/${avatarSeed}/80/80`;
 
   // 실제 데이터 가져오기
   const { data: dashboardStats, isLoading: dashboardLoading, error: dashboardError, refetch: refetchDashboard } = useDashboardStats();
@@ -398,6 +409,19 @@ export default function HomePage() {
     window.addEventListener("scroll", handleScroll);
     return () => window.removeEventListener("scroll", handleScroll);
   }, []);
+
+  useEffect(() => {
+    if (!profileMenuOpen) return;
+
+    const handleClickOutside = (event: MouseEvent) => {
+      if (profileMenuRef.current && !profileMenuRef.current.contains(event.target as Node)) {
+        setProfileMenuOpen(false);
+      }
+    };
+
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [profileMenuOpen]);
 
   // 에러 로깅
   if (vendorUpdatesError) {
@@ -439,6 +463,21 @@ export default function HomePage() {
       });
       setIsLoading(false);
     }
+  };
+
+  const handleSignOutClick = async () => {
+    const { error } = await signOut();
+    if (error) {
+      toast({
+        title: "로그아웃 실패",
+        description: error.message,
+        variant: "destructive",
+        duration: 4000,
+      });
+      return;
+    }
+    setProfileMenuOpen(false);
+    setMobileMenuOpen(false);
   };
 
   const focusInput = () => {
@@ -672,20 +711,68 @@ export default function HomePage() {
           {/* Auth Buttons */}
           <div className="hidden md:flex items-center gap-4 z-10">
             {user ? (
-              <>
-                <Link href="/chat">
-                  <Button className="bg-white text-black hover:bg-gray-200 rounded-full px-6 font-medium transition-all duration-300 hover:scale-105">
-                    Start Chat
-                  </Button>
-                </Link>
-                <Button 
-                  variant="ghost" 
-                  className="text-gray-400 hover:text-white hover:bg-white/5"
-                  onClick={signOut}
+              <div className="relative" ref={profileMenuRef}>
+                <button
+                  onClick={() => setProfileMenuOpen((prev) => !prev)}
+                  className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-4 py-2 focus:outline-none hover:border-white/20 transition-all"
                 >
-                  Sign Out
-                </Button>
-              </>
+                  <div className="w-10 h-10 rounded-full overflow-hidden bg-white/10">
+                    <img src={profileAvatar} alt="프로필" className="w-full h-full object-cover" />
+                  </div>
+                  <div className="text-left">
+                    <p className="text-sm font-semibold text-white leading-tight">{profileName}</p>
+                    <p className="text-xs text-gray-400">{profileEmail}</p>
+                  </div>
+                  <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${profileMenuOpen ? "rotate-180" : ""}`} />
+                </button>
+
+                <AnimatePresence>
+                  {profileMenuOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -10 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -10 }}
+                      transition={{ duration: 0.2 }}
+                      className="absolute right-0 mt-3 w-72 rounded-3xl border border-white/10 bg-[#0F1424] shadow-2xl overflow-hidden"
+                    >
+                      <div className="p-4 border-b border-white/10 flex items-center gap-3">
+                        <div className="w-12 h-12 rounded-full overflow-hidden bg-white/10">
+                          <img src={profileAvatar} alt="프로필" className="w-full h-full object-cover" />
+                        </div>
+                        <div>
+                          <p className="text-white font-semibold">{profileName}</p>
+                          <p className="text-xs text-gray-400">{profileEmail}</p>
+                        </div>
+                      </div>
+                      <div className="p-3 flex flex-col gap-1">
+                        <Link
+                          href="/admin"
+                          className="flex items-center gap-2 px-3 py-2 rounded-2xl text-sm text-white hover:bg-white/10 transition-colors"
+                          onClick={() => setProfileMenuOpen(false)}
+                        >
+                          <Shield className="w-4 h-4 text-blue-400" />
+                          <span>관리자 페이지</span>
+                        </Link>
+                        <Link
+                          href="/mypage"
+                          className="flex items-center gap-2 px-3 py-2 rounded-2xl text-sm text-white hover:bg-white/10 transition-colors"
+                          onClick={() => setProfileMenuOpen(false)}
+                        >
+                          <UserCircle className="w-4 h-4 text-purple-400" />
+                          <span>프로필 변경</span>
+                        </Link>
+                        <button
+                          onClick={handleSignOutClick}
+                          className="flex items-center gap-2 px-3 py-2 rounded-2xl text-sm text-red-400 hover:bg-red-500/10 transition-colors"
+                        >
+                          <LogOut className="w-4 h-4" />
+                          <span>로그아웃</span>
+                        </button>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
             ) : (
               <>
                 <Button 
@@ -770,12 +857,51 @@ export default function HomePage() {
               </button>
               <div className="h-px bg-white/10 my-2" />
               {user ? (
-                <>
-                  <Link href="/chat">
-                    <Button className="w-full bg-white text-black">Start Chat</Button>
-                  </Link>
-                  <Button variant="outline" className="w-full" onClick={signOut}>Sign Out</Button>
-                </>
+                <div className="rounded-3xl border border-white/10 bg-white/5 p-4 space-y-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 rounded-full overflow-hidden bg-white/10">
+                      <img src={profileAvatar} alt="프로필" className="w-full h-full object-cover" />
+                    </div>
+                    <div>
+                      <p className="text-white font-semibold">{profileName}</p>
+                      <p className="text-sm text-gray-400">{profileEmail}</p>
+                    </div>
+                  </div>
+                  <div className="grid gap-2">
+                    <Link
+                      href="/admin"
+                      className="flex items-center justify-between rounded-2xl border border-white/10 px-4 py-2 text-sm text-white hover:bg-white/10 transition-colors"
+                      onClick={() => setMobileMenuOpen(false)}
+                    >
+                      <span className="flex items-center gap-2">
+                        <Shield className="w-4 h-4 text-blue-400" />
+                        관리자 페이지
+                      </span>
+                      <ArrowRight className="w-4 h-4 text-gray-400" />
+                    </Link>
+                    <Link
+                      href="/mypage"
+                      className="flex items-center justify-between rounded-2xl border border-white/10 px-4 py-2 text-sm text-white hover:bg-white/10 transition-colors"
+                      onClick={() => setMobileMenuOpen(false)}
+                    >
+                      <span className="flex items-center gap-2">
+                        <UserCircle className="w-4 h-4 text-purple-400" />
+                        프로필 변경
+                      </span>
+                      <ArrowRight className="w-4 h-4 text-gray-400" />
+                    </Link>
+                    <button
+                      onClick={handleSignOutClick}
+                      className="flex items-center justify-between rounded-2xl border border-red-500/30 px-4 py-2 text-sm text-red-400 hover:bg-red-500/10 transition-colors"
+                    >
+                      <span className="flex items-center gap-2">
+                        <LogOut className="w-4 h-4" />
+                        로그아웃
+                      </span>
+                      <ArrowRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
               ) : (
                 <>
                   <Button 

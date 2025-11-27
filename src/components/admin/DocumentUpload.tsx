@@ -20,6 +20,7 @@ import {
   AlertDialogCancel
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
+import { fetchWithTimeout } from "@/lib/utils/fetchWithTimeout";
 
 interface DocumentFile {
   id: string;
@@ -59,7 +60,7 @@ export default function DocumentUpload({ onUpload, onDocumentListRefresh }: Docu
       setIsLoadingDocuments(true);
       console.log('📋 업로드된 문서 목록 가져오기 시작');
       
-      const response = await fetch('/api/admin/upload-new', {
+      const response = await fetchWithTimeout('/api/admin/upload-new', {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -227,7 +228,7 @@ export default function DocumentUpload({ onUpload, onDocumentListRefresh }: Docu
 
       console.log('Base64 인코딩 완료, JSON 요청 전송');
 
-      const response = await fetch('/api/admin/upload-new', {
+      const response = await fetchWithTimeout('/api/admin/upload-new', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -369,7 +370,7 @@ export default function DocumentUpload({ onUpload, onDocumentListRefresh }: Docu
 
   const uploadAndIndexUrl = async (url: string) => {
     try {
-      const response = await fetch('/api/admin/upload', {
+      const response = await fetchWithTimeout('/api/admin/upload', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -436,7 +437,7 @@ export default function DocumentUpload({ onUpload, onDocumentListRefresh }: Docu
 
       console.log('덮어쓰기 Base64 인코딩 완료, JSON 요청 전송');
 
-      const response = await fetch('/api/admin/upload-new', {
+      const response = await fetchWithTimeout('/api/admin/upload-new', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

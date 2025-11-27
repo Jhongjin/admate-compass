@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from 'react';
+import { fetchWithTimeout } from '@/lib/utils/fetchWithTimeout';
 
 type Metric = {
   id: string;
@@ -46,7 +47,7 @@ export default function MetricsPage() {
       setLoading(true);
       setError(null);
       try {
-        const res = await fetch(`/api/admin/metrics?hours=${hours}` , { cache: 'no-store' });
+        const res = await fetchWithTimeout(`/api/admin/metrics?hours=${hours}` , { cache: 'no-store' });
         const json = await res.json();
         if (!res.ok) throw new Error(json?.error || 'failed to load metrics');
         if (alive) {

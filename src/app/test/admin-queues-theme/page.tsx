@@ -2,17 +2,77 @@
 
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
-import { fetchWithTimeout } from "@/lib/utils/fetchWithTimeout";
-import AdminThemeLayout from "@/components/layouts/AdminThemeLayout";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { RefreshCw, Play, AlertTriangle, RotateCcw, XCircle, Trash2, ChevronDown, ChevronRight } from "lucide-react";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import Link from "next/link";
+import Image from "next/image";
 import { BarChart3, Activity, Users, MessageSquare, Zap, PieChart } from "lucide-react";
 
-// 실제 관리자 처리 큐 페이지에서도 동일 테마를 사용하기 위한 레이아웃
+// 테스트 페이지용 레이아웃 (gemini_pro_theme 스타일)
+function TestQueuesLayout({ children, currentPage = "queues" }: { children: React.ReactNode; currentPage?: string }) {
+    const [sidebarOpen, setSidebarOpen] = useState(false);
+    const navigation = [
+        { name: "대시보드", href: "/test/admin-theme", icon: BarChart3, current: currentPage === "dashboard" },
+        { name: "문서 관리", href: "/admin/docs", icon: MessageSquare, current: currentPage === "docs" },
+        { name: "처리 큐", href: "/test/admin-queues-theme", icon: Activity, current: currentPage === "queues" },
+        { name: "사용자 관리", href: "/admin/users", icon: Users, current: currentPage === "users" },
+        { name: "시스템 모니터링", href: "/admin/monitoring", icon: Zap, current: currentPage === "monitoring" },
+        { name: "통계 및 분석", href: "/test/admin-stats-theme", icon: PieChart, current: currentPage === "stats" },
+        { name: "로그 및 감사", href: "/admin/logs", icon: Activity, current: currentPage === "logs" },
+        { name: "비용 모니터링", href: "/admin/cost-monitoring", icon: BarChart3, current: currentPage === "cost" },
+    ];
+
+    return (
+        <div className="min-h-screen bg-[#0B0F17] text-white font-sans selection:bg-blue-500/30">
+            <header className="fixed top-0 left-0 right-0 z-50 bg-[#0B0F17]/80 backdrop-blur-xl border-b border-white/5">
+                <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8">
+                    <div className="flex justify-between items-center h-20">
+                        <div className="flex items-center gap-8">
+                            <Link href="/" className="flex items-center gap-2 group">
+                                <div className="relative w-8 h-8">
+                                    <Image src="/admate-logo.png" alt="AdMate" fill className="object-contain" />
+                                </div>
+                                <span className="text-xl font-bold bg-gradient-to-r from-white to-gray-400 bg-clip-text text-transparent">AdMate</span>
+                            </Link>
+                            <div className="hidden md:flex items-center text-sm text-gray-500">
+                                <span className="px-2">/</span>
+                                <span className="text-gray-300">Admin Queues (Test)</span>
+                            </div>
+                        </div>
+                        <div className="flex items-center gap-4">
+                            <div className="hidden md:flex items-center gap-3 px-4 py-2 rounded-full bg-white/5 border border-white/5">
+                                <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                                <span className="text-xs font-medium text-gray-300">System Operational</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </header>
+            <div className="pt-20 flex max-w-[1600px] mx-auto">
+                <aside className="hidden md:block w-64 fixed h-[calc(100vh-5rem)] border-r border-white/5 bg-[#0B0F17]/50 backdrop-blur-sm">
+                    <nav className="p-4 space-y-2">
+                        {navigation.map((item) => (
+                            <Link key={item.name} href={item.href} className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 ${item.current ? "bg-blue-600/10 text-blue-400 border border-blue-500/20" : "text-gray-400 hover:bg-white/5 hover:text-white"}`}>
+                                <item.icon className={`w-5 h-5 ${item.current ? "text-blue-400" : "text-gray-500"}`} />
+                                {item.name}
+                            </Link>
+                        ))}
+                    </nav>
+                </aside>
+                <main className="flex-1 md:pl-64 min-h-[calc(100vh-5rem)]">
+                    <div className="p-6 lg:p-10 space-y-8">
+                        {children}
+                    </div>
+                </main>
+            </div>
+        </div>
+    );
+}
+
 type Job = {
     id: string;
     document_id: string;
@@ -97,7 +157,7 @@ export default function AdminQueuesPage() {
     const consumeOne = async () => {
         try {
             setConsuming(true);
-            const res = await fetchWithTimeout('/api/jobs/consume', { method: 'POST' });
+            const res = await fetch('/api/jobs/consume', { method: 'POST' });
             await res.json();
             await loadJobs();
         } catch (err) {
@@ -115,7 +175,7 @@ export default function AdminQueuesPage() {
                 }
             }
 
-            const res = await fetchWithTimeout('/api/jobs/action', {
+            const res = await fetch('/api/jobs/action', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ jobId, action })
@@ -159,7 +219,7 @@ export default function AdminQueuesPage() {
         }
 
         try {
-            const res = await fetchWithTimeout('/api/jobs/action', {
+            const res = await fetch('/api/jobs/action', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -227,7 +287,7 @@ export default function AdminQueuesPage() {
     };
 
     return (
-        <AdminThemeLayout currentPage="queues" pageTitle="처리 큐">
+        <TestQueuesLayout currentPage="queues">
             <div className="space-y-6">
                 {/* Header */}
                 <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
@@ -527,7 +587,7 @@ export default function AdminQueuesPage() {
                     </CardContent>
                 </Card>
             </div>
-        </AdminThemeLayout>
+        </TestQueuesLayout>
     );
 }
 

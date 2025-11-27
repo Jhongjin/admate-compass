@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { RefreshCw, CheckCircle, Clock, AlertCircle, FileText, Database } from 'lucide-react';
+import { fetchWithTimeout } from '@/lib/utils/fetchWithTimeout';
 
 interface DocumentStatus {
   id: string;
@@ -45,7 +46,7 @@ export default function StatusPage() {
       setLoading(true);
       setError(null);
       
-      const response = await fetch('/api/admin/status');
+      const response = await fetchWithTimeout('/api/admin/status');
       const data = await response.json();
       
       if (data.success) {

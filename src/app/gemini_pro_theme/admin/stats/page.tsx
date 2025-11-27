@@ -228,11 +228,14 @@ export default function StatsPage() {
                 </div>
 
                 {/* Tabs & Charts */}
+                {/* Tabs & Charts */}
                 <Tabs value={activeTab} onValueChange={setActiveTab} className="space-y-6">
-                    <TabsList className="bg-[#131823] border border-white/5 p-1 rounded-xl">
-                        <TabsTrigger value="overview" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white text-gray-400 rounded-lg">개요</TabsTrigger>
-                        <TabsTrigger value="activity" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white text-gray-400 rounded-lg">활동</TabsTrigger>
-                        <TabsTrigger value="feedback" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white text-gray-400 rounded-lg">피드백</TabsTrigger>
+                    <TabsList className="bg-[#131823] border border-white/5 p-1 rounded-xl overflow-x-auto flex-nowrap">
+                        <TabsTrigger value="overview" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white text-gray-400 rounded-lg whitespace-nowrap">개요</TabsTrigger>
+                        <TabsTrigger value="activity" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white text-gray-400 rounded-lg whitespace-nowrap">활동 현황</TabsTrigger>
+                        <TabsTrigger value="feedback" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white text-gray-400 rounded-lg whitespace-nowrap">피드백</TabsTrigger>
+                        <TabsTrigger value="performance" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white text-gray-400 rounded-lg whitespace-nowrap">성능 지표</TabsTrigger>
+                        <TabsTrigger value="analysis" className="data-[state=active]:bg-blue-600 data-[state=active]:text-white text-gray-400 rounded-lg whitespace-nowrap">분석</TabsTrigger>
                     </TabsList>
 
                     <TabsContent value="overview" className="space-y-6">
@@ -274,7 +277,7 @@ export default function StatsPage() {
                                 </div>
                             </div>
 
-                            {/* Top Questions or Other Stats */}
+                            {/* System Status */}
                             <div className="bg-[#131823] border border-white/5 rounded-3xl p-6">
                                 <div className="flex items-center justify-between mb-6">
                                     <h3 className="text-lg font-bold text-white flex items-center">
@@ -311,13 +314,33 @@ export default function StatsPage() {
 
                     <TabsContent value="activity">
                         <div className="bg-[#131823] border border-white/5 rounded-3xl p-8 text-center text-gray-500">
-                            상세 활동 차트가 여기에 표시됩니다.
+                            <Activity className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                            <h3 className="text-lg font-medium text-white mb-2">활동 현황</h3>
+                            <p>상세한 사용자 활동 로그와 패턴을 분석합니다.</p>
                         </div>
                     </TabsContent>
 
                     <TabsContent value="feedback">
                         <div className="bg-[#131823] border border-white/5 rounded-3xl p-8 text-center text-gray-500">
-                            상세 피드백 분석이 여기에 표시됩니다.
+                            <ThumbsUp className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                            <h3 className="text-lg font-medium text-white mb-2">사용자 피드백</h3>
+                            <p>사용자 만족도 및 피드백 데이터를 분석합니다.</p>
+                        </div>
+                    </TabsContent>
+
+                    <TabsContent value="performance">
+                        <div className="bg-[#131823] border border-white/5 rounded-3xl p-8 text-center text-gray-500">
+                            <Zap className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                            <h3 className="text-lg font-medium text-white mb-2">성능 지표</h3>
+                            <p>시스템 응답 시간 및 리소스 사용량을 모니터링합니다.</p>
+                        </div>
+                    </TabsContent>
+
+                    <TabsContent value="analysis">
+                        <div className="bg-[#131823] border border-white/5 rounded-3xl p-8 text-center text-gray-500">
+                            <TrendingUp className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                            <h3 className="text-lg font-medium text-white mb-2">심층 분석</h3>
+                            <p>AI 모델의 성능과 데이터 품질을 분석합니다.</p>
                         </div>
                     </TabsContent>
                 </Tabs>

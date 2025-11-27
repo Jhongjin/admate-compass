@@ -10,16 +10,16 @@ import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { Separator } from '@/components/ui/separator';
 // import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
-// import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 // import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 // import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { 
-  Globe, 
-  Plus, 
-  Trash2, 
-  Play, 
-  Loader2, 
-  CheckCircle, 
+import {
+  Globe,
+  Plus,
+  Trash2,
+  Play,
+  Loader2,
+  CheckCircle,
   XCircle,
   ExternalLink,
   Settings,
@@ -38,6 +38,7 @@ import {
   EyeOff
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { fetchWithTimeout } from '@/lib/utils/fetchWithTimeout';
 
 // 미리 정의된 URL 템플릿 (대표 도메인만)
 const predefinedUrlTemplates = {
@@ -75,11 +76,28 @@ interface CrawlingProgress {
   }>;
 }
 
+const ALL_VENDORS = ["Meta", "Naver", "Kakao", "Google", "X(Twitter)"] as const;
+
+// UI 벤더 이름을 DB ENUM 값으로 변환하는 매핑
+const VENDOR_TO_DB_MAP: Record<string, string> = {
+  "Meta": "META",
+  "Naver": "NAVER",
+  "Kakao": "KAKAO",
+  "Google": "GOOGLE",
+  "X(Twitter)": "OTHER", // X/Twitter는 OTHER로 매핑
+};
+
 interface HybridCrawlingManagerProps {
   onCrawlingComplete?: () => void;
+  vendors?: string[];
+  onVendorsChange?: (vendors: string[]) => void;
 }
 
-export default function HybridCrawlingManager({ onCrawlingComplete }: HybridCrawlingManagerProps) {
+export default function HybridCrawlingManager({ 
+  onCrawlingComplete,
+  vendors = [],
+  onVendorsChange
+}: HybridCrawlingManagerProps) {
   const [crawlingMode, setCrawlingMode] = useState<'predefined' | 'custom' | 'hybrid'>('predefined');
   const [selectedTemplates, setSelectedTemplates] = useState<string[]>([]);
   const [customUrls, setCustomUrls] = useState<string[]>([]);
@@ -88,28 +106,49 @@ export default function HybridCrawlingManager({ onCrawlingComplete }: HybridCraw
   const [crawlingProgress, setCrawlingProgress] = useState<CrawlingProgress[]>([]);
   const [extractSubPages, setExtractSubPages] = useState(true);
   const [editingTemplate, setEditingTemplate] = useState<string | null>(null);
-  const [templateUrls, setTemplateUrls] = useState<{[key: string]: string[]}>({});
-  const [originalTemplateUrls, setOriginalTemplateUrls] = useState<{[key: string]: string[]}>({});
+  const [templateUrls, setTemplateUrls] = useState<{ [key: string]: string[] }>({});
+  const [originalTemplateUrls, setOriginalTemplateUrls] = useState<{ [key: string]: string[] }>({});
   const [templatesLoaded, setTemplatesLoaded] = useState(false);
   const [newTemplateName, setNewTemplateName] = useState('');
   const [newTemplateUrls, setNewTemplateUrls] = useState<string[]>(['']);
-  const [expandedCategories, setExpandedCategories] = useState<{[key: string]: boolean}>({});
+  const [expandedCategories, setExpandedCategories] = useState<{ [key: string]: boolean }>({});
   const [selectedUrls, setSelectedUrls] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   const [showUrlSelector, setShowUrlSelector] = useState(false);
   const [deletingUrl, setDeletingUrl] = useState<string | null>(null);
-  const [showDiscoveredUrls, setShowDiscoveredUrls] = useState<{[key: string]: boolean}>({});
-  const [selectedDiscoveredUrls, setSelectedDiscoveredUrls] = useState<{[key: string]: string[]}>({});
+  const [showDiscoveredUrls, setShowDiscoveredUrls] = useState<{ [key: string]: boolean }>({});
+  const [selectedDiscoveredUrls, setSelectedDiscoveredUrls] = useState<{ [key: string]: string[] }>({});
+
+  // Advanced Crawl Options
+  const [crawlOptions, setCrawlOptions] = useState({
+    domainLimit: true,
+    respectRobots: true,
+    maxDepth: '2'
+  });
+
+  const clampDepthValue = (value: string | number) => {
+    const numeric = typeof value === 'number' ? value : parseInt(value, 10);
+    if (!Number.isFinite(numeric)) {
+      return 1;
+    }
+    return Math.max(1, Math.min(4, numeric));
+  };
 
   // 템플릿 로드
-  const loadTemplates = async () => {
+  const loadTemplates = async (vendorFilter?: string) => {
     try {
-      console.log('템플릿 로드 시도...');
-      const response = await fetch('/api/admin/url-templates');
+      console.log('템플릿 로드 시도...', { vendorFilter });
+      
+      // 벤더 필터가 있으면 쿼리 파라미터 추가
+      const url = vendorFilter 
+        ? `/api/admin/url-templates?vendor=${encodeURIComponent(vendorFilter)}`
+        : '/api/admin/url-templates';
+      
+      const response = await fetchWithTimeout(url);
       const data = await response.json();
-      
+
       console.log('템플릿 로드 응답:', data);
-      
+
       if (data.success) {
         setTemplateUrls(data.templates);
         setOriginalTemplateUrls(data.templates);
@@ -134,9 +173,21 @@ export default function HybridCrawlingManager({ onCrawlingComplete }: HybridCraw
   // 컴포넌트 마운트 시 템플릿 로드
   React.useEffect(() => {
     if (!templatesLoaded) {
-      loadTemplates();
+      // 벤더가 선택되어 있으면 첫 번째 벤더로 필터링, 없으면 전체 로드
+      const dbVendor = vendors.length > 0 ? VENDOR_TO_DB_MAP[vendors[0]] : undefined;
+      loadTemplates(dbVendor);
     }
   }, [templatesLoaded]);
+
+  // 벤더 변경 시 템플릿 다시 로드
+  React.useEffect(() => {
+    if (templatesLoaded) {
+      const dbVendor = vendors.length > 0 ? VENDOR_TO_DB_MAP[vendors[0]] : undefined;
+      loadTemplates(dbVendor);
+      // 선택된 템플릿 초기화
+      setSelectedTemplates([]);
+    }
+  }, [vendors]);
 
   // URL 삭제 함수
   const handleDeleteUrl = async (url: string) => {
@@ -148,14 +199,14 @@ export default function HybridCrawlingManager({ onCrawlingComplete }: HybridCraw
     try {
       // 사용자 정의 URL은 아직 크롤링되지 않은 상태이므로
       // 프론트엔드 상태에서만 제거하면 됩니다
-      
+
       // URL 목록에서 제거
       setCustomUrls(prev => prev.filter(u => u !== url));
       setSelectedUrls(prev => prev.filter(u => u !== url));
-      
+
       // 성공 메시지 표시
       toast.success('URL이 목록에서 제거되었습니다.');
-      
+
     } catch (error) {
       console.error('URL 삭제 오류:', error);
       toast.error(`URL 삭제 중 오류가 발생했습니다: ${error instanceof Error ? error.message : String(error)}`);
@@ -239,27 +290,31 @@ export default function HybridCrawlingManager({ onCrawlingComplete }: HybridCraw
       const validUrls = newTemplateUrls.filter(url => url.trim());
       const templateName = newTemplateName.trim();
       
+      // 현재 선택된 벤더의 DB 값 가져오기 (없으면 META)
+      const dbVendor = vendors.length > 0 ? VENDOR_TO_DB_MAP[vendors[0]] : 'META';
+
       try {
-        console.log('새 템플릿 추가 시도:', { name: templateName, urls: validUrls });
-        
-        const response = await fetch('/api/admin/url-templates', {
+        console.log('새 템플릿 추가 시도:', { name: templateName, urls: validUrls, vendor: dbVendor });
+
+        const response = await fetchWithTimeout('/api/admin/url-templates', {
           method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
             name: templateName,
-            urls: validUrls
+            urls: validUrls,
+            vendor: dbVendor
           })
         });
-        
+
         const data = await response.json();
         console.log('API 응답:', data);
-        
+
         if (data.success) {
           // 먼저 백엔드에서 최신 데이터를 다시 로드
-          await loadTemplates();
-          
+          await loadTemplates(dbVendor);
+
           setNewTemplateName('');
           setNewTemplateUrls(['']);
           toast.success('새 템플릿이 추가되었습니다.');
@@ -283,11 +338,11 @@ export default function HybridCrawlingManager({ onCrawlingComplete }: HybridCraw
       toast.error('최소 하나의 유효한 URL이 필요합니다.');
       return;
     }
-    
+
     try {
       console.log('템플릿 저장 시도:', { name: templateName, urls: validUrls });
-      
-      const response = await fetch('/api/admin/url-templates', {
+
+      const response = await fetchWithTimeout('/api/admin/url-templates', {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -297,14 +352,14 @@ export default function HybridCrawlingManager({ onCrawlingComplete }: HybridCraw
           urls: validUrls
         })
       });
-      
+
       const data = await response.json();
       console.log('API 응답:', data);
-      
+
       if (data.success) {
         // 먼저 백엔드에서 최신 데이터를 다시 로드
         await loadTemplates();
-        
+
         setEditingTemplate(null);
         toast.success('템플릿이 저장되었습니다.');
       } else {
@@ -321,21 +376,21 @@ export default function HybridCrawlingManager({ onCrawlingComplete }: HybridCraw
     if (!confirm(`"${templateName}" 템플릿을 삭제하시겠습니까?`)) {
       return;
     }
-    
+
     try {
       console.log('템플릿 삭제 시도:', templateName);
-      
-      const response = await fetch(`/api/admin/url-templates?name=${encodeURIComponent(templateName)}`, {
+
+      const response = await fetchWithTimeout(`/api/admin/url-templates?name=${encodeURIComponent(templateName)}`, {
         method: 'DELETE'
       });
-      
+
       const data = await response.json();
       console.log('API 응답:', data);
-      
+
       if (data.success) {
         // 먼저 백엔드에서 최신 데이터를 다시 로드
         await loadTemplates();
-        
+
         setSelectedTemplates(prev => prev.filter(t => t !== templateName));
         setEditingTemplate(null);
         toast.success('템플릿이 삭제되었습니다.');
@@ -351,6 +406,7 @@ export default function HybridCrawlingManager({ onCrawlingComplete }: HybridCraw
   // 크롤링 시작
   const handleStartCrawling = async () => {
     const urlsToCrawl: string[] = [];
+    const maxDepthValue = clampDepthValue(crawlOptions.maxDepth);
 
     // 선택된 템플릿에서 URL 추출
     if (crawlingMode !== 'custom') {
@@ -387,12 +443,12 @@ export default function HybridCrawlingManager({ onCrawlingComplete }: HybridCraw
     // 크롤링 시작 전 상태 초기화
     setCrawlingProgress([]);
     setIsCrawling(false);
-    
+
     // 잠시 후 크롤링 시작
     setTimeout(() => {
       setIsCrawling(true);
       setCrawlingProgress(urlsToCrawl.map(url => ({ url, status: 'pending' })));
-      
+
       // 크롤링 로직 실행
       executeCrawling();
     }, 100);
@@ -408,22 +464,22 @@ export default function HybridCrawlingManager({ onCrawlingComplete }: HybridCraw
         // 각 URL에 대해 순차적으로 크롤링 상태 업데이트
         for (let i = 0; i < urlsToCrawl.length; i++) {
           const url = urlsToCrawl[i];
-          
+
           // 현재 URL을 크롤링 중으로 표시
-          setCrawlingProgress(prev => 
-            prev.map((p, index) => 
-              index === i 
+          setCrawlingProgress(prev =>
+            prev.map((p, index) =>
+              index === i
                 ? { ...p, status: 'crawling', message: '크롤링 중...' }
                 : p
             )
           );
-          
+
           // 실제 크롤링은 API에서 일괄 처리되므로 짧은 지연만 추가
           await new Promise(resolve => setTimeout(resolve, 1000));
         }
 
         // Puppeteer 기반 크롤링 API 호출 (Facebook/Instagram 지원)
-        const response = await fetch('/api/puppeteer-crawl', {
+        const response = await fetchWithTimeout('/api/puppeteer-crawl', {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
@@ -431,7 +487,9 @@ export default function HybridCrawlingManager({ onCrawlingComplete }: HybridCraw
           body: JSON.stringify({
             urls: urlsToCrawl,
             action: 'crawl_custom',
-            extractSubPages: extractSubPages // 하위 페이지 추출 옵션 전달
+            extractSubPages: extractSubPages,
+            ...crawlOptions,
+            maxDepth: maxDepthValue
           }),
         });
 
@@ -444,28 +502,28 @@ export default function HybridCrawlingManager({ onCrawlingComplete }: HybridCraw
         if (result.success) {
           const successCount = result.successCount || 0;
           const failedCount = result.failCount || 0;
-          
+
           toast.success(`크롤링 완료: ${successCount}개 성공, ${failedCount}개 실패`);
-          
+
           // 결과에 따라 진행상황 업데이트
-          setCrawlingProgress(prev => 
+          setCrawlingProgress(prev =>
             prev.map((p, index) => {
               const processedUrl = result.processedUrls?.[index];
               return {
-                ...p, 
-                status: processedUrl?.status === 'success' ? 'completed' as const : 'failed' as const, 
+                ...p,
+                status: processedUrl?.status === 'success' ? 'completed' as const : 'failed' as const,
                 message: processedUrl?.status === 'success' ? '크롤링 완료' : '크롤링 실패',
                 discoveredUrls: []
               };
             })
           );
-          
+
           // 크롤링된 데이터를 Supabase에 저장
           if (result.documents && result.documents.length > 0) {
             try {
               console.log('💾 크롤링된 데이터 저장 시작:', result.documents.length, '개');
-              
-              const saveResponse = await fetch('/api/admin/save-crawled-content', {
+
+              const saveResponse = await fetchWithTimeout('/api/admin/save-crawled-content', {
                 method: 'POST',
                 headers: {
                   'Content-Type': 'application/json',
@@ -479,9 +537,9 @@ export default function HybridCrawlingManager({ onCrawlingComplete }: HybridCraw
                   }))
                 }),
               });
-              
+
               const saveResult = await saveResponse.json();
-              
+
               if (saveResult.success) {
                 console.log('✅ 크롤링 데이터 저장 완료:', saveResult.data.summary);
                 toast.success(`데이터 저장 완료: ${saveResult.data.summary.success}개 저장`);
@@ -494,7 +552,7 @@ export default function HybridCrawlingManager({ onCrawlingComplete }: HybridCraw
               toast.error('데이터 저장 중 오류가 발생했습니다.');
             }
           }
-          
+
           // 크롤링 완료 후 즉시 상태 초기화
           setTimeout(() => {
             setCrawlingProgress([]);
@@ -510,7 +568,7 @@ export default function HybridCrawlingManager({ onCrawlingComplete }: HybridCraw
 
       } catch (error) {
         console.error('크롤링 오류:', error);
-        
+
         let errorMessage = '알 수 없는 오류';
         if (error instanceof Error) {
           if (error.message.includes('404')) {
@@ -521,9 +579,9 @@ export default function HybridCrawlingManager({ onCrawlingComplete }: HybridCraw
             errorMessage = error.message;
           }
         }
-        
+
         toast.error(`크롤링 실패: ${errorMessage}`);
-        setCrawlingProgress(prev => 
+        setCrawlingProgress(prev =>
           prev.map(p => ({ ...p, status: 'failed', message: '크롤링 실패' }))
         );
       } finally {
@@ -571,7 +629,7 @@ export default function HybridCrawlingManager({ onCrawlingComplete }: HybridCraw
     setSelectedDiscoveredUrls(prev => {
       const current = prev[parentUrl] || [];
       const isSelected = current.includes(discoveredUrl);
-      
+
       if (isSelected) {
         return {
           ...prev,
@@ -587,10 +645,10 @@ export default function HybridCrawlingManager({ onCrawlingComplete }: HybridCraw
   };
 
   // 모든 발견된 URL 선택/해제
-  const toggleAllDiscoveredUrls = (parentUrl: string, discoveredUrls: Array<{url: string; title?: string; source: string}>) => {
+  const toggleAllDiscoveredUrls = (parentUrl: string, discoveredUrls: Array<{ url: string; title?: string; source: string }>) => {
     const current = selectedDiscoveredUrls[parentUrl] || [];
     const allSelected = discoveredUrls.every(discovered => current.includes(discovered.url));
-    
+
     if (allSelected) {
       setSelectedDiscoveredUrls(prev => ({
         ...prev,
@@ -606,7 +664,7 @@ export default function HybridCrawlingManager({ onCrawlingComplete }: HybridCraw
 
   // URL을 도메인별로 그룹화
   const groupUrlsByDomain = (urls: string[]) => {
-    const groups: {[key: string]: string[]} = {};
+    const groups: { [key: string]: string[] } = {};
     urls.forEach(url => {
       try {
         const domain = new URL(url).hostname;
@@ -635,8 +693,8 @@ export default function HybridCrawlingManager({ onCrawlingComplete }: HybridCraw
 
   // URL 선택 토글
   const toggleUrlSelection = (url: string) => {
-    setSelectedUrls(prev => 
-      prev.includes(url) 
+    setSelectedUrls(prev =>
+      prev.includes(url)
         ? prev.filter(u => u !== url)
         : [...prev, url]
     );
@@ -655,7 +713,7 @@ export default function HybridCrawlingManager({ onCrawlingComplete }: HybridCraw
   const toggleAllUrlsInDomain = (domain: string, urls: string[]) => {
     const domainUrls = urls;
     const allSelected = domainUrls.every(url => selectedUrls.includes(url));
-    
+
     if (allSelected) {
       setSelectedUrls(prev => prev.filter(url => !domainUrls.includes(url)));
     } else {
@@ -676,6 +734,39 @@ export default function HybridCrawlingManager({ onCrawlingComplete }: HybridCraw
           </p>
         </div>
         <div className="flex items-center space-x-4">
+          {onVendorsChange && (
+            <div className="flex items-center space-x-2">
+              <span className="text-sm text-gray-400">크롤링 벤더:</span>
+              <Select 
+                value={vendors.length === 1 ? vendors[0] : vendors.length > 1 ? "multiple" : "all"} 
+                onValueChange={(v) => {
+                  if (v === "all") {
+                    onVendorsChange([]);
+                  } else if (v !== "multiple") {
+                    onVendorsChange([v]);
+                  }
+                }}
+              >
+                <SelectTrigger className="w-[180px] bg-[#0B0F17] border-white/10 text-white">
+                  <span className="flex-1 text-left">
+                    {vendors.length === 0 
+                      ? "전체 벤더" 
+                      : vendors.length === 1 
+                      ? vendors[0] 
+                      : `${vendors.length}개 선택됨`}
+                  </span>
+                </SelectTrigger>
+                <SelectContent className="bg-[#1A1F2C] border-white/10 text-white">
+                  <SelectItem value="all">전체 벤더</SelectItem>
+                  {ALL_VENDORS.map((vendor) => (
+                    <SelectItem key={vendor} value={vendor}>
+                      {vendor}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <Badge variant="outline" className="text-orange-300 border-orange-500/30 px-3 py-1">
             <BarChart3 className="w-3 h-3 mr-1" />
             {getSelectedUrlCount()}개 URL 선택됨
@@ -767,18 +858,17 @@ export default function HybridCrawlingManager({ onCrawlingComplete }: HybridCraw
                         )}
                       </Button>
                     </div>
-                    
+
                     {expandedCategories[domain] && (
                       <div className="border-t border-gray-600/30 bg-gray-800/30">
                         <div className="p-3 space-y-1">
                           {urls.map((url, index) => (
                             <div
                               key={index}
-                              className={`flex items-center space-x-3 p-2 rounded-lg cursor-pointer transition-colors ${
-                                selectedUrls.includes(url)
-                                  ? 'bg-orange-500/20 border border-orange-500/30'
-                                  : 'bg-gray-700/20 hover:bg-gray-700/40'
-                              }`}
+                              className={`flex items-center space-x-3 p-2 rounded-lg cursor-pointer transition-colors ${selectedUrls.includes(url)
+                                ? 'bg-orange-500/20 border border-orange-500/30'
+                                : 'bg-gray-700/20 hover:bg-gray-700/40'
+                                }`}
                               onClick={() => toggleUrlSelection(url)}
                             >
                               <Checkbox
@@ -834,21 +924,19 @@ export default function HybridCrawlingManager({ onCrawlingComplete }: HybridCraw
         </CardHeader>
         <CardContent>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <Card 
-              className={`cursor-pointer transition-all duration-300 rounded-xl group ${
-                crawlingMode === 'predefined' 
-                  ? 'ring-2 ring-blue-500 bg-blue-500/20 border-blue-500/50 shadow-lg shadow-blue-500/20' 
-                  : 'bg-gray-700/60 border-gray-600/70 hover:bg-gray-700/80 hover:border-blue-400/30 hover:shadow-lg hover:shadow-blue-500/10'
-              }`}
+            <Card
+              className={`cursor-pointer transition-all duration-300 rounded-xl group ${crawlingMode === 'predefined'
+                ? 'ring-2 ring-blue-500 bg-blue-500/20 border-blue-500/50 shadow-lg shadow-blue-500/20'
+                : 'bg-gray-700/60 border-gray-600/70 hover:bg-gray-700/80 hover:border-blue-400/30 hover:shadow-lg hover:shadow-blue-500/10'
+                }`}
               onClick={() => setCrawlingMode('predefined')}
             >
               <CardHeader className="pb-2">
                 <div className="flex items-center space-x-3 mb-3">
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300 ${
-                    crawlingMode === 'predefined' 
-                      ? 'bg-gradient-to-br from-blue-500 to-blue-600 shadow-lg shadow-blue-500/30' 
-                      : 'bg-gradient-to-br from-gray-600 to-gray-700 group-hover:from-blue-500 group-hover:to-blue-600'
-                  }`}>
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300 ${crawlingMode === 'predefined'
+                    ? 'bg-gradient-to-br from-blue-500 to-blue-600 shadow-lg shadow-blue-500/30'
+                    : 'bg-gradient-to-br from-gray-600 to-gray-700 group-hover:from-blue-500 group-hover:to-blue-600'
+                    }`}>
                     <Layers className="w-5 h-5 text-white" />
                   </div>
                   <div>
@@ -870,22 +958,20 @@ export default function HybridCrawlingManager({ onCrawlingComplete }: HybridCraw
                 </div>
               </CardHeader>
             </Card>
-            
-            <Card 
-              className={`cursor-pointer transition-all duration-300 rounded-xl group ${
-                crawlingMode === 'custom' 
-                  ? 'ring-2 ring-green-500 bg-green-500/20 border-green-500/50 shadow-lg shadow-green-500/20' 
-                  : 'bg-gray-700/60 border-gray-600/70 hover:bg-gray-700/80 hover:border-green-400/30 hover:shadow-lg hover:shadow-green-500/10'
-              }`}
+
+            <Card
+              className={`cursor-pointer transition-all duration-300 rounded-xl group ${crawlingMode === 'custom'
+                ? 'ring-2 ring-green-500 bg-green-500/20 border-green-500/50 shadow-lg shadow-green-500/20'
+                : 'bg-gray-700/60 border-gray-600/70 hover:bg-gray-700/80 hover:border-green-400/30 hover:shadow-lg hover:shadow-green-500/10'
+                }`}
               onClick={() => setCrawlingMode('custom')}
             >
               <CardHeader className="pb-2">
                 <div className="flex items-center space-x-3 mb-3">
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300 ${
-                    crawlingMode === 'custom' 
-                      ? 'bg-gradient-to-br from-green-500 to-green-600 shadow-lg shadow-green-500/30' 
-                      : 'bg-gradient-to-br from-gray-600 to-gray-700 group-hover:from-green-500 group-hover:to-green-600'
-                  }`}>
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300 ${crawlingMode === 'custom'
+                    ? 'bg-gradient-to-br from-green-500 to-green-600 shadow-lg shadow-green-500/30'
+                    : 'bg-gradient-to-br from-gray-600 to-gray-700 group-hover:from-green-500 group-hover:to-green-600'
+                    }`}>
                     <Plus className="w-5 h-5 text-white" />
                   </div>
                   <div>
@@ -907,22 +993,20 @@ export default function HybridCrawlingManager({ onCrawlingComplete }: HybridCraw
                 </div>
               </CardHeader>
             </Card>
-            
-            <Card 
-              className={`cursor-pointer transition-all duration-300 rounded-xl group ${
-                crawlingMode === 'hybrid' 
-                  ? 'ring-2 ring-purple-500 bg-purple-500/20 border-purple-500/50 shadow-lg shadow-purple-500/20' 
-                  : 'bg-gray-700/60 border-gray-600/70 hover:bg-gray-700/80 hover:border-purple-400/30 hover:shadow-lg hover:shadow-purple-500/10'
-              }`}
+
+            <Card
+              className={`cursor-pointer transition-all duration-300 rounded-xl group ${crawlingMode === 'hybrid'
+                ? 'ring-2 ring-purple-500 bg-purple-500/20 border-purple-500/50 shadow-lg shadow-purple-500/20'
+                : 'bg-gray-700/60 border-gray-600/70 hover:bg-gray-700/80 hover:border-purple-400/30 hover:shadow-lg hover:shadow-purple-500/10'
+                }`}
               onClick={() => setCrawlingMode('hybrid')}
             >
               <CardHeader className="pb-2">
                 <div className="flex items-center space-x-3 mb-3">
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300 ${
-                    crawlingMode === 'hybrid' 
-                      ? 'bg-gradient-to-br from-purple-500 to-purple-600 shadow-lg shadow-purple-500/30' 
-                      : 'bg-gradient-to-br from-gray-600 to-gray-700 group-hover:from-purple-500 group-hover:to-purple-600'
-                  }`}>
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all duration-300 ${crawlingMode === 'hybrid'
+                    ? 'bg-gradient-to-br from-purple-500 to-purple-600 shadow-lg shadow-purple-500/30'
+                    : 'bg-gradient-to-br from-gray-600 to-gray-700 group-hover:from-purple-500 group-hover:to-purple-600'
+                    }`}>
                     <Globe className="w-5 h-5 text-white" />
                   </div>
                   <div>
@@ -959,7 +1043,7 @@ export default function HybridCrawlingManager({ onCrawlingComplete }: HybridCraw
                   URL 템플릿 관리
                 </CardTitle>
                 <CardDescription className="text-gray-400">
-                  검증된 Meta 공식 사이트 템플릿을 선택하고 관리하세요.
+                  검증된 {vendors.length > 0 ? vendors[0] : 'Meta'} 공식 사이트 템플릿을 선택하고 관리하세요.
                 </CardDescription>
               </div>
               <div className="flex items-center space-x-2">
@@ -999,17 +1083,16 @@ export default function HybridCrawlingManager({ onCrawlingComplete }: HybridCraw
           <CardContent>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {Object.entries(templateUrls).map(([name, urls]) => (
-                <Card key={name} className={`relative group transition-all duration-300 rounded-xl ${
-                  editingTemplate === name
-                    ? 'border-yellow-500/50 bg-yellow-500/10'
-                    : selectedTemplates.includes(name)
+                <Card key={name} className={`relative group transition-all duration-300 rounded-xl ${editingTemplate === name
+                  ? 'border-yellow-500/50 bg-yellow-500/10'
+                  : selectedTemplates.includes(name)
                     ? 'border-blue-500/50 bg-blue-500/10'
                     : 'border-gray-600/50 bg-gray-700/30 hover:bg-gray-700/50'
-                }`}>
+                  }`}>
                   <CardHeader className="pb-2">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center space-x-3 flex-1">
-                        <Checkbox 
+                        <Checkbox
                           checked={selectedTemplates.includes(name)}
                           onCheckedChange={() => toggleTemplate(name)}
                           className="data-[state=checked]:bg-blue-500 data-[state=checked]:border-blue-500"
@@ -1116,7 +1199,7 @@ export default function HybridCrawlingManager({ onCrawlingComplete }: HybridCraw
                 </Card>
               ))}
             </div>
-            
+
             {/* 새 템플릿 추가 폼 */}
             {!editingTemplate && (
               <Card className="mt-4 border-dashed border-2 border-gray-600 rounded-xl">
@@ -1207,7 +1290,7 @@ export default function HybridCrawlingManager({ onCrawlingComplete }: HybridCraw
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="flex space-x-2">
-              <Input 
+              <Input
                 placeholder="새 URL 입력 (예: https://ko-kr.facebook.com/business)"
                 value={newUrl}
                 onChange={(e) => setNewUrl(e.target.value)}
@@ -1221,7 +1304,7 @@ export default function HybridCrawlingManager({ onCrawlingComplete }: HybridCraw
                 <Plus className="w-4 h-4" />
               </Button>
             </div>
-            
+
             {customUrls.length > 0 && (
               <div className="space-y-3">
                 <Separator />
@@ -1239,7 +1322,7 @@ export default function HybridCrawlingManager({ onCrawlingComplete }: HybridCraw
                           <Globe className="w-4 h-4 text-blue-400" />
                         </div>
                       </div>
-                      
+
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center space-x-2 mb-1">
                           <span className="text-sm font-medium text-white truncate">
@@ -1253,10 +1336,10 @@ export default function HybridCrawlingManager({ onCrawlingComplete }: HybridCraw
                           크롤링 대기 상태
                         </p>
                       </div>
-                      
+
                       <div className="flex-shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <Button 
-                          variant="ghost" 
+                        <Button
+                          variant="ghost"
                           size="sm"
                           onClick={() => handleDeleteUrl(url)}
                           disabled={deletingUrl === url}
@@ -1278,43 +1361,104 @@ export default function HybridCrawlingManager({ onCrawlingComplete }: HybridCraw
         </Card>
       )}
 
-      {/* 고급 설정 */}
-      <Card className="bg-gradient-to-br from-gray-800/90 to-gray-900/90 backdrop-blur-sm border-gray-700/50">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-white">
-            <Settings className="w-5 h-5 text-purple-400" />
-            고급 설정
-          </CardTitle>
-          <CardDescription className="text-gray-400">
-            크롤링 동작을 세밀하게 제어할 수 있습니다.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex items-center space-x-3 p-4 bg-gray-700/30 rounded-lg border border-gray-600/30">
-            <Checkbox 
-              id="extractSubPages"
-              checked={extractSubPages}
-              onCheckedChange={(checked) => setExtractSubPages(checked as boolean)}
-              className="data-[state=checked]:bg-purple-500 data-[state=checked]:border-purple-500"
+      {/* Advanced Crawl Options */}
+      <div className="bg-gray-800/50 border border-gray-700 rounded-xl p-6 space-y-4">
+        <h3 className="text-lg font-semibold text-white flex items-center gap-2">
+          <Settings className="w-5 h-5 text-gray-400" />
+          고급 크롤링 옵션
+        </h3>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="flex items-center space-x-2">
+            <Checkbox
+              id="domainLimit"
+              checked={crawlOptions.domainLimit}
+              onCheckedChange={(checked) => setCrawlOptions(prev => ({ ...prev, domainLimit: !!checked }))}
             />
-            <div className="flex-1">
-              <label htmlFor="extractSubPages" className="text-sm font-medium text-white cursor-pointer">
-                하위 페이지 자동 추출 (사이트맵 기반)
-              </label>
-              <p className="text-xs text-gray-400 mt-1">
-                활성화하면 선택된 URL의 하위 페이지들을 자동으로 찾아서 크롤링합니다.
-              </p>
-            </div>
-            <Badge variant="outline" className="text-purple-300 border-purple-500/30">
-              {extractSubPages ? '활성화' : '비활성화'}
-            </Badge>
+            <Label htmlFor="domainLimit" className="text-gray-300 cursor-pointer">
+              도메인 제한 (외부 링크 제외)
+            </Label>
           </div>
-        </CardContent>
-      </Card>
+          <div className="flex items-center space-x-2">
+            <Checkbox
+              id="respectRobots"
+              checked={crawlOptions.respectRobots}
+              onCheckedChange={(checked) => setCrawlOptions(prev => ({ ...prev, respectRobots: !!checked }))}
+            />
+            <Label htmlFor="respectRobots" className="text-gray-300 cursor-pointer">
+              Robots.txt 준수
+            </Label>
+          </div>
+          <div className="flex items-center space-x-2">
+            <Label htmlFor="maxDepth" className="text-gray-300 whitespace-nowrap">
+              최대 깊이:
+            </Label>
+            <Input
+              id="maxDepth"
+              type="number"
+              min="1"
+              max="4"
+              value={crawlOptions.maxDepth}
+              onChange={(e) => {
+                const sanitized = clampDepthValue(e.target.value).toString();
+                setCrawlOptions(prev => ({ ...prev, maxDepth: sanitized }));
+              }}
+              className="w-20 bg-gray-700 border-gray-600 text-white"
+            />
+          </div>
+        </div>
+        <div className="flex items-center space-x-2 pt-2">
+          <Checkbox
+            id="extractSubPages"
+            checked={extractSubPages}
+            onCheckedChange={(checked) => setExtractSubPages(!!checked)}
+          />
+          <Label htmlFor="extractSubPages" className="text-gray-300 cursor-pointer">
+            하위 페이지 자동 추출 (sitemap.xml 및 링크 분석)
+          </Label>
+        </div>
+      </div>
+
+      {/* 크롤링 실행 버튼 */}
+      <div className="flex justify-center space-x-4">
+        <Button
+          onClick={handleStartCrawling}
+          disabled={isCrawling || getSelectedUrlCount() === 0}
+          size="lg"
+          className={`w-full max-w-md h-14 text-lg font-semibold transition-all duration-300 ${isCrawling || getSelectedUrlCount() === 0
+            ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
+            : 'bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white shadow-lg hover:shadow-xl transform hover:scale-105'
+            }`}
+        >
+          {isCrawling ? (
+            <>
+              <Loader2 className="w-5 h-5 mr-3 animate-spin" />
+              크롤링 진행 중...
+            </>
+          ) : (
+            <>
+              <Play className="w-5 h-5 mr-3" />
+              크롤링 시작 ({getSelectedUrlCount()}개 URL)
+            </>
+          )}
+        </Button>
+
+        {/* 크롤링 상태 초기화 버튼 */}
+        {isCrawling && (
+          <Button
+            onClick={handleResetCrawling}
+            variant="outline"
+            size="lg"
+            className="h-14 px-6 text-white border-gray-500 hover:bg-gray-700 hover:border-gray-400"
+          >
+            <RefreshCw className="w-5 h-5 mr-3" />
+            상태 초기화
+          </Button>
+        )}
+      </div>
 
       {/* 크롤링 진행 상황 */}
       {crawlingProgress.length > 0 && (
-        <Card className="bg-gradient-to-br from-gray-800/90 to-gray-900/90 backdrop-blur-sm border-gray-700/50 rounded-xl">
+        <Card className="bg-gradient-to-br from-gray-800/90 to-gray-900/90 backdrop-blur-sm border-gray-700/50 rounded-xl mt-6">
           <CardHeader>
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -1345,17 +1489,16 @@ export default function HybridCrawlingManager({ onCrawlingComplete }: HybridCraw
           <CardContent>
             <div className="space-y-3">
               {crawlingProgress.map((progress, index) => (
-                <div 
-                  key={index} 
-                  className={`flex items-center space-x-4 p-4 rounded-lg border transition-all duration-200 ${
-                    progress.status === 'completed' 
-                      ? 'bg-green-500/10 border-green-500/30' 
-                      : progress.status === 'failed'
+                <div
+                  key={index}
+                  className={`flex items-center space-x-4 p-4 rounded-lg border transition-all duration-200 ${progress.status === 'completed'
+                    ? 'bg-green-500/10 border-green-500/30'
+                    : progress.status === 'failed'
                       ? 'bg-red-500/10 border-red-500/30'
                       : progress.status === 'crawling'
-                      ? 'bg-blue-500/10 border-blue-500/30'
-                      : 'bg-gray-700/30 border-gray-600/50'
-                  }`}
+                        ? 'bg-blue-500/10 border-blue-500/30'
+                        : 'bg-gray-700/30 border-gray-600/50'
+                    }`}
                 >
                   <div className="flex-shrink-0">
                     {progress.status === 'pending' && (
@@ -1379,7 +1522,7 @@ export default function HybridCrawlingManager({ onCrawlingComplete }: HybridCraw
                       </div>
                     )}
                   </div>
-                  
+
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center space-x-2 mb-1">
                       <Globe className="w-4 h-4 text-gray-400 flex-shrink-0" />
@@ -1392,7 +1535,7 @@ export default function HybridCrawlingManager({ onCrawlingComplete }: HybridCraw
                         {progress.message}
                       </p>
                     )}
-                    
+
                     {/* 발견된 하위 페이지 표시 */}
                     {progress.discoveredUrls && progress.discoveredUrls.length > 0 && (
                       <div className="mt-3">
@@ -1419,17 +1562,16 @@ export default function HybridCrawlingManager({ onCrawlingComplete }: HybridCraw
                             </Button>
                           </div>
                         </div>
-                        
+
                         {showDiscoveredUrls[progress.url] && (
                           <div className="space-y-2 max-h-40 overflow-y-auto">
                             {progress.discoveredUrls.map((discovered, idx) => (
-                              <div 
+                              <div
                                 key={idx}
-                                className={`flex items-center space-x-2 p-2 rounded border transition-colors ${
-                                  selectedDiscoveredUrls[progress.url]?.includes(discovered.url)
-                                    ? 'bg-purple-500/20 border-purple-500/50'
-                                    : 'bg-gray-700/30 border-gray-600/30 hover:bg-gray-600/30'
-                                }`}
+                                className={`flex items-center space-x-2 p-2 rounded border transition-colors ${selectedDiscoveredUrls[progress.url]?.includes(discovered.url)
+                                  ? 'bg-purple-500/20 border-purple-500/50'
+                                  : 'bg-gray-700/30 border-gray-600/30 hover:bg-gray-600/30'
+                                  }`}
                               >
                                 <Checkbox
                                   checked={selectedDiscoveredUrls[progress.url]?.includes(discovered.url) || false}
@@ -1441,17 +1583,16 @@ export default function HybridCrawlingManager({ onCrawlingComplete }: HybridCraw
                                     <span className="text-xs text-white truncate">
                                       {discovered.title || discovered.url}
                                     </span>
-                                    <Badge 
-                                      variant="outline" 
-                                      className={`text-xs ${
-                                        discovered.source === 'sitemap' 
-                                          ? 'bg-blue-500/20 text-blue-300 border-blue-500/30'
-                                          : discovered.source === 'robots'
+                                    <Badge
+                                      variant="outline"
+                                      className={`text-xs ${discovered.source === 'sitemap'
+                                        ? 'bg-blue-500/20 text-blue-300 border-blue-500/30'
+                                        : discovered.source === 'robots'
                                           ? 'bg-green-500/20 text-green-300 border-green-500/30'
                                           : discovered.source === 'links'
-                                          ? 'bg-orange-500/20 text-orange-300 border-orange-500/30'
-                                          : 'bg-gray-500/20 text-gray-300 border-gray-500/30'
-                                      }`}
+                                            ? 'bg-orange-500/20 text-orange-300 border-orange-500/30'
+                                            : 'bg-gray-500/20 text-gray-300 border-gray-500/30'
+                                        }`}
                                     >
                                       {discovered.source}
                                     </Badge>
@@ -1475,19 +1616,18 @@ export default function HybridCrawlingManager({ onCrawlingComplete }: HybridCraw
                       </div>
                     )}
                   </div>
-                  
+
                   <div className="flex-shrink-0">
-                    <Badge 
+                    <Badge
                       variant="outline"
-                      className={`text-xs font-medium ${
-                        progress.status === 'completed' 
-                          ? 'bg-green-500/20 text-green-300 border-green-500/30' 
-                          : progress.status === 'failed'
+                      className={`text-xs font-medium ${progress.status === 'completed'
+                        ? 'bg-green-500/20 text-green-300 border-green-500/30'
+                        : progress.status === 'failed'
                           ? 'bg-red-500/20 text-red-300 border-red-500/30'
                           : progress.status === 'crawling'
-                          ? 'bg-blue-500/20 text-blue-300 border-blue-500/30'
-                          : 'bg-gray-500/20 text-gray-300 border-gray-500/30'
-                      }`}
+                            ? 'bg-blue-500/20 text-blue-300 border-blue-500/30'
+                            : 'bg-gray-500/20 text-gray-300 border-gray-500/30'
+                        }`}
                     >
                       {progress.status === 'pending' && '대기 중'}
                       {progress.status === 'crawling' && '크롤링 중'}
@@ -1498,56 +1638,19 @@ export default function HybridCrawlingManager({ onCrawlingComplete }: HybridCraw
                 </div>
               ))}
             </div>
-            
+
             {/* 전체 진행률 표시 */}
-            <div className="mt-6 p-4 bg-gray-700/30 rounded-lg border border-gray-600/30">
-              <div className="flex items-center justify-center space-x-3">
-                <Loader2 className="w-5 h-5 animate-spin text-orange-400" />
-                <span className="text-white font-medium">크롤링 진행 중...</span>
+            {isCrawling && (
+              <div className="mt-6 p-4 bg-gray-700/30 rounded-lg border border-gray-600/30">
+                <div className="flex items-center justify-center space-x-3">
+                  <Loader2 className="w-5 h-5 animate-spin text-orange-400" />
+                  <span className="text-white font-medium">크롤링 진행 중...</span>
+                </div>
               </div>
-            </div>
+            )}
           </CardContent>
         </Card>
       )}
-
-      {/* 크롤링 실행 버튼 */}
-      <div className="flex justify-center space-x-4">
-        <Button 
-          onClick={handleStartCrawling}
-          disabled={isCrawling || getSelectedUrlCount() === 0}
-          size="lg"
-          className={`w-full max-w-md h-14 text-lg font-semibold transition-all duration-300 ${
-            isCrawling || getSelectedUrlCount() === 0
-              ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
-              : 'bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white shadow-lg hover:shadow-xl transform hover:scale-105'
-          }`}
-        >
-          {isCrawling ? (
-            <>
-              <Loader2 className="w-5 h-5 mr-3 animate-spin" />
-              크롤링 진행 중...
-            </>
-          ) : (
-            <>
-              <Play className="w-5 h-5 mr-3" />
-              크롤링 시작 ({getSelectedUrlCount()}개 URL)
-            </>
-          )}
-        </Button>
-        
-        {/* 크롤링 상태 초기화 버튼 */}
-        {isCrawling && (
-          <Button 
-            onClick={handleResetCrawling}
-            variant="outline"
-            size="lg"
-            className="h-14 px-6 text-white border-gray-500 hover:bg-gray-700 hover:border-gray-400"
-          >
-            <RefreshCw className="w-5 h-5 mr-3" />
-            상태 초기화
-          </Button>
-        )}
-      </div>
     </div>
   );
 }

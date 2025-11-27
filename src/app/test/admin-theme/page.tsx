@@ -3,7 +3,6 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useAuth } from "@/hooks/useAuth";
-import AdminThemeLayout from "@/components/layouts/AdminThemeLayout";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -40,6 +39,10 @@ import {
     PieChart,
     FileSearch,
     DollarSign,
+    Menu,
+    LogOut,
+    ChevronRight,
+    Home,
     MessageSquare,
     Star,
     Upload,
@@ -49,12 +52,105 @@ import {
     TrendingDown
 } from "lucide-react";
 import Link from "next/link";
+import Image from "next/image";
 import { dashboardDataService, DashboardStats } from "@/lib/services/DashboardDataService";
 import Statistics from "@/components/admin/Statistics";
 import TeamStats from "@/components/admin/TeamStats";
 import QueueSummaryPanel from "@/components/admin/QueueSummaryPanel";
-import { fetchWithTimeout } from "@/lib/utils/fetchWithTimeout";
 
+// 테스트 페이지용 레이아웃 (원본 admin 경로 사용)
+function TestAdminLayout({ children, currentPage = "dashboard" }: { children: React.ReactNode; currentPage?: string }) {
+    const [sidebarOpen, setSidebarOpen] = useState(false);
+
+    const navigation = [
+        { name: "대시보드", href: "/test/admin-theme", icon: BarChart3, current: currentPage === "dashboard" },
+        { name: "문서 관리", href: "/admin/docs", icon: FileText, current: currentPage === "docs" },
+        { name: "처리 큐", href: "/admin/queues", icon: Activity, current: currentPage === "queues" },
+        { name: "사용자 관리", href: "/admin/users", icon: Users, current: currentPage === "users" },
+        { name: "시스템 모니터링", href: "/admin/monitoring", icon: TrendingUp, current: currentPage === "monitoring" },
+        { name: "통계 및 분석", href: "/admin/stats", icon: PieChart, current: currentPage === "stats" },
+        { name: "로그 및 감사", href: "/admin/logs", icon: FileSearch, current: currentPage === "logs" },
+        { name: "비용 모니터링", href: "/admin/cost-monitoring", icon: DollarSign, current: currentPage === "cost" },
+    ];
+
+    return (
+        <div className="min-h-screen bg-[#0B0F17] text-white font-sans selection:bg-blue-500/30">
+            {/* Header */}
+            <header className="fixed top-0 left-0 right-0 z-50 bg-[#0B0F17]/80 backdrop-blur-xl border-b border-white/5">
+                <div className="max-w-[1600px] mx-auto px-4 sm:px-6 lg:px-8">
+                    <div className="flex justify-between items-center h-20">
+                        <div className="flex items-center gap-8">
+                            <Link href="/" className="flex items-center gap-2 group">
+                                <div className="relative w-8 h-8">
+                                    <Image
+                                        src="/admate-logo.png"
+                                        alt="AdMate"
+                                        fill
+                                        className="object-contain"
+                                    />
+                                </div>
+                                <span className="text-xl font-bold bg-gradient-to-r from-white to-gray-400 bg-clip-text text-transparent">AdMate</span>
+                            </Link>
+                            <div className="hidden md:flex items-center text-sm text-gray-500">
+                                <span className="px-2">/</span>
+                                <span className="text-gray-300">관리자 대시보드 (테스트)</span>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-4">
+                            <div className="hidden md:flex items-center gap-3 px-4 py-2 rounded-full bg-white/5 border border-white/5">
+                                <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                                <span className="text-xs font-medium text-gray-300">시스템 정상 가동 중</span>
+                            </div>
+                            <Button variant="ghost" size="icon" className="md:hidden text-gray-400 hover:text-white" onClick={() => setSidebarOpen(!sidebarOpen)}>
+                                <Menu className="w-5 h-5" />
+                            </Button>
+                        </div>
+                    </div>
+                </div>
+            </header>
+
+            <div className="pt-20 flex max-w-[1600px] mx-auto">
+                {/* Sidebar (Desktop) */}
+                <aside className="hidden md:block w-64 fixed h-[calc(100vh-5rem)] border-r border-white/5 bg-[#0B0F17]/50 backdrop-blur-sm">
+                    <nav className="p-4 space-y-2">
+                        {navigation.map((item) => (
+                            <Link
+                                key={item.name}
+                                href={item.href}
+                                className={`flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all duration-200 ${item.current
+                                    ? "bg-blue-600/10 text-blue-400 border border-blue-500/20"
+                                    : "text-gray-400 hover:bg-white/5 hover:text-white"
+                                    }`}
+                            >
+                                <item.icon className={`w-5 h-5 ${item.current ? "text-blue-400" : "text-gray-500"}`} />
+                                {item.name}
+                            </Link>
+                        ))}
+                    </nav>
+                    <div className="absolute bottom-0 left-0 right-0 p-4 border-t border-white/5">
+                        <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-white/5 border border-white/5">
+                            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-xs font-bold">
+                                AD
+                            </div>
+                            <div className="flex-1 min-w-0">
+                                <p className="text-sm font-medium text-white truncate">관리자</p>
+                                <p className="text-xs text-gray-500 truncate">admin@admate.ai</p>
+                            </div>
+                        </div>
+                    </div>
+                </aside>
+
+                {/* Main Content */}
+                <main className="flex-1 md:pl-64 min-h-[calc(100vh-5rem)]">
+                    <div className="p-6 lg:p-10 space-y-8">
+                        {children}
+                    </div>
+                </main>
+            </div>
+        </div>
+    );
+}
 
 // --- Themed Statistics Component (gemini_pro_theme 스타일) ---
 interface StatCardProps {
@@ -329,7 +425,7 @@ function ThemedQueueSummaryPanel({ selectedVendors = [] }: { selectedVendors?: s
     const handleProcessImmediately = async () => {
         setProcessing(true);
         try {
-            await fetchWithTimeout('/api/jobs/consume', { method: 'POST' });
+            await fetch('/api/jobs/consume', { method: 'POST' });
             await refetch();
         } catch (e) {
             console.error(e);
@@ -566,7 +662,7 @@ export default function TestAdminThemePage() {
     // 로딩 상태
     if (isLoading && !dashboardStats) {
         return (
-            <AdminThemeLayout currentPage="dashboard">
+            <TestAdminLayout currentPage="dashboard">
                 <div className="space-y-4 sm:space-y-6 p-4 sm:p-6">
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
                         {Array.from({ length: 4 }).map((_, i) => (
@@ -581,14 +677,14 @@ export default function TestAdminThemePage() {
                         데이터를 불러오는 중...
                     </div>
                 </div>
-            </AdminThemeLayout>
+            </TestAdminLayout>
         );
     }
 
     // 에러 상태
     if (error) {
         return (
-            <AdminThemeLayout currentPage="dashboard">
+            <TestAdminLayout currentPage="dashboard">
                 <div className="p-4 sm:p-6">
                     <Alert className="bg-red-900/20 border-red-500/30 text-red-100">
                         <AlertTriangle className="h-4 w-4" aria-hidden="true" />
@@ -608,27 +704,27 @@ export default function TestAdminThemePage() {
                         </AlertDescription>
                     </Alert>
                 </div>
-            </AdminThemeLayout>
+            </TestAdminLayout>
         );
     }
 
     // 로딩 중이거나 로그인하지 않은 경우
     if (loading) {
         return (
-            <AdminThemeLayout currentPage="dashboard">
+            <TestAdminLayout currentPage="dashboard">
                 <div className="flex items-center justify-center h-[calc(100vh-8rem)]">
                     <div className="text-center">
                         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
                         <p className="text-gray-400">로그인 상태를 확인하는 중...</p>
                     </div>
                 </div>
-            </AdminThemeLayout>
+            </TestAdminLayout>
         );
     }
 
     if (!user) {
         return (
-            <AdminThemeLayout currentPage="dashboard">
+            <TestAdminLayout currentPage="dashboard">
                 <div className="flex items-center justify-center h-[calc(100vh-8rem)]">
                     <div className="text-center">
                         <div className="bg-red-900/20 border border-red-500/30 text-red-100 px-4 py-3 rounded mb-4">
@@ -638,12 +734,12 @@ export default function TestAdminThemePage() {
                         <p className="text-gray-400">잠시 후 메인 페이지로 이동합니다...</p>
                     </div>
                 </div>
-            </AdminThemeLayout>
+            </TestAdminLayout>
         );
     }
 
     return (
-        <AdminThemeLayout currentPage="dashboard">
+        <TestAdminLayout currentPage="dashboard">
             {/* System Alerts */}
             <motion.div
                 className="mb-6"
@@ -655,7 +751,7 @@ export default function TestAdminThemePage() {
                     <Info className="h-4 w-4 text-blue-300" />
                     <AlertTitle className="text-blue-200 font-semibold">✅ 시스템 상태</AlertTitle>
                     <AlertDescription className="text-blue-100">
-                        모든 시스템이 정상적으로 작동 중입니다. 마지막 업데이트: {systemStatus.lastUpdate}
+                        🟢 모든 시스템이 정상적으로 작동 중입니다. 마지막 업데이트: {systemStatus.lastUpdate}
                     </AlertDescription>
                 </Alert>
             </motion.div>
@@ -1138,7 +1234,7 @@ export default function TestAdminThemePage() {
                                 if (!documentToDelete) return;
 
                                 try {
-                                    const response = await fetchWithTimeout(`/api/admin/upload?documentId=${documentToDelete.id}`, {
+                                    const response = await fetch(`/api/admin/upload?documentId=${documentToDelete.id}`, {
                                         method: 'DELETE',
                                     });
 
@@ -1170,7 +1266,7 @@ export default function TestAdminThemePage() {
                     </DialogFooter>
                 </DialogContent>
             </Dialog>
-        </AdminThemeLayout>
+        </TestAdminLayout>
     );
 }
 

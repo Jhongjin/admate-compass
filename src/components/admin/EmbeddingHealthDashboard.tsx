@@ -7,6 +7,7 @@ import { Badge } from '@/components/ui/badge';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Progress } from '@/components/ui/progress';
 import { RefreshCw, AlertTriangle, CheckCircle, XCircle, Database, Wrench } from 'lucide-react';
+import { fetchWithTimeout } from '@/lib/utils/fetchWithTimeout';
 
 interface EmbeddingStats {
   totalChunks: number;
@@ -43,7 +44,7 @@ export default function EmbeddingHealthDashboard() {
     setLoading(true);
     try {
       // Fetch validation data
-      const validationResponse = await fetch('/api/validate-embeddings');
+      const validationResponse = await fetchWithTimeout('/api/validate-embeddings');
       const validationData = await validationResponse.json();
       
       if (validationData.success) {
@@ -61,7 +62,7 @@ export default function EmbeddingHealthDashboard() {
   const fixEmbeddingFormats = async () => {
     setFixing(true);
     try {
-      const response = await fetch('/api/fix-embedding-formats', {
+      const response = await fetchWithTimeout('/api/fix-embedding-formats', {
         method: 'POST',
       });
       const result: { success: boolean; result: FixResult } = await response.json();
@@ -83,7 +84,7 @@ export default function EmbeddingHealthDashboard() {
   const regenerateEmbeddings = async () => {
     setRegenerating(true);
     try {
-      const response = await fetch('/api/regenerate-embeddings', {
+      const response = await fetchWithTimeout('/api/regenerate-embeddings', {
         method: 'POST',
       });
       const result: { success: boolean; result: FixResult } = await response.json();

@@ -9,7 +9,7 @@ import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { 
+import {
   AlertDialog,
   AlertDialogContent,
   AlertDialogHeader,
@@ -20,6 +20,7 @@ import {
   AlertDialogCancel
 } from "@/components/ui/alert-dialog";
 import { useToast } from "@/hooks/use-toast";
+import { fetchWithTimeout } from "@/lib/utils/fetchWithTimeout";
 
 interface DocumentFile {
   id: string;
@@ -44,9 +45,11 @@ interface UploadedDocument {
 
 interface NewDocumentUploadProps {
   onUpload?: (files: File[]) => void;
+  vendor?: string;
+  hideList?: boolean;
 }
 
-export default function NewDocumentUpload({ onUpload }: NewDocumentUploadProps) {
+export default function NewDocumentUpload({ onUpload, vendor, hideList = false }: NewDocumentUploadProps) {
   const [files, setFiles] = useState<DocumentFile[]>([]);
   const [urls, setUrls] = useState<string[]>([]);
   const [isUploading, setIsUploading] = useState(false);
@@ -63,14 +66,15 @@ export default function NewDocumentUpload({ onUpload }: NewDocumentUploadProps) 
 
   // File 객체를 별도로 관리하는 Map
   const fileMapRef = useRef<Map<string, File>>(new Map());
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   // 업로드된 문서 목록 가져오기
   const fetchUploadedDocuments = useCallback(async () => {
     try {
       setIsLoadingDocuments(true);
       console.log('📋 업로드된 문서 목록 가져오기 시작');
-      
-      const response = await fetch('/api/admin/upload-new', {
+
+      const response = await fetchWithTimeout('/api/admin/upload-new', {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -84,7 +88,7 @@ export default function NewDocumentUpload({ onUpload }: NewDocumentUploadProps) 
 
       const result = await response.json();
       console.log('📋 문서 목록 조회 성공:', result);
-      
+
       if (result.success && result.data?.documents) {
         setUploadedDocuments(result.data.documents);
         console.log(`📋 ${result.data.documents.length}개 문서 로드 완료`);
@@ -121,7 +125,7 @@ export default function NewDocumentUpload({ onUpload }: NewDocumentUploadProps) 
     e.preventDefault();
     e.stopPropagation();
     setDragActive(false);
-    
+
     if (e.dataTransfer.files && e.dataTransfer.files[0]) {
       const droppedFiles = Array.from(e.dataTransfer.files);
       handleFileSelect(droppedFiles);
@@ -130,7 +134,7 @@ export default function NewDocumentUpload({ onUpload }: NewDocumentUploadProps) 
 
   const handleFileSelect = (selectedFiles: File[]) => {
     console.log('선택된 파일들:', selectedFiles.map(f => ({ name: f.name, size: f.size, type: f.type })));
-    
+
     const validFiles = selectedFiles.filter(file => {
       // PDF, DOCX, 텍스트 파일 허용
       const validTypes = ['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain'];
@@ -180,25 +184,37 @@ export default function NewDocumentUpload({ onUpload }: NewDocumentUploadProps) 
     fileMapRef.current.delete(fileId); // Map에서도 제거
   };
 
+  const handleInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const selected = event.target.files ? Array.from(event.target.files) : [];
+    if (selected.length) {
+      handleFileSelect(selected);
+      event.target.value = "";
+    }
+  };
+
+  const triggerFileDialog = () => {
+    fileInputRef.current?.click();
+  };
+
   // 적응형 폴링 함수: 작업 상태를 확인하고 완료될 때까지 폴링
   const pollJobStatus = async (jobId: string, documentId: string, fileId: string, fileName: string) => {
     const MAX_POLL_ATTEMPTS = 120; // 최대 10분 (5초 * 120)
     const INITIAL_POLL_INTERVAL = 2000; // 초기 2초
     const MAX_POLL_INTERVAL = 5000; // 최대 5초
     const MIN_POLL_INTERVAL = 2000; // 최소 2초
-    
+
     let pollInterval = INITIAL_POLL_INTERVAL;
     let attempts = 0;
     let lastStatus = 'queued';
-    
+
     const poll = async (): Promise<void> => {
       if (attempts >= MAX_POLL_ATTEMPTS) {
         console.error('⏱️ 폴링 타임아웃:', { jobId, documentId, attempts });
-        setFiles(prev => prev.map(f => 
-          f.id === fileId ? { 
-            ...f, 
-            status: "error", 
-            error: '처리 시간이 초과되었습니다. 나중에 다시 확인해주세요.' 
+        setFiles(prev => prev.map(f =>
+          f.id === fileId ? {
+            ...f,
+            status: "error",
+            error: '처리 시간이 초과되었습니다. 나중에 다시 확인해주세요.'
           } : f
         ));
         toast({
@@ -208,9 +224,9 @@ export default function NewDocumentUpload({ onUpload }: NewDocumentUploadProps) 
         });
         return;
       }
-      
+
       attempts++;
-      
+
       try {
         // Supabase에서 작업 상태 확인
         const { createClient } = await import('@supabase/supabase-js');
@@ -218,37 +234,37 @@ export default function NewDocumentUpload({ onUpload }: NewDocumentUploadProps) 
           process.env.NEXT_PUBLIC_SUPABASE_URL!,
           process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
         );
-        
+
         // 작업 상태 확인
         const { data: job, error: jobError } = await supabase
           .from('processing_jobs')
           .select('status, error, result')
           .eq('id', jobId)
           .single();
-        
+
         if (jobError) {
           console.error('❌ 작업 상태 조회 실패:', jobError);
           // 에러가 있어도 계속 폴링 (일시적 오류일 수 있음)
         }
-        
+
         // 문서 상태 확인 (작업이 완료되었을 수 있음)
         const { data: document, error: docError } = await supabase
           .from('documents')
           .select('status, chunk_count')
           .eq('id', documentId)
           .single();
-        
+
         if (docError && docError.code !== 'PGRST116') {
           console.error('❌ 문서 상태 조회 실패:', docError);
         }
-        
+
         const currentStatus = job?.status || document?.status || 'unknown';
-        
+
         // 상태 변경 감지 시 폴링 간격 조정
         if (currentStatus !== lastStatus) {
           console.log(`📊 상태 변경: ${lastStatus} → ${currentStatus}`);
           lastStatus = currentStatus;
-          
+
           // 처리 중이면 폴링 간격 증가 (처리 시간이 길어질 수 있음)
           if (currentStatus === 'processing') {
             pollInterval = Math.min(pollInterval + 500, MAX_POLL_INTERVAL);
@@ -257,68 +273,68 @@ export default function NewDocumentUpload({ onUpload }: NewDocumentUploadProps) 
             pollInterval = Math.max(pollInterval - 500, MIN_POLL_INTERVAL);
           }
         }
-        
+
         // 진행률 업데이트 (상태에 따라)
         if (currentStatus === 'processing') {
           const progress = Math.min(30 + (attempts * 0.5), 90);
-          setFiles(prev => prev.map(f => 
+          setFiles(prev => prev.map(f =>
             f.id === fileId ? { ...f, status: "processing", progress } : f
           ));
         }
-        
+
         // 완료 확인
         if (currentStatus === 'completed' || document?.status === 'indexed') {
           console.log('✅ 작업 완료:', { jobId, documentId, chunkCount: document?.chunk_count });
-          
-          setFiles(prev => prev.map(f => 
+
+          setFiles(prev => prev.map(f =>
             f.id === fileId ? { ...f, status: "success", progress: 100 } : f
           ));
-          
+
           toast({
             title: "처리 완료",
             description: `${fileName} 파일이 성공적으로 처리되었습니다.`,
           });
-          
+
           // 문서 목록 새로고침
           setTimeout(() => {
             fetchUploadedDocuments();
           }, 1000);
-          
+
           return;
         }
-        
+
         // 실패 확인
         if (currentStatus === 'failed') {
           const errorMessage = job?.error || '처리 중 오류가 발생했습니다.';
           console.error('❌ 작업 실패:', { jobId, error: errorMessage });
-          
-          setFiles(prev => prev.map(f => 
-            f.id === fileId ? { 
-              ...f, 
-              status: "error", 
-              error: errorMessage 
+
+          setFiles(prev => prev.map(f =>
+            f.id === fileId ? {
+              ...f,
+              status: "error",
+              error: errorMessage
             } : f
           ));
-          
+
           toast({
             title: "처리 실패",
             description: `${fileName} 파일 처리 중 오류가 발생했습니다.`,
             variant: "destructive"
           });
-          
+
           return;
         }
-        
+
         // 다음 폴링 예약
         setTimeout(poll, pollInterval);
-        
+
       } catch (error) {
         console.error('❌ 폴링 오류:', error);
         // 오류가 있어도 계속 폴링 (일시적 오류일 수 있음)
         setTimeout(poll, pollInterval);
       }
     };
-    
+
     // 첫 폴링 시작
     setTimeout(poll, pollInterval);
   };
@@ -326,7 +342,7 @@ export default function NewDocumentUpload({ onUpload }: NewDocumentUploadProps) 
   const uploadAndIndexDocument = async (file: File, fileId: string) => {
     try {
       // 1단계: 파일 업로드
-      setFiles(prev => prev.map(f => 
+      setFiles(prev => prev.map(f =>
         f.id === fileId ? { ...f, status: "uploading", progress: 10 } : f
       ));
 
@@ -340,7 +356,7 @@ export default function NewDocumentUpload({ onUpload }: NewDocumentUploadProps) 
       // PDF/DOCX는 바이너리 파일이므로 arrayBuffer 사용 (file.text()는 텍스트 파일에만 작동)
       const arrayBuffer = await file.arrayBuffer();
       const uint8Array = new Uint8Array(arrayBuffer);
-      
+
       // 브라우저 환경에서 Uint8Array를 Base64로 변환 (청크 단위로 처리하여 메모리 효율성 향상)
       let base64Content = '';
       const chunkSize = 8192; // 8KB 청크로 처리
@@ -350,22 +366,20 @@ export default function NewDocumentUpload({ onUpload }: NewDocumentUploadProps) 
         const binaryString = Array.from(chunk, byte => String.fromCharCode(byte)).join('');
         base64Content += btoa(binaryString);
       }
-      
+
       const requestBody = {
         fileName: file.name,
         fileSize: file.size,
         fileType: file.type,
         fileContent: base64Content,
-        type: 'file'
+        type: 'file',
+        vendor: vendor || 'Unknown'
       };
 
       console.log('Base64 인코딩 완료, JSON 요청 전송');
 
       // 타임아웃 설정 (35초)
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 35000);
-
-      const response = await fetch('/api/admin/upload-new', {
+      const response = await fetchWithTimeout('/api/admin/upload-new', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -374,21 +388,18 @@ export default function NewDocumentUpload({ onUpload }: NewDocumentUploadProps) 
         cache: 'no-cache',
         mode: 'cors',
         credentials: 'same-origin',
-        signal: controller.signal
-      });
-
-      clearTimeout(timeoutId);
+      }, 35000);
       console.log('응답 상태:', response.status);
 
       let result;
       try {
         const responseText = await response.text();
         console.log('서버 응답 텍스트:', responseText);
-        
+
         if (!responseText) {
           throw new Error('서버에서 빈 응답을 받았습니다.');
         }
-        
+
         result = JSON.parse(responseText);
         console.log('JSON 파싱 성공:', result);
       } catch (parseError) {
@@ -406,11 +417,11 @@ export default function NewDocumentUpload({ onUpload }: NewDocumentUploadProps) 
       // 큐로 오프로딩된 경우 폴링 시작
       if (result.queued && result.jobId && result.documentId) {
         console.log('📋 큐로 오프로딩됨, 폴링 시작:', { jobId: result.jobId, documentId: result.documentId });
-        
-        setFiles(prev => prev.map(f => 
+
+        setFiles(prev => prev.map(f =>
           f.id === fileId ? { ...f, status: "processing", progress: 30 } : f
         ));
-        
+
         // 적응형 폴링 시작
         await pollJobStatus(result.jobId, result.documentId, fileId, file.name);
         return; // 폴링이 완료되면 함수 종료
@@ -424,23 +435,23 @@ export default function NewDocumentUpload({ onUpload }: NewDocumentUploadProps) 
       }
 
       // 2단계: 처리 진행
-      setFiles(prev => prev.map(f => 
+      setFiles(prev => prev.map(f =>
         f.id === fileId ? { ...f, status: "processing", progress: 60 } : f
       ));
 
       // 3단계: 완료
-      setFiles(prev => prev.map(f => 
+      setFiles(prev => prev.map(f =>
         f.id === fileId ? { ...f, status: "success", progress: 100 } : f
       ));
 
       console.log(`파일 처리 완료: ${file.name}`);
-      
+
       // 성공 토스트 표시
       toast({
         title: "업로드 완료",
         description: `${file.name} 파일이 성공적으로 업로드되고 처리되었습니다.`,
       });
-      
+
       // 문서 목록 새로고침
       setTimeout(() => {
         fetchUploadedDocuments();
@@ -448,22 +459,22 @@ export default function NewDocumentUpload({ onUpload }: NewDocumentUploadProps) 
 
     } catch (error) {
       console.error('파일 처리 오류:', error);
-      
+
       // 타임아웃 오류 감지
       const isTimeoutError = error instanceof Error && (
-        error.name === 'AbortError' || 
+        error.name === 'AbortError' ||
         error.message.includes('timeout') ||
         error.message.includes('Request timeout')
       );
-      
-      const errorMessage = isTimeoutError 
+
+      const errorMessage = isTimeoutError
         ? '파일 처리 시간이 초과되었습니다. 파일 크기를 줄이거나 나중에 다시 시도해주세요.'
         : error instanceof Error ? error.message : '알 수 없는 오류';
-      
-      setFiles(prev => prev.map(f => 
-        f.id === fileId ? { 
-          ...f, 
-          status: "error", 
+
+      setFiles(prev => prev.map(f =>
+        f.id === fileId ? {
+          ...f,
+          status: "error",
           progress: 0,
           error: errorMessage
         } : f
@@ -496,9 +507,9 @@ export default function NewDocumentUpload({ onUpload }: NewDocumentUploadProps) 
         });
 
       await Promise.all(uploadPromises);
-      
+
       console.log('배치 업로드 완료');
-      
+
       // 부모 컴포넌트에 업로드 완료 알림
       if (onUpload) {
         const uploadedFiles = files
@@ -518,7 +529,7 @@ export default function NewDocumentUpload({ onUpload }: NewDocumentUploadProps) 
   const handleUrlAdd = () => {
     const urlInput = document.getElementById('url-input') as HTMLInputElement;
     const url = urlInput?.value.trim();
-    
+
     if (url && !urls.includes(url)) {
       setUrls(prev => [...prev, url]);
       urlInput.value = '';
@@ -555,63 +566,56 @@ export default function NewDocumentUpload({ onUpload }: NewDocumentUploadProps) 
   };
 
   return (
-    <motion.div 
+    <motion.div
       className="space-y-8"
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.5 }}
     >
       {/* 문서 관리 안내 */}
-      <div className="text-center space-y-4">
-        <div className="space-y-2">
-          <h2 className="text-2xl font-bold text-white">문서 관리</h2>
-          <p className="text-gray-400 max-w-2xl mx-auto">
-            정책 문서와 가이드라인을 업로드하고 관리하여 AI 챗봇의 지식 베이스를 확장하세요.
-          </p>
-        </div>
-        <div className="text-sm text-gray-500">
+      <div className="text-center space-y-3">
+        <h2 className="text-3xl font-bold text-white">문서 관리</h2>
+        <p className="text-gray-400 max-w-2xl mx-auto">
+          정책 문서와 가이드라인을 업로드하고 관리하여 AI 챗봇의 지식 베이스를 확장하세요.
+        </p>
+        <p className="text-sm text-gray-500">
           문서 업로드 후 자동으로 인덱싱됩니다. 처리 상태를 실시간으로 확인할 수 있습니다.
-        </div>
+        </p>
       </div>
 
       {/* 파일 업로드 영역 */}
-      <Card className="bg-gray-800/50 border-gray-700">
-        <CardHeader>
-          <CardTitle className="text-white flex items-center space-x-2">
-            <Upload className="w-5 h-5 text-blue-400" />
-            <span>문서 업로드 및 인덱싱</span>
-          </CardTitle>
-          <p className="text-gray-400 text-sm">
-            새로운 문서를 시스템에 추가하고 AI가 학습할 수 있도록 인덱싱합니다
-          </p>
-        </CardHeader>
-        <CardContent className="space-y-6">
-          {/* 드래그 앤 드롭 영역 */}
+      <Card className="bg-gradient-to-b from-[#12172a] to-[#0b0f17] border border-white/10 shadow-[0_20px_60px_rgba(5,9,20,0.55)]">
+        <CardContent className="space-y-6 pt-8">
           <div
-            className={`border-2 border-dashed rounded-lg p-8 text-center transition-colors ${
-              dragActive 
-                ? 'border-blue-400 bg-blue-400/10' 
-                : 'border-gray-600 hover:border-gray-500'
-            }`}
+            className={`relative border-2 border-dashed rounded-2xl p-10 text-center transition-all cursor-pointer ${dragActive
+              ? 'border-blue-400 bg-blue-500/5'
+              : 'border-white/10 bg-[#0B0F17]'
+              }`}
             onDragEnter={handleDrag}
             onDragLeave={handleDrag}
             onDragOver={handleDrag}
             onDrop={handleDrop}
+            onClick={triggerFileDialog}
           >
-            <Upload className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-            <p className="text-white text-lg mb-2">파일 선택 또는 드래그 앤 드롭</p>
-            <p className="text-gray-400 text-sm mb-4">
-              PDF, DOCX, TXT 파일을 지원합니다
-            </p>
-            <div className="flex items-center justify-center space-x-4 text-xs text-gray-500">
-              <span className="text-gray-500">• 최대 20MB</span>
+            <div className="flex flex-col items-center space-y-3">
+              <Upload className="w-14 h-14 text-blue-300" />
+              <p className="text-xl font-semibold text-white">파일을 드래그하여 놓거나 클릭하여 선택하세요</p>
+              <p className="text-gray-300 text-sm">PDF, DOCX, TXT 파일 지원 (멀티 파일 선택 가능)</p>
+              <p className="text-sm font-semibold text-amber-300">최대 파일 크기: 15MB</p>
             </div>
+            <input
+              ref={fileInputRef}
+              type="file"
+              multiple
+              className="absolute inset-0 opacity-0 cursor-pointer"
+              onChange={handleInputChange}
+            />
           </div>
 
           {/* File List */}
           <AnimatePresence>
             {files.length > 0 && (
-              <motion.div 
+              <motion.div
                 className="space-y-3"
                 initial={{ opacity: 0, height: 0 }}
                 animate={{ opacity: 1, height: "auto" }}
@@ -662,97 +666,102 @@ export default function NewDocumentUpload({ onUpload }: NewDocumentUploadProps) 
           </AnimatePresence>
 
           {/* 업로드 버튼 */}
-          <div className="flex justify-end">
+          <div className="space-y-2">
             <Button
               onClick={handleBatchUpload}
               disabled={isUploading || files.length === 0}
-              className="bg-blue-600 hover:bg-blue-700 text-white"
+              className="w-full h-12 bg-gradient-to-r from-blue-500 to-purple-500 hover:from-blue-600 hover:to-purple-600 text-white font-semibold"
             >
               {isUploading ? (
                 <>
                   <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  처리 중...
+                  업로드 중...
                 </>
               ) : (
                 <>
-                  <Sparkles className="w-4 h-4 mr-2" />
-                  업로드 및 인덱싱 시작
+                  <Upload className="w-4 h-4 mr-2" />
+                  업로드
                 </>
               )}
             </Button>
+            <p className="text-center text-xs text-gray-400">
+              10MB 이상 PDF/DOCX는 자동으로 큐로 오프로드됩니다.
+            </p>
           </div>
         </CardContent>
       </Card>
 
       {/* 업로드된 문서 목록 */}
-      <Card className="bg-gray-800/50 border-gray-700">
-        <CardHeader>
-          <div className="flex items-center justify-between">
-            <CardTitle className="text-white flex items-center space-x-2">
-              <FileText className="w-5 h-5 text-green-400" />
-              <span>업로드된 파일</span>
-              <Badge variant="secondary" className="bg-green-500/20 text-green-300 border-green-500/30">
-                {uploadedDocuments.length}개
-              </Badge>
-            </CardTitle>
-            <Button
-              onClick={fetchUploadedDocuments}
-              disabled={isLoadingDocuments}
-              variant="outline"
-              size="sm"
-              className="bg-gray-700 hover:bg-gray-600 text-white border-gray-500"
-            >
-              {isLoadingDocuments ? (
-                <Loader2 className="w-4 h-4 animate-spin" />
-              ) : (
-                "새로고침"
-              )}
-            </Button>
-          </div>
-        </CardHeader>
-        <CardContent>
-          {isLoadingDocuments ? (
-            <div className="text-center py-8">
-              <Loader2 className="w-8 h-8 animate-spin mx-auto mb-2 text-gray-400" />
-              <p className="text-gray-400">문서 목록을 불러오는 중...</p>
+      {!hideList && (
+        <Card className="bg-gray-800/50 border-gray-700">
+          <CardHeader>
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-white flex items-center space-x-2">
+                <FileText className="w-5 h-5 text-green-400" />
+                <span>업로드된 파일</span>
+                <Badge variant="secondary" className="bg-green-500/20 text-green-300 border-green-500/30">
+                  {uploadedDocuments.length}개
+                </Badge>
+              </CardTitle>
+              <Button
+                onClick={fetchUploadedDocuments}
+                disabled={isLoadingDocuments}
+                variant="outline"
+                size="sm"
+                className="bg-gray-700 hover:bg-gray-600 text-white border-gray-500"
+              >
+                {isLoadingDocuments ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  "새로고침"
+                )}
+              </Button>
             </div>
-          ) : uploadedDocuments.length > 0 ? (
-            <div className="space-y-2">
-              {uploadedDocuments.map((doc) => (
-                <div key={doc.id} className="bg-gray-700/50 border border-gray-600 rounded-lg p-4">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-3">
-                      <FileText className="w-5 h-5 text-blue-400" />
-                      <div>
-                        <p className="text-white font-medium">{doc.title}</p>
-                        <div className="flex items-center space-x-4 text-sm text-gray-400">
-                          <span>유형: {doc.type?.toUpperCase() || 'UNKNOWN'}</span>
-                          <span>상태: {doc.status === 'completed' ? '완료' : doc.status === 'processing' ? '처리중' : '대기'}</span>
-                          <span>청크: {doc.chunk_count || 0}개</span>
-                          <span>크기: {doc.url ? 'URL' : 'N/A'}</span>
+          </CardHeader>
+          <CardContent>
+            {isLoadingDocuments ? (
+              <div className="text-center py-8">
+                <Loader2 className="w-8 h-8 animate-spin mx-auto mb-2 text-gray-400" />
+                <p className="text-gray-400">문서 목록을 불러오는 중...</p>
+              </div>
+            ) : uploadedDocuments.length > 0 ? (
+              <div className="space-y-2">
+                {uploadedDocuments.map((doc) => (
+                  <div key={doc.id} className="bg-gray-700/50 border border-gray-600 rounded-lg p-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-3">
+                        <FileText className="w-5 h-5 text-blue-400" />
+                        <div>
+                          <p className="text-white font-medium">{doc.title}</p>
+                          <div className="flex items-center space-x-4 text-sm text-gray-400">
+                            <span>유형: {doc.type?.toUpperCase() || 'UNKNOWN'}</span>
+                            <span>상태: {doc.status === 'completed' ? '완료' : doc.status === 'processing' ? '처리중' : '대기'}</span>
+                            <span>청크: {doc.chunk_count || 0}개</span>
+                            <span>크기: {doc.url ? 'URL' : 'N/A'}</span>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <Badge 
-                        variant={doc.status === 'completed' ? 'default' : 'secondary'}
-                        className={doc.status === 'completed' ? 'bg-green-500/20 text-green-300' : 'bg-yellow-500/20 text-yellow-300'}
-                      >
-                        {doc.status === 'completed' ? '완료' : doc.status === 'processing' ? '처리중' : '대기'}
-                      </Badge>
+                      <div className="flex items-center space-x-2">
+                        <Badge
+                          variant={doc.status === 'completed' ? 'default' : 'secondary'}
+                          className={doc.status === 'completed' ? 'bg-green-500/20 text-green-300' : 'bg-yellow-500/20 text-yellow-300'}
+                        >
+                          {doc.status === 'completed' ? '완료' : doc.status === 'processing' ? '처리중' : '대기'}
+                        </Badge>
+                      </div>
                     </div>
                   </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="text-center py-8 text-gray-400">
-              <FileText className="w-12 h-12 mx-auto mb-4 opacity-50" />
-              <p>업로드된 문서가 없습니다.</p>
-            </div>
-          )}
-        </CardContent>
-      </Card>
+                ))}
+              </div>
+            ) : (
+              <div className="text-center py-8 text-gray-400">
+                <FileText className="w-12 h-12 mx-auto mb-4 opacity-50" />
+                <p>업로드된 문서가 없습니다.</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      )}
     </motion.div>
   );
 }

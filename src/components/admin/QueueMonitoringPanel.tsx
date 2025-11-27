@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { fetchWithTimeout } from "@/lib/utils/fetchWithTimeout";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { RefreshCw, Play, AlertTriangle, RotateCcw, XCircle, Trash2, ChevronDown, ChevronUp, Activity } from "lucide-react";
@@ -105,7 +106,7 @@ export default function QueueMonitoringPanel({ vendors = [], defaultOpen = false
   const consumeOne = async () => {
     try {
       setConsuming(true);
-      const res = await fetch('/api/jobs/consume', { method: 'POST' });
+      const res = await fetchWithTimeout('/api/jobs/consume', { method: 'POST' });
       await res.json();
       await loadJobs();
     } catch (err) {
@@ -123,7 +124,7 @@ export default function QueueMonitoringPanel({ vendors = [], defaultOpen = false
         }
       }
       
-      const res = await fetch('/api/jobs/action', {
+      const res = await fetchWithTimeout('/api/jobs/action', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ jobId, action })
@@ -200,7 +201,7 @@ export default function QueueMonitoringPanel({ vendors = [], defaultOpen = false
         }
       }
 
-      const res = await fetch('/api/jobs/action', {
+      const res = await fetchWithTimeout('/api/jobs/action', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
@@ -275,11 +276,11 @@ export default function QueueMonitoringPanel({ vendors = [], defaultOpen = false
 
   return (
     <Collapsible open={isOpen} onOpenChange={setIsOpen}>
-      <Card className="card-enhanced">
+      <Card className="card-enhanced text-sm text-gray-200">
         <CollapsibleTrigger asChild>
           <CardHeader className="cursor-pointer hover:bg-gray-800/30 transition-colors">
             <div className="flex items-center justify-between">
-              <CardTitle className="flex items-center gap-2 text-primary-enhanced">
+              <CardTitle className="flex items-center gap-2 text-primary-enhanced text-base">
                 <Activity className="w-5 h-5" />
                 처리 큐 모니터링
                 {!isOpen && (queueStats.queued > 0 || queueStats.failed > 0) && (
@@ -300,7 +301,7 @@ export default function QueueMonitoringPanel({ vendors = [], defaultOpen = false
         </CollapsibleTrigger>
 
         <CollapsibleContent>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-4 text-sm">
             {/* 큐 통계 요약 */}
             <div className="grid grid-cols-3 gap-2">
               <div className="p-2 bg-blue-500/10 rounded border border-blue-500/20 text-center">

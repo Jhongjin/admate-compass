@@ -2,14 +2,24 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/client';
 
 // 템플릿 조회
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
+    const { searchParams } = new URL(request.url);
+    const vendor = searchParams.get('vendor');
+    
     const supabase = createClient();
     
-    const { data: templates, error } = await supabase
+    let query = supabase
       .from('url_templates')
       .select('*')
       .order('created_at', { ascending: true });
+
+    // vendor 필터링
+    if (vendor) {
+      query = query.eq('vendor', vendor);
+    }
+
+    const { data: templates, error } = await query;
 
     if (error) {
       console.error('템플릿 조회 오류:', error);
@@ -115,7 +125,7 @@ export async function POST(request: NextRequest) {
 // 개별 템플릿 추가/수정
 export async function PUT(request: NextRequest) {
   try {
-    const { name, urls } = await request.json();
+    const { name, urls, vendor } = await request.json();
     
     if (!name || !Array.isArray(urls)) {
       return NextResponse.json(
@@ -125,6 +135,9 @@ export async function PUT(request: NextRequest) {
     }
 
     const supabase = createClient();
+    
+    // vendor 기본값 설정
+    const templateVendor = vendor || 'META';
     
     // 템플릿이 존재하는지 확인
     const { data: existingTemplate, error: checkError } = await supabase
@@ -145,7 +158,7 @@ export async function PUT(request: NextRequest) {
       // 기존 템플릿 업데이트
       const { error: updateError } = await supabase
         .from('url_templates')
-        .update({ urls })
+        .update({ urls, vendor: templateVendor })
         .eq('name', name);
 
       if (updateError) {
@@ -164,7 +177,7 @@ export async function PUT(request: NextRequest) {
       // 새 템플릿 추가
       const { error: insertError } = await supabase
         .from('url_templates')
-        .insert({ name, urls });
+        .insert({ name, urls, vendor: templateVendor });
 
       if (insertError) {
         console.error('템플릿 추가 오류:', insertError);
