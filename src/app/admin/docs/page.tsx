@@ -240,11 +240,23 @@ function AdminDocsPageContent() {
             return { data: { documents: documents || [] } };
         },
         enabled: isClient && selectedVendors.length > 0,
-        // 처리중인 문서가 있으면 5초마다 자동 새로고침
+        // 처리중인 문서가 있으면 3초마다 자동 새로고침
         refetchInterval: (query) => {
             const documents = query.state.data?.data?.documents || [];
             const hasProcessing = documents.some((doc: any) => doc.status === 'processing' || doc.status === 'queued');
-            return hasProcessing ? 5000 : false;
+            return hasProcessing ? 3000 : false;
+        },
+        // 새로고침 시 문서 상태 자동 동기화
+        onSuccess: async (data) => {
+            const documents = data?.data?.documents || [];
+            // processing 상태이지만 chunk_count > 0인 문서 자동 수정
+            const stuckDocs = documents.filter((doc: any) => 
+                doc.status === 'processing' && doc.chunk_count > 0
+            );
+            if (stuckDocs.length > 0) {
+                // 백그라운드에서 자동 수정 (사용자 경험 방해 없음)
+                fetch('/api/admin/sync-status', { method: 'POST' }).catch(() => {});
+            }
         },
     });
 

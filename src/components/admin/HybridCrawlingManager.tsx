@@ -997,7 +997,7 @@ export default function HybridCrawlingManager({
           console.warn('큐 워커 트리거 실패 (무시 가능):', consumeError);
         }
         
-        // 폴링으로 진행 상황 업데이트
+        // 폴링으로 진행 상황 업데이트 (2초마다 - 더 빠른 반응성)
         pollingIntervalRef.current = setInterval(async () => {
           try {
             const { data: jobs, error: jobsError } = await supabase
@@ -1098,7 +1098,7 @@ export default function HybridCrawlingManager({
           } catch (pollError) {
             console.error('폴링 오류:', pollError);
           }
-        }, 3000); // 3초마다 폴링
+        }, 2000); // 2초마다 폴링 (더 빠른 반응성)
         
         // 5분 후 자동으로 폴링 중지
         setTimeout(() => {
