@@ -400,18 +400,13 @@ export default function DocumentsPage() {
     });
 
     const handleBulkDelete = useCallback(() => {
-        console.log('🗑️ [handleBulkDelete] 함수 호출됨!');
+        console.log('🗑️ [handleBulkDelete] ========== 함수 호출 시작 ==========');
         console.log('🗑️ [handleBulkDelete] selectedDocs:', selectedDocs);
-        console.log('🗑️ [handleBulkDelete] selectedDocs.size:', selectedDocs.size);
+        console.log('🗑️ [handleBulkDelete] selectedDocs.size:', selectedDocs?.size || 0);
+        console.log('🗑️ [handleBulkDelete] selectedDocs 타입:', typeof selectedDocs);
+        console.log('🗑️ [handleBulkDelete] selectedDocs instanceof Set:', selectedDocs instanceof Set);
         
-        const selectedArray = Array.from(selectedDocs);
-        console.log('🗑️ [handleBulkDelete] 선택 삭제 요청:', { 
-            count: selectedArray.length, 
-            ids: selectedArray,
-            selectedDocsSize: selectedDocs.size 
-        });
-        
-        if (selectedArray.length === 0) {
+        if (!selectedDocs || selectedDocs.size === 0) {
             console.warn('⚠️ [handleBulkDelete] 선택된 문서 없음');
             toast({
                 title: "선택된 문서 없음",
@@ -420,20 +415,31 @@ export default function DocumentsPage() {
             });
             return;
         }
-
-        const confirmMessage = `선택한 ${selectedArray.length}개의 문서를 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`;
-        console.log('🗑️ [handleBulkDelete] 확인 다이얼로그 표시:', confirmMessage);
         
-        if (!window.confirm(confirmMessage)) {
+        const selectedArray = Array.from(selectedDocs);
+        console.log('🗑️ [handleBulkDelete] 선택 삭제 요청:', { 
+            count: selectedArray.length, 
+            ids: selectedArray.slice(0, 5), // 처음 5개만 로그
+            selectedDocsSize: selectedDocs.size 
+        });
+        
+        const confirmMessage = `선택한 ${selectedArray.length}개의 문서를 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`;
+        console.log('🗑️ [handleBulkDelete] 확인 다이얼로그 표시 전');
+        
+        const confirmed = window.confirm(confirmMessage);
+        console.log('🗑️ [handleBulkDelete] 확인 다이얼로그 결과:', confirmed);
+        
+        if (!confirmed) {
             console.log('❌ [handleBulkDelete] 사용자가 취소함');
             return;
         }
 
-        console.log('🗑️ [handleBulkDelete] 삭제 시작 - bulkDeleteMutation.mutate 호출:', selectedArray);
-        console.log('🗑️ [handleBulkDelete] bulkDeleteMutation:', bulkDeleteMutation);
-        console.log('🗑️ [handleBulkDelete] bulkDeleteMutation.mutate 존재:', !!bulkDeleteMutation.mutate);
+        console.log('🗑️ [handleBulkDelete] 삭제 시작 - bulkDeleteMutation.mutate 호출 전');
+        console.log('🗑️ [handleBulkDelete] bulkDeleteMutation 존재:', !!bulkDeleteMutation);
+        console.log('🗑️ [handleBulkDelete] bulkDeleteMutation.mutate 존재:', !!bulkDeleteMutation?.mutate);
+        console.log('🗑️ [handleBulkDelete] selectedArray:', selectedArray);
         
-        if (!bulkDeleteMutation.mutate) {
+        if (!bulkDeleteMutation || !bulkDeleteMutation.mutate) {
             console.error('❌ [handleBulkDelete] bulkDeleteMutation.mutate가 없습니다!');
             toast({
                 title: "삭제 실패",
@@ -443,7 +449,20 @@ export default function DocumentsPage() {
             return;
         }
         
-        bulkDeleteMutation.mutate(selectedArray);
+        try {
+            console.log('🗑️ [handleBulkDelete] bulkDeleteMutation.mutate 호출 직전');
+            bulkDeleteMutation.mutate(selectedArray);
+            console.log('🗑️ [handleBulkDelete] bulkDeleteMutation.mutate 호출 완료');
+        } catch (error) {
+            console.error('❌ [handleBulkDelete] mutate 호출 중 예외:', error);
+            toast({
+                title: "삭제 실패",
+                description: error instanceof Error ? error.message : '알 수 없는 오류',
+                variant: "destructive",
+            });
+        }
+        
+        console.log('🗑️ [handleBulkDelete] ========== 함수 종료 ==========');
     }, [selectedDocs, bulkDeleteMutation, toast]);
 
     return (
@@ -660,7 +679,16 @@ export default function DocumentsPage() {
                                 onDeleteDocument={(id) => setDeleteId(id)}
                                 onSelectAll={handleSelectAll}
                                 onSelectDocument={handleSelectDocument}
-                                onBulkDelete={handleBulkDelete}
+                                onBulkDelete={() => {
+                                    console.log('🔍 [DocumentsPage] onBulkDelete prop 호출됨');
+                                    console.log('🔍 [DocumentsPage] handleBulkDelete 존재:', !!handleBulkDelete);
+                                    console.log('🔍 [DocumentsPage] handleBulkDelete 타입:', typeof handleBulkDelete);
+                                    if (handleBulkDelete) {
+                                        handleBulkDelete();
+                                    } else {
+                                        console.error('❌ [DocumentsPage] handleBulkDelete가 없습니다!');
+                                    }
+                                }}
                                 selectedDocuments={selectedDocs}
                                 isAllSelected={selectedDocs.size > 0 && selectedDocs.size === filteredDocs.length}
                                 actionLoading={{}}
