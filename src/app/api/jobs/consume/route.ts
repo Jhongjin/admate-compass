@@ -2837,14 +2837,37 @@ export async function processQueue() {
           crawlTimeMs: Date.now() - crawlStartMs,
         };
 
-        await supabase
+        console.log('[CRITICAL] ✅ CRAWL_SEED 작업 완료 - 상태 업데이트 시작:', {
+          jobId: job.id,
+          documentId,
+          title: mainPage.pageTitle,
+          chunkCount: mainDocResult.chunkCount,
+          crawlTimeMs: finishedResult.crawlTimeMs
+        });
+
+        const { error: updateError, data: updateData } = await supabase
           .from('processing_jobs')
           .update({
             status: 'completed',
             finished_at: new Date().toISOString(),
             result: finishedResult,
           })
-          .eq('id', job.id);
+          .eq('id', job.id)
+          .select();
+
+        if (updateError) {
+          console.error('[CRITICAL] ❌ 작업 상태 업데이트 실패:', {
+            jobId: job.id,
+            error: updateError
+          });
+          throw updateError;
+        }
+
+        console.log('[CRITICAL] ✅ 작업 상태 업데이트 완료:', {
+          jobId: job.id,
+          updatedRows: updateData?.length || 0,
+          status: 'completed'
+        });
 
         return NextResponse.json({ 
           success: true, 
