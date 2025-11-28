@@ -41,6 +41,7 @@ import { toast } from 'sonner';
 import { fetchWithTimeout } from '@/lib/utils/fetchWithTimeout';
 import { UrlDiscoveryPanel, DiscoveredUrlItem } from './UrlDiscoveryPanel';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
+import { Progress } from '@/components/ui/progress';
 
 // 미리 정의된 URL 템플릿 (대표 도메인만)
 const predefinedUrlTemplates = {
@@ -1779,6 +1780,41 @@ export default function HybridCrawlingManager({
             </CardDescription>
           </CardHeader>
           <CardContent>
+            {/* 전체 진행률 프로그레스바 */}
+            {crawlingProgress.length > 0 && (
+              <div className="mb-6 space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-gray-300 font-medium">전체 진행률</span>
+                  <span className="text-white font-semibold">
+                    {Math.round(
+                      (crawlingProgress.filter(p => p.status === 'completed').length / crawlingProgress.length) * 100
+                    )}%
+                  </span>
+                </div>
+                <Progress
+                  value={
+                    (crawlingProgress.filter(p => p.status === 'completed').length / crawlingProgress.length) * 100
+                  }
+                  className="h-3 bg-gray-700/50"
+                />
+                <div className="flex items-center justify-between text-xs text-gray-400">
+                  <span>
+                    완료: {crawlingProgress.filter(p => p.status === 'completed').length}개
+                  </span>
+                  <span>
+                    진행 중: {crawlingProgress.filter(p => p.status === 'crawling').length}개
+                  </span>
+                  <span>
+                    대기 중: {crawlingProgress.filter(p => p.status === 'pending').length}개
+                  </span>
+                  {crawlingProgress.filter(p => p.status === 'failed').length > 0 && (
+                    <span className="text-red-400">
+                      실패: {crawlingProgress.filter(p => p.status === 'failed').length}개
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
             <div className="space-y-3">
               {crawlingProgress.map((progress, index) => (
                 <div
