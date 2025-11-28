@@ -494,6 +494,33 @@ export default function HybridCrawlingManager({
 
         const result = await response.json();
 
+        const documentMap = new Map<string, any>();
+        if (Array.isArray(result.documents)) {
+          result.documents.forEach((doc: any) => {
+            if (doc?.url) {
+              documentMap.set(doc.url, doc);
+            }
+          });
+        }
+
+        const extractDiscoveredUrls = (targetUrl?: string) => {
+          if (!targetUrl) return undefined;
+          const docInfo = documentMap.get(targetUrl);
+          if (!docInfo || !Array.isArray(docInfo.discoveredUrls)) {
+            return undefined;
+          }
+
+          const normalized = docInfo.discoveredUrls
+            .filter((item: any) => item?.url)
+            .map((item: any) => ({
+              url: item.url,
+              title: item.title || item.url,
+              source: (['sitemap', 'robots', 'pattern', 'links'].includes(item.source) ? item.source : 'links') as 'sitemap' | 'robots' | 'links' | 'pattern',
+            }));
+
+          return normalized.length > 0 ? normalized : undefined;
+        };
+
         if (result.success) {
           // 심도 3 이상이고 하위 페이지가 발견된 경우 모달 표시
           const maxDepthValue = clampDepthValue(crawlOptions.maxDepth);
@@ -560,11 +587,12 @@ export default function HybridCrawlingManager({
               prev.map((p, index) => {
                 const processedUrl = result.processedUrls?.[index];
                 if (processedUrl?.status === 'success') {
+                  const discoveredList = extractDiscoveredUrls(processedUrl.url || p.url);
                   return {
                     ...p,
                     status: 'completed' as const,
                     message: '크롤링 완료 (하위 페이지 선택 대기 중)',
-                    discoveredUrls: []
+                    discoveredUrls: discoveredList
                   };
                 }
                 return p;
@@ -590,11 +618,12 @@ export default function HybridCrawlingManager({
               if (p.status === 'completed') {
                 return p;
               }
+              const discoveredList = extractDiscoveredUrls(processedUrl?.url || p.url);
               return {
                 ...p,
                 status: processedUrl?.status === 'success' ? 'completed' as const : 'failed' as const,
                 message: processedUrl?.status === 'success' ? '크롤링 완료' : '크롤링 실패',
-                discoveredUrls: []
+                discoveredUrls: discoveredList
               };
             });
             return updated;
