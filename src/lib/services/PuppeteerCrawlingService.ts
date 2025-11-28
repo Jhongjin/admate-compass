@@ -424,49 +424,63 @@ export class PuppeteerCrawlingService {
         title?: string;
         source: 'sitemap' | 'robots' | 'links' | 'pattern';
         depth: number;
+        parentUrl?: string;
+        path?: string[];
       }> = [];
       if (discoverSubPages) {
         try {
           console.log(`🔍 하위 페이지 발견 시작: ${url} (maxDepth: ${maxDepth})`);
           const { sitemapDiscoveryService } = await import('./SitemapDiscoveryService');
           
-          // 성공했던 버전: discoverSubPages 사용 (depth 1만 찾기, depth 2 이상은 모달에서 선택)
-          const discovered = await sitemapDiscoveryService.discoverSubPages(url, {
-            maxDepth: 1, // 첫 번째 레벨만 찾기 (성공했던 버전과 동일)
-            maxUrls: maxDepth >= 3 ? 50 : 20, // depth 3 이상이면 더 많이 찾기
-            respectRobotsTxt: true,
-            includeExternal: false,
-            allowedDomains: [this.extractDomain(url)]
-          }, undefined); // preloadedHtml은 사용하지 않음
-          
-          // depth 설정: maxDepth에 따라 depth 분배
-          discoveredUrls = discovered.map((d, index) => {
-            let depth = 1;
+          // maxDepth >= 3일 때는 BFS depth 탐색 사용 (실제 depth 3까지 탐색하여 200개 발견 가능)
+          // maxDepth < 3일 때는 단순 discoverSubPages 사용
+          if (maxDepth >= 3) {
+            // BFS depth 탐색 사용: 실제 depth 3까지 탐색
+            const discovered = await sitemapDiscoveryService.discoverSubPagesWithDepth(url, {
+              maxDepth: maxDepth, // 실제 maxDepth 전달
+              maxUrls: 200, // 성공했던 버전과 동일하게 200개로 증가
+              respectRobotsTxt: true,
+              includeExternal: false,
+              allowedDomains: [this.extractDomain(url)]
+            }, undefined); // preloadedHtml은 사용하지 않음
             
-            if (maxDepth >= 3) {
-              // maxDepth >= 3일 때: 일부는 depth 2, 나머지는 depth 3으로 표시하여 모달에서 선택하도록 함
-              // 처음 20개는 depth 2 (자동 크롤링), 나머지는 depth 3 (모달에서 선택)
-              depth = index < 20 ? 2 : 3;
-            } else if (maxDepth >= 2) {
-              // maxDepth == 2일 때: 모두 depth 2로 표시 (자동 크롤링)
-              depth = 2;
-            } else {
-              // maxDepth == 1일 때: 모두 depth 1로 표시 (자동 크롤링)
-              depth = 1;
-            }
-            
-            return {
+            // DepthAwareDiscoveredUrl을 일반 형식으로 변환
+            discoveredUrls = discovered.map((d) => ({
               url: d.url,
               title: d.title,
               source: d.source || 'links',
-              depth: depth
-            };
-          });
-          
-          const depth1Count = discoveredUrls.filter(d => d.depth === 1).length;
-          const depth2Count = discoveredUrls.filter(d => d.depth === 2).length;
-          const depth3Count = discoveredUrls.filter(d => d.depth === 3).length;
-          console.log(`✅ 발견된 하위 페이지: ${discoveredUrls.length}개 (depth 1: ${depth1Count}개, depth 2: ${depth2Count}개, depth 3: ${depth3Count}개)`);
+              depth: d.depth, // 실제 depth 사용
+              parentUrl: d.parentUrl,
+              path: d.path || []
+            }));
+            
+            // depth별 통계
+            const depth1Count = discoveredUrls.filter(d => d.depth === 1).length;
+            const depth2Count = discoveredUrls.filter(d => d.depth === 2).length;
+            const depth3Count = discoveredUrls.filter(d => d.depth === 3).length;
+            const depth4PlusCount = discoveredUrls.filter(d => d.depth >= 4).length;
+            console.log(`✅ BFS depth 탐색 완료: ${discoveredUrls.length}개 발견 (depth 1: ${depth1Count}개, depth 2: ${depth2Count}개, depth 3: ${depth3Count}개, depth 4+: ${depth4PlusCount}개)`);
+          } else {
+            // maxDepth < 3일 때: 단순 discoverSubPages 사용
+            const discovered = await sitemapDiscoveryService.discoverSubPages(url, {
+              maxDepth: maxDepth,
+              maxUrls: maxDepth >= 2 ? 50 : 20,
+              respectRobotsTxt: true,
+              includeExternal: false,
+              allowedDomains: [this.extractDomain(url)]
+            }, undefined);
+            
+            // depth 설정: maxDepth에 따라 depth 분배
+            discoveredUrls = discovered.map((d) => ({
+              url: d.url,
+              title: d.title,
+              source: d.source || 'links',
+              depth: maxDepth >= 2 ? 2 : 1,
+              path: [url, d.url] // 간단한 경로
+            }));
+            
+            console.log(`✅ 단순 탐색 완료: ${discoveredUrls.length}개 발견 (depth: ${maxDepth >= 2 ? 2 : 1})`);
+          }
         } catch (error) {
           console.error('❌ 하위 페이지 발견 실패:', error);
         }

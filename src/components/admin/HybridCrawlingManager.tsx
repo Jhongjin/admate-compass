@@ -126,6 +126,7 @@ export default function HybridCrawlingManager({
   const [allDiscoveredUrls, setAllDiscoveredUrls] = useState<DiscoveredUrlItem[]>([]);
   const [selectedUrlsForCrawling, setSelectedUrlsForCrawling] = useState<Set<string>>(new Set());
   const [pendingCrawlUrls, setPendingCrawlUrls] = useState<string[]>([]);
+  const [groupedDiscoveredUrls, setGroupedDiscoveredUrls] = useState<Record<string, DiscoveredUrlItem[]>>({});
 
   // Advanced Crawl Options
   const [crawlOptions, setCrawlOptions] = useState({
@@ -498,27 +499,38 @@ export default function HybridCrawlingManager({
           const maxDepthValue = clampDepthValue(crawlOptions.maxDepth);
           const allDiscovered: DiscoveredUrlItem[] = [];
           
-          // 모든 문서에서 discoveredUrls 수집 (심도 3 이상)
+          // 모든 문서에서 discoveredUrls 수집 (심도 3 이상) - 메인 페이지별로 그룹화
+          const groupedByMainPage: Record<string, DiscoveredUrlItem[]> = {};
           if (result.documents && Array.isArray(result.documents)) {
             result.documents.forEach((doc: any) => {
               if (doc.discoveredUrls && Array.isArray(doc.discoveredUrls)) {
+                const mainPageUrl = doc.url;
+                if (!groupedByMainPage[mainPageUrl]) {
+                  groupedByMainPage[mainPageUrl] = [];
+                }
+                
                 doc.discoveredUrls.forEach((discovered: any) => {
                   // 심도 3 이상인 페이지만 수집
                   if (discovered.depth >= 3) {
-                    allDiscovered.push({
+                    const item: DiscoveredUrlItem = {
                       url: discovered.url,
-                      title: discovered.title,
+                      title: discovered.title || discovered.url,
                       depth: discovered.depth,
-                      parentUrl: doc.url,
-                      path: [doc.url, discovered.url],
+                      parentUrl: mainPageUrl,
+                      path: discovered.path || [mainPageUrl, discovered.url],
                       source: discovered.source || 'links',
                       isAlreadyCrawled: false
-                    });
+                    };
+                    allDiscovered.push(item);
+                    groupedByMainPage[mainPageUrl].push(item);
                   }
                 });
               }
             });
           }
+          
+          // 그룹화 정보 저장 (나중에 모달에서 사용)
+          setGroupedDiscoveredUrls(groupedByMainPage);
           
           console.log(`🔍 심도 3 이상 페이지 수집 결과: ${allDiscovered.length}개, maxDepth: ${maxDepthValue}`);
 
@@ -1841,7 +1853,7 @@ export default function HybridCrawlingManager({
 
       {/* 심도 3 이상 하위 페이지 선택 모달 */}
       <Dialog open={showDiscoveryModal} onOpenChange={setShowDiscoveryModal}>
-        <DialogContent className="max-w-5xl h-[90vh] max-h-[90vh] overflow-hidden p-0 flex flex-col bg-gray-900 border-gray-700">
+        <DialogContent className="max-w-6xl h-[90vh] max-h-[90vh] overflow-hidden p-0 flex flex-col bg-[#0B0F17] border-white/10">
           <UrlDiscoveryPanel
             discoveredUrls={allDiscoveredUrls}
             selectedUrls={selectedUrlsForCrawling}
@@ -1856,6 +1868,14 @@ export default function HybridCrawlingManager({
               acc[item.depth] = (acc[item.depth] || 0) + 1;
               return acc;
             }, {} as Record<number, number>)}
+            onUpdateTitle={(url, title) => {
+              // 제목 업데이트: allDiscoveredUrls에서 해당 URL의 제목 업데이트
+              setAllDiscoveredUrls(prev => 
+                prev.map(item => 
+                  item.url === url ? { ...item, title } : item
+                )
+              );
+            }}
           />
         </DialogContent>
       </Dialog>
