@@ -142,8 +142,43 @@ export class PuppeteerCrawlingService {
             const executablePath = await chromium.executablePath();
             console.log(`📁 Chromium 실행 경로: ${executablePath}`);
             
+            // Chromium args에 필요한 시스템 라이브러리 경로 및 보안 옵션 추가
+            // @sparticuz/chromium 최신 버전은 이미 필요한 라이브러리를 포함하고 있음
+            const chromiumArgs = [
+              ...chromium.args,
+              '--no-sandbox',
+              '--disable-setuid-sandbox',
+              '--disable-dev-shm-usage',
+              '--disable-gpu',
+              '--disable-software-rasterizer',
+              '--disable-extensions',
+              '--disable-background-networking',
+              '--disable-background-timer-throttling',
+              '--disable-backgrounding-occluded-windows',
+              '--disable-breakpad',
+              '--disable-client-side-phishing-detection',
+              '--disable-default-apps',
+              '--disable-features=TranslateUI',
+              '--disable-hang-monitor',
+              '--disable-ipc-flooding-protection',
+              '--disable-popup-blocking',
+              '--disable-prompt-on-repost',
+              '--disable-renderer-backgrounding',
+              '--disable-sync',
+              '--disable-translate',
+              '--metrics-recording-only',
+              '--no-first-run',
+              '--safebrowsing-disable-auto-update',
+              '--enable-automation',
+              '--password-store=basic',
+              '--use-mock-keychain',
+              '--single-process',
+            ];
+            
+            console.log(`🔧 Chromium args 개수: ${chromiumArgs.length}`);
+            
             this.browser = await puppeteerCore.launch({
-              args: chromium.args as string[],
+              args: chromiumArgs,
               defaultViewport: chromium.defaultViewport,
               executablePath: executablePath,
               headless: chromium.headless,
