@@ -1587,8 +1587,11 @@ export async function processQueue() {
               const hasLargeFont = /font-size:\s*([2-9]\d|1\d{2,})px/i.test(style) || 
                                    /font-size:\s*([2-9]|1[0-9]|2[0-9]|3[0-9])rem/i.test(style) ||
                                    /font-size:\s*([2-9]|1[0-9]|2[0-9]|3[0-9])em/i.test(style);
+              
+              // 태그 이름 확인 (타입 가드 추가)
+              const tagName = (el as any).tagName || (el as any).name || '';
               const hasBold = /font-weight:\s*(bold|700|800|900)/i.test(style) ||
-                              ['b', 'strong', 'h1', 'h2', 'h3'].includes(el.tagName?.toLowerCase() || '');
+                              ['b', 'strong', 'h1', 'h2', 'h3'].includes(tagName.toLowerCase());
               
               return hasLargeFont || hasBold;
             });
