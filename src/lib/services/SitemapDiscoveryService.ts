@@ -236,20 +236,15 @@ export class SitemapDiscoveryService {
 
     // BFS 루프
     let processedCount = 0;
-    const maxProcessed = config.maxUrls * 2; // 최대 처리 개수 제한 (무한 루프 방지)
+    const maxProcessed = config.maxUrls * 3; // 최대 처리 개수 제한 (무한 루프 방지)
 
-    while (queue.length > 0 && discoveredPages.length < config.maxUrls && processedCount < maxProcessed) {
+    while (queue.length > 0 && processedCount < maxProcessed) {
       const current = queue.shift();
       if (!current) break;
 
       // maxDepth 도달 시 더 이상 탐색하지 않음
       if (current.depth >= config.maxDepth) {
         continue;
-      }
-
-      // 이미 충분히 발견했으면 중단
-      if (discoveredPages.length >= config.maxUrls) {
-        break;
       }
 
       processedCount++;
@@ -279,7 +274,7 @@ export class SitemapDiscoveryService {
           });
 
           // 다음 depth 탐색을 위해 큐에 추가 (maxDepth까지 포함)
-          if (nextDepth <= config.maxDepth && discoveredPages.length < config.maxUrls) {
+          if (nextDepth <= config.maxDepth) {
             queue.push({
               url: linkUrl.url,
               depth: nextDepth,
@@ -917,8 +912,46 @@ export class SitemapDiscoveryService {
       
       return 0;
     });
-    
-    return filteredPages;
+
+    const autoLimit = Math.max(1, config.maxUrls);
+    if (filteredPages.length <= autoLimit || config.maxDepth < 3) {
+      return filteredPages.slice(0, autoLimit);
+    }
+
+    const depth1List = filteredPages.filter(page => page.depth === 1);
+    const depth2List = filteredPages.filter(page => page.depth === 2);
+    const depth3PlusList = filteredPages.filter(page => page.depth && page.depth >= 3);
+
+    const reserveForDepth3 = Math.min(50, Math.max(10, Math.floor(autoLimit * 0.25)));
+    const result: DiscoveredUrl[] = [];
+
+    const consume = (list: DiscoveredUrl[], limit: number) => {
+      if (limit <= 0 || list.length === 0) {
+        return 0;
+      }
+      const portion = list.splice(0, limit);
+      result.push(...portion);
+      return portion.length;
+    };
+
+    let depth12Budget = Math.max(0, autoLimit - reserveForDepth3);
+    depth12Budget -= consume(depth1List, depth12Budget);
+    depth12Budget -= consume(depth2List, depth12Budget);
+
+    consume(depth3PlusList, reserveForDepth3);
+
+    while (result.length < autoLimit && (depth1List.length || depth2List.length || depth3PlusList.length)) {
+      const remaining = autoLimit - result.length;
+      if (consume(depth1List, remaining)) {
+        continue;
+      }
+      if (consume(depth2List, remaining)) {
+        continue;
+      }
+      consume(depth3PlusList, remaining);
+    }
+
+    return result.slice(0, autoLimit);
   }
 
   /**
