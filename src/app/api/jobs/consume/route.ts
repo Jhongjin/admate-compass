@@ -2845,7 +2845,7 @@ export async function processQueue() {
           crawlTimeMs: finishedResult.crawlTimeMs
         });
 
-        const { error: updateError, data: updateData, count: updatedCount } = await supabase
+        const { error: updateError, data: updateData } = await supabase
           .from('processing_jobs')
           .update({
             status: 'completed',
@@ -2853,7 +2853,7 @@ export async function processQueue() {
             result: finishedResult,
           })
           .eq('id', job.id)
-          .eq('status', 'processing') // processing 상태일 때만 업데이트
+          .in('status', ['processing', 'queued', 'retrying']) // 여러 상태에서 완료로 변경 가능
           .select();
 
         if (updateError) {
@@ -2864,15 +2864,22 @@ export async function processQueue() {
           throw updateError;
         }
 
-        if (updatedCount === 0) {
+        if (!updateData || updateData.length === 0) {
+          // 현재 상태 확인
+          const { data: currentJob } = await supabase
+            .from('processing_jobs')
+            .select('status')
+            .eq('id', job.id)
+            .single();
+          
           console.warn('[CRITICAL] ⚠️ 작업 상태 업데이트 실패: 이미 다른 상태이거나 취소됨', {
             jobId: job.id,
-            currentStatus: updateData?.[0]?.status || 'unknown'
+            currentStatus: currentJob?.status || 'unknown'
           });
         } else {
           console.log('[CRITICAL] ✅ 작업 상태 업데이트 완료:', {
             jobId: job.id,
-            updatedRows: updatedCount || updateData?.length || 0,
+            updatedRows: updateData.length,
             status: 'completed'
           });
         }

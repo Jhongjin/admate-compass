@@ -8,11 +8,12 @@ export async function POST(request: NextRequest) {
     
     console.log('문서 상태 동기화 시작...');
 
-    // "Introduction to the Advertising Standards" 문서들 조회
+    // processing 상태이지만 chunk_count > 0인 모든 문서 조회
     const { data: documents, error: docError } = await supabase
       .from('documents')
       .select('*')
-      .ilike('title', '%Introduction to the Advertising Standards%');
+      .eq('status', 'processing')
+      .gt('chunk_count', 0);
 
     if (docError) {
       throw new Error(`문서 조회 실패: ${docError.message}`);
