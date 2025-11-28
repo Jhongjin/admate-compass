@@ -947,31 +947,11 @@ export default function HybridCrawlingManager({
                 }
               });
               
-              setCrawlingProgress(prev =>
-                prev.map(p => {
-                  const jobId = urlToJobIdMap.get(p.url);
-                  if (jobId) {
-                    const job = jobs.find(j => j.id === jobId);
-                    if (job) {
-                      if (job.status === 'completed') {
-                        return { ...p, status: 'completed' as const, message: '크롤링 완료' };
-                      } else if (job.status === 'failed') {
-                        return { ...p, status: 'failed' as const, message: '크롤링 실패' };
-                      } else if (job.status === 'processing') {
-                        return { ...p, status: 'crawling' as const, message: '크롤링 중...' };
-                      } else if (job.status === 'queued' || job.status === 'retrying') {
-                        return { ...p, status: 'pending' as const, message: '큐 대기 중...' };
-                      }
-                    }
-                  }
-                  return p;
-                })
-              );
-              
-              // 완료된 작업이 있으면 즉시 문서 목록 새로고침
+              // 완료된 작업 먼저 처리
               const completedJobs = jobs.filter(j => j.status === 'completed');
+              
+              // 완료된 작업의 URL을 진행 상황에서 제거하고 문서 목록 새로고침
               if (completedJobs.length > 0) {
-                // 완료된 작업의 URL을 진행 상황에서 제거
                 completedJobs.forEach(job => {
                   const jobUrl = (job.payload as any)?.url;
                   if (jobUrl) {
@@ -986,6 +966,36 @@ export default function HybridCrawlingManager({
                   onCrawlingComplete();
                 }
               }
+              
+              // 진행 상황 업데이트 (완료된 것은 이미 제거됨)
+              setCrawlingProgress(prev => {
+                const remaining = prev.filter(p => {
+                  const jobId = urlToJobIdMap.get(p.url);
+                  if (jobId) {
+                    const job = jobs.find(j => j.id === jobId);
+                    // 완료된 작업은 이미 제거했으므로 여기서는 제외
+                    return job && job.status !== 'completed';
+                  }
+                  return true;
+                });
+                
+                return remaining.map(p => {
+                  const jobId = urlToJobIdMap.get(p.url);
+                  if (jobId) {
+                    const job = jobs.find(j => j.id === jobId);
+                    if (job) {
+                      if (job.status === 'failed') {
+                        return { ...p, status: 'failed' as const, message: '크롤링 실패' };
+                      } else if (job.status === 'processing') {
+                        return { ...p, status: 'crawling' as const, message: '크롤링 중...' };
+                      } else if (job.status === 'queued' || job.status === 'retrying') {
+                        return { ...p, status: 'pending' as const, message: '큐 대기 중...' };
+                      }
+                    }
+                  }
+                  return p;
+                });
+              });
               
               // 모든 작업이 완료되면 폴링 중지
               const allCompleted = jobs.every(j => j.status === 'completed' || j.status === 'failed');
