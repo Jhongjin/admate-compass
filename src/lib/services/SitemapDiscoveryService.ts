@@ -278,8 +278,8 @@ export class SitemapDiscoveryService {
             path: newPath,
           });
 
-          // 다음 depth 탐색을 위해 큐에 추가 (maxDepth 미만인 경우만)
-          if (nextDepth < config.maxDepth && discoveredPages.length < config.maxUrls) {
+          // 다음 depth 탐색을 위해 큐에 추가 (maxDepth까지 포함)
+          if (nextDepth <= config.maxDepth && discoveredPages.length < config.maxUrls) {
             queue.push({
               url: linkUrl.url,
               depth: nextDepth,
