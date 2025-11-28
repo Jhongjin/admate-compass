@@ -39,6 +39,8 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { fetchWithTimeout } from '@/lib/utils/fetchWithTimeout';
+import { UrlDiscoveryPanel, DiscoveredUrlItem } from './UrlDiscoveryPanel';
+import { Dialog, DialogContent } from '@/components/ui/dialog';
 
 // 미리 정의된 URL 템플릿 (대표 도메인만)
 const predefinedUrlTemplates = {
@@ -118,6 +120,12 @@ export default function HybridCrawlingManager({
   const [deletingUrl, setDeletingUrl] = useState<string | null>(null);
   const [showDiscoveredUrls, setShowDiscoveredUrls] = useState<{ [key: string]: boolean }>({});
   const [selectedDiscoveredUrls, setSelectedDiscoveredUrls] = useState<{ [key: string]: string[] }>({});
+  
+  // 심도 3 이상일 때 하위 페이지 선택 모달 상태
+  const [showDiscoveryModal, setShowDiscoveryModal] = useState(false);
+  const [allDiscoveredUrls, setAllDiscoveredUrls] = useState<DiscoveredUrlItem[]>([]);
+  const [selectedUrlsForCrawling, setSelectedUrlsForCrawling] = useState<Set<string>>(new Set());
+  const [pendingCrawlUrls, setPendingCrawlUrls] = useState<string[]>([]);
 
   // Advanced Crawl Options
   const [crawlOptions, setCrawlOptions] = useState({
@@ -486,6 +494,42 @@ export default function HybridCrawlingManager({
         const result = await response.json();
 
         if (result.success) {
+          // 심도 3 이상이고 하위 페이지가 발견된 경우 모달 표시
+          const maxDepthValue = clampDepthValue(crawlOptions.maxDepth);
+          const allDiscovered: DiscoveredUrlItem[] = [];
+          
+          // 모든 문서에서 discoveredUrls 수집
+          if (result.documents && Array.isArray(result.documents)) {
+            result.documents.forEach((doc: any) => {
+              if (doc.discoveredUrls && Array.isArray(doc.discoveredUrls)) {
+                doc.discoveredUrls.forEach((discovered: any) => {
+                  // 심도 3 이상인 페이지만 수집
+                  if (discovered.depth >= 3) {
+                    allDiscovered.push({
+                      url: discovered.url,
+                      title: discovered.title,
+                      depth: discovered.depth,
+                      parentUrl: doc.url,
+                      path: [doc.url, discovered.url],
+                      source: discovered.source || 'links',
+                      isAlreadyCrawled: false
+                    });
+                  }
+                });
+              }
+            });
+          }
+
+          // 심도 3 이상이고 발견된 페이지가 있으면 모달 표시
+          if (maxDepthValue >= 3 && allDiscovered.length > 0) {
+            console.log(`🔍 심도 3 이상 페이지 발견: ${allDiscovered.length}개`);
+            setAllDiscoveredUrls(allDiscovered);
+            setSelectedUrlsForCrawling(new Set());
+            setShowDiscoveryModal(true);
+            // 모달에서 선택 후 크롤링하도록 대기
+            return;
+          }
+
           const successCount = result.successCount || 0;
           const failedCount = result.failCount || 0;
 
@@ -650,6 +694,134 @@ export default function HybridCrawlingManager({
         [parentUrl]: discoveredUrls.map(discovered => discovered.url)
       }));
     }
+  };
+
+  // 심도 3 이상 페이지 선택 모달 핸들러
+  const handleDiscoveryModalSelectionChange = (url: string, selected: boolean) => {
+    setSelectedUrlsForCrawling(prev => {
+      const next = new Set(prev);
+      if (selected) {
+        next.add(url);
+      } else {
+        next.delete(url);
+      }
+      return next;
+    });
+  };
+
+  const handleDiscoveryModalSelectAll = () => {
+    setSelectedUrlsForCrawling(new Set(allDiscoveredUrls.map(item => item.url)));
+  };
+
+  const handleDiscoveryModalDeselectAll = () => {
+    setSelectedUrlsForCrawling(new Set());
+  };
+
+  const handleDiscoveryModalConfirm = async () => {
+    if (selectedUrlsForCrawling.size === 0) {
+      toast.error('최소 1개 이상의 페이지를 선택해주세요.');
+      return;
+    }
+
+    const selectedUrlsArray = Array.from(selectedUrlsForCrawling);
+    setShowDiscoveryModal(false);
+    setIsCrawling(true);
+    setCrawlingProgress(selectedUrlsArray.map(url => ({ url, status: 'pending' as const })));
+
+    // 선택한 페이지만 크롤링
+    try {
+      const response = await fetchWithTimeout('/api/puppeteer-crawl', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          urls: selectedUrlsArray,
+          action: 'crawl_custom',
+          extractSubPages: false, // 이미 선택한 페이지만 크롤링하므로 하위 페이지 추출 비활성화
+          ...crawlOptions,
+          maxDepth: 1 // 선택한 페이지만 크롤링하므로 심도 1
+        }),
+      }, 300000);
+
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      const result = await response.json();
+
+      if (result.success) {
+        const successCount = result.successCount || 0;
+        const failedCount = result.failCount || 0;
+
+        toast.success(`선택한 페이지 크롤링 완료: ${successCount}개 성공, ${failedCount}개 실패`);
+
+        // 크롤링된 데이터를 Supabase에 저장
+        if (result.documents && result.documents.length > 0) {
+          try {
+            const saveResponse = await fetchWithTimeout('/api/admin/save-crawled-content', {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+              },
+              body: JSON.stringify({
+                results: result.documents.map((doc: any) => ({
+                  url: doc.url,
+                  title: doc.title,
+                  content: doc.content,
+                  status: 'success'
+                }))
+              }),
+            });
+
+            const saveResult = await saveResponse.json();
+
+            if (saveResult.success) {
+              toast.success(`데이터 저장 완료: ${saveResult.data.summary.success}개 저장`);
+            } else {
+              toast.error(`데이터 저장 실패: ${saveResult.error}`);
+            }
+          } catch (saveError) {
+            console.error('❌ 크롤링 데이터 저장 중 오류:', saveError);
+            toast.error('데이터 저장 중 오류가 발생했습니다.');
+          }
+        }
+
+        // 진행상황 업데이트
+        setCrawlingProgress(prev =>
+          prev.map((p, index) => {
+            const processedUrl = result.processedUrls?.[index];
+            return {
+              ...p,
+              status: processedUrl?.status === 'success' ? 'completed' as const : 'failed' as const,
+              message: processedUrl?.status === 'success' ? '크롤링 완료' : '크롤링 실패',
+            };
+          })
+        );
+
+        setTimeout(() => {
+          setCrawlingProgress([]);
+          setIsCrawling(false);
+          if (onCrawlingComplete) {
+            onCrawlingComplete();
+          }
+        }, 1000);
+      } else {
+        throw new Error(result.error || '크롤링 실패');
+      }
+    } catch (error) {
+      console.error('선택한 페이지 크롤링 오류:', error);
+      toast.error(`크롤링 실패: ${error instanceof Error ? error.message : '알 수 없는 오류'}`);
+      setIsCrawling(false);
+    }
+  };
+
+  const handleDiscoveryModalCancel = () => {
+    setShowDiscoveryModal(false);
+    setAllDiscoveredUrls([]);
+    setSelectedUrlsForCrawling(new Set());
+    setIsCrawling(false);
+    setCrawlingProgress([]);
   };
 
   // URL을 도메인별로 그룹화
@@ -1641,6 +1813,29 @@ export default function HybridCrawlingManager({
           </CardContent>
         </Card>
       )}
+
+      {/* 심도 3 이상 하위 페이지 선택 모달 */}
+      <Dialog open={showDiscoveryModal} onOpenChange={setShowDiscoveryModal}>
+        <DialogContent className="max-w-5xl max-h-[90vh] overflow-hidden p-0">
+          <div className="p-6">
+            <UrlDiscoveryPanel
+              discoveredUrls={allDiscoveredUrls}
+              selectedUrls={selectedUrlsForCrawling}
+              onSelectionChange={handleDiscoveryModalSelectionChange}
+              onSelectAll={handleDiscoveryModalSelectAll}
+              onDeselectAll={handleDiscoveryModalDeselectAll}
+              onConfirm={handleDiscoveryModalConfirm}
+              onCancel={handleDiscoveryModalCancel}
+              isLoading={isCrawling}
+              totalCount={allDiscoveredUrls.length}
+              byDepth={allDiscoveredUrls.reduce((acc, item) => {
+                acc[item.depth] = (acc[item.depth] || 0) + 1;
+                return acc;
+              }, {} as Record<number, number>)}
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
