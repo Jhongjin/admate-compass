@@ -338,13 +338,21 @@ export default function AdminDocsPage() {
         setExpandedGroups(newExpanded);
     };
 
-    const handleSelectDocument = (id: string) => {
+    const handleSelectDocument = (id: string | string[]) => {
         const newSelected = new Set(selectedDocs);
-        if (newSelected.has(id)) {
-            newSelected.delete(id);
+        const ids = Array.isArray(id) ? id : [id];
+        
+        // 모든 ID가 선택되어 있는지 확인
+        const allSelected = ids.every(docId => newSelected.has(docId));
+        
+        if (allSelected) {
+            // 모두 선택되어 있으면 모두 해제
+            ids.forEach(docId => newSelected.delete(docId));
         } else {
-            newSelected.add(id);
+            // 일부만 선택되어 있거나 모두 해제되어 있으면 모두 선택
+            ids.forEach(docId => newSelected.add(docId));
         }
+        
         setSelectedDocs(newSelected);
     };
 
