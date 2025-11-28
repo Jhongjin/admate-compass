@@ -1002,7 +1002,7 @@ export default function HybridCrawlingManager({
           try {
             const { data: jobs, error: jobsError } = await supabase
               .from('processing_jobs')
-              .select('id, status, result, payload')
+              .select('id, status, result, payload, started_at')
               .in('id', jobIds);
             
             if (jobsError) {
