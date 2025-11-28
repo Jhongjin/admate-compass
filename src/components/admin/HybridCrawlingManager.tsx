@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -128,6 +128,10 @@ export default function HybridCrawlingManager({
   const [selectedUrlsForCrawling, setSelectedUrlsForCrawling] = useState<Set<string>>(new Set());
   const [pendingCrawlUrls, setPendingCrawlUrls] = useState<string[]>([]);
   const [groupedDiscoveredUrls, setGroupedDiscoveredUrls] = useState<Record<string, DiscoveredUrlItem[]>>({});
+  
+  // 하위 페이지 크롤링 진행률 polling을 위한 상태
+  const [subPageCrawlJobIds, setSubPageCrawlJobIds] = useState<Map<string, string>>(new Map()); // URL -> jobId 매핑
+  const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
   // Advanced Crawl Options
   const [crawlOptions, setCrawlOptions] = useState({
@@ -451,8 +455,13 @@ export default function HybridCrawlingManager({
     }
 
     // 크롤링 시작 전 상태 초기화 및 즉시 크롤링 상태로 설정
-    setCrawlingProgress(urlsToCrawl.map(url => ({ url, status: 'pending' as const })));
+    // 프로그레스바가 즉시 보이도록 먼저 설정
+    const initialProgress = urlsToCrawl.map(url => ({ url, status: 'pending' as const }));
+    setCrawlingProgress(initialProgress);
     setIsCrawling(true);
+    
+    // 프로그레스바가 즉시 렌더링되도록 강제 업데이트
+    await new Promise(resolve => setTimeout(resolve, 100));
 
     // 크롤링 로직 실행
     executeCrawling();
@@ -1751,8 +1760,8 @@ export default function HybridCrawlingManager({
         )}
       </div>
 
-      {/* 크롤링 진행 상황 */}
-      {crawlingProgress.length > 0 && (
+      {/* 크롤링 진행 상황 - 크롤링 시작 시 즉시 표시 */}
+      {(crawlingProgress.length > 0 || isCrawling) && (
         <Card className="bg-gradient-to-br from-gray-800/90 to-gray-900/90 backdrop-blur-sm border-gray-700/50 rounded-xl mt-6">
           <CardHeader>
             <div className="flex items-center justify-between">

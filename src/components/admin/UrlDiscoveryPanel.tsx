@@ -138,10 +138,10 @@ export function UrlDiscoveryPanel({
         className={cn(
           "group flex items-start gap-3 p-3 rounded-md border transition-all relative z-10",
           isSelected
-            ? "bg-blue-900/40 border-blue-500/70 shadow-md"
+            ? "bg-blue-900/50 border-blue-500/70 shadow-md"
             : isAlreadyCrawled
-            ? "bg-amber-900/15 border-amber-600/50"
-            : "bg-gray-800/40 border-gray-700/60 hover:border-gray-600 hover:bg-gray-800/60"
+            ? "bg-amber-900/25 border-amber-600/50"
+            : "bg-gray-800/60 border-gray-700/80 hover:border-gray-600 hover:bg-gray-800/80"
         )}
       >
         <Checkbox

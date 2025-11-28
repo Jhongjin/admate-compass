@@ -2278,59 +2278,59 @@ export async function processQueue() {
                     };
                   }
                   
-                  // 제목 우선순위: 페이지 제목 > 링크 텍스트(메뉴명) > URL 경로
-                  // 먼저 페이지 제목이 제대로 추출되었는지 확인 (메인 페이지 제목과 다르고, 의미있는 길이인지)
-                  let finalTitle = page.pageTitle;
+                  // 제목 우선순위: 링크 텍스트(메뉴명) > 페이지 제목 > URL 경로
+                  // 메인 페이지 제목과 구분되도록 강화된 로직
+                  let finalTitle = null;
                   
-                  // 페이지 제목이 없거나 메인 페이지와 동일하거나 너무 짧은 경우
-                  if (!finalTitle || finalTitle.length < 2 || finalTitle === mainPage.pageTitle) {
-                    // 링크 텍스트가 있으면 우선 사용
-                    if (linkTitle && linkTitle.length >= 2 && linkTitle !== mainPage.pageTitle) {
-                      finalTitle = linkTitle;
-                    } else {
-                      // URL 경로에서 의미있는 제목 추출
-                      try {
-                        const urlPath = new URL(subUrl).pathname;
-                        if (urlPath && urlPath !== '/') {
-                          const pathParts = urlPath.split('/').filter(p => p.length > 0);
-                          if (pathParts.length > 0) {
-                            // 마지막 경로를 제목으로 사용
-                            let pathTitle = pathParts[pathParts.length - 1];
-                            
-                            // URL 디코딩 시도 (한글 경로 지원)
-                            try {
-                              pathTitle = decodeURIComponent(pathTitle);
-                            } catch (e) {
-                              // 디코딩 실패 시 원본 사용
-                            }
-                            
-                            // 하이픈/언더스코어를 공백으로 변환하고 단어 첫 글자 대문자화
-                            finalTitle = pathTitle
-                              .replace(/[-_]/g, ' ')
-                              .split(' ')
-                              .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-                              .join(' ')
-                              .trim();
-                            
-                            // 여전히 제목이 없거나 너무 짧으면 URL 사용
-                            if (!finalTitle || finalTitle.length < 2) {
-                              finalTitle = subUrl;
-                            }
-                          } else {
-                            finalTitle = subUrl;
+                  // 1. 링크 텍스트가 있고 메인 페이지 제목과 다르면 우선 사용
+                  if (linkTitle && linkTitle.length >= 2 && linkTitle !== mainPage.pageTitle && !linkTitle.includes('광고주센터') && !linkTitle.includes('광고주 센터')) {
+                    finalTitle = linkTitle;
+                    console.log(`[CRITICAL] 📝 하위 페이지 제목 결정 (링크 텍스트): ${subUrl} -> "${finalTitle}"`);
+                  }
+                  // 2. 페이지 제목이 있고 메인 페이지 제목과 다르면 사용
+                  else if (page.pageTitle && page.pageTitle.length >= 2 && page.pageTitle !== mainPage.pageTitle && !page.pageTitle.includes('광고주센터') && !page.pageTitle.includes('광고주 센터')) {
+                    finalTitle = page.pageTitle;
+                    console.log(`[CRITICAL] 📝 하위 페이지 제목 결정 (페이지 제목): ${subUrl} -> "${finalTitle}"`);
+                  }
+                  // 3. URL 경로에서 의미있는 제목 추출
+                  else {
+                    try {
+                      const urlPath = new URL(subUrl).pathname;
+                      if (urlPath && urlPath !== '/') {
+                        const pathParts = urlPath.split('/').filter(p => p.length > 0);
+                        if (pathParts.length > 0) {
+                          // 마지막 경로를 제목으로 사용
+                          let pathTitle = pathParts[pathParts.length - 1];
+                          
+                          // URL 디코딩 시도 (한글 경로 지원)
+                          try {
+                            pathTitle = decodeURIComponent(pathTitle);
+                          } catch (e) {
+                            // 디코딩 실패 시 원본 사용
                           }
-                        } else {
-                          finalTitle = subUrl;
+                          
+                          // 하이픈/언더스코어를 공백으로 변환하고 단어 첫 글자 대문자화
+                          pathTitle = pathTitle
+                            .replace(/[-_]/g, ' ')
+                            .split(' ')
+                            .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+                            .join(' ')
+                            .trim();
+                          
+                          // 경로 기반 제목이 의미있으면 사용
+                          if (pathTitle && pathTitle.length >= 2 && pathTitle !== mainPage.pageTitle) {
+                            finalTitle = pathTitle;
+                            console.log(`[CRITICAL] 📝 하위 페이지 제목 결정 (URL 경로): ${subUrl} -> "${finalTitle}"`);
+                          }
                         }
-                      } catch (urlError) {
-                        // URL 파싱 실패 시 원본 URL 사용
-                        finalTitle = subUrl;
                       }
+                    } catch (urlError) {
+                      // URL 파싱 실패 시 무시
                     }
                   }
                   
-                  // 최종 제목이 메인 페이지 제목과 같으면 URL 경로 기반 제목으로 변경
-                  if (finalTitle === mainPage.pageTitle) {
+                  // 4. 최종 제목이 없거나 메인 페이지 제목과 같으면 URL 기반 제목 생성
+                  if (!finalTitle || finalTitle === mainPage.pageTitle || finalTitle.includes('광고주센터') || finalTitle.includes('광고주 센터')) {
                     try {
                       const urlPath = new URL(subUrl).pathname;
                       if (urlPath && urlPath !== '/') {
@@ -2342,13 +2342,46 @@ export async function processQueue() {
                           } catch (e) {
                             // 디코딩 실패 시 원본 사용
                           }
-                          finalTitle = pathTitle
-                            .replace(/[-_]/g, ' ')
-                            .split(' ')
-                            .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-                            .join(' ')
-                            .trim() || subUrl;
+                          
+                          // 경로를 한글로 변환 시도 (일반적인 경로 패턴)
+                          const pathTitleMap: Record<string, string> = {
+                            'sales': '매출',
+                            'offline': '오프라인',
+                            'website': '웹사이트',
+                            'recommend': '추천',
+                            'guarantee': '보장형',
+                            'shoppingBlock': '쇼핑블록',
+                            'adtips': '광고 팁',
+                            'gfa': 'GFA',
+                            'sa': '검색광고',
+                            'sub': '하위',
+                            'intro': '소개',
+                            'start': '시작'
+                          };
+                          
+                          // 경로 제목 매핑 시도
+                          const lowerPathTitle = pathTitle.toLowerCase();
+                          if (pathTitleMap[lowerPathTitle]) {
+                            finalTitle = pathTitleMap[lowerPathTitle];
+                          } else {
+                            // 매핑이 없으면 경로를 제목으로 사용
+                            finalTitle = pathTitle
+                              .replace(/[-_]/g, ' ')
+                              .split(' ')
+                              .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+                              .join(' ')
+                              .trim();
+                          }
+                          
+                          // 여전히 제목이 없거나 메인 페이지 제목과 같으면 URL 사용
+                          if (!finalTitle || finalTitle.length < 2 || finalTitle === mainPage.pageTitle) {
+                            finalTitle = subUrl;
+                          }
+                        } else {
+                          finalTitle = subUrl;
                         }
+                      } else {
+                        finalTitle = subUrl;
                       }
                     } catch (urlError) {
                       // URL 파싱 실패 시 원본 URL 사용
@@ -2356,7 +2389,7 @@ export async function processQueue() {
                     }
                   }
                   
-                  console.log(`[CRITICAL] 📝 하위 페이지 제목 결정: ${subUrl} -> "${finalTitle}" (원본 페이지 제목: "${page.pageTitle}", 링크 텍스트: "${linkTitle}")`);
+                  console.log(`[CRITICAL] 📝 최종 하위 페이지 제목: ${subUrl} -> "${finalTitle}" (원본 페이지 제목: "${page.pageTitle}", 링크 텍스트: "${linkTitle}", 메인 페이지 제목: "${mainPage.pageTitle}")`);
                   
                   let result;
                   try {
