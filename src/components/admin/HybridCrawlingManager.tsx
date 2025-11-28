@@ -1854,24 +1854,22 @@ export default function HybridCrawlingManager({
 
       {/* 심도 3 이상 하위 페이지 선택 모달 */}
       <Dialog open={showDiscoveryModal} onOpenChange={setShowDiscoveryModal}>
-        <DialogContent className="max-w-5xl max-h-[90vh] overflow-hidden p-0">
-          <div className="p-6">
-            <UrlDiscoveryPanel
-              discoveredUrls={allDiscoveredUrls}
-              selectedUrls={selectedUrlsForCrawling}
-              onSelectionChange={handleDiscoveryModalSelectionChange}
-              onSelectAll={handleDiscoveryModalSelectAll}
-              onDeselectAll={handleDiscoveryModalDeselectAll}
-              onConfirm={handleDiscoveryModalConfirm}
-              onCancel={handleDiscoveryModalCancel}
-              isLoading={isCrawling}
-              totalCount={allDiscoveredUrls.length}
-              byDepth={allDiscoveredUrls.reduce((acc, item) => {
-                acc[item.depth] = (acc[item.depth] || 0) + 1;
-                return acc;
-              }, {} as Record<number, number>)}
-            />
-          </div>
+        <DialogContent className="max-w-6xl h-[85vh] max-h-[85vh] overflow-hidden p-0 flex flex-col bg-gray-900 border-gray-700">
+          <UrlDiscoveryPanel
+            discoveredUrls={allDiscoveredUrls}
+            selectedUrls={selectedUrlsForCrawling}
+            onSelectionChange={handleDiscoveryModalSelectionChange}
+            onSelectAll={handleDiscoveryModalSelectAll}
+            onDeselectAll={handleDiscoveryModalDeselectAll}
+            onConfirm={handleDiscoveryModalConfirm}
+            onCancel={handleDiscoveryModalCancel}
+            isLoading={isCrawling}
+            totalCount={allDiscoveredUrls.length}
+            byDepth={allDiscoveredUrls.reduce((acc, item) => {
+              acc[item.depth] = (acc[item.depth] || 0) + 1;
+              return acc;
+            }, {} as Record<number, number>)}
+          />
         </DialogContent>
       </Dialog>
     </div>
