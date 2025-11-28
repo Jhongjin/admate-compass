@@ -399,7 +399,7 @@ export default function DocumentsPage() {
         }
     });
 
-    const handleBulkDelete = useCallback(() => {
+    const handleBulkDelete = useCallback(async () => {
         console.log('🗑️ [handleBulkDelete] ========== 함수 호출 시작 ==========');
         console.log('🗑️ [handleBulkDelete] selectedDocs:', selectedDocs);
         console.log('🗑️ [handleBulkDelete] selectedDocs.size:', selectedDocs?.size || 0);
@@ -679,16 +679,7 @@ export default function DocumentsPage() {
                                 onDeleteDocument={(id) => setDeleteId(id)}
                                 onSelectAll={handleSelectAll}
                                 onSelectDocument={handleSelectDocument}
-                                onBulkDelete={() => {
-                                    console.log('🔍 [DocumentsPage] onBulkDelete prop 호출됨');
-                                    console.log('🔍 [DocumentsPage] handleBulkDelete 존재:', !!handleBulkDelete);
-                                    console.log('🔍 [DocumentsPage] handleBulkDelete 타입:', typeof handleBulkDelete);
-                                    if (handleBulkDelete) {
-                                        handleBulkDelete();
-                                    } else {
-                                        console.error('❌ [DocumentsPage] handleBulkDelete가 없습니다!');
-                                    }
-                                }}
+                                onBulkDelete={handleBulkDelete}
                                 selectedDocuments={selectedDocs}
                                 isAllSelected={selectedDocs.size > 0 && selectedDocs.size === filteredDocs.length}
                                 actionLoading={{}}
