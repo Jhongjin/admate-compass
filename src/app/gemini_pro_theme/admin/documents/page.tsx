@@ -647,7 +647,12 @@ export default function DocumentsPage() {
                                 onDeleteDocument={(id) => setDeleteId(id)}
                                 onSelectAll={handleSelectAll}
                                 onSelectDocument={handleSelectDocument}
-                                onBulkDelete={handleBulkDelete}
+                                onBulkDelete={() => {
+                                    console.log('🔍 [DocumentsPage] onBulkDelete 래퍼 호출됨');
+                                    console.log('🔍 [DocumentsPage] handleBulkDelete:', handleBulkDelete);
+                                    console.log('🔍 [DocumentsPage] handleBulkDelete.toString():', handleBulkDelete?.toString().substring(0, 300));
+                                    handleBulkDelete();
+                                }}
                                 selectedDocuments={selectedDocs}
                                 isAllSelected={selectedDocs.size > 0 && selectedDocs.size === filteredDocs.length}
                                 actionLoading={{}}
