@@ -357,7 +357,7 @@ export default function DocumentsPage() {
             });
             return results;
         },
-        onSuccess: (results) => {
+        onSuccess: async (results) => {
             const successCount = results.filter(r => r.success).length;
             const failCount = results.filter(r => !r.success).length;
             
@@ -366,8 +366,16 @@ export default function DocumentsPage() {
             // 선택 상태 먼저 초기화 (무한 루프 방지)
             setSelectedDocs(new Set());
             
-            // 쿼리 무효화 (자동 리프레시됨)
-            queryClient.invalidateQueries({ queryKey: ['admin-documents'] });
+            // 쿼리 무효화 (모든 admin-documents 쿼리)
+            await queryClient.invalidateQueries({ 
+                queryKey: ['admin-documents'],
+                exact: false // 부분 매칭으로 모든 admin-documents 쿼리 무효화
+            });
+            
+            // 명시적으로 리프레시
+            await refetch();
+            
+            console.log('✅ [bulkDeleteMutation] 쿼리 무효화 및 리프레시 완료');
             
             if (failCount === 0) {
                 toast({
@@ -422,9 +430,21 @@ export default function DocumentsPage() {
         }
 
         console.log('🗑️ [handleBulkDelete] 삭제 시작 - bulkDeleteMutation.mutate 호출:', selectedArray);
+        console.log('🗑️ [handleBulkDelete] bulkDeleteMutation:', bulkDeleteMutation);
+        console.log('🗑️ [handleBulkDelete] bulkDeleteMutation.mutate 존재:', !!bulkDeleteMutation.mutate);
+        
+        if (!bulkDeleteMutation.mutate) {
+            console.error('❌ [handleBulkDelete] bulkDeleteMutation.mutate가 없습니다!');
+            toast({
+                title: "삭제 실패",
+                description: "삭제 기능을 초기화할 수 없습니다.",
+                variant: "destructive",
+            });
+            return;
+        }
         
         bulkDeleteMutation.mutate(selectedArray);
-    }, [selectedDocs, bulkDeleteMutation.mutate, toast]);
+    }, [selectedDocs, bulkDeleteMutation, toast]);
 
     return (
         <ThemedAdminLayout currentPage="docs">
