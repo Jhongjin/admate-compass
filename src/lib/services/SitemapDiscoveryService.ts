@@ -401,9 +401,13 @@ export class SitemapDiscoveryService {
         return [];
       }
 
+      // Content-Type 확인
+      const contentType = response.headers.get('content-type') || '';
+      const isXmlContentType = contentType.includes('xml') || contentType.includes('text/xml') || contentType.includes('application/xml');
+      const isHtmlContentType = contentType.includes('html') || contentType.includes('text/html');
+
       // Gzip 압축 파일 처리
       let xmlContent: string;
-      const contentType = response.headers.get('content-type') || '';
       const isGzip = sitemapUrl.endsWith('.gz') || contentType.includes('gzip') || contentType.includes('application/gzip');
       
       if (isGzip) {
@@ -420,11 +424,32 @@ export class SitemapDiscoveryService {
         }
       } else {
         xmlContent = await response.text();
-        console.log(`[CRITICAL] 📄 일반 XML 파일: ${sitemapUrl} (${xmlContent.length}자)`);
+        console.log(`[CRITICAL] 📄 콘텐츠 다운로드 완료: ${sitemapUrl} (${xmlContent.length}자, Content-Type: ${contentType})`);
       }
 
       if (!xmlContent || xmlContent.trim().length === 0) {
-        console.warn(`[CRITICAL] ⚠️ 빈 XML 콘텐츠: ${sitemapUrl}`);
+        console.warn(`[CRITICAL] ⚠️ 빈 콘텐츠: ${sitemapUrl}`);
+        return [];
+      }
+
+      // HTML 감지 (Content-Type 또는 내용 기반)
+      const trimmedContent = xmlContent.trim();
+      const isHtml = isHtmlContentType || 
+                     trimmedContent.startsWith('<!DOCTYPE html') || 
+                     trimmedContent.startsWith('<!doctype html') ||
+                     trimmedContent.startsWith('<html') ||
+                     trimmedContent.startsWith('<HTML');
+
+      if (isHtml) {
+        console.warn(`[CRITICAL] ⚠️ Sitemap이 HTML을 반환했습니다: ${sitemapUrl} (Content-Type: ${contentType})`);
+        console.warn(`[CRITICAL] 💡 실제 Sitemap이 없거나 다른 경로에 있을 수 있습니다. 링크 탐색으로 대체합니다.`);
+        return [];
+      }
+
+      // XML 형식 확인
+      if (!isXmlContentType && !trimmedContent.startsWith('<?xml') && !trimmedContent.startsWith('<urlset') && !trimmedContent.startsWith('<sitemapindex')) {
+        console.warn(`[CRITICAL] ⚠️ XML 형식이 아닌 것으로 보입니다: ${sitemapUrl} (Content-Type: ${contentType})`);
+        console.warn(`[CRITICAL] 💡 링크 탐색으로 대체합니다.`);
         return [];
       }
 
