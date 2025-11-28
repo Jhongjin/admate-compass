@@ -43,6 +43,7 @@ import { fetchWithTimeout } from '@/lib/utils/fetchWithTimeout';
 import { UrlDiscoveryPanel, DiscoveredUrlItem } from './UrlDiscoveryPanel';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { Progress } from '@/components/ui/progress';
+import { createClient } from '@/lib/supabase/client';
 
 // 미리 정의된 URL 템플릿 (대표 도메인만)
 const predefinedUrlTemplates = {
@@ -102,6 +103,7 @@ export default function HybridCrawlingManager({
   vendors = [],
   onVendorsChange
 }: HybridCrawlingManagerProps) {
+  const supabase = createClient();
   const [crawlingMode, setCrawlingMode] = useState<'predefined' | 'custom' | 'hybrid'>('predefined');
   const [selectedTemplates, setSelectedTemplates] = useState<string[]>([]);
   const [customUrls, setCustomUrls] = useState<string[]>([]);
@@ -845,112 +847,151 @@ export default function HybridCrawlingManager({
 
     const selectedUrlsArray = Array.from(selectedUrlsForCrawling);
     setShowDiscoveryModal(false);
+    
+    // 프로그레스바 즉시 표시
     setIsCrawling(true);
     setCrawlingProgress(selectedUrlsArray.map(url => ({ url, status: 'pending' as const })));
+    
+    // UI 업데이트를 위한 짧은 지연
+    await new Promise(resolve => setTimeout(resolve, 100));
 
-    // 선택한 페이지만 크롤링
+    // 선택한 페이지만 크롤링 (큐에 등록)
     try {
-      const response = await fetchWithTimeout('/api/puppeteer-crawl', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          urls: selectedUrlsArray,
-          action: 'crawl_custom',
-          extractSubPages: false, // 이미 선택한 페이지만 크롤링하므로 하위 페이지 추출 비활성화
-          ...crawlOptions,
-          maxDepth: 1 // 선택한 페이지만 크롤링하므로 심도 1
-        }),
-      }, 300000);
+      // 벤더 정보 가져오기
+      const dbVendors = vendors.length > 0 ? vendors.map(v => VENDOR_TO_DB_MAP[v] || 'META') : ['META'];
+      
+      // 각 URL을 큐에 등록
+      const jobIds: string[] = [];
+      for (let i = 0; i < selectedUrlsArray.length; i++) {
+        const url = selectedUrlsArray[i];
+        
+        // 진행 상황 업데이트
+        setCrawlingProgress(prev =>
+          prev.map(p =>
+            p.url === url ? { ...p, status: 'crawling' as const, message: '큐에 등록 중...' } : p
+          )
+        );
+        
+        try {
+          const enqueueResponse = await fetchWithTimeout('/api/jobs/enqueue', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              jobType: 'CRAWL_SEED',
+              priority: 5,
+              payload: {
+                url,
+                vendors: dbVendors,
+                domainLimit: crawlOptions.domainLimit,
+                respectRobots: crawlOptions.respectRobots,
+                maxDepth: 1,
+                extractSubPages: false
+              }
+            }),
+          }, 30000);
 
-      if (!response.ok) {
-        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+          if (!enqueueResponse.ok) {
+            throw new Error(`HTTP ${enqueueResponse.status}: ${enqueueResponse.statusText}`);
+          }
+
+          const enqueueResult = await enqueueResponse.json();
+          if (enqueueResult.jobId) {
+            jobIds.push(enqueueResult.jobId);
+            setCrawlingProgress(prev =>
+              prev.map(p =>
+                p.url === url ? { ...p, status: 'crawling' as const, message: '큐에 등록됨, 처리 대기 중...' } : p
+              )
+            );
+          } else {
+            throw new Error('작업 ID를 받지 못했습니다.');
+          }
+        } catch (urlError) {
+          console.error(`URL 큐 등록 오류: ${url}`, urlError);
+          setCrawlingProgress(prev =>
+            prev.map(p =>
+              p.url === url
+                ? { ...p, status: 'failed' as const, message: urlError instanceof Error ? urlError.message : '큐 등록 실패' }
+                : p
+            )
+          );
+        }
       }
 
-      const result = await response.json();
-
-      if (result.success) {
-        const successCount = result.successCount || 0;
-        const failedCount = result.failCount || 0;
-
-        toast.success(`선택한 페이지 크롤링 완료: ${successCount}개 성공, ${failedCount}개 실패`);
-
-        // 크롤링된 데이터를 Supabase에 저장
-        if (result.documents && result.documents.length > 0) {
+      if (jobIds.length > 0) {
+        toast.success(`${jobIds.length}개 작업이 큐에 등록되었습니다.`);
+        
+        // 큐 워커 즉시 트리거
+        try {
+          await fetchWithTimeout('/api/jobs/consume', { method: 'POST' }, 10000);
+        } catch (consumeError) {
+          console.warn('큐 워커 트리거 실패 (무시 가능):', consumeError);
+        }
+        
+        // 폴링으로 진행 상황 업데이트
+        const pollInterval = setInterval(async () => {
           try {
-            // 벤더 정보 가져오기 (URL 도메인 기반 자동 감지 또는 선택된 벤더 사용)
-            const getVendorFromUrl = (url: string): string => {
-              try {
-                const urlObj = new URL(url);
-                const hostname = urlObj.hostname.toLowerCase();
-                
-                if (hostname.includes('naver.com') || hostname.includes('naver')) {
-                  return 'NAVER';
-                } else if (hostname.includes('kakao.com') || hostname.includes('kakao')) {
-                  return 'KAKAO';
-                } else if (hostname.includes('google.com') || hostname.includes('google')) {
-                  return 'GOOGLE';
-                } else if (hostname.includes('twitter.com') || hostname.includes('x.com')) {
-                  return 'OTHER';
-                } else if (hostname.includes('facebook.com') || hostname.includes('instagram.com') || hostname.includes('meta.com') || hostname.includes('threads.net')) {
-                  return 'META';
+            const { data: jobs } = await supabase
+              .from('processing_jobs')
+              .select('id, status, result, payload')
+              .in('id', jobIds);
+            
+            if (jobs) {
+              // URL과 jobId 매핑 생성
+              const urlToJobIdMap = new Map<string, string>();
+              jobs.forEach(job => {
+                const jobUrl = (job.payload as any)?.url;
+                if (jobUrl) {
+                  urlToJobIdMap.set(jobUrl, job.id);
                 }
-              } catch (e) {
-                console.error('URL 파싱 오류:', e);
+              });
+              
+              setCrawlingProgress(prev =>
+                prev.map(p => {
+                  const jobId = urlToJobIdMap.get(p.url);
+                  if (jobId) {
+                    const job = jobs.find(j => j.id === jobId);
+                    if (job) {
+                      if (job.status === 'completed') {
+                        return { ...p, status: 'completed' as const, message: '크롤링 완료' };
+                      } else if (job.status === 'failed') {
+                        return { ...p, status: 'failed' as const, message: '크롤링 실패' };
+                      } else if (job.status === 'processing') {
+                        return { ...p, status: 'crawling' as const, message: '크롤링 중...' };
+                      } else if (job.status === 'queued' || job.status === 'retrying') {
+                        return { ...p, status: 'pending' as const, message: '큐 대기 중...' };
+                      }
+                    }
+                  }
+                  return p;
+                })
+              );
+              
+              // 모든 작업이 완료되면 폴링 중지
+              const allCompleted = jobs.every(j => j.status === 'completed' || j.status === 'failed');
+              if (allCompleted) {
+                clearInterval(pollInterval);
+                setIsCrawling(false);
+                if (onCrawlingComplete) {
+                  setTimeout(() => {
+                    onCrawlingComplete();
+                  }, 2000);
+                }
               }
-              // 기본값: 선택된 벤더 또는 META
-              return vendors.length > 0 ? VENDOR_TO_DB_MAP[vendors[0]] || 'META' : 'META';
-            };
-
-            const saveResponse = await fetchWithTimeout('/api/admin/save-crawled-content', {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-              },
-              body: JSON.stringify({
-                results: result.documents.map((doc: any) => ({
-                  url: doc.url,
-                  title: doc.title,
-                  content: doc.content,
-                  status: 'success',
-                  vendor: getVendorFromUrl(doc.url) // 벤더 정보 추가
-                }))
-              }),
-            });
-
-            const saveResult = await saveResponse.json();
-
-            if (saveResult.success) {
-              toast.success(`데이터 저장 완료: ${saveResult.data.summary.success}개 저장`);
-            } else {
-              toast.error(`데이터 저장 실패: ${saveResult.error}`);
             }
-          } catch (saveError) {
-            console.error('❌ 크롤링 데이터 저장 중 오류:', saveError);
-            toast.error('데이터 저장 중 오류가 발생했습니다.');
+          } catch (pollError) {
+            console.error('폴링 오류:', pollError);
           }
-        }
-
-        // 진행상황 업데이트
-        setCrawlingProgress(prev =>
-          prev.map((p, index) => {
-            const processedUrl = result.processedUrls?.[index];
-            return {
-              ...p,
-              status: processedUrl?.status === 'success' ? 'completed' as const : 'failed' as const,
-              message: processedUrl?.status === 'success' ? '크롤링 완료' : '크롤링 실패',
-            };
-          })
-        );
-
-        // 크롤링 완료 후 상태 업데이트 (리스트는 유지)
-        setIsCrawling(false);
-        if (onCrawlingComplete) {
-          onCrawlingComplete();
-        }
+        }, 3000); // 3초마다 폴링
+        
+        // 5분 후 자동으로 폴링 중지
+        setTimeout(() => {
+          clearInterval(pollInterval);
+        }, 300000);
       } else {
-        throw new Error(result.error || '크롤링 실패');
+        toast.error('작업 등록에 실패했습니다.');
+        setIsCrawling(false);
       }
     } catch (error) {
       console.error('선택한 페이지 크롤링 오류:', error);

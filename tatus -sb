@@ -185,4 +185,89 @@ warning: in the working copy of 'src/lib/services/PuppeteerCrawlingService.ts', 
            // maxDepth < 3일 때는 단순 discoverSubPages 사용[m
            if (maxDepth >= 3) {[m
 [36m@@ -441,9 +441,10 @@[m [mexport class PuppeteerCrawlingService {[m
-               maxUrls: 200, 
+               maxUrls: 200, // 성공했던 버전과 동일하게 200개로 증가[m
+               respectRobotsTxt: true,[m
+               includeExternal: false,[m
+[31m-              allowedDomains: [this.extractDomain(url)][m
+[32m+[m[32m              allowedDomains: [this.extractDomain(url)],[m
+[32m+[m[32m              timeout: 60000 // 1분 타임아웃 설정 (Vercel 타임아웃 고려)[m
+             }, undefined); // preloadedHtml은 사용하지 않음[m
+[31m-            [m
+[32m+[m
+             // DepthAwareDiscoveredUrl을 일반 형식으로 변환[m
+             discoveredUrls = discovered.map((d) => ({[m
+               url: d.url,[m
+[36m@@ -453,7 +454,7 @@[m [mexport class PuppeteerCrawlingService {[m
+               parentUrl: d.parentUrl,[m
+               path: d.path || [][m
+             }));[m
+[31m-            [m
+[32m+[m
+             // depth별 통계[m
+             const depth1Count = discoveredUrls.filter(d => d.depth === 1).length;[m
+             const depth2Count = discoveredUrls.filter(d => d.depth === 2).length;[m
+[36m@@ -469,7 +470,7 @@[m [mexport class PuppeteerCrawlingService {[m
+               includeExternal: false,[m
+               allowedDomains: [this.extractDomain(url)][m
+             }, undefined);[m
+[31m-            [m
+[32m+[m
+             // depth 설정: maxDepth에 따라 depth 분배[m
+             discoveredUrls = discovered.map((d) => ({[m
+               url: d.url,[m
+[36m@@ -478,7 +479,7 @@[m [mexport class PuppeteerCrawlingService {[m
+               depth: maxDepth >= 2 ? 2 : 1,[m
+               path: [url, d.url] // 간단한 경로[m
+             }));[m
+[31m-            [m
+[32m+[m
+             console.log(`✅ 단순 탐색 완료: ${discoveredUrls.length}개 발견 (depth: ${maxDepth >= 2 ? 2 : 1})`);[m
+           }[m
+         } catch (error) {[m
+[36m@@ -498,7 +499,7 @@[m [mexport class PuppeteerCrawlingService {[m
+       };[m
+ [m
+       console.log(`✅ Meta 페이지 크롤링 성공: ${url} - ${content.length}자`);[m
+[31m-      [m
+[32m+[m
+       return crawledDocument;[m
+ [m
+     } catch (error) {[m
+[36m@@ -545,17 +546,17 @@[m [mexport class PuppeteerCrawlingService {[m
+ [m
+     for (let i = 0; i < urls.length; i++) {[m
+       const url = urls[i];[m
+[31m-      [m
+[32m+[m
+       try {[m
+         const document = await this.crawlMetaPage(url);[m
+         if (document) {[m
+           documents.push(document);[m
+           console.log(`✅ 성공 (${i + 1}/${urls.length}): ${document.title}`);[m
+[31m-          [m
+[32m+[m
+           // 크롤링 성공 시 즉시 인덱싱 시도[m
+           try {[m
+             console.log(`📚 인덱싱 시작: ${document.title}`);[m
+[31m-            [m
+[32m+[m
+             // 메타데이터 생성[m
+             const metadata = {[m
+               source: document.url,[m
+[36m@@ -565,12 +566,12 @@[m [mexport class PuppeteerCrawlingService {[m
+               contentLength: document.contentLength,[m
+               crawledAt: new Date().toISOString()[m
+             };[m
+[31m-            [m
+[32m+[m
+             console.log(`🔄 인덱싱 시작: ${document.title}`);[m
+             await this.documentIndexingService.indexCrawledContent([m
+[31m-              document.url, [m
+[31m-              document.content, [m
+[31m-              document.title, [m
+[32m+[m[32m              document.url,[m
+[32m+[m[32m              document.content,[m
+[32m+[m[32m              document.title,[m
+               metadata[m
+             );[m
+             console.log(`✅ 인덱싱 완료: ${document.title}`);[m
