@@ -1041,8 +1041,8 @@ export default function HybridCrawlingManager({
                   const jobId = urlToJobIdMap.get(p.url);
                   if (jobId) {
                     const job = jobs.find(j => j.id === jobId);
-                    // 완료된 작업은 이미 제거했으므로 여기서는 제외
-                    return job && job.status !== 'completed';
+                    // 완료된 작업과 취소된 작업은 제외
+                    return job && job.status !== 'completed' && job.status !== 'cancelled';
                   }
                   return true;
                 });
