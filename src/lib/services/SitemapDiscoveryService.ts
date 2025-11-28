@@ -428,7 +428,47 @@ export class SitemapDiscoveryService {
         return [];
       }
 
-      const result = await parseStringPromise(xmlContent);
+      // XML 전처리: 잘못된 속성 형식 수정
+      // "Attribute without value" 오류 방지를 위해 속성 정규화
+      let normalizedXml = xmlContent
+        // 잘못된 속성 형식 수정 (attr > → attr="")
+        .replace(/(\w+)\s+>/g, '$1="">')
+        // 따옴표 없는 속성 값 수정 (attr=value → attr="value")
+        .replace(/(\w+)=([^"'\s>]+)(?=\s|\/?>)/g, (match, attr, value) => {
+          // 이미 따옴표가 있으면 그대로 유지
+          if (value.startsWith('"') || value.startsWith("'")) {
+            return match;
+          }
+          // 특수 문자나 공백이 있으면 따옴표 추가
+          if (value.includes(' ') || value.includes('=') || value.includes('>')) {
+            return `${attr}="${value}"`;
+          }
+          return match;
+        })
+        // 잘못된 XML 문자 제거 (제어 문자 등)
+        .replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]/g, '')
+        // CDATA 섹션 보존
+        .replace(/<!\[CDATA\[(.*?)\]\]>/gs, '<![CDATA[$1]]>');
+
+      // xml2js 파서 옵션 설정 (엄격한 모드 완화)
+      const parseOptions = {
+        trim: true,
+        explicitArray: false,
+        mergeAttrs: true,
+        explicitRoot: false,
+        ignoreAttrs: false,
+        attrkey: '_attr',
+        charkey: '_text',
+        strict: false, // 엄격한 모드 비활성화 (잘못된 형식 허용)
+        normalize: true, // 공백 정규화
+        normalizeTags: false,
+        explicitChildren: false,
+        charsAsChildren: false,
+        includeWhiteChars: false,
+        async: false,
+      };
+
+      const result = await parseStringPromise(normalizedXml, parseOptions);
       
       const discoveredUrls: DiscoveredUrl[] = [];
       let sitemapIndexCount = 0;
