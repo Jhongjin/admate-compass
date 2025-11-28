@@ -2283,12 +2283,12 @@ export async function processQueue() {
                   let finalTitle = null;
                   
                   // 1. 링크 텍스트가 있고 메인 페이지 제목과 다르면 우선 사용
-                  if (linkTitle && linkTitle.length >= 2 && linkTitle !== mainPage.pageTitle && !linkTitle.includes('광고주센터') && !linkTitle.includes('광고주 센터')) {
+                  if (linkTitle && linkTitle.length >= 2 && linkTitle !== mainPage.pageTitle && !linkTitle.toLowerCase().includes('광고주센터') && !linkTitle.toLowerCase().includes('광고주 센터') && !linkTitle.toLowerCase().includes('advertiser center')) {
                     finalTitle = linkTitle;
                     console.log(`[CRITICAL] 📝 하위 페이지 제목 결정 (링크 텍스트): ${subUrl} -> "${finalTitle}"`);
                   }
                   // 2. 페이지 제목이 있고 메인 페이지 제목과 다르면 사용
-                  else if (page.pageTitle && page.pageTitle.length >= 2 && page.pageTitle !== mainPage.pageTitle && !page.pageTitle.includes('광고주센터') && !page.pageTitle.includes('광고주 센터')) {
+                  else if (page.pageTitle && page.pageTitle.length >= 2 && page.pageTitle !== mainPage.pageTitle && !page.pageTitle.toLowerCase().includes('광고주센터') && !page.pageTitle.toLowerCase().includes('광고주 센터') && !page.pageTitle.toLowerCase().includes('advertiser center')) {
                     finalTitle = page.pageTitle;
                     console.log(`[CRITICAL] 📝 하위 페이지 제목 결정 (페이지 제목): ${subUrl} -> "${finalTitle}"`);
                   }
