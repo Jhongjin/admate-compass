@@ -1020,6 +1020,29 @@ export default function HybridCrawlingManager({
                 }
               });
               
+              // 타임아웃 감지: processing 상태로 30분 이상 머무는 작업 감지
+              const now = Date.now();
+              const TIMEOUT_MS = 30 * 60 * 1000; // 30분
+              const stuckJobs = jobs.filter(j => {
+                if (j.status === 'processing' && j.started_at) {
+                  const elapsed = now - new Date(j.started_at).getTime();
+                  return elapsed > TIMEOUT_MS;
+                }
+                return false;
+              });
+              
+              if (stuckJobs.length > 0) {
+                console.warn(`⚠️ 타임아웃 감지: ${stuckJobs.length}개 작업이 30분 이상 진행 중입니다.`, stuckJobs.map(j => ({ id: j.id, url: (j.payload as any)?.url, started_at: j.started_at })));
+                // 타임아웃된 작업을 failed로 표시
+                setCrawlingProgress(prev => prev.map(p => {
+                  const jobId = urlToJobIdMap.get(p.url);
+                  if (jobId && stuckJobs.some(j => j.id === jobId)) {
+                    return { ...p, status: 'failed' as const, message: '크롤링 타임아웃 (30분 초과)' };
+                  }
+                  return p;
+                }));
+              }
+              
               // 진행 상황 업데이트 (완료된 작업도 상태 업데이트)
               setCrawlingProgress(prev => {
                 const updated = prev.map(p => {
@@ -1036,6 +1059,10 @@ export default function HybridCrawlingManager({
                       } else if (job.status === 'failed') {
                         return { ...p, status: 'failed' as const, message: '크롤링 실패' };
                       } else if (job.status === 'processing') {
+                        // 타임아웃 체크 (이미 위에서 처리됨)
+                        if (stuckJobs.some(j => j.id === jobId)) {
+                          return { ...p, status: 'failed' as const, message: '크롤링 타임아웃 (30분 초과)' };
+                        }
                         return { ...p, status: 'crawling' as const, message: '크롤링 중...' };
                       } else if (job.status === 'queued' || job.status === 'retrying') {
                         return { ...p, status: 'pending' as const, message: '큐 대기 중...' };
