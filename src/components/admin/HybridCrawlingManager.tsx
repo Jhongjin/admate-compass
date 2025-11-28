@@ -1052,7 +1052,10 @@ export default function HybridCrawlingManager({
                   if (jobId) {
                     const job = jobs.find(j => j.id === jobId);
                     if (job) {
-                      if (job.status === 'failed') {
+                      if (job.status === 'cancelled') {
+                        // 취소된 작업은 제거
+                        return null;
+                      } else if (job.status === 'failed') {
                         return { ...p, status: 'failed' as const, message: '크롤링 실패' };
                       } else if (job.status === 'processing') {
                         return { ...p, status: 'crawling' as const, message: '크롤링 중...' };
@@ -1062,7 +1065,7 @@ export default function HybridCrawlingManager({
                     }
                   }
                   return p;
-                });
+                }).filter((p): p is CrawlingProgress => p !== null);
               });
               
               // 모든 작업이 완료되면 폴링 중지
@@ -1093,6 +1096,10 @@ export default function HybridCrawlingManager({
                     );
                   }
                 });
+                // 취소된 작업이 있으면 문서 목록도 새로고침
+                if (onCrawlingComplete) {
+                  onCrawlingComplete();
+                }
               }
             }
           } catch (pollError) {
@@ -1973,7 +1980,7 @@ export default function HybridCrawlingManager({
                       ? (crawlingProgress.filter(p => p.status === 'completed').length / crawlingProgress.length) * 100
                       : 0
                   }
-                  className="h-3 bg-gray-700/50"
+                  className="h-3 bg-gray-700/50 transition-all duration-500 ease-out"
                 />
                 <div className="flex items-center justify-between text-xs text-gray-400">
                   <span>
