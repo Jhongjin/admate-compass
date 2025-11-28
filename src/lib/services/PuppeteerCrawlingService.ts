@@ -427,9 +427,10 @@ export class PuppeteerCrawlingService {
       }> = [];
       if (discoverSubPages) {
         try {
-          console.log(`🔍 하위 페이지 발견 시작: ${url}`);
+          console.log(`🔍 하위 페이지 발견 시작: ${url} (maxDepth: ${maxDepth})`);
           const { sitemapDiscoveryService } = await import('./SitemapDiscoveryService');
-          const discovered = await sitemapDiscoveryService.discoverSubPages(url, {
+          // depth를 제대로 추적하기 위해 discoverSubPagesWithDepth 사용
+          const discovered = await sitemapDiscoveryService.discoverSubPagesWithDepth(url, {
             maxDepth: maxDepth,
             maxUrls: 20,
             respectRobotsTxt: true,
