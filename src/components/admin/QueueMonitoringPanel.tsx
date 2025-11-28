@@ -45,6 +45,8 @@ export default function QueueMonitoringPanel({ vendors = [], defaultOpen = false
   const [loading, setLoading] = useState(false);
   const [consuming, setConsuming] = useState(false);
   const [selectedJobs, setSelectedJobs] = useState<Set<string>>(new Set());
+  const [sortBy, setSortBy] = useState<'scheduled_at' | 'status' | 'created_at'>('scheduled_at');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const [isOpen, setIsOpen] = useState(() => {
     if (typeof window === 'undefined') return defaultOpen;
     const saved = window.localStorage.getItem('queueMonitoringOpen');
@@ -61,13 +63,36 @@ export default function QueueMonitoringPanel({ vendors = [], defaultOpen = false
   const loadJobs = async () => {
     try {
       setLoading(true);
-      const { data, error } = await supabase
+      let query = supabase
         .from('processing_jobs')
-        .select('id, document_id, job_type, status, attempts, max_attempts, priority, scheduled_at, started_at, finished_at, result')
-        .order('scheduled_at', { ascending: true })
-        .limit(100);
-      if (error) throw error;
-      setJobs(data || []);
+        .select('id, document_id, job_type, status, attempts, max_attempts, priority, scheduled_at, started_at, finished_at, result, created_at');
+      
+      // 정렬 적용
+      if (sortBy === 'status') {
+        // 상태별 정렬: queued/retrying -> processing -> completed -> failed 순서
+        const statusOrder: Record<string, number> = { 'queued': 1, 'retrying': 1, 'processing': 2, 'completed': 3, 'failed': 4 };
+        query = query.order('created_at', { ascending: sortOrder === 'asc' });
+        const { data, error } = await query.limit(100);
+        if (error) throw error;
+        // 클라이언트 측에서 상태별 정렬
+        const sorted = (data || []).sort((a, b) => {
+          const aOrder = statusOrder[a.status] || 5;
+          const bOrder = statusOrder[b.status] || 5;
+          if (aOrder !== bOrder) {
+            return sortOrder === 'asc' ? aOrder - bOrder : bOrder - aOrder;
+          }
+          // 상태가 같으면 created_at으로 정렬
+          const aTime = new Date(a.created_at || a.scheduled_at || 0).getTime();
+          const bTime = new Date(b.created_at || b.scheduled_at || 0).getTime();
+          return sortOrder === 'asc' ? aTime - bTime : bTime - aTime;
+        });
+        setJobs(sorted);
+      } else {
+        query = query.order(sortBy, { ascending: sortOrder === 'asc' });
+        const { data, error } = await query.limit(100);
+        if (error) throw error;
+        setJobs(data || []);
+      }
     } catch (err) {
       console.error('큐 조회 오류:', err);
     } finally {
@@ -434,7 +459,25 @@ export default function QueueMonitoringPanel({ vendors = [], defaultOpen = false
                     </TableHead>
                     <TableHead className="text-white text-xs">ID</TableHead>
                     <TableHead className="text-white text-xs">타입</TableHead>
-                    <TableHead className="text-white text-xs">상태</TableHead>
+                    <TableHead className="text-white text-xs">
+                      <button
+                        onClick={() => {
+                          if (sortBy === 'status') {
+                            setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+                          } else {
+                            setSortBy('status');
+                            setSortOrder('asc');
+                          }
+                          loadJobs();
+                        }}
+                        className="flex items-center gap-1 hover:text-blue-400 transition-colors"
+                      >
+                        상태
+                        {sortBy === 'status' && (
+                          <span className="text-blue-400">{sortOrder === 'asc' ? '↑' : '↓'}</span>
+                        )}
+                      </button>
+                    </TableHead>
                     <TableHead className="text-white text-xs">작업</TableHead>
                   </TableRow>
                 </TableHeader>

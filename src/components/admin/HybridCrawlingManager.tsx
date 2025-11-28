@@ -968,15 +968,35 @@ export default function HybridCrawlingManager({
                 })
               );
               
+              // 완료된 작업이 있으면 즉시 문서 목록 새로고침
+              const completedJobs = jobs.filter(j => j.status === 'completed');
+              if (completedJobs.length > 0) {
+                // 완료된 작업의 URL을 진행 상황에서 제거
+                completedJobs.forEach(job => {
+                  const jobUrl = (job.payload as any)?.url;
+                  if (jobUrl) {
+                    setCrawlingProgress(prev =>
+                      prev.filter(p => p.url !== jobUrl)
+                    );
+                  }
+                });
+                
+                // 문서 목록 즉시 새로고침
+                if (onCrawlingComplete) {
+                  onCrawlingComplete();
+                }
+              }
+              
               // 모든 작업이 완료되면 폴링 중지
               const allCompleted = jobs.every(j => j.status === 'completed' || j.status === 'failed');
               if (allCompleted) {
                 clearInterval(pollInterval);
                 setIsCrawling(false);
                 if (onCrawlingComplete) {
+                  // 마지막 새로고침
                   setTimeout(() => {
                     onCrawlingComplete();
-                  }, 2000);
+                  }, 1000);
                 }
               }
             }
