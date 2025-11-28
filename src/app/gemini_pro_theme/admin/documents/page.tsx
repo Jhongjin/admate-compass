@@ -267,6 +267,77 @@ export default function DocumentsPage() {
         }
     };
 
+    const bulkDeleteMutation = useMutation({
+        mutationFn: async (ids: string[]) => {
+            const results = [];
+            for (const id of ids) {
+                try {
+                    const res = await fetch(`/api/admin/upload-new?documentId=${id}`, {
+                        method: 'DELETE'
+                    });
+                    if (!res.ok) {
+                        const errorData = await res.json();
+                        throw new Error(errorData.error || 'Failed to delete document');
+                    }
+                    results.push({ id, success: true });
+                } catch (error) {
+                    results.push({ 
+                        id, 
+                        success: false, 
+                        error: error instanceof Error ? error.message : '알 수 없는 오류' 
+                    });
+                }
+            }
+            return results;
+        },
+        onSuccess: (results) => {
+            const successCount = results.filter(r => r.success).length;
+            const failCount = results.filter(r => !r.success).length;
+            
+            queryClient.invalidateQueries({ queryKey: ['admin-documents'] });
+            
+            if (failCount === 0) {
+                toast({
+                    title: "선택 삭제 완료",
+                    description: `${successCount}개의 문서가 성공적으로 삭제되었습니다.`,
+                });
+            } else {
+                toast({
+                    title: "일부 삭제 실패",
+                    description: `${successCount}개 성공, ${failCount}개 실패`,
+                    variant: "destructive",
+                });
+            }
+            
+            // 선택 상태 초기화
+            setSelectedDocs(new Set());
+        },
+        onError: (error) => {
+            toast({
+                title: "삭제 실패",
+                description: error.message,
+                variant: "destructive",
+            });
+        }
+    });
+
+    const handleBulkDelete = () => {
+        if (selectedDocs.size === 0) {
+            toast({
+                title: "선택된 문서 없음",
+                description: "삭제할 문서를 선택해주세요.",
+                variant: "destructive",
+            });
+            return;
+        }
+
+        if (!confirm(`선택한 ${selectedDocs.size}개의 문서를 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`)) {
+            return;
+        }
+
+        bulkDeleteMutation.mutate(Array.from(selectedDocs));
+    };
+
     return (
         <ThemedAdminLayout currentPage="docs">
             <div className="space-y-6">
@@ -481,7 +552,7 @@ export default function DocumentsPage() {
                                 onDeleteDocument={(id) => setDeleteId(id)}
                                 onSelectAll={handleSelectAll}
                                 onSelectDocument={handleSelectDocument}
-                                onBulkDelete={() => { }} // Placeholder
+                                onBulkDelete={handleBulkDelete}
                                 selectedDocuments={selectedDocs}
                                 isAllSelected={selectedDocs.size > 0 && selectedDocs.size === filteredDocs.length}
                                 actionLoading={{}}
