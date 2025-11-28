@@ -246,9 +246,12 @@ function AdminDocsPageContent() {
             const hasProcessing = documents.some((doc: any) => doc.status === 'processing' || doc.status === 'queued');
             return hasProcessing ? 3000 : false;
         },
-        // 새로고침 시 문서 상태 자동 동기화
-        onSuccess: async (data) => {
-            const documents = data?.data?.documents || [];
+    });
+    
+    // 새로고침 시 문서 상태 자동 동기화 (useEffect 사용)
+    useEffect(() => {
+        if (data?.data?.documents) {
+            const documents = data.data.documents;
             // processing 상태이지만 chunk_count > 0인 문서 자동 수정
             const stuckDocs = documents.filter((doc: any) => 
                 doc.status === 'processing' && doc.chunk_count > 0
@@ -257,8 +260,8 @@ function AdminDocsPageContent() {
                 // 백그라운드에서 자동 수정 (사용자 경험 방해 없음)
                 fetch('/api/admin/sync-status', { method: 'POST' }).catch(() => {});
             }
-        },
-    });
+        }
+    }, [data]);
 
     const deleteMutation = useMutation({
         mutationFn: async (id: string) => {
