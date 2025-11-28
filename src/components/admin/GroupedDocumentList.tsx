@@ -65,7 +65,7 @@ interface GroupedDocumentListProps {
   onDownloadDocument: (id: string, title: string) => void;
   onDeleteDocument: (id: string, title: string) => void;
   onSelectAll: () => void;
-  onSelectDocument: (id: string) => void;
+  onSelectDocument: (id: string | string[]) => void;
   onBulkDelete: () => void;
   selectedDocuments: Set<string>;
   isAllSelected: boolean;
