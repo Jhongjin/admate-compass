@@ -135,84 +135,43 @@ export class PuppeteerCrawlingService {
       let executablePath: string | undefined;
       
       if (isVercel) {
-          try {
-            // Vercel 서버리스 환경에서는 fs.existsSync() 체크를 건너뛰고 바로 실행
-            // 서버리스 환경에서는 파일 시스템 체크가 제대로 작동하지 않을 수 있음
-            executablePath = await chromium.executablePath();
-            console.log(`📁 Chromium 실행 경로: ${executablePath}`);
-          } catch (chromiumError: any) {
-            console.error('❌ @sparticuz/chromium 초기화 실패:', chromiumError.message);
-            throw new Error(`Chromium 초기화 실패: ${chromiumError.message}. Puppeteer를 사용할 수 없습니다.`);
-          }
+        // Vercel 환경: @sparticuz/chromium 사용 (동적 크롤링 필수)
+        try {
+          // Chromium 바이너리 경로 가져오기
+          // Vercel 서버리스 환경에서는 자동으로 Chromium 바이너리를 포함함
+          const executablePath = await chromium.executablePath();
+          console.log(`📁 Chromium 실행 경로: ${executablePath}`);
+          
+          this.browser = await puppeteerCore.launch({
+            args: chromium.args as string[],
+            defaultViewport: chromium.defaultViewport,
+            executablePath: executablePath,
+            headless: chromium.headless,
+          });
+          console.log('✅ Puppeteer 브라우저 초기화 완료 (Vercel 환경: @sparticuz/chromium)');
+        } catch (chromiumError: any) {
+          console.error('❌ @sparticuz/chromium 초기화 실패:', chromiumError.message);
+          console.error('❌ Chromium 에러 상세:', chromiumError);
+          console.error('❌ 스택 트레이스:', chromiumError.stack);
+          // 동적 크롤링이 필수이므로 에러를 throw
+          throw new Error(`Chromium 초기화 실패: ${chromiumError.message}. 동적 크롤링을 사용할 수 없습니다. Vercel 빌드 설정을 확인해주세요.`);
+        }
       } else {
-        // 로컬 환경: 환경 변수 또는 일반적인 Chrome 경로 시도
-        executablePath = process.env.PUPPETEER_EXECUTABLE_PATH;
-        
-        if (!executablePath) {
-          // Windows에서 일반적인 Chrome 경로들 시도
-          const os = require('os');
-          const platform = os.platform();
-          const fs = require('fs');
-          const path = require('path');
-          
-          const possiblePaths = [
-            // 환경 변수
-            process.env.PUPPETEER_EXECUTABLE_PATH,
-            // Windows 일반 경로
-            'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-            'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
-            process.env.LOCALAPPDATA && path.join(process.env.LOCALAPPDATA, 'Google', 'Chrome', 'Application', 'chrome.exe'),
-            // macOS 일반 경로
-            '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
-            // Linux 일반 경로
-            '/usr/bin/google-chrome',
-            '/usr/bin/google-chrome-stable',
-            '/usr/bin/chromium',
-            '/usr/bin/chromium-browser',
-          ].filter(Boolean) as string[];
-          
-          // 존재하는 경로 찾기
-          for (const chromePath of possiblePaths) {
-            try {
-              if (chromePath && fs.existsSync(chromePath)) {
-                executablePath = chromePath;
-                console.log(`✅ Chrome 실행 파일 발견: ${chromePath}`);
-                break;
-              }
-            } catch (e) {
-              // 경로 확인 실패 시 다음 경로 시도
-            }
-          }
-        }
-        
-        if (!executablePath) {
-          throw new Error('Chrome 실행 파일을 찾을 수 없습니다. PUPPETEER_EXECUTABLE_PATH 환경 변수를 설정하거나 Chrome을 설치해주세요.');
-        }
-      }
-      
-      this.browser = await puppeteerCore.launch({
-        headless: true,
-        executablePath,
-        args: isVercel 
-          ? chromium.args
-          : [
-              '--no-sandbox',
-              '--disable-setuid-sandbox',
-              '--disable-dev-shm-usage',
-              '--disable-accelerated-2d-canvas',
-              '--no-first-run',
-              '--no-zygote',
-              '--disable-gpu',
-              '--disable-web-security',
-              '--disable-features=VizDisplayCompositor'
-            ]
-      });
-      console.log('✅ Puppeteer 브라우저 초기화 완료');
-      } catch (error: any) {
-        console.error('❌ Puppeteer 브라우저 초기화 실패:', error.message);
-        // 에러를 throw하지 않고 null로 유지하여 Cheerio fallback 사용 가능하도록 함
-        this.browser = null;
-        throw error; // 호출자가 에러를 처리할 수 있도록 throw
+        // 로컬 환경: 일반 Puppeteer 사용 (동적 크롤링 필수)
+        this.browser = await puppeteerCore.launch({
+          headless: true,
+          args: [
+            '--no-sandbox',
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-blink-features=AutomationControlled',
+            '--disable-web-security',
+            '--allow-running-insecure-content',
+            '--disable-features=VizDisplayCompositor'
+          ],
+          ignoreDefaultArgs: ['--enable-automation'],
+        });
+        console.log('✅ Puppeteer 브라우저 초기화 완료 (로컬 환경)');
       }
     }
   }
@@ -232,21 +191,14 @@ export class PuppeteerCrawlingService {
       return null;
     }
 
-    // 브라우저 초기화 시도
+    // 브라우저 초기화 시도 (동적 크롤링 필수)
     if (!this.browser) {
-      try {
-      await this.init();
-      } catch (initError: any) {
-        console.error(`❌ Puppeteer 초기화 실패로 크롤링 불가: ${initError.message}`);
-        // 초기화 실패 시 null 반환하여 호출자가 Cheerio fallback 사용 가능하도록 함
-        return null;
-      }
+      await this.init(); // 실패 시 에러 throw
     }
 
     // 브라우저가 여전히 null이면 크롤링 불가
     if (!this.browser) {
-      console.error('❌ Puppeteer 브라우저를 사용할 수 없습니다.');
-      return null;
+      throw new Error('Puppeteer 브라우저를 사용할 수 없습니다. 동적 크롤링이 필수입니다.');
     }
 
     const page = await this.browser.newPage();
