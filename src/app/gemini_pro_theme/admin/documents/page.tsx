@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { motion } from "framer-motion";
 import {
     FileText,
@@ -90,6 +90,11 @@ export default function DocumentsPage() {
     // GroupedDocumentList states
     const [expandedGroups, setExpandedGroups] = useState<Set<number>>(new Set());
     const [selectedDocs, setSelectedDocs] = useState<Set<string>>(new Set());
+    
+    // 디버깅: 컴포넌트 마운트 시 handleBulkDelete 확인
+    useEffect(() => {
+        console.log('🔍 [DocumentsPage] 컴포넌트 마운트됨');
+    }, []);
 
     const { toast } = useToast();
     const queryClient = useQueryClient();
@@ -315,18 +320,28 @@ export default function DocumentsPage() {
 
     const bulkDeleteMutation = useMutation({
         mutationFn: async (ids: string[]) => {
+            console.log('🗑️ [bulkDeleteMutation] mutationFn 시작:', { count: ids.length, ids });
             const results = [];
-            for (const id of ids) {
+            for (let i = 0; i < ids.length; i++) {
+                const id = ids[i];
+                console.log(`🗑️ [bulkDeleteMutation] 문서 ${i + 1}/${ids.length} 삭제 시도:`, id);
                 try {
-                    const res = await fetch(`/api/admin/upload-new?documentId=${id}`, {
+                    const url = `/api/admin/upload-new?documentId=${id}`;
+                    console.log(`🗑️ [bulkDeleteMutation] API 호출:`, url);
+                    const res = await fetch(url, {
                         method: 'DELETE'
                     });
+                    console.log(`🗑️ [bulkDeleteMutation] API 응답:`, { status: res.status, ok: res.ok, id });
                     if (!res.ok) {
-                        const errorData = await res.json();
+                        const errorData = await res.json().catch(() => ({ error: 'Unknown error' }));
+                        console.error(`❌ [bulkDeleteMutation] API 오류:`, { id, status: res.status, error: errorData });
                         throw new Error(errorData.error || 'Failed to delete document');
                     }
+                    const responseData = await res.json().catch(() => ({}));
+                    console.log(`✅ [bulkDeleteMutation] 문서 삭제 성공:`, { id, response: responseData });
                     results.push({ id, success: true });
                 } catch (error) {
+                    console.error(`❌ [bulkDeleteMutation] 문서 삭제 실패:`, { id, error });
                     results.push({ 
                         id, 
                         success: false, 
@@ -334,6 +349,12 @@ export default function DocumentsPage() {
                     });
                 }
             }
+            console.log('🗑️ [bulkDeleteMutation] mutationFn 완료:', { 
+                total: ids.length, 
+                success: results.filter(r => r.success).length,
+                failed: results.filter(r => !r.success).length,
+                results 
+            });
             return results;
         },
         onSuccess: (results) => {
@@ -369,9 +390,14 @@ export default function DocumentsPage() {
 
     const handleBulkDelete = () => {
         const selectedArray = Array.from(selectedDocs);
-        console.log('🗑️ 선택 삭제 요청:', { count: selectedArray.length, ids: selectedArray });
+        console.log('🗑️ [handleBulkDelete] 선택 삭제 요청:', { 
+            count: selectedArray.length, 
+            ids: selectedArray,
+            selectedDocsSize: selectedDocs.size 
+        });
         
         if (selectedArray.length === 0) {
+            console.warn('⚠️ [handleBulkDelete] 선택된 문서 없음');
             toast({
                 title: "선택된 문서 없음",
                 description: "삭제할 문서를 선택해주세요.",
@@ -380,12 +406,27 @@ export default function DocumentsPage() {
             return;
         }
 
-        if (!confirm(`선택한 ${selectedArray.length}개의 문서를 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`)) {
+        const confirmMessage = `선택한 ${selectedArray.length}개의 문서를 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`;
+        console.log('🗑️ [handleBulkDelete] 확인 다이얼로그 표시:', confirmMessage);
+        
+        if (!confirm(confirmMessage)) {
+            console.log('❌ [handleBulkDelete] 사용자가 취소함');
             return;
         }
 
-        console.log('🗑️ 삭제 시작:', selectedArray);
-        bulkDeleteMutation.mutate(selectedArray);
+        console.log('🗑️ [handleBulkDelete] 삭제 시작 - bulkDeleteMutation.mutate 호출:', selectedArray);
+        try {
+            bulkDeleteMutation.mutate(selectedArray, {
+                onSuccess: (results) => {
+                    console.log('✅ [handleBulkDelete] bulkDeleteMutation 성공:', results);
+                },
+                onError: (error) => {
+                    console.error('❌ [handleBulkDelete] bulkDeleteMutation 실패:', error);
+                }
+            });
+        } catch (error) {
+            console.error('❌ [handleBulkDelete] mutate 호출 중 예외 발생:', error);
+        }
     };
 
     return (

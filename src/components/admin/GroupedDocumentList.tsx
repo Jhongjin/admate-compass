@@ -201,14 +201,25 @@ export default function GroupedDocumentList({
                 <Button
                   variant="destructive"
                   size="sm"
-                  onClick={(e) => {
+                  onClick={async (e) => {
                     e.preventDefault();
                     e.stopPropagation();
-                    console.log('🗑️ 선택 삭제 버튼 클릭됨, selectedDocuments:', selectedDocuments);
+                    console.log('🗑️ [GroupedDocumentList] 선택 삭제 버튼 클릭됨');
+                    console.log('🗑️ [GroupedDocumentList] selectedDocuments:', selectedDocuments);
+                    console.log('🗑️ [GroupedDocumentList] selectedDocuments.size:', selectedDocuments?.size);
+                    console.log('🗑️ [GroupedDocumentList] onBulkDelete 함수 존재:', !!onBulkDelete);
+                    console.log('🗑️ [GroupedDocumentList] onBulkDelete 타입:', typeof onBulkDelete);
+                    
                     if (onBulkDelete) {
-                      onBulkDelete();
+                      console.log('🗑️ [GroupedDocumentList] onBulkDelete 호출 시작');
+                      try {
+                        await Promise.resolve(onBulkDelete());
+                        console.log('🗑️ [GroupedDocumentList] onBulkDelete 호출 완료');
+                      } catch (error) {
+                        console.error('❌ [GroupedDocumentList] onBulkDelete 호출 중 오류:', error);
+                      }
                     } else {
-                      console.error('❌ onBulkDelete 함수가 전달되지 않음');
+                      console.error('❌ [GroupedDocumentList] onBulkDelete 함수가 전달되지 않음');
                     }
                   }}
                   className="h-8 px-4"
