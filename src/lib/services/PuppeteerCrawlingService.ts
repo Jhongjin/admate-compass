@@ -179,9 +179,12 @@ export class PuppeteerCrawlingService {
             
             this.browser = await puppeteerCore.launch({
               args: chromiumArgs,
-              defaultViewport: chromium.defaultViewport,
+              defaultViewport: {
+                width: 1280,
+                height: 720,
+              },
               executablePath: executablePath,
-              headless: chromium.headless,
+              headless: true,
             });
             console.log('✅ Puppeteer 브라우저 초기화 완료 (Vercel 환경: @sparticuz/chromium)');
           } catch (chromiumError: any) {
