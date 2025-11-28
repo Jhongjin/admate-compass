@@ -6,9 +6,10 @@ export const maxDuration = 30;
 export const dynamic = 'force-dynamic';
 
 type ActionBody = {
-  jobId: string;
+  jobId?: string;
   action: 'retry' | 'cancel' | 'reprocess' | 'delete';
   jobIds?: string[]; // 일괄 삭제용
+  forceDelete?: boolean; // 진행중인 작업 강제 삭제용
 };
 
 export async function POST(request: NextRequest) {
