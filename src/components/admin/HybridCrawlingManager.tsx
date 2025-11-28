@@ -609,17 +609,14 @@ export default function HybridCrawlingManager({
             }
           }
 
-          // 크롤링 완료 후 상태 초기화 (성공한 문서는 유지)
+          // 크롤링 완료 후 상태 업데이트 (성공한 문서는 유지)
           // 하위 페이지 크롤링 실패 시에도 메인 페이지 결과는 유지
-          setTimeout(() => {
-            // 완료된 페이지만 유지하고, 실패한 페이지만 제거
-            setCrawlingProgress(prev => prev.filter(p => p.status === 'completed'));
-            setIsCrawling(false);
-            // 부모 컴포넌트에 크롤링 완료 알림
-            if (onCrawlingComplete) {
-              onCrawlingComplete();
-            }
-          }, 2000); // 2초로 증가
+          // 리스트는 유지하고, 사용자가 수동으로 초기화할 수 있도록 함
+          setIsCrawling(false);
+          // 부모 컴포넌트에 크롤링 완료 알림
+          if (onCrawlingComplete) {
+            onCrawlingComplete();
+          }
         } else {
           throw new Error(result.error || '크롤링 실패');
         }
@@ -649,19 +646,11 @@ export default function HybridCrawlingManager({
         await new Promise(resolve => setTimeout(resolve, 100));
         // 모달이 표시되지 않은 경우에만 크롤링 상태 해제
         // (모달이 표시되면 모달 핸들러에서 상태를 관리하므로 여기서는 해제하지 않음)
-        setIsCrawling(false);
-        // 완료된 페이지만 유지하고, 실패한 페이지만 제거 (하위 페이지 크롤링 실패 시에도 메인 페이지 결과 유지)
-        // 단, 모달이 표시된 경우에는 모달에서 처리하므로 여기서는 제거하지 않음
-        setTimeout(() => {
-          setCrawlingProgress(prev => {
-            // 모달이 표시된 경우 진행 상황 유지, 그렇지 않으면 완료된 페이지만 유지
-            const hasModal = prev.some(p => p.message?.includes('하위 페이지 선택 대기'));
-            if (hasModal) {
-              return prev; // 모달이 표시된 경우 유지
-            }
-            return prev.filter(p => p.status === 'completed'); // 완료된 페이지만 유지
-          });
-        }, 3000); // 3초 후 완료된 페이지만 유지
+        if (!showDiscoveryModal) {
+          setIsCrawling(false);
+        }
+        // 리스트는 유지 - 사용자가 수동으로 초기화할 수 있도록 함
+        // 완료된 페이지와 실패한 페이지 모두 표시하여 사용자가 결과를 확인할 수 있도록 함
       }
     }
   };
@@ -837,13 +826,11 @@ export default function HybridCrawlingManager({
           })
         );
 
-        setTimeout(() => {
-          setCrawlingProgress([]);
-          setIsCrawling(false);
-          if (onCrawlingComplete) {
-            onCrawlingComplete();
-          }
-        }, 1000);
+        // 크롤링 완료 후 상태 업데이트 (리스트는 유지)
+        setIsCrawling(false);
+        if (onCrawlingComplete) {
+          onCrawlingComplete();
+        }
       } else {
         throw new Error(result.error || '크롤링 실패');
       }
