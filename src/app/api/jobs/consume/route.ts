@@ -2845,7 +2845,7 @@ export async function processQueue() {
           crawlTimeMs: finishedResult.crawlTimeMs
         });
 
-        const { error: updateError, data: updateData } = await supabase
+        const { error: updateError, data: updateData, count: updatedCount } = await supabase
           .from('processing_jobs')
           .update({
             status: 'completed',
@@ -2853,6 +2853,7 @@ export async function processQueue() {
             result: finishedResult,
           })
           .eq('id', job.id)
+          .eq('status', 'processing') // processing 상태일 때만 업데이트
           .select();
 
         if (updateError) {
@@ -2863,11 +2864,18 @@ export async function processQueue() {
           throw updateError;
         }
 
-        console.log('[CRITICAL] ✅ 작업 상태 업데이트 완료:', {
-          jobId: job.id,
-          updatedRows: updateData?.length || 0,
-          status: 'completed'
-        });
+        if (updatedCount === 0) {
+          console.warn('[CRITICAL] ⚠️ 작업 상태 업데이트 실패: 이미 다른 상태이거나 취소됨', {
+            jobId: job.id,
+            currentStatus: updateData?.[0]?.status || 'unknown'
+          });
+        } else {
+          console.log('[CRITICAL] ✅ 작업 상태 업데이트 완료:', {
+            jobId: job.id,
+            updatedRows: updatedCount || updateData?.length || 0,
+            status: 'completed'
+          });
+        }
 
         return NextResponse.json({ 
           success: true, 
