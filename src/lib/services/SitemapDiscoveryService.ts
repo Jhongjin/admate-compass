@@ -24,6 +24,7 @@ export interface DiscoveryOptions {
   respectRobotsTxt: boolean;
   includeExternal: boolean;
   allowedDomains?: string[];
+  timeout?: number; // 타임아웃 (ms)
 }
 
 export class SitemapDiscoveryService {
@@ -33,6 +34,7 @@ export class SitemapDiscoveryService {
     maxUrls: 100,
     respectRobotsTxt: true,
     includeExternal: false,
+    timeout: 60000, // 기본 1분 (Vercel 타임아웃 고려하여 단축)
   };
 
   async initialize(): Promise<void> {
@@ -40,16 +42,16 @@ export class SitemapDiscoveryService {
 
     try {
       console.log('🔧 SitemapDiscoveryService 브라우저 초기화 중...');
-      
+
       // Vercel 환경에서 @sparticuz/chromium 사용
       const isVercel = process.env.VERCEL === '1' || process.env.AWS_LAMBDA_FUNCTION_NAME;
-      
+
       if (isVercel) {
         // Vercel 환경: @sparticuz/chromium 사용
         try {
           // @sparticuz/chromium의 executablePath()가 실패할 수 있으므로 try-catch
           const executablePath = await chromium.executablePath();
-          
+
           this.browser = await puppeteer.launch({
             args: chromium.args as string[],
             defaultViewport: {
@@ -104,7 +106,7 @@ export class SitemapDiscoveryService {
    * 메인 URL에서 하위 페이지들을 발견
    */
   async discoverSubPages(
-    baseUrl: string, 
+    baseUrl: string,
     options: Partial<DiscoveryOptions> = {},
     preloadedHtml?: string
   ): Promise<DiscoveredUrl[]> {
@@ -160,7 +162,7 @@ export class SitemapDiscoveryService {
       const filterStartMs = Date.now();
       const filteredPages = this.filterAndSortPages(discoveredPages, baseDomain, config);
       const filterEndMs = Date.now();
-      
+
       console.error(`[CRITICAL] ✅ 최종 발견된 하위 페이지: ${filteredPages.length}개 (필터링 소요 시간: ${filterEndMs - filterStartMs}ms)`);
       if (filteredPages.length === 0 && discoveredPages.length > 0) {
         console.warn(`[CRITICAL] ⚠️ 발견된 ${discoveredPages.length}개 페이지가 모두 필터링되었습니다. 필터 조건을 확인해주세요.`);
@@ -238,7 +240,16 @@ export class SitemapDiscoveryService {
     let processedCount = 0;
     const maxProcessed = config.maxUrls * 3; // 최대 처리 개수 제한 (무한 루프 방지)
 
+    const startTime = Date.now();
+    const timeout = config.timeout || 120000;
+
     while (queue.length > 0 && processedCount < maxProcessed) {
+      // 타임아웃 체크
+      if (Date.now() - startTime > timeout) {
+        console.error(`[CRITICAL] ⚠️ Discovery 타임아웃 (${timeout}ms) 도달, 현재까지 발견된 ${discoveredPages.length}개 URL 반환`);
+        break;
+      }
+
       const current = queue.shift();
       if (!current) break;
 
@@ -318,7 +329,7 @@ export class SitemapDiscoveryService {
    * Sitemap.xml에서 URL 발견
    */
   private async discoverFromSitemap(
-    baseUrl: string, 
+    baseUrl: string,
     config: DiscoveryOptions
   ): Promise<DiscoveredUrl[]> {
     const discoveredUrls: DiscoveredUrl[] = [];
@@ -331,18 +342,18 @@ export class SitemapDiscoveryService {
 
       const robotsResponse = await fetch(robotsUrl);
       console.error(`[CRITICAL] 🤖 robots.txt 응답: ${robotsResponse.status} ${robotsResponse.statusText}`);
-      
+
       if (robotsResponse.ok) {
         const robotsText = await robotsResponse.text();
         console.error(`[CRITICAL] 🤖 robots.txt 내용 길이: ${robotsText.length}자`);
         const sitemapMatches = robotsText.match(/Sitemap:\s*(.+)/gi);
-        
+
         if (sitemapMatches && sitemapMatches.length > 0) {
           console.error(`[CRITICAL] 📋 robots.txt에서 ${sitemapMatches.length}개 Sitemap 발견`);
           for (const match of sitemapMatches) {
             const sitemapUrl = match.replace(/Sitemap:\s*/i, '').trim();
             console.error(`[CRITICAL] 📄 Sitemap 처리 시작: ${sitemapUrl}`);
-            
+
             try {
               const sitemapUrls = await this.parseSitemap(sitemapUrl, baseDomain, config);
               discoveredUrls.push(...sitemapUrls);
@@ -362,7 +373,7 @@ export class SitemapDiscoveryService {
       // 기본 sitemap.xml 시도
       const defaultSitemapUrl = `${this.getBaseUrl(baseUrl)}/sitemap.xml`;
       console.error(`[CRITICAL] 📄 기본 sitemap.xml 시도: ${defaultSitemapUrl}`);
-      
+
       try {
         const sitemapUrls = await this.parseSitemap(defaultSitemapUrl, baseDomain, config);
         discoveredUrls.push(...sitemapUrls);
@@ -371,7 +382,7 @@ export class SitemapDiscoveryService {
         console.error(`[CRITICAL] ❌ 기본 sitemap.xml 처리 실패 (계속 진행):`, sitemapError);
         // 기본 sitemap 실패해도 계속 진행
       }
-      
+
       console.error(`[CRITICAL] 📊 Sitemap 탐색 최종 결과: ${discoveredUrls.length}개 URL 발견`);
 
     } catch (error) {
@@ -385,8 +396,8 @@ export class SitemapDiscoveryService {
    * Sitemap XML 파싱
    */
   private async parseSitemap(
-    sitemapUrl: string, 
-    baseDomain: string, 
+    sitemapUrl: string,
+    baseDomain: string,
     config: DiscoveryOptions
   ): Promise<DiscoveredUrl[]> {
     try {
@@ -404,7 +415,7 @@ export class SitemapDiscoveryService {
       // Gzip 압축 파일 처리
       let xmlContent: string;
       const isGzip = sitemapUrl.endsWith('.gz') || contentType.includes('gzip') || contentType.includes('application/gzip');
-      
+
       if (isGzip) {
         console.log(`[CRITICAL] 📦 Gzip 압축 파일 감지: ${sitemapUrl} (Content-Type: ${contentType})`);
         const arrayBuffer = await response.arrayBuffer();
@@ -429,11 +440,11 @@ export class SitemapDiscoveryService {
 
       // HTML 감지 (Content-Type 또는 내용 기반)
       const trimmedContent = xmlContent.trim();
-      const isHtml = isHtmlContentType || 
-                     trimmedContent.startsWith('<!DOCTYPE html') || 
-                     trimmedContent.startsWith('<!doctype html') ||
-                     trimmedContent.startsWith('<html') ||
-                     trimmedContent.startsWith('<HTML');
+      const isHtml = isHtmlContentType ||
+        trimmedContent.startsWith('<!DOCTYPE html') ||
+        trimmedContent.startsWith('<!doctype html') ||
+        trimmedContent.startsWith('<html') ||
+        trimmedContent.startsWith('<HTML');
 
       if (isHtml) {
         console.warn(`[CRITICAL] ⚠️ Sitemap이 HTML을 반환했습니다: ${sitemapUrl} (Content-Type: ${contentType})`);
@@ -489,12 +500,12 @@ export class SitemapDiscoveryService {
       };
 
       const result = await parseStringPromise(normalizedXml, parseOptions);
-      
+
       const discoveredUrls: DiscoveredUrl[] = [];
       let sitemapIndexCount = 0;
       let urlsetCount = 0;
       let urlsetFilteredCount = 0;
-      
+
       // sitemapindex인 경우
       if (result.sitemapindex) {
         const sitemaps = result.sitemapindex.sitemap || [];
@@ -508,7 +519,7 @@ export class SitemapDiscoveryService {
           console.error(`[CRITICAL] ✅ 하위 Sitemap 처리 완료: ${subSitemapUrl} - ${subUrls.length}개 URL`);
         }
       }
-      
+
       // urlset인 경우
       if (result.urlset) {
         const urls = result.urlset.url || [];
@@ -518,7 +529,7 @@ export class SitemapDiscoveryService {
           const urlString = url.loc[0];
           const lastmod = url.lastmod ? url.lastmod[0] : undefined;
           const priority = url.priority ? parseFloat(url.priority[0]) : undefined;
-          
+
           if (this.isValidUrl(urlString, baseDomain, config)) {
             discoveredUrls.push({
               url: urlString,
@@ -552,7 +563,7 @@ export class SitemapDiscoveryService {
    * 페이지 링크에서 URL 발견 (하이브리드: Cheerio 우선, 필요 시 Puppeteer)
    */
   private async discoverFromLinks(
-    baseUrl: string, 
+    baseUrl: string,
     config: DiscoveryOptions,
     preloadedHtml?: string
   ): Promise<DiscoveredUrl[]> {
@@ -562,7 +573,7 @@ export class SitemapDiscoveryService {
     // 1단계: 이미 로드된 HTML이 있으면 재사용, 없으면 Fetch + Cheerio로 시도
     try {
       let htmlContent: string;
-      
+
       if (preloadedHtml) {
         console.error(`[CRITICAL] 🔗 링크 추출 시작 (Cheerio, HTML 재사용): ${baseUrl}`);
         htmlContent = preloadedHtml;
@@ -579,7 +590,7 @@ export class SitemapDiscoveryService {
           'Sec-Fetch-Mode': 'navigate',
           'Sec-Fetch-Site': 'none',
         } as Record<string, string>;
-        
+
         const response = await fetch(baseUrl, {
           headers: commonHeaders,
           redirect: 'follow',
@@ -591,7 +602,7 @@ export class SitemapDiscoveryService {
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
-        
+
         htmlContent = await response.text();
       }
 
@@ -604,7 +615,7 @@ export class SitemapDiscoveryService {
         let totalLinks = 0;
         let validLinks = 0;
         let filteredLinks = 0;
-        
+
         $('a[href]').each((_, element) => {
           const href = $(element).attr('href');
           if (!href || href.startsWith('#') || href.startsWith('javascript:') || href.startsWith('mailto:')) {
@@ -629,9 +640,9 @@ export class SitemapDiscoveryService {
             const normalizedUrl = this.normalizeUrl(fullUrl);
 
             // 같은 도메인이고 다른 경로인 경우만 포함
-            if (urlDomain === baseDomain && 
-                normalizedUrl !== baseUrl &&
-                !normalizedUrl.includes('#')) {
+            if (urlDomain === baseDomain &&
+              normalizedUrl !== baseUrl &&
+              !normalizedUrl.includes('#')) {
               validLinks++;
               if (this.isValidUrl(normalizedUrl, baseDomain, config)) {
                 discoveredUrls.push({
@@ -648,13 +659,13 @@ export class SitemapDiscoveryService {
             // URL 파싱 실패 시 무시
           }
         });
-        
+
         console.error(`[CRITICAL] 📊 링크 추출 통계 (Cheerio): 총 ${totalLinks}개 → 유효 ${validLinks}개 → 최종 ${discoveredUrls.length}개 (필터링: ${filteredLinks}개)`);
 
         // 콘텐츠가 충분한지 확인 (정적 HTML로 충분한 경우)
         const bodyText = $('body').text().trim();
         const hasSubstantialContent = bodyText.length > 500; // 500자 이상의 텍스트가 있으면 정적 HTML로 판단
-        
+
         if (hasSubstantialContent && discoveredUrls.length > 0) {
           console.error(`[CRITICAL] 🔗 페이지 링크에서 발견 (Cheerio): ${discoveredUrls.length}개`);
           return discoveredUrls;
@@ -673,50 +684,65 @@ export class SitemapDiscoveryService {
       }
 
       if (this.browser) {
-        const page = await this.browser.newPage();
-        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
-        await page.setViewport({ width: 1920, height: 1080 });
+        // Puppeteer 작업에 타임아웃 적용 (30초)
+        const puppeteerTask = async () => {
+          const page = await this.browser!.newPage();
+          try {
+            await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+            await page.setViewport({ width: 1920, height: 1080 });
 
-        await page.goto(baseUrl, { 
-          waitUntil: 'networkidle2',
-          timeout: 30000 
-        });
+            await page.goto(baseUrl, {
+              waitUntil: 'networkidle2',
+              timeout: 25000 // 페이지 로드 타임아웃 25초
+            });
 
-        // 페이지가 완전히 로드될 때까지 대기 (waitForTimeout 대체)
-        await new Promise(resolve => setTimeout(resolve, 2000)); // JavaScript 실행 대기
+            // 페이지가 완전히 로드될 때까지 대기 (waitForTimeout 대체)
+            await new Promise(resolve => setTimeout(resolve, 2000)); // JavaScript 실행 대기
 
-        // 페이지에서 링크 추출
-        const links = await page.evaluate((baseDomain) => {
-          const linkElements = document.querySelectorAll('a[href]');
-          const links: Array<{url: string, title: string}> = [];
-          
-          linkElements.forEach(link => {
-            const href = link.getAttribute('href');
-            if (!href) return;
-            
-            try {
-              const fullUrl = new URL(href, window.location.href).href;
-              const urlDomain = new URL(fullUrl).hostname;
-              
-              // 같은 도메인이고 다른 경로인 경우만 포함
-              // 쿼리 파라미터는 허용 (정규화는 서버 측에서 수행)
-              if (urlDomain === baseDomain && 
-                  fullUrl !== window.location.href &&
-                  !fullUrl.includes('#') && 
-                  !fullUrl.includes('javascript:') &&
-                  !fullUrl.includes('mailto:')) {
-                links.push({
-                  url: fullUrl,
-                  title: link.textContent?.trim() || ''
-                });
-              }
-            } catch (e) {
-              // URL 파싱 실패 시 무시
-            }
-          });
-          
-          return links;
-        }, baseDomain);
+            // 페이지에서 링크 추출
+            const links = await page.evaluate((baseDomain) => {
+              const linkElements = document.querySelectorAll('a[href]');
+              const links: Array<{ url: string, title: string }> = [];
+
+              linkElements.forEach(link => {
+                const href = link.getAttribute('href');
+                if (!href) return;
+
+                try {
+                  const fullUrl = new URL(href, window.location.href).href;
+                  const urlDomain = new URL(fullUrl).hostname;
+
+                  // 같은 도메인이고 다른 경로인 경우만 포함
+                  // 쿼리 파라미터는 허용 (정규화는 서버 측에서 수행)
+                  if (urlDomain === baseDomain &&
+                    fullUrl !== window.location.href &&
+                    !fullUrl.includes('#') &&
+                    !fullUrl.includes('javascript:') &&
+                    !fullUrl.includes('mailto:')) {
+                    links.push({
+                      url: fullUrl,
+                      title: link.textContent?.trim() || ''
+                    });
+                  }
+                } catch (e) {
+                  // URL 파싱 실패 시 무시
+                }
+              });
+
+              return links;
+            }, baseDomain);
+
+            return links;
+          } finally {
+            await page.close();
+          }
+        };
+
+        // 30초 타임아웃으로 Puppeteer 작업 실행
+        const links = await Promise.race([
+          puppeteerTask(),
+          new Promise<never>((_, reject) => setTimeout(() => reject(new Error('Puppeteer timeout')), 30000))
+        ]) as Array<{ url: string, title: string }>;
 
         // Puppeteer로 발견한 링크 추가 (중복 제거, URL 정규화)
         const existingUrls = new Set(discoveredUrls.map(u => u.url));
@@ -734,7 +760,6 @@ export class SitemapDiscoveryService {
           }
         });
 
-        await page.close();
         console.error(`[CRITICAL] 🔗 페이지 링크에서 발견 (Puppeteer 추가): 총 ${discoveredUrls.length}개`);
       }
     } catch (puppeteerError) {
@@ -752,17 +777,17 @@ export class SitemapDiscoveryService {
   private normalizeUrl(url: string): string {
     try {
       const urlObj = new URL(url);
-      
+
       // 트래킹 파라미터 목록 (제거할 파라미터)
       const trackingParams = [
         'utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content',
         'fbclid', 'gclid', 'ref', 'source', 'campaign_id',
         '_ga', '_gid', 'mc_cid', 'mc_eid'
       ];
-      
+
       // 중요한 파라미터 목록 (유지할 파라미터)
       const importantParams = ['locale', 'lang', 'language', 'version', 'id'];
-      
+
       // 쿼리 파라미터 필터링
       const filteredParams = new URLSearchParams();
       urlObj.searchParams.forEach((value, key) => {
@@ -774,7 +799,7 @@ export class SitemapDiscoveryService {
         // 중요한 파라미터나 기타 파라미터는 유지
         filteredParams.append(key, value);
       });
-      
+
       // 정규화된 URL 생성
       urlObj.search = filteredParams.toString();
       return urlObj.href;
@@ -791,7 +816,7 @@ export class SitemapDiscoveryService {
     try {
       const urlObj = new URL(url);
       const urlDomain = urlObj.hostname;
-      
+
       // 같은 도메인인지 확인
       if (urlDomain !== baseDomain) {
         if (config.includeExternal) {
@@ -800,12 +825,12 @@ export class SitemapDiscoveryService {
         // 도메인이 다르면 false 반환 (상세 로그는 filterAndSortPages에서 출력)
         return false;
       }
-      
+
       // 허용된 도메인 목록 확인
       if (config.allowedDomains && config.allowedDomains.length > 0 && !config.allowedDomains.includes(urlDomain)) {
         return false;
       }
-      
+
       // 불필요한 확장자 제외 (단, sitemap URL은 이미 파싱되어 URL 목록으로 변환되므로 영향 없음)
       const excludedExtensions = ['.pdf', '.jpg', '.jpeg', '.png', '.gif', '.css', '.js', '.xml'];
       const hasExcludedExtension = excludedExtensions.some(ext => {
@@ -816,7 +841,7 @@ export class SitemapDiscoveryService {
       if (hasExcludedExtension) {
         return false;
       }
-      
+
       return true;
     } catch (e) {
       return false;
@@ -827,8 +852,8 @@ export class SitemapDiscoveryService {
    * 페이지 필터링 및 정렬
    */
   private filterAndSortPages(
-    pages: DiscoveredUrl[], 
-    baseDomain: string, 
+    pages: DiscoveredUrl[],
+    baseDomain: string,
     config: DiscoveryOptions
   ): DiscoveredUrl[] {
     // URL 정규화 적용 (트래킹 파라미터 제거)
@@ -836,36 +861,36 @@ export class SitemapDiscoveryService {
       ...page,
       url: this.normalizeUrl(page.url)
     }));
-    
+
     // 중복 제거 (정규화된 URL 기준)
-    const uniquePages = normalizedPages.filter((page, index, self) => 
+    const uniquePages = normalizedPages.filter((page, index, self) =>
       index === self.findIndex(p => p.url === page.url)
     );
-    
+
     console.log(`📊 필터링 전: ${pages.length}개 → 정규화 후: ${normalizedPages.length}개 → 중복 제거 후: ${uniquePages.length}개`);
-    
+
     // 도메인 필터링
     const beforeDomainFilter = uniquePages.length;
     const filteredPages: DiscoveredUrl[] = [];
-    const filteredOut: Array<{url: string, reason: string}> = [];
-    
+    const filteredOut: Array<{ url: string, reason: string }> = [];
+
     uniquePages.forEach(page => {
       try {
         const urlObj = new URL(page.url);
         const urlDomain = urlObj.hostname;
-        
+
         // 도메인 체크
         if (urlDomain !== baseDomain) {
           filteredOut.push({ url: page.url, reason: `도메인 불일치: ${urlDomain} !== ${baseDomain}` });
           return;
         }
-        
+
         // allowedDomains 체크
         if (config.allowedDomains && config.allowedDomains.length > 0 && !config.allowedDomains.includes(urlDomain)) {
           filteredOut.push({ url: page.url, reason: `허용되지 않은 도메인: ${urlDomain} not in [${config.allowedDomains.join(', ')}]` });
           return;
         }
-        
+
         // 확장자 체크
         const excludedExtensions = ['.pdf', '.jpg', '.jpeg', '.png', '.gif', '.css', '.js', '.xml'];
         const pathname = urlObj.pathname.toLowerCase();
@@ -874,16 +899,16 @@ export class SitemapDiscoveryService {
           filteredOut.push({ url: page.url, reason: `제외된 확장자: ${pathname}` });
           return;
         }
-        
+
         // 모든 체크 통과
         filteredPages.push(page);
       } catch (e) {
         filteredOut.push({ url: page.url, reason: `URL 파싱 실패: ${e}` });
       }
     });
-    
+
     console.log(`[CRITICAL] 📊 도메인 필터링: ${beforeDomainFilter}개 → ${filteredPages.length}개 (제외: ${beforeDomainFilter - filteredPages.length}개)`);
-    
+
     // 필터링된 URL 상세 로그 (처음 10개만)
     if (filteredOut.length > 0) {
       console.error(`[CRITICAL] ⚠️ 필터링된 URL 샘플 (처음 10개):`);
@@ -894,22 +919,22 @@ export class SitemapDiscoveryService {
         console.error(`[CRITICAL]   ... 외 ${filteredOut.length - 10}개`);
       }
     }
-    
+
     // 우선순위별 정렬 (sitemap > links > pattern)
     const sourcePriority = { sitemap: 1, robots: 1, links: 2, pattern: 3 };
     filteredPages.sort((a, b) => {
       const priorityA = sourcePriority[a.source] || 4;
       const priorityB = sourcePriority[b.source] || 4;
-      
+
       if (priorityA !== priorityB) {
         return priorityA - priorityB;
       }
-      
+
       // 같은 소스인 경우 priority 값으로 정렬
       if (a.priority && b.priority) {
         return b.priority - a.priority;
       }
-      
+
       return 0;
     });
 

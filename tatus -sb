@@ -1,0 +1,188 @@
+warning: in the working copy of 'src/lib/services/PuppeteerCrawlingService.ts', LF will be replaced by CRLF the next time Git touches it
+[1mdiff --git a/src/lib/services/PuppeteerCrawlingService.ts b/src/lib/services/PuppeteerCrawlingService.ts[m
+[1mindex bc07b5e..f87046f 100644[m
+[1m--- a/src/lib/services/PuppeteerCrawlingService.ts[m
+[1m+++ b/src/lib/services/PuppeteerCrawlingService.ts[m
+[36m@@ -38,11 +38,11 @@[m [mexport class PuppeteerCrawlingService {[m
+     try {[m
+       // 통합된 인코딩 처리 유틸리티 사용[m
+       const { processTextEncoding } = await import('../utils/textEncoding');[m
+[31m-      const result = processTextEncoding(text, { [m
+[32m+[m[32m      const result = processTextEncoding(text, {[m
+         strictMode: true,[m
+[31m-        preserveOriginal: false [m
+[32m+[m[32m        preserveOriginal: false[m
+       });[m
+[31m-      [m
+[32m+[m
+       console.log(`🔧 URL 텍스트 인코딩 처리:`, {[m
+         originalLength: text.length,[m
+         cleanedLength: result.cleanedText.length,[m
+[36m@@ -50,7 +50,7 @@[m [mexport class PuppeteerCrawlingService {[m
+         hasIssues: result.hasIssues,[m
+         issues: result.issues[m
+       });[m
+[31m-      [m
+[32m+[m
+       return result.cleanedText;[m
+     } catch (error) {[m
+       console.warn('⚠️ 통합 인코딩 처리 실패, 기본 처리 사용:', error);[m
+[36m@@ -70,13 +70,13 @@[m [mexport class PuppeteerCrawlingService {[m
+       'https://business.instagram.com/help/',[m
+       'https://www.facebook.com/business/help/',[m
+       'https://www.facebook.com/business/help/164749007013531',[m
+[31m-      [m
+[32m+[m
+       // 추가 Meta 공식 문서들[m
+       'https://www.facebook.com/policies/ads/prohibited_content/',[m
+       'https://www.facebook.com/policies/ads/restricted_content/',[m
+       'https://developers.facebook.com/docs/marketing-api/overview/',[m
+       'https://business.instagram.com/help/instagram-business/',[m
+[31m-      [m
+[32m+[m
+       // Facebook Help 추가[m
+       'https://www.facebook.com/help/',[m
+     ];[m
+[36m@@ -93,10 +93,10 @@[m [mexport class PuppeteerCrawlingService {[m
+       'business.instagram.com',[m
+       'help.instagram.com'[m
+     ];[m
+[31m-    [m
+[32m+[m
+     try {[m
+       const urlObj = new URL(url);[m
+[31m-      return allowedDomains.some(domain => [m
+[32m+[m[32m      return allowedDomains.some(domain =>[m
+         urlObj.hostname === domain || urlObj.hostname.endsWith(`.${domain}`)[m
+       );[m
+     } catch (e) {[m
+[36m@@ -128,12 +128,12 @@[m [mexport class PuppeteerCrawlingService {[m
+   async init(): Promise<void> {[m
+     if (!this.browser) {[m
+       console.log('🚀 Puppeteer 브라우저 초기화 중...');[m
+[31m-      [m
+[32m+[m
+       try {[m
+         // Vercel 환경에서는 chromium을 사용[m
+         const isVercel = process.env.VERCEL === '1';[m
+         let executablePath: string | undefined;[m
+[31m-        [m
+[32m+[m
+         if (isVercel) {[m
+           // Vercel 환경: @sparticuz/chromium 사용 (동적 크롤링 필수)[m
+           try {[m
+[36m@@ -141,7 +141,7 @@[m [mexport class PuppeteerCrawlingService {[m
+             // Vercel 서버리스 환경에서는 자동으로 Chromium 바이너리를 포함함[m
+             const executablePath = await chromium.executablePath();[m
+             console.log(`📁 Chromium 실행 경로: ${executablePath}`);[m
+[31m-            [m
+[32m+[m
+             // Chromium args에 필요한 시스템 라이브러리 경로 및 보안 옵션 추가[m
+             // @sparticuz/chromium 최신 버전은 이미 필요한 라이브러리를 포함하고 있음[m
+             const chromiumArgs = [[m
+[36m@@ -174,9 +174,9 @@[m [mexport class PuppeteerCrawlingService {[m
+               '--use-mock-keychain',[m
+               '--single-process',[m
+             ];[m
+[31m-            [m
+[32m+[m
+             console.log(`🔧 Chromium args 개수: ${chromiumArgs.length}`);[m
+[31m-            [m
+[32m+[m
+             this.browser = await puppeteerCore.launch({[m
+               args: chromiumArgs,[m
+               defaultViewport: {[m
+[36m@@ -272,13 +272,13 @@[m [mexport class PuppeteerCrawlingService {[m
+       browser = this.browser;[m
+       page = await browser.newPage();[m
+     }[m
+[31m-    [m
+[32m+[m
+     try {[m
+       console.log(`🔍 Meta 페이지 크롤링 시작: ${url}`);[m
+ [m
+       // 실제 브라우저처럼 보이게 설정[m
+       await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');[m
+[31m-      [m
+[32m+[m
+       // 뷰포트 설정[m
+       await page.setViewport({ width: 1920, height: 1080 });[m
+ [m
+[36m@@ -286,9 +286,9 @@[m [mexport class PuppeteerCrawlingService {[m
+       console.log(`📡 페이지 로드 시도: ${url}`);[m
+       let response;[m
+       try {[m
+[31m-        response = await page.goto(url, { [m
+[32m+[m[32m        response = await page.goto(url, {[m
+           waitUntil: 'networkidle2',[m
+[31m-          timeout: 30000 [m
+[32m+[m[32m          timeout: 30000[m
+         });[m
+       } catch (gotoError: any) {[m
+         // "Navigating frame was detached" 또는 "Connection closed" 오류 처리[m
+[36m@@ -311,9 +311,9 @@[m [mexport class PuppeteerCrawlingService {[m
+           page = await browser.newPage();[m
+           await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');[m
+           await page.setViewport({ width: 1920, height: 1080 });[m
+[31m-          response = await page.goto(url, { [m
+[32m+[m[32m          response = await page.goto(url, {[m
+             waitUntil: 'networkidle2',[m
+[31m-            timeout: 30000 [m
+[32m+[m[32m            timeout: 30000[m
+           });[m
+         } else {[m
+           throw gotoError;[m
+[36m@@ -347,7 +347,7 @@[m [mexport class PuppeteerCrawlingService {[m
+           '.page-title',[m
+           '.article-title'[m
+         ];[m
+[31m-        [m
+[32m+[m
+         for (const selector of titleSelectors) {[m
+           const element = document.querySelector(selector);[m
+           if (element && element.textContent?.trim()) {[m
+[36m@@ -381,7 +381,7 @@[m [mexport class PuppeteerCrawlingService {[m
+           '[role="main"]',[m
+           '.page-content'[m
+         ];[m
+[31m-        [m
+[32m+[m
+         let contentElement = null;[m
+         for (const selector of contentSelectors) {[m
+           const element = document.querySelector(selector);[m
+[36m@@ -390,20 +390,20 @@[m [mexport class PuppeteerCrawlingService {[m
+             break;[m
+           }[m
+         }[m
+[31m-        [m
+[32m+[m
+         if (!contentElement) {[m
+           contentElement = document.body;[m
+         }[m
+[31m-        [m
+[32m+[m
+         if (contentElement) {[m
+           // 위키백과 관련 링크 제거[m
+           const wikiLinks = contentElement.querySelectorAll('a[href*="wikipedia"], a[href*="wiki"]');[m
+           wikiLinks.forEach(link => link.remove());[m
+[31m-          [m
+[32m+[m
+           const text = contentElement.textContent || '';[m
+           return text.replace(/\s+/g, ' ').trim();[m
+         }[m
+[31m-        [m
+[32m+[m
+         return '';[m
+       });[m
+       let content: string = contentResult as string;[m
+[36m@@ -431,7 +431,7 @@[m [mexport class PuppeteerCrawlingService {[m
+         try {[m
+           console.log(`🔍 하위 페이지 발견 시작: ${url} (maxDepth: ${maxDepth})`);[m
+           const { sitemapDiscoveryService } = await import('./SitemapDiscoveryService');[m
+[31m-          [m
+[32m+[m
+           // maxDepth >= 3일 때는 BFS depth 탐색 사용 (실제 depth 3까지 탐색하여 200개 발견 가능)[m
+           // maxDepth < 3일 때는 단순 discoverSubPages 사용[m
+           if (maxDepth >= 3) {[m
+[36m@@ -441,9 +441,10 @@[m [mexport class PuppeteerCrawlingService {[m
+               maxUrls: 200, 

@@ -499,7 +499,8 @@ export default function HybridCrawlingManager({
           const maxDepthValue = clampDepthValue(crawlOptions.maxDepth);
           const allDiscovered: DiscoveredUrlItem[] = [];
           
-          // 모든 문서에서 discoveredUrls 수집 (심도 3 이상) - 메인 페이지별로 그룹화
+          // 모든 문서에서 discoveredUrls 수집 - 메인 페이지별로 그룹화
+          // maxDepth >= 3일 때는 depth 2와 3 이상을 모두 모달에서 선택하도록 함 (타임아웃 방지)
           const groupedByMainPage: Record<string, DiscoveredUrlItem[]> = {};
           if (result.documents && Array.isArray(result.documents)) {
             result.documents.forEach((doc: any) => {
@@ -510,8 +511,21 @@ export default function HybridCrawlingManager({
                 }
                 
                 doc.discoveredUrls.forEach((discovered: any) => {
-                  // 심도 3 이상인 페이지만 수집
-                  if (discovered.depth >= 3) {
+                  // maxDepth >= 3일 때는 depth 2 이상인 모든 페이지를 모달에서 선택하도록 함
+                  if (maxDepthValue >= 3 && discovered.depth >= 2) {
+                    const item: DiscoveredUrlItem = {
+                      url: discovered.url,
+                      title: discovered.title || discovered.url,
+                      depth: discovered.depth,
+                      parentUrl: mainPageUrl,
+                      path: discovered.path || [mainPageUrl, discovered.url],
+                      source: discovered.source || 'links',
+                      isAlreadyCrawled: false
+                    };
+                    allDiscovered.push(item);
+                    groupedByMainPage[mainPageUrl].push(item);
+                  } else if (maxDepthValue < 3 && discovered.depth >= 3) {
+                    // maxDepth < 3일 때는 depth 3 이상만 모달에서 선택
                     const item: DiscoveredUrlItem = {
                       url: discovered.url,
                       title: discovered.title || discovered.url,
@@ -532,11 +546,11 @@ export default function HybridCrawlingManager({
           // 그룹화 정보 저장 (나중에 모달에서 사용)
           setGroupedDiscoveredUrls(groupedByMainPage);
           
-          console.log(`🔍 심도 3 이상 페이지 수집 결과: ${allDiscovered.length}개, maxDepth: ${maxDepthValue}`);
+          console.log(`🔍 하위 페이지 수집 결과: ${allDiscovered.length}개, maxDepth: ${maxDepthValue}`);
 
-          // 심도 3 이상이고 발견된 페이지가 있으면 모달 표시
+          // maxDepth >= 3이고 발견된 페이지가 있으면 모달 표시 (depth 2 이상 모두 포함)
           if (maxDepthValue >= 3 && allDiscovered.length > 0) {
-            console.log(`🔍 심도 3 이상 페이지 발견: ${allDiscovered.length}개 - 모달 표시`);
+            console.log(`🔍 하위 페이지 발견: ${allDiscovered.length}개 (depth 2 이상) - 모달 표시`);
             setAllDiscoveredUrls(allDiscovered);
             setSelectedUrlsForCrawling(new Set(allDiscovered.map(item => item.url))); // 기본적으로 모두 선택
             setShowDiscoveryModal(true);
@@ -560,7 +574,7 @@ export default function HybridCrawlingManager({
             // 모달에서 선택 후 크롤링하도록 대기 (성공한 문서는 이미 저장되었으므로 진행 상황은 유지)
             return;
           } else {
-            console.log(`🔍 심도 3 이상 페이지 없음: maxDepth=${maxDepthValue}, 발견된 페이지=${allDiscovered.length}개`);
+            console.log(`🔍 모달 표시 조건 불만족: maxDepth=${maxDepthValue}, 발견된 페이지=${allDiscovered.length}개`);
           }
 
           const successCount = result.successCount || 0;

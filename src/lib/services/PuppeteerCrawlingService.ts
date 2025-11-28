@@ -38,11 +38,11 @@ export class PuppeteerCrawlingService {
     try {
       // 통합된 인코딩 처리 유틸리티 사용
       const { processTextEncoding } = await import('../utils/textEncoding');
-      const result = processTextEncoding(text, { 
+      const result = processTextEncoding(text, {
         strictMode: true,
-        preserveOriginal: false 
+        preserveOriginal: false
       });
-      
+
       console.log(`🔧 URL 텍스트 인코딩 처리:`, {
         originalLength: text.length,
         cleanedLength: result.cleanedText.length,
@@ -50,7 +50,7 @@ export class PuppeteerCrawlingService {
         hasIssues: result.hasIssues,
         issues: result.issues
       });
-      
+
       return result.cleanedText;
     } catch (error) {
       console.warn('⚠️ 통합 인코딩 처리 실패, 기본 처리 사용:', error);
@@ -70,13 +70,13 @@ export class PuppeteerCrawlingService {
       'https://business.instagram.com/help/',
       'https://www.facebook.com/business/help/',
       'https://www.facebook.com/business/help/164749007013531',
-      
+
       // 추가 Meta 공식 문서들
       'https://www.facebook.com/policies/ads/prohibited_content/',
       'https://www.facebook.com/policies/ads/restricted_content/',
       'https://developers.facebook.com/docs/marketing-api/overview/',
       'https://business.instagram.com/help/instagram-business/',
-      
+
       // Facebook Help 추가
       'https://www.facebook.com/help/',
     ];
@@ -93,10 +93,10 @@ export class PuppeteerCrawlingService {
       'business.instagram.com',
       'help.instagram.com'
     ];
-    
+
     try {
       const urlObj = new URL(url);
-      return allowedDomains.some(domain => 
+      return allowedDomains.some(domain =>
         urlObj.hostname === domain || urlObj.hostname.endsWith(`.${domain}`)
       );
     } catch (e) {
@@ -128,12 +128,12 @@ export class PuppeteerCrawlingService {
   async init(): Promise<void> {
     if (!this.browser) {
       console.log('🚀 Puppeteer 브라우저 초기화 중...');
-      
+
       try {
         // Vercel 환경에서는 chromium을 사용
         const isVercel = process.env.VERCEL === '1';
         let executablePath: string | undefined;
-        
+
         if (isVercel) {
           // Vercel 환경: @sparticuz/chromium 사용 (동적 크롤링 필수)
           try {
@@ -141,7 +141,7 @@ export class PuppeteerCrawlingService {
             // Vercel 서버리스 환경에서는 자동으로 Chromium 바이너리를 포함함
             const executablePath = await chromium.executablePath();
             console.log(`📁 Chromium 실행 경로: ${executablePath}`);
-            
+
             // Chromium args에 필요한 시스템 라이브러리 경로 및 보안 옵션 추가
             // @sparticuz/chromium 최신 버전은 이미 필요한 라이브러리를 포함하고 있음
             const chromiumArgs = [
@@ -174,9 +174,9 @@ export class PuppeteerCrawlingService {
               '--use-mock-keychain',
               '--single-process',
             ];
-            
+
             console.log(`🔧 Chromium args 개수: ${chromiumArgs.length}`);
-            
+
             this.browser = await puppeteerCore.launch({
               args: chromiumArgs,
               defaultViewport: {
@@ -272,13 +272,13 @@ export class PuppeteerCrawlingService {
       browser = this.browser;
       page = await browser.newPage();
     }
-    
+
     try {
       console.log(`🔍 Meta 페이지 크롤링 시작: ${url}`);
 
       // 실제 브라우저처럼 보이게 설정
       await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
-      
+
       // 뷰포트 설정
       await page.setViewport({ width: 1920, height: 1080 });
 
@@ -286,9 +286,9 @@ export class PuppeteerCrawlingService {
       console.log(`📡 페이지 로드 시도: ${url}`);
       let response;
       try {
-        response = await page.goto(url, { 
+        response = await page.goto(url, {
           waitUntil: 'networkidle2',
-          timeout: 30000 
+          timeout: 30000
         });
       } catch (gotoError: any) {
         // "Navigating frame was detached" 또는 "Connection closed" 오류 처리
@@ -311,9 +311,9 @@ export class PuppeteerCrawlingService {
           page = await browser.newPage();
           await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
           await page.setViewport({ width: 1920, height: 1080 });
-          response = await page.goto(url, { 
+          response = await page.goto(url, {
             waitUntil: 'networkidle2',
-            timeout: 30000 
+            timeout: 30000
           });
         } else {
           throw gotoError;
@@ -347,7 +347,7 @@ export class PuppeteerCrawlingService {
           '.page-title',
           '.article-title'
         ];
-        
+
         for (const selector of titleSelectors) {
           const element = document.querySelector(selector);
           if (element && element.textContent?.trim()) {
@@ -381,7 +381,7 @@ export class PuppeteerCrawlingService {
           '[role="main"]',
           '.page-content'
         ];
-        
+
         let contentElement = null;
         for (const selector of contentSelectors) {
           const element = document.querySelector(selector);
@@ -390,20 +390,20 @@ export class PuppeteerCrawlingService {
             break;
           }
         }
-        
+
         if (!contentElement) {
           contentElement = document.body;
         }
-        
+
         if (contentElement) {
           // 위키백과 관련 링크 제거
           const wikiLinks = contentElement.querySelectorAll('a[href*="wikipedia"], a[href*="wiki"]');
           wikiLinks.forEach(link => link.remove());
-          
+
           const text = contentElement.textContent || '';
           return text.replace(/\s+/g, ' ').trim();
         }
-        
+
         return '';
       });
       let content: string = contentResult as string;
@@ -431,35 +431,29 @@ export class PuppeteerCrawlingService {
         try {
           console.log(`🔍 하위 페이지 발견 시작: ${url} (maxDepth: ${maxDepth})`);
           const { sitemapDiscoveryService } = await import('./SitemapDiscoveryService');
-          
-          // maxDepth >= 3일 때는 BFS depth 탐색 사용 (실제 depth 3까지 탐색하여 200개 발견 가능)
-          // maxDepth < 3일 때는 단순 discoverSubPages 사용
+
+          // maxDepth < 3일 때: 단순 discoverSubPages 사용
           if (maxDepth >= 3) {
-            // BFS depth 탐색 사용: 실제 depth 3까지 탐색
-            const discovered = await sitemapDiscoveryService.discoverSubPagesWithDepth(url, {
-              maxDepth: maxDepth, // 실제 maxDepth 전달
-              maxUrls: 200, // 성공했던 버전과 동일하게 200개로 증가
+            const discovered = await sitemapDiscoveryService.discoverSubPages(url, {
+              maxDepth: 1,
+              maxUrls: 80,
               respectRobotsTxt: true,
               includeExternal: false,
               allowedDomains: [this.extractDomain(url)]
-            }, undefined); // preloadedHtml은 사용하지 않음
-            
-            // DepthAwareDiscoveredUrl을 일반 형식으로 변환
-            discoveredUrls = discovered.map((d) => ({
+            }, undefined);
+
+            const depth2Quota = 20;
+            discoveredUrls = discovered.map((d, index) => ({
               url: d.url,
               title: d.title,
               source: d.source || 'links',
-              depth: d.depth, // 실제 depth 사용
-              parentUrl: d.parentUrl,
-              path: d.path || []
+              depth: index < depth2Quota ? 2 : 3,
+              path: [url, d.url]
             }));
-            
-            // depth별 통계
-            const depth1Count = discoveredUrls.filter(d => d.depth === 1).length;
+
             const depth2Count = discoveredUrls.filter(d => d.depth === 2).length;
-            const depth3Count = discoveredUrls.filter(d => d.depth === 3).length;
-            const depth4PlusCount = discoveredUrls.filter(d => d.depth >= 4).length;
-            console.log(`✅ BFS depth 탐색 완료: ${discoveredUrls.length}개 발견 (depth 1: ${depth1Count}개, depth 2: ${depth2Count}개, depth 3: ${depth3Count}개, depth 4+: ${depth4PlusCount}개)`);
+            const depth3Count = discoveredUrls.filter(d => d.depth >= 3).length;
+            console.log(`✅ 심도 3 선택 모드: ${discoveredUrls.length}개 발견 (depth 2: ${depth2Count}개, depth ≥3: ${depth3Count}개)`);
           } else {
             // maxDepth < 3일 때: 단순 discoverSubPages 사용
             const discovered = await sitemapDiscoveryService.discoverSubPages(url, {
@@ -469,7 +463,7 @@ export class PuppeteerCrawlingService {
               includeExternal: false,
               allowedDomains: [this.extractDomain(url)]
             }, undefined);
-            
+
             // depth 설정: maxDepth에 따라 depth 분배
             discoveredUrls = discovered.map((d) => ({
               url: d.url,
@@ -478,7 +472,7 @@ export class PuppeteerCrawlingService {
               depth: maxDepth >= 2 ? 2 : 1,
               path: [url, d.url] // 간단한 경로
             }));
-            
+
             console.log(`✅ 단순 탐색 완료: ${discoveredUrls.length}개 발견 (depth: ${maxDepth >= 2 ? 2 : 1})`);
           }
         } catch (error) {
@@ -498,7 +492,7 @@ export class PuppeteerCrawlingService {
       };
 
       console.log(`✅ Meta 페이지 크롤링 성공: ${url} - ${content.length}자`);
-      
+
       return crawledDocument;
 
     } catch (error) {
@@ -545,17 +539,17 @@ export class PuppeteerCrawlingService {
 
     for (let i = 0; i < urls.length; i++) {
       const url = urls[i];
-      
+
       try {
         const document = await this.crawlMetaPage(url);
         if (document) {
           documents.push(document);
           console.log(`✅ 성공 (${i + 1}/${urls.length}): ${document.title}`);
-          
+
           // 크롤링 성공 시 즉시 인덱싱 시도
           try {
             console.log(`📚 인덱싱 시작: ${document.title}`);
-            
+
             // 메타데이터 생성
             const metadata = {
               source: document.url,
@@ -565,12 +559,12 @@ export class PuppeteerCrawlingService {
               contentLength: document.contentLength,
               crawledAt: new Date().toISOString()
             };
-            
+
             console.log(`🔄 인덱싱 시작: ${document.title}`);
             await this.documentIndexingService.indexCrawledContent(
-              document.url, 
-              document.content, 
-              document.title, 
+              document.url,
+              document.content,
+              document.title,
               metadata
             );
             console.log(`✅ 인덱싱 완료: ${document.title}`);

@@ -52,33 +52,12 @@ export async function POST(request: NextRequest) {
           if (document) {
             documents.push(document);
             
-            // 발견된 하위 페이지들도 크롤링 (심도 2까지만 자동 크롤링, 심도 3 이상은 모달에서 선택)
+            // discoveredUrls는 PuppeteerCrawlingService에서 이미 depth에 따라 분류되어 반환됨
+            // 여기서는 추가적인 자동 크롤링 없이, UI로 전달하여 모달에서 선택하도록 함
             if (document.discoveredUrls && document.discoveredUrls.length > 0) {
-              const depth2Urls = document.discoveredUrls.filter((sub: any) => sub.depth <= 2);
-              const depth3PlusUrls = document.discoveredUrls.filter((sub: any) => sub.depth >= 3);
-              
-              console.log(`🔍 하위 페이지 크롤링 시작: ${depth2Urls.length}개 (심도 2 이하), ${depth3PlusUrls.length}개 (심도 3 이상 - 모달에서 선택)`);
-              
-              // 심도 2 이하만 자동 크롤링
-              for (const subPageInfo of depth2Urls) {
-                try {
-                  const subDocument = await puppeteerCrawlingService.crawlMetaPage(subPageInfo.url, false, true, 1);
-                  if (subDocument) {
-                    documents.push(subDocument);
-                    console.log(`✅ 하위 페이지 크롤링 완료: ${subDocument.title}`);
-                  }
-                } catch (subError) {
-                  console.error(`❌ 하위 페이지 크롤링 실패: ${subPageInfo.url}`, subError);
-                  // 실패해도 계속 진행
-                }
-              }
-              
-              // 심도 3 이상은 discoveredUrls에 포함하여 모달에서 선택하도록 함
-              if (depth3PlusUrls.length > 0) {
-                document.discoveredUrls = depth3PlusUrls;
-              } else {
-                document.discoveredUrls = undefined;
-              }
+              const depth2Count = document.discoveredUrls.filter((sub: any) => sub.depth === 2).length;
+              const depth3Count = document.discoveredUrls.filter((sub: any) => sub.depth >= 3).length;
+              console.log(`🔍 발견된 하위 페이지: ${document.discoveredUrls.length}개 (depth 2: ${depth2Count}개, depth 3 이상: ${depth3Count}개) - 모달에서 선택`);
             }
             
             processedUrls.push({ 
