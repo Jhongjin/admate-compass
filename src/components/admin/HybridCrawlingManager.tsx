@@ -2000,7 +2000,7 @@ export default function HybridCrawlingManager({
               </div>
             )}
             <div className="space-y-3">
-              {/* 완료된 페이지는 제외하고 실패/진행중/대기중 페이지만 표시 */}
+              {/* 진행 중인 페이지만 표시 (완료된 페이지는 3초 후 자동 제거) */}
               {crawlingProgress
                 .filter(p => p.status !== 'completed')
                 .map((progress, index) => (
