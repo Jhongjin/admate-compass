@@ -648,10 +648,16 @@ export default function DocumentsPage() {
                                 onSelectAll={handleSelectAll}
                                 onSelectDocument={handleSelectDocument}
                                 onBulkDelete={() => {
-                                    console.log('🔍 [DocumentsPage] onBulkDelete 래퍼 호출됨');
-                                    console.log('🔍 [DocumentsPage] handleBulkDelete:', handleBulkDelete);
-                                    console.log('🔍 [DocumentsPage] handleBulkDelete.toString():', handleBulkDelete?.toString().substring(0, 300));
-                                    handleBulkDelete();
+                                    console.log('🚨🚨🚨 [DocumentsPage] onBulkDelete 래퍼 함수 호출됨! 🚨🚨🚨');
+                                    console.log('🔍 [DocumentsPage] handleBulkDelete 존재:', !!handleBulkDelete);
+                                    console.log('🔍 [DocumentsPage] handleBulkDelete 타입:', typeof handleBulkDelete);
+                                    if (handleBulkDelete) {
+                                        console.log('🔍 [DocumentsPage] handleBulkDelete 호출 시작');
+                                        handleBulkDelete();
+                                        console.log('🔍 [DocumentsPage] handleBulkDelete 호출 완료');
+                                    } else {
+                                        console.error('❌❌❌ [DocumentsPage] handleBulkDelete가 없습니다! ❌❌❌');
+                                    }
                                 }}
                                 selectedDocuments={selectedDocs}
                                 isAllSelected={selectedDocs.size > 0 && selectedDocs.size === filteredDocs.length}
