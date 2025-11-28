@@ -440,18 +440,12 @@ export default function HybridCrawlingManager({
       return;
     }
 
-    // 크롤링 시작 전 상태 초기화
-    setCrawlingProgress([]);
-    setIsCrawling(false);
+    // 크롤링 시작 전 상태 초기화 및 즉시 크롤링 상태로 설정
+    setCrawlingProgress(urlsToCrawl.map(url => ({ url, status: 'pending' as const })));
+    setIsCrawling(true);
 
-    // 잠시 후 크롤링 시작
-    setTimeout(() => {
-      setIsCrawling(true);
-      setCrawlingProgress(urlsToCrawl.map(url => ({ url, status: 'pending' })));
-
-      // 크롤링 로직 실행
-      executeCrawling();
-    }, 100);
+    // 크롤링 로직 실행
+    executeCrawling();
 
     async function executeCrawling() {
       try {
@@ -461,24 +455,16 @@ export default function HybridCrawlingManager({
           console.log('🔍 하위 페이지 추출이 활성화되어 있습니다.');
         }
 
-        // 각 URL에 대해 순차적으로 크롤링 상태 업데이트
-        for (let i = 0; i < urlsToCrawl.length; i++) {
-          const url = urlsToCrawl[i];
-
-          // 현재 URL을 크롤링 중으로 표시
-          setCrawlingProgress(prev =>
-            prev.map((p, index) =>
-              index === i
-                ? { ...p, status: 'crawling', message: '크롤링 중...' }
-                : p
-            )
-          );
-
-          // 실제 크롤링은 API에서 일괄 처리되므로 짧은 지연만 추가
-          await new Promise(resolve => setTimeout(resolve, 1000));
-        }
+        // 모든 URL을 크롤링 중으로 표시 (즉시 업데이트)
+        setCrawlingProgress(prev =>
+          prev.map(p => ({ ...p, status: 'crawling' as const, message: '크롤링 중...' }))
+        );
+        
+        // 상태 업데이트를 위해 강제 리렌더링 트리거
+        await new Promise(resolve => setTimeout(resolve, 50));
 
         // Puppeteer 기반 크롤링 API 호출 (Facebook/Instagram 지원)
+        // 크롤링은 최대 5분까지 걸릴 수 있으므로 타임아웃을 5분(300초)으로 설정
         const response = await fetchWithTimeout('/api/puppeteer-crawl', {
           method: 'POST',
           headers: {
@@ -491,7 +477,7 @@ export default function HybridCrawlingManager({
             ...crawlOptions,
             maxDepth: maxDepthValue
           }),
-        });
+        }, 300000); // 5분 = 300,000ms
 
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -575,6 +561,8 @@ export default function HybridCrawlingManager({
             errorMessage = '크롤링 API를 찾을 수 없습니다. 서버를 재시작해주세요.';
           } else if (error.message.includes('JSON')) {
             errorMessage = '서버 응답 형식 오류입니다.';
+          } else if (error.message.includes('시간이 초과')) {
+            errorMessage = '크롤링 시간이 초과되었습니다. 일부 페이지는 크롤링되었을 수 있습니다.';
           } else {
             errorMessage = error.message;
           }
@@ -582,14 +570,16 @@ export default function HybridCrawlingManager({
 
         toast.error(`크롤링 실패: ${errorMessage}`);
         setCrawlingProgress(prev =>
-          prev.map(p => ({ ...p, status: 'failed', message: '크롤링 실패' }))
+          prev.map(p => ({ ...p, status: 'failed' as const, message: errorMessage }))
         );
       } finally {
+        // 상태 업데이트를 보장하기 위해 약간의 지연 후 상태 변경
+        await new Promise(resolve => setTimeout(resolve, 100));
         setIsCrawling(false);
-        // 크롤링 완료 후 진행상황 초기화
+        // 크롤링 완료 후 진행상황 초기화 (더 긴 시간 후)
         setTimeout(() => {
           setCrawlingProgress([]);
-        }, 3000);
+        }, 5000); // 5초로 증가
       }
     }
   };
