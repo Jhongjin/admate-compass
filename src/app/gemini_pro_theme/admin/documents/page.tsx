@@ -253,13 +253,16 @@ export default function DocumentsPage() {
         const newSelected = new Set(selectedDocs);
         const ids = Array.isArray(id) ? id : [id];
         
-        ids.forEach(docId => {
-            if (newSelected.has(docId)) {
-                newSelected.delete(docId);
-            } else {
-                newSelected.add(docId);
-            }
-        });
+        // 모든 ID가 선택되어 있는지 확인
+        const allSelected = ids.every(docId => newSelected.has(docId));
+        
+        if (allSelected) {
+            // 모두 선택되어 있으면 모두 해제
+            ids.forEach(docId => newSelected.delete(docId));
+        } else {
+            // 일부만 선택되어 있거나 모두 해제되어 있으면 모두 선택
+            ids.forEach(docId => newSelected.add(docId));
+        }
         
         setSelectedDocs(newSelected);
     };

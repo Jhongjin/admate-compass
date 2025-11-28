@@ -201,7 +201,16 @@ export default function GroupedDocumentList({
                 <Button
                   variant="destructive"
                   size="sm"
-                  onClick={onBulkDelete}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    console.log('🗑️ 선택 삭제 버튼 클릭됨, selectedDocuments:', selectedDocuments);
+                    if (onBulkDelete) {
+                      onBulkDelete();
+                    } else {
+                      console.error('❌ onBulkDelete 함수가 전달되지 않음');
+                    }
+                  }}
                   className="h-8 px-4"
                 >
                   <Trash2 className="w-4 h-4 mr-2" />
@@ -240,24 +249,25 @@ export default function GroupedDocumentList({
                     <Button
                       variant="ghost"
                       size="sm"
-                      onClick={() => {
+                      onClick={(e) => {
+                        e.stopPropagation();
                         // 그룹 전체 선택/해제를 위한 모든 ID 수집
-                        const allIds = [group.mainDocument.id, ...group.subPages.map(sub => sub.id)];
+                        const allIds = [group.mainDocument.id, ...group.subPages.map((sub: GroupedDocument) => sub.id)];
                         const allSelected = allIds.every(id => selectedDocuments?.has(id));
                         
-                        // 한 번에 모든 ID를 선택/해제 (배열로 전달)
+                        // 한 번에 모든 ID를 배열로 전달하여 처리
                         if (allSelected) {
-                          // 모두 선택되어 있으면 해제
-                          allIds.forEach(id => onSelectDocument(id));
+                          // 모두 선택되어 있으면 해제 - 배열로 전달
+                          onSelectDocument(allIds);
                         } else {
-                          // 일부만 선택되어 있거나 모두 해제되어 있으면 전체 선택
-                          const idsToSelect = allIds.filter(id => !selectedDocuments?.has(id));
-                          idsToSelect.forEach(id => onSelectDocument(id));
+                          // 일부만 선택되어 있거나 모두 해제되어 있으면 전체 선택 - 배열로 전달
+                          onSelectDocument(allIds);
                         }
                       }}
                       className="p-1 h-6 w-6 hover:bg-gray-700/50"
                     >
-                      {selectedDocuments?.has(group.mainDocument.id) ? (
+                      {selectedDocuments?.has(group.mainDocument.id) && 
+                       group.subPages.every((sub: GroupedDocument) => selectedDocuments?.has(sub.id)) ? (
                         <Check className="w-4 h-4 text-blue-400" />
                       ) : (
                         <Square className="w-4 h-4 text-gray-400" />
