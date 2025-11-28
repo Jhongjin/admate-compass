@@ -52,9 +52,12 @@ export class SitemapDiscoveryService {
           
           this.browser = await puppeteer.launch({
             args: chromium.args as string[],
-            defaultViewport: chromium.defaultViewport,
+            defaultViewport: {
+              width: 1280,
+              height: 720,
+            },
             executablePath: executablePath,
-            headless: chromium.headless,
+            headless: true,
           });
           console.log('✅ SitemapDiscoveryService 브라우저 초기화 완료 (Vercel 환경: @sparticuz/chromium)');
         } catch (chromiumError) {
