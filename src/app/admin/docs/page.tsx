@@ -240,6 +240,12 @@ function AdminDocsPageContent() {
             return { data: { documents: documents || [] } };
         },
         enabled: isClient && selectedVendors.length > 0,
+        // 처리중인 문서가 있으면 5초마다 자동 새로고침
+        refetchInterval: (query) => {
+            const documents = query.state.data?.data?.documents || [];
+            const hasProcessing = documents.some((doc: any) => doc.status === 'processing' || doc.status === 'queued');
+            return hasProcessing ? 5000 : false;
+        },
     });
 
     const deleteMutation = useMutation({
