@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo, useEffect, useCallback } from "react";
 import { motion } from "framer-motion";
 import {
     FileText,
@@ -388,7 +388,11 @@ export default function DocumentsPage() {
         }
     });
 
-    const handleBulkDelete = () => {
+    const handleBulkDelete = useCallback(() => {
+        console.log('🗑️ [handleBulkDelete] 함수 호출됨!');
+        console.log('🗑️ [handleBulkDelete] selectedDocs:', selectedDocs);
+        console.log('🗑️ [handleBulkDelete] selectedDocs.size:', selectedDocs.size);
+        
         const selectedArray = Array.from(selectedDocs);
         console.log('🗑️ [handleBulkDelete] 선택 삭제 요청:', { 
             count: selectedArray.length, 
@@ -415,6 +419,9 @@ export default function DocumentsPage() {
         }
 
         console.log('🗑️ [handleBulkDelete] 삭제 시작 - bulkDeleteMutation.mutate 호출:', selectedArray);
+        console.log('🗑️ [handleBulkDelete] bulkDeleteMutation:', bulkDeleteMutation);
+        console.log('🗑️ [handleBulkDelete] bulkDeleteMutation.mutate:', bulkDeleteMutation.mutate);
+        
         try {
             bulkDeleteMutation.mutate(selectedArray, {
                 onSuccess: (results) => {
@@ -427,7 +434,7 @@ export default function DocumentsPage() {
         } catch (error) {
             console.error('❌ [handleBulkDelete] mutate 호출 중 예외 발생:', error);
         }
-    };
+    }, [selectedDocs, bulkDeleteMutation, toast]);
 
     return (
         <ThemedAdminLayout currentPage="docs">
