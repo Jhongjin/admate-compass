@@ -1080,13 +1080,15 @@ export default function HybridCrawlingManager({
                   clearInterval(pollingIntervalRef.current);
                   pollingIntervalRef.current = null;
                 }
-                jobIdsRef.current = [];
                 setIsCrawling(false);
+                // 진행 상황 초기화
+                setCrawlingProgress([]);
+                jobIdsRef.current = [];
                 if (onCrawlingComplete) {
-                  // 마지막 새로고침
+                  // 마지막 새로고침 (DB 업데이트 완료 대기)
                   setTimeout(() => {
                     onCrawlingComplete();
-                  }, 1000);
+                  }, 2000);
                 }
               }
               
