@@ -526,10 +526,26 @@ export default function HybridCrawlingManager({
           if (maxDepthValue >= 3 && allDiscovered.length > 0) {
             console.log(`🔍 심도 3 이상 페이지 발견: ${allDiscovered.length}개 - 모달 표시`);
             setAllDiscoveredUrls(allDiscovered);
-            setSelectedUrlsForCrawling(new Set());
+            setSelectedUrlsForCrawling(new Set(allDiscovered.map(item => item.url))); // 기본적으로 모두 선택
             setShowDiscoveryModal(true);
-            // 모달에서 선택 후 크롤링하도록 대기
-            // 성공한 문서는 이미 저장되었으므로 진행 상황은 유지
+            
+            // 성공한 메인 페이지들의 진행 상황 업데이트 (유지)
+            setCrawlingProgress(prev =>
+              prev.map((p, index) => {
+                const processedUrl = result.processedUrls?.[index];
+                if (processedUrl?.status === 'success') {
+                  return {
+                    ...p,
+                    status: 'completed' as const,
+                    message: '크롤링 완료 (하위 페이지 선택 대기 중)',
+                    discoveredUrls: []
+                  };
+                }
+                return p;
+              })
+            );
+            
+            // 모달에서 선택 후 크롤링하도록 대기 (성공한 문서는 이미 저장되었으므로 진행 상황은 유지)
             return;
           } else {
             console.log(`🔍 심도 3 이상 페이지 없음: maxDepth=${maxDepthValue}, 발견된 페이지=${allDiscovered.length}개`);
@@ -593,15 +609,17 @@ export default function HybridCrawlingManager({
             }
           }
 
-          // 크롤링 완료 후 즉시 상태 초기화
+          // 크롤링 완료 후 상태 초기화 (성공한 문서는 유지)
+          // 하위 페이지 크롤링 실패 시에도 메인 페이지 결과는 유지
           setTimeout(() => {
-            setCrawlingProgress([]);
+            // 완료된 페이지만 유지하고, 실패한 페이지만 제거
+            setCrawlingProgress(prev => prev.filter(p => p.status === 'completed'));
             setIsCrawling(false);
             // 부모 컴포넌트에 크롤링 완료 알림
             if (onCrawlingComplete) {
               onCrawlingComplete();
             }
-          }, 1000); // 1초로 단축
+          }, 2000); // 2초로 증가
         } else {
           throw new Error(result.error || '크롤링 실패');
         }
@@ -629,11 +647,21 @@ export default function HybridCrawlingManager({
       } finally {
         // 상태 업데이트를 보장하기 위해 약간의 지연 후 상태 변경
         await new Promise(resolve => setTimeout(resolve, 100));
+        // 모달이 표시되지 않은 경우에만 크롤링 상태 해제
+        // (모달이 표시되면 모달 핸들러에서 상태를 관리하므로 여기서는 해제하지 않음)
         setIsCrawling(false);
-        // 크롤링 완료 후 진행상황 초기화 (더 긴 시간 후)
+        // 완료된 페이지만 유지하고, 실패한 페이지만 제거 (하위 페이지 크롤링 실패 시에도 메인 페이지 결과 유지)
+        // 단, 모달이 표시된 경우에는 모달에서 처리하므로 여기서는 제거하지 않음
         setTimeout(() => {
-          setCrawlingProgress([]);
-        }, 5000); // 5초로 증가
+          setCrawlingProgress(prev => {
+            // 모달이 표시된 경우 진행 상황 유지, 그렇지 않으면 완료된 페이지만 유지
+            const hasModal = prev.some(p => p.message?.includes('하위 페이지 선택 대기'));
+            if (hasModal) {
+              return prev; // 모달이 표시된 경우 유지
+            }
+            return prev.filter(p => p.status === 'completed'); // 완료된 페이지만 유지
+          });
+        }, 3000); // 3초 후 완료된 페이지만 유지
       }
     }
   };

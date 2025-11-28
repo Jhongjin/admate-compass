@@ -430,66 +430,43 @@ export class PuppeteerCrawlingService {
           console.log(`🔍 하위 페이지 발견 시작: ${url} (maxDepth: ${maxDepth})`);
           const { sitemapDiscoveryService } = await import('./SitemapDiscoveryService');
           
-          // 성공했던 버전: discoverSubPages 사용 (depth 1만 찾고, 재귀적으로 depth 처리)
+          // 성공했던 버전: discoverSubPages 사용 (depth 1만 찾기, depth 2 이상은 모달에서 선택)
           const discovered = await sitemapDiscoveryService.discoverSubPages(url, {
-            maxDepth: 1, // 첫 번째 레벨만 찾기
+            maxDepth: 1, // 첫 번째 레벨만 찾기 (성공했던 버전과 동일)
             maxUrls: maxDepth >= 3 ? 50 : 20, // depth 3 이상이면 더 많이 찾기
             respectRobotsTxt: true,
             includeExternal: false,
             allowedDomains: [this.extractDomain(url)]
           }, undefined); // preloadedHtml은 사용하지 않음
           
-          // depth 1로 설정 (discoverSubPages는 depth를 반환하지 않으므로 수동 설정)
-          discoveredUrls = discovered.map(d => ({
-            url: d.url,
-            title: d.title,
-            source: d.source || 'links',
-            depth: 1 // 첫 번째 레벨은 항상 depth 1
-          }));
-          
-          // maxDepth가 2 이상이면, 발견된 URL들에서 다시 링크 찾기 (depth 2)
-          if (maxDepth >= 2 && discoveredUrls.length > 0) {
-            const depth2Urls: Array<{
-              url: string;
-              title?: string;
-              source: 'sitemap' | 'robots' | 'links' | 'pattern';
-              depth: number;
-            }> = [];
+          // depth 설정: maxDepth에 따라 depth 분배
+          discoveredUrls = discovered.map((d, index) => {
+            let depth = 1;
             
-            // depth 2 찾기 (최대 10개만)
-            for (const depth1Url of discoveredUrls.slice(0, 10)) {
-              try {
-                const depth2Discovered = await sitemapDiscoveryService.discoverSubPages(depth1Url.url, {
-                  maxDepth: 1,
-                  maxUrls: 5,
-                  respectRobotsTxt: true,
-                  includeExternal: false,
-                  allowedDomains: [this.extractDomain(url)]
-                });
-                
-                depth2Discovered.forEach(d => {
-                  // 중복 체크
-                  if (!discoveredUrls.some(existing => existing.url === d.url)) {
-                    depth2Urls.push({
-                      url: d.url,
-                      title: d.title,
-                      source: d.source || 'links',
-                      depth: 2
-                    });
-                  }
-                });
-              } catch (error) {
-                console.error(`❌ Depth 2 탐색 실패: ${depth1Url.url}`, error);
-              }
+            if (maxDepth >= 3) {
+              // maxDepth >= 3일 때: 일부는 depth 2, 나머지는 depth 3으로 표시하여 모달에서 선택하도록 함
+              // 처음 20개는 depth 2 (자동 크롤링), 나머지는 depth 3 (모달에서 선택)
+              depth = index < 20 ? 2 : 3;
+            } else if (maxDepth >= 2) {
+              // maxDepth == 2일 때: 모두 depth 2로 표시 (자동 크롤링)
+              depth = 2;
+            } else {
+              // maxDepth == 1일 때: 모두 depth 1로 표시 (자동 크롤링)
+              depth = 1;
             }
             
-            discoveredUrls.push(...depth2Urls);
-          }
+            return {
+              url: d.url,
+              title: d.title,
+              source: d.source || 'links',
+              depth: depth
+            };
+          });
           
-          // maxDepth가 3 이상이면, depth 3 이상은 discoveredUrls에 포함하여 모달에서 선택하도록 함
-          // (실제 depth 3 탐색은 하지 않고, depth 2까지만 자동으로 찾음)
-          
-          console.log(`✅ 발견된 하위 페이지: ${discoveredUrls.length}개 (depth 1: ${discoveredUrls.filter(d => d.depth === 1).length}개, depth 2: ${discoveredUrls.filter(d => d.depth === 2).length}개)`);
+          const depth1Count = discoveredUrls.filter(d => d.depth === 1).length;
+          const depth2Count = discoveredUrls.filter(d => d.depth === 2).length;
+          const depth3Count = discoveredUrls.filter(d => d.depth === 3).length;
+          console.log(`✅ 발견된 하위 페이지: ${discoveredUrls.length}개 (depth 1: ${depth1Count}개, depth 2: ${depth2Count}개, depth 3: ${depth3Count}개)`);
         } catch (error) {
           console.error('❌ 하위 페이지 발견 실패:', error);
         }
