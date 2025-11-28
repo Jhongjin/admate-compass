@@ -429,21 +429,67 @@ export class PuppeteerCrawlingService {
         try {
           console.log(`🔍 하위 페이지 발견 시작: ${url} (maxDepth: ${maxDepth})`);
           const { sitemapDiscoveryService } = await import('./SitemapDiscoveryService');
-          // depth를 제대로 추적하기 위해 discoverSubPagesWithDepth 사용
-          const discovered = await sitemapDiscoveryService.discoverSubPagesWithDepth(url, {
-            maxDepth: maxDepth,
-            maxUrls: 20,
+          
+          // 성공했던 버전: discoverSubPages 사용 (depth 1만 찾고, 재귀적으로 depth 처리)
+          const discovered = await sitemapDiscoveryService.discoverSubPages(url, {
+            maxDepth: 1, // 첫 번째 레벨만 찾기
+            maxUrls: maxDepth >= 3 ? 50 : 20, // depth 3 이상이면 더 많이 찾기
             respectRobotsTxt: true,
             includeExternal: false,
             allowedDomains: [this.extractDomain(url)]
-          });
+          }, undefined); // preloadedHtml은 사용하지 않음
+          
+          // depth 1로 설정 (discoverSubPages는 depth를 반환하지 않으므로 수동 설정)
           discoveredUrls = discovered.map(d => ({
             url: d.url,
             title: d.title,
-            source: d.source,
-            depth: d.depth
+            source: d.source || 'links',
+            depth: 1 // 첫 번째 레벨은 항상 depth 1
           }));
-          console.log(`✅ 발견된 하위 페이지: ${discoveredUrls.length}개`);
+          
+          // maxDepth가 2 이상이면, 발견된 URL들에서 다시 링크 찾기 (depth 2)
+          if (maxDepth >= 2 && discoveredUrls.length > 0) {
+            const depth2Urls: Array<{
+              url: string;
+              title?: string;
+              source: 'sitemap' | 'robots' | 'links' | 'pattern';
+              depth: number;
+            }> = [];
+            
+            // depth 2 찾기 (최대 10개만)
+            for (const depth1Url of discoveredUrls.slice(0, 10)) {
+              try {
+                const depth2Discovered = await sitemapDiscoveryService.discoverSubPages(depth1Url.url, {
+                  maxDepth: 1,
+                  maxUrls: 5,
+                  respectRobotsTxt: true,
+                  includeExternal: false,
+                  allowedDomains: [this.extractDomain(url)]
+                });
+                
+                depth2Discovered.forEach(d => {
+                  // 중복 체크
+                  if (!discoveredUrls.some(existing => existing.url === d.url)) {
+                    depth2Urls.push({
+                      url: d.url,
+                      title: d.title,
+                      source: d.source || 'links',
+                      depth: 2
+                    });
+                  }
+                });
+              } catch (error) {
+                console.error(`❌ Depth 2 탐색 실패: ${depth1Url.url}`, error);
+              }
+            }
+            
+            discoveredUrls.push(...depth2Urls);
+          }
+          
+          // maxDepth가 3 이상이면, depth 3 이상은 discoveredUrls에 포함하여 모달에서 선택하도록 함
+          // (실제 depth 3 탐색은 하지 않고, depth 2까지만 자동으로 찾음)
+          
+          console.log(`✅ 발견된 하위 페이지: ${discoveredUrls.length}개 (depth 1: ${discoveredUrls.filter(d => d.depth === 1).length}개, depth 2: ${discoveredUrls.filter(d => d.depth === 2).length}개)`);
         } catch (error) {
           console.error('❌ 하위 페이지 발견 실패:', error);
         }
