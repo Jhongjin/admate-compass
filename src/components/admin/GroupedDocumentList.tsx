@@ -241,29 +241,18 @@ export default function GroupedDocumentList({
                       variant="ghost"
                       size="sm"
                       onClick={() => {
-                        const isMainSelected = selectedDocuments?.has(group.mainDocument.id);
-                        const allSubPageIds = group.subPages.map(sub => sub.id);
+                        // 그룹 전체 선택/해제를 위한 모든 ID 수집
+                        const allIds = [group.mainDocument.id, ...group.subPages.map(sub => sub.id)];
+                        const allSelected = allIds.every(id => selectedDocuments?.has(id));
                         
-                        // 부모 선택/해제
-                        onSelectDocument(group.mainDocument.id);
-                        
-                        // 하위 페이지들도 함께 선택/해제 (비동기 상태 업데이트를 고려하여 즉시 실행)
-                        if (!isMainSelected) {
-                          // 부모가 선택되지 않았으면 하위 전체 선택
-                          // 모든 하위 페이지 ID를 한 번에 처리
-                          allSubPageIds.forEach(id => {
-                            // selectedDocuments가 아직 업데이트되지 않았을 수 있으므로
-                            // 현재 상태를 확인하지 않고 바로 선택
-                            onSelectDocument(id);
-                          });
+                        // 한 번에 모든 ID를 선택/해제 (배열로 전달)
+                        if (allSelected) {
+                          // 모두 선택되어 있으면 해제
+                          allIds.forEach(id => onSelectDocument(id));
                         } else {
-                          // 부모가 이미 선택되어 있으면 하위 전체 해제
-                          // 모든 하위 페이지 ID를 한 번에 처리
-                          allSubPageIds.forEach(id => {
-                            // selectedDocuments가 아직 업데이트되지 않았을 수 있으므로
-                            // 현재 상태를 확인하지 않고 바로 해제 (토글)
-                            onSelectDocument(id);
-                          });
+                          // 일부만 선택되어 있거나 모두 해제되어 있으면 전체 선택
+                          const idsToSelect = allIds.filter(id => !selectedDocuments?.has(id));
+                          idsToSelect.forEach(id => onSelectDocument(id));
                         }
                       }}
                       className="p-1 h-6 w-6 hover:bg-gray-700/50"

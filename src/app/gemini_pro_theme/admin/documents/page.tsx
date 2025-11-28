@@ -249,21 +249,61 @@ export default function DocumentsPage() {
         setExpandedGroups(newExpanded);
     };
 
-    const handleSelectDocument = (id: string) => {
+    const handleSelectDocument = (id: string | string[]) => {
         const newSelected = new Set(selectedDocs);
-        if (newSelected.has(id)) {
-            newSelected.delete(id);
+        const ids = Array.isArray(id) ? id : [id];
+        
+        ids.forEach(docId => {
+            if (newSelected.has(docId)) {
+                newSelected.delete(docId);
+            } else {
+                newSelected.add(docId);
+            }
+        });
+        
+        setSelectedDocs(newSelected);
+    };
+
+    // 그룹 전체 선택/해제 (부모 + 하위 페이지)
+    const handleSelectGroup = (groupIndex: number) => {
+        const group = documentGroups[groupIndex];
+        if (!group) return;
+
+        const allIds = [group.mainDocument.id, ...group.subPages.map(sub => sub.id)];
+        const allSelected = allIds.every(id => selectedDocs.has(id));
+
+        const newSelected = new Set(selectedDocs);
+        if (allSelected) {
+            // 모두 선택되어 있으면 해제
+            allIds.forEach(id => newSelected.delete(id));
         } else {
-            newSelected.add(id);
+            // 일부만 선택되어 있거나 모두 해제되어 있으면 전체 선택
+            allIds.forEach(id => newSelected.add(id));
         }
         setSelectedDocs(newSelected);
     };
 
     const handleSelectAll = () => {
-        if (selectedDocs.size === filteredDocs.length) {
-            setSelectedDocs(new Set());
+        // URL 크롤링 탭인 경우 그룹의 모든 문서 포함
+        if (activeTab === "crawling") {
+            const allDocIds = new Set<string>();
+            documentGroups.forEach(group => {
+                allDocIds.add(group.mainDocument.id);
+                group.subPages.forEach(sub => allDocIds.add(sub.id));
+            });
+            
+            if (selectedDocs.size === allDocIds.size && allDocIds.size > 0) {
+                setSelectedDocs(new Set());
+            } else {
+                setSelectedDocs(allDocIds);
+            }
         } else {
-            setSelectedDocs(new Set(filteredDocs.map((d: Document) => d.id)));
+            // 일반 문서 탭
+            if (selectedDocs.size === filteredDocs.length) {
+                setSelectedDocs(new Set());
+            } else {
+                setSelectedDocs(new Set(filteredDocs.map((d: Document) => d.id)));
+            }
         }
     };
 
@@ -322,7 +362,10 @@ export default function DocumentsPage() {
     });
 
     const handleBulkDelete = () => {
-        if (selectedDocs.size === 0) {
+        const selectedArray = Array.from(selectedDocs);
+        console.log('🗑️ 선택 삭제 요청:', { count: selectedArray.length, ids: selectedArray });
+        
+        if (selectedArray.length === 0) {
             toast({
                 title: "선택된 문서 없음",
                 description: "삭제할 문서를 선택해주세요.",
@@ -331,11 +374,12 @@ export default function DocumentsPage() {
             return;
         }
 
-        if (!confirm(`선택한 ${selectedDocs.size}개의 문서를 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`)) {
+        if (!confirm(`선택한 ${selectedArray.length}개의 문서를 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`)) {
             return;
         }
 
-        bulkDeleteMutation.mutate(Array.from(selectedDocs));
+        console.log('🗑️ 삭제 시작:', selectedArray);
+        bulkDeleteMutation.mutate(selectedArray);
     };
 
     return (
