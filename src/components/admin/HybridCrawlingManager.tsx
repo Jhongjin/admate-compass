@@ -800,9 +800,9 @@ export default function HybridCrawlingManager({
       }
       
       // 폴링 중지
-      if (pollIntervalRef.current) {
-        clearInterval(pollIntervalRef.current);
-        pollIntervalRef.current = null;
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
       }
       
       // 프론트엔드 상태 초기화
