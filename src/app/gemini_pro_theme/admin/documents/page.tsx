@@ -91,12 +91,10 @@ export default function DocumentsPage() {
     const [expandedGroups, setExpandedGroups] = useState<Set<number>>(new Set());
     const [selectedDocs, setSelectedDocs] = useState<Set<string>>(new Set());
     
-    // 디버깅: 컴포넌트 마운트 시 handleBulkDelete 확인
+    // 디버깅: 컴포넌트 마운트 시 확인
     useEffect(() => {
         console.log('🔍 [DocumentsPage] 컴포넌트 마운트됨');
-        console.log('🔍 [DocumentsPage] handleBulkDelete:', handleBulkDelete);
-        console.log('🔍 [DocumentsPage] handleBulkDelete.toString():', handleBulkDelete?.toString().substring(0, 500));
-    }, [handleBulkDelete]);
+    }, []);
 
     const { toast } = useToast();
     const queryClient = useQueryClient();
@@ -446,6 +444,12 @@ export default function DocumentsPage() {
         }
         console.log('🚨🚨🚨 [handleBulkDelete] ========== 함수 종료 ========== 🚨🚨🚨');
     };
+
+    // 디버깅: handleBulkDelete 정의 후 확인
+    useEffect(() => {
+        console.log('🔍 [DocumentsPage] handleBulkDelete 정의 확인:', handleBulkDelete);
+        console.log('🔍 [DocumentsPage] handleBulkDelete.toString():', handleBulkDelete?.toString().substring(0, 500));
+    }, [handleBulkDelete]);
 
     return (
         <ThemedAdminLayout currentPage="docs">
