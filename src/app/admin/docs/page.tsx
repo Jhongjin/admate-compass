@@ -625,7 +625,11 @@ const getDocumentTypeBadgeClass = (type: string) => {
 
                     <TabsContent value="crawling" className="space-y-6">
                         <HybridCrawlingManager 
-                            onCrawlingComplete={() => refetch()} 
+                            onCrawlingComplete={async () => {
+                                // 문서 목록 새로고침 및 캐시 무효화
+                                await queryClient.invalidateQueries({ queryKey: ['admin-documents'] });
+                                await refetch();
+                            }} 
                             vendors={selectedVendors}
                             onVendorsChange={setSelectedVendors}
                         />

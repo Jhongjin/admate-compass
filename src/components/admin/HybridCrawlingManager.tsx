@@ -694,9 +694,11 @@ export default function HybridCrawlingManager({
           // 하위 페이지 크롤링 실패 시에도 메인 페이지 결과는 유지
           // 리스트는 유지하고, 사용자가 수동으로 초기화할 수 있도록 함
           setIsCrawling(false);
-          // 부모 컴포넌트에 크롤링 완료 알림
+          // 부모 컴포넌트에 크롤링 완료 알림 (약간의 지연 후 호출하여 DB 업데이트 완료 대기)
           if (onCrawlingComplete) {
-            onCrawlingComplete();
+            setTimeout(() => {
+              onCrawlingComplete();
+            }, 2000); // 2초 후 새로고침하여 DB 업데이트 완료 대기
           }
         } else {
           throw new Error(result.error || '크롤링 실패');

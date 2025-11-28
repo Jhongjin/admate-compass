@@ -2278,31 +2278,85 @@ export async function processQueue() {
                     };
                   }
                   
-                  // 제목 우선순위: 링크 텍스트(메뉴명) > 페이지 제목 > URL 경로
-                  let finalTitle = linkTitle || page.pageTitle;
+                  // 제목 우선순위: 페이지 제목 > 링크 텍스트(메뉴명) > URL 경로
+                  // 먼저 페이지 제목이 제대로 추출되었는지 확인 (메인 페이지 제목과 다르고, 의미있는 길이인지)
+                  let finalTitle = page.pageTitle;
                   
-                  // 페이지 제목이 없거나 메인 페이지와 동일한 경우 링크 텍스트 또는 URL 경로 사용
+                  // 페이지 제목이 없거나 메인 페이지와 동일하거나 너무 짧은 경우
                   if (!finalTitle || finalTitle.length < 2 || finalTitle === mainPage.pageTitle) {
-                    if (linkTitle && linkTitle.length >= 2) {
+                    // 링크 텍스트가 있으면 우선 사용
+                    if (linkTitle && linkTitle.length >= 2 && linkTitle !== mainPage.pageTitle) {
                       finalTitle = linkTitle;
                     } else {
                       // URL 경로에서 의미있는 제목 추출
-                      const urlPath = new URL(subUrl).pathname;
-                      if (urlPath && urlPath !== '/') {
-                        const pathParts = urlPath.split('/').filter(p => p.length > 0);
-                        if (pathParts.length > 0) {
-                          // 마지막 경로를 제목으로 사용 (한글화 가능하면 더 좋음)
-                          finalTitle = pathParts[pathParts.length - 1]
-                            .split('-')
-                            .map(word => word.charAt(0).toUpperCase() + word.slice(1))
-                            .join(' ');
+                      try {
+                        const urlPath = new URL(subUrl).pathname;
+                        if (urlPath && urlPath !== '/') {
+                          const pathParts = urlPath.split('/').filter(p => p.length > 0);
+                          if (pathParts.length > 0) {
+                            // 마지막 경로를 제목으로 사용
+                            let pathTitle = pathParts[pathParts.length - 1];
+                            
+                            // URL 디코딩 시도 (한글 경로 지원)
+                            try {
+                              pathTitle = decodeURIComponent(pathTitle);
+                            } catch (e) {
+                              // 디코딩 실패 시 원본 사용
+                            }
+                            
+                            // 하이픈/언더스코어를 공백으로 변환하고 단어 첫 글자 대문자화
+                            finalTitle = pathTitle
+                              .replace(/[-_]/g, ' ')
+                              .split(' ')
+                              .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+                              .join(' ')
+                              .trim();
+                            
+                            // 여전히 제목이 없거나 너무 짧으면 URL 사용
+                            if (!finalTitle || finalTitle.length < 2) {
+                              finalTitle = subUrl;
+                            }
+                          } else {
+                            finalTitle = subUrl;
+                          }
+                        } else {
+                          finalTitle = subUrl;
                         }
-                      }
-                      if (!finalTitle || finalTitle.length < 2) {
+                      } catch (urlError) {
+                        // URL 파싱 실패 시 원본 URL 사용
                         finalTitle = subUrl;
                       }
                     }
                   }
+                  
+                  // 최종 제목이 메인 페이지 제목과 같으면 URL 경로 기반 제목으로 변경
+                  if (finalTitle === mainPage.pageTitle) {
+                    try {
+                      const urlPath = new URL(subUrl).pathname;
+                      if (urlPath && urlPath !== '/') {
+                        const pathParts = urlPath.split('/').filter(p => p.length > 0);
+                        if (pathParts.length > 0) {
+                          let pathTitle = pathParts[pathParts.length - 1];
+                          try {
+                            pathTitle = decodeURIComponent(pathTitle);
+                          } catch (e) {
+                            // 디코딩 실패 시 원본 사용
+                          }
+                          finalTitle = pathTitle
+                            .replace(/[-_]/g, ' ')
+                            .split(' ')
+                            .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+                            .join(' ')
+                            .trim() || subUrl;
+                        }
+                      }
+                    } catch (urlError) {
+                      // URL 파싱 실패 시 원본 URL 사용
+                      finalTitle = subUrl;
+                    }
+                  }
+                  
+                  console.log(`[CRITICAL] 📝 하위 페이지 제목 결정: ${subUrl} -> "${finalTitle}" (원본 페이지 제목: "${page.pageTitle}", 링크 텍스트: "${linkTitle}")`);
                   
                   let result;
                   try {
