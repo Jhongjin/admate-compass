@@ -269,7 +269,10 @@ export default function DocumentsPage() {
         const group = documentGroups[groupIndex];
         if (!group) return;
 
-        const allIds = [group.mainDocument.id, ...group.subPages.map(sub => sub.id)];
+        const allIds = [
+            group.mainDocument.id,
+            ...group.subPages.map((sub: Document) => sub.id)
+        ];
         const allSelected = allIds.every(id => selectedDocs.has(id));
 
         const newSelected = new Set(selectedDocs);
@@ -289,7 +292,7 @@ export default function DocumentsPage() {
             const allDocIds = new Set<string>();
             documentGroups.forEach(group => {
                 allDocIds.add(group.mainDocument.id);
-                group.subPages.forEach(sub => allDocIds.add(sub.id));
+                group.subPages.forEach((sub: Document) => allDocIds.add(sub.id));
             });
             
             if (selectedDocs.size === allDocIds.size && allDocIds.size > 0) {
