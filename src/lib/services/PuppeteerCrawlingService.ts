@@ -243,7 +243,35 @@ export class PuppeteerCrawlingService {
       throw new Error('Puppeteer 브라우저를 사용할 수 없습니다. 동적 크롤링이 필수입니다.');
     }
 
-    const page = await this.browser.newPage();
+    // 브라우저 연결 상태 확인 및 재초기화
+    let browser: Browser = this.browser!;
+    try {
+      const pages = await browser.pages();
+      // 연결 테스트
+      await browser.version();
+    } catch (browserError) {
+      console.warn('⚠️ 브라우저 연결 끊김 감지, 재초기화 시도...');
+      this.browser = null;
+      await this.init();
+      if (!this.browser) {
+        throw new Error('브라우저 재초기화 실패');
+      }
+      browser = this.browser;
+    }
+
+    let page: Page;
+    try {
+      page = await browser.newPage();
+    } catch (pageError) {
+      console.warn('⚠️ 새 페이지 생성 실패, 브라우저 재초기화 시도...');
+      this.browser = null;
+      await this.init();
+      if (!this.browser) {
+        throw new Error('브라우저 재초기화 실패');
+      }
+      browser = this.browser;
+      page = await browser.newPage();
+    }
     
     try {
       console.log(`🔍 Meta 페이지 크롤링 시작: ${url}`);
@@ -254,12 +282,43 @@ export class PuppeteerCrawlingService {
       // 뷰포트 설정
       await page.setViewport({ width: 1920, height: 1080 });
 
-      // 페이지 로드 시도
+      // 페이지 로드 시도 (에러 처리 강화)
       console.log(`📡 페이지 로드 시도: ${url}`);
-      const response = await page.goto(url, { 
-        waitUntil: 'networkidle2',
-        timeout: 30000 
-      });
+      let response;
+      try {
+        response = await page.goto(url, { 
+          waitUntil: 'networkidle2',
+          timeout: 30000 
+        });
+      } catch (gotoError: any) {
+        // "Navigating frame was detached" 또는 "Connection closed" 오류 처리
+        if (gotoError.message?.includes('detached') || gotoError.message?.includes('Connection closed')) {
+          console.warn('⚠️ 페이지 로드 중 연결 끊김, 재시도...');
+          // 페이지 닫기 시도 (에러 무시)
+          try {
+            await page.close();
+          } catch (closeError) {
+            // 무시
+          }
+          // 브라우저 재초기화
+          this.browser = null;
+          await this.init();
+          if (!this.browser) {
+            throw new Error('브라우저 재초기화 실패');
+          }
+          browser = this.browser;
+          // 새 페이지로 재시도
+          page = await browser.newPage();
+          await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+          await page.setViewport({ width: 1920, height: 1080 });
+          response = await page.goto(url, { 
+            waitUntil: 'networkidle2',
+            timeout: 30000 
+          });
+        } else {
+          throw gotoError;
+        }
+      }
 
       if (!response) {
         console.error(`❌ 페이지 응답 없음: ${url}`);
@@ -406,9 +465,28 @@ export class PuppeteerCrawlingService {
 
     } catch (error) {
       console.error(`❌ Meta 페이지 크롤링 실패: ${url}`, error);
+      // 브라우저 연결 오류인 경우 재초기화
+      if (error instanceof Error && (
+        error.message.includes('Connection closed') ||
+        error.message.includes('detached') ||
+        error.message.includes('Target closed')
+      )) {
+        console.warn('⚠️ 브라우저 연결 오류 감지, 재초기화...');
+        this.browser = null;
+      }
       return null;
     } finally {
-      await page.close();
+      // 페이지 닫기 (에러 처리 강화)
+      if (page) {
+        try {
+          await page.close();
+        } catch (closeError: any) {
+          // "Connection closed" 오류는 무시 (이미 연결이 끊어진 상태)
+          if (!closeError.message?.includes('Connection closed') && !closeError.message?.includes('Target closed')) {
+            console.error('페이지 닫기 실패:', closeError);
+          }
+        }
+      }
     }
   }
 
