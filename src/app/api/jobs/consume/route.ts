@@ -1524,8 +1524,91 @@ export async function processQueue() {
           // Cheerio로 HTML 파싱
           const $ = cheerio.load(htmlContent);
           
-          // 제목 추출 (우선순위: h1 > title > og:title > pathname)
-          let pageTitle = $('h1').first().text().trim() || 
+          // 히어로 영역(상단)의 큰 볼드 텍스트 추출 함수
+          const extractHeroTitle = (): string | null => {
+            // 1. h1 태그 (가장 우선)
+            const h1Text = $('h1').first().text().trim();
+            if (h1Text && h1Text.length >= 2) {
+              return h1Text;
+            }
+            
+            // 2. h2 태그 (히어로 영역에 자주 사용)
+            const h2Text = $('h2').first().text().trim();
+            if (h2Text && h2Text.length >= 2 && h2Text.length <= 100) {
+              return h2Text;
+            }
+            
+            // 3. 상단 영역(첫 30% 정도)에서 큰 볼드 텍스트 추출
+            // main, article, section, header 등의 상단 요소에서 추출
+            const heroSelectors = [
+              'main h1',
+              'main h2',
+              'article h1',
+              'article h2',
+              'section:first-of-type h1',
+              'section:first-of-type h2',
+              'header h1',
+              'header h2',
+              '.hero h1',
+              '.hero h2',
+              '.banner h1',
+              '.banner h2',
+              '.page-title',
+              '.article-title',
+              '.post-title',
+              '.entry-title',
+              'h1.page-title',
+              'h1.article-title',
+              '.content-title',
+              '.main-title'
+            ];
+            
+            for (const selector of heroSelectors) {
+              const text = $(selector).first().text().trim();
+              if (text && text.length >= 2 && text.length <= 100) {
+                return text;
+              }
+            }
+            
+            // 4. 상단 영역에서 font-weight: bold이고 큰 텍스트 추출
+            // body의 첫 30% 영역에서 큰 텍스트 찾기
+            const bodyText = $('body').html() || '';
+            const firstThird = bodyText.substring(0, Math.floor(bodyText.length * 0.3));
+            const $firstThird = cheerio.load(firstThird);
+            
+            // 큰 폰트 사이즈나 볼드 스타일을 가진 요소 찾기
+            const largeBoldElements = $firstThird('*').filter((_, el) => {
+              const $el = $firstThird(el);
+              const text = $el.text().trim();
+              if (!text || text.length < 2 || text.length > 100) return false;
+              
+              // 스타일 속성에서 font-size나 font-weight 확인
+              const style = $el.attr('style') || '';
+              const hasLargeFont = /font-size:\s*([2-9]\d|1\d{2,})px/i.test(style) || 
+                                   /font-size:\s*([2-9]|1[0-9]|2[0-9]|3[0-9])rem/i.test(style) ||
+                                   /font-size:\s*([2-9]|1[0-9]|2[0-9]|3[0-9])em/i.test(style);
+              const hasBold = /font-weight:\s*(bold|700|800|900)/i.test(style) ||
+                              ['b', 'strong', 'h1', 'h2', 'h3'].includes(el.tagName?.toLowerCase() || '');
+              
+              return hasLargeFont || hasBold;
+            });
+            
+            if (largeBoldElements.length > 0) {
+              const firstLargeBold = largeBoldElements.first().text().trim();
+              if (firstLargeBold && firstLargeBold.length >= 2 && firstLargeBold.length <= 100) {
+                return firstLargeBold;
+              }
+            }
+            
+            return null;
+          };
+          
+          // 히어로 영역 제목 추출
+          const heroTitle = extractHeroTitle();
+          
+          // 제목 추출 (우선순위: 히어로 영역 제목 > h1 > title > og:title > pathname)
+          let pageTitle = heroTitle || 
+                         $('h1').first().text().trim() || 
                          $('title').text().trim() || 
                          $('meta[property="og:title"]').attr('content')?.trim() ||
                          htmlContent.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1]?.trim();
@@ -2306,16 +2389,72 @@ export async function processQueue() {
                     };
                   }
                   
-                  // 제목 우선순위: 링크 텍스트(메뉴명) > 페이지 제목 > URL 경로
+                  // 제목 우선순위: 히어로 영역 제목 > 링크 텍스트(메뉴명) > 페이지 제목 > URL 경로
                   // 메인 페이지 제목과 구분되도록 강화된 로직
                   let finalTitle = null;
                   
-                  // 1. 링크 텍스트가 있고 메인 페이지 제목과 다르면 우선 사용
-                  if (linkTitle && linkTitle.length >= 2 && linkTitle !== mainPage.pageTitle && !linkTitle.toLowerCase().includes('광고주센터') && !linkTitle.toLowerCase().includes('광고주 센터') && !linkTitle.toLowerCase().includes('advertiser center')) {
+                  // 0. 히어로 영역 제목 추출 (페이지 HTML에서 직접 추출)
+                  let heroTitle = null;
+                  try {
+                    const $page = cheerio.load(page.htmlContent || '');
+                    
+                    // h1, h2 태그 우선 확인
+                    const h1Text = $page('h1').first().text().trim();
+                    const h2Text = $page('h2').first().text().trim();
+                    
+                    if (h1Text && h1Text.length >= 2 && h1Text.length <= 100 && 
+                        h1Text !== mainPage.pageTitle && 
+                        !h1Text.toLowerCase().includes('광고주센터') && 
+                        !h1Text.toLowerCase().includes('광고주 센터') && 
+                        !h1Text.toLowerCase().includes('advertiser center')) {
+                      heroTitle = h1Text;
+                    } else if (h2Text && h2Text.length >= 2 && h2Text.length <= 100 && 
+                               h2Text !== mainPage.pageTitle && 
+                               !h2Text.toLowerCase().includes('광고주센터') && 
+                               !h2Text.toLowerCase().includes('광고주 센터') && 
+                               !h2Text.toLowerCase().includes('advertiser center')) {
+                      heroTitle = h2Text;
+                    } else {
+                      // 상단 영역에서 큰 볼드 텍스트 찾기
+                      const heroSelectors = [
+                        'main h1', 'main h2',
+                        'article h1', 'article h2',
+                        'section:first-of-type h1', 'section:first-of-type h2',
+                        'header h1', 'header h2',
+                        '.hero h1', '.hero h2',
+                        '.banner h1', '.banner h2',
+                        '.page-title', '.article-title', '.post-title', '.entry-title',
+                        'h1.page-title', 'h1.article-title',
+                        '.content-title', '.main-title'
+                      ];
+                      
+                      for (const selector of heroSelectors) {
+                        const text = $page(selector).first().text().trim();
+                        if (text && text.length >= 2 && text.length <= 100 && 
+                            text !== mainPage.pageTitle && 
+                            !text.toLowerCase().includes('광고주센터') && 
+                            !text.toLowerCase().includes('광고주 센터') && 
+                            !text.toLowerCase().includes('advertiser center')) {
+                          heroTitle = text;
+                          break;
+                        }
+                      }
+                    }
+                  } catch (heroError) {
+                    console.warn(`[CRITICAL] ⚠️ 히어로 제목 추출 실패: ${subUrl}`, heroError);
+                  }
+                  
+                  // 1. 히어로 영역 제목이 있으면 최우선 사용
+                  if (heroTitle) {
+                    finalTitle = heroTitle;
+                    console.log(`[CRITICAL] 📝 하위 페이지 제목 결정 (히어로 영역): ${subUrl} -> "${finalTitle}"`);
+                  }
+                  // 2. 링크 텍스트가 있고 메인 페이지 제목과 다르면 사용
+                  else if (linkTitle && linkTitle.length >= 2 && linkTitle !== mainPage.pageTitle && !linkTitle.toLowerCase().includes('광고주센터') && !linkTitle.toLowerCase().includes('광고주 센터') && !linkTitle.toLowerCase().includes('advertiser center')) {
                     finalTitle = linkTitle;
                     console.log(`[CRITICAL] 📝 하위 페이지 제목 결정 (링크 텍스트): ${subUrl} -> "${finalTitle}"`);
                   }
-                  // 2. 페이지 제목이 있고 메인 페이지 제목과 다르면 사용
+                  // 3. 페이지 제목이 있고 메인 페이지 제목과 다르면 사용
                   else if (page.pageTitle && page.pageTitle.length >= 2 && page.pageTitle !== mainPage.pageTitle && !page.pageTitle.toLowerCase().includes('광고주센터') && !page.pageTitle.toLowerCase().includes('광고주 센터') && !page.pageTitle.toLowerCase().includes('advertiser center')) {
                     finalTitle = page.pageTitle;
                     console.log(`[CRITICAL] 📝 하위 페이지 제목 결정 (페이지 제목): ${subUrl} -> "${finalTitle}"`);
