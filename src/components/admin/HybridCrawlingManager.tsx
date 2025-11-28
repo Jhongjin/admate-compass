@@ -35,7 +35,8 @@ import {
   Layers,
   Link as LinkIcon,
   Eye,
-  EyeOff
+  EyeOff,
+  RotateCcw
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { fetchWithTimeout } from '@/lib/utils/fetchWithTimeout';
@@ -1788,6 +1789,9 @@ export default function HybridCrawlingManager({
             </div>
             <CardDescription className="text-gray-400">
               전체 {crawlingProgress.length}개 URL 중 {crawlingProgress.filter(p => p.status === 'completed').length}개 완료
+              {crawlingProgress.filter(p => p.status === 'completed').length > 0 && (
+                <span className="ml-2 text-xs text-gray-500">(완료된 페이지는 목록에서 제외됨)</span>
+              )}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -1797,14 +1801,18 @@ export default function HybridCrawlingManager({
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-gray-300 font-medium">전체 진행률</span>
                   <span className="text-white font-semibold">
-                    {Math.round(
-                      (crawlingProgress.filter(p => p.status === 'completed').length / crawlingProgress.length) * 100
-                    )}%
+                    {crawlingProgress.length > 0
+                      ? Math.round(
+                          (crawlingProgress.filter(p => p.status === 'completed').length / crawlingProgress.length) * 100
+                        )
+                      : 0}%
                   </span>
                 </div>
                 <Progress
                   value={
-                    (crawlingProgress.filter(p => p.status === 'completed').length / crawlingProgress.length) * 100
+                    crawlingProgress.length > 0
+                      ? (crawlingProgress.filter(p => p.status === 'completed').length / crawlingProgress.length) * 100
+                      : 0
                   }
                   className="h-3 bg-gray-700/50"
                 />
@@ -1824,10 +1832,18 @@ export default function HybridCrawlingManager({
                     </span>
                   )}
                 </div>
+                {crawlingProgress.filter(p => p.status === 'completed').length > 0 && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    완료된 {crawlingProgress.filter(p => p.status === 'completed').length}개 페이지는 목록에서 제외되었습니다.
+                  </p>
+                )}
               </div>
             )}
             <div className="space-y-3">
-              {crawlingProgress.map((progress, index) => (
+              {/* 완료된 페이지는 제외하고 실패/진행중/대기중 페이지만 표시 */}
+              {crawlingProgress
+                .filter(p => p.status !== 'completed')
+                .map((progress, index) => (
                 <div
                   key={index}
                   className={`flex items-center space-x-4 p-4 rounded-lg border transition-all duration-200 ${progress.status === 'completed'
@@ -1956,7 +1972,7 @@ export default function HybridCrawlingManager({
                     )}
                   </div>
 
-                  <div className="flex-shrink-0">
+                  <div className="flex-shrink-0 flex items-center gap-2">
                     <Badge
                       variant="outline"
                       className={`text-xs font-medium ${progress.status === 'completed'
@@ -1973,6 +1989,137 @@ export default function HybridCrawlingManager({
                       {progress.status === 'completed' && '완료'}
                       {progress.status === 'failed' && '실패'}
                     </Badge>
+                    {/* 실패한 페이지에 대한 액션 버튼 */}
+                    {progress.status === 'failed' && (
+                      <div className="flex items-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={async () => {
+                            // 재인덱싱: URL을 다시 크롤링
+                            try {
+                              setCrawlingProgress(prev =>
+                                prev.map(p =>
+                                  p.url === progress.url
+                                    ? { ...p, status: 'crawling' as const, message: '재크롤링 중...' }
+                                    : p
+                                )
+                              );
+                              
+                              const response = await fetchWithTimeout('/api/puppeteer-crawl', {
+                                method: 'POST',
+                                headers: {
+                                  'Content-Type': 'application/json',
+                                },
+                                body: JSON.stringify({
+                                  urls: [progress.url],
+                                  action: 'crawl_custom',
+                                  extractSubPages: false,
+                                  ...crawlOptions,
+                                  maxDepth: 1
+                                }),
+                              }, 300000);
+
+                              if (!response.ok) {
+                                throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                              }
+
+                              const result = await response.json();
+
+                              if (result.success && result.documents && result.documents.length > 0) {
+                                // 벤더 정보 가져오기
+                                const getVendorFromUrl = (url: string): string => {
+                                  try {
+                                    const urlObj = new URL(url);
+                                    const hostname = urlObj.hostname.toLowerCase();
+                                    if (hostname.includes('naver.com') || hostname.includes('naver')) {
+                                      return 'NAVER';
+                                    } else if (hostname.includes('kakao.com') || hostname.includes('kakao')) {
+                                      return 'KAKAO';
+                                    } else if (hostname.includes('google.com') || hostname.includes('google')) {
+                                      return 'GOOGLE';
+                                    } else if (hostname.includes('twitter.com') || hostname.includes('x.com')) {
+                                      return 'OTHER';
+                                    } else if (hostname.includes('facebook.com') || hostname.includes('instagram.com') || hostname.includes('meta.com') || hostname.includes('threads.net')) {
+                                      return 'META';
+                                    }
+                                  } catch (e) {
+                                    console.error('URL 파싱 오류:', e);
+                                  }
+                                  return vendors.length > 0 ? VENDOR_TO_DB_MAP[vendors[0]] || 'META' : 'META';
+                                };
+
+                                // 크롤링된 데이터 저장
+                                const saveResponse = await fetchWithTimeout('/api/admin/save-crawled-content', {
+                                  method: 'POST',
+                                  headers: {
+                                    'Content-Type': 'application/json',
+                                  },
+                                  body: JSON.stringify({
+                                    results: result.documents.map((doc: any) => ({
+                                      url: doc.url,
+                                      title: doc.title,
+                                      content: doc.content,
+                                      status: 'success',
+                                      vendor: getVendorFromUrl(doc.url)
+                                    }))
+                                  }),
+                                });
+
+                                const saveResult = await saveResponse.json();
+
+                                if (saveResult.success) {
+                                  toast.success('재크롤링 완료');
+                                  // 진행 상황에서 제거 (완료되었으므로)
+                                  setCrawlingProgress(prev =>
+                                    prev.filter(p => p.url !== progress.url)
+                                  );
+                                  // 문서 목록 새로고침
+                                  if (onCrawlingComplete) {
+                                    setTimeout(() => {
+                                      onCrawlingComplete();
+                                    }, 1000);
+                                  }
+                                } else {
+                                  throw new Error(saveResult.error || '데이터 저장 실패');
+                                }
+                              } else {
+                                throw new Error(result.error || '크롤링 실패');
+                              }
+                            } catch (error) {
+                              console.error('재크롤링 오류:', error);
+                              toast.error(`재크롤링 실패: ${error instanceof Error ? error.message : '알 수 없는 오류'}`);
+                              setCrawlingProgress(prev =>
+                                prev.map(p =>
+                                  p.url === progress.url
+                                    ? { ...p, status: 'failed' as const, message: error instanceof Error ? error.message : '재크롤링 실패' }
+                                    : p
+                                )
+                              );
+                            }
+                          }}
+                          className="h-7 w-7 p-0 text-blue-400 hover:text-blue-300 hover:bg-blue-500/20"
+                          title="재크롤링"
+                        >
+                          <RotateCcw className="w-4 h-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => {
+                            // 진행 상황에서 제거
+                            setCrawlingProgress(prev =>
+                              prev.filter(p => p.url !== progress.url)
+                            );
+                            toast.info('실패한 페이지가 목록에서 제거되었습니다.');
+                          }}
+                          className="h-7 w-7 p-0 text-red-400 hover:text-red-300 hover:bg-red-500/20"
+                          title="삭제"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    )}
                   </div>
                 </div>
               ))}
