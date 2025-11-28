@@ -99,6 +99,10 @@ export async function POST(request: NextRequest) {
         
         console.log(`🔍 저장할 문서 데이터: title="${result.title}", url="${result.url}"`);
         
+        // 벤더 정보 정규화 (대문자로 변환, 기본값: META)
+        const normalizedVendor = result.vendor ? result.vendor.toUpperCase() : 'META';
+        console.log('🏷️ 벤더 정보:', { original: result.vendor, normalized: normalizedVendor, url: result.url });
+        
         const documentData = {
           id: documentId,
           title: result.title || result.url,
@@ -107,6 +111,7 @@ export async function POST(request: NextRequest) {
           file_size: 0,
           file_type: 'url',
           url: result.url,
+          source_vendor: normalizedVendor, // 벤더 정보 추가
           created_at: isReindex ? existingDocs[0].created_at : new Date().toISOString(),
           updated_at: new Date().toISOString()
         };

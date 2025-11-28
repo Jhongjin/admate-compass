@@ -634,6 +634,30 @@ export default function HybridCrawlingManager({
             try {
               console.log('💾 크롤링된 데이터 저장 시작:', result.documents.length, '개');
 
+              // 벤더 정보 가져오기 (URL 도메인 기반 자동 감지 또는 선택된 벤더 사용)
+              const getVendorFromUrl = (url: string): string => {
+                try {
+                  const urlObj = new URL(url);
+                  const hostname = urlObj.hostname.toLowerCase();
+                  
+                  if (hostname.includes('naver.com') || hostname.includes('naver')) {
+                    return 'NAVER';
+                  } else if (hostname.includes('kakao.com') || hostname.includes('kakao')) {
+                    return 'KAKAO';
+                  } else if (hostname.includes('google.com') || hostname.includes('google')) {
+                    return 'GOOGLE';
+                  } else if (hostname.includes('twitter.com') || hostname.includes('x.com')) {
+                    return 'OTHER';
+                  } else if (hostname.includes('facebook.com') || hostname.includes('instagram.com') || hostname.includes('meta.com') || hostname.includes('threads.net')) {
+                    return 'META';
+                  }
+                } catch (e) {
+                  console.error('URL 파싱 오류:', e);
+                }
+                // 기본값: 선택된 벤더 또는 META
+                return vendors.length > 0 ? VENDOR_TO_DB_MAP[vendors[0]] || 'META' : 'META';
+              };
+
               const saveResponse = await fetchWithTimeout('/api/admin/save-crawled-content', {
                 method: 'POST',
                 headers: {
@@ -644,7 +668,8 @@ export default function HybridCrawlingManager({
                     url: doc.url,
                     title: doc.title,
                     content: doc.content,
-                    status: 'success'
+                    status: 'success',
+                    vendor: getVendorFromUrl(doc.url) // 벤더 정보 추가
                   }))
                 }),
               });
@@ -841,6 +866,30 @@ export default function HybridCrawlingManager({
         // 크롤링된 데이터를 Supabase에 저장
         if (result.documents && result.documents.length > 0) {
           try {
+            // 벤더 정보 가져오기 (URL 도메인 기반 자동 감지 또는 선택된 벤더 사용)
+            const getVendorFromUrl = (url: string): string => {
+              try {
+                const urlObj = new URL(url);
+                const hostname = urlObj.hostname.toLowerCase();
+                
+                if (hostname.includes('naver.com') || hostname.includes('naver')) {
+                  return 'NAVER';
+                } else if (hostname.includes('kakao.com') || hostname.includes('kakao')) {
+                  return 'KAKAO';
+                } else if (hostname.includes('google.com') || hostname.includes('google')) {
+                  return 'GOOGLE';
+                } else if (hostname.includes('twitter.com') || hostname.includes('x.com')) {
+                  return 'OTHER';
+                } else if (hostname.includes('facebook.com') || hostname.includes('instagram.com') || hostname.includes('meta.com') || hostname.includes('threads.net')) {
+                  return 'META';
+                }
+              } catch (e) {
+                console.error('URL 파싱 오류:', e);
+              }
+              // 기본값: 선택된 벤더 또는 META
+              return vendors.length > 0 ? VENDOR_TO_DB_MAP[vendors[0]] || 'META' : 'META';
+            };
+
             const saveResponse = await fetchWithTimeout('/api/admin/save-crawled-content', {
               method: 'POST',
               headers: {
@@ -851,7 +900,8 @@ export default function HybridCrawlingManager({
                   url: doc.url,
                   title: doc.title,
                   content: doc.content,
-                  status: 'success'
+                  status: 'success',
+                  vendor: getVendorFromUrl(doc.url) // 벤더 정보 추가
                 }))
               }),
             });

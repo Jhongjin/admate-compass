@@ -337,23 +337,70 @@ export class PuppeteerCrawlingService {
       console.log(`⏳ 봇 탐지 우회 대기: ${Math.round(waitTime)}ms`);
       await new Promise(resolve => setTimeout(resolve, waitTime));
 
-      // 제목 추출
+      // 제목 추출 (우선순위: h1 > title > og:title > data-testid > class 기반 > pathname)
       console.log(`📝 제목 추출 중...`);
       const titleResult = await page.evaluate(() => {
-        const titleSelectors = [
-          'h1',
-          'title',
-          '[data-testid="page-title"]',
-          '.page-title',
-          '.article-title'
-        ];
+        // 1. h1 태그 (가장 우선)
+        const h1Element = document.querySelector('h1');
+        if (h1Element && h1Element.textContent?.trim()) {
+          return h1Element.textContent.trim();
+        }
 
-        for (const selector of titleSelectors) {
+        // 2. title 태그
+        const titleElement = document.querySelector('title');
+        if (titleElement && titleElement.textContent?.trim()) {
+          return titleElement.textContent.trim();
+        }
+
+        // 3. og:title 메타 태그
+        const ogTitle = document.querySelector('meta[property="og:title"]');
+        if (ogTitle && ogTitle.getAttribute('content')?.trim()) {
+          return ogTitle.getAttribute('content')!.trim();
+        }
+
+        // 4. data-testid 기반
+        const dataTestIdTitle = document.querySelector('[data-testid="page-title"]');
+        if (dataTestIdTitle && dataTestIdTitle.textContent?.trim()) {
+          return dataTestIdTitle.textContent.trim();
+        }
+
+        // 5. 클래스 기반 셀렉터들
+        const classSelectors = [
+          '.page-title',
+          '.article-title',
+          '.post-title',
+          '.entry-title',
+          'h1.page-title',
+          'h1.article-title',
+          '.content-title',
+          '.main-title'
+        ];
+        for (const selector of classSelectors) {
           const element = document.querySelector(selector);
           if (element && element.textContent?.trim()) {
             return element.textContent.trim();
           }
         }
+
+        // 6. URL pathname에서 추출 (마지막 경로)
+        try {
+          const urlPath = window.location.pathname;
+          if (urlPath && urlPath !== '/') {
+            const pathParts = urlPath.split('/').filter(p => p);
+            if (pathParts.length > 0) {
+              const lastPart = pathParts[pathParts.length - 1];
+              // URL 인코딩된 한글 디코딩 시도
+              try {
+                return decodeURIComponent(lastPart).replace(/[-_]/g, ' ');
+              } catch {
+                return lastPart.replace(/[-_]/g, ' ');
+              }
+            }
+          }
+        } catch (e) {
+          // URL 파싱 실패 시 무시
+        }
+
         return null;
       });
       let title: string | null = titleResult as string | null;
