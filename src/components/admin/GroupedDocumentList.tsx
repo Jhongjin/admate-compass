@@ -201,7 +201,7 @@ export default function GroupedDocumentList({
                 <Button
                   variant="destructive"
                   size="sm"
-                  onClick={async (e) => {
+                  onClick={(e) => {
                     e.preventDefault();
                     e.stopPropagation();
                     console.log('🗑️ [GroupedDocumentList] 선택 삭제 버튼 클릭됨');
@@ -209,11 +209,21 @@ export default function GroupedDocumentList({
                     console.log('🗑️ [GroupedDocumentList] selectedDocuments.size:', selectedDocuments?.size);
                     console.log('🗑️ [GroupedDocumentList] onBulkDelete 함수 존재:', !!onBulkDelete);
                     console.log('🗑️ [GroupedDocumentList] onBulkDelete 타입:', typeof onBulkDelete);
+                    console.log('🗑️ [GroupedDocumentList] onBulkDelete 함수 내용:', onBulkDelete?.toString().substring(0, 200));
                     
                     if (onBulkDelete) {
-                      console.log('🗑️ [GroupedDocumentList] onBulkDelete 호출 시작');
+                      console.log('🗑️ [GroupedDocumentList] onBulkDelete 직접 호출 시작');
                       try {
-                        await Promise.resolve(onBulkDelete());
+                        const result = onBulkDelete();
+                        console.log('🗑️ [GroupedDocumentList] onBulkDelete 호출 결과:', result);
+                        // Promise인 경우 처리
+                        if (result && typeof result.then === 'function') {
+                          result.then(() => {
+                            console.log('🗑️ [GroupedDocumentList] onBulkDelete Promise 완료');
+                          }).catch((error: any) => {
+                            console.error('❌ [GroupedDocumentList] onBulkDelete Promise 실패:', error);
+                          });
+                        }
                         console.log('🗑️ [GroupedDocumentList] onBulkDelete 호출 완료');
                       } catch (error) {
                         console.error('❌ [GroupedDocumentList] onBulkDelete 호출 중 오류:', error);
