@@ -361,7 +361,17 @@ export default function DocumentsPage() {
             const successCount = results.filter(r => r.success).length;
             const failCount = results.filter(r => !r.success).length;
             
-            queryClient.invalidateQueries({ queryKey: ['admin-documents'] });
+            console.log('🗑️ [bulkDeleteMutation] onSuccess 호출:', { successCount, failCount, results });
+            
+            // 쿼리 무효화 및 리프레시
+            queryClient.invalidateQueries({ queryKey: ['admin-documents'] }).then(() => {
+                console.log('✅ [bulkDeleteMutation] 쿼리 무효화 완료, 자동 리프레시 예정');
+            });
+            
+            // 명시적으로 리프레시 호출
+            setTimeout(() => {
+                refetch();
+            }, 100);
             
             if (failCount === 0) {
                 toast({
@@ -413,28 +423,15 @@ export default function DocumentsPage() {
         const confirmMessage = `선택한 ${selectedArray.length}개의 문서를 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`;
         console.log('🗑️ [handleBulkDelete] 확인 다이얼로그 표시:', confirmMessage);
         
-        if (!confirm(confirmMessage)) {
+        if (!window.confirm(confirmMessage)) {
             console.log('❌ [handleBulkDelete] 사용자가 취소함');
             return;
         }
 
         console.log('🗑️ [handleBulkDelete] 삭제 시작 - bulkDeleteMutation.mutate 호출:', selectedArray);
-        console.log('🗑️ [handleBulkDelete] bulkDeleteMutation:', bulkDeleteMutation);
-        console.log('🗑️ [handleBulkDelete] bulkDeleteMutation.mutate:', bulkDeleteMutation.mutate);
         
-        try {
-            bulkDeleteMutation.mutate(selectedArray, {
-                onSuccess: (results) => {
-                    console.log('✅ [handleBulkDelete] bulkDeleteMutation 성공:', results);
-                },
-                onError: (error) => {
-                    console.error('❌ [handleBulkDelete] bulkDeleteMutation 실패:', error);
-                }
-            });
-        } catch (error) {
-            console.error('❌ [handleBulkDelete] mutate 호출 중 예외 발생:', error);
-        }
-    }, [selectedDocs, bulkDeleteMutation, toast]);
+        bulkDeleteMutation.mutate(selectedArray);
+    }, [selectedDocs, bulkDeleteMutation.mutate, toast]);
 
     return (
         <ThemedAdminLayout currentPage="docs">
