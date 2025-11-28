@@ -226,7 +226,7 @@ export class PuppeteerCrawlingService {
     }
   }
 
-  async crawlMetaPage(url: string, discoverSubPages: boolean = false, skipUrlCheck: boolean = false): Promise<CrawledDocumentData | null> {
+  async crawlMetaPage(url: string, discoverSubPages: boolean = false, skipUrlCheck: boolean = false, maxDepth: number = 2): Promise<CrawledDocumentData | null> {
     // URL 필터링 적용 (skipUrlCheck가 true이면 체크 건너뛰기)
     if (!skipUrlCheck && !this.isAllowedUrl(url)) {
       console.log(`🚫 크롤링 차단: ${url}`);
@@ -430,7 +430,7 @@ export class PuppeteerCrawlingService {
           console.log(`🔍 하위 페이지 발견 시작: ${url}`);
           const { sitemapDiscoveryService } = await import('./SitemapDiscoveryService');
           const discovered = await sitemapDiscoveryService.discoverSubPages(url, {
-            maxDepth: 2,
+            maxDepth: maxDepth,
             maxUrls: 20,
             respectRobotsTxt: true,
             includeExternal: false,

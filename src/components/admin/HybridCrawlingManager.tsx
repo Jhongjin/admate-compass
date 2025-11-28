@@ -498,7 +498,7 @@ export default function HybridCrawlingManager({
           const maxDepthValue = clampDepthValue(crawlOptions.maxDepth);
           const allDiscovered: DiscoveredUrlItem[] = [];
           
-          // 모든 문서에서 discoveredUrls 수집
+          // 모든 문서에서 discoveredUrls 수집 (심도 3 이상)
           if (result.documents && Array.isArray(result.documents)) {
             result.documents.forEach((doc: any) => {
               if (doc.discoveredUrls && Array.isArray(doc.discoveredUrls)) {
@@ -519,15 +519,20 @@ export default function HybridCrawlingManager({
               }
             });
           }
+          
+          console.log(`🔍 심도 3 이상 페이지 수집 결과: ${allDiscovered.length}개, maxDepth: ${maxDepthValue}`);
 
           // 심도 3 이상이고 발견된 페이지가 있으면 모달 표시
           if (maxDepthValue >= 3 && allDiscovered.length > 0) {
-            console.log(`🔍 심도 3 이상 페이지 발견: ${allDiscovered.length}개`);
+            console.log(`🔍 심도 3 이상 페이지 발견: ${allDiscovered.length}개 - 모달 표시`);
             setAllDiscoveredUrls(allDiscovered);
             setSelectedUrlsForCrawling(new Set());
             setShowDiscoveryModal(true);
             // 모달에서 선택 후 크롤링하도록 대기
+            // 성공한 문서는 이미 저장되었으므로 진행 상황은 유지
             return;
+          } else {
+            console.log(`🔍 심도 3 이상 페이지 없음: maxDepth=${maxDepthValue}, 발견된 페이지=${allDiscovered.length}개`);
           }
 
           const successCount = result.successCount || 0;
@@ -535,18 +540,23 @@ export default function HybridCrawlingManager({
 
           toast.success(`크롤링 완료: ${successCount}개 성공, ${failedCount}개 실패`);
 
-          // 결과에 따라 진행상황 업데이트
-          setCrawlingProgress(prev =>
-            prev.map((p, index) => {
+          // 결과에 따라 진행상황 업데이트 (성공한 페이지는 유지)
+          setCrawlingProgress(prev => {
+            const updated = prev.map((p, index) => {
               const processedUrl = result.processedUrls?.[index];
+              // 이미 완료된 페이지는 유지
+              if (p.status === 'completed') {
+                return p;
+              }
               return {
                 ...p,
                 status: processedUrl?.status === 'success' ? 'completed' as const : 'failed' as const,
                 message: processedUrl?.status === 'success' ? '크롤링 완료' : '크롤링 실패',
                 discoveredUrls: []
               };
-            })
-          );
+            });
+            return updated;
+          });
 
           // 크롤링된 데이터를 Supabase에 저장
           if (result.documents && result.documents.length > 0) {

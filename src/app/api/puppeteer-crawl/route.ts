@@ -36,8 +36,9 @@ export async function POST(request: NextRequest) {
       // 사용자 정의 URL 크롤링 - 동적 크롤링만 사용 (필수)
       console.log(`🌐 사용자 정의 URL 크롤링 시작: ${urls.length}개`);
       
-      const { extractSubPages = false } = body; // 하위 페이지 추출 옵션
-      console.log(`🔍 하위 페이지 추출: ${extractSubPages ? '활성화' : '비활성화'}`);
+      const { extractSubPages = false, maxDepth = 2 } = body; // 하위 페이지 추출 옵션 및 최대 심도
+      const maxDepthValue = Math.max(1, Math.min(4, parseInt(String(maxDepth), 10) || 2));
+      console.log(`🔍 하위 페이지 추출: ${extractSubPages ? '활성화' : '비활성화'}, 최대 심도: ${maxDepthValue}`);
       
       const documents = [];
       const processedUrls = [];
@@ -46,25 +47,37 @@ export async function POST(request: NextRequest) {
         try {
           // 동적 크롤링만 시도 (필수)
           console.log(`🚀 동적 크롤링 시도: ${url}`);
-          const document = await puppeteerCrawlingService.crawlMetaPage(url, extractSubPages, true);
+          const document = await puppeteerCrawlingService.crawlMetaPage(url, extractSubPages, true, maxDepthValue);
           
           if (document) {
             documents.push(document);
             
-            // 발견된 하위 페이지들도 크롤링
+            // 발견된 하위 페이지들도 크롤링 (심도 2까지만 자동 크롤링, 심도 3 이상은 모달에서 선택)
             if (document.discoveredUrls && document.discoveredUrls.length > 0) {
-              console.log(`🔍 하위 페이지 크롤링 시작: ${document.discoveredUrls.length}개`);
+              const depth2Urls = document.discoveredUrls.filter((sub: any) => sub.depth <= 2);
+              const depth3PlusUrls = document.discoveredUrls.filter((sub: any) => sub.depth >= 3);
               
-              for (const subPageInfo of document.discoveredUrls) {
+              console.log(`🔍 하위 페이지 크롤링 시작: ${depth2Urls.length}개 (심도 2 이하), ${depth3PlusUrls.length}개 (심도 3 이상 - 모달에서 선택)`);
+              
+              // 심도 2 이하만 자동 크롤링
+              for (const subPageInfo of depth2Urls) {
                 try {
-                  const subDocument = await puppeteerCrawlingService.crawlMetaPage(subPageInfo.url, false, true);
+                  const subDocument = await puppeteerCrawlingService.crawlMetaPage(subPageInfo.url, false, true, 1);
                   if (subDocument) {
                     documents.push(subDocument);
                     console.log(`✅ 하위 페이지 크롤링 완료: ${subDocument.title}`);
                   }
                 } catch (subError) {
                   console.error(`❌ 하위 페이지 크롤링 실패: ${subPageInfo.url}`, subError);
+                  // 실패해도 계속 진행
                 }
+              }
+              
+              // 심도 3 이상은 discoveredUrls에 포함하여 모달에서 선택하도록 함
+              if (depth3PlusUrls.length > 0) {
+                document.discoveredUrls = depth3PlusUrls;
+              } else {
+                document.discoveredUrls = undefined;
               }
             }
             
