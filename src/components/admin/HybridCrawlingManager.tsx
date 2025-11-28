@@ -110,6 +110,7 @@ export default function HybridCrawlingManager({
   const [newUrl, setNewUrl] = useState('');
   const [isCrawling, setIsCrawling] = useState(false);
   const [crawlingProgress, setCrawlingProgress] = useState<CrawlingProgress[]>([]);
+  const jobIdsRef = useRef<string[]>([]);
   const [extractSubPages, setExtractSubPages] = useState(true);
   const [editingTemplate, setEditingTemplate] = useState<string | null>(null);
   const [templateUrls, setTemplateUrls] = useState<{ [key: string]: string[] }>({});
@@ -750,11 +751,76 @@ export default function HybridCrawlingManager({
     }
   };
 
-  // 크롤링 상태 수동 초기화
-  const handleResetCrawling = () => {
-    setCrawlingProgress([]);
-    setIsCrawling(false);
-    toast.info('크롤링 상태가 초기화되었습니다.');
+  // 크롤링 취소 핸들러
+  const handleResetCrawling = async () => {
+    try {
+      // 진행 중인 모든 작업 취소
+      const activeJobIds: string[] = [];
+      
+      // 폴링 중인 작업 ID 수집
+      crawlingProgress.forEach(progress => {
+        // progress에서 jobId를 추출할 수 있는 방법이 필요
+        // 현재 구조에서는 URL만 있으므로, Supabase에서 해당 URL의 job을 찾아야 함
+      });
+      
+      // Supabase에서 진행 중인 CRAWL_SEED 작업 조회
+      const { data: activeJobs } = await supabase
+        .from('processing_jobs')
+        .select('id, payload')
+        .eq('job_type', 'CRAWL_SEED')
+        .in('status', ['queued', 'processing', 'retrying']);
+      
+      if (activeJobs && activeJobs.length > 0) {
+        // 현재 크롤링 중인 URL과 매칭되는 작업 찾기
+        const currentUrls = new Set(crawlingProgress.map(p => p.url));
+        const matchingJobs = activeJobs.filter(job => {
+          const jobUrl = (job.payload as any)?.url;
+          return jobUrl && currentUrls.has(jobUrl);
+        });
+        
+        // 매칭되는 작업들 취소
+        for (const job of matchingJobs) {
+          try {
+            const cancelRes = await fetchWithTimeout('/api/jobs/action', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ jobId: job.id, action: 'cancel' }),
+            }, 10000);
+            
+            if (cancelRes.ok) {
+              const cancelResult = await cancelRes.json();
+              if (cancelResult.success) {
+                activeJobIds.push(job.id);
+              }
+            }
+          } catch (cancelError) {
+            console.error(`작업 취소 실패: ${job.id}`, cancelError);
+          }
+        }
+      }
+      
+      // 폴링 중지
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+        pollIntervalRef.current = null;
+      }
+      
+      // 프론트엔드 상태 초기화
+      setCrawlingProgress([]);
+      setIsCrawling(false);
+      
+      if (activeJobIds.length > 0) {
+        toast.success(`${activeJobIds.length}개 작업이 취소되었습니다.`);
+      } else {
+        toast.info('크롤링 상태가 초기화되었습니다.');
+      }
+    } catch (error) {
+      console.error('크롤링 취소 오류:', error);
+      toast.error('크롤링 취소 중 오류가 발생했습니다.');
+      // 오류 발생 시에도 프론트엔드 상태는 초기화
+      setCrawlingProgress([]);
+      setIsCrawling(false);
+    }
   };
 
   // 선택된 URL 수 계산
@@ -862,6 +928,7 @@ export default function HybridCrawlingManager({
       
       // 각 URL을 큐에 등록
       const jobIds: string[] = [];
+      jobIdsRef.current = []; // 초기화
       for (let i = 0; i < selectedUrlsArray.length; i++) {
         const url = selectedUrlsArray[i];
         
@@ -899,6 +966,7 @@ export default function HybridCrawlingManager({
           const enqueueResult = await enqueueResponse.json();
           if (enqueueResult.jobId) {
             jobIds.push(enqueueResult.jobId);
+            jobIdsRef.current.push(enqueueResult.jobId);
             setCrawlingProgress(prev =>
               prev.map(p =>
                 p.url === url ? { ...p, status: 'crawling' as const, message: '큐에 등록됨, 처리 대기 중...' } : p
@@ -930,7 +998,7 @@ export default function HybridCrawlingManager({
         }
         
         // 폴링으로 진행 상황 업데이트
-        const pollInterval = setInterval(async () => {
+        pollingIntervalRef.current = setInterval(async () => {
           try {
             const { data: jobs } = await supabase
               .from('processing_jobs')
@@ -998,9 +1066,13 @@ export default function HybridCrawlingManager({
               });
               
               // 모든 작업이 완료되면 폴링 중지
-              const allCompleted = jobs.every(j => j.status === 'completed' || j.status === 'failed');
+              const allCompleted = jobs.every(j => j.status === 'completed' || j.status === 'failed' || j.status === 'cancelled');
               if (allCompleted) {
-                clearInterval(pollInterval);
+                if (pollingIntervalRef.current) {
+                  clearInterval(pollingIntervalRef.current);
+                  pollingIntervalRef.current = null;
+                }
+                jobIdsRef.current = [];
                 setIsCrawling(false);
                 if (onCrawlingComplete) {
                   // 마지막 새로고침
@@ -1008,6 +1080,19 @@ export default function HybridCrawlingManager({
                     onCrawlingComplete();
                   }, 1000);
                 }
+              }
+              
+              // 취소된 작업도 진행 상황에서 제거
+              const cancelledJobs = jobs.filter(j => j.status === 'cancelled');
+              if (cancelledJobs.length > 0) {
+                cancelledJobs.forEach(job => {
+                  const jobUrl = (job.payload as any)?.url;
+                  if (jobUrl) {
+                    setCrawlingProgress(prev =>
+                      prev.filter(p => p.url !== jobUrl)
+                    );
+                  }
+                });
               }
             }
           } catch (pollError) {
@@ -1017,7 +1102,10 @@ export default function HybridCrawlingManager({
         
         // 5분 후 자동으로 폴링 중지
         setTimeout(() => {
-          clearInterval(pollInterval);
+          if (pollingIntervalRef.current) {
+            clearInterval(pollingIntervalRef.current);
+            pollingIntervalRef.current = null;
+          }
         }, 300000);
       } else {
         toast.error('작업 등록에 실패했습니다.');
