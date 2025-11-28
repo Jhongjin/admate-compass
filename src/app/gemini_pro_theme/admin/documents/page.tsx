@@ -399,12 +399,10 @@ export default function DocumentsPage() {
         }
     });
 
-    const handleBulkDelete = useCallback(async () => {
+    const handleBulkDelete = () => {
         console.log('🗑️ [handleBulkDelete] ========== 함수 호출 시작 ==========');
         console.log('🗑️ [handleBulkDelete] selectedDocs:', selectedDocs);
         console.log('🗑️ [handleBulkDelete] selectedDocs.size:', selectedDocs?.size || 0);
-        console.log('🗑️ [handleBulkDelete] selectedDocs 타입:', typeof selectedDocs);
-        console.log('🗑️ [handleBulkDelete] selectedDocs instanceof Set:', selectedDocs instanceof Set);
         
         if (!selectedDocs || selectedDocs.size === 0) {
             console.warn('⚠️ [handleBulkDelete] 선택된 문서 없음');
@@ -419,51 +417,21 @@ export default function DocumentsPage() {
         const selectedArray = Array.from(selectedDocs);
         console.log('🗑️ [handleBulkDelete] 선택 삭제 요청:', { 
             count: selectedArray.length, 
-            ids: selectedArray.slice(0, 5), // 처음 5개만 로그
-            selectedDocsSize: selectedDocs.size 
+            ids: selectedArray.slice(0, 5)
         });
         
         const confirmMessage = `선택한 ${selectedArray.length}개의 문서를 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`;
-        console.log('🗑️ [handleBulkDelete] 확인 다이얼로그 표시 전');
-        
         const confirmed = window.confirm(confirmMessage);
-        console.log('🗑️ [handleBulkDelete] 확인 다이얼로그 결과:', confirmed);
         
         if (!confirmed) {
             console.log('❌ [handleBulkDelete] 사용자가 취소함');
             return;
         }
 
-        console.log('🗑️ [handleBulkDelete] 삭제 시작 - bulkDeleteMutation.mutate 호출 전');
-        console.log('🗑️ [handleBulkDelete] bulkDeleteMutation 존재:', !!bulkDeleteMutation);
-        console.log('🗑️ [handleBulkDelete] bulkDeleteMutation.mutate 존재:', !!bulkDeleteMutation?.mutate);
-        console.log('🗑️ [handleBulkDelete] selectedArray:', selectedArray);
-        
-        if (!bulkDeleteMutation || !bulkDeleteMutation.mutate) {
-            console.error('❌ [handleBulkDelete] bulkDeleteMutation.mutate가 없습니다!');
-            toast({
-                title: "삭제 실패",
-                description: "삭제 기능을 초기화할 수 없습니다.",
-                variant: "destructive",
-            });
-            return;
-        }
-        
-        try {
-            console.log('🗑️ [handleBulkDelete] bulkDeleteMutation.mutate 호출 직전');
-            bulkDeleteMutation.mutate(selectedArray);
-            console.log('🗑️ [handleBulkDelete] bulkDeleteMutation.mutate 호출 완료');
-        } catch (error) {
-            console.error('❌ [handleBulkDelete] mutate 호출 중 예외:', error);
-            toast({
-                title: "삭제 실패",
-                description: error instanceof Error ? error.message : '알 수 없는 오류',
-                variant: "destructive",
-            });
-        }
-        
+        console.log('🗑️ [handleBulkDelete] bulkDeleteMutation.mutate 호출:', selectedArray);
+        bulkDeleteMutation.mutate(selectedArray);
         console.log('🗑️ [handleBulkDelete] ========== 함수 종료 ==========');
-    }, [selectedDocs, bulkDeleteMutation, toast]);
+    };
 
     return (
         <ThemedAdminLayout currentPage="docs">
