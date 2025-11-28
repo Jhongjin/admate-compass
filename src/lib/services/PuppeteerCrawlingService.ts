@@ -280,7 +280,7 @@ export class PuppeteerCrawlingService {
 
       // 제목 추출
       console.log(`📝 제목 추출 중...`);
-      let title = await page.evaluate(() => {
+      const titleResult = await page.evaluate(() => {
         const titleSelectors = [
           'h1',
           'title',
@@ -290,13 +290,14 @@ export class PuppeteerCrawlingService {
         ];
         
         for (const selector of titleSelectors) {
-          const element = (document as unknown as Document).querySelector(selector);
+          const element = document.querySelector(selector);
           if (element && element.textContent?.trim()) {
             return element.textContent.trim();
           }
         }
         return null;
       });
+      let title: string | null = titleResult as string | null;
 
       console.log(`📝 추출된 제목: ${title || '없음'}`);
 
@@ -307,9 +308,9 @@ export class PuppeteerCrawlingService {
 
       // 콘텐츠 추출
       console.log(`📄 콘텐츠 추출 중...`);
-      let content = await page.evaluate(() => {
+      const contentResult = await page.evaluate(() => {
         // 불필요한 요소 제거
-        const elementsToRemove = (document as unknown as Document).querySelectorAll('script, style, nav, footer, header, aside');
+        const elementsToRemove = document.querySelectorAll('script, style, nav, footer, header, aside');
         elementsToRemove.forEach(el => el.remove());
 
         // 콘텐츠 영역 찾기
@@ -324,7 +325,7 @@ export class PuppeteerCrawlingService {
         
         let contentElement = null;
         for (const selector of contentSelectors) {
-          const element = (document as unknown as Document).querySelector(selector);
+          const element = document.querySelector(selector);
           if (element) {
             contentElement = element;
             break;
@@ -332,7 +333,7 @@ export class PuppeteerCrawlingService {
         }
         
         if (!contentElement) {
-          contentElement = (document as unknown as Document).body;
+          contentElement = document.body;
         }
         
         if (contentElement) {
@@ -340,12 +341,13 @@ export class PuppeteerCrawlingService {
           const wikiLinks = contentElement.querySelectorAll('a[href*="wikipedia"], a[href*="wiki"]');
           wikiLinks.forEach(link => link.remove());
           
-          const text = (contentElement as HTMLElement).innerText || contentElement.textContent || '';
+          const text = contentElement.textContent || '';
           return text.replace(/\s+/g, ' ').trim();
         }
         
         return '';
       });
+      let content: string = contentResult as string;
 
       console.log(`📄 추출된 콘텐츠 길이: ${content.length}자`);
 
@@ -387,7 +389,7 @@ export class PuppeteerCrawlingService {
         }
       }
 
-      const document: CrawledDocumentData = {
+      const crawledDocument: CrawledDocumentData = {
         id: `crawled_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
         title: title || url,
         content,
@@ -400,7 +402,7 @@ export class PuppeteerCrawlingService {
 
       console.log(`✅ Meta 페이지 크롤링 성공: ${url} - ${content.length}자`);
       
-      return document;
+      return crawledDocument;
 
     } catch (error) {
       console.error(`❌ Meta 페이지 크롤링 실패: ${url}`, error);
