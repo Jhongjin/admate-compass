@@ -1854,7 +1854,7 @@ export default function HybridCrawlingManager({
 
       {/* 심도 3 이상 하위 페이지 선택 모달 */}
       <Dialog open={showDiscoveryModal} onOpenChange={setShowDiscoveryModal}>
-        <DialogContent className="max-w-6xl h-[85vh] max-h-[85vh] overflow-hidden p-0 flex flex-col bg-gray-900 border-gray-700">
+        <DialogContent className="max-w-5xl h-[90vh] max-h-[90vh] overflow-hidden p-0 flex flex-col bg-gray-900 border-gray-700">
           <UrlDiscoveryPanel
             discoveredUrls={allDiscoveredUrls}
             selectedUrls={selectedUrlsForCrawling}
