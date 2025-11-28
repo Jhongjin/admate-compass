@@ -190,22 +190,29 @@ export default function QueueMonitoringPanel({ vendors = [], defaultOpen = false
       if (!jobIds.includes(j.id)) return false;
       // 일반 삭제 가능한 상태
       if (['queued', 'failed', 'cancelled', 'retrying'].includes(j.status)) return true;
-      // 멈춘 작업
+      // 멈춘 작업 (30분 이상)
       if (j.status === 'processing' && j.started_at && 
           (Date.now() - new Date(j.started_at).getTime()) > 30 * 60 * 1000) return true;
+      // 진행중인 작업도 포함 (강제 삭제)
+      if (j.status === 'processing') return true;
       return false;
     });
 
     if (deletableJobs.length === 0) {
-      alert('삭제 가능한 작업이 없습니다. (대기, 실패, 취소, 재시도 중인 작업 또는 30분 이상 진행 중인 멈춘 작업만 삭제 가능)');
+      alert('삭제 가능한 작업이 없습니다.');
       return;
     }
 
+    const processingJobs = deletableJobs.filter(j => j.status === 'processing');
     const stuckCount = stuckJobs.length;
-    const normalCount = deletableJobs.length - stuckCount;
-    const confirmMessage = stuckCount > 0
-      ? `${deletableJobs.length}개 작업을 삭제하시겠습니까?\n\n- 일반 작업: ${normalCount}개\n- 멈춘 작업: ${stuckCount}개\n\n이 작업은 되돌릴 수 없습니다.`
-      : `${deletableJobs.length}개 작업을 삭제하시겠습니까?\n\n이 작업은 되돌릴 수 없습니다.`;
+    const normalCount = deletableJobs.length - stuckCount - processingJobs.length;
+    const processingCount = processingJobs.length - stuckCount; // 멈춘 작업 제외한 진행중 작업
+    
+    let confirmMessage = `${deletableJobs.length}개 작업을 삭제하시겠습니까?\n\n`;
+    if (normalCount > 0) confirmMessage += `- 일반 작업: ${normalCount}개\n`;
+    if (stuckCount > 0) confirmMessage += `- 멈춘 작업: ${stuckCount}개\n`;
+    if (processingCount > 0) confirmMessage += `- 진행중인 작업: ${processingCount}개 (강제 삭제)\n`;
+    confirmMessage += `\n이 작업은 되돌릴 수 없습니다.`;
 
     if (!confirm(confirmMessage)) {
       return;
@@ -232,7 +239,8 @@ export default function QueueMonitoringPanel({ vendors = [], defaultOpen = false
         body: JSON.stringify({ 
           jobId: deletableJobs[0].id,
           action: 'delete',
-          jobIds: deletableJobs.map(j => j.id)
+          jobIds: deletableJobs.map(j => j.id),
+          forceDelete: processingCount > 0 // 진행중인 작업이 있으면 강제 삭제 플래그
         })
       });
 

@@ -67,12 +67,30 @@ export async function POST(request: NextRequest) {
           if (job.document_id) {
             documentIdsToDelete.add(job.document_id);
           }
-        } else if (job.status === 'processing' && job.started_at) {
-          const elapsed = now - new Date(job.started_at).getTime();
-          if (elapsed > STUCK_THRESHOLD_MS) {
+        } else if (job.status === 'processing') {
+          // processing 작업: 멈춘 작업(30분 이상) 또는 강제 삭제 요청
+          if (job.started_at) {
+            const elapsed = now - new Date(job.started_at).getTime();
+            if (elapsed > STUCK_THRESHOLD_MS) {
+              // 멈춘 작업
+              stuckJobIds.push(job.id);
+              deletableJobIds.push(job.id);
+              // 멈춘 작업의 문서도 함께 삭제
+              if (job.document_id) {
+                documentIdsToDelete.add(job.document_id);
+              }
+            } else if (body.forceDelete === true) {
+              // 강제 삭제 요청 (30분 미만이어도 삭제 가능)
+              stuckJobIds.push(job.id);
+              deletableJobIds.push(job.id);
+              if (job.document_id) {
+                documentIdsToDelete.add(job.document_id);
+              }
+            }
+          } else if (body.forceDelete === true) {
+            // started_at이 없어도 강제 삭제 요청이면 삭제 가능
             stuckJobIds.push(job.id);
             deletableJobIds.push(job.id);
-            // 멈춘 작업의 문서도 함께 삭제
             if (job.document_id) {
               documentIdsToDelete.add(job.document_id);
             }
@@ -81,9 +99,12 @@ export async function POST(request: NextRequest) {
       }
       
       if (deletableJobIds.length === 0) {
+        const errorMessage = body.forceDelete 
+          ? '삭제 가능한 작업이 없습니다.'
+          : '삭제 가능한 작업이 없습니다. (대기, 실패, 취소, 재시도 중인 작업 또는 30분 이상 진행 중인 멈춘 작업만 삭제 가능)';
         return NextResponse.json({ 
           success: false, 
-          error: '삭제 가능한 작업이 없습니다. (대기, 실패, 취소, 재시도 중인 작업 또는 30분 이상 진행 중인 멈춘 작업만 삭제 가능)'
+          error: errorMessage
         }, { status: 400 });
       }
       
