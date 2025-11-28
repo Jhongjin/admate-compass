@@ -94,7 +94,9 @@ export default function DocumentsPage() {
     // 디버깅: 컴포넌트 마운트 시 handleBulkDelete 확인
     useEffect(() => {
         console.log('🔍 [DocumentsPage] 컴포넌트 마운트됨');
-    }, []);
+        console.log('🔍 [DocumentsPage] handleBulkDelete:', handleBulkDelete);
+        console.log('🔍 [DocumentsPage] handleBulkDelete.toString():', handleBulkDelete?.toString().substring(0, 500));
+    }, [handleBulkDelete]);
 
     const { toast } = useToast();
     const queryClient = useQueryClient();
