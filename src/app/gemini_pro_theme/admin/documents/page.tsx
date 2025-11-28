@@ -665,7 +665,12 @@ export default function DocumentsPage() {
                                 onDeleteDocument={(id) => setDeleteId(id)}
                                 onSelectAll={handleSelectAll}
                                 onSelectDocument={handleSelectDocument}
-                                onBulkDelete={handleBulkDelete}
+                                onBulkDelete={(() => {
+                                    const func = handleBulkDelete;
+                                    console.log('🔍🔍🔍 [DocumentsPage] onBulkDelete prop 렌더링:', func);
+                                    console.log('🔍🔍🔍 [DocumentsPage] func.toString():', func?.toString().substring(0, 300));
+                                    return func;
+                                })()}
                                 selectedDocuments={selectedDocs}
                                 isAllSelected={selectedDocs.size > 0 && selectedDocs.size === filteredDocs.length}
                                 actionLoading={{}}
