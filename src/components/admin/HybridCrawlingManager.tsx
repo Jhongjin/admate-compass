@@ -1000,10 +1000,15 @@ export default function HybridCrawlingManager({
         // 폴링으로 진행 상황 업데이트
         pollingIntervalRef.current = setInterval(async () => {
           try {
-            const { data: jobs } = await supabase
+            const { data: jobs, error: jobsError } = await supabase
               .from('processing_jobs')
               .select('id, status, result, payload')
               .in('id', jobIds);
+            
+            if (jobsError) {
+              console.error('폴링 중 작업 조회 오류:', jobsError);
+              return;
+            }
             
             if (jobs) {
               // URL과 jobId 매핑 생성
