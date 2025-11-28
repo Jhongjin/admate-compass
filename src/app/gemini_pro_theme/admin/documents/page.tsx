@@ -363,15 +363,11 @@ export default function DocumentsPage() {
             
             console.log('🗑️ [bulkDeleteMutation] onSuccess 호출:', { successCount, failCount, results });
             
-            // 쿼리 무효화 및 리프레시
-            queryClient.invalidateQueries({ queryKey: ['admin-documents'] }).then(() => {
-                console.log('✅ [bulkDeleteMutation] 쿼리 무효화 완료, 자동 리프레시 예정');
-            });
+            // 선택 상태 먼저 초기화 (무한 루프 방지)
+            setSelectedDocs(new Set());
             
-            // 명시적으로 리프레시 호출
-            setTimeout(() => {
-                refetch();
-            }, 100);
+            // 쿼리 무효화 (자동 리프레시됨)
+            queryClient.invalidateQueries({ queryKey: ['admin-documents'] });
             
             if (failCount === 0) {
                 toast({
@@ -385,9 +381,6 @@ export default function DocumentsPage() {
                     variant: "destructive",
                 });
             }
-            
-            // 선택 상태 초기화
-            setSelectedDocs(new Set());
         },
         onError: (error) => {
             toast({
