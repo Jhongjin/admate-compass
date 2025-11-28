@@ -214,16 +214,7 @@ export default function GroupedDocumentList({
                     if (onBulkDelete) {
                       console.log('🗑️ [GroupedDocumentList] onBulkDelete 직접 호출 시작');
                       try {
-                        const result = onBulkDelete();
-                        console.log('🗑️ [GroupedDocumentList] onBulkDelete 호출 결과:', result);
-                        // Promise인 경우 처리
-                        if (result && typeof result.then === 'function') {
-                          result.then(() => {
-                            console.log('🗑️ [GroupedDocumentList] onBulkDelete Promise 완료');
-                          }).catch((error: any) => {
-                            console.error('❌ [GroupedDocumentList] onBulkDelete Promise 실패:', error);
-                          });
-                        }
+                        onBulkDelete();
                         console.log('🗑️ [GroupedDocumentList] onBulkDelete 호출 완료');
                       } catch (error) {
                         console.error('❌ [GroupedDocumentList] onBulkDelete 호출 중 오류:', error);
