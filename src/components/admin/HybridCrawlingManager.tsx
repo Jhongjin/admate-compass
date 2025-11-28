@@ -1020,44 +1020,17 @@ export default function HybridCrawlingManager({
                 }
               });
               
-              // 완료된 작업 먼저 처리
-              const completedJobs = jobs.filter(j => j.status === 'completed');
-              
-              // 완료된 작업의 URL을 진행 상황에서 제거하고 문서 목록 새로고침
-              if (completedJobs.length > 0) {
-                completedJobs.forEach(job => {
-                  const jobUrl = (job.payload as any)?.url;
-                  if (jobUrl) {
-                    setCrawlingProgress(prev =>
-                      prev.filter(p => p.url !== jobUrl)
-                    );
-                  }
-                });
-                
-                // 문서 목록 즉시 새로고침
-                if (onCrawlingComplete) {
-                  onCrawlingComplete();
-                }
-              }
-              
-              // 진행 상황 업데이트 (완료된 것은 이미 제거됨)
+              // 진행 상황 업데이트 (완료된 작업도 상태 업데이트)
               setCrawlingProgress(prev => {
-                const remaining = prev.filter(p => {
-                  const jobId = urlToJobIdMap.get(p.url);
-                  if (jobId) {
-                    const job = jobs.find(j => j.id === jobId);
-                    // 완료된 작업과 취소된 작업은 제외
-                    return job && job.status !== 'completed' && job.status !== 'cancelled';
-                  }
-                  return true;
-                });
-                
-                return remaining.map(p => {
+                const updated = prev.map(p => {
                   const jobId = urlToJobIdMap.get(p.url);
                   if (jobId) {
                     const job = jobs.find(j => j.id === jobId);
                     if (job) {
-                      if (job.status === 'cancelled') {
+                      if (job.status === 'completed') {
+                        // 완료된 작업은 상태만 업데이트 (목록에서 제거하지 않음)
+                        return { ...p, status: 'completed' as const, message: '크롤링 완료' };
+                      } else if (job.status === 'cancelled') {
                         // 취소된 작업은 제거
                         return null;
                       } else if (job.status === 'failed') {
@@ -1071,7 +1044,15 @@ export default function HybridCrawlingManager({
                   }
                   return p;
                 }).filter((p): p is CrawlingProgress => p !== null);
+                
+                return updated;
               });
+              
+              // 완료된 작업이 있으면 문서 목록 새로고침
+              const completedJobs = jobs.filter(j => j.status === 'completed');
+              if (completedJobs.length > 0 && onCrawlingComplete) {
+                onCrawlingComplete();
+              }
               
               // 모든 작업이 완료되면 폴링 중지
               const allCompleted = jobs.every(j => j.status === 'completed' || j.status === 'failed' || j.status === 'cancelled');
@@ -1080,16 +1061,21 @@ export default function HybridCrawlingManager({
                   clearInterval(pollingIntervalRef.current);
                   pollingIntervalRef.current = null;
                 }
-                setIsCrawling(false);
-                // 진행 상황 초기화
-                setCrawlingProgress([]);
-                jobIdsRef.current = [];
+                // 진행 상황에서 완료된 작업 제거 (3초 후)
+                setTimeout(() => {
+                  setCrawlingProgress(prev => prev.filter(p => p.status !== 'completed'));
+                  setIsCrawling(false);
+                  jobIdsRef.current = [];
+                }, 3000);
                 if (onCrawlingComplete) {
                   // 마지막 새로고침 (DB 업데이트 완료 대기)
                   setTimeout(() => {
                     onCrawlingComplete();
                   }, 2000);
                 }
+              } else {
+                // 진행 중인 작업이 있으면 isCrawling 유지
+                setIsCrawling(true);
               }
               
               // 취소된 작업도 진행 상황에서 제거
