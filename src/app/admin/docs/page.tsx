@@ -627,8 +627,11 @@ const getDocumentTypeBadgeClass = (type: string) => {
                         <HybridCrawlingManager 
                             onCrawlingComplete={async () => {
                                 // 문서 목록 새로고침 및 캐시 무효화
-                                await queryClient.invalidateQueries({ queryKey: ['admin-documents'] });
-                                await refetch();
+                                await queryClient.invalidateQueries({ queryKey: ['admin-documents'], exact: false });
+                                // 약간의 지연 후 새로고침 (DB 업데이트 완료 대기)
+                                setTimeout(async () => {
+                                    await refetch();
+                                }, 2000);
                             }} 
                             vendors={selectedVendors}
                             onVendorsChange={setSelectedVendors}

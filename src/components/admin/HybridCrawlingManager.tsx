@@ -1972,19 +1972,20 @@ export default function HybridCrawlingManager({
                 <div className="flex items-center justify-between text-sm">
                   <span className="text-gray-300 font-medium">전체 진행률</span>
                   <span className="text-white font-semibold">
-                    {crawlingProgress.length > 0
-                      ? Math.round(
-                          (crawlingProgress.filter(p => p.status === 'completed').length / crawlingProgress.length) * 100
-                        )
-                      : 0}%
+                    {(() => {
+                      const completedCount = crawlingProgress.filter(p => p.status === 'completed').length;
+                      const totalCount = crawlingProgress.length;
+                      const percentage = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
+                      return `${percentage}%`;
+                    })()}
                   </span>
                 </div>
                 <Progress
-                  value={
-                    crawlingProgress.length > 0
-                      ? (crawlingProgress.filter(p => p.status === 'completed').length / crawlingProgress.length) * 100
-                      : 0
-                  }
+                  value={(() => {
+                    const completedCount = crawlingProgress.filter(p => p.status === 'completed').length;
+                    const totalCount = crawlingProgress.length;
+                    return totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
+                  })()}
                   className="h-3 bg-gray-700/50 transition-all duration-500 ease-out"
                 />
                 <div className="flex items-center justify-between text-xs text-gray-400">
