@@ -1575,11 +1575,15 @@ export async function processQueue() {
             const mainH1 = $('main h1, article h1, .content h1, .main-content h1').first();
             const h1Text = mainH1.length > 0 ? mainH1.text().trim() : $('h1').first().text().trim();
             if (h1Text && h1Text.length >= 2 && h1Text.length <= 200) {
-              // "광고주센터" 같은 일반적인 제목 필터링
-              const lowerH1 = h1Text.toLowerCase();
-              if (!lowerH1.includes('광고주센터') && !lowerH1.includes('광고주 센터') && 
-                  !lowerH1.includes('advertiser center') && !lowerH1.includes('naver')) {
-                return h1Text;
+              const lowerH1 = h1Text.toLowerCase().trim();
+              // "광고주센터"만 있는 경우만 제외 (내용이 있는 경우는 허용)
+              if (lowerH1 !== '광고주센터' && lowerH1 !== '광고주 센터' && 
+                  lowerH1 !== 'advertiser center' && lowerH1 !== 'naver' && 
+                  lowerH1 !== '네이버' && lowerH1 !== 'naver광고주센터') {
+                // "광고주센터"로만 시작하거나 끝나는 짧은 제목 제외
+                if (!((lowerH1.startsWith('광고주센터') || lowerH1.endsWith('광고주센터')) && h1Text.length < 10)) {
+                  return h1Text;
+                }
               }
             }
 
