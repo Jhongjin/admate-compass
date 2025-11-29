@@ -3017,9 +3017,11 @@ export async function processQueue() {
           crawlTimeMs: finishedResult.crawlTimeMs
         });
 
+        // 🔥 원자적 업데이트: documents 테이블 먼저 업데이트 후 processing_jobs 업데이트
         // 1. 메인 문서 상태 업데이트 (processing -> indexed)
+        let mainDocUpdated = false;
         if (documentId && mainDocResult.chunkCount > 0) {
-          const { error: docUpdateError } = await supabase
+          const { error: docUpdateError, data: docUpdateData } = await supabase
             .from('documents')
             .update({
               status: 'indexed',
@@ -3027,28 +3029,56 @@ export async function processQueue() {
               updated_at: new Date().toISOString()
             })
             .eq('id', documentId)
-            .eq('status', 'processing'); // processing 상태인 경우만 업데이트
+            .eq('status', 'processing') // processing 상태인 경우만 업데이트
+            .select('id, status, chunk_count')
+            .single();
           
           if (docUpdateError) {
             console.error('[CRITICAL] ⚠️ 메인 문서 상태 업데이트 실패:', {
               documentId,
               error: docUpdateError
             });
-          } else {
+          } else if (docUpdateData) {
+            mainDocUpdated = true;
             console.log('[CRITICAL] ✅ 메인 문서 상태 업데이트 완료:', {
               documentId,
               status: 'processing -> indexed',
-              chunkCount: mainDocResult.chunkCount
+              chunkCount: mainDocResult.chunkCount,
+              updatedDocument: docUpdateData
             });
+          } else {
+            // 이미 다른 상태로 변경되었을 수 있음
+            const { data: currentDoc } = await supabase
+              .from('documents')
+              .select('id, status, chunk_count')
+              .eq('id', documentId)
+              .single();
+            
+            if (currentDoc && (currentDoc.status === 'indexed' || currentDoc.chunk_count > 0)) {
+              mainDocUpdated = true;
+              console.log('[CRITICAL] ✅ 메인 문서는 이미 indexed 상태:', {
+                documentId,
+                status: currentDoc.status,
+                chunkCount: currentDoc.chunk_count
+              });
+            } else {
+              console.warn('[CRITICAL] ⚠️ 메인 문서 상태 업데이트 실패: 이미 다른 상태', {
+                documentId,
+                currentStatus: currentDoc?.status || 'unknown',
+                currentChunkCount: currentDoc?.chunk_count || 0
+              });
+            }
           }
         }
 
         // 2. 성공한 하위 페이지 문서들도 상태 업데이트
         const successfulSubPages = subPageResults.filter(item => item.success && item.documentId);
+        const subPageUpdateResults: Array<{ documentId: string; success: boolean }> = [];
+        
         if (successfulSubPages.length > 0) {
           for (const subPage of successfulSubPages) {
             if (subPage.documentId && subPage.chunkCount && subPage.chunkCount > 0) {
-              const { error: subDocUpdateError } = await supabase
+              const { error: subDocUpdateError, data: subDocUpdateData } = await supabase
                 .from('documents')
                 .update({
                   status: 'indexed',
@@ -3056,7 +3086,9 @@ export async function processQueue() {
                   updated_at: new Date().toISOString()
                 })
                 .eq('id', subPage.documentId)
-                .eq('status', 'processing');
+                .eq('status', 'processing')
+                .select('id, status, chunk_count')
+                .single();
               
               if (subDocUpdateError) {
                 console.error('[CRITICAL] ⚠️ 하위 페이지 문서 상태 업데이트 실패:', {
@@ -3064,23 +3096,69 @@ export async function processQueue() {
                   url: subPage.url,
                   error: subDocUpdateError
                 });
-              } else {
+                subPageUpdateResults.push({ documentId: subPage.documentId, success: false });
+              } else if (subDocUpdateData) {
                 console.log('[CRITICAL] ✅ 하위 페이지 문서 상태 업데이트 완료:', {
                   documentId: subPage.documentId,
                   url: subPage.url,
                   status: 'processing -> indexed',
                   chunkCount: subPage.chunkCount
                 });
+                subPageUpdateResults.push({ documentId: subPage.documentId, success: true });
+              } else {
+                // 이미 다른 상태로 변경되었을 수 있음
+                const { data: currentSubDoc } = await supabase
+                  .from('documents')
+                  .select('id, status, chunk_count')
+                  .eq('id', subPage.documentId)
+                  .single();
+                
+                if (currentSubDoc && (currentSubDoc.status === 'indexed' || currentSubDoc.chunk_count > 0)) {
+                  subPageUpdateResults.push({ documentId: subPage.documentId, success: true });
+                  console.log('[CRITICAL] ✅ 하위 페이지 문서는 이미 indexed 상태:', {
+                    documentId: subPage.documentId,
+                    url: subPage.url,
+                    status: currentSubDoc.status,
+                    chunkCount: currentSubDoc.chunk_count
+                  });
+                } else {
+                  subPageUpdateResults.push({ documentId: subPage.documentId, success: false });
+                  console.warn('[CRITICAL] ⚠️ 하위 페이지 문서 상태 업데이트 실패: 이미 다른 상태', {
+                    documentId: subPage.documentId,
+                    url: subPage.url,
+                    currentStatus: currentSubDoc?.status || 'unknown'
+                  });
+                }
               }
             }
           }
         }
 
-        // 3. processing_jobs 업데이트 (document_id도 함께 설정)
+        // 3. documents 테이블 업데이트가 성공한 경우에만 processing_jobs 업데이트
+        // (메인 문서 또는 하위 페이지 중 하나라도 성공하면 작업 완료로 간주)
+        const hasSuccessfulDocumentUpdate = mainDocUpdated || subPageUpdateResults.some(r => r.success);
+        
+        if (!hasSuccessfulDocumentUpdate && documentId) {
+          console.warn('[CRITICAL] ⚠️ 모든 문서 업데이트 실패 - 작업을 failed로 처리할지 확인 필요', {
+            jobId: job.id,
+            documentId,
+            mainDocUpdated,
+            subPageUpdateResults
+          });
+        }
+
+        // 4. processing_jobs 업데이트 (document_id도 함께 설정)
         const jobUpdateData: any = {
           status: 'completed',
           finished_at: new Date().toISOString(),
-          result: finishedResult,
+          result: {
+            ...finishedResult,
+            documentsUpdated: {
+              main: mainDocUpdated,
+              subPages: subPageUpdateResults.filter(r => r.success).length,
+              totalSubPages: subPageUpdateResults.length
+            }
+          },
         };
         
         // document_id가 없었던 경우 설정
@@ -3093,7 +3171,7 @@ export async function processQueue() {
           .update(jobUpdateData)
           .eq('id', job.id)
           .in('status', ['processing', 'queued', 'retrying']) // 여러 상태에서 완료로 변경 가능
-          .select();
+          .select('id, status, document_id, finished_at');
 
         if (updateError) {
           console.error('[CRITICAL] ❌ 작업 상태 업데이트 실패:', {
@@ -3107,21 +3185,27 @@ export async function processQueue() {
           // 현재 상태 확인
           const { data: currentJob } = await supabase
             .from('processing_jobs')
-            .select('status, document_id')
+            .select('status, document_id, finished_at')
             .eq('id', job.id)
             .single();
           
           console.warn('[CRITICAL] ⚠️ 작업 상태 업데이트 실패: 이미 다른 상태이거나 취소됨', {
             jobId: job.id,
             currentStatus: currentJob?.status || 'unknown',
-            currentDocumentId: currentJob?.document_id || 'none'
+            currentDocumentId: currentJob?.document_id || 'none',
+            currentFinishedAt: currentJob?.finished_at || 'none'
           });
         } else {
           console.log('[CRITICAL] ✅ 작업 상태 업데이트 완료:', {
             jobId: job.id,
             updatedRows: updateData.length,
             status: 'completed',
-            documentId: updateData[0]?.document_id || documentId || 'none'
+            documentId: updateData[0]?.document_id || documentId || 'none',
+            finishedAt: updateData[0]?.finished_at || 'none',
+            documentsUpdated: {
+              main: mainDocUpdated,
+              subPages: subPageUpdateResults.filter(r => r.success).length
+            }
           });
         }
 

@@ -136,6 +136,7 @@ export default function HybridCrawlingManager({
   // 하위 페이지 크롤링 진행률 polling을 위한 상태
   const [subPageCrawlJobIds, setSubPageCrawlJobIds] = useState<Map<string, string>>(new Map()); // URL -> jobId 매핑
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const crawlingCompleteTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Advanced Crawl Options
   const [crawlOptions, setCrawlOptions] = useState({
@@ -206,6 +207,20 @@ export default function HybridCrawlingManager({
       setSelectedTemplates([]);
     }
   }, [vendors]);
+
+  // 컴포넌트 언마운트 시 타이머 정리
+  React.useEffect(() => {
+    return () => {
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
+      }
+      if (crawlingCompleteTimeoutRef.current) {
+        clearTimeout(crawlingCompleteTimeoutRef.current);
+        crawlingCompleteTimeoutRef.current = null;
+      }
+    };
+  }, []);
 
   // 초기 로드 시 진행 중인 크롤링 작업 자동 감지 및 폴링 시작
   React.useEffect(() => {
@@ -1264,37 +1279,56 @@ export default function HybridCrawlingManager({
                 
                 console.log(`🔍 폴링: 매칭된 작업 ${matchingJobs.length}개 발견`);
                 
-                // processing 상태인 작업 중 실제로 완료된 것 강제 동기화
+                // 🔥 processing 상태인 작업 중 실제로 완료된 것 강제 동기화 (documents 테이블 확인)
                 for (const job of matchingJobs) {
                   if (job.status === 'processing' && job.document_id && !job.finished_at) {
-                    const { data: document } = await supabase
-                      .from('documents')
-                      .select('id, status, chunk_count')
-                      .eq('id', job.document_id)
-                      .single();
-                    
-                    // 문서가 indexed 상태이고 chunk_count > 0이면 작업 완료로 간주
-                    if (document && (document.status === 'indexed' || document.chunk_count > 0)) {
-                      console.log(`🔧 폴링 중 강제 동기화: 작업 ${job.id}는 실제로 완료되었습니다`);
+                    try {
+                      const { data: document, error: docError } = await supabase
+                        .from('documents')
+                        .select('id, status, chunk_count, url')
+                        .eq('id', job.document_id)
+                        .single();
                       
-                      // processing_jobs를 completed로 업데이트
-                      await supabase
-                        .from('processing_jobs')
-                        .update({
-                          status: 'completed',
-                          finished_at: new Date().toISOString(),
-                          result: { 
-                            note: 'force_synced_during_polling',
-                            chunkCount: document.chunk_count || 0,
-                            documentStatus: document.status
-                          }
-                        })
-                        .eq('id', job.id)
-                        .eq('status', 'processing');
+                      if (docError) {
+                        console.error(`❌ 폴링 중 문서 조회 오류 (${job.document_id}):`, docError);
+                        continue;
+                      }
                       
-                      // job 상태 업데이트
-                      job.status = 'completed';
-                      job.finished_at = new Date().toISOString();
+                      // 문서가 indexed 상태이고 chunk_count > 0이면 작업 완료로 간주
+                      if (document && (document.status === 'indexed' || (document.chunk_count && document.chunk_count > 0))) {
+                        console.log(`🔧 폴링 중 강제 동기화: 작업 ${job.id}는 실제로 완료되었습니다 (문서 상태: ${document.status}, 청크: ${document.chunk_count})`);
+                        
+                        // processing_jobs를 completed로 업데이트
+                        const { error: updateError, data: updateData } = await supabase
+                          .from('processing_jobs')
+                          .update({
+                            status: 'completed',
+                            finished_at: new Date().toISOString(),
+                            result: { 
+                              note: 'force_synced_during_polling',
+                              chunkCount: document.chunk_count || 0,
+                              documentStatus: document.status,
+                              documentUrl: document.url,
+                              syncedAt: new Date().toISOString()
+                            }
+                          })
+                          .eq('id', job.id)
+                          .eq('status', 'processing')
+                          .select('id, status, finished_at');
+                        
+                        if (updateError) {
+                          console.error(`❌ 폴링 중 작업 상태 업데이트 실패 (${job.id}):`, updateError);
+                        } else if (updateData && updateData.length > 0) {
+                          // job 상태 업데이트 (메모리 내)
+                          job.status = 'completed';
+                          job.finished_at = updateData[0].finished_at || new Date().toISOString();
+                          console.log(`✅ 폴링 중 강제 동기화 완료: 작업 ${job.id} -> completed`);
+                        } else {
+                          console.warn(`⚠️ 폴링 중 작업 상태 업데이트 실패: 이미 다른 상태 (${job.id})`);
+                        }
+                      }
+                    } catch (syncError) {
+                      console.error(`❌ 폴링 중 강제 동기화 오류 (${job.id}):`, syncError);
                     }
                   }
                 }
@@ -1381,26 +1415,8 @@ export default function HybridCrawlingManager({
                       if (stuckJobs.some(j => j.id === jobId)) {
                         return { ...p, status: 'failed' as const, message: '크롤링 타임아웃 (2시간 초과)' };
                       }
-                      // processing 상태인데 document_id가 있으면 documents 테이블 확인
-                      if (job.document_id) {
-                        // 비동기로 documents 확인 (다음 폴링에서 반영)
-                        void (async () => {
-                          try {
-                            const { data: document } = await supabase
-                              .from('documents')
-                              .select('id, status, chunk_count')
-                              .eq('id', job.document_id!)
-                              .single();
-                            
-                            if (document && (document.status === 'indexed' || document.chunk_count > 0)) {
-                              console.log(`🔧 폴링: documents 테이블 확인 - 작업은 processing이지만 문서는 indexed (${document.chunk_count}개 청크)`);
-                              // 다음 폴링에서 감지되도록 강제 동기화는 하지 않고 로그만 출력
-                            }
-                          } catch (err) {
-                            // 무시
-                          }
-                        })();
-                      }
+                      // processing 상태: documents 테이블 확인은 위의 강제 동기화 루프에서 이미 처리됨
+                      // 여기서는 UI 상태만 업데이트
                       return { ...p, status: 'crawling' as const, message: '크롤링 중...', chunkCount: (job.result as any)?.chunkCount || 0 };
                     } else if (job.status === 'queued' || job.status === 'retrying') {
                       return { ...p, status: 'pending' as const, message: '큐 대기 중...' };
@@ -1417,19 +1433,30 @@ export default function HybridCrawlingManager({
               return updated;
             });
             
-            // 완료된 작업이 있으면 문서 목록 새로고침
+            // 🔥 완료된 작업이 있으면 문서 목록 새로고침 (debounce 적용)
             const completedJobs = jobs.filter(j => 
               j.status === 'completed' || j.finished_at !== null
             );
             if (completedJobs.length > 0) {
               console.log(`✅ 폴링: 완료된 작업 ${completedJobs.length}개 감지`, completedJobs.map(j => ({
-                id: j.id,
-                url: (j.payload as any)?.url,
+                id: j.id.substring(0, 8),
+                url: (j.payload as any)?.url || (j.result as any)?.url,
                 status: j.status,
                 finished_at: j.finished_at
               })));
+              
+              // 문서 목록 새로고침 (debounce: 마지막 완료 후 2초 후 호출)
               if (onCrawlingComplete) {
-                onCrawlingComplete();
+                // 기존 타이머 취소
+                if (crawlingCompleteTimeoutRef.current) {
+                  clearTimeout(crawlingCompleteTimeoutRef.current);
+                }
+                // 새로운 타이머 설정
+                crawlingCompleteTimeoutRef.current = setTimeout(() => {
+                  console.log('📋 문서 목록 새로고침 트리거');
+                  onCrawlingComplete();
+                  crawlingCompleteTimeoutRef.current = null;
+                }, 2000); // 2초 debounce
               }
             }
             
