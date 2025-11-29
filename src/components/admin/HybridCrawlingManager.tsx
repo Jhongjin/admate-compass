@@ -1295,11 +1295,48 @@ export default function HybridCrawlingManager({
 
       console.log(`[POLL] 📊 URL별 작업 매핑: ${urlToLatestJob.size}개 URL에 작업 매칭됨`);
 
-      // 5. 상태 업데이트
+      // 5. 상태 업데이트 - documents 테이블을 최우선으로 확인 (가장 확실한 방법)
       const nextProgress: CrawlingProgress[] = urls.map(url => {
         const job = urlToLatestJob.get(url);
         const docInfo = urlToDocStatus.get(url);
 
+        // 🔥 핵심: documents 테이블 상태를 최우선으로 확인 (백엔드에서 이미 indexed로 업데이트되었을 수 있음)
+        if (docInfo) {
+          const docStatus = docInfo.status;
+          const docChunkCount = docInfo.chunkCount || 0;
+          
+          // indexed 또는 completed 상태이고 청크가 있으면 완료로 간주
+          if ((docStatus === 'indexed' || docStatus === 'completed') && docChunkCount > 0) {
+            console.log(`[POLL] ✅ ${url}: documents 테이블에서 indexed 상태 확인 (청크: ${docChunkCount})`);
+            return {
+              url,
+              status: 'completed',
+              message: '크롤링 완료',
+              chunkCount: docChunkCount
+            };
+          }
+          
+          // failed 상태
+          if (docStatus === 'failed') {
+            return {
+              url,
+              status: 'failed',
+              message: '크롤링 실패'
+            };
+          }
+          
+          // processing 상태
+          if (docStatus === 'processing') {
+            return {
+              url,
+              status: 'crawling',
+              message: '크롤링 중...',
+              chunkCount: docChunkCount
+            };
+          }
+        }
+
+        // documents 테이블에 정보가 없거나 pending 상태인 경우, processing_jobs 확인
         if (job) {
           const jobStatus = job.status;
           const result = job.result as any | null;
@@ -1307,11 +1344,23 @@ export default function HybridCrawlingManager({
           console.log(`[POLL] 📋 ${url}: jobStatus=${jobStatus}, docStatus=${docInfo?.status}, chunks=${docInfo?.chunkCount || 0}`);
 
           if (jobStatus === 'completed' || job.finished_at) {
+            // 작업이 완료되었지만 documents 테이블이 아직 업데이트되지 않았을 수 있음
+            // documents 테이블을 다시 확인
+            const finalChunkCount = docInfo?.chunkCount || result?.chunkCount || 0;
+            if (finalChunkCount > 0 || docInfo?.status === 'indexed') {
+              return {
+                url,
+                status: 'completed',
+                message: '크롤링 완료',
+                chunkCount: finalChunkCount
+              };
+            }
+            // 작업은 완료되었지만 문서가 아직 indexed가 아닌 경우, 잠시 대기
             return {
               url,
-              status: 'completed',
-              message: '크롤링 완료',
-              chunkCount: docInfo?.chunkCount || result?.chunkCount || 0
+              status: 'crawling',
+              message: '처리 중...',
+              chunkCount: finalChunkCount
             };
           }
 
@@ -1346,31 +1395,6 @@ export default function HybridCrawlingManager({
             status: 'pending',
             message: '큐 대기 중...'
           };
-        } else if (docInfo) {
-          // processing_jobs가 없지만 documents가 있는 경우
-          const docStatus = docInfo.status;
-          if (docStatus === 'indexed' || docStatus === 'completed') {
-            console.log(`[POLL] ✅ ${url}: 문서가 indexed 상태 (청크: ${docInfo.chunkCount})`);
-            return {
-              url,
-              status: 'completed',
-              message: '크롤링 완료',
-              chunkCount: docInfo.chunkCount
-            };
-          } else if (docStatus === 'failed') {
-            return {
-              url,
-              status: 'failed',
-              message: '크롤링 실패'
-            };
-          } else if (docStatus === 'processing') {
-            return {
-              url,
-              status: 'crawling',
-              message: '크롤링 중...',
-              chunkCount: docInfo.chunkCount
-            };
-          }
         }
 
         // 아무것도 없는 경우
