@@ -345,6 +345,31 @@ function getFileTypeFromExtension(fileName: string): string {
 }
 
 /**
+ * 벤더 이름 정규화 함수
+ * UI 벤더 이름을 DB ENUM 값으로 변환
+ */
+function normalizeVendor(vendor: string | null | undefined): string {
+  if (!vendor) return 'META';
+  
+  const upperVendor = vendor.toUpperCase();
+  
+  // X(Twitter) 관련 매핑
+  if (upperVendor === 'X(TWITTER)' || upperVendor === 'TWITTER' || upperVendor === 'X') {
+    return 'OTHER';
+  }
+  
+  // 다른 벤더는 대문자로 변환
+  // META, NAVER, KAKAO, GOOGLE은 그대로 사용
+  if (['META', 'NAVER', 'KAKAO', 'GOOGLE', 'OTHER'].includes(upperVendor)) {
+    return upperVendor;
+  }
+  
+  // 알 수 없는 벤더는 기본값 META
+  console.warn(`⚠️ 알 수 없는 벤더: ${vendor}, 기본값 META 사용`);
+  return 'META';
+}
+
+/**
  * 파일 업로드 및 처리
  */
 export async function POST(request: NextRequest) {
@@ -444,7 +469,7 @@ export async function POST(request: NextRequest) {
         
         // PDF/DOCX 모두 큐로 오프로드
         const documentId = `doc_${Date.now()}`;
-        const normalizedVendor = vendor ? vendor.toUpperCase() : 'META';
+        const normalizedVendor = normalizeVendor(vendor);
         
         // 파일을 Storage에 업로드
         let storageInfo;
@@ -877,7 +902,7 @@ export async function POST(request: NextRequest) {
       let processedContent = fileContent;
 
       // 벤더 정보 정규화 (대문자로 변환, 기본값: META)
-      const normalizedVendor = vendor ? vendor.toUpperCase() : 'META';
+      const normalizedVendor = normalizeVendor(vendor);
       console.log('🏷️ 벤더 정보:', { original: vendor, normalized: normalizedVendor });
       
       // 문서 생성
@@ -1198,7 +1223,7 @@ export async function POST(request: NextRequest) {
       }
       
       // 벤더 정보 정규화 (대문자로 변환, 기본값: META)
-      const normalizedVendor = vendor ? vendor.toUpperCase() : 'META';
+      const normalizedVendor = normalizeVendor(vendor);
       console.log('🏷️ 벤더 정보 (JSON 요청):', { original: vendor, normalized: normalizedVendor });
 
       // 문서 생성
@@ -1990,9 +2015,9 @@ export async function GET(request: NextRequest) {
 
     // 벤더 필터 적용
     if (vendor) {
-      const normalizedVendor = vendor.toUpperCase();
+      const normalizedVendor = normalizeVendor(vendor);
       query = query.eq('source_vendor', normalizedVendor);
-      console.log('🏷️ 벤더 필터 적용:', normalizedVendor);
+      console.log('🏷️ 벤더 필터 적용:', { original: vendor, normalized: normalizedVendor });
     }
 
     const { data: documents, error: documentsError } = await query;
