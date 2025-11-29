@@ -3627,57 +3627,94 @@ export async function processQueue() {
         // 3.5. 작업 완료 전 "처리중 0개 청크" 문서 정리
         // 작업이 완료되기 전에 해당 작업과 연결된 모든 "처리중 0개 청크" 문서 정리
         try {
-          // 작업과 연결된 모든 문서 조회 (URL 기반)
-          const jobUrl = url;
-          if (jobUrl) {
-            // 해당 URL의 모든 하위 페이지 중 "처리중 0개 청크" 문서 조회
-            const { data: orphanedDocs } = await supabase
+          if (documentId) {
+            // 메인 문서와 연결된 모든 하위 페이지 중 "처리중 0개 청크" 문서 조회
+            const { data: orphanedSubPages } = await supabase
               .from('documents')
               .select('id, url, status, chunk_count, main_document_id')
               .eq('type', 'url')
-              .eq('url', jobUrl)
+              .eq('main_document_id', documentId)
               .eq('status', 'processing')
               .eq('chunk_count', 0);
             
-            if (orphanedDocs && orphanedDocs.length > 0) {
-              // document_id로도 확인
-              const orphanedDocIds = orphanedDocs.map(d => d.id);
-              const { data: relatedJobs } = await supabase
+            if (orphanedSubPages && orphanedSubPages.length > 0) {
+              const orphanedSubPageIds = orphanedSubPages.map(d => d.id);
+              
+              // 모든 활성 CRAWL_SEED 작업 조회
+              const { data: allActiveJobs } = await supabase
                 .from('processing_jobs')
-                .select('document_id, status')
-                .in('document_id', orphanedDocIds)
+                .select('id, document_id, status, payload, result')
+                .eq('job_type', 'CRAWL_SEED')
                 .in('status', ['queued', 'processing', 'retrying'])
-                .neq('id', job.id); // 현재 작업은 제외 (이미 완료 예정)
+                .neq('id', job.id) // 현재 작업은 제외 (이미 완료 예정)
+                .order('created_at', { ascending: false })
+                .limit(1000);
               
-              const activeDocIds = new Set((relatedJobs || []).map(j => j.document_id).filter(Boolean));
+              // document_id로 활성 작업 확인
+              const activeJobDocIds = new Set((allActiveJobs || []).map(j => j.document_id).filter(Boolean));
               
-              // 활성 작업이 없는 문서만 정리
-              const toCleanup = orphanedDocs.filter(doc => !activeDocIds.has(doc.id));
+              // URL로도 확인
+              const activeJobUrls = new Set<string>();
+              (allActiveJobs || []).forEach(job => {
+                const jobUrl = (job.payload as any)?.url || (job.result as any)?.url;
+                if (jobUrl) {
+                  activeJobUrls.add(jobUrl);
+                }
+              });
+              
+              // 하위 페이지 URL 조회
+              const subPageUrls = orphanedSubPages.map(d => d.url).filter(Boolean);
+              
+              // 활성 작업이 없는 하위 페이지만 정리
+              const toCleanup = orphanedSubPages.filter(doc => {
+                // document_id로 활성 작업이 있으면 제외
+                if (activeJobDocIds.has(doc.id)) return false;
+                
+                // URL로도 확인
+                if (doc.url && activeJobUrls.has(doc.url)) return false;
+                
+                return true;
+              });
               
               if (toCleanup.length > 0) {
                 const cleanupIds = toCleanup.map(d => d.id);
                 
-                // 하위 페이지는 삭제, 메인 문서는 failed로 변경
-                const subPageIds = toCleanup.filter(d => d.main_document_id).map(d => d.id);
-                const mainDocIds = toCleanup.filter(d => !d.main_document_id).map(d => d.id);
-                
-                if (subPageIds.length > 0) {
-                  await supabase.from('document_chunks').delete().in('document_id', subPageIds);
-                  await supabase.from('document_metadata').delete().in('document_id', subPageIds);
-                  await supabase.from('document_logs').delete().in('document_id', subPageIds);
-                  await supabase.from('documents').delete().in('id', subPageIds);
-                  console.log(`[CRITICAL] ✅ 작업 완료 전 "처리중 0개 청크" 하위 페이지 ${subPageIds.length}개 삭제`);
-                }
-                
-                if (mainDocIds.length > 0) {
-                  await supabase
-                    .from('documents')
-                    .update({ status: 'failed', updated_at: new Date().toISOString() })
-                    .in('id', mainDocIds)
-                    .eq('status', 'processing')
-                    .eq('chunk_count', 0);
-                  console.log(`[CRITICAL] ✅ 작업 완료 전 "처리중 0개 청크" 메인 문서 ${mainDocIds.length}개 failed로 변경`);
-                }
+                // 하위 페이지 삭제
+                await supabase.from('document_chunks').delete().in('document_id', cleanupIds);
+                await supabase.from('document_metadata').delete().in('document_id', cleanupIds);
+                await supabase.from('document_logs').delete().in('document_id', cleanupIds);
+                await supabase.from('documents').delete().in('id', cleanupIds);
+                console.log(`[CRITICAL] ✅ 작업 완료 전 "처리중 0개 청크" 하위 페이지 ${cleanupIds.length}개 삭제`);
+              }
+            }
+            
+            // 메인 문서도 확인 (processing 상태이면서 chunk_count가 0인 경우)
+            const { data: mainDoc } = await supabase
+              .from('documents')
+              .select('id, status, chunk_count')
+              .eq('id', documentId)
+              .eq('status', 'processing')
+              .eq('chunk_count', 0)
+              .maybeSingle();
+            
+            if (mainDoc) {
+              // 메인 문서에 대한 활성 작업 확인
+              const { data: mainDocJobs } = await supabase
+                .from('processing_jobs')
+                .select('id, status')
+                .eq('document_id', documentId)
+                .in('status', ['queued', 'processing', 'retrying'])
+                .neq('id', job.id);
+              
+              if (!mainDocJobs || mainDocJobs.length === 0) {
+                // 활성 작업이 없으면 failed로 변경
+                await supabase
+                  .from('documents')
+                  .update({ status: 'failed', updated_at: new Date().toISOString() })
+                  .eq('id', documentId)
+                  .eq('status', 'processing')
+                  .eq('chunk_count', 0);
+                console.log(`[CRITICAL] ✅ 작업 완료 전 "처리중 0개 청크" 메인 문서 ${documentId} failed로 변경`);
               }
             }
           }
