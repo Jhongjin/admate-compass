@@ -2694,43 +2694,48 @@ export async function processQueue() {
                   try {
                     const $page = cheerio.load(page.htmlContent || '');
                     
-                    // h1, h2 태그 우선 확인
-                    const h1Text = $page('h1').first().text().trim();
-                    const h2Text = $page('h2').first().text().trim();
+                    // 메인 콘텐츠 영역 우선 확인
+                    const mainH1 = $page('main h1, article h1, .content h1, .main-content h1').first();
+                    const mainH2 = $page('main h2, article h2, .content h2, .main-content h2').first();
+                    const h1Text = mainH1.length > 0 ? mainH1.text().trim() : $page('h1').first().text().trim();
+                    const h2Text = mainH2.length > 0 ? mainH2.text().trim() : $page('h2').first().text().trim();
                     
-                    if (h1Text && h1Text.length >= 2 && h1Text.length <= 100 && 
-                        h1Text !== mainPage.pageTitle && 
-                        !h1Text.toLowerCase().includes('광고주센터') && 
-                        !h1Text.toLowerCase().includes('광고주 센터') && 
-                        !h1Text.toLowerCase().includes('advertiser center')) {
+                    // 제목 유효성 검사 함수
+                    const isValidTitle = (title: string): boolean => {
+                      if (!title || title.length < 2 || title.length > 200) return false;
+                      const lower = title.toLowerCase();
+                      // 메인 페이지 제목과 동일하거나 "광고주센터" 관련이면 제외
+                      if (title === mainPage.pageTitle) return false;
+                      if (lower.includes('광고주센터') || lower.includes('광고주 센터') || 
+                          lower.includes('advertiser center') || lower.includes('naver') ||
+                          lower === 'naver' || lower === '네이버') return false;
+                      return true;
+                    };
+                    
+                    if (isValidTitle(h1Text)) {
                       heroTitle = h1Text;
-                    } else if (h2Text && h2Text.length >= 2 && h2Text.length <= 100 && 
-                               h2Text !== mainPage.pageTitle && 
-                               !h2Text.toLowerCase().includes('광고주센터') && 
-                               !h2Text.toLowerCase().includes('광고주 센터') && 
-                               !h2Text.toLowerCase().includes('advertiser center')) {
+                    } else if (isValidTitle(h2Text)) {
                       heroTitle = h2Text;
                     } else {
-                      // 상단 영역에서 큰 볼드 텍스트 찾기
+                      // 상단 영역에서 큰 볼드 텍스트 찾기 (더 많은 셀렉터)
                       const heroSelectors = [
-                        'main h1', 'main h2',
-                        'article h1', 'article h2',
+                        'main h1', 'main h2', 'main h3',
+                        'article h1', 'article h2', 'article h3',
+                        '.main-content h1', '.main-content h2',
+                        '.content h1', '.content h2',
                         'section:first-of-type h1', 'section:first-of-type h2',
                         'header h1', 'header h2',
                         '.hero h1', '.hero h2',
                         '.banner h1', '.banner h2',
                         '.page-title', '.article-title', '.post-title', '.entry-title',
                         'h1.page-title', 'h1.article-title',
-                        '.content-title', '.main-title'
+                        '.content-title', '.main-title',
+                        '.section-title', '.heading-title'
                       ];
                       
                       for (const selector of heroSelectors) {
                         const text = $page(selector).first().text().trim();
-                        if (text && text.length >= 2 && text.length <= 100 && 
-                            text !== mainPage.pageTitle && 
-                            !text.toLowerCase().includes('광고주센터') && 
-                            !text.toLowerCase().includes('광고주 센터') && 
-                            !text.toLowerCase().includes('advertiser center')) {
+                        if (isValidTitle(text)) {
                           heroTitle = text;
                           break;
                         }
