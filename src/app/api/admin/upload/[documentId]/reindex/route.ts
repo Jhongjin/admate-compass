@@ -248,7 +248,7 @@ export async function POST(
           type: 'file',
           file_size: Buffer.byteLength(document.content, 'utf8'),
           file_type: 'text/plain',
-          url: null,
+          url: undefined,
           source_vendor: document.source_vendor || 'META',
           main_document_id: document.main_document_id,
           created_at: document.created_at || new Date().toISOString(),
