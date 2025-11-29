@@ -189,6 +189,10 @@ export default function DocumentsPage() {
 
     const handleReindexDocument = useCallback((id: string, title: string) => {
         console.log('🔄 [handleReindexDocument] 호출됨:', { id, title });
+        console.log('🔄 [handleReindexDocument] reindexMutation 타입:', typeof reindexMutation);
+        console.log('🔄 [handleReindexDocument] reindexMutation 값:', reindexMutation);
+        console.log('🔄 [handleReindexDocument] toast 타입:', typeof toast);
+        
         if (!id || !title) {
             console.error('❌ [handleReindexDocument] 잘못된 파라미터:', { id, title });
             toast({
@@ -198,8 +202,39 @@ export default function DocumentsPage() {
             });
             return;
         }
-        console.log('🔄 [handleReindexDocument] mutation 호출 시작');
-        reindexMutation.mutate({ documentId: id, title });
+        
+        if (!reindexMutation) {
+            console.error('❌ [handleReindexDocument] reindexMutation이 없음');
+            toast({
+                title: "재인덱싱 실패",
+                description: '재인덱싱 기능이 초기화되지 않았습니다. 페이지를 새로고침해주세요.',
+                variant: "destructive",
+            });
+            return;
+        }
+        
+        if (!reindexMutation.mutate) {
+            console.error('❌ [handleReindexDocument] reindexMutation.mutate가 없음');
+            toast({
+                title: "재인덱싱 실패",
+                description: '재인덱싱 mutation이 제대로 초기화되지 않았습니다.',
+                variant: "destructive",
+            });
+            return;
+        }
+        
+        try {
+            console.log('🔄 [handleReindexDocument] mutation 호출 시작:', { documentId: id, title });
+            reindexMutation.mutate({ documentId: id, title });
+            console.log('🔄 [handleReindexDocument] mutation 호출 완료');
+        } catch (error) {
+            console.error('❌ [handleReindexDocument] mutation 호출 중 에러:', error);
+            toast({
+                title: "재인덱싱 실패",
+                description: `재인덱싱 중 오류가 발생했습니다: ${error instanceof Error ? error.message : String(error)}`,
+                variant: "destructive",
+            });
+        }
     }, [reindexMutation, toast]);
 
     const deleteMutation = useMutation({
