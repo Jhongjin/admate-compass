@@ -405,17 +405,36 @@ export default function GroupedDocumentList({
                             console.log('🔄 [GroupedDocumentList] 메인 문서 재인덱싱 버튼 클릭:', { id: group.mainDocument.id, title: group.mainDocument.title, status: group.mainDocument.status });
                             console.log('🔄 [GroupedDocumentList] onReindexDocument 타입:', typeof onReindexDocument);
                             console.log('🔄 [GroupedDocumentList] onReindexDocument 값:', onReindexDocument);
+                            console.log('🔄 [GroupedDocumentList] onReindexDocument 함수 본문:', onReindexDocument?.toString?.()?.substring(0, 500));
+                            
                             if (!onReindexDocument) {
                               console.error('❌ [GroupedDocumentList] onReindexDocument 핸들러가 없음');
                               alert('재인덱싱 핸들러가 연결되지 않았습니다. 페이지를 새로고침해주세요.');
                               return;
                             }
+                            
+                            if (typeof onReindexDocument !== 'function') {
+                              console.error('❌ [GroupedDocumentList] onReindexDocument가 함수가 아님:', typeof onReindexDocument);
+                              alert(`재인덱싱 핸들러가 함수가 아닙니다: ${typeof onReindexDocument}`);
+                              return;
+                            }
+                            
                             try {
-                              console.log('🔄 [GroupedDocumentList] onReindexDocument 호출 시작');
-                              onReindexDocument(group.mainDocument.id, group.mainDocument.title);
-                              console.log('🔄 [GroupedDocumentList] onReindexDocument 호출 완료');
+                              console.log('🔄 [GroupedDocumentList] onReindexDocument 호출 시작:', { id: group.mainDocument.id, title: group.mainDocument.title });
+                              const result = onReindexDocument(group.mainDocument.id, group.mainDocument.title);
+                              console.log('🔄 [GroupedDocumentList] onReindexDocument 호출 완료, 반환값:', result);
+                              
+                              // Promise인 경우 처리
+                              if (result && typeof result.then === 'function') {
+                                console.log('🔄 [GroupedDocumentList] onReindexDocument가 Promise 반환, 대기 중...');
+                                result.then(
+                                  (resolved) => console.log('🔄 [GroupedDocumentList] onReindexDocument Promise 완료:', resolved),
+                                  (rejected) => console.error('❌ [GroupedDocumentList] onReindexDocument Promise 실패:', rejected)
+                                );
+                              }
                             } catch (error) {
                               console.error('❌ [GroupedDocumentList] onReindexDocument 호출 중 에러:', error);
+                              console.error('❌ [GroupedDocumentList] 에러 스택:', error instanceof Error ? error.stack : 'No stack');
                               alert(`재인덱싱 중 오류가 발생했습니다: ${error instanceof Error ? error.message : String(error)}`);
                             }
                           }}
@@ -589,17 +608,36 @@ export default function GroupedDocumentList({
                                         console.log('🔄 [GroupedDocumentList] 재인덱싱 버튼 클릭:', { id: subPage.id, title: subPage.title, status: subPage.status });
                                         console.log('🔄 [GroupedDocumentList] onReindexDocument 타입:', typeof onReindexDocument);
                                         console.log('🔄 [GroupedDocumentList] onReindexDocument 값:', onReindexDocument);
+                                        console.log('🔄 [GroupedDocumentList] onReindexDocument 함수 본문:', onReindexDocument?.toString?.()?.substring(0, 500));
+                                        
                                         if (!onReindexDocument) {
                                           console.error('❌ [GroupedDocumentList] onReindexDocument 핸들러가 없음');
                                           alert('재인덱싱 핸들러가 연결되지 않았습니다. 페이지를 새로고침해주세요.');
                                           return;
                                         }
+                                        
+                                        if (typeof onReindexDocument !== 'function') {
+                                          console.error('❌ [GroupedDocumentList] onReindexDocument가 함수가 아님:', typeof onReindexDocument);
+                                          alert(`재인덱싱 핸들러가 함수가 아닙니다: ${typeof onReindexDocument}`);
+                                          return;
+                                        }
+                                        
                                         try {
-                                          console.log('🔄 [GroupedDocumentList] onReindexDocument 호출 시작');
-                                          onReindexDocument(subPage.id, subPage.title);
-                                          console.log('🔄 [GroupedDocumentList] onReindexDocument 호출 완료');
+                                          console.log('🔄 [GroupedDocumentList] onReindexDocument 호출 시작:', { id: subPage.id, title: subPage.title });
+                                          const result = onReindexDocument(subPage.id, subPage.title);
+                                          console.log('🔄 [GroupedDocumentList] onReindexDocument 호출 완료, 반환값:', result);
+                                          
+                                          // Promise인 경우 처리
+                                          if (result && typeof result.then === 'function') {
+                                            console.log('🔄 [GroupedDocumentList] onReindexDocument가 Promise 반환, 대기 중...');
+                                            result.then(
+                                              (resolved) => console.log('🔄 [GroupedDocumentList] onReindexDocument Promise 완료:', resolved),
+                                              (rejected) => console.error('❌ [GroupedDocumentList] onReindexDocument Promise 실패:', rejected)
+                                            );
+                                          }
                                         } catch (error) {
                                           console.error('❌ [GroupedDocumentList] onReindexDocument 호출 중 에러:', error);
+                                          console.error('❌ [GroupedDocumentList] 에러 스택:', error instanceof Error ? error.stack : 'No stack');
                                           alert(`재인덱싱 중 오류가 발생했습니다: ${error instanceof Error ? error.message : String(error)}`);
                                         }
                                       }}
