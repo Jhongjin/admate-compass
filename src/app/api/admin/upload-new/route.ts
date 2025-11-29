@@ -1900,6 +1900,120 @@ export async function GET(request: NextRequest) {
       });
     }
     
+    // 🔥 핵심: pending/processing 상태 문서와 CRAWL_SEED 작업 상태 실시간 동기화
+    const pendingOrProcessingDocs = (documents || []).filter((doc: any) => 
+      doc.status === 'pending' || (doc.status === 'processing' && doc.chunk_count === 0)
+    );
+    
+    if (pendingOrProcessingDocs.length > 0) {
+      const pendingDocIds = pendingOrProcessingDocs.map((d: any) => d.id);
+      const pendingUrls = pendingOrProcessingDocs
+        .filter((d: any) => d.url)
+        .map((d: any) => d.url);
+      
+      // 관련 CRAWL_SEED 작업 조회 (completed 포함)
+      const { data: relatedJobs } = await supabase
+        .from('processing_jobs')
+        .select('id, document_id, status, payload, result, finished_at, error, created_at')
+        .eq('job_type', 'CRAWL_SEED')
+        .or(`document_id.in.(${pendingDocIds.join(',')}),payload->>url.in.(${pendingUrls.map((u: string) => `"${u}"`).join(',')})`)
+        .order('created_at', { ascending: false })
+        .limit(500);
+      
+      // URL -> 최신 작업 매핑
+      const urlToLatestJob = new Map<string, any>();
+      const docIdToLatestJob = new Map<string, any>();
+      
+      (relatedJobs || []).forEach((job: any) => {
+        const jobUrl = (job.payload as any)?.url;
+        if (jobUrl && pendingUrls.includes(jobUrl)) {
+          const existing = urlToLatestJob.get(jobUrl);
+          if (!existing || 
+              (job.created_at && existing.created_at && 
+               new Date(job.created_at).getTime() > new Date(existing.created_at).getTime())) {
+            urlToLatestJob.set(jobUrl, job);
+          }
+        }
+        if (job.document_id && pendingDocIds.includes(job.document_id)) {
+          const existing = docIdToLatestJob.get(job.document_id);
+          if (!existing || 
+              (job.created_at && existing.created_at && 
+               new Date(job.created_at).getTime() > new Date(existing.created_at).getTime())) {
+            docIdToLatestJob.set(job.document_id, job);
+          }
+        }
+      });
+      
+      // pending/processing 문서 상태 실시간 업데이트
+      for (const doc of pendingOrProcessingDocs) {
+        const jobByUrl = doc.url ? urlToLatestJob.get(doc.url) : null;
+        const jobByDocId = docIdToLatestJob.get(doc.id);
+        const job = jobByDocId || jobByUrl;
+        
+        if (job) {
+          const jobStatus = job.status;
+          const result = job.result as any;
+          
+          // 작업이 완료되었고 문서가 indexed 상태가 아니면 즉시 업데이트
+          if ((jobStatus === 'completed' || job.finished_at) && result?.chunkCount > 0) {
+            await supabase
+              .from('documents')
+              .update({
+                status: 'indexed',
+                chunk_count: result.chunkCount,
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', doc.id)
+              .in('status', ['pending', 'processing']);
+            
+            // documents 배열에서도 즉시 업데이트
+            const docIndex = documents?.findIndex((d: any) => d.id === doc.id);
+            if (docIndex !== undefined && docIndex >= 0 && documents) {
+              documents[docIndex].status = 'indexed';
+              documents[docIndex].chunk_count = result.chunkCount;
+            }
+            
+            console.log(`✅ 문서 목록 API에서 실시간 동기화: ${doc.id} -> indexed (작업 완료, 청크: ${result.chunkCount})`);
+          } 
+          // 작업이 실패했으면 failed로 업데이트
+          else if (jobStatus === 'failed') {
+            await supabase
+              .from('documents')
+              .update({
+                status: 'failed',
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', doc.id)
+              .in('status', ['pending', 'processing'])
+              .eq('chunk_count', 0);
+            
+            const docIndex = documents?.findIndex((d: any) => d.id === doc.id);
+            if (docIndex !== undefined && docIndex >= 0 && documents) {
+              documents[docIndex].status = 'failed';
+            }
+            
+            console.log(`✅ 문서 목록 API에서 실시간 동기화: ${doc.id} -> failed (작업 실패)`);
+          }
+          // 작업이 진행 중이면 processing으로 업데이트
+          else if ((jobStatus === 'processing' || jobStatus === 'retrying') && doc.status === 'pending') {
+            await supabase
+              .from('documents')
+              .update({
+                status: 'processing',
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', doc.id)
+              .eq('status', 'pending');
+            
+            const docIndex = documents?.findIndex((d: any) => d.id === doc.id);
+            if (docIndex !== undefined && docIndex >= 0 && documents) {
+              documents[docIndex].status = 'processing';
+            }
+          }
+        }
+      }
+    }
+
     // 각 문서의 URL에 대한 최신 processing_jobs 정보 조회
     const documentUrls = (documents || [])
       .filter((doc: any) => doc.url)
