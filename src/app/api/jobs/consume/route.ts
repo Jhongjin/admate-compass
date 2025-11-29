@@ -2755,10 +2755,20 @@ export async function processQueue() {
                     finalTitle = linkTitle;
                     console.log(`[CRITICAL] 📝 하위 페이지 제목 결정 (링크 텍스트): ${subUrl} -> "${finalTitle}"`);
                   }
-                  // 3. 페이지 제목이 있고 메인 페이지 제목과 다르면 사용
-                  else if (page.pageTitle && page.pageTitle.length >= 2 && page.pageTitle !== mainPage.pageTitle && !page.pageTitle.toLowerCase().includes('광고주센터') && !page.pageTitle.toLowerCase().includes('광고주 센터') && !page.pageTitle.toLowerCase().includes('advertiser center')) {
-                    finalTitle = page.pageTitle;
-                    console.log(`[CRITICAL] 📝 하위 페이지 제목 결정 (페이지 제목): ${subUrl} -> "${finalTitle}"`);
+                  // 3. 페이지 제목이 있고 메인 페이지 제목과 다르면 사용 (더 강화된 필터링)
+                  else if (page.pageTitle && page.pageTitle.length >= 2) {
+                    const lowerPageTitle = page.pageTitle.toLowerCase();
+                    // 메인 페이지 제목과 다르고, "광고주센터" 관련이 아니고, "NAVER"만 있는 것도 아님
+                    if (page.pageTitle !== mainPage.pageTitle && 
+                        !lowerPageTitle.includes('광고주센터') && 
+                        !lowerPageTitle.includes('광고주 센터') && 
+                        !lowerPageTitle.includes('advertiser center') &&
+                        !(lowerPageTitle === 'naver' || lowerPageTitle === '네이버' || lowerPageTitle.trim() === 'naver광고주센터')) {
+                      finalTitle = page.pageTitle;
+                      console.log(`[CRITICAL] 📝 하위 페이지 제목 결정 (페이지 제목): ${subUrl} -> "${finalTitle}" (원본: "${page.pageTitle}", 메인: "${mainPage.pageTitle}")`);
+                    } else {
+                      console.log(`[CRITICAL] ⚠️ 페이지 제목 필터링됨: ${subUrl} -> "${page.pageTitle}" (메인: "${mainPage.pageTitle}")`);
+                    }
                   }
                   // 3. URL 경로에서 의미있는 제목 추출
                   else {
