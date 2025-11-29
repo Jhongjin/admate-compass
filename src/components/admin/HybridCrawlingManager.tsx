@@ -1456,16 +1456,84 @@ export default function HybridCrawlingManager({
 
       console.log(`✅ ${batchCreateResult.created}개 문서 생성, ${batchCreateResult.updated}개 문서 업데이트 완료`);
       
-      // 상태 업데이트: pending -> queued
-      setCrawlingProgress(prev =>
-        prev.map(p => ({ ...p, message: '큐에 등록됨, 처리 대기 중...' }))
-      );
+      // 🔥 생성된 문서들에 대해 CRAWL_SEED 작업을 큐에 등록
+      const createdDocuments = batchCreateResult.documents || [];
+      const jobIds: string[] = [];
+      
+      for (const doc of createdDocuments) {
+        try {
+          // 진행 상황 업데이트
+          setCrawlingProgress(prev =>
+            prev.map(p =>
+              p.url === doc.url ? { ...p, message: '큐에 등록 중...' } : p
+            )
+          );
+          
+          const enqueueResponse = await fetchWithTimeout('/api/jobs/enqueue', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              jobType: 'CRAWL_SEED',
+              documentId: doc.id,
+              priority: 5,
+              payload: {
+                url: doc.url,
+                title: doc.title,
+                vendors: [dbVendor],
+                domainLimit: crawlOptions.domainLimit,
+                respectRobots: crawlOptions.respectRobots,
+                maxDepth: 1,
+                extractSubPages: false
+              }
+            }),
+          }, 30000);
 
-      // 큐 워커 즉시 트리거
-      try {
-        await fetchWithTimeout('/api/jobs/consume', { method: 'POST' }, 10000);
-      } catch (consumeError) {
-        console.warn('큐 워커 트리거 실패 (무시 가능):', consumeError);
+          if (!enqueueResponse.ok) {
+            throw new Error(`HTTP ${enqueueResponse.status}: ${enqueueResponse.statusText}`);
+          }
+
+          const enqueueResult = await enqueueResponse.json();
+          if (enqueueResult.jobId) {
+            jobIds.push(enqueueResult.jobId);
+            jobIdsRef.current.push(enqueueResult.jobId);
+            setCrawlingProgress(prev =>
+              prev.map(p =>
+                p.url === doc.url ? { ...p, message: '큐에 등록됨, 처리 대기 중...' } : p
+              )
+            );
+          } else {
+            throw new Error('작업 ID를 받지 못했습니다.');
+          }
+        } catch (urlError) {
+          console.error(`URL 큐 등록 오류: ${doc.url}`, urlError);
+          setCrawlingProgress(prev =>
+            prev.map(p =>
+              p.url === doc.url
+                ? { ...p, status: 'failed' as const, message: urlError instanceof Error ? urlError.message : '큐 등록 실패' }
+                : p
+            )
+          );
+        }
+      }
+
+      if (jobIds.length > 0) {
+        // 상태 업데이트: pending -> queued
+        setCrawlingProgress(prev =>
+          prev.map(p => ({ ...p, message: '큐에 등록됨, 처리 대기 중...' }))
+        );
+
+        // 큐 워커 즉시 트리거
+        try {
+          await fetchWithTimeout('/api/jobs/consume', { method: 'POST' }, 10000);
+        } catch (consumeError) {
+          console.warn('큐 워커 트리거 실패 (무시 가능):', consumeError);
+        }
+      } else {
+        toast.error('작업 등록에 실패했습니다.');
+        setIsCrawling(false);
+        return;
       }
 
       // 폴링 시작 (2초마다)
