@@ -170,13 +170,16 @@ export async function POST(request: NextRequest) {
           const elapsedFromCreate = createdAt > 0 ? (now - createdAt) / (60 * 1000) : 0; // 분 단위
           const elapsedMinutes = updatedAt > 0 ? elapsedFromUpdate : elapsedFromCreate;
           
-          // 🔥 무한대기 방지: 30분 이상 업데이트가 없으면 failed로 간주 (기존 1시간에서 단축)
-          const TIMEOUT_MINUTES = 30;
+          // 🔥 무한대기 방지: 10분 이상 업데이트가 없으면 failed로 간주 (더 적극적으로)
+          const TIMEOUT_MINUTES = 10;
           if (elapsedMinutes > TIMEOUT_MINUTES) {
             needsSync = true;
             newStatus = 'failed';
-            docCheck.issues.push(`무한대기 감지: ${elapsedMinutes.toFixed(0)}분 동안 업데이트 없음`);
+            docCheck.issues.push(`무한대기 감지: ${elapsedMinutes.toFixed(0)}분 동안 업데이트 없음 (활성 작업 없음, 청크 없음)`);
             docCheck.actions.push(`상태를 failed로 변경 (타임아웃: ${elapsedMinutes.toFixed(0)}분)`);
+          } else {
+            // 10분 미만이어도 활성 작업이 없고 청크가 없으면 경고만 표시
+            docCheck.issues.push(`활성 작업 없음, 청크 없음 (경과: ${elapsedMinutes.toFixed(0)}분, 타임아웃까지 ${(TIMEOUT_MINUTES - elapsedMinutes).toFixed(0)}분)`);
           }
         }
 
@@ -187,14 +190,14 @@ export async function POST(request: NextRequest) {
           const createdAt = stuckJob.created_at ? new Date(stuckJob.created_at).getTime() : null;
           const now = Date.now();
           const elapsed = startedAt ? now - startedAt : (createdAt ? now - createdAt : 0);
-          const TIMEOUT_MS = 30 * 60 * 1000; // 30분
+          const TIMEOUT_MS = 10 * 60 * 1000; // 10분으로 단축 (더 적극적으로)
           
-          // 작업이 30분 이상 진행 중이고 청크가 없으면 실패로 간주
+          // 작업이 10분 이상 진행 중이고 청크가 없으면 실패로 간주
           if (elapsed > TIMEOUT_MS && actualChunkCount === 0) {
             needsSync = true;
             newStatus = 'failed';
             docCheck.issues.push(`작업 타임아웃: ${Math.round(elapsed / (60 * 1000))}분 동안 진행 중인데 청크 없음`);
-            docCheck.actions.push(`상태를 failed로 변경 (작업 타임아웃)`);
+            docCheck.actions.push(`상태를 failed로 변경 (작업 타임아웃: ${Math.round(elapsed / (60 * 1000))}분)`);
             
             // processing_jobs도 failed로 업데이트
             try {
@@ -207,9 +210,13 @@ export async function POST(request: NextRequest) {
                 })
                 .eq('id', stuckJob.id)
                 .eq('status', 'processing');
+              console.log(`✅ 작업 타임아웃 처리: ${stuckJob.id} -> failed`);
             } catch (jobUpdateError) {
               console.error(`작업 상태 업데이트 실패 (${stuckJob.id}):`, jobUpdateError);
             }
+          } else if (actualChunkCount === 0) {
+            // 10분 미만이어도 청크가 없으면 경고 표시
+            docCheck.issues.push(`작업 진행 중이지만 청크 없음 (경과: ${Math.round(elapsed / (60 * 1000))}분, 타임아웃까지 ${Math.round((TIMEOUT_MS - elapsed) / (60 * 1000))}분)`);
           }
         }
 
