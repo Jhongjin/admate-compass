@@ -1337,13 +1337,12 @@ export async function GET(request: NextRequest) {
 
     // 메인 문서 상태 동기화: 하위 페이지가 완료되었는데 메인 문서가 처리중인 경우
     try {
-      // 메인 문서가 processing 상태이고 chunk_count가 0인 문서 조회
+      // 메인 문서가 processing 상태인 문서 조회 (chunk_count는 0이거나 이미 설정된 경우 모두 포함)
       const { data: processingMainDocs } = await supabase
         .from('documents')
         .select('id, url, status, chunk_count, main_document_id')
         .eq('type', 'url')
         .eq('status', 'processing')
-        .eq('chunk_count', 0)
         .is('main_document_id', null) // 메인 문서만 (main_document_id가 null)
         .limit(100);
       
@@ -1364,7 +1363,7 @@ export async function GET(request: NextRequest) {
             const totalSubPageChunks = subPages.reduce((sum, sub) => sum + (sub.chunk_count || 0), 0);
             
             if (totalSubPageChunks > 0) {
-              // 메인 문서를 indexed로 업데이트
+              // 메인 문서를 indexed로 업데이트 (chunk_count도 함께 업데이트)
               const { error: syncError } = await supabase
                 .from('documents')
                 .update({
@@ -1373,8 +1372,7 @@ export async function GET(request: NextRequest) {
                   updated_at: new Date().toISOString()
                 })
                 .eq('id', mainDoc.id)
-                .eq('status', 'processing')
-                .eq('chunk_count', 0);
+                .eq('status', 'processing'); // chunk_count 조건 제거
               
               if (!syncError) {
                 console.log(`✅ 메인 문서 상태 동기화 완료: ${mainDoc.id} (하위 페이지 ${subPages.length}개 완료, 총 ${totalSubPageChunks}개 청크)`);
