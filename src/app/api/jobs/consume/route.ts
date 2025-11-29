@@ -1990,8 +1990,8 @@ export async function processQueue() {
               wasExistingDocument = true;
               console.log(`[CRITICAL] ✅ documentIdOverride로 문서 찾음: ${documentIdOverride}`);
               
-              // 🔥 모달에서 생성한 문서(status: 'queued')인 경우, payload의 title을 우선 사용
-              if (docById.status === 'queued' && job.payload?.title) {
+              // 🔥 모달에서 생성한 문서(status: 'pending')인 경우, payload의 title을 우선 사용
+              if (docById.status === 'pending' && job.payload?.title) {
                 const payloadTitle = job.payload.title as string;
                 const docTitle = (docById as any).title || '';
                 if (payloadTitle && payloadTitle !== docTitle) {
