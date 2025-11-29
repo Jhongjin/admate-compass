@@ -1400,6 +1400,15 @@ export default function HybridCrawlingManager({
               }));
             }
             
+            // 진행 중/대기 중 작업이 전혀 없으면 UI 상태 초기화
+            if (jobs.length === 0) {
+              console.log('ℹ️ 폴링: 활성 작업이 없으므로 크롤링 진행 상태 초기화');
+              setCrawlingProgress([]);
+              setIsCrawling(false);
+              jobIdsRef.current = [];
+              return;
+            }
+            
             // 진행 상황 업데이트 (완료된 작업도 상태 업데이트)
             setCrawlingProgress(prev => {
               const updated = prev.map(p => {
