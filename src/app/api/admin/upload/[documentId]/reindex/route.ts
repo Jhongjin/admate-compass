@@ -101,7 +101,7 @@ export async function POST(
       );
     }
 
-    console.log(`✅ 문서 상태 업데이트 완료`);
+    console.log(`✅ 문서 상태 업데이트 완료: ${updatedDoc?.status || 'unknown'}, 청크 수: ${updatedDoc?.chunk_count || 0}`);
 
     // 문서 타입에 따른 재인덱싱 처리
     if (document.type === 'url') {
@@ -352,6 +352,7 @@ export async function POST(
           }
 
           console.log(`✅ 파일 재인덱싱 완료: ${ragResult.chunkCount || 0}개 청크 생성`);
+          console.log(`📊 최종 문서 상태: indexed, 청크 수: ${ragResult.chunkCount || 0}`);
 
           return NextResponse.json({
             success: true,
