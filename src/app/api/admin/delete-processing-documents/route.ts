@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
     // 🔥 1단계: processing_jobs 테이블에서 URL로 매칭되는 작업 먼저 찾기
     const { data: allCrawlJobs, error: jobsError } = await supabase
       .from('processing_jobs')
-      .select('id, job_type, status, document_id, payload, started_at, finished_at')
+      .select('id, job_type, status, document_id, payload, result, started_at, finished_at')
       .eq('job_type', 'CRAWL_SEED')
       .in('status', ['queued', 'processing', 'retrying', 'completed', 'failed', 'cancelled'])
       .order('created_at', { ascending: false })
