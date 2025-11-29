@@ -1291,42 +1291,76 @@ export async function GET(request: NextRequest) {
     );
 
     // "처리중 0개 청크" 상태인 문서 자동 정리 (백그라운드)
-    // 관련 processing_jobs가 없는 경우 failed로 변경
+    // 관련 processing_jobs가 없는 경우 failed로 변경 또는 삭제
     try {
       const { data: stuckDocs } = await supabase
         .from('documents')
-        .select('id, status, chunk_count')
+        .select('id, status, chunk_count, main_document_id, created_at')
         .eq('status', 'processing')
         .eq('chunk_count', 0)
-        .limit(100);
+        .limit(200); // 더 많이 처리
       
       if (stuckDocs && stuckDocs.length > 0) {
         const stuckDocIds = stuckDocs.map(d => d.id);
         
-        // 관련 processing_jobs 확인
+        // 관련 processing_jobs 확인 (더 넓은 범위)
         const { data: relatedJobs } = await supabase
           .from('processing_jobs')
-          .select('document_id, status')
+          .select('document_id, status, job_type')
           .in('document_id', stuckDocIds)
           .in('status', ['queued', 'processing', 'retrying']);
         
         const activeJobDocIds = new Set((relatedJobs || []).map(j => j.document_id));
         
-        // 관련 job이 없는 문서만 failed로 변경
-        const orphanedDocIds = stuckDocIds.filter(id => !activeJobDocIds.has(id));
+        // 관련 job이 없는 문서들
+        const orphanedDocs = stuckDocs.filter(doc => !activeJobDocIds.has(doc.id));
         
-        if (orphanedDocIds.length > 0) {
-          const { error: cleanupError } = await supabase
-            .from('documents')
-            .update({ status: 'failed', updated_at: new Date().toISOString() })
-            .in('id', orphanedDocIds)
-            .eq('status', 'processing')
-            .eq('chunk_count', 0);
+        if (orphanedDocs.length > 0) {
+          const orphanedDocIds = orphanedDocs.map(d => d.id);
           
-          if (!cleanupError) {
-            console.log(`✅ "처리중 0개 청크" 문서 ${orphanedDocIds.length}개 자동 정리 완료`);
-          } else {
-            console.warn('⚠️ "처리중 0개 청크" 문서 정리 실패:', cleanupError);
+          // 하위 페이지인 경우 (main_document_id가 있는 경우) 삭제
+          const subPageIds = orphanedDocs
+            .filter(doc => doc.main_document_id)
+            .map(doc => doc.id);
+          
+          // 메인 문서인 경우 failed로 변경
+          const mainDocIds = orphanedDocs
+            .filter(doc => !doc.main_document_id)
+            .map(doc => doc.id);
+          
+          // 하위 페이지 삭제
+          if (subPageIds.length > 0) {
+            // 관련 데이터 먼저 삭제
+            await supabase.from('document_chunks').delete().in('document_id', subPageIds);
+            await supabase.from('document_metadata').delete().in('document_id', subPageIds);
+            await supabase.from('document_logs').delete().in('document_id', subPageIds);
+            
+            const { error: deleteError } = await supabase
+              .from('documents')
+              .delete()
+              .in('id', subPageIds);
+            
+            if (!deleteError) {
+              console.log(`✅ "처리중 0개 청크" 하위 페이지 ${subPageIds.length}개 삭제 완료`);
+            } else {
+              console.warn('⚠️ 하위 페이지 삭제 실패:', deleteError);
+            }
+          }
+          
+          // 메인 문서 failed로 변경
+          if (mainDocIds.length > 0) {
+            const { error: failError } = await supabase
+              .from('documents')
+              .update({ status: 'failed', updated_at: new Date().toISOString() })
+              .in('id', mainDocIds)
+              .eq('status', 'processing')
+              .eq('chunk_count', 0);
+            
+            if (!failError) {
+              console.log(`✅ "처리중 0개 청크" 메인 문서 ${mainDocIds.length}개 failed로 변경 완료`);
+            } else {
+              console.warn('⚠️ 메인 문서 failed 변경 실패:', failError);
+            }
           }
         }
       }
