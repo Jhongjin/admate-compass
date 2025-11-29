@@ -160,7 +160,13 @@ export default function DocumentsPage() {
             }
         },
         onSuccess: (data, variables) => {
-            queryClient.invalidateQueries({ queryKey: ['admin-documents'] });
+            // 모든 admin-documents 쿼리 무효화 (selectedStatus 포함)
+            queryClient.invalidateQueries({ 
+                queryKey: ['admin-documents'],
+                exact: false // 부분 매칭으로 모든 admin-documents 쿼리 무효화
+            });
+            // 명시적으로 refetch 호출
+            refetch();
             toast({
                 title: "재인덱싱 완료",
                 description: `${variables.title} 문서의 재인덱싱이 완료되었습니다. (${data.document?.chunkCount || 0}개 청크)`,
