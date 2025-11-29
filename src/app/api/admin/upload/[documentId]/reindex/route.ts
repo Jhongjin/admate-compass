@@ -60,13 +60,15 @@ export async function POST(
     }
 
     console.log(`📄 재인덱싱 대상 문서: ${document.title} (${document.url || document.document_url || 'N/A'})`);
+    console.log(`📊 현재 문서 상태: ${document.status}, 청크 수: ${document.chunk_count || 0}`);
 
     // 기존 청크 삭제
     console.log(`🗑️ 기존 청크 삭제 중...`);
-    const { error: deleteError } = await supabase
+    const { error: deleteError, count: deletedCount } = await supabase
       .from('document_chunks')
       .delete()
-      .eq('document_id', documentId);
+      .eq('document_id', documentId)
+      .select('*', { count: 'exact', head: true });
 
     if (deleteError) {
       console.error('❌ 청크 삭제 실패:', deleteError);
@@ -76,18 +78,20 @@ export async function POST(
       );
     }
 
-    console.log(`✅ 기존 청크 삭제 완료`);
+    console.log(`✅ 기존 청크 삭제 완료: ${deletedCount || 0}개 청크 삭제됨`);
 
     // 문서 상태를 'processing'으로 업데이트
     console.log(`🔄 문서 상태를 'processing'으로 업데이트 중...`);
-    const { error: statusError } = await supabase
+    const { error: statusError, data: updatedDoc } = await supabase
       .from('documents')
       .update({ 
         status: 'processing',
         chunk_count: 0,
         updated_at: new Date().toISOString()
       })
-      .eq('id', documentId);
+      .eq('id', documentId)
+      .select('id, status, chunk_count')
+      .single();
 
     if (statusError) {
       console.error('❌ 문서 상태 업데이트 실패:', statusError);
