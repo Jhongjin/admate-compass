@@ -489,6 +489,17 @@ export default function QueueSummaryPanel({ selectedVendors = [] }: QueueSummary
             강제 동기화 (재배포 불필요)
           </Button>
           
+          <Button
+            onClick={handleCleanupZombieJobs}
+            disabled={processing}
+            variant="outline"
+            className="w-full bg-red-900/20 border-red-600/50 text-red-300 hover:bg-red-800/30 hover:text-red-200 h-10 font-semibold"
+            title="좀비 작업(중복/멈춘 작업)을 정리합니다. 같은 URL의 중복 작업 중 오래된 것 삭제, 완료되었지만 processing 상태인 작업 completed로 업데이트"
+          >
+            <Trash2 className={`w-4 h-4 mr-2 ${processing ? 'animate-spin' : ''}`} />
+            좀비 작업 정리 (중복/멈춘 작업)
+          </Button>
+          
           <div className="grid grid-cols-2 gap-3">
             <Button
               onClick={handleRetryFailed}
