@@ -9,14 +9,14 @@ export async function POST(request: Request) {
         const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!;
         const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
-        // 1시간 이상 'processing' 상태로 멈춰있는 작업 조회
-        const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+        // 5분 이상 'processing' 상태로 멈춰있는 작업 조회 (테스트를 위해 시간 단축)
+        const thresholdTime = new Date(Date.now() - 5 * 60 * 1000).toISOString();
 
         const { data: stuckJobs, error: fetchError } = await supabase
             .from('processing_jobs')
             .select('id, created_at, status, job_type')
             .eq('status', 'processing')
-            .lt('created_at', oneHourAgo);
+            .lt('created_at', thresholdTime);
 
         if (fetchError) {
             console.error('Error fetching stuck jobs:', fetchError);
