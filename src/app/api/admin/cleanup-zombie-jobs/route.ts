@@ -176,13 +176,28 @@ export async function POST(request: NextRequest) {
               }
             })
             .eq('id', job.id)
-            .eq('status', 'processing')
-            .is('finished_at', null);
+            .eq('status', 'processing');
+          
+          // 문서 상태도 함께 업데이트 (pending -> indexed)
+          if (!updateError && document.status === 'pending') {
+            await supabase
+              .from('documents')
+              .update({
+                status: 'indexed',
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', document.id)
+              .eq('status', 'pending');
+            console.log(`✅ 문서 ${document.id} 상태 업데이트: pending -> indexed`);
+          }
           
           if (!updateError) {
             updatedCount++;
             console.log(`✅ 좀비 작업 completed로 업데이트: ${job.id.substring(0, 8)}... (문서: ${document.status}, 청크: ${document.chunk_count})`);
           }
+        } else if (document && document.status === 'pending' && !force) {
+          // pending 상태인 문서는 failed로 처리하지 않고 그대로 둠 (아직 처리 중일 수 있음)
+          console.log(`ℹ️ pending 상태 문서는 건너뜀: ${document.id} (작업: ${job.id.substring(0, 8)}...)`);
         } else if (force || (job.started_at && (now - new Date(job.started_at).getTime()) > TIMEOUT_MS)) {
           // 타임아웃된 작업은 failed로 업데이트
           const { error: updateError } = await supabase

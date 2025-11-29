@@ -2094,12 +2094,13 @@ export async function processQueue() {
               }
             }
             
+            // 🔥 pending 상태 문서를 processing으로 명시적으로 업데이트 (프론트엔드가 상태를 감지할 수 있도록)
             await supabase
               .from('documents')
               .update({
                 title: finalTitle, // 🔥 모달의 정확한 제목 사용
                 type: 'url', // URL 크롤링 문서는 항상 'url' 타입으로 설정
-                status: 'processing', // queued -> processing으로 변경
+                status: 'processing', // pending -> processing으로 변경
                 file_size: fileSize,
                 file_type: 'text/html',
                 source_vendor: dbVendor,
@@ -2108,7 +2109,10 @@ export async function processQueue() {
                 main_document_id: parentDocumentId || null, // 부모 문서 ID 설정
                 updated_at: nowIso,
               })
-              .eq('id', existingDoc.id);
+              .eq('id', existingDoc.id)
+              .in('status', ['pending', 'queued']); // pending/queued 상태만 processing으로 변경
+            
+            console.log(`[CRITICAL] 📝 문서 상태 업데이트: pending/queued -> processing (문서 ID: ${existingDoc.id}, 제목: ${finalTitle})`);
           } else if (wasExistingDocument && documentIdOverride) {
             // documentIdOverride가 있고 기존 문서가 있는 경우 업데이트
             // 🔥 모달에서 생성한 문서(status: 'pending')인 경우, payload의 title을 우선 사용
@@ -2121,12 +2125,13 @@ export async function processQueue() {
               }
             }
             
+            // 🔥 pending 상태 문서를 processing으로 명시적으로 업데이트
             await supabase
               .from('documents')
               .update({
                 title: finalTitle, // 🔥 모달의 정확한 제목 사용
                 type: 'url',
-                status: 'processing', // queued -> processing으로 변경
+                status: 'processing', // pending -> processing으로 변경
                 file_size: fileSize,
                 file_type: 'text/html',
                 source_vendor: dbVendor,
@@ -2135,7 +2140,10 @@ export async function processQueue() {
                 main_document_id: parentDocumentId || null,
                 updated_at: nowIso,
               })
-              .eq('id', documentIdOverride);
+              .eq('id', documentIdOverride)
+              .in('status', ['pending', 'queued']); // pending/queued 상태만 processing으로 변경
+            
+            console.log(`[CRITICAL] 📝 문서 상태 업데이트: pending/queued -> processing (문서 ID: ${documentIdOverride}, 제목: ${finalTitle})`);
           } else if (!wasExistingDocument) {
             // 새 문서 생성
             await supabase
