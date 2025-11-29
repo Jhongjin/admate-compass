@@ -81,7 +81,7 @@ export async function POST(request: NextRequest) {
         // 2-2. processing_jobs 상태 확인
         const { data: relatedJobs, error: jobsError } = await supabase
           .from('processing_jobs')
-          .select('id, status, job_type, started_at, finished_at, result, error')
+          .select('id, status, job_type, started_at, finished_at, result, error, created_at')
           .eq('document_id', doc.id)
           .order('created_at', { ascending: false })
           .limit(5);
