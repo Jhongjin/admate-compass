@@ -2702,6 +2702,87 @@ export default function HybridCrawlingManager({
             <Button
               onClick={async () => {
                 try {
+                  toast.info('백엔드 상태 체크 중...');
+                  console.log('🔍 백엔드 상태 체크 시작...');
+
+                  const response = await fetch('/api/admin/check-processing-status', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                  });
+
+                  if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                  }
+
+                  const result = await response.json();
+                  console.log('🔍 백엔드 상태 체크 결과:', result);
+
+                  if (result.success) {
+                    const { checked, synced, results: checkResults } = result.data;
+                    
+                    // 동기화된 문서가 있으면 문서 목록 새로고침
+                    if (synced > 0) {
+                      if (onCrawlingComplete) {
+                        setTimeout(() => {
+                          onCrawlingComplete();
+                        }, 500);
+                      }
+                      queryClient.invalidateQueries({ queryKey: ['admin-documents'], exact: false });
+                      queryClient.invalidateQueries({ queryKey: ['documents'], exact: false });
+                    }
+
+                    // 결과 요약
+                    const syncedDocs = checkResults.filter((r: any) => r.status === 'synced');
+                    const errorDocs = checkResults.filter((r: any) => r.status === 'error');
+                    const processingDocs = checkResults.filter((r: any) => r.status === 'processing');
+
+                    let message = `체크 완료: ${checked}개 문서 확인`;
+                    if (synced > 0) {
+                      message += `, ${synced}개 동기화됨`;
+                    }
+                    if (errorDocs.length > 0) {
+                      message += `, ${errorDocs.length}개 오류`;
+                    }
+                    if (processingDocs.length > 0) {
+                      message += `, ${processingDocs.length}개 처리 중`;
+                    }
+
+                    toast.success(message);
+
+                    // 상세 결과를 콘솔에 출력
+                    if (syncedDocs.length > 0) {
+                      console.log('✅ 동기화된 문서:', syncedDocs.map((r: any) => ({
+                        title: r.title,
+                        oldStatus: r.currentStatus,
+                        newStatus: r.newStatus,
+                        message: r.message
+                      })));
+                    }
+                    if (errorDocs.length > 0) {
+                      console.error('❌ 오류 문서:', errorDocs.map((r: any) => ({
+                        title: r.title,
+                        message: r.message
+                      })));
+                    }
+                  } else {
+                    toast.error(result.error || '상태 체크 실패');
+                  }
+                } catch (error) {
+                  console.error('❌ 백엔드 상태 체크 오류:', error);
+                  toast.error('백엔드 상태 체크 중 오류가 발생했습니다.');
+                }
+              }}
+              variant="outline"
+              size="lg"
+              className="h-14 px-6 text-white border-blue-500 hover:bg-blue-700/20 hover:border-blue-400"
+            >
+              <RefreshCw className="w-5 h-5 mr-3" />
+              백엔드 상태 체크
+            </Button>
+
+            <Button
+              onClick={async () => {
+                try {
                   const urls = crawlingProgress.map(p => p.url);
                   if (urls.length === 0) {
                     toast.warning('삭제할 진행 중인 문서가 없습니다.');
