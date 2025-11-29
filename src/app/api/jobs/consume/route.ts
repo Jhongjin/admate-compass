@@ -2689,11 +2689,27 @@ export async function processQueue() {
                     };
                   }
                   
-                  // 제목 우선순위: 히어로 영역 제목 > 링크 텍스트(메뉴명) > 페이지 제목 > URL 경로
-                  // 메인 페이지 제목과 구분되도록 강화된 로직
+                  // 제목 우선순위: discovered 배열의 title (모달과 동일) > 히어로 영역 제목 > 링크 텍스트(메뉴명) > 페이지 제목 > URL 경로
+                  // 모달 페이지에서 사용하는 로직과 동일하게 discovered.title을 최우선 사용
                   let finalTitle = null;
                   
-                  // 0. 히어로 영역 제목 추출 (페이지 HTML에서 직접 추출)
+                  // 0. discovered 배열에서 추출한 제목 (모달과 동일한 로직)
+                  const discoveredTitle = urlToTitleMap.get(subUrl);
+                  if (discoveredTitle && discoveredTitle.trim().length >= 2) {
+                    const lowerDiscovered = discoveredTitle.toLowerCase().trim();
+                    // "광고주센터"만 있는 경우만 제외
+                    if (lowerDiscovered !== '광고주센터' && lowerDiscovered !== '광고주 센터' && 
+                        lowerDiscovered !== 'advertiser center' && lowerDiscovered !== 'naver' && 
+                        lowerDiscovered !== '네이버' && lowerDiscovered !== 'naver광고주센터') {
+                      // 메인 페이지 제목과 다르면 사용
+                      if (discoveredTitle.trim() !== mainPage.pageTitle.trim()) {
+                        finalTitle = discoveredTitle.trim();
+                        console.log(`[CRITICAL] 📝 하위 페이지 제목 결정 (discovered 배열): ${subUrl} -> "${finalTitle}"`);
+                      }
+                    }
+                  }
+                  
+                  // 1. 히어로 영역 제목 추출 (페이지 HTML에서 직접 추출) - finalTitle이 없을 때만
                   let heroTitle = null;
                   try {
                     const $page = cheerio.load(page.htmlContent || '');
@@ -2757,17 +2773,17 @@ export async function processQueue() {
                     console.warn(`[CRITICAL] ⚠️ 히어로 제목 추출 실패: ${subUrl}`, heroError);
                   }
                   
-                  // 1. 히어로 영역 제목이 있으면 최우선 사용
-                  if (heroTitle) {
+                  // 2. 히어로 영역 제목이 있으면 사용 (finalTitle이 없을 때만)
+                  if (!finalTitle && heroTitle) {
                     finalTitle = heroTitle;
                     console.log(`[CRITICAL] 📝 하위 페이지 제목 결정 (히어로 영역): ${subUrl} -> "${finalTitle}"`);
                   }
-                  // 2. 링크 텍스트가 있고 메인 페이지 제목과 다르면 사용
-                  else if (linkTitle && linkTitle.length >= 2 && linkTitle !== mainPage.pageTitle && !linkTitle.toLowerCase().includes('광고주센터') && !linkTitle.toLowerCase().includes('광고주 센터') && !linkTitle.toLowerCase().includes('advertiser center')) {
+                  // 3. 링크 텍스트가 있고 메인 페이지 제목과 다르면 사용 (finalTitle이 없을 때만)
+                  else if (!finalTitle && linkTitle && linkTitle.length >= 2 && linkTitle !== mainPage.pageTitle && !linkTitle.toLowerCase().includes('광고주센터') && !linkTitle.toLowerCase().includes('광고주 센터') && !linkTitle.toLowerCase().includes('advertiser center')) {
                     finalTitle = linkTitle;
                     console.log(`[CRITICAL] 📝 하위 페이지 제목 결정 (링크 텍스트): ${subUrl} -> "${finalTitle}"`);
                   }
-                  // 3. 페이지 제목이 있고 메인 페이지 제목과 다르면 사용 (더 관대한 필터링)
+                  // 4. 페이지 제목이 있고 메인 페이지 제목과 다르면 사용 (더 관대한 필터링, finalTitle이 없을 때만)
                   else if (page.pageTitle && page.pageTitle.length >= 2) {
                     const lowerPageTitle = page.pageTitle.toLowerCase().trim();
                     const mainPageTitleLower = mainPage.pageTitle.toLowerCase().trim();
@@ -2792,8 +2808,8 @@ export async function processQueue() {
                       console.log(`[CRITICAL] 📝 하위 페이지 제목 결정 (페이지 제목): ${subUrl} -> "${finalTitle}" (원본: "${page.pageTitle}", 메인: "${mainPage.pageTitle}")`);
                     }
                   }
-                  // 3. URL 경로에서 의미있는 제목 추출
-                  else {
+                  // 5. URL 경로에서 의미있는 제목 추출 (finalTitle이 없을 때만)
+                  if (!finalTitle) {
                     try {
                       const urlPath = new URL(subUrl).pathname;
                       if (urlPath && urlPath !== '/') {
@@ -2897,7 +2913,7 @@ export async function processQueue() {
                     }
                   }
                   
-                  console.log(`[CRITICAL] 📝 최종 하위 페이지 제목: ${subUrl} -> "${finalTitle}" (원본 페이지 제목: "${page.pageTitle}", 링크 텍스트: "${linkTitle}", 메인 페이지 제목: "${mainPage.pageTitle}", 히어로 제목: "${heroTitle || '없음'}")`);
+                  console.log(`[CRITICAL] 📝 최종 하위 페이지 제목: ${subUrl} -> "${finalTitle}" (discovered 제목: "${discoveredTitle || '없음'}", 원본 페이지 제목: "${page.pageTitle}", 링크 텍스트: "${linkTitle}", 메인 페이지 제목: "${mainPage.pageTitle}", 히어로 제목: "${heroTitle || '없음'}")`);
                   
                   // 최종 제목이 여전히 "광고주센터" 관련이면 경고
                   if (finalTitle && (finalTitle.toLowerCase().includes('광고주센터') || finalTitle.toLowerCase().includes('광고주 센터'))) {
