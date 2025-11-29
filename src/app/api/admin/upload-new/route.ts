@@ -1854,6 +1854,106 @@ export async function GET(request: NextRequest) {
       console.warn('⚠️ 메인 문서 상태 동기화 중 오류 (무시):', syncError);
     }
 
+    // 🔥 핵심: documents 조회 전에 pending 문서 동기화 실행 (최우선)
+    // 이미 위에서 실행했지만, documents 조회 직전에 한 번 더 확인
+    try {
+      const { data: finalPendingCheck } = await supabase
+        .from('documents')
+        .select('id, url, status, chunk_count, main_document_id, created_at')
+        .eq('type', 'url')
+        .eq('status', 'pending')
+        .eq('chunk_count', 0)
+        .limit(100);
+      
+      if (finalPendingCheck && finalPendingCheck.length > 0) {
+        const finalPendingIds = finalPendingCheck.map(d => d.id);
+        const finalPendingUrls = finalPendingCheck.map(d => d.url).filter(Boolean) as string[];
+        
+        // 관련 CRAWL_SEED 작업 조회 (completed 포함)
+        const { data: finalRelatedJobs } = await supabase
+          .from('processing_jobs')
+          .select('id, document_id, status, payload, result, finished_at, error, created_at')
+          .eq('job_type', 'CRAWL_SEED')
+          .or(`document_id.in.(${finalPendingIds.join(',')}),payload->>url.in.(${finalPendingUrls.map((u: string) => `"${u}"`).join(',')})`)
+          .order('created_at', { ascending: false })
+          .limit(200);
+        
+        // URL -> 최신 작업 매핑
+        const finalUrlToJob = new Map<string, any>();
+        const finalDocIdToJob = new Map<string, any>();
+        
+        (finalRelatedJobs || []).forEach((job: any) => {
+          const jobUrl = (job.payload as any)?.url;
+          if (jobUrl && finalPendingUrls.includes(jobUrl)) {
+            const existing = finalUrlToJob.get(jobUrl);
+            if (!existing || 
+                (job.created_at && existing.created_at && 
+                 new Date(job.created_at).getTime() > new Date(existing.created_at).getTime())) {
+              finalUrlToJob.set(jobUrl, job);
+            }
+          }
+          if (job.document_id && finalPendingIds.includes(job.document_id)) {
+            const existing = finalDocIdToJob.get(job.document_id);
+            if (!existing || 
+                (job.created_at && existing.created_at && 
+                 new Date(job.created_at).getTime() > new Date(existing.created_at).getTime())) {
+              finalDocIdToJob.set(job.document_id, job);
+            }
+          }
+        });
+        
+        // pending 문서 상태 최종 업데이트
+        for (const doc of finalPendingCheck) {
+          const jobByUrl = doc.url ? finalUrlToJob.get(doc.url) : null;
+          const jobByDocId = finalDocIdToJob.get(doc.id);
+          const job = jobByDocId || jobByUrl;
+          
+          if (job) {
+            const jobStatus = job.status;
+            const result = job.result as any;
+            
+            if ((jobStatus === 'completed' || job.finished_at) && result?.chunkCount > 0) {
+              await supabase
+                .from('documents')
+                .update({
+                  status: 'indexed',
+                  chunk_count: result.chunkCount,
+                  updated_at: new Date().toISOString()
+                })
+                .eq('id', doc.id)
+                .eq('status', 'pending')
+                .eq('chunk_count', 0);
+              
+              console.log(`✅ 문서 조회 직전 최종 동기화: ${doc.id} -> indexed (작업 완료, 청크: ${result.chunkCount})`);
+            } else if (jobStatus === 'failed') {
+              await supabase
+                .from('documents')
+                .update({
+                  status: 'failed',
+                  updated_at: new Date().toISOString()
+                })
+                .eq('id', doc.id)
+                .eq('status', 'pending')
+                .eq('chunk_count', 0);
+              
+              console.log(`✅ 문서 조회 직전 최종 동기화: ${doc.id} -> failed (작업 실패)`);
+            } else if ((jobStatus === 'processing' || jobStatus === 'retrying') && doc.status === 'pending') {
+              await supabase
+                .from('documents')
+                .update({
+                  status: 'processing',
+                  updated_at: new Date().toISOString()
+                })
+                .eq('id', doc.id)
+                .eq('status', 'pending');
+            }
+          }
+        }
+      }
+    } catch (finalSyncError) {
+      console.warn('⚠️ 문서 조회 직전 최종 동기화 중 오류 (무시):', finalSyncError);
+    }
+
     // Supabase에서 문서 목록 조회 (최적화)
     let query = supabase
       .from('documents')
