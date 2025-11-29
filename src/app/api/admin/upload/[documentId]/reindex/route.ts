@@ -123,21 +123,30 @@ export async function POST(
 
         console.log(`✅ URL 크롤링 완료: ${crawledData.content.length}자`);
 
-        // 제목 추출 (크롤링된 제목 우선, 없으면 기존 제목 사용)
-        let pageTitle = crawledData.title || document.title;
+        // 재인덱싱 시에는 기존 제목을 우선 유지 (제목 변경 방지)
+        // 크롤링된 제목은 참고용으로만 사용하고, 기존 제목이 있으면 그대로 유지
+        let pageTitle = document.title; // 기존 제목 우선
         
-        // HTML에서 제목 추출 시도
-        if (!pageTitle || pageTitle === effectiveUrl) {
-          try {
-            const $ = cheerio.load(crawledData.content);
-            pageTitle = $('h1').first().text().trim() || 
-                       $('title').text().trim() || 
-                       $('meta[property="og:title"]').attr('content')?.trim() ||
-                       document.title;
-          } catch (e) {
-            console.warn('⚠️ HTML 파싱 실패, 기존 제목 사용');
+        // 기존 제목이 없거나 URL과 같은 경우에만 크롤링된 제목 사용
+        if (!pageTitle || pageTitle === effectiveUrl || pageTitle.trim() === '') {
+          pageTitle = crawledData.title || document.title;
+          
+          // HTML에서 제목 추출 시도
+          if (!pageTitle || pageTitle === effectiveUrl) {
+            try {
+              const $ = cheerio.load(crawledData.content);
+              pageTitle = $('h1').first().text().trim() || 
+                         $('title').text().trim() || 
+                         $('meta[property="og:title"]').attr('content')?.trim() ||
+                         document.title;
+            } catch (e) {
+              console.warn('⚠️ HTML 파싱 실패, 기존 제목 사용');
+              pageTitle = document.title;
+            }
           }
         }
+        
+        console.log(`📝 제목 결정: 기존="${document.title}", 최종="${pageTitle}"`);
 
         // main_document_id 보존
         const mainDocumentIdToPreserve = document.main_document_id;
