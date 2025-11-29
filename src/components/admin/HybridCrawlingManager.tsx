@@ -1197,6 +1197,210 @@ export default function HybridCrawlingManager({
     setSelectedUrlsForCrawling(new Set());
   };
 
+  // 🔥 새로운 크롤링 상태 폴링 함수: processing_jobs를 직접 조회
+  const pollCrawlStatusFromJobs = useCallback(async (urls: string[]) => {
+    if (urls.length === 0) {
+      setCrawlingProgress([]);
+      setIsCrawling(false);
+      jobIdsRef.current = [];
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
+      }
+      return;
+    }
+
+    try {
+      // 1. URL 목록으로 documents 조회하여 document_id 가져오기
+      const { data: documents, error: docsError } = await supabase
+        .from('documents')
+        .select('id, url, status, chunk_count')
+        .in('url', urls)
+        .order('created_at', { ascending: false });
+
+      if (docsError) {
+        console.error('❌ 문서 조회 오류:', docsError);
+        return;
+      }
+
+      // URL -> document_id 매핑 (최신 문서 우선)
+      const urlToDocId = new Map<string, string>();
+      const urlToDocStatus = new Map<string, { status: string; chunkCount: number }>();
+      
+      documents?.forEach(doc => {
+        if (doc.url && !urlToDocId.has(doc.url)) {
+          urlToDocId.set(doc.url, doc.id);
+          urlToDocStatus.set(doc.url, {
+            status: doc.status || 'pending',
+            chunkCount: doc.chunk_count || 0
+          });
+        }
+      });
+
+      // 2. document_id로 processing_jobs 조회
+      const docIds = Array.from(urlToDocId.values());
+      let jobs: any[] = [];
+
+      if (docIds.length > 0) {
+        const { data: jobsByDocId, error: jobsError } = await supabase
+          .from('processing_jobs')
+          .select('id, status, payload, started_at, finished_at, document_id, result, error, created_at')
+          .eq('job_type', 'CRAWL_SEED')
+          .in('document_id', docIds)
+          .order('created_at', { ascending: false })
+          .limit(1000);
+
+        if (!jobsError && jobsByDocId) {
+          jobs = jobsByDocId;
+        }
+      }
+
+      // 3. URL로도 조회 (document_id가 없는 경우 대비)
+      const { data: jobsByUrl, error: jobsByUrlError } = await supabase
+        .from('processing_jobs')
+        .select('id, status, payload, started_at, finished_at, document_id, result, error, created_at')
+        .eq('job_type', 'CRAWL_SEED')
+        .in('status', ['queued', 'processing', 'retrying', 'completed', 'failed', 'cancelled'])
+        .order('created_at', { ascending: false })
+        .limit(1000);
+
+      if (!jobsByUrlError && jobsByUrl) {
+        // URL 매칭하여 추가 (중복 제거)
+        jobsByUrl.forEach(job => {
+          const jobUrl = (job.payload as any)?.url;
+          if (jobUrl && urls.includes(jobUrl)) {
+            const existing = jobs.find(j => j.id === job.id);
+            if (!existing) {
+              jobs.push(job);
+            }
+          }
+        });
+      }
+
+      // 4. URL별로 가장 최신 작업 선택
+      const urlToLatestJob = new Map<string, any>();
+      jobs.forEach(job => {
+        const jobUrl = (job.payload as any)?.url;
+        if (jobUrl && urls.includes(jobUrl)) {
+          const existing = urlToLatestJob.get(jobUrl);
+          if (!existing || 
+              (job.created_at && existing.created_at && 
+               new Date(job.created_at).getTime() > new Date(existing.created_at).getTime())) {
+            urlToLatestJob.set(jobUrl, job);
+          }
+        }
+      });
+
+      // 5. 상태 맵 업데이트
+      const nextProgress: CrawlingProgress[] = urls.map(url => {
+        const job = urlToLatestJob.get(url);
+        const docInfo = urlToDocStatus.get(url);
+
+        if (job) {
+          // processing_jobs 상태를 우선 사용
+          const jobStatus = job.status;
+          const result = job.result as any | null;
+
+          if (jobStatus === 'completed' || job.finished_at) {
+            return {
+              url,
+              status: 'completed',
+              message: '크롤링 완료',
+              chunkCount: docInfo?.chunkCount || result?.chunkCount || 0
+            };
+          }
+
+          if (jobStatus === 'failed') {
+            return {
+              url,
+              status: 'failed',
+              message: job.error || result?.error || '크롤링 실패'
+            };
+          }
+
+          if (jobStatus === 'cancelled') {
+            return {
+              url,
+              status: 'failed',
+              message: '사용자에 의해 취소됨'
+            };
+          }
+
+          if (jobStatus === 'processing' || jobStatus === 'retrying') {
+            return {
+              url,
+              status: 'crawling',
+              message: '크롤링 중...',
+              chunkCount: result?.chunkCount || 0
+            };
+          }
+
+          // queued
+          return {
+            url,
+            status: 'pending',
+            message: '큐 대기 중...'
+          };
+        } else if (docInfo) {
+          // processing_jobs가 없지만 documents가 있는 경우
+          const docStatus = docInfo.status;
+          if (docStatus === 'indexed' || docStatus === 'completed') {
+            return {
+              url,
+              status: 'completed',
+              message: '크롤링 완료',
+              chunkCount: docInfo.chunkCount
+            };
+          } else if (docStatus === 'failed') {
+            return {
+              url,
+              status: 'failed',
+              message: '크롤링 실패'
+            };
+          } else if (docStatus === 'processing') {
+            return {
+              url,
+              status: 'crawling',
+              message: '크롤링 중...',
+              chunkCount: docInfo.chunkCount
+            };
+          }
+        }
+
+        // 아무것도 없는 경우 (아직 생성되지 않음)
+        return {
+          url,
+          status: 'pending',
+          message: '대기 중...'
+        };
+      });
+
+      setCrawlingProgress(nextProgress);
+
+      // 6. 모든 작업이 완료되었는지 확인
+      const activeCount = nextProgress.filter(
+        p => p.status === 'crawling' || p.status === 'pending'
+      ).length;
+
+      if (activeCount === 0) {
+        setIsCrawling(false);
+        if (pollingIntervalRef.current) {
+          clearInterval(pollingIntervalRef.current);
+          pollingIntervalRef.current = null;
+        }
+        if (onCrawlingComplete) {
+          setTimeout(() => onCrawlingComplete(), 1000);
+        }
+      } else {
+        setIsCrawling(true);
+      }
+
+    } catch (error) {
+      console.error('❌ 크롤링 상태 폴링 오류:', error);
+    }
+  }, [supabase, onCrawlingComplete]);
+
+  // 🔥 새로운 handleDiscoveryModalConfirm: 단순하고 명확한 로직
   const handleDiscoveryModalConfirm = async () => {
     if (selectedUrlsForCrawling.size === 0) {
       toast.error('최소 1개 이상의 페이지를 선택해주세요.');
@@ -1206,14 +1410,10 @@ export default function HybridCrawlingManager({
     const selectedUrlsArray = Array.from(selectedUrlsForCrawling);
     setShowDiscoveryModal(false);
     
-    // 프로그레스바 즉시 표시
+    // 즉시 상태 초기화
     setIsCrawling(true);
-    setCrawlingProgress(selectedUrlsArray.map(url => ({ url, status: 'pending' as const })));
-    
-    // UI 업데이트를 위한 짧은 지연
-    await new Promise(resolve => setTimeout(resolve, 100));
+    setCrawlingProgress(selectedUrlsArray.map(url => ({ url, status: 'pending' as const, message: '문서 생성 중...' })));
 
-    // 🔥 모달에서 선택한 모든 페이지를 한번에 documents 테이블에 추가 (대기중 상태)
     try {
       // 벤더 정보 가져오기
       const dbVendor = vendors.length > 0 ? VENDOR_TO_DB_MAP[vendors[0]] || 'META' : 'META';
@@ -1229,7 +1429,7 @@ export default function HybridCrawlingManager({
       // 모달에서 선택한 모든 페이지를 문서 목록에 한번에 추가
       const documentsToCreate = selectedUrlsArray.map(url => ({
         url,
-        title: urlToTitleMap.get(url) || url // 모달의 정확한 제목 사용
+        title: urlToTitleMap.get(url) || url
       }));
       
       console.log(`📋 모달에서 선택한 ${documentsToCreate.length}개 페이지를 문서 목록에 한번에 추가 시작...`);
@@ -1256,85 +1456,57 @@ export default function HybridCrawlingManager({
 
       console.log(`✅ ${batchCreateResult.created}개 문서 생성, ${batchCreateResult.updated}개 문서 업데이트 완료`);
       
-      // 생성된 문서들을 큐에 등록
-      const jobIds: string[] = [];
-      jobIdsRef.current = []; // 초기화
-      
-      const createdDocuments = batchCreateResult.documents || [];
-      
-      for (let i = 0; i < createdDocuments.length; i++) {
-        const doc = createdDocuments[i];
-        const url = doc.url;
-        
-        // 진행 상황 업데이트
-        setCrawlingProgress(prev =>
-          prev.map(p =>
-            p.url === url ? { ...p, status: 'crawling' as const, message: '큐에 등록 중...' } : p
-          )
-        );
-        
-        try {
-          const enqueueResponse = await fetchWithTimeout('/api/jobs/enqueue', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              jobType: 'CRAWL_SEED',
-              documentId: doc.id, // 🔥 생성된 문서 ID 사용
-              priority: 5,
-              payload: {
-                url,
-                title: doc.title, // 모달의 정확한 제목
-                vendors: [dbVendor],
-                domainLimit: crawlOptions.domainLimit,
-                respectRobots: crawlOptions.respectRobots,
-                maxDepth: 1,
-                extractSubPages: false
-              }
-            }),
-          }, 30000);
+      // 상태 업데이트: pending -> queued
+      setCrawlingProgress(prev =>
+        prev.map(p => ({ ...p, message: '큐에 등록됨, 처리 대기 중...' }))
+      );
 
-          if (!enqueueResponse.ok) {
-            throw new Error(`HTTP ${enqueueResponse.status}: ${enqueueResponse.statusText}`);
-          }
-
-          const enqueueResult = await enqueueResponse.json();
-          if (enqueueResult.jobId) {
-            jobIds.push(enqueueResult.jobId);
-            jobIdsRef.current.push(enqueueResult.jobId);
-            setCrawlingProgress(prev =>
-              prev.map(p =>
-                p.url === url ? { ...p, status: 'crawling' as const, message: '큐에 등록됨, 처리 대기 중...' } : p
-              )
-            );
-          } else {
-            throw new Error('작업 ID를 받지 못했습니다.');
-          }
-        } catch (urlError) {
-          console.error(`URL 큐 등록 오류: ${url}`, urlError);
-          setCrawlingProgress(prev =>
-            prev.map(p =>
-              p.url === url
-                ? { ...p, status: 'failed' as const, message: urlError instanceof Error ? urlError.message : '큐 등록 실패' }
-                : p
-            )
-          );
-        }
+      // 큐 워커 즉시 트리거
+      try {
+        await fetchWithTimeout('/api/jobs/consume', { method: 'POST' }, 10000);
+      } catch (consumeError) {
+        console.warn('큐 워커 트리거 실패 (무시 가능):', consumeError);
       }
 
-      if (jobIds.length > 0) {
-        toast.success(`${jobIds.length}개 작업이 큐에 등록되었습니다.`);
+      // 폴링 시작 (2초마다)
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+      }
+      
+      pollingIntervalRef.current = setInterval(() => {
+        pollCrawlStatusFromJobs(selectedUrlsArray);
+      }, 2000);
 
-        // 큐 워커 즉시 트리거
-        try {
-          await fetchWithTimeout('/api/jobs/consume', { method: 'POST' }, 10000);
-        } catch (consumeError) {
-          console.warn('큐 워커 트리거 실패 (무시 가능):', consumeError);
-        }
+      // 즉시 첫 폴링 실행
+      setTimeout(() => {
+        pollCrawlStatusFromJobs(selectedUrlsArray);
+      }, 1000);
 
-        // 폴링으로 진행 상황 업데이트 (2초마다 - Seed 크롤링 전용, Supabase를 진실의 소스로 사용)
-        pollingIntervalRef.current = setInterval(async () => {
+      toast.success(`${selectedUrlsArray.length}개 페이지가 큐에 등록되었습니다.`);
+
+    } catch (error) {
+      console.error('❌ 크롤링 시작 오류:', error);
+      toast.error(error instanceof Error ? error.message : '크롤링 시작 실패');
+      
+      // 오류 발생 시 상태 업데이트
+      setCrawlingProgress(prev =>
+        prev.map(p => ({
+          ...p,
+          status: 'failed' as const,
+          message: error instanceof Error ? error.message : '크롤링 시작 실패'
+        }))
+      );
+      setIsCrawling(false);
+      
+      if (pollingIntervalRef.current) {
+        clearInterval(pollingIntervalRef.current);
+        pollingIntervalRef.current = null;
+      }
+    }
+  };
+
+  // 기존 폴링 로직 제거하고 새로운 함수 사용
+  // (아래 기존 폴링 코드는 삭제됨)
           try {
             const currentUrls = selectedUrlsArray;
 
