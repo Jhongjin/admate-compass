@@ -1388,10 +1388,14 @@ export default function HybridCrawlingManager({
             }
 
             // URL 기준으로 항상 전체 진행 상태 재계산
+            // ⚠️ 같은 URL에 대해 여러 CRAWL_SEED 작업이 있을 수 있으므로
+            // created_at DESC 정렬된 배열에서 "가장 최신 작업"만 매핑에 사용한다.
             const urlToJobMap = new Map<string, any>();
             jobs.forEach(job => {
               const jobUrl = (job.payload as any)?.url || (job.result as any)?.url;
-              if (jobUrl && currentUrls.includes(jobUrl)) {
+              if (!jobUrl || !currentUrls.includes(jobUrl)) return;
+              // jobs는 created_at DESC 이므로, 처음 만나는 job이 가장 최신이다.
+              if (!urlToJobMap.has(jobUrl)) {
                 urlToJobMap.set(jobUrl, job);
               }
             });
