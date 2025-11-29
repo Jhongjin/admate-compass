@@ -14,13 +14,13 @@ export async function POST(request: NextRequest) {
   try {
     const supabase = await createPureClient();
     
-    console.log('🔍 processing 상태 문서 백엔드 상태 체크 시작...');
+    console.log('🔍 processing 및 pending 상태 문서 백엔드 상태 체크 시작...');
 
-    // 1. processing 상태인 모든 문서 조회
+    // 1. processing과 pending 상태인 모든 문서 조회
     const { data: processingDocs, error: docError } = await supabase
       .from('documents')
       .select('id, title, url, status, chunk_count, created_at, updated_at')
-      .eq('status', 'processing')
+      .in('status', ['processing', 'pending'])
       .order('updated_at', { ascending: false })
       .limit(500);
 
@@ -28,14 +28,18 @@ export async function POST(request: NextRequest) {
       throw new Error(`문서 조회 실패: ${docError.message}`);
     }
 
-    console.log(`📋 발견된 processing 문서 수: ${processingDocs?.length || 0}`);
+    const processingCount = processingDocs?.filter(d => d.status === 'processing').length || 0;
+    const pendingCount = processingDocs?.filter(d => d.status === 'pending').length || 0;
+    console.log(`📋 발견된 문서 수: processing ${processingCount}개, pending ${pendingCount}개`);
 
     if (!processingDocs || processingDocs.length === 0) {
       return NextResponse.json({
         success: true,
-        message: 'processing 상태인 문서가 없습니다.',
+        message: 'processing/pending 상태인 문서가 없습니다.',
         data: {
           totalDocuments: 0,
+          processingCount: 0,
+          pendingCount: 0,
           checked: 0,
           synced: 0,
           results: []
