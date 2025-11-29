@@ -2084,21 +2084,25 @@ export async function processQueue() {
 
           if (existingDoc?.id && !documentIdOverride) {
             // 기존 문서 업데이트
-            // 🔥 모달에서 생성한 문서(status: 'pending')인 경우, payload의 title을 우선 사용
-            let finalTitle = title;
+            // 🔥 크롤링 완료 후 제목은 기존 제목 유지 (크롤링된 제목으로 덮어쓰지 않음)
+            // 모달에서 설정한 제목이 있으면 그것을 사용, 없으면 기존 제목 유지
+            let finalTitle = existingDoc.title; // 기존 제목 유지
+            
+            // 모달에서 생성한 문서(status: 'pending')인 경우에만 payload의 title 사용
             if (existingDoc.status === 'pending' && job.payload?.title) {
               const payloadTitle = job.payload.title as string;
-              if (payloadTitle && payloadTitle !== existingDoc.title) {
-                console.log(`[CRITICAL] 📝 모달에서 생성한 문서의 제목 업데이트: "${existingDoc.title}" -> "${payloadTitle}"`);
+              if (payloadTitle && payloadTitle.length >= 2) {
+                console.log(`[CRITICAL] 📝 모달에서 생성한 문서의 제목 사용: "${payloadTitle}"`);
                 finalTitle = payloadTitle;
               }
             }
             
             // 🔥 pending 상태 문서를 processing으로 명시적으로 업데이트 (프론트엔드가 상태를 감지할 수 있도록)
+            // 제목은 기존 제목 유지 (크롤링된 제목으로 덮어쓰지 않음)
             await supabase
               .from('documents')
               .update({
-                title: finalTitle, // 🔥 모달의 정확한 제목 사용
+                // title은 업데이트하지 않음 - 기존 제목 유지
                 type: 'url', // URL 크롤링 문서는 항상 'url' 타입으로 설정
                 status: 'processing', // pending -> processing으로 변경
                 file_size: fileSize,
@@ -2112,24 +2116,27 @@ export async function processQueue() {
               .eq('id', existingDoc.id)
               .in('status', ['pending', 'queued']); // pending/queued 상태만 processing으로 변경
             
-            console.log(`[CRITICAL] 📝 문서 상태 업데이트: pending/queued -> processing (문서 ID: ${existingDoc.id}, 제목: ${finalTitle})`);
+            console.log(`[CRITICAL] 📝 문서 상태 업데이트: pending/queued -> processing (문서 ID: ${existingDoc.id}, 제목 유지: ${finalTitle})`);
           } else if (wasExistingDocument && documentIdOverride) {
             // documentIdOverride가 있고 기존 문서가 있는 경우 업데이트
-            // 🔥 모달에서 생성한 문서(status: 'pending')인 경우, payload의 title을 우선 사용
-            let finalTitle = title;
+            // 🔥 크롤링 완료 후 제목은 기존 제목 유지 (크롤링된 제목으로 덮어쓰지 않음)
+            let finalTitle = existingDoc?.title || title; // 기존 제목 우선
+            
+            // 모달에서 생성한 문서(status: 'pending')인 경우에만 payload의 title 사용
             if (existingDoc?.status === 'pending' && job.payload?.title) {
               const payloadTitle = job.payload.title as string;
-              if (payloadTitle && payloadTitle !== existingDoc.title) {
-                console.log(`[CRITICAL] 📝 모달에서 생성한 문서의 제목 업데이트: "${existingDoc.title}" -> "${payloadTitle}"`);
+              if (payloadTitle && payloadTitle.length >= 2) {
+                console.log(`[CRITICAL] 📝 모달에서 생성한 문서의 제목 사용: "${payloadTitle}"`);
                 finalTitle = payloadTitle;
               }
             }
             
             // 🔥 pending 상태 문서를 processing으로 명시적으로 업데이트
+            // 제목은 기존 제목 유지 (크롤링된 제목으로 덮어쓰지 않음)
             await supabase
               .from('documents')
               .update({
-                title: finalTitle, // 🔥 모달의 정확한 제목 사용
+                // title은 업데이트하지 않음 - 기존 제목 유지
                 type: 'url',
                 status: 'processing', // pending -> processing으로 변경
                 file_size: fileSize,
@@ -2143,7 +2150,7 @@ export async function processQueue() {
               .eq('id', documentIdOverride)
               .in('status', ['pending', 'queued']); // pending/queued 상태만 processing으로 변경
             
-            console.log(`[CRITICAL] 📝 문서 상태 업데이트: pending/queued -> processing (문서 ID: ${documentIdOverride}, 제목: ${finalTitle})`);
+            console.log(`[CRITICAL] 📝 문서 상태 업데이트: pending/queued -> processing (문서 ID: ${documentIdOverride}, 제목 유지: ${finalTitle})`);
           } else if (!wasExistingDocument) {
             // 새 문서 생성
             await supabase
