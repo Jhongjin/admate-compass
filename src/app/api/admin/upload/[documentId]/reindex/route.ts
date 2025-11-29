@@ -169,12 +169,13 @@ export async function POST(
 
         if (ragResult.success) {
           // 문서 상태를 'indexed'로 업데이트
+          // 재인덱싱 시 제목은 기존 제목 유지 (변경하지 않음)
           const { error: finalStatusError } = await supabase
             .from('documents')
             .update({ 
               status: 'indexed',
               chunk_count: ragResult.chunkCount || 0,
-              title: pageTitle,
+              // title은 기존 제목 유지 (재인덱싱 시 제목 변경 방지)
               content: crawledData.content,
               updated_at: new Date().toISOString()
             })
@@ -195,7 +196,7 @@ export async function POST(
             message: '재인덱싱이 완료되었습니다.',
             document: {
               id: document.id,
-              title: pageTitle,
+              title: document.title, // 기존 제목 반환
               url: effectiveUrl,
               type: document.type,
               chunkCount: ragResult.chunkCount || 0
