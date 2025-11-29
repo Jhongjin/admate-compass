@@ -1335,6 +1335,61 @@ export async function GET(request: NextRequest) {
       console.warn('⚠️ "처리중 0개 청크" 문서 자동 정리 중 오류 (무시):', cleanupError);
     }
 
+    // 메인 문서 상태 동기화: 하위 페이지가 완료되었는데 메인 문서가 처리중인 경우
+    try {
+      // 메인 문서가 processing 상태이고 chunk_count가 0인 문서 조회
+      const { data: processingMainDocs } = await supabase
+        .from('documents')
+        .select('id, url, status, chunk_count, main_document_id')
+        .eq('type', 'url')
+        .eq('status', 'processing')
+        .eq('chunk_count', 0)
+        .is('main_document_id', null) // 메인 문서만 (main_document_id가 null)
+        .limit(100);
+      
+      if (processingMainDocs && processingMainDocs.length > 0) {
+        console.log(`🔍 메인 문서 상태 동기화 시작: ${processingMainDocs.length}개 문서 확인`);
+        
+        for (const mainDoc of processingMainDocs) {
+          // 이 메인 문서의 하위 페이지 조회
+          const { data: subPages } = await supabase
+            .from('documents')
+            .select('id, status, chunk_count')
+            .eq('type', 'url')
+            .eq('main_document_id', mainDoc.id)
+            .in('status', ['indexed', 'completed']);
+          
+          if (subPages && subPages.length > 0) {
+            // 완료된 하위 페이지가 있는 경우
+            const totalSubPageChunks = subPages.reduce((sum, sub) => sum + (sub.chunk_count || 0), 0);
+            
+            if (totalSubPageChunks > 0) {
+              // 메인 문서를 indexed로 업데이트
+              const { error: syncError } = await supabase
+                .from('documents')
+                .update({
+                  status: 'indexed',
+                  chunk_count: totalSubPageChunks,
+                  updated_at: new Date().toISOString()
+                })
+                .eq('id', mainDoc.id)
+                .eq('status', 'processing')
+                .eq('chunk_count', 0);
+              
+              if (!syncError) {
+                console.log(`✅ 메인 문서 상태 동기화 완료: ${mainDoc.id} (하위 페이지 ${subPages.length}개 완료, 총 ${totalSubPageChunks}개 청크)`);
+              } else {
+                console.warn(`⚠️ 메인 문서 상태 동기화 실패: ${mainDoc.id}`, syncError);
+              }
+            }
+          }
+        }
+      }
+    } catch (syncError) {
+      // 동기화 실패해도 문서 목록 조회는 계속 진행
+      console.warn('⚠️ 메인 문서 상태 동기화 중 오류 (무시):', syncError);
+    }
+
     // Supabase에서 문서 목록 조회 (최적화)
     let query = supabase
       .from('documents')
