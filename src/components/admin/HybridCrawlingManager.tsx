@@ -2255,19 +2255,37 @@ export default function HybridCrawlingManager({
                     toast.success(`동기화 완료: ${result.synced}개 작업 업데이트됨 (전체: ${result.total}개)`);
                     console.log('✅ 동기화된 작업:', result.results);
                     
-                    // 상태 즉시 새로고침
+                    // 결과를 콘솔에 상세 출력 (새로고침 전에 확인 가능하도록)
+                    if (result.results && result.results.length > 0) {
+                      console.group('📋 강제 동기화 상세 결과');
+                      result.results.forEach((r: any) => {
+                        const icon = r.status === 'synced' ? '✅' : r.status === 'timeout' ? '⏰' : r.status === 'error' ? '❌' : '⚠️';
+                        console.log(`${icon} 작업 ${r.jobId?.substring(0, 8)}...: ${r.status} - ${r.message}`);
+                        if (r.title) console.log(`   문서: ${r.title}`);
+                        if (r.chunkCount !== undefined) console.log(`   청크: ${r.chunkCount}개`);
+                      });
+                      console.groupEnd();
+                    }
+                    
+                    // 콘솔 로그 확인을 위해 3초 후 새로고침
                     setTimeout(() => {
+                      console.log('🔄 페이지 새로고침 시작...');
                       window.location.reload();
-                    }, 1000);
+                    }, 3000);
                   } else {
                     toast.warning(`동기화할 작업이 없습니다. (전체: ${result.total}개)`);
                     console.log('⚠️ 동기화 결과:', result.results);
                     
                     // 결과를 콘솔에 출력
                     if (result.results && result.results.length > 0) {
+                      console.group('📋 강제 동기화 상세 결과');
                       result.results.forEach((r: any) => {
-                        console.log(`  - 작업 ${r.jobId}: ${r.status} - ${r.message}`);
+                        const icon = r.status === 'not_completed' ? '⏳' : r.status === 'not_found' ? '❓' : '⚠️';
+                        console.log(`${icon} 작업 ${r.jobId?.substring(0, 8)}...: ${r.status} - ${r.message}`);
+                        if (r.title) console.log(`   문서: ${r.title}`);
+                        if (r.chunkCount !== undefined) console.log(`   청크: ${r.chunkCount}개`);
                       });
+                      console.groupEnd();
                     }
                   }
                 } else {

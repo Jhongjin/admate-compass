@@ -145,6 +145,24 @@ export async function POST(request: NextRequest) {
             });
           } else {
             if (updateResult && updateResult.length > 0) {
+              // documents 테이블도 함께 업데이트 (처리중 -> indexed)
+              if (document.status === 'processing' && document.chunk_count > 0) {
+                const { error: docUpdateError } = await supabase
+                  .from('documents')
+                  .update({
+                    status: 'indexed',
+                    updated_at: new Date().toISOString()
+                  })
+                  .eq('id', document.id)
+                  .eq('status', 'processing');
+                
+                if (docUpdateError) {
+                  console.error(`⚠️ 문서 상태 업데이트 실패 (${document.id}):`, docUpdateError);
+                } else {
+                  console.log(`✅ 문서 ${document.id} 상태 업데이트: processing -> indexed`);
+                }
+              }
+              
               syncedCount++;
               console.log(`✅ 작업 ${job.id} 동기화 완료: processing -> completed`);
               results.push({
