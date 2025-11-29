@@ -193,7 +193,8 @@ export async function POST(
             );
           }
 
-          console.log(`✅ 재인덱싱 완료: ${ragResult.chunkCount || 0}개 청크 생성`);
+          console.log(`✅ URL 재인덱싱 완료: ${ragResult.chunkCount || 0}개 청크 생성`);
+          console.log(`📊 최종 문서 상태: indexed, 청크 수: ${ragResult.chunkCount || 0}`);
 
           return NextResponse.json({
             success: true,
