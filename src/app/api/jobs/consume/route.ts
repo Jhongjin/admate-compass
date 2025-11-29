@@ -2875,7 +2875,12 @@ export async function processQueue() {
                     }
                   }
                   
-                  console.log(`[CRITICAL] 📝 최종 하위 페이지 제목: ${subUrl} -> "${finalTitle}" (원본 페이지 제목: "${page.pageTitle}", 링크 텍스트: "${linkTitle}", 메인 페이지 제목: "${mainPage.pageTitle}")`);
+                  console.log(`[CRITICAL] 📝 최종 하위 페이지 제목: ${subUrl} -> "${finalTitle}" (원본 페이지 제목: "${page.pageTitle}", 링크 텍스트: "${linkTitle}", 메인 페이지 제목: "${mainPage.pageTitle}", 히어로 제목: "${heroTitle || '없음'}")`);
+                  
+                  // 최종 제목이 여전히 "광고주센터" 관련이면 경고
+                  if (finalTitle && (finalTitle.toLowerCase().includes('광고주센터') || finalTitle.toLowerCase().includes('광고주 센터'))) {
+                    console.warn(`[CRITICAL] ⚠️ 최종 제목이 여전히 "광고주센터" 관련입니다: ${subUrl} -> "${finalTitle}"`);
+                  }
                   
                   let result;
                   let createdDocumentId: string | undefined = undefined;
