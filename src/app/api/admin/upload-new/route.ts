@@ -1422,6 +1422,88 @@ export async function GET(request: NextRequest) {
       console.warn('⚠️ "처리중 0개 청크" 문서 자동 정리 중 오류 (무시):', cleanupError);
     }
 
+    // 하위 페이지 "처리중 0개 청크" 자동 정리 강화 (메인 문서 동기화 전에 실행)
+    try {
+      // 하위 페이지 중 processing 상태이고 chunk_count가 0인 문서 조회
+      const { data: stuckSubPages } = await supabase
+        .from('documents')
+        .select('id, url, status, chunk_count, main_document_id')
+        .eq('type', 'url')
+        .eq('status', 'processing')
+        .eq('chunk_count', 0)
+        .not('main_document_id', 'is', null) // 하위 페이지만
+        .limit(200);
+      
+      if (stuckSubPages && stuckSubPages.length > 0) {
+        const stuckSubPageIds = stuckSubPages.map(d => d.id);
+        
+        // 관련 processing_jobs 확인 (document_id와 URL 모두)
+        const { data: relatedJobs } = await supabase
+          .from('processing_jobs')
+          .select('id, document_id, status, payload, result')
+          .eq('job_type', 'CRAWL_SEED')
+          .in('status', ['queued', 'processing', 'retrying'])
+          .limit(1000);
+        
+        // 활성 작업이 있는 문서 ID 수집
+        const activeJobDocIds = new Set((relatedJobs || []).map(j => j.document_id).filter(Boolean));
+        
+        // URL로도 확인
+        const activeJobUrls = new Set<string>();
+        (relatedJobs || []).forEach(job => {
+          const jobUrl = (job.payload as any)?.url || (job.result as any)?.url;
+          if (jobUrl) {
+            activeJobUrls.add(jobUrl);
+          }
+        });
+        
+        // stuckSubPages의 URL 조회
+        const { data: stuckSubPagesWithUrls } = await supabase
+          .from('documents')
+          .select('id, url')
+          .in('id', stuckSubPageIds);
+        
+        const stuckSubPageUrlMap = new Map<string, string>();
+        (stuckSubPagesWithUrls || []).forEach(doc => {
+          if (doc.url) {
+            stuckSubPageUrlMap.set(doc.id, doc.url);
+          }
+        });
+        
+        // 활성 작업이 없는 하위 페이지 삭제
+        const orphanedSubPages = stuckSubPages.filter(doc => {
+          if (activeJobDocIds.has(doc.id)) return false;
+          const docUrl = stuckSubPageUrlMap.get(doc.id);
+          if (docUrl && activeJobUrls.has(docUrl)) return false;
+          return true;
+        });
+        
+        if (orphanedSubPages.length > 0) {
+          const orphanedIds = orphanedSubPages.map(d => d.id);
+          console.log(`🗑️ "처리중 0개 청크" 하위 페이지 ${orphanedIds.length}개 자동 삭제 시작`);
+          
+          // 관련 데이터 먼저 삭제
+          await supabase.from('document_chunks').delete().in('document_id', orphanedIds);
+          await supabase.from('document_metadata').delete().in('document_id', orphanedIds);
+          await supabase.from('document_logs').delete().in('document_id', orphanedIds);
+          
+          // 문서 삭제
+          const { error: deleteError } = await supabase
+            .from('documents')
+            .delete()
+            .in('id', orphanedIds);
+          
+          if (!deleteError) {
+            console.log(`✅ "처리중 0개 청크" 하위 페이지 ${orphanedIds.length}개 자동 삭제 완료`);
+          } else {
+            console.warn('⚠️ 하위 페이지 자동 삭제 실패:', deleteError);
+          }
+        }
+      }
+    } catch (cleanupError) {
+      console.warn('⚠️ 하위 페이지 자동 정리 중 오류 (무시):', cleanupError);
+    }
+
     // 메인 문서 상태 동기화: 하위 페이지가 완료되었는데 메인 문서가 처리중인 경우
     try {
       // 메인 문서가 processing 상태인 문서 조회 (chunk_count는 0이거나 이미 설정된 경우 모두 포함)
@@ -1437,39 +1519,69 @@ export async function GET(request: NextRequest) {
         console.log(`🔍 메인 문서 상태 동기화 시작: ${processingMainDocs.length}개 문서 확인`);
         
         for (const mainDoc of processingMainDocs) {
-          // 이 메인 문서의 하위 페이지 조회
-          const { data: subPages } = await supabase
+          // 이 메인 문서의 모든 하위 페이지 조회 (processing 포함)
+          const { data: allSubPages } = await supabase
             .from('documents')
             .select('id, status, chunk_count')
             .eq('type', 'url')
-            .eq('main_document_id', mainDoc.id)
-            .in('status', ['indexed', 'completed']);
+            .eq('main_document_id', mainDoc.id);
           
-          if (subPages && subPages.length > 0) {
-            // 완료된 하위 페이지가 있는 경우
-            const totalSubPageChunks = subPages.reduce((sum, sub) => sum + (sub.chunk_count || 0), 0);
-            const allSubPagesCompleted = subPages.every(sub => 
+          if (allSubPages && allSubPages.length > 0) {
+            // 완료된 하위 페이지만 필터링
+            const completedSubPages = allSubPages.filter(sub => 
               sub.status === 'indexed' || sub.status === 'completed'
             );
             
-            // 하위 페이지가 모두 완료되었거나, 완료된 하위 페이지가 있고 총 청크 수가 0보다 큰 경우
-            if (totalSubPageChunks > 0 && (allSubPagesCompleted || subPages.length > 0)) {
-              // 메인 문서를 indexed로 업데이트 (chunk_count도 함께 업데이트)
-              // 상태 조건만 확인 (chunk_count는 이미 설정되어 있을 수 있음)
-              const { error: syncError } = await supabase
-                .from('documents')
-                .update({
-                  status: 'indexed',
-                  chunk_count: totalSubPageChunks,
-                  updated_at: new Date().toISOString()
-                })
-                .eq('id', mainDoc.id)
-                .in('status', ['processing', 'indexing']); // processing 또는 indexing 상태 모두 처리
+            // processing 상태인 하위 페이지 (정리 대상)
+            const processingSubPages = allSubPages.filter(sub => 
+              sub.status === 'processing' && (sub.chunk_count || 0) === 0
+            );
+            
+            // processing 하위 페이지가 있고 활성 작업이 없으면 삭제
+            if (processingSubPages.length > 0) {
+              const processingSubPageIds = processingSubPages.map(s => s.id);
               
-              if (!syncError) {
-                console.log(`✅ 메인 문서 상태 동기화 완료: ${mainDoc.id} (하위 페이지 ${subPages.length}개 완료, 총 ${totalSubPageChunks}개 청크, 모두 완료: ${allSubPagesCompleted})`);
-              } else {
-                console.warn(`⚠️ 메인 문서 상태 동기화 실패: ${mainDoc.id}`, syncError);
+              // 관련 processing_jobs 확인
+              const { data: subPageJobs } = await supabase
+                .from('processing_jobs')
+                .select('document_id, status')
+                .in('document_id', processingSubPageIds)
+                .in('status', ['queued', 'processing', 'retrying']);
+              
+              const activeSubPageIds = new Set((subPageJobs || []).map(j => j.document_id).filter(Boolean));
+              const orphanedSubPageIds = processingSubPageIds.filter(id => !activeSubPageIds.has(id));
+              
+              if (orphanedSubPageIds.length > 0) {
+                // 관련 데이터 삭제
+                await supabase.from('document_chunks').delete().in('document_id', orphanedSubPageIds);
+                await supabase.from('document_metadata').delete().in('document_id', orphanedSubPageIds);
+                await supabase.from('document_logs').delete().in('document_id', orphanedSubPageIds);
+                await supabase.from('documents').delete().in('id', orphanedSubPageIds);
+                console.log(`✅ 메인 문서 ${mainDoc.id}의 "처리중 0개 청크" 하위 페이지 ${orphanedSubPageIds.length}개 삭제`);
+              }
+            }
+            
+            // 완료된 하위 페이지가 있는 경우
+            if (completedSubPages.length > 0) {
+              const totalSubPageChunks = completedSubPages.reduce((sum, sub) => sum + (sub.chunk_count || 0), 0);
+              
+              // 완료된 하위 페이지가 있고 총 청크 수가 0보다 큰 경우 메인 문서 업데이트
+              if (totalSubPageChunks > 0) {
+                const { error: syncError } = await supabase
+                  .from('documents')
+                  .update({
+                    status: 'indexed',
+                    chunk_count: totalSubPageChunks,
+                    updated_at: new Date().toISOString()
+                  })
+                  .eq('id', mainDoc.id)
+                  .in('status', ['processing', 'indexing']);
+                
+                if (!syncError) {
+                  console.log(`✅ 메인 문서 상태 동기화 완료: ${mainDoc.id} (완료된 하위 페이지 ${completedSubPages.length}개, 총 ${totalSubPageChunks}개 청크)`);
+                } else {
+                  console.warn(`⚠️ 메인 문서 상태 동기화 실패: ${mainDoc.id}`, syncError);
+                }
               }
             }
           }
