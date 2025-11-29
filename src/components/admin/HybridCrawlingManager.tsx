@@ -1364,13 +1364,14 @@ export default function HybridCrawlingManager({
             }
 
             // 2. URL 기반 CRAWL_SEED 조회 (jobIds 누락 방지)
+            // 🔥 좀비 작업 방지: 최신순 정렬 및 적절한 제한으로 최신 작업만 조회
             const { data: allCrawlJobs, error: allCrawlJobsError } = await supabase
               .from('processing_jobs')
               .select('id, status, result, payload, started_at, finished_at, document_id')
               .eq('job_type', 'CRAWL_SEED')
               .in('status', ['queued', 'processing', 'retrying', 'completed', 'failed', 'cancelled'])
-              .order('created_at', { ascending: false })
-              .limit(200);
+              .order('created_at', { ascending: false }) // 최신순 정렬 (좀비 작업 방지)
+              .limit(50); // 보고서 권장값: 충분한 수의 최신 작업만 조회
 
             if (!allCrawlJobsError && allCrawlJobs) {
               // 현재 URL과 매칭되는 작업만 필터링

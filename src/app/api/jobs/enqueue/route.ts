@@ -56,19 +56,24 @@ export async function POST(request: NextRequest) {
     // CRAWL_SEED의 경우 documentId가 없으므로 payload의 url로 중복 체크
     let existing = null;
     if (body.documentId) {
-      const { data: existingData, error: existingError } = await supabase
+      // 🔥 PGRST116 오류 해결: .maybeSingle() 제거하고 리스트로 조회 후 메모리에서 비교
+      const { data: potentialDuplicates, error: existingError } = await supabase
         .from('processing_jobs')
         .select('id, status')
         .eq('document_id', body.documentId)
         .eq('job_type', body.jobType)
         .in('status', ['queued', 'processing', 'retrying'])
-        .limit(1)
-        .maybeSingle();
+        .order('created_at', { ascending: false }) // 최신순 정렬
+        .limit(10);
 
       if (existingError) {
         console.error('중복 조회 오류:', existingError);
       }
-      existing = existingData;
+      
+      // 메모리에서 가장 최신 작업 선택
+      if (potentialDuplicates && potentialDuplicates.length > 0) {
+        existing = potentialDuplicates[0]; // 정렬된 첫 번째 항목이 가장 최신
+      }
     } else if (body.jobType === 'CRAWL_SEED' && payload.url) {
       // CRAWL_SEED의 경우 같은 URL이 이미 큐에 있으면 중복으로 간주
       // 🔥 PGRST116 오류 해결: .maybeSingle() 제거하고 리스트로 조회 후 메모리에서 비교
