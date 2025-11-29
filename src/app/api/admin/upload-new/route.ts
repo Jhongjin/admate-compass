@@ -1440,11 +1440,13 @@ export async function GET(request: NextRequest) {
         const stuckSubPageIds = stuckSubPages.map(d => d.id);
         
         // 관련 processing_jobs 확인 (document_id와 URL 모두) - 최신순 정렬
+        // finished_at이 없는 작업만 확인 (완료된 작업은 제외)
         const { data: relatedJobs } = await supabase
           .from('processing_jobs')
-          .select('id, document_id, status, payload, result')
+          .select('id, document_id, status, payload, result, finished_at')
           .eq('job_type', 'CRAWL_SEED')
           .in('status', ['queued', 'processing', 'retrying'])
+          .is('finished_at', null) // finished_at이 없는 작업만
           .order('created_at', { ascending: false })
           .limit(1000);
         
