@@ -2550,6 +2550,77 @@ export default function HybridCrawlingManager({
             <RefreshCw className="w-5 h-5 mr-3" />
             상태 동기화
           </Button>
+
+          <Button
+            onClick={async () => {
+              try {
+                const urls = crawlingProgress.map(p => p.url);
+                if (urls.length === 0) {
+                  toast.warning('삭제할 진행 중인 문서가 없습니다.');
+                  return;
+                }
+
+                if (!confirm(`진행 중인 문서 ${urls.length}개를 삭제하시겠습니까?\n\n${urls.slice(0, 3).join('\n')}${urls.length > 3 ? `\n... 외 ${urls.length - 3}개` : ''}`)) {
+                  return;
+                }
+
+                toast.info('진행 중인 문서 삭제 중...');
+                console.log('🗑️ 진행 중인 문서 삭제 요청:', urls);
+
+                const response = await fetch('/api/admin/delete-processing-documents', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ urls, status: 'processing' })
+                });
+
+                if (!response.ok) {
+                  throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+
+                const result = await response.json();
+                console.log('🗑️ 삭제 결과:', result);
+
+                if (result.success) {
+                  toast.success(`삭제 완료: ${result.deleted.documents}개 문서, ${result.deleted.jobs}개 작업 삭제됨`);
+                  
+                  // 진행 상황 초기화
+                  setCrawlingProgress([]);
+                  setIsCrawling(false);
+                  jobIdsRef.current = [];
+                  
+                  // 폴링 중지
+                  if (pollingIntervalRef.current) {
+                    clearInterval(pollingIntervalRef.current);
+                    pollingIntervalRef.current = null;
+                  }
+
+                  // 문서 목록 새로고침
+                  if (onCrawlingComplete) {
+                    setTimeout(() => {
+                      onCrawlingComplete();
+                    }, 1000);
+                  }
+
+                  // 페이지 새로고침
+                  setTimeout(() => {
+                    window.location.reload();
+                  }, 2000);
+                } else {
+                  toast.error(`삭제 실패: ${result.error || '알 수 없는 오류'}`);
+                  console.error('❌ 삭제 실패:', result);
+                }
+              } catch (error) {
+                console.error('❌ 진행 중인 문서 삭제 오류:', error);
+                toast.error('삭제 중 오류가 발생했습니다.');
+              }
+            }}
+            variant="outline"
+            size="lg"
+            className="h-14 px-6 text-white border-red-500 hover:bg-red-700/20 hover:border-red-400"
+          >
+            <Trash2 className="w-5 h-5 mr-3" />
+            진행 중인 문서 삭제
+          </Button>
         )}
       </div>
 
