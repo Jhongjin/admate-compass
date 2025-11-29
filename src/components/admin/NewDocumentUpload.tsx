@@ -340,6 +340,17 @@ export default function NewDocumentUpload({ onUpload, vendor, hideList = false }
 
         // 완료 확인
         if (currentStatus === 'completed' || document?.status === 'indexed') {
+          // 폴링 완료 후 문서 목록 새로고침
+          console.log('🔄 폴링 완료 - 문서 목록 새로고침 예약');
+          setTimeout(() => {
+            fetchUploadedDocuments();
+          }, 1000);
+          
+          // 추가로 3초 후에도 새로고침 (DB 동기화 대기)
+          setTimeout(() => {
+            console.log('🔄 폴링 완료 - 지연 문서 목록 새로고침');
+            fetchUploadedDocuments();
+          }, 3000);
           console.log('✅ 작업 완료:', { jobId, documentId, chunkCount: document?.chunk_count });
 
           setFiles(prev => prev.map(f =>
