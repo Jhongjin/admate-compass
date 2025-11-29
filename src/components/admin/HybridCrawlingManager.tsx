@@ -44,6 +44,7 @@ import { UrlDiscoveryPanel, DiscoveredUrlItem } from './UrlDiscoveryPanel';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import { Progress } from '@/components/ui/progress';
 import { createClient } from '@/lib/supabase/client';
+import { useQueryClient } from '@tanstack/react-query';
 
 // 미리 정의된 URL 템플릿 (대표 도메인만)
 const predefinedUrlTemplates = {
@@ -106,6 +107,7 @@ export default function HybridCrawlingManager({
   onVendorsChange
 }: HybridCrawlingManagerProps) {
   const supabase = createClient();
+  const queryClient = useQueryClient();
   const [crawlingMode, setCrawlingMode] = useState<'predefined' | 'custom' | 'hybrid'>('predefined');
   const [selectedTemplates, setSelectedTemplates] = useState<string[]>([]);
   const [customUrls, setCustomUrls] = useState<string[]>([]);
@@ -1381,6 +1383,22 @@ export default function HybridCrawlingManager({
       const activeCount = nextProgress.filter(
         p => p.status === 'crawling' || p.status === 'pending'
       ).length;
+      
+      const completedCount = nextProgress.filter(
+        p => p.status === 'completed'
+      ).length;
+
+      // 🔥 완료된 작업이 있으면 문서 목록 새로고침
+      if (completedCount > 0) {
+        // React Query 캐시 무효화하여 문서 목록 새로고침
+        queryClient.invalidateQueries({ queryKey: ['documents'] });
+        queryClient.invalidateQueries({ queryKey: ['queue-stats'] });
+        
+        // 콜백도 호출
+        if (onCrawlingComplete) {
+          setTimeout(() => onCrawlingComplete(), 500);
+        }
+      }
 
       if (activeCount === 0) {
         setIsCrawling(false);
@@ -1388,6 +1406,11 @@ export default function HybridCrawlingManager({
           clearInterval(pollingIntervalRef.current);
           pollingIntervalRef.current = null;
         }
+        
+        // 모든 작업 완료 시 최종 새로고침
+        queryClient.invalidateQueries({ queryKey: ['documents'] });
+        queryClient.invalidateQueries({ queryKey: ['queue-stats'] });
+        
         if (onCrawlingComplete) {
           setTimeout(() => onCrawlingComplete(), 1000);
         }
@@ -1398,7 +1421,7 @@ export default function HybridCrawlingManager({
     } catch (error) {
       console.error('❌ 크롤링 상태 폴링 오류:', error);
     }
-  }, [supabase, onCrawlingComplete]);
+  }, [supabase, onCrawlingComplete, queryClient]);
 
   // 🔥 새로운 handleDiscoveryModalConfirm: 단순하고 명확한 로직
   const handleDiscoveryModalConfirm = async () => {
