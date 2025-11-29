@@ -337,23 +337,29 @@ export default function GroupedDocumentList({
                 <div className="text-right">
                   <div className="flex items-center space-x-2">
                     {(() => {
+                      // 크롤링 작업 상태 우선 확인
+                      const effectiveStatus = getEffectiveStatus(group.mainDocument);
+                      
                       // 하위 페이지가 모두 완료되었는지 확인
                       const allSubPagesCompleted = group.subPages.length > 0 && 
-                        group.subPages.every((sub: GroupedDocument) => 
-                          sub.status === 'indexed' || sub.status === 'completed'
-                        );
+                        group.subPages.every((sub: GroupedDocument) => {
+                          const subEffectiveStatus = getEffectiveStatus(sub);
+                          return subEffectiveStatus.status === 'indexed' || 
+                                 subEffectiveStatus.status === 'completed';
+                        });
                       
                       // 메인 문서가 처리중이지만 하위 페이지가 모두 완료된 경우 → 완료로 표시
-                      const isMainProcessing = group.mainDocument.status === 'processing' || 
-                                             group.mainDocument.status === 'indexing' ||
-                                             group.mainDocument.status === 'crawling';
+                      const isMainProcessing = effectiveStatus.status === 'processing' || 
+                                             effectiveStatus.status === 'indexing' ||
+                                             effectiveStatus.status === 'crawling';
                       
                       const shouldShowCompleted = isMainProcessing && allSubPagesCompleted;
-                      const displayStatus = shouldShowCompleted ? 'indexed' : group.mainDocument.status;
+                      const displayStatus = shouldShowCompleted ? 'indexed' : effectiveStatus.status;
+                      const isCrawling = effectiveStatus.isCrawling && displayStatus === 'crawling';
                       
                       return (
                         <>
-                          {getStatusIcon(displayStatus)}
+                          {getStatusIcon(displayStatus, isCrawling)}
                           <span className="text-sm text-gray-300">
                             {getStatusText(displayStatus)}
                           </span>
