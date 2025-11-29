@@ -310,17 +310,15 @@ export default function GroupedDocumentList({
                         group.subPages.every((sub: GroupedDocument) => 
                           sub.status === 'indexed' || sub.status === 'completed'
                         );
-                      const totalSubPageChunks = group.subPages.reduce((sum: number, sub: GroupedDocument) => 
-                        sum + (sub.chunk_count || 0), 0
-                      );
                       
-                      // 메인 문서가 처리중이지만 하위 페이지가 모두 완료된 경우
-                      const shouldShowCompleted = (group.mainDocument.status === 'processing' || group.mainDocument.status === 'indexing') &&
-                        allSubPagesCompleted && 
-                        totalSubPageChunks > 0 &&
-                        totalSubPageChunks === (group.mainDocument.chunk_count || 0);
+                      // 메인 문서가 처리중이지만 하위 페이지가 모두 완료된 경우 → 완료로 표시
+                      const isMainProcessing = group.mainDocument.status === 'processing' || 
+                                             group.mainDocument.status === 'indexing' ||
+                                             group.mainDocument.status === 'crawling';
                       
+                      const shouldShowCompleted = isMainProcessing && allSubPagesCompleted;
                       const displayStatus = shouldShowCompleted ? 'indexed' : group.mainDocument.status;
+                      
                       return (
                         <>
                           {getStatusIcon(displayStatus)}
