@@ -2084,9 +2084,9 @@ export async function processQueue() {
 
           if (existingDoc?.id && !documentIdOverride) {
             // 기존 문서 업데이트
-            // 🔥 모달에서 생성한 문서(status: 'queued')인 경우, payload의 title을 우선 사용
+            // 🔥 모달에서 생성한 문서(status: 'pending')인 경우, payload의 title을 우선 사용
             let finalTitle = title;
-            if (existingDoc.status === 'queued' && job.payload?.title) {
+            if (existingDoc.status === 'pending' && job.payload?.title) {
               const payloadTitle = job.payload.title as string;
               if (payloadTitle && payloadTitle !== existingDoc.title) {
                 console.log(`[CRITICAL] 📝 모달에서 생성한 문서의 제목 업데이트: "${existingDoc.title}" -> "${payloadTitle}"`);
@@ -2111,9 +2111,9 @@ export async function processQueue() {
               .eq('id', existingDoc.id);
           } else if (wasExistingDocument && documentIdOverride) {
             // documentIdOverride가 있고 기존 문서가 있는 경우 업데이트
-            // 🔥 모달에서 생성한 문서(status: 'queued')인 경우, payload의 title을 우선 사용
+            // 🔥 모달에서 생성한 문서(status: 'pending')인 경우, payload의 title을 우선 사용
             let finalTitle = title;
-            if (existingDoc?.status === 'queued' && job.payload?.title) {
+            if (existingDoc?.status === 'pending' && job.payload?.title) {
               const payloadTitle = job.payload.title as string;
               if (payloadTitle && payloadTitle !== existingDoc.title) {
                 console.log(`[CRITICAL] 📝 모달에서 생성한 문서의 제목 업데이트: "${existingDoc.title}" -> "${payloadTitle}"`);
