@@ -1303,17 +1303,70 @@ export async function GET(request: NextRequest) {
       if (stuckDocs && stuckDocs.length > 0) {
         const stuckDocIds = stuckDocs.map(d => d.id);
         
-        // 관련 processing_jobs 확인 (더 넓은 범위)
-        const { data: relatedJobs } = await supabase
+        // 관련 processing_jobs 확인 (document_id와 URL 모두 확인)
+        // 1. document_id로 확인
+        const { data: relatedJobsByDocId } = await supabase
           .from('processing_jobs')
-          .select('document_id, status, job_type')
+          .select('document_id, status, job_type, payload, result')
           .in('document_id', stuckDocIds)
           .in('status', ['queued', 'processing', 'retrying']);
         
-        const activeJobDocIds = new Set((relatedJobs || []).map(j => j.document_id));
+        // 2. URL로도 확인 (하위 페이지의 경우 URL이 다를 수 있음)
+        const stuckDocUrls = stuckDocs
+          .filter(doc => doc.id) // id가 있는 문서만
+          .map(doc => {
+            // documents 테이블에서 URL 조회
+            return doc.id;
+          });
         
-        // 관련 job이 없는 문서들
-        const orphanedDocs = stuckDocs.filter(doc => !activeJobDocIds.has(doc.id));
+        // 모든 CRAWL_SEED 작업 조회하여 URL 매칭
+        const { data: allCrawlJobs } = await supabase
+          .from('processing_jobs')
+          .select('id, document_id, status, payload, result')
+          .eq('job_type', 'CRAWL_SEED')
+          .in('status', ['queued', 'processing', 'retrying'])
+          .limit(1000);
+        
+        // document_id로 활성 작업이 있는 문서 ID 수집
+        const activeJobDocIds = new Set((relatedJobsByDocId || []).map(j => j.document_id));
+        
+        // URL로도 확인 (payload나 result에 URL이 있을 수 있음)
+        const activeJobUrls = new Set<string>();
+        (allCrawlJobs || []).forEach(job => {
+          const jobUrl = (job.payload as any)?.url || (job.result as any)?.url;
+          if (jobUrl) {
+            activeJobUrls.add(jobUrl);
+          }
+        });
+        
+        // stuckDocs의 URL을 조회하여 매칭
+        const { data: stuckDocsWithUrls } = await supabase
+          .from('documents')
+          .select('id, url')
+          .in('id', stuckDocIds);
+        
+        const stuckDocUrlMap = new Map<string, string>();
+        (stuckDocsWithUrls || []).forEach(doc => {
+          if (doc.url) {
+            stuckDocUrlMap.set(doc.id, doc.url);
+          }
+        });
+        
+        // 관련 job이 없는 문서들 (document_id와 URL 모두 확인)
+        const orphanedDocs = stuckDocs.filter(doc => {
+          // document_id로 활성 작업이 있으면 제외
+          if (activeJobDocIds.has(doc.id)) {
+            return false;
+          }
+          
+          // URL로도 확인
+          const docUrl = stuckDocUrlMap.get(doc.id);
+          if (docUrl && activeJobUrls.has(docUrl)) {
+            return false;
+          }
+          
+          return true;
+        });
         
         if (orphanedDocs.length > 0) {
           const orphanedDocIds = orphanedDocs.map(d => d.id);

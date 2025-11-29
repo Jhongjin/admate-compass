@@ -71,14 +71,24 @@ export default function QueueSummaryPanel({ selectedVendors = [] }: QueueSummary
       const now = Date.now();
       const STUCK_THRESHOLD_MS = 2 * 60 * 60 * 1000; // 2시간 (10시간 지연 문제 해결)
       
-      // 상태별 카운트 계산
-      const queued = (allJobs || []).filter(j => ['queued', 'retrying'].includes(j.status)).length;
-      const processing = (allJobs || []).filter(j => j.status === 'processing').length;
-      const failed = (allJobs || []).filter(j => j.status === 'failed').length;
+      // 상태별 카운트 계산 (completed는 제외)
+      // finished_at이 있으면 완료된 것으로 간주하여 제외
+      const queued = (allJobs || []).filter(j => 
+        ['queued', 'retrying'].includes(j.status) && !j.finished_at
+      ).length;
+      
+      // processing 상태이면서 finished_at이 없는 것만 카운트
+      const processing = (allJobs || []).filter(j => 
+        j.status === 'processing' && !j.finished_at
+      ).length;
+      
+      const failed = (allJobs || []).filter(j => 
+        j.status === 'failed' && (j.finished_at || true) // failed는 finished_at 여부와 관계없이 카운트
+      ).length;
       
       // 멈춘 작업 개수 계산 (2시간 이상 진행 중인 processing 작업)
       const stuck = (allJobs || []).filter(job => {
-        if (job.status !== 'processing' || !job.started_at) return false;
+        if (job.status !== 'processing' || !job.started_at || job.finished_at) return false;
         const elapsed = now - new Date(job.started_at).getTime();
         return elapsed > STUCK_THRESHOLD_MS;
       }).length;
