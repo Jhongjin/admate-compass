@@ -2639,90 +2639,7 @@ export default function HybridCrawlingManager({
         )}
       </div>
 
-      {/* 크롤링 진행 상황 - 크롤링 시작 시 즉시 표시 */}
-      {(crawlingProgress.length > 0 || isCrawling) && (
-        <Card className="bg-gradient-to-br from-gray-800/90 to-gray-900/90 backdrop-blur-sm border-gray-700/50 rounded-xl mt-6">
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <BarChart3 className="w-5 h-5 text-orange-400" />
-                <CardTitle className="text-white">크롤링 진행 상황</CardTitle>
-              </div>
-              <div className="flex items-center space-x-2">
-                <Badge variant="outline" className="text-xs bg-green-500/20 text-green-300 border-green-500/30">
-                  {crawlingProgress.filter(p => p.status === 'completed').length}개 완료
-                </Badge>
-                <Badge variant="outline" className="text-xs bg-blue-500/20 text-blue-300 border-blue-500/30">
-                  {crawlingProgress.filter(p => p.status === 'crawling').length}개 진행 중
-                </Badge>
-                <Badge variant="outline" className="text-xs bg-gray-500/20 text-gray-300 border-gray-500/30">
-                  {crawlingProgress.filter(p => p.status === 'pending').length}개 대기 중
-                </Badge>
-                {crawlingProgress.filter(p => p.status === 'failed').length > 0 && (
-                  <Badge variant="outline" className="text-xs bg-red-500/20 text-red-300 border-red-500/30">
-                    {crawlingProgress.filter(p => p.status === 'failed').length}개 실패
-                  </Badge>
-                )}
-              </div>
-            </div>
-            <CardDescription className="text-gray-400">
-              전체 {crawlingProgress.length}개 URL 중 {crawlingProgress.filter(p => p.status === 'completed').length}개 완료
-              {crawlingProgress.filter(p => p.status === 'completed').length > 0 && (
-                <span className="ml-2 text-xs text-gray-500">(완료된 페이지는 목록에서 제외됨)</span>
-              )}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            {/* 전체 진행률 프로그레스바 */}
-            {crawlingProgress.length > 0 && (
-              <div className="mb-6 space-y-2">
-                <div className="flex items-center justify-between text-sm">
-                  <span className="text-gray-300 font-medium">전체 진행률</span>
-                  <span className="text-white font-semibold">
-                    {(() => {
-                      const completedCount = crawlingProgress.filter(p => p.status === 'completed').length;
-                      const totalCount = crawlingProgress.length;
-                      const percentage = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
-                      return `${percentage}%`;
-                    })()}
-                  </span>
-                </div>
-                <Progress
-                  value={(() => {
-                    const completedCount = crawlingProgress.filter(p => p.status === 'completed').length;
-                    const totalCount = crawlingProgress.length;
-                    return totalCount > 0 ? (completedCount / totalCount) * 100 : 0;
-                  })()}
-                  className="h-3 bg-gray-700/50 transition-all duration-500 ease-out"
-                />
-                <div className="flex items-center justify-between text-xs text-gray-400">
-                  <span>
-                    완료: {crawlingProgress.filter(p => p.status === 'completed').length}개
-                  </span>
-                  <span>
-                    진행 중: {crawlingProgress.filter(p => p.status === 'crawling').length}개
-                  </span>
-                  <span>
-                    대기 중: {crawlingProgress.filter(p => p.status === 'pending').length}개
-                  </span>
-                  {crawlingProgress.filter(p => p.status === 'failed').length > 0 && (
-                    <span className="text-red-400">
-                      실패: {crawlingProgress.filter(p => p.status === 'failed').length}개
-                    </span>
-                  )}
-                </div>
-                {crawlingProgress.filter(p => p.status === 'completed').length > 0 && (
-                  <p className="text-xs text-gray-500 mt-1">
-                    완료된 {crawlingProgress.filter(p => p.status === 'completed').length}개 페이지는 목록에서 제외되었습니다.
-                  </p>
-                )}
-              </div>
-            )}
-            <div className="space-y-3">
-              {/* 진행 중인 페이지만 표시 (완료된 페이지는 3초 후 자동 제거) */}
-              {crawlingProgress
-                .filter(p => p.status !== 'completed')
-                .map((progress, index) => (
+      {/* 크롤링 진행 상황 섹션 제거 - 이제 문서 목록에서 크롤링 상태를 직접 확인 */}
                 <div
                   key={index}
                   className={`flex items-center space-x-4 p-4 rounded-lg border transition-all duration-200 ${progress.status === 'completed'
@@ -3003,19 +2920,6 @@ export default function HybridCrawlingManager({
                 </div>
               ))}
             </div>
-
-            {/* 전체 진행률 표시 */}
-            {isCrawling && (
-              <div className="mt-6 p-4 bg-gray-700/30 rounded-lg border border-gray-600/30">
-                <div className="flex items-center justify-center space-x-3">
-                  <Loader2 className="w-5 h-5 animate-spin text-orange-400" />
-                  <span className="text-white font-medium">크롤링 진행 중...</span>
-                </div>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
 
       {/* 심도 3 이상 하위 페이지 선택 모달 */}
       <Dialog open={showDiscoveryModal} onOpenChange={setShowDiscoveryModal}>
