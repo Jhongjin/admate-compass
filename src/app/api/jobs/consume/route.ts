@@ -3127,116 +3127,169 @@ export async function processQueue() {
         });
 
         // 🔥 원자적 업데이트: documents 테이블 먼저 업데이트 후 processing_jobs 업데이트
-        // 1. 메인 문서 상태 업데이트 (processing -> indexed)
+        // 1. 메인 문서 상태 업데이트 (chunk_count > 0이면 무조건 indexed로 업데이트)
         let mainDocUpdated = false;
         if (documentId && mainDocResult.chunkCount > 0) {
-          const { error: docUpdateError, data: docUpdateData } = await supabase
+          // 먼저 현재 상태 확인 (중복 방지를 위해 maybeSingle 사용)
+          const { data: currentDoc, error: currentDocError } = await supabase
             .from('documents')
-            .update({
-              status: 'indexed',
-              chunk_count: mainDocResult.chunkCount,
-              updated_at: new Date().toISOString()
-            })
-            .eq('id', documentId)
-            .eq('status', 'processing') // processing 상태인 경우만 업데이트
             .select('id, status, chunk_count')
+            .eq('id', documentId)
             .maybeSingle();
           
-          if (docUpdateError) {
-            console.error('[CRITICAL] ⚠️ 메인 문서 상태 업데이트 실패:', {
+          if (currentDocError && currentDocError.code !== 'PGRST116') {
+            console.error('[CRITICAL] ⚠️ 메인 문서 조회 실패:', {
               documentId,
-              error: docUpdateError
+              error: currentDocError
             });
-          } else if (docUpdateData) {
+          }
+          
+          // 이미 indexed 상태이거나 chunk_count가 이미 설정되어 있으면 성공으로 간주
+          if (currentDoc && (currentDoc.status === 'indexed' || (currentDoc.chunk_count && currentDoc.chunk_count > 0))) {
             mainDocUpdated = true;
-            console.log('[CRITICAL] ✅ 메인 문서 상태 업데이트 완료:', {
+            console.log('[CRITICAL] ✅ 메인 문서는 이미 indexed 상태:', {
               documentId,
-              status: 'processing -> indexed',
-              chunkCount: mainDocResult.chunkCount,
-              updatedDocument: docUpdateData
+              status: currentDoc.status,
+              chunkCount: currentDoc.chunk_count
             });
           } else {
-            // 이미 다른 상태로 변경되었을 수 있음
-            const { data: currentDoc } = await supabase
+            // status 조건 없이 무조건 업데이트 (chunk_count > 0이면 indexed로)
+            const { error: docUpdateError, data: docUpdateData } = await supabase
               .from('documents')
-              .select('id, status, chunk_count')
+              .update({
+                status: 'indexed',
+                chunk_count: mainDocResult.chunkCount,
+                updated_at: new Date().toISOString()
+              })
               .eq('id', documentId)
-              .single();
+              .neq('status', 'indexed') // 이미 indexed인 경우는 제외 (불필요한 업데이트 방지)
+              .select('id, status, chunk_count')
+              .maybeSingle();
             
-            if (currentDoc && (currentDoc.status === 'indexed' || currentDoc.chunk_count > 0)) {
-              mainDocUpdated = true;
-              console.log('[CRITICAL] ✅ 메인 문서는 이미 indexed 상태:', {
+            if (docUpdateError) {
+              console.error('[CRITICAL] ⚠️ 메인 문서 상태 업데이트 실패:', {
                 documentId,
-                status: currentDoc.status,
-                chunkCount: currentDoc.chunk_count
+                error: docUpdateError
+              });
+            } else if (docUpdateData) {
+              mainDocUpdated = true;
+              console.log('[CRITICAL] ✅ 메인 문서 상태 업데이트 완료:', {
+                documentId,
+                status: `${currentDoc?.status || 'unknown'} -> indexed`,
+                chunkCount: mainDocResult.chunkCount,
+                updatedDocument: docUpdateData
               });
             } else {
-              console.warn('[CRITICAL] ⚠️ 메인 문서 상태 업데이트 실패: 이미 다른 상태', {
-                documentId,
-                currentStatus: currentDoc?.status || 'unknown',
-                currentChunkCount: currentDoc?.chunk_count || 0
-              });
+              // 업데이트가 적용되지 않았지만, 다시 확인
+              const { data: recheckDoc } = await supabase
+                .from('documents')
+                .select('id, status, chunk_count')
+                .eq('id', documentId)
+                .maybeSingle();
+              
+              if (recheckDoc && (recheckDoc.status === 'indexed' || (recheckDoc.chunk_count && recheckDoc.chunk_count > 0))) {
+                mainDocUpdated = true;
+                console.log('[CRITICAL] ✅ 메인 문서 상태 재확인: indexed 상태 확인', {
+                  documentId,
+                  status: recheckDoc.status,
+                  chunkCount: recheckDoc.chunk_count
+                });
+              } else {
+                console.warn('[CRITICAL] ⚠️ 메인 문서 상태 업데이트 실패: 업데이트 후에도 indexed 상태가 아님', {
+                  documentId,
+                  currentStatus: recheckDoc?.status || 'unknown',
+                  currentChunkCount: recheckDoc?.chunk_count || 0
+                });
+              }
             }
           }
         }
 
-        // 2. 성공한 하위 페이지 문서들도 상태 업데이트
+        // 2. 성공한 하위 페이지 문서들도 상태 업데이트 (chunk_count > 0이면 무조건 indexed로)
         const successfulSubPages = subPageResults.filter(item => item.success && item.documentId);
         const subPageUpdateResults: Array<{ documentId: string; success: boolean }> = [];
         
         if (successfulSubPages.length > 0) {
           for (const subPage of successfulSubPages) {
             if (subPage.documentId && subPage.chunkCount && subPage.chunkCount > 0) {
-              const { error: subDocUpdateError, data: subDocUpdateData } = await supabase
+              // 먼저 현재 상태 확인 (중복 방지를 위해 maybeSingle 사용)
+              const { data: currentSubDoc, error: currentSubDocError } = await supabase
                 .from('documents')
-                .update({
-                  status: 'indexed',
-                  chunk_count: subPage.chunkCount,
-                  updated_at: new Date().toISOString()
-                })
-                .eq('id', subPage.documentId)
-                .eq('status', 'processing')
                 .select('id, status, chunk_count')
-                .single();
+                .eq('id', subPage.documentId)
+                .maybeSingle();
               
-              if (subDocUpdateError) {
-                console.error('[CRITICAL] ⚠️ 하위 페이지 문서 상태 업데이트 실패:', {
+              if (currentSubDocError && currentSubDocError.code !== 'PGRST116') {
+                console.error('[CRITICAL] ⚠️ 하위 페이지 문서 조회 실패:', {
                   documentId: subPage.documentId,
                   url: subPage.url,
-                  error: subDocUpdateError
+                  error: currentSubDocError
                 });
-                subPageUpdateResults.push({ documentId: subPage.documentId, success: false });
-              } else if (subDocUpdateData) {
-                console.log('[CRITICAL] ✅ 하위 페이지 문서 상태 업데이트 완료:', {
-                  documentId: subPage.documentId,
-                  url: subPage.url,
-                  status: 'processing -> indexed',
-                  chunkCount: subPage.chunkCount
-                });
+              }
+              
+              // 이미 indexed 상태이거나 chunk_count가 이미 설정되어 있으면 성공으로 간주
+              if (currentSubDoc && (currentSubDoc.status === 'indexed' || (currentSubDoc.chunk_count && currentSubDoc.chunk_count > 0))) {
                 subPageUpdateResults.push({ documentId: subPage.documentId, success: true });
+                console.log('[CRITICAL] ✅ 하위 페이지 문서는 이미 indexed 상태:', {
+                  documentId: subPage.documentId,
+                  url: subPage.url,
+                  status: currentSubDoc.status,
+                  chunkCount: currentSubDoc.chunk_count
+                });
               } else {
-                // 이미 다른 상태로 변경되었을 수 있음
-                const { data: currentSubDoc } = await supabase
+                // status 조건 없이 무조건 업데이트 (chunk_count > 0이면 indexed로)
+                const { error: subDocUpdateError, data: subDocUpdateData } = await supabase
                   .from('documents')
-                  .select('id, status, chunk_count')
+                  .update({
+                    status: 'indexed',
+                    chunk_count: subPage.chunkCount,
+                    updated_at: new Date().toISOString()
+                  })
                   .eq('id', subPage.documentId)
-                  .single();
+                  .neq('status', 'indexed') // 이미 indexed인 경우는 제외
+                  .select('id, status, chunk_count')
+                  .maybeSingle();
                 
-                if (currentSubDoc && (currentSubDoc.status === 'indexed' || currentSubDoc.chunk_count > 0)) {
-                  subPageUpdateResults.push({ documentId: subPage.documentId, success: true });
-                  console.log('[CRITICAL] ✅ 하위 페이지 문서는 이미 indexed 상태:', {
+                if (subDocUpdateError) {
+                  console.error('[CRITICAL] ⚠️ 하위 페이지 문서 상태 업데이트 실패:', {
                     documentId: subPage.documentId,
                     url: subPage.url,
-                    status: currentSubDoc.status,
-                    chunkCount: currentSubDoc.chunk_count
+                    error: subDocUpdateError
                   });
-                } else {
                   subPageUpdateResults.push({ documentId: subPage.documentId, success: false });
-                  console.warn('[CRITICAL] ⚠️ 하위 페이지 문서 상태 업데이트 실패: 이미 다른 상태', {
+                } else if (subDocUpdateData) {
+                  console.log('[CRITICAL] ✅ 하위 페이지 문서 상태 업데이트 완료:', {
                     documentId: subPage.documentId,
                     url: subPage.url,
-                    currentStatus: currentSubDoc?.status || 'unknown'
+                    status: `${currentSubDoc?.status || 'unknown'} -> indexed`,
+                    chunkCount: subPage.chunkCount
                   });
+                  subPageUpdateResults.push({ documentId: subPage.documentId, success: true });
+                } else {
+                  // 업데이트가 적용되지 않았지만, 다시 확인
+                  const { data: recheckSubDoc } = await supabase
+                    .from('documents')
+                    .select('id, status, chunk_count')
+                    .eq('id', subPage.documentId)
+                    .maybeSingle();
+                  
+                  if (recheckSubDoc && (recheckSubDoc.status === 'indexed' || (recheckSubDoc.chunk_count && recheckSubDoc.chunk_count > 0))) {
+                    subPageUpdateResults.push({ documentId: subPage.documentId, success: true });
+                    console.log('[CRITICAL] ✅ 하위 페이지 문서 상태 재확인: indexed 상태 확인', {
+                      documentId: subPage.documentId,
+                      url: subPage.url,
+                      status: recheckSubDoc.status,
+                      chunkCount: recheckSubDoc.chunk_count
+                    });
+                  } else {
+                    subPageUpdateResults.push({ documentId: subPage.documentId, success: false });
+                    console.warn('[CRITICAL] ⚠️ 하위 페이지 문서 상태 업데이트 실패: 업데이트 후에도 indexed 상태가 아님', {
+                      documentId: subPage.documentId,
+                      url: subPage.url,
+                      currentStatus: recheckSubDoc?.status || 'unknown',
+                      currentChunkCount: recheckSubDoc?.chunk_count || 0
+                    });
+                  }
                 }
               }
             }
