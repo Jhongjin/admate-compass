@@ -947,6 +947,52 @@ export default function NewDocumentUpload({ onUpload, vendor, hideList = false }
           </CardContent>
         </Card>
       )}
+
+      {/* 중복 파일 다이얼로그 */}
+      <AlertDialog open={showDuplicateDialog} onOpenChange={setShowDuplicateDialog}>
+        <AlertDialogContent className="bg-gray-800 border-gray-700 text-white">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center space-x-2">
+              <AlertTriangle className="w-5 h-5 text-yellow-400" />
+              <span>중복 파일 감지</span>
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-gray-300">
+              <div className="space-y-3 mt-2">
+                <p>
+                  <span className="font-semibold text-white">'{duplicateFile?.file.name}'</span> 파일이 이미 존재합니다.
+                </p>
+                {duplicateFile?.existingDocument && (
+                  <div className="bg-gray-700/50 rounded-lg p-3 space-y-1 text-sm">
+                    <p className="text-gray-400">기존 문서 정보:</p>
+                    <p className="text-white">• 제목: {duplicateFile.existingDocument.title}</p>
+                    <p className="text-white">• 생성일: {new Date(duplicateFile.existingDocument.created_at).toLocaleString('ko-KR')}</p>
+                    <p className="text-white">• 크기: {duplicateFile.existingDocument.file_size ? `${Math.round(duplicateFile.existingDocument.file_size / 1024)}KB` : 'N/A'}</p>
+                    <p className="text-white">• 청크 수: {duplicateFile.existingDocument.chunk_count || 0}개</p>
+                    <p className="text-white">• 상태: {duplicateFile.existingDocument.status === 'indexed' ? '인덱싱 완료' : duplicateFile.existingDocument.status}</p>
+                  </div>
+                )}
+                <p className="text-gray-400 text-sm mt-3">
+                  어떻게 처리하시겠습니까?
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex-col sm:flex-row gap-2">
+            <AlertDialogCancel 
+              onClick={handleDuplicateSkip}
+              className="bg-gray-700 hover:bg-gray-600 text-white border-gray-600"
+            >
+              건너뛰기
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDuplicateOverwrite}
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              덮어쓰기
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </motion.div>
   );
 }
