@@ -1218,11 +1218,22 @@ export default function HybridCrawlingManager({
       // 벤더 정보 가져오기
       const dbVendors = vendors.length > 0 ? vendors.map(v => VENDOR_TO_DB_MAP[v] || 'META') : ['META'];
       
-      // 각 URL을 큐에 등록
+      // 각 URL을 큐에 등록 (모달의 정확한 제목 포함)
       const jobIds: string[] = [];
       jobIdsRef.current = []; // 초기화
+      
+      // allDiscoveredUrls에서 URL -> title 매핑 생성
+      const urlToTitleMap = new Map<string, string>();
+      allDiscoveredUrls.forEach(item => {
+        if (item.url && item.title && item.title !== item.url) {
+          urlToTitleMap.set(item.url, item.title);
+        }
+      });
+      
       for (let i = 0; i < selectedUrlsArray.length; i++) {
         const url = selectedUrlsArray[i];
+        // 모달에서 선택한 정확한 제목 가져오기
+        const modalTitle = urlToTitleMap.get(url) || url;
         
         // 진행 상황 업데이트
         setCrawlingProgress(prev =>
@@ -1242,6 +1253,7 @@ export default function HybridCrawlingManager({
               priority: 5,
               payload: {
                 url,
+                title: modalTitle, // 🔥 모달의 정확한 제목 포함
                 vendors: dbVendors,
                 domainLimit: crawlOptions.domainLimit,
                 respectRobots: crawlOptions.respectRobots,

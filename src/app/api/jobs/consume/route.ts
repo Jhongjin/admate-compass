@@ -1718,8 +1718,15 @@ export async function processQueue() {
             return null;
           };
           
-          // 정교한 제목 추출
-          let pageTitle = extractPageTitle();
+          // 🔥 모달에서 전달한 정확한 제목 우선 사용 (payload.title)
+          let pageTitle = (job.payload?.title as string) || null;
+          
+          // payload.title이 없으면 기존 로직으로 제목 추출
+          if (!pageTitle || pageTitle.length < 2) {
+            pageTitle = extractPageTitle();
+          } else {
+            console.log(`[CRITICAL] 📝 모달에서 전달한 제목 사용: "${pageTitle}" (URL: ${url})`);
+          }
           
           // 제목이 없거나 너무 짧으면 URL pathname에서 추출 (마지막 경로)
           if (!pageTitle || pageTitle.length < 2) {
