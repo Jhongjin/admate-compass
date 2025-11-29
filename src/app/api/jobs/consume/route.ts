@@ -1525,23 +1525,50 @@ export async function processQueue() {
           // Cheerio로 HTML 파싱
           const $ = cheerio.load(htmlContent);
           
-          // 히어로 영역(상단)의 큰 볼드 텍스트 추출 함수
-          const extractHeroTitle = (): string | null => {
+          // 정교한 제목 추출 함수 (PuppeteerCrawlingService 로직 기반)
+          const extractPageTitle = (): string | null => {
             // 1. h1 태그 (가장 우선)
             const h1Text = $('h1').first().text().trim();
             if (h1Text && h1Text.length >= 2) {
               return h1Text;
             }
-            
-            // 2. h2 태그 (히어로 영역에 자주 사용)
-            const h2Text = $('h2').first().text().trim();
-            if (h2Text && h2Text.length >= 2 && h2Text.length <= 100) {
-              return h2Text;
+
+            // 2. title 태그
+            const titleText = $('title').text().trim();
+            if (titleText && titleText.length >= 2) {
+              // title 태그에서 불필요한 접미사 제거 (예: " - 사이트명", " | 사이트명")
+              const cleanedTitle = titleText
+                .replace(/\s*[-|]\s*.*$/, '') // " - 사이트명" 또는 " | 사이트명" 제거
+                .replace(/\s*::\s*.*$/, '') // " :: 사이트명" 제거
+                .trim();
+              if (cleanedTitle && cleanedTitle.length >= 2) {
+                return cleanedTitle;
+              }
+              return titleText;
             }
-            
-            // 3. 상단 영역(첫 30% 정도)에서 큰 볼드 텍스트 추출
-            // main, article, section, header 등의 상단 요소에서 추출
-            const heroSelectors = [
+
+            // 3. og:title 메타 태그
+            const ogTitle = $('meta[property="og:title"]').attr('content')?.trim();
+            if (ogTitle && ogTitle.length >= 2) {
+              return ogTitle;
+            }
+
+            // 4. data-testid 기반
+            const dataTestIdTitle = $('[data-testid="page-title"]').first().text().trim();
+            if (dataTestIdTitle && dataTestIdTitle.length >= 2 && dataTestIdTitle.length <= 100) {
+              return dataTestIdTitle;
+            }
+
+            // 5. 클래스 기반 셀렉터들 (우선순위 순)
+            const classSelectors = [
+              'h1.page-title',
+              'h1.article-title',
+              '.page-title',
+              '.article-title',
+              '.post-title',
+              '.entry-title',
+              '.content-title',
+              '.main-title',
               'main h1',
               'main h2',
               'article h1',
@@ -1553,25 +1580,23 @@ export async function processQueue() {
               '.hero h1',
               '.hero h2',
               '.banner h1',
-              '.banner h2',
-              '.page-title',
-              '.article-title',
-              '.post-title',
-              '.entry-title',
-              'h1.page-title',
-              'h1.article-title',
-              '.content-title',
-              '.main-title'
+              '.banner h2'
             ];
             
-            for (const selector of heroSelectors) {
+            for (const selector of classSelectors) {
               const text = $(selector).first().text().trim();
               if (text && text.length >= 2 && text.length <= 100) {
                 return text;
               }
             }
-            
-            // 4. 상단 영역에서 font-weight: bold이고 큰 텍스트 추출
+
+            // 6. h2 태그 (히어로 영역에 자주 사용)
+            const h2Text = $('h2').first().text().trim();
+            if (h2Text && h2Text.length >= 2 && h2Text.length <= 100) {
+              return h2Text;
+            }
+
+            // 7. 상단 영역에서 font-weight: bold이고 큰 텍스트 추출
             // body의 첫 30% 영역에서 큰 텍스트 찾기
             const bodyText = $('body').html() || '';
             const firstThird = bodyText.substring(0, Math.floor(bodyText.length * 0.3));
@@ -1603,24 +1628,51 @@ export async function processQueue() {
                 return firstLargeBold;
               }
             }
-            
+
             return null;
           };
           
-          // 히어로 영역 제목 추출
-          const heroTitle = extractHeroTitle();
+          // 정교한 제목 추출
+          let pageTitle = extractPageTitle();
           
-          // 제목 추출 (우선순위: 히어로 영역 제목 > h1 > title > og:title > pathname)
-          let pageTitle = heroTitle || 
-                         $('h1').first().text().trim() || 
-                         $('title').text().trim() || 
-                         $('meta[property="og:title"]').attr('content')?.trim() ||
-                         htmlContent.match(/<title[^>]*>([^<]+)<\/title>/i)?.[1]?.trim();
-          
-          // 제목이 없거나 너무 짧으면 URL 경로 사용
+          // 제목이 없거나 너무 짧으면 URL pathname에서 추출 (마지막 경로)
           if (!pageTitle || pageTitle.length < 2) {
-            const urlPath = new URL(targetUrl).pathname;
-            pageTitle = urlPath && urlPath !== '/' ? urlPath.split('/').pop() || urlPath : targetUrl;
+            try {
+              const urlPath = new URL(targetUrl).pathname;
+              if (urlPath && urlPath !== '/') {
+                const pathParts = urlPath.split('/').filter(p => p);
+                if (pathParts.length > 0) {
+                  const lastPart = pathParts[pathParts.length - 1];
+                  // URL 인코딩된 한글 디코딩 시도
+                  try {
+                    const decoded = decodeURIComponent(lastPart);
+                    pageTitle = decoded.replace(/[-_]/g, ' ').trim();
+                  } catch {
+                    pageTitle = lastPart.replace(/[-_]/g, ' ').trim();
+                  }
+                  
+                  // 여전히 제목이 없거나 너무 짧으면 전체 URL 사용
+                  if (!pageTitle || pageTitle.length < 2) {
+                    pageTitle = targetUrl;
+                  }
+                } else {
+                  pageTitle = targetUrl;
+                }
+              } else {
+                pageTitle = targetUrl;
+              }
+            } catch (urlError) {
+              // URL 파싱 실패 시 전체 URL 사용
+              pageTitle = targetUrl;
+            }
+          }
+          
+          // 제목 정리: 불필요한 공백 제거 및 길이 제한
+          if (pageTitle) {
+            pageTitle = pageTitle
+              .replace(/\s+/g, ' ') // 연속된 공백을 하나로
+              .trim()
+              .substring(0, 200); // 최대 200자로 제한
           }
           
           // 개선된 텍스트 추출: 구조를 유지하면서 텍스트 추출
