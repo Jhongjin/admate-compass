@@ -2092,6 +2092,23 @@ export async function processQueue() {
           } catch (ragError) {
             const ragProcessElapsed = Date.now() - ragProcessStartTime;
             console.error(`[CRITICAL] ❌ RAG 처리 실패/타임아웃: ${title} (소요 시간: ${ragProcessElapsed}ms)`, ragError);
+            
+            // 타임아웃 또는 에러 발생 시 즉시 문서 상태를 failed로 업데이트
+            try {
+              await supabase
+                .from('documents')
+                .update({ 
+                  status: 'failed', 
+                  updated_at: new Date().toISOString() 
+                })
+                .eq('id', resolvedDocumentId)
+                .in('status', ['processing', 'indexing']);
+              
+              console.log(`[CRITICAL] ✅ RAG 처리 실패로 인한 문서 상태 업데이트: ${resolvedDocumentId} -> failed`);
+            } catch (updateError) {
+              console.warn('[CRITICAL] ⚠️ 문서 상태 업데이트 실패 (계속 진행):', updateError);
+            }
+            
             // 타임아웃 또는 에러 발생 시 실패 결과 반환
             ragResult = {
               documentId: resolvedDocumentId,
