@@ -3031,7 +3031,7 @@ export async function processQueue() {
             .eq('id', documentId)
             .eq('status', 'processing') // processing 상태인 경우만 업데이트
             .select('id, status, chunk_count')
-            .single();
+            .maybeSingle();
           
           if (docUpdateError) {
             console.error('[CRITICAL] ⚠️ 메인 문서 상태 업데이트 실패:', {
