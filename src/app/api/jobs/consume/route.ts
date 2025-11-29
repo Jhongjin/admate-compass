@@ -1993,17 +1993,9 @@ export async function processQueue() {
               // 🔥 모달에서 생성한 문서(status: 'queued')인 경우, payload의 title을 우선 사용
               if (docById.status === 'queued' && job.payload?.title) {
                 const payloadTitle = job.payload.title as string;
-                if (payloadTitle && payloadTitle !== docById.title) {
-                  console.log(`[CRITICAL] 📝 모달에서 생성한 문서의 제목 업데이트: "${docById.title}" -> "${payloadTitle}"`);
-                  title = payloadTitle; // payload의 title 사용
-                }
-              }
-              
-              // 🔥 모달에서 생성한 문서(status: 'queued')인 경우, payload의 title을 우선 사용
-              if (docById.status === 'queued' && job.payload?.title) {
-                const payloadTitle = job.payload.title as string;
-                if (payloadTitle && payloadTitle !== docById.title) {
-                  console.log(`[CRITICAL] 📝 모달에서 생성한 문서의 제목 업데이트: "${docById.title}" -> "${payloadTitle}"`);
+                const docTitle = (docById as any).title || '';
+                if (payloadTitle && payloadTitle !== docTitle) {
+                  console.log(`[CRITICAL] 📝 모달에서 생성한 문서의 제목 업데이트: "${docTitle}" -> "${payloadTitle}"`);
                   title = payloadTitle; // payload의 title 사용
                 }
               }
