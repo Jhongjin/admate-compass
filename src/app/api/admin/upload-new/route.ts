@@ -1425,14 +1425,16 @@ export async function GET(request: NextRequest) {
     // 하위 페이지 "처리중 0개 청크" 자동 정리 강화 (메인 문서 동기화 전에 실행)
     try {
       // 하위 페이지 중 processing 상태이고 chunk_count가 0인 문서 조회
+      // 더 넓은 범위로 조회하여 확실히 정리
       const { data: stuckSubPages } = await supabase
         .from('documents')
-        .select('id, url, status, chunk_count, main_document_id')
+        .select('id, url, status, chunk_count, main_document_id, created_at')
         .eq('type', 'url')
         .eq('status', 'processing')
         .eq('chunk_count', 0)
         .not('main_document_id', 'is', null) // 하위 페이지만
-        .limit(200);
+        .order('created_at', { ascending: false }) // 최신순 정렬
+        .limit(500); // 더 많이 처리
       
       if (stuckSubPages && stuckSubPages.length > 0) {
         const stuckSubPageIds = stuckSubPages.map(d => d.id);

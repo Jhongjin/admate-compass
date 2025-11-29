@@ -12,11 +12,13 @@ export async function POST(request: NextRequest) {
     console.log('🔧 강제 작업 동기화 시작...');
 
     // 1. processing 상태인 CRAWL_SEED 작업 조회 (최신순 정렬)
+    // finished_at이 없는 작업도 포함 (완료되었지만 finished_at이 설정되지 않은 경우)
     const { data: processingJobs, error: jobsError } = await supabase
       .from('processing_jobs')
       .select('id, document_id, status, payload, started_at, finished_at, created_at')
       .eq('job_type', 'CRAWL_SEED')
       .eq('status', 'processing')
+      .is('finished_at', null) // finished_at이 없는 작업만 (이미 finished_at이 있으면 완료된 것으로 간주)
       .order('created_at', { ascending: false })
       .limit(100);
 
