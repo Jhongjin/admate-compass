@@ -609,6 +609,10 @@ export default function NewDocumentUpload({ onUpload, vendor, hideList = false }
               multiple
               className="absolute inset-0 opacity-0 cursor-pointer"
               onChange={handleInputChange}
+              onClick={(e) => {
+                // input 클릭 시 이벤트 전파 중지 (div의 onClick과 중복 방지)
+                e.stopPropagation();
+              }}
             />
           </div>
 
