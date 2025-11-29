@@ -37,7 +37,7 @@ export async function POST(
     console.log(`📋 문서 정보 조회 중: ${documentId}`);
     const { data: document, error: docError } = await supabase
       .from('documents')
-      .select('id, title, content, url, document_url, type, source_vendor, main_document_id, status, created_at')
+      .select('id, title, content, url, document_url, type, source_vendor, main_document_id, status, created_at, file_type, file_size, original_file_name, sanitized_file_name')
       .eq('id', documentId)
       .maybeSingle();
 
@@ -231,7 +231,68 @@ export async function POST(
     } else if (document.type === 'file') {
       console.log(`📁 파일 재인덱싱 시작: ${document.title}`);
       
-      if (!document.content || document.content.trim() === '') {
+      let contentToProcess = document.content || '';
+      let fileType = document.file_type || 'text/plain';
+      let fileSize = document.file_size || 0;
+      
+      // PDF/DOCX 파일의 경우 Storage에서 원본 파일을 가져와서 텍스트 추출 시도
+      const fileName = document.original_file_name || document.sanitized_file_name || document.title;
+      const fileExtension = fileName?.toLowerCase().split('.').pop();
+      
+      if ((fileExtension === 'pdf' || fileExtension === 'docx') && (!contentToProcess || contentToProcess.includes('PDF 문서:') || contentToProcess.includes('DOCX 문서:') || contentToProcess.includes('텍스트 추출이 비활성화'))) {
+        console.log('📥 Storage에서 원본 파일 다운로드 시도:', fileName);
+        
+        try {
+          // Storage에서 파일 찾기 (document_id로 경로 검색)
+          const { data: files, error: listError } = await supabase.storage
+            .from(STORAGE_BUCKET)
+            .list(documentId, {
+              limit: 100,
+              sortBy: { column: 'created_at', order: 'desc' }
+            });
+          
+          if (!listError && files && files.length > 0) {
+            // 가장 최근 파일 찾기
+            const latestFile = files[0];
+            const filePath = `${documentId}/${latestFile.name}`;
+            
+            console.log(`📥 Storage 파일 다운로드: ${filePath}`);
+            const { data: fileData, error: downloadError } = await supabase.storage
+              .from(STORAGE_BUCKET)
+              .download(filePath);
+            
+            if (!downloadError && fileData) {
+              const arrayBuffer = await fileData.arrayBuffer();
+              const fileBuffer = Buffer.from(arrayBuffer);
+              
+              console.log(`✅ Storage 파일 다운로드 완료: ${fileBuffer.length} bytes`);
+              
+              // RAGProcessor의 extractTextFromFile 사용
+              const ragProcessor = new RAGProcessor();
+              const extractionResult = await ragProcessor.extractTextFromFile(
+                fileBuffer,
+                fileName,
+                fileType
+              );
+              
+              contentToProcess = extractionResult.cleanedText;
+              fileSize = fileBuffer.length;
+              fileType = fileExtension === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
+              
+              console.log(`✅ 텍스트 추출 완료: ${contentToProcess.length}자`);
+            } else {
+              console.warn('⚠️ Storage 파일 다운로드 실패, 기존 content 사용:', downloadError);
+            }
+          } else {
+            console.warn('⚠️ Storage에서 파일을 찾을 수 없음, 기존 content 사용');
+          }
+        } catch (storageError) {
+          console.error('❌ Storage 처리 오류:', storageError);
+          // Storage 오류 시 기존 content 사용
+        }
+      }
+      
+      if (!contentToProcess || contentToProcess.trim() === '') {
         return NextResponse.json(
           { success: false, error: '파일 문서에 콘텐츠가 없습니다. 파일을 다시 업로드해주세요.' },
           { status: 400 }
@@ -244,10 +305,10 @@ export async function POST(
         const ragResult = await ragProcessor.processDocument({
           id: document.id,
           title: document.title,
-          content: document.content,
+          content: contentToProcess,
           type: 'file',
-          file_size: Buffer.byteLength(document.content, 'utf8'),
-          file_type: 'text/plain',
+          file_size: fileSize || Buffer.byteLength(contentToProcess, 'utf8'),
+          file_type: fileType,
           url: undefined,
           source_vendor: document.source_vendor || 'META',
           main_document_id: document.main_document_id,
