@@ -72,9 +72,14 @@ export default function NewDocumentUpload({ onUpload, vendor, hideList = false }
   const fetchUploadedDocuments = useCallback(async () => {
     try {
       setIsLoadingDocuments(true);
-      console.log('📋 업로드된 문서 목록 가져오기 시작');
+      console.log('📋 업로드된 문서 목록 가져오기 시작', { vendor });
 
-      const response = await fetchWithTimeout('/api/admin/upload-new', {
+      // vendor가 있으면 쿼리 파라미터에 추가
+      const url = vendor 
+        ? `/api/admin/upload-new?vendor=${encodeURIComponent(vendor)}`
+        : '/api/admin/upload-new';
+
+      const response = await fetchWithTimeout(url, {
         method: 'GET',
         headers: {
           'Content-Type': 'application/json',
@@ -105,10 +110,10 @@ export default function NewDocumentUpload({ onUpload, vendor, hideList = false }
     }
   }, [toast]);
 
-  // 컴포넌트 마운트 시 문서 목록 로드
+  // 컴포넌트 마운트 시 및 vendor 변경 시 문서 목록 로드
   useEffect(() => {
     fetchUploadedDocuments();
-  }, [fetchUploadedDocuments]);
+  }, [fetchUploadedDocuments, vendor]);
 
   // 파일 드래그 앤 드롭 핸들러
   const handleDrag = useCallback((e: React.DragEvent) => {
@@ -300,6 +305,12 @@ export default function NewDocumentUpload({ onUpload, vendor, hideList = false }
             fetchUploadedDocuments();
           }, 1000);
 
+          // 완료된 파일을 3초 후 업로드 리스트에서 제거
+          setTimeout(() => {
+            setFiles(prev => prev.filter(f => f.id !== fileId));
+            console.log(`✅ 완료된 파일 제거: ${fileName}`);
+          }, 3000);
+
           return;
         }
 
@@ -456,6 +467,12 @@ export default function NewDocumentUpload({ onUpload, vendor, hideList = false }
       setTimeout(() => {
         fetchUploadedDocuments();
       }, 1000);
+
+      // 완료된 파일을 3초 후 업로드 리스트에서 제거
+      setTimeout(() => {
+        setFiles(prev => prev.filter(f => f.id !== fileId));
+        console.log(`✅ 완료된 파일 제거: ${file.name}`);
+      }, 3000);
 
     } catch (error) {
       console.error('파일 처리 오류:', error);
