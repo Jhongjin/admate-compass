@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -97,6 +97,14 @@ export default function GroupedDocumentList({
   actionLoading,
   deletingDocument
 }: GroupedDocumentListProps) {
+  
+  // 디버깅: 컴포넌트 마운트 시 onReindexDocument 확인
+  useEffect(() => {
+    console.log('🔍 [GroupedDocumentList] 컴포넌트 마운트됨');
+    console.log('🔍 [GroupedDocumentList] onReindexDocument 타입:', typeof onReindexDocument);
+    console.log('🔍 [GroupedDocumentList] onReindexDocument 값:', onReindexDocument);
+    console.log('🔍 [GroupedDocumentList] onReindexDocument 함수 본문:', onReindexDocument?.toString?.()?.substring(0, 500));
+  }, [onReindexDocument]);
   
   // 크롤링 작업 상태를 우선적으로 확인하는 헬퍼 함수
   const getEffectiveStatus = (doc: GroupedDocument): { status: string; isCrawling: boolean } => {

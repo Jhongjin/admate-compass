@@ -791,13 +791,7 @@ export default function DocumentsPage() {
                                 onToggleGroupExpansion={handleToggleGroupExpansion}
                                 onToggleSubPageSelection={() => { }} // Not fully implemented in this view
                                 onToggleAllSubPages={() => { }}
-                                onReindexDocument={useMemo(() => {
-                                    console.log('🔍 [DocumentsPage] GroupedDocumentList 렌더링 - onReindexDocument prop 설정');
-                                    console.log('🔍 [DocumentsPage] handleReindexDocument:', handleReindexDocument);
-                                    console.log('🔍 [DocumentsPage] handleReindexDocument 타입:', typeof handleReindexDocument);
-                                    console.log('🔍 [DocumentsPage] handleReindexDocument 함수 본문:', handleReindexDocument?.toString?.()?.substring(0, 500));
-                                    return handleReindexDocument;
-                                }, [handleReindexDocument])}
+                                onReindexDocument={handleReindexDocument}
                                 onDownloadDocument={() => { }} // Placeholder
                                 onDeleteDocument={(id) => setDeleteId(id)}
                                 onSelectAll={handleSelectAll}
