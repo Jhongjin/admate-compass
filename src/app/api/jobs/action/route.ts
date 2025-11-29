@@ -53,9 +53,9 @@ export async function POST(request: NextRequest) {
       
       if (fetchError) throw fetchError;
       
-      // 멈춘 작업 감지: processing 상태이지만 started_at이 30분 이상 지난 경우
+      // 멈춘 작업 감지: processing 상태이지만 started_at이 2시간 이상 지난 경우
       const now = Date.now();
-      const STUCK_THRESHOLD_MS = 30 * 60 * 1000; // 30분
+      const STUCK_THRESHOLD_MS = 2 * 60 * 60 * 1000; // 2시간 (10시간 지연 문제 해결)
       
       const deletableJobIds: string[] = [];
       const stuckJobIds: string[] = [];

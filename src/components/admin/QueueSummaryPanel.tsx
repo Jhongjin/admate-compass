@@ -45,7 +45,7 @@ export default function QueueSummaryPanel({ selectedVendors = [] }: QueueSummary
         });
 
         const now = Date.now();
-        const STUCK_THRESHOLD_MS = 30 * 60 * 1000; // 30분
+        const STUCK_THRESHOLD_MS = 2 * 60 * 60 * 1000; // 2시간 (10시간 지연 문제 해결)
         
         return {
           queued: filteredJobs.filter(j => ['queued', 'retrying'].includes(j.status)).length,
@@ -59,37 +59,37 @@ export default function QueueSummaryPanel({ selectedVendors = [] }: QueueSummary
         };
       }
 
-      const { data: queuedData } = await query.in('status', ['queued', 'retrying']);
-      const { data: processingData } = await supabase
+      // 정확한 상태 조회를 위해 개별 쿼리 대신 전체 조회 후 필터링
+      const { data: allJobs, error: allJobsError } = await supabase
         .from('processing_jobs')
-        .select('status', { count: 'exact', head: true })
-        .eq('status', 'processing');
-      const { data: failedData } = await supabase
-        .from('processing_jobs')
-        .select('status', { count: 'exact', head: true })
-        .eq('status', 'failed');
-
-      // 멈춘 작업 개수 계산 (30분 이상 진행 중인 processing 작업)
+        .select('id, status, started_at, finished_at')
+        .limit(1000); // 충분한 수의 작업 조회
+      
+      if (allJobsError) {
+        console.error('큐 통계 조회 오류:', allJobsError);
+        return { queued: 0, processing: 0, failed: 0, stuck: 0 };
+      }
+      
       const now = Date.now();
-      const STUCK_THRESHOLD_MS = 30 * 60 * 1000; // 30분
+      const STUCK_THRESHOLD_MS = 2 * 60 * 60 * 1000; // 2시간 (10시간 지연 문제 해결)
       
-      const { data: processingJobsWithTime } = await supabase
-        .from('processing_jobs')
-        .select('id, started_at')
-        .eq('status', 'processing')
-        .not('started_at', 'is', null);
+      // 상태별 카운트 계산
+      const queued = (allJobs || []).filter(j => ['queued', 'retrying'].includes(j.status)).length;
+      const processing = (allJobs || []).filter(j => j.status === 'processing').length;
+      const failed = (allJobs || []).filter(j => j.status === 'failed').length;
       
-      const stuckCount = (processingJobsWithTime || []).filter(job => {
-        if (!job.started_at) return false;
+      // 멈춘 작업 개수 계산 (2시간 이상 진행 중인 processing 작업)
+      const stuck = (allJobs || []).filter(job => {
+        if (job.status !== 'processing' || !job.started_at) return false;
         const elapsed = now - new Date(job.started_at).getTime();
         return elapsed > STUCK_THRESHOLD_MS;
       }).length;
 
       return {
-        queued: queuedData?.length || 0,
-        processing: processingData?.length || 0,
-        failed: failedData?.length || 0,
-        stuck: stuckCount,
+        queued,
+        processing,
+        failed,
+        stuck,
       };
     },
     refetchInterval: 5000, // 5초마다 자동 갱신
@@ -107,6 +107,28 @@ export default function QueueSummaryPanel({ selectedVendors = [] }: QueueSummary
     } catch (err) {
       console.error('즉시 처리 오류:', err);
       alert('처리 중 오류가 발생했습니다.');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  // 강제 동기화 (processing_jobs와 documents 테이블 비교)
+  const handleForceSync = async () => {
+    try {
+      setProcessing(true);
+      const res = await fetchWithTimeout('/api/admin/force-sync-jobs', { method: 'POST' });
+      const result = await res.json();
+      if (result.success) {
+        alert(`동기화 완료: ${result.synced}개 작업이 완료 상태로 업데이트되었습니다.`);
+        await refetch();
+        // 페이지 새로고침하여 UI 업데이트
+        window.location.reload();
+      } else {
+        alert(`동기화 실패: ${result.error}`);
+      }
+    } catch (err) {
+      console.error('강제 동기화 오류:', err);
+      alert('동기화 중 오류가 발생했습니다.');
     } finally {
       setProcessing(false);
     }
@@ -241,7 +263,7 @@ export default function QueueSummaryPanel({ selectedVendors = [] }: QueueSummary
     try {
       setProcessing(true);
       const now = Date.now();
-      const STUCK_THRESHOLD_MS = 30 * 60 * 1000; // 30분
+      const STUCK_THRESHOLD_MS = 2 * 60 * 60 * 1000; // 2시간 (10시간 지연 문제 해결)
       
       const { data: allProcessingJobs } = await supabase
         .from('processing_jobs')
@@ -358,6 +380,17 @@ export default function QueueSummaryPanel({ selectedVendors = [] }: QueueSummary
           >
             <RefreshCw className={`w-4 h-4 mr-2 ${processing ? 'animate-spin' : ''}`} />
             즉시 처리
+          </Button>
+          
+          <Button
+            onClick={handleForceSync}
+            disabled={processing}
+            variant="outline"
+            className="w-full bg-orange-900/20 border-orange-600/50 text-orange-300 hover:bg-orange-800/30 hover:text-orange-200 h-10 font-semibold"
+            title="processing_jobs와 documents 테이블을 비교하여 실제로 완료된 작업을 강제로 동기화합니다"
+          >
+            <RefreshCw className={`w-4 h-4 mr-2 ${processing ? 'animate-spin' : ''}`} />
+            강제 동기화 (재배포 불필요)
           </Button>
           
           <div className="grid grid-cols-2 gap-3">

@@ -178,21 +178,21 @@ export default function QueueMonitoringPanel({ vendors = [], defaultOpen = false
     }
 
     const jobIds = Array.from(selectedJobs);
-    // 멈춘 작업 감지: processing 상태이지만 started_at이 30분 이상 지난 경우
+    // 멈춘 작업 감지: processing 상태이지만 started_at이 2시간 이상 지난 경우
     const stuckJobs = jobs.filter(j => 
       jobIds.includes(j.id) && 
       j.status === 'processing' && 
       j.started_at && 
-      (Date.now() - new Date(j.started_at).getTime()) > 30 * 60 * 1000
+      (Date.now() - new Date(j.started_at).getTime()) > 2 * 60 * 60 * 1000
     );
     
     const deletableJobs = jobs.filter(j => {
       if (!jobIds.includes(j.id)) return false;
       // 일반 삭제 가능한 상태
       if (['queued', 'failed', 'cancelled', 'retrying'].includes(j.status)) return true;
-      // 멈춘 작업 (30분 이상)
+      // 멈춘 작업 (2시간 이상)
       if (j.status === 'processing' && j.started_at && 
-          (Date.now() - new Date(j.started_at).getTime()) > 30 * 60 * 1000) return true;
+          (Date.now() - new Date(j.started_at).getTime()) > 2 * 60 * 60 * 1000) return true;
       // 진행중인 작업도 포함 (강제 삭제)
       if (j.status === 'processing') return true;
       return false;
@@ -272,9 +272,9 @@ export default function QueueMonitoringPanel({ vendors = [], defaultOpen = false
     const newSelected = new Set(selectedJobs);
     jobs.forEach(job => {
       if (status === 'stuck') {
-        // 멈춘 작업 선택: processing 상태이지만 started_at이 30분 이상 지난 경우
+        // 멈춘 작업 선택: processing 상태이지만 started_at이 2시간 이상 지난 경우
         if (job.status === 'processing' && job.started_at && 
-            (Date.now() - new Date(job.started_at).getTime()) > 30 * 60 * 1000) {
+            (Date.now() - new Date(job.started_at).getTime()) > 2 * 60 * 60 * 1000) {
           newSelected.add(job.id);
         }
       } else if (job.status === status && ['queued', 'failed', 'cancelled', 'retrying'].includes(job.status)) {
@@ -303,7 +303,7 @@ export default function QueueMonitoringPanel({ vendors = [], defaultOpen = false
     stuck: jobs.filter(j => 
       j.status === 'processing' && 
       j.started_at && 
-      (Date.now() - new Date(j.started_at).getTime()) > 30 * 60 * 1000
+      (Date.now() - new Date(j.started_at).getTime()) > 2 * 60 * 60 * 1000
     ).length,
   };
 
@@ -443,7 +443,7 @@ export default function QueueMonitoringPanel({ vendors = [], defaultOpen = false
                           if (['queued', 'failed', 'cancelled', 'retrying'].includes(j.status)) return true;
                           // 멈춘 작업도 포함
                           if (j.status === 'processing' && j.started_at && 
-                              (Date.now() - new Date(j.started_at).getTime()) > 30 * 60 * 1000) return true;
+                              (Date.now() - new Date(j.started_at).getTime()) > 2 * 60 * 60 * 1000) return true;
                           return false;
                         }).length}
                         onChange={(e) => {
@@ -453,7 +453,7 @@ export default function QueueMonitoringPanel({ vendors = [], defaultOpen = false
                                 if (['queued', 'failed', 'cancelled', 'retrying'].includes(j.status)) return true;
                                 // 멈춘 작업도 포함
                                 if (j.status === 'processing' && j.started_at && 
-                                    (Date.now() - new Date(j.started_at).getTime()) > 30 * 60 * 1000) return true;
+                                    (Date.now() - new Date(j.started_at).getTime()) > 2 * 60 * 60 * 1000) return true;
                                 return false;
                               })
                               .map(j => j.id);
@@ -500,9 +500,9 @@ export default function QueueMonitoringPanel({ vendors = [], defaultOpen = false
                       </TableCell>
                     </TableRow>
                   ) : jobs.map(j => {
-                    // 멈춘 작업 감지: processing 상태이지만 started_at이 30분 이상 지난 경우
+                    // 멈춘 작업 감지: processing 상태이지만 started_at이 2시간 이상 지난 경우
                     const isStuck = j.status === 'processing' && j.started_at && 
-                      (Date.now() - new Date(j.started_at).getTime()) > 30 * 60 * 1000; // 30분
+                      (Date.now() - new Date(j.started_at).getTime()) > 2 * 60 * 60 * 1000; // 2시간 (10시간 지연 문제 해결)
                     
                     const isDeletable = ['queued', 'failed', 'cancelled', 'retrying'].includes(j.status) || isStuck;
                     const isSelected = selectedJobs.has(j.id);

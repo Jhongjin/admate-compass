@@ -353,8 +353,9 @@ function normalizeTablesToMarkdown(text: string): string {
 export async function processQueue() {
   const supabase = await createPureClient();
   
-  // 타임아웃된 작업 감지 및 처리 (30분 이상 processing 상태)
-  const TIMEOUT_MS = 30 * 60 * 1000; // 30분
+  // 타임아웃된 작업 감지 및 처리 (2시간 이상 processing 상태)
+  // 10시간 지연 문제를 해결하기 위해 타임아웃을 2시간으로 설정
+  const TIMEOUT_MS = 2 * 60 * 60 * 1000; // 2시간
   const timeoutThreshold = new Date(Date.now() - TIMEOUT_MS).toISOString();
   
   const { data: stuckJobs, error: stuckError } = await supabase
@@ -364,8 +365,8 @@ export async function processQueue() {
     .lt('started_at', timeoutThreshold);
   
   if (!stuckError && stuckJobs && stuckJobs.length > 0) {
-    console.warn(`⚠️ 타임아웃된 작업 감지: ${stuckJobs.length}개 작업이 30분 이상 진행 중입니다.`, 
-      stuckJobs.map(j => ({ id: j.id, url: (j.payload as any)?.url, started_at: j.started_at })));
+    console.warn(`⚠️ 타임아웃된 작업 감지: ${stuckJobs.length}개 작업이 2시간 이상 진행 중입니다.`, 
+      stuckJobs.map(j => ({ id: j.id, url: (j.payload as any)?.url, started_at: j.started_at, elapsedHours: ((Date.now() - new Date(j.started_at).getTime()) / (60 * 60 * 1000)).toFixed(2) })));
     
     // 타임아웃된 작업을 failed로 변경
     const stuckJobIds = stuckJobs.map(j => j.id);
@@ -373,7 +374,7 @@ export async function processQueue() {
       .from('processing_jobs')
       .update({
         status: 'failed',
-        error: '작업 타임아웃: 30분 이상 진행 중',
+        error: '작업 타임아웃: 2시간 이상 진행 중',
         finished_at: new Date().toISOString(),
       })
       .in('id', stuckJobIds);
