@@ -1977,7 +1977,7 @@ export async function processQueue() {
             // documentIdOverride가 있으면 해당 ID로 직접 조회
             const { data: docById, error: docByIdError } = await supabase
               .from('documents')
-              .select('id, chunk_count, created_at, url, status')
+              .select('id, title, chunk_count, created_at, url, status')
               .eq('id', documentIdOverride)
               .maybeSingle();
             
@@ -1998,6 +1998,15 @@ export async function processQueue() {
                   title = payloadTitle; // payload의 title 사용
                 }
               }
+              
+              // 🔥 모달에서 생성한 문서(status: 'queued')인 경우, payload의 title을 우선 사용
+              if (docById.status === 'queued' && job.payload?.title) {
+                const payloadTitle = job.payload.title as string;
+                if (payloadTitle && payloadTitle !== docById.title) {
+                  console.log(`[CRITICAL] 📝 모달에서 생성한 문서의 제목 업데이트: "${docById.title}" -> "${payloadTitle}"`);
+                  title = payloadTitle; // payload의 title 사용
+                }
+              }
             }
           }
           
@@ -2006,7 +2015,7 @@ export async function processQueue() {
             // URL 기준으로 조회 시 중복이 있을 수 있으므로 가장 최신 문서만 가져오기
             const { data: docsByUrl, error: docsByUrlError } = await supabase
               .from('documents')
-              .select('id, chunk_count, created_at, status')
+              .select('id, title, chunk_count, created_at, status')
               .eq('url', targetUrl)
               .order('created_at', { ascending: false })
               .limit(10); // 최대 10개까지 조회해서 중복 확인
