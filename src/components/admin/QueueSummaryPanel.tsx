@@ -68,7 +68,7 @@ export default function QueueSummaryPanel({ selectedVendors = [] }: QueueSummary
       // 정확한 상태 조회를 위해 개별 쿼리 대신 전체 조회 후 필터링
       const { data: allJobs, error: allJobsError } = await supabase
         .from('processing_jobs')
-        .select('id, status, started_at, finished_at')
+        .select('id, status, started_at, finished_at, document_id')
         .eq('job_type', 'CRAWL_SEED')
         .order('created_at', { ascending: false }) // 최신순 정렬
         .limit(1000); // 충분한 수의 Seed 크롤 작업 조회
@@ -76,6 +76,54 @@ export default function QueueSummaryPanel({ selectedVendors = [] }: QueueSummary
       if (allJobsError) {
         console.error('큐 통계 조회 오류:', allJobsError);
         return { queued: 0, processing: 0, failed: 0, stuck: 0 };
+      }
+      
+      // document_id가 있는 작업들의 실제 문서 상태 확인 (강제 동기화)
+      const jobsWithDocIds = (allJobs || []).filter(j => j.document_id && j.status === 'processing' && !j.finished_at);
+      if (jobsWithDocIds.length > 0) {
+        const docIds = jobsWithDocIds.map(j => j.document_id).filter(Boolean) as string[];
+        const { data: documents } = await supabase
+          .from('documents')
+          .select('id, status, chunk_count')
+          .in('id', docIds);
+        
+        if (documents) {
+          const docStatusMap = new Map(documents.map(d => [d.id, { status: d.status, chunk_count: d.chunk_count || 0 }]));
+          
+          // 실제로 완료된 작업들을 completed로 업데이트
+          for (const job of jobsWithDocIds) {
+            const docStatus = docStatusMap.get(job.document_id!);
+            if (docStatus && (docStatus.status === 'indexed' || docStatus.status === 'completed' || docStatus.chunk_count > 0)) {
+              // 백그라운드에서 업데이트 (await하지 않음)
+              supabase
+                .from('processing_jobs')
+                .update({
+                  status: 'completed',
+                  finished_at: new Date().toISOString(),
+                  result: {
+                    note: 'auto_synced_by_queue_summary',
+                    documentStatus: docStatus.status,
+                    chunkCount: docStatus.chunk_count,
+                    syncedAt: new Date().toISOString()
+                  }
+                })
+                .eq('id', job.id)
+                .eq('status', 'processing')
+                .is('finished_at', null)
+                .then(({ error }) => {
+                  if (error) {
+                    console.warn(`⚠️ 큐 요약 자동 동기화 실패 (${job.id}):`, error);
+                  } else {
+                    console.log(`✅ 큐 요약 자동 동기화: 작업 ${job.id.substring(0, 8)}... completed로 업데이트`);
+                  }
+                });
+              
+              // 메모리에서도 상태 업데이트
+              job.status = 'completed';
+              job.finished_at = new Date().toISOString();
+            }
+          }
+        }
       }
       
       const now = Date.now();
@@ -87,7 +135,7 @@ export default function QueueSummaryPanel({ selectedVendors = [] }: QueueSummary
         ['queued', 'retrying'].includes(j.status) && !j.finished_at
       ).length;
       
-      // processing 상태이면서 finished_at이 없는 것만 카운트
+      // processing 상태이면서 finished_at이 없는 것만 카운트 (위에서 업데이트된 작업은 제외됨)
       const processing = (allJobs || []).filter(j => 
         j.status === 'processing' && !j.finished_at
       ).length;
