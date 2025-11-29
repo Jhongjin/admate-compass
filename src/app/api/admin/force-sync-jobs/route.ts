@@ -93,13 +93,58 @@ export async function POST(request: NextRequest) {
 
         if (!document) {
           console.log(`⚠️ 문서를 찾을 수 없습니다 (jobId: ${job.id}, documentId: ${job.document_id}, url: ${jobUrl})`);
-          results.push({
-            jobId: job.id,
-            documentId: job.document_id || null,
-            url: jobUrl || null,
-            status: 'not_found',
-            message: '문서를 찾을 수 없습니다 (document_id와 URL 모두 확인했지만 찾지 못함)'
-          });
+          
+          // 문서를 찾을 수 없는 경우, 2시간 이상 지난 작업은 failed로 처리
+          const now = Date.now();
+          const startedAt = job.started_at ? new Date(job.started_at).getTime() : null;
+          const createdAt = job.created_at ? new Date(job.created_at).getTime() : null;
+          const elapsed = startedAt ? now - startedAt : (createdAt ? now - createdAt : 0);
+          const TIMEOUT_MS = 2 * 60 * 60 * 1000; // 2시간
+          
+          if (elapsed > TIMEOUT_MS) {
+            console.log(`⏰ 문서를 찾을 수 없는 작업 ${job.id}는 타임아웃되었습니다 (${Math.round(elapsed / (60 * 60 * 1000))}시간 경과)`);
+            
+            const { error: timeoutError } = await supabase
+              .from('processing_jobs')
+              .update({
+                status: 'failed',
+                finished_at: new Date().toISOString(),
+                error: `작업 타임아웃: 문서를 찾을 수 없고 2시간 이상 진행 중`,
+                result: {
+                  note: 'timeout_no_document',
+                  elapsedHours: Math.round(elapsed / (60 * 60 * 1000))
+                }
+              })
+              .eq('id', job.id)
+              .eq('status', 'processing');
+            
+            if (!timeoutError) {
+              syncedCount++;
+              results.push({
+                jobId: job.id,
+                documentId: job.document_id || null,
+                url: jobUrl || null,
+                status: 'timeout_no_document',
+                message: `타임아웃으로 failed 처리됨 (문서 없음, ${Math.round(elapsed / (60 * 60 * 1000))}시간 경과)`
+              });
+            } else {
+              results.push({
+                jobId: job.id,
+                documentId: job.document_id || null,
+                url: jobUrl || null,
+                status: 'error',
+                message: `타임아웃 처리 실패: ${timeoutError.message}`
+              });
+            }
+          } else {
+            results.push({
+              jobId: job.id,
+              documentId: job.document_id || null,
+              url: jobUrl || null,
+              status: 'not_found',
+              message: `문서를 찾을 수 없습니다 (경과: ${Math.round(elapsed / (60 * 1000))}분, 타임아웃까지 ${Math.round((TIMEOUT_MS - elapsed) / (60 * 1000))}분 남음)`
+            });
+          }
           continue;
         }
 
@@ -191,11 +236,13 @@ export async function POST(request: NextRequest) {
           // 실제로 완료되지 않은 경우 - 하지만 2시간 이상 지났으면 failed로 처리
           const now = Date.now();
           const startedAt = job.started_at ? new Date(job.started_at).getTime() : null;
-          const elapsed = startedAt ? now - startedAt : 0;
+          const createdAt = job.created_at ? new Date(job.created_at).getTime() : null;
+          // started_at이 없으면 created_at 기준으로 타임아웃 체크
+          const elapsed = startedAt ? now - startedAt : (createdAt ? now - createdAt : 0);
           const TIMEOUT_MS = 2 * 60 * 60 * 1000; // 2시간
           
           if (elapsed > TIMEOUT_MS) {
-            console.log(`⏰ 작업 ${job.id}는 타임아웃되었습니다 (${Math.round(elapsed / (60 * 60 * 1000))}시간 경과)`);
+            console.log(`⏰ 작업 ${job.id}는 타임아웃되었습니다 (${Math.round(elapsed / (60 * 60 * 1000))}시간 경과, started_at: ${job.started_at ? '있음' : '없음'})`);
             
             // 타임아웃된 작업을 failed로 업데이트
             const { error: timeoutError } = await supabase
@@ -215,6 +262,20 @@ export async function POST(request: NextRequest) {
               .eq('status', 'processing');
             
             if (!timeoutError) {
+              // 관련 문서도 failed로 업데이트 (processing 상태이면서 chunk_count가 0인 경우)
+              if (document.status === 'processing' && (document.chunk_count || 0) === 0) {
+                await supabase
+                  .from('documents')
+                  .update({
+                    status: 'failed',
+                    updated_at: new Date().toISOString()
+                  })
+                  .eq('id', document.id)
+                  .eq('status', 'processing')
+                  .eq('chunk_count', 0);
+                console.log(`✅ 타임아웃된 작업의 관련 문서 ${document.id}도 failed로 업데이트`);
+              }
+              
               syncedCount++;
               results.push({
                 jobId: job.id,
