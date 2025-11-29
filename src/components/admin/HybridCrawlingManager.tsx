@@ -266,12 +266,13 @@ export default function HybridCrawlingManager({
           }
         }
         
-        // 2단계: 진행 중인 CRAWL_SEED 작업 조회
+        // 2단계: 진행 중인 CRAWL_SEED 작업 조회 (cancelled 제외)
         const { data: activeJobs, error } = await supabase
           .from('processing_jobs')
           .select('id, status, result, payload, started_at, finished_at, document_id')
           .eq('job_type', 'CRAWL_SEED')
           .in('status', ['queued', 'processing', 'retrying', 'completed', 'failed'])
+          .neq('status', 'cancelled') // cancelled 상태 제외
           .order('created_at', { ascending: false })
           .limit(50);
         
