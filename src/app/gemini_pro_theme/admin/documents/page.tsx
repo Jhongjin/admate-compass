@@ -182,12 +182,8 @@ export default function DocumentsPage() {
         }
     });
 
-    const handleReindexDocument = useCallback((id: string, title: string) => {
+    const handleReindexDocument = (id: string, title: string) => {
         console.log('🔄 [handleReindexDocument] 호출됨:', { id, title });
-        console.log('🔄 [handleReindexDocument] reindexMutation 타입:', typeof reindexMutation);
-        console.log('🔄 [handleReindexDocument] reindexMutation 값:', reindexMutation);
-        console.log('🔄 [handleReindexDocument] toast 타입:', typeof toast);
-        console.log('🔄 [handleReindexDocument] 이 함수는 실제로 실행되고 있습니다!');
         
         if (!id || !title) {
             console.error('❌ [handleReindexDocument] 잘못된 파라미터:', { id, title });
@@ -231,7 +227,7 @@ export default function DocumentsPage() {
                 variant: "destructive",
             });
         }
-    }, [reindexMutation, toast]);
+    };
 
     // 디버깅: 컴포넌트 마운트 시 확인
     useEffect(() => {
