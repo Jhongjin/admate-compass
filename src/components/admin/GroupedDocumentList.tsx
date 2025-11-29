@@ -304,10 +304,32 @@ export default function GroupedDocumentList({
               <div className="flex items-center space-x-4">
                 <div className="text-right">
                   <div className="flex items-center space-x-2">
-                    {getStatusIcon(group.mainDocument.status)}
-                    <span className="text-sm text-gray-300">
-                      {getStatusText(group.mainDocument.status)}
-                    </span>
+                    {(() => {
+                      // 하위 페이지가 모두 완료되었는지 확인
+                      const allSubPagesCompleted = group.subPages.length > 0 && 
+                        group.subPages.every((sub: GroupedDocument) => 
+                          sub.status === 'indexed' || sub.status === 'completed'
+                        );
+                      const totalSubPageChunks = group.subPages.reduce((sum: number, sub: GroupedDocument) => 
+                        sum + (sub.chunk_count || 0), 0
+                      );
+                      
+                      // 메인 문서가 처리중이지만 하위 페이지가 모두 완료된 경우
+                      const shouldShowCompleted = (group.mainDocument.status === 'processing' || group.mainDocument.status === 'indexing') &&
+                        allSubPagesCompleted && 
+                        totalSubPageChunks > 0 &&
+                        totalSubPageChunks === (group.mainDocument.chunk_count || 0);
+                      
+                      const displayStatus = shouldShowCompleted ? 'indexed' : group.mainDocument.status;
+                      return (
+                        <>
+                          {getStatusIcon(displayStatus)}
+                          <span className="text-sm text-gray-300">
+                            {getStatusText(displayStatus)}
+                          </span>
+                        </>
+                      );
+                    })()}
                   </div>
                   <p className="text-xs text-gray-500 mt-1">
                     총 {group.totalChunks}개 청크
