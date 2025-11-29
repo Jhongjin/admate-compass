@@ -3016,13 +3016,80 @@ export async function processQueue() {
           crawlTimeMs: finishedResult.crawlTimeMs
         });
 
+        // 1. 메인 문서 상태 업데이트 (processing -> indexed)
+        if (documentId && mainDocResult.chunkCount > 0) {
+          const { error: docUpdateError } = await supabase
+            .from('documents')
+            .update({
+              status: 'indexed',
+              chunk_count: mainDocResult.chunkCount,
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', documentId)
+            .eq('status', 'processing'); // processing 상태인 경우만 업데이트
+          
+          if (docUpdateError) {
+            console.error('[CRITICAL] ⚠️ 메인 문서 상태 업데이트 실패:', {
+              documentId,
+              error: docUpdateError
+            });
+          } else {
+            console.log('[CRITICAL] ✅ 메인 문서 상태 업데이트 완료:', {
+              documentId,
+              status: 'processing -> indexed',
+              chunkCount: mainDocResult.chunkCount
+            });
+          }
+        }
+
+        // 2. 성공한 하위 페이지 문서들도 상태 업데이트
+        const successfulSubPages = subPageResults.filter(item => item.success && item.documentId);
+        if (successfulSubPages.length > 0) {
+          for (const subPage of successfulSubPages) {
+            if (subPage.documentId && subPage.chunkCount && subPage.chunkCount > 0) {
+              const { error: subDocUpdateError } = await supabase
+                .from('documents')
+                .update({
+                  status: 'indexed',
+                  chunk_count: subPage.chunkCount,
+                  updated_at: new Date().toISOString()
+                })
+                .eq('id', subPage.documentId)
+                .eq('status', 'processing');
+              
+              if (subDocUpdateError) {
+                console.error('[CRITICAL] ⚠️ 하위 페이지 문서 상태 업데이트 실패:', {
+                  documentId: subPage.documentId,
+                  url: subPage.url,
+                  error: subDocUpdateError
+                });
+              } else {
+                console.log('[CRITICAL] ✅ 하위 페이지 문서 상태 업데이트 완료:', {
+                  documentId: subPage.documentId,
+                  url: subPage.url,
+                  status: 'processing -> indexed',
+                  chunkCount: subPage.chunkCount
+                });
+              }
+            }
+          }
+        }
+
+        // 3. processing_jobs 업데이트 (document_id도 함께 설정)
+        const jobUpdateData: any = {
+          status: 'completed',
+          finished_at: new Date().toISOString(),
+          result: finishedResult,
+        };
+        
+        // document_id가 없었던 경우 설정
+        if (!job.document_id && documentId) {
+          jobUpdateData.document_id = documentId;
+        }
+
         const { error: updateError, data: updateData } = await supabase
           .from('processing_jobs')
-          .update({
-            status: 'completed',
-            finished_at: new Date().toISOString(),
-            result: finishedResult,
-          })
+          .update(jobUpdateData)
           .eq('id', job.id)
           .in('status', ['processing', 'queued', 'retrying']) // 여러 상태에서 완료로 변경 가능
           .select();
@@ -3039,19 +3106,21 @@ export async function processQueue() {
           // 현재 상태 확인
           const { data: currentJob } = await supabase
             .from('processing_jobs')
-            .select('status')
+            .select('status, document_id')
             .eq('id', job.id)
             .single();
           
           console.warn('[CRITICAL] ⚠️ 작업 상태 업데이트 실패: 이미 다른 상태이거나 취소됨', {
             jobId: job.id,
-            currentStatus: currentJob?.status || 'unknown'
+            currentStatus: currentJob?.status || 'unknown',
+            currentDocumentId: currentJob?.document_id || 'none'
           });
         } else {
           console.log('[CRITICAL] ✅ 작업 상태 업데이트 완료:', {
             jobId: job.id,
             updatedRows: updateData.length,
-            status: 'completed'
+            status: 'completed',
+            documentId: updateData[0]?.document_id || documentId || 'none'
           });
         }
 
@@ -3063,6 +3132,31 @@ export async function processQueue() {
       } catch (crawlError) {
         console.error('❌ CRAWL_SEED 처리 오류:', crawlError);
         const errorMessage = crawlError instanceof Error ? crawlError.message : String(crawlError);
+        
+        // 실패 시 documents 테이블도 함께 업데이트
+        const documentId = job.document_id || (job.payload as any)?.documentId;
+        if (documentId) {
+          const { error: docFailError } = await supabase
+            .from('documents')
+            .update({
+              status: 'failed',
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', documentId)
+            .eq('status', 'processing');
+          
+          if (docFailError) {
+            console.error('[CRITICAL] ⚠️ 문서 실패 상태 업데이트 실패:', {
+              documentId,
+              error: docFailError
+            });
+          } else {
+            console.log('[CRITICAL] ✅ 문서 실패 상태 업데이트 완료:', {
+              documentId,
+              status: 'processing -> failed'
+            });
+          }
+        }
         
         await supabase
           .from('processing_jobs')
