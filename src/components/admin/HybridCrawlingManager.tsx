@@ -1417,6 +1417,12 @@ export default function HybridCrawlingManager({
         console.log(`[POLL] 🎉 모든 작업 완료 - 폴링 종료`);
         setIsCrawling(false);
         
+        // 완료된 작업은 crawlingProgress에서 제거 (3초 후)
+        setTimeout(() => {
+          setCrawlingProgress([]);
+          jobIdsRef.current = [];
+        }, 3000);
+        
         if (pollingIntervalRef.current) {
           clearInterval(pollingIntervalRef.current);
           pollingIntervalRef.current = null;
@@ -2405,7 +2411,7 @@ export default function HybridCrawlingManager({
         </Button>
 
         {/* 크롤링 상태 동기화 버튼 */}
-        {(isCrawling || crawlingProgress.length > 0) && (
+        {(isCrawling || crawlingProgress.some(p => p.status === 'crawling' || p.status === 'pending')) && (
           <>
           <Button
             onClick={async () => {
