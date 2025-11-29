@@ -3,7 +3,7 @@ import { createPureClient } from '@/lib/supabase/server';
 
 /**
  * 모달에서 선택한 모든 페이지를 한번에 documents 테이블에 추가
- * status: 'queued' (대기중)으로 설정하여 큐에서 순차적으로 처리
+ * status: 'pending' (대기중)으로 설정하여 큐에서 순차적으로 처리
  */
 export async function POST(request: NextRequest) {
   try {
@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
         id: documentId,
         title: doc.title || doc.url,
         type: 'url',
-        status: 'queued', // 🔥 대기중 상태로 설정
+        status: 'pending', // 🔥 대기중 상태로 설정
         chunk_count: 0,
         url: doc.url,
         source_vendor: vendor,
