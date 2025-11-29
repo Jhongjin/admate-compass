@@ -1296,18 +1296,38 @@ export default function HybridCrawlingManager({
       console.log(`[POLL] 📊 URL별 작업 매핑: ${urlToLatestJob.size}개 URL에 작업 매칭됨`);
 
       // 5. 상태 업데이트 - documents 테이블을 최우선으로 확인 (가장 확실한 방법)
-      const nextProgress: CrawlingProgress[] = urls.map(url => {
+      // 🔥 핵심: processing 작업이 있어도 documents 테이블이 indexed면 그것을 우선함
+      const nextProgress: CrawlingProgress[] = await Promise.all(urls.map(async (url) => {
         const job = urlToLatestJob.get(url);
-        const docInfo = urlToDocStatus.get(url);
+        let docInfo = urlToDocStatus.get(url);
+
+        // 🔥 CRITICAL: processing 작업이 있으면 documents 테이블을 강제로 다시 조회하여 최신 상태 확인
+        if (job && (job.status === 'processing' || job.status === 'retrying' || job.status === 'completed' || job.finished_at)) {
+          const { data: freshDoc } = await supabase
+            .from('documents')
+            .select('id, url, status, chunk_count')
+            .eq('url', url)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+          
+          if (freshDoc) {
+            docInfo = {
+              status: freshDoc.status || 'pending',
+              chunkCount: freshDoc.chunk_count || 0
+            };
+            console.log(`[POLL] 🔄 ${url}: documents 테이블 재조회 - status=${docInfo.status}, chunks=${docInfo.chunkCount}`);
+          }
+        }
 
         // 🔥 핵심: documents 테이블 상태를 최우선으로 확인 (백엔드에서 이미 indexed로 업데이트되었을 수 있음)
         if (docInfo) {
           const docStatus = docInfo.status;
           const docChunkCount = docInfo.chunkCount || 0;
           
-          // indexed 또는 completed 상태이고 청크가 있으면 완료로 간주
+          // indexed 또는 completed 상태이고 청크가 있으면 완료로 간주 (processing 작업이 있어도 무시)
           if ((docStatus === 'indexed' || docStatus === 'completed') && docChunkCount > 0) {
-            console.log(`[POLL] ✅ ${url}: documents 테이블에서 indexed 상태 확인 (청크: ${docChunkCount})`);
+            console.log(`[POLL] ✅ ${url}: documents 테이블에서 indexed 상태 확인 (청크: ${docChunkCount}) - processing 작업 무시`);
             return {
               url,
               status: 'completed',
@@ -1381,20 +1401,20 @@ export default function HybridCrawlingManager({
           }
 
           if (jobStatus === 'processing' || jobStatus === 'retrying') {
-            // 타임아웃 체크: processing 상태가 2시간 이상 지속되면 failed로 간주
+            // 타임아웃 체크: processing 상태가 10분 이상 지속되고 pending 문서가 0 chunks이면 failed로 간주
             const now = Date.now();
             const startedAt = job.started_at ? new Date(job.started_at).getTime() : null;
             const createdAt = job.created_at ? new Date(job.created_at).getTime() : null;
             const elapsed = startedAt ? now - startedAt : (createdAt ? now - createdAt : 0);
-            const TIMEOUT_MS = 2 * 60 * 60 * 1000; // 2시간
+            const TIMEOUT_MS = 10 * 60 * 1000; // 10분으로 단축
             
             // pending 문서이고 0 chunks이며 타임아웃이면 failed로 표시
             if (docInfo?.status === 'pending' && docInfo?.chunkCount === 0 && elapsed > TIMEOUT_MS) {
-              console.log(`[POLL] ⏰ ${url}: 타임아웃 감지 (경과: ${Math.round(elapsed / (60 * 60 * 1000))}시간) - failed로 표시`);
+              console.log(`[POLL] ⏰ ${url}: 타임아웃 감지 (경과: ${Math.round(elapsed / (60 * 1000))}분) - failed로 표시`);
               return {
                 url,
                 status: 'failed',
-                message: `타임아웃: ${Math.round(elapsed / (60 * 60 * 1000))}시간 이상 진행 중`
+                message: `타임아웃: ${Math.round(elapsed / (60 * 1000))}분 이상 진행 중`
               };
             }
             
@@ -1420,7 +1440,7 @@ export default function HybridCrawlingManager({
           status: 'pending',
           message: '대기 중...'
         };
-      });
+      }));
 
       setCrawlingProgress(nextProgress);
 
