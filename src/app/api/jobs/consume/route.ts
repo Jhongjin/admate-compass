@@ -2172,7 +2172,7 @@ export async function processQueue() {
           }
         }
 
-        const subPageResults: Array<{ url: string; success: boolean; chunkCount?: number; error?: string }> = [];
+        const subPageResults: Array<{ url: string; success: boolean; chunkCount?: number; error?: string; documentId?: string }> = [];
 
         // extractSubPages 값 재확인 (메인 문서 처리 후)
         const extractSubPagesAfterMain = extractSubPagesRaw === true || extractSubPagesRaw === 'true';
@@ -2609,6 +2609,7 @@ export async function processQueue() {
                       success: false,
                       error: (result as any).error || 'RAG 처리 실패',
                       chunkCount: result.chunkCount || 0,
+                      documentId: result.documentId,
                     };
                   }
                   
@@ -2619,12 +2620,12 @@ export async function processQueue() {
                     statusEntry.title = finalTitle || statusEntry.title;
                   }
                   
-                  console.log(`[CRITICAL] ✅ 하위 페이지 처리 완료: ${subUrl} [제목: ${finalTitle}] (청크: ${result.chunkCount}개)`);
+                  console.log(`[CRITICAL] ✅ 하위 페이지 처리 완료: ${subUrl} [제목: ${finalTitle}] (청크: ${result.chunkCount}개, 문서 ID: ${result.documentId})`);
                   
                   // 메모리 최적화: 처리 완료된 페이지 데이터 즉시 해제
                   page = null as any;
                   
-                  return { url: subUrl, success: result.success, chunkCount: result.chunkCount };
+                  return { url: subUrl, success: result.success, chunkCount: result.chunkCount, documentId: result.documentId };
               } catch (subError) {
                   console.error('[CRITICAL] ❌ 하위 페이지 처리 중 예상치 못한 에러:', {
                   url: subUrl,
