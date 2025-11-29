@@ -200,6 +200,36 @@ export default function QueueSummaryPanel({ selectedVendors = [] }: QueueSummary
     }
   };
 
+  // 좀비 작업 정리 (중복/멈춘 작업 삭제 및 업데이트)
+  const handleCleanupZombieJobs = async () => {
+    if (!confirm('좀비 작업(중복/멈춘 작업)을 정리하시겠습니까?\n\n이 작업은:\n- 같은 URL의 중복 작업 중 오래된 것 삭제\n- 완료되었지만 processing 상태인 작업 completed로 업데이트\n- 타임아웃된 작업 failed로 업데이트')) {
+      return;
+    }
+    
+    try {
+      setProcessing(true);
+      const res = await fetchWithTimeout('/api/admin/cleanup-zombie-jobs', { 
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ force: true })
+      });
+      const result = await res.json();
+      if (result.success) {
+        alert(`좀비 작업 정리 완료:\n- 삭제: ${result.deleted}개\n- 업데이트: ${result.updated}개`);
+        await refetch();
+        // 페이지 새로고침하여 UI 업데이트
+        setTimeout(() => window.location.reload(), 1000);
+      } else {
+        alert(`좀비 작업 정리 실패: ${result.error}`);
+      }
+    } catch (err) {
+      console.error('좀비 작업 정리 오류:', err);
+      alert('좀비 작업 정리 중 오류가 발생했습니다.');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
   // 실패 작업 재시작
   const handleRetryFailed = async () => {
     try {
