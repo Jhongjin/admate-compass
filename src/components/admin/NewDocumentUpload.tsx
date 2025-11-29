@@ -412,7 +412,7 @@ export default function NewDocumentUpload({ onUpload, vendor, hideList = false }
     setTimeout(poll, pollInterval);
   };
 
-  const uploadAndIndexDocument = async (file: File, fileId: string) => {
+  const uploadAndIndexDocument = async (file: File, fileId: string, duplicateAction?: 'overwrite' | 'skip') => {
     try {
       // 1단계: 파일 업로드
       setFiles(prev => prev.map(f =>
@@ -449,7 +449,8 @@ export default function NewDocumentUpload({ onUpload, vendor, hideList = false }
         fileType: file.type,
         fileContent: base64Content,
         type: 'file',
-        vendor: normalizedVendor // 정규화된 벤더 값 전달
+        vendor: normalizedVendor, // 정규화된 벤더 값 전달
+        duplicateAction: duplicateAction // 중복 처리 옵션 (overwrite | skip)
       };
       
       console.log('📤 파일 업로드 요청:', {
@@ -539,6 +540,29 @@ export default function NewDocumentUpload({ onUpload, vendor, hideList = false }
       } catch (parseError) {
         console.error('❌ 응답 처리 오류:', parseError);
         throw parseError instanceof Error ? parseError : new Error('서버 응답 처리 중 알 수 없는 오류가 발생했습니다.');
+      }
+
+      // 중복 파일 처리 (409 Conflict)
+      if (response.status === 409 && result.error === 'DUPLICATE_FILE') {
+        console.log('⚠️ 중복 파일 감지:', {
+          fileName: file.name,
+          existingDocument: result.data?.existingDocument
+        });
+        
+        // 중복 파일 정보 저장 및 다이얼로그 표시
+        setDuplicateFile({
+          file: file,
+          existingDocument: result.data?.existingDocument,
+          existingDocumentId: result.data?.existingDocument?.id
+        });
+        setShowDuplicateDialog(true);
+        
+        // 파일 상태를 대기로 변경
+        setFiles(prev => prev.map(f =>
+          f.id === fileId ? { ...f, status: "pending", progress: 0 } : f
+        ));
+        
+        return; // 다이얼로그에서 사용자 선택 대기
       }
 
       // 오류 처리
