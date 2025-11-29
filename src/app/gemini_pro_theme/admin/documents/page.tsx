@@ -785,7 +785,16 @@ export default function DocumentsPage() {
                                 onToggleGroupExpansion={handleToggleGroupExpansion}
                                 onToggleSubPageSelection={() => { }} // Not fully implemented in this view
                                 onToggleAllSubPages={() => { }}
-                                onReindexDocument={handleReindexDocument}
+                                onReindexDocument={(id, title) => {
+                                    console.log('🔄 [DocumentsPage] onReindexDocument prop 호출:', { id, title });
+                                    console.log('🔄 [DocumentsPage] handleReindexDocument 타입:', typeof handleReindexDocument);
+                                    console.log('🔄 [DocumentsPage] handleReindexDocument 값:', handleReindexDocument);
+                                    if (handleReindexDocument) {
+                                        handleReindexDocument(id, title);
+                                    } else {
+                                        console.error('❌ [DocumentsPage] handleReindexDocument가 없음');
+                                    }
+                                }}
                                 onDownloadDocument={() => { }} // Placeholder
                                 onDeleteDocument={(id) => setDeleteId(id)}
                                 onSelectAll={handleSelectAll}
