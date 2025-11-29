@@ -996,9 +996,22 @@ export class RAGProcessor {
       }
 
       const isUpdate = !!existingDoc;
+      
+      // 기존 문서가 있으면 제목 조회 (크롤링된 제목으로 덮어쓰지 않기 위해)
+      let existingTitle: string | null = null;
+      if (isUpdate) {
+        const { data: existingDocWithTitle } = await supabase
+          .from('documents')
+          .select('title')
+          .eq('id', document.id)
+          .maybeSingle();
+        existingTitle = existingDocWithTitle?.title || null;
+      }
+      
       const documentData: any = {
         id: document.id,
-        title: document.title,
+        // 🔥 기존 문서가 있으면 기존 제목 유지, 없으면 크롤링된 제목 사용
+        title: isUpdate && existingTitle ? existingTitle : document.title,
         content: contentForStorage,
         type: document.type,
         status: 'processing',

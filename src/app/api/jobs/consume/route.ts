@@ -2153,11 +2153,21 @@ export async function processQueue() {
             console.log(`[CRITICAL] 📝 문서 상태 업데이트: pending/queued -> processing (문서 ID: ${documentIdOverride}, 제목 유지: ${finalTitle})`);
           } else if (!wasExistingDocument) {
             // 새 문서 생성
+            // 🔥 모달에서 설정한 제목 우선 사용 (payload.title)
+            let newDocTitle = title;
+            if (job.payload?.title) {
+              const payloadTitle = job.payload.title as string;
+              if (payloadTitle && payloadTitle.length >= 2) {
+                newDocTitle = payloadTitle;
+                console.log(`[CRITICAL] 📝 새 문서 생성 시 모달 제목 사용: "${newDocTitle}"`);
+              }
+            }
+            
             await supabase
               .from('documents')
               .insert({
                 id: resolvedDocumentId,
-                title,
+                title: newDocTitle, // 모달 제목 우선 사용
                 type: 'url',
                 status: 'processing',
                 chunk_count: 0,
