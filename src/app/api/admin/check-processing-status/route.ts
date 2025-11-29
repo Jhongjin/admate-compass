@@ -103,6 +103,14 @@ export async function POST(request: NextRequest) {
         let newStatus = doc.status;
         let newChunkCount = dbChunkCount;
 
+        // 케이스 0: pending 문서에 processing_jobs가 있으면 processing으로 동기화
+        if (doc.status === 'pending' && activeJobs.length > 0) {
+          needsSync = true;
+          newStatus = 'processing';
+          docCheck.issues.push(`pending 상태인데 processing_jobs가 진행 중`);
+          docCheck.actions.push(`pending -> processing으로 동기화`);
+        }
+
         // 케이스 1: 실제 청크가 있는데 processing 상태인 경우
         if (actualChunkCount > 0 && doc.status === 'processing') {
           needsSync = true;
