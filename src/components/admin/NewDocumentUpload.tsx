@@ -197,8 +197,10 @@ export default function NewDocumentUpload({ onUpload, vendor, hideList = false }
       const fileExtension = file.name.split('.').pop()?.toLowerCase();
       const isValidType = validTypes.includes(file.type) || ['.pdf', '.docx', '.txt'].includes(`.${fileExtension}`);
 
-      // 파일 크기 제한 (20MB)
-      const maxFileSize = parseInt(process.env.NEXT_PUBLIC_MAX_FILE_SIZE || '52428800'); // 50MB
+      // 파일 크기 제한 (15MB - Base64 인코딩 후 Vercel payload 제한 고려)
+      // Base64 인코딩 시 약 33% 증가하므로, 15MB 파일은 약 20MB가 됨
+      // Vercel 함수 payload 제한(4.5MB)을 고려하여 15MB로 제한
+      const maxFileSize = parseInt(process.env.NEXT_PUBLIC_MAX_FILE_SIZE || '15728640'); // 15MB (기본값 변경: 50MB → 15MB)
       const isValidSize = file.size <= maxFileSize;
 
       if (!isValidType) {
@@ -209,9 +211,11 @@ export default function NewDocumentUpload({ onUpload, vendor, hideList = false }
         });
       }
       if (!isValidSize) {
+        const fileSizeMB = (file.size / (1024 * 1024)).toFixed(2);
+        const maxSizeMB = Math.round(maxFileSize / 1024 / 1024);
         toast({
           title: "파일 크기 초과",
-          description: `${file.name} 파일은 ${Math.round(maxFileSize / 1024 / 1024)}MB를 초과할 수 없습니다. 최대 50MB까지 업로드 가능합니다.`,
+          description: `${file.name} 파일(${fileSizeMB}MB)은 최대 ${maxSizeMB}MB까지 업로드 가능합니다. 더 큰 파일은 분할하거나 압축해주세요.`,
           variant: "destructive",
         });
       }
@@ -518,6 +522,40 @@ export default function NewDocumentUpload({ onUpload, vendor, hideList = false }
 
       console.log('Base64 인코딩 완료, JSON 요청 전송');
 
+      // Base64 인코딩 후 크기 확인 (약 33% 증가)
+      const base64Size = base64Content.length;
+      const base64SizeMB = base64Size / (1024 * 1024);
+      const VERCEL_PAYLOAD_LIMIT = 4.5 * 1024 * 1024; // 4.5MB
+      
+      if (base64Size > VERCEL_PAYLOAD_LIMIT) {
+        const errorMessage = `파일이 너무 큽니다. Base64 인코딩 후 크기(${base64SizeMB.toFixed(2)}MB)가 Vercel 제한(4.5MB)을 초과합니다. 파일을 분할하거나 압축해주세요.`;
+        console.error('❌ Vercel payload 제한 초과:', {
+          originalSize: file.size,
+          originalSizeMB: (file.size / (1024 * 1024)).toFixed(2),
+          base64Size,
+          base64SizeMB: base64SizeMB.toFixed(2),
+          limit: VERCEL_PAYLOAD_LIMIT,
+          limitMB: (VERCEL_PAYLOAD_LIMIT / (1024 * 1024)).toFixed(2)
+        });
+        
+        setFiles(prev => prev.map(f =>
+          f.id === fileId ? {
+            ...f,
+            status: "error",
+            progress: 0,
+            error: errorMessage
+          } : f
+        ));
+        
+        toast({
+          title: "파일 크기 초과",
+          description: errorMessage,
+          variant: "destructive",
+        });
+        
+        return;
+      }
+
       // 타임아웃 설정 (파일 크기에 따라 조정)
       // 작은 파일(<5MB): 60초, 중간 파일(5-15MB): 120초, 큰 파일(>15MB): 180초
       const fileSizeMB = file.size / (1024 * 1024);
@@ -553,12 +591,27 @@ export default function NewDocumentUpload({ onUpload, vendor, hideList = false }
           console.error('❌ JSON이 아닌 응답 수신:', {
             contentType,
             status: response.status,
-            responsePreview: responseText.substring(0, 200)
+            responsePreview: responseText.substring(0, 500),
+            fileSize: file.size,
+            fileSizeMB: (file.size / (1024 * 1024)).toFixed(2)
           });
           
           // HTML 에러 페이지인 경우 (Vercel 타임아웃 등)
-          if (responseText.includes('<!DOCTYPE') || responseText.includes('<html')) {
-            throw new Error('요청 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.');
+          if (responseText.includes('<!DOCTYPE') || responseText.includes('<html') || responseText.includes('<!doctype')) {
+            // 파일 크기가 큰 경우 특별한 메시지
+            if (file.size > 10 * 1024 * 1024) { // 10MB 이상
+              throw new Error(`파일이 너무 커서 처리할 수 없습니다 (${(file.size / (1024 * 1024)).toFixed(2)}MB). 15MB 이하의 파일만 업로드 가능합니다.`);
+            }
+            throw new Error('요청 시간이 초과되었습니다. 파일 크기를 줄이거나 잠시 후 다시 시도해주세요.');
+          }
+          
+          // text/plain 응답인 경우 (Vercel 에러 등)
+          if (contentType.includes('text/plain')) {
+            // 파일 크기 관련 에러인지 확인
+            if (file.size > 15 * 1024 * 1024) {
+              throw new Error(`파일 크기(${(file.size / (1024 * 1024)).toFixed(2)}MB)가 제한을 초과했습니다. 최대 15MB까지 업로드 가능합니다.`);
+            }
+            throw new Error(`서버 오류가 발생했습니다. 파일 크기를 확인하거나 잠시 후 다시 시도해주세요. (상태: ${response.status})`);
           }
           
           throw new Error(`서버가 예상치 못한 형식의 응답을 반환했습니다 (${contentType}). 상태: ${response.status}`);
