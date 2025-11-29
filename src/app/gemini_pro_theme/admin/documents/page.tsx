@@ -113,6 +113,48 @@ export default function DocumentsPage() {
         }
     });
 
+    // 재인덱싱 mutation
+    const reindexMutation = useMutation({
+        mutationFn: async ({ documentId, title }: { documentId: string; title: string }) => {
+            const loadingKey = `${documentId}_reindex`;
+            setActionLoading(prev => ({ ...prev, [loadingKey]: true }));
+            
+            try {
+                const res = await fetch(`/api/admin/upload/${documentId}/reindex`, {
+                    method: 'POST'
+                });
+                
+                if (!res.ok) {
+                    const errorData = await res.json().catch(() => ({ error: 'Unknown error' }));
+                    throw new Error(errorData.error || '재인덱싱에 실패했습니다.');
+                }
+                
+                const result = await res.json();
+                return result;
+            } finally {
+                setActionLoading(prev => ({ ...prev, [loadingKey]: false }));
+            }
+        },
+        onSuccess: (data, variables) => {
+            queryClient.invalidateQueries({ queryKey: ['admin-documents'] });
+            toast({
+                title: "재인덱싱 완료",
+                description: `${variables.title} 문서의 재인덱싱이 완료되었습니다. (${data.document?.chunkCount || 0}개 청크)`,
+            });
+        },
+        onError: (error, variables) => {
+            toast({
+                title: "재인덱싱 실패",
+                description: error.message || '재인덱싱 중 오류가 발생했습니다.',
+                variant: "destructive",
+            });
+        }
+    });
+
+    const handleReindexDocument = useCallback((id: string, title: string) => {
+        reindexMutation.mutate({ documentId: id, title });
+    }, [reindexMutation]);
+
     const deleteMutation = useMutation({
         mutationFn: async (id: string) => {
             const res = await fetch(`/api/admin/upload-new?documentId=${id}`, {
