@@ -237,6 +237,7 @@ export default function DocumentsPage() {
         console.log('🔍 [DocumentsPage] 컴포넌트 마운트됨');
         console.log('🔍 [DocumentsPage] handleReindexDocument 타입:', typeof handleReindexDocument);
         console.log('🔍 [DocumentsPage] handleReindexDocument 값:', handleReindexDocument);
+        console.log('🔍 [DocumentsPage] handleReindexDocument 함수 본문:', handleReindexDocument?.toString?.()?.substring(0, 500));
     }, [handleReindexDocument]);
 
     const deleteMutation = useMutation({
@@ -787,16 +788,7 @@ export default function DocumentsPage() {
                                 onToggleGroupExpansion={handleToggleGroupExpansion}
                                 onToggleSubPageSelection={() => { }} // Not fully implemented in this view
                                 onToggleAllSubPages={() => { }}
-                                onReindexDocument={(id, title) => {
-                                    console.log('🔄 [DocumentsPage] onReindexDocument prop 호출:', { id, title });
-                                    console.log('🔄 [DocumentsPage] handleReindexDocument 타입:', typeof handleReindexDocument);
-                                    console.log('🔄 [DocumentsPage] handleReindexDocument 값:', handleReindexDocument);
-                                    if (handleReindexDocument) {
-                                        handleReindexDocument(id, title);
-                                    } else {
-                                        console.error('❌ [DocumentsPage] handleReindexDocument가 없음');
-                                    }
-                                }}
+                                onReindexDocument={handleReindexDocument}
                                 onDownloadDocument={() => { }} // Placeholder
                                 onDeleteDocument={(id) => setDeleteId(id)}
                                 onSelectAll={handleSelectAll}
