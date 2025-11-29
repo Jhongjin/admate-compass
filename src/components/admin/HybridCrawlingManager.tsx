@@ -1444,11 +1444,14 @@ export default function HybridCrawlingManager({
                     }
                   } else {
                     console.warn(`⚠️ 폴링: URL에 해당하는 작업을 찾지 못함 - URL: ${p.url}, JobId: ${jobId}`);
+                    // 관련 작업을 찾지 못하면 더 이상 진행 중이 아니므로 실패로 표시하여 무한 진행 상태 방지
+                    return { ...p, status: 'failed' as const, message: '관련 작업을 찾을 수 없습니다 (동기화 오류)' };
                   }
                 } else {
                   console.warn(`⚠️ 폴링: URL에 해당하는 JobId를 찾지 못함 - URL: ${p.url}`);
+                  // JobId 자체를 찾지 못해도 동일하게 실패로 처리
+                  return { ...p, status: 'failed' as const, message: '관련 작업을 찾을 수 없습니다 (동기화 오류)' };
                 }
-                return p;
               }).filter((p): p is CrawlingProgress => p !== null);
               
               return updated;
