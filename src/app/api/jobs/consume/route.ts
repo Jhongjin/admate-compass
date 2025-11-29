@@ -2560,6 +2560,38 @@ export async function processQueue() {
                       error: fetchError,
                       documentId
                     });
+                    
+                    // 🔥 근본 원인 해결: 다운로드 실패 시 이미 생성된 문서가 있으면 failed로 업데이트
+                    try {
+                      const { data: failedDoc } = await supabase
+                        .from('documents')
+                        .select('id, status, chunk_count')
+                        .eq('url', subUrl)
+                        .eq('type', 'url')
+                        .eq('main_document_id', documentId)
+                        .eq('status', 'processing')
+                        .eq('chunk_count', 0)
+                        .order('created_at', { ascending: false })
+                        .limit(1)
+                        .maybeSingle();
+                      
+                      if (failedDoc) {
+                        await supabase
+                          .from('documents')
+                          .update({ 
+                            status: 'failed', 
+                            updated_at: new Date().toISOString() 
+                          })
+                          .eq('id', failedDoc.id)
+                          .eq('status', 'processing')
+                          .eq('chunk_count', 0);
+                        
+                        console.log(`[CRITICAL] ✅ 다운로드 실패로 인한 문서 상태 업데이트: ${failedDoc.id} -> failed`);
+                      }
+                    } catch (docUpdateError) {
+                      console.warn(`[CRITICAL] ⚠️ 다운로드 실패 시 문서 상태 업데이트 실패: ${subUrl}`, docUpdateError);
+                    }
+                    
                     if (statusEntry) {
                       statusEntry.status = 'failed';
                       statusEntry.error = fetchError instanceof Error ? fetchError.message : String(fetchError);
@@ -3025,27 +3057,65 @@ export async function processQueue() {
                 console.warn(`[CRITICAL] ⏱️ 배치 ${Math.floor(i / BATCH_SIZE) + 1} 타임아웃 발생: ${timedOutCount}개 페이지가 타임아웃됨 (${BATCH_TIMEOUT}ms 초과) - 완료된 작업만 처리하고 계속 진행`);
               }
               
-              batchResults.forEach((settledResult, idx) => {
+              // 배치 결과 처리 및 문서 상태 업데이트
+              for (const [idx, settledResult] of batchResults.entries()) {
+                const subUrl = batch[idx];
+                
                 if (settledResult.status === 'fulfilled' && settledResult.value) {
                   subPageResults.push(settledResult.value);
                 } else if (settledResult.status === 'rejected') {
-                  const subUrl = batch[idx];
                   console.error(`[CRITICAL] ❌ 배치 처리 중 예상치 못한 에러 (하위 페이지 ${idx + 1}):`, {
                     url: subUrl,
                     error: settledResult.reason
                   });
+                  
+                  // 상태 엔트리 업데이트
                   const errorStatusEntry = subPageStatusMap.get(subUrl);
                   if (errorStatusEntry) {
                     errorStatusEntry.status = 'failed';
                     errorStatusEntry.error = settledResult.reason instanceof Error ? settledResult.reason.message : String(settledResult.reason);
                   }
+                  
+                  // 🔥 근본 원인 해결: 배치 처리 실패 시 문서 상태를 failed로 업데이트
+                  try {
+                    // URL과 main_document_id로 문서 찾기
+                    const { data: failedDoc } = await supabase
+                      .from('documents')
+                      .select('id, status, chunk_count')
+                      .eq('url', subUrl)
+                      .eq('type', 'url')
+                      .eq('main_document_id', documentId)
+                      .eq('status', 'processing')
+                      .eq('chunk_count', 0)
+                      .order('created_at', { ascending: false })
+                      .limit(1)
+                      .maybeSingle();
+                    
+                    if (failedDoc) {
+                      // 문서 상태를 failed로 업데이트
+                      await supabase
+                        .from('documents')
+                        .update({ 
+                          status: 'failed', 
+                          updated_at: new Date().toISOString() 
+                        })
+                        .eq('id', failedDoc.id)
+                        .eq('status', 'processing')
+                        .eq('chunk_count', 0);
+                      
+                      console.log(`[CRITICAL] ✅ 배치 처리 실패로 인한 문서 상태 업데이트: ${failedDoc.id} -> failed`);
+                    }
+                  } catch (docUpdateError) {
+                    console.warn(`[CRITICAL] ⚠️ 배치 처리 실패 시 문서 상태 업데이트 실패: ${subUrl}`, docUpdateError);
+                  }
+                  
                   subPageResults.push({
                     url: subUrl,
                     success: false,
                     error: settledResult.reason instanceof Error ? settledResult.reason.message : String(settledResult.reason),
                   });
                 }
-              });
+              }
               
               // 타임아웃 체크 및 배치 완료 로그
               const batchElapsedTime = Date.now() - batchStartTime;
