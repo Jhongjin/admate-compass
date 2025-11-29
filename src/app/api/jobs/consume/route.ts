@@ -2074,12 +2074,22 @@ export async function processQueue() {
 
           if (existingDoc?.id && !documentIdOverride) {
             // 기존 문서 업데이트
+            // 🔥 모달에서 생성한 문서(status: 'queued')인 경우, payload의 title을 우선 사용
+            let finalTitle = title;
+            if (existingDoc.status === 'queued' && job.payload?.title) {
+              const payloadTitle = job.payload.title as string;
+              if (payloadTitle && payloadTitle !== existingDoc.title) {
+                console.log(`[CRITICAL] 📝 모달에서 생성한 문서의 제목 업데이트: "${existingDoc.title}" -> "${payloadTitle}"`);
+                finalTitle = payloadTitle;
+              }
+            }
+            
             await supabase
               .from('documents')
               .update({
-                title,
+                title: finalTitle, // 🔥 모달의 정확한 제목 사용
                 type: 'url', // URL 크롤링 문서는 항상 'url' 타입으로 설정
-                status: 'processing',
+                status: 'processing', // queued -> processing으로 변경
                 file_size: fileSize,
                 file_type: 'text/html',
                 source_vendor: dbVendor,
@@ -2091,12 +2101,22 @@ export async function processQueue() {
               .eq('id', existingDoc.id);
           } else if (wasExistingDocument && documentIdOverride) {
             // documentIdOverride가 있고 기존 문서가 있는 경우 업데이트
+            // 🔥 모달에서 생성한 문서(status: 'queued')인 경우, payload의 title을 우선 사용
+            let finalTitle = title;
+            if (existingDoc?.status === 'queued' && job.payload?.title) {
+              const payloadTitle = job.payload.title as string;
+              if (payloadTitle && payloadTitle !== existingDoc.title) {
+                console.log(`[CRITICAL] 📝 모달에서 생성한 문서의 제목 업데이트: "${existingDoc.title}" -> "${payloadTitle}"`);
+                finalTitle = payloadTitle;
+              }
+            }
+            
             await supabase
               .from('documents')
               .update({
-                title,
+                title: finalTitle, // 🔥 모달의 정확한 제목 사용
                 type: 'url',
-                status: 'processing',
+                status: 'processing', // queued -> processing으로 변경
                 file_size: fileSize,
                 file_type: 'text/html',
                 source_vendor: dbVendor,

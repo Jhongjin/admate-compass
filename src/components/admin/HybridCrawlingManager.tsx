@@ -1213,14 +1213,10 @@ export default function HybridCrawlingManager({
     // UI 업데이트를 위한 짧은 지연
     await new Promise(resolve => setTimeout(resolve, 100));
 
-    // 선택한 페이지만 크롤링 (큐에 등록)
+    // 🔥 모달에서 선택한 모든 페이지를 한번에 documents 테이블에 추가 (대기중 상태)
     try {
       // 벤더 정보 가져오기
-      const dbVendors = vendors.length > 0 ? vendors.map(v => VENDOR_TO_DB_MAP[v] || 'META') : ['META'];
-      
-      // 각 URL을 큐에 등록 (모달의 정확한 제목 포함)
-      const jobIds: string[] = [];
-      jobIdsRef.current = []; // 초기화
+      const dbVendor = vendors.length > 0 ? VENDOR_TO_DB_MAP[vendors[0]] || 'META' : 'META';
       
       // allDiscoveredUrls에서 URL -> title 매핑 생성
       const urlToTitleMap = new Map<string, string>();
@@ -1230,10 +1226,45 @@ export default function HybridCrawlingManager({
         }
       });
       
-      for (let i = 0; i < selectedUrlsArray.length; i++) {
-        const url = selectedUrlsArray[i];
-        // 모달에서 선택한 정확한 제목 가져오기
-        const modalTitle = urlToTitleMap.get(url) || url;
+      // 모달에서 선택한 모든 페이지를 문서 목록에 한번에 추가
+      const documentsToCreate = selectedUrlsArray.map(url => ({
+        url,
+        title: urlToTitleMap.get(url) || url // 모달의 정확한 제목 사용
+      }));
+      
+      console.log(`📋 모달에서 선택한 ${documentsToCreate.length}개 페이지를 문서 목록에 한번에 추가 시작...`);
+      
+      const batchCreateResponse = await fetchWithTimeout('/api/admin/batch-create-documents', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          documents: documentsToCreate,
+          vendor: dbVendor
+        }),
+      }, 30000);
+
+      if (!batchCreateResponse.ok) {
+        throw new Error(`HTTP ${batchCreateResponse.status}: ${batchCreateResponse.statusText}`);
+      }
+
+      const batchCreateResult = await batchCreateResponse.json();
+      if (!batchCreateResult.success) {
+        throw new Error(batchCreateResult.error || '문서 생성 실패');
+      }
+
+      console.log(`✅ ${batchCreateResult.created}개 문서 생성, ${batchCreateResult.updated}개 문서 업데이트 완료`);
+      
+      // 생성된 문서들을 큐에 등록
+      const jobIds: string[] = [];
+      jobIdsRef.current = []; // 초기화
+      
+      const createdDocuments = batchCreateResult.documents || [];
+      
+      for (let i = 0; i < createdDocuments.length; i++) {
+        const doc = createdDocuments[i];
+        const url = doc.url;
         
         // 진행 상황 업데이트
         setCrawlingProgress(prev =>
@@ -1250,11 +1281,12 @@ export default function HybridCrawlingManager({
             },
             body: JSON.stringify({
               jobType: 'CRAWL_SEED',
+              documentId: doc.id, // 🔥 생성된 문서 ID 사용
               priority: 5,
               payload: {
                 url,
-                title: modalTitle, // 🔥 모달의 정확한 제목 포함
-                vendors: dbVendors,
+                title: doc.title, // 모달의 정확한 제목
+                vendors: [dbVendor],
                 domainLimit: crawlOptions.domainLimit,
                 respectRobots: crawlOptions.respectRobots,
                 maxDepth: 1,
