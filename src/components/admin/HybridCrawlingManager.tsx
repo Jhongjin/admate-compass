@@ -1381,6 +1381,23 @@ export default function HybridCrawlingManager({
           }
 
           if (jobStatus === 'processing' || jobStatus === 'retrying') {
+            // 타임아웃 체크: processing 상태가 2시간 이상 지속되면 failed로 간주
+            const now = Date.now();
+            const startedAt = job.started_at ? new Date(job.started_at).getTime() : null;
+            const createdAt = job.created_at ? new Date(job.created_at).getTime() : null;
+            const elapsed = startedAt ? now - startedAt : (createdAt ? now - createdAt : 0);
+            const TIMEOUT_MS = 2 * 60 * 60 * 1000; // 2시간
+            
+            // pending 문서이고 0 chunks이며 타임아웃이면 failed로 표시
+            if (docInfo?.status === 'pending' && docInfo?.chunkCount === 0 && elapsed > TIMEOUT_MS) {
+              console.log(`[POLL] ⏰ ${url}: 타임아웃 감지 (경과: ${Math.round(elapsed / (60 * 60 * 1000))}시간) - failed로 표시`);
+              return {
+                url,
+                status: 'failed',
+                message: `타임아웃: ${Math.round(elapsed / (60 * 60 * 1000))}시간 이상 진행 중`
+              };
+            }
+            
             return {
               url,
               status: 'crawling',
