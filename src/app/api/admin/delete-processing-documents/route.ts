@@ -19,7 +19,7 @@ export async function POST(request: NextRequest) {
     // 1. 삭제할 문서 조회
     let query = supabase
       .from('documents')
-      .select('id, title, url, status, chunk_count, document_id')
+      .select('id, title, url, status, chunk_count')
       .eq('type', 'url');
 
     // URL 필터
@@ -62,10 +62,23 @@ export async function POST(request: NextRequest) {
     const documentUrls = documentsToDelete.map(d => d.url).filter(Boolean) as string[];
 
     // 2. 관련 processing_jobs 조회 및 취소
-    const { data: relatedJobs, error: jobsError } = await supabase
+    // document_id로 매칭되는 작업과 CRAWL_SEED 타입 작업을 별도로 조회
+    const { data: jobsByDocumentId, error: jobsByDocError } = await supabase
       .from('processing_jobs')
       .select('id, job_type, status, document_id, payload')
-      .or(`document_id.in.(${documentIds.join(',')}),job_type.eq.CRAWL_SEED`);
+      .in('document_id', documentIds);
+    
+    const { data: crawlSeedJobs, error: crawlSeedError } = await supabase
+      .from('processing_jobs')
+      .select('id, job_type, status, document_id, payload')
+      .eq('job_type', 'CRAWL_SEED')
+      .in('status', ['queued', 'processing', 'retrying', 'completed', 'failed']);
+    
+    const relatedJobs = [
+      ...(jobsByDocumentId || []),
+      ...(crawlSeedJobs || [])
+    ];
+    const jobsError = jobsByDocError || crawlSeedError;
 
     let cancelledJobsCount = 0;
     if (!jobsError && relatedJobs) {
