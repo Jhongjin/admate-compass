@@ -1473,9 +1473,51 @@ export async function GET(request: NextRequest) {
       });
     }
     
+    // 각 문서의 URL에 대한 최신 processing_jobs 정보 조회
+    const documentUrls = (documents || [])
+      .filter((doc: any) => doc.url)
+      .map((doc: any) => doc.url);
+    
+    let jobStatusMap: Record<string, any> = {};
+    if (documentUrls.length > 0) {
+      // 각 URL에 대한 최신 CRAWL_SEED 작업 조회
+      const { data: jobs, error: jobsError } = await supabase
+        .from('processing_jobs')
+        .select('id, status, started_at, finished_at, result, payload, created_at')
+        .eq('job_type', 'CRAWL_SEED')
+        .in('status', ['queued', 'retrying', 'processing', 'completed', 'failed'])
+        .order('created_at', { ascending: false })
+        .limit(1000);
+      
+      if (!jobsError && jobs) {
+        // URL별로 가장 최신 작업만 선택
+        const urlToLatestJob = new Map<string, any>();
+        jobs.forEach(job => {
+          const jobUrl = (job.payload as any)?.url || (job.result as any)?.url;
+          if (jobUrl && !urlToLatestJob.has(jobUrl)) {
+            urlToLatestJob.set(jobUrl, job);
+          }
+        });
+        
+        // Map을 Record로 변환
+        urlToLatestJob.forEach((job, url) => {
+          jobStatusMap[url] = {
+            id: job.id,
+            status: job.status,
+            started_at: job.started_at,
+            finished_at: job.finished_at,
+            created_at: job.created_at
+          };
+        });
+      }
+    }
+
     const mappedDocuments = documents?.map((doc: any) => {
       const parentDoc = doc.main_document_id ? parentDocumentsMap.get(doc.main_document_id) : null;
       const parentUrl = parentDoc?.url || null;
+      
+      // 이 문서의 URL에 대한 크롤링 작업 상태
+      const jobStatus = doc.url ? jobStatusMap[doc.url] : null;
       
       return {
         ...doc,
@@ -1486,6 +1528,13 @@ export async function GET(request: NextRequest) {
         normalizedUrl: doc.url ? normalizeUrlForGrouping(doc.url) : null,
         normalizedMainUrl: parentUrl ? normalizeUrlForGrouping(parentUrl) : null,
         isMainUrl: !doc.main_document_id, // main_document_id가 없으면 메인 페이지
+        // 크롤링 작업 상태 정보 추가
+        crawlJobStatus: jobStatus ? {
+          status: jobStatus.status, // 'queued' | 'retrying' | 'processing' | 'completed' | 'failed'
+          started_at: jobStatus.started_at,
+          finished_at: jobStatus.finished_at,
+          created_at: jobStatus.created_at
+        } : null
       };
     }) || [];
 

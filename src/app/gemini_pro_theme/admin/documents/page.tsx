@@ -110,7 +110,11 @@ export default function DocumentsPage() {
             const res = await fetch(`/api/admin/upload-new?${params.toString()}`);
             if (!res.ok) throw new Error('Failed to fetch documents');
             return res.json();
-        }
+        },
+        // 크롤링 상태를 실시간으로 반영하기 위해 3초마다 자동 새로고침
+        refetchInterval: 3000,
+        // 백그라운드에서도 새로고침 (탭이 활성화되어 있을 때)
+        refetchIntervalInBackground: false
     });
 
     // 재인덱싱 mutation

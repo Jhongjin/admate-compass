@@ -27,6 +27,13 @@ import {
   Square
 } from 'lucide-react';
 
+interface CrawlJobStatus {
+  status: 'queued' | 'retrying' | 'processing' | 'completed' | 'failed';
+  started_at?: string | null;
+  finished_at?: string | null;
+  created_at?: string | null;
+}
+
 interface GroupedDocument {
   id: string;
   title: string;
@@ -38,6 +45,7 @@ interface GroupedDocument {
   updated_at: string;
   isMainUrl: boolean;
   parentUrl?: string;
+  crawlJobStatus?: CrawlJobStatus | null;
   discoveredUrls?: Array<{
     url: string;
     title?: string;
@@ -90,7 +98,27 @@ export default function GroupedDocumentList({
   deletingDocument
 }: GroupedDocumentListProps) {
   
-  const getStatusIcon = (status: string) => {
+  // 크롤링 작업 상태를 우선적으로 확인하는 헬퍼 함수
+  const getEffectiveStatus = (doc: GroupedDocument): { status: string; isCrawling: boolean } => {
+    // 크롤링 작업 상태가 있으면 우선 사용
+    if (doc.crawlJobStatus) {
+      const jobStatus = doc.crawlJobStatus.status;
+      if (jobStatus === 'queued' || jobStatus === 'retrying') {
+        return { status: 'queued', isCrawling: true };
+      } else if (jobStatus === 'processing') {
+        return { status: 'crawling', isCrawling: true };
+      } else if (jobStatus === 'completed') {
+        return { status: 'completed', isCrawling: false };
+      } else if (jobStatus === 'failed') {
+        return { status: 'failed', isCrawling: false };
+      }
+    }
+    
+    // 크롤링 작업 상태가 없으면 문서 상태 사용
+    return { status: doc.status, isCrawling: false };
+  };
+
+  const getStatusIcon = (status: string, isCrawling: boolean = false) => {
     switch (status) {
       case "indexed":
       case "completed":
@@ -98,7 +126,9 @@ export default function GroupedDocumentList({
       case "indexing":
       case "crawling":
       case "processing":
-        return <RefreshCw className="w-4 h-4 text-blue-300 animate-spin" />;
+        return <RefreshCw className={`w-4 h-4 text-blue-300 ${isCrawling ? 'animate-spin' : ''}`} />;
+      case "queued":
+        return <Clock className="w-4 h-4 text-gray-300" />;
       case "error":
         return <AlertTriangle className="w-4 h-4 text-yellow-300" />;
       case "failed":
@@ -116,9 +146,11 @@ export default function GroupedDocumentList({
       case "indexing":
         return "인덱싱";
       case "crawling":
-        return "크롤링";
+        return "크롤링 중";
       case "processing":
         return "처리중";
+      case "queued":
+        return "대기 중";
       case "error":
         return "오류";
       case "failed":
@@ -479,8 +511,15 @@ export default function GroupedDocumentList({
                               
                               <div className="flex items-center space-x-3 text-xs text-gray-400">
                                 <div className="flex items-center space-x-1">
-                                  {getStatusIcon(subPage.status)}
-                                  <span>{getStatusText(subPage.status)}</span>
+                                  {(() => {
+                                    const effectiveStatus = getEffectiveStatus(subPage);
+                                    return (
+                                      <>
+                                        {getStatusIcon(effectiveStatus.status, effectiveStatus.isCrawling && effectiveStatus.status === 'crawling')}
+                                        <span>{getStatusText(effectiveStatus.status)}</span>
+                                      </>
+                                    );
+                                  })()}
                                 </div>
                                 <span>{subPage.chunk_count}개 청크</span>
                                 {subPage.discoveredUrls && subPage.discoveredUrls.length > 0 && (
