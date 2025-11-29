@@ -1361,9 +1361,14 @@ export async function GET(request: NextRequest) {
           if (subPages && subPages.length > 0) {
             // 완료된 하위 페이지가 있는 경우
             const totalSubPageChunks = subPages.reduce((sum, sub) => sum + (sub.chunk_count || 0), 0);
+            const allSubPagesCompleted = subPages.every(sub => 
+              sub.status === 'indexed' || sub.status === 'completed'
+            );
             
-            if (totalSubPageChunks > 0) {
+            // 하위 페이지가 모두 완료되었거나, 완료된 하위 페이지가 있고 총 청크 수가 0보다 큰 경우
+            if (totalSubPageChunks > 0 && (allSubPagesCompleted || subPages.length > 0)) {
               // 메인 문서를 indexed로 업데이트 (chunk_count도 함께 업데이트)
+              // 상태 조건만 확인 (chunk_count는 이미 설정되어 있을 수 있음)
               const { error: syncError } = await supabase
                 .from('documents')
                 .update({
@@ -1372,10 +1377,10 @@ export async function GET(request: NextRequest) {
                   updated_at: new Date().toISOString()
                 })
                 .eq('id', mainDoc.id)
-                .eq('status', 'processing'); // chunk_count 조건 제거
+                .in('status', ['processing', 'indexing']); // processing 또는 indexing 상태 모두 처리
               
               if (!syncError) {
-                console.log(`✅ 메인 문서 상태 동기화 완료: ${mainDoc.id} (하위 페이지 ${subPages.length}개 완료, 총 ${totalSubPageChunks}개 청크)`);
+                console.log(`✅ 메인 문서 상태 동기화 완료: ${mainDoc.id} (하위 페이지 ${subPages.length}개 완료, 총 ${totalSubPageChunks}개 청크, 모두 완료: ${allSubPagesCompleted})`);
               } else {
                 console.warn(`⚠️ 메인 문서 상태 동기화 실패: ${mainDoc.id}`, syncError);
               }
