@@ -3198,6 +3198,7 @@ export async function processQueue() {
         }
 
         // 4. processing_jobs 업데이트 (메인 문서가 indexed인 경우만 completed)
+        const finalDocumentStatus = 'indexed';
         const jobUpdateData: any = {
           status: 'completed',
           finished_at: new Date().toISOString(),
