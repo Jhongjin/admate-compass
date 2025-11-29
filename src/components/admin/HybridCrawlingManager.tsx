@@ -1199,7 +1199,7 @@ export default function HybridCrawlingManager({
     setSelectedUrlsForCrawling(new Set());
   };
 
-  // 🔥 새로운 크롤링 상태 폴링 함수: processing_jobs를 직접 조회
+  // 🔥 완전히 새로운 폴링 로직: jobIds를 직접 추적하고 processing_jobs를 직접 조회
   const pollCrawlStatusFromJobs = useCallback(async (urls: string[]) => {
     if (urls.length === 0) {
       setCrawlingProgress([]);
@@ -1213,7 +1213,26 @@ export default function HybridCrawlingManager({
     }
 
     try {
-      // 1. URL 목록으로 documents 조회하여 document_id 가져오기
+      console.log(`[POLL] 🔍 폴링 시작: ${urls.length}개 URL, ${jobIdsRef.current.length}개 jobId`);
+      
+      // 1. jobIds로 직접 조회 (가장 확실한 방법)
+      let jobs: any[] = [];
+      if (jobIdsRef.current.length > 0) {
+        const { data: jobsByIds, error: jobsError } = await supabase
+          .from('processing_jobs')
+          .select('id, status, payload, started_at, finished_at, document_id, result, error, created_at')
+          .in('id', jobIdsRef.current)
+          .order('created_at', { ascending: false });
+
+        if (!jobsError && jobsByIds) {
+          jobs = jobsByIds;
+          console.log(`[POLL] ✅ jobIds로 ${jobs.length}개 작업 조회 성공`);
+        } else if (jobsError) {
+          console.error('[POLL] ❌ jobIds 조회 오류:', jobsError);
+        }
+      }
+
+      // 2. URL로 documents 조회하여 document_id 가져오기
       const { data: documents, error: docsError } = await supabase
         .from('documents')
         .select('id, url, status, chunk_count')
@@ -1221,11 +1240,10 @@ export default function HybridCrawlingManager({
         .order('created_at', { ascending: false });
 
       if (docsError) {
-        console.error('❌ 문서 조회 오류:', docsError);
-        return;
+        console.error('[POLL] ❌ 문서 조회 오류:', docsError);
       }
 
-      // URL -> document_id 매핑 (최신 문서 우선)
+      // URL -> document_id 매핑
       const urlToDocId = new Map<string, string>();
       const urlToDocStatus = new Map<string, { status: string; chunkCount: number }>();
       
@@ -1239,44 +1257,26 @@ export default function HybridCrawlingManager({
         }
       });
 
-      // 2. document_id로 processing_jobs 조회
+      // 3. document_id로도 조회 (jobIds에 없는 경우 대비)
       const docIds = Array.from(urlToDocId.values());
-      let jobs: any[] = [];
-
       if (docIds.length > 0) {
-        const { data: jobsByDocId, error: jobsError } = await supabase
+        const { data: jobsByDocId, error: jobsByDocIdError } = await supabase
           .from('processing_jobs')
           .select('id, status, payload, started_at, finished_at, document_id, result, error, created_at')
           .eq('job_type', 'CRAWL_SEED')
           .in('document_id', docIds)
           .order('created_at', { ascending: false })
-          .limit(1000);
+          .limit(100);
 
-        if (!jobsError && jobsByDocId) {
-          jobs = jobsByDocId;
-        }
-      }
-
-      // 3. URL로도 조회 (document_id가 없는 경우 대비)
-      const { data: jobsByUrl, error: jobsByUrlError } = await supabase
-        .from('processing_jobs')
-        .select('id, status, payload, started_at, finished_at, document_id, result, error, created_at')
-        .eq('job_type', 'CRAWL_SEED')
-        .in('status', ['queued', 'processing', 'retrying', 'completed', 'failed', 'cancelled'])
-        .order('created_at', { ascending: false })
-        .limit(1000);
-
-      if (!jobsByUrlError && jobsByUrl) {
-        // URL 매칭하여 추가 (중복 제거)
-        jobsByUrl.forEach(job => {
-          const jobUrl = (job.payload as any)?.url;
-          if (jobUrl && urls.includes(jobUrl)) {
-            const existing = jobs.find(j => j.id === job.id);
-            if (!existing) {
+        if (!jobsByDocIdError && jobsByDocId) {
+          // 중복 제거하면서 추가
+          jobsByDocId.forEach(job => {
+            if (!jobs.find(j => j.id === job.id)) {
               jobs.push(job);
             }
-          }
-        });
+          });
+          console.log(`[POLL] ✅ document_id로 추가 조회: ${jobsByDocId.length}개`);
+        }
       }
 
       // 4. URL별로 가장 최신 작업 선택
@@ -1293,15 +1293,18 @@ export default function HybridCrawlingManager({
         }
       });
 
-      // 5. 상태 맵 업데이트
+      console.log(`[POLL] 📊 URL별 작업 매핑: ${urlToLatestJob.size}개 URL에 작업 매칭됨`);
+
+      // 5. 상태 업데이트
       const nextProgress: CrawlingProgress[] = urls.map(url => {
         const job = urlToLatestJob.get(url);
         const docInfo = urlToDocStatus.get(url);
 
         if (job) {
-          // processing_jobs 상태를 우선 사용
           const jobStatus = job.status;
           const result = job.result as any | null;
+
+          console.log(`[POLL] 📋 ${url}: jobStatus=${jobStatus}, docStatus=${docInfo?.status}, chunks=${docInfo?.chunkCount || 0}`);
 
           if (jobStatus === 'completed' || job.finished_at) {
             return {
@@ -1333,7 +1336,7 @@ export default function HybridCrawlingManager({
               url,
               status: 'crawling',
               message: '크롤링 중...',
-              chunkCount: result?.chunkCount || 0
+              chunkCount: result?.chunkCount || docInfo?.chunkCount || 0
             };
           }
 
@@ -1347,6 +1350,7 @@ export default function HybridCrawlingManager({
           // processing_jobs가 없지만 documents가 있는 경우
           const docStatus = docInfo.status;
           if (docStatus === 'indexed' || docStatus === 'completed') {
+            console.log(`[POLL] ✅ ${url}: 문서가 indexed 상태 (청크: ${docInfo.chunkCount})`);
             return {
               url,
               status: 'completed',
@@ -1369,7 +1373,7 @@ export default function HybridCrawlingManager({
           }
         }
 
-        // 아무것도 없는 경우 (아직 생성되지 않음)
+        // 아무것도 없는 경우
         return {
           url,
           status: 'pending',
@@ -1379,7 +1383,7 @@ export default function HybridCrawlingManager({
 
       setCrawlingProgress(nextProgress);
 
-      // 6. 모든 작업이 완료되었는지 확인
+      // 6. 완료/활성 작업 카운트
       const activeCount = nextProgress.filter(
         p => p.status === 'crawling' || p.status === 'pending'
       ).length;
@@ -1388,38 +1392,53 @@ export default function HybridCrawlingManager({
         p => p.status === 'completed'
       ).length;
 
-      // 🔥 완료된 작업이 있으면 문서 목록 새로고침
+      console.log(`[POLL] 📊 상태 요약: 완료 ${completedCount}개, 활성 ${activeCount}개, 전체 ${nextProgress.length}개`);
+
+      // 🔥 완료된 작업이 있으면 즉시 문서 목록 새로고침
       if (completedCount > 0) {
-        // React Query 캐시 무효화하여 문서 목록 새로고침
-        queryClient.invalidateQueries({ queryKey: ['documents'] });
-        queryClient.invalidateQueries({ queryKey: ['queue-stats'] });
+        console.log(`[POLL] 🔄 ${completedCount}개 작업 완료 감지 - 문서 목록 새로고침 시작`);
         
-        // 콜백도 호출
+        // 모든 documents 관련 쿼리 무효화
+        queryClient.invalidateQueries({ queryKey: ['admin-documents'], exact: false });
+        queryClient.invalidateQueries({ queryKey: ['documents'], exact: false });
+        queryClient.invalidateQueries({ queryKey: ['queue-stats'], exact: false });
+        
+        // 콜백 호출
         if (onCrawlingComplete) {
-          setTimeout(() => onCrawlingComplete(), 500);
+          setTimeout(() => {
+            console.log('[POLL] 📞 onCrawlingComplete 콜백 호출');
+            onCrawlingComplete();
+          }, 500);
         }
       }
 
+      // 7. 모든 작업 완료 확인
       if (activeCount === 0) {
+        console.log(`[POLL] 🎉 모든 작업 완료 - 폴링 종료`);
         setIsCrawling(false);
+        
         if (pollingIntervalRef.current) {
           clearInterval(pollingIntervalRef.current);
           pollingIntervalRef.current = null;
         }
         
-        // 모든 작업 완료 시 최종 새로고침
-        queryClient.invalidateQueries({ queryKey: ['documents'] });
-        queryClient.invalidateQueries({ queryKey: ['queue-stats'] });
+        // 최종 새로고침
+        queryClient.invalidateQueries({ queryKey: ['admin-documents'], exact: false });
+        queryClient.invalidateQueries({ queryKey: ['documents'], exact: false });
+        queryClient.invalidateQueries({ queryKey: ['queue-stats'], exact: false });
         
         if (onCrawlingComplete) {
-          setTimeout(() => onCrawlingComplete(), 1000);
+          setTimeout(() => {
+            console.log('[POLL] 📞 최종 onCrawlingComplete 콜백 호출');
+            onCrawlingComplete();
+          }, 1000);
         }
       } else {
         setIsCrawling(true);
       }
 
     } catch (error) {
-      console.error('❌ 크롤링 상태 폴링 오류:', error);
+      console.error('[POLL] ❌ 크롤링 상태 폴링 오류:', error);
     }
   }, [supabase, onCrawlingComplete, queryClient]);
 
