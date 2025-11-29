@@ -142,7 +142,7 @@ async function enqueueProcessingJob(params: { documentId: string; jobType: 'PDF_
   const supabase = await createPureClient();
   if (!supabase) throw new Error('Supabase 클라이언트를 생성할 수 없습니다.');
   // 문서 stub 생성 (없으면)
-  const vendor = (params.payload as any)?.vendor || 'META';
+  const vendor = normalizeVendor((params.payload as any)?.vendor);
   const originalFileName = (params.payload as any)?.originalFileName || null;
   const sanitizedFileName = (params.payload as any)?.sanitizedFileName || (params.payload as any)?.fileName || null;
   const displayTitle = originalFileName || sanitizedFileName || params.documentId;
@@ -556,7 +556,7 @@ export async function POST(request: NextRequest) {
           
           // 벤더 정보 정규화
           const vendor = formData.get('vendor') as string | null;
-          const normalizedVendor = vendor ? vendor.toUpperCase() : 'META';
+          const normalizedVendor = normalizeVendor(vendor);
           
           // 원본을 Storage에 업로드
           let storageInfo;
@@ -2251,7 +2251,7 @@ export async function GET(request: NextRequest) {
 
     // 벤더 필터 적용 (통계 조회에도)
     if (vendor) {
-      const normalizedVendor = vendor.toUpperCase();
+      const normalizedVendor = normalizeVendor(vendor);
       countQuery = countQuery.eq('source_vendor', normalizedVendor);
     }
 
