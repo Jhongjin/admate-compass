@@ -784,7 +784,19 @@ export default function DocumentsPage() {
                                 onToggleGroupExpansion={handleToggleGroupExpansion}
                                 onToggleSubPageSelection={() => { }} // Not fully implemented in this view
                                 onToggleAllSubPages={() => { }}
-                                onReindexDocument={handleReindexDocument}
+                                onReindexDocument={useMemo(() => {
+                                    console.log('🔍 [DocumentsPage] GroupedDocumentList 렌더링 - handleReindexDocument 확인');
+                                    console.log('🔍 [DocumentsPage] handleReindexDocument:', handleReindexDocument);
+                                    console.log('🔍 [DocumentsPage] handleReindexDocument 타입:', typeof handleReindexDocument);
+                                    console.log('🔍 [DocumentsPage] handleReindexDocument 함수 본문:', handleReindexDocument?.toString?.()?.substring(0, 300));
+                                    if (!handleReindexDocument || typeof handleReindexDocument !== 'function') {
+                                        console.error('❌ [DocumentsPage] handleReindexDocument가 함수가 아님!');
+                                        return () => {
+                                            console.error('❌ [DocumentsPage] 빈 함수가 호출됨 - handleReindexDocument가 제대로 전달되지 않음');
+                                        };
+                                    }
+                                    return handleReindexDocument;
+                                }, [handleReindexDocument])}
                                 onDownloadDocument={() => { }} // Placeholder
                                 onDeleteDocument={(id) => setDeleteId(id)}
                                 onSelectAll={handleSelectAll}
