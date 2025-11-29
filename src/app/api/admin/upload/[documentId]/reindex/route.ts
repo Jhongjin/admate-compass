@@ -15,6 +15,8 @@ export const runtime = 'nodejs';
 export const maxDuration = 300; // 5분
 export const dynamic = 'force-dynamic';
 
+const STORAGE_BUCKET = 'documents';
+
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ documentId: string }> }
