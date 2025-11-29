@@ -124,17 +124,37 @@ export default function DocumentsPage() {
             setActionLoading(prev => ({ ...prev, [loadingKey]: true }));
             
             try {
+                console.log('🔄 재인덱싱 요청 시작:', { documentId, title });
+                
                 const res = await fetch(`/api/admin/upload/${documentId}/reindex`, {
-                    method: 'POST'
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
                 });
                 
+                console.log('📡 재인덱싱 응답 상태:', res.status, res.statusText);
+                
                 if (!res.ok) {
-                    const errorData = await res.json().catch(() => ({ error: 'Unknown error' }));
-                    throw new Error(errorData.error || '재인덱싱에 실패했습니다.');
+                    let errorMessage = '재인덱싱에 실패했습니다.';
+                    try {
+                        const errorData = await res.json();
+                        errorMessage = errorData.error || errorData.message || errorMessage;
+                        console.error('❌ 재인덱싱 오류 응답:', errorData);
+                    } catch (parseError) {
+                        const errorText = await res.text().catch(() => '알 수 없는 오류');
+                        console.error('❌ 재인덱싱 오류 (JSON 파싱 실패):', errorText);
+                        errorMessage = `서버 오류 (${res.status}): ${errorText.substring(0, 200)}`;
+                    }
+                    throw new Error(errorMessage);
                 }
                 
                 const result = await res.json();
+                console.log('✅ 재인덱싱 성공:', result);
                 return result;
+            } catch (error) {
+                console.error('❌ 재인덱싱 요청 실패:', error);
+                throw error;
             } finally {
                 setActionLoading(prev => ({ ...prev, [loadingKey]: false }));
             }
