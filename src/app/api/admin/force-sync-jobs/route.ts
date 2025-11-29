@@ -11,12 +11,14 @@ export async function POST(request: NextRequest) {
     
     console.log('🔧 강제 작업 동기화 시작...');
 
-    // 1. processing 상태인 CRAWL_SEED 작업 조회
+    // 1. processing 상태인 CRAWL_SEED 작업 조회 (최신순 정렬)
     const { data: processingJobs, error: jobsError } = await supabase
       .from('processing_jobs')
-      .select('id, document_id, status, payload, started_at, finished_at')
+      .select('id, document_id, status, payload, started_at, finished_at, created_at')
       .eq('job_type', 'CRAWL_SEED')
-      .eq('status', 'processing');
+      .eq('status', 'processing')
+      .order('created_at', { ascending: false })
+      .limit(100);
 
     if (jobsError) {
       throw new Error(`작업 조회 실패: ${jobsError.message}`);
