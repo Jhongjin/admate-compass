@@ -271,11 +271,16 @@ export async function POST(request: NextRequest) {
 
     console.log(`✅ 상태 체크 완료: ${results.length}개 문서 체크, ${syncedCount}개 동기화`);
 
+    const processingCount = processingDocs.filter(d => d.status === 'processing').length;
+    const pendingCount = processingDocs.filter(d => d.status === 'pending').length;
+
     return NextResponse.json({
       success: true,
-      message: `processing 상태 문서 ${results.length}개를 체크했습니다. ${syncedCount}개 문서를 동기화했습니다.`,
+      message: `processing/pending 상태 문서 ${results.length}개를 체크했습니다. ${syncedCount}개 문서를 동기화했습니다. (processing: ${processingCount}, pending: ${pendingCount})`,
       data: {
         totalDocuments: processingDocs.length,
+        processingCount,
+        pendingCount,
         checked: results.length,
         synced: syncedCount,
         results: results
