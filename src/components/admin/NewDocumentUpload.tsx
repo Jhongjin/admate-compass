@@ -22,6 +22,39 @@ import {
 import { useToast } from "@/hooks/use-toast";
 import { fetchWithTimeout } from "@/lib/utils/fetchWithTimeout";
 
+// UI 벤더 이름을 DB ENUM 값으로 변환하는 매핑
+const VENDOR_TO_DB_MAP: Record<string, string> = {
+  "Meta": "META",
+  "Naver": "NAVER",
+  "Kakao": "KAKAO",
+  "Google": "GOOGLE",
+  "X(Twitter)": "OTHER", // X/Twitter는 OTHER로 매핑
+};
+
+// 벤더 정규화 함수
+function normalizeVendorForDB(vendor: string | undefined | null): string {
+  if (!vendor) return 'META';
+  
+  // 매핑 테이블에서 찾기
+  if (VENDOR_TO_DB_MAP[vendor]) {
+    return VENDOR_TO_DB_MAP[vendor];
+  }
+  
+  // 대문자로 변환하여 직접 매칭 시도
+  const upperVendor = vendor.toUpperCase();
+  if (['META', 'NAVER', 'KAKAO', 'GOOGLE', 'OTHER'].includes(upperVendor)) {
+    return upperVendor;
+  }
+  
+  // X(Twitter) 관련 처리
+  if (upperVendor === 'X(TWITTER)' || upperVendor === 'TWITTER' || upperVendor === 'X') {
+    return 'OTHER';
+  }
+  
+  // 기본값
+  return 'META';
+}
+
 interface DocumentFile {
   id: string;
   name: string;
@@ -378,18 +411,22 @@ export default function NewDocumentUpload({ onUpload, vendor, hideList = false }
         base64Content += btoa(binaryString);
       }
 
+      // 벤더 정규화 (UI 이름 -> DB ENUM 값)
+      const normalizedVendor = normalizeVendorForDB(vendor);
+      
       const requestBody = {
         fileName: file.name,
         fileSize: file.size,
         fileType: file.type,
         fileContent: base64Content,
         type: 'file',
-        vendor: vendor || 'META' // 기본값을 META로 변경 (Unknown 대신)
+        vendor: normalizedVendor // 정규화된 벤더 값 전달
       };
       
       console.log('📤 파일 업로드 요청:', {
         fileName: file.name,
-        vendor: requestBody.vendor,
+        vendorOriginal: vendor,
+        vendorNormalized: normalizedVendor,
         vendorProp: vendor
       });
 
