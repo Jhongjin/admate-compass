@@ -3297,36 +3297,46 @@ export async function processQueue() {
         }
 
         // 3. 완료/실패 분기 처리
-        // 🔥 핵심 원칙: 메인 문서가 indexed면 completed, failed면 failed
-        // 하위 페이지는 별도 문서로 처리되므로 메인 문서 상태만 확인
+        // 🔥 개선된 원칙: 
+        // - 메인 문서가 indexed면 completed
+        // - 메인 문서가 실패했지만 하위 페이지가 하나라도 성공했다면 completed (부분 성공)
+        // - 메인 문서와 모든 하위 페이지가 실패했을 때만 failed
         
         // 메인 문서 업데이트 성공 여부 확인
         const isMainDocumentIndexed = mainDocUpdated && 
           documentId && 
           mainDocResult.chunkCount > 0;
+        
+        // 하위 페이지 성공 여부 확인
+        const successfulSubPageCount = subPageUpdateResults.filter(r => r.success).length;
+        const hasSuccessfulSubPages = successfulSubPageCount > 0;
+        
+        // 최종 작업 성공 여부: 메인 문서가 indexed이거나 하위 페이지가 하나라도 성공했으면 성공
+        const isJobSuccessful = isMainDocumentIndexed || hasSuccessfulSubPages;
 
-        if (!isMainDocumentIndexed) {
-          // 메인 문서가 indexed가 아니면 작업을 failed로 처리
-          console.error('[CRITICAL] ❌ 메인 문서 인덱싱 실패 - 작업을 failed로 처리', {
+        if (!isJobSuccessful) {
+          // 메인 문서와 모든 하위 페이지가 실패했을 때만 failed로 처리
+          console.error('[CRITICAL] ❌ 메인 문서 및 모든 하위 페이지 인덱싱 실패 - 작업을 failed로 처리', {
             jobId: job.id,
             documentId,
             mainDocUpdated,
             mainDocChunkCount: mainDocResult.chunkCount,
-            subPageCount: subPageResults.filter(item => item.success).length
+            successfulSubPageCount,
+            totalSubPageCount: subPageResults.length
           });
 
           const { error: failError } = await supabase
             .from('processing_jobs')
             .update({
               status: 'failed',
-              error: '메인 문서 인덱싱 실패',
+              error: '메인 문서 및 모든 하위 페이지 인덱싱 실패',
               finished_at: new Date().toISOString(),
               result: {
-                error: '메인 문서 인덱싱 실패',
+                error: '메인 문서 및 모든 하위 페이지 인덱싱 실패',
                 mainDocUpdated,
                 mainDocChunkCount: mainDocResult.chunkCount,
-                subPageCount: subPageResults.filter(item => item.success).length,
-                subPageTotal: subPageResults.length
+                successfulSubPageCount,
+                totalSubPageCount: subPageResults.length
               }
             })
             .eq('id', job.id)
@@ -3351,12 +3361,64 @@ export async function processQueue() {
 
           return NextResponse.json({
             success: false,
-            error: 'CRAWL_SEED 작업 실패: 메인 문서 인덱싱 실패',
+            error: 'CRAWL_SEED 작업 실패: 메인 문서 및 모든 하위 페이지 인덱싱 실패',
             details: {
               mainDocUpdated,
-              mainDocChunkCount: mainDocResult.chunkCount
+              mainDocChunkCount: mainDocResult.chunkCount,
+              successfulSubPageCount,
+              totalSubPageCount: subPageResults.length
             }
           }, { status: 500 });
+        }
+        
+        // 작업이 성공한 경우 (메인 문서가 indexed이거나 하위 페이지가 하나라도 성공)
+        // 메인 문서가 실패했지만 하위 페이지가 성공한 경우, 메인 문서 상태를 다시 확인하고 필요시 indexed로 업데이트
+        if (!isMainDocumentIndexed && hasSuccessfulSubPages) {
+          console.log('[CRITICAL] ⚠️ 메인 문서는 실패했지만 하위 페이지가 성공 - 메인 문서 상태 재확인', {
+            jobId: job.id,
+            documentId,
+            mainDocChunkCount: mainDocResult.chunkCount,
+            successfulSubPageCount
+          });
+          
+          // 메인 문서의 현재 상태 확인
+          if (documentId) {
+            const { data: currentMainDoc } = await supabase
+              .from('documents')
+              .select('id, status, chunk_count')
+              .eq('id', documentId)
+              .maybeSingle();
+            
+            // 메인 문서가 processing 상태이고 chunk_count가 0이면, 하위 페이지가 성공했으므로 indexed로 업데이트
+            if (currentMainDoc && currentMainDoc.status === 'processing' && currentMainDoc.chunk_count === 0) {
+              // 하위 페이지의 총 청크 수를 메인 문서의 chunk_count로 설정
+              const totalSubPageChunks = subPageResults
+                .filter(item => item.success && item.chunkCount)
+                .reduce((sum, item) => sum + (item.chunkCount || 0), 0);
+              
+              if (totalSubPageChunks > 0) {
+                const { error: mainDocUpdateError } = await supabase
+                  .from('documents')
+                  .update({
+                    status: 'indexed',
+                    chunk_count: totalSubPageChunks,
+                    updated_at: new Date().toISOString()
+                  })
+                  .eq('id', documentId)
+                  .eq('status', 'processing');
+                
+                if (!mainDocUpdateError) {
+                  console.log('[CRITICAL] ✅ 메인 문서 상태 업데이트 완료 (하위 페이지 성공 기반):', {
+                    documentId,
+                    status: 'processing -> indexed',
+                    chunkCount: totalSubPageChunks
+                  });
+                } else {
+                  console.warn('[CRITICAL] ⚠️ 메인 문서 상태 업데이트 실패 (하위 페이지 성공 기반):', mainDocUpdateError);
+                }
+              }
+            }
+          }
         }
 
         // 4. processing_jobs 업데이트 (메인 문서가 indexed인 경우만 completed)
