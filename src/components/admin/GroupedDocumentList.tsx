@@ -403,11 +403,21 @@ export default function GroupedDocumentList({
                             e.preventDefault();
                             e.stopPropagation();
                             console.log('🔄 [GroupedDocumentList] 메인 문서 재인덱싱 버튼 클릭:', { id: group.mainDocument.id, title: group.mainDocument.title, status: group.mainDocument.status });
+                            console.log('🔄 [GroupedDocumentList] onReindexDocument 타입:', typeof onReindexDocument);
+                            console.log('🔄 [GroupedDocumentList] onReindexDocument 값:', onReindexDocument);
                             if (!onReindexDocument) {
                               console.error('❌ [GroupedDocumentList] onReindexDocument 핸들러가 없음');
+                              alert('재인덱싱 핸들러가 연결되지 않았습니다. 페이지를 새로고침해주세요.');
                               return;
                             }
-                            onReindexDocument(group.mainDocument.id, group.mainDocument.title);
+                            try {
+                              console.log('🔄 [GroupedDocumentList] onReindexDocument 호출 시작');
+                              onReindexDocument(group.mainDocument.id, group.mainDocument.title);
+                              console.log('🔄 [GroupedDocumentList] onReindexDocument 호출 완료');
+                            } catch (error) {
+                              console.error('❌ [GroupedDocumentList] onReindexDocument 호출 중 에러:', error);
+                              alert(`재인덱싱 중 오류가 발생했습니다: ${error instanceof Error ? error.message : String(error)}`);
+                            }
                           }}
                           disabled={actionLoading[`${group.mainDocument.id}_reindex`] || group.mainDocument.status === "processing"}
                           className="text-gray-400 hover:text-blue-400 hover:bg-blue-500/10"
@@ -577,11 +587,21 @@ export default function GroupedDocumentList({
                                         e.preventDefault();
                                         e.stopPropagation();
                                         console.log('🔄 [GroupedDocumentList] 재인덱싱 버튼 클릭:', { id: subPage.id, title: subPage.title, status: subPage.status });
+                                        console.log('🔄 [GroupedDocumentList] onReindexDocument 타입:', typeof onReindexDocument);
+                                        console.log('🔄 [GroupedDocumentList] onReindexDocument 값:', onReindexDocument);
                                         if (!onReindexDocument) {
                                           console.error('❌ [GroupedDocumentList] onReindexDocument 핸들러가 없음');
+                                          alert('재인덱싱 핸들러가 연결되지 않았습니다. 페이지를 새로고침해주세요.');
                                           return;
                                         }
-                                        onReindexDocument(subPage.id, subPage.title);
+                                        try {
+                                          console.log('🔄 [GroupedDocumentList] onReindexDocument 호출 시작');
+                                          onReindexDocument(subPage.id, subPage.title);
+                                          console.log('🔄 [GroupedDocumentList] onReindexDocument 호출 완료');
+                                        } catch (error) {
+                                          console.error('❌ [GroupedDocumentList] onReindexDocument 호출 중 에러:', error);
+                                          alert(`재인덱싱 중 오류가 발생했습니다: ${error instanceof Error ? error.message : String(error)}`);
+                                        }
                                       }}
                                       disabled={actionLoading[`${subPage.id}_reindex`] || subPage.status === "processing"}
                                       className="text-gray-400 hover:text-blue-400 hover:bg-blue-500/10 p-1"
