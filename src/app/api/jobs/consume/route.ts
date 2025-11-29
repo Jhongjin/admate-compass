@@ -2808,7 +2808,15 @@ export async function processQueue() {
                   }
                   
                   // 4. 최종 제목이 없거나 메인 페이지 제목과 같거나 "광고주센터" 관련이면 URL 경로 기반 제목 생성
-                  if (!finalTitle || finalTitle === mainPage.pageTitle || finalTitle.toLowerCase().includes('광고주센터') || finalTitle.toLowerCase().includes('광고주 센터') || finalTitle.toLowerCase().includes('advertiser center')) {
+                  const finalTitleLower = finalTitle ? finalTitle.toLowerCase() : '';
+                  if (!finalTitle || 
+                      finalTitle === mainPage.pageTitle || 
+                      finalTitleLower.includes('광고주센터') || 
+                      finalTitleLower.includes('광고주 센터') || 
+                      finalTitleLower.includes('advertiser center') ||
+                      finalTitleLower === 'naver' || 
+                      finalTitleLower === '네이버' ||
+                      finalTitleLower.trim() === 'naver광고주센터') {
                     try {
                       const urlPath = new URL(subUrl).pathname;
                       if (urlPath && urlPath !== '/') {
