@@ -39,7 +39,7 @@ export async function POST(
     console.log(`📋 문서 정보 조회 중: ${documentId}`);
     const { data: document, error: docError } = await supabase
       .from('documents')
-      .select('id, title, content, url, document_url, type, source_vendor, main_document_id, status, created_at, file_type, file_size, original_file_name, sanitized_file_name')
+      .select('id, title, content, url, document_url, type, source_vendor, main_document_id, status, created_at, file_type, file_size, original_file_name, sanitized_file_name, chunk_count')
       .eq('id', documentId)
       .maybeSingle();
 
