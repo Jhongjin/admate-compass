@@ -1290,6 +1290,51 @@ export async function GET(request: NextRequest) {
       }
     );
 
+    // "처리중 0개 청크" 상태인 문서 자동 정리 (백그라운드)
+    // 관련 processing_jobs가 없는 경우 failed로 변경
+    try {
+      const { data: stuckDocs } = await supabase
+        .from('documents')
+        .select('id, status, chunk_count')
+        .eq('status', 'processing')
+        .eq('chunk_count', 0)
+        .limit(100);
+      
+      if (stuckDocs && stuckDocs.length > 0) {
+        const stuckDocIds = stuckDocs.map(d => d.id);
+        
+        // 관련 processing_jobs 확인
+        const { data: relatedJobs } = await supabase
+          .from('processing_jobs')
+          .select('document_id, status')
+          .in('document_id', stuckDocIds)
+          .in('status', ['queued', 'processing', 'retrying']);
+        
+        const activeJobDocIds = new Set((relatedJobs || []).map(j => j.document_id));
+        
+        // 관련 job이 없는 문서만 failed로 변경
+        const orphanedDocIds = stuckDocIds.filter(id => !activeJobDocIds.has(id));
+        
+        if (orphanedDocIds.length > 0) {
+          const { error: cleanupError } = await supabase
+            .from('documents')
+            .update({ status: 'failed', updated_at: new Date().toISOString() })
+            .in('id', orphanedDocIds)
+            .eq('status', 'processing')
+            .eq('chunk_count', 0);
+          
+          if (!cleanupError) {
+            console.log(`✅ "처리중 0개 청크" 문서 ${orphanedDocIds.length}개 자동 정리 완료`);
+          } else {
+            console.warn('⚠️ "처리중 0개 청크" 문서 정리 실패:', cleanupError);
+          }
+        }
+      }
+    } catch (cleanupError) {
+      // 정리 실패해도 문서 목록 조회는 계속 진행
+      console.warn('⚠️ "처리중 0개 청크" 문서 자동 정리 중 오류 (무시):', cleanupError);
+    }
+
     // Supabase에서 문서 목록 조회 (최적화)
     let query = supabase
       .from('documents')
