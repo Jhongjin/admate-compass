@@ -31,7 +31,7 @@ export async function POST(
       );
     }
 
-    console.log(`🔄 재인덱싱 요청: ${documentId}`);
+    console.log(`🔄 재인덱싱 요청 시작: ${documentId}`);
 
     const supabase = await createPureClient();
 
@@ -395,13 +395,21 @@ export async function POST(
     }
 
   } catch (error) {
-    console.error('재인덱싱 오류:', error);
+    const documentId = await params.then(p => p.documentId).catch(() => 'unknown');
+    console.error('❌ 재인덱싱 오류:', {
+      documentId,
+      error: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined
+    });
+    
+    const errorMessage = error instanceof Error ? error.message : String(error);
     
     return NextResponse.json(
       { 
         success: false,
         error: '재인덱싱에 실패했습니다.',
-        details: error instanceof Error ? error.message : String(error)
+        message: errorMessage,
+        details: error instanceof Error ? error.stack : String(error)
       },
       { status: 500 }
     );
