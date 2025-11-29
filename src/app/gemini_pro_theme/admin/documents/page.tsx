@@ -182,7 +182,8 @@ export default function DocumentsPage() {
         }
     });
 
-    const handleReindexDocument = (id: string, title: string) => {
+    // 재인덱싱 핸들러 - useCallback으로 메모이제이션하여 안정적인 참조 유지
+    const handleReindexDocument = useCallback((id: string, title: string) => {
         console.log('🔄 [handleReindexDocument] 호출됨:', { id, title });
         
         if (!id || !title) {
@@ -195,21 +196,11 @@ export default function DocumentsPage() {
             return;
         }
         
-        if (!reindexMutation) {
-            console.error('❌ [handleReindexDocument] reindexMutation이 없음');
-            toast({
-                title: "재인덱싱 실패",
-                description: '재인덱싱 기능이 초기화되지 않았습니다. 페이지를 새로고침해주세요.',
-                variant: "destructive",
-            });
-            return;
-        }
-        
-        if (!reindexMutation.mutate) {
+        if (!reindexMutation?.mutate) {
             console.error('❌ [handleReindexDocument] reindexMutation.mutate가 없음');
             toast({
                 title: "재인덱싱 실패",
-                description: '재인덱싱 mutation이 제대로 초기화되지 않았습니다.',
+                description: '재인덱싱 기능이 초기화되지 않았습니다. 페이지를 새로고침해주세요.',
                 variant: "destructive",
             });
             return;
@@ -227,7 +218,7 @@ export default function DocumentsPage() {
                 variant: "destructive",
             });
         }
-    };
+    }, [reindexMutation, toast]);
 
     // 디버깅: 컴포넌트 마운트 시 확인
     useEffect(() => {
