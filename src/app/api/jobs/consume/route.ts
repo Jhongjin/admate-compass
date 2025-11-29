@@ -2441,7 +2441,32 @@ export async function processQueue() {
             }
           }, 30000); // 30초마다 하트비트 업데이트
           
-          const ragPromise = upsertAndProcessDocument({ targetUrl: url, title: mainPage.pageTitle, content: mainPage.textContent, documentIdOverride: documentId }).finally(() => {
+          // 🔥 메인 페이지 처리 시에도 모달에서 설정한 제목 우선 사용
+          // 크롤링된 제목(mainPage.pageTitle)이 "광고주센터"인 경우 기존 제목 유지
+          let mainPageTitle = mainPage.pageTitle;
+          if (job.payload?.title) {
+            const payloadTitle = job.payload.title as string;
+            if (payloadTitle && payloadTitle.length >= 2) {
+              mainPageTitle = payloadTitle;
+              console.log(`[CRITICAL] 📝 메인 페이지 모달 제목 사용: "${mainPageTitle}"`);
+            }
+          } else if (documentId) {
+            // payload.title이 없으면 기존 문서 제목 확인
+            const { data: existingMainDoc } = await supabase
+              .from('documents')
+              .select('id, title')
+              .eq('id', documentId)
+              .maybeSingle();
+            
+            if (existingMainDoc?.title && 
+                (mainPage.pageTitle.toLowerCase().includes('광고주센터') || 
+                 mainPage.pageTitle.toLowerCase().includes('광고주 센터'))) {
+              mainPageTitle = existingMainDoc.title;
+              console.log(`[CRITICAL] 📝 메인 페이지 기존 제목 유지: "${mainPageTitle}" (크롤링 제목: "${mainPage.pageTitle}")`);
+            }
+          }
+          
+          const ragPromise = upsertAndProcessDocument({ targetUrl: url, title: mainPageTitle, content: mainPage.textContent, documentIdOverride: documentId }).finally(() => {
             clearInterval(ragHeartbeatInterval);
           });
           
