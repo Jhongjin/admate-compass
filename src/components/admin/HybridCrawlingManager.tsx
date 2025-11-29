@@ -2236,25 +2236,47 @@ export default function HybridCrawlingManager({
               // API를 통해 강제 동기화 실행
               try {
                 toast.info('강제 동기화 중...');
+                console.log('🔧 강제 동기화 버튼 클릭됨');
                 
                 const response = await fetch('/api/admin/force-sync-jobs', {
                   method: 'POST',
                   headers: { 'Content-Type': 'application/json' }
                 });
                 
+                if (!response.ok) {
+                  throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
                 const result = await response.json();
+                console.log('🔧 강제 동기화 결과:', result);
                 
                 if (result.success) {
-                  toast.success(`동기화 완료: ${result.synced}개 작업 업데이트됨`);
-                  
-                  // 상태 새로고침
-                  window.location.reload();
+                  if (result.synced > 0) {
+                    toast.success(`동기화 완료: ${result.synced}개 작업 업데이트됨 (전체: ${result.total}개)`);
+                    console.log('✅ 동기화된 작업:', result.results);
+                    
+                    // 상태 즉시 새로고침
+                    setTimeout(() => {
+                      window.location.reload();
+                    }, 1000);
+                  } else {
+                    toast.warning(`동기화할 작업이 없습니다. (전체: ${result.total}개)`);
+                    console.log('⚠️ 동기화 결과:', result.results);
+                    
+                    // 결과를 콘솔에 출력
+                    if (result.results && result.results.length > 0) {
+                      result.results.forEach((r: any) => {
+                        console.log(`  - 작업 ${r.jobId}: ${r.status} - ${r.message}`);
+                      });
+                    }
+                  }
                 } else {
-                  toast.error(`동기화 실패: ${result.error}`);
+                  toast.error(`동기화 실패: ${result.error || '알 수 없는 오류'}`);
+                  console.error('❌ 동기화 실패:', result);
                 }
               } catch (error) {
-                console.error('강제 동기화 오류:', error);
-                toast.error('동기화 중 오류가 발생했습니다.');
+                console.error('❌ 강제 동기화 오류:', error);
+                toast.error(`동기화 중 오류가 발생했습니다: ${error instanceof Error ? error.message : String(error)}`);
               }
               
               // 기존 로직도 실행 (로컬 상태 동기화)
