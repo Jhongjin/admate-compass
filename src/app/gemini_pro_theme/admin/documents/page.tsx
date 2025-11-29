@@ -182,8 +182,19 @@ export default function DocumentsPage() {
     });
 
     const handleReindexDocument = useCallback((id: string, title: string) => {
+        console.log('🔄 [handleReindexDocument] 호출됨:', { id, title });
+        if (!id || !title) {
+            console.error('❌ [handleReindexDocument] 잘못된 파라미터:', { id, title });
+            toast({
+                title: "재인덱싱 실패",
+                description: '문서 ID 또는 제목이 없습니다.',
+                variant: "destructive",
+            });
+            return;
+        }
+        console.log('🔄 [handleReindexDocument] mutation 호출 시작');
         reindexMutation.mutate({ documentId: id, title });
-    }, [reindexMutation]);
+    }, [reindexMutation, toast]);
 
     const deleteMutation = useMutation({
         mutationFn: async (id: string) => {

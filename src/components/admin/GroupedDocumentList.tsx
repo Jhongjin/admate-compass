@@ -399,7 +399,16 @@ export default function GroupedDocumentList({
                         <Button
                           variant="ghost"
                           size="sm"
-                          onClick={() => onReindexDocument(group.mainDocument.id, group.mainDocument.title)}
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            console.log('🔄 [GroupedDocumentList] 메인 문서 재인덱싱 버튼 클릭:', { id: group.mainDocument.id, title: group.mainDocument.title, status: group.mainDocument.status });
+                            if (!onReindexDocument) {
+                              console.error('❌ [GroupedDocumentList] onReindexDocument 핸들러가 없음');
+                              return;
+                            }
+                            onReindexDocument(group.mainDocument.id, group.mainDocument.title);
+                          }}
                           disabled={actionLoading[`${group.mainDocument.id}_reindex`] || group.mainDocument.status === "processing"}
                           className="text-gray-400 hover:text-blue-400 hover:bg-blue-500/10"
                         >
@@ -564,7 +573,16 @@ export default function GroupedDocumentList({
                                     <Button
                                       variant="ghost"
                                       size="sm"
-                                      onClick={() => onReindexDocument(subPage.id, subPage.title)}
+                                      onClick={(e) => {
+                                        e.preventDefault();
+                                        e.stopPropagation();
+                                        console.log('🔄 [GroupedDocumentList] 재인덱싱 버튼 클릭:', { id: subPage.id, title: subPage.title, status: subPage.status });
+                                        if (!onReindexDocument) {
+                                          console.error('❌ [GroupedDocumentList] onReindexDocument 핸들러가 없음');
+                                          return;
+                                        }
+                                        onReindexDocument(subPage.id, subPage.title);
+                                      }}
                                       disabled={actionLoading[`${subPage.id}_reindex`] || subPage.status === "processing"}
                                       className="text-gray-400 hover:text-blue-400 hover:bg-blue-500/10 p-1"
                                     >
