@@ -2177,6 +2177,22 @@ export async function processQueue() {
             };
           }
 
+          // 🔥 RAG 처리 전에 문서 상태를 명시적으로 'processing'으로 업데이트 (프론트엔드가 상태를 감지할 수 있도록)
+          try {
+            await supabase
+              .from('documents')
+              .update({ 
+                status: 'processing',
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', resolvedDocumentId)
+              .in('status', ['pending', 'queued']); // pending/queued 상태만 processing으로 변경
+            
+            console.log(`[CRITICAL] 📝 문서 상태 업데이트: pending/queued -> processing (문서 ID: ${resolvedDocumentId})`);
+          } catch (statusUpdateError) {
+            console.warn('[CRITICAL] ⚠️ 문서 상태 업데이트 실패 (계속 진행):', statusUpdateError);
+          }
+          
           // RAG 처리 시작 로깅
           const ragProcessStartTime = Date.now();
           console.log(`[CRITICAL] 🚀 RAG 처리 시작: ${title} (콘텐츠 길이: ${content.length}자)`);
