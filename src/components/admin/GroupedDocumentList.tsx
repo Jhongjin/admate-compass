@@ -421,17 +421,8 @@ export default function GroupedDocumentList({
                             
                             try {
                               console.log('🔄 [GroupedDocumentList] onReindexDocument 호출 시작:', { id: group.mainDocument.id, title: group.mainDocument.title });
-                              const result = onReindexDocument(group.mainDocument.id, group.mainDocument.title);
-                              console.log('🔄 [GroupedDocumentList] onReindexDocument 호출 완료, 반환값:', result);
-                              
-                              // Promise인 경우 처리
-                              if (result && typeof result.then === 'function') {
-                                console.log('🔄 [GroupedDocumentList] onReindexDocument가 Promise 반환, 대기 중...');
-                                result.then(
-                                  (resolved) => console.log('🔄 [GroupedDocumentList] onReindexDocument Promise 완료:', resolved),
-                                  (rejected) => console.error('❌ [GroupedDocumentList] onReindexDocument Promise 실패:', rejected)
-                                );
-                              }
+                              onReindexDocument(group.mainDocument.id, group.mainDocument.title);
+                              console.log('🔄 [GroupedDocumentList] onReindexDocument 호출 완료');
                             } catch (error) {
                               console.error('❌ [GroupedDocumentList] onReindexDocument 호출 중 에러:', error);
                               console.error('❌ [GroupedDocumentList] 에러 스택:', error instanceof Error ? error.stack : 'No stack');
@@ -624,17 +615,8 @@ export default function GroupedDocumentList({
                                         
                                         try {
                                           console.log('🔄 [GroupedDocumentList] onReindexDocument 호출 시작:', { id: subPage.id, title: subPage.title });
-                                          const result = onReindexDocument(subPage.id, subPage.title);
-                                          console.log('🔄 [GroupedDocumentList] onReindexDocument 호출 완료, 반환값:', result);
-                                          
-                                          // Promise인 경우 처리
-                                          if (result && typeof result.then === 'function') {
-                                            console.log('🔄 [GroupedDocumentList] onReindexDocument가 Promise 반환, 대기 중...');
-                                            result.then(
-                                              (resolved) => console.log('🔄 [GroupedDocumentList] onReindexDocument Promise 완료:', resolved),
-                                              (rejected) => console.error('❌ [GroupedDocumentList] onReindexDocument Promise 실패:', rejected)
-                                            );
-                                          }
+                                          onReindexDocument(subPage.id, subPage.title);
+                                          console.log('🔄 [GroupedDocumentList] onReindexDocument 호출 완료');
                                         } catch (error) {
                                           console.error('❌ [GroupedDocumentList] onReindexDocument 호출 중 에러:', error);
                                           console.error('❌ [GroupedDocumentList] 에러 스택:', error instanceof Error ? error.stack : 'No stack');
