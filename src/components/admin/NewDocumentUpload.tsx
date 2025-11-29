@@ -128,11 +128,25 @@ export default function NewDocumentUpload({ onUpload, vendor, hideList = false }
       }
 
       const result = await response.json();
-      console.log('📋 문서 목록 조회 성공:', result);
+      console.log('📋 문서 목록 조회 성공:', {
+        success: result.success,
+        documentCount: result.data?.documents?.length || 0,
+        totalCount: result.data?.totalCount || 0,
+        documents: result.data?.documents?.map((d: any) => ({
+          id: d.id,
+          title: d.title,
+          vendor: d.source_vendor,
+          status: d.status,
+          chunkCount: d.chunk_count
+        }))
+      });
 
       if (result.success && result.data?.documents) {
         setUploadedDocuments(result.data.documents);
-        console.log(`📋 ${result.data.documents.length}개 문서 로드 완료`);
+        console.log(`📋 ${result.data.documents.length}개 문서 로드 완료 (벤더: ${normalizedVendor || '전체'})`);
+      } else {
+        console.warn('⚠️ 문서 목록 조회 결과가 비정상적:', result);
+        setUploadedDocuments([]);
       }
     } catch (error) {
       console.error('❌ 문서 목록 조회 오류:', error);
@@ -141,10 +155,11 @@ export default function NewDocumentUpload({ onUpload, vendor, hideList = false }
         description: "업로드된 문서 목록을 가져오는데 실패했습니다.",
         variant: "destructive"
       });
+      setUploadedDocuments([]);
     } finally {
       setIsLoadingDocuments(false);
     }
-  }, [toast]);
+  }, [toast, vendor]);
 
   // 컴포넌트 마운트 시 및 vendor 변경 시 문서 목록 로드
   useEffect(() => {
@@ -435,7 +450,18 @@ export default function NewDocumentUpload({ onUpload, vendor, hideList = false }
 
       console.log('Base64 인코딩 완료, JSON 요청 전송');
 
-      // 타임아웃 설정 (35초)
+      // 타임아웃 설정 (파일 크기에 따라 조정)
+      // 작은 파일(<5MB): 60초, 중간 파일(5-15MB): 120초, 큰 파일(>15MB): 180초
+      const fileSizeMB = file.size / (1024 * 1024);
+      let timeout = 60000; // 기본 60초
+      if (fileSizeMB > 15) {
+        timeout = 180000; // 180초 (3분)
+      } else if (fileSizeMB > 5) {
+        timeout = 120000; // 120초 (2분)
+      }
+      
+      console.log('⏱️ 타임아웃 설정:', { fileSizeMB: fileSizeMB.toFixed(2), timeoutMs: timeout, timeoutSec: timeout / 1000 });
+      
       const response = await fetchWithTimeout('/api/admin/upload-new', {
         method: 'POST',
         headers: {
@@ -445,23 +471,63 @@ export default function NewDocumentUpload({ onUpload, vendor, hideList = false }
         cache: 'no-cache',
         mode: 'cors',
         credentials: 'same-origin',
-      }, 35000);
+      }, timeout);
       console.log('응답 상태:', response.status);
+      console.log('응답 Content-Type:', response.headers.get('content-type'));
 
       let result;
       try {
-        const responseText = await response.text();
-        console.log('서버 응답 텍스트:', responseText);
+        const contentType = response.headers.get('content-type') || '';
+        
+        // Content-Type 확인
+        if (!contentType.includes('application/json') && !contentType.includes('text/json')) {
+          const responseText = await response.text();
+          console.error('❌ JSON이 아닌 응답 수신:', {
+            contentType,
+            status: response.status,
+            responsePreview: responseText.substring(0, 200)
+          });
+          
+          // HTML 에러 페이지인 경우 (Vercel 타임아웃 등)
+          if (responseText.includes('<!DOCTYPE') || responseText.includes('<html')) {
+            throw new Error('요청 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.');
+          }
+          
+          throw new Error(`서버가 예상치 못한 형식의 응답을 반환했습니다 (${contentType}). 상태: ${response.status}`);
+        }
 
-        if (!responseText) {
+        const responseText = await response.text();
+        console.log('서버 응답 텍스트 (처음 500자):', responseText.substring(0, 500));
+
+        if (!responseText || responseText.trim() === '') {
           throw new Error('서버에서 빈 응답을 받았습니다.');
         }
 
-        result = JSON.parse(responseText);
-        console.log('JSON 파싱 성공:', result);
+        // JSON 파싱 시도
+        try {
+          result = JSON.parse(responseText);
+          console.log('JSON 파싱 성공:', {
+            success: result.success,
+            hasError: !!result.error,
+            hasData: !!result.data
+          });
+        } catch (jsonError) {
+          console.error('❌ JSON 파싱 실패:', {
+            error: jsonError instanceof Error ? jsonError.message : String(jsonError),
+            responsePreview: responseText.substring(0, 500),
+            contentType
+          });
+          
+          // HTML 에러 페이지인 경우
+          if (responseText.includes('<!DOCTYPE') || responseText.includes('<html')) {
+            throw new Error('요청 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.');
+          }
+          
+          throw new Error(`서버 응답을 파싱할 수 없습니다: ${jsonError instanceof Error ? jsonError.message : '알 수 없는 오류'}`);
+        }
       } catch (parseError) {
-        console.error('JSON 파싱 오류:', parseError);
-        throw new Error(`서버 응답 처리 오류: ${parseError instanceof Error ? parseError.message : '알 수 없는 오류'}`);
+        console.error('❌ 응답 처리 오류:', parseError);
+        throw parseError instanceof Error ? parseError : new Error('서버 응답 처리 중 알 수 없는 오류가 발생했습니다.');
       }
 
       // 오류 처리
@@ -519,10 +585,17 @@ export default function NewDocumentUpload({ onUpload, vendor, hideList = false }
         description: `${file.name} 파일이 성공적으로 업로드되고 처리되었습니다.`,
       });
 
-      // 문서 목록 새로고침
+      // 문서 목록 새로고침 (업로드 완료 후 즉시 + 지연)
+      console.log('🔄 문서 목록 새로고침 예약:', { vendor, documentId: result.data?.documentId || 'unknown' });
+      
+      // 즉시 새로고침 시도
+      fetchUploadedDocuments();
+      
+      // 추가로 2초 후에도 새로고침 (DB 동기화 대기)
       setTimeout(() => {
+        console.log('🔄 문서 목록 지연 새로고침 실행');
         fetchUploadedDocuments();
-      }, 1000);
+      }, 2000);
 
       // 완료된 파일을 3초 후 업로드 리스트에서 제거
       setTimeout(() => {
