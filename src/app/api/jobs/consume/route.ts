@@ -3134,20 +3134,93 @@ export async function processQueue() {
           }
         }
 
-        // 3. documents 테이블 업데이트가 성공한 경우에만 processing_jobs 업데이트
+        // 3. documents 테이블 업데이트 성공 여부 확인
         // (메인 문서 또는 하위 페이지 중 하나라도 성공하면 작업 완료로 간주)
         const hasSuccessfulDocumentUpdate = mainDocUpdated || subPageUpdateResults.some(r => r.success);
         
-        if (!hasSuccessfulDocumentUpdate && documentId) {
-          console.warn('[CRITICAL] ⚠️ 모든 문서 업데이트 실패 - 작업을 failed로 처리할지 확인 필요', {
-            jobId: job.id,
-            documentId,
-            mainDocUpdated,
-            subPageUpdateResults
-          });
+        // 🔥 4. documents 테이블 최종 확인 (동기화 보장)
+        let finalDocumentStatus = 'unknown';
+        if (documentId) {
+          const { data: finalDocCheck } = await supabase
+            .from('documents')
+            .select('id, status, chunk_count')
+            .eq('id', documentId)
+            .single();
+          
+          if (finalDocCheck) {
+            finalDocumentStatus = finalDocCheck.status;
+            console.log('[CRITICAL] 🔍 최종 문서 상태 확인:', {
+              documentId,
+              status: finalDocCheck.status,
+              chunkCount: finalDocCheck.chunk_count,
+              mainDocUpdated,
+              hasSuccessfulDocumentUpdate
+            });
+          }
         }
 
-        // 4. processing_jobs 업데이트 (document_id도 함께 설정)
+        // 5. 완료/실패 분기 처리
+        // 조건: 메인 문서가 indexed 상태이거나 chunk_count > 0이어야 함
+        const isActuallyCompleted = hasSuccessfulDocumentUpdate && 
+          (finalDocumentStatus === 'indexed' || 
+           (documentId && mainDocResult.chunkCount > 0));
+
+        if (!isActuallyCompleted) {
+          // 문서 업데이트 실패 또는 indexed 상태가 아닌 경우 작업을 failed로 처리
+          console.error('[CRITICAL] ❌ 문서 업데이트 실패 또는 indexed 상태 아님 - 작업을 failed로 처리', {
+            jobId: job.id,
+            documentId,
+            finalDocumentStatus,
+            mainDocUpdated,
+            mainDocChunkCount: mainDocResult.chunkCount,
+            subPageUpdateResults
+          });
+
+          const { error: failError } = await supabase
+            .from('processing_jobs')
+            .update({
+              status: 'failed',
+              error: '문서 업데이트 실패 또는 indexed 상태로 변경되지 않음',
+              finished_at: new Date().toISOString(),
+              result: {
+                error: '문서 업데이트 실패',
+                documentStatus: finalDocumentStatus,
+                mainDocUpdated,
+                subPageUpdateResults
+              }
+            })
+            .eq('id', job.id)
+            .in('status', ['processing', 'queued', 'retrying']);
+
+          if (failError) {
+            console.error('[CRITICAL] ❌ 작업 failed 상태 업데이트 실패:', failError);
+            throw failError;
+          }
+
+          // documents 테이블도 failed로 업데이트
+          if (documentId) {
+            await supabase
+              .from('documents')
+              .update({
+                status: 'failed',
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', documentId)
+              .neq('status', 'indexed'); // 이미 indexed인 경우는 유지
+          }
+
+          return NextResponse.json({
+            success: false,
+            error: 'CRAWL_SEED 작업 실패: 문서 업데이트 실패',
+            details: {
+              documentStatus: finalDocumentStatus,
+              mainDocUpdated,
+              subPageUpdateResults
+            }
+          }, { status: 500 });
+        }
+
+        // 6. processing_jobs 업데이트 (document_id도 함께 설정) - 성공한 경우만
         const jobUpdateData: any = {
           status: 'completed',
           finished_at: new Date().toISOString(),
@@ -3157,7 +3230,9 @@ export async function processQueue() {
               main: mainDocUpdated,
               subPages: subPageUpdateResults.filter(r => r.success).length,
               totalSubPages: subPageUpdateResults.length
-            }
+            },
+            finalDocumentStatus,
+            verifiedAt: new Date().toISOString()
           },
         };
         

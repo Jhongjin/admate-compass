@@ -287,17 +287,52 @@ export default function HybridCrawlingManager({
             ['queued', 'processing', 'retrying'].includes(j.status) && !j.finished_at
           );
           
-          const completedJobs = activeJobs.filter(j => 
-            j.status === 'completed' || j.finished_at !== null
-          );
+          // 🔥 completed 작업도 documents 테이블과 동기화 확인
+          const verifiedCompletedJobs: any[] = [];
+          const unverifiedCompletedJobs: any[] = [];
+          
+          for (const job of activeJobs) {
+            if (job.status === 'completed' || job.finished_at !== null) {
+              // documents 테이블 확인
+              if (job.document_id) {
+                try {
+                  const { data: document } = await supabase
+                    .from('documents')
+                    .select('id, status, chunk_count')
+                    .eq('id', job.document_id)
+                    .single();
+                  
+                  if (document && (document.status === 'indexed' || (document.chunk_count && document.chunk_count > 0))) {
+                    verifiedCompletedJobs.push(job);
+                  } else {
+                    console.warn(`⚠️ 초기 로드: 작업 ${job.id}는 completed인데 문서는 ${document?.status || '없음'} - 동기화 불일치`);
+                    unverifiedCompletedJobs.push(job);
+                  }
+                } catch (docError) {
+                  console.warn(`⚠️ 초기 로드: 문서 확인 실패 (${job.document_id}):`, docError);
+                  // 확인 실패해도 completed로 간주
+                  verifiedCompletedJobs.push(job);
+                }
+              } else {
+                // document_id가 없으면 finished_at만으로 완료로 간주
+                verifiedCompletedJobs.push(job);
+              }
+            }
+          }
           
           const failedJobs = activeJobs.filter(j => j.status === 'failed');
           
-          // 완료된 작업이 있으면 콜백 호출 (문서 목록 새로고침)
-          if (completedJobs.length > 0 && onCrawlingComplete) {
+          // 검증된 완료 작업이 있으면 콜백 호출 (문서 목록 새로고침)
+          if (verifiedCompletedJobs.length > 0 && onCrawlingComplete) {
             setTimeout(() => {
               onCrawlingComplete();
             }, 1000);
+          }
+          
+          // 동기화 불일치가 있는 경우 강제 동기화 시도
+          if (unverifiedCompletedJobs.length > 0) {
+            console.log(`🔧 초기 로드: ${unverifiedCompletedJobs.length}개 작업의 동기화 불일치 감지 - 강제 동기화 시도`);
+            // 강제 동기화는 폴링에서 처리하도록 함
           }
           
           // 완료되지 않은 작업만 진행 상황에 표시
@@ -1280,9 +1315,11 @@ export default function HybridCrawlingManager({
                 
                 console.log(`🔍 폴링: 매칭된 작업 ${matchingJobs.length}개 발견`);
                 
-                // 🔥 processing 상태인 작업 중 실제로 완료된 것 강제 동기화 (documents 테이블 확인)
+                // 🔥 processing/completed 상태인 작업의 documents 테이블 동기화 확인
                 for (const job of matchingJobs) {
-                  if (job.status === 'processing' && job.document_id && !job.finished_at) {
+                  // processing 상태: documents 확인하여 완료 여부 판단
+                  // completed 상태: documents 확인하여 실제 indexed 여부 확인
+                  if ((job.status === 'processing' || job.status === 'completed') && job.document_id) {
                     try {
                       const { data: document, error: docError } = await supabase
                         .from('documents')
@@ -1295,11 +1332,19 @@ export default function HybridCrawlingManager({
                         continue;
                       }
                       
-                      // 문서가 indexed 상태이고 chunk_count > 0이면 작업 완료로 간주
-                      if (document && (document.status === 'indexed' || (document.chunk_count && document.chunk_count > 0))) {
+                      if (!document) {
+                        console.warn(`⚠️ 폴링 중 문서를 찾을 수 없음 (${job.document_id})`);
+                        continue;
+                      }
+
+                      const isDocumentIndexed = document.status === 'indexed' || (document.chunk_count && document.chunk_count > 0);
+                      const isJobCompleted = job.status === 'completed' || job.finished_at !== null;
+
+                      // 동기화 불일치 감지 및 수정
+                      if (isDocumentIndexed && !isJobCompleted) {
+                        // 문서는 indexed인데 작업은 processing → completed로 업데이트
                         console.log(`🔧 폴링 중 강제 동기화: 작업 ${job.id}는 실제로 완료되었습니다 (문서 상태: ${document.status}, 청크: ${document.chunk_count})`);
                         
-                        // processing_jobs를 completed로 업데이트
                         const { error: updateError, data: updateData } = await supabase
                           .from('processing_jobs')
                           .update({
@@ -1320,16 +1365,17 @@ export default function HybridCrawlingManager({
                         if (updateError) {
                           console.error(`❌ 폴링 중 작업 상태 업데이트 실패 (${job.id}):`, updateError);
                         } else if (updateData && updateData.length > 0) {
-                          // job 상태 업데이트 (메모리 내)
                           job.status = 'completed';
                           job.finished_at = updateData[0].finished_at || new Date().toISOString();
                           console.log(`✅ 폴링 중 강제 동기화 완료: 작업 ${job.id} -> completed`);
-                        } else {
-                          console.warn(`⚠️ 폴링 중 작업 상태 업데이트 실패: 이미 다른 상태 (${job.id})`);
                         }
+                      } else if (!isDocumentIndexed && isJobCompleted) {
+                        // 작업은 completed인데 문서는 indexed 아님 → documents 상태 확인 필요
+                        console.warn(`⚠️ 폴링 중 동기화 불일치: 작업 ${job.id}는 completed인데 문서는 ${document.status} (청크: ${document.chunk_count})`);
+                        // documents 상태를 확인하고 필요시 indexed로 업데이트 시도는 하지 않음 (백엔드에서 처리해야 함)
                       }
                     } catch (syncError) {
-                      console.error(`❌ 폴링 중 강제 동기화 오류 (${job.id}):`, syncError);
+                      console.error(`❌ 폴링 중 동기화 확인 오류 (${job.id}):`, syncError);
                     }
                   }
                 }
@@ -1401,10 +1447,39 @@ export default function HybridCrawlingManager({
                 if (jobId) {
                   const job = jobs.find(j => j.id === jobId);
                   if (job) {
-                    // finished_at이 있으면 완료로 간주 (동기화 문제 해결)
-                    if (job.finished_at || job.status === 'completed') {
-                      console.log(`✅ 폴링: 작업 완료 감지 - URL: ${p.url}, JobId: ${jobId}, Status: ${job.status}, FinishedAt: ${job.finished_at}`);
-                      return { ...p, status: 'completed' as const, message: '크롤링 완료', chunkCount: (job.result as any)?.chunkCount || 0 };
+                    // 🔥 완료 조건: finished_at이 있고 status가 completed이며, documents 테이블도 indexed인지 확인
+                    if (job.finished_at && job.status === 'completed') {
+                      // documents 테이블 확인 (동기화 보장)
+                      let isDocumentIndexed = false;
+                      if (job.document_id) {
+                        try {
+                          const { data: document } = await supabase
+                            .from('documents')
+                            .select('id, status, chunk_count')
+                            .eq('id', job.document_id)
+                            .single();
+                          
+                          if (document && (document.status === 'indexed' || (document.chunk_count && document.chunk_count > 0))) {
+                            isDocumentIndexed = true;
+                          }
+                        } catch (docCheckError) {
+                          console.warn(`⚠️ 폴링 중 문서 확인 오류 (${job.document_id}):`, docCheckError);
+                          // 문서 확인 실패해도 finished_at이 있으면 완료로 간주 (백엔드에서 이미 확인했을 가능성)
+                          isDocumentIndexed = true;
+                        }
+                      } else {
+                        // document_id가 없으면 finished_at만으로 완료로 간주
+                        isDocumentIndexed = true;
+                      }
+
+                      if (isDocumentIndexed) {
+                        console.log(`✅ 폴링: 작업 완료 감지 (문서 확인됨) - URL: ${p.url}, JobId: ${jobId}, Status: ${job.status}, FinishedAt: ${job.finished_at}`);
+                        return { ...p, status: 'completed' as const, message: '크롤링 완료', chunkCount: (job.result as any)?.chunkCount || 0 };
+                      } else {
+                        console.warn(`⚠️ 폴링: 작업은 completed인데 문서는 indexed 아님 - URL: ${p.url}, JobId: ${jobId}`);
+                        // 문서가 indexed가 아니면 여전히 processing으로 표시
+                        return { ...p, status: 'crawling' as const, message: '크롤링 중... (문서 인덱싱 대기)', chunkCount: (job.result as any)?.chunkCount || 0 };
+                      }
                     } else if (job.status === 'cancelled') {
                       // 취소된 작업은 제거
                       return null;
