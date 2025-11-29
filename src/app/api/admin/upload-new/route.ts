@@ -1606,9 +1606,22 @@ export async function GET(request: NextRequest) {
                   updated_at: new Date().toISOString()
                 })
                 .eq('id', doc.id)
-                .eq('status', 'pending');
+                .in('status', ['pending', 'queued']); // pending 또는 queued 상태 모두 처리
               
-              console.log(`✅ pending 문서 상태 동기화: ${doc.id} -> processing (작업 진행 중)`);
+              console.log(`✅ pending/queued 문서 상태 동기화: ${doc.id} -> processing (작업 진행 중)`);
+            }
+            // 작업이 queued 상태면 processing으로 업데이트 (작업이 시작되었음을 의미)
+            else if (jobStatus === 'queued') {
+              await supabase
+                .from('documents')
+                .update({
+                  status: 'processing',
+                  updated_at: new Date().toISOString()
+                })
+                .eq('id', doc.id)
+                .in('status', ['pending', 'queued']);
+              
+              console.log(`✅ pending/queued 문서 상태 동기화: ${doc.id} -> processing (작업 큐 대기 중)`);
             }
           } else {
             // 관련 작업이 없고 2시간 이상 지났으면 failed로 업데이트
