@@ -187,6 +187,7 @@ export default function DocumentsPage() {
         console.log('🔄 [handleReindexDocument] reindexMutation 타입:', typeof reindexMutation);
         console.log('🔄 [handleReindexDocument] reindexMutation 값:', reindexMutation);
         console.log('🔄 [handleReindexDocument] toast 타입:', typeof toast);
+        console.log('🔄 [handleReindexDocument] 이 함수는 실제로 실행되고 있습니다!');
         
         if (!id || !title) {
             console.error('❌ [handleReindexDocument] 잘못된 파라미터:', { id, title });
