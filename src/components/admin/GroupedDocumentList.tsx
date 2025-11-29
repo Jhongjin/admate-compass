@@ -100,13 +100,14 @@ export default function GroupedDocumentList({
   
   // 크롤링 작업 상태를 우선적으로 확인하는 헬퍼 함수
   const getEffectiveStatus = (doc: GroupedDocument): { status: string; isCrawling: boolean } => {
-    // 크롤링 작업 상태가 있으면 우선 사용
+    // 🔥 크롤링 작업 상태가 있으면 우선 사용 (processing_jobs가 진실의 소스)
     if (doc.crawlJobStatus) {
       const jobStatus = doc.crawlJobStatus.status;
       if (jobStatus === 'queued' || jobStatus === 'retrying') {
         return { status: 'queued', isCrawling: true };
       } else if (jobStatus === 'processing') {
-        return { status: 'crawling', isCrawling: true };
+        // processing_jobs가 processing이면 무조건 '처리중'으로 표시
+        return { status: 'processing', isCrawling: true };
       } else if (jobStatus === 'completed') {
         return { status: 'completed', isCrawling: false };
       } else if (jobStatus === 'failed') {
@@ -115,6 +116,13 @@ export default function GroupedDocumentList({
     }
     
     // 크롤링 작업 상태가 없으면 문서 상태 사용
+    // 🔥 pending 상태 문서도 처리 중일 수 있으므로 processing_jobs 확인 필요
+    // 하지만 여기서는 문서 상태만 사용 (프론트엔드에서 polling으로 업데이트)
+    if (doc.status === 'pending') {
+      // pending 상태는 '대기'로 표시하되, 실제로는 큐에서 처리 중일 수 있음
+      return { status: 'pending', isCrawling: false };
+    }
+    
     return { status: doc.status, isCrawling: false };
   };
 
@@ -150,7 +158,8 @@ export default function GroupedDocumentList({
       case "processing":
         return "처리중";
       case "queued":
-        return "대기 중";
+      case "pending":
+        return "대기";
       case "error":
         return "오류";
       case "failed":

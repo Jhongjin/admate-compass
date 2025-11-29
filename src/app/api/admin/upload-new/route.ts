@@ -1775,21 +1775,27 @@ export async function GET(request: NextRequest) {
     let jobStatusMap: Record<string, any> = {};
     if (documentUrls.length > 0) {
       // 각 URL에 대한 최신 CRAWL_SEED 작업 조회 (최신순 정렬 및 제한 추가)
+      // 🔥 finished_at이 있어도 status가 processing이면 조회 대상에 포함
       const { data: jobs, error: jobsError } = await supabase
         .from('processing_jobs')
-        .select('id, status, started_at, finished_at, result, payload, created_at')
+        .select('id, status, started_at, finished_at, result, payload, created_at, document_id')
         .eq('job_type', 'CRAWL_SEED')
         .in('status', ['queued', 'retrying', 'processing', 'completed', 'failed'])
-        .order('created_at', { ascending: false })
+        .order('created_at', { ascending: false }) // 최신순 정렬
         .limit(1000);
       
       if (!jobsError && jobs) {
-        // URL별로 가장 최신 작업만 선택
+        // URL별로 가장 최신 작업만 선택 (같은 URL에 여러 작업이 있으면 가장 최신 것만)
         const urlToLatestJob = new Map<string, any>();
         jobs.forEach(job => {
           const jobUrl = (job.payload as any)?.url || (job.result as any)?.url;
-          if (jobUrl && !urlToLatestJob.has(jobUrl)) {
-            urlToLatestJob.set(jobUrl, job);
+          if (jobUrl) {
+            // 같은 URL에 대해 더 최신 작업이면 교체
+            const existing = urlToLatestJob.get(jobUrl);
+            if (!existing || (job.created_at && existing.created_at && 
+                new Date(job.created_at).getTime() > new Date(existing.created_at).getTime())) {
+              urlToLatestJob.set(jobUrl, job);
+            }
           }
         });
         
@@ -1800,7 +1806,8 @@ export async function GET(request: NextRequest) {
             status: job.status,
             started_at: job.started_at,
             finished_at: job.finished_at,
-            created_at: job.created_at
+            created_at: job.created_at,
+            document_id: job.document_id
           };
         });
       }
