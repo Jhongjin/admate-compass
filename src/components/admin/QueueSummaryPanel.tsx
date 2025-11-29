@@ -28,16 +28,13 @@ export default function QueueSummaryPanel({ selectedVendors = [] }: QueueSummary
   const { data: stats, refetch, isLoading } = useQuery<QueueStats>({
     queryKey: ['queue-stats', selectedVendors],
     queryFn: async () => {
-      let query = supabase
-        .from('processing_jobs')
-        .select('status', { count: 'exact', head: true });
-
       // vendor 필터링 (payload JSONB에서)
       if (selectedVendors.length > 0) {
         // Supabase에서는 JSONB 필터링이 복잡하므로 클라이언트에서 필터링
         const { data: allJobs } = await supabase
           .from('processing_jobs')
-          .select('status, payload');
+          .select('status, payload')
+          .eq('job_type', 'CRAWL_SEED');
         
         const filteredJobs = (allJobs || []).filter(job => {
           const vendor = job.payload?.vendor;
@@ -63,7 +60,8 @@ export default function QueueSummaryPanel({ selectedVendors = [] }: QueueSummary
       const { data: allJobs, error: allJobsError } = await supabase
         .from('processing_jobs')
         .select('id, status, started_at, finished_at')
-        .limit(1000); // 충분한 수의 작업 조회
+        .eq('job_type', 'CRAWL_SEED')
+        .limit(1000); // 충분한 수의 Seed 크롤 작업 조회
       
       if (allJobsError) {
         console.error('큐 통계 조회 오류:', allJobsError);

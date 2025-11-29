@@ -65,7 +65,8 @@ export default function QueueMonitoringPanel({ vendors = [], defaultOpen = false
       setLoading(true);
       let query = supabase
         .from('processing_jobs')
-        .select('id, document_id, job_type, status, attempts, max_attempts, priority, scheduled_at, started_at, finished_at, result, created_at');
+        .select('id, document_id, job_type, status, attempts, max_attempts, priority, scheduled_at, started_at, finished_at, result, created_at')
+        .eq('job_type', 'CRAWL_SEED');
       
       // 정렬 적용
       if (sortBy === 'status') {
