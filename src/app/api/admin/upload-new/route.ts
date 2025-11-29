@@ -1299,7 +1299,7 @@ export async function GET(request: NextRequest) {
         .eq('status', 'processing')
         .is('finished_at', null) // finished_at이 없는 작업만
         .order('created_at', { ascending: false })
-        .limit(100);
+        .limit(200); // 제한 증가
       
       if (!stuckJobsError && stuckJobs && stuckJobs.length > 0) {
         console.log(`🔧 finished_at이 없는 processing 작업 ${stuckJobs.length}개 발견, 자동 정리 시작`);
