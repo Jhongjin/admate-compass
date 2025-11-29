@@ -385,15 +385,15 @@ export async function processQueue() {
   ];
   
   if ((!stuckError1 && !stuckError2) && allStuckJobs.length > 0) {
-    console.warn(`⚠️ 타임아웃된 작업 감지: ${allStuckJobs.length}개 작업이 2시간 이상 진행 중입니다.`, 
+    console.warn(`⚠️ 무한대기 작업 감지: ${allStuckJobs.length}개 작업이 30분 이상 진행 중입니다.`, 
       allStuckJobs.map(j => ({ 
         id: j.id, 
         url: (j.payload as any)?.url, 
         started_at: j.started_at, 
         created_at: j.created_at,
-        elapsedHours: j.started_at 
-          ? ((Date.now() - new Date(j.started_at).getTime()) / (60 * 60 * 1000)).toFixed(2)
-          : ((Date.now() - new Date(j.created_at).getTime()) / (60 * 60 * 1000)).toFixed(2)
+        elapsedMinutes: j.started_at 
+          ? Math.round((Date.now() - new Date(j.started_at).getTime()) / (60 * 1000))
+          : Math.round((Date.now() - new Date(j.created_at).getTime()) / (60 * 1000))
       })));
     
     // 타임아웃된 작업을 failed로 변경
@@ -402,7 +402,7 @@ export async function processQueue() {
       .from('processing_jobs')
       .update({
         status: 'failed',
-        error: '작업 타임아웃: 2시간 이상 진행 중',
+        error: '작업 타임아웃: 30분 이상 진행 중 (무한대기 방지)',
         finished_at: new Date().toISOString(),
       })
       .in('id', stuckJobIds);
