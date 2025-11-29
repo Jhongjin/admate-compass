@@ -3001,12 +3001,38 @@ export async function processQueue() {
                   let result;
                   let createdDocumentId: string | undefined = undefined;
                   try {
+                    // 🔥 하위 페이지 처리 시에도 모달에서 설정한 제목 우선 사용
+                    // finalTitle이 null이거나 "광고주센터"인 경우, 기존 문서 제목 유지
+                    let titleForUpsert = finalTitle;
+                    if (!titleForUpsert || titleForUpsert.toLowerCase().includes('광고주센터') || titleForUpsert.toLowerCase().includes('광고주 센터')) {
+                      // 기존 문서가 있는지 확인하여 제목 가져오기
+                      const { data: existingSubDoc } = await supabase
+                        .from('documents')
+                        .select('id, title')
+                        .eq('url', subUrl)
+                        .order('created_at', { ascending: false })
+                        .limit(1)
+                        .maybeSingle();
+                      
+                      if (existingSubDoc?.title) {
+                        titleForUpsert = existingSubDoc.title;
+                        console.log(`[CRITICAL] 📝 하위 페이지 기존 제목 유지: ${subUrl} -> "${titleForUpsert}"`);
+                      } else {
+                        // 모달에서 설정한 제목 확인 (urlToTitleMap)
+                        const modalTitle = urlToTitleMap.get(subUrl);
+                        if (modalTitle && modalTitle.trim().length >= 2) {
+                          titleForUpsert = modalTitle.trim();
+                          console.log(`[CRITICAL] 📝 하위 페이지 모달 제목 사용: ${subUrl} -> "${titleForUpsert}"`);
+                        }
+                      }
+                    }
+                    
                     // RAG 처리에 타임아웃 추가 (60초로 단축 - 배치 타임아웃 내에 완료되어야 함)
                     const ragTimeout = 60000; // 90초 → 60초로 단축 (배치 타임아웃 90초 내에 완료되어야 함)
                     const ragStartTime = Date.now();
                     const ragPromise = upsertAndProcessDocument({ 
                       targetUrl: subUrl, 
-                      title: finalTitle, 
+                      title: titleForUpsert || subUrl, // 모달 제목 또는 기존 제목 사용
                       content: page.textContent,
                       parentDocumentId: documentId // 부모 문서 ID 전달
                     });
