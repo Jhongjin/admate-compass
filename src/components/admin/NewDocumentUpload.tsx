@@ -425,6 +425,16 @@ export default function NewDocumentUpload({ onUpload, vendor, hideList = false }
         throw new Error(errorMessage);
       }
 
+      // 백엔드 처리 확인 로직 추가
+      if (result.data?.documentId) {
+        console.log('✅ 백엔드 처리 확인:', {
+          documentId: result.data.documentId,
+          status: result.data.status,
+          chunkCount: result.data.chunkCount,
+          message: result.data.message
+        });
+      }
+
       // 큐로 오프로딩된 경우 폴링 시작
       if (result.queued && result.jobId && result.documentId) {
         console.log('📋 큐로 오프로딩됨, 폴링 시작:', { jobId: result.jobId, documentId: result.documentId });
