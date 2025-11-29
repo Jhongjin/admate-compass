@@ -101,7 +101,7 @@ interface HybridCrawlingManagerProps {
   onVendorsChange?: (vendors: string[]) => void;
 }
 
-export default function HybridCrawlingManager({ 
+export default function HybridCrawlingManager({
   onCrawlingComplete,
   vendors = [],
   onVendorsChange
@@ -129,14 +129,14 @@ export default function HybridCrawlingManager({
   const [deletingUrl, setDeletingUrl] = useState<string | null>(null);
   const [showDiscoveredUrls, setShowDiscoveredUrls] = useState<{ [key: string]: boolean }>({});
   const [selectedDiscoveredUrls, setSelectedDiscoveredUrls] = useState<{ [key: string]: string[] }>({});
-  
+
   // 심도 3 이상일 때 하위 페이지 선택 모달 상태
   const [showDiscoveryModal, setShowDiscoveryModal] = useState(false);
   const [allDiscoveredUrls, setAllDiscoveredUrls] = useState<DiscoveredUrlItem[]>([]);
   const [selectedUrlsForCrawling, setSelectedUrlsForCrawling] = useState<Set<string>>(new Set());
   const [pendingCrawlUrls, setPendingCrawlUrls] = useState<string[]>([]);
   const [groupedDiscoveredUrls, setGroupedDiscoveredUrls] = useState<Record<string, DiscoveredUrlItem[]>>({});
-  
+
   // 하위 페이지 크롤링 진행률 polling을 위한 상태
   const [subPageCrawlJobIds, setSubPageCrawlJobIds] = useState<Map<string, string>>(new Map()); // URL -> jobId 매핑
   const pollingIntervalRef = useRef<NodeJS.Timeout | null>(null);
@@ -161,12 +161,12 @@ export default function HybridCrawlingManager({
   const loadTemplates = async (vendorFilter?: string) => {
     try {
       console.log('템플릿 로드 시도...', { vendorFilter });
-      
+
       // 벤더 필터가 있으면 쿼리 파라미터 추가
-      const url = vendorFilter 
+      const url = vendorFilter
         ? `/api/admin/url-templates?vendor=${encodeURIComponent(vendorFilter)}`
         : '/api/admin/url-templates';
-      
+
       const response = await fetchWithTimeout(url);
       const data = await response.json();
 
@@ -230,6 +230,14 @@ export default function HybridCrawlingManager({
   React.useEffect(() => {
     const initializeCrawlingState = async () => {
       try {
+        // [NEW] 0단계: 좀비 작업 자동 정리 (1시간 이상 된 processing 작업 삭제)
+        try {
+          await fetch('/api/admin/cleanup-jobs', { method: 'POST' });
+          console.log('🧹 좀비 작업 정리 완료');
+        } catch (cleanupError) {
+          console.error('좀비 작업 정리 실패:', cleanupError);
+        }
+
         // 1단계: processing 상태인 작업 중 실제로 완료된 것 강제 동기화
         const { data: stuckProcessingJobs, error: stuckError } = await supabase
           .from('processing_jobs')
@@ -238,7 +246,7 @@ export default function HybridCrawlingManager({
           .eq('status', 'processing')
           .order('created_at', { ascending: false })
           .limit(100);
-        
+
         if (!stuckError && stuckProcessingJobs && stuckProcessingJobs.length > 0) {
           // 각 작업의 document_id로 documents 테이블 확인
           for (const job of stuckProcessingJobs) {
@@ -248,18 +256,18 @@ export default function HybridCrawlingManager({
                 .select('id, status, chunk_count')
                 .eq('id', job.document_id)
                 .single();
-              
+
               // 문서가 indexed 상태이고 chunk_count > 0이면 작업 완료로 간주
               if (document && (document.status === 'indexed' || document.chunk_count > 0)) {
                 console.log(`🔧 강제 동기화: 작업 ${job.id}는 실제로 완료되었습니다 (문서 상태: ${document.status}, 청크: ${document.chunk_count})`);
-                
+
                 // processing_jobs를 completed로 업데이트
                 await supabase
                   .from('processing_jobs')
                   .update({
                     status: 'completed',
                     finished_at: new Date().toISOString(),
-                    result: { 
+                    result: {
                       note: 'force_synced',
                       chunkCount: document.chunk_count || 0,
                       documentStatus: document.status
@@ -271,7 +279,7 @@ export default function HybridCrawlingManager({
             }
           }
         }
-        
+
         // 2단계: 진행 중인 CRAWL_SEED 작업 조회 (cancelled 제외)
         const { data: activeJobs, error } = await supabase
           .from('processing_jobs')
@@ -281,32 +289,32 @@ export default function HybridCrawlingManager({
           .neq('status', 'cancelled') // cancelled 상태 제외
           .order('created_at', { ascending: false })
           .limit(50);
-        
+
         if (error) {
           console.error('진행 중인 작업 조회 오류:', error);
           return;
         }
-        
+
         if (activeJobs && activeJobs.length > 0) {
           // 모든 작업을 상태별로 분류
-          const incompleteJobs = activeJobs.filter(j => 
+          const incompleteJobs = activeJobs.filter(j =>
             ['queued', 'processing', 'retrying'].includes(j.status) && !j.finished_at
           );
-          
+
           // 🔥 completed/failed 작업은 백엔드에서 이미 처리되었으므로 그대로 표시
-          const completedJobs = activeJobs.filter(j => 
+          const completedJobs = activeJobs.filter(j =>
             j.status === 'completed' && j.finished_at !== null
           );
-          
+
           const failedJobs = activeJobs.filter(j => j.status === 'failed');
-          
+
           // 완료된 작업이 있으면 콜백 호출 (문서 목록 새로고침)
           if (completedJobs.length > 0 && onCrawlingComplete) {
             setTimeout(() => {
               onCrawlingComplete();
             }, 1000);
           }
-          
+
           // 완료되지 않은 작업만 진행 상황에 표시
           if (incompleteJobs.length > 0) {
             // 진행 상황 상태 초기화
@@ -320,41 +328,41 @@ export default function HybridCrawlingManager({
                 chunkCount: jobResult?.chunkCount || 0
               };
             });
-            
+
             setCrawlingProgress(progressItems);
             setIsCrawling(true);
-            
+
             // jobIds 설정
             const jobIds = incompleteJobs.map(j => j.id);
             jobIdsRef.current = jobIds;
-            
+
             // 폴링 시작 (기존 폴링이 없을 때만)
             if (!pollingIntervalRef.current) {
               pollingIntervalRef.current = setInterval(async () => {
                 try {
                   // URL 기반으로 조회
                   const currentUrls = progressItems.map(p => p.url);
-                  
+
                   const { data: jobs, error: jobsError } = await supabase
                     .from('processing_jobs')
                     .select('id, status, result, payload, started_at, finished_at')
                     .eq('job_type', 'CRAWL_SEED')
                     .in('status', ['queued', 'processing', 'retrying', 'completed', 'failed'])
-                    .order('created_at', { ascending: false }) // 최신순 정렬 추가
-                    .limit(100); // 최근 작업 100개로 제한
-                  
+                    .order('created_at', { ascending: false })
+                    .limit(100);
+
                   if (jobsError) {
                     console.error('폴링 중 작업 조회 오류:', jobsError);
                     return;
                   }
-                  
+
                   if (jobs && jobs.length > 0) {
                     // 현재 URL과 매칭되는 작업만 필터링
                     const matchingJobs = jobs.filter(job => {
                       const jobUrl = (job.payload as any)?.url;
                       return jobUrl && currentUrls.includes(jobUrl);
                     });
-                    
+
                     // URL과 jobId 매핑 생성
                     const urlToJobIdMap = new Map<string, string>();
                     matchingJobs.forEach(job => {
@@ -363,7 +371,7 @@ export default function HybridCrawlingManager({
                         urlToJobIdMap.set(jobUrl, job.id);
                       }
                     });
-                    
+
                     // 타임아웃 감지
                     const now = Date.now();
                     const TIMEOUT_MS = 2 * 60 * 60 * 1000;
@@ -374,7 +382,7 @@ export default function HybridCrawlingManager({
                       }
                       return false;
                     });
-                    
+
                     // 진행 상황 업데이트
                     setCrawlingProgress(prev => {
                       const updated = prev.map(p => {
@@ -399,25 +407,25 @@ export default function HybridCrawlingManager({
                         }
                         return p;
                       }).filter((p): p is CrawlingProgress => p !== null);
-                      
+
                       return updated;
                     });
-                    
+
                     // 완료된 작업이 있으면 콜백 호출
-                    const completedInMatching = matchingJobs.filter(j => 
+                    const completedInMatching = matchingJobs.filter(j =>
                       j.status === 'completed' || j.finished_at !== null
                     );
                     if (completedInMatching.length > 0 && onCrawlingComplete) {
                       onCrawlingComplete();
                     }
-                    
+
                     // 모든 작업이 완료되면 폴링 중지
-                    const allCompleted = matchingJobs.every(j => 
-                      (j.status === 'completed' || j.finished_at !== null) || 
-                      j.status === 'failed' || 
+                    const allCompleted = matchingJobs.every(j =>
+                      (j.status === 'completed' || j.finished_at !== null) ||
+                      j.status === 'failed' ||
                       j.status === 'cancelled'
                     );
-                    
+
                     if (allCompleted) {
                       if (pollingIntervalRef.current) {
                         clearInterval(pollingIntervalRef.current);
@@ -443,9 +451,9 @@ export default function HybridCrawlingManager({
         console.error('초기 크롤링 상태 로드 오류:', initError);
       }
     };
-    
+
     initializeCrawlingState();
-    
+
     // 컴포넌트 언마운트 시 폴링 정리
     return () => {
       if (pollingIntervalRef.current) {
@@ -555,7 +563,7 @@ export default function HybridCrawlingManager({
     if (newTemplateName.trim() && newTemplateUrls.some(url => url.trim())) {
       const validUrls = newTemplateUrls.filter(url => url.trim());
       const templateName = newTemplateName.trim();
-      
+
       // 현재 선택된 벤더의 DB 값 가져오기 (없으면 META)
       const dbVendor = vendors.length > 0 ? VENDOR_TO_DB_MAP[vendors[0]] : 'META';
 
@@ -711,7 +719,7 @@ export default function HybridCrawlingManager({
     const initialProgress = urlsToCrawl.map(url => ({ url, status: 'pending' as const }));
     setCrawlingProgress(initialProgress);
     setIsCrawling(true);
-    
+
     // 프로그레스바가 즉시 렌더링되도록 강제 업데이트
     await new Promise(resolve => setTimeout(resolve, 100));
 
@@ -730,7 +738,7 @@ export default function HybridCrawlingManager({
         setCrawlingProgress(prev =>
           prev.map(p => ({ ...p, status: 'crawling' as const, message: '크롤링 중...' }))
         );
-        
+
         // 상태 업데이트를 위해 강제 리렌더링 트리거
         await new Promise(resolve => setTimeout(resolve, 50));
 
@@ -787,7 +795,7 @@ export default function HybridCrawlingManager({
           // 심도 3 이상이고 하위 페이지가 발견된 경우 모달 표시
           const maxDepthValue = clampDepthValue(crawlOptions.maxDepth);
           const allDiscovered: DiscoveredUrlItem[] = [];
-          
+
           // 모든 문서에서 discoveredUrls 수집 - 메인 페이지별로 그룹화
           // maxDepth >= 3일 때는 depth 2와 3 이상을 모두 모달에서 선택하도록 함 (타임아웃 방지)
           const groupedByMainPage: Record<string, DiscoveredUrlItem[]> = {};
@@ -798,7 +806,7 @@ export default function HybridCrawlingManager({
                 if (!groupedByMainPage[mainPageUrl]) {
                   groupedByMainPage[mainPageUrl] = [];
                 }
-                
+
                 doc.discoveredUrls.forEach((discovered: any) => {
                   // maxDepth >= 3일 때는 depth 2 이상인 모든 페이지를 모달에서 선택하도록 함
                   if (maxDepthValue >= 3 && discovered.depth >= 2) {
@@ -831,16 +839,16 @@ export default function HybridCrawlingManager({
               }
             });
           }
-          
+
           // 그룹화 정보 저장 (나중에 모달에서 사용)
           setGroupedDiscoveredUrls(groupedByMainPage);
-          
+
           console.log(`🔍 하위 페이지 수집 결과: ${allDiscovered.length}개, maxDepth: ${maxDepthValue}`);
 
           // maxDepth >= 3이고 발견된 페이지가 있으면 모달 표시 (depth 2 이상 모두 포함)
           if (maxDepthValue >= 3 && allDiscovered.length > 0) {
             console.log(`🔍 하위 페이지 발견: ${allDiscovered.length}개 (depth 2 이상) - 이미 크롤된 문서 체크 중...`);
-            
+
             // 이미 크롤된 문서 체크 (indexed 또는 chunk_count > 0인 문서)
             const urlsToCheck = allDiscovered.map(item => item.url);
             const { data: existingDocs, error: checkError } = await supabase
@@ -849,10 +857,10 @@ export default function HybridCrawlingManager({
               .in('url', urlsToCheck)
               .eq('type', 'url')
               .or('status.eq.indexed,chunk_count.gt.0'); // indexed 상태이거나 chunk_count > 0인 문서
-            
+
             const alreadyCrawledUrlSet = new Set<string>();
             const existingDocMap = new Map<string, { id: string; title: string; status: string; chunk_count: number }>();
-            
+
             if (!checkError && existingDocs) {
               existingDocs.forEach((doc) => {
                 if (doc.url && (doc.status === 'indexed' || (doc.chunk_count && doc.chunk_count > 0))) {
@@ -866,19 +874,19 @@ export default function HybridCrawlingManager({
                 }
               });
             }
-            
+
             // 이미 크롤된 문서 정보를 DiscoveredUrlItem에 반영
             const allDiscoveredWithStatus = allDiscovered.map(item => ({
               ...item,
               isAlreadyCrawled: alreadyCrawledUrlSet.has(item.url),
               existingDocumentId: existingDocMap.get(item.url)?.id
             }));
-            
+
             const alreadyCrawledCount = alreadyCrawledUrlSet.size;
             if (alreadyCrawledCount > 0) {
               console.log(`✅ 이미 크롤된 문서 발견: ${alreadyCrawledCount}개 (총 ${allDiscovered.length}개 중)`);
             }
-            
+
             console.log(`🔍 하위 페이지 발견: ${allDiscovered.length}개 (depth 2 이상) - 모달 표시`);
             setAllDiscoveredUrls(allDiscoveredWithStatus);
             // 이미 크롤된 문서는 기본 선택에서 제외
@@ -887,7 +895,7 @@ export default function HybridCrawlingManager({
               .map(item => item.url);
             setSelectedUrlsForCrawling(new Set(urlsToSelect));
             setShowDiscoveryModal(true);
-            
+
             // 성공한 메인 페이지들의 진행 상황 업데이트 (유지)
             setCrawlingProgress(prev =>
               prev.map((p, index) => {
@@ -904,7 +912,7 @@ export default function HybridCrawlingManager({
                 return p;
               })
             );
-            
+
             // 모달에서 선택 후 크롤링하도록 대기 (성공한 문서는 이미 저장되었으므로 진행 상황은 유지)
             return;
           } else {
@@ -945,7 +953,7 @@ export default function HybridCrawlingManager({
                 try {
                   const urlObj = new URL(url);
                   const hostname = urlObj.hostname.toLowerCase();
-                  
+
                   if (hostname.includes('naver.com') || hostname.includes('naver')) {
                     return 'NAVER';
                   } else if (hostname.includes('kakao.com') || hostname.includes('kakao')) {
@@ -1048,13 +1056,13 @@ export default function HybridCrawlingManager({
     try {
       // 진행 중인 모든 작업 취소
       const activeJobIds: string[] = [];
-      
+
       // 폴링 중인 작업 ID 수집
       crawlingProgress.forEach(progress => {
         // progress에서 jobId를 추출할 수 있는 방법이 필요
         // 현재 구조에서는 URL만 있으므로, Supabase에서 해당 URL의 job을 찾아야 함
       });
-      
+
       // Supabase에서 진행 중인 CRAWL_SEED 작업 조회
       const { data: activeJobs } = await supabase
         .from('processing_jobs')
@@ -1063,7 +1071,7 @@ export default function HybridCrawlingManager({
         .in('status', ['queued', 'processing', 'retrying'])
         .order('created_at', { ascending: false })
         .limit(100);
-      
+
       if (activeJobs && activeJobs.length > 0) {
         // 현재 크롤링 중인 URL과 매칭되는 작업 찾기
         const currentUrls = new Set(crawlingProgress.map(p => p.url));
@@ -1071,7 +1079,7 @@ export default function HybridCrawlingManager({
           const jobUrl = (job.payload as any)?.url;
           return jobUrl && currentUrls.has(jobUrl);
         });
-        
+
         // 매칭되는 작업들 취소
         for (const job of matchingJobs) {
           try {
@@ -1080,7 +1088,7 @@ export default function HybridCrawlingManager({
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ jobId: job.id, action: 'cancel' }),
             }, 10000);
-            
+
             if (cancelRes.ok) {
               const cancelResult = await cancelRes.json();
               if (cancelResult.success) {
@@ -1092,17 +1100,17 @@ export default function HybridCrawlingManager({
           }
         }
       }
-      
+
       // 폴링 중지
       if (pollingIntervalRef.current) {
         clearInterval(pollingIntervalRef.current);
         pollingIntervalRef.current = null;
       }
-      
+
       // 프론트엔드 상태 초기화
       setCrawlingProgress([]);
       setIsCrawling(false);
-      
+
       if (activeJobIds.length > 0) {
         toast.success(`${activeJobIds.length}개 작업이 취소되었습니다.`);
       } else {
@@ -1214,7 +1222,7 @@ export default function HybridCrawlingManager({
 
     try {
       console.log(`[POLL] 🔍 폴링 시작: ${urls.length}개 URL, ${jobIdsRef.current.length}개 jobId`);
-      
+
       // 1. jobIds로 직접 조회 (가장 확실한 방법)
       let jobs: any[] = [];
       if (jobIdsRef.current.length > 0) {
@@ -1246,7 +1254,7 @@ export default function HybridCrawlingManager({
       // URL -> document_id 매핑
       const urlToDocId = new Map<string, string>();
       const urlToDocStatus = new Map<string, { status: string; chunkCount: number }>();
-      
+
       documents?.forEach(doc => {
         if (doc.url && !urlToDocId.has(doc.url)) {
           urlToDocId.set(doc.url, doc.id);
@@ -1285,9 +1293,9 @@ export default function HybridCrawlingManager({
         const jobUrl = (job.payload as any)?.url;
         if (jobUrl && urls.includes(jobUrl)) {
           const existing = urlToLatestJob.get(jobUrl);
-          if (!existing || 
-              (job.created_at && existing.created_at && 
-               new Date(job.created_at).getTime() > new Date(existing.created_at).getTime())) {
+          if (!existing ||
+            (job.created_at && existing.created_at &&
+              new Date(job.created_at).getTime() > new Date(existing.created_at).getTime())) {
             urlToLatestJob.set(jobUrl, job);
           }
         }
@@ -1310,7 +1318,7 @@ export default function HybridCrawlingManager({
             .order('created_at', { ascending: false })
             .limit(1)
             .maybeSingle();
-          
+
           if (freshDoc) {
             docInfo = {
               status: freshDoc.status || 'pending',
@@ -1324,7 +1332,7 @@ export default function HybridCrawlingManager({
         if (docInfo) {
           const docStatus = docInfo.status;
           const docChunkCount = docInfo.chunkCount || 0;
-          
+
           // indexed 또는 completed 상태이고 청크가 있으면 완료로 간주 (processing 작업이 있어도 무시)
           if ((docStatus === 'indexed' || docStatus === 'completed') && docChunkCount > 0) {
             console.log(`[POLL] ✅ ${url}: documents 테이블에서 indexed 상태 확인 (청크: ${docChunkCount}) - processing 작업 무시`);
@@ -1335,7 +1343,7 @@ export default function HybridCrawlingManager({
               chunkCount: docChunkCount
             };
           }
-          
+
           // failed 상태
           if (docStatus === 'failed') {
             return {
@@ -1344,7 +1352,7 @@ export default function HybridCrawlingManager({
               message: '크롤링 실패'
             };
           }
-          
+
           // processing 상태
           if (docStatus === 'processing') {
             return {
@@ -1407,7 +1415,7 @@ export default function HybridCrawlingManager({
             const createdAt = job.created_at ? new Date(job.created_at).getTime() : null;
             const elapsed = startedAt ? now - startedAt : (createdAt ? now - createdAt : 0);
             const TIMEOUT_MS = 10 * 60 * 1000; // 10분으로 단축
-            
+
             // pending 문서이고 0 chunks이며 타임아웃이면 failed로 표시
             if (docInfo?.status === 'pending' && docInfo?.chunkCount === 0 && elapsed > TIMEOUT_MS) {
               console.log(`[POLL] ⏰ ${url}: 타임아웃 감지 (경과: ${Math.round(elapsed / (60 * 1000))}분) - failed로 표시`);
@@ -1417,7 +1425,7 @@ export default function HybridCrawlingManager({
                 message: `타임아웃: ${Math.round(elapsed / (60 * 1000))}분 이상 진행 중`
               };
             }
-            
+
             return {
               url,
               status: 'crawling',
@@ -1448,7 +1456,7 @@ export default function HybridCrawlingManager({
       const activeCount = nextProgress.filter(
         p => p.status === 'crawling' || p.status === 'pending'
       ).length;
-      
+
       const completedCount = nextProgress.filter(
         p => p.status === 'completed'
       ).length;
@@ -1458,12 +1466,12 @@ export default function HybridCrawlingManager({
       // 🔥 완료된 작업이 있으면 즉시 문서 목록 새로고침
       if (completedCount > 0) {
         console.log(`[POLL] 🔄 ${completedCount}개 작업 완료 감지 - 문서 목록 새로고침 시작`);
-        
+
         // 모든 documents 관련 쿼리 무효화
         queryClient.invalidateQueries({ queryKey: ['admin-documents'], exact: false });
         queryClient.invalidateQueries({ queryKey: ['documents'], exact: false });
         queryClient.invalidateQueries({ queryKey: ['queue-stats'], exact: false });
-        
+
         // 콜백 호출
         if (onCrawlingComplete) {
           setTimeout(() => {
@@ -1477,23 +1485,23 @@ export default function HybridCrawlingManager({
       if (activeCount === 0) {
         console.log(`[POLL] 🎉 모든 작업 완료 - 폴링 종료`);
         setIsCrawling(false);
-        
+
         // 완료된 작업은 crawlingProgress에서 제거 (3초 후)
         setTimeout(() => {
           setCrawlingProgress([]);
           jobIdsRef.current = [];
         }, 3000);
-        
+
         if (pollingIntervalRef.current) {
           clearInterval(pollingIntervalRef.current);
           pollingIntervalRef.current = null;
         }
-        
+
         // 최종 새로고침
         queryClient.invalidateQueries({ queryKey: ['admin-documents'], exact: false });
         queryClient.invalidateQueries({ queryKey: ['documents'], exact: false });
         queryClient.invalidateQueries({ queryKey: ['queue-stats'], exact: false });
-        
+
         if (onCrawlingComplete) {
           setTimeout(() => {
             console.log('[POLL] 📞 최종 onCrawlingComplete 콜백 호출');
@@ -1518,7 +1526,7 @@ export default function HybridCrawlingManager({
 
     const selectedUrlsArray = Array.from(selectedUrlsForCrawling);
     setShowDiscoveryModal(false);
-    
+
     // 즉시 상태 초기화
     setIsCrawling(true);
     setCrawlingProgress(selectedUrlsArray.map(url => ({ url, status: 'pending' as const, message: '문서 생성 중...' })));
@@ -1526,7 +1534,7 @@ export default function HybridCrawlingManager({
     try {
       // 벤더 정보 가져오기
       const dbVendor = vendors.length > 0 ? VENDOR_TO_DB_MAP[vendors[0]] || 'META' : 'META';
-      
+
       // allDiscoveredUrls에서 URL -> title 매핑 생성
       const urlToTitleMap = new Map<string, string>();
       allDiscoveredUrls.forEach(item => {
@@ -1534,15 +1542,15 @@ export default function HybridCrawlingManager({
           urlToTitleMap.set(item.url, item.title);
         }
       });
-      
+
       // 모달에서 선택한 모든 페이지를 문서 목록에 한번에 추가
       const documentsToCreate = selectedUrlsArray.map(url => ({
         url,
         title: urlToTitleMap.get(url) || url
       }));
-      
+
       console.log(`📋 모달에서 선택한 ${documentsToCreate.length}개 페이지를 문서 목록에 한번에 추가 시작...`);
-      
+
       const batchCreateResponse = await fetchWithTimeout('/api/admin/batch-create-documents', {
         method: 'POST',
         headers: {
@@ -1564,11 +1572,11 @@ export default function HybridCrawlingManager({
       }
 
       console.log(`✅ ${batchCreateResult.created}개 문서 생성, ${batchCreateResult.updated}개 문서 업데이트 완료`);
-      
+
       // 🔥 생성된 문서들에 대해 CRAWL_SEED 작업을 큐에 등록
       const createdDocuments = batchCreateResult.documents || [];
       const jobIds: string[] = [];
-      
+
       for (const doc of createdDocuments) {
         try {
           // 진행 상황 업데이트
@@ -1577,7 +1585,7 @@ export default function HybridCrawlingManager({
               p.url === doc.url ? { ...p, message: '큐에 등록 중...' } : p
             )
           );
-          
+
           const enqueueResponse = await fetchWithTimeout('/api/jobs/enqueue', {
             method: 'POST',
             headers: {
@@ -1649,7 +1657,7 @@ export default function HybridCrawlingManager({
       if (pollingIntervalRef.current) {
         clearInterval(pollingIntervalRef.current);
       }
-      
+
       pollingIntervalRef.current = setInterval(() => {
         pollCrawlStatusFromJobs(selectedUrlsArray);
       }, 2000);
@@ -1664,7 +1672,7 @@ export default function HybridCrawlingManager({
     } catch (error) {
       console.error('❌ 크롤링 시작 오류:', error);
       toast.error(error instanceof Error ? error.message : '크롤링 시작 실패');
-      
+
       // 오류 발생 시 상태 업데이트
       setCrawlingProgress(prev =>
         prev.map(p => ({
@@ -1674,7 +1682,7 @@ export default function HybridCrawlingManager({
         }))
       );
       setIsCrawling(false);
-      
+
       if (pollingIntervalRef.current) {
         clearInterval(pollingIntervalRef.current);
         pollingIntervalRef.current = null;
@@ -1766,8 +1774,8 @@ export default function HybridCrawlingManager({
           {onVendorsChange && (
             <div className="flex items-center space-x-2">
               <span className="text-sm text-gray-400">크롤링 벤더:</span>
-              <Select 
-                value={vendors.length === 1 ? vendors[0] : vendors.length > 1 ? "multiple" : "all"} 
+              <Select
+                value={vendors.length === 1 ? vendors[0] : vendors.length > 1 ? "multiple" : "all"}
                 onValueChange={(v) => {
                   if (v === "all") {
                     onVendorsChange([]);
@@ -1778,11 +1786,11 @@ export default function HybridCrawlingManager({
               >
                 <SelectTrigger className="w-[180px] bg-[#0B0F17] border-white/10 text-white">
                   <span className="flex-1 text-left">
-                    {vendors.length === 0 
-                      ? "전체 벤더" 
-                      : vendors.length === 1 
-                      ? vendors[0] 
-                      : `${vendors.length}개 선택됨`}
+                    {vendors.length === 0
+                      ? "전체 벤더"
+                      : vendors.length === 1
+                        ? vendors[0]
+                        : `${vendors.length}개 선택됨`}
                   </span>
                 </SelectTrigger>
                 <SelectContent className="bg-[#1A1F2C] border-white/10 text-white">
@@ -2474,293 +2482,293 @@ export default function HybridCrawlingManager({
         {/* 크롤링 상태 동기화 버튼 */}
         {(isCrawling || crawlingProgress.some(p => p.status === 'crawling' || p.status === 'pending')) && (
           <>
-          <Button
-            onClick={async () => {
-              // API를 통해 강제 동기화 실행
-              try {
-                toast.info('강제 동기화 중...');
-                console.log('🔧 강제 동기화 버튼 클릭됨');
-                
-                const response = await fetch('/api/admin/force-sync-jobs', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' }
-                });
-                
-                if (!response.ok) {
-                  throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                }
-                
-                const result = await response.json();
-                console.log('🔧 강제 동기화 결과:', result);
-                
-                if (result.success) {
-                  if (result.synced > 0) {
-                    toast.success(`동기화 완료: ${result.synced}개 작업 업데이트됨 (전체: ${result.total}개)`);
-                    console.log('✅ 동기화된 작업:', result.results);
-                    
-                    // 결과를 콘솔에 상세 출력 (새로고침 전에 확인 가능하도록)
-                    if (result.results && result.results.length > 0) {
-                      console.group('📋 강제 동기화 상세 결과');
-                      result.results.forEach((r: any) => {
-                        const icon = r.status === 'synced' ? '✅' : r.status === 'timeout' ? '⏰' : r.status === 'error' ? '❌' : '⚠️';
-                        console.log(`${icon} 작업 ${r.jobId?.substring(0, 8)}...: ${r.status} - ${r.message}`);
-                        if (r.title) console.log(`   문서: ${r.title}`);
-                        if (r.chunkCount !== undefined) console.log(`   청크: ${r.chunkCount}개`);
-                      });
-                      console.groupEnd();
-                    }
-                    
-                    // 콘솔 로그 확인을 위해 3초 후 새로고침
-                    setTimeout(() => {
-                      console.log('🔄 페이지 새로고침 시작...');
-                      window.location.reload();
-                    }, 3000);
-                  } else {
-                    toast.warning(`동기화할 작업이 없습니다. (전체: ${result.total}개)`);
-                    console.log('⚠️ 동기화 결과:', result.results);
-                    
-                    // 결과를 콘솔에 출력
-                    if (result.results && result.results.length > 0) {
-                      console.group('📋 강제 동기화 상세 결과');
-                      result.results.forEach((r: any) => {
-                        const icon = r.status === 'not_completed' ? '⏳' : r.status === 'not_found' ? '❓' : '⚠️';
-                        console.log(`${icon} 작업 ${r.jobId?.substring(0, 8)}...: ${r.status} - ${r.message}`);
-                        if (r.title) console.log(`   문서: ${r.title}`);
-                        if (r.chunkCount !== undefined) console.log(`   청크: ${r.chunkCount}개`);
-                      });
-                      console.groupEnd();
-                    }
+            <Button
+              onClick={async () => {
+                // API를 통해 강제 동기화 실행
+                try {
+                  toast.info('강제 동기화 중...');
+                  console.log('🔧 강제 동기화 버튼 클릭됨');
+
+                  const response = await fetch('/api/admin/force-sync-jobs', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                  });
+
+                  if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
                   }
-                } else {
-                  toast.error(`동기화 실패: ${result.error || '알 수 없는 오류'}`);
-                  console.error('❌ 동기화 실패:', result);
-                }
-              } catch (error) {
-                console.error('❌ 강제 동기화 오류:', error);
-                toast.error(`동기화 중 오류가 발생했습니다: ${error instanceof Error ? error.message : String(error)}`);
-              }
-              
-              // 기존 로직도 실행 (로컬 상태 동기화)
-              try {
-                const currentUrls = crawlingProgress.map(p => p.url);
-                if (currentUrls.length === 0) {
-                  // 진행 중인 모든 작업 조회
-                  const { data: allJobs } = await supabase
-                    .from('processing_jobs')
-                    .select('id, status, result, payload, started_at, finished_at')
-                    .eq('job_type', 'CRAWL_SEED')
-                    .in('status', ['queued', 'processing', 'retrying', 'completed', 'failed'])
-                    .order('created_at', { ascending: false })
-                    .limit(50);
-                  
-                  if (allJobs && allJobs.length > 0) {
-                    const incompleteJobs = allJobs.filter(j => 
-                      ['queued', 'processing', 'retrying'].includes(j.status) && !j.finished_at
-                    );
-                    
-                    if (incompleteJobs.length > 0) {
-                      const progressItems: CrawlingProgress[] = incompleteJobs.map(job => {
-                        const jobUrl = (job.payload as any)?.url;
-                        const jobResult = job.result as any;
-                        return {
-                          url: jobUrl || '알 수 없는 URL',
-                          status: job.status === 'processing' ? 'crawling' as const : 'pending' as const,
-                          message: job.status === 'processing' ? '크롤링 중...' : '큐 대기 중...',
-                          chunkCount: jobResult?.chunkCount || 0
-                        };
-                      });
-                      setCrawlingProgress(progressItems);
-                      setIsCrawling(true);
-                      jobIdsRef.current = incompleteJobs.map(j => j.id);
+
+                  const result = await response.json();
+                  console.log('🔧 강제 동기화 결과:', result);
+
+                  if (result.success) {
+                    if (result.synced > 0) {
+                      toast.success(`동기화 완료: ${result.synced}개 작업 업데이트됨 (전체: ${result.total}개)`);
+                      console.log('✅ 동기화된 작업:', result.results);
+
+                      // 결과를 콘솔에 상세 출력 (새로고침 전에 확인 가능하도록)
+                      if (result.results && result.results.length > 0) {
+                        console.group('📋 강제 동기화 상세 결과');
+                        result.results.forEach((r: any) => {
+                          const icon = r.status === 'synced' ? '✅' : r.status === 'timeout' ? '⏰' : r.status === 'error' ? '❌' : '⚠️';
+                          console.log(`${icon} 작업 ${r.jobId?.substring(0, 8)}...: ${r.status} - ${r.message}`);
+                          if (r.title) console.log(`   문서: ${r.title}`);
+                          if (r.chunkCount !== undefined) console.log(`   청크: ${r.chunkCount}개`);
+                        });
+                        console.groupEnd();
+                      }
+
+                      // 콘솔 로그 확인을 위해 3초 후 새로고침
+                      setTimeout(() => {
+                        console.log('🔄 페이지 새로고침 시작...');
+                        window.location.reload();
+                      }, 3000);
                     } else {
-                      // 모든 작업이 완료됨
-                      setCrawlingProgress([]);
-                      setIsCrawling(false);
-                      if (onCrawlingComplete) {
+                      toast.warning(`동기화할 작업이 없습니다. (전체: ${result.total}개)`);
+                      console.log('⚠️ 동기화 결과:', result.results);
+
+                      // 결과를 콘솔에 출력
+                      if (result.results && result.results.length > 0) {
+                        console.group('📋 강제 동기화 상세 결과');
+                        result.results.forEach((r: any) => {
+                          const icon = r.status === 'not_completed' ? '⏳' : r.status === 'not_found' ? '❓' : '⚠️';
+                          console.log(`${icon} 작업 ${r.jobId?.substring(0, 8)}...: ${r.status} - ${r.message}`);
+                          if (r.title) console.log(`   문서: ${r.title}`);
+                          if (r.chunkCount !== undefined) console.log(`   청크: ${r.chunkCount}개`);
+                        });
+                        console.groupEnd();
+                      }
+                    }
+                  } else {
+                    toast.error(`동기화 실패: ${result.error || '알 수 없는 오류'}`);
+                    console.error('❌ 동기화 실패:', result);
+                  }
+                } catch (error) {
+                  console.error('❌ 강제 동기화 오류:', error);
+                  toast.error(`동기화 중 오류가 발생했습니다: ${error instanceof Error ? error.message : String(error)}`);
+                }
+
+                // 기존 로직도 실행 (로컬 상태 동기화)
+                try {
+                  const currentUrls = crawlingProgress.map(p => p.url);
+                  if (currentUrls.length === 0) {
+                    // 진행 중인 모든 작업 조회
+                    const { data: allJobs } = await supabase
+                      .from('processing_jobs')
+                      .select('id, status, result, payload, started_at, finished_at')
+                      .eq('job_type', 'CRAWL_SEED')
+                      .in('status', ['queued', 'processing', 'retrying', 'completed', 'failed'])
+                      .order('created_at', { ascending: false })
+                      .limit(50);
+
+                    if (allJobs && allJobs.length > 0) {
+                      const incompleteJobs = allJobs.filter(j =>
+                        ['queued', 'processing', 'retrying'].includes(j.status) && !j.finished_at
+                      );
+
+                      if (incompleteJobs.length > 0) {
+                        const progressItems: CrawlingProgress[] = incompleteJobs.map(job => {
+                          const jobUrl = (job.payload as any)?.url;
+                          const jobResult = job.result as any;
+                          return {
+                            url: jobUrl || '알 수 없는 URL',
+                            status: job.status === 'processing' ? 'crawling' as const : 'pending' as const,
+                            message: job.status === 'processing' ? '크롤링 중...' : '큐 대기 중...',
+                            chunkCount: jobResult?.chunkCount || 0
+                          };
+                        });
+                        setCrawlingProgress(progressItems);
+                        setIsCrawling(true);
+                        jobIdsRef.current = incompleteJobs.map(j => j.id);
+                      } else {
+                        // 모든 작업이 완료됨
+                        setCrawlingProgress([]);
+                        setIsCrawling(false);
+                        if (onCrawlingComplete) {
+                          onCrawlingComplete();
+                        }
+                      }
+                    }
+                  } else {
+                    // 현재 URL의 실제 상태 확인 및 강제 동기화
+                    const { data: jobs } = await supabase
+                      .from('processing_jobs')
+                      .select('id, status, result, payload, started_at, finished_at, document_id')
+                      .eq('job_type', 'CRAWL_SEED')
+                      .in('status', ['queued', 'processing', 'retrying', 'completed', 'failed']);
+
+                    if (jobs && jobs.length > 0) {
+                      const matchingJobs = jobs.filter(job => {
+                        const jobUrl = (job.payload as any)?.url;
+                        return jobUrl && currentUrls.includes(jobUrl);
+                      });
+
+                      // processing 상태인 작업 중 실제로 완료된 것 강제 동기화
+                      for (const job of matchingJobs) {
+                        if (job.status === 'processing' && job.document_id && !job.finished_at) {
+                          const { data: document } = await supabase
+                            .from('documents')
+                            .select('id, status, chunk_count')
+                            .eq('id', job.document_id)
+                            .single();
+
+                          // 문서가 indexed 상태이고 chunk_count > 0이면 작업 완료로 간주
+                          if (document && (document.status === 'indexed' || document.chunk_count > 0)) {
+                            console.log(`🔧 강제 동기화 버튼: 작업 ${job.id}는 실제로 완료되었습니다`);
+
+                            // processing_jobs를 completed로 업데이트
+                            await supabase
+                              .from('processing_jobs')
+                              .update({
+                                status: 'completed',
+                                finished_at: new Date().toISOString(),
+                                result: {
+                                  note: 'force_synced_by_button',
+                                  chunkCount: document.chunk_count || 0,
+                                  documentStatus: document.status
+                                }
+                              })
+                              .eq('id', job.id)
+                              .eq('status', 'processing');
+
+                            // job 상태 업데이트
+                            job.status = 'completed';
+                            job.finished_at = new Date().toISOString();
+                          }
+                        }
+                      }
+
+                      setCrawlingProgress(prev => {
+                        const urlToJobMap = new Map<string, any>();
+                        matchingJobs.forEach(job => {
+                          const jobUrl = (job.payload as any)?.url;
+                          if (jobUrl) {
+                            urlToJobMap.set(jobUrl, job);
+                          }
+                        });
+
+                        const updated = prev.map(p => {
+                          const job = urlToJobMap.get(p.url);
+                          if (job) {
+                            if (job.finished_at || job.status === 'completed') {
+                              return { ...p, status: 'completed' as const, message: '크롤링 완료', chunkCount: (job.result as any)?.chunkCount || 0 };
+                            } else if (job.status === 'failed') {
+                              return { ...p, status: 'failed' as const, message: '크롤링 실패' };
+                            } else if (job.status === 'processing') {
+                              return { ...p, status: 'crawling' as const, message: '크롤링 중...', chunkCount: (job.result as any)?.chunkCount || 0 };
+                            } else if (job.status === 'queued' || job.status === 'retrying') {
+                              return { ...p, status: 'pending' as const, message: '큐 대기 중...' };
+                            }
+                          }
+                          return p;
+                        });
+
+                        const allCompleted = updated.every(p => p.status === 'completed' || p.status === 'failed');
+                        if (allCompleted) {
+                          setIsCrawling(false);
+                          setTimeout(() => {
+                            if (onCrawlingComplete) {
+                              onCrawlingComplete();
+                            }
+                          }, 1000);
+                        }
+
+                        return updated;
+                      });
+
+                      // 완료된 작업이 있으면 콜백 호출
+                      const completedJobs = matchingJobs.filter(j =>
+                        j.status === 'completed' || j.finished_at !== null
+                      );
+                      if (completedJobs.length > 0 && onCrawlingComplete) {
                         onCrawlingComplete();
                       }
                     }
                   }
-                } else {
-                  // 현재 URL의 실제 상태 확인 및 강제 동기화
-                  const { data: jobs } = await supabase
-                    .from('processing_jobs')
-                    .select('id, status, result, payload, started_at, finished_at, document_id')
-                    .eq('job_type', 'CRAWL_SEED')
-                    .in('status', ['queued', 'processing', 'retrying', 'completed', 'failed']);
-                  
-                  if (jobs && jobs.length > 0) {
-                    const matchingJobs = jobs.filter(job => {
-                      const jobUrl = (job.payload as any)?.url;
-                      return jobUrl && currentUrls.includes(jobUrl);
-                    });
-                    
-                    // processing 상태인 작업 중 실제로 완료된 것 강제 동기화
-                    for (const job of matchingJobs) {
-                      if (job.status === 'processing' && job.document_id && !job.finished_at) {
-                        const { data: document } = await supabase
-                          .from('documents')
-                          .select('id, status, chunk_count')
-                          .eq('id', job.document_id)
-                          .single();
-                        
-                        // 문서가 indexed 상태이고 chunk_count > 0이면 작업 완료로 간주
-                        if (document && (document.status === 'indexed' || document.chunk_count > 0)) {
-                          console.log(`🔧 강제 동기화 버튼: 작업 ${job.id}는 실제로 완료되었습니다`);
-                          
-                          // processing_jobs를 completed로 업데이트
-                          await supabase
-                            .from('processing_jobs')
-                            .update({
-                              status: 'completed',
-                              finished_at: new Date().toISOString(),
-                              result: { 
-                                note: 'force_synced_by_button',
-                                chunkCount: document.chunk_count || 0,
-                                documentStatus: document.status
-                              }
-                            })
-                            .eq('id', job.id)
-                            .eq('status', 'processing');
-                          
-                          // job 상태 업데이트
-                          job.status = 'completed';
-                          job.finished_at = new Date().toISOString();
-                        }
-                      }
-                    }
-                    
-                    setCrawlingProgress(prev => {
-                      const urlToJobMap = new Map<string, any>();
-                      matchingJobs.forEach(job => {
-                        const jobUrl = (job.payload as any)?.url;
-                        if (jobUrl) {
-                          urlToJobMap.set(jobUrl, job);
-                        }
-                      });
-                      
-                      const updated = prev.map(p => {
-                        const job = urlToJobMap.get(p.url);
-                        if (job) {
-                          if (job.finished_at || job.status === 'completed') {
-                            return { ...p, status: 'completed' as const, message: '크롤링 완료', chunkCount: (job.result as any)?.chunkCount || 0 };
-                          } else if (job.status === 'failed') {
-                            return { ...p, status: 'failed' as const, message: '크롤링 실패' };
-                          } else if (job.status === 'processing') {
-                            return { ...p, status: 'crawling' as const, message: '크롤링 중...', chunkCount: (job.result as any)?.chunkCount || 0 };
-                          } else if (job.status === 'queued' || job.status === 'retrying') {
-                            return { ...p, status: 'pending' as const, message: '큐 대기 중...' };
-                          }
-                        }
-                        return p;
-                      });
-                      
-                      const allCompleted = updated.every(p => p.status === 'completed' || p.status === 'failed');
-                      if (allCompleted) {
-                        setIsCrawling(false);
-                        setTimeout(() => {
-                          if (onCrawlingComplete) {
-                            onCrawlingComplete();
-                          }
-                        }, 1000);
-                      }
-                      
-                      return updated;
-                    });
-                    
-                    // 완료된 작업이 있으면 콜백 호출
-                    const completedJobs = matchingJobs.filter(j => 
-                      j.status === 'completed' || j.finished_at !== null
-                    );
-                    if (completedJobs.length > 0 && onCrawlingComplete) {
-                      onCrawlingComplete();
-                    }
-                  }
+                  toast.success('상태 동기화 완료');
+                } catch (error) {
+                  console.error('상태 동기화 오류:', error);
+                  toast.error('상태 동기화 실패');
                 }
-                toast.success('상태 동기화 완료');
-              } catch (error) {
-                console.error('상태 동기화 오류:', error);
-                toast.error('상태 동기화 실패');
-              }
-            }}
-            variant="outline"
-            size="lg"
-            className="h-14 px-6 text-white border-gray-500 hover:bg-gray-700 hover:border-gray-400"
-          >
-            <RefreshCw className="w-5 h-5 mr-3" />
-            상태 동기화
-          </Button>
+              }}
+              variant="outline"
+              size="lg"
+              className="h-14 px-6 text-white border-gray-500 hover:bg-gray-700 hover:border-gray-400"
+            >
+              <RefreshCw className="w-5 h-5 mr-3" />
+              상태 동기화
+            </Button>
 
-          <Button
-            onClick={async () => {
-              try {
-                const urls = crawlingProgress.map(p => p.url);
-                if (urls.length === 0) {
-                  toast.warning('삭제할 진행 중인 문서가 없습니다.');
-                  return;
-                }
-
-                if (!confirm(`진행 중인 문서 ${urls.length}개를 삭제하시겠습니까?\n\n${urls.slice(0, 3).join('\n')}${urls.length > 3 ? `\n... 외 ${urls.length - 3}개` : ''}`)) {
-                  return;
-                }
-
-                toast.info('진행 중인 문서 삭제 중...');
-                console.log('🗑️ 진행 중인 문서 삭제 요청:', urls);
-
-                const response = await fetch('/api/admin/delete-processing-documents', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ urls, status: 'processing' })
-                });
-
-                if (!response.ok) {
-                  throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-                }
-
-                const result = await response.json();
-                console.log('🗑️ 삭제 결과:', result);
-
-                if (result.success) {
-                  toast.success(`삭제 완료: ${result.deleted.documents}개 문서, ${result.deleted.jobs}개 작업 삭제됨`);
-                  
-                  // 진행 상황 초기화
-                  setCrawlingProgress([]);
-                  setIsCrawling(false);
-                  jobIdsRef.current = [];
-                  
-                  // 폴링 중지
-                  if (pollingIntervalRef.current) {
-                    clearInterval(pollingIntervalRef.current);
-                    pollingIntervalRef.current = null;
+            <Button
+              onClick={async () => {
+                try {
+                  const urls = crawlingProgress.map(p => p.url);
+                  if (urls.length === 0) {
+                    toast.warning('삭제할 진행 중인 문서가 없습니다.');
+                    return;
                   }
 
-                  // 문서 목록 새로고침
-                  if (onCrawlingComplete) {
+                  if (!confirm(`진행 중인 문서 ${urls.length}개를 삭제하시겠습니까?\n\n${urls.slice(0, 3).join('\n')}${urls.length > 3 ? `\n... 외 ${urls.length - 3}개` : ''}`)) {
+                    return;
+                  }
+
+                  toast.info('진행 중인 문서 삭제 중...');
+                  console.log('🗑️ 진행 중인 문서 삭제 요청:', urls);
+
+                  const response = await fetch('/api/admin/delete-processing-documents', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ urls, status: 'processing' })
+                  });
+
+                  if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                  }
+
+                  const result = await response.json();
+                  console.log('🗑️ 삭제 결과:', result);
+
+                  if (result.success) {
+                    toast.success(`삭제 완료: ${result.deleted.documents}개 문서, ${result.deleted.jobs}개 작업 삭제됨`);
+
+                    // 진행 상황 초기화
+                    setCrawlingProgress([]);
+                    setIsCrawling(false);
+                    jobIdsRef.current = [];
+
+                    // 폴링 중지
+                    if (pollingIntervalRef.current) {
+                      clearInterval(pollingIntervalRef.current);
+                      pollingIntervalRef.current = null;
+                    }
+
+                    // 문서 목록 새로고침
+                    if (onCrawlingComplete) {
+                      setTimeout(() => {
+                        onCrawlingComplete();
+                      }, 1000);
+                    }
+
+                    // 페이지 새로고침
                     setTimeout(() => {
-                      onCrawlingComplete();
-                    }, 1000);
+                      window.location.reload();
+                    }, 2000);
+                  } else {
+                    toast.error(`삭제 실패: ${result.error || '알 수 없는 오류'}`);
+                    console.error('❌ 삭제 실패:', result);
                   }
-
-                  // 페이지 새로고침
-                  setTimeout(() => {
-                    window.location.reload();
-                  }, 2000);
-                } else {
-                  toast.error(`삭제 실패: ${result.error || '알 수 없는 오류'}`);
-                  console.error('❌ 삭제 실패:', result);
+                } catch (error) {
+                  console.error('❌ 진행 중인 문서 삭제 오류:', error);
+                  toast.error('삭제 중 오류가 발생했습니다.');
                 }
-              } catch (error) {
-                console.error('❌ 진행 중인 문서 삭제 오류:', error);
-                toast.error('삭제 중 오류가 발생했습니다.');
-              }
-            }}
-            variant="outline"
-            size="lg"
-            className="h-14 px-6 text-white border-red-500 hover:bg-red-700/20 hover:border-red-400"
-          >
-            <Trash2 className="w-5 h-5 mr-3" />
-            진행 중인 문서 삭제
-          </Button>
+              }}
+              variant="outline"
+              size="lg"
+              className="h-14 px-6 text-white border-red-500 hover:bg-red-700/20 hover:border-red-400"
+            >
+              <Trash2 className="w-5 h-5 mr-3" />
+              진행 중인 문서 삭제
+            </Button>
           </>
         )}
       </div>
@@ -2786,8 +2794,8 @@ export default function HybridCrawlingManager({
             }, {} as Record<number, number>)}
             onUpdateTitle={(url, title) => {
               // 제목 업데이트: allDiscoveredUrls에서 해당 URL의 제목 업데이트
-              setAllDiscoveredUrls(prev => 
-                prev.map(item => 
+              setAllDiscoveredUrls(prev =>
+                prev.map(item =>
                   item.url === url ? { ...item, title } : item
                 )
               );

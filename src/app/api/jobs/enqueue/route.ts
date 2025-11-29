@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
         .select('type, url, title')
         .eq('id', body.documentId)
         .maybeSingle();
-      
+
       if (!docCheckError && docCheck && (docCheck.type === 'url' || docCheck.url)) {
         return NextResponse.json(
           {
@@ -69,28 +69,28 @@ export async function POST(request: NextRequest) {
       if (existingError) {
         console.error('중복 조회 오류:', existingError);
       }
-      
+
       // 메모리에서 가장 최신 작업 선택
       if (potentialDuplicates && potentialDuplicates.length > 0) {
         existing = potentialDuplicates[0]; // 정렬된 첫 번째 항목이 가장 최신
       }
     } else if (body.jobType === 'CRAWL_SEED' && payload.url) {
       // CRAWL_SEED의 경우 같은 URL이 이미 큐에 있으면 중복으로 간주
-      // 🔥 PGRST116 오류 해결: .maybeSingle() 제거하고 리스트로 조회 후 메모리에서 비교
+      // .maybeSingle() 대신 리스트로 조회하여 PGRST116 오류 방지
       const { data: potentialDuplicates, error: existingError } = await supabase
         .from('processing_jobs')
-        .select('id, status, payload') // payload 포함하여 한 번에 조회
+        .select('id, status, payload')
         .eq('job_type', body.jobType)
         .is('document_id', null)
         .in('status', ['queued', 'processing', 'retrying'])
-        .order('created_at', { ascending: false }) // 최신순 정렬
-        .limit(50); // 충분한 수의 작업 조회
+        .order('created_at', { ascending: false })
+        .limit(10);
 
       if (existingError) {
         console.error('중복 조회 오류:', existingError);
       }
-      
-      // 메모리에서 URL 비교하여 정확한 중복 작업 찾기
+
+      // payload.url이 같은 작업 찾기
       if (potentialDuplicates && potentialDuplicates.length > 0) {
         const matchingJob = potentialDuplicates.find(j => (j.payload as any)?.url === payload.url);
         if (matchingJob) {
