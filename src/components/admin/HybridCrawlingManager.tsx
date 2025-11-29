@@ -833,9 +833,53 @@ export default function HybridCrawlingManager({
 
           // maxDepth >= 3이고 발견된 페이지가 있으면 모달 표시 (depth 2 이상 모두 포함)
           if (maxDepthValue >= 3 && allDiscovered.length > 0) {
+            console.log(`🔍 하위 페이지 발견: ${allDiscovered.length}개 (depth 2 이상) - 이미 크롤된 문서 체크 중...`);
+            
+            // 이미 크롤된 문서 체크 (indexed 또는 chunk_count > 0인 문서)
+            const urlsToCheck = allDiscovered.map(item => item.url);
+            const { data: existingDocs, error: checkError } = await supabase
+              .from('documents')
+              .select('id, url, title, status, chunk_count')
+              .in('url', urlsToCheck)
+              .eq('type', 'url')
+              .or('status.eq.indexed,chunk_count.gt.0'); // indexed 상태이거나 chunk_count > 0인 문서
+            
+            const alreadyCrawledUrlSet = new Set<string>();
+            const existingDocMap = new Map<string, { id: string; title: string; status: string; chunk_count: number }>();
+            
+            if (!checkError && existingDocs) {
+              existingDocs.forEach((doc) => {
+                if (doc.url && (doc.status === 'indexed' || (doc.chunk_count && doc.chunk_count > 0))) {
+                  alreadyCrawledUrlSet.add(doc.url);
+                  existingDocMap.set(doc.url, {
+                    id: doc.id,
+                    title: doc.title || doc.url,
+                    status: doc.status || 'unknown',
+                    chunk_count: doc.chunk_count || 0
+                  });
+                }
+              });
+            }
+            
+            // 이미 크롤된 문서 정보를 DiscoveredUrlItem에 반영
+            const allDiscoveredWithStatus = allDiscovered.map(item => ({
+              ...item,
+              isAlreadyCrawled: alreadyCrawledUrlSet.has(item.url),
+              existingDocumentId: existingDocMap.get(item.url)?.id
+            }));
+            
+            const alreadyCrawledCount = alreadyCrawledUrlSet.size;
+            if (alreadyCrawledCount > 0) {
+              console.log(`✅ 이미 크롤된 문서 발견: ${alreadyCrawledCount}개 (총 ${allDiscovered.length}개 중)`);
+            }
+            
             console.log(`🔍 하위 페이지 발견: ${allDiscovered.length}개 (depth 2 이상) - 모달 표시`);
-            setAllDiscoveredUrls(allDiscovered);
-            setSelectedUrlsForCrawling(new Set(allDiscovered.map(item => item.url))); // 기본적으로 모두 선택
+            setAllDiscoveredUrls(allDiscoveredWithStatus);
+            // 이미 크롤된 문서는 기본 선택에서 제외
+            const urlsToSelect = allDiscoveredWithStatus
+              .filter(item => !item.isAlreadyCrawled)
+              .map(item => item.url);
+            setSelectedUrlsForCrawling(new Set(urlsToSelect));
             setShowDiscoveryModal(true);
             
             // 성공한 메인 페이지들의 진행 상황 업데이트 (유지)

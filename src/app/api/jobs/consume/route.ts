@@ -1824,20 +1824,111 @@ export async function processQueue() {
           const nowIso = new Date().toISOString();
           const fileSize = Buffer.byteLength(content, 'utf8');
 
-          const { data: existingDoc, error: existingError } = await supabase
-            .from('documents')
-            .select('id, chunk_count, created_at')
-            .eq('url', targetUrl)
-            .maybeSingle();
-
-          if (existingError) {
-            console.error('❌ 기존 문서 조회 실패:', existingError);
+          // documentIdOverride가 있으면 그것을 우선 사용 (명확한 PK 기준)
+          let existingDoc = null;
+          let wasExistingDocument = false;
+          
+          if (documentIdOverride) {
+            // documentIdOverride가 있으면 해당 ID로 직접 조회
+            const { data: docById, error: docByIdError } = await supabase
+              .from('documents')
+              .select('id, chunk_count, created_at, url, status')
+              .eq('id', documentIdOverride)
+              .maybeSingle();
+            
+            if (docByIdError && docByIdError.code !== 'PGRST116') {
+              console.error('❌ documentIdOverride로 문서 조회 실패:', docByIdError);
+            }
+            
+            if (docById) {
+              existingDoc = docById;
+              wasExistingDocument = true;
+              console.log(`[CRITICAL] ✅ documentIdOverride로 문서 찾음: ${documentIdOverride}`);
+            }
+          }
+          
+          // documentIdOverride로 찾지 못했거나 없으면 URL 기준으로 조회 (중복 처리 포함)
+          if (!existingDoc) {
+            // URL 기준으로 조회 시 중복이 있을 수 있으므로 가장 최신 문서만 가져오기
+            const { data: docsByUrl, error: docsByUrlError } = await supabase
+              .from('documents')
+              .select('id, chunk_count, created_at, status')
+              .eq('url', targetUrl)
+              .order('created_at', { ascending: false })
+              .limit(10); // 최대 10개까지 조회해서 중복 확인
+            
+            if (docsByUrlError && docsByUrlError.code !== 'PGRST116') {
+              console.error('❌ URL 기준 문서 조회 실패:', docsByUrlError);
+            }
+            
+            if (docsByUrl && docsByUrl.length > 0) {
+              // 가장 최신 문서 사용
+              existingDoc = docsByUrl[0];
+              wasExistingDocument = true;
+              
+              // 중복 문서가 있으면 정리 (processing 상태이면서 chunk_count=0인 중복 문서 삭제)
+              if (docsByUrl.length > 1) {
+                console.warn(`⚠️ URL 중복 문서 발견: ${docsByUrl.length}개, 정리 시작: ${targetUrl}`);
+                const duplicateIds = docsByUrl.slice(1).map(d => d.id); // 첫 번째(최신) 제외한 나머지
+                
+                // 중복 문서 중 processing 상태이면서 chunk_count=0인 것만 삭제
+                const { data: duplicatesToDelete } = await supabase
+                  .from('documents')
+                  .select('id, status, chunk_count')
+                  .in('id', duplicateIds)
+                  .eq('status', 'processing')
+                  .eq('chunk_count', 0);
+                
+                if (duplicatesToDelete && duplicatesToDelete.length > 0) {
+                  const deleteIds = duplicatesToDelete.map(d => d.id);
+                  console.log(`[CRITICAL] 🗑️ 중복 문서 삭제: ${deleteIds.length}개 (processing, chunk_count=0)`);
+                  
+                  // 관련 청크, 메타데이터, 로그도 함께 삭제
+                  await supabase.from('document_chunks').delete().in('document_id', deleteIds);
+                  await supabase.from('document_metadata').delete().in('document_id', deleteIds);
+                  await supabase.from('document_logs').delete().in('document_id', deleteIds);
+                  
+                  // 문서 삭제
+                  const { error: deleteError } = await supabase
+                    .from('documents')
+                    .delete()
+                    .in('id', deleteIds);
+                  
+                  if (deleteError) {
+                    console.error('❌ 중복 문서 삭제 실패:', deleteError);
+                  } else {
+                    console.log(`[CRITICAL] ✅ 중복 문서 삭제 완료: ${deleteIds.length}개`);
+                  }
+                }
+                
+                // 나머지 중복 문서는 failed 상태로 변경 (이미 indexed인 경우는 유지)
+                const remainingDuplicates = docsByUrl.slice(1).filter(d => 
+                  !duplicatesToDelete?.some(del => del.id === d.id)
+                );
+                
+                if (remainingDuplicates.length > 0) {
+                  const remainingIds = remainingDuplicates
+                    .filter(d => d.status !== 'indexed') // indexed는 유지
+                    .map(d => d.id);
+                  
+                  if (remainingIds.length > 0) {
+                    await supabase
+                      .from('documents')
+                      .update({ status: 'failed', updated_at: nowIso })
+                      .in('id', remainingIds)
+                      .neq('status', 'indexed'); // indexed는 변경하지 않음
+                    
+                    console.log(`[CRITICAL] ⚠️ 중복 문서 failed 상태로 변경: ${remainingIds.length}개`);
+                  }
+                }
+              }
+            }
           }
 
-          const wasExistingDocument = !!existingDoc;
           const resolvedDocumentId = documentIdOverride || existingDoc?.id || `doc_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
           if (existingDoc?.id && !documentIdOverride) {
+            // 기존 문서 업데이트
             await supabase
               .from('documents')
               .update({
@@ -1853,7 +1944,25 @@ export async function processQueue() {
                 updated_at: nowIso,
               })
               .eq('id', existingDoc.id);
+          } else if (wasExistingDocument && documentIdOverride) {
+            // documentIdOverride가 있고 기존 문서가 있는 경우 업데이트
+            await supabase
+              .from('documents')
+              .update({
+                title,
+                type: 'url',
+                status: 'processing',
+                file_size: fileSize,
+                file_type: 'text/html',
+                source_vendor: dbVendor,
+                content,
+                url: targetUrl,
+                main_document_id: parentDocumentId || null,
+                updated_at: nowIso,
+              })
+              .eq('id', documentIdOverride);
           } else if (!wasExistingDocument) {
+            // 새 문서 생성
             await supabase
               .from('documents')
               .insert({
