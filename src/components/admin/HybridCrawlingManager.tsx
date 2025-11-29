@@ -1428,9 +1428,6 @@ export default function HybridCrawlingManager({
                     } else if (job.status === 'cancelled') {
                       // 취소된 작업은 제거
                       return null;
-                    } else if (job.status === 'failed') {
-                      console.log(`❌ 폴링: 작업 실패 감지 - URL: ${p.url}, JobId: ${jobId}`);
-                      return { ...p, status: 'failed' as const, message: '크롤링 실패' };
                     } else if (job.status === 'processing') {
                       // 타임아웃 체크 (이미 위에서 처리됨)
                       if (stuckJobs.some(j => j.id === jobId)) {
@@ -1442,6 +1439,8 @@ export default function HybridCrawlingManager({
                     } else if (job.status === 'queued' || job.status === 'retrying') {
                       return { ...p, status: 'pending' as const, message: '큐 대기 중...' };
                     }
+                    // 예상하지 못한 상태 값인 경우 기존 상태 유지
+                    return p;
                   } else {
                     console.warn(`⚠️ 폴링: URL에 해당하는 작업을 찾지 못함 - URL: ${p.url}, JobId: ${jobId}`);
                     // 관련 작업을 찾지 못하면 더 이상 진행 중이 아니므로 실패로 표시하여 무한 진행 상태 방지
