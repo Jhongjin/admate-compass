@@ -74,6 +74,8 @@ interface CrawlingProgress {
   url: string;
   status: 'pending' | 'crawling' | 'completed' | 'failed';
   message?: string;
+  // 선택된 URL 크롤링(Seed 크롤링) 진행 상황을 위해 사용
+  chunkCount?: number;
   discoveredUrls?: Array<{
     url: string;
     title?: string;
@@ -1229,333 +1231,273 @@ export default function HybridCrawlingManager({
 
       if (jobIds.length > 0) {
         toast.success(`${jobIds.length}개 작업이 큐에 등록되었습니다.`);
-        
+
         // 큐 워커 즉시 트리거
         try {
           await fetchWithTimeout('/api/jobs/consume', { method: 'POST' }, 10000);
         } catch (consumeError) {
           console.warn('큐 워커 트리거 실패 (무시 가능):', consumeError);
         }
-        
-        // 폴링으로 진행 상황 업데이트 (2초마다 - 더 빠른 반응성)
+
+        // 폴링으로 진행 상황 업데이트 (2초마다 - Seed 크롤링 전용, Supabase를 진실의 소스로 사용)
         pollingIntervalRef.current = setInterval(async () => {
           try {
-            // jobIds와 URL 기반으로 모두 조회하여 동기화 문제 해결
-            const currentUrls = crawlingProgress.map(p => p.url);
-            
-            // 1. jobIds로 조회
-            let jobs: any[] = [];
-            if (jobIds.length > 0) {
-              const { data: jobsByIds, error: jobsByIdsError } = await supabase
-                .from('processing_jobs')
-                .select('id, status, result, payload, started_at, finished_at')
-                .in('id', jobIds);
-              
-              if (!jobsByIdsError && jobsByIds) {
-                jobs = jobsByIds;
-              }
-            }
-            
-            // 2. URL 기반으로도 조회 (동기화 문제 해결)
-            if (currentUrls.length > 0) {
-              const { data: allCrawlJobs, error: allCrawlJobsError } = await supabase
-                .from('processing_jobs')
-                .select('id, status, result, payload, started_at, finished_at, document_id')
-                .eq('job_type', 'CRAWL_SEED')
-                .in('status', ['queued', 'processing', 'retrying', 'completed', 'failed'])
-                .order('created_at', { ascending: false })
-                .limit(100); // 최근 100개 작업 조회
-              
-              if (!allCrawlJobsError && allCrawlJobs) {
-                console.log(`🔍 폴링: 전체 CRAWL_SEED 작업 ${allCrawlJobs.length}개 조회됨, 현재 URL: ${currentUrls.length}개`);
-                
-                // 현재 URL과 매칭되는 작업만 필터링
-                const matchingJobs = allCrawlJobs.filter(job => {
-                  const jobUrl = (job.payload as any)?.url || (job.result as any)?.url;
-                  const matches = jobUrl && currentUrls.includes(jobUrl);
-                  if (matches) {
-                    console.log(`✅ 폴링: URL 매칭됨 - ${jobUrl}, JobId: ${job.id}, Status: ${job.status}, FinishedAt: ${job.finished_at || '없음'}`);
-                  }
-                  return matches;
-                });
-                
-                console.log(`🔍 폴링: 매칭된 작업 ${matchingJobs.length}개 발견`);
-                
-                // 🔥 processing 상태인 작업만 documents 테이블 확인하여 동기화
-                // completed/failed는 이미 백엔드에서 처리되었으므로 그대로 표시
-                for (const job of matchingJobs) {
-                  // processing 상태만 확인 (completed/failed는 백엔드에서 이미 처리됨)
-                  if (job.status === 'processing' && job.document_id && !job.finished_at) {
-                    try {
-                      const { data: document, error: docError } = await supabase
-                        .from('documents')
-                        .select('id, status, chunk_count, url')
-                        .eq('id', job.document_id)
-                        .single();
-                      
-                      if (docError) {
-                        console.error(`❌ 폴링 중 문서 조회 오류 (${job.document_id}):`, docError);
-                        continue;
-                      }
-                      
-                      if (!document) {
-                        console.warn(`⚠️ 폴링 중 문서를 찾을 수 없음 (${job.document_id})`);
-                        continue;
-                      }
+            const currentUrls = selectedUrlsArray;
 
-                      // 문서가 indexed면 작업을 completed로 업데이트
-                      const isDocumentIndexed = document.status === 'indexed' || (document.chunk_count && document.chunk_count > 0);
-                      
-                      if (isDocumentIndexed) {
-                        console.log(`🔧 폴링 중 강제 동기화: 작업 ${job.id}는 실제로 완료되었습니다 (문서 상태: ${document.status}, 청크: ${document.chunk_count})`);
-                        
-                        const { error: updateError, data: updateData } = await supabase
-                          .from('processing_jobs')
-                          .update({
-                            status: 'completed',
-                            finished_at: new Date().toISOString(),
-                            result: { 
-                              note: 'force_synced_during_polling',
-                              chunkCount: document.chunk_count || 0,
-                              documentStatus: document.status,
-                              documentUrl: document.url,
-                              syncedAt: new Date().toISOString()
-                            }
-                          })
-                          .eq('id', job.id)
-                          .eq('status', 'processing')
-                          .select('id, status, finished_at');
-                        
-                        if (updateError) {
-                          console.error(`❌ 폴링 중 작업 상태 업데이트 실패 (${job.id}):`, updateError);
-                        } else if (updateData && updateData.length > 0) {
-                          job.status = 'completed';
-                          job.finished_at = updateData[0].finished_at || new Date().toISOString();
-                          console.log(`✅ 폴링 중 강제 동기화 완료: 작업 ${job.id} -> completed`);
-                        }
-                      }
-                    } catch (syncError) {
-                      console.error(`❌ 폴링 중 동기화 확인 오류 (${job.id}):`, syncError);
-                    }
-                  }
-                }
-                
-                // 중복 제거 (jobId 기준)
-                const existingJobIds = new Set(jobs.map(j => j.id));
-                matchingJobs.forEach(job => {
-                  if (!existingJobIds.has(job.id)) {
-                    jobs.push(job);
-                    // jobIds에도 추가 (다음 폴링에서 빠르게 조회)
-                    if (!jobIdsRef.current.includes(job.id)) {
-                      jobIdsRef.current.push(job.id);
-                    }
-                  }
-                });
-              }
-            }
-            
-            if (jobs.length === 0) {
-              console.log(`⚠️ 폴링: 조회된 작업이 없음 - currentUrls: ${currentUrls.length}개, jobIds: ${jobIds.length}개`);
-              return;
-            }
-            
-            console.log(`📊 폴링: 총 ${jobs.length}개 작업 조회됨`, jobs.map(j => ({
-              id: j.id.substring(0, 8),
-              url: (j.payload as any)?.url || (j.result as any)?.url,
-              status: j.status,
-              finished_at: j.finished_at ? '있음' : '없음'
-            })));
-            
-            // URL과 jobId 매핑 생성 (payload와 result 모두 확인)
-            const urlToJobIdMap = new Map<string, string>();
-            jobs.forEach(job => {
-              const jobUrl = (job.payload as any)?.url || (job.result as any)?.url;
-              if (jobUrl) {
-                urlToJobIdMap.set(jobUrl, job.id);
-              }
-            });
-            
-            console.log(`🔗 폴링: URL-JobId 매핑 ${urlToJobIdMap.size}개 생성됨`);
-            
-            // 타임아웃 감지: processing 상태로 2시간 이상 머무는 작업 감지
-            const now = Date.now();
-            const TIMEOUT_MS = 2 * 60 * 60 * 1000; // 2시간 (10시간 지연 문제 해결)
-            const stuckJobs = jobs.filter(j => {
-              if (j.status === 'processing' && j.started_at) {
-                const elapsed = now - new Date(j.started_at).getTime();
-                return elapsed > TIMEOUT_MS;
-              }
-              return false;
-            });
-            
-            if (stuckJobs.length > 0) {
-              console.warn(`⚠️ 타임아웃 감지: ${stuckJobs.length}개 작업이 2시간 이상 진행 중입니다.`, stuckJobs.map(j => ({ id: j.id, url: (j.payload as any)?.url, started_at: j.started_at })));
-              // 타임아웃된 작업을 failed로 표시
-              setCrawlingProgress(prev => prev.map(p => {
-                const jobId = urlToJobIdMap.get(p.url);
-                if (jobId && stuckJobs.some(j => j.id === jobId)) {
-                  return { ...p, status: 'failed' as const, message: '크롤링 타임아웃 (2시간 초과)' };
-                }
-                return p;
-              }));
-            }
-            
-            // 진행 중/대기 중 작업이 전혀 없으면 UI 상태 초기화
-            if (jobs.length === 0) {
-              console.log('ℹ️ 폴링: 활성 작업이 없으므로 크롤링 진행 상태 초기화');
+            if (currentUrls.length === 0) {
+              console.log('ℹ️ Seed 폴링: 추적 중인 URL이 없어 상태 초기화');
               setCrawlingProgress([]);
               setIsCrawling(false);
               jobIdsRef.current = [];
-              return;
-            }
-            
-            // 진행 상황 업데이트 (완료된 작업도 상태 업데이트)
-            setCrawlingProgress(prev => {
-              const updated = prev.map(p => {
-                const jobId = urlToJobIdMap.get(p.url);
-                if (jobId) {
-                  const job = jobs.find(j => j.id === jobId);
-                  if (job) {
-                    // 🔥 완료/실패 분기: processing_jobs.status를 기준으로 표시
-                    // completed → 완료 리스트로 이동
-                    // failed → 크롤링 리스트에 실패로 표기
-                    if (job.status === 'completed' && job.finished_at) {
-                      console.log(`✅ 폴링: 작업 완료 - URL: ${p.url}, JobId: ${jobId}, Status: ${job.status}`);
-                      return { ...p, status: 'completed' as const, message: '크롤링 완료', chunkCount: (job.result as any)?.chunkCount || 0 };
-                    } else if (job.status === 'failed') {
-                      console.log(`❌ 폴링: 작업 실패 - URL: ${p.url}, JobId: ${jobId}`);
-                      return { ...p, status: 'failed' as const, message: (job.result as any)?.error || '크롤링 실패' };
-                    } else if (job.status === 'cancelled') {
-                      // 취소된 작업은 제거
-                      return null;
-                    } else if (job.status === 'processing') {
-                      // 타임아웃 체크 (이미 위에서 처리됨)
-                      if (stuckJobs.some(j => j.id === jobId)) {
-                        return { ...p, status: 'failed' as const, message: '크롤링 타임아웃 (2시간 초과)' };
-                      }
-                      // processing 상태: documents 테이블 확인은 위의 강제 동기화 루프에서 이미 처리됨
-                      // 여기서는 UI 상태만 업데이트
-                      return { ...p, status: 'crawling' as const, message: '크롤링 중...', chunkCount: (job.result as any)?.chunkCount || 0 };
-                    } else if (job.status === 'queued' || job.status === 'retrying') {
-                      return { ...p, status: 'pending' as const, message: '큐 대기 중...' };
-                    }
-                    // 예상하지 못한 상태 값인 경우 기존 상태 유지
-                    return p;
-                  } else {
-                    console.warn(`⚠️ 폴링: URL에 해당하는 작업을 찾지 못함 - URL: ${p.url}, JobId: ${jobId}`);
-                    // 관련 작업을 찾지 못하면 더 이상 진행 중이 아니므로 실패로 표시하여 무한 진행 상태 방지
-                    return { ...p, status: 'failed' as const, message: '관련 작업을 찾을 수 없습니다 (동기화 오류)' };
-                  }
-                } else {
-                  console.warn(`⚠️ 폴링: URL에 해당하는 JobId를 찾지 못함 - URL: ${p.url}`);
-                  // JobId 자체를 찾지 못해도 동일하게 실패로 처리
-                  return { ...p, status: 'failed' as const, message: '관련 작업을 찾을 수 없습니다 (동기화 오류)' };
-                }
-              }).filter((p): p is CrawlingProgress => p !== null);
-              
-              return updated;
-            });
-            
-            // 🔥 완료된 작업이 있으면 문서 목록 새로고침 (debounce 적용)
-            const completedJobs = jobs.filter(j => 
-              j.status === 'completed' || j.finished_at !== null
-            );
-            if (completedJobs.length > 0) {
-              console.log(`✅ 폴링: 완료된 작업 ${completedJobs.length}개 감지`, completedJobs.map(j => ({
-                id: j.id.substring(0, 8),
-                url: (j.payload as any)?.url || (j.result as any)?.url,
-                status: j.status,
-                finished_at: j.finished_at
-              })));
-              
-              // 문서 목록 새로고침 (debounce: 마지막 완료 후 2초 후 호출)
-              if (onCrawlingComplete) {
-                // 기존 타이머 취소
-                if (crawlingCompleteTimeoutRef.current) {
-                  clearTimeout(crawlingCompleteTimeoutRef.current);
-                }
-                // 새로운 타이머 설정
-                crawlingCompleteTimeoutRef.current = setTimeout(() => {
-                  console.log('📋 문서 목록 새로고침 트리거');
-                  onCrawlingComplete();
-                  crawlingCompleteTimeoutRef.current = null;
-                }, 2000); // 2초 debounce
-              }
-            }
-            
-            // 현재 진행 상황에서 완료/실패된 작업 확인
-            const currentProgress = crawlingProgress;
-            const completedInProgress = currentProgress.filter(p => 
-              p.status === 'completed' || p.status === 'failed'
-            );
-            const processingInProgress = currentProgress.filter(p => 
-              p.status === 'crawling' || p.status === 'pending'
-            );
-            
-            // 모든 작업이 완료되면 폴링 중지
-            const allCompleted = jobs.every(j => 
-              (j.status === 'completed' || j.finished_at !== null) || 
-              j.status === 'failed' || 
-              j.status === 'cancelled'
-            ) && processingInProgress.length === 0;
-            
-            if (allCompleted) {
-              console.log(`🎉 폴링: 모든 작업 완료 - 폴링 중지`, {
-                totalJobs: jobs.length,
-                completed: completedJobs.length,
-                failed: jobs.filter(j => j.status === 'failed').length
-              });
-              
               if (pollingIntervalRef.current) {
                 clearInterval(pollingIntervalRef.current);
                 pollingIntervalRef.current = null;
               }
-              // 진행 상황에서 완료된 작업 제거 (3초 후)
+              return;
+            }
+
+            // 1. jobIds 기반 조회
+            let jobs: any[] = [];
+            if (jobIds.length > 0) {
+              const { data: jobsByIds, error: jobsByIdsError } = await supabase
+                .from('processing_jobs')
+                .select('id, status, result, payload, started_at, finished_at, document_id')
+                .in('id', jobIds);
+
+              if (!jobsByIdsError && jobsByIds) {
+                jobs = jobsByIds;
+              }
+            }
+
+            // 2. URL 기반 CRAWL_SEED 조회 (jobIds 누락 방지)
+            const { data: allCrawlJobs, error: allCrawlJobsError } = await supabase
+              .from('processing_jobs')
+              .select('id, status, result, payload, started_at, finished_at, document_id')
+              .eq('job_type', 'CRAWL_SEED')
+              .in('status', ['queued', 'processing', 'retrying', 'completed', 'failed', 'cancelled'])
+              .order('created_at', { ascending: false })
+              .limit(200);
+
+            if (!allCrawlJobsError && allCrawlJobs) {
+              // 현재 URL과 매칭되는 작업만 필터링
+              const matchingJobs = allCrawlJobs.filter(job => {
+                const jobUrl = (job.payload as any)?.url || (job.result as any)?.url;
+                return jobUrl && currentUrls.includes(jobUrl);
+              });
+
+              jobs = matchingJobs;
+
+              // processing 상태지만 실제로는 끝난 작업들을 documents 기준으로 강제 동기화
+              const now = Date.now();
+              const TIMEOUT_MS = 2 * 60 * 60 * 1000;
+
+              for (const job of matchingJobs) {
+                if (job.status === 'processing' && job.document_id && !job.finished_at) {
+                  try {
+                    const { data: document, error: docError } = await supabase
+                      .from('documents')
+                      .select('id, status, chunk_count, url')
+                      .eq('id', job.document_id)
+                      .single();
+
+                    if (docError) {
+                      console.error(`❌ Seed 폴링 문서 조회 오류 (${job.document_id}):`, docError);
+                      continue;
+                    }
+
+                    if (!document) {
+                      console.warn(`⚠️ Seed 폴링 문서를 찾을 수 없음 (${job.document_id})`);
+                      continue;
+                    }
+
+                    const isIndexed =
+                      document.status === 'indexed' || (document.chunk_count && document.chunk_count > 0);
+
+                    if (isIndexed) {
+                      console.log(
+                        `🔧 Seed 폴링 강제 동기화: 작업 ${job.id} (URL: ${document.url}) 은 실제로 완료됨, 상태: ${document.status}, 청크: ${document.chunk_count}`
+                      );
+
+                      const { error: updateError, data: updatedRows } = await supabase
+                        .from('processing_jobs')
+                        .update({
+                          status: 'completed',
+                          finished_at: new Date().toISOString(),
+                          result: {
+                            ...(job.result || {}),
+                            note: 'force_synced_during_seed_polling',
+                            chunkCount: document.chunk_count || 0,
+                            documentStatus: document.status,
+                            documentUrl: document.url,
+                            syncedAt: new Date().toISOString()
+                          }
+                        })
+                        .eq('id', job.id)
+                        .eq('status', 'processing')
+                        .select('id, status, finished_at');
+
+                      if (updateError) {
+                        console.error(`❌ Seed 폴링 강제 동기화 실패 (${job.id}):`, updateError);
+                      } else if (updatedRows && updatedRows.length > 0) {
+                        job.status = 'completed';
+                        job.finished_at = updatedRows[0].finished_at || new Date().toISOString();
+                      }
+                    } else if (job.started_at) {
+                      const elapsed = now - new Date(job.started_at).getTime();
+                      if (elapsed > TIMEOUT_MS) {
+                        console.warn(
+                          `⏰ Seed 폴링 타임아웃: 작업 ${job.id} (URL: ${document.url}) 2시간 초과, failed로 마킹`
+                        );
+                        await supabase
+                          .from('processing_jobs')
+                          .update({
+                            status: 'failed',
+                            finished_at: new Date().toISOString(),
+                            result: {
+                              ...(job.result || {}),
+                              error: 'timeout_exceeded',
+                              message: 'Seed 크롤링이 2시간을 초과했습니다.'
+                            }
+                          })
+                          .eq('id', job.id)
+                          .eq('status', 'processing');
+                        job.status = 'failed';
+                        job.finished_at = new Date().toISOString();
+                      }
+                    }
+                  } catch (syncError) {
+                    console.error(`❌ Seed 폴링 강제 동기화 예외 (${job.id}):`, syncError);
+                  }
+                }
+              }
+            }
+
+            if (!jobs || jobs.length === 0) {
+              console.log('ℹ️ Seed 폴링: 매칭되는 작업이 없어 UI 상태 초기화');
+              setCrawlingProgress([]);
+              setIsCrawling(false);
+              jobIdsRef.current = [];
+              if (pollingIntervalRef.current) {
+                clearInterval(pollingIntervalRef.current);
+                pollingIntervalRef.current = null;
+              }
+              if (onCrawlingComplete) {
+                onCrawlingComplete();
+              }
+              return;
+            }
+
+            // URL 기준으로 항상 전체 진행 상태 재계산
+            const urlToJobMap = new Map<string, any>();
+            jobs.forEach(job => {
+              const jobUrl = (job.payload as any)?.url || (job.result as any)?.url;
+              if (jobUrl && currentUrls.includes(jobUrl)) {
+                urlToJobMap.set(jobUrl, job);
+              }
+            });
+
+            const nextProgress: CrawlingProgress[] = currentUrls.map(url => {
+              const job = urlToJobMap.get(url);
+              if (!job) {
+                return {
+                  url,
+                  status: 'failed',
+                  message: '관련 작업을 찾을 수 없습니다 (동기화 오류)'
+                };
+              }
+
+              const result = job.result as any | null;
+
+              if (job.status === 'completed' || job.finished_at) {
+                return {
+                  url,
+                  status: 'completed',
+                  message: '크롤링 완료',
+                  chunkCount: result?.chunkCount || 0
+                };
+              }
+
+              if (job.status === 'failed') {
+                return {
+                  url,
+                  status: 'failed',
+                  message: result?.error || '크롤링 실패'
+                };
+              }
+
+              if (job.status === 'cancelled') {
+                return {
+                  url,
+                  status: 'failed',
+                  message: '사용자에 의해 취소됨'
+                };
+              }
+
+              if (job.status === 'queued' || job.status === 'retrying') {
+                return {
+                  url,
+                  status: 'pending',
+                  message: '큐 대기 중...'
+                };
+              }
+
+              // 기본값: processing
+              return {
+                url,
+                status: 'crawling',
+                message: '크롤링 중...',
+                chunkCount: result?.chunkCount || 0
+              };
+            });
+
+            setCrawlingProgress(nextProgress);
+
+            const completedCount = nextProgress.filter(p => p.status === 'completed').length;
+            const failedCount = nextProgress.filter(p => p.status === 'failed').length;
+            const activeCount = nextProgress.filter(
+              p => p.status === 'crawling' || p.status === 'pending'
+            ).length;
+
+            // 완료된 작업이 있으면 문서 목록 새로고침 (debounce)
+            if (completedCount > 0 && onCrawlingComplete) {
+              if (crawlingCompleteTimeoutRef.current) {
+                clearTimeout(crawlingCompleteTimeoutRef.current);
+              }
+              crawlingCompleteTimeoutRef.current = setTimeout(() => {
+                console.log('📋 Seed 문서 목록 새로고침 트리거 (polling)');
+                onCrawlingComplete();
+                crawlingCompleteTimeoutRef.current = null;
+              }, 2000);
+            }
+
+            // 모든 URL이 완료/실패면 폴링 종료 및 UI 정리
+            if (activeCount === 0) {
+              console.log(
+                `🎉 Seed 폴링 종료: 완료 ${completedCount}개, 실패 ${failedCount}개 → UI 초기화`
+              );
+              if (pollingIntervalRef.current) {
+                clearInterval(pollingIntervalRef.current);
+                pollingIntervalRef.current = null;
+              }
+
               setTimeout(() => {
-                setCrawlingProgress(prev => prev.filter(p => p.status !== 'completed'));
+                setCrawlingProgress([]);
                 setIsCrawling(false);
                 jobIdsRef.current = [];
-              }, 3000);
+              }, 2000);
+
               if (onCrawlingComplete) {
-                // 마지막 새로고침 (DB 업데이트 완료 대기)
                 setTimeout(() => {
                   onCrawlingComplete();
                 }, 2000);
               }
             } else {
-              // 진행 중인 작업이 있으면 isCrawling 유지
-              if (processingInProgress.length > 0) {
-                setIsCrawling(true);
-              } else if (completedInProgress.length > 0 && processingInProgress.length === 0) {
-                // 진행 중인 작업은 없지만 완료된 작업만 있는 경우
-                console.log(`⏳ 폴링: 진행 중인 작업 없음, 완료된 작업만 있음 - 폴링 계속`);
-                setIsCrawling(false);
-              }
-            }
-            
-            // 취소된 작업도 진행 상황에서 제거
-            const cancelledJobs = jobs.filter(j => j.status === 'cancelled');
-            if (cancelledJobs.length > 0) {
-              cancelledJobs.forEach(job => {
-                const jobUrl = (job.payload as any)?.url;
-                if (jobUrl) {
-                  setCrawlingProgress(prev =>
-                    prev.filter(p => p.url !== jobUrl)
-                  );
-                }
-              });
-              // 취소된 작업이 있으면 문서 목록도 새로고침
-              if (onCrawlingComplete) {
-                onCrawlingComplete();
-              }
+              setIsCrawling(true);
             }
           } catch (pollError) {
-            console.error('폴링 오류:', pollError);
+            console.error('Seed 크롤링 폴링 오류:', pollError);
           }
-        }, 2000); // 2초마다 폴링 (더 빠른 반응성)
-        
-        // 폴링은 모든 작업이 완료될 때까지 계속 진행 (자동 중지 제거)
-        // 모든 작업이 completed/failed/cancelled 상태가 되면 위의 로직에서 자동으로 중지됨
+        }, 2000);
       } else {
         toast.error('작업 등록에 실패했습니다.');
         setIsCrawling(false);
