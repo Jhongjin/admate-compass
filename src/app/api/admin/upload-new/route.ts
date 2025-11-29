@@ -1591,14 +1591,14 @@ export async function GET(request: NextRequest) {
       console.warn('⚠️ 하위 페이지 자동 정리 중 오류 (무시):', cleanupError);
     }
 
-    // 메인 문서 상태 동기화: 하위 페이지가 완료되었는데 메인 문서가 처리중인 경우
+    // 메인 문서 상태 동기화: 하위 페이지가 완료되었는데 메인 문서가 처리중이거나 실패한 경우
     try {
-      // 메인 문서가 processing 상태인 문서 조회 (chunk_count는 0이거나 이미 설정된 경우 모두 포함)
+      // 메인 문서가 processing 또는 failed 상태인 문서 조회 (하위 페이지 완료 시 복구)
       const { data: processingMainDocs } = await supabase
         .from('documents')
         .select('id, url, status, chunk_count, main_document_id')
         .eq('type', 'url')
-        .eq('status', 'processing')
+        .in('status', ['processing', 'failed', 'indexing']) // failed 상태도 포함
         .is('main_document_id', null) // 메인 문서만 (main_document_id가 null)
         .limit(100);
       
@@ -1695,6 +1695,7 @@ export async function GET(request: NextRequest) {
               const totalSubPageChunks = completedSubPages.reduce((sum, sub) => sum + (sub.chunk_count || 0), 0);
               
               // 완료된 하위 페이지가 있고 총 청크 수가 0보다 큰 경우 메인 문서 업데이트
+              // failed 상태도 indexed로 복구
               if (totalSubPageChunks > 0) {
                 const { error: syncError } = await supabase
                   .from('documents')
@@ -1704,10 +1705,11 @@ export async function GET(request: NextRequest) {
                     updated_at: new Date().toISOString()
                   })
                   .eq('id', mainDoc.id)
-                  .in('status', ['processing', 'indexing']);
+                  .in('status', ['processing', 'indexing', 'failed']); // failed 상태도 포함
                 
                 if (!syncError) {
-                  console.log(`✅ 메인 문서 상태 동기화 완료: ${mainDoc.id} (완료된 하위 페이지 ${completedSubPages.length}개, 총 ${totalSubPageChunks}개 청크)`);
+                  const statusChange = mainDoc.status === 'failed' ? ' (failed -> indexed 복구)' : '';
+                  console.log(`✅ 메인 문서 상태 동기화 완료: ${mainDoc.id}${statusChange} (완료된 하위 페이지 ${completedSubPages.length}개, 총 ${totalSubPageChunks}개 청크)`);
                 } else {
                   console.warn(`⚠️ 메인 문서 상태 동기화 실패: ${mainDoc.id}`, syncError);
                 }
