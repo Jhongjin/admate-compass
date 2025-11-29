@@ -335,7 +335,9 @@ export default function HybridCrawlingManager({
                     .from('processing_jobs')
                     .select('id, status, result, payload, started_at, finished_at')
                     .eq('job_type', 'CRAWL_SEED')
-                    .in('status', ['queued', 'processing', 'retrying', 'completed', 'failed']);
+                    .in('status', ['queued', 'processing', 'retrying', 'completed', 'failed'])
+                    .order('created_at', { ascending: false }) // 최신순 정렬 추가
+                    .limit(100); // 최근 작업 100개로 제한
                   
                   if (jobsError) {
                     console.error('폴링 중 작업 조회 오류:', jobsError);
@@ -1054,7 +1056,9 @@ export default function HybridCrawlingManager({
         .from('processing_jobs')
         .select('id, payload')
         .eq('job_type', 'CRAWL_SEED')
-        .in('status', ['queued', 'processing', 'retrying']);
+        .in('status', ['queued', 'processing', 'retrying'])
+        .order('created_at', { ascending: false })
+        .limit(100);
       
       if (activeJobs && activeJobs.length > 0) {
         // 현재 크롤링 중인 URL과 매칭되는 작업 찾기
