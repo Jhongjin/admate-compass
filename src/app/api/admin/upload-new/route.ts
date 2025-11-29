@@ -1542,15 +1542,57 @@ export async function GET(request: NextRequest) {
             if (processingSubPages.length > 0) {
               const processingSubPageIds = processingSubPages.map(s => s.id);
               
-              // 관련 processing_jobs 확인
+              // 관련 processing_jobs 확인 (document_id와 URL 모두)
               const { data: subPageJobs } = await supabase
                 .from('processing_jobs')
-                .select('document_id, status')
+                .select('document_id, status, payload, result')
                 .in('document_id', processingSubPageIds)
-                .in('status', ['queued', 'processing', 'retrying']);
+                .in('status', ['queued', 'processing', 'retrying'])
+                .order('created_at', { ascending: false })
+                .limit(100);
               
-              const activeSubPageIds = new Set((subPageJobs || []).map(j => j.document_id).filter(Boolean));
-              const orphanedSubPageIds = processingSubPageIds.filter(id => !activeSubPageIds.has(id));
+              // URL로도 확인
+              const { data: subPageDocsWithUrls } = await supabase
+                .from('documents')
+                .select('id, url')
+                .in('id', processingSubPageIds);
+              
+              const subPageUrlMap = new Map<string, string>();
+              (subPageDocsWithUrls || []).forEach(doc => {
+                if (doc.url) {
+                  subPageUrlMap.set(doc.id, doc.url);
+                }
+              });
+              
+              // 모든 활성 CRAWL_SEED 작업 조회하여 URL 매칭
+              const { data: allActiveJobs } = await supabase
+                .from('processing_jobs')
+                .select('id, document_id, status, payload, result')
+                .eq('job_type', 'CRAWL_SEED')
+                .in('status', ['queued', 'processing', 'retrying'])
+                .order('created_at', { ascending: false })
+                .limit(1000);
+              
+              const activeJobDocIds = new Set((subPageJobs || []).map(j => j.document_id).filter(Boolean));
+              const activeJobUrls = new Set<string>();
+              (allActiveJobs || []).forEach(job => {
+                const jobUrl = (job.payload as any)?.url || (job.result as any)?.url;
+                if (jobUrl) {
+                  activeJobUrls.add(jobUrl);
+                }
+              });
+              
+              // 활성 작업이 없는 하위 페이지 필터링
+              const orphanedSubPageIds = processingSubPageIds.filter(id => {
+                // document_id로 활성 작업이 있으면 제외
+                if (activeJobDocIds.has(id)) return false;
+                
+                // URL로도 확인
+                const docUrl = subPageUrlMap.get(id);
+                if (docUrl && activeJobUrls.has(docUrl)) return false;
+                
+                return true;
+              });
               
               if (orphanedSubPageIds.length > 0) {
                 // 관련 데이터 삭제
