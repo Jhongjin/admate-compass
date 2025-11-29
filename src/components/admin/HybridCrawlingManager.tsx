@@ -1384,18 +1384,22 @@ export default function HybridCrawlingManager({
                       // processing 상태인데 document_id가 있으면 documents 테이블 확인
                       if (job.document_id) {
                         // 비동기로 documents 확인 (다음 폴링에서 반영)
-                        supabase
-                          .from('documents')
-                          .select('id, status, chunk_count')
-                          .eq('id', job.document_id)
-                          .single()
-                          .then(({ data: document }) => {
+                        void (async () => {
+                          try {
+                            const { data: document } = await supabase
+                              .from('documents')
+                              .select('id, status, chunk_count')
+                              .eq('id', job.document_id!)
+                              .single();
+                            
                             if (document && (document.status === 'indexed' || document.chunk_count > 0)) {
                               console.log(`🔧 폴링: documents 테이블 확인 - 작업은 processing이지만 문서는 indexed (${document.chunk_count}개 청크)`);
                               // 다음 폴링에서 감지되도록 강제 동기화는 하지 않고 로그만 출력
                             }
-                          })
-                          .catch(() => {});
+                          } catch (err) {
+                            // 무시
+                          }
+                        })();
                       }
                       return { ...p, status: 'crawling' as const, message: '크롤링 중...', chunkCount: (job.result as any)?.chunkCount || 0 };
                     } else if (job.status === 'queued' || job.status === 'retrying') {
