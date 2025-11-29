@@ -235,7 +235,7 @@ export default function DocumentsPage() {
 
     // 디버깅: 컴포넌트 마운트 시 확인
     useEffect(() => {
-        console.log('🔍 [DocumentsPage] 컴포넌트 마운트됨');
+        console.log('🔍 [DocumentsPage] useEffect 실행됨 - handleReindexDocument 확인');
         console.log('🔍 [DocumentsPage] handleReindexDocument 타입:', typeof handleReindexDocument);
         console.log('🔍 [DocumentsPage] handleReindexDocument 값:', handleReindexDocument);
         console.log('🔍 [DocumentsPage] handleReindexDocument 함수 본문:', handleReindexDocument?.toString?.()?.substring(0, 500));
@@ -243,6 +243,11 @@ export default function DocumentsPage() {
         console.log('🔍 [DocumentsPage] reindexMutation 값:', reindexMutation);
         console.log('🔍 [DocumentsPage] reindexMutation.mutate 타입:', typeof reindexMutation?.mutate);
     }, [handleReindexDocument, reindexMutation]);
+    
+    // 컴포넌트 마운트 시 한 번만 실행
+    useEffect(() => {
+        console.log('🔍 [DocumentsPage] 컴포넌트 마운트됨 (한 번만 실행)');
+    }, []);
 
     const deleteMutation = useMutation({
         mutationFn: async (id: string) => {
