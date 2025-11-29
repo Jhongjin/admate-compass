@@ -2724,6 +2724,7 @@ export async function processQueue() {
                   console.log(`[CRITICAL] 📝 최종 하위 페이지 제목: ${subUrl} -> "${finalTitle}" (원본 페이지 제목: "${page.pageTitle}", 링크 텍스트: "${linkTitle}", 메인 페이지 제목: "${mainPage.pageTitle}")`);
                   
                   let result;
+                  let createdDocumentId: string | undefined = undefined;
                   try {
                     // RAG 처리에 타임아웃 추가 (60초로 단축 - 배치 타임아웃 내에 완료되어야 함)
                     const ragTimeout = 60000; // 90초 → 60초로 단축 (배치 타임아웃 90초 내에 완료되어야 함)
@@ -2741,12 +2742,54 @@ export async function processQueue() {
                       }, ragTimeout);
                     });
                     result = await Promise.race([ragPromise, ragTimeoutPromise]) as Awaited<ReturnType<typeof upsertAndProcessDocument>>;
+                    createdDocumentId = result.documentId;
                   } catch (processError) {
                     console.error('[CRITICAL] ❌ 하위 페이지 RAG 처리 실패:', {
                       url: subUrl,
                       error: processError,
                       documentId
                     });
+                    
+                    // 타임아웃이나 에러 발생 시 문서 상태를 failed로 업데이트
+                    // upsertAndProcessDocument 내부에서 문서가 생성되었을 수 있으므로 확인 후 업데이트
+                    try {
+                      if (!createdDocumentId) {
+                        // documentId를 찾기 위해 URL로 조회
+                        const { data: failedDoc } = await supabase
+                          .from('documents')
+                          .select('id, status, chunk_count')
+                          .eq('url', subUrl)
+                          .eq('type', 'url')
+                          .eq('main_document_id', documentId)
+                          .eq('status', 'processing')
+                          .eq('chunk_count', 0)
+                          .order('created_at', { ascending: false })
+                          .limit(1)
+                          .maybeSingle();
+                        
+                        if (failedDoc) {
+                          createdDocumentId = failedDoc.id;
+                        }
+                      }
+                      
+                      if (createdDocumentId) {
+                        // 문서 상태를 failed로 업데이트
+                        await supabase
+                          .from('documents')
+                          .update({ 
+                            status: 'failed', 
+                            updated_at: new Date().toISOString() 
+                          })
+                          .eq('id', createdDocumentId)
+                          .eq('status', 'processing')
+                          .eq('chunk_count', 0);
+                        
+                        console.log(`[CRITICAL] ✅ 실패한 하위 페이지 문서 상태 업데이트: ${createdDocumentId} -> failed`);
+                      }
+                    } catch (updateError) {
+                      console.warn('[CRITICAL] ⚠️ 실패한 하위 페이지 문서 상태 업데이트 실패:', updateError);
+                    }
+                    
                     if (statusEntry) {
                       statusEntry.status = 'failed';
                       statusEntry.error = processError instanceof Error ? processError.message : String(processError);
@@ -2755,11 +2798,32 @@ export async function processQueue() {
                       url: subUrl,
                       success: false,
                       error: processError instanceof Error ? processError.message : String(processError),
+                      documentId: createdDocumentId,
                     };
                   }
                   
                   if (!result.success) {
                     console.warn(`[CRITICAL] ⚠️ 하위 페이지 처리 실패 (성공=false): ${subUrl} [제목: ${finalTitle}]`);
+                    
+                    // RAG 처리 실패 시 문서 상태를 failed로 업데이트
+                    const failedDocId = result.documentId;
+                    if (failedDocId) {
+                      try {
+                        await supabase
+                          .from('documents')
+                          .update({ 
+                            status: 'failed', 
+                            updated_at: new Date().toISOString() 
+                          })
+                          .eq('id', failedDocId)
+                          .in('status', ['processing', 'indexing']);
+                        
+                        console.log(`[CRITICAL] ✅ 실패한 하위 페이지 문서 상태 업데이트: ${failedDocId} -> failed`);
+                      } catch (updateError) {
+                        console.warn('[CRITICAL] ⚠️ 실패한 하위 페이지 문서 상태 업데이트 실패:', updateError);
+                      }
+                    }
+                    
                     if (statusEntry) {
                       statusEntry.status = 'failed';
                       statusEntry.error = (result as any).error || 'RAG 처리 실패';
