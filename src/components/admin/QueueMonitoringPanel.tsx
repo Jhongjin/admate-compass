@@ -296,13 +296,18 @@ export default function QueueMonitoringPanel({ vendors = [], defaultOpen = false
     }
   }) as any;
 
-  // 큐 통계 계산
+  // 큐 통계 계산 (finished_at이 있으면 완료된 것으로 간주하여 제외)
   const queueStats = {
-    queued: jobs.filter(j => ['queued', 'retrying'].includes(j.status)).length,
-    processing: jobs.filter(j => j.status === 'processing').length,
+    queued: jobs.filter(j => 
+      ['queued', 'retrying'].includes(j.status) && !j.finished_at
+    ).length,
+    processing: jobs.filter(j => 
+      j.status === 'processing' && !j.finished_at
+    ).length,
     failed: jobs.filter(j => j.status === 'failed').length,
     stuck: jobs.filter(j => 
       j.status === 'processing' && 
+      !j.finished_at &&
       j.started_at && 
       (Date.now() - new Date(j.started_at).getTime()) > 2 * 60 * 60 * 1000
     ).length,
