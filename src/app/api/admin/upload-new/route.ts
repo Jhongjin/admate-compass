@@ -1025,9 +1025,9 @@ export async function POST(request: NextRequest) {
         );
       }
       
-      const { fileName, fileSize, fileType, fileContent, duplicateAction } = body;
+      const { fileName, fileSize, fileType, fileContent, duplicateAction, vendor } = body;
 
-      console.log('📋 업로드 요청 정보:', { fileName, fileSize, fileType, duplicateAction });
+      console.log('📋 업로드 요청 정보:', { fileName, fileSize, fileType, duplicateAction, vendor });
 
       if (!fileContent || !fileName) {
         return NextResponse.json(
@@ -1197,6 +1197,10 @@ export async function POST(request: NextRequest) {
         );
       }
       
+      // 벤더 정보 정규화 (대문자로 변환, 기본값: META)
+      const normalizedVendor = vendor ? vendor.toUpperCase() : 'META';
+      console.log('🏷️ 벤더 정보 (JSON 요청):', { original: vendor, normalized: normalizedVendor });
+
       // 문서 생성
       const documentId = `doc_${Date.now()}`;
       const documentData: DocumentData = {
@@ -1206,6 +1210,7 @@ export async function POST(request: NextRequest) {
         type: getFileTypeFromExtension(fileName),
         file_size: fileSize,
         file_type: fileType,
+        source_vendor: normalizedVendor, // 벤더 정보 추가
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString()
       };

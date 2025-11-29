@@ -384,8 +384,14 @@ export default function NewDocumentUpload({ onUpload, vendor, hideList = false }
         fileType: file.type,
         fileContent: base64Content,
         type: 'file',
-        vendor: vendor || 'Unknown'
+        vendor: vendor || 'META' // 기본값을 META로 변경 (Unknown 대신)
       };
+      
+      console.log('📤 파일 업로드 요청:', {
+        fileName: file.name,
+        vendor: requestBody.vendor,
+        vendorProp: vendor
+      });
 
       console.log('Base64 인코딩 완료, JSON 요청 전송');
 
