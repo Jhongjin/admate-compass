@@ -107,10 +107,13 @@ export default function NewDocumentUpload({ onUpload, vendor, hideList = false }
       setIsLoadingDocuments(true);
       console.log('📋 업로드된 문서 목록 가져오기 시작', { vendor });
 
-      // vendor가 있으면 쿼리 파라미터에 추가
-      const url = vendor 
-        ? `/api/admin/upload-new?vendor=${encodeURIComponent(vendor)}`
+      // vendor가 있으면 정규화하여 쿼리 파라미터에 추가
+      const normalizedVendor = vendor ? normalizeVendorForDB(vendor) : null;
+      const url = normalizedVendor
+        ? `/api/admin/upload-new?vendor=${encodeURIComponent(normalizedVendor)}`
         : '/api/admin/upload-new';
+      
+      console.log('📋 문서 목록 조회 URL:', { vendorOriginal: vendor, vendorNormalized: normalizedVendor, url });
 
       const response = await fetchWithTimeout(url, {
         method: 'GET',
