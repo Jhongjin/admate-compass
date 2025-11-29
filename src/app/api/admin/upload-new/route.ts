@@ -1437,12 +1437,13 @@ export async function GET(request: NextRequest) {
       if (stuckSubPages && stuckSubPages.length > 0) {
         const stuckSubPageIds = stuckSubPages.map(d => d.id);
         
-        // 관련 processing_jobs 확인 (document_id와 URL 모두)
+        // 관련 processing_jobs 확인 (document_id와 URL 모두) - 최신순 정렬
         const { data: relatedJobs } = await supabase
           .from('processing_jobs')
           .select('id, document_id, status, payload, result')
           .eq('job_type', 'CRAWL_SEED')
           .in('status', ['queued', 'processing', 'retrying'])
+          .order('created_at', { ascending: false })
           .limit(1000);
         
         // 활성 작업이 있는 문서 ID 수집
@@ -1645,7 +1646,7 @@ export async function GET(request: NextRequest) {
     
     let jobStatusMap: Record<string, any> = {};
     if (documentUrls.length > 0) {
-      // 각 URL에 대한 최신 CRAWL_SEED 작업 조회
+      // 각 URL에 대한 최신 CRAWL_SEED 작업 조회 (최신순 정렬 및 제한 추가)
       const { data: jobs, error: jobsError } = await supabase
         .from('processing_jobs')
         .select('id, status, started_at, finished_at, result, payload, created_at')
