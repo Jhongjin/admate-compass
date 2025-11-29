@@ -64,11 +64,17 @@ export async function POST(
 
     // 기존 청크 삭제
     console.log(`🗑️ 기존 청크 삭제 중...`);
-    const { error: deleteError, count: deletedCount } = await supabase
+    
+    // 삭제 전 청크 개수 확인
+    const { count: beforeCount } = await supabase
+      .from('document_chunks')
+      .select('*', { count: 'exact', head: true })
+      .eq('document_id', documentId);
+    
+    const { error: deleteError } = await supabase
       .from('document_chunks')
       .delete()
-      .eq('document_id', documentId)
-      .select('*', { count: 'exact', head: true });
+      .eq('document_id', documentId);
 
     if (deleteError) {
       console.error('❌ 청크 삭제 실패:', deleteError);
@@ -78,7 +84,7 @@ export async function POST(
       );
     }
 
-    console.log(`✅ 기존 청크 삭제 완료: ${deletedCount || 0}개 청크 삭제됨`);
+    console.log(`✅ 기존 청크 삭제 완료: ${beforeCount || 0}개 청크 삭제됨`);
 
     // 문서 상태를 'processing'으로 업데이트
     console.log(`🔄 문서 상태를 'processing'으로 업데이트 중...`);
