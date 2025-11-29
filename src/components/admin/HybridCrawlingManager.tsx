@@ -2334,6 +2334,7 @@ export default function HybridCrawlingManager({
 
         {/* 크롤링 상태 동기화 버튼 */}
         {(isCrawling || crawlingProgress.length > 0) && (
+          <>
           <Button
             onClick={async () => {
               // API를 통해 강제 동기화 실행
@@ -2621,6 +2622,7 @@ export default function HybridCrawlingManager({
             <Trash2 className="w-5 h-5 mr-3" />
             진행 중인 문서 삭제
           </Button>
+          </>
         )}
       </div>
 
