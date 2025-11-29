@@ -1245,14 +1245,24 @@ export default function HybridCrawlingManager({
                 .from('processing_jobs')
                 .select('id, status, result, payload, started_at, finished_at, document_id')
                 .eq('job_type', 'CRAWL_SEED')
-                .in('status', ['queued', 'processing', 'retrying', 'completed', 'failed']);
+                .in('status', ['queued', 'processing', 'retrying', 'completed', 'failed'])
+                .order('created_at', { ascending: false })
+                .limit(100); // 최근 100개 작업 조회
               
               if (!allCrawlJobsError && allCrawlJobs) {
+                console.log(`🔍 폴링: 전체 CRAWL_SEED 작업 ${allCrawlJobs.length}개 조회됨, 현재 URL: ${currentUrls.length}개`);
+                
                 // 현재 URL과 매칭되는 작업만 필터링
                 const matchingJobs = allCrawlJobs.filter(job => {
-                  const jobUrl = (job.payload as any)?.url;
-                  return jobUrl && currentUrls.includes(jobUrl);
+                  const jobUrl = (job.payload as any)?.url || (job.result as any)?.url;
+                  const matches = jobUrl && currentUrls.includes(jobUrl);
+                  if (matches) {
+                    console.log(`✅ 폴링: URL 매칭됨 - ${jobUrl}, JobId: ${job.id}, Status: ${job.status}, FinishedAt: ${job.finished_at || '없음'}`);
+                  }
+                  return matches;
                 });
+                
+                console.log(`🔍 폴링: 매칭된 작업 ${matchingJobs.length}개 발견`);
                 
                 // processing 상태인 작업 중 실제로 완료된 것 강제 동기화
                 for (const job of matchingJobs) {
@@ -1304,17 +1314,27 @@ export default function HybridCrawlingManager({
             }
             
             if (jobs.length === 0) {
+              console.log(`⚠️ 폴링: 조회된 작업이 없음 - currentUrls: ${currentUrls.length}개, jobIds: ${jobIds.length}개`);
               return;
             }
             
-            // URL과 jobId 매핑 생성
+            console.log(`📊 폴링: 총 ${jobs.length}개 작업 조회됨`, jobs.map(j => ({
+              id: j.id.substring(0, 8),
+              url: (j.payload as any)?.url || (j.result as any)?.url,
+              status: j.status,
+              finished_at: j.finished_at ? '있음' : '없음'
+            })));
+            
+            // URL과 jobId 매핑 생성 (payload와 result 모두 확인)
             const urlToJobIdMap = new Map<string, string>();
             jobs.forEach(job => {
-              const jobUrl = (job.payload as any)?.url;
+              const jobUrl = (job.payload as any)?.url || (job.result as any)?.url;
               if (jobUrl) {
                 urlToJobIdMap.set(jobUrl, job.id);
               }
             });
+            
+            console.log(`🔗 폴링: URL-JobId 매핑 ${urlToJobIdMap.size}개 생성됨`);
             
             // 타임아웃 감지: processing 상태로 2시간 이상 머무는 작업 감지
             const now = Date.now();
@@ -1348,22 +1368,44 @@ export default function HybridCrawlingManager({
                   if (job) {
                     // finished_at이 있으면 완료로 간주 (동기화 문제 해결)
                     if (job.finished_at || job.status === 'completed') {
+                      console.log(`✅ 폴링: 작업 완료 감지 - URL: ${p.url}, JobId: ${jobId}, Status: ${job.status}, FinishedAt: ${job.finished_at}`);
                       return { ...p, status: 'completed' as const, message: '크롤링 완료', chunkCount: (job.result as any)?.chunkCount || 0 };
                     } else if (job.status === 'cancelled') {
                       // 취소된 작업은 제거
                       return null;
                     } else if (job.status === 'failed') {
+                      console.log(`❌ 폴링: 작업 실패 감지 - URL: ${p.url}, JobId: ${jobId}`);
                       return { ...p, status: 'failed' as const, message: '크롤링 실패' };
                     } else if (job.status === 'processing') {
                       // 타임아웃 체크 (이미 위에서 처리됨)
                       if (stuckJobs.some(j => j.id === jobId)) {
                         return { ...p, status: 'failed' as const, message: '크롤링 타임아웃 (2시간 초과)' };
                       }
+                      // processing 상태인데 document_id가 있으면 documents 테이블 확인
+                      if (job.document_id) {
+                        // 비동기로 documents 확인 (다음 폴링에서 반영)
+                        supabase
+                          .from('documents')
+                          .select('id, status, chunk_count')
+                          .eq('id', job.document_id)
+                          .single()
+                          .then(({ data: document }) => {
+                            if (document && (document.status === 'indexed' || document.chunk_count > 0)) {
+                              console.log(`🔧 폴링: documents 테이블 확인 - 작업은 processing이지만 문서는 indexed (${document.chunk_count}개 청크)`);
+                              // 다음 폴링에서 감지되도록 강제 동기화는 하지 않고 로그만 출력
+                            }
+                          })
+                          .catch(() => {});
+                      }
                       return { ...p, status: 'crawling' as const, message: '크롤링 중...', chunkCount: (job.result as any)?.chunkCount || 0 };
                     } else if (job.status === 'queued' || job.status === 'retrying') {
                       return { ...p, status: 'pending' as const, message: '큐 대기 중...' };
                     }
+                  } else {
+                    console.warn(`⚠️ 폴링: URL에 해당하는 작업을 찾지 못함 - URL: ${p.url}, JobId: ${jobId}`);
                   }
+                } else {
+                  console.warn(`⚠️ 폴링: URL에 해당하는 JobId를 찾지 못함 - URL: ${p.url}`);
                 }
                 return p;
               }).filter((p): p is CrawlingProgress => p !== null);
@@ -1375,17 +1417,41 @@ export default function HybridCrawlingManager({
             const completedJobs = jobs.filter(j => 
               j.status === 'completed' || j.finished_at !== null
             );
-            if (completedJobs.length > 0 && onCrawlingComplete) {
-              onCrawlingComplete();
+            if (completedJobs.length > 0) {
+              console.log(`✅ 폴링: 완료된 작업 ${completedJobs.length}개 감지`, completedJobs.map(j => ({
+                id: j.id,
+                url: (j.payload as any)?.url,
+                status: j.status,
+                finished_at: j.finished_at
+              })));
+              if (onCrawlingComplete) {
+                onCrawlingComplete();
+              }
             }
+            
+            // 현재 진행 상황에서 완료/실패된 작업 확인
+            const currentProgress = crawlingProgress;
+            const completedInProgress = currentProgress.filter(p => 
+              p.status === 'completed' || p.status === 'failed'
+            );
+            const processingInProgress = currentProgress.filter(p => 
+              p.status === 'crawling' || p.status === 'pending'
+            );
             
             // 모든 작업이 완료되면 폴링 중지
             const allCompleted = jobs.every(j => 
               (j.status === 'completed' || j.finished_at !== null) || 
               j.status === 'failed' || 
               j.status === 'cancelled'
-            );
+            ) && processingInProgress.length === 0;
+            
             if (allCompleted) {
+              console.log(`🎉 폴링: 모든 작업 완료 - 폴링 중지`, {
+                totalJobs: jobs.length,
+                completed: completedJobs.length,
+                failed: jobs.filter(j => j.status === 'failed').length
+              });
+              
               if (pollingIntervalRef.current) {
                 clearInterval(pollingIntervalRef.current);
                 pollingIntervalRef.current = null;
@@ -1404,7 +1470,13 @@ export default function HybridCrawlingManager({
               }
             } else {
               // 진행 중인 작업이 있으면 isCrawling 유지
-              setIsCrawling(true);
+              if (processingInProgress.length > 0) {
+                setIsCrawling(true);
+              } else if (completedInProgress.length > 0 && processingInProgress.length === 0) {
+                // 진행 중인 작업은 없지만 완료된 작업만 있는 경우
+                console.log(`⏳ 폴링: 진행 중인 작업 없음, 완료된 작업만 있음 - 폴링 계속`);
+                setIsCrawling(false);
+              }
             }
             
             // 취소된 작업도 진행 상황에서 제거
