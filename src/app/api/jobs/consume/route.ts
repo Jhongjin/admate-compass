@@ -1571,30 +1571,66 @@ export async function processQueue() {
           
           // 정교한 제목 추출 함수 (PuppeteerCrawlingService 로직 기반)
           const extractPageTitle = (): string | null => {
-            // 1. h1 태그 (가장 우선)
-            const h1Text = $('h1').first().text().trim();
-            if (h1Text && h1Text.length >= 2) {
-              return h1Text;
+            // 1. h1 태그 (가장 우선) - 메인 콘텐츠 영역 우선
+            const mainH1 = $('main h1, article h1, .content h1, .main-content h1').first();
+            const h1Text = mainH1.length > 0 ? mainH1.text().trim() : $('h1').first().text().trim();
+            if (h1Text && h1Text.length >= 2 && h1Text.length <= 200) {
+              // "광고주센터" 같은 일반적인 제목 필터링
+              const lowerH1 = h1Text.toLowerCase();
+              if (!lowerH1.includes('광고주센터') && !lowerH1.includes('광고주 센터') && 
+                  !lowerH1.includes('advertiser center') && !lowerH1.includes('naver')) {
+                return h1Text;
+              }
             }
 
-            // 2. title 태그
+            // 2. title 태그 - 더 정교한 접미사 제거
             const titleText = $('title').text().trim();
             if (titleText && titleText.length >= 2) {
               // title 태그에서 불필요한 접미사 제거 (예: " - 사이트명", " | 사이트명")
-              const cleanedTitle = titleText
+              let cleanedTitle = titleText
                 .replace(/\s*[-|]\s*.*$/, '') // " - 사이트명" 또는 " | 사이트명" 제거
                 .replace(/\s*::\s*.*$/, '') // " :: 사이트명" 제거
+                .replace(/\s*-\s*.*$/, '') // " - 사이트명" 제거 (추가)
+                .replace(/\s*\|\s*.*$/, '') // " | 사이트명" 제거 (추가)
+                .replace(/\s*:\s*.*$/, '') // " : 사이트명" 제거
                 .trim();
-              if (cleanedTitle && cleanedTitle.length >= 2) {
-                return cleanedTitle;
+              
+              // "광고주센터", "NAVER" 같은 일반적인 접미사 제거
+              const commonSuffixes = [
+                /광고주센터.*$/i,
+                /advertiser\s*center.*$/i,
+                /naver.*$/i,
+                /네이버.*$/i
+              ];
+              for (const suffix of commonSuffixes) {
+                cleanedTitle = cleanedTitle.replace(suffix, '').trim();
               }
-              return titleText;
+              
+              if (cleanedTitle && cleanedTitle.length >= 2 && cleanedTitle.length <= 200) {
+                // "광고주센터" 같은 일반적인 제목 필터링
+                const lowerCleaned = cleanedTitle.toLowerCase();
+                if (!lowerCleaned.includes('광고주센터') && !lowerCleaned.includes('광고주 센터') && 
+                    !lowerCleaned.includes('advertiser center') && !lowerCleaned.includes('naver')) {
+                  return cleanedTitle;
+                }
+              }
+              
+              // 원본 title도 "광고주센터" 필터링 후 반환
+              const lowerTitle = titleText.toLowerCase();
+              if (!lowerTitle.includes('광고주센터') && !lowerTitle.includes('광고주 센터') && 
+                  !lowerTitle.includes('advertiser center')) {
+                return titleText;
+              }
             }
 
             // 3. og:title 메타 태그
             const ogTitle = $('meta[property="og:title"]').attr('content')?.trim();
-            if (ogTitle && ogTitle.length >= 2) {
-              return ogTitle;
+            if (ogTitle && ogTitle.length >= 2 && ogTitle.length <= 200) {
+              const lowerOg = ogTitle.toLowerCase();
+              if (!lowerOg.includes('광고주센터') && !lowerOg.includes('광고주 센터') && 
+                  !lowerOg.includes('advertiser center') && !lowerOg.includes('naver')) {
+                return ogTitle;
+              }
             }
 
             // 4. data-testid 기반
@@ -1603,41 +1639,43 @@ export async function processQueue() {
               return dataTestIdTitle;
             }
 
-            // 5. 클래스 기반 셀렉터들 (우선순위 순)
+            // 5. 클래스 기반 셀렉터들 (우선순위 순) - 메인 콘텐츠 영역 우선
             const classSelectors = [
-              'h1.page-title',
-              'h1.article-title',
-              '.page-title',
-              '.article-title',
-              '.post-title',
-              '.entry-title',
-              '.content-title',
-              '.main-title',
-              'main h1',
-              'main h2',
-              'article h1',
-              'article h2',
-              'section:first-of-type h1',
-              'section:first-of-type h2',
-              'header h1',
-              'header h2',
-              '.hero h1',
-              '.hero h2',
-              '.banner h1',
-              '.banner h2'
+              'main h1', 'main h2',
+              'article h1', 'article h2',
+              '.main-content h1', '.main-content h2',
+              '.content h1', '.content h2',
+              'section:first-of-type h1', 'section:first-of-type h2',
+              'h1.page-title', 'h1.article-title',
+              '.page-title', '.article-title',
+              '.post-title', '.entry-title',
+              '.content-title', '.main-title',
+              'header h1', 'header h2',
+              '.hero h1', '.hero h2',
+              '.banner h1', '.banner h2'
             ];
             
             for (const selector of classSelectors) {
               const text = $(selector).first().text().trim();
-              if (text && text.length >= 2 && text.length <= 100) {
-                return text;
+              if (text && text.length >= 2 && text.length <= 200) {
+                const lowerText = text.toLowerCase();
+                // "광고주센터" 같은 일반적인 제목 필터링
+                if (!lowerText.includes('광고주센터') && !lowerText.includes('광고주 센터') && 
+                    !lowerText.includes('advertiser center') && !lowerText.includes('naver')) {
+                  return text;
+                }
               }
             }
 
-            // 6. h2 태그 (히어로 영역에 자주 사용)
-            const h2Text = $('h2').first().text().trim();
-            if (h2Text && h2Text.length >= 2 && h2Text.length <= 100) {
-              return h2Text;
+            // 6. h2 태그 (히어로 영역에 자주 사용) - 메인 콘텐츠 영역 우선
+            const mainH2 = $('main h2, article h2, .content h2, .main-content h2').first();
+            const h2Text = mainH2.length > 0 ? mainH2.text().trim() : $('h2').first().text().trim();
+            if (h2Text && h2Text.length >= 2 && h2Text.length <= 200) {
+              const lowerH2 = h2Text.toLowerCase();
+              if (!lowerH2.includes('광고주센터') && !lowerH2.includes('광고주 센터') && 
+                  !lowerH2.includes('advertiser center') && !lowerH2.includes('naver')) {
+                return h2Text;
+              }
             }
 
             // 7. 상단 영역에서 font-weight: bold이고 큰 텍스트 추출
