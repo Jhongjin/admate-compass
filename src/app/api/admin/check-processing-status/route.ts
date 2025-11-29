@@ -275,9 +275,7 @@ export async function POST(request: NextRequest) {
 
     console.log(`✅ 상태 체크 완료: ${results.length}개 문서 체크, ${syncedCount}개 동기화`);
 
-    const processingCount = processingDocs.filter(d => d.status === 'processing').length;
-    const pendingCount = processingDocs.filter(d => d.status === 'pending').length;
-
+    // processingCount와 pendingCount는 이미 위에서 정의됨 (31-32번 줄)
     return NextResponse.json({
       success: true,
       message: `processing/pending 상태 문서 ${results.length}개를 체크했습니다. ${syncedCount}개 문서를 동기화했습니다. (processing: ${processingCount}, pending: ${pendingCount})`,
