@@ -90,6 +90,7 @@ export default function DocumentsPage() {
     // GroupedDocumentList states
     const [expandedGroups, setExpandedGroups] = useState<Set<number>>(new Set());
     const [selectedDocs, setSelectedDocs] = useState<Set<string>>(new Set());
+    const [actionLoading, setActionLoading] = useState<{ [key: string]: boolean }>({});
     
     // 디버깅: 컴포넌트 마운트 시 확인
     useEffect(() => {
@@ -660,7 +661,7 @@ export default function DocumentsPage() {
                                 onToggleGroupExpansion={handleToggleGroupExpansion}
                                 onToggleSubPageSelection={() => { }} // Not fully implemented in this view
                                 onToggleAllSubPages={() => { }}
-                                onReindexDocument={() => { }} // Placeholder
+                                onReindexDocument={handleReindexDocument}
                                 onDownloadDocument={() => { }} // Placeholder
                                 onDeleteDocument={(id) => setDeleteId(id)}
                                 onSelectAll={handleSelectAll}
@@ -673,7 +674,7 @@ export default function DocumentsPage() {
                                 })()}
                                 selectedDocuments={selectedDocs}
                                 isAllSelected={selectedDocs.size > 0 && selectedDocs.size === filteredDocs.length}
-                                actionLoading={{}}
+                                actionLoading={actionLoading}
                                 deletingDocument={deleteId}
                             />
                         </div>
