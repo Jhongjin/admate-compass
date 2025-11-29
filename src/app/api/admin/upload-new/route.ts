@@ -1330,8 +1330,8 @@ export async function GET(request: NextRequest) {
             if (docByUrl) document = docByUrl;
           }
           
-          // 문서가 indexed이거나 chunk_count > 0이면 completed로 업데이트
-          if (document && (document.status === 'indexed' || (document.chunk_count && document.chunk_count > 0))) {
+          // 문서가 indexed/completed이거나 chunk_count > 0이면 completed로 업데이트
+          if (document && (document.status === 'indexed' || document.status === 'completed' || (document.chunk_count && document.chunk_count > 0))) {
             await supabase
               .from('processing_jobs')
               .update({
