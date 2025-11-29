@@ -233,7 +233,9 @@ export default function HybridCrawlingManager({
           .from('processing_jobs')
           .select('id, document_id, status, payload, started_at')
           .eq('job_type', 'CRAWL_SEED')
-          .eq('status', 'processing');
+          .eq('status', 'processing')
+          .order('created_at', { ascending: false })
+          .limit(100);
         
         if (!stuckError && stuckProcessingJobs && stuckProcessingJobs.length > 0) {
           // 각 작업의 document_id로 documents 테이블 확인
