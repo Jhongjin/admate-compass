@@ -18,7 +18,7 @@ export async function POST(request: NextRequest) {
     // 1. 같은 URL에 대한 중복 CRAWL_SEED 작업 찾기
     const { data: allCrawlJobs, error: allJobsError } = await supabase
       .from('processing_jobs')
-      .select('id, status, payload, started_at, finished_at, created_at, document_id')
+      .select('id, status, payload, started_at, finished_at, created_at, document_id, result')
       .eq('job_type', 'CRAWL_SEED')
       .in('status', ['queued', 'processing', 'retrying', 'completed', 'failed'])
       .order('created_at', { ascending: false })
