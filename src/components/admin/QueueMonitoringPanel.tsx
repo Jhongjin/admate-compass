@@ -66,15 +66,17 @@ export default function QueueMonitoringPanel({ vendors = [], defaultOpen = false
       let query = supabase
         .from('processing_jobs')
         .select('id, document_id, job_type, status, attempts, max_attempts, priority, scheduled_at, started_at, finished_at, result, created_at')
-        .eq('job_type', 'CRAWL_SEED');
+        .eq('job_type', 'CRAWL_SEED')
+        .order('created_at', { ascending: false }) // 최신순 정렬 추가
+        .limit(1000); // 더 많은 작업 조회
+      
+      const { data, error } = await query;
+      if (error) throw error;
       
       // 정렬 적용
       if (sortBy === 'status') {
         // 상태별 정렬: queued/retrying -> processing -> completed -> failed 순서
         const statusOrder: Record<string, number> = { 'queued': 1, 'retrying': 1, 'processing': 2, 'completed': 3, 'failed': 4 };
-        query = query.order('created_at', { ascending: sortOrder === 'asc' });
-        const { data, error } = await query.limit(100);
-        if (error) throw error;
         // 클라이언트 측에서 상태별 정렬
         const sorted = (data || []).sort((a, b) => {
           const aOrder = statusOrder[a.status] || 5;
@@ -89,9 +91,7 @@ export default function QueueMonitoringPanel({ vendors = [], defaultOpen = false
         });
         setJobs(sorted);
       } else {
-        query = query.order(sortBy, { ascending: sortOrder === 'asc' });
-        const { data, error } = await query.limit(100);
-        if (error) throw error;
+        // created_at 기준으로 이미 정렬되어 있으므로 추가 정렬 불필요
         setJobs(data || []);
       }
     } catch (err) {
