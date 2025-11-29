@@ -240,6 +240,62 @@ export default function NewDocumentUpload({ onUpload, vendor, hideList = false }
     fileMapRef.current.delete(fileId); // Map에서도 제거
   };
 
+  // 중복 파일 처리: 덮어쓰기
+  const handleDuplicateOverwrite = async () => {
+    if (!duplicateFile) return;
+    
+    setShowDuplicateDialog(false);
+    const { file } = duplicateFile;
+    
+    // 파일 ID 찾기
+    const fileId = Array.from(fileMapRef.current.entries()).find(
+      ([_, f]) => f.name === file.name && f.size === file.size
+    )?.[0];
+    
+    if (!fileId) {
+      console.error('❌ 파일 ID를 찾을 수 없습니다:', file.name);
+      toast({
+        title: "오류",
+        description: "파일을 찾을 수 없습니다.",
+        variant: "destructive"
+      });
+      setDuplicateFile(null);
+      return;
+    }
+    
+    // 덮어쓰기 모드로 재업로드
+    console.log('🔄 덮어쓰기 모드로 재업로드 시작:', file.name);
+    await uploadAndIndexDocument(file, fileId, 'overwrite');
+    
+    setDuplicateFile(null);
+  };
+
+  // 중복 파일 처리: 건너뛰기
+  const handleDuplicateSkip = () => {
+    if (!duplicateFile) return;
+    
+    setShowDuplicateDialog(false);
+    const { file } = duplicateFile;
+    
+    // 파일 ID 찾기
+    const fileId = Array.from(fileMapRef.current.entries()).find(
+      ([_, f]) => f.name === file.name && f.size === file.size
+    )?.[0];
+    
+    if (fileId) {
+      // 파일을 리스트에서 제거
+      setFiles(prev => prev.filter(f => f.id !== fileId));
+      fileMapRef.current.delete(fileId);
+      
+      toast({
+        title: "파일 건너뛰기",
+        description: `'${file.name}' 파일을 건너뛰었습니다.`,
+      });
+    }
+    
+    setDuplicateFile(null);
+  };
+
   const handleInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const selected = event.target.files ? Array.from(event.target.files) : [];
     if (selected.length) {
