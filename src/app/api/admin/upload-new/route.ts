@@ -1290,6 +1290,88 @@ export async function GET(request: NextRequest) {
       }
     );
 
+    // 🔥 finished_at이 없는 processing 작업 자동 정리 (최우선)
+    try {
+      const { data: stuckJobs, error: stuckJobsError } = await supabase
+        .from('processing_jobs')
+        .select('id, document_id, status, payload, started_at, finished_at, created_at')
+        .eq('job_type', 'CRAWL_SEED')
+        .eq('status', 'processing')
+        .is('finished_at', null) // finished_at이 없는 작업만
+        .order('created_at', { ascending: false })
+        .limit(100);
+      
+      if (!stuckJobsError && stuckJobs && stuckJobs.length > 0) {
+        console.log(`🔧 finished_at이 없는 processing 작업 ${stuckJobs.length}개 발견, 자동 정리 시작`);
+        
+        for (const stuckJob of stuckJobs) {
+          const jobUrl = (stuckJob.payload as any)?.url;
+          let document: any = null;
+          
+          // document_id로 문서 찾기
+          if (stuckJob.document_id) {
+            const { data: docById } = await supabase
+              .from('documents')
+              .select('id, status, chunk_count, url')
+              .eq('id', stuckJob.document_id)
+              .maybeSingle();
+            if (docById) document = docById;
+          }
+          
+          // URL로 문서 찾기
+          if (!document && jobUrl) {
+            const { data: docByUrl } = await supabase
+              .from('documents')
+              .select('id, status, chunk_count, url')
+              .eq('url', jobUrl)
+              .order('created_at', { ascending: false })
+              .limit(1)
+              .maybeSingle();
+            if (docByUrl) document = docByUrl;
+          }
+          
+          // 문서가 indexed이거나 chunk_count > 0이면 completed로 업데이트
+          if (document && (document.status === 'indexed' || (document.chunk_count && document.chunk_count > 0))) {
+            await supabase
+              .from('processing_jobs')
+              .update({
+                status: 'completed',
+                finished_at: new Date().toISOString(),
+                result: { note: 'auto_synced_by_document_list', syncedAt: new Date().toISOString() }
+              })
+              .eq('id', stuckJob.id)
+              .eq('status', 'processing')
+              .is('finished_at', null);
+            console.log(`✅ 작업 ${stuckJob.id.substring(0, 8)}... completed로 자동 업데이트 (문서: ${document.status}, 청크: ${document.chunk_count})`);
+          } else {
+            // 타임아웃 체크 (2시간)
+            const now = Date.now();
+            const startedAt = stuckJob.started_at ? new Date(stuckJob.started_at).getTime() : null;
+            const createdAt = stuckJob.created_at ? new Date(stuckJob.created_at).getTime() : null;
+            const elapsed = startedAt ? now - startedAt : (createdAt ? now - createdAt : 0);
+            const TIMEOUT_MS = 2 * 60 * 60 * 1000;
+            
+            if (elapsed > TIMEOUT_MS) {
+              await supabase
+                .from('processing_jobs')
+                .update({
+                  status: 'failed',
+                  finished_at: new Date().toISOString(),
+                  error: '작업 타임아웃: 2시간 이상 진행 중',
+                  result: { note: 'timeout_auto_synced', elapsedHours: Math.round(elapsed / (60 * 60 * 1000)) }
+                })
+                .eq('id', stuckJob.id)
+                .eq('status', 'processing')
+                .is('finished_at', null);
+              console.log(`⏰ 작업 ${stuckJob.id.substring(0, 8)}... failed로 자동 업데이트 (타임아웃: ${Math.round(elapsed / (60 * 60 * 1000))}시간)`);
+            }
+          }
+        }
+      }
+    } catch (autoSyncError) {
+      console.warn('⚠️ finished_at이 없는 작업 자동 정리 중 오류 (무시):', autoSyncError);
+    }
+
     // "처리중 0개 청크" 상태인 문서 자동 정리 (백그라운드)
     // 관련 processing_jobs가 없는 경우 failed로 변경 또는 삭제
     try {
