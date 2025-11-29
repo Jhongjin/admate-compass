@@ -120,11 +120,17 @@ export default function DocumentsPage() {
     // 재인덱싱 mutation
     const reindexMutation = useMutation({
         mutationFn: async ({ documentId, title }: { documentId: string; title: string }) => {
+            console.log('🔄 [reindexMutation] mutationFn 시작:', { documentId, title });
             const loadingKey = `${documentId}_reindex`;
-            setActionLoading(prev => ({ ...prev, [loadingKey]: true }));
+            console.log('🔄 [reindexMutation] loadingKey 설정:', loadingKey);
+            setActionLoading(prev => {
+                const newState = { ...prev, [loadingKey]: true };
+                console.log('🔄 [reindexMutation] actionLoading 업데이트:', newState);
+                return newState;
+            });
             
             try {
-                console.log('🔄 재인덱싱 요청 시작:', { documentId, title });
+                console.log('🔄 [reindexMutation] API 호출 시작:', { documentId, title });
                 
                 const res = await fetch(`/api/admin/upload/${documentId}/reindex`, {
                     method: 'POST',
