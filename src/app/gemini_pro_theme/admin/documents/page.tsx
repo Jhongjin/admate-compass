@@ -95,7 +95,9 @@ export default function DocumentsPage() {
     // 디버깅: 컴포넌트 마운트 시 확인
     useEffect(() => {
         console.log('🔍 [DocumentsPage] 컴포넌트 마운트됨');
-    }, []);
+        console.log('🔍 [DocumentsPage] handleReindexDocument 타입:', typeof handleReindexDocument);
+        console.log('🔍 [DocumentsPage] handleReindexDocument 값:', handleReindexDocument);
+    }, [handleReindexDocument]);
 
     const { toast } = useToast();
     const queryClient = useQueryClient();
