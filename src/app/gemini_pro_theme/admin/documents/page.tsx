@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect, useCallback } from "react";
+import { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import { motion } from "framer-motion";
 import {
     FileText,
@@ -238,7 +238,10 @@ export default function DocumentsPage() {
         console.log('🔍 [DocumentsPage] handleReindexDocument 타입:', typeof handleReindexDocument);
         console.log('🔍 [DocumentsPage] handleReindexDocument 값:', handleReindexDocument);
         console.log('🔍 [DocumentsPage] handleReindexDocument 함수 본문:', handleReindexDocument?.toString?.()?.substring(0, 500));
-    }, [handleReindexDocument]);
+        console.log('🔍 [DocumentsPage] reindexMutation 타입:', typeof reindexMutation);
+        console.log('🔍 [DocumentsPage] reindexMutation 값:', reindexMutation);
+        console.log('🔍 [DocumentsPage] reindexMutation.mutate 타입:', typeof reindexMutation?.mutate);
+    }, [handleReindexDocument, reindexMutation]);
 
     const deleteMutation = useMutation({
         mutationFn: async (id: string) => {
