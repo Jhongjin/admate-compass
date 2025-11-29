@@ -353,9 +353,9 @@ function normalizeTablesToMarkdown(text: string): string {
 export async function processQueue() {
   const supabase = await createPureClient();
   
-  // 타임아웃된 작업 감지 및 처리 (2시간 이상 processing 상태)
-  // 10시간 지연 문제를 해결하기 위해 타임아웃을 2시간으로 설정
-  const TIMEOUT_MS = 2 * 60 * 60 * 1000; // 2시간
+  // 🔥 무한대기 방지: 타임아웃된 작업 감지 및 처리 (30분 이상 processing 상태)
+  // 기존 2시간에서 30분으로 단축하여 무한대기 문제 해결
+  const TIMEOUT_MS = 30 * 60 * 1000; // 30분
   const timeoutThreshold = new Date(Date.now() - TIMEOUT_MS).toISOString();
   const createdTimeoutThreshold = new Date(Date.now() - TIMEOUT_MS).toISOString();
   

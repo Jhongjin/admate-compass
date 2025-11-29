@@ -152,15 +152,52 @@ export async function POST(request: NextRequest) {
         // 케이스 5: 활성 작업이 없고 청크도 없는데 processing 상태인 경우 (타임아웃)
         if (activeJobs.length === 0 && actualChunkCount === 0 && doc.status === 'processing') {
           const updatedAt = doc.updated_at ? new Date(doc.updated_at).getTime() : 0;
+          const createdAt = doc.created_at ? new Date(doc.created_at).getTime() : 0;
           const now = Date.now();
-          const elapsedHours = (now - updatedAt) / (60 * 60 * 1000);
+          const elapsedFromUpdate = updatedAt > 0 ? (now - updatedAt) / (60 * 1000) : 0; // 분 단위
+          const elapsedFromCreate = createdAt > 0 ? (now - createdAt) / (60 * 1000) : 0; // 분 단위
+          const elapsedMinutes = updatedAt > 0 ? elapsedFromUpdate : elapsedFromCreate;
           
-          // 1시간 이상 업데이트가 없으면 failed로 간주
-          if (elapsedHours > 1) {
+          // 🔥 무한대기 방지: 30분 이상 업데이트가 없으면 failed로 간주 (기존 1시간에서 단축)
+          const TIMEOUT_MINUTES = 30;
+          if (elapsedMinutes > TIMEOUT_MINUTES) {
             needsSync = true;
             newStatus = 'failed';
-            docCheck.issues.push(`타임아웃: ${elapsedHours.toFixed(1)}시간 동안 업데이트 없음`);
-            docCheck.actions.push(`상태를 failed로 변경 (타임아웃)`);
+            docCheck.issues.push(`무한대기 감지: ${elapsedMinutes.toFixed(0)}분 동안 업데이트 없음`);
+            docCheck.actions.push(`상태를 failed로 변경 (타임아웃: ${elapsedMinutes.toFixed(0)}분)`);
+          }
+        }
+
+        // 케이스 6: processing_jobs가 processing 상태인데 실제로는 멈춰있는 경우 (더 적극적 감지)
+        if (activeJobs.length > 0 && doc.status === 'processing') {
+          const stuckJob = activeJobs[0];
+          const startedAt = stuckJob.started_at ? new Date(stuckJob.started_at).getTime() : null;
+          const createdAt = stuckJob.created_at ? new Date(stuckJob.created_at).getTime() : null;
+          const now = Date.now();
+          const elapsed = startedAt ? now - startedAt : (createdAt ? now - createdAt : 0);
+          const TIMEOUT_MS = 30 * 60 * 1000; // 30분
+          
+          // 작업이 30분 이상 진행 중이고 청크가 없으면 실패로 간주
+          if (elapsed > TIMEOUT_MS && actualChunkCount === 0) {
+            needsSync = true;
+            newStatus = 'failed';
+            docCheck.issues.push(`작업 타임아웃: ${Math.round(elapsed / (60 * 1000))}분 동안 진행 중인데 청크 없음`);
+            docCheck.actions.push(`상태를 failed로 변경 (작업 타임아웃)`);
+            
+            // processing_jobs도 failed로 업데이트
+            try {
+              await supabase
+                .from('processing_jobs')
+                .update({
+                  status: 'failed',
+                  error: `작업 타임아웃: ${Math.round(elapsed / (60 * 1000))}분 이상 진행 중`,
+                  finished_at: new Date().toISOString()
+                })
+                .eq('id', stuckJob.id)
+                .eq('status', 'processing');
+            } catch (jobUpdateError) {
+              console.error(`작업 상태 업데이트 실패 (${stuckJob.id}):`, jobUpdateError);
+            }
           }
         }
 

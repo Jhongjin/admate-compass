@@ -226,16 +226,72 @@ export default function HybridCrawlingManager({
     };
   }, []);
 
+  // 🔥 무한대기 문서 자동 체크 및 해결 (5분마다)
+  React.useEffect(() => {
+    const autoCheckStuckDocuments = async () => {
+      try {
+        console.log('🔍 무한대기 문서 자동 체크 시작...');
+        const response = await fetch('/api/admin/check-processing-status', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' }
+        });
+
+        if (response.ok) {
+          const result = await response.json();
+          if (result.success && result.data.synced > 0) {
+            console.log(`✅ 자동 체크: ${result.data.synced}개 무한대기 문서 해결됨`);
+            // 동기화된 문서가 있으면 문서 목록 새로고침
+            if (onCrawlingComplete) {
+              setTimeout(() => {
+                onCrawlingComplete();
+              }, 500);
+            }
+            queryClient.invalidateQueries({ queryKey: ['admin-documents'], exact: false });
+            queryClient.invalidateQueries({ queryKey: ['documents'], exact: false });
+          }
+        }
+      } catch (error) {
+        console.error('자동 상태 체크 오류:', error);
+      }
+    };
+
+    // 초기 로드 시 즉시 체크
+    autoCheckStuckDocuments();
+
+    // 5분마다 자동 체크
+    const autoCheckInterval = setInterval(autoCheckStuckDocuments, 5 * 60 * 1000);
+
+    return () => {
+      clearInterval(autoCheckInterval);
+    };
+  }, [onCrawlingComplete, queryClient]);
+
   // 초기 로드 시 진행 중인 크롤링 작업 자동 감지 및 폴링 시작
   React.useEffect(() => {
     const initializeCrawlingState = async () => {
       try {
-        // [NEW] 0단계: 좀비 작업 자동 정리 (1시간 이상 된 processing 작업 삭제)
+        // [NEW] 0단계: 좀비 작업 자동 정리 (30분 이상 된 processing 작업 삭제)
         try {
           await fetch('/api/admin/cleanup-jobs', { method: 'POST' });
           console.log('🧹 좀비 작업 정리 완료');
         } catch (cleanupError) {
           console.error('좀비 작업 정리 실패:', cleanupError);
+        }
+
+        // [NEW] 0-1단계: 무한대기 문서 자동 체크 및 해결
+        try {
+          const checkResponse = await fetch('/api/admin/check-processing-status', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+          });
+          if (checkResponse.ok) {
+            const checkResult = await checkResponse.json();
+            if (checkResult.success && checkResult.data.synced > 0) {
+              console.log(`✅ 초기 로드: ${checkResult.data.synced}개 무한대기 문서 해결됨`);
+            }
+          }
+        } catch (checkError) {
+          console.error('초기 상태 체크 실패:', checkError);
         }
 
         // 1단계: processing 상태인 작업 중 실제로 완료된 것 강제 동기화
