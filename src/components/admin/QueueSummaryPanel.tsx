@@ -33,8 +33,10 @@ export default function QueueSummaryPanel({ selectedVendors = [] }: QueueSummary
         // Supabase에서는 JSONB 필터링이 복잡하므로 클라이언트에서 필터링
         const { data: allJobs } = await supabase
           .from('processing_jobs')
-          .select('status, payload')
-          .eq('job_type', 'CRAWL_SEED');
+          .select('status, payload, started_at, finished_at')
+          .eq('job_type', 'CRAWL_SEED')
+          .order('created_at', { ascending: false })
+          .limit(1000);
         
         const filteredJobs = (allJobs || []).filter(job => {
           const vendor = job.payload?.vendor;
@@ -45,13 +47,20 @@ export default function QueueSummaryPanel({ selectedVendors = [] }: QueueSummary
         const STUCK_THRESHOLD_MS = 2 * 60 * 60 * 1000; // 2시간 (10시간 지연 문제 해결)
         
         return {
-          queued: filteredJobs.filter(j => ['queued', 'retrying'].includes(j.status)).length,
-          processing: filteredJobs.filter(j => j.status === 'processing').length,
-          failed: filteredJobs.filter(j => j.status === 'failed').length,
+          queued: filteredJobs.filter(j => 
+            ['queued', 'retrying'].includes(j.status) && !j.finished_at
+          ).length,
+          processing: filteredJobs.filter(j => 
+            j.status === 'processing' && !j.finished_at
+          ).length,
+          failed: filteredJobs.filter(j => 
+            j.status === 'failed'
+          ).length,
           stuck: filteredJobs.filter(j => 
             j.status === 'processing' && 
-            j.payload?.started_at && 
-            (now - new Date(j.payload.started_at).getTime()) > STUCK_THRESHOLD_MS
+            !j.finished_at &&
+            j.started_at && 
+            (now - new Date(j.started_at).getTime()) > STUCK_THRESHOLD_MS
           ).length,
         };
       }
@@ -61,6 +70,7 @@ export default function QueueSummaryPanel({ selectedVendors = [] }: QueueSummary
         .from('processing_jobs')
         .select('id, status, started_at, finished_at')
         .eq('job_type', 'CRAWL_SEED')
+        .order('created_at', { ascending: false }) // 최신순 정렬
         .limit(1000); // 충분한 수의 Seed 크롤 작업 조회
       
       if (allJobsError) {
