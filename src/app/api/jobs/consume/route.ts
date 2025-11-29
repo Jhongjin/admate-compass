@@ -2700,15 +2700,23 @@ export async function processQueue() {
                     const h1Text = mainH1.length > 0 ? mainH1.text().trim() : $page('h1').first().text().trim();
                     const h2Text = mainH2.length > 0 ? mainH2.text().trim() : $page('h2').first().text().trim();
                     
-                    // 제목 유효성 검사 함수
+                    // 제목 유효성 검사 함수 (하위 페이지용 - 더 관대한 필터링)
                     const isValidTitle = (title: string): boolean => {
                       if (!title || title.length < 2 || title.length > 200) return false;
-                      const lower = title.toLowerCase();
-                      // 메인 페이지 제목과 동일하거나 "광고주센터" 관련이면 제외
-                      if (title === mainPage.pageTitle) return false;
-                      if (lower.includes('광고주센터') || lower.includes('광고주 센터') || 
-                          lower.includes('advertiser center') || lower.includes('naver') ||
-                          lower === 'naver' || lower === '네이버') return false;
+                      const lower = title.toLowerCase().trim();
+                      
+                      // 메인 페이지 제목과 정확히 동일하면 제외
+                      if (title.trim() === mainPage.pageTitle.trim()) return false;
+                      
+                      // "광고주센터"만 있는 경우 제외 (하지만 "네이버 광고 상품 추천" 같은 것은 허용)
+                      if (lower === '광고주센터' || lower === '광고주 센터' || 
+                          lower === 'advertiser center' || lower === 'naver' || 
+                          lower === '네이버' || lower === 'naver광고주센터') return false;
+                      
+                      // "광고주센터"로 시작하거나 끝나는 경우만 제외 (내용이 있는 경우는 허용)
+                      if (lower.startsWith('광고주센터') && title.length < 10) return false;
+                      if (lower.endsWith('광고주센터') && title.length < 10) return false;
+                      
                       return true;
                     };
                     
@@ -2755,19 +2763,29 @@ export async function processQueue() {
                     finalTitle = linkTitle;
                     console.log(`[CRITICAL] 📝 하위 페이지 제목 결정 (링크 텍스트): ${subUrl} -> "${finalTitle}"`);
                   }
-                  // 3. 페이지 제목이 있고 메인 페이지 제목과 다르면 사용 (더 강화된 필터링)
+                  // 3. 페이지 제목이 있고 메인 페이지 제목과 다르면 사용 (더 관대한 필터링)
                   else if (page.pageTitle && page.pageTitle.length >= 2) {
-                    const lowerPageTitle = page.pageTitle.toLowerCase();
-                    // 메인 페이지 제목과 다르고, "광고주센터" 관련이 아니고, "NAVER"만 있는 것도 아님
-                    if (page.pageTitle !== mainPage.pageTitle && 
-                        !lowerPageTitle.includes('광고주센터') && 
-                        !lowerPageTitle.includes('광고주 센터') && 
-                        !lowerPageTitle.includes('advertiser center') &&
-                        !(lowerPageTitle === 'naver' || lowerPageTitle === '네이버' || lowerPageTitle.trim() === 'naver광고주센터')) {
+                    const lowerPageTitle = page.pageTitle.toLowerCase().trim();
+                    const mainPageTitleLower = mainPage.pageTitle.toLowerCase().trim();
+                    
+                    // 메인 페이지 제목과 정확히 동일하면 제외
+                    if (page.pageTitle.trim() === mainPage.pageTitle.trim()) {
+                      console.log(`[CRITICAL] ⚠️ 페이지 제목 필터링됨 (메인과 동일): ${subUrl} -> "${page.pageTitle}"`);
+                    }
+                    // "광고주센터"만 있는 경우 제외
+                    else if (lowerPageTitle === '광고주센터' || lowerPageTitle === '광고주 센터' || 
+                             lowerPageTitle === 'advertiser center' || lowerPageTitle === 'naver' || 
+                             lowerPageTitle === '네이버' || lowerPageTitle === 'naver광고주센터') {
+                      console.log(`[CRITICAL] ⚠️ 페이지 제목 필터링됨 (일반적인 제목): ${subUrl} -> "${page.pageTitle}"`);
+                    }
+                    // "광고주센터"로만 시작하거나 끝나는 짧은 제목 제외 (내용이 있는 경우는 허용)
+                    else if ((lowerPageTitle.startsWith('광고주센터') || lowerPageTitle.endsWith('광고주센터')) && page.pageTitle.length < 10) {
+                      console.log(`[CRITICAL] ⚠️ 페이지 제목 필터링됨 (짧은 일반 제목): ${subUrl} -> "${page.pageTitle}"`);
+                    }
+                    // 그 외에는 사용 (내용이 있는 제목은 허용)
+                    else {
                       finalTitle = page.pageTitle;
                       console.log(`[CRITICAL] 📝 하위 페이지 제목 결정 (페이지 제목): ${subUrl} -> "${finalTitle}" (원본: "${page.pageTitle}", 메인: "${mainPage.pageTitle}")`);
-                    } else {
-                      console.log(`[CRITICAL] ⚠️ 페이지 제목 필터링됨: ${subUrl} -> "${page.pageTitle}" (메인: "${mainPage.pageTitle}")`);
                     }
                   }
                   // 3. URL 경로에서 의미있는 제목 추출
