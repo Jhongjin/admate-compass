@@ -319,19 +319,26 @@ function AdminDocsPageContent() {
             
             console.log('📡 재인덱싱 응답 상태:', res.status, res.statusText);
             
-            if (!res.ok) {
-                let errorMessage = '재인덱싱에 실패했습니다.';
-                try {
-                    const errorData = await res.json();
-                    errorMessage = errorData.error || errorData.message || errorMessage;
-                    console.error('❌ 재인덱싱 오류 응답:', errorData);
-                } catch (parseError) {
-                    const errorText = await res.text().catch(() => '알 수 없는 오류');
-                    console.error('❌ 재인덱싱 오류 (JSON 파싱 실패):', errorText);
-                    errorMessage = `서버 오류 (${res.status}): ${errorText.substring(0, 200)}`;
+                if (!res.ok) {
+                    let errorMessage = '재인덱싱에 실패했습니다.';
+                    let errorDetails = '';
+                    try {
+                        const errorData = await res.json();
+                        errorMessage = errorData.error || errorData.message || errorMessage;
+                        errorDetails = errorData.details || '';
+                        console.error('❌ 재인덱싱 오류 응답:', errorData);
+                        
+                        // details가 있으면 메시지에 포함
+                        if (errorDetails) {
+                            errorMessage = `${errorMessage}\n\n${errorDetails}`;
+                        }
+                    } catch (parseError) {
+                        const errorText = await res.text().catch(() => '알 수 없는 오류');
+                        console.error('❌ 재인덱싱 오류 (JSON 파싱 실패):', errorText);
+                        errorMessage = `서버 오류 (${res.status}): ${errorText.substring(0, 200)}`;
+                    }
+                    throw new Error(errorMessage);
                 }
-                throw new Error(errorMessage);
-            }
             
             const result = await res.json();
             console.log('✅ 재인덱싱 성공:', result);
