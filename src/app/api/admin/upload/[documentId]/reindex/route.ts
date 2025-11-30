@@ -123,36 +123,33 @@ export async function POST(
       console.log(`🌐 URL 재인덱싱 시작: ${effectiveUrl}`);
       
       try {
-        // URL 크롤링
+        let contentToProcess: string;
+        let pageTitle: string = document.title;
+        
+        // 1. 먼저 크롤링 시도
+        console.log(`🔄 URL 크롤링 시도 중...`);
         const crawlingService = new PuppeteerCrawlingService();
         const crawledData = await crawlingService.crawlMetaPage(effectiveUrl, false, false, 1);
         
-        if (!crawledData || !crawledData.content) {
-          throw new Error('URL 크롤링 실패: 콘텐츠를 가져올 수 없습니다.');
-        }
-
-        console.log(`✅ URL 크롤링 완료: ${crawledData.content.length}자`);
-
-        // 재인덱싱 시에는 기존 제목을 우선 유지 (제목 변경 방지)
-        // 크롤링된 제목은 참고용으로만 사용하고, 기존 제목이 있으면 그대로 유지
-        let pageTitle = document.title; // 기존 제목 우선
-        
-        // 기존 제목이 없거나 URL과 같은 경우에만 크롤링된 제목 사용
-        if (!pageTitle || pageTitle === effectiveUrl || pageTitle.trim() === '') {
-          pageTitle = crawledData.title || document.title;
+        if (crawledData && crawledData.content && crawledData.content.length >= 100) {
+          // 크롤링 성공
+          console.log(`✅ URL 크롤링 완료: ${crawledData.content.length}자`);
+          contentToProcess = crawledData.content;
           
-          // HTML에서 제목 추출 시도
-          if (!pageTitle || pageTitle === effectiveUrl) {
-            try {
-              const $ = cheerio.load(crawledData.content);
-              pageTitle = $('h1').first().text().trim() || 
-                         $('title').text().trim() || 
-                         $('meta[property="og:title"]').attr('content')?.trim() ||
-                         document.title;
-            } catch (e) {
-              console.warn('⚠️ HTML 파싱 실패, 기존 제목 사용');
-              pageTitle = document.title;
-            }
+          // 크롤링된 제목이 있으면 사용 (기존 제목이 URL과 같거나 비어있는 경우만)
+          if (crawledData.title && (document.title === effectiveUrl || !document.title || document.title.trim() === '')) {
+            pageTitle = crawledData.title;
+          }
+        } else {
+          // 크롤링 실패 - 기존 content 사용
+          console.warn(`⚠️ URL 크롤링 실패 또는 콘텐츠 부족. 기존 저장된 content 사용 시도...`);
+          
+          if (document.content && document.content.length >= 100) {
+            console.log(`✅ 기존 content 사용: ${document.content.length}자`);
+            contentToProcess = document.content;
+          } else {
+            // 기존 content도 없거나 너무 짧은 경우
+            throw new Error(`URL 크롤링 실패: 콘텐츠를 가져올 수 없습니다. (크롤링 결과: ${crawledData?.content?.length || 0}자, 기존 content: ${document.content?.length || 0}자)`);
           }
         }
         
@@ -166,9 +163,9 @@ export async function POST(
         const ragResult = await ragProcessor.processDocument({
           id: document.id,
           title: pageTitle,
-          content: crawledData.content,
+          content: contentToProcess,
           type: 'url',
-          file_size: Buffer.byteLength(crawledData.content, 'utf8'),
+          file_size: Buffer.byteLength(contentToProcess, 'utf8'),
           file_type: 'text/html',
           url: effectiveUrl,
           source_vendor: document.source_vendor || 'META',
@@ -186,7 +183,7 @@ export async function POST(
               status: 'indexed',
               chunk_count: ragResult.chunkCount || 0,
               // title은 기존 제목 유지 (재인덱싱 시 제목 변경 방지)
-              content: crawledData.content,
+              content: contentToProcess,
               updated_at: new Date().toISOString()
             })
             .eq('id', documentId);
