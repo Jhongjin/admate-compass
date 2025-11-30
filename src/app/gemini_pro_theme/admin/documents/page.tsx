@@ -118,14 +118,20 @@ export default function DocumentsPage() {
             console.log('🔄 [reindexMutation] mutationFn 시작:', { documentId, title });
             const loadingKey = `${documentId}_reindex`;
             console.log('🔄 [reindexMutation] loadingKey 설정:', loadingKey);
+            
+            // 로딩 상태 즉시 업데이트
             setActionLoading(prev => {
                 const newState = { ...prev, [loadingKey]: true };
-                console.log('🔄 [reindexMutation] actionLoading 업데이트:', newState);
+                console.log('🔄 [reindexMutation] actionLoading 업데이트 (시작):', newState);
                 return newState;
             });
             
             try {
-                console.log('🔄 [reindexMutation] API 호출 시작:', { documentId, title });
+                console.log('🔄 [reindexMutation] API 호출 시작:', { 
+                    documentId, 
+                    title,
+                    url: `/api/admin/upload/${documentId}/reindex`
+                });
                 
                 const res = await fetch(`/api/admin/upload/${documentId}/reindex`, {
                     method: 'POST',
@@ -135,6 +141,7 @@ export default function DocumentsPage() {
                 });
                 
                 console.log('📡 재인덱싱 응답 상태:', res.status, res.statusText);
+                console.log('📡 재인덱싱 응답 헤더:', Object.fromEntries(res.headers.entries()));
                 
                 if (!res.ok) {
                     let errorMessage = '재인덱싱에 실패했습니다.';
@@ -155,25 +162,52 @@ export default function DocumentsPage() {
                 return result;
             } catch (error) {
                 console.error('❌ 재인덱싱 요청 실패:', error);
+                console.error('❌ 재인덱싱 에러 상세:', {
+                    message: error instanceof Error ? error.message : String(error),
+                    stack: error instanceof Error ? error.stack : 'No stack',
+                    name: error instanceof Error ? error.name : 'Unknown'
+                });
                 throw error;
             } finally {
-                setActionLoading(prev => ({ ...prev, [loadingKey]: false }));
+                console.log('🔄 [reindexMutation] finally 블록 실행, loadingKey 해제:', loadingKey);
+                setActionLoading(prev => {
+                    const newState = { ...prev, [loadingKey]: false };
+                    console.log('🔄 [reindexMutation] actionLoading 업데이트 (종료):', newState);
+                    return newState;
+                });
             }
         },
         onSuccess: (data, variables) => {
+            console.log('✅ [reindexMutation] onSuccess 호출:', { data, variables });
+            
             // 모든 admin-documents 쿼리 무효화 (selectedStatus 포함)
+            console.log('🔄 [reindexMutation] 쿼리 무효화 시작');
             queryClient.invalidateQueries({ 
                 queryKey: ['admin-documents'],
                 exact: false // 부분 매칭으로 모든 admin-documents 쿼리 무효화
             });
+            
             // 명시적으로 refetch 호출
-            refetch();
+            console.log('🔄 [reindexMutation] refetch 호출');
+            refetch().then(() => {
+                console.log('✅ [reindexMutation] refetch 완료');
+            }).catch((err) => {
+                console.error('❌ [reindexMutation] refetch 실패:', err);
+            });
+            
             toast({
                 title: "재인덱싱 완료",
-                description: `${variables.title} 문서의 재인덱싱이 완료되었습니다. (${data.document?.chunkCount || 0}개 청크)`,
+                description: `${variables.title} 문서의 재인덱싱이 완료되었습니다. (${data.document?.chunkCount || data.chunkCount || 0}개 청크)`,
             });
         },
         onError: (error, variables) => {
+            console.error('❌ [reindexMutation] onError 호출:', { error, variables });
+            console.error('❌ [reindexMutation] 에러 상세:', {
+                message: error.message,
+                stack: error.stack,
+                name: error.name
+            });
+            
             toast({
                 title: "재인덱싱 실패",
                 description: error.message || '재인덱싱 중 오류가 발생했습니다.',
@@ -184,7 +218,16 @@ export default function DocumentsPage() {
 
     // 재인덱싱 핸들러 - useCallback으로 메모이제이션하여 안정적인 참조 유지
     const handleReindexDocument = useCallback((id: string, title: string) => {
-        console.log('🔄 [handleReindexDocument] 호출됨:', { id, title });
+        console.log('🔄 [handleReindexDocument] ====== 함수 호출 시작 ======');
+        console.log('🔄 [handleReindexDocument] 파라미터:', { id, title });
+        console.log('🔄 [handleReindexDocument] reindexMutation 상태:', {
+            exists: !!reindexMutation,
+            hasMutate: !!reindexMutation?.mutate,
+            isPending: reindexMutation?.isPending,
+            isError: reindexMutation?.isError,
+            mutationType: typeof reindexMutation,
+            mutateType: typeof reindexMutation?.mutate,
+        });
         
         if (!id || !title) {
             console.error('❌ [handleReindexDocument] 잘못된 파라미터:', { id, title });
@@ -196,8 +239,8 @@ export default function DocumentsPage() {
             return;
         }
         
-        if (!reindexMutation?.mutate) {
-            console.error('❌ [handleReindexDocument] reindexMutation.mutate가 없음');
+        if (!reindexMutation) {
+            console.error('❌ [handleReindexDocument] reindexMutation이 없음');
             toast({
                 title: "재인덱싱 실패",
                 description: '재인덱싱 기능이 초기화되지 않았습니다. 페이지를 새로고침해주세요.',
@@ -206,18 +249,47 @@ export default function DocumentsPage() {
             return;
         }
         
+        if (!reindexMutation.mutate) {
+            console.error('❌ [handleReindexDocument] reindexMutation.mutate가 없음');
+            console.error('❌ [handleReindexDocument] reindexMutation 전체 객체:', reindexMutation);
+            toast({
+                title: "재인덱싱 실패",
+                description: '재인덱싱 기능이 초기화되지 않았습니다. 페이지를 새로고침해주세요.',
+                variant: "destructive",
+            });
+            return;
+        }
+        
+        // 이미 처리 중인 경우 중복 요청 방지
+        if (reindexMutation.isPending) {
+            console.warn('⚠️ [handleReindexDocument] 이미 재인덱싱이 진행 중입니다.');
+            toast({
+                title: "재인덱싱 진행 중",
+                description: '이미 재인덱싱이 진행 중입니다. 잠시 후 다시 시도해주세요.',
+                variant: "default",
+            });
+            return;
+        }
+        
         try {
-            console.log('🔄 [handleReindexDocument] mutation 호출 시작:', { documentId: id, title });
+            console.log('🔄 [handleReindexDocument] mutation.mutate 호출 직전');
+            console.log('🔄 [handleReindexDocument] 전달할 데이터:', { documentId: id, title });
+            
+            // mutate 호출
             reindexMutation.mutate({ documentId: id, title });
-            console.log('🔄 [handleReindexDocument] mutation 호출 완료');
+            
+            console.log('🔄 [handleReindexDocument] mutation.mutate 호출 완료 (비동기이므로 즉시 반환됨)');
         } catch (error) {
-            console.error('❌ [handleReindexDocument] mutation 호출 중 에러:', error);
+            console.error('❌ [handleReindexDocument] mutation 호출 중 동기 에러:', error);
+            console.error('❌ [handleReindexDocument] 에러 스택:', error instanceof Error ? error.stack : 'No stack');
             toast({
                 title: "재인덱싱 실패",
                 description: `재인덱싱 중 오류가 발생했습니다: ${error instanceof Error ? error.message : String(error)}`,
                 variant: "destructive",
             });
         }
+        
+        console.log('🔄 [handleReindexDocument] ====== 함수 호출 종료 ======');
     }, [reindexMutation, toast]);
 
     // 디버깅: 컴포넌트 마운트 시 확인
@@ -784,19 +856,7 @@ export default function DocumentsPage() {
                                 onToggleGroupExpansion={handleToggleGroupExpansion}
                                 onToggleSubPageSelection={() => { }} // Not fully implemented in this view
                                 onToggleAllSubPages={() => { }}
-                                onReindexDocument={useMemo(() => {
-                                    console.log('🔍 [DocumentsPage] GroupedDocumentList 렌더링 - handleReindexDocument 확인');
-                                    console.log('🔍 [DocumentsPage] handleReindexDocument:', handleReindexDocument);
-                                    console.log('🔍 [DocumentsPage] handleReindexDocument 타입:', typeof handleReindexDocument);
-                                    console.log('🔍 [DocumentsPage] handleReindexDocument 함수 본문:', handleReindexDocument?.toString?.()?.substring(0, 300));
-                                    if (!handleReindexDocument || typeof handleReindexDocument !== 'function') {
-                                        console.error('❌ [DocumentsPage] handleReindexDocument가 함수가 아님!');
-                                        return () => {
-                                            console.error('❌ [DocumentsPage] 빈 함수가 호출됨 - handleReindexDocument가 제대로 전달되지 않음');
-                                        };
-                                    }
-                                    return handleReindexDocument;
-                                }, [handleReindexDocument])}
+                                onReindexDocument={handleReindexDocument}
                                 onDownloadDocument={() => { }} // Placeholder
                                 onDeleteDocument={(id) => setDeleteId(id)}
                                 onSelectAll={handleSelectAll}

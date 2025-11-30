@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect, Suspense } from "react";
+import { useState, useMemo, useEffect, useCallback, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import AdminThemeLayout from "@/components/layouts/AdminThemeLayout";
 import {
@@ -304,6 +304,123 @@ function AdminDocsPageContent() {
             });
         }
     });
+
+    // 재인덱싱 mutation
+    const reindexMutation = useMutation({
+        mutationFn: async ({ documentId, title }: { documentId: string; title: string }) => {
+            console.log('🔄 [reindexMutation] mutationFn 시작:', { documentId, title });
+            
+            const res = await fetch(`/api/admin/upload/${documentId}/reindex`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+            });
+            
+            console.log('📡 재인덱싱 응답 상태:', res.status, res.statusText);
+            
+            if (!res.ok) {
+                let errorMessage = '재인덱싱에 실패했습니다.';
+                try {
+                    const errorData = await res.json();
+                    errorMessage = errorData.error || errorData.message || errorMessage;
+                    console.error('❌ 재인덱싱 오류 응답:', errorData);
+                } catch (parseError) {
+                    const errorText = await res.text().catch(() => '알 수 없는 오류');
+                    console.error('❌ 재인덱싱 오류 (JSON 파싱 실패):', errorText);
+                    errorMessage = `서버 오류 (${res.status}): ${errorText.substring(0, 200)}`;
+                }
+                throw new Error(errorMessage);
+            }
+            
+            const result = await res.json();
+            console.log('✅ 재인덱싱 성공:', result);
+            return result;
+        },
+        onSuccess: (data, variables) => {
+            console.log('✅ [reindexMutation] onSuccess 호출:', { data, variables });
+            
+            // 모든 admin-documents 쿼리 무효화
+            queryClient.invalidateQueries({ 
+                queryKey: ['admin-documents'],
+                exact: false
+            });
+            
+            // 명시적으로 refetch 호출
+            refetch();
+            
+            toast({
+                title: "재인덱싱 완료",
+                description: `${variables.title} 문서의 재인덱싱이 완료되었습니다. (${data.document?.chunkCount || data.chunkCount || 0}개 청크)`,
+            });
+        },
+        onError: (error, variables) => {
+            console.error('❌ [reindexMutation] onError 호출:', { error, variables });
+            
+            toast({
+                title: "재인덱싱 실패",
+                description: error.message || '재인덱싱 중 오류가 발생했습니다.',
+                variant: "destructive",
+            });
+        }
+    });
+
+    // 재인덱싱 핸들러
+    const handleReindexDocument = useCallback((id: string, title: string) => {
+        console.log('🔄 [handleReindexDocument] ====== 함수 호출 시작 ======');
+        console.log('🔄 [handleReindexDocument] 파라미터:', { id, title });
+        
+        if (!id || !title) {
+            console.error('❌ [handleReindexDocument] 잘못된 파라미터:', { id, title });
+            toast({
+                title: "재인덱싱 실패",
+                description: '문서 ID 또는 제목이 없습니다.',
+                variant: "destructive",
+            });
+            return;
+        }
+        
+        if (!reindexMutation?.mutate) {
+            console.error('❌ [handleReindexDocument] reindexMutation.mutate가 없음');
+            toast({
+                title: "재인덱싱 실패",
+                description: '재인덱싱 기능이 초기화되지 않았습니다. 페이지를 새로고침해주세요.',
+                variant: "destructive",
+            });
+            return;
+        }
+        
+        // 이미 처리 중인 경우 중복 요청 방지
+        if (reindexMutation.isPending) {
+            console.warn('⚠️ [handleReindexDocument] 이미 재인덱싱이 진행 중입니다.');
+            toast({
+                title: "재인덱싱 진행 중",
+                description: '이미 재인덱싱이 진행 중입니다. 잠시 후 다시 시도해주세요.',
+                variant: "default",
+            });
+            return;
+        }
+        
+        try {
+            console.log('🔄 [handleReindexDocument] mutation.mutate 호출 직전');
+            console.log('🔄 [handleReindexDocument] 전달할 데이터:', { documentId: id, title });
+            
+            // mutate 호출
+            reindexMutation.mutate({ documentId: id, title });
+            
+            console.log('🔄 [handleReindexDocument] mutation.mutate 호출 완료 (비동기이므로 즉시 반환됨)');
+        } catch (error) {
+            console.error('❌ [handleReindexDocument] mutation 호출 중 동기 에러:', error);
+            console.error('❌ [handleReindexDocument] 에러 스택:', error instanceof Error ? error.stack : 'No stack');
+            toast({
+                title: "재인덱싱 실패",
+                description: `재인덱싱 중 오류가 발생했습니다: ${error instanceof Error ? error.message : String(error)}`,
+                variant: "destructive",
+            });
+        }
+        
+        console.log('🔄 [handleReindexDocument] ====== 함수 호출 종료 ======');
+    }, [reindexMutation, toast]);
 
     const documents = data?.data?.documents || [];
 
@@ -672,7 +789,7 @@ const getDocumentTypeBadgeClass = (type: string) => {
                                 onToggleGroupExpansion={handleToggleGroupExpansion}
                                 onToggleSubPageSelection={() => { }}
                                 onToggleAllSubPages={() => { }}
-                                onReindexDocument={() => { }}
+                                onReindexDocument={handleReindexDocument}
                                 onDownloadDocument={() => { }}
                                 onDeleteDocument={(id) => setDeleteId(id)}
                                 onSelectAll={handleSelectAll}
