@@ -35,13 +35,21 @@ export async function POST(
 
     const supabase = await createPureClient();
 
-    // 문서 정보 조회
+    // 문서 정보 조회 (content 필드 포함)
     console.log(`📋 문서 정보 조회 중: ${documentId}`);
     const { data: document, error: docError } = await supabase
       .from('documents')
       .select('id, title, content, url, document_url, type, source_vendor, main_document_id, status, created_at, file_type, file_size, original_file_name, sanitized_file_name, chunk_count')
       .eq('id', documentId)
       .maybeSingle();
+    
+    console.log(`📋 문서 조회 결과:`, {
+      id: document?.id,
+      title: document?.title,
+      hasContent: !!document?.content,
+      contentLength: document?.content?.length || 0,
+      url: document?.url || document?.document_url
+    });
 
     if (docError) {
       console.error('❌ 문서 조회 실패:', docError);
@@ -143,13 +151,27 @@ export async function POST(
         } else {
           // 크롤링 실패 - 기존 content 사용
           console.warn(`⚠️ URL 크롤링 실패 또는 콘텐츠 부족. 기존 저장된 content 사용 시도...`);
+          console.warn(`⚠️ 크롤링 결과: ${crawledData?.content?.length || 0}자, 기존 content: ${document.content?.length || 0}자`);
           
           if (document.content && document.content.length >= 100) {
             console.log(`✅ 기존 content 사용: ${document.content.length}자`);
             contentToProcess = document.content;
+          } else if (document.content && document.content.length > 0) {
+            // content가 있지만 100자 미만인 경우에도 사용 (최소한의 콘텐츠라도)
+            console.warn(`⚠️ 기존 content가 짧지만 사용: ${document.content.length}자`);
+            contentToProcess = document.content;
           } else {
-            // 기존 content도 없거나 너무 짧은 경우
-            throw new Error(`URL 크롤링 실패: 콘텐츠를 가져올 수 없습니다. (크롤링 결과: ${crawledData?.content?.length || 0}자, 기존 content: ${document.content?.length || 0}자)`);
+            // 기존 content도 없는 경우 - 더 자세한 에러 메시지
+            const errorDetails = {
+              documentId,
+              url: effectiveUrl,
+              crawledContentLength: crawledData?.content?.length || 0,
+              existingContentLength: document.content?.length || 0,
+              hasCrawledData: !!crawledData,
+              hasExistingContent: !!document.content
+            };
+            console.error('❌ 재인덱싱 불가능:', errorDetails);
+            throw new Error(`URL 크롤링 실패: 콘텐츠를 가져올 수 없습니다. (크롤링 결과: ${crawledData?.content?.length || 0}자, 기존 content: ${document.content?.length || 0}자). 문서에 저장된 content가 없거나 너무 짧습니다.`);
           }
         }
         
