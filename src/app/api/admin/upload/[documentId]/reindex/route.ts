@@ -161,17 +161,29 @@ export async function POST(
             console.warn(`⚠️ 기존 content가 짧지만 사용: ${document.content.length}자`);
             contentToProcess = document.content;
           } else {
-            // 기존 content도 없는 경우 - 더 자세한 에러 메시지
+            // 기존 content도 없는 경우 - 문서 삭제 또는 상태 업데이트 권장
             const errorDetails = {
               documentId,
               url: effectiveUrl,
+              title: document.title,
               crawledContentLength: crawledData?.content?.length || 0,
               existingContentLength: document.content?.length || 0,
               hasCrawledData: !!crawledData,
-              hasExistingContent: !!document.content
+              hasExistingContent: !!document.content,
+              status: document.status
             };
-            console.error('❌ 재인덱싱 불가능:', errorDetails);
-            throw new Error(`URL 크롤링 실패: 콘텐츠를 가져올 수 없습니다. (크롤링 결과: ${crawledData?.content?.length || 0}자, 기존 content: ${document.content?.length || 0}자). 문서에 저장된 content가 없거나 너무 짧습니다.`);
+            console.error('❌ 재인덱싱 불가능 - content 없음:', errorDetails);
+            
+            // 문서 상태를 'failed'로 업데이트하고 명확한 에러 메시지 반환
+            await supabase
+              .from('documents')
+              .update({ 
+                status: 'failed',
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', documentId);
+            
+            throw new Error(`재인덱싱 불가능: 문서에 저장된 콘텐츠가 없습니다. URL 크롤링도 실패했습니다. (크롤링: ${crawledData?.content?.length || 0}자, 저장된 content: ${document.content?.length || 0}자). 이 문서는 삭제하거나 다시 크롤링해야 합니다.`);
           }
         }
         
