@@ -55,6 +55,19 @@ interface CostMetrics {
       estimatedCostFormatted: string;
     };
   };
+  openai: {
+    embeddings: {
+      totalTokens: number;
+      totalTokensFormatted: string;
+      estimatedCost: number; // 달러
+      estimatedCostFormatted: string;
+      apiKeyUsed: 'OPENAI_EMBEDDING_API_KEY' | 'OPENAI_API_KEY' | 'none';
+    };
+    total: {
+      estimatedCost: number; // 달러
+      estimatedCostFormatted: string;
+    };
+  };
   total: {
     estimatedCost: number; // 달러
     estimatedCostFormatted: string;
@@ -67,12 +80,14 @@ interface CostMetrics {
       date: string;
       supabase: number;
       vercel: number;
+      openai: number;
       total: number;
     }>;
     monthly: Array<{
       month: string;
       supabase: number;
       vercel: number;
+      openai: number;
       total: number;
     }>;
   };
@@ -149,12 +164,27 @@ export async function GET(request: NextRequest) {
     const vercelBandwidthCost = 0; // 1TB 이내는 무료
     const vercelTotalCost = vercelFunctionCost + vercelBandwidthCost;
 
-    // 6. 총 비용 계산
-    const totalCost = supabaseTotalCost + vercelTotalCost;
+    // 6. OpenAI Embeddings 비용 계산
+    // OPENAI_EMBEDDING_API_KEY 사용 (OPENAI_API_KEY가 아닌)
+    const openaiEmbeddingApiKey = process.env.OPENAI_EMBEDDING_API_KEY || process.env.OPENAI_API_KEY;
+    const apiKeyUsed = process.env.OPENAI_EMBEDDING_API_KEY ? 'OPENAI_EMBEDDING_API_KEY' : 
+                      (process.env.OPENAI_API_KEY ? 'OPENAI_API_KEY' : 'none');
+    
+    // 임베딩 사용량 계산: 청크 수를 기반으로 추정
+    // 평균 청크당 약 50 토큰 (200자 기준)
+    const avgTokensPerChunk = 50;
+    const totalEmbeddingTokens = (chunkCount || 0) * avgTokensPerChunk;
+    
+    // OpenAI text-embedding-3-small 가격: $0.02/1M tokens
+    const openaiEmbeddingCost = (totalEmbeddingTokens / 1_000_000) * 0.02;
+    const openaiTotalCost = openaiEmbeddingCost;
+
+    // 7. 총 비용 계산
+    const totalCost = supabaseTotalCost + vercelTotalCost + openaiTotalCost;
     const budgetUsage = (totalCost / MONTHLY_BUDGET) * 100;
     const budgetRemaining = MONTHLY_BUDGET - totalCost;
     
-    // 7. 상태 결정
+    // 8. 상태 결정
     let status: 'healthy' | 'warning' | 'critical' = 'healthy';
     if (budgetUsage >= 90) {
       status = 'critical';
@@ -162,7 +192,7 @@ export async function GET(request: NextRequest) {
       status = 'warning';
     }
 
-    // 8. 알림 생성
+    // 9. 알림 생성
     const alerts: CostMetrics['alerts'] = [];
     if (budgetUsage >= 90) {
       alerts.push({
@@ -180,7 +210,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // 9. 트렌드 데이터 (최근 7일, 최근 3개월)
+    // 10. 트렌드 데이터 (최근 7일, 최근 3개월)
     // 실제 구현 시에는 historical_cost 테이블에서 조회
     const trends = {
       daily: Array.from({ length: 7 }, (_, i) => {
@@ -190,6 +220,7 @@ export async function GET(request: NextRequest) {
           date: date.toISOString().split('T')[0],
           supabase: supabaseTotalCost / 7, // 일일 평균
           vercel: vercelTotalCost / 7,
+          openai: openaiTotalCost / 7,
           total: totalCost / 7
         };
       }),
@@ -200,6 +231,7 @@ export async function GET(request: NextRequest) {
           month: date.toISOString().slice(0, 7),
           supabase: supabaseTotalCost / 3, // 월 평균
           vercel: vercelTotalCost / 3,
+          openai: openaiTotalCost / 3,
           total: totalCost / 3
         };
       })
@@ -245,6 +277,19 @@ export async function GET(request: NextRequest) {
         total: {
           estimatedCost: vercelTotalCost,
           estimatedCostFormatted: `$${vercelTotalCost.toFixed(2)}`
+        }
+      },
+      openai: {
+        embeddings: {
+          totalTokens: totalEmbeddingTokens,
+          totalTokensFormatted: `${(totalEmbeddingTokens / 1_000_000).toFixed(2)}M tokens`,
+          estimatedCost: openaiEmbeddingCost,
+          estimatedCostFormatted: `$${openaiEmbeddingCost.toFixed(4)}`,
+          apiKeyUsed: apiKeyUsed as 'OPENAI_EMBEDDING_API_KEY' | 'OPENAI_API_KEY' | 'none'
+        },
+        total: {
+          estimatedCost: openaiTotalCost,
+          estimatedCostFormatted: `$${openaiTotalCost.toFixed(4)}`
         }
       },
       total: {
