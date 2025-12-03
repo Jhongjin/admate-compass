@@ -75,6 +75,22 @@ export default function CrawlToIndexTestPage() {
 
   const supabase = createClient();
 
+  // 최근 인덱싱된 문서 필터링 (현재 작업과 관련된 문서)
+  // jobId가 없어도 URL 기준으로 필터링 (작업 완료 후 jobId가 없을 수 있음)
+  const recentDocuments = React.useMemo(() => {
+    return documentsData?.data?.documents?.filter((doc: Document) => {
+      try {
+        if (!doc.url) return false;
+        const docUrl = new URL(doc.url);
+        const targetUrl = new URL(url);
+        // 같은 도메인의 문서만 표시
+        return docUrl.hostname === targetUrl.hostname || docUrl.hostname.endsWith(`.${targetUrl.hostname}`);
+      } catch {
+        return false;
+      }
+    }) || [];
+  }, [documentsData?.data?.documents, url]);
+
   // 작업 상태 조회
   const { data: jobStatus, refetch: refetchJob, isLoading: isLoadingJob } = useQuery({
     queryKey: ['job-status', jobId],
@@ -236,20 +252,6 @@ export default function CrawlToIndexTestPage() {
       intervalRef.current = null;
     }
   };
-
-  // 최근 인덱싱된 문서 필터링 (현재 작업과 관련된 문서)
-  // jobId가 없어도 URL 기준으로 필터링 (작업 완료 후 jobId가 없을 수 있음)
-  const recentDocuments = documentsData?.data?.documents?.filter((doc: Document) => {
-    try {
-      if (!doc.url) return false;
-      const docUrl = new URL(doc.url);
-      const targetUrl = new URL(url);
-      // 같은 도메인의 문서만 표시
-      return docUrl.hostname === targetUrl.hostname || docUrl.hostname.endsWith(`.${targetUrl.hostname}`);
-    } catch {
-      return false;
-    }
-  }) || [];
 
   // 작업이 완료되었는지 문서 목록으로 확인
   useEffect(() => {
