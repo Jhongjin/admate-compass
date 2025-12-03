@@ -26,6 +26,13 @@ import { toast } from 'sonner';
 import { useQuery } from '@tanstack/react-query';
 import { createClient } from '@/lib/supabase/client';
 
+// URL 타입 선언
+declare global {
+  interface Window {
+    URL: typeof URL;
+  }
+}
+
 interface JobStatus {
   id: string;
   status: 'pending' | 'processing' | 'completed' | 'failed';
