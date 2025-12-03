@@ -53,10 +53,6 @@ export async function POST(request: NextRequest) {
       }
     });
 
-    if (docsError) {
-      throw new Error(`문서 조회 실패: ${docsError.message}`);
-    }
-
     if (!documents || documents.length === 0) {
       return NextResponse.json({
         success: true,
