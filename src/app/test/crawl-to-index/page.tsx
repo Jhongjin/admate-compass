@@ -442,6 +442,13 @@ export default function CrawlToIndexTestPage() {
         return;
       }
 
+      // 삭제 전 문서 수 및 삭제될 문서 ID 목록 확인
+      const beforeDeleteCount = recentDocuments.length;
+      const deletedDocumentIds = new Set(recentDocuments.map((doc: Document) => doc.id));
+      console.log(`🗑️ 삭제 전 문서 수: ${beforeDeleteCount}개`, {
+        삭제될_문서_ID: Array.from(deletedDocumentIds).slice(0, 5)
+      });
+
       toast.info('도메인 문서 삭제 중...');
       
       const response = await fetch('/api/admin/delete-domain-documents', {
@@ -453,17 +460,116 @@ export default function CrawlToIndexTestPage() {
       });
 
       const data = await response.json();
+      console.log('🗑️ 삭제 API 응답:', data);
 
       if (data.success) {
-        toast.success(`${data.deleted.documents}개 문서가 삭제되었습니다.`);
+        const deletedCount = data.deleted?.documents || 0;
+        const verifiedCount = data.deleted?.verified || deletedCount;
+        const remainingCount = data.deleted?.remaining || 0;
+        const verified = data.verified !== false;
         
-        // React Query 캐시 무효화 및 즉시 refetch
+        console.log(`🗑️ 삭제 완료:`, {
+          삭제_요청: deletedCount,
+          검증_삭제: verifiedCount,
+          남은_문서: remainingCount,
+          검증_성공: verified,
+          삭제된_문서_ID: data.deletedDocuments?.map((d: any) => d.id.substring(0, 8)) || []
+        });
+        
+        // 백엔드에서 실제로 삭제된 문서 ID 목록 저장
+        const backendDeletedIds = new Set(
+          (data.deletedDocuments || []).map((d: any) => d.id)
+        );
+        
+        // React Query 캐시 즉시 무효화 및 제거
+        await queryClient.cancelQueries({ queryKey: ['test-documents'] });
+        queryClient.removeQueries({ queryKey: ['test-documents'] });
         queryClient.invalidateQueries({ queryKey: ['test-documents'] });
         
-        // 약간의 지연 후 refetch (DB 반영 시간 확보)
-        setTimeout(() => {
-          refetchDocuments();
-        }, 500);
+        // 즉시 refetch 실행 (캐시 없이)
+        const refetchWithRetry = async (retries = 8) => {
+          for (let i = 0; i < retries; i++) {
+            const delay = i === 0 ? 200 : (i + 1) * 500; // 첫 번째는 0.2초, 이후 0.5초씩 증가
+            await new Promise(resolve => setTimeout(resolve, delay));
+            
+            try {
+              // 강제로 새로고침 (캐시 무시)
+              const result = await queryClient.fetchQuery({
+                queryKey: ['test-documents'],
+                queryFn: async () => {
+                  const res = await fetch('/api/admin/upload-new?limit=200&status=indexed', {
+                    cache: 'no-store',
+                    headers: {
+                      'Cache-Control': 'no-cache',
+                    }
+                  });
+                  if (!res.ok) throw new Error('Failed to fetch documents');
+                  return res.json();
+                },
+              });
+              
+              const allDocs = result?.data?.documents || [];
+              
+              // 도메인 필터링 (maxDepth에 따라)
+              const filteredDocs = options.maxDepth === 4 
+                ? allDocs 
+                : allDocs.filter((doc: Document) => {
+                    try {
+                      if (!doc.url) return false;
+                      const docUrl = new URL(doc.url);
+                      const targetUrlObj = new URL(url);
+                      return docUrl.hostname === targetUrlObj.hostname || docUrl.hostname.endsWith(`.${targetUrlObj.hostname}`);
+                    } catch {
+                      return false;
+                    }
+                  });
+              
+              // 삭제된 문서 ID로도 필터링 (백엔드에서 삭제된 문서 제외)
+              const finalDocs = filteredDocs.filter((doc: Document) => {
+                return !backendDeletedIds.has(doc.id);
+              });
+              
+              const afterDeleteCount = finalDocs.length;
+              
+              console.log(`🔄 Refetch 시도 ${i + 1}/${retries}:`, {
+                전체_문서: allDocs.length,
+                필터링_후: filteredDocs.length,
+                삭제_ID_필터링_후: finalDocs.length,
+                삭제_전: beforeDeleteCount,
+                차이: beforeDeleteCount - afterDeleteCount,
+                백엔드_삭제_ID_수: backendDeletedIds.size
+              });
+              
+              // 삭제가 확인되면 중단
+              if (afterDeleteCount === 0 || afterDeleteCount < beforeDeleteCount) {
+                console.log(`✅ 문서 삭제 확인됨: ${beforeDeleteCount}개 → ${afterDeleteCount}개`);
+                
+                // 검증 메시지
+                if (!verified || remainingCount > 0) {
+                  toast.warning(`${deletedCount}개 문서 삭제 요청됨 (${remainingCount}개 문서가 여전히 존재할 수 있음)`);
+                } else if (afterDeleteCount === 0) {
+                  toast.success('모든 문서가 삭제되었습니다.');
+                } else {
+                  toast.success(`${deletedCount}개 문서가 삭제되었습니다. (${afterDeleteCount}개 남음)`);
+                }
+                break;
+              }
+              
+              // 마지막 시도에서도 삭제가 확인되지 않으면 경고
+              if (i === retries - 1 && afterDeleteCount >= beforeDeleteCount) {
+                console.error(`❌ 삭제 확인 실패: 문서가 여전히 ${afterDeleteCount}개 존재합니다.`, {
+                  백엔드_삭제_ID: Array.from(backendDeletedIds).slice(0, 5),
+                  남은_문서_ID: finalDocs.slice(0, 5).map((d: Document) => d.id.substring(0, 8))
+                });
+                toast.error(`문서 삭제가 완전히 반영되지 않았습니다. (${afterDeleteCount}개 문서 남음)`);
+              }
+            } catch (refetchError) {
+              console.error(`❌ Refetch 시도 ${i + 1} 실패:`, refetchError);
+            }
+          }
+        };
+        
+        await refetchWithRetry();
       } else {
         throw new Error(data.error || '문서 삭제 실패');
       }

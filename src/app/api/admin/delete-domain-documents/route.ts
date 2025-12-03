@@ -156,26 +156,99 @@ export async function POST(request: NextRequest) {
     const deletedCount = documentIds.length;
     console.log(`✅ ${deletedCount}개 문서 삭제 완료`);
 
-    // 삭제 확인: 실제로 삭제되었는지 검증
-    const { data: remainingDocs, error: verifyError } = await supabase
-      .from('documents')
-      .select('id')
-      .in('id', documentIds)
-      .limit(10);
+    // 삭제 확인: 실제로 삭제되었는지 검증 (여러 번 시도)
+    let remainingDocs: any[] = [];
+    let verifyError: any = null;
     
-    if (verifyError) {
-      console.warn('⚠️ 삭제 확인 중 오류 (무시됨):', verifyError);
-    } else if (remainingDocs && remainingDocs.length > 0) {
-      console.warn(`⚠️ ${remainingDocs.length}개 문서가 여전히 존재합니다. 삭제가 완전히 반영되지 않았을 수 있습니다.`);
-    } else {
-      console.log(`✅ 삭제 확인 완료: 모든 문서가 성공적으로 삭제되었습니다.`);
+    // 삭제 후 즉시 확인 (1초 대기)
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    
+    // 방법 1: ID로 직접 확인
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const { data: verifyDocs, error: verifyErr } = await supabase
+        .from('documents')
+        .select('id, url, title, status')
+        .in('id', documentIds)
+        .limit(100);
+      
+      verifyError = verifyErr;
+      remainingDocs = verifyDocs || [];
+      
+      if (verifyError) {
+        console.warn(`⚠️ 삭제 확인 시도 ${attempt + 1}/5 중 오류:`, verifyError);
+      } else if (remainingDocs.length === 0) {
+        console.log(`✅ 삭제 확인 완료 (시도 ${attempt + 1}/5): 모든 문서가 성공적으로 삭제되었습니다.`);
+        break;
+      } else {
+        console.warn(`⚠️ 삭제 확인 시도 ${attempt + 1}/5: ${remainingDocs.length}개 문서가 여전히 존재합니다.`, 
+          remainingDocs.map(d => ({ id: d.id.substring(0, 8), url: d.url, status: d.status })));
+        if (attempt < 4) {
+          // 다음 시도 전 대기 (점진적으로 증가)
+          await new Promise(resolve => setTimeout(resolve, 1000 * (attempt + 1)));
+        }
+      }
     }
+    
+    // 방법 2: 도메인으로도 재확인 (ID로 확인되지 않은 경우)
+    if (remainingDocs.length > 0) {
+      console.log(`🔍 도메인 기준으로 재확인 시작...`);
+      const { data: domainDocs, error: domainError } = await supabase
+        .from('documents')
+        .select('id, url, title, status')
+        .eq('type', 'url')
+        .not('url', 'is', null);
+      
+      if (!domainError && domainDocs) {
+        const stillExists = domainDocs.filter(doc => {
+          if (!doc.url) return false;
+          try {
+            const docUrl = new URL(doc.url);
+            return docUrl.hostname === domain || docUrl.hostname.endsWith(`.${domain}`);
+          } catch {
+            return doc.url.includes(domain);
+          }
+        });
+        
+        if (stillExists.length > 0) {
+          console.warn(`⚠️ 도메인 재확인: ${stillExists.length}개 문서가 여전히 존재합니다:`, 
+            stillExists.map(d => ({ id: d.id.substring(0, 8), url: d.url, status: d.status })));
+          
+          // 삭제된 ID 목록과 비교하여 실제로 삭제되지 않은 문서만 남김
+          const actuallyRemaining = stillExists.filter(doc => documentIds.includes(doc.id));
+          if (actuallyRemaining.length > 0) {
+            remainingDocs = actuallyRemaining;
+            console.warn(`⚠️ 실제로 삭제되지 않은 문서: ${actuallyRemaining.length}개`, 
+              actuallyRemaining.map(d => ({ id: d.id.substring(0, 8), url: d.url })));
+          } else {
+            // 삭제된 ID가 아니면 다른 문서이므로 무시
+            console.log(`✅ 도메인 재확인: 남은 문서는 삭제 대상이 아닙니다.`);
+            remainingDocs = [];
+          }
+        } else {
+          console.log(`✅ 도메인 재확인: 모든 문서가 삭제되었습니다.`);
+          remainingDocs = [];
+        }
+      }
+    }
+
+    const verified = remainingDocs.length === 0;
+    const verifiedCount = deletedCount - remainingDocs.length;
+    
+    console.log(`📊 최종 삭제 검증 결과:`, {
+      삭제_요청: deletedCount,
+      검증_성공: verified,
+      검증_삭제: verifiedCount,
+      남은_문서: remainingDocs.length,
+      남은_문서_상세: remainingDocs.length > 0 ? remainingDocs.map(d => ({ id: d.id.substring(0, 8), url: d.url })) : []
+    });
 
     return NextResponse.json({
       success: true,
-      message: `${domain} 도메인의 ${deletedCount}개 문서가 삭제되었습니다.`,
+      message: `${domain} 도메인의 ${deletedCount}개 문서가 삭제되었습니다.${verified ? '' : ` (${remainingDocs.length}개 문서가 여전히 존재할 수 있음)`}`,
       deleted: {
         documents: deletedCount,
+        verified: verifiedCount,
+        remaining: remainingDocs.length,
         chunks: 0, // 정확한 개수는 알 수 없음
         jobs: cancelledJobsCount
       },
@@ -185,7 +258,12 @@ export async function POST(request: NextRequest) {
         title: d.title,
         status: d.status
       })),
-      verified: remainingDocs ? remainingDocs.length === 0 : true
+      remainingDocuments: remainingDocs.length > 0 ? remainingDocs.map(d => ({
+        id: d.id,
+        url: d.url,
+        title: d.title
+      })) : undefined,
+      verified
     });
 
   } catch (error) {
