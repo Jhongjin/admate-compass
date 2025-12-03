@@ -77,9 +77,19 @@ export default function CrawlToIndexTestPage() {
   const { data: documentsData, refetch: refetchDocuments } = useQuery({
     queryKey: ['test-documents'],
     queryFn: async () => {
-      const res = await fetch('/api/admin/upload-new?limit=100&status=indexed');
+      const res = await fetch('/api/admin/upload-new?limit=200&status=indexed');
       if (!res.ok) throw new Error('Failed to fetch documents');
-      return res.json();
+      const data = await res.json();
+      console.log('📥 문서 목록 조회:', {
+        total: data?.data?.documents?.length || 0,
+        documents: data?.data?.documents?.slice(0, 5).map((d: Document) => ({
+          title: d.title,
+          url: d.url,
+          status: d.status,
+          chunk_count: d.chunk_count
+        }))
+      });
+      return data;
     },
     refetchInterval: 3000, // 3초마다 자동 새로고침
   });
@@ -89,18 +99,32 @@ export default function CrawlToIndexTestPage() {
   // 최근 인덱싱된 문서 필터링 (현재 작업과 관련된 문서)
   // jobId가 없어도 URL 기준으로 필터링 (작업 완료 후 jobId가 없을 수 있음)
   const recentDocuments = React.useMemo(() => {
-    return documentsData?.data?.documents?.filter((doc: Document) => {
+    const allDocs = documentsData?.data?.documents || [];
+    console.log('📋 전체 문서 수:', allDocs.length);
+    
+    // maxDepth 4일 때는 모든 문서 표시 (다른 도메인 포함)
+    if (options.maxDepth === 4) {
+      console.log('🔍 maxDepth 4: 모든 문서 표시 (다른 도메인 포함)');
+      return allDocs;
+    }
+    
+    // maxDepth 1-3일 때는 같은 도메인만 표시
+    const filtered = allDocs.filter((doc: Document) => {
       try {
         if (!doc.url) return false;
         const docUrl = new URL(doc.url);
         const targetUrl = new URL(url);
         // 같은 도메인의 문서만 표시
-        return docUrl.hostname === targetUrl.hostname || docUrl.hostname.endsWith(`.${targetUrl.hostname}`);
+        const isSameDomain = docUrl.hostname === targetUrl.hostname || docUrl.hostname.endsWith(`.${targetUrl.hostname}`);
+        return isSameDomain;
       } catch {
         return false;
       }
-    }) || [];
-  }, [documentsData?.data?.documents, url]);
+    });
+    
+    console.log('🔍 필터링된 문서 수:', filtered.length, '(도메인:', new URL(url).hostname, ')');
+    return filtered;
+  }, [documentsData?.data?.documents, url, options.maxDepth]);
 
   // 도메인별 통계 계산
   const domainStats = React.useMemo(() => {
@@ -293,8 +317,35 @@ export default function CrawlToIndexTestPage() {
         setCurrentStep('인덱싱 완료!');
         setProgress(100);
         setIsCrawling(false);
-        toast.success('크롤링 및 인덱싱이 완료되었습니다!');
-        refetchDocuments();
+        
+        // 작업 완료 후 문서 목록 강제 갱신
+        queryClient.invalidateQueries({ queryKey: ['test-documents'] });
+        setTimeout(() => {
+          refetchDocuments().then(() => {
+            // 문서 목록 갱신 후 다시 확인
+            setTimeout(() => {
+              const currentDocs = documentsData?.data?.documents || [];
+              const filteredDocs = options.maxDepth === 4 
+                ? currentDocs 
+                : currentDocs.filter((doc: Document) => {
+                    try {
+                      if (!doc.url) return false;
+                      const docUrl = new URL(doc.url);
+                      const targetUrl = new URL(url);
+                      return docUrl.hostname === targetUrl.hostname || docUrl.hostname.endsWith(`.${targetUrl.hostname}`);
+                    } catch {
+                      return false;
+                    }
+                  });
+              
+              if (filteredDocs.length > 0) {
+                toast.success(`크롤링 및 인덱싱이 완료되었습니다! (${filteredDocs.length}개 문서)`);
+              } else {
+                toast.success('크롤링 및 인덱싱이 완료되었습니다!');
+              }
+            }, 500);
+          });
+        }, 1000);
         break;
       case 'failed':
         setCurrentStep('처리 실패');
