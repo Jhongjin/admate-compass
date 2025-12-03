@@ -59,6 +59,9 @@ export default function CrawlToIndexTestPage() {
   const [url, setUrl] = useState<string>('https://ads.naver.com/');
   const [isCrawling, setIsCrawling] = useState(false);
   const [jobId, setJobId] = useState<string | null>(null);
+  const [jobIdReady, setJobIdReady] = useState(false); // 작업 ID가 준비되었는지 (DB 반영 대기)
+  const [nullCheckCount, setNullCheckCount] = useState(0); // null 반환 횟수 추적
+  const nullCheckCountRef = useRef(0); // ref로도 추적 (query 함수 내에서 사용)
   const [currentStep, setCurrentStep] = useState<string>('');
   const [progress, setProgress] = useState(0);
   const [options, setOptions] = useState({
@@ -103,7 +106,7 @@ export default function CrawlToIndexTestPage() {
     queryKey: ['job-status', jobId],
     queryFn: async () => {
       if (!jobId) return null;
-      console.log('🔍 작업 상태 조회:', jobId);
+      
       // Supabase에서 직접 작업 상태 조회
       const { data, error } = await supabase
         .from('processing_jobs')
@@ -116,16 +119,32 @@ export default function CrawlToIndexTestPage() {
         throw new Error(`Failed to fetch job status: ${error.message}`);
       }
       
-      console.log('📊 작업 상태:', data ? {
+      // null인 경우 카운트 증가 (너무 많은 로그 방지)
+      if (!data) {
+        nullCheckCountRef.current += 1;
+        const currentCount = nullCheckCountRef.current;
+        // 처음 몇 번만 로그 출력 (너무 많은 경고 방지)
+        if (currentCount <= 3) {
+          console.log('🔍 작업 상태 조회:', jobId, `(시도 ${currentCount})`);
+        }
+        // 상태 업데이트는 useEffect에서 처리
+        return null;
+      }
+      
+      // 데이터가 있으면 카운트 리셋
+      if (nullCheckCountRef.current > 0) {
+        nullCheckCountRef.current = 0;
+      }
+      console.log('📊 작업 상태:', {
         id: data.id,
         status: data.status,
         job_type: data.job_type,
         result: data.result ? Object.keys(data.result) : null
-      } : 'null');
+      });
       
       return data as JobStatus | null;
     },
-    enabled: !!jobId,
+    enabled: !!jobId && jobIdReady, // jobId가 설정되고 준비된 후에만 쿼리 활성화
     refetchInterval: (query) => {
       // 작업이 완료되면 폴링 중지
       const data = query.state.data;
@@ -133,15 +152,28 @@ export default function CrawlToIndexTestPage() {
         console.log('✅ 작업 완료, 폴링 중지:', data.status);
         return false;
       }
+      // null이 계속 반환되는 경우 (10회 이상) 폴링 간격 늘리기
+      if (nullCheckCountRef.current >= 10) {
+        return 5000; // 5초마다 폴링
+      }
       return 2000; // 2초마다 폴링
     },
   });
 
+  // nullCheckCount 동기화 (ref -> state)
+  useEffect(() => {
+    setNullCheckCount(nullCheckCountRef.current);
+  }, [jobStatus]); // jobStatus가 변경될 때마다 동기화
+
   // 작업 상태에 따른 진행 상황 업데이트
   useEffect(() => {
     if (!jobStatus) {
-      if (jobId && !isLoadingJob) {
-        console.warn('⚠️ 작업 ID가 있지만 상태를 조회할 수 없습니다:', jobId);
+      if (jobId && jobIdReady && !isLoadingJob) {
+        const currentNullCount = nullCheckCountRef.current;
+        // null 체크가 여러 번 반복되면 경고 (너무 많은 로그 방지)
+        if (currentNullCount >= 5 && currentNullCount % 5 === 0) {
+          console.warn('⚠️ 작업 ID가 있지만 상태를 조회할 수 없습니다:', jobId, `(시도 ${currentNullCount}회)`);
+        }
         // 작업이 완료되어 삭제되었을 수 있음 - 문서 목록으로 확인
         if (recentDocuments.length > 0) {
           console.log('✅ 작업이 완료된 것으로 보입니다. 문서 목록에', recentDocuments.length, '개 문서가 있습니다.');
@@ -149,10 +181,24 @@ export default function CrawlToIndexTestPage() {
           setProgress(100);
           setIsCrawling(false);
           toast.success(`크롤링 및 인덱싱이 완료되었습니다! (${recentDocuments.length}개 문서)`);
-        } else {
+          // 상태 리셋
+          setJobId(null);
+          setJobIdReady(false);
+          nullCheckCountRef.current = 0;
+          setNullCheckCount(0);
+        } else if (currentNullCount < 3) {
+          // 처음 몇 번은 정상적인 대기 상태
           setCurrentStep('작업 상태 조회 중...');
           setProgress(5);
+        } else {
+          // 여러 번 null이 반환되면 작업이 빠르게 완료되었거나 처리 중일 수 있음
+          setCurrentStep('작업 처리 중... (문서 목록 확인 중)');
+          setProgress(10);
         }
+      } else if (jobId && !jobIdReady) {
+        // 작업 ID는 있지만 아직 준비되지 않음
+        setCurrentStep('작업 등록 중...');
+        setProgress(2);
       }
       return;
     }
@@ -235,6 +281,13 @@ export default function CrawlToIndexTestPage() {
       if (data.success && data.jobId) {
         console.log('✅ 작업 ID 설정:', data.jobId);
         setJobId(data.jobId);
+        nullCheckCountRef.current = 0; // 카운트 리셋
+        setNullCheckCount(0);
+        // DB 반영을 위한 짧은 지연 후 쿼리 활성화
+        setTimeout(() => {
+          setJobIdReady(true);
+          console.log('✅ 작업 상태 조회 시작');
+        }, 500); // 500ms 지연으로 DB 반영 시간 확보
         toast.success('크롤링 작업이 큐에 추가되었습니다.');
       } else {
         console.error('❌ 작업 추가 실패:', data);
@@ -252,6 +305,9 @@ export default function CrawlToIndexTestPage() {
   const handleStop = () => {
     setIsCrawling(false);
     setJobId(null);
+    setJobIdReady(false);
+    nullCheckCountRef.current = 0;
+    setNullCheckCount(0);
     setCurrentStep('');
     setProgress(0);
     if (intervalRef.current) {
@@ -260,21 +316,26 @@ export default function CrawlToIndexTestPage() {
     }
   };
 
-  // 작업이 완료되었는지 문서 목록으로 확인
+  // 작업이 완료되었는지 문서 목록으로 확인 (null 상태가 지속될 때)
   useEffect(() => {
-    if (jobId && !jobStatus && recentDocuments.length > 0 && !isLoadingJob) {
-      // 작업 레코드가 없지만 문서가 인덱싱되어 있으면 완료된 것으로 간주
+    const currentNullCount = nullCheckCountRef.current;
+    if (jobId && jobIdReady && !jobStatus && recentDocuments.length > 0 && !isLoadingJob && currentNullCount >= 3) {
+      // 작업 레코드가 없지만 문서가 인덱싱되어 있고, 여러 번 null이 반환되었으면 완료된 것으로 간주
       const timeoutId = setTimeout(() => {
         console.log('✅ 작업 완료 확인: 문서 목록에', recentDocuments.length, '개 문서가 인덱싱되어 있습니다.');
         setCurrentStep(`인덱싱 완료! (${recentDocuments.length}개 문서)`);
         setProgress(100);
         setIsCrawling(false);
+        setJobId(null);
+        setJobIdReady(false);
+        nullCheckCountRef.current = 0;
+        setNullCheckCount(0);
         toast.success(`크롤링 및 인덱싱이 완료되었습니다! (${recentDocuments.length}개 문서)`);
-      }, 5000); // 5초 후 확인 (작업 레코드 정리 시간 고려)
+      }, 3000); // 3초 후 확인 (작업 레코드 정리 시간 고려)
 
       return () => clearTimeout(timeoutId);
     }
-  }, [jobId, jobStatus, recentDocuments.length, isLoadingJob]);
+  }, [jobId, jobIdReady, jobStatus, recentDocuments.length, isLoadingJob]);
 
   // 작업 결과 요약
   const jobSummary = jobStatus?.result || {};
