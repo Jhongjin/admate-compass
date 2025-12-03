@@ -9,16 +9,6 @@ import { existsSync } from 'fs';
 import { join } from 'path';
 import type { BrowserConfig } from '../types';
 
-// 일반 puppeteer 패키지 (폴백용, 선택적)
-let puppeteer: typeof puppeteerCore | null = null;
-try {
-  // 일반 puppeteer가 설치되어 있으면 사용 (자동 Chromium 다운로드)
-  puppeteer = require('puppeteer');
-} catch {
-  // puppeteer가 없으면 puppeteer-core만 사용
-  puppeteer = null;
-}
-
 export class BrowserManager {
   private browser: Browser | null = null;
   private isInitializing = false;
@@ -301,6 +291,7 @@ export class BrowserManager {
       this.browser = null;
       await this.initialize();
       
+      // 재초기화 후 브라우저 확인
       if (!this.browser) {
         throw new Error('브라우저 재초기화 실패');
       }
