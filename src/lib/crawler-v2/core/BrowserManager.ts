@@ -289,14 +289,9 @@ export class BrowserManager {
       // 페이지 생성 실패 시 브라우저 재초기화 시도
       console.warn('⚠️ 페이지 생성 실패, 브라우저 재초기화 시도...');
       this.browser = null;
-      await this.initialize();
+      const reinitializedBrowser: Browser = await this.initialize();
       
-      // 재초기화 후 브라우저 확인
-      if (!this.browser) {
-        throw new Error('브라우저 재초기화 실패');
-      }
-      
-      const page = await this.browser.newPage();
+      const page = await reinitializedBrowser.newPage();
       await page.setUserAgent(
         'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
       );
