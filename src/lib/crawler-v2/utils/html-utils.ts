@@ -83,23 +83,52 @@ export function extractMetaTag(html: string, property: string): string | null {
  */
 export function extractLinks(html: string, baseUrl: string): Array<{ url: string; text: string }> {
   const links: Array<{ url: string; text: string }> = [];
+  const seenUrls = new Set<string>();
   
-  // a 태그에서 링크 추출
-  const linkPattern = /<a[^>]*href=["']([^"']+)["'][^>]*>([^<]*)<\/a>/gi;
-  let match;
+  // a 태그에서 링크 추출 (다양한 패턴 지원)
+  const linkPatterns = [
+    // 표준 href 속성
+    /<a[^>]*href\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi,
+    // 따옴표 없는 href
+    /<a[^>]*href\s*=\s*([^\s>]+)[^>]*>([\s\S]*?)<\/a>/gi,
+  ];
   
-  while ((match = linkPattern.exec(html)) !== null) {
-    const href = match[1];
-    const text = match[2] || '';
-    
-    try {
-      const absoluteUrl = new URL(href, baseUrl).toString();
-      links.push({
-        url: absoluteUrl,
-        text: extractTextFromHtml(text).trim(),
-      });
-    } catch {
-      // 유효하지 않은 URL은 무시
+  for (const pattern of linkPatterns) {
+    let match;
+    while ((match = pattern.exec(html)) !== null) {
+      const href = match[1]?.trim();
+      const text = match[2] || '';
+      
+      if (!href) continue;
+      
+      try {
+        // 상대 URL 처리
+        let absoluteUrl: string;
+        if (href.startsWith('http://') || href.startsWith('https://')) {
+          absoluteUrl = href;
+        } else if (href.startsWith('//')) {
+          absoluteUrl = new URL(baseUrl).protocol + href;
+        } else if (href.startsWith('/')) {
+          const baseUrlObj = new URL(baseUrl);
+          absoluteUrl = `${baseUrlObj.protocol}//${baseUrlObj.host}${href}`;
+        } else {
+          absoluteUrl = new URL(href, baseUrl).toString();
+        }
+        
+        // 중복 제거
+        const normalizedUrl = absoluteUrl.split('#')[0].split('?')[0]; // 프래그먼트와 쿼리 제거
+        if (seenUrls.has(normalizedUrl)) {
+          continue;
+        }
+        seenUrls.add(normalizedUrl);
+        
+        links.push({
+          url: absoluteUrl,
+          text: extractTextFromHtml(text).trim(),
+        });
+      } catch {
+        // 유효하지 않은 URL은 무시
+      }
     }
   }
   

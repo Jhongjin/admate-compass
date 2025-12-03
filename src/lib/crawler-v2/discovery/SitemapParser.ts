@@ -37,11 +37,29 @@ export class SitemapParser {
         xmlContent = await response.text();
       }
 
-      // XML 파싱
-      const result = await parseStringPromise(xmlContent, {
+      // XML 정규화 (제어 문자 제거, 잘못된 형식 수정)
+      let normalizedXml = xmlContent
+        .replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]/g, '') // 제어 문자 제거
+        .replace(/&(?![a-zA-Z]+;|#\d+;)/g, '&amp;') // 잘못된 & 문자 수정
+        .replace(/<([^>]+)\s+([^=]+)\s*>/g, '<$1 $2="">') // 속성 값 없는 경우 처리
+        .trim();
+
+      // XML 파싱 옵션 (관대한 모드)
+      const parseOptions = {
         explicitArray: false,
         mergeAttrs: true,
-      });
+        trim: true,
+        normalize: true,
+        normalizeTags: false,
+        explicitRoot: false,
+        ignoreAttrs: false,
+        attrkey: '_attr',
+        charkey: '_text',
+        strict: false, // 엄격한 모드 비활성화
+        async: false,
+      };
+
+      const result = await parseStringPromise(normalizedXml, parseOptions);
 
       // 사이트맵 인덱스인 경우 (sitemapindex)
       if (result.sitemapindex?.sitemap) {
@@ -82,7 +100,9 @@ export class SitemapParser {
 
       return [];
     } catch (error) {
-      console.error(`❌ 사이트맵 파싱 실패: ${sitemapUrl}`, error);
+      // 에러 발생 시에도 경고만 표시하고 빈 배열 반환 (다른 방법으로 계속 진행)
+      const errorMessage = error instanceof Error ? error.message : String(error);
+      console.warn(`⚠️ 사이트맵 파싱 실패: ${sitemapUrl} - ${errorMessage}`);
       return [];
     }
   }

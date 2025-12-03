@@ -175,25 +175,53 @@ export class UrlDiscovery {
 
       // HTML에서 링크 추출
       const links = extractLinks(html, baseUrl);
+      
+      console.log(`🔗 발견된 링크: ${links.length}개`);
 
-      for (const link of links) {
+      // 링크 필터링 및 정렬 (중요한 링크 우선)
+      const filteredLinks = links
+        .filter(link => {
+          const normalizedUrl = normalizeUrl(link.url);
+          
+          // 같은 URL 제외
+          if (normalizedUrl === baseUrl || normalizedUrl === normalizeUrl(baseUrl)) {
+            return false;
+          }
+
+          // 도메인 제한 확인
+          if (config.domainLimit && !isAllowedDomain(normalizedUrl, config.allowedDomains)) {
+            return false;
+          }
+
+          // 깊이 계산
+          const depth = calculateDepth(baseUrl, normalizedUrl);
+          
+          // 깊이 제한 확인 (999는 다른 도메인을 의미하므로 제외)
+          if (config.maxDepth && depth !== 999 && depth > config.maxDepth) {
+            return false;
+          }
+
+          return true;
+        })
+        // 우선순위 정렬: 깊이 2 > 깊이 3 > 기타, 텍스트가 있는 링크 우선
+        .sort((a, b) => {
+          const depthA = calculateDepth(baseUrl, normalizeUrl(a.url));
+          const depthB = calculateDepth(baseUrl, normalizeUrl(b.url));
+          
+          if (depthA !== depthB) {
+            return depthA - depthB; // 깊이가 낮은 것 우선
+          }
+          
+          // 텍스트가 있는 링크 우선
+          if (a.text && !b.text) return -1;
+          if (!a.text && b.text) return 1;
+          
+          return 0;
+        });
+
+      for (const link of filteredLinks) {
         const normalizedUrl = normalizeUrl(link.url);
         const depth = calculateDepth(baseUrl, normalizedUrl);
-
-        // 깊이 제한 확인 (999는 다른 도메인을 의미하므로 제외)
-        if (config.maxDepth && depth !== 999 && depth > config.maxDepth) {
-          continue;
-        }
-
-        // 도메인 제한 확인
-        if (config.domainLimit && !isAllowedDomain(normalizedUrl, config.allowedDomains)) {
-          continue;
-        }
-
-        // 같은 URL 제외
-        if (normalizedUrl === baseUrl || normalizedUrl === normalizeUrl(baseUrl)) {
-          continue;
-        }
 
         discovered.push({
           url: normalizedUrl,
@@ -204,6 +232,8 @@ export class UrlDiscovery {
           path: buildUrlPath(baseUrl, normalizedUrl),
         });
       }
+      
+      console.log(`✅ 필터링된 링크: ${discovered.length}개`);
     } catch (error) {
       console.warn('⚠️ 링크에서 URL 발견 실패:', error);
     }
