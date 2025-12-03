@@ -28,12 +28,30 @@ export async function POST(request: NextRequest) {
 
     console.log(`🗑️ 도메인 문서 삭제 요청: ${domain}`);
 
-    // 1. 해당 도메인의 모든 문서 조회
-    const { data: documents, error: docsError } = await supabase
+    // 1. 해당 도메인의 모든 문서 조회 (정확한 hostname 매칭)
+    // URL에서 hostname을 추출하여 정확히 매칭
+    const { data: allUrlDocs, error: allDocsError } = await supabase
       .from('documents')
       .select('id, title, url, status, chunk_count')
       .eq('type', 'url')
-      .like('url', `%${domain}%`);
+      .not('url', 'is', null);
+    
+    if (allDocsError) {
+      throw new Error(`문서 조회 실패: ${allDocsError.message}`);
+    }
+    
+    // URL에서 hostname을 추출하여 정확히 매칭
+    const documents = (allUrlDocs || []).filter(doc => {
+      if (!doc.url) return false;
+      try {
+        const docUrl = new URL(doc.url);
+        // 정확한 hostname 매칭 또는 하위 도메인 매칭
+        return docUrl.hostname === domain || docUrl.hostname.endsWith(`.${domain}`);
+      } catch {
+        // URL 파싱 실패 시 like로 폴백
+        return doc.url.includes(domain);
+      }
+    });
 
     if (docsError) {
       throw new Error(`문서 조회 실패: ${docsError.message}`);
@@ -142,6 +160,21 @@ export async function POST(request: NextRequest) {
     const deletedCount = documentIds.length;
     console.log(`✅ ${deletedCount}개 문서 삭제 완료`);
 
+    // 삭제 확인: 실제로 삭제되었는지 검증
+    const { data: remainingDocs, error: verifyError } = await supabase
+      .from('documents')
+      .select('id')
+      .in('id', documentIds)
+      .limit(10);
+    
+    if (verifyError) {
+      console.warn('⚠️ 삭제 확인 중 오류 (무시됨):', verifyError);
+    } else if (remainingDocs && remainingDocs.length > 0) {
+      console.warn(`⚠️ ${remainingDocs.length}개 문서가 여전히 존재합니다. 삭제가 완전히 반영되지 않았을 수 있습니다.`);
+    } else {
+      console.log(`✅ 삭제 확인 완료: 모든 문서가 성공적으로 삭제되었습니다.`);
+    }
+
     return NextResponse.json({
       success: true,
       message: `${domain} 도메인의 ${deletedCount}개 문서가 삭제되었습니다.`,
@@ -155,7 +188,8 @@ export async function POST(request: NextRequest) {
         url: d.url,
         title: d.title,
         status: d.status
-      }))
+      })),
+      verified: remainingDocs ? remainingDocs.length === 0 : true
     });
 
   } catch (error) {

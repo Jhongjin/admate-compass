@@ -23,7 +23,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { createClient } from '@/lib/supabase/client';
 
 // URL 타입 선언
@@ -71,6 +71,7 @@ export default function CrawlToIndexTestPage() {
     domainLimit: true,
   });
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const queryClient = useQueryClient();
 
   // 문서 목록 조회 (3초마다 자동 새로고침)
   const { data: documentsData, refetch: refetchDocuments } = useQuery({
@@ -404,7 +405,14 @@ export default function CrawlToIndexTestPage() {
 
       if (data.success) {
         toast.success(`${data.deleted.documents}개 문서가 삭제되었습니다.`);
-        refetchDocuments(); // 문서 목록 새로고침
+        
+        // React Query 캐시 무효화 및 즉시 refetch
+        queryClient.invalidateQueries({ queryKey: ['test-documents'] });
+        
+        // 약간의 지연 후 refetch (DB 반영 시간 확보)
+        setTimeout(() => {
+          refetchDocuments();
+        }, 500);
       } else {
         throw new Error(data.error || '문서 삭제 실패');
       }
