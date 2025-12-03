@@ -2601,7 +2601,7 @@ export async function processQueue() {
               const discoveryEndMs = Date.now();
               console.log(`[CRITICAL] ✅ 하위 페이지 발견 완료: ${discovered.length}개 (소요 시간: ${discoveryEndMs - discoveryStartMs}ms)`);
               
-              // 발견된 페이지 상세 로그
+              // 발견된 페이지 상세 로그 및 도메인 분포 분석
               if (discovered.length > 0) {
                 console.log('📋 발견된 하위 페이지 목록:');
                 discovered.slice(0, 10).forEach((page, idx) => {
@@ -2610,6 +2610,43 @@ export async function processQueue() {
                 if (discovered.length > 10) {
                   console.log(`  ... 외 ${discovered.length - 10}개`);
                 }
+                
+                // 도메인 분포 분석
+                const domainMap = new Map<string, number>();
+                const baseDomain = seedUrl.hostname;
+                let sameDomainCount = 0;
+                let subdomainCount = 0;
+                let otherDomainCount = 0;
+                
+                discovered.forEach(page => {
+                  try {
+                    const pageUrl = new URL(page.url);
+                    const pageDomain = pageUrl.hostname;
+                    const count = domainMap.get(pageDomain) || 0;
+                    domainMap.set(pageDomain, count + 1);
+                    
+                    if (pageDomain === baseDomain) {
+                      sameDomainCount++;
+                    } else if (pageDomain.endsWith(`.${baseDomain}`)) {
+                      subdomainCount++;
+                    } else {
+                      otherDomainCount++;
+                    }
+                  } catch (e) {
+                    // URL 파싱 실패 무시
+                  }
+                });
+                
+                console.log(`[CRITICAL] 📊 발견된 URL 도메인 분포:`, {
+                  total: discovered.length,
+                  sameDomain: sameDomainCount,
+                  subdomain: subdomainCount,
+                  otherDomain: otherDomainCount,
+                  domainList: Array.from(domainMap.entries())
+                    .sort((a, b) => b[1] - a[1])
+                    .slice(0, 10)
+                    .map(([domain, count]) => ({ domain, count }))
+                });
               } else {
                 console.error('[CRITICAL] ⚠️ 하위 페이지가 발견되지 않았습니다. Sitemap 또는 링크 추출이 실패했을 수 있습니다.', {
                   url,
@@ -2646,6 +2683,32 @@ export async function processQueue() {
             const maxUrlsLimit = discoveryOptions.maxUrls || 150;
             const candidateUrls = Array.from(candidateUrlSet).slice(0, maxUrlsLimit);
 
+            // 후보 URL의 도메인 분포 분석
+            const candidateDomainMap = new Map<string, number>();
+            const candidateBaseDomain = seedUrl.hostname;
+            let candidateSameDomainCount = 0;
+            let candidateSubdomainCount = 0;
+            let candidateOtherDomainCount = 0;
+            
+            candidateUrls.forEach(candidateUrl => {
+              try {
+                const candidateUrlObj = new URL(candidateUrl);
+                const candidateUrlDomain = candidateUrlObj.hostname;
+                const count = candidateDomainMap.get(candidateUrlDomain) || 0;
+                candidateDomainMap.set(candidateUrlDomain, count + 1);
+                
+                if (candidateUrlDomain === candidateBaseDomain) {
+                  candidateSameDomainCount++;
+                } else if (candidateUrlDomain.endsWith(`.${candidateBaseDomain}`)) {
+                  candidateSubdomainCount++;
+                } else {
+                  candidateOtherDomainCount++;
+                }
+              } catch (e) {
+                // URL 파싱 실패 무시
+              }
+            });
+            
             console.log(`[CRITICAL] 📄 하위 페이지 후보: ${candidateUrls.length}개 (발견: ${discovered.length}개, maxUrls 제한: ${maxUrlsLimit}개, 필터링 후: ${candidateUrls.length}개)`, {
               url,
               documentId,
@@ -2653,7 +2716,17 @@ export async function processQueue() {
               maxUrlsLimit,
               discoveredUrls: discovered.map(d => d.url).slice(0, 10),
               candidateUrls: candidateUrls.slice(0, 10),
-              titleMapSample: Array.from(urlToTitleMap.entries()).slice(0, 5)
+              titleMapSample: Array.from(urlToTitleMap.entries()).slice(0, 5),
+              candidateDomainStats: {
+                total: candidateUrls.length,
+                sameDomain: candidateSameDomainCount,
+                subdomain: candidateSubdomainCount,
+                otherDomain: candidateOtherDomainCount,
+                domainList: Array.from(candidateDomainMap.entries())
+                  .sort((a, b) => b[1] - a[1])
+                  .slice(0, 10)
+                  .map(([domain, count]) => ({ domain, count }))
+              }
             });
             
             if (candidateUrls.length === 0 && discovered.length > 0) {
@@ -3602,6 +3675,62 @@ export async function processQueue() {
           console.log(`[CRITICAL] 📊 하위 페이지 재처리 완료: ${reprocessedSubPages.filter(p => p.success).length}/${failedSubPages.length} 성공`);
         }
 
+        // 크롤링 완료 후 실제 인덱싱된 문서의 도메인 분포 확인
+        let indexedDocsDomainStats = null;
+        try {
+          const { data: indexedDocs } = await supabase
+            .from('documents')
+            .select('id, url, status, chunk_count')
+            .eq('type', 'url')
+            .in('status', ['indexed', 'completed'])
+            .gt('chunk_count', 0)
+            .order('created_at', { ascending: false })
+            .limit(500);
+          
+          if (indexedDocs && indexedDocs.length > 0) {
+            const indexedDomainMap = new Map<string, number>();
+            const indexedBaseDomain = seedUrl.hostname;
+            let indexedSameDomainCount = 0;
+            let indexedSubdomainCount = 0;
+            let indexedOtherDomainCount = 0;
+            
+            indexedDocs.forEach(doc => {
+              if (!doc.url) return;
+              try {
+                const docUrl = new URL(doc.url);
+                const docDomain = docUrl.hostname;
+                const count = indexedDomainMap.get(docDomain) || 0;
+                indexedDomainMap.set(docDomain, count + 1);
+                
+                if (docDomain === indexedBaseDomain) {
+                  indexedSameDomainCount++;
+                } else if (docDomain.endsWith(`.${indexedBaseDomain}`)) {
+                  indexedSubdomainCount++;
+                } else {
+                  indexedOtherDomainCount++;
+                }
+              } catch (e) {
+                // URL 파싱 실패 무시
+              }
+            });
+            
+            indexedDocsDomainStats = {
+              total: indexedDocs.length,
+              sameDomain: indexedSameDomainCount,
+              subdomain: indexedSubdomainCount,
+              otherDomain: indexedOtherDomainCount,
+              domainList: Array.from(indexedDomainMap.entries())
+                .sort((a, b) => b[1] - a[1])
+                .slice(0, 20)
+                .map(([domain, count]) => ({ domain, count }))
+            };
+            
+            console.log(`[CRITICAL] 📊 인덱싱된 문서 도메인 분포:`, indexedDocsDomainStats);
+          }
+        } catch (domainStatsError) {
+          console.warn('[CRITICAL] ⚠️ 인덱싱된 문서 도메인 분포 확인 실패:', domainStatsError);
+        }
+        
         const finishedResult = {
           url,
           documentId,
@@ -3616,6 +3745,7 @@ export async function processQueue() {
           subPages: subPageResults,
           reprocessedSubPages: reprocessedSubPages.length > 0 ? reprocessedSubPages : undefined,
           crawlTimeMs: Date.now() - crawlStartMs,
+          indexedDocsDomainStats, // 인덱싱된 문서 도메인 분포 추가
         };
 
         console.log('[CRITICAL] ✅ CRAWL_SEED 작업 완료 - 상태 업데이트 시작:', {
