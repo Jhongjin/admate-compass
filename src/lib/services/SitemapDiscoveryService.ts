@@ -112,6 +112,19 @@ export class SitemapDiscoveryService {
   ): Promise<DiscoveredUrl[]> {
     const config = { ...this.defaultOptions, ...options };
 
+    // maxDepth 3 이상일 때는 BFS depth 탐색 사용 (더 많은 URL 발견 가능)
+    if (config.maxDepth >= 3) {
+      console.error(`[CRITICAL] 🔍 maxDepth ${config.maxDepth} 감지: BFS depth 탐색 사용`);
+      const depthAwareResults = await this.discoverSubPagesWithDepth(baseUrl, config, preloadedHtml);
+      // DepthAwareDiscoveredUrl을 DiscoveredUrl로 변환
+      return depthAwareResults.map(item => ({
+        url: item.url,
+        title: item.title,
+        source: item.source || 'bfs',
+        depth: item.depth || 1
+      }));
+    }
+
     // Puppeteer 초기화 시도 (실패해도 계속 진행)
     // initialize()는 내부에서 에러를 throw하지 않으므로 try-catch는 사실상 불필요하지만, 안전을 위해 유지
     if (!this.browser) {
