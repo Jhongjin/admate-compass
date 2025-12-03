@@ -119,8 +119,17 @@ export default function CrawlToIndexTestPage() {
     if (!jobStatus) {
       if (jobId && !isLoadingJob) {
         console.warn('⚠️ 작업 ID가 있지만 상태를 조회할 수 없습니다:', jobId);
-        setCurrentStep('작업 상태 조회 중...');
-        setProgress(5);
+        // 작업이 완료되어 삭제되었을 수 있음 - 문서 목록으로 확인
+        if (recentDocuments.length > 0) {
+          console.log('✅ 작업이 완료된 것으로 보입니다. 문서 목록에', recentDocuments.length, '개 문서가 있습니다.');
+          setCurrentStep('인덱싱 완료 (작업 레코드가 정리되었습니다)');
+          setProgress(100);
+          setIsCrawling(false);
+          toast.success(`크롤링 및 인덱싱이 완료되었습니다! (${recentDocuments.length}개 문서)`);
+        } else {
+          setCurrentStep('작업 상태 조회 중...');
+          setProgress(5);
+        }
       }
       return;
     }
@@ -164,7 +173,7 @@ export default function CrawlToIndexTestPage() {
         toast.error('크롤링 또는 인덱싱 중 오류가 발생했습니다.');
         break;
     }
-  }, [jobStatus, refetchDocuments, jobId, isLoadingJob]);
+  }, [jobStatus, refetchDocuments, jobId, isLoadingJob, recentDocuments.length]);
 
   const handleStartCrawl = async () => {
     if (!url.trim()) {
@@ -229,11 +238,34 @@ export default function CrawlToIndexTestPage() {
   };
 
   // 최근 인덱싱된 문서 필터링 (현재 작업과 관련된 문서)
+  // jobId가 없어도 URL 기준으로 필터링 (작업 완료 후 jobId가 없을 수 있음)
   const recentDocuments = documentsData?.data?.documents?.filter((doc: Document) => {
-    if (!jobId) return false;
-    // URL이 일치하는 문서 찾기
-    return doc.url && doc.url.includes(new URL(url).hostname);
+    try {
+      if (!doc.url) return false;
+      const docUrl = new URL(doc.url);
+      const targetUrl = new URL(url);
+      // 같은 도메인의 문서만 표시
+      return docUrl.hostname === targetUrl.hostname || docUrl.hostname.endsWith(`.${targetUrl.hostname}`);
+    } catch {
+      return false;
+    }
   }) || [];
+
+  // 작업이 완료되었는지 문서 목록으로 확인
+  useEffect(() => {
+    if (jobId && !jobStatus && recentDocuments.length > 0 && !isLoadingJob) {
+      // 작업 레코드가 없지만 문서가 인덱싱되어 있으면 완료된 것으로 간주
+      const timeoutId = setTimeout(() => {
+        console.log('✅ 작업 완료 확인: 문서 목록에', recentDocuments.length, '개 문서가 인덱싱되어 있습니다.');
+        setCurrentStep(`인덱싱 완료! (${recentDocuments.length}개 문서)`);
+        setProgress(100);
+        setIsCrawling(false);
+        toast.success(`크롤링 및 인덱싱이 완료되었습니다! (${recentDocuments.length}개 문서)`);
+      }, 5000); // 5초 후 확인 (작업 레코드 정리 시간 고려)
+
+      return () => clearTimeout(timeoutId);
+    }
+  }, [jobId, jobStatus, recentDocuments.length, isLoadingJob]);
 
   // 작업 결과 요약
   const jobSummary = jobStatus?.result || {};
