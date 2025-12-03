@@ -102,10 +102,11 @@ export class UrlDiscovery {
             const baseDomain = extractDomain(baseUrl);
             
             if (urlDomain !== baseDomain) {
-              if (config.maxDepth >= 4) {
+              const maxDepth = config.maxDepth ?? 3; // 기본값 3
+              if (maxDepth >= 4) {
                 // maxDepth 4: 모든 도메인 허용 (domainLimit과 관계없이)
                 // 모든 도메인 허용
-              } else if (config.maxDepth >= 3) {
+              } else if (maxDepth >= 3) {
                 // maxDepth 3: 같은 도메인 + 하위 도메인 허용
                 if (!urlDomain.endsWith(`.${baseDomain}`)) {
                   continue;
@@ -231,10 +232,11 @@ export class UrlDiscovery {
           const baseDomain = extractDomain(baseUrl);
           
           if (urlDomain !== baseDomain) {
-            if (config.maxDepth >= 4) {
+            const maxDepth = config.maxDepth ?? 3; // 기본값 3
+            if (maxDepth >= 4) {
               // maxDepth 4: 모든 도메인 허용 (domainLimit과 관계없이)
               // 모든 도메인 허용
-            } else if (config.maxDepth >= 3) {
+            } else if (maxDepth >= 3) {
               // maxDepth 3: 같은 도메인 + 하위 도메인 허용
               if (!urlDomain.endsWith(`.${baseDomain}`)) {
                 return false;
@@ -248,7 +250,8 @@ export class UrlDiscovery {
           }
 
           // 허용된 도메인 확인 (maxDepth 4가 아닌 경우)
-          if (config.maxDepth < 4 && config.domainLimit && config.allowedDomains && config.allowedDomains.length > 0) {
+          const maxDepth = config.maxDepth ?? 3; // 기본값 3
+          if (maxDepth < 4 && config.domainLimit && config.allowedDomains && config.allowedDomains.length > 0) {
             if (!isAllowedDomain(normalizedUrl, config.allowedDomains)) {
               return false;
             }
@@ -259,8 +262,8 @@ export class UrlDiscovery {
           
           // 깊이 제한 확인
           // maxDepth 4일 때는 다른 도메인(999)도 허용
-          if (config.maxDepth && depth > config.maxDepth) {
-            if (config.maxDepth < 4 || depth !== 999) {
+          if (maxDepth && depth > maxDepth) {
+            if (maxDepth < 4 || depth !== 999) {
               return false;
             }
           }
@@ -332,10 +335,11 @@ export class UrlDiscovery {
       // maxDepth 3: 같은 도메인 + 하위 도메인 허용
       // maxDepth 4: 모든 도메인 허용 (domainLimit이 false이거나 없을 때)
       if (urlDomain !== baseDomain) {
-        if (config.maxDepth >= 4) {
+        const maxDepth = config.maxDepth ?? 3; // 기본값 3
+        if (maxDepth >= 4) {
           // maxDepth 4: 모든 도메인 허용 (domainLimit과 관계없이)
           // 모든 도메인 허용
-        } else if (config.maxDepth >= 3) {
+        } else if (maxDepth >= 3) {
           // maxDepth 3: 같은 도메인 + 하위 도메인 허용
           if (!this.isSubdomain(urlDomain, baseDomain)) {
             return false;
@@ -349,10 +353,11 @@ export class UrlDiscovery {
       }
 
       // 허용된 도메인 확인 (maxDepth 4가 아닌 경우)
-      if (config.maxDepth < 4 && config.allowedDomains && config.allowedDomains.length > 0) {
+      const maxDepth = config.maxDepth ?? 3; // 기본값 3
+      if (maxDepth < 4 && config.allowedDomains && config.allowedDomains.length > 0) {
         const isAllowed = config.allowedDomains.some(domain => 
           urlDomain === domain || 
-          (config.maxDepth >= 3 && this.isSubdomain(urlDomain, domain))
+          (maxDepth >= 3 && this.isSubdomain(urlDomain, domain))
         );
         if (!isAllowed) {
           return false;
