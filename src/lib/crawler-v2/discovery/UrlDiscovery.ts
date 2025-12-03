@@ -35,6 +35,7 @@ export class UrlDiscovery {
     try {
       // 1. 사이트맵에서 URL 발견
       const sitemapUrls = await this.discoverFromSitemap(baseUrl, config);
+      console.log(`📋 사이트맵에서 발견: ${sitemapUrls.length}개`);
       sitemapUrls.forEach(url => {
         if (!discoveredUrls.has(url.url)) {
           discoveredUrls.add(url.url);
@@ -44,6 +45,7 @@ export class UrlDiscovery {
 
       // 2. 페이지 링크에서 URL 발견
       const linkUrls = await this.discoverFromLinks(baseUrl, config);
+      console.log(`🔗 링크에서 발견: ${linkUrls.length}개`);
       linkUrls.forEach(url => {
         if (!discoveredUrls.has(url.url)) {
           discoveredUrls.add(url.url);
@@ -83,9 +85,11 @@ export class UrlDiscovery {
       const allSitemapUrls = [...new Set([...sitemapUrls, ...commonSitemaps])];
 
       // 각 사이트맵 파싱
+      let totalSitemapUrls = 0;
       for (const sitemapUrl of allSitemapUrls) {
         try {
           const items = await sitemapParser.parseSitemap(sitemapUrl);
+          totalSitemapUrls += items.length;
           
           for (const item of items) {
             if (!item.loc) continue;
@@ -116,6 +120,14 @@ export class UrlDiscovery {
         } catch (error) {
           console.warn(`⚠️ 사이트맵 파싱 실패: ${sitemapUrl}`, error);
         }
+      }
+      
+      if (totalSitemapUrls > 0) {
+        console.log(`✅ 사이트맵에서 총 ${totalSitemapUrls}개 URL 발견`);
+      }
+      
+      if (totalSitemapUrls > 0) {
+        console.log(`✅ 사이트맵에서 총 ${totalSitemapUrls}개 URL 발견`);
       }
     } catch (error) {
       console.warn('⚠️ 사이트맵에서 URL 발견 실패:', error);

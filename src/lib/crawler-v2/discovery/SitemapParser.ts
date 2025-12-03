@@ -75,12 +75,19 @@ export class SitemapParser {
             try {
               const urls = await this.parseSitemap(sitemap.loc);
               allUrls.push(...urls);
+              if (urls.length > 0) {
+                console.log(`✅ 하위 사이트맵 처리 완료: ${sitemap.loc} - ${urls.length}개 URL`);
+              }
             } catch (error) {
               console.warn(`⚠️ 하위 사이트맵 파싱 실패: ${sitemap.loc}`, error);
             }
           }
         }
 
+        if (allUrls.length > 0) {
+          console.log(`✅ 사이트맵 인덱스 처리 완료: ${sitemapUrl} - 총 ${allUrls.length}개 URL`);
+        }
+        
         return allUrls;
       }
 
@@ -90,14 +97,21 @@ export class SitemapParser {
           ? result.urlset.url
           : [result.urlset.url];
 
-        return urls.map((item: any) => ({
+        const items = urls.map((item: any) => ({
           loc: item.loc || '',
           lastmod: item.lastmod,
           changefreq: item.changefreq,
           priority: item.priority ? parseFloat(item.priority) : undefined,
         })).filter((item: SitemapItem) => item.loc);
+        
+        if (items.length > 0) {
+          console.log(`✅ 사이트맵 파싱 완료: ${sitemapUrl} - ${items.length}개 URL`);
+        }
+        
+        return items;
       }
 
+      console.log(`ℹ️ 사이트맵 형식 인식 실패: ${sitemapUrl} (빈 사이트맵 또는 알 수 없는 형식)`);
       return [];
     } catch (error) {
       // 에러 발생 시에도 경고만 표시하고 빈 배열 반환 (다른 방법으로 계속 진행)
