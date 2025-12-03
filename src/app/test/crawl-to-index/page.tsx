@@ -138,7 +138,7 @@ export default function CrawlToIndexTestPage() {
         // 작업이 완료되어 삭제되었을 수 있음 - 문서 목록으로 확인
         if (recentDocuments.length > 0) {
           console.log('✅ 작업이 완료된 것으로 보입니다. 문서 목록에', recentDocuments.length, '개 문서가 있습니다.');
-          setCurrentStep('인덱싱 완료 (작업 레코드가 정리되었습니다)');
+          setCurrentStep(`인덱싱 완료! (${recentDocuments.length}개 문서)`);
           setProgress(100);
           setIsCrawling(false);
           toast.success(`크롤링 및 인덱싱이 완료되었습니다! (${recentDocuments.length}개 문서)`);
