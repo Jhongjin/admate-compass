@@ -91,8 +91,9 @@ export default function CrawlToIndexTestPage() {
       return data as JobStatus | null;
     },
     enabled: !!jobId,
-    refetchInterval: (data) => {
+    refetchInterval: (query) => {
       // 작업이 완료되면 폴링 중지
+      const data = query.state.data;
       if (data?.status === 'completed' || data?.status === 'failed') {
         return false;
       }
