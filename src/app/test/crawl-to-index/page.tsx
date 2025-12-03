@@ -376,6 +376,44 @@ export default function CrawlToIndexTestPage() {
     }
   };
 
+  const handleDeleteDomainDocuments = async () => {
+    if (!url.trim()) {
+      toast.error('URL을 입력해주세요.');
+      return;
+    }
+
+    try {
+      const targetUrl = new URL(url.trim());
+      const domain = targetUrl.hostname;
+
+      if (!confirm(`${domain} 도메인의 모든 문서를 삭제하시겠습니까?`)) {
+        return;
+      }
+
+      toast.info('도메인 문서 삭제 중...');
+      
+      const response = await fetch('/api/admin/delete-domain-documents', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ domain }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        toast.success(`${data.deleted.documents}개 문서가 삭제되었습니다.`);
+        refetchDocuments(); // 문서 목록 새로고침
+      } else {
+        throw new Error(data.error || '문서 삭제 실패');
+      }
+    } catch (error) {
+      console.error('도메인 문서 삭제 오류:', error);
+      toast.error('도메인 문서 삭제 중 오류가 발생했습니다.');
+    }
+  };
+
   // 작업이 완료되었는지 문서 목록으로 확인 (null 상태가 지속될 때)
   useEffect(() => {
     const currentNullCount = nullCheckCountRef.current;
@@ -483,7 +521,7 @@ export default function CrawlToIndexTestPage() {
             </div>
           </div>
 
-          {/* 시작 버튼 */}
+          {/* 시작 버튼 및 도메인 문서 삭제 */}
           <div className="flex gap-2">
             <Button
               onClick={handleStartCrawl}
@@ -508,6 +546,16 @@ export default function CrawlToIndexTestPage() {
                 variant="outline"
               >
                 중지
+              </Button>
+            )}
+            {!isCrawling && (
+              <Button
+                onClick={handleDeleteDomainDocuments}
+                variant="destructive"
+                disabled={!url.trim()}
+              >
+                <XCircle className="mr-2 h-4 w-4" />
+                도메인 문서 삭제
               </Button>
             )}
           </div>

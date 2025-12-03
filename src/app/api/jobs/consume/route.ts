@@ -2021,6 +2021,18 @@ export async function processQueue() {
               existingDoc = docsByUrl[0];
               wasExistingDocument = true;
               
+              // 🔥 이미 indexed 상태이고 chunk_count > 0인 문서는 건너뛰기
+              if (existingDoc.status === 'indexed' && existingDoc.chunk_count > 0) {
+                console.log(`[CRITICAL] ⏭️ 이미 인덱싱된 문서 건너뜀: ${targetUrl} (문서 ID: ${existingDoc.id}, 청크 수: ${existingDoc.chunk_count})`);
+                return {
+                  documentId: existingDoc.id,
+                  chunkCount: existingDoc.chunk_count,
+                  success: true,
+                  skipped: true,
+                  reason: 'already_indexed'
+                };
+              }
+              
               // 중복 문서가 있으면 정리 (processing 상태이면서 chunk_count=0인 중복 문서 삭제)
               if (docsByUrl.length > 1) {
                 console.warn(`⚠️ URL 중복 문서 발견: ${docsByUrl.length}개, 정리 시작: ${targetUrl}`);
