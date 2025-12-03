@@ -101,6 +101,66 @@ export default function CrawlToIndexTestPage() {
     }) || [];
   }, [documentsData?.data?.documents, url]);
 
+  // 도메인별 통계 계산
+  const domainStats = React.useMemo(() => {
+    if (!recentDocuments.length) return null;
+
+    try {
+      const targetUrl = new URL(url);
+      const baseDomain = targetUrl.hostname;
+      
+      // 도메인별 문서 수 집계
+      const domainMap = new Map<string, number>();
+      let sameDomainCount = 0;
+      let subdomainCount = 0;
+      let otherDomainCount = 0;
+
+      recentDocuments.forEach((doc: Document) => {
+        if (!doc.url) return;
+        try {
+          const docUrl = new URL(doc.url);
+          const docDomain = docUrl.hostname;
+          
+          const count = domainMap.get(docDomain) || 0;
+          domainMap.set(docDomain, count + 1);
+
+          if (docDomain === baseDomain) {
+            sameDomainCount++;
+          } else if (docDomain.endsWith(`.${baseDomain}`)) {
+            subdomainCount++;
+          } else {
+            otherDomainCount++;
+          }
+        } catch {
+          // URL 파싱 실패 시 무시
+        }
+      });
+
+      // 도메인 목록을 문서 수 기준으로 정렬
+      const domainList = Array.from(domainMap.entries())
+        .map(([domain, count]) => ({
+          domain,
+          count,
+          isBaseDomain: domain === baseDomain,
+          isSubdomain: domain !== baseDomain && domain.endsWith(`.${baseDomain}`),
+          isOtherDomain: domain !== baseDomain && !domain.endsWith(`.${baseDomain}`)
+        }))
+        .sort((a, b) => b.count - a.count);
+
+      return {
+        baseDomain,
+        totalDocuments: recentDocuments.length,
+        domainList,
+        sameDomainCount,
+        subdomainCount,
+        otherDomainCount,
+        domainCount: domainMap.size
+      };
+    } catch {
+      return null;
+    }
+  }, [recentDocuments, url]);
+
   // 작업 상태 조회
   const { data: jobStatus, refetch: refetchJob, isLoading: isLoadingJob } = useQuery({
     queryKey: ['job-status', jobId],
@@ -501,6 +561,112 @@ export default function CrawlToIndexTestPage() {
           )}
         </CardContent>
       </Card>
+
+      {/* 도메인 통계 */}
+      {domainStats && (
+        <Card className="bg-blue-50 dark:bg-blue-950/20">
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Globe className="h-5 w-5" />
+              도메인 분포 통계 (maxDepth {options.maxDepth})
+            </CardTitle>
+            <CardDescription>
+              크롤링된 문서의 도메인별 분포를 확인합니다
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* 전체 통계 */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="space-y-1">
+                <div className="text-sm text-muted-foreground">전체 문서</div>
+                <div className="text-2xl font-bold">{domainStats.totalDocuments}개</div>
+              </div>
+              <div className="space-y-1">
+                <div className="text-sm text-muted-foreground">기본 도메인</div>
+                <div className="text-2xl font-bold text-green-600">{domainStats.sameDomainCount}개</div>
+                <div className="text-xs text-muted-foreground">{domainStats.baseDomain}</div>
+              </div>
+              <div className="space-y-1">
+                <div className="text-sm text-muted-foreground">하위 도메인</div>
+                <div className="text-2xl font-bold text-blue-600">{domainStats.subdomainCount}개</div>
+                {domainStats.subdomainCount > 0 && (
+                  <div className="text-xs text-green-600">✅ 정상 (maxDepth 3)</div>
+                )}
+              </div>
+              <div className="space-y-1">
+                <div className="text-sm text-muted-foreground">다른 도메인</div>
+                <div className="text-2xl font-bold text-red-600">{domainStats.otherDomainCount}개</div>
+                {domainStats.otherDomainCount > 0 && options.maxDepth < 4 && (
+                  <div className="text-xs text-red-600">⚠️ 예상과 다름 (maxDepth 3)</div>
+                )}
+                {domainStats.otherDomainCount > 0 && options.maxDepth >= 4 && (
+                  <div className="text-xs text-green-600">✅ 정상 (maxDepth 4)</div>
+                )}
+              </div>
+            </div>
+
+            {/* 도메인별 상세 목록 */}
+            <div className="space-y-2">
+              <div className="text-sm font-semibold">도메인별 문서 수 ({domainStats.domainCount}개 도메인)</div>
+              <div className="space-y-1 max-h-48 overflow-y-auto">
+                {domainStats.domainList.map((item) => (
+                  <div
+                    key={item.domain}
+                    className="flex items-center justify-between p-2 rounded-md bg-background border text-sm"
+                  >
+                    <div className="flex items-center gap-2 flex-1 min-w-0">
+                      {item.isBaseDomain && (
+                        <Badge variant="default" className="text-xs">기본</Badge>
+                      )}
+                      {item.isSubdomain && (
+                        <Badge variant="secondary" className="text-xs">하위</Badge>
+                      )}
+                      {item.isOtherDomain && (
+                        <Badge variant="destructive" className="text-xs">외부</Badge>
+                      )}
+                      <span className="font-mono text-xs truncate">{item.domain}</span>
+                    </div>
+                    <span className="font-semibold ml-2">{item.count}개</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* maxDepth별 검증 메시지 */}
+            <div className="p-3 rounded-md bg-muted space-y-1">
+              {options.maxDepth === 3 && (
+                <>
+                  <div className="text-sm font-semibold">maxDepth 3 검증:</div>
+                  <div className="text-xs space-y-1">
+                    {domainStats.subdomainCount > 0 ? (
+                      <div className="text-green-600">✅ 하위 도메인 포함됨 (정상)</div>
+                    ) : (
+                      <div className="text-yellow-600">⚠️ 하위 도메인 없음</div>
+                    )}
+                    {domainStats.otherDomainCount === 0 ? (
+                      <div className="text-green-600">✅ 다른 도메인 제외됨 (정상)</div>
+                    ) : (
+                      <div className="text-red-600">❌ 다른 도메인 포함됨 (비정상)</div>
+                    )}
+                  </div>
+                </>
+              )}
+              {options.maxDepth === 4 && (
+                <>
+                  <div className="text-sm font-semibold">maxDepth 4 검증:</div>
+                  <div className="text-xs space-y-1">
+                    {domainStats.otherDomainCount > 0 ? (
+                      <div className="text-green-600">✅ 다른 도메인 포함됨 (정상)</div>
+                    ) : (
+                      <div className="text-yellow-600">⚠️ 다른 도메인 없음 (외부 링크가 없을 수 있음)</div>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       {/* 문서 목록 */}
       <Card>

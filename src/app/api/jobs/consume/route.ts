@@ -2630,11 +2630,15 @@ export async function processQueue() {
               }
             });
 
-            const candidateUrls = Array.from(candidateUrlSet).slice(0, 150); // maxUrls와 일치하도록 150개로 증가 (기존: 50)
+            // discoveryOptions.maxUrls를 사용하여 동적으로 제한 적용
+            const maxUrlsLimit = discoveryOptions.maxUrls || 150;
+            const candidateUrls = Array.from(candidateUrlSet).slice(0, maxUrlsLimit);
 
-            console.log(`[CRITICAL] 📄 하위 페이지 후보: ${candidateUrls.length}개 (발견: ${discovered.length}개, 필터링 후: ${candidateUrls.length}개)`, {
+            console.log(`[CRITICAL] 📄 하위 페이지 후보: ${candidateUrls.length}개 (발견: ${discovered.length}개, maxUrls 제한: ${maxUrlsLimit}개, 필터링 후: ${candidateUrls.length}개)`, {
               url,
               documentId,
+              maxDepth: actualMaxDepth,
+              maxUrlsLimit,
               discoveredUrls: discovered.map(d => d.url).slice(0, 10),
               candidateUrls: candidateUrls.slice(0, 10),
               titleMapSample: Array.from(urlToTitleMap.entries()).slice(0, 5)
@@ -2650,10 +2654,9 @@ export async function processQueue() {
             }
             let processedCount = 0;
 
-            // 병렬 처리: 메모리 최적화를 위해 배치 크기 조정 (150개 페이지 처리 시)
-            // 150개 페이지 = 15개 배치 (10개씩) 또는 10개 배치 (15개씩)
-            // 메모리 안정성을 위해 8개씩 처리 (기존: 10개)
-            const BATCH_SIZE = 8; // 메모리 최적화: 10 → 8로 감소
+            // 병렬 처리: 메모리 최적화를 위해 배치 크기 조정
+            // maxUrls에 따라 배치 크기 동적 조정 (200개일 때는 10개씩, 150개 이하는 8개씩)
+            const BATCH_SIZE = maxUrlsLimit >= 200 ? 10 : 8; // maxUrls 200개 이상일 때는 배치 크기 증가
             
             // 각 하위 페이지의 개별 상태 추적
             const subPageStatusMap = new Map<string, { url: string; title?: string; status: 'pending' | 'processing' | 'completed' | 'failed'; chunkCount?: number; error?: string }>();
