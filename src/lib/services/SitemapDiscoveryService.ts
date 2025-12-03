@@ -810,6 +810,16 @@ export class SitemapDiscoveryService {
   }
 
   /**
+   * 도메인이 하위 도메인인지 확인
+   */
+  private isSubdomain(subDomain: string, baseDomain: string): boolean {
+    if (subDomain === baseDomain) {
+      return false;
+    }
+    return subDomain.endsWith(`.${baseDomain}`);
+  }
+
+  /**
    * URL 유효성 검사
    */
   private isValidUrl(url: string, baseDomain: string, config: DiscoveryOptions): boolean {
@@ -817,18 +827,40 @@ export class SitemapDiscoveryService {
       const urlObj = new URL(url);
       const urlDomain = urlObj.hostname;
 
-      // 같은 도메인인지 확인
+      // maxDepth에 따른 도메인 필터링
+      // maxDepth 1-2: 정확히 같은 도메인만 허용
+      // maxDepth 3: 같은 도메인 + 하위 도메인 허용
+      // maxDepth 4: 모든 도메인 허용 (includeExternal이 true인 경우와 동일)
       if (urlDomain !== baseDomain) {
-        if (config.includeExternal) {
-          return true;
+        if (config.maxDepth >= 4) {
+          // maxDepth 4: 모든 도메인 허용
+          // includeExternal이 true이거나 maxDepth가 4 이상이면 허용
+          if (config.includeExternal) {
+            return true;
+          }
+        } else if (config.maxDepth >= 3) {
+          // maxDepth 3: 같은 도메인 + 하위 도메인 허용
+          if (this.isSubdomain(urlDomain, baseDomain)) {
+            // 하위 도메인은 허용
+          } else {
+            // 하위 도메인이 아니면 제외
+            return false;
+          }
+        } else {
+          // maxDepth 1-2: 정확히 같은 도메인만 허용
+          return false;
         }
-        // 도메인이 다르면 false 반환 (상세 로그는 filterAndSortPages에서 출력)
-        return false;
       }
 
-      // 허용된 도메인 목록 확인
-      if (config.allowedDomains && config.allowedDomains.length > 0 && !config.allowedDomains.includes(urlDomain)) {
-        return false;
+      // 허용된 도메인 목록 확인 (maxDepth 4가 아닌 경우)
+      if (config.maxDepth < 4 && config.allowedDomains && config.allowedDomains.length > 0) {
+        const isAllowed = config.allowedDomains.some(domain => 
+          urlDomain === domain || 
+          (config.maxDepth >= 3 && this.isSubdomain(urlDomain, domain))
+        );
+        if (!isAllowed) {
+          return false;
+        }
       }
 
       // 불필요한 확장자 제외 (단, sitemap URL은 이미 파싱되어 URL 목록으로 변환되므로 영향 없음)
@@ -879,16 +911,40 @@ export class SitemapDiscoveryService {
         const urlObj = new URL(page.url);
         const urlDomain = urlObj.hostname;
 
-        // 도메인 체크
+        // maxDepth에 따른 도메인 필터링
+        // maxDepth 1-2: 정확히 같은 도메인만 허용
+        // maxDepth 3: 같은 도메인 + 하위 도메인 허용
+        // maxDepth 4: 모든 도메인 허용
         if (urlDomain !== baseDomain) {
-          filteredOut.push({ url: page.url, reason: `도메인 불일치: ${urlDomain} !== ${baseDomain}` });
-          return;
+          if (config.maxDepth >= 4) {
+            // maxDepth 4: 모든 도메인 허용 (includeExternal이 true인 경우와 동일)
+            if (!config.includeExternal) {
+              filteredOut.push({ url: page.url, reason: `도메인 불일치 (maxDepth 4는 includeExternal=true 필요): ${urlDomain} !== ${baseDomain}` });
+              return;
+            }
+          } else if (config.maxDepth >= 3) {
+            // maxDepth 3: 같은 도메인 + 하위 도메인 허용
+            if (!this.isSubdomain(urlDomain, baseDomain)) {
+              filteredOut.push({ url: page.url, reason: `도메인 불일치 (하위 도메인 아님): ${urlDomain} !== ${baseDomain}` });
+              return;
+            }
+          } else {
+            // maxDepth 1-2: 정확히 같은 도메인만 허용
+            filteredOut.push({ url: page.url, reason: `도메인 불일치: ${urlDomain} !== ${baseDomain}` });
+            return;
+          }
         }
 
-        // allowedDomains 체크
-        if (config.allowedDomains && config.allowedDomains.length > 0 && !config.allowedDomains.includes(urlDomain)) {
-          filteredOut.push({ url: page.url, reason: `허용되지 않은 도메인: ${urlDomain} not in [${config.allowedDomains.join(', ')}]` });
-          return;
+        // allowedDomains 체크 (maxDepth 4가 아닌 경우)
+        if (config.maxDepth < 4 && config.allowedDomains && config.allowedDomains.length > 0) {
+          const isAllowed = config.allowedDomains.some(domain => 
+            urlDomain === domain || 
+            (config.maxDepth >= 3 && this.isSubdomain(urlDomain, domain))
+          );
+          if (!isAllowed) {
+            filteredOut.push({ url: page.url, reason: `허용되지 않은 도메인: ${urlDomain} not in [${config.allowedDomains.join(', ')}]` });
+            return;
+          }
         }
 
         // 확장자 체크

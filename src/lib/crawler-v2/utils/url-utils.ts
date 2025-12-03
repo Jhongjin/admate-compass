@@ -140,3 +140,42 @@ export function buildUrlPath(seedUrl: string, currentUrl: string, parentPath?: s
   return [seedUrl, currentUrl];
 }
 
+/**
+ * 도메인이 다른 도메인의 하위 도메인인지 확인
+ * @param subDomain 확인할 도메인 (예: sub.example.com)
+ * @param baseDomain 기준 도메인 (예: example.com)
+ * @returns 하위 도메인이면 true
+ */
+export function isSubdomain(subDomain: string, baseDomain: string): boolean {
+  if (subDomain === baseDomain) {
+    return false; // 같은 도메인은 하위 도메인이 아님
+  }
+  
+  // 하위 도메인 체크: sub.example.com은 example.com의 하위 도메인
+  return subDomain.endsWith(`.${baseDomain}`);
+}
+
+/**
+ * 도메인이 같은 루트 도메인인지 확인 (같은 도메인 또는 하위 도메인)
+ * @param domain1 첫 번째 도메인
+ * @param domain2 두 번째 도메인
+ * @returns 같은 루트 도메인이면 true
+ */
+export function isSameRootDomain(domain1: string, domain2: string): boolean {
+  if (domain1 === domain2) {
+    return true;
+  }
+  
+  // domain1이 domain2의 하위 도메인인지 확인
+  if (isSubdomain(domain1, domain2)) {
+    return true;
+  }
+  
+  // domain2가 domain1의 하위 도메인인지 확인
+  if (isSubdomain(domain2, domain1)) {
+    return true;
+  }
+  
+  return false;
+}
+

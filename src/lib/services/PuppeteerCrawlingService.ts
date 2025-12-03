@@ -479,17 +479,50 @@ export class PuppeteerCrawlingService {
           console.log(`🔍 하위 페이지 발견 시작: ${url} (maxDepth: ${maxDepth})`);
           const { sitemapDiscoveryService } = await import('./SitemapDiscoveryService');
 
-          // maxDepth < 3일 때: 단순 discoverSubPages 사용
-          if (maxDepth >= 3) {
-            const discovered = await sitemapDiscoveryService.discoverSubPages(url, {
-              maxDepth: 1,
-              maxUrls: 80,
+          // maxDepth에 따른 필터링 옵션 설정
+          // maxDepth 1-2: 정확히 같은 도메인만 허용
+          // maxDepth 3: 같은 도메인 + 하위 도메인 허용
+          // maxDepth 4: 모든 도메인 허용 (includeExternal: true)
+          const baseDomain = this.extractDomain(url);
+          let discoveryOptions: any;
+
+          if (maxDepth >= 4) {
+            // maxDepth 4: 모든 도메인 허용
+            discoveryOptions = {
+              maxDepth: maxDepth,
+              maxUrls: 200,
+              respectRobotsTxt: true,
+              includeExternal: true, // 모든 외부 도메인 허용
+              allowedDomains: undefined // allowedDomains 제한 없음
+            };
+            console.log(`🔍 maxDepth 4 모드: 모든 도메인 허용 (includeExternal: true)`);
+          } else if (maxDepth >= 3) {
+            // maxDepth 3: 같은 도메인 + 하위 도메인 허용
+            discoveryOptions = {
+              maxDepth: maxDepth,
+              maxUrls: 150,
               respectRobotsTxt: true,
               includeExternal: false,
-              allowedDomains: [this.extractDomain(url)]
-            }, undefined);
+              allowedDomains: [baseDomain] // 하위 도메인은 isValidUrl에서 체크
+            };
+            console.log(`🔍 maxDepth 3 모드: 같은 도메인 + 하위 도메인 허용`);
+          } else {
+            // maxDepth 1-2: 정확히 같은 도메인만 허용
+            discoveryOptions = {
+              maxDepth: maxDepth,
+              maxUrls: maxDepth >= 2 ? 50 : 20,
+              respectRobotsTxt: true,
+              includeExternal: false,
+              allowedDomains: [baseDomain]
+            };
+            console.log(`🔍 maxDepth ${maxDepth} 모드: 정확히 같은 도메인만 허용`);
+          }
 
-            const depth2Quota = 20;
+          const discovered = await sitemapDiscoveryService.discoverSubPages(url, discoveryOptions, undefined);
+
+          // depth 설정: maxDepth에 따라 depth 분배
+          if (maxDepth >= 3) {
+            const depth2Quota = Math.floor(discovered.length * 0.3); // 30%를 depth 2로
             discoveredUrls = discovered.map((d, index) => ({
               url: d.url,
               title: d.title,
@@ -500,27 +533,17 @@ export class PuppeteerCrawlingService {
 
             const depth2Count = discoveredUrls.filter(d => d.depth === 2).length;
             const depth3Count = discoveredUrls.filter(d => d.depth >= 3).length;
-            console.log(`✅ 심도 3 선택 모드: ${discoveredUrls.length}개 발견 (depth 2: ${depth2Count}개, depth ≥3: ${depth3Count}개)`);
+            console.log(`✅ maxDepth ${maxDepth} 탐색 완료: ${discoveredUrls.length}개 발견 (depth 2: ${depth2Count}개, depth ≥3: ${depth3Count}개)`);
           } else {
-            // maxDepth < 3일 때: 단순 discoverSubPages 사용
-            const discovered = await sitemapDiscoveryService.discoverSubPages(url, {
-              maxDepth: maxDepth,
-              maxUrls: maxDepth >= 2 ? 50 : 20,
-              respectRobotsTxt: true,
-              includeExternal: false,
-              allowedDomains: [this.extractDomain(url)]
-            }, undefined);
-
-            // depth 설정: maxDepth에 따라 depth 분배
             discoveredUrls = discovered.map((d) => ({
               url: d.url,
               title: d.title,
               source: d.source || 'links',
               depth: maxDepth >= 2 ? 2 : 1,
-              path: [url, d.url] // 간단한 경로
+              path: [url, d.url]
             }));
 
-            console.log(`✅ 단순 탐색 완료: ${discoveredUrls.length}개 발견 (depth: ${maxDepth >= 2 ? 2 : 1})`);
+            console.log(`✅ maxDepth ${maxDepth} 탐색 완료: ${discoveredUrls.length}개 발견 (depth: ${maxDepth >= 2 ? 2 : 1})`);
           }
         } catch (error) {
           console.error('❌ 하위 페이지 발견 실패:', error);

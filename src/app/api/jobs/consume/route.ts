@@ -2561,12 +2561,17 @@ export async function processQueue() {
         if (extractSubPages) {
           console.error('[CRITICAL] ✅ 하위 페이지 크롤링 시작 - extractSubPages가 true입니다.');
           try {
+            // maxDepth에 따른 필터링 옵션 설정
+            // maxDepth 1-2: 정확히 같은 도메인만 허용
+            // maxDepth 3: 같은 도메인 + 하위 도메인 허용
+            // maxDepth 4: 모든 도메인 허용 (includeExternal: true)
+            const actualMaxDepth = Math.max(1, Math.min(maxDepth, 4));
             const discoveryOptions = {
-              maxDepth: Math.max(1, Math.min(maxDepth, 3)),
-              maxUrls: 150, // 하위 페이지 발견 개수 증가 (기존: 50 → 150)
+              maxDepth: actualMaxDepth,
+              maxUrls: actualMaxDepth >= 4 ? 200 : actualMaxDepth >= 3 ? 150 : actualMaxDepth >= 2 ? 50 : 20,
               respectRobotsTxt: respectRobots,
-              includeExternal: false,
-              allowedDomains: [seedUrl.hostname],
+              includeExternal: actualMaxDepth >= 4, // maxDepth 4일 때만 외부 도메인 허용
+              allowedDomains: actualMaxDepth >= 4 ? undefined : [seedUrl.hostname], // maxDepth 4일 때는 제한 없음
             };
 
             console.error('[CRITICAL] 🔍 하위 페이지 탐색 옵션:', {
