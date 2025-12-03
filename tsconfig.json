@@ -39,6 +39,7 @@
     "node_modules",
     "supabase/functions/**/*",
     "AdMate_전체코드완료_임시/**/*",
-    "backup/**/*"
+    "backup/**/*",
+    "crawler_success_temp/**/*"
   ]
 }

@@ -141,3 +141,4 @@ preview/
 # Backup folders (exclude from build)
 AdMate_전체코드완료_임시/
 backup/!src/app/gemini_pro_theme/admin/docs
+crawler_success_temp/
