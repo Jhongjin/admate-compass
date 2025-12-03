@@ -61,11 +61,19 @@ export class SitemapParser {
 
       const result = await parseStringPromise(normalizedXml, parseOptions);
 
+      // 디버깅: 파싱 결과 구조 확인
+      const resultKeys = Object.keys(result);
+      if (resultKeys.length > 0) {
+        console.log(`🔍 사이트맵 파싱 결과 키: ${resultKeys.join(', ')}`);
+      }
+
       // 사이트맵 인덱스인 경우 (sitemapindex)
-      if (result.sitemapindex?.sitemap) {
-        const sitemaps = Array.isArray(result.sitemapindex.sitemap)
-          ? result.sitemapindex.sitemap
-          : [result.sitemapindex.sitemap];
+      // 다양한 가능한 구조 확인
+      const sitemapIndex = result.sitemapindex || result['sitemap:index'] || result['sitemap-index'];
+      if (sitemapIndex?.sitemap) {
+        const sitemaps = Array.isArray(sitemapIndex.sitemap)
+          ? sitemapIndex.sitemap
+          : [sitemapIndex.sitemap];
 
         const allUrls: SitemapItem[] = [];
 
@@ -92,10 +100,12 @@ export class SitemapParser {
       }
 
       // 일반 사이트맵인 경우 (urlset)
-      if (result.urlset?.url) {
-        const urls = Array.isArray(result.urlset.url)
-          ? result.urlset.url
-          : [result.urlset.url];
+      // 다양한 가능한 구조 확인
+      const urlSet = result.urlset || result['url:set'] || result['url-set'];
+      if (urlSet?.url) {
+        const urls = Array.isArray(urlSet.url)
+          ? urlSet.url
+          : [urlSet.url];
 
         const items = urls.map((item: any) => ({
           loc: item.loc || '',
@@ -111,7 +121,15 @@ export class SitemapParser {
         return items;
       }
 
-      console.log(`ℹ️ 사이트맵 형식 인식 실패: ${sitemapUrl} (빈 사이트맵 또는 알 수 없는 형식)`);
+      // 디버깅: 실제 응답 내용 확인 (처음 500자만)
+      if (normalizedXml.length > 0) {
+        const preview = normalizedXml.substring(0, 500);
+        console.log(`ℹ️ 사이트맵 형식 인식 실패: ${sitemapUrl}`);
+        console.log(`📄 응답 미리보기 (처음 500자): ${preview}...`);
+        console.log(`📊 파싱 결과 키: ${resultKeys.join(', ') || '없음'}`);
+      } else {
+        console.log(`ℹ️ 사이트맵이 비어있음: ${sitemapUrl}`);
+      }
       return [];
     } catch (error) {
       // 에러 발생 시에도 경고만 표시하고 빈 배열 반환 (다른 방법으로 계속 진행)
