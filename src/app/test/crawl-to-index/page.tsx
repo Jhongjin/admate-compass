@@ -76,10 +76,11 @@ export default function CrawlToIndexTestPage() {
   const supabase = createClient();
 
   // 작업 상태 조회
-  const { data: jobStatus, refetch: refetchJob } = useQuery({
+  const { data: jobStatus, refetch: refetchJob, isLoading: isLoadingJob } = useQuery({
     queryKey: ['job-status', jobId],
     queryFn: async () => {
       if (!jobId) return null;
+      console.log('🔍 작업 상태 조회:', jobId);
       // Supabase에서 직접 작업 상태 조회
       const { data, error } = await supabase
         .from('processing_jobs')
@@ -87,7 +88,18 @@ export default function CrawlToIndexTestPage() {
         .eq('id', jobId)
         .maybeSingle();
       
-      if (error) throw new Error(`Failed to fetch job status: ${error.message}`);
+      if (error) {
+        console.error('❌ 작업 상태 조회 실패:', error);
+        throw new Error(`Failed to fetch job status: ${error.message}`);
+      }
+      
+      console.log('📊 작업 상태:', data ? {
+        id: data.id,
+        status: data.status,
+        job_type: data.job_type,
+        result: data.result ? Object.keys(data.result) : null
+      } : 'null');
+      
       return data as JobStatus | null;
     },
     enabled: !!jobId,
@@ -95,6 +107,7 @@ export default function CrawlToIndexTestPage() {
       // 작업이 완료되면 폴링 중지
       const data = query.state.data;
       if (data?.status === 'completed' || data?.status === 'failed') {
+        console.log('✅ 작업 완료, 폴링 중지:', data.status);
         return false;
       }
       return 2000; // 2초마다 폴링
@@ -103,10 +116,19 @@ export default function CrawlToIndexTestPage() {
 
   // 작업 상태에 따른 진행 상황 업데이트
   useEffect(() => {
-    if (!jobStatus) return;
+    if (!jobStatus) {
+      if (jobId && !isLoadingJob) {
+        console.warn('⚠️ 작업 ID가 있지만 상태를 조회할 수 없습니다:', jobId);
+        setCurrentStep('작업 상태 조회 중...');
+        setProgress(5);
+      }
+      return;
+    }
 
     const status = jobStatus.status;
     const result = jobStatus.result || {};
+
+    console.log('🔄 작업 상태 업데이트:', { status, resultKeys: Object.keys(result) });
 
     switch (status) {
       case 'pending':
@@ -142,7 +164,7 @@ export default function CrawlToIndexTestPage() {
         toast.error('크롤링 또는 인덱싱 중 오류가 발생했습니다.');
         break;
     }
-  }, [jobStatus, refetchDocuments]);
+  }, [jobStatus, refetchDocuments, jobId, isLoadingJob]);
 
   const handleStartCrawl = async () => {
     if (!url.trim()) {
@@ -176,10 +198,14 @@ export default function CrawlToIndexTestPage() {
 
       const data = await response.json();
 
+      console.log('📋 작업 추가 응답:', data);
+
       if (data.success && data.jobId) {
+        console.log('✅ 작업 ID 설정:', data.jobId);
         setJobId(data.jobId);
         toast.success('크롤링 작업이 큐에 추가되었습니다.');
       } else {
+        console.error('❌ 작업 추가 실패:', data);
         throw new Error(data.error || '작업 추가 실패');
       }
     } catch (error) {
