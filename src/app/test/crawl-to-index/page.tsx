@@ -100,29 +100,78 @@ export default function CrawlToIndexTestPage() {
   // jobId가 없어도 URL 기준으로 필터링 (작업 완료 후 jobId가 없을 수 있음)
   const recentDocuments = React.useMemo(() => {
     const allDocs = documentsData?.data?.documents || [];
-    console.log('📋 전체 문서 수:', allDocs.length);
+    console.log('📋 전체 문서 수:', allDocs.length, {
+      documentsData_exists: !!documentsData,
+      data_exists: !!documentsData?.data,
+      documents_array: Array.isArray(allDocs),
+      first_doc: allDocs[0] ? {
+        id: allDocs[0].id?.substring(0, 8),
+        url: allDocs[0].url,
+        title: allDocs[0].title,
+        status: allDocs[0].status
+      } : null
+    });
+    
+    if (allDocs.length === 0) {
+      console.log('⚠️ 문서가 없습니다.');
+      return [];
+    }
     
     // maxDepth 4일 때는 모든 문서 표시 (다른 도메인 포함)
     if (options.maxDepth === 4) {
-      console.log('🔍 maxDepth 4: 모든 문서 표시 (다른 도메인 포함)');
+      console.log('🔍 maxDepth 4: 모든 문서 표시 (다른 도메인 포함)', { count: allDocs.length });
       return allDocs;
     }
     
     // maxDepth 1-3일 때는 같은 도메인만 표시
+    let targetHostname: string;
+    try {
+      const targetUrl = new URL(url);
+      targetHostname = targetUrl.hostname;
+    } catch (error) {
+      console.error('❌ URL 파싱 실패:', url, error);
+      // URL 파싱 실패 시 모든 문서 표시
+      return allDocs;
+    }
+    
     const filtered = allDocs.filter((doc: Document) => {
       try {
-        if (!doc.url) return false;
+        if (!doc.url) {
+          console.log('⚠️ 문서에 URL이 없음:', doc.id?.substring(0, 8));
+          return false;
+        }
         const docUrl = new URL(doc.url);
-        const targetUrl = new URL(url);
+        const docHostname = docUrl.hostname;
+        
         // 같은 도메인의 문서만 표시
-        const isSameDomain = docUrl.hostname === targetUrl.hostname || docUrl.hostname.endsWith(`.${targetUrl.hostname}`);
+        const isSameDomain = docHostname === targetHostname || docHostname.endsWith(`.${targetHostname}`);
+        
+        if (!isSameDomain) {
+          console.log('🔍 도메인 불일치:', {
+            doc_hostname: docHostname,
+            target_hostname: targetHostname,
+            doc_url: doc.url
+          });
+        }
+        
         return isSameDomain;
-      } catch {
+      } catch (error) {
+        console.error('❌ 문서 URL 파싱 실패:', doc.url, error);
         return false;
       }
     });
     
-    console.log('🔍 필터링된 문서 수:', filtered.length, '(도메인:', new URL(url).hostname, ')');
+    console.log('🔍 필터링 결과:', {
+      전체_문서: allDocs.length,
+      필터링_후: filtered.length,
+      대상_도메인: targetHostname,
+      필터링된_문서: filtered.slice(0, 3).map((d: Document) => ({
+        id: d.id?.substring(0, 8),
+        url: d.url,
+        title: d.title
+      }))
+    });
+    
     return filtered;
   }, [documentsData?.data?.documents, url, options.maxDepth]);
 
@@ -918,6 +967,31 @@ export default function CrawlToIndexTestPage() {
               <p className="text-sm text-muted-foreground mt-2">
                 크롤링을 시작하면 완료된 문서가 여기에 표시됩니다.
               </p>
+              {/* 디버깅 정보 */}
+              {documentsData?.data?.documents && documentsData.data.documents.length > 0 && (
+                <div className="mt-4 p-3 bg-yellow-50 dark:bg-yellow-950/20 rounded-md text-left max-w-md">
+                  <p className="text-xs font-semibold text-yellow-800 dark:text-yellow-200 mb-2">
+                    디버깅 정보:
+                  </p>
+                  <p className="text-xs text-yellow-700 dark:text-yellow-300">
+                    전체 문서: {documentsData.data.documents.length}개
+                  </p>
+                  <p className="text-xs text-yellow-700 dark:text-yellow-300">
+                    필터링 후: {recentDocuments.length}개
+                  </p>
+                  <p className="text-xs text-yellow-700 dark:text-yellow-300">
+                    대상 도메인: {url ? new URL(url).hostname : 'N/A'}
+                  </p>
+                  <p className="text-xs text-yellow-700 dark:text-yellow-300 mt-2">
+                    첫 번째 문서 URL: {documentsData.data.documents[0]?.url || 'N/A'}
+                  </p>
+                  {options.maxDepth !== 4 && (
+                    <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-2">
+                      💡 maxDepth가 4가 아니면 같은 도메인만 표시됩니다. maxDepth를 4로 변경하면 모든 문서를 볼 수 있습니다.
+                    </p>
+                  )}
+                </div>
+              )}
             </div>
           ) : (
             <div className="space-y-4">
