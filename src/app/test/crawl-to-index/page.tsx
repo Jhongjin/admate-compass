@@ -527,6 +527,7 @@ export default function CrawlToIndexTestPage() {
         nullCheckCountRef.current = 0; // 카운트 리셋
         setNullCheckCount(0);
         completionToastShownRef.current = false; // 🔥 새 작업 시작 시 토스트 플래그 리셋
+        setDeletedDocumentIds(new Set()); // 🔥 새 작업 시작 시 삭제 ID 목록 초기화
         // DB 반영을 위한 짧은 지연 후 쿼리 활성화
         setTimeout(() => {
           setJobIdReady(true);
