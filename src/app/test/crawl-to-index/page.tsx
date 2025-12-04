@@ -86,10 +86,14 @@ export default function CrawlToIndexTestPage() {
   const { data: documentsData, refetch: refetchDocuments } = useQuery({
     queryKey: ['test-documents'],
     queryFn: async () => {
-      const res = await fetch('/api/admin/upload-new?limit=200&status=indexed', {
+      // 🔥 캐시 버스팅을 위한 타임스탬프 추가
+      const cacheBuster = Date.now();
+      const res = await fetch(`/api/admin/upload-new?limit=200&status=indexed&_t=${cacheBuster}`, {
         cache: 'no-store',
         headers: {
-          'Cache-Control': 'no-cache',
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0',
         }
       });
       if (!res.ok) throw new Error('Failed to fetch documents');
