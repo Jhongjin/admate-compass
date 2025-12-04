@@ -76,6 +76,9 @@ export default function CrawlToIndexTestPage() {
   // 삭제 중 플래그 (자동 새로고침 일시 중지용)
   const [isDeleting, setIsDeleting] = useState(false);
   
+  // 작업 완료 토스트 중복 방지 플래그
+  const completionToastShownRef = useRef(false);
+  
   // 문서 목록 조회 (3초마다 자동 새로고침, 삭제 중일 때는 중지)
   const { data: documentsData, refetch: refetchDocuments } = useQuery({
     queryKey: ['test-documents'],
@@ -302,7 +305,11 @@ export default function CrawlToIndexTestPage() {
           setCurrentStep(`인덱싱 완료! (${recentDocuments.length}개 문서)`);
           setProgress(100);
           setIsCrawling(false);
-          toast.success(`크롤링 및 인덱싱이 완료되었습니다! (${recentDocuments.length}개 문서)`);
+          // 🔥 토스트 중복 방지
+          if (!completionToastShownRef.current) {
+            toast.success(`크롤링 및 인덱싱이 완료되었습니다! (${recentDocuments.length}개 문서)`);
+            completionToastShownRef.current = true;
+          }
           // 상태 리셋
           setJobId(null);
           setJobIdReady(false);
@@ -355,6 +362,12 @@ export default function CrawlToIndexTestPage() {
         setProgress(100);
         setIsCrawling(false);
         
+        // 🔥 토스트 중복 방지: 이미 표시되었으면 스킵
+        if (completionToastShownRef.current) {
+          console.log('⚠️ [작업 완료] 토스트가 이미 표시되었습니다. 중복 실행 방지.');
+          break;
+        }
+        
         console.log('✅ [작업 완료] 문서 목록 강제 갱신 시작...');
         
         // 작업 완료 후 문서 목록 강제 갱신 (여러 번 시도)
@@ -383,13 +396,17 @@ export default function CrawlToIndexTestPage() {
               // 🔥 중요: refetch 결과를 React Query 캐시에 즉시 반영
               if (result.data) {
                 queryClient.setQueryData(['test-documents'], result.data);
+                queryClient.invalidateQueries({ queryKey: ['test-documents'] }); // 강제 리렌더링
                 console.log('✅ [작업 완료] React Query 캐시 업데이트 완료');
               }
               
               if (allDocs.length > 0) {
-                // 문서가 조회되면 성공
+                // 문서가 조회되면 성공 (토스트는 한 번만 표시)
                 console.log('✅ [작업 완료] 문서 목록 갱신 성공:', allDocs.length, '개 문서');
-                toast.success(`크롤링 및 인덱싱이 완료되었습니다! (${allDocs.length}개 문서 조회됨)`);
+                if (!completionToastShownRef.current) {
+                  toast.success(`크롤링 및 인덱싱이 완료되었습니다! (${allDocs.length}개 문서 조회됨)`);
+                  completionToastShownRef.current = true;
+                }
                 break;
               } else if (i === 4) {
                 // 마지막 시도에서도 문서가 없으면 백엔드 상태 확인
@@ -414,11 +431,17 @@ export default function CrawlToIndexTestPage() {
                     const finalResult = await refetchDocuments();
                     if (finalResult.data) {
                       queryClient.setQueryData(['test-documents'], finalResult.data);
+                      queryClient.invalidateQueries({ queryKey: ['test-documents'] });
                     }
                     const finalDocs = finalResult.data?.data?.documents || [];
-                    if (finalDocs.length > 0) {
+                    if (finalDocs.length > 0 && !completionToastShownRef.current) {
                       toast.success(`크롤링 및 인덱싱이 완료되었습니다! (${finalDocs.length}개 문서 조회됨, 상태 동기화 완료)`);
+                      completionToastShownRef.current = true;
                     }
+                  } else if (!completionToastShownRef.current) {
+                    // 문서가 없어도 작업 완료 토스트 표시 (한 번만)
+                    toast.warning('크롤링이 완료되었지만 문서가 조회되지 않습니다. 잠시 후 다시 확인해주세요.');
+                    completionToastShownRef.current = true;
                   }
                 } catch (checkError) {
                   console.error('❌ [백엔드 상태 확인 실패]:', checkError);
@@ -480,6 +503,7 @@ export default function CrawlToIndexTestPage() {
         setJobId(data.jobId);
         nullCheckCountRef.current = 0; // 카운트 리셋
         setNullCheckCount(0);
+        completionToastShownRef.current = false; // 🔥 새 작업 시작 시 토스트 플래그 리셋
         // DB 반영을 위한 짧은 지연 후 쿼리 활성화
         setTimeout(() => {
           setJobIdReady(true);
@@ -778,7 +802,11 @@ export default function CrawlToIndexTestPage() {
         setJobIdReady(false);
         nullCheckCountRef.current = 0;
         setNullCheckCount(0);
-        toast.success(`크롤링 및 인덱싱이 완료되었습니다! (${recentDocuments.length}개 문서)`);
+        // 🔥 토스트 중복 방지
+        if (!completionToastShownRef.current) {
+          toast.success(`크롤링 및 인덱싱이 완료되었습니다! (${recentDocuments.length}개 문서)`);
+          completionToastShownRef.current = true;
+        }
       }, 3000); // 3초 후 확인 (작업 레코드 정리 시간 고려)
 
       return () => clearTimeout(timeoutId);
