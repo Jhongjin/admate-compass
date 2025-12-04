@@ -375,14 +375,53 @@ export default function CrawlToIndexTestPage() {
               console.log(`🔄 [작업 완료] Refetch 시도 ${i + 1}/5:`, {
                 전체_문서: allDocs.length,
                 첫_문서_URL: allDocs[0]?.url || 'N/A',
-                첫_문서_상태: allDocs[0]?.status
+                첫_문서_상태: allDocs[0]?.status,
+                첫_문서_청크수: allDocs[0]?.chunk_count || 0
               });
+              
+              // 🔥 중요: refetch 결과를 React Query 캐시에 즉시 반영
+              if (result.data) {
+                queryClient.setQueryData(['test-documents'], result.data);
+                console.log('✅ [작업 완료] React Query 캐시 업데이트 완료');
+              }
               
               if (allDocs.length > 0) {
                 // 문서가 조회되면 성공
                 console.log('✅ [작업 완료] 문서 목록 갱신 성공:', allDocs.length, '개 문서');
                 toast.success(`크롤링 및 인덱싱이 완료되었습니다! (${allDocs.length}개 문서 조회됨)`);
                 break;
+              } else if (i === 4) {
+                // 마지막 시도에서도 문서가 없으면 백엔드 상태 확인
+                console.warn('⚠️ [작업 완료] 모든 refetch 시도 후에도 문서가 없습니다. 백엔드 상태 확인 필요.');
+                try {
+                  const checkResponse = await fetch('/api/admin/check-processing-status', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' }
+                  });
+                  const checkData = await checkResponse.json();
+                  console.log('🔍 [백엔드 상태 확인]', {
+                    success: checkData.success,
+                    processingCount: checkData.data?.processingCount || 0,
+                    pendingCount: checkData.data?.pendingCount || 0,
+                    synced: checkData.data?.synced || 0,
+                    results: checkData.data?.results?.slice(0, 3) || []
+                  });
+                  
+                  if (checkData.data?.synced > 0) {
+                    // 동기화가 발생했으면 다시 refetch
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                    const finalResult = await refetchDocuments();
+                    if (finalResult.data) {
+                      queryClient.setQueryData(['test-documents'], finalResult.data);
+                    }
+                    const finalDocs = finalResult.data?.data?.documents || [];
+                    if (finalDocs.length > 0) {
+                      toast.success(`크롤링 및 인덱싱이 완료되었습니다! (${finalDocs.length}개 문서 조회됨, 상태 동기화 완료)`);
+                    }
+                  }
+                } catch (checkError) {
+                  console.error('❌ [백엔드 상태 확인 실패]:', checkError);
+                }
               }
             } catch (error) {
               console.error(`❌ [작업 완료] Refetch 시도 ${i + 1} 실패:`, error);
