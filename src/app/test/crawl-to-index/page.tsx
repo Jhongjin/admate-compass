@@ -986,14 +986,48 @@ export default function CrawlToIndexTestPage() {
                 크롤링 및 인덱싱이 완료된 문서가 자동으로 표시됩니다 (3초마다 자동 새로고침)
               </CardDescription>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => refetchDocuments()}
-            >
-              <RefreshCw className="h-4 w-4 mr-2" />
-              새로고침
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={async () => {
+                  try {
+                    const targetUrl = new URL(url);
+                    const domain = targetUrl.hostname;
+                    
+                    const response = await fetch('/api/admin/verify-document-deletion', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ domain }),
+                    });
+                    
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                      console.log('🔍 [백엔드 데이터 확인]:', data.data);
+                      toast.info(
+                        `${domain} 도메인: 백엔드에 ${data.data.total}개 문서 존재`,
+                        { duration: 5000 }
+                      );
+                    }
+                  } catch (error) {
+                    console.error('백엔드 데이터 확인 오류:', error);
+                    toast.error('백엔드 데이터 확인 중 오류가 발생했습니다.');
+                  }
+                }}
+              >
+                <Database className="h-4 w-4 mr-2" />
+                백엔드 확인
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => refetchDocuments()}
+              >
+                <RefreshCw className="h-4 w-4 mr-2" />
+                새로고침
+              </Button>
+            </div>
           </div>
         </CardHeader>
         <CardContent>

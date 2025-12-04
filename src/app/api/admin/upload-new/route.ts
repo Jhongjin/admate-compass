@@ -2568,14 +2568,59 @@ export async function DELETE(request: NextRequest) {
       targetDocumentId = documents[0].id;
     }
 
+    // 삭제 전 문서 확인
+    const { data: beforeDeleteDoc, error: beforeError } = await supabase
+      .from('documents')
+      .select('id, title, url, chunk_count')
+      .eq('id', targetDocumentId)
+      .maybeSingle();
+
+    if (beforeError) {
+      throw new Error(`문서 조회 실패: ${beforeError.message}`);
+    }
+
+    if (!beforeDeleteDoc) {
+      return NextResponse.json({
+        success: false,
+        error: '삭제할 문서를 찾을 수 없습니다.',
+        data: {
+          deletedChunks: 0,
+          deletedEmbeddings: 0
+        }
+      }, { status: 404 });
+    }
+
+    const chunkCount = beforeDeleteDoc.chunk_count || 0;
+
     // 문서와 관련된 모든 청크 삭제
-    const { error: chunksError } = await supabase
+    const { error: chunksError, count: deletedChunksCount } = await supabase
       .from('document_chunks')
+      .delete()
+      .eq('document_id', targetDocumentId)
+      .select('*', { count: 'exact', head: true });
+
+    if (chunksError) {
+      console.warn('⚠️ 청크 삭제 실패:', chunksError);
+    }
+
+    // document_metadata 삭제
+    const { error: metadataError } = await supabase
+      .from('document_metadata')
       .delete()
       .eq('document_id', targetDocumentId);
 
-    if (chunksError) {
-      console.warn('청크 삭제 실패:', chunksError);
+    if (metadataError) {
+      console.warn('⚠️ 메타데이터 삭제 실패:', metadataError);
+    }
+
+    // document_logs 삭제
+    const { error: logsError } = await supabase
+      .from('document_logs')
+      .delete()
+      .eq('document_id', targetDocumentId);
+
+    if (logsError) {
+      console.warn('⚠️ 로그 삭제 실패:', logsError);
     }
 
     // 문서 삭제
@@ -2588,17 +2633,44 @@ export async function DELETE(request: NextRequest) {
       throw new Error(`문서 삭제 실패: ${documentError.message}`);
     }
 
+    // 삭제 검증: 실제로 삭제되었는지 확인
+    await new Promise(resolve => setTimeout(resolve, 500)); // DB 반영 대기
+    
+    const { data: verifyDoc, error: verifyError } = await supabase
+      .from('documents')
+      .select('id')
+      .eq('id', targetDocumentId)
+      .maybeSingle();
+
+    if (verifyError) {
+      console.warn('⚠️ 삭제 검증 중 오류:', verifyError);
+    }
+
+    const verified = !verifyDoc; // 문서가 없으면 삭제 성공
+
     // 메모리에서도 삭제
     documents = documents.filter(doc => doc.id !== targetDocumentId);
 
-    console.log(`✅ 문서 삭제 완료: ${targetDocumentId}`);
+    console.log(`✅ 문서 삭제 완료: ${targetDocumentId}`, {
+      삭제_전_청크수: chunkCount,
+      삭제된_청크수: deletedChunksCount || 0,
+      검증_성공: verified
+    });
 
     return NextResponse.json({
       success: true,
-      message: '문서와 관련된 모든 데이터가 성공적으로 삭제되었습니다.',
+      message: verified 
+        ? '문서와 관련된 모든 데이터가 성공적으로 삭제되었습니다.'
+        : '문서 삭제 요청이 완료되었지만 검증이 필요합니다.',
       data: {
-        deletedChunks: 0, // 실제로는 삭제된 청크 수를 반환해야 함
-        deletedEmbeddings: 0
+        deletedChunks: deletedChunksCount || 0,
+        deletedEmbeddings: deletedChunksCount || 0, // 임베딩은 청크와 함께 삭제됨
+        verified
+      },
+      deletedDocument: {
+        id: targetDocumentId,
+        title: beforeDeleteDoc.title,
+        url: beforeDeleteDoc.url
       }
     });
 
