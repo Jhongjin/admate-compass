@@ -2551,7 +2551,7 @@ export async function processQueue() {
           }
         }
 
-        const subPageResults: Array<{ url: string; success: boolean; chunkCount?: number; error?: string; documentId?: string }> = [];
+        let subPageResults: Array<{ url: string; success: boolean; chunkCount?: number; error?: string; documentId?: string }> = [];
 
         // extractSubPages 값 재확인 (메인 문서 처리 후)
         const extractSubPagesAfterMain = extractSubPagesRaw === true || extractSubPagesRaw === 'true';
