@@ -143,18 +143,19 @@ export async function POST(request: NextRequest) {
       console.log(`✅ 로그 삭제 완료`);
     }
 
-    // 4. documents 삭제
-    const { error: deleteError } = await supabase
+    // 4. documents 삭제 (트랜잭션처럼 처리)
+    const { error: deleteError, count: deletedCount } = await supabase
       .from('documents')
       .delete()
-      .in('id', documentIds);
+      .in('id', documentIds)
+      .select('*', { count: 'exact', head: true });
 
     if (deleteError) {
       throw new Error(`문서 삭제 실패: ${deleteError.message}`);
     }
 
-    const deletedCount = documentIds.length;
-    console.log(`✅ ${deletedCount}개 문서 삭제 완료`);
+    const actualDeletedCount = deletedCount || documentIds.length;
+    console.log(`✅ ${actualDeletedCount}개 문서 삭제 완료 (요청: ${documentIds.length}개)`);
 
     // 삭제 확인: 실제로 삭제되었는지 검증 (여러 번 시도)
     let remainingDocs: any[] = [];
@@ -232,10 +233,11 @@ export async function POST(request: NextRequest) {
     }
 
     const verified = remainingDocs.length === 0;
-    const verifiedCount = deletedCount - remainingDocs.length;
+    const verifiedCount = actualDeletedCount - remainingDocs.length;
     
     console.log(`📊 최종 삭제 검증 결과:`, {
-      삭제_요청: deletedCount,
+      삭제_요청: documentIds.length,
+      실제_삭제: actualDeletedCount,
       검증_성공: verified,
       검증_삭제: verifiedCount,
       남은_문서: remainingDocs.length,
@@ -244,9 +246,9 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      message: `${domain} 도메인의 ${deletedCount}개 문서가 삭제되었습니다.${verified ? '' : ` (${remainingDocs.length}개 문서가 여전히 존재할 수 있음)`}`,
+      message: `${domain} 도메인의 ${actualDeletedCount}개 문서가 삭제되었습니다.${verified ? '' : ` (${remainingDocs.length}개 문서가 여전히 존재할 수 있음)`}`,
       deleted: {
-        documents: deletedCount,
+        documents: actualDeletedCount,
         verified: verifiedCount,
         remaining: remainingDocs.length,
         chunks: 0, // 정확한 개수는 알 수 없음
