@@ -580,6 +580,19 @@ export default function CrawlToIndexTestPage() {
               if (afterDeleteCount === 0 || afterDeleteCount < beforeDeleteCount) {
                 console.log(`✅ 문서 삭제 확인됨: ${beforeDeleteCount}개 → ${afterDeleteCount}개`);
                 
+                // 필터링된 결과로 상태 업데이트
+                const filteredResult = {
+                  ...result,
+                  data: {
+                    ...result.data,
+                    documents: finalDocs,
+                    total: finalDocs.length
+                  }
+                };
+                
+                // UI 즉시 업데이트를 위해 필터링된 상태 강제 갱신
+                queryClient.setQueryData(['test-documents'], filteredResult);
+                
                 // 검증 메시지
                 if (!verified || remainingCount > 0) {
                   toast.warning(`${deletedCount}개 문서 삭제 요청됨 (백엔드 검증: ${remainingCount}개 문서가 여전히 존재할 수 있음)`);
@@ -588,9 +601,6 @@ export default function CrawlToIndexTestPage() {
                 } else {
                   toast.success(`${deletedCount}개 문서가 삭제되었습니다. (${afterDeleteCount}개 남음)`);
                 }
-                
-                // UI 즉시 업데이트를 위해 상태 강제 갱신
-                queryClient.setQueryData(['test-documents'], result);
                 
                 // 삭제 완료 플래그 해제 (자동 새로고침 재개)
                 setIsDeleting(false);
@@ -618,6 +628,33 @@ export default function CrawlToIndexTestPage() {
         };
         
         await refetchWithRetry();
+        
+        // 삭제 완료 후 백엔드 검증 API 호출
+        setTimeout(async () => {
+          try {
+            console.log('🔍 [삭제 후 검증] 백엔드 검증 API 호출...');
+            const verifyResponse = await fetch('/api/admin/verify-document-deletion', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ domain }),
+            });
+            const verifyData = await verifyResponse.json();
+            
+            if (verifyData.success) {
+              const remainingInBackend = verifyData.data?.total || 0;
+              console.log(`🔍 [삭제 후 검증] 백엔드 남은 문서: ${remainingInBackend}개`);
+              
+              if (remainingInBackend > 0) {
+                console.warn(`⚠️ [삭제 후 검증] 백엔드에 여전히 ${remainingInBackend}개 문서가 존재합니다.`);
+                toast.warning(`백엔드 검증: ${remainingInBackend}개 문서가 여전히 존재합니다.`);
+              } else {
+                console.log(`✅ [삭제 후 검증] 백엔드에서 모든 문서가 삭제되었습니다.`);
+              }
+            }
+          } catch (verifyError) {
+            console.error('❌ [삭제 후 검증] 검증 API 호출 실패:', verifyError);
+          }
+        }, 2000);
         
         // 삭제 완료 후 추가로 한 번 더 강제 새로고침 (5초 후)
         setTimeout(async () => {
