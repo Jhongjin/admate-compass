@@ -80,15 +80,29 @@ export default function CrawlToIndexTestPage() {
       const res = await fetch('/api/admin/upload-new?limit=200&status=indexed');
       if (!res.ok) throw new Error('Failed to fetch documents');
       const data = await res.json();
+      
+      // 상세 디버깅 로그
+      const documents = data?.data?.documents || [];
       console.log('📥 문서 목록 조회:', {
-        total: data?.data?.documents?.length || 0,
-        documents: data?.data?.documents?.slice(0, 5).map((d: Document) => ({
+        success: data?.success,
+        total: documents.length,
+        response_structure: {
+          has_data: !!data?.data,
+          has_documents: !!data?.data?.documents,
+          is_array: Array.isArray(documents),
+          documents_type: typeof documents
+        },
+        documents: documents.slice(0, 5).map((d: Document) => ({
+          id: d.id?.substring(0, 8),
           title: d.title,
           url: d.url,
           status: d.status,
-          chunk_count: d.chunk_count
-        }))
+          chunk_count: d.chunk_count,
+          type: d.type
+        })),
+        all_documents_urls: documents.map((d: Document) => d.url).filter(Boolean)
       });
+      
       return data;
     },
     refetchInterval: 3000, // 3초마다 자동 새로고침
@@ -100,26 +114,43 @@ export default function CrawlToIndexTestPage() {
   // jobId가 없어도 URL 기준으로 필터링 (작업 완료 후 jobId가 없을 수 있음)
   const recentDocuments = React.useMemo(() => {
     const allDocs = documentsData?.data?.documents || [];
-    console.log('📋 전체 문서 수:', allDocs.length, {
+    
+    // 백엔드 처리 상태 진단
+    console.log('📋 [백엔드 진단] 전체 문서 수:', allDocs.length, {
       documentsData_exists: !!documentsData,
       data_exists: !!documentsData?.data,
       documents_array: Array.isArray(allDocs),
+      response_success: documentsData?.success,
       first_doc: allDocs[0] ? {
         id: allDocs[0].id?.substring(0, 8),
         url: allDocs[0].url,
         title: allDocs[0].title,
-        status: allDocs[0].status
-      } : null
+        status: allDocs[0].status,
+        chunk_count: allDocs[0].chunk_count,
+        type: allDocs[0].type
+      } : null,
+      all_urls: allDocs.map((d: Document) => d.url).filter(Boolean)
     });
     
+    // 백엔드에서 문서가 조회되었는지 확인
+    if (allDocs.length > 0) {
+      console.log('✅ [백엔드 확인] 문서가 정상적으로 조회되었습니다:', {
+        총_문서수: allDocs.length,
+        첫_문서_URL: allDocs[0]?.url,
+        첫_문서_상태: allDocs[0]?.status,
+        첫_문서_청크수: allDocs[0]?.chunk_count
+      });
+    } else {
+      console.warn('⚠️ [백엔드 확인] 조회된 문서가 없습니다. 백엔드에서 인덱싱이 완료되지 않았을 수 있습니다.');
+    }
+    
     if (allDocs.length === 0) {
-      console.log('⚠️ 문서가 없습니다.');
       return [];
     }
     
     // maxDepth 4일 때는 모든 문서 표시 (다른 도메인 포함)
     if (options.maxDepth === 4) {
-      console.log('🔍 maxDepth 4: 모든 문서 표시 (다른 도메인 포함)', { count: allDocs.length });
+      console.log('🔍 [필터링] maxDepth 4: 모든 문서 표시 (다른 도메인 포함)', { count: allDocs.length });
       return allDocs;
     }
     
@@ -128,8 +159,9 @@ export default function CrawlToIndexTestPage() {
     try {
       const targetUrl = new URL(url);
       targetHostname = targetUrl.hostname;
+      console.log('🔍 [필터링] 대상 도메인:', targetHostname);
     } catch (error) {
-      console.error('❌ URL 파싱 실패:', url, error);
+      console.error('❌ [필터링] URL 파싱 실패:', url, error);
       // URL 파싱 실패 시 모든 문서 표시
       return allDocs;
     }
@@ -137,7 +169,7 @@ export default function CrawlToIndexTestPage() {
     const filtered = allDocs.filter((doc: Document) => {
       try {
         if (!doc.url) {
-          console.log('⚠️ 문서에 URL이 없음:', doc.id?.substring(0, 8));
+          console.log('⚠️ [필터링] 문서에 URL이 없음:', doc.id?.substring(0, 8));
           return false;
         }
         const docUrl = new URL(doc.url);
@@ -147,28 +179,39 @@ export default function CrawlToIndexTestPage() {
         const isSameDomain = docHostname === targetHostname || docHostname.endsWith(`.${targetHostname}`);
         
         if (!isSameDomain) {
-          console.log('🔍 도메인 불일치:', {
-            doc_hostname: docHostname,
-            target_hostname: targetHostname,
-            doc_url: doc.url
+          console.log('🔍 [필터링] 도메인 불일치 - 필터링됨:', {
+            문서_도메인: docHostname,
+            대상_도메인: targetHostname,
+            문서_URL: doc.url,
+            일치여부: isSameDomain
+          });
+        } else {
+          console.log('✅ [필터링] 도메인 일치 - 표시됨:', {
+            문서_도메인: docHostname,
+            문서_URL: doc.url
           });
         }
         
         return isSameDomain;
       } catch (error) {
-        console.error('❌ 문서 URL 파싱 실패:', doc.url, error);
+        console.error('❌ [필터링] 문서 URL 파싱 실패:', doc.url, error);
         return false;
       }
     });
     
-    console.log('🔍 필터링 결과:', {
+    console.log('🔍 [필터링 최종 결과]:', {
       전체_문서: allDocs.length,
       필터링_후: filtered.length,
       대상_도메인: targetHostname,
-      필터링된_문서: filtered.slice(0, 3).map((d: Document) => ({
+      maxDepth: options.maxDepth,
+      필터링된_문서: filtered.slice(0, 5).map((d: Document) => ({
         id: d.id?.substring(0, 8),
         url: d.url,
-        title: d.title
+        title: d.title?.substring(0, 30)
+      })),
+      필터링_제외된_문서: allDocs.filter(d => !filtered.includes(d)).slice(0, 3).map((d: Document) => ({
+        id: d.id?.substring(0, 8),
+        url: d.url
       }))
     });
     
