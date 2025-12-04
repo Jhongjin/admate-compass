@@ -110,8 +110,8 @@ export default function CrawlToIndexTestPage() {
 
   const supabase = createClient();
 
-  // 최근 인덱싱된 문서 필터링 (현재 작업과 관련된 문서)
-  // jobId가 없어도 URL 기준으로 필터링 (작업 완료 후 jobId가 없을 수 있음)
+  // 인덱싱된 문서 목록 (필터링 없이 모든 문서 표시 - 크롤링 테스트 목적)
+  // maxDepth와 상관없이 크롤된 모든 페이지 리스트를 보여줌
   const recentDocuments = React.useMemo(() => {
     const allDocs = documentsData?.data?.documents || [];
     
@@ -144,98 +144,15 @@ export default function CrawlToIndexTestPage() {
       console.warn('⚠️ [백엔드 확인] 조회된 문서가 없습니다. 백엔드에서 인덱싱이 완료되지 않았을 수 있습니다.');
     }
     
-    if (allDocs.length === 0) {
-      return [];
-    }
-    
-    // maxDepth 4일 때는 모든 문서 표시 (다른 도메인 포함)
-    if (options.maxDepth === 4) {
-      console.log('🔍 [필터링] maxDepth 4: 모든 문서 표시 (다른 도메인 포함)', { count: allDocs.length });
-      return allDocs;
-    }
-    
-    // maxDepth 1-3일 때는 같은 도메인만 표시
-    let targetHostname: string;
-    try {
-      const targetUrl = new URL(url);
-      targetHostname = targetUrl.hostname;
-      console.log('🔍 [필터링] 대상 도메인:', targetHostname);
-    } catch (error) {
-      console.error('❌ [필터링] URL 파싱 실패:', url, error);
-      // URL 파싱 실패 시 모든 문서 표시
-      return allDocs;
-    }
-    
-    const filtered = allDocs.filter((doc: Document) => {
-      try {
-        // URL이 없는 경우: 최근 생성된 문서이거나 아직 URL이 설정되지 않은 경우
-        // 같은 작업으로 생성된 문서일 가능성이 높으므로 표시
-        if (!doc.url) {
-          console.log('⚠️ [필터링] 문서에 URL이 없음:', {
-            id: doc.id?.substring(0, 8),
-            title: doc.title?.substring(0, 30),
-            status: doc.status,
-            created_at: doc.created_at
-          });
-          // URL이 없어도 최근 생성된 문서면 표시 (크롤링 직후 URL이 아직 설정되지 않았을 수 있음)
-          // 하지만 도메인 필터링이 활성화된 경우는 제외
-          if (options.domainLimit) {
-            return false;
-          }
-          return true; // domainLimit이 false면 URL 없는 문서도 표시
-        }
-        
-        const docUrl = new URL(doc.url);
-        const docHostname = docUrl.hostname;
-        
-        // 같은 도메인의 문서만 표시
-        const isSameDomain = docHostname === targetHostname || docHostname.endsWith(`.${targetHostname}`);
-        
-        if (!isSameDomain) {
-          console.log('🔍 [필터링] 도메인 불일치 - 필터링됨:', {
-            문서_도메인: docHostname,
-            대상_도메인: targetHostname,
-            문서_URL: doc.url,
-            일치여부: isSameDomain,
-            domainLimit: options.domainLimit
-          });
-        } else {
-          console.log('✅ [필터링] 도메인 일치 - 표시됨:', {
-            문서_도메인: docHostname,
-            문서_URL: doc.url
-          });
-        }
-        
-        return isSameDomain;
-      } catch (error) {
-        console.error('❌ [필터링] 문서 URL 파싱 실패:', {
-          url: doc.url,
-          id: doc.id?.substring(0, 8),
-          error: error instanceof Error ? error.message : String(error)
-        });
-        // URL 파싱 실패 시 domainLimit이 false면 표시
-        return !options.domainLimit;
-      }
-    });
-    
-    console.log('🔍 [필터링 최종 결과]:', {
+    // 크롤링 테스트 목적: 필터링 없이 모든 문서 반환
+    console.log('📋 [문서 목록] 필터링 없이 모든 크롤된 문서 표시:', {
       전체_문서: allDocs.length,
-      필터링_후: filtered.length,
-      대상_도메인: targetHostname,
       maxDepth: options.maxDepth,
-      필터링된_문서: filtered.slice(0, 5).map((d: Document) => ({
-        id: d.id?.substring(0, 8),
-        url: d.url,
-        title: d.title?.substring(0, 30)
-      })),
-      필터링_제외된_문서: allDocs.filter((d: Document) => !filtered.includes(d)).slice(0, 3).map((d: Document) => ({
-        id: d.id?.substring(0, 8),
-        url: d.url
-      }))
+      note: '크롤링 테스트를 위해 모든 문서를 표시합니다.'
     });
     
-    return filtered;
-  }, [documentsData?.data?.documents, url, options.maxDepth]);
+    return allDocs;
+  }, [documentsData?.data?.documents, options.maxDepth]);
 
   // 도메인별 통계 계산
   const domainStats = React.useMemo(() => {
@@ -1082,20 +999,20 @@ export default function CrawlToIndexTestPage() {
               </p>
               {/* 디버깅 정보 */}
               {documentsData?.data?.documents && documentsData.data.documents.length > 0 && (
-                <div className="mt-4 p-3 bg-yellow-50 dark:bg-yellow-950/20 rounded-md text-left max-w-md">
-                  <p className="text-xs font-semibold text-yellow-800 dark:text-yellow-200 mb-2">
-                    🔍 디버깅 정보:
+                <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-950/20 rounded-md text-left max-w-md">
+                  <p className="text-xs font-semibold text-blue-800 dark:text-blue-200 mb-2">
+                    📊 크롤링 테스트 정보:
                   </p>
-                  <div className="space-y-1 text-xs text-yellow-700 dark:text-yellow-300">
+                  <div className="space-y-1 text-xs text-blue-700 dark:text-blue-300">
                     <p>전체 문서: {documentsData.data.documents.length}개</p>
-                    <p>필터링 후: {recentDocuments.length}개</p>
+                    <p>표시된 문서: {recentDocuments.length}개</p>
                     <p>대상 도메인: {url ? new URL(url).hostname : 'N/A'}</p>
                     <p>maxDepth: {options.maxDepth}</p>
-                    <p>도메인 제한: {options.domainLimit ? '활성화' : '비활성화'}</p>
                     <p className="mt-2 font-semibold">첫 번째 문서 정보:</p>
                     <p className="pl-2">- URL: {documentsData.data.documents[0]?.url || 'N/A (URL 없음)'}</p>
                     <p className="pl-2">- 제목: {documentsData.data.documents[0]?.title?.substring(0, 40) || 'N/A'}</p>
                     <p className="pl-2">- 상태: {documentsData.data.documents[0]?.status || 'N/A'}</p>
+                    <p className="pl-2">- 청크 수: {documentsData.data.documents[0]?.chunk_count || 0}개</p>
                     {documentsData.data.documents[0]?.url && (
                       <p className="pl-2">- 도메인: {(() => {
                         try {
@@ -1106,22 +1023,17 @@ export default function CrawlToIndexTestPage() {
                       })()}</p>
                     )}
                   </div>
-                  {options.maxDepth !== 4 && (
-                    <div className="mt-3 p-2 bg-yellow-100 dark:bg-yellow-900/30 rounded text-xs">
-                      <p className="font-semibold text-yellow-800 dark:text-yellow-200 mb-1">
-                        💡 필터링 안내:
-                      </p>
-                      <p className="text-yellow-700 dark:text-yellow-300">
-                        maxDepth가 4가 아니면 같은 도메인만 표시됩니다.
-                      </p>
-                      <p className="text-yellow-700 dark:text-yellow-300 mt-1">
-                        문서에 URL이 없거나 도메인이 일치하지 않으면 필터링에서 제외됩니다.
-                      </p>
-                      <p className="text-yellow-700 dark:text-yellow-300 mt-1">
-                        모든 문서를 보려면 maxDepth를 4로 변경하세요.
-                      </p>
-                    </div>
-                  )}
+                  <div className="mt-3 p-2 bg-blue-100 dark:bg-blue-900/30 rounded text-xs">
+                    <p className="font-semibold text-blue-800 dark:text-blue-200 mb-1">
+                      ℹ️ 크롤링 테스트 모드:
+                    </p>
+                    <p className="text-blue-700 dark:text-blue-300">
+                      maxDepth와 상관없이 크롤된 모든 문서를 표시합니다.
+                    </p>
+                    <p className="text-blue-700 dark:text-blue-300 mt-1">
+                      크롤링이 정상적으로 수행되었는지 확인할 수 있습니다.
+                    </p>
+                  </div>
                 </div>
               )}
             </div>
