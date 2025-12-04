@@ -3750,7 +3750,7 @@ export async function processQueue() {
           indexedDocsDomainStats, // 인덱싱된 문서 도메인 분포 추가
         };
 
-        console.log('[CRITICAL] ✅ CRAWL_SEED 작업 완료 - 상태 업데이트 시작:', {
+        console.error('[CRITICAL] ✅ CRAWL_SEED 작업 완료 - 상태 업데이트 시작:', {
           jobId: job.id,
           documentId,
           title: mainPage.pageTitle,
