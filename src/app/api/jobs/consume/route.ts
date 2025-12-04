@@ -432,7 +432,7 @@ export async function processQueue() {
     const jobStartMs = Date.now();
     // 1) 픽업할 잡 조회 (우선순위 높은 순, 예약시각 이른 순)
     // retrying 상태도 포함하여 재시도 작업 처리
-    console.log(`🔍 큐에서 작업 조회 중...`);
+    console.error('[CRITICAL] 🔍 큐에서 작업 조회 중...');
     const { data: job, error: pickErr } = await supabase
       .from('processing_jobs')
       .select('id, document_id, job_type, status, attempts, max_attempts, priority, payload')
@@ -443,7 +443,7 @@ export async function processQueue() {
       .maybeSingle();
     
     const pickMs = Date.now() - jobStartMs;
-    console.log(`📋 작업 조회 완료: ${pickMs}ms`, {
+    console.error('[CRITICAL] 📋 작업 조회 완료: ' + pickMs + 'ms', {
       found: !!job,
       jobId: job?.id,
       jobType: job?.job_type,
@@ -460,7 +460,7 @@ export async function processQueue() {
       return NextResponse.json({ success: true, message: '대기 중인 잡이 없습니다.' }, { status: 200 });
     }
     
-    console.log(`✅ 작업 선택됨:`, {
+    console.error('[CRITICAL] ✅ 작업 선택됨:', {
       jobId: job.id,
       documentId: job.document_id,
       jobType: job.job_type,
@@ -1455,7 +1455,7 @@ export async function processQueue() {
 
     // 🔥 CRAWL_SEED job 처리
     if (job.job_type === 'CRAWL_SEED') {
-      console.log('🌐 CRAWL_SEED job 처리 시작:', {
+      console.error('[CRITICAL] 🌐 CRAWL_SEED job 처리 시작:', {
         jobId: job.id,
         url: job.payload?.url,
         vendors: job.payload?.vendors,

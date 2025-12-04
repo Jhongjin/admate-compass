@@ -123,6 +123,27 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: '큐 등록 실패', details: error.message }, { status: 500 });
     }
 
+    // 큐에 등록 후 즉시 큐 워커 트리거 (백그라운드 실행)
+    try {
+      console.log('🚀 큐 워커 트리거 시작 (작업 ID: ' + data.id + ')');
+      // 백그라운드로 큐 워커 실행 (응답 반환 후에도 실행되도록)
+      fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/jobs/consume`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      }).catch(err => {
+        // 에러 발생해도 무시 (Cron Job이 처리할 수 있음)
+        console.error('❌ 큐 워커 트리거 에러:', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      });
+      console.log('✅ 큐 워커 트리거 완료 (백그라운드 실행 중)');
+    } catch (triggerError) {
+      // 트리거 실패해도 작업 등록은 성공했으므로 계속 진행
+      console.warn('⚠️ 큐 워커 트리거 실패 (작업은 등록됨):', triggerError);
+    }
+
     return NextResponse.json({ success: true, jobId: data.id }, { status: 202 });
   } catch (err) {
     console.error('enqueue API 오류:', err);
