@@ -209,7 +209,7 @@ export default function CrawlToIndexTestPage() {
         url: d.url,
         title: d.title?.substring(0, 30)
       })),
-      필터링_제외된_문서: allDocs.filter(d => !filtered.includes(d)).slice(0, 3).map((d: Document) => ({
+      필터링_제외된_문서: allDocs.filter((d: Document) => !filtered.includes(d)).slice(0, 3).map((d: Document) => ({
         id: d.id?.substring(0, 8),
         url: d.url
       }))
