@@ -143,19 +143,19 @@ export async function POST(request: NextRequest) {
       console.log(`✅ 로그 삭제 완료`);
     }
 
-    // 4. documents 삭제 (트랜잭션처럼 처리)
-    const { error: deleteError, count: deletedCount } = await supabase
+    // 4. documents 삭제
+    const { error: deleteError } = await supabase
       .from('documents')
       .delete()
-      .in('id', documentIds)
-      .select('*', { count: 'exact', head: true });
+      .in('id', documentIds);
 
     if (deleteError) {
       throw new Error(`문서 삭제 실패: ${deleteError.message}`);
     }
 
-    const actualDeletedCount = deletedCount || documentIds.length;
-    console.log(`✅ ${actualDeletedCount}개 문서 삭제 완료 (요청: ${documentIds.length}개)`);
+    // 삭제 요청한 문서 수를 실제 삭제된 수로 간주 (검증 단계에서 확인)
+    const actualDeletedCount = documentIds.length;
+    console.log(`✅ ${actualDeletedCount}개 문서 삭제 요청 완료`);
 
     // 삭제 확인: 실제로 삭제되었는지 검증 (여러 번 시도)
     let remainingDocs: any[] = [];
