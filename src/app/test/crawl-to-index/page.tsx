@@ -79,6 +79,9 @@ export default function CrawlToIndexTestPage() {
   // 작업 완료 토스트 중복 방지 플래그
   const completionToastShownRef = useRef(false);
   
+  // 🔥 삭제된 문서 ID 목록 (영구 저장하여 자동 새로고침 시에도 필터링)
+  const [deletedDocumentIds, setDeletedDocumentIds] = useState<Set<string>>(new Set());
+  
   // 문서 목록 조회 (3초마다 자동 새로고침, 삭제 중일 때는 중지)
   const { data: documentsData, refetch: refetchDocuments } = useQuery({
     queryKey: ['test-documents'],
@@ -123,8 +126,14 @@ export default function CrawlToIndexTestPage() {
 
   // 인덱싱된 문서 목록 (필터링 없이 모든 문서 표시 - 크롤링 테스트 목적)
   // maxDepth와 상관없이 크롤된 모든 페이지 리스트를 보여줌
+  // 🔥 삭제된 문서는 항상 필터링하여 표시하지 않음
   const recentDocuments = React.useMemo(() => {
     const allDocs = documentsData?.data?.documents || [];
+    
+    // 🔥 삭제된 문서 ID로 필터링 (백엔드에서 삭제된 문서 제외)
+    const filteredDocs = allDocs.filter((doc: Document) => {
+      return !deletedDocumentIds.has(doc.id);
+    });
     
     // 백엔드 처리 상태 진단
     console.log('📋 [백엔드 진단] 전체 문서 수:', allDocs.length, {
@@ -132,39 +141,49 @@ export default function CrawlToIndexTestPage() {
       data_exists: !!documentsData?.data,
       documents_array: Array.isArray(allDocs),
       response_success: documentsData?.success,
-      first_doc: allDocs[0] ? {
-        id: allDocs[0].id?.substring(0, 8),
-        url: allDocs[0].url,
-        title: allDocs[0].title,
-        status: allDocs[0].status,
-        chunk_count: allDocs[0].chunk_count,
-        type: allDocs[0].type
+      삭제된_문서_ID_수: deletedDocumentIds.size,
+      필터링_후_문서_수: filteredDocs.length,
+      first_doc: filteredDocs[0] ? {
+        id: filteredDocs[0].id?.substring(0, 8),
+        url: filteredDocs[0].url,
+        title: filteredDocs[0].title,
+        status: filteredDocs[0].status,
+        chunk_count: filteredDocs[0].chunk_count,
+        type: filteredDocs[0].type
       } : null,
-      all_urls: allDocs.map((d: Document) => d.url).filter(Boolean)
+      all_urls: filteredDocs.map((d: Document) => d.url).filter(Boolean)
     });
     
     // 백엔드에서 문서가 조회되었는지 확인
-    if (allDocs.length > 0) {
+    if (filteredDocs.length > 0) {
       console.log('✅ [백엔드 확인] 문서가 정상적으로 조회되었습니다:', {
-        총_문서수: allDocs.length,
-        첫_문서_URL: allDocs[0]?.url,
-        첫_문서_상태: allDocs[0]?.status,
-        첫_문서_청크수: allDocs[0]?.chunk_count
+        총_문서수: filteredDocs.length,
+        첫_문서_URL: filteredDocs[0]?.url,
+        첫_문서_상태: filteredDocs[0]?.status,
+        첫_문서_청크수: filteredDocs[0]?.chunk_count
+      });
+    } else if (allDocs.length > 0) {
+      console.warn('⚠️ [백엔드 확인] 모든 문서가 삭제되었거나 필터링되었습니다.', {
+        전체_문서: allDocs.length,
+        삭제된_ID_수: deletedDocumentIds.size
       });
     } else {
       console.warn('⚠️ [백엔드 확인] 조회된 문서가 없습니다. 백엔드에서 인덱싱이 완료되지 않았을 수 있습니다.');
     }
     
-    // 크롤링 테스트 목적: 필터링 없이 모든 문서 반환
-    console.log('📋 [문서 목록] 필터링 없이 모든 크롤된 문서 표시:', {
+    // 크롤링 테스트 목적: 필터링 없이 모든 문서 반환 (단, 삭제된 문서는 제외)
+    console.log('📋 [문서 목록] 삭제된 문서 제외 후 표시:', {
       전체_문서: allDocs.length,
+      삭제된_문서: deletedDocumentIds.size,
+      필터링_후: filteredDocs.length,
       maxDepth: options.maxDepth,
-      note: '크롤링 테스트를 위해 모든 문서를 표시합니다.'
+      note: '크롤링 테스트를 위해 모든 문서를 표시하되, 삭제된 문서는 제외합니다.'
     });
     
     // 🔥 중요: documentsData 전체를 의존성으로 추가하여 캐시 업데이트 시 즉시 반영
-    return allDocs;
-  }, [documentsData, options.maxDepth]);
+    // 🔥 삭제된 문서 ID도 의존성에 추가하여 삭제 시 즉시 필터링
+    return filteredDocs;
+  }, [documentsData, options.maxDepth, deletedDocumentIds]);
 
   // 도메인별 통계 계산
   const domainStats = React.useMemo(() => {
@@ -593,6 +612,18 @@ export default function CrawlToIndexTestPage() {
           (data.deletedDocuments || []).map((d: any) => d.id)
         );
         
+        // 🔥 삭제된 문서 ID를 상태에 영구 저장 (자동 새로고침 시에도 필터링)
+        setDeletedDocumentIds(prev => {
+          const newSet = new Set(prev);
+          backendDeletedIds.forEach(id => newSet.add(id));
+          console.log('🗑️ [삭제 ID 저장] 삭제된 문서 ID 목록 업데이트:', {
+            기존_삭제_ID_수: prev.size,
+            새로_추가된_ID_수: backendDeletedIds.size,
+            총_삭제_ID_수: newSet.size
+          });
+          return newSet;
+        });
+        
         // React Query 캐시 완전히 제거 및 무효화
         await queryClient.cancelQueries({ queryKey: ['test-documents'] });
         queryClient.removeQueries({ queryKey: ['test-documents'] });
@@ -605,15 +636,17 @@ export default function CrawlToIndexTestPage() {
             await new Promise(resolve => setTimeout(resolve, delay));
             
             try {
-              // 강제로 새로고침 (캐시 무시, 필터링 없이)
+              // 강제로 새로고침 (캐시 무시, 타임스탬프 추가하여 캐시 버스팅)
+              const cacheBuster = Date.now();
               const result = await queryClient.fetchQuery({
                 queryKey: ['test-documents'],
                 queryFn: async () => {
-                  const res = await fetch('/api/admin/upload-new?limit=200&status=indexed', {
+                  const res = await fetch(`/api/admin/upload-new?limit=200&status=indexed&_t=${cacheBuster}`, {
                     cache: 'no-store',
                     headers: {
-                      'Cache-Control': 'no-cache',
+                      'Cache-Control': 'no-cache, no-store, must-revalidate',
                       'Pragma': 'no-cache',
+                      'Expires': '0',
                     }
                   });
                   if (!res.ok) throw new Error('Failed to fetch documents');
@@ -623,9 +656,10 @@ export default function CrawlToIndexTestPage() {
               
               const allDocs = result?.data?.documents || [];
               
-              // 삭제된 문서 ID로 필터링 (백엔드에서 삭제된 문서 제외)
+              // 🔥 삭제된 문서 ID로 필터링 (상태에 저장된 삭제 ID 사용)
+              const currentDeletedIds = deletedDocumentIds.size > 0 ? deletedDocumentIds : backendDeletedIds;
               const finalDocs = allDocs.filter((doc: Document) => {
-                return !backendDeletedIds.has(doc.id);
+                return !currentDeletedIds.has(doc.id);
               });
               
               const afterDeleteCount = finalDocs.length;
@@ -636,6 +670,7 @@ export default function CrawlToIndexTestPage() {
                 삭제_전: beforeDeleteCount,
                 차이: beforeDeleteCount - afterDeleteCount,
                 백엔드_삭제_ID_수: backendDeletedIds.size,
+                상태_삭제_ID_수: deletedDocumentIds.size,
                 백엔드_검증: verified,
                 백엔드_남은_문서: remainingCount
               });
@@ -663,14 +698,16 @@ export default function CrawlToIndexTestPage() {
                 // 🔥 추가: 최종 확인을 위해 한 번 더 refetch (DB 반영 시간 고려)
                 setTimeout(async () => {
                   try {
+                    const finalCacheBuster = Date.now();
                     const finalRefetch = await queryClient.fetchQuery({
                       queryKey: ['test-documents'],
                       queryFn: async () => {
-                        const res = await fetch('/api/admin/upload-new?limit=200&status=indexed', {
+                        const res = await fetch(`/api/admin/upload-new?limit=200&status=indexed&_t=${finalCacheBuster}`, {
                           cache: 'no-store',
                           headers: {
-                            'Cache-Control': 'no-cache',
+                            'Cache-Control': 'no-cache, no-store, must-revalidate',
                             'Pragma': 'no-cache',
+                            'Expires': '0',
                           }
                         });
                         if (!res.ok) throw new Error('Failed to fetch documents');
@@ -679,8 +716,9 @@ export default function CrawlToIndexTestPage() {
                     });
                     
                     const finalAllDocs = finalRefetch?.data?.documents || [];
+                    // 🔥 상태에 저장된 삭제 ID로 필터링
                     const finalFilteredDocs = finalAllDocs.filter((doc: Document) => {
-                      return !backendDeletedIds.has(doc.id);
+                      return !deletedDocumentIds.has(doc.id);
                     });
                     
                     console.log(`🔄 [최종 확인] Refetch 결과:`, {
