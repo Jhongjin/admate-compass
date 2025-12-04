@@ -124,24 +124,54 @@ export async function POST(request: NextRequest) {
     }
 
     // 큐에 등록 후 즉시 큐 워커 트리거 (백그라운드 실행)
+    // Vercel serverless 환경에서는 fetch 대신 import()를 사용하여 직접 함수 호출
     try {
-      console.log('🚀 큐 워커 트리거 시작 (작업 ID: ' + data.id + ')');
-      // 백그라운드로 큐 워커 실행 (응답 반환 후에도 실행되도록)
-      fetch(`${process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'}/api/jobs/consume`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      }).catch(err => {
-        // 에러 발생해도 무시 (Cron Job이 처리할 수 있음)
-        console.error('❌ 큐 워커 트리거 에러:', {
-          error: err instanceof Error ? err.message : String(err),
+      console.error('[CRITICAL] 🚀 큐 워커 트리거 시작 (작업 ID: ' + data.id + ')');
+      
+      // processQueue를 백그라운드로 실행 (await 없이)
+      // Vercel serverless 환경에서 응답 반환 후에도 실행되도록 보장
+      import('@/app/api/jobs/consume/route')
+        .then(({ processQueue }) => {
+          console.error('[CRITICAL] 📦 processQueue import 완료, 실행 시작...');
+          return processQueue();
+        })
+        .then(result => {
+          if (result instanceof Response) {
+            return result.text().then(text => {
+              try {
+                const json = JSON.parse(text);
+                console.error('[CRITICAL] ✅ 큐 워커 처리 완료:', {
+                  status: result.status,
+                  success: json.success,
+                  message: json.message,
+                  jobId: json.jobId
+                });
+              } catch {
+                console.error('[CRITICAL] ✅ 큐 워커 처리 완료:', {
+                  status: result.status,
+                  response: text.substring(0, 200)
+                });
+              }
+            });
+          } else {
+            console.error('[CRITICAL] ✅ 큐 워커 처리 완료:', result);
+          }
+        })
+        .catch(err => {
+          // 에러 발생해도 무시 (Cron Job이 처리할 수 있음)
+          console.error('[CRITICAL] ❌ 큐 워커 트리거 에러:', {
+            error: err instanceof Error ? err.message : String(err),
+            stack: err instanceof Error ? err.stack : undefined
+          });
         });
-      });
-      console.log('✅ 큐 워커 트리거 완료 (백그라운드 실행 중)');
+      
+      console.error('[CRITICAL] ✅ 큐 워커 트리거 완료 (백그라운드 실행 중)');
     } catch (triggerError) {
       // 트리거 실패해도 작업 등록은 성공했으므로 계속 진행
-      console.warn('⚠️ 큐 워커 트리거 실패 (작업은 등록됨):', triggerError);
+      console.error('[CRITICAL] ⚠️ 큐 워커 트리거 실패 (작업은 등록됨):', {
+        error: triggerError instanceof Error ? triggerError.message : String(triggerError),
+        stack: triggerError instanceof Error ? triggerError.stack : undefined
+      });
     }
 
     return NextResponse.json({ success: true, jobId: data.id }, { status: 202 });

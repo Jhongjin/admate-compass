@@ -426,7 +426,7 @@ export async function processQueue() {
     console.log(`✅ 타임아웃된 ${allStuckJobs.length}개 작업을 failed 상태로 변경했습니다.`);
   }
   const queueStartMs = Date.now();
-  console.log(`🚀 큐 처리 시작: ${new Date().toISOString()}`);
+  console.error('[CRITICAL] 🚀 큐 처리 시작: ' + new Date().toISOString());
   
   try {
     const jobStartMs = Date.now();
@@ -2594,12 +2594,12 @@ export async function processQueue() {
             let discovered: Array<{ url: string; title?: string; source: string; depth: number }> = [];
             try {
               // SitemapDiscoveryService가 Puppeteer 실패 시 fetch fallback을 자동으로 사용
-              console.log(`[CRITICAL] 🔍 하위 페이지 탐색 시작: ${url}`);
+              console.error('[CRITICAL] 🔍 하위 페이지 탐색 시작: ' + url);
               const discoveryStartMs = Date.now();
               // 메인 페이지 HTML 재사용하여 중복 요청 방지 및 400 에러 회피
               discovered = await sitemapDiscoveryService.discoverSubPages(url, discoveryOptions, mainPage.htmlContent);
               const discoveryEndMs = Date.now();
-              console.log(`[CRITICAL] ✅ 하위 페이지 발견 완료: ${discovered.length}개 (소요 시간: ${discoveryEndMs - discoveryStartMs}ms)`);
+              console.error('[CRITICAL] ✅ 하위 페이지 발견 완료: ' + discovered.length + '개 (소요 시간: ' + (discoveryEndMs - discoveryStartMs) + 'ms)');
               
               // 발견된 페이지 상세 로그 및 도메인 분포 분석
               if (discovered.length > 0) {
@@ -2709,7 +2709,7 @@ export async function processQueue() {
               }
             });
             
-            console.log(`[CRITICAL] 📄 하위 페이지 후보: ${candidateUrls.length}개 (발견: ${discovered.length}개, maxUrls 제한: ${maxUrlsLimit}개, 필터링 후: ${candidateUrls.length}개)`, {
+            console.error('[CRITICAL] 📄 하위 페이지 후보: ' + candidateUrls.length + '개 (발견: ' + discovered.length + '개, maxUrls 제한: ' + maxUrlsLimit + '개, 필터링 후: ' + candidateUrls.length + '개)', {
               url,
               documentId,
               maxDepth: actualMaxDepth,
@@ -2754,7 +2754,7 @@ export async function processQueue() {
               });
             });
             
-            console.log(`[CRITICAL] 🔄 하위 페이지 크롤링 시작: ${candidateUrls.length}개 (병렬 처리: 최대 ${BATCH_SIZE}개 동시)`, {
+            console.error('[CRITICAL] 🔄 하위 페이지 크롤링 시작: ' + candidateUrls.length + '개 (병렬 처리: 최대 ' + BATCH_SIZE + '개 동시)', {
               url,
               documentId,
               candidateUrls: candidateUrls.slice(0, 5),
@@ -2803,7 +2803,7 @@ export async function processQueue() {
               // 개별 페이지 타임아웃: fetch (20초) + RAG (60초) + 여유 (10초) = 90초
               const INDIVIDUAL_PAGE_TIMEOUT = 90000; // 90초 (개별 페이지당 최대 처리 시간, 배치 타임아웃과 동일)
               
-              console.log(`[CRITICAL] 🔄 배치 ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(candidateUrls.length / BATCH_SIZE)} 시작: ${batch.length}개 페이지 (인덱스 ${i}~${i + batch.length - 1})`);
+              console.error('[CRITICAL] 🔄 배치 ' + (Math.floor(i / BATCH_SIZE) + 1) + '/' + Math.ceil(candidateUrls.length / BATCH_SIZE) + ' 시작: ' + batch.length + '개 페이지 (인덱스 ' + i + '~' + (i + batch.length - 1) + ')');
               
               // 배치 병렬 처리
               const batchPromises = batch.map(async (subUrl) => {
@@ -2812,7 +2812,7 @@ export async function processQueue() {
                 try {
                   const linkTitle = urlToTitleMap.get(subUrl); // 링크 텍스트(메뉴명) 가져오기
                   const currentIndex = candidateUrls.indexOf(subUrl) + 1;
-                  console.log(`[CRITICAL] 📄 하위 페이지 처리 중 (${currentIndex}/${candidateUrls.length}): ${subUrl}${linkTitle ? ` [링크제목: ${linkTitle}]` : ''}`);
+                  console.error('[CRITICAL] 📄 하위 페이지 처리 중 (' + currentIndex + '/' + candidateUrls.length + '): ' + subUrl + (linkTitle ? ' [링크제목: ' + linkTitle + ']' : ''));
                   
                   // 상태 엔트리 가져오기 (한 번만 선언하고 재사용)
                   const statusEntry = subPageStatusMap.get(subUrl);
@@ -3264,7 +3264,7 @@ export async function processQueue() {
                     statusEntry.title = finalTitle || statusEntry.title;
                   }
                   
-                  console.log(`[CRITICAL] ✅ 하위 페이지 처리 완료: ${subUrl} [제목: ${finalTitle}] (청크: ${result.chunkCount}개, 문서 ID: ${result.documentId})`);
+                  console.error('[CRITICAL] ✅ 하위 페이지 처리 완료: ' + subUrl + ' [제목: ' + finalTitle + '] (청크: ' + result.chunkCount + '개, 문서 ID: ' + result.documentId + ')');
                   
                   // 메모리 최적화: 처리 완료된 페이지 데이터 즉시 해제
                   page = null as any;
@@ -3493,7 +3493,7 @@ export async function processQueue() {
                 console.warn(`[CRITICAL] ⏱️ 배치 ${Math.floor(i / BATCH_SIZE) + 1} 처리 시간 초과: ${batchElapsedTime}ms (제한: ${BATCH_TIMEOUT}ms)`);
               }
               processedCount = subPageResults.length; // 실제 처리된 개수로 업데이트
-              console.log(`[CRITICAL] 📊 배치 ${Math.floor(i / BATCH_SIZE) + 1} 완료: ${processedCount}/${candidateUrls.length} 처리됨 (소요 시간: ${batchElapsedTime}ms)`);
+              console.error('[CRITICAL] 📊 배치 ' + (Math.floor(i / BATCH_SIZE) + 1) + ' 완료: ' + processedCount + '/' + candidateUrls.length + ' 처리됨 (소요 시간: ' + batchElapsedTime + 'ms)');
               
               // 취소 체크: 배치 처리 후에도 취소되었는지 확인
               const { data: currentJobAfterBatch } = await supabase
