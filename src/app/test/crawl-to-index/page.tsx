@@ -613,14 +613,14 @@ export default function CrawlToIndexTestPage() {
         });
         
         // 백엔드에서 실제로 삭제된 문서 ID 목록 저장
-        const backendDeletedIds = new Set(
-          (data.deletedDocuments || []).map((d: any) => d.id)
+        const backendDeletedIds = new Set<string>(
+          (data.deletedDocuments || []).map((d: any) => d.id as string).filter((id): id is string => typeof id === 'string')
         );
         
         // 🔥 삭제된 문서 ID를 상태에 영구 저장 (자동 새로고침 시에도 필터링)
         setDeletedDocumentIds(prev => {
           const newSet = new Set(prev);
-          backendDeletedIds.forEach(id => newSet.add(id));
+          backendDeletedIds.forEach((id: string) => newSet.add(id));
           console.log('🗑️ [삭제 ID 저장] 삭제된 문서 ID 목록 업데이트:', {
             기존_삭제_ID_수: prev.size,
             새로_추가된_ID_수: backendDeletedIds.size,
