@@ -238,15 +238,19 @@ export class UrlDiscovery {
               // maxDepth 4: 모든 도메인 허용 (domainLimit과 관계없이)
               // 모든 도메인 허용
             } else if (maxDepth >= 3) {
-              // maxDepth 3: 같은 도메인 + 하위 도메인 허용
-              if (!urlDomain.endsWith(`.${baseDomain}`)) {
+              // maxDepth 3: domainLimit에 따라 다름
+              if (config.domainLimit === true) {
+                // domainLimit이 true면 하위 도메인도 제외 (같은 도메인만)
                 return false;
+              } else {
+                // domainLimit이 false면 하위 도메인 허용
+                if (!urlDomain.endsWith(`.${baseDomain}`)) {
+                  return false;
+                }
               }
             } else {
               // maxDepth 1-2: 정확히 같은 도메인만 허용
-              if (config.domainLimit !== false) {
-                return false;
-              }
+              return false;
             }
           }
 
@@ -333,23 +337,27 @@ export class UrlDiscovery {
       
       // maxDepth에 따른 도메인 필터링
       // maxDepth 1-2: 정확히 같은 도메인만 허용
-      // maxDepth 3: 같은 도메인 + 하위 도메인 허용
-      // maxDepth 4: 모든 도메인 허용 (domainLimit이 false이거나 없을 때)
+      // maxDepth 3: domainLimit에 따라 다름 (true: 같은 도메인만, false: 하위 도메인 포함)
+      // maxDepth 4: 모든 도메인 허용 (domainLimit과 관계없이)
       if (urlDomain !== baseDomain) {
         const maxDepth = config.maxDepth ?? 3; // 기본값 3
         if (maxDepth >= 4) {
           // maxDepth 4: 모든 도메인 허용 (domainLimit과 관계없이)
           // 모든 도메인 허용
         } else if (maxDepth >= 3) {
-          // maxDepth 3: 같은 도메인 + 하위 도메인 허용
-          if (!this.isSubdomain(urlDomain, baseDomain)) {
+          // maxDepth 3: domainLimit에 따라 다름
+          if (config.domainLimit === true) {
+            // domainLimit이 true면 하위 도메인도 제외 (같은 도메인만)
             return false;
+          } else {
+            // domainLimit이 false면 하위 도메인 허용
+            if (!this.isSubdomain(urlDomain, baseDomain)) {
+              return false;
+            }
           }
         } else {
           // maxDepth 1-2: 정확히 같은 도메인만 허용
-          if (config.domainLimit !== false) {
-            return false;
-          }
+          return false;
         }
       }
 
