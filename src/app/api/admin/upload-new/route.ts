@@ -2592,16 +2592,23 @@ export async function DELETE(request: NextRequest) {
 
     const chunkCount = beforeDeleteDoc.chunk_count || 0;
 
+    // 삭제 전 청크 수 확인
+    const { count: beforeChunksCount } = await supabase
+      .from('document_chunks')
+      .select('*', { count: 'exact', head: true })
+      .eq('document_id', targetDocumentId);
+
     // 문서와 관련된 모든 청크 삭제
-    const { error: chunksError, count: deletedChunksCount } = await supabase
+    const { error: chunksError } = await supabase
       .from('document_chunks')
       .delete()
-      .eq('document_id', targetDocumentId)
-      .select('*', { count: 'exact', head: true });
+      .eq('document_id', targetDocumentId);
 
     if (chunksError) {
       console.warn('⚠️ 청크 삭제 실패:', chunksError);
     }
+
+    const deletedChunksCount = beforeChunksCount || 0;
 
     // document_metadata 삭제
     const { error: metadataError } = await supabase
