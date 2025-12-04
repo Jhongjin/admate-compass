@@ -168,10 +168,23 @@ export default function CrawlToIndexTestPage() {
     
     const filtered = allDocs.filter((doc: Document) => {
       try {
+        // URL이 없는 경우: 최근 생성된 문서이거나 아직 URL이 설정되지 않은 경우
+        // 같은 작업으로 생성된 문서일 가능성이 높으므로 표시
         if (!doc.url) {
-          console.log('⚠️ [필터링] 문서에 URL이 없음:', doc.id?.substring(0, 8));
-          return false;
+          console.log('⚠️ [필터링] 문서에 URL이 없음:', {
+            id: doc.id?.substring(0, 8),
+            title: doc.title?.substring(0, 30),
+            status: doc.status,
+            created_at: doc.created_at
+          });
+          // URL이 없어도 최근 생성된 문서면 표시 (크롤링 직후 URL이 아직 설정되지 않았을 수 있음)
+          // 하지만 도메인 필터링이 활성화된 경우는 제외
+          if (options.domainLimit) {
+            return false;
+          }
+          return true; // domainLimit이 false면 URL 없는 문서도 표시
         }
+        
         const docUrl = new URL(doc.url);
         const docHostname = docUrl.hostname;
         
@@ -183,7 +196,8 @@ export default function CrawlToIndexTestPage() {
             문서_도메인: docHostname,
             대상_도메인: targetHostname,
             문서_URL: doc.url,
-            일치여부: isSameDomain
+            일치여부: isSameDomain,
+            domainLimit: options.domainLimit
           });
         } else {
           console.log('✅ [필터링] 도메인 일치 - 표시됨:', {
@@ -194,8 +208,13 @@ export default function CrawlToIndexTestPage() {
         
         return isSameDomain;
       } catch (error) {
-        console.error('❌ [필터링] 문서 URL 파싱 실패:', doc.url, error);
-        return false;
+        console.error('❌ [필터링] 문서 URL 파싱 실패:', {
+          url: doc.url,
+          id: doc.id?.substring(0, 8),
+          error: error instanceof Error ? error.message : String(error)
+        });
+        // URL 파싱 실패 시 domainLimit이 false면 표시
+        return !options.domainLimit;
       }
     });
     
@@ -410,34 +429,43 @@ export default function CrawlToIndexTestPage() {
         setProgress(100);
         setIsCrawling(false);
         
-        // 작업 완료 후 문서 목록 강제 갱신
-        queryClient.invalidateQueries({ queryKey: ['test-documents'] });
-        setTimeout(() => {
-          refetchDocuments().then(() => {
-            // 문서 목록 갱신 후 다시 확인
-            setTimeout(() => {
-              const currentDocs = documentsData?.data?.documents || [];
-              const filteredDocs = options.maxDepth === 4 
-                ? currentDocs 
-                : currentDocs.filter((doc: Document) => {
-                    try {
-                      if (!doc.url) return false;
-                      const docUrl = new URL(doc.url);
-                      const targetUrl = new URL(url);
-                      return docUrl.hostname === targetUrl.hostname || docUrl.hostname.endsWith(`.${targetUrl.hostname}`);
-                    } catch {
-                      return false;
-                    }
-                  });
+        console.log('✅ [작업 완료] 문서 목록 강제 갱신 시작...');
+        
+        // 작업 완료 후 문서 목록 강제 갱신 (여러 번 시도)
+        const refreshDocuments = async () => {
+          // 1. 캐시 무효화
+          await queryClient.cancelQueries({ queryKey: ['test-documents'] });
+          queryClient.removeQueries({ queryKey: ['test-documents'] });
+          queryClient.invalidateQueries({ queryKey: ['test-documents'] });
+          
+          // 2. 여러 번 refetch 시도 (DB 반영 시간 고려)
+          for (let i = 0; i < 5; i++) {
+            const delay = i === 0 ? 500 : i * 1000; // 0.5초, 1초, 2초, 3초, 4초
+            await new Promise(resolve => setTimeout(resolve, delay));
+            
+            try {
+              const result = await refetchDocuments();
+              const allDocs = result.data?.data?.documents || [];
               
-              if (filteredDocs.length > 0) {
-                toast.success(`크롤링 및 인덱싱이 완료되었습니다! (${filteredDocs.length}개 문서)`);
-              } else {
-                toast.success('크롤링 및 인덱싱이 완료되었습니다!');
+              console.log(`🔄 [작업 완료] Refetch 시도 ${i + 1}/5:`, {
+                전체_문서: allDocs.length,
+                첫_문서_URL: allDocs[0]?.url || 'N/A',
+                첫_문서_상태: allDocs[0]?.status
+              });
+              
+              if (allDocs.length > 0) {
+                // 문서가 조회되면 성공
+                console.log('✅ [작업 완료] 문서 목록 갱신 성공:', allDocs.length, '개 문서');
+                toast.success(`크롤링 및 인덱싱이 완료되었습니다! (${allDocs.length}개 문서 조회됨)`);
+                break;
               }
-            }, 500);
-          });
-        }, 1000);
+            } catch (error) {
+              console.error(`❌ [작업 완료] Refetch 시도 ${i + 1} 실패:`, error);
+            }
+          }
+        };
+        
+        refreshDocuments();
         break;
       case 'failed':
         setCurrentStep('처리 실패');
@@ -662,6 +690,14 @@ export default function CrawlToIndexTestPage() {
         };
         
         await refetchWithRetry();
+        
+        // 삭제 완료 후 추가로 한 번 더 강제 새로고침 (3초 후)
+        setTimeout(async () => {
+          console.log('🔄 [삭제 완료] 추가 새로고침 실행...');
+          await queryClient.cancelQueries({ queryKey: ['test-documents'] });
+          queryClient.invalidateQueries({ queryKey: ['test-documents'] });
+          await refetchDocuments();
+        }, 3000);
       } else {
         throw new Error(data.error || '문서 삭제 실패');
       }
@@ -1048,24 +1084,43 @@ export default function CrawlToIndexTestPage() {
               {documentsData?.data?.documents && documentsData.data.documents.length > 0 && (
                 <div className="mt-4 p-3 bg-yellow-50 dark:bg-yellow-950/20 rounded-md text-left max-w-md">
                   <p className="text-xs font-semibold text-yellow-800 dark:text-yellow-200 mb-2">
-                    디버깅 정보:
+                    🔍 디버깅 정보:
                   </p>
-                  <p className="text-xs text-yellow-700 dark:text-yellow-300">
-                    전체 문서: {documentsData.data.documents.length}개
-                  </p>
-                  <p className="text-xs text-yellow-700 dark:text-yellow-300">
-                    필터링 후: {recentDocuments.length}개
-                  </p>
-                  <p className="text-xs text-yellow-700 dark:text-yellow-300">
-                    대상 도메인: {url ? new URL(url).hostname : 'N/A'}
-                  </p>
-                  <p className="text-xs text-yellow-700 dark:text-yellow-300 mt-2">
-                    첫 번째 문서 URL: {documentsData.data.documents[0]?.url || 'N/A'}
-                  </p>
+                  <div className="space-y-1 text-xs text-yellow-700 dark:text-yellow-300">
+                    <p>전체 문서: {documentsData.data.documents.length}개</p>
+                    <p>필터링 후: {recentDocuments.length}개</p>
+                    <p>대상 도메인: {url ? new URL(url).hostname : 'N/A'}</p>
+                    <p>maxDepth: {options.maxDepth}</p>
+                    <p>도메인 제한: {options.domainLimit ? '활성화' : '비활성화'}</p>
+                    <p className="mt-2 font-semibold">첫 번째 문서 정보:</p>
+                    <p className="pl-2">- URL: {documentsData.data.documents[0]?.url || 'N/A (URL 없음)'}</p>
+                    <p className="pl-2">- 제목: {documentsData.data.documents[0]?.title?.substring(0, 40) || 'N/A'}</p>
+                    <p className="pl-2">- 상태: {documentsData.data.documents[0]?.status || 'N/A'}</p>
+                    {documentsData.data.documents[0]?.url && (
+                      <p className="pl-2">- 도메인: {(() => {
+                        try {
+                          return new URL(documentsData.data.documents[0].url).hostname;
+                        } catch {
+                          return '파싱 실패';
+                        }
+                      })()}</p>
+                    )}
+                  </div>
                   {options.maxDepth !== 4 && (
-                    <p className="text-xs text-yellow-600 dark:text-yellow-400 mt-2">
-                      💡 maxDepth가 4가 아니면 같은 도메인만 표시됩니다. maxDepth를 4로 변경하면 모든 문서를 볼 수 있습니다.
-                    </p>
+                    <div className="mt-3 p-2 bg-yellow-100 dark:bg-yellow-900/30 rounded text-xs">
+                      <p className="font-semibold text-yellow-800 dark:text-yellow-200 mb-1">
+                        💡 필터링 안내:
+                      </p>
+                      <p className="text-yellow-700 dark:text-yellow-300">
+                        maxDepth가 4가 아니면 같은 도메인만 표시됩니다.
+                      </p>
+                      <p className="text-yellow-700 dark:text-yellow-300 mt-1">
+                        문서에 URL이 없거나 도메인이 일치하지 않으면 필터링에서 제외됩니다.
+                      </p>
+                      <p className="text-yellow-700 dark:text-yellow-300 mt-1">
+                        모든 문서를 보려면 maxDepth를 4로 변경하세요.
+                      </p>
+                    </div>
                   )}
                 </div>
               )}
