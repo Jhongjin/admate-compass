@@ -3592,12 +3592,14 @@ export async function processQueue() {
             }
           }
         } else {
-          console.error('[CRITICAL] ⚠️ 하위 페이지 크롤링 건너뜀 - extractSubPages가 false입니다.', {
+          console.log('[CRITICAL] ℹ️ 하위 페이지 크롤링 건너뜀 - extractSubPages가 false입니다.', {
             extractSubPages,
             payloadExtractSubPages: job.payload?.extractSubPages,
             url,
             documentId
           });
+          // extractSubPages가 false일 때도 작업이 완료되도록 subPageResults를 빈 배열로 설정
+          subPageResults = [];
         }
 
         // 실패한 하위 페이지 자동 재처리 (해시 모드 활성화 시)
