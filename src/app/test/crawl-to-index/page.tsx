@@ -614,7 +614,9 @@ export default function CrawlToIndexTestPage() {
         
         // 백엔드에서 실제로 삭제된 문서 ID 목록 저장
         const backendDeletedIds = new Set<string>(
-          (data.deletedDocuments || []).map((d: any) => d.id as string).filter((id): id is string => typeof id === 'string')
+          (data.deletedDocuments || [])
+            .map((d: any) => d.id as string)
+            .filter((id: string): id is string => typeof id === 'string' && id.length > 0)
         );
         
         // 🔥 삭제된 문서 ID를 상태에 영구 저장 (자동 새로고침 시에도 필터링)
