@@ -159,8 +159,9 @@ export default function CrawlToIndexTestPage() {
       note: '크롤링 테스트를 위해 모든 문서를 표시합니다.'
     });
     
+    // 🔥 중요: documentsData 전체를 의존성으로 추가하여 캐시 업데이트 시 즉시 반영
     return allDocs;
-  }, [documentsData?.data?.documents, options.maxDepth]);
+  }, [documentsData, options.maxDepth]);
 
   // 도메인별 통계 계산
   const domainStats = React.useMemo(() => {
@@ -629,8 +630,57 @@ export default function CrawlToIndexTestPage() {
                   }
                 };
                 
-                // UI 즉시 업데이트를 위해 필터링된 상태 강제 갱신
+                // 🔥 UI 즉시 업데이트를 위해 필터링된 상태 강제 갱신
                 queryClient.setQueryData(['test-documents'], filteredResult);
+                
+                // 🔥 추가: 캐시 무효화 및 강제 리렌더링
+                queryClient.invalidateQueries({ queryKey: ['test-documents'] });
+                
+                // 🔥 추가: 최종 확인을 위해 한 번 더 refetch (DB 반영 시간 고려)
+                setTimeout(async () => {
+                  try {
+                    const finalRefetch = await queryClient.fetchQuery({
+                      queryKey: ['test-documents'],
+                      queryFn: async () => {
+                        const res = await fetch('/api/admin/upload-new?limit=200&status=indexed', {
+                          cache: 'no-store',
+                          headers: {
+                            'Cache-Control': 'no-cache',
+                            'Pragma': 'no-cache',
+                          }
+                        });
+                        if (!res.ok) throw new Error('Failed to fetch documents');
+                        return res.json();
+                      },
+                    });
+                    
+                    const finalAllDocs = finalRefetch?.data?.documents || [];
+                    const finalFilteredDocs = finalAllDocs.filter((doc: Document) => {
+                      return !backendDeletedIds.has(doc.id);
+                    });
+                    
+                    console.log(`🔄 [최종 확인] Refetch 결과:`, {
+                      전체_문서: finalAllDocs.length,
+                      필터링_후: finalFilteredDocs.length,
+                      삭제_ID_수: backendDeletedIds.size
+                    });
+                    
+                    // 최종 필터링된 결과로 캐시 업데이트
+                    const finalFilteredResult = {
+                      ...finalRefetch,
+                      data: {
+                        ...finalRefetch.data,
+                        documents: finalFilteredDocs,
+                        total: finalFilteredDocs.length
+                      }
+                    };
+                    
+                    queryClient.setQueryData(['test-documents'], finalFilteredResult);
+                    queryClient.invalidateQueries({ queryKey: ['test-documents'] });
+                  } catch (finalError) {
+                    console.error('❌ 최종 refetch 실패:', finalError);
+                  }
+                }, 2000); // 2초 후 최종 확인
                 
                 // 검증 메시지
                 if (!verified || remainingCount > 0) {
