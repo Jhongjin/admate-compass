@@ -945,35 +945,36 @@ export default function CrawlToIndexTestPage() {
           </div>
 
           {/* 시작 버튼 및 도메인 문서 삭제 */}
-          <div className="flex gap-2">
-            <Button
-              onClick={handleStartCrawl}
-              disabled={isCrawling}
-              className="flex-1"
-            >
-              {isCrawling ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  처리 중...
-                </>
-              ) : (
-                <>
-                  <Play className="mr-2 h-4 w-4" />
-                  크롤링 시작
-                </>
-              )}
-            </Button>
-            {isCrawling && (
+          <div className="space-y-2">
+            <div className="flex gap-2">
               <Button
-                onClick={handleStop}
-                variant="outline"
+                onClick={handleStartCrawl}
+                disabled={isCrawling}
+                className="flex-1"
               >
-                중지
+                {isCrawling ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    처리 중...
+                  </>
+                ) : (
+                  <>
+                    <Play className="mr-2 h-4 w-4" />
+                    크롤링 시작
+                  </>
+                )}
               </Button>
-            )}
-            {!isCrawling && (
-              <Button
-                onClick={handleDeleteDomainDocuments}
+              {isCrawling && (
+                <Button
+                  onClick={handleStop}
+                  variant="outline"
+                >
+                  중지
+                </Button>
+              )}
+              {!isCrawling && (
+                <Button
+                  onClick={handleDeleteDomainDocuments}
                 variant="destructive"
                 disabled={!url.trim()}
               >
@@ -982,6 +983,89 @@ export default function CrawlToIndexTestPage() {
               </Button>
             )}
           </div>
+          
+          {/* 크롤링 상태 확인 버튼 */}
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full"
+            onClick={async () => {
+              try {
+                const targetUrl = new URL(url);
+                const domain = targetUrl.hostname;
+                
+                // 크롤링 작업 상태 확인
+                const statusResponse = await fetch('/api/admin/check-crawl-status', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ domain, jobId: jobId || undefined }),
+                });
+                
+                const statusData = await statusResponse.json();
+                
+                if (statusData.success) {
+                  const { latestJob, summary, domainStats, jobs } = statusData.data;
+                  console.log('🔍 [크롤링 상태 확인]:', statusData.data);
+                  
+                  // 상세 정보를 콘솔에 출력
+                  if (jobs && jobs.length > 0) {
+                    console.log('📋 [작업 상세 정보]:', jobs.map((j: any) => ({
+                      jobId: j.jobId,
+                      status: j.status,
+                      startedAt: j.startedAt,
+                      finishedAt: j.finishedAt,
+                      subPagesCount: j.result?.subPagesCount || 0,
+                      totalChunks: j.result?.totalChunks || 0,
+                      documentsCount: j.documents?.length || 0
+                    })));
+                  }
+                  
+                  let message = '';
+                  if (latestJob) {
+                    message = `작업 상태: ${latestJob.status}`;
+                    if (latestJob.isCompleted) {
+                      const finishedAt = latestJob.finishedAt ? new Date(latestJob.finishedAt).toLocaleString('ko-KR') : '';
+                      message += ` ✅ 완료`;
+                      if (finishedAt) message += ` (${finishedAt})`;
+                      const result = latestJob.result as any;
+                      if (result?.subPagesCount) message += `\n하위 페이지: ${result.subPagesCount}개`;
+                      if (result?.totalChunks) message += `\n총 청크: ${result.totalChunks}개`;
+                    } else if (latestJob.isProcessing) {
+                      message += ` ⏳ 처리 중...`;
+                    } else if (latestJob.isFailed) {
+                      message += ` ❌ 실패`;
+                    }
+                  }
+                  
+                  if (summary) {
+                    message += `\n\n작업 통계: 완료 ${summary.completed}개, 처리중 ${summary.processing}개, 실패 ${summary.failed}개`;
+                  }
+                  
+                  if (domainStats) {
+                    message += `\n\n도메인 문서 (${domain}):`;
+                    message += `\n- 총 ${domainStats.total}개`;
+                    message += `\n- 인덱싱됨: ${domainStats.indexed}개 ✅`;
+                    message += `\n- 처리중: ${domainStats.processing}개 ⏳`;
+                    message += `\n- 실패: ${domainStats.failed}개 ❌`;
+                    message += `\n- 대기중: ${domainStats.pending}개`;
+                    if (domainStats.totalChunks > 0) {
+                      message += `\n- 총 청크: ${domainStats.totalChunks}개`;
+                    }
+                  }
+                  
+                  toast.info(message, { duration: 10000 });
+                } else {
+                  toast.error(`상태 확인 실패: ${statusData.error || '알 수 없는 오류'}`);
+                }
+              } catch (error) {
+                console.error('크롤링 상태 확인 오류:', error);
+                toast.error('크롤링 상태 확인 중 오류가 발생했습니다.');
+              }
+            }}
+          >
+            <Database className="h-4 w-4 mr-2" />
+            크롤링 상태 확인
+          </Button>
 
           {/* 진행 상황 */}
           {isCrawling && (
