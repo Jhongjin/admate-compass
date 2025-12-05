@@ -1321,6 +1321,7 @@ export async function GET(request: NextRequest) {
     );
 
     // 🔥 finished_at이 없는 processing 작업 자동 정리 (최우선)
+    // 타임아웃 방지를 위해 제한 및 배치 처리
     try {
       const { data: stuckJobs, error: stuckJobsError } = await supabase
         .from('processing_jobs')
@@ -1329,10 +1330,53 @@ export async function GET(request: NextRequest) {
         .eq('status', 'processing')
         .is('finished_at', null) // finished_at이 없는 작업만
         .order('created_at', { ascending: false })
-        .limit(200); // 제한 증가
+        .limit(50); // 제한 감소 (타임아웃 방지)
       
       if (!stuckJobsError && stuckJobs && stuckJobs.length > 0) {
         console.log(`🔧 finished_at이 없는 processing 작업 ${stuckJobs.length}개 발견, 자동 정리 시작`);
+        
+        // 배치 처리: document_id 수집 후 한 번에 조회
+        const documentIds = stuckJobs
+          .map(job => job.document_id)
+          .filter((id): id is string => typeof id === 'string' && id.length > 0);
+        
+        const jobUrls = stuckJobs
+          .map(job => (job.payload as any)?.url)
+          .filter((url): url is string => typeof url === 'string' && url.length > 0);
+        
+        // 문서 일괄 조회
+        const documentsMap = new Map<string, any>();
+        if (documentIds.length > 0) {
+          const { data: docsById } = await supabase
+            .from('documents')
+            .select('id, status, chunk_count, url')
+            .in('id', documentIds);
+          docsById?.forEach(doc => documentsMap.set(doc.id, doc));
+        }
+        
+        // URL로 문서 일괄 조회 (중복 제거)
+        const uniqueUrls = [...new Set(jobUrls)];
+        if (uniqueUrls.length > 0) {
+          // URL별로 최신 문서만 조회 (배치 크기 제한)
+          for (let i = 0; i < Math.min(uniqueUrls.length, 50); i++) {
+            const url = uniqueUrls[i];
+            const { data: docByUrl } = await supabase
+              .from('documents')
+              .select('id, status, chunk_count, url')
+              .eq('url', url)
+              .order('created_at', { ascending: false })
+              .limit(1)
+              .maybeSingle();
+            if (docByUrl) {
+              documentsMap.set(docByUrl.id, docByUrl);
+            }
+          }
+        }
+        
+        // 작업 업데이트 (배치)
+        const now = Date.now();
+        const TIMEOUT_MS = 2 * 60 * 60 * 1000;
+        const jobsToUpdate: Array<{ id: string; status: string; finished_at: string; result: any }> = [];
         
         for (const stuckJob of stuckJobs) {
           const jobUrl = (stuckJob.payload as any)?.url;
@@ -1340,62 +1384,63 @@ export async function GET(request: NextRequest) {
           
           // document_id로 문서 찾기
           if (stuckJob.document_id) {
-            const { data: docById } = await supabase
-              .from('documents')
-              .select('id, status, chunk_count, url')
-              .eq('id', stuckJob.document_id)
-              .maybeSingle();
-            if (docById) document = docById;
+            document = documentsMap.get(stuckJob.document_id);
           }
           
           // URL로 문서 찾기
           if (!document && jobUrl) {
-            const { data: docByUrl } = await supabase
-              .from('documents')
-              .select('id, status, chunk_count, url')
-              .eq('url', jobUrl)
-              .order('created_at', { ascending: false })
-              .limit(1)
-              .maybeSingle();
-            if (docByUrl) document = docByUrl;
+            document = Array.from(documentsMap.values()).find(doc => doc.url === jobUrl);
           }
           
           // 문서가 indexed/completed이거나 chunk_count > 0이면 completed로 업데이트
           if (document && (document.status === 'indexed' || document.status === 'completed' || (document.chunk_count && document.chunk_count > 0))) {
-            await supabase
-              .from('processing_jobs')
-              .update({
-                status: 'completed',
-                finished_at: new Date().toISOString(),
-                result: { note: 'auto_synced_by_document_list', syncedAt: new Date().toISOString() }
-              })
-              .eq('id', stuckJob.id)
-              .eq('status', 'processing')
-              .is('finished_at', null);
-            console.log(`✅ 작업 ${stuckJob.id.substring(0, 8)}... completed로 자동 업데이트 (문서: ${document.status}, 청크: ${document.chunk_count})`);
+            jobsToUpdate.push({
+              id: stuckJob.id,
+              status: 'completed',
+              finished_at: new Date().toISOString(),
+              result: { note: 'auto_synced_by_document_list', syncedAt: new Date().toISOString() }
+            });
           } else {
             // 타임아웃 체크 (2시간)
-            const now = Date.now();
             const startedAt = stuckJob.started_at ? new Date(stuckJob.started_at).getTime() : null;
             const createdAt = stuckJob.created_at ? new Date(stuckJob.created_at).getTime() : null;
             const elapsed = startedAt ? now - startedAt : (createdAt ? now - createdAt : 0);
-            const TIMEOUT_MS = 2 * 60 * 60 * 1000;
             
             if (elapsed > TIMEOUT_MS) {
+              jobsToUpdate.push({
+                id: stuckJob.id,
+                status: 'failed',
+                finished_at: new Date().toISOString(),
+                result: { 
+                  note: 'timeout_auto_synced', 
+                  elapsedHours: Math.round(elapsed / (60 * 60 * 1000)),
+                  error: '작업 타임아웃: 2시간 이상 진행 중'
+                }
+              });
+            }
+          }
+        }
+        
+        // 배치 업데이트 (최대 50개씩)
+        if (jobsToUpdate.length > 0) {
+          const batchSize = 50;
+          for (let i = 0; i < jobsToUpdate.length; i += batchSize) {
+            const batch = jobsToUpdate.slice(i, i + batchSize);
+            for (const jobUpdate of batch) {
               await supabase
                 .from('processing_jobs')
                 .update({
-                  status: 'failed',
-                  finished_at: new Date().toISOString(),
-                  error: '작업 타임아웃: 2시간 이상 진행 중',
-                  result: { note: 'timeout_auto_synced', elapsedHours: Math.round(elapsed / (60 * 60 * 1000)) }
+                  status: jobUpdate.status as any,
+                  finished_at: jobUpdate.finished_at,
+                  result: jobUpdate.result,
+                  ...(jobUpdate.status === 'failed' ? { error: jobUpdate.result.error } : {})
                 })
-                .eq('id', stuckJob.id)
+                .eq('id', jobUpdate.id)
                 .eq('status', 'processing')
                 .is('finished_at', null);
-              console.log(`⏰ 작업 ${stuckJob.id.substring(0, 8)}... failed로 자동 업데이트 (타임아웃: ${Math.round(elapsed / (60 * 60 * 1000))}시간)`);
             }
           }
+          console.log(`✅ ${jobsToUpdate.length}개 작업 자동 업데이트 완료`);
         }
       }
     } catch (autoSyncError) {
