@@ -1004,7 +1004,7 @@ export default function CrawlToIndexTestPage() {
                 const statusData = await statusResponse.json();
                 
                 if (statusData.success) {
-                  const { latestJob, summary, domainStats, jobs, dbVerification } = statusData.data;
+                  const { latestJob, summary, domainStats, jobs, dbVerification, progressAnalysis } = statusData.data;
                   console.log('🔍 [크롤링 상태 확인]:', statusData.data);
                   
                   // 상세 정보를 콘솔에 출력
@@ -1018,6 +1018,17 @@ export default function CrawlToIndexTestPage() {
                       totalChunks: j.result?.totalChunks || 0,
                       documentsCount: j.documents?.length || 0
                     })));
+                  }
+                  
+                  // 🔥 진행률 분석 결과 콘솔 출력
+                  if (progressAnalysis) {
+                    console.log('📊 [진행률 분석]:', {
+                      진행률: `${progressAnalysis.progressPercent}%`,
+                      처리_상태: progressAnalysis.subPageStatusCounts,
+                      멈춤_감지: progressAnalysis.isStuck,
+                      오래_처리중인_페이지: progressAnalysis.stuckSubPagesCount,
+                      상세: progressAnalysis.stuckSubPages
+                    });
                   }
                   
                   // 🔥 DB 저장 확인 결과 콘솔 출력
@@ -1066,6 +1077,22 @@ export default function CrawlToIndexTestPage() {
                     }
                   }
                   
+                  // 🔥 진행률 분석 결과 추가
+                  if (progressAnalysis) {
+                    message += `\n\n📊 진행률 분석:`;
+                    message += `\n- 진행률: ${progressAnalysis.progressPercent}%`;
+                    message += `\n- 완료: ${progressAnalysis.subPageStatusCounts.completed}개`;
+                    message += `\n- 처리중: ${progressAnalysis.subPageStatusCounts.processing}개`;
+                    message += `\n- 실패: ${progressAnalysis.subPageStatusCounts.failed}개`;
+                    message += `\n- 대기중: ${progressAnalysis.subPageStatusCounts.pending}개`;
+                    if (progressAnalysis.isStuck) {
+                      message += `\n- ⚠️ 멈춤 감지: 처리 완료되었지만 처리중 상태인 페이지가 있습니다`;
+                    }
+                    if (progressAnalysis.hasStuckSubPages) {
+                      message += `\n- ⚠️ 오래 처리중: ${progressAnalysis.stuckSubPagesCount}개 페이지가 10분 이상 처리중입니다`;
+                    }
+                  }
+                  
                   // 🔥 DB 저장 확인 결과 추가
                   if (dbVerification) {
                     message += `\n\n💾 DB 저장 확인:`;
@@ -1079,7 +1106,7 @@ export default function CrawlToIndexTestPage() {
                     }
                   }
                   
-                  toast.info(message, { duration: 12000 });
+                  toast.info(message, { duration: 15000 });
                 } else {
                   toast.error(`상태 확인 실패: ${statusData.error || '알 수 없는 오류'}`);
                 }
