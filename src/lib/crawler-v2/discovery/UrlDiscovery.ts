@@ -107,9 +107,15 @@ export class UrlDiscovery {
                 // maxDepth 4: 모든 도메인 허용 (domainLimit과 관계없이)
                 // 모든 도메인 허용
               } else if (maxDepth >= 3) {
-                // maxDepth 3: 같은 도메인 + 하위 도메인 허용
-                if (!urlDomain.endsWith(`.${baseDomain}`)) {
+                // maxDepth 3: domainLimit에 따라 다름
+                if (config.domainLimit === true) {
+                  // domainLimit이 true면 하위 도메인도 제외 (같은 도메인만)
                   continue;
+                } else {
+                  // domainLimit이 false면 하위 도메인 허용
+                  if (!urlDomain.endsWith(`.${baseDomain}`)) {
+                    continue;
+                  }
                 }
               } else {
                 // maxDepth 1-2: 정확히 같은 도메인만 허용
