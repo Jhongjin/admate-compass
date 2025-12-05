@@ -2811,10 +2811,25 @@ export async function processQueue() {
               
               const batch = candidateUrls.slice(i, i + BATCH_SIZE);
               const batchStartTime = Date.now();
-              // 타임아웃 강화: 배치당 90초로 단축 (무한 대기 방지)
-              const BATCH_TIMEOUT = 90000; // 90초 타임아웃 (각 배치당, 기존: 2분)
+              // 타임아웃 설정: domainLimit이 false이고 maxDepth 3 이상일 때는 더 많은 URL이 처리되므로 타임아웃 증가
+              const isDomainLimitDisabled = config.domainLimit === false;
+              const shouldIncreaseTimeout = isDomainLimitDisabled && actualMaxDepth >= 3;
+              const BATCH_TIMEOUT = shouldIncreaseTimeout 
+                ? 10 * 60 * 1000 // 10분 (도메인 제한 해제 시)
+                : 90000; // 90초 (기본값)
               // 개별 페이지 타임아웃: fetch (20초) + RAG (60초) + 여유 (10초) = 90초
-              const INDIVIDUAL_PAGE_TIMEOUT = 90000; // 90초 (개별 페이지당 최대 처리 시간, 배치 타임아웃과 동일)
+              // 도메인 제한 해제 시에는 더 긴 타임아웃 필요
+              const INDIVIDUAL_PAGE_TIMEOUT = shouldIncreaseTimeout
+                ? 5 * 60 * 1000 // 5분 (도메인 제한 해제 시)
+                : 90000; // 90초 (기본값)
+              console.error('[CRITICAL] ⏱️ 배치 타임아웃 설정:', {
+                BATCH_TIMEOUT,
+                INDIVIDUAL_PAGE_TIMEOUT,
+                isDomainLimitDisabled,
+                actualMaxDepth,
+                shouldIncreaseTimeout,
+                batchNumber: Math.floor(i / BATCH_SIZE) + 1
+              });
               
               console.error('[CRITICAL] 🔄 배치 ' + (Math.floor(i / BATCH_SIZE) + 1) + '/' + Math.ceil(candidateUrls.length / BATCH_SIZE) + ' 시작: ' + batch.length + '개 페이지 (인덱스 ' + i + '~' + (i + batch.length - 1) + ')');
               
