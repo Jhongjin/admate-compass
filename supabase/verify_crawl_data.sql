@@ -119,8 +119,8 @@ FROM documents d
 LEFT JOIN document_chunks dc ON dc.document_id = d.id
 WHERE d.url ILIKE '%ads.naver.com%'
   AND d.created_at >= '2025-12-05 01:04:25'  -- 작업 시작 시간 이후
-ORDER BY d.created_at DESC
-GROUP BY d.id, d.url, d.title, d.status, d.chunk_count, d.created_at;
+GROUP BY d.id, d.url, d.title, d.status, d.chunk_count, d.created_at
+ORDER BY d.created_at DESC;
 
 -- 9. 하위 페이지별 상세 청크 확인
 SELECT 
