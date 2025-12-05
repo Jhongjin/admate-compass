@@ -2812,7 +2812,7 @@ export async function processQueue() {
               const batch = candidateUrls.slice(i, i + BATCH_SIZE);
               const batchStartTime = Date.now();
               // 타임아웃 설정: domainLimit이 false이고 maxDepth 3 이상일 때는 더 많은 URL이 처리되므로 타임아웃 증가
-              const isDomainLimitDisabled = config.domainLimit === false;
+              const isDomainLimitDisabled = domainLimit === false;
               const shouldIncreaseTimeout = isDomainLimitDisabled && actualMaxDepth >= 3;
               const BATCH_TIMEOUT = shouldIncreaseTimeout 
                 ? 10 * 60 * 1000 // 10분 (도메인 제한 해제 시)
