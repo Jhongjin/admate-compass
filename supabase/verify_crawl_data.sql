@@ -94,3 +94,55 @@ LEFT JOIN document_chunks dc ON dc.document_id = d.id
 WHERE pj.id = '463e9e8b-6d6c-4ac4-9df8-d42915551f99'
 GROUP BY pj.id, pj.status, pj.finished_at, d.id, d.url, d.status, d.chunk_count;
 
+-- 7. 작업 결과에서 하위 페이지 확인 (result 컬럼 확인)
+SELECT 
+  id,
+  job_type,
+  status,
+  result->>'subPages' as sub_pages_json,
+  jsonb_array_length(result->'subPages') as sub_pages_count,
+  result->>'totalChunks' as total_chunks_from_result
+FROM processing_jobs
+WHERE id = '463e9e8b-6d6c-4ac4-9df8-d42915551f99';
+
+-- 8. 작업 시작 시간 이후 생성된 모든 도메인 문서 확인 (하위 페이지 포함)
+SELECT 
+  d.id,
+  d.url,
+  d.title,
+  d.status,
+  d.chunk_count,
+  d.created_at,
+  COUNT(dc.id) as actual_chunks,
+  COUNT(CASE WHEN dc.embedding IS NOT NULL THEN 1 END) as embeddings_count
+FROM documents d
+LEFT JOIN document_chunks dc ON dc.document_id = d.id
+WHERE d.url ILIKE '%ads.naver.com%'
+  AND d.created_at >= '2025-12-05 01:04:25'  -- 작업 시작 시간 이후
+ORDER BY d.created_at DESC
+GROUP BY d.id, d.url, d.title, d.status, d.chunk_count, d.created_at;
+
+-- 9. 하위 페이지별 상세 청크 확인
+SELECT 
+  d.id as document_id,
+  d.url,
+  d.status,
+  d.chunk_count as expected_chunks,
+  COUNT(dc.id) as actual_chunks,
+  COUNT(CASE WHEN dc.embedding IS NOT NULL THEN 1 END) as embeddings_count,
+  CASE 
+    WHEN d.chunk_count = COUNT(dc.id) AND COUNT(CASE WHEN dc.embedding IS NOT NULL THEN 1 END) > 0 
+    THEN '완전 저장됨 ✅'
+    WHEN d.chunk_count = COUNT(dc.id) 
+    THEN '청크만 저장됨 (임베딩 없음) ⚠️'
+    WHEN COUNT(dc.id) = 0 
+    THEN '저장 안됨 ❌'
+    ELSE '부분 저장됨 ⚠️'
+  END as storage_status
+FROM documents d
+LEFT JOIN document_chunks dc ON dc.document_id = d.id
+WHERE d.url ILIKE '%ads.naver.com%'
+  AND d.created_at >= '2025-12-05 01:04:25'
+GROUP BY d.id, d.url, d.status, d.chunk_count
+ORDER BY d.created_at DESC;
+
