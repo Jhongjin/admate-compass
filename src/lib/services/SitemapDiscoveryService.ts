@@ -252,10 +252,17 @@ export class SitemapDiscoveryService {
 
     // BFS 루프
     let processedCount = 0;
-    const maxProcessed = config.maxUrls * 3; // 최대 처리 개수 제한 (무한 루프 방지)
+    // maxDepth 4일 때는 더 많은 페이지를 처리할 수 있도록 maxProcessed 증가
+    // maxDepth 4는 외부 도메인까지 탐색하므로 더 많은 처리 시간이 필요
+    const maxProcessed = config.maxDepth >= 4 
+      ? config.maxUrls * 5  // maxDepth 4: 더 많은 처리 허용
+      : config.maxUrls * 3; // maxDepth 1-3: 기존 제한 유지
 
     const startTime = Date.now();
-    const timeout = config.timeout || 120000;
+    // maxDepth 4일 때는 더 긴 타임아웃 허용 (외부 도메인 탐색 시간 고려)
+    const timeout = config.maxDepth >= 4 
+      ? (config.timeout || 180000)  // maxDepth 4: 3분
+      : (config.timeout || 120000);  // maxDepth 1-3: 2분
 
     while (queue.length > 0 && processedCount < maxProcessed) {
       // 타임아웃 체크
