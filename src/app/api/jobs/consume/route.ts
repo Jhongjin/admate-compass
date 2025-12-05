@@ -3617,6 +3617,57 @@ export async function processQueue() {
               console.error(`[CRITICAL] ⚠️ ${autoFailedCount}개 페이지를 자동으로 failed로 변경 (배치 완료 후에도 처리되지 않음)`);
             }
             
+            // 🔥 작업 완료 전 문서 생성 완료 확인
+            // 모든 배치가 완료되었지만, DB 트랜잭션 지연으로 인해 문서 생성이 지연될 수 있음
+            // 최소 2초 대기 후 실제 문서 생성 확인
+            console.error('[CRITICAL] ⏳ 작업 완료 전 문서 생성 완료 확인 시작...');
+            await new Promise(resolve => setTimeout(resolve, 2000)); // 최소 2초 대기 (DB 트랜잭션 완료 대기)
+            
+            // 실제로 생성된 문서 확인 (최대 30초 대기)
+            const maxWaitTime = 30000; // 30초
+            const checkInterval = 1000; // 1초마다 확인
+            let waited = 0;
+            let allDocsCreated = false;
+            
+            while (waited < maxWaitTime && !allDocsCreated) {
+              // 성공한 하위 페이지의 documentId 수집
+              const successfulSubPageIds = subPageResults
+                .filter(item => item.success && item.documentId)
+                .map(item => item.documentId)
+                .filter((id): id is string => typeof id === 'string');
+              
+              if (successfulSubPageIds.length > 0) {
+                // 실제로 DB에 생성된 문서 확인
+                const { data: createdDocs } = await supabase
+                  .from('documents')
+                  .select('id, status')
+                  .in('id', successfulSubPageIds);
+                
+                const createdCount = createdDocs?.length || 0;
+                const pendingCount = createdDocs?.filter(d => d.status === 'processing' || d.status === 'indexing').length || 0;
+                
+                if (createdCount === successfulSubPageIds.length && pendingCount === 0) {
+                  // 모든 문서가 생성되고 처리 완료됨
+                  allDocsCreated = true;
+                  console.error(`[CRITICAL] ✅ 모든 문서 생성 완료 확인: ${createdCount}/${successfulSubPageIds.length} (대기 시간: ${waited}ms)`);
+                  break;
+                } else {
+                  console.error(`[CRITICAL] ⏳ 문서 생성 대기 중: ${createdCount}/${successfulSubPageIds.length} 생성됨, ${pendingCount}개 처리 중 (대기 시간: ${waited}ms)`);
+                }
+              } else {
+                // 성공한 하위 페이지가 없으면 대기 불필요
+                allDocsCreated = true;
+                break;
+              }
+              
+              await new Promise(resolve => setTimeout(resolve, checkInterval));
+              waited += checkInterval;
+            }
+            
+            if (waited >= maxWaitTime && !allDocsCreated) {
+              console.warn(`[CRITICAL] ⚠️ 문서 생성 확인 타임아웃: ${maxWaitTime}ms 초과, 작업 완료 처리 계속 진행`);
+            }
+            
             const finalCompletedCount = Array.from(subPageStatusMap.values()).filter(s => s.status === 'completed').length;
             const finalFailedCount = Array.from(subPageStatusMap.values()).filter(s => s.status === 'failed').length;
             const finalProcessingCount = Array.from(subPageStatusMap.values()).filter(s => s.status === 'processing').length;
@@ -3639,13 +3690,14 @@ export async function processQueue() {
                       failed: finalFailedCount,
                       processing: finalProcessingCount,
                       pending: finalPendingCount,
-                      autoFailed: autoFailedCount > 0 ? autoFailedCount : undefined // 자동 실패 처리된 페이지 수
+                      autoFailed: autoFailedCount > 0 ? autoFailedCount : undefined, // 자동 실패 처리된 페이지 수
+                      docsVerificationWaitTime: waited // 문서 생성 확인 대기 시간
                     },
                     subPages: Array.from(subPageStatusMap.values()), // 모든 하위 페이지 상태 저장
                   },
                 })
                 .eq('id', job.id);
-              console.log(`[CRITICAL] 📊 최종 진행 상황 업데이트: ${finalProcessedCount}/${candidateUrls.length} (${Math.round((finalProcessedCount / candidateUrls.length) * 100)}%) - 완료: ${finalCompletedCount}, 실패: ${finalFailedCount} (자동 실패: ${autoFailedCount}), 처리중: ${finalProcessingCount}, 대기: ${finalPendingCount}`);
+              console.log(`[CRITICAL] 📊 최종 진행 상황 업데이트: ${finalProcessedCount}/${candidateUrls.length} (${Math.round((finalProcessedCount / candidateUrls.length) * 100)}%) - 완료: ${finalCompletedCount}, 실패: ${finalFailedCount} (자동 실패: ${autoFailedCount}), 처리중: ${finalProcessingCount}, 대기: ${finalPendingCount}, 문서 생성 확인 대기: ${waited}ms`);
             }
           } catch (subDiscoveryError) {
             console.error('❌ 하위 페이지 탐색 실패:', subDiscoveryError);
