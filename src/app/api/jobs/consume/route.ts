@@ -2584,6 +2584,7 @@ export async function processQueue() {
               respectRobotsTxt: respectRobots,
               includeExternal: actualMaxDepth >= 4, // maxDepth 4일 때만 외부 도메인 허용
               allowedDomains: actualMaxDepth >= 4 ? undefined : [seedUrl.hostname], // maxDepth 4일 때는 제한 없음
+              domainLimit: domainLimit, // 도메인 제한 옵션 전달
             };
 
             console.error('[CRITICAL] 🔍 하위 페이지 탐색 옵션:', {

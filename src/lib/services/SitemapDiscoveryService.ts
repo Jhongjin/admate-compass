@@ -24,6 +24,7 @@ export interface DiscoveryOptions {
   respectRobotsTxt: boolean;
   includeExternal: boolean;
   allowedDomains?: string[];
+  domainLimit?: boolean; // 도메인 제한 (true: 같은 도메인만, false: 하위 도메인 포함)
   timeout?: number; // 타임아웃 (ms)
 }
 
@@ -654,8 +655,23 @@ export class SitemapDiscoveryService {
 
             // maxDepth 4일 때는 모든 도메인 허용, 그 외에는 같은 도메인만 체크
             const isSameDomain = urlDomain === baseDomain;
-            const isAllowedDomain = config.maxDepth >= 4 || isSameDomain || 
-              (config.maxDepth >= 3 && this.isSubdomain(urlDomain, baseDomain));
+            let isAllowedDomain = false;
+            if (config.maxDepth >= 4) {
+              // maxDepth 4: 모든 도메인 허용
+              isAllowedDomain = true;
+            } else if (config.maxDepth >= 3) {
+              // maxDepth 3: domainLimit에 따라 다름
+              if (config.domainLimit === true) {
+                // domainLimit이 true면 하위 도메인도 제외 (같은 도메인만)
+                isAllowedDomain = isSameDomain;
+              } else {
+                // domainLimit이 false면 하위 도메인 허용
+                isAllowedDomain = isSameDomain || this.isSubdomain(urlDomain, baseDomain);
+              }
+            } else {
+              // maxDepth 1-2: 정확히 같은 도메인만 허용
+              isAllowedDomain = isSameDomain;
+            }
 
             if (isAllowedDomain &&
               normalizedUrl !== baseUrl &&
@@ -737,8 +753,18 @@ export class SitemapDiscoveryService {
 
                   // maxDepth 4일 때는 모든 도메인 허용, 그 외에는 같은 도메인/하위 도메인만
                   const isSameDomain = urlDomain === baseDomain;
-                  const isAllowedDomain = maxDepth >= 4 || isSameDomain || 
-                    (maxDepth >= 3 && isSubdomain(urlDomain, baseDomain));
+                  let isAllowedDomain = false;
+                  if (maxDepth >= 4) {
+                    // maxDepth 4: 모든 도메인 허용
+                    isAllowedDomain = true;
+                  } else if (maxDepth >= 3) {
+                    // maxDepth 3: domainLimit 확인 필요 (Puppeteer 내부에서는 domainLimit을 직접 확인할 수 없으므로, 하위 도메인 허용)
+                    // 실제 필터링은 isValidUrl에서 수행됨
+                    isAllowedDomain = isSameDomain || isSubdomain(urlDomain, baseDomain);
+                  } else {
+                    // maxDepth 1-2: 정확히 같은 도메인만 허용
+                    isAllowedDomain = isSameDomain;
+                  }
 
                   if (isAllowedDomain &&
                     fullUrl !== window.location.href &&
@@ -855,19 +881,25 @@ export class SitemapDiscoveryService {
 
       // maxDepth에 따른 도메인 필터링
       // maxDepth 1-2: 정확히 같은 도메인만 허용
-      // maxDepth 3: 같은 도메인 + 하위 도메인 허용
+      // maxDepth 3: domainLimit에 따라 다름 (true: 같은 도메인만, false: 하위 도메인 포함)
       // maxDepth 4: 모든 도메인 허용 (includeExternal과 관계없이)
       if (urlDomain !== baseDomain) {
         if (config.maxDepth >= 4) {
           // maxDepth 4: 모든 도메인 허용 (includeExternal과 관계없이)
           return true;
         } else if (config.maxDepth >= 3) {
-          // maxDepth 3: 같은 도메인 + 하위 도메인 허용
-          if (this.isSubdomain(urlDomain, baseDomain)) {
-            // 하위 도메인은 허용
-          } else {
-            // 하위 도메인이 아니면 제외
+          // maxDepth 3: domainLimit에 따라 다름
+          if (config.domainLimit === true) {
+            // domainLimit이 true면 하위 도메인도 제외 (같은 도메인만)
             return false;
+          } else {
+            // domainLimit이 false면 하위 도메인 허용
+            if (this.isSubdomain(urlDomain, baseDomain)) {
+              // 하위 도메인은 허용
+            } else {
+              // 하위 도메인이 아니면 제외
+              return false;
+            }
           }
         } else {
           // maxDepth 1-2: 정확히 같은 도메인만 허용
@@ -936,17 +968,24 @@ export class SitemapDiscoveryService {
 
         // maxDepth에 따른 도메인 필터링
         // maxDepth 1-2: 정확히 같은 도메인만 허용
-        // maxDepth 3: 같은 도메인 + 하위 도메인 허용
+        // maxDepth 3: domainLimit에 따라 다름 (true: 같은 도메인만, false: 하위 도메인 포함)
         // maxDepth 4: 모든 도메인 허용 (includeExternal과 관계없이)
         if (urlDomain !== baseDomain) {
           if (config.maxDepth >= 4) {
             // maxDepth 4: 모든 도메인 허용 (includeExternal과 관계없이)
             // 허용됨 - 계속 진행
           } else if (config.maxDepth >= 3) {
-            // maxDepth 3: 같은 도메인 + 하위 도메인 허용
-            if (!this.isSubdomain(urlDomain, baseDomain)) {
-              filteredOut.push({ url: page.url, reason: `도메인 불일치 (하위 도메인 아님): ${urlDomain} !== ${baseDomain}` });
+            // maxDepth 3: domainLimit에 따라 다름
+            if (config.domainLimit === true) {
+              // domainLimit이 true면 하위 도메인도 제외 (같은 도메인만)
+              filteredOut.push({ url: page.url, reason: `도메인 제한 활성화: ${urlDomain} !== ${baseDomain}` });
               return;
+            } else {
+              // domainLimit이 false면 하위 도메인 허용
+              if (!this.isSubdomain(urlDomain, baseDomain)) {
+                filteredOut.push({ url: page.url, reason: `도메인 불일치 (하위 도메인 아님): ${urlDomain} !== ${baseDomain}` });
+                return;
+              }
             }
           } else {
             // maxDepth 1-2: 정확히 같은 도메인만 허용
