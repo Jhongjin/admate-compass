@@ -1171,14 +1171,32 @@ export default function CrawlToIndexTestPage() {
                     const statusData = await statusResponse.json();
                     
                     if (statusData.success) {
-                      const { latestJob, summary, domainStats } = statusData.data;
+                      const { latestJob, summary, domainStats, jobs } = statusData.data;
                       console.log('🔍 [크롤링 상태 확인]:', statusData.data);
+                      
+                      // 상세 정보를 콘솔에 출력
+                      if (jobs && jobs.length > 0) {
+                        console.log('📋 [작업 상세 정보]:', jobs.map((j: any) => ({
+                          jobId: j.jobId,
+                          status: j.status,
+                          startedAt: j.startedAt,
+                          finishedAt: j.finishedAt,
+                          subPagesCount: j.result?.subPagesCount || 0,
+                          totalChunks: j.result?.totalChunks || 0,
+                          documentsCount: j.documents?.length || 0
+                        })));
+                      }
                       
                       let message = '';
                       if (latestJob) {
                         message = `작업 상태: ${latestJob.status}`;
                         if (latestJob.isCompleted) {
-                          message += ` ✅ 완료 (${latestJob.finishedAt ? new Date(latestJob.finishedAt).toLocaleString('ko-KR') : ''})`;
+                          const finishedAt = latestJob.finishedAt ? new Date(latestJob.finishedAt).toLocaleString('ko-KR') : '';
+                          message += ` ✅ 완료`;
+                          if (finishedAt) message += ` (${finishedAt})`;
+                          const result = latestJob.result as any;
+                          if (result?.subPagesCount) message += `\n하위 페이지: ${result.subPagesCount}개`;
+                          if (result?.totalChunks) message += `\n총 청크: ${result.totalChunks}개`;
                         } else if (latestJob.isProcessing) {
                           message += ` ⏳ 처리 중...`;
                         } else if (latestJob.isFailed) {
@@ -1187,14 +1205,24 @@ export default function CrawlToIndexTestPage() {
                       }
                       
                       if (summary) {
-                        message += `\n작업 통계: 완료 ${summary.completed}개, 처리중 ${summary.processing}개, 실패 ${summary.failed}개`;
+                        message += `\n\n작업 통계: 완료 ${summary.completed}개, 처리중 ${summary.processing}개, 실패 ${summary.failed}개`;
                       }
                       
                       if (domainStats) {
-                        message += `\n도메인 문서: 총 ${domainStats.total}개 (인덱싱됨: ${domainStats.indexed}개, 처리중: ${domainStats.processing}개, 실패: ${domainStats.failed}개)`;
+                        message += `\n\n도메인 문서 (${domain}):`;
+                        message += `\n- 총 ${domainStats.total}개`;
+                        message += `\n- 인덱싱됨: ${domainStats.indexed}개 ✅`;
+                        message += `\n- 처리중: ${domainStats.processing}개 ⏳`;
+                        message += `\n- 실패: ${domainStats.failed}개 ❌`;
+                        message += `\n- 대기중: ${domainStats.pending}개`;
+                        if (domainStats.totalChunks > 0) {
+                          message += `\n- 총 청크: ${domainStats.totalChunks}개`;
+                        }
                       }
                       
-                      toast.info(message, { duration: 8000 });
+                      toast.info(message, { duration: 10000 });
+                    } else {
+                      toast.error(`상태 확인 실패: ${statusData.error || '알 수 없는 오류'}`);
                     }
                     
                     // 문서 삭제 확인도 함께 수행
@@ -1208,10 +1236,6 @@ export default function CrawlToIndexTestPage() {
                     
                     if (data.success) {
                       console.log('🔍 [백엔드 데이터 확인]:', data.data);
-                      toast.info(
-                        `${domain} 도메인: 백엔드에 ${data.data.total}개 문서 존재`,
-                        { duration: 5000 }
-                      );
                     }
                   } catch (error) {
                     console.error('백엔드 데이터 확인 오류:', error);
@@ -1220,7 +1244,7 @@ export default function CrawlToIndexTestPage() {
                 }}
               >
                 <Database className="h-4 w-4 mr-2" />
-                백엔드 확인
+                크롤링 상태 확인
               </Button>
               <Button
                 variant="outline"
