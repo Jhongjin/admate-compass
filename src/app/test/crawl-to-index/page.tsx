@@ -982,14 +982,13 @@ export default function CrawlToIndexTestPage() {
                 도메인 문서 삭제
               </Button>
             )}
-          </div>
-          
-          {/* 크롤링 상태 확인 버튼 */}
-          <Button
-            variant="outline"
-            size="sm"
-            className="w-full"
-            onClick={async () => {
+            </div>
+            {/* 크롤링 상태 확인 버튼 */}
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full"
+              onClick={async () => {
               try {
                 const targetUrl = new URL(url);
                 const domain = targetUrl.hostname;
