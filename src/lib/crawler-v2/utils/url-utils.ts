@@ -99,6 +99,12 @@ export function isValidUrl(url: string): boolean {
 
 /**
  * URL 깊이 계산 (시드 URL 기준)
+ * 
+ * 깊이 계산 규칙:
+ * - 시드가 루트(/)인 경우: 현재 경로의 세그먼트 수를 깊이로 사용
+ *   예: / → /help = 깊이 1, / → /sub/insight = 깊이 2
+ * - 시드가 하위 경로인 경우: 공통 경로를 제외한 상대 깊이 계산
+ *   예: /help → /help/call = 깊이 1, /help → /sub/insight = 깊이 2
  */
 export function calculateDepth(seedUrl: string, currentUrl: string): number {
   try {
@@ -113,6 +119,11 @@ export function calculateDepth(seedUrl: string, currentUrl: string): number {
     const seedPath = seedObj.pathname.split('/').filter(p => p);
     const currentPath = currentObj.pathname.split('/').filter(p => p);
     
+    // 시드가 루트(/)인 경우: 현재 경로의 세그먼트 수를 깊이로 사용
+    if (seedPath.length === 0) {
+      return currentPath.length || 1;
+    }
+    
     // 공통 경로 찾기
     let commonLength = 0;
     for (let i = 0; i < Math.min(seedPath.length, currentPath.length); i++) {
@@ -124,6 +135,7 @@ export function calculateDepth(seedUrl: string, currentUrl: string): number {
     }
     
     // 깊이는 현재 경로 길이 - 공통 경로 길이
+    // 최소값은 1 (같은 경로면 깊이 1)
     return Math.max(1, currentPath.length - commonLength + 1);
   } catch {
     return 1;
