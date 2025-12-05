@@ -2849,6 +2849,7 @@ export async function processQueue() {
                   if (statusEntry) {
                     statusEntry.status = 'processing';
                     statusEntry.title = linkTitle || statusEntry.title;
+                    statusEntry.startedAt = statusEntry.startedAt || new Date().toISOString(); // 시작 시간 기록
                   }
                   
                   let page;
