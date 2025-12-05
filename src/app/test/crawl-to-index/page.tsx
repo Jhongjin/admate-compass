@@ -1218,27 +1218,43 @@ export default function CrawlToIndexTestPage() {
             <div className="space-y-2">
               <div className="text-sm font-semibold">도메인별 문서 수 ({domainStats.domainCount}개 도메인)</div>
               <div className="space-y-1 max-h-48 overflow-y-auto">
-                {domainStats.domainList.map((item) => (
-                  <div
-                    key={item.domain}
-                    className="flex items-center justify-between p-2 rounded-md bg-background border text-sm"
-                  >
-                    <div className="flex items-center gap-2 flex-1 min-w-0">
-                      {item.isBaseDomain && (
-                        <Badge variant="default" className="text-xs">기본</Badge>
-                      )}
-                      {item.isSubdomain && (
-                        <Badge variant="secondary" className="text-xs">하위</Badge>
-                      )}
-                      {item.isOtherDomain && (
-                        <Badge variant="destructive" className="text-xs">외부</Badge>
-                      )}
-                      <span className="font-mono text-xs truncate">{item.domain}</span>
+                {domainStats.domainList.length === 0 ? (
+                  <div className="text-sm text-muted-foreground p-2">도메인 정보 없음</div>
+                ) : (
+                  domainStats.domainList.map((item) => (
+                    <div
+                      key={item.domain}
+                      className="flex items-center justify-between p-2 rounded-md bg-background border text-sm"
+                      title={`도메인: ${item.domain}, 타입: ${item.isBaseDomain ? '기본' : item.isSubdomain ? '하위' : '외부'}`}
+                    >
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        {item.isBaseDomain && (
+                          <Badge variant="default" className="text-xs">기본</Badge>
+                        )}
+                        {item.isSubdomain && (
+                          <Badge variant="secondary" className="text-xs">하위</Badge>
+                        )}
+                        {item.isOtherDomain && (
+                          <Badge variant="destructive" className="text-xs">외부</Badge>
+                        )}
+                        <span className="font-mono text-xs truncate">{item.domain}</span>
+                      </div>
+                      <span className="font-semibold ml-2">{item.count}개</span>
                     </div>
-                    <span className="font-semibold ml-2">{item.count}개</span>
-                  </div>
-                ))}
+                  ))
+                )}
               </div>
+              {/* 디버깅: 도메인 상세 정보 */}
+              {process.env.NODE_ENV === 'development' && domainStats.domainList.length > 0 && (
+                <div className="mt-2 p-2 bg-muted rounded text-xs">
+                  <div className="font-semibold mb-1">디버깅 정보:</div>
+                  <div>전체 도메인 수: {domainStats.domainCount}개</div>
+                  <div>기본 도메인: {domainStats.sameDomainCount}개</div>
+                  <div>하위 도메인: {domainStats.subdomainCount}개</div>
+                  <div>다른 도메인: {domainStats.otherDomainCount}개</div>
+                  <div className="mt-1">도메인 목록: {domainStats.domainList.map(d => d.domain).join(', ')}</div>
+                </div>
+              )}
             </div>
 
             {/* maxDepth별 검증 메시지 */}
