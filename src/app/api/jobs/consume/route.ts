@@ -2757,7 +2757,7 @@ export async function processQueue() {
             });
             
             // 각 하위 페이지의 개별 상태 추적
-            const subPageStatusMap = new Map<string, { url: string; title?: string; status: 'pending' | 'processing' | 'completed' | 'failed'; chunkCount?: number; error?: string }>();
+            const subPageStatusMap = new Map<string, { url: string; title?: string; status: 'pending' | 'processing' | 'completed' | 'failed'; chunkCount?: number; error?: string; startedAt?: string }>();
             candidateUrls.forEach(subUrl => {
               const linkTitle = urlToTitleMap.get(subUrl);
               subPageStatusMap.set(subUrl, {
