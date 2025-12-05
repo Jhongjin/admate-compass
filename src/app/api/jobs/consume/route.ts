@@ -3574,11 +3574,53 @@ export async function processQueue() {
             }
             
             // 마지막 진행 상황 업데이트 (모든 배치 완료 후)
+            // 🔥 중요: 모든 배치가 완료되었는데도 processing/pending 상태인 페이지는 타임아웃으로 간주하고 failed로 변경
+            const now = Date.now();
+            let autoFailedCount = 0;
+            for (const [subUrl, statusEntry] of subPageStatusMap.entries()) {
+              if (statusEntry.status === 'processing' || statusEntry.status === 'pending') {
+                // 배치 처리가 모두 완료되었는데도 processing/pending 상태면 타임아웃으로 간주
+                const timeoutMinutes = statusEntry.status === 'processing' && statusEntry.startedAt
+                  ? Math.round((now - new Date(statusEntry.startedAt).getTime()) / 60000)
+                  : 0;
+                
+                statusEntry.status = 'failed';
+                statusEntry.error = `배치 처리 완료 후에도 처리되지 않음 (타임아웃: ${timeoutMinutes}분)`;
+                autoFailedCount++;
+                
+                // 해당 문서도 failed로 업데이트
+                try {
+                  const { data: stuckDoc } = await supabase
+                    .from('documents')
+                    .select('id')
+                    .eq('url', subUrl)
+                    .eq('type', 'url')
+                    .maybeSingle();
+                  
+                  if (stuckDoc) {
+                    await supabase
+                      .from('documents')
+                      .update({
+                        status: 'failed',
+                        updated_at: new Date().toISOString()
+                      })
+                      .eq('id', stuckDoc.id);
+                  }
+                } catch (docUpdateError) {
+                  console.warn(`[CRITICAL] ⚠️ 타임아웃 문서 상태 업데이트 실패: ${subUrl}`, docUpdateError);
+                }
+              }
+            }
+            
+            if (autoFailedCount > 0) {
+              console.error(`[CRITICAL] ⚠️ ${autoFailedCount}개 페이지를 자동으로 failed로 변경 (배치 완료 후에도 처리되지 않음)`);
+            }
+            
             const finalCompletedCount = Array.from(subPageStatusMap.values()).filter(s => s.status === 'completed').length;
             const finalFailedCount = Array.from(subPageStatusMap.values()).filter(s => s.status === 'failed').length;
             const finalProcessingCount = Array.from(subPageStatusMap.values()).filter(s => s.status === 'processing').length;
             const finalPendingCount = Array.from(subPageStatusMap.values()).filter(s => s.status === 'pending').length;
-            const finalProcessedCount = finalCompletedCount + finalFailedCount;
+            const finalProcessedCount = finalCompletedCount + finalFailedCount; // 이제 모든 페이지가 completed 또는 failed 상태
             
             if (finalProcessedCount > 0 || candidateUrls.length > 0) {
               await supabase
@@ -3595,13 +3637,14 @@ export async function processQueue() {
                       completed: finalCompletedCount,
                       failed: finalFailedCount,
                       processing: finalProcessingCount,
-                      pending: finalPendingCount
+                      pending: finalPendingCount,
+                      autoFailed: autoFailedCount > 0 ? autoFailedCount : undefined // 자동 실패 처리된 페이지 수
                     },
                     subPages: Array.from(subPageStatusMap.values()), // 모든 하위 페이지 상태 저장
                   },
                 })
                 .eq('id', job.id);
-              console.log(`[CRITICAL] 📊 최종 진행 상황 업데이트: ${finalProcessedCount}/${candidateUrls.length} (${Math.round((finalProcessedCount / candidateUrls.length) * 100)}%) - 완료: ${finalCompletedCount}, 실패: ${finalFailedCount}, 처리중: ${finalProcessingCount}, 대기: ${finalPendingCount}`);
+              console.log(`[CRITICAL] 📊 최종 진행 상황 업데이트: ${finalProcessedCount}/${candidateUrls.length} (${Math.round((finalProcessedCount / candidateUrls.length) * 100)}%) - 완료: ${finalCompletedCount}, 실패: ${finalFailedCount} (자동 실패: ${autoFailedCount}), 처리중: ${finalProcessingCount}, 대기: ${finalPendingCount}`);
             }
           } catch (subDiscoveryError) {
             console.error('❌ 하위 페이지 탐색 실패:', subDiscoveryError);
