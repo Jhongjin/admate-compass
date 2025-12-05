@@ -197,11 +197,59 @@ export async function POST(request: NextRequest) {
     const isProcessing = latestJob?.status === 'processing';
     const isFailed = latestJob?.status === 'failed';
 
+    // 8. 진행률 및 하위 페이지 상태 분석 (processing 상태인 경우)
+    let progressAnalysis = null;
+    if (latestJob && isProcessing) {
+      const result = latestJob.result as any;
+      const subPageProgress = result?.subPageProgress;
+      const subPages = result?.subPages || [];
+      
+      if (subPageProgress) {
+        const progressPercent = subPageProgress.total > 0 
+          ? Math.round((subPageProgress.processed / subPageProgress.total) * 100)
+          : 0;
+        
+        // 하위 페이지 상태 분석
+        const subPageStatusCounts = {
+          pending: subPages.filter((p: any) => p.status === 'pending').length,
+          processing: subPages.filter((p: any) => p.status === 'processing').length,
+          completed: subPages.filter((p: any) => p.status === 'completed').length,
+          failed: subPages.filter((p: any) => p.status === 'failed').length,
+        };
+        
+        // 오래 처리 중인 하위 페이지 확인 (10분 이상)
+        const now = Date.now();
+        const stuckSubPages = subPages.filter((p: any) => {
+          if (p.status === 'processing' && p.startedAt) {
+            const startedAt = new Date(p.startedAt).getTime();
+            return (now - startedAt) > 10 * 60 * 1000; // 10분
+          }
+          return false;
+        });
+        
+        progressAnalysis = {
+          progressPercent,
+          subPageProgress,
+          subPageStatusCounts,
+          stuckSubPagesCount: stuckSubPages.length,
+          stuckSubPages: stuckSubPages.slice(0, 5).map((p: any) => ({
+            url: p.url,
+            status: p.status,
+            startedAt: p.startedAt,
+            stuckMinutes: p.startedAt ? Math.round((now - new Date(p.startedAt).getTime()) / 60000) : 0
+          })),
+          isStuck: progressPercent > 0 && subPageProgress.processed === subPageProgress.total && subPageStatusCounts.processing > 0,
+          hasStuckSubPages: stuckSubPages.length > 0
+        };
+      }
+    }
+
     console.log('✅ 크롤링 작업 상태 확인 완료:', {
       totalJobs: jobs.length,
       latestJobStatus: latestJob?.status,
       latestJobFinished: latestJob?.finished_at,
-      domainStats
+      domainStats,
+      progressAnalysis
     });
 
     return NextResponse.json({
@@ -221,7 +269,8 @@ export async function POST(request: NextRequest) {
           isFailed,
           finishedAt: latestJob?.finished_at,
           result: latestJob?.result
-        }
+        },
+        progressAnalysis // 🔥 진행률 분석 추가
       }
     });
 
