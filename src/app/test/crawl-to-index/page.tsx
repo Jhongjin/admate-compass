@@ -1004,7 +1004,7 @@ export default function CrawlToIndexTestPage() {
                 const statusData = await statusResponse.json();
                 
                 if (statusData.success) {
-                  const { latestJob, summary, domainStats, jobs } = statusData.data;
+                  const { latestJob, summary, domainStats, jobs, dbVerification } = statusData.data;
                   console.log('🔍 [크롤링 상태 확인]:', statusData.data);
                   
                   // 상세 정보를 콘솔에 출력
@@ -1018,6 +1018,19 @@ export default function CrawlToIndexTestPage() {
                       totalChunks: j.result?.totalChunks || 0,
                       documentsCount: j.documents?.length || 0
                     })));
+                  }
+                  
+                  // 🔥 DB 저장 확인 결과 콘솔 출력
+                  if (dbVerification) {
+                    console.log('💾 [DB 저장 확인 결과]:', {
+                      확인된_문서_수: dbVerification.sampleDocumentsChecked,
+                      실제_청크_수: dbVerification.actualChunksInDB,
+                      DB_청크_수: dbVerification.dbChunksCount,
+                      청크_일치: dbVerification.chunksMatch,
+                      임베딩_수: dbVerification.embeddingsCount,
+                      확인_상태: dbVerification.verificationStatus,
+                      샘플_URL: dbVerification.sampleUrls
+                    });
                   }
                   
                   let message = '';
@@ -1053,7 +1066,20 @@ export default function CrawlToIndexTestPage() {
                     }
                   }
                   
-                  toast.info(message, { duration: 10000 });
+                  // 🔥 DB 저장 확인 결과 추가
+                  if (dbVerification) {
+                    message += `\n\n💾 DB 저장 확인:`;
+                    message += `\n- 확인된 문서: ${dbVerification.sampleDocumentsChecked}개`;
+                    message += `\n- 실제 청크 (DB): ${dbVerification.actualChunksInDB}개`;
+                    message += `\n- 임베딩 벡터: ${dbVerification.embeddingsCount}개`;
+                    if (dbVerification.verificationStatus === 'verified') {
+                      message += `\n- 상태: ✅ DB에 정상 저장됨`;
+                    } else {
+                      message += `\n- 상태: ⚠️ 저장 불완전 (청크: ${dbVerification.actualChunksInDB}개, 임베딩: ${dbVerification.embeddingsCount}개)`;
+                    }
+                  }
+                  
+                  toast.info(message, { duration: 12000 });
                 } else {
                   toast.error(`상태 확인 실패: ${statusData.error || '알 수 없는 오류'}`);
                 }
