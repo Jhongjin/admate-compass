@@ -1161,6 +1161,43 @@ export default function CrawlToIndexTestPage() {
                     const targetUrl = new URL(url);
                     const domain = targetUrl.hostname;
                     
+                    // 크롤링 작업 상태 확인
+                    const statusResponse = await fetch('/api/admin/check-crawl-status', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ domain, jobId: jobId || undefined }),
+                    });
+                    
+                    const statusData = await statusResponse.json();
+                    
+                    if (statusData.success) {
+                      const { latestJob, summary, domainStats } = statusData.data;
+                      console.log('🔍 [크롤링 상태 확인]:', statusData.data);
+                      
+                      let message = '';
+                      if (latestJob) {
+                        message = `작업 상태: ${latestJob.status}`;
+                        if (latestJob.isCompleted) {
+                          message += ` ✅ 완료 (${latestJob.finishedAt ? new Date(latestJob.finishedAt).toLocaleString('ko-KR') : ''})`;
+                        } else if (latestJob.isProcessing) {
+                          message += ` ⏳ 처리 중...`;
+                        } else if (latestJob.isFailed) {
+                          message += ` ❌ 실패`;
+                        }
+                      }
+                      
+                      if (summary) {
+                        message += `\n작업 통계: 완료 ${summary.completed}개, 처리중 ${summary.processing}개, 실패 ${summary.failed}개`;
+                      }
+                      
+                      if (domainStats) {
+                        message += `\n도메인 문서: 총 ${domainStats.total}개 (인덱싱됨: ${domainStats.indexed}개, 처리중: ${domainStats.processing}개, 실패: ${domainStats.failed}개)`;
+                      }
+                      
+                      toast.info(message, { duration: 8000 });
+                    }
+                    
+                    // 문서 삭제 확인도 함께 수행
                     const response = await fetch('/api/admin/verify-document-deletion', {
                       method: 'POST',
                       headers: { 'Content-Type': 'application/json' },
