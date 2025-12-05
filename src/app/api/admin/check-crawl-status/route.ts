@@ -73,11 +73,13 @@ export async function POST(request: NextRequest) {
 
     // 4. 도메인별 문서 통계 (domain이 제공된 경우)
     let domainStats = null;
+    let dbVerification = null;
     if (domain) {
       const { data: allDomainDocs } = await supabase
         .from('documents')
-        .select('id, url, status, chunk_count')
-        .ilike('url', `%${domain}%`);
+        .select('id, url, status, chunk_count, title, created_at, updated_at')
+        .ilike('url', `%${domain}%`)
+        .order('created_at', { ascending: false });
 
       if (allDomainDocs) {
         const indexed = allDomainDocs.filter(d => d.status === 'indexed').length;
@@ -94,6 +96,55 @@ export async function POST(request: NextRequest) {
           pending,
           totalChunks
         };
+
+        // 🔥 DB 저장 확인: 실제 청크와 임베딩이 있는지 확인
+        const indexedDocs = allDomainDocs.filter(d => d.status === 'indexed');
+        if (indexedDocs.length > 0) {
+          const sampleDocIds = indexedDocs.slice(0, 5).map(d => d.id);
+          
+          // 실제 청크 수 확인
+          const { data: chunksData, error: chunksError } = await supabase
+            .from('document_chunks')
+            .select('id, document_id, chunk_index')
+            .in('document_id', sampleDocIds);
+
+          const actualChunksCount = chunksData?.length || 0;
+          const dbChunksCount = indexedDocs.slice(0, 5).reduce((sum, d) => sum + (d.chunk_count || 0), 0);
+
+          // 임베딩 벡터 확인 (pgvector)
+          const { data: embeddingsData, error: embeddingsError } = await supabase
+            .from('document_chunks')
+            .select('id, document_id, embedding')
+            .in('document_id', sampleDocIds)
+            .not('embedding', 'is', null)
+            .limit(10);
+
+          const embeddingsCount = embeddingsData?.length || 0;
+
+          dbVerification = {
+            sampleDocumentsChecked: sampleDocIds.length,
+            documentsWithChunks: chunksData ? new Set(chunksData.map(c => c.document_id)).size : 0,
+            actualChunksInDB: actualChunksCount,
+            dbChunksCount: dbChunksCount,
+            chunksMatch: actualChunksCount === dbChunksCount,
+            documentsWithEmbeddings: embeddingsData ? new Set(embeddingsData.map(e => e.document_id)).size : 0,
+            embeddingsCount: embeddingsCount,
+            verificationStatus: actualChunksCount > 0 && embeddingsCount > 0 ? 'verified' : 'incomplete',
+            sampleUrls: indexedDocs.slice(0, 5).map(d => ({
+              url: d.url,
+              chunkCount: d.chunk_count || 0,
+              status: d.status
+            }))
+          };
+
+          console.log('🔍 [DB 저장 확인]:', {
+            sampleDocs: sampleDocIds.length,
+            actualChunks: actualChunksCount,
+            dbChunks: dbChunksCount,
+            embeddings: embeddingsCount,
+            status: dbVerification.verificationStatus
+          });
+        }
       }
     }
 
@@ -161,6 +212,7 @@ export async function POST(request: NextRequest) {
         documents: documents || [],
         summary,
         domainStats,
+        dbVerification, // 🔥 DB 저장 확인 결과 추가
         latestJob: {
           jobId: latestJob?.id,
           status: latestJob?.status,
