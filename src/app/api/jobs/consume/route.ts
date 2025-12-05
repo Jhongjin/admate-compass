@@ -7,7 +7,7 @@ import { PuppeteerCrawlingService } from '@/lib/services/PuppeteerCrawlingServic
 import * as cheerio from 'cheerio';
 
 export const runtime = 'nodejs';
-export const maxDuration = 600; // Pro 플랜: 최대 10분 (큰 파일 처리 지원 - 13MB+ 파일 처리 가능)
+export const maxDuration = 300; // Pro 플랜: 최대 5분 (Vercel Pro 실제 제한)
 export const dynamic = 'force-dynamic';
 
 /**
@@ -4297,9 +4297,93 @@ export async function processQueue() {
         console.error('❌ CRAWL_SEED 처리 오류:', crawlError);
         const errorMessage = crawlError instanceof Error ? crawlError.message : String(crawlError);
         
-        // 실패 시 documents 테이블도 함께 업데이트
+        // 타임아웃 감지: Vercel 함수 실행 시간 제한 초과 여부 확인
+        const isTimeout = errorMessage.toLowerCase().includes('timeout') || 
+                         errorMessage.toLowerCase().includes('duration') ||
+                         errorMessage.toLowerCase().includes('exceeded') ||
+                         errorMessage.toLowerCase().includes('function execution') ||
+                         crawlError instanceof Error && crawlError.name === 'TimeoutError';
+        
         const documentId = job.document_id || (job.payload as any)?.documentId;
+        
+        // 타임아웃인 경우: 부분 성공 확인
+        if (isTimeout && documentId) {
+          console.error('[CRITICAL] ⏱️ 타임아웃 감지 - 부분 성공 확인 시작:', {
+            jobId: job.id,
+            documentId,
+            errorMessage
+          });
+          
+          // 실제로 인덱싱된 문서 확인 (메인 문서 + 하위 페이지)
+          const { data: indexedDocs } = await supabase
+            .from('documents')
+            .select('id, url, status, chunk_count, main_document_id')
+            .or(`id.eq.${documentId},main_document_id.eq.${documentId}`)
+            .eq('status', 'indexed')
+            .gt('chunk_count', 0);
+          
+          const indexedCount = indexedDocs?.length || 0;
+          const mainDocIndexed = indexedDocs?.some(d => d.id === documentId) || false;
+          const subPageIndexed = indexedDocs?.some(d => d.main_document_id === documentId) || false;
+          
+          console.error('[CRITICAL] 📊 타임아웃 시 부분 성공 확인 결과:', {
+            jobId: job.id,
+            documentId,
+            indexedCount,
+            mainDocIndexed,
+            subPageIndexed,
+            indexedDocs: indexedDocs?.map(d => ({ id: d.id, url: d.url, chunks: d.chunk_count }))
+          });
+          
+          // 하나라도 성공했다면 completed로 처리 (부분 성공)
+          if (indexedCount > 0) {
+            const timeoutMessage = `타임아웃 발생 (Vercel 함수 실행 시간 제한 초과), 하지만 ${indexedCount}개 문서는 성공적으로 인덱싱됨`;
+            
+            await supabase
+              .from('processing_jobs')
+              .update({
+                status: 'completed',
+                error: timeoutMessage,
+                finished_at: new Date().toISOString(),
+                result: {
+                  timeout: true,
+                  partialSuccess: true,
+                  indexedCount,
+                  mainDocIndexed,
+                  subPageIndexed,
+                  error: timeoutMessage,
+                  indexedDocs: indexedDocs?.map(d => ({ id: d.id, url: d.url, chunks: d.chunk_count }))
+                },
+              })
+              .eq('id', job.id);
+            
+            console.error('[CRITICAL] ✅ 타임아웃이지만 부분 성공으로 completed 처리:', {
+              jobId: job.id,
+              indexedCount
+            });
+            
+            return NextResponse.json({ 
+              success: true, 
+              message: 'CRAWL_SEED 작업 타임아웃 (부분 성공)', 
+              details: {
+                timeout: true,
+                partialSuccess: true,
+                indexedCount,
+                mainDocIndexed,
+                subPageIndexed,
+                error: timeoutMessage
+              }
+            }, { status: 200 });
+          }
+        }
+        
+        // 타임아웃이 아니거나, 타임아웃이지만 성공한 문서가 없는 경우: failed 처리
+        const finalErrorMessage = isTimeout 
+          ? `타임아웃 발생 (Vercel 함수 실행 시간 제한 초과): ${errorMessage}`
+          : errorMessage;
+        
         if (documentId) {
+          // processing 상태인 문서만 failed로 업데이트 (이미 indexed인 문서는 유지)
           const { error: docFailError } = await supabase
             .from('documents')
             .update({
@@ -4326,16 +4410,20 @@ export async function processQueue() {
           .from('processing_jobs')
           .update({
             status: 'failed',
-            error: errorMessage,
+            error: finalErrorMessage,
             finished_at: new Date().toISOString(),
-            result: { error: errorMessage },
+            result: { 
+              error: finalErrorMessage,
+              timeout: isTimeout
+            },
           })
           .eq('id', job.id);
 
         return NextResponse.json({ 
           success: false, 
           error: 'CRAWL_SEED 처리 실패', 
-          details: errorMessage 
+          details: finalErrorMessage,
+          timeout: isTimeout
         }, { status: 500 });
       }
     }
