@@ -2742,7 +2742,7 @@ export async function processQueue() {
             // 병렬 처리: 메모리 최적화를 위해 배치 크기 조정
             // maxUrls에 따라 배치 크기 동적 조정 (200개일 때는 10개씩, 150개 이하는 8개씩)
             // domainLimit이 false이고 maxDepth 3 이상일 때는 더 많은 URL이 발견될 수 있으므로 배치 크기 조정
-            const isDomainLimitDisabled = config.domainLimit === false;
+            const isDomainLimitDisabled = domainLimit === false;
             const shouldReduceBatchSize = isDomainLimitDisabled && actualMaxDepth >= 3;
             const BATCH_SIZE = shouldReduceBatchSize 
               ? (maxUrlsLimit >= 200 ? 8 : 6) // 도메인 제한 해제 시 배치 크기 감소 (메모리 부족 방지)
@@ -2750,7 +2750,7 @@ export async function processQueue() {
             console.error('[CRITICAL] 📦 배치 크기 설정:', {
               maxUrlsLimit,
               actualMaxDepth,
-              domainLimit: config.domainLimit,
+              domainLimit,
               isDomainLimitDisabled,
               shouldReduceBatchSize,
               BATCH_SIZE
