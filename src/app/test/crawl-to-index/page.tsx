@@ -1066,6 +1066,7 @@ export default function CrawlToIndexTestPage() {
             <Database className="h-4 w-4 mr-2" />
             크롤링 상태 확인
           </Button>
+          </div>
 
           {/* 진행 상황 */}
           {isCrawling && (
