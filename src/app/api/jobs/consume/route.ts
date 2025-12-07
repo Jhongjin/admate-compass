@@ -360,13 +360,16 @@ export async function processQueue() {
   const supabase = await createPureClient();
   console.error('[CRITICAL] ✅ Supabase 클라이언트 생성 완료');
   
-  try {
-    // 🔥 무한대기 방지: 타임아웃된 작업 감지 및 처리 (30분 이상 processing 상태)
-    // 기존 2시간에서 30분으로 단축하여 무한대기 문제 해결
-    console.error('[CRITICAL] 🔍 타임아웃된 작업 감지 시작...');
-    const TIMEOUT_MS = 30 * 60 * 1000; // 30분
-    const timeoutThreshold = new Date(Date.now() - TIMEOUT_MS).toISOString();
-    const createdTimeoutThreshold = new Date(Date.now() - TIMEOUT_MS).toISOString();
+  // 타임아웃 작업 감지 로직을 선택적으로 실행 (환경 변수로 제어 가능)
+  const ENABLE_TIMEOUT_CHECK = process.env.ENABLE_TIMEOUT_CHECK !== 'false'; // 기본값: true
+  if (ENABLE_TIMEOUT_CHECK) {
+    try {
+      // 🔥 무한대기 방지: 타임아웃된 작업 감지 및 처리 (30분 이상 processing 상태)
+      // 기존 2시간에서 30분으로 단축하여 무한대기 문제 해결
+      console.error('[CRITICAL] 🔍 타임아웃된 작업 감지 시작...');
+      const TIMEOUT_MS = 30 * 60 * 1000; // 30분
+      const timeoutThreshold = new Date(Date.now() - TIMEOUT_MS).toISOString();
+      const createdTimeoutThreshold = new Date(Date.now() - TIMEOUT_MS).toISOString();
     
     // started_at이 있는 경우: started_at 기준으로 타임아웃 체크
     console.error('[CRITICAL] 🔍 started_at 기준 타임아웃 작업 조회 중...');
