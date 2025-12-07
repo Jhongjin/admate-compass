@@ -629,30 +629,30 @@ export async function processQueue() {
       console.error('[CRITICAL] 🔍 Promise.race 시작...');
       
       // Promise.race 실행
-      const result = await Promise.race([
-        queryPromise.then((res) => {
+      const wrappedQueryPromise = (async () => {
+        try {
+          const res = await queryPromise;
           if (!queryCompleted) {
             queryCompleted = true;
             if (timeoutId) {
               clearTimeout(timeoutId);
               timeoutId = null;
             }
-            return res;
           }
           return res;
-        }).catch((err) => {
+        } catch (err: any) {
           if (!queryCompleted) {
             queryCompleted = true;
             if (timeoutId) {
               clearTimeout(timeoutId);
               timeoutId = null;
             }
-            throw err;
           }
           throw err;
-        }),
-        timeoutPromise
-      ]);
+        }
+      })();
+      
+      const result = await Promise.race([wrappedQueryPromise, timeoutPromise]);
       
       // 타임아웃이 발생했는지 확인
       if (queryCompleted && timeoutId) {
