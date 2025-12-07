@@ -370,142 +370,143 @@ export async function processQueue() {
       const TIMEOUT_MS = 30 * 60 * 1000; // 30분
       const timeoutThreshold = new Date(Date.now() - TIMEOUT_MS).toISOString();
       const createdTimeoutThreshold = new Date(Date.now() - TIMEOUT_MS).toISOString();
-    
-    // started_at이 있는 경우: started_at 기준으로 타임아웃 체크
-    console.error('[CRITICAL] 🔍 started_at 기준 타임아웃 작업 조회 중...');
-    const stuckJobsByStartedStartMs = Date.now();
-    let stuckJobsByStarted: any[] | null = null;
-    let stuckError1: any = null;
-    try {
-      // 쿼리 타임아웃: 10초
-      const QUERY_TIMEOUT_MS = 10000;
-      const queryPromise = supabase
-        .from('processing_jobs')
-        .select('id, status, started_at, created_at, payload, document_id')
-        .eq('status', 'processing')
-        .not('started_at', 'is', null)
-        .lt('started_at', timeoutThreshold)
-        .order('created_at', { ascending: false })
-        .limit(100);
       
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => {
-          reject(new Error(`쿼리 타임아웃: ${QUERY_TIMEOUT_MS}ms 초과`));
-        }, QUERY_TIMEOUT_MS);
-      });
-      
-      const result = await Promise.race([queryPromise, timeoutPromise]);
-      stuckJobsByStarted = result.data;
-      stuckError1 = result.error;
-      const elapsedMs = Date.now() - stuckJobsByStartedStartMs;
-      console.error('[CRITICAL] ✅ started_at 기준 조회 완료:', {
-        elapsedMs,
-        count: stuckJobsByStarted?.length || 0,
-        error: stuckError1 ? stuckError1.message : null
-      });
-    } catch (queryError) {
-      stuckError1 = queryError;
-      const elapsedMs = Date.now() - stuckJobsByStartedStartMs;
-      console.error('[CRITICAL] ❌ started_at 기준 조회 실패:', {
-        elapsedMs,
-        error: queryError instanceof Error ? queryError.message : String(queryError),
-        stack: queryError instanceof Error ? queryError.stack : undefined
-      });
-    }
-    
-    // started_at이 없는 경우: created_at 기준으로 타임아웃 체크 (작업이 시작되지 않은 좀비 작업)
-    console.error('[CRITICAL] 🔍 created_at 기준 타임아웃 작업 조회 중...');
-    const stuckJobsByCreatedStartMs = Date.now();
-    let stuckJobsByCreated: any[] | null = null;
-    let stuckError2: any = null;
-    try {
-      // 쿼리 타임아웃: 10초
-      const QUERY_TIMEOUT_MS = 10000;
-      const queryPromise = supabase
-        .from('processing_jobs')
-        .select('id, status, started_at, created_at, payload, document_id')
-        .eq('status', 'processing')
-        .is('started_at', null)
-        .lt('created_at', createdTimeoutThreshold)
-        .order('created_at', { ascending: false })
-        .limit(100);
-      
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => {
-          reject(new Error(`쿼리 타임아웃: ${QUERY_TIMEOUT_MS}ms 초과`));
-        }, QUERY_TIMEOUT_MS);
-      });
-      
-      const result = await Promise.race([queryPromise, timeoutPromise]);
-      stuckJobsByCreated = result.data;
-      stuckError2 = result.error;
-      const elapsedMs = Date.now() - stuckJobsByCreatedStartMs;
-      console.error('[CRITICAL] ✅ created_at 기준 조회 완료:', {
-        elapsedMs,
-        count: stuckJobsByCreated?.length || 0,
-        error: stuckError2 ? stuckError2.message : null
-      });
-    } catch (queryError) {
-      stuckError2 = queryError;
-      const elapsedMs = Date.now() - stuckJobsByCreatedStartMs;
-      console.error('[CRITICAL] ❌ created_at 기준 조회 실패:', {
-        elapsedMs,
-        error: queryError instanceof Error ? queryError.message : String(queryError),
-        stack: queryError instanceof Error ? queryError.stack : undefined
-      });
-    }
-    
-    const allStuckJobs = [
-      ...(stuckJobsByStarted || []),
-      ...(stuckJobsByCreated || [])
-    ];
-    
-    if ((!stuckError1 && !stuckError2) && allStuckJobs.length > 0) {
-      console.warn(`⚠️ 무한대기 작업 감지: ${allStuckJobs.length}개 작업이 30분 이상 진행 중입니다.`, 
-        allStuckJobs.map(j => ({ 
-          id: j.id, 
-          url: (j.payload as any)?.url, 
-          started_at: j.started_at, 
-          created_at: j.created_at,
-          elapsedMinutes: j.started_at 
-            ? Math.round((Date.now() - new Date(j.started_at).getTime()) / (60 * 1000))
-            : Math.round((Date.now() - new Date(j.created_at).getTime()) / (60 * 1000))
-        })));
-      
-      // 타임아웃된 작업을 failed로 변경
-      const stuckJobIds = allStuckJobs.map(j => j.id);
-      await supabase
-        .from('processing_jobs')
-        .update({
-          status: 'failed',
-          error: '작업 타임아웃: 30분 이상 진행 중 (무한대기 방지)',
-          finished_at: new Date().toISOString(),
-        })
-        .in('id', stuckJobIds);
-      
-      // 관련 문서도 failed로 업데이트 (processing 상태인 경우)
-      const stuckJobDocIds = allStuckJobs
-        .map(j => j.document_id)
-        .filter(Boolean) as string[];
-      
-      if (stuckJobDocIds.length > 0) {
-        await supabase
-          .from('documents')
-          .update({
-            status: 'failed',
-            updated_at: new Date().toISOString()
-          })
-          .in('id', stuckJobDocIds)
-          .eq('status', 'processing');
+      // started_at이 있는 경우: started_at 기준으로 타임아웃 체크
+      console.error('[CRITICAL] 🔍 started_at 기준 타임아웃 작업 조회 중...');
+      const stuckJobsByStartedStartMs = Date.now();
+      let stuckJobsByStarted: any[] | null = null;
+      let stuckError1: any = null;
+      try {
+        // 쿼리 타임아웃: 10초
+        const QUERY_TIMEOUT_MS = 10000;
+        const queryPromise = supabase
+          .from('processing_jobs')
+          .select('id, status, started_at, created_at, payload, document_id')
+          .eq('status', 'processing')
+          .not('started_at', 'is', null)
+          .lt('started_at', timeoutThreshold)
+          .order('created_at', { ascending: false })
+          .limit(100);
+        
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          setTimeout(() => {
+            reject(new Error(`쿼리 타임아웃: ${QUERY_TIMEOUT_MS}ms 초과`));
+          }, QUERY_TIMEOUT_MS);
+        });
+        
+        const result = await Promise.race([queryPromise, timeoutPromise]);
+        stuckJobsByStarted = result.data;
+        stuckError1 = result.error;
+        const elapsedMs = Date.now() - stuckJobsByStartedStartMs;
+        console.error('[CRITICAL] ✅ started_at 기준 조회 완료:', {
+          elapsedMs,
+          count: stuckJobsByStarted?.length || 0,
+          error: stuckError1 ? stuckError1.message : null
+        });
+      } catch (queryError) {
+        stuckError1 = queryError;
+        const elapsedMs = Date.now() - stuckJobsByStartedStartMs;
+        console.error('[CRITICAL] ❌ started_at 기준 조회 실패:', {
+          elapsedMs,
+          error: queryError instanceof Error ? queryError.message : String(queryError),
+          stack: queryError instanceof Error ? queryError.stack : undefined
+        });
       }
       
-      console.log(`✅ 타임아웃된 ${allStuckJobs.length}개 작업을 failed 상태로 변경했습니다.`);
+      // started_at이 없는 경우: created_at 기준으로 타임아웃 체크 (작업이 시작되지 않은 좀비 작업)
+      console.error('[CRITICAL] 🔍 created_at 기준 타임아웃 작업 조회 중...');
+      const stuckJobsByCreatedStartMs = Date.now();
+      let stuckJobsByCreated: any[] | null = null;
+      let stuckError2: any = null;
+      try {
+        // 쿼리 타임아웃: 10초
+        const QUERY_TIMEOUT_MS = 10000;
+        const queryPromise = supabase
+          .from('processing_jobs')
+          .select('id, status, started_at, created_at, payload, document_id')
+          .eq('status', 'processing')
+          .is('started_at', null)
+          .lt('created_at', createdTimeoutThreshold)
+          .order('created_at', { ascending: false })
+          .limit(100);
+        
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          setTimeout(() => {
+            reject(new Error(`쿼리 타임아웃: ${QUERY_TIMEOUT_MS}ms 초과`));
+          }, QUERY_TIMEOUT_MS);
+        });
+        
+        const result = await Promise.race([queryPromise, timeoutPromise]);
+        stuckJobsByCreated = result.data;
+        stuckError2 = result.error;
+        const elapsedMs = Date.now() - stuckJobsByCreatedStartMs;
+        console.error('[CRITICAL] ✅ created_at 기준 조회 완료:', {
+          elapsedMs,
+          count: stuckJobsByCreated?.length || 0,
+          error: stuckError2 ? stuckError2.message : null
+        });
+      } catch (queryError) {
+        stuckError2 = queryError;
+        const elapsedMs = Date.now() - stuckJobsByCreatedStartMs;
+        console.error('[CRITICAL] ❌ created_at 기준 조회 실패:', {
+          elapsedMs,
+          error: queryError instanceof Error ? queryError.message : String(queryError),
+          stack: queryError instanceof Error ? queryError.stack : undefined
+        });
+      }
+      
+      const allStuckJobs = [
+        ...(stuckJobsByStarted || []),
+        ...(stuckJobsByCreated || [])
+      ];
+      
+      if ((!stuckError1 && !stuckError2) && allStuckJobs.length > 0) {
+        console.warn(`⚠️ 무한대기 작업 감지: ${allStuckJobs.length}개 작업이 30분 이상 진행 중입니다.`, 
+          allStuckJobs.map(j => ({ 
+            id: j.id, 
+            url: (j.payload as any)?.url, 
+            started_at: j.started_at, 
+            created_at: j.created_at,
+            elapsedMinutes: j.started_at 
+              ? Math.round((Date.now() - new Date(j.started_at).getTime()) / (60 * 1000))
+              : Math.round((Date.now() - new Date(j.created_at).getTime()) / (60 * 1000))
+          })));
+        
+        // 타임아웃된 작업을 failed로 변경
+        const stuckJobIds = allStuckJobs.map(j => j.id);
+        await supabase
+          .from('processing_jobs')
+          .update({
+            status: 'failed',
+            error: '작업 타임아웃: 30분 이상 진행 중 (무한대기 방지)',
+            finished_at: new Date().toISOString(),
+          })
+          .in('id', stuckJobIds);
+        
+        // 관련 문서도 failed로 업데이트 (processing 상태인 경우)
+        const stuckJobDocIds = allStuckJobs
+          .map(j => j.document_id)
+          .filter(Boolean) as string[];
+        
+        if (stuckJobDocIds.length > 0) {
+          await supabase
+            .from('documents')
+            .update({
+              status: 'failed',
+              updated_at: new Date().toISOString()
+            })
+            .in('id', stuckJobDocIds)
+            .eq('status', 'processing');
+        }
+        
+        console.log(`✅ 타임아웃된 ${allStuckJobs.length}개 작업을 failed 상태로 변경했습니다.`);
+      }
+    } catch (timeoutCheckError) {
+      console.error('[CRITICAL] ⚠️ 타임아웃 작업 감지 중 오류 (계속 진행):', {
+        error: timeoutCheckError instanceof Error ? timeoutCheckError.message : String(timeoutCheckError),
+        stack: timeoutCheckError instanceof Error ? timeoutCheckError.stack : undefined
+      });
     }
-  } catch (timeoutCheckError) {
-    console.error('[CRITICAL] ⚠️ 타임아웃 작업 감지 중 오류 (계속 진행):', {
-      error: timeoutCheckError instanceof Error ? timeoutCheckError.message : String(timeoutCheckError),
-      stack: timeoutCheckError instanceof Error ? timeoutCheckError.stack : undefined
-    });
   }
   
   const queueStartMs = Date.now();
