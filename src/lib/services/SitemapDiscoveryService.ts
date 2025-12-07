@@ -705,12 +705,20 @@ export class SitemapDiscoveryService {
         // 콘텐츠가 충분한지 확인 (정적 HTML로 충분한 경우)
         const bodyText = $('body').text().trim();
         const hasSubstantialContent = bodyText.length > 500; // 500자 이상의 텍스트가 있으면 정적 HTML로 판단
+        
+        // maxDepth 4인 경우 또는 발견된 링크가 5개 미만인 경우 Puppeteer도 시도
+        // (Facebook 같은 동적 사이트는 Cheerio만으로는 충분한 링크를 찾지 못할 수 있음)
+        const shouldTryPuppeteer = config.maxDepth >= 4 || discoveredUrls.length < 5;
 
-        if (hasSubstantialContent && discoveredUrls.length > 0) {
+        if (hasSubstantialContent && discoveredUrls.length > 0 && !shouldTryPuppeteer) {
           console.error(`[CRITICAL] 🔗 페이지 링크에서 발견 (Cheerio): ${discoveredUrls.length}개`);
           return discoveredUrls;
         } else {
-          console.error(`[CRITICAL] ⚠️ Cheerio로 충분한 콘텐츠를 찾지 못함 (텍스트: ${bodyText.length}자, 링크: ${discoveredUrls.length}개), Puppeteer 시도`);
+          if (shouldTryPuppeteer) {
+            console.error(`[CRITICAL] ⚠️ maxDepth 4이거나 링크가 적음 (${discoveredUrls.length}개), Puppeteer도 시도하여 더 많은 링크 발견 시도`);
+          } else {
+            console.error(`[CRITICAL] ⚠️ Cheerio로 충분한 콘텐츠를 찾지 못함 (텍스트: ${bodyText.length}자, 링크: ${discoveredUrls.length}개), Puppeteer 시도`);
+          }
         }
       }
     } catch (fetchError) {
@@ -733,11 +741,40 @@ export class SitemapDiscoveryService {
 
             await page.goto(baseUrl, {
               waitUntil: 'networkidle2',
-              timeout: 25000 // 페이지 로드 타임아웃 25초
+              timeout: 30000 // 페이지 로드 타임아웃 30초로 증가
             });
 
-            // 페이지가 완전히 로드될 때까지 대기 (waitForTimeout 대체)
-            await new Promise(resolve => setTimeout(resolve, 2000)); // JavaScript 실행 대기
+            // 현재 URL 확인 (로그인 페이지로 리다이렉트되었는지 체크)
+            const currentUrl = page.url();
+            const isLoginPage = currentUrl.includes('/login') || 
+                               currentUrl.includes('/signin') || 
+                               currentUrl.includes('facebook.com/login');
+            
+            if (isLoginPage && !baseUrl.includes('/login') && !baseUrl.includes('/signin')) {
+              console.error(`[CRITICAL] ⚠️ 로그인 페이지로 리다이렉트됨: ${currentUrl} (원본: ${baseUrl})`);
+              // 로그인 페이지로 리다이렉트된 경우에도 일단 링크 추출 시도
+            }
+
+            // 페이지가 완전히 로드될 때까지 대기 (JavaScript 실행 대기)
+            // maxDepth 4이거나 Facebook 같은 동적 사이트는 더 오래 대기
+            const waitTime = (config.maxDepth >= 4 || baseUrl.includes('facebook.com')) ? 5000 : 2000;
+            await new Promise(resolve => setTimeout(resolve, waitTime));
+            
+            // 추가 스크롤로 lazy-loaded 콘텐츠 로드 시도
+            if (config.maxDepth >= 4 || baseUrl.includes('facebook.com')) {
+              try {
+                await page.evaluate(() => {
+                  window.scrollTo(0, document.body.scrollHeight);
+                });
+                await new Promise(resolve => setTimeout(resolve, 2000));
+                await page.evaluate(() => {
+                  window.scrollTo(0, 0);
+                });
+                await new Promise(resolve => setTimeout(resolve, 1000));
+              } catch (scrollError) {
+                console.error(`[CRITICAL] ⚠️ 스크롤 실패 (계속 진행):`, scrollError);
+              }
+            }
 
             // 페이지에서 링크 추출 (maxDepth 4일 때는 모든 도메인 허용)
             const links = await page.evaluate((baseDomain, maxDepth) => {
@@ -751,7 +788,8 @@ export class SitemapDiscoveryService {
               };
 
               linkElements.forEach(link => {
-                const href = link.getAttribute('href');
+                // href 속성 또는 data-href 속성 확인
+                let href = link.getAttribute('href') || link.getAttribute('data-href');
                 if (!href) return;
 
                 try {
