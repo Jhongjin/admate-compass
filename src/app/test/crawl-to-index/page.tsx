@@ -563,23 +563,68 @@ export default function CrawlToIndexTestPage() {
   };
 
   const handleDeleteDomainDocuments = async () => {
-    if (!url.trim()) {
-      toast.error('URL을 입력해주세요.');
+    // 🔥 현재 표시된 문서에서 도메인 자동 감지
+    if (recentDocuments.length === 0) {
+      toast.error('삭제할 문서가 없습니다.');
       return;
     }
 
     try {
-      const currentUrl = url.trim();
-      console.log('🗑️ [삭제 요청] 현재 URL 상태:', { currentUrl, urlState: url });
+      // 표시된 문서에서 도메인별 문서 수 집계
+      const domainMap = new Map<string, { count: number; docIds: string[] }>();
       
-      const targetUrl = new URL(currentUrl);
-      const domain = targetUrl.hostname;
-      
-      console.log('🗑️ [삭제 요청] 추출된 도메인:', { domain, fullUrl: currentUrl });
+      recentDocuments.forEach((doc: Document) => {
+        if (!doc.url) return;
+        try {
+          const docUrl = new URL(doc.url);
+          const docDomain = docUrl.hostname;
+          
+          const existing = domainMap.get(docDomain) || { count: 0, docIds: [] };
+          existing.count++;
+          existing.docIds.push(doc.id);
+          domainMap.set(docDomain, existing);
+        } catch {
+          // URL 파싱 실패 시 무시
+        }
+      });
 
-      if (!confirm(`${domain} 도메인의 모든 문서를 삭제하시겠습니까?`)) {
+      // 가장 많은 문서를 가진 도메인 선택
+      const sortedDomains = Array.from(domainMap.entries())
+        .sort((a, b) => b[1].count - a[1].count);
+      
+      if (sortedDomains.length === 0) {
+        toast.error('도메인을 추출할 수 없습니다.');
         return;
       }
+
+      const [primaryDomain, primaryData] = sortedDomains[0];
+      
+      // 여러 도메인이 있는 경우 사용자에게 확인
+      let targetDomain = primaryDomain;
+      if (sortedDomains.length > 1) {
+        const domainList = sortedDomains.map(([domain, data]) => 
+          `${domain} (${data.count}개)`
+        ).join('\n');
+        
+        const message = `다음 도메인들이 발견되었습니다:\n${domainList}\n\n가장 많은 문서를 가진 "${primaryDomain}" 도메인의 모든 문서를 삭제하시겠습니까?`;
+        
+        if (!confirm(message)) {
+          return;
+        }
+        targetDomain = primaryDomain;
+      } else {
+        if (!confirm(`${primaryDomain} 도메인의 모든 문서(${primaryData.count}개)를 삭제하시겠습니까?`)) {
+          return;
+        }
+      }
+      
+      const domain = targetDomain;
+      console.log('🗑️ [삭제 요청] 자동 감지된 도메인:', { 
+        domain, 
+        문서_수: primaryData.count,
+        전체_도메인_수: sortedDomains.length,
+        도메인_목록: sortedDomains.map(([d, data]) => `${d}: ${data.count}개`)
+      });
 
       // 삭제 시작 플래그 설정 (자동 새로고침 중지)
       setIsDeleting(true);
