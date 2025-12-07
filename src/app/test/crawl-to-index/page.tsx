@@ -1626,9 +1626,13 @@ export default function CrawlToIndexTestPage() {
                             <CheckCircle className="h-4 w-4 text-green-500" />
                             <h3 className="font-semibold">{doc.title}</h3>
                           </div>
-                          {doc.url && (
+                          {doc.url ? (
                             <p className="text-sm text-muted-foreground break-all">
                               {doc.url}
+                            </p>
+                          ) : (
+                            <p className="text-sm text-muted-foreground italic">
+                              URL 없음 (문서 ID: {doc.id.substring(0, 8)}...)
                             </p>
                           )}
                           <div className="flex items-center gap-4 text-sm text-muted-foreground">
