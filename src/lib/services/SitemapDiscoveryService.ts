@@ -777,8 +777,10 @@ export class SitemapDiscoveryService {
             }
 
             // 페이지에서 링크 추출 (maxDepth 4일 때는 모든 도메인 허용)
+            // 더 많은 선택자를 사용하여 링크 발견 (Facebook 같은 사이트 대응)
             const links = await page.evaluate((baseDomain, maxDepth) => {
-              const linkElements = document.querySelectorAll('a[href]');
+              // 다양한 선택자로 링크 찾기
+              const linkElements = document.querySelectorAll('a[href], [role="link"][href], [data-href]');
               const links: Array<{ url: string, title: string }> = [];
 
               // 하위 도메인 체크 함수
