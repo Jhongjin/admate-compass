@@ -2553,6 +2553,9 @@ export async function processQueue() {
 
         let subPageResults: Array<{ url: string; success: boolean; chunkCount?: number; error?: string; documentId?: string }> = [];
 
+        // actualMaxDepth를 상위 스코프로 이동 (finishedResult에서 사용하기 위해)
+        const actualMaxDepth = Math.max(1, Math.min(maxDepth, 4));
+
         // extractSubPages 값 재확인 (메인 문서 처리 후)
         const extractSubPagesAfterMain = extractSubPagesRaw === true || extractSubPagesRaw === 'true';
         console.error('[CRITICAL] 🔍 하위 페이지 크롤링 여부 확인 (메인 문서 처리 후):', {
@@ -2577,7 +2580,6 @@ export async function processQueue() {
             // maxDepth 1-2: 정확히 같은 도메인만 허용
             // maxDepth 3: 같은 도메인 + 하위 도메인 허용
             // maxDepth 4: 모든 도메인 허용 (includeExternal: true)
-            const actualMaxDepth = Math.max(1, Math.min(maxDepth, 4));
             const discoveryOptions = {
               maxDepth: actualMaxDepth,
               maxUrls: actualMaxDepth >= 4 ? 200 : actualMaxDepth >= 3 ? 150 : actualMaxDepth >= 2 ? 50 : 20,
@@ -3868,6 +3870,7 @@ export async function processQueue() {
           respectRobots,
           maxDepth,
           extractSubPages,
+          includeExternal: actualMaxDepth >= 4, // maxDepth 4일 때만 외부 도메인 허용
           subPageCount: subPageResults.filter((item) => item.success).length + reprocessedSubPages.filter((p) => p.success).length,
           subPages: subPageResults,
           reprocessedSubPages: reprocessedSubPages.length > 0 ? reprocessedSubPages : undefined,
@@ -4283,6 +4286,13 @@ export async function processQueue() {
           finished_at: new Date().toISOString(),
           result: {
             ...finishedResult,
+            // 메타데이터 명시적으로 포함 (spread가 실패할 경우 대비)
+            maxDepth: finishedResult.maxDepth ?? maxDepth,
+            domainLimit: finishedResult.domainLimit ?? domainLimit,
+            extractSubPages: finishedResult.extractSubPages ?? extractSubPages,
+            includeExternal: finishedResult.includeExternal ?? (actualMaxDepth >= 4),
+            subPageCount: finishedResult.subPageCount ?? (subPageResults.filter((item) => item.success).length + reprocessedSubPages.filter((p) => p.success).length),
+            crawlTimeMs: finishedResult.crawlTimeMs ?? (Date.now() - crawlStartMs),
             documentsUpdated: {
               main: mainDocUpdated,
               subPages: subPageUpdateResults.filter(r => r.success).length,
