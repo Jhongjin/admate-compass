@@ -374,7 +374,9 @@ export async function processQueue() {
     let stuckJobsByStarted: any[] | null = null;
     let stuckError1: any = null;
     try {
-      const result = await supabase
+      // 쿼리 타임아웃: 10초
+      const QUERY_TIMEOUT_MS = 10000;
+      const queryPromise = supabase
         .from('processing_jobs')
         .select('id, status, started_at, created_at, payload, document_id')
         .eq('status', 'processing')
@@ -382,6 +384,14 @@ export async function processQueue() {
         .lt('started_at', timeoutThreshold)
         .order('created_at', { ascending: false })
         .limit(100);
+      
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => {
+          reject(new Error(`쿼리 타임아웃: ${QUERY_TIMEOUT_MS}ms 초과`));
+        }, QUERY_TIMEOUT_MS);
+      });
+      
+      const result = await Promise.race([queryPromise, timeoutPromise]);
       stuckJobsByStarted = result.data;
       stuckError1 = result.error;
       const elapsedMs = Date.now() - stuckJobsByStartedStartMs;
@@ -392,7 +402,9 @@ export async function processQueue() {
       });
     } catch (queryError) {
       stuckError1 = queryError;
+      const elapsedMs = Date.now() - stuckJobsByStartedStartMs;
       console.error('[CRITICAL] ❌ started_at 기준 조회 실패:', {
+        elapsedMs,
         error: queryError instanceof Error ? queryError.message : String(queryError),
         stack: queryError instanceof Error ? queryError.stack : undefined
       });
@@ -404,7 +416,9 @@ export async function processQueue() {
     let stuckJobsByCreated: any[] | null = null;
     let stuckError2: any = null;
     try {
-      const result = await supabase
+      // 쿼리 타임아웃: 10초
+      const QUERY_TIMEOUT_MS = 10000;
+      const queryPromise = supabase
         .from('processing_jobs')
         .select('id, status, started_at, created_at, payload, document_id')
         .eq('status', 'processing')
@@ -412,6 +426,14 @@ export async function processQueue() {
         .lt('created_at', createdTimeoutThreshold)
         .order('created_at', { ascending: false })
         .limit(100);
+      
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => {
+          reject(new Error(`쿼리 타임아웃: ${QUERY_TIMEOUT_MS}ms 초과`));
+        }, QUERY_TIMEOUT_MS);
+      });
+      
+      const result = await Promise.race([queryPromise, timeoutPromise]);
       stuckJobsByCreated = result.data;
       stuckError2 = result.error;
       const elapsedMs = Date.now() - stuckJobsByCreatedStartMs;
@@ -422,7 +444,9 @@ export async function processQueue() {
       });
     } catch (queryError) {
       stuckError2 = queryError;
+      const elapsedMs = Date.now() - stuckJobsByCreatedStartMs;
       console.error('[CRITICAL] ❌ created_at 기준 조회 실패:', {
+        elapsedMs,
         error: queryError instanceof Error ? queryError.message : String(queryError),
         stack: queryError instanceof Error ? queryError.stack : undefined
       });
