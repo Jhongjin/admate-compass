@@ -748,16 +748,20 @@ export class SitemapDiscoveryService {
             const currentUrl = page.url();
             const isLoginPage = currentUrl.includes('/login') || 
                                currentUrl.includes('/signin') || 
-                               currentUrl.includes('facebook.com/login');
+                               currentUrl.includes('facebook.com/login') ||
+                               currentUrl.includes('facebook.com/business') && currentUrl.includes('login');
             
             if (isLoginPage && !baseUrl.includes('/login') && !baseUrl.includes('/signin')) {
               console.error(`[CRITICAL] ⚠️ 로그인 페이지로 리다이렉트됨: ${currentUrl} (원본: ${baseUrl})`);
               // 로그인 페이지로 리다이렉트된 경우에도 일단 링크 추출 시도
+              // Facebook의 경우 로그인 페이지에도 일부 링크가 있을 수 있음
             }
 
             // 페이지가 완전히 로드될 때까지 대기 (JavaScript 실행 대기)
             // maxDepth 4이거나 Facebook 같은 동적 사이트는 더 오래 대기
-            const waitTime = (config.maxDepth >= 4 || baseUrl.includes('facebook.com')) ? 5000 : 2000;
+            // 로그인 페이지로 리다이렉트된 경우에도 충분한 대기 시간 필요
+            const isFacebook = baseUrl.includes('facebook.com');
+            const waitTime = (config.maxDepth >= 4 || isFacebook) ? 8000 : (isLoginPage ? 5000 : 2000);
             await new Promise(resolve => setTimeout(resolve, waitTime));
             
             // 추가 스크롤로 lazy-loaded 콘텐츠 로드 시도
@@ -778,9 +782,26 @@ export class SitemapDiscoveryService {
 
             // 페이지에서 링크 추출 (maxDepth 4일 때는 모든 도메인 허용)
             // 더 많은 선택자를 사용하여 링크 발견 (Facebook 같은 사이트 대응)
-            const links = await page.evaluate((baseDomain, maxDepth) => {
-              // 다양한 선택자로 링크 찾기
-              const linkElements = document.querySelectorAll('a[href], [role="link"][href], [data-href]');
+            const links = await page.evaluate((baseDomain, maxDepth, baseUrl) => {
+              // 다양한 선택자로 링크 찾기 (Facebook의 다양한 링크 패턴 대응)
+              const linkSelectors = [
+                'a[href]',
+                '[role="link"][href]',
+                '[data-href]',
+                '[href]', // 모든 href 속성을 가진 요소
+                'a[data-testid]', // Facebook의 data-testid를 가진 링크
+                'a[aria-label]', // aria-label을 가진 링크
+              ];
+              
+              const linkElements = new Set<Element>();
+              linkSelectors.forEach(selector => {
+                try {
+                  document.querySelectorAll(selector).forEach(el => linkElements.add(el));
+                } catch (e) {
+                  // 선택자 오류 무시
+                }
+              });
+              
               const links: Array<{ url: string, title: string }> = [];
 
               // 하위 도메인 체크 함수
@@ -829,7 +850,7 @@ export class SitemapDiscoveryService {
               });
 
               return links;
-            }, baseDomain, config.maxDepth);
+            }, baseDomain, config.maxDepth, baseUrl);
 
             return links;
           } finally {

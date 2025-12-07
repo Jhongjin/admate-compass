@@ -377,45 +377,31 @@ export async function processQueue() {
       let stuckJobsByStarted: any[] | null = null;
       let stuckError1: any = null;
       try {
-        // 쿼리 타임아웃: 5초로 단축 (더 빠른 응답)
-        const QUERY_TIMEOUT_MS = 5000;
+        // 쿼리 타임아웃: 3초로 더 단축하고 더 엄격한 타임아웃 적용
+        const QUERY_TIMEOUT_MS = 3000;
         
-        // AbortController를 사용하여 명시적인 타임아웃 구현
-        const abortController = new AbortController();
-        const timeoutId = setTimeout(() => {
-          abortController.abort();
-        }, QUERY_TIMEOUT_MS);
+        // Promise.race를 사용하되, 타임아웃 Promise를 먼저 생성
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          setTimeout(() => {
+            reject(new Error(`쿼리 타임아웃: ${QUERY_TIMEOUT_MS}ms 초과`));
+          }, QUERY_TIMEOUT_MS);
+        });
         
-        try {
-          const queryPromise = supabase
-            .from('processing_jobs')
-            .select('id, status, started_at, created_at, payload, document_id')
-            .eq('status', 'processing')
-            .not('started_at', 'is', null)
-            .lt('started_at', timeoutThreshold)
-            .order('created_at', { ascending: false })
-            .limit(50); // limit을 100에서 50으로 줄여 쿼리 성능 개선
-          
-          const result = await Promise.race([
-            queryPromise,
-            new Promise<never>((_, reject) => {
-              setTimeout(() => {
-                clearTimeout(timeoutId);
-                reject(new Error(`쿼리 타임아웃: ${QUERY_TIMEOUT_MS}ms 초과`));
-              }, QUERY_TIMEOUT_MS);
-            })
-          ]);
-          
-          clearTimeout(timeoutId);
-          stuckJobsByStarted = result.data;
-          stuckError1 = result.error;
-        } catch (raceError) {
-          clearTimeout(timeoutId);
-          if (raceError instanceof Error && raceError.message.includes('타임아웃')) {
-            throw raceError;
-          }
-          throw raceError;
-        }
+        const queryPromise = supabase
+          .from('processing_jobs')
+          .select('id, status, started_at, created_at, payload, document_id')
+          .eq('status', 'processing')
+          .not('started_at', 'is', null)
+          .lt('started_at', timeoutThreshold)
+          .order('created_at', { ascending: false })
+          .limit(20); // limit을 50에서 20으로 더 줄여 쿼리 성능 개선
+        
+        // Promise.race 실행 (타임아웃 Promise를 먼저 배치)
+        const result = await Promise.race([timeoutPromise, queryPromise]);
+        
+        stuckJobsByStarted = result.data;
+        stuckError1 = result.error;
+        
         const elapsedMs = Date.now() - stuckJobsByStartedStartMs;
         console.error('[CRITICAL] ✅ started_at 기준 조회 완료:', {
           elapsedMs,
@@ -425,11 +411,19 @@ export async function processQueue() {
       } catch (queryError) {
         stuckError1 = queryError;
         const elapsedMs = Date.now() - stuckJobsByStartedStartMs;
-        console.error('[CRITICAL] ❌ started_at 기준 조회 실패:', {
-          elapsedMs,
-          error: queryError instanceof Error ? queryError.message : String(queryError),
-          stack: queryError instanceof Error ? queryError.stack : undefined
-        });
+        // 타임아웃 에러는 정상적인 동작이므로 경고로 처리
+        if (queryError instanceof Error && queryError.message.includes('타임아웃')) {
+          console.warn('[CRITICAL] ⚠️ started_at 기준 조회 타임아웃 (계속 진행):', {
+            elapsedMs,
+            error: queryError.message
+          });
+        } else {
+          console.error('[CRITICAL] ❌ started_at 기준 조회 실패:', {
+            elapsedMs,
+            error: queryError instanceof Error ? queryError.message : String(queryError),
+            stack: queryError instanceof Error ? queryError.stack : undefined
+          });
+        }
       }
       
       // started_at이 없는 경우: created_at 기준으로 타임아웃 체크 (작업이 시작되지 않은 좀비 작업)
@@ -438,36 +432,31 @@ export async function processQueue() {
       let stuckJobsByCreated: any[] | null = null;
       let stuckError2: any = null;
       try {
-        // 쿼리 타임아웃: 5초로 단축 (더 빠른 응답)
-        const QUERY_TIMEOUT_MS = 5000;
+        // 쿼리 타임아웃: 3초로 더 단축하고 더 엄격한 타임아웃 적용
+        const QUERY_TIMEOUT_MS = 3000;
         
-        try {
-          const queryPromise = supabase
-            .from('processing_jobs')
-            .select('id, status, started_at, created_at, payload, document_id')
-            .eq('status', 'processing')
-            .is('started_at', null)
-            .lt('created_at', createdTimeoutThreshold)
-            .order('created_at', { ascending: false })
-            .limit(50); // limit을 100에서 50으로 줄여 쿼리 성능 개선
-          
-          const result = await Promise.race([
-            queryPromise,
-            new Promise<never>((_, reject) => {
-              setTimeout(() => {
-                reject(new Error(`쿼리 타임아웃: ${QUERY_TIMEOUT_MS}ms 초과`));
-              }, QUERY_TIMEOUT_MS);
-            })
-          ]);
-          
-          stuckJobsByCreated = result.data;
-          stuckError2 = result.error;
-        } catch (raceError) {
-          if (raceError instanceof Error && raceError.message.includes('타임아웃')) {
-            throw raceError;
-          }
-          throw raceError;
-        }
+        // Promise.race를 사용하되, 타임아웃 Promise를 먼저 생성
+        const timeoutPromise = new Promise<never>((_, reject) => {
+          setTimeout(() => {
+            reject(new Error(`쿼리 타임아웃: ${QUERY_TIMEOUT_MS}ms 초과`));
+          }, QUERY_TIMEOUT_MS);
+        });
+        
+        const queryPromise = supabase
+          .from('processing_jobs')
+          .select('id, status, started_at, created_at, payload, document_id')
+          .eq('status', 'processing')
+          .is('started_at', null)
+          .lt('created_at', createdTimeoutThreshold)
+          .order('created_at', { ascending: false })
+          .limit(20); // limit을 50에서 20으로 더 줄여 쿼리 성능 개선
+        
+        // Promise.race 실행 (타임아웃 Promise를 먼저 배치)
+        const result = await Promise.race([timeoutPromise, queryPromise]);
+        
+        stuckJobsByCreated = result.data;
+        stuckError2 = result.error;
+        
         const elapsedMs = Date.now() - stuckJobsByCreatedStartMs;
         console.error('[CRITICAL] ✅ created_at 기준 조회 완료:', {
           elapsedMs,
@@ -477,11 +466,19 @@ export async function processQueue() {
       } catch (queryError) {
         stuckError2 = queryError;
         const elapsedMs = Date.now() - stuckJobsByCreatedStartMs;
-        console.error('[CRITICAL] ❌ created_at 기준 조회 실패:', {
-          elapsedMs,
-          error: queryError instanceof Error ? queryError.message : String(queryError),
-          stack: queryError instanceof Error ? queryError.stack : undefined
-        });
+        // 타임아웃 에러는 정상적인 동작이므로 경고로 처리
+        if (queryError instanceof Error && queryError.message.includes('타임아웃')) {
+          console.warn('[CRITICAL] ⚠️ created_at 기준 조회 타임아웃 (계속 진행):', {
+            elapsedMs,
+            error: queryError.message
+          });
+        } else {
+          console.error('[CRITICAL] ❌ created_at 기준 조회 실패:', {
+            elapsedMs,
+            error: queryError instanceof Error ? queryError.message : String(queryError),
+            stack: queryError instanceof Error ? queryError.stack : undefined
+          });
+        }
       }
       
       const allStuckJobs = [
