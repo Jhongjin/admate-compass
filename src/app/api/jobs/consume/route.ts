@@ -596,9 +596,16 @@ export async function processQueue() {
     let pickErr: any = null;
     
     try {
-      // 작업 조회 쿼리에 타임아웃 추가 (5초)
-      const QUERY_TIMEOUT_MS = 5000;
+      // 작업 조회 쿼리에 타임아웃 추가 (3초로 단축)
+      const QUERY_TIMEOUT_MS = 3000;
       console.error('[CRITICAL] 🔍 작업 조회 쿼리 시작 (타임아웃: ' + QUERY_TIMEOUT_MS + 'ms)...');
+      
+      // 타임아웃 Promise를 먼저 생성
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => {
+          reject(new Error(`작업 조회 쿼리 타임아웃: ${QUERY_TIMEOUT_MS}ms 초과`));
+        }, QUERY_TIMEOUT_MS);
+      });
       
       const queryPromise = supabase
         .from('processing_jobs')
@@ -609,16 +616,17 @@ export async function processQueue() {
         .limit(1)
         .maybeSingle();
       
-      // 타임아웃 Promise와 race
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        setTimeout(() => {
-          reject(new Error(`작업 조회 쿼리 타임아웃: ${QUERY_TIMEOUT_MS}ms 초과`));
-        }, QUERY_TIMEOUT_MS);
-      });
-      
+      // 타임아웃 Promise를 먼저 배치하여 빠른 실패 보장
       const result = await Promise.race([timeoutPromise, queryPromise]);
-      job = result.data;
-      pickErr = result.error;
+      
+      // result가 타임아웃 에러인지 확인
+      if (result && typeof result === 'object' && 'data' in result) {
+        job = result.data;
+        pickErr = result.error;
+      } else {
+        // 타임아웃 발생 (이 경우는 catch 블록에서 처리됨)
+        throw new Error(`작업 조회 쿼리 타임아웃: ${QUERY_TIMEOUT_MS}ms 초과`);
+      }
       
       const pickMs = Date.now() - jobStartMs;
       console.error('[CRITICAL] 📋 작업 조회 완료: ' + pickMs + 'ms', {
@@ -630,25 +638,27 @@ export async function processQueue() {
       });
     } catch (queryError) {
       const pickMs = Date.now() - jobStartMs;
-      pickErr = queryError;
-      console.error('[CRITICAL] ❌ 작업 조회 쿼리 실패:', {
-        elapsedMs: pickMs,
-        error: queryError instanceof Error ? queryError.message : String(queryError),
-        name: queryError instanceof Error ? queryError.name : undefined,
-        stack: queryError instanceof Error ? queryError.stack : undefined
-      });
       
       // 타임아웃이 발생해도 계속 진행 (작업이 없을 수 있음)
       if (queryError instanceof Error && queryError.message.includes('타임아웃')) {
         console.warn('[CRITICAL] ⚠️ 작업 조회 타임아웃 (작업 없음으로 처리):', {
-          elapsedMs: pickMs
+          elapsedMs: pickMs,
+          error: queryError.message
         });
         // 작업이 없다고 가정하고 계속 진행
         job = null;
         pickErr = null;
       } else {
-        // 다른 에러는 그대로 전파
-        throw queryError;
+        // 다른 에러는 로그만 남기고 작업 없음으로 처리 (크롤링이 멈추지 않도록)
+        console.error('[CRITICAL] ❌ 작업 조회 쿼리 실패 (작업 없음으로 처리):', {
+          elapsedMs: pickMs,
+          error: queryError instanceof Error ? queryError.message : String(queryError),
+          name: queryError instanceof Error ? queryError.name : undefined,
+          stack: queryError instanceof Error ? queryError.stack : undefined
+        });
+        // 작업이 없다고 가정하고 계속 진행 (크롤링이 멈추지 않도록)
+        job = null;
+        pickErr = null;
       }
     }
 
