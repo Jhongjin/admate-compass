@@ -370,25 +370,63 @@ export async function processQueue() {
     
     // started_at이 있는 경우: started_at 기준으로 타임아웃 체크
     console.error('[CRITICAL] 🔍 started_at 기준 타임아웃 작업 조회 중...');
-    const { data: stuckJobsByStarted, error: stuckError1 } = await supabase
-      .from('processing_jobs')
-      .select('id, status, started_at, created_at, payload, document_id')
-      .eq('status', 'processing')
-      .not('started_at', 'is', null)
-      .lt('started_at', timeoutThreshold)
-      .order('created_at', { ascending: false })
-      .limit(100);
+    const stuckJobsByStartedStartMs = Date.now();
+    let stuckJobsByStarted: any[] | null = null;
+    let stuckError1: any = null;
+    try {
+      const result = await supabase
+        .from('processing_jobs')
+        .select('id, status, started_at, created_at, payload, document_id')
+        .eq('status', 'processing')
+        .not('started_at', 'is', null)
+        .lt('started_at', timeoutThreshold)
+        .order('created_at', { ascending: false })
+        .limit(100);
+      stuckJobsByStarted = result.data;
+      stuckError1 = result.error;
+      const elapsedMs = Date.now() - stuckJobsByStartedStartMs;
+      console.error('[CRITICAL] ✅ started_at 기준 조회 완료:', {
+        elapsedMs,
+        count: stuckJobsByStarted?.length || 0,
+        error: stuckError1 ? stuckError1.message : null
+      });
+    } catch (queryError) {
+      stuckError1 = queryError;
+      console.error('[CRITICAL] ❌ started_at 기준 조회 실패:', {
+        error: queryError instanceof Error ? queryError.message : String(queryError),
+        stack: queryError instanceof Error ? queryError.stack : undefined
+      });
+    }
     
     // started_at이 없는 경우: created_at 기준으로 타임아웃 체크 (작업이 시작되지 않은 좀비 작업)
     console.error('[CRITICAL] 🔍 created_at 기준 타임아웃 작업 조회 중...');
-    const { data: stuckJobsByCreated, error: stuckError2 } = await supabase
-      .from('processing_jobs')
-      .select('id, status, started_at, created_at, payload, document_id')
-      .eq('status', 'processing')
-      .is('started_at', null)
-      .lt('created_at', createdTimeoutThreshold)
-      .order('created_at', { ascending: false })
-      .limit(100);
+    const stuckJobsByCreatedStartMs = Date.now();
+    let stuckJobsByCreated: any[] | null = null;
+    let stuckError2: any = null;
+    try {
+      const result = await supabase
+        .from('processing_jobs')
+        .select('id, status, started_at, created_at, payload, document_id')
+        .eq('status', 'processing')
+        .is('started_at', null)
+        .lt('created_at', createdTimeoutThreshold)
+        .order('created_at', { ascending: false })
+        .limit(100);
+      stuckJobsByCreated = result.data;
+      stuckError2 = result.error;
+      const elapsedMs = Date.now() - stuckJobsByCreatedStartMs;
+      console.error('[CRITICAL] ✅ created_at 기준 조회 완료:', {
+        elapsedMs,
+        count: stuckJobsByCreated?.length || 0,
+        error: stuckError2 ? stuckError2.message : null
+      });
+    } catch (queryError) {
+      stuckError2 = queryError;
+      console.error('[CRITICAL] ❌ created_at 기준 조회 실패:', {
+        error: queryError instanceof Error ? queryError.message : String(queryError),
+        stack: queryError instanceof Error ? queryError.stack : undefined
+      });
+    }
     
     const allStuckJobs = [
       ...(stuckJobsByStarted || []),
