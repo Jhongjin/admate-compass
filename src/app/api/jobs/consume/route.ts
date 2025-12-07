@@ -481,10 +481,22 @@ export async function processQueue() {
         }
       }
       
+      console.error('[CRITICAL] ✅ 타임아웃 작업 감지 완료:', {
+        started_at_기준: stuckJobsByStarted?.length || 0,
+        created_at_기준: stuckJobsByCreated?.length || 0,
+        started_at_에러: stuckError1 ? (stuckError1 instanceof Error ? stuckError1.message : String(stuckError1)) : null,
+        created_at_에러: stuckError2 ? (stuckError2 instanceof Error ? stuckError2.message : String(stuckError2)) : null
+      });
+      
       const allStuckJobs = [
         ...(stuckJobsByStarted || []),
         ...(stuckJobsByCreated || [])
       ];
+      
+      console.error('[CRITICAL] 🔍 타임아웃 작업 처리 시작:', {
+        전체_타임아웃_작업_수: allStuckJobs.length,
+        에러_발생: !!(stuckError1 || stuckError2)
+      });
       
       if ((!stuckError1 && !stuckError2) && allStuckJobs.length > 0) {
         console.warn(`⚠️ 무한대기 작업 감지: ${allStuckJobs.length}개 작업이 30분 이상 진행 중입니다.`, 
