@@ -568,8 +568,13 @@ export default function CrawlToIndexTestPage() {
     }
 
     try {
-      const targetUrl = new URL(url.trim());
+      const currentUrl = url.trim();
+      console.log('🗑️ [삭제 요청] 현재 URL 상태:', { currentUrl, urlState: url });
+      
+      const targetUrl = new URL(currentUrl);
       const domain = targetUrl.hostname;
+      
+      console.log('🗑️ [삭제 요청] 추출된 도메인:', { domain, fullUrl: currentUrl });
 
       if (!confirm(`${domain} 도메인의 모든 문서를 삭제하시겠습니까?`)) {
         return;
