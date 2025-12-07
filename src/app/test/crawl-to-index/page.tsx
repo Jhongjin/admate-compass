@@ -401,20 +401,24 @@ export default function CrawlToIndexTestPage() {
           queryClient.removeQueries({ queryKey: ['test-documents'] });
           queryClient.invalidateQueries({ queryKey: ['test-documents'] });
           
+          // 🔥 작업 완료 후 최소 3초 대기 (문서 인덱싱 완료 시간 고려)
+          await new Promise(resolve => setTimeout(resolve, 3000));
+          
           // 2. 여러 번 refetch 시도 (DB 반영 시간 고려)
-          for (let i = 0; i < 5; i++) {
-            const delay = i === 0 ? 500 : i * 1000; // 0.5초, 1초, 2초, 3초, 4초
+          for (let i = 0; i < 8; i++) {
+            const delay = i === 0 ? 1000 : i * 1500; // 1초, 1.5초, 3초, 4.5초, 6초, 7.5초, 9초, 10.5초
             await new Promise(resolve => setTimeout(resolve, delay));
             
             try {
               const result = await refetchDocuments();
               const allDocs = result.data?.data?.documents || [];
               
-              console.log(`🔄 [작업 완료] Refetch 시도 ${i + 1}/5:`, {
+              console.log(`🔄 [작업 완료] Refetch 시도 ${i + 1}/8:`, {
                 전체_문서: allDocs.length,
                 첫_문서_URL: allDocs[0]?.url || 'N/A',
                 첫_문서_상태: allDocs[0]?.status,
-                첫_문서_청크수: allDocs[0]?.chunk_count || 0
+                첫_문서_청크수: allDocs[0]?.chunk_count || 0,
+                indexed_문서_수: allDocs.filter((d: Document) => d.status === 'indexed').length
               });
               
               // 🔥 중요: refetch 결과를 React Query 캐시에 즉시 반영
@@ -432,7 +436,7 @@ export default function CrawlToIndexTestPage() {
                   completionToastShownRef.current = true;
                 }
                 break;
-              } else if (i === 4) {
+              } else if (i === 7) {
                 // 마지막 시도에서도 문서가 없으면 백엔드 상태 확인
                 console.warn('⚠️ [작업 완료] 모든 refetch 시도 후에도 문서가 없습니다. 백엔드 상태 확인 필요.');
                 try {
@@ -478,12 +482,93 @@ export default function CrawlToIndexTestPage() {
         };
         
         refreshDocuments();
+        
+        // 🔥 추가: 작업 완료 후 15초 후에 한 번 더 강제 refetch (문서 인덱싱 완료 대기)
+        setTimeout(async () => {
+          console.log('🔄 [작업 완료] 15초 후 추가 refetch 실행...');
+          try {
+            await queryClient.cancelQueries({ queryKey: ['test-documents'] });
+            queryClient.invalidateQueries({ queryKey: ['test-documents'] });
+            const finalResult = await refetchDocuments();
+            
+            if (finalResult.data) {
+              queryClient.setQueryData(['test-documents'], finalResult.data);
+              queryClient.invalidateQueries({ queryKey: ['test-documents'] });
+              
+              const finalDocs = finalResult.data?.data?.documents || [];
+              console.log('✅ [작업 완료] 15초 후 추가 refetch 결과:', {
+                전체_문서: finalDocs.length,
+                indexed_문서: finalDocs.filter((d: Document) => d.status === 'indexed').length
+              });
+              
+              if (finalDocs.length > 0 && !completionToastShownRef.current) {
+                toast.success(`크롤링 및 인덱싱이 완료되었습니다! (${finalDocs.length}개 문서)`);
+                completionToastShownRef.current = true;
+              }
+            }
+          } catch (error) {
+            console.error('❌ [작업 완료] 15초 후 추가 refetch 실패:', error);
+          }
+        }, 15000); // 15초 후
+        
         break;
       case 'failed':
         setCurrentStep('처리 실패');
         setProgress(0);
         setIsCrawling(false);
-        toast.error('크롤링 또는 인덱싱 중 오류가 발생했습니다.');
+        
+        // 🔥 실패 상태이지만 실제로 문서가 인덱싱되었는지 확인
+        const checkFailedJobDocuments = async () => {
+          console.log('🔍 [작업 실패] 문서 목록 확인 중...');
+          
+          // 최소 3초 대기 (문서 인덱싱 완료 시간 고려)
+          await new Promise(resolve => setTimeout(resolve, 3000));
+          
+          // 여러 번 refetch 시도
+          for (let i = 0; i < 5; i++) {
+            const delay = i === 0 ? 1000 : i * 1500; // 1초, 1.5초, 3초, 4.5초, 6초
+            await new Promise(resolve => setTimeout(resolve, delay));
+            
+            try {
+              await queryClient.cancelQueries({ queryKey: ['test-documents'] });
+              queryClient.invalidateQueries({ queryKey: ['test-documents'] });
+              const result = await refetchDocuments();
+              
+              const allDocs = result.data?.data?.documents || [];
+              const indexedDocs = allDocs.filter((d: Document) => d.status === 'indexed');
+              
+              console.log(`🔍 [작업 실패] 문서 확인 시도 ${i + 1}/5:`, {
+                전체_문서: allDocs.length,
+                indexed_문서: indexedDocs.length,
+                첫_문서_URL: allDocs[0]?.url || 'N/A',
+                첫_문서_상태: allDocs[0]?.status
+              });
+              
+              if (result.data) {
+                queryClient.setQueryData(['test-documents'], result.data);
+                queryClient.invalidateQueries({ queryKey: ['test-documents'] });
+              }
+              
+              if (indexedDocs.length > 0) {
+                // 문서가 인덱싱되었다면 부분 성공으로 처리
+                console.log(`✅ [작업 실패] 부분 성공: ${indexedDocs.length}개 문서가 인덱싱되었습니다.`);
+                toast.warning(`크롤링 중 일부 오류가 발생했지만 ${indexedDocs.length}개 문서는 성공적으로 인덱싱되었습니다.`);
+                break;
+              } else if (i === 4) {
+                // 마지막 시도에서도 문서가 없으면 실제 실패
+                console.error('❌ [작업 실패] 실제 실패: 문서가 인덱싱되지 않았습니다.');
+                toast.error('크롤링 또는 인덱싱 중 오류가 발생했습니다.');
+              }
+            } catch (error) {
+              console.error(`❌ [작업 실패] 문서 확인 시도 ${i + 1} 실패:`, error);
+              if (i === 4) {
+                toast.error('크롤링 또는 인덱싱 중 오류가 발생했습니다.');
+              }
+            }
+          }
+        };
+        
+        checkFailedJobDocuments();
         break;
     }
   }, [jobStatus, refetchDocuments, jobId, isLoadingJob, recentDocuments.length]);
