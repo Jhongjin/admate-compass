@@ -351,7 +351,14 @@ function normalizeTablesToMarkdown(text: string): string {
  * 큐 처리 핵심 로직 (GET/POST 공통)
  */
 export async function processQueue() {
+  const processQueueStartMs = Date.now();
+  console.error('[CRITICAL] 🚀 processQueue 함수 진입:', {
+    timestamp: new Date().toISOString(),
+    startTime: processQueueStartMs
+  });
+  
   const supabase = await createPureClient();
+  console.error('[CRITICAL] ✅ Supabase 클라이언트 생성 완료');
   
   // 🔥 무한대기 방지: 타임아웃된 작업 감지 및 처리 (30분 이상 processing 상태)
   // 기존 2시간에서 30분으로 단축하여 무한대기 문제 해결
@@ -4844,10 +4851,16 @@ export async function processQueue() {
       console.error('❌ 실패 상태 업데이트 오류:', recoveryError);
     }
     
-    return NextResponse.json(
+    const errorResponse = NextResponse.json(
       { success: false, error: 'Consumer 처리 오류', details: err instanceof Error ? err.message : String(err) },
       { status: 500 }
     );
+    console.error('[CRITICAL] ❌ processQueue 최상위 catch 블록 - 에러 응답 반환:', {
+      error: err instanceof Error ? err.message : String(err),
+      stack: err instanceof Error ? err.stack : undefined,
+      name: err instanceof Error ? err.name : undefined
+    });
+    return errorResponse;
   }
 }
 

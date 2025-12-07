@@ -131,11 +131,19 @@ export async function POST(request: NextRequest) {
       // processQueue를 백그라운드로 실행 (await 없이)
       // Vercel serverless 환경에서 응답 반환 후에도 실행되도록 보장
       import('@/app/api/jobs/consume/route')
-        .then(({ processQueue }) => {
+        .then((module) => {
           console.error('[CRITICAL] 📦 processQueue import 완료, 실행 시작...');
-          return processQueue();
+          if (!module.processQueue) {
+            throw new Error('processQueue 함수를 찾을 수 없습니다.');
+          }
+          console.error('[CRITICAL] 🔄 processQueue 함수 호출 시작...');
+          return module.processQueue();
         })
         .then(result => {
+          console.error('[CRITICAL] 📥 processQueue 반환값 수신:', {
+            isResponse: result instanceof Response,
+            type: typeof result
+          });
           if (result instanceof Response) {
             return result.text().then(text => {
               try {
@@ -144,12 +152,13 @@ export async function POST(request: NextRequest) {
                   status: result.status,
                   success: json.success,
                   message: json.message,
-                  jobId: json.jobId
+                  jobId: json.jobId,
+                  error: json.error
                 });
               } catch {
-                console.error('[CRITICAL] ✅ 큐 워커 처리 완료:', {
+                console.error('[CRITICAL] ✅ 큐 워커 처리 완료 (JSON 파싱 실패):', {
                   status: result.status,
-                  response: text.substring(0, 200)
+                  response: text.substring(0, 500)
                 });
               }
             });
@@ -161,7 +170,9 @@ export async function POST(request: NextRequest) {
           // 에러 발생해도 무시 (Cron Job이 처리할 수 있음)
           console.error('[CRITICAL] ❌ 큐 워커 트리거 에러:', {
             error: err instanceof Error ? err.message : String(err),
-            stack: err instanceof Error ? err.stack : undefined
+            stack: err instanceof Error ? err.stack : undefined,
+            name: err instanceof Error ? err.name : undefined,
+            cause: err instanceof Error && 'cause' in err ? err.cause : undefined
           });
         });
       
