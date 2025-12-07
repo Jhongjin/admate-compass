@@ -591,22 +591,66 @@ export async function processQueue() {
     // 1) 픽업할 잡 조회 (우선순위 높은 순, 예약시각 이른 순)
     // retrying 상태도 포함하여 재시도 작업 처리
     console.error('[CRITICAL] 🔍 큐에서 작업 조회 중...');
-    const { data: job, error: pickErr } = await supabase
-      .from('processing_jobs')
-      .select('id, document_id, job_type, status, attempts, max_attempts, priority, payload')
-      .in('status', ['queued', 'retrying']) // retrying 상태도 처리
-      .order('priority', { ascending: false })
-      .order('scheduled_at', { ascending: true })
-      .limit(1)
-      .maybeSingle();
     
-    const pickMs = Date.now() - jobStartMs;
-    console.error('[CRITICAL] 📋 작업 조회 완료: ' + pickMs + 'ms', {
-      found: !!job,
-      jobId: job?.id,
-      jobType: job?.job_type,
-      documentId: job?.document_id
-    });
+    let job: any = null;
+    let pickErr: any = null;
+    
+    try {
+      // 작업 조회 쿼리에 타임아웃 추가 (5초)
+      const QUERY_TIMEOUT_MS = 5000;
+      console.error('[CRITICAL] 🔍 작업 조회 쿼리 시작 (타임아웃: ' + QUERY_TIMEOUT_MS + 'ms)...');
+      
+      const queryPromise = supabase
+        .from('processing_jobs')
+        .select('id, document_id, job_type, status, attempts, max_attempts, priority, payload')
+        .in('status', ['queued', 'retrying']) // retrying 상태도 처리
+        .order('priority', { ascending: false })
+        .order('scheduled_at', { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      
+      // 타임아웃 Promise와 race
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => {
+          reject(new Error(`작업 조회 쿼리 타임아웃: ${QUERY_TIMEOUT_MS}ms 초과`));
+        }, QUERY_TIMEOUT_MS);
+      });
+      
+      const result = await Promise.race([timeoutPromise, queryPromise]);
+      job = result.data;
+      pickErr = result.error;
+      
+      const pickMs = Date.now() - jobStartMs;
+      console.error('[CRITICAL] 📋 작업 조회 완료: ' + pickMs + 'ms', {
+        found: !!job,
+        jobId: job?.id,
+        jobType: job?.job_type,
+        documentId: job?.document_id,
+        error: pickErr ? pickErr.message : null
+      });
+    } catch (queryError) {
+      const pickMs = Date.now() - jobStartMs;
+      pickErr = queryError;
+      console.error('[CRITICAL] ❌ 작업 조회 쿼리 실패:', {
+        elapsedMs: pickMs,
+        error: queryError instanceof Error ? queryError.message : String(queryError),
+        name: queryError instanceof Error ? queryError.name : undefined,
+        stack: queryError instanceof Error ? queryError.stack : undefined
+      });
+      
+      // 타임아웃이 발생해도 계속 진행 (작업이 없을 수 있음)
+      if (queryError instanceof Error && queryError.message.includes('타임아웃')) {
+        console.warn('[CRITICAL] ⚠️ 작업 조회 타임아웃 (작업 없음으로 처리):', {
+          elapsedMs: pickMs
+        });
+        // 작업이 없다고 가정하고 계속 진행
+        job = null;
+        pickErr = null;
+      } else {
+        // 다른 에러는 그대로 전파
+        throw queryError;
+      }
+    }
 
     if (pickErr) {
       console.error(`❌ 작업 조회 실패:`, pickErr);
