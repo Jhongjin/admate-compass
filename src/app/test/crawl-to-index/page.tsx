@@ -953,6 +953,32 @@ export default function CrawlToIndexTestPage() {
                 toast.warning(`백엔드 검증: ${remainingInBackend}개 문서가 여전히 존재합니다.`);
               } else {
                 console.log(`✅ [삭제 후 검증] 백엔드에서 모든 문서가 삭제되었습니다.`);
+                
+                // 🔥 백엔드 검증 결과가 0개이면 캐시를 완전히 비우기
+                console.log('🗑️ [캐시 초기화] 백엔드 검증 결과 0개 - 캐시 완전 제거');
+                
+                // 캐시 완전 제거
+                queryClient.removeQueries({ queryKey: ['test-documents'] });
+                
+                // 빈 결과로 캐시 설정
+                const emptyResult = {
+                  success: true,
+                  data: {
+                    documents: [],
+                    total: 0
+                  }
+                };
+                queryClient.setQueryData(['test-documents'], emptyResult);
+                
+                // 캐시 무효화 및 강제 리렌더링
+                queryClient.invalidateQueries({ queryKey: ['test-documents'], exact: true });
+                queryClient.invalidateQueries({ queryKey: ['test-documents'] });
+                
+                // 강제 리렌더링을 위한 추가 무효화
+                await queryClient.refetchQueries({ queryKey: ['test-documents'] });
+                
+                // 삭제된 문서 ID 목록도 초기화
+                setDeletedDocumentIds(new Set());
               }
             }
           } catch (verifyError) {
