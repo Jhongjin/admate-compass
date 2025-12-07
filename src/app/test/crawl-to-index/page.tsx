@@ -82,6 +82,9 @@ export default function CrawlToIndexTestPage() {
   // 🔥 삭제된 문서 ID 목록 (영구 저장하여 자동 새로고침 시에도 필터링)
   const [deletedDocumentIds, setDeletedDocumentIds] = useState<Set<string>>(new Set());
   
+  // 🔥 현재 크롤링 작업과 관련된 문서만 표시하기 위한 필터 (작업 완료 후 사용)
+  const [currentJobUrl, setCurrentJobUrl] = useState<string | null>(null);
+  
   // 문서 목록 조회 (3초마다 자동 새로고침, 삭제 중일 때는 중지)
   const { data: documentsData, refetch: refetchDocuments } = useQuery({
     queryKey: ['test-documents'],
@@ -135,9 +138,41 @@ export default function CrawlToIndexTestPage() {
     const allDocs = documentsData?.data?.documents || [];
     
     // 🔥 삭제된 문서 ID로 필터링 (백엔드에서 삭제된 문서 제외)
-    const filteredDocs = allDocs.filter((doc: Document) => {
+    let filteredDocs = allDocs.filter((doc: Document) => {
       return !deletedDocumentIds.has(doc.id);
     });
+    
+    // 🔥 현재 작업 URL이 있으면 해당 URL과 관련된 문서만 표시 (작업 완료 후)
+    if (currentJobUrl) {
+      try {
+        const jobUrlObj = new URL(currentJobUrl);
+        const jobDomain = jobUrlObj.hostname;
+        
+        filteredDocs = filteredDocs.filter((doc: Document) => {
+          // URL이 null인 문서는 제외 (파일 업로드 문서 등)
+          if (!doc.url) return false;
+          
+          try {
+            const docUrlObj = new URL(doc.url);
+            const docDomain = docUrlObj.hostname;
+            
+            // 같은 도메인인 경우만 표시
+            return docDomain === jobDomain || docDomain.endsWith(`.${jobDomain}`);
+          } catch {
+            return false;
+          }
+        });
+        
+        console.log('🔍 [작업 필터링] 현재 작업 URL 기준 필터링:', {
+          작업_URL: currentJobUrl,
+          작업_도메인: jobDomain,
+          필터링_전: allDocs.length,
+          필터링_후: filteredDocs.length
+        });
+      } catch (e) {
+        console.warn('⚠️ [작업 필터링] URL 파싱 실패:', e);
+      }
+    }
     
     // 백엔드 처리 상태 진단
     console.log('📋 [백엔드 진단] 전체 문서 수:', allDocs.length, {
@@ -188,7 +223,7 @@ export default function CrawlToIndexTestPage() {
     // 🔥 삭제된 문서 ID도 의존성에 추가하여 삭제 시 즉시 필터링
     // Set 객체는 참조 동일성으로 비교되므로 size와 문자열 배열을 의존성에 추가
     return filteredDocs;
-  }, [documentsData, options.maxDepth, deletedDocumentIds, deletedDocumentIds.size, Array.from(deletedDocumentIds).join(',')]);
+  }, [documentsData, options.maxDepth, deletedDocumentIds, deletedDocumentIds.size, Array.from(deletedDocumentIds).join(','), currentJobUrl]);
 
   // 도메인별 통계 계산
   const domainStats = React.useMemo(() => {
@@ -583,6 +618,9 @@ export default function CrawlToIndexTestPage() {
     setJobId(null);
     setCurrentStep('작업 시작 중...');
     setProgress(0);
+    
+    // 🔥 새로운 크롤링 시작 시 현재 작업 URL 설정
+    setCurrentJobUrl(url.trim());
 
     try {
       // 큐에 작업 추가
@@ -648,6 +686,9 @@ export default function CrawlToIndexTestPage() {
   };
 
   const handleDeleteDomainDocuments = async () => {
+    // 🔥 삭제 시 현재 작업 URL 초기화 (모든 문서 표시)
+    setCurrentJobUrl(null);
+    
     // 🔥 현재 표시된 문서에서 도메인 자동 감지
     if (recentDocuments.length === 0) {
       toast.error('삭제할 문서가 없습니다.');
