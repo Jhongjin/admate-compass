@@ -186,8 +186,9 @@ export default function CrawlToIndexTestPage() {
     
     // 🔥 중요: documentsData 전체를 의존성으로 추가하여 캐시 업데이트 시 즉시 반영
     // 🔥 삭제된 문서 ID도 의존성에 추가하여 삭제 시 즉시 필터링
+    // Set 객체는 참조 동일성으로 비교되므로 size와 문자열 배열을 의존성에 추가
     return filteredDocs;
-  }, [documentsData, options.maxDepth, deletedDocumentIds]);
+  }, [documentsData, options.maxDepth, deletedDocumentIds, deletedDocumentIds.size, Array.from(deletedDocumentIds).join(',')]);
 
   // 도메인별 통계 계산
   const domainStats = React.useMemo(() => {
@@ -585,9 +586,9 @@ export default function CrawlToIndexTestPage() {
 
       // 삭제 전 문서 수 및 삭제될 문서 ID 목록 확인
       const beforeDeleteCount = recentDocuments.length;
-      const deletedDocumentIds = new Set(recentDocuments.map((doc: Document) => doc.id));
+      const localDeletedIds = new Set(recentDocuments.map((doc: Document) => doc.id));
       console.log(`🗑️ 삭제 전 문서 수: ${beforeDeleteCount}개`, {
-        삭제될_문서_ID: Array.from(deletedDocumentIds).slice(0, 5)
+        삭제될_문서_ID: Array.from(localDeletedIds).slice(0, 5)
       });
 
       toast.info('도메인 문서 삭제 중...');
@@ -641,6 +642,9 @@ export default function CrawlToIndexTestPage() {
         queryClient.removeQueries({ queryKey: ['test-documents'] });
         queryClient.clear(); // 모든 쿼리 캐시 클리어
         
+        // 🔥 상태 업데이트 후 최신 삭제 ID Set 생성 (refetch에서 사용)
+        const finalDeletedIds = new Set([...backendDeletedIds]);
+        
         // 즉시 refetch 실행 (캐시 없이, 필터링 없이)
         const refetchWithRetry = async (retries = 10) => {
           for (let i = 0; i < retries; i++) {
@@ -668,10 +672,9 @@ export default function CrawlToIndexTestPage() {
               
               const allDocs = result?.data?.documents || [];
               
-              // 🔥 삭제된 문서 ID로 필터링 (상태에 저장된 삭제 ID 사용)
-              const currentDeletedIds = deletedDocumentIds.size > 0 ? deletedDocumentIds : backendDeletedIds;
+              // 🔥 삭제된 문서 ID로 필터링 (백엔드에서 삭제된 ID 사용)
               const finalDocs = allDocs.filter((doc: Document) => {
-                return !currentDeletedIds.has(doc.id);
+                return !finalDeletedIds.has(doc.id);
               });
               
               const afterDeleteCount = finalDocs.length;
@@ -682,7 +685,7 @@ export default function CrawlToIndexTestPage() {
                 삭제_전: beforeDeleteCount,
                 차이: beforeDeleteCount - afterDeleteCount,
                 백엔드_삭제_ID_수: backendDeletedIds.size,
-                상태_삭제_ID_수: deletedDocumentIds.size,
+                사용중_삭제_ID_수: finalDeletedIds.size,
                 백엔드_검증: verified,
                 백엔드_남은_문서: remainingCount
               });
@@ -704,8 +707,12 @@ export default function CrawlToIndexTestPage() {
                 // 🔥 UI 즉시 업데이트를 위해 필터링된 상태 강제 갱신
                 queryClient.setQueryData(['test-documents'], filteredResult);
                 
-                // 🔥 추가: 캐시 무효화 및 강제 리렌더링
+                // 🔥 추가: 캐시 무효화 및 강제 리렌더링 (여러 번 호출하여 확실히 반영)
+                queryClient.invalidateQueries({ queryKey: ['test-documents'], exact: true });
                 queryClient.invalidateQueries({ queryKey: ['test-documents'] });
+                
+                // 🔥 강제 리렌더링을 위한 추가 무효화
+                await queryClient.refetchQueries({ queryKey: ['test-documents'] });
                 
                 // 🔥 추가: 최종 확인을 위해 한 번 더 refetch (DB 반영 시간 고려)
                 setTimeout(async () => {
@@ -728,9 +735,9 @@ export default function CrawlToIndexTestPage() {
                     });
                     
                     const finalAllDocs = finalRefetch?.data?.documents || [];
-                    // 🔥 상태에 저장된 삭제 ID로 필터링
+                    // 🔥 백엔드에서 삭제된 ID로 필터링
                     const finalFilteredDocs = finalAllDocs.filter((doc: Document) => {
-                      return !deletedDocumentIds.has(doc.id);
+                      return !finalDeletedIds.has(doc.id);
                     });
                     
                     console.log(`🔄 [최종 확인] Refetch 결과:`, {
@@ -750,7 +757,11 @@ export default function CrawlToIndexTestPage() {
                     };
                     
                     queryClient.setQueryData(['test-documents'], finalFilteredResult);
+                    queryClient.invalidateQueries({ queryKey: ['test-documents'], exact: true });
                     queryClient.invalidateQueries({ queryKey: ['test-documents'] });
+                    
+                    // 🔥 최종 강제 리렌더링
+                    await queryClient.refetchQueries({ queryKey: ['test-documents'] });
                   } catch (finalError) {
                     console.error('❌ 최종 refetch 실패:', finalError);
                   }
