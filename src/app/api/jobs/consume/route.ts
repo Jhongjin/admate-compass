@@ -360,78 +360,89 @@ export async function processQueue() {
   const supabase = await createPureClient();
   console.error('[CRITICAL] ✅ Supabase 클라이언트 생성 완료');
   
-  // 🔥 무한대기 방지: 타임아웃된 작업 감지 및 처리 (30분 이상 processing 상태)
-  // 기존 2시간에서 30분으로 단축하여 무한대기 문제 해결
-  const TIMEOUT_MS = 30 * 60 * 1000; // 30분
-  const timeoutThreshold = new Date(Date.now() - TIMEOUT_MS).toISOString();
-  const createdTimeoutThreshold = new Date(Date.now() - TIMEOUT_MS).toISOString();
-  
-  // started_at이 있는 경우: started_at 기준으로 타임아웃 체크
-  const { data: stuckJobsByStarted, error: stuckError1 } = await supabase
-    .from('processing_jobs')
-    .select('id, status, started_at, created_at, payload, document_id')
-    .eq('status', 'processing')
-    .not('started_at', 'is', null)
-    .lt('started_at', timeoutThreshold)
-    .order('created_at', { ascending: false })
-    .limit(100);
-  
-  // started_at이 없는 경우: created_at 기준으로 타임아웃 체크 (작업이 시작되지 않은 좀비 작업)
-  const { data: stuckJobsByCreated, error: stuckError2 } = await supabase
-    .from('processing_jobs')
-    .select('id, status, started_at, created_at, payload, document_id')
-    .eq('status', 'processing')
-    .is('started_at', null)
-    .lt('created_at', createdTimeoutThreshold)
-    .order('created_at', { ascending: false })
-    .limit(100);
-  
-  const allStuckJobs = [
-    ...(stuckJobsByStarted || []),
-    ...(stuckJobsByCreated || [])
-  ];
-  
-  if ((!stuckError1 && !stuckError2) && allStuckJobs.length > 0) {
-    console.warn(`⚠️ 무한대기 작업 감지: ${allStuckJobs.length}개 작업이 30분 이상 진행 중입니다.`, 
-      allStuckJobs.map(j => ({ 
-        id: j.id, 
-        url: (j.payload as any)?.url, 
-        started_at: j.started_at, 
-        created_at: j.created_at,
-        elapsedMinutes: j.started_at 
-          ? Math.round((Date.now() - new Date(j.started_at).getTime()) / (60 * 1000))
-          : Math.round((Date.now() - new Date(j.created_at).getTime()) / (60 * 1000))
-      })));
+  try {
+    // 🔥 무한대기 방지: 타임아웃된 작업 감지 및 처리 (30분 이상 processing 상태)
+    // 기존 2시간에서 30분으로 단축하여 무한대기 문제 해결
+    console.error('[CRITICAL] 🔍 타임아웃된 작업 감지 시작...');
+    const TIMEOUT_MS = 30 * 60 * 1000; // 30분
+    const timeoutThreshold = new Date(Date.now() - TIMEOUT_MS).toISOString();
+    const createdTimeoutThreshold = new Date(Date.now() - TIMEOUT_MS).toISOString();
     
-    // 타임아웃된 작업을 failed로 변경
-    const stuckJobIds = allStuckJobs.map(j => j.id);
-    await supabase
+    // started_at이 있는 경우: started_at 기준으로 타임아웃 체크
+    console.error('[CRITICAL] 🔍 started_at 기준 타임아웃 작업 조회 중...');
+    const { data: stuckJobsByStarted, error: stuckError1 } = await supabase
       .from('processing_jobs')
-      .update({
-        status: 'failed',
-        error: '작업 타임아웃: 30분 이상 진행 중 (무한대기 방지)',
-        finished_at: new Date().toISOString(),
-      })
-      .in('id', stuckJobIds);
+      .select('id, status, started_at, created_at, payload, document_id')
+      .eq('status', 'processing')
+      .not('started_at', 'is', null)
+      .lt('started_at', timeoutThreshold)
+      .order('created_at', { ascending: false })
+      .limit(100);
     
-    // 관련 문서도 failed로 업데이트 (processing 상태인 경우)
-    const stuckJobDocIds = allStuckJobs
-      .map(j => j.document_id)
-      .filter(Boolean) as string[];
+    // started_at이 없는 경우: created_at 기준으로 타임아웃 체크 (작업이 시작되지 않은 좀비 작업)
+    console.error('[CRITICAL] 🔍 created_at 기준 타임아웃 작업 조회 중...');
+    const { data: stuckJobsByCreated, error: stuckError2 } = await supabase
+      .from('processing_jobs')
+      .select('id, status, started_at, created_at, payload, document_id')
+      .eq('status', 'processing')
+      .is('started_at', null)
+      .lt('created_at', createdTimeoutThreshold)
+      .order('created_at', { ascending: false })
+      .limit(100);
     
-    if (stuckJobDocIds.length > 0) {
+    const allStuckJobs = [
+      ...(stuckJobsByStarted || []),
+      ...(stuckJobsByCreated || [])
+    ];
+    
+    if ((!stuckError1 && !stuckError2) && allStuckJobs.length > 0) {
+      console.warn(`⚠️ 무한대기 작업 감지: ${allStuckJobs.length}개 작업이 30분 이상 진행 중입니다.`, 
+        allStuckJobs.map(j => ({ 
+          id: j.id, 
+          url: (j.payload as any)?.url, 
+          started_at: j.started_at, 
+          created_at: j.created_at,
+          elapsedMinutes: j.started_at 
+            ? Math.round((Date.now() - new Date(j.started_at).getTime()) / (60 * 1000))
+            : Math.round((Date.now() - new Date(j.created_at).getTime()) / (60 * 1000))
+        })));
+      
+      // 타임아웃된 작업을 failed로 변경
+      const stuckJobIds = allStuckJobs.map(j => j.id);
       await supabase
-        .from('documents')
+        .from('processing_jobs')
         .update({
           status: 'failed',
-          updated_at: new Date().toISOString()
+          error: '작업 타임아웃: 30분 이상 진행 중 (무한대기 방지)',
+          finished_at: new Date().toISOString(),
         })
-        .in('id', stuckJobDocIds)
-        .eq('status', 'processing');
+        .in('id', stuckJobIds);
+      
+      // 관련 문서도 failed로 업데이트 (processing 상태인 경우)
+      const stuckJobDocIds = allStuckJobs
+        .map(j => j.document_id)
+        .filter(Boolean) as string[];
+      
+      if (stuckJobDocIds.length > 0) {
+        await supabase
+          .from('documents')
+          .update({
+            status: 'failed',
+            updated_at: new Date().toISOString()
+          })
+          .in('id', stuckJobDocIds)
+          .eq('status', 'processing');
+      }
+      
+      console.log(`✅ 타임아웃된 ${allStuckJobs.length}개 작업을 failed 상태로 변경했습니다.`);
     }
-    
-    console.log(`✅ 타임아웃된 ${allStuckJobs.length}개 작업을 failed 상태로 변경했습니다.`);
+  } catch (timeoutCheckError) {
+    console.error('[CRITICAL] ⚠️ 타임아웃 작업 감지 중 오류 (계속 진행):', {
+      error: timeoutCheckError instanceof Error ? timeoutCheckError.message : String(timeoutCheckError),
+      stack: timeoutCheckError instanceof Error ? timeoutCheckError.stack : undefined
+    });
   }
+  
   const queueStartMs = Date.now();
   console.error('[CRITICAL] 🚀 큐 처리 시작: ' + new Date().toISOString());
   
