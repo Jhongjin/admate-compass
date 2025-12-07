@@ -377,50 +377,66 @@ export async function processQueue() {
       let stuckJobsByStarted: any[] | null = null;
       let stuckError1: any = null;
       try {
-        // 쿼리 타임아웃: 3초로 더 단축하고 더 엄격한 타임아웃 적용
-        const QUERY_TIMEOUT_MS = 3000;
+        // 쿼리 타임아웃: 2초로 더 단축 (빠른 실패)
+        const QUERY_TIMEOUT_MS = 2000;
         
-        // Promise.race를 사용하되, 타임아웃 Promise를 먼저 생성
-        const timeoutPromise = new Promise<never>((_, reject) => {
-          setTimeout(() => {
-            reject(new Error(`쿼리 타임아웃: ${QUERY_TIMEOUT_MS}ms 초과`));
-          }, QUERY_TIMEOUT_MS);
-        });
+        console.error('[CRITICAL] 🔍 started_at 쿼리 시작 (타임아웃: ' + QUERY_TIMEOUT_MS + 'ms)...');
         
-        const queryPromise = supabase
-          .from('processing_jobs')
-          .select('id, status, started_at, created_at, payload, document_id')
-          .eq('status', 'processing')
-          .not('started_at', 'is', null)
-          .lt('started_at', timeoutThreshold)
-          .order('created_at', { ascending: false })
-          .limit(20); // limit을 50에서 20으로 더 줄여 쿼리 성능 개선
+        // AbortController를 사용한 명시적 타임아웃
+        const abortController = new AbortController();
+        const timeoutId = setTimeout(() => {
+          abortController.abort();
+        }, QUERY_TIMEOUT_MS);
         
-        // Promise.race 실행 (타임아웃 Promise를 먼저 배치)
-        const result = await Promise.race([timeoutPromise, queryPromise]);
-        
-        stuckJobsByStarted = result.data;
-        stuckError1 = result.error;
-        
-        const elapsedMs = Date.now() - stuckJobsByStartedStartMs;
-        console.error('[CRITICAL] ✅ started_at 기준 조회 완료:', {
-          elapsedMs,
-          count: stuckJobsByStarted?.length || 0,
-          error: stuckError1 ? stuckError1.message : null
-        });
+        try {
+          const queryPromise = supabase
+            .from('processing_jobs')
+            .select('id, status, started_at, created_at, payload, document_id')
+            .eq('status', 'processing')
+            .not('started_at', 'is', null)
+            .lt('started_at', timeoutThreshold)
+            .order('created_at', { ascending: false })
+            .limit(10); // limit을 20에서 10으로 더 줄여 쿼리 성능 개선
+          
+          // 타임아웃 Promise와 race
+          const timeoutPromise = new Promise<never>((_, reject) => {
+            setTimeout(() => {
+              clearTimeout(timeoutId);
+              reject(new Error(`쿼리 타임아웃: ${QUERY_TIMEOUT_MS}ms 초과`));
+            }, QUERY_TIMEOUT_MS);
+          });
+          
+          const result = await Promise.race([timeoutPromise, queryPromise]);
+          clearTimeout(timeoutId);
+          
+          stuckJobsByStarted = result.data;
+          stuckError1 = result.error;
+          
+          const elapsedMs = Date.now() - stuckJobsByStartedStartMs;
+          console.error('[CRITICAL] ✅ started_at 기준 조회 완료:', {
+            elapsedMs,
+            count: stuckJobsByStarted?.length || 0,
+            error: stuckError1 ? stuckError1.message : null
+          });
+        } catch (raceError) {
+          clearTimeout(timeoutId);
+          throw raceError;
+        }
       } catch (queryError) {
         stuckError1 = queryError;
         const elapsedMs = Date.now() - stuckJobsByStartedStartMs;
         // 타임아웃 에러는 정상적인 동작이므로 경고로 처리
-        if (queryError instanceof Error && queryError.message.includes('타임아웃')) {
+        if (queryError instanceof Error && (queryError.message.includes('타임아웃') || queryError.name === 'AbortError')) {
           console.warn('[CRITICAL] ⚠️ started_at 기준 조회 타임아웃 (계속 진행):', {
             elapsedMs,
-            error: queryError.message
+            error: queryError.message,
+            name: queryError.name
           });
         } else {
           console.error('[CRITICAL] ❌ started_at 기준 조회 실패:', {
             elapsedMs,
             error: queryError instanceof Error ? queryError.message : String(queryError),
+            name: queryError instanceof Error ? queryError.name : undefined,
             stack: queryError instanceof Error ? queryError.stack : undefined
           });
         }
@@ -432,50 +448,66 @@ export async function processQueue() {
       let stuckJobsByCreated: any[] | null = null;
       let stuckError2: any = null;
       try {
-        // 쿼리 타임아웃: 3초로 더 단축하고 더 엄격한 타임아웃 적용
-        const QUERY_TIMEOUT_MS = 3000;
+        // 쿼리 타임아웃: 2초로 더 단축 (빠른 실패)
+        const QUERY_TIMEOUT_MS = 2000;
         
-        // Promise.race를 사용하되, 타임아웃 Promise를 먼저 생성
-        const timeoutPromise = new Promise<never>((_, reject) => {
-          setTimeout(() => {
-            reject(new Error(`쿼리 타임아웃: ${QUERY_TIMEOUT_MS}ms 초과`));
-          }, QUERY_TIMEOUT_MS);
-        });
+        console.error('[CRITICAL] 🔍 created_at 쿼리 시작 (타임아웃: ' + QUERY_TIMEOUT_MS + 'ms)...');
         
-        const queryPromise = supabase
-          .from('processing_jobs')
-          .select('id, status, started_at, created_at, payload, document_id')
-          .eq('status', 'processing')
-          .is('started_at', null)
-          .lt('created_at', createdTimeoutThreshold)
-          .order('created_at', { ascending: false })
-          .limit(20); // limit을 50에서 20으로 더 줄여 쿼리 성능 개선
+        // AbortController를 사용한 명시적 타임아웃
+        const abortController = new AbortController();
+        const timeoutId = setTimeout(() => {
+          abortController.abort();
+        }, QUERY_TIMEOUT_MS);
         
-        // Promise.race 실행 (타임아웃 Promise를 먼저 배치)
-        const result = await Promise.race([timeoutPromise, queryPromise]);
-        
-        stuckJobsByCreated = result.data;
-        stuckError2 = result.error;
-        
-        const elapsedMs = Date.now() - stuckJobsByCreatedStartMs;
-        console.error('[CRITICAL] ✅ created_at 기준 조회 완료:', {
-          elapsedMs,
-          count: stuckJobsByCreated?.length || 0,
-          error: stuckError2 ? stuckError2.message : null
-        });
+        try {
+          const queryPromise = supabase
+            .from('processing_jobs')
+            .select('id, status, started_at, created_at, payload, document_id')
+            .eq('status', 'processing')
+            .is('started_at', null)
+            .lt('created_at', createdTimeoutThreshold)
+            .order('created_at', { ascending: false })
+            .limit(10); // limit을 20에서 10으로 더 줄여 쿼리 성능 개선
+          
+          // 타임아웃 Promise와 race
+          const timeoutPromise = new Promise<never>((_, reject) => {
+            setTimeout(() => {
+              clearTimeout(timeoutId);
+              reject(new Error(`쿼리 타임아웃: ${QUERY_TIMEOUT_MS}ms 초과`));
+            }, QUERY_TIMEOUT_MS);
+          });
+          
+          const result = await Promise.race([timeoutPromise, queryPromise]);
+          clearTimeout(timeoutId);
+          
+          stuckJobsByCreated = result.data;
+          stuckError2 = result.error;
+          
+          const elapsedMs = Date.now() - stuckJobsByCreatedStartMs;
+          console.error('[CRITICAL] ✅ created_at 기준 조회 완료:', {
+            elapsedMs,
+            count: stuckJobsByCreated?.length || 0,
+            error: stuckError2 ? stuckError2.message : null
+          });
+        } catch (raceError) {
+          clearTimeout(timeoutId);
+          throw raceError;
+        }
       } catch (queryError) {
         stuckError2 = queryError;
         const elapsedMs = Date.now() - stuckJobsByCreatedStartMs;
         // 타임아웃 에러는 정상적인 동작이므로 경고로 처리
-        if (queryError instanceof Error && queryError.message.includes('타임아웃')) {
+        if (queryError instanceof Error && (queryError.message.includes('타임아웃') || queryError.name === 'AbortError')) {
           console.warn('[CRITICAL] ⚠️ created_at 기준 조회 타임아웃 (계속 진행):', {
             elapsedMs,
-            error: queryError.message
+            error: queryError.message,
+            name: queryError.name
           });
         } else {
           console.error('[CRITICAL] ❌ created_at 기준 조회 실패:', {
             elapsedMs,
             error: queryError instanceof Error ? queryError.message : String(queryError),
+            name: queryError instanceof Error ? queryError.name : undefined,
             stack: queryError instanceof Error ? queryError.stack : undefined
           });
         }
