@@ -361,8 +361,10 @@ export async function processQueue() {
   console.error('[CRITICAL] ✅ Supabase 클라이언트 생성 완료');
   
   // 타임아웃 작업 감지 로직을 선택적으로 실행 (환경 변수로 제어 가능)
-  const ENABLE_TIMEOUT_CHECK = process.env.ENABLE_TIMEOUT_CHECK !== 'false'; // 기본값: true
+  // 기본값: false (타임아웃 체크가 쿼리 성능 문제를 일으킬 수 있으므로 비활성화)
+  const ENABLE_TIMEOUT_CHECK = process.env.ENABLE_TIMEOUT_CHECK === 'true'; // 기본값: false
   if (ENABLE_TIMEOUT_CHECK) {
+    console.error('[CRITICAL] ⚙️ 타임아웃 작업 감지 활성화됨');
     try {
       // 🔥 무한대기 방지: 타임아웃된 작업 감지 및 처리 (30분 이상 processing 상태)
       // 기존 2시간에서 30분으로 단축하여 무한대기 문제 해결
@@ -577,6 +579,8 @@ export async function processQueue() {
         stack: timeoutCheckError instanceof Error ? timeoutCheckError.stack : undefined
       });
     }
+  } else {
+    console.error('[CRITICAL] ⚙️ 타임아웃 작업 감지 비활성화됨 (ENABLE_TIMEOUT_CHECK=false 또는 미설정)');
   }
   
   const queueStartMs = Date.now();
