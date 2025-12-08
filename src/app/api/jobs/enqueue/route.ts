@@ -129,18 +129,13 @@ export async function POST(request: NextRequest) {
     try {
       console.error('[CRITICAL] 🚀 큐 워커 트리거 시작 (작업 ID: ' + data.id + ')');
       
-      // Vercel 환경에서 실제 HTTP 요청 사용
-      // VERCEL_URL이 있으면 외부 URL 사용, 없으면 localhost 사용
-      const baseUrl = process.env.VERCEL_URL 
-        ? `https://${process.env.VERCEL_URL}`
-        : (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000');
-      const consumeUrl = `${baseUrl}/api/jobs/consume`;
-      
-      console.error('[CRITICAL] 🔗 HTTP 요청 URL:', {
-        url: consumeUrl,
-        baseUrl: baseUrl,
-        vercelUrl: process.env.VERCEL_URL
-      });
+    // Vercel 보호 페이지(401)를 피하기 위해 절대 도메인 대신 상대 경로 사용
+    // 내부 라우팅으로 처리하여 보호 우회
+    const consumeUrl = `/api/jobs/consume`;
+    
+    console.error('[CRITICAL] 🔗 HTTP 요청 URL:', {
+      url: consumeUrl
+    });
       
       // 실제 HTTP 요청 (백그라운드 실행, await 없이)
       // ⚠️ POST 요청은 Authorization 헤더가 없으면 검증하지 않도록 설정됨
