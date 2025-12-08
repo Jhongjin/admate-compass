@@ -165,9 +165,13 @@ export async function POST(request: NextRequest) {
               error: json.error
             });
           } catch (parseError) {
+            // text 변수를 다시 읽어야 함 (이미 한 번 읽었으므로)
+            const responseClone = response.clone();
+            const errorText = await responseClone.text();
             console.error('[CRITICAL] ✅ 큐 워커 처리 완료 (JSON 파싱 실패):', {
               status: response.status,
-              response: text.substring(0, 500)
+              response: errorText.substring(0, 500),
+              parseError: parseError instanceof Error ? parseError.message : String(parseError)
             });
           }
         })
