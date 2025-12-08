@@ -2828,8 +2828,8 @@ export async function processQueue() {
           try {
             // maxDepth에 따른 필터링 옵션 설정
             // maxDepth 1-2: 정확히 같은 도메인만 허용
-            // maxDepth 3: 같은 도메인 + 하위 도메인 허용
-            // maxDepth 4: 모든 도메인 허용 (includeExternal: true)
+            // maxDepth 3: domainLimit에 따라 다름 (true: 같은 도메인만, false: 하위 도메인 포함)
+            // maxDepth 4: domainLimit에 따라 다름 (true: 같은 루트 도메인만, false: 모든 도메인 허용)
             const discoveryOptions = {
               maxDepth: actualMaxDepth,
               maxUrls: actualMaxDepth >= 4 ? 200 : actualMaxDepth >= 3 ? 150 : actualMaxDepth >= 2 ? 50 : 20,
@@ -5111,14 +5111,18 @@ export async function processQueue() {
  * GET 핸들러 (Vercel Cron Jobs가 사용)
  */
 export async function GET(request: NextRequest) {
+  console.error('[CRITICAL] 🔔 GET 핸들러 호출됨 (Cron Job 또는 수동 호출)');
+  
   // CRON_SECRET 검증
   if (!verifyCronSecret(request)) {
+    console.error('[CRITICAL] ❌ CRON_SECRET 검증 실패');
     return NextResponse.json(
       { error: 'Unauthorized' },
       { status: 401 }
     );
   }
 
+  console.error('[CRITICAL] ✅ CRON_SECRET 검증 성공, processQueue 실행 시작');
   // 큐 처리 실행
   return processQueue();
 }
@@ -5127,16 +5131,20 @@ export async function GET(request: NextRequest) {
  * POST 핸들러 (수동 호출 또는 외부 서비스용)
  */
 export async function POST(request: NextRequest) {
+  console.error('[CRITICAL] 🔔 POST 핸들러 호출됨 (수동 호출)');
+  
   // CRON_SECRET 검증 (POST 요청의 경우 선택적 - 수동 호출 허용)
   // Authorization 헤더가 있는 경우에만 검증
   const authHeader = request.headers.get('authorization');
   if (authHeader && !verifyCronSecret(request)) {
+    console.error('[CRITICAL] ❌ CRON_SECRET 검증 실패 (Authorization 헤더 있음)');
     return NextResponse.json(
       { error: 'Unauthorized' },
       { status: 401 }
     );
   }
 
+  console.error('[CRITICAL] ✅ POST 요청 허용 (Authorization 헤더 없음 또는 검증 통과), processQueue 실행 시작');
   // 큐 처리 실행
   return processQueue();
 }

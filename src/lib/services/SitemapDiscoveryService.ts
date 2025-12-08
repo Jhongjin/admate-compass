@@ -668,12 +668,18 @@ export class SitemapDiscoveryService {
             // 쿼리 파라미터 정규화 (트래킹 파라미터 제거)
             const normalizedUrl = this.normalizeUrl(fullUrl);
 
-            // maxDepth 4일 때는 모든 도메인 허용, 그 외에는 같은 도메인만 체크
+            // maxDepth에 따른 도메인 필터링
             const isSameDomain = urlDomain === baseDomain;
             let isAllowedDomain = false;
             if (config.maxDepth >= 4) {
-              // maxDepth 4: 모든 도메인 허용
-              isAllowedDomain = true;
+              // maxDepth 4: domainLimit에 따라 다름
+              if (config.domainLimit === true) {
+                // domainLimit이 true면 같은 루트 도메인만 허용 (예: ko-kr.facebook.com과 www.facebook.com)
+                isAllowedDomain = this.isSameRootDomain(urlDomain, baseDomain);
+              } else {
+                // domainLimit이 false면 모든 도메인 허용
+                isAllowedDomain = true;
+              }
             } else if (config.maxDepth >= 3) {
               // maxDepth 3: domainLimit에 따라 다름
               if (config.domainLimit === true) {
@@ -818,6 +824,21 @@ export class SitemapDiscoveryService {
                 return subDomain.endsWith(`.${baseDomain}`);
               };
 
+              // 루트 도메인 추출 함수 (브라우저 내부에서 사용)
+              const extractRootDomain = (domain: string): string => {
+                const parts = domain.split('.');
+                if (parts.length <= 2) {
+                  return domain;
+                }
+                return parts.slice(-2).join('.');
+              };
+
+              // 같은 루트 도메인인지 확인
+              const isSameRootDomain = (domain1: string, domain2: string): boolean => {
+                if (domain1 === domain2) return true;
+                return extractRootDomain(domain1) === extractRootDomain(domain2);
+              };
+
               linkElements.forEach(link => {
                 // href 속성 또는 data-href 속성 확인
                 let href = link.getAttribute('href') || link.getAttribute('data-href');
@@ -827,12 +848,14 @@ export class SitemapDiscoveryService {
                   const fullUrl = new URL(href, window.location.href).href;
                   const urlDomain = new URL(fullUrl).hostname;
 
-                  // maxDepth 4일 때는 모든 도메인 허용, 그 외에는 같은 도메인/하위 도메인만
+                  // maxDepth에 따른 도메인 필터링
                   const isSameDomain = urlDomain === baseDomain;
                   let isAllowedDomain = false;
                   if (maxDepth >= 4) {
-                    // maxDepth 4: 모든 도메인 허용
-                    isAllowedDomain = true;
+                    // maxDepth 4: domainLimit 확인 필요 (Puppeteer 내부에서는 domainLimit을 직접 확인할 수 없으므로, 같은 루트 도메인 허용)
+                    // 실제 필터링은 isValidUrl에서 수행됨
+                    // 여기서는 같은 루트 도메인만 허용 (domainLimit=true일 때를 가정)
+                    isAllowedDomain = isSameRootDomain(urlDomain, baseDomain);
                   } else if (maxDepth >= 3) {
                     // maxDepth 3: domainLimit 확인 필요 (Puppeteer 내부에서는 domainLimit을 직접 확인할 수 없으므로, 하위 도메인 허용)
                     // 실제 필터링은 isValidUrl에서 수행됨
@@ -948,6 +971,30 @@ export class SitemapDiscoveryService {
   }
 
   /**
+   * 루트 도메인 추출 (예: ko-kr.facebook.com → facebook.com)
+   */
+  private extractRootDomain(domain: string): string {
+    const parts = domain.split('.');
+    if (parts.length <= 2) {
+      return domain;
+    }
+    // 마지막 2개 부분을 루트 도메인으로 사용 (facebook.com, example.co.kr 등)
+    return parts.slice(-2).join('.');
+  }
+
+  /**
+   * 같은 루트 도메인인지 확인 (예: ko-kr.facebook.com과 www.facebook.com)
+   */
+  private isSameRootDomain(domain1: string, domain2: string): boolean {
+    if (domain1 === domain2) {
+      return true;
+    }
+    const root1 = this.extractRootDomain(domain1);
+    const root2 = this.extractRootDomain(domain2);
+    return root1 === root2;
+  }
+
+  /**
    * URL 유효성 검사
    */
   private isValidUrl(url: string, baseDomain: string, config: DiscoveryOptions): boolean {
@@ -958,11 +1005,17 @@ export class SitemapDiscoveryService {
       // maxDepth에 따른 도메인 필터링
       // maxDepth 1-2: 정확히 같은 도메인만 허용
       // maxDepth 3: domainLimit에 따라 다름 (true: 같은 도메인만, false: 하위 도메인 포함)
-      // maxDepth 4: 모든 도메인 허용 (includeExternal과 관계없이)
+      // maxDepth 4: domainLimit에 따라 다름 (true: 같은 루트 도메인만, false: 모든 도메인 허용)
       if (urlDomain !== baseDomain) {
         if (config.maxDepth >= 4) {
-          // maxDepth 4: 모든 도메인 허용 (includeExternal과 관계없이)
-          return true;
+          // maxDepth 4: domainLimit에 따라 다름
+          if (config.domainLimit === true) {
+            // domainLimit이 true면 같은 루트 도메인만 허용 (예: ko-kr.facebook.com과 www.facebook.com)
+            return this.isSameRootDomain(urlDomain, baseDomain);
+          } else {
+            // domainLimit이 false면 모든 도메인 허용
+            return true;
+          }
         } else if (config.maxDepth >= 3) {
           // maxDepth 3: domainLimit에 따라 다름
           if (config.domainLimit === true) {
@@ -972,6 +1025,7 @@ export class SitemapDiscoveryService {
             // domainLimit이 false면 하위 도메인 허용
             if (this.isSubdomain(urlDomain, baseDomain)) {
               // 하위 도메인은 허용
+              return true;
             } else {
               // 하위 도메인이 아니면 제외
               return false;
@@ -1045,11 +1099,21 @@ export class SitemapDiscoveryService {
         // maxDepth에 따른 도메인 필터링
         // maxDepth 1-2: 정확히 같은 도메인만 허용
         // maxDepth 3: domainLimit에 따라 다름 (true: 같은 도메인만, false: 하위 도메인 포함)
-        // maxDepth 4: 모든 도메인 허용 (includeExternal과 관계없이)
+        // maxDepth 4: domainLimit에 따라 다름 (true: 같은 루트 도메인만, false: 모든 도메인 허용)
         if (urlDomain !== baseDomain) {
           if (config.maxDepth >= 4) {
-            // maxDepth 4: 모든 도메인 허용 (includeExternal과 관계없이)
-            // 허용됨 - 계속 진행
+            // maxDepth 4: domainLimit에 따라 다름
+            if (config.domainLimit === true) {
+              // domainLimit이 true면 같은 루트 도메인만 허용 (예: ko-kr.facebook.com과 www.facebook.com)
+              if (!this.isSameRootDomain(urlDomain, baseDomain)) {
+                filteredOut.push({ url: page.url, reason: `도메인 제한 활성화 (루트 도메인 불일치): ${urlDomain} !== ${baseDomain}` });
+                return;
+              }
+              // 같은 루트 도메인이면 허용 - 계속 진행
+            } else {
+              // domainLimit이 false면 모든 도메인 허용
+              // 허용됨 - 계속 진행
+            }
           } else if (config.maxDepth >= 3) {
             // maxDepth 3: domainLimit에 따라 다름
             if (config.domainLimit === true) {
