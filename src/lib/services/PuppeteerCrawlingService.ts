@@ -286,13 +286,31 @@ export class PuppeteerCrawlingService {
       console.log(`📡 페이지 로드 시도: ${url}`);
       let response;
       try {
+        // Facebook은 JavaScript가 많이 로드되므로 domcontentloaded 사용
+        // 타임아웃을 60초로 증가하고, 실패 시 load로 fallback
         response = await page.goto(url, {
-          waitUntil: 'networkidle2',
-          timeout: 30000
+          waitUntil: 'domcontentloaded',
+          timeout: 60000
         });
       } catch (gotoError: any) {
-        // "Navigating frame was detached" 또는 "Connection closed" 오류 처리
-        if (gotoError.message?.includes('detached') || gotoError.message?.includes('Connection closed')) {
+        const errorMessage = gotoError.message || String(gotoError);
+        console.error(`❌ 페이지 로드 실패 (첫 시도): ${errorMessage}`);
+        
+        // 타임아웃 에러인 경우 load로 재시도 (더 관대한 조건)
+        if (errorMessage.includes('timeout') || errorMessage.includes('Navigation timeout')) {
+          console.warn('⚠️ 타임아웃 발생, load 조건으로 재시도...');
+          try {
+            response = await page.goto(url, {
+              waitUntil: 'load', // domcontentloaded보다 더 관대한 조건
+              timeout: 60000
+            });
+            console.log('✅ load 조건으로 페이지 로드 성공');
+          } catch (retryError: any) {
+            console.error(`❌ 재시도도 실패: ${retryError.message || String(retryError)}`);
+            throw new Error(`페이지 로드 실패 (타임아웃): ${errorMessage}. 재시도도 실패: ${retryError.message || String(retryError)}`);
+          }
+        } else if (errorMessage.includes('detached') || errorMessage.includes('Connection closed')) {
+          // "Navigating frame was detached" 또는 "Connection closed" 오류 처리
           console.warn('⚠️ 페이지 로드 중 연결 끊김, 재시도...');
           // 페이지 닫기 시도 (에러 무시)
           try {
@@ -312,8 +330,8 @@ export class PuppeteerCrawlingService {
           await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
           await page.setViewport({ width: 1920, height: 1080 });
           response = await page.goto(url, {
-            waitUntil: 'networkidle2',
-            timeout: 30000
+            waitUntil: 'load', // 재시도 시에도 load 사용
+            timeout: 60000
           });
         } else {
           throw gotoError;
