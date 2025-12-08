@@ -128,42 +128,43 @@ export async function POST(request: NextRequest) {
     try {
       console.error('[CRITICAL] 🚀 큐 워커 트리거 시작 (작업 ID: ' + data.id + ')');
       
-      // processQueue를 백그라운드로 실행 (await 없이)
-      // Vercel serverless 환경에서 응답 반환 후에도 실행되도록 보장
-      import('@/app/api/jobs/consume/route')
-        .then((module) => {
-          console.error('[CRITICAL] 📦 processQueue import 완료, 실행 시작...');
-          if (!module.processQueue) {
-            throw new Error('processQueue 함수를 찾을 수 없습니다.');
-          }
-          console.error('[CRITICAL] 🔄 processQueue 함수 호출 시작...');
-          return module.processQueue();
-        })
-        .then(result => {
-          console.error('[CRITICAL] 📥 processQueue 반환값 수신:', {
-            isResponse: result instanceof Response,
-            type: typeof result
+      // Vercel 서버리스 환경에서 import()로 실행된 함수의 Supabase 쿼리가 멈추는 문제
+      // 해결책: fetch()를 사용하여 /api/jobs/consume를 직접 호출
+      // 이렇게 하면 정상적인 API 요청 컨텍스트에서 실행되므로 Supabase 쿼리가 정상 작동
+      const consumeUrl = new URL('/api/jobs/consume', process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000');
+      
+      // 백그라운드로 실행 (await 없이)
+      fetch(consumeUrl.toString(), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          // CRON_SECRET이 있으면 Authorization 헤더 추가
+          ...(process.env.CRON_SECRET ? { 'Authorization': `Bearer ${process.env.CRON_SECRET}` } : {})
+        },
+        // 중요: signal을 설정하지 않음 (백그라운드 실행이므로)
+      })
+        .then(async (response) => {
+          console.error('[CRITICAL] 📥 processQueue 응답 수신:', {
+            status: response.status,
+            statusText: response.statusText,
+            ok: response.ok
           });
-          if (result instanceof Response) {
-            return result.text().then(text => {
-              try {
-                const json = JSON.parse(text);
-                console.error('[CRITICAL] ✅ 큐 워커 처리 완료:', {
-                  status: result.status,
-                  success: json.success,
-                  message: json.message,
-                  jobId: json.jobId,
-                  error: json.error
-                });
-              } catch {
-                console.error('[CRITICAL] ✅ 큐 워커 처리 완료 (JSON 파싱 실패):', {
-                  status: result.status,
-                  response: text.substring(0, 500)
-                });
-              }
+          
+          try {
+            const text = await response.text();
+            const json = JSON.parse(text);
+            console.error('[CRITICAL] ✅ 큐 워커 처리 완료:', {
+              status: response.status,
+              success: json.success,
+              message: json.message,
+              jobId: json.jobId,
+              error: json.error
             });
-          } else {
-            console.error('[CRITICAL] ✅ 큐 워커 처리 완료:', result);
+          } catch (parseError) {
+            console.error('[CRITICAL] ✅ 큐 워커 처리 완료 (JSON 파싱 실패):', {
+              status: response.status,
+              response: text.substring(0, 500)
+            });
           }
         })
         .catch(err => {
@@ -176,7 +177,7 @@ export async function POST(request: NextRequest) {
           });
         });
       
-      console.error('[CRITICAL] ✅ 큐 워커 트리거 완료 (백그라운드 실행 중)');
+      console.error('[CRITICAL] ✅ 큐 워커 트리거 완료 (백그라운드 fetch 실행 중)');
     } catch (triggerError) {
       // 트리거 실패해도 작업 등록은 성공했으므로 계속 진행
       console.error('[CRITICAL] ⚠️ 큐 워커 트리거 실패 (작업은 등록됨):', {
