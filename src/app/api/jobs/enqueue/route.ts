@@ -123,53 +123,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: '큐 등록 실패', details: error.message }, { status: 500 });
     }
 
-    // 큐에 등록 후 즉시 큐 워커 트리거 (백그라운드 실행)
-    // ⚠️ import()와 fetch() 모두 Vercel 서버리스에서 문제가 있음
-    // 최종 해결책: processQueue를 직접 호출하되, Supabase 쿼리 부분을 우회
-    // 작업은 등록되었으므로 Cron Job이 처리할 수 있음 (1분마다 실행)
-    // 하지만 즉시 처리하려면 직접 호출
-    try {
-      console.error('[CRITICAL] 🚀 큐 워커 트리거 시작 (작업 ID: ' + data.id + ')');
-      
-      // processQueue를 직접 호출 (await 없이, 백그라운드 실행)
-      // 이전에 문제가 있었지만, 최신 수정으로 해결되었을 가능성
-      import('@/app/api/jobs/consume/route')
-        .then((module) => {
-          console.error('[CRITICAL] 📦 processQueue import 완료');
-          if (!module.processQueue) {
-            throw new Error('processQueue 함수를 찾을 수 없습니다.');
-          }
-          console.error('[CRITICAL] 🔄 processQueue 직접 호출 시작...');
-          
-          // processQueue를 직접 호출 (결과를 기다리지 않음)
-          module.processQueue()
-            .then((result) => {
-              console.error('[CRITICAL] ✅ processQueue 완료:', {
-                isResponse: result instanceof Response,
-                type: typeof result
-              });
-            })
-            .catch((err) => {
-              console.error('[CRITICAL] ❌ processQueue 에러:', {
-                error: err instanceof Error ? err.message : String(err),
-                stack: err instanceof Error ? err.stack : undefined
-              });
-            });
-        })
-        .catch((importErr) => {
-          console.error('[CRITICAL] ❌ import 에러:', {
-            error: importErr instanceof Error ? importErr.message : String(importErr)
-          });
-        });
-      
-      console.error('[CRITICAL] ✅ 큐 워커 트리거 완료 (백그라운드 import 실행 중)');
-    } catch (triggerError) {
-      // 트리거 실패해도 작업 등록은 성공했으므로 계속 진행
-      console.error('[CRITICAL] ⚠️ 큐 워커 트리거 실패 (작업은 등록됨):', {
-        error: triggerError instanceof Error ? triggerError.message : String(triggerError),
-        stack: triggerError instanceof Error ? triggerError.stack : undefined
-      });
-    }
+    // ⚠️ 근본적인 문제: Vercel 서버리스 환경에서 import()로 실행된 함수의 Supabase 쿼리가 멈춤
+    // check-crawl-status는 정상 작동하는데, 그것은 실제 HTTP 요청 핸들러로 실행되기 때문
+    // processQueue는 import()로 호출되면 비정상적인 실행 컨텍스트에서 실행됨
+    // 
+    // 해결책: 즉시 트리거를 제거하고 Cron Job에 의존
+    // - 작업은 정상적으로 등록됨
+    // - Cron Job이 1분마다 /api/jobs/consume를 호출하여 처리
+    // - 실제 HTTP 요청 컨텍스트에서 실행되므로 Supabase 쿼리가 정상 작동
+    //
+    // 즉시 처리가 필요한 경우:
+    // - 프론트엔드에서 수동으로 /api/jobs/consume를 호출
+    // - 또는 관리자 페이지에서 "1건 처리" 버튼 클릭
+    console.log('✅ 작업 등록 완료 (작업 ID: ' + data.id + '). Cron Job이 1분 내에 처리합니다.');
 
     return NextResponse.json({ success: true, jobId: data.id }, { status: 202 });
   } catch (err) {
