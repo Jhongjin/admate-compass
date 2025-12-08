@@ -298,7 +298,14 @@ export class SitemapDiscoveryService {
           const normalized = this.normalizeUrl(linkUrl.url);
 
           // 이미 방문했거나 유효하지 않은 URL은 건너뛰기
-          if (visitedUrls.has(normalized) || !this.isValidUrl(linkUrl.url, baseDomain, config)) {
+          if (visitedUrls.has(normalized)) {
+            console.error(`[CRITICAL] ⏭️ 이미 방문한 URL 건너뜀: ${linkUrl.url}`);
+            continue;
+          }
+          
+          const isValid = this.isValidUrl(linkUrl.url, baseDomain, config);
+          if (!isValid) {
+            console.error(`[CRITICAL] ⏭️ 유효하지 않은 URL 건너뜀: ${linkUrl.url} (baseDomain: ${baseDomain}, maxDepth: ${config.maxDepth}, domainLimit: ${config.domainLimit})`);
             continue;
           }
 
@@ -698,7 +705,8 @@ export class SitemapDiscoveryService {
               normalizedUrl !== baseUrl &&
               !normalizedUrl.includes('#')) {
               validLinks++;
-              if (this.isValidUrl(normalizedUrl, baseDomain, config)) {
+              const isValid = this.isValidUrl(normalizedUrl, baseDomain, config);
+              if (isValid) {
                 discoveredUrls.push({
                   url: normalizedUrl,
                   title: $(element).text().trim() || undefined,
@@ -706,6 +714,15 @@ export class SitemapDiscoveryService {
                   depth: 1
                 });
               } else {
+                console.error(`[CRITICAL] ⏭️ discoverFromLinks에서 isValidUrl 실패: ${normalizedUrl} (baseDomain: ${baseDomain}, maxDepth: ${config.maxDepth}, domainLimit: ${config.domainLimit})`);
+              }
+            } else {
+              if (!isAllowedDomain) {
+                console.error(`[CRITICAL] ⏭️ discoverFromLinks에서 도메인 필터링: ${normalizedUrl} (baseDomain: ${baseDomain}, urlDomain: ${urlDomain}, maxDepth: ${config.maxDepth}, domainLimit: ${config.domainLimit})`);
+              }
+            }
+            
+            if (false) { // 기존 else 블록 제거를 위한 더미 코드
                 filteredLinks++;
               }
             }
@@ -1134,7 +1151,9 @@ export class SitemapDiscoveryService {
           }
         }
 
-        // allowedDomains 체크 (maxDepth 4가 아닌 경우)
+        // allowedDomains 체크 (maxDepth 4 + domainLimit=false일 때는 건너뛰기)
+        // maxDepth 4 + domainLimit=true일 때는 이미 루트 도메인 체크를 했으므로 추가 체크 불필요
+        // maxDepth 4 + domainLimit=false일 때는 모든 도메인 허용하므로 체크 불필요
         if (config.maxDepth < 4 && config.allowedDomains && config.allowedDomains.length > 0) {
           const isAllowed = config.allowedDomains.some(domain => 
             urlDomain === domain || 
