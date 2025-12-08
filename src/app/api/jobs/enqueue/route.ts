@@ -137,7 +137,15 @@ export async function POST(request: NextRequest) {
         : (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000');
       const consumeUrl = new URL('/api/jobs/consume', baseUrl);
       
+      console.error('[CRITICAL] 🔗 fetch URL:', {
+        url: consumeUrl.toString(),
+        baseUrl: baseUrl,
+        vercelUrl: process.env.VERCEL_URL,
+        nextPublicAppUrl: process.env.NEXT_PUBLIC_APP_URL
+      });
+      
       // 백그라운드로 실행 (await 없이)
+      const fetchStartMs = Date.now();
       fetch(consumeUrl.toString(), {
         method: 'POST',
         headers: {
@@ -148,10 +156,13 @@ export async function POST(request: NextRequest) {
         // 중요: signal을 설정하지 않음 (백그라운드 실행이므로)
       })
         .then(async (response) => {
+          const fetchElapsedMs = Date.now() - fetchStartMs;
           console.error('[CRITICAL] 📥 processQueue 응답 수신:', {
+            elapsedMs: fetchElapsedMs,
             status: response.status,
             statusText: response.statusText,
-            ok: response.ok
+            ok: response.ok,
+            headers: Object.fromEntries(response.headers.entries())
           });
           
           try {
@@ -176,16 +187,19 @@ export async function POST(request: NextRequest) {
           }
         })
         .catch(err => {
+          const fetchElapsedMs = Date.now() - fetchStartMs;
           // 에러 발생해도 무시 (Cron Job이 처리할 수 있음)
           console.error('[CRITICAL] ❌ 큐 워커 트리거 에러:', {
+            elapsedMs: fetchElapsedMs,
             error: err instanceof Error ? err.message : String(err),
             stack: err instanceof Error ? err.stack : undefined,
             name: err instanceof Error ? err.name : undefined,
-            cause: err instanceof Error && 'cause' in err ? err.cause : undefined
+            cause: err instanceof Error && 'cause' in err ? err.cause : undefined,
+            url: consumeUrl.toString()
           });
         });
       
-      console.error('[CRITICAL] ✅ 큐 워커 트리거 완료 (백그라운드 fetch 실행 중)');
+      console.error('[CRITICAL] ✅ 큐 워커 트리거 완료 (백그라운드 fetch 실행 중, URL: ' + consumeUrl.toString() + ')');
     } catch (triggerError) {
       // 트리거 실패해도 작업 등록은 성공했으므로 계속 진행
       console.error('[CRITICAL] ⚠️ 큐 워커 트리거 실패 (작업은 등록됨):', {
