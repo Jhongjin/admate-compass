@@ -595,30 +595,114 @@ export async function processQueue() {
     let job: any = null;
     let pickErr: any = null;
     
-    // ⚠️ 임시 해결책: Supabase 쿼리가 완료되지 않는 문제로 인해
-    // 쿼리 실행을 완전히 우회하고 타임아웃만 체크하여 즉시 작업 없음으로 처리
-    // 이렇게 하면 processQueue가 멈추지 않고 계속 실행됨
-    const QUERY_TIMEOUT_MS = 500; // 0.5초로 매우 짧게 설정
-    console.error('[CRITICAL] 🔍 작업 조회 쿼리 시작 (타임아웃: ' + QUERY_TIMEOUT_MS + 'ms, 쿼리 우회 모드)...');
+    // 작업 조회 쿼리 타임아웃 (2초로 설정, 빠른 실패)
+    const QUERY_TIMEOUT_MS = 2000;
+    console.error('[CRITICAL] 🔍 작업 조회 쿼리 시작 (타임아웃: ' + QUERY_TIMEOUT_MS + 'ms)...');
     
-    // 타임아웃만 체크하고 쿼리는 실행하지 않음
-    await new Promise<void>((resolve) => {
-      setTimeout(() => {
+    let queryTimedOut = false;
+    let queryResolved = false;
+    let timeoutId: NodeJS.Timeout | null = null;
+    
+    // 타임아웃 체크를 먼저 설정
+    timeoutId = setTimeout(() => {
+      if (!queryResolved) {
+        queryTimedOut = true;
+        queryResolved = true;
+        const elapsedMs = Date.now() - jobStartMs;
         console.error('[CRITICAL] ⏰ 타임아웃 발생 (' + QUERY_TIMEOUT_MS + 'ms 경과, 작업 없음으로 처리):', {
-          elapsedMs: Date.now() - jobStartMs,
-          timeoutMs: QUERY_TIMEOUT_MS,
-          reason: 'Supabase 쿼리 완료되지 않는 문제로 인한 임시 우회'
+          elapsedMs,
+          timeoutMs: QUERY_TIMEOUT_MS
         });
         job = null;
         pickErr = null;
-        resolve();
-      }, QUERY_TIMEOUT_MS);
-    });
+      }
+    }, QUERY_TIMEOUT_MS);
     
-    console.error('[CRITICAL] 📋 작업 조회 완료 (쿼리 우회 모드):', {
-      found: false,
-      reason: 'Supabase 쿼리 완료되지 않는 문제로 인한 임시 우회'
-    });
+    // 쿼리 실행 (타임아웃이 발생해도 계속 실행됨)
+    try {
+      console.error('[CRITICAL] 🔍 Supabase 쿼리 실행 중...');
+      const queryStartMs = Date.now();
+      
+      const { data, error } = await supabase
+        .from('processing_jobs')
+        .select('id, document_id, job_type, status, attempts, max_attempts, priority, payload')
+        .in('status', ['queued', 'retrying'])
+        .limit(1)
+        .maybeSingle();
+      
+      const queryElapsedMs = Date.now() - queryStartMs;
+      const totalElapsedMs = Date.now() - jobStartMs;
+      
+      // 타임아웃이 이미 발생했는지 확인
+      if (queryTimedOut) {
+        console.warn('[CRITICAL] ⚠️ 타임아웃 발생 후 쿼리 완료됨 (작업 없음으로 처리):', {
+          elapsedMs: totalElapsedMs,
+          queryElapsedMs
+        });
+        job = null;
+        pickErr = null;
+      } else {
+        // 정상 쿼리 결과
+        queryResolved = true;
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+          timeoutId = null;
+        }
+        
+        job = data;
+        pickErr = error;
+        console.error('[CRITICAL] 📋 작업 조회 완료: ' + totalElapsedMs + 'ms (쿼리: ' + queryElapsedMs + 'ms)', {
+          found: !!job,
+          jobId: job?.id,
+          jobType: job?.job_type,
+          documentId: job?.document_id,
+          error: pickErr ? pickErr.message : null
+        });
+      }
+    } catch (queryError) {
+      queryResolved = true;
+      const pickMs = Date.now() - jobStartMs;
+      
+      // 타임아웃 정리
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+      
+      // 타임아웃이 발생했는지 확인
+      if (queryTimedOut) {
+        console.warn('[CRITICAL] ⚠️ 작업 조회 타임아웃 (catch 블록, 작업 없음으로 처리):', {
+          elapsedMs: pickMs
+        });
+        job = null;
+        pickErr = null;
+      } else {
+        // 다른 에러는 로그만 남기고 작업 없음으로 처리 (크롤링이 멈추지 않도록)
+        console.error('[CRITICAL] ❌ 작업 조회 쿼리 실패 (작업 없음으로 처리):', {
+          elapsedMs: pickMs,
+          error: queryError instanceof Error ? queryError.message : String(queryError),
+          name: queryError instanceof Error ? queryError.name : undefined,
+          stack: queryError instanceof Error ? queryError.stack : undefined
+        });
+        job = null;
+        pickErr = null;
+      }
+    } finally {
+      // 최종 정리
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+        timeoutId = null;
+      }
+      
+      // 타임아웃이 발생했지만 쿼리가 완료되지 않은 경우
+      if (queryTimedOut && !queryResolved) {
+        console.error('[CRITICAL] ⚠️ 쿼리가 타임아웃되었지만 완료되지 않음 (작업 없음으로 처리):', {
+          elapsedMs: Date.now() - jobStartMs
+        });
+        job = null;
+        pickErr = null;
+      }
+    }
 
     if (pickErr) {
       console.error(`❌ 작업 조회 실패:`, pickErr);
