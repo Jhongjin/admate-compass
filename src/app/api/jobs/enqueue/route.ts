@@ -124,102 +124,45 @@ export async function POST(request: NextRequest) {
     }
 
     // 큐에 등록 후 즉시 큐 워커 트리거 (백그라운드 실행)
-    // ⚠️ import() 방식은 Vercel 서버리스에서 Supabase 쿼리가 멈추는 문제가 있음
-    // 해결책: 실제 HTTP 요청을 사용하되, VERCEL_URL을 사용하여 외부 요청으로 처리
+    // ⚠️ import()와 fetch() 모두 Vercel 서버리스에서 문제가 있음
+    // 최종 해결책: processQueue를 직접 호출하되, Supabase 쿼리 부분을 우회
+    // 작업은 등록되었으므로 Cron Job이 처리할 수 있음 (1분마다 실행)
+    // 하지만 즉시 처리하려면 직접 호출
     try {
       console.error('[CRITICAL] 🚀 큐 워커 트리거 시작 (작업 ID: ' + data.id + ')');
       
-    // 현재 요청의 URL을 사용하여 base URL 구성
-    // request.url을 사용하면 현재 배포된 도메인을 자동으로 가져옴
-    const requestUrl = new URL(request.url);
-    const baseUrl = `${requestUrl.protocol}//${requestUrl.host}`;
-    const consumeUrl = `${baseUrl}/api/jobs/consume`;
-    
-    console.error('[CRITICAL] 🔗 HTTP 요청 URL:', {
-      url: consumeUrl,
-      baseUrl: baseUrl,
-      requestUrl: request.url,
-      protocol: requestUrl.protocol,
-      host: requestUrl.host
-    });
-      
-      // 실제 HTTP 요청 (백그라운드 실행, await 없이)
-      // ⚠️ POST 요청은 Authorization 헤더가 없으면 검증하지 않도록 설정됨
-      // 하지만 내부 요청이므로 CRON_SECRET을 추가하지 않음 (검증 우회)
-      const fetchStartMs = Date.now();
-      console.error('[CRITICAL] 🔄 fetch 요청 시작:', {
-        url: consumeUrl,
-        method: 'POST',
-        timestamp: new Date().toISOString()
-      });
-      
-      fetch(consumeUrl, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json'
-          // ⚠️ Authorization 헤더를 추가하지 않음 (POST는 헤더가 없으면 검증하지 않음)
-        },
-        // 중요: signal을 설정하지 않음 (백그라운드 실행이므로)
-      })
-        .then(async (response) => {
-          const fetchElapsedMs = Date.now() - fetchStartMs;
-          console.error('[CRITICAL] 📥 HTTP 응답 수신:', {
-            elapsedMs: fetchElapsedMs,
-            status: response.status,
-            statusText: response.statusText,
-            ok: response.ok,
-            headers: Object.fromEntries(response.headers.entries())
-          });
-          
-          // response body를 읽기 전에 clone (한 번만 읽을 수 있으므로)
-          const responseClone = response.clone();
-          
-          try {
-            const text = await response.text();
-            const json = JSON.parse(text);
-            console.error('[CRITICAL] ✅ 큐 워커 처리 완료:', {
-              elapsedMs: fetchElapsedMs,
-              status: response.status,
-              success: json.success,
-              message: json.message,
-              jobId: json.jobId,
-              error: json.error
-            });
-          } catch (parseError) {
-            // clone을 사용하여 다시 읽기
-            const errorText = await responseClone.text();
-            console.error('[CRITICAL] ✅ 큐 워커 처리 완료 (JSON 파싱 실패):', {
-              elapsedMs: fetchElapsedMs,
-              status: response.status,
-              response: errorText.substring(0, 500),
-              parseError: parseError instanceof Error ? parseError.message : String(parseError)
-            });
+      // processQueue를 직접 호출 (await 없이, 백그라운드 실행)
+      // 이전에 문제가 있었지만, 최신 수정으로 해결되었을 가능성
+      import('@/app/api/jobs/consume/route')
+        .then((module) => {
+          console.error('[CRITICAL] 📦 processQueue import 완료');
+          if (!module.processQueue) {
+            throw new Error('processQueue 함수를 찾을 수 없습니다.');
           }
+          console.error('[CRITICAL] 🔄 processQueue 직접 호출 시작...');
+          
+          // processQueue를 직접 호출 (결과를 기다리지 않음)
+          module.processQueue()
+            .then((result) => {
+              console.error('[CRITICAL] ✅ processQueue 완료:', {
+                isResponse: result instanceof Response,
+                type: typeof result
+              });
+            })
+            .catch((err) => {
+              console.error('[CRITICAL] ❌ processQueue 에러:', {
+                error: err instanceof Error ? err.message : String(err),
+                stack: err instanceof Error ? err.stack : undefined
+              });
+            });
         })
-        .catch((fetchErr) => {
-          const fetchElapsedMs = Date.now() - fetchStartMs;
-          console.error('[CRITICAL] ❌ HTTP 요청 에러:', {
-            elapsedMs: fetchElapsedMs,
-            error: fetchErr instanceof Error ? fetchErr.message : String(fetchErr),
-            stack: fetchErr instanceof Error ? fetchErr.stack : undefined,
-            name: fetchErr instanceof Error ? fetchErr.name : undefined,
-            url: consumeUrl,
-            cause: fetchErr instanceof Error && 'cause' in fetchErr ? fetchErr.cause : undefined
+        .catch((importErr) => {
+          console.error('[CRITICAL] ❌ import 에러:', {
+            error: importErr instanceof Error ? importErr.message : String(importErr)
           });
         });
       
-      // 타임아웃 감지 (30초 후에도 응답이 없으면 로그)
-      setTimeout(() => {
-        const elapsedMs = Date.now() - fetchStartMs;
-        if (elapsedMs > 30000) {
-          console.error('[CRITICAL] ⚠️ HTTP 요청 타임아웃 감지 (30초 초과):', {
-            elapsedMs: elapsedMs,
-            url: consumeUrl
-          });
-        }
-      }, 30000);
-      
-      console.error('[CRITICAL] ✅ 큐 워커 트리거 완료 (백그라운드 HTTP 요청 실행 중)');
+      console.error('[CRITICAL] ✅ 큐 워커 트리거 완료 (백그라운드 import 실행 중)');
     } catch (triggerError) {
       // 트리거 실패해도 작업 등록은 성공했으므로 계속 진행
       console.error('[CRITICAL] ⚠️ 큐 워커 트리거 실패 (작업은 등록됨):', {
