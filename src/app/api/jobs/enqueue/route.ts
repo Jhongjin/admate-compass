@@ -131,7 +131,11 @@ export async function POST(request: NextRequest) {
       // Vercel 서버리스 환경에서 import()로 실행된 함수의 Supabase 쿼리가 멈추는 문제
       // 해결책: fetch()를 사용하여 /api/jobs/consume를 직접 호출
       // 이렇게 하면 정상적인 API 요청 컨텍스트에서 실행되므로 Supabase 쿼리가 정상 작동
-      const consumeUrl = new URL('/api/jobs/consume', process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000');
+      // Vercel 환경 변수 우선순위: VERCEL_URL > NEXT_PUBLIC_APP_URL > localhost
+      const baseUrl = process.env.VERCEL_URL 
+        ? `https://${process.env.VERCEL_URL}`
+        : (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000');
+      const consumeUrl = new URL('/api/jobs/consume', baseUrl);
       
       // 백그라운드로 실행 (await 없이)
       fetch(consumeUrl.toString(), {
