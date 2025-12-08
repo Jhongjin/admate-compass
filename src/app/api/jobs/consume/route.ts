@@ -667,22 +667,49 @@ export async function processQueue() {
       const maxWaitMs = QUERY_TIMEOUT_MS + 100;
       const checkInterval = 50; // 50ms마다 체크
       let waitedMs = 0;
-      let lastCheckMs = Date.now();
       
-      console.error('[CRITICAL] ⏳ 타임아웃 대기 시작 (최대 ' + maxWaitMs + 'ms)...');
+      console.error('[CRITICAL] ⏳ 타임아웃 대기 시작 (최대 ' + maxWaitMs + 'ms, queryResolved: ' + queryResolved + ')...');
       
+      // 루프 시작 로그
+      console.error('[CRITICAL] 🔄 while 루프 시작 조건 확인:', { 
+        queryResolved: queryResolved, 
+        waitedMs: waitedMs, 
+        maxWaitMs: maxWaitMs,
+        shouldEnter: !queryResolved && waitedMs < maxWaitMs
+      });
+      
+      let loopIteration = 0;
       while (!queryResolved && waitedMs < maxWaitMs) {
+        loopIteration++;
+        
+        // 첫 번째 반복 로그
+        if (loopIteration === 1) {
+          console.error('[CRITICAL] 🔄 while 루프 첫 번째 반복 시작');
+        }
+        
         await new Promise(resolve => setTimeout(resolve, checkInterval));
         waitedMs += checkInterval;
         
-        // 진행 상황 로그 (매 200ms마다)
-        if (waitedMs % 200 === 0) {
+        // 진행 상황 로그 (매 100ms마다, 첫 번째 반복 포함)
+        if (loopIteration === 1 || waitedMs % 100 === 0) {
           const elapsed = Date.now() - queryStartMs;
-          console.error('[CRITICAL] ⏳ 타임아웃 대기 중:', { waitedMs: waitedMs, elapsedMs: elapsed, queryResolved: queryResolved });
+          console.error('[CRITICAL] ⏳ 타임아웃 대기 중:', { 
+            iteration: loopIteration,
+            waitedMs: waitedMs, 
+            elapsedMs: elapsed, 
+            queryResolved: queryResolved,
+            maxWaitMs: maxWaitMs,
+            shouldContinue: !queryResolved && waitedMs < maxWaitMs
+          });
         }
       }
       
-      console.error('[CRITICAL] ⏳ 타임아웃 대기 종료:', { waitedMs: waitedMs, queryResolved: queryResolved });
+      console.error('[CRITICAL] ⏳ 타임아웃 대기 종료:', { 
+        waitedMs: waitedMs, 
+        queryResolved: queryResolved,
+        loopIteration: loopIteration,
+        totalElapsed: Date.now() - queryStartMs
+      });
       
       if (timeoutId) {
         clearTimeout(timeoutId);
