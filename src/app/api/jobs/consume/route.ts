@@ -2626,17 +2626,35 @@ export async function processQueue() {
           });
           mainPage = await Promise.race([fetchPromise, fetchTimeoutPromise]) as Awaited<ReturnType<typeof fetchPageContent>>;
         } catch (fetchError) {
-          console.error('[CRITICAL] ❌ 메인 페이지 크롤링 실패:', fetchError);
+          const errorMessage = fetchError instanceof Error ? fetchError.message : String(fetchError);
+          const errorStack = fetchError instanceof Error ? fetchError.stack : undefined;
+          const errorName = fetchError instanceof Error ? fetchError.name : 'Unknown';
+          
+          console.error('[CRITICAL] ❌ 메인 페이지 크롤링 실패:', {
+            url,
+            errorMessage,
+            errorName,
+            errorStack,
+            errorType: typeof fetchError,
+            errorString: String(fetchError)
+          });
+          
           // 실패 시 작업 상태 업데이트
+          const detailedError = `메인 페이지 크롤링 실패: ${errorMessage} (${errorName})`;
           await supabase
             .from('processing_jobs')
             .update({
               status: 'failed',
+              error: detailedError,
               finished_at: new Date().toISOString(),
-              result: { error: `메인 페이지 크롤링 실패: ${fetchError instanceof Error ? fetchError.message : String(fetchError)}` }
+              result: { 
+                error: detailedError,
+                errorName,
+                errorStack: errorStack?.substring(0, 500) // 스택은 500자로 제한
+              }
             })
             .eq('id', job.id);
-          throw new Error(`메인 페이지 크롤링 실패: ${fetchError instanceof Error ? fetchError.message : String(fetchError)}`);
+          throw new Error(detailedError);
         }
         
         console.error('[CRITICAL] 📄 메인 페이지 크롤링 완료:', { url, title: mainPage.pageTitle, contentLength: mainPage.textContent.length, htmlLength: mainPage.htmlContent.length });
@@ -4607,8 +4625,19 @@ export async function processQueue() {
           result: finishedResult 
         }, { status: 200 });
       } catch (crawlError) {
-        console.error('❌ CRAWL_SEED 처리 오류:', crawlError);
         const errorMessage = crawlError instanceof Error ? crawlError.message : String(crawlError);
+        const errorStack = crawlError instanceof Error ? crawlError.stack : undefined;
+        const errorName = crawlError instanceof Error ? crawlError.name : 'Unknown';
+        
+        console.error('[CRITICAL] ❌ CRAWL_SEED 처리 오류:', {
+          jobId: job.id,
+          url: job.payload?.url,
+          errorMessage,
+          errorName,
+          errorStack: errorStack?.substring(0, 1000), // 스택은 1000자로 제한
+          errorType: typeof crawlError,
+          errorString: String(crawlError)
+        });
         
         // 타임아웃 감지: Vercel 함수 실행 시간 제한 초과 여부 확인
         const isTimeout = errorMessage.toLowerCase().includes('timeout') || 
