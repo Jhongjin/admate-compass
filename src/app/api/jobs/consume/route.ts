@@ -616,7 +616,8 @@ export async function processQueue() {
       
       try {
         // crawler_success_temp와 완전히 동일한 쿼리 구조
-        const { data: fetchedJob, error: fetchedErr } = await supabase
+        // Vercel 서버리스 환경에서 타임아웃 방지를 위해 Promise.race 사용
+        const queryPromise = supabase
           .from('processing_jobs')
           .select('id, document_id, job_type, status, attempts, max_attempts, priority, payload')
           .in('status', ['queued', 'retrying'])
@@ -625,8 +626,17 @@ export async function processQueue() {
           .limit(1)
           .maybeSingle();
         
-        job = fetchedJob;
-        pickErr = fetchedErr;
+        // 5초 타임아웃 추가 (Vercel 서버리스 환경 대응)
+        const timeoutPromise = new Promise<{ data: null; error: { message: string } }>((resolve) => {
+          setTimeout(() => {
+            resolve({ data: null, error: { message: '쿼리 타임아웃: 5초 초과' } });
+          }, 5000);
+        });
+        
+        const result = await Promise.race([queryPromise, timeoutPromise]);
+        
+        job = result.data;
+        pickErr = result.error;
         
         const queryElapsedMs = Date.now() - queryStartMs;
         const totalElapsedMs = Date.now() - jobStartMs;
