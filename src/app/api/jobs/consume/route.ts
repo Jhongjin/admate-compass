@@ -357,7 +357,9 @@ export async function processQueue() {
     startTime: processQueueStartMs
   });
   
-  const supabase = await createPureClient();
+  // ⚠️ 작업 조회를 위해 별도의 Supabase 클라이언트 생성
+  // 기존 클라이언트가 문제가 있을 수 있으므로 새로 생성
+  let supabase = await createPureClient();
   console.error('[CRITICAL] ✅ Supabase 클라이언트 생성 완료');
   
   // 타임아웃 작업 감지 로직을 선택적으로 실행 (환경 변수로 제어 가능)
@@ -614,8 +616,13 @@ export async function processQueue() {
         console.error('[CRITICAL] 🔍 Supabase 쿼리 실행 중...');
         const queryStartMs = Date.now();
         
+        // ⚠️ 작업 조회를 위해 Supabase 클라이언트를 다시 생성
+        // 기존 클라이언트가 문제가 있을 수 있으므로 새로 생성
+        const querySupabase = await createPureClient();
+        console.error('[CRITICAL] ✅ 작업 조회용 Supabase 클라이언트 재생성 완료');
+        
         // check-crawl-status 패턴 사용: .maybeSingle() 대신 .limit(1) 사용
-        const jobsQuery = supabase
+        const jobsQuery = querySupabase
           .from('processing_jobs')
           .select('id, document_id, job_type, status, attempts, max_attempts, priority, payload')
           .in('status', ['queued', 'retrying'])
@@ -632,7 +639,9 @@ export async function processQueue() {
           }, QUERY_TIMEOUT_MS);
         });
         
+        console.error('[CRITICAL] 🔍 Promise.race 시작...');
         const queryResult = await Promise.race([queryPromise, timeoutPromise]);
+        console.error('[CRITICAL] 🔍 Promise.race 완료');
         
         const queryElapsedMs = Date.now() - queryStartMs;
         const totalElapsedMs = Date.now() - jobStartMs;
