@@ -357,9 +357,9 @@ export async function processQueue() {
     startTime: processQueueStartMs
   });
   
-  // ⚠️ 작업 조회를 위해 별도의 Supabase 클라이언트 생성
-  // 기존 클라이언트가 문제가 있을 수 있으므로 새로 생성
-  let supabase = await createPureClient();
+  // ⚠️ 작업 조회를 위해 Supabase 클라이언트 생성
+  // check-crawl-status와 동일한 방식으로 생성
+  const supabase = await createPureClient();
   console.error('[CRITICAL] ✅ Supabase 클라이언트 생성 완료');
   
   // 타임아웃 작업 감지 로직을 선택적으로 실행 (환경 변수로 제어 가능)
@@ -673,29 +673,23 @@ export async function processQueue() {
           errorMessage: jobsError?.message || (jobsError instanceof Error ? jobsError.message : String(jobsError))
         });
         
-        // 결과 구성 (check-crawl-status 패턴과 동일)
-        const queryResult = {
-          data: jobs,
-          error: jobsError
-        };
-        
+        // check-crawl-status와 동일한 방식으로 처리
         const queryElapsedMs = Date.now() - queryStartMs;
         const totalElapsedMs = Date.now() - jobStartMs;
         
-        if (queryResult.error) {
+        if (jobsError) {
           // 쿼리 에러
           console.error('[CRITICAL] ❌ 작업 조회 쿼리 실패 (작업 없음으로 처리):', {
             elapsedMs: totalElapsedMs,
             queryElapsedMs: queryElapsedMs,
             queryExecuteElapsedMs: queryExecuteElapsedMs,
-            error: queryResult.error.message
+            error: jobsError.message
           });
           job = null;
-          pickErr = queryResult.error;
-        } else if (queryResult.data && Array.isArray(queryResult.data)) {
+          pickErr = jobsError;
+        } else if (jobs && Array.isArray(jobs)) {
           // 성공: 배열의 첫 번째 요소 사용 (check-crawl-status 패턴)
-          const jobsArray = queryResult.data;
-          job = jobsArray && jobsArray.length > 0 ? jobsArray[0] : null;
+          job = jobs && jobs.length > 0 ? jobs[0] : null;
           pickErr = null;
           
           console.error('[CRITICAL] 📋 작업 조회 완료: ' + totalElapsedMs + 'ms (쿼리: ' + queryElapsedMs + 'ms, 실행: ' + queryExecuteElapsedMs + 'ms)', {
