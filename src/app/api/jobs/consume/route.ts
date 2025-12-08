@@ -1805,6 +1805,9 @@ export async function processQueue() {
 
           const htmlContent = await response.text();
 
+          // ⚠️ 로그인 페이지 감지 로직 제거: 이전 버전에서는 Facebook 페이지도 크롤링이 되었으므로
+          // 로그인 페이지로 리다이렉트되어도 Puppeteer를 통해 동적 콘텐츠를 처리할 수 있도록 허용
+          // Puppeteer가 로그인 페이지에서도 일부 링크를 추출할 수 있음
           const lowerHtml = htmlContent.toLowerCase();
           const loginPatterns = [
             '계속하려면 로그인',
@@ -1817,7 +1820,8 @@ export async function processQueue() {
           const isBlockedByLogin = loginPatterns.some((pattern) => lowerHtml.includes(pattern.toLowerCase()));
 
           if (isBlockedByLogin && (targetUrl.includes('facebook.com') || targetUrl.includes('instagram.com'))) {
-            throw new Error('로그인 페이지가 반환되어 크롤링할 수 없습니다. 공개 접근이 가능한 문서를 사용해 주세요.');
+            console.warn(`⚠️ 로그인 페이지로 리다이렉트됨: ${targetUrl}. Puppeteer를 통해 동적 콘텐츠 처리 시도...`);
+            // 에러를 throw하지 않고 계속 진행 (Puppeteer가 처리할 수 있도록)
           }
 
           // Cheerio로 HTML 파싱
