@@ -623,12 +623,15 @@ export async function processQueue() {
       console.error('[CRITICAL] 🔍 Supabase 쿼리 실행 중...');
       const queryStartMs = Date.now();
       
-      const { data, error } = await supabase
+      // 다른 API 라우트에서 성공한 패턴 사용: 더 간단한 쿼리
+      const queryResult = await supabase
         .from('processing_jobs')
         .select('id, document_id, job_type, status, attempts, max_attempts, priority, payload')
         .in('status', ['queued', 'retrying'])
         .limit(1)
         .maybeSingle();
+      
+      const { data, error } = queryResult;
       
       const queryElapsedMs = Date.now() - queryStartMs;
       const totalElapsedMs = Date.now() - jobStartMs;
