@@ -2630,17 +2630,21 @@ export async function processQueue() {
           const errorStack = fetchError instanceof Error ? fetchError.stack : undefined;
           const errorName = fetchError instanceof Error ? fetchError.name : 'Unknown';
           
+          // 에러 메시지를 안전하게 인코딩 (UTF-8 보장)
+          const safeErrorMessage = Buffer.from(errorMessage, 'utf8').toString('utf8');
+          const safeErrorStack = errorStack ? Buffer.from(errorStack.substring(0, 1000), 'utf8').toString('utf8') : undefined;
+          
           console.error('[CRITICAL] ❌ 메인 페이지 크롤링 실패:', {
             url,
-            errorMessage,
+            errorMessage: safeErrorMessage,
             errorName,
-            errorStack,
+            errorStack: safeErrorStack,
             errorType: typeof fetchError,
             errorString: String(fetchError)
           });
           
-          // 실패 시 작업 상태 업데이트
-          const detailedError = `메인 페이지 크롤링 실패: ${errorMessage} (${errorName})`;
+          // 실패 시 작업 상태 업데이트 (안전한 인코딩 사용)
+          const detailedError = `메인 페이지 크롤링 실패: ${safeErrorMessage} (${errorName})`;
           await supabase
             .from('processing_jobs')
             .update({
@@ -2649,8 +2653,9 @@ export async function processQueue() {
               finished_at: new Date().toISOString(),
               result: { 
                 error: detailedError,
+                errorMessage: safeErrorMessage,
                 errorName,
-                errorStack: errorStack?.substring(0, 500) // 스택은 500자로 제한
+                errorStack: safeErrorStack
               }
             })
             .eq('id', job.id);

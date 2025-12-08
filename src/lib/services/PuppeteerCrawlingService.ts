@@ -188,11 +188,16 @@ export class PuppeteerCrawlingService {
             });
             console.log('✅ Puppeteer 브라우저 초기화 완료 (Vercel 환경: @sparticuz/chromium)');
           } catch (chromiumError: any) {
-            console.error('❌ @sparticuz/chromium 초기화 실패:', chromiumError.message);
-            console.error('❌ Chromium 에러 상세:', chromiumError);
-            console.error('❌ 스택 트레이스:', chromiumError.stack);
+            const errorMsg = chromiumError?.message || String(chromiumError);
+            const errorStack = chromiumError?.stack || 'No stack available';
+            console.error('❌ @sparticuz/chromium 초기화 실패:', {
+              message: errorMsg,
+              name: chromiumError?.name || 'UnknownError',
+              stack: errorStack,
+              fullError: chromiumError
+            });
             // 동적 크롤링이 필수이므로 에러를 throw
-            throw new Error(`Chromium 초기화 실패: ${chromiumError.message}. 동적 크롤링을 사용할 수 없습니다. Vercel 빌드 설정을 확인해주세요.`);
+            throw new Error(`Chromium 초기화 실패: ${errorMsg}. 동적 크롤링을 사용할 수 없습니다. Vercel 빌드 설정을 확인해주세요.`);
           }
         } else {
           // 로컬 환경: 일반 Puppeteer 사용 (동적 크롤링 필수)
