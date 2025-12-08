@@ -720,11 +720,7 @@ export class SitemapDiscoveryService {
               if (!isAllowedDomain) {
                 console.error(`[CRITICAL] ⏭️ discoverFromLinks에서 도메인 필터링: ${normalizedUrl} (baseDomain: ${baseDomain}, urlDomain: ${urlDomain}, maxDepth: ${config.maxDepth}, domainLimit: ${config.domainLimit})`);
               }
-            }
-            
-            if (false) { // 기존 else 블록 제거를 위한 더미 코드
-                filteredLinks++;
-              }
+              filteredLinks++;
             }
           } catch (e) {
             // URL 파싱 실패 시 무시
