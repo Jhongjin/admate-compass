@@ -608,106 +608,39 @@ export async function processQueue() {
       job = null;
       pickErr = null;
     } else {
-      // 쿼리 실행 (check-crawl-status 패턴 사용, 직접 await)
-      const QUERY_TIMEOUT_MS = 2000; // 2초로 설정 (check-crawl-status와 동일)
-      console.error('[CRITICAL] 🔍 작업 조회 쿼리 시작 (타임아웃: ' + QUERY_TIMEOUT_MS + 'ms, check-crawl-status 패턴)...');
-      
-      // ⚠️ Vercel 서버리스 환경에서 import()로 실행된 함수의 Supabase 쿼리가 멈추는 문제
-      // 해결책: 기존 supabase 클라이언트를 재사용 (새로 생성하지 않음)
-      // 연결 테스트도 제거 (쿼리 자체가 멈추므로 의미 없음)
-      console.error('[CRITICAL] 🔧 기존 Supabase 클라이언트 재사용 (새로 생성하지 않음)...');
-      
-      // 기존 supabase 클라이언트 재사용
-      const querySupabase = supabase;
-      console.error('[CRITICAL] ✅ Supabase 클라이언트 재사용 완료');
+      // crawler_success_temp와 완전히 동일한 패턴 사용
+      // 가장 단순한 쿼리 패턴으로 복원
+      console.error('[CRITICAL] 🔍 작업 조회 쿼리 시작 (crawler_success_temp 패턴)...');
       
       const queryStartMs = Date.now();
       
       try {
-        console.error('[CRITICAL] 🔍 작업 조회 쿼리 시작 (기존 클라이언트 사용)...');
-        
-        // 쿼리 구조를 최대한 단순화
-        // check-crawl-status와 동일한 패턴이지만 더 단순하게
-        console.error('[CRITICAL] 🔍 쿼리 빌더 시작...');
-        const jobsQuery = querySupabase
+        // crawler_success_temp와 완전히 동일한 쿼리 구조
+        const { data: job, error: pickErr } = await supabase
           .from('processing_jobs')
           .select('id, document_id, job_type, status, attempts, max_attempts, priority, payload')
           .in('status', ['queued', 'retrying'])
-          .limit(1);
+          .order('priority', { ascending: false })
+          .order('scheduled_at', { ascending: true })
+          .limit(1)
+          .maybeSingle();
         
-        console.error('[CRITICAL] 🔍 쿼리 실행 시작 (직접 await, 단순화된 패턴)...');
-        const queryExecuteStartMs = Date.now();
-        
-        // 쿼리 실행 (check-crawl-status와 동일한 패턴)
-        let jobs: any[] | null = null;
-        let jobsError: any = null;
-        
-        try {
-          console.error('[CRITICAL] 🔍 await 시작 (타임아웃 없음, Vercel maxDuration에 의존)...');
-          const result = await jobsQuery;
-          console.error('[CRITICAL] 🔍 await 완료:', { 
-            hasData: !!result.data,
-            hasError: !!result.error,
-            dataType: typeof result.data,
-            errorType: typeof result.error
-          });
-          
-          jobs = result.data;
-          jobsError = result.error;
-        } catch (awaitError) {
-          console.error('[CRITICAL] ❌ await 중 예외 발생:', {
-            error: awaitError instanceof Error ? awaitError.message : String(awaitError),
-            name: awaitError instanceof Error ? awaitError.name : undefined,
-            stack: awaitError instanceof Error ? awaitError.stack : undefined
-          });
-          jobsError = awaitError;
-        }
-        
-        const queryExecuteElapsedMs = Date.now() - queryExecuteStartMs;
-        
-        console.error('[CRITICAL] 🔍 쿼리 실행 완료:', { 
-          elapsedMs: queryExecuteElapsedMs,
-          hasError: !!jobsError,
-          hasData: !!jobs,
-          dataLength: Array.isArray(jobs) ? jobs.length : 0,
-          errorMessage: jobsError?.message || (jobsError instanceof Error ? jobsError.message : String(jobsError))
-        });
-        
-        // check-crawl-status와 동일한 방식으로 처리
         const queryElapsedMs = Date.now() - queryStartMs;
         const totalElapsedMs = Date.now() - jobStartMs;
         
-        if (jobsError) {
-          // 쿼리 에러
-          console.error('[CRITICAL] ❌ 작업 조회 쿼리 실패 (작업 없음으로 처리):', {
-            elapsedMs: totalElapsedMs,
-            queryElapsedMs: queryElapsedMs,
-            queryExecuteElapsedMs: queryExecuteElapsedMs,
-            error: jobsError.message
-          });
+        console.error('[CRITICAL] 📋 작업 조회 완료: ' + totalElapsedMs + 'ms (쿼리: ' + queryElapsedMs + 'ms)', {
+          found: !!job,
+          jobId: job?.id,
+          jobType: job?.job_type,
+          documentId: job?.document_id,
+          error: pickErr?.message || null
+        });
+        
+        // crawler_success_temp와 동일한 에러 처리
+        if (pickErr) {
+          console.error('[CRITICAL] ❌ 작업 조회 실패:', pickErr);
+          // 에러를 반환하지 않고 null로 처리 (다음 시도 가능)
           job = null;
-          pickErr = jobsError;
-        } else if (jobs && Array.isArray(jobs)) {
-          // 성공: 배열의 첫 번째 요소 사용 (check-crawl-status 패턴)
-          job = jobs && jobs.length > 0 ? jobs[0] : null;
-          pickErr = null;
-          
-          console.error('[CRITICAL] 📋 작업 조회 완료: ' + totalElapsedMs + 'ms (쿼리: ' + queryElapsedMs + 'ms, 실행: ' + queryExecuteElapsedMs + 'ms)', {
-            found: !!job,
-            jobId: job?.id,
-            jobType: job?.job_type,
-            documentId: job?.document_id,
-            error: null
-          });
-        } else {
-          // 데이터가 없음
-          console.error('[CRITICAL] ⚠️ 작업 조회 결과 데이터 없음 (작업 없음으로 처리):', {
-            elapsedMs: totalElapsedMs,
-            queryElapsedMs: queryElapsedMs,
-            queryExecuteElapsedMs: queryExecuteElapsedMs
-          });
-          job = null;
-          pickErr = null;
         }
       } catch (queryError) {
         const queryElapsedMs = Date.now() - queryStartMs;
