@@ -1783,6 +1783,38 @@ export async function processQueue() {
 
         const fetchPageContent = async (targetUrl: string) => {
           console.log('🌍 페이지 다운로드 요청:', targetUrl);
+          
+          // Facebook/Instagram URL의 경우 처음부터 Puppeteer 사용 (이전 버전과 동일)
+          const isFacebookUrl = targetUrl.includes('facebook.com') || targetUrl.includes('instagram.com');
+          if (isFacebookUrl) {
+            console.log(`🔍 Facebook/Instagram URL 감지: ${targetUrl}. Puppeteer를 직접 사용합니다.`);
+            try {
+              // PuppeteerCrawlingService 인스턴스 생성 (한 번만 생성)
+              if (!puppeteerService) {
+                puppeteerService = new PuppeteerCrawlingService();
+              }
+              
+              const puppeteerResult = await puppeteerService.crawlMetaPage(targetUrl, false, true); // skipUrlCheck=true로 모든 도메인 허용
+              
+              if (puppeteerResult && puppeteerResult.content && puppeteerResult.content.length >= 100) {
+                console.log(`✅ Puppeteer로 콘텐츠 추출 성공: ${puppeteerResult.content.length}자`);
+                return {
+                  textContent: puppeteerResult.content,
+                  pageTitle: puppeteerResult.title,
+                  htmlContent: '' // Puppeteer 결과는 HTML이 별도로 필요 없음
+                };
+              } else {
+                console.warn(`⚠️ Puppeteer로 충분한 콘텐츠를 추출하지 못했습니다 (${puppeteerResult?.content?.length || 0}자). fetch로 fallback 시도...`);
+                // Puppeteer 실패 시 fetch로 fallback
+              }
+            } catch (puppeteerError: any) {
+              console.error(`❌ Puppeteer 크롤링 실패:`, puppeteerError);
+              console.warn(`⚠️ Puppeteer 실패, fetch로 fallback 시도...`);
+              // Puppeteer 실패 시 fetch로 fallback
+            }
+          }
+          
+          // 일반 URL 또는 Puppeteer 실패 시 fetch 사용
           const response = await fetch(targetUrl, {
             headers: commonHeaders,
             signal: AbortSignal.timeout(30000),
