@@ -146,6 +146,13 @@ export async function POST(request: NextRequest) {
       // 실제 HTTP 요청 (백그라운드 실행, await 없이)
       // ⚠️ POST 요청은 Authorization 헤더가 없으면 검증하지 않도록 설정됨
       // 하지만 내부 요청이므로 CRON_SECRET을 추가하지 않음 (검증 우회)
+      const fetchStartMs = Date.now();
+      console.error('[CRITICAL] 🔄 fetch 요청 시작:', {
+        url: consumeUrl,
+        method: 'POST',
+        timestamp: new Date().toISOString()
+      });
+      
       fetch(consumeUrl, {
         method: 'POST',
         headers: {
@@ -155,10 +162,13 @@ export async function POST(request: NextRequest) {
         // 중요: signal을 설정하지 않음 (백그라운드 실행이므로)
       })
         .then(async (response) => {
+          const fetchElapsedMs = Date.now() - fetchStartMs;
           console.error('[CRITICAL] 📥 HTTP 응답 수신:', {
+            elapsedMs: fetchElapsedMs,
             status: response.status,
             statusText: response.statusText,
-            ok: response.ok
+            ok: response.ok,
+            headers: Object.fromEntries(response.headers.entries())
           });
           
           // response body를 읽기 전에 clone (한 번만 읽을 수 있으므로)
@@ -168,6 +178,7 @@ export async function POST(request: NextRequest) {
             const text = await response.text();
             const json = JSON.parse(text);
             console.error('[CRITICAL] ✅ 큐 워커 처리 완료:', {
+              elapsedMs: fetchElapsedMs,
               status: response.status,
               success: json.success,
               message: json.message,
@@ -178,6 +189,7 @@ export async function POST(request: NextRequest) {
             // clone을 사용하여 다시 읽기
             const errorText = await responseClone.text();
             console.error('[CRITICAL] ✅ 큐 워커 처리 완료 (JSON 파싱 실패):', {
+              elapsedMs: fetchElapsedMs,
               status: response.status,
               response: errorText.substring(0, 500),
               parseError: parseError instanceof Error ? parseError.message : String(parseError)
@@ -185,13 +197,27 @@ export async function POST(request: NextRequest) {
           }
         })
         .catch((fetchErr) => {
+          const fetchElapsedMs = Date.now() - fetchStartMs;
           console.error('[CRITICAL] ❌ HTTP 요청 에러:', {
+            elapsedMs: fetchElapsedMs,
             error: fetchErr instanceof Error ? fetchErr.message : String(fetchErr),
             stack: fetchErr instanceof Error ? fetchErr.stack : undefined,
             name: fetchErr instanceof Error ? fetchErr.name : undefined,
-            url: consumeUrl
+            url: consumeUrl,
+            cause: fetchErr instanceof Error && 'cause' in fetchErr ? fetchErr.cause : undefined
           });
         });
+      
+      // 타임아웃 감지 (30초 후에도 응답이 없으면 로그)
+      setTimeout(() => {
+        const elapsedMs = Date.now() - fetchStartMs;
+        if (elapsedMs > 30000) {
+          console.error('[CRITICAL] ⚠️ HTTP 요청 타임아웃 감지 (30초 초과):', {
+            elapsedMs: elapsedMs,
+            url: consumeUrl
+          });
+        }
+      }, 30000);
       
       console.error('[CRITICAL] ✅ 큐 워커 트리거 완료 (백그라운드 HTTP 요청 실행 중)');
     } catch (triggerError) {
