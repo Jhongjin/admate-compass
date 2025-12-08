@@ -616,7 +616,7 @@ export async function processQueue() {
       
       try {
         // crawler_success_temp와 완전히 동일한 쿼리 구조
-        const { data: job, error: pickErr } = await supabase
+        const { data: fetchedJob, error: fetchedErr } = await supabase
           .from('processing_jobs')
           .select('id, document_id, job_type, status, attempts, max_attempts, priority, payload')
           .in('status', ['queued', 'retrying'])
@@ -624,6 +624,9 @@ export async function processQueue() {
           .order('scheduled_at', { ascending: true })
           .limit(1)
           .maybeSingle();
+        
+        job = fetchedJob;
+        pickErr = fetchedErr;
         
         const queryElapsedMs = Date.now() - queryStartMs;
         const totalElapsedMs = Date.now() - jobStartMs;
