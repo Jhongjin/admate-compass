@@ -620,42 +620,34 @@ export async function processQueue() {
       const queryStartMs = Date.now();
       
       try {
-        console.error('[CRITICAL] 🔍 Supabase 쿼리 실행 중 (check-crawl-status 패턴)...');
+        console.error('[CRITICAL] 🔍 Supabase 쿼리 실행 중 (check-crawl-status 패턴, 직접 await)...');
         
-        // check-crawl-status 패턴: 직접 await 사용 (타입: { data, error })
+        // check-crawl-status 패턴: 직접 await 사용 (타임아웃 없이)
+        // 타임아웃은 Vercel의 maxDuration으로 처리
         const jobsQuery = querySupabase
           .from('processing_jobs')
           .select('id, document_id, job_type, status, attempts, max_attempts, priority, payload')
           .in('status', ['queued', 'retrying'])
           .limit(1);
         
-        // 타임아웃을 위한 Promise.race 사용
-        // Supabase 쿼리 결과 타입: { data: T[] | null, error: PostgrestError | null }
-        const timeoutPromise = new Promise<{ data: null; error: Error }>((resolve) => {
-          const timeoutId = setTimeout(() => {
-            resolve({
-              data: null,
-              error: new Error(`쿼리 타임아웃: ${QUERY_TIMEOUT_MS}ms 초과`)
-            });
-          }, QUERY_TIMEOUT_MS);
-          
-          // 타임아웃이 제대로 설정되었는지 확인
-          console.error('[CRITICAL] ⏰ 타임아웃 Promise 설정 완료:', { 
-            timeoutMs: QUERY_TIMEOUT_MS, 
-            timeoutId: timeoutId 
-          });
+        console.error('[CRITICAL] 🔍 쿼리 실행 시작 (직접 await, 타임아웃 없음)...');
+        const queryExecuteStartMs = Date.now();
+        const { data: jobs, error: jobsError } = await jobsQuery;
+        const queryExecuteElapsedMs = Date.now() - queryExecuteStartMs;
+        
+        console.error('[CRITICAL] 🔍 쿼리 실행 완료:', { 
+          elapsedMs: queryExecuteElapsedMs,
+          hasError: !!jobsError,
+          hasData: !!jobs,
+          dataLength: Array.isArray(jobs) ? jobs.length : 0,
+          errorMessage: jobsError?.message
         });
         
-        console.error('[CRITICAL] 🔍 Promise.race 시작 (쿼리 vs 타임아웃)...');
-        const raceStartMs = Date.now();
-        const queryResult = await Promise.race([jobsQuery, timeoutPromise]);
-        const raceElapsedMs = Date.now() - raceStartMs;
-        console.error('[CRITICAL] 🔍 Promise.race 완료:', { 
-          elapsedMs: raceElapsedMs,
-          hasError: !!queryResult.error,
-          hasData: !!queryResult.data,
-          dataLength: Array.isArray(queryResult.data) ? queryResult.data.length : 0
-        });
+        // 결과 구성 (check-crawl-status 패턴과 동일)
+        const queryResult = {
+          data: jobs,
+          error: jobsError
+        };
         
         const queryElapsedMs = Date.now() - queryStartMs;
         const totalElapsedMs = Date.now() - jobStartMs;
@@ -665,17 +657,18 @@ export async function processQueue() {
           console.error('[CRITICAL] ❌ 작업 조회 쿼리 실패 (작업 없음으로 처리):', {
             elapsedMs: totalElapsedMs,
             queryElapsedMs: queryElapsedMs,
+            queryExecuteElapsedMs: queryExecuteElapsedMs,
             error: queryResult.error.message
           });
           job = null;
           pickErr = queryResult.error;
         } else if (queryResult.data && Array.isArray(queryResult.data)) {
           // 성공: 배열의 첫 번째 요소 사용 (check-crawl-status 패턴)
-          const jobs = queryResult.data;
-          job = jobs && jobs.length > 0 ? jobs[0] : null;
+          const jobsArray = queryResult.data;
+          job = jobsArray && jobsArray.length > 0 ? jobsArray[0] : null;
           pickErr = null;
           
-          console.error('[CRITICAL] 📋 작업 조회 완료: ' + totalElapsedMs + 'ms (쿼리: ' + queryElapsedMs + 'ms)', {
+          console.error('[CRITICAL] 📋 작업 조회 완료: ' + totalElapsedMs + 'ms (쿼리: ' + queryElapsedMs + 'ms, 실행: ' + queryExecuteElapsedMs + 'ms)', {
             found: !!job,
             jobId: job?.id,
             jobType: job?.job_type,
@@ -686,7 +679,8 @@ export async function processQueue() {
           // 데이터가 없음
           console.error('[CRITICAL] ⚠️ 작업 조회 결과 데이터 없음 (작업 없음으로 처리):', {
             elapsedMs: totalElapsedMs,
-            queryElapsedMs: queryElapsedMs
+            queryElapsedMs: queryElapsedMs,
+            queryExecuteElapsedMs: queryExecuteElapsedMs
           });
           job = null;
           pickErr = null;
