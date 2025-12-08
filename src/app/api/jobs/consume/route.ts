@@ -644,7 +644,8 @@ export async function processQueue() {
           .limit(1);
         
         // 쿼리 실행 (비동기로 실행하되 타임아웃 체크)
-        jobsQuery.then((result: any) => {
+        // Promise.resolve로 감싸서 완전한 Promise로 변환
+        Promise.resolve(jobsQuery).then((result: any) => {
           if (!queryResolved) {
             queryResolved = true;
             queryResult = result;
