@@ -608,16 +608,16 @@ export async function processQueue() {
       job = null;
       pickErr = null;
     } else {
-      // crawler_success_temp와 완전히 동일한 패턴 사용
-      // 가장 단순한 쿼리 패턴으로 복원
-      console.error('[CRITICAL] 🔍 작업 조회 쿼리 시작 (crawler_success_temp 패턴)...');
+      // check-crawl-status와 완전히 동일한 패턴 사용 (정상 작동하는 패턴)
+      // Promise.race나 타임아웃 없이 직접 await 사용
+      console.error('[CRITICAL] 🔍 작업 조회 쿼리 시작 (check-crawl-status 패턴, 타임아웃 없음)...');
       
       const queryStartMs = Date.now();
       
       try {
-        // crawler_success_temp와 완전히 동일한 쿼리 구조
-        // Vercel 서버리스 환경에서 타임아웃 방지를 위해 Promise.race 사용
-        const queryPromise = supabase
+        // check-crawl-status와 완전히 동일한 쿼리 구조
+        // 타임아웃 없이 직접 await (check-crawl-status는 이렇게 작동함)
+        const { data: fetchedJob, error: fetchedErr } = await supabase
           .from('processing_jobs')
           .select('id, document_id, job_type, status, attempts, max_attempts, priority, payload')
           .in('status', ['queued', 'retrying'])
@@ -626,17 +626,8 @@ export async function processQueue() {
           .limit(1)
           .maybeSingle();
         
-        // 5초 타임아웃 추가 (Vercel 서버리스 환경 대응)
-        const timeoutPromise = new Promise<{ data: null; error: { message: string } }>((resolve) => {
-          setTimeout(() => {
-            resolve({ data: null, error: { message: '쿼리 타임아웃: 5초 초과' } });
-          }, 5000);
-        });
-        
-        const result = await Promise.race([queryPromise, timeoutPromise]);
-        
-        job = result.data;
-        pickErr = result.error;
+        job = fetchedJob;
+        pickErr = fetchedErr;
         
         const queryElapsedMs = Date.now() - queryStartMs;
         const totalElapsedMs = Date.now() - jobStartMs;
@@ -649,7 +640,7 @@ export async function processQueue() {
           error: pickErr?.message || null
         });
         
-        // crawler_success_temp와 동일한 에러 처리
+        // check-crawl-status와 동일한 에러 처리
         if (pickErr) {
           console.error('[CRITICAL] ❌ 작업 조회 실패:', pickErr);
           // 에러를 반환하지 않고 null로 처리 (다음 시도 가능)
