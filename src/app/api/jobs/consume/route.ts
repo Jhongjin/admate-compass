@@ -624,7 +624,9 @@ export async function processQueue() {
         
         // check-crawl-status 패턴: 직접 await 사용 (타임아웃 없이)
         // 타임아웃은 Vercel의 maxDuration으로 처리
-        const jobsQuery = querySupabase
+        // 쿼리 구조를 check-crawl-status와 완전히 동일하게 맞춤
+        console.error('[CRITICAL] 🔍 쿼리 빌더 시작...');
+        let jobsQuery = querySupabase
           .from('processing_jobs')
           .select('id, document_id, job_type, status, attempts, max_attempts, priority, payload')
           .in('status', ['queued', 'retrying'])
@@ -632,7 +634,32 @@ export async function processQueue() {
         
         console.error('[CRITICAL] 🔍 쿼리 실행 시작 (직접 await, 타임아웃 없음)...');
         const queryExecuteStartMs = Date.now();
-        const { data: jobs, error: jobsError } = await jobsQuery;
+        
+        // 쿼리 실행 (check-crawl-status와 동일한 패턴)
+        let jobs: any[] | null = null;
+        let jobsError: any = null;
+        
+        try {
+          console.error('[CRITICAL] 🔍 await 시작...');
+          const result = await jobsQuery;
+          console.error('[CRITICAL] 🔍 await 완료:', { 
+            hasData: !!result.data,
+            hasError: !!result.error,
+            dataType: typeof result.data,
+            errorType: typeof result.error
+          });
+          
+          jobs = result.data;
+          jobsError = result.error;
+        } catch (awaitError) {
+          console.error('[CRITICAL] ❌ await 중 예외 발생:', {
+            error: awaitError instanceof Error ? awaitError.message : String(awaitError),
+            name: awaitError instanceof Error ? awaitError.name : undefined,
+            stack: awaitError instanceof Error ? awaitError.stack : undefined
+          });
+          jobsError = awaitError;
+        }
+        
         const queryExecuteElapsedMs = Date.now() - queryExecuteStartMs;
         
         console.error('[CRITICAL] 🔍 쿼리 실행 완료:', { 
@@ -640,7 +667,7 @@ export async function processQueue() {
           hasError: !!jobsError,
           hasData: !!jobs,
           dataLength: Array.isArray(jobs) ? jobs.length : 0,
-          errorMessage: jobsError?.message
+          errorMessage: jobsError?.message || (jobsError instanceof Error ? jobsError.message : String(jobsError))
         });
         
         // 결과 구성 (check-crawl-status 패턴과 동일)
