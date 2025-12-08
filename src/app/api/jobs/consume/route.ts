@@ -661,11 +661,11 @@ export async function processQueue() {
         const totalElapsedMs = Date.now() - jobStartMs;
         
         if (queryResult.error) {
-          // 타임아웃 또는 쿼리 에러
+          // 쿼리 에러
           console.error('[CRITICAL] ❌ 작업 조회 쿼리 실패 (작업 없음으로 처리):', {
             elapsedMs: totalElapsedMs,
             queryElapsedMs: queryElapsedMs,
-            raceElapsedMs: raceElapsedMs,
+            queryExecuteElapsedMs: queryExecuteElapsedMs,
             error: queryResult.error.message
           });
           job = null;
@@ -676,7 +676,7 @@ export async function processQueue() {
           job = jobs && jobs.length > 0 ? jobs[0] : null;
           pickErr = null;
           
-          console.error('[CRITICAL] 📋 작업 조회 완료: ' + totalElapsedMs + 'ms (쿼리: ' + queryElapsedMs + 'ms, race: ' + raceElapsedMs + 'ms)', {
+          console.error('[CRITICAL] 📋 작업 조회 완료: ' + totalElapsedMs + 'ms (쿼리: ' + queryElapsedMs + 'ms, 실행: ' + queryExecuteElapsedMs + 'ms)', {
             found: !!job,
             jobId: job?.id,
             jobType: job?.job_type,
@@ -688,7 +688,7 @@ export async function processQueue() {
           console.error('[CRITICAL] ⚠️ 작업 조회 결과 데이터 없음 (작업 없음으로 처리):', {
             elapsedMs: totalElapsedMs,
             queryElapsedMs: queryElapsedMs,
-            raceElapsedMs: raceElapsedMs
+            queryExecuteElapsedMs: queryExecuteElapsedMs
           });
           job = null;
           pickErr = null;
