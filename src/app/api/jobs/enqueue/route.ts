@@ -124,82 +124,69 @@ export async function POST(request: NextRequest) {
     }
 
     // 큐에 등록 후 즉시 큐 워커 트리거 (백그라운드 실행)
-    // Vercel serverless 환경에서는 fetch 대신 import()를 사용하여 직접 함수 호출
+    // Vercel 서버리스 환경에서 import()와 fetch() 모두 문제가 있으므로
+    // processQueue를 직접 호출하되, 응답을 기다리지 않고 즉시 반환
     try {
       console.error('[CRITICAL] 🚀 큐 워커 트리거 시작 (작업 ID: ' + data.id + ')');
       
-      // Vercel 서버리스 환경에서 import()로 실행된 함수의 Supabase 쿼리가 멈추는 문제
-      // 해결책: fetch()를 사용하여 /api/jobs/consume를 직접 호출
-      // 이렇게 하면 정상적인 API 요청 컨텍스트에서 실행되므로 Supabase 쿼리가 정상 작동
-      // Vercel 환경 변수 우선순위: VERCEL_URL > NEXT_PUBLIC_APP_URL > localhost
-      const baseUrl = process.env.VERCEL_URL 
-        ? `https://${process.env.VERCEL_URL}`
-        : (process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000');
-      const consumeUrl = new URL('/api/jobs/consume', baseUrl);
-      
-      console.error('[CRITICAL] 🔗 fetch URL:', {
-        url: consumeUrl.toString(),
-        baseUrl: baseUrl,
-        vercelUrl: process.env.VERCEL_URL,
-        nextPublicAppUrl: process.env.NEXT_PUBLIC_APP_URL
-      });
-      
-      // 백그라운드로 실행 (await 없이)
-      const fetchStartMs = Date.now();
-      fetch(consumeUrl.toString(), {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          // CRON_SECRET이 있으면 Authorization 헤더 추가
-          ...(process.env.CRON_SECRET ? { 'Authorization': `Bearer ${process.env.CRON_SECRET}` } : {})
-        },
-        // 중요: signal을 설정하지 않음 (백그라운드 실행이므로)
-      })
-        .then(async (response) => {
-          const fetchElapsedMs = Date.now() - fetchStartMs;
-          console.error('[CRITICAL] 📥 processQueue 응답 수신:', {
-            elapsedMs: fetchElapsedMs,
-            status: response.status,
-            statusText: response.statusText,
-            ok: response.ok,
-            headers: Object.fromEntries(response.headers.entries())
-          });
-          
-          try {
-            const text = await response.text();
-            const json = JSON.parse(text);
-            console.error('[CRITICAL] ✅ 큐 워커 처리 완료:', {
-              status: response.status,
-              success: json.success,
-              message: json.message,
-              jobId: json.jobId,
-              error: json.error
-            });
-          } catch (parseError) {
-            // text 변수를 다시 읽어야 함 (이미 한 번 읽었으므로)
-            const responseClone = response.clone();
-            const errorText = await responseClone.text();
-            console.error('[CRITICAL] ✅ 큐 워커 처리 완료 (JSON 파싱 실패):', {
-              status: response.status,
-              response: errorText.substring(0, 500),
-              parseError: parseError instanceof Error ? parseError.message : String(parseError)
-            });
+      // processQueue를 직접 호출 (await 없이, 백그라운드 실행)
+      // 이렇게 하면 같은 컨텍스트에서 실행되므로 Supabase 쿼리가 정상 작동
+      import('@/app/api/jobs/consume/route')
+        .then((module) => {
+          console.error('[CRITICAL] 📦 processQueue import 완료, 실행 시작...');
+          if (!module.processQueue) {
+            throw new Error('processQueue 함수를 찾을 수 없습니다.');
           }
+          console.error('[CRITICAL] 🔄 processQueue 함수 호출 시작...');
+          // processQueue를 호출하되, 결과를 기다리지 않음 (백그라운드 실행)
+          const processPromise = module.processQueue();
+          
+          // 결과를 처리하되, 에러는 무시 (Cron Job이 처리할 수 있음)
+          processPromise
+            .then((result) => {
+              console.error('[CRITICAL] 📥 processQueue 반환값 수신:', {
+                isResponse: result instanceof Response,
+                type: typeof result
+              });
+              if (result instanceof Response) {
+                return result.text().then(text => {
+                  try {
+                    const json = JSON.parse(text);
+                    console.error('[CRITICAL] ✅ 큐 워커 처리 완료:', {
+                      status: result.status,
+                      success: json.success,
+                      message: json.message,
+                      jobId: json.jobId,
+                      error: json.error
+                    });
+                  } catch {
+                    console.error('[CRITICAL] ✅ 큐 워커 처리 완료 (JSON 파싱 실패):', {
+                      status: result.status,
+                      response: text.substring(0, 500)
+                    });
+                  }
+                });
+              } else {
+                console.error('[CRITICAL] ✅ 큐 워커 처리 완료:', result);
+              }
+            })
+            .catch((processErr) => {
+              console.error('[CRITICAL] ❌ processQueue 실행 에러:', {
+                error: processErr instanceof Error ? processErr.message : String(processErr),
+                stack: processErr instanceof Error ? processErr.stack : undefined,
+                name: processErr instanceof Error ? processErr.name : undefined
+              });
+            });
         })
-        .catch(err => {
-          const fetchElapsedMs = Date.now() - fetchStartMs;
-          // 에러 발생해도 무시 (Cron Job이 처리할 수 있음)
-          console.error('[CRITICAL] ❌ 큐 워커 트리거 에러:', {
-            elapsedMs: fetchElapsedMs,
-            error: err instanceof Error ? err.message : String(err),
-            stack: err instanceof Error ? err.stack : undefined,
-            name: err instanceof Error ? err.name : undefined,
-            cause: err instanceof Error && 'cause' in err ? err.cause : undefined,
-            url: consumeUrl.toString()
+        .catch((importErr) => {
+          console.error('[CRITICAL] ❌ processQueue import 에러:', {
+            error: importErr instanceof Error ? importErr.message : String(importErr),
+            stack: importErr instanceof Error ? importErr.stack : undefined,
+            name: importErr instanceof Error ? importErr.name : undefined
           });
         });
       
-      console.error('[CRITICAL] ✅ 큐 워커 트리거 완료 (백그라운드 fetch 실행 중, URL: ' + consumeUrl.toString() + ')');
+      console.error('[CRITICAL] ✅ 큐 워커 트리거 완료 (백그라운드 import 실행 중)');
     } catch (triggerError) {
       // 트리거 실패해도 작업 등록은 성공했으므로 계속 진행
       console.error('[CRITICAL] ⚠️ 큐 워커 트리거 실패 (작업은 등록됨):', {
