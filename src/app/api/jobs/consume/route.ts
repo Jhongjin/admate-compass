@@ -679,28 +679,60 @@ export async function processQueue() {
       });
       
       let loopIteration = 0;
+      const loopStartMs = Date.now();
+      
       while (!queryResolved && waitedMs < maxWaitMs) {
         loopIteration++;
+        const loopIterationStartMs = Date.now();
         
         // 첫 번째 반복 로그
         if (loopIteration === 1) {
           console.error('[CRITICAL] 🔄 while 루프 첫 번째 반복 시작');
         }
         
-        await new Promise(resolve => setTimeout(resolve, checkInterval));
-        waitedMs += checkInterval;
+        // setTimeout 대신 직접 시간 체크
+        const sleepStartMs = Date.now();
+        try {
+          await new Promise(resolve => {
+            const timerId = setTimeout(resolve, checkInterval);
+            // 타임아웃이 제대로 설정되었는지 확인
+            if (loopIteration === 1) {
+              console.error('[CRITICAL] ⏰ setTimeout 설정 완료:', { checkInterval: checkInterval, timerId: timerId });
+            }
+          });
+        } catch (sleepError) {
+          console.error('[CRITICAL] ❌ setTimeout 에러:', sleepError);
+        }
+        const sleepElapsedMs = Date.now() - sleepStartMs;
+        waitedMs += sleepElapsedMs; // 실제 경과 시간 사용
         
         // 진행 상황 로그 (매 100ms마다, 첫 번째 반복 포함)
-        if (loopIteration === 1 || waitedMs % 100 === 0) {
+        if (loopIteration === 1 || waitedMs % 100 < checkInterval || loopIteration % 2 === 0) {
           const elapsed = Date.now() - queryStartMs;
+          const loopElapsed = Date.now() - loopIterationStartMs;
           console.error('[CRITICAL] ⏳ 타임아웃 대기 중:', { 
             iteration: loopIteration,
             waitedMs: waitedMs, 
-            elapsedMs: elapsed, 
+            elapsedMs: elapsed,
+            sleepElapsedMs: sleepElapsedMs,
+            loopElapsedMs: loopElapsed,
             queryResolved: queryResolved,
             maxWaitMs: maxWaitMs,
             shouldContinue: !queryResolved && waitedMs < maxWaitMs
           });
+        }
+        
+        // 타임아웃 체크 (실제 경과 시간 기준)
+        if (Date.now() - queryStartMs >= QUERY_TIMEOUT_MS) {
+          console.error('[CRITICAL] ⏰ 실제 경과 시간이 타임아웃 초과:', { 
+            elapsed: Date.now() - queryStartMs, 
+            timeout: QUERY_TIMEOUT_MS 
+          });
+          if (!queryResolved) {
+            queryResolved = true;
+            queryResult = { data: null, error: new Error(`쿼리 타임아웃: ${QUERY_TIMEOUT_MS}ms 초과`) };
+          }
+          break;
         }
       }
       
