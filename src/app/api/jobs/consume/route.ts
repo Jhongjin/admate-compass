@@ -612,82 +612,30 @@ export async function processQueue() {
       const QUERY_TIMEOUT_MS = 2000; // 2초로 설정 (check-crawl-status와 동일)
       console.error('[CRITICAL] 🔍 작업 조회 쿼리 시작 (타임아웃: ' + QUERY_TIMEOUT_MS + 'ms, check-crawl-status 패턴)...');
       
-      // ⚠️ 작업 조회를 위해 Supabase 클라이언트를 완전히 새로 생성
-      // Vercel 서버리스 환경에서 import()로 실행된 함수는 별도 컨텍스트이므로
-      // Supabase 클라이언트를 완전히 새로 생성하고 연결을 테스트해야 함
-      console.error('[CRITICAL] 🔧 Supabase 클라이언트 재생성 시작...');
-      const clientCreateStartMs = Date.now();
+      // ⚠️ Vercel 서버리스 환경에서 import()로 실행된 함수의 Supabase 쿼리가 멈추는 문제
+      // 해결책: 기존 supabase 클라이언트를 재사용 (새로 생성하지 않음)
+      // 연결 테스트도 제거 (쿼리 자체가 멈추므로 의미 없음)
+      console.error('[CRITICAL] 🔧 기존 Supabase 클라이언트 재사용 (새로 생성하지 않음)...');
       
-      // Supabase 클라이언트를 직접 생성 (createPureClient 대신)
-      // 이렇게 하면 완전히 새로운 연결이 생성됨
-      const { createClient } = await import('@supabase/supabase-js');
-      const querySupabase = createClient(
-        process.env.NEXT_PUBLIC_SUPABASE_URL!,
-        process.env.SUPABASE_SERVICE_ROLE_KEY!,
-        {
-          auth: { persistSession: false },
-          db: { schema: 'public' },
-          global: {
-            fetch: (url, options = {}) => {
-              // AbortSignal.timeout을 사용하여 명시적 타임아웃 설정
-              return fetch(url, {
-                ...options,
-                signal: AbortSignal.timeout(5000) // 5초 타임아웃
-              });
-            }
-          }
-        }
-      );
-      
-      const clientCreateElapsedMs = Date.now() - clientCreateStartMs;
-      console.error('[CRITICAL] ✅ Supabase 클라이언트 직접 생성 완료:', { 
-        elapsedMs: clientCreateElapsedMs,
-        url: process.env.NEXT_PUBLIC_SUPABASE_URL ? '설정됨' : '미설정',
-        key: process.env.SUPABASE_SERVICE_ROLE_KEY ? '설정됨' : '미설정'
-      });
-      
-      // 연결 테스트: 간단한 쿼리로 연결 확인
-      console.error('[CRITICAL] 🔍 연결 테스트 시작...');
-      const connectionTestStartMs = Date.now();
-      try {
-        const { data: testData, error: testError } = await querySupabase
-          .from('processing_jobs')
-          .select('id')
-          .limit(1);
-        
-        const connectionTestElapsedMs = Date.now() - connectionTestStartMs;
-        console.error('[CRITICAL] ✅ 연결 테스트 완료:', { 
-          elapsedMs: connectionTestElapsedMs,
-          hasError: !!testError,
-          hasData: !!testData,
-          errorMessage: testError?.message
-        });
-        
-        if (testError) {
-          console.error('[CRITICAL] ⚠️ 연결 테스트 실패, 하지만 계속 진행...');
-        }
-      } catch (testError) {
-        const connectionTestElapsedMs = Date.now() - connectionTestStartMs;
-        console.error('[CRITICAL] ⚠️ 연결 테스트 예외 발생, 하지만 계속 진행:', {
-          elapsedMs: connectionTestElapsedMs,
-          error: testError instanceof Error ? testError.message : String(testError)
-        });
-      }
+      // 기존 supabase 클라이언트 재사용
+      const querySupabase = supabase;
+      console.error('[CRITICAL] ✅ Supabase 클라이언트 재사용 완료');
       
       const queryStartMs = Date.now();
       
       try {
-        console.error('[CRITICAL] 🔍 실제 작업 조회 쿼리 시작...');
+        console.error('[CRITICAL] 🔍 작업 조회 쿼리 시작 (기존 클라이언트 사용)...');
         
-        // check-crawl-status 패턴: 직접 await 사용
+        // 쿼리 구조를 최대한 단순화
+        // check-crawl-status와 동일한 패턴이지만 더 단순하게
         console.error('[CRITICAL] 🔍 쿼리 빌더 시작...');
-        let jobsQuery = querySupabase
+        const jobsQuery = querySupabase
           .from('processing_jobs')
           .select('id, document_id, job_type, status, attempts, max_attempts, priority, payload')
           .in('status', ['queued', 'retrying'])
           .limit(1);
         
-        console.error('[CRITICAL] 🔍 쿼리 실행 시작 (직접 await)...');
+        console.error('[CRITICAL] 🔍 쿼리 실행 시작 (직접 await, 단순화된 패턴)...');
         const queryExecuteStartMs = Date.now();
         
         // 쿼리 실행 (check-crawl-status와 동일한 패턴)
@@ -695,7 +643,7 @@ export async function processQueue() {
         let jobsError: any = null;
         
         try {
-          console.error('[CRITICAL] 🔍 await 시작...');
+          console.error('[CRITICAL] 🔍 await 시작 (타임아웃 없음, Vercel maxDuration에 의존)...');
           const result = await jobsQuery;
           console.error('[CRITICAL] 🔍 await 완료:', { 
             hasData: !!result.data,
