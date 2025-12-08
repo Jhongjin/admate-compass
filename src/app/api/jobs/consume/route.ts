@@ -643,36 +643,57 @@ export async function processQueue() {
           .in('status', ['queued', 'retrying'])
           .limit(1);
         
-        // 쿼리 실행 (비동기로 실행하되 타임아웃 체크)
-        // Promise.resolve로 감싸서 완전한 Promise로 변환
-        Promise.resolve(jobsQuery).then((result: any) => {
-          if (!queryResolved) {
-            queryResolved = true;
-            queryResult = result;
-            if (timeoutId) {
-              clearTimeout(timeoutId);
+        // 쿼리 실행 (직접 await하되 타임아웃 체크)
+        // 타임아웃이 발생하면 즉시 중단
+        const queryExecution = (async () => {
+          try {
+            const result = await jobsQuery;
+            if (!queryResolved) {
+              queryResolved = true;
+              queryResult = result;
+              if (timeoutId) {
+                clearTimeout(timeoutId);
+              }
+              console.error('[CRITICAL] ✅ 쿼리 완료 (await)');
             }
-            console.error('[CRITICAL] ✅ 쿼리 완료 (then 콜백)');
-          }
-        }).catch((err: any) => {
-          if (!queryResolved) {
-            queryResolved = true;
-            queryError = err;
-            if (timeoutId) {
-              clearTimeout(timeoutId);
+          } catch (err: any) {
+            if (!queryResolved) {
+              queryResolved = true;
+              queryError = err;
+              if (timeoutId) {
+                clearTimeout(timeoutId);
+              }
+              console.error('[CRITICAL] ❌ 쿼리 에러 (catch)');
             }
-            console.error('[CRITICAL] ❌ 쿼리 에러 (catch 콜백)');
           }
-        });
+        })();
         
-        // 타임아웃까지 대기 (최대 QUERY_TIMEOUT_MS + 100ms 여유)
-        const maxWaitMs = QUERY_TIMEOUT_MS + 100;
-        const checkInterval = 50; // 50ms마다 체크
+        // 타임아웃까지 대기 (최대 QUERY_TIMEOUT_MS + 200ms 여유)
+        const maxWaitMs = QUERY_TIMEOUT_MS + 200;
+        const checkInterval = 100; // 100ms마다 체크
         let waitedMs = 0;
         
         while (!queryResolved && waitedMs < maxWaitMs) {
           await new Promise(resolve => setTimeout(resolve, checkInterval));
           waitedMs += checkInterval;
+          
+          // 타임아웃이 이미 발생했는지 확인
+          if (timeoutTriggered) {
+            console.error('[CRITICAL] ⏰ 타임아웃 발생으로 쿼리 중단');
+            break;
+          }
+        }
+        
+        // 쿼리 실행이 완료될 때까지 대기 (타임아웃이 발생하지 않은 경우)
+        if (!timeoutTriggered) {
+          try {
+            await Promise.race([
+              queryExecution,
+              new Promise((resolve) => setTimeout(resolve, 100)) // 최대 100ms 더 대기
+            ]);
+          } catch (e) {
+            // 무시 (이미 queryError에 저장됨)
+          }
         }
         
         if (timeoutId) {
