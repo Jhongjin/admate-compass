@@ -640,14 +640,16 @@ export async function processQueue() {
         .limit(1);
       
       // 쿼리를 비동기로 실행하되 결과를 기다리지 않음
-      Promise.resolve(jobsQuery).then((result: any) => {
+      const queryPromise = Promise.resolve(jobsQuery);
+      queryPromise.then((result: any) => {
         if (!queryResolved) {
           queryResolved = true;
           queryResult = result;
           if (timeoutId) {
             clearTimeout(timeoutId);
           }
-          console.error('[CRITICAL] ✅ 쿼리 완료 (then, 비동기)');
+          const elapsed = Date.now() - queryStartMs;
+          console.error('[CRITICAL] ✅ 쿼리 완료 (then, 비동기):', { elapsedMs: elapsed, hasData: !!result?.data });
         }
       }).catch((err: any) => {
         if (!queryResolved) {
@@ -656,19 +658,31 @@ export async function processQueue() {
           if (timeoutId) {
             clearTimeout(timeoutId);
           }
-          console.error('[CRITICAL] ❌ 쿼리 에러 (catch, 비동기)');
+          const elapsed = Date.now() - queryStartMs;
+          console.error('[CRITICAL] ❌ 쿼리 에러 (catch, 비동기):', { elapsedMs: elapsed, error: err?.message });
         }
       });
       
-      // 타임아웃까지 대기 (최대 QUERY_TIMEOUT_MS + 50ms 여유)
-      const maxWaitMs = QUERY_TIMEOUT_MS + 50;
+      // 타임아웃까지 대기 (최대 QUERY_TIMEOUT_MS + 100ms 여유)
+      const maxWaitMs = QUERY_TIMEOUT_MS + 100;
       const checkInterval = 50; // 50ms마다 체크
       let waitedMs = 0;
+      let lastCheckMs = Date.now();
+      
+      console.error('[CRITICAL] ⏳ 타임아웃 대기 시작 (최대 ' + maxWaitMs + 'ms)...');
       
       while (!queryResolved && waitedMs < maxWaitMs) {
         await new Promise(resolve => setTimeout(resolve, checkInterval));
         waitedMs += checkInterval;
+        
+        // 진행 상황 로그 (매 200ms마다)
+        if (waitedMs % 200 === 0) {
+          const elapsed = Date.now() - queryStartMs;
+          console.error('[CRITICAL] ⏳ 타임아웃 대기 중:', { waitedMs: waitedMs, elapsedMs: elapsed, queryResolved: queryResolved });
+        }
       }
+      
+      console.error('[CRITICAL] ⏳ 타임아웃 대기 종료:', { waitedMs: waitedMs, queryResolved: queryResolved });
       
       if (timeoutId) {
         clearTimeout(timeoutId);
