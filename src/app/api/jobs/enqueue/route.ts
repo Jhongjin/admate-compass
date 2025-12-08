@@ -129,12 +129,18 @@ export async function POST(request: NextRequest) {
     try {
       console.error('[CRITICAL] 🚀 큐 워커 트리거 시작 (작업 ID: ' + data.id + ')');
       
-    // Vercel 보호 페이지(401)를 피하기 위해 절대 도메인 대신 상대 경로 사용
-    // 내부 라우팅으로 처리하여 보호 우회
-    const consumeUrl = `/api/jobs/consume`;
+    // 현재 요청의 URL을 사용하여 base URL 구성
+    // request.url을 사용하면 현재 배포된 도메인을 자동으로 가져옴
+    const requestUrl = new URL(request.url);
+    const baseUrl = `${requestUrl.protocol}//${requestUrl.host}`;
+    const consumeUrl = `${baseUrl}/api/jobs/consume`;
     
     console.error('[CRITICAL] 🔗 HTTP 요청 URL:', {
-      url: consumeUrl
+      url: consumeUrl,
+      baseUrl: baseUrl,
+      requestUrl: request.url,
+      protocol: requestUrl.protocol,
+      host: requestUrl.host
     });
       
       // 실제 HTTP 요청 (백그라운드 실행, await 없이)
