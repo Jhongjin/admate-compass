@@ -665,7 +665,6 @@ export async function processQueue() {
           console.error('[CRITICAL] ❌ 작업 조회 쿼리 실패 (작업 없음으로 처리):', {
             elapsedMs: totalElapsedMs,
             queryElapsedMs: queryElapsedMs,
-            queryExecuteElapsedMs: queryExecuteElapsedMs,
             error: queryResult.error.message
           });
           job = null;
@@ -676,7 +675,7 @@ export async function processQueue() {
           job = jobs && jobs.length > 0 ? jobs[0] : null;
           pickErr = null;
           
-          console.error('[CRITICAL] 📋 작업 조회 완료: ' + totalElapsedMs + 'ms (쿼리: ' + queryElapsedMs + 'ms, 실행: ' + queryExecuteElapsedMs + 'ms)', {
+          console.error('[CRITICAL] 📋 작업 조회 완료: ' + totalElapsedMs + 'ms (쿼리: ' + queryElapsedMs + 'ms)', {
             found: !!job,
             jobId: job?.id,
             jobType: job?.job_type,
@@ -687,8 +686,7 @@ export async function processQueue() {
           // 데이터가 없음
           console.error('[CRITICAL] ⚠️ 작업 조회 결과 데이터 없음 (작업 없음으로 처리):', {
             elapsedMs: totalElapsedMs,
-            queryElapsedMs: queryElapsedMs,
-            queryExecuteElapsedMs: queryExecuteElapsedMs
+            queryElapsedMs: queryElapsedMs
           });
           job = null;
           pickErr = null;
