@@ -595,54 +595,67 @@ export async function processQueue() {
     let job: any = null;
     let pickErr: any = null;
     
-    // 작업 조회 쿼리 타임아웃 (5초로 설정, 빠른 실패)
-    const QUERY_TIMEOUT_MS = 5000;
+    // 작업 조회 쿼리 타임아웃 (3초로 설정, 매우 빠른 실패)
+    const QUERY_TIMEOUT_MS = 3000;
     console.error('[CRITICAL] 🔍 작업 조회 쿼리 시작 (타임아웃: ' + QUERY_TIMEOUT_MS + 'ms)...');
     
     let queryTimedOut = false;
     let timeoutId: NodeJS.Timeout | null = null;
     let queryResolved = false;
     
-    // 타임아웃 체크를 먼저 설정
+    // 타임아웃 체크를 먼저 설정 (강제로 트리거되도록)
     timeoutId = setTimeout(() => {
+      console.error('[CRITICAL] ⏰ 타임아웃 setTimeout 콜백 실행됨');
       if (!queryResolved) {
         queryTimedOut = true;
         queryResolved = true;
         const elapsedMs = Date.now() - jobStartMs;
         console.error('[CRITICAL] ⏰ 타임아웃 트리거됨 (쿼리 미완료, 즉시 작업 없음으로 처리):', {
           elapsedMs,
-          timeoutMs: QUERY_TIMEOUT_MS
+          timeoutMs: QUERY_TIMEOUT_MS,
+          queryResolvedBefore: false
         });
         // 타임아웃 발생 시 즉시 작업 없음으로 처리
         job = null;
         pickErr = null;
+      } else {
+        console.error('[CRITICAL] ⏰ 타임아웃 setTimeout 콜백 실행됨 (쿼리 이미 완료됨)');
       }
     }, QUERY_TIMEOUT_MS);
     
-    // 쿼리 실행 (타임아웃이 발생해도 계속 실행됨)
+    // 쿼리 실행을 Promise.race로 래핑하여 강제 타임아웃
     try {
       console.error('[CRITICAL] 🔍 Supabase 쿼리 실행 중...');
       const queryStartMs = Date.now();
       
-      const { data, error } = await supabase
+      // 타임아웃 Promise 생성
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        setTimeout(() => {
+          console.error('[CRITICAL] ⏰ 타임아웃 Promise reject 실행됨');
+          reject(new Error(`작업 조회 쿼리 타임아웃: ${QUERY_TIMEOUT_MS}ms 초과`));
+        }, QUERY_TIMEOUT_MS);
+      });
+      
+      // 쿼리 Promise 생성
+      const queryPromise = supabase
         .from('processing_jobs')
         .select('id, document_id, job_type, status, attempts, max_attempts, priority, payload')
         .in('status', ['queued', 'retrying'])
         .limit(1)
         .maybeSingle();
       
-      const queryElapsedMs = Date.now() - queryStartMs;
-      const totalElapsedMs = Date.now() - jobStartMs;
+      // Promise.race로 타임아웃 강제 적용
+      console.error('[CRITICAL] 🔍 Promise.race 시작...');
+      const result = await Promise.race([timeoutPromise, queryPromise]);
       
-      // 타임아웃이 이미 발생했는지 확인
+      // 타임아웃이 발생했는지 확인
       if (queryTimedOut) {
         console.warn('[CRITICAL] ⚠️ 타임아웃 발생 후 쿼리 완료됨 (작업 없음으로 처리):', {
-          elapsedMs: totalElapsedMs,
-          queryElapsedMs
+          elapsedMs: Date.now() - jobStartMs
         });
         job = null;
         pickErr = null;
-      } else {
+      } else if (result && typeof result === 'object' && 'data' in result) {
         // 정상 쿼리 결과
         queryResolved = true;
         if (timeoutId) {
@@ -650,8 +663,10 @@ export async function processQueue() {
           timeoutId = null;
         }
         
-        job = data;
-        pickErr = error;
+        job = result.data;
+        pickErr = result.error;
+        const queryElapsedMs = Date.now() - queryStartMs;
+        const totalElapsedMs = Date.now() - jobStartMs;
         console.error('[CRITICAL] 📋 작업 조회 완료: ' + totalElapsedMs + 'ms (쿼리: ' + queryElapsedMs + 'ms)', {
           found: !!job,
           jobId: job?.id,
@@ -659,6 +674,19 @@ export async function processQueue() {
           documentId: job?.document_id,
           error: pickErr ? pickErr.message : null
         });
+      } else {
+        // 예상치 못한 결과
+        queryResolved = true;
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+          timeoutId = null;
+        }
+        console.error('[CRITICAL] ⚠️ 예상치 못한 쿼리 결과:', {
+          resultType: typeof result,
+          hasData: result && typeof result === 'object' && 'data' in result
+        });
+        job = null;
+        pickErr = null;
       }
     } catch (queryError) {
       queryResolved = true;
@@ -671,9 +699,11 @@ export async function processQueue() {
       }
       
       // 타임아웃이 발생했는지 확인
-      if (queryTimedOut) {
+      if (queryError instanceof Error && queryError.message.includes('타임아웃')) {
+        queryTimedOut = true;
         console.warn('[CRITICAL] ⚠️ 작업 조회 타임아웃 (catch 블록, 작업 없음으로 처리):', {
-          elapsedMs: pickMs
+          elapsedMs: pickMs,
+          error: queryError.message
         });
         job = null;
         pickErr = null;
