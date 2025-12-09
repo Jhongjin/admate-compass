@@ -134,67 +134,24 @@ export default function CrawlToIndexTestPage() {
   // 인덱싱된 문서 목록 (필터링 없이 모든 문서 표시 - 크롤링 테스트 목적)
   // maxDepth와 상관없이 크롤된 모든 페이지 리스트를 보여줌
   // 🔥 삭제된 문서는 항상 필터링하여 표시하지 않음
-  const recentDocuments = React.useMemo(() => {
-    const allDocs = documentsData?.data?.documents || [];
-    
-    // 🔥 삭제된 문서 ID로 필터링 (백엔드에서 삭제된 문서 제외)
-    // 🔥 테스트 페이지에서는 삭제된 문서 필터링도 완전 제거 - 모든 문서 표시
-    const filteredDocs = allDocs; // 삭제된 문서 필터링도 제거
-    
-    console.log('📋 [테스트 모드] 모든 문서 표시 (필터링 완전 제거):', {
-      전체_문서: allDocs.length,
-      필터링_후: filteredDocs.length,
-      documentsData_존재: !!documentsData,
-      data_존재: !!documentsData?.data,
-      documents_배열_존재: !!documentsData?.data?.documents,
-      첫_문서_정보: filteredDocs[0] ? {
-        id: filteredDocs[0].id?.substring(0, 8),
-        url: filteredDocs[0].url,
-        title: filteredDocs[0].title?.substring(0, 30),
-        status: filteredDocs[0].status,
-        type: filteredDocs[0].type
-      } : null
-    });
-    
-    // 백엔드 처리 상태 진단
-    console.log('📋 [백엔드 진단] 전체 문서 수:', allDocs.length, {
-      documentsData_exists: !!documentsData,
-      data_exists: !!documentsData?.data,
-      documents_array: Array.isArray(allDocs),
-      response_success: documentsData?.success,
-      삭제된_문서_ID_수: deletedDocumentIds.size,
-      필터링_후_문서_수: filteredDocs.length,
-      first_doc: filteredDocs[0] ? {
-        id: filteredDocs[0].id?.substring(0, 8),
-        url: filteredDocs[0].url,
-        title: filteredDocs[0].title,
-        status: filteredDocs[0].status,
-        chunk_count: filteredDocs[0].chunk_count,
-        type: filteredDocs[0].type
-      } : null,
-      all_urls: filteredDocs.map((d: Document) => d.url).filter(Boolean)
-    });
-    
-    // 백엔드에서 문서가 조회되었는지 확인
-    if (filteredDocs.length > 0) {
-      console.log('✅ [백엔드 확인] 문서가 정상적으로 조회되었습니다:', {
-        총_문서수: filteredDocs.length,
-        첫_문서_URL: filteredDocs[0]?.url,
-        첫_문서_상태: filteredDocs[0]?.status,
-        첫_문서_청크수: filteredDocs[0]?.chunk_count
-      });
-    } else if (allDocs.length > 0) {
-      console.warn('⚠️ [백엔드 확인] 모든 문서가 삭제되었거나 필터링되었습니다.', {
-        전체_문서: allDocs.length,
-        삭제된_ID_수: deletedDocumentIds.size
-      });
-    } else {
-      console.warn('⚠️ [백엔드 확인] 조회된 문서가 없습니다. 백엔드에서 인덱싱이 완료되지 않았을 수 있습니다.');
-    }
-    
-    // 🔥 테스트 페이지에서는 모든 필터링 제거 - 백엔드에서 조회된 모든 문서 표시
-    return filteredDocs;
-  }, [documentsData]);
+  // 🔥 테스트 페이지에서는 모든 필터링 제거 - 백엔드에서 조회된 모든 문서 즉시 반환
+  // 메모이제이션 제거하여 documentsData 변경 시 즉시 반영
+  const recentDocuments = documentsData?.data?.documents || [];
+  
+  // 디버깅 로그
+  console.log('📋 [문서 목록] 최종 반환:', {
+    전체_문서: recentDocuments.length,
+    documentsData_존재: !!documentsData,
+    data_존재: !!documentsData?.data,
+    documents_배열_존재: !!documentsData?.data?.documents,
+    첫_문서_정보: recentDocuments[0] ? {
+      id: recentDocuments[0].id?.substring(0, 8),
+      url: recentDocuments[0].url,
+      title: recentDocuments[0].title?.substring(0, 30),
+      status: recentDocuments[0].status,
+      type: recentDocuments[0].type
+    } : null
+  });
 
   // 도메인별 통계 계산
   const domainStats = React.useMemo(() => {
