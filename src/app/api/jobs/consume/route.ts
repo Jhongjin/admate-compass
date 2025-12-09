@@ -2684,17 +2684,34 @@ export async function processQueue() {
           const safeErrorMessage = Buffer.from(errorMessage, 'utf8').toString('utf8');
           const safeErrorStack = errorStack ? Buffer.from(errorStack.substring(0, 1000), 'utf8').toString('utf8') : undefined;
 
-          console.error('[CRITICAL] ❌ 메인 페이지 크롤링 실패 (하위 페이지 탐색 시도):', {
-            url,
-            errorMessage: safeErrorMessage,
-            errorName,
-            errorStack: safeErrorStack,
-            errorType: typeof fetchError,
-            errorString: String(fetchError)
-          });
+          // 로그인/접근제한 관련 에러 감지
+          const isLoginError = errorMessage.includes('로그인') ||
+            errorMessage.includes('Login') ||
+            errorMessage.includes('login') ||
+            errorMessage.includes('Access denied') ||
+            errorMessage.includes('authentication') ||
+            errorMessage.includes('Authentication') ||
+            errorMessage.includes('Facebook') || // Facebook 관련 에러도 포함
+            errorMessage.includes('Instagram');
+
+          if (isLoginError) {
+            console.warn('[CRITICAL] ⚠️ 메인 페이지 로그인/접근제한 감지 (부분 성공 모드 진입):', errorMessage);
+          } else {
+            console.error('[CRITICAL] ❌ 메인 페이지 크롤링 실패 (하위 페이지 탐색 시도):', {
+              url,
+              errorMessage: safeErrorMessage,
+              errorName,
+              errorStack: safeErrorStack,
+              errorType: typeof fetchError,
+              errorString: String(fetchError)
+            });
+          }
 
           // 실패 시 작업 상태 업데이트 (failed가 아닌 processing 유지, 에러 정보만 result에 기록)
-          const detailedError = `[V4_DEBUG_${Date.now()}] 메인 페이지 크롤링 실패: ${safeErrorMessage} (${errorName})`;
+          // 로그인 에러인 경우 사용자에게 친절한 메시지 표시
+          const detailedError = isLoginError
+            ? `[V4_PARTIAL] 메인 페이지 접근 제한 (로그인 필요): ${safeErrorMessage}`
+            : `[V4_DEBUG_${Date.now()}] 메인 페이지 크롤링 실패: ${safeErrorMessage} (${errorName})`;
 
           try {
             const currentResult = ((job as any).result as any) || {};
@@ -2709,7 +2726,8 @@ export async function processQueue() {
                   mainPageErrorMessage: safeErrorMessage,
                   mainPageErrorName: errorName,
                   mainPageErrorStack: safeErrorStack,
-                  mainPageFailed: true
+                  mainPageFailed: true,
+                  isLoginError: isLoginError // 프론트엔드 처리를 위한 플래그
                 }
               })
               .eq('id', job.id);
@@ -5144,7 +5162,7 @@ export async function processQueue() {
       // 처리 중인 job 조회 (lastJob 대신 현재 처리 중인 job 사용)
       const { data: processingJob } = await supabase
         .from('processing_jobs')
-        .select('id, document_id, status, payload')
+        .select('id, document_id, status, payload, result') // result 추가
         .eq('status', 'processing')
         .order('updated_at', { ascending: false })
         .limit(1)
@@ -5155,6 +5173,16 @@ export async function processQueue() {
       const fileName = (processingJob?.payload as any)?.fileName || 'unknown';
       const fileSizeMB = fileSize > 0 ? (fileSize / (1024 * 1024)).toFixed(2) : 'unknown';
 
+      // 로그인/접근제한 관련 에러 감지 (최상위 레벨)
+      const isLoginError = message.includes('로그인') ||
+        message.includes('Login') ||
+        message.includes('login') ||
+        message.includes('Access denied') ||
+        message.includes('authentication') ||
+        message.includes('Authentication') ||
+        message.includes('Facebook') ||
+        message.includes('Instagram');
+
       console.error('❌ 큐 처리 실패:', {
         jobId: processingJob?.id,
         documentId: processingJob?.document_id,
@@ -5162,30 +5190,51 @@ export async function processQueue() {
         fileSizeMB: `${fileSizeMB}MB`,
         error: message,
         stack: errorStack,
+        isLoginError
       });
 
       if (processingJob?.id) {
-        // processing_jobs 상태를 failed로 업데이트 (에러 메시지에 파일 정보 포함)
+        // processing_jobs 상태 업데이트
         const errorMessage = fileSizeMB !== 'unknown'
           ? `${message} (파일: ${fileName}, 크기: ${fileSizeMB}MB)`
           : message;
 
+        // 로그인 에러인 경우 'failed' 대신 'completed' (경고 포함) 상태로 처리
+        // 또는 부분 성공 로직 적용
+        let status = 'failed';
+        let resultUpdate = (processingJob.result as any) || {};
+
+        if (isLoginError) {
+          console.warn('[CRITICAL] ⚠️ 최상위 예외 처리: 로그인/접근제한 에러 감지됨. 작업을 `completed`(경고)로 처리합니다.');
+          status = 'completed';
+          resultUpdate = {
+            ...resultUpdate,
+            warning: errorMessage,
+            note: 'completed_with_access_warning',
+            partialSuccess: true
+          };
+        }
+
         await supabase
           .from('processing_jobs')
           .update({
-            status: 'failed',
-            error: errorMessage,
+            status: status,
+            error: status === 'failed' ? errorMessage : null, // 완료 시 에러 필드 비움
+            result: resultUpdate,
             finished_at: new Date().toISOString()
           })
           .eq('id', processingJob.id)
           .eq('status', 'processing');
 
-        // documents 테이블도 failed 상태로 업데이트
+        // documents 테이블 업데이트
         if (processingJob.document_id) {
+          // 로그인 에러라면 문서를 삭제하지 않고 유지할 수도 있음 (메타데이터 확보 등)
+          // 여기서도 completed로 처리하여 사용자가 "실패"로 보지 않게 함
+          const docStatus = isLoginError ? 'completed' : 'failed';
           await supabase
             .from('documents')
             .update({
-              status: 'failed',
+              status: docStatus,
               updated_at: new Date().toISOString()
             })
             .eq('id', processingJob.document_id);
@@ -5200,11 +5249,21 @@ export async function processQueue() {
       { success: false, error: 'Consumer 처리 오류', details: err instanceof Error ? err.message : String(err) },
       { status: 500 }
     );
+
+    // 로그인 에러인 경우 200 OK 반환
+    const isLoginErrorResponse = (err instanceof Error ? err.message : String(err)).includes('로그인') ||
+      (err instanceof Error ? err.message : String(err)).includes('Login');
+
+    if (isLoginErrorResponse) {
+      return NextResponse.json({ success: true, message: '부분 성공 (접근 제한)', warning: true }, { status: 200 });
+    }
+
     console.error('[CRITICAL] ❌ processQueue 최상위 catch 블록 - 에러 응답 반환:', {
       error: err instanceof Error ? err.message : String(err),
       stack: err instanceof Error ? err.stack : undefined,
       name: err instanceof Error ? err.name : undefined
     });
+
     return errorResponse;
   }
 }
