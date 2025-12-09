@@ -703,13 +703,37 @@ export default function CrawlToIndexTestPage() {
         
         break;
       case 'failed':
-        setCurrentStep('처리 실패');
+        // 🔥 실패 원인 확인 및 표시
+        const errorMessage = jobStatus?.result?.[0]?.error || jobStatus?.error || '알 수 없는 오류';
+        const errorDetails = jobStatus?.result?.[0]?.details || jobStatus?.result?.[0];
+        
+        console.error('❌ [작업 실패] 상세 정보:', {
+          jobId: jobStatus?.id,
+          error: errorMessage,
+          result: jobStatus?.result,
+          errorDetails: errorDetails
+        });
+        
+        setCurrentStep(`처리 실패: ${errorMessage}`);
         setProgress(0);
         setIsCrawling(false);
         
+        // 🔥 실패 원인 토스트 표시
+        if (errorMessage && errorMessage !== '알 수 없는 오류') {
+          toast.error(`크롤링 실패: ${errorMessage}`, {
+            duration: 10000, // 10초간 표시
+            description: errorDetails ? JSON.stringify(errorDetails).substring(0, 200) : undefined
+          });
+        } else {
+          toast.error('크롤링 중 오류가 발생했습니다.');
+        }
+        
         // 🔥 실패 상태이지만 실제로 문서가 인덱싱되었는지 확인
         const checkFailedJobDocuments = async () => {
-          console.log('🔍 [작업 실패] 문서 목록 확인 중...');
+          console.log('🔍 [작업 실패] 문서 목록 확인 중...', {
+            errorMessage,
+            errorDetails
+          });
           
           // 최소 3초 대기 (문서 인덱싱 완료 시간 고려)
           await new Promise(resolve => setTimeout(resolve, 3000));
