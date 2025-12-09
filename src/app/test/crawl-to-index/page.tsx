@@ -190,7 +190,7 @@ export default function CrawlToIndexTestPage() {
       let subdomainCount = 0;
       let otherDomainCount = 0;
 
-      recentDocuments.forEach((doc: Document) => {
+      documentsWithUrl.forEach((doc: Document) => {
         if (!doc.url) return;
         try {
           const docUrl = new URL(doc.url);
