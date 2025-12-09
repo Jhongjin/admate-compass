@@ -679,7 +679,7 @@ export class PuppeteerCrawlingService {
             return {
               id: `crawled_${Date.now()}`,
               url: actualUrl || url,
-              type: 'url',
+              type: 'general' as const,
               lastUpdated: new Date().toISOString(),
               contentLength: enhancedContent.length,
               content: enhancedContent,
