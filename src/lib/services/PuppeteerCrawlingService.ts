@@ -349,6 +349,13 @@ export class PuppeteerCrawlingService {
       }
 
       console.log(`📄 페이지 응답 상태: ${response.status()} - ${response.statusText()}`);
+      
+      // 🔥 실제 페이지 URL 확인 (리다이렉트 여부 확인)
+      const actualUrl = page.url();
+      console.log(`🔍 실제 페이지 URL: ${actualUrl} (원본: ${url})`);
+      if (actualUrl !== url) {
+        console.warn(`⚠️ URL 리다이렉트 감지: ${url} → ${actualUrl}`);
+      }
 
       if (!response.ok()) {
         console.error(`❌ 페이지 로드 실패: ${url} - HTTP ${response.status()}`);
@@ -534,6 +541,14 @@ export class PuppeteerCrawlingService {
       let content: string = contentResult as string;
 
       console.log(`📄 추출된 콘텐츠 길이: ${content.length}자`);
+      
+      // 🔥 콘텐츠 미리보기 로깅 (디버깅용)
+      if (content.length > 0) {
+        const preview = content.substring(0, 500);
+        console.log(`📄 콘텐츠 미리보기 (처음 500자):`, preview);
+      } else {
+        console.warn(`⚠️ 추출된 콘텐츠가 비어있습니다.`);
+      }
 
       // UTF-8 인코딩 보장
       content = await this.ensureUtf8Encoding(content);
@@ -619,6 +634,31 @@ export class PuppeteerCrawlingService {
         // 최종 콘텐츠 길이 확인 (Facebook/Instagram은 30자 이상이면 허용)
         if (!content || content.length < minContentLength) {
           console.error(`❌ 최종 콘텐츠 부족: ${url} - ${content?.length || 0}자 (최소 요구: ${minContentLength}자)`);
+          console.error(`❌ 최종 콘텐츠 미리보기:`, content?.substring(0, 500) || 'N/A');
+          console.error(`❌ 페이지 URL 확인:`, page.url());
+          console.error(`❌ 페이지 제목:`, title || '없음');
+          
+          // 🔥 페이지가 로그인 페이지인지 확인
+          const isLoginPage = await page.evaluate(() => {
+            const bodyText = document.body.textContent || '';
+            const loginIndicators = [
+              '로그인',
+              'login',
+              'sign in',
+              '계정',
+              'account',
+              'password',
+              '비밀번호'
+            ];
+            return loginIndicators.some(indicator => 
+              bodyText.toLowerCase().includes(indicator.toLowerCase())
+            ) && bodyText.length < 500; // 로그인 페이지는 보통 짧음
+          });
+          
+          if (isLoginPage) {
+            console.error(`❌ 로그인 페이지로 확인됨: ${url}`);
+          }
+          
           return null;
         }
       }
