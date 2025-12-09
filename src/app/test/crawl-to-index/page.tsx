@@ -192,21 +192,9 @@ export default function CrawlToIndexTestPage() {
       console.warn('⚠️ [백엔드 확인] 조회된 문서가 없습니다. 백엔드에서 인덱싱이 완료되지 않았을 수 있습니다.');
     }
     
-    // 크롤링 테스트 목적: 필터링 없이 모든 문서 반환 (단, 삭제된 문서는 제외)
-    console.log('📋 [문서 목록] 삭제된 문서 제외 후 표시:', {
-      전체_문서: allDocs.length,
-      삭제된_문서: deletedDocumentIds.size,
-      필터링_후: filteredDocs.length,
-      maxDepth: options.maxDepth,
-      note: '크롤링 테스트를 위해 모든 문서를 표시하되, 삭제된 문서는 제외합니다.'
-    });
-    
-    // 🔥 중요: documentsData 전체를 의존성으로 추가하여 캐시 업데이트 시 즉시 반영
-    // 🔥 삭제된 문서 ID도 의존성에 추가하여 삭제 시 즉시 필터링
-    // Set 객체는 참조 동일성으로 비교되므로 size와 문자열 배열을 의존성에 추가
-    // 🔥 isCrawling도 의존성에 추가하여 크롤링 상태 변경 시 필터링 로직 재실행
+    // 🔥 테스트 페이지에서는 모든 필터링 제거 - 백엔드에서 조회된 모든 문서 표시
     return filteredDocs;
-  }, [documentsData, options.maxDepth, deletedDocumentIds, deletedDocumentIds.size, Array.from(deletedDocumentIds).join(','), currentJobUrl, isCrawling]);
+  }, [documentsData]);
 
   // 도메인별 통계 계산
   const domainStats = React.useMemo(() => {
