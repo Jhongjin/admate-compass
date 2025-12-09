@@ -142,8 +142,9 @@ export default function CrawlToIndexTestPage() {
       return !deletedDocumentIds.has(doc.id);
     });
     
-    // 🔥 현재 작업 URL이 있으면 해당 URL과 관련된 문서만 표시 (작업 완료 후)
-    if (currentJobUrl) {
+    // 🔥 현재 작업 URL이 있고 크롤링이 완료되었을 때만 필터링 (진행 중일 때는 모든 문서 표시)
+    // isCrawling이 false이고 currentJobUrl이 있으면 작업 완료 후 필터링 적용
+    if (currentJobUrl && !isCrawling) {
       try {
         const jobUrlObj = new URL(currentJobUrl);
         const jobDomain = jobUrlObj.hostname;
@@ -163,15 +164,23 @@ export default function CrawlToIndexTestPage() {
           }
         });
         
-        console.log('🔍 [작업 필터링] 현재 작업 URL 기준 필터링:', {
+        console.log('🔍 [작업 필터링] 현재 작업 URL 기준 필터링 (작업 완료 후):', {
           작업_URL: currentJobUrl,
           작업_도메인: jobDomain,
           필터링_전: allDocs.length,
-          필터링_후: filteredDocs.length
+          필터링_후: filteredDocs.length,
+          isCrawling: isCrawling
         });
       } catch (e) {
         console.warn('⚠️ [작업 필터링] URL 파싱 실패:', e);
       }
+    } else if (currentJobUrl && isCrawling) {
+      // 크롤링 진행 중일 때는 필터링하지 않음 (모든 문서 표시)
+      console.log('📋 [작업 필터링] 크롤링 진행 중이므로 필터링하지 않음:', {
+        작업_URL: currentJobUrl,
+        isCrawling: isCrawling,
+        전체_문서: allDocs.length
+      });
     }
     
     // 백엔드 처리 상태 진단
@@ -222,8 +231,9 @@ export default function CrawlToIndexTestPage() {
     // 🔥 중요: documentsData 전체를 의존성으로 추가하여 캐시 업데이트 시 즉시 반영
     // 🔥 삭제된 문서 ID도 의존성에 추가하여 삭제 시 즉시 필터링
     // Set 객체는 참조 동일성으로 비교되므로 size와 문자열 배열을 의존성에 추가
+    // 🔥 isCrawling도 의존성에 추가하여 크롤링 상태 변경 시 필터링 로직 재실행
     return filteredDocs;
-  }, [documentsData, options.maxDepth, deletedDocumentIds, deletedDocumentIds.size, Array.from(deletedDocumentIds).join(','), currentJobUrl]);
+  }, [documentsData, options.maxDepth, deletedDocumentIds, deletedDocumentIds.size, Array.from(deletedDocumentIds).join(','), currentJobUrl, isCrawling]);
 
   // 도메인별 통계 계산
   const domainStats = React.useMemo(() => {
