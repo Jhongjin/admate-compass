@@ -405,171 +405,172 @@ export class NewDocumentProcessor {
       ];
       const isBlockedByLogin = loginPatterns.some((pattern) => lowerHtml.includes(pattern.toLowerCase()));
 
-      if (isBlockedByLogin && (url.includes('facebook.com') || url.includes('instagram.com'))) {
-        console.warn('⚠️ 로그인 페이지가 반환되었습니다. (NewDocumentProcessor) - 처리를 계속합니다.');
-        console.warn('DEBUG: Login page detected in NewDocumentProcessor - NOT THROWING ERROR (V3)');
-        // 에러를 던지지 않고 처리를 계속하거나 빈 내용을 반환하도록 수정
-        // throw new Error('DEBUG_TEST: Login page returned (NewDocProc) - If you see this, NewDocProc is RUNNING and UPDATED.');
-      }
+      console.warn('⚠️ 로그인 페이지가 반환되었습니다. (NewDocumentProcessor) - 처리를 계속합니다.');
+      console.warn('DEBUG: Login page detected in NewDocumentProcessor - NOT THROWING ERROR (V4_CHECK)');
+      console.error('*** [V4_CHECK] LOGIN DETECTED IN NEW DOCUMENT PROCESSOR ***');
+      // 에러를 던지지 않고 처리를 계속하거나 빈 내용을 반환하도록 수정
+      // throw new Error('DEBUG_TEST: Login page returned (NewDocProc) - If you see this, NewDocProc is RUNNING and UPDATED (V4).');
+    }
 
       // Cheerio로 HTML 파싱 및 텍스트 추출
       const text = this.extractTextFromHTMLWithCheerio(htmlContent);
 
-      if (!text || text.length < 100) {
-        throw new Error('크롤링된 콘텐츠가 너무 짧거나 비어있습니다. 접근 권한 또는 공개 여부를 확인해주세요.');
-      }
-
-      console.log('✅ 텍스트 추출 완료 (Cheerio):', url, `(${text.length}자)`);
-      return text;
-
-    } catch (error) {
-      console.error(`❌ URL 크롤링 오류: ${url}`, error);
-      return `URL 크롤링 실패: ${url}\n오류: ${error instanceof Error ? error.message : '알 수 없는 오류'}`;
+    if (!text || text.length < 100) {
+      // console.error('[V4_CHECK] Content too short');
+      throw new Error('크롤링된 콘텐츠가 너무 짧거나 비어있습니다. 접근 권한 또는 공개 여부를 확인해주세요.');
     }
+
+    console.log('✅ 텍스트 추출 완료 (Cheerio):', url, `(${text.length}자)`);
+    return text;
+
+  } catch(error) {
+    console.error(`❌ URL 크롤링 오류: ${url}`, error);
+    return `URL 크롤링 실패: ${url}\n오류: ${error instanceof Error ? error.message : '알 수 없는 오류'}`;
   }
+}
 
   /**
    * HTML에서 텍스트 추출 (Cheerio 기반 개선 버전)
    * 구조를 유지하면서 텍스트 추출
    */
   private extractTextFromHTMLWithCheerio(html: string): string {
-    try {
-      const $ = cheerio.load(html);
+  try {
+    const $ = cheerio.load(html);
 
-      // 텍스트 추출 헬퍼 함수
-      const extractTextWithStructure = ($element: cheerio.Cheerio): string => {
-        const $clone = $element.clone();
+    // 텍스트 추출 헬퍼 함수
+    const extractTextWithStructure = ($element: cheerio.Cheerio): string => {
+      const $clone = $element.clone();
 
-        // 스크립트, 스타일, 네비게이션 등 제거
-        $clone.find('script, style, nav, footer, header, aside').remove();
+      // 스크립트, 스타일, 네비게이션 등 제거
+      $clone.find('script, style, nav, footer, header, aside').remove();
 
-        // 링크는 텍스트만 표시
-        $clone.find('a').each((_, el) => {
+      // 링크는 텍스트만 표시
+      $clone.find('a').each((_, el) => {
+        const $el = $(el);
+        const text = $el.text().trim();
+        if (text) {
+          $el.replaceWith(` ${text} `);
+        } else {
+          $el.replaceWith(' ');
+        }
+      });
+
+      // 블록 요소를 줄바꿈으로 변환
+      const blockElements = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'div', 'li', 'td', 'th', 'tr', 'section', 'article', 'main'];
+      blockElements.forEach(tag => {
+        $clone.find(tag).each((_, el) => {
           const $el = $(el);
           const text = $el.text().trim();
           if (text) {
-            $el.replaceWith(` ${text} `);
+            $el.replaceWith(`\n${text}\n`);
           } else {
-            $el.replaceWith(' ');
+            $el.replaceWith('\n');
           }
         });
+      });
 
-        // 블록 요소를 줄바꿈으로 변환
-        const blockElements = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'div', 'li', 'td', 'th', 'tr', 'section', 'article', 'main'];
-        blockElements.forEach(tag => {
-          $clone.find(tag).each((_, el) => {
-            const $el = $(el);
-            const text = $el.text().trim();
-            if (text) {
-              $el.replaceWith(`\n${text}\n`);
-            } else {
-              $el.replaceWith('\n');
-            }
-          });
-        });
+      // <br> 태그는 줄바꿈으로 변환
+      $clone.find('br').each((_, el) => {
+        $(el).replaceWith('\n');
+      });
 
-        // <br> 태그는 줄바꿈으로 변환
-        $clone.find('br').each((_, el) => {
-          $(el).replaceWith('\n');
-        });
-
-        // 인라인 요소는 공백으로 변환
-        $clone.find('span, strong, em, b, i, code').each((_, el) => {
-          const $el = $(el);
-          const text = $el.text().trim();
-          if (text) {
-            $el.replaceWith(` ${text} `);
-          }
-        });
-
-        // 최종 텍스트 추출
-        const html = $clone.html() || '';
-        let text = html
-          .replace(/<[^>]+>/g, ' ') // 모든 태그를 공백으로 변환
-          .replace(/&nbsp;/g, ' ') // HTML 엔티티 디코딩
-          .replace(/&amp;/g, '&')
-          .replace(/&lt;/g, '<')
-          .replace(/&gt;/g, '>')
-          .replace(/&quot;/g, '"')
-          .replace(/&#39;/g, "'")
-          .replace(/&apos;/g, "'");
-
-        // 연속된 공백을 하나로, 연속된 줄바꿈을 두 개로 제한
-        text = text.replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
-        return text;
-      };
-
-      // 주요 콘텐츠 영역 우선 추출
-      const contentSelectors = [
-        'main',
-        'article',
-        '[role="main"]',
-        '.content',
-        '.main-content',
-        '.page-content',
-        '#content',
-        '#main-content'
-      ];
-
-      let textContent = '';
-      let foundContent = false;
-
-      for (const selector of contentSelectors) {
-        const $content = $(selector).first();
-        if ($content.length > 0) {
-          const extracted = extractTextWithStructure($content.clone());
-          if (extracted.length > textContent.length) {
-            textContent = extracted;
-            foundContent = true;
-          }
-          if (textContent.length > 1000) break; // 충분한 콘텐츠를 찾으면 중단
+      // 인라인 요소는 공백으로 변환
+      $clone.find('span, strong, em, b, i, code').each((_, el) => {
+        const $el = $(el);
+        const text = $el.text().trim();
+        if (text) {
+          $el.replaceWith(` ${text} `);
         }
-      }
+      });
 
-      // 주요 콘텐츠 영역을 찾지 못했거나 너무 짧은 경우 body 전체에서 추출
-      if (!foundContent || textContent.length < 500) {
-        const $body = $('body');
-        if ($body.length > 0) {
-          const fullText = extractTextWithStructure($body.clone());
-          if (fullText.length > textContent.length) {
-            textContent = fullText;
-          }
+      // 최종 텍스트 추출
+      const html = $clone.html() || '';
+      let text = html
+        .replace(/<[^>]+>/g, ' ') // 모든 태그를 공백으로 변환
+        .replace(/&nbsp;/g, ' ') // HTML 엔티티 디코딩
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&quot;/g, '"')
+        .replace(/&#39;/g, "'")
+        .replace(/&apos;/g, "'");
+
+      // 연속된 공백을 하나로, 연속된 줄바꿈을 두 개로 제한
+      text = text.replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+      return text;
+    };
+
+    // 주요 콘텐츠 영역 우선 추출
+    const contentSelectors = [
+      'main',
+      'article',
+      '[role="main"]',
+      '.content',
+      '.main-content',
+      '.page-content',
+      '#content',
+      '#main-content'
+    ];
+
+    let textContent = '';
+    let foundContent = false;
+
+    for (const selector of contentSelectors) {
+      const $content = $(selector).first();
+      if ($content.length > 0) {
+        const extracted = extractTextWithStructure($content.clone());
+        if (extracted.length > textContent.length) {
+          textContent = extracted;
+          foundContent = true;
         }
+        if (textContent.length > 1000) break; // 충분한 콘텐츠를 찾으면 중단
       }
-
-      return textContent;
-    } catch (error) {
-      console.error('❌ Cheerio 텍스트 추출 실패, 기본 방식으로 폴백:', error);
-      // 폴백: 기본 정규식 방식
-      return this.extractTextFromHTML(html);
     }
+
+    // 주요 콘텐츠 영역을 찾지 못했거나 너무 짧은 경우 body 전체에서 추출
+    if (!foundContent || textContent.length < 500) {
+      const $body = $('body');
+      if ($body.length > 0) {
+        const fullText = extractTextWithStructure($body.clone());
+        if (fullText.length > textContent.length) {
+          textContent = fullText;
+        }
+      }
+    }
+
+    return textContent;
+  } catch (error) {
+    console.error('❌ Cheerio 텍스트 추출 실패, 기본 방식으로 폴백:', error);
+    // 폴백: 기본 정규식 방식
+    return this.extractTextFromHTML(html);
   }
+}
 
   /**
    * HTML에서 텍스트 추출 (기본 버전 - 폴백용)
    */
   private extractTextFromHTML(html: string): string {
-    // 스크립트와 스타일 태그 제거
-    let text = html
-      .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
-      .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
-      .replace(/<noscript[^>]*>[\s\S]*?<\/noscript>/gi, '')
-      .replace(/<[^>]+>/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
+  // 스크립트와 스타일 태그 제거
+  let text = html
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+    .replace(/<noscript[^>]*>[\s\S]*?<\/noscript>/gi, '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 
-    // HTML 엔티티 디코딩
-    text = text
-      .replace(/&nbsp;/g, ' ')
-      .replace(/&amp;/g, '&')
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/&quot;/g, '"')
-      .replace(/&#39;/g, "'")
-      .replace(/&apos;/g, "'");
+  // HTML 엔티티 디코딩
+  text = text
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'");
 
-    return text;
-  }
+  return text;
+}
 
   /**
    * @deprecated 이 메서드들은 더 이상 사용되지 않습니다.
@@ -585,110 +586,110 @@ export class NewDocumentProcessor {
   /**
    * 임베딩 생성 (즉시 처리 버전)
    */
-  private async generateEmbeddings(chunks: DocumentChunk[]): Promise<DocumentChunk[]> {
-    console.log(`🧠 임베딩 생성 시작: ${chunks.length}개 청크`);
+  private async generateEmbeddings(chunks: DocumentChunk[]): Promise < DocumentChunk[] > {
+  console.log(`🧠 임베딩 생성 시작: ${chunks.length}개 청크`);
 
-    try {
-      const result: DocumentChunk[] = [];
+  try {
+    const result: DocumentChunk[] = [];
 
-      // 모든 청크를 즉시 처리 (배치 없이)
-      for (let i = 0; i < chunks.length; i++) {
-        const chunk = chunks[i];
-        console.log(`🧠 청크 ${i + 1}/${chunks.length} 처리 중`);
+    // 모든 청크를 즉시 처리 (배치 없이)
+    for(let i = 0; i <chunks.length; i++) {
+  const chunk = chunks[i];
+  console.log(`🧠 청크 ${i + 1}/${chunks.length} 처리 중`);
 
-        try {
-          // 즉시 임베딩 생성
-          const embedding = this.generateHashEmbedding(chunk.content);
-          result.push({
-            ...chunk,
-            embedding,
-          });
-          console.log(`✅ 청크 ${i + 1} 완료`);
-        } catch (error) {
-          console.error(`❌ 청크 ${i + 1} 실패:`, error);
-          // 실패한 청크는 기본 임베딩으로 처리
-          result.push({
-            ...chunk,
-            embedding: this.generateHashEmbedding(''),
-          });
-        }
-      }
+  try {
+    // 즉시 임베딩 생성
+    const embedding = this.generateHashEmbedding(chunk.content);
+    result.push({
+      ...chunk,
+      embedding,
+    });
+    console.log(`✅ 청크 ${i + 1} 완료`);
+  } catch (error) {
+    console.error(`❌ 청크 ${i + 1} 실패:`, error);
+    // 실패한 청크는 기본 임베딩으로 처리
+    result.push({
+      ...chunk,
+      embedding: this.generateHashEmbedding(''),
+    });
+  }
+}
 
-      console.log(`✅ 임베딩 생성 완료: ${result.length}개`);
-      return result;
+console.log(`✅ 임베딩 생성 완료: ${result.length}개`);
+return result;
     } catch (error) {
-      console.error('❌ 임베딩 생성 중 오류 발생:', error);
-      throw error;
-    }
+  console.error('❌ 임베딩 생성 중 오류 발생:', error);
+  throw error;
+}
   }
 
   /**
    * 해시 기반 임베딩 생성
    */
   private generateHashEmbedding(text: string): number[] {
-    // 간단한 해시 기반 임베딩 (실제로는 BGE-M3 모델 사용)
-    const hash = this.simpleHash(text);
-    const embedding = new Array(this.embeddingDimension).fill(0);
+  // 간단한 해시 기반 임베딩 (실제로는 BGE-M3 모델 사용)
+  const hash = this.simpleHash(text);
+  const embedding = new Array(this.embeddingDimension).fill(0);
 
-    // 해시를 기반으로 임베딩 벡터 생성
-    for (let i = 0; i < this.embeddingDimension; i++) {
-      const seed = (hash + i) % 1000000;
-      embedding[i] = (Math.sin(seed) * 0.5 + 0.5) * 2 - 1; // -1 ~ 1 범위
-    }
-
-    return embedding;
+  // 해시를 기반으로 임베딩 벡터 생성
+  for (let i = 0; i < this.embeddingDimension; i++) {
+    const seed = (hash + i) % 1000000;
+    embedding[i] = (Math.sin(seed) * 0.5 + 0.5) * 2 - 1; // -1 ~ 1 범위
   }
+
+  return embedding;
+}
 
   /**
    * 간단한 해시 함수
    */
   private simpleHash(str: string): number {
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-      const char = str.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
-      hash = hash & hash; // 32비트 정수로 변환
-    }
-    return Math.abs(hash);
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const char = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // 32비트 정수로 변환
   }
+  return Math.abs(hash);
+}
 
   /**
    * 파일 타입 추출 (데이터베이스 제약 조건에 맞게 수정)
    */
   private getFileType(filename: string): 'file' | 'url' {
-    // 데이터베이스 제약 조건에 맞게 'file' 또는 'url'만 반환
-    return 'file';
-  }
+  // 데이터베이스 제약 조건에 맞게 'file' 또는 'url'만 반환
+  return 'file';
+}
 
   /**
    * 제목 추출
    */
   private extractTitle(filename: string): string {
-    return filename.replace(/\.[^/.]+$/, ''); // 확장자 제거
-  }
+  return filename.replace(/\.[^/.]+$/, ''); // 확장자 제거
+}
 
   /**
    * URL에서 제목 추출
    */
   private extractTitleFromUrl(url: string): string {
-    try {
-      const urlObj = new URL(url);
-      const pathname = urlObj.pathname;
-      const segments = pathname.split('/').filter(segment => segment.length > 0);
-      return segments[segments.length - 1] || urlObj.hostname;
-    } catch {
-      return url;
-    }
+  try {
+    const urlObj = new URL(url);
+    const pathname = urlObj.pathname;
+    const segments = pathname.split('/').filter(segment => segment.length > 0);
+    return segments[segments.length - 1] || urlObj.hostname;
+  } catch {
+    return url;
   }
+}
 
   /**
    * 문서 ID 생성
    */
   private generateDocumentId(): string {
-    const timestamp = Date.now();
-    const random = Math.random().toString(36).substring(2, 15);
-    return `doc_${timestamp}_${random}`;
-  }
+  const timestamp = Date.now();
+  const random = Math.random().toString(36).substring(2, 15);
+  return `doc_${timestamp}_${random}`;
+}
 }
 
 export const newDocumentProcessor = new NewDocumentProcessor();

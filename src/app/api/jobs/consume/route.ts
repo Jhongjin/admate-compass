@@ -2664,7 +2664,8 @@ export async function processQueue() {
 
         let mainPage;
         try {
-          console.log('*** DEPLOYMENT CHECK: V2 (Fixed Partial Success) ***');
+          console.log(`*** MODULE LOADED: route.ts [V4_CHECK] ${new Date().toISOString()} ***`);
+          console.log('*** DEPLOYMENT CHECK: V4 (Timestamp Verification) ***');
           // 메인 페이지 크롤링 타임아웃: 30초
           const fetchTimeout = 30000;
           const fetchPromise = fetchPageContent(url);
@@ -2693,7 +2694,7 @@ export async function processQueue() {
           });
 
           // 실패 시 작업 상태 업데이트 (failed가 아닌 processing 유지, 에러 정보만 result에 기록)
-          const detailedError = `[V3_DEBUG] 메인 페이지 크롤링 실패: ${safeErrorMessage} (${errorName})`;
+          const detailedError = `[V4_DEBUG_${Date.now()}] 메인 페이지 크롤링 실패: ${safeErrorMessage} (${errorName})`;
 
           try {
             const currentResult = ((job as any).result as any) || {};
