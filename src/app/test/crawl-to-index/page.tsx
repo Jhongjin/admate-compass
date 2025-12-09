@@ -104,6 +104,8 @@ export default function CrawlToIndexTestPage() {
       
       // 상세 디버깅 로그
       const documents = data?.data?.documents || [];
+      // 🔥 첫 번째 문서의 전체 구조 출력 (URL 필드 확인용)
+      const firstDoc = documents[0];
       console.log('📥 문서 목록 조회:', {
         success: data?.success,
         total: documents.length,
@@ -121,7 +123,18 @@ export default function CrawlToIndexTestPage() {
           chunk_count: d.chunk_count,
           type: d.type
         })),
-        all_documents_urls: documents.map((d: Document) => d.url).filter(Boolean)
+        all_documents_urls: documents.map((d: Document) => d.url).filter(Boolean),
+        // 🔥 첫 번째 문서의 전체 필드 출력
+        첫_문서_전체_필드: firstDoc ? Object.keys(firstDoc) : null,
+        첫_문서_전체_값: firstDoc ? {
+          ...firstDoc,
+          // 큰 필드는 제외
+          content: firstDoc.content ? `[${firstDoc.content.length}자]` : null
+        } : null,
+        첫_문서_URL_존재: firstDoc ? 'url' in firstDoc : false,
+        첫_문서_URL_값: firstDoc?.url,
+        첫_문서_URL_타입: firstDoc?.url ? typeof firstDoc.url : null,
+        첫_문서_document_url: firstDoc ? (firstDoc as any).document_url : null
       });
       
       return data;
@@ -141,19 +154,31 @@ export default function CrawlToIndexTestPage() {
     
     // 🔥 강제 디버깅 로그 (항상 출력)
     if (typeof window !== 'undefined') {
+      const firstDoc = docs[0];
       console.group('📋 [문서 목록] 최종 반환');
       console.log('전체_문서:', docs.length);
       console.log('documentsData_존재:', !!documentsData);
       console.log('data_존재:', !!documentsData?.data);
       console.log('documents_배열_존재:', !!documentsData?.data?.documents);
       console.log('documentsData_전체:', documentsData);
-      console.log('첫_문서_정보:', docs[0] ? {
-        id: docs[0].id?.substring(0, 8),
-        url: docs[0].url,
-        title: docs[0].title?.substring(0, 30),
-        status: docs[0].status,
-        type: docs[0].type
+      console.log('첫_문서_정보:', firstDoc ? {
+        id: firstDoc.id?.substring(0, 8),
+        url: firstDoc.url,
+        title: firstDoc.title?.substring(0, 30),
+        status: firstDoc.status,
+        type: firstDoc.type
       } : null);
+      // 🔥 첫 번째 문서의 모든 필드 출력
+      if (firstDoc) {
+        console.log('첫_문서_전체_필드:', Object.keys(firstDoc));
+        console.log('첫_문서_URL_존재:', 'url' in firstDoc);
+        console.log('첫_문서_URL_값:', firstDoc.url);
+        console.log('첫_문서_document_url:', (firstDoc as any).document_url);
+        console.log('첫_문서_전체_객체:', {
+          ...firstDoc,
+          content: firstDoc.content ? `[${firstDoc.content.length}자]` : null
+        });
+      }
       console.log('모든_문서_URL:', docs.map((d: Document) => d.url).filter(Boolean));
       console.groupEnd();
     }
