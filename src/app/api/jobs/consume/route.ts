@@ -1744,10 +1744,10 @@ export async function processQueue() {
         const fetchPageContent = async (targetUrl: string) => {
           console.log('🌍 페이지 다운로드 요청:', targetUrl);
           
-          // Facebook/Instagram URL의 경우 처음부터 Puppeteer 사용 (fetch로 fallback하지 않음)
+          // Facebook/Instagram URL의 경우 처음부터 Puppeteer만 사용 (fetch 시도하지 않음)
           const isFacebookUrl = targetUrl.includes('facebook.com') || targetUrl.includes('instagram.com');
           if (isFacebookUrl) {
-            console.log(`🔍 Facebook/Instagram URL 감지: ${targetUrl}. Puppeteer를 직접 사용합니다.`);
+            console.log(`🔍 Facebook/Instagram URL 감지: ${targetUrl}. Puppeteer만 사용합니다 (fetch 시도 안 함).`);
             try {
               // PuppeteerCrawlingService 인스턴스 생성 (한 번만 생성)
               if (!puppeteerService) {
@@ -1756,8 +1756,8 @@ export async function processQueue() {
               
               const puppeteerResult = await puppeteerService.crawlMetaPage(targetUrl, false, true); // skipUrlCheck=true로 모든 도메인 허용
               
-              // 🔥 Facebook/Instagram의 경우 최소 콘텐츠 길이를 30자로 완화 (PuppeteerCrawlingService와 일치)
-              const minContentLength = 30;
+              // 🔥 Facebook/Instagram의 경우 최소 콘텐츠 길이를 10자로 더 완화 (링크 정보라도 추출)
+              const minContentLength = 10;
               
               if (puppeteerResult && puppeteerResult.content && puppeteerResult.content.length >= minContentLength) {
                 console.log(`✅ Puppeteer로 콘텐츠 추출 성공: ${puppeteerResult.content.length}자 (최소 요구: ${minContentLength}자)`);
@@ -1780,18 +1780,23 @@ export async function processQueue() {
                   hasResult: hasResult,
                   hasContent: hasContent,
                   title: title,
-                  contentPreview: puppeteerResult?.content?.substring(0, 200) || 'N/A'
+                  contentPreview: puppeteerResult?.content?.substring(0, 500) || 'N/A'
                 });
                 
-                throw new Error(`Facebook/Instagram 페이지에서 충분한 콘텐츠를 추출할 수 없습니다. (추출된 콘텐츠: ${contentLength}자, 최소 요구: ${minContentLength}자) 공개 접근이 가능한 페이지를 사용해 주세요.`);
+                throw new Error(`Facebook/Instagram 페이지에서 콘텐츠를 추출할 수 없습니다. (추출된 콘텐츠: ${contentLength}자) 이 페이지는 로그인이 필요하거나 봇 접근이 차단되었을 수 있습니다.`);
               }
             } catch (puppeteerError: any) {
               // 🔥 Puppeteer 실패 시 fetch로 fallback하지 않고 바로 에러 반환
               const errorMsg = puppeteerError instanceof Error 
                 ? puppeteerError.message 
                 : String(puppeteerError);
-              console.error(`❌ Puppeteer 크롤링 실패:`, errorMsg);
-              throw new Error(`Facebook/Instagram 페이지 크롤링 실패: ${errorMsg}. 공개 접근이 가능한 페이지를 사용해 주세요.`);
+              console.error(`❌ Puppeteer 크롤링 실패:`, {
+                url: targetUrl,
+                error: errorMsg,
+                errorType: typeof puppeteerError,
+                errorStack: puppeteerError instanceof Error ? puppeteerError.stack : undefined
+              });
+              throw new Error(`Facebook/Instagram 페이지 크롤링 실패: ${errorMsg}`);
             }
           }
           
