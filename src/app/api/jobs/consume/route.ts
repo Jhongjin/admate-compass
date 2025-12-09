@@ -2304,8 +2304,21 @@ export async function processQueue() {
               wasExistingDocument = true;
               
               // 🔥 이미 indexed 상태이고 chunk_count > 0인 문서는 건너뛰기
+              // 단, URL이 없는 경우에는 URL만 업데이트
               if (existingDoc.status === 'indexed' && existingDoc.chunk_count > 0) {
-                console.log(`[CRITICAL] ⏭️ 이미 인덱싱된 문서 건너뜀: ${targetUrl} (문서 ID: ${existingDoc.id}, 청크 수: ${existingDoc.chunk_count})`);
+                // URL이 없는 경우에만 URL 업데이트
+                if (!existingDoc.url || existingDoc.url.trim().length === 0) {
+                  console.log(`[CRITICAL] ⚠️ 이미 인덱싱된 문서이지만 URL이 없어 URL만 업데이트: ${targetUrl} (문서 ID: ${existingDoc.id})`);
+                  await supabase
+                    .from('documents')
+                    .update({
+                      url: targetUrl,
+                      updated_at: new Date().toISOString()
+                    })
+                    .eq('id', existingDoc.id);
+                } else {
+                  console.log(`[CRITICAL] ⏭️ 이미 인덱싱된 문서 건너뜀: ${targetUrl} (문서 ID: ${existingDoc.id}, 청크 수: ${existingDoc.chunk_count})`);
+                }
                 return {
                   documentId: existingDoc.id,
                   chunkCount: existingDoc.chunk_count,
