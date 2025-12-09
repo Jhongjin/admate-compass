@@ -142,46 +142,14 @@ export default function CrawlToIndexTestPage() {
       return !deletedDocumentIds.has(doc.id);
     });
     
-    // 🔥 현재 작업 URL이 있고 크롤링이 완료되었을 때만 필터링 (진행 중일 때는 모든 문서 표시)
-    // isCrawling이 false이고 currentJobUrl이 있으면 작업 완료 후 필터링 적용
-    if (currentJobUrl && !isCrawling) {
-      try {
-        const jobUrlObj = new URL(currentJobUrl);
-        const jobDomain = jobUrlObj.hostname;
-        
-        filteredDocs = filteredDocs.filter((doc: Document) => {
-          // URL이 null인 문서는 제외 (파일 업로드 문서 등)
-          if (!doc.url) return false;
-          
-          try {
-            const docUrlObj = new URL(doc.url);
-            const docDomain = docUrlObj.hostname;
-            
-            // 같은 도메인인 경우만 표시
-            return docDomain === jobDomain || docDomain.endsWith(`.${jobDomain}`);
-          } catch {
-            return false;
-          }
-        });
-        
-        console.log('🔍 [작업 필터링] 현재 작업 URL 기준 필터링 (작업 완료 후):', {
-          작업_URL: currentJobUrl,
-          작업_도메인: jobDomain,
-          필터링_전: allDocs.length,
-          필터링_후: filteredDocs.length,
-          isCrawling: isCrawling
-        });
-      } catch (e) {
-        console.warn('⚠️ [작업 필터링] URL 파싱 실패:', e);
-      }
-    } else if (currentJobUrl && isCrawling) {
-      // 크롤링 진행 중일 때는 필터링하지 않음 (모든 문서 표시)
-      console.log('📋 [작업 필터링] 크롤링 진행 중이므로 필터링하지 않음:', {
-        작업_URL: currentJobUrl,
-        isCrawling: isCrawling,
-        전체_문서: allDocs.length
-      });
-    }
+    // 🔥 테스트 페이지에서는 필터링 완전 제거 - 모든 문서 표시
+    // 크롤링 테스트 목적이므로 currentJobUrl 필터링 비활성화
+    console.log('📋 [테스트 모드] 모든 문서 표시 (필터링 없음):', {
+      전체_문서: allDocs.length,
+      필터링_후: filteredDocs.length,
+      currentJobUrl: currentJobUrl,
+      isCrawling: isCrawling
+    });
     
     // 백엔드 처리 상태 진단
     console.log('📋 [백엔드 진단] 전체 문서 수:', allDocs.length, {
