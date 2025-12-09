@@ -675,8 +675,14 @@ export class PuppeteerCrawlingService {
           if (pageInfo.linksCount > 0 && content && content.length >= 10) {
             console.warn(`⚠️ 콘텐츠가 부족하지만 링크가 ${pageInfo.linksCount}개 발견됨. 최소 정보로 처리 시도...`);
             // 최소한의 콘텐츠라도 반환 (링크 정보 포함)
+            const enhancedContent = content + '\n\n발견된 링크:\n' + pageInfo.links.map(l => `${l.text}: ${l.href}`).join('\n');
             return {
-              content: content + '\n\n발견된 링크:\n' + pageInfo.links.map(l => `${l.text}: ${l.href}`).join('\n'),
+              id: `crawled_${Date.now()}`,
+              url: actualUrl || url,
+              type: 'url',
+              lastUpdated: new Date().toISOString(),
+              contentLength: enhancedContent.length,
+              content: enhancedContent,
               title: title || 'Facebook Business'
             };
           }
