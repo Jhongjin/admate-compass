@@ -1744,7 +1744,7 @@ export async function processQueue() {
         const fetchPageContent = async (targetUrl: string) => {
           console.log('🌍 페이지 다운로드 요청:', targetUrl);
           
-          // Facebook/Instagram URL의 경우 처음부터 Puppeteer 사용 (이전 버전과 동일)
+          // Facebook/Instagram URL의 경우 처음부터 Puppeteer 사용 (fetch로 fallback하지 않음)
           const isFacebookUrl = targetUrl.includes('facebook.com') || targetUrl.includes('instagram.com');
           if (isFacebookUrl) {
             console.log(`🔍 Facebook/Instagram URL 감지: ${targetUrl}. Puppeteer를 직접 사용합니다.`);
@@ -1756,7 +1756,8 @@ export async function processQueue() {
               
               const puppeteerResult = await puppeteerService.crawlMetaPage(targetUrl, false, true); // skipUrlCheck=true로 모든 도메인 허용
               
-              if (puppeteerResult && puppeteerResult.content && puppeteerResult.content.length >= 100) {
+              if (puppeteerResult && puppeteerResult.content && puppeteerResult.content.length >= 50) {
+                // 🔥 콘텐츠 길이 기준을 100자에서 50자로 완화 (로그인 페이지 우회 시 일부 콘텐츠만 추출될 수 있음)
                 console.log(`✅ Puppeteer로 콘텐츠 추출 성공: ${puppeteerResult.content.length}자`);
                 return {
                   textContent: puppeteerResult.content,
@@ -1764,13 +1765,18 @@ export async function processQueue() {
                   htmlContent: '' // Puppeteer 결과는 HTML이 별도로 필요 없음
                 };
               } else {
-                console.warn(`⚠️ Puppeteer로 충분한 콘텐츠를 추출하지 못했습니다 (${puppeteerResult?.content?.length || 0}자). fetch로 fallback 시도...`);
-                // Puppeteer 실패 시 fetch로 fallback
+                // 🔥 Puppeteer가 충분한 콘텐츠를 추출하지 못한 경우 에러 발생 (fetch로 fallback하지 않음)
+                const contentLength = puppeteerResult?.content?.length || 0;
+                console.error(`❌ Puppeteer로 충분한 콘텐츠를 추출하지 못했습니다 (${contentLength}자)`);
+                throw new Error(`Facebook/Instagram 페이지에서 충분한 콘텐츠를 추출할 수 없습니다. (추출된 콘텐츠: ${contentLength}자) 공개 접근이 가능한 페이지를 사용해 주세요.`);
               }
             } catch (puppeteerError: any) {
-              console.error(`❌ Puppeteer 크롤링 실패:`, puppeteerError);
-              console.warn(`⚠️ Puppeteer 실패, fetch로 fallback 시도...`);
-              // Puppeteer 실패 시 fetch로 fallback
+              // 🔥 Puppeteer 실패 시 fetch로 fallback하지 않고 바로 에러 반환
+              const errorMsg = puppeteerError instanceof Error 
+                ? puppeteerError.message 
+                : String(puppeteerError);
+              console.error(`❌ Puppeteer 크롤링 실패:`, errorMsg);
+              throw new Error(`Facebook/Instagram 페이지 크롤링 실패: ${errorMsg}. 공개 접근이 가능한 페이지를 사용해 주세요.`);
             }
           }
           
