@@ -721,32 +721,32 @@ export default function CrawlToIndexTestPage() {
         break;
       case 'failed':
         // 🔥 실패 원인 확인 및 표시
-        const result = jobStatus?.result;
+        const failedResult = jobStatus?.result;
         let errorMessage = '알 수 없는 오류';
         let errorDetails: any = null;
         
-        // result가 배열인 경우
-        if (Array.isArray(result) && result.length > 0) {
-          const firstResult = result[0];
+        // failedResult가 배열인 경우
+        if (Array.isArray(failedResult) && failedResult.length > 0) {
+          const firstResult = failedResult[0];
           errorMessage = firstResult?.error || firstResult?.message || firstResult?.details || JSON.stringify(firstResult).substring(0, 200) || '알 수 없는 오류';
           errorDetails = firstResult;
         } 
-        // result가 객체인 경우
-        else if (result && typeof result === 'object') {
-          errorMessage = result.error || result.message || result.details || JSON.stringify(result).substring(0, 200) || '알 수 없는 오류';
-          errorDetails = result;
+        // failedResult가 객체인 경우
+        else if (failedResult && typeof failedResult === 'object') {
+          errorMessage = failedResult.error || failedResult.message || failedResult.details || JSON.stringify(failedResult).substring(0, 200) || '알 수 없는 오류';
+          errorDetails = failedResult;
         }
-        // result가 문자열인 경우
-        else if (typeof result === 'string') {
-          errorMessage = result;
+        // failedResult가 문자열인 경우
+        else if (typeof failedResult === 'string') {
+          errorMessage = failedResult;
         }
         
         console.error('❌ [작업 실패] 상세 정보:', {
           jobId: jobStatus?.id,
           error: errorMessage,
-          result_전체: result,
-          result_타입: typeof result,
-          result_배열여부: Array.isArray(result),
+          result_전체: failedResult,
+          result_타입: typeof failedResult,
+          result_배열여부: Array.isArray(failedResult),
           errorDetails: errorDetails
         });
         
