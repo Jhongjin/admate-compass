@@ -1756,19 +1756,34 @@ export async function processQueue() {
               
               const puppeteerResult = await puppeteerService.crawlMetaPage(targetUrl, false, true); // skipUrlCheck=true로 모든 도메인 허용
               
-              if (puppeteerResult && puppeteerResult.content && puppeteerResult.content.length >= 50) {
-                // 🔥 콘텐츠 길이 기준을 100자에서 50자로 완화 (로그인 페이지 우회 시 일부 콘텐츠만 추출될 수 있음)
-                console.log(`✅ Puppeteer로 콘텐츠 추출 성공: ${puppeteerResult.content.length}자`);
+              // 🔥 Facebook/Instagram의 경우 최소 콘텐츠 길이를 30자로 완화 (PuppeteerCrawlingService와 일치)
+              const minContentLength = 30;
+              
+              if (puppeteerResult && puppeteerResult.content && puppeteerResult.content.length >= minContentLength) {
+                console.log(`✅ Puppeteer로 콘텐츠 추출 성공: ${puppeteerResult.content.length}자 (최소 요구: ${minContentLength}자)`);
                 return {
                   textContent: puppeteerResult.content,
                   pageTitle: puppeteerResult.title,
                   htmlContent: '' // Puppeteer 결과는 HTML이 별도로 필요 없음
                 };
               } else {
-                // 🔥 Puppeteer가 충분한 콘텐츠를 추출하지 못한 경우 에러 발생 (fetch로 fallback하지 않음)
+                // 🔥 Puppeteer가 충분한 콘텐츠를 추출하지 못한 경우 상세 로그 출력
                 const contentLength = puppeteerResult?.content?.length || 0;
-                console.error(`❌ Puppeteer로 충분한 콘텐츠를 추출하지 못했습니다 (${contentLength}자)`);
-                throw new Error(`Facebook/Instagram 페이지에서 충분한 콘텐츠를 추출할 수 없습니다. (추출된 콘텐츠: ${contentLength}자) 공개 접근이 가능한 페이지를 사용해 주세요.`);
+                const hasResult = !!puppeteerResult;
+                const hasContent = !!puppeteerResult?.content;
+                const title = puppeteerResult?.title || '없음';
+                
+                console.error(`❌ Puppeteer로 충분한 콘텐츠를 추출하지 못했습니다:`, {
+                  url: targetUrl,
+                  contentLength: contentLength,
+                  minRequired: minContentLength,
+                  hasResult: hasResult,
+                  hasContent: hasContent,
+                  title: title,
+                  contentPreview: puppeteerResult?.content?.substring(0, 200) || 'N/A'
+                });
+                
+                throw new Error(`Facebook/Instagram 페이지에서 충분한 콘텐츠를 추출할 수 없습니다. (추출된 콘텐츠: ${contentLength}자, 최소 요구: ${minContentLength}자) 공개 접근이 가능한 페이지를 사용해 주세요.`);
               }
             } catch (puppeteerError: any) {
               // 🔥 Puppeteer 실패 시 fetch로 fallback하지 않고 바로 에러 반환
@@ -1828,16 +1843,34 @@ export async function processQueue() {
               
               const puppeteerResult = await puppeteerService.crawlMetaPage(targetUrl, false, true);
               
-              if (puppeteerResult && puppeteerResult.content && puppeteerResult.content.length >= 100) {
-                console.log(`✅ Puppeteer로 로그인 페이지 우회 성공: ${puppeteerResult.content.length}자`);
+              // 🔥 Facebook/Instagram의 경우 최소 콘텐츠 길이를 30자로 완화 (PuppeteerCrawlingService와 일치)
+              const minContentLength = 30;
+              
+              if (puppeteerResult && puppeteerResult.content && puppeteerResult.content.length >= minContentLength) {
+                console.log(`✅ Puppeteer로 로그인 페이지 우회 성공: ${puppeteerResult.content.length}자 (최소 요구: ${minContentLength}자)`);
                 return {
                   textContent: puppeteerResult.content,
                   pageTitle: puppeteerResult.title,
                   htmlContent: '' // Puppeteer 결과는 HTML이 별도로 필요 없음
                 };
               } else {
-                // Puppeteer도 실패한 경우 명확한 에러 메시지
-                throw new Error('로그인 페이지가 반환되어 크롤링할 수 없습니다. 공개 접근이 가능한 페이지를 사용해 주세요.');
+                // Puppeteer도 실패한 경우 상세 로그 출력
+                const contentLength = puppeteerResult?.content?.length || 0;
+                const hasResult = !!puppeteerResult;
+                const hasContent = !!puppeteerResult?.content;
+                const title = puppeteerResult?.title || '없음';
+                
+                console.error(`❌ Puppeteer로 로그인 페이지 우회 실패:`, {
+                  url: targetUrl,
+                  contentLength: contentLength,
+                  minRequired: minContentLength,
+                  hasResult: hasResult,
+                  hasContent: hasContent,
+                  title: title,
+                  contentPreview: puppeteerResult?.content?.substring(0, 200) || 'N/A'
+                });
+                
+                throw new Error(`로그인 페이지가 반환되어 크롤링할 수 없습니다. (추출된 콘텐츠: ${contentLength}자, 최소 요구: ${minContentLength}자) 공개 접근이 가능한 페이지를 사용해 주세요.`);
               }
             } catch (puppeteerRetryError: any) {
               // Puppeteer 재시도도 실패한 경우 명확한 에러 메시지
