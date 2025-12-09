@@ -420,7 +420,10 @@ export default function CrawlToIndexTestPage() {
         // 🔥 작업 완료 후에도 문서 생성이 계속 진행되므로 진행 표시 유지
         setCurrentStep('크롤링 완료! 문서 생성 및 인덱싱 중...');
         setProgress(95); // 95%로 설정 (문서 생성 대기 중)
-        // setIsCrawling(false); // 🔥 주석 처리: 문서 생성이 완료될 때까지 진행 표시 유지
+        // 🔥 setIsCrawling(false)는 주석 처리하지 않음
+        // 문서 생성이 완료되면 pollDocuments 내부에서 false로 설정되지만,
+        // 새로운 크롤링을 시작할 수 있도록 여기서는 false로 설정하지 않음
+        // 대신 문서 생성 완료 시점에만 false로 설정 (pollDocuments 내부)
         
         // 🔥 토스트 중복 방지: 이미 표시되었으면 스킵
         if (completionToastShownRef.current) {
@@ -790,10 +793,13 @@ export default function CrawlToIndexTestPage() {
       return;
     }
 
+    // 🔥 새로운 크롤링 시작 시 상태 완전 초기화
     setIsCrawling(true);
     setJobId(null);
+    setJobIdReady(false); // 🔥 작업 ID 준비 상태도 초기화
     setCurrentStep('작업 시작 중...');
     setProgress(0);
+    completionToastShownRef.current = false; // 🔥 토스트 플래그 초기화
     
     // 🔥 새로운 크롤링 시작 시 현재 작업 URL 설정
     setCurrentJobUrl(url.trim());
