@@ -363,30 +363,53 @@ export class PuppeteerCrawlingService {
       // 🔥 Facebook/Instagram 페이지의 경우 추가 대기 및 스크롤 (JavaScript 콘텐츠 로드 유도)
       if (url.includes('facebook.com') || url.includes('instagram.com')) {
         console.log(`⏳ Facebook/Instagram 페이지 추가 대기 및 스크롤...`);
-        // 추가 대기 (JavaScript 콘텐츠 로드 시간 확보)
-        await new Promise(resolve => setTimeout(resolve, 3000));
+        
+        // 🔥 로그인 페이지 감지 (URL 또는 페이지 내용 확인)
+        const currentUrl = page.url();
+        const isLoginPage = currentUrl.includes('/login') || 
+                           currentUrl.includes('/signin') ||
+                           currentUrl.includes('facebook.com/login') ||
+                           currentUrl.includes('instagram.com/accounts/login');
+        
+        if (isLoginPage) {
+          console.warn(`⚠️ 로그인 페이지로 리다이렉트됨: ${currentUrl}`);
+          // 로그인 페이지에서도 메타 정보나 기본 콘텐츠는 추출 가능하므로 계속 진행
+        }
+        
+        // 추가 대기 (JavaScript 콘텐츠 로드 시간 확보) - 5초로 증가
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        
+        // 🔥 특정 요소가 로드될 때까지 대기 (Facebook 페이지의 메인 콘텐츠 영역)
+        try {
+          await page.waitForSelector('main, article, [role="main"], .content, body', { timeout: 10000 }).catch(() => {
+            console.warn('⚠️ 메인 콘텐츠 영역 대기 타임아웃 (계속 진행)');
+          });
+        } catch (waitError) {
+          console.warn('⚠️ 요소 대기 실패 (계속 진행):', waitError);
+        }
         
         // 스크롤을 통해 콘텐츠 로드 유도 (Lazy loading 콘텐츠 활성화)
         try {
           await page.evaluate(async () => {
             await new Promise<void>((resolve) => {
               let totalHeight = 0;
-              const distance = 100;
+              const distance = 200; // 스크롤 거리 증가
               const timer = setInterval(() => {
                 const scrollHeight = document.body.scrollHeight;
                 window.scrollBy(0, distance);
                 totalHeight += distance;
 
-                if (totalHeight >= scrollHeight || totalHeight >= 2000) {
+                // 최대 3000px 스크롤 또는 페이지 끝까지
+                if (totalHeight >= scrollHeight || totalHeight >= 3000) {
                   clearInterval(timer);
                   resolve();
                 }
-              }, 100);
+              }, 150); // 스크롤 간격 증가
             });
           });
           console.log(`✅ 스크롤 완료, 추가 대기...`);
-          // 스크롤 후 추가 대기 (콘텐츠 로드 시간)
-          await new Promise(resolve => setTimeout(resolve, 2000));
+          // 스크롤 후 추가 대기 (콘텐츠 로드 시간) - 3초로 증가
+          await new Promise(resolve => setTimeout(resolve, 3000));
         } catch (scrollError) {
           console.warn(`⚠️ 스크롤 실패 (무시):`, scrollError);
         }
@@ -516,39 +539,86 @@ export class PuppeteerCrawlingService {
       content = await this.ensureUtf8Encoding(content);
 
       // 🔥 Facebook/Instagram 페이지의 경우 콘텐츠 길이 기준 완화 (로그인 페이지에서도 일부 콘텐츠 추출 가능)
-      const minContentLength = (url.includes('facebook.com') || url.includes('instagram.com')) ? 50 : 100;
+      const minContentLength = (url.includes('facebook.com') || url.includes('instagram.com')) ? 30 : 100; // 50자에서 30자로 더 완화
       
       if (!content || content.length < minContentLength) {
         console.warn(`⚠️ 콘텐츠 부족: ${url} - ${content.length}자 (최소 요구: ${minContentLength}자)`);
         
         // 🔥 Facebook/Instagram 페이지의 경우 로그인 페이지에서도 링크나 메타 정보는 추출 가능
-        if ((url.includes('facebook.com') || url.includes('instagram.com')) && content.length >= 30) {
-          console.log(`⚠️ 콘텐츠가 부족하지만 최소 길이(30자)는 충족, 링크나 메타 정보 추출 시도...`);
-          // 링크 추출 시도
-          const linkContent = await page.evaluate(() => {
+        if (url.includes('facebook.com') || url.includes('instagram.com')) {
+          console.log(`⚠️ Facebook/Instagram 페이지: 링크, 메타 정보, 모든 텍스트 추출 시도...`);
+          
+          // 🔥 더 공격적인 콘텐츠 추출 (로그인 페이지에서도 가능한 모든 정보)
+          const enhancedContent = await page.evaluate(() => {
+            // 모든 텍스트 추출 (body 전체)
+            const allText = document.body.innerText || document.body.textContent || '';
+            
+            // 모든 링크 추출
             const links = Array.from(document.querySelectorAll('a[href]'));
             const linkTexts = links
               .map(link => {
                 const href = link.getAttribute('href');
-                const text = link.textContent?.trim() || '';
-                if (href && text && href.startsWith('http')) {
-                  return `${text}: ${href}`;
+                const text = link.textContent?.trim() || link.innerText?.trim() || '';
+                if (href) {
+                  // 상대 경로를 절대 경로로 변환
+                  try {
+                    const absoluteUrl = new URL(href, window.location.href).href;
+                    return `${text || '링크'}: ${absoluteUrl}`;
+                  } catch {
+                    return href.startsWith('http') ? `${text || '링크'}: ${href}` : null;
+                  }
                 }
                 return null;
               })
               .filter(Boolean)
               .join('\n');
-            return linkTexts;
+            
+            // 메타 정보 추출
+            const metaTags = Array.from(document.querySelectorAll('meta[name], meta[property]'));
+            const metaInfo = metaTags
+              .map(meta => {
+                const name = meta.getAttribute('name') || meta.getAttribute('property');
+                const content = meta.getAttribute('content');
+                return name && content ? `${name}: ${content}` : null;
+              })
+              .filter(Boolean)
+              .join('\n');
+            
+            // 제목 정보
+            const title = document.title || '';
+            
+            return {
+              allText: allText.replace(/\s+/g, ' ').trim(),
+              links: linkTexts,
+              meta: metaInfo,
+              title: title
+            };
           });
           
-          if (linkContent && linkContent.length > 0) {
-            content = `${content}\n\n발견된 링크:\n${linkContent}`;
-            console.log(`✅ 링크 정보 추가: ${content.length}자`);
+          // 추출된 정보를 결합
+          const parts: string[] = [];
+          if (enhancedContent.allText && enhancedContent.allText.length > 0) {
+            parts.push(enhancedContent.allText);
+          }
+          if (enhancedContent.title && enhancedContent.title.length > 0) {
+            parts.push(`제목: ${enhancedContent.title}`);
+          }
+          if (enhancedContent.meta && enhancedContent.meta.length > 0) {
+            parts.push(`메타 정보:\n${enhancedContent.meta}`);
+          }
+          if (enhancedContent.links && enhancedContent.links.length > 0) {
+            parts.push(`발견된 링크:\n${enhancedContent.links}`);
+          }
+          
+          if (parts.length > 0) {
+            content = parts.join('\n\n');
+            console.log(`✅ 향상된 콘텐츠 추출 완료: ${content.length}자`);
           }
         }
         
-        // 최종 콘텐츠 길이 확인
+        // 최종 콘텐츠 길이 확인 (Facebook/Instagram은 30자 이상이면 허용)
         if (!content || content.length < minContentLength) {
+          console.error(`❌ 최종 콘텐츠 부족: ${url} - ${content?.length || 0}자 (최소 요구: ${minContentLength}자)`);
           return null;
         }
       }
