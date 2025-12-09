@@ -136,22 +136,30 @@ export default function CrawlToIndexTestPage() {
   // 🔥 삭제된 문서는 항상 필터링하여 표시하지 않음
   // 🔥 테스트 페이지에서는 모든 필터링 제거 - 백엔드에서 조회된 모든 문서 즉시 반환
   // 메모이제이션 제거하여 documentsData 변경 시 즉시 반영
-  const recentDocuments = documentsData?.data?.documents || [];
-  
-  // 디버깅 로그
-  console.log('📋 [문서 목록] 최종 반환:', {
-    전체_문서: recentDocuments.length,
-    documentsData_존재: !!documentsData,
-    data_존재: !!documentsData?.data,
-    documents_배열_존재: !!documentsData?.data?.documents,
-    첫_문서_정보: recentDocuments[0] ? {
-      id: recentDocuments[0].id?.substring(0, 8),
-      url: recentDocuments[0].url,
-      title: recentDocuments[0].title?.substring(0, 30),
-      status: recentDocuments[0].status,
-      type: recentDocuments[0].type
-    } : null
-  });
+  const recentDocuments = React.useMemo(() => {
+    const docs = documentsData?.data?.documents || [];
+    
+    // 🔥 강제 디버깅 로그 (항상 출력)
+    if (typeof window !== 'undefined') {
+      console.group('📋 [문서 목록] 최종 반환');
+      console.log('전체_문서:', docs.length);
+      console.log('documentsData_존재:', !!documentsData);
+      console.log('data_존재:', !!documentsData?.data);
+      console.log('documents_배열_존재:', !!documentsData?.data?.documents);
+      console.log('documentsData_전체:', documentsData);
+      console.log('첫_문서_정보:', docs[0] ? {
+        id: docs[0].id?.substring(0, 8),
+        url: docs[0].url,
+        title: docs[0].title?.substring(0, 30),
+        status: docs[0].status,
+        type: docs[0].type
+      } : null);
+      console.log('모든_문서_URL:', docs.map((d: Document) => d.url).filter(Boolean));
+      console.groupEnd();
+    }
+    
+    return docs;
+  }, [documentsData]);
 
   // 도메인별 통계 계산
   const domainStats = React.useMemo(() => {
