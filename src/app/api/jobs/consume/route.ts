@@ -1823,68 +1823,8 @@ export async function processQueue() {
 
           const htmlContent = await response.text();
 
-          // ⚠️ 로그인 페이지 감지 로직 제거: 이전 버전에서는 Facebook 페이지도 크롤링이 되었으므로
-          // 로그인 페이지로 리다이렉트되어도 Puppeteer를 통해 동적 콘텐츠를 처리할 수 있도록 허용
-          // Puppeteer가 로그인 페이지에서도 일부 링크를 추출할 수 있음
-          const lowerHtml = htmlContent.toLowerCase();
-          const loginPatterns = [
-            '계속하려면 로그인',
-            'facebook에 로그인',
-            'login to facebook',
-            'instagram에 로그인',
-            'log in to instagram',
-            '로그인하여 계속',
-          ];
-          const isBlockedByLogin = loginPatterns.some((pattern) => lowerHtml.includes(pattern.toLowerCase()));
-
-          if (isBlockedByLogin && (targetUrl.includes('facebook.com') || targetUrl.includes('instagram.com'))) {
-            console.warn(`⚠️ 로그인 페이지로 리다이렉트됨: ${targetUrl}. Puppeteer를 통해 동적 콘텐츠 처리 시도...`);
-            
-            // 로그인 페이지 감지 시 Puppeteer로 강제 전환
-            try {
-              if (!puppeteerService) {
-                puppeteerService = new PuppeteerCrawlingService();
-              }
-              
-              const puppeteerResult = await puppeteerService.crawlMetaPage(targetUrl, false, true);
-              
-              // 🔥 Facebook/Instagram의 경우 최소 콘텐츠 길이를 30자로 완화 (PuppeteerCrawlingService와 일치)
-              const minContentLength = 30;
-              
-              if (puppeteerResult && puppeteerResult.content && puppeteerResult.content.length >= minContentLength) {
-                console.log(`✅ Puppeteer로 로그인 페이지 우회 성공: ${puppeteerResult.content.length}자 (최소 요구: ${minContentLength}자)`);
-                return {
-                  textContent: puppeteerResult.content,
-                  pageTitle: puppeteerResult.title,
-                  htmlContent: '' // Puppeteer 결과는 HTML이 별도로 필요 없음
-                };
-              } else {
-                // Puppeteer도 실패한 경우 상세 로그 출력
-                const contentLength = puppeteerResult?.content?.length || 0;
-                const hasResult = !!puppeteerResult;
-                const hasContent = !!puppeteerResult?.content;
-                const title = puppeteerResult?.title || '없음';
-                
-                console.error(`❌ Puppeteer로 로그인 페이지 우회 실패:`, {
-                  url: targetUrl,
-                  contentLength: contentLength,
-                  minRequired: minContentLength,
-                  hasResult: hasResult,
-                  hasContent: hasContent,
-                  title: title,
-                  contentPreview: puppeteerResult?.content?.substring(0, 200) || 'N/A'
-                });
-                
-                throw new Error(`로그인 페이지가 반환되어 크롤링할 수 없습니다. (추출된 콘텐츠: ${contentLength}자, 최소 요구: ${minContentLength}자) 공개 접근이 가능한 페이지를 사용해 주세요.`);
-              }
-            } catch (puppeteerRetryError: any) {
-              // Puppeteer 재시도도 실패한 경우 명확한 에러 메시지
-              const errorMsg = puppeteerRetryError instanceof Error 
-                ? puppeteerRetryError.message 
-                : 'Puppeteer 크롤링 실패';
-              throw new Error(`로그인 페이지가 반환되어 크롤링할 수 없습니다. 공개 접근이 가능한 페이지를 사용해 주세요. (Puppeteer 재시도 실패: ${errorMsg})`);
-            }
-          }
+          // 🔥 Facebook/Instagram URL은 이미 위에서 Puppeteer로 처리했으므로, 여기서는 일반 URL만 처리
+          // 로그인 페이지 감지 로직 제거 (중복 제거)
 
           // Cheerio로 HTML 파싱
           const $ = cheerio.load(htmlContent);
