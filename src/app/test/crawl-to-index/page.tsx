@@ -679,6 +679,7 @@ export default function CrawlToIndexTestPage() {
               }
             }
           })();
+        };
         
         refreshDocuments();
         
