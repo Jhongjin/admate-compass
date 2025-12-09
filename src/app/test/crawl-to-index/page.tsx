@@ -163,7 +163,22 @@ export default function CrawlToIndexTestPage() {
 
   // 도메인별 통계 계산
   const domainStats = React.useMemo(() => {
-    if (!recentDocuments.length) return null;
+    // 🔥 URL이 있는 문서만 필터링하여 통계 계산
+    const documentsWithUrl = recentDocuments.filter((d: Document) => d.url && d.url.trim().length > 0);
+    if (!documentsWithUrl.length) {
+      console.warn('⚠️ [도메인 통계] URL이 있는 문서가 없습니다:', {
+        전체_문서: recentDocuments.length,
+        URL_있는_문서: documentsWithUrl.length,
+        문서_상세: recentDocuments.map((d: Document) => ({
+          id: d.id?.substring(0, 8),
+          title: d.title?.substring(0, 30),
+          url: d.url || 'NULL',
+          status: d.status,
+          type: d.type
+        }))
+      });
+      return null;
+    }
 
     try {
       const targetUrl = new URL(url);
@@ -209,7 +224,7 @@ export default function CrawlToIndexTestPage() {
 
       return {
         baseDomain,
-        totalDocuments: recentDocuments.length,
+        totalDocuments: documentsWithUrl.length, // URL이 있는 문서만 카운트
         domainList,
         sameDomainCount,
         subdomainCount,
