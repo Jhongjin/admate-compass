@@ -23,7 +23,7 @@ function verifyCronSecret(request: NextRequest): boolean {
 
   const authHeader = request.headers.get('authorization');
   const expectedToken = `Bearer ${process.env.CRON_SECRET}`;
-  
+
   if (authHeader !== expectedToken) {
     console.warn('❌ CRON_SECRET 검증 실패:', {
       received: authHeader ? 'present' : 'missing',
@@ -39,10 +39,10 @@ function verifyCronSecret(request: NextRequest): boolean {
 async function downloadFromStorage(supabase: any, bucket: string, path: string, retries: number = 3): Promise<Buffer> {
   const downloadStartMs = Date.now();
   console.log(`📥 Storage 다운로드 시작: ${bucket}/${path} (재시도 ${retries}회)`);
-  
+
   // Storage 다운로드 타임아웃 설정 (90초 - Supabase Gateway Timeout 및 네트워크 지연 대응)
   const DOWNLOAD_TIMEOUT = 90000; // 90초 (504 Gateway Timeout 대응, 큰 파일 다운로드 고려)
-  
+
   for (let attempt = 1; attempt <= retries; attempt++) {
     try {
       const downloadPromise = (async () => {
@@ -62,13 +62,13 @@ async function downloadFromStorage(supabase: any, bucket: string, path: string, 
         const arrayBuffer = await data.arrayBuffer();
         return Buffer.from(arrayBuffer);
       })();
-      
+
       const timeoutPromise = new Promise<never>((_, reject) => {
         setTimeout(() => {
           reject(new Error(`Storage 다운로드 타임아웃 (${DOWNLOAD_TIMEOUT / 1000}초): ${bucket}/${path}`));
         }, DOWNLOAD_TIMEOUT);
       });
-      
+
       const buffer = await Promise.race([downloadPromise, timeoutPromise]);
       const downloadMs = Date.now() - downloadStartMs;
       const sizeMB = (buffer.length / (1024 * 1024)).toFixed(2);
@@ -79,7 +79,7 @@ async function downloadFromStorage(supabase: any, bucket: string, path: string, 
       const isLastAttempt = attempt === retries;
       const isTimeout = error?.message?.includes('타임아웃') || error?.originalError?.status === 504;
       const isGatewayTimeout = error?.originalError?.status === 504 || error?.status === 504;
-      
+
       console.error(`❌ Storage 다운로드 실패 (시도 ${attempt}/${retries}, ${downloadMs}ms):`, {
         error: error?.message || error,
         status: error?.status || error?.originalError?.status,
@@ -87,7 +87,7 @@ async function downloadFromStorage(supabase: any, bucket: string, path: string, 
         isGatewayTimeout,
         isLastAttempt
       });
-      
+
       // 마지막 시도이거나 타임아웃이 아닌 경우 즉시 실패
       if (isLastAttempt) {
         // Gateway Timeout인 경우 더 명확한 에러 메시지
@@ -96,14 +96,14 @@ async function downloadFromStorage(supabase: any, bucket: string, path: string, 
         }
         throw error;
       }
-      
+
       // 재시도 전 대기 (지수 백오프)
       const backoffMs = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
       console.log(`⏳ 재시도 전 대기: ${backoffMs}ms...`);
       await new Promise(resolve => setTimeout(resolve, backoffMs));
     }
   }
-  
+
   // 이 코드는 실행되지 않아야 하지만 TypeScript를 위해 필요
   throw new Error('Storage 다운로드 실패: 모든 재시도 실패');
 }
@@ -111,23 +111,23 @@ async function downloadFromStorage(supabase: any, bucket: string, path: string, 
 async function processPdfBuffer(buffer: Buffer): Promise<string> {
   const pdf = (await import('pdf-parse')).default as any;
   const startMs = Date.now();
-  
+
   // 큰 파일의 경우 옵션 최적화
   const fileSizeMB = buffer.length / (1024 * 1024);
   const options: any = {};
-  
+
   if (fileSizeMB > 10) {
     // 큰 파일은 최대 페이지 수 제한 (메모리 및 시간 절약)
     // pdf-parse는 기본적으로 모든 페이지를 처리하지만, 
     // 매우 큰 파일의 경우 부분 처리 고려
     console.log(`📄 큰 PDF 처리 시작 (${fileSizeMB.toFixed(2)}MB) - 최적화 옵션 적용`);
   }
-  
+
   try {
     // PDF 파싱 타임아웃 설정 (5분)
     // 큰 파일(13MB+) 파싱에 5-8분 소요 가능하므로 타임아웃 설정
     const PDF_PARSE_TIMEOUT = 300000; // 5분
-    
+
     // 경고 메시지 필터링 (TT: undefined function 경고는 무시)
     const originalWarn = console.warn;
     const warnings: string[] = [];
@@ -140,22 +140,22 @@ async function processPdfBuffer(buffer: Buffer): Promise<string> {
         originalWarn.apply(console, args);
       }
     };
-    
+
     const parsePromise = pdf(buffer, options);
     const timeoutPromise = new Promise<never>((_, reject) => {
       setTimeout(() => {
         reject(new Error(`PDF 파싱 타임아웃 (${PDF_PARSE_TIMEOUT / 60000}분) - 파일 크기: ${fileSizeMB.toFixed(2)}MB`));
       }, PDF_PARSE_TIMEOUT);
     });
-    
+
     const res = await Promise.race([parsePromise, timeoutPromise]);
-    
+
     // 원래 console.warn 복원
     console.warn = originalWarn;
-    
+
     const parseMs = Date.now() - startMs;
     const textLengthKB = (res.text?.length || 0) / 1024;
-    
+
     // 폰트 경고가 있었는지 확인
     if (warnings.length > 0) {
       console.warn(`⚠️ PDF 폰트 경고 ${warnings.length}건 발생 (이미지 기반 PDF일 수 있음):`, {
@@ -164,7 +164,7 @@ async function processPdfBuffer(buffer: Buffer): Promise<string> {
         pages: res.numpages || 'unknown'
       });
     }
-    
+
     // 텍스트 추출이 매우 짧은 경우 경고 (파일명만 추출된 경우)
     const extractedText = res.text || '';
     if (extractedText.length < 100 && fileSizeMB > 0.1) {
@@ -176,7 +176,7 @@ async function processPdfBuffer(buffer: Buffer): Promise<string> {
         note: '이미지 기반 PDF의 경우 OCR이 필요하지만 현재 OCR 기능은 비활성화되어 있습니다.'
       });
     }
-    
+
     console.log(`✅ PDF 파싱 완료:`, {
       fileSizeMB: fileSizeMB.toFixed(2),
       textLengthKB: textLengthKB.toFixed(2),
@@ -185,7 +185,7 @@ async function processPdfBuffer(buffer: Buffer): Promise<string> {
       throughput: `${(textLengthKB / (parseMs / 1000)).toFixed(2)}KB/s`,
       fontWarnings: warnings.length > 0 ? `${warnings.length}건` : '없음'
     });
-    
+
     return extractedText;
   } catch (error) {
     const parseMs = Date.now() - startMs;
@@ -198,9 +198,9 @@ async function processDocxBuffer(buffer: Buffer): Promise<string> {
   const mammoth = (await import('mammoth')).default as any;
   const startMs = Date.now();
   const bufferSizeMB = (buffer.length / (1024 * 1024)).toFixed(2);
-  
+
   console.log(`📄 DOCX 파싱 시작: ${bufferSizeMB}MB`);
-  
+
   try {
     // DOCX 파싱 타임아웃 설정 (2분 - 작은 파일은 매우 빠르게 처리되어야 함)
     const DOCX_PARSE_TIMEOUT = 120000; // 2분
@@ -210,31 +210,31 @@ async function processDocxBuffer(buffer: Buffer): Promise<string> {
         reject(new Error(`DOCX 파싱 타임아웃 (${DOCX_PARSE_TIMEOUT / 60000}분) - 파일 크기: ${bufferSizeMB}MB`));
       }, DOCX_PARSE_TIMEOUT);
     });
-    
+
     const res = await Promise.race([parsePromise, timeoutPromise]);
     const parseMs = Date.now() - startMs;
     const extractedText = res.value || '';
     const textLengthKB = (extractedText.length / 1024).toFixed(2);
-    
+
     // 빈 텍스트 체크 및 에러 throw
     if (!extractedText || extractedText.trim().length === 0) {
       const errorMsg = 'DOCX에서 텍스트를 추출할 수 없습니다. 파일이 손상되었거나 텍스트가 없습니다.';
       console.error(`❌ ${errorMsg}`);
       throw new Error(errorMsg);
     }
-    
+
     console.log(`✅ DOCX 파싱 완료:`, {
       textLengthKB: textLengthKB,
       parseTime: `${parseMs}ms (${(parseMs / 1000).toFixed(1)}초)`,
       throughput: `${(parseFloat(textLengthKB) / (parseMs / 1000)).toFixed(2)}KB/s`,
       bufferSizeMB: bufferSizeMB
     });
-    
+
     return extractedText;
   } catch (error) {
     const parseMs = Date.now() - startMs;
     console.error(`❌ DOCX 파싱 실패 (${parseMs}ms):`, error);
-    
+
     // 에러 발생 시 상세 정보 로깅
     console.error('❌ DOCX 파싱 에러 상세:', {
       error: error instanceof Error ? error.message : String(error),
@@ -243,7 +243,7 @@ async function processDocxBuffer(buffer: Buffer): Promise<string> {
       bufferSizeMB: bufferSizeMB,
       elapsedTime: `${(parseMs / 1000).toFixed(1)}초`
     });
-    
+
     throw error;
   }
 }
@@ -252,7 +252,7 @@ async function ocrPdfWithTesseract(buffer: Buffer): Promise<string> {
   // OCR 기능은 현재 비활성화됨 (필요시 패키지 설치 필요: canvas, pdfjs-dist, tesseract.js)
   // 서버리스 환경에서 바이너리 의존성으로 인한 빌드 문제 방지
   throw new Error('OCR 기능은 현재 비활성화되어 있습니다. 텍스트 추출이 실패한 경우 다른 방법을 사용해주세요.');
-  
+
   /* OCR 구현 코드 (주석 처리)
   // Lazy imports to keep cold start small
   const { createCanvas } = await import('canvas');
@@ -356,12 +356,12 @@ export async function processQueue() {
     timestamp: new Date().toISOString(),
     startTime: processQueueStartMs
   });
-  
+
   // ⚠️ 작업 조회를 위해 Supabase 클라이언트 생성
   // check-crawl-status와 동일한 방식으로 생성
   const supabase = await createPureClient();
   console.error('[CRITICAL] ✅ Supabase 클라이언트 생성 완료');
-  
+
   // 타임아웃 작업 감지 로직을 선택적으로 실행 (환경 변수로 제어 가능)
   // 기본값: false (타임아웃 체크가 쿼리 성능 문제를 일으킬 수 있으므로 비활성화)
   const ENABLE_TIMEOUT_CHECK = process.env.ENABLE_TIMEOUT_CHECK === 'true'; // 기본값: false
@@ -374,7 +374,7 @@ export async function processQueue() {
       const TIMEOUT_MS = 30 * 60 * 1000; // 30분
       const timeoutThreshold = new Date(Date.now() - TIMEOUT_MS).toISOString();
       const createdTimeoutThreshold = new Date(Date.now() - TIMEOUT_MS).toISOString();
-      
+
       // started_at이 있는 경우: started_at 기준으로 타임아웃 체크
       console.error('[CRITICAL] 🔍 started_at 기준 타임아웃 작업 조회 중...');
       const stuckJobsByStartedStartMs = Date.now();
@@ -383,15 +383,15 @@ export async function processQueue() {
       try {
         // 쿼리 타임아웃: 2초로 더 단축 (빠른 실패)
         const QUERY_TIMEOUT_MS = 2000;
-        
+
         console.error('[CRITICAL] 🔍 started_at 쿼리 시작 (타임아웃: ' + QUERY_TIMEOUT_MS + 'ms)...');
-        
+
         // AbortController를 사용한 명시적 타임아웃
         const abortController = new AbortController();
         const timeoutId = setTimeout(() => {
           abortController.abort();
         }, QUERY_TIMEOUT_MS);
-        
+
         try {
           const queryPromise = supabase
             .from('processing_jobs')
@@ -401,7 +401,7 @@ export async function processQueue() {
             .lt('started_at', timeoutThreshold)
             .order('created_at', { ascending: false })
             .limit(10); // limit을 20에서 10으로 더 줄여 쿼리 성능 개선
-          
+
           // 타임아웃 Promise와 race
           const timeoutPromise = new Promise<never>((_, reject) => {
             setTimeout(() => {
@@ -409,13 +409,13 @@ export async function processQueue() {
               reject(new Error(`쿼리 타임아웃: ${QUERY_TIMEOUT_MS}ms 초과`));
             }, QUERY_TIMEOUT_MS);
           });
-          
+
           const result = await Promise.race([timeoutPromise, queryPromise]);
           clearTimeout(timeoutId);
-          
+
           stuckJobsByStarted = result.data;
           stuckError1 = result.error;
-          
+
           const elapsedMs = Date.now() - stuckJobsByStartedStartMs;
           console.error('[CRITICAL] ✅ started_at 기준 조회 완료:', {
             elapsedMs,
@@ -445,7 +445,7 @@ export async function processQueue() {
           });
         }
       }
-      
+
       // started_at이 없는 경우: created_at 기준으로 타임아웃 체크 (작업이 시작되지 않은 좀비 작업)
       console.error('[CRITICAL] 🔍 created_at 기준 타임아웃 작업 조회 중...');
       const stuckJobsByCreatedStartMs = Date.now();
@@ -454,15 +454,15 @@ export async function processQueue() {
       try {
         // 쿼리 타임아웃: 2초로 더 단축 (빠른 실패)
         const QUERY_TIMEOUT_MS = 2000;
-        
+
         console.error('[CRITICAL] 🔍 created_at 쿼리 시작 (타임아웃: ' + QUERY_TIMEOUT_MS + 'ms)...');
-        
+
         // AbortController를 사용한 명시적 타임아웃
         const abortController = new AbortController();
         const timeoutId = setTimeout(() => {
           abortController.abort();
         }, QUERY_TIMEOUT_MS);
-        
+
         try {
           const queryPromise = supabase
             .from('processing_jobs')
@@ -472,7 +472,7 @@ export async function processQueue() {
             .lt('created_at', createdTimeoutThreshold)
             .order('created_at', { ascending: false })
             .limit(10); // limit을 20에서 10으로 더 줄여 쿼리 성능 개선
-          
+
           // 타임아웃 Promise와 race
           const timeoutPromise = new Promise<never>((_, reject) => {
             setTimeout(() => {
@@ -480,13 +480,13 @@ export async function processQueue() {
               reject(new Error(`쿼리 타임아웃: ${QUERY_TIMEOUT_MS}ms 초과`));
             }, QUERY_TIMEOUT_MS);
           });
-          
+
           const result = await Promise.race([timeoutPromise, queryPromise]);
           clearTimeout(timeoutId);
-          
+
           stuckJobsByCreated = result.data;
           stuckError2 = result.error;
-          
+
           const elapsedMs = Date.now() - stuckJobsByCreatedStartMs;
           console.error('[CRITICAL] ✅ created_at 기준 조회 완료:', {
             elapsedMs,
@@ -516,36 +516,36 @@ export async function processQueue() {
           });
         }
       }
-      
+
       console.error('[CRITICAL] ✅ 타임아웃 작업 감지 완료:', {
         started_at_기준: stuckJobsByStarted?.length || 0,
         created_at_기준: stuckJobsByCreated?.length || 0,
         started_at_에러: stuckError1 ? (stuckError1 instanceof Error ? stuckError1.message : String(stuckError1)) : null,
         created_at_에러: stuckError2 ? (stuckError2 instanceof Error ? stuckError2.message : String(stuckError2)) : null
       });
-      
+
       const allStuckJobs = [
         ...(stuckJobsByStarted || []),
         ...(stuckJobsByCreated || [])
       ];
-      
+
       console.error('[CRITICAL] 🔍 타임아웃 작업 처리 시작:', {
         전체_타임아웃_작업_수: allStuckJobs.length,
         에러_발생: !!(stuckError1 || stuckError2)
       });
-      
+
       if ((!stuckError1 && !stuckError2) && allStuckJobs.length > 0) {
-        console.warn(`⚠️ 무한대기 작업 감지: ${allStuckJobs.length}개 작업이 30분 이상 진행 중입니다.`, 
-          allStuckJobs.map(j => ({ 
-            id: j.id, 
-            url: (j.payload as any)?.url, 
-            started_at: j.started_at, 
+        console.warn(`⚠️ 무한대기 작업 감지: ${allStuckJobs.length}개 작업이 30분 이상 진행 중입니다.`,
+          allStuckJobs.map(j => ({
+            id: j.id,
+            url: (j.payload as any)?.url,
+            started_at: j.started_at,
             created_at: j.created_at,
-            elapsedMinutes: j.started_at 
+            elapsedMinutes: j.started_at
               ? Math.round((Date.now() - new Date(j.started_at).getTime()) / (60 * 1000))
               : Math.round((Date.now() - new Date(j.created_at).getTime()) / (60 * 1000))
           })));
-        
+
         // 타임아웃된 작업을 failed로 변경
         const stuckJobIds = allStuckJobs.map(j => j.id);
         await supabase
@@ -556,12 +556,12 @@ export async function processQueue() {
             finished_at: new Date().toISOString(),
           })
           .in('id', stuckJobIds);
-        
+
         // 관련 문서도 failed로 업데이트 (processing 상태인 경우)
         const stuckJobDocIds = allStuckJobs
           .map(j => j.document_id)
           .filter(Boolean) as string[];
-        
+
         if (stuckJobDocIds.length > 0) {
           await supabase
             .from('documents')
@@ -572,7 +572,7 @@ export async function processQueue() {
             .in('id', stuckJobDocIds)
             .eq('status', 'processing');
         }
-        
+
         console.log(`✅ 타임아웃된 ${allStuckJobs.length}개 작업을 failed 상태로 변경했습니다.`);
       }
     } catch (timeoutCheckError) {
@@ -584,24 +584,24 @@ export async function processQueue() {
   } else {
     console.error('[CRITICAL] ⚙️ 타임아웃 작업 감지 비활성화됨 (ENABLE_TIMEOUT_CHECK=false 또는 미설정)');
   }
-  
+
   const queueStartMs = Date.now();
   console.error('[CRITICAL] 🚀 큐 처리 시작: ' + new Date().toISOString());
-  
+
   try {
     const jobStartMs = Date.now();
     // 1) 픽업할 잡 조회 (우선순위 높은 순, 예약시각 이른 순)
     // retrying 상태도 포함하여 재시도 작업 처리
     console.error('[CRITICAL] 🔍 큐에서 작업 조회 중...');
-    
+
     let job: any = null;
     let pickErr: any = null;
-    
+
     // ⚠️ Vercel 환경에서 Supabase 쿼리가 완료되지 않는 근본적인 문제로 인해
     // 환경 변수로 쿼리 우회 모드를 제어할 수 있도록 함
     // 기본값: false (쿼리 실행 시도)
     const SKIP_JOB_QUERY = process.env.SKIP_JOB_QUERY === 'true';
-    
+
     if (SKIP_JOB_QUERY) {
       console.error('[CRITICAL] ⚠️ 작업 조회 쿼리 우회 모드 활성화 (SKIP_JOB_QUERY=true)');
       console.error('[CRITICAL] 📋 작업 조회 완료 (쿼리 우회 모드): { found: false, reason: "SKIP_JOB_QUERY=true" }');
@@ -611,9 +611,9 @@ export async function processQueue() {
       // check-crawl-status와 완전히 동일한 패턴 사용 (정상 작동하는 패턴)
       // Promise.race나 타임아웃 없이 직접 await 사용
       console.error('[CRITICAL] 🔍 작업 조회 쿼리 시작 (check-crawl-status 패턴, 타임아웃 없음)...');
-      
+
       const queryStartMs = Date.now();
-      
+
       try {
         // check-crawl-status와 완전히 동일한 쿼리 구조
         // 타임아웃 없이 직접 await (check-crawl-status는 이렇게 작동함)
@@ -625,13 +625,13 @@ export async function processQueue() {
           .order('scheduled_at', { ascending: true })
           .limit(1)
           .maybeSingle();
-        
+
         job = fetchedJob;
         pickErr = fetchedErr;
-        
+
         const queryElapsedMs = Date.now() - queryStartMs;
         const totalElapsedMs = Date.now() - jobStartMs;
-        
+
         console.error('[CRITICAL] 📋 작업 조회 완료: ' + totalElapsedMs + 'ms (쿼리: ' + queryElapsedMs + 'ms)', {
           found: !!job,
           jobId: job?.id,
@@ -639,7 +639,7 @@ export async function processQueue() {
           documentId: job?.document_id,
           error: pickErr?.message || null
         });
-        
+
         // check-crawl-status와 동일한 에러 처리
         if (pickErr) {
           console.error('[CRITICAL] ❌ 작업 조회 실패:', pickErr);
@@ -649,7 +649,7 @@ export async function processQueue() {
       } catch (queryError) {
         const queryElapsedMs = Date.now() - queryStartMs;
         const totalElapsedMs = Date.now() - jobStartMs;
-        
+
         console.error('[CRITICAL] ❌ 작업 조회 쿼리 예외 발생 (작업 없음으로 처리):', {
           elapsedMs: totalElapsedMs,
           queryElapsedMs: queryElapsedMs,
@@ -657,7 +657,7 @@ export async function processQueue() {
           name: queryError instanceof Error ? queryError.name : undefined,
           stack: queryError instanceof Error ? queryError.stack : undefined
         });
-        
+
         // 에러 발생 시 작업 없음으로 처리 (크롤링이 멈추지 않도록)
         job = null;
         pickErr = queryError instanceof Error ? queryError : new Error(String(queryError));
@@ -673,7 +673,7 @@ export async function processQueue() {
       console.log(`ℹ️ 대기 중인 작업 없음 (${totalMs}ms)`);
       return NextResponse.json({ success: true, message: '대기 중인 잡이 없습니다.' }, { status: 200 });
     }
-    
+
     console.error('[CRITICAL] ✅ 작업 선택됨:', {
       jobId: job.id,
       documentId: job.document_id,
@@ -700,7 +700,7 @@ export async function processQueue() {
         .select('id, status, job_type, document_id, attempts')
         .eq('id', job.id)
         .maybeSingle();
-      
+
       console.warn('⚠️ processing 전환 실패:', {
         jobId: job.id,
         expectedStatus: ['queued', 'retrying'],
@@ -710,32 +710,32 @@ export async function processQueue() {
         attempts: currentJob?.attempts,
         error: toProcessingErr.message
       });
-      
+
       // 작업이 이미 processing 상태인 경우 (다른 워커가 처리 중)
       if (currentJob?.status === 'processing') {
-        return NextResponse.json({ 
-          success: false, 
+        return NextResponse.json({
+          success: false,
           error: '작업이 이미 처리 중입니다. 다른 워커가 처리하고 있을 수 있습니다.',
           currentStatus: currentJob.status,
-          details: toProcessingErr.message 
+          details: toProcessingErr.message
         }, { status: 409 });
       }
-      
+
       // 작업이 completed, failed, cancelled 상태인 경우
       if (currentJob && ['completed', 'failed', 'cancelled'].includes(currentJob.status)) {
-        return NextResponse.json({ 
-          success: false, 
+        return NextResponse.json({
+          success: false,
           error: `작업이 이미 ${currentJob.status} 상태입니다. 재처리가 필요하면 새로운 작업을 생성하거나 작업을 삭제하고 다시 시도해주세요.`,
           currentStatus: currentJob.status,
-          details: toProcessingErr.message 
+          details: toProcessingErr.message
         }, { status: 409 });
       }
-      
-      return NextResponse.json({ 
-        success: false, 
-        error: 'processing 전환 실패', 
+
+      return NextResponse.json({
+        success: false,
+        error: 'processing 전환 실패',
         currentStatus: currentJob?.status || 'unknown',
-        details: toProcessingErr.message 
+        details: toProcessingErr.message
       }, { status: 409 });
     }
 
@@ -757,7 +757,7 @@ export async function processQueue() {
     const fileSize = storage?.size || (job?.payload?.fileSize as number) || 0;
     const isReprocess = job?.payload?.reprocess === true;
     const fileSizeMB = fileSize > 0 ? (fileSize / (1024 * 1024)).toFixed(2) : '0';
-    
+
     // PDF_PARSE/DOCX_PARSE 작업 처리 전에 문서 타입 확인
     if ((job.job_type === 'PDF_PARSE' || job.job_type === 'DOCX_PARSE') && job.document_id) {
       // 문서 타입 확인 (URL 크롤링 문서인지 확인)
@@ -766,11 +766,11 @@ export async function processQueue() {
         .select('type, url, title')
         .eq('id', job.document_id)
         .maybeSingle();
-      
+
       if (!docCheckError && docCheck && (docCheck.type === 'url' || docCheck.url)) {
         // URL 크롤링 문서에 대해 PDF_PARSE/DOCX_PARSE 작업이 생성된 경우
         const errorMessage = `잘못된 작업 타입: 이 문서는 URL 크롤링 문서입니다 (type: ${docCheck.type || 'url'}, title: ${docCheck.title || 'N/A'}). PDF_PARSE/DOCX_PARSE 작업으로는 처리할 수 없습니다. 작업을 자동으로 삭제했습니다. URL 크롤링 작업(CRAWL_SEED)을 생성하거나 문서를 삭제하고 다시 크롤링해주세요.`;
-        
+
         console.error('❌ 잘못된 작업 타입 감지 - 작업 자동 삭제:', {
           jobId: job.id,
           jobType: job.job_type,
@@ -779,18 +779,18 @@ export async function processQueue() {
           documentUrl: docCheck.url,
           documentTitle: docCheck.title
         });
-        
+
         // 작업을 자동으로 삭제 (failed 상태로 남겨두지 않음)
         await supabase
           .from('processing_jobs')
           .delete()
           .eq('id', job.id);
-        
+
         console.log(`✅ 잘못된 작업 타입 자동 삭제 완료: ${job.id}`);
-        
+
         return NextResponse.json(
-          { 
-            success: false, 
+          {
+            success: false,
             error: errorMessage,
             deleted: true,
             documentType: docCheck.type,
@@ -800,7 +800,7 @@ export async function processQueue() {
         );
       }
     }
-    
+
     // 큰 파일 처리 시작 로그
     if (fileSize > 10 * 1024 * 1024) {
       console.log(`📦 큰 파일 처리 시작: ${fileName} (${fileSizeMB}MB)`);
@@ -811,14 +811,14 @@ export async function processQueue() {
       // 재처리인 경우: Storage 파일이 없으면 Storage에서 파일 찾기 시도
       if (isReprocess && (!storage?.bucket || !storage?.path)) {
         console.log('🔄 재처리 모드: Storage 정보 없음, Storage에서 파일 찾기 시도');
-        
+
         // 문서 정보 조회
         const { data: docData, error: docError } = await supabase
           .from('documents')
           .select('content, title, file_type, file_size, id, type, url')
           .eq('id', job.document_id)
           .single();
-        
+
         if (docError || !docData) {
           throw new Error(`재처리: 문서를 찾을 수 없습니다: ${docError?.message || 'Unknown error'}`);
         }
@@ -827,49 +827,49 @@ export async function processQueue() {
         if (docData.type === 'url' || docData.url) {
           throw new Error(`재처리: 이 문서는 URL 크롤링 문서입니다 (type: ${docData.type || 'url'}). PDF_PARSE/DOCX_PARSE 작업으로는 재처리할 수 없습니다. URL 크롤링 작업을 다시 생성하거나 문서를 삭제하고 다시 크롤링해주세요.`);
         }
-        
+
         // Storage에서 파일 찾기 시도 (문서 ID 기반 경로)
         const STORAGE_BUCKET = 'documents';
         let foundFile: { path: string; size: number } | null = null;
-        
+
         // Storage에서 파일 목록 조회
         try {
           console.log(`🔍 Storage에서 파일 검색 시작: ${STORAGE_BUCKET}/${job.document_id}`);
           const { data: files, error: listError } = await supabase.storage
             .from(STORAGE_BUCKET)
-            .list(job.document_id, { 
-              limit: 10, 
+            .list(job.document_id, {
+              limit: 10,
               sortBy: { column: 'created_at', order: 'desc' },
               search: ''
             });
-          
+
           if (listError) {
             console.error('❌ Storage 목록 조회 에러:', listError);
             // 폴더가 없을 수도 있으므로 에러는 무시하고 계속 진행
           } else if (files && files.length > 0) {
             // job_type에 맞는 파일 우선 찾기, 없으면 다른 타입 파일 찾기
             const jobTypeExtension = job.job_type === 'PDF_PARSE' ? '.pdf' : '.docx';
-            const targetFile = files.find(f => 
+            const targetFile = files.find(f =>
               f.name.toLowerCase().endsWith(jobTypeExtension)
-            ) || files.find(f => 
-              f.name.toLowerCase().endsWith('.pdf') || 
+            ) || files.find(f =>
+              f.name.toLowerCase().endsWith('.pdf') ||
               f.name.toLowerCase().endsWith('.docx')
             ) || files[0]; // job_type에 맞는 파일 우선, 없으면 다른 타입, 그래도 없으면 첫 번째 파일
-            
+
             foundFile = {
               path: `${job.document_id}/${targetFile.name}`,
               size: targetFile.metadata?.size || 0
             };
-            
+
             // 실제 파일 확장자 확인 및 경고
-            const actualExtension = targetFile.name.toLowerCase().endsWith('.pdf') ? '.pdf' : 
-                                   targetFile.name.toLowerCase().endsWith('.docx') ? '.docx' : 'unknown';
+            const actualExtension = targetFile.name.toLowerCase().endsWith('.pdf') ? '.pdf' :
+              targetFile.name.toLowerCase().endsWith('.docx') ? '.docx' : 'unknown';
             const expectedExtension = jobTypeExtension;
-            
+
             if (actualExtension !== expectedExtension) {
               console.warn(`⚠️ 파일 타입 불일치: job_type=${job.job_type}, 실제 파일=${actualExtension}, 예상=${expectedExtension}`);
             }
-            
+
             console.log(`✅ Storage에서 파일 발견: ${foundFile.path} (${foundFile.size} bytes, 실제 확장자: ${actualExtension})`);
           } else {
             console.warn(`⚠️ Storage에 파일이 없습니다: ${STORAGE_BUCKET}/${job.document_id}`);
@@ -877,7 +877,7 @@ export async function processQueue() {
         } catch (storageError) {
           console.error('❌ Storage 목록 조회 예외:', storageError);
         }
-        
+
         // Storage에서 파일을 찾았으면 다운로드
         if (foundFile) {
           try {
@@ -885,33 +885,33 @@ export async function processQueue() {
             console.log(`⬇️ 재처리: Storage에서 파일 다운로드 시작: ${STORAGE_BUCKET}/${foundFile.path}`);
             const fileBuffer = await downloadFromStorage(supabase, STORAGE_BUCKET, foundFile.path);
             dlMs = Date.now() - dlStart;
-            
+
             if (!fileBuffer || fileBuffer.length === 0) {
               throw new Error(`재처리: Storage에서 다운로드한 파일이 비어있습니다: ${foundFile.path}`);
             }
-            
+
             const downloadedSizeMB = (fileBuffer.length / (1024 * 1024)).toFixed(2);
             console.log(`✅ 재처리: 파일 다운로드 완료: ${downloadedSizeMB}MB (${dlMs}ms)`);
-            
+
             // 실제 파일 확장자 확인 (Storage 파일명 기준)
-            const actualExtension = foundFile.path.toLowerCase().endsWith('.pdf') ? 'pdf' : 
-                                   foundFile.path.toLowerCase().endsWith('.docx') ? 'docx' : 
-                                   foundFile.path.toLowerCase().endsWith('.doc') ? 'docx' : 'unknown';
-            
+            const actualExtension = foundFile.path.toLowerCase().endsWith('.pdf') ? 'pdf' :
+              foundFile.path.toLowerCase().endsWith('.docx') ? 'docx' :
+                foundFile.path.toLowerCase().endsWith('.doc') ? 'docx' : 'unknown';
+
             // 실제 파일 타입 (MIME type) 결정
             const actualFileType = actualExtension === 'pdf' ? 'application/pdf' :
-                                  actualExtension === 'docx' ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' :
-                                  'application/octet-stream';
-            
+              actualExtension === 'docx' ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' :
+                'application/octet-stream';
+
             // 파일 타입에 따라 텍스트 추출 (실제 파일 확장자 우선, 없으면 job_type 사용)
-            const fileTypeToUse = actualExtension !== 'unknown' ? actualExtension : 
-                                 (job.job_type === 'PDF_PARSE' ? 'pdf' : 'docx');
-            
+            const fileTypeToUse = actualExtension !== 'unknown' ? actualExtension :
+              (job.job_type === 'PDF_PARSE' ? 'pdf' : 'docx');
+
             if (actualExtension !== 'unknown' && actualExtension !== fileTypeToUse && job.job_type) {
               const expectedType = job.job_type === 'PDF_PARSE' ? 'pdf' : 'docx';
               console.warn(`⚠️ 재처리: 파일 타입 불일치 - job_type=${job.job_type}, 실제 파일=${actualExtension}, 실제 파일 타입으로 처리합니다.`);
             }
-            
+
             // file_type을 실제 파일 확장자에 맞게 업데이트 (docData 생성 시 사용)
             if (actualExtension !== 'unknown') {
               if (!storage) {
@@ -924,7 +924,7 @@ export async function processQueue() {
               storage.contentType = actualFileType;
               console.log(`📝 재처리: file_type 업데이트 - ${actualExtension} (${actualFileType})`);
             }
-            
+
             if (fileTypeToUse === 'pdf') {
               const p0 = Date.now();
               try {
@@ -962,58 +962,58 @@ export async function processQueue() {
         } else {
           // Storage에서 파일을 찾지 못한 경우
           console.log('🔄 재처리 모드: Storage 파일 없음');
-          
+
           // content가 BINARY_DATA로 시작하는 경우
           if (docData.content && docData.content.startsWith('BINARY_DATA:')) {
             // Storage에서 파일을 다시 한 번 더 시도 (다른 경로 검색)
             console.log('🔍 BINARY_DATA 감지 - Storage 전체 검색 시도');
-            
+
             try {
               // Storage 루트에서 파일 검색 (문서 ID 포함 파일명)
               const { data: allFiles, error: searchError } = await supabase.storage
                 .from(STORAGE_BUCKET)
-                .list('', { 
+                .list('', {
                   limit: 100,
                   search: job.document_id
                 });
-              
+
               if (!searchError && allFiles && allFiles.length > 0) {
                 // 문서 ID가 포함된 파일 찾기
-                const matchingFile = allFiles.find(f => 
-                  f.name.includes(job.document_id) && 
+                const matchingFile = allFiles.find(f =>
+                  f.name.includes(job.document_id) &&
                   (f.name.toLowerCase().endsWith('.pdf') || f.name.toLowerCase().endsWith('.docx'))
                 );
-                
+
                 if (matchingFile) {
                   foundFile = {
                     path: matchingFile.name,
                     size: matchingFile.metadata?.size || 0
                   };
                   console.log(`✅ Storage 전체 검색으로 파일 발견: ${foundFile.path}`);
-                  
+
                   // 파일 다운로드 및 텍스트 추출
                   const dlStart = Date.now();
                   const fileBuffer = await downloadFromStorage(supabase, STORAGE_BUCKET, foundFile.path);
                   dlMs = Date.now() - dlStart;
-                  
+
                   if (fileBuffer && fileBuffer.length > 0) {
                     const downloadedSizeMB = (fileBuffer.length / (1024 * 1024)).toFixed(2);
                     console.log(`✅ 재처리: 파일 다운로드 완료: ${downloadedSizeMB}MB (${dlMs}ms)`);
-                    
+
                     // 실제 파일 확장자 확인 (Storage 파일명 기준)
-                    const actualExtension = foundFile.path.toLowerCase().endsWith('.pdf') ? 'pdf' : 
-                                           foundFile.path.toLowerCase().endsWith('.docx') ? 'docx' : 
-                                           foundFile.path.toLowerCase().endsWith('.doc') ? 'docx' : 'unknown';
-                    
+                    const actualExtension = foundFile.path.toLowerCase().endsWith('.pdf') ? 'pdf' :
+                      foundFile.path.toLowerCase().endsWith('.docx') ? 'docx' :
+                        foundFile.path.toLowerCase().endsWith('.doc') ? 'docx' : 'unknown';
+
                     // 파일 타입에 따라 텍스트 추출 (실제 파일 확장자 우선, 없으면 job_type 사용)
-                    const fileTypeToUse = actualExtension !== 'unknown' ? actualExtension : 
-                                         (job.job_type === 'PDF_PARSE' ? 'pdf' : 'docx');
-                    
+                    const fileTypeToUse = actualExtension !== 'unknown' ? actualExtension :
+                      (job.job_type === 'PDF_PARSE' ? 'pdf' : 'docx');
+
                     if (actualExtension !== 'unknown' && actualExtension !== fileTypeToUse && job.job_type) {
                       const expectedType = job.job_type === 'PDF_PARSE' ? 'pdf' : 'docx';
                       console.warn(`⚠️ 재처리: 파일 타입 불일치 - job_type=${job.job_type}, 실제 파일=${actualExtension}, 실제 파일 타입으로 처리합니다.`);
                     }
-                    
+
                     if (fileTypeToUse === 'pdf') {
                       const p0 = Date.now();
                       try {
@@ -1049,7 +1049,7 @@ export async function processQueue() {
             } catch (searchError) {
               console.error('❌ Storage 전체 검색 실패:', searchError);
             }
-            
+
             // 여전히 파일을 찾지 못한 경우
             if (!extractedText || extractedText.length === 0) {
               throw new Error('재처리: 바이너리 데이터는 재처리할 수 없습니다. Storage에서 원본 파일을 찾을 수 없습니다. 원본 파일을 다시 업로드해주세요.');
@@ -1059,17 +1059,17 @@ export async function processQueue() {
             console.log('🔄 재처리 모드: documents.content에서 텍스트 가져오기');
             extractedText = docData.content || '';
             console.log(`✅ 재처리: documents.content에서 텍스트 가져옴 (${extractedText.length}자)`);
-            
+
             // 재처리 모드에서 텍스트가 비어있으면 에러
             const cleanedLength = (extractedText || '').replace(/\s+/g, ' ').trim().length;
             if (cleanedLength === 0) {
               throw new Error('재처리: documents.content에 텍스트가 없고 Storage에서도 파일을 찾을 수 없습니다. 원본 파일을 다시 업로드해주세요.');
             }
-            
+
             if (cleanedLength < 100) {
               console.warn(`⚠️ 재처리: 텍스트가 매우 짧습니다 (${cleanedLength}자). 청킹 결과가 제한적일 수 있습니다.`);
             }
-            
+
             // 재처리 모드에서는 dlMs와 parseMs는 0으로 유지
           }
         }
@@ -1081,7 +1081,7 @@ export async function processQueue() {
         // 저장소에서 파일 다운로드
         const dlStart = Date.now();
         console.log(`⬇️ Storage에서 파일 다운로드 시작: ${storage.bucket}/${storage.path}`);
-        
+
         let fileBuffer: Buffer;
         try {
           fileBuffer = await downloadFromStorage(supabase, storage.bucket, storage.path);
@@ -1098,24 +1098,24 @@ export async function processQueue() {
             elapsedMs: dlMs,
             note: '일반 처리 모드에서는 Storage 다운로드 실패 시 documents.content로 폴백하지 않습니다. 재처리 모드를 사용하거나 파일을 다시 업로드해주세요.'
           });
-          
+
           // 일반 처리 모드에서는 Storage 다운로드 실패 시 즉시 에러 throw
           // 재처리 모드가 아니므로 documents.content로 폴백하지 않음
           throw new Error(`Storage 다운로드 실패: ${errorMsg}. 일반 처리 모드에서는 Storage에서 파일을 다운로드할 수 없으면 처리를 중단합니다. 재처리 모드를 사용하거나 파일을 다시 업로드해주세요.`);
         }
-        
+
         if (!fileBuffer || fileBuffer.length === 0) {
           throw new Error(`downloaded empty file from storage: ${storage.bucket}/${storage.path}`);
         }
-        
+
         const downloadedSizeMB = (fileBuffer.length / (1024 * 1024)).toFixed(2);
         console.log(`✅ 파일 다운로드 완료: ${downloadedSizeMB}MB (${dlMs}ms)`);
-        
+
         // 큰 파일 처리 시 중간 상태 업데이트 (타임아웃 방지)
         if (fileBuffer.length > 10 * 1024 * 1024) {
           console.log(`📄 큰 파일 텍스트 추출 시작... (${downloadedSizeMB}MB)`);
         }
-        
+
         if (job.job_type === 'PDF_PARSE') {
           const p0 = Date.now();
           extractedText = await processPdfBuffer(fileBuffer);
@@ -1143,7 +1143,7 @@ export async function processQueue() {
       if (!extractedText || typeof extractedText !== 'string') {
         throw new Error(`텍스트 추출 실패: extractedText가 유효하지 않습니다. (${job.job_type})`);
       }
-      
+
       const cleanedLength = extractedText.replace(/\s+/g, ' ').trim().length;
       console.log(`📊 텍스트 추출 검증:`, {
         rawLength: extractedText.length,
@@ -1152,7 +1152,7 @@ export async function processQueue() {
         fileName: fileName,
         textPreview: extractedText.substring(0, 200) // 텍스트 미리보기 추가
       });
-      
+
       // DOCX 텍스트 추출 실패 검증 (빈 텍스트)
       if (cleanedLength === 0 && job.job_type === 'DOCX_PARSE') {
         const errorMsg = 'DOCX에서 텍스트를 추출할 수 없습니다. 파일이 손상되었거나 텍스트가 없습니다.';
@@ -1163,19 +1163,19 @@ export async function processQueue() {
         });
         throw new Error(errorMsg);
       }
-      
+
       // DOCX 텍스트가 너무 짧은 경우 경고 (텍스트는 있지만 청킹 결과가 제한적일 수 있음)
       if (cleanedLength > 0 && cleanedLength < 100 && job.job_type === 'DOCX_PARSE') {
         console.warn(`⚠️ DOCX 텍스트가 매우 짧습니다 (${cleanedLength}자). 청킹 결과가 제한적일 수 있습니다.`);
       }
-      
+
       // 텍스트 추출이 너무 적으면 경고 및 처리
       // DOCX의 경우 텍스트가 있어도 OCR로 폴백하지 않도록 수정 (PDF만 OCR 폴백)
       if (cleanedLength < 500 && !isReprocess && storage?.bucket && storage?.path && job.job_type === 'PDF_PARSE') {
         // 텍스트가 매우 짧은 경우 (파일명만 추출된 경우 등)
         const isVeryShort = cleanedLength < 100;
         const textPreview = extractedText.substring(0, 200);
-        
+
         if (isVeryShort) {
           console.error('❌ PDF 텍스트 추출 실패: 이미지 기반 PDF이거나 텍스트 추출이 거의 실패했습니다.', {
             fileName,
@@ -1193,7 +1193,7 @@ export async function processQueue() {
             textPreview
           });
         }
-        
+
         // OCR 폴백 Job 생성 (현재 OCR 기능은 비활성화되어 있지만, 향후 활성화 대비)
         const { error: ocrEnqErr } = await supabase
           .from('processing_jobs')
@@ -1238,7 +1238,7 @@ export async function processQueue() {
       const normalizedText = normalizeTablesToMarkdown(extractedText);
       const normalizedLengthKB = (normalizedText.length / 1024).toFixed(2);
       console.log(`📝 텍스트 정규화 완료: ${normalizedLengthKB}KB`);
-      
+
       // 텍스트 길이 검증 및 경고
       if (normalizedText.length < 100 && fileSize > 100 * 1024) {
         // 파일 크기는 큰데 텍스트가 매우 짧은 경우 (PDF 파싱 실패 가능성)
@@ -1267,10 +1267,10 @@ export async function processQueue() {
       const LARGE_TEXT_THRESHOLD = 2 * 1024 * 1024; // 2MB 텍스트 (파일 크기와 함께 고려)
       // 파일 크기와 텍스트 길이 모두 큰 경우에만 큰 파일로 분류
       // DOCX 파일의 경우 파일 크기만으로 판단 (텍스트 양이 파일 크기보다 클 수 있음)
-      const isLargeFile = job.job_type === 'DOCX_PARSE' 
+      const isLargeFile = job.job_type === 'DOCX_PARSE'
         ? fileSize > LARGE_FILE_THRESHOLD
         : (fileSize > LARGE_FILE_THRESHOLD && normalizedText.length > LARGE_TEXT_THRESHOLD);
-      
+
       if (isLargeFile) {
         console.log('📦 큰 파일 감지 - 분할 처리 시작:', {
           fileName,
@@ -1278,14 +1278,14 @@ export async function processQueue() {
           textLength: normalizedText.length,
           textLengthKB: normalizedLengthKB
         });
-        
+
         try {
           // 1. 텍스트 분할 (500KB 단위 - RAG 품질 유지)
           // 분할 크기는 충분히 크게 유지하여 문맥 보존
           const splits = simpleTextSplitter.splitByFixedSize(normalizedText, {
             maxSize: 500 * 1024 // 500KB (RAG 품질 유지)
           });
-          
+
           const stats = simpleTextSplitter.getSplitStats(splits);
           console.log('✂️ 텍스트 분할 완료:', {
             totalSplits: splits.length,
@@ -1294,7 +1294,7 @@ export async function processQueue() {
             minSizeKB: (stats.minSizeBytes / 1024).toFixed(2),
             maxSizeKB: (stats.maxSizeBytes / 1024).toFixed(2)
           });
-          
+
           // 2. document_splits 테이블에 분할 저장
           const splitInserts = splits.map((split, idx) => ({
             document_id: job.document_id,
@@ -1305,18 +1305,18 @@ export async function processQueue() {
             end_char: split.endChar,
             status: 'pending'
           }));
-          
+
           const { data: insertedSplits, error: splitInsertError } = await supabase
             .from('document_splits')
             .insert(splitInserts)
             .select('id');
-          
+
           if (splitInsertError) {
             throw new Error(`분할 저장 실패: ${splitInsertError.message}`);
           }
-          
+
           console.log('💾 분할 저장 완료:', insertedSplits?.length || 0, '개');
-          
+
           // 3. 각 분할에 대해 CHUNK_PROCESS job 등록
           const chunkJobs = insertedSplits!.map((split, idx) => ({
             document_id: job.document_id,
@@ -1335,18 +1335,18 @@ export async function processQueue() {
             max_attempts: 3,
             scheduled_at: new Date().toISOString()
           }));
-          
+
           const { data: insertedJobs, error: jobInsertError } = await supabase
             .from('processing_jobs')
             .insert(chunkJobs)
             .select('id');
-          
+
           if (jobInsertError) {
             throw new Error(`CHUNK_PROCESS job 등록 실패: ${jobInsertError.message}`);
           }
-          
+
           console.log('📋 CHUNK_PROCESS job 등록 완료:', insertedJobs?.length || 0, '개');
-          
+
           // 4. documents 테이블 상태 업데이트
           await supabase
             .from('documents')
@@ -1360,7 +1360,7 @@ export async function processQueue() {
               status: 'processing'
             })
             .eq('id', job.document_id);
-          
+
           // 5. 원본 PDF_PARSE/DOCX_PARSE job 완료 처리
           await supabase
             .from('processing_jobs')
@@ -1376,15 +1376,15 @@ export async function processQueue() {
             })
             .eq('id', job.id)
             .eq('status', 'processing');
-          
+
           console.log('✅ 큰 파일 분할 완료 - CHUNK_PROCESS job들이 큐에 등록됨');
-          
+
           return NextResponse.json({
             success: true,
             message: `큰 파일을 ${splits.length}개 분할로 처리했습니다.`,
             splits: splits.length
           }, { status: 200 });
-          
+
         } catch (splitError: any) {
           console.error('❌ 큰 파일 분할 실패:', splitError);
           console.error('❌ 분할 실패 상세:', {
@@ -1395,7 +1395,7 @@ export async function processQueue() {
             fileSize: fileSize,
             textLength: normalizedText.length
           });
-          
+
           // 분할 실패 시 기존 방식으로 폴백 (전체 파일 처리 시도)
           console.log('⚠️ 분할 실패 - 기존 방식으로 폴백');
           // 폴백: 분할 없이 전체 파일 처리 계속 진행 (아래 일반 처리 로직 사용)
@@ -1405,10 +1405,10 @@ export async function processQueue() {
       // 문서 레코드 불러오기(없을 경우 기본 메타 구성)
       const { data: docs } = await supabase.from('documents').select('id, title, file_size, file_type, created_at, updated_at, source_vendor').eq('id', job.document_id).limit(1);
       const nowIso = new Date().toISOString();
-      
+
       // 재처리인 경우 기존 문서 정보 사용, 아니면 payload에서 가져오기
       const vendor = (job?.payload?.vendor as string) || docs?.[0]?.source_vendor || 'META';
-      
+
       // normalizedText 검증 (DOCX 처리 경로 확인)
       if (!normalizedText || normalizedText.trim().length === 0) {
         const errorMsg = `텍스트 정규화 후 빈 텍스트입니다. 원본 텍스트 길이: ${extractedText.length}자`;
@@ -1420,7 +1420,7 @@ export async function processQueue() {
         });
         throw new Error(errorMsg);
       }
-      
+
       // 실제 파일 확장자 확인 (Storage 파일 경로 또는 파일명 기준)
       let actualFileType = storage?.contentType || docs?.[0]?.file_type;
       if (!actualFileType || (isReprocess && storage)) {
@@ -1439,16 +1439,16 @@ export async function processQueue() {
           actualFileType = job.job_type === 'PDF_PARSE' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
         }
       }
-      
+
       // type도 실제 파일 확장자에 맞게 설정
-      const actualType = actualFileType.includes('wordprocessingml') ? 'docx' : 
-                        actualFileType.includes('pdf') ? 'pdf' : 
-                        (job.job_type === 'PDF_PARSE' ? 'pdf' : 'docx');
-      
+      const actualType = actualFileType.includes('wordprocessingml') ? 'docx' :
+        actualFileType.includes('pdf') ? 'pdf' :
+          (job.job_type === 'PDF_PARSE' ? 'pdf' : 'docx');
+
       if (isReprocess && actualFileType !== (job.job_type === 'PDF_PARSE' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')) {
         console.warn(`⚠️ 재처리: file_type 불일치 감지 - job_type=${job.job_type}, 실제 file_type=${actualFileType}, 실제 타입으로 업데이트합니다.`);
       }
-      
+
       const docData: DocumentData = {
         id: job.document_id,
         title: originalFileName || docs?.[0]?.title || fileName,
@@ -1469,7 +1469,7 @@ export async function processQueue() {
       const isLargeDocument = job.job_type === 'DOCX_PARSE'
         ? fileSize > 10 * 1024 * 1024
         : (docData.content.length > 2 * 1024 * 1024 || fileSize > 10 * 1024 * 1024);
-      
+
       // DOCX 처리 경로 로깅 (디버깅용)
       console.log(`📄 DOCX 처리 준비:`, {
         fileName: fileName,
@@ -1479,32 +1479,32 @@ export async function processQueue() {
         willSplit: isLargeFile,
         willProcessNormally: !isLargeFile
       });
-      
+
       if (isLargeDocument) {
         console.log(`🔮 큰 문서 처리 시작: ${textLengthKB}KB 텍스트, ${fileSizeMB}MB 파일`);
         console.log(`⏱️ 타임아웃 전 중간 상태 업데이트를 위해 처리 중...`);
-        
+
         // 큰 파일 처리 시작 전에 processing_jobs 상태를 업데이트하여 타임아웃 방지
         await supabase
           .from('processing_jobs')
-          .update({ 
+          .update({
             started_at: new Date().toISOString(),
             // 중간 상태를 나타내는 메타데이터 추가
           })
           .eq('id', job.id)
           .eq('status', 'processing');
       }
-      
+
       // 인코딩/청킹/임베딩/저장 (타임아웃 보호)
       const processStartMs = Date.now();
       // 타임아웃 설정: 파일 크기와 타입에 따라 동적 설정
       // 작은 파일: 2분, 중간 파일: 5분, 큰 파일: 10분
       // DOCX 파일은 파일 크기 기준으로만 판단
-      const MAX_PROCESS_TIME = 
+      const MAX_PROCESS_TIME =
         fileSize < 5 * 1024 * 1024 ? 120000 :  // 5MB 미만: 2분
-        fileSize < 10 * 1024 * 1024 ? 300000 : // 10MB 미만: 5분
-        600000; // 10MB 이상: 10분 (Vercel Pro 최대)
-      
+          fileSize < 10 * 1024 * 1024 ? 300000 : // 10MB 미만: 5분
+            600000; // 10MB 이상: 10분 (Vercel Pro 최대)
+
       // 전체 처리 시간 측정을 위한 단계별 시간 추적
       const stepTimings = {
         download: dlMs,
@@ -1514,7 +1514,7 @@ export async function processQueue() {
         saving: 0,
         total: 0
       };
-      
+
       // 큰 파일의 경우 타임아웃 전에 중간 상태를 업데이트하는 로직
       let processResult;
       if (isLargeDocument) {
@@ -1527,10 +1527,10 @@ export async function processQueue() {
             reject(new Error(`큐 처리 시간 초과 (${Math.round(MAX_PROCESS_TIME / 60000)}분) - 경과 시간: ${Math.round(elapsed / 1000)}초`));
           }, MAX_PROCESS_TIME);
         });
-        
+
         try {
           processResult = await Promise.race([processPromise, timeoutPromise]) as any;
-          
+
           // 처리 결과에서 단계별 시간 추출 (가능한 경우)
           if (processResult && typeof processResult === 'object' && 'timings' in processResult) {
             stepTimings.chunking = (processResult as any).timings.chunking || 0;
@@ -1541,7 +1541,7 @@ export async function processQueue() {
           // 타임아웃 발생 시 진행 상황 상세 로깅
           const elapsed = Date.now() - processStartMs;
           stepTimings.total = elapsed;
-          
+
           console.error('❌ 큰 파일 처리 타임아웃 - 상세 분석:', {
             fileSize: fileSizeMB,
             textLength: docData.content.length,
@@ -1558,11 +1558,11 @@ export async function processQueue() {
             },
             error: timeoutError instanceof Error ? timeoutError.message : String(timeoutError)
           });
-          
+
           // 재시도 가능 여부 확인
           const currentAttempts = job.attempts || 0;
           const maxAttempts = job.max_attempts || 3;
-          
+
           if (currentAttempts < maxAttempts) {
             // 재시도 가능: retrying 상태로 변경하고 다음 실행 시 재시도
             console.log(`🔄 타임아웃 발생 - 재시도 예약 (${currentAttempts + 1}/${maxAttempts})`);
@@ -1576,7 +1576,7 @@ export async function processQueue() {
               })
               .eq('id', job.id)
               .eq('status', 'processing');
-            
+
             // 문서 상태도 retrying으로 업데이트
             await supabase
               .from('documents')
@@ -1585,7 +1585,7 @@ export async function processQueue() {
                 updated_at: new Date().toISOString()
               })
               .eq('id', job.document_id);
-            
+
             return NextResponse.json({
               success: false,
               error: '큐 처리 시간 초과 - 재시도 예약됨',
@@ -1602,10 +1602,10 @@ export async function processQueue() {
       } else {
         processResult = await ragProcessor.processDocument(docData, true /* skipDuplicate */);
       }
-      
+
       const processMs = Date.now() - processStartMs;
       stepTimings.total = processMs;
-      
+
       // 상세한 처리 시간 로깅
       if (isLargeDocument) {
         console.log('📊 큰 파일 처리 시간 분석:', {
@@ -1622,7 +1622,7 @@ export async function processQueue() {
           chunkCount: processResult?.chunkCount || 0
         });
       }
-      
+
       if (processResult.success) {
         console.log(`✅ 문서 처리 완료: ${processResult.chunkCount}개 청크 생성 (${(processMs / 1000).toFixed(1)}초)`);
       } else {
@@ -1634,23 +1634,23 @@ export async function processQueue() {
         .from('document_chunks')
         .select('*', { count: 'exact', head: true })
         .eq('document_id', job.document_id);
-      
+
       const finalChunkCount = actualChunkCount || processResult.chunkCount;
-      
+
       // chunk_count가 이미 saveChunksToDatabase에서 업데이트되었지만, 큐 워커에서도 동기화
       // (실제 저장된 개수와 processResult.chunkCount가 다른 경우 대비)
       // 청크 0개인 경우 failed 상태로 설정 (근본 원인 수정)
       const finalStatus = (processResult.success && finalChunkCount > 0) ? 'indexed' : 'failed';
       const { error: docUpdateErr } = await supabase
         .from('documents')
-        .update({ 
+        .update({
           status: finalStatus,
-          chunk_count: finalChunkCount, 
-          updated_at: nowIso 
+          chunk_count: finalChunkCount,
+          updated_at: nowIso
         })
         .eq('id', job.document_id);
       if (docUpdateErr) throw docUpdateErr;
-      
+
       // 불일치 경고
       if (finalChunkCount !== processResult.chunkCount) {
         console.warn(`⚠️ 청크 개수 불일치 감지: processResult=${processResult.chunkCount}, 실제=${finalChunkCount}`);
@@ -1743,7 +1743,7 @@ export async function processQueue() {
 
         const fetchPageContent = async (targetUrl: string) => {
           console.log('🌍 페이지 다운로드 요청:', targetUrl);
-          
+
           // Facebook/Instagram URL의 경우 처음부터 Puppeteer만 사용 (fetch 시도하지 않음)
           const isFacebookUrl = targetUrl.includes('facebook.com') || targetUrl.includes('instagram.com');
           if (isFacebookUrl) {
@@ -1753,12 +1753,12 @@ export async function processQueue() {
               if (!puppeteerService) {
                 puppeteerService = new PuppeteerCrawlingService();
               }
-              
+
               const puppeteerResult = await puppeteerService.crawlMetaPage(targetUrl, false, true); // skipUrlCheck=true로 모든 도메인 허용
-              
+
               // 🔥 Facebook/Instagram의 경우 최소 콘텐츠 길이를 10자로 더 완화 (링크 정보라도 추출)
               const minContentLength = 10;
-              
+
               if (puppeteerResult && puppeteerResult.content && puppeteerResult.content.length >= minContentLength) {
                 console.log(`✅ Puppeteer로 콘텐츠 추출 성공: ${puppeteerResult.content.length}자 (최소 요구: ${minContentLength}자)`);
                 return {
@@ -1772,7 +1772,7 @@ export async function processQueue() {
                 const hasResult = !!puppeteerResult;
                 const hasContent = !!puppeteerResult?.content;
                 const title = puppeteerResult?.title || '없음';
-                
+
                 console.error(`❌ Puppeteer로 충분한 콘텐츠를 추출하지 못했습니다:`, {
                   url: targetUrl,
                   contentLength: contentLength,
@@ -1782,13 +1782,13 @@ export async function processQueue() {
                   title: title,
                   contentPreview: puppeteerResult?.content?.substring(0, 500) || 'N/A'
                 });
-                
+
                 throw new Error(`Facebook/Instagram 페이지에서 콘텐츠를 추출할 수 없습니다. (추출된 콘텐츠: ${contentLength}자) 이 페이지는 로그인이 필요하거나 봇 접근이 차단되었을 수 있습니다.`);
               }
             } catch (puppeteerError: any) {
               // 🔥 Puppeteer 실패 시 fetch로 fallback하지 않고 바로 에러 반환
-              const errorMsg = puppeteerError instanceof Error 
-                ? puppeteerError.message 
+              const errorMsg = puppeteerError instanceof Error
+                ? puppeteerError.message
                 : String(puppeteerError);
               console.error(`❌ Puppeteer 크롤링 실패:`, {
                 url: targetUrl,
@@ -1799,7 +1799,7 @@ export async function processQueue() {
               throw new Error(`Facebook/Instagram 페이지 크롤링 실패: ${errorMsg}`);
             }
           }
-          
+
           // 일반 URL 또는 Puppeteer 실패 시 fetch 사용
           const response = await fetch(targetUrl, {
             headers: commonHeaders,
@@ -1828,7 +1828,7 @@ export async function processQueue() {
 
           // Cheerio로 HTML 파싱
           const $ = cheerio.load(htmlContent);
-          
+
           // 정교한 제목 추출 함수 (PuppeteerCrawlingService 로직 기반)
           const extractPageTitle = (): string | null => {
             // 1. h1 태그 (가장 우선) - 메인 콘텐츠 영역 우선
@@ -1837,9 +1837,9 @@ export async function processQueue() {
             if (h1Text && h1Text.length >= 2 && h1Text.length <= 200) {
               const lowerH1 = h1Text.toLowerCase().trim();
               // "광고주센터"만 있는 경우만 제외 (내용이 있는 경우는 허용)
-              if (lowerH1 !== '광고주센터' && lowerH1 !== '광고주 센터' && 
-                  lowerH1 !== 'advertiser center' && lowerH1 !== 'naver' && 
-                  lowerH1 !== '네이버' && lowerH1 !== 'naver광고주센터') {
+              if (lowerH1 !== '광고주센터' && lowerH1 !== '광고주 센터' &&
+                lowerH1 !== 'advertiser center' && lowerH1 !== 'naver' &&
+                lowerH1 !== '네이버' && lowerH1 !== 'naver광고주센터') {
                 // "광고주센터"로만 시작하거나 끝나는 짧은 제목 제외
                 if (!((lowerH1.startsWith('광고주센터') || lowerH1.endsWith('광고주센터')) && h1Text.length < 10)) {
                   return h1Text;
@@ -1858,7 +1858,7 @@ export async function processQueue() {
                 .replace(/\s*\|\s*.*$/, '') // " | 사이트명" 제거 (추가)
                 .replace(/\s*:\s*.*$/, '') // " : 사이트명" 제거
                 .trim();
-              
+
               // "광고주센터", "NAVER" 같은 일반적인 접미사 제거
               const commonSuffixes = [
                 /광고주센터.*$/i,
@@ -1869,20 +1869,20 @@ export async function processQueue() {
               for (const suffix of commonSuffixes) {
                 cleanedTitle = cleanedTitle.replace(suffix, '').trim();
               }
-              
+
               if (cleanedTitle && cleanedTitle.length >= 2 && cleanedTitle.length <= 200) {
                 // "광고주센터" 같은 일반적인 제목 필터링
                 const lowerCleaned = cleanedTitle.toLowerCase();
-                if (!lowerCleaned.includes('광고주센터') && !lowerCleaned.includes('광고주 센터') && 
-                    !lowerCleaned.includes('advertiser center') && !lowerCleaned.includes('naver')) {
+                if (!lowerCleaned.includes('광고주센터') && !lowerCleaned.includes('광고주 센터') &&
+                  !lowerCleaned.includes('advertiser center') && !lowerCleaned.includes('naver')) {
                   return cleanedTitle;
                 }
               }
-              
+
               // 원본 title도 "광고주센터" 필터링 후 반환
               const lowerTitle = titleText.toLowerCase();
-              if (!lowerTitle.includes('광고주센터') && !lowerTitle.includes('광고주 센터') && 
-                  !lowerTitle.includes('advertiser center')) {
+              if (!lowerTitle.includes('광고주센터') && !lowerTitle.includes('광고주 센터') &&
+                !lowerTitle.includes('advertiser center')) {
                 return titleText;
               }
             }
@@ -1891,8 +1891,8 @@ export async function processQueue() {
             const ogTitle = $('meta[property="og:title"]').attr('content')?.trim();
             if (ogTitle && ogTitle.length >= 2 && ogTitle.length <= 200) {
               const lowerOg = ogTitle.toLowerCase();
-              if (!lowerOg.includes('광고주센터') && !lowerOg.includes('광고주 센터') && 
-                  !lowerOg.includes('advertiser center') && !lowerOg.includes('naver')) {
+              if (!lowerOg.includes('광고주센터') && !lowerOg.includes('광고주 센터') &&
+                !lowerOg.includes('advertiser center') && !lowerOg.includes('naver')) {
                 return ogTitle;
               }
             }
@@ -1918,14 +1918,14 @@ export async function processQueue() {
               '.hero h1', '.hero h2',
               '.banner h1', '.banner h2'
             ];
-            
+
             for (const selector of classSelectors) {
               const text = $(selector).first().text().trim();
               if (text && text.length >= 2 && text.length <= 200) {
                 const lowerText = text.toLowerCase();
                 // "광고주센터" 같은 일반적인 제목 필터링
-                if (!lowerText.includes('광고주센터') && !lowerText.includes('광고주 센터') && 
-                    !lowerText.includes('advertiser center') && !lowerText.includes('naver')) {
+                if (!lowerText.includes('광고주센터') && !lowerText.includes('광고주 센터') &&
+                  !lowerText.includes('advertiser center') && !lowerText.includes('naver')) {
                   return text;
                 }
               }
@@ -1936,8 +1936,8 @@ export async function processQueue() {
             const h2Text = mainH2.length > 0 ? mainH2.text().trim() : $('h2').first().text().trim();
             if (h2Text && h2Text.length >= 2 && h2Text.length <= 200) {
               const lowerH2 = h2Text.toLowerCase();
-              if (!lowerH2.includes('광고주센터') && !lowerH2.includes('광고주 센터') && 
-                  !lowerH2.includes('advertiser center') && !lowerH2.includes('naver')) {
+              if (!lowerH2.includes('광고주센터') && !lowerH2.includes('광고주 센터') &&
+                !lowerH2.includes('advertiser center') && !lowerH2.includes('naver')) {
                 return h2Text;
               }
             }
@@ -1947,27 +1947,27 @@ export async function processQueue() {
             const bodyText = $('body').html() || '';
             const firstThird = bodyText.substring(0, Math.floor(bodyText.length * 0.3));
             const $firstThird = cheerio.load(firstThird);
-            
+
             // 큰 폰트 사이즈나 볼드 스타일을 가진 요소 찾기
             const largeBoldElements = $firstThird('*').filter((_, el) => {
               const $el = $firstThird(el);
               const text = $el.text().trim();
               if (!text || text.length < 2 || text.length > 100) return false;
-              
+
               // 스타일 속성에서 font-size나 font-weight 확인
               const style = $el.attr('style') || '';
-              const hasLargeFont = /font-size:\s*([2-9]\d|1\d{2,})px/i.test(style) || 
-                                   /font-size:\s*([2-9]|1[0-9]|2[0-9]|3[0-9])rem/i.test(style) ||
-                                   /font-size:\s*([2-9]|1[0-9]|2[0-9]|3[0-9])em/i.test(style);
-              
+              const hasLargeFont = /font-size:\s*([2-9]\d|1\d{2,})px/i.test(style) ||
+                /font-size:\s*([2-9]|1[0-9]|2[0-9]|3[0-9])rem/i.test(style) ||
+                /font-size:\s*([2-9]|1[0-9]|2[0-9]|3[0-9])em/i.test(style);
+
               // 태그 이름 확인 (타입 가드 추가)
               const tagName = (el as any).tagName || (el as any).name || '';
               const hasBold = /font-weight:\s*(bold|700|800|900)/i.test(style) ||
-                              ['b', 'strong', 'h1', 'h2', 'h3'].includes(tagName.toLowerCase());
-              
+                ['b', 'strong', 'h1', 'h2', 'h3'].includes(tagName.toLowerCase());
+
               return hasLargeFont || hasBold;
             });
-            
+
             if (largeBoldElements.length > 0) {
               const firstLargeBold = largeBoldElements.first().text().trim();
               if (firstLargeBold && firstLargeBold.length >= 2 && firstLargeBold.length <= 100) {
@@ -1977,17 +1977,17 @@ export async function processQueue() {
 
             return null;
           };
-          
+
           // 🔥 모달에서 전달한 정확한 제목 우선 사용 (payload.title)
           let pageTitle = (job.payload?.title as string) || null;
-          
+
           // payload.title이 없으면 기존 로직으로 제목 추출
           if (!pageTitle || pageTitle.length < 2) {
             pageTitle = extractPageTitle();
           } else {
             console.log(`[CRITICAL] 📝 모달에서 전달한 제목 사용: "${pageTitle}" (URL: ${url})`);
           }
-          
+
           // 제목이 없거나 너무 짧으면 URL pathname에서 추출 (마지막 경로)
           if (!pageTitle || pageTitle.length < 2) {
             try {
@@ -2003,7 +2003,7 @@ export async function processQueue() {
                   } catch {
                     pageTitle = lastPart.replace(/[-_]/g, ' ').trim();
                   }
-                  
+
                   // 여전히 제목이 없거나 너무 짧으면 전체 URL 사용
                   if (!pageTitle || pageTitle.length < 2) {
                     pageTitle = targetUrl;
@@ -2019,7 +2019,7 @@ export async function processQueue() {
               pageTitle = targetUrl;
             }
           }
-          
+
           // 제목 정리: 불필요한 공백 제거 및 길이 제한
           if (pageTitle) {
             pageTitle = pageTitle
@@ -2027,18 +2027,18 @@ export async function processQueue() {
               .trim()
               .substring(0, 200); // 최대 200자로 제한
           }
-          
+
           // 개선된 텍스트 추출: 구조를 유지하면서 텍스트 추출
           let textContent = '';
-          
+
           // 텍스트 추출 헬퍼 함수: 줄바꿈과 공백을 적절히 유지
           const extractTextWithStructure = ($element: cheerio.Cheerio): string => {
             // 클론 생성 (원본 보존)
             const $clone = $element.clone();
-            
+
             // 스크립트, 스타일, 네비게이션 등 제거
             $clone.find('script, style, nav, footer, header, aside').remove();
-            
+
             // 링크는 텍스트만 표시 (먼저 처리)
             $clone.find('a').each((_, el) => {
               const $el = $(el);
@@ -2053,7 +2053,7 @@ export async function processQueue() {
                 $el.replaceWith(' ');
               }
             });
-            
+
             // 블록 요소를 줄바꿈으로 변환 (먼저 처리)
             const blockElements = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'div', 'li', 'td', 'th', 'tr', 'section', 'article', 'main'];
             blockElements.forEach(tag => {
@@ -2067,12 +2067,12 @@ export async function processQueue() {
                 }
               });
             });
-            
+
             // <br> 태그는 줄바꿈으로 변환
             $clone.find('br').each((_, el) => {
               $(el).replaceWith('\n');
             });
-            
+
             // 인라인 요소는 공백으로 변환
             $clone.find('span, strong, em, b, i, code').each((_, el) => {
               const $el = $(el);
@@ -2081,10 +2081,10 @@ export async function processQueue() {
                 $el.replaceWith(` ${text} `);
               }
             });
-            
+
             // 최종 텍스트 추출: HTML을 가져와서 남은 태그 제거
             const html = $clone.html() || '';
-            
+
             // 남은 HTML 태그를 공백으로 변환하고 엔티티 디코딩
             let text = html
               .replace(/<[^>]+>/g, ' ') // 모든 태그를 공백으로 변환
@@ -2095,12 +2095,12 @@ export async function processQueue() {
               .replace(/&quot;/g, '"')
               .replace(/&#39;/g, "'")
               .replace(/&apos;/g, "'");
-            
+
             // 연속된 공백을 하나로, 연속된 줄바꿈을 두 개로 제한
             text = text.replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
             return text;
           };
-          
+
           // 1. 주요 콘텐츠 영역 우선 추출 (Cheerio 사용)
           const contentSelectors = [
             'main',
@@ -2112,28 +2112,28 @@ export async function processQueue() {
             '#content',
             '#main-content'
           ];
-          
+
           let foundContent = false;
           for (const selector of contentSelectors) {
             const $content = $(selector).first();
             if ($content.length > 0) {
               const extracted = extractTextWithStructure($content.clone());
-              
+
               if (extracted.length > textContent.length) {
                 textContent = extracted;
                 foundContent = true;
               }
-              
+
               if (textContent.length > 1000) break; // 충분한 콘텐츠를 찾으면 중단
             }
           }
-          
+
           // 2. 주요 콘텐츠 영역을 찾지 못했거나 너무 짧은 경우 body 전체에서 추출
           if (!foundContent || textContent.length < 500) {
             const $body = $('body');
             if ($body.length > 0) {
               const fullText = extractTextWithStructure($body.clone());
-              
+
               // 더 긴 텍스트를 선택
               if (fullText.length > textContent.length) {
                 textContent = fullText;
@@ -2143,9 +2143,9 @@ export async function processQueue() {
 
           // 3. 콘텐츠가 충분하지 않은 경우 JavaScript 렌더링 필요 여부 확인
           const hasSubstantialContent = textContent.length > 500;
-          const hasEmptyRoot = $('body').children().length === 0 || 
-                               ($('#root, #app').length > 0 && $('#root, #app').text().trim().length < 100);
-          
+          const hasEmptyRoot = $('body').children().length === 0 ||
+            ($('#root, #app').length > 0 && $('#root, #app').text().trim().length < 100);
+
           if (!hasSubstantialContent && hasEmptyRoot) {
             console.warn(`⚠️ 정적 HTML로 충분한 콘텐츠를 찾지 못함 (${textContent.length}자). JavaScript 렌더링이 필요할 수 있습니다.`);
             // Puppeteer를 사용한 크롤링은 별도로 처리 (현재는 경고만)
@@ -2154,15 +2154,15 @@ export async function processQueue() {
           // 콘텐츠가 짧은 경우 Puppeteer로 재시도 (JavaScript 렌더링 필요할 수 있음)
           if (!textContent || textContent.length < 100) {
             console.warn(`⚠️ Cheerio로 추출한 콘텐츠가 짧습니다 (${textContent.length}자). Puppeteer로 재시도합니다.`);
-            
+
             try {
               // PuppeteerCrawlingService 인스턴스 생성 (한 번만 생성)
               if (!puppeteerService) {
                 puppeteerService = new PuppeteerCrawlingService();
               }
-              
+
               const puppeteerResult = await puppeteerService.crawlMetaPage(targetUrl, false, true); // skipUrlCheck=true로 모든 도메인 허용
-              
+
               if (puppeteerResult && puppeteerResult.content && puppeteerResult.content.length >= 100) {
                 console.log(`✅ Puppeteer로 콘텐츠 추출 성공: ${puppeteerResult.content.length}자`);
                 return {
@@ -2174,10 +2174,10 @@ export async function processQueue() {
                 // Puppeteer가 null을 반환하거나 콘텐츠가 짧은 경우
                 if (puppeteerResult === null) {
                   console.warn(`⚠️ Puppeteer 초기화 실패로 크롤링 불가, Cheerio 결과 확인 중...`);
-              } else {
-                console.warn(`⚠️ Puppeteer로도 충분한 콘텐츠를 추출하지 못했습니다 (${puppeteerResult?.content?.length || 0}자)`);
+                } else {
+                  console.warn(`⚠️ Puppeteer로도 충분한 콘텐츠를 추출하지 못했습니다 (${puppeteerResult?.content?.length || 0}자)`);
                 }
-                
+
                 // Puppeteer 실패 시 Cheerio 결과가 있으면 사용 (graceful fallback)
                 if (textContent && textContent.length > 0) {
                   console.warn(`⚠️ Puppeteer 실패했지만 Cheerio 결과 사용: ${textContent.length}자`);
@@ -2187,7 +2187,7 @@ export async function processQueue() {
                     htmlContent: htmlContent
                   };
                 }
-                
+
                 // Cheerio 결과도 없으면 최소한 빈 문서라도 반환 (에러 대신)
                 // 이렇게 하면 작업이 완전히 실패하지 않고, 빈 문서로 저장되어 사용자가 확인할 수 있음
                 console.warn(`⚠️ Cheerio와 Puppeteer 모두 실패했지만, 빈 문서로 저장하여 작업을 계속 진행합니다.`);
@@ -2199,7 +2199,7 @@ export async function processQueue() {
               }
             } catch (puppeteerError: any) {
               console.error(`❌ Puppeteer 재시도 실패:`, puppeteerError);
-              
+
               // Puppeteer 실패 시 Cheerio 결과가 있으면 사용 (graceful fallback)
               if (textContent && textContent.length > 0) {
                 console.warn(`⚠️ Puppeteer 실패했지만 Cheerio 결과 사용: ${textContent.length}자`);
@@ -2209,7 +2209,7 @@ export async function processQueue() {
                   htmlContent: htmlContent
                 };
               }
-              
+
               // Cheerio 결과도 없으면 최소한 빈 문서라도 반환 (에러 대신)
               console.warn(`⚠️ Cheerio와 Puppeteer 모두 실패했지만, 빈 문서로 저장하여 작업을 계속 진행합니다.`);
               return {
@@ -2232,7 +2232,7 @@ export async function processQueue() {
           // documentIdOverride가 있으면 그것을 우선 사용 (명확한 PK 기준)
           let existingDoc = null;
           let wasExistingDocument = false;
-          
+
           if (documentIdOverride) {
             // documentIdOverride가 있으면 해당 ID로 직접 조회
             const { data: docById, error: docByIdError } = await supabase
@@ -2240,16 +2240,16 @@ export async function processQueue() {
               .select('id, title, chunk_count, created_at, url, status')
               .eq('id', documentIdOverride)
               .maybeSingle();
-            
+
             if (docByIdError && docByIdError.code !== 'PGRST116') {
               console.error('❌ documentIdOverride로 문서 조회 실패:', docByIdError);
             }
-            
+
             if (docById) {
               existingDoc = docById;
               wasExistingDocument = true;
               console.log(`[CRITICAL] ✅ documentIdOverride로 문서 찾음: ${documentIdOverride}`);
-              
+
               // 🔥 이미 indexed 상태이고 chunk_count > 0인 문서는 건너뛰기
               // 단, URL이 없는 경우에는 URL만 업데이트
               if (docById.status === 'indexed' && docById.chunk_count > 0) {
@@ -2274,7 +2274,7 @@ export async function processQueue() {
                   reason: 'already_indexed'
                 };
               }
-              
+
               // 🔥 모달에서 생성한 문서(status: 'pending')인 경우, payload의 title을 우선 사용
               if (docById.status === 'pending' && job.payload?.title) {
                 const payloadTitle = job.payload.title as string;
@@ -2286,7 +2286,7 @@ export async function processQueue() {
               }
             }
           }
-          
+
           // documentIdOverride로 찾지 못했거나 없으면 URL 기준으로 조회 (중복 처리 포함)
           if (!existingDoc) {
             // URL 기준으로 조회 시 중복이 있을 수 있으므로 가장 최신 문서만 가져오기
@@ -2296,16 +2296,16 @@ export async function processQueue() {
               .eq('url', targetUrl)
               .order('created_at', { ascending: false })
               .limit(10); // 최대 10개까지 조회해서 중복 확인
-            
+
             if (docsByUrlError && docsByUrlError.code !== 'PGRST116') {
               console.error('❌ URL 기준 문서 조회 실패:', docsByUrlError);
             }
-            
+
             if (docsByUrl && docsByUrl.length > 0) {
               // 가장 최신 문서 사용
               existingDoc = docsByUrl[0];
               wasExistingDocument = true;
-              
+
               // 🔥 이미 indexed 상태이고 chunk_count > 0인 문서는 건너뛰기
               // 단, URL이 없는 경우에는 URL만 업데이트
               if (existingDoc.status === 'indexed' && existingDoc.chunk_count > 0) {
@@ -2330,12 +2330,12 @@ export async function processQueue() {
                   reason: 'already_indexed'
                 };
               }
-              
+
               // 중복 문서가 있으면 정리 (processing 상태이면서 chunk_count=0인 중복 문서 삭제)
               if (docsByUrl.length > 1) {
                 console.warn(`⚠️ URL 중복 문서 발견: ${docsByUrl.length}개, 정리 시작: ${targetUrl}`);
                 const duplicateIds = docsByUrl.slice(1).map(d => d.id); // 첫 번째(최신) 제외한 나머지
-                
+
                 // 중복 문서 중 processing 상태이면서 chunk_count=0인 것만 삭제
                 const { data: duplicatesToDelete } = await supabase
                   .from('documents')
@@ -2343,46 +2343,46 @@ export async function processQueue() {
                   .in('id', duplicateIds)
                   .eq('status', 'processing')
                   .eq('chunk_count', 0);
-                
+
                 if (duplicatesToDelete && duplicatesToDelete.length > 0) {
                   const deleteIds = duplicatesToDelete.map(d => d.id);
                   console.log(`[CRITICAL] 🗑️ 중복 문서 삭제: ${deleteIds.length}개 (processing, chunk_count=0)`);
-                  
+
                   // 관련 청크, 메타데이터, 로그도 함께 삭제
                   await supabase.from('document_chunks').delete().in('document_id', deleteIds);
                   await supabase.from('document_metadata').delete().in('document_id', deleteIds);
                   await supabase.from('document_logs').delete().in('document_id', deleteIds);
-                  
+
                   // 문서 삭제
                   const { error: deleteError } = await supabase
                     .from('documents')
                     .delete()
                     .in('id', deleteIds);
-                  
+
                   if (deleteError) {
                     console.error('❌ 중복 문서 삭제 실패:', deleteError);
                   } else {
                     console.log(`[CRITICAL] ✅ 중복 문서 삭제 완료: ${deleteIds.length}개`);
                   }
                 }
-                
+
                 // 나머지 중복 문서는 failed 상태로 변경 (이미 indexed인 경우는 유지)
-                const remainingDuplicates = docsByUrl.slice(1).filter(d => 
+                const remainingDuplicates = docsByUrl.slice(1).filter(d =>
                   !duplicatesToDelete?.some(del => del.id === d.id)
                 );
-                
+
                 if (remainingDuplicates.length > 0) {
                   const remainingIds = remainingDuplicates
                     .filter(d => d.status !== 'indexed') // indexed는 유지
                     .map(d => d.id);
-                  
+
                   if (remainingIds.length > 0) {
                     await supabase
                       .from('documents')
                       .update({ status: 'failed', updated_at: nowIso })
                       .in('id', remainingIds)
                       .neq('status', 'indexed'); // indexed는 변경하지 않음
-                    
+
                     console.log(`[CRITICAL] ⚠️ 중복 문서 failed 상태로 변경: ${remainingIds.length}개`);
                   }
                 }
@@ -2397,7 +2397,7 @@ export async function processQueue() {
             // 🔥 크롤링 완료 후 제목은 기존 제목 유지 (크롤링된 제목으로 덮어쓰지 않음)
             // 모달에서 설정한 제목이 있으면 그것을 사용, 없으면 기존 제목 유지
             let finalTitle = existingDoc.title; // 기존 제목 유지
-            
+
             // 모달에서 생성한 문서(status: 'pending')인 경우에만 payload의 title 사용
             if (existingDoc.status === 'pending' && job.payload?.title) {
               const payloadTitle = job.payload.title as string;
@@ -2406,7 +2406,7 @@ export async function processQueue() {
                 finalTitle = payloadTitle;
               }
             }
-            
+
             // 🔥 pending 상태 문서를 processing으로 명시적으로 업데이트 (프론트엔드가 상태를 감지할 수 있도록)
             // 제목은 기존 제목 유지 (크롤링된 제목으로 덮어쓰지 않음)
             await supabase
@@ -2425,13 +2425,13 @@ export async function processQueue() {
               })
               .eq('id', existingDoc.id)
               .in('status', ['pending', 'queued']); // pending/queued 상태만 processing으로 변경
-            
+
             console.log(`[CRITICAL] 📝 문서 상태 업데이트: pending/queued -> processing (문서 ID: ${existingDoc.id}, 제목 유지: ${finalTitle})`);
           } else if (wasExistingDocument && documentIdOverride) {
             // documentIdOverride가 있고 기존 문서가 있는 경우 업데이트
             // 🔥 크롤링 완료 후 제목은 기존 제목 유지 (크롤링된 제목으로 덮어쓰지 않음)
             let finalTitle = existingDoc?.title || title; // 기존 제목 우선
-            
+
             // 모달에서 생성한 문서(status: 'pending')인 경우에만 payload의 title 사용
             if (existingDoc?.status === 'pending' && job.payload?.title) {
               const payloadTitle = job.payload.title as string;
@@ -2440,7 +2440,7 @@ export async function processQueue() {
                 finalTitle = payloadTitle;
               }
             }
-            
+
             // 🔥 pending 상태 문서를 processing으로 명시적으로 업데이트
             // 제목은 기존 제목 유지 (크롤링된 제목으로 덮어쓰지 않음)
             await supabase
@@ -2459,7 +2459,7 @@ export async function processQueue() {
               })
               .eq('id', documentIdOverride)
               .in('status', ['pending', 'queued']); // pending/queued 상태만 processing으로 변경
-            
+
             console.log(`[CRITICAL] 📝 문서 상태 업데이트: pending/queued -> processing (문서 ID: ${documentIdOverride}, 제목 유지: ${finalTitle})`);
           } else if (!wasExistingDocument) {
             // 새 문서 생성
@@ -2472,7 +2472,7 @@ export async function processQueue() {
                 console.log(`[CRITICAL] 📝 새 문서 생성 시 모달 제목 사용: "${newDocTitle}"`);
               }
             }
-            
+
             await supabase
               .from('documents')
               .insert({
@@ -2502,7 +2502,7 @@ export async function processQueue() {
                 updated_at: nowIso,
               })
               .eq('id', resolvedDocumentId);
-            
+
             // 작업은 완료로 표시하되, 문서는 failed 상태
             return {
               success: true, // 작업은 완료로 표시
@@ -2516,26 +2516,26 @@ export async function processQueue() {
           try {
             await supabase
               .from('documents')
-              .update({ 
+              .update({
                 status: 'processing',
                 updated_at: new Date().toISOString()
               })
               .eq('id', resolvedDocumentId)
               .in('status', ['pending', 'queued']); // pending/queued 상태만 processing으로 변경
-            
+
             console.log(`[CRITICAL] 📝 문서 상태 업데이트: pending/queued -> processing (문서 ID: ${resolvedDocumentId})`);
           } catch (statusUpdateError) {
             console.warn('[CRITICAL] ⚠️ 문서 상태 업데이트 실패 (계속 진행):', statusUpdateError);
           }
-          
+
           // RAG 처리 시작 로깅
           const ragProcessStartTime = Date.now();
           console.log(`[CRITICAL] 🚀 RAG 처리 시작: ${title} (콘텐츠 길이: ${content.length}자)`);
-          
+
           // BGE-M3 초기화 진행 상황 DB 업데이트를 위해 jobId 설정
           ragProcessor.setCurrentJobId(job.id);
           console.log(`[CRITICAL] ✅ RAGProcessor에 jobId 설정 완료: ${job.id} (BGE-M3 초기화 하트비트 DB 업데이트 활성화)`);
-          
+
           // RAG 처리 전체에 타임아웃 추가 (60초)
           const ragProcessTimeout = 60000;
           const ragProcessPromise = ragProcessor.processDocument({
@@ -2550,14 +2550,14 @@ export async function processQueue() {
             created_at: existingDoc?.created_at || nowIso,
             updated_at: nowIso,
           });
-          
+
           const ragProcessTimeoutPromise = new Promise<never>((_, reject) => {
             setTimeout(() => {
               const elapsed = Date.now() - ragProcessStartTime;
               reject(new Error(`RAG 처리 전체 타임아웃: ${ragProcessTimeout}ms 초과 (경과: ${elapsed}ms)`));
             }, ragProcessTimeout);
           });
-          
+
           let ragResult;
           try {
             ragResult = await Promise.race([ragProcessPromise, ragProcessTimeoutPromise]);
@@ -2566,23 +2566,23 @@ export async function processQueue() {
           } catch (ragError) {
             const ragProcessElapsed = Date.now() - ragProcessStartTime;
             console.error(`[CRITICAL] ❌ RAG 처리 실패/타임아웃: ${title} (소요 시간: ${ragProcessElapsed}ms)`, ragError);
-            
+
             // 타임아웃 또는 에러 발생 시 즉시 문서 상태를 failed로 업데이트
             try {
               await supabase
                 .from('documents')
-                .update({ 
-                  status: 'failed', 
-                  updated_at: new Date().toISOString() 
+                .update({
+                  status: 'failed',
+                  updated_at: new Date().toISOString()
                 })
                 .eq('id', resolvedDocumentId)
                 .in('status', ['processing', 'indexing']);
-              
+
               console.log(`[CRITICAL] ✅ RAG 처리 실패로 인한 문서 상태 업데이트: ${resolvedDocumentId} -> failed`);
             } catch (updateError) {
               console.warn('[CRITICAL] ⚠️ 문서 상태 업데이트 실패 (계속 진행):', updateError);
             }
-            
+
             // 타임아웃 또는 에러 발생 시 실패 결과 반환
             ragResult = {
               documentId: resolvedDocumentId,
@@ -2603,7 +2603,7 @@ export async function processQueue() {
                 updated_at: new Date().toISOString(),
               })
               .eq('id', resolvedDocumentId);
-            
+
             // URL 업데이트 확인 로그
             console.log(`[CRITICAL] ✅ 하위 페이지 URL 업데이트 완료:`, {
               documentId: resolvedDocumentId,
@@ -2637,11 +2637,11 @@ export async function processQueue() {
         };
 
         console.error('[CRITICAL] 📄 메인 페이지 크롤링 시작:', { url, documentId, extractSubPages, extractSubPagesRaw });
-        
+
         // 메인 페이지 처리 전체 타임아웃: 5분 (크롤링 30초 + RAG 처리 4분 30초)
         const MAIN_PAGE_TIMEOUT = 5 * 60 * 1000; // 5분
         const mainPageStartTime = Date.now();
-        
+
         // 하트비트 업데이트: 메인 페이지 처리 시작 (기존 result 유지)
         try {
           const currentResult = ((job as any).result as any) || {};
@@ -2661,7 +2661,7 @@ export async function processQueue() {
         } catch (heartbeatError) {
           console.warn('[CRITICAL] ⚠️ 하트비트 업데이트 실패 (계속 진행):', heartbeatError);
         }
-        
+
         let mainPage;
         try {
           // 메인 페이지 크롤링 타임아웃: 30초
@@ -2677,12 +2677,12 @@ export async function processQueue() {
           const errorMessage = fetchError instanceof Error ? fetchError.message : String(fetchError);
           const errorStack = fetchError instanceof Error ? fetchError.stack : undefined;
           const errorName = fetchError instanceof Error ? fetchError.name : 'Unknown';
-          
+
           // 에러 메시지를 안전하게 인코딩 (UTF-8 보장)
           const safeErrorMessage = Buffer.from(errorMessage, 'utf8').toString('utf8');
           const safeErrorStack = errorStack ? Buffer.from(errorStack.substring(0, 1000), 'utf8').toString('utf8') : undefined;
-          
-          console.error('[CRITICAL] ❌ 메인 페이지 크롤링 실패:', {
+
+          console.error('[CRITICAL] ❌ 메인 페이지 크롤링 실패 (하위 페이지 탐색 시도):', {
             url,
             errorMessage: safeErrorMessage,
             errorName,
@@ -2690,26 +2690,40 @@ export async function processQueue() {
             errorType: typeof fetchError,
             errorString: String(fetchError)
           });
-          
-          // 실패 시 작업 상태 업데이트 (안전한 인코딩 사용)
+
+          // 실패 시 작업 상태 업데이트 (failed가 아닌 processing 유지, 에러 정보만 result에 기록)
           const detailedError = `메인 페이지 크롤링 실패: ${safeErrorMessage} (${errorName})`;
-          await supabase
-            .from('processing_jobs')
-            .update({
-              status: 'failed',
-              error: detailedError,
-              finished_at: new Date().toISOString(),
-              result: { 
-                error: detailedError,
-                errorMessage: safeErrorMessage,
-                errorName,
-                errorStack: safeErrorStack
-              }
-            })
-            .eq('id', job.id);
-          throw new Error(detailedError);
+
+          try {
+            const currentResult = ((job as any).result as any) || {};
+            await supabase
+              .from('processing_jobs')
+              .update({
+                // status: 'failed', // 실패 상태로 변경하지 않음
+                // error: detailedError, // 전체 에러로 설정하지 않음
+                result: {
+                  ...currentResult,
+                  mainPageError: detailedError,
+                  mainPageErrorMessage: safeErrorMessage,
+                  mainPageErrorName: errorName,
+                  mainPageErrorStack: safeErrorStack,
+                  mainPageFailed: true
+                }
+              })
+              .eq('id', job.id);
+          } catch (updateError) {
+            console.warn('[CRITICAL] ⚠️ 작업 상태 업데이트 실패 (계속 진행):', updateError);
+          }
+
+          // 에러를 throw하지 않고 빈 객체 반환하여 하위 페이지 탐색 진행
+          mainPage = {
+            textContent: '',
+            pageTitle: url, // URL을 제목으로
+            htmlContent: ''
+          };
+          console.warn('[CRITICAL] ⚠️ 메인 페이지 크롤링 실패로 인해 빈 컨텐츠로 진행합니다. 하위 페이지 탐색을 시도합니다.');
         }
-        
+
         console.error('[CRITICAL] 📄 메인 페이지 크롤링 완료:', { url, title: mainPage.pageTitle, contentLength: mainPage.textContent.length, htmlLength: mainPage.htmlContent.length });
 
         // 하트비트 업데이트: 메인 페이지 크롤링 완료, RAG 처리 시작 (기존 result 유지)
@@ -2732,7 +2746,7 @@ export async function processQueue() {
         } catch (heartbeatError) {
           console.warn('[CRITICAL] ⚠️ 하트비트 업데이트 실패 (계속 진행):', heartbeatError);
         }
-        
+
         let mainDocResult;
         try {
           // RAG 처리 타임아웃: 5분 (Vercel Pro 플랜 최대 실행 시간 5분)
@@ -2743,14 +2757,14 @@ export async function processQueue() {
           // 총: 5분 (안전 마진 포함)
           const ragTimeout = 5 * 60 * 1000; // 5분
           const ragStartTime = Date.now();
-          
+
           // RAG 처리 진행 상황 모니터링을 위한 하트비트 (30초마다 업데이트)
           const ragHeartbeatInterval = setInterval(async () => {
             try {
               const elapsed = Date.now() - ragStartTime;
               const elapsedSeconds = (elapsed / 1000).toFixed(1);
               const remainingSeconds = ((ragTimeout - elapsed) / 1000).toFixed(1);
-              
+
               const currentResult = ((job as any).result as any) || {};
               await supabase
                 .from('processing_jobs')
@@ -2767,13 +2781,13 @@ export async function processQueue() {
                 })
                 .eq('id', job.id)
                 .neq('status', 'cancelled');
-              
+
               console.log(`[CRITICAL] 💓 RAG 처리 하트비트: 경과 ${elapsedSeconds}초, 남은 시간 ${remainingSeconds}초`);
             } catch (heartbeatError) {
               console.warn('[CRITICAL] ⚠️ RAG 처리 하트비트 업데이트 실패 (계속 진행):', heartbeatError);
             }
           }, 30000); // 30초마다 하트비트 업데이트
-          
+
           // 🔥 메인 페이지 처리 시에도 모달에서 설정한 제목 우선 사용
           // 크롤링된 제목(mainPage.pageTitle)이 "광고주센터"인 경우 기존 제목 유지
           let mainPageTitle = mainPage.pageTitle;
@@ -2790,19 +2804,19 @@ export async function processQueue() {
               .select('id, title')
               .eq('id', documentId)
               .maybeSingle();
-            
-            if (existingMainDoc?.title && 
-                (mainPage.pageTitle.toLowerCase().includes('광고주센터') || 
-                 mainPage.pageTitle.toLowerCase().includes('광고주 센터'))) {
+
+            if (existingMainDoc?.title &&
+              (mainPage.pageTitle.toLowerCase().includes('광고주센터') ||
+                mainPage.pageTitle.toLowerCase().includes('광고주 센터'))) {
               mainPageTitle = existingMainDoc.title;
               console.log(`[CRITICAL] 📝 메인 페이지 기존 제목 유지: "${mainPageTitle}" (크롤링 제목: "${mainPage.pageTitle}")`);
             }
           }
-          
+
           const ragPromise = upsertAndProcessDocument({ targetUrl: url, title: mainPageTitle, content: mainPage.textContent, documentIdOverride: documentId }).finally(() => {
             clearInterval(ragHeartbeatInterval);
           });
-          
+
           const ragTimeoutPromise = new Promise<never>((_, reject) => {
             setTimeout(() => {
               clearInterval(ragHeartbeatInterval);
@@ -2824,7 +2838,7 @@ export async function processQueue() {
             .update({
               status: 'failed',
               finished_at: new Date().toISOString(),
-              result: { 
+              result: {
                 error: `메인 문서 처리 실패: ${upsertError instanceof Error ? upsertError.message : String(upsertError)}`,
                 isTimeout: isTimeout,
                 suggestion: isTimeout ? '임베딩 모델 초기화가 오래 걸리고 있습니다. 잠시 후 다시 시도해주세요.' : undefined
@@ -2833,10 +2847,10 @@ export async function processQueue() {
             .eq('id', job.id);
           throw new Error(`메인 문서 처리 실패: ${upsertError instanceof Error ? upsertError.message : String(upsertError)}`);
         }
-        
+
         const mainPageElapsed = Date.now() - mainPageStartTime;
         console.error('[CRITICAL] 📄 메인 문서 처리 완료:', { documentId, success: mainDocResult.success, chunkCount: mainDocResult.chunkCount, elapsed: mainPageElapsed });
-        
+
         // 하트비트 업데이트: 메인 페이지 처리 완료 (기존 result 유지)
         try {
           const currentResult = ((job as any).result as any) || {};
@@ -2862,10 +2876,10 @@ export async function processQueue() {
         // document_id가 없으면 생성된 documentId로 업데이트
         if (!job.document_id && mainDocResult.documentId) {
           try {
-          await supabase
-            .from('processing_jobs')
+            await supabase
+              .from('processing_jobs')
               .update({ document_id: mainDocResult.documentId })
-            .eq('id', job.id);
+              .eq('id', job.id);
             console.log(`[CRITICAL] ✅ processing_jobs에 document_id 업데이트: ${mainDocResult.documentId}`);
           } catch (updateError) {
             console.warn('[CRITICAL] ⚠️ processing_jobs document_id 업데이트 실패 (계속 진행):', updateError);
@@ -2924,7 +2938,7 @@ export async function processQueue() {
               discovered = await sitemapDiscoveryService.discoverSubPages(url, discoveryOptions, mainPage.htmlContent);
               const discoveryEndMs = Date.now();
               console.error('[CRITICAL] ✅ 하위 페이지 발견 완료: ' + discovered.length + '개 (소요 시간: ' + (discoveryEndMs - discoveryStartMs) + 'ms)');
-              
+
               // 발견된 페이지 상세 로그 및 도메인 분포 분석
               if (discovered.length > 0) {
                 console.log('📋 발견된 하위 페이지 목록:');
@@ -2934,21 +2948,21 @@ export async function processQueue() {
                 if (discovered.length > 10) {
                   console.log(`  ... 외 ${discovered.length - 10}개`);
                 }
-                
+
                 // 도메인 분포 분석
                 const domainMap = new Map<string, number>();
                 const baseDomain = seedUrl.hostname;
                 let sameDomainCount = 0;
                 let subdomainCount = 0;
                 let otherDomainCount = 0;
-                
+
                 discovered.forEach(page => {
                   try {
                     const pageUrl = new URL(page.url);
                     const pageDomain = pageUrl.hostname;
                     const count = domainMap.get(pageDomain) || 0;
                     domainMap.set(pageDomain, count + 1);
-                    
+
                     if (pageDomain === baseDomain) {
                       sameDomainCount++;
                     } else if (pageDomain.endsWith(`.${baseDomain}`)) {
@@ -2960,7 +2974,7 @@ export async function processQueue() {
                     // URL 파싱 실패 무시
                   }
                 });
-                
+
                 console.log(`[CRITICAL] 📊 발견된 URL 도메인 분포:`, {
                   total: discovered.length,
                   sameDomain: sameDomainCount,
@@ -2988,11 +3002,11 @@ export async function processQueue() {
               });
               discovered = [];
             }
-            
+
             // URL과 title 정보를 함께 유지
             const urlToTitleMap = new Map<string, string>();
             const candidateUrlSet = new Set<string>();
-            
+
             discovered.forEach(entry => {
               if (entry.url && entry.url !== url && !entry.url.includes('#')) {
                 candidateUrlSet.add(entry.url);
@@ -3013,14 +3027,14 @@ export async function processQueue() {
             let candidateSameDomainCount = 0;
             let candidateSubdomainCount = 0;
             let candidateOtherDomainCount = 0;
-            
+
             candidateUrls.forEach(candidateUrl => {
               try {
                 const candidateUrlObj = new URL(candidateUrl);
                 const candidateUrlDomain = candidateUrlObj.hostname;
                 const count = candidateDomainMap.get(candidateUrlDomain) || 0;
                 candidateDomainMap.set(candidateUrlDomain, count + 1);
-                
+
                 if (candidateUrlDomain === candidateBaseDomain) {
                   candidateSameDomainCount++;
                 } else if (candidateUrlDomain.endsWith(`.${candidateBaseDomain}`)) {
@@ -3032,7 +3046,7 @@ export async function processQueue() {
                 // URL 파싱 실패 무시
               }
             });
-            
+
             console.error('[CRITICAL] 📄 하위 페이지 후보: ' + candidateUrls.length + '개 (발견: ' + discovered.length + '개, maxUrls 제한: ' + maxUrlsLimit + '개, 필터링 후: ' + candidateUrls.length + '개)', {
               url,
               documentId,
@@ -3052,7 +3066,7 @@ export async function processQueue() {
                   .map(([domain, count]) => ({ domain, count }))
               }
             });
-            
+
             if (candidateUrls.length === 0 && discovered.length > 0) {
               console.warn('[CRITICAL] ⚠️ 발견된 하위 페이지가 모두 필터링되었습니다. 필터 조건을 확인해주세요.', {
                 url,
@@ -3068,7 +3082,7 @@ export async function processQueue() {
             // domainLimit이 false이고 maxDepth 3 이상일 때는 더 많은 URL이 발견될 수 있으므로 배치 크기 조정
             const isDomainLimitDisabled = domainLimit === false;
             const shouldReduceBatchSize = isDomainLimitDisabled && actualMaxDepth >= 3;
-            const BATCH_SIZE = shouldReduceBatchSize 
+            const BATCH_SIZE = shouldReduceBatchSize
               ? (maxUrlsLimit >= 200 ? 8 : 6) // 도메인 제한 해제 시 배치 크기 감소 (메모리 부족 방지)
               : (maxUrlsLimit >= 200 ? 10 : 8); // 기본값
             console.error('[CRITICAL] 📦 배치 크기 설정:', {
@@ -3079,7 +3093,7 @@ export async function processQueue() {
               shouldReduceBatchSize,
               BATCH_SIZE
             });
-            
+
             // 각 하위 페이지의 개별 상태 추적
             const subPageStatusMap = new Map<string, { url: string; title?: string; status: 'pending' | 'processing' | 'completed' | 'failed'; chunkCount?: number; error?: string; startedAt?: string }>();
             candidateUrls.forEach(subUrl => {
@@ -3090,7 +3104,7 @@ export async function processQueue() {
                 status: 'pending'
               });
             });
-            
+
             console.error('[CRITICAL] 🔄 하위 페이지 크롤링 시작: ' + candidateUrls.length + '개 (병렬 처리: 최대 ' + BATCH_SIZE + '개 동시)', {
               url,
               documentId,
@@ -3098,7 +3112,7 @@ export async function processQueue() {
               batchSize: BATCH_SIZE,
               totalBatches: Math.ceil(candidateUrls.length / BATCH_SIZE)
             });
-            
+
             // 초기 상태 저장 (모든 하위 페이지를 pending으로 설정)
             try {
               await supabase
@@ -3118,7 +3132,7 @@ export async function processQueue() {
             } catch (initError) {
               console.error('[CRITICAL] ⚠️ 초기 상태 업데이트 실패 (계속 진행):', initError);
             }
-            
+
             // 진행 상황 업데이트: 각 배치 완료 시마다 즉시 업데이트
             for (let i = 0; i < candidateUrls.length; i += BATCH_SIZE) {
               // 취소 체크: 배치 처리 전에 작업이 취소되었는지 확인
@@ -3127,18 +3141,18 @@ export async function processQueue() {
                 .select('status')
                 .eq('id', job.id)
                 .single();
-              
+
               if (currentJob?.status === 'cancelled') {
                 console.log(`⚠️ 하위 페이지 처리 중 작업이 취소되었습니다: ${job.id}`);
                 throw new Error('작업이 취소되었습니다.');
               }
-              
+
               const batch = candidateUrls.slice(i, i + BATCH_SIZE);
               const batchStartTime = Date.now();
               // 타임아웃 설정: domainLimit이 false이고 maxDepth 3 이상일 때는 더 많은 URL이 처리되므로 타임아웃 증가
               const isDomainLimitDisabled = domainLimit === false;
               const shouldIncreaseTimeout = isDomainLimitDisabled && actualMaxDepth >= 3;
-              const BATCH_TIMEOUT = shouldIncreaseTimeout 
+              const BATCH_TIMEOUT = shouldIncreaseTimeout
                 ? 10 * 60 * 1000 // 10분 (도메인 제한 해제 시)
                 : 90000; // 90초 (기본값)
               // 개별 페이지 타임아웃: fetch (20초) + RAG (60초) + 여유 (10초) = 90초
@@ -3154,9 +3168,9 @@ export async function processQueue() {
                 shouldIncreaseTimeout,
                 batchNumber: Math.floor(i / BATCH_SIZE) + 1
               });
-              
+
               console.error('[CRITICAL] 🔄 배치 ' + (Math.floor(i / BATCH_SIZE) + 1) + '/' + Math.ceil(candidateUrls.length / BATCH_SIZE) + ' 시작: ' + batch.length + '개 페이지 (인덱스 ' + i + '~' + (i + batch.length - 1) + ')');
-              
+
               // 배치 병렬 처리
               const batchPromises = batch.map(async (subUrl) => {
                 if (!subUrl) return null;
@@ -3165,17 +3179,17 @@ export async function processQueue() {
                   const linkTitle = urlToTitleMap.get(subUrl); // 링크 텍스트(메뉴명) 가져오기
                   const currentIndex = candidateUrls.indexOf(subUrl) + 1;
                   console.error('[CRITICAL] 📄 하위 페이지 처리 중 (' + currentIndex + '/' + candidateUrls.length + '): ' + subUrl + (linkTitle ? ' [링크제목: ' + linkTitle + ']' : ''));
-                  
+
                   // 상태 엔트리 가져오기 (한 번만 선언하고 재사용)
                   const statusEntry = subPageStatusMap.get(subUrl);
-                  
+
                   // 상태를 'processing'으로 업데이트
                   if (statusEntry) {
                     statusEntry.status = 'processing';
                     statusEntry.title = linkTitle || statusEntry.title;
                     statusEntry.startedAt = statusEntry.startedAt || new Date().toISOString(); // 시작 시간 기록
                   }
-                  
+
                   let page;
                   try {
                     // 페이지 다운로드에 타임아웃 추가 (20초로 단축)
@@ -3195,7 +3209,7 @@ export async function processQueue() {
                       error: fetchError,
                       documentId
                     });
-                    
+
                     // 🔥 근본 원인 해결: 다운로드 실패 시 이미 생성된 문서가 있으면 failed로 업데이트
                     try {
                       const { data: failedDoc } = await supabase
@@ -3209,24 +3223,24 @@ export async function processQueue() {
                         .order('created_at', { ascending: false })
                         .limit(1)
                         .maybeSingle();
-                      
+
                       if (failedDoc) {
                         await supabase
                           .from('documents')
-                          .update({ 
-                            status: 'failed', 
-                            updated_at: new Date().toISOString() 
+                          .update({
+                            status: 'failed',
+                            updated_at: new Date().toISOString()
                           })
                           .eq('id', failedDoc.id)
                           .eq('status', 'processing')
                           .eq('chunk_count', 0);
-                        
+
                         console.log(`[CRITICAL] ✅ 다운로드 실패로 인한 문서 상태 업데이트: ${failedDoc.id} -> failed`);
                       }
                     } catch (docUpdateError) {
                       console.warn(`[CRITICAL] ⚠️ 다운로드 실패 시 문서 상태 업데이트 실패: ${subUrl}`, docUpdateError);
                     }
-                    
+
                     if (statusEntry) {
                       statusEntry.status = 'failed';
                       statusEntry.error = fetchError instanceof Error ? fetchError.message : String(fetchError);
@@ -3237,19 +3251,19 @@ export async function processQueue() {
                       error: fetchError instanceof Error ? fetchError.message : String(fetchError),
                     };
                   }
-                  
+
                   // 제목 우선순위: discovered 배열의 title (모달과 동일) > 히어로 영역 제목 > 링크 텍스트(메뉴명) > 페이지 제목 > URL 경로
                   // 모달 페이지에서 사용하는 로직과 동일하게 discovered.title을 최우선 사용
                   let finalTitle = null;
-                  
+
                   // 0. discovered 배열에서 추출한 제목 (모달과 동일한 로직)
                   const discoveredTitle = urlToTitleMap.get(subUrl);
                   if (discoveredTitle && discoveredTitle.trim().length >= 2) {
                     const lowerDiscovered = discoveredTitle.toLowerCase().trim();
                     // "광고주센터"만 있는 경우만 제외
-                    if (lowerDiscovered !== '광고주센터' && lowerDiscovered !== '광고주 센터' && 
-                        lowerDiscovered !== 'advertiser center' && lowerDiscovered !== 'naver' && 
-                        lowerDiscovered !== '네이버' && lowerDiscovered !== 'naver광고주센터') {
+                    if (lowerDiscovered !== '광고주센터' && lowerDiscovered !== '광고주 센터' &&
+                      lowerDiscovered !== 'advertiser center' && lowerDiscovered !== 'naver' &&
+                      lowerDiscovered !== '네이버' && lowerDiscovered !== 'naver광고주센터') {
                       // 메인 페이지 제목과 다르면 사용
                       if (discoveredTitle.trim() !== mainPage.pageTitle.trim()) {
                         finalTitle = discoveredTitle.trim();
@@ -3257,38 +3271,38 @@ export async function processQueue() {
                       }
                     }
                   }
-                  
+
                   // 1. 히어로 영역 제목 추출 (페이지 HTML에서 직접 추출) - finalTitle이 없을 때만
                   let heroTitle = null;
                   try {
                     const $page = cheerio.load(page.htmlContent || '');
-                    
+
                     // 메인 콘텐츠 영역 우선 확인
                     const mainH1 = $page('main h1, article h1, .content h1, .main-content h1').first();
                     const mainH2 = $page('main h2, article h2, .content h2, .main-content h2').first();
                     const h1Text = mainH1.length > 0 ? mainH1.text().trim() : $page('h1').first().text().trim();
                     const h2Text = mainH2.length > 0 ? mainH2.text().trim() : $page('h2').first().text().trim();
-                    
+
                     // 제목 유효성 검사 함수 (하위 페이지용 - 더 관대한 필터링)
                     const isValidTitle = (title: string): boolean => {
                       if (!title || title.length < 2 || title.length > 200) return false;
                       const lower = title.toLowerCase().trim();
-                      
+
                       // 메인 페이지 제목과 정확히 동일하면 제외
                       if (title.trim() === mainPage.pageTitle.trim()) return false;
-                      
+
                       // "광고주센터"만 있는 경우 제외 (하지만 "네이버 광고 상품 추천" 같은 것은 허용)
-                      if (lower === '광고주센터' || lower === '광고주 센터' || 
-                          lower === 'advertiser center' || lower === 'naver' || 
-                          lower === '네이버' || lower === 'naver광고주센터') return false;
-                      
+                      if (lower === '광고주센터' || lower === '광고주 센터' ||
+                        lower === 'advertiser center' || lower === 'naver' ||
+                        lower === '네이버' || lower === 'naver광고주센터') return false;
+
                       // "광고주센터"로 시작하거나 끝나는 경우만 제외 (내용이 있는 경우는 허용)
                       if (lower.startsWith('광고주센터') && title.length < 10) return false;
                       if (lower.endsWith('광고주센터') && title.length < 10) return false;
-                      
+
                       return true;
                     };
-                    
+
                     if (isValidTitle(h1Text)) {
                       heroTitle = h1Text;
                     } else if (isValidTitle(h2Text)) {
@@ -3309,7 +3323,7 @@ export async function processQueue() {
                         '.content-title', '.main-title',
                         '.section-title', '.heading-title'
                       ];
-                      
+
                       for (const selector of heroSelectors) {
                         const text = $page(selector).first().text().trim();
                         if (isValidTitle(text)) {
@@ -3321,7 +3335,7 @@ export async function processQueue() {
                   } catch (heroError) {
                     console.warn(`[CRITICAL] ⚠️ 히어로 제목 추출 실패: ${subUrl}`, heroError);
                   }
-                  
+
                   // 2. 히어로 영역 제목이 있으면 사용 (finalTitle이 없을 때만)
                   if (!finalTitle && heroTitle) {
                     finalTitle = heroTitle;
@@ -3336,15 +3350,15 @@ export async function processQueue() {
                   else if (page.pageTitle && page.pageTitle.length >= 2) {
                     const lowerPageTitle = page.pageTitle.toLowerCase().trim();
                     const mainPageTitleLower = mainPage.pageTitle.toLowerCase().trim();
-                    
+
                     // 메인 페이지 제목과 정확히 동일하면 제외
                     if (page.pageTitle.trim() === mainPage.pageTitle.trim()) {
                       console.log(`[CRITICAL] ⚠️ 페이지 제목 필터링됨 (메인과 동일): ${subUrl} -> "${page.pageTitle}"`);
                     }
                     // "광고주센터"만 있는 경우 제외
-                    else if (lowerPageTitle === '광고주센터' || lowerPageTitle === '광고주 센터' || 
-                             lowerPageTitle === 'advertiser center' || lowerPageTitle === 'naver' || 
-                             lowerPageTitle === '네이버' || lowerPageTitle === 'naver광고주센터') {
+                    else if (lowerPageTitle === '광고주센터' || lowerPageTitle === '광고주 센터' ||
+                      lowerPageTitle === 'advertiser center' || lowerPageTitle === 'naver' ||
+                      lowerPageTitle === '네이버' || lowerPageTitle === 'naver광고주센터') {
                       console.log(`[CRITICAL] ⚠️ 페이지 제목 필터링됨 (일반적인 제목): ${subUrl} -> "${page.pageTitle}"`);
                     }
                     // "광고주센터"로만 시작하거나 끝나는 짧은 제목 제외 (내용이 있는 경우는 허용)
@@ -3366,14 +3380,14 @@ export async function processQueue() {
                         if (pathParts.length > 0) {
                           // 마지막 경로를 제목으로 사용
                           let pathTitle = pathParts[pathParts.length - 1];
-                          
+
                           // URL 디코딩 시도 (한글 경로 지원)
                           try {
                             pathTitle = decodeURIComponent(pathTitle);
                           } catch (e) {
                             // 디코딩 실패 시 원본 사용
                           }
-                          
+
                           // 하이픈/언더스코어를 공백으로 변환하고 단어 첫 글자 대문자화
                           pathTitle = pathTitle
                             .replace(/[-_]/g, ' ')
@@ -3381,7 +3395,7 @@ export async function processQueue() {
                             .map(word => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
                             .join(' ')
                             .trim();
-                          
+
                           // 경로 기반 제목이 의미있으면 사용
                           if (pathTitle && pathTitle.length >= 2 && pathTitle !== mainPage.pageTitle) {
                             finalTitle = pathTitle;
@@ -3393,17 +3407,17 @@ export async function processQueue() {
                       // URL 파싱 실패 시 무시
                     }
                   }
-                  
+
                   // 4. 최종 제목이 없거나 메인 페이지 제목과 같거나 "광고주센터" 관련이면 URL 경로 기반 제목 생성
                   const finalTitleLower = finalTitle ? finalTitle.toLowerCase() : '';
-                  if (!finalTitle || 
-                      finalTitle === mainPage.pageTitle || 
-                      finalTitleLower.includes('광고주센터') || 
-                      finalTitleLower.includes('광고주 센터') || 
-                      finalTitleLower.includes('advertiser center') ||
-                      finalTitleLower === 'naver' || 
-                      finalTitleLower === '네이버' ||
-                      finalTitleLower.trim() === 'naver광고주센터') {
+                  if (!finalTitle ||
+                    finalTitle === mainPage.pageTitle ||
+                    finalTitleLower.includes('광고주센터') ||
+                    finalTitleLower.includes('광고주 센터') ||
+                    finalTitleLower.includes('advertiser center') ||
+                    finalTitleLower === 'naver' ||
+                    finalTitleLower === '네이버' ||
+                    finalTitleLower.trim() === 'naver광고주센터') {
                     try {
                       const urlPath = new URL(subUrl).pathname;
                       if (urlPath && urlPath !== '/') {
@@ -3415,7 +3429,7 @@ export async function processQueue() {
                           } catch (e) {
                             // 디코딩 실패 시 원본 사용
                           }
-                          
+
                           // 경로를 한글로 변환 시도 (일반적인 경로 패턴)
                           const pathTitleMap: Record<string, string> = {
                             'sales': '매출',
@@ -3431,7 +3445,7 @@ export async function processQueue() {
                             'intro': '소개',
                             'start': '시작'
                           };
-                          
+
                           // 경로 제목 매핑 시도
                           const lowerPathTitle = pathTitle.toLowerCase();
                           if (pathTitleMap[lowerPathTitle]) {
@@ -3445,7 +3459,7 @@ export async function processQueue() {
                               .join(' ')
                               .trim();
                           }
-                          
+
                           // 여전히 제목이 없거나 메인 페이지 제목과 같으면 URL 사용
                           if (!finalTitle || finalTitle.length < 2 || finalTitle === mainPage.pageTitle) {
                             finalTitle = subUrl;
@@ -3461,14 +3475,14 @@ export async function processQueue() {
                       finalTitle = subUrl;
                     }
                   }
-                  
+
                   console.log(`[CRITICAL] 📝 최종 하위 페이지 제목: ${subUrl} -> "${finalTitle}" (discovered 제목: "${discoveredTitle || '없음'}", 원본 페이지 제목: "${page.pageTitle}", 링크 텍스트: "${linkTitle}", 메인 페이지 제목: "${mainPage.pageTitle}", 히어로 제목: "${heroTitle || '없음'}")`);
-                  
+
                   // 최종 제목이 여전히 "광고주센터" 관련이면 경고
                   if (finalTitle && (finalTitle.toLowerCase().includes('광고주센터') || finalTitle.toLowerCase().includes('광고주 센터'))) {
                     console.warn(`[CRITICAL] ⚠️ 최종 제목이 여전히 "광고주센터" 관련입니다: ${subUrl} -> "${finalTitle}"`);
                   }
-                  
+
                   let result;
                   let createdDocumentId: string | undefined = undefined;
                   try {
@@ -3484,7 +3498,7 @@ export async function processQueue() {
                         .order('created_at', { ascending: false })
                         .limit(1)
                         .maybeSingle();
-                      
+
                       if (existingSubDoc?.title) {
                         titleForUpsert = existingSubDoc.title;
                         console.log(`[CRITICAL] 📝 하위 페이지 기존 제목 유지: ${subUrl} -> "${titleForUpsert}"`);
@@ -3497,12 +3511,12 @@ export async function processQueue() {
                         }
                       }
                     }
-                    
+
                     // RAG 처리에 타임아웃 추가 (60초로 단축 - 배치 타임아웃 내에 완료되어야 함)
                     const ragTimeout = 60000; // 90초 → 60초로 단축 (배치 타임아웃 90초 내에 완료되어야 함)
                     const ragStartTime = Date.now();
-                    const ragPromise = upsertAndProcessDocument({ 
-                      targetUrl: subUrl, 
+                    const ragPromise = upsertAndProcessDocument({
+                      targetUrl: subUrl,
                       title: titleForUpsert || subUrl, // 모달 제목 또는 기존 제목 사용
                       content: page.textContent,
                       parentDocumentId: documentId // 부모 문서 ID 전달
@@ -3521,7 +3535,7 @@ export async function processQueue() {
                       error: processError,
                       documentId
                     });
-                    
+
                     // 타임아웃이나 에러 발생 시 문서 상태를 failed로 업데이트
                     // upsertAndProcessDocument 내부에서 문서가 생성되었을 수 있으므로 확인 후 업데이트
                     try {
@@ -3538,30 +3552,30 @@ export async function processQueue() {
                           .order('created_at', { ascending: false })
                           .limit(1)
                           .maybeSingle();
-                        
+
                         if (failedDoc) {
                           createdDocumentId = failedDoc.id;
                         }
                       }
-                      
+
                       if (createdDocumentId) {
                         // 문서 상태를 failed로 업데이트
                         await supabase
                           .from('documents')
-                          .update({ 
-                            status: 'failed', 
-                            updated_at: new Date().toISOString() 
+                          .update({
+                            status: 'failed',
+                            updated_at: new Date().toISOString()
                           })
                           .eq('id', createdDocumentId)
                           .eq('status', 'processing')
                           .eq('chunk_count', 0);
-                        
+
                         console.log(`[CRITICAL] ✅ 실패한 하위 페이지 문서 상태 업데이트: ${createdDocumentId} -> failed`);
                       }
                     } catch (updateError) {
                       console.warn('[CRITICAL] ⚠️ 실패한 하위 페이지 문서 상태 업데이트 실패:', updateError);
                     }
-                    
+
                     if (statusEntry) {
                       statusEntry.status = 'failed';
                       statusEntry.error = processError instanceof Error ? processError.message : String(processError);
@@ -3573,29 +3587,29 @@ export async function processQueue() {
                       documentId: createdDocumentId,
                     };
                   }
-                  
+
                   if (!result.success) {
                     console.warn(`[CRITICAL] ⚠️ 하위 페이지 처리 실패 (성공=false): ${subUrl} [제목: ${finalTitle}]`);
-                    
+
                     // RAG 처리 실패 시 문서 상태를 failed로 업데이트
                     const failedDocId = result.documentId;
                     if (failedDocId) {
                       try {
                         await supabase
                           .from('documents')
-                          .update({ 
-                            status: 'failed', 
-                            updated_at: new Date().toISOString() 
+                          .update({
+                            status: 'failed',
+                            updated_at: new Date().toISOString()
                           })
                           .eq('id', failedDocId)
                           .in('status', ['processing', 'indexing']);
-                        
+
                         console.log(`[CRITICAL] ✅ 실패한 하위 페이지 문서 상태 업데이트: ${failedDocId} -> failed`);
                       } catch (updateError) {
                         console.warn('[CRITICAL] ⚠️ 실패한 하위 페이지 문서 상태 업데이트 실패:', updateError);
                       }
                     }
-                    
+
                     if (statusEntry) {
                       statusEntry.status = 'failed';
                       statusEntry.error = (result as any).error || 'RAG 처리 실패';
@@ -3609,35 +3623,35 @@ export async function processQueue() {
                       documentId: result.documentId,
                     };
                   }
-                  
+
                   // 상태를 'completed'로 업데이트
                   if (statusEntry) {
                     statusEntry.status = 'completed';
                     statusEntry.chunkCount = result.chunkCount;
                     statusEntry.title = finalTitle || statusEntry.title;
                   }
-                  
+
                   console.error('[CRITICAL] ✅ 하위 페이지 처리 완료: ' + subUrl + ' [제목: ' + finalTitle + '] (청크: ' + result.chunkCount + '개, 문서 ID: ' + result.documentId + ')');
-                  
+
                   // 메모리 최적화: 처리 완료된 페이지 데이터 즉시 해제
                   page = null as any;
-                  
+
                   return { url: subUrl, success: result.success, chunkCount: result.chunkCount, documentId: result.documentId };
-              } catch (subError) {
+                } catch (subError) {
                   console.error('[CRITICAL] ❌ 하위 페이지 처리 중 예상치 못한 에러:', {
-                  url: subUrl,
-                  error: subError,
-                  documentId
-                });
+                    url: subUrl,
+                    error: subError,
+                    documentId
+                  });
                   const errorStatusEntry = subPageStatusMap.get(subUrl);
                   if (errorStatusEntry) {
                     errorStatusEntry.status = 'failed';
                     errorStatusEntry.error = subError instanceof Error ? subError.message : String(subError);
                   }
                   return {
-                  url: subUrl,
-                  success: false,
-                  error: subError instanceof Error ? subError.message : String(subError),
+                    url: subUrl,
+                    success: false,
+                    error: subError instanceof Error ? subError.message : String(subError),
                   };
                 }
               });
@@ -3645,14 +3659,14 @@ export async function processQueue() {
               // 배치 결과 대기 (각 Promise가 실패해도 전체가 실패하지 않도록 처리)
               // 타임아웃 추가: 배치 처리에 시간 제한 설정 - 타임아웃 시 강제 종료
               let batchResults: PromiseSettledResult<any>[];
-              
+
               // 각 Promise에 개별 타임아웃을 적용한 래퍼 생성
               // 타임아웃이 발생하면 즉시 실패로 처리하여 Promise.allSettled가 무한 대기하지 않도록 함
               const wrappedPromises = batchPromises.map((promise, idx) => {
                 const subUrl = batch[idx];
                 let timeoutId: NodeJS.Timeout | null = null;
                 let isResolved = false;
-                
+
                 // 타임아웃 Promise 생성 (개별 페이지 타임아웃 사용)
                 const timeoutPromise = new Promise<any>((_, reject) => {
                   timeoutId = setTimeout(() => {
@@ -3667,7 +3681,7 @@ export async function processQueue() {
                     }
                   }, INDIVIDUAL_PAGE_TIMEOUT);
                 });
-                
+
                 // Promise.race로 타임아웃 적용
                 return Promise.race([
                   promise.then(result => {
@@ -3693,20 +3707,20 @@ export async function processQueue() {
                   };
                 });
               });
-              
+
               // Promise.allSettled에 타임아웃을 적용하여 무한 대기 방지
               // 중요: Promise.allSettled는 내부적으로 무한 대기할 수 있으므로, 
               // 배치 타임아웃을 더 짧게 설정하고 타임아웃 발생 시 즉시 강제 종료
               const allSettledPromise = Promise.allSettled(wrappedPromises);
               const batchStartTimeForTimeout = Date.now();
-              
+
               // 배치 전체 타임아웃: BATCH_TIMEOUT과 동일하게 설정하여 강제 종료 보장
               // 타임아웃 발생 시 즉시 모든 미완료 작업을 실패로 처리하고 Promise.race가 타임아웃 Promise를 선택하도록 보장
               const overallTimeoutPromise = new Promise<PromiseSettledResult<any>[]>((resolve) => {
                 const timeoutId = setTimeout(() => {
                   const elapsed = Date.now() - batchStartTimeForTimeout;
                   console.error(`[CRITICAL] ⏱️ 배치 ${Math.floor(i / BATCH_SIZE) + 1} 전체 타임아웃 발생: ${BATCH_TIMEOUT}ms 초과 (경과: ${elapsed}ms) - 미완료 작업을 즉시 실패로 처리`);
-                  
+
                   // 타임아웃 발생 시 모든 미완료 작업을 즉시 실패로 처리
                   const timeoutResults: PromiseSettledResult<any>[] = [];
                   batch.forEach((subUrl) => {
@@ -3722,7 +3736,7 @@ export async function processQueue() {
                   });
                   resolve(timeoutResults);
                 }, BATCH_TIMEOUT);
-                
+
                 // allSettledPromise가 먼저 완료되면 타임아웃 취소
                 allSettledPromise.then(() => {
                   clearTimeout(timeoutId);
@@ -3730,12 +3744,12 @@ export async function processQueue() {
                   clearTimeout(timeoutId);
                 });
               });
-              
+
               try {
                 // 전체 배치에 대한 타임아웃 적용 (타임아웃 시 즉시 실패 처리)
                 // Promise.race는 먼저 완료되는 Promise를 반환하므로, 타임아웃이 발생하면 즉시 타임아웃 결과를 반환
                 batchResults = await Promise.race([allSettledPromise, overallTimeoutPromise]);
-                
+
                 // 타임아웃이 발생했는지 확인 (배치 타임아웃 메시지가 포함된 결과인지 확인)
                 const isTimeoutResult = batchResults.length > 0 && batchResults.every((result) => {
                   if (result.status === 'rejected') {
@@ -3743,7 +3757,7 @@ export async function processQueue() {
                   }
                   return false;
                 });
-                
+
                 if (isTimeoutResult) {
                   console.error(`[CRITICAL] ⚠️ 배치 ${Math.floor(i / BATCH_SIZE) + 1} 타임아웃으로 인해 모든 작업이 실패 처리되었습니다.`);
                 }
@@ -3762,7 +3776,7 @@ export async function processQueue() {
                   } as PromiseRejectedResult;
                 });
               }
-              
+
               // 타임아웃으로 실패한 항목 확인 및 로깅
               const timedOutCount = batchResults.filter((result, idx) => {
                 if (result.status === 'rejected') {
@@ -3775,15 +3789,15 @@ export async function processQueue() {
                 }
                 return false;
               }).length;
-              
+
               if (timedOutCount > 0) {
                 console.warn(`[CRITICAL] ⏱️ 배치 ${Math.floor(i / BATCH_SIZE) + 1} 타임아웃 발생: ${timedOutCount}개 페이지가 타임아웃됨 (${BATCH_TIMEOUT}ms 초과) - 완료된 작업만 처리하고 계속 진행`);
               }
-              
+
               // 배치 결과 처리 및 문서 상태 업데이트
               for (const [idx, settledResult] of batchResults.entries()) {
                 const subUrl = batch[idx];
-                
+
                 if (settledResult.status === 'fulfilled' && settledResult.value) {
                   subPageResults.push(settledResult.value);
                 } else if (settledResult.status === 'rejected') {
@@ -3791,14 +3805,14 @@ export async function processQueue() {
                     url: subUrl,
                     error: settledResult.reason
                   });
-                  
+
                   // 상태 엔트리 업데이트
                   const errorStatusEntry = subPageStatusMap.get(subUrl);
                   if (errorStatusEntry) {
                     errorStatusEntry.status = 'failed';
                     errorStatusEntry.error = settledResult.reason instanceof Error ? settledResult.reason.message : String(settledResult.reason);
                   }
-                  
+
                   // 🔥 근본 원인 해결: 배치 처리 실패 시 문서 상태를 failed로 업데이트
                   try {
                     // URL과 main_document_id로 문서 찾기
@@ -3813,25 +3827,25 @@ export async function processQueue() {
                       .order('created_at', { ascending: false })
                       .limit(1)
                       .maybeSingle();
-                    
+
                     if (failedDoc) {
                       // 문서 상태를 failed로 업데이트
                       await supabase
                         .from('documents')
-                        .update({ 
-                          status: 'failed', 
-                          updated_at: new Date().toISOString() 
+                        .update({
+                          status: 'failed',
+                          updated_at: new Date().toISOString()
                         })
                         .eq('id', failedDoc.id)
                         .eq('status', 'processing')
                         .eq('chunk_count', 0);
-                      
+
                       console.log(`[CRITICAL] ✅ 배치 처리 실패로 인한 문서 상태 업데이트: ${failedDoc.id} -> failed`);
                     }
                   } catch (docUpdateError) {
                     console.warn(`[CRITICAL] ⚠️ 배치 처리 실패 시 문서 상태 업데이트 실패: ${subUrl}`, docUpdateError);
                   }
-                  
+
                   subPageResults.push({
                     url: subUrl,
                     success: false,
@@ -3839,7 +3853,7 @@ export async function processQueue() {
                   });
                 }
               }
-              
+
               // 타임아웃 체크 및 배치 완료 로그
               const batchElapsedTime = Date.now() - batchStartTime;
               if (batchElapsedTime > BATCH_TIMEOUT) {
@@ -3847,40 +3861,40 @@ export async function processQueue() {
               }
               processedCount = subPageResults.length; // 실제 처리된 개수로 업데이트
               console.error('[CRITICAL] 📊 배치 ' + (Math.floor(i / BATCH_SIZE) + 1) + ' 완료: ' + processedCount + '/' + candidateUrls.length + ' 처리됨 (소요 시간: ' + batchElapsedTime + 'ms)');
-              
+
               // 취소 체크: 배치 처리 후에도 취소되었는지 확인
               const { data: currentJobAfterBatch } = await supabase
                 .from('processing_jobs')
                 .select('status')
                 .eq('id', job.id)
                 .single();
-              
+
               if (currentJobAfterBatch?.status === 'cancelled') {
                 console.log(`⚠️ 배치 처리 중 작업이 취소되었습니다: ${job.id}`);
                 throw new Error('작업이 취소되었습니다.');
               }
-              
+
               // 진행 상황 업데이트: 각 배치 완료 시마다 즉시 업데이트 (모든 하위 페이지 상태 포함)
               try {
                 const completedCount = Array.from(subPageStatusMap.values()).filter(s => s.status === 'completed').length;
                 const failedCount = Array.from(subPageStatusMap.values()).filter(s => s.status === 'failed').length;
                 const processingCount = Array.from(subPageStatusMap.values()).filter(s => s.status === 'processing').length;
                 const pendingCount = Array.from(subPageStatusMap.values()).filter(s => s.status === 'pending').length;
-                
+
                 // processedCount: 완료 + 실패 (실제로 처리 완료된 페이지 수)
                 // 이렇게 하면 진행률이 정확하게 표시됩니다 (처리 중인 페이지는 제외)
                 const processedCount = completedCount + failedCount;
-                
-              await supabase
-                .from('processing_jobs')
-                .update({
-                  result: {
-                    url,
-                    documentId,
-                    title: mainPage.pageTitle,
-                    chunkCount: mainDocResult.chunkCount,
-                      subPageProgress: { 
-                        processed: processedCount, 
+
+                await supabase
+                  .from('processing_jobs')
+                  .update({
+                    result: {
+                      url,
+                      documentId,
+                      title: mainPage.pageTitle,
+                      chunkCount: mainDocResult.chunkCount,
+                      subPageProgress: {
+                        processed: processedCount,
                         total: candidateUrls.length,
                         completed: completedCount,
                         failed: failedCount,
@@ -3897,7 +3911,7 @@ export async function processQueue() {
                 console.error('[CRITICAL] ⚠️ 진행 상황 업데이트 실패 (계속 진행):', updateError);
               }
             }
-            
+
             // 마지막 진행 상황 업데이트 (모든 배치 완료 후)
             // 🔥 중요: 모든 배치가 완료되었는데도 processing/pending 상태인 페이지는 타임아웃으로 간주하고 failed로 변경
             const now = Date.now();
@@ -3908,11 +3922,11 @@ export async function processQueue() {
                 const timeoutMinutes = statusEntry.status === 'processing' && statusEntry.startedAt
                   ? Math.round((now - new Date(statusEntry.startedAt).getTime()) / 60000)
                   : 0;
-                
+
                 statusEntry.status = 'failed';
                 statusEntry.error = `배치 처리 완료 후에도 처리되지 않음 (타임아웃: ${timeoutMinutes}분)`;
                 autoFailedCount++;
-                
+
                 // 해당 문서도 failed로 업데이트
                 try {
                   const { data: stuckDoc } = await supabase
@@ -3921,7 +3935,7 @@ export async function processQueue() {
                     .eq('url', subUrl)
                     .eq('type', 'url')
                     .maybeSingle();
-                  
+
                   if (stuckDoc) {
                     await supabase
                       .from('documents')
@@ -3936,40 +3950,40 @@ export async function processQueue() {
                 }
               }
             }
-            
+
             if (autoFailedCount > 0) {
               console.error(`[CRITICAL] ⚠️ ${autoFailedCount}개 페이지를 자동으로 failed로 변경 (배치 완료 후에도 처리되지 않음)`);
             }
-            
+
             // 🔥 작업 완료 전 문서 생성 완료 확인
             // 모든 배치가 완료되었지만, DB 트랜잭션 지연으로 인해 문서 생성이 지연될 수 있음
             // 최소 2초 대기 후 실제 문서 생성 확인
             console.error('[CRITICAL] ⏳ 작업 완료 전 문서 생성 완료 확인 시작...');
             await new Promise(resolve => setTimeout(resolve, 2000)); // 최소 2초 대기 (DB 트랜잭션 완료 대기)
-            
+
             // 실제로 생성된 문서 확인 (최대 30초 대기)
             const maxWaitTime = 30000; // 30초
             const checkInterval = 1000; // 1초마다 확인
             let waited = 0;
             let allDocsCreated = false;
-            
+
             while (waited < maxWaitTime && !allDocsCreated) {
               // 성공한 하위 페이지의 documentId 수집
               const successfulSubPageIds = subPageResults
                 .filter(item => item.success && item.documentId)
                 .map(item => item.documentId)
                 .filter((id): id is string => typeof id === 'string');
-              
+
               if (successfulSubPageIds.length > 0) {
                 // 실제로 DB에 생성된 문서 확인
                 const { data: createdDocs } = await supabase
                   .from('documents')
                   .select('id, status')
                   .in('id', successfulSubPageIds);
-                
+
                 const createdCount = createdDocs?.length || 0;
                 const pendingCount = createdDocs?.filter(d => d.status === 'processing' || d.status === 'indexing').length || 0;
-                
+
                 if (createdCount === successfulSubPageIds.length && pendingCount === 0) {
                   // 모든 문서가 생성되고 처리 완료됨
                   allDocsCreated = true;
@@ -3983,21 +3997,21 @@ export async function processQueue() {
                 allDocsCreated = true;
                 break;
               }
-              
+
               await new Promise(resolve => setTimeout(resolve, checkInterval));
               waited += checkInterval;
             }
-            
+
             if (waited >= maxWaitTime && !allDocsCreated) {
               console.warn(`[CRITICAL] ⚠️ 문서 생성 확인 타임아웃: ${maxWaitTime}ms 초과, 작업 완료 처리 계속 진행`);
             }
-            
+
             const finalCompletedCount = Array.from(subPageStatusMap.values()).filter(s => s.status === 'completed').length;
             const finalFailedCount = Array.from(subPageStatusMap.values()).filter(s => s.status === 'failed').length;
             const finalProcessingCount = Array.from(subPageStatusMap.values()).filter(s => s.status === 'processing').length;
             const finalPendingCount = Array.from(subPageStatusMap.values()).filter(s => s.status === 'pending').length;
             const finalProcessedCount = finalCompletedCount + finalFailedCount; // 이제 모든 페이지가 completed 또는 failed 상태
-            
+
             if (finalProcessedCount > 0 || candidateUrls.length > 0) {
               await supabase
                 .from('processing_jobs')
@@ -4007,8 +4021,8 @@ export async function processQueue() {
                     documentId,
                     title: mainPage.pageTitle,
                     chunkCount: mainDocResult.chunkCount,
-                    subPageProgress: { 
-                      processed: finalProcessedCount, 
+                    subPageProgress: {
+                      processed: finalProcessedCount,
                       total: candidateUrls.length,
                       completed: finalCompletedCount,
                       failed: finalFailedCount,
@@ -4031,11 +4045,11 @@ export async function processQueue() {
               error: subDiscoveryError instanceof Error ? subDiscoveryError.message : String(subDiscoveryError),
             });
           } finally {
-            await sitemapDiscoveryService.close().catch(() => {});
+            await sitemapDiscoveryService.close().catch(() => { });
             // Puppeteer 서비스 정리
             if (puppeteerService) {
               const service: PuppeteerCrawlingService = puppeteerService;
-              await service.close().catch(() => {});
+              await service.close().catch(() => { });
               puppeteerService = null;
             }
           }
@@ -4053,12 +4067,12 @@ export async function processQueue() {
         // 실패한 하위 페이지 자동 재처리 (해시 모드 활성화 시)
         const failedSubPages = subPageResults.filter((item) => !item.success);
         const reprocessedSubPages: Array<{ url: string; success: boolean; error?: string }> = [];
-        
+
         const isHashEmbeddingEnabled =
           (process.env.USE_HASH_EMBEDDING ?? 'false').toLowerCase() === 'true';
         if (failedSubPages.length > 0 && isHashEmbeddingEnabled) {
           console.log(`[CRITICAL] 🔄 실패한 하위 페이지 자동 재처리 시작: ${failedSubPages.length}개`);
-          
+
           for (const failedPage of failedSubPages) {
             try {
               // 실패한 문서 ID 찾기
@@ -4068,7 +4082,7 @@ export async function processQueue() {
                 .eq('url', failedPage.url)
                 .eq('type', 'url')
                 .maybeSingle();
-              
+
               if (failedDoc && failedDoc.content && failedDoc.content.trim().length > 0) {
                 // RAG 재처리
                 ragProcessor.setCurrentJobId(job.id);
@@ -4084,7 +4098,7 @@ export async function processQueue() {
                   created_at: (failedDoc as any).created_at || new Date().toISOString(),
                   updated_at: new Date().toISOString(),
                 });
-                
+
                 if (reprocessResult.success) {
                   await supabase
                     .from('documents')
@@ -4094,7 +4108,7 @@ export async function processQueue() {
                       updated_at: new Date().toISOString(),
                     })
                     .eq('id', failedDoc.id);
-                  
+
                   reprocessedSubPages.push({ url: failedPage.url, success: true });
                   console.log(`[CRITICAL] ✅ 하위 페이지 재처리 성공: ${failedPage.url} (청크: ${reprocessResult.chunkCount}개)`);
                 } else {
@@ -4121,7 +4135,7 @@ export async function processQueue() {
               console.error(`[CRITICAL] ❌ 하위 페이지 재처리 중 에러: ${failedPage.url}`, reprocessError);
             }
           }
-          
+
           console.log(`[CRITICAL] 📊 하위 페이지 재처리 완료: ${reprocessedSubPages.filter(p => p.success).length}/${failedSubPages.length} 성공`);
         }
 
@@ -4136,14 +4150,14 @@ export async function processQueue() {
             .gt('chunk_count', 0)
             .order('created_at', { ascending: false })
             .limit(500);
-          
+
           if (indexedDocs && indexedDocs.length > 0) {
             const indexedDomainMap = new Map<string, number>();
             const indexedBaseDomain = seedUrl.hostname;
             let indexedSameDomainCount = 0;
             let indexedSubdomainCount = 0;
             let indexedOtherDomainCount = 0;
-            
+
             indexedDocs.forEach(doc => {
               if (!doc.url) return;
               try {
@@ -4151,7 +4165,7 @@ export async function processQueue() {
                 const docDomain = docUrl.hostname;
                 const count = indexedDomainMap.get(docDomain) || 0;
                 indexedDomainMap.set(docDomain, count + 1);
-                
+
                 if (docDomain === indexedBaseDomain) {
                   indexedSameDomainCount++;
                 } else if (docDomain.endsWith(`.${indexedBaseDomain}`)) {
@@ -4163,7 +4177,7 @@ export async function processQueue() {
                 // URL 파싱 실패 무시
               }
             });
-            
+
             indexedDocsDomainStats = {
               total: indexedDocs.length,
               sameDomain: indexedSameDomainCount,
@@ -4174,37 +4188,20 @@ export async function processQueue() {
                 .slice(0, 20)
                 .map(([domain, count]) => ({ domain, count }))
             };
-            
+
             console.log(`[CRITICAL] 📊 인덱싱된 문서 도메인 분포:`, indexedDocsDomainStats);
           }
         } catch (domainStatsError) {
           console.warn('[CRITICAL] ⚠️ 인덱싱된 문서 도메인 분포 확인 실패:', domainStatsError);
         }
-        
-        const finishedResult = {
-          url,
-          documentId,
-          title: mainPage.pageTitle,
-          chunkCount: mainDocResult.chunkCount,
-          vendors,
-          domainLimit,
-          respectRobots,
-          maxDepth,
-          extractSubPages,
-          includeExternal: actualMaxDepth >= 4, // maxDepth 4일 때만 외부 도메인 허용
-          subPageCount: subPageResults.filter((item) => item.success).length + reprocessedSubPages.filter((p) => p.success).length,
-          subPages: subPageResults,
-          reprocessedSubPages: reprocessedSubPages.length > 0 ? reprocessedSubPages : undefined,
-          crawlTimeMs: Date.now() - crawlStartMs,
-          indexedDocsDomainStats, // 인덱싱된 문서 도메인 분포 추가
-        };
+
 
         console.error('[CRITICAL] ✅ CRAWL_SEED 작업 완료 - 상태 업데이트 시작:', {
           jobId: job.id,
           documentId,
           title: mainPage.pageTitle,
           chunkCount: mainDocResult.chunkCount,
-          crawlTimeMs: finishedResult.crawlTimeMs
+          crawlTimeMs: Date.now() - crawlStartMs
         });
 
         // 🔥 원자적 업데이트: documents 테이블 먼저 업데이트 후 processing_jobs 업데이트
@@ -4217,14 +4214,14 @@ export async function processQueue() {
             .select('id, status, chunk_count')
             .eq('id', documentId)
             .maybeSingle();
-          
+
           if (currentDocError && currentDocError.code !== 'PGRST116') {
             console.error('[CRITICAL] ⚠️ 메인 문서 조회 실패:', {
               documentId,
               error: currentDocError
             });
           }
-          
+
           // 이미 indexed 상태이거나 chunk_count가 이미 설정되어 있으면 성공으로 간주
           if (currentDoc && (currentDoc.status === 'indexed' || (currentDoc.chunk_count && currentDoc.chunk_count > 0))) {
             mainDocUpdated = true;
@@ -4246,7 +4243,7 @@ export async function processQueue() {
               .neq('status', 'indexed') // 이미 indexed인 경우는 제외 (불필요한 업데이트 방지)
               .select('id, status, chunk_count')
               .maybeSingle();
-            
+
             if (docUpdateError) {
               console.error('[CRITICAL] ⚠️ 메인 문서 상태 업데이트 실패:', {
                 documentId,
@@ -4267,7 +4264,7 @@ export async function processQueue() {
                 .select('id, status, chunk_count')
                 .eq('id', documentId)
                 .maybeSingle();
-              
+
               if (recheckDoc && (recheckDoc.status === 'indexed' || (recheckDoc.chunk_count && recheckDoc.chunk_count > 0))) {
                 mainDocUpdated = true;
                 console.log('[CRITICAL] ✅ 메인 문서 상태 재확인: indexed 상태 확인', {
@@ -4289,7 +4286,7 @@ export async function processQueue() {
         // 2. 성공한 하위 페이지 문서들도 상태 업데이트 (chunk_count > 0이면 무조건 indexed로)
         const successfulSubPages = subPageResults.filter(item => item.success && item.documentId);
         const subPageUpdateResults: Array<{ documentId: string; success: boolean }> = [];
-        
+
         if (successfulSubPages.length > 0) {
           for (const subPage of successfulSubPages) {
             if (subPage.documentId && subPage.chunkCount && subPage.chunkCount > 0) {
@@ -4299,7 +4296,7 @@ export async function processQueue() {
                 .select('id, status, chunk_count')
                 .eq('id', subPage.documentId)
                 .maybeSingle();
-              
+
               if (currentSubDocError && currentSubDocError.code !== 'PGRST116') {
                 console.error('[CRITICAL] ⚠️ 하위 페이지 문서 조회 실패:', {
                   documentId: subPage.documentId,
@@ -4307,7 +4304,7 @@ export async function processQueue() {
                   error: currentSubDocError
                 });
               }
-              
+
               // 이미 indexed 상태이거나 chunk_count가 이미 설정되어 있으면 성공으로 간주
               if (currentSubDoc && (currentSubDoc.status === 'indexed' || (currentSubDoc.chunk_count && currentSubDoc.chunk_count > 0))) {
                 subPageUpdateResults.push({ documentId: subPage.documentId, success: true });
@@ -4330,7 +4327,7 @@ export async function processQueue() {
                   .neq('status', 'indexed') // 이미 indexed인 경우는 제외
                   .select('id, status, chunk_count')
                   .maybeSingle();
-                
+
                 if (subDocUpdateError) {
                   console.error('[CRITICAL] ⚠️ 하위 페이지 문서 상태 업데이트 실패:', {
                     documentId: subPage.documentId,
@@ -4353,7 +4350,7 @@ export async function processQueue() {
                     .select('id, status, chunk_count')
                     .eq('id', subPage.documentId)
                     .maybeSingle();
-                  
+
                   if (recheckSubDoc && (recheckSubDoc.status === 'indexed' || (recheckSubDoc.chunk_count && recheckSubDoc.chunk_count > 0))) {
                     subPageUpdateResults.push({ documentId: subPage.documentId, success: true });
                     console.log('[CRITICAL] ✅ 하위 페이지 문서 상태 재확인: indexed 상태 확인', {
@@ -4382,18 +4379,39 @@ export async function processQueue() {
         // - 메인 문서가 indexed면 completed
         // - 메인 문서가 실패했지만 하위 페이지가 하나라도 성공했다면 completed (부분 성공)
         // - 메인 문서와 모든 하위 페이지가 실패했을 때만 failed
-        
+
         // 메인 문서 업데이트 성공 여부 확인
-        const isMainDocumentIndexed = mainDocUpdated && 
-          documentId && 
+        const isMainDocumentIndexed = mainDocUpdated &&
+          documentId &&
+          mainDocResult &&
           mainDocResult.chunkCount > 0;
-        
+
         // 하위 페이지 성공 여부 확인
         const successfulSubPageCount = subPageUpdateResults.filter(r => r.success).length;
         const hasSuccessfulSubPages = successfulSubPageCount > 0;
-        
+
         // 최종 작업 성공 여부: 메인 문서가 indexed이거나 하위 페이지가 하나라도 성공했으면 성공
         const isJobSuccessful = isMainDocumentIndexed || hasSuccessfulSubPages;
+
+        // 결과 객체 생성 (성공/실패 여부 판단 후 생성)
+        const finishedResult = {
+          url,
+          documentId,
+          title: mainPage.pageTitle,
+          chunkCount: mainDocResult.chunkCount,
+          vendors,
+          domainLimit,
+          respectRobots,
+          maxDepth,
+          extractSubPages,
+          includeExternal: actualMaxDepth >= 4, // maxDepth 4일 때만 외부 도메인 허용
+          subPageCount: subPageResults.filter((item) => item.success).length + reprocessedSubPages.filter((p) => p.success).length,
+          subPages: subPageResults,
+          reprocessedSubPages: reprocessedSubPages.length > 0 ? reprocessedSubPages : undefined,
+          crawlTimeMs: Date.now() - crawlStartMs,
+          indexedDocsDomainStats, // 인덱싱된 문서 도메인 분포 추가
+          partialSuccess: !isMainDocumentIndexed && hasSuccessfulSubPages
+        };
 
         if (!isJobSuccessful) {
           // 메인 문서와 모든 하위 페이지가 실패했을 때만 failed로 처리
@@ -4451,7 +4469,7 @@ export async function processQueue() {
             }
           }, { status: 500 });
         }
-        
+
         // 작업이 성공한 경우 (메인 문서가 indexed이거나 하위 페이지가 하나라도 성공)
         // 메인 문서가 실패했지만 하위 페이지가 성공한 경우, 메인 문서 상태를 다시 확인하고 필요시 indexed로 업데이트
         if (!isMainDocumentIndexed && hasSuccessfulSubPages) {
@@ -4461,7 +4479,7 @@ export async function processQueue() {
             mainDocChunkCount: mainDocResult.chunkCount,
             successfulSubPageCount
           });
-          
+
           // 메인 문서의 현재 상태 확인
           if (documentId) {
             const { data: currentMainDoc } = await supabase
@@ -4469,14 +4487,14 @@ export async function processQueue() {
               .select('id, status, chunk_count')
               .eq('id', documentId)
               .maybeSingle();
-            
+
             // 메인 문서가 processing 상태이고 chunk_count가 0이면, 하위 페이지가 성공했으므로 indexed로 업데이트
             if (currentMainDoc && currentMainDoc.status === 'processing' && currentMainDoc.chunk_count === 0) {
               // 하위 페이지의 총 청크 수를 메인 문서의 chunk_count로 설정
               const totalSubPageChunks = subPageResults
                 .filter(item => item.success && item.chunkCount)
                 .reduce((sum, item) => sum + (item.chunkCount || 0), 0);
-              
+
               if (totalSubPageChunks > 0) {
                 const { error: mainDocUpdateError } = await supabase
                   .from('documents')
@@ -4487,7 +4505,7 @@ export async function processQueue() {
                   })
                   .eq('id', documentId)
                   .eq('status', 'processing');
-                
+
                 if (!mainDocUpdateError) {
                   console.log('[CRITICAL] ✅ 메인 문서 상태 업데이트 완료 (하위 페이지 성공 기반):', {
                     documentId,
@@ -4514,10 +4532,10 @@ export async function processQueue() {
               .eq('main_document_id', documentId)
               .eq('status', 'processing')
               .eq('chunk_count', 0);
-            
+
             if (orphanedSubPages && orphanedSubPages.length > 0) {
               const orphanedSubPageIds = orphanedSubPages.map(d => d.id);
-              
+
               // 모든 활성 CRAWL_SEED 작업 조회
               const { data: allActiveJobs } = await supabase
                 .from('processing_jobs')
@@ -4527,10 +4545,10 @@ export async function processQueue() {
                 .neq('id', job.id) // 현재 작업은 제외 (이미 완료 예정)
                 .order('created_at', { ascending: false })
                 .limit(1000);
-              
+
               // document_id로 활성 작업 확인
               const activeJobDocIds = new Set((allActiveJobs || []).map(j => j.document_id).filter(Boolean));
-              
+
               // URL로도 확인
               const activeJobUrls = new Set<string>();
               (allActiveJobs || []).forEach(job => {
@@ -4539,24 +4557,24 @@ export async function processQueue() {
                   activeJobUrls.add(jobUrl);
                 }
               });
-              
+
               // 하위 페이지 URL 조회
               const subPageUrls = orphanedSubPages.map(d => d.url).filter(Boolean);
-              
+
               // 활성 작업이 없는 하위 페이지만 정리
               const toCleanup = orphanedSubPages.filter(doc => {
                 // document_id로 활성 작업이 있으면 제외
                 if (activeJobDocIds.has(doc.id)) return false;
-                
+
                 // URL로도 확인
                 if (doc.url && activeJobUrls.has(doc.url)) return false;
-                
+
                 return true;
               });
-              
+
               if (toCleanup.length > 0) {
                 const cleanupIds = toCleanup.map(d => d.id);
-                
+
                 // 하위 페이지 삭제
                 await supabase.from('document_chunks').delete().in('document_id', cleanupIds);
                 await supabase.from('document_metadata').delete().in('document_id', cleanupIds);
@@ -4565,7 +4583,7 @@ export async function processQueue() {
                 console.log(`[CRITICAL] ✅ 작업 완료 전 "처리중 0개 청크" 하위 페이지 ${cleanupIds.length}개 삭제`);
               }
             }
-            
+
             // 메인 문서도 확인 (processing 상태이면서 chunk_count가 0인 경우)
             const { data: mainDoc } = await supabase
               .from('documents')
@@ -4574,7 +4592,7 @@ export async function processQueue() {
               .eq('status', 'processing')
               .eq('chunk_count', 0)
               .maybeSingle();
-            
+
             if (mainDoc) {
               // 메인 문서에 대한 활성 작업 확인
               const { data: mainDocJobs } = await supabase
@@ -4583,7 +4601,7 @@ export async function processQueue() {
                 .eq('document_id', documentId)
                 .in('status', ['queued', 'processing', 'retrying'])
                 .neq('id', job.id);
-              
+
               if (!mainDocJobs || mainDocJobs.length === 0) {
                 // 활성 작업이 없으면 failed로 변경
                 await supabase
@@ -4623,7 +4641,7 @@ export async function processQueue() {
             verifiedAt: new Date().toISOString()
           },
         };
-        
+
         // document_id가 없었던 경우 설정
         if (!job.document_id && documentId) {
           jobUpdateData.document_id = documentId;
@@ -4651,7 +4669,7 @@ export async function processQueue() {
             .select('status, document_id, finished_at')
             .eq('id', job.id)
             .single();
-          
+
           console.warn('[CRITICAL] ⚠️ 작업 상태 업데이트 실패: 이미 다른 상태이거나 취소됨', {
             jobId: job.id,
             currentStatus: currentJob?.status || 'unknown',
@@ -4672,16 +4690,16 @@ export async function processQueue() {
           });
         }
 
-        return NextResponse.json({ 
-          success: true, 
-          message: 'CRAWL_SEED 작업 완료', 
-          result: finishedResult 
+        return NextResponse.json({
+          success: true,
+          message: 'CRAWL_SEED 작업 완료',
+          result: finishedResult
         }, { status: 200 });
       } catch (crawlError) {
         const errorMessage = crawlError instanceof Error ? crawlError.message : String(crawlError);
         const errorStack = crawlError instanceof Error ? crawlError.stack : undefined;
         const errorName = crawlError instanceof Error ? crawlError.name : 'Unknown';
-        
+
         console.error('[CRITICAL] ❌ CRAWL_SEED 처리 오류:', {
           jobId: job.id,
           url: job.payload?.url,
@@ -4691,16 +4709,16 @@ export async function processQueue() {
           errorType: typeof crawlError,
           errorString: String(crawlError)
         });
-        
+
         // 타임아웃 감지: Vercel 함수 실행 시간 제한 초과 여부 확인
-        const isTimeout = errorMessage.toLowerCase().includes('timeout') || 
-                         errorMessage.toLowerCase().includes('duration') ||
-                         errorMessage.toLowerCase().includes('exceeded') ||
-                         errorMessage.toLowerCase().includes('function execution') ||
-                         crawlError instanceof Error && crawlError.name === 'TimeoutError';
-        
+        const isTimeout = errorMessage.toLowerCase().includes('timeout') ||
+          errorMessage.toLowerCase().includes('duration') ||
+          errorMessage.toLowerCase().includes('exceeded') ||
+          errorMessage.toLowerCase().includes('function execution') ||
+          crawlError instanceof Error && crawlError.name === 'TimeoutError';
+
         const documentId = job.document_id || (job.payload as any)?.documentId;
-        
+
         // 타임아웃인 경우: 부분 성공 확인
         if (isTimeout && documentId) {
           console.error('[CRITICAL] ⏱️ 타임아웃 감지 - 부분 성공 확인 시작:', {
@@ -4708,7 +4726,7 @@ export async function processQueue() {
             documentId,
             errorMessage
           });
-          
+
           // 실제로 인덱싱된 문서 확인 (메인 문서 + 하위 페이지)
           const { data: indexedDocs } = await supabase
             .from('documents')
@@ -4716,11 +4734,11 @@ export async function processQueue() {
             .or(`id.eq.${documentId},main_document_id.eq.${documentId}`)
             .eq('status', 'indexed')
             .gt('chunk_count', 0);
-          
+
           const indexedCount = indexedDocs?.length || 0;
           const mainDocIndexed = indexedDocs?.some(d => d.id === documentId) || false;
           const subPageIndexed = indexedDocs?.some(d => d.main_document_id === documentId) || false;
-          
+
           console.error('[CRITICAL] 📊 타임아웃 시 부분 성공 확인 결과:', {
             jobId: job.id,
             documentId,
@@ -4729,11 +4747,11 @@ export async function processQueue() {
             subPageIndexed,
             indexedDocs: indexedDocs?.map(d => ({ id: d.id, url: d.url, chunks: d.chunk_count }))
           });
-          
+
           // 하나라도 성공했다면 completed로 처리 (부분 성공)
           if (indexedCount > 0) {
             const timeoutMessage = `타임아웃 발생 (Vercel 함수 실행 시간 제한 초과), 하지만 ${indexedCount}개 문서는 성공적으로 인덱싱됨`;
-            
+
             await supabase
               .from('processing_jobs')
               .update({
@@ -4751,15 +4769,15 @@ export async function processQueue() {
                 },
               })
               .eq('id', job.id);
-            
+
             console.error('[CRITICAL] ✅ 타임아웃이지만 부분 성공으로 completed 처리:', {
               jobId: job.id,
               indexedCount
             });
-            
-            return NextResponse.json({ 
-              success: true, 
-              message: 'CRAWL_SEED 작업 타임아웃 (부분 성공)', 
+
+            return NextResponse.json({
+              success: true,
+              message: 'CRAWL_SEED 작업 타임아웃 (부분 성공)',
               details: {
                 timeout: true,
                 partialSuccess: true,
@@ -4771,12 +4789,12 @@ export async function processQueue() {
             }, { status: 200 });
           }
         }
-        
+
         // 타임아웃이 아니거나, 타임아웃이지만 성공한 문서가 없는 경우: failed 처리
-        const finalErrorMessage = isTimeout 
+        const finalErrorMessage = isTimeout
           ? `타임아웃 발생 (Vercel 함수 실행 시간 제한 초과): ${errorMessage}`
           : errorMessage;
-        
+
         if (documentId) {
           // processing 상태인 문서만 failed로 업데이트 (이미 indexed인 문서는 유지)
           const { error: docFailError } = await supabase
@@ -4787,7 +4805,7 @@ export async function processQueue() {
             })
             .eq('id', documentId)
             .eq('status', 'processing');
-          
+
           if (docFailError) {
             console.error('[CRITICAL] ⚠️ 문서 실패 상태 업데이트 실패:', {
               documentId,
@@ -4800,23 +4818,23 @@ export async function processQueue() {
             });
           }
         }
-        
+
         await supabase
           .from('processing_jobs')
           .update({
             status: 'failed',
             error: finalErrorMessage,
             finished_at: new Date().toISOString(),
-            result: { 
+            result: {
               error: finalErrorMessage,
               timeout: isTimeout
             },
           })
           .eq('id', job.id);
 
-        return NextResponse.json({ 
-          success: false, 
-          error: 'CRAWL_SEED 처리 실패', 
+        return NextResponse.json({
+          success: false,
+          error: 'CRAWL_SEED 처리 실패',
           details: finalErrorMessage,
           timeout: isTimeout
         }, { status: 500 });
@@ -4830,16 +4848,16 @@ export async function processQueue() {
         documentId: job.document_id,
         splitIndex: job.payload?.split_index
       });
-      
+
       try {
         const splitId = job.payload?.split_id as string;
         const splitIndex = job.payload?.split_index as number;
         let splitContent = job.payload?.content as string;
-        
+
         if (!splitId) {
           throw new Error('CHUNK_PROCESS job payload에 split_id가 없습니다.');
         }
-        
+
         // payload에 content가 없으면 document_splits에서 조회
         if (!splitContent) {
           const { data: splitData, error: splitFetchError } = await supabase
@@ -4847,18 +4865,18 @@ export async function processQueue() {
             .select('content')
             .eq('id', splitId)
             .single();
-          
+
           if (splitFetchError || !splitData) {
             throw new Error(`분할 콘텐츠 조회 실패: ${splitFetchError?.message || '분할 데이터 없음'}`);
           }
-          
+
           splitContent = splitData.content;
         }
-        
+
         if (!splitContent || splitContent.length === 0) {
           throw new Error('CHUNK_PROCESS job payload에 content가 없거나 비어있습니다.');
         }
-        
+
         // 1. document_splits 상태를 processing으로 업데이트
         await supabase
           .from('document_splits')
@@ -4869,18 +4887,18 @@ export async function processQueue() {
           })
           .eq('id', splitId)
           .eq('status', 'pending');
-        
+
         // 2. 문서 정보 조회
         const { data: doc, error: docError } = await supabase
           .from('documents')
           .select('id, title, type, created_at, updated_at, source_vendor')
           .eq('id', job.document_id)
           .single();
-        
+
         if (docError || !doc) {
           throw new Error(`문서 조회 실패: ${docError?.message || '문서 없음'}`);
         }
-        
+
         // 3. DocumentData 준비 (분할 콘텐츠만 포함)
         const docData: DocumentData = {
           id: doc.id,
@@ -4893,22 +4911,22 @@ export async function processQueue() {
           created_at: doc.created_at || new Date().toISOString(),
           updated_at: new Date().toISOString()
         };
-        
+
         // 4. RAG 처리 (청킹, 임베딩, 저장)
         const processStartMs = Date.now();
         const result = await ragProcessor.processDocument(docData, true);
         const processMs = Date.now() - processStartMs;
-        
+
         if (!result.success) {
           throw new Error(`RAG 처리 실패: ${result.error || '알 수 없는 오류'}`);
         }
-        
+
         console.log('✅ 분할 처리 완료:', {
           splitIndex,
           chunkCount: result.chunkCount,
           processTimeMs: processMs
         });
-        
+
         // 5. document_splits 상태를 completed로 업데이트
         await supabase
           .from('document_splits')
@@ -4918,23 +4936,23 @@ export async function processQueue() {
           })
           .eq('id', splitId)
           .eq('status', 'processing');
-        
+
         // 6. 문서 전체 완료 여부 확인
         const { count: completedCount, error: countError } = await supabase
           .from('document_splits')
           .select('*', { count: 'exact', head: true })
           .eq('document_id', job.document_id)
           .eq('status', 'completed');
-        
+
         const { count: totalCount } = await supabase
           .from('document_splits')
           .select('*', { count: 'exact', head: true })
           .eq('document_id', job.document_id);
-        
+
         if (countError) {
           console.warn('⚠️ 분할 완료 수 조회 실패:', countError);
         }
-        
+
         // 7. 모든 분할 완료 시 문서 상태 업데이트
         if (completedCount === totalCount && totalCount! > 0) {
           // 전체 청크 수 조회
@@ -4942,7 +4960,7 @@ export async function processQueue() {
             .from('document_chunks')
             .select('*', { count: 'exact', head: true })
             .eq('document_id', job.document_id);
-          
+
           await supabase
             .from('documents')
             .update({
@@ -4957,7 +4975,7 @@ export async function processQueue() {
               updated_at: new Date().toISOString()
             })
             .eq('id', job.document_id);
-          
+
           console.log('🎉 모든 분할 처리 완료 - 문서 인덱싱 완료:', {
             documentId: job.document_id,
             totalSplits: totalCount,
@@ -4970,7 +4988,7 @@ export async function processQueue() {
             .select('*', { count: 'exact', head: true })
             .eq('document_id', job.document_id)
             .eq('status', 'failed');
-          
+
           await supabase
             .from('documents')
             .update({
@@ -4983,7 +5001,7 @@ export async function processQueue() {
             })
             .eq('id', job.document_id);
         }
-        
+
         // 8. CHUNK_PROCESS job 완료 처리
         await supabase
           .from('processing_jobs')
@@ -4999,16 +5017,16 @@ export async function processQueue() {
           })
           .eq('id', job.id)
           .eq('status', 'processing');
-        
+
         return NextResponse.json({
           success: true,
           message: `분할 ${splitIndex + 1} 처리 완료`,
           chunkCount: result.chunkCount
         }, { status: 200 });
-        
+
       } catch (error: any) {
         console.error('❌ CHUNK_PROCESS 처리 실패:', error);
-        
+
         // document_splits 상태를 failed로 업데이트
         const splitId = job.payload?.split_id as string;
         if (splitId) {
@@ -5020,19 +5038,19 @@ export async function processQueue() {
             })
             .eq('id', splitId);
         }
-        
+
         // documents.split_status 업데이트 (failed_splits 증가)
         const { count: failedCount } = await supabase
           .from('document_splits')
           .select('*', { count: 'exact', head: true })
           .eq('document_id', job.document_id)
           .eq('status', 'failed');
-        
+
         const { count: totalCount } = await supabase
           .from('document_splits')
           .select('*', { count: 'exact', head: true })
           .eq('document_id', job.document_id);
-        
+
         await supabase
           .from('documents')
           .update({
@@ -5043,7 +5061,7 @@ export async function processQueue() {
             }
           })
           .eq('id', job.document_id);
-        
+
         // job 실패 처리 (재시도 로직은 기존과 동일)
         throw error;
       }
@@ -5084,7 +5102,7 @@ export async function processQueue() {
         .eq('id', job.document_id);
       await supabase
         .from('processing_jobs')
-        .update({ status: 'completed', finished_at: new Date().toISOString(), result: { note: 'ocr_completed', chunks: result.chunkCount, bytes: fileBuffer.length, dlMs, ocrMs, embMs, totalMs, textLength: (normalizedText||'').length } })
+        .update({ status: 'completed', finished_at: new Date().toISOString(), result: { note: 'ocr_completed', chunks: result.chunkCount, bytes: fileBuffer.length, dlMs, ocrMs, embMs, totalMs, textLength: (normalizedText || '').length } })
         .eq('id', job.id)
         .eq('status', 'processing');
 
@@ -5099,7 +5117,7 @@ export async function processQueue() {
           ocr_ms: ocrMs,
           emb_ms: embMs,
           total_ms: totalMs,
-          text_length: (normalizedText||'').length,
+          text_length: (normalizedText || '').length,
           chunks: result.chunkCount,
           note: 'ocr_completed'
         });
@@ -5120,7 +5138,7 @@ export async function processQueue() {
       // 실패 시 상태를 failed로 기록하여 stuck 방지
       const message = err instanceof Error ? err.message : String(err);
       const errorStack = err instanceof Error ? err.stack : undefined;
-      
+
       // 처리 중인 job 조회 (lastJob 대신 현재 처리 중인 job 사용)
       const { data: processingJob } = await supabase
         .from('processing_jobs')
@@ -5129,12 +5147,12 @@ export async function processQueue() {
         .order('updated_at', { ascending: false })
         .limit(1)
         .maybeSingle();
-      
+
       // 에러 로그에 파일 정보 포함
       const fileSize = (processingJob?.payload as any)?.fileSize || (processingJob?.payload as any)?.storage?.size || 0;
       const fileName = (processingJob?.payload as any)?.fileName || 'unknown';
       const fileSizeMB = fileSize > 0 ? (fileSize / (1024 * 1024)).toFixed(2) : 'unknown';
-      
+
       console.error('❌ 큐 처리 실패:', {
         jobId: processingJob?.id,
         documentId: processingJob?.document_id,
@@ -5143,28 +5161,28 @@ export async function processQueue() {
         error: message,
         stack: errorStack,
       });
-      
+
       if (processingJob?.id) {
         // processing_jobs 상태를 failed로 업데이트 (에러 메시지에 파일 정보 포함)
-        const errorMessage = fileSizeMB !== 'unknown' 
+        const errorMessage = fileSizeMB !== 'unknown'
           ? `${message} (파일: ${fileName}, 크기: ${fileSizeMB}MB)`
           : message;
-          
+
         await supabase
           .from('processing_jobs')
-          .update({ 
-            status: 'failed', 
-            error: errorMessage, 
-            finished_at: new Date().toISOString() 
+          .update({
+            status: 'failed',
+            error: errorMessage,
+            finished_at: new Date().toISOString()
           })
           .eq('id', processingJob.id)
           .eq('status', 'processing');
-        
+
         // documents 테이블도 failed 상태로 업데이트
         if (processingJob.document_id) {
           await supabase
             .from('documents')
-            .update({ 
+            .update({
               status: 'failed',
               updated_at: new Date().toISOString()
             })
@@ -5175,7 +5193,7 @@ export async function processQueue() {
       // ignore secondary errors
       console.error('❌ 실패 상태 업데이트 오류:', recoveryError);
     }
-    
+
     const errorResponse = NextResponse.json(
       { success: false, error: 'Consumer 처리 오류', details: err instanceof Error ? err.message : String(err) },
       { status: 500 }
@@ -5196,7 +5214,7 @@ export async function GET(request: NextRequest) {
   // 🔥 즉시 로깅 (Vercel 로그에 반드시 나타나도록)
   console.log('[CRITICAL] 🔔 GET 핸들러 호출됨 (Cron Job 또는 수동 호출)');
   console.error('[CRITICAL] 🔔 GET 핸들러 호출됨 (Cron Job 또는 수동 호출)');
-  
+
   // 요청 정보 로깅
   const url = request.url;
   const headers = Object.fromEntries(request.headers.entries());
@@ -5210,11 +5228,11 @@ export async function GET(request: NextRequest) {
       'x-vercel-id': headers['x-vercel-id']
     }
   });
-  
+
   // CRON_SECRET 검증
   const isAuthorized = verifyCronSecret(request);
   console.log('[CRITICAL] CRON_SECRET 검증 결과:', isAuthorized);
-  
+
   if (!isAuthorized) {
     console.error('[CRITICAL] ❌ CRON_SECRET 검증 실패');
     console.log('[CRITICAL] ❌ CRON_SECRET 검증 실패');
@@ -5226,7 +5244,7 @@ export async function GET(request: NextRequest) {
 
   console.log('[CRITICAL] ✅ CRON_SECRET 검증 성공, processQueue 실행 시작');
   console.error('[CRITICAL] ✅ CRON_SECRET 검증 성공, processQueue 실행 시작');
-  
+
   // 큐 처리 실행
   return processQueue();
 }
@@ -5236,7 +5254,7 @@ export async function GET(request: NextRequest) {
  */
 export async function POST(request: NextRequest) {
   console.error('[CRITICAL] 🔔 POST 핸들러 호출됨 (수동 호출)');
-  
+
   // CRON_SECRET 검증 (POST 요청의 경우 선택적 - 수동 호출 허용)
   // Authorization 헤더가 있는 경우에만 검증
   const authHeader = request.headers.get('authorization');
@@ -5263,7 +5281,7 @@ export async function OPTIONS() {
     'Access-Control-Allow-Headers': 'Content-Type, Authorization',
     'Access-Control-Max-Age': '86400',
   });
-  
+
   return new NextResponse(null, {
     status: 204,
     headers,
