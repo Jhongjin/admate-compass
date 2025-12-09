@@ -137,18 +137,36 @@ export default function CrawlToIndexTestPage() {
   const recentDocuments = React.useMemo(() => {
     const allDocs = documentsData?.data?.documents || [];
     
-    // 🔥 삭제된 문서 ID로 필터링 (백엔드에서 삭제된 문서 제외)
-    let filteredDocs = allDocs.filter((doc: Document) => {
-      return !deletedDocumentIds.has(doc.id);
+    console.log('🔍 [문서 필터링 시작]', {
+      전체_문서수: allDocs.length,
+      삭제된_ID_목록_크기: deletedDocumentIds.size,
+      삭제된_ID_목록: Array.from(deletedDocumentIds),
+      documentsData_존재: !!documentsData,
+      data_존재: !!documentsData?.data,
+      documents_배열_존재: !!documentsData?.data?.documents
     });
     
-    // 🔥 테스트 페이지에서는 필터링 완전 제거 - 모든 문서 표시
-    // 크롤링 테스트 목적이므로 currentJobUrl 필터링 비활성화
-    console.log('📋 [테스트 모드] 모든 문서 표시 (필터링 없음):', {
+    // 🔥 삭제된 문서 ID로 필터링 (백엔드에서 삭제된 문서 제외)
+    let filteredDocs = allDocs.filter((doc: Document) => {
+      const isDeleted = deletedDocumentIds.has(doc.id);
+      if (isDeleted) {
+        console.log(`🗑️ [필터링] 삭제된 문서 제외: ${doc.id?.substring(0, 8)} - ${doc.title?.substring(0, 30)}`);
+      }
+      return !isDeleted;
+    });
+    
+    console.log('📋 [필터링 결과]', {
       전체_문서: allDocs.length,
       필터링_후: filteredDocs.length,
+      제외된_문서수: allDocs.length - filteredDocs.length,
       currentJobUrl: currentJobUrl,
-      isCrawling: isCrawling
+      isCrawling: isCrawling,
+      첫_문서_정보: filteredDocs[0] ? {
+        id: filteredDocs[0].id?.substring(0, 8),
+        url: filteredDocs[0].url,
+        title: filteredDocs[0].title?.substring(0, 30),
+        status: filteredDocs[0].status
+      } : null
     });
     
     // 백엔드 처리 상태 진단
