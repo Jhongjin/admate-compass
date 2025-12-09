@@ -2664,6 +2664,7 @@ export async function processQueue() {
 
         let mainPage;
         try {
+          console.log('*** DEPLOYMENT CHECK: V2 (Fixed Partial Success) ***');
           // 메인 페이지 크롤링 타임아웃: 30초
           const fetchTimeout = 30000;
           const fetchPromise = fetchPageContent(url);
