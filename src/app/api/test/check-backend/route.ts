@@ -53,9 +53,14 @@ export async function GET(request: NextRequest) {
         });
 
     } catch (error) {
+        console.error('Backend Check Error:', error);
         return NextResponse.json({
             success: false,
-            error: error instanceof Error ? error.message : String(error)
+            error: error instanceof Error ? error.message : JSON.stringify(error),
+            env_check: {
+                url: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
+                key: !!process.env.SUPABASE_SERVICE_ROLE_KEY
+            }
         }, { status: 500 });
     }
 }
