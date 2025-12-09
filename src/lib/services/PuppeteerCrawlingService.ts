@@ -169,10 +169,11 @@ export class PuppeteerCrawlingService {
               '--metrics-recording-only',
               '--no-first-run',
               '--safebrowsing-disable-auto-update',
-              '--enable-automation',
+              // '--enable-automation', // 🚫 봇 탐지 원인 제거
               '--password-store=basic',
               '--use-mock-keychain',
               '--single-process',
+              '--disable-blink-features=AutomationControlled', // ✅ Stealth: 자동화 제어 숨기기
             ];
 
             console.log(`🔧 Chromium args 개수: ${chromiumArgs.length}`);
@@ -207,12 +208,12 @@ export class PuppeteerCrawlingService {
               '--no-sandbox',
               '--disable-setuid-sandbox',
               '--disable-dev-shm-usage',
-              '--disable-blink-features=AutomationControlled',
+              '--disable-blink-features=AutomationControlled', // ✅ Stealth 추가
               '--disable-web-security',
               '--allow-running-insecure-content',
               '--disable-features=VizDisplayCompositor'
             ],
-            ignoreDefaultArgs: ['--enable-automation'],
+            ignoreDefaultArgs: ['--enable-automation'], // 이미 설정되어 있음
           });
           console.log('✅ Puppeteer 브라우저 초기화 완료 (로컬 환경)');
         }
@@ -281,8 +282,16 @@ export class PuppeteerCrawlingService {
     try {
       console.log(`🔍 Meta 페이지 크롤링 시작: ${url}`);
 
-      // 실제 브라우저처럼 보이게 설정
-      await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+      // 실제 브라우저처럼 보이게 설정 (Chrome 131 - Windows)
+      const userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
+      await page.setUserAgent(userAgent);
+
+      // ✅ Stealth: navigator.webdriver 프로퍼티 삭제
+      await page.evaluateOnNewDocument(() => {
+        Object.defineProperty(navigator, 'webdriver', {
+          get: () => false,
+        });
+      });
 
       // 뷰포트 설정
       await page.setViewport({ width: 1920, height: 1080 });
@@ -300,7 +309,7 @@ export class PuppeteerCrawlingService {
       } catch (gotoError: any) {
         const errorMessage = gotoError.message || String(gotoError);
         console.error(`❌ 페이지 로드 실패 (첫 시도): ${errorMessage}`);
-        
+
         // 타임아웃 에러인 경우 load로 재시도 (더 관대한 조건)
         if (errorMessage.includes('timeout') || errorMessage.includes('Navigation timeout')) {
           console.warn('⚠️ 타임아웃 발생, load 조건으로 재시도...');
@@ -349,7 +358,7 @@ export class PuppeteerCrawlingService {
       }
 
       console.log(`📄 페이지 응답 상태: ${response.status()} - ${response.statusText()}`);
-      
+
       // 🔥 실제 페이지 URL 확인 (리다이렉트 여부 확인)
       const actualUrl = page.url();
       console.log(`🔍 실제 페이지 URL: ${actualUrl} (원본: ${url})`);
@@ -370,22 +379,22 @@ export class PuppeteerCrawlingService {
       // 🔥 Facebook/Instagram 페이지의 경우 추가 대기 및 스크롤 (JavaScript 콘텐츠 로드 유도)
       if (url.includes('facebook.com') || url.includes('instagram.com')) {
         console.log(`⏳ Facebook/Instagram 페이지 추가 대기 및 스크롤...`);
-        
+
         // 🔥 로그인 페이지 감지 (URL 또는 페이지 내용 확인)
         const currentUrl = page.url();
-        const isLoginPage = currentUrl.includes('/login') || 
-                           currentUrl.includes('/signin') ||
-                           currentUrl.includes('facebook.com/login') ||
-                           currentUrl.includes('instagram.com/accounts/login');
-        
+        const isLoginPage = currentUrl.includes('/login') ||
+          currentUrl.includes('/signin') ||
+          currentUrl.includes('facebook.com/login') ||
+          currentUrl.includes('instagram.com/accounts/login');
+
         if (isLoginPage) {
           console.warn(`⚠️ 로그인 페이지로 리다이렉트됨: ${currentUrl}`);
           // 로그인 페이지에서도 메타 정보나 기본 콘텐츠는 추출 가능하므로 계속 진행
         }
-        
+
         // 추가 대기 (JavaScript 콘텐츠 로드 시간 확보) - 5초로 증가
         await new Promise(resolve => setTimeout(resolve, 5000));
-        
+
         // 🔥 특정 요소가 로드될 때까지 대기 (Facebook 페이지의 메인 콘텐츠 영역)
         try {
           await page.waitForSelector('main, article, [role="main"], .content, body', { timeout: 10000 }).catch(() => {
@@ -394,7 +403,7 @@ export class PuppeteerCrawlingService {
         } catch (waitError) {
           console.warn('⚠️ 요소 대기 실패 (계속 진행):', waitError);
         }
-        
+
         // 스크롤을 통해 콘텐츠 로드 유도 (Lazy loading 콘텐츠 활성화)
         try {
           await page.evaluate(async () => {
@@ -541,7 +550,7 @@ export class PuppeteerCrawlingService {
       let content: string = contentResult as string;
 
       console.log(`📄 추출된 콘텐츠 길이: ${content.length}자`);
-      
+
       // 🔥 콘텐츠 미리보기 로깅 (디버깅용)
       if (content.length > 0) {
         const preview = content.substring(0, 500);
@@ -555,19 +564,19 @@ export class PuppeteerCrawlingService {
 
       // 🔥 Facebook/Instagram 페이지의 경우 콘텐츠 길이 기준 완화 (로그인 페이지에서도 일부 콘텐츠 추출 가능)
       const minContentLength = (url.includes('facebook.com') || url.includes('instagram.com')) ? 30 : 100; // 50자에서 30자로 더 완화
-      
+
       if (!content || content.length < minContentLength) {
         console.warn(`⚠️ 콘텐츠 부족: ${url} - ${content.length}자 (최소 요구: ${minContentLength}자)`);
-        
+
         // 🔥 Facebook/Instagram 페이지의 경우 로그인 페이지에서도 링크나 메타 정보는 추출 가능
         if (url.includes('facebook.com') || url.includes('instagram.com')) {
           console.log(`⚠️ Facebook/Instagram 페이지: 링크, 메타 정보, 모든 텍스트 추출 시도...`);
-          
+
           // 🔥 더 공격적인 콘텐츠 추출 (로그인 페이지에서도 가능한 모든 정보)
           const enhancedContent = await page.evaluate(() => {
             // 모든 텍스트 추출 (body 전체)
             const allText = document.body.textContent || '';
-            
+
             // 모든 링크 추출
             const links = Array.from(document.querySelectorAll('a[href]'));
             const linkTexts = links
@@ -587,7 +596,7 @@ export class PuppeteerCrawlingService {
               })
               .filter(Boolean)
               .join('\n');
-            
+
             // 메타 정보 추출
             const metaTags = Array.from(document.querySelectorAll('meta[name], meta[property]'));
             const metaInfo = metaTags
@@ -598,10 +607,10 @@ export class PuppeteerCrawlingService {
               })
               .filter(Boolean)
               .join('\n');
-            
+
             // 제목 정보
             const title = document.title || '';
-            
+
             return {
               allText: allText.replace(/\s+/g, ' ').trim(),
               links: linkTexts,
@@ -609,7 +618,7 @@ export class PuppeteerCrawlingService {
               title: title
             };
           });
-          
+
           // 추출된 정보를 결합
           const parts: string[] = [];
           if (enhancedContent.allText && enhancedContent.allText.length > 0) {
@@ -624,20 +633,20 @@ export class PuppeteerCrawlingService {
           if (enhancedContent.links && enhancedContent.links.length > 0) {
             parts.push(`발견된 링크:\n${enhancedContent.links}`);
           }
-          
+
           if (parts.length > 0) {
             content = parts.join('\n\n');
             console.log(`✅ 향상된 콘텐츠 추출 완료: ${content.length}자`);
           }
         }
-        
+
         // 최종 콘텐츠 길이 확인 (Facebook/Instagram은 30자 이상이면 허용)
         if (!content || content.length < minContentLength) {
           console.error(`❌ 최종 콘텐츠 부족: ${url} - ${content?.length || 0}자 (최소 요구: ${minContentLength}자)`);
           console.error(`❌ 최종 콘텐츠 미리보기:`, content?.substring(0, 500) || 'N/A');
           console.error(`❌ 페이지 URL 확인:`, page.url());
           console.error(`❌ 페이지 제목:`, title || '없음');
-          
+
           // 🔥 페이지가 로그인 페이지인지 확인
           const pageInfo = await page.evaluate(() => {
             const bodyText = document.body.textContent || '';
@@ -650,16 +659,16 @@ export class PuppeteerCrawlingService {
               'password',
               '비밀번호'
             ];
-            const isLoginPage = loginIndicators.some(indicator => 
+            const isLoginPage = loginIndicators.some(indicator =>
               bodyText.toLowerCase().includes(indicator.toLowerCase())
             ) && bodyText.length < 500;
-            
+
             // 페이지의 모든 링크 추출
             const links = Array.from(document.querySelectorAll('a[href]')).map(a => ({
               href: a.getAttribute('href'),
               text: a.textContent?.trim() || ''
             })).filter(l => l.href && l.href.startsWith('http'));
-            
+
             return {
               isLoginPage,
               bodyTextLength: bodyText.length,
@@ -668,9 +677,9 @@ export class PuppeteerCrawlingService {
               links: links.slice(0, 10) // 처음 10개만
             };
           });
-          
+
           console.error(`❌ 페이지 분석 결과:`, JSON.stringify(pageInfo, null, 2));
-          
+
           // 🔥 콘텐츠가 부족하더라도 링크가 있으면 최소한의 정보로 처리 시도
           if (pageInfo.linksCount > 0 && content && content.length >= 10) {
             console.warn(`⚠️ 콘텐츠가 부족하지만 링크가 ${pageInfo.linksCount}개 발견됨. 최소 정보로 처리 시도...`);
@@ -686,7 +695,7 @@ export class PuppeteerCrawlingService {
               title: title || 'Facebook Business'
             };
           }
-          
+
           return null;
         }
       }
