@@ -417,9 +417,10 @@ export default function CrawlToIndexTestPage() {
         }
         break;
       case 'completed':
-        setCurrentStep('인덱싱 완료!');
-        setProgress(100);
-        setIsCrawling(false);
+        // 🔥 작업 완료 후에도 문서 생성이 계속 진행되므로 진행 표시 유지
+        setCurrentStep('크롤링 완료! 문서 생성 및 인덱싱 중...');
+        setProgress(95); // 95%로 설정 (문서 생성 대기 중)
+        // setIsCrawling(false); // 🔥 주석 처리: 문서 생성이 완료될 때까지 진행 표시 유지
         
         // 🔥 토스트 중복 방지: 이미 표시되었으면 스킵
         if (completionToastShownRef.current) {
@@ -436,8 +437,8 @@ export default function CrawlToIndexTestPage() {
           queryClient.removeQueries({ queryKey: ['test-documents'] });
           queryClient.invalidateQueries({ queryKey: ['test-documents'] });
           
-          // 🔥 작업 완료 후 최소 3초 대기 (문서 인덱싱 완료 시간 고려)
-          await new Promise(resolve => setTimeout(resolve, 3000));
+          // 🔥 즉시 첫 번째 refetch 실행 (3초 대기 제거)
+          // 문서 목록 자동 새로고침(3초)과 겹치지 않도록 즉시 시작
           
           // 🔥 예상 문서 수 확인 (작업 결과에서)
           const expectedDocCount = result?.totalDocuments || result?.subPageCount || null;
@@ -490,6 +491,9 @@ export default function CrawlToIndexTestPage() {
                 // 예상 문서 수가 있고 도달했으면 완료
                 if (expectedDocCount && currentDocCount >= expectedDocCount) {
                   console.log('✅ [작업 완료] 예상 문서 수에 도달:', currentDocCount, '개');
+                  setCurrentStep(`인덱싱 완료! (${currentDocCount}개 문서)`);
+                  setProgress(100);
+                  setIsCrawling(false); // 🔥 이제 완료 표시
                   if (!completionToastShownRef.current) {
                     toast.success(`크롤링 및 인덱싱이 완료되었습니다! (${currentDocCount}개 문서)`);
                     completionToastShownRef.current = true;
@@ -503,6 +507,9 @@ export default function CrawlToIndexTestPage() {
                 // 문서 수가 일정 시간 동안 변하지 않으면 완료로 간주
                 if (stableCount >= MAX_STABLE_COUNT) {
                   console.log('✅ [작업 완료] 문서 수가 안정화됨:', currentDocCount, '개');
+                  setCurrentStep(`인덱싱 완료! (${currentDocCount}개 문서)`);
+                  setProgress(100);
+                  setIsCrawling(false); // 🔥 이제 완료 표시
                   if (!completionToastShownRef.current) {
                     toast.success(`크롤링 및 인덱싱이 완료되었습니다! (${currentDocCount}개 문서)`);
                     completionToastShownRef.current = true;
@@ -511,16 +518,27 @@ export default function CrawlToIndexTestPage() {
                 }
               }
               
-              // 문서가 있으면 진행 상황 표시
-              if (currentDocCount > 0 && !completionToastShownRef.current) {
-                setCurrentStep(`인덱싱 완료! (${currentDocCount}개 문서 생성됨, 계속 진행 중...)`);
-                if (expectedDocCount) {
-                  setProgress(Math.min(95, Math.round((currentDocCount / expectedDocCount) * 100)));
-                }
+              // 🔥 문서가 있으면 진행 상황 표시 (항상 업데이트)
+              if (currentDocCount > 0) {
+                const progressPercent = expectedDocCount 
+                  ? Math.min(95, Math.round((currentDocCount / expectedDocCount) * 100))
+                  : Math.min(95, 90); // 예상 문서 수가 없으면 90%로 설정
+                
+                setCurrentStep(`크롤링 완료! 문서 생성 중... (${currentDocCount}개 생성됨${expectedDocCount ? ` / 예상 ${expectedDocCount}개` : ''})`);
+                setProgress(progressPercent);
+                
+                // 문서가 생성되면 크롤링 상태 유지 (완료 표시는 나중에)
+                setIsCrawling(true); // 문서 생성이 완료될 때까지 진행 표시 유지
+              } else {
+                // 문서가 아직 없으면 대기 중 메시지
+                setCurrentStep('크롤링 완료! 문서 생성 대기 중...');
+                setProgress(95);
+                setIsCrawling(true);
               }
               
               // 다음 폴링 스케줄 (점진적으로 간격 증가)
-              const delay = attempt < 10 ? 3000 : attempt < 30 ? 5000 : 10000; // 3초 → 5초 → 10초
+              // 🔥 초기에는 더 빠르게 조회 (1초 → 2초 → 3초)
+              const delay = attempt <= 3 ? 1000 : attempt <= 10 ? 2000 : attempt < 30 ? 5000 : 10000;
               setTimeout(() => pollDocuments(attempt + 1), delay);
               
             } catch (error) {
@@ -533,13 +551,39 @@ export default function CrawlToIndexTestPage() {
             }
           };
           
-          // 초기 폴링 시작
-          pollDocuments(1);
+          // 🔥 즉시 첫 번째 refetch 실행 (문서 생성 확인)
+          try {
+            const immediateResult = await refetchDocuments();
+            const immediateDocs = immediateResult.data?.data?.documents || [];
+            const immediateIndexed = immediateDocs.filter((d: Document) => d.status === 'indexed');
+            
+            console.log('🔄 [작업 완료] 즉시 Refetch 결과:', {
+              전체_문서: immediateDocs.length,
+              indexed_문서: immediateIndexed.length
+            });
+            
+            if (immediateResult.data) {
+              queryClient.setQueryData(['test-documents'], immediateResult.data);
+              queryClient.invalidateQueries({ queryKey: ['test-documents'] });
+            }
+            
+            if (immediateIndexed.length > 0) {
+              setCurrentStep(`크롤링 완료! 문서 생성 중... (${immediateIndexed.length}개 생성됨)`);
+              setProgress(Math.min(95, 90 + (immediateIndexed.length / (expectedDocCount || 100)) * 5));
+              setIsCrawling(true);
+            }
+          } catch (immediateError) {
+            console.error('❌ [작업 완료] 즉시 Refetch 실패:', immediateError);
+          }
           
-          // 🔥 기존 로직 유지 (빠른 응답을 위한 초기 시도)
-          for (let i = 0; i < 8; i++) {
-            const delay = i === 0 ? 1000 : i * 1500; // 1초, 1.5초, 3초, 4.5초, 6초, 7.5초, 9초, 10.5초
-            await new Promise(resolve => setTimeout(resolve, delay));
+          // 초기 폴링 시작 (1초 후)
+          setTimeout(() => pollDocuments(1), 1000);
+          
+          // 🔥 기존 로직 유지 (빠른 응답을 위한 초기 시도) - 병렬로 실행
+          (async () => {
+            for (let i = 0; i < 8; i++) {
+              const delay = i === 0 ? 500 : i * 1000; // 0.5초, 1초, 2초, 3초, 4초, 5초, 6초, 7초
+              await new Promise(resolve => setTimeout(resolve, delay));
             
             try {
               const result = await refetchDocuments();
@@ -561,11 +605,20 @@ export default function CrawlToIndexTestPage() {
               }
               
               if (allDocs.length > 0) {
-                // 문서가 조회되면 성공 (토스트는 한 번만 표시)
-                console.log('✅ [작업 완료] 문서 목록 갱신 성공:', allDocs.length, '개 문서');
+                // 문서가 조회되면 진행 표시 업데이트
+                const indexedCount = allDocs.filter((d: Document) => d.status === 'indexed').length;
+                console.log('✅ [작업 완료] 문서 목록 갱신 성공:', allDocs.length, '개 문서 (indexed:', indexedCount, '개)');
+                
+                // 🔥 진행 표시 즉시 업데이트
+                setCurrentStep(`크롤링 완료! 문서 생성 중... (${indexedCount}개 생성됨${expectedDocCount ? ` / 예상 ${expectedDocCount}개` : ''})`);
+                const progressPercent = expectedDocCount 
+                  ? Math.min(95, Math.round((indexedCount / expectedDocCount) * 100))
+                  : Math.min(95, 90);
+                setProgress(progressPercent);
+                setIsCrawling(true); // 문서 생성이 완료될 때까지 진행 표시 유지
+                
                 if (!completionToastShownRef.current) {
-                  toast.success(`크롤링 및 인덱싱이 완료되었습니다! (${allDocs.length}개 문서 조회됨)`);
-                  completionToastShownRef.current = true;
+                  // 토스트는 나중에 완료 시 표시 (지금은 진행 중)
                 }
                 // 초기 시도에서 문서를 찾았어도 지속 폴링은 계속 진행 (문서 수 증가 확인)
                 break;
@@ -595,15 +648,27 @@ export default function CrawlToIndexTestPage() {
                       queryClient.invalidateQueries({ queryKey: ['test-documents'] });
                     }
                     const finalDocs = finalResult.data?.data?.documents || [];
-                    if (finalDocs.length > 0 && !completionToastShownRef.current) {
-                      toast.success(`크롤링 및 인덱싱이 완료되었습니다! (${finalDocs.length}개 문서 조회됨, 상태 동기화 완료)`);
+                    const finalIndexed = finalDocs.filter((d: Document) => d.status === 'indexed');
+                    if (finalIndexed.length > 0) {
+                      // 🔥 진행 표시 업데이트
+                      setCurrentStep(`크롤링 완료! 문서 생성 중... (${finalIndexed.length}개 생성됨)`);
+                      const progressPercent = expectedDocCount 
+                        ? Math.min(95, Math.round((finalIndexed.length / expectedDocCount) * 100))
+                        : Math.min(95, 90);
+                      setProgress(progressPercent);
+                      setIsCrawling(true);
+                      
+                      if (!completionToastShownRef.current) {
+                        // 토스트는 나중에 완료 시 표시
+                      }
+                    } else if (!completionToastShownRef.current) {
+                      // 문서가 없어도 진행 표시는 유지
+                      setCurrentStep('크롤링 완료! 문서 생성 대기 중...');
+                      setProgress(95);
+                      setIsCrawling(true);
+                      toast.warning('크롤링이 완료되었지만 문서가 조회되지 않습니다. 잠시 후 다시 확인해주세요.');
                       completionToastShownRef.current = true;
                     }
-                  } else if (!completionToastShownRef.current) {
-                    // 문서가 없어도 작업 완료 토스트 표시 (한 번만)
-                    toast.warning('크롤링이 완료되었지만 문서가 조회되지 않습니다. 잠시 후 다시 확인해주세요.');
-                    completionToastShownRef.current = true;
-                  }
                 } catch (checkError) {
                   console.error('❌ [백엔드 상태 확인 실패]:', checkError);
                 }
@@ -629,14 +694,25 @@ export default function CrawlToIndexTestPage() {
               queryClient.invalidateQueries({ queryKey: ['test-documents'] });
               
               const finalDocs = finalResult.data?.data?.documents || [];
+              const finalIndexed = finalDocs.filter((d: Document) => d.status === 'indexed');
               console.log('✅ [작업 완료] 15초 후 추가 refetch 결과:', {
                 전체_문서: finalDocs.length,
-                indexed_문서: finalDocs.filter((d: Document) => d.status === 'indexed').length
+                indexed_문서: finalIndexed.length
               });
               
-              if (finalDocs.length > 0 && !completionToastShownRef.current) {
-                toast.success(`크롤링 및 인덱싱이 완료되었습니다! (${finalDocs.length}개 문서)`);
-                completionToastShownRef.current = true;
+              if (finalIndexed.length > 0) {
+                // 🔥 진행 표시 업데이트
+                const expectedDocCount = result?.totalDocuments || result?.subPageCount || null;
+                setCurrentStep(`크롤링 완료! 문서 생성 중... (${finalIndexed.length}개 생성됨${expectedDocCount ? ` / 예상 ${expectedDocCount}개` : ''})`);
+                const progressPercent = expectedDocCount 
+                  ? Math.min(95, Math.round((finalIndexed.length / expectedDocCount) * 100))
+                  : Math.min(95, 90);
+                setProgress(progressPercent);
+                setIsCrawling(true);
+                
+                if (!completionToastShownRef.current) {
+                  // 토스트는 나중에 완료 시 표시
+                }
               }
             }
           } catch (error) {
