@@ -5248,18 +5248,40 @@ export async function processQueue() {
  * GET 핸들러 (Vercel Cron Jobs가 사용)
  */
 export async function GET(request: NextRequest) {
+  // 🔥 즉시 로깅 (Vercel 로그에 반드시 나타나도록)
+  console.log('[CRITICAL] 🔔 GET 핸들러 호출됨 (Cron Job 또는 수동 호출)');
   console.error('[CRITICAL] 🔔 GET 핸들러 호출됨 (Cron Job 또는 수동 호출)');
   
+  // 요청 정보 로깅
+  const url = request.url;
+  const headers = Object.fromEntries(request.headers.entries());
+  console.log('[CRITICAL] 요청 정보:', {
+    url,
+    method: request.method,
+    headers: {
+      authorization: headers.authorization ? 'present' : 'missing',
+      'user-agent': headers['user-agent'],
+      'x-vercel-cron': headers['x-vercel-cron'],
+      'x-vercel-id': headers['x-vercel-id']
+    }
+  });
+  
   // CRON_SECRET 검증
-  if (!verifyCronSecret(request)) {
+  const isAuthorized = verifyCronSecret(request);
+  console.log('[CRITICAL] CRON_SECRET 검증 결과:', isAuthorized);
+  
+  if (!isAuthorized) {
     console.error('[CRITICAL] ❌ CRON_SECRET 검증 실패');
+    console.log('[CRITICAL] ❌ CRON_SECRET 검증 실패');
     return NextResponse.json(
       { error: 'Unauthorized' },
       { status: 401 }
     );
   }
 
+  console.log('[CRITICAL] ✅ CRON_SECRET 검증 성공, processQueue 실행 시작');
   console.error('[CRITICAL] ✅ CRON_SECRET 검증 성공, processQueue 실행 시작');
+  
   // 큐 처리 실행
   return processQueue();
 }
