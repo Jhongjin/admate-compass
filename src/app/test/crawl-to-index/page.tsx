@@ -585,99 +585,100 @@ export default function CrawlToIndexTestPage() {
               const delay = i === 0 ? 500 : i * 1000; // 0.5초, 1초, 2초, 3초, 4초, 5초, 6초, 7초
               await new Promise(resolve => setTimeout(resolve, delay));
             
-            try {
-              const result = await refetchDocuments();
-              const allDocs = result.data?.data?.documents || [];
-              
-              console.log(`🔄 [작업 완료] 초기 Refetch 시도 ${i + 1}/8:`, {
-                전체_문서: allDocs.length,
-                첫_문서_URL: allDocs[0]?.url || 'N/A',
-                첫_문서_상태: allDocs[0]?.status,
-                첫_문서_청크수: allDocs[0]?.chunk_count || 0,
-                indexed_문서_수: allDocs.filter((d: Document) => d.status === 'indexed').length
-              });
-              
-              // 🔥 중요: refetch 결과를 React Query 캐시에 즉시 반영
-              if (result.data) {
-                queryClient.setQueryData(['test-documents'], result.data);
-                queryClient.invalidateQueries({ queryKey: ['test-documents'] }); // 강제 리렌더링
-                console.log('✅ [작업 완료] React Query 캐시 업데이트 완료');
-              }
-              
-              if (allDocs.length > 0) {
-                // 문서가 조회되면 진행 표시 업데이트
-                const indexedCount = allDocs.filter((d: Document) => d.status === 'indexed').length;
-                console.log('✅ [작업 완료] 문서 목록 갱신 성공:', allDocs.length, '개 문서 (indexed:', indexedCount, '개)');
+              try {
+                const result = await refetchDocuments();
+                const allDocs = result.data?.data?.documents || [];
                 
-                // 🔥 진행 표시 즉시 업데이트
-                setCurrentStep(`크롤링 완료! 문서 생성 중... (${indexedCount}개 생성됨${expectedDocCount ? ` / 예상 ${expectedDocCount}개` : ''})`);
-                const progressPercent = expectedDocCount 
-                  ? Math.min(95, Math.round((indexedCount / expectedDocCount) * 100))
-                  : Math.min(95, 90);
-                setProgress(progressPercent);
-                setIsCrawling(true); // 문서 생성이 완료될 때까지 진행 표시 유지
+                console.log(`🔄 [작업 완료] 초기 Refetch 시도 ${i + 1}/8:`, {
+                  전체_문서: allDocs.length,
+                  첫_문서_URL: allDocs[0]?.url || 'N/A',
+                  첫_문서_상태: allDocs[0]?.status,
+                  첫_문서_청크수: allDocs[0]?.chunk_count || 0,
+                  indexed_문서_수: allDocs.filter((d: Document) => d.status === 'indexed').length
+                });
                 
-                if (!completionToastShownRef.current) {
-                  // 토스트는 나중에 완료 시 표시 (지금은 진행 중)
+                // 🔥 중요: refetch 결과를 React Query 캐시에 즉시 반영
+                if (result.data) {
+                  queryClient.setQueryData(['test-documents'], result.data);
+                  queryClient.invalidateQueries({ queryKey: ['test-documents'] }); // 강제 리렌더링
+                  console.log('✅ [작업 완료] React Query 캐시 업데이트 완료');
                 }
-                // 초기 시도에서 문서를 찾았어도 지속 폴링은 계속 진행 (문서 수 증가 확인)
-                break;
-              } else if (i === 7) {
-                // 마지막 시도에서도 문서가 없으면 백엔드 상태 확인
-                console.warn('⚠️ [작업 완료] 모든 refetch 시도 후에도 문서가 없습니다. 백엔드 상태 확인 필요.');
-                try {
-                  const checkResponse = await fetch('/api/admin/check-processing-status', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' }
-                  });
-                  const checkData = await checkResponse.json();
-                  console.log('🔍 [백엔드 상태 확인]', {
-                    success: checkData.success,
-                    processingCount: checkData.data?.processingCount || 0,
-                    pendingCount: checkData.data?.pendingCount || 0,
-                    synced: checkData.data?.synced || 0,
-                    results: checkData.data?.results?.slice(0, 3) || []
-                  });
+                
+                if (allDocs.length > 0) {
+                  // 문서가 조회되면 진행 표시 업데이트
+                  const indexedCount = allDocs.filter((d: Document) => d.status === 'indexed').length;
+                  console.log('✅ [작업 완료] 문서 목록 갱신 성공:', allDocs.length, '개 문서 (indexed:', indexedCount, '개)');
                   
-                  if (checkData.data?.synced > 0) {
-                    // 동기화가 발생했으면 다시 refetch
-                    await new Promise(resolve => setTimeout(resolve, 1000));
-                    const finalResult = await refetchDocuments();
-                    if (finalResult.data) {
-                      queryClient.setQueryData(['test-documents'], finalResult.data);
-                      queryClient.invalidateQueries({ queryKey: ['test-documents'] });
-                    }
-                    const finalDocs = finalResult.data?.data?.documents || [];
-                    const finalIndexed = finalDocs.filter((d: Document) => d.status === 'indexed');
-                    if (finalIndexed.length > 0) {
-                      // 🔥 진행 표시 업데이트
-                      setCurrentStep(`크롤링 완료! 문서 생성 중... (${finalIndexed.length}개 생성됨)`);
-                      const progressPercent = expectedDocCount 
-                        ? Math.min(95, Math.round((finalIndexed.length / expectedDocCount) * 100))
-                        : Math.min(95, 90);
-                      setProgress(progressPercent);
-                      setIsCrawling(true);
-                      
-                      if (!completionToastShownRef.current) {
-                        // 토스트는 나중에 완료 시 표시
+                  // 🔥 진행 표시 즉시 업데이트
+                  setCurrentStep(`크롤링 완료! 문서 생성 중... (${indexedCount}개 생성됨${expectedDocCount ? ` / 예상 ${expectedDocCount}개` : ''})`);
+                  const progressPercent = expectedDocCount 
+                    ? Math.min(95, Math.round((indexedCount / expectedDocCount) * 100))
+                    : Math.min(95, 90);
+                  setProgress(progressPercent);
+                  setIsCrawling(true); // 문서 생성이 완료될 때까지 진행 표시 유지
+                  
+                  if (!completionToastShownRef.current) {
+                    // 토스트는 나중에 완료 시 표시 (지금은 진행 중)
+                  }
+                  // 초기 시도에서 문서를 찾았어도 지속 폴링은 계속 진행 (문서 수 증가 확인)
+                  break;
+                } else if (i === 7) {
+                  // 마지막 시도에서도 문서가 없으면 백엔드 상태 확인
+                  console.warn('⚠️ [작업 완료] 모든 refetch 시도 후에도 문서가 없습니다. 백엔드 상태 확인 필요.');
+                  try {
+                    const checkResponse = await fetch('/api/admin/check-processing-status', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' }
+                    });
+                    const checkData = await checkResponse.json();
+                    console.log('🔍 [백엔드 상태 확인]', {
+                      success: checkData.success,
+                      processingCount: checkData.data?.processingCount || 0,
+                      pendingCount: checkData.data?.pendingCount || 0,
+                      synced: checkData.data?.synced || 0,
+                      results: checkData.data?.results?.slice(0, 3) || []
+                    });
+                    
+                    if (checkData.data?.synced > 0) {
+                      // 동기화가 발생했으면 다시 refetch
+                      await new Promise(resolve => setTimeout(resolve, 1000));
+                      const finalResult = await refetchDocuments();
+                      if (finalResult.data) {
+                        queryClient.setQueryData(['test-documents'], finalResult.data);
+                        queryClient.invalidateQueries({ queryKey: ['test-documents'] });
                       }
-                    } else if (!completionToastShownRef.current) {
-                      // 문서가 없어도 진행 표시는 유지
-                      setCurrentStep('크롤링 완료! 문서 생성 대기 중...');
-                      setProgress(95);
-                      setIsCrawling(true);
-                      toast.warning('크롤링이 완료되었지만 문서가 조회되지 않습니다. 잠시 후 다시 확인해주세요.');
-                      completionToastShownRef.current = true;
+                      const finalDocs = finalResult.data?.data?.documents || [];
+                      const finalIndexed = finalDocs.filter((d: Document) => d.status === 'indexed');
+                      if (finalIndexed.length > 0) {
+                        // 🔥 진행 표시 업데이트
+                        setCurrentStep(`크롤링 완료! 문서 생성 중... (${finalIndexed.length}개 생성됨)`);
+                        const progressPercent = expectedDocCount 
+                          ? Math.min(95, Math.round((finalIndexed.length / expectedDocCount) * 100))
+                          : Math.min(95, 90);
+                        setProgress(progressPercent);
+                        setIsCrawling(true);
+                        
+                        if (!completionToastShownRef.current) {
+                          // 토스트는 나중에 완료 시 표시
+                        }
+                      } else if (!completionToastShownRef.current) {
+                        // 문서가 없어도 진행 표시는 유지
+                        setCurrentStep('크롤링 완료! 문서 생성 대기 중...');
+                        setProgress(95);
+                        setIsCrawling(true);
+                        toast.warning('크롤링이 완료되었지만 문서가 조회되지 않습니다. 잠시 후 다시 확인해주세요.');
+                        completionToastShownRef.current = true;
+                      }
                     }
-                } catch (checkError) {
-                  console.error('❌ [백엔드 상태 확인 실패]:', checkError);
+                  } catch (checkError) {
+                    console.error('❌ [백엔드 상태 확인 실패]:', checkError);
+                  }
                 }
+              } catch (error) {
+                console.error(`❌ [작업 완료] Refetch 시도 ${i + 1} 실패:`, error);
               }
-            } catch (error) {
-              console.error(`❌ [작업 완료] Refetch 시도 ${i + 1} 실패:`, error);
             }
-          }
-        };
+          })();
         
         refreshDocuments();
         
