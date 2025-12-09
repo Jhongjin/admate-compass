@@ -2289,7 +2289,7 @@ export async function processQueue() {
             // URL 기준으로 조회 시 중복이 있을 수 있으므로 가장 최신 문서만 가져오기
             const { data: docsByUrl, error: docsByUrlError } = await supabase
               .from('documents')
-              .select('id, title, chunk_count, created_at, status')
+              .select('id, title, chunk_count, created_at, status, url')
               .eq('url', targetUrl)
               .order('created_at', { ascending: false })
               .limit(10); // 최대 10개까지 조회해서 중복 확인
