@@ -469,7 +469,7 @@ export default function AdminDashboardPage() {
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-8">
                 <div>
                     <motion.h1 initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="text-3xl md:text-4xl font-bold text-white mb-2">
-                        대시보드 개요
+                        대시보드 개요 (V4_CHECK_TIMESTAMP_${Date.now()})
                     </motion.h1>
                     <motion.p initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }} className="text-gray-400">
                         시스템 성능을 모니터링하고 리소스를 실시간으로 관리합니다.
