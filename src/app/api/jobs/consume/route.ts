@@ -1813,7 +1813,33 @@ export async function processQueue() {
 
           if (isBlockedByLogin && (targetUrl.includes('facebook.com') || targetUrl.includes('instagram.com'))) {
             console.warn(`⚠️ 로그인 페이지로 리다이렉트됨: ${targetUrl}. Puppeteer를 통해 동적 콘텐츠 처리 시도...`);
-            // 에러를 throw하지 않고 계속 진행 (Puppeteer가 처리할 수 있도록)
+            
+            // 로그인 페이지 감지 시 Puppeteer로 강제 전환
+            try {
+              if (!puppeteerService) {
+                puppeteerService = new PuppeteerCrawlingService();
+              }
+              
+              const puppeteerResult = await puppeteerService.crawlMetaPage(targetUrl, false, true);
+              
+              if (puppeteerResult && puppeteerResult.content && puppeteerResult.content.length >= 100) {
+                console.log(`✅ Puppeteer로 로그인 페이지 우회 성공: ${puppeteerResult.content.length}자`);
+                return {
+                  textContent: puppeteerResult.content,
+                  pageTitle: puppeteerResult.title,
+                  htmlContent: '' // Puppeteer 결과는 HTML이 별도로 필요 없음
+                };
+              } else {
+                // Puppeteer도 실패한 경우 명확한 에러 메시지
+                throw new Error('로그인 페이지가 반환되어 크롤링할 수 없습니다. 공개 접근이 가능한 페이지를 사용해 주세요.');
+              }
+            } catch (puppeteerRetryError: any) {
+              // Puppeteer 재시도도 실패한 경우 명확한 에러 메시지
+              const errorMsg = puppeteerRetryError instanceof Error 
+                ? puppeteerRetryError.message 
+                : 'Puppeteer 크롤링 실패';
+              throw new Error(`로그인 페이지가 반환되어 크롤링할 수 없습니다. 공개 접근이 가능한 페이지를 사용해 주세요. (Puppeteer 재시도 실패: ${errorMsg})`);
+            }
           }
 
           // Cheerio로 HTML 파싱
