@@ -558,7 +558,7 @@ export class PuppeteerCrawlingService {
             const linkTexts = links
               .map(link => {
                 const href = link.getAttribute('href');
-                const text = link.textContent?.trim() || link.innerText?.trim() || '';
+                const text = link.textContent?.trim() || '';
                 if (href) {
                   // 상대 경로를 절대 경로로 변환
                   try {
