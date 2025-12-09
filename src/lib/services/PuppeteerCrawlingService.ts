@@ -551,7 +551,7 @@ export class PuppeteerCrawlingService {
           // 🔥 더 공격적인 콘텐츠 추출 (로그인 페이지에서도 가능한 모든 정보)
           const enhancedContent = await page.evaluate(() => {
             // 모든 텍스트 추출 (body 전체)
-            const allText = document.body.innerText || document.body.textContent || '';
+            const allText = document.body.textContent || '';
             
             // 모든 링크 추출
             const links = Array.from(document.querySelectorAll('a[href]'));
