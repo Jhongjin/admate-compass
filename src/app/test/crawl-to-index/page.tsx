@@ -429,7 +429,7 @@ export default function CrawlToIndexTestPage() {
         
         console.log('✅ [작업 완료] 문서 목록 강제 갱신 시작...');
         
-        // 작업 완료 후 문서 목록 강제 갱신 (여러 번 시도)
+        // 작업 완료 후 문서 목록 강제 갱신 (지속 조회)
         const refreshDocuments = async () => {
           // 1. 캐시 무효화
           await queryClient.cancelQueries({ queryKey: ['test-documents'] });
@@ -439,7 +439,104 @@ export default function CrawlToIndexTestPage() {
           // 🔥 작업 완료 후 최소 3초 대기 (문서 인덱싱 완료 시간 고려)
           await new Promise(resolve => setTimeout(resolve, 3000));
           
-          // 2. 여러 번 refetch 시도 (DB 반영 시간 고려)
+          // 🔥 예상 문서 수 확인 (작업 결과에서)
+          const expectedDocCount = result?.totalDocuments || result?.subPageCount || null;
+          let lastDocCount = 0;
+          let stableCount = 0; // 문서 수가 변하지 않은 연속 횟수
+          const MAX_STABLE_COUNT = 3; // 3번 연속 동일하면 완료로 간주
+          const MAX_POLLING_TIME = 30 * 60 * 1000; // 최대 30분
+          const startTime = Date.now();
+          
+          // 2. 지속적으로 refetch (문서 생성이 완료될 때까지)
+          const pollDocuments = async (attempt: number) => {
+            // 최대 폴링 시간 초과 체크
+            if (Date.now() - startTime > MAX_POLLING_TIME) {
+              console.warn('⚠️ [작업 완료] 최대 폴링 시간(30분) 초과. 폴링 중지.');
+              if (!completionToastShownRef.current) {
+                toast.warning('문서 생성이 오래 걸리고 있습니다. 잠시 후 다시 확인해주세요.');
+                completionToastShownRef.current = true;
+              }
+              return;
+            }
+            
+            try {
+              const result = await refetchDocuments();
+              const allDocs = result.data?.data?.documents || [];
+              const indexedDocs = allDocs.filter((d: Document) => d.status === 'indexed');
+              const currentDocCount = indexedDocs.length;
+              
+              console.log(`🔄 [작업 완료] Refetch 시도 ${attempt}:`, {
+                전체_문서: allDocs.length,
+                indexed_문서: currentDocCount,
+                예상_문서수: expectedDocCount,
+                이전_문서수: lastDocCount,
+                문서_증가: currentDocCount > lastDocCount ? `+${currentDocCount - lastDocCount}` : '변화없음',
+                첫_문서_URL: allDocs[0]?.url || 'N/A',
+                첫_문서_상태: allDocs[0]?.status,
+                첫_문서_청크수: allDocs[0]?.chunk_count || 0
+              });
+              
+              // 🔥 중요: refetch 결과를 React Query 캐시에 즉시 반영
+              if (result.data) {
+                queryClient.setQueryData(['test-documents'], result.data);
+                queryClient.invalidateQueries({ queryKey: ['test-documents'] }); // 강제 리렌더링
+              }
+              
+              // 문서 수가 증가했으면 카운터 리셋
+              if (currentDocCount > lastDocCount) {
+                stableCount = 0;
+                lastDocCount = currentDocCount;
+                
+                // 예상 문서 수가 있고 도달했으면 완료
+                if (expectedDocCount && currentDocCount >= expectedDocCount) {
+                  console.log('✅ [작업 완료] 예상 문서 수에 도달:', currentDocCount, '개');
+                  if (!completionToastShownRef.current) {
+                    toast.success(`크롤링 및 인덱싱이 완료되었습니다! (${currentDocCount}개 문서)`);
+                    completionToastShownRef.current = true;
+                  }
+                  return;
+                }
+              } else if (currentDocCount === lastDocCount && currentDocCount > 0) {
+                // 문서 수가 변하지 않았으면 카운터 증가
+                stableCount++;
+                
+                // 문서 수가 일정 시간 동안 변하지 않으면 완료로 간주
+                if (stableCount >= MAX_STABLE_COUNT) {
+                  console.log('✅ [작업 완료] 문서 수가 안정화됨:', currentDocCount, '개');
+                  if (!completionToastShownRef.current) {
+                    toast.success(`크롤링 및 인덱싱이 완료되었습니다! (${currentDocCount}개 문서)`);
+                    completionToastShownRef.current = true;
+                  }
+                  return;
+                }
+              }
+              
+              // 문서가 있으면 진행 상황 표시
+              if (currentDocCount > 0 && !completionToastShownRef.current) {
+                setCurrentStep(`인덱싱 완료! (${currentDocCount}개 문서 생성됨, 계속 진행 중...)`);
+                if (expectedDocCount) {
+                  setProgress(Math.min(95, Math.round((currentDocCount / expectedDocCount) * 100)));
+                }
+              }
+              
+              // 다음 폴링 스케줄 (점진적으로 간격 증가)
+              const delay = attempt < 10 ? 3000 : attempt < 30 ? 5000 : 10000; // 3초 → 5초 → 10초
+              setTimeout(() => pollDocuments(attempt + 1), delay);
+              
+            } catch (error) {
+              console.error(`❌ [작업 완료] Refetch 시도 ${attempt} 실패:`, error);
+              
+              // 에러 발생 시에도 재시도 (최대 30분)
+              if (Date.now() - startTime < MAX_POLLING_TIME) {
+                setTimeout(() => pollDocuments(attempt + 1), 5000);
+              }
+            }
+          };
+          
+          // 초기 폴링 시작
+          pollDocuments(1);
+          
+          // 🔥 기존 로직 유지 (빠른 응답을 위한 초기 시도)
           for (let i = 0; i < 8; i++) {
             const delay = i === 0 ? 1000 : i * 1500; // 1초, 1.5초, 3초, 4.5초, 6초, 7.5초, 9초, 10.5초
             await new Promise(resolve => setTimeout(resolve, delay));
@@ -448,7 +545,7 @@ export default function CrawlToIndexTestPage() {
               const result = await refetchDocuments();
               const allDocs = result.data?.data?.documents || [];
               
-              console.log(`🔄 [작업 완료] Refetch 시도 ${i + 1}/8:`, {
+              console.log(`🔄 [작업 완료] 초기 Refetch 시도 ${i + 1}/8:`, {
                 전체_문서: allDocs.length,
                 첫_문서_URL: allDocs[0]?.url || 'N/A',
                 첫_문서_상태: allDocs[0]?.status,
@@ -470,6 +567,7 @@ export default function CrawlToIndexTestPage() {
                   toast.success(`크롤링 및 인덱싱이 완료되었습니다! (${allDocs.length}개 문서 조회됨)`);
                   completionToastShownRef.current = true;
                 }
+                // 초기 시도에서 문서를 찾았어도 지속 폴링은 계속 진행 (문서 수 증가 확인)
                 break;
               } else if (i === 7) {
                 // 마지막 시도에서도 문서가 없으면 백엔드 상태 확인
