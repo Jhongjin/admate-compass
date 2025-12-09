@@ -407,9 +407,9 @@ export class NewDocumentProcessor {
 
       if (isBlockedByLogin && (url.includes('facebook.com') || url.includes('instagram.com'))) {
         console.warn('⚠️ 로그인 페이지가 반환되었습니다. (NewDocumentProcessor) - 처리를 계속합니다.');
-        console.warn('DEBUG: Login page detected in NewDocumentProcessor - NOT THROWING ERROR');
+        console.warn('DEBUG: Login page detected in NewDocumentProcessor - NOT THROWING ERROR (V3)');
         // 에러를 던지지 않고 처리를 계속하거나 빈 내용을 반환하도록 수정
-        // throw new Error('로그인 페이지가 반환되어 크롤링할 수 없습니다. 공개 접근이 가능한 문서를 사용해 주세요.');
+        // throw new Error('DEBUG_TEST: Login page returned (NewDocProc) - If you see this, NewDocProc is RUNNING and UPDATED.');
       }
 
       // Cheerio로 HTML 파싱 및 텍스트 추출

@@ -2693,7 +2693,7 @@ export async function processQueue() {
           });
 
           // 실패 시 작업 상태 업데이트 (failed가 아닌 processing 유지, 에러 정보만 result에 기록)
-          const detailedError = `메인 페이지 크롤링 실패: ${safeErrorMessage} (${errorName})`;
+          const detailedError = `[V3_DEBUG] 메인 페이지 크롤링 실패: ${safeErrorMessage} (${errorName})`;
 
           try {
             const currentResult = ((job as any).result as any) || {};
