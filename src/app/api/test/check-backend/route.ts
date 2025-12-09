@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
     try {
-        const supabase = createPureClient();
+        const supabase = await createPureClient();
 
         // 1. 최근 생성된 문서 50개 조회
         const { data: documents, error: docError } = await supabase
