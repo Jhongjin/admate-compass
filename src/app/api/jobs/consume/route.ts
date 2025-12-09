@@ -5174,6 +5174,9 @@ export async function processQueue() {
       const fileSizeMB = fileSize > 0 ? (fileSize / (1024 * 1024)).toFixed(2) : 'unknown';
 
       // 로그인/접근제한 관련 에러 감지 (최상위 레벨)
+      // 🔥 DEBUG: 에러 메시지와 감지 로직 확인
+      console.error('[DEBUG_FINAL] Error Message Check:', { message, type: typeof message });
+
       const isLoginError = message.includes('로그인') ||
         message.includes('Login') ||
         message.includes('login') ||

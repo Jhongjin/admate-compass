@@ -13,7 +13,7 @@ import { createPureClient } from '@/lib/supabase/server';
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createPureClient();
-    
+
     console.log('🔍 processing 및 pending 상태 문서 백엔드 상태 체크 시작...');
 
     // 1. processing과 pending 상태인 모든 문서 조회
@@ -94,10 +94,10 @@ export async function POST(request: NextRequest) {
           docCheck.issues.push(`작업 조회 실패: ${jobsError.message}`);
         }
 
-        const activeJobs = relatedJobs?.filter(j => 
+        const activeJobs = relatedJobs?.filter(j =>
           ['queued', 'processing', 'retrying'].includes(j.status)
         ) || [];
-        const completedJobs = relatedJobs?.filter(j => 
+        const completedJobs = relatedJobs?.filter(j =>
           j.status === 'completed' && j.finished_at
         ) || [];
         const failedJobs = relatedJobs?.filter(j => j.status === 'failed') || [];
@@ -130,7 +130,7 @@ export async function POST(request: NextRequest) {
           newChunkCount = actualChunkCount;
           docCheck.issues.push(`청크 수 불일치: DB=${dbChunkCount}, 실제=${actualChunkCount}`);
           docCheck.actions.push(`청크 수를 ${actualChunkCount}로 업데이트`);
-          
+
           // 청크가 없으면 failed로 변경
           if (actualChunkCount === 0 && activeJobs.length === 0) {
             newStatus = 'failed';
@@ -143,7 +143,7 @@ export async function POST(request: NextRequest) {
           const latestCompletedJob = completedJobs[0];
           const jobResult = latestCompletedJob.result as any;
           const jobChunkCount = jobResult?.chunkCount || actualChunkCount;
-          
+
           if (jobChunkCount > 0) {
             needsSync = true;
             newStatus = 'indexed';
@@ -155,10 +155,33 @@ export async function POST(request: NextRequest) {
 
         // 케이스 4: 모든 작업이 실패했는데 processing 상태인 경우
         if (failedJobs.length > 0 && activeJobs.length === 0 && actualChunkCount === 0 && doc.status === 'processing') {
-          needsSync = true;
-          newStatus = 'failed';
-          docCheck.issues.push(`모든 작업이 실패했지만 processing 상태임`);
-          docCheck.actions.push(`상태를 failed로 변경`);
+          // 🔥 Fail-Safe: 작업이 실패했더라도, 에러 원인이 '로그인/접근제한'이라면 'indexed'(부분 성공)으로 처리
+          const loginErrorJob = failedJobs.find(j => {
+            const err = j.error || '';
+            const resultMsg = (j.result as any)?.message || '';
+            const combinedMsg = `${err} ${resultMsg}`;
+            return combinedMsg.includes('로그인') ||
+              combinedMsg.includes('Login') ||
+              combinedMsg.includes('Access denied') ||
+              combinedMsg.includes('접근 제한') ||
+              combinedMsg.includes('403') ||
+              combinedMsg.includes('401');
+          });
+
+          if (loginErrorJob) {
+            needsSync = true;
+            newStatus = 'indexed'; // 부분 성공 처리
+            // 청크가 0개여도 indexed로 변경하여 재시도 루프 탈출
+
+            docCheck.issues.push(`작업 실패했으나 로그인/접근제한 에러 감지됨 (Job: ${loginErrorJob.id})`);
+            docCheck.actions.push(`상태를 indexed로 변경 (부분 성공 처리)`);
+            console.log(`⚠️ [Fail-Safe] 로그인 에러 작업 감지: ${doc.id} -> indexed`);
+          } else {
+            needsSync = true;
+            newStatus = 'failed';
+            docCheck.issues.push(`모든 작업이 실패했지만 processing 상태임`);
+            docCheck.actions.push(`상태를 failed로 변경`);
+          }
         }
 
         // 케이스 5: 활성 작업이 없고 청크도 없는데 processing 상태인 경우 (타임아웃)
@@ -169,7 +192,7 @@ export async function POST(request: NextRequest) {
           const elapsedFromUpdate = updatedAt > 0 ? (now - updatedAt) / (60 * 1000) : 0; // 분 단위
           const elapsedFromCreate = createdAt > 0 ? (now - createdAt) / (60 * 1000) : 0; // 분 단위
           const elapsedMinutes = updatedAt > 0 ? elapsedFromUpdate : elapsedFromCreate;
-          
+
           // 🔥 무한대기 방지: 10분 이상 업데이트가 없으면 failed로 간주 (더 적극적으로)
           const TIMEOUT_MINUTES = 10;
           if (elapsedMinutes > TIMEOUT_MINUTES) {
@@ -191,14 +214,14 @@ export async function POST(request: NextRequest) {
           const now = Date.now();
           const elapsed = startedAt ? now - startedAt : (createdAt ? now - createdAt : 0);
           const TIMEOUT_MS = 10 * 60 * 1000; // 10분으로 단축 (더 적극적으로)
-          
+
           // 작업이 10분 이상 진행 중이고 청크가 없으면 실패로 간주
           if (elapsed > TIMEOUT_MS && actualChunkCount === 0) {
             needsSync = true;
             newStatus = 'failed';
             docCheck.issues.push(`작업 타임아웃: ${Math.round(elapsed / (60 * 1000))}분 동안 진행 중인데 청크 없음`);
             docCheck.actions.push(`상태를 failed로 변경 (작업 타임아웃: ${Math.round(elapsed / (60 * 1000))}분)`);
-            
+
             // processing_jobs도 failed로 업데이트
             try {
               await supabase
@@ -262,7 +285,7 @@ export async function POST(request: NextRequest) {
           results.push({
             ...docCheck,
             status: hasActiveJobs ? 'processing' : 'no_issue',
-            message: hasActiveJobs 
+            message: hasActiveJobs
               ? `정상 처리 중 (활성 작업 ${activeJobs.length}개, 청크 ${actualChunkCount}개)`
               : `정상 상태 (청크 ${actualChunkCount}개)`,
             activeJobsCount: activeJobs.length,
@@ -298,9 +321,9 @@ export async function POST(request: NextRequest) {
 
   } catch (error) {
     console.error('❌ 상태 체크 오류:', error);
-    
+
     return NextResponse.json(
-      { 
+      {
         success: false,
         error: 'processing 상태 문서 체크 중 오류가 발생했습니다.',
         details: error instanceof Error ? error.message : String(error)
