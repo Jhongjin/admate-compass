@@ -295,11 +295,28 @@ export default function CrawlToIndexTestPage() {
       if (nullCheckCountRef.current > 0) {
         nullCheckCountRef.current = 0;
       }
+      // 🔥 실패한 작업의 에러 메시지 상세 출력
+      if (data.status === 'failed' && data.result) {
+        console.error('❌ [작업 실패] 상세 에러 정보:', {
+          jobId: data.id,
+          status: data.status,
+          job_type: data.job_type,
+          result_전체: data.result,
+          result_타입: typeof data.result,
+          result_배열여부: Array.isArray(data.result),
+          result_길이: Array.isArray(data.result) ? data.result.length : 'N/A',
+          result_첫번째: Array.isArray(data.result) ? data.result[0] : data.result,
+          error_메시지: Array.isArray(data.result) 
+            ? (data.result[0]?.error || data.result[0]?.message || data.result[0])
+            : (data.result?.error || data.result?.message || data.result)
+        });
+      }
+      
       console.log('📊 작업 상태:', {
         id: data.id,
         status: data.status,
         job_type: data.job_type,
-        result: data.result ? Object.keys(data.result) : null
+        result: data.result ? (Array.isArray(data.result) ? `Array(${data.result.length})` : Object.keys(data.result)) : null
       });
       
       return data as JobStatus | null;
@@ -704,13 +721,32 @@ export default function CrawlToIndexTestPage() {
         break;
       case 'failed':
         // 🔥 실패 원인 확인 및 표시
-        const errorMessage = jobStatus?.result?.[0]?.error || jobStatus?.error || '알 수 없는 오류';
-        const errorDetails = jobStatus?.result?.[0]?.details || jobStatus?.result?.[0];
+        const result = jobStatus?.result;
+        let errorMessage = '알 수 없는 오류';
+        let errorDetails: any = null;
+        
+        // result가 배열인 경우
+        if (Array.isArray(result) && result.length > 0) {
+          const firstResult = result[0];
+          errorMessage = firstResult?.error || firstResult?.message || firstResult?.details || JSON.stringify(firstResult).substring(0, 200) || '알 수 없는 오류';
+          errorDetails = firstResult;
+        } 
+        // result가 객체인 경우
+        else if (result && typeof result === 'object') {
+          errorMessage = result.error || result.message || result.details || JSON.stringify(result).substring(0, 200) || '알 수 없는 오류';
+          errorDetails = result;
+        }
+        // result가 문자열인 경우
+        else if (typeof result === 'string') {
+          errorMessage = result;
+        }
         
         console.error('❌ [작업 실패] 상세 정보:', {
           jobId: jobStatus?.id,
           error: errorMessage,
-          result: jobStatus?.result,
+          result_전체: result,
+          result_타입: typeof result,
+          result_배열여부: Array.isArray(result),
           errorDetails: errorDetails
         });
         
