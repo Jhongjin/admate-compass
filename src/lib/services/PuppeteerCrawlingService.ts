@@ -360,6 +360,38 @@ export class PuppeteerCrawlingService {
       console.log(`⏳ 봇 탐지 우회 대기: ${Math.round(waitTime)}ms`);
       await new Promise(resolve => setTimeout(resolve, waitTime));
 
+      // 🔥 Facebook/Instagram 페이지의 경우 추가 대기 및 스크롤 (JavaScript 콘텐츠 로드 유도)
+      if (url.includes('facebook.com') || url.includes('instagram.com')) {
+        console.log(`⏳ Facebook/Instagram 페이지 추가 대기 및 스크롤...`);
+        // 추가 대기 (JavaScript 콘텐츠 로드 시간 확보)
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        
+        // 스크롤을 통해 콘텐츠 로드 유도 (Lazy loading 콘텐츠 활성화)
+        try {
+          await page.evaluate(async () => {
+            await new Promise<void>((resolve) => {
+              let totalHeight = 0;
+              const distance = 100;
+              const timer = setInterval(() => {
+                const scrollHeight = document.body.scrollHeight;
+                window.scrollBy(0, distance);
+                totalHeight += distance;
+
+                if (totalHeight >= scrollHeight || totalHeight >= 2000) {
+                  clearInterval(timer);
+                  resolve();
+                }
+              }, 100);
+            });
+          });
+          console.log(`✅ 스크롤 완료, 추가 대기...`);
+          // 스크롤 후 추가 대기 (콘텐츠 로드 시간)
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        } catch (scrollError) {
+          console.warn(`⚠️ 스크롤 실패 (무시):`, scrollError);
+        }
+      }
+
       // 제목 추출 (우선순위: h1 > title > og:title > data-testid > class 기반 > pathname)
       console.log(`📝 제목 추출 중...`);
       const titleResult = await page.evaluate(() => {
@@ -483,9 +515,42 @@ export class PuppeteerCrawlingService {
       // UTF-8 인코딩 보장
       content = await this.ensureUtf8Encoding(content);
 
-      if (!content || content.length < 100) {
-        console.warn(`⚠️ 콘텐츠 부족: ${url} - ${content.length}자`);
-        return null;
+      // 🔥 Facebook/Instagram 페이지의 경우 콘텐츠 길이 기준 완화 (로그인 페이지에서도 일부 콘텐츠 추출 가능)
+      const minContentLength = (url.includes('facebook.com') || url.includes('instagram.com')) ? 50 : 100;
+      
+      if (!content || content.length < minContentLength) {
+        console.warn(`⚠️ 콘텐츠 부족: ${url} - ${content.length}자 (최소 요구: ${minContentLength}자)`);
+        
+        // 🔥 Facebook/Instagram 페이지의 경우 로그인 페이지에서도 링크나 메타 정보는 추출 가능
+        if ((url.includes('facebook.com') || url.includes('instagram.com')) && content.length >= 30) {
+          console.log(`⚠️ 콘텐츠가 부족하지만 최소 길이(30자)는 충족, 링크나 메타 정보 추출 시도...`);
+          // 링크 추출 시도
+          const linkContent = await page.evaluate(() => {
+            const links = Array.from(document.querySelectorAll('a[href]'));
+            const linkTexts = links
+              .map(link => {
+                const href = link.getAttribute('href');
+                const text = link.textContent?.trim() || '';
+                if (href && text && href.startsWith('http')) {
+                  return `${text}: ${href}`;
+                }
+                return null;
+              })
+              .filter(Boolean)
+              .join('\n');
+            return linkTexts;
+          });
+          
+          if (linkContent && linkContent.length > 0) {
+            content = `${content}\n\n발견된 링크:\n${linkContent}`;
+            console.log(`✅ 링크 정보 추가: ${content.length}자`);
+          }
+        }
+        
+        // 최종 콘텐츠 길이 확인
+        if (!content || content.length < minContentLength) {
+          return null;
+        }
       }
 
       // 하위 페이지 발견 (옵션이 활성화된 경우)
