@@ -2272,6 +2272,31 @@ export async function processQueue() {
               wasExistingDocument = true;
               console.log(`[CRITICAL] ✅ documentIdOverride로 문서 찾음: ${documentIdOverride}`);
               
+              // 🔥 이미 indexed 상태이고 chunk_count > 0인 문서는 건너뛰기
+              // 단, URL이 없는 경우에는 URL만 업데이트
+              if (docById.status === 'indexed' && docById.chunk_count > 0) {
+                // URL이 없는 경우에만 URL 업데이트
+                if (!docById.url || docById.url.trim().length === 0) {
+                  console.log(`[CRITICAL] ⚠️ documentIdOverride로 찾은 문서이지만 URL이 없어 URL만 업데이트: ${targetUrl} (문서 ID: ${docById.id})`);
+                  await supabase
+                    .from('documents')
+                    .update({
+                      url: targetUrl,
+                      updated_at: new Date().toISOString()
+                    })
+                    .eq('id', docById.id);
+                } else {
+                  console.log(`[CRITICAL] ⏭️ documentIdOverride로 찾은 문서 건너뜀: ${targetUrl} (문서 ID: ${docById.id}, 청크 수: ${docById.chunk_count})`);
+                }
+                return {
+                  documentId: docById.id,
+                  chunkCount: docById.chunk_count,
+                  success: true,
+                  skipped: true,
+                  reason: 'already_indexed'
+                };
+              }
+              
               // 🔥 모달에서 생성한 문서(status: 'pending')인 경우, payload의 title을 우선 사용
               if (docById.status === 'pending' && job.payload?.title) {
                 const payloadTitle = job.payload.title as string;
