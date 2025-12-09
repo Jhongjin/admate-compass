@@ -639,7 +639,7 @@ export class PuppeteerCrawlingService {
           console.error(`❌ 페이지 제목:`, title || '없음');
           
           // 🔥 페이지가 로그인 페이지인지 확인
-          const isLoginPage = await page.evaluate(() => {
+          const pageInfo = await page.evaluate(() => {
             const bodyText = document.body.textContent || '';
             const loginIndicators = [
               '로그인',
@@ -650,13 +650,35 @@ export class PuppeteerCrawlingService {
               'password',
               '비밀번호'
             ];
-            return loginIndicators.some(indicator => 
+            const isLoginPage = loginIndicators.some(indicator => 
               bodyText.toLowerCase().includes(indicator.toLowerCase())
-            ) && bodyText.length < 500; // 로그인 페이지는 보통 짧음
+            ) && bodyText.length < 500;
+            
+            // 페이지의 모든 링크 추출
+            const links = Array.from(document.querySelectorAll('a[href]')).map(a => ({
+              href: a.getAttribute('href'),
+              text: a.textContent?.trim() || ''
+            })).filter(l => l.href && l.href.startsWith('http'));
+            
+            return {
+              isLoginPage,
+              bodyTextLength: bodyText.length,
+              bodyTextPreview: bodyText.substring(0, 300),
+              linksCount: links.length,
+              links: links.slice(0, 10) // 처음 10개만
+            };
           });
           
-          if (isLoginPage) {
-            console.error(`❌ 로그인 페이지로 확인됨: ${url}`);
+          console.error(`❌ 페이지 분석 결과:`, JSON.stringify(pageInfo, null, 2));
+          
+          // 🔥 콘텐츠가 부족하더라도 링크가 있으면 최소한의 정보로 처리 시도
+          if (pageInfo.linksCount > 0 && content && content.length >= 10) {
+            console.warn(`⚠️ 콘텐츠가 부족하지만 링크가 ${pageInfo.linksCount}개 발견됨. 최소 정보로 처리 시도...`);
+            // 최소한의 콘텐츠라도 반환 (링크 정보 포함)
+            return {
+              content: content + '\n\n발견된 링크:\n' + pageInfo.links.map(l => `${l.text}: ${l.href}`).join('\n'),
+              title: title || 'Facebook Business'
+            };
           }
           
           return null;
