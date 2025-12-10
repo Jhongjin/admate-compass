@@ -3,7 +3,7 @@
  * Facebook/Instagram 등 JavaScript가 필요한 사이트 크롤링
  */
 
-import puppeteerCore, { Browser, Page } from 'puppeteer-core';
+import puppeteerCore, { Browser, Page, HTTPResponse } from 'puppeteer-core';
 import chromium from '@sparticuz/chromium';
 import { DocumentIndexingService } from './DocumentIndexingService';
 
@@ -307,63 +307,73 @@ export class PuppeteerCrawlingService {
         'Sec-Fetch-Dest': 'document'
       });
 
-      // 페이지 로드 시도 (에러 처리 강화)
+      // 페이지 로드 시도 (Meta 전용 backoff + 모바일 fallback + 긴 타임아웃)
       console.log(`📡 페이지 로드 시도: ${url}`);
-      let response;
-      try {
-        // Facebook은 JavaScript가 많이 로드되므로 domcontentloaded 사용
-        // 타임아웃을 60초로 증가하고, 실패 시 load로 fallback
-        // 🔥 업데이트: networkidle2로 변경하여 더 안정적인 로드 대기 (네트워크 활동이 줄어들 때까지)
-        const waitUntilOption = (url.includes('facebook.com') || url.includes('instagram.com')) ? 'networkidle2' : 'domcontentloaded';
-        response = await page.goto(url, {
-          waitUntil: waitUntilOption,
-          timeout: 60000
-        });
-      } catch (gotoError: any) {
-        const errorMessage = gotoError.message || String(gotoError);
-        console.error(`❌ 페이지 로드 실패 (첫 시도): ${errorMessage}`);
+      const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+      let response: HTTPResponse | null = null;
 
-        // 타임아웃 에러인 경우 load로 재시도 (더 관대한 조건)
-        if (errorMessage.includes('timeout') || errorMessage.includes('Navigation timeout')) {
-          console.warn('⚠️ 타임아웃 발생, load 조건으로 재시도...');
+      const isMetaDomain = url.includes('facebook.com') || url.includes('instagram.com');
+      const waitUntilOption = isMetaDomain ? 'networkidle2' : 'domcontentloaded';
+      const timeoutMs = isMetaDomain ? 90000 : 60000;
+      const backoff = [5000, 15000, 30000];
+
+      const toMobileUrl = (targetUrl: string) => {
+        try {
+          const u = new URL(targetUrl);
+          if (u.hostname.startsWith('www.facebook.com')) u.hostname = 'm.facebook.com';
+          else if (u.hostname === 'facebook.com') u.hostname = 'm.facebook.com';
+          else if (u.hostname.endsWith('instagram.com') && !u.hostname.startsWith('m.')) u.hostname = 'm.instagram.com';
+          return u.toString();
+        } catch {
+          return targetUrl;
+        }
+      };
+
+      const visitWithRetries = async (targetUrl: string) => {
+        for (let attempt = 0; attempt < backoff.length; attempt++) {
           try {
-            response = await page.goto(url, {
-              waitUntil: 'load', // domcontentloaded보다 더 관대한 조건
-              timeout: 60000
-            });
-            console.log('✅ load 조건으로 페이지 로드 성공');
-          } catch (retryError: any) {
-            console.error(`❌ 재시도도 실패: ${retryError.message || String(retryError)}`);
-            throw new Error(`페이지 로드 실패 (타임아웃): ${errorMessage}. 재시도도 실패: ${retryError.message || String(retryError)}`);
-          }
-        } else if (errorMessage.includes('detached') || errorMessage.includes('Connection closed')) {
-          // "Navigating frame was detached" 또는 "Connection closed" 오류 처리
-          console.warn('⚠️ 페이지 로드 중 연결 끊김, 재시도...');
-          // 페이지 닫기 시도 (에러 무시 - 이미 닫혀있거나 프로토콜 에러 방지)
-          try {
-            if (page && !page.isClosed()) {
-              await page.close().catch(() => { });
+            response = await page.goto(targetUrl, { waitUntil: waitUntilOption, timeout: timeoutMs });
+            const status = response?.status() || 0;
+
+            if ([401, 403, 429].includes(status)) {
+              console.warn(`⚠️ 상태코드 ${status} - 백오프 후 재시도 (${attempt + 1}/${backoff.length})`);
+              await sleep(backoff[attempt]);
+              continue;
             }
-          } catch (closeError) {
-            // 무시
+
+            if (!response || !response.ok()) {
+              console.warn(`⚠️ 응답 실패(${status}), 재시도 (${attempt + 1}/${backoff.length})`);
+              await sleep(backoff[attempt]);
+              continue;
+            }
+
+            return;
+          } catch (navError: any) {
+            const msg = navError.message || String(navError);
+            console.warn(`⚠️ 네비게이션 오류 (${attempt + 1}/${backoff.length}): ${msg}`);
+            await sleep(backoff[attempt]);
+            if (attempt === backoff.length - 1) {
+              throw navError;
+            }
           }
-          // 브라우저 재초기화
-          this.browser = null;
-          await this.init();
-          if (!this.browser) {
-            throw new Error('브라우저 재초기화 실패');
-          }
-          browser = this.browser;
-          // 새 페이지로 재시도
+        }
+      };
+
+      // 1차: 원본 URL
+      await visitWithRetries(url);
+
+      // 2차: 모바일 도메인 fallback (Meta 전용)
+      const isResponseOk = (res: HTTPResponse | null) => !!res && res.ok();
+
+      if (!isResponseOk(response) && isMetaDomain) {
+        const mobileUrl = toMobileUrl(url);
+        if (mobileUrl !== url) {
+          console.warn(`⚠️ 모바일 도메인으로 재시도: ${mobileUrl}`);
+          await page.close().catch(() => {});
           page = await browser.newPage();
-          await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+          await page.setUserAgent(userAgent);
           await page.setViewport({ width: 1920, height: 1080 });
-          response = await page.goto(url, {
-            waitUntil: 'load', // 재시도 시에도 load 사용
-            timeout: 60000
-          });
-        } else {
-          throw gotoError;
+          await visitWithRetries(mobileUrl);
         }
       }
 
@@ -372,7 +382,9 @@ export class PuppeteerCrawlingService {
         return null;
       }
 
-      console.log(`📄 페이지 응답 상태: ${response.status()} - ${response.statusText()}`);
+      const finalResponse = response as HTTPResponse;
+
+      console.log(`📄 페이지 응답 상태: ${finalResponse.status()} - ${finalResponse.statusText()}`);
 
       // 🔥 실제 페이지 URL 확인 (리다이렉트 여부 확인)
       const actualUrl = page.url();
@@ -381,8 +393,8 @@ export class PuppeteerCrawlingService {
         console.warn(`⚠️ URL 리다이렉트 감지: ${url} → ${actualUrl}`);
       }
 
-      if (!response.ok()) {
-        console.error(`❌ 페이지 로드 실패: ${url} - HTTP ${response.status()}`);
+      if (!finalResponse.ok()) {
+        console.error(`❌ 페이지 로드 실패: ${url} - HTTP ${finalResponse.status()}`);
         return null;
       }
 
