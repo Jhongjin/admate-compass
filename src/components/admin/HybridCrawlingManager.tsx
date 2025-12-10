@@ -733,6 +733,17 @@ export default function HybridCrawlingManager({
     // 사용자 정의 URL 추가
     if (crawlingMode !== 'predefined') {
       urlsToCrawl.push(...customUrls);
+
+      // [FIX] 입력창에 값이 있으면 자동으로 추가
+      if (newUrl && newUrl.trim()) {
+        const urlToAdd = newUrl.trim();
+        // 중복 체크
+        if (!urlsToCrawl.includes(urlToAdd)) {
+          urlsToCrawl.push(urlToAdd);
+          setCustomUrls(prev => [...prev, urlToAdd]);
+          setNewUrl('');
+        }
+      }
     }
 
     // 테스트용 공개 URL 추가 (Facebook URL이 실패하는 경우)
@@ -2499,9 +2510,9 @@ export default function HybridCrawlingManager({
       <div className="flex justify-center space-x-4">
         <Button
           onClick={handleStartCrawling}
-          disabled={isCrawling || getSelectedUrlCount() === 0}
+          disabled={isCrawling || (getSelectedUrlCount() === 0 && !newUrl.trim())}
           size="lg"
-          className={`w-full max-w-md h-14 text-lg font-semibold transition-all duration-300 ${isCrawling || getSelectedUrlCount() === 0
+          className={`w-full max-w-md h-14 text-lg font-semibold transition-all duration-300 ${isCrawling || (getSelectedUrlCount() === 0 && !newUrl.trim())
             ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
             : 'bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 text-white shadow-lg hover:shadow-xl transform hover:scale-105'
             }`}
