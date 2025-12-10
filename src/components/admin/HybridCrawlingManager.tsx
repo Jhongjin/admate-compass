@@ -126,8 +126,8 @@ export default function HybridCrawlingManager({
   const [isCrawling, setIsCrawling] = useState(false);
   const [crawlingProgress, setCrawlingProgress] = useState<CrawlingProgress[]>([]);
   const jobIdsRef = useRef<string[]>([]);
-  // 🔥 추가: URL별 활성 작업 ID 매핑 (DB 지연 시에도 작업 존재 여부 확인용)
-  const activeJobsMapRef = useRef<Map<string, string>>(new Map());
+  // 🔥 추가: URL별 활성 작업 ID 매핑 (DB 지연 시에도 작업 존재 여부 확인용) - timestamp 추가하여 타임아웃 처리
+  const activeJobsMapRef = useRef<Map<string, { id: string; timestamp: number }>>(new Map());
   const [extractSubPages, setExtractSubPages] = useState(true);
   const [editingTemplate, setEditingTemplate] = useState<string | null>(null);
   const [templateUrls, setTemplateUrls] = useState<{ [key: string]: string[] }>({});
@@ -138,6 +138,9 @@ export default function HybridCrawlingManager({
   const [expandedCategories, setExpandedCategories] = useState<{ [key: string]: boolean }>({});
   const [selectedUrls, setSelectedUrls] = useState<string[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+
+  // URL 정규화 함수 (끝의 슬래시 제거)
+  const normalizeUrl = (url: string) => url.replace(/\/$/, '');
   const [showUrlSelector, setShowUrlSelector] = useState(false);
   const [deletingUrl, setDeletingUrl] = useState<string | null>(null);
   const [showDiscoveredUrls, setShowDiscoveredUrls] = useState<{ [key: string]: boolean }>({});
@@ -829,7 +832,7 @@ export default function HybridCrawlingManager({
             if (enqueueResult.jobId) {
               jobIds.push(enqueueResult.jobId);
               jobIdsRef.current.push(enqueueResult.jobId);
-              activeJobsMapRef.current.set(url, enqueueResult.jobId); // 🔥 로컬 매핑 저장
+              activeJobsMapRef.current.set(url, { id: enqueueResult.jobId, timestamp: Date.now() }); // 🔥 로컬 매핑 저장 (타임아웃용 timestamp 포함)
               setCrawlingProgress(prev =>
                 prev.map(p =>
                   p.url === url ? { ...p, message: '처리 대기 중 (백그라운드)...' } : p
@@ -1133,12 +1136,17 @@ export default function HybridCrawlingManager({
       const urlToLatestJob = new Map<string, any>();
       jobs.forEach(job => {
         const jobUrl = (job.payload as any)?.url;
-        if (jobUrl && urls.includes(jobUrl)) {
-          const existing = urlToLatestJob.get(jobUrl);
-          if (!existing ||
-            (job.created_at && existing.created_at &&
-              new Date(job.created_at).getTime() > new Date(existing.created_at).getTime())) {
-            urlToLatestJob.set(jobUrl, job);
+        if (jobUrl) {
+          // URL 끝의 슬래시 차이를 무시하고 매칭
+          const matchedUrl = urls.find(u => u === jobUrl || normalizeUrl(u) === normalizeUrl(jobUrl));
+
+          if (matchedUrl) {
+            const existing = urlToLatestJob.get(matchedUrl);
+            if (!existing ||
+              (job.created_at && existing.created_at &&
+                new Date(job.created_at).getTime() > new Date(existing.created_at).getTime())) {
+              urlToLatestJob.set(matchedUrl, job);
+            }
           }
         }
       });
@@ -1214,7 +1222,19 @@ export default function HybridCrawlingManager({
 
             // 🔥 추가: DB에 잡이 안 보이지만(지연) 로컬에는 등록된 경우
             // job이 없을 때만 체크해야 함
-            if (activeJobsMapRef.current.has(url)) {
+            const activeJobInfo = activeJobsMapRef.current.get(url);
+            if (activeJobInfo) {
+              // 30초 이상 지났는데도 DB에 없으면 실패 처리 (좀비/삭제됨)
+              if (Date.now() - activeJobInfo.timestamp > 30000) {
+                console.log(`[POLL] ❌ ${url}: 로컬 작업 타임아웃 (30초) - 실패 처리`);
+                activeJobsMapRef.current.delete(url);
+                return {
+                  url,
+                  status: 'failed',
+                  message: '작업 응답 시간 초과 (30초)'
+                };
+              }
+
               console.log(`[POLL] ⚠️ ${url}: 문서는 failed지만 로컬 activeJobsMap에 존재 - 크롤링 중으로 표시`);
               return {
                 url,
