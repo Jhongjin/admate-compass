@@ -395,11 +395,22 @@ export default function CrawlToIndexTestPage() {
         setProgress(10);
         break;
       case 'processing':
-        if (result.status === 'crawling') {
+        // 🔥 하위 페이지 처리 진행률 표시 (subPageProgress)
+        if (result.subPageProgress) {
+          const { processed, total, completed, failed } = result.subPageProgress;
+          const percentage = total > 0 ? Math.round((processed / total) * 100) : 0;
+
+          // 메인 페이지(50%) + 하위 페이지 진행률(40% 비중)
+          const totalProgress = 50 + Math.round((percentage * 0.4));
+
+          setCurrentStep(`하위 페이지 처리 중... (${processed}/${total} 완료)`);
+          setProgress(totalProgress);
+        }
+        else if (result.status === 'crawling') {
           setCurrentStep('크롤링 중...');
           setProgress(30);
         } else if (result.status === 'main_page_completed') {
-          setCurrentStep('메인 페이지 크롤링 완료 - 하위 페이지 처리 중...');
+          setCurrentStep('메인 페이지 크롤링 완료 - 하위 페이지 처리 중... (대기 중)');
           setProgress(50);
         } else if (result.status === 'rag_processing') {
           setCurrentStep('RAG 처리 중 (청킹 및 임베딩)...');
