@@ -779,325 +779,131 @@ export default function HybridCrawlingManager({
 
     async function executeCrawling() {
       try {
-        // 하위 페이지 추출이 활성화된 경우
-        if (extractSubPages) {
-          toast.info('하위 페이지를 추출하고 있습니다...');
-          console.log('🔍 하위 페이지 추출이 활성화되어 있습니다.');
-        }
+        const dbVendor = vendors.length > 0 ? VENDOR_TO_DB_MAP[vendors[0]] || 'META' : 'META';
 
-        // 모든 URL을 크롤링 중으로 표시 (즉시 업데이트)
-        setCrawlingProgress(prev =>
-          prev.map(p => ({ ...p, status: 'crawling' as const, message: '크롤링 중...' }))
-        );
+        // 1. 문서 배치 생성 (Status: pending)
+        console.log(`📋 ${urlsToCrawl.length}개 URL에 대한 문서 생성 요청...`);
+        const documentsToCreate = urlsToCrawl.map(url => ({
+          url,
+          title: new URL(url).hostname + (new URL(url).pathname !== '/' ? new URL(url).pathname : '') // 임시 제목
+        }));
 
-        // 상태 업데이트를 위해 강제 리렌더링 트리거
-        await new Promise(resolve => setTimeout(resolve, 50));
-
-        // Puppeteer 기반 크롤링 API 호출 (Facebook/Instagram 지원)
-        // 크롤링은 최대 5분까지 걸릴 수 있으므로 타임아웃을 5분(300초)으로 설정
-        const response = await fetchWithTimeout('/api/puppeteer-crawl', {
+        const batchCreateResponse = await fetchWithTimeout('/api/admin/batch-create-documents', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
+          headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            urls: urlsToCrawl,
-            action: 'crawl_custom',
-            extractSubPages: extractSubPages,
-            ...crawlOptions,
-            maxDepth: maxDepthValue
+            documents: documentsToCreate,
+            vendor: dbVendor
           }),
-        }, 300000); // 5분 = 300,000ms
+        }, 30000);
 
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        if (!batchCreateResponse.ok) {
+          throw new Error(`문서 생성 실패: ${batchCreateResponse.status} ${batchCreateResponse.statusText}`);
         }
 
-        const result = await response.json();
-
-        const documentMap = new Map<string, any>();
-        if (Array.isArray(result.documents)) {
-          result.documents.forEach((doc: any) => {
-            if (doc?.url) {
-              documentMap.set(doc.url, doc);
-            }
-          });
+        const batchCreateResult = await batchCreateResponse.json();
+        if (!batchCreateResult.success) {
+          throw new Error(batchCreateResult.error || '문서 생성 실패');
         }
 
-        const extractDiscoveredUrls = (targetUrl?: string) => {
-          if (!targetUrl) return undefined;
-          const docInfo = documentMap.get(targetUrl);
-          if (!docInfo || !Array.isArray(docInfo.discoveredUrls)) {
-            return undefined;
-          }
+        console.log(`✅ ${batchCreateResult.created}개 문서 생성, ${batchCreateResult.updated}개 문서 업데이트`);
+        const createdDocuments = batchCreateResult.documents || [];
+        const jobIds: string[] = [];
 
-          const normalized = docInfo.discoveredUrls
-            .filter((item: any) => item?.url)
-            .map((item: any) => ({
-              url: item.url,
-              title: item.title || item.url,
-              source: (['sitemap', 'robots', 'pattern', 'links'].includes(item.source) ? item.source : 'links') as 'sitemap' | 'robots' | 'links' | 'pattern',
-            }));
+        // 2. 큐에 작업 등록 (CRAWL_SEED)
+        if (extractSubPages) {
+          toast.info('하위 페이지 자동 추출이 백그라운드에서 진행됩니다. (시간이 소요될 수 있습니다)');
+        }
 
-          return normalized.length > 0 ? normalized : undefined;
-        };
-
-        if (result.success) {
-          // 심도 3 이상이고 하위 페이지가 발견된 경우 모달 표시
-          const maxDepthValue = clampDepthValue(crawlOptions.maxDepth);
-          const allDiscovered: DiscoveredUrlItem[] = [];
-
-          // 모든 문서에서 discoveredUrls 수집 - 메인 페이지별로 그룹화
-          // maxDepth >= 3일 때는 depth 2와 3 이상을 모두 모달에서 선택하도록 함 (타임아웃 방지)
-          const groupedByMainPage: Record<string, DiscoveredUrlItem[]> = {};
-          if (result.documents && Array.isArray(result.documents)) {
-            result.documents.forEach((doc: any) => {
-              if (doc.discoveredUrls && Array.isArray(doc.discoveredUrls)) {
-                const mainPageUrl = doc.url;
-                if (!groupedByMainPage[mainPageUrl]) {
-                  groupedByMainPage[mainPageUrl] = [];
-                }
-
-                doc.discoveredUrls.forEach((discovered: any) => {
-                  // maxDepth >= 3일 때는 depth 2 이상인 모든 페이지를 모달에서 선택하도록 함
-                  if (maxDepthValue >= 3 && discovered.depth >= 2) {
-                    const item: DiscoveredUrlItem = {
-                      url: discovered.url,
-                      title: discovered.title || discovered.url,
-                      depth: discovered.depth,
-                      parentUrl: mainPageUrl,
-                      path: discovered.path || [mainPageUrl, discovered.url],
-                      source: discovered.source || 'links',
-                      isAlreadyCrawled: false
-                    };
-                    allDiscovered.push(item);
-                    groupedByMainPage[mainPageUrl].push(item);
-                  } else if (maxDepthValue < 3 && discovered.depth >= 3) {
-                    // maxDepth < 3일 때는 depth 3 이상만 모달에서 선택
-                    const item: DiscoveredUrlItem = {
-                      url: discovered.url,
-                      title: discovered.title || discovered.url,
-                      depth: discovered.depth,
-                      parentUrl: mainPageUrl,
-                      path: discovered.path || [mainPageUrl, discovered.url],
-                      source: discovered.source || 'links',
-                      isAlreadyCrawled: false
-                    };
-                    allDiscovered.push(item);
-                    groupedByMainPage[mainPageUrl].push(item);
-                  }
-                });
-              }
-            });
-          }
-
-          // 그룹화 정보 저장 (나중에 모달에서 사용)
-          setGroupedDiscoveredUrls(groupedByMainPage);
-
-          console.log(`🔍 하위 페이지 수집 결과: ${allDiscovered.length}개, maxDepth: ${maxDepthValue}`);
-
-          // maxDepth >= 3이고 발견된 페이지가 있으면 모달 표시 (depth 2 이상 모두 포함)
-          if (maxDepthValue >= 3 && allDiscovered.length > 0) {
-            console.log(`🔍 하위 페이지 발견: ${allDiscovered.length}개 (depth 2 이상) - 이미 크롤된 문서 체크 중...`);
-
-            // 이미 크롤된 문서 체크 (indexed 또는 chunk_count > 0인 문서)
-            const urlsToCheck = allDiscovered.map(item => item.url);
-            const { data: existingDocs, error: checkError } = await supabase
-              .from('documents')
-              .select('id, url, title, status, chunk_count')
-              .in('url', urlsToCheck)
-              .eq('type', 'url')
-              .or('status.eq.indexed,chunk_count.gt.0'); // indexed 상태이거나 chunk_count > 0인 문서
-
-            const alreadyCrawledUrlSet = new Set<string>();
-            const existingDocMap = new Map<string, { id: string; title: string; status: string; chunk_count: number }>();
-
-            if (!checkError && existingDocs) {
-              existingDocs.forEach((doc) => {
-                if (doc.url && (doc.status === 'indexed' || (doc.chunk_count && doc.chunk_count > 0))) {
-                  alreadyCrawledUrlSet.add(doc.url);
-                  existingDocMap.set(doc.url, {
-                    id: doc.id,
-                    title: doc.title || doc.url,
-                    status: doc.status || 'unknown',
-                    chunk_count: doc.chunk_count || 0
-                  });
-                }
-              });
-            }
-
-            // 이미 크롤된 문서 정보를 DiscoveredUrlItem에 반영
-            const allDiscoveredWithStatus = allDiscovered.map(item => ({
-              ...item,
-              isAlreadyCrawled: alreadyCrawledUrlSet.has(item.url),
-              existingDocumentId: existingDocMap.get(item.url)?.id
-            }));
-
-            const alreadyCrawledCount = alreadyCrawledUrlSet.size;
-            if (alreadyCrawledCount > 0) {
-              console.log(`✅ 이미 크롤된 문서 발견: ${alreadyCrawledCount}개 (총 ${allDiscovered.length}개 중)`);
-            }
-
-            console.log(`🔍 하위 페이지 발견: ${allDiscovered.length}개 (depth 2 이상) - 모달 표시`);
-            setAllDiscoveredUrls(allDiscoveredWithStatus);
-            // 이미 크롤된 문서는 기본 선택에서 제외
-            const urlsToSelect = allDiscoveredWithStatus
-              .filter(item => !item.isAlreadyCrawled)
-              .map(item => item.url);
-            setSelectedUrlsForCrawling(new Set(urlsToSelect));
-            setShowDiscoveryModal(true);
-
-            // 성공한 메인 페이지들의 진행 상황 업데이트 (유지)
+        for (const doc of createdDocuments) {
+          try {
             setCrawlingProgress(prev =>
-              prev.map((p, index) => {
-                const processedUrl = result.processedUrls?.[index];
-                if (processedUrl?.status === 'success') {
-                  const discoveredList = extractDiscoveredUrls(processedUrl.url || p.url);
-                  return {
-                    ...p,
-                    status: 'completed' as const,
-                    message: '크롤링 완료 (하위 페이지 선택 대기 중)',
-                    discoveredUrls: discoveredList
-                  };
-                }
-                return p;
-              })
+              prev.map(p =>
+                p.url === doc.url ? { ...p, message: '작업 큐 등록 중...' } : p
+              )
             );
 
-            // 모달에서 선택 후 크롤링하도록 대기 (성공한 문서는 이미 저장되었으므로 진행 상황은 유지)
-            return;
-          } else {
-            console.log(`🔍 모달 표시 조건 불만족: maxDepth=${maxDepthValue}, 발견된 페이지=${allDiscovered.length}개`);
-          }
-
-          const successCount = result.successCount || 0;
-          const failedCount = result.failCount || 0;
-
-          toast.success(`크롤링 완료: ${successCount}개 성공, ${failedCount}개 실패`);
-
-          // 결과에 따라 진행상황 업데이트 (성공한 페이지는 유지)
-          setCrawlingProgress(prev => {
-            const updated = prev.map((p, index) => {
-              const processedUrl = result.processedUrls?.[index];
-              // 이미 완료된 페이지는 유지
-              if (p.status === 'completed') {
-                return p;
-              }
-              const discoveredList = extractDiscoveredUrls(processedUrl?.url || p.url);
-              return {
-                ...p,
-                status: processedUrl?.status === 'success' ? 'completed' as const : 'failed' as const,
-                message: processedUrl?.status === 'success' ? '크롤링 완료' : '크롤링 실패',
-                discoveredUrls: discoveredList
-              };
-            });
-            return updated;
-          });
-
-          // 크롤링된 데이터를 Supabase에 저장
-          if (result.documents && result.documents.length > 0) {
-            try {
-              console.log('💾 크롤링된 데이터 저장 시작:', result.documents.length, '개');
-
-              // 벤더 정보 가져오기 (URL 도메인 기반 자동 감지 또는 선택된 벤더 사용)
-              const getVendorFromUrl = (url: string): string => {
-                try {
-                  const urlObj = new URL(url);
-                  const hostname = urlObj.hostname.toLowerCase();
-
-                  if (hostname.includes('naver.com') || hostname.includes('naver')) {
-                    return 'NAVER';
-                  } else if (hostname.includes('kakao.com') || hostname.includes('kakao')) {
-                    return 'KAKAO';
-                  } else if (hostname.includes('google.com') || hostname.includes('google')) {
-                    return 'GOOGLE';
-                  } else if (hostname.includes('twitter.com') || hostname.includes('x.com')) {
-                    return 'OTHER';
-                  } else if (hostname.includes('facebook.com') || hostname.includes('instagram.com') || hostname.includes('meta.com') || hostname.includes('threads.net')) {
-                    return 'META';
-                  }
-                } catch (e) {
-                  console.error('URL 파싱 오류:', e);
+            const enqueueResponse = await fetchWithTimeout('/api/jobs/enqueue', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                jobType: 'CRAWL_SEED',
+                documentId: doc.id,
+                priority: 5,
+                payload: {
+                  url: doc.url,
+                  title: doc.title,
+                  vendors: [dbVendor],
+                  domainLimit: crawlOptions.domainLimit,
+                  respectRobots: crawlOptions.respectRobots,
+                  maxDepth: clampDepthValue(crawlOptions.maxDepth),
+                  extractSubPages: extractSubPages // 백그라운드 워커가 처리하도록 전달 - 모달 없이 자동 진행
                 }
-                // 기본값: 선택된 벤더 또는 META
-                return vendors.length > 0 ? VENDOR_TO_DB_MAP[vendors[0]] || 'META' : 'META';
-              };
+              }),
+            }, 30000);
 
-              const saveResponse = await fetchWithTimeout('/api/admin/save-crawled-content', {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({
-                  results: result.documents.map((doc: any) => ({
-                    url: doc.url,
-                    title: doc.title,
-                    content: doc.content,
-                    status: 'success',
-                    vendor: getVendorFromUrl(doc.url) // 벤더 정보 추가
-                  }))
-                }),
-              });
-
-              const saveResult = await saveResponse.json();
-
-              if (saveResult.success) {
-                console.log('✅ 크롤링 데이터 저장 완료:', saveResult.data.summary);
-                toast.success(`데이터 저장 완료: ${saveResult.data.summary.success}개 저장`);
-              } else {
-                console.error('❌ 크롤링 데이터 저장 실패:', saveResult.error);
-                toast.error(`데이터 저장 실패: ${saveResult.error}`);
-              }
-            } catch (saveError) {
-              console.error('❌ 크롤링 데이터 저장 중 오류:', saveError);
-              toast.error('데이터 저장 중 오류가 발생했습니다.');
+            if (!enqueueResponse.ok) {
+              throw new Error(`작업 등록 실패: ${enqueueResponse.status}`);
             }
+
+            const enqueueResult = await enqueueResponse.json();
+            if (enqueueResult.jobId) {
+              jobIds.push(enqueueResult.jobId);
+              jobIdsRef.current.push(enqueueResult.jobId);
+              setCrawlingProgress(prev =>
+                prev.map(p =>
+                  p.url === doc.url ? { ...p, message: '처리 대기 중 (백그라운드)...' } : p
+                )
+              );
+            }
+          } catch (jobError) {
+            console.error(`URL 작업 등록 실패: ${doc.url}`, jobError);
+            setCrawlingProgress(prev =>
+              prev.map(p =>
+                p.url === doc.url
+                  ? { ...p, status: 'failed', message: '작업 등록 실패' }
+                  : p
+              )
+            );
+          }
+        }
+
+        // 3. 작업이 하나라도 등록되었으면 폴링 시작 및 워커 트리거
+        if (jobIds.length > 0) {
+          toast.success(`${jobIds.length}개 크롤링 작업이 시작되었습니다.`);
+
+          // 큐 워커 트리거 (선택적 - 백그라운드 처리 촉진)
+          try {
+            fetchWithTimeout('/api/jobs/consume', { method: 'POST' }, 5000).catch(() => { });
+          } catch (e) { /* 무시 */ }
+
+          // 폴링 시작
+          if (pollingIntervalRef.current) {
+            clearInterval(pollingIntervalRef.current);
           }
 
-          // 크롤링 완료 후 상태 업데이트 (성공한 문서는 유지)
-          // 하위 페이지 크롤링 실패 시에도 메인 페이지 결과는 유지
-          // 리스트는 유지하고, 사용자가 수동으로 초기화할 수 있도록 함
-          setIsCrawling(false);
-          // 부모 컴포넌트에 크롤링 완료 알림 (약간의 지연 후 호출하여 DB 업데이트 완료 대기)
-          if (onCrawlingComplete) {
-            setTimeout(() => {
-              onCrawlingComplete();
-            }, 2000); // 2초 후 새로고침하여 DB 업데이트 완료 대기
-          }
+          pollingIntervalRef.current = setInterval(() => {
+            pollCrawlStatusFromJobs(urlsToCrawl);
+          }, 2000);
+
+          // 즉시 첫 폴링
+          setTimeout(() => pollCrawlStatusFromJobs(urlsToCrawl), 1000);
+
         } else {
-          throw new Error(result.error || '크롤링 실패');
+          toast.error('등록된 작업이 없습니다.');
+          setIsCrawling(false);
         }
 
       } catch (error) {
-        console.error('크롤링 오류:', error);
-
-        let errorMessage = '알 수 없는 오류';
-        if (error instanceof Error) {
-          if (error.message.includes('404')) {
-            errorMessage = '크롤링 API를 찾을 수 없습니다. 서버를 재시작해주세요.';
-          } else if (error.message.includes('JSON')) {
-            errorMessage = '서버 응답 형식 오류입니다.';
-          } else if (error.message.includes('시간이 초과')) {
-            errorMessage = '크롤링 시간이 초과되었습니다. 일부 페이지는 크롤링되었을 수 있습니다.';
-          } else {
-            errorMessage = error.message;
-          }
-        }
-
-        toast.error(`크롤링 실패: ${errorMessage}`);
+        console.error('❌ 크롤링 시작 프로세스 오류:', error);
+        toast.error(error instanceof Error ? error.message : '크롤링 시작 중 오류가 발생했습니다.');
         setCrawlingProgress(prev =>
-          prev.map(p => ({ ...p, status: 'failed' as const, message: errorMessage }))
+          prev.map(p => p.status === 'pending' || p.status === 'crawling'
+            ? { ...p, status: 'failed', message: '시작 실패' }
+            : p
+          )
         );
-      } finally {
-        // 상태 업데이트를 보장하기 위해 약간의 지연 후 상태 변경
-        await new Promise(resolve => setTimeout(resolve, 100));
-        // 모달이 표시되지 않은 경우에만 크롤링 상태 해제
-        // (모달이 표시되면 모달 핸들러에서 상태를 관리하므로 여기서는 해제하지 않음)
-        if (!showDiscoveryModal) {
-          setIsCrawling(false);
-        }
-        // 리스트는 유지 - 사용자가 수동으로 초기화할 수 있도록 함
-        // 완료된 페이지와 실패한 페이지 모두 표시하여 사용자가 결과를 확인할 수 있도록 함
+        setIsCrawling(false);
       }
     }
   };
