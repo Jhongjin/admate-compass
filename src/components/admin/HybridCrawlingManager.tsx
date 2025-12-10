@@ -1188,13 +1188,16 @@ export default function HybridCrawlingManager({
 
           // failed 상태
           // 🔥 수정: 현재 실행 중인 작업(job)이 있고 그것이 진행 중이면, 문서의 failed 상태는 과거의 기록일 수 있으므로 무시함
+          // failed 상태
+          // 🔥 수정: 현재 실행 중인 작업(job)이 있고 그것이 진행 중이면, 문서의 failed 상태는 과거의 기록일 수 있으므로 무시함
           if (docStatus === 'failed') {
-            if (job && (job.status === 'processing' || job.status === 'pending' || job.status === 'queued')) {
-              console.log(`[POLL] ⚠️ ${url}: 문서는 failed지만 새로운 작업이 진행 중임 (status=${job.status}) - 크롤링 중으로 표시`);
+            // 🔥 수정: completed 상태도 포함하여 처리 (문서 상태가 아직 업데이트되지 않은 경우 대비)
+            if (job && (job.status === 'processing' || job.status === 'pending' || job.status === 'queued' || job.status === 'completed')) {
+              console.log(`[POLL] ⚠️ ${url}: 문서는 failed지만 새로운 작업이 진행/완료됨 (status=${job.status}) - 크롤링 중으로 표시`);
               return {
                 url,
                 status: 'crawling',
-                message: job.status === 'pending' ? '작업 대기 중...' : '크롤링 재시도 중...',
+                message: job.status === 'pending' ? '작업 대기 중...' : (job.status === 'completed' ? '인덱싱 중...' : '크롤링 재시도 중...'),
                 chunkCount: docChunkCount
               };
             }
