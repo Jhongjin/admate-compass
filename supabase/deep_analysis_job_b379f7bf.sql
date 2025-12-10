@@ -144,3 +144,5 @@ WHERE url ILIKE '%ads.naver.com%'
   AND created_at <= '2025-12-05 02:21:50'
 ORDER BY timestamp;
 
+
+

@@ -114,3 +114,5 @@
 - `supabase/analyze_31_documents_mystery.sql`: 종합 분석 쿼리
 - `src/app/test/crawl-to-index/page.tsx`: 개선된 프론트엔드 코드
 
+
+

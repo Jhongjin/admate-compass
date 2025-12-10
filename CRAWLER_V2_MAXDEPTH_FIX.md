@@ -65,3 +65,5 @@
   - `discoverFromLinks()` 함수 수정
   - `discoverFromSitemap()` 함수 수정
 
+
+

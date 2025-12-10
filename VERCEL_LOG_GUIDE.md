@@ -163,3 +163,5 @@ vercel logs --limit 200 | grep "eeec3b56-cd8a-4779-b357-0c7089ac97db"
 vercel logs --limit 100 | grep -E "(ERROR|❌|실패)"
 ```
 
+
+

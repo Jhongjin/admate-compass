@@ -80,3 +80,5 @@ if (urlDomain !== baseDomain) {
 2. `isValidUrl` 함수에 더 상세한 로그 추가
 3. Facebook 도메인 처리 로직 개선
 
+
+

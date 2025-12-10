@@ -143,3 +143,5 @@ export async function GET(request: NextRequest) {
 - **2024-12-09**: 상세 에러 로그 추가
 - **2024-12-09**: GET 핸들러 즉시 로깅 추가
 
+
+

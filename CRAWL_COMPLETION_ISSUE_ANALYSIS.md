@@ -259,3 +259,5 @@ if (allSubPagesProcessed) {
 - [ ] 에러 로그 확인 (`❌ CRAWL_SEED 처리 오류:`)
 - [ ] 데이터베이스에서 작업 상태 직접 확인
 
+
+

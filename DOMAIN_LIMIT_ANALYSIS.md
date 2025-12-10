@@ -222,3 +222,5 @@ if (config.domainLimit === true) {
 2. **하위 도메인 포함:** `maxDepth: 3` + `domainLimit: false`
 3. **모든 도메인 포함:** `maxDepth: 4`
 
+
+

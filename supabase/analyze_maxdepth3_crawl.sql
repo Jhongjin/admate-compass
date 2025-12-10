@@ -177,3 +177,5 @@ WHERE job_type = 'CRAWL_SEED'
 ORDER BY created_at DESC
 LIMIT 1;
 
+
+

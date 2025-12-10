@@ -296,3 +296,5 @@ LIMIT 10;
 - `src/lib/services/PuppeteerCrawlingService.ts`: Puppeteer 크롤링 서비스
 - `supabase/check_recent_failed_crawl_errors.sql`: 에러 확인 쿼리
 
+
+

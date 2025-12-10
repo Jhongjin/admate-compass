@@ -131,3 +131,5 @@ if (candidateUrls.length === 0 && discovered.length > 0) {
 3. **원인 파악**: 시나리오 A/B/C 중 어느 것인지 확인
 4. **수정**: 원인에 따라 코드 수정
 
+
+

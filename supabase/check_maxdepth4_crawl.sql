@@ -158,3 +158,5 @@ WHERE job_type = 'CRAWL_SEED'
   AND (result->>'maxDepth' = '3' OR result->>'maxDepth' = '4')
 ORDER BY created_at DESC;
 
+
+

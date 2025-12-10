@@ -174,3 +174,5 @@ GROUP BY pj.id, pj.status, pj.finished_at, d.id, d.url, d.status, d.chunk_count;
 - `embedding` 컬럼이 NULL
 - **원인**: 임베딩 생성 실패 또는 저장 실패
 
+
+

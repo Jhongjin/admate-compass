@@ -69,3 +69,5 @@ AND status = 'indexed'
 ORDER BY created_at DESC
 LIMIT 10;
 
+
+

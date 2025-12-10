@@ -41,3 +41,5 @@ WHERE pj.job_type = 'CRAWL_SEED'
 GROUP BY pj.status
 ORDER BY latest_created DESC;
 
+
+

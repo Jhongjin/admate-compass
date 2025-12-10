@@ -124,3 +124,5 @@ FROM domain_stats
 GROUP BY domain_type
 ORDER BY domain_type;
 
+
+

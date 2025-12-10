@@ -170,3 +170,5 @@ isSubdomain(subDomain: string, baseDomain: string): boolean {
 예상 결과: 모든 도메인 포함
 ```
 
+
+
