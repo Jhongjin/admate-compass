@@ -52,7 +52,8 @@ export async function POST(request: NextRequest) {
     let deletedCount = 0;
     let updatedCount = 0;
     const now = Date.now();
-    const TIMEOUT_MS = 2 * 60 * 60 * 1000; // 2시간
+    // ⚠️ CRAWL_SEED는 10~15분 내 완료가 정상. 더 빠르게 정리해 무한 대기 방지.
+    const TIMEOUT_MS = 15 * 60 * 1000; // 15분
     
     // 2. 각 URL에 대해 중복 작업 정리
     for (const [url, jobs] of urlToJobs.entries()) {
