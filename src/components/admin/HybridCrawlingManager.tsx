@@ -73,7 +73,7 @@ const predefinedUrlTemplates = {
 
 interface CrawlingProgress {
   url: string;
-  status: 'pending' | 'crawling' | 'completed' | 'failed';
+  status: 'pending' | 'crawling' | 'completed' | 'failed' | 'stabilizing';
   message?: string;
   // 선택된 URL 크롤링(Seed 크롤링) 진행 상황을 위해 사용
   chunkCount?: number;
@@ -82,6 +82,17 @@ interface CrawlingProgress {
     title?: string;
     source: 'sitemap' | 'robots' | 'links' | 'pattern';
   }>;
+  subPageProgress?: {
+    processed: number;
+    total: number;
+    completed: number;
+    failed: number;
+  };
+  stabilityCheck?: {
+    stableCount: number;
+    lastDocCount: number;
+    expectedDocCount: number | null;
+  };
 }
 
 const ALL_VENDORS = ["Meta", "Naver", "Kakao", "Google", "X(Twitter)"] as const;
@@ -467,34 +478,7 @@ export default function HybridCrawlingManager({
                       return updated;
                     });
 
-                    // 완료된 작업이 있으면 콜백 호출
-                    const completedInMatching = matchingJobs.filter(j =>
-                      j.status === 'completed' || j.finished_at !== null
-                    );
-                    if (completedInMatching.length > 0 && onCrawlingComplete) {
-                      onCrawlingComplete();
-                    }
-
-                    // 모든 작업이 완료되면 폴링 중지
-                    const allCompleted = matchingJobs.every(j =>
-                      (j.status === 'completed' || j.finished_at !== null) ||
-                      j.status === 'failed' ||
-                      j.status === 'cancelled'
-                    );
-
-                    if (allCompleted) {
-                      if (pollingIntervalRef.current) {
-                        clearInterval(pollingIntervalRef.current);
-                        pollingIntervalRef.current = null;
-                      }
-                      setIsCrawling(false);
-                      setTimeout(() => {
-                        setCrawlingProgress(prev => prev.filter(p => p.status !== 'completed'));
-                        if (onCrawlingComplete) {
-                          onCrawlingComplete();
-                        }
-                      }, 3000);
-                    }
+                    // (구) 완료 체크 로직 제거됨 - setCrawlingProgress 내부로 통합됨
                   }
                 } catch (pollError) {
                   console.error('폴링 오류:', pollError);
@@ -2535,6 +2519,72 @@ export default function HybridCrawlingManager({
           )}
         </Button>
 
+        {/* 크롤링 진행 상황 표시 */}
+        {crawlingProgress.length > 0 && (
+          <div className="space-y-4 mb-6 p-4 bg-gray-800/50 rounded-xl border border-gray-700">
+            <h3 className="text-sm font-semibold text-gray-300 mb-3 flex items-center gap-2">
+              <Loader2 className="w-4 h-4 animate-spin text-blue-400" />
+              크롤링 진행 상황
+            </h3>
+            {crawlingProgress.map((progress, index) => (
+              <div key={index} className="space-y-2">
+                <div className="flex justify-between text-xs text-gray-400">
+                  <span className="truncate max-w-[70%] font-medium text-white">
+                    {progress.url}
+                  </span>
+                  <span className={`
+                      ${progress.status === 'completed' ? 'text-green-400' :
+                      progress.status === 'failed' ? 'text-red-400' : 'text-blue-400'}
+                  `}>
+                    {progress.status === 'pending' && '대기 중...'}
+                    {progress.status === 'crawling' && (
+                      progress.subPageProgress
+                        ? `하위 페이지 분석 중 (${progress.subPageProgress.processed}/${progress.subPageProgress.total})`
+                        : '메인 페이지 분석 중...'
+                    )}
+                    {progress.status === 'stabilizing' && `인덱싱 안정화 중... (${progress.stabilityCheck?.lastDocCount || '?'}개 문서)`}
+                    {progress.status === 'completed' && '완료됨'}
+                    {progress.status === 'failed' && '실패'}
+                  </span>
+                </div>
+
+                <Progress
+                  value={
+                    progress.status === 'completed' ? 100 :
+                      progress.status === 'failed' ? 100 :
+                        progress.status === 'pending' ? 0 :
+                          progress.status === 'stabilizing' ? 99 :
+                            progress.subPageProgress
+                              ? 50 + Math.round((progress.subPageProgress.processed / (progress.subPageProgress.total || 1)) * 40)
+                              : 30
+                  }
+                  className={`h-2 ${progress.status === 'failed' ? 'bg-red-900/20' :
+                    progress.status === 'stabilizing' ? 'bg-blue-900/20 animate-pulse' :
+                      'bg-gray-700'
+                    }`}
+                  indicatorClassName={
+                    progress.status === 'completed' ? 'bg-green-500' :
+                      progress.status === 'failed' ? 'bg-red-500' :
+                        progress.status === 'stabilizing' ? 'bg-blue-400' :
+                          progress.subPageProgress ? 'bg-blue-500 transition-all duration-300' :
+                            'bg-blue-500 animate-pulse'
+                  }
+                />
+
+                {/* 상세 상태 메시지 */}
+                {progress.message && (
+                  <p className={`text-xs truncate ${progress.status === 'failed' ? 'text-red-400' :
+                    progress.status === 'completed' ? 'text-green-400' :
+                      'text-gray-500'
+                    }`}>
+                    {progress.message}
+                  </p>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* 크롤링 상태 동기화 버튼 */}
         {(isCrawling || crawlingProgress.some(p => p.status === 'crawling' || p.status === 'pending')) && (
           <>
@@ -2775,7 +2825,7 @@ export default function HybridCrawlingManager({
 
                   if (result.success) {
                     const { checked, synced, results: checkResults } = result.data;
-                    
+
                     // 동기화된 문서가 있으면 문서 목록 새로고침
                     if (synced > 0) {
                       if (onCrawlingComplete) {
