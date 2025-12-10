@@ -2697,14 +2697,17 @@ export async function processQueue() {
           if (isLoginError) {
             console.warn('[CRITICAL] ⚠️ 메인 페이지 로그인/접근제한 감지 (부분 성공 모드 진입):', errorMessage);
           } else {
-            console.error('[CRITICAL] ❌ 메인 페이지 크롤링 실패 (하위 페이지 탐색 시도):', {
+            console.error('[CRITICAL] ❌ 메인 페이지 크롤링 실패:', {
               url,
               errorMessage: safeErrorMessage,
               errorName,
-              errorStack: safeErrorStack,
-              errorType: typeof fetchError,
-              errorString: String(fetchError)
             });
+
+            // 🔥 [FIX] Facebook/Instagram은 메인 페이지 실패 시 하위 페이지도 99% 실패하므로 즉시 중단 (Fail Fast)
+            if (url.includes('facebook.com') || url.includes('instagram.com')) {
+              console.error('[CRITICAL] 🛑 Facebook/Instagram 메인 페이지 실패로 인해 작업을 즉시 중단합니다 (Fail Fast).');
+              throw fetchError; // 에러를 다시 던져서 작업 실패 처리
+            }
           }
 
           // 실패 시 작업 상태 업데이트 (failed가 아닌 processing 유지, 에러 정보만 result에 기록)
