@@ -495,17 +495,13 @@ export default function CrawlToIndexTestPage() {
                 stableCount = 0;
                 lastDocCount = currentDocCount;
 
-                // 예상 문서 수가 있고 도달했으면 완료
+                // 예상 문서 수가 있고 도달했더라도 즉시 완료하지 않고 안정화 확인
                 if (expectedDocCount && currentDocCount >= expectedDocCount) {
-                  console.log('✅ [작업 완료] 예상 문서 수에 도달:', currentDocCount, '개');
-                  setCurrentStep(`인덱싱 완료! (${currentDocCount}개 문서)`);
-                  setProgress(100);
-                  setIsCrawling(false); // 🔥 이제 완료 표시
-                  if (!completionToastShownRef.current) {
-                    toast.success(`크롤링 및 인덱싱이 완료되었습니다! (${currentDocCount}개 문서)`);
-                    completionToastShownRef.current = true;
-                  }
-                  return;
+                  console.log('✅ [작업 완료] 예상 문서 수에 도달했으나 안정화 대기:', currentDocCount, '개');
+                  // 99%에서 대기하며 안정화 확인
+                  setCurrentStep(`인덱싱 마무리 중... (${currentDocCount}개 문서)`);
+                  setProgress(99);
+                  // setIsCrawling(false)는 안정화 후 실행
                 }
               } else if (currentDocCount === lastDocCount && currentDocCount > 0) {
                 // 문서 수가 변하지 않았으면 카운터 증가
@@ -527,8 +523,9 @@ export default function CrawlToIndexTestPage() {
 
               // 🔥 문서가 있으면 진행 상황 표시 (항상 업데이트)
               if (currentDocCount > 0) {
+                // 완료 전까지는 최대 99%까지만 표시
                 const progressPercent = expectedDocCount
-                  ? Math.min(95, Math.round((currentDocCount / expectedDocCount) * 100))
+                  ? Math.min(99, Math.round((currentDocCount / expectedDocCount) * 100))
                   : Math.min(95, 90); // 예상 문서 수가 없으면 90%로 설정
 
                 setCurrentStep(`크롤링 완료! 문서 생성 중... (${currentDocCount}개 생성됨${expectedDocCount ? ` / 예상 ${expectedDocCount}개` : ''})`);
