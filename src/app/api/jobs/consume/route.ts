@@ -362,6 +362,9 @@ export async function processQueue() {
   const supabase = await createPureClient();
   console.error('[CRITICAL] ✅ Supabase 클라이언트 생성 완료');
 
+  // 🔥 job 변수를 try/catch 블록 외부로 이동하여 catch 블록에서 접근 가능하게 함
+  let job: any = null;
+
   // 타임아웃 작업 감지 로직을 선택적으로 실행 (환경 변수로 제어 가능)
   // 기본값: false (타임아웃 체크가 쿼리 성능 문제를 일으킬 수 있으므로 비활성화)
   const ENABLE_TIMEOUT_CHECK = process.env.ENABLE_TIMEOUT_CHECK === 'true'; // 기본값: false
@@ -594,7 +597,6 @@ export async function processQueue() {
     // retrying 상태도 포함하여 재시도 작업 처리
     console.error('[CRITICAL] 🔍 큐에서 작업 조회 중...');
 
-    let job: any = null;
     let pickErr: any = null;
 
     // ⚠️ Vercel 환경에서 Supabase 쿼리가 완료되지 않는 근본적인 문제로 인해
@@ -5162,14 +5164,20 @@ export async function processQueue() {
       const message = err instanceof Error ? err.message : String(err);
       const errorStack = err instanceof Error ? err.stack : undefined;
 
-      // 처리 중인 job 조회 (lastJob 대신 현재 처리 중인 job 사용)
-      const { data: processingJob } = await supabase
-        .from('processing_jobs')
-        .select('id, document_id, status, payload, result') // result 추가
-        .eq('status', 'processing')
-        .order('updated_at', { ascending: false })
-        .limit(1)
-        .maybeSingle();
+      // 처리 중인 job 조회 (job 변수가 있으면 우선 사용)
+      let processingJob = job;
+
+      if (!processingJob) {
+        console.warn('⚠️ job 변수가 없음. DB에서 최근 작업 조회 시도...');
+        const { data: fallbackJob } = await supabase
+          .from('processing_jobs')
+          .select('id, document_id, status, payload, result') // result 추가
+          .eq('status', 'processing')
+          .order('updated_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        processingJob = fallbackJob;
+      }
 
       // 에러 로그에 파일 정보 포함
       const fileSize = (processingJob?.payload as any)?.fileSize || (processingJob?.payload as any)?.storage?.size || 0;
