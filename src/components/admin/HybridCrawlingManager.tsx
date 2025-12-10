@@ -1202,7 +1202,18 @@ export default function HybridCrawlingManager({
               };
             }
 
+            // 🔥 추가: 잡이 존재하는데 위 조건(진행중/완료)에 안 걸렸다면 실패했거나 취소된 것임
+            // 이 경우 activeJobsMapRef fallback으로 넘어가지 말고 바로 실패 처리해야 함
+            if (job) {
+              return {
+                url,
+                status: 'failed',
+                message: job.message || `크롤링 실패 (${job.status})`
+              };
+            }
+
             // 🔥 추가: DB에 잡이 안 보이지만(지연) 로컬에는 등록된 경우
+            // job이 없을 때만 체크해야 함
             if (activeJobsMapRef.current.has(url)) {
               console.log(`[POLL] ⚠️ ${url}: 문서는 failed지만 로컬 activeJobsMap에 존재 - 크롤링 중으로 표시`);
               return {
