@@ -448,10 +448,11 @@ export default function CrawlToIndexTestPage() {
           // 문서 목록 자동 새로고침(3초)과 겹치지 않도록 즉시 시작
 
           // 🔥 예상 문서 수 확인 (작업 결과에서)
-          const expectedDocCount = result?.totalDocuments || result?.subPageCount || null;
+          // subPageProgress.total이 있으면 그것을 최우선으로 사용
+          const expectedDocCount = result?.subPageProgress?.total || result?.totalDocuments || result?.subPageCount || null;
           let lastDocCount = 0;
           let stableCount = 0; // 문서 수가 변하지 않은 연속 횟수
-          const MAX_STABLE_COUNT = 3; // 3번 연속 동일하면 완료로 간주
+          const MAX_STABLE_COUNT = 10; // 10번 연속 동일하면 완료로 간주 (안정화 기준 강화)
           const MAX_POLLING_TIME = 30 * 60 * 1000; // 최대 30분
           const startTime = Date.now();
 
@@ -497,18 +498,38 @@ export default function CrawlToIndexTestPage() {
 
                 // 예상 문서 수가 있고 도달했더라도 즉시 완료하지 않고 안정화 확인
                 if (expectedDocCount && currentDocCount >= expectedDocCount) {
-                  console.log('✅ [작업 완료] 예상 문서 수에 도달했으나 안정화 대기:', currentDocCount, '개');
-                  // 99%에서 대기하며 안정화 확인
-                  setCurrentStep(`인덱싱 마무리 중... (${currentDocCount}개 문서)`);
-                  setProgress(99);
-                  // setIsCrawling(false)는 안정화 후 실행
+                  // 문서 수가 목표치에 도달했고 안정화되었는지 확인 (최소 3번 연속 동일)
+                  if (stableCount >= 3) {
+                    console.log('✅ [작업 완료] 예상 문서 수 달성 및 안정화:', currentDocCount, '개');
+                    setCurrentStep(`인덱싱 완료! (${currentDocCount}개 문서)`);
+                    setProgress(100);
+                    setIsCrawling(false);
+                    if (!completionToastShownRef.current) {
+                      toast.success(`크롤링 및 인덱싱이 완료되었습니다! (${currentDocCount}개 문서)`);
+                      completionToastShownRef.current = true;
+                    }
+                    return;
+                  } else {
+                    stableCount++; // 안정화 카운트 증가
+                    console.log('⏳ [작업 완료] 목표 달성 후 안정화 대기:', stableCount, '/ 3');
+                    // 99%에서 대기
+                    setCurrentStep(`인덱싱 마무리 중... (${currentDocCount}개 문서)`);
+                    setProgress(99);
+                  }
                 }
               } else if (currentDocCount === lastDocCount && currentDocCount > 0) {
                 // 문서 수가 변하지 않았으면 카운터 증가
                 stableCount++;
 
-                // 문서 수가 일정 시간 동안 변하지 않으면 완료로 간주
-                if (stableCount >= MAX_STABLE_COUNT) {
+                // 예상 문서 수가 있는데 아직 도달하지 못했다면 완료하지 않음
+                if (expectedDocCount && currentDocCount < expectedDocCount) {
+                  console.log(`⏳ [작업 완료] 문서 수 부족, 대기 중... (${currentDocCount}/${expectedDocCount}) - 안정화 카운트: ${stableCount}`);
+                  // 안정화 카운트가 너무 높아지면(30회, 약 1~2분) 경고 메시지와 함께 강제 완료 고려 가능하지만,
+                  // 지금은 사용자 피드백에 따라 끝까지 기다리도록 함.
+                  // 단, 무한 대기를 방지하기 위해 MAX_POLLING_TIME(30분)이 존재함.
+                }
+                // 예상 문서 수가 없거나 도달했을 때 안정화 체크
+                else if (stableCount >= MAX_STABLE_COUNT) {
                   console.log('✅ [작업 완료] 문서 수가 안정화됨:', currentDocCount, '개');
                   setCurrentStep(`인덱싱 완료! (${currentDocCount}개 문서)`);
                   setProgress(100);
