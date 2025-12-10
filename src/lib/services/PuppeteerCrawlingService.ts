@@ -296,14 +296,27 @@ export class PuppeteerCrawlingService {
       // 뷰포트 설정
       await page.setViewport({ width: 1920, height: 1080 });
 
+      // 🔥 Stealth: 추가 헤더 설정 (리얼 유저 흉내)
+      await page.setExtraHTTPHeaders({
+        'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'Upgrade-Insecure-Requests': '1',
+        'Sec-Fetch-Site': 'none',
+        'Sec-Fetch-Mode': 'navigate',
+        'Sec-Fetch-User': '?1',
+        'Sec-Fetch-Dest': 'document'
+      });
+
       // 페이지 로드 시도 (에러 처리 강화)
       console.log(`📡 페이지 로드 시도: ${url}`);
       let response;
       try {
         // Facebook은 JavaScript가 많이 로드되므로 domcontentloaded 사용
         // 타임아웃을 60초로 증가하고, 실패 시 load로 fallback
+        // 🔥 업데이트: networkidle2로 변경하여 더 안정적인 로드 대기 (네트워크 활동이 줄어들 때까지)
+        const waitUntilOption = (url.includes('facebook.com') || url.includes('instagram.com')) ? 'networkidle2' : 'domcontentloaded';
         response = await page.goto(url, {
-          waitUntil: 'domcontentloaded',
+          waitUntil: waitUntilOption,
           timeout: 60000
         });
       } catch (gotoError: any) {
@@ -326,9 +339,11 @@ export class PuppeteerCrawlingService {
         } else if (errorMessage.includes('detached') || errorMessage.includes('Connection closed')) {
           // "Navigating frame was detached" 또는 "Connection closed" 오류 처리
           console.warn('⚠️ 페이지 로드 중 연결 끊김, 재시도...');
-          // 페이지 닫기 시도 (에러 무시)
+          // 페이지 닫기 시도 (에러 무시 - 이미 닫혀있거나 프로토콜 에러 방지)
           try {
-            await page.close();
+            if (page && !page.isClosed()) {
+              await page.close().catch(() => { });
+            }
           } catch (closeError) {
             // 무시
           }
