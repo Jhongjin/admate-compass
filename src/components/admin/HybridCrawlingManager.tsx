@@ -1199,6 +1199,17 @@ export default function HybridCrawlingManager({
               };
             }
 
+            // 🔥 추가: DB에 잡이 안 보이지만(지연) 로컬에는 등록된 경우
+            if (activeJobsMapRef.current.has(url)) {
+              console.log(`[POLL] ⚠️ ${url}: 문서는 failed지만 로컬 activeJobsMap에 존재 - 크롤링 중으로 표시`);
+              return {
+                url,
+                status: 'crawling', // pending 대신 crawling으로 표시하여 실패 처리 방지
+                message: '작업 초기화 중...',
+                chunkCount: docChunkCount
+              };
+            }
+
             return {
               url,
               status: 'failed',
