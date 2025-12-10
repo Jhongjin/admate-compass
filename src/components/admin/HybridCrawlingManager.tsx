@@ -2530,71 +2530,7 @@ export default function HybridCrawlingManager({
           )}
         </Button>
 
-        {/* 크롤링 진행 상황 표시 */}
-        {crawlingProgress.length > 0 && (
-          <div className="space-y-4 mb-6 p-4 bg-gray-800/50 rounded-xl border border-gray-700">
-            <h3 className="text-sm font-semibold text-gray-300 mb-3 flex items-center gap-2">
-              <Loader2 className="w-4 h-4 animate-spin text-blue-400" />
-              크롤링 진행 상황
-            </h3>
-            {crawlingProgress.map((progress, index) => (
-              <div key={index} className="space-y-2">
-                <div className="flex justify-between text-xs text-gray-400">
-                  <span className="truncate max-w-[70%] font-medium text-white">
-                    {progress.url}
-                  </span>
-                  <span className={`
-                      ${progress.status === 'completed' ? 'text-green-400' :
-                      progress.status === 'failed' ? 'text-red-400' : 'text-blue-400'}
-                  `}>
-                    {progress.status === 'pending' && '대기 중...'}
-                    {progress.status === 'crawling' && (
-                      progress.subPageProgress
-                        ? `하위 페이지 분석 중 (${progress.subPageProgress.processed}/${progress.subPageProgress.total})`
-                        : '메인 페이지 분석 중...'
-                    )}
-                    {progress.status === 'stabilizing' && `인덱싱 안정화 중... (${progress.stabilityCheck?.lastDocCount || '?'}개 문서)`}
-                    {progress.status === 'completed' && '완료됨'}
-                    {progress.status === 'failed' && '실패'}
-                  </span>
-                </div>
 
-                <Progress
-                  value={
-                    progress.status === 'completed' ? 100 :
-                      progress.status === 'failed' ? 100 :
-                        progress.status === 'pending' ? 0 :
-                          progress.status === 'stabilizing' ? 99 :
-                            progress.subPageProgress
-                              ? 50 + Math.round((progress.subPageProgress.processed / (progress.subPageProgress.total || 1)) * 40)
-                              : 30
-                  }
-                  className={`h-2 ${progress.status === 'failed' ? 'bg-red-900/20' :
-                    progress.status === 'stabilizing' ? 'bg-blue-900/20 animate-pulse' :
-                      'bg-gray-700'
-                    }`}
-                  indicatorClassName={
-                    progress.status === 'completed' ? 'bg-green-500' :
-                      progress.status === 'failed' ? 'bg-red-500' :
-                        progress.status === 'stabilizing' ? 'bg-blue-400' :
-                          progress.subPageProgress ? 'bg-blue-500 transition-all duration-300' :
-                            'bg-blue-500 animate-pulse'
-                  }
-                />
-
-                {/* 상세 상태 메시지 */}
-                {progress.message && (
-                  <p className={`text-xs truncate ${progress.status === 'failed' ? 'text-red-400' :
-                    progress.status === 'completed' ? 'text-green-400' :
-                      'text-gray-500'
-                    }`}>
-                    {progress.message}
-                  </p>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
 
         {/* 크롤링 상태 동기화 버튼 */}
         {(isCrawling || crawlingProgress.some(p => p.status === 'crawling' || p.status === 'pending')) && (
@@ -2970,6 +2906,81 @@ export default function HybridCrawlingManager({
           </>
         )}
       </div>
+
+      {/* 크롤링 진행 상황 표시 (버튼 영역 하단으로 이동) */}
+      {crawlingProgress.length > 0 && (
+        <div className="space-y-4 p-4 bg-gray-800/80 rounded-xl border border-gray-700 shadow-lg mt-4 w-full">
+          <h3 className="text-sm font-semibold text-gray-300 mb-3 flex items-center gap-2">
+            <Loader2 className="w-4 h-4 animate-spin text-blue-400" />
+            크롤링 진행 상황
+          </h3>
+          {crawlingProgress.map((progress, index) => (
+            <div key={index} className="space-y-2 bg-gray-700/30 p-3 rounded-lg border border-gray-600/30">
+              <div className="flex justify-between items-center text-xs text-gray-400 mb-2">
+                <span className="truncate max-w-[70%] font-medium text-white flex items-center gap-2">
+                  <Globe className="w-3 h-3 text-blue-400" />
+                  {progress.url}
+                </span>
+                <Badge variant="outline" className={`
+                    text-xs px-2 py-0.5 border-none
+                    ${progress.status === 'completed' ? 'bg-green-500/20 text-green-300' :
+                    progress.status === 'failed' ? 'bg-red-500/20 text-red-300' :
+                      progress.status === 'stabilizing' ? 'bg-blue-400/20 text-blue-200' :
+                        'bg-blue-500/20 text-blue-300'}
+                `}>
+                  {progress.status === 'pending' && '대기 중...'}
+                  {progress.status === 'crawling' && (
+                    progress.subPageProgress
+                      ? `하위 페이지:${progress.subPageProgress.processed}/${progress.subPageProgress.total}`
+                      : '메인 분석 중...'
+                  )}
+                  {progress.status === 'stabilizing' && '안정화 중'}
+                  {progress.status === 'completed' && '완료됨'}
+                  {progress.status === 'failed' && '실패'}
+                </Badge>
+              </div>
+
+              <Progress
+                value={
+                  progress.status === 'completed' ? 100 :
+                    progress.status === 'failed' ? 100 :
+                      progress.status === 'pending' ? 0 :
+                        progress.status === 'stabilizing' ? 99 :
+                          progress.subPageProgress
+                            ? 50 + Math.round((progress.subPageProgress.processed / (progress.subPageProgress.total || 1)) * 40)
+                            : 30
+                }
+                className={`h-2 ${progress.status === 'failed' ? 'bg-red-900/20' :
+                  progress.status === 'stabilizing' ? 'bg-blue-900/20 animate-pulse' :
+                    'bg-gray-700'
+                  }`}
+                indicatorClassName={
+                  progress.status === 'completed' ? 'bg-green-500' :
+                    progress.status === 'failed' ? 'bg-red-500' :
+                      progress.status === 'stabilizing' ? 'bg-blue-400' :
+                        progress.subPageProgress ? 'bg-blue-500 transition-all duration-300' :
+                          'bg-blue-500 animate-pulse'
+                }
+              />
+
+              {/* 상세 상태 메시지 */}
+              <div className="flex justify-between items-center mt-1">
+                <p className={`text-xs truncate max-w-[85%] ${progress.status === 'failed' ? 'text-red-400' :
+                  progress.status === 'completed' ? 'text-green-400' :
+                    'text-gray-400'
+                  }`}>
+                  {progress.message || (progress.status === 'failed' ? '크롤링 실패' : '처리 중...')}
+                </p>
+                {progress.status === 'stabilizing' && progress.stabilityCheck && (
+                  <span className="text-[10px] text-blue-300/70">
+                    Doc: {progress.stabilityCheck.lastDocCount}
+                  </span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* 크롤링 진행 상황 섹션 제거 완료 - 이제 문서 목록에서 크롤링 상태를 직접 확인 */}
 
