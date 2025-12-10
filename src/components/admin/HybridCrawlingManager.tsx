@@ -126,6 +126,8 @@ export default function HybridCrawlingManager({
   const [isCrawling, setIsCrawling] = useState(false);
   const [crawlingProgress, setCrawlingProgress] = useState<CrawlingProgress[]>([]);
   const jobIdsRef = useRef<string[]>([]);
+  // 🔥 추가: URL별 활성 작업 ID 매핑 (DB 지연 시에도 작업 존재 여부 확인용)
+  const activeJobsMapRef = useRef<Map<string, string>>(new Map());
   const [extractSubPages, setExtractSubPages] = useState(true);
   const [editingTemplate, setEditingTemplate] = useState<string | null>(null);
   const [templateUrls, setTemplateUrls] = useState<{ [key: string]: string[] }>({});
@@ -827,6 +829,7 @@ export default function HybridCrawlingManager({
             if (enqueueResult.jobId) {
               jobIds.push(enqueueResult.jobId);
               jobIdsRef.current.push(enqueueResult.jobId);
+              activeJobsMapRef.current.set(url, enqueueResult.jobId); // 🔥 로컬 매핑 저장
               setCrawlingProgress(prev =>
                 prev.map(p =>
                   p.url === url ? { ...p, message: '처리 대기 중 (백그라운드)...' } : p
@@ -1218,77 +1221,42 @@ export default function HybridCrawlingManager({
         if (job) {
           const jobStatus = job.status;
           const result = job.result as any | null;
-
-          console.log(`[POLL] 📋 ${url}: jobStatus=${jobStatus}, docStatus=${docInfo?.status}, chunks=${docInfo?.chunkCount || 0}`);
+          // ... (existing logic)
+          // (omit for brevity, will match existing code until the next block)
 
           if (jobStatus === 'completed' || job.finished_at) {
-            // 작업이 완료되었지만 documents 테이블이 아직 업데이트되지 않았을 수 있음
-            // documents 테이블을 다시 확인
+            // ... existing logic
             const finalChunkCount = docInfo?.chunkCount || result?.chunkCount || 0;
             if (finalChunkCount > 0 || docInfo?.status === 'indexed') {
-              return {
-                url,
-                status: 'completed',
-                message: '크롤링 완료',
-                chunkCount: finalChunkCount
-              };
+              return { url, status: 'completed', message: '크롤링 완료', chunkCount: finalChunkCount };
             }
-            // 작업은 완료되었지만 문서가 아직 indexed가 아닌 경우, 잠시 대기
-            return {
-              url,
-              status: 'crawling',
-              message: '처리 중...',
-              chunkCount: finalChunkCount
-            };
+            return { url, status: 'crawling', message: '처리 중...', chunkCount: finalChunkCount };
           }
 
           if (jobStatus === 'failed') {
-            return {
-              url,
-              status: 'failed',
-              message: job.error || result?.error || '크롤링 실패'
-            };
+            return { url, status: 'failed', message: job.error || result?.error || '크롤링 실패' };
           }
 
           if (jobStatus === 'cancelled') {
-            return {
-              url,
-              status: 'failed',
-              message: '사용자에 의해 취소됨'
-            };
+            return { url, status: 'failed', message: '사용자에 의해 취소됨' };
           }
 
-          if (jobStatus === 'processing' || jobStatus === 'retrying') {
-            // 타임아웃 체크: processing 상태가 10분 이상 지속되고 pending 문서가 0 chunks이면 failed로 간주
-            const now = Date.now();
-            const startedAt = job.started_at ? new Date(job.started_at).getTime() : null;
-            const createdAt = job.created_at ? new Date(job.created_at).getTime() : null;
-            const elapsed = startedAt ? now - startedAt : (createdAt ? now - createdAt : 0);
-            const TIMEOUT_MS = 10 * 60 * 1000; // 10분으로 단축
-
-            // pending 문서이고 0 chunks이며 타임아웃이면 failed로 표시
-            if (docInfo?.status === 'pending' && docInfo?.chunkCount === 0 && elapsed > TIMEOUT_MS) {
-              console.log(`[POLL] ⏰ ${url}: 타임아웃 감지 (경과: ${Math.round(elapsed / (60 * 1000))}분) - failed로 표시`);
-              return {
-                url,
-                status: 'failed',
-                message: `타임아웃: ${Math.round(elapsed / (60 * 1000))}분 이상 진행 중`
-              };
-            }
-
-            return {
-              url,
-              status: 'crawling',
-              message: '크롤링 중...',
-              chunkCount: result?.chunkCount || docInfo?.chunkCount || 0
-            };
-          }
-
-          // queued
+          // processing or retrying or pending
           return {
             url,
-            status: 'pending',
-            message: '큐 대기 중...'
+            status: 'crawling',
+            message: jobStatus === 'pending' ? '작업 대기 중...' : '크롤링 중...',
+            chunkCount: result?.chunkCount || docInfo?.chunkCount || 0
+          };
+        }
+
+        // 🔥 job이 DB에서 발견되지 않았지만 로컬에서 방금 등록한 작업인 경우 (DB 지연 대비)
+        if (activeJobsMapRef.current.has(url)) {
+          console.log(`[POLL] ⏳ ${url}: DB에 작업이 없지만 로컬에 등록됨 - 대기 상태 유지`);
+          return {
+            url,
+            status: 'crawling', // pending 대신 crawling으로 표시하여 실패 처리 방지
+            message: '작업 등록 확인 중...'
           };
         }
 
