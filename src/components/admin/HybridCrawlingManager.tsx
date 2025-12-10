@@ -781,63 +781,40 @@ export default function HybridCrawlingManager({
       try {
         const dbVendor = vendors.length > 0 ? VENDOR_TO_DB_MAP[vendors[0]] || 'META' : 'META';
 
-        // 1. 문서 배치 생성 (Status: pending)
-        console.log(`📋 ${urlsToCrawl.length}개 URL에 대한 문서 생성 요청...`);
-        const documentsToCreate = urlsToCrawl.map(url => ({
-          url,
-          title: new URL(url).hostname + (new URL(url).pathname !== '/' ? new URL(url).pathname : '') // 임시 제목
-        }));
+        // 1. 큐에 작업 등록 (CRAWL_SEED) - 문서 생성은 워커에게 위임 (Test Page 방식)
+        console.log(`📋 ${urlsToCrawl.length}개 URL 크롤링 요청 (Async Queue)...`);
 
-        const batchCreateResponse = await fetchWithTimeout('/api/admin/batch-create-documents', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            documents: documentsToCreate,
-            vendor: dbVendor
-          }),
-        }, 30000);
-
-        if (!batchCreateResponse.ok) {
-          throw new Error(`문서 생성 실패: ${batchCreateResponse.status} ${batchCreateResponse.statusText}`);
+        if (extractSubPages) {
+          toast.info('하위 페이지 자동 추출이 백그라운드에서 진행됩니다.');
         }
 
-        const batchCreateResult = await batchCreateResponse.json();
-        if (!batchCreateResult.success) {
-          throw new Error(batchCreateResult.error || '문서 생성 실패');
-        }
-
-        console.log(`✅ ${batchCreateResult.created}개 문서 생성, ${batchCreateResult.updated}개 문서 업데이트`);
-        const createdDocuments = batchCreateResult.documents || [];
         const jobIds: string[] = [];
 
-        // 2. 큐에 작업 등록 (CRAWL_SEED)
-        if (extractSubPages) {
-          toast.info('하위 페이지 자동 추출이 백그라운드에서 진행됩니다. (시간이 소요될 수 있습니다)');
-        }
-
-        for (const doc of createdDocuments) {
+        for (const url of urlsToCrawl) {
           try {
+            // UI 상태 업데이트
             setCrawlingProgress(prev =>
               prev.map(p =>
-                p.url === doc.url ? { ...p, message: '작업 큐 등록 중...' } : p
+                p.url === url ? { ...p, status: 'pending', message: '작업 큐 등록 중...' } : p
               )
             );
 
+            // 문서 ID 없이 URL만으로 작업 등록 (워커가 문서 생성/찾기 수행)
             const enqueueResponse = await fetchWithTimeout('/api/jobs/enqueue', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 jobType: 'CRAWL_SEED',
-                documentId: doc.id,
+                // documentId: ... (생략: 워커가 URL로 찾거나 생성함)
                 priority: 5,
                 payload: {
-                  url: doc.url,
-                  title: doc.title,
+                  url: url,
+                  // title: ... (생략: 워커가 수집함)
                   vendors: [dbVendor],
                   domainLimit: crawlOptions.domainLimit,
                   respectRobots: crawlOptions.respectRobots,
                   maxDepth: clampDepthValue(crawlOptions.maxDepth),
-                  extractSubPages: extractSubPages // 백그라운드 워커가 처리하도록 전달 - 모달 없이 자동 진행
+                  extractSubPages: extractSubPages
                 }
               }),
             }, 30000);
@@ -852,15 +829,17 @@ export default function HybridCrawlingManager({
               jobIdsRef.current.push(enqueueResult.jobId);
               setCrawlingProgress(prev =>
                 prev.map(p =>
-                  p.url === doc.url ? { ...p, message: '처리 대기 중 (백그라운드)...' } : p
+                  p.url === url ? { ...p, message: '처리 대기 중 (백그라운드)...' } : p
                 )
               );
+            } else {
+              throw new Error(enqueueResult.error || '작업 ID 반환 실패');
             }
           } catch (jobError) {
-            console.error(`URL 작업 등록 실패: ${doc.url}`, jobError);
+            console.error(`URL 작업 등록 실패: ${url}`, jobError);
             setCrawlingProgress(prev =>
               prev.map(p =>
-                p.url === doc.url
+                p.url === url
                   ? { ...p, status: 'failed', message: '작업 등록 실패' }
                   : p
               )
@@ -868,16 +847,16 @@ export default function HybridCrawlingManager({
           }
         }
 
-        // 3. 작업이 하나라도 등록되었으면 폴링 시작 및 워커 트리거
+        // 2. 작업이 하나라도 등록되었으면 폴링 시작 및 워커 트리거
         if (jobIds.length > 0) {
           toast.success(`${jobIds.length}개 크롤링 작업이 시작되었습니다.`);
 
-          // 큐 워커 트리거 (선택적 - 백그라운드 처리 촉진)
+          // 큐 워커 트리거
           try {
             fetchWithTimeout('/api/jobs/consume', { method: 'POST' }, 5000).catch(() => { });
           } catch (e) { /* 무시 */ }
 
-          // 폴링 시작
+          // 폴링 시작 - URL 기반으로 폴링 (문서가 아직 생성 안 됐을 수 있으므로)
           if (pollingIntervalRef.current) {
             clearInterval(pollingIntervalRef.current);
           }
@@ -890,7 +869,10 @@ export default function HybridCrawlingManager({
           setTimeout(() => pollCrawlStatusFromJobs(urlsToCrawl), 1000);
 
         } else {
-          toast.error('등록된 작업이 없습니다.');
+          // 모든 작업 등록 실패 시
+          if (urlsToCrawl.length > 0) {
+            toast.error('작업 등록에 실패했습니다.');
+          }
           setIsCrawling(false);
         }
 
