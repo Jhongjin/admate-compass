@@ -200,7 +200,7 @@ export class PuppeteerCrawlingService {
                 height: 720,
               },
               executablePath: executablePath,
-              headless: chromium.headless ?? true, // @sparticuz/chromium의 headless 설정 사용
+              headless: true, // Vercel 서버리스 환경에서는 항상 headless 모드
             });
             console.log('✅ Puppeteer 브라우저 초기화 완료 (Vercel 환경: @sparticuz/chromium)');
           } catch (chromiumError: any) {
