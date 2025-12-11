@@ -471,6 +471,31 @@ export default function HybridCrawlingManager({
                             } else if (job.status === 'failed') {
                               return { ...p, status: 'failed' as const, message: '크롤링 실패' };
                             } else if (job.status === 'processing') {
+                              // 🔥 타임아웃 체크: processing 상태인 작업이 타임아웃되었는지 확인
+                              if (job.started_at) {
+                                const startedAt = new Date(job.started_at).getTime();
+                                const now = Date.now();
+                                const elapsed = now - startedAt;
+                                
+                                // deepCrawlTimeout 옵션 확인 (payload에서)
+                                const deepCrawlTimeout = (job.payload as any)?.deepCrawlTimeout === true;
+                                const timeoutMs = deepCrawlTimeout ? 30 * 60 * 1000 : 15 * 60 * 1000; // 30분 또는 15분
+                                const timeoutMinutes = Math.round(timeoutMs / (60 * 1000));
+                                
+                                if (elapsed > timeoutMs) {
+                                  console.log(`[POLL] ⏰ ${p.url}: 타임아웃 감지 (경과: ${Math.round(elapsed / (60 * 1000))}분, 제한: ${timeoutMinutes}분) - 실패 처리`);
+                                  return { ...p, status: 'failed' as const, message: `크롤링 타임아웃 (${timeoutMinutes}분 초과)` };
+                                }
+                                
+                                // 타임아웃에 가까워지면 경고 메시지
+                                const warningThreshold = timeoutMs * 0.8; // 80% 경과 시 경고
+                                if (elapsed > warningThreshold) {
+                                  const remainingMinutes = Math.round((timeoutMs - elapsed) / (60 * 1000));
+                                  return { ...p, status: 'crawling' as const, message: `크롤링 중... (${remainingMinutes}분 남음)`, chunkCount: (job.result as any)?.chunkCount || 0 };
+                                }
+                              }
+                              
+                              // 기존 stuckJobs 체크 (2시간 초과 - 레거시)
                               if (stuckJobs.some(j => j.id === jobId)) {
                                 return { ...p, status: 'failed' as const, message: '크롤링 타임아웃 (2시간 초과)' };
                               }
@@ -1293,6 +1318,39 @@ export default function HybridCrawlingManager({
           }
 
           // processing or retrying or pending
+          // 🔥 타임아웃 체크: processing 상태인 작업이 타임아웃되었는지 확인
+          if (jobStatus === 'processing' && job.started_at) {
+            const startedAt = new Date(job.started_at).getTime();
+            const now = Date.now();
+            const elapsed = now - startedAt;
+            
+            // deepCrawlTimeout 옵션 확인 (payload에서)
+            const deepCrawlTimeout = (job.payload as any)?.deepCrawlTimeout === true;
+            const timeoutMs = deepCrawlTimeout ? 30 * 60 * 1000 : 15 * 60 * 1000; // 30분 또는 15분
+            const timeoutMinutes = Math.round(timeoutMs / (60 * 1000));
+            
+            if (elapsed > timeoutMs) {
+              console.log(`[POLL] ⏰ ${url}: 타임아웃 감지 (경과: ${Math.round(elapsed / (60 * 1000))}분, 제한: ${timeoutMinutes}분) - 실패 처리`);
+              return {
+                url,
+                status: 'failed',
+                message: `크롤링 타임아웃 (${timeoutMinutes}분 초과)`
+              };
+            }
+            
+            // 타임아웃에 가까워지면 경고 메시지
+            const warningThreshold = timeoutMs * 0.8; // 80% 경과 시 경고
+            if (elapsed > warningThreshold) {
+              const remainingMinutes = Math.round((timeoutMs - elapsed) / (60 * 1000));
+              return {
+                url,
+                status: 'crawling',
+                message: `크롤링 중... (${remainingMinutes}분 남음)`,
+                chunkCount: result?.chunkCount || docInfo?.chunkCount || 0
+              };
+            }
+          }
+          
           return {
             url,
             status: 'crawling',
