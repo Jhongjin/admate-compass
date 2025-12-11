@@ -289,7 +289,20 @@ export default function HybridCrawlingManager({
   React.useEffect(() => {
     const initializeCrawlingState = async () => {
       try {
-        // [NEW] 0단계: 좀비 작업 자동 정리 (30분 이상 된 processing 작업 삭제)
+        // [NEW] 0단계: 좀비 작업 자동 정리 (타임아웃된 processing 작업 failed로 업데이트)
+        try {
+          const cleanupResponse = await fetch('/api/admin/cleanup-zombie-jobs', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ force: false })
+          });
+          if (cleanupResponse.ok) {
+            const cleanupData = await cleanupResponse.json();
+            console.log('🧹 좀비 작업 정리 결과:', cleanupData);
+          }
+        } catch (cleanupError) {
+          console.warn('⚠️ 좀비 작업 정리 실패 (무시):', cleanupError);
+        }
         try {
           await fetch('/api/admin/cleanup-jobs', { method: 'POST' });
           console.log('🧹 좀비 작업 정리 완료');
@@ -1220,8 +1233,30 @@ export default function HybridCrawlingManager({
             return {
               url,
               status: 'completed',
-              message: '크롤링 완료',
+              message: `크롤링 완료 (${docChunkCount}개 청크 인덱싱됨)`,
               chunkCount: docChunkCount
+            };
+          }
+          
+          // 🔥 indexed/completed 상태인데 청크가 없으면 경고 (인덱싱 실패 가능성)
+          if ((docStatus === 'indexed' || docStatus === 'completed') && docChunkCount === 0) {
+            console.warn(`[POLL] ⚠️ ${url}: indexed/completed 상태인데 청크가 없음 - 인덱싱 검증 필요`);
+            return {
+              url,
+              status: 'completed',
+              message: '크롤링 완료 (인덱싱 검증 필요 - 청크 없음)',
+              chunkCount: 0
+            };
+          }
+          
+          // 🔥 indexed/completed 상태인데 청크가 없으면 경고 (인덱싱 실패 가능성)
+          if ((docStatus === 'indexed' || docStatus === 'completed') && docChunkCount === 0) {
+            console.warn(`[POLL] ⚠️ ${url}: indexed/completed 상태인데 청크가 없음 - 인덱싱 검증 필요`);
+            return {
+              url,
+              status: 'completed',
+              message: '크롤링 완료 (인덱싱 검증 필요 - 청크 없음)',
+              chunkCount: 0
             };
           }
 
@@ -1304,7 +1339,13 @@ export default function HybridCrawlingManager({
             // ... existing logic
             const finalChunkCount = docInfo?.chunkCount || result?.chunkCount || 0;
             if (finalChunkCount > 0 || docInfo?.status === 'indexed') {
-              return { url, status: 'completed', message: '크롤링 완료', chunkCount: finalChunkCount };
+              // 🔥 인덱싱 검증: 청크가 실제로 있는지 확인
+              if (finalChunkCount > 0) {
+                return { url, status: 'completed', message: `크롤링 완료 (${finalChunkCount}개 청크 인덱싱됨)`, chunkCount: finalChunkCount };
+              } else {
+                // indexed 상태인데 청크가 없으면 경고
+                return { url, status: 'completed', message: '크롤링 완료 (인덱싱 검증 필요 - 청크 없음)', chunkCount: 0 };
+              }
             }
             return { url, status: 'crawling', message: '처리 중...', chunkCount: finalChunkCount };
           }
