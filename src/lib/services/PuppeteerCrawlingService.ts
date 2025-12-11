@@ -155,6 +155,7 @@ export class PuppeteerCrawlingService {
             }
 
             // @sparticuz/chromium의 기본 args와 headless 설정 사용
+            // Vercel 서버리스 환경에 최적화된 args
             const chromiumArgs = [
               ...chromium.args,
               '--no-sandbox',
@@ -184,6 +185,10 @@ export class PuppeteerCrawlingService {
               '--use-mock-keychain',
               '--single-process',
               '--disable-blink-features=AutomationControlled', // ✅ Stealth: 자동화 제어 숨기기
+              // Vercel 서버리스 환경을 위한 추가 옵션
+              '--disable-setuid-sandbox',
+              '--disable-web-security',
+              '--disable-features=VizDisplayCompositor',
             ];
 
             console.log(`🔧 Chromium args 개수: ${chromiumArgs.length}`);
@@ -209,6 +214,16 @@ export class PuppeteerCrawlingService {
               stack: errorStack,
               fullError: chromiumError
             });
+            
+            // libnss3.so 에러인 경우 특별 처리
+            if (errorMsg.includes('libnss3.so') || errorMsg.includes('shared libraries')) {
+              console.error('❌ [CRITICAL] libnss3.so 에러 감지 - @sparticuz/chromium 버전 또는 Vercel 설정 확인 필요');
+              console.error('❌ [CRITICAL] 해결 방법:');
+              console.error('   1. @sparticuz/chromium을 최신 버전으로 업데이트');
+              console.error('   2. Vercel 프로젝트 설정에서 Node.js 버전 확인');
+              console.error('   3. vercel.json에 functions 설정 추가 확인');
+            }
+            
             // 동적 크롤링이 필수이므로 에러를 throw
             throw new Error(`Chromium 초기화 실패 (Code: ${errorCode}): ${errorMsg}. 동적 크롤링을 사용할 수 없습니다. Vercel 빌드 설정을 확인해주세요.`);
           }
