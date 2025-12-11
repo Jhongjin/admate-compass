@@ -428,47 +428,11 @@ export class PuppeteerCrawlingService {
           '.cookie-banner button',
         ];
         
-        // 텍스트 기반 검색 (Puppeteer는 :has-text()를 지원하지 않음)
-        const textBasedSelectors = await page.evaluate(() => {
-          const buttons = Array.from(document.querySelectorAll('button, [role="button"]'));
-          const matchingButtons: string[] = [];
-          const acceptTexts = ['Accept', '수락', '동의', 'accept', 'ACCEPT'];
-          
-          buttons.forEach((btn, index) => {
-            const text = btn.textContent?.toLowerCase() || '';
-            if (acceptTexts.some(acceptText => text.includes(acceptText.toLowerCase()))) {
-              // XPath 또는 고유한 식별자 생성
-              const path: string[] = [];
-              let element: Element | null = btn;
-              while (element && element !== document.body) {
-                let selector = element.tagName.toLowerCase();
-                if (element.id) {
-                  selector += `#${element.id}`;
-                  path.unshift(selector);
-                  break;
-                } else if (element.className && typeof element.className === 'string') {
-                  const classes = element.className.split(' ').filter(c => c).join('.');
-                  if (classes) selector += `.${classes}`;
-                }
-                const parent = element.parentElement;
-                if (parent) {
-                  const siblings = Array.from(parent.children).filter(c => c.tagName === element!.tagName);
-                  if (siblings.length > 1) {
-                    const idx = siblings.indexOf(element as Element) + 1;
-                    selector += `:nth-of-type(${idx})`;
-                  }
-                }
-                path.unshift(selector);
-                element = element.parentElement;
-              }
-              matchingButtons.push(path.join(' > '));
-            }
-          });
-          return matchingButtons;
-        });
+        let cookieClicked = false;
         
         // CSS selector 시도
         for (const selector of cookieBannerSelectors) {
+          if (cookieClicked) break;
           try {
             const cookieButton = await page.$(selector);
             if (cookieButton) {
@@ -481,7 +445,8 @@ export class PuppeteerCrawlingService {
                 await cookieButton.click();
                 console.log(`✅ 쿠키 배너 클릭 성공: ${selector}`);
                 await new Promise(resolve => setTimeout(resolve, 1000)); // 클릭 후 대기
-                return; // 성공 시 종료
+                cookieClicked = true;
+                break; // 성공 시 종료
               }
             }
           } catch (selectorError) {
@@ -490,8 +455,8 @@ export class PuppeteerCrawlingService {
           }
         }
         
-        // 텍스트 기반 selector 시도 (XPath 사용)
-        for (const xpath of textBasedSelectors) {
+        // 텍스트 기반 selector 시도 (XPath 사용) - CSS selector로 실패한 경우에만
+        if (!cookieClicked) {
           try {
             const elements = await page.$x(`//button[contains(text(), 'Accept') or contains(text(), '수락') or contains(text(), '동의')]`);
             if (elements.length > 0) {
@@ -505,11 +470,11 @@ export class PuppeteerCrawlingService {
                 await cookieButton.click();
                 console.log(`✅ 쿠키 배너 클릭 성공 (텍스트 기반)`);
                 await new Promise(resolve => setTimeout(resolve, 1000)); // 클릭 후 대기
-                return; // 성공 시 종료
+                cookieClicked = true;
               }
             }
           } catch (xpathError) {
-            continue;
+            // XPath 실패 시 무시하고 계속 진행
           }
         }
       } catch (cookieError) {
