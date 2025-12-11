@@ -142,8 +142,19 @@ export class PuppeteerCrawlingService {
             const executablePath = await chromium.executablePath();
             console.log(`📁 Chromium 실행 경로: ${executablePath}`);
 
-            // Chromium args에 필요한 시스템 라이브러리 경로 및 보안 옵션 추가
-            // @sparticuz/chromium 최신 버전은 이미 필요한 라이브러리를 포함하고 있음
+            // 실행 파일 존재 여부 확인 (fs 모듈 사용)
+            try {
+              const fs = await import('fs/promises');
+              const stats = await fs.stat(executablePath);
+              if (!stats.isFile()) {
+                throw new Error(`Chromium 실행 파일이 유효하지 않습니다: ${executablePath}`);
+              }
+              console.log(`✅ Chromium 실행 파일 확인 완료: ${executablePath} (${stats.size} bytes)`);
+            } catch (statError: any) {
+              console.warn(`⚠️ Chromium 실행 파일 확인 실패 (계속 진행): ${statError.message}`);
+            }
+
+            // @sparticuz/chromium의 기본 args와 headless 설정 사용
             const chromiumArgs = [
               ...chromium.args,
               '--no-sandbox',
@@ -169,7 +180,6 @@ export class PuppeteerCrawlingService {
               '--metrics-recording-only',
               '--no-first-run',
               '--safebrowsing-disable-auto-update',
-              // '--enable-automation', // 🚫 봇 탐지 원인 제거
               '--password-store=basic',
               '--use-mock-keychain',
               '--single-process',
@@ -185,20 +195,22 @@ export class PuppeteerCrawlingService {
                 height: 720,
               },
               executablePath: executablePath,
-              headless: true,
+              headless: chromium.headless ?? true, // @sparticuz/chromium의 headless 설정 사용
             });
             console.log('✅ Puppeteer 브라우저 초기화 완료 (Vercel 환경: @sparticuz/chromium)');
           } catch (chromiumError: any) {
             const errorMsg = chromiumError?.message || String(chromiumError);
             const errorStack = chromiumError?.stack || 'No stack available';
+            const errorCode = chromiumError?.code || 'NO_CODE';
             console.error('❌ @sparticuz/chromium 초기화 실패:', {
               message: errorMsg,
               name: chromiumError?.name || 'UnknownError',
+              code: errorCode,
               stack: errorStack,
               fullError: chromiumError
             });
             // 동적 크롤링이 필수이므로 에러를 throw
-            throw new Error(`Chromium 초기화 실패: ${errorMsg}. 동적 크롤링을 사용할 수 없습니다. Vercel 빌드 설정을 확인해주세요.`);
+            throw new Error(`Chromium 초기화 실패 (Code: ${errorCode}): ${errorMsg}. 동적 크롤링을 사용할 수 없습니다. Vercel 빌드 설정을 확인해주세요.`);
           }
         } else {
           // 로컬 환경: 일반 Puppeteer 사용 (동적 크롤링 필수)
@@ -402,6 +414,107 @@ export class PuppeteerCrawlingService {
       const waitTime = Math.random() * 2000 + 1000;
       console.log(`⏳ 봇 탐지 우회 대기: ${Math.round(waitTime)}ms`);
       await new Promise(resolve => setTimeout(resolve, waitTime));
+
+      // 🔥 쿠키 배너 클릭 시도 (공용 selector)
+      try {
+        const cookieBannerSelectors = [
+          'button[id*="cookie"]',
+          'button[class*="cookie"]',
+          'button[id*="accept"]',
+          'button[class*="accept"]',
+          '[data-testid*="cookie"]',
+          '[data-testid*="accept"]',
+          '#cookie-banner button',
+          '.cookie-banner button',
+        ];
+        
+        // 텍스트 기반 검색 (Puppeteer는 :has-text()를 지원하지 않음)
+        const textBasedSelectors = await page.evaluate(() => {
+          const buttons = Array.from(document.querySelectorAll('button, [role="button"]'));
+          const matchingButtons: string[] = [];
+          const acceptTexts = ['Accept', '수락', '동의', 'accept', 'ACCEPT'];
+          
+          buttons.forEach((btn, index) => {
+            const text = btn.textContent?.toLowerCase() || '';
+            if (acceptTexts.some(acceptText => text.includes(acceptText.toLowerCase()))) {
+              // XPath 또는 고유한 식별자 생성
+              const path: string[] = [];
+              let element: Element | null = btn;
+              while (element && element !== document.body) {
+                let selector = element.tagName.toLowerCase();
+                if (element.id) {
+                  selector += `#${element.id}`;
+                  path.unshift(selector);
+                  break;
+                } else if (element.className && typeof element.className === 'string') {
+                  const classes = element.className.split(' ').filter(c => c).join('.');
+                  if (classes) selector += `.${classes}`;
+                }
+                const parent = element.parentElement;
+                if (parent) {
+                  const siblings = Array.from(parent.children).filter(c => c.tagName === element!.tagName);
+                  if (siblings.length > 1) {
+                    const idx = siblings.indexOf(element as Element) + 1;
+                    selector += `:nth-of-type(${idx})`;
+                  }
+                }
+                path.unshift(selector);
+                element = element.parentElement;
+              }
+              matchingButtons.push(path.join(' > '));
+            }
+          });
+          return matchingButtons;
+        });
+        
+        // CSS selector 시도
+        for (const selector of cookieBannerSelectors) {
+          try {
+            const cookieButton = await page.$(selector);
+            if (cookieButton) {
+              const isVisible = await cookieButton.evaluate((el) => {
+                const style = window.getComputedStyle(el);
+                return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
+              });
+              
+              if (isVisible) {
+                await cookieButton.click();
+                console.log(`✅ 쿠키 배너 클릭 성공: ${selector}`);
+                await new Promise(resolve => setTimeout(resolve, 1000)); // 클릭 후 대기
+                return; // 성공 시 종료
+              }
+            }
+          } catch (selectorError) {
+            // selector 실패 시 다음 selector 시도
+            continue;
+          }
+        }
+        
+        // 텍스트 기반 selector 시도 (XPath 사용)
+        for (const xpath of textBasedSelectors) {
+          try {
+            const elements = await page.$x(`//button[contains(text(), 'Accept') or contains(text(), '수락') or contains(text(), '동의')]`);
+            if (elements.length > 0) {
+              const cookieButton = elements[0];
+              const isVisible = await cookieButton.evaluate((el: Element) => {
+                const style = window.getComputedStyle(el);
+                return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
+              });
+              
+              if (isVisible) {
+                await cookieButton.click();
+                console.log(`✅ 쿠키 배너 클릭 성공 (텍스트 기반)`);
+                await new Promise(resolve => setTimeout(resolve, 1000)); // 클릭 후 대기
+                return; // 성공 시 종료
+              }
+            }
+          } catch (xpathError) {
+            continue;
+          }
+        }
+      } catch (cookieError) {
+        console.warn('⚠️ 쿠키 배너 클릭 실패 (무시하고 계속 진행):', cookieError);
+      }
 
       // 🔥 Facebook/Instagram 페이지의 경우 추가 대기 및 스크롤 (JavaScript 콘텐츠 로드 유도)
       if (url.includes('facebook.com') || url.includes('instagram.com')) {

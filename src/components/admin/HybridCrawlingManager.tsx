@@ -162,7 +162,10 @@ export default function HybridCrawlingManager({
   const [crawlOptions, setCrawlOptions] = useState({
     domainLimit: true,
     respectRobots: true,
-    maxDepth: '2'
+    maxDepth: '2',
+    forceCrawl: false, // robots.txt 무시
+    deepCrawlTimeout: false, // 30분 타임아웃 (기본 15분)
+    retryOn429: true // 429 에러 재시도
   });
 
   const clampDepthValue = (value: string | number) => {
@@ -817,9 +820,12 @@ export default function HybridCrawlingManager({
                   // title: ... (생략: 워커가 수집함)
                   vendors: [dbVendor],
                   domainLimit: crawlOptions.domainLimit,
-                  respectRobots: crawlOptions.respectRobots,
+                  respectRobots: crawlOptions.forceCrawl ? false : crawlOptions.respectRobots,
                   maxDepth: clampDepthValue(crawlOptions.maxDepth),
-                  extractSubPages: extractSubPages
+                  extractSubPages: extractSubPages,
+                  forceCrawl: crawlOptions.forceCrawl,
+                  deepCrawlTimeout: crawlOptions.deepCrawlTimeout,
+                  retryOn429: crawlOptions.retryOn429
                 }
               }),
             }, 30000);
@@ -2306,7 +2312,7 @@ export default function HybridCrawlingManager({
             />
           </div>
         </div>
-        <div className="flex items-center space-x-2 pt-2">
+          <div className="flex items-center space-x-2 pt-2">
           <Checkbox
             id="extractSubPages"
             checked={extractSubPages}
@@ -2314,6 +2320,36 @@ export default function HybridCrawlingManager({
           />
           <Label htmlFor="extractSubPages" className="text-gray-300 cursor-pointer">
             하위 페이지 자동 추출 (sitemap.xml 및 링크 분석)
+          </Label>
+        </div>
+        <div className="flex items-center space-x-2 pt-2">
+          <Checkbox
+            id="forceCrawl"
+            checked={crawlOptions.forceCrawl}
+            onCheckedChange={(checked) => setCrawlOptions(prev => ({ ...prev, forceCrawl: !!checked }))}
+          />
+          <Label htmlFor="forceCrawl" className="text-gray-300 cursor-pointer">
+            강제 크롤 (robots.txt 무시)
+          </Label>
+        </div>
+        <div className="flex items-center space-x-2 pt-2">
+          <Checkbox
+            id="deepCrawlTimeout"
+            checked={crawlOptions.deepCrawlTimeout}
+            onCheckedChange={(checked) => setCrawlOptions(prev => ({ ...prev, deepCrawlTimeout: !!checked }))}
+          />
+          <Label htmlFor="deepCrawlTimeout" className="text-gray-300 cursor-pointer">
+            깊은 크롤 모드 (30분 타임아웃)
+          </Label>
+        </div>
+        <div className="flex items-center space-x-2 pt-2">
+          <Checkbox
+            id="retryOn429"
+            checked={crawlOptions.retryOn429}
+            onCheckedChange={(checked) => setCrawlOptions(prev => ({ ...prev, retryOn429: !!checked }))}
+          />
+          <Label htmlFor="retryOn429" className="text-gray-300 cursor-pointer">
+            429 에러 자동 재시도
           </Label>
         </div>
       </div>

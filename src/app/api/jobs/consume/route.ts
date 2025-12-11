@@ -1694,12 +1694,15 @@ export async function processQueue() {
         const url = job.payload?.url as string;
         const vendors = (job.payload?.vendors as string[]) || [];
         const domainLimit = job.payload?.domainLimit as boolean ?? true;
-        const respectRobots = job.payload?.respectRobots as boolean ?? true;
+        const forceCrawl = job.payload?.forceCrawl as boolean ?? false;
+        const respectRobots = forceCrawl ? false : (job.payload?.respectRobots as boolean ?? true);
         const maxDepthRaw = Number(job.payload?.maxDepth);
         const maxDepth = Number.isFinite(maxDepthRaw) && maxDepthRaw > 0 ? maxDepthRaw : 2;
         // extractSubPages를 명시적으로 boolean으로 변환 (문자열 "true"도 처리)
         const extractSubPagesRaw = job.payload?.extractSubPages;
         const extractSubPages = extractSubPagesRaw === true || extractSubPagesRaw === 'true';
+        const deepCrawlTimeout = job.payload?.deepCrawlTimeout as boolean ?? false;
+        const retryOn429 = job.payload?.retryOn429 as boolean ?? true;
 
         if (!url || typeof url !== 'string' || url.trim().length === 0) {
           throw new Error(`CRAWL_SEED job payload에 유효한 url이 없습니다. (url: ${url})`);
@@ -1724,6 +1727,9 @@ export async function processQueue() {
           maxDepth,
           domainLimit,
           respectRobots,
+          forceCrawl,
+          deepCrawlTimeout,
+          retryOn429,
           vendors,
           documentId
         });

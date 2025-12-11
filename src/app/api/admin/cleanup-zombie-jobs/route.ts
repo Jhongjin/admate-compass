@@ -53,7 +53,9 @@ export async function POST(request: NextRequest) {
     let updatedCount = 0;
     const now = Date.now();
     // ⚠️ CRAWL_SEED는 10~15분 내 완료가 정상. 더 빠르게 정리해 무한 대기 방지.
-    const TIMEOUT_MS = 15 * 60 * 1000; // 15분
+    // deepCrawlTimeout 옵션이 있으면 30분으로 확장
+    const DEFAULT_TIMEOUT_MS = 15 * 60 * 1000; // 15분
+    const DEEP_CRAWL_TIMEOUT_MS = 30 * 60 * 1000; // 30분
     
     // 2. 각 URL에 대해 중복 작업 정리
     for (const [url, jobs] of urlToJobs.entries()) {
@@ -199,26 +201,33 @@ export async function POST(request: NextRequest) {
         } else if (document && document.status === 'pending' && !force) {
           // pending 상태인 문서는 failed로 처리하지 않고 그대로 둠 (아직 처리 중일 수 있음)
           console.log(`ℹ️ pending 상태 문서는 건너뜀: ${document.id} (작업: ${job.id.substring(0, 8)}...)`);
-        } else if (force || (job.started_at && (now - new Date(job.started_at).getTime()) > TIMEOUT_MS)) {
-          // 타임아웃된 작업은 failed로 업데이트
-          const { error: updateError } = await supabase
-            .from('processing_jobs')
-            .update({
-              status: 'failed',
-              finished_at: new Date().toISOString(),
-              result: {
-                note: 'timeout_by_zombie_cleanup',
-                errorMessage: '작업 타임아웃: 2시간 이상 진행 중',
-                syncedAt: new Date().toISOString()
-              }
-            })
-            .eq('id', job.id)
-            .eq('status', 'processing')
-            .is('finished_at', null);
+        } else {
+          // deepCrawlTimeout 옵션 확인하여 타임아웃 조정
+          const deepCrawlTimeout = job.payload?.deepCrawlTimeout as boolean ?? false;
+          const timeoutMs = deepCrawlTimeout ? DEEP_CRAWL_TIMEOUT_MS : DEFAULT_TIMEOUT_MS;
+          const timeoutMinutes = Math.round(timeoutMs / (60 * 1000));
           
-          if (!updateError) {
-            updatedCount++;
-            console.log(`⏰ 타임아웃 작업 failed로 업데이트: ${job.id.substring(0, 8)}...`);
+          if (force || (job.started_at && (now - new Date(job.started_at).getTime()) > timeoutMs)) {
+            // 타임아웃된 작업은 failed로 업데이트
+            const { error: updateError } = await supabase
+              .from('processing_jobs')
+              .update({
+                status: 'failed',
+                finished_at: new Date().toISOString(),
+                result: {
+                  note: 'timeout_by_zombie_cleanup',
+                  errorMessage: `작업 타임아웃: ${timeoutMinutes}분 이상 진행 중`,
+                  syncedAt: new Date().toISOString()
+                }
+              })
+              .eq('id', job.id)
+              .eq('status', 'processing')
+              .is('finished_at', null);
+            
+            if (!updateError) {
+              updatedCount++;
+              console.log(`⏰ 타임아웃 작업 failed로 업데이트: ${job.id.substring(0, 8)}... (타임아웃: ${timeoutMinutes}분)`);
+            }
           }
         }
       }

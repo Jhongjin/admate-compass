@@ -165,3 +165,4 @@ vercel logs --limit 100 | grep -E "(ERROR|❌|실패)"
 
 
 
+

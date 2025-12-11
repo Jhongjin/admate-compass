@@ -450,22 +450,48 @@ export class SitemapDiscoveryService {
 
       // Gzip 압축 파일 처리
       let xmlContent: string;
-      const isGzip = sitemapUrl.endsWith('.gz') || contentType.includes('gzip') || contentType.includes('application/gzip');
+      const arrayBuffer = await response.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      
+      // Content-Type과 파일 확장자로 gzip 여부 판단
+      const isGzipByExtension = sitemapUrl.endsWith('.gz');
+      const isGzipByContentType = contentType.includes('gzip') || contentType.includes('application/gzip');
+      
+      // 실제 바이너리 내용 확인: gzip magic number (1f 8b) 확인
+      const isGzipByMagic = buffer.length >= 2 && buffer[0] === 0x1f && buffer[1] === 0x8b;
+      
+      // HTML Content-Type이지만 실제로는 gzip인 경우 처리
+      const isHtmlContentTypeButGzip = isHtmlContentType && (isGzipByExtension || isGzipByMagic);
+      
+      const isGzip = isGzipByExtension || isGzipByContentType || isGzipByMagic || isHtmlContentTypeButGzip;
 
       if (isGzip) {
-        console.log(`[CRITICAL] 📦 Gzip 압축 파일 감지: ${sitemapUrl} (Content-Type: ${contentType})`);
-        const arrayBuffer = await response.arrayBuffer();
-        const buffer = Buffer.from(arrayBuffer);
+        console.log(`[CRITICAL] 📦 Gzip 압축 파일 감지: ${sitemapUrl} (Content-Type: ${contentType}, 확장자: ${isGzipByExtension}, Magic: ${isGzipByMagic})`);
         try {
           const decompressed = gunzipSync(buffer);
           xmlContent = decompressed.toString('utf-8');
           console.log(`[CRITICAL] ✅ Gzip 압축 해제 완료: ${sitemapUrl} (${xmlContent.length}자)`);
-        } catch (gzipError) {
-          console.error(`[CRITICAL] ❌ Gzip 압축 해제 실패: ${sitemapUrl}`, gzipError);
-          return [];
+        } catch (gzipError: any) {
+          console.error(`[CRITICAL] ❌ Gzip 압축 해제 실패: ${sitemapUrl}`, {
+            error: gzipError?.message || String(gzipError),
+            bufferLength: buffer.length,
+            contentType,
+            isGzipByExtension,
+            isGzipByMagic,
+            firstBytes: buffer.slice(0, 10).toString('hex')
+          });
+          
+          // gzip 해제 실패 시 일반 텍스트로 시도
+          try {
+            xmlContent = buffer.toString('utf-8');
+            console.log(`[CRITICAL] ⚠️ Gzip 해제 실패, 일반 텍스트로 시도: ${sitemapUrl} (${xmlContent.length}자)`);
+          } catch (textError) {
+            console.error(`[CRITICAL] ❌ 텍스트 변환도 실패: ${sitemapUrl}`);
+            return [];
+          }
         }
       } else {
-        xmlContent = await response.text();
+        xmlContent = buffer.toString('utf-8');
         console.log(`[CRITICAL] 📄 콘텐츠 다운로드 완료: ${sitemapUrl} (${xmlContent.length}자, Content-Type: ${contentType})`);
       }
 
