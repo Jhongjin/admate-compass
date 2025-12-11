@@ -610,6 +610,55 @@ export async function processQueue() {
       job = null;
       pickErr = null;
     } else {
+      // 🔥 개선: 타임아웃된 processing 작업을 먼저 failed로 변경
+      try {
+        const now = Date.now();
+        const TIMEOUT_MS = 30 * 60 * 1000; // 30분
+        const timeoutThreshold = new Date(now - TIMEOUT_MS).toISOString();
+        
+        // 타임아웃된 processing 작업 조회 (빠른 쿼리)
+        const { data: timeoutJobs } = await supabase
+          .from('processing_jobs')
+          .select('id, payload, started_at')
+          .eq('status', 'processing')
+          .not('started_at', 'is', null)
+          .lt('started_at', timeoutThreshold)
+          .limit(10);
+        
+        if (timeoutJobs && timeoutJobs.length > 0) {
+          console.error(`[CRITICAL] ⏰ 타임아웃된 processing 작업 ${timeoutJobs.length}개 발견 - failed로 업데이트 시작`);
+          
+          // 각 작업의 deepCrawlTimeout 옵션 확인하여 타임아웃 시간 조정
+          for (const timeoutJob of timeoutJobs) {
+            const deepCrawlTimeout = (timeoutJob.payload as any)?.deepCrawlTimeout === true;
+            const jobTimeoutMs = deepCrawlTimeout ? 30 * 60 * 1000 : 15 * 60 * 1000;
+            const startedAt = timeoutJob.started_at ? new Date(timeoutJob.started_at).getTime() : null;
+            
+            if (startedAt && (now - startedAt) > jobTimeoutMs) {
+              const timeoutMinutes = Math.round(jobTimeoutMs / (60 * 1000));
+              await supabase
+                .from('processing_jobs')
+                .update({
+                  status: 'failed',
+                  error: `작업 타임아웃: ${timeoutMinutes}분 이상 진행 중`,
+                  finished_at: new Date().toISOString(),
+                  result: {
+                    note: 'timeout_by_consume',
+                    errorMessage: `작업 타임아웃: ${timeoutMinutes}분 이상 진행 중`,
+                    syncedAt: new Date().toISOString()
+                  }
+                })
+                .eq('id', timeoutJob.id)
+                .eq('status', 'processing');
+              
+              console.error(`[CRITICAL] ⏰ 타임아웃 작업 failed로 업데이트: ${timeoutJob.id.substring(0, 8)}... (타임아웃: ${timeoutMinutes}분)`);
+            }
+          }
+        }
+      } catch (timeoutCheckError) {
+        console.warn('[CRITICAL] ⚠️ 타임아웃 작업 체크 실패 (무시하고 계속 진행):', timeoutCheckError);
+      }
+      
       // check-crawl-status와 완전히 동일한 패턴 사용 (정상 작동하는 패턴)
       // Promise.race나 타임아웃 없이 직접 await 사용
       console.error('[CRITICAL] 🔍 작업 조회 쿼리 시작 (check-crawl-status 패턴, 타임아웃 없음)...');
