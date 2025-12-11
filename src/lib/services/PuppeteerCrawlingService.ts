@@ -455,26 +455,37 @@ export class PuppeteerCrawlingService {
           }
         }
         
-        // 텍스트 기반 selector 시도 (XPath 사용) - CSS selector로 실패한 경우에만
+        // 텍스트 기반 selector 시도 - CSS selector로 실패한 경우에만
         if (!cookieClicked) {
           try {
-            const elements = await page.$x(`//button[contains(text(), 'Accept') or contains(text(), '수락') or contains(text(), '동의')]`);
-            if (elements.length > 0) {
-              const cookieButton = elements[0];
-              const isVisible = await cookieButton.evaluate((el: Element) => {
-                const style = window.getComputedStyle(el);
-                return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
-              });
+            const clicked = await page.evaluate(() => {
+              const buttons = Array.from(document.querySelectorAll('button, [role="button"]'));
+              const acceptTexts = ['Accept', '수락', '동의', 'accept', 'ACCEPT'];
               
-              if (isVisible) {
-                await cookieButton.click();
-                console.log(`✅ 쿠키 배너 클릭 성공 (텍스트 기반)`);
-                await new Promise(resolve => setTimeout(resolve, 1000)); // 클릭 후 대기
-                cookieClicked = true;
+              for (const btn of buttons) {
+                const text = btn.textContent?.toLowerCase() || '';
+                if (acceptTexts.some(acceptText => text.includes(acceptText.toLowerCase()))) {
+                  const style = window.getComputedStyle(btn);
+                  const isVisible = style.display !== 'none' && 
+                                   style.visibility !== 'hidden' && 
+                                   style.opacity !== '0';
+                  
+                  if (isVisible) {
+                    (btn as HTMLElement).click();
+                    return true;
+                  }
+                }
               }
+              return false;
+            });
+            
+            if (clicked) {
+              console.log(`✅ 쿠키 배너 클릭 성공 (텍스트 기반)`);
+              await new Promise(resolve => setTimeout(resolve, 1000)); // 클릭 후 대기
+              cookieClicked = true;
             }
-          } catch (xpathError) {
-            // XPath 실패 시 무시하고 계속 진행
+          } catch (textError) {
+            // 텍스트 기반 클릭 실패 시 무시하고 계속 진행
           }
         }
       } catch (cookieError) {
