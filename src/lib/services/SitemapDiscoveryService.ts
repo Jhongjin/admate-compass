@@ -231,6 +231,7 @@ export class SitemapDiscoveryService {
 
     const queue: QueueItem[] = [{ url: baseUrl, depth: 0, path: [baseUrl] }];
     visitedUrls.add(this.normalizeUrl(baseUrl));
+    console.error(`[CRITICAL] 🚀 BFS 큐 초기화: 시작 URL ${baseUrl} 추가 (depth: 0, 큐 크기: ${queue.length})`);
 
     // Sitemap에서 먼저 발견한 URL들을 큐에 추가 (depth 1로 설정)
     try {
