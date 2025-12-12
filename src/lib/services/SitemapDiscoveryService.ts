@@ -713,41 +713,8 @@ export class SitemapDiscoveryService {
             // 쿼리 파라미터 정규화 (트래킹 파라미터 제거)
             const normalizedUrl = this.normalizeUrl(fullUrl);
 
-            // maxDepth에 따른 도메인 필터링
-            const isSameDomain = urlDomain === baseDomain;
-            let isAllowedDomain = false;
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/c0851aaf-3b55-4357-b1b0-24aecd475e3c',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SitemapDiscoveryService.ts:705',message:'discoverFromLinks: 도메인 필터링 시작',data:{urlDomain,baseDomain,isSameDomain,maxDepth:config.maxDepth,domainLimit:config.domainLimit},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-            // #endregion
-            if (config.maxDepth >= 4) {
-              // maxDepth 4: domainLimit에 따라 다름
-              if (config.domainLimit === true) {
-                // domainLimit이 true면 같은 루트 도메인만 허용 (예: ko-kr.facebook.com과 www.facebook.com)
-                isAllowedDomain = this.isSameRootDomain(urlDomain, baseDomain);
-                // #region agent log
-                fetch('http://127.0.0.1:7242/ingest/c0851aaf-3b55-4357-b1b0-24aecd475e3c',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SitemapDiscoveryService.ts:711',message:'discoverFromLinks: maxDepth 4 + domainLimit true',data:{urlDomain,baseDomain,isAllowedDomain},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
-                // #endregion
-              } else {
-                // domainLimit이 false면 모든 도메인 허용
-                isAllowedDomain = true;
-              }
-            } else if (config.maxDepth >= 3) {
-              // maxDepth 3: domainLimit에 따라 다름
-              if (config.domainLimit === true) {
-                // domainLimit이 true면 하위 도메인도 제외 (같은 도메인만)
-                isAllowedDomain = isSameDomain;
-              } else {
-                // domainLimit이 false면 하위 도메인 허용
-                isAllowedDomain = isSameDomain || this.isSubdomain(urlDomain, baseDomain);
-              }
-            } else {
-              // maxDepth 1-2: 정확히 같은 도메인만 허용
-              isAllowedDomain = isSameDomain;
-            }
-
-            if (isAllowedDomain &&
-              normalizedUrl !== baseUrl &&
-              !normalizedUrl.includes('#')) {
+            // isValidUrl에서 모든 도메인 필터링을 수행하므로, 여기서는 기본적인 중복/앵커 체크만 수행
+            if (normalizedUrl !== baseUrl && !normalizedUrl.includes('#')) {
               validLinks++;
               const isValid = this.isValidUrl(normalizedUrl, baseDomain, config);
               if (isValid) {
@@ -758,12 +725,10 @@ export class SitemapDiscoveryService {
                   depth: 1
                 });
               } else {
-                console.error(`[CRITICAL] ⏭️ discoverFromLinks에서 isValidUrl 실패: ${normalizedUrl} (baseDomain: ${baseDomain}, maxDepth: ${config.maxDepth}, domainLimit: ${config.domainLimit})`);
+                console.error(`[CRITICAL] ⏭️ discoverFromLinks에서 isValidUrl 실패: ${normalizedUrl} (baseDomain: ${baseDomain}, urlDomain: ${urlDomain}, maxDepth: ${config.maxDepth}, domainLimit: ${config.domainLimit})`);
+                filteredLinks++;
               }
             } else {
-              if (!isAllowedDomain) {
-                console.error(`[CRITICAL] ⏭️ discoverFromLinks에서 도메인 필터링: ${normalizedUrl} (baseDomain: ${baseDomain}, urlDomain: ${urlDomain}, maxDepth: ${config.maxDepth}, domainLimit: ${config.domainLimit})`);
-              }
               filteredLinks++;
             }
           } catch (e) {
@@ -905,24 +870,23 @@ export class SitemapDiscoveryService {
                   const fullUrl = new URL(href, window.location.href).href;
                   const urlDomain = new URL(fullUrl).hostname;
 
-                  // maxDepth에 따른 도메인 필터링
+                  // Puppeteer 내부에서는 모든 링크를 수집하고, 나중에 isValidUrl로 필터링
+                  // (브라우저 내부에서는 isValidUrl을 직접 호출할 수 없으므로, 여기서는 기본적인 필터링만 수행)
+                  // maxDepth 4일 때는 같은 루트 도메인 허용 (나중에 isValidUrl에서 정확히 필터링됨)
                   const isSameDomain = urlDomain === baseDomain;
-                  let isAllowedDomain = false;
+                  let shouldInclude = false;
                   if (maxDepth >= 4) {
-                    // maxDepth 4: domainLimit 확인 필요 (Puppeteer 내부에서는 domainLimit을 직접 확인할 수 없으므로, 같은 루트 도메인 허용)
-                    // 실제 필터링은 isValidUrl에서 수행됨
-                    // 여기서는 같은 루트 도메인만 허용 (domainLimit=true일 때를 가정)
-                    isAllowedDomain = isSameRootDomain(urlDomain, baseDomain);
+                    // maxDepth 4: 같은 루트 도메인 허용 (나중에 isValidUrl에서 domainLimit에 따라 정확히 필터링됨)
+                    shouldInclude = isSameRootDomain(urlDomain, baseDomain);
                   } else if (maxDepth >= 3) {
-                    // maxDepth 3: domainLimit 확인 필요 (Puppeteer 내부에서는 domainLimit을 직접 확인할 수 없으므로, 하위 도메인 허용)
-                    // 실제 필터링은 isValidUrl에서 수행됨
-                    isAllowedDomain = isSameDomain || isSubdomain(urlDomain, baseDomain);
+                    // maxDepth 3: 같은 도메인 또는 하위 도메인 허용
+                    shouldInclude = isSameDomain || isSubdomain(urlDomain, baseDomain);
                   } else {
                     // maxDepth 1-2: 정확히 같은 도메인만 허용
-                    isAllowedDomain = isSameDomain;
+                    shouldInclude = isSameDomain;
                   }
 
-                  if (isAllowedDomain &&
+                  if (shouldInclude &&
                     fullUrl !== window.location.href &&
                     !fullUrl.includes('#') &&
                     !fullUrl.includes('javascript:') &&
