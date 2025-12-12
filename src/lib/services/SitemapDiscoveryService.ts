@@ -292,7 +292,13 @@ export class SitemapDiscoveryService {
       try {
         // 현재 페이지에서 링크 추출
         const nextDepth = current.depth + 1;
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/c0851aaf-3b55-4357-b1b0-24aecd475e3c',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SitemapDiscoveryService.ts:295',message:'BFS: discoverFromLinks 호출 전',data:{currentUrl:current.url,currentDepth:current.depth,nextDepth,baseDomain},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+        // #endregion
         const linkUrls = await this.discoverFromLinks(current.url, config, current.depth === 0 ? preloadedHtml : undefined);
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/c0851aaf-3b55-4357-b1b0-24aecd475e3c',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SitemapDiscoveryService.ts:297',message:'BFS: discoverFromLinks 결과',data:{currentUrl:current.url,linkUrlsCount:linkUrls.length,linkUrls:linkUrls.slice(0,5).map(u=>u.url)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+        // #endregion
 
         for (const linkUrl of linkUrls) {
           const normalized = this.normalizeUrl(linkUrl.url);
@@ -303,7 +309,13 @@ export class SitemapDiscoveryService {
             continue;
           }
           
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/c0851aaf-3b55-4357-b1b0-24aecd475e3c',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SitemapDiscoveryService.ts:306',message:'BFS: isValidUrl 호출 전',data:{linkUrl:linkUrl.url,baseDomain,maxDepth:config.maxDepth,domainLimit:config.domainLimit},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+          // #endregion
           const isValid = this.isValidUrl(linkUrl.url, baseDomain, config);
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/c0851aaf-3b55-4357-b1b0-24aecd475e3c',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SitemapDiscoveryService.ts:307',message:'BFS: isValidUrl 결과',data:{linkUrl:linkUrl.url,isValid,baseDomain,maxDepth:config.maxDepth,domainLimit:config.domainLimit},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+          // #endregion
           if (!isValid) {
             console.error(`[CRITICAL] ⏭️ 유효하지 않은 URL 건너뜀: ${linkUrl.url} (baseDomain: ${baseDomain}, maxDepth: ${config.maxDepth}, domainLimit: ${config.domainLimit})`);
             continue;
@@ -704,11 +716,17 @@ export class SitemapDiscoveryService {
             // maxDepth에 따른 도메인 필터링
             const isSameDomain = urlDomain === baseDomain;
             let isAllowedDomain = false;
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/c0851aaf-3b55-4357-b1b0-24aecd475e3c',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SitemapDiscoveryService.ts:705',message:'discoverFromLinks: 도메인 필터링 시작',data:{urlDomain,baseDomain,isSameDomain,maxDepth:config.maxDepth,domainLimit:config.domainLimit},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+            // #endregion
             if (config.maxDepth >= 4) {
               // maxDepth 4: domainLimit에 따라 다름
               if (config.domainLimit === true) {
                 // domainLimit이 true면 같은 루트 도메인만 허용 (예: ko-kr.facebook.com과 www.facebook.com)
                 isAllowedDomain = this.isSameRootDomain(urlDomain, baseDomain);
+                // #region agent log
+                fetch('http://127.0.0.1:7242/ingest/c0851aaf-3b55-4357-b1b0-24aecd475e3c',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SitemapDiscoveryService.ts:711',message:'discoverFromLinks: maxDepth 4 + domainLimit true',data:{urlDomain,baseDomain,isAllowedDomain},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+                // #endregion
               } else {
                 // domainLimit이 false면 모든 도메인 허용
                 isAllowedDomain = true;
@@ -1025,12 +1043,22 @@ export class SitemapDiscoveryService {
    * 같은 루트 도메인인지 확인 (예: ko-kr.facebook.com과 www.facebook.com)
    */
   private isSameRootDomain(domain1: string, domain2: string): boolean {
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/c0851aaf-3b55-4357-b1b0-24aecd475e3c',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SitemapDiscoveryService.ts:1027',message:'isSameRootDomain 호출',data:{domain1,domain2},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
     if (domain1 === domain2) {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/c0851aaf-3b55-4357-b1b0-24aecd475e3c',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SitemapDiscoveryService.ts:1030',message:'isSameRootDomain: 같은 도메인',data:{domain1,domain2,result:true},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
       return true;
     }
     const root1 = this.extractRootDomain(domain1);
     const root2 = this.extractRootDomain(domain2);
-    return root1 === root2;
+    const result = root1 === root2;
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/c0851aaf-3b55-4357-b1b0-24aecd475e3c',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SitemapDiscoveryService.ts:1033',message:'isSameRootDomain: 루트 도메인 비교',data:{domain1,domain2,root1,root2,result},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    // #endregion
+    return result;
   }
 
   /**
@@ -1041,6 +1069,10 @@ export class SitemapDiscoveryService {
       const urlObj = new URL(url);
       const urlDomain = urlObj.hostname;
 
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/c0851aaf-3b55-4357-b1b0-24aecd475e3c',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SitemapDiscoveryService.ts:1040',message:'isValidUrl 호출',data:{url,urlDomain,baseDomain,maxDepth:config.maxDepth,domainLimit:config.domainLimit},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+      // #endregion
+
       // maxDepth에 따른 도메인 필터링
       // maxDepth 1-2: 정확히 같은 도메인만 허용
       // maxDepth 3: domainLimit에 따라 다름 (true: 같은 도메인만, false: 하위 도메인 포함)
@@ -1050,7 +1082,11 @@ export class SitemapDiscoveryService {
           // maxDepth 4: domainLimit에 따라 다름
           if (config.domainLimit === true) {
             // domainLimit이 true면 같은 루트 도메인만 허용 (예: ko-kr.facebook.com과 www.facebook.com)
-            return this.isSameRootDomain(urlDomain, baseDomain);
+            const result = this.isSameRootDomain(urlDomain, baseDomain);
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/c0851aaf-3b55-4357-b1b0-24aecd475e3c',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SitemapDiscoveryService.ts:1053',message:'isValidUrl: maxDepth 4 + domainLimit true',data:{urlDomain,baseDomain,result},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+            // #endregion
+            return result;
           } else {
             // domainLimit이 false면 모든 도메인 허용
             return true;
