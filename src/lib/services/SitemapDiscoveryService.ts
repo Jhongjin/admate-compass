@@ -284,10 +284,14 @@ export class SitemapDiscoveryService {
 
       // maxDepth 도달 시 더 이상 탐색하지 않음
       if (current.depth >= config.maxDepth) {
+        console.error(`[CRITICAL] ⏭️ maxDepth 도달: ${current.url} (depth: ${current.depth}, maxDepth: ${config.maxDepth})`);
         continue;
       }
 
       processedCount++;
+      if (processedCount === 1 || processedCount % 5 === 0) {
+        console.error(`[CRITICAL] 🔄 BFS 루프 진행: 처리 ${processedCount}개, 발견 ${discoveredPages.length}개, 큐 ${queue.length}개 (현재: ${current.url}, depth: ${current.depth})`);
+      }
 
       try {
         // 현재 페이지에서 링크 추출
@@ -300,12 +304,19 @@ export class SitemapDiscoveryService {
         fetch('http://127.0.0.1:7242/ingest/c0851aaf-3b55-4357-b1b0-24aecd475e3c',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SitemapDiscoveryService.ts:297',message:'BFS: discoverFromLinks 결과',data:{currentUrl:current.url,linkUrlsCount:linkUrls.length,linkUrls:linkUrls.slice(0,5).map(u=>u.url)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
         // #endregion
 
+        let validLinksCount = 0;
+        let skippedVisitedCount = 0;
+        let skippedInvalidCount = 0;
+        
         for (const linkUrl of linkUrls) {
           const normalized = this.normalizeUrl(linkUrl.url);
 
           // 이미 방문했거나 유효하지 않은 URL은 건너뛰기
           if (visitedUrls.has(normalized)) {
-            console.error(`[CRITICAL] ⏭️ 이미 방문한 URL 건너뜀: ${linkUrl.url}`);
+            skippedVisitedCount++;
+            if (skippedVisitedCount <= 5) {
+              console.error(`[CRITICAL] ⏭️ 이미 방문한 URL 건너뜀: ${linkUrl.url}`);
+            }
             continue;
           }
           
@@ -317,10 +328,14 @@ export class SitemapDiscoveryService {
           fetch('http://127.0.0.1:7242/ingest/c0851aaf-3b55-4357-b1b0-24aecd475e3c',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SitemapDiscoveryService.ts:307',message:'BFS: isValidUrl 결과',data:{linkUrl:linkUrl.url,isValid,baseDomain,maxDepth:config.maxDepth,domainLimit:config.domainLimit},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
           // #endregion
           if (!isValid) {
-            console.error(`[CRITICAL] ⏭️ 유효하지 않은 URL 건너뜀: ${linkUrl.url} (baseDomain: ${baseDomain}, maxDepth: ${config.maxDepth}, domainLimit: ${config.domainLimit})`);
+            skippedInvalidCount++;
+            if (skippedInvalidCount <= 5) {
+              console.error(`[CRITICAL] ⏭️ 유효하지 않은 URL 건너뜀: ${linkUrl.url} (baseDomain: ${baseDomain}, maxDepth: ${config.maxDepth}, domainLimit: ${config.domainLimit})`);
+            }
             continue;
           }
 
+          validLinksCount++;
           visitedUrls.add(normalized);
 
           // 발견된 URL을 결과에 추가 (depth 재설정)
@@ -342,6 +357,10 @@ export class SitemapDiscoveryService {
             });
           }
         }
+        
+        if (linkUrls.length > 0) {
+          console.error(`[CRITICAL] 📊 BFS 링크 처리 통계 (${current.url}): 총 ${linkUrls.length}개 → 유효 ${validLinksCount}개 (건너뜀: 방문 ${skippedVisitedCount}개, 무효 ${skippedInvalidCount}개)`);
+        }
 
         // 진행 상황 로깅 (매 10개마다)
         if (processedCount % 10 === 0) {
@@ -354,10 +373,16 @@ export class SitemapDiscoveryService {
     }
 
     // 결과 필터링 및 정렬
+    console.error(`[CRITICAL] 🔍 BFS 루프 종료: 발견 ${discoveredPages.length}개, 처리 ${processedCount}개, 큐 남음 ${queue.length}개`);
     const filteredPages = this.filterAndSortPages(discoveredPages, baseDomain, config) as DepthAwareDiscoveredUrl[];
 
-    console.error(`[CRITICAL] ✅ BFS depth 탐색 완료: 총 ${filteredPages.length}개 발견 (처리: ${processedCount}개)`);
+    console.error(`[CRITICAL] ✅ BFS depth 탐색 완료: 총 ${filteredPages.length}개 발견 (처리: ${processedCount}개, 필터링 전: ${discoveredPages.length}개)`);
     console.error(`[CRITICAL] 📊 Depth별 통계:`, this.getDepthStatistics(filteredPages));
+    
+    if (filteredPages.length === 0 && discoveredPages.length > 0) {
+      console.error(`[CRITICAL] ⚠️ 발견된 ${discoveredPages.length}개 페이지가 모두 필터링되었습니다. 필터 조건을 확인해주세요.`);
+      console.error(`[CRITICAL] 📋 필터링 전 샘플 URL (최대 10개):`, discoveredPages.slice(0, 10).map(p => ({ url: p.url, depth: p.depth, source: p.source })));
+    }
 
     return filteredPages.slice(0, config.maxUrls);
   }
