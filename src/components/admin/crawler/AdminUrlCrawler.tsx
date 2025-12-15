@@ -75,25 +75,26 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor }: AdminUrlCrawlerPro
   /* Updated state to store normalized URL -> actual URL map */
   const [existingDbMap, setExistingDbMap] = useState<Map<string, string>>(new Map());
 
+  const fetchExistingUrls = async () => {
+    try {
+      const response = await fetch('/api/admin/documents/list?type=url');
+      if (response.ok) {
+        const data = await response.json();
+        if (data.documents) {
+          const map = new Map<string, string>();
+          data.documents.forEach((d: any) => {
+            map.set(normalizeUrl(d.url), d.url);
+          });
+          setExistingDbMap(map);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to fetch existing URLs:', error);
+    }
+  };
+
   // Fetch existing URLs from DB on mount
   React.useEffect(() => {
-    const fetchExistingUrls = async () => {
-      try {
-        const response = await fetch('/api/admin/documents/list?type=url');
-        if (response.ok) {
-          const data = await response.json();
-          if (data.documents) {
-            const map = new Map<string, string>();
-            data.documents.forEach((d: any) => {
-              map.set(normalizeUrl(d.url), d.url);
-            });
-            setExistingDbMap(map);
-          }
-        }
-      } catch (error) {
-        console.error('Failed to fetch existing URLs:', error);
-      }
-    };
     fetchExistingUrls();
   }, []);
 
@@ -283,6 +284,7 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor }: AdminUrlCrawlerPro
         toast.success(data.message);
         if (onSuccess) onSuccess();
         setResults([]); // Clear results after successful save
+        await fetchExistingUrls(); // Refresh existing URLs map
       } else {
         toast.error(data.error || '저장 실패');
       }
