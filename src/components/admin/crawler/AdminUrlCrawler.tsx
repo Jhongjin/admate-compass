@@ -72,7 +72,8 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor }: AdminUrlCrawlerPro
     waitTime: 1000,
   });
 
-  const [existingDbUrls, setExistingDbUrls] = useState<Set<string>>(new Set());
+  /* Updated state to store normalized URL -> actual URL map */
+  const [existingDbMap, setExistingDbMap] = useState<Map<string, string>>(new Map());
 
   // Fetch existing URLs from DB on mount
   React.useEffect(() => {
@@ -82,8 +83,11 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor }: AdminUrlCrawlerPro
         if (response.ok) {
           const data = await response.json();
           if (data.documents) {
-            const urls = new Set<string>(data.documents.map((d: any) => normalizeUrl(d.url)));
-            setExistingDbUrls(urls);
+            const map = new Map<string, string>();
+            data.documents.forEach((d: any) => {
+              map.set(normalizeUrl(d.url), d.url);
+            });
+            setExistingDbMap(map);
           }
         }
       } catch (error) {
@@ -209,17 +213,28 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor }: AdminUrlCrawlerPro
 
       const resultsWithVendor = successfulResults.map(r => {
         // Find if this URL was discovered from another URL (is it a sub-page?)
-        // We use discoveredUrls state to find the parent with normalization
         const discoveryInfo = discoveredUrls.find(d => normalizeUrl(d.url) === normalizeUrl(r.url));
+
+        let parentUrl = discoveryInfo?.parentUrl || null;
+
+        // If we have a parentUrl from discovery, check if it exists in the DB (exact string match from DB)
+        // This ensures that even if we discovered it as "example.com/foo/", we link to "example.com/foo" if that's what's in DB.
+        if (parentUrl) {
+          const normalizedParent = normalizeUrl(parentUrl);
+          const dbParentUrl = existingDbMap.get(normalizedParent);
+          if (dbParentUrl) {
+            parentUrl = dbParentUrl; // Use the canonical URL from DB
+          }
+        }
 
         return {
           ...r,
           vendor,
           metadata: {
             source: 'admin-crawler',
-            parentUrl: discoveryInfo?.parentUrl || null, // Use parentUrl from discoveryInfo
-            parent_title: discoveryInfo?.parentUrl ? (results.find(res => res.url === discoveryInfo.parentUrl)?.title) : null,
-            is_sub_page: !!discoveryInfo?.parentUrl,
+            parentUrl: parentUrl,
+            parent_title: parentUrl ? (results.find(res => res.url === parentUrl)?.title) : null,
+            is_sub_page: !!parentUrl,
             discovered_at: new Date().toISOString()
           }
         };
@@ -517,14 +532,14 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor }: AdminUrlCrawlerPro
               <div className="space-y-3">
                 {discoveredUrls.map((item, index) => {
                   // Check if this URL is already in the main results OR in the DB
-                  const isAlreadyCrawled = results.some(r => normalizeUrl(r.url) === normalizeUrl(item.url)) || existingDbUrls.has(normalizeUrl(item.url));
+                  const isAlreadyCrawled = results.some(r => normalizeUrl(r.url) === normalizeUrl(item.url)) || existingDbMap.has(normalizeUrl(item.url));
 
                   return (<div key={index} className={`flex items-start gap-3 p-2 rounded-md transition-colors ${isAlreadyCrawled ? 'bg-green-900/10 border border-green-900/20' : 'hover:bg-white/5'}`}>
                     <Checkbox
                       id={`url-${index}`}
                       checked={selectedDiscoveredUrls.has(item.url)}
                       onCheckedChange={() => toggleSelect(item.url)}
-                      className="mt-2"
+                      className="mt-2 border-gray-500 data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
                     />
                     <div className="flex-1 min-w-0 space-y-1">
                       <div className="flex items-center gap-2">
