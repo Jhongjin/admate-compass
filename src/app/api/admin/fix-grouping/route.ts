@@ -15,14 +15,33 @@ export async function GET(request: NextRequest) {
             }
         );
 
-        // 1. Fetch all URL documents
-        const { data: allDocs, error } = await supabase
-            .from('documents')
-            .select('id, url, title, metadata')
-            .eq('type', 'url');
+        // 1. Fetch all URL documents using pagination
+        let allDocs: any[] = [];
+        let page = 0;
+        const PAGE_SIZE = 1000;
+        let hasMore = true;
 
-        if (error) throw error;
-        if (!allDocs) return NextResponse.json({ success: true, message: 'No documents found' });
+        while (hasMore) {
+            const { data, error } = await supabase
+                .from('documents')
+                .select('id, url, title, metadata')
+                .eq('type', 'url')
+                .range(page * PAGE_SIZE, (page + 1) * PAGE_SIZE - 1);
+
+            if (error) throw error;
+
+            if (data && data.length > 0) {
+                allDocs = [...allDocs, ...data];
+                if (data.length < PAGE_SIZE) hasMore = false;
+                page++;
+            } else {
+                hasMore = false;
+            }
+        }
+
+        console.log(`🔍 Total documents scanned: ${allDocs.length}`);
+
+        if (allDocs.length === 0) return NextResponse.json({ success: true, message: 'No documents found' });
 
         // 2. Build Map of existing URLs
         const urlMap = new Map<string, string>(); // normalized -> realUrl
