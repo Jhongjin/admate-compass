@@ -58,7 +58,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useToast } from "@/hooks/use-toast";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import NewDocumentUpload from "@/components/admin/NewDocumentUpload";
-import HybridCrawlingManager from "@/components/admin/HybridCrawlingManager";
+import { AdminUrlCrawler } from "@/components/admin/crawler/AdminUrlCrawler";
 import GroupedDocumentList from "@/components/admin/GroupedDocumentList";
 import QueueSummaryPanel from "@/components/admin/QueueSummaryPanel";
 import QueueMonitoringPanel from "@/components/admin/QueueMonitoringPanel";
@@ -769,17 +769,16 @@ const getDocumentTypeBadgeClass = (type: string) => {
                     </TabsContent>
 
                     <TabsContent value="crawling" className="space-y-6">
-                        <HybridCrawlingManager 
-                            onCrawlingComplete={async () => {
+                        <AdminUrlCrawler
+                            defaultVendor={selectedVendors}
+                            onSuccess={async () => {
                                 // 문서 목록 새로고침 및 캐시 무효화
                                 await queryClient.invalidateQueries({ queryKey: ['admin-documents'], exact: false });
                                 // 약간의 지연 후 새로고침 (DB 업데이트 완료 대기)
                                 setTimeout(async () => {
                                     await refetch();
                                 }, 2000);
-                            }} 
-                            vendors={selectedVendors}
-                            onVendorsChange={setSelectedVendors}
+                            }}
                         />
 
                         <div className="mt-8">
