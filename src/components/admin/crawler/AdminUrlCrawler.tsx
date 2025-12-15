@@ -88,7 +88,10 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor }: AdminUrlCrawlerPro
         },
         body: JSON.stringify({
           urls: urlList,
-          options,
+          options: {
+            ...options,
+            discoverSubPages: isSubPageCrawl ? false : options.discoverSubPages,
+          },
         }),
       });
 
