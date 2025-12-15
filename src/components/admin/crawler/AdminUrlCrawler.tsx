@@ -76,7 +76,7 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor }: AdminUrlCrawlerPro
           const data = await response.json();
           // Assuming API returns list of documents
           if (data.documents) {
-            const urls = new Set(data.documents.map((d: any) => d.url));
+            const urls = new Set<string>(data.documents.map((d: any) => d.url));
             setExistingDbUrls(urls);
           }
         }
