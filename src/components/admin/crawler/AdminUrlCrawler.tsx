@@ -190,10 +190,18 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor }: AdminUrlCrawlerPro
     try {
       const vendor = defaultVendor && defaultVendor.length > 0 ? defaultVendor[0] : 'META';
 
+      const normalizeUrl = (url: string) => {
+        try {
+          return url.replace(/\/$/, "").trim();
+        } catch (e) {
+          return url;
+        }
+      };
+
       const resultsWithVendor = successfulResults.map(r => {
         // Find if this URL was discovered from another URL (is it a sub-page?)
-        // We use discoveredUrls state to find the parent
-        const discoveryInfo = discoveredUrls.find(d => d.url === r.url);
+        // We use discoveredUrls state to find the parent with normalization
+        const discoveryInfo = discoveredUrls.find(d => normalizeUrl(d.url) === normalizeUrl(r.url));
 
         return {
           ...r,

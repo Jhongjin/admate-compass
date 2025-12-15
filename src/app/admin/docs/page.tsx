@@ -218,7 +218,7 @@ function AdminDocsPageContent() {
             const dbVendors = convertVendorsToDB(selectedVendors);
             let q = supabase
                 .from("documents")
-                .select("id,title,type,status,updated_at,chunk_count,source_vendor,url,document_url,main_document_id,file_size,created_at")
+                .select("id,title,type,status,updated_at,chunk_count,source_vendor,url,document_url,main_document_id,file_size,created_at,metadata")
                 .order("updated_at", { ascending: false })
                 .limit(1000);
 
