@@ -33,6 +33,21 @@ export async function POST(request: NextRequest) {
       }
     );
 
+    // DB에 있는 모든 URL 문서 가져오기 (부모 찾기용)
+    const { data: allUrlDocs } = await supabase
+      .from('documents')
+      .select('url, title')
+      .eq('type', 'url');
+
+    const existingUrlsMap = new Map<string, string>(); // normalized -> real
+    if (allUrlDocs) {
+      allUrlDocs.forEach(doc => {
+        // Normalize: remove trailing slash
+        const normalized = doc.url.replace(/\/$/, "").trim();
+        existingUrlsMap.set(normalized, doc.url);
+      });
+    }
+
     const savedDocuments = [];
     const errors = [];
 
@@ -41,6 +56,56 @@ export async function POST(request: NextRequest) {
         if (result.status !== 'success' || !result.content) {
           continue;
         }
+
+        // --- Backend Auto-Grouping Logic ---
+        // If no parentUrl is provided (or even if it is, we might want to verify, but let's trust explicit first if valid),
+        // try to find one in the DB.
+
+        let metadata = result.metadata || {};
+        let parentUrl = metadata.parentUrl || null;
+
+        if (!parentUrl) {
+          // Try to find a parent in existing DB
+          const currentNormalized = result.url.replace(/\/$/, "").trim();
+          let bestParent = null;
+          let maxLen = 0;
+
+          // Also check against *other results in this batch* if they are being created now?
+          // The previous logic in frontend did this. 
+          // But here we rely on DB primarily for "existing" parents.
+          // Ideally we should also check the 'results' array itself for a parent, but let's stick to DB for persistence stability first.
+          // Actually, the `existingUrlsMap` is from DB snapshot. 
+          // If we are saving a parent AND a child in the same batch, the parent might not be in DB yet if processed later?
+          // Or if processed earlier in loop?
+          // Ideally we update `existingUrlsMap` as we go?
+
+          for (const [dbNormalized, dbRealUrl] of existingUrlsMap.entries()) {
+            if (currentNormalized.startsWith(dbNormalized + '/')) {
+              if (dbNormalized.length > maxLen) {
+                maxLen = dbNormalized.length;
+                bestParent = dbRealUrl;
+              }
+            }
+          }
+
+          if (bestParent) {
+            console.log(`🔗 [Auto-Grouping] Found parent for ${result.url}: ${bestParent}`);
+            parentUrl = bestParent;
+            metadata = {
+              ...metadata,
+              parentUrl: bestParent,
+              is_sub_page: true,
+              // We could fetch parent title if needed, but let's stick to URL linkage
+            };
+          }
+        }
+
+        // Update the map for subsequent items in this loop (in case we just saved a potential parent)
+        if (!existingUrlsMap.has(result.url.replace(/\/$/, "").trim())) {
+          existingUrlsMap.set(result.url.replace(/\/$/, "").trim(), result.url);
+        }
+
+        // --- End Auto-Grouping Logic ---
 
         // URL 중복 확인
         console.log(`🔍 URL 중복 확인: ${result.url}`);
@@ -84,7 +149,7 @@ export async function POST(request: NextRequest) {
               updated_at: new Date().toISOString(),
               // Update metadata for grouping logic
               source_vendor: result.vendor ? result.vendor.toUpperCase() : 'META',
-              metadata: result.metadata || {}
+              metadata: metadata
             })
             .eq('id', documentId);
 
@@ -115,7 +180,7 @@ export async function POST(request: NextRequest) {
           file_type: 'url',
           url: result.url,
           source_vendor: normalizedVendor, // 벤더 정보 추가
-          metadata: result.metadata || {}, // 메타데이터 추가 (부모 URL 등)
+          metadata: metadata, // 메타데이터 추가 (부모 URL 등)
           created_at: isReindex ? existingDocs[0].created_at : new Date().toISOString(),
           updated_at: new Date().toISOString()
         };
