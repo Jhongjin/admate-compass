@@ -65,6 +65,28 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor }: AdminUrlCrawlerPro
     waitTime: 1000,
   });
 
+  const [existingDbUrls, setExistingDbUrls] = useState<Set<string>>(new Set());
+
+  // Fetch existing URLs from DB on mount
+  React.useEffect(() => {
+    const fetchExistingUrls = async () => {
+      try {
+        const response = await fetch('/api/admin/documents/list?type=url');
+        if (response.ok) {
+          const data = await response.json();
+          // Assuming API returns list of documents
+          if (data.documents) {
+            const urls = new Set(data.documents.map((d: any) => d.url));
+            setExistingDbUrls(urls);
+          }
+        }
+      } catch (error) {
+        console.error('Failed to fetch existing URLs:', error);
+      }
+    };
+    fetchExistingUrls();
+  }, []);
+
   // 환경 감지
   React.useEffect(() => {
     const isVercel = window.location.hostname.includes('vercel.app') ||
@@ -508,51 +530,50 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor }: AdminUrlCrawlerPro
             <ScrollArea className="h-[300px] border border-white/10 rounded-md p-4">
               <div className="space-y-3">
                 {discoveredUrls.map((item, index) => {
-                  // Check if this URL is already in the main results
-                  const isAlreadyCrawled = results.some(r => r.url === item.url);
+                  // Check if this URL is already in the main results OR in the DB
+                  const isAlreadyCrawled = results.some(r => r.url === item.url) || existingDbUrls.has(item.url);
 
-                  return (
-                    <div key={index} className={`flex items-start gap-3 p-2 rounded-md transition-colors ${isAlreadyCrawled ? 'bg-green-900/10 border border-green-900/20' : 'hover:bg-white/5'}`}>
-                      <Checkbox
-                        id={`url-${index}`}
-                        checked={selectedDiscoveredUrls.has(item.url)}
-                        onCheckedChange={() => toggleSelect(item.url)}
-                        className="mt-2"
-                      />
-                      <div className="flex-1 min-w-0 space-y-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-blue-400 text-[10px] mt-1">●</span>
-                          <Input
-                            value={item.title || ''}
-                            onChange={(e) => {
-                              const newTitle = e.target.value;
-                              setDiscoveredUrls(prev => prev.map((p, i) => i === index ? { ...p, title: newTitle } : p));
-                            }}
-                            className="h-7 text-sm font-semibold text-gray-200 bg-transparent border-transparent hover:border-white/10 focus:border-blue-500 focus:bg-black/20 p-1 px-2 w-full transition-all"
-                            placeholder="제목을 입력하세요"
-                          />
-                        </div>
-                        <div className="flex items-center gap-2 px-1">
-                          <Label htmlFor={`url-${index}`} className="text-xs text-blue-300/80 cursor-pointer break-all block leading-tight hover:text-blue-300">
-                            {item.url}
-                          </Label>
-                          <a
-                            href={item.url}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-blue-400 hover:text-blue-300 flex-shrink-0 opacity-50 hover:opacity-100 transition-opacity"
-                            title="새 탭에서 열기"
-                          >
-                            <ExternalLink className="h-3 w-3" />
-                          </a>
-                          {isAlreadyCrawled && (
-                            <Badge variant="outline" className="text-[10px] h-4 px-1 text-green-400 border-green-900/30 bg-green-900/10 ml-auto">
-                              이미 수집됨
-                            </Badge>
-                          )}
-                        </div>
+                  return (<div key={index} className={`flex items-start gap-3 p-2 rounded-md transition-colors ${isAlreadyCrawled ? 'bg-green-900/10 border border-green-900/20' : 'hover:bg-white/5'}`}>
+                    <Checkbox
+                      id={`url-${index}`}
+                      checked={selectedDiscoveredUrls.has(item.url)}
+                      onCheckedChange={() => toggleSelect(item.url)}
+                      className="mt-2"
+                    />
+                    <div className="flex-1 min-w-0 space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-blue-400 text-[10px] mt-1">●</span>
+                        <Input
+                          value={item.title || ''}
+                          onChange={(e) => {
+                            const newTitle = e.target.value;
+                            setDiscoveredUrls(prev => prev.map((p, i) => i === index ? { ...p, title: newTitle } : p));
+                          }}
+                          className="h-7 text-sm font-semibold text-gray-200 bg-transparent border-transparent hover:border-white/10 focus:border-blue-500 focus:bg-black/20 p-1 px-2 w-full transition-all"
+                          placeholder="제목을 입력하세요"
+                        />
+                      </div>
+                      <div className="flex items-center gap-2 px-1">
+                        <Label htmlFor={`url-${index}`} className="text-xs text-blue-300/80 cursor-pointer break-all block leading-tight hover:text-blue-300">
+                          {item.url}
+                        </Label>
+                        <a
+                          href={item.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-400 hover:text-blue-300 flex-shrink-0 opacity-50 hover:opacity-100 transition-opacity"
+                          title="새 탭에서 열기"
+                        >
+                          <ExternalLink className="h-3 w-3" />
+                        </a>
+                        {isAlreadyCrawled && (
+                          <Badge variant="outline" className="text-[10px] h-4 px-1 text-green-400 border-green-900/30 bg-green-900/10 ml-auto">
+                            이미 수집됨
+                          </Badge>
+                        )}
                       </div>
                     </div>
+                  </div>
                   );
                 })}
               </div>
