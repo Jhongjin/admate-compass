@@ -42,6 +42,14 @@ interface AdminUrlCrawlerProps {
   defaultVendor?: string[];
 }
 
+const normalizeUrl = (url: string) => {
+  try {
+    return url.replace(/\/$/, "").trim();
+  } catch (e) {
+    return url;
+  }
+};
+
 export function AdminUrlCrawler({ onSuccess, defaultVendor }: AdminUrlCrawlerProps) {
   const [urls, setUrls] = useState<string>('https://example.com');
   const [isCrawling, setIsCrawling] = useState(false);
@@ -50,7 +58,6 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor }: AdminUrlCrawlerPro
   const [environment, setEnvironment] = useState<'local' | 'vercel' | 'unknown'>('unknown');
 
   // Sub-page selection state
-  /* Updated state to include title and parentUrl */
   const [discoveredUrls, setDiscoveredUrls] = useState<Array<{ url: string; source: string; title?: string; parentUrl?: string }>>([]);
   const [selectedDiscoveredUrls, setSelectedDiscoveredUrls] = useState<Set<string>>(new Set());
   const [isSelectionDialogOpen, setIsSelectionDialogOpen] = useState(false);
@@ -74,9 +81,8 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor }: AdminUrlCrawlerPro
         const response = await fetch('/api/admin/documents/list?type=url');
         if (response.ok) {
           const data = await response.json();
-          // Assuming API returns list of documents
           if (data.documents) {
-            const urls = new Set<string>(data.documents.map((d: any) => d.url));
+            const urls = new Set<string>(data.documents.map((d: any) => normalizeUrl(d.url)));
             setExistingDbUrls(urls);
           }
         }
@@ -185,17 +191,6 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor }: AdminUrlCrawlerPro
 
     if (urlsToCrawl.length === 0) return;
 
-    // Disable discovery for sub-pages to prevent infinite loop (or use depth control)
-    // For now, we just crawl the selected ones without further deep discovery popup
-    // But we might want to keep options as is.
-    // Let's keep options same but maybe we should not trigger popup again recursively for V1.
-    // Or just let it trigger if user wants deep crawling. 
-    // Current logic: performCrawl checks options.discoverSubPages. 
-    // If we want to avoid recursive popups, we should temporarily disable it or pass a flag.
-    // Let's passed modified options or just handle it. 
-    // Actually, performCrawl logic for popup is inside `else` block of `isSubPageCrawl`.
-    // So if `isSubPageCrawl` is true, popup won't trigger. Correct.
-
     await performCrawl(urlsToCrawl, true);
   };
 
@@ -211,14 +206,6 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor }: AdminUrlCrawlerPro
 
     try {
       const vendor = defaultVendor && defaultVendor.length > 0 ? defaultVendor[0] : 'META';
-
-      const normalizeUrl = (url: string) => {
-        try {
-          return url.replace(/\/$/, "").trim();
-        } catch (e) {
-          return url;
-        }
-      };
 
       const resultsWithVendor = successfulResults.map(r => {
         // Find if this URL was discovered from another URL (is it a sub-page?)
@@ -498,7 +485,6 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor }: AdminUrlCrawlerPro
                   variant="ghost"
                   size="sm"
                   onClick={() => {
-                    // Select all except those already in results (crawled)
                     const existingUrls = new Set(results.map(r => r.url));
                     const newSelection = new Set(
                       discoveredUrls
@@ -531,7 +517,7 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor }: AdminUrlCrawlerPro
               <div className="space-y-3">
                 {discoveredUrls.map((item, index) => {
                   // Check if this URL is already in the main results OR in the DB
-                  const isAlreadyCrawled = results.some(r => r.url === item.url) || existingDbUrls.has(item.url);
+                  const isAlreadyCrawled = results.some(r => normalizeUrl(r.url) === normalizeUrl(item.url)) || existingDbUrls.has(normalizeUrl(item.url));
 
                   return (<div key={index} className={`flex items-start gap-3 p-2 rounded-md transition-colors ${isAlreadyCrawled ? 'bg-green-900/10 border border-green-900/20' : 'hover:bg-white/5'}`}>
                     <Checkbox
