@@ -78,10 +78,10 @@ export async function POST(request: NextRequest) {
           // 문서 상태를 'processing'으로 업데이트
           const { error: updateError } = await supabase
             .from('documents')
-            .update({ 
-              status: 'processing', 
-              chunk_count: 0, 
-              updated_at: new Date().toISOString() 
+            .update({
+              status: 'processing',
+              chunk_count: 0,
+              updated_at: new Date().toISOString()
             })
             .eq('id', documentId);
 
@@ -96,13 +96,13 @@ export async function POST(request: NextRequest) {
           documentId = `url_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
           console.log(`🆕 새로운 URL 생성: ${result.url}`);
         }
-        
+
         console.log(`🔍 저장할 문서 데이터: title="${result.title}", url="${result.url}"`);
-        
+
         // 벤더 정보 정규화 (대문자로 변환, 기본값: META)
         const normalizedVendor = result.vendor ? result.vendor.toUpperCase() : 'META';
         console.log('🏷️ 벤더 정보:', { original: result.vendor, normalized: normalizedVendor, url: result.url });
-        
+
         const documentData = {
           id: documentId,
           title: result.title || result.url,
@@ -112,15 +112,16 @@ export async function POST(request: NextRequest) {
           file_type: 'url',
           url: result.url,
           source_vendor: normalizedVendor, // 벤더 정보 추가
+          metadata: result.metadata || {}, // 메타데이터 추가 (부모 URL 등)
           created_at: isReindex ? existingDocs[0].created_at : new Date().toISOString(),
           updated_at: new Date().toISOString()
         };
-        
+
         console.log(`💾 최종 저장 데이터: title="${documentData.title}", id="${documentData.id}"`);
 
         // RAG 처리 (중복 검사 없이 강제 처리)
         const ragResult = await ragProcessor.processDocument(documentData, false);
-        
+
         if (ragResult.success) {
           savedDocuments.push({
             id: documentId,
@@ -162,7 +163,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('❌ 크롤링 결과 저장 오류:', error);
     return NextResponse.json(
-      { 
+      {
         error: '크롤링 결과 저장 중 오류가 발생했습니다.',
         details: error instanceof Error ? error.message : '알 수 없는 오류'
       },

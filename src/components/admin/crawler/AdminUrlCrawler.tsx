@@ -50,8 +50,8 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor }: AdminUrlCrawlerPro
   const [environment, setEnvironment] = useState<'local' | 'vercel' | 'unknown'>('unknown');
 
   // Sub-page selection state
-  /* Updated state to include title */
-  const [discoveredUrls, setDiscoveredUrls] = useState<Array<{ url: string; source: string; title?: string }>>([]);
+  /* Updated state to include title and parentUrl */
+  const [discoveredUrls, setDiscoveredUrls] = useState<Array<{ url: string; source: string; title?: string; parentUrl?: string }>>([]);
   const [selectedDiscoveredUrls, setSelectedDiscoveredUrls] = useState<Set<string>>(new Set());
   const [isSelectionDialogOpen, setIsSelectionDialogOpen] = useState(false);
 
@@ -109,14 +109,15 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor }: AdminUrlCrawlerPro
 
           // Check for discovered sub-pages if option enabled
           if (options.discoverSubPages) {
-            const allDiscovered: Array<{ url: string; source: string; title?: string }> = [];
+            const allDiscovered: Array<{ url: string; source: string; title?: string; parentUrl?: string }> = [];
             const existingUrls = new Set([...urlList, ...newResults.map(r => r.url)]);
 
             newResults.forEach(result => {
               if (result.discoveredUrls && result.discoveredUrls.length > 0) {
                 result.discoveredUrls.forEach(d => {
                   if (!existingUrls.has(d.url)) {
-                    allDiscovered.push({ url: d.url, source: result.url, title: d.title });
+                    // source maps to d.source (method), and we add parentUrl which is the current result.url
+                    allDiscovered.push({ url: d.url, source: result.url, title: d.title, parentUrl: result.url });
                     existingUrls.add(d.url); // Prevent duplicates
                   }
                 });
@@ -189,10 +190,23 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor }: AdminUrlCrawlerPro
     try {
       const vendor = defaultVendor && defaultVendor.length > 0 ? defaultVendor[0] : 'META';
 
-      const resultsWithVendor = successfulResults.map(r => ({
-        ...r,
-        vendor
-      }));
+      const resultsWithVendor = successfulResults.map(r => {
+        // Find if this URL was discovered from another URL (is it a sub-page?)
+        // We use discoveredUrls state to find the parent
+        const discoveryInfo = discoveredUrls.find(d => d.url === r.url);
+
+        return {
+          ...r,
+          vendor,
+          metadata: {
+            source: 'admin-crawler',
+            parentUrl: discoveryInfo?.parentUrl || null, // Use parentUrl from discoveryInfo
+            parent_title: discoveryInfo?.parentUrl ? (results.find(res => res.url === discoveryInfo.parentUrl)?.title) : null,
+            is_sub_page: !!discoveryInfo?.parentUrl,
+            discovered_at: new Date().toISOString()
+          }
+        };
+      });
 
       const response = await fetch('/api/admin/save-crawled-content', {
         method: 'POST',

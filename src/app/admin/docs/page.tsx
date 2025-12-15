@@ -457,43 +457,69 @@ function AdminDocsPageContent() {
     const documentGroups = useMemo(() => {
         if (activeTab !== "crawling") return [];
 
-        const groups: any[] = [];
-        const domainMap = new Map<string, any>();
+        const groupMap = new Map<string, any>();
 
         filteredDocs.forEach((doc: Document) => {
-            let domain = 'Unknown';
-            try {
-                if (doc.url) {
-                    domain = new URL(doc.url).hostname;
-                }
-            } catch (e) { }
+            const metadata = doc.metadata || {};
+            const parentUrl = metadata.parentUrl || null;
+            const isSubPage = !!parentUrl;
+            
+            // 그룹 키 결정: 하위 페이지면 부모 URL, 아니면(메인 페이지) 본인 URL
+            const groupKey = parentUrl || doc.url;
+            
+            if (!groupKey) return;
 
+            if (!groupMap.has(groupKey)) {
+                let domain = 'Unknown';
+                try {
+                    if (groupKey) {
+                        domain = new URL(groupKey).hostname;
+                    }
+                } catch (e) { }
+
+                groupMap.set(groupKey, {
+                    domain,
+                    mainUrl: groupKey,
+                    mainDocument: null,
+                    subPages: [],
+                    totalChunks: 0,
+                    isExpanded: false,
+                    selectedSubPages: []
+                });
+            }
+
+            const group = groupMap.get(groupKey);
+            
             const groupedDoc = {
                 ...doc,
                 url: doc.url || '',
                 updated_at: doc.updated_at || doc.created_at,
-                isMainUrl: false
+                isMainUrl: !isSubPage
             };
 
-            if (!domainMap.has(domain)) {
-                domainMap.set(domain, {
-                    domain,
-                    mainUrl: doc.url || '',
-                    mainDocument: { ...groupedDoc, isMainUrl: true },
-                    subPages: [],
-                    totalChunks: doc.chunk_count || 0,
-                    isExpanded: false,
-                    selectedSubPages: []
-                });
-                groups.push(domainMap.get(domain));
+            if (isSubPage) {
+                group.subPages.push(groupedDoc);
             } else {
-                const group = domainMap.get(domain);
-                group.subPages.push({ ...groupedDoc, isMainUrl: false });
-                group.totalChunks += (doc.chunk_count || 0);
+                group.mainDocument = groupedDoc;
+            }
+            
+            group.totalChunks += (doc.chunk_count || 0);
+        });
+
+        const resultGroups: any[] = [];
+        groupMap.forEach((group) => {
+            if (!group.mainDocument && group.subPages.length > 0) {
+                 const firstSub = group.subPages[0];
+                 group.mainDocument = { ...firstSub, title: `[원본 없음] ${firstSub.title}` };
+                 group.subPages = group.subPages.slice(1);
+            }
+
+            if (group.mainDocument) {
+                resultGroups.push(group);
             }
         });
 
-        return groups.map((group, index) => ({
+        return resultGroups.map((group, index) => ({
             ...group,
             isExpanded: expandedGroups.has(index)
         }));

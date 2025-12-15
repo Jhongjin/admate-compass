@@ -7,14 +7,14 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
-import { 
-  ChevronDown, 
-  ChevronRight, 
-  ExternalLink, 
-  FileText, 
-  CheckCircle, 
-  AlertTriangle, 
-  XCircle, 
+import {
+  ChevronDown,
+  ChevronRight,
+  ExternalLink,
+  FileText,
+  CheckCircle,
+  AlertTriangle,
+  XCircle,
   Clock,
   RefreshCw,
   Download,
@@ -97,7 +97,7 @@ export default function GroupedDocumentList({
   actionLoading,
   deletingDocument
 }: GroupedDocumentListProps) {
-  
+
   // 디버깅: 컴포넌트 마운트 시 onReindexDocument 확인
   useEffect(() => {
     console.log('🔍 [GroupedDocumentList] 컴포넌트 마운트됨');
@@ -105,7 +105,7 @@ export default function GroupedDocumentList({
     console.log('🔍 [GroupedDocumentList] onReindexDocument 값:', onReindexDocument);
     console.log('🔍 [GroupedDocumentList] onReindexDocument 함수 본문:', onReindexDocument?.toString?.()?.substring(0, 500));
   }, [onReindexDocument]);
-  
+
   // 크롤링 작업 상태를 우선적으로 확인하는 헬퍼 함수
   const getEffectiveStatus = (doc: GroupedDocument): { status: string; isCrawling: boolean } => {
     // 🔥 크롤링 작업 상태가 있으면 우선 사용 (processing_jobs가 진실의 소스)
@@ -122,7 +122,7 @@ export default function GroupedDocumentList({
         return { status: 'failed', isCrawling: false };
       }
     }
-    
+
     // 크롤링 작업 상태가 없으면 문서 상태 사용
     // 🔥 pending 상태 문서도 처리 중일 수 있으므로 processing_jobs 확인 필요
     // 하지만 여기서는 문서 상태만 사용 (프론트엔드에서 polling으로 업데이트)
@@ -130,7 +130,7 @@ export default function GroupedDocumentList({
       // pending 상태는 '대기'로 표시하되, 실제로는 큐에서 처리 중일 수 있음
       return { status: 'pending', isCrawling: false };
     }
-    
+
     return { status: doc.status, isCrawling: false };
   };
 
@@ -192,7 +192,8 @@ export default function GroupedDocumentList({
     }
   };
 
-  const getSourceText = (source: string) => {
+  const getSourceText = (source: string | null | undefined) => {
+    if (!source) return '알 수 없음';
     switch (source) {
       case 'sitemap':
         return 'Sitemap';
@@ -203,7 +204,13 @@ export default function GroupedDocumentList({
       case 'pattern':
         return 'URL 패턴';
       default:
-        return '알 수 없음';
+        // URL일 경우 도메인 표시
+        try {
+          if (source.startsWith('http')) {
+            return new URL(source).hostname;
+          }
+        } catch (e) { }
+        return source;
     }
   };
 
@@ -241,7 +248,7 @@ export default function GroupedDocumentList({
                 {isAllSelected ? '전체 해제' : '전체 선택'}
               </span>
             </div>
-            
+
             {selectedDocuments && selectedDocuments.size > 0 && (
               <div className="flex items-center space-x-4">
                 <span className="text-sm text-gray-300">
@@ -259,7 +266,7 @@ export default function GroupedDocumentList({
                     console.log('🗑️ [GroupedDocumentList] onBulkDelete 함수 존재:', !!onBulkDelete);
                     console.log('🗑️ [GroupedDocumentList] onBulkDelete 타입:', typeof onBulkDelete);
                     console.log('🗑️ [GroupedDocumentList] onBulkDelete 함수 내용:', onBulkDelete?.toString().substring(0, 200));
-                    
+
                     if (onBulkDelete) {
                       console.log('🗑️ [GroupedDocumentList] onBulkDelete 직접 호출 시작');
                       try {
@@ -300,11 +307,11 @@ export default function GroupedDocumentList({
                     <ChevronRight className="w-4 h-4 text-gray-400" />
                   )}
                 </Button>
-                
+
                 <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
                   <Globe className="w-5 h-5 text-white" />
                 </div>
-                
+
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center space-x-2 mb-1">
                     <Button
@@ -315,7 +322,7 @@ export default function GroupedDocumentList({
                         // 그룹 전체 선택/해제를 위한 모든 ID 수집
                         const allIds = [group.mainDocument.id, ...group.subPages.map((sub: GroupedDocument) => sub.id)];
                         const allSelected = allIds.every(id => selectedDocuments?.has(id));
-                        
+
                         // 한 번에 모든 ID를 배열로 전달하여 처리
                         if (allSelected) {
                           // 모두 선택되어 있으면 해제 - 배열로 전달
@@ -327,8 +334,8 @@ export default function GroupedDocumentList({
                       }}
                       className="p-1 h-6 w-6 hover:bg-gray-700/50"
                     >
-                      {selectedDocuments?.has(group.mainDocument.id) && 
-                       group.subPages.every((sub: GroupedDocument) => selectedDocuments?.has(sub.id)) ? (
+                      {selectedDocuments?.has(group.mainDocument.id) &&
+                        group.subPages.every((sub: GroupedDocument) => selectedDocuments?.has(sub.id)) ? (
                         <Check className="w-4 h-4 text-blue-400" />
                       ) : (
                         <Square className="w-4 h-4 text-gray-400" />
@@ -337,43 +344,45 @@ export default function GroupedDocumentList({
                     <h3 className="font-semibold text-white text-lg truncate">
                       {group.mainDocument.title}
                     </h3>
-                    <a 
-                      href={group.mainDocument.url} 
-                      target="_blank" 
+                    <a
+                      href={group.mainDocument.url}
+                      target="_blank"
                       rel="noopener noreferrer"
                       className="text-gray-400 hover:text-blue-400 transition-colors"
                     >
                       <ExternalLink className="w-4 h-4" />
                     </a>
                   </div>
-                  <p className="text-sm text-gray-400 truncate">{group.domain}</p>
+                  <p className="text-sm text-gray-400 truncate text-left">
+                    {group.mainDocument?.url || group.mainUrl}
+                  </p>
                 </div>
               </div>
-              
+
               <div className="flex items-center space-x-4">
                 <div className="text-right">
                   <div className="flex items-center space-x-2">
                     {(() => {
                       // 크롤링 작업 상태 우선 확인
                       const effectiveStatus = getEffectiveStatus(group.mainDocument);
-                      
+
                       // 하위 페이지가 모두 완료되었는지 확인
-                      const allSubPagesCompleted = group.subPages.length > 0 && 
+                      const allSubPagesCompleted = group.subPages.length > 0 &&
                         group.subPages.every((sub: GroupedDocument) => {
                           const subEffectiveStatus = getEffectiveStatus(sub);
-                          return subEffectiveStatus.status === 'indexed' || 
-                                 subEffectiveStatus.status === 'completed';
+                          return subEffectiveStatus.status === 'indexed' ||
+                            subEffectiveStatus.status === 'completed';
                         });
-                      
+
                       // 메인 문서가 처리중이지만 하위 페이지가 모두 완료된 경우 → 완료로 표시
-                      const isMainProcessing = effectiveStatus.status === 'processing' || 
-                                             effectiveStatus.status === 'indexing' ||
-                                             effectiveStatus.status === 'crawling';
-                      
+                      const isMainProcessing = effectiveStatus.status === 'processing' ||
+                        effectiveStatus.status === 'indexing' ||
+                        effectiveStatus.status === 'crawling';
+
                       const shouldShowCompleted = isMainProcessing && allSubPagesCompleted;
                       const displayStatus = shouldShowCompleted ? 'indexed' : effectiveStatus.status;
                       const isCrawling = effectiveStatus.isCrawling && displayStatus === 'crawling';
-                      
+
                       return (
                         <>
                           {getStatusIcon(displayStatus, isCrawling)}
@@ -388,7 +397,7 @@ export default function GroupedDocumentList({
                     총 {group.totalChunks}개 청크
                   </p>
                 </div>
-                
+
                 <div className="flex items-center space-x-1">
                   <TooltipProvider>
                     <Tooltip>
@@ -400,7 +409,7 @@ export default function GroupedDocumentList({
                       </TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
-                  
+
                   <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
@@ -414,19 +423,19 @@ export default function GroupedDocumentList({
                             console.log('🔄 [GroupedDocumentList] onReindexDocument 타입:', typeof onReindexDocument);
                             console.log('🔄 [GroupedDocumentList] onReindexDocument 값:', onReindexDocument);
                             console.log('🔄 [GroupedDocumentList] onReindexDocument 함수 본문:', onReindexDocument?.toString?.()?.substring(0, 500));
-                            
+
                             if (!onReindexDocument) {
                               console.error('❌ [GroupedDocumentList] onReindexDocument 핸들러가 없음');
                               alert('재인덱싱 핸들러가 연결되지 않았습니다. 페이지를 새로고침해주세요.');
                               return;
                             }
-                            
+
                             if (typeof onReindexDocument !== 'function') {
                               console.error('❌ [GroupedDocumentList] onReindexDocument가 함수가 아님:', typeof onReindexDocument);
                               alert(`재인덱싱 핸들러가 함수가 아닙니다: ${typeof onReindexDocument}`);
                               return;
                             }
-                            
+
                             try {
                               console.log('🔄 [GroupedDocumentList] onReindexDocument 호출 시작:', { id: group.mainDocument.id, title: group.mainDocument.title });
                               onReindexDocument(group.mainDocument.id, group.mainDocument.title);
@@ -452,7 +461,7 @@ export default function GroupedDocumentList({
                       </TooltipContent>
                     </Tooltip>
                   </TooltipProvider>
-                  
+
                   <TooltipProvider>
                     <Tooltip>
                       <TooltipTrigger asChild>
@@ -479,7 +488,7 @@ export default function GroupedDocumentList({
               </div>
             </div>
           </CardHeader>
-          
+
           <AnimatePresence>
             {group.isExpanded && (
               <motion.div
@@ -503,7 +512,7 @@ export default function GroupedDocumentList({
                               // 하위 페이지 전체 선택/해제
                               const allSubPageIds = group.subPages.map(sub => sub.id);
                               const allSelected = allSubPageIds.every(id => selectedDocuments?.has(id));
-                              
+
                               if (allSelected) {
                                 // 모두 선택되어 있으면 해제
                                 allSubPageIds.forEach(id => onSelectDocument(id));
@@ -523,7 +532,7 @@ export default function GroupedDocumentList({
                           <span className="text-xs text-gray-400">전체 선택</span>
                         </div>
                       </div>
-                      
+
                       <div className="space-y-2">
                         {group.subPages.map((subPage, subIndex) => (
                           <motion.div
@@ -545,22 +554,22 @@ export default function GroupedDocumentList({
                                 <Square className="w-4 h-4 text-gray-400" />
                               )}
                             </Button>
-                            
+
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center space-x-2 mb-1">
                                 <p className="text-sm font-medium text-white truncate">
                                   {subPage.title}
                                 </p>
-                                <a 
-                                  href={subPage.url} 
-                                  target="_blank" 
+                                <a
+                                  href={subPage.url}
+                                  target="_blank"
                                   rel="noopener noreferrer"
                                   className="text-gray-400 hover:text-blue-400 transition-colors"
                                 >
                                   <ExternalLink className="w-3 h-3" />
                                 </a>
                               </div>
-                              
+
                               <div className="flex items-center space-x-3 text-xs text-gray-400">
                                 <div className="flex items-center space-x-1">
                                   {(() => {
@@ -582,7 +591,7 @@ export default function GroupedDocumentList({
                                 )}
                               </div>
                             </div>
-                            
+
                             <div className="flex items-center space-x-1">
                               <TooltipProvider>
                                 <Tooltip>
@@ -594,7 +603,7 @@ export default function GroupedDocumentList({
                                   </TooltipContent>
                                 </Tooltip>
                               </TooltipProvider>
-                              
+
                               <TooltipProvider>
                                 <Tooltip>
                                   <TooltipTrigger asChild>
@@ -608,19 +617,19 @@ export default function GroupedDocumentList({
                                         console.log('🔄 [GroupedDocumentList] onReindexDocument 타입:', typeof onReindexDocument);
                                         console.log('🔄 [GroupedDocumentList] onReindexDocument 값:', onReindexDocument);
                                         console.log('🔄 [GroupedDocumentList] onReindexDocument 함수 본문:', onReindexDocument?.toString?.()?.substring(0, 500));
-                                        
+
                                         if (!onReindexDocument) {
                                           console.error('❌ [GroupedDocumentList] onReindexDocument 핸들러가 없음');
                                           alert('재인덱싱 핸들러가 연결되지 않았습니다. 페이지를 새로고침해주세요.');
                                           return;
                                         }
-                                        
+
                                         if (typeof onReindexDocument !== 'function') {
                                           console.error('❌ [GroupedDocumentList] onReindexDocument가 함수가 아님:', typeof onReindexDocument);
                                           alert(`재인덱싱 핸들러가 함수가 아닙니다: ${typeof onReindexDocument}`);
                                           return;
                                         }
-                                        
+
                                         try {
                                           console.log('🔄 [GroupedDocumentList] onReindexDocument 호출 시작:', { id: subPage.id, title: subPage.title });
                                           onReindexDocument(subPage.id, subPage.title);
@@ -646,7 +655,7 @@ export default function GroupedDocumentList({
                                   </TooltipContent>
                                 </Tooltip>
                               </TooltipProvider>
-                              
+
                               <TooltipProvider>
                                 <Tooltip>
                                   <TooltipTrigger asChild>
@@ -675,7 +684,7 @@ export default function GroupedDocumentList({
                       </div>
                     </div>
                   )}
-                  
+
                   {group.subPages.length === 0 && (
                     <div className="text-center py-4">
                       <p className="text-sm text-gray-400">하위 페이지가 없습니다.</p>
@@ -686,8 +695,9 @@ export default function GroupedDocumentList({
             )}
           </AnimatePresence>
         </Card>
-      ))}
-    </div>
+      ))
+      }
+    </div >
   );
 }
 
