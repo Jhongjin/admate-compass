@@ -50,7 +50,8 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor }: AdminUrlCrawlerPro
   const [environment, setEnvironment] = useState<'local' | 'vercel' | 'unknown'>('unknown');
 
   // Sub-page selection state
-  const [discoveredUrls, setDiscoveredUrls] = useState<Array<{ url: string; source: string }>>([]);
+  /* Updated state to include title */
+  const [discoveredUrls, setDiscoveredUrls] = useState<Array<{ url: string; source: string; title?: string }>>([]);
   const [selectedDiscoveredUrls, setSelectedDiscoveredUrls] = useState<Set<string>>(new Set());
   const [isSelectionDialogOpen, setIsSelectionDialogOpen] = useState(false);
 
@@ -105,14 +106,14 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor }: AdminUrlCrawlerPro
 
           // Check for discovered sub-pages if option enabled
           if (options.discoverSubPages) {
-            const allDiscovered: Array<{ url: string; source: string }> = [];
+            const allDiscovered: Array<{ url: string; source: string; title?: string }> = [];
             const existingUrls = new Set([...urlList, ...newResults.map(r => r.url)]);
 
             newResults.forEach(result => {
               if (result.discoveredUrls && result.discoveredUrls.length > 0) {
                 result.discoveredUrls.forEach(d => {
                   if (!existingUrls.has(d.url)) {
-                    allDiscovered.push({ url: d.url, source: result.url });
+                    allDiscovered.push({ url: d.url, source: result.url, title: d.title });
                     existingUrls.add(d.url); // Prevent duplicates
                   }
                 });
@@ -459,10 +460,16 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor }: AdminUrlCrawlerPro
                       className="mt-1 border-gray-500 data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
                     />
                     <div className="flex-1 min-w-0">
-                      <Label htmlFor={`url-${index}`} className="text-sm font-medium text-gray-200 cursor-pointer break-all block leading-tight hover:text-blue-200">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-blue-400 text-[10px]">●</span>
+                        <span className="text-sm font-semibold text-gray-200 truncate">
+                          {item.title || '제목 없음'}
+                        </span>
+                      </div>
+                      <Label htmlFor={`url-${index}`} className="text-xs text-blue-300/80 cursor-pointer break-all block leading-tight hover:text-blue-300">
                         {item.url}
                       </Label>
-                      <p className="text-xs text-gray-500 mt-1">출처: {item.source}</p>
+                      {/* <p className="text-xs text-gray-500 mt-1">출처: {item.source}</p> */}
                     </div>
                   </div>
                 ))}
