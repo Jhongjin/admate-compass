@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Play, CheckCircle, XCircle, Globe, Save, RefreshCw } from 'lucide-react';
+import { Loader2, Play, CheckCircle, XCircle, Globe, Save, RefreshCw, ExternalLink } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   Dialog,
@@ -466,9 +466,20 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor }: AdminUrlCrawlerPro
                           {item.title || '제목 없음'}
                         </span>
                       </div>
-                      <Label htmlFor={`url-${index}`} className="text-xs text-blue-300/80 cursor-pointer break-all block leading-tight hover:text-blue-300">
-                        {item.url}
-                      </Label>
+                      <div className="flex items-center gap-2 mt-0.5">
+                        <Label htmlFor={`url-${index}`} className="text-xs text-blue-300/80 cursor-pointer break-all block leading-tight hover:text-blue-300">
+                          {item.url}
+                        </Label>
+                        <a
+                          href={item.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-blue-400 hover:text-blue-300 flex-shrink-0 opacity-50 hover:opacity-100 transition-opacity"
+                          title="새 탭에서 열기"
+                        >
+                          <ExternalLink className="h-3 w-3" />
+                        </a>
+                      </div>
                       {/* <p className="text-xs text-gray-500 mt-1">출처: {item.source}</p> */}
                     </div>
                   </div>

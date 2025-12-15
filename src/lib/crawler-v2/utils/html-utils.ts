@@ -78,29 +78,24 @@ export function extractMetaTag(html: string, property: string): string | null {
   return null;
 }
 
+import * as cheerio from 'cheerio';
+
 /**
- * HTML에서 링크 추출
+ * HTML에서 링크 추출 (Cheerio 사용)
  */
 export function extractLinks(html: string, baseUrl: string): Array<{ url: string; text: string }> {
   const links: Array<{ url: string; text: string }> = [];
   const seenUrls = new Set<string>();
-  
-  // a 태그에서 링크 추출 (다양한 패턴 지원)
-  const linkPatterns = [
-    // 표준 href 속성
-    /<a[^>]*href\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi,
-    // 따옴표 없는 href
-    /<a[^>]*href\s*=\s*([^\s>]+)[^>]*>([\s\S]*?)<\/a>/gi,
-  ];
-  
-  for (const pattern of linkPatterns) {
-    let match;
-    while ((match = pattern.exec(html)) !== null) {
-      const href = match[1]?.trim();
-      const text = match[2] || '';
-      
-      if (!href) continue;
-      
+
+  try {
+    const $ = cheerio.load(html);
+
+    $('a').each((_, element) => {
+      const $element = $(element);
+      const href = $element.attr('href');
+
+      if (!href) return;
+
       try {
         // 상대 URL 처리
         let absoluteUrl: string;
@@ -114,24 +109,90 @@ export function extractLinks(html: string, baseUrl: string): Array<{ url: string
         } else {
           absoluteUrl = new URL(href, baseUrl).toString();
         }
-        
+
         // 중복 제거
-        const normalizedUrl = absoluteUrl.split('#')[0].split('?')[0]; // 프래그먼트와 쿼리 제거
+        const normalizedUrl = absoluteUrl.split('#')[0].split('?')[0];
         if (seenUrls.has(normalizedUrl)) {
-          continue;
+          return;
         }
+
+        // 텍스트 추출 (내부 태그 포함)
+        let text = $element.text().trim();
+
+        // 텍스트가 비어있다면 title 속성 확인
+        if (!text) {
+          text = $element.attr('title') || '';
+        }
+
+        // 그래도 비어있다면 이미지의 alt 텍스트 확인
+        if (!text) {
+          const imgAlt = $element.find('img').attr('alt');
+          if (imgAlt) text = imgAlt;
+        }
+
+        // 마지막으로 URL에서 추측 (하지만 호출자가 처리하도록 비워두는 게 나을 수도 있음)
+        // 여기서는 비어있으면 빈 문자열 반환
+
+        // 공백 정리
+        text = text.replace(/\s+/g, ' ').trim();
+
         seenUrls.add(normalizedUrl);
-        
+        links.push({
+          url: absoluteUrl,
+          text: text,
+        });
+      } catch {
+        // 유효하지 않은 URL 무시
+      }
+    });
+  } catch (error) {
+    console.warn('Cheerio parsing failed, falling back to regex', error);
+    // 폴백 로직 (기존 정규식)
+    return extractLinksRegex(html, baseUrl);
+  }
+
+  return links;
+}
+
+/**
+ * 정규식 기반 링크 추출 (폴백용)
+ */
+function extractLinksRegex(html: string, baseUrl: string): Array<{ url: string; text: string }> {
+  const links: Array<{ url: string; text: string }> = [];
+  const seenUrls = new Set<string>();
+
+  const linkPatterns = [
+    /<a[^>]*href\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi,
+    /<a[^>]*href\s*=\s*([^\s>]+)[^>]*>([\s\S]*?)<\/a>/gi,
+  ];
+
+  for (const pattern of linkPatterns) {
+    let match;
+    while ((match = pattern.exec(html)) !== null) {
+      const href = match[1]?.trim();
+      const text = match[2] || '';
+
+      if (!href) continue;
+
+      try {
+        let absoluteUrl: string;
+        if (href.startsWith('http')) {
+          absoluteUrl = href;
+        } else {
+          absoluteUrl = new URL(href, baseUrl).toString();
+        }
+
+        const normalizedUrl = absoluteUrl.split('#')[0];
+        if (seenUrls.has(normalizedUrl)) continue;
+        seenUrls.add(normalizedUrl);
+
         links.push({
           url: absoluteUrl,
           text: extractTextFromHtml(text).trim(),
         });
-      } catch {
-        // 유효하지 않은 URL은 무시
-      }
+      } catch { }
     }
   }
-  
   return links;
 }
 
@@ -140,10 +201,10 @@ export function extractLinks(html: string, baseUrl: string): Array<{ url: string
  */
 export function extractImageUrls(html: string, baseUrl: string): string[] {
   const imageUrls: string[] = [];
-  
+
   const imgPattern = /<img[^>]*src=["']([^"']+)["']/gi;
   let match;
-  
+
   while ((match = imgPattern.exec(html)) !== null) {
     const src = match[1];
     try {
@@ -153,7 +214,7 @@ export function extractImageUrls(html: string, baseUrl: string): string[] {
       // 유효하지 않은 URL은 무시
     }
   }
-  
+
   return imageUrls;
 }
 
@@ -162,16 +223,16 @@ export function extractImageUrls(html: string, baseUrl: string): string[] {
  */
 export function cleanHtml(html: string, removeSelectors: string[] = []): string {
   let cleaned = html;
-  
+
   // 기본 제거 선택자
   const defaultSelectors = ['script', 'style', 'noscript', 'nav', 'footer', 'header', 'aside'];
   const allSelectors = [...defaultSelectors, ...removeSelectors];
-  
+
   for (const selector of allSelectors) {
     const pattern = new RegExp(`<${selector}[^>]*>[\s\S]*?<\/${selector}>`, 'gi');
     cleaned = cleaned.replace(pattern, '');
   }
-  
+
   return cleaned;
 }
 
