@@ -81,7 +81,10 @@ export async function POST(request: NextRequest) {
             .update({
               status: 'processing',
               chunk_count: 0,
-              updated_at: new Date().toISOString()
+              updated_at: new Date().toISOString(),
+              // Update metadata for grouping logic
+              source_vendor: result.vendor ? result.vendor.toUpperCase() : 'META',
+              metadata: result.metadata || {}
             })
             .eq('id', documentId);
 
