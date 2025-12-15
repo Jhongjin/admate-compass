@@ -225,6 +225,33 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor }: AdminUrlCrawlerPro
           if (dbParentUrl) {
             parentUrl = dbParentUrl; // Use the canonical URL from DB
           }
+        } else {
+          // If NOT discovered in this session (e.g. independent crawl), try to find a parent in the DB
+          // Look for the longest URL in DB that is a "directory parent" of the current URL
+          const currentNormalized = normalizeUrl(r.url);
+          let bestParent = null;
+          let maxLen = 0;
+
+          for (const [dbNormalized, dbRealUrl] of Array.from(existingDbMap.entries())) {
+            // Check if current URL is a child of DB URL
+            // Logic: current starts with db (+ slash)
+            // e.g. DB: facebook.com/help
+            // Current: facebook.com/help/123
+            // Normalized DB: facebook.com/help
+            // Normalized Current: facebook.com/help/123
+            // Check: current.startsWith(db + '/') 
+            // We use + '/' to ensure we don't match "helper" against "help"
+            if (currentNormalized.startsWith(dbNormalized + '/')) {
+              if (dbNormalized.length > maxLen) {
+                maxLen = dbNormalized.length;
+                bestParent = dbRealUrl;
+              }
+            }
+          }
+
+          if (bestParent) {
+            parentUrl = bestParent;
+          }
         }
 
         return {
@@ -233,7 +260,7 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor }: AdminUrlCrawlerPro
           metadata: {
             source: 'admin-crawler',
             parentUrl: parentUrl,
-            parent_title: parentUrl ? (results.find(res => res.url === parentUrl)?.title) : null,
+            parent_title: parentUrl ? (results.find(res => res.url === parentUrl)?.title || existingDbMap.get(normalizeUrl(parentUrl))) : null, // Try to get title from results or just use URL if from DB (will be updated by backend if needed)
             is_sub_page: !!parentUrl,
             discovered_at: new Date().toISOString()
           }
