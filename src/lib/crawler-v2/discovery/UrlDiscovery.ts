@@ -753,7 +753,6 @@ export class UrlDiscovery {
             }
 
             // 허용된 도메인 확인 (maxDepth 4가 아닌 경우)
-            const maxDepth = config.maxDepth ?? 3; // 기본값 3
             if (maxDepth < 4 && config.domainLimit && config.allowedDomains && config.allowedDomains.length > 0) {
               if (!isAllowedDomain(normalizedUrl, config.allowedDomains)) {
                 return false;
