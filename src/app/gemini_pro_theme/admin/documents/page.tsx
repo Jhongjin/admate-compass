@@ -68,6 +68,7 @@ interface Document {
     source_vendor?: string;
     url?: string;
     metadata?: any;
+    mainDocumentId?: string;
 }
 
 const VENDORS = [
@@ -363,9 +364,12 @@ export default function DocumentsPage() {
             } catch { return url.replace(/\/$/, ""); }
         };
 
-        // 1. Map all documents by their URL for easy lookup
+        // 1. Map all documents by their URL AND ID for easy lookup
         const urlToDocMap = new Map<string, Document>();
+        const idToDocMap = new Map<string, Document>();
+
         filteredDocs.forEach((doc: Document) => {
+            idToDocMap.set(doc.id, doc);
             if (doc.url) {
                 // Exact match priority
                 if (!urlToDocMap.has(doc.url)) {
@@ -390,21 +394,26 @@ export default function DocumentsPage() {
             if (processedIds.has(doc.id)) return;
             processedIds.add(doc.id);
 
-            // Check if this document has a parent URL in metadata
-            const parentUrl = doc.metadata?.parentUrl || (doc as any).parentUrl;
+            // Strategy 1: Check mainDocumentId (Explicit Backend Link) - MOST ROBUST
+            let parentDoc: Document | undefined = undefined;
+            if (doc.mainDocumentId) {
+                parentDoc = idToDocMap.get(doc.mainDocumentId);
+            }
 
-            // Verify if the parent actually exists in our current list
-            let parentDoc = null;
-            if (parentUrl) {
-                parentDoc = urlToDocMap.get(parentUrl);
-                if (!parentDoc) {
-                    parentDoc = urlToDocMap.get(normalizeUrlForLookups(parentUrl));
+            // Strategy 2: Check metadata.parentUrl (Legacy / Implicit Link)
+            if (!parentDoc) {
+                const parentUrl = doc.metadata?.parentUrl || (doc as any).parentUrl;
+                if (parentUrl) {
+                    parentDoc = urlToDocMap.get(parentUrl);
+                    if (!parentDoc) {
+                        parentDoc = urlToDocMap.get(normalizeUrlForLookups(parentUrl));
+                    }
                 }
             }
 
             if (parentDoc && parentDoc.id !== doc.id) {
                 // Use the canonical parent URL from the found doc
-                const canonicalParentUrl = parentDoc.url || parentUrl;
+                const canonicalParentUrl = parentDoc.url || parentDoc.id; // Fallback to ID if URL missing (unlikely for crawler)
 
                 if (!parentToChildrenMap.has(canonicalParentUrl)) {
                     parentToChildrenMap.set(canonicalParentUrl, []);

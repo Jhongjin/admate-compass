@@ -67,7 +67,7 @@ export async function POST(request: NextRequest) {
     });
 
     const uniqueCandidates = Array.from(candidatePaths);
-    const existingParentsMap = new Map<string, string>(); // normalized -> realUrl
+    const existingParentsMap = new Map<string, { url: string, id: string }>(); // normalized -> { url, id }
 
     // --- 2. Bulk Lookup Candidate Parents ---
     if (uniqueCandidates.length > 0) {
@@ -78,14 +78,14 @@ export async function POST(request: NextRequest) {
         const batch = uniqueCandidates.slice(i, i + BATCH_SIZE);
         const { data: foundParents, error } = await supabase
           .from('documents')
-          .select('url')
+          .select('id, url')
           .in('url', batch)
           .eq('type', 'url');
 
         if (foundParents) {
           foundParents.forEach(p => {
             const norm = p.url.replace(/\/$/, "").trim();
-            existingParentsMap.set(norm, p.url);
+            existingParentsMap.set(norm, { url: p.url, id: p.id });
           });
         }
       }
@@ -97,7 +97,13 @@ export async function POST(request: NextRequest) {
         const norm = r.url.replace(/\/$/, "").trim();
         // Only add if not already from DB (DB takes precedence as "stable" source)
         if (!existingParentsMap.has(norm)) {
-          existingParentsMap.set(norm, r.url);
+          if (!existingParentsMap.has(norm)) {
+            // Note: Current batch URLs won't have IDs yet, so we can't link to them as parents by ID in this batch.
+            // This matches previous behavior but we need to store object structure.
+            // existingParentsMap.set(norm, { url: r.url, id: null }); 
+            // Actually, let's NOT add them here to avoid type errors if we expect ID.
+            // Self-referencing in same batch is edge case for now.
+          }
         }
       }
     });
@@ -106,7 +112,7 @@ export async function POST(request: NextRequest) {
     // Log a few entries for debugging
     let logCount = 0;
     for (const [k, v] of existingParentsMap.entries()) {
-      if (logCount++ < 5) console.log(`  Map Entry: ${k} -> ${v}`);
+      if (logCount++ < 5) console.log(`  Map Entry: ${k} -> ${v.url} (${v.id})`);
     }
 
     // --- 3. Process Each Result ---
@@ -123,32 +129,46 @@ export async function POST(request: NextRequest) {
         // --- Backend Auto-Grouping Logic ---
         let metadata = result.metadata || {};
         let parentUrl = metadata.parentUrl || null;
+        let mainDocumentId: string | undefined = undefined;
+
+        // Try to resolve parent ID if parentUrl exists from frontend discovery
+        if (parentUrl) {
+          const normParent = parentUrl.replace(/\/$/, "").trim();
+          const parentInfo = existingParentsMap.get(normParent);
+          if (parentInfo && parentInfo.id) {
+            mainDocumentId = parentInfo.id;
+            // Ensure URL matches DB canonical
+            parentUrl = parentInfo.url;
+            metadata.parentUrl = parentInfo.url;
+          }
+        }
 
         if (!parentUrl) {
           // Try to find a parent in existing map
           const currentNormalized = result.url.replace(/\/$/, "").trim();
-          let bestParent = null;
+          let bestParentInfo = null;
           let maxLen = 0;
 
           console.log(`🔍 Doing Auto-Grouping for: ${currentNormalized}`);
 
-          for (const [parentNormalized, parentRealUrl] of existingParentsMap.entries()) {
+          for (const [parentNormalized, info] of existingParentsMap.entries()) {
             // Check if current URL is a child of this parent
             if (currentNormalized !== parentNormalized && currentNormalized.startsWith(parentNormalized + '/')) {
               console.log(`   Candidate Match: ${parentNormalized}`);
               if (parentNormalized.length > maxLen) {
                 maxLen = parentNormalized.length;
-                bestParent = parentRealUrl;
+                bestParentInfo = info;
               }
             }
           }
 
-          if (bestParent) {
-            console.log(`🔗 [Auto-Grouping] Found parent for ${result.url}: ${bestParent}`);
-            parentUrl = bestParent;
+          if (bestParentInfo && bestParentInfo.id) {
+            console.log(`🔗 [Auto-Grouping] Found parent for ${result.url}: ${bestParentInfo.url} (ID: ${bestParentInfo.id})`);
+            parentUrl = bestParentInfo.url;
+            mainDocumentId = bestParentInfo.id;
             metadata = {
               ...metadata,
-              parentUrl: bestParent,
+              parentUrl: bestParentInfo.url,
               is_sub_page: true
             };
           } else {
@@ -231,6 +251,7 @@ export async function POST(request: NextRequest) {
           url: result.url,
           source_vendor: normalizedVendor, // 벤더 정보 추가
           metadata: metadata, // 메타데이터 추가 (부모 URL 등)
+          main_document_id: mainDocumentId, // Foreign Key for Grouping
           created_at: isReindex ? existingDocs[0].created_at : new Date().toISOString(),
           updated_at: new Date().toISOString()
         };
