@@ -731,7 +731,6 @@ export class UrlDiscovery {
             }
             
             if (urlDomain !== baseDomain) {
-              const maxDepth = config.maxDepth ?? 3; // 기본값 3
               if (maxDepth >= 4) {
                 // maxDepth 4: 모든 도메인 허용 (domainLimit과 관계없이)
                 // 모든 도메인 허용
