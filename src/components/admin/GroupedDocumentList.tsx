@@ -228,7 +228,7 @@ export default function GroupedDocumentList({
   return (
     <div className="space-y-4">
       {/* 전체선택 및 선택삭제 헤더 */}
-      <Card className="bg-gray-800/50 border-gray-700">
+      <Card className="bg-[#131823] border border-white/5">
         <CardContent className="p-4">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
@@ -291,7 +291,7 @@ export default function GroupedDocumentList({
       </Card>
 
       {groups.map((group, groupIndex) => (
-        <Card key={group.domain} className="bg-gray-800/50 border-gray-700 hover:bg-gray-800/70 transition-colors">
+        <Card key={group.domain} className="bg-[#131823] border border-white/5 hover:bg-white/[0.02] transition-colors">
           <CardHeader className="pb-3">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-3 flex-1 min-w-0">
@@ -341,7 +341,10 @@ export default function GroupedDocumentList({
                         <Square className="w-4 h-4 text-gray-400" />
                       )}
                     </Button>
-                    <h3 className="font-semibold text-white text-lg truncate">
+                    <div className="p-2 rounded-lg bg-white/5 mr-2">
+                      <Globe className="w-4 h-4 text-green-400" />
+                    </div>
+                    <h3 className="font-semibold text-white text-sm truncate">
                       {group.mainDocument.title}
                     </h3>
                     <a
@@ -353,9 +356,16 @@ export default function GroupedDocumentList({
                       <ExternalLink className="w-4 h-4" />
                     </a>
                   </div>
-                  <p className="text-sm text-gray-400 truncate text-left">
-                    {group.mainDocument?.url || group.mainUrl}
-                  </p>
+                  <div className="flex items-center space-x-4 text-xs text-gray-400 mt-1">
+                    <p className="truncate text-left">
+                      {group.mainDocument?.url || group.mainUrl}
+                    </p>
+                    {group.mainDocument.created_at && (
+                      <span className="whitespace-nowrap">
+                        {new Date(group.mainDocument.created_at).toLocaleDateString()}
+                      </span>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -393,8 +403,8 @@ export default function GroupedDocumentList({
                       );
                     })()}
                   </div>
-                  <p className="text-xs text-gray-500 mt-1">
-                    총 {group.totalChunks}개 청크
+                  <p className="text-xs text-gray-400 mt-1">
+                    {group.totalChunks}개 청크
                   </p>
                 </div>
 
@@ -540,7 +550,7 @@ export default function GroupedDocumentList({
                             initial={{ opacity: 0, x: -20 }}
                             animate={{ opacity: 1, x: 0 }}
                             transition={{ delay: subIndex * 0.05 }}
-                            className="flex items-center space-x-3 p-3 bg-gray-700/30 rounded-lg hover:bg-gray-700/50 transition-colors"
+                            className="flex items-center space-x-3 p-3 bg-white/[0.02] rounded-lg hover:bg-white/[0.03] transition-colors border border-white/5"
                           >
                             <Button
                               variant="ghost"
@@ -557,6 +567,9 @@ export default function GroupedDocumentList({
 
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center space-x-2 mb-1">
+                                <div className="p-1.5 rounded bg-white/5 mr-1">
+                                  <Globe className="w-3 h-3 text-green-400" />
+                                </div>
                                 <p className="text-sm font-medium text-white truncate">
                                   {subPage.title}
                                 </p>
@@ -570,7 +583,7 @@ export default function GroupedDocumentList({
                                 </a>
                               </div>
 
-                              <div className="flex items-center space-x-3 text-xs text-gray-400">
+                              <div className="flex items-center space-x-3 text-xs text-gray-400 mt-1">
                                 <div className="flex items-center space-x-1">
                                   {(() => {
                                     const effectiveStatus = getEffectiveStatus(subPage);
@@ -583,6 +596,11 @@ export default function GroupedDocumentList({
                                   })()}
                                 </div>
                                 <span>{subPage.chunk_count}개 청크</span>
+                                {subPage.created_at && (
+                                  <span className="whitespace-nowrap">
+                                    {new Date(subPage.created_at).toLocaleDateString()}
+                                  </span>
+                                )}
                                 {subPage.discoveredUrls && subPage.discoveredUrls.length > 0 && (
                                   <div className="flex items-center space-x-1">
                                     {getSourceIcon(subPage.discoveredUrls[0].source)}
