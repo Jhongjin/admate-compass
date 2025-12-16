@@ -455,7 +455,7 @@ export class CrawlerEngine {
     cacheMisses: number;
     cacheHitRate: number;
     averageProcessingTime: number;
-    memoryStats: ReturnType<typeof memoryMonitor.getStats>;
+    memoryStats: ReturnType<typeof cacheManager.getStats>;
   } {
     const totalCacheRequests = this.cacheHits + this.cacheMisses;
     const cacheHitRate =
