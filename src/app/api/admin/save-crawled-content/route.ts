@@ -102,6 +102,13 @@ export async function POST(request: NextRequest) {
       }
     });
 
+    console.log(`🗺️ Parent Map Size: ${existingParentsMap.size}`);
+    // Log a few entries for debugging
+    let logCount = 0;
+    for (const [k, v] of existingParentsMap.entries()) {
+      if (logCount++ < 5) console.log(`  Map Entry: ${k} -> ${v}`);
+    }
+
     // --- 3. Process Each Result ---
 
     const savedDocuments = [];
@@ -123,9 +130,12 @@ export async function POST(request: NextRequest) {
           let bestParent = null;
           let maxLen = 0;
 
+          console.log(`🔍 Doing Auto-Grouping for: ${currentNormalized}`);
+
           for (const [parentNormalized, parentRealUrl] of existingParentsMap.entries()) {
             // Check if current URL is a child of this parent
             if (currentNormalized !== parentNormalized && currentNormalized.startsWith(parentNormalized + '/')) {
+              console.log(`   Candidate Match: ${parentNormalized}`);
               if (parentNormalized.length > maxLen) {
                 maxLen = parentNormalized.length;
                 bestParent = parentRealUrl;
@@ -141,6 +151,8 @@ export async function POST(request: NextRequest) {
               parentUrl: bestParent,
               is_sub_page: true
             };
+          } else {
+            console.log(`⚠️ [Auto-Grouping] No parent found for ${result.url}`);
           }
         }
         // --- End Auto-Grouping Logic ---
