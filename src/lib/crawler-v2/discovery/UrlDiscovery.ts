@@ -485,9 +485,20 @@ export class UrlDiscovery {
                     const isDifferentDomain = urlDomain !== baseDomain && !urlDomain.endsWith(`.${baseDomain}`);
                     if (isDifferentDomain && maxDepth >= 4) {
                       // help.naver.com, nca.naver.com 같은 다른 서비스는 제외
-                      const excludedDomains = ['help.naver.com', 'nca.naver.com', 'www.naver.com', 'blog.naver.com'];
+                      const excludedDomains = [
+                        'help.naver.com', 'nca.naver.com', 'www.naver.com', 'blog.naver.com',
+                        'mail.naver.com', 'cafe.naver.com', 'kin.naver.com', 'shopping.naver.com',
+                        'map.naver.com', 'news.naver.com', 'finance.naver.com'
+                      ];
                       if (excludedDomains.some(domain => urlDomain === domain || urlDomain.endsWith(`.${domain}`))) {
                         return;
+                      }
+                      
+                      // ads.naver.com의 경우 다른 naver.com 서브도메인도 제외
+                      if (baseDomain === 'ads.naver.com') {
+                        if (urlDomain !== 'ads.naver.com' && urlDomain.endsWith('.naver.com')) {
+                          return;
+                        }
                       }
                     }
                   } catch (e) {
@@ -700,9 +711,21 @@ export class UrlDiscovery {
             // maxDepth 4일 때도 다른 도메인은 제외하거나 우선순위를 낮춤
             if (isDifferentDomain && config.maxDepth >= 4) {
               // help.naver.com, nca.naver.com 같은 다른 서비스는 제외
-              const excludedDomains = ['help.naver.com', 'nca.naver.com', 'www.naver.com', 'blog.naver.com'];
+              const excludedDomains = [
+                'help.naver.com', 'nca.naver.com', 'www.naver.com', 'blog.naver.com',
+                'mail.naver.com', 'cafe.naver.com', 'kin.naver.com', 'shopping.naver.com',
+                'map.naver.com', 'news.naver.com', 'finance.naver.com'
+              ];
               if (excludedDomains.some(domain => urlDomain === domain || urlDomain.endsWith(`.${domain}`))) {
                 return false;
+              }
+              
+              // ads.naver.com의 경우 다른 naver.com 서브도메인도 제외 (품질 향상)
+              if (baseDomain === 'ads.naver.com') {
+                // ads.naver.com이 아닌 다른 naver.com 서브도메인은 제외
+                if (urlDomain !== 'ads.naver.com' && urlDomain.endsWith('.naver.com')) {
+                  return false;
+                }
               }
             }
 
@@ -797,20 +820,30 @@ export class UrlDiscovery {
           // 6. 품질이 낮은 경로는 점수 감점
           const lowQualityPaths = ['/rules/', '/legal/', '/terms/', '/privacy/', '/help/', '/support/', '/login/'];
           if (lowQualityPaths.some(path => pathname.includes(path))) {
-            qualityScore -= 100; // 품질 낮은 링크는 제외
+            qualityScore -= 200; // 품질 낮은 링크는 강하게 제외
           }
           
           // 7. ads.naver.com의 주요 경로는 높은 점수
           if (baseDomain === 'ads.naver.com') {
             const mainPaths = ['/start/', '/sa/', '/sub/', '/notice/', '/insight/'];
             if (mainPaths.some(path => pathname.startsWith(path))) {
-              qualityScore += 20;
+              qualityScore += 30; // 주요 경로는 더 높은 점수
             }
+            
+            // ads.naver.com의 경우 같은 도메인 링크에 추가 보너스
+            if (urlDomain === 'ads.naver.com') {
+              qualityScore += 50;
+            }
+          }
+          
+          // 8. 다른 도메인 링크는 강하게 감점
+          if (isDifferentDomain) {
+            qualityScore -= 100;
           }
           
           return { ...link, qualityScore };
         })
-        .filter(link => link.qualityScore > -50) // 품질이 너무 낮은 링크 제외
+        .filter(link => link.qualityScore > 0) // 품질 점수가 0보다 높은 링크만 허용
         .sort((a, b) => {
           // 품질 점수 높은 순으로 정렬
           if (b.qualityScore !== a.qualityScore) {
