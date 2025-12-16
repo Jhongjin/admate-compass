@@ -457,30 +457,63 @@ function AdminDocsPageContent() {
     const documentGroups = useMemo(() => {
         if (activeTab !== "crawling") return [];
 
-        const groupMap = new Map<string, any>();
+        // URL 정규화 함수 (trailing slash 제거, 소문자 변환)
+        const normalizeUrlForGrouping = (url: string | null | undefined): string | null => {
+            if (!url) return null;
+            try {
+                const urlObj = new URL(url);
+                // origin + pathname (trailing slash 제거, 쿼리/프래그먼트 제거)
+                return `${urlObj.origin}${urlObj.pathname.replace(/\/$/, '')}`.toLowerCase();
+            } catch (e) {
+                // URL 파싱 실패 시 기본 정규화
+                return url.replace(/\/$/, '').trim().toLowerCase();
+            }
+        };
 
+        const groupMap = new Map<string, any>();
+        const urlToDocMap = new Map<string, Document>(); // 정규화된 URL -> Document 매핑
+
+        // 1단계: 모든 문서를 정규화하여 매핑
+        filteredDocs.forEach((doc: Document) => {
+            if (doc.url) {
+                const normalizedUrl = normalizeUrlForGrouping(doc.url);
+                if (normalizedUrl) {
+                    urlToDocMap.set(normalizedUrl, doc);
+                }
+            }
+        });
+
+        // 2단계: 그룹화
         filteredDocs.forEach((doc: Document) => {
             const metadata = doc.metadata || {};
             const parentUrl = metadata.parentUrl || null;
             const isSubPage = !!parentUrl;
             
-            // 그룹 키 결정: 하위 페이지면 부모 URL, 아니면(메인 페이지) 본인 URL
-            const groupKey = parentUrl || doc.url;
+            // 그룹 키 결정: 하위 페이지면 부모 URL (정규화), 아니면(메인 페이지) 본인 URL (정규화)
+            const rawGroupKey = parentUrl || doc.url;
+            const groupKey = normalizeUrlForGrouping(rawGroupKey);
             
             if (!groupKey) return;
 
             if (!groupMap.has(groupKey)) {
                 let domain = 'Unknown';
                 try {
-                    if (groupKey) {
-                        domain = new URL(groupKey).hostname;
-                    }
+                    const urlObj = new URL(groupKey);
+                    domain = urlObj.hostname;
                 } catch (e) { }
 
+                // 메인 문서 찾기 (정규화된 URL로 매칭)
+                const mainDoc = urlToDocMap.get(groupKey);
+                
                 groupMap.set(groupKey, {
                     domain,
-                    mainUrl: groupKey,
-                    mainDocument: null,
+                    mainUrl: mainDoc?.url || rawGroupKey || groupKey, // 원본 URL 사용
+                    mainDocument: mainDoc ? {
+                        ...mainDoc,
+                        url: mainDoc.url || '',
+                        updated_at: mainDoc.updated_at || mainDoc.created_at,
+                        isMainUrl: true
+                    } : null,
                     subPages: [],
                     totalChunks: 0,
                     isExpanded: false,
@@ -498,9 +531,15 @@ function AdminDocsPageContent() {
             };
 
             if (isSubPage) {
-                group.subPages.push(groupedDoc);
+                // 하위 페이지는 메인 문서가 아니면 추가
+                if (normalizeUrlForGrouping(doc.url) !== groupKey) {
+                    group.subPages.push(groupedDoc);
+                }
             } else {
-                group.mainDocument = groupedDoc;
+                // 메인 문서는 이미 그룹 생성 시 설정되었거나, 여기서 설정
+                if (!group.mainDocument) {
+                    group.mainDocument = groupedDoc;
+                }
             }
             
             group.totalChunks += (doc.chunk_count || 0);
@@ -508,10 +547,16 @@ function AdminDocsPageContent() {
 
         const resultGroups: any[] = [];
         groupMap.forEach((group) => {
+            // 메인 문서가 없고 하위 페이지만 있는 경우 처리
             if (!group.mainDocument && group.subPages.length > 0) {
-                 const firstSub = group.subPages[0];
-                 group.mainDocument = { ...firstSub, title: `[원본 없음] ${firstSub.title}` };
-                 group.subPages = group.subPages.slice(1);
+                const firstSub = group.subPages[0];
+                group.mainDocument = { 
+                    ...firstSub, 
+                    title: `[원본 없음] ${firstSub.title}`,
+                    url: group.mainUrl,
+                    isMainUrl: true
+                };
+                group.subPages = group.subPages.slice(1);
             }
 
             if (group.mainDocument) {
