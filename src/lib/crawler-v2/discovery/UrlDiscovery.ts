@@ -266,6 +266,44 @@ export class UrlDiscovery {
                     !fullUrl.includes('javascript:') &&
                     !fullUrl.includes('mailto:')) {
                   
+                  // 확장자 필터링 (브라우저 내부에서 미리 필터링)
+                  try {
+                    const urlObj = new URL(fullUrl);
+                    const pathname = urlObj.pathname.toLowerCase();
+                    
+                    // 정적 리소스 확장자 제외
+                    const excludedExtensions = [
+                      '.css', '.js', '.json', '.xml', '.pdf',
+                      '.jpg', '.jpeg', '.png', '.gif', '.svg', '.ico', '.webp',
+                      '.woff', '.woff2', '.ttf', '.eot', '.otf',
+                      '.mp4', '.mp3', '.avi', '.mov', '.wmv',
+                      '.zip', '.tar', '.gz', '.rar'
+                    ];
+                    const hasExcludedExtension = excludedExtensions.some(ext => pathname.endsWith(ext));
+                    if (hasExcludedExtension) return;
+                    
+                    // 정적 리소스 경로 제외
+                    const staticResourcePaths = [
+                      '/static/', '/_next/static/', '/assets/', '/dist/', '/build/', '/public/',
+                      '/css/', '/js/', '/images/', '/img/', '/fonts/', '/media/',
+                      '/vendor/', '/lib/', '/node_modules/'
+                    ];
+                    const isStaticResourcePath = staticResourcePaths.some(path => pathname.includes(path));
+                    if (isStaticResourcePath) return;
+                    
+                    // API 엔드포인트 제외
+                    if (pathname.startsWith('/api/') || 
+                        pathname.includes('/graphql') || 
+                        pathname.includes('/rest/') ||
+                        pathname.includes('/ajax/') ||
+                        pathname.includes('/endpoint/')) {
+                      return;
+                    }
+                  } catch (e) {
+                    // URL 파싱 실패 시 제외
+                    return;
+                  }
+                  
                   // 텍스트 추출
                   let text = link.textContent?.trim() || '';
                   if (!text) {
@@ -331,70 +369,135 @@ export class UrlDiscovery {
         .filter(link => {
           const normalizedUrl = normalizeUrl(link.url);
           
-          // 같은 URL 제외
-          if (normalizedUrl === baseUrl || normalizedUrl === normalizeUrl(baseUrl)) {
+          try {
+            const urlObj = new URL(normalizedUrl);
+            const pathname = urlObj.pathname.toLowerCase();
+            
+            // 같은 URL 제외
+            if (normalizedUrl === baseUrl || normalizedUrl === normalizeUrl(baseUrl)) {
+              return false;
+            }
+
+            // 확장자 필터링 (정적 리소스 파일 제외)
+            const excludedExtensions = [
+              '.css', '.js', '.json', '.xml', '.pdf',
+              '.jpg', '.jpeg', '.png', '.gif', '.svg', '.ico', '.webp',
+              '.woff', '.woff2', '.ttf', '.eot', '.otf',
+              '.mp4', '.mp3', '.avi', '.mov', '.wmv',
+              '.zip', '.tar', '.gz', '.rar',
+              '.exe', '.dmg', '.deb', '.rpm'
+            ];
+            const hasExcludedExtension = excludedExtensions.some(ext => pathname.endsWith(ext));
+            if (hasExcludedExtension) {
+              return false;
+            }
+
+            // 정적 리소스 경로 필터링
+            const staticResourcePaths = [
+              '/static/', '/_next/static/', '/assets/', '/dist/', '/build/', '/public/',
+              '/css/', '/js/', '/images/', '/img/', '/fonts/', '/media/',
+              '/vendor/', '/lib/', '/node_modules/'
+            ];
+            const isStaticResourcePath = staticResourcePaths.some(path => pathname.includes(path));
+            if (isStaticResourcePath) {
+              return false;
+            }
+
+            // API 엔드포인트 제외 (일반적으로 문서가 아닌 데이터 엔드포인트)
+            if (pathname.startsWith('/api/') || 
+                pathname.includes('/graphql') || 
+                pathname.includes('/rest/') ||
+                pathname.includes('/ajax/') ||
+                pathname.includes('/endpoint/')) {
+              return false;
+            }
+
+            // 도메인 제한 확인 (maxDepth 기반)
+            const urlDomain = extractDomain(normalizedUrl);
+            const baseDomain = extractDomain(baseUrl);
+            
+            if (urlDomain !== baseDomain) {
+              const maxDepth = config.maxDepth ?? 3; // 기본값 3
+              if (maxDepth >= 4) {
+                // maxDepth 4: 모든 도메인 허용 (domainLimit과 관계없이)
+                // 모든 도메인 허용
+              } else if (maxDepth >= 3) {
+                // maxDepth 3: domainLimit에 따라 다름
+                if (config.domainLimit === true) {
+                  // domainLimit이 true면 하위 도메인도 제외 (같은 도메인만)
+                  return false;
+                } else {
+                  // domainLimit이 false면 하위 도메인 허용
+                  if (!urlDomain.endsWith(`.${baseDomain}`)) {
+                    return false;
+                  }
+                }
+              } else {
+                // maxDepth 1-2: 정확히 같은 도메인만 허용
+                return false;
+              }
+            }
+
+            // 허용된 도메인 확인 (maxDepth 4가 아닌 경우)
+            const maxDepth = config.maxDepth ?? 3; // 기본값 3
+            if (maxDepth < 4 && config.domainLimit && config.allowedDomains && config.allowedDomains.length > 0) {
+              if (!isAllowedDomain(normalizedUrl, config.allowedDomains)) {
+                return false;
+              }
+            }
+
+            // 깊이 계산
+            const depth = calculateDepth(baseUrl, normalizedUrl);
+            
+            // 깊이 제한 확인
+            // maxDepth 4일 때는 다른 도메인(999)도 허용
+            if (maxDepth && depth > maxDepth) {
+              if (maxDepth < 4 || depth !== 999) {
+                return false;
+              }
+            }
+
+            return true;
+          } catch (e) {
+            // URL 파싱 실패 시 제외
             return false;
           }
-
-          // 도메인 제한 확인 (maxDepth 기반)
-          const urlDomain = extractDomain(normalizedUrl);
-          const baseDomain = extractDomain(baseUrl);
-          
-          if (urlDomain !== baseDomain) {
-            const maxDepth = config.maxDepth ?? 3; // 기본값 3
-            if (maxDepth >= 4) {
-              // maxDepth 4: 모든 도메인 허용 (domainLimit과 관계없이)
-              // 모든 도메인 허용
-            } else if (maxDepth >= 3) {
-              // maxDepth 3: domainLimit에 따라 다름
-              if (config.domainLimit === true) {
-                // domainLimit이 true면 하위 도메인도 제외 (같은 도메인만)
-                return false;
-              } else {
-                // domainLimit이 false면 하위 도메인 허용
-                if (!urlDomain.endsWith(`.${baseDomain}`)) {
-                  return false;
-                }
-              }
-            } else {
-              // maxDepth 1-2: 정확히 같은 도메인만 허용
-              return false;
-            }
-          }
-
-          // 허용된 도메인 확인 (maxDepth 4가 아닌 경우)
-          const maxDepth = config.maxDepth ?? 3; // 기본값 3
-          if (maxDepth < 4 && config.domainLimit && config.allowedDomains && config.allowedDomains.length > 0) {
-            if (!isAllowedDomain(normalizedUrl, config.allowedDomains)) {
-              return false;
-            }
-          }
-
-          // 깊이 계산
-          const depth = calculateDepth(baseUrl, normalizedUrl);
-          
-          // 깊이 제한 확인
-          // maxDepth 4일 때는 다른 도메인(999)도 허용
-          if (maxDepth && depth > maxDepth) {
-            if (maxDepth < 4 || depth !== 999) {
-              return false;
-            }
-          }
-
-          return true;
         })
-        // 우선순위 정렬: 깊이 2 > 깊이 3 > 기타, 텍스트가 있는 링크 우선
+        // 우선순위 정렬: 텍스트가 있는 링크 > 깊이 낮은 링크 > 경로 짧은 링크
         .sort((a, b) => {
-          const depthA = calculateDepth(baseUrl, normalizeUrl(a.url));
-          const depthB = calculateDepth(baseUrl, normalizeUrl(b.url));
+          const urlA = normalizeUrl(a.url);
+          const urlB = normalizeUrl(b.url);
+          const depthA = calculateDepth(baseUrl, urlA);
+          const depthB = calculateDepth(baseUrl, urlB);
           
-          if (depthA !== depthB) {
-            return depthA - depthB; // 깊이가 낮은 것 우선
-          }
-          
-          // 텍스트가 있는 링크 우선
+          // 1. 텍스트가 있는 링크 우선 (일반적으로 더 중요한 콘텐츠)
           if (a.text && !b.text) return -1;
           if (!a.text && b.text) return 1;
+          
+          // 2. 깊이가 낮은 링크 우선 (시드 URL에 가까운 페이지)
+          if (depthA !== depthB) {
+            return depthA - depthB;
+          }
+          
+          // 3. 경로가 짧은 링크 우선 (일반적으로 더 중요한 페이지)
+          try {
+            const pathA = new URL(urlA).pathname;
+            const pathB = new URL(urlB).pathname;
+            const pathLengthA = pathA.split('/').filter(p => p).length;
+            const pathLengthB = pathB.split('/').filter(p => p).length;
+            if (pathLengthA !== pathLengthB) {
+              return pathLengthA - pathLengthB;
+            }
+          } catch (e) {
+            // URL 파싱 실패 시 무시
+          }
+          
+          // 4. 쿼리 파라미터가 없는 링크 우선
+          const hasQueryA = urlA.includes('?');
+          const hasQueryB = urlB.includes('?');
+          if (hasQueryA !== hasQueryB) {
+            return hasQueryA ? 1 : -1;
+          }
           
           return 0;
         });
