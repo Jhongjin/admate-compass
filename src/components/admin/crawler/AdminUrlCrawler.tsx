@@ -424,17 +424,18 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
           } else {
             // 시드 URL이 results에 없으면 DB에서 확인
             const dbSeedUrl = existingDbMap.get(normalizedSeedUrl);
-            if (dbSeedUrl) {
-              parentUrl = dbSeedUrl;
-              console.log(`[handleSaveToDb] 하위 페이지 "${r.url}"의 부모를 DB의 시드 URL "${dbSeedUrl}"로 설정`);
-            } else {
-              // DB에도 없으면 discoveryInfo의 parentUrl 사용
-              if (discoveryInfo?.parentUrl) {
-                const normalizedParent = normalizeUrl(discoveryInfo.parentUrl);
-                const dbParentUrl = existingDbMap.get(normalizedParent);
-                if (dbParentUrl) {
-                  parentUrl = dbParentUrl;
-                  console.log(`[handleSaveToDb] 하위 페이지 "${r.url}"의 부모를 discoveryInfo의 parentUrl "${dbParentUrl}"로 설정`);
+              if (dbSeedUrl) {
+                parentUrl = dbSeedUrl;
+                console.log(`[handleSaveToDb] 하위 페이지 "${r.url}"의 부모를 DB의 시드 URL "${dbSeedUrl}"로 설정`);
+              } else {
+                // DB에도 없으면 discoveryInfo의 parentUrl 사용
+                if (discoveryInfo?.parentUrl) {
+                  const normalizedParent = normalizeUrl(discoveryInfo.parentUrl);
+                  const dbParentUrl = existingDbMap.get(normalizedParent);
+                  if (dbParentUrl) {
+                    parentUrl = dbParentUrl;
+                    console.log(`[handleSaveToDb] 하위 페이지 "${r.url}"의 부모를 discoveryInfo의 parentUrl "${dbParentUrl}"로 설정`);
+                  }
                 }
               }
             }
