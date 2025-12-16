@@ -682,7 +682,7 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
       {/* Sub-page Selection Dialog (Preserved functionality) */}
       <Dialog open={isSelectionDialogOpen} onOpenChange={setIsSelectionDialogOpen}>
         <DialogContent
-          className="max-w-3xl bg-[#1e232f] border-gray-700 text-white shadow-2xl"
+          className="max-w-5xl w-[90vw] bg-[#1e232f] border-gray-700 text-white shadow-2xl"
           onInteractOutside={(e) => e.preventDefault()}
         >
           <DialogHeader className="border-b border-gray-800 pb-4">
@@ -716,8 +716,8 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
               </div>
             </div>
 
-            <ScrollArea className="h-[400px] bg-black/20 rounded-md border border-gray-800 p-2">
-              <div className="space-y-1">
+            <ScrollArea className="h-[400px] bg-black/20 rounded-md border border-gray-800 p-3">
+              <div className="space-y-2 pr-2">
                 {discoveredUrls.map((item, i) => {
                   const isAlreadyCrawled = results.some(r => normalizeUrl(r.url) === normalizeUrl(item.url)) || existingDbMap.has(normalizeUrl(item.url));
                   return (
@@ -732,18 +732,30 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                         checked={selectedDiscoveredUrls.has(item.url)}
                         onCheckedChange={() => toggleSelect(item.url)}
                         disabled={isAlreadyCrawled}
-                        className="mt-1"
+                        className="mt-1 flex-shrink-0"
                       />
-                      <div className="flex-1 min-w-0">
+                      <div className="flex-1 min-w-0 pr-3">
                         <label htmlFor={`url-${i}`} className="cursor-pointer block">
-                          <div className="text-sm font-medium text-gray-200 truncate flex items-center gap-2">
-                            {item.title || '제목 없음'}
-                            {isAlreadyCrawled && <Badge variant="outline" className="text-[10px] h-4 text-green-500 border-green-900 bg-green-500/10">수집됨</Badge>}
+                          <div className="text-sm font-medium text-gray-200 mb-1 flex items-center gap-2 flex-wrap">
+                            <span className="truncate max-w-full">{item.title || '제목 없음'}</span>
+                            {isAlreadyCrawled && (
+                              <Badge variant="outline" className="text-[10px] h-4 text-green-500 border-green-900 bg-green-500/10 flex-shrink-0">
+                                수집됨
+                              </Badge>
+                            )}
                           </div>
-                          <div className="text-xs text-blue-400/70 truncate mt-0.5 font-mono">{item.url}</div>
+                          <div className="text-xs text-blue-400/70 break-all mt-0.5 font-mono">
+                            {item.url}
+                          </div>
                         </label>
                       </div>
-                      <a href={item.url} target="_blank" rel="noreferrer" className="text-gray-500 hover:text-gray-300">
+                      <a 
+                        href={item.url} 
+                        target="_blank" 
+                        rel="noreferrer" 
+                        className="text-gray-500 hover:text-gray-300 flex-shrink-0 mt-1"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         <ExternalLink className="h-4 w-4" />
                       </a>
                     </div>
