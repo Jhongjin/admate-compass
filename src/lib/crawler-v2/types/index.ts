@@ -27,6 +27,18 @@ export interface CrawlOptions {
   userAgent?: string;
   /** 대기 시간 (ms) - 봇 탐지 우회용 */
   waitTime?: number;
+  /** 캐시 사용 여부 */
+  useCache?: boolean;
+  /** 캐시 TTL (초) */
+  cacheTTL?: number;
+  /** 최대 재시도 횟수 */
+  maxRetries?: number;
+  /** 재시도 지연 시간 (ms) */
+  retryDelay?: number;
+  /** 병렬 처리 수 (배치 크롤링 시) */
+  concurrency?: number;
+  /** 메모리 모니터링 활성화 */
+  enableMemoryMonitoring?: boolean;
 }
 
 /**
@@ -125,6 +137,14 @@ export interface CrawlProgress {
   stage: 'discovering' | 'crawling' | 'processing' | 'completed';
   /** 메시지 */
   message?: string;
+  /** 예상 남은 시간 (초) */
+  estimatedTimeRemaining?: number;
+  /** 평균 처리 시간 (초) */
+  averageTimePerUrl?: number;
+  /** 메모리 사용량 (MB) */
+  memoryUsage?: number;
+  /** 캐시 히트율 (%) */
+  cacheHitRate?: number;
 }
 
 /**
@@ -194,6 +214,7 @@ export interface RobotsRule {
   /** 크롤링 지연 (초) */
   crawlDelay?: number;
 }
+
 
 
 

@@ -8,6 +8,9 @@ export { browserManager } from './core/BrowserManager';
 export { contentExtractor } from './core/ContentExtractor';
 export { urlDiscovery } from './discovery/UrlDiscovery';
 export { sitemapParser } from './discovery/SitemapParser';
+export { cacheManager } from './utils/CacheManager';
+export { retryManager } from './utils/RetryManager';
+export { memoryMonitor } from './utils/MemoryMonitor';
 
 export type {
   CrawlOptions,
@@ -21,6 +24,7 @@ export type {
   SitemapItem,
   RobotsRule,
 } from './types';
+
 
 
 
