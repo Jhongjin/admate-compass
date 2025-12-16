@@ -176,6 +176,7 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
   const [isSelectionDialogOpen, setIsSelectionDialogOpen] = useState(false);
   const [editingTitleIndex, setEditingTitleIndex] = useState<number | null>(null);
   const [editingTitleValue, setEditingTitleValue] = useState<string>('');
+  const [seedUrl, setSeedUrl] = useState<string | null>(null); // 원본 시드 URL 저장
 
   const [options, setOptions] = useState({
     discoverSubPages: false,
@@ -240,7 +241,7 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
 
   // --- Handlers ---
 
-  const performCrawl = async (urlList: string[], isSubPageCrawl = false) => {
+  const performCrawl = async (urlList: string[], isSubPageCrawl = false, parentSeedUrl: string | null = null) => {
     if (urlList.length === 0) return;
 
     await fetchExistingUrls();
@@ -250,6 +251,11 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
 
     if (!isSubPageCrawl) {
       setResults([]);
+      // 원본 시드 URL 저장 (첫 번째 URL을 시드로 사용)
+      setSeedUrl(urlList[0] || null);
+    } else if (parentSeedUrl) {
+      // 하위 페이지 크롤링 시 원본 시드 URL 유지
+      setSeedUrl(parentSeedUrl);
     }
 
     try {
@@ -296,6 +302,9 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                   // 정규화된 URL로 비교하기 위해 Set 생성
                   const existingUrlsNormalized = new Set<string>();
                   
+                  // 원본 시드 URL 찾기 (urlList의 첫 번째 URL 또는 results에서 시드 URL 찾기)
+                  const seedUrlForDiscovery = urlList[0] || seedUrl || null;
+                  
                   // 기존 URL들을 정규화하여 Set에 추가
                   [...urlList, ...results.map(r => r.url), ...newResults.map(r => r.url)].forEach(url => {
                     existingUrlsNormalized.add(normalizeUrl(url));
@@ -306,15 +315,26 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                     existingUrlsNormalized.add(normalizedUrl);
                   });
 
-                  console.log(`[Discovery Logic] 기존 URL Set 크기: ${existingUrlsNormalized.size}`);
+                  console.log(`[Discovery Logic] 기존 URL Set 크기: ${existingUrlsNormalized.size}, 시드 URL: ${seedUrlForDiscovery}`);
 
                   newResults.forEach(result => {
                     if (result.discoveredUrls) {
                       result.discoveredUrls.forEach(d => {
                         const normalizedDiscoveredUrl = normalizeUrl(d.url);
                         if (!existingUrlsNormalized.has(normalizedDiscoveredUrl)) {
-                          allDiscovered.push({ url: d.url, source: result.url, title: d.title, parentUrl: result.url });
+                          // 원본 시드 URL을 부모로 설정 (시드 URL이 현재 result.url과 같으면 시드 URL 사용)
+                          const parentUrlForDiscovered = (seedUrlForDiscovery && normalizeUrl(result.url) === normalizeUrl(seedUrlForDiscovery)) 
+                            ? seedUrlForDiscovery 
+                            : result.url;
+                          
+                          allDiscovered.push({ 
+                            url: d.url, 
+                            source: result.url, 
+                            title: d.title, 
+                            parentUrl: parentUrlForDiscovered 
+                          });
                           existingUrlsNormalized.add(normalizedDiscoveredUrl);
+                          console.log(`[Discovery Logic] 하위 페이지 발견: "${d.url}" -> 부모: "${parentUrlForDiscovered}"`);
                         } else {
                           console.log(`[Discovery Logic] 이미 존재하는 URL 스킵: "${d.url}" (정규화: "${normalizedDiscoveredUrl}")`);
                         }
@@ -361,7 +381,10 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
     const urlsToCrawl = Array.from(selectedDiscoveredUrls);
     setIsSelectionDialogOpen(false);
     if (urlsToCrawl.length === 0) return;
-    await performCrawl(urlsToCrawl, true);
+    // 원본 시드 URL 전달 (seedUrl이 있으면 사용, 없으면 discoveredUrls의 첫 번째 parentUrl 사용)
+    const parentSeedUrl = seedUrl || discoveredUrls[0]?.parentUrl || null;
+    console.log(`[handleCrawlSelectedSubPages] 하위 페이지 크롤링 시작, 부모 시드 URL: ${parentSeedUrl}`);
+    await performCrawl(urlsToCrawl, true, parentSeedUrl);
   };
 
   const handleSaveToDb = async () => {
@@ -384,11 +407,39 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
         const discoveryInfo = discoveredUrls.find(d => normalizeUrl(d.url) === normalizeUrl(r.url));
         let parentUrl = discoveryInfo?.parentUrl || null;
 
-        if (parentUrl) {
+        // 하위 페이지인 경우 원본 시드 URL을 우선적으로 부모로 사용
+        if (seedUrl && (discoveryInfo || results.some(res => normalizeUrl(res.url) === normalizeUrl(seedUrl)))) {
+          // 원본 시드 URL이 results에 있으면 그것을 부모로 사용
+          const seedResult = results.find(res => normalizeUrl(res.url) === normalizeUrl(seedUrl));
+          if (seedResult) {
+            parentUrl = seedUrl;
+            console.log(`[handleSaveToDb] 하위 페이지 "${r.url}"의 부모를 시드 URL "${seedUrl}"로 설정`);
+          } else {
+            // 시드 URL이 results에 없으면 DB에서 확인
+            const normalizedSeed = normalizeUrl(seedUrl);
+            const dbSeedUrl = existingDbMap.get(normalizedSeed);
+            if (dbSeedUrl) {
+              parentUrl = dbSeedUrl;
+              console.log(`[handleSaveToDb] 하위 페이지 "${r.url}"의 부모를 DB의 시드 URL "${dbSeedUrl}"로 설정`);
+            } else {
+              // DB에도 없으면 discoveryInfo의 parentUrl 사용
+              if (discoveryInfo?.parentUrl) {
+                const normalizedParent = normalizeUrl(discoveryInfo.parentUrl);
+                const dbParentUrl = existingDbMap.get(normalizedParent);
+                if (dbParentUrl) {
+                  parentUrl = dbParentUrl;
+                  console.log(`[handleSaveToDb] 하위 페이지 "${r.url}"의 부모를 discoveryInfo의 parentUrl "${dbParentUrl}"로 설정`);
+                }
+              }
+            }
+          }
+        } else if (parentUrl) {
+          // discoveryInfo의 parentUrl이 있으면 DB에서 확인
           const normalizedParent = normalizeUrl(parentUrl);
           const dbParentUrl = existingDbMap.get(normalizedParent);
           if (dbParentUrl) parentUrl = dbParentUrl;
         } else {
+          // 자동 그룹화: 현재 URL이 다른 URL의 하위 경로인지 확인
           const currentNormalized = normalizeUrl(r.url);
           let bestParent = null;
           let maxLen = 0;
@@ -400,7 +451,10 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
               }
             }
           }
-          if (bestParent) parentUrl = bestParent;
+          if (bestParent) {
+            parentUrl = bestParent;
+            console.log(`[handleSaveToDb] 자동 그룹화: "${r.url}"의 부모를 "${bestParent}"로 설정`);
+          }
         }
 
         return {
