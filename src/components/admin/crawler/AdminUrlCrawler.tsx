@@ -73,20 +73,31 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor }: AdminUrlCrawlerPro
   });
 
   /* Updated state to store normalized URL -> actual URL map */
-  const [existingDbMap, setExistingDbMap] = useState<Map<string, string>>(new Map());
-
+  const [existingDbMap, setExistingDbMap] = useState<Map<string, string>>(new Map()); /* Fetch existing URLs from DB to mark them as "Already Collected" */
   const fetchExistingUrls = async () => {
     try {
-      const response = await fetch('/api/admin/documents/list?type=url');
+      const response = await fetch('/api/admin/documents/list?type=url', {
+        cache: 'no-store', // Prevent browser caching
+        headers: {
+          'Pragma': 'no-cache',
+          'Cache-Control': 'no-cache'
+        }
+      });
       if (response.ok) {
         const data = await response.json();
-        if (data.documents) {
-          const map = new Map<string, string>();
-          data.documents.forEach((d: any) => {
-            map.set(normalizeUrl(d.url), d.url);
+        // Create a map of Normalized URL -> Original URL for quick lookup
+        const map = new Map<string, string>();
+        if (data.documents && Array.isArray(data.documents)) {
+          console.log(`DB에서 가져온 기존 URL: ${data.documents.length}개`);
+          data.documents.forEach((doc: any) => {
+            if (doc.url) {
+              const normalized = normalizeUrl(doc.url);
+              map.set(normalized, doc.url);
+            }
           });
-          setExistingDbMap(map);
         }
+        setExistingDbMap(map);
+        console.log(`기존 URL 맵 업데이트 완료: ${map.size}개`);
       }
     } catch (error) {
       console.error('Failed to fetch existing URLs:', error);

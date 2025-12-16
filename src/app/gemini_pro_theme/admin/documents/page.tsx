@@ -91,7 +91,7 @@ export default function DocumentsPage() {
     const [expandedGroups, setExpandedGroups] = useState<Set<number>>(new Set());
     const [selectedDocs, setSelectedDocs] = useState<Set<string>>(new Set());
     const [actionLoading, setActionLoading] = useState<{ [key: string]: boolean }>({});
-    
+
     const { toast } = useToast();
     const queryClient = useQueryClient();
 
@@ -118,31 +118,31 @@ export default function DocumentsPage() {
             console.log('🔄 [reindexMutation] mutationFn 시작:', { documentId, title });
             const loadingKey = `${documentId}_reindex`;
             console.log('🔄 [reindexMutation] loadingKey 설정:', loadingKey);
-            
+
             // 로딩 상태 즉시 업데이트
             setActionLoading(prev => {
                 const newState = { ...prev, [loadingKey]: true };
                 console.log('🔄 [reindexMutation] actionLoading 업데이트 (시작):', newState);
                 return newState;
             });
-            
+
             try {
-                console.log('🔄 [reindexMutation] API 호출 시작:', { 
-                    documentId, 
+                console.log('🔄 [reindexMutation] API 호출 시작:', {
+                    documentId,
                     title,
                     url: `/api/admin/upload/${documentId}/reindex`
                 });
-                
+
                 const res = await fetch(`/api/admin/upload/${documentId}/reindex`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                     },
                 });
-                
+
                 console.log('📡 재인덱싱 응답 상태:', res.status, res.statusText);
                 console.log('📡 재인덱싱 응답 헤더:', Object.fromEntries(res.headers.entries()));
-                
+
                 if (!res.ok) {
                     let errorMessage = '재인덱싱에 실패했습니다.';
                     try {
@@ -156,7 +156,7 @@ export default function DocumentsPage() {
                     }
                     throw new Error(errorMessage);
                 }
-                
+
                 const result = await res.json();
                 console.log('✅ 재인덱싱 성공:', result);
                 return result;
@@ -179,14 +179,14 @@ export default function DocumentsPage() {
         },
         onSuccess: (data, variables) => {
             console.log('✅ [reindexMutation] onSuccess 호출:', { data, variables });
-            
+
             // 모든 admin-documents 쿼리 무효화 (selectedStatus 포함)
             console.log('🔄 [reindexMutation] 쿼리 무효화 시작');
-            queryClient.invalidateQueries({ 
+            queryClient.invalidateQueries({
                 queryKey: ['admin-documents'],
                 exact: false // 부분 매칭으로 모든 admin-documents 쿼리 무효화
             });
-            
+
             // 명시적으로 refetch 호출
             console.log('🔄 [reindexMutation] refetch 호출');
             refetch().then(() => {
@@ -194,7 +194,7 @@ export default function DocumentsPage() {
             }).catch((err) => {
                 console.error('❌ [reindexMutation] refetch 실패:', err);
             });
-            
+
             toast({
                 title: "재인덱싱 완료",
                 description: `${variables.title} 문서의 재인덱싱이 완료되었습니다. (${data.document?.chunkCount || data.chunkCount || 0}개 청크)`,
@@ -207,7 +207,7 @@ export default function DocumentsPage() {
                 stack: error.stack,
                 name: error.name
             });
-            
+
             toast({
                 title: "재인덱싱 실패",
                 description: error.message || '재인덱싱 중 오류가 발생했습니다.',
@@ -228,7 +228,7 @@ export default function DocumentsPage() {
             mutationType: typeof reindexMutation,
             mutateType: typeof reindexMutation?.mutate,
         });
-        
+
         if (!id || !title) {
             console.error('❌ [handleReindexDocument] 잘못된 파라미터:', { id, title });
             toast({
@@ -238,7 +238,7 @@ export default function DocumentsPage() {
             });
             return;
         }
-        
+
         if (!reindexMutation) {
             console.error('❌ [handleReindexDocument] reindexMutation이 없음');
             toast({
@@ -248,7 +248,7 @@ export default function DocumentsPage() {
             });
             return;
         }
-        
+
         if (!reindexMutation.mutate) {
             console.error('❌ [handleReindexDocument] reindexMutation.mutate가 없음');
             console.error('❌ [handleReindexDocument] reindexMutation 전체 객체:', reindexMutation);
@@ -259,7 +259,7 @@ export default function DocumentsPage() {
             });
             return;
         }
-        
+
         // 이미 처리 중인 경우 중복 요청 방지
         if (reindexMutation.isPending) {
             console.warn('⚠️ [handleReindexDocument] 이미 재인덱싱이 진행 중입니다.');
@@ -270,14 +270,14 @@ export default function DocumentsPage() {
             });
             return;
         }
-        
+
         try {
             console.log('🔄 [handleReindexDocument] mutation.mutate 호출 직전');
             console.log('🔄 [handleReindexDocument] 전달할 데이터:', { documentId: id, title });
-            
+
             // mutate 호출
             reindexMutation.mutate({ documentId: id, title });
-            
+
             console.log('🔄 [handleReindexDocument] mutation.mutate 호출 완료 (비동기이므로 즉시 반환됨)');
         } catch (error) {
             console.error('❌ [handleReindexDocument] mutation 호출 중 동기 에러:', error);
@@ -288,7 +288,7 @@ export default function DocumentsPage() {
                 variant: "destructive",
             });
         }
-        
+
         console.log('🔄 [handleReindexDocument] ====== 함수 호출 종료 ======');
     }, [reindexMutation, toast]);
 
@@ -302,7 +302,7 @@ export default function DocumentsPage() {
         console.log('🔍 [DocumentsPage] reindexMutation 값:', reindexMutation);
         console.log('🔍 [DocumentsPage] reindexMutation.mutate 타입:', typeof reindexMutation?.mutate);
     }, [handleReindexDocument, reindexMutation]);
-    
+
     // 컴포넌트 마운트 시 한 번만 실행
     useEffect(() => {
         console.log('🔍 [DocumentsPage] 컴포넌트 마운트됨 (한 번만 실행)');
@@ -356,44 +356,102 @@ export default function DocumentsPage() {
     const documentGroups = useMemo(() => {
         if (activeTab !== "crawling") return [];
 
-        const groups: any[] = [];
-        const domainMap = new Map<string, any>();
-
-        filteredDocs.forEach((doc: Document) => {
-            let domain = 'Unknown';
+        const normalizeUrlForLookups = (url: string) => {
             try {
-                if (doc.url) {
-                    domain = new URL(doc.url).hostname;
+                const u = new URL(url);
+                return u.origin + u.pathname.replace(/\/$/, "");
+            } catch { return url.replace(/\/$/, ""); }
+        };
+
+        // 1. Map all documents by their URL for easy lookup
+        const urlToDocMap = new Map<string, Document>();
+        filteredDocs.forEach((doc: Document) => {
+            if (doc.url) {
+                // Exact match priority
+                if (!urlToDocMap.has(doc.url)) {
+                    urlToDocMap.set(doc.url, doc);
                 }
-            } catch (e) { }
-
-            const groupedDoc = {
-                ...doc,
-                url: doc.url || '',
-                updated_at: doc.updated_at || doc.created_at, // Fallback to created_at if updated_at is missing
-                isMainUrl: false
-            };
-
-            if (!domainMap.has(domain)) {
-                domainMap.set(domain, {
-                    domain,
-                    mainUrl: doc.url || '',
-                    mainDocument: { ...groupedDoc, isMainUrl: true },
-                    subPages: [],
-                    totalChunks: doc.chunk_count || 0,
-                    isExpanded: false,
-                    selectedSubPages: []
-                });
-                groups.push(domainMap.get(domain));
-            } else {
-                const group = domainMap.get(domain);
-                group.subPages.push({ ...groupedDoc, isMainUrl: false });
-                group.totalChunks += (doc.chunk_count || 0);
+                // Normalized match fallback
+                const normalized = normalizeUrlForLookups(doc.url);
+                if (!urlToDocMap.has(normalized)) {
+                    urlToDocMap.set(normalized, doc);
+                }
             }
         });
 
-        // Apply expansion state
-        return groups.map((group, index) => ({
+        // 2. Identify Roots and Children
+        const roots: Document[] = [];
+        const parentToChildrenMap = new Map<string, Document[]>();
+
+        // Track processed IDs to avoid duplicates if map has multiple keys for same doc
+        const processedIds = new Set<string>();
+
+        filteredDocs.forEach((doc: Document) => {
+            if (processedIds.has(doc.id)) return;
+            processedIds.add(doc.id);
+
+            // Check if this document has a parent URL in metadata
+            const parentUrl = doc.metadata?.parentUrl || (doc as any).parentUrl;
+
+            // Verify if the parent actually exists in our current list
+            let parentDoc = null;
+            if (parentUrl) {
+                parentDoc = urlToDocMap.get(parentUrl);
+                if (!parentDoc) {
+                    parentDoc = urlToDocMap.get(normalizeUrlForLookups(parentUrl));
+                }
+            }
+
+            if (parentDoc && parentDoc.id !== doc.id) {
+                // Use the canonical parent URL from the found doc
+                const canonicalParentUrl = parentDoc.url || parentUrl;
+
+                if (!parentToChildrenMap.has(canonicalParentUrl)) {
+                    parentToChildrenMap.set(canonicalParentUrl, []);
+                }
+                parentToChildrenMap.get(canonicalParentUrl)?.push(doc);
+            } else {
+                // It's a root document
+                roots.push(doc);
+            }
+        });
+
+        // 3. Construct Groups from Roots
+        return roots.map((rootDoc, index) => {
+            const canonicalUrl = rootDoc.url || '';
+            const children = parentToChildrenMap.get(canonicalUrl) || [];
+
+            let domain = 'Unknown';
+            try {
+                if (rootDoc.url) {
+                    domain = new URL(rootDoc.url).hostname;
+                }
+            } catch (e) { }
+
+            // Calculate total chunks (root + children)
+            const rootChunks = rootDoc.chunk_count || 0;
+            const childrenChunks = children.reduce((acc, child) => acc + (child.chunk_count || 0), 0);
+
+            return {
+                domain,
+                mainUrl: rootDoc.url || '',
+                mainDocument: {
+                    ...rootDoc,
+                    isMainUrl: true,
+                    url: rootDoc.url || '',
+                    updated_at: rootDoc.updated_at || rootDoc.created_at
+                },
+                subPages: children.map(child => ({
+                    ...child,
+                    isMainUrl: false,
+                    url: child.url || '',
+                    updated_at: child.updated_at || child.created_at
+                })),
+                totalChunks: rootChunks + childrenChunks,
+                isExpanded: false,
+                selectedSubPages: []
+            };
+        }).map((group, index) => ({
             ...group,
             isExpanded: expandedGroups.has(index)
         }));
@@ -453,10 +511,10 @@ export default function DocumentsPage() {
     const handleSelectDocument = (id: string | string[]) => {
         const newSelected = new Set(selectedDocs);
         const ids = Array.isArray(id) ? id : [id];
-        
+
         // 모든 ID가 선택되어 있는지 확인
         const allSelected = ids.every(docId => newSelected.has(docId));
-        
+
         if (allSelected) {
             // 모두 선택되어 있으면 모두 해제
             ids.forEach(docId => newSelected.delete(docId));
@@ -464,7 +522,7 @@ export default function DocumentsPage() {
             // 일부만 선택되어 있거나 모두 해제되어 있으면 모두 선택
             ids.forEach(docId => newSelected.add(docId));
         }
-        
+
         setSelectedDocs(newSelected);
     };
 
@@ -498,7 +556,7 @@ export default function DocumentsPage() {
                 allDocIds.add(group.mainDocument.id);
                 group.subPages.forEach((sub: Document) => allDocIds.add(sub.id));
             });
-            
+
             if (selectedDocs.size === allDocIds.size && allDocIds.size > 0) {
                 setSelectedDocs(new Set());
             } else {
@@ -538,41 +596,41 @@ export default function DocumentsPage() {
                     results.push({ id, success: true });
                 } catch (error) {
                     console.error(`❌ [bulkDeleteMutation] 문서 삭제 실패:`, { id, error });
-                    results.push({ 
-                        id, 
-                        success: false, 
-                        error: error instanceof Error ? error.message : '알 수 없는 오류' 
+                    results.push({
+                        id,
+                        success: false,
+                        error: error instanceof Error ? error.message : '알 수 없는 오류'
                     });
                 }
             }
-            console.log('🗑️ [bulkDeleteMutation] mutationFn 완료:', { 
-                total: ids.length, 
+            console.log('🗑️ [bulkDeleteMutation] mutationFn 완료:', {
+                total: ids.length,
                 success: results.filter(r => r.success).length,
                 failed: results.filter(r => !r.success).length,
-                results 
+                results
             });
             return results;
         },
         onSuccess: async (results) => {
             const successCount = results.filter(r => r.success).length;
             const failCount = results.filter(r => !r.success).length;
-            
+
             console.log('🗑️ [bulkDeleteMutation] onSuccess 호출:', { successCount, failCount, results });
-            
+
             // 선택 상태 먼저 초기화 (무한 루프 방지)
             setSelectedDocs(new Set());
-            
+
             // 쿼리 무효화 (모든 admin-documents 쿼리)
-            await queryClient.invalidateQueries({ 
+            await queryClient.invalidateQueries({
                 queryKey: ['admin-documents'],
                 exact: false // 부분 매칭으로 모든 admin-documents 쿼리 무효화
             });
-            
+
             // 명시적으로 리프레시
             await refetch();
-            
+
             console.log('✅ [bulkDeleteMutation] 쿼리 무효화 및 리프레시 완료');
-            
+
             if (failCount === 0) {
                 toast({
                     title: "선택 삭제 완료",
@@ -601,7 +659,7 @@ export default function DocumentsPage() {
         console.log('🗑️ [handleBulkDelete] selectedDocs.size:', selectedDocs?.size || 0);
         console.log('🗑️ [handleBulkDelete] bulkDeleteMutation:', bulkDeleteMutation);
         console.log('🗑️ [handleBulkDelete] bulkDeleteMutation.mutate:', bulkDeleteMutation?.mutate);
-        
+
         if (!selectedDocs || selectedDocs.size === 0) {
             console.warn('⚠️ [handleBulkDelete] 선택된 문서 없음');
             toast({
@@ -611,16 +669,16 @@ export default function DocumentsPage() {
             });
             return;
         }
-        
+
         const selectedArray = Array.from(selectedDocs);
-        console.log('🗑️ [handleBulkDelete] 선택 삭제 요청:', { 
-            count: selectedArray.length, 
+        console.log('🗑️ [handleBulkDelete] 선택 삭제 요청:', {
+            count: selectedArray.length,
             ids: selectedArray.slice(0, 5)
         });
-        
+
         const confirmMessage = `선택한 ${selectedArray.length}개의 문서를 삭제하시겠습니까?\n이 작업은 되돌릴 수 없습니다.`;
         const confirmed = window.confirm(confirmMessage);
-        
+
         if (!confirmed) {
             console.log('❌ [handleBulkDelete] 사용자가 취소함');
             return;
