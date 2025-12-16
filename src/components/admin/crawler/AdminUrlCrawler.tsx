@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Play, CheckCircle, XCircle, Globe, Save, RefreshCw, ExternalLink, Link, AlertTriangle } from 'lucide-react';
+import { Loader2, Play, CheckCircle, XCircle, Globe, Save, RefreshCw, ExternalLink, Link, AlertTriangle, Pencil, Check, X } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   Dialog,
@@ -167,6 +167,8 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
   const [discoveredUrls, setDiscoveredUrls] = useState<Array<{ url: string; source: string; title?: string; parentUrl?: string }>>([]);
   const [selectedDiscoveredUrls, setSelectedDiscoveredUrls] = useState<Set<string>>(new Set());
   const [isSelectionDialogOpen, setIsSelectionDialogOpen] = useState(false);
+  const [editingTitleIndex, setEditingTitleIndex] = useState<number | null>(null);
+  const [editingTitleValue, setEditingTitleValue] = useState<string>('');
 
   const [options, setOptions] = useState({
     discoverSubPages: false,
@@ -409,6 +411,44 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
     if (newSelected.has(url)) newSelected.delete(url);
     else newSelected.add(url);
     setSelectedDiscoveredUrls(newSelected);
+  };
+
+  const handleStartEditTitle = (index: number, currentTitle: string) => {
+    setEditingTitleIndex(index);
+    setEditingTitleValue(currentTitle || '');
+  };
+
+  const handleSaveTitle = (index: number) => {
+    if (editingTitleIndex === index) {
+      const updated = [...discoveredUrls];
+      updated[index] = { ...updated[index], title: editingTitleValue.trim() || undefined };
+      setDiscoveredUrls(updated);
+      setEditingTitleIndex(null);
+      setEditingTitleValue('');
+    }
+  };
+
+  const handleCancelEditTitle = () => {
+    setEditingTitleIndex(null);
+    setEditingTitleValue('');
+  };
+
+  const handleSelectAllExcludingCollected = () => {
+    const newSelected = new Set<string>();
+    discoveredUrls.forEach(item => {
+      const isAlreadyCrawled = results.some(r => normalizeUrl(r.url) === normalizeUrl(item.url)) || existingDbMap.has(normalizeUrl(item.url));
+      if (!isAlreadyCrawled) {
+        newSelected.add(item.url);
+      }
+    });
+    setSelectedDiscoveredUrls(newSelected);
+  };
+
+  const handleDialogOpenChange = async (open: boolean) => {
+    setIsSelectionDialogOpen(open);
+    if (open) {
+      await fetchExistingUrls();
+    }
   };
 
 
@@ -680,7 +720,7 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
 
 
       {/* Sub-page Selection Dialog (Preserved functionality) */}
-      <Dialog open={isSelectionDialogOpen} onOpenChange={setIsSelectionDialogOpen}>
+      <Dialog open={isSelectionDialogOpen} onOpenChange={handleDialogOpenChange}>
         <DialogContent
           className="max-w-5xl w-[90vw] bg-[#1e232f] border-gray-700 text-white shadow-2xl"
           onInteractOutside={(e) => e.preventDefault()}
@@ -705,6 +745,14 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                 <Button
                   variant="ghost"
                   size="sm"
+                  onClick={handleSelectAllExcludingCollected}
+                  className="text-xs h-8"
+                >
+                  수집 제외 전체 선택
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
                   onClick={() => {
                     if (selectedDiscoveredUrls.size === discoveredUrls.length) setSelectedDiscoveredUrls(new Set());
                     else setSelectedDiscoveredUrls(new Set(discoveredUrls.map(d => d.url)));
@@ -723,8 +771,8 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                   return (
                     <div key={i}
                       className={`
-                             flex items-start gap-3 p-3 rounded-lg transition-colors border
-                             ${isAlreadyCrawled ? 'bg-green-500/5 border-green-500/20 opacity-70' : 'border-transparent hover:bg-white/5 hover:border-white/10'}
+                             flex items-start gap-3 p-3 rounded-lg transition-colors border group
+                             ${isAlreadyCrawled ? 'bg-green-500/5 border-green-500/20 opacity-70' : 'border-gray-700 hover:bg-white/5 hover:border-white/10'}
                            `}
                     >
                       <Checkbox
@@ -732,16 +780,73 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                         checked={selectedDiscoveredUrls.has(item.url)}
                         onCheckedChange={() => toggleSelect(item.url)}
                         disabled={isAlreadyCrawled}
-                        className="mt-1 flex-shrink-0"
+                        className="mt-1 flex-shrink-0 border-gray-600 data-[state=checked]:border-blue-500"
                       />
                       <div className="flex-1 min-w-0 pr-3">
                         <label htmlFor={`url-${i}`} className="cursor-pointer block">
                           <div className="text-sm font-medium text-gray-200 mb-1 flex items-center gap-2 flex-wrap">
-                            <span className="truncate max-w-full">{item.title || '제목 없음'}</span>
-                            {isAlreadyCrawled && (
-                              <Badge variant="outline" className="text-[10px] h-4 text-green-500 border-green-900 bg-green-500/10 flex-shrink-0">
-                                수집됨
-                              </Badge>
+                            {editingTitleIndex === i ? (
+                              <div className="flex items-center gap-2 flex-1 min-w-0">
+                                <Input
+                                  value={editingTitleValue}
+                                  onChange={(e) => setEditingTitleValue(e.target.value)}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                      e.preventDefault();
+                                      handleSaveTitle(i);
+                                    } else if (e.key === 'Escape') {
+                                      e.preventDefault();
+                                      handleCancelEditTitle();
+                                    }
+                                  }}
+                                  className="h-7 text-sm bg-gray-800 border-gray-600 text-white flex-1 min-w-0"
+                                  autoFocus
+                                  onClick={(e) => e.stopPropagation()}
+                                />
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-7 w-7 p-0 text-green-400 hover:text-green-300 hover:bg-green-500/10"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleSaveTitle(i);
+                                  }}
+                                >
+                                  <Check className="h-3 w-3" />
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-7 w-7 p-0 text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleCancelEditTitle();
+                                  }}
+                                >
+                                  <X className="h-3 w-3" />
+                                </Button>
+                              </div>
+                            ) : (
+                              <>
+                                <span className="truncate max-w-full">{item.title || '제목 없음'}</span>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-5 w-5 p-0 text-gray-500 hover:text-gray-300 hover:bg-gray-700/50 opacity-0 group-hover:opacity-100 transition-opacity"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleStartEditTitle(i, item.title || '');
+                                  }}
+                                  title="제목 수정"
+                                >
+                                  <Pencil className="h-3 w-3" />
+                                </Button>
+                                {isAlreadyCrawled && (
+                                  <Badge variant="outline" className="text-[10px] h-4 text-green-500 border-green-900 bg-green-500/10 flex-shrink-0">
+                                    수집됨
+                                  </Badge>
+                                )}
+                              </>
                             )}
                           </div>
                           <div className="text-xs text-blue-400/70 break-all mt-0.5 font-mono">
