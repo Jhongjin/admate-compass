@@ -706,10 +706,10 @@ export class UrlDiscovery {
             // 도메인 제한 확인 (maxDepth 기반)
             const urlDomain = extractDomain(normalizedUrl);
             const baseDomain = extractDomain(baseUrl);
+            const maxDepth = config.maxDepth ?? 3; // 기본값 3
             const isDifferentDomain = urlDomain !== baseDomain && !urlDomain.endsWith(`.${baseDomain}`);
             
             // maxDepth 4일 때도 다른 도메인은 제외하거나 우선순위를 낮춤
-            const maxDepth = config.maxDepth ?? 3;
             if (isDifferentDomain && maxDepth >= 4) {
               // help.naver.com, nca.naver.com 같은 다른 서비스는 제외
               const excludedDomains = [
