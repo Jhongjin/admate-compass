@@ -188,17 +188,65 @@ export class UrlDiscovery {
       if (browser) {
         try {
           const page = await browserManager.createPage();
+          
+          // 네이버 광고 페이지 같은 SPA 사이트를 위한 설정
+          const isNaverAds = baseUrl.includes('ads.naver.com');
+          const waitTime = isNaverAds ? 5000 : 2000; // 네이버 광고는 더 오래 대기
+          
           await page.goto(baseUrl, {
             waitUntil: 'networkidle2',
             timeout: config.timeout || 30000,
           });
           
           // JavaScript 실행 대기 (동적 링크 로딩)
+          await new Promise(resolve => setTimeout(resolve, waitTime));
+          
+          // 스크롤하여 lazy loading된 콘텐츠 로드
+          await page.evaluate(async () => {
+            await new Promise((resolve) => {
+              let totalHeight = 0;
+              const distance = 100;
+              const timer = setInterval(() => {
+                const scrollHeight = document.body.scrollHeight;
+                window.scrollBy(0, distance);
+                totalHeight += distance;
+                
+                if (totalHeight >= scrollHeight) {
+                  clearInterval(timer);
+                  resolve(null);
+                }
+              }, 100);
+            });
+          });
+          
+          // 추가 대기 (스크롤 후 콘텐츠 로딩)
           await new Promise(resolve => setTimeout(resolve, 2000));
+          
+          // 네비게이션 메뉴 열기 (네이버 광고 페이지의 경우)
+          if (isNaverAds) {
+            try {
+              // 드롭다운 메뉴를 열기 위해 호버 또는 클릭 시도
+              await page.evaluate(() => {
+                // 네비게이션 메뉴 요소 찾기 및 호버
+                const navItems = document.querySelectorAll('nav a, [role="navigation"] a, header a');
+                navItems.forEach((item: Element) => {
+                  const mouseEvent = new MouseEvent('mouseenter', {
+                    view: window,
+                    bubbles: true,
+                    cancelable: true,
+                  });
+                  item.dispatchEvent(mouseEvent);
+                });
+              });
+              await new Promise(resolve => setTimeout(resolve, 1000));
+            } catch (e) {
+              console.warn('⚠️ 네비게이션 메뉴 열기 실패:', e);
+            }
+          }
           
           // 브라우저에서 직접 링크 추출 (JavaScript 실행 후)
           links = await page.evaluate((baseDomain, maxDepth, baseUrl) => {
-            // 다양한 선택자로 링크 찾기 (Instagram, Facebook 등 다양한 사이트 대응)
+            // 다양한 선택자로 링크 찾기 (네이버 광고, Instagram, Facebook 등 다양한 사이트 대응)
             const linkSelectors = [
               'a[href]',
               '[role="link"][href]',
@@ -207,6 +255,15 @@ export class UrlDiscovery {
               'a[data-testid]',
               'a[aria-label]',
               '[onclick*="location"]', // onclick으로 링크 동작하는 요소
+              'nav a[href]', // 네비게이션 링크
+              'header a[href]', // 헤더 링크
+              'footer a[href]', // 푸터 링크
+              '[class*="menu"] a[href]', // 메뉴 클래스를 가진 요소의 링크
+              '[class*="nav"] a[href]', // nav 클래스를 가진 요소의 링크
+              '[class*="link"] a[href]', // link 클래스를 가진 요소의 링크
+              'button[href]', // button 태그에 href가 있는 경우
+              '[data-link]', // data-link 속성
+              '[data-url]', // data-url 속성
             ];
             
             const linkElements = new Set<Element>();
@@ -222,15 +279,26 @@ export class UrlDiscovery {
             const seenUrls = new Set<string>();
 
             linkElements.forEach(link => {
-              // href 속성 또는 data-href 속성 확인
-              let href = link.getAttribute('href') || link.getAttribute('data-href');
+              // href 속성 또는 data-href, data-link, data-url 속성 확인
+              let href = link.getAttribute('href') || 
+                        link.getAttribute('data-href') || 
+                        link.getAttribute('data-link') || 
+                        link.getAttribute('data-url');
               
               // onclick에서 URL 추출 시도
               if (!href) {
                 const onclick = link.getAttribute('onclick');
                 if (onclick) {
-                  const urlMatch = onclick.match(/(?:location\.href|window\.open|location\.assign)\s*=\s*['"]([^'"]+)['"]/);
+                  const urlMatch = onclick.match(/(?:location\.href|window\.open|location\.assign|router\.push|navigate)\s*\(?\s*['"]([^'"]+)['"]/);
                   if (urlMatch) href = urlMatch[1];
+                }
+              }
+              
+              // React Router나 Next.js 같은 클라이언트 사이드 라우팅 처리
+              if (!href) {
+                const onClick = (link as any).onclick;
+                if (onClick) {
+                  // 이벤트 리스너에서 URL 추출은 복잡하므로 일단 스킵
                 }
               }
               
@@ -323,11 +391,69 @@ export class UrlDiscovery {
               }
             });
 
+            // iframe 내부 링크도 추출
+            try {
+              const iframes = document.querySelectorAll('iframe');
+              iframes.forEach(iframe => {
+                try {
+                  const iframeDoc = (iframe as HTMLIFrameElement).contentDocument || 
+                                  ((iframe as HTMLIFrameElement).contentWindow as any)?.document;
+                  if (iframeDoc) {
+                    const iframeLinks = iframeDoc.querySelectorAll('a[href]');
+                    iframeLinks.forEach((iframeLink: Element) => {
+                      const iframeHref = iframeLink.getAttribute('href');
+                      if (iframeHref) {
+                        try {
+                          const fullUrl = new URL(iframeHref, window.location.href).href;
+                          const urlDomain = new URL(fullUrl).hostname;
+                          const normalizedUrl = fullUrl.split('#')[0].split('?')[0];
+                          
+                          if (!seenUrls.has(normalizedUrl)) {
+                            const isSameDomain = urlDomain === baseDomain;
+                            let shouldInclude = false;
+                            
+                            if (maxDepth >= 4) {
+                              shouldInclude = true;
+                            } else if (maxDepth >= 3) {
+                              shouldInclude = isSameDomain || urlDomain.endsWith(`.${baseDomain}`);
+                            } else {
+                              shouldInclude = isSameDomain;
+                            }
+                            
+                            if (shouldInclude && 
+                                fullUrl !== window.location.href &&
+                                !fullUrl.includes('#') &&
+                                !fullUrl.includes('javascript:') &&
+                                !fullUrl.includes('mailto:')) {
+                              seenUrls.add(normalizedUrl);
+                              extractedLinks.push({
+                                url: fullUrl,
+                                text: iframeLink.textContent?.trim() || ''
+                              });
+                            }
+                          }
+                        } catch (e) {
+                          // URL 파싱 실패 시 무시
+                        }
+                      }
+                    });
+                  }
+                } catch (e) {
+                  // iframe 접근 실패 (CORS 등) - 무시
+                }
+              });
+            } catch (e) {
+              // iframe 처리 실패 - 무시
+            }
+            
             return extractedLinks;
           }, baseDomain, config.maxDepth ?? 3, baseUrl);
           
           await page.close();
           console.log(`🔗 Puppeteer에서 발견된 링크: ${links.length}개`);
+          if (links.length > 0) {
+            console.log(`🔗 발견된 링크 샘플 (처음 5개):`, links.slice(0, 5).map(l => l.url));
+          }
         } catch (error) {
           // Puppeteer 실패 시 HTML 파싱으로 폴백
           console.warn('⚠️ Puppeteer로 링크 추출 실패, HTML 파싱으로 폴백:', error);
@@ -363,6 +489,9 @@ export class UrlDiscovery {
       }
 
       console.log(`🔗 총 발견된 링크: ${links.length}개`);
+      if (links.length === 0) {
+        console.warn(`⚠️ 링크가 발견되지 않았습니다. URL: ${baseUrl}`);
+      }
 
       // 링크 필터링 및 정렬 (중요한 링크 우선)
       const filteredLinks = links
