@@ -55,7 +55,11 @@ export async function POST(request: NextRequest) {
           accumulatedPath += "/" + pathSegments[i];
           // Construct full potential parent URL
           const candidateUrl = `${urlObj.origin}${accumulatedPath}`;
+
+          // Add both versions (no-slash and with-slash) to candidates
+          // because DB might store it either way
           candidatePaths.add(candidateUrl);
+          candidatePaths.add(candidateUrl + '/');
         }
       } catch (e) {
         // Invalid URL, ignore
