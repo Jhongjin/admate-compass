@@ -703,7 +703,7 @@ export class UrlDiscovery {
               return false;
             }
             
-            // 다른 도메인으로의 링크는 품질이 낮음 (maxDepth 4일 때도 우선순위 낮춤)
+            // 도메인 제한 확인 (maxDepth 기반)
             const urlDomain = extractDomain(normalizedUrl);
             const baseDomain = extractDomain(baseUrl);
             const isDifferentDomain = urlDomain !== baseDomain && !urlDomain.endsWith(`.${baseDomain}`);
@@ -728,10 +728,6 @@ export class UrlDiscovery {
                 }
               }
             }
-
-            // 도메인 제한 확인 (maxDepth 기반)
-            const urlDomain = extractDomain(normalizedUrl);
-            const baseDomain = extractDomain(baseUrl);
             
             if (urlDomain !== baseDomain) {
               const maxDepth = config.maxDepth ?? 3; // 기본값 3
