@@ -143,7 +143,7 @@ export async function POST(request: NextRequest) {
           const normParent = parentUrl.replace(/\/$/, "").trim();
           
           // 1. First check existing DB parents
-          let parentInfo = existingParentsMap.get(normParent);
+          let parentInfo: { url: string, id: string | null } | undefined = existingParentsMap.get(normParent);
           
           // 2. If not found, check current batch (for same-batch grouping)
           if (!parentInfo) {
