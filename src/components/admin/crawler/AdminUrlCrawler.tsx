@@ -423,7 +423,8 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
             console.log(`[handleSaveToDb] 하위 페이지 "${r.url}"의 부모를 시드 URL "${seedUrl}"로 설정`);
           } else {
             // 시드 URL이 results에 없으면 DB에서 확인
-            const dbSeedUrl = existingDbMap.get(normalizedSeedUrl);
+            if (normalizedSeedUrl) {
+              const dbSeedUrl = existingDbMap.get(normalizedSeedUrl);
               if (dbSeedUrl) {
                 parentUrl = dbSeedUrl;
                 console.log(`[handleSaveToDb] 하위 페이지 "${r.url}"의 부모를 DB의 시드 URL "${dbSeedUrl}"로 설정`);
