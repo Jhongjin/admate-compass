@@ -191,57 +191,103 @@ export class UrlDiscovery {
           
           // 네이버 광고 페이지 같은 SPA 사이트를 위한 설정
           const isNaverAds = baseUrl.includes('ads.naver.com');
-          const waitTime = isNaverAds ? 5000 : 2000; // 네이버 광고는 더 오래 대기
+          const waitTime = isNaverAds ? 8000 : 3000; // 네이버 광고는 더 오래 대기
           
           await page.goto(baseUrl, {
             waitUntil: 'networkidle2',
-            timeout: config.timeout || 30000,
+            timeout: config.timeout || 60000, // 타임아웃 증가
           });
           
           // JavaScript 실행 대기 (동적 링크 로딩)
           await new Promise(resolve => setTimeout(resolve, waitTime));
           
-          // 스크롤하여 lazy loading된 콘텐츠 로드
-          await page.evaluate(async () => {
-            await new Promise((resolve) => {
-              let totalHeight = 0;
-              const distance = 100;
-              const timer = setInterval(() => {
-                const scrollHeight = document.body.scrollHeight;
-                window.scrollBy(0, distance);
-                totalHeight += distance;
-                
-                if (totalHeight >= scrollHeight) {
-                  clearInterval(timer);
-                  resolve(null);
-                }
-              }, 100);
-            });
-          });
-          
-          // 추가 대기 (스크롤 후 콘텐츠 로딩)
-          await new Promise(resolve => setTimeout(resolve, 2000));
-          
-          // 네비게이션 메뉴 열기 (네이버 광고 페이지의 경우)
+          // 네이버 광고 페이지의 경우 더 적극적인 링크 추출
           if (isNaverAds) {
             try {
-              // 드롭다운 메뉴를 열기 위해 호버 또는 클릭 시도
+              // 1. 네비게이션 메뉴 클릭하여 서브 메뉴 열기
               await page.evaluate(() => {
-                // 네비게이션 메뉴 요소 찾기 및 호버
-                const navItems = document.querySelectorAll('nav a, [role="navigation"] a, header a');
-                navItems.forEach((item: Element) => {
-                  const mouseEvent = new MouseEvent('mouseenter', {
-                    view: window,
-                    bubbles: true,
-                    cancelable: true,
-                  });
-                  item.dispatchEvent(mouseEvent);
+                // 모든 네비게이션 링크와 버튼 찾기
+                const navLinks = document.querySelectorAll('nav a, header a, [role="navigation"] a, [class*="menu"] a, [class*="nav"] a');
+                const navButtons = document.querySelectorAll('nav button, header button, [role="navigation"] button, [class*="menu"] button');
+                
+                // 링크 클릭 시도 (서브 메뉴 열기)
+                navLinks.forEach((link: Element) => {
+                  try {
+                    const clickEvent = new MouseEvent('click', {
+                      view: window,
+                      bubbles: true,
+                      cancelable: true,
+                    });
+                    link.dispatchEvent(clickEvent);
+                  } catch (e) {
+                    // 클릭 실패 무시
+                  }
+                });
+                
+                // 버튼 클릭 시도 (드롭다운 열기)
+                navButtons.forEach((button: Element) => {
+                  try {
+                    const clickEvent = new MouseEvent('click', {
+                      view: window,
+                      bubbles: true,
+                      cancelable: true,
+                    });
+                    button.dispatchEvent(clickEvent);
+                  } catch (e) {
+                    // 클릭 실패 무시
+                  }
+                });
+                
+                // 호버 이벤트도 발생
+                navLinks.forEach((link: Element) => {
+                  try {
+                    const mouseEnterEvent = new MouseEvent('mouseenter', {
+                      view: window,
+                      bubbles: true,
+                      cancelable: true,
+                    });
+                    link.dispatchEvent(mouseEnterEvent);
+                  } catch (e) {
+                    // 이벤트 실패 무시
+                  }
                 });
               });
-              await new Promise(resolve => setTimeout(resolve, 1000));
+              
+              // 메뉴 열림 대기
+              await new Promise(resolve => setTimeout(resolve, 3000));
             } catch (e) {
               console.warn('⚠️ 네비게이션 메뉴 열기 실패:', e);
             }
+          }
+          
+          // 스크롤하여 lazy loading된 콘텐츠 로드 (여러 번)
+          for (let i = 0; i < 3; i++) {
+            await page.evaluate(async () => {
+              await new Promise((resolve) => {
+                let totalHeight = 0;
+                const distance = 200;
+                const timer = setInterval(() => {
+                  const scrollHeight = Math.max(
+                    document.body.scrollHeight,
+                    document.documentElement.scrollHeight,
+                    document.body.offsetHeight,
+                    document.documentElement.offsetHeight,
+                    document.body.clientHeight,
+                    document.documentElement.clientHeight
+                  );
+                  window.scrollBy(0, distance);
+                  totalHeight += distance;
+                  
+                  if (totalHeight >= scrollHeight || totalHeight > 10000) {
+                    clearInterval(timer);
+                    resolve(null);
+                  }
+                }, 150);
+              });
+            });
+            
+            // 스크롤 후 콘텐츠 로딩 대기
+            await new Promise(resolve => setTimeout(resolve, 2000));
           }
           
           // 브라우저에서 직접 링크 추출 (JavaScript 실행 후)
@@ -261,45 +307,98 @@ export class UrlDiscovery {
               '[class*="menu"] a[href]', // 메뉴 클래스를 가진 요소의 링크
               '[class*="nav"] a[href]', // nav 클래스를 가진 요소의 링크
               '[class*="link"] a[href]', // link 클래스를 가진 요소의 링크
+              '[class*="MenuItem"] a[href]', // MenuItem 클래스
+              '[class*="NavItem"] a[href]', // NavItem 클래스
               'button[href]', // button 태그에 href가 있는 경우
               '[data-link]', // data-link 속성
               '[data-url]', // data-url 속성
+              '[data-path]', // data-path 속성 (React Router)
+              '[data-to]', // data-to 속성 (React Router)
+              '[to]', // to 속성 (React Router Link)
+            ];
+            
+            // 숨겨진 요소도 포함 (display: none이 아닌 경우)
+            const hiddenSelectors = [
+              '[style*="display: none"]',
+              '[hidden]',
+              '[aria-hidden="true"]'
             ];
             
             const linkElements = new Set<Element>();
             linkSelectors.forEach(selector => {
               try {
-                document.querySelectorAll(selector).forEach(el => linkElements.add(el));
+                document.querySelectorAll(selector).forEach(el => {
+                  // 숨겨진 요소는 제외 (단, aria-hidden만 있는 경우는 포함)
+                  const isHidden = (el as HTMLElement).offsetParent === null && 
+                                   (el as HTMLElement).style.display === 'none';
+                  if (!isHidden) {
+                    linkElements.add(el);
+                  }
+                });
               } catch (e) {
                 // 선택자 오류 무시
               }
             });
             
+            // 모든 a 태그도 추가 (href가 없어도)
+            try {
+              document.querySelectorAll('a').forEach(el => {
+                const isHidden = (el as HTMLElement).offsetParent === null && 
+                               (el as HTMLElement).style.display === 'none';
+                if (!isHidden) {
+                  linkElements.add(el);
+                }
+              });
+            } catch (e) {
+              // 선택자 오류 무시
+            }
+            
             const extractedLinks: Array<{ url: string, text: string }> = [];
             const seenUrls = new Set<string>();
 
             linkElements.forEach(link => {
-              // href 속성 또는 data-href, data-link, data-url 속성 확인
+              // href 속성 또는 data-href, data-link, data-url, data-path, data-to, to 속성 확인
               let href = link.getAttribute('href') || 
                         link.getAttribute('data-href') || 
                         link.getAttribute('data-link') || 
-                        link.getAttribute('data-url');
+                        link.getAttribute('data-url') ||
+                        link.getAttribute('data-path') ||
+                        link.getAttribute('data-to') ||
+                        link.getAttribute('to');
               
               // onclick에서 URL 추출 시도
               if (!href) {
                 const onclick = link.getAttribute('onclick');
                 if (onclick) {
-                  const urlMatch = onclick.match(/(?:location\.href|window\.open|location\.assign|router\.push|navigate)\s*\(?\s*['"]([^'"]+)['"]/);
+                  const urlMatch = onclick.match(/(?:location\.href|window\.open|location\.assign|router\.push|navigate|history\.push|history\.replace)\s*\(?\s*['"]([^'"]+)['"]/);
                   if (urlMatch) href = urlMatch[1];
                 }
               }
               
-              // React Router나 Next.js 같은 클라이언트 사이드 라우팅 처리
-              if (!href) {
-                const onClick = (link as any).onclick;
-                if (onClick) {
-                  // 이벤트 리스너에서 URL 추출은 복잡하므로 일단 스킵
+              // React Router Link 컴포넌트의 경우 (to 속성)
+              if (!href && link.tagName === 'A') {
+                const linkElement = link as HTMLElement;
+                // React Router의 경우 내부적으로 pathname을 저장할 수 있음
+                const reactProps = (linkElement as any).__reactInternalInstance || 
+                                 (linkElement as any).__reactFiber ||
+                                 (linkElement as any)._reactInternalFiber;
+                if (reactProps) {
+                  // React 내부 속성에서 추출 시도 (복잡하므로 일단 스킵)
                 }
+              }
+              
+              // 클릭 이벤트 리스너에서 URL 추출 시도 (간단한 경우만)
+              if (!href) {
+                const linkElement = link as HTMLElement;
+                // data 속성에서 URL 패턴 찾기
+                Array.from(linkElement.attributes).forEach(attr => {
+                  if (attr.name.startsWith('data-') && attr.value) {
+                    // URL 패턴인지 확인
+                    if (attr.value.startsWith('/') || attr.value.startsWith('http')) {
+                      href = attr.value;
+                    }
+                  }
+                });
               }
               
               if (!href) return;
@@ -452,7 +551,21 @@ export class UrlDiscovery {
           await page.close();
           console.log(`🔗 Puppeteer에서 발견된 링크: ${links.length}개`);
           if (links.length > 0) {
-            console.log(`🔗 발견된 링크 샘플 (처음 5개):`, links.slice(0, 5).map(l => l.url));
+            console.log(`🔗 발견된 링크 샘플 (처음 10개):`, links.slice(0, 10).map(l => ({ url: l.url, text: l.text?.substring(0, 30) })));
+          } else {
+            console.warn(`⚠️ 링크가 발견되지 않았습니다. URL: ${baseUrl}`);
+            // HTML을 다시 확인
+            try {
+              const page2 = await browserManager.createPage();
+              await page2.goto(baseUrl, { waitUntil: 'networkidle2', timeout: 30000 });
+              await new Promise(resolve => setTimeout(resolve, 3000));
+              const html = await page2.content();
+              const linkCount = (html.match(/<a[^>]*href=/gi) || []).length;
+              console.warn(`⚠️ HTML에서 발견된 <a> 태그 수: ${linkCount}개`);
+              await page2.close();
+            } catch (e) {
+              console.warn('⚠️ HTML 재확인 실패:', e);
+            }
           }
         } catch (error) {
           // Puppeteer 실패 시 HTML 파싱으로 폴백
