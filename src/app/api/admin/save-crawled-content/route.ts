@@ -115,8 +115,17 @@ export async function POST(request: NextRequest) {
 
     // --- 3. Process Each Result ---
 
-    const savedDocuments = [];
-    const errors = [];
+    interface SavedDocument {
+      id: string;
+      url: string;
+      title: string;
+      chunkCount: number;
+      parentUrl: string | null;
+      mainDocumentId: string | null;
+    }
+
+    const savedDocuments: SavedDocument[] = [];
+    const errors: Array<{ url: string; error: string }> = [];
 
     for (const result of results) {
       try {
