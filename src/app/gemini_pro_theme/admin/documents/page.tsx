@@ -55,6 +55,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import NewDocumentUpload from "@/components/admin/NewDocumentUpload";
 import HybridCrawlingManager from "@/components/admin/HybridCrawlingManager";
 import GroupedDocumentList from "@/components/admin/GroupedDocumentList";
+import { AdminUrlCrawler } from "@/components/admin/crawler/AdminUrlCrawler";
 
 interface Document {
     id: string;
@@ -907,7 +908,10 @@ export default function DocumentsPage() {
 
                     {/* URL Crawling Tab */}
                     <TabsContent value="crawling" className="space-y-6">
-                        <HybridCrawlingManager onCrawlingComplete={() => refetch()} />
+                        <AdminUrlCrawler
+                            onSuccess={() => refetch()}
+                            defaultVendor={selectedVendor === 'all' ? undefined : [selectedVendor]}
+                        />
 
                         <div className="mt-8">
                             <div className="flex items-center justify-between mb-4">

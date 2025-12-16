@@ -75,6 +75,15 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor }: AdminUrlCrawlerPro
   const [selectedVendor, setSelectedVendor] = useState<string>(
     defaultVendor && defaultVendor.length > 0 ? defaultVendor[0].toUpperCase() : 'META'
   );
+
+  useEffect(() => {
+    if (defaultVendor && defaultVendor.length > 0) {
+      const vendor = defaultVendor[0].toUpperCase();
+      // Only update if it's a valid vendor or map accordingly
+      const validVendor = VENDOR_OPTIONS.find(v => v.id === vendor) ? vendor : 'META';
+      setSelectedVendor(validVendor);
+    }
+  }, [defaultVendor]);
   const [isDragActive, setIsDragActive] = useState(false);
 
   // Sub-page selection state
