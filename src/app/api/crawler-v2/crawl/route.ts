@@ -21,17 +21,13 @@ export async function POST(request: NextRequest) {
 
     if (!urls || !Array.isArray(urls) || urls.length === 0) {
       return NextResponse.json(
-        {
-          success: false,
-          error: '크롤링할 URL 목록이 필요합니다.',
-        },
+        { success: false, error: '크롤링할 URL 목록이 필요합니다.' },
         { status: 400 }
       );
     }
 
     console.log(`🕷️ 크롤러 V2 시작: ${urls.length}개 URL`);
 
-    // 크롤링 옵션 설정
     const crawlOptions: Partial<CrawlOptions> = {
       maxDepth: options?.maxDepth || 2,
       maxUrls: options?.maxUrls || 100,
@@ -43,44 +39,62 @@ export async function POST(request: NextRequest) {
       ...options,
     };
 
-    // 크롤링 실행
-    const results = await crawlerEngine.crawlUrls(urls, crawlOptions);
+    const encoder = new TextEncoder();
+    const stream = new TransformStream();
+    const writer = stream.writable.getWriter();
 
-    // 성공/실패 통계
-    const successCount = results.filter(r => r.status === 'success').length;
-    const failedCount = results.filter(r => r.status === 'failed').length;
+    // Run crawling in background
+    (async () => {
+      try {
+        const results = await crawlerEngine.crawlUrls(urls, crawlOptions, (progress) => {
+          // Write progress to stream
+          writer.write(encoder.encode(JSON.stringify(progress) + '\n'));
+        });
 
-    console.log(`✅ 크롤러 V2 완료: 성공 ${successCount}개, 실패 ${failedCount}개`);
+        // Write final completion
+        const successCount = results.filter(r => r.status === 'success').length;
+        const failedCount = results.filter(r => r.status === 'failed').length;
 
-    return NextResponse.json({
-      success: true,
-      message: `크롤링 완료: 성공 ${successCount}개, 실패 ${failedCount}개`,
-      data: {
-        results,
-        summary: {
-          total: urls.length,
-          success: successCount,
-          failed: failedCount,
-        },
-      },
+        writer.write(encoder.encode(JSON.stringify({
+          type: 'done',
+          success: true,
+          summary: {
+            total: urls.length,
+            success: successCount,
+            failed: failedCount
+          },
+          results: results // Send full results at end too? Or rely on incremental? Frontend might want final summary.
+        }) + '\n'));
+
+      } catch (error) {
+        console.error('❌ 크롤러 V2 API 오류:', error);
+        writer.write(encoder.encode(JSON.stringify({
+          type: 'error',
+          error: error instanceof Error ? error.message : String(error)
+        }) + '\n'));
+      } finally {
+        try {
+          await crawlerEngine.cleanup();
+          await writer.close();
+        } catch (e) {
+          console.warn('Stream cleanup error:', e);
+        }
+      }
+    })();
+
+    return new NextResponse(stream.readable, {
+      headers: {
+        'Content-Type': 'application/x-ndjson',
+        'Transfer-Encoding': 'chunked'
+      }
     });
+
   } catch (error) {
-    console.error('❌ 크롤러 V2 API 오류:', error);
+    console.error('❌ 크롤러 V2 API 요청 오류:', error);
     return NextResponse.json(
-      {
-        success: false,
-        error: '크롤링 중 오류가 발생했습니다.',
-        details: error instanceof Error ? error.message : String(error),
-      },
+      { success: false, error: '요청 처리 중 오류가 발생했습니다.' },
       { status: 500 }
     );
-  } finally {
-    // 브라우저 정리
-    try {
-      await crawlerEngine.cleanup();
-    } catch (error) {
-      console.warn('⚠️ 브라우저 정리 실패:', error);
-    }
   }
 }
 

@@ -105,10 +105,15 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor }: AdminUrlCrawlerPro
     setEnvironment(isVercel ? 'vercel' : 'local');
   }, []);
 
+  /* New state for detailed progress message */
+  const [statusMessage, setStatusMessage] = useState<string>("크롤링 중...");
+
   const performCrawl = async (urlList: string[], isSubPageCrawl = false) => {
     if (urlList.length === 0) return;
 
     setIsCrawling(true);
+    setStatusMessage("크롤링 준비 중..."); // Reset status
+
     if (!isSubPageCrawl) {
       setResults([]); // Clear results only for new main crawl
     }
@@ -128,51 +133,80 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor }: AdminUrlCrawlerPro
         }),
       });
 
-      const data = await response.json();
+      if (!response.body) {
+        throw new Error('ReadableStream not supported');
+      }
 
-      if (data.success) {
-        const newResults = data.data.results as CrawlResult[];
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
 
-        if (isSubPageCrawl) {
-          setResults(prev => [...prev, ...newResults]);
-          toast.success(`추가 크롤링 완료: ${newResults.length}개`);
-        } else {
-          setResults(newResults);
-          toast.success(`크롤링 완료: 성공 ${data.data.summary.success}개, 실패 ${data.data.summary.failed}개`);
+      while (true) {
+        const { done, value } = await reader.read();
 
-          // Check for discovered sub-pages if option enabled
-          if (options.discoverSubPages) {
-            const allDiscovered: Array<{ url: string; source: string; title?: string; parentUrl?: string }> = [];
-            const existingUrls = new Set([...urlList, ...newResults.map(r => r.url)]);
+        if (value) {
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          // Keep the last chunk if it's incomplete
+          buffer = lines.pop() || '';
 
-            newResults.forEach(result => {
-              if (result.discoveredUrls && result.discoveredUrls.length > 0) {
-                result.discoveredUrls.forEach(d => {
-                  if (!existingUrls.has(d.url)) {
-                    // source maps to d.source (method), and we add parentUrl which is the current result.url
-                    allDiscovered.push({ url: d.url, source: result.url, title: d.title, parentUrl: result.url });
-                    existingUrls.add(d.url); // Prevent duplicates
+          for (const line of lines) {
+            if (line.trim() === '') continue;
+            try {
+              const event = JSON.parse(line);
+
+              if (event.type === 'log') {
+                setStatusMessage(event.message);
+              } else if (event.type === 'batch_progress') {
+                // Add individual result immediately
+                if (event.result) {
+                  setResults(prev => [...prev, event.result]);
+                }
+              } else if (event.type === 'done') {
+                toast.success(`크롤링 완료: 성공 ${event.summary.success}개, 실패 ${event.summary.failed}개`);
+
+                // Handle discovery logic (for the final summary or if we gathered them incrementally)
+                // Note: `event.results` contains all results if we want to process discovery in bulk
+                if (options.discoverSubPages && !isSubPageCrawl && event.results) {
+                  const newResults = event.results as CrawlResult[];
+                  const allDiscovered: Array<{ url: string; source: string; title?: string; parentUrl?: string }> = [];
+                  const existingUrls = new Set([...urlList, ...results.map(r => r.url), ...newResults.map(r => r.url)]);
+
+                  newResults.forEach(result => {
+                    if (result.discoveredUrls && result.discoveredUrls.length > 0) {
+                      result.discoveredUrls.forEach(d => {
+                        if (!existingUrls.has(d.url)) {
+                          allDiscovered.push({ url: d.url, source: result.url, title: d.title, parentUrl: result.url });
+                          existingUrls.add(d.url);
+                        }
+                      });
+                    }
+                  });
+
+                  if (allDiscovered.length > 0) {
+                    setDiscoveredUrls(allDiscovered);
+                    setSelectedDiscoveredUrls(new Set(allDiscovered.map(d => d.url)));
+                    setIsSelectionDialogOpen(true);
                   }
-                });
+                }
+              } else if (event.type === 'error') {
+                toast.error(event.error || '크롤링 중 오류 발생');
               }
-            });
-
-            if (allDiscovered.length > 0) {
-              setDiscoveredUrls(allDiscovered);
-              // Select all by default
-              setSelectedDiscoveredUrls(new Set(allDiscovered.map(d => d.url)));
-              setIsSelectionDialogOpen(true);
+            } catch (e) {
+              console.warn('Failed to parse NDJSON line:', line);
             }
           }
         }
-      } else {
-        toast.error(data.error || '크롤링 실패');
+
+        if (done) break;
       }
+
     } catch (error) {
       console.error('크롤링 오류:', error);
       toast.error('크롤링 중 오류가 발생했습니다.');
     } finally {
       setIsCrawling(false);
+      setStatusMessage("크롤링 중..."); // Reset to default for next time
     }
   };
 
@@ -411,7 +445,7 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor }: AdminUrlCrawlerPro
             {isCrawling ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                크롤링 중...
+                {statusMessage}
               </>
             ) : (
               <>

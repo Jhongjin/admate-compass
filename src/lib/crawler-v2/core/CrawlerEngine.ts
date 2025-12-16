@@ -93,9 +93,9 @@ export class CrawlerEngine {
             await page.close();
           } catch (closeError: any) {
             // "Connection closed" 또는 "Target closed" 오류는 무시 (이미 연결이 끊어진 상태)
-            if (!closeError.message?.includes('Connection closed') && 
-                !closeError.message?.includes('Target closed') &&
-                !closeError.message?.includes('detached')) {
+            if (!closeError.message?.includes('Connection closed') &&
+              !closeError.message?.includes('Target closed') &&
+              !closeError.message?.includes('detached')) {
               console.warn('⚠️ 페이지 닫기 실패:', closeError);
             }
           }
@@ -137,7 +137,8 @@ export class CrawlerEngine {
    */
   async crawlUrls(
     urls: string[],
-    options: Partial<CrawlOptions> = {}
+    options: Partial<CrawlOptions> = {},
+    onProgress?: (data: { type: 'log' | 'batch_progress', message: string, current?: number, total?: number, result?: CrawlResult }) => void
   ): Promise<CrawlResult[]> {
     console.log(`🕷️ 배치 크롤링 시작: ${urls.length}개 URL`);
 
@@ -147,9 +148,28 @@ export class CrawlerEngine {
       const url = urls[i];
       console.log(`📄 크롤링 진행: ${i + 1}/${urls.length} - ${url}`);
 
+      if (onProgress) {
+        onProgress({
+          type: 'log',
+          message: `페이지 분석 중... (${i + 1}/${urls.length})`,
+          current: i + 1,
+          total: urls.length
+        });
+      }
+
       try {
         const result = await this.crawlUrl(url, options);
         results.push(result);
+
+        if (onProgress) {
+          onProgress({
+            type: 'batch_progress',
+            message: `완료: ${url}`,
+            current: i + 1,
+            total: urls.length,
+            result: result
+          });
+        }
 
         // 요청 간격 (서버 부하 방지)
         if (i < urls.length - 1) {
