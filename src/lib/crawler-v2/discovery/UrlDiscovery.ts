@@ -180,9 +180,10 @@ export class UrlDiscovery {
     const discovered: DiscoveredUrl[] = [];
 
     try {
-      let html: string;
+      let links: Array<{ url: string; text: string }> = [];
+      const baseDomain = extractDomain(baseUrl);
 
-      // Puppeteer 사용 시도
+      // Puppeteer 사용 시도 (JavaScript 렌더링된 링크 추출)
       const browser = browserManager.getBrowser();
       if (browser) {
         try {
@@ -191,20 +192,121 @@ export class UrlDiscovery {
             waitUntil: 'networkidle2',
             timeout: config.timeout || 30000,
           });
-          html = await page.content();
+          
+          // JavaScript 실행 대기 (동적 링크 로딩)
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          
+          // 브라우저에서 직접 링크 추출 (JavaScript 실행 후)
+          links = await page.evaluate((baseDomain, maxDepth, baseUrl) => {
+            // 다양한 선택자로 링크 찾기 (Instagram, Facebook 등 다양한 사이트 대응)
+            const linkSelectors = [
+              'a[href]',
+              '[role="link"][href]',
+              '[data-href]',
+              '[href]', // 모든 href 속성을 가진 요소
+              'a[data-testid]',
+              'a[aria-label]',
+              '[onclick*="location"]', // onclick으로 링크 동작하는 요소
+            ];
+            
+            const linkElements = new Set<Element>();
+            linkSelectors.forEach(selector => {
+              try {
+                document.querySelectorAll(selector).forEach(el => linkElements.add(el));
+              } catch (e) {
+                // 선택자 오류 무시
+              }
+            });
+            
+            const extractedLinks: Array<{ url: string, text: string }> = [];
+            const seenUrls = new Set<string>();
+
+            linkElements.forEach(link => {
+              // href 속성 또는 data-href 속성 확인
+              let href = link.getAttribute('href') || link.getAttribute('data-href');
+              
+              // onclick에서 URL 추출 시도
+              if (!href) {
+                const onclick = link.getAttribute('onclick');
+                if (onclick) {
+                  const urlMatch = onclick.match(/(?:location\.href|window\.open|location\.assign)\s*=\s*['"]([^'"]+)['"]/);
+                  if (urlMatch) href = urlMatch[1];
+                }
+              }
+              
+              if (!href) return;
+
+              try {
+                const fullUrl = new URL(href, window.location.href).href;
+                const urlDomain = new URL(fullUrl).hostname;
+                
+                // 중복 제거
+                const normalizedUrl = fullUrl.split('#')[0].split('?')[0];
+                if (seenUrls.has(normalizedUrl)) return;
+                seenUrls.add(normalizedUrl);
+                
+                // 도메인 필터링 (maxDepth 기반)
+                const isSameDomain = urlDomain === baseDomain;
+                let shouldInclude = false;
+                
+                if (maxDepth >= 4) {
+                  // maxDepth 4: 모든 도메인 허용
+                  shouldInclude = true;
+                } else if (maxDepth >= 3) {
+                  // maxDepth 3: 같은 도메인 또는 하위 도메인
+                  shouldInclude = isSameDomain || urlDomain.endsWith(`.${baseDomain}`);
+                } else {
+                  // maxDepth 1-2: 정확히 같은 도메인만
+                  shouldInclude = isSameDomain;
+                }
+
+                if (shouldInclude &&
+                    fullUrl !== window.location.href &&
+                    !fullUrl.includes('#') &&
+                    !fullUrl.includes('javascript:') &&
+                    !fullUrl.includes('mailto:')) {
+                  
+                  // 텍스트 추출
+                  let text = link.textContent?.trim() || '';
+                  if (!text) {
+                    text = link.getAttribute('title') || link.getAttribute('aria-label') || '';
+                  }
+                  if (!text && link.querySelector('img')) {
+                    text = link.querySelector('img')?.getAttribute('alt') || '';
+                  }
+                  
+                  extractedLinks.push({
+                    url: fullUrl,
+                    text: text.replace(/\s+/g, ' ').trim(),
+                  });
+                }
+              } catch (e) {
+                // URL 파싱 실패 시 무시
+              }
+            });
+
+            return extractedLinks;
+          }, baseDomain, config.maxDepth ?? 3, baseUrl);
+          
           await page.close();
+          console.log(`🔗 Puppeteer에서 발견된 링크: ${links.length}개`);
         } catch (error) {
-          // Puppeteer 실패 시 fetch 사용
-          console.warn('⚠️ Puppeteer로 페이지 로드 실패, fetch로 폴백:', error);
-          const response = await fetch(baseUrl, {
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            },
-          });
-          if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+          // Puppeteer 실패 시 HTML 파싱으로 폴백
+          console.warn('⚠️ Puppeteer로 링크 추출 실패, HTML 파싱으로 폴백:', error);
+          try {
+            const response = await fetch(baseUrl, {
+              headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+              },
+            });
+            if (response.ok) {
+              const html = await response.text();
+              links = extractLinks(html, baseUrl);
+              console.log(`🔗 HTML 파싱에서 발견된 링크: ${links.length}개`);
+            }
+          } catch (fetchError) {
+            console.warn('⚠️ fetch로 HTML 가져오기 실패:', fetchError);
           }
-          html = await response.text();
         }
       } else {
         // 브라우저가 없으면 fetch 사용
@@ -213,16 +315,16 @@ export class UrlDiscovery {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
           },
         });
-        if (!response.ok) {
+        if (response.ok) {
+          const html = await response.text();
+          links = extractLinks(html, baseUrl);
+          console.log(`🔗 HTML 파싱에서 발견된 링크: ${links.length}개`);
+        } else {
           throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
-        html = await response.text();
       }
 
-      // HTML에서 링크 추출
-      const links = extractLinks(html, baseUrl);
-      
-      console.log(`🔗 발견된 링크: ${links.length}개`);
+      console.log(`🔗 총 발견된 링크: ${links.length}개`);
 
       // 링크 필터링 및 정렬 (중요한 링크 우선)
       const filteredLinks = links
