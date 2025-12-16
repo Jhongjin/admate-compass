@@ -64,6 +64,24 @@ const VENDOR_OPTIONS = [
   { id: 'OTHER', name: 'Other' },
 ];
 
+// UI 벤더 이름을 DB/내부 ID로 변환하는 매핑
+const UI_VENDOR_TO_ID_MAP: Record<string, string> = {
+  'Meta': 'META',
+  'Naver': 'NAVER',
+  'Kakao': 'KAKAO',
+  'Google': 'GOOGLE',
+  'X(Twitter)': 'OTHER',
+  'X': 'OTHER',
+};
+
+// DB/내부 ID를 UI 벤더 이름으로 변환하는 역매핑
+const ID_TO_UI_VENDOR_MAP: Record<string, string> = {
+  'META': 'Meta',
+  'NAVER': 'Naver',
+  'KAKAO': 'Kakao',
+  'GOOGLE': 'Google',
+  'OTHER': 'Other',
+};
 
 export function AdminUrlCrawler({ onSuccess, defaultVendor }: AdminUrlCrawlerProps) {
   // --- State ---
@@ -72,18 +90,38 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor }: AdminUrlCrawlerPro
   const [isSaving, setIsSaving] = useState(false);
   const [results, setResults] = useState<CrawlResult[]>([]);
   const [environment, setEnvironment] = useState<'local' | 'vercel' | 'unknown'>('unknown');
+  
+  // defaultVendor에서 벤더 ID 추출 및 초기화
+  const getVendorIdFromDefault = (vendors?: string[]): string => {
+    if (!vendors || vendors.length === 0) return 'META';
+    
+    const firstVendor = vendors[0];
+    // UI 벤더 이름인 경우 변환
+    if (UI_VENDOR_TO_ID_MAP[firstVendor]) {
+      return UI_VENDOR_TO_ID_MAP[firstVendor];
+    }
+    // 이미 대문자 ID인 경우 그대로 사용
+    if (VENDOR_OPTIONS.find(v => v.id === firstVendor.toUpperCase())) {
+      return firstVendor.toUpperCase();
+    }
+    // 기본값
+    return 'META';
+  };
+
   const [selectedVendor, setSelectedVendor] = useState<string>(
-    defaultVendor && defaultVendor.length > 0 ? defaultVendor[0].toUpperCase() : 'META'
+    getVendorIdFromDefault(defaultVendor)
   );
 
+  // defaultVendor 변경 시 동기화 (문자열로 변환하여 의존성 배열에 추가)
   useEffect(() => {
     if (defaultVendor && defaultVendor.length > 0) {
-      const vendor = defaultVendor[0].toUpperCase();
-      // Only update if it's a valid vendor or map accordingly
-      const validVendor = VENDOR_OPTIONS.find(v => v.id === vendor) ? vendor : 'META';
-      setSelectedVendor(validVendor);
+      const vendorId = getVendorIdFromDefault(defaultVendor);
+      // 현재 선택된 벤더와 다를 때만 업데이트 (무한 루프 방지)
+      if (selectedVendor !== vendorId) {
+        setSelectedVendor(vendorId);
+      }
     }
-  }, [defaultVendor]);
+  }, [defaultVendor?.join(',')]); // 배열을 문자열로 변환하여 의존성 추적
   const [isDragActive, setIsDragActive] = useState(false);
 
   // Sub-page selection state
