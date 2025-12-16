@@ -55,6 +55,7 @@ export interface DocumentData {
   url?: string; // URL 필드 추가
   source_vendor?: string; // 벤더 정보 추가
   main_document_id?: string; // 그룹 관계를 위한 부모 문서 ID
+  metadata?: any; // 메타데이터 (parentUrl, is_sub_page 등)
   original_file_name?: string | null; // 업로드 시 사용자가 본래 입력한 파일명
   sanitized_file_name?: string | null; // 저장/경로용 정리된 파일명
   created_at: string;
@@ -1011,6 +1012,17 @@ export class RAGProcessor {
         source_vendor: document.source_vendor || 'META', // 벤더 정보 저장 (기본값: META)
         updated_at: document.updated_at,
       };
+
+      // metadata 저장 (parentUrl, is_sub_page 등 그룹화 정보 포함)
+      if (document.metadata !== undefined) {
+        documentData.metadata = document.metadata;
+        console.log(`[CRITICAL] 📦 metadata 저장:`, {
+          documentId: document.id,
+          hasParentUrl: !!document.metadata?.parentUrl,
+          parentUrl: document.metadata?.parentUrl || 'null',
+          isSubPage: !!document.metadata?.is_sub_page
+        });
+      }
 
       // URL은 전달된 값이 있을 때만 덮어쓰고, undefined면 기존 값을 유지한다.
       if (document.url !== undefined) {

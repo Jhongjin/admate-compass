@@ -92,21 +92,19 @@ export async function POST(request: NextRequest) {
     }
 
     // Also add any URLs that are IN the current batch to the map, so they can parent each other
+    // This is critical for grouping: if seed URL is in current batch, sub-pages can reference it
+    const currentBatchMap = new Map<string, { url: string, id: string | null }>();
     results.forEach(r => {
       if (r.url) {
         const norm = r.url.replace(/\/$/, "").trim();
-        // Only add if not already from DB (DB takes precedence as "stable" source)
-        if (!existingParentsMap.has(norm)) {
-          if (!existingParentsMap.has(norm)) {
-            // Note: Current batch URLs won't have IDs yet, so we can't link to them as parents by ID in this batch.
-            // This matches previous behavior but we need to store object structure.
-            // existingParentsMap.set(norm, { url: r.url, id: null }); 
-            // Actually, let's NOT add them here to avoid type errors if we expect ID.
-            // Self-referencing in same batch is edge case for now.
-          }
+        // Add to current batch map (ID will be set when document is created)
+        if (!currentBatchMap.has(norm)) {
+          currentBatchMap.set(norm, { url: r.url, id: null });
         }
       }
     });
+    
+    console.log(`📦 Current batch URLs: ${currentBatchMap.size}개`);
 
     console.log(`🗺️ Parent Map Size: ${existingParentsMap.size}`);
     // Log a few entries for debugging
@@ -134,12 +132,39 @@ export async function POST(request: NextRequest) {
         // Try to resolve parent ID if parentUrl exists from frontend discovery
         if (parentUrl) {
           const normParent = parentUrl.replace(/\/$/, "").trim();
-          const parentInfo = existingParentsMap.get(normParent);
+          
+          // 1. First check existing DB parents
+          let parentInfo = existingParentsMap.get(normParent);
+          
+          // 2. If not found, check current batch (for same-batch grouping)
+          if (!parentInfo) {
+            const batchParent = currentBatchMap.get(normParent);
+            if (batchParent) {
+              // Find the document ID from savedDocuments if already saved
+              const savedParent = savedDocuments.find(s => {
+                const savedNorm = s.url.replace(/\/$/, "").trim();
+                return savedNorm === normParent;
+              });
+              if (savedParent) {
+                parentInfo = { url: batchParent.url, id: savedParent.id };
+              } else {
+                // Parent will be saved later in this batch, we'll update main_document_id after
+                parentInfo = { url: batchParent.url, id: null };
+              }
+            }
+          }
+          
           if (parentInfo && parentInfo.id) {
             mainDocumentId = parentInfo.id;
             // Ensure URL matches DB canonical
             parentUrl = parentInfo.url;
             metadata.parentUrl = parentInfo.url;
+            console.log(`🔗 [Grouping] Parent found: ${parentUrl} (ID: ${mainDocumentId})`);
+          } else if (parentInfo) {
+            // Parent URL exists but ID not yet available (will be in same batch)
+            parentUrl = parentInfo.url;
+            metadata.parentUrl = parentInfo.url;
+            console.log(`⏳ [Grouping] Parent URL found in batch but ID not yet available: ${parentUrl}`);
           }
         }
 
@@ -266,9 +291,22 @@ export async function POST(request: NextRequest) {
             id: documentId,
             url: result.url,
             title: result.title,
-            chunkCount: ragResult.chunkCount || 0
+            chunkCount: ragResult.chunkCount || 0,
+            parentUrl: parentUrl || null,
+            mainDocumentId: mainDocumentId || null
           });
-          console.log('✅ URL 저장 완료:', result.url);
+          
+          // Update current batch map with the saved document ID
+          const normUrl = result.url.replace(/\/$/, "").trim();
+          if (currentBatchMap.has(normUrl)) {
+            currentBatchMap.set(normUrl, { url: result.url, id: documentId });
+          }
+          
+          console.log('✅ URL 저장 완료:', result.url, {
+            documentId,
+            parentUrl: parentUrl || 'null',
+            mainDocumentId: mainDocumentId || 'null'
+          });
         } else {
           errors.push({
             url: result.url,
@@ -285,6 +323,44 @@ export async function POST(request: NextRequest) {
       }
     }
 
+    // --- 4. Post-process: Update main_document_id for documents that reference parents in same batch ---
+    console.log('🔄 같은 배치 내 parent 참조 업데이트 시작...');
+    const urlToIdMap = new Map<string, string>();
+    savedDocuments.forEach(doc => {
+      if (doc.url) {
+        const norm = doc.url.replace(/\/$/, "").trim();
+        urlToIdMap.set(norm, doc.id);
+      }
+    });
+
+    let updatedCount = 0;
+    for (const savedDoc of savedDocuments) {
+      if (savedDoc.parentUrl && !savedDoc.mainDocumentId) {
+        const normParent = savedDoc.parentUrl.replace(/\/$/, "").trim();
+        const parentId = urlToIdMap.get(normParent);
+        
+        if (parentId) {
+          console.log(`🔗 같은 배치 내 parent 찾음: ${savedDoc.url} -> ${savedDoc.parentUrl} (ID: ${parentId})`);
+          
+          const { error: updateError } = await supabase
+            .from('documents')
+            .update({ main_document_id: parentId })
+            .eq('id', savedDoc.id);
+          
+          if (updateError) {
+            console.error(`❌ main_document_id 업데이트 실패: ${savedDoc.id}`, updateError);
+          } else {
+            updatedCount++;
+            console.log(`✅ main_document_id 업데이트 완료: ${savedDoc.id} -> ${parentId}`);
+          }
+        }
+      }
+    }
+    
+    if (updatedCount > 0) {
+      console.log(`✅ 총 ${updatedCount}개 문서의 main_document_id 업데이트 완료`);
+    }
+
     return NextResponse.json({
       success: true,
       message: `${savedDocuments.length}개의 URL이 성공적으로 저장되었습니다.`,
@@ -294,7 +370,8 @@ export async function POST(request: NextRequest) {
         summary: {
           total: results.length,
           success: savedDocuments.length,
-          failed: errors.length
+          failed: errors.length,
+          groupingUpdated: updatedCount
         }
       }
     });
