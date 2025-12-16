@@ -21,6 +21,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { motion, AnimatePresence } from 'framer-motion';
+import { normalizeUrl as normalizeUrlUtil } from '@/lib/crawler-v2/utils/url-utils';
 
 // --- Interfaces ---
 
@@ -51,9 +52,15 @@ interface AdminUrlCrawlerProps {
 
 const normalizeUrl = (url: string) => {
   try {
-    return url.replace(/\/$/, "").trim();
+    // crawler-v2의 normalizeUrl 사용 (프래그먼트 제거, 슬래시 정리 등)
+    return normalizeUrlUtil(url);
   } catch (e) {
-    return url;
+    // fallback: 기본 정규화
+    try {
+      return url.replace(/\/$/, "").trim().toLowerCase();
+    } catch {
+      return url;
+    }
   }
 };
 
@@ -199,17 +206,28 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
         const data = await response.json();
         const map = new Map<string, string>();
         if (data.documents && Array.isArray(data.documents)) {
+          console.log(`[fetchExistingUrls] DB에서 ${data.documents.length}개의 URL 문서를 가져옴`);
           data.documents.forEach((doc: any) => {
             if (doc.url) {
               const normalized = normalizeUrl(doc.url);
               map.set(normalized, doc.url);
+              // 디버깅: 처음 5개만 로그
+              if (map.size <= 5) {
+                console.log(`[fetchExistingUrls] URL 매핑: "${doc.url}" -> "${normalized}"`);
+              }
             }
           });
+          if (data.documents.length > 5) {
+            console.log(`[fetchExistingUrls] ... 외 ${data.documents.length - 5}개 URL 매핑됨`);
+          }
         }
+        console.log(`[fetchExistingUrls] 총 ${map.size}개의 정규화된 URL이 existingDbMap에 저장됨`);
         setExistingDbMap(map);
+      } else {
+        console.error('[fetchExistingUrls] API 응답 오류:', response.status, response.statusText);
       }
     } catch (error) {
-      console.error('Failed to fetch existing URLs:', error);
+      console.error('[fetchExistingUrls] Failed to fetch existing URLs:', error);
     }
   };
 
@@ -275,20 +293,37 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                 if (options.discoverSubPages && !isSubPageCrawl && event.results) {
                   const newResults = event.results as CrawlResult[];
                   const allDiscovered: Array<{ url: string; source: string; title?: string; parentUrl?: string }> = [];
-                  const existingUrls = new Set([...urlList, ...results.map(r => r.url), ...newResults.map(r => r.url)]);
+                  // 정규화된 URL로 비교하기 위해 Set 생성
+                  const existingUrlsNormalized = new Set<string>();
+                  
+                  // 기존 URL들을 정규화하여 Set에 추가
+                  [...urlList, ...results.map(r => r.url), ...newResults.map(r => r.url)].forEach(url => {
+                    existingUrlsNormalized.add(normalizeUrl(url));
+                  });
+                  
+                  // DB에 있는 URL들도 정규화하여 Set에 추가
+                  existingDbMap.forEach((_, normalizedUrl) => {
+                    existingUrlsNormalized.add(normalizedUrl);
+                  });
+
+                  console.log(`[Discovery Logic] 기존 URL Set 크기: ${existingUrlsNormalized.size}`);
 
                   newResults.forEach(result => {
                     if (result.discoveredUrls) {
                       result.discoveredUrls.forEach(d => {
-                        if (!existingUrls.has(d.url)) {
+                        const normalizedDiscoveredUrl = normalizeUrl(d.url);
+                        if (!existingUrlsNormalized.has(normalizedDiscoveredUrl)) {
                           allDiscovered.push({ url: d.url, source: result.url, title: d.title, parentUrl: result.url });
-                          existingUrls.add(d.url);
+                          existingUrlsNormalized.add(normalizedDiscoveredUrl);
+                        } else {
+                          console.log(`[Discovery Logic] 이미 존재하는 URL 스킵: "${d.url}" (정규화: "${normalizedDiscoveredUrl}")`);
                         }
                       });
                     }
                   });
 
                   if (allDiscovered.length > 0) {
+                    console.log(`[Discovery Logic] ${allDiscovered.length}개의 새로운 하위 페이지 발견`);
                     setDiscoveredUrls(allDiscovered);
                     setSelectedDiscoveredUrls(new Set(allDiscovered.map(d => d.url)));
                     setIsSelectionDialogOpen(true);
@@ -436,7 +471,10 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
   const handleSelectAllExcludingCollected = () => {
     const newSelected = new Set<string>();
     discoveredUrls.forEach(item => {
-      const isAlreadyCrawled = results.some(r => normalizeUrl(r.url) === normalizeUrl(item.url)) || existingDbMap.has(normalizeUrl(item.url));
+      const normalizedItemUrl = normalizeUrl(item.url);
+      const isInResults = results.some(r => normalizeUrl(r.url) === normalizedItemUrl);
+      const isInDb = existingDbMap.has(normalizedItemUrl);
+      const isAlreadyCrawled = isInResults || isInDb;
       if (!isAlreadyCrawled) {
         newSelected.add(item.url);
       }
@@ -447,7 +485,21 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
   const handleDialogOpenChange = async (open: boolean) => {
     setIsSelectionDialogOpen(open);
     if (open) {
+      console.log('[handleDialogOpenChange] 다이얼로그 열림, DB 동기화 시작');
       await fetchExistingUrls();
+      
+      // 동기화 후 발견된 URL과 DB 비교 결과 로그
+      if (discoveredUrls.length > 0) {
+        console.log(`[handleDialogOpenChange] 발견된 URL ${discoveredUrls.length}개와 DB 비교 시작`);
+        discoveredUrls.slice(0, 5).forEach((item, i) => {
+          const normalized = normalizeUrl(item.url);
+          const isInDb = existingDbMap.has(normalized);
+          console.log(`[handleDialogOpenChange] [${i + 1}] "${item.url}" -> 정규화: "${normalized}" -> DB에 있음: ${isInDb}`);
+        });
+        if (discoveredUrls.length > 5) {
+          console.log(`[handleDialogOpenChange] ... 외 ${discoveredUrls.length - 5}개 URL`);
+        }
+      }
     }
   };
 
@@ -767,7 +819,23 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
             <ScrollArea className="h-[400px] bg-black/20 rounded-md border border-gray-800 p-3">
               <div className="space-y-2 pr-2">
                 {discoveredUrls.map((item, i) => {
-                  const isAlreadyCrawled = results.some(r => normalizeUrl(r.url) === normalizeUrl(item.url)) || existingDbMap.has(normalizeUrl(item.url));
+                  const normalizedItemUrl = normalizeUrl(item.url);
+                  const isInResults = results.some(r => normalizeUrl(r.url) === normalizedItemUrl);
+                  const isInDb = existingDbMap.has(normalizedItemUrl);
+                  const isAlreadyCrawled = isInResults || isInDb;
+                  
+                  // 디버깅: 처음 3개만 상세 로그
+                  if (i < 3 && isAlreadyCrawled) {
+                    console.log(`[isAlreadyCrawled] URL: "${item.url}"`, {
+                      normalized: normalizedItemUrl,
+                      isInResults,
+                      isInDb,
+                      resultsUrls: results.slice(0, 3).map(r => ({ original: r.url, normalized: normalizeUrl(r.url) })),
+                      dbHas: existingDbMap.has(normalizedItemUrl),
+                      dbSize: existingDbMap.size
+                    });
+                  }
+                  
                   return (
                     <div key={i}
                       className={`
