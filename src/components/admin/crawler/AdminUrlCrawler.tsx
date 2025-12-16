@@ -1,13 +1,13 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Play, CheckCircle, XCircle, Globe, Save, RefreshCw, ExternalLink } from 'lucide-react';
+import { Loader2, Play, CheckCircle, XCircle, Globe, Save, RefreshCw, ExternalLink, Link, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   Dialog,
@@ -19,6 +19,10 @@ import {
 } from '@/components/ui/dialog';
 import { Checkbox } from '@/components/ui/checkbox';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { motion, AnimatePresence } from 'framer-motion';
+
+// --- Interfaces ---
 
 interface CrawlResult {
   url: string;
@@ -42,6 +46,8 @@ interface AdminUrlCrawlerProps {
   defaultVendor?: string[];
 }
 
+// --- Utils ---
+
 const normalizeUrl = (url: string) => {
   try {
     return url.replace(/\/$/, "").trim();
@@ -50,12 +56,26 @@ const normalizeUrl = (url: string) => {
   }
 };
 
+const VENDOR_OPTIONS = [
+  { id: 'META', name: 'Meta' },
+  { id: 'NAVER', name: 'Naver' },
+  { id: 'KAKAO', name: 'Kakao' },
+  { id: 'GOOGLE', name: 'Google' },
+  { id: 'OTHER', name: 'Other' },
+];
+
+
 export function AdminUrlCrawler({ onSuccess, defaultVendor }: AdminUrlCrawlerProps) {
-  const [urls, setUrls] = useState<string>('https://example.com');
+  // --- State ---
+  const [urls, setUrls] = useState<string>('');
   const [isCrawling, setIsCrawling] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [results, setResults] = useState<CrawlResult[]>([]);
   const [environment, setEnvironment] = useState<'local' | 'vercel' | 'unknown'>('unknown');
+  const [selectedVendor, setSelectedVendor] = useState<string>(
+    defaultVendor && defaultVendor.length > 0 ? defaultVendor[0].toUpperCase() : 'META'
+  );
+  const [isDragActive, setIsDragActive] = useState(false);
 
   // Sub-page selection state
   const [discoveredUrls, setDiscoveredUrls] = useState<Array<{ url: string; source: string; title?: string; parentUrl?: string }>>([]);
@@ -72,12 +92,16 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor }: AdminUrlCrawlerPro
     waitTime: 1000,
   });
 
-  /* Updated state to store normalized URL -> actual URL map */
-  const [existingDbMap, setExistingDbMap] = useState<Map<string, string>>(new Map()); /* Fetch existing URLs from DB to mark them as "Already Collected" */
+  const [existingDbMap, setExistingDbMap] = useState<Map<string, string>>(new Map());
+  const [statusMessage, setStatusMessage] = useState<string>("크롤링 중...");
+
+
+  // --- Effects ---
+
   const fetchExistingUrls = async () => {
     try {
       const response = await fetch('/api/admin/documents/list?type=url', {
-        cache: 'no-store', // Prevent browser caching
+        cache: 'no-store',
         headers: {
           'Pragma': 'no-cache',
           'Cache-Control': 'no-cache'
@@ -85,10 +109,8 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor }: AdminUrlCrawlerPro
       });
       if (response.ok) {
         const data = await response.json();
-        // Create a map of Normalized URL -> Original URL for quick lookup
         const map = new Map<string, string>();
         if (data.documents && Array.isArray(data.documents)) {
-          console.log(`DB에서 가져온 기존 URL: ${data.documents.length}개`);
           data.documents.forEach((doc: any) => {
             if (doc.url) {
               const normalized = normalizeUrl(doc.url);
@@ -97,47 +119,37 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor }: AdminUrlCrawlerPro
           });
         }
         setExistingDbMap(map);
-        console.log(`기존 URL 맵 업데이트 완료: ${map.size}개`);
       }
     } catch (error) {
       console.error('Failed to fetch existing URLs:', error);
     }
   };
 
-  // Fetch existing URLs from DB on mount
-  React.useEffect(() => {
+  useEffect(() => {
     fetchExistingUrls();
-  }, []);
-
-  // 환경 감지
-  React.useEffect(() => {
-    const isVercel = window.location.hostname.includes('vercel.app') ||
-      window.location.hostname.includes('vercel.com');
+    const isVercel = window.location.hostname.includes('vercel.app') || window.location.hostname.includes('vercel.com');
     setEnvironment(isVercel ? 'vercel' : 'local');
   }, []);
 
-  /* New state for detailed progress message */
-  const [statusMessage, setStatusMessage] = useState<string>("크롤링 중...");
+
+  // --- Handlers ---
 
   const performCrawl = async (urlList: string[], isSubPageCrawl = false) => {
     if (urlList.length === 0) return;
 
-    // Refresh DB map first thing!
     await fetchExistingUrls();
 
     setIsCrawling(true);
-    setStatusMessage("크롤링 준비 중..."); // Reset status
+    setStatusMessage("크롤링 준비 중...");
 
     if (!isSubPageCrawl) {
-      setResults([]); // Clear results only for new main crawl
+      setResults([]);
     }
 
     try {
       const response = await fetch('/api/crawler-v2/crawl', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           urls: urlList,
           options: {
@@ -147,9 +159,7 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor }: AdminUrlCrawlerPro
         }),
       });
 
-      if (!response.body) {
-        throw new Error('ReadableStream not supported');
-      }
+      if (!response.body) throw new Error('ReadableStream not supported');
 
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -157,37 +167,30 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor }: AdminUrlCrawlerPro
 
       while (true) {
         const { done, value } = await reader.read();
-
         if (value) {
           buffer += decoder.decode(value, { stream: true });
           const lines = buffer.split('\n');
-          // Keep the last chunk if it's incomplete
           buffer = lines.pop() || '';
 
           for (const line of lines) {
             if (line.trim() === '') continue;
             try {
               const event = JSON.parse(line);
-
               if (event.type === 'log') {
                 setStatusMessage(event.message);
               } else if (event.type === 'batch_progress') {
-                // Add individual result immediately
-                if (event.result) {
-                  setResults(prev => [...prev, event.result]);
-                }
+                if (event.result) setResults(prev => [...prev, event.result]);
               } else if (event.type === 'done') {
-                toast.success(`크롤링 완료: 성공 ${event.summary.success}개, 실패 ${event.summary.failed}개`);
+                toast.success(`크롤링 완료: 성공 ${event.summary.success}개`);
 
-                // Handle discovery logic (for the final summary or if we gathered them incrementally)
-                // Note: `event.results` contains all results if we want to process discovery in bulk
+                // Discovery Logic
                 if (options.discoverSubPages && !isSubPageCrawl && event.results) {
                   const newResults = event.results as CrawlResult[];
                   const allDiscovered: Array<{ url: string; source: string; title?: string; parentUrl?: string }> = [];
                   const existingUrls = new Set([...urlList, ...results.map(r => r.url), ...newResults.map(r => r.url)]);
 
                   newResults.forEach(result => {
-                    if (result.discoveredUrls && result.discoveredUrls.length > 0) {
+                    if (result.discoveredUrls) {
                       result.discoveredUrls.forEach(d => {
                         if (!existingUrls.has(d.url)) {
                           allDiscovered.push({ url: d.url, source: result.url, title: d.title, parentUrl: result.url });
@@ -203,17 +206,13 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor }: AdminUrlCrawlerPro
                     setIsSelectionDialogOpen(true);
                   }
                 }
-                // Refresh DB map again after crawl to be super sync
                 await fetchExistingUrls();
               } else if (event.type === 'error') {
                 toast.error(event.error || '크롤링 중 오류 발생');
               }
-            } catch (e) {
-              console.warn('Failed to parse NDJSON line:', line);
-            }
+            } catch (e) { }
           }
         }
-
         if (done) break;
       }
 
@@ -222,78 +221,53 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor }: AdminUrlCrawlerPro
       toast.error('크롤링 중 오류가 발생했습니다.');
     } finally {
       setIsCrawling(false);
-      setStatusMessage("크롤링 중..."); // Reset to default for next time
+      setStatusMessage("크롤링 중...");
     }
   };
 
   const handleCrawl = async () => {
-    const urlList = urls
-      .split('\n')
-      .map(url => url.trim())
-      .filter(url => url.length > 0);
-
+    const urlList = urls.split('\n').map(url => url.trim()).filter(url => url.length > 0);
     if (urlList.length === 0) {
       toast.error('URL을 입력해주세요.');
       return;
     }
-
     await performCrawl(urlList);
   };
 
   const handleCrawlSelectedSubPages = async () => {
     const urlsToCrawl = Array.from(selectedDiscoveredUrls);
     setIsSelectionDialogOpen(false);
-
     if (urlsToCrawl.length === 0) return;
-
     await performCrawl(urlsToCrawl, true);
   };
 
   const handleSaveToDb = async () => {
     const successfulResults = results.filter(r => r.status === 'success');
-
     if (successfulResults.length === 0) {
       toast.error('저장할 성공적인 크롤링 결과가 없습니다.');
       return;
     }
 
     setIsSaving(true);
-    // Refresh MAP right before save calculation to be safe
     await fetchExistingUrls();
 
     try {
-      const vendor = defaultVendor && defaultVendor.length > 0 ? defaultVendor[0] : 'META';
+      // Use selected vendor instead of defaultVendor prop
+      const vendor = selectedVendor;
 
       const resultsWithVendor = successfulResults.map(r => {
-        // Find if this URL was discovered from another URL (is it a sub-page?)
         const discoveryInfo = discoveredUrls.find(d => normalizeUrl(d.url) === normalizeUrl(r.url));
-
         let parentUrl = discoveryInfo?.parentUrl || null;
 
-        // If we have a parentUrl from discovery, check if it exists in the DB (exact string match from DB)
-        // This ensures that even if we discovered it as "example.com/foo/", we link to "example.com/foo" if that's what's in DB.
         if (parentUrl) {
           const normalizedParent = normalizeUrl(parentUrl);
           const dbParentUrl = existingDbMap.get(normalizedParent);
-          if (dbParentUrl) {
-            parentUrl = dbParentUrl; // Use the canonical URL from DB
-          }
+          if (dbParentUrl) parentUrl = dbParentUrl;
         } else {
-          // If NOT discovered in this session (e.g. independent crawl), try to find a parent in the DB
-          // Look for the longest URL in DB that is a "directory parent" of the current URL
           const currentNormalized = normalizeUrl(r.url);
           let bestParent = null;
           let maxLen = 0;
-
           for (const [dbNormalized, dbRealUrl] of Array.from(existingDbMap.entries())) {
-            // Check if current URL is a child of DB URL
-            // Logic: current starts with db (+ slash)
-            // e.g. DB: facebook.com/help
-            // Current: facebook.com/help/123
-            // Normalized DB: facebook.com/help
-            // Normalized Current: facebook.com/help/123
-            // Check: current.startsWith(db + '/') 
-            // We use + '/' to ensure we don't match "helper" against "help"
             if (currentNormalized.startsWith(dbNormalized + '/')) {
               if (dbNormalized.length > maxLen) {
                 maxLen = dbNormalized.length;
@@ -301,10 +275,7 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor }: AdminUrlCrawlerPro
               }
             }
           }
-
-          if (bestParent) {
-            parentUrl = bestParent;
-          }
+          if (bestParent) parentUrl = bestParent;
         }
 
         return {
@@ -313,7 +284,7 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor }: AdminUrlCrawlerPro
           metadata: {
             source: 'admin-crawler',
             parentUrl: parentUrl,
-            parent_title: parentUrl ? (results.find(res => res.url === parentUrl)?.title || existingDbMap.get(normalizeUrl(parentUrl))) : null, // Try to get title from results or just use URL if from DB (will be updated by backend if needed)
+            parent_title: parentUrl ? (results.find(res => res.url === parentUrl)?.title || existingDbMap.get(normalizeUrl(parentUrl))) : null,
             is_sub_page: !!parentUrl,
             discovered_at: new Date().toISOString()
           }
@@ -322,12 +293,8 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor }: AdminUrlCrawlerPro
 
       const response = await fetch('/api/admin/save-crawled-content', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          results: resultsWithVendor,
-        }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ results: resultsWithVendor }),
       });
 
       const data = await response.json();
@@ -335,9 +302,9 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor }: AdminUrlCrawlerPro
       if (data.success) {
         toast.success(data.message);
         if (onSuccess) onSuccess();
-        setResults([]); // Clear results after successful save
-        await fetchExistingUrls(); // Refresh existing URLs map
-        setDiscoveredUrls([]); // Clear discovered URLs on success save to clean up
+        setResults([]);
+        await fetchExistingUrls();
+        setDiscoveredUrls([]);
       } else {
         toast.error(data.error || '저장 실패');
       }
@@ -349,341 +316,354 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor }: AdminUrlCrawlerPro
     }
   };
 
-  const toggleSelectAll = () => {
-    if (selectedDiscoveredUrls.size === discoveredUrls.length) {
-      setSelectedDiscoveredUrls(new Set());
-    } else {
-      setSelectedDiscoveredUrls(new Set(discoveredUrls.map(d => d.url)));
-    }
-  };
-
   const toggleSelect = (url: string) => {
     const newSelected = new Set(selectedDiscoveredUrls);
-    if (newSelected.has(url)) {
-      newSelected.delete(url);
-    } else {
-      newSelected.add(url);
-    }
+    if (newSelected.has(url)) newSelected.delete(url);
+    else newSelected.add(url);
     setSelectedDiscoveredUrls(newSelected);
   };
 
+
   return (
-    <div className="space-y-6">
-      <Card className="bg-[#131823] border-white/5">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-white">
-            <Globe className="h-5 w-5 text-blue-400" />
-            URL 크롤러 (V2)
-          </CardTitle>
-          <CardDescription className="text-gray-400">
-            Railway 기반의 개선된 크롤링 시스템을 사용하여 웹페이지를 수집합니다.
-          </CardDescription>
-          {environment === 'local' && (
-            <div className="mt-2 p-3 bg-yellow-900/20 border border-yellow-700/30 rounded-md">
-              <p className="text-sm text-yellow-500">
-                <strong>⚠️ 로컬 환경 감지</strong>
-              </p>
-              <p className="text-xs text-yellow-600/80 mt-1">
-                로컬 환경에서는 Chrome 설정이 필요할 수 있습니다.
+    <div className="space-y-8 animate-in fade-in duration-500">
+
+      {/* 1. Input Section (Hero Style) */}
+      <div className="relative group">
+        <div className="absolute -inset-0.5 bg-gradient-to-r from-blue-500 to-purple-600 rounded-lg blur opacity-20 group-hover:opacity-30 transition duration-1000"></div>
+        <div className="relative bg-[#131823] border border-gray-800 rounded-lg p-6 md:p-8">
+
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+            <div>
+              <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+                <Globe className="w-6 h-6 text-blue-400" />
+                URL 크롤링
+              </h2>
+              <p className="text-gray-400 text-sm mt-1">
+                웹페이지를 크롤링하여 지식 베이스에 추가합니다.
               </p>
             </div>
-          )}
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="urls" className="text-gray-300">크롤링할 URL (한 줄에 하나씩)</Label>
-            <Textarea
-              id="urls"
-              value={urls}
-              onChange={(e) => setUrls(e.target.value)}
-              placeholder="https://example.com&#10;https://example.org"
-              rows={5}
-              className="font-mono text-sm bg-black/20 border-white/10 text-gray-200 focus:border-blue-500"
-            />
-          </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <div className="flex items-center gap-2">
-                <input
-                  type="checkbox"
-                  id="discoverSubPages"
-                  checked={options.discoverSubPages}
-                  onChange={(e) => setOptions({ ...options, discoverSubPages: e.target.checked })}
-                  className="w-4 h-4 rounded border-gray-600 bg-black/20 text-blue-500 focus:ring-blue-500 focus:ring-offset-0"
-                />
-                <Label htmlFor="discoverSubPages" className="text-gray-300 cursor-pointer">하위 페이지 발견</Label>
-              </div>
+            {/* Vendor Selection */}
+            <div className="flex items-center gap-3">
+              <span className="text-sm text-gray-400">벤더 선택:</span>
+              <Select value={selectedVendor} onValueChange={setSelectedVendor}>
+                <SelectTrigger className="w-[140px] bg-black/40 border-white/10 text-white h-9">
+                  <SelectValue placeholder="벤더 선택" />
+                </SelectTrigger>
+                <SelectContent className="bg-[#1e232f] border-gray-700 text-white">
+                  {VENDOR_OPTIONS.map((vendor) => (
+                    <SelectItem key={vendor.id} value={vendor.id} className="focus:bg-white/10 focus:text-white">
+                      {vendor.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
 
-          <div className="grid grid-cols-3 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="maxDepth" className="text-gray-300">최대 깊이</Label>
-              <Input
-                id="maxDepth"
-                type="number"
-                min="1"
-                max="4"
-                value={options.maxDepth}
-                onChange={(e) => setOptions({ ...options, maxDepth: parseInt(e.target.value) || 2 })}
-                className="bg-black/20 border-white/10 text-gray-200"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="maxUrls" className="text-gray-300">최대 URL 수</Label>
-              <Input
-                id="maxUrls"
-                type="number"
-                min="1"
-                max="200"
-                value={options.maxUrls}
-                onChange={(e) => setOptions({ ...options, maxUrls: parseInt(e.target.value) || 50 })}
-                className="bg-black/20 border-white/10 text-gray-200"
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="timeout" className="text-gray-300">타임아웃 (ms)</Label>
-              <Input
-                id="timeout"
-                type="number"
-                min="5000"
-                max="60000"
-                value={options.timeout}
-                onChange={(e) => setOptions({ ...options, timeout: parseInt(e.target.value) || 30000 })}
-                className="bg-black/20 border-white/10 text-gray-200"
-              />
-            </div>
-          </div>
-
-          <Button
-            onClick={handleCrawl}
-            disabled={isCrawling}
-            className="w-full bg-blue-600 hover:bg-blue-700 text-white"
+          <div
+            className={`
+               border-2 border-dashed rounded-xl p-8 transition-all duration-300
+               flex flex-col items-center justify-center text-center
+               ${isDragActive ? 'border-blue-500 bg-blue-500/5' : 'border-gray-700 hover:border-gray-500 bg-black/20'}
+             `}
+            onDragEnter={() => setIsDragActive(true)}
+            onDragLeave={() => setIsDragActive(false)}
+            onDrop={(e) => { e.preventDefault(); setIsDragActive(false); }}
+            onDragOver={(e) => e.preventDefault()}
           >
-            {isCrawling ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                {statusMessage}
-              </>
-            ) : (
-              <>
-                <Play className="mr-2 h-4 w-4" />
-                크롤링 시작
-              </>
-            )}
-          </Button>
-        </CardContent>
-      </Card>
+            <div className="w-16 h-16 bg-gradient-to-br from-blue-500/20 to-purple-500/20 rounded-full flex items-center justify-center mb-6 shadow-inner shadow-white/5">
+              <Link className="w-8 h-8 text-blue-400" />
+            </div>
 
-      {results.length > 0 && (
-        <Card className="bg-[#131823] border-white/5">
-          <CardHeader>
-            <div className="flex items-center justify-between">
-              <div>
-                <CardTitle className="text-white flex items-center gap-2">
-                  크롤링 결과
-                  {/* Re-open discovery button */}
-                  {discoveredUrls.length > 0 && !isSelectionDialogOpen && (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setIsSelectionDialogOpen(true)}
-                      className="ml-2 h-6 text-xs border-blue-500/30 text-blue-400 hover:bg-blue-500/10"
-                    >
-                      발견된 페이지 보기 ({discoveredUrls.length})
-                    </Button>
-                  )}
-                </CardTitle>
-                <CardDescription className="text-gray-400">
-                  총 {results.length}개 중 성공 {results.filter(r => r.status === 'success').length}개
-                </CardDescription>
+            <div className="w-full max-w-2xl space-y-4">
+              <Label htmlFor="urls" className="sr-only">URL 입력</Label>
+              <Textarea
+                id="urls"
+                value={urls}
+                onChange={(e) => setUrls(e.target.value)}
+                placeholder="https://example.com&#10;https://example.org"
+                rows={3}
+                className="min-h-[100px] text-center bg-transparent border-gray-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-lg resize-none placeholder:text-gray-600"
+              />
+              <p className="text-xs text-gray-500">
+                여러 URL을 입력하려면 줄바꿈으로 구분하세요.
+              </p>
+            </div>
+
+            {/* Options Grid */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-8 w-full max-w-3xl">
+              <div className="flex flex-col gap-2 p-3 rounded-lg bg-white/5 border border-white/5">
+                <Label className="text-xs text-gray-400">하위 페이지 발견</Label>
+                <div className="flex items-center gap-2 mt-auto">
+                  <Checkbox
+                    id="discoverSubPages"
+                    checked={options.discoverSubPages}
+                    onCheckedChange={(c) => setOptions({ ...options, discoverSubPages: !!c })}
+                    className="border-gray-500 data-[state=checked]:bg-blue-500"
+                  />
+                  <span className="text-sm font-medium text-gray-300">사용</span>
+                </div>
               </div>
-              {results.some(r => r.status === 'success') && (
-                <Button
-                  onClick={handleSaveToDb}
-                  disabled={isSaving || isCrawling}
-                  className="bg-green-600 hover:bg-green-700 text-white disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {isSaving ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      저장 중...
-                    </>
-                  ) : (
-                    <>
-                      <Save className="mr-2 h-4 w-4" />
-                      결과값 DB 저장
-                    </>
-                  )}
-                </Button>
+
+              <div className="flex flex-col gap-2 p-3 rounded-lg bg-white/5 border border-white/5">
+                <Label className="text-xs text-gray-400">최대 깊이</Label>
+                <Input
+                  type="number"
+                  min={1} max={5}
+                  value={options.maxDepth}
+                  onChange={(e) => setOptions({ ...options, maxDepth: parseInt(e.target.value) || 1 })}
+                  className="h-7 bg-transparent border-gray-600 text-white text-sm"
+                />
+              </div>
+
+              <div className="flex flex-col gap-2 p-3 rounded-lg bg-white/5 border border-white/5">
+                <Label className="text-xs text-gray-400">최대 페이지 수</Label>
+                <Input
+                  type="number"
+                  min={1} max={300}
+                  value={options.maxUrls}
+                  onChange={(e) => setOptions({ ...options, maxUrls: parseInt(e.target.value) || 50 })}
+                  className="h-7 bg-transparent border-gray-600 text-white text-sm"
+                />
+              </div>
+
+              <div className="flex flex-col gap-2 p-3 rounded-lg bg-white/5 border border-white/5">
+                <Label className="text-xs text-gray-400">타임아웃 (ms)</Label>
+                <Input
+                  type="number"
+                  min={1000} value={options.timeout}
+                  onChange={(e) => setOptions({ ...options, timeout: parseInt(e.target.value) || 30000 })}
+                  className="h-7 bg-transparent border-gray-600 text-white text-sm"
+                />
+              </div>
+            </div>
+
+            <div className="mt-8 w-full max-w-sm">
+              <Button
+                onClick={handleCrawl}
+                disabled={isCrawling || !urls.trim()}
+                className="w-full h-12 text-base font-semibold bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 shadow-lg shadow-blue-900/20"
+              >
+                {isCrawling ? (
+                  <>
+                    <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                    {statusMessage}
+                  </>
+                ) : (
+                  <>
+                    <Play className="mr-2 h-5 w-5 fill-white" />
+                    크롤링 시작
+                  </>
+                )}
+              </Button>
+              {environment === 'local' && (
+                <p className="text-[10px] text-yellow-600 mt-2 text-center flex items-center justify-center gap-1">
+                  <AlertTriangle className="h-3 w-3" /> 로컬 환경 감지됨
+                </p>
               )}
             </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {results.map((result, index) => (
-              <Card key={index} className="border-l-4 border-l-blue-500 bg-black/20 border-y-0 border-r-0">
-                <CardHeader className="pb-3 px-4 pt-4">
-                  <div className="flex items-start justify-between gap-4">
-                    <div className="flex-1 min-w-0">
-                      <CardTitle className="text-base flex items-center gap-2 text-gray-200">
-                        {result.status === 'success' ? (
-                          <CheckCircle className="h-4 w-4 text-green-500 flex-shrink-0" />
-                        ) : (
-                          <XCircle className="h-4 w-4 text-red-500 flex-shrink-0" />
-                        )}
-                        <span className="truncate">{result.title}</span>
-                      </CardTitle>
-                      <CardDescription className="mt-1 break-all text-xs text-blue-400">
-                        {result.url}
-                      </CardDescription>
-                    </div>
-                    <div className="flex flex-col gap-2 flex-shrink-0">
-                      <Badge variant={result.status === 'success' ? 'default' : 'destructive'} className="justify-center">
-                        {result.status}
-                      </Badge>
-                      <Badge variant="outline" className="border-white/10 text-gray-400 justify-center">{result.type}</Badge>
-                    </div>
-                  </div>
-                </CardHeader>
-                <CardContent className="px-4 pb-4">
-                  <div className="space-y-2">
-                    <div className="text-xs text-gray-500">
-                      콘텐츠 길이: {result.contentLength.toLocaleString()}자
-                    </div>
-                    {result.error && (
-                      <div className="text-xs text-red-400 bg-red-900/10 p-2 rounded-md border border-red-900/20">
-                        {result.error}
-                      </div>
-                    )}
-                    {result.discoveredUrls && result.discoveredUrls.length > 0 && (
-                      <div className="text-xs text-gray-400">
-                        <div className="font-semibold mb-1">
-                          발견된 하위 페이지: {result.discoveredUrls.length}개
-                        </div>
-                        <div className="pl-2 border-l border-white/10">
-                          {result.discoveredUrls.slice(0, 5).map((u, i) => (
-                            <div key={i} className="truncate">• {u.url}</div>
-                          ))}
-                          {result.discoveredUrls.length > 5 && <div>... 외 {result.discoveredUrls.length - 5}개</div>}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
-          </CardContent>
-        </Card>
-      )}
 
+          </div>
+        </div>
+      </div>
+
+      {/* 2. Results Section (Table Style) */}
+      <AnimatePresence>
+        {results.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+          >
+            <Card className="bg-[#131823] border-gray-800 overflow-hidden">
+              <CardHeader className="border-b border-gray-800 bg-gray-900/50 pb-4">
+                <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                  <div>
+                    <CardTitle className="text-white flex items-center gap-2">
+                      <CheckCircle className="h-5 w-5 text-green-500" />
+                      크롤링 결과 확인
+                    </CardTitle>
+                    <CardDescription className="text-gray-400 mt-1">
+                      총 <span className="text-white font-medium">{results.length}</span>개 페이지 발견
+                      (<span className="text-green-400">{results.filter(r => r.status === 'success').length} 성공</span>)
+                    </CardDescription>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    {discoveredUrls.length > 0 && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setIsSelectionDialogOpen(true)}
+                        className="border-blue-500/30 text-blue-400 hover:bg-blue-500/10"
+                      >
+                        하위 페이지 발견 ({discoveredUrls.length})
+                      </Button>
+                    )}
+
+                    <Button
+                      onClick={handleSaveToDb}
+                      disabled={isSaving || isCrawling || results.every(r => r.status !== 'success')}
+                      className="bg-green-600 hover:bg-green-700 text-white min-w-[140px]"
+                    >
+                      {isSaving ? (
+                        <>
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                          저장 중...
+                        </>
+                      ) : (
+                        <>
+                          <Save className="mr-2 h-4 w-4" />
+                          DB에 저장하기
+                        </>
+                      )}
+                    </Button>
+                  </div>
+                </div>
+              </CardHeader>
+
+              <CardContent className="p-0">
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-sm">
+                    <thead className="bg-[#1a202e] text-gray-400 font-medium border-b border-gray-800">
+                      <tr>
+                        <th className="px-6 py-3 w-[50px]">No.</th>
+                        <th className="px-6 py-3 w-[80px]">상태</th>
+                        <th className="px-6 py-3">페이지 제목 / URL</th>
+                        <th className="px-6 py-3 w-[120px]">타입</th>
+                        <th className="px-6 py-3 w-[120px] text-right">크기</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-800">
+                      {results.map((result, idx) => (
+                        <tr key={idx} className="hover:bg-white/5 transition-colors group">
+                          <td className="px-6 py-4 text-gray-600 font-mono text-xs">{idx + 1}</td>
+                          <td className="px-6 py-4">
+                            {result.status === 'success' ? (
+                              <Badge variant="outline" className="bg-green-500/10 text-green-400 border-green-500/20 hover:bg-green-500/20">성공</Badge>
+                            ) : (
+                              <Badge variant="outline" className="bg-red-500/10 text-red-400 border-red-500/20 hover:bg-red-500/20">실패</Badge>
+                            )}
+                          </td>
+                          <td className="px-6 py-4 max-w-lg">
+                            <div className="flex flex-col">
+                              <span className="text-white font-medium truncate pr-4" title={result.title}>{result.title || '(No Title)'}</span>
+                              <a
+                                href={result.url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="text-xs text-blue-400 hover:underline hover:text-blue-300 flex items-center gap-1 mt-0.5"
+                              >
+                                {result.url}
+                                <ExternalLink className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                              </a>
+                              {result.error && <p className="text-xs text-red-400 mt-1">Error: {result.error}</p>}
+                            </div>
+                          </td>
+                          <td className="px-6 py-4">
+                            <span className="px-2 py-1 rounded bg-gray-800 text-gray-300 text-xs border border-gray-700 capitalize">
+                              {result.type}
+                            </span>
+                          </td>
+                          <td className="px-6 py-4 text-right text-gray-400 font-mono text-xs">
+                            {result.contentLength > 0 ? (result.contentLength / 1024).toFixed(1) + ' KB' : '-'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+
+      {/* Sub-page Selection Dialog (Preserved functionality) */}
       <Dialog open={isSelectionDialogOpen} onOpenChange={setIsSelectionDialogOpen}>
         <DialogContent
-          className="max-w-2xl bg-[#1e232f] border-white/10 text-white"
+          className="max-w-3xl bg-[#1e232f] border-gray-700 text-white shadow-2xl"
           onInteractOutside={(e) => e.preventDefault()}
         >
-          <DialogHeader>
-            <DialogTitle>하위 페이지 발견 ({discoveredUrls.length}개)</DialogTitle>
+          <DialogHeader className="border-b border-gray-800 pb-4">
+            <DialogTitle className="flex items-center gap-2 text-xl">
+              <Globe className="w-5 h-5 text-blue-400" />
+              추가 하위 페이지 발견됨
+            </DialogTitle>
             <DialogDescription className="text-gray-400">
-              추가로 크롤링할 하위 페이지를 선택해주세요. 제목을 클릭하여 수정할 수 있습니다.
+              {discoveredUrls.length}개의 관련 페이지를 추가로 발견했습니다. 크롤링할 페이지를 선택하세요.
             </DialogDescription>
           </DialogHeader>
+
           <div className="py-4">
-            <div className="flex items-center justify-between mb-2 px-1 gap-2 flex-wrap">
-              <Label className="text-sm text-gray-300">
-                {selectedDiscoveredUrls.size}개 선택됨
-              </Label>
+            <div className="flex justify-between items-center mb-4">
+              <div>
+                <span className="text-blue-400 font-bold">{selectedDiscoveredUrls.size}</span>
+                <span className="text-gray-500 text-sm ml-1">개 선택됨</span>
+              </div>
               <div className="flex gap-2">
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={() => {
-                    const existingUrls = new Set(results.map(r => r.url));
-                    const newSelection = new Set(
-                      discoveredUrls
-                        .filter(d => !existingUrls.has(d.url))
-                        .map(d => d.url)
-                    );
-                    setSelectedDiscoveredUrls(newSelection);
+                    if (selectedDiscoveredUrls.size === discoveredUrls.length) setSelectedDiscoveredUrls(new Set());
+                    else setSelectedDiscoveredUrls(new Set(discoveredUrls.map(d => d.url)));
                   }}
-                  className="text-xs text-blue-400 hover:text-blue-300 hover:bg-white/5"
-                >
-                  미수집 전체 선택
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => {
-                    if (selectedDiscoveredUrls.size === discoveredUrls.length) {
-                      setSelectedDiscoveredUrls(new Set());
-                    } else {
-                      setSelectedDiscoveredUrls(new Set(discoveredUrls.map(d => d.url)));
-                    }
-                  }}
-                  className="text-xs text-gray-400 hover:text-white hover:bg-white/5"
+                  className="text-xs h-8"
                 >
                   {selectedDiscoveredUrls.size === discoveredUrls.length ? "전체 해제" : "전체 선택"}
                 </Button>
               </div>
             </div>
-            <ScrollArea className="h-[300px] border border-white/10 rounded-md p-4">
-              <div className="space-y-3">
-                {discoveredUrls.map((item, index) => {
-                  // Check if this URL is already in the main results OR in the DB
-                  const isAlreadyCrawled = results.some(r => normalizeUrl(r.url) === normalizeUrl(item.url)) || existingDbMap.has(normalizeUrl(item.url));
 
-                  return (<div key={index} className={`flex items-start gap-3 p-2 rounded-md transition-colors ${isAlreadyCrawled ? 'bg-green-900/10 border border-green-900/20' : 'hover:bg-white/5'}`}>
-                    <Checkbox
-                      id={`url-${index}`}
-                      checked={selectedDiscoveredUrls.has(item.url)}
-                      onCheckedChange={() => toggleSelect(item.url)}
-                      className="mt-2 border-gray-500 data-[state=checked]:bg-blue-600 data-[state=checked]:border-blue-600"
-                    />
-                    <div className="flex-1 min-w-0 space-y-1">
-                      <div className="flex items-center gap-2">
-                        <span className="text-blue-400 text-[10px] mt-1">●</span>
-                        <Input
-                          value={item.title || ''}
-                          onChange={(e) => {
-                            const newTitle = e.target.value;
-                            setDiscoveredUrls(prev => prev.map((p, i) => i === index ? { ...p, title: newTitle } : p));
-                          }}
-                          className="h-7 text-sm font-semibold text-gray-200 bg-transparent border-transparent hover:border-white/10 focus:border-blue-500 focus:bg-black/20 p-1 px-2 w-full transition-all"
-                          placeholder="제목을 입력하세요"
-                        />
+            <ScrollArea className="h-[400px] bg-black/20 rounded-md border border-gray-800 p-2">
+              <div className="space-y-1">
+                {discoveredUrls.map((item, i) => {
+                  const isAlreadyCrawled = results.some(r => normalizeUrl(r.url) === normalizeUrl(item.url)) || existingDbMap.has(normalizeUrl(item.url));
+                  return (
+                    <div key={i}
+                      className={`
+                             flex items-start gap-3 p-3 rounded-lg transition-colors border
+                             ${isAlreadyCrawled ? 'bg-green-500/5 border-green-500/20 opacity-70' : 'border-transparent hover:bg-white/5 hover:border-white/10'}
+                           `}
+                    >
+                      <Checkbox
+                        id={`url-${i}`}
+                        checked={selectedDiscoveredUrls.has(item.url)}
+                        onCheckedChange={() => toggleSelect(item.url)}
+                        disabled={isAlreadyCrawled}
+                        className="mt-1"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <label htmlFor={`url-${i}`} className="cursor-pointer block">
+                          <div className="text-sm font-medium text-gray-200 truncate flex items-center gap-2">
+                            {item.title || '제목 없음'}
+                            {isAlreadyCrawled && <Badge variant="outline" className="text-[10px] h-4 text-green-500 border-green-900 bg-green-500/10">수집됨</Badge>}
+                          </div>
+                          <div className="text-xs text-blue-400/70 truncate mt-0.5 font-mono">{item.url}</div>
+                        </label>
                       </div>
-                      <div className="flex items-center gap-2 px-1">
-                        <Label htmlFor={`url-${index}`} className="text-xs text-blue-300/80 cursor-pointer break-all block leading-tight hover:text-blue-300">
-                          {item.url}
-                        </Label>
-                        <a
-                          href={item.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-blue-400 hover:text-blue-300 flex-shrink-0 opacity-50 hover:opacity-100 transition-opacity"
-                          title="새 탭에서 열기"
-                        >
-                          <ExternalLink className="h-3 w-3" />
-                        </a>
-                        {isAlreadyCrawled && (
-                          <Badge variant="outline" className="text-[10px] h-4 px-1 text-green-400 border-green-900/30 bg-green-900/10 ml-auto">
-                            이미 수집됨
-                          </Badge>
-                        )}
-                      </div>
+                      <a href={item.url} target="_blank" rel="noreferrer" className="text-gray-500 hover:text-gray-300">
+                        <ExternalLink className="h-4 w-4" />
+                      </a>
                     </div>
-                  </div>
-                  );
+                  )
                 })}
               </div>
             </ScrollArea>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsSelectionDialogOpen(false)} className="border-white/10 text-gray-300 hover:bg-white/5">
-              취소
+
+          <DialogFooter className="border-t border-gray-800 pt-4">
+            <Button variant="ghost" onClick={() => setIsSelectionDialogOpen(false)} className="text-gray-400">
+              닫기
             </Button>
-            <Button onClick={handleCrawlSelectedSubPages} className="bg-blue-600 hover:bg-blue-700 text-white">
-              선택한 페이지 크롤링 ({selectedDiscoveredUrls.size}개)
+            <Button
+              onClick={handleCrawlSelectedSubPages}
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              선택한 {selectedDiscoveredUrls.size}개 페이지 크롤링
             </Button>
           </DialogFooter>
         </DialogContent>
