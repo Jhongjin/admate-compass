@@ -832,6 +832,7 @@ export class UrlDiscovery {
           }
           
           // 8. 다른 도메인 링크는 강하게 감점
+          const isDifferentDomain = urlDomain !== baseDomain && !urlDomain.endsWith(`.${baseDomain}`);
           if (isDifferentDomain) {
             qualityScore -= 100;
           }
