@@ -169,6 +169,7 @@ function AdminDocsPageContent() {
 
     const [expandedGroups, setExpandedGroups] = useState<Set<number>>(new Set());
     const [selectedDocs, setSelectedDocs] = useState<Set<string>>(new Set());
+    const [actionLoading, setActionLoading] = useState<{ [key: string]: boolean }>({});
 
     const { toast } = useToast();
     const queryClient = useQueryClient();
@@ -308,7 +309,35 @@ function AdminDocsPageContent() {
     // 재인덱싱 mutation
     const reindexMutation = useMutation({
         mutationFn: async ({ documentId, title }: { documentId: string; title: string }) => {
+            const loadingKey = `${documentId}_reindex`;
             console.log('🔄 [reindexMutation] mutationFn 시작:', { documentId, title });
+            
+            // 로딩 상태 즉시 설정
+            setActionLoading(prev => ({ ...prev, [loadingKey]: true }));
+            
+            // 문서 상태를 즉시 'processing'으로 업데이트 (UI 반응성 향상)
+            try {
+                const { error: statusError } = await supabase
+                    .from('documents')
+                    .update({ 
+                        status: 'processing',
+                        updated_at: new Date().toISOString()
+                    })
+                    .eq('id', documentId);
+                
+                if (statusError) {
+                    console.warn('⚠️ 상태 업데이트 실패 (계속 진행):', statusError);
+                } else {
+                    console.log('✅ 문서 상태를 processing으로 업데이트 완료');
+                    // 쿼리 무효화하여 UI 즉시 반영
+                    queryClient.invalidateQueries({ 
+                        queryKey: ['admin-documents'],
+                        exact: false
+                    });
+                }
+            } catch (statusUpdateError) {
+                console.warn('⚠️ 상태 업데이트 중 오류 (계속 진행):', statusUpdateError);
+            }
             
             const res = await fetch(`/api/admin/upload/${documentId}/reindex`, {
                 method: 'POST',
@@ -319,33 +348,48 @@ function AdminDocsPageContent() {
             
             console.log('📡 재인덱싱 응답 상태:', res.status, res.statusText);
             
-                if (!res.ok) {
-                    let errorMessage = '재인덱싱에 실패했습니다.';
-                    let errorDetails = '';
-                    try {
-                        const errorData = await res.json();
-                        errorMessage = errorData.error || errorData.message || errorMessage;
-                        errorDetails = errorData.details || '';
-                        console.error('❌ 재인덱싱 오류 응답:', errorData);
-                        
-                        // details가 있으면 메시지에 포함
-                        if (errorDetails) {
-                            errorMessage = `${errorMessage}\n\n${errorDetails}`;
-                        }
-                    } catch (parseError) {
-                        const errorText = await res.text().catch(() => '알 수 없는 오류');
-                        console.error('❌ 재인덱싱 오류 (JSON 파싱 실패):', errorText);
-                        errorMessage = `서버 오류 (${res.status}): ${errorText.substring(0, 200)}`;
+            if (!res.ok) {
+                // 에러 시 로딩 상태 해제
+                setActionLoading(prev => {
+                    const newState = { ...prev };
+                    delete newState[loadingKey];
+                    return newState;
+                });
+                
+                let errorMessage = '재인덱싱에 실패했습니다.';
+                let errorDetails = '';
+                try {
+                    const errorData = await res.json();
+                    errorMessage = errorData.error || errorData.message || errorMessage;
+                    errorDetails = errorData.details || '';
+                    console.error('❌ 재인덱싱 오류 응답:', errorData);
+                    
+                    // details가 있으면 메시지에 포함
+                    if (errorDetails) {
+                        errorMessage = `${errorMessage}\n\n${errorDetails}`;
                     }
-                    throw new Error(errorMessage);
+                } catch (parseError) {
+                    const errorText = await res.text().catch(() => '알 수 없는 오류');
+                    console.error('❌ 재인덱싱 오류 (JSON 파싱 실패):', errorText);
+                    errorMessage = `서버 오류 (${res.status}): ${errorText.substring(0, 200)}`;
                 }
+                throw new Error(errorMessage);
+            }
             
             const result = await res.json();
             console.log('✅ 재인덱싱 성공:', result);
             return result;
         },
         onSuccess: (data, variables) => {
+            const loadingKey = `${variables.documentId}_reindex`;
             console.log('✅ [reindexMutation] onSuccess 호출:', { data, variables });
+            
+            // 로딩 상태 해제
+            setActionLoading(prev => {
+                const newState = { ...prev };
+                delete newState[loadingKey];
+                return newState;
+            });
             
             // 모든 admin-documents 쿼리 무효화
             queryClient.invalidateQueries({ 
@@ -362,7 +406,21 @@ function AdminDocsPageContent() {
             });
         },
         onError: (error, variables) => {
+            const loadingKey = `${variables.documentId}_reindex`;
             console.error('❌ [reindexMutation] onError 호출:', { error, variables });
+            
+            // 에러 시 로딩 상태 해제
+            setActionLoading(prev => {
+                const newState = { ...prev };
+                delete newState[loadingKey];
+                return newState;
+            });
+            
+            // 쿼리 무효화하여 상태 복구
+            queryClient.invalidateQueries({ 
+                queryKey: ['admin-documents'],
+                exact: false
+            });
             
             toast({
                 title: "재인덱싱 실패",
@@ -878,7 +936,7 @@ const getDocumentTypeBadgeClass = (type: string) => {
                                 onBulkDelete={handleBulkDelete}
                                 selectedDocuments={selectedDocs}
                                 isAllSelected={selectedDocs.size > 0 && selectedDocs.size === filteredDocs.length}
-                                actionLoading={{}}
+                                actionLoading={actionLoading}
                                 deletingDocument={deleteId}
                             />
                         </div>
