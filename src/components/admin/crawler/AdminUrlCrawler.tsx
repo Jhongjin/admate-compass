@@ -111,6 +111,9 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor }: AdminUrlCrawlerPro
   const performCrawl = async (urlList: string[], isSubPageCrawl = false) => {
     if (urlList.length === 0) return;
 
+    // Refresh DB map first thing!
+    await fetchExistingUrls();
+
     setIsCrawling(true);
     setStatusMessage("크롤링 준비 중..."); // Reset status
 
@@ -189,6 +192,8 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor }: AdminUrlCrawlerPro
                     setIsSelectionDialogOpen(true);
                   }
                 }
+                // Refresh DB map again after crawl to be super sync
+                await fetchExistingUrls();
               } else if (event.type === 'error') {
                 toast.error(event.error || '크롤링 중 오류 발생');
               }
@@ -242,6 +247,8 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor }: AdminUrlCrawlerPro
     }
 
     setIsSaving(true);
+    // Refresh MAP right before save calculation to be safe
+    await fetchExistingUrls();
 
     try {
       const vendor = defaultVendor && defaultVendor.length > 0 ? defaultVendor[0] : 'META';
@@ -319,6 +326,7 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor }: AdminUrlCrawlerPro
         if (onSuccess) onSuccess();
         setResults([]); // Clear results after successful save
         await fetchExistingUrls(); // Refresh existing URLs map
+        setDiscoveredUrls([]); // Clear discovered URLs on success save to clean up
       } else {
         toast.error(data.error || '저장 실패');
       }
@@ -462,7 +470,20 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor }: AdminUrlCrawlerPro
           <CardHeader>
             <div className="flex items-center justify-between">
               <div>
-                <CardTitle className="text-white">크롤링 결과</CardTitle>
+                <CardTitle className="text-white flex items-center gap-2">
+                  크롤링 결과
+                  {/* Re-open discovery button */}
+                  {discoveredUrls.length > 0 && !isSelectionDialogOpen && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setIsSelectionDialogOpen(true)}
+                      className="ml-2 h-6 text-xs border-blue-500/30 text-blue-400 hover:bg-blue-500/10"
+                    >
+                      발견된 페이지 보기 ({discoveredUrls.length})
+                    </Button>
+                  )}
+                </CardTitle>
                 <CardDescription className="text-gray-400">
                   총 {results.length}개 중 성공 {results.filter(r => r.status === 'success').length}개
                 </CardDescription>
@@ -546,7 +567,10 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor }: AdminUrlCrawlerPro
       )}
 
       <Dialog open={isSelectionDialogOpen} onOpenChange={setIsSelectionDialogOpen}>
-        <DialogContent className="max-w-2xl bg-[#1e232f] border-white/10 text-white">
+        <DialogContent
+          className="max-w-2xl bg-[#1e232f] border-white/10 text-white"
+          onInteractOutside={(e) => e.preventDefault()}
+        >
           <DialogHeader>
             <DialogTitle>하위 페이지 발견 ({discoveredUrls.length}개)</DialogTitle>
             <DialogDescription className="text-gray-400">
