@@ -502,8 +502,8 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor }: AdminUrlCrawlerPro
               {results.some(r => r.status === 'success') && (
                 <Button
                   onClick={handleSaveToDb}
-                  disabled={isSaving}
-                  className="bg-green-600 hover:bg-green-700 text-white"
+                  disabled={isSaving || isCrawling}
+                  className="bg-green-600 hover:bg-green-700 text-white disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isSaving ? (
                     <>
