@@ -406,18 +406,24 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
       const resultsWithVendor = successfulResults.map(r => {
         const discoveryInfo = discoveredUrls.find(d => normalizeUrl(d.url) === normalizeUrl(r.url));
         let parentUrl = discoveryInfo?.parentUrl || null;
+        const normalizedCurrentUrl = normalizeUrl(r.url);
+        const normalizedSeedUrl = seedUrl ? normalizeUrl(seedUrl) : null;
 
+        // 시드 URL 자체는 부모를 가지지 않음
+        if (normalizedSeedUrl && normalizedCurrentUrl === normalizedSeedUrl) {
+          parentUrl = null;
+          console.log(`[handleSaveToDb] 시드 URL 자체 "${r.url}"는 부모를 가지지 않음`);
+        }
         // 하위 페이지인 경우 원본 시드 URL을 우선적으로 부모로 사용
-        if (seedUrl && (discoveryInfo || results.some(res => normalizeUrl(res.url) === normalizeUrl(seedUrl)))) {
+        else if (seedUrl && normalizedCurrentUrl !== normalizedSeedUrl && (discoveryInfo || results.some(res => normalizeUrl(res.url) === normalizedSeedUrl))) {
           // 원본 시드 URL이 results에 있으면 그것을 부모로 사용
-          const seedResult = results.find(res => normalizeUrl(res.url) === normalizeUrl(seedUrl));
+          const seedResult = results.find(res => normalizeUrl(res.url) === normalizedSeedUrl);
           if (seedResult) {
             parentUrl = seedUrl;
             console.log(`[handleSaveToDb] 하위 페이지 "${r.url}"의 부모를 시드 URL "${seedUrl}"로 설정`);
           } else {
             // 시드 URL이 results에 없으면 DB에서 확인
-            const normalizedSeed = normalizeUrl(seedUrl);
-            const dbSeedUrl = existingDbMap.get(normalizedSeed);
+            const dbSeedUrl = existingDbMap.get(normalizedSeedUrl);
             if (dbSeedUrl) {
               parentUrl = dbSeedUrl;
               console.log(`[handleSaveToDb] 하위 페이지 "${r.url}"의 부모를 DB의 시드 URL "${dbSeedUrl}"로 설정`);
@@ -439,11 +445,13 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
           const dbParentUrl = existingDbMap.get(normalizedParent);
           if (dbParentUrl) parentUrl = dbParentUrl;
         } else {
-          // 자동 그룹화: 현재 URL이 다른 URL의 하위 경로인지 확인
+          // 자동 그룹화: 현재 URL이 다른 URL의 하위 경로인지 확인 (시드 URL 제외)
           const currentNormalized = normalizeUrl(r.url);
           let bestParent = null;
           let maxLen = 0;
           for (const [dbNormalized, dbRealUrl] of Array.from(existingDbMap.entries())) {
+            // 시드 URL은 부모로 사용하지 않음
+            if (normalizedSeedUrl && dbNormalized === normalizedSeedUrl) continue;
             if (currentNormalized.startsWith(dbNormalized + '/')) {
               if (dbNormalized.length > maxLen) {
                 maxLen = dbNormalized.length;
