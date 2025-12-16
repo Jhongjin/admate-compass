@@ -466,6 +466,30 @@ export class UrlDiscovery {
                         pathname.includes('/endpoint/')) {
                       return;
                     }
+                    
+                    // 푸터/법적 고지 링크 제외 (품질이 낮은 링크)
+                    const lowQualityPaths = [
+                      '/rules/', '/rule/', '/legal/', '/terms/', '/privacy/', '/policy/',
+                      '/disclaimer/', '/service/', '/agreement/', '/tos/',
+                      '/help/', '/support/', '/contact/', '/faq/',
+                      '/login/', '/signin/', '/signup/', '/register/',
+                      '/logout/', '/account/', '/profile/', '/settings/',
+                      '/chat/', '/customer/', '/member/', '/membership/'
+                    ];
+                    const isLowQualityPath = lowQualityPaths.some(path => pathname.includes(path));
+                    if (isLowQualityPath) {
+                      return;
+                    }
+                    
+                    // 다른 도메인으로의 링크는 품질이 낮음 (maxDepth 4일 때도 제외)
+                    const isDifferentDomain = urlDomain !== baseDomain && !urlDomain.endsWith(`.${baseDomain}`);
+                    if (isDifferentDomain && maxDepth >= 4) {
+                      // help.naver.com, nca.naver.com 같은 다른 서비스는 제외
+                      const excludedDomains = ['help.naver.com', 'nca.naver.com', 'www.naver.com', 'blog.naver.com'];
+                      if (excludedDomains.some(domain => urlDomain === domain || urlDomain.endsWith(`.${domain}`))) {
+                        return;
+                      }
+                    }
                   } catch (e) {
                     // URL 파싱 실패 시 제외
                     return;
@@ -653,6 +677,34 @@ export class UrlDiscovery {
                 pathname.includes('/endpoint/')) {
               return false;
             }
+            
+            // 푸터/법적 고지 링크 필터링 (품질이 낮은 링크)
+            const lowQualityPaths = [
+              '/rules/', '/rule/', '/legal/', '/terms/', '/privacy/', '/policy/',
+              '/disclaimer/', '/service/', '/agreement/', '/tos/',
+              '/help/', '/support/', '/contact/', '/faq/',
+              '/login/', '/signin/', '/signup/', '/register/',
+              '/logout/', '/account/', '/profile/', '/settings/',
+              '/chat/', '/customer/', '/member/', '/membership/'
+            ];
+            const isLowQualityPath = lowQualityPaths.some(path => pathname.includes(path));
+            if (isLowQualityPath) {
+              return false;
+            }
+            
+            // 다른 도메인으로의 링크는 품질이 낮음 (maxDepth 4일 때도 우선순위 낮춤)
+            const urlDomain = extractDomain(normalizedUrl);
+            const baseDomain = extractDomain(baseUrl);
+            const isDifferentDomain = urlDomain !== baseDomain && !urlDomain.endsWith(`.${baseDomain}`);
+            
+            // maxDepth 4일 때도 다른 도메인은 제외하거나 우선순위를 낮춤
+            if (isDifferentDomain && config.maxDepth >= 4) {
+              // help.naver.com, nca.naver.com 같은 다른 서비스는 제외
+              const excludedDomains = ['help.naver.com', 'nca.naver.com', 'www.naver.com', 'blog.naver.com'];
+              if (excludedDomains.some(domain => urlDomain === domain || urlDomain.endsWith(`.${domain}`))) {
+                return false;
+              }
+            }
 
             // 도메인 제한 확인 (maxDepth 기반)
             const urlDomain = extractDomain(normalizedUrl);
@@ -705,44 +757,73 @@ export class UrlDiscovery {
             return false;
           }
         })
-        // 우선순위 정렬: 텍스트가 있는 링크 > 깊이 낮은 링크 > 경로 짧은 링크
-        .sort((a, b) => {
-          const urlA = normalizeUrl(a.url);
-          const urlB = normalizeUrl(b.url);
-          const depthA = calculateDepth(baseUrl, urlA);
-          const depthB = calculateDepth(baseUrl, urlB);
+        // 품질 점수 기반 정렬 (높은 점수 우선)
+        .map(link => {
+          const url = normalizeUrl(link.url);
+          const urlObj = new URL(url);
+          const pathname = urlObj.pathname.toLowerCase();
+          const urlDomain = extractDomain(url);
+          const baseDomain = extractDomain(baseUrl);
           
-          // 1. 텍스트가 있는 링크 우선 (일반적으로 더 중요한 콘텐츠)
+          let qualityScore = 0;
+          
+          // 1. 같은 도메인인 경우 높은 점수
+          if (urlDomain === baseDomain) {
+            qualityScore += 100;
+          } else if (urlDomain.endsWith(`.${baseDomain}`)) {
+            qualityScore += 50;
+          } else {
+            qualityScore -= 50; // 다른 도메인은 낮은 점수
+          }
+          
+          // 2. 텍스트가 있는 링크는 높은 점수
+          if (link.text && link.text.trim().length > 0) {
+            qualityScore += 30;
+          }
+          
+          // 3. 깊이가 낮은 링크는 높은 점수
+          const depth = calculateDepth(baseUrl, url);
+          qualityScore += Math.max(0, 20 - depth * 2);
+          
+          // 4. 경로가 짧은 링크는 높은 점수
+          const pathLength = pathname.split('/').filter(p => p).length;
+          qualityScore += Math.max(0, 15 - pathLength);
+          
+          // 5. 쿼리 파라미터가 없는 링크는 높은 점수
+          if (!url.includes('?')) {
+            qualityScore += 10;
+          }
+          
+          // 6. 품질이 낮은 경로는 점수 감점
+          const lowQualityPaths = ['/rules/', '/legal/', '/terms/', '/privacy/', '/help/', '/support/', '/login/'];
+          if (lowQualityPaths.some(path => pathname.includes(path))) {
+            qualityScore -= 100; // 품질 낮은 링크는 제외
+          }
+          
+          // 7. ads.naver.com의 주요 경로는 높은 점수
+          if (baseDomain === 'ads.naver.com') {
+            const mainPaths = ['/start/', '/sa/', '/sub/', '/notice/', '/insight/'];
+            if (mainPaths.some(path => pathname.startsWith(path))) {
+              qualityScore += 20;
+            }
+          }
+          
+          return { ...link, qualityScore };
+        })
+        .filter(link => link.qualityScore > -50) // 품질이 너무 낮은 링크 제외
+        .sort((a, b) => {
+          // 품질 점수 높은 순으로 정렬
+          if (b.qualityScore !== a.qualityScore) {
+            return b.qualityScore - a.qualityScore;
+          }
+          
+          // 같은 점수면 텍스트가 있는 링크 우선
           if (a.text && !b.text) return -1;
           if (!a.text && b.text) return 1;
           
-          // 2. 깊이가 낮은 링크 우선 (시드 URL에 가까운 페이지)
-          if (depthA !== depthB) {
-            return depthA - depthB;
-          }
-          
-          // 3. 경로가 짧은 링크 우선 (일반적으로 더 중요한 페이지)
-          try {
-            const pathA = new URL(urlA).pathname;
-            const pathB = new URL(urlB).pathname;
-            const pathLengthA = pathA.split('/').filter(p => p).length;
-            const pathLengthB = pathB.split('/').filter(p => p).length;
-            if (pathLengthA !== pathLengthB) {
-              return pathLengthA - pathLengthB;
-            }
-          } catch (e) {
-            // URL 파싱 실패 시 무시
-          }
-          
-          // 4. 쿼리 파라미터가 없는 링크 우선
-          const hasQueryA = urlA.includes('?');
-          const hasQueryB = urlB.includes('?');
-          if (hasQueryA !== hasQueryB) {
-            return hasQueryA ? 1 : -1;
-          }
-          
           return 0;
-        });
+        })
+        .map(({ qualityScore, ...link }) => link); // qualityScore 제거
 
       for (const link of filteredLinks) {
         const normalizedUrl = normalizeUrl(link.url);
