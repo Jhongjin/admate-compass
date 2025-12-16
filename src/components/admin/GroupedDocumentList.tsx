@@ -226,7 +226,7 @@ export default function GroupedDocumentList({
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4 w-full max-w-full overflow-hidden">
       {/* 전체선택 및 선택삭제 헤더 */}
       <Card className="bg-[#131823] border border-white/5">
         <CardContent className="p-4">
@@ -291,10 +291,10 @@ export default function GroupedDocumentList({
       </Card>
 
       {groups.map((group, groupIndex) => (
-        <Card key={group.domain} className="bg-[#131823] border border-white/5 hover:bg-white/[0.02] transition-colors">
+        <Card key={group.domain} className="bg-[#131823] border border-white/5 hover:bg-white/[0.02] transition-colors w-full max-w-full overflow-hidden">
           <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-3 flex-1 min-w-0">
+            <div className="flex items-center justify-between w-full max-w-full overflow-hidden">
+              <div className="flex items-center space-x-3 flex-1 min-w-0 max-w-full overflow-hidden">
                 <Button
                   variant="ghost"
                   size="sm"
@@ -312,7 +312,7 @@ export default function GroupedDocumentList({
                   <Globe className="w-5 h-5 text-white" />
                 </div>
 
-                <div className="flex-1 min-w-0">
+                <div className="flex-1 min-w-0 max-w-full">
                   <div className="flex items-center space-x-2 mb-1">
                     <Button
                       variant="ghost"
@@ -332,7 +332,7 @@ export default function GroupedDocumentList({
                           onSelectDocument(allIds);
                         }
                       }}
-                      className="p-1 h-6 w-6 hover:bg-gray-700/50"
+                      className="p-1 h-6 w-6 hover:bg-gray-700/50 flex-shrink-0"
                     >
                       {selectedDocuments?.has(group.mainDocument.id) &&
                         group.subPages.every((sub: GroupedDocument) => selectedDocuments?.has(sub.id)) ? (
@@ -341,27 +341,33 @@ export default function GroupedDocumentList({
                         <Square className="w-4 h-4 text-gray-400" />
                       )}
                     </Button>
-                    <div className="p-2 rounded-lg bg-white/5 mr-2">
+                    <div className="p-2 rounded-lg bg-white/5 mr-2 flex-shrink-0">
                       <Globe className="w-4 h-4 text-green-400" />
                     </div>
-                    <h3 className="font-semibold text-white text-sm truncate">
+                    <h3 className="font-semibold text-white text-sm truncate min-w-0 flex-1">
                       {group.mainDocument.title}
                     </h3>
                     <a
                       href={group.mainDocument.url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="text-gray-400 hover:text-blue-400 transition-colors"
+                      className="text-gray-400 hover:text-blue-400 transition-colors flex-shrink-0"
                     >
                       <ExternalLink className="w-4 h-4" />
                     </a>
                   </div>
                   <div className="flex items-center space-x-4 text-xs text-gray-400 mt-1">
-                    <p className="truncate text-left">
-                      {group.mainDocument?.url || group.mainUrl}
+                    <p className="truncate text-left max-w-[400px] min-w-0" title={group.mainDocument?.url || group.mainUrl}>
+                      {(() => {
+                        const url = group.mainDocument?.url || group.mainUrl;
+                        if (url.length > 50) {
+                          return url.substring(0, 50) + '...';
+                        }
+                        return url;
+                      })()}
                     </p>
                     {group.mainDocument.created_at && (
-                      <span className="whitespace-nowrap">
+                      <span className="whitespace-nowrap flex-shrink-0">
                         {new Date(group.mainDocument.created_at).toLocaleDateString()}
                       </span>
                     )}
