@@ -797,6 +797,10 @@ const getDocumentTypeBadgeClass = (type: string) => {
                     <TabsContent value="crawling" className="space-y-6">
                         <AdminUrlCrawler
                             defaultVendor={selectedVendors}
+                            onVendorChange={(vendors) => {
+                                // URL 크롤링 페이지에서 벤더 선택 변경 시 상단 벤더와 동기화
+                                setSelectedVendors(vendors);
+                            }}
                             onSuccess={async () => {
                                 // 문서 목록 새로고침 및 캐시 무효화
                                 await queryClient.invalidateQueries({ queryKey: ['admin-documents'], exact: false });

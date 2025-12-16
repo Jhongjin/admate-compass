@@ -44,6 +44,7 @@ interface CrawlResult {
 interface AdminUrlCrawlerProps {
   onSuccess?: () => void;
   defaultVendor?: string[];
+  onVendorChange?: (vendors: string[]) => void;
 }
 
 // --- Utils ---
@@ -56,34 +57,28 @@ const normalizeUrl = (url: string) => {
   }
 };
 
-const VENDOR_OPTIONS = [
-  { id: 'META', name: 'Meta' },
-  { id: 'NAVER', name: 'Naver' },
-  { id: 'KAKAO', name: 'Kakao' },
-  { id: 'GOOGLE', name: 'Google' },
-  { id: 'OTHER', name: 'Other' },
-];
+// 문서 관리 페이지와 동일한 벤더 목록
+const ALL_VENDORS = ["Meta", "Naver", "Kakao", "Google", "X(Twitter)"] as const;
 
-// UI 벤더 이름을 DB/내부 ID로 변환하는 매핑
-const UI_VENDOR_TO_ID_MAP: Record<string, string> = {
-  'Meta': 'META',
-  'Naver': 'NAVER',
-  'Kakao': 'KAKAO',
-  'Google': 'GOOGLE',
-  'X(Twitter)': 'OTHER',
-  'X': 'OTHER',
+// UI 벤더 이름을 DB ENUM 값으로 변환하는 매핑 (문서 관리 페이지와 동일)
+const VENDOR_TO_DB_MAP: Record<string, string> = {
+  "Meta": "META",
+  "Naver": "NAVER",
+  "Kakao": "KAKAO",
+  "Google": "GOOGLE",
+  "X(Twitter)": "OTHER",
 };
 
-// DB/내부 ID를 UI 벤더 이름으로 변환하는 역매핑
-const ID_TO_UI_VENDOR_MAP: Record<string, string> = {
-  'META': 'Meta',
-  'NAVER': 'Naver',
-  'KAKAO': 'Kakao',
-  'GOOGLE': 'Google',
-  'OTHER': 'Other',
+// DB ENUM 값을 UI 벤더 이름으로 변환하는 역매핑
+const DB_TO_VENDOR_MAP: Record<string, string> = {
+  "META": "Meta",
+  "NAVER": "Naver",
+  "KAKAO": "Kakao",
+  "GOOGLE": "Google",
+  "OTHER": "X(Twitter)",
 };
 
-export function AdminUrlCrawler({ onSuccess, defaultVendor }: AdminUrlCrawlerProps) {
+export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: AdminUrlCrawlerProps) {
   // --- State ---
   const [urls, setUrls] = useState<string>('');
   const [isCrawling, setIsCrawling] = useState(false);
@@ -91,37 +86,81 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor }: AdminUrlCrawlerPro
   const [results, setResults] = useState<CrawlResult[]>([]);
   const [environment, setEnvironment] = useState<'local' | 'vercel' | 'unknown'>('unknown');
   
-  // defaultVendor에서 벤더 ID 추출 및 초기화
-  const getVendorIdFromDefault = (vendors?: string[]): string => {
-    if (!vendors || vendors.length === 0) return 'META';
+  // 벤더를 배열로 관리 (문서 관리 페이지와 동일한 패턴)
+  const [selectedVendors, setSelectedVendors] = useState<string[]>(() => {
+    if (defaultVendor && defaultVendor.length > 0) {
+      // UI 벤더 이름으로 변환
+      return defaultVendor.map(v => {
+        // 이미 UI 벤더 이름인 경우
+        if (ALL_VENDORS.includes(v as any)) {
+          return v;
+        }
+        // DB ENUM 값인 경우 UI 이름으로 변환
+        if (DB_TO_VENDOR_MAP[v]) {
+          return DB_TO_VENDOR_MAP[v];
+        }
+        // 대문자로 변환해서 매핑 시도
+        const upperV = v.toUpperCase();
+        if (DB_TO_VENDOR_MAP[upperV]) {
+          return DB_TO_VENDOR_MAP[upperV];
+        }
+        return v;
+      });
+    }
+    return [];
+  });
+
+  // vendorSelectValue 계산 (문서 관리 페이지와 동일)
+  const vendorSelectValue = selectedVendors.length === 0 
+    ? "all" 
+    : selectedVendors.length === 1 
+      ? selectedVendors[0] 
+      : "multiple";
+
+  // 벤더 선택 변경 핸들러 (문서 관리 페이지와 동일)
+  const handleVendorSelectChange = (value: string) => {
+    if (value === "multiple") return;
     
-    const firstVendor = vendors[0];
-    // UI 벤더 이름인 경우 변환
-    if (UI_VENDOR_TO_ID_MAP[firstVendor]) {
-      return UI_VENDOR_TO_ID_MAP[firstVendor];
+    let newVendors: string[] = [];
+    if (value === "all") {
+      newVendors = [];
+    } else {
+      newVendors = [value];
     }
-    // 이미 대문자 ID인 경우 그대로 사용
-    if (VENDOR_OPTIONS.find(v => v.id === firstVendor.toUpperCase())) {
-      return firstVendor.toUpperCase();
+    
+    setSelectedVendors(newVendors);
+    
+    // 상위 컴포넌트에 변경 사항 전달
+    if (onVendorChange) {
+      onVendorChange(newVendors);
     }
-    // 기본값
-    return 'META';
   };
 
-  const [selectedVendor, setSelectedVendor] = useState<string>(
-    getVendorIdFromDefault(defaultVendor)
-  );
-
-  // defaultVendor 변경 시 동기화 (문자열로 변환하여 의존성 배열에 추가)
+  // defaultVendor 변경 시 동기화
   useEffect(() => {
-    if (defaultVendor && defaultVendor.length > 0) {
-      const vendorId = getVendorIdFromDefault(defaultVendor);
-      // 현재 선택된 벤더와 다를 때만 업데이트 (무한 루프 방지)
-      if (selectedVendor !== vendorId) {
-        setSelectedVendor(vendorId);
+    if (defaultVendor) {
+      const newVendors = defaultVendor.map(v => {
+        if (ALL_VENDORS.includes(v as any)) {
+          return v;
+        }
+        if (DB_TO_VENDOR_MAP[v]) {
+          return DB_TO_VENDOR_MAP[v];
+        }
+        const upperV = v.toUpperCase();
+        if (DB_TO_VENDOR_MAP[upperV]) {
+          return DB_TO_VENDOR_MAP[upperV];
+        }
+        return v;
+      });
+      
+      // 배열이 실제로 다를 때만 업데이트
+      const currentStr = selectedVendors.sort().join(',');
+      const newStr = newVendors.sort().join(',');
+      if (currentStr !== newStr) {
+        setSelectedVendors(newVendors);
       }
     }
-  }, [defaultVendor?.join(',')]); // 배열을 문자열로 변환하여 의존성 추적
+  }, [defaultVendor?.join(',')]);
   const [isDragActive, setIsDragActive] = useState(false);
 
   // Sub-page selection state
@@ -299,8 +338,10 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor }: AdminUrlCrawlerPro
     await fetchExistingUrls();
 
     try {
-      // Use selected vendor instead of defaultVendor prop
-      const vendor = selectedVendor;
+      // 선택된 벤더가 없으면 기본값 사용
+      const vendor = selectedVendors.length > 0 
+        ? VENDOR_TO_DB_MAP[selectedVendors[0]] || 'META'
+        : 'META';
 
       const resultsWithVendor = successfulResults.map(r => {
         const discoveryInfo = discoveredUrls.find(d => normalizeUrl(d.url) === normalizeUrl(r.url));
@@ -390,17 +431,27 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor }: AdminUrlCrawlerPro
               </p>
             </div>
 
-            {/* Vendor Selection */}
-            <div className="flex items-center gap-3">
-              <span className="text-sm text-gray-400">벤더 선택:</span>
-              <Select value={selectedVendor} onValueChange={setSelectedVendor}>
-                <SelectTrigger className="w-[140px] bg-black/40 border-white/10 text-white h-9">
-                  <SelectValue placeholder="벤더 선택" />
+            {/* Vendor Selection - 문서 관리 페이지와 동일한 패턴 */}
+            <div className="flex items-center gap-2 text-sm text-gray-400">
+              <span className="hidden sm:inline-block">벤더 선택:</span>
+              <Select value={vendorSelectValue} onValueChange={handleVendorSelectChange}>
+                <SelectTrigger className="w-[200px] bg-[#0B0F17] border-white/10 text-white h-9">
+                  <div className="flex-1 text-left">
+                    {vendorSelectValue === "all"
+                      ? "전체 벤더"
+                      : vendorSelectValue === "multiple"
+                        ? `${selectedVendors.length}개 선택됨`
+                        : vendorSelectValue}
+                  </div>
                 </SelectTrigger>
-                <SelectContent className="bg-[#1e232f] border-gray-700 text-white">
-                  {VENDOR_OPTIONS.map((vendor) => (
-                    <SelectItem key={vendor.id} value={vendor.id} className="focus:bg-white/10 focus:text-white">
-                      {vendor.name}
+                <SelectContent className="bg-[#1A1F2C] border-white/10 text-white">
+                  <SelectItem value="all">전체 벤더</SelectItem>
+                  <SelectItem value="multiple" disabled>
+                    {selectedVendors.length}개 선택됨
+                  </SelectItem>
+                  {ALL_VENDORS.map((vendor) => (
+                    <SelectItem key={vendor} value={vendor}>
+                      {vendor}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -423,7 +474,7 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor }: AdminUrlCrawlerPro
               <Link className="w-8 h-8 text-blue-400" />
             </div>
 
-            <div className="w-full max-w-2xl space-y-4">
+            <div className="w-full max-w-2xl mx-auto space-y-4">
               <Label htmlFor="urls" className="sr-only">URL 입력</Label>
               <Textarea
                 id="urls"
@@ -431,7 +482,7 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor }: AdminUrlCrawlerPro
                 onChange={(e) => setUrls(e.target.value)}
                 placeholder="https://example.com&#10;https://example.org"
                 rows={3}
-                className="min-h-[100px] text-center bg-transparent border-gray-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-lg resize-none placeholder:text-gray-600"
+                className="min-h-[100px] w-full text-center bg-transparent border-gray-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-lg resize-none placeholder:text-gray-600"
               />
               <p className="text-xs text-gray-500">
                 여러 URL을 입력하려면 줄바꿈으로 구분하세요.
