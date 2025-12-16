@@ -33,20 +33,72 @@ export async function POST(request: NextRequest) {
       }
     );
 
-    // DB에 있는 모든 URL 문서 가져오기 (부모 찾기용)
-    const { data: allUrlDocs } = await supabase
-      .from('documents')
-      .select('url, title')
-      .eq('type', 'url');
+    // --- 1. Identify Potential Parent Paths (Path Reduction) ---
+    // Instead of loading ALL documents, we predict potential parents for the incoming batch.
+    const candidatePaths = new Set<string>();
 
-    const existingUrlsMap = new Map<string, string>(); // normalized -> real
-    if (allUrlDocs) {
-      allUrlDocs.forEach(doc => {
-        // Normalize: remove trailing slash
-        const normalized = doc.url.replace(/\/$/, "").trim();
-        existingUrlsMap.set(normalized, doc.url);
-      });
+    // Also track "self" URLs to check for duplicates later in one go if needed, 
+    // but the original logic checks duplicates one by one. We'll stick to that for safety.
+
+    results.forEach(result => {
+      if (!result.url) return;
+      try {
+        // Remove trailing slash for consistency
+        const currentUrl = result.url.replace(/\/$/, "");
+        const urlObj = new URL(currentUrl);
+        const pathSegments = urlObj.pathname.split('/').filter(p => p.length > 0);
+
+        // Generate all parent prefixes
+        // e.g. /business/help/123 -> /business/help, /business
+        let accumulatedPath = "";
+        for (let i = 0; i < pathSegments.length - 1; i++) {
+          accumulatedPath += "/" + pathSegments[i];
+          // Construct full potential parent URL
+          const candidateUrl = `${urlObj.origin}${accumulatedPath}`;
+          candidatePaths.add(candidateUrl);
+        }
+      } catch (e) {
+        // Invalid URL, ignore
+      }
+    });
+
+    const uniqueCandidates = Array.from(candidatePaths);
+    const existingParentsMap = new Map<string, string>(); // normalized -> realUrl
+
+    // --- 2. Bulk Lookup Candidate Parents ---
+    if (uniqueCandidates.length > 0) {
+      // Query in batches if candidates are too many (Supabase 'in' limit ~65k chars usually, safely 100 items)
+      // Let's do batches of 50
+      const BATCH_SIZE = 50;
+      for (let i = 0; i < uniqueCandidates.length; i += BATCH_SIZE) {
+        const batch = uniqueCandidates.slice(i, i + BATCH_SIZE);
+        const { data: foundParents, error } = await supabase
+          .from('documents')
+          .select('url')
+          .in('url', batch)
+          .eq('type', 'url');
+
+        if (foundParents) {
+          foundParents.forEach(p => {
+            const norm = p.url.replace(/\/$/, "").trim();
+            existingParentsMap.set(norm, p.url);
+          });
+        }
+      }
     }
+
+    // Also add any URLs that are IN the current batch to the map, so they can parent each other
+    results.forEach(r => {
+      if (r.url) {
+        const norm = r.url.replace(/\/$/, "").trim();
+        // Only add if not already from DB (DB takes precedence as "stable" source)
+        if (!existingParentsMap.has(norm)) {
+          existingParentsMap.set(norm, r.url);
+        }
+      }
+    });
+
+    // --- 3. Process Each Result ---
 
     const savedDocuments = [];
     const errors = [];
@@ -58,32 +110,21 @@ export async function POST(request: NextRequest) {
         }
 
         // --- Backend Auto-Grouping Logic ---
-        // If no parentUrl is provided (or even if it is, we might want to verify, but let's trust explicit first if valid),
-        // try to find one in the DB.
-
         let metadata = result.metadata || {};
         let parentUrl = metadata.parentUrl || null;
 
         if (!parentUrl) {
-          // Try to find a parent in existing DB
+          // Try to find a parent in existing map
           const currentNormalized = result.url.replace(/\/$/, "").trim();
           let bestParent = null;
           let maxLen = 0;
 
-          // Also check against *other results in this batch* if they are being created now?
-          // The previous logic in frontend did this. 
-          // But here we rely on DB primarily for "existing" parents.
-          // Ideally we should also check the 'results' array itself for a parent, but let's stick to DB for persistence stability first.
-          // Actually, the `existingUrlsMap` is from DB snapshot. 
-          // If we are saving a parent AND a child in the same batch, the parent might not be in DB yet if processed later?
-          // Or if processed earlier in loop?
-          // Ideally we update `existingUrlsMap` as we go?
-
-          for (const [dbNormalized, dbRealUrl] of existingUrlsMap.entries()) {
-            if (currentNormalized.startsWith(dbNormalized + '/')) {
-              if (dbNormalized.length > maxLen) {
-                maxLen = dbNormalized.length;
-                bestParent = dbRealUrl;
+          for (const [parentNormalized, parentRealUrl] of existingParentsMap.entries()) {
+            // Check if current URL is a child of this parent
+            if (currentNormalized !== parentNormalized && currentNormalized.startsWith(parentNormalized + '/')) {
+              if (parentNormalized.length > maxLen) {
+                maxLen = parentNormalized.length;
+                bestParent = parentRealUrl;
               }
             }
           }
@@ -94,17 +135,10 @@ export async function POST(request: NextRequest) {
             metadata = {
               ...metadata,
               parentUrl: bestParent,
-              is_sub_page: true,
-              // We could fetch parent title if needed, but let's stick to URL linkage
+              is_sub_page: true
             };
           }
         }
-
-        // Update the map for subsequent items in this loop (in case we just saved a potential parent)
-        if (!existingUrlsMap.has(result.url.replace(/\/$/, "").trim())) {
-          existingUrlsMap.set(result.url.replace(/\/$/, "").trim(), result.url);
-        }
-
         // --- End Auto-Grouping Logic ---
 
         // URL 중복 확인
