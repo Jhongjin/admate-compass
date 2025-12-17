@@ -602,7 +602,8 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
       if (data.success) {
         toast.success(data.message);
         if (onSuccess) onSuccess();
-        setResults([]);
+        // 성공한 결과만 제거하고 실패한 결과는 남겨두기
+        setResults(prev => prev.filter(r => r.status !== 'success'));
         await fetchExistingUrls();
         setDiscoveredUrls([]);
       } else {
