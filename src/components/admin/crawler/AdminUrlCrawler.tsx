@@ -298,6 +298,19 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                 // Discovery Logic
                 if (options.discoverSubPages && !isSubPageCrawl && event.results) {
                   const newResults = event.results as CrawlResult[];
+                  console.log(`[Discovery Logic] ====== 하위 페이지 발견 로직 시작 ======`);
+                  console.log(`[Discovery Logic] options.discoverSubPages: ${options.discoverSubPages}`);
+                  console.log(`[Discovery Logic] isSubPageCrawl: ${isSubPageCrawl}`);
+                  console.log(`[Discovery Logic] event.results 길이: ${newResults.length}`);
+                  
+                  // 각 result의 discoveredUrls 확인
+                  newResults.forEach((result, idx) => {
+                    console.log(`[Discovery Logic] Result[${idx}]: url=${result.url}, discoveredUrls=${result.discoveredUrls ? result.discoveredUrls.length : 0}개`);
+                    if (result.discoveredUrls && result.discoveredUrls.length > 0) {
+                      console.log(`[Discovery Logic] Result[${idx}]의 discoveredUrls:`, result.discoveredUrls.slice(0, 3).map(d => d.url));
+                    }
+                  });
+                  
                   const allDiscovered: Array<{ url: string; source: string; title?: string; parentUrl?: string }> = [];
                   // 정규화된 URL로 비교하기 위해 Set 생성
                   const existingUrlsNormalized = new Set<string>();
@@ -318,7 +331,8 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                   console.log(`[Discovery Logic] 기존 URL Set 크기: ${existingUrlsNormalized.size}, 시드 URL: ${seedUrlForDiscovery}`);
 
                   newResults.forEach(result => {
-                    if (result.discoveredUrls) {
+                    if (result.discoveredUrls && result.discoveredUrls.length > 0) {
+                      console.log(`[Discovery Logic] 처리 중인 result: ${result.url}, discoveredUrls: ${result.discoveredUrls.length}개`);
                       result.discoveredUrls.forEach(d => {
                         const normalizedDiscoveredUrl = normalizeUrl(d.url);
                         if (!existingUrlsNormalized.has(normalizedDiscoveredUrl)) {
@@ -339,15 +353,22 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                           console.log(`[Discovery Logic] 이미 존재하는 URL 스킵: "${d.url}" (정규화: "${normalizedDiscoveredUrl}")`);
                         }
                       });
+                    } else {
+                      console.log(`[Discovery Logic] result에 discoveredUrls가 없음: ${result.url}`);
                     }
                   });
 
+                  console.log(`[Discovery Logic] 총 발견된 하위 페이지: ${allDiscovered.length}개`);
                   if (allDiscovered.length > 0) {
-                    console.log(`[Discovery Logic] ${allDiscovered.length}개의 새로운 하위 페이지 발견`);
+                    console.log(`[Discovery Logic] ${allDiscovered.length}개의 새로운 하위 페이지 발견 - 팝업 표시`);
                     setDiscoveredUrls(allDiscovered);
                     setSelectedDiscoveredUrls(new Set(allDiscovered.map(d => d.url)));
                     setIsSelectionDialogOpen(true);
+                  } else {
+                    console.log(`[Discovery Logic] 발견된 하위 페이지가 없어 팝업을 표시하지 않음`);
                   }
+                } else {
+                  console.log(`[Discovery Logic] 조건 불만족 - discoverSubPages: ${options.discoverSubPages}, isSubPageCrawl: ${isSubPageCrawl}, event.results: ${!!event.results}`);
                 }
                 await fetchExistingUrls();
               } else if (event.type === 'error') {
