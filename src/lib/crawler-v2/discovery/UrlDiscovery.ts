@@ -339,6 +339,34 @@ export class UrlDiscovery {
           // 페이지의 모든 링크를 찾기 위해 추가 대기 (ads.naver.com은 더 오래 대기)
           const additionalWaitTime = isNaverAds ? 8000 : 2000;
           await new Promise(resolve => setTimeout(resolve, additionalWaitTime));
+          // 리다이렉트 확인
+          const currentPageUrl = page.url();
+          const isRedirected = currentPageUrl !== baseUrl && !currentPageUrl.startsWith(baseUrl);
+          if (isRedirected) {
+            console.warn(`[discoverFromLinks] ⚠️ 리다이렉트 감지: ${baseUrl} -> ${currentPageUrl}`);
+            // 로그인 페이지로 리다이렉트된 경우 원래 URL로 다시 시도
+            if (currentPageUrl.includes('nid.naver.com') || currentPageUrl.includes('login')) {
+              console.warn(`[discoverFromLinks] ⚠️ 로그인 페이지로 리다이렉트됨. 원래 URL로 재시도: ${baseUrl}`);
+              await page.close();
+              const retryPage = await browserManager.createPage();
+              try {
+                await retryPage.goto(baseUrl, {
+                  waitUntil: 'networkidle2',
+                  timeout: config.timeout || 60000,
+                });
+                // 추가 대기
+                await new Promise(resolve => setTimeout(resolve, waitTime));
+                // 페이지를 retryPage로 교체
+                await page.close();
+                page = retryPage;
+              } catch (retryError) {
+                console.warn(`[discoverFromLinks] 재시도 실패:`, retryError);
+                await retryPage.close();
+                throw retryError;
+              }
+            }
+          }
+          
           // DOM 상태를 먼저 확인
           const domState = await page.evaluate(() => {
             const allLinks = document.querySelectorAll('a');
@@ -369,6 +397,12 @@ export class UrlDiscovery {
           console.log(`[discoverFromLinks] - readyState: ${domState.readyState}`);
           if (domState.sampleLinks.length > 0) {
             console.log(`[discoverFromLinks] - 샘플 링크 (처음 10개):`, domState.sampleLinks);
+          }
+          
+          // 리다이렉트된 경우 경고
+          if (domState.currentUrl !== baseUrl && !domState.currentUrl.startsWith(baseUrl)) {
+            console.warn(`[discoverFromLinks] ⚠️ 페이지가 리다이렉트됨: ${baseUrl} -> ${domState.currentUrl}`);
+            console.warn(`[discoverFromLinks] ⚠️ 링크 추출이 제대로 되지 않을 수 있습니다.`);
           }
           
           links = await page.evaluate((baseDomain, maxDepth, baseUrl) => {
