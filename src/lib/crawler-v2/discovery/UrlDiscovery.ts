@@ -339,14 +339,39 @@ export class UrlDiscovery {
           // 페이지의 모든 링크를 찾기 위해 추가 대기 (ads.naver.com은 더 오래 대기)
           const additionalWaitTime = isNaverAds ? 8000 : 2000;
           await new Promise(resolve => setTimeout(resolve, additionalWaitTime));
-          links = await page.evaluate((baseDomain, maxDepth, baseUrl) => {
-            console.log(`[discoverFromLinks] page.evaluate 내부 시작 - baseDomain: ${baseDomain}, maxDepth: ${maxDepth}, baseUrl: ${baseUrl}`);
-            console.log(`[discoverFromLinks] 현재 URL: ${window.location.href}`);
-            
-            // DOM 상태 확인
+          // DOM 상태를 먼저 확인
+          const domState = await page.evaluate(() => {
             const allLinks = document.querySelectorAll('a');
             const linksWithHref = document.querySelectorAll('a[href]');
-            console.log(`[discoverFromLinks] DOM 상태 - 전체 <a> 태그: ${allLinks.length}개, href 속성 있는 링크: ${linksWithHref.length}개`);
+            const currentUrl = window.location.href;
+            const readyState = document.readyState;
+            
+            // 샘플 링크 정보 수집
+            const sampleLinks = Array.from(document.querySelectorAll('a[href]')).slice(0, 10).map(link => ({
+              href: link.getAttribute('href'),
+              text: link.textContent?.trim().substring(0, 50) || '',
+              className: link.className || ''
+            }));
+            
+            return {
+              allLinksCount: allLinks.length,
+              linksWithHrefCount: linksWithHref.length,
+              currentUrl,
+              readyState,
+              sampleLinks
+            };
+          });
+          
+          console.log(`[discoverFromLinks] DOM 상태 확인:`);
+          console.log(`[discoverFromLinks] - 전체 <a> 태그: ${domState.allLinksCount}개`);
+          console.log(`[discoverFromLinks] - href 속성 있는 링크: ${domState.linksWithHrefCount}개`);
+          console.log(`[discoverFromLinks] - 현재 URL: ${domState.currentUrl}`);
+          console.log(`[discoverFromLinks] - readyState: ${domState.readyState}`);
+          if (domState.sampleLinks.length > 0) {
+            console.log(`[discoverFromLinks] - 샘플 링크 (처음 10개):`, domState.sampleLinks);
+          }
+          
+          links = await page.evaluate((baseDomain, maxDepth, baseUrl) => {
             
             // 다양한 선택자로 링크 찾기 (네이버 광고, Instagram, Facebook 등 다양한 사이트 대응)
             const linkSelectors = [
@@ -632,9 +657,27 @@ export class UrlDiscovery {
               // iframe 처리 실패 - 무시
             }
             
+            console.log(`[discoverFromLinks] page.evaluate 내부 - 추출된 링크: ${extractedLinks.length}개`);
+            if (extractedLinks.length === 0) {
+              console.log(`[discoverFromLinks] ⚠️ 링크가 추출되지 않음. DOM 상태 확인:`);
+              console.log(`[discoverFromLinks] - document.querySelectorAll('a').length: ${document.querySelectorAll('a').length}`);
+              console.log(`[discoverFromLinks] - document.querySelectorAll('a[href]').length: ${document.querySelectorAll('a[href]').length}`);
+              console.log(`[discoverFromLinks] - document.querySelectorAll('[href]').length: ${document.querySelectorAll('[href]').length}`);
+              
+              // 샘플 링크 출력
+              const sampleLinks = Array.from(document.querySelectorAll('a[href]')).slice(0, 5);
+              sampleLinks.forEach((link, idx) => {
+                const href = link.getAttribute('href');
+                const text = link.textContent?.trim().substring(0, 50);
+                const className = link.className;
+                console.log(`[discoverFromLinks] 샘플 링크 ${idx + 1}:`, { href, text, className });
+              });
+            }
+            
             return extractedLinks;
           }, baseDomain, config.maxDepth ?? 3, baseUrl);
           
+          console.log(`[discoverFromLinks] page.evaluate 완료 - 반환된 링크: ${links.length}개`);
           await page.close();
           console.log(`[discoverFromLinks] 🔗 Puppeteer에서 발견된 링크: ${links.length}개`);
           if (links.length > 0) {
