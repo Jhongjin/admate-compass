@@ -9,18 +9,30 @@
 export interface CrawlOptions {
   /** 최대 탐색 깊이 (1-4) */
   maxDepth?: number;
+  /**
+   * 깊이 모드
+   * - 'LIMITED': maxDepth 기반으로 깊이 제한 적용
+   * - 'MAX': maxDepth 무시하고(깊이 제한 없음) 재귀적으로 링크를 계속 발견 (단, maxUrls/maxRecursivePages로 상한 적용)
+   */
+  depthMode?: 'LIMITED' | 'MAX';
   /** 최대 발견 URL 수 */
   maxUrls?: number;
   /** robots.txt 존중 여부 */
   respectRobots?: boolean;
   /** 도메인 제한 여부 */
   domainLimit?: boolean;
+  /** 외부 도메인 허용 여부 */
+  includeExternal?: boolean;
   /** 허용된 도메인 목록 */
   allowedDomains?: string[];
   /** 타임아웃 (ms) */
   timeout?: number;
   /** 하위 페이지 발견 여부 */
   discoverSubPages?: boolean;
+  /** 하위 페이지 발견을 재귀적으로 수행할지 여부 (병렬 BFS). depthMode==='MAX'일 때 자동 true로 취급 가능 */
+  recursiveDiscovery?: boolean;
+  /** 재귀 탐색 시 최대 방문 페이지 수 (무한 루프/폭발 방지) */
+  maxRecursivePages?: number;
   /** 벤더 정보 */
   vendor?: string;
   /** 사용자 에이전트 */

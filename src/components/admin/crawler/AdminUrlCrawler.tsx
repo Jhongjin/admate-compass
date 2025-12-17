@@ -219,7 +219,7 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
 
   const [options, setOptions] = useState({
     discoverSubPages: false,
-    maxDepth: 4, // ads.naver.com 같은 사이트는 깊이 4로 크롤링
+    maxDepth: 4 as number | 'MAX', // ads.naver.com 같은 사이트는 깊이 4로 크롤링
     maxUrls: 100, // 더 많은 URL 추출
     respectRobots: true,
     domainLimit: true,
@@ -893,13 +893,31 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
 
               <div className="flex flex-col gap-2 p-3 rounded-lg bg-white/5 border border-white/5">
                 <Label className="text-xs text-gray-400">최대 깊이</Label>
-                <Input
-                  type="number"
-                  min={1} max={5}
-                  value={options.maxDepth}
-                  onChange={(e) => setOptions({ ...options, maxDepth: parseInt(e.target.value) || 1 })}
-                  className="h-7 bg-transparent border-gray-600 text-white text-sm"
-                />
+                <Select
+                  value={String(options.maxDepth)}
+                  onValueChange={(value) => {
+                    if (value === 'MAX') {
+                      setOptions({ ...options, maxDepth: 'MAX' });
+                      return;
+                    }
+                    const parsed = Number.parseInt(value, 10);
+                    setOptions({ ...options, maxDepth: Number.isFinite(parsed) ? parsed : 1 });
+                  }}
+                >
+                  <SelectTrigger className="h-7 bg-transparent border-gray-600 text-white text-sm">
+                    <SelectValue placeholder="깊이 선택" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1">1</SelectItem>
+                    <SelectItem value="2">2</SelectItem>
+                    <SelectItem value="3">3</SelectItem>
+                    <SelectItem value="4">4</SelectItem>
+                    <SelectItem value="MAX">Max (재귀)</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-[10px] text-gray-500 leading-tight">
+                  Max + 하위 페이지 발견 사용 시: 발견된 하위 페이지를 실제로 열어 링크를 추가로 추출합니다.
+                </p>
               </div>
 
               <div className="flex flex-col gap-2 p-3 rounded-lg bg-white/5 border border-white/5">

@@ -32,9 +32,21 @@ export async function POST(request: NextRequest) {
     }
 
     console.log(`🕷️ 크롤러 V2 시작: ${urls.length}개 URL`);
+    const rawMaxDepth = options?.maxDepth as unknown;
+    const isMaxDepthMode =
+      rawMaxDepth === 'MAX' ||
+      options?.depthMode === 'MAX';
+
+    const parsedMaxDepth =
+      typeof rawMaxDepth === 'number'
+        ? rawMaxDepth
+        : typeof rawMaxDepth === 'string'
+          ? Number.parseInt(rawMaxDepth, 10)
+          : undefined;
 
     const crawlOptions: Partial<CrawlOptions> = {
-      maxDepth: options?.maxDepth || 2,
+      maxDepth: isMaxDepthMode ? undefined : (Number.isFinite(parsedMaxDepth) ? parsedMaxDepth : 2),
+      depthMode: isMaxDepthMode ? 'MAX' : (options?.depthMode || 'LIMITED'),
       maxUrls: options?.maxUrls || 100,
       respectRobots: options?.respectRobots !== false,
       domainLimit: options?.domainLimit !== false,
@@ -47,6 +59,12 @@ export async function POST(request: NextRequest) {
       retryDelay: options?.retryDelay || 1000,
       concurrency: options?.concurrency || 3, // 기본값: 3개 병렬 처리
       enableMemoryMonitoring: options?.enableMemoryMonitoring !== false, // 기본값: true
+      // MAX 모드일 때 재귀 탐색 활성화 (discoverSubPages가 true일 때만 의미 있음)
+      recursiveDiscovery: isMaxDepthMode ? true : options?.recursiveDiscovery,
+      // MAX 모드 기본 상한 (무한루프/폭발 방지). 옵션으로 덮어쓸 수 있음.
+      maxRecursivePages: options?.maxRecursivePages || (isMaxDepthMode ? 120 : undefined),
+      // MAX 모드에서는 기본적으로 외부 도메인을 허용하지 않음
+      includeExternal: options?.includeExternal ?? (isMaxDepthMode ? false : undefined),
       ...options,
     };
 

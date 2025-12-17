@@ -28,6 +28,12 @@ export class UrlDiscovery {
 
     console.log(`🔍 URL 발견 시작: ${baseUrl}`, config);
 
+    // MAX 모드: 재귀(병렬 BFS)로 하위 페이지 링크까지 추출
+    const isMaxMode = config.depthMode === 'MAX' || config.recursiveDiscovery === true;
+    if (isMaxMode) {
+      return await this.discoverSubPagesRecursive(baseUrl, config);
+    }
+
     const discoveredUrls = new Set<string>();
     const discoveredPages: DiscoveredUrl[] = [];
     const baseDomain = extractDomain(baseUrl);
@@ -82,6 +88,117 @@ export class UrlDiscovery {
       console.error('[UrlDiscovery] 에러 스택:', error instanceof Error ? error.stack : String(error));
       return discoveredPages.slice(0, config.maxUrls || 100);
     }
+  }
+  /**
+   * MAX 모드: 재귀적(병렬 BFS) 하위 페이지 발견
+   * - 시드 URL에서 시작하여, 발견된 하위 페이지도 실제로 열어(link extraction) 추가 링크를 계속 발견
+   * - 무한 루프/폭발 방지: visited(중복) + maxUrls + maxRecursivePages
+   */
+  private async discoverSubPagesRecursive(
+    seedUrl: string,
+    config: CrawlOptions
+  ): Promise<DiscoveredUrl[]> {
+    const baseDomain = extractDomain(seedUrl);
+    const maxUrls = Math.max(1, config.maxUrls ?? 100);
+    const concurrency = Math.max(1, config.concurrency ?? 3);
+    const maxRecursivePages = Math.max(1, config.maxRecursivePages ?? 120);
+
+    const visitedPages = new Set<string>();
+    const discoveredByNormalized = new Map<string, DiscoveredUrl>();
+
+    const addDiscovered = (d: DiscoveredUrl) => {
+      const n = normalizeUrl(d.url);
+      if (discoveredByNormalized.has(n)) return false;
+      discoveredByNormalized.set(n, d);
+      return true;
+    };
+
+    const queue: Array<{ url: string; parentUrl?: string; path?: string[] }> = [];
+
+    console.log('[UrlDiscovery][MAX] ====== 재귀(병렬 BFS) 하위 페이지 발견 시작 ======');
+    console.log('[UrlDiscovery][MAX] seedUrl: ' + seedUrl);
+    console.log('[UrlDiscovery][MAX] maxUrls=' + maxUrls + ', concurrency=' + concurrency + ', maxRecursivePages=' + maxRecursivePages);
+
+    // 시드에서 1회 링크/사이트맵 수집
+    const seedDiscovered: DiscoveredUrl[] = [];
+    try {
+      seedDiscovered.push(...(await this.discoverFromSitemap(seedUrl, config)));
+    } catch (e) {
+      console.warn('[UrlDiscovery][MAX] ⚠️ 시드 사이트맵 발견 실패:', e);
+    }
+    try {
+      seedDiscovered.push(...(await this.discoverFromLinks(seedUrl, config)));
+    } catch (e) {
+      console.warn('[UrlDiscovery][MAX] ⚠️ 시드 링크 발견 실패:', e);
+    }
+
+    // 시드에서 발견한 URL을 결과/큐에 추가
+    for (const d of seedDiscovered) {
+      if (discoveredByNormalized.size >= maxUrls) break;
+      const depth = calculateDepth(seedUrl, d.url);
+      const discovered: DiscoveredUrl = {
+        ...d,
+        depth,
+        parentUrl: d.parentUrl ?? seedUrl,
+        path: d.path ?? buildUrlPath(seedUrl, d.url),
+      };
+      if (addDiscovered(discovered) && depth !== 999) {
+        queue.push({ url: discovered.url, parentUrl: discovered.parentUrl, path: discovered.path });
+      }
+    }
+
+    visitedPages.add(normalizeUrl(seedUrl));
+
+    // BFS (병렬): 큐에서 꺼내 실제로 페이지를 열어 링크를 추가 발견
+    while (queue.length > 0 && discoveredByNormalized.size < maxUrls && visitedPages.size < maxRecursivePages) {
+      const batch = queue.splice(0, concurrency)
+        .filter(item => !visitedPages.has(normalizeUrl(item.url)));
+      if (batch.length === 0) continue;
+
+      batch.forEach(item => visitedPages.add(normalizeUrl(item.url)));
+
+      const batchResults = await Promise.all(
+        batch.map(async (item) => {
+          try {
+            const links = await this.discoverFromLinks(item.url, config);
+            return { item, links };
+          } catch (e) {
+            console.warn('[UrlDiscovery][MAX] ⚠️ 링크 추출 실패: ' + item.url, e);
+            return { item, links: [] as DiscoveredUrl[] };
+          }
+        })
+      );
+
+      for (const { item, links } of batchResults) {
+        for (const link of links) {
+          if (discoveredByNormalized.size >= maxUrls) break;
+          const depth = calculateDepth(seedUrl, link.url);
+          const discovered: DiscoveredUrl = {
+            ...link,
+            depth,
+            parentUrl: item.url,
+            path: buildUrlPath(seedUrl, link.url, item.path),
+          };
+
+          if (!addDiscovered(discovered)) continue;
+
+          // 외부(999)는 큐에 넣지 않음 (폭발 방지)
+          if (depth !== 999 && visitedPages.size < maxRecursivePages) {
+            const normalized = normalizeUrl(discovered.url);
+            if (!visitedPages.has(normalized)) {
+              queue.push({ url: discovered.url, parentUrl: discovered.parentUrl, path: discovered.path });
+            }
+          }
+        }
+      }
+    }
+
+    const discoveredPages = Array.from(discoveredByNormalized.values());
+    const filtered = this.filterAndSort(discoveredPages, baseDomain, config);
+    const finalResults = filtered.slice(0, maxUrls);
+
+    console.log('[UrlDiscovery][MAX] ✅ 재귀 발견 완료: visitedPages=' + visitedPages.size + ', discovered=' + finalResults.length + '/' + maxUrls);
+    return finalResults;
   }
 
   /**
@@ -894,7 +1011,7 @@ export class UrlDiscovery {
           
           // 깊이 제한 확인
           // maxDepth 4일 때는 다른 도메인(999)도 허용
-          if (maxDepth && depth > maxDepth) {
+          if (config.depthMode !== 'MAX' && maxDepth && depth > maxDepth) {
             if (maxDepth < 4 || depth !== 999) {
               return false;
             }
@@ -1096,7 +1213,7 @@ export class UrlDiscovery {
 
       // 깊이 필터링 추가 (discoverFromLinks에서 이미 필터링했지만, 사이트맵 URL은 여기서 필터링)
       const maxDepthForFilter = config.maxDepth ?? 3;
-      if (maxDepthForFilter && url.depth && url.depth > maxDepthForFilter) {
+      if (config.depthMode !== 'MAX' && maxDepthForFilter && url.depth && url.depth > maxDepthForFilter) {
         // maxDepth 4일 때는 다른 도메인(999)도 허용
         if (maxDepthForFilter < 4 || url.depth !== 999) {
           return false;
