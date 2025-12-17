@@ -285,7 +285,13 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
   useEffect(() => {
     if (isSelectionDialogOpen) {
       console.log('[useEffect] 다이얼로그 열림 감지, DB 동기화 시작');
-      fetchExistingUrls();
+      fetchExistingUrls().then(dbMap => {
+        console.log('[useEffect] DB 동기화 완료, dialogDbMap 업데이트');
+        setDialogDbMap(new Map(dbMap));
+      });
+    } else {
+      // 다이얼로그가 닫힐 때 dialogDbMap 초기화
+      setDialogDbMap(new Map());
     }
   }, [isSelectionDialogOpen]);
 
