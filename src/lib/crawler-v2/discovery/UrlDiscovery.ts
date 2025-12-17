@@ -551,6 +551,7 @@ export class UrlDiscovery {
                     !fullUrl.includes('#') &&
                     !fullUrl.includes('javascript:') &&
                     !fullUrl.includes('mailto:')) {
+                  // 쿼리 파라미터가 있는 URL도 포함 (더 많은 링크를 찾기 위해)
                   
                   // 확장자 필터링 (브라우저 내부에서 미리 필터링)
                   try {
