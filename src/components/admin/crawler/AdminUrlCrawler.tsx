@@ -85,6 +85,45 @@ const DB_TO_VENDOR_MAP: Record<string, string> = {
   "OTHER": "X(Twitter)",
 };
 
+// 에러 메시지를 사용자 친화적인 한글로 변환
+const translateError = (error: string): string => {
+  const errorLower = error.toLowerCase();
+  
+  if (errorLower.includes('navigating frame was detached') || errorLower.includes('frame was detached')) {
+    return '페이지 로딩 중 연결이 끊어졌습니다';
+  }
+  if (errorLower.includes('timeout') || errorLower.includes('timed out')) {
+    return '요청 시간이 초과되었습니다';
+  }
+  if (errorLower.includes('network') || errorLower.includes('failed to fetch')) {
+    return '네트워크 연결 오류가 발생했습니다';
+  }
+  if (errorLower.includes('navigation') || errorLower.includes('navigation timeout')) {
+    return '페이지 이동 중 시간이 초과되었습니다';
+  }
+  if (errorLower.includes('target closed') || errorLower.includes('browser closed')) {
+    return '브라우저가 닫혔습니다';
+  }
+  if (errorLower.includes('protocol error') || errorLower.includes('session closed')) {
+    return '브라우저 세션이 종료되었습니다';
+  }
+  if (errorLower.includes('net::err') || errorLower.includes('dns')) {
+    return '인터넷 연결 문제가 발생했습니다';
+  }
+  if (errorLower.includes('403') || errorLower.includes('forbidden')) {
+    return '접근이 거부되었습니다 (403)';
+  }
+  if (errorLower.includes('404') || errorLower.includes('not found')) {
+    return '페이지를 찾을 수 없습니다 (404)';
+  }
+  if (errorLower.includes('500') || errorLower.includes('internal server error')) {
+    return '서버 오류가 발생했습니다 (500)';
+  }
+  
+  // 기본값: 원본 에러 메시지 반환 (한글이거나 짧은 경우)
+  return error.length > 50 ? '크롤링 중 오류가 발생했습니다' : error;
+};
+
 export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: AdminUrlCrawlerProps) {
   // --- State ---
   const [urls, setUrls] = useState<string>('');
