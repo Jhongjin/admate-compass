@@ -317,8 +317,11 @@ export class UrlDiscovery {
           
           // 브라우저에서 직접 링크 추출 (JavaScript 실행 후)
           console.log(`[discoverFromLinks] 페이지에서 링크 추출 시작`);
+          // 페이지의 모든 링크를 찾기 위해 추가 대기
+          await new Promise(resolve => setTimeout(resolve, 2000));
           links = await page.evaluate((baseDomain, maxDepth, baseUrl) => {
             console.log(`[discoverFromLinks] page.evaluate 내부 시작 - baseDomain: ${baseDomain}, maxDepth: ${maxDepth}, baseUrl: ${baseUrl}`);
+            console.log(`[discoverFromLinks] 현재 URL: ${window.location.href}`);
             // 다양한 선택자로 링크 찾기 (네이버 광고, Instagram, Facebook 등 다양한 사이트 대응)
             const linkSelectors = [
               'a[href]',
