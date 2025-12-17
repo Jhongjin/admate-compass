@@ -304,8 +304,9 @@ export class UrlDiscovery {
             }
           }
           
-          // 스크롤하여 lazy loading된 콘텐츠 로드 (여러 번)
-          for (let i = 0; i < 3; i++) {
+          // 스크롤하여 lazy loading된 콘텐츠 로드 (여러 번, ads.naver.com은 더 많이)
+          const scrollIterations = isNaverAds ? 5 : 3;
+          for (let i = 0; i < scrollIterations; i++) {
             await page.evaluate(async () => {
               await new Promise((resolve) => {
                 let totalHeight = 0;
@@ -322,7 +323,7 @@ export class UrlDiscovery {
                   window.scrollBy(0, distance);
                   totalHeight += distance;
                   
-                  if (totalHeight >= scrollHeight || totalHeight > 10000) {
+                  if (totalHeight >= scrollHeight || totalHeight > 15000) {
                     clearInterval(timer);
                     resolve(null);
                   }
@@ -330,8 +331,9 @@ export class UrlDiscovery {
               });
             });
             
-            // 스크롤 후 콘텐츠 로딩 대기
-            await new Promise(resolve => setTimeout(resolve, 2000));
+            // 스크롤 후 콘텐츠 로딩 대기 (ads.naver.com은 더 오래)
+            const scrollWaitTime = isNaverAds ? 3000 : 2000;
+            await new Promise(resolve => setTimeout(resolve, scrollWaitTime));
           }
           
           // 브라우저에서 직접 링크 추출 (JavaScript 실행 후)
