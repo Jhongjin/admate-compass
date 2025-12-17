@@ -194,7 +194,7 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
 
   // --- Effects ---
 
-  const fetchExistingUrls = async () => {
+  const fetchExistingUrls = async (): Promise<Map<string, string>> => {
     try {
       const response = await fetch('/api/admin/documents/list?type=url', {
         cache: 'no-store',
@@ -224,11 +224,14 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
         }
         console.log(`[fetchExistingUrls] 총 ${map.size}개의 정규화된 URL이 existingDbMap에 저장됨`);
         setExistingDbMap(map);
+        return map;
       } else {
         console.error('[fetchExistingUrls] API 응답 오류:', response.status, response.statusText);
+        return new Map();
       }
     } catch (error) {
       console.error('[fetchExistingUrls] Failed to fetch existing URLs:', error);
+      return new Map();
     }
   };
 
@@ -364,8 +367,15 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                     
                     // 팝업 표시 전에 DB에서 최신 URL 목록 가져오기
                     console.log(`[Discovery Logic] 팝업 표시 전 DB 동기화 시작`);
-                    await fetchExistingUrls();
-                    console.log(`[Discovery Logic] DB 동기화 완료, existingDbMap 크기: ${existingDbMap.size}`);
+                    const dbMap = await fetchExistingUrls();
+                    console.log(`[Discovery Logic] DB 동기화 완료, DB URL 개수: ${dbMap.size}`);
+                    
+                    // DB에 있는 URL 확인 로그
+                    allDiscovered.slice(0, 5).forEach((item, idx) => {
+                      const normalized = normalizeUrl(item.url);
+                      const isInDb = dbMap.has(normalized);
+                      console.log(`[Discovery Logic] [${idx + 1}] "${item.url}" -> DB에 있음: ${isInDb}`);
+                    });
                     
                     setDiscoveredUrls(allDiscovered);
                     setSelectedDiscoveredUrls(new Set(allDiscovered.map(d => d.url)));
