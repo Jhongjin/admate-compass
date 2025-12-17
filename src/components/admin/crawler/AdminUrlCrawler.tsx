@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Play, CheckCircle, XCircle, Globe, Save, RefreshCw, ExternalLink, Link, AlertTriangle, Pencil, Check, X } from 'lucide-react';
+import { Loader2, Play, CheckCircle, XCircle, Globe, Save, RefreshCw, ExternalLink, Link, AlertTriangle, Pencil, Check, X, CheckCircle2, CircleX } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   Dialog,
@@ -874,9 +874,13 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                           <td className="px-6 py-4 text-gray-600 font-mono text-xs">{idx + 1}</td>
                           <td className="px-6 py-4">
                             {result.status === 'success' ? (
-                              <Badge variant="outline" className="bg-green-500/10 text-green-400 border-green-500/20 hover:bg-green-500/20">성공</Badge>
+                              <div className="flex items-center justify-center w-8 h-8 rounded-full bg-green-500/10 border border-green-500/20">
+                                <CheckCircle2 className="w-4 h-4 text-green-400" />
+                              </div>
                             ) : (
-                              <Badge variant="outline" className="bg-red-500/10 text-red-400 border-red-500/20 hover:bg-red-500/20">실패</Badge>
+                              <div className="flex items-center justify-center w-8 h-8 rounded-full bg-red-500/10 border border-red-500/20">
+                                <CircleX className="w-4 h-4 text-red-400" />
+                              </div>
                             )}
                           </td>
                           <td className="px-6 py-4 max-w-lg">
@@ -891,7 +895,12 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                                 {result.url}
                                 <ExternalLink className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
                               </a>
-                              {result.error && <p className="text-xs text-red-400 mt-1">Error: {result.error}</p>}
+                              {result.error && (
+                                <p className="text-xs text-red-400 mt-1 flex items-center gap-1">
+                                  <AlertTriangle className="w-3 h-3 flex-shrink-0" />
+                                  <span>{translateError(result.error)}</span>
+                                </p>
+                              )}
                             </div>
                           </td>
                           <td className="px-6 py-4">
