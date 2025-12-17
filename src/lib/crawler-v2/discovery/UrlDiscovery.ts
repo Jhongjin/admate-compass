@@ -317,8 +317,9 @@ export class UrlDiscovery {
           
           // 브라우저에서 직접 링크 추출 (JavaScript 실행 후)
           console.log(`[discoverFromLinks] 페이지에서 링크 추출 시작`);
-          // 페이지의 모든 링크를 찾기 위해 추가 대기
-          await new Promise(resolve => setTimeout(resolve, 2000));
+          // 페이지의 모든 링크를 찾기 위해 추가 대기 (ads.naver.com은 더 오래 대기)
+          const additionalWaitTime = isNaverAds ? 8000 : 2000;
+          await new Promise(resolve => setTimeout(resolve, additionalWaitTime));
           links = await page.evaluate((baseDomain, maxDepth, baseUrl) => {
             console.log(`[discoverFromLinks] page.evaluate 내부 시작 - baseDomain: ${baseDomain}, maxDepth: ${maxDepth}, baseUrl: ${baseUrl}`);
             console.log(`[discoverFromLinks] 현재 URL: ${window.location.href}`);
@@ -859,7 +860,7 @@ export class UrlDiscovery {
             const maxDepth = config.maxDepth ?? 3;
             if (maxDepth >= 4) {
               // maxDepth 4일 때는 다른 도메인도 허용하되 매우 낮은 점수
-              qualityScore -= 200; // 다른 도메인은 매우 낮은 점수
+              qualityScore -= 300; // 다른 도메인은 매우 낮은 점수 (같은 도메인과 확실히 구분)
             } else {
               qualityScore -= 100; // maxDepth 4 미만일 때는 강하게 감점
             }
