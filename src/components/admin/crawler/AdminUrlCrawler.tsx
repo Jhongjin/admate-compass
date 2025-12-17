@@ -676,8 +676,10 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
     const newSelected = new Set<string>();
     discoveredUrls.forEach(item => {
       const normalizedItemUrl = normalizeUrl(item.url);
-      // DB에 저장된 정보만 비교 (다이얼로그 전용 DB Map 사용)
-      const isInDb = dialogDbMap.has(normalizedItemUrl);
+      // DB에 저장된 정보만 비교 (다이얼로그 전용 DB Map 사용, 없으면 existingDbMap 사용)
+      const isInDb = dialogDbMap.size > 0 
+        ? dialogDbMap.has(normalizedItemUrl)
+        : existingDbMap.has(normalizedItemUrl);
       if (!isInDb) {
         newSelected.add(item.url);
       }
@@ -1073,8 +1075,10 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
               <div className="space-y-2 pr-2">
                 {discoveredUrls.map((item, i) => {
                   const normalizedItemUrl = normalizeUrl(item.url);
-                  // DB에 저장된 정보만 비교 (다이얼로그 전용 DB Map 사용)
-                  const isInDb = dialogDbMap.has(normalizedItemUrl);
+                  // DB에 저장된 정보만 비교 (다이얼로그 전용 DB Map 사용, 없으면 existingDbMap 사용)
+                  const isInDb = dialogDbMap.size > 0 
+                    ? dialogDbMap.has(normalizedItemUrl)
+                    : existingDbMap.has(normalizedItemUrl);
                   const isAlreadyCrawled = isInDb;
                   
                   // 디버깅: 처음 5개만 상세 로그
