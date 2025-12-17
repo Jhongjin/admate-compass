@@ -32,7 +32,7 @@ interface CrawlResult {
   contentLength: number;
   type: 'policy' | 'help' | 'guide' | 'general';
   lastUpdated: string;
-  status: 'success' | 'failed' | 'partial';
+  status: 'success' | 'failed' | 'partial' | 'processing';
   error?: string;
   discoveredUrls?: Array<{
     url: string;
@@ -1044,6 +1044,10 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                               <div className="flex items-center justify-center w-8 h-8 rounded-full bg-green-500/10 border border-green-500/20">
                                 <CheckCircle2 className="w-4 h-4 text-green-400" />
                               </div>
+                            ) : result.status === 'processing' ? (
+                              <div className="flex items-center justify-center w-8 h-8 rounded-full bg-blue-500/10 border border-blue-500/20">
+                                <Loader2 className="w-4 h-4 text-blue-400 animate-spin" />
+                              </div>
                             ) : (
                               <div className="flex items-center justify-center w-8 h-8 rounded-full bg-red-500/10 border border-red-500/20">
                                 <XCircle className="w-4 h-4 text-red-400" />
@@ -1078,15 +1082,15 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                           <td className="px-6 py-4 text-right text-gray-400 font-mono text-xs">
                             {result.contentLength > 0 ? (result.contentLength / 1024).toFixed(1) + ' KB' : '-'}
                           </td>
-                          {results.some(r => r.status !== 'success') && (
+                          {results.some(r => r.status === 'failed') && (
                             <td className="px-6 py-4">
-                              {result.status !== 'success' && (
+                              {result.status === 'failed' && (
                                 <div className="flex items-center gap-2">
                                   <Button
                                     variant="ghost"
                                     size="sm"
                                     onClick={() => handleRetryFailedUrl(result.url)}
-                                    disabled={isCrawling}
+                                    disabled={isCrawling || result.status === 'processing'}
                                     className="h-7 px-2 text-xs text-blue-400 hover:text-blue-300 hover:bg-blue-500/10"
                                     title="재시도"
                                   >
