@@ -303,7 +303,15 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
               if (event.type === 'log') {
                 setStatusMessage(event.message);
               } else if (event.type === 'batch_progress') {
-                if (event.result) setResults(prev => [...prev, event.result]);
+                if (event.result) {
+                  // discoveredUrls에서 제목 찾아서 덮어쓰기
+                  const discoveryInfo = discoveredUrls.find(d => normalizeUrl(d.url) === normalizeUrl(event.result.url));
+                  const resultWithTitle = {
+                    ...event.result,
+                    title: discoveryInfo?.title || event.result.title // discoveredUrls의 제목 우선 사용
+                  };
+                  setResults(prev => [...prev, resultWithTitle]);
+                }
               } else if (event.type === 'done') {
                 toast.success(`크롤링 완료: 성공 ${event.summary.success}개`);
 
