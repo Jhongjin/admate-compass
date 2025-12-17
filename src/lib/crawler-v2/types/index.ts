@@ -7,7 +7,7 @@
  * 크롤링 옵션
  */
 export interface CrawlOptions {
-  /** 최대 탐색 깊이 (1-4) */
+  /** 최대 탐색 깊이 (1-4, 또는 -1=Max) */
   maxDepth?: number;
   /** 최대 발견 URL 수 */
   maxUrls?: number;
@@ -39,6 +39,14 @@ export interface CrawlOptions {
   concurrency?: number;
   /** 메모리 모니터링 활성화 */
   enableMemoryMonitoring?: boolean;
+  /** 재귀적 하위 페이지 발견 활성화 (발견된 페이지의 링크까지 추출) */
+  recursiveDiscovery?: boolean;
+  /** 재귀 발견 최대 깊이 (기본값: 3) */
+  maxRecursiveDepth?: number;
+  /** 재귀 발견 최대 페이지 수 (기본값: 500) */
+  maxRecursivePages?: number;
+  /** 재귀 발견 시 병렬 처리 수 (기본값: 3) */
+  recursiveConcurrency?: number;
 }
 
 /**
@@ -214,11 +222,3 @@ export interface RobotsRule {
   /** 크롤링 지연 (초) */
   crawlDelay?: number;
 }
-
-
-
-
-
-
-
-

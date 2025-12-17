@@ -177,7 +177,16 @@ export class CrawlerEngine {
       let discoveredUrls: DiscoveredUrl[] | undefined;
       if (config.discoverSubPages) {
         try {
-          discoveredUrls = await urlDiscovery.discoverSubPages(url, config);
+          const discoveryConfig = {
+            ...config,
+            recursiveDiscovery: config.recursiveDiscovery || config.maxDepth === -1,
+          };
+          
+          if (discoveryConfig.recursiveDiscovery) {
+            console.log(`🔄 재귀 발견 모드로 하위 페이지 탐색 시작...`);
+          }
+          
+          discoveredUrls = await urlDiscovery.discoverSubPages(url, discoveryConfig);
           console.log(`🔍 발견된 하위 페이지: ${discoveredUrls.length}개`);
         } catch (error) {
           console.warn('⚠️ 하위 페이지 발견 실패:', error);
