@@ -150,11 +150,39 @@ export class UrlDiscovery {
     visitedPages.add(normalizeUrl(seedUrl));
 
     // BFS (병렬): 큐에서 꺼내 실제로 페이지를 열어 링크를 추가 발견
+    const startTime = Date.now();
+    const maxExecutionTime = (config.timeout || 30000) * 3; // 최대 실행 시간 (타임아웃의 3배)
+    let consecutiveEmptyBatches = 0; // 연속으로 새로운 링크를 발견하지 못한 배치 수
+    const maxConsecutiveEmptyBatches = 5; // 5번 연속 실패하면 종료
+    let iterationCount = 0;
+
     while (queue.length > 0 && discoveredByNormalized.size < maxUrls && visitedPages.size < maxRecursivePages) {
+      iterationCount++;
+      
+      // 타임아웃 체크
+      const elapsed = Date.now() - startTime;
+      if (elapsed > maxExecutionTime) {
+        console.warn('[UrlDiscovery][MAX] ⚠️ 최대 실행 시간 초과, 종료: ' + elapsed + 'ms');
+        break;
+      }
+
+      // 진행 상황 로깅 (10번마다)
+      if (iterationCount % 10 === 0) {
+        console.log('[UrlDiscovery][MAX] 진행 중: visited=' + visitedPages.size + ', discovered=' + discoveredByNormalized.size + ', queue=' + queue.length + ', iteration=' + iterationCount);
+      }
+
       const batch = queue.splice(0, concurrency)
         .filter(item => !visitedPages.has(normalizeUrl(item.url)));
-      if (batch.length === 0) continue;
+      if (batch.length === 0) {
+        consecutiveEmptyBatches++;
+        if (consecutiveEmptyBatches >= maxConsecutiveEmptyBatches) {
+          console.log('[UrlDiscovery][MAX] ⚠️ 연속으로 처리할 URL이 없어 종료');
+          break;
+        }
+        continue;
+      }
 
+      consecutiveEmptyBatches = 0; // 새로운 배치가 있으면 리셋
       batch.forEach(item => visitedPages.add(normalizeUrl(item.url)));
 
       const batchResults = await Promise.all(
@@ -169,6 +197,7 @@ export class UrlDiscovery {
         })
       );
 
+      let newLinksInBatch = 0;
       for (const { item, links } of batchResults) {
         for (const link of links) {
           if (discoveredByNormalized.size >= maxUrls) break;
@@ -181,6 +210,7 @@ export class UrlDiscovery {
           };
 
           if (!addDiscovered(discovered)) continue;
+          newLinksInBatch++;
 
           // 외부(999)는 큐에 넣지 않음 (폭발 방지)
           if (depth !== 999 && visitedPages.size < maxRecursivePages) {
@@ -191,13 +221,31 @@ export class UrlDiscovery {
           }
         }
       }
+
+      // 배치에서 새로운 링크가 없으면 카운트 증가
+      if (newLinksInBatch === 0) {
+        consecutiveEmptyBatches++;
+        if (consecutiveEmptyBatches >= maxConsecutiveEmptyBatches) {
+          console.log('[UrlDiscovery][MAX] ⚠️ 연속으로 새로운 링크를 발견하지 못해 종료');
+          break;
+        }
+      } else {
+        consecutiveEmptyBatches = 0;
+      }
     }
 
     const discoveredPages = Array.from(discoveredByNormalized.values());
     const filtered = this.filterAndSort(discoveredPages, baseDomain, config);
     const finalResults = filtered.slice(0, maxUrls);
 
-    console.log('[UrlDiscovery][MAX] ✅ 재귀 발견 완료: visitedPages=' + visitedPages.size + ', discovered=' + finalResults.length + '/' + maxUrls);
+    console.log('[UrlDiscovery][MAX] ✅ 재귀 발견 완료: visitedPages=' + visitedPages.size + ', discovered=' + finalResults.length + '/' + maxUrls + ', iterations=' + iterationCount);
+    
+    // 최소한 시드에서 발견한 링크라도 반환 (빈 결과 방지)
+    if (finalResults.length === 0 && seedDiscovered.length > 0) {
+      console.warn('[UrlDiscovery][MAX] ⚠️ 필터링 후 결과가 없어 시드에서 발견한 링크 반환: ' + seedDiscovered.length + '개');
+      return seedDiscovered.slice(0, maxUrls);
+    }
+    
     return finalResults;
   }
 
