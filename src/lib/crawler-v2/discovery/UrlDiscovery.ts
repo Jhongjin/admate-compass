@@ -234,15 +234,19 @@ export class UrlDiscovery {
                 () => {
                   // DOM이 로드되고 링크가 있는지 확인
                   const links = document.querySelectorAll('a[href]');
-                  return links.length > 10 || document.readyState === 'complete';
+                  const hasEnoughLinks = links.length > 0;
+                  const isComplete = document.readyState === 'complete';
+                  // 네비게이션 요소가 있는지도 확인
+                  const hasNav = document.querySelector('nav, header, [role="navigation"]') !== null;
+                  return (hasEnoughLinks && isComplete) || (hasNav && isComplete);
                 },
                 { timeout: 30000 }
               ).catch(() => {
-                console.warn('[discoverFromLinks] 페이지 로드 대기 타임아웃');
+                console.warn('[discoverFromLinks] 페이지 로드 대기 타임아웃 - 계속 진행');
               });
               
               // 추가 대기 (JavaScript 실행 완료 대기)
-              await new Promise(resolve => setTimeout(resolve, 3000));
+              await new Promise(resolve => setTimeout(resolve, 5000));
               
               // 1. 네비게이션 메뉴 클릭하여 서브 메뉴 열기
               await page.evaluate(() => {
