@@ -984,10 +984,10 @@ export class UrlDiscovery {
             return true;
           }
           
-          // 다른 도메인 링크는 maxDepth 4일 때만 허용하되 매우 높은 품질 점수 필요
+          // 다른 도메인 링크는 maxDepth 4일 때만 허용하되 품질 점수 기준 완화
           if (maxDepth >= 4) {
-            // 다른 도메인은 품질 점수가 0 이상이어야 함 (같은 도메인보다 훨씬 엄격)
-            return link.qualityScore >= 0;
+            // 다른 도메인은 품질 점수가 -100 이상이면 허용 (완화)
+            return link.qualityScore >= -100;
           }
           
           // maxDepth 4 미만일 때는 같은 도메인만 허용
