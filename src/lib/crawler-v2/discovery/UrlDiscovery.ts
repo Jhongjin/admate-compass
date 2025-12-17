@@ -229,6 +229,21 @@ export class UrlDiscovery {
           // 네이버 광고 페이지의 경우 더 적극적인 링크 추출
           if (isNaverAds) {
             try {
+              // 페이지가 완전히 로드될 때까지 대기
+              await page.waitForFunction(
+                () => {
+                  // DOM이 로드되고 링크가 있는지 확인
+                  const links = document.querySelectorAll('a[href]');
+                  return links.length > 10 || document.readyState === 'complete';
+                },
+                { timeout: 30000 }
+              ).catch(() => {
+                console.warn('[discoverFromLinks] 페이지 로드 대기 타임아웃');
+              });
+              
+              // 추가 대기 (JavaScript 실행 완료 대기)
+              await new Promise(resolve => setTimeout(resolve, 3000));
+              
               // 1. 네비게이션 메뉴 클릭하여 서브 메뉴 열기
               await page.evaluate(() => {
                 // 모든 네비게이션 링크와 버튼 찾기
