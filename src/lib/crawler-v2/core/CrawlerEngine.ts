@@ -53,11 +53,18 @@ export class CrawlerEngine {
     if (config.useCache) {
       const cached = cacheManager.get(normalizedUrl, config.cacheTTL);
       if (cached) {
-        this.cacheHits++;
-        console.log(`💾 캐시 히트: ${url}`);
-        return cached;
+        // discoverSubPages 옵션이 활성화되어 있고, 캐시된 결과에 discoveredUrls가 없으면 캐시 무시
+        if (config.discoverSubPages && (!cached.discoveredUrls || cached.discoveredUrls.length === 0)) {
+          console.log(`💾 캐시 히트했지만 discoveredUrls가 없어 재크롤링: ${url}`);
+          this.cacheMisses++;
+        } else {
+          this.cacheHits++;
+          console.log(`💾 캐시 히트: ${url}`);
+          return cached;
+        }
+      } else {
+        this.cacheMisses++;
       }
-      this.cacheMisses++;
     }
 
     // 2. 메모리 모니터링
