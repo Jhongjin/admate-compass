@@ -872,10 +872,11 @@ export class UrlDiscovery {
           return { ...link, qualityScore };
         })
         .filter(link => {
-          // maxDepth 4일 때는 qualityScore가 0보다 크거나 같으면 허용 (다른 도메인도 포함)
+          // maxDepth 4일 때는 qualityScore가 -50 이상이면 허용 (다른 도메인도 포함)
           const maxDepth = config.maxDepth ?? 3;
           if (maxDepth >= 4) {
-            return link.qualityScore >= 0; // 0점 이상 허용
+            // maxDepth 4일 때는 더 관대하게 필터링 (다른 도메인도 허용)
+            return link.qualityScore >= -50; // -50점 이상 허용
           }
           return link.qualityScore > 0; // 기본적으로 0보다 높은 점수만 허용
         })
