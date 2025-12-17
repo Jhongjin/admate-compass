@@ -1,4 +1,4 @@
-/**
+﻿/**
  * URL 발견 서비스
  * 사이트맵, robots.txt, 페이지 링크에서 URL 발견
  */
@@ -27,6 +27,12 @@ export class UrlDiscovery {
     };
 
     console.log(`🔍 URL 발견 시작: ${baseUrl}`, config);
+
+    // 재귀 발견 모드가 활성화된 경우 (maxDepth === -1 또는 recursiveDiscovery === true)
+    if (config.recursiveDiscovery || config.maxDepth === -1) {
+      console.log(`🔄 [UrlDiscovery] 재귀 발견 모드 활성화 - 병렬 BFS 방식으로 하위 페이지 링크까지 추출`);
+      return this.discoverSubPagesRecursive(baseUrl, config);
+    }
 
     const discoveredUrls = new Set<string>();
     const discoveredPages: DiscoveredUrl[] = [];
@@ -82,6 +88,141 @@ export class UrlDiscovery {
       console.error('[UrlDiscovery] 에러 스택:', error instanceof Error ? error.stack : String(error));
       return discoveredPages.slice(0, config.maxUrls || 100);
     }
+  }
+
+
+  /**
+   * 병렬 BFS 방식으로 재귀적 하위 페이지 발견
+   */
+  private async discoverSubPagesRecursive(
+    baseUrl: string,
+    config: CrawlOptions
+  ): Promise<DiscoveredUrl[]> {
+    const maxRecursiveDepth = config.maxRecursiveDepth ?? 3;
+    const maxRecursivePages = config.maxRecursivePages ?? 500;
+    const recursiveConcurrency = config.recursiveConcurrency ?? 3;
+    const timeout = config.timeout ?? 120000;
+
+    console.log(`🔄 [RecursiveDiscovery] ====== 재귀 하위 페이지 발견 시작 ======`);
+    console.log(`🔄 [RecursiveDiscovery] baseUrl: ${baseUrl}`);
+    console.log(`🔄 [RecursiveDiscovery] maxRecursiveDepth: ${maxRecursiveDepth}, maxRecursivePages: ${maxRecursivePages}`);
+
+    const startTime = Date.now();
+    const baseDomain = extractDomain(baseUrl);
+    const discoveredSet = new Set<string>();
+    const results: DiscoveredUrl[] = [];
+    
+    discoveredSet.add(normalizeUrl(baseUrl));
+
+    interface QueueItem {
+      url: string;
+      depth: number;
+      parentUrl?: string;
+      path: string[];
+    }
+
+    let currentLevel: QueueItem[] = [
+      { url: baseUrl, depth: 0, parentUrl: undefined, path: [baseUrl] }
+    ];
+
+    for (let depth = 0; depth < maxRecursiveDepth && currentLevel.length > 0; depth++) {
+      if (Date.now() - startTime > timeout) {
+        console.warn(`⚠️ [RecursiveDiscovery] 타임아웃 도달, ${results.length}개 URL 반환`);
+        break;
+      }
+
+      if (results.length >= maxRecursivePages) {
+        console.log(`📊 [RecursiveDiscovery] 최대 페이지 수 도달, 종료`);
+        break;
+      }
+
+      console.log(`🔄 [RecursiveDiscovery] === 깊이 ${depth} 처리 (큐: ${currentLevel.length}) ===`);
+
+      const nextLevel: QueueItem[] = [];
+      const batches = this.chunkArray(currentLevel, recursiveConcurrency);
+
+      for (const batch of batches) {
+        if (Date.now() - startTime > timeout || results.length >= maxRecursivePages) break;
+
+        const batchResults = await Promise.all(
+          batch.map(async (item) => {
+            try {
+              console.log(`  🔗 [Depth ${depth}] ${item.url} 크롤링 중...`);
+              
+              const links = await this.discoverFromLinks(item.url, {
+                ...config,
+                maxDepth: 999,
+                recursiveDiscovery: false,
+              });
+
+              const validLinks: QueueItem[] = [];
+              
+              for (const link of links) {
+                const normalizedUrl = normalizeUrl(link.url);
+                if (discoveredSet.has(normalizedUrl)) continue;
+
+                const linkDomain = extractDomain(link.url);
+                if (config.domainLimit !== false) {
+                  if (linkDomain !== baseDomain && !linkDomain.endsWith(`.${baseDomain}`)) {
+                    continue;
+                  }
+                }
+
+                discoveredSet.add(normalizedUrl);
+                
+                const newPath = [...item.path, link.url];
+                const newDepth = depth + 1;
+
+                results.push({
+                  url: link.url,
+                  title: link.title,
+                  source: 'links',
+                  depth: newDepth,
+                  parentUrl: item.url,
+                  path: newPath,
+                });
+
+                if (newDepth < maxRecursiveDepth && results.length < maxRecursivePages) {
+                  validLinks.push({
+                    url: link.url,
+                    depth: newDepth,
+                    parentUrl: item.url,
+                    path: newPath,
+                  });
+                }
+              }
+
+              return validLinks;
+            } catch (error) {
+              console.warn(`  ⚠️ [Depth ${depth}] ${item.url} 크롤링 실패:`, error);
+              return [];
+            }
+          })
+        );
+
+        batchResults.forEach(links => nextLevel.push(...links));
+        console.log(`  📊 [Depth ${depth}] 발견: ${results.length}개, 다음 큐: ${nextLevel.length}개`);
+      }
+
+      currentLevel = nextLevel;
+    }
+
+    const elapsedTime = (Date.now() - startTime) / 1000;
+    console.log(`🔄 [RecursiveDiscovery] 완료: ${results.length}개 발견, ${elapsedTime.toFixed(2)}초 소요`);
+
+    const filtered = this.filterAndSort(results, baseDomain, { ...config, maxDepth: 999 });
+    return filtered.slice(0, config.maxUrls ?? 100);
+  }
+
+  /**
+   * 배열을 청크로 나눔
+   */
+  private chunkArray<T>(array: T[], chunkSize: number): T[][] {
+    const chunks: T[][] = [];
+    for (let i = 0; i < array.length; i += chunkSize) {
+      chunks.push(array.slice(i, i + chunkSize));
+    }
+    return chunks;
   }
 
   /**

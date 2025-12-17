@@ -1,4 +1,4 @@
-'use client';
+﻿'use client';
 
 import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
@@ -219,12 +219,13 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
 
   const [options, setOptions] = useState({
     discoverSubPages: false,
-    maxDepth: 4, // ads.naver.com 같은 사이트는 깊이 4로 크롤링
+    maxDepth: 4, // ads.naver.com 같은 사이트는 깊이 4로 크롤링 (-1 = Max: 재귀 발견)
     maxUrls: 100, // 더 많은 URL 추출
     respectRobots: true,
     domainLimit: true,
     timeout: 30000,
     waitTime: 1000,
+    recursiveDiscovery: false, // 재귀 발견 모드 (maxDepth가 Max일 때 활성화)
   });
 
   const [existingDbMap, setExistingDbMap] = useState<Map<string, string>>(new Map());
@@ -893,13 +894,38 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
 
               <div className="flex flex-col gap-2 p-3 rounded-lg bg-white/5 border border-white/5">
                 <Label className="text-xs text-gray-400">최대 깊이</Label>
-                <Input
-                  type="number"
-                  min={1} max={5}
-                  value={options.maxDepth}
-                  onChange={(e) => setOptions({ ...options, maxDepth: parseInt(e.target.value) || 1 })}
-                  className="h-7 bg-transparent border-gray-600 text-white text-sm"
-                />
+                <Select
+                  value={options.maxDepth.toString()}
+                  onValueChange={(value) => {
+                    const depth = parseInt(value);
+                    if (depth === -1) {
+                      setOptions({ 
+                        ...options, 
+                        maxDepth: depth, 
+                        recursiveDiscovery: true,
+                        maxUrls: Math.max(options.maxUrls, 200),
+                      });
+                    } else {
+                      setOptions({ ...options, maxDepth: depth, recursiveDiscovery: false });
+                    }
+                  }}
+                >
+                  <SelectTrigger className="h-7 bg-transparent border-gray-600 text-white text-sm">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="1">1 (같은 페이지)</SelectItem>
+                    <SelectItem value="2">2 (하위 1단계)</SelectItem>
+                    <SelectItem value="3">3 (하위 2단계)</SelectItem>
+                    <SelectItem value="4">4 (전체 도메인)</SelectItem>
+                    <SelectItem value="-1">Max (재귀 추출)</SelectItem>
+                  </SelectContent>
+                </Select>
+                {options.maxDepth === -1 && (
+                  <p className="text-[10px] text-amber-400 mt-1">
+                    ⚠️ 발견된 하위 페이지 링크까지 재귀 추출 (시간 소요)
+                  </p>
+                )}
               </div>
 
               <div className="flex flex-col gap-2 p-3 rounded-lg bg-white/5 border border-white/5">
