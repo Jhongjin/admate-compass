@@ -250,9 +250,9 @@ export class UrlDiscovery {
               
               // 1. 네비게이션 메뉴 클릭하여 서브 메뉴 열기
               await page.evaluate(() => {
-                // 모든 네비게이션 링크와 버튼 찾기
-                const navLinks = document.querySelectorAll('nav a, header a, [role="navigation"] a, [class*="menu"] a, [class*="nav"] a');
-                const navButtons = document.querySelectorAll('nav button, header button, [role="navigation"] button, [class*="menu"] button');
+                // 모든 네비게이션 링크와 버튼 찾기 (더 넓은 범위)
+                const navLinks = document.querySelectorAll('nav a, header a, [role="navigation"] a, [class*="menu"] a, [class*="nav"] a, [class*="Menu"] a, [class*="Nav"] a, [class*="header"] a, [class*="Header"] a');
+                const navButtons = document.querySelectorAll('nav button, header button, [role="navigation"] button, [class*="menu"] button, [class*="Menu"] button, [class*="nav"] button, [class*="Nav"] button');
                 
                 // 링크 클릭 시도 (서브 메뉴 열기)
                 navLinks.forEach((link: Element) => {
@@ -297,8 +297,8 @@ export class UrlDiscovery {
                 });
               });
               
-              // 메뉴 열림 대기
-              await new Promise(resolve => setTimeout(resolve, 3000));
+              // 메뉴 열림 대기 (더 오래 대기)
+              await new Promise(resolve => setTimeout(resolve, 5000));
             } catch (e) {
               console.warn('⚠️ 네비게이션 메뉴 열기 실패:', e);
             }
@@ -479,7 +479,9 @@ export class UrlDiscovery {
                         link.getAttribute('data-url') ||
                         link.getAttribute('data-path') ||
                         link.getAttribute('data-to') ||
-                        link.getAttribute('to');
+                        link.getAttribute('to') ||
+                        (link as HTMLElement).onclick?.toString().match(/['"](https?:\/\/[^'"]+)['"]/)?.[1] ||
+                        (link as HTMLElement).onclick?.toString().match(/['"](\/[^'"]+)['"]/)?.[1];
               
               // onclick에서 URL 추출 시도
               if (!href) {
