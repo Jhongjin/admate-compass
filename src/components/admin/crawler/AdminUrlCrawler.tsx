@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Play, CheckCircle, XCircle, Globe, Save, RefreshCw, ExternalLink, Link, AlertTriangle, Pencil, Check, X, CheckCircle2, CircleX } from 'lucide-react';
+import { Loader2, Play, CheckCircle, XCircle, Globe, Save, RefreshCw, ExternalLink, Link, AlertTriangle, Pencil, Check, X, CheckCircle2 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   Dialog,
@@ -918,7 +918,7 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                               </div>
                             ) : (
                               <div className="flex items-center justify-center w-8 h-8 rounded-full bg-red-500/10 border border-red-500/20">
-                                <CircleX className="w-4 h-4 text-red-400" />
+                                <XCircle className="w-4 h-4 text-red-400" />
                               </div>
                             )}
                           </td>
