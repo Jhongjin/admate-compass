@@ -599,14 +599,16 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
     setIsSelectionDialogOpen(open);
     if (open) {
       console.log('[handleDialogOpenChange] 다이얼로그 열림, DB 동기화 시작');
-      await fetchExistingUrls();
+      // 다이얼로그가 열릴 때마다 최신 DB 데이터 가져오기
+      const dbMap = await fetchExistingUrls();
+      console.log(`[handleDialogOpenChange] DB 동기화 완료, DB URL 개수: ${dbMap.size}`);
       
       // 동기화 후 발견된 URL과 DB 비교 결과 로그
       if (discoveredUrls.length > 0) {
         console.log(`[handleDialogOpenChange] 발견된 URL ${discoveredUrls.length}개와 DB 비교 시작`);
         discoveredUrls.slice(0, 5).forEach((item, i) => {
           const normalized = normalizeUrl(item.url);
-          const isInDb = existingDbMap.has(normalized);
+          const isInDb = dbMap.has(normalized);
           console.log(`[handleDialogOpenChange] [${i + 1}] "${item.url}" -> 정규화: "${normalized}" -> DB에 있음: ${isInDb}`);
         });
         if (discoveredUrls.length > 5) {
