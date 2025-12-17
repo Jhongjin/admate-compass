@@ -1090,7 +1090,7 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                                     variant="ghost"
                                     size="sm"
                                     onClick={() => handleRetryFailedUrl(result.url)}
-                                    disabled={isCrawling || result.status === 'processing'}
+                                    disabled={isCrawling}
                                     className="h-7 px-2 text-xs text-blue-400 hover:text-blue-300 hover:bg-blue-500/10"
                                     title="재시도"
                                   >
