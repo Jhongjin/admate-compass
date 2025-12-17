@@ -570,10 +570,9 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
     const newSelected = new Set<string>();
     discoveredUrls.forEach(item => {
       const normalizedItemUrl = normalizeUrl(item.url);
-      const isInResults = results.some(r => normalizeUrl(r.url) === normalizedItemUrl);
+      // DB에 저장된 정보만 비교 (현재 세션의 results는 제외)
       const isInDb = existingDbMap.has(normalizedItemUrl);
-      const isAlreadyCrawled = isInResults || isInDb;
-      if (!isAlreadyCrawled) {
+      if (!isInDb) {
         newSelected.add(item.url);
       }
     });
@@ -918,17 +917,15 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
               <div className="space-y-2 pr-2">
                 {discoveredUrls.map((item, i) => {
                   const normalizedItemUrl = normalizeUrl(item.url);
-                  const isInResults = results.some(r => normalizeUrl(r.url) === normalizedItemUrl);
+                  // DB에 저장된 정보만 비교 (현재 세션의 results는 제외)
                   const isInDb = existingDbMap.has(normalizedItemUrl);
-                  const isAlreadyCrawled = isInResults || isInDb;
+                  const isAlreadyCrawled = isInDb;
                   
                   // 디버깅: 처음 3개만 상세 로그
                   if (i < 3 && isAlreadyCrawled) {
                     console.log(`[isAlreadyCrawled] URL: "${item.url}"`, {
                       normalized: normalizedItemUrl,
-                      isInResults,
                       isInDb,
-                      resultsUrls: results.slice(0, 3).map(r => ({ original: r.url, normalized: normalizeUrl(r.url) })),
                       dbHas: existingDbMap.has(normalizedItemUrl),
                       dbSize: existingDbMap.size
                     });
