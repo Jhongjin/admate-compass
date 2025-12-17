@@ -312,21 +312,18 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                   });
                   
                   const allDiscovered: Array<{ url: string; source: string; title?: string; parentUrl?: string }> = [];
-                  // 정규화된 URL로 비교하기 위해 Set 생성
+                  // 정규화된 URL로 비교하기 위해 Set 생성 (같은 크롤링 세션 내 중복 제거용)
                   const existingUrlsNormalized = new Set<string>();
                   
                   // 원본 시드 URL 찾기 (urlList의 첫 번째 URL 또는 results에서 시드 URL 찾기)
                   const seedUrlForDiscovery = urlList[0] || seedUrl || null;
                   
-                  // 기존 URL들을 정규화하여 Set에 추가
+                  // 같은 크롤링 세션 내에서만 중복 제거 (DB URL은 필터링하지 않음)
                   [...urlList, ...results.map(r => r.url), ...newResults.map(r => r.url)].forEach(url => {
                     existingUrlsNormalized.add(normalizeUrl(url));
                   });
                   
-                  // DB에 있는 URL들도 정규화하여 Set에 추가
-                  existingDbMap.forEach((_, normalizedUrl) => {
-                    existingUrlsNormalized.add(normalizedUrl);
-                  });
+                  // DB에 있는 URL은 필터링하지 않음 - 사용자가 선택할 수 있도록 모두 표시
 
                   console.log(`[Discovery Logic] 기존 URL Set 크기: ${existingUrlsNormalized.size}, 시드 URL: ${seedUrlForDiscovery}`);
 
