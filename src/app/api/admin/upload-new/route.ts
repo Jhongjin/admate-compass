@@ -2656,19 +2656,19 @@ export async function DELETE(request: NextRequest) {
 
     const deletedChunksCount = beforeChunksCount || 0;
 
-    // document_metadata 삭제
+    // document_metadata 삭제 (PRIMARY KEY는 id)
     const { error: metadataError } = await supabase
       .from('document_metadata')
       .delete()
-      .eq('document_id', targetDocumentId);
+      .eq('id', targetDocumentId);
 
     if (metadataError) {
       console.warn('⚠️ 메타데이터 삭제 실패:', metadataError);
     }
 
-    // document_logs 삭제
+    // document_processing_logs 삭제 (document_logs가 아닌 document_processing_logs)
     const { error: logsError } = await supabase
-      .from('document_logs')
+      .from('document_processing_logs')
       .delete()
       .eq('document_id', targetDocumentId);
 
