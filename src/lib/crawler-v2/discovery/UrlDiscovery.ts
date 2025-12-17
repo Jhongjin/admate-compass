@@ -511,7 +511,7 @@ export class UrlDiscovery {
                       return;
                     }
                     
-                    // 다른 도메인으로의 링크는 품질이 낮음 (maxDepth 4일 때도 제외)
+                    // 다른 도메인으로의 링크는 품질이 낮음 (maxDepth 4일 때는 제외하지 않음)
                     const isDifferentDomain = urlDomain !== baseDomain && !urlDomain.endsWith(`.${baseDomain}`);
                     if (isDifferentDomain && maxDepth >= 4) {
                       // help.naver.com, nca.naver.com 같은 다른 서비스는 제외
@@ -524,12 +524,8 @@ export class UrlDiscovery {
                         return;
                       }
                       
-                      // ads.naver.com의 경우 다른 naver.com 서브도메인도 제외
-                      if (baseDomain === 'ads.naver.com') {
-                        if (urlDomain !== 'ads.naver.com' && urlDomain.endsWith('.naver.com')) {
-                          return;
-                        }
-                      }
+                      // ads.naver.com의 경우 다른 naver.com 서브도메인은 제외하지 않음 (maxDepth 4일 때는 허용)
+                      // 이전 로직 제거: maxDepth 4일 때는 모든 도메인 허용
                     }
                   } catch (e) {
                     // URL 파싱 실패 시 제외
