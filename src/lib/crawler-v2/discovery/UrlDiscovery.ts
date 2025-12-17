@@ -33,34 +33,53 @@ export class UrlDiscovery {
     const baseDomain = extractDomain(baseUrl);
 
     try {
+      console.log(`[UrlDiscovery] ====== 하위 페이지 발견 시작 ======`);
+      console.log(`[UrlDiscovery] baseUrl: ${baseUrl}`);
+      console.log(`[UrlDiscovery] config:`, JSON.stringify(config, null, 2));
+      
       // 1. 사이트맵에서 URL 발견
+      console.log(`[UrlDiscovery] 1단계: 사이트맵에서 URL 발견 시작`);
       const sitemapUrls = await this.discoverFromSitemap(baseUrl, config);
-      console.log(`📋 사이트맵에서 발견: ${sitemapUrls.length}개`);
+      console.log(`[UrlDiscovery] 📋 사이트맵에서 발견: ${sitemapUrls.length}개`);
       sitemapUrls.forEach(url => {
         if (!discoveredUrls.has(url.url)) {
           discoveredUrls.add(url.url);
           discoveredPages.push(url);
         }
       });
+      console.log(`[UrlDiscovery] 사이트맵 후 discoveredPages: ${discoveredPages.length}개`);
 
       // 2. 페이지 링크에서 URL 발견
+      console.log(`[UrlDiscovery] 2단계: 페이지 링크에서 URL 발견 시작`);
       const linkUrls = await this.discoverFromLinks(baseUrl, config);
-      console.log(`🔗 링크에서 발견: ${linkUrls.length}개`);
+      console.log(`[UrlDiscovery] 🔗 링크에서 발견: ${linkUrls.length}개`);
+      if (linkUrls.length > 0) {
+        console.log(`[UrlDiscovery] 링크 발견 예시 (처음 5개):`, linkUrls.slice(0, 5).map(l => l.url));
+      }
       linkUrls.forEach(url => {
         if (!discoveredUrls.has(url.url)) {
           discoveredUrls.add(url.url);
           discoveredPages.push(url);
         }
       });
+      console.log(`[UrlDiscovery] 링크 후 discoveredPages: ${discoveredPages.length}개`);
 
       // 3. 필터링 및 정렬
+      console.log(`[UrlDiscovery] 3단계: 필터링 및 정렬 시작`);
       const filtered = this.filterAndSort(discoveredPages, baseDomain, config);
+      console.log(`[UrlDiscovery] 필터링 후: ${filtered.length}개 (필터링 전: ${discoveredPages.length}개)`);
+      if (filtered.length < discoveredPages.length) {
+        console.log(`[UrlDiscovery] ⚠️ ${discoveredPages.length - filtered.length}개가 필터링됨`);
+      }
 
-      console.log(`✅ URL 발견 완료: ${filtered.length}개`);
+      console.log(`[UrlDiscovery] ✅ URL 발견 완료: ${filtered.length}개`);
+      const finalResults = filtered.slice(0, config.maxUrls || 100);
+      console.log(`[UrlDiscovery] 최종 반환: ${finalResults.length}개 (maxUrls: ${config.maxUrls || 100})`);
 
-      return filtered.slice(0, config.maxUrls || 100);
+      return finalResults;
     } catch (error) {
-      console.error('❌ URL 발견 실패:', error);
+      console.error('[UrlDiscovery] ❌ URL 발견 실패:', error);
+      console.error('[UrlDiscovery] 에러 스택:', error instanceof Error ? error.stack : String(error));
       return discoveredPages.slice(0, config.maxUrls || 100);
     }
   }
@@ -180,11 +199,17 @@ export class UrlDiscovery {
     const discovered: DiscoveredUrl[] = [];
 
     try {
+      console.log(`[discoverFromLinks] ====== 링크 발견 시작 ======`);
+      console.log(`[discoverFromLinks] baseUrl: ${baseUrl}`);
+      console.log(`[discoverFromLinks] config:`, JSON.stringify(config, null, 2));
+      
       let links: Array<{ url: string; text: string }> = [];
       const baseDomain = extractDomain(baseUrl);
+      console.log(`[discoverFromLinks] baseDomain: ${baseDomain}`);
 
       // Puppeteer 사용 시도 (JavaScript 렌더링된 링크 추출)
       const browser = browserManager.getBrowser();
+      console.log(`[discoverFromLinks] browser 존재: ${!!browser}`);
       if (browser) {
         try {
           const page = await browserManager.createPage();
@@ -291,7 +316,9 @@ export class UrlDiscovery {
           }
           
           // 브라우저에서 직접 링크 추출 (JavaScript 실행 후)
+          console.log(`[discoverFromLinks] 페이지에서 링크 추출 시작`);
           links = await page.evaluate((baseDomain, maxDepth, baseUrl) => {
+            console.log(`[discoverFromLinks] page.evaluate 내부 시작 - baseDomain: ${baseDomain}, maxDepth: ${maxDepth}, baseUrl: ${baseUrl}`);
             // 다양한 선택자로 링크 찾기 (네이버 광고, Instagram, Facebook 등 다양한 사이트 대응)
             const linkSelectors = [
               'a[href]',
@@ -584,11 +611,11 @@ export class UrlDiscovery {
           }, baseDomain, config.maxDepth ?? 3, baseUrl);
           
           await page.close();
-          console.log(`🔗 Puppeteer에서 발견된 링크: ${links.length}개`);
+          console.log(`[discoverFromLinks] 🔗 Puppeteer에서 발견된 링크: ${links.length}개`);
           if (links.length > 0) {
-            console.log(`🔗 발견된 링크 샘플 (처음 10개):`, links.slice(0, 10).map(l => ({ url: l.url, text: l.text?.substring(0, 30) })));
+            console.log(`[discoverFromLinks] 🔗 발견된 링크 샘플 (처음 10개):`, links.slice(0, 10).map(l => ({ url: l.url, text: l.text?.substring(0, 30) })));
           } else {
-            console.warn(`⚠️ 링크가 발견되지 않았습니다. URL: ${baseUrl}`);
+            console.warn(`[discoverFromLinks] ⚠️ 링크가 발견되지 않았습니다. URL: ${baseUrl}`);
             // HTML을 다시 확인
             try {
               const page2 = await browserManager.createPage();
@@ -606,11 +633,11 @@ export class UrlDiscovery {
           // Puppeteer 실패 시 HTML 파싱으로 폴백
           console.warn('⚠️ Puppeteer로 링크 추출 실패, HTML 파싱으로 폴백:', error);
           try {
-            const response = await fetch(baseUrl, {
-              headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-              },
-            });
+          const response = await fetch(baseUrl, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            },
+          });
             if (response.ok) {
               const html = await response.text();
               links = extractLinks(html, baseUrl);
@@ -636,12 +663,13 @@ export class UrlDiscovery {
         }
       }
 
-      console.log(`🔗 총 발견된 링크: ${links.length}개`);
+      console.log(`[discoverFromLinks] 🔗 총 발견된 링크: ${links.length}개`);
       if (links.length === 0) {
-        console.warn(`⚠️ 링크가 발견되지 않았습니다. URL: ${baseUrl}`);
+        console.warn(`[discoverFromLinks] ⚠️ 링크가 발견되지 않았습니다. URL: ${baseUrl}`);
       }
 
       // 링크 필터링 및 정렬 (중요한 링크 우선)
+      console.log(`[discoverFromLinks] 링크 필터링 시작 (필터링 전: ${links.length}개)`);
       const filteredLinks = links
         .filter(link => {
           const normalizedUrl = normalizeUrl(link.url);
@@ -649,11 +677,11 @@ export class UrlDiscovery {
           try {
             const urlObj = new URL(normalizedUrl);
             const pathname = urlObj.pathname.toLowerCase();
-            
-            // 같은 URL 제외
-            if (normalizedUrl === baseUrl || normalizedUrl === normalizeUrl(baseUrl)) {
-              return false;
-            }
+          
+          // 같은 URL 제외
+          if (normalizedUrl === baseUrl || normalizedUrl === normalizeUrl(baseUrl)) {
+            return false;
+          }
 
             // 확장자 필터링 (정적 리소스 파일 제외)
             const excludedExtensions = [
@@ -700,12 +728,12 @@ export class UrlDiscovery {
             ];
             const isLowQualityPath = lowQualityPaths.some(path => pathname.includes(path));
             if (isLowQualityPath) {
-              return false;
-            }
-            
-            // 도메인 제한 확인 (maxDepth 기반)
-            const urlDomain = extractDomain(normalizedUrl);
-            const baseDomain = extractDomain(baseUrl);
+            return false;
+          }
+
+          // 도메인 제한 확인 (maxDepth 기반)
+          const urlDomain = extractDomain(normalizedUrl);
+          const baseDomain = extractDomain(baseUrl);
             const maxDepth = config.maxDepth ?? 3; // 기본값 3
             const isDifferentDomain = urlDomain !== baseDomain && !urlDomain.endsWith(`.${baseDomain}`);
             
@@ -731,45 +759,45 @@ export class UrlDiscovery {
             }
             
             if (urlDomain !== baseDomain) {
-              if (maxDepth >= 4) {
-                // maxDepth 4: 모든 도메인 허용 (domainLimit과 관계없이)
-                // 모든 도메인 허용
-              } else if (maxDepth >= 3) {
-                // maxDepth 3: domainLimit에 따라 다름
-                if (config.domainLimit === true) {
-                  // domainLimit이 true면 하위 도메인도 제외 (같은 도메인만)
-                  return false;
-                } else {
-                  // domainLimit이 false면 하위 도메인 허용
-                  if (!urlDomain.endsWith(`.${baseDomain}`)) {
-                    return false;
-                  }
-                }
+            if (maxDepth >= 4) {
+              // maxDepth 4: 모든 도메인 허용 (domainLimit과 관계없이)
+              // 모든 도메인 허용
+            } else if (maxDepth >= 3) {
+              // maxDepth 3: domainLimit에 따라 다름
+              if (config.domainLimit === true) {
+                // domainLimit이 true면 하위 도메인도 제외 (같은 도메인만)
+                return false;
               } else {
-                // maxDepth 1-2: 정확히 같은 도메인만 허용
-                return false;
+                // domainLimit이 false면 하위 도메인 허용
+                if (!urlDomain.endsWith(`.${baseDomain}`)) {
+                  return false;
+                }
               }
+            } else {
+              // maxDepth 1-2: 정확히 같은 도메인만 허용
+              return false;
             }
+          }
 
-            // 허용된 도메인 확인 (maxDepth 4가 아닌 경우)
-            if (maxDepth < 4 && config.domainLimit && config.allowedDomains && config.allowedDomains.length > 0) {
-              if (!isAllowedDomain(normalizedUrl, config.allowedDomains)) {
-                return false;
-              }
+          // 허용된 도메인 확인 (maxDepth 4가 아닌 경우)
+          if (maxDepth < 4 && config.domainLimit && config.allowedDomains && config.allowedDomains.length > 0) {
+            if (!isAllowedDomain(normalizedUrl, config.allowedDomains)) {
+              return false;
             }
+          }
 
-            // 깊이 계산
-            const depth = calculateDepth(baseUrl, normalizedUrl);
-            
-            // 깊이 제한 확인
-            // maxDepth 4일 때는 다른 도메인(999)도 허용
-            if (maxDepth && depth > maxDepth) {
-              if (maxDepth < 4 || depth !== 999) {
-                return false;
-              }
+          // 깊이 계산
+          const depth = calculateDepth(baseUrl, normalizedUrl);
+          
+          // 깊이 제한 확인
+          // maxDepth 4일 때는 다른 도메인(999)도 허용
+          if (maxDepth && depth > maxDepth) {
+            if (maxDepth < 4 || depth !== 999) {
+              return false;
             }
+          }
 
-            return true;
+          return true;
           } catch (e) {
             // URL 파싱 실패 시 제외
             return false;
