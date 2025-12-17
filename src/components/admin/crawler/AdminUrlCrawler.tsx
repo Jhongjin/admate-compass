@@ -361,11 +361,25 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                   console.log(`[Discovery Logic] 총 발견된 하위 페이지: ${allDiscovered.length}개`);
                   if (allDiscovered.length > 0) {
                     console.log(`[Discovery Logic] ${allDiscovered.length}개의 새로운 하위 페이지 발견 - 팝업 표시`);
+                    console.log(`[Discovery Logic] 발견된 URL 샘플 (처음 5개):`, allDiscovered.slice(0, 5).map(d => d.url));
                     setDiscoveredUrls(allDiscovered);
                     setSelectedDiscoveredUrls(new Set(allDiscovered.map(d => d.url)));
                     setIsSelectionDialogOpen(true);
                   } else {
                     console.log(`[Discovery Logic] 발견된 하위 페이지가 없어 팝업을 표시하지 않음`);
+                    console.log(`[Discovery Logic] 디버깅 정보:`);
+                    console.log(`[Discovery Logic] - newResults.length: ${newResults.length}`);
+                    console.log(`[Discovery Logic] - existingUrlsNormalized.size: ${existingUrlsNormalized.size}`);
+                    newResults.forEach((result, idx) => {
+                      if (result.discoveredUrls && result.discoveredUrls.length > 0) {
+                        console.log(`[Discovery Logic] - Result[${idx}]: ${result.url}, discoveredUrls: ${result.discoveredUrls.length}개`);
+                        result.discoveredUrls.forEach((d, dIdx) => {
+                          const normalized = normalizeUrl(d.url);
+                          const exists = existingUrlsNormalized.has(normalized);
+                          console.log(`[Discovery Logic]   - [${dIdx}] ${d.url} (정규화: ${normalized}, 기존: ${exists})`);
+                        });
+                      }
+                    });
                   }
                 } else {
                   console.log(`[Discovery Logic] 조건 불만족 - discoverSubPages: ${options.discoverSubPages}, isSubPageCrawl: ${isSubPageCrawl}, event.results: ${!!event.results}`);
