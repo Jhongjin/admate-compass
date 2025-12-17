@@ -241,6 +241,14 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
     setEnvironment(isVercel ? 'vercel' : 'local');
   }, []);
 
+  // 다이얼로그가 열릴 때 DB 동기화
+  useEffect(() => {
+    if (isSelectionDialogOpen) {
+      console.log('[useEffect] 다이얼로그 열림 감지, DB 동기화 시작');
+      fetchExistingUrls();
+    }
+  }, [isSelectionDialogOpen]);
+
 
   // --- Handlers ---
 
