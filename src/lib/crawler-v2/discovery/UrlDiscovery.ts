@@ -853,13 +853,13 @@ export class UrlDiscovery {
             }
           }
           
-          // 8. 다른 도메인 링크는 강하게 감점 (단, maxDepth 4일 때는 완전히 제외하지 않음)
+          // 8. 다른 도메인 링크는 강하게 감점
           const isDifferentDomain = urlDomain !== baseDomain && !urlDomain.endsWith(`.${baseDomain}`);
           if (isDifferentDomain) {
             const maxDepth = config.maxDepth ?? 3;
             if (maxDepth >= 4) {
-              // maxDepth 4일 때는 다른 도메인도 허용하되 낮은 점수
-              qualityScore -= 50; // 완전히 제외하지 않고 낮은 점수만
+              // maxDepth 4일 때는 다른 도메인도 허용하되 매우 낮은 점수
+              qualityScore -= 200; // 다른 도메인은 매우 낮은 점수
             } else {
               qualityScore -= 100; // maxDepth 4 미만일 때는 강하게 감점
             }
@@ -868,13 +868,24 @@ export class UrlDiscovery {
           return { ...link, qualityScore };
         })
         .filter(link => {
-          // maxDepth 4일 때는 qualityScore가 -50 이상이면 허용 (다른 도메인도 포함)
           const maxDepth = config.maxDepth ?? 3;
-          if (maxDepth >= 4) {
-            // maxDepth 4일 때는 더 관대하게 필터링 (다른 도메인도 허용)
-            return link.qualityScore >= -50; // -50점 이상 허용
+          const urlDomain = extractDomain(link.url);
+          const baseDomain = extractDomain(baseUrl);
+          const isSameDomain = urlDomain === baseDomain;
+          
+          // 같은 도메인 링크는 항상 허용 (품질 점수와 관계없이)
+          if (isSameDomain) {
+            return true;
           }
-          return link.qualityScore > 0; // 기본적으로 0보다 높은 점수만 허용
+          
+          // 다른 도메인 링크는 maxDepth 4일 때만 허용하되 매우 높은 품질 점수 필요
+          if (maxDepth >= 4) {
+            // 다른 도메인은 품질 점수가 0 이상이어야 함 (같은 도메인보다 훨씬 엄격)
+            return link.qualityScore >= 0;
+          }
+          
+          // maxDepth 4 미만일 때는 같은 도메인만 허용
+          return link.qualityScore > 0;
         })
         .sort((a, b) => {
           // 품질 점수 높은 순으로 정렬
