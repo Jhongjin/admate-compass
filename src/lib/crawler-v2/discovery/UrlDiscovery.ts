@@ -911,11 +911,11 @@ export class UrlDiscovery {
           
           let qualityScore = 0;
           
-          // 1. 같은 도메인인 경우 높은 점수
+          // 1. 같은 도메인인 경우 높은 점수 (우선순위 강화)
           if (urlDomain === baseDomain) {
-            qualityScore += 100;
+            qualityScore += 200; // 같은 도메인은 매우 높은 점수
           } else if (urlDomain.endsWith(`.${baseDomain}`)) {
-            qualityScore += 50;
+            qualityScore += 100; // 하위 도메인도 높은 점수
           } else {
             qualityScore -= 50; // 다른 도메인은 낮은 점수
           }
@@ -938,11 +938,13 @@ export class UrlDiscovery {
             qualityScore += 10;
           }
           
-          // 6. 품질이 낮은 경로는 점수 감점
-          const lowQualityPaths = ['/rules/', '/legal/', '/terms/', '/privacy/', '/help/', '/support/', '/login/'];
+          // 6. 품질이 낮은 경로는 점수 감점 (완화)
+          // ads.naver.com의 경우 /help/, /support/ 같은 경로도 유용할 수 있으므로 감점만 함
+          const lowQualityPaths = ['/rules/', '/legal/', '/terms/', '/privacy/', '/login/'];
           if (lowQualityPaths.some(path => pathname.includes(path))) {
-            qualityScore -= 200; // 품질 낮은 링크는 강하게 제외
+            qualityScore -= 50; // 품질 낮은 링크는 약간 감점 (완전 제외하지 않음)
           }
+          // /help/, /support/는 감점하지 않음
           
           // 7. ads.naver.com의 주요 경로는 높은 점수
           if (baseDomain === 'ads.naver.com') {
