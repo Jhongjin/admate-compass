@@ -361,6 +361,12 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                   if (allDiscovered.length > 0) {
                     console.log(`[Discovery Logic] ${allDiscovered.length}개의 새로운 하위 페이지 발견 - 팝업 표시`);
                     console.log(`[Discovery Logic] 발견된 URL 샘플 (처음 5개):`, allDiscovered.slice(0, 5).map(d => d.url));
+                    
+                    // 팝업 표시 전에 DB에서 최신 URL 목록 가져오기
+                    console.log(`[Discovery Logic] 팝업 표시 전 DB 동기화 시작`);
+                    await fetchExistingUrls();
+                    console.log(`[Discovery Logic] DB 동기화 완료, existingDbMap 크기: ${existingDbMap.size}`);
+                    
                     setDiscoveredUrls(allDiscovered);
                     setSelectedDiscoveredUrls(new Set(allDiscovered.map(d => d.url)));
                     setIsSelectionDialogOpen(true);
