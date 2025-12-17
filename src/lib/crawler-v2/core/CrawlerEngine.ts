@@ -53,10 +53,20 @@ export class CrawlerEngine {
     if (config.useCache) {
       const cached = cacheManager.get(normalizedUrl, config.cacheTTL);
       if (cached) {
-        // discoverSubPages 옵션이 활성화되어 있고, 캐시된 결과에 discoveredUrls가 없으면 캐시 무시
-        if (config.discoverSubPages && (!cached.discoveredUrls || cached.discoveredUrls.length === 0)) {
-          console.log(`💾 캐시 히트했지만 discoveredUrls가 없어 재크롤링: ${url}`);
-          this.cacheMisses++;
+        // discoverSubPages 옵션이 활성화되어 있고, 캐시된 결과에 discoveredUrls가 없거나 너무 적으면 캐시 무시
+        if (config.discoverSubPages) {
+          const discoveredCount = cached.discoveredUrls?.length || 0;
+          // discoveredUrls가 없거나 10개 미만이면 재크롤링 (더 많은 링크를 찾기 위해)
+          if (discoveredCount === 0 || discoveredCount < 10) {
+            console.log(`💾 캐시 히트했지만 discoveredUrls가 ${discoveredCount}개로 적어 재크롤링: ${url}`);
+            this.cacheMisses++;
+            // 캐시 삭제하여 다음에 새로 크롤링하도록
+            cacheManager.delete(normalizedUrl);
+          } else {
+            this.cacheHits++;
+            console.log(`💾 캐시 히트: ${url} (discoveredUrls: ${discoveredCount}개)`);
+            return cached;
+          }
         } else {
           this.cacheHits++;
           console.log(`💾 캐시 히트: ${url}`);
