@@ -180,8 +180,8 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
 
   const [options, setOptions] = useState({
     discoverSubPages: false,
-    maxDepth: 2,
-    maxUrls: 50,
+    maxDepth: 4, // ads.naver.com 같은 사이트는 깊이 4로 크롤링
+    maxUrls: 100, // 더 많은 URL 추출
     respectRobots: true,
     domainLimit: true,
     timeout: 30000,
@@ -335,12 +335,14 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                       console.log(`[Discovery Logic] 처리 중인 result: ${result.url}, discoveredUrls: ${result.discoveredUrls.length}개`);
                       result.discoveredUrls.forEach(d => {
                         const normalizedDiscoveredUrl = normalizeUrl(d.url);
+                        // DB에 이미 있는 URL도 일단 추출 (사용자가 선택할 수 있도록)
+                        // 원본 시드 URL을 부모로 설정 (시드 URL이 현재 result.url과 같으면 시드 URL 사용)
+                        const parentUrlForDiscovered = (seedUrlForDiscovery && normalizeUrl(result.url) === normalizeUrl(seedUrlForDiscovery)) 
+                          ? seedUrlForDiscovery 
+                          : result.url;
+                        
+                        // 중복 체크 (같은 크롤링 세션 내에서만)
                         if (!existingUrlsNormalized.has(normalizedDiscoveredUrl)) {
-                          // 원본 시드 URL을 부모로 설정 (시드 URL이 현재 result.url과 같으면 시드 URL 사용)
-                          const parentUrlForDiscovered = (seedUrlForDiscovery && normalizeUrl(result.url) === normalizeUrl(seedUrlForDiscovery)) 
-                            ? seedUrlForDiscovery 
-                            : result.url;
-                          
                           allDiscovered.push({ 
                             url: d.url, 
                             source: result.url, 
@@ -350,7 +352,7 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                           existingUrlsNormalized.add(normalizedDiscoveredUrl);
                           console.log(`[Discovery Logic] 하위 페이지 발견: "${d.url}" -> 부모: "${parentUrlForDiscovered}"`);
                         } else {
-                          console.log(`[Discovery Logic] 이미 존재하는 URL 스킵: "${d.url}" (정규화: "${normalizedDiscoveredUrl}")`);
+                          console.log(`[Discovery Logic] 중복 URL 스킵 (같은 세션 내): "${d.url}" (정규화: "${normalizedDiscoveredUrl}")`);
                         }
                       });
                     } else {
