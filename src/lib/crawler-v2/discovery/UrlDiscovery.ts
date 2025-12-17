@@ -212,7 +212,7 @@ export class UrlDiscovery {
       console.log(`[discoverFromLinks] browser 존재: ${!!browser}`);
       if (browser) {
         try {
-          const page = await browserManager.createPage();
+          let page = await browserManager.createPage();
           
           // 네이버 광고 페이지 같은 SPA 사이트를 위한 설정
           const isNaverAds = baseUrl.includes('ads.naver.com');
