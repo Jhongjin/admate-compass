@@ -180,27 +180,6 @@ discoverSubPages: true
 
 ---
 
-### maxDepth = 5
-
-**참고**: 코드에서 `maxDepth`는 기본적으로 1~4까지만 명시적으로 처리됩니다.
-- `maxDepth >= 4` 조건으로 처리되므로, **maxDepth = 5도 maxDepth = 4와 동일하게 처리**됩니다.
-
-**도메인 제한**: **모든 도메인 허용** (maxDepth 4와 동일)
-
-**깊이 제한**: 깊이 **5**까지만 추출
-
-**예시**:
-```
-시드: https://ads.naver.com/
-maxDepth: 5
-discoverSubPages: true
-
-추출되는 URL:
-✅ https://ads.naver.com/start (깊이 1)
-✅ https://ads.naver.com/start/sales/detail/page/sub (깊이 5)
-✅ https://help.naver.com/ (깊이 999, 다른 도메인 - 허용)
-❌ https://ads.naver.com/start/sales/detail/page/sub/deep (깊이 6 - 제외)
-```
 
 ---
 
@@ -394,7 +373,6 @@ if (maxDepth && depth > maxDepth) {
 | **2** | 같은 도메인만 | 깊이 2 | 시드만 크롤링 | 시드 + 깊이 2까지 발견 |
 | **3** | domainLimit에 따라 다름 | 깊이 3 | 시드만 크롤링 | 시드 + 깊이 3까지 발견 |
 | **4** | 모든 도메인 허용 | 깊이 4 | 시드만 크롤링 | 시드 + 깊이 4까지 발견 (다른 도메인 포함) |
-| **5** | 모든 도메인 허용 | 깊이 5 | 시드만 크롤링 | 시드 + 깊이 5까지 발견 (다른 도메인 포함) |
 
 ---
 
