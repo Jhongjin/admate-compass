@@ -338,6 +338,12 @@ export class UrlDiscovery {
           links = await page.evaluate((baseDomain, maxDepth, baseUrl) => {
             console.log(`[discoverFromLinks] page.evaluate 내부 시작 - baseDomain: ${baseDomain}, maxDepth: ${maxDepth}, baseUrl: ${baseUrl}`);
             console.log(`[discoverFromLinks] 현재 URL: ${window.location.href}`);
+            
+            // DOM 상태 확인
+            const allLinks = document.querySelectorAll('a');
+            const linksWithHref = document.querySelectorAll('a[href]');
+            console.log(`[discoverFromLinks] DOM 상태 - 전체 <a> 태그: ${allLinks.length}개, href 속성 있는 링크: ${linksWithHref.length}개`);
+            
             // 다양한 선택자로 링크 찾기 (네이버 광고, Instagram, Facebook 등 다양한 사이트 대응)
             const linkSelectors = [
               'a[href]',
