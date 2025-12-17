@@ -526,8 +526,13 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
           }
         }
 
+        // 팝업에서 추출된 제목을 우선 사용 (discoveryInfo.title)
+        // 없으면 크롤링 결과의 제목 사용
+        const finalTitle = discoveryInfo?.title || r.title;
+        
         return {
           ...r,
+          title: finalTitle, // 팝업에서 추출된 제목으로 덮어쓰기
           vendor,
           metadata: {
             source: 'admin-crawler',
