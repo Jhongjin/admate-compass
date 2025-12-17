@@ -966,7 +966,7 @@ export class UrlDiscovery {
 
       // 깊이 필터링 추가 (discoverFromLinks에서 이미 필터링했지만, 사이트맵 URL은 여기서 필터링)
       const maxDepthForFilter = config.maxDepth ?? 3;
-      if (maxDepthForFilter && url.depth > maxDepthForFilter) {
+      if (maxDepthForFilter && url.depth && url.depth > maxDepthForFilter) {
         // maxDepth 4일 때는 다른 도메인(999)도 허용
         if (maxDepthForFilter < 4 || url.depth !== 999) {
           return false;
