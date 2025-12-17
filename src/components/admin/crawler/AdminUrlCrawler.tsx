@@ -1077,13 +1077,16 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                   const isInDb = dialogDbMap.has(normalizedItemUrl);
                   const isAlreadyCrawled = isInDb;
                   
-                  // 디버깅: 처음 3개만 상세 로그
-                  if (i < 3 && isAlreadyCrawled) {
-                    console.log(`[isAlreadyCrawled] URL: "${item.url}"`, {
+                  // 디버깅: 처음 5개만 상세 로그
+                  if (i < 5) {
+                    console.log(`[isAlreadyCrawled] URL[${i}]: "${item.url}"`, {
                       normalized: normalizedItemUrl,
                       isInDb,
-                      dbHas: existingDbMap.has(normalizedItemUrl),
-                      dbSize: existingDbMap.size
+                      isAlreadyCrawled,
+                      dialogDbMapSize: dialogDbMap.size,
+                      dialogDbMapHas: dialogDbMap.has(normalizedItemUrl),
+                      existingDbMapSize: existingDbMap.size,
+                      existingDbMapHas: existingDbMap.has(normalizedItemUrl)
                     });
                   }
                   
