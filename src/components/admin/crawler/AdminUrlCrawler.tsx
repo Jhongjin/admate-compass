@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
-import { Loader2, Play, CheckCircle, XCircle, Globe, Save, RefreshCw, ExternalLink, Link, AlertTriangle, Pencil, Check, X, CheckCircle2 } from 'lucide-react';
+import { Loader2, Play, CheckCircle, XCircle, Globe, Save, RefreshCw, ExternalLink, Link, AlertTriangle, Pencil, Check, X, CheckCircle2, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   Dialog,
@@ -617,6 +617,28 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
     }
   };
 
+  // 실패한 URL 재인덱싱 (다시 크롤링)
+  const handleRetryFailedUrl = async (url: string) => {
+    console.log(`[handleRetryFailedUrl] 실패한 URL 재시도: ${url}`);
+    // 해당 URL을 results에서 제거하고 다시 크롤링
+    setResults(prev => prev.filter(r => r.url !== url));
+    await performCrawl([url], false, null);
+  };
+
+  // 실패한 결과 전체 삭제
+  const handleDeleteAllFailed = () => {
+    const failedCount = results.filter(r => r.status !== 'success').length;
+    if (failedCount === 0) {
+      toast.warning('삭제할 실패한 결과가 없습니다.');
+      return;
+    }
+    
+    if (confirm(`실패한 크롤링 결과 ${failedCount}개를 모두 삭제하시겠습니까?`)) {
+      setResults(prev => prev.filter(r => r.status === 'success'));
+      toast.success('실패한 결과가 삭제되었습니다.');
+    }
+  };
+
   const toggleSelect = (url: string) => {
     const newSelected = new Set(selectedDiscoveredUrls);
     if (newSelected.has(url)) newSelected.delete(url);
@@ -875,6 +897,18 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                       </Button>
                     )}
 
+                    {results.some(r => r.status !== 'success') && (
+                      <Button
+                        onClick={handleDeleteAllFailed}
+                        disabled={isSaving || isCrawling}
+                        variant="outline"
+                        className="border-red-500/30 text-red-400 hover:bg-red-500/10 min-w-[120px]"
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        실패 항목 삭제
+                      </Button>
+                    )}
+
                     <Button
                       onClick={handleSaveToDb}
                       disabled={isSaving || isCrawling || results.every(r => r.status !== 'success')}
@@ -906,6 +940,9 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                         <th className="px-6 py-3">페이지 제목 / URL</th>
                         <th className="px-6 py-3 w-[120px]">타입</th>
                         <th className="px-6 py-3 w-[120px] text-right">크기</th>
+                        {results.some(r => r.status !== 'success') && (
+                          <th className="px-6 py-3 w-[100px]">작업</th>
+                        )}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-800">
@@ -951,6 +988,24 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                           <td className="px-6 py-4 text-right text-gray-400 font-mono text-xs">
                             {result.contentLength > 0 ? (result.contentLength / 1024).toFixed(1) + ' KB' : '-'}
                           </td>
+                          {results.some(r => r.status !== 'success') && (
+                            <td className="px-6 py-4">
+                              {result.status !== 'success' && (
+                                <div className="flex items-center gap-2">
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    onClick={() => handleRetryFailedUrl(result.url)}
+                                    disabled={isCrawling}
+                                    className="h-7 px-2 text-xs text-blue-400 hover:text-blue-300 hover:bg-blue-500/10"
+                                    title="재시도"
+                                  >
+                                    <RefreshCw className="w-3 h-3" />
+                                  </Button>
+                                </div>
+                              )}
+                            </td>
+                          )}
                         </tr>
                       ))}
                     </tbody>
