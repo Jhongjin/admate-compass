@@ -623,12 +623,94 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
     }
   };
 
-  // 실패한 URL 재인덱싱 (다시 크롤링)
+  // 실패한 URL 재인덱싱 (다시 크롤링) - 단일 URL만 처리
   const handleRetryFailedUrl = async (url: string) => {
     console.log(`[handleRetryFailedUrl] 실패한 URL 재시도: ${url}`);
-    // 해당 URL을 results에서 제거하고 다시 크롤링
-    setResults(prev => prev.filter(r => r.url !== url));
-    await performCrawl([url], false, null);
+    
+    // 해당 URL의 결과를 로딩 상태로 변경
+    setResults(prev => prev.map(r => 
+      r.url === url ? { ...r, status: 'processing' as const } : r
+    ));
+
+    try {
+      const response = await fetch('/api/crawler-v2/crawl', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          urls: [url],
+          options: {
+            ...options,
+            discoverSubPages: false, // 재시도 시 하위 페이지 발견 비활성화
+          },
+        }),
+      });
+
+      if (!response.body) throw new Error('ReadableStream not supported');
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (value) {
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            if (line.trim() === '') continue;
+            try {
+              const event = JSON.parse(line);
+              if (event.type === 'log') {
+                setStatusMessage(event.message);
+              } else if (event.type === 'batch_progress') {
+                if (event.result) {
+                  // discoveredUrls에서 제목 찾아서 덮어쓰기
+                  const discoveryInfo = discoveredUrls.find(d => normalizeUrl(d.url) === normalizeUrl(event.result.url));
+                  const resultWithTitle = {
+                    ...event.result,
+                    title: discoveryInfo?.title || event.result.title
+                  };
+                  // 해당 URL의 결과만 업데이트
+                  setResults(prev => prev.map(r => 
+                    r.url === url ? resultWithTitle : r
+                  ));
+                }
+              } else if (event.type === 'done') {
+                if (event.results && event.results.length > 0) {
+                  const newResult = event.results[0] as CrawlResult;
+                  const discoveryInfo = discoveredUrls.find(d => normalizeUrl(d.url) === normalizeUrl(newResult.url));
+                  const resultWithTitle = {
+                    ...newResult,
+                    title: discoveryInfo?.title || newResult.title
+                  };
+                  // 해당 URL의 결과만 업데이트
+                  setResults(prev => prev.map(r => 
+                    r.url === url ? resultWithTitle : r
+                  ));
+                }
+                toast.success(`재시도 완료: ${url}`);
+              } else if (event.type === 'error') {
+                // 에러 발생 시 실패 상태로 업데이트
+                setResults(prev => prev.map(r => 
+                  r.url === url ? { ...r, status: 'failed' as const, error: event.error || '크롤링 실패' } : r
+                ));
+                toast.error(event.error || '재시도 중 오류 발생');
+              }
+            } catch (e) { }
+          }
+        }
+        if (done) break;
+      }
+    } catch (error) {
+      console.error('재시도 오류:', error);
+      // 에러 발생 시 실패 상태로 업데이트
+      setResults(prev => prev.map(r => 
+        r.url === url ? { ...r, status: 'failed' as const, error: error instanceof Error ? error.message : '크롤링 실패' } : r
+      ));
+      toast.error('재시도 중 오류가 발생했습니다.');
+    }
   };
 
   // 실패한 결과 전체 삭제
