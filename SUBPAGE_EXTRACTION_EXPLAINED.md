@@ -1,5 +1,18 @@
 # 하위 페이지 추출 로직 상세 설명
 
+## ⚠️ 중요: 하위 페이지 추출의 한계
+
+**핵심 원칙**: 하위 페이지 추출은 **시드 URL에서만** 링크를 찾습니다.
+
+- ✅ **시드 URL** (`https://ads.naver.com/`)에서 모든 링크 추출
+- ❌ **발견된 하위 페이지** (`https://ads.naver.com/start/sales`)를 크롤링해서 그 안의 링크를 추출하지 **않음**
+
+**maxDepth의 의미**:
+- maxDepth는 발견된 링크의 **깊이를 필터링**하는 기준입니다
+- 재귀적으로 하위 페이지를 크롤링하는 깊이가 **아닙니다**
+
+---
+
 ## 시드 페이지: `https://ads.naver.com/`, maxDepth: 2
 
 ### 🎯 목표
@@ -153,8 +166,11 @@ Puppeteer로 페이지 접속
 → 메뉴 클릭/호버 (5초 대기)
 ```
 
-**2단계: 링크 추출**
+**2단계: 링크 추출 (시드 URL에서만)**
 ```
+⚠️ 중요: https://ads.naver.com/ 페이지에서만 링크를 추출합니다.
+         발견된 하위 페이지를 크롤링하지 않습니다!
+
 페이지에서 발견된 링크 (예시):
 - <a href="/start/sales">온라인 판매 목적</a>
 - <a href="/start/offline">오프라인 방문 목적</a>
@@ -186,6 +202,30 @@ Puppeteer로 페이지 접속
 3. https://ads.naver.com/sa
 4. https://ads.naver.com/sub/guarantee
 5. https://ads.naver.com/help
+
+⚠️ 주의: 이 페이지들은 발견만 되었을 뿐, 
+         실제로 크롤링되어 그 안의 링크를 추출하지는 않습니다!
+```
+
+### ❌ 하지 않는 것
+
+```
+시드: https://ads.naver.com/
+발견된 하위 페이지: https://ads.naver.com/start/sales
+
+❌ https://ads.naver.com/start/sales 페이지를 크롤링하지 않음
+❌ https://ads.naver.com/start/sales 페이지의 링크를 추출하지 않음
+❌ 재귀적으로 하위 페이지의 하위 페이지를 찾지 않음
+```
+
+### ✅ 하는 것
+
+```
+시드: https://ads.naver.com/
+
+✅ https://ads.naver.com/ 페이지에서 모든 링크 추출
+✅ 발견된 링크를 maxDepth 기준으로 필터링
+✅ 사용자가 선택한 하위 페이지만 나중에 크롤링
 ```
 
 ---
