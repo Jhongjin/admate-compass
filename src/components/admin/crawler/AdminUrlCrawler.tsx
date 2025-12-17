@@ -189,6 +189,7 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
   });
 
   const [existingDbMap, setExistingDbMap] = useState<Map<string, string>>(new Map());
+  const [dialogDbMap, setDialogDbMap] = useState<Map<string, string>>(new Map()); // 다이얼로그 전용 DB Map
   const [statusMessage, setStatusMessage] = useState<string>("크롤링 중...");
 
 
@@ -594,8 +595,8 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
     const newSelected = new Set<string>();
     discoveredUrls.forEach(item => {
       const normalizedItemUrl = normalizeUrl(item.url);
-      // DB에 저장된 정보만 비교 (현재 세션의 results는 제외)
-      const isInDb = existingDbMap.has(normalizedItemUrl);
+      // DB에 저장된 정보만 비교 (다이얼로그 전용 DB Map 사용)
+      const isInDb = dialogDbMap.has(normalizedItemUrl);
       if (!isInDb) {
         newSelected.add(item.url);
       }
@@ -611,6 +612,9 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
       const dbMap = await fetchExistingUrls();
       console.log(`[handleDialogOpenChange] DB 동기화 완료, DB URL 개수: ${dbMap.size}`);
       
+      // 다이얼로그 전용 DB Map 업데이트 (즉시 반영)
+      setDialogDbMap(new Map(dbMap));
+      
       // 동기화 후 발견된 URL과 DB 비교 결과 로그
       if (discoveredUrls.length > 0) {
         console.log(`[handleDialogOpenChange] 발견된 URL ${discoveredUrls.length}개와 DB 비교 시작`);
@@ -623,6 +627,9 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
           console.log(`[handleDialogOpenChange] ... 외 ${discoveredUrls.length - 5}개 URL`);
         }
       }
+    } else {
+      // 다이얼로그가 닫힐 때 dialogDbMap 초기화
+      setDialogDbMap(new Map());
     }
   };
 
@@ -943,8 +950,8 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
               <div className="space-y-2 pr-2">
                 {discoveredUrls.map((item, i) => {
                   const normalizedItemUrl = normalizeUrl(item.url);
-                  // DB에 저장된 정보만 비교 (현재 세션의 results는 제외)
-                  const isInDb = existingDbMap.has(normalizedItemUrl);
+                  // DB에 저장된 정보만 비교 (다이얼로그 전용 DB Map 사용)
+                  const isInDb = dialogDbMap.has(normalizedItemUrl);
                   const isAlreadyCrawled = isInDb;
                   
                   // 디버깅: 처음 3개만 상세 로그
