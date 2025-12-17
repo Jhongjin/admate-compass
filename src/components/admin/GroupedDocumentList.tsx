@@ -485,10 +485,10 @@ export default function GroupedDocumentList({
                           variant="ghost"
                           size="sm"
                           onClick={() => onDeleteDocument(group.mainDocument.id, group.mainDocument.title)}
-                          disabled={deletingDocument === group.mainDocument.id}
+                          disabled={actionLoading[`${group.mainDocument.id}_delete`] || group.mainDocument.status === "processing"}
                           className="text-gray-400 hover:text-red-400 hover:bg-red-500/10"
                         >
-                          {deletingDocument === group.mainDocument.id ? (
+                          {actionLoading[`${group.mainDocument.id}_delete`] ? (
                             <RefreshCw className="w-4 h-4 animate-spin" />
                           ) : (
                             <Trash2 className="w-4 h-4" />
@@ -687,10 +687,10 @@ export default function GroupedDocumentList({
                                       variant="ghost"
                                       size="sm"
                                       onClick={() => onDeleteDocument(subPage.id, subPage.title)}
-                                      disabled={deletingDocument === subPage.id}
+                                      disabled={actionLoading[`${subPage.id}_delete`] || subPage.status === "processing"}
                                       className="text-gray-400 hover:text-red-400 hover:bg-red-500/10 p-1"
                                     >
-                                      {deletingDocument === subPage.id ? (
+                                      {actionLoading[`${subPage.id}_delete`] ? (
                                         <RefreshCw className="w-3 h-3 animate-spin" />
                                       ) : (
                                         <Trash2 className="w-3 h-3" />

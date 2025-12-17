@@ -318,7 +318,23 @@ export default function DocumentsPage() {
             if (!res.ok) throw new Error('Failed to delete document');
             return res.json();
         },
-        onSuccess: () => {
+        onMutate: async (id: string) => {
+            // 삭제 시작 시 로딩 상태 설정
+            setActionLoading(prev => {
+                const newState = { ...prev, [`${id}_delete`]: true };
+                console.log('🗑️ [deleteMutation] actionLoading 업데이트 (시작):', newState);
+                return newState;
+            });
+        },
+        onSuccess: (data, id) => {
+            // 삭제 완료 시 로딩 상태 해제
+            setActionLoading(prev => {
+                const newState = { ...prev };
+                delete newState[`${id}_delete`];
+                console.log('🗑️ [deleteMutation] actionLoading 업데이트 (종료):', newState);
+                return newState;
+            });
+            
             queryClient.invalidateQueries({ queryKey: ['admin-documents'] });
             toast({
                 title: "문서 삭제 완료",
@@ -332,7 +348,15 @@ export default function DocumentsPage() {
                 setSelectedDocs(newSelected);
             }
         },
-        onError: (error) => {
+        onError: (error, id) => {
+            // 삭제 실패 시 로딩 상태 해제
+            setActionLoading(prev => {
+                const newState = { ...prev };
+                delete newState[`${id}_delete`];
+                console.log('🗑️ [deleteMutation] actionLoading 업데이트 (에러):', newState);
+                return newState;
+            });
+            
             toast({
                 title: "삭제 실패",
                 description: error.message,
