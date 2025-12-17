@@ -27,6 +27,10 @@ export async function GET(request: NextRequest) {
             query = query.eq('type', type);
         }
 
+        // 삭제된 문서는 조회하지 않음 (hard delete이므로 실제로 삭제된 문서는 조회되지 않음)
+        // 하지만 혹시 모를 경우를 대비해 명시적으로 필터링하지 않음
+        // 삭제가 제대로 되었다면 자동으로 조회되지 않음
+        
         const { data: documents, error } = await query;
 
         if (error) {
