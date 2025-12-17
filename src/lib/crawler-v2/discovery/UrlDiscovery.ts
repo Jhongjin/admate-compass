@@ -819,15 +819,16 @@ export class UrlDiscovery {
               return false;
             }
             
-            // 푸터/법적 고지 링크 필터링 (품질이 낮은 링크)
+            // 푸터/법적 고지 링크 필터링 (품질이 낮은 링크) - 완화
+            // ads.naver.com의 경우 /help/, /support/ 같은 경로도 유용할 수 있으므로 제외하지 않음
             const lowQualityPaths = [
               '/rules/', '/rule/', '/legal/', '/terms/', '/privacy/', '/policy/',
               '/disclaimer/', '/service/', '/agreement/', '/tos/',
-              '/help/', '/support/', '/contact/', '/faq/',
               '/login/', '/signin/', '/signup/', '/register/',
               '/logout/', '/account/', '/profile/', '/settings/',
               '/chat/', '/customer/', '/member/', '/membership/'
             ];
+            // /help/, /support/, /contact/, /faq/는 제외하지 않음 (유용한 정보일 수 있음)
             const isLowQualityPath = lowQualityPaths.some(path => pathname.includes(path));
             if (isLowQualityPath) {
             return false;
