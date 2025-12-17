@@ -752,13 +752,8 @@ export class UrlDiscovery {
                 return false;
               }
               
-              // ads.naver.com의 경우 다른 naver.com 서브도메인도 제외 (품질 향상)
-              if (baseDomain === 'ads.naver.com') {
-                // ads.naver.com이 아닌 다른 naver.com 서브도메인은 제외
-                if (urlDomain !== 'ads.naver.com' && urlDomain.endsWith('.naver.com')) {
-                  return false;
-                }
-              }
+              // ads.naver.com의 경우 다른 naver.com 서브도메인은 제외하지 않음 (maxDepth 4일 때는 허용)
+              // 이전 로직 제거: maxDepth 4일 때는 모든 도메인 허용
             }
             
             if (urlDomain !== baseDomain) {
