@@ -122,6 +122,28 @@ curl -X POST http://localhost:3000/api/crawler-v2/crawl \
 - 로컬 모드에서 먼저 테스트 필요
 - 프로덕션 배포 전 충분한 테스트 필요
 
+## 구현 현황 (2025-12-18 업데이트)
+
+### Phase 1: 병행 운영 ✅ 완료
+- [x] CrawlerEngine 구현
+- [x] BrowserManager 구현
+- [x] ContentExtractor 구현
+- [x] UrlDiscovery 구현
+- [x] SitemapParser 구현
+- [x] CacheManager 구현
+- [x] RetryManager 구현
+- [x] MemoryMonitor 구현
+- [x] API 엔드포인트 (`/api/crawler-v2/crawl`)
+- [x] 테스트 페이지 (`/test/crawler-v2`) - 스트리밍 응답 처리 수정 완료
+
+### Phase 2: 점진적 마이그레이션 ⏳ 진행 예정
+- [ ] 기존 HybridCrawlingManager와 V2 통합
+- [ ] 관리자 페이지에서 V2 크롤러 사용 옵션 추가
+
+### Phase 3: 완전 전환 ⏳ 대기
+- [ ] 모든 크롤링 기능 V2로 전환
+- [ ] 기존 크롤링 코드 deprecated 처리
+
 
 
 

@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
+import { Progress } from '@/components/ui/progress';
 import { Loader2, Play, CheckCircle, XCircle, Globe } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -27,10 +28,19 @@ interface CrawlResult {
   }>;
 }
 
+interface CrawlProgress {
+  progress: number;
+  completedUrls: number;
+  totalUrls: number;
+  currentUrl?: string;
+  message?: string;
+}
+
 export default function CrawlerV2TestPage() {
   const [urls, setUrls] = useState<string>('https://example.com');
   const [isCrawling, setIsCrawling] = useState(false);
   const [results, setResults] = useState<CrawlResult[]>([]);
+  const [progressInfo, setProgressInfo] = useState<CrawlProgress | null>(null);
   const [environment, setEnvironment] = useState<'local' | 'vercel' | 'unknown'>('unknown');
   const [options, setOptions] = useState({
     discoverSubPages: false,
@@ -62,6 +72,7 @@ export default function CrawlerV2TestPage() {
 
     setIsCrawling(true);
     setResults([]);
+    setProgressInfo({ progress: 0, completedUrls: 0, totalUrls: urlList.length });
 
     try {
       const response = await fetch('/api/crawler-v2/crawl', {
@@ -75,19 +86,58 @@ export default function CrawlerV2TestPage() {
         }),
       });
 
-      const data = await response.json();
+      if (!response.body) {
+        throw new Error('응답 스트림이 없습니다.');
+      }
 
-      if (data.success) {
-        setResults(data.data.results);
-        toast.success(`크롤링 완료: 성공 ${data.data.summary.success}개, 실패 ${data.data.summary.failed}개`);
-      } else {
-        toast.error(data.error || '크롤링 실패');
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      const collectedResults: CrawlResult[] = [];
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const data = JSON.parse(line);
+
+            if (data.type === 'progress') {
+              setProgressInfo({
+                progress: data.progress || 0,
+                completedUrls: data.completedUrls || 0,
+                totalUrls: data.totalUrls || urlList.length,
+                currentUrl: data.currentUrl,
+                message: data.message,
+              });
+            } else if (data.type === 'batch_progress' && data.result) {
+              collectedResults.push(data.result);
+              setResults([...collectedResults]);
+            } else if (data.type === 'done') {
+              if (data.results) {
+                setResults(data.results);
+              }
+              toast.success(`크롤링 완료: 성공 ${data.summary?.success || 0}개, 실패 ${data.summary?.failed || 0}개`);
+            } else if (data.type === 'error') {
+              toast.error(data.error || '크롤링 실패');
+            }
+          } catch {
+            // JSON 파싱 실패 무시
+          }
+        }
       }
     } catch (error) {
       console.error('크롤링 오류:', error);
       toast.error('크롤링 중 오류가 발생했습니다.');
     } finally {
       setIsCrawling(false);
+      setProgressInfo(null);
     }
   };
 
@@ -181,6 +231,21 @@ export default function CrawlerV2TestPage() {
               />
             </div>
           </div>
+
+          {progressInfo && (
+            <div className="space-y-2 p-4 bg-muted rounded-md">
+              <div className="flex justify-between text-sm">
+                <span>진행률: {progressInfo.progress.toFixed(1)}%</span>
+                <span>{progressInfo.completedUrls}/{progressInfo.totalUrls}</span>
+              </div>
+              <Progress value={progressInfo.progress} className="h-2" />
+              {progressInfo.currentUrl && (
+                <p className="text-xs text-muted-foreground truncate">
+                  처리 중: {progressInfo.currentUrl}
+                </p>
+              )}
+            </div>
+          )}
 
           <Button
             onClick={handleCrawl}
