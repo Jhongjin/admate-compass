@@ -225,6 +225,7 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
     domainLimit: true,
     timeout: 30000,
     waitTime: 1000,
+    useCrawlerV2: true, // 크롤러 V2 사용 (기본값: true)
   });
 
   const [existingDbMap, setExistingDbMap] = useState<Map<string, string>>(new Map());
@@ -939,6 +940,50 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                   onChange={(e) => setOptions({ ...options, timeout: parseInt(e.target.value) || 30000 })}
                   className="h-7 bg-transparent border-gray-600 text-white text-sm"
                 />
+              </div>
+            </div>
+
+            {/* 고급 옵션 */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4 w-full max-w-3xl">
+              <div className="flex flex-col gap-2 p-3 rounded-lg bg-white/5 border border-white/5">
+                <Label className="text-xs text-gray-400">도메인 제한</Label>
+                <div className="flex items-center gap-2 mt-auto">
+                  <Checkbox
+                    id="domainLimit"
+                    checked={options.domainLimit}
+                    onCheckedChange={(c) => setOptions({ ...options, domainLimit: !!c })}
+                    className="border-gray-500 data-[state=checked]:bg-blue-500"
+                  />
+                  <span className="text-sm font-medium text-gray-300">사용</span>
+                </div>
+                <p className="text-[10px] text-gray-500 leading-tight">외부 도메인 링크 제외</p>
+              </div>
+
+              <div className="flex flex-col gap-2 p-3 rounded-lg bg-white/5 border border-white/5">
+                <Label className="text-xs text-gray-400">Robots.txt 준수</Label>
+                <div className="flex items-center gap-2 mt-auto">
+                  <Checkbox
+                    id="respectRobots"
+                    checked={options.respectRobots}
+                    onCheckedChange={(c) => setOptions({ ...options, respectRobots: !!c })}
+                    className="border-gray-500 data-[state=checked]:bg-blue-500"
+                  />
+                  <span className="text-sm font-medium text-gray-300">사용</span>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-2 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+                <Label className="text-xs text-emerald-400">🚀 크롤러 V2</Label>
+                <div className="flex items-center gap-2 mt-auto">
+                  <Checkbox
+                    id="useCrawlerV2"
+                    checked={options.useCrawlerV2}
+                    onCheckedChange={(c) => setOptions({ ...options, useCrawlerV2: !!c })}
+                    className="border-emerald-500 data-[state=checked]:bg-emerald-500"
+                  />
+                  <span className="text-sm font-medium text-emerald-300">사용</span>
+                </div>
+                <p className="text-[10px] text-emerald-500/70 leading-tight">개선된 성능 및 안정성</p>
               </div>
             </div>
 
