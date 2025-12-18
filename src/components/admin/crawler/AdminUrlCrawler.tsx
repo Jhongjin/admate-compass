@@ -216,6 +216,7 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
   const [editingTitleIndex, setEditingTitleIndex] = useState<number | null>(null);
   const [editingTitleValue, setEditingTitleValue] = useState<string>('');
   const [seedUrl, setSeedUrl] = useState<string | null>(null); // 원본 시드 URL 저장
+  const [fetchingTitleUrls, setFetchingTitleUrls] = useState<Set<string>>(new Set()); // 제목 가져오는 중인 URL
 
   const [options, setOptions] = useState({
     discoverSubPages: false,
@@ -755,6 +756,67 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
     setEditingTitleValue('');
   };
 
+  // 제목이 없는 URL의 제목을 페이지에서 가져오기
+  const handleFetchTitle = async (index: number, url: string) => {
+    if (fetchingTitleUrls.has(url)) return;
+    
+    setFetchingTitleUrls(prev => new Set(prev).add(url));
+    
+    try {
+      const response = await fetch('/api/fetch-page-title', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+      });
+      
+      if (response.ok) {
+        const data = await response.json();
+        if (data.title) {
+          const updated = [...discoveredUrls];
+          updated[index] = { ...updated[index], title: data.title };
+          setDiscoveredUrls(updated);
+          toast.success(`제목을 가져왔습니다: ${data.title.substring(0, 30)}...`);
+        } else {
+          toast.error('제목을 찾을 수 없습니다.');
+        }
+      } else {
+        toast.error('제목 가져오기 실패');
+      }
+    } catch (error) {
+      console.error('제목 가져오기 오류:', error);
+      toast.error('제목 가져오기 중 오류 발생');
+    } finally {
+      setFetchingTitleUrls(prev => {
+        const next = new Set(prev);
+        next.delete(url);
+        return next;
+      });
+    }
+  };
+
+  // 제목이 없는 모든 URL의 제목 가져오기
+  const handleFetchAllMissingTitles = async () => {
+    const urlsWithoutTitle = discoveredUrls
+      .map((item, index) => ({ item, index }))
+      .filter(({ item }) => !item.title);
+    
+    if (urlsWithoutTitle.length === 0) {
+      toast.info('모든 URL에 제목이 있습니다.');
+      return;
+    }
+    
+    toast.info(`${urlsWithoutTitle.length}개 URL의 제목을 가져오는 중...`);
+    
+    // 병렬로 최대 5개씩 처리
+    const batchSize = 5;
+    for (let i = 0; i < urlsWithoutTitle.length; i += batchSize) {
+      const batch = urlsWithoutTitle.slice(i, i + batchSize);
+      await Promise.all(batch.map(({ item, index }) => handleFetchTitle(index, item.url)));
+    }
+    
+    toast.success('제목 가져오기 완료');
+  };
+
   const handleSelectAllExcludingCollected = () => {
     const newSelected = new Set<string>();
     discoveredUrls.forEach(item => {
@@ -1201,6 +1263,22 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                 <Button
                   variant="ghost"
                   size="sm"
+                  onClick={handleFetchAllMissingTitles}
+                  disabled={fetchingTitleUrls.size > 0}
+                  className="text-xs h-8 text-blue-400 hover:text-blue-300"
+                >
+                  {fetchingTitleUrls.size > 0 ? (
+                    <>
+                      <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+                      제목 가져오는 중...
+                    </>
+                  ) : (
+                    '제목 없는 URL 제목 가져오기'
+                  )}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
                   onClick={handleSelectAllExcludingCollected}
                   className="text-xs h-8"
                 >
@@ -1304,6 +1382,25 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                             ) : (
                               <>
                                 <span className="truncate max-w-full">{item.title || '제목 없음'}</span>
+                                {!item.title && (
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-5 px-1.5 text-[10px] text-blue-400 hover:text-blue-300 hover:bg-blue-500/10"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleFetchTitle(i, item.url);
+                                    }}
+                                    disabled={fetchingTitleUrls.has(item.url)}
+                                    title="페이지에서 제목 가져오기"
+                                  >
+                                    {fetchingTitleUrls.has(item.url) ? (
+                                      <Loader2 className="h-3 w-3 animate-spin" />
+                                    ) : (
+                                      '제목 가져오기'
+                                    )}
+                                  </Button>
+                                )}
                                 <Button
                                   size="sm"
                                   variant="ghost"
