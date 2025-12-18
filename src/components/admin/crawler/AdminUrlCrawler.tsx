@@ -1253,36 +1253,36 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
             </DialogDescription>
           </DialogHeader>
 
-          <div className="py-4">
-            <div className="flex justify-between items-center mb-4">
-              <div>
+          <div className="py-4 overflow-hidden">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-4">
+              <div className="flex-shrink-0">
                 <span className="text-blue-400 font-bold">{selectedDiscoveredUrls.size}</span>
                 <span className="text-gray-500 text-sm ml-1">개 선택됨</span>
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-1 sm:gap-2">
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={handleFetchAllMissingTitles}
                   disabled={fetchingTitleUrls.size > 0}
-                  className="text-xs h-8 text-blue-400 hover:text-blue-300"
+                  className="text-[10px] sm:text-xs h-7 sm:h-8 px-2 text-blue-400 hover:text-blue-300"
                 >
                   {fetchingTitleUrls.size > 0 ? (
                     <>
                       <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                      제목 가져오는 중...
+                      가져오는 중...
                     </>
                   ) : (
-                    '제목 없는 URL 제목 가져오기'
+                    '제목 가져오기'
                   )}
                 </Button>
                 <Button
                   variant="ghost"
                   size="sm"
                   onClick={handleSelectAllExcludingCollected}
-                  className="text-xs h-8"
+                  className="text-[10px] sm:text-xs h-7 sm:h-8 px-2"
                 >
-                  수집 제외 전체 선택
+                  미수집 선택
                 </Button>
                 <Button
                   variant="ghost"
@@ -1291,9 +1291,9 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                     if (selectedDiscoveredUrls.size === discoveredUrls.length) setSelectedDiscoveredUrls(new Set());
                     else setSelectedDiscoveredUrls(new Set(discoveredUrls.map(d => d.url)));
                   }}
-                  className="text-xs h-8"
+                  className="text-[10px] sm:text-xs h-7 sm:h-8 px-2"
                 >
-                  {selectedDiscoveredUrls.size === discoveredUrls.length ? "전체 해제" : "전체 선택"}
+                  {selectedDiscoveredUrls.size === discoveredUrls.length ? "해제" : "전체"}
                 </Button>
               </div>
             </div>
@@ -1335,9 +1335,9 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                         disabled={isAlreadyCrawled}
                         className="mt-1 flex-shrink-0 border-gray-600 data-[state=checked]:border-blue-500"
                       />
-                      <div className="flex-1 min-w-0 pr-3">
+                      <div className="flex-1 min-w-0 overflow-hidden">
                         <label htmlFor={`url-${i}`} className="cursor-pointer block">
-                          <div className="text-sm font-medium text-gray-200 mb-1 flex items-center gap-2 flex-wrap">
+                          <div className="text-sm font-medium text-gray-200 mb-1 flex items-center gap-1 sm:gap-2 flex-nowrap overflow-hidden">
                             {editingTitleIndex === i ? (
                               <div className="flex items-center gap-2 flex-1 min-w-0">
                                 <Input
@@ -1381,12 +1381,12 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                               </div>
                             ) : (
                               <>
-                                <span className="truncate max-w-full">{item.title || '제목 없음'}</span>
+                                <span className="truncate flex-1 min-w-0" title={item.title}>{item.title || '제목 없음'}</span>
                                 {!item.title && (
                                   <Button
                                     size="sm"
                                     variant="ghost"
-                                    className="h-5 px-1.5 text-[10px] text-blue-400 hover:text-blue-300 hover:bg-blue-500/10"
+                                    className="h-5 px-1 text-[9px] text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 flex-shrink-0"
                                     onClick={(e) => {
                                       e.stopPropagation();
                                       handleFetchTitle(i, item.url);
@@ -1397,14 +1397,14 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                                     {fetchingTitleUrls.has(item.url) ? (
                                       <Loader2 className="h-3 w-3 animate-spin" />
                                     ) : (
-                                      '제목 가져오기'
+                                      '가져오기'
                                     )}
                                   </Button>
                                 )}
                                 <Button
                                   size="sm"
                                   variant="ghost"
-                                  className="h-5 w-5 p-0 text-gray-500 hover:text-gray-300 hover:bg-gray-700/50 opacity-0 group-hover:opacity-100 transition-opacity"
+                                  className="h-5 w-5 p-0 text-gray-500 hover:text-gray-300 hover:bg-gray-700/50 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     handleStartEditTitle(i, item.title || '');
@@ -1414,7 +1414,7 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                                   <Pencil className="h-3 w-3" />
                                 </Button>
                                 {isAlreadyCrawled && (
-                                  <Badge variant="outline" className="text-[10px] h-4 text-green-500 border-green-900 bg-green-500/10 flex-shrink-0">
+                                  <Badge variant="outline" className="text-[9px] h-4 text-green-500 border-green-900 bg-green-500/10 flex-shrink-0">
                                     수집됨
                                   </Badge>
                                 )}
