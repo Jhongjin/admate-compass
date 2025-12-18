@@ -796,9 +796,26 @@ export class UrlDiscovery {
                     text = link.querySelector('img')?.getAttribute('alt') || '';
                   }
                   
+                  // 일반적인 링크 텍스트는 제목으로 사용하지 않음
+                  const genericLinkTexts = [
+                    'read more', 'more', 'learn more', 'see more', 'view more',
+                    'click here', 'here', 'link', 'details', 'view details',
+                    '더 보기', '자세히 보기', '자세히', '보기', '더보기',
+                    '바로가기', '바로 가기', '클릭', '링크', '상세보기',
+                    '続きを読む', '詳細', 'もっと見る',
+                    '→', '>', '>>', '...', '»'
+                  ];
+                  const normalizedText = text.toLowerCase().trim();
+                  const isGenericText = genericLinkTexts.some(gt => 
+                    normalizedText === gt || 
+                    normalizedText === gt.replace(/\s+/g, '') ||
+                    normalizedText.startsWith(gt + ' ') ||
+                    normalizedText.endsWith(' ' + gt)
+                  );
+                  
                   extractedLinks.push({
                     url: fullUrl,
-                    text: text.replace(/\s+/g, ' ').trim(),
+                    text: isGenericText ? '' : text.replace(/\s+/g, ' ').trim(),
                   });
                 }
               } catch (e) {
