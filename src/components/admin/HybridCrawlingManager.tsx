@@ -165,7 +165,8 @@ export default function HybridCrawlingManager({
     maxDepth: '2',
     forceCrawl: false, // robots.txt 무시
     deepCrawlTimeout: false, // 30분 타임아웃 (기본 15분)
-    retryOn429: true // 429 에러 재시도
+    retryOn429: true, // 429 에러 재시도
+    useCrawlerV2: false // 크롤러 V2 사용 여부
   });
 
   const clampDepthValue = (value: string | number) => {
@@ -820,8 +821,12 @@ export default function HybridCrawlingManager({
     // 프로그레스바가 즉시 렌더링되도록 강제 업데이트
     await new Promise(resolve => setTimeout(resolve, 100));
 
-    // 크롤링 로직 실행
-    executeCrawling();
+    // 크롤러 V2 사용 여부에 따라 분기
+    if (crawlOptions.useCrawlerV2) {
+      executeCrawlingV2(urlsToCrawl, maxDepthValue);
+    } else {
+      executeCrawling();
+    }
 
     async function executeCrawling() {
       try {
@@ -939,6 +944,151 @@ export default function HybridCrawlingManager({
       }
     }
   };
+
+  // 크롤러 V2를 사용한 크롤링 실행
+  async function executeCrawlingV2(urlsToCrawl: string[], maxDepthValue: number) {
+    const dbVendor = vendors.length > 0 ? VENDOR_TO_DB_MAP[vendors[0]] || 'META' : 'META';
+
+    try {
+      toast.info('🚀 크롤러 V2로 크롤링을 시작합니다.');
+
+      const response = await fetch('/api/crawler-v2/crawl', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          urls: urlsToCrawl,
+          options: {
+            discoverSubPages: extractSubPages,
+            maxDepth: maxDepthValue,
+            maxUrls: 100,
+            respectRobots: crawlOptions.forceCrawl ? false : crawlOptions.respectRobots,
+            domainLimit: crawlOptions.domainLimit,
+            timeout: crawlOptions.deepCrawlTimeout ? 60000 : 30000,
+            waitTime: 1000,
+          },
+        }),
+      });
+
+      if (!response.body) {
+        throw new Error('응답 스트림이 없습니다.');
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const data = JSON.parse(line);
+
+            if (data.type === 'progress') {
+              // 진행률 업데이트
+              const currentUrl = data.currentUrl || '';
+              setCrawlingProgress(prev =>
+                prev.map(p => {
+                  if (p.url === currentUrl) {
+                    return { ...p, status: 'crawling', message: data.message || '처리 중...' };
+                  }
+                  return p;
+                })
+              );
+            } else if (data.type === 'batch_progress' && data.result) {
+              // 개별 URL 완료
+              const result = data.result;
+              setCrawlingProgress(prev =>
+                prev.map(p => {
+                  if (p.url === result.url) {
+                    return {
+                      ...p,
+                      status: result.status === 'success' ? 'completed' : 'failed',
+                      message: result.status === 'success'
+                        ? `${result.contentLength}자 추출 완료`
+                        : result.error || '크롤링 실패',
+                      discoveredUrls: result.discoveredUrls,
+                    };
+                  }
+                  return p;
+                })
+              );
+
+              // 성공한 결과를 DB에 저장
+              if (result.status === 'success' && result.content) {
+                try {
+                  await saveV2ResultToDatabase(result, dbVendor);
+                } catch (saveError) {
+                  console.error('DB 저장 실패:', saveError);
+                }
+              }
+            } else if (data.type === 'done') {
+              toast.success(`크롤링 완료: 성공 ${data.summary?.success || 0}개, 실패 ${data.summary?.failed || 0}개`);
+
+              // 완료 후 문서 목록 갱신
+              queryClient.invalidateQueries({ queryKey: ['documents'] });
+              onCrawlingComplete?.();
+            } else if (data.type === 'error') {
+              toast.error(data.error || '크롤링 실패');
+            }
+          } catch {
+            // JSON 파싱 실패 무시
+          }
+        }
+      }
+    } catch (error) {
+      console.error('❌ 크롤러 V2 오류:', error);
+      toast.error(error instanceof Error ? error.message : '크롤링 중 오류가 발생했습니다.');
+      setCrawlingProgress(prev =>
+        prev.map(p => p.status === 'pending' || p.status === 'crawling'
+          ? { ...p, status: 'failed', message: '크롤링 실패' }
+          : p
+        )
+      );
+    } finally {
+      setIsCrawling(false);
+    }
+  }
+
+  // V2 크롤링 결과를 DB에 저장
+  async function saveV2ResultToDatabase(result: any, vendor: string) {
+    const { data: existingDoc } = await supabase
+      .from('documents')
+      .select('id')
+      .eq('url', result.url)
+      .single();
+
+    if (existingDoc) {
+      // 기존 문서 업데이트
+      await supabase
+        .from('documents')
+        .update({
+          title: result.title,
+          content: result.content,
+          status: 'indexed',
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', existingDoc.id);
+    } else {
+      // 새 문서 생성
+      await supabase
+        .from('documents')
+        .insert({
+          title: result.title,
+          url: result.url,
+          content: result.content,
+          source_type: 'url',
+          source_vendor: vendor,
+          status: 'indexed',
+        });
+    }
+  }
 
   // 크롤링 취소 핸들러
   const handleResetCrawling = async () => {
@@ -2449,6 +2599,16 @@ export default function HybridCrawlingManager({
           />
           <Label htmlFor="retryOn429" className="text-gray-300 cursor-pointer">
             429 에러 자동 재시도
+          </Label>
+        </div>
+        <div className="flex items-center space-x-2 pt-2">
+          <Checkbox
+            id="useCrawlerV2"
+            checked={crawlOptions.useCrawlerV2}
+            onCheckedChange={(checked) => setCrawlOptions(prev => ({ ...prev, useCrawlerV2: !!checked }))}
+          />
+          <Label htmlFor="useCrawlerV2" className="text-gray-300 cursor-pointer">
+            🚀 크롤러 V2 사용 (개선된 성능)
           </Label>
         </div>
       </div>

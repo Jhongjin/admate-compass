@@ -136,9 +136,10 @@ curl -X POST http://localhost:3000/api/crawler-v2/crawl \
 - [x] API 엔드포인트 (`/api/crawler-v2/crawl`)
 - [x] 테스트 페이지 (`/test/crawler-v2`) - 스트리밍 응답 처리 수정 완료
 
-### Phase 2: 점진적 마이그레이션 ⏳ 진행 예정
-- [ ] 기존 HybridCrawlingManager와 V2 통합
-- [ ] 관리자 페이지에서 V2 크롤러 사용 옵션 추가
+### Phase 2: 점진적 마이그레이션 ✅ 완료
+- [x] 기존 HybridCrawlingManager와 V2 통합
+- [x] 관리자 페이지에서 V2 크롤러 사용 옵션 추가 ("🚀 크롤러 V2 사용" 체크박스)
+- [x] V2 크롤링 결과 DB 자동 저장
 
 ### Phase 3: 완전 전환 ⏳ 대기
 - [ ] 모든 크롤링 기능 V2로 전환
