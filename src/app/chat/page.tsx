@@ -62,12 +62,12 @@ interface Theme {
 const themes: Record<string, Theme> = {
   dark: {
     name: "Dark",
-    bgMain: "#202124",
-    bgSidebar: "#1a1d21",
-    bgInput: "#1a1d21",
-    border: "#3c4043",
+    bgMain: "#0B0F17", // gemini_theme 메인 배경
+    bgSidebar: "#0B0F17", // gemini_theme 메인 배경
+    bgInput: "#131823", // gemini_theme 카드 배경
+    border: "rgba(255, 255, 255, 0.1)", // gemini_theme 보더 스타일
     textPrimary: "#ffffff",
-    textSecondary: "#9aa0a6",
+    textSecondary: "rgba(255, 255, 255, 0.6)", // gemini_theme 텍스트 스타일
     accent: "#4285f4",
   },
   light: {
@@ -166,9 +166,9 @@ function GmailStyleLayout() {
     [messages]
   );
 
-  const DEFAULT_PANEL_BG = "rgb(11, 15, 23)";
-  const MAIN_PANEL_BG = "rgb(26, 29, 33)";
-  const RIGHT_PANEL_BG = "rgb(248, 249, 252)";
+  const DEFAULT_PANEL_BG = "#0B0F17"; // gemini_theme 메인 배경
+  const MAIN_PANEL_BG = "#131823"; // gemini_theme 카드 배경
+  const RIGHT_PANEL_BG = "#131823"; // gemini_theme와 통일
 
   // 테마 적용
   useEffect(() => {
@@ -1075,14 +1075,21 @@ function GmailStyleLayout() {
   }
 
   return (
-    <div className="h-screen flex overflow-hidden" style={{ backgroundColor: theme.bgMain, color: theme.textPrimary }}>
+    <div className="h-screen flex overflow-hidden relative" style={{ backgroundColor: theme.bgMain, color: theme.textPrimary }}>
+      {/* Background Effects - gemini_theme 스타일 */}
+      <div className="fixed inset-0 z-0 pointer-events-none">
+        <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-blue-600/20 rounded-full blur-[120px] animate-pulse" />
+        <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-purple-600/20 rounded-full blur-[120px] animate-pulse" style={{ animationDelay: '1s' }} />
+        <div className="absolute top-[20%] right-[20%] w-[20%] h-[20%] bg-cyan-500/10 rounded-full blur-[80px]" />
+      </div>
+
       {/* 좌측 사이드바 */}
       <motion.aside
         initial={false}
         animate={{ width: isLeftPanelCollapsed ? 64 : 256 }}
         transition={sidebarTransition}
         className="border-r relative flex flex-col overflow-hidden"
-        style={{ backgroundColor: DEFAULT_PANEL_BG, borderColor: theme.border }}
+        style={{ backgroundColor: DEFAULT_PANEL_BG, borderColor: 'rgba(255, 255, 255, 0.1)' }}
       >
         <AnimatePresence mode="wait" initial={false}>
           {isLeftPanelCollapsed ? (
@@ -1163,7 +1170,7 @@ function GmailStyleLayout() {
               exit="hidden"
               variants={sidebarContentVariants}
             >
-              <div className="p-4 border-b flex items-center justify-between" style={{ borderColor: theme.border }}>
+              <div className="p-4 border-b flex items-center justify-between" style={{ borderColor: 'rgba(255, 255, 255, 0.1)' }}>
                 <div>
                   <p className="text-xs font-medium uppercase tracking-wide" style={{ color: theme.textSecondary }}>
                     대화 목록
@@ -1200,7 +1207,7 @@ function GmailStyleLayout() {
                     </div>
                   </button>
 
-                  <Separator className="my-2" style={{ backgroundColor: theme.border }} />
+                  <Separator className="my-2" style={{ backgroundColor: 'rgba(255, 255, 255, 0.1)' }} />
 
                   <button
                     onClick={() => setSelectedMenu("history")}
@@ -1245,7 +1252,7 @@ function GmailStyleLayout() {
                     <div 
                       className="flex-1 overflow-hidden rounded-lg border"
                       style={{ 
-                        borderColor: `${theme.border}80`,
+                        borderColor: 'rgba(255, 255, 255, 0.1)',
                         boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.02)',
                         minHeight: 0
                       }}
@@ -1331,16 +1338,19 @@ function GmailStyleLayout() {
 
       {/* 중간 영역 - 메인 콘텐츠 */}
       <div
-        className="flex-1 flex flex-col rounded-lg overflow-hidden shadow-sm"
+        className="flex-1 flex flex-col rounded-lg overflow-hidden shadow-sm relative"
         style={{
           margin: '12px',
           marginRight: rightPanelOpen ? '6px' : '12px',
           backgroundColor: MAIN_PANEL_BG,
-          border: `1px solid ${theme.border}40`,
+          border: '1px solid rgba(255, 255, 255, 0.1)',
         }}
       >
+        {/* 그라데이션 오버레이 - gemini_theme 스타일 */}
+        <div className="absolute inset-0 bg-gradient-to-br from-blue-900/20 via-transparent to-purple-900/20 pointer-events-none rounded-lg" />
+        
         {/* 상단 바 - 실제 메인 페이지 헤더 스타일 */}
-        <div className="h-16 border-b flex items-center justify-between px-4" style={{ backgroundColor: 'rgba(0, 0, 0, 0.2)', backdropFilter: 'blur(12px)', borderColor: 'rgba(255, 255, 255, 0.1)' }}>
+        <div className="h-16 border-b flex items-center justify-between px-4 relative z-10" style={{ backgroundColor: 'rgba(19, 24, 35, 0.8)', backdropFilter: 'blur(12px)', borderColor: 'rgba(255, 255, 255, 0.1)' }}>
           <div className="flex items-center gap-4">
             {/* AdMate 로고 */}
             <Link href="/" className="block">
@@ -1384,7 +1394,7 @@ function GmailStyleLayout() {
         </div>
 
         {/* 상단 안내 텍스트 */}
-        <div className="px-6 py-4 border-b" style={{ backgroundColor: theme.bgMain, borderColor: theme.border }}>
+        <div className="px-6 py-4 border-b relative z-10" style={{ backgroundColor: 'transparent', borderColor: 'rgba(255, 255, 255, 0.1)' }}>
           <div className="max-w-4xl mx-auto">
             <h2 className="text-lg font-semibold mb-2" style={{ color: theme.textPrimary }}>
               멀티 광고 플랫폼 AI Agent
@@ -1396,7 +1406,7 @@ function GmailStyleLayout() {
         </div>
 
         {/* 메시지 리스트 영역 */}
-        <div className="flex-1 overflow-y-auto" style={{ minHeight: 0 }}>
+        <div className="flex-1 overflow-y-auto relative z-10" style={{ minHeight: 0 }}>
           <div className={`max-w-4xl mx-auto px-6 py-4 ${messageSpacing}`}>
             {sortedMessages().map((message) => (
               <div
@@ -1404,12 +1414,12 @@ function GmailStyleLayout() {
                 className={`flex gap-4 p-4 rounded-lg hover:bg-opacity-50 transition-colors ${
                   message.type === "user" ? "justify-end" : "justify-start"
                 }`}
-                style={{ backgroundColor: message.type === "assistant" ? `${DEFAULT_PANEL_BG}CC` : 'transparent' }}
+                style={{ backgroundColor: 'transparent' }}
               >
                 {message.type === "assistant" && (
                   <div 
                     className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0"
-                    style={{ backgroundColor: theme.accent }}
+                    style={{ background: 'linear-gradient(135deg, #4285f4, #9c27b0)' }}
                   >
                     <Bot className="w-6 h-6 text-white" />
                   </div>
@@ -1421,10 +1431,10 @@ function GmailStyleLayout() {
                       : "border"
                   }`}
                   style={message.type === "user" 
-                    ? { backgroundColor: theme.accent }
+                    ? { background: 'linear-gradient(135deg, #4285f4, #9c27b0)' }
                     : { 
-                        backgroundColor: DEFAULT_PANEL_BG, 
-                        borderColor: theme.border,
+                        backgroundColor: 'rgba(19, 24, 35, 0.6)', 
+                        borderColor: 'rgba(255, 255, 255, 0.1)',
                         color: theme.textPrimary
                       }}
                 >
@@ -1453,7 +1463,7 @@ function GmailStyleLayout() {
                     </ReactMarkdown>
                   </div>
                   {message.sources && message.sources.length > 0 && (
-                    <div className="mt-3 pt-3 border-t" style={{ borderColor: theme.border }}>
+                    <div className="mt-3 pt-3 border-t" style={{ borderColor: 'rgba(255, 255, 255, 0.1)' }}>
                       <p className="text-xs font-semibold mb-2" style={{ color: theme.textSecondary }}>출처</p>
                       <div className="space-y-1">
                         {message.sources.map((source) => (
@@ -1589,13 +1599,13 @@ function GmailStyleLayout() {
               <div className="flex gap-4 justify-start">
                 <div 
                   className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0"
-                  style={{ backgroundColor: theme.accent }}
+                  style={{ background: 'linear-gradient(135deg, #4285f4, #9c27b0)' }}
                 >
                   <Bot className="w-6 h-6 text-white" />
                 </div>
                 <div 
                   className="rounded-xl px-4 py-3 border"
-                  style={{ backgroundColor: DEFAULT_PANEL_BG, borderColor: theme.border }}
+                  style={{ backgroundColor: 'rgba(19, 24, 35, 0.6)', borderColor: 'rgba(255, 255, 255, 0.1)' }}
                 >
                   <div className="flex items-center gap-2">
                     <div className="animate-spin rounded-full h-4 w-4 border-b-2" style={{ borderColor: theme.accent }}></div>
@@ -1609,7 +1619,7 @@ function GmailStyleLayout() {
         </div>
 
         {/* 입력 영역 */}
-        <div className="border-t px-6 py-4" style={{ backgroundColor: DEFAULT_PANEL_BG, borderColor: theme.border }}>
+        <div className="border-t px-6 py-4 relative z-10" style={{ backgroundColor: 'rgba(19, 24, 35, 0.8)', backdropFilter: 'blur(12px)', borderColor: 'rgba(255, 255, 255, 0.1)' }}>
           <div className="max-w-4xl mx-auto">
             <div className="flex items-end gap-3">
               <Textarea
@@ -1625,18 +1635,18 @@ function GmailStyleLayout() {
                 placeholder={user ? "메시지를 입력하세요..." : "로그인이 필요합니다..."}
                 className="flex-1 min-h-[60px] max-h-[120px] resize-none"
                 style={{ 
-                  backgroundColor: theme.bgInput, 
-                  borderColor: theme.border,
+                  backgroundColor: 'rgba(19, 24, 35, 0.6)', 
+                  borderColor: 'rgba(255, 255, 255, 0.1)',
                   color: theme.textPrimary 
                 }}
                 rows={1}
                 disabled={isLoading}
               />
               <Button 
-                className="px-6 h-[60px]"
+                className="px-6 h-[60px] rounded-xl"
                 onClick={handleSendMessage}
                 disabled={isLoading || !inputValue.trim()}
-                style={{ backgroundColor: theme.accent }}
+                style={{ background: 'linear-gradient(135deg, #4285f4, #9c27b0)' }}
               >
                 <Send className="w-5 h-5" />
               </Button>
@@ -1654,8 +1664,11 @@ function GmailStyleLayout() {
             exit={{ width: 0, opacity: 0 }}
             transition={{ duration: isDragging ? 0 : 0.2 }}
             className="flex flex-col border-l overflow-hidden relative rounded-lg shadow-sm"
-            style={{ backgroundColor: RIGHT_PANEL_BG, borderColor: '#dadce0', margin: '12px', marginLeft: '6px' }}
+            style={{ backgroundColor: RIGHT_PANEL_BG, borderColor: 'rgba(255, 255, 255, 0.1)', margin: '12px', marginLeft: '6px' }}
           >
+            {/* 그라데이션 오버레이 */}
+            <div className="absolute inset-0 bg-gradient-to-br from-blue-900/20 via-transparent to-purple-900/20 pointer-events-none rounded-lg" />
+            
             {/* 드래그 핸들 */}
             <div
               onMouseDown={handleRightPanelResize}
@@ -1667,23 +1680,23 @@ function GmailStyleLayout() {
               <div 
                 className="absolute left-0 top-0 bottom-0 w-1 group-hover:w-1.5 transition-all"
                 style={{ 
-                  backgroundColor: isDragging ? theme.accent : '#dadce0',
+                  backgroundColor: isDragging ? theme.accent : 'rgba(255, 255, 255, 0.2)',
                   opacity: isDragging ? 1 : 0.5
                 }}
               />
             </div>
 
-            <div className="p-4 border-b flex items-center justify-between" style={{ borderColor: '#dadce0' }}>
+            <div className="p-4 border-b flex items-center justify-between relative z-10" style={{ borderColor: 'rgba(255, 255, 255, 0.1)' }}>
               <div className="flex items-center gap-3">
                 <div 
                   className="w-10 h-10 rounded-lg flex items-center justify-center"
-                  style={{ backgroundColor: theme.accent }}
+                  style={{ background: 'linear-gradient(135deg, #4285f4, #9c27b0)' }}
                 >
                   <BookOpen className="w-5 h-5 text-white" />
                 </div>
                 <div>
-                  <h3 className="font-semibold" style={{ color: '#111827' }}>관련 자료</h3>
-                  <p className="text-xs" style={{ color: '#4b5563' }}>질문과 관련된 문서와 가이드라인</p>
+                  <h3 className="font-semibold" style={{ color: theme.textPrimary }}>관련 자료</h3>
+                  <p className="text-xs" style={{ color: theme.textSecondary }}>질문과 관련된 문서와 가이드라인</p>
                 </div>
               </div>
               <Button
@@ -1697,15 +1710,15 @@ function GmailStyleLayout() {
             </div>
 
             <div 
-              className="flex-1 overflow-y-auto p-4 space-y-6 text-sm leading-relaxed [&_*]:text-sm [&_*]:leading-relaxed"
+              className="flex-1 overflow-y-auto p-4 space-y-6 text-sm leading-relaxed [&_*]:text-sm [&_*]:leading-relaxed relative z-10"
               style={{
-                backgroundColor: 'rgb(204,204,204)',
+                backgroundColor: 'transparent',
                 // CSS 변수로 테마 색상 전달
                 ['--theme-bg-main' as any]: theme.bgMain,
                 ['--theme-bg-sidebar' as any]: theme.bgSidebar,
-                ['--theme-border' as any]: '#b5b5b5',
-                ['--theme-text-primary' as any]: '#1a1a1a',
-                ['--theme-text-secondary' as any]: '#333333',
+                ['--theme-border' as any]: 'rgba(255, 255, 255, 0.1)',
+                ['--theme-text-primary' as any]: theme.textPrimary,
+                ['--theme-text-secondary' as any]: theme.textSecondary,
                 ['--theme-accent' as any]: theme.accent,
               }}
             >
@@ -1742,8 +1755,8 @@ function GmailStyleLayout() {
                       <div className="w-2 h-2 rounded-full animate-bounce" style={{ backgroundColor: theme.accent, animationDelay: "0.2s" }}></div>
                     </div>
                   </div>
-                  <h3 className="text-xl font-semibold mb-3" style={{ color: '#202124' }}>AI가 답변을 생성 중입니다</h3>
-                  <p className="text-sm max-w-sm leading-relaxed" style={{ color: '#333333' }}>
+                  <h3 className="text-xl font-semibold mb-3" style={{ color: theme.textPrimary }}>AI가 답변을 생성 중입니다</h3>
+                  <p className="text-sm max-w-sm leading-relaxed" style={{ color: theme.textSecondary }}>
                     답변이 완료되면 관련 자료와 핵심 요약이 여기에 표시됩니다.
                   </p>
                 </div>
@@ -1752,8 +1765,8 @@ function GmailStyleLayout() {
                   <div className="w-20 h-20 rounded-full flex items-center justify-center mb-6" style={{ backgroundColor: `${theme.accent}20` }}>
                     <BookOpen className="w-10 h-10" style={{ color: theme.accent }} />
                   </div>
-                  <h3 className="text-xl font-semibold mb-3" style={{ color: '#1a1a1a' }}>질문을 시작해보세요</h3>
-                  <p className="text-sm max-w-sm leading-relaxed" style={{ color: '#333333' }}>
+                  <h3 className="text-xl font-semibold mb-3" style={{ color: theme.textPrimary }}>질문을 시작해보세요</h3>
+                  <p className="text-sm max-w-sm leading-relaxed" style={{ color: theme.textSecondary }}>
                     멀티 플랫폼 광고 정책, 타겟팅, 예산 설정 등에 대해 궁금한 점이 있으시면 
                     좌측 채팅창에서 질문해주세요. 관련 자료와 유사한 질문들이 
                     여기에 표시됩니다.
@@ -1784,7 +1797,7 @@ function GmailStyleLayout() {
         <Sheet open={isMobileLeftOpen} onOpenChange={setIsMobileLeftOpen}>
           <SheetContent side="left" className="w-[280px] sm:w-[320px] p-0">
             <div className="h-full flex flex-col" style={{ backgroundColor: DEFAULT_PANEL_BG }}>
-              <div className="p-4 border-b flex items-center justify-between" style={{ borderColor: theme.border }}>
+              <div className="p-4 border-b flex items-center justify-between" style={{ borderColor: 'rgba(255, 255, 255, 0.1)' }}>
                 <div>
                   <p className="text-xs font-medium uppercase tracking-wide" style={{ color: theme.textSecondary }}>
                     대화 목록
@@ -1851,10 +1864,10 @@ function GmailStyleLayout() {
         <Sheet open={isMobileRightOpen} onOpenChange={setIsMobileRightOpen}>
           <SheetContent side="right" className="w-[90vw] sm:w-[400px] p-0">
             <div className="h-full flex flex-col" style={{ backgroundColor: RIGHT_PANEL_BG }}>
-              <div className="p-4 border-b flex items-center justify-between" style={{ borderColor: '#dadce0' }}>
+              <div className="p-4 border-b flex items-center justify-between" style={{ borderColor: 'rgba(255, 255, 255, 0.1)', backgroundColor: RIGHT_PANEL_BG }}>
                 <div>
-                  <h3 className="text-lg font-semibold" style={{ color: '#111827' }}>관련 자료</h3>
-                  <p className="text-sm" style={{ color: '#4b5563' }}>질문과 관련된 문서와 가이드라인</p>
+                  <h3 className="text-lg font-semibold" style={{ color: theme.textPrimary }}>관련 자료</h3>
+                  <p className="text-sm" style={{ color: theme.textSecondary }}>질문과 관련된 문서와 가이드라인</p>
                 </div>
                 <Button
                   variant="ghost"
