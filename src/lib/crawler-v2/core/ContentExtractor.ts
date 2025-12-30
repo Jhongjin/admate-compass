@@ -202,6 +202,45 @@ export class ContentExtractor {
         // Naver Ads FAQ 페이지 특화 제목 추출
         const isNaverAdsFAQ = window.location.href.includes('ads.naver.com/help/faq/');
         if (isNaverAdsFAQ) {
+          // 0. title 태그 우선 확인 (FAQ 페이지는 title 태그에 실제 제목이 있을 수 있음)
+          const titleElement = document.querySelector('title');
+          if (titleElement) {
+            let titleText = titleElement.textContent?.trim() || '';
+            // title 태그에서 불필요한 접미사 제거
+            titleText = titleText
+              .replace(/\s*[-|]\s*.*$/, '')
+              .replace(/\s*::\s*.*$/, '')
+              .trim();
+            
+            // "광고주센터", "NAVER" 같은 일반적인 접미사 제거
+            const commonSuffixes = [
+              /광고주센터.*$/i,
+              /advertiser\s*center.*$/i,
+              /naver.*$/i,
+              /네이버.*$/i
+            ];
+            for (const suffix of commonSuffixes) {
+              titleText = titleText.replace(suffix, '').trim();
+            }
+            
+            // UI 텍스트가 아닌 경우 반환
+            if (titleText && titleText.length >= 3 && titleText.length <= 150 &&
+                !titleText.includes('카테고리') && !titleText.includes('닫기') &&
+                !titleText.includes('광고주센터') && !titleText.includes('도움말')) {
+              return titleText;
+            }
+          }
+
+          // 0-1. og:title 메타 태그 확인
+          const ogTitle = document.querySelector('meta[property="og:title"]');
+          if (ogTitle) {
+            const ogTitleText = ogTitle.getAttribute('content')?.trim() || '';
+            if (ogTitleText && ogTitleText.length >= 3 && ogTitleText.length <= 150 &&
+                !ogTitleText.includes('카테고리') && !ogTitleText.includes('닫기') &&
+                !ogTitleText.includes('광고주센터') && !ogTitleText.includes('도움말')) {
+              return ogTitleText;
+            }
+          }
           // FAQ 페이지의 실제 제목을 찾기 위한 특화 로직
           // 공통 텍스트 필터링 함수
           const isCommonText = (text: string): boolean => {
@@ -217,9 +256,70 @@ export class ContentExtractor {
             return commonTexts.includes(text) || text.includes('실전에 통하는');
           };
 
+          // UI/네비게이션 요소인지 확인하는 함수
+          const isUIElement = (el: Element): boolean => {
+            // 태그명 확인
+            const tagName = el.tagName?.toLowerCase() || '';
+            if (['nav', 'header', 'footer', 'aside', 'button', 'a'].includes(tagName)) {
+              return true;
+            }
+
+            // role 속성 확인
+            const role = el.getAttribute('role');
+            if (role && ['navigation', 'button', 'menuitem', 'tab'].includes(role)) {
+              return true;
+            }
+
+            // 클래스명 확인
+            const className = el.className?.toLowerCase() || '';
+            const uiKeywords = ['nav', 'menu', 'category', 'button', 'close', 'toggle', 'dropdown', 'tab'];
+            if (uiKeywords.some(keyword => className.includes(keyword))) {
+              return true;
+            }
+
+            // ID 확인
+            const id = el.id?.toLowerCase() || '';
+            if (uiKeywords.some(keyword => id.includes(keyword))) {
+              return true;
+            }
+
+            // 텍스트 내용 확인 (UI 텍스트 패턴)
+            const text = el.textContent?.trim() || '';
+            const uiTextPatterns = ['카테고리', '닫기', '열기', '메뉴', 'category', 'close', 'open', 'menu'];
+            if (uiTextPatterns.some(pattern => text.includes(pattern) && text.length < 20)) {
+              return true;
+            }
+
+            // 부모 요소가 네비게이션인지 확인
+            let parent = el.parentElement;
+            let depth = 0;
+            while (parent && depth < 5) {
+              const parentTag = parent.tagName?.toLowerCase() || '';
+              const parentRole = parent.getAttribute('role');
+              const parentClass = parent.className?.toLowerCase() || '';
+              if (['nav', 'header', 'aside'].includes(parentTag) ||
+                  parentRole === 'navigation' ||
+                  ['nav', 'menu', 'navigation'].some(k => parentClass.includes(k))) {
+                return true;
+              }
+              parent = parent.parentElement;
+              depth++;
+            }
+
+            return false;
+          };
+
           // 1. 메인 콘텐츠 영역의 첫 번째 의미있는 제목 찾기
-          // 메인 콘텐츠 영역 내의 모든 제목 후보 수집
+          // 네비게이션/UI 요소를 제외한 메인 콘텐츠 영역 찾기
           const mainContent = document.querySelector('main, article, .content, .main-content, [role="main"]') || document.body;
+          
+          // 네비게이션 요소 제외
+          const navElements = document.querySelectorAll('nav, header, aside, [role="navigation"]');
+          const excludedSelectors = Array.from(navElements).map(el => {
+            // 각 네비게이션 요소의 모든 하위 요소 제외
+            return Array.from(el.querySelectorAll('*')).map(child => child);
+          }).flat();
+
           const allHeadings = Array.from(mainContent.querySelectorAll('h1, h2, h3, [class*="title"], [class*="question"], [role="heading"]'));
           
           // 제목 후보들을 Y 좌표 순으로 정렬 (페이지 상단부터)
@@ -230,7 +330,23 @@ export class ContentExtractor {
               return { element: el, text, y: rect.top };
             })
             .filter(item => {
+              // UI 요소 제외
+              if (isUIElement(item.element)) {
+                return false;
+              }
+
+              // 네비게이션 하위 요소 제외
+              if (excludedSelectors.includes(item.element)) {
+                return false;
+              }
+
               const text = item.text;
+              
+              // UI 텍스트 패턴 제외
+              if (text.includes('카테고리') || text.includes('닫기') || text.includes('열기')) {
+                return false;
+              }
+
               return text.length >= 3 && 
                      text.length <= 150 && 
                      !isCommonText(text) && 
@@ -245,36 +361,45 @@ export class ContentExtractor {
             return headingCandidates[0].text;
           }
 
-          // 2. 메인 콘텐츠 영역의 h1 우선
-          const mainH1 = mainContent.querySelector('h1');
-          if (mainH1) {
-            const text = mainH1.textContent?.trim() || '';
+          // 2. 메인 콘텐츠 영역의 h1 우선 (UI 요소 제외)
+          const mainH1Elements = Array.from(mainContent.querySelectorAll('h1'));
+          for (const h1 of mainH1Elements) {
+            if (isUIElement(h1)) continue;
+            
+            const text = h1.textContent?.trim() || '';
             if (text && text.length >= 3 && text.length <= 150 && 
-                !isCommonText(text) && !isFeedbackText(text)) {
+                !isCommonText(text) && !isFeedbackText(text) &&
+                !text.includes('카테고리') && !text.includes('닫기')) {
               return text;
             }
           }
 
-          // 3. 모든 h1 태그 확인 (공통 텍스트 제외)
+          // 3. 모든 h1 태그 확인 (UI 요소 제외)
           const h1Elements = Array.from(document.querySelectorAll('h1'));
           for (const h1 of h1Elements) {
+            if (isUIElement(h1)) continue;
+            
             const rect = h1.getBoundingClientRect();
             const text = h1.textContent?.trim() || '';
             if (text && text.length >= 3 && text.length <= 150 && 
                 rect.top >= 0 && rect.top <= 1000 &&
-                !isCommonText(text) && !isFeedbackText(text)) {
+                !isCommonText(text) && !isFeedbackText(text) &&
+                !text.includes('카테고리') && !text.includes('닫기')) {
               return text;
             }
           }
 
-          // 4. h2 태그 확인 (FAQ 제목이 h2에 있을 수 있음)
+          // 4. h2 태그 확인 (FAQ 제목이 h2에 있을 수 있음, UI 요소 제외)
           const h2Elements = Array.from(document.querySelectorAll('h2'));
           for (const h2 of h2Elements) {
+            if (isUIElement(h2)) continue;
+            
             const rect = h2.getBoundingClientRect();
             if (rect.top >= 0 && rect.top <= 1000) {
               const text = h2.textContent?.trim() || '';
               if (text && text.length >= 3 && text.length <= 150 && 
-                  !isCommonText(text) && !isFeedbackText(text)) {
+                  !isCommonText(text) && !isFeedbackText(text) &&
+                  !text.includes('카테고리') && !text.includes('닫기')) {
                 return text;
               }
             }
@@ -454,7 +579,19 @@ export class ContentExtractor {
         // "실전에 통하는" 같은 공통 문구가 포함된 경우 제외
         const hasCommonPhrase = lowerTitle.includes('실전에 통하는');
         
-        if (isGenericTitle || isFeedback || hasCommonPhrase) {
+        // UI/네비게이션 텍스트 제외
+        const isUIText = [
+          '카테고리',
+          '닫기',
+          '열기',
+          '메뉴',
+          'category',
+          'close',
+          'open',
+          'menu'
+        ].some(keyword => lowerTitle.includes(keyword));
+        
+        if (isGenericTitle || isFeedback || hasCommonPhrase || isUIText) {
           title = null;
         }
       }
