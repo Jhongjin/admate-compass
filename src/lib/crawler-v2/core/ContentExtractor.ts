@@ -409,7 +409,7 @@ export class ContentExtractor {
           if (candidates.length > 0) {
             const firstCandidate = candidates[0].text.trim();
             console.log(`⚠️ [FAQ 제목 추출] 필터링 실패, 첫 번째 후보 반환: "${firstCandidate}"`);
-            return firstCandidate;
+            return { type: 'faq', title: firstCandidate, score: candidates[0].score, source: candidates[0].source };
           }
           
           // Fallback 2: 페이지의 모든 텍스트 요소 중 첫 번째 의미있는 텍스트 찾기
@@ -433,7 +433,7 @@ export class ContentExtractor {
               
               // 첫 번째 유효한 텍스트 반환
               console.log(`✅ [FAQ 제목 추출] Fallback 성공: "${text.substring(0, 60)}"`);
-              return text;
+              return { type: 'faq', title: text, score: 50, source: 'fallback-text' };
             }
           }
           
