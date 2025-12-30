@@ -188,15 +188,6 @@ export class ContentExtractor {
           return feedbackKeywords.some(keyword => lowerText.includes(keyword));
         };
 
-        // Naver Ads FAQ 페이지 특화 제목 추출 (가장 먼저 실행)
-        const isNaverAdsFAQ = window.location.href.includes('ads.naver.com/help/faq/');
-        if (isNaverAdsFAQ) {
-          // FAQ 페이지는 특화 로직만 실행하고 일반 로직은 건너뜀
-          // (이미 위에서 FAQ 특화 로직이 실행되었지만, page.evaluate 내부에서도 확인)
-          // 여기서는 일반 로직을 건너뛰기 위해 null을 반환하고
-          // 실제 FAQ 특화 로직은 extractTitle 메서드의 앞부분에서 실행됨
-        }
-
         // 0. 페이지 상단 가장 큰 볼드체 텍스트 찾기 (h1/h2가 없을 때만 사용)
         const findLargestBoldText = (): string | null => {
           const allElements = Array.from(document.querySelectorAll('*'));
