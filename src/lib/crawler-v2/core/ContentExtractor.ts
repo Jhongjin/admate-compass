@@ -384,6 +384,35 @@ export class ContentExtractor {
             /^성공 전략$/
           ];
           
+          // 피드백/평가 관련 텍스트 필터링 함수 (FAQ 특화 로직용)
+          const isFeedbackText = (text: string): boolean => {
+            const lowerText = text.toLowerCase();
+            const feedbackKeywords = [
+              '위 도움말',
+              '도움이 되었나요',
+              '점 만점',
+              '별점',
+              '평가',
+              '피드백',
+              'was this help',
+              'helpful',
+              'rating',
+              'feedback',
+              '점수',
+              '만족도',
+              '의견',
+              '보내주셔서 감사합니다',
+              '의견 보내주셔서 감사합니다',
+              '위 내용으로 궁금한 점이 해결되지 않았나요',
+              '궁금한 점이 해결되지 않았나요',
+              '해결되지 않았나요',
+              '추가 문의',
+              '문의하기',
+              '질문이 남아있나요'
+            ];
+            return feedbackKeywords.some(keyword => lowerText.includes(keyword));
+          };
+          
           // 명시적으로 제외할 텍스트 목록
           const excludedTexts = [
             '도움말 카테고리',
@@ -391,7 +420,9 @@ export class ContentExtractor {
             '광고주센터',
             '네이버 광고주센터',
             '성공전략',
-            '성공 전략'
+            '성공 전략',
+            '의견 보내주셔서 감사합니다.',
+            '의견 보내주셔서 감사합니다'
           ];
           
           // URL에서 FAQ ID 추출
@@ -405,6 +436,12 @@ export class ContentExtractor {
             // 명시적으로 제외할 텍스트 체크 (가장 먼저)
             if (excludedTexts.some(excluded => text === excluded || text.includes(excluded))) {
               console.log(`  ❌ 필터링됨: "${text.substring(0, 50)}" (제외 텍스트 목록)`);
+              continue;
+            }
+            
+            // 피드백/평가 텍스트 제외
+            if (isFeedbackText(text)) {
+              console.log(`  ❌ 필터링됨: "${text.substring(0, 50)}" (피드백 텍스트)`);
               continue;
             }
             
