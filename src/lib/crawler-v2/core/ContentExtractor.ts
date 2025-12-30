@@ -168,9 +168,11 @@ export class ContentExtractor {
             // 너무 짧거나 길면 제외
             if (text.length < 3 || text.length > 150) continue;
             // 일반적인 사이트 제목 제외 (광고주센터, 도움말 등)
-            if (['광고주센터', '도움말', 'Help', 'Advertiser Center'].includes(text)) continue;
+            if (['광고주센터', '도움말', 'Help', 'Advertiser Center', '성공전략', '성공 전략'].includes(text)) continue;
             // 피드백/평가 텍스트 제외
             if (isFeedbackText(text)) continue;
+            // 숫자만 있는 제목 제외
+            if (/^\d+[\s\-_]*$/.test(text)) continue;
 
             const style = window.getComputedStyle(el);
             const fontSize = parseFloat(style.fontSize) || 0;
@@ -198,8 +200,11 @@ export class ContentExtractor {
           if (largestElement) {
             const text = largestElement.element.textContent?.trim() || '';
             // 일반적인 사이트 제목이 아닌 경우만 반환
+            const isNumeric = /^\d+[\s\-_]*$/.test(text);
+            const isCommonText = ['광고주센터', '도움말', 'Help', 'Advertiser Center', '성공전략', '성공 전략'].includes(text);
             if (text.length >= 3 && text.length <= 150 && 
-                !['광고주센터', '도움말', 'Help', 'Advertiser Center'].includes(text) &&
+                !isCommonText &&
+                !isNumeric &&
                 !isFeedbackText(text)) {
               return text;
             }
@@ -649,6 +654,19 @@ export class ContentExtractor {
         // 숫자만 있는 제목인지 확인 (FAQ ID는 숫자지만 실제 제목은 문장 형태)
         const isNumericTitle = /^\d+[\s\-_]*$/.test(title.trim());
         
+        // URL에서 FAQ ID 추출하여 제목과 비교 (Naver Ads FAQ 페이지인 경우)
+        let isFaqId = false;
+        if (url.includes('ads.naver.com/help/faq/')) {
+          const urlMatch = url.match(/\/faq\/(\d+)/);
+          if (urlMatch) {
+            const faqId = urlMatch[1];
+            // 제목이 FAQ ID와 정확히 일치하거나 숫자로만 구성된 경우
+            if (title.trim() === faqId || /^\d+$/.test(title.trim())) {
+              isFaqId = true;
+            }
+          }
+        }
+        
         // UI/네비게이션 텍스트 제외
         const isUIText = [
           '카테고리',
@@ -661,8 +679,11 @@ export class ContentExtractor {
           'menu'
         ].some(keyword => lowerTitle.includes(keyword));
         
-        if (isGenericTitle || isFeedback || hasCommonPhrase || isUIText || isNumericTitle) {
-          console.warn(`⚠️ 일반적인 제목/피드백/UI 텍스트/숫자 제목 감지, 제외: "${title}"`);
+        // "성공전략" 같은 공통 텍스트 제외
+        const isCommonText = ['성공전략', '성공 전략', '광고주센터', '도움말', 'Help', 'Advertiser Center', '실전에 통하는', '자주 묻는 질문', 'FAQ'].includes(title) || lowerTitle.includes('실전에 통하는') || lowerTitle.includes('성공전략') || lowerTitle.includes('성공 전략');
+        
+        if (isGenericTitle || isFeedback || hasCommonPhrase || isUIText || isNumericTitle || isCommonText || isFaqId) {
+          console.warn(`⚠️ 일반적인 제목/피드백/UI 텍스트/숫자 제목/공통 텍스트/FAQ ID 감지, 제외: "${title}"`);
           title = null;
         }
       }
