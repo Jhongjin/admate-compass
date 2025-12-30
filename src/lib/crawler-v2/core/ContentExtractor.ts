@@ -413,7 +413,7 @@ export class ContentExtractor {
             return feedbackKeywords.some(keyword => lowerText.includes(keyword));
           };
           
-          // 명시적으로 제외할 텍스트 목록
+          // 명시적으로 제외할 텍스트 목록 (카테고리/섹션 제목 포함)
           const excludedTexts = [
             '도움말 카테고리',
             '도움말',
@@ -422,7 +422,21 @@ export class ContentExtractor {
             '성공전략',
             '성공 전략',
             '의견 보내주셔서 감사합니다.',
-            '의견 보내주셔서 감사합니다'
+            '의견 보내주셔서 감사합니다',
+            '상품 안내',
+            '커뮤니케이션 애드',
+            '커뮤니케이션',
+            '애드'
+          ];
+          
+          // 카테고리/섹션 제목 패턴 (일반적인 카테고리 제목 필터링)
+          const categoryPatterns = [
+            /^상품\s*안내$/,
+            /^커뮤니케이션\s*애드$/,
+            /^■\s*커뮤니케이션\s*애드$/,
+            /^[■□●○]\s*[가-힣\s]+$/, // 특수문자로 시작하는 짧은 텍스트 (카테고리 가능성)
+            /^[가-힣]{2,4}\s*안내$/, // "XX 안내" 패턴
+            /^[가-힣]{2,4}\s*[가-힣]{2,4}$/ // 2-4글자 + 2-4글자 (카테고리 가능성)
           ];
           
           // URL에서 FAQ ID 추출
@@ -442,6 +456,12 @@ export class ContentExtractor {
             // 피드백/평가 텍스트 제외
             if (isFeedbackText(text)) {
               console.log(`  ❌ 필터링됨: "${text.substring(0, 50)}" (피드백 텍스트)`);
+              continue;
+            }
+            
+            // 카테고리/섹션 제목 패턴 제외
+            if (categoryPatterns.some(pattern => pattern.test(text))) {
+              console.log(`  ❌ 필터링됨: "${text.substring(0, 50)}" (카테고리/섹션 제목)`);
               continue;
             }
             
