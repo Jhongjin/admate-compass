@@ -399,14 +399,39 @@ export class ContentExtractor {
           
           console.warn('⚠️ [FAQ 제목 추출] 모든 후보가 필터링됨');
           
-          // Fallback: 첫 번째 후보를 무조건 반환 (필터링 없이)
+          // Fallback 1: 첫 번째 후보를 무조건 반환 (필터링 없이)
           if (candidates.length > 0) {
             const firstCandidate = candidates[0].text.trim();
             console.log(`⚠️ [FAQ 제목 추출] 필터링 실패, 첫 번째 후보 반환: "${firstCandidate}"`);
             return firstCandidate;
           }
           
-          // Fallback: 간단한 title 태그 확인
+          // Fallback 2: 페이지의 모든 텍스트 요소 중 첫 번째 의미있는 텍스트 찾기
+          console.log('🔍 [FAQ 제목 추출] Fallback: 모든 텍스트 요소 스캔 시작...');
+          const allTextElements = Array.from(document.querySelectorAll('*'));
+          for (const el of allTextElements) {
+            const tagName = el.tagName?.toLowerCase() || '';
+            // nav, header, footer, aside, script, style 제외
+            if (['nav', 'header', 'footer', 'aside', 'script', 'style', 'meta', 'link'].includes(tagName)) continue;
+            
+            const rect = el.getBoundingClientRect();
+            const text = el.textContent?.trim() || '';
+            
+            // 기본 조건: 3자 이상 200자 이하, 페이지 상단 2000px 이내
+            if (text.length >= 3 && text.length <= 200 && rect.top >= 0 && rect.top <= 2000) {
+              // 숫자만 있는 경우 제외
+              if (/^[\d\s\-_]+$/.test(text)) continue;
+              
+              // 매우 짧은 일반 텍스트만 제외
+              if (text.length <= 2) continue;
+              
+              // 첫 번째 유효한 텍스트 반환
+              console.log(`✅ [FAQ 제목 추출] Fallback 성공: "${text.substring(0, 60)}"`);
+              return text;
+            }
+          }
+          
+          // Fallback 3: title 태그 확인
           const titleElement = document.querySelector('title');
           if (titleElement) {
             let titleText = titleElement.textContent?.trim() || '';
@@ -433,22 +458,29 @@ export class ContentExtractor {
               titleText = titleText.replace(suffix, '').trim();
             }
             
-            // 간단한 필터링: 명확히 잘못된 제목만 제외
+            // 최소한의 필터링만 적용
             const isBadTitle = 
               /^[\d\s\-_]+$/.test(titleText) || // 숫자만
-              titleText === '광고주센터' ||
-              titleText === '도움말' ||
-              (titleText.length <= 10 && (titleText === '네이버 광고주센터' || titleText === '광고주센터' || titleText === '도움말'));
+              (titleText.length <= 2);
             
-            if (titleText && titleText.length >= 2 && titleText.length <= 200 && !isBadTitle) {
+            if (titleText && titleText.length >= 3 && titleText.length <= 200 && !isBadTitle) {
               console.log(`✅ [FAQ 제목 추출 성공] title 태그 fallback: "${titleText}"`);
               return titleText;
-            } else {
-              console.log(`❌ [FAQ 제목 추출] title 태그도 필터링됨: "${titleText}"`);
+            }
+          }
+          
+          // Fallback 4: body의 첫 번째 텍스트 노드
+          const bodyText = document.body.textContent?.trim() || '';
+          if (bodyText.length > 0) {
+            const firstSentence = bodyText.split(/[.!?。！？\n]/)[0].trim();
+            if (firstSentence.length >= 3 && firstSentence.length <= 200) {
+              console.log(`✅ [FAQ 제목 추출] body 첫 문장 반환: "${firstSentence.substring(0, 60)}"`);
+              return firstSentence;
             }
           }
           
           console.error('❌ [FAQ 제목 추출] 모든 방법 실패 - 제목을 찾을 수 없음');
+          return null; // 명시적으로 null 반환
         }
 
         // 1. h1 태그 (가장 우선) - 메인 콘텐츠 영역 우선
