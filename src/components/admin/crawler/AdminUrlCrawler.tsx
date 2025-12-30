@@ -1287,7 +1287,7 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                                     title={result.title}
                                     onClick={() => handleStartEditResultTitle(result.url, result.title)}
                                   >
-                                    {result.title || '(No Title)'}
+                                    {result.title || '제목 없음'}
                                   </span>
                                   <Button
                                     size="sm"
@@ -1300,15 +1300,23 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                                   </Button>
                                 </div>
                               )}
-                              <a
-                                href={result.url}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="text-xs text-blue-400 hover:underline hover:text-blue-300 flex items-center gap-1 mt-0.5"
-                              >
-                                {result.url}
-                                <ExternalLink className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
-                              </a>
+                              <div className="flex items-center gap-2 mt-0.5">
+                                <a
+                                  href={result.url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-xs text-blue-400 hover:underline hover:text-blue-300 flex items-center gap-1"
+                                >
+                                  {result.url}
+                                  <ExternalLink className="h-3 w-3 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                </a>
+                                {/* 이미 크롤링된 페이지 표시 (maxdepth 1일 때만) */}
+                                {options.maxDepth === 1 && existingDbMap.has(normalizeUrl(result.url)) && (
+                                  <Badge variant="outline" className="text-[10px] px-1.5 py-0.5 bg-yellow-500/10 border-yellow-500/30 text-yellow-400">
+                                    이미 크롤됨
+                                  </Badge>
+                                )}
+                              </div>
                               {result.error && (
                                 <p className="text-xs text-red-400 mt-1 flex items-center gap-1">
                                   <AlertTriangle className="w-3 h-3 flex-shrink-0" />
