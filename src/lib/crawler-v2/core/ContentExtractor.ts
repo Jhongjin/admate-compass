@@ -265,17 +265,37 @@ export class ContentExtractor {
             
             console.log(`🔍 [FAQ 제목 추출] 메인 콘텐츠 영역: ${mainContent.tagName} (${mainContent.className || 'no-class'})`);
             
-            // 1. 모든 h1, h2, h3, h4 수집
+            // 1. 모든 h1, h2, h3, h4 수집 (네비게이션/UI 텍스트 제외)
             const headings = Array.from(mainContent.querySelectorAll('h1, h2, h3, h4'));
             console.log(`🔍 [FAQ 제목 추출] 발견된 heading 태그: ${headings.length}개`);
+            
+            // 제외할 텍스트 패턴 (수집 단계에서 미리 필터링)
+            const excludedHeadingTexts = [
+              '도움말 카테고리',
+              '도움말',
+              '광고주센터',
+              '네이버 광고주센터',
+              '카테고리',
+              '카테고리 닫기',
+              '카테고리 열기'
+            ];
+            
             headings.forEach((el, idx) => {
               const rect = el.getBoundingClientRect();
               const text = el.textContent?.trim() || '';
+              
+              // 네비게이션/UI 텍스트 제외 (수집 단계에서 미리 필터링)
+              if (excludedHeadingTexts.some(excluded => text === excluded || text.includes(excluded))) {
+                console.log(`  - ${el.tagName}: "${text.substring(0, 50)}" (제외: 네비게이션/UI 텍스트)`);
+                return; // continue 대신 return 사용 (forEach 내부)
+              }
+              
               if (text && text.length >= 2 && text.length <= 200 && rect.top >= 0 && rect.top <= 2000) {
                 let score = 100;
                 if (el.tagName === 'H1') score += 50;
                 else if (el.tagName === 'H2') score += 30;
                 else if (el.tagName === 'H3') score += 10;
+                else if (el.tagName === 'H4') score -= 20; // h4는 점수 감점 (네비게이션/UI 가능성 높음)
                 // 페이지 상단에 가까울수록 높은 점수
                 score += Math.max(0, 50 - Math.floor(rect.top / 20));
                 // 첫 번째 제목에 보너스
@@ -355,11 +375,23 @@ export class ContentExtractor {
             /^[\d\s\-_]+$/, // 숫자만 (FAQ ID)
             /^광고주센터$/,
             /^도움말$/,
+            /^도움말\s+카테고리$/, // "도움말 카테고리" 명시적 제외
+            /도움말\s*카테고리/, // "도움말 카테고리" 포함된 모든 텍스트 제외
             /카테고리\s*(닫기|열기)/,
             /위 내용으로 궁금한 점이 해결되지 않았나요/,
             /궁금한 점이 해결되지 않았나요\?/,
             /^성공전략$/,
             /^성공 전략$/
+          ];
+          
+          // 명시적으로 제외할 텍스트 목록
+          const excludedTexts = [
+            '도움말 카테고리',
+            '도움말',
+            '광고주센터',
+            '네이버 광고주센터',
+            '성공전략',
+            '성공 전략'
           ];
           
           // URL에서 FAQ ID 추출
@@ -369,6 +401,12 @@ export class ContentExtractor {
           // 최고 점수 후보 찾기 (필터링 최소화)
           for (const candidate of candidates) {
             const text = candidate.text.trim();
+            
+            // 명시적으로 제외할 텍스트 체크 (가장 먼저)
+            if (excludedTexts.some(excluded => text === excluded || text.includes(excluded))) {
+              console.log(`  ❌ 필터링됨: "${text.substring(0, 50)}" (제외 텍스트 목록)`);
+              continue;
+            }
             
             // 명확히 잘못된 패턴만 제외
             if (badPatterns.some(pattern => pattern.test(text))) {
