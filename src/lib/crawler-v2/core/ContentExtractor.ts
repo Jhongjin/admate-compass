@@ -471,7 +471,7 @@ export class ContentExtractor {
             
             if (titleText && titleText.length >= 3 && titleText.length <= 200 && !isBadTitle) {
               console.log(`✅ [FAQ 제목 추출 성공] title 태그 fallback: "${titleText}"`);
-              return titleText;
+              return { type: 'faq', title: titleText, score: 40, source: 'title-tag' };
             }
           }
           
@@ -481,7 +481,7 @@ export class ContentExtractor {
             const firstSentence = bodyText.split(/[.!?。！？\n]/)[0].trim();
             if (firstSentence.length >= 3 && firstSentence.length <= 200) {
               console.log(`✅ [FAQ 제목 추출] body 첫 문장 반환: "${firstSentence.substring(0, 60)}"`);
-              return firstSentence;
+              return { type: 'faq', title: firstSentence, score: 30, source: 'body-first-sentence' };
             }
           }
           
