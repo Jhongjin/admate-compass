@@ -688,18 +688,26 @@ export class ContentExtractor {
         }
       }
 
-      // 모든 전략 실패 시 URL에서 추출
-      if (!title) {
+      // 모든 전략 실패 시 URL에서 추출 (단, FAQ 페이지는 제외)
+      if (!title && !url.includes('ads.naver.com/help/faq/')) {
         try {
           const urlObj = new URL(url);
           const pathParts = urlObj.pathname.split('/').filter(p => p);
           if (pathParts.length > 0) {
             const lastPart = pathParts[pathParts.length - 1];
+            // 숫자만 있는 경우 제외 (FAQ ID 등)
+            if (/^\d+$/.test(lastPart)) {
+              return null;
+            }
             // URL 인코딩된 한글 디코딩 시도
             try {
               title = decodeURIComponent(lastPart).replace(/[-_]/g, ' ');
             } catch {
               title = lastPart.replace(/[-_]/g, ' ');
+            }
+            // 숫자만 있는 제목인지 다시 확인
+            if (/^\d+[\s\-_]*$/.test(title.trim())) {
+              return null;
             }
           }
         } catch {
