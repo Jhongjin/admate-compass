@@ -74,9 +74,31 @@ export class ContentExtractor {
         await new Promise(resolve => setTimeout(resolve, 3000));
       }
 
-      // 전략에 따라 제목 추출 (우선순위: 페이지 상단 가장 큰 볼드체 > h1 > title > og:title > data-testid > class 기반)
+      // 전략에 따라 제목 추출 (우선순위: h1 > h2 > 페이지 상단 가장 큰 볼드체 > title > og:title > data-testid > class 기반)
       const titleResult = await page.evaluate(() => {
-        // 0. 페이지 상단 가장 큰 볼드체 텍스트 찾기 (최우선 - 네이버 광고 페이지용)
+        // 피드백/평가 관련 텍스트 필터링 함수
+        const isFeedbackText = (text: string): boolean => {
+          const lowerText = text.toLowerCase();
+          const feedbackKeywords = [
+            '위 도움말',
+            '도움이 되었나요',
+            '점 만점',
+            '별점',
+            '평가',
+            '피드백',
+            'was this help',
+            'helpful',
+            'rating',
+            'feedback',
+            '점수',
+            '만족도',
+            '의견',
+            '보내주셔서 감사합니다'
+          ];
+          return feedbackKeywords.some(keyword => lowerText.includes(keyword));
+        };
+
+        // 0. 페이지 상단 가장 큰 볼드체 텍스트 찾기 (h1/h2가 없을 때만 사용)
         const findLargestBoldText = (): string | null => {
           const allElements = Array.from(document.querySelectorAll('*'));
           let largestElement: { element: Element; fontSize: number; fontWeight: number; y: number } | null = null;
@@ -91,6 +113,8 @@ export class ContentExtractor {
             if (text.length < 3 || text.length > 150) continue;
             // 일반적인 사이트 제목 제외 (광고주센터, 도움말 등)
             if (['광고주센터', '도움말', 'Help', 'Advertiser Center'].includes(text)) continue;
+            // 피드백/평가 텍스트 제외
+            if (isFeedbackText(text)) continue;
 
             const style = window.getComputedStyle(el);
             const fontSize = parseFloat(style.fontSize) || 0;
@@ -119,7 +143,8 @@ export class ContentExtractor {
             const text = largestElement.element.textContent?.trim() || '';
             // 일반적인 사이트 제목이 아닌 경우만 반환
             if (text.length >= 3 && text.length <= 150 && 
-                !['광고주센터', '도움말', 'Help', 'Advertiser Center'].includes(text)) {
+                !['광고주센터', '도움말', 'Help', 'Advertiser Center'].includes(text) &&
+                !isFeedbackText(text)) {
               return text;
             }
           }
@@ -127,18 +152,13 @@ export class ContentExtractor {
           return null;
         };
 
-        // 페이지 상단 가장 큰 볼드체 텍스트 (최우선)
-        const largestBoldText = findLargestBoldText();
-        if (largestBoldText) {
-          return largestBoldText;
-        }
-
         // 1. h1 태그 (가장 우선) - 메인 콘텐츠 영역 우선
         const mainH1 = document.querySelector('main h1, article h1, .content h1, .main-content h1, [role="main"] h1');
         if (mainH1) {
           const text = mainH1.textContent?.trim() || '';
           if (text && text.length >= 3 && text.length <= 150 && 
-              !['광고주센터', '도움말', 'Help', 'Advertiser Center'].includes(text)) {
+              !['광고주센터', '도움말', 'Help', 'Advertiser Center'].includes(text) &&
+              !isFeedbackText(text)) {
             return text;
           }
         }
@@ -148,7 +168,8 @@ export class ContentExtractor {
         for (const h1 of h1Elements) {
           const text = h1.textContent?.trim() || '';
           if (text && text.length >= 3 && text.length <= 150 && 
-              !['광고주센터', '도움말', 'Help', 'Advertiser Center'].includes(text)) {
+              !['광고주센터', '도움말', 'Help', 'Advertiser Center'].includes(text) &&
+              !isFeedbackText(text)) {
             return text;
           }
         }
@@ -160,19 +181,44 @@ export class ContentExtractor {
           if (rect.top >= 0 && rect.top <= 500) {
             const text = h2.textContent?.trim() || '';
             if (text && text.length >= 3 && text.length <= 150 && 
-                !['광고주센터', '도움말', 'Help', 'Advertiser Center'].includes(text)) {
+                !['광고주센터', '도움말', 'Help', 'Advertiser Center'].includes(text) &&
+                !isFeedbackText(text)) {
               return text;
             }
           }
         }
 
+        // 페이지 상단 가장 큰 볼드체 텍스트 (h1/h2가 없을 때만 사용)
+        const largestBoldText = findLargestBoldText();
+        if (largestBoldText) {
+          return largestBoldText;
+        }
+
         // 3. title 태그 (일반적인 사이트 제목이 아닌 경우만)
         const titleElement = document.querySelector('title');
         if (titleElement) {
-          const text = titleElement.textContent?.trim() || '';
+          let text = titleElement.textContent?.trim() || '';
+          // title 태그에서 불필요한 접미사 제거
+          text = text
+            .replace(/\s*[-|]\s*.*$/, '') // " - 사이트명" 또는 " | 사이트명" 제거
+            .replace(/\s*::\s*.*$/, '') // " :: 사이트명" 제거
+            .trim();
+          
+          // "광고주센터", "NAVER" 같은 일반적인 접미사 제거
+          const commonSuffixes = [
+            /광고주센터.*$/i,
+            /advertiser\s*center.*$/i,
+            /naver.*$/i,
+            /네이버.*$/i
+          ];
+          for (const suffix of commonSuffixes) {
+            text = text.replace(suffix, '').trim();
+          }
+          
           if (text && text.length >= 3 && text.length <= 150 && 
               !['광고주센터', '도움말', 'Help', 'Advertiser Center'].includes(text) &&
-              !text.includes('광고주센터') && !text.includes('Advertiser Center')) {
+              !text.includes('광고주센터') && !text.includes('Advertiser Center') &&
+              !isFeedbackText(text)) {
             return text;
           }
         }
@@ -182,7 +228,8 @@ export class ContentExtractor {
         if (ogTitle) {
           const text = ogTitle.getAttribute('content')?.trim() || '';
           if (text && text.length >= 3 && text.length <= 150 && 
-              !['광고주센터', '도움말', 'Help', 'Advertiser Center'].includes(text)) {
+              !['광고주센터', '도움말', 'Help', 'Advertiser Center'].includes(text) &&
+              !isFeedbackText(text)) {
             return text;
           }
         }
@@ -192,7 +239,8 @@ export class ContentExtractor {
         if (dataTestIdTitle) {
           const text = dataTestIdTitle.textContent?.trim() || '';
           if (text && text.length >= 3 && text.length <= 150 && 
-              !['광고주센터', '도움말', 'Help', 'Advertiser Center'].includes(text)) {
+              !['광고주센터', '도움말', 'Help', 'Advertiser Center'].includes(text) &&
+              !isFeedbackText(text)) {
             return text;
           }
         }
@@ -216,7 +264,8 @@ export class ContentExtractor {
           if (element) {
             const text = element.textContent?.trim() || '';
             if (text && text.length >= 3 && text.length <= 150 && 
-                !['광고주센터', '도움말', 'Help', 'Advertiser Center'].includes(text)) {
+                !['광고주센터', '도움말', 'Help', 'Advertiser Center'].includes(text) &&
+                !isFeedbackText(text)) {
               return text;
             }
           }
@@ -227,9 +276,30 @@ export class ContentExtractor {
 
       let title: string | null = titleResult as string | null;
 
-      // 일반적인 사이트 제목 필터링
-      if (title && ['광고주센터', '도움말', 'Help', 'Advertiser Center'].includes(title)) {
-        title = null;
+      // 일반적인 사이트 제목 및 피드백 텍스트 필터링
+      if (title) {
+        const lowerTitle = title.toLowerCase();
+        const isGenericTitle = ['광고주센터', '도움말', 'Help', 'Advertiser Center'].includes(title);
+        const isFeedback = [
+          '위 도움말',
+          '도움이 되었나요',
+          '점 만점',
+          '별점',
+          '평가',
+          '피드백',
+          'was this help',
+          'helpful',
+          'rating',
+          'feedback',
+          '점수',
+          '만족도',
+          '의견',
+          '보내주셔서 감사합니다'
+        ].some(keyword => lowerTitle.includes(keyword));
+        
+        if (isGenericTitle || isFeedback) {
+          title = null;
+        }
       }
 
       // 모든 전략 실패 시 URL에서 추출
@@ -271,6 +341,36 @@ export class ContentExtractor {
 
       while (Date.now() - startTime < maxWaitTime) {
         const currentLargestText = await page.evaluate(() => {
+          // 피드백/평가 관련 텍스트 필터링 함수
+          const isFeedbackText = (text: string): boolean => {
+            const lowerText = text.toLowerCase();
+            const feedbackKeywords = [
+              '위 도움말',
+              '도움이 되었나요',
+              '점 만점',
+              '별점',
+              '평가',
+              '피드백',
+              'was this help',
+              'helpful',
+              'rating',
+              'feedback',
+              '점수',
+              '만족도',
+              '의견',
+              '보내주셔서 감사합니다'
+            ];
+            return feedbackKeywords.some(keyword => lowerText.includes(keyword));
+          };
+
+          // h1 태그 우선 확인
+          const h1 = document.querySelector('h1')?.textContent?.trim();
+          if (h1 && h1.length >= 3 && h1.length <= 150 && 
+              !['광고주센터', '도움말', 'Help', 'Advertiser Center'].includes(h1) &&
+              !isFeedbackText(h1)) {
+            return h1;
+          }
+
           // 페이지 상단 가장 큰 볼드체 텍스트 찾기
           const allElements = Array.from(document.querySelectorAll('*'));
           let largestElement: { element: Element; fontSize: number; fontWeight: number; y: number } | null = null;
@@ -282,6 +382,7 @@ export class ContentExtractor {
             const text = el.textContent?.trim() || '';
             if (text.length < 3 || text.length > 150) continue;
             if (['광고주센터', '도움말', 'Help', 'Advertiser Center'].includes(text)) continue;
+            if (isFeedbackText(text)) continue;
 
             const style = window.getComputedStyle(el);
             const fontSize = parseFloat(style.fontSize) || 0;
@@ -307,16 +408,10 @@ export class ContentExtractor {
           if (largestElement) {
             const text = largestElement.element.textContent?.trim() || '';
             if (text.length >= 3 && text.length <= 150 && 
-                !['광고주센터', '도움말', 'Help', 'Advertiser Center'].includes(text)) {
+                !['광고주센터', '도움말', 'Help', 'Advertiser Center'].includes(text) &&
+                !isFeedbackText(text)) {
               return text;
             }
-          }
-
-          // 폴백: h1 태그
-          const h1 = document.querySelector('h1')?.textContent?.trim();
-          if (h1 && h1.length >= 3 && h1.length <= 150 && 
-              !['광고주센터', '도움말', 'Help', 'Advertiser Center'].includes(h1)) {
-            return h1;
           }
 
           return null;
