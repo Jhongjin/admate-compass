@@ -258,6 +258,16 @@ export class ContentExtractor {
           console.log('🔍 [FAQ 제목 추출] Naver Ads FAQ 페이지 감지, 제목 추출 시작...');
           console.log('🔍 [FAQ 제목 추출] URL:', urlParam);
           
+          // 카테고리/섹션 제목 패턴 (일반적인 카테고리 제목 필터링)
+          const categoryPatterns = [
+            /^상품\s*안내$/,
+            /^커뮤니케이션\s*애드$/,
+            /^■\s*커뮤니케이션\s*애드$/,
+            /^[■□●○]\s*[가-힣\s]+$/, // 특수문자로 시작하는 짧은 텍스트 (카테고리 가능성)
+            /^[가-힣]{2,4}\s*안내$/, // "XX 안내" 패턴
+            /^[가-힣]{2,4}\s*[가-힣]{2,4}$/ // 2-4글자 + 2-4글자 (카테고리 가능성)
+          ];
+          
           // 완전히 새로운 접근: 모든 제목 후보를 수집하고 점수화 (필터링 최소화)
           const collectAllTitleCandidates = (): Array<{text: string, score: number, source: string}> => {
             const candidates: Array<{text: string, score: number, source: string}> = [];
@@ -327,34 +337,75 @@ export class ContentExtractor {
               }
             });
             
-            // 2-1. FAQ 질문 제목을 찾기 위한 더 구체적인 선택자 시도
-            const faqQuestionSelectors = [
-              'article h1',
-              'article h2',
-              '.faq-content h1',
-              '.faq-content h2',
-              '.faq-question',
-              '[data-faq-question]',
-              '.question-title',
-              '.faq-title'
+            // 2-1. FAQ 질문 리스트 영역에서 첫 번째 질문 찾기 (가장 우선)
+            // FAQ 질문들은 보통 리스트 형태로 배치되어 있고, "란?" 또는 "?"로 끝나는 패턴을 가짐
+            const faqListContainers = [
+              'ul li a',
+              'ol li a',
+              '.faq-list a',
+              '.question-list a',
+              '[class*="faq"] a',
+              '[class*="question"] a',
+              'main a',
+              'article a'
             ];
-            faqQuestionSelectors.forEach(selector => {
-              const elements = Array.from(mainContent.querySelectorAll(selector));
-              elements.forEach(el => {
-                const rect = el.getBoundingClientRect();
-                const text = el.textContent?.trim() || '';
-                if (text && text.length >= 3 && text.length <= 200 && rect.top >= 0 && rect.top <= 2000) {
-                  // 카테고리 제목 제외
-                  if (excludedHeadingTexts.some(excluded => text === excluded || text.includes(excluded))) {
-                    return;
-                  }
-                  let score = 120; // FAQ 질문 선택자는 높은 점수
-                  score += Math.max(0, 40 - Math.floor(rect.top / 20));
-                  candidates.push({ text, score, source: `faq-selector-${selector.replace(/\s+/g, '-')}` });
-                  console.log(`  - FAQ selector (${selector}): "${text.substring(0, 50)}" (점수: ${score}, Y: ${Math.round(rect.top)})`);
+            
+            let firstFaqQuestion: string | null = null;
+            for (const selector of faqListContainers) {
+              const links = Array.from(mainContent.querySelectorAll(selector));
+              for (const link of links) {
+                const rect = link.getBoundingClientRect();
+                const text = link.textContent?.trim() || '';
+                
+                // FAQ 질문 패턴: "란?" 또는 "?"로 끝나고, 카테고리 제목이 아닌 경우
+                if (text && text.length >= 3 && text.length <= 200 && 
+                    rect.top >= 0 && rect.top <= 2000 &&
+                    (text.endsWith('란?') || text.endsWith('?') || text.includes('?')) &&
+                    !excludedHeadingTexts.some(excluded => text === excluded || text.includes(excluded)) &&
+                    !categoryPatterns.some(pattern => pattern.test(text))) {
+                  
+                  // 첫 번째 유효한 FAQ 질문을 찾으면 저장하고 중단
+                  firstFaqQuestion = text;
+                  let score = 150; // FAQ 질문 리스트는 최고 점수
+                  score += Math.max(0, 50 - Math.floor(rect.top / 15));
+                  candidates.push({ text, score, source: `faq-list-${selector.replace(/\s+/g, '-')}` });
+                  console.log(`  ✅ FAQ 질문 리스트에서 발견: "${text.substring(0, 50)}" (점수: ${score}, Y: ${Math.round(rect.top)})`);
+                  break; // 첫 번째 질문만 사용
                 }
+              }
+              if (firstFaqQuestion) break; // 첫 번째 질문을 찾으면 다른 선택자 시도 중단
+            }
+            
+            // 2-2. FAQ 질문 제목을 찾기 위한 더 구체적인 선택자 시도 (리스트에서 찾지 못한 경우)
+            if (!firstFaqQuestion) {
+              const faqQuestionSelectors = [
+                'article h1',
+                'article h2',
+                '.faq-content h1',
+                '.faq-content h2',
+                '.faq-question',
+                '[data-faq-question]',
+                '.question-title',
+                '.faq-title'
+              ];
+              faqQuestionSelectors.forEach(selector => {
+                const elements = Array.from(mainContent.querySelectorAll(selector));
+                elements.forEach(el => {
+                  const rect = el.getBoundingClientRect();
+                  const text = el.textContent?.trim() || '';
+                  if (text && text.length >= 3 && text.length <= 200 && rect.top >= 0 && rect.top <= 2000) {
+                    // 카테고리 제목 제외
+                    if (excludedHeadingTexts.some(excluded => text === excluded || text.includes(excluded))) {
+                      return;
+                    }
+                    let score = 120; // FAQ 질문 선택자는 높은 점수
+                    score += Math.max(0, 40 - Math.floor(rect.top / 20));
+                    candidates.push({ text, score, source: `faq-selector-${selector.replace(/\s+/g, '-')}` });
+                    console.log(`  - FAQ selector (${selector}): "${text.substring(0, 50)}" (점수: ${score}, Y: ${Math.round(rect.top)})`);
+                  }
+                });
               });
-            });
+            }
             
             // 3. 큰 폰트/볼드 텍스트 수집 (더 관대한 조건)
             const allElements = Array.from(mainContent.querySelectorAll('*'));
