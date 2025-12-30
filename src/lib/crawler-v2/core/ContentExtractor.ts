@@ -55,7 +55,7 @@ export class ContentExtractor {
   }
 
   /**
-   * 제목 추출 (개선: 더 다양한 전략 + 동적 로드 대기)
+   * 제목 추출 (개선: 더 다양한 전략 + 동적 로드 대기 + 페이지 상단 가장 큰 볼드체 우선)
    */
   private async extractTitle(
     page: Page,
@@ -64,42 +64,140 @@ export class ContentExtractor {
     url: string
   ): Promise<string | null> {
     try {
-      // 페이지 안정화 대기 (동적으로 로드되는 제목을 기다림)
-      await this.waitForPageStabilization(page);
+      // 네이버 광고 페이지 같은 SPA의 경우 더 오래 대기
+      const isNaverAds = url.includes('ads.naver.com');
+      const waitTime = isNaverAds ? 8000 : 5000;
+      await this.waitForPageStabilization(page, waitTime);
 
-      // 전략에 따라 제목 추출 (우선순위: h1 > title > og:title > data-testid > class 기반 > pathname)
+      // 추가 대기 (동적 콘텐츠 로드)
+      if (isNaverAds) {
+        await new Promise(resolve => setTimeout(resolve, 3000));
+      }
+
+      // 전략에 따라 제목 추출 (우선순위: 페이지 상단 가장 큰 볼드체 > h1 > title > og:title > data-testid > class 기반)
       const titleResult = await page.evaluate(() => {
+        // 0. 페이지 상단 가장 큰 볼드체 텍스트 찾기 (최우선 - 네이버 광고 페이지용)
+        const findLargestBoldText = (): string | null => {
+          const allElements = Array.from(document.querySelectorAll('*'));
+          let largestElement: { element: Element; fontSize: number; fontWeight: number; y: number } | null = null;
+
+          for (const el of allElements) {
+            // nav, header, footer, aside 제외
+            const tagName = el.tagName?.toLowerCase() || '';
+            if (['nav', 'header', 'footer', 'aside', 'script', 'style'].includes(tagName)) continue;
+
+            const text = el.textContent?.trim() || '';
+            // 너무 짧거나 길면 제외
+            if (text.length < 3 || text.length > 150) continue;
+            // 일반적인 사이트 제목 제외 (광고주센터, 도움말 등)
+            if (['광고주센터', '도움말', 'Help', 'Advertiser Center'].includes(text)) continue;
+
+            const style = window.getComputedStyle(el);
+            const fontSize = parseFloat(style.fontSize) || 0;
+            const fontWeight = parseInt(style.fontWeight) || 400;
+            const rect = el.getBoundingClientRect();
+            const y = rect.top;
+
+            // 페이지 상단 500px 이내에 있고, 큰 폰트(18px 이상) 또는 볼드체(600 이상)인 경우
+            if (y >= 0 && y <= 500 && (fontSize >= 18 || fontWeight >= 600)) {
+              // 자식 요소가 있으면 제외 (부모 요소가 아닌 실제 텍스트 요소만)
+              const hasTextChildren = Array.from(el.children).some(child => {
+                const childText = child.textContent?.trim() || '';
+                return childText.length > 0 && childText.length < 150;
+              });
+              
+              if (!hasTextChildren) {
+                if (!largestElement || fontSize > largestElement.fontSize || 
+                    (fontSize === largestElement.fontSize && fontWeight > largestElement.fontWeight)) {
+                  largestElement = { element: el, fontSize, fontWeight, y };
+                }
+              }
+            }
+          }
+
+          if (largestElement) {
+            const text = largestElement.element.textContent?.trim() || '';
+            // 일반적인 사이트 제목이 아닌 경우만 반환
+            if (text.length >= 3 && text.length <= 150 && 
+                !['광고주센터', '도움말', 'Help', 'Advertiser Center'].includes(text)) {
+              return text;
+            }
+          }
+
+          return null;
+        };
+
+        // 페이지 상단 가장 큰 볼드체 텍스트 (최우선)
+        const largestBoldText = findLargestBoldText();
+        if (largestBoldText) {
+          return largestBoldText;
+        }
+
         // 1. h1 태그 (가장 우선) - 메인 콘텐츠 영역 우선
-        const mainH1 = document.querySelector('main h1, article h1, .content h1, .main-content h1');
-        if (mainH1 && mainH1.textContent?.trim()) {
-          return mainH1.textContent.trim();
+        const mainH1 = document.querySelector('main h1, article h1, .content h1, .main-content h1, [role="main"] h1');
+        if (mainH1) {
+          const text = mainH1.textContent?.trim() || '';
+          if (text && text.length >= 3 && text.length <= 150 && 
+              !['광고주센터', '도움말', 'Help', 'Advertiser Center'].includes(text)) {
+            return text;
+          }
         }
 
         // 일반 h1 태그
-        const h1Element = document.querySelector('h1');
-        if (h1Element && h1Element.textContent?.trim()) {
-          return h1Element.textContent.trim();
+        const h1Elements = Array.from(document.querySelectorAll('h1'));
+        for (const h1 of h1Elements) {
+          const text = h1.textContent?.trim() || '';
+          if (text && text.length >= 3 && text.length <= 150 && 
+              !['광고주센터', '도움말', 'Help', 'Advertiser Center'].includes(text)) {
+            return text;
+          }
         }
 
-        // 2. title 태그
+        // 2. h2 태그 (h1이 없을 때)
+        const h2Elements = Array.from(document.querySelectorAll('h2'));
+        for (const h2 of h2Elements) {
+          const rect = h2.getBoundingClientRect();
+          if (rect.top >= 0 && rect.top <= 500) {
+            const text = h2.textContent?.trim() || '';
+            if (text && text.length >= 3 && text.length <= 150 && 
+                !['광고주센터', '도움말', 'Help', 'Advertiser Center'].includes(text)) {
+              return text;
+            }
+          }
+        }
+
+        // 3. title 태그 (일반적인 사이트 제목이 아닌 경우만)
         const titleElement = document.querySelector('title');
-        if (titleElement && titleElement.textContent?.trim()) {
-          return titleElement.textContent.trim();
+        if (titleElement) {
+          const text = titleElement.textContent?.trim() || '';
+          if (text && text.length >= 3 && text.length <= 150 && 
+              !['광고주센터', '도움말', 'Help', 'Advertiser Center'].includes(text) &&
+              !text.includes('광고주센터') && !text.includes('Advertiser Center')) {
+            return text;
+          }
         }
 
-        // 3. og:title 메타 태그
+        // 4. og:title 메타 태그
         const ogTitle = document.querySelector('meta[property="og:title"]');
-        if (ogTitle && ogTitle.getAttribute('content')?.trim()) {
-          return ogTitle.getAttribute('content')!.trim();
+        if (ogTitle) {
+          const text = ogTitle.getAttribute('content')?.trim() || '';
+          if (text && text.length >= 3 && text.length <= 150 && 
+              !['광고주센터', '도움말', 'Help', 'Advertiser Center'].includes(text)) {
+            return text;
+          }
         }
 
-        // 4. data-testid 기반
+        // 5. data-testid 기반
         const dataTestIdTitle = document.querySelector('[data-testid="page-title"]');
-        if (dataTestIdTitle && dataTestIdTitle.textContent?.trim()) {
-          return dataTestIdTitle.textContent.trim();
+        if (dataTestIdTitle) {
+          const text = dataTestIdTitle.textContent?.trim() || '';
+          if (text && text.length >= 3 && text.length <= 150 && 
+              !['광고주센터', '도움말', 'Help', 'Advertiser Center'].includes(text)) {
+            return text;
+          }
         }
 
-        // 5. 클래스 기반 셀렉터들
+        // 6. 클래스 기반 셀렉터들
         const classSelectors = [
           '.page-title',
           '.article-title',
@@ -115,32 +213,10 @@ export class ContentExtractor {
         ];
         for (const selector of classSelectors) {
           const element = document.querySelector(selector);
-          if (element && element.textContent?.trim()) {
-            return element.textContent.trim();
-          }
-        }
-
-        // 6. body의 첫 번째 큰 텍스트 요소 찾기 (폴백)
-        const bodyText = document.body?.textContent || '';
-        if (bodyText.length > 0) {
-          // body의 첫 30% 영역에서 큰 폰트나 볼드 스타일을 가진 요소 찾기
-          const firstThird = Math.floor(bodyText.length * 0.3);
-          const bodyElements = Array.from(document.body?.querySelectorAll('*') || []);
-          
-          for (const el of bodyElements.slice(0, Math.floor(bodyElements.length * 0.3))) {
-            const text = el.textContent?.trim() || '';
-            if (!text || text.length < 2 || text.length > 100) continue;
-
-            const style = window.getComputedStyle(el);
-            const fontSize = parseInt(style.fontSize) || 0;
-            const fontWeight = style.fontWeight;
-            const tagName = el.tagName?.toLowerCase() || '';
-
-            const hasLargeFont = fontSize >= 20;
-            const hasBold = fontWeight === 'bold' || fontWeight === '700' || fontWeight === '800' || fontWeight === '900';
-            const isHeading = ['h1', 'h2', 'h3', 'b', 'strong'].includes(tagName);
-
-            if ((hasLargeFont || hasBold || isHeading) && text.length >= 2 && text.length <= 100) {
+          if (element) {
+            const text = element.textContent?.trim() || '';
+            if (text && text.length >= 3 && text.length <= 150 && 
+                !['광고주센터', '도움말', 'Help', 'Advertiser Center'].includes(text)) {
               return text;
             }
           }
@@ -150,6 +226,11 @@ export class ContentExtractor {
       });
 
       let title: string | null = titleResult as string | null;
+
+      // 일반적인 사이트 제목 필터링
+      if (title && ['광고주센터', '도움말', 'Help', 'Advertiser Center'].includes(title)) {
+        title = null;
+      }
 
       // 모든 전략 실패 시 URL에서 추출
       if (!title) {
@@ -184,21 +265,64 @@ export class ContentExtractor {
     try {
       // 제목이 변경되지 않을 때까지 대기 (최대 maxWaitTime)
       const startTime = Date.now();
-      let previousTitle: string | null = null;
+      let previousLargestText: string | null = null;
       let stableCount = 0;
-      const requiredStableCount = 2; // 연속 2번 동일하면 안정화된 것으로 간주
+      const requiredStableCount = 3; // 연속 3번 동일하면 안정화된 것으로 간주
 
       while (Date.now() - startTime < maxWaitTime) {
-        const currentTitle = await page.evaluate(() => {
-          // 여러 소스에서 제목 확인
+        const currentLargestText = await page.evaluate(() => {
+          // 페이지 상단 가장 큰 볼드체 텍스트 찾기
+          const allElements = Array.from(document.querySelectorAll('*'));
+          let largestElement: { element: Element; fontSize: number; fontWeight: number; y: number } | null = null;
+
+          for (const el of allElements) {
+            const tagName = el.tagName?.toLowerCase() || '';
+            if (['nav', 'header', 'footer', 'aside', 'script', 'style'].includes(tagName)) continue;
+
+            const text = el.textContent?.trim() || '';
+            if (text.length < 3 || text.length > 150) continue;
+            if (['광고주센터', '도움말', 'Help', 'Advertiser Center'].includes(text)) continue;
+
+            const style = window.getComputedStyle(el);
+            const fontSize = parseFloat(style.fontSize) || 0;
+            const fontWeight = parseInt(style.fontWeight) || 400;
+            const rect = el.getBoundingClientRect();
+            const y = rect.top;
+
+            if (y >= 0 && y <= 500 && (fontSize >= 18 || fontWeight >= 600)) {
+              const hasTextChildren = Array.from(el.children).some(child => {
+                const childText = child.textContent?.trim() || '';
+                return childText.length > 0 && childText.length < 150;
+              });
+              
+              if (!hasTextChildren) {
+                if (!largestElement || fontSize > largestElement.fontSize || 
+                    (fontSize === largestElement.fontSize && fontWeight > largestElement.fontWeight)) {
+                  largestElement = { element: el, fontSize, fontWeight, y };
+                }
+              }
+            }
+          }
+
+          if (largestElement) {
+            const text = largestElement.element.textContent?.trim() || '';
+            if (text.length >= 3 && text.length <= 150 && 
+                !['광고주센터', '도움말', 'Help', 'Advertiser Center'].includes(text)) {
+              return text;
+            }
+          }
+
+          // 폴백: h1 태그
           const h1 = document.querySelector('h1')?.textContent?.trim();
-          const title = document.title?.trim();
-          const ogTitle = document.querySelector('meta[property="og:title"]')?.getAttribute('content')?.trim();
-          
-          return h1 || title || ogTitle || null;
+          if (h1 && h1.length >= 3 && h1.length <= 150 && 
+              !['광고주센터', '도움말', 'Help', 'Advertiser Center'].includes(h1)) {
+            return h1;
+          }
+
+          return null;
         });
 
-        if (currentTitle === previousTitle && currentTitle) {
+        if (currentLargestText === previousLargestText && currentLargestText) {
           stableCount++;
           if (stableCount >= requiredStableCount) {
             // 제목이 안정화됨
@@ -208,7 +332,7 @@ export class ContentExtractor {
           stableCount = 0;
         }
 
-        previousTitle = currentTitle;
+        previousLargestText = currentLargestText;
 
         // 짧은 대기 후 다시 확인
         await new Promise(resolve => setTimeout(resolve, 500));
