@@ -44,8 +44,21 @@ export class ContentExtractor {
         throw new Error(`콘텐츠가 너무 짧습니다 (${cleanContent.length}자)`);
       }
 
+      // FAQ 페이지인 경우 URL을 제목으로 사용하지 않음
+      const isNaverAdsFAQ = url.includes('ads.naver.com/help/faq/');
+      let finalTitle: string;
+      
+      if (isNaverAdsFAQ) {
+        // FAQ 페이지는 제목을 찾지 못했을 때 URL을 사용하지 않음
+        // 대신 "제목 없음" 또는 빈 문자열 사용 (나중에 수동으로 수정 가능)
+        finalTitle = title || '제목 없음';
+      } else {
+        // 일반 페이지는 URL을 fallback으로 사용
+        finalTitle = title || url;
+      }
+      
       return {
-        title: title || url,
+        title: finalTitle,
         content: cleanContent,
       };
     } catch (error) {
