@@ -350,15 +350,41 @@ export class ContentExtractor {
               'article a'
             ];
             
+            // 네비게이션/메뉴 텍스트 제외 패턴
+            const navigationPatterns = [
+              /^\[.*\]$/, // [검색광고], [광고 시작] 같은 패턴
+              /메뉴\s*(펼치기|닫기)/,
+              /검색어\s*입력/,
+              /바로가기\s*>?$/,
+              /네이버\s*비즈니스\s*스쿨/,
+              /활용한\s*광고\s*등록\s*방법을\s*알아보세요/,
+              /\.\.\./,
+              /^\s*$/
+            ];
+            
             let firstFaqQuestion: string | null = null;
             for (const selector of faqListContainers) {
               const links = Array.from(mainContent.querySelectorAll(selector));
+              console.log(`🔍 [FAQ 제목 추출] 선택자 "${selector}"에서 ${links.length}개 링크 발견`);
+              
               for (const link of links) {
                 const rect = link.getBoundingClientRect();
                 const text = link.textContent?.trim() || '';
                 
+                // 네비게이션/메뉴 텍스트 제외
+                if (navigationPatterns.some(pattern => pattern.test(text))) {
+                  console.log(`  ❌ 네비게이션 텍스트 제외: "${text.substring(0, 50)}"`);
+                  continue;
+                }
+                
+                // 너무 긴 텍스트 제외 (네비게이션 메뉴 전체 텍스트일 가능성)
+                if (text.length > 100) {
+                  console.log(`  ❌ 너무 긴 텍스트 제외: "${text.substring(0, 50)}..." (${text.length}자)`);
+                  continue;
+                }
+                
                 // FAQ 질문 패턴: "란?" 또는 "?"로 끝나고, 카테고리 제목이 아닌 경우
-                if (text && text.length >= 3 && text.length <= 200 && 
+                if (text && text.length >= 3 && text.length <= 100 && 
                     rect.top >= 0 && rect.top <= 2000 &&
                     (text.endsWith('란?') || text.endsWith('?') || text.includes('?')) &&
                     !excludedHeadingTexts.some(excluded => text === excluded || text.includes(excluded)) &&
@@ -513,8 +539,20 @@ export class ContentExtractor {
             '커뮤니케이션 애드',
             '커뮤니케이션',
             '애드',
-            '광고 상품' // 카테고리 제목 추가
+            '광고 상품', // 카테고리 제목 추가
+            '검색광고',
+            '광고 시작',
+            '회원/계정관리',
+            '성과형 디스플레이광고',
+            '메뉴 펼치기',
+            '메뉴 닫기',
+            '검색어 입력',
+            '바로가기',
+            '네이버 비즈니스 스쿨'
           ];
+          
+          // 대괄호로 둘러싸인 카테고리 제목 패턴 (예: [검색광고], [광고 시작])
+          const bracketCategoryPattern = /^\[.*\]$/;
           
           // URL에서 FAQ ID 추출
           const urlMatch = window.location.href.match(/\/faq\/(\d+)/);
