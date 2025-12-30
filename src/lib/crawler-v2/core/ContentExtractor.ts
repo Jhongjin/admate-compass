@@ -626,7 +626,19 @@ export class ContentExtractor {
         return null;
       }, url); // URL을 파라미터로 전달
 
-      let title: string | null = titleResult as string | null;
+      // FAQ 특화 로직 결과 처리
+      let title: string | null = null;
+      if (titleResult && typeof titleResult === 'object' && 'type' in titleResult && titleResult.type === 'faq') {
+        title = (titleResult as { type: string; title: string; score: number; source: string }).title;
+        console.log(`✅ [FAQ 제목 추출] 서버 측: 제목 추출 성공 - "${title}" (출처: ${(titleResult as any).source})`);
+      } else if (typeof titleResult === 'string') {
+        title = titleResult;
+      } else {
+        title = null;
+        if (isNaverAdsFAQ) {
+          console.warn(`⚠️ [FAQ 제목 추출] 서버 측: FAQ 페이지에서 제목을 찾지 못함 - null 반환`);
+        }
+      }
 
       // 일반적인 사이트 제목 및 피드백 텍스트 필터링
         if (title) {
