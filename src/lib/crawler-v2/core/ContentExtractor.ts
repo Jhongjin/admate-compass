@@ -159,7 +159,8 @@ export class ContentExtractor {
       }
 
       // 전략에 따라 제목 추출 (우선순위: FAQ 특화 로직 > h1 > h2 > 페이지 상단 가장 큰 볼드체 > title > og:title > data-testid > class 기반)
-      const titleResult = await page.evaluate(() => {
+      // FAQ 페이지인 경우 URL을 전달하여 명확하게 감지
+      const titleResult = await page.evaluate((urlParam: string) => {
         // 피드백/평가 관련 텍스트 필터링 함수
         const isFeedbackText = (text: string): boolean => {
           const lowerText = text.toLowerCase();
@@ -247,10 +248,12 @@ export class ContentExtractor {
           return null;
         };
 
-        // Naver Ads FAQ 페이지 특화 제목 추출
-        const isNaverAdsFAQ = window.location.href.includes('ads.naver.com/help/faq/');
+        // Naver Ads FAQ 페이지 특화 제목 추출 (가장 먼저 실행 - 일반 로직보다 우선)
+        // URL 파라미터로 전달받은 URL을 사용하여 명확하게 감지
+        const isNaverAdsFAQ = urlParam.includes('ads.naver.com/help/faq/');
         if (isNaverAdsFAQ) {
           console.log('🔍 [FAQ 제목 추출] Naver Ads FAQ 페이지 감지, 제목 추출 시작...');
+          console.log('🔍 [FAQ 제목 추출] URL:', urlParam);
           
           // 완전히 새로운 접근: 모든 제목 후보를 수집하고 점수화 (필터링 최소화)
           const collectAllTitleCandidates = (): Array<{text: string, score: number, source: string}> => {
@@ -618,7 +621,7 @@ export class ContentExtractor {
         }
 
         return null;
-      });
+      }, url); // URL을 파라미터로 전달
 
       let title: string | null = titleResult as string | null;
 
