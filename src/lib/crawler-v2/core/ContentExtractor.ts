@@ -318,7 +318,7 @@ export class ContentExtractor {
                 !titleText.includes('카테고리 닫기') && !titleText.includes('카테고리 열기')) {
               console.log('✅ FAQ 제목 추출 성공 (title 태그):', titleText);
               return titleText;
-            } else if (isGenericSiteTitle) {
+            } else if (titleText && isGenericSiteTitle(titleText)) {
               console.warn('⚠️ title 태그가 일반적인 사이트 제목만 포함, 본문에서 제목 찾기 시도');
             }
           }
@@ -538,22 +538,6 @@ export class ContentExtractor {
             console.log('✅ FAQ 제목 추출 성공 (텍스트 후보):', selectedTitle);
             return selectedTitle;
           }
-
-          // 일반적인 사이트 제목 패턴 감지 함수
-          const isGenericSiteTitle = (text: string): boolean => {
-            return text === '네이버 광고주센터' ||
-                   text === '광고주센터' ||
-                   text === '도움말' ||
-                   text === '네이버 광고주센터: 도움말' ||
-                   text === '광고주센터: 도움말' ||
-                   text.includes('네이버 광고주센터:') ||
-                   text.includes('광고주센터:') ||
-                   (text.length <= 20 && (
-                     text.includes('광고주센터') || 
-                     text.includes('도움말') ||
-                     (text.includes('네이버') && !text.includes('?'))
-                   ));
-          };
 
           // 2. 메인 콘텐츠 영역의 h1 우선 (UI 요소 제외)
           const mainH1Elements = Array.from(mainContent.querySelectorAll('h1'));
