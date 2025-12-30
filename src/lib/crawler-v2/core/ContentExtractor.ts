@@ -66,12 +66,59 @@ export class ContentExtractor {
     try {
       // 네이버 광고 페이지 같은 SPA의 경우 더 오래 대기
       const isNaverAds = url.includes('ads.naver.com');
-      const waitTime = isNaverAds ? 8000 : 5000;
-      await this.waitForPageStabilization(page, waitTime);
+      const isNaverAdsFAQ = isNaverAds && url.includes('/help/faq/');
+      
+      if (isNaverAdsFAQ) {
+        // FAQ 페이지는 URL 파라미터로 콘텐츠가 동적으로 변경되므로 특별 처리
+        try {
+          // FAQ 제목이 로드될 때까지 대기 (최대 15초)
+          await page.waitForFunction(
+            () => {
+              // FAQ 제목이 있는지 확인 (다양한 선택자 시도)
+              const selectors = [
+                'h1',
+                'h2',
+                '[class*="title"]',
+                '[class*="question"]',
+                '[class*="faq"]',
+                'main h1',
+                'article h1',
+                '.content h1',
+                '[role="heading"]'
+              ];
+              
+              for (const selector of selectors) {
+                const elements = document.querySelectorAll(selector);
+                for (const el of elements) {
+                  const text = el.textContent?.trim() || '';
+                  // 공통 텍스트 제외
+                  if (text.length >= 3 && text.length <= 150 &&
+                      !['광고주센터', '도움말', 'Help', 'Advertiser Center', '실전에 통하는'].includes(text) &&
+                      !text.includes('위 도움말') && !text.includes('도움이 되었나요')) {
+                    return true;
+                  }
+                }
+              }
+              return false;
+            },
+            { timeout: 15000 }
+          ).catch(() => {
+            console.warn('⚠️ FAQ 제목 로드 대기 타임아웃 (계속 진행)');
+          });
+          
+          // 추가 대기 (동적 콘텐츠 완전 로드)
+          await new Promise(resolve => setTimeout(resolve, 3000));
+        } catch (error) {
+          console.warn('⚠️ FAQ 페이지 제목 대기 실패 (계속 진행):', error);
+        }
+      } else {
+        const waitTime = isNaverAds ? 8000 : 5000;
+        await this.waitForPageStabilization(page, waitTime);
 
-      // 추가 대기 (동적 콘텐츠 로드)
-      if (isNaverAds) {
-        await new Promise(resolve => setTimeout(resolve, 3000));
+        // 추가 대기 (동적 콘텐츠 로드)
+        if (isNaverAds) {
+          await new Promise(resolve => setTimeout(resolve, 3000));
+        }
       }
 
       // 전략에 따라 제목 추출 (우선순위: h1 > h2 > 페이지 상단 가장 큰 볼드체 > title > og:title > data-testid > class 기반)
@@ -152,13 +199,120 @@ export class ContentExtractor {
           return null;
         };
 
+        // Naver Ads FAQ 페이지 특화 제목 추출
+        const isNaverAdsFAQ = window.location.href.includes('ads.naver.com/help/faq/');
+        if (isNaverAdsFAQ) {
+          // FAQ 페이지의 실제 제목을 찾기 위한 특화 로직
+          // 공통 텍스트 필터링 함수
+          const isCommonText = (text: string): boolean => {
+            const commonTexts = [
+              '광고주센터',
+              '도움말',
+              'Help',
+              'Advertiser Center',
+              '실전에 통하는',
+              '자주 묻는 질문',
+              'FAQ'
+            ];
+            return commonTexts.includes(text) || text.includes('실전에 통하는');
+          };
+
+          // 1. 메인 콘텐츠 영역의 첫 번째 의미있는 제목 찾기
+          // 메인 콘텐츠 영역 내의 모든 제목 후보 수집
+          const mainContent = document.querySelector('main, article, .content, .main-content, [role="main"]') || document.body;
+          const allHeadings = Array.from(mainContent.querySelectorAll('h1, h2, h3, [class*="title"], [class*="question"], [role="heading"]'));
+          
+          // 제목 후보들을 Y 좌표 순으로 정렬 (페이지 상단부터)
+          const headingCandidates = allHeadings
+            .map(el => {
+              const rect = el.getBoundingClientRect();
+              const text = el.textContent?.trim() || '';
+              return { element: el, text, y: rect.top };
+            })
+            .filter(item => {
+              const text = item.text;
+              return text.length >= 3 && 
+                     text.length <= 150 && 
+                     !isCommonText(text) && 
+                     !isFeedbackText(text) &&
+                     item.y >= 0 && 
+                     item.y <= 1000; // 페이지 상단 1000px 이내
+            })
+            .sort((a, b) => a.y - b.y); // Y 좌표 순 정렬
+
+          // 첫 번째 유효한 제목 반환
+          if (headingCandidates.length > 0) {
+            return headingCandidates[0].text;
+          }
+
+          // 2. 메인 콘텐츠 영역의 h1 우선
+          const mainH1 = mainContent.querySelector('h1');
+          if (mainH1) {
+            const text = mainH1.textContent?.trim() || '';
+            if (text && text.length >= 3 && text.length <= 150 && 
+                !isCommonText(text) && !isFeedbackText(text)) {
+              return text;
+            }
+          }
+
+          // 3. 모든 h1 태그 확인 (공통 텍스트 제외)
+          const h1Elements = Array.from(document.querySelectorAll('h1'));
+          for (const h1 of h1Elements) {
+            const rect = h1.getBoundingClientRect();
+            const text = h1.textContent?.trim() || '';
+            if (text && text.length >= 3 && text.length <= 150 && 
+                rect.top >= 0 && rect.top <= 1000 &&
+                !isCommonText(text) && !isFeedbackText(text)) {
+              return text;
+            }
+          }
+
+          // 4. h2 태그 확인 (FAQ 제목이 h2에 있을 수 있음)
+          const h2Elements = Array.from(document.querySelectorAll('h2'));
+          for (const h2 of h2Elements) {
+            const rect = h2.getBoundingClientRect();
+            if (rect.top >= 0 && rect.top <= 1000) {
+              const text = h2.textContent?.trim() || '';
+              if (text && text.length >= 3 && text.length <= 150 && 
+                  !isCommonText(text) && !isFeedbackText(text)) {
+                return text;
+              }
+            }
+          }
+
+          // 5. FAQ 특화 클래스 선택자
+          const faqSelectors = [
+            '[class*="faq-title"]',
+            '[class*="question-title"]',
+            '[class*="faq-question"]',
+            '[class*="faq-content"] h1',
+            '[class*="faq-content"] h2',
+            '[class*="question-content"] h1',
+            '[class*="question-content"] h2',
+            '[data-testid*="title"]',
+            '[data-testid*="question"]'
+          ];
+          for (const selector of faqSelectors) {
+            const element = document.querySelector(selector);
+            if (element) {
+              const rect = element.getBoundingClientRect();
+              const text = element.textContent?.trim() || '';
+              if (text && text.length >= 3 && text.length <= 150 && 
+                  rect.top >= 0 && rect.top <= 1000 &&
+                  !isCommonText(text) && !isFeedbackText(text)) {
+                return text;
+              }
+            }
+          }
+        }
+
         // 1. h1 태그 (가장 우선) - 메인 콘텐츠 영역 우선
         const mainH1 = document.querySelector('main h1, article h1, .content h1, .main-content h1, [role="main"] h1');
         if (mainH1) {
           const text = mainH1.textContent?.trim() || '';
           if (text && text.length >= 3 && text.length <= 150 && 
-              !['광고주센터', '도움말', 'Help', 'Advertiser Center'].includes(text) &&
-              !isFeedbackText(text)) {
+              !['광고주센터', '도움말', 'Help', 'Advertiser Center', '실전에 통하는'].includes(text) &&
+              !isFeedbackText(text) && !text.includes('실전에 통하는')) {
             return text;
           }
         }
@@ -168,8 +322,8 @@ export class ContentExtractor {
         for (const h1 of h1Elements) {
           const text = h1.textContent?.trim() || '';
           if (text && text.length >= 3 && text.length <= 150 && 
-              !['광고주센터', '도움말', 'Help', 'Advertiser Center'].includes(text) &&
-              !isFeedbackText(text)) {
+              !['광고주센터', '도움말', 'Help', 'Advertiser Center', '실전에 통하는'].includes(text) &&
+              !isFeedbackText(text) && !text.includes('실전에 통하는')) {
             return text;
           }
         }
@@ -181,8 +335,8 @@ export class ContentExtractor {
           if (rect.top >= 0 && rect.top <= 500) {
             const text = h2.textContent?.trim() || '';
             if (text && text.length >= 3 && text.length <= 150 && 
-                !['광고주센터', '도움말', 'Help', 'Advertiser Center'].includes(text) &&
-                !isFeedbackText(text)) {
+                !['광고주센터', '도움말', 'Help', 'Advertiser Center', '실전에 통하는'].includes(text) &&
+                !isFeedbackText(text) && !text.includes('실전에 통하는')) {
               return text;
             }
           }
@@ -279,7 +433,7 @@ export class ContentExtractor {
       // 일반적인 사이트 제목 및 피드백 텍스트 필터링
       if (title) {
         const lowerTitle = title.toLowerCase();
-        const isGenericTitle = ['광고주센터', '도움말', 'Help', 'Advertiser Center'].includes(title);
+        const isGenericTitle = ['광고주센터', '도움말', 'Help', 'Advertiser Center', '실전에 통하는'].includes(title);
         const isFeedback = [
           '위 도움말',
           '도움이 되었나요',
@@ -297,7 +451,10 @@ export class ContentExtractor {
           '보내주셔서 감사합니다'
         ].some(keyword => lowerTitle.includes(keyword));
         
-        if (isGenericTitle || isFeedback) {
+        // "실전에 통하는" 같은 공통 문구가 포함된 경우 제외
+        const hasCommonPhrase = lowerTitle.includes('실전에 통하는');
+        
+        if (isGenericTitle || isFeedback || hasCommonPhrase) {
           title = null;
         }
       }
