@@ -211,6 +211,25 @@ export class ContentExtractor {
         // Naver Ads FAQ 페이지 특화 제목 추출
         const isNaverAdsFAQ = window.location.href.includes('ads.naver.com/help/faq/');
         if (isNaverAdsFAQ) {
+          // 숫자만 있는 제목인지 확인 (FAQ ID는 숫자지만 실제 제목은 문장 형태)
+          const isNumericOnly = (text: string): boolean => {
+            const trimmed = text.trim();
+            // 숫자만 있거나, 숫자 + 공백/특수문자만 있는 경우
+            if (/^\d+[\s\-_]*$/.test(trimmed)) {
+              return true;
+            }
+            // URL에서 FAQ ID 추출하여 비교
+            const urlMatch = window.location.href.match(/\/faq\/(\d+)/);
+            if (urlMatch) {
+              const faqId = urlMatch[1];
+              // 제목이 FAQ ID와 정확히 일치하거나 숫자로만 구성된 경우
+              if (trimmed === faqId || /^\d+$/.test(trimmed)) {
+                return true;
+              }
+            }
+            return false;
+          };
+
           // 0. title 태그 우선 확인 (FAQ 페이지는 title 태그에 실제 제목이 있을 수 있음)
           const titleElement = document.querySelector('title');
           if (titleElement) {
@@ -267,25 +286,6 @@ export class ContentExtractor {
               '성공 전략'
             ];
             return commonTexts.includes(text) || text.includes('실전에 통하는');
-          };
-
-          // 숫자만 있는 제목인지 확인 (FAQ ID는 숫자지만 실제 제목은 문장 형태)
-          const isNumericOnly = (text: string): boolean => {
-            const trimmed = text.trim();
-            // 숫자만 있거나, 숫자 + 공백/특수문자만 있는 경우
-            if (/^\d+[\s\-_]*$/.test(trimmed)) {
-              return true;
-            }
-            // URL에서 FAQ ID 추출하여 비교
-            const urlMatch = window.location.href.match(/\/faq\/(\d+)/);
-            if (urlMatch) {
-              const faqId = urlMatch[1];
-              // 제목이 FAQ ID와 정확히 일치하거나 숫자로만 구성된 경우
-              if (trimmed === faqId || /^\d+$/.test(trimmed)) {
-                return true;
-              }
-            }
-            return false;
           };
 
           // UI/네비게이션 요소인지 확인하는 함수
