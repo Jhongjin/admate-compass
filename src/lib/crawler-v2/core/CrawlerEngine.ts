@@ -193,12 +193,13 @@ export class CrawlerEngine {
         });
 
         // 네이버 광고 페이지는 더 오래 대기 (동적 콘텐츠 로드 시간 확보)
-        const scrollWaitTime = isNaverAds ? 5000 : 2000;
+        const scrollWaitTime = isNaverAds ? 8000 : 2000; // FAQ 페이지는 8초로 증가
         await new Promise(resolve => setTimeout(resolve, scrollWaitTime));
 
-        // 네이버 광고 페이지의 경우 추가로 DOM 변경 감지 대기
-        if (isNaverAds) {
+        // 네이버 광고 FAQ 페이지의 경우 추가로 DOM 변경 감지 대기
+        if (isNaverAds && url.includes('/help/faq/')) {
           try {
+            console.log('⏳ [CrawlerEngine] FAQ 페이지 DOM 안정화 대기 중...');
             await page.waitForFunction(
               () => {
                 // 페이지 상단에 큰 텍스트가 있는지 확인
