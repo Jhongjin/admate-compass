@@ -160,6 +160,9 @@ export class ContentExtractor {
 
       // 전략에 따라 제목 추출 (우선순위: FAQ 특화 로직 > h1 > h2 > 페이지 상단 가장 큰 볼드체 > title > og:title > data-testid > class 기반)
       // FAQ 페이지인 경우 URL을 전달하여 명확하게 감지
+      if (isNaverAdsFAQ) {
+        console.log(`🔍 [FAQ 제목 추출] 서버 측: FAQ 페이지 감지, 제목 추출 시작... URL: ${url}`);
+      }
       const titleResult = await page.evaluate((urlParam: string) => {
         // 피드백/평가 관련 텍스트 필터링 함수
         const isFeedbackText = (text: string): boolean => {
@@ -397,7 +400,7 @@ export class ContentExtractor {
             
             // 유효한 제목 발견
             console.log(`✅ [FAQ 제목 추출 성공] "${text}" (점수: ${candidate.score}, 출처: ${candidate.source})`);
-            return text;
+            return { type: 'faq', title: text, score: candidate.score, source: candidate.source };
           }
           
           console.warn('⚠️ [FAQ 제목 추출] 모든 후보가 필터링됨');
