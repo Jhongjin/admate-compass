@@ -269,7 +269,7 @@ export class ContentExtractor {
             return false;
           };
 
-          // 0. title 태그 우선 확인 (FAQ 페이지는 title 태그에 실제 제목이 있을 수 있음)
+          // 0. title 태그 확인 (하지만 일반적인 텍스트만 포함하는 경우 제외)
           const titleElement = document.querySelector('title');
           if (titleElement) {
             let titleText = titleElement.textContent?.trim() || '';
@@ -295,13 +295,30 @@ export class ContentExtractor {
               titleText = titleText.replace(suffix, '').trim();
             }
             
-            // 숫자만 있는 제목이 아니고, 너무 짧지 않은 경우 반환 (더 관대하게)
-            if (titleText && titleText.length >= 2 && titleText.length <= 200 &&
+            // 일반적인 사이트 제목 패턴 감지 (모든 FAQ 페이지에서 동일한 제목)
+            const isGenericSiteTitle = 
+              titleText === '네이버 광고주센터' ||
+              titleText === '광고주센터' ||
+              titleText === '도움말' ||
+              titleText === '네이버 광고주센터: 도움말' ||
+              titleText === '광고주센터: 도움말' ||
+              titleText.includes('네이버 광고주센터:') ||
+              titleText.includes('광고주센터:') ||
+              (titleText.length <= 20 && (
+                titleText.includes('광고주센터') || 
+                titleText.includes('도움말') ||
+                titleText.includes('네이버')
+              ));
+            
+            // 일반적인 사이트 제목이 아닌 경우에만 반환
+            if (titleText && titleText.length >= 5 && titleText.length <= 200 &&
                 !isNumericOnly(titleText) &&
-                titleText !== '광고주센터' && titleText !== '도움말' &&
+                !isGenericSiteTitle &&
                 !titleText.includes('카테고리 닫기') && !titleText.includes('카테고리 열기')) {
               console.log('✅ FAQ 제목 추출 성공 (title 태그):', titleText);
               return titleText;
+            } else if (isGenericSiteTitle) {
+              console.warn('⚠️ title 태그가 일반적인 사이트 제목만 포함, 본문에서 제목 찾기 시도');
             }
           }
 
@@ -439,6 +456,25 @@ export class ContentExtractor {
                 return false;
               }
 
+              // 일반적인 사이트 제목 패턴 제외 (모든 FAQ 페이지에서 동일한 제목)
+              const isGenericSiteTitle = 
+                text === '네이버 광고주센터' ||
+                text === '광고주센터' ||
+                text === '도움말' ||
+                text === '네이버 광고주센터: 도움말' ||
+                text === '광고주센터: 도움말' ||
+                text.includes('네이버 광고주센터:') ||
+                text.includes('광고주센터:') ||
+                (text.length <= 20 && (
+                  text.includes('광고주센터') || 
+                  text.includes('도움말') ||
+                  (text.includes('네이버') && !text.includes('?'))
+                ));
+              
+              if (isGenericSiteTitle) {
+                return false;
+              }
+
               // 공통 텍스트 제외 (하지만 너무 엄격하지 않게)
               if (isCommonText(text) && text.length < 20) {
                 return false;
@@ -446,6 +482,25 @@ export class ContentExtractor {
 
               // 피드백 텍스트 제외 (하지만 너무 엄격하지 않게)
               if (isFeedbackText(text) && text.length < 30) {
+                return false;
+              }
+
+              // 일반적인 사이트 제목 패턴 제외 (모든 FAQ 페이지에서 동일한 제목)
+              const isGenericSiteTitle = 
+                text === '네이버 광고주센터' ||
+                text === '광고주센터' ||
+                text === '도움말' ||
+                text === '네이버 광고주센터: 도움말' ||
+                text === '광고주센터: 도움말' ||
+                text.includes('네이버 광고주센터:') ||
+                text.includes('광고주센터:') ||
+                (text.length <= 20 && (
+                  text.includes('광고주센터') || 
+                  text.includes('도움말') ||
+                  (text.includes('네이버') && !text.includes('?'))
+                ));
+              
+              if (isGenericSiteTitle) {
                 return false;
               }
 
@@ -496,6 +551,23 @@ export class ContentExtractor {
               if (text.includes('위 내용으로 궁금한 점이 해결되지 않았나요') ||
                   text.includes('궁금한 점이 해결되지 않았나요?')) return false;
               
+              // 일반적인 사이트 제목 패턴 제외
+              const isGenericSiteTitle = 
+                text === '네이버 광고주센터' ||
+                text === '광고주센터' ||
+                text === '도움말' ||
+                text === '네이버 광고주센터: 도움말' ||
+                text === '광고주센터: 도움말' ||
+                text.includes('네이버 광고주센터:') ||
+                text.includes('광고주센터:') ||
+                (text.length <= 20 && (
+                  text.includes('광고주센터') || 
+                  text.includes('도움말') ||
+                  (text.includes('네이버') && !text.includes('?'))
+                ));
+              
+              if (isGenericSiteTitle) return false;
+              
               // 페이지 상단 1500px 이내, 큰 폰트(16px 이상) 또는 볼드체(600 이상)
               return item.y >= 0 && item.y <= 1500 && 
                      (item.fontSize >= 16 || item.fontWeight >= 600);
@@ -513,6 +585,22 @@ export class ContentExtractor {
             return selectedTitle;
           }
 
+          // 일반적인 사이트 제목 패턴 감지 함수
+          const isGenericSiteTitle = (text: string): boolean => {
+            return text === '네이버 광고주센터' ||
+                   text === '광고주센터' ||
+                   text === '도움말' ||
+                   text === '네이버 광고주센터: 도움말' ||
+                   text === '광고주센터: 도움말' ||
+                   text.includes('네이버 광고주센터:') ||
+                   text.includes('광고주센터:') ||
+                   (text.length <= 20 && (
+                     text.includes('광고주센터') || 
+                     text.includes('도움말') ||
+                     (text.includes('네이버') && !text.includes('?'))
+                   ));
+          };
+
           // 2. 메인 콘텐츠 영역의 h1 우선 (UI 요소 제외)
           const mainH1Elements = Array.from(mainContent.querySelectorAll('h1'));
           for (const h1 of mainH1Elements) {
@@ -522,7 +610,9 @@ export class ContentExtractor {
             if (text && text.length >= 3 && text.length <= 150 && 
                 !isCommonText(text) && !isFeedbackText(text) &&
                 !isNumericOnly(text) &&
+                !isGenericSiteTitle(text) &&
                 !text.includes('카테고리') && !text.includes('닫기')) {
+              console.log('✅ FAQ 제목 추출 성공 (main h1):', text);
               return text;
             }
           }
@@ -538,7 +628,9 @@ export class ContentExtractor {
                 rect.top >= 0 && rect.top <= 1000 &&
                 !isCommonText(text) && !isFeedbackText(text) &&
                 !isNumericOnly(text) &&
+                !isGenericSiteTitle(text) &&
                 !text.includes('카테고리') && !text.includes('닫기')) {
+              console.log('✅ FAQ 제목 추출 성공 (h1):', text);
               return text;
             }
           }
@@ -554,7 +646,9 @@ export class ContentExtractor {
               if (text && text.length >= 3 && text.length <= 150 && 
                   !isCommonText(text) && !isFeedbackText(text) &&
                   !isNumericOnly(text) &&
+                  !isGenericSiteTitle(text) &&
                   !text.includes('카테고리') && !text.includes('닫기')) {
+                console.log('✅ FAQ 제목 추출 성공 (h2):', text);
                 return text;
               }
             }
