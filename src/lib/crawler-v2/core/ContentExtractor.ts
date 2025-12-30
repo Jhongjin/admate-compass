@@ -273,6 +273,7 @@ export class ContentExtractor {
           const titleElement = document.querySelector('title');
           if (titleElement) {
             let titleText = titleElement.textContent?.trim() || '';
+            
             // title 태그에서 불필요한 접미사 제거
             titleText = titleText
               .replace(/\s*[-|]\s*.*$/, '')
@@ -281,20 +282,25 @@ export class ContentExtractor {
             
             // "광고주센터", "NAVER" 같은 일반적인 접미사 제거
             const commonSuffixes = [
-              /광고주센터.*$/i,
-              /advertiser\s*center.*$/i,
-              /naver.*$/i,
-              /네이버.*$/i
+              /\s*-\s*광고주센터.*$/i,
+              /\s*-\s*advertiser\s*center.*$/i,
+              /\s*-\s*naver.*$/i,
+              /\s*-\s*네이버.*$/i,
+              /\s*\|\s*광고주센터.*$/i,
+              /\s*\|\s*advertiser\s*center.*$/i,
+              /\s*\|\s*naver.*$/i,
+              /\s*\|\s*네이버.*$/i
             ];
             for (const suffix of commonSuffixes) {
               titleText = titleText.replace(suffix, '').trim();
             }
             
-            // UI/피드백 텍스트가 아니고 숫자만 있는 제목이 아닌 경우 반환
-            if (titleText && titleText.length >= 3 && titleText.length <= 150 &&
-                !titleText.includes('카테고리') && !titleText.includes('닫기') &&
-                !titleText.includes('광고주센터') && !titleText.includes('도움말') &&
-                !isFeedbackText(titleText) && !isNumericOnly(titleText)) {
+            // 숫자만 있는 제목이 아니고, 너무 짧지 않은 경우 반환 (더 관대하게)
+            if (titleText && titleText.length >= 2 && titleText.length <= 200 &&
+                !isNumericOnly(titleText) &&
+                titleText !== '광고주센터' && titleText !== '도움말' &&
+                !titleText.includes('카테고리 닫기') && !titleText.includes('카테고리 열기')) {
+              console.log('✅ FAQ 제목 추출 성공 (title 태그):', titleText);
               return titleText;
             }
           }
@@ -450,11 +456,62 @@ export class ContentExtractor {
           // 첫 번째 유효한 제목 반환
           if (headingCandidates.length > 0) {
             const selectedTitle = headingCandidates[0].text;
-            console.log('✅ FAQ 제목 추출 성공:', selectedTitle);
+            console.log('✅ FAQ 제목 추출 성공 (heading 후보):', selectedTitle);
             return selectedTitle;
           }
           
           console.warn('⚠️ FAQ 제목 후보를 찾지 못함, 다른 방법 시도');
+          
+          // Fallback: 페이지의 모든 텍스트 요소 중 가장 큰/볼드한 텍스트 찾기
+          const allTextElements = Array.from(mainContent.querySelectorAll('*'));
+          const textCandidates = allTextElements
+            .map(el => {
+              const rect = el.getBoundingClientRect();
+              const text = el.textContent?.trim() || '';
+              const style = window.getComputedStyle(el);
+              const fontSize = parseFloat(style.fontSize) || 0;
+              const fontWeight = parseInt(style.fontWeight) || 400;
+              
+              return { element: el, text, fontSize, fontWeight, y: rect.top };
+            })
+            .filter(item => {
+              const text = item.text;
+              
+              // 너무 짧거나 길면 제외
+              if (text.length < 5 || text.length > 200) return false;
+              
+              // UI 요소 제외
+              if (isUIElement(item.element)) return false;
+              
+              // 네비게이션 하위 요소 제외
+              if (excludedSelectors.has(item.element)) return false;
+              
+              // 명확한 UI 텍스트만 제외
+              if (text.length < 10 && (text === '카테고리' || text === '닫기' || text === '열기')) return false;
+              
+              // 숫자만 있는 제목 제외
+              if (isNumericOnly(text)) return false;
+              
+              // 명확한 피드백 텍스트만 제외
+              if (text.includes('위 내용으로 궁금한 점이 해결되지 않았나요') ||
+                  text.includes('궁금한 점이 해결되지 않았나요?')) return false;
+              
+              // 페이지 상단 1500px 이내, 큰 폰트(16px 이상) 또는 볼드체(600 이상)
+              return item.y >= 0 && item.y <= 1500 && 
+                     (item.fontSize >= 16 || item.fontWeight >= 600);
+            })
+            .sort((a, b) => {
+              // 폰트 크기와 굵기 우선, 그 다음 Y 좌표
+              if (a.fontSize !== b.fontSize) return b.fontSize - a.fontSize;
+              if (a.fontWeight !== b.fontWeight) return b.fontWeight - a.fontWeight;
+              return a.y - b.y;
+            });
+          
+          if (textCandidates.length > 0) {
+            const selectedTitle = textCandidates[0].text;
+            console.log('✅ FAQ 제목 추출 성공 (텍스트 후보):', selectedTitle);
+            return selectedTitle;
+          }
 
           // 2. 메인 콘텐츠 영역의 h1 우선 (UI 요소 제외)
           const mainH1Elements = Array.from(mainContent.querySelectorAll('h1'));
@@ -670,7 +727,7 @@ export class ContentExtractor {
       let title: string | null = titleResult as string | null;
 
       // 일반적인 사이트 제목 및 피드백 텍스트 필터링
-      if (title) {
+        if (title) {
         const lowerTitle = title.toLowerCase();
         const isGenericTitle = ['광고주센터', '도움말', 'Help', 'Advertiser Center', '실전에 통하는'].includes(title);
         const isFeedback = [
@@ -738,11 +795,11 @@ export class ContentExtractor {
 
       // 모든 전략 실패 시 URL에서 추출 (단, FAQ 페이지는 제외)
       if (!title && !url.includes('ads.naver.com/help/faq/')) {
-        try {
-          const urlObj = new URL(url);
-          const pathParts = urlObj.pathname.split('/').filter(p => p);
-          if (pathParts.length > 0) {
-            const lastPart = pathParts[pathParts.length - 1];
+      try {
+        const urlObj = new URL(url);
+        const pathParts = urlObj.pathname.split('/').filter(p => p);
+        if (pathParts.length > 0) {
+          const lastPart = pathParts[pathParts.length - 1];
             // 숫자만 있는 경우 제외 (FAQ ID 등)
             if (/^\d+$/.test(lastPart)) {
               return null;
@@ -757,9 +814,9 @@ export class ContentExtractor {
             if (/^\d+[\s\-_]*$/.test(title.trim())) {
               return null;
             }
-          }
-        } catch {
-          // URL 파싱 실패 시 무시
+        }
+      } catch {
+        // URL 파싱 실패 시 무시
         }
       }
 
