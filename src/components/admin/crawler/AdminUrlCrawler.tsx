@@ -610,8 +610,46 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
       if (data.success) {
         toast.success(data.message);
         if (onSuccess) onSuccess();
-        // 성공한 결과만 제거하고 실패한 결과는 남겨두기
-        setResults(prev => prev.filter(r => r.status !== 'success'));
+        
+        // 저장된 URL 목록 추출 (성공적으로 저장된 URL들)
+        const savedUrls = new Set<string>();
+        // API 응답 구조: data.data.savedDocuments
+        const savedDocuments = data.data?.savedDocuments || data.savedDocuments || [];
+        if (Array.isArray(savedDocuments)) {
+          savedDocuments.forEach((doc: any) => {
+            if (doc.url) {
+              savedUrls.add(normalizeUrl(doc.url));
+            }
+          });
+        }
+        
+        console.log(`[handleSaveToDb] 저장된 URL 개수: ${savedUrls.size}개`);
+        if (savedUrls.size > 0) {
+          console.log(`[handleSaveToDb] 저장된 URL 목록 (처음 5개):`, Array.from(savedUrls).slice(0, 5));
+        }
+        
+        // 저장된 URL들을 results에서 제거 (재크롤링 후 저장된 경우도 포함)
+        setResults(prev => {
+          const filtered = prev.filter(r => {
+            const normalizedUrl = normalizeUrl(r.url);
+            // 저장된 URL인 경우 제거 (재크롤링 후 저장된 경우 포함)
+            if (savedUrls.has(normalizedUrl)) {
+              console.log(`[handleSaveToDb] 저장된 URL 제거: ${r.url}`);
+              return false;
+            }
+            // 성공 상태이지만 저장 목록에 없는 경우도 제거 (일반적인 성공 케이스)
+            // 단, 저장 목록이 비어있으면 성공 상태만 제거 (폴백)
+            if (r.status === 'success' && (savedUrls.size === 0 || savedUrls.has(normalizedUrl))) {
+              console.log(`[handleSaveToDb] 성공 상태 URL 제거: ${r.url}`);
+              return false;
+            }
+            // 실패한 결과는 남겨둠
+            return true;
+          });
+          console.log(`[handleSaveToDb] 결과 필터링: ${prev.length}개 -> ${filtered.length}개`);
+          return filtered;
+        });
+        
         await fetchExistingUrls();
         setDiscoveredUrls([]);
       } else {
