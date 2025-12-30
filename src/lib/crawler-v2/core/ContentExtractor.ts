@@ -232,11 +232,11 @@ export class ContentExtractor {
               titleText = titleText.replace(suffix, '').trim();
             }
             
-            // UI/피드백 텍스트가 아닌 경우 반환
+            // UI/피드백 텍스트가 아니고 숫자만 있는 제목이 아닌 경우 반환
             if (titleText && titleText.length >= 3 && titleText.length <= 150 &&
                 !titleText.includes('카테고리') && !titleText.includes('닫기') &&
                 !titleText.includes('광고주센터') && !titleText.includes('도움말') &&
-                !isFeedbackText(titleText)) {
+                !isFeedbackText(titleText) && !isNumericOnly(titleText)) {
               return titleText;
             }
           }
@@ -248,7 +248,7 @@ export class ContentExtractor {
             if (ogTitleText && ogTitleText.length >= 3 && ogTitleText.length <= 150 &&
                 !ogTitleText.includes('카테고리') && !ogTitleText.includes('닫기') &&
                 !ogTitleText.includes('광고주센터') && !ogTitleText.includes('도움말') &&
-                !isFeedbackText(ogTitleText)) {
+                !isFeedbackText(ogTitleText) && !isNumericOnly(ogTitleText)) {
               return ogTitleText;
             }
           }
@@ -262,9 +262,30 @@ export class ContentExtractor {
               'Advertiser Center',
               '실전에 통하는',
               '자주 묻는 질문',
-              'FAQ'
+              'FAQ',
+              '성공전략',
+              '성공 전략'
             ];
             return commonTexts.includes(text) || text.includes('실전에 통하는');
+          };
+
+          // 숫자만 있는 제목인지 확인 (FAQ ID는 숫자지만 실제 제목은 문장 형태)
+          const isNumericOnly = (text: string): boolean => {
+            const trimmed = text.trim();
+            // 숫자만 있거나, 숫자 + 공백/특수문자만 있는 경우
+            if (/^\d+[\s\-_]*$/.test(trimmed)) {
+              return true;
+            }
+            // URL에서 FAQ ID 추출하여 비교
+            const urlMatch = window.location.href.match(/\/faq\/(\d+)/);
+            if (urlMatch) {
+              const faqId = urlMatch[1];
+              // 제목이 FAQ ID와 정확히 일치하거나 숫자로만 구성된 경우
+              if (trimmed === faqId || /^\d+$/.test(trimmed)) {
+                return true;
+              }
+            }
+            return false;
           };
 
           // UI/네비게이션 요소인지 확인하는 함수
@@ -371,6 +392,7 @@ export class ContentExtractor {
                      text.length <= 150 && 
                      !isCommonText(text) && 
                      !isFeedbackText(text) &&
+                     !isNumericOnly(text) &&
                      item.y >= 0 && 
                      item.y <= 1000; // 페이지 상단 1000px 이내
             })
@@ -389,6 +411,7 @@ export class ContentExtractor {
             const text = h1.textContent?.trim() || '';
             if (text && text.length >= 3 && text.length <= 150 && 
                 !isCommonText(text) && !isFeedbackText(text) &&
+                !isNumericOnly(text) &&
                 !text.includes('카테고리') && !text.includes('닫기')) {
               return text;
             }
@@ -404,6 +427,7 @@ export class ContentExtractor {
             if (text && text.length >= 3 && text.length <= 150 && 
                 rect.top >= 0 && rect.top <= 1000 &&
                 !isCommonText(text) && !isFeedbackText(text) &&
+                !isNumericOnly(text) &&
                 !text.includes('카테고리') && !text.includes('닫기')) {
               return text;
             }
@@ -419,6 +443,7 @@ export class ContentExtractor {
               const text = h2.textContent?.trim() || '';
               if (text && text.length >= 3 && text.length <= 150 && 
                   !isCommonText(text) && !isFeedbackText(text) &&
+                  !isNumericOnly(text) &&
                   !text.includes('카테고리') && !text.includes('닫기')) {
                 return text;
               }
@@ -444,7 +469,8 @@ export class ContentExtractor {
               const text = element.textContent?.trim() || '';
               if (text && text.length >= 3 && text.length <= 150 && 
                   rect.top >= 0 && rect.top <= 1000 &&
-                  !isCommonText(text) && !isFeedbackText(text)) {
+                  !isCommonText(text) && !isFeedbackText(text) &&
+                  !isNumericOnly(text)) {
                 return text;
               }
             }
@@ -479,7 +505,10 @@ export class ContentExtractor {
           const rect = h2.getBoundingClientRect();
           if (rect.top >= 0 && rect.top <= 500) {
             const text = h2.textContent?.trim() || '';
+            // 숫자만 있는 제목인지 확인
+            const isNumeric = /^\d+[\s\-_]*$/.test(text);
             if (text && text.length >= 3 && text.length <= 150 && 
+                !isNumeric &&
                 !['광고주센터', '도움말', 'Help', 'Advertiser Center', '실전에 통하는'].includes(text) &&
                 !isFeedbackText(text) && !text.includes('실전에 통하는')) {
               return text;
@@ -514,7 +543,10 @@ export class ContentExtractor {
             text = text.replace(suffix, '').trim();
           }
           
+          // 숫자만 있는 제목인지 확인
+          const isNumeric = /^\d+[\s\-_]*$/.test(text);
           if (text && text.length >= 3 && text.length <= 150 && 
+              !isNumeric &&
               !['광고주센터', '도움말', 'Help', 'Advertiser Center'].includes(text) &&
               !text.includes('광고주센터') && !text.includes('Advertiser Center') &&
               !isFeedbackText(text)) {
@@ -526,7 +558,10 @@ export class ContentExtractor {
         const ogTitle = document.querySelector('meta[property="og:title"]');
         if (ogTitle) {
           const text = ogTitle.getAttribute('content')?.trim() || '';
+          // 숫자만 있는 제목인지 확인
+          const isNumeric = /^\d+[\s\-_]*$/.test(text);
           if (text && text.length >= 3 && text.length <= 150 && 
+              !isNumeric &&
               !['광고주센터', '도움말', 'Help', 'Advertiser Center'].includes(text) &&
               !isFeedbackText(text)) {
             return text;
@@ -537,7 +572,10 @@ export class ContentExtractor {
         const dataTestIdTitle = document.querySelector('[data-testid="page-title"]');
         if (dataTestIdTitle) {
           const text = dataTestIdTitle.textContent?.trim() || '';
+          // 숫자만 있는 제목인지 확인
+          const isNumeric = /^\d+[\s\-_]*$/.test(text);
           if (text && text.length >= 3 && text.length <= 150 && 
+              !isNumeric &&
               !['광고주센터', '도움말', 'Help', 'Advertiser Center'].includes(text) &&
               !isFeedbackText(text)) {
             return text;
@@ -562,7 +600,10 @@ export class ContentExtractor {
           const element = document.querySelector(selector);
           if (element) {
             const text = element.textContent?.trim() || '';
+            // 숫자만 있는 제목인지 확인
+            const isNumeric = /^\d+[\s\-_]*$/.test(text);
             if (text && text.length >= 3 && text.length <= 150 && 
+                !isNumeric &&
                 !['광고주센터', '도움말', 'Help', 'Advertiser Center'].includes(text) &&
                 !isFeedbackText(text)) {
               return text;
@@ -605,6 +646,9 @@ export class ContentExtractor {
         // "실전에 통하는" 같은 공통 문구가 포함된 경우 제외
         const hasCommonPhrase = lowerTitle.includes('실전에 통하는');
         
+        // 숫자만 있는 제목인지 확인 (FAQ ID는 숫자지만 실제 제목은 문장 형태)
+        const isNumericTitle = /^\d+[\s\-_]*$/.test(title.trim());
+        
         // UI/네비게이션 텍스트 제외
         const isUIText = [
           '카테고리',
@@ -617,7 +661,8 @@ export class ContentExtractor {
           'menu'
         ].some(keyword => lowerTitle.includes(keyword));
         
-        if (isGenericTitle || isFeedback || hasCommonPhrase || isUIText) {
+        if (isGenericTitle || isFeedback || hasCommonPhrase || isUIText || isNumericTitle) {
+          console.warn(`⚠️ 일반적인 제목/피드백/UI 텍스트/숫자 제목 감지, 제외: "${title}"`);
           title = null;
         }
       }
