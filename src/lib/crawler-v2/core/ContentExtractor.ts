@@ -305,20 +305,55 @@ export class ContentExtractor {
               }
             });
             
-            // 2. 클래스명에 title, question이 포함된 요소 수집
-            const titleElements = Array.from(mainContent.querySelectorAll('[class*="title"], [class*="question"], [class*="heading"]'));
+            // 2. 클래스명에 title, question이 포함된 요소 수집 (FAQ 질문 제목 우선)
+            const titleElements = Array.from(mainContent.querySelectorAll('[class*="title"], [class*="question"], [class*="heading"], [class*="faq"], [class*="content"]'));
             console.log(`🔍 [FAQ 제목 추출] 발견된 title/question 클래스 요소: ${titleElements.length}개`);
             titleElements.forEach(el => {
               const rect = el.getBoundingClientRect();
               const text = el.textContent?.trim() || '';
               if (text && text.length >= 2 && text.length <= 200 && rect.top >= 0 && rect.top <= 2000) {
+                // 카테고리 제목 제외
+                if (excludedHeadingTexts.some(excluded => text === excluded || text.includes(excluded))) {
+                  return;
+                }
                 let score = 80;
                 if (el.className.includes('title')) score += 30;
                 if (el.className.includes('question')) score += 25;
+                if (el.className.includes('faq')) score += 20; // FAQ 관련 클래스 보너스
+                if (el.className.includes('content')) score += 10; // content 클래스 보너스
                 score += Math.max(0, 30 - Math.floor(rect.top / 30));
                 candidates.push({ text, score, source: 'class-based' });
                 console.log(`  - class-based: "${text.substring(0, 50)}" (점수: ${score}, Y: ${Math.round(rect.top)})`);
               }
+            });
+            
+            // 2-1. FAQ 질문 제목을 찾기 위한 더 구체적인 선택자 시도
+            const faqQuestionSelectors = [
+              'article h1',
+              'article h2',
+              '.faq-content h1',
+              '.faq-content h2',
+              '.faq-question',
+              '[data-faq-question]',
+              '.question-title',
+              '.faq-title'
+            ];
+            faqQuestionSelectors.forEach(selector => {
+              const elements = Array.from(mainContent.querySelectorAll(selector));
+              elements.forEach(el => {
+                const rect = el.getBoundingClientRect();
+                const text = el.textContent?.trim() || '';
+                if (text && text.length >= 3 && text.length <= 200 && rect.top >= 0 && rect.top <= 2000) {
+                  // 카테고리 제목 제외
+                  if (excludedHeadingTexts.some(excluded => text === excluded || text.includes(excluded))) {
+                    return;
+                  }
+                  let score = 120; // FAQ 질문 선택자는 높은 점수
+                  score += Math.max(0, 40 - Math.floor(rect.top / 20));
+                  candidates.push({ text, score, source: `faq-selector-${selector.replace(/\s+/g, '-')}` });
+                  console.log(`  - FAQ selector (${selector}): "${text.substring(0, 50)}" (점수: ${score}, Y: ${Math.round(rect.top)})`);
+                }
+              });
             });
             
             // 3. 큰 폰트/볼드 텍스트 수집 (더 관대한 조건)
