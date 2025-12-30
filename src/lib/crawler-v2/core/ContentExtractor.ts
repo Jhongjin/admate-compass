@@ -91,10 +91,13 @@ export class ContentExtractor {
                 const elements = document.querySelectorAll(selector);
                 for (const el of elements) {
                   const text = el.textContent?.trim() || '';
-                  // 공통 텍스트 제외
-                  if (text.length >= 3 && text.length <= 150 &&
-                      !['광고주센터', '도움말', 'Help', 'Advertiser Center', '실전에 통하는'].includes(text) &&
-                      !text.includes('위 도움말') && !text.includes('도움이 되었나요')) {
+                  // 공통 텍스트 및 피드백 텍스트 제외
+                  const isCommon = ['광고주센터', '도움말', 'Help', 'Advertiser Center', '실전에 통하는'].includes(text);
+                  const isFeedback = text.includes('위 도움말') || 
+                                    text.includes('도움이 되었나요') ||
+                                    text.includes('위 내용으로 궁금한 점이 해결되지 않았나요') ||
+                                    text.includes('궁금한 점이 해결되지 않았나요');
+                  if (text.length >= 3 && text.length <= 150 && !isCommon && !isFeedback) {
                     return true;
                   }
                 }
@@ -140,7 +143,13 @@ export class ContentExtractor {
             '점수',
             '만족도',
             '의견',
-            '보내주셔서 감사합니다'
+            '보내주셔서 감사합니다',
+            '위 내용으로 궁금한 점이 해결되지 않았나요',
+            '궁금한 점이 해결되지 않았나요',
+            '해결되지 않았나요',
+            '추가 문의',
+            '문의하기',
+            '질문이 남아있나요'
           ];
           return feedbackKeywords.some(keyword => lowerText.includes(keyword));
         };
@@ -223,10 +232,11 @@ export class ContentExtractor {
               titleText = titleText.replace(suffix, '').trim();
             }
             
-            // UI 텍스트가 아닌 경우 반환
+            // UI/피드백 텍스트가 아닌 경우 반환
             if (titleText && titleText.length >= 3 && titleText.length <= 150 &&
                 !titleText.includes('카테고리') && !titleText.includes('닫기') &&
-                !titleText.includes('광고주센터') && !titleText.includes('도움말')) {
+                !titleText.includes('광고주센터') && !titleText.includes('도움말') &&
+                !isFeedbackText(titleText)) {
               return titleText;
             }
           }
@@ -237,7 +247,8 @@ export class ContentExtractor {
             const ogTitleText = ogTitle.getAttribute('content')?.trim() || '';
             if (ogTitleText && ogTitleText.length >= 3 && ogTitleText.length <= 150 &&
                 !ogTitleText.includes('카테고리') && !ogTitleText.includes('닫기') &&
-                !ogTitleText.includes('광고주센터') && !ogTitleText.includes('도움말')) {
+                !ogTitleText.includes('광고주센터') && !ogTitleText.includes('도움말') &&
+                !isFeedbackText(ogTitleText)) {
               return ogTitleText;
             }
           }
@@ -344,6 +355,15 @@ export class ContentExtractor {
               
               // UI 텍스트 패턴 제외
               if (text.includes('카테고리') || text.includes('닫기') || text.includes('열기')) {
+                return false;
+              }
+
+              // 피드백 텍스트 패턴 제외
+              if (text.includes('위 내용으로 궁금한 점이 해결되지 않았나요') ||
+                  text.includes('궁금한 점이 해결되지 않았나요') ||
+                  text.includes('해결되지 않았나요') ||
+                  text.includes('추가 문의') ||
+                  text.includes('문의하기')) {
                 return false;
               }
 
@@ -573,7 +593,13 @@ export class ContentExtractor {
           '점수',
           '만족도',
           '의견',
-          '보내주셔서 감사합니다'
+          '보내주셔서 감사합니다',
+          '위 내용으로 궁금한 점이 해결되지 않았나요',
+          '궁금한 점이 해결되지 않았나요',
+          '해결되지 않았나요',
+          '추가 문의',
+          '문의하기',
+          '질문이 남아있나요'
         ].some(keyword => lowerTitle.includes(keyword));
         
         // "실전에 통하는" 같은 공통 문구가 포함된 경우 제외
