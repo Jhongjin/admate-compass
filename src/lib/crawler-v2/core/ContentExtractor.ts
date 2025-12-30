@@ -362,9 +362,8 @@ export class ContentExtractor {
           }
           
           console.warn('⚠️ FAQ 제목 후보를 찾지 못함');
-        }
-
-          // 0. title 태그 확인 (하지만 일반적인 텍스트만 포함하는 경우 제외)
+          
+          // Fallback: 간단한 title 태그 확인
           const titleElement = document.querySelector('title');
           if (titleElement) {
             let titleText = titleElement.textContent?.trim() || '';
@@ -390,17 +389,23 @@ export class ContentExtractor {
               titleText = titleText.replace(suffix, '').trim();
             }
             
-            // 일반적인 사이트 제목이 아닌 경우에만 반환
-            if (titleText && titleText.length >= 5 && titleText.length <= 200 &&
-                !isNumericOnly(titleText) &&
-                !isGenericSiteTitle(titleText) &&
-                !titleText.includes('카테고리 닫기') && !titleText.includes('카테고리 열기')) {
-              console.log('✅ FAQ 제목 추출 성공 (title 태그):', titleText);
+            // 간단한 필터링: 명확히 잘못된 제목만 제외
+            const isBadTitle = 
+              /^[\d\s\-_]+$/.test(titleText) || // 숫자만
+              titleText === '광고주센터' ||
+              titleText === '도움말' ||
+              titleText === '네이버 광고주센터: 도움말' ||
+              titleText === '광고주센터: 도움말' ||
+              titleText.startsWith('네이버 광고주센터:') ||
+              titleText.startsWith('광고주센터:') ||
+              (titleText.length <= 15 && (titleText.includes('광고주센터') || titleText.includes('도움말')));
+            
+            if (titleText && titleText.length >= 5 && titleText.length <= 200 && !isBadTitle) {
+              console.log('✅ FAQ 제목 추출 성공 (title 태그 fallback):', titleText);
               return titleText;
-            } else if (titleText && isGenericSiteTitle(titleText)) {
-              console.warn('⚠️ title 태그가 일반적인 사이트 제목만 포함, 본문에서 제목 찾기 시도');
             }
           }
+        }
 
           // 0-1. og:title 메타 태그 확인
           const ogTitle = document.querySelector('meta[property="og:title"]');
