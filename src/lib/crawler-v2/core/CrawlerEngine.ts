@@ -167,7 +167,36 @@ export class CrawlerEngine {
         await new Promise((resolve) => setTimeout(resolve, waitTime));
       }
 
-      // 콘텐츠 추출
+      // 페이지 안정화를 위한 추가 대기 (동적으로 로드되는 제목을 기다림)
+      // 특히 maxdepth 1이고 하위페이지 추출 X인 경우, 단일 페이지의 제목이 정확히 로드되도록 보장
+      try {
+        // 스크롤을 통해 콘텐츠 로드 유도 (Lazy loading 콘텐츠 활성화)
+        await page.evaluate(async () => {
+          await new Promise<void>((resolve) => {
+            let totalHeight = 0;
+            const distance = 200;
+            const timer = setInterval(() => {
+              const scrollHeight = document.body.scrollHeight;
+              window.scrollBy(0, distance);
+              totalHeight += distance;
+
+              if (totalHeight >= scrollHeight || totalHeight >= 3000) {
+                clearInterval(timer);
+                resolve();
+              }
+            }, 150);
+          });
+        });
+
+        // 스크롤 후 추가 대기 (콘텐츠 로드 시간)
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      } catch (scrollError) {
+        console.warn('⚠️ 스크롤 실패 (무시):', scrollError);
+        // 스크롤 실패해도 최소 대기 시간은 확보
+        await new Promise(resolve => setTimeout(resolve, 2000));
+      }
+
+      // 콘텐츠 추출 (내부에서 추가 안정화 대기 수행)
       const { title, content } = await contentExtractor.extractFromPage(page, url);
 
       // 문서 타입 결정
