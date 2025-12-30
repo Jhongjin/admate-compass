@@ -215,6 +215,8 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
   const [isSelectionDialogOpen, setIsSelectionDialogOpen] = useState(false);
   const [editingTitleIndex, setEditingTitleIndex] = useState<number | null>(null);
   const [editingTitleValue, setEditingTitleValue] = useState<string>('');
+  const [editingResultUrl, setEditingResultUrl] = useState<string | null>(null); // 크롤링 결과 제목 편집 중인 URL
+  const [editingResultTitle, setEditingResultTitle] = useState<string>(''); // 크롤링 결과 제목 편집 값
   const [seedUrl, setSeedUrl] = useState<string | null>(null); // 원본 시드 URL 저장
   const [fetchingTitleUrls, setFetchingTitleUrls] = useState<Set<string>>(new Set()); // 제목 가져오는 중인 URL
 
@@ -794,6 +796,30 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
     setEditingTitleValue('');
   };
 
+  // 크롤링 결과 제목 편집 시작
+  const handleStartEditResultTitle = (url: string, currentTitle: string) => {
+    setEditingResultUrl(url);
+    setEditingResultTitle(currentTitle || '');
+  };
+
+  // 크롤링 결과 제목 저장
+  const handleSaveResultTitle = (url: string) => {
+    if (editingResultUrl === url) {
+      setResults(prev => prev.map(r => 
+        r.url === url ? { ...r, title: editingResultTitle.trim() || r.title } : r
+      ));
+      setEditingResultUrl(null);
+      setEditingResultTitle('');
+      toast.success('제목이 저장되었습니다.');
+    }
+  };
+
+  // 크롤링 결과 제목 편집 취소
+  const handleCancelEditResultTitle = () => {
+    setEditingResultUrl(null);
+    setEditingResultTitle('');
+  };
+
   // 제목이 없는 URL의 제목을 페이지에서 가져오기
   const handleFetchTitle = async (index: number, url: string) => {
     if (fetchingTitleUrls.has(url)) return;
@@ -1219,7 +1245,61 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                           </td>
                           <td className="px-6 py-4 max-w-lg">
                             <div className="flex flex-col">
-                              <span className="text-white font-medium truncate pr-4" title={result.title}>{result.title || '(No Title)'}</span>
+                              {editingResultUrl === result.url ? (
+                                <div className="flex items-center gap-2 mb-1">
+                                  <Input
+                                    value={editingResultTitle}
+                                    onChange={(e) => setEditingResultTitle(e.target.value)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') {
+                                        e.preventDefault();
+                                        handleSaveResultTitle(result.url);
+                                      } else if (e.key === 'Escape') {
+                                        e.preventDefault();
+                                        handleCancelEditResultTitle();
+                                      }
+                                    }}
+                                    className="h-8 text-sm bg-gray-800 border-gray-600 text-white flex-1"
+                                    autoFocus
+                                    onClick={(e) => e.stopPropagation()}
+                                  />
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-8 w-8 p-0 text-green-400 hover:text-green-300 hover:bg-green-500/10"
+                                    onClick={() => handleSaveResultTitle(result.url)}
+                                  >
+                                    <Check className="h-4 w-4" />
+                                  </Button>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-8 w-8 p-0 text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                                    onClick={handleCancelEditResultTitle}
+                                  >
+                                    <X className="h-4 w-4" />
+                                  </Button>
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-2 group/title">
+                                  <span 
+                                    className="text-white font-medium truncate pr-4 flex-1 cursor-pointer hover:text-blue-400 transition-colors" 
+                                    title={result.title}
+                                    onClick={() => handleStartEditResultTitle(result.url, result.title)}
+                                  >
+                                    {result.title || '(No Title)'}
+                                  </span>
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-6 w-6 p-0 text-gray-500 hover:text-gray-300 hover:bg-gray-700/50 opacity-0 group-hover/title:opacity-100 transition-opacity"
+                                    onClick={() => handleStartEditResultTitle(result.url, result.title)}
+                                    title="제목 수정"
+                                  >
+                                    <Pencil className="h-3 w-3" />
+                                  </Button>
+                                </div>
+                              )}
                               <a
                                 href={result.url}
                                 target="_blank"
