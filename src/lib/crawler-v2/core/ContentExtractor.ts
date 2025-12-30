@@ -269,6 +269,22 @@ export class ContentExtractor {
             return false;
           };
 
+          // 일반적인 사이트 제목 패턴 감지 함수
+          const isGenericSiteTitle = (text: string): boolean => {
+            return text === '네이버 광고주센터' ||
+                   text === '광고주센터' ||
+                   text === '도움말' ||
+                   text === '네이버 광고주센터: 도움말' ||
+                   text === '광고주센터: 도움말' ||
+                   text.includes('네이버 광고주센터:') ||
+                   text.includes('광고주센터:') ||
+                   (text.length <= 20 && (
+                     text.includes('광고주센터') || 
+                     text.includes('도움말') ||
+                     (text.includes('네이버') && !text.includes('?'))
+                   ));
+          };
+
           // 0. title 태그 확인 (하지만 일반적인 텍스트만 포함하는 경우 제외)
           const titleElement = document.querySelector('title');
           if (titleElement) {
@@ -295,25 +311,10 @@ export class ContentExtractor {
               titleText = titleText.replace(suffix, '').trim();
             }
             
-            // 일반적인 사이트 제목 패턴 감지 (모든 FAQ 페이지에서 동일한 제목)
-            const isGenericSiteTitle = 
-              titleText === '네이버 광고주센터' ||
-              titleText === '광고주센터' ||
-              titleText === '도움말' ||
-              titleText === '네이버 광고주센터: 도움말' ||
-              titleText === '광고주센터: 도움말' ||
-              titleText.includes('네이버 광고주센터:') ||
-              titleText.includes('광고주센터:') ||
-              (titleText.length <= 20 && (
-                titleText.includes('광고주센터') || 
-                titleText.includes('도움말') ||
-                titleText.includes('네이버')
-              ));
-            
             // 일반적인 사이트 제목이 아닌 경우에만 반환
             if (titleText && titleText.length >= 5 && titleText.length <= 200 &&
                 !isNumericOnly(titleText) &&
-                !isGenericSiteTitle &&
+                !isGenericSiteTitle(titleText) &&
                 !titleText.includes('카테고리 닫기') && !titleText.includes('카테고리 열기')) {
               console.log('✅ FAQ 제목 추출 성공 (title 태그):', titleText);
               return titleText;
@@ -457,21 +458,7 @@ export class ContentExtractor {
               }
 
               // 일반적인 사이트 제목 패턴 제외 (모든 FAQ 페이지에서 동일한 제목)
-              const isGenericSiteTitle = 
-                text === '네이버 광고주센터' ||
-                text === '광고주센터' ||
-                text === '도움말' ||
-                text === '네이버 광고주센터: 도움말' ||
-                text === '광고주센터: 도움말' ||
-                text.includes('네이버 광고주센터:') ||
-                text.includes('광고주센터:') ||
-                (text.length <= 20 && (
-                  text.includes('광고주센터') || 
-                  text.includes('도움말') ||
-                  (text.includes('네이버') && !text.includes('?'))
-                ));
-              
-              if (isGenericSiteTitle) {
+              if (isGenericSiteTitle(text)) {
                 return false;
               }
 
@@ -482,25 +469,6 @@ export class ContentExtractor {
 
               // 피드백 텍스트 제외 (하지만 너무 엄격하지 않게)
               if (isFeedbackText(text) && text.length < 30) {
-                return false;
-              }
-
-              // 일반적인 사이트 제목 패턴 제외 (모든 FAQ 페이지에서 동일한 제목)
-              const isGenericSiteTitle = 
-                text === '네이버 광고주센터' ||
-                text === '광고주센터' ||
-                text === '도움말' ||
-                text === '네이버 광고주센터: 도움말' ||
-                text === '광고주센터: 도움말' ||
-                text.includes('네이버 광고주센터:') ||
-                text.includes('광고주센터:') ||
-                (text.length <= 20 && (
-                  text.includes('광고주센터') || 
-                  text.includes('도움말') ||
-                  (text.includes('네이버') && !text.includes('?'))
-                ));
-              
-              if (isGenericSiteTitle) {
                 return false;
               }
 
@@ -552,21 +520,7 @@ export class ContentExtractor {
                   text.includes('궁금한 점이 해결되지 않았나요?')) return false;
               
               // 일반적인 사이트 제목 패턴 제외
-              const isGenericSiteTitle = 
-                text === '네이버 광고주센터' ||
-                text === '광고주센터' ||
-                text === '도움말' ||
-                text === '네이버 광고주센터: 도움말' ||
-                text === '광고주센터: 도움말' ||
-                text.includes('네이버 광고주센터:') ||
-                text.includes('광고주센터:') ||
-                (text.length <= 20 && (
-                  text.includes('광고주센터') || 
-                  text.includes('도움말') ||
-                  (text.includes('네이버') && !text.includes('?'))
-                ));
-              
-              if (isGenericSiteTitle) return false;
+              if (isGenericSiteTitle(text)) return false;
               
               // 페이지 상단 1500px 이내, 큰 폰트(16px 이상) 또는 볼드체(600 이상)
               return item.y >= 0 && item.y <= 1500 && 
