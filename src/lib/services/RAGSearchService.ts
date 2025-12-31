@@ -6,6 +6,9 @@
 import { createClient } from '@supabase/supabase-js';
 import { SimpleEmbeddingService } from './SimpleEmbeddingService';
 import { GeminiService } from './GeminiService';
+import { filterTruncatedSearchResults } from './search/TruncatedTextFilter';
+import { rerankSearchResults } from './search/SearchResultReranker';
+import { optimizeContextWindow, removeDuplicateResults } from './search/ContextWindowOptimizer';
 
 export interface SearchResult {
   id: string;
@@ -112,7 +115,7 @@ export class RAGSearchService {
       console.log(`📊 데이터베이스 조회 결과: ${searchResults?.length || 0}개`);
 
       // 클라이언트에서 유사도 계산 및 필터링
-      const filteredResults = (searchResults || [])
+      const similarityResults = (searchResults || [])
         .map((result: any) => {
           // 임베딩 데이터 파싱
           let storedEmbedding: number[];
@@ -146,11 +149,64 @@ export class RAGSearchService {
           };
         })
         .filter((result: any) => result !== null && result.similarity > 0.01)
-        .sort((a: any, b: any) => b.similarity - a.similarity)
-        .slice(0, limit);
+        .sort((a: any, b: any) => b.similarity - a.similarity);
 
-      console.log(`✅ 검색 완료: ${filteredResults.length}개 결과 (임계값: ${similarityThreshold})`);
-      return filteredResults as SearchResult[];
+      // null 필터링
+      const validSimilarityResults = similarityResults.filter(
+        (result): result is NonNullable<typeof result> => result !== null
+      );
+      
+      // 질문 키워드 추출 (잘린 텍스트 필터링 및 재랭킹에 사용)
+      const queryKeywords = query
+        .toLowerCase()
+        .split(/\s+/)
+        .filter(word => word.length > 1)
+        .filter(word => !['에', '를', '을', '의', '와', '과', '은', '는', '이', '가', '에 대해', '알려주세요'].includes(word));
+      
+      // 잘린 텍스트 필터링 (질문 키워드 추출하여 관련성 높은 결과는 보존)
+      const { valid: filteredResults, filtered: truncatedFiltered } = filterTruncatedSearchResults(
+        validSimilarityResults,
+        {
+          filterHighSeverityOnly: true, // high severity만 필터링
+          keepIfHasKeywords: queryKeywords, // 질문 키워드가 있으면 보존
+        }
+      );
+
+      if (truncatedFiltered.length > 0) {
+        console.log(`⚠️ 잘린 텍스트 패턴 감지로 ${truncatedFiltered.length}개 결과 필터링됨`);
+        truncatedFiltered.forEach(({ result, reason }) => {
+          console.log(`  - 필터링: ${result.documentTitle} (이유: ${reason})`);
+        });
+      }
+
+      // 검색 결과 재랭킹 (관련성 점수 기반)
+      
+      // 검색 결과 재랭킹 (관련성 점수 기반)
+      const rerankedResults = rerankSearchResults(filteredResults, {
+        query,
+        queryKeywords,
+        boostSectionTitle: true,
+        boostExactMatch: true,
+      });
+
+      // 중복 결과 제거
+      const deduplicatedResults = removeDuplicateResults(rerankedResults, {
+        sameDocumentOnly: false, // 같은 문서의 유사한 콘텐츠도 제거
+        similarityThreshold: 0.85,
+      });
+
+      // 컨텍스트 윈도우 최적화
+      const optimizedResults = optimizeContextWindow(deduplicatedResults, {
+        maxTokens: 4000,
+        maxResults: limit,
+        minSimilarity: similarityThreshold,
+        prioritizeSectionTitle: true,
+      });
+
+      const finalResults = optimizedResults;
+
+      console.log(`✅ 검색 완료: ${finalResults.length}개 결과 (임계값: ${similarityThreshold}, 잘린 텍스트 필터링: ${truncatedFiltered.length}개)`);
+      return finalResults as SearchResult[];
 
     } catch (error) {
       console.error('❌ RAG 검색 실패:', error);

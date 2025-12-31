@@ -18,6 +18,7 @@ import type {
   ChunkingResult,
 } from '../DocumentTypeChunkingStrategy';
 import type { UnifiedChunk } from '../../UnifiedChunkingService';
+import { extractHTMLStructureFromText, findSectionForChunk } from '../utils/HTMLStructureExtractor';
 
 export class URLChunkingStrategy implements DocumentTypeChunkingStrategy {
   getDocumentType(): 'url' {
@@ -76,6 +77,9 @@ export class URLChunkingStrategy implements DocumentTypeChunkingStrategy {
   ): Promise<ChunkingResult> {
     const config = this.getStrategyConfig(content.length, options?.contentType);
 
+    // HTML 구조 정보 추출
+    const structureInfo = extractHTMLStructureFromText(content);
+
     const textSplitter = new RecursiveCharacterTextSplitter({
       chunkSize: config.chunkSize,
       chunkOverlap: config.chunkOverlap,
@@ -88,9 +92,16 @@ export class URLChunkingStrategy implements DocumentTypeChunkingStrategy {
       const startChar = content.indexOf(chunk);
       const endChar = startChar + chunk.length;
 
-      // URL 특화 메타데이터 추출 (옵션)
+      // 청크가 속한 섹션 정보 찾기
+      const sectionInfo = findSectionForChunk(startChar, endChar, structureInfo.sections);
+
+      // URL 특화 메타데이터 추출
       const urlMetadata: Record<string, any> = {
-        // 페이지 구조 정보 (나중에 HTML 파싱으로 보강 가능)
+        // 페이지 구조 정보
+        hasLists: structureInfo.hasLists,
+        hasTables: structureInfo.hasTables,
+        sectionTitle: sectionInfo?.title,
+        headingLevel: sectionInfo?.level,
         ...(options?.metadata || {}),
       };
 
@@ -104,7 +115,8 @@ export class URLChunkingStrategy implements DocumentTypeChunkingStrategy {
           startChar,
           endChar,
           chunkType: 'text' as const,
-          hierarchyLevel: 'section' as const,
+          hierarchyLevel: sectionInfo ? 'section' : 'paragraph' as const,
+          sectionTitle: sectionInfo?.title,
           ...urlMetadata,
         },
       };
