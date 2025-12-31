@@ -1577,7 +1577,16 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                               </div>
                             ) : (
                               <>
-                                <span className="truncate flex-1 min-w-0" title={item.title}>{item.title || '제목 없음'}</span>
+                                <span 
+                                  className="truncate flex-1 min-w-0 cursor-text" 
+                                  title={item.title}
+                                  onDoubleClick={(e) => {
+                                    e.stopPropagation();
+                                    handleStartEditTitle(i, item.title || '');
+                                  }}
+                                >
+                                  {item.title || '제목 없음'}
+                                </span>
                                 {!item.title && (
                                   <Button
                                     size="sm"
@@ -1600,12 +1609,12 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                                 <Button
                                   size="sm"
                                   variant="ghost"
-                                  className="h-5 w-5 p-0 text-gray-500 hover:text-gray-300 hover:bg-gray-700/50 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
+                                  className="h-5 w-5 p-0 text-gray-400 hover:text-gray-200 hover:bg-gray-700/50 flex-shrink-0"
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     handleStartEditTitle(i, item.title || '');
                                   }}
-                                  title="제목 수정"
+                                  title="제목 수정 (더블클릭도 가능)"
                                 >
                                   <Pencil className="h-3 w-3" />
                                 </Button>
@@ -1617,20 +1626,20 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                               </>
                             )}
                           </div>
-                          <div className="text-xs text-blue-400/70 break-all mt-0.5 font-mono">
-                            {item.url}
+                          <div className="text-xs text-blue-400/70 break-all mt-0.5 font-mono flex items-center gap-2">
+                            <a 
+                              href={item.url} 
+                              target="_blank" 
+                              rel="noreferrer" 
+                              className="text-blue-400 hover:text-blue-300 hover:underline flex items-center gap-1"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              {item.url}
+                              <ExternalLink className="h-3 w-3 inline" />
+                            </a>
                           </div>
                         </label>
                       </div>
-                      <a 
-                        href={item.url} 
-                        target="_blank" 
-                        rel="noreferrer" 
-                        className="text-gray-500 hover:text-gray-300 flex-shrink-0 mt-1"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <ExternalLink className="h-4 w-4" />
-                      </a>
                     </div>
                   )
                 })}
