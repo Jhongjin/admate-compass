@@ -171,6 +171,55 @@ export class ContentExtractor {
       // FAQ 페이지인 경우 URL을 전달하여 명확하게 감지
       if (isNaverAdsFAQ) {
         console.log(`🔍 [FAQ 제목 추출] 서버 측: FAQ 페이지 감지, 제목 추출 시작... URL: ${url}`);
+        
+        // 서버 측에서 content_title 요소 확인
+        const contentTitleExists = await page.evaluate(() => {
+          const elements = document.querySelectorAll('.content_title, h3.content_title, h2.content_title, h1.content_title');
+          return {
+            count: elements.length,
+            texts: Array.from(elements).slice(0, 3).map(el => ({
+              text: el.textContent?.trim()?.substring(0, 100) || '',
+              tag: el.tagName,
+              className: el.className || ''
+            }))
+          };
+        });
+        
+        if (contentTitleExists.count > 0) {
+          console.log(`✅ [FAQ 제목 추출] 서버 측: content_title 요소 ${contentTitleExists.count}개 발견`);
+          contentTitleExists.texts.forEach((item, idx) => {
+            console.log(`  ${idx + 1}. ${item.tag}: "${item.text}" (class: ${item.className})`);
+          });
+        } else {
+          console.warn(`⚠️ [FAQ 제목 추출] 서버 측: content_title 요소를 찾을 수 없습니다.`);
+          
+          // 대체 선택자 확인
+          const altSelectors = await page.evaluate(() => {
+            const results: any = {};
+            const selectors = ['h3', '[class*="title"]', '.title_wrap h3', '.title_area h3', 'h3[class*="content"]'];
+            selectors.forEach(selector => {
+              const elements = Array.from(document.querySelectorAll(selector));
+              if (elements.length > 0) {
+                results[selector] = elements.slice(0, 3).map((el: Element) => ({
+                  text: el.textContent?.trim()?.substring(0, 100) || '',
+                  tag: el.tagName,
+                  className: el.className || ''
+                }));
+              }
+            });
+            return results;
+          });
+          
+          console.log(`🔍 [FAQ 제목 추출] 서버 측: 대체 선택자 확인 결과:`);
+          Object.entries(altSelectors).forEach(([selector, items]: [string, any]) => {
+            if (items && items.length > 0) {
+              console.log(`  "${selector}": ${items.length}개 발견`);
+              items.forEach((item: any, idx: number) => {
+                console.log(`    ${idx + 1}. ${item.tag}: "${item.text}" (class: ${item.className})`);
+              });
+            }
+          });
+        }
       }
       const titleResult = await page.evaluate((urlParam: string) => {
         // 피드백/평가 관련 텍스트 필터링 함수
