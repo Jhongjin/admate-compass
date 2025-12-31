@@ -14,20 +14,20 @@ export interface TruncatedTextPattern {
 }
 
 /**
- * 잘린 텍스트 패턴 정의
+ * 잘린 텍스트 패턴 정의 (강화된 버전)
  */
 export const TRUNCATED_TEXT_PATTERNS: TruncatedTextPattern[] = [
-  // 파이프로 구분된 숫자 (예: "3 | 500만")
+  // 파이프로 구분된 숫자 (예: "3 | 500만", "3|500만")
   {
     pattern: /\d+\s*\|\s*\d+/g,
     description: '파이프로 구분된 숫자 (잘린 텍스트)',
     severity: 'high',
   },
-  // 공백으로 구분된 숫자 (예: "3 500만")
+  // 공백으로 구분된 숫자 (예: "3 500만", "3 500만원")
   {
     pattern: /\d+\s+\d+[\s가-힣]/g,
     description: '공백으로 구분된 숫자 (잘린 텍스트 가능성)',
-    severity: 'medium',
+    severity: 'high', // medium → high로 상향
   },
   // 문장 중간에 갑자기 끝나는 패턴 (예: "500만...", "3,500만...")
   {
@@ -35,16 +35,46 @@ export const TRUNCATED_TEXT_PATTERNS: TruncatedTextPattern[] = [
     description: '숫자 뒤 생략 표시 (잘린 텍스트)',
     severity: 'high',
   },
-  // 문장이 갑자기 끝나는 패턴 (예: "광고 등록 방법을")
+  // 문장이 갑자기 끝나는 패턴 (예: "광고 등록 방법을", "설정을")
   {
-    pattern: /[가-힣A-Za-z]+\s*$/m,
-    description: '문장이 갑자기 끝나는 패턴 (잘린 텍스트 가능성)',
-    severity: 'low',
+    pattern: /[가-힣A-Za-z]+(을|를|이|가|은|는|의|에|에서|로|으로)\s*$/m,
+    description: '조사로 끝나는 문장 (잘린 텍스트 가능성)',
+    severity: 'medium', // low → medium으로 상향
   },
   // 특수문자로 구분된 숫자 (예: "3-500만", "3_500만")
   {
     pattern: /\d+[-_]\d+/g,
     description: '특수문자로 구분된 숫자 (잘린 텍스트 가능성)',
+    severity: 'high', // medium → high로 상향
+  },
+  // 숫자만 있는 패턴 (예: "3", "500", "3,500")
+  {
+    pattern: /^\s*\d{1,3}(?:,\d{3})*(?:만|억|조|원|명|개|건|%|퍼센트)?\s*$/m,
+    description: '숫자만 있는 청크 (잘린 텍스트 가능성)',
+    severity: 'high',
+  },
+  // 숫자 뒤 공백으로 끝나는 패턴 (예: "3,500만 ", "500만원 ")
+  {
+    pattern: /\d{1,3}(?:,\d{3})*(?:만|억|조|원|명|개|건|%|퍼센트)?\s+$/m,
+    description: '숫자 뒤 공백으로 끝나는 패턴 (잘린 텍스트 가능성)',
+    severity: 'medium',
+  },
+  // 대괄호로 감싸진 숫자 (예: "[3]", "[500만]")
+  {
+    pattern: /\[\s*\d{1,3}(?:,\d{3})*(?:만|억|조|원|명|개|건|%|퍼센트)?\s*\]/g,
+    description: '대괄호로 감싸진 숫자 (잘린 텍스트 가능성)',
+    severity: 'low',
+  },
+  // 숫자와 한글이 섞인 잘린 패턴 (예: "3만원|", "500만|")
+  {
+    pattern: /\d{1,3}(?:,\d{3})*(?:만|억|조|원|명|개|건|%|퍼센트)?[가-힣]*\s*[|]/g,
+    description: '숫자와 한글 뒤 파이프 (잘린 텍스트)',
+    severity: 'high',
+  },
+  // 숫자 뒤 점으로 끝나는 패턴 (예: "3.", "500만.")
+  {
+    pattern: /\d{1,3}(?:,\d{3})*(?:만|억|조|원|명|개|건|%|퍼센트)?\.\s*$/m,
+    description: '숫자 뒤 점으로 끝나는 패턴 (잘린 텍스트 가능성)',
     severity: 'medium',
   },
 ];

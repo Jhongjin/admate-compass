@@ -27,52 +27,54 @@ export function adjustChunkBoundary(
   let adjustedStart = chunkStart;
   let adjustedEnd = chunkEnd;
 
-  // 1. 숫자 패턴 보호
+  // 1. 숫자 패턴 보호 (강화된 버전)
   if (preserveNumbers) {
-    // 청크 시작 부분: 숫자 앞에서 시작하지 않도록
-    const beforeStart = content.slice(Math.max(0, chunkStart - 50), chunkStart);
+    // 청크 시작 부분: 숫자 앞에서 시작하지 않도록 (확장 범위 증가: 50 → 100)
+    const beforeStart = content.slice(Math.max(0, chunkStart - 100), chunkStart);
     const numberBeforePattern = /(\d{1,3}(?:,\d{3})*(?:만|억|조|원|명|개|건|%|퍼센트)?)\s*$/;
     const numberBeforeMatch = beforeStart.match(numberBeforePattern);
     if (numberBeforeMatch) {
-      // 숫자 시작 위치로 조정
+      // 숫자 시작 위치로 조정 (확장 범위 증가: 100 → 150)
       const numberStart = chunkStart - beforeStart.length + (numberBeforeMatch.index || 0);
-      if (numberStart < chunkStart && numberStart >= chunkStart - 100) {
+      if (numberStart < chunkStart && numberStart >= chunkStart - 150) {
         adjustedStart = numberStart;
       }
     }
 
-    // 청크 끝 부분: 숫자 중간에서 끝나지 않도록
+    // 청크 끝 부분: 숫자 중간에서 끝나지 않도록 (확장 범위 증가: 100 → 150)
     const nearEnd = content.slice(
-      Math.max(0, chunkEnd - 100), 
-      Math.min(content.length, chunkEnd + 100)
+      Math.max(0, chunkEnd - 150), 
+      Math.min(content.length, chunkEnd + 150)
     );
     
-    // 잘린 숫자 패턴 감지 (예: "3 | 500만", "3 500만")
+    // 잘린 숫자 패턴 감지 (강화된 패턴)
     const truncatedNumberPatterns = [
-      /\d+\s*\|\s*\d+/,           // 파이프로 구분
-      /\d+\s+\d+[\s가-힣]/,       // 공백으로 구분
-      /\d+[-_]\d+/,                // 특수문자로 구분
+      /\d+\s*\|\s*\d+/,                    // 파이프로 구분
+      /\d+\s+\d+[\s가-힣]/,                // 공백으로 구분
+      /\d+[-_]\d+/,                         // 특수문자로 구분
+      /\d{1,3}(?:,\d{3})*(?:만|억|조|원|명|개|건|%|퍼센트)?\.{3,}/, // 숫자 뒤 생략 표시
+      /\d{1,3}(?:,\d{3})*(?:만|억|조|원|명|개|건|%|퍼센트)?[가-힣]*\s*[|]/, // 숫자와 한글 뒤 파이프
     ];
 
     for (const pattern of truncatedNumberPatterns) {
       if (pattern.test(nearEnd)) {
-        // 숫자 패턴 앞뒤로 경계 확장
+        // 숫자 패턴 앞뒤로 경계 확장 (확장 범위 증가: 200 → 300)
         const numberPattern = /(\d{1,3}(?:,\d{3})*(?:만|억|조|원|명|개|건|%|퍼센트)?)\s*$/;
         const numberMatch = content.slice(adjustedStart, adjustedEnd).match(numberPattern);
         
         if (numberMatch && numberMatch.index !== undefined) {
           const numberEnd = adjustedStart + numberMatch.index + numberMatch[0].length;
-          // 숫자 끝까지 포함하도록 조정 (최대 200자 확장)
-          if (numberEnd > adjustedEnd && numberEnd < adjustedEnd + 200) {
+          // 숫자 끝까지 포함하도록 조정 (최대 300자 확장)
+          if (numberEnd > adjustedEnd && numberEnd < adjustedEnd + 300) {
             adjustedEnd = numberEnd;
           }
         }
 
-        // 다음 숫자 시작까지 포함하도록 조정
+        // 다음 숫자 시작까지 포함하도록 조정 (확장 범위 증가: 200 → 300)
         const nextNumberMatch = content.slice(adjustedEnd).match(/^\s*(\d{1,3}(?:,\d{3})*(?:만|억|조|원|명|개|건|%|퍼센트)?)/);
         if (nextNumberMatch && nextNumberMatch.index !== undefined) {
           const nextNumberEnd = adjustedEnd + nextNumberMatch.index + nextNumberMatch[0].length;
-          if (nextNumberEnd < adjustedEnd + 200) {
+          if (nextNumberEnd < adjustedEnd + 300) {
             adjustedEnd = nextNumberEnd;
           }
         }
@@ -80,36 +82,42 @@ export function adjustChunkBoundary(
     }
   }
 
-  // 2. 문장 경계 보호
+  // 2. 문장 경계 보호 (강화된 버전)
   if (preserveSentences) {
-    // 청크 시작: 문장 시작으로 조정
-    const beforeStart = content.slice(Math.max(0, adjustedStart - 200), adjustedStart);
+    // 청크 시작: 문장 시작으로 조정 (확장 범위 증가: 200 → 250)
+    const beforeStart = content.slice(Math.max(0, adjustedStart - 250), adjustedStart);
     const lastSentenceEnd = Math.max(
       beforeStart.lastIndexOf('. '),
       beforeStart.lastIndexOf('! '),
       beforeStart.lastIndexOf('? '),
+      beforeStart.lastIndexOf('.\n'),
+      beforeStart.lastIndexOf('!\n'),
+      beforeStart.lastIndexOf('?\n'),
       beforeStart.lastIndexOf('\n\n'),
       beforeStart.lastIndexOf('\n')
     );
     
-    if (lastSentenceEnd > 0 && lastSentenceEnd > beforeStart.length - 150) {
+    if (lastSentenceEnd > 0 && lastSentenceEnd > beforeStart.length - 200) {
       const sentenceStart = adjustedStart - beforeStart.length + lastSentenceEnd + 2;
-      if (sentenceStart < adjustedStart && sentenceStart >= adjustedStart - 150) {
+      if (sentenceStart < adjustedStart && sentenceStart >= adjustedStart - 200) {
         adjustedStart = sentenceStart;
       }
     }
 
-    // 청크 끝: 문장 끝으로 조정
-    const afterEnd = content.slice(adjustedEnd, Math.min(content.length, adjustedEnd + 200));
+    // 청크 끝: 문장 끝으로 조정 (확장 범위 증가: 200 → 250)
+    const afterEnd = content.slice(adjustedEnd, Math.min(content.length, adjustedEnd + 250));
     const nextSentenceEnd = Math.min(
       afterEnd.indexOf('. ') !== -1 ? afterEnd.indexOf('. ') + 2 : Infinity,
       afterEnd.indexOf('! ') !== -1 ? afterEnd.indexOf('! ') + 2 : Infinity,
       afterEnd.indexOf('? ') !== -1 ? afterEnd.indexOf('? ') + 2 : Infinity,
+      afterEnd.indexOf('.\n') !== -1 ? afterEnd.indexOf('.\n') + 2 : Infinity,
+      afterEnd.indexOf('!\n') !== -1 ? afterEnd.indexOf('!\n') + 2 : Infinity,
+      afterEnd.indexOf('?\n') !== -1 ? afterEnd.indexOf('?\n') + 2 : Infinity,
       afterEnd.indexOf('\n\n') !== -1 ? afterEnd.indexOf('\n\n') + 2 : Infinity,
       afterEnd.indexOf('\n') !== -1 ? afterEnd.indexOf('\n') + 1 : Infinity
     );
 
-    if (nextSentenceEnd < Infinity && nextSentenceEnd < 150) {
+    if (nextSentenceEnd < Infinity && nextSentenceEnd < 200) {
       adjustedEnd = adjustedEnd + nextSentenceEnd;
     }
   }

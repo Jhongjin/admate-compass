@@ -2734,7 +2734,7 @@ export class RAGProcessor {
       try {
         const testResult = await supabase.rpc('search_documents_with_weights', {
           query_embedding: queryEmbedding,
-          match_threshold: 0.7,
+          match_threshold: 0.6, // 0.7 → 0.6으로 조정 (더 많은 결과)
           match_count: 1,
           vendor_filter: normalizedVendorFilter,
         });
@@ -2746,20 +2746,28 @@ export class RAGProcessor {
       // 하이브리드 검색: 벡터 검색과 키워드 검색을 동시에 수행
       console.log('🔀 하이브리드 검색 시작: 벡터 + 키워드 검색 결합');
       
+      // 검색 임계값 상수 정의 (더 공격적인 Fallback 전략)
+      const SEARCH_THRESHOLDS = {
+        primary: 0.6,      // 기본 검색 임계값
+        secondary: 0.35,   // 1차 Fallback
+        tertiary: 0.15,    // 2차 Fallback
+        minimum: 0.05      // 최소 임계값
+      };
+      
       // 1단계: 벡터 검색 (기본 임계값 0.6)
       const vectorChunks = await this.performVectorSearch(
         supabase,
         queryEmbedding,
-        limit * 2, // 하이브리드 검색을 위해 더 많은 결과 가져오기
+        limit * 3, // 더 많은 결과 가져오기 (2 → 3)
         normalizedVendorFilter,
-        0.6,
+        SEARCH_THRESHOLDS.primary,
         useWeightedSearch
       );
 
       // 2단계: 키워드 검색 (동시 수행, 확장된 쿼리 사용)
       const keywordChunks = await this.performKeywordSearch(
         searchQuery, // 확장된 쿼리 사용
-        limit * 2, // 하이브리드 검색을 위해 더 많은 결과 가져오기
+        limit * 3, // 더 많은 결과 가져오기 (2 → 3)
         supabase,
         normalizedVendorFilter
       );
@@ -2809,78 +2817,98 @@ export class RAGProcessor {
         console.log(`✅ Cross-Encoder 재랭킹 완료: ${chunks.length}개 결과 (최종)`);
       }
 
-      // 4단계: 하이브리드 검색 결과가 부족하면 Fallback 전략 실행
-      if (chunks.length === 0 || chunks.every(c => (c.similarity || 0) < 0.5)) {
-        console.log('⚠️ 하이브리드 검색 결과 부족 - Fallback 전략 실행');
+      // 4단계: 하이브리드 검색 결과가 부족하면 Fallback 전략 실행 (더 공격적인 전략)
+      // 결과가 3개 미만이거나 평균 유사도가 0.5 미만이면 Fallback 실행
+      const avgSimilarity = chunks.length > 0 
+        ? chunks.reduce((sum, c) => sum + (c.similarity || 0), 0) / chunks.length 
+        : 0;
+      const needsFallback = chunks.length < 3 || avgSimilarity < 0.5;
+      
+      if (needsFallback) {
+        console.log(`⚠️ 하이브리드 검색 결과 부족 (${chunks.length}개, 평균 유사도: ${avgSimilarity.toFixed(3)}) - Fallback 전략 실행`);
         
         // 4-1단계: 벡터 검색 임계값을 낮춰서 재검색 (0.35)
         const lowerThresholdChunks = await this.performVectorSearch(
           supabase,
           queryEmbedding,
-          limit,
+          limit * 2, // 더 많은 결과 가져오기
           normalizedVendorFilter,
-          0.35,
+          SEARCH_THRESHOLDS.secondary,
           useWeightedSearch
         );
         
-        // 더 나은 결과가 있으면 사용
-        if (lowerThresholdChunks.length > 0 && 
-            lowerThresholdChunks.some(c => (c.similarity || 0) > 0.3)) {
-          console.log(`✅ Fallback 1단계 검색 성공: ${lowerThresholdChunks.length}개 결과 발견`);
+        // 더 나은 결과가 있으면 사용 (결과가 더 많거나 평균 유사도가 더 높으면)
+        const lowerAvgSimilarity = lowerThresholdChunks.length > 0
+          ? lowerThresholdChunks.reduce((sum, c) => sum + (c.similarity || 0), 0) / lowerThresholdChunks.length
+          : 0;
+        
+        if (lowerThresholdChunks.length > chunks.length || 
+            (lowerThresholdChunks.length > 0 && lowerAvgSimilarity > avgSimilarity)) {
+          console.log(`✅ Fallback 1단계 검색 성공: ${lowerThresholdChunks.length}개 결과 발견 (평균 유사도: ${lowerAvgSimilarity.toFixed(3)})`);
           chunks = lowerThresholdChunks;
         }
       }
 
-      // 4-2단계: 여전히 결과가 없으면 임계값을 더 낮춰서 재검색 (0.15)
-      if (chunks.length === 0 || chunks.every(c => (c.similarity || 0) < 0.3)) {
-        console.log('⚠️ Fallback 1단계 검색 결과 부족 - 임계값을 0.15로 낮춰서 재검색');
+      // 4-2단계: 여전히 결과가 부족하면 임계값을 더 낮춰서 재검색 (0.15)
+      const currentAvgSimilarity = chunks.length > 0 
+        ? chunks.reduce((sum, c) => sum + (c.similarity || 0), 0) / chunks.length 
+        : 0;
+      if (chunks.length < 3 || currentAvgSimilarity < 0.4) {
+        console.log(`⚠️ Fallback 1단계 검색 결과 부족 (${chunks.length}개, 평균 유사도: ${currentAvgSimilarity.toFixed(3)}) - 임계값을 ${SEARCH_THRESHOLDS.tertiary}로 낮춰서 재검색`);
         const veryLowThresholdChunks = await this.performVectorSearch(
           supabase,
           queryEmbedding,
-          limit * 2,
+          limit * 3, // 더 많은 결과 가져오기
           normalizedVendorFilter,
-          0.15,
+          SEARCH_THRESHOLDS.tertiary,
           useWeightedSearch
         );
         
-        if (veryLowThresholdChunks.length > 0) {
-          console.log(`✅ Fallback 2단계 검색 성공: ${veryLowThresholdChunks.length}개 결과 발견`);
+        const veryLowAvgSimilarity = veryLowThresholdChunks.length > 0
+          ? veryLowThresholdChunks.reduce((sum, c) => sum + (c.similarity || 0), 0) / veryLowThresholdChunks.length
+          : 0;
+        
+        if (veryLowThresholdChunks.length > chunks.length || 
+            (veryLowThresholdChunks.length > 0 && veryLowAvgSimilarity > currentAvgSimilarity)) {
+          console.log(`✅ Fallback 2단계 검색 성공: ${veryLowThresholdChunks.length}개 결과 발견 (평균 유사도: ${veryLowAvgSimilarity.toFixed(3)})`);
           chunks = veryLowThresholdChunks;
         }
       }
 
       // 4-3단계: 최소 임계값으로 재검색 (0.05)
       if (chunks.length === 0) {
-        console.log('⚠️ Fallback 2단계 검색 결과 부족 - 최소 임계값 0.05로 재검색');
+        console.log(`⚠️ Fallback 2단계 검색 결과 부족 - 최소 임계값 ${SEARCH_THRESHOLDS.minimum}로 재검색`);
         const minimumThresholdChunks = await this.performVectorSearch(
           supabase,
           queryEmbedding,
-          limit * 3,
+          limit * 4, // 최대한 많은 결과 가져오기
           normalizedVendorFilter,
-          0.05,
+          SEARCH_THRESHOLDS.minimum,
           useWeightedSearch
         );
         
         if (minimumThresholdChunks.length > 0) {
-          console.log(`✅ Fallback 3단계 검색 성공: ${minimumThresholdChunks.length}개 결과 발견`);
+          const minAvgSimilarity = minimumThresholdChunks.reduce((sum, c) => sum + (c.similarity || 0), 0) / minimumThresholdChunks.length;
+          console.log(`✅ Fallback 3단계 검색 성공: ${minimumThresholdChunks.length}개 결과 발견 (평균 유사도: ${minAvgSimilarity.toFixed(3)})`);
           chunks = minimumThresholdChunks;
         }
       }
 
-      // 3단계: 벤더 필터가 적용된 상태에서 결과가 없으면 필터를 제거하고 재검색
-      if (chunks.length === 0 && normalizedVendorFilter) {
-        console.log('⚠️ 벤더 필터 적용 시 결과 없음 - 벤더 필터를 제거하고 재검색');
+      // 4-4단계: 벤더 필터가 적용된 상태에서 결과가 부족하면 필터를 제거하고 재검색
+      if (chunks.length < 3 && normalizedVendorFilter) {
+        console.log(`⚠️ 벤더 필터 적용 시 결과 부족 (${chunks.length}개) - 벤더 필터를 제거하고 재검색`);
         const noFilterChunks = await this.performVectorSearch(
           supabase,
           queryEmbedding,
-          limit * 2, // 더 많은 결과 가져오기
+          limit * 3, // 더 많은 결과 가져오기
           null, // 벤더 필터 제거
-          0.2, // 낮은 임계값 사용
+          SEARCH_THRESHOLDS.secondary, // 0.35 임계값 사용
           useWeightedSearch
         );
         
-        if (noFilterChunks.length > 0) {
-          console.log(`✅ 3단계 검색 성공 (벤더 필터 제거): ${noFilterChunks.length}개 결과 발견`);
+        if (noFilterChunks.length > chunks.length) {
+          const noFilterAvgSimilarity = noFilterChunks.reduce((sum, c) => sum + (c.similarity || 0), 0) / noFilterChunks.length;
+          console.log(`✅ 벤더 필터 제거 후 검색 성공: ${noFilterChunks.length}개 결과 발견 (평균 유사도: ${noFilterAvgSimilarity.toFixed(3)})`);
           chunks = noFilterChunks;
         }
       }
