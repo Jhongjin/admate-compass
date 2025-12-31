@@ -18,6 +18,8 @@ import type {
   ChunkingResult,
 } from '../DocumentTypeChunkingStrategy';
 import type { UnifiedChunk } from '../../UnifiedChunkingService';
+import { extractKeywords, calculateChunkImportance } from '../utils/KeywordExtractor';
+import { adjustChunkBoundary } from '../utils/ChunkBoundaryAdjuster';
 
 export class PDFChunkingStrategy implements DocumentTypeChunkingStrategy {
   getDocumentType(): 'pdf' {
@@ -29,16 +31,16 @@ export class PDFChunkingStrategy implements DocumentTypeChunkingStrategy {
   }
 
   getStrategyConfig(contentLength: number, contentType?: string): ChunkingStrategyConfig {
-    // PDF는 표와 이미지 캡션을 포함할 수 있으므로 더 큰 청크 크기 사용
-    const baseChunkSize = 1000;
-    const baseOverlap = 150;
+    // PDF는 표와 이미지 캡션을 포함할 수 있지만, 검색 정확도 향상을 위해 800자로 조정
+    const baseChunkSize = 800; // 1000 → 800 (검색 정확도 향상)
+    const baseOverlap = 120; // 150 → 120
 
     // 콘텐츠 타입별 조정
     if (contentType === 'policy' || contentType === 'technical') {
-      // 정책 문서나 기술 문서는 더 큰 청크로 문맥 보존
+      // 정책 문서나 기술 문서는 중간 크기 청크로 조정
       return {
-        chunkSize: 1200,
-        chunkOverlap: 180,
+        chunkSize: 900, // 1200 → 900
+        chunkOverlap: 140, // 180 → 140
         separators: ['\n\n', '\n', '. ', '! ', '? ', '; ', ' ', ''],
         minChunkSize: 200,
         maxChunkSize: 2000,
@@ -73,13 +75,55 @@ export class PDFChunkingStrategy implements DocumentTypeChunkingStrategy {
 
     const textChunks = await textSplitter.splitText(content);
 
+    // 전체 청크 컨텍스트 준비 (TF-IDF 계산용)
+    const allChunks = textChunks.map(chunk => chunk.trim());
+
     const chunks: UnifiedChunk[] = textChunks.map((chunk, index) => {
-      const startChar = content.indexOf(chunk);
-      const endChar = startChar + chunk.length;
+      let startChar = content.indexOf(chunk);
+      let endChar = startChar + chunk.length;
+      
+      // 잘린 텍스트 방지를 위한 경계 조정
+      const adjustedBoundary = adjustChunkBoundary(
+        content,
+        startChar,
+        endChar,
+        {
+          minChunkSize: config.minChunkSize || 200,
+          maxChunkSize: config.maxChunkSize || 2000,
+          preserveNumbers: true,
+          preserveSentences: true,
+        }
+      );
+      
+      startChar = adjustedBoundary.start;
+      endChar = adjustedBoundary.end;
+      
+      const trimmedChunk = content.slice(startChar, endChar).trim();
+      const position = startChar / content.length; // 문서 내 위치 (0-1)
+
+      // 키워드 추출
+      const keywords = extractKeywords(trimmedChunk, 5, {
+        allChunks,
+        documentTitle,
+      });
+
+      // 중요도 점수 계산
+      const importance = calculateChunkImportance(
+        {
+          content: trimmedChunk,
+          position,
+          hasTitle: trimmedChunk.length < 100 && index === 0,
+          hasKeywords: keywords.length > 0,
+        },
+        {
+          totalLength: content.length,
+          averageChunkSize: content.length / textChunks.length,
+        }
+      );
 
       return {
         id: `${documentId}_chunk_${index}`,
-        content: chunk.trim(),
+        content: trimmedChunk,
         metadata: {
           documentId,
           documentTitle,
@@ -88,6 +132,9 @@ export class PDFChunkingStrategy implements DocumentTypeChunkingStrategy {
           endChar,
           chunkType: 'text' as const,
           hierarchyLevel: 'paragraph' as const,
+          // 메타데이터 강화
+          keywords: keywords.length > 0 ? keywords : undefined,
+          importance: importance > 0.5 ? importance : undefined,
           // PDF 특화 메타데이터
           ...(options?.metadata || {}),
         },

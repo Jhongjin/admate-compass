@@ -2716,26 +2716,26 @@ export class RAGProcessor {
         useWeightedSearch = false;
       }
 
-      // 단계적 Fallback 검색 전략
-      // 1단계: 기본 임계값(0.7)으로 검색
+      // 단계적 Fallback 검색 전략 (개선: 더 공격적인 Fallback)
+      // 1단계: 기본 임계값(0.6)으로 검색 (0.7 → 0.6으로 낮춤)
       let chunks = await this.performVectorSearch(
         supabase,
         queryEmbedding,
         limit,
         normalizedVendorFilter,
-        0.7,
+        0.6, // 0.7 → 0.6으로 조정
         useWeightedSearch
       );
 
-      // 2단계: 결과가 없거나 유사도가 낮으면 임계값을 낮춰서 재검색 (0.4)
+      // 2단계: 결과가 없거나 유사도가 낮으면 임계값을 낮춰서 재검색 (0.35)
       if (chunks.length === 0 || chunks.every(c => (c.similarity || 0) < 0.5)) {
-        console.log('⚠️ 1단계 검색 결과 부족 - 임계값을 0.4로 낮춰서 재검색');
+        console.log('⚠️ 1단계 검색 결과 부족 - 임계값을 0.35로 낮춰서 재검색');
         const lowerThresholdChunks = await this.performVectorSearch(
           supabase,
           queryEmbedding,
           limit,
           normalizedVendorFilter,
-          0.4,
+          0.35, // 0.4 → 0.35로 조정
           useWeightedSearch
         );
         
@@ -2747,15 +2747,15 @@ export class RAGProcessor {
         }
       }
 
-      // 2-1단계: 여전히 결과가 없으면 임계값을 더 낮춰서 재검색 (0.2)
+      // 2-1단계: 여전히 결과가 없으면 임계값을 더 낮춰서 재검색 (0.15)
       if (chunks.length === 0 || chunks.every(c => (c.similarity || 0) < 0.3)) {
-        console.log('⚠️ 2단계 검색 결과 부족 - 임계값을 0.2로 낮춰서 재검색');
+        console.log('⚠️ 2단계 검색 결과 부족 - 임계값을 0.15로 낮춰서 재검색');
         const veryLowThresholdChunks = await this.performVectorSearch(
           supabase,
           queryEmbedding,
           limit * 2, // 더 많은 결과 가져오기
           normalizedVendorFilter,
-          0.2,
+          0.15, // 0.2 → 0.15로 조정
           useWeightedSearch
         );
         
@@ -2763,6 +2763,24 @@ export class RAGProcessor {
         if (veryLowThresholdChunks.length > 0) {
           console.log(`✅ 2-1단계 검색 성공: ${veryLowThresholdChunks.length}개 결과 발견`);
           chunks = veryLowThresholdChunks;
+        }
+      }
+
+      // 2-2단계: 최소 임계값으로 재검색 (0.05)
+      if (chunks.length === 0) {
+        console.log('⚠️ 2-1단계 검색 결과 부족 - 최소 임계값 0.05로 재검색');
+        const minimumThresholdChunks = await this.performVectorSearch(
+          supabase,
+          queryEmbedding,
+          limit * 3, // 더 많은 결과 가져오기
+          normalizedVendorFilter,
+          0.05, // 최소 임계값 추가
+          useWeightedSearch
+        );
+        
+        if (minimumThresholdChunks.length > 0) {
+          console.log(`✅ 2-2단계 검색 성공: ${minimumThresholdChunks.length}개 결과 발견`);
+          chunks = minimumThresholdChunks;
         }
       }
 
