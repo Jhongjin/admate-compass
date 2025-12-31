@@ -196,11 +196,12 @@ export class UnifiedChunkingService {
           metadata: {
             documentId: chunk.metadata.documentId,
             documentTitle: chunk.metadata.documentTitle,
-            documentType: chunk.metadata.documentType || documentType,
+            documentType: documentType,
             chunkIndex: chunk.metadata.chunkIndex,
             startChar: chunk.metadata.startChar,
             endChar: chunk.metadata.endChar,
-            chunkType: chunk.metadata.chunkType || 'text',
+            originalLength: chunk.content.length, // AdaptiveChunk 타입에 필요한 필드
+            chunkType: (chunk.metadata.chunkType === 'list' ? 'text' : chunk.metadata.chunkType) || 'text' as 'text' | 'table' | 'title' | 'section' | 'image' | 'qa' | 'article',
             sectionTitle: chunk.metadata.sectionTitle,
             keywords: chunk.metadata.keywords,
             importance: chunk.metadata.importance,
