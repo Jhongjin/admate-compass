@@ -371,6 +371,9 @@ export class ContentExtractor {
               const links = Array.from(mainContent.querySelectorAll(selector));
               console.log(`🔍 [FAQ 제목 추출] 선택자 "${selector}"에서 ${links.length}개 링크 발견`);
               
+              // 각 링크의 텍스트와 위치를 수집하여 정렬
+              const linkCandidates: Array<{text: string, y: number, link: Element}> = [];
+              
               for (const link of links) {
                 const rect = link.getBoundingClientRect();
                 const text = link.textContent?.trim() || '';
@@ -394,16 +397,22 @@ export class ContentExtractor {
                     !excludedHeadingTexts.some(excluded => text === excluded || text.includes(excluded)) &&
                     !categoryPatterns.some(pattern => pattern.test(text))) {
                   
-                  // 첫 번째 유효한 FAQ 질문을 찾으면 저장하고 중단
-                  firstFaqQuestion = text;
-                  let score = 150; // FAQ 질문 리스트는 최고 점수
-                  score += Math.max(0, 50 - Math.floor(rect.top / 15));
-                  candidates.push({ text, score, source: `faq-list-${selector.replace(/\s+/g, '-')}` });
-                  console.log(`  ✅ FAQ 질문 리스트에서 발견: "${text.substring(0, 50)}" (점수: ${score}, Y: ${Math.round(rect.top)})`);
-                  break; // 첫 번째 질문만 사용
+                  linkCandidates.push({ text, y: rect.top, link });
+                  console.log(`  📝 FAQ 질문 후보: "${text.substring(0, 50)}" (Y: ${Math.round(rect.top)})`);
                 }
               }
-              if (firstFaqQuestion) break; // 첫 번째 질문을 찾으면 다른 선택자 시도 중단
+              
+              // Y 좌표 순으로 정렬하여 가장 위에 있는 질문 선택
+              if (linkCandidates.length > 0) {
+                linkCandidates.sort((a, b) => a.y - b.y);
+                const bestCandidate = linkCandidates[0];
+                firstFaqQuestion = bestCandidate.text;
+                let score = 150; // FAQ 질문 리스트는 최고 점수
+                score += Math.max(0, 50 - Math.floor(bestCandidate.y / 15));
+                candidates.push({ text: bestCandidate.text, score, source: `faq-list-${selector.replace(/\s+/g, '-')}` });
+                console.log(`  ✅ FAQ 질문 리스트에서 발견: "${bestCandidate.text.substring(0, 50)}" (점수: ${score}, Y: ${Math.round(bestCandidate.y)})`);
+                break; // 첫 번째 질문을 찾으면 다른 선택자 시도 중단
+              }
             }
             
             // 2-2. FAQ 질문 제목을 찾기 위한 더 구체적인 선택자 시도 (리스트에서 찾지 못한 경우)
