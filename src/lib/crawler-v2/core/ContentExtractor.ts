@@ -97,6 +97,15 @@ export class ContentExtractor {
                 return false;
               }
               
+              // content_title 클래스를 최우선으로 확인 (Naver Ads FAQ 페이지의 표준 제목 클래스)
+              const contentTitle = document.querySelector('.content_title, h3.content_title, h2.content_title, h1.content_title');
+              if (contentTitle) {
+                const text = contentTitle.textContent?.trim() || '';
+                if (text && text.length >= 3 && text.length <= 200) {
+                  return true;
+                }
+              }
+              
               // FAQ 제목이 있는지 확인 (다양한 선택자 시도)
               const selectors = [
                 'h1',
@@ -296,6 +305,30 @@ export class ContentExtractor {
             // 0. content_title 클래스를 가진 요소를 최우선으로 찾기 (Naver Ads FAQ 페이지의 표준 제목 클래스)
             const contentTitleElements = Array.from(mainContent.querySelectorAll('.content_title, h3.content_title, h2.content_title, h1.content_title'));
             console.log(`🔍 [FAQ 제목 추출] 발견된 content_title 클래스 요소: ${contentTitleElements.length}개`);
+            
+            if (contentTitleElements.length === 0) {
+              // content_title이 없을 때 디버깅 정보 출력
+              console.log(`⚠️ [FAQ 제목 추출] content_title 클래스를 가진 요소를 찾을 수 없습니다.`);
+              console.log(`🔍 [FAQ 제목 추출] 대체 선택자 시도: h3, [class*="title"], [class*="content_title"]`);
+              const altSelectors = [
+                'h3',
+                '[class*="title"]',
+                '[class*="content_title"]',
+                '.title_wrap h3',
+                '.title_area h3'
+              ];
+              altSelectors.forEach(selector => {
+                const elements = Array.from(mainContent.querySelectorAll(selector));
+                if (elements.length > 0) {
+                  console.log(`  - "${selector}": ${elements.length}개 발견`);
+                  elements.slice(0, 3).forEach((el, idx) => {
+                    const text = el.textContent?.trim() || '';
+                    console.log(`    ${idx + 1}. "${text.substring(0, 50)}" (tag: ${el.tagName}, class: ${el.className})`);
+                  });
+                }
+              });
+            }
+            
             contentTitleElements.forEach((el, idx) => {
               const rect = el.getBoundingClientRect();
               const text = el.textContent?.trim() || '';
@@ -1060,8 +1093,16 @@ export class ContentExtractor {
         // "성공전략" 같은 공통 텍스트 제외
         const isCommonText = ['성공전략', '성공 전략', '광고주센터', '도움말', 'Help', 'Advertiser Center', '실전에 통하는', '자주 묻는 질문', 'FAQ'].includes(title) || lowerTitle.includes('실전에 통하는') || lowerTitle.includes('성공전략') || lowerTitle.includes('성공 전략');
         
-        if (isGenericTitle || isFeedback || hasCommonPhrase || isUIText || isNumericTitle || isCommonText || isFaqId) {
-          console.warn(`⚠️ 일반적인 제목/피드백/UI 텍스트/숫자 제목/공통 텍스트/FAQ ID 감지, 제외: "${title}"`);
+        // 광고/프로모션 텍스트 제외 (FAQ 페이지에서 자주 나타나는 프로모션 텍스트)
+        const isPromotionalText = 
+          (lowerTitle.includes('advoost') && lowerTitle.includes('소재') && lowerTitle.includes('활용한')) ||
+          lowerTitle.includes('광고 등록 방법을 알아보세요') ||
+          lowerTitle.includes('네이버 비즈니스 스쿨') ||
+          (lowerTitle.includes('바로가기') && lowerTitle.includes('>')) ||
+          lowerTitle.includes('advoost 소재 활용한 광고 등록 방법');
+        
+        if (isGenericTitle || isFeedback || hasCommonPhrase || isUIText || isNumericTitle || isCommonText || isFaqId || isPromotionalText) {
+          console.warn(`⚠️ 일반적인 제목/피드백/UI 텍스트/숫자 제목/공통 텍스트/FAQ ID/프로모션 텍스트 감지, 제외: "${title}"`);
           title = null;
         }
       }
