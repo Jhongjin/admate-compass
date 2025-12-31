@@ -1524,18 +1524,24 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                              ${isAlreadyCrawled ? 'bg-green-500/5 border-green-500/20 opacity-70' : 'border-gray-700 hover:bg-white/5 hover:border-white/10'}
                            `}
                     >
-                      <Checkbox
-                        id={`url-${i}`}
-                        checked={selectedDiscoveredUrls.has(item.url)}
-                        onCheckedChange={() => toggleSelect(item.url)}
-                        disabled={isAlreadyCrawled}
-                        className="mt-1 flex-shrink-0 border-gray-600 data-[state=checked]:border-blue-500"
-                      />
+                      {/* 체크박스 영역 - 고정 너비로 레이아웃 변동 방지 */}
+                      <div className="flex-shrink-0 pt-0.5">
+                        <Checkbox
+                          id={`url-${i}`}
+                          checked={selectedDiscoveredUrls.has(item.url)}
+                          onCheckedChange={() => toggleSelect(item.url)}
+                          disabled={isAlreadyCrawled}
+                          className="border-gray-600 data-[state=checked]:border-blue-500"
+                        />
+                      </div>
+                      
+                      {/* 제목 및 URL 영역 - 편집 모드와 일반 모드에서 동일한 공간 사용 */}
                       <div className="flex-1 min-w-0 overflow-hidden">
                         <label htmlFor={`url-${i}`} className="cursor-pointer block">
-                          <div className="text-sm font-medium text-gray-200 mb-1 flex items-center gap-1 sm:gap-2 flex-nowrap overflow-hidden">
+                          {/* 제목 영역 - 고정 높이로 레이아웃 변동 방지 */}
+                          <div className="text-sm font-medium text-gray-200 mb-1 flex items-center gap-1 sm:gap-2 min-h-[28px]">
                             {editingTitleIndex === i ? (
-                              <div className="flex items-center gap-2 flex-1 min-w-0">
+                              <div className="flex items-center gap-2 flex-1 min-w-0 w-full">
                                 <Input
                                   value={editingTitleValue}
                                   onChange={(e) => setEditingTitleValue(e.target.value)}
@@ -1555,7 +1561,7 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                                 <Button
                                   size="sm"
                                   variant="ghost"
-                                  className="h-7 w-7 p-0 text-green-400 hover:text-green-300 hover:bg-green-500/10"
+                                  className="h-7 w-7 p-0 text-green-400 hover:text-green-300 hover:bg-green-500/10 flex-shrink-0"
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     handleSaveTitle(i);
@@ -1566,7 +1572,7 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                                 <Button
                                   size="sm"
                                   variant="ghost"
-                                  className="h-7 w-7 p-0 text-red-400 hover:text-red-300 hover:bg-red-500/10"
+                                  className="h-7 w-7 p-0 text-red-400 hover:text-red-300 hover:bg-red-500/10 flex-shrink-0"
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     handleCancelEditTitle();
@@ -1576,7 +1582,7 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                                 </Button>
                               </div>
                             ) : (
-                              <>
+                              <div className="flex items-center gap-1 sm:gap-2 flex-1 min-w-0 w-full">
                                 <span 
                                   className="truncate flex-1 min-w-0 cursor-text" 
                                   title={item.title}
@@ -1623,9 +1629,10 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                                     수집됨
                                   </Badge>
                                 )}
-                              </>
+                              </div>
                             )}
                           </div>
+                          {/* URL 영역 */}
                           <div className="text-xs text-blue-400/70 break-all mt-0.5 font-mono flex items-center gap-2">
                             <a 
                               href={item.url} 
@@ -1635,7 +1642,7 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                               onClick={(e) => e.stopPropagation()}
                             >
                               {item.url}
-                              <ExternalLink className="h-3 w-3 inline" />
+                              <ExternalLink className="h-3 w-3 inline flex-shrink-0" />
                             </a>
                           </div>
                         </label>
