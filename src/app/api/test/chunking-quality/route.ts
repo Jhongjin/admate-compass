@@ -6,7 +6,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { unifiedChunkingService } from '@/lib/services/UnifiedChunkingService';
-import { getRAGSearchService } from '@/lib/services/RAGSearchService';
+import { ragProcessor } from '@/lib/services/RAGProcessor';
 import { documentTypeChunkingStrategyManager } from '@/lib/services/chunking/DocumentTypeChunkingStrategyManager';
 
 interface ChunkingQualityMetrics {
@@ -280,16 +280,15 @@ async function testSearchQuality(queries: string[]): Promise<SearchQualityMetric
   const metrics: SearchQualityMetrics[] = [];
 
   try {
-    const ragSearchService = getRAGSearchService();
-
     for (const query of queries) {
       try {
         const startTime = Date.now();
-        const searchResults = await ragSearchService.searchSimilarChunks(query, 10, 0.1);
+        // RAGProcessor 사용 (실제 벡터 검색 구현)
+        const searchResults = await ragProcessor.searchSimilarChunks(query, 10, null);
         const processingTime = Date.now() - startTime;
 
-        // 유사도 통계
-        const similarities = searchResults.map(r => r.similarity);
+        // 유사도 통계 (RAGProcessor는 similarity 필드 포함)
+        const similarities = searchResults.map(r => r.similarity || 0).filter(s => s > 0);
         const averageSimilarity = similarities.length > 0
           ? similarities.reduce((sum, s) => sum + s, 0) / similarities.length
           : 0;
@@ -324,13 +323,30 @@ async function testSearchQuality(queries: string[]): Promise<SearchQualityMetric
           issues.push(`느린 처리 시간: ${processingTime}ms`);
         }
 
+        // RAGProcessor 결과를 SearchResult 형식으로 변환
+        const convertedResults = searchResults.map((r, idx) => {
+          const metadata = r.metadata as any;
+          const isUrl = metadata.sourceType === 'url' || metadata.document_type === 'url';
+          
+          return {
+            id: r.id,
+            content: r.content,
+            similarity: r.similarity || 0,
+            documentId: metadata.document_id,
+            documentTitle: metadata.document_title || metadata.source || 'Unknown',
+            documentUrl: isUrl ? metadata.source : undefined,
+            chunkIndex: metadata.chunk_index || idx,
+            metadata: metadata,
+          };
+        });
+
         metrics.push({
           query,
-          totalResults: searchResults.length,
+          totalResults: convertedResults.length,
           averageSimilarity,
-          filteredResults: searchResults.length, // 필터링된 결과 수 (실제로는 RAGSearchService 내부에서 처리)
-          rerankedResults: searchResults.length, // 재랭킹된 결과 수
-          optimizedResults: searchResults.length, // 최적화된 결과 수
+          filteredResults: convertedResults.length, // RAGProcessor 내부에서 이미 필터링됨
+          rerankedResults: convertedResults.length, // RAGProcessor 내부에서 이미 재랭킹됨
+          optimizedResults: convertedResults.length, // RAGProcessor 내부에서 이미 최적화됨
           hasTruncatedText,
           truncatedFiltered: hasTruncatedText ? 1 : 0,
           processingTimeMs: processingTime,

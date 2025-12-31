@@ -5,6 +5,7 @@
 
 import { createClient } from '@supabase/supabase-js';
 import { SimpleEmbeddingService } from './SimpleEmbeddingService';
+import { OpenAIEmbeddingService, openAIEmbeddingService } from './OpenAIEmbeddingService';
 import { GeminiService } from './GeminiService';
 import { filterTruncatedSearchResults } from './search/TruncatedTextFilter';
 import { rerankSearchResults } from './search/SearchResultReranker';
@@ -32,7 +33,9 @@ export interface ChatResponse {
 
 export class RAGSearchService {
   private supabase;
-  private embeddingService: SimpleEmbeddingService;
+  private embeddingService: SimpleEmbeddingService | null = null;
+  private openAIEmbeddingService: OpenAIEmbeddingService | null = null;
+  private useOpenAIEmbedding: boolean = false;
 
   constructor() {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -63,9 +66,17 @@ export class RAGSearchService {
     try {
       this.supabase = createClient(supabaseUrl, supabaseKey);
       
-      // SimpleEmbeddingService 사용
-      this.embeddingService = new SimpleEmbeddingService();
-      console.log('✅ RAGSearchService 초기화 완료 (SimpleEmbeddingService)');
+      // OpenAI 임베딩 서비스 사용 가능 여부 확인
+      if (openAIEmbeddingService.initialized) {
+        this.openAIEmbeddingService = openAIEmbeddingService;
+        this.useOpenAIEmbedding = true;
+        console.log('✅ RAGSearchService 초기화 완료 (OpenAI Embedding Service)');
+      } else {
+        // Fallback: SimpleEmbeddingService 사용
+        this.embeddingService = new SimpleEmbeddingService();
+        console.log('⚠️ RAGSearchService 초기화 완료 (SimpleEmbeddingService - Fallback)');
+        console.warn('⚠️ OpenAI Embedding Service를 사용할 수 없습니다. 벡터 검색 품질이 저하될 수 있습니다.');
+      }
     } catch (error) {
       console.error('❌ RAGSearchService 초기화 실패:', error);
       throw new Error(`RAGSearchService 초기화 실패: ${error}`);
@@ -73,7 +84,7 @@ export class RAGSearchService {
   }
 
   /**
-   * 질문에 대한 유사한 문서 청크 검색
+   * 질문에 대한 유사한 문서 청크 검색 (벡터 검색 구현)
    */
   async searchSimilarChunks(
     query: string,
@@ -81,7 +92,7 @@ export class RAGSearchService {
     similarityThreshold: number = 0.1  // 임계값을 낮춰서 더 많은 결과 검색
   ): Promise<SearchResult[]> {
     try {
-      console.log(`🔍 RAG 검색 시작: "${query}"`);
+      console.log(`🔍 RAG 벡터 검색 시작: "${query}"`);
       
       // Fallback 모드인 경우 샘플 데이터 반환
       if (!this.supabase) {
@@ -89,71 +100,73 @@ export class RAGSearchService {
         return this.getFallbackSearchResults(query, limit);
       }
       
-      // 질문을 임베딩으로 변환
-      const queryEmbeddingResult = await this.embeddingService.generateEmbedding(query);
-      const queryEmbedding = queryEmbeddingResult.embedding;
-      console.log(`📊 질문 임베딩 생성 완료: ${queryEmbedding.length}차원`);
-
-      // 직접 SQL 쿼리 사용 (RPC 함수 문제 우회)
-      const queryVectorString = `[${queryEmbedding.join(',')}]`;
-      
-      const { data: searchResults, error } = await this.supabase
-        .from('document_chunks')
-        .select(`
-          chunk_id,
-          content,
-          metadata,
-          embedding
-        `)
-        .limit(limit * 2); // 더 많은 결과를 가져와서 클라이언트에서 필터링
-
-      if (error) {
-        console.error('벡터 검색 오류:', error);
-        throw error;
+      // 질문을 임베딩으로 변환 (OpenAI 우선, 없으면 SimpleEmbeddingService)
+      let queryEmbedding: number[];
+      try {
+        if (this.useOpenAIEmbedding && this.openAIEmbeddingService) {
+          console.log('🔄 OpenAI로 쿼리 임베딩 생성 중...');
+          const queryEmbeddingResult = await this.openAIEmbeddingService.generateEmbedding(query);
+          queryEmbedding = queryEmbeddingResult.embedding;
+          console.log(`✅ OpenAI 쿼리 임베딩 생성 완료: ${queryEmbedding.length}차원`);
+        } else if (this.embeddingService) {
+          console.log('🔄 SimpleEmbeddingService로 쿼리 임베딩 생성 중...');
+          const queryEmbeddingResult = await this.embeddingService.generateEmbedding(query);
+          queryEmbedding = queryEmbeddingResult.embedding;
+          console.log(`✅ SimpleEmbeddingService 쿼리 임베딩 생성 완료: ${queryEmbedding.length}차원`);
+          console.warn('⚠️ SimpleEmbeddingService는 해시 기반이므로 벡터 검색 품질이 저하될 수 있습니다.');
+        } else {
+          throw new Error('임베딩 서비스가 초기화되지 않았습니다.');
+        }
+      } catch (error) {
+        console.error('❌ 임베딩 생성 실패:', error);
+        return this.getFallbackSearchResults(query, limit);
       }
 
-      console.log(`📊 데이터베이스 조회 결과: ${searchResults?.length || 0}개`);
+      // 단계적 Fallback 검색 전략 (RAGProcessor 로직 참고)
+      // 1단계: 기본 임계값(0.7)으로 검색
+      let searchResults = await this.performVectorSearch(
+        queryEmbedding,
+        limit,
+        similarityThreshold,
+        0.7
+      );
 
-      // 클라이언트에서 유사도 계산 및 필터링
-      const similarityResults = (searchResults || [])
-        .map((result: any) => {
-          // 임베딩 데이터 파싱
-          let storedEmbedding: number[];
-          try {
-            if (typeof result.embedding === 'string') {
-              storedEmbedding = JSON.parse(result.embedding);
-            } else if (Array.isArray(result.embedding)) {
-              storedEmbedding = result.embedding;
-            } else {
-              console.warn(`알 수 없는 임베딩 형식: ${typeof result.embedding}`);
-              return null;
-            }
-          } catch (error) {
-            console.warn(`임베딩 파싱 실패: ${error}`);
-            return null;
-          }
+      // 2단계: 결과가 없거나 유사도가 낮으면 임계값을 낮춰서 재검색 (0.4)
+      if (searchResults.length === 0 || searchResults.every(r => r.similarity < 0.5)) {
+        console.log('⚠️ 1단계 검색 결과 부족 - 임계값을 0.4로 낮춰서 재검색');
+        const lowerThresholdResults = await this.performVectorSearch(
+          queryEmbedding,
+          limit,
+          similarityThreshold,
+          0.4
+        );
+        
+        if (lowerThresholdResults.length > 0 && 
+            lowerThresholdResults.some(r => r.similarity > 0.3)) {
+          console.log(`✅ 2단계 검색 성공: ${lowerThresholdResults.length}개 결과 발견`);
+          searchResults = lowerThresholdResults;
+        }
+      }
 
-          // 유사도 계산 (코사인 유사도)
-          const similarity = this.calculateCosineSimilarity(queryEmbedding, storedEmbedding);
-          console.log(`🔍 유사도 계산: ${result.chunk_id} = ${similarity.toFixed(4)}`);
-          
-          return {
-            id: result.chunk_id,
-            content: result.content,
-            similarity: similarity,
-            documentId: result.document_id,
-            documentTitle: result.metadata?.title || 'Unknown',
-            documentUrl: result.metadata?.url,
-            chunkIndex: result.chunk_id, // 문자열 ID 사용
-            metadata: result.metadata
-          };
-        })
-        .filter((result: any) => result !== null && result.similarity > 0.01)
-        .sort((a: any, b: any) => b.similarity - a.similarity);
+      // 3단계: 여전히 결과가 없으면 임계값을 더 낮춰서 재검색 (0.2)
+      if (searchResults.length === 0 || searchResults.every(r => r.similarity < 0.3)) {
+        console.log('⚠️ 2단계 검색 결과 부족 - 임계값을 0.2로 낮춰서 재검색');
+        const veryLowThresholdResults = await this.performVectorSearch(
+          queryEmbedding,
+          limit * 2,
+          similarityThreshold,
+          0.2
+        );
+        
+        if (veryLowThresholdResults.length > 0) {
+          console.log(`✅ 3단계 검색 성공: ${veryLowThresholdResults.length}개 결과 발견`);
+          searchResults = veryLowThresholdResults;
+        }
+      }
 
       // null 필터링
-      const validSimilarityResults = similarityResults.filter(
-        (result): result is NonNullable<typeof result> => result !== null
+      const validSimilarityResults = searchResults.filter(
+        (result): result is SearchResult => result !== null
       );
       
       // 질문 키워드 추출 (잘린 텍스트 필터링 및 재랭킹에 사용)
@@ -212,6 +225,72 @@ export class RAGSearchService {
       console.error('❌ RAG 검색 실패:', error);
       // 오류 발생 시에도 fallback 데이터 반환
       return this.getFallbackSearchResults(query, limit);
+    }
+  }
+
+  /**
+   * 벡터 검색 수행 (Supabase RPC 함수 사용)
+   */
+  private async performVectorSearch(
+    queryEmbedding: number[],
+    limit: number,
+    minThreshold: number,
+    matchThreshold: number
+  ): Promise<SearchResult[]> {
+    try {
+      // Supabase RPC 함수 호출
+      const { data, error } = await this.supabase.rpc('search_documents', {
+        query_embedding: queryEmbedding,
+        match_threshold: matchThreshold,
+        match_count: limit * 2, // 더 많은 결과를 가져와서 필터링
+        vendor_filter: null, // 벤더 필터는 나중에 추가 가능
+      });
+
+      if (error) {
+        console.error('❌ 벡터 검색 RPC 오류:', error);
+        return [];
+      }
+
+      if (!data || data.length === 0) {
+        console.log(`📊 벡터 검색 결과 없음 (임계값: ${matchThreshold})`);
+        return [];
+      }
+
+      console.log(`📊 벡터 검색 결과: ${data.length}개 (임계값: ${matchThreshold})`);
+
+      // SearchResult 형식으로 변환
+      const results: SearchResult[] = (data || [])
+        .map((item: any) => {
+          const similarity = item.similarity || 0;
+          
+          // 최소 임계값 필터링
+          if (similarity < minThreshold) {
+            return null;
+          }
+
+          return {
+            id: item.chunk_id,
+            content: item.content,
+            similarity: similarity,
+            documentId: item.document_id,
+            documentTitle: item.title || item.metadata?.title || 'Unknown',
+            documentUrl: item.metadata?.url || (item.document_type === 'url' ? item.metadata?.source : undefined),
+            chunkIndex: item.metadata?.chunk_index || 0,
+            metadata: {
+              ...item.metadata,
+              source_vendor: item.source_vendor,
+              document_type: item.document_type,
+            },
+          };
+        })
+        .filter((result: SearchResult | null): result is SearchResult => result !== null)
+        .sort((a: SearchResult, b: SearchResult) => b.similarity - a.similarity)
+        .slice(0, limit); // 최종 limit만큼만 반환
+
+      return results;
+    } catch (error) {
+      console.error('❌ 벡터 검색 수행 오류:', error);
+      return [];
     }
   }
 
