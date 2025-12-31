@@ -238,9 +238,22 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
 
   // --- Effects ---
 
-  const fetchExistingUrls = async (): Promise<Map<string, string>> => {
+  const fetchExistingUrls = async (vendorFilter?: string[]): Promise<Map<string, string>> => {
     try {
-      const response = await fetch('/api/admin/documents/list?type=url', {
+      // 벤더 필터를 DB ENUM 값으로 변환
+      const dbVendorFilter = vendorFilter && vendorFilter.length > 0
+        ? vendorFilter.map(v => VENDOR_TO_DB_MAP[v] || v.toUpperCase())
+        : undefined;
+
+      // API 파라미터 구성
+      const params = new URLSearchParams();
+      params.append('type', 'url');
+      if (dbVendorFilter && dbVendorFilter.length > 0) {
+        // 벤더 필터가 있으면 각 벤더별로 조회 (API가 배열을 지원하지 않을 수 있으므로)
+        // 일단 모든 문서를 가져온 후 프론트엔드에서 필터링
+      }
+
+      const response = await fetch(`/api/admin/documents/list?${params.toString()}`, {
         cache: 'no-store',
         headers: {
           'Pragma': 'no-cache',
@@ -251,22 +264,30 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
         const data = await response.json();
         const map = new Map<string, string>();
         if (data.documents && Array.isArray(data.documents)) {
-          console.log(`[fetchExistingUrls] DB에서 ${data.documents.length}개의 URL 문서를 가져옴`);
-          data.documents.forEach((doc: any) => {
+          // 벤더 필터 적용 (프론트엔드에서)
+          const filteredDocs = dbVendorFilter && dbVendorFilter.length > 0
+            ? data.documents.filter((doc: any) => {
+                const docVendor = doc.source_vendor || 'META';
+                return dbVendorFilter.includes(docVendor);
+              })
+            : data.documents;
+
+          console.log(`[fetchExistingUrls] DB에서 ${data.documents.length}개의 URL 문서를 가져옴 (필터링 후: ${filteredDocs.length}개)`);
+          filteredDocs.forEach((doc: any) => {
             if (doc.url) {
               const normalized = normalizeUrl(doc.url);
               map.set(normalized, doc.url);
               // 디버깅: 처음 5개만 로그
               if (map.size <= 5) {
-                console.log(`[fetchExistingUrls] URL 매핑: "${doc.url}" -> "${normalized}"`);
+                console.log(`[fetchExistingUrls] URL 매핑: "${doc.url}" -> "${normalized}" (벤더: ${doc.source_vendor || 'META'})`);
               }
             }
           });
-          if (data.documents.length > 5) {
-            console.log(`[fetchExistingUrls] ... 외 ${data.documents.length - 5}개 URL 매핑됨`);
+          if (filteredDocs.length > 5) {
+            console.log(`[fetchExistingUrls] ... 외 ${filteredDocs.length - 5}개 URL 매핑됨`);
           }
         }
-        console.log(`[fetchExistingUrls] 총 ${map.size}개의 정규화된 URL이 existingDbMap에 저장됨`);
+        console.log(`[fetchExistingUrls] 총 ${map.size}개의 정규화된 URL이 existingDbMap에 저장됨 (벤더: ${vendorFilter?.join(', ') || '전체'})`);
         setExistingDbMap(map);
         return map;
       } else {
@@ -280,24 +301,72 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
   };
 
   useEffect(() => {
-    fetchExistingUrls();
+    // 초기 로드 시 벤더 필터 적용하여 기존 URL 가져오기
+    fetchExistingUrls(selectedVendors.length > 0 ? selectedVendors : undefined);
     const isVercel = window.location.hostname.includes('vercel.app') || window.location.hostname.includes('vercel.com');
     setEnvironment(isVercel ? 'vercel' : 'local');
   }, []);
 
-  // 다이얼로그가 열릴 때 DB 동기화
+  // 벤더 변경 시 existingDbMap 갱신
+  useEffect(() => {
+    if (selectedVendors.length > 0) {
+      console.log('[useEffect] 벤더 변경 감지, existingDbMap 갱신:', selectedVendors);
+      fetchExistingUrls(selectedVendors);
+    }
+  }, [selectedVendors.join(',')]); // 벤더 배열이 변경될 때마다 실행
+
+  // 문서 삭제 이벤트 리스너 (전역 이벤트)
+  useEffect(() => {
+    const handleDocumentDeleted = (event: CustomEvent) => {
+      const deletedDoc = event.detail;
+      console.log('[handleDocumentDeleted] 문서 삭제 이벤트 수신:', deletedDoc);
+      
+      // existingDbMap에서 삭제된 URL 제거
+      if (deletedDoc.url) {
+        const normalized = normalizeUrl(deletedDoc.url);
+        setExistingDbMap(prev => {
+          const newMap = new Map(prev);
+          if (newMap.has(normalized)) {
+            newMap.delete(normalized);
+            console.log(`[handleDocumentDeleted] existingDbMap에서 URL 제거: "${deletedDoc.url}"`);
+          }
+          return newMap;
+        });
+        
+        // dialogDbMap에서도 제거
+        setDialogDbMap(prev => {
+          const newMap = new Map(prev);
+          if (newMap.has(normalized)) {
+            newMap.delete(normalized);
+            console.log(`[handleDocumentDeleted] dialogDbMap에서 URL 제거: "${deletedDoc.url}"`);
+          }
+          return newMap;
+        });
+      }
+      
+      // DB에서 최신 상태 다시 가져오기 (벤더 필터 적용)
+      fetchExistingUrls(selectedVendors.length > 0 ? selectedVendors : undefined);
+    };
+
+    window.addEventListener('documentDeleted' as any, handleDocumentDeleted as EventListener);
+    return () => {
+      window.removeEventListener('documentDeleted' as any, handleDocumentDeleted as EventListener);
+    };
+  }, [selectedVendors.join(',')]);
+
+  // 다이얼로그가 열릴 때 DB 동기화 (벤더 필터 적용)
   useEffect(() => {
     if (isSelectionDialogOpen) {
-      console.log('[useEffect] 다이얼로그 열림 감지, DB 동기화 시작');
-      fetchExistingUrls().then(dbMap => {
-        console.log('[useEffect] DB 동기화 완료, dialogDbMap 업데이트');
+      console.log('[useEffect] 다이얼로그 열림 감지, DB 동기화 시작 (벤더:', selectedVendors.join(', ') || '전체', ')');
+      fetchExistingUrls(selectedVendors.length > 0 ? selectedVendors : undefined).then(dbMap => {
+        console.log('[useEffect] DB 동기화 완료, dialogDbMap 업데이트:', dbMap.size, '개 URL');
         setDialogDbMap(new Map(dbMap));
       });
     } else {
       // 다이얼로그가 닫힐 때 dialogDbMap 초기화
       setDialogDbMap(new Map());
     }
-  }, [isSelectionDialogOpen]);
+  }, [isSelectionDialogOpen, selectedVendors.join(',')]);
 
 
   // --- Handlers ---
@@ -305,7 +374,8 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
   const performCrawl = async (urlList: string[], isSubPageCrawl = false, parentSeedUrl: string | null = null) => {
     if (urlList.length === 0) return;
 
-    await fetchExistingUrls();
+    // 크롤링 전 최신 DB 상태 가져오기 (벤더 필터 적용)
+    await fetchExistingUrls(selectedVendors.length > 0 ? selectedVendors : undefined);
 
     setIsCrawling(true);
     setStatusMessage("크롤링 준비 중...");

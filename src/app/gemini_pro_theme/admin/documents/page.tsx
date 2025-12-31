@@ -347,6 +347,15 @@ export default function DocumentsPage() {
                 newSelected.delete(deleteId);
                 setSelectedDocs(newSelected);
             }
+            
+            // 삭제된 문서 정보를 이벤트로 전파 (크롤러 컴포넌트 동기화용)
+            if (data.deletedDocument) {
+                const deletedEvent = new CustomEvent('documentDeleted', {
+                    detail: data.deletedDocument
+                });
+                window.dispatchEvent(deletedEvent);
+                console.log('📢 [deleteMutation] documentDeleted 이벤트 발생:', data.deletedDocument);
+            }
         },
         onError: (error, id) => {
             // 삭제 실패 시 로딩 상태 해제

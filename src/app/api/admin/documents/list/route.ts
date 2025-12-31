@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
 
         let query = supabase
             .from('documents')
-            .select('id, title, url, type, created_at')
+            .select('id, title, url, type, created_at, source_vendor')
             .order('created_at', { ascending: false });
 
         if (type) {
