@@ -594,14 +594,20 @@ export class ContentExtractor {
           };
           
           // content_title 요소를 최우선으로 확인 (다른 로직보다 먼저 실행)
+          console.log('🔍 [FAQ 제목 추출] content_title 즉시 반환 로직 시작...');
           const mainContent = document.querySelector('main, article, .content, .main-content, [role="main"]') || document.body;
           const contentTitleElements = Array.from(mainContent.querySelectorAll('.content_title, h3.content_title, h2.content_title, h1.content_title'));
           
+          console.log(`🔍 [FAQ 제목 추출] content_title 요소 발견: ${contentTitleElements.length}개`);
+          
           if (contentTitleElements.length > 0) {
             // content_title 요소가 있으면 즉시 반환 (최우선 처리)
-            for (const el of contentTitleElements) {
+            for (let i = 0; i < contentTitleElements.length; i++) {
+              const el = contentTitleElements[i];
               const rect = el.getBoundingClientRect();
               const text = el.textContent?.trim() || '';
+              
+              console.log(`🔍 [FAQ 제목 추출] content_title 후보 ${i + 1}: "${text.substring(0, 100)}" (tag: ${el.tagName}, Y: ${Math.round(rect.top)}, length: ${text.length})`);
               
               // 기본 유효성 검사
               if (text && text.length >= 2 && text.length <= 200 && rect.top >= 0 && rect.top <= 2000) {
@@ -617,12 +623,20 @@ export class ContentExtractor {
                   lowerText.includes('위 내용으로 궁금한 점이 해결되지 않았나요') ||
                   lowerText.includes('의견 보내주셔서 감사합니다');
                 
+                console.log(`🔍 [FAQ 제목 추출] content_title 후보 ${i + 1} 필터링 결과: isVeryBad=${isVeryBad}`);
+                
                 if (!isVeryBad) {
                   console.log(`✅ [FAQ 제목 추출] content_title 즉시 반환: "${text}" (${el.tagName})`);
                   return { type: 'faq', title: text, score: 1000, source: 'content_title-immediate' };
+                } else {
+                  console.log(`❌ [FAQ 제목 추출] content_title 후보 ${i + 1} 필터링됨: "${text.substring(0, 50)}"`);
                 }
+              } else {
+                console.log(`❌ [FAQ 제목 추출] content_title 후보 ${i + 1} 유효성 검사 실패: text=${text ? '있음' : '없음'}, length=${text.length}, Y=${Math.round(rect.top)}`);
               }
             }
+          } else {
+            console.log('⚠️ [FAQ 제목 추출] content_title 요소를 찾을 수 없음');
           }
           
           // 제목 후보 수집 및 점수화
