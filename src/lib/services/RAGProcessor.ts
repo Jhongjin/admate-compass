@@ -15,6 +15,8 @@ import { OpenAIEmbeddingService, openAIEmbeddingService } from './OpenAIEmbeddin
 
 export interface ChunkData {
   id: string;
+  chunkId?: string; // 하이브리드 검색을 위한 필드
+  documentId?: string; // 하이브리드 검색을 위한 필드
   content: string;
   metadata: {
     document_id: string;
@@ -2716,70 +2718,96 @@ export class RAGProcessor {
         useWeightedSearch = false;
       }
 
-      // 단계적 Fallback 검색 전략 (개선: 더 공격적인 Fallback)
-      // 1단계: 기본 임계값(0.6)으로 검색 (0.7 → 0.6으로 낮춤)
-      let chunks = await this.performVectorSearch(
+      // 하이브리드 검색: 벡터 검색과 키워드 검색을 동시에 수행
+      console.log('🔀 하이브리드 검색 시작: 벡터 + 키워드 검색 결합');
+      
+      // 1단계: 벡터 검색 (기본 임계값 0.6)
+      const vectorChunks = await this.performVectorSearch(
         supabase,
         queryEmbedding,
-        limit,
+        limit * 2, // 하이브리드 검색을 위해 더 많은 결과 가져오기
         normalizedVendorFilter,
-        0.6, // 0.7 → 0.6으로 조정
+        0.6,
         useWeightedSearch
       );
 
-      // 2단계: 결과가 없거나 유사도가 낮으면 임계값을 낮춰서 재검색 (0.35)
+      // 2단계: 키워드 검색 (동시 수행)
+      const keywordChunks = await this.performKeywordSearch(
+        query,
+        limit * 2, // 하이브리드 검색을 위해 더 많은 결과 가져오기
+        supabase,
+        normalizedVendorFilter
+      );
+
+      // 3단계: 하이브리드 검색 결과 결합 및 재랭킹
+      const { combineHybridSearchResults } = await import('./search/HybridSearchService');
+      let chunks = combineHybridSearchResults(
+        vectorChunks,
+        keywordChunks,
+        {
+          vectorWeight: 0.7,
+          keywordWeight: 0.3,
+          maxResults: limit,
+          deduplicate: true,
+        }
+      );
+
+      console.log(`🔀 하이브리드 검색 결과: 벡터 ${vectorChunks.length}개, 키워드 ${keywordChunks.length}개 → 결합 ${chunks.length}개`);
+
+      // 4단계: 하이브리드 검색 결과가 부족하면 Fallback 전략 실행
       if (chunks.length === 0 || chunks.every(c => (c.similarity || 0) < 0.5)) {
-        console.log('⚠️ 1단계 검색 결과 부족 - 임계값을 0.35로 낮춰서 재검색');
+        console.log('⚠️ 하이브리드 검색 결과 부족 - Fallback 전략 실행');
+        
+        // 4-1단계: 벡터 검색 임계값을 낮춰서 재검색 (0.35)
         const lowerThresholdChunks = await this.performVectorSearch(
           supabase,
           queryEmbedding,
           limit,
           normalizedVendorFilter,
-          0.35, // 0.4 → 0.35로 조정
+          0.35,
           useWeightedSearch
         );
         
         // 더 나은 결과가 있으면 사용
         if (lowerThresholdChunks.length > 0 && 
             lowerThresholdChunks.some(c => (c.similarity || 0) > 0.3)) {
-          console.log(`✅ 2단계 검색 성공: ${lowerThresholdChunks.length}개 결과 발견`);
+          console.log(`✅ Fallback 1단계 검색 성공: ${lowerThresholdChunks.length}개 결과 발견`);
           chunks = lowerThresholdChunks;
         }
       }
 
-      // 2-1단계: 여전히 결과가 없으면 임계값을 더 낮춰서 재검색 (0.15)
+      // 4-2단계: 여전히 결과가 없으면 임계값을 더 낮춰서 재검색 (0.15)
       if (chunks.length === 0 || chunks.every(c => (c.similarity || 0) < 0.3)) {
-        console.log('⚠️ 2단계 검색 결과 부족 - 임계값을 0.15로 낮춰서 재검색');
+        console.log('⚠️ Fallback 1단계 검색 결과 부족 - 임계값을 0.15로 낮춰서 재검색');
         const veryLowThresholdChunks = await this.performVectorSearch(
           supabase,
           queryEmbedding,
-          limit * 2, // 더 많은 결과 가져오기
+          limit * 2,
           normalizedVendorFilter,
-          0.15, // 0.2 → 0.15로 조정
+          0.15,
           useWeightedSearch
         );
         
-        // 더 나은 결과가 있으면 사용
         if (veryLowThresholdChunks.length > 0) {
-          console.log(`✅ 2-1단계 검색 성공: ${veryLowThresholdChunks.length}개 결과 발견`);
+          console.log(`✅ Fallback 2단계 검색 성공: ${veryLowThresholdChunks.length}개 결과 발견`);
           chunks = veryLowThresholdChunks;
         }
       }
 
-      // 2-2단계: 최소 임계값으로 재검색 (0.05)
+      // 4-3단계: 최소 임계값으로 재검색 (0.05)
       if (chunks.length === 0) {
-        console.log('⚠️ 2-1단계 검색 결과 부족 - 최소 임계값 0.05로 재검색');
+        console.log('⚠️ Fallback 2단계 검색 결과 부족 - 최소 임계값 0.05로 재검색');
         const minimumThresholdChunks = await this.performVectorSearch(
           supabase,
           queryEmbedding,
-          limit * 3, // 더 많은 결과 가져오기
+          limit * 3,
           normalizedVendorFilter,
-          0.05, // 최소 임계값 추가
+          0.05,
           useWeightedSearch
         );
         
         if (minimumThresholdChunks.length > 0) {
-          console.log(`✅ 2-2단계 검색 성공: ${minimumThresholdChunks.length}개 결과 발견`);
+          console.log(`✅ Fallback 3단계 검색 성공: ${minimumThresholdChunks.length}개 결과 발견`);
           chunks = minimumThresholdChunks;
         }
       }
@@ -2802,9 +2830,9 @@ export class RAGProcessor {
         }
       }
 
-      // 최종 결과가 없으면 키워드 검색으로 Fallback
+      // 최종 결과가 없으면 키워드 검색으로 Fallback (기존 로직 유지)
       if (chunks.length === 0) {
-        console.log('🔄 벡터 검색 결과 없음 - 키워드 검색으로 Fallback 시도...');
+        console.log('🔄 모든 검색 전략 실패 - 키워드 검색으로 최종 Fallback 시도...');
         return await this.fallbackKeywordSearch(query, limit, supabase, normalizedVendorFilter);
       }
 
@@ -2879,6 +2907,8 @@ export class RAGProcessor {
       const chunks: ChunkData[] = (data || []).map((item: any) => {
         const documentType = item.document_type || item.metadata?.document_type || 'file';
         const isUrl = documentType === 'url';
+        const chunkId = item.chunk_id || item.id || '';
+        const documentId = item.document_id || item.metadata?.document_id || '';
         
         const finalSimilarity = item.weighted_similarity !== undefined 
           ? item.weighted_similarity 
@@ -2886,6 +2916,8 @@ export class RAGProcessor {
         
         return {
           id: item.chunk_id,
+          chunkId: chunkId,
+          documentId: documentId,
           content: item.content,
           metadata: {
             document_id: item.document_id,
@@ -2910,6 +2942,149 @@ export class RAGProcessor {
   }
 
   /**
+   * 키워드 검색 수행 (하이브리드 검색용)
+   */
+  private async performKeywordSearch(
+    query: string,
+    limit: number,
+    supabase: any,
+    vendorFilter: string[] | null = null
+  ): Promise<ChunkData[]> {
+    try {
+      // 키워드 추출
+      const queryKeywords = this.extractQueryKeywords(query);
+      
+      if (queryKeywords.length === 0) {
+        return [];
+      }
+
+      console.log(`🔑 키워드 검색: ${queryKeywords.join(', ')}`);
+
+      // 키워드 검색 쿼리 구성
+      const orConditions = queryKeywords.map(term => `content.ilike.%${term}%`).join(',');
+      const { data: chunksData, error: chunksError } = await supabase
+        .from('document_chunks')
+        .select('chunk_id, content, metadata, document_id')
+        .or(orConditions)
+        .limit(limit);
+
+      if (chunksError || !chunksData || chunksData.length === 0) {
+        return [];
+      }
+
+      // 문서 정보 조회 (벤더 필터 적용)
+      const documentIds = [...new Set(chunksData.map((c: any) => c.document_id))];
+      let documentsQuery = supabase
+        .from('documents')
+        .select('id, title, source_vendor, type, status')
+        .in('id', documentIds)
+        .eq('status', 'indexed');
+
+      if (vendorFilter && vendorFilter.length > 0) {
+        const normalizedVendorFilter = vendorFilter.map(v => v.toUpperCase());
+        documentsQuery = documentsQuery.in('source_vendor', normalizedVendorFilter);
+      }
+
+      const { data: documentsData, error: documentsError } = await documentsQuery;
+
+      if (documentsError || !documentsData || documentsData.length === 0) {
+        return [];
+      }
+
+      // 결과 매핑
+      const documentMap = new Map<string, any>(
+        documentsData.map((d: any) => [d.id, d])
+      );
+
+      const { scoreKeywordResults } = await import('./search/HybridSearchService');
+      
+      const chunks: ChunkData[] = chunksData
+        .filter((c: any) => documentMap.has(c.document_id))
+        .map((item: any) => {
+          const doc = documentMap.get(item.document_id);
+          if (!doc) return null;
+
+          const documentType = doc.type || 'file';
+          const isUrl = documentType === 'url';
+
+          return {
+            id: item.chunk_id,
+            chunkId: item.chunk_id,
+            content: item.content,
+            documentId: item.document_id,
+            metadata: {
+              document_id: item.document_id,
+              chunk_index: item.metadata?.chunk_index || 0,
+              source: doc.title || item.metadata?.source || 'Unknown',
+              created_at: item.metadata?.created_at || new Date().toISOString(),
+              source_vendor: doc.source_vendor || item.metadata?.source_vendor || null,
+              document_type: documentType,
+              sourceType: isUrl ? 'url' : 'file',
+            },
+            similarity: 0, // 키워드 점수는 scoreKeywordResults에서 계산
+          };
+        })
+        .filter((c: ChunkData | null): c is ChunkData => c !== null);
+
+      // 키워드 점수 부여
+      return scoreKeywordResults(chunks, queryKeywords);
+    } catch (error) {
+      console.error('❌ 키워드 검색 오류:', error);
+      return [];
+    }
+  }
+
+  /**
+   * 쿼리에서 키워드 추출 (공통 로직)
+   */
+  private extractQueryKeywords(query: string): string[] {
+    const queryLower = query.toLowerCase();
+    
+    // 불용어 목록
+    const stopWords = ['에', '를', '을', '의', '와', '과', '에 대해', '에 대해 설명', '알려줘', '소개해줘', '설명해줘', '가이드', '가이드를', '알려', '소개', '설명', '에 대해', '설명해', '알려주', '소개해'];
+    
+    // 복합 키워드 패턴
+    const compoundPatterns = [
+      /전환\s*api/gi,
+      /dv\s*360/gi,
+      /포토\s*뷰어/gi,
+      /youtube\s*상품/gi,
+      /google\s*ads/gi,
+      /meta\s*ads/gi,
+      /conversion\s*api/gi,
+      /conversionapi/gi,
+    ];
+    
+    const queryKeywords: string[] = [];
+    
+    // 복합 키워드 먼저 추출
+    compoundPatterns.forEach(pattern => {
+      const matches = queryLower.match(pattern);
+      if (matches) {
+        matches.forEach(match => {
+          const cleaned = match.replace(/\s+/g, '');
+          if (cleaned.length > 1) {
+            queryKeywords.push(cleaned);
+          }
+        });
+      }
+    });
+    
+    // 나머지 단어 추출
+    const words = queryLower.split(/\s+/);
+    words.forEach(word => {
+      const cleaned = word.trim();
+      if (cleaned.length > 1 && 
+          !stopWords.includes(cleaned) && 
+          !queryKeywords.some(kw => cleaned.includes(kw) || kw.includes(cleaned))) {
+        queryKeywords.push(cleaned);
+      }
+    });
+    
+    return Array.from(new Set(queryKeywords));
+  }
+
+  /**
    * Fallback 키워드 검색 (벤더 필터 지원, 복합 키워드 처리)
    */
   private async fallbackKeywordSearch(
@@ -2924,53 +3099,8 @@ export class RAGProcessor {
         console.log('🏷️ 키워드 검색에도 벤더 필터 적용:', vendorFilter);
       }
       
-      // 개선된 키워드 추출 (복합 키워드 지원)
-      const queryLower = query.toLowerCase();
-      
-      // 불용어 목록
-      const stopWords = ['에', '를', '을', '의', '와', '과', '에 대해', '에 대해 설명', '알려줘', '소개해줘', '설명해줘', '가이드', '가이드를', '알려', '소개', '설명', '에 대해', '설명해', '알려주', '소개해'];
-      
-      // 복합 키워드 패턴 (예: "전환API", "DV360", "포토뷰어")
-      const compoundPatterns = [
-        /전환\s*api/gi,
-        /dv\s*360/gi,
-        /포토\s*뷰어/gi,
-        /youtube\s*상품/gi,
-        /google\s*ads/gi,
-        /meta\s*ads/gi,
-        /conversion\s*api/gi,
-        /conversionapi/gi,
-      ];
-      
-      const queryKeywords: string[] = [];
-      
-      // 복합 키워드 먼저 추출
-      compoundPatterns.forEach(pattern => {
-        const matches = queryLower.match(pattern);
-        if (matches) {
-          matches.forEach(match => {
-            const cleaned = match.replace(/\s+/g, ''); // 공백 제거
-            if (cleaned.length > 1) {
-              queryKeywords.push(cleaned);
-            }
-          });
-        }
-      });
-      
-      // 나머지 단어 추출 (복합 키워드에 포함되지 않은 경우만)
-      const words = queryLower.split(/\s+/);
-      words.forEach(word => {
-        const cleaned = word.trim();
-        // 불용어가 아니고, 길이가 1보다 크며, 복합 키워드에 포함되지 않은 경우
-        if (cleaned.length > 1 && 
-            !stopWords.includes(cleaned) && 
-            !queryKeywords.some(kw => cleaned.includes(kw) || kw.includes(cleaned))) {
-          queryKeywords.push(cleaned);
-        }
-      });
-      
-      // 중복 제거
-      const searchTerms = Array.from(new Set(queryKeywords));
+      // 키워드 추출 (공통 메서드 사용)
+      const searchTerms = this.extractQueryKeywords(query);
       
       if (searchTerms.length === 0) {
         searchTerms.push(query); // 키워드가 없으면 전체 쿼리 사용
