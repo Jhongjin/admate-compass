@@ -593,6 +593,38 @@ export class ContentExtractor {
             return candidates;
           };
           
+          // content_title 요소를 최우선으로 확인 (다른 로직보다 먼저 실행)
+          const mainContent = document.querySelector('main, article, .content, .main-content, [role="main"]') || document.body;
+          const contentTitleElements = Array.from(mainContent.querySelectorAll('.content_title, h3.content_title, h2.content_title, h1.content_title'));
+          
+          if (contentTitleElements.length > 0) {
+            // content_title 요소가 있으면 즉시 반환 (최우선 처리)
+            for (const el of contentTitleElements) {
+              const rect = el.getBoundingClientRect();
+              const text = el.textContent?.trim() || '';
+              
+              // 기본 유효성 검사
+              if (text && text.length >= 2 && text.length <= 200 && rect.top >= 0 && rect.top <= 2000) {
+                // content_title은 최고 우선순위이므로 필터링 최소화
+                // 매우 명확한 잘못된 텍스트만 제외
+                const lowerText = text.toLowerCase();
+                const isVeryBad = 
+                  text.length < 2 ||
+                  /^[\d\s\-_]+$/.test(text) || // 숫자만
+                  text === '도움말 카테고리' ||
+                  text === '광고주센터' ||
+                  text === '도움말' ||
+                  lowerText.includes('위 내용으로 궁금한 점이 해결되지 않았나요') ||
+                  lowerText.includes('의견 보내주셔서 감사합니다');
+                
+                if (!isVeryBad) {
+                  console.log(`✅ [FAQ 제목 추출] content_title 즉시 반환: "${text}" (${el.tagName})`);
+                  return { type: 'faq', title: text, score: 1000, source: 'content_title-immediate' };
+                }
+              }
+            }
+          }
+          
           // 제목 후보 수집 및 점수화
           const candidates = collectAllTitleCandidates();
           
