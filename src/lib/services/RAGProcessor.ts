@@ -2803,18 +2803,83 @@ export class RAGProcessor {
           query: searchQuery,
           queryKeywords,
           weights: {
-            vectorSimilarity: 0.5, // 벡터 유사도 가중치
-            keywordMatch: 0.2, // 키워드 매칭 가중치
-            sectionTitle: 0.15, // 섹션 제목 일치 가중치
+            vectorSimilarity: 0.4, // 벡터 유사도 가중치 (0.5 → 0.4로 감소)
+            keywordMatch: 0.25, // 키워드 매칭 가중치 (0.2 → 0.25로 증가)
+            sectionTitle: 0.2, // 섹션 제목 일치 가중치 (0.15 → 0.2로 증가)
             documentTitle: 0.1, // 문서 제목 일치 가중치
             keywordDensity: 0.05, // 키워드 밀도 가중치
           },
-          minRelevanceScore: 0.1, // 최소 관련성 점수
+          minRelevanceScore: 0.15, // 최소 관련성 점수 (0.1 → 0.15로 상향)
         });
         
+        // 잘린 텍스트 필터링 적용
+        const { filterTruncatedSearchResults } = await import('./search/TruncatedTextFilter');
+        const { valid: filteredChunks, filtered: truncatedFiltered } = filterTruncatedSearchResults(
+          chunks,
+          {
+            filterHighSeverityOnly: true,
+            keepIfHasKeywords: queryKeywords,
+          }
+        );
+        
+        if (truncatedFiltered.length > 0) {
+          console.log(`⚠️ 잘린 텍스트 패턴으로 ${truncatedFiltered.length}개 결과 필터링됨`);
+        }
+        
+        chunks = filteredChunks;
+        
+        // 평균 유사도 향상을 위한 추가 부스팅
+        // 키워드 매칭이 있는 결과에 추가 점수 부여
+        const boostedChunks = chunks.map(chunk => {
+          const content = chunk.content.toLowerCase();
+          const docTitle = (chunk.metadata?.document_title || '').toLowerCase();
+          const sectionTitle = (chunk.metadata?.section_title || '').toLowerCase();
+          
+          let boost = 0;
+          
+          // 쿼리 키워드가 콘텐츠에 포함된 경우
+          for (const keyword of queryKeywords) {
+            const keywordLower = keyword.toLowerCase();
+            if (content.includes(keywordLower)) {
+              boost += 0.05; // 키워드 매칭당 5% 부스팅
+              
+              // 정확한 단어 매칭 (공백으로 구분)
+              const exactMatch = new RegExp(`\\b${keywordLower}\\b`, 'i');
+              if (exactMatch.test(chunk.content)) {
+                boost += 0.1; // 정확한 매칭 추가 보너스
+              }
+            }
+            
+            // 문서 제목에 키워드가 포함된 경우
+            if (docTitle.includes(keywordLower)) {
+              boost += 0.1;
+            }
+            
+            // 섹션 제목에 키워드가 포함된 경우
+            if (sectionTitle.includes(keywordLower)) {
+              boost += 0.15;
+            }
+          }
+          
+          // 부스팅된 유사도 계산 (최대 1.0으로 제한)
+          const boostedSimilarity = Math.min(1.0, (chunk.similarity || 0) + boost);
+          
+          return {
+            ...chunk,
+            similarity: boostedSimilarity,
+          };
+        });
+        
+        // 부스팅된 유사도 기준으로 재정렬
+        boostedChunks.sort((a, b) => (b.similarity || 0) - (a.similarity || 0));
+        
         // 최종 결과 수 제한
-        chunks = chunks.slice(0, limit);
-        console.log(`✅ Cross-Encoder 재랭킹 완료: ${chunks.length}개 결과 (최종)`);
+        chunks = boostedChunks.slice(0, limit);
+        
+        const finalAvgSimilarity = chunks.length > 0
+          ? chunks.reduce((sum, c) => sum + (c.similarity || 0), 0) / chunks.length
+          : 0;
+        console.log(`✅ Cross-Encoder 재랭킹 완료: ${chunks.length}개 결과 (최종, 평균 유사도: ${finalAvgSimilarity.toFixed(3)})`);
       }
 
       // 4단계: 하이브리드 검색 결과가 부족하면 Fallback 전략 실행 (더 공격적인 전략)

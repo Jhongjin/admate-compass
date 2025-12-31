@@ -293,12 +293,20 @@ async function testSearchQuality(queries: string[]): Promise<SearchQualityMetric
           ? similarities.reduce((sum, s) => sum + s, 0) / similarities.length
           : 0;
 
-        // 잘린 텍스트 감지
-        const hasTruncatedText = searchResults.some(r => {
-          const content = r.content;
-          return /\d+\s*\|\s*\d+/.test(content) || // 잘린 숫자 패턴
-                 content.length < 50; // 너무 짧은 콘텐츠
-        });
+        // 잘린 텍스트 감지 (TruncatedTextFilter 사용)
+        const { hasTruncatedText: checkTruncatedText } = await import('@/lib/services/search/TruncatedTextFilter');
+        let hasTruncatedText = false;
+        let truncatedCount = 0;
+        
+        for (const result of searchResults) {
+          const truncatedCheck = checkTruncatedText(result.content);
+          // high severity 패턴만 카운트
+          const highSeverityPatterns = truncatedCheck.patterns.filter(p => p.severity === 'high');
+          if (highSeverityPatterns.length > 0) {
+            hasTruncatedText = true;
+            truncatedCount++;
+          }
+        }
 
         // 품질 점수 계산
         const qualityScore = calculateSearchQualityScore({
@@ -348,7 +356,7 @@ async function testSearchQuality(queries: string[]): Promise<SearchQualityMetric
           rerankedResults: convertedResults.length, // RAGProcessor 내부에서 이미 재랭킹됨
           optimizedResults: convertedResults.length, // RAGProcessor 내부에서 이미 최적화됨
           hasTruncatedText,
-          truncatedFiltered: hasTruncatedText ? 1 : 0,
+          truncatedFiltered: truncatedCount, // 실제 필터링된 개수
           processingTimeMs: processingTime,
           qualityScore,
           issues,
@@ -450,11 +458,15 @@ function calculateSearchQualityScore(params: {
     score += 0.25;
   }
 
-  // 평균 유사도 (0.5 이상이 이상적)
+  // 평균 유사도 (0.5 이상이 이상적, 더 세밀한 점수 부여)
   if (params.averageSimilarity >= 0.7) {
     score += 0.4;
+  } else if (params.averageSimilarity >= 0.6) {
+    score += 0.35; // 0.6-0.7 구간 추가
   } else if (params.averageSimilarity >= 0.5) {
     score += 0.3;
+  } else if (params.averageSimilarity >= 0.4) {
+    score += 0.25; // 0.4-0.5 구간 추가
   } else if (params.averageSimilarity >= 0.3) {
     score += 0.2;
   } else {

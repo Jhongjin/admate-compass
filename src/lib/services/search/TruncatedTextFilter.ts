@@ -81,6 +81,8 @@ export const TRUNCATED_TEXT_PATTERNS: TruncatedTextPattern[] = [
 
 /**
  * 텍스트에 잘린 패턴이 있는지 확인
+ * @param text 확인할 텍스트
+ * @returns 잘린 패턴이 있는지 여부와 발견된 패턴 목록
  */
 export function hasTruncatedText(text: string): {
   hasTruncated: boolean;
