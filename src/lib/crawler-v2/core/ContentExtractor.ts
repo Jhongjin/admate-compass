@@ -293,6 +293,26 @@ export class ContentExtractor {
             
             console.log(`🔍 [FAQ 제목 추출] 메인 콘텐츠 영역: ${mainContent.tagName} (${mainContent.className || 'no-class'})`);
             
+            // 0. content_title 클래스를 가진 요소를 최우선으로 찾기 (Naver Ads FAQ 페이지의 표준 제목 클래스)
+            const contentTitleElements = Array.from(mainContent.querySelectorAll('.content_title, h3.content_title, h2.content_title, h1.content_title'));
+            console.log(`🔍 [FAQ 제목 추출] 발견된 content_title 클래스 요소: ${contentTitleElements.length}개`);
+            contentTitleElements.forEach((el, idx) => {
+              const rect = el.getBoundingClientRect();
+              const text = el.textContent?.trim() || '';
+              if (text && text.length >= 2 && text.length <= 200 && rect.top >= 0 && rect.top <= 2000) {
+                // content_title은 최고 우선순위 (점수 500)
+                let score = 500;
+                // 태그에 따른 추가 점수
+                if (el.tagName === 'H1') score += 50;
+                else if (el.tagName === 'H2') score += 40;
+                else if (el.tagName === 'H3') score += 30;
+                // 페이지 상단에 가까울수록 높은 점수
+                score += Math.max(0, 50 - Math.floor(rect.top / 20));
+                candidates.push({ text, score, source: 'content_title-class' });
+                console.log(`  ✅ content_title: "${text.substring(0, 50)}" (점수: ${score}, Y: ${Math.round(rect.top)})`);
+              }
+            });
+            
             // 1. 모든 h1, h2, h3, h4 수집 (네비게이션/UI 텍스트 제외)
             const headings = Array.from(mainContent.querySelectorAll('h1, h2, h3, h4'));
             console.log(`🔍 [FAQ 제목 추출] 발견된 heading 태그: ${headings.length}개`);
@@ -311,6 +331,12 @@ export class ContentExtractor {
             headings.forEach((el, idx) => {
               const rect = el.getBoundingClientRect();
               const text = el.textContent?.trim() || '';
+              
+              // content_title 클래스를 가진 요소는 이미 수집했으므로 제외 (중복 방지)
+              if (el.classList.contains('content_title')) {
+                console.log(`  - ${el.tagName}: "${text.substring(0, 50)}" (제외: 이미 content_title로 수집됨)`);
+                return;
+              }
               
               // 네비게이션/UI 텍스트 제외 (수집 단계에서 미리 필터링)
               if (excludedHeadingTexts.some(excluded => text === excluded || text.includes(excluded))) {
@@ -334,9 +360,15 @@ export class ContentExtractor {
             });
             
             // 2. 클래스명에 title, question이 포함된 요소 수집 (FAQ 질문 제목 우선)
+            // 단, content_title은 이미 최우선으로 수집했으므로 제외
             const titleElements = Array.from(mainContent.querySelectorAll('[class*="title"], [class*="question"], [class*="heading"], [class*="faq"], [class*="content"]'));
             console.log(`🔍 [FAQ 제목 추출] 발견된 title/question 클래스 요소: ${titleElements.length}개`);
             titleElements.forEach(el => {
+              // content_title 클래스를 가진 요소는 이미 수집했으므로 제외 (중복 방지)
+              if (el.classList.contains('content_title')) {
+                return;
+              }
+              
               const rect = el.getBoundingClientRect();
               const text = el.textContent?.trim() || '';
               if (text && text.length >= 2 && text.length <= 200 && rect.top >= 0 && rect.top <= 2000) {
