@@ -2651,7 +2651,32 @@ export class RAGProcessor {
    */
   async searchSimilarChunks(query: string, limit: number = 5, vendorFilter: string[] | null = null): Promise<ChunkData[]> {
     try {
-      console.log('🔍 벡터 검색 시작:', query);
+      // 쿼리 확장 (동의어/관련어 추가) - 임베딩 생성 전에 수행
+      const { expandQuery } = await import('./search/QueryExpansionService');
+      
+      // 벤더 필터에서 도메인 감지
+      let domain: 'meta' | 'naver' | 'kakao' | 'google' | 'general' = 'general';
+      if (vendorFilter && vendorFilter.length > 0) {
+        const vendor = vendorFilter[0].toLowerCase();
+        if (vendor.includes('meta') || vendor.includes('facebook') || vendor.includes('instagram')) {
+          domain = 'meta';
+        } else if (vendor.includes('naver')) {
+          domain = 'naver';
+        } else if (vendor.includes('kakao')) {
+          domain = 'kakao';
+        } else if (vendor.includes('google')) {
+          domain = 'google';
+        }
+      }
+      
+      const expandedQuery = expandQuery(query, { domain, maxExpansions: 3 });
+      const searchQuery = expandedQuery; // 확장된 쿼리 사용
+      
+      if (expandedQuery !== query) {
+        console.log(`🔍 쿼리 확장: "${query}" → "${expandedQuery}"`);
+      }
+      
+      console.log('🔍 벡터 검색 시작:', searchQuery);
       if (vendorFilter && vendorFilter.length > 0) {
         console.log('🏷️ 벤더 필터 적용:', vendorFilter);
       }
@@ -2673,7 +2698,7 @@ export class RAGProcessor {
         }
         
         console.log('🔄 OpenAI로 쿼리 임베딩 생성 중...');
-        const result = await this.openAIEmbeddingService.generateEmbedding(query);
+        const result = await this.openAIEmbeddingService.generateEmbedding(searchQuery);
         queryEmbedding = result.embedding;
         console.log('✅ OpenAI 쿼리 임베딩 생성 완료:', queryEmbedding.length, '차원');
       } else {
@@ -2685,7 +2710,7 @@ export class RAGProcessor {
         }
         
         console.log('🔄 BGE-M3로 쿼리 임베딩 생성 중...');
-        const result = await embeddingService.generateEmbedding(query, {
+        const result = await embeddingService.generateEmbedding(searchQuery, {
           model: 'bge-m3',
           normalize: true
         });
@@ -2731,9 +2756,9 @@ export class RAGProcessor {
         useWeightedSearch
       );
 
-      // 2단계: 키워드 검색 (동시 수행)
+      // 2단계: 키워드 검색 (동시 수행, 확장된 쿼리 사용)
       const keywordChunks = await this.performKeywordSearch(
-        query,
+        searchQuery, // 확장된 쿼리 사용
         limit * 2, // 하이브리드 검색을 위해 더 많은 결과 가져오기
         supabase,
         normalizedVendorFilter
@@ -2830,10 +2855,10 @@ export class RAGProcessor {
         }
       }
 
-      // 최종 결과가 없으면 키워드 검색으로 Fallback (기존 로직 유지)
+      // 최종 결과가 없으면 키워드 검색으로 Fallback (기존 로직 유지, 확장된 쿼리 사용)
       if (chunks.length === 0) {
         console.log('🔄 모든 검색 전략 실패 - 키워드 검색으로 최종 Fallback 시도...');
-        return await this.fallbackKeywordSearch(query, limit, supabase, normalizedVendorFilter);
+        return await this.fallbackKeywordSearch(searchQuery, limit, supabase, normalizedVendorFilter);
       }
 
       // 타입별 통계 로그
