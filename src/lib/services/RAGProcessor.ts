@@ -2772,12 +2772,42 @@ export class RAGProcessor {
         {
           vectorWeight: 0.7,
           keywordWeight: 0.3,
-          maxResults: limit,
+          maxResults: limit * 2, // Cross-Encoder 재랭킹을 위해 더 많은 결과 가져오기
           deduplicate: true,
         }
       );
 
       console.log(`🔀 하이브리드 검색 결과: 벡터 ${vectorChunks.length}개, 키워드 ${keywordChunks.length}개 → 결합 ${chunks.length}개`);
+
+      // 3-1단계: Cross-Encoder 스타일 재랭킹 (관련성 점수 기반 재정렬)
+      if (chunks.length > 0) {
+        console.log('🎯 Cross-Encoder 재랭킹 시작: 관련성 점수 기반 재정렬');
+        const { crossEncoderRerank } = await import('./search/CrossEncoderReranker');
+        
+        // 쿼리 키워드 추출
+        const queryKeywords = searchQuery
+          .toLowerCase()
+          .split(/\s+/)
+          .filter(word => word.length > 1)
+          .filter(word => !['에', '를', '을', '의', '와', '과', '은', '는', '이', '가', '에 대해', '알려주세요', '어떻게', '무엇', '왜', '언제', '어디'].includes(word));
+        
+        chunks = crossEncoderRerank(chunks, {
+          query: searchQuery,
+          queryKeywords,
+          weights: {
+            vectorSimilarity: 0.5, // 벡터 유사도 가중치
+            keywordMatch: 0.2, // 키워드 매칭 가중치
+            sectionTitle: 0.15, // 섹션 제목 일치 가중치
+            documentTitle: 0.1, // 문서 제목 일치 가중치
+            keywordDensity: 0.05, // 키워드 밀도 가중치
+          },
+          minRelevanceScore: 0.1, // 최소 관련성 점수
+        });
+        
+        // 최종 결과 수 제한
+        chunks = chunks.slice(0, limit);
+        console.log(`✅ Cross-Encoder 재랭킹 완료: ${chunks.length}개 결과 (최종)`);
+      }
 
       // 4단계: 하이브리드 검색 결과가 부족하면 Fallback 전략 실행
       if (chunks.length === 0 || chunks.every(c => (c.similarity || 0) < 0.5)) {
