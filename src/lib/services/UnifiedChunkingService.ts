@@ -8,6 +8,7 @@
 
 import { adaptiveChunkingService, AdaptiveChunkingConfig, AdaptiveChunk } from './AdaptiveChunkingService';
 import { processTextEncoding } from '../utils/textEncoding';
+import { documentTypeChunkingStrategyManager } from './chunking/DocumentTypeChunkingStrategyManager';
 
 export interface UnifiedChunkingOptions {
   // 표준 청크 크기 (800-1000자 범위)
@@ -156,15 +157,6 @@ export class UnifiedChunkingService {
       // 콘텐츠 타입 자동 감지 (지정되지 않은 경우)
       const contentType = options.contentType || this.detectContentType(cleanContent, documentTitle);
 
-      // AdaptiveChunkingService 사용
-      const adaptiveConfig: AdaptiveChunkingConfig = {
-        documentType,
-        contentLength: cleanContent.length,
-        language,
-        contentType,
-        optimizeForSpeed: options.optimizeForSpeed || false,
-      };
-
       console.log('📦 통합 청킹 시작:', {
         documentId,
         documentTitle,
@@ -178,12 +170,65 @@ export class UnifiedChunkingService {
 
       // 청킹 시간 측정
       const chunkingStartTime = Date.now();
-      const adaptiveChunks = await adaptiveChunkingService.chunkDocument(
-        cleanContent,
-        documentId,
-        documentTitle,
-        adaptiveConfig
-      );
+      
+      // 문서 타입별 청킹 전략 시도 (우선순위: 타입별 전략 > 기존 AdaptiveChunkingService)
+      // 각 문서 타입별 전략은 독립적으로 관리되므로 새로운 타입 추가 시 기존 로직에 영향 없음
+      let adaptiveChunks: AdaptiveChunk[];
+      try {
+        const strategyResult = await documentTypeChunkingStrategyManager.chunkDocument(
+          cleanContent,
+          documentId,
+          documentTitle,
+          documentType,
+          {
+            contentType,
+            metadata: {
+              language,
+              originalLength: cleanContent.length,
+            },
+          }
+        );
+
+        // 전략 결과를 AdaptiveChunk 형식으로 변환
+        adaptiveChunks = strategyResult.chunks.map((chunk) => ({
+          id: chunk.id,
+          content: chunk.content,
+          metadata: {
+            documentId: chunk.metadata.documentId,
+            documentTitle: chunk.metadata.documentTitle,
+            documentType: chunk.metadata.documentType || documentType,
+            chunkIndex: chunk.metadata.chunkIndex,
+            startChar: chunk.metadata.startChar,
+            endChar: chunk.metadata.endChar,
+            chunkType: chunk.metadata.chunkType || 'text',
+            sectionTitle: chunk.metadata.sectionTitle,
+            keywords: chunk.metadata.keywords,
+            importance: chunk.metadata.importance,
+            hierarchyLevel: chunk.metadata.hierarchyLevel || 'paragraph',
+          },
+        }));
+
+        console.log(`✅ [UnifiedChunking] 문서 타입별 전략으로 청킹 완료: ${strategyResult.metadata.strategy} (${adaptiveChunks.length}개 청크)`);
+      } catch (strategyError) {
+        console.warn(`⚠️ [UnifiedChunking] 문서 타입별 전략 실행 오류, 기존 AdaptiveChunkingService로 fallback:`, strategyError);
+        
+        // 기존 AdaptiveChunkingService 사용 (fallback)
+        const adaptiveConfig: AdaptiveChunkingConfig = {
+          documentType,
+          contentLength: cleanContent.length,
+          language,
+          contentType,
+          optimizeForSpeed: options.optimizeForSpeed || false,
+        };
+
+        adaptiveChunks = await adaptiveChunkingService.chunkDocument(
+          cleanContent,
+          documentId,
+          documentTitle,
+          adaptiveConfig
+        );
+      }
+      
       performanceMetrics.chunkingTimeMs = Date.now() - chunkingStartTime;
 
       // UnifiedChunk 형식으로 변환

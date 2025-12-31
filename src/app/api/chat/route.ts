@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
 import OpenAI from 'openai';
 import { createClient } from '@supabase/supabase-js';
+import { promptBuilder } from '@/lib/services/prompting/PromptBuilder';
 
 // Claude AI 초기화 (환경변수 확인)
 console.log('🔑 환경변수 확인:');
@@ -1388,7 +1389,33 @@ async function generateStreamAnswerWithClaude(
     const vendors = extractVendorsFromSearchResults(searchResults);
     console.log(`🏷️ 검색된 벤더: ${vendors.length > 0 ? vendors.join(', ') : '없음'}`);
     
-    const prompt = buildMultiVendorPrompt(query, searchResults, vendors);
+    // 프롬프트 빌더 사용 (모듈화된 프롬프트 생성)
+    // 기존 buildMultiVendorPrompt는 fallback으로 유지
+    let prompt: string;
+    try {
+      // 질문에서 핵심 키워드 추출
+      const questionKeywords = query
+        .toLowerCase()
+        .split(/\s+/)
+        .filter(word => word.length > 1)
+        .filter(word => !['에', '를', '을', '의', '와', '과', '은', '는', '이', '가', '에 대해', '알려주세요', '알려줘', '설명해줘'].includes(word));
+      
+      // 프롬프트 빌더로 프롬프트 생성
+      prompt = promptBuilder.buildPrompt({
+        query,
+        searchResults,
+        vendors,
+        components: {
+          questionKeywords,
+        },
+      });
+      
+      console.log('✅ [PromptBuilder] 모듈화된 프롬프트 생성 완료');
+    } catch (promptBuilderError) {
+      console.warn('⚠️ [PromptBuilder] 프롬프트 빌더 오류, 기존 로직으로 fallback:', promptBuilderError);
+      // 기존 로직으로 fallback
+      prompt = buildMultiVendorPrompt(query, searchResults, vendors);
+    }
     
     // 디버깅: 프롬프트에 포함된 컨텍스트 확인
     console.log('📋 프롬프트에 포함된 검색 결과 요약:');
