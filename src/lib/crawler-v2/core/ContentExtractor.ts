@@ -1,12 +1,18 @@
 /**
  * 콘텐츠 추출기
  * HTML에서 제목과 본문을 추출
+ * 
+ * 벤더별 제목 추출 전략:
+ * - 벤더별 제목 추출 로직은 TitleStrategyManager를 통해 관리됨
+ * - 각 벤더별 전략은 독립적으로 관리되므로 새로운 벤더 추가 시 기존 로직에 영향 없음
+ * - 전략 추가 방법: src/lib/crawler-v2/strategies/TitleStrategyManager.ts 참조
  */
 
 import { Page } from 'puppeteer-core';
 import type { ContentExtractionOptions } from '../types';
 import { extractTextFromHtml, extractTitleFromHtml, cleanHtml } from '../utils/html-utils';
 import { processTextEncoding } from '@/lib/utils/textEncoding';
+import { titleStrategyManager } from '../strategies/TitleStrategyManager';
 
 export class ContentExtractor {
   private defaultOptions: ContentExtractionOptions = {
@@ -77,6 +83,21 @@ export class ContentExtractor {
     url: string
   ): Promise<string | null> {
     try {
+      // 벤더별 제목 추출 전략 시도 (우선순위: 벤더별 특화 전략 > 기본 전략)
+      // 각 벤더별 전략은 독립적으로 관리되므로 새로운 벤더 추가 시 기존 로직에 영향 없음
+      try {
+        const strategyResult = await titleStrategyManager.extractTitle(url, page);
+        if (strategyResult.title) {
+          console.log(`✅ [ContentExtractor] 벤더별 전략으로 제목 추출 성공: "${strategyResult.title}" (출처: ${strategyResult.source})`);
+          return strategyResult.title;
+        }
+        // 전략이 적용되었지만 제목을 찾지 못한 경우, 기존 로직으로 fallback
+        console.log(`ℹ️ [ContentExtractor] 벤더별 전략 적용되었지만 제목을 찾지 못함, 기존 로직으로 fallback`);
+      } catch (strategyError) {
+        console.warn(`⚠️ [ContentExtractor] 벤더별 전략 실행 오류, 기존 로직으로 fallback:`, strategyError);
+      }
+
+      // 기존 제목 추출 로직 (fallback)
       // 네이버 광고 페이지 같은 SPA의 경우 더 오래 대기
       const isNaverAds = url.includes('ads.naver.com');
       const isNaverAdsFAQ = isNaverAds && url.includes('/help/faq/');
@@ -167,8 +188,12 @@ export class ContentExtractor {
         }
       }
 
-      // 전략에 따라 제목 추출 (우선순위: FAQ 특화 로직 > h1 > h2 > 페이지 상단 가장 큰 볼드체 > title > og:title > data-testid > class 기반)
-      // FAQ 페이지인 경우 URL을 전달하여 명확하게 감지
+      // ⚠️ 주의: 아래 Naver Ads FAQ 특화 로직은 이제 TitleStrategyManager를 통해 처리됩니다.
+      // 전략 관리자가 먼저 실행되며, 제목을 찾지 못한 경우에만 아래 기존 로직이 fallback으로 실행됩니다.
+      // 새로운 벤더 추가 시 이 부분을 수정하지 말고, strategies/ 폴더에 새로운 전략 클래스를 생성하세요.
+      // 자세한 내용은 src/lib/crawler-v2/strategies/README.md 참조
+      
+      // 기존 Naver Ads FAQ 로직 (fallback용 - 전략 관리자가 제목을 찾지 못한 경우에만 실행)
       if (isNaverAdsFAQ) {
         console.log(`🔍 [FAQ 제목 추출] 서버 측: FAQ 페이지 감지, 제목 추출 시작... URL: ${url}`);
         

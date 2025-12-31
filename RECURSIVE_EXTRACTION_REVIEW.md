@@ -105,6 +105,8 @@ async discoverSubPagesRecursive(
 /start/sales/detail 크롤링 (maxDepth 도달)
   ↓
 백트래킹하여 다른 경로 탐색
+
+
 ```
 
 #### 구현 구조
