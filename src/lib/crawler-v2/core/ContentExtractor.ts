@@ -594,8 +594,12 @@ export class ContentExtractor {
           for (const candidate of candidates) {
             const text = candidate.text.trim();
             
-            // 명시적으로 제외할 텍스트 체크 (가장 먼저)
-            if (excludedTexts.some(excluded => text === excluded || text.includes(excluded))) {
+            // 명시적으로 제외할 텍스트 체크 (가장 먼저) - 포함 여부도 체크
+            if (excludedTexts.some(excluded => {
+              const normalizedText = text.toLowerCase();
+              const normalizedExcluded = excluded.toLowerCase();
+              return text === excluded || text.includes(excluded) || normalizedText.includes(normalizedExcluded);
+            })) {
               console.log(`  ❌ 필터링됨: "${text.substring(0, 50)}" (제외 텍스트 목록)`);
               continue;
             }
@@ -603,6 +607,12 @@ export class ContentExtractor {
             // 피드백/평가 텍스트 제외
             if (isFeedbackText(text)) {
               console.log(`  ❌ 필터링됨: "${text.substring(0, 50)}" (피드백 텍스트)`);
+              continue;
+            }
+            
+            // 네비게이션/메뉴 텍스트 패턴 제외 (navigationPatterns 사용)
+            if (navigationPatterns.some(pattern => pattern.test(text))) {
+              console.log(`  ❌ 필터링됨: "${text.substring(0, 50)}" (네비게이션/메뉴 텍스트)`);
               continue;
             }
             
@@ -615,6 +625,25 @@ export class ContentExtractor {
             // 명확히 잘못된 패턴만 제외
             if (badPatterns.some(pattern => pattern.test(text))) {
               console.log(`  ❌ 필터링됨: "${text.substring(0, 50)}" (나쁜 패턴)`);
+              continue;
+            }
+            
+            // 광고/프로모션 텍스트 명시적 체크
+            const lowerText = text.toLowerCase();
+            if (lowerText.includes('advoost') && lowerText.includes('소재') && lowerText.includes('활용한')) {
+              console.log(`  ❌ 필터링됨: "${text.substring(0, 50)}" (광고 텍스트: ADVoost 소재 활용한)`);
+              continue;
+            }
+            if (lowerText.includes('광고 등록 방법을 알아보세요')) {
+              console.log(`  ❌ 필터링됨: "${text.substring(0, 50)}" (광고 텍스트: 광고 등록 방법을 알아보세요)`);
+              continue;
+            }
+            if (lowerText.includes('네이버 비즈니스 스쿨')) {
+              console.log(`  ❌ 필터링됨: "${text.substring(0, 50)}" (광고 텍스트: 네이버 비즈니스 스쿨)`);
+              continue;
+            }
+            if (lowerText.includes('바로가기')) {
+              console.log(`  ❌ 필터링됨: "${text.substring(0, 50)}" (광고 텍스트: 바로가기)`);
               continue;
             }
             
