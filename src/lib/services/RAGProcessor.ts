@@ -2803,27 +2803,31 @@ export class RAGProcessor {
           query: searchQuery,
           queryKeywords,
           weights: {
-            vectorSimilarity: 0.4, // 벡터 유사도 가중치 (0.5 → 0.4로 감소)
-            keywordMatch: 0.25, // 키워드 매칭 가중치 (0.2 → 0.25로 증가)
-            sectionTitle: 0.2, // 섹션 제목 일치 가중치 (0.15 → 0.2로 증가)
+            vectorSimilarity: 0.35, // 벡터 유사도 가중치 (0.4 → 0.35로 감소, 키워드 매칭 강화)
+            keywordMatch: 0.3, // 키워드 매칭 가중치 (0.25 → 0.3로 증가)
+            sectionTitle: 0.2, // 섹션 제목 일치 가중치
             documentTitle: 0.1, // 문서 제목 일치 가중치
             keywordDensity: 0.05, // 키워드 밀도 가중치
           },
-          minRelevanceScore: 0.15, // 최소 관련성 점수 (0.1 → 0.15로 상향)
+          minRelevanceScore: 0.2, // 최소 관련성 점수 (0.15 → 0.2로 상향, 더 엄격한 필터링)
         });
         
-        // 잘린 텍스트 필터링 적용
+        // 잘린 텍스트 필터링 적용 (더 엄격한 필터링)
         const { filterTruncatedSearchResults } = await import('./search/TruncatedTextFilter');
         const { valid: filteredChunks, filtered: truncatedFiltered } = filterTruncatedSearchResults(
           chunks,
           {
-            filterHighSeverityOnly: true,
+            filterHighSeverityOnly: false, // 모든 severity 필터링 (high + medium)
             keepIfHasKeywords: queryKeywords,
           }
         );
         
         if (truncatedFiltered.length > 0) {
           console.log(`⚠️ 잘린 텍스트 패턴으로 ${truncatedFiltered.length}개 결과 필터링됨`);
+          // 필터링된 결과의 이유 로깅
+          truncatedFiltered.forEach(({ result, reason }) => {
+            console.log(`  - 필터링됨: ${reason.substring(0, 50)}... (유사도: ${result.similarity?.toFixed(3)})`);
+          });
         }
         
         chunks = filteredChunks;
@@ -2837,28 +2841,39 @@ export class RAGProcessor {
           
           let boost = 0;
           
-          // 쿼리 키워드가 콘텐츠에 포함된 경우
+          // 쿼리 키워드가 콘텐츠에 포함된 경우 (더 강력한 부스팅)
           for (const keyword of queryKeywords) {
             const keywordLower = keyword.toLowerCase();
-            if (content.includes(keywordLower)) {
-              boost += 0.05; // 키워드 매칭당 5% 부스팅
+            
+            // 정확한 단어 매칭 (공백으로 구분) - 최우선
+            const exactMatch = new RegExp(`\\b${keywordLower}\\b`, 'i');
+            if (exactMatch.test(chunk.content)) {
+              boost += 0.15; // 정확한 매칭 15% 부스팅 (기존 10%에서 증가)
               
-              // 정확한 단어 매칭 (공백으로 구분)
-              const exactMatch = new RegExp(`\\b${keywordLower}\\b`, 'i');
-              if (exactMatch.test(chunk.content)) {
-                boost += 0.1; // 정확한 매칭 추가 보너스
+              // 중요한 키워드인 경우 추가 부스팅
+              const importantKeywords = ['광고', '정책', '계정', '생성', '등록', '절차', '방법', '설정', '관리'];
+              if (importantKeywords.some(ik => keywordLower.includes(ik.toLowerCase()))) {
+                boost += 0.1; // 중요 키워드 추가 10% 부스팅
               }
+            } else if (content.includes(keywordLower)) {
+              boost += 0.08; // 부분 매칭 8% 부스팅 (기존 5%에서 증가)
             }
             
-            // 문서 제목에 키워드가 포함된 경우
+            // 문서 제목에 키워드가 포함된 경우 (더 높은 가중치)
             if (docTitle.includes(keywordLower)) {
-              boost += 0.1;
+              boost += 0.15; // 문서 제목 매칭 15% 부스팅 (기존 10%에서 증가)
             }
             
-            // 섹션 제목에 키워드가 포함된 경우
+            // 섹션 제목에 키워드가 포함된 경우 (더 높은 가중치)
             if (sectionTitle.includes(keywordLower)) {
-              boost += 0.15;
+              boost += 0.2; // 섹션 제목 매칭 20% 부스팅 (기존 15%에서 증가)
             }
+          }
+          
+          // 쿼리 전체가 콘텐츠에 포함된 경우 (매우 높은 부스팅)
+          const queryLower = searchQuery.toLowerCase();
+          if (content.includes(queryLower)) {
+            boost += 0.25; // 전체 쿼리 매칭 25% 부스팅
           }
           
           // 부스팅된 유사도 계산 (최대 1.0으로 제한)

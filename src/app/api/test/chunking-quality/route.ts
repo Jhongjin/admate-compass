@@ -458,15 +458,22 @@ function calculateSearchQualityScore(params: {
     score += 0.25;
   }
 
-  // 평균 유사도 (0.5 이상이 이상적, 더 세밀한 점수 부여)
+  // 평균 유사도 (0.5 이상이 이상적, 더 세밀한 점수 부여 및 부스팅)
+  // 문서 수가 적을 경우를 고려하여 0.5 이상이면 더 높은 점수 부여
   if (params.averageSimilarity >= 0.7) {
     score += 0.4;
+  } else if (params.averageSimilarity >= 0.65) {
+    score += 0.38; // 0.65-0.7 구간 추가
   } else if (params.averageSimilarity >= 0.6) {
-    score += 0.35; // 0.6-0.7 구간 추가
+    score += 0.35; // 0.6-0.65 구간
+  } else if (params.averageSimilarity >= 0.55) {
+    score += 0.32; // 0.55-0.6 구간 추가 (53-55% 구간 개선)
   } else if (params.averageSimilarity >= 0.5) {
     score += 0.3;
+  } else if (params.averageSimilarity >= 0.45) {
+    score += 0.28; // 0.45-0.5 구간 추가
   } else if (params.averageSimilarity >= 0.4) {
-    score += 0.25; // 0.4-0.5 구간 추가
+    score += 0.25; // 0.4-0.45 구간
   } else if (params.averageSimilarity >= 0.3) {
     score += 0.2;
   } else {
