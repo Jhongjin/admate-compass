@@ -757,7 +757,38 @@ export class ContentExtractor {
           }
           
           console.error('❌ [FAQ 제목 추출] 모든 방법 실패 - 제목을 찾을 수 없음');
-          return null; // 명시적으로 null 반환
+          
+          // DOM 구조 정보 수집 (디버깅용)
+          const domInfo = {
+            url: window.location.href,
+            titleTag: document.querySelector('title')?.textContent?.trim() || null,
+            headings: Array.from(document.querySelectorAll('h1, h2, h3, h4')).map(el => ({
+              tag: el.tagName,
+              text: el.textContent?.trim()?.substring(0, 100) || '',
+              className: el.className || '',
+              id: el.id || '',
+              y: el.getBoundingClientRect().top
+            })).slice(0, 20), // 최대 20개만
+            mainContent: {
+              tag: (document.querySelector('main, article, .content, .main-content, [role="main"]') || document.body).tagName,
+              className: (document.querySelector('main, article, .content, .main-content, [role="main"]') || document.body).className || '',
+              topText: (document.querySelector('main, article, .content, .main-content, [role="main"]') || document.body).textContent?.trim()?.substring(0, 200) || ''
+            },
+            titleElements: Array.from(document.querySelectorAll('[class*="title"], [class*="question"], [class*="heading"]')).slice(0, 10).map(el => ({
+              tag: el.tagName,
+              text: el.textContent?.trim()?.substring(0, 100) || '',
+              className: el.className || '',
+              id: el.id || '',
+              y: el.getBoundingClientRect().top
+            })),
+            faqLinks: Array.from(document.querySelectorAll('ul li a, ol li a, .faq-list a, .question-list a')).slice(0, 10).map(el => ({
+              text: el.textContent?.trim()?.substring(0, 100) || '',
+              href: (el as HTMLAnchorElement).href || '',
+              className: el.className || ''
+            }))
+          };
+          
+          return { type: 'faq', title: null, score: 0, source: 'failed', domInfo }; // DOM 정보 포함하여 반환
         }
 
         // 1. h1 태그 (가장 우선) - 메인 콘텐츠 영역 우선
@@ -900,8 +931,33 @@ export class ContentExtractor {
       // FAQ 특화 로직 결과 처리
       let title: string | null = null;
       if (titleResult && typeof titleResult === 'object' && 'type' in titleResult && titleResult.type === 'faq') {
-        title = (titleResult as { type: string; title: string; score: number; source: string }).title;
-        console.log(`✅ [FAQ 제목 추출] 서버 측: 제목 추출 성공 - "${title}" (출처: ${(titleResult as any).source})`);
+        const faqResult = titleResult as { type: string; title: string | null; score: number; source: string; domInfo?: any };
+        title = faqResult.title;
+        
+        if (title) {
+          console.log(`✅ [FAQ 제목 추출] 서버 측: 제목 추출 성공 - "${title}" (출처: ${faqResult.source})`);
+        } else {
+          // 제목을 찾지 못한 경우 DOM 구조 정보 출력
+          console.error(`❌ [FAQ 제목 추출] 서버 측: 제목을 찾지 못함 - DOM 구조 정보 출력`);
+          if (faqResult.domInfo) {
+            console.log(`📋 [FAQ DOM 구조] URL: ${faqResult.domInfo.url}`);
+            console.log(`📋 [FAQ DOM 구조] title 태그: ${faqResult.domInfo.titleTag || '없음'}`);
+            console.log(`📋 [FAQ DOM 구조] 메인 콘텐츠: ${faqResult.domInfo.mainContent.tag} (${faqResult.domInfo.mainContent.className})`);
+            console.log(`📋 [FAQ DOM 구조] 메인 콘텐츠 상단 텍스트: ${faqResult.domInfo.mainContent.topText?.substring(0, 200) || '없음'}`);
+            console.log(`📋 [FAQ DOM 구조] 발견된 heading 태그: ${faqResult.domInfo.headings.length}개`);
+            faqResult.domInfo.headings.forEach((h: any, idx: number) => {
+              console.log(`  ${idx + 1}. ${h.tag}: "${h.text}" (class: ${h.className}, id: ${h.id}, Y: ${Math.round(h.y)})`);
+            });
+            console.log(`📋 [FAQ DOM 구조] 발견된 title/question 클래스 요소: ${faqResult.domInfo.titleElements.length}개`);
+            faqResult.domInfo.titleElements.forEach((el: any, idx: number) => {
+              console.log(`  ${idx + 1}. ${el.tag}: "${el.text}" (class: ${el.className}, id: ${el.id}, Y: ${Math.round(el.y)})`);
+            });
+            console.log(`📋 [FAQ DOM 구조] 발견된 FAQ 링크: ${faqResult.domInfo.faqLinks.length}개`);
+            faqResult.domInfo.faqLinks.forEach((link: any, idx: number) => {
+              console.log(`  ${idx + 1}. "${link.text}" (href: ${link.href}, class: ${link.className})`);
+            });
+          }
+        }
       } else if (typeof titleResult === 'string') {
         title = titleResult;
       } else {
