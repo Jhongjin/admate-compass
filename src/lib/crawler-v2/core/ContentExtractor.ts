@@ -220,6 +220,17 @@ export class ContentExtractor {
             }
           });
         }
+        
+        // content_title 요소가 로드될 때까지 명시적으로 대기
+        try {
+          await page.waitForSelector('.content_title, h3.content_title, h2.content_title, h1.content_title', {
+            timeout: 10000,
+            visible: true
+          });
+          console.log(`✅ [FAQ 제목 추출] 서버 측: content_title 요소 로드 완료`);
+        } catch (error) {
+          console.warn(`⚠️ [FAQ 제목 추출] 서버 측: content_title 요소 대기 실패 (타임아웃 또는 요소 없음)`);
+        }
       }
       const titleResult = await page.evaluate((urlParam: string) => {
         // 피드백/평가 관련 텍스트 필터링 함수
@@ -594,11 +605,14 @@ export class ContentExtractor {
           };
           
           // content_title 요소를 최우선으로 확인 (다른 로직보다 먼저 실행)
-          console.log('🔍 [FAQ 제목 추출] content_title 즉시 반환 로직 시작...');
           const mainContent = document.querySelector('main, article, .content, .main-content, [role="main"]') || document.body;
           const contentTitleElements = Array.from(mainContent.querySelectorAll('.content_title, h3.content_title, h2.content_title, h1.content_title'));
           
-          console.log(`🔍 [FAQ 제목 추출] content_title 요소 발견: ${contentTitleElements.length}개`);
+          // 디버깅 정보 수집
+          const debugInfo: any = {
+            contentTitleFound: contentTitleElements.length,
+            contentTitleTexts: []
+          };
           
           if (contentTitleElements.length > 0) {
             // content_title 요소가 있으면 즉시 반환 (최우선 처리)
@@ -607,7 +621,12 @@ export class ContentExtractor {
               const rect = el.getBoundingClientRect();
               const text = el.textContent?.trim() || '';
               
-              console.log(`🔍 [FAQ 제목 추출] content_title 후보 ${i + 1}: "${text.substring(0, 100)}" (tag: ${el.tagName}, Y: ${Math.round(rect.top)}, length: ${text.length})`);
+              debugInfo.contentTitleTexts.push({
+                text: text.substring(0, 100),
+                tag: el.tagName,
+                y: Math.round(rect.top),
+                length: text.length
+              });
               
               // 기본 유효성 검사
               if (text && text.length >= 2 && text.length <= 200 && rect.top >= 0 && rect.top <= 2000) {
@@ -623,20 +642,11 @@ export class ContentExtractor {
                   lowerText.includes('위 내용으로 궁금한 점이 해결되지 않았나요') ||
                   lowerText.includes('의견 보내주셔서 감사합니다');
                 
-                console.log(`🔍 [FAQ 제목 추출] content_title 후보 ${i + 1} 필터링 결과: isVeryBad=${isVeryBad}`);
-                
                 if (!isVeryBad) {
-                  console.log(`✅ [FAQ 제목 추출] content_title 즉시 반환: "${text}" (${el.tagName})`);
-                  return { type: 'faq', title: text, score: 1000, source: 'content_title-immediate' };
-                } else {
-                  console.log(`❌ [FAQ 제목 추출] content_title 후보 ${i + 1} 필터링됨: "${text.substring(0, 50)}"`);
+                  return { type: 'faq', title: text, score: 1000, source: 'content_title-immediate', debugInfo };
                 }
-              } else {
-                console.log(`❌ [FAQ 제목 추출] content_title 후보 ${i + 1} 유효성 검사 실패: text=${text ? '있음' : '없음'}, length=${text.length}, Y=${Math.round(rect.top)}`);
               }
             }
-          } else {
-            console.log('⚠️ [FAQ 제목 추출] content_title 요소를 찾을 수 없음');
           }
           
           // 제목 후보 수집 및 점수화
@@ -840,7 +850,7 @@ export class ContentExtractor {
           if (candidates.length > 0) {
             const firstCandidate = candidates[0].text.trim();
             console.log(`⚠️ [FAQ 제목 추출] 필터링 실패, 첫 번째 후보 반환: "${firstCandidate}"`);
-            return { type: 'faq', title: firstCandidate, score: candidates[0].score, source: candidates[0].source };
+            return { type: 'faq', title: firstCandidate, score: candidates[0].score, source: candidates[0].source, debugInfo };
           }
           
           // Fallback 2: 페이지의 모든 텍스트 요소 중 첫 번째 의미있는 텍스트 찾기
@@ -948,7 +958,7 @@ export class ContentExtractor {
             }))
           };
           
-          return { type: 'faq', title: null, score: 0, source: 'failed', domInfo }; // DOM 정보 포함하여 반환
+          return { type: 'faq', title: null, score: 0, source: 'failed', domInfo, debugInfo }; // DOM 정보 및 디버깅 정보 포함하여 반환
         }
 
         // 1. h1 태그 (가장 우선) - 메인 콘텐츠 영역 우선
@@ -1091,8 +1101,19 @@ export class ContentExtractor {
       // FAQ 특화 로직 결과 처리
       let title: string | null = null;
       if (titleResult && typeof titleResult === 'object' && 'type' in titleResult && titleResult.type === 'faq') {
-        const faqResult = titleResult as { type: string; title: string | null; score: number; source: string; domInfo?: any };
+        const faqResult = titleResult as { type: string; title: string | null; score: number; source: string; domInfo?: any; debugInfo?: any };
         title = faqResult.title;
+        
+        // debugInfo 출력
+        if (faqResult.debugInfo) {
+          console.log(`🔍 [FAQ 제목 추출] page.evaluate 내부 디버깅 정보:`);
+          console.log(`  - content_title 요소 발견: ${faqResult.debugInfo.contentTitleFound}개`);
+          if (faqResult.debugInfo.contentTitleTexts && faqResult.debugInfo.contentTitleTexts.length > 0) {
+            faqResult.debugInfo.contentTitleTexts.forEach((item: any, idx: number) => {
+              console.log(`    ${idx + 1}. "${item.text}" (tag: ${item.tag}, Y: ${item.y}, length: ${item.length})`);
+            });
+          }
+        }
         
         if (title) {
           console.log(`✅ [FAQ 제목 추출] 서버 측: 제목 추출 성공 - "${title}" (출처: ${faqResult.source})`);
