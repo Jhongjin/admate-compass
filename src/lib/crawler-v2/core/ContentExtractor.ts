@@ -628,8 +628,13 @@ export class ContentExtractor {
                 length: text.length
               });
               
-              // 기본 유효성 검사
-              if (text && text.length >= 2 && text.length <= 200 && rect.top >= 0 && rect.top <= 2000) {
+              // 기본 유효성 검사 (content_title은 Y 좌표 체크 제거)
+              // Y 좌표가 음수인 경우는 스크롤 위치에 따라 요소가 화면 상단 밖에 있을 수 있음
+              // content_title은 페이지의 실제 제목이므로 Y 좌표와 무관하게 유효
+              // 단, 너무 멀리 떨어진 요소는 제외 (Y < -10000 또는 Y > 10000)
+              const isReasonablePosition = rect.top >= -10000 && rect.top <= 10000;
+              
+              if (text && text.length >= 2 && text.length <= 200 && isReasonablePosition) {
                 // content_title은 최고 우선순위이므로 필터링 최소화
                 // 매우 명확한 잘못된 텍스트만 제외
                 const lowerText = text.toLowerCase();
