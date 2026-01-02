@@ -284,3 +284,85 @@ export function generatePageUrls(paginationInfo: PaginationInfo): string[] {
   return urls;
 }
 
+/**
+ * URL 유효성 검증
+ * 
+ * @param url 검증할 URL
+ * @returns 유효성 검증 결과
+ */
+export function validateUrl(url: string): {
+  valid: boolean;
+  error?: string;
+} {
+  try {
+    const urlObj = new URL(url);
+    
+    // 프로토콜 검증
+    if (!['http:', 'https:'].includes(urlObj.protocol)) {
+      return {
+        valid: false,
+        error: `지원하지 않는 프로토콜: ${urlObj.protocol}`,
+      };
+    }
+    
+    // 호스트 검증
+    if (!urlObj.hostname || urlObj.hostname.length === 0) {
+      return {
+        valid: false,
+        error: '호스트명이 없습니다',
+      };
+    }
+    
+    // URL 길이 검증 (너무 긴 URL은 문제가 될 수 있음)
+    if (url.length > 2048) {
+      return {
+        valid: false,
+        error: `URL이 너무 깁니다 (${url.length}자)`,
+      };
+    }
+    
+    return { valid: true };
+  } catch (error) {
+    return {
+      valid: false,
+      error: error instanceof Error ? error.message : '유효하지 않은 URL 형식',
+    };
+  }
+}
+
+/**
+ * 페이지 URL 목록 생성 및 유효성 검증
+ * 
+ * @param paginationInfo Pagination 정보
+ * @returns 생성된 페이지 URL 목록 (유효한 URL만 포함)
+ */
+export function generateAndValidatePageUrls(
+  paginationInfo: PaginationInfo
+): {
+  urls: string[];
+  invalidUrls: string[];
+  errors: string[];
+} {
+  const urls: string[] = [];
+  const invalidUrls: string[] = [];
+  const errors: string[] = [];
+
+  for (let page = 1; page <= paginationInfo.totalPages; page++) {
+    const url = paginationInfo.pageUrlPattern.replace('{page}', String(page));
+    const validation = validateUrl(url);
+    
+    if (validation.valid) {
+      urls.push(url);
+    } else {
+      invalidUrls.push(url);
+      errors.push(`페이지 ${page}: ${validation.error}`);
+    }
+  }
+
+  if (invalidUrls.length > 0) {
+    console.warn(`⚠️ [Pagination] 유효하지 않은 URL ${invalidUrls.length}개 발견:`, errors);
+  }
+
+  return { urls, invalidUrls, errors };
+}
+
