@@ -76,21 +76,32 @@ export class NaverAdsPaginationStrategy {
         }
 
         // 2. Pagination 요소에서 텍스트 추출 (먼저 "X/Y" 패턴을 찾기 위해)
+        let searchText = '';
         if (paginationElement) {
+          // textContent와 innerHTML 모두 검색 (innerHTML에는 숨겨진 텍스트도 포함될 수 있음)
           result.paginationText = paginationElement.textContent || '';
+          const innerHtml = paginationElement.innerHTML || '';
+          // innerHTML에서 텍스트만 추출 (태그 제거)
+          const tempDiv = document.createElement('div');
+          tempDiv.innerHTML = innerHtml;
+          const innerText = tempDiv.textContent || tempDiv.innerText || '';
+          searchText = result.paginationText + ' ' + innerText;
         } else {
           // Pagination 요소를 찾지 못한 경우, 페이지 전체에서 찾기
           result.paginationText = document.body.innerText || '';
+          searchText = result.paginationText;
         }
+
+        // 디버깅: pagination 텍스트 로그
+        console.log(`[NaverAdsPagination] Pagination 텍스트: "${searchText.substring(0, 200)}"`);
 
         // 3. "X/Y" 패턴 찾기 (가장 정확한 방법 - 전체 페이지 수를 알 수 있음)
         // 주의: "529/35" 같은 경우 529는 무시하고 35만 사용
-        // Pagination 요소 내에서만 검색 (전체 페이지에서 검색하면 다른 숫자와 혼동 가능)
-        const searchText = paginationElement ? paginationElement.textContent || '' : result.paginationText;
-        
-        // 먼저 "X/Y" 패턴을 찾아서 전체 페이지 수를 정확히 파악
+        // 더 유연한 패턴: 공백이 없어도 됨 (예: "529/35", "1/35", "1 / 35")
         const rangePattern = /(\d+)\s*\/\s*(\d+)/g;
-        const rangeMatches = Array.from(searchText.matchAll(rangePattern));
+        let rangeMatches = Array.from(searchText.matchAll(rangePattern));
+        
+        console.log(`[NaverAdsPagination] "X/Y" 패턴 매치: ${rangeMatches.length}개`);
         
         if (rangeMatches.length > 0) {
           // 모든 "X/Y" 패턴에서 Y 값만 수집 (X가 Y보다 크면 무시)
@@ -215,6 +226,20 @@ export class NaverAdsPaginationStrategy {
           result.paginationText = `페이지 링크에서 발견: ${result.pageLinks.join(', ')}`;
           console.log(`[NaverAdsPagination] 페이지 링크에서 발견: ${result.pageLinks.length}개 (${result.pageLinks[0]}~${result.pageLinks[result.pageLinks.length - 1]})`);
           return result;
+        }
+
+        // "X/Y" 패턴을 찾지 못한 경우, 더 넓은 범위에서 검색
+        if (rangeMatches.length === 0) {
+          const allText = paginationElement 
+            ? (paginationElement.textContent || '') + ' ' + (paginationElement.innerHTML || '')
+            : document.body.innerText || '';
+          
+          const widerRangePattern = /(\d+)\s*\/\s*(\d+)/g;
+          const widerMatches = Array.from(allText.matchAll(widerRangePattern));
+          if (widerMatches.length > 0) {
+            console.log(`[NaverAdsPagination] 전체 텍스트에서 "X/Y" 패턴 발견: ${widerMatches.length}개`);
+            rangeMatches = widerMatches;
+          }
         }
 
         // 5. "이전 페이지 1 2 3 4 5 다음 페이지" 패턴 찾기
