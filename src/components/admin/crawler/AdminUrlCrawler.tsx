@@ -1520,12 +1520,12 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                   return (
                     <div key={i}
                       className={`
-                             flex items-start gap-3 p-3 rounded-lg transition-colors border group
+                             grid grid-cols-[auto_1fr] gap-3 p-3 rounded-lg transition-colors border group
                              ${isAlreadyCrawled ? 'bg-green-500/5 border-green-500/20 opacity-70' : 'border-gray-700 hover:bg-white/5 hover:border-white/10'}
                            `}
                     >
-                      {/* 체크박스 영역 - 완전히 고정 */}
-                      <div className="flex-shrink-0 w-5 pt-0.5">
+                      {/* 체크박스 영역 - Grid 첫 번째 컬럼, 완전히 고정 */}
+                      <div className="pt-0.5">
                         <Checkbox
                           id={`url-${i}`}
                           checked={selectedDiscoveredUrls.has(item.url)}
@@ -1535,14 +1535,14 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                         />
                       </div>
                       
-                      {/* 제목 및 URL 영역 - 고정 너비로 레이아웃 변동 완전 방지 */}
-                      <div className="flex-1 min-w-0 overflow-hidden pr-2">
+                      {/* 제목 및 URL 영역 - Grid 두 번째 컬럼, 고정 너비 */}
+                      <div className="min-w-0 overflow-hidden">
                         <label htmlFor={`url-${i}`} className="cursor-pointer block">
-                          {/* 제목 영역 - relative positioning으로 편집 모드 겹치기 */}
-                          <div className="relative text-sm font-medium text-gray-200 mb-1 min-h-[28px] flex items-center">
+                          {/* 제목 영역 - 고정 높이와 구조로 레이아웃 변동 완전 방지 */}
+                          <div className="text-sm font-medium text-gray-200 mb-1 min-h-[28px]">
                             {editingTitleIndex === i ? (
-                              // 편집 모드 - absolute로 겹쳐서 표시하여 레이아웃 변동 방지
-                              <div className="absolute inset-0 flex items-center gap-2 z-10 bg-inherit">
+                              // 편집 모드
+                              <div className="flex items-center gap-2 h-7">
                                 <Input
                                   value={editingTitleValue}
                                   onChange={(e) => setEditingTitleValue(e.target.value)}
@@ -1582,57 +1582,57 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                                   <X className="h-3 w-3" />
                                 </Button>
                               </div>
-                            ) : null}
-                            
-                            {/* 일반 모드 - 항상 렌더링하여 공간 유지 */}
-                            <div className={`flex items-center gap-1 sm:gap-2 flex-1 min-w-0 w-full ${editingTitleIndex === i ? 'invisible' : ''}`}>
-                              <span 
-                                className="truncate flex-1 min-w-0 cursor-text" 
-                                title={item.title}
-                                onDoubleClick={(e) => {
-                                  e.stopPropagation();
-                                  handleStartEditTitle(i, item.title || '');
-                                }}
-                              >
-                                {item.title || '제목 없음'}
-                              </span>
-                              {!item.title && (
+                            ) : (
+                              // 일반 모드 - 편집 모드와 동일한 높이 유지
+                              <div className="flex items-center gap-1 sm:gap-2 h-7">
+                                <span 
+                                  className="truncate flex-1 min-w-0 cursor-text" 
+                                  title={item.title}
+                                  onDoubleClick={(e) => {
+                                    e.stopPropagation();
+                                    handleStartEditTitle(i, item.title || '');
+                                  }}
+                                >
+                                  {item.title || '제목 없음'}
+                                </span>
+                                {!item.title && (
+                                  <Button
+                                    size="sm"
+                                    variant="ghost"
+                                    className="h-5 px-1 text-[9px] text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 flex-shrink-0"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleFetchTitle(i, item.url);
+                                    }}
+                                    disabled={fetchingTitleUrls.has(item.url)}
+                                    title="페이지에서 제목 가져오기"
+                                  >
+                                    {fetchingTitleUrls.has(item.url) ? (
+                                      <Loader2 className="h-3 w-3 animate-spin" />
+                                    ) : (
+                                      '가져오기'
+                                    )}
+                                  </Button>
+                                )}
                                 <Button
                                   size="sm"
                                   variant="ghost"
-                                  className="h-5 px-1 text-[9px] text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 flex-shrink-0"
+                                  className="h-5 w-5 p-0 text-gray-400 hover:text-gray-200 hover:bg-gray-700/50 flex-shrink-0"
                                   onClick={(e) => {
                                     e.stopPropagation();
-                                    handleFetchTitle(i, item.url);
+                                    handleStartEditTitle(i, item.title || '');
                                   }}
-                                  disabled={fetchingTitleUrls.has(item.url)}
-                                  title="페이지에서 제목 가져오기"
+                                  title="제목 수정 (더블클릭도 가능)"
                                 >
-                                  {fetchingTitleUrls.has(item.url) ? (
-                                    <Loader2 className="h-3 w-3 animate-spin" />
-                                  ) : (
-                                    '가져오기'
-                                  )}
+                                  <Pencil className="h-3 w-3" />
                                 </Button>
-                              )}
-                              <Button
-                                size="sm"
-                                variant="ghost"
-                                className="h-5 w-5 p-0 text-gray-400 hover:text-gray-200 hover:bg-gray-700/50 flex-shrink-0"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleStartEditTitle(i, item.title || '');
-                                }}
-                                title="제목 수정 (더블클릭도 가능)"
-                              >
-                                <Pencil className="h-3 w-3" />
-                              </Button>
-                              {isAlreadyCrawled && (
-                                <Badge variant="outline" className="text-[9px] h-4 text-green-500 border-green-900 bg-green-500/10 flex-shrink-0">
-                                  수집됨
-                                </Badge>
-                              )}
-                            </div>
+                                {isAlreadyCrawled && (
+                                  <Badge variant="outline" className="text-[9px] h-4 text-green-500 border-green-900 bg-green-500/10 flex-shrink-0">
+                                    수집됨
+                                  </Badge>
+                                )}
+                              </div>
+                            )}
                           </div>
                           {/* URL 영역 */}
                           <div className="text-xs text-blue-400/70 break-all mt-0.5 font-mono flex items-center gap-2">
