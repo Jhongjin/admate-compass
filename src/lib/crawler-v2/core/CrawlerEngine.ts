@@ -315,7 +315,7 @@ export class CrawlerEngine {
       cacheTTL: 24 * 60 * 60,
       maxRetries: 3,
       retryDelay: 1000,
-      concurrency: 3,
+      concurrency: 5, // Pagination 모드에서 많은 URL 처리 시 속도 향상
       enableMemoryMonitoring: true,
       maxUrls: 10000, // Pagination 모드에서는 충분히 큰 값으로 설정 (모든 FAQ 크롤링)
       ...options,
@@ -396,7 +396,7 @@ export class CrawlerEngine {
       cacheTTL: 24 * 60 * 60,
       maxRetries: 3,
       retryDelay: 1000,
-      concurrency: 3, // 기본 병렬 처리 수
+      concurrency: 5, // 기본 병렬 처리 수 (Pagination 모드에서 많은 URL 처리 시 속도 향상)
       enableMemoryMonitoring: true,
       ...options,
     };

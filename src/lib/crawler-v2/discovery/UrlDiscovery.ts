@@ -1423,27 +1423,71 @@ export class UrlDiscovery {
               });
               await new Promise(resolve => setTimeout(resolve, 2000)); // 페이지 안정화 대기
 
+              // 스크롤을 내려서 동적 콘텐츠 로드 (FAQ 링크가 동적으로 로드될 수 있음)
+              await paginationPage.evaluate(() => {
+                window.scrollTo(0, document.body.scrollHeight);
+              });
+              await new Promise(resolve => setTimeout(resolve, 1000)); // 스크롤 후 대기
+
               // FAQ 링크 추출 (Naver Ads FAQ 페이지의 링크 패턴: /help/faq/{id})
+              // 더 정확한 선택자 사용: FAQ 리스트 영역을 우선적으로 찾기
               const faqLinks = await paginationPage.evaluate((baseOrigin) => {
                 const links: string[] = [];
-                const linkElements = document.querySelectorAll('a[href]');
+                const linkSet = new Set<string>(); // 중복 제거용
                 
-                linkElements.forEach((link) => {
+                // 1. FAQ 리스트 영역 우선 검색 (ul, ol, div 등 FAQ 리스트가 있을 수 있는 영역)
+                const faqListSelectors = [
+                  'ul a[href*="/help/faq/"]',
+                  'ol a[href*="/help/faq/"]',
+                  '.faq-list a[href*="/help/faq/"]',
+                  '[class*="faq"] a[href*="/help/faq/"]',
+                  '[class*="list"] a[href*="/help/faq/"]',
+                ];
+                
+                // 2. 모든 링크 검색 (fallback)
+                const allLinkElements = document.querySelectorAll('a[href]');
+                
+                // FAQ 리스트 영역에서 먼저 찾기
+                for (const selector of faqListSelectors) {
+                  const elements = document.querySelectorAll(selector);
+                  elements.forEach((link) => {
+                    const href = link.getAttribute('href');
+                    if (!href) return;
+                    
+                    try {
+                      const absoluteUrl = new URL(href, baseOrigin).href;
+                      const faqPattern = /\/help\/faq\/(\d+)/;
+                      const match = absoluteUrl.match(faqPattern);
+                      if (match) {
+                        const faqId = match[1];
+                        const cleanUrl = `${baseOrigin}/help/faq/${faqId}`;
+                        if (!linkSet.has(cleanUrl)) {
+                          linkSet.add(cleanUrl);
+                          links.push(cleanUrl);
+                        }
+                      }
+                    } catch (e) {
+                      // URL 파싱 오류 무시
+                    }
+                  });
+                }
+                
+                // 모든 링크에서도 찾기 (FAQ 리스트 영역에서 찾지 못한 경우)
+                allLinkElements.forEach((link) => {
                   const href = link.getAttribute('href');
                   if (!href) return;
                   
                   try {
-                    // 상대 경로를 절대 경로로 변환
                     const absoluteUrl = new URL(href, baseOrigin).href;
-                    
-                    // FAQ 링크 패턴 확인: /help/faq/{숫자}
                     const faqPattern = /\/help\/faq\/(\d+)/;
                     const match = absoluteUrl.match(faqPattern);
                     if (match) {
-                      // FAQ ID만 추출하여 쿼리 파라미터 제거한 URL 생성
                       const faqId = match[1];
                       const cleanUrl = `${baseOrigin}/help/faq/${faqId}`;
-                      links.push(cleanUrl);
+                      if (!linkSet.has(cleanUrl)) {
+                        linkSet.add(cleanUrl);
+                        links.push(cleanUrl);
+                      }
                     }
                   } catch (e) {
                     // URL 파싱 오류 무시
@@ -1484,10 +1528,49 @@ export class UrlDiscovery {
                   });
                   await new Promise(resolve => setTimeout(resolve, 2000));
                   
+                  // 스크롤을 내려서 동적 콘텐츠 로드
+                  await retryPage.evaluate(() => {
+                    window.scrollTo(0, document.body.scrollHeight);
+                  });
+                  await new Promise(resolve => setTimeout(resolve, 1000));
+
                   const retryFaqLinks = await retryPage.evaluate((baseOrigin) => {
                     const links: string[] = [];
-                    const linkElements = document.querySelectorAll('a[href]');
-                    linkElements.forEach((link) => {
+                    const linkSet = new Set<string>();
+                    
+                    // FAQ 리스트 영역 우선 검색
+                    const faqListSelectors = [
+                      'ul a[href*="/help/faq/"]',
+                      'ol a[href*="/help/faq/"]',
+                      '.faq-list a[href*="/help/faq/"]',
+                      '[class*="faq"] a[href*="/help/faq/"]',
+                      '[class*="list"] a[href*="/help/faq/"]',
+                    ];
+                    
+                    const allLinkElements = document.querySelectorAll('a[href]');
+                    
+                    for (const selector of faqListSelectors) {
+                      const elements = document.querySelectorAll(selector);
+                      elements.forEach((link) => {
+                        const href = link.getAttribute('href');
+                        if (!href) return;
+                        try {
+                          const absoluteUrl = new URL(href, baseOrigin).href;
+                          const faqPattern = /\/help\/faq\/(\d+)/;
+                          const match = absoluteUrl.match(faqPattern);
+                          if (match) {
+                            const faqId = match[1];
+                            const cleanUrl = `${baseOrigin}/help/faq/${faqId}`;
+                            if (!linkSet.has(cleanUrl)) {
+                              linkSet.add(cleanUrl);
+                              links.push(cleanUrl);
+                            }
+                          }
+                        } catch (e) { /* ignore */ }
+                      });
+                    }
+                    
+                    allLinkElements.forEach((link) => {
                       const href = link.getAttribute('href');
                       if (!href) return;
                       try {
@@ -1496,11 +1579,13 @@ export class UrlDiscovery {
                         const match = absoluteUrl.match(faqPattern);
                         if (match) {
                           const faqId = match[1];
-                          links.push(`${baseOrigin}/help/faq/${faqId}`);
+                          const cleanUrl = `${baseOrigin}/help/faq/${faqId}`;
+                          if (!linkSet.has(cleanUrl)) {
+                            linkSet.add(cleanUrl);
+                            links.push(cleanUrl);
+                          }
                         }
-                      } catch (e) {
-                        // 무시
-                      }
+                      } catch (e) { /* ignore */ }
                     });
                     return links;
                   }, baseOrigin);
