@@ -1335,9 +1335,11 @@ export class UrlDiscovery {
 
     try {
       // 1. 브라우저 및 페이지 준비
-      const browser = await browserManager.getBrowser();
+      // 브라우저가 없으면 초기화
+      let browser = browserManager.getBrowser();
       if (!browser) {
-        throw new Error('브라우저를 초기화할 수 없습니다');
+        console.log(`🔧 [Pagination Discovery] 브라우저가 없어 초기화 중...`);
+        browser = await browserManager.initialize();
       }
 
       const page = await browser.newPage();
