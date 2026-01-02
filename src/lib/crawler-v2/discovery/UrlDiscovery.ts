@@ -1396,6 +1396,10 @@ export class UrlDiscovery {
         const baseUrlObj = new URL(baseUrl);
         const baseOrigin = `${baseUrlObj.protocol}//${baseUrlObj.host}`;
 
+        // 빈 페이지 연속 카운터 (최적화: 연속으로 빈 페이지가 나오면 조기 종료)
+        let consecutiveEmptyPages = 0;
+        const maxConsecutiveEmptyPages = 5; // 연속으로 5개 빈 페이지가 나오면 종료
+
         // 모든 페이지를 방문하여 FAQ 링크 추출
         for (let i = 0; i < paginationUrls.length; i++) {
           const paginationUrl = paginationUrls[i];
@@ -1454,7 +1458,19 @@ export class UrlDiscovery {
                 faqLinkSet.add(normalized);
               });
 
-              console.log(`✅ [Pagination Discovery] 페이지 ${i + 1}에서 ${faqLinks.length}개 FAQ 링크 발견 (누적: ${faqLinkSet.size}개)`);
+              if (faqLinks.length === 0) {
+                consecutiveEmptyPages++;
+                console.log(`⚠️ [Pagination Discovery] 페이지 ${i + 1}에서 FAQ 링크 없음 (연속 빈 페이지: ${consecutiveEmptyPages}/${maxConsecutiveEmptyPages})`);
+                
+                // 연속으로 빈 페이지가 나오면 조기 종료
+                if (consecutiveEmptyPages >= maxConsecutiveEmptyPages) {
+                  console.log(`⏹️ [Pagination Discovery] 연속 ${maxConsecutiveEmptyPages}개 빈 페이지 발견, 조기 종료 (${i + 1}/${paginationUrls.length} 페이지까지 처리)`);
+                  break;
+                }
+              } else {
+                consecutiveEmptyPages = 0; // FAQ 링크가 있으면 카운터 리셋
+                console.log(`✅ [Pagination Discovery] 페이지 ${i + 1}에서 ${faqLinks.length}개 FAQ 링크 발견 (누적: ${faqLinkSet.size}개)`);
+              }
             } catch (pageError: any) {
               // Connection closed 에러 처리
               if (pageError?.message?.includes('Connection closed') || pageError?.message?.includes('ConnectionClosedError')) {
@@ -1515,7 +1531,14 @@ export class UrlDiscovery {
               }
             }
           } catch (error) {
+            consecutiveEmptyPages++; // 에러 발생 시 빈 페이지로 간주
             console.warn(`⚠️ [Pagination Discovery] 페이지 ${i + 1} 방문 실패: ${error instanceof Error ? error.message : String(error)}`);
+            
+            // 연속으로 에러가 발생하면 조기 종료
+            if (consecutiveEmptyPages >= maxConsecutiveEmptyPages) {
+              console.log(`⏹️ [Pagination Discovery] 연속 ${maxConsecutiveEmptyPages}개 페이지 에러 발생, 조기 종료 (${i + 1}/${paginationUrls.length} 페이지까지 처리)`);
+              break;
+            }
             // 계속 진행
           }
         }
