@@ -1396,14 +1396,11 @@ export class UrlDiscovery {
         const baseUrlObj = new URL(baseUrl);
         const baseOrigin = `${baseUrlObj.protocol}//${baseUrlObj.host}`;
 
-        // 최적화: 첫 번째 페이지에서만 FAQ 링크 추출하고 패턴 파악
-        // 모든 페이지를 방문하면 시간이 너무 오래 걸리고 브라우저 연결이 끊어질 수 있음
-        const samplePages = Math.min(3, paginationUrls.length); // 최대 3개 페이지만 샘플링
-
-        for (let i = 0; i < samplePages; i++) {
+        // 모든 페이지를 방문하여 FAQ 링크 추출
+        for (let i = 0; i < paginationUrls.length; i++) {
           const paginationUrl = paginationUrls[i];
           try {
-            console.log(`🔍 [Pagination Discovery] 샘플 페이지 ${i + 1}/${samplePages} 방문 중: ${paginationUrl}`);
+            console.log(`🔍 [Pagination Discovery] 페이지 ${i + 1}/${paginationUrls.length} 방문 중: ${paginationUrl}`);
             
             // 브라우저 연결 상태 확인
             try {
@@ -1457,7 +1454,7 @@ export class UrlDiscovery {
                 faqLinkSet.add(normalized);
               });
 
-              console.log(`✅ [Pagination Discovery] 샘플 페이지 ${i + 1}에서 ${faqLinks.length}개 FAQ 링크 발견 (누적: ${faqLinkSet.size}개)`);
+              console.log(`✅ [Pagination Discovery] 페이지 ${i + 1}에서 ${faqLinks.length}개 FAQ 링크 발견 (누적: ${faqLinkSet.size}개)`);
             } catch (pageError: any) {
               // Connection closed 에러 처리
               if (pageError?.message?.includes('Connection closed') || pageError?.message?.includes('ConnectionClosedError')) {
@@ -1497,7 +1494,7 @@ export class UrlDiscovery {
                     faqLinkSet.add(normalized);
                   });
                   
-                  console.log(`✅ [Pagination Discovery] 재시도 성공: 페이지 ${i + 1}에서 ${retryFaqLinks.length}개 FAQ 링크 발견`);
+                  console.log(`✅ [Pagination Discovery] 재시도 성공: 페이지 ${i + 1}에서 ${retryFaqLinks.length}개 FAQ 링크 발견 (누적: ${faqLinkSet.size}개)`);
                   await retryPage.close();
                 } catch (retryError) {
                   console.warn(`⚠️ [Pagination Discovery] 재시도 실패: ${retryError instanceof Error ? retryError.message : String(retryError)}`);
@@ -1523,10 +1520,9 @@ export class UrlDiscovery {
           }
         }
 
-        // 7. 샘플링된 FAQ 링크 수를 기반으로 전체 FAQ 링크 수 추정
-        const avgFaqPerPage = samplePages > 0 ? faqLinkSet.size / samplePages : 0;
-        const estimatedTotalFaqs = Math.ceil(avgFaqPerPage * paginationUrls.length);
-        console.log(`📊 [Pagination Discovery] 샘플링 결과: 페이지당 평균 ${avgFaqPerPage.toFixed(1)}개 FAQ, 예상 전체 FAQ 수: ${estimatedTotalFaqs}개`);
+        // 7. 추출 완료 로그
+        const avgFaqPerPage = paginationUrls.length > 0 ? faqLinkSet.size / paginationUrls.length : 0;
+        console.log(`📊 [Pagination Discovery] 추출 완료: 페이지당 평균 ${avgFaqPerPage.toFixed(1)}개 FAQ, 총 ${faqLinkSet.size}개 고유 FAQ 링크 발견`);
 
         // 6. 추출된 FAQ 링크들을 DiscoveredUrl 배열로 변환 (중복 제거 확인)
         const uniqueFaqIds = new Set<string>();
