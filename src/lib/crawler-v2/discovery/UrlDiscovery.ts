@@ -1375,25 +1375,87 @@ export class UrlDiscovery {
         console.log(`✅ [Pagination Discovery] Pagination 감지 성공: ${paginationInfo.totalPages}페이지`);
 
         // 4. 각 페이지 URL 생성 및 검증
-        const { urls, invalidUrls, errors } = generateAndValidatePageUrls(paginationInfo);
+        const { urls: paginationUrls, invalidUrls, errors } = generateAndValidatePageUrls(paginationInfo);
         
         if (invalidUrls.length > 0) {
           console.warn(`⚠️ [Pagination Discovery] 유효하지 않은 URL ${invalidUrls.length}개 발견`);
         }
 
-        // 5. DiscoveredUrl 배열 생성
-        urls.forEach((url, index) => {
+        console.log(`🔍 [Pagination Discovery] ${paginationUrls.length}개 Pagination 페이지에서 FAQ 링크 추출 시작...`);
+
+        // 5. 각 Pagination 페이지를 방문하여 FAQ 링크 추출
+        const faqLinkSet = new Set<string>();
+        const baseUrlObj = new URL(baseUrl);
+        const baseOrigin = `${baseUrlObj.protocol}//${baseUrlObj.host}`;
+
+        for (let i = 0; i < paginationUrls.length; i++) {
+          const paginationUrl = paginationUrls[i];
+          try {
+            console.log(`🔍 [Pagination Discovery] 페이지 ${i + 1}/${paginationUrls.length} 방문 중: ${paginationUrl}`);
+            
+            // 각 Pagination 페이지 방문
+            const paginationPage = await browser.newPage();
+            try {
+              await paginationPage.goto(paginationUrl, {
+                waitUntil: 'networkidle2',
+                timeout: config.timeout || 60000,
+              });
+              await new Promise(resolve => setTimeout(resolve, 2000)); // 페이지 안정화 대기
+
+              // FAQ 링크 추출 (Naver Ads FAQ 페이지의 링크 패턴: /help/faq/{id})
+              const faqLinks = await paginationPage.evaluate((baseOrigin) => {
+                const links: string[] = [];
+                const linkElements = document.querySelectorAll('a[href]');
+                
+                linkElements.forEach((link) => {
+                  const href = link.getAttribute('href');
+                  if (!href) return;
+                  
+                  try {
+                    // 상대 경로를 절대 경로로 변환
+                    const absoluteUrl = new URL(href, baseOrigin).href;
+                    
+                    // FAQ 링크 패턴 확인: /help/faq/{숫자}
+                    const faqPattern = /\/help\/faq\/\d+/;
+                    if (faqPattern.test(absoluteUrl)) {
+                      links.push(absoluteUrl);
+                    }
+                  } catch (e) {
+                    // URL 파싱 오류 무시
+                  }
+                });
+                
+                return links;
+              }, baseOrigin);
+
+              faqLinks.forEach(link => {
+                const normalized = normalizeUrl(link);
+                faqLinkSet.add(normalized);
+              });
+
+              console.log(`✅ [Pagination Discovery] 페이지 ${i + 1}에서 ${faqLinks.length}개 FAQ 링크 발견 (누적: ${faqLinkSet.size}개)`);
+            } finally {
+              await paginationPage.close();
+            }
+          } catch (error) {
+            console.warn(`⚠️ [Pagination Discovery] 페이지 ${i + 1} 방문 실패: ${error instanceof Error ? error.message : String(error)}`);
+            // 계속 진행
+          }
+        }
+
+        // 6. 추출된 FAQ 링크들을 DiscoveredUrl 배열로 변환
+        Array.from(faqLinkSet).forEach((faqUrl) => {
           discoveredPages.push({
-            url: normalizeUrl(url),
-            title: `페이지 ${index + 1}`,
+            url: faqUrl,
+            title: `FAQ ${faqUrl.match(/\/faq\/(\d+)/)?.[1] || 'Unknown'}`,
             source: 'pattern',
             depth: 1,
             parentUrl: baseUrl,
-            path: [baseUrl, url],
+            path: [baseUrl, faqUrl],
           });
         });
 
-        console.log(`✅ [Pagination Discovery] 완료: ${discoveredPages.length}개 페이지 발견`);
+        console.log(`✅ [Pagination Discovery] 완료: ${discoveredPages.length}개 FAQ 링크 발견 (${paginationUrls.length}개 Pagination 페이지에서)`);
 
         return discoveredPages;
       } finally {
