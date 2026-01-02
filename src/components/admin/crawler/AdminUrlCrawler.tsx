@@ -229,6 +229,7 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
     timeout: 30000,
     waitTime: 1000,
     useCrawlerV2: true, // 크롤러 V2 사용 (기본값: true)
+    paginationMode: false, // Pagination 모드 (부모 페이지만 입력하면 자동으로 모든 페이지 크롤링)
   });
 
   const [existingDbMap, setExistingDbMap] = useState<Map<string, string>>(new Map());
@@ -397,7 +398,8 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
           urls: urlList,
           options: {
             ...options,
-            discoverSubPages: isSubPageCrawl ? false : options.discoverSubPages,
+            discoverSubPages: isSubPageCrawl ? false : (options.paginationMode ? false : options.discoverSubPages),
+            paginationMode: options.paginationMode && !isSubPageCrawl, // Pagination 모드는 하위 페이지 크롤링 시 비활성화
           },
         }),
       });
@@ -560,6 +562,13 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
       toast.error('URL을 입력해주세요.');
       return;
     }
+    
+    // Pagination 모드일 때는 하나의 URL만 입력 가능
+    if (options.paginationMode && urlList.length > 1) {
+      toast.error('Pagination 모드에서는 하나의 URL만 입력할 수 있습니다.');
+      return;
+    }
+    
     await performCrawl(urlList);
   };
 
@@ -1069,7 +1078,9 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                 className="min-h-[100px] w-full text-center bg-transparent border-gray-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-lg resize-none placeholder:text-gray-600"
               />
               <p className="text-xs text-gray-500">
-                여러 URL을 입력하려면 줄바꿈으로 구분하세요.
+                {options.paginationMode 
+                  ? 'Pagination 모드: 하나의 부모 페이지 URL만 입력하세요 (예: https://ads.naver.com/help/faq?categorySeq=136)'
+                  : '여러 URL을 입력하려면 줄바꿈으로 구분하세요.'}
               </p>
             </div>
 
@@ -1080,12 +1091,41 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                 <div className="flex items-center gap-2 mt-auto">
                   <Checkbox
                     id="discoverSubPages"
-                    checked={options.discoverSubPages}
-                    onCheckedChange={(c) => setOptions({ ...options, discoverSubPages: !!c })}
+                    checked={options.discoverSubPages && !options.paginationMode}
+                    disabled={options.paginationMode}
+                    onCheckedChange={(c) => {
+                      if (!options.paginationMode) {
+                        setOptions({ ...options, discoverSubPages: !!c });
+                      }
+                    }}
                     className="border-gray-500 data-[state=checked]:bg-blue-500"
                   />
                   <span className="text-sm font-medium text-gray-300">사용</span>
                 </div>
+                {options.paginationMode && (
+                  <p className="text-[10px] text-gray-500 leading-tight">Pagination 모드 사용 시 비활성화</p>
+                )}
+              </div>
+
+              <div className="flex flex-col gap-2 p-3 rounded-lg bg-purple-500/10 border border-purple-500/20">
+                <Label className="text-xs text-purple-400">📄 Pagination 모드</Label>
+                <div className="flex items-center gap-2 mt-auto">
+                  <Checkbox
+                    id="paginationMode"
+                    checked={options.paginationMode}
+                    onCheckedChange={(c) => {
+                      const newPaginationMode = !!c;
+                      setOptions({ 
+                        ...options, 
+                        paginationMode: newPaginationMode,
+                        discoverSubPages: newPaginationMode ? false : options.discoverSubPages, // Pagination 모드 활성화 시 하위 페이지 발견 비활성화
+                      });
+                    }}
+                    className="border-purple-500 data-[state=checked]:bg-purple-500"
+                  />
+                  <span className="text-sm font-medium text-purple-300">사용</span>
+                </div>
+                <p className="text-[10px] text-purple-500/70 leading-tight">부모 페이지만 입력하면 자동으로 모든 페이지 크롤링</p>
               </div>
 
               <div className="flex flex-col gap-2 p-3 rounded-lg bg-white/5 border border-white/5">
