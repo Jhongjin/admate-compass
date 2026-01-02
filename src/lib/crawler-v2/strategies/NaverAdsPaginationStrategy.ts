@@ -379,6 +379,12 @@ export class NaverAdsPaginationStrategy {
             // 다음 페이지로 이동
             console.log(`[NaverAdsPagination] 다음 페이지로 이동 시도 ${attempts}/${maxAttempts}: ${nextLinkInfo}`);
             try {
+              // 프레임이 분리되었는지 확인
+              if (page.isClosed()) {
+                console.warn(`[NaverAdsPagination] 페이지가 닫혔습니다. 추적 중단.`);
+                break;
+              }
+              
               await page.goto(nextLinkInfo, { waitUntil: 'networkidle2', timeout: 30000 });
               await new Promise(resolve => setTimeout(resolve, 2000)); // 페이지 안정화 대기
               
@@ -398,10 +404,18 @@ export class NaverAdsPaginationStrategy {
                   }
                 }
                 
-                // "X/Y" 패턴 찾기
+                // "X/Y" 패턴 찾기 (더 넓은 범위에서 검색)
                 const bodyText = document.body.innerText || '';
+                const paginationElements = document.querySelectorAll('[class*="pagination"], [class*="paging"], nav[aria-label*="페이지"], nav[aria-label*="page"]');
+                let searchText = bodyText;
+                
+                // Pagination 요소의 텍스트도 추가로 검색
+                paginationElements.forEach(el => {
+                  searchText += ' ' + (el.textContent || '');
+                });
+                
                 const rangePattern = /(\d+)\s*\/\s*(\d+)/g;
-                const rangeMatches = Array.from(bodyText.matchAll(rangePattern));
+                const rangeMatches = Array.from(searchText.matchAll(rangePattern));
                 
                 return {
                   pageNumbers: Array.from(pageNumbers).sort((a, b) => a - b),
@@ -443,7 +457,12 @@ export class NaverAdsPaginationStrategy {
               }
               
               currentUrl = nextLinkInfo;
-            } catch (error) {
+            } catch (error: any) {
+              // 프레임 분리 에러는 추적 중단하되, 현재까지 발견한 최대 페이지 수는 유지
+              if (error?.message?.includes('detached') || error?.message?.includes('LifecycleWatcher')) {
+                console.warn(`[NaverAdsPagination] 프레임 분리 에러 발생. 현재까지 발견한 최대 페이지: ${lastPageFound}`);
+                break;
+              }
               console.error(`[NaverAdsPagination] 다음 페이지 이동 실패:`, error);
               break;
             }
@@ -457,12 +476,19 @@ export class NaverAdsPaginationStrategy {
             console.warn(`[NaverAdsPagination] "다음 페이지" 링크 추적 완료. 전체 페이지 수를 정확히 알 수 없음. 링크의 최대값(${maxLinkPage})을 사용합니다.`);
           }
           
-          // 원래 URL로 돌아가기
+          // 원래 URL로 돌아가기 (프레임이 분리되지 않은 경우에만)
           try {
-            await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
-            await new Promise(resolve => setTimeout(resolve, 1000));
-          } catch (error) {
-            console.error(`[NaverAdsPagination] 원래 URL로 복귀 실패:`, error);
+            if (!page.isClosed()) {
+              await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
+              await new Promise(resolve => setTimeout(resolve, 1000));
+            } else {
+              console.warn(`[NaverAdsPagination] 페이지가 닫혀서 원래 URL로 복귀할 수 없습니다.`);
+            }
+          } catch (error: any) {
+            // 프레임 분리 에러는 무시 (이미 추적은 완료됨)
+            if (!error?.message?.includes('detached') && !error?.message?.includes('LifecycleWatcher')) {
+              console.error(`[NaverAdsPagination] 원래 URL로 복귀 실패:`, error);
+            }
           }
         }
       }
