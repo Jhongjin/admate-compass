@@ -21,6 +21,11 @@ export class NaverAdsPaginationStrategy {
    * - URL: https://ads.naver.com/help/faq?categorySeq=136
    * - Pagination: "이전 페이지 1 2 3 4 5 다음 페이지" 또는 "1/35"
    * - URL 패턴: ?categorySeq=136&page=2 또는 ?categorySeq=136&p=2
+   * 
+   * 전략:
+   * 1. "X/Y" 패턴 찾기 (가장 정확)
+   * 2. 마지막 페이지 링크 찾기
+   * 3. "다음 페이지" 링크를 클릭하여 마지막 페이지까지 추적
    */
   async detectPagination(
     page: Page,
@@ -38,6 +43,7 @@ export class NaverAdsPaginationStrategy {
       console.log(`🔍 [NaverAdsPagination] 감지 시작: ${url}`);
 
       // Naver Ads FAQ 특화 pagination 감지
+      // 1단계: 현재 페이지에서 pagination 정보 추출
       const paginationData = await page.evaluate(() => {
         const result: {
           foundElements: string[];
@@ -46,6 +52,7 @@ export class NaverAdsPaginationStrategy {
           lastPageNumber: number | null;
           currentPageNumber: number | null;
           pageLinks: number[];
+          nextPageLink: string | null;
         } = {
           foundElements: [],
           extractedNumbers: [],
@@ -53,6 +60,7 @@ export class NaverAdsPaginationStrategy {
           lastPageNumber: null,
           currentPageNumber: null,
           pageLinks: [],
+          nextPageLink: null,
         };
 
         // 1. Pagination 요소 찾기
@@ -86,22 +94,52 @@ export class NaverAdsPaginationStrategy {
           tempDiv.innerHTML = innerHtml;
           const innerText = tempDiv.textContent || tempDiv.innerText || '';
           searchText = result.paginationText + ' ' + innerText;
+          
+          // Pagination 요소의 모든 자식 요소의 텍스트도 수집
+          const allTextNodes: string[] = [];
+          const walker = document.createTreeWalker(
+            paginationElement,
+            NodeFilter.SHOW_TEXT,
+            null
+          );
+          let node;
+          while (node = walker.nextNode()) {
+            const text = node.textContent?.trim() || '';
+            if (text) {
+              allTextNodes.push(text);
+            }
+          }
+          searchText += ' ' + allTextNodes.join(' ');
         } else {
           // Pagination 요소를 찾지 못한 경우, 페이지 전체에서 찾기
           result.paginationText = document.body.innerText || '';
           searchText = result.paginationText;
         }
 
-        // 디버깅: pagination 텍스트 로그
-        console.log(`[NaverAdsPagination] Pagination 텍스트: "${searchText.substring(0, 200)}"`);
+        // 디버깅: pagination 텍스트 로그 (서버 측에서 확인 가능하도록 반환)
+        result.paginationText = searchText.substring(0, 500); // 디버깅을 위해 저장
 
         // 3. "X/Y" 패턴 찾기 (가장 정확한 방법 - 전체 페이지 수를 알 수 있음)
         // 주의: "529/35" 같은 경우 529는 무시하고 35만 사용
         // 더 유연한 패턴: 공백이 없어도 됨 (예: "529/35", "1/35", "1 / 35")
-        const rangePattern = /(\d+)\s*\/\s*(\d+)/g;
-        let rangeMatches = Array.from(searchText.matchAll(rangePattern));
+        // 다양한 패턴 시도: "X/Y", "X of Y", "X 페이지 중 Y", "X페이지/Y페이지"
+        const rangePatterns = [
+          /(\d+)\s*\/\s*(\d+)/g,  // "1/35", "529/35"
+          /(\d+)\s+of\s+(\d+)/gi,  // "1 of 35"
+          /(\d+)\s*페이지\s*중\s*(\d+)/g,  // "1 페이지 중 35"
+          /(\d+)\s*페이지\s*\/\s*(\d+)\s*페이지/g,  // "1페이지/35페이지"
+          /페이지\s*(\d+)\s*\/\s*(\d+)/g,  // "페이지 1/35"
+        ];
         
-        console.log(`[NaverAdsPagination] "X/Y" 패턴 매치: ${rangeMatches.length}개`);
+        let rangeMatches: RegExpMatchArray[] = [];
+        for (const pattern of rangePatterns) {
+          const matches = Array.from(searchText.matchAll(pattern));
+          if (matches.length > 0) {
+            rangeMatches.push(...matches);
+            break; // 첫 번째로 매치된 패턴 사용
+          }
+        }
+        
         
         if (rangeMatches.length > 0) {
           // 모든 "X/Y" 패턴에서 Y 값만 수집 (X가 Y보다 크면 무시)
@@ -175,6 +213,7 @@ export class NaverAdsPaginationStrategy {
           const linkClass = (link as HTMLElement).className?.toLowerCase() || '';
           if ((linkText.includes('다음') || linkText.includes('next') || linkText.includes('>') || linkClass.includes('next')) && !nextPageLink) {
             nextPageLink = link as HTMLAnchorElement;
+            result.nextPageLink = (link as HTMLAnchorElement).href;
           }
           
           // "마지막 페이지" 링크 확인
@@ -205,22 +244,22 @@ export class NaverAdsPaginationStrategy {
           }
           
           // "다음 페이지" 링크가 있으면 더 많은 페이지가 있을 수 있음
-          // 하지만 정확한 전체 페이지 수를 알 수 없으므로, 링크의 최대값을 사용하되 경고
+          // "다음 페이지" 링크를 클릭하여 다음 페이지로 이동하고, 마지막 페이지까지 반복
           if (nextPageLink) {
-            console.warn(`[NaverAdsPagination] "다음 페이지" 링크가 있지만 전체 페이지 수를 정확히 알 수 없음. 링크의 최대값(${maxLinkPage})을 사용합니다.`);
-            // "다음 페이지" 링크의 href에서 페이지 번호를 확인해볼 수 있음
+            // 다음 페이지 링크의 href에서 페이지 번호를 확인
             const nextPageHref = nextPageLink.href;
             const nextPageMatch = nextPageHref.match(/[?&]page=(\d+)/);
             if (nextPageMatch) {
               const nextPageNum = parseInt(nextPageMatch[1], 10);
               if (!isNaN(nextPageNum) && nextPageNum > maxLinkPage) {
                 // 다음 페이지 번호가 현재 최대값보다 크면, 전체 페이지 수는 그보다 클 수 있음
-                // 하지만 정확히 알 수 없으므로 보수적으로 추정
-                console.warn(`[NaverAdsPagination] 다음 페이지 번호(${nextPageNum})가 현재 최대값(${maxLinkPage})보다 큼. 전체 페이지 수는 ${nextPageNum} 이상일 수 있습니다.`);
+                console.warn(`[NaverAdsPagination] "다음 페이지" 링크가 있음. 다음 페이지 번호: ${nextPageNum}, 현재 최대값: ${maxLinkPage}. 전체 페이지 수는 ${nextPageNum} 이상일 수 있습니다.`);
               }
             }
           }
           
+          // 일단 링크의 최대값을 사용 (Phase 1에서는 단일 페이지에서만 감지)
+          // Phase 2에서 "다음 페이지" 링크를 클릭하여 마지막 페이지까지 추적할 예정
           result.lastPageNumber = maxLinkPage;
           result.extractedNumbers = result.pageLinks;
           result.paginationText = `페이지 링크에서 발견: ${result.pageLinks.join(', ')}`;
@@ -297,6 +336,124 @@ export class NaverAdsPaginationStrategy {
       });
 
       console.log(`🔍 [NaverAdsPagination] 추출된 데이터:`, paginationData);
+      
+      // 2단계: "다음 페이지" 링크가 있고 "X/Y" 패턴을 찾지 못한 경우, 다음 페이지로 이동하여 추적
+      if (paginationData.pageLinks && paginationData.pageLinks.length > 0) {
+        const maxLinkPage = Math.max(...paginationData.pageLinks);
+        
+        // "X/Y" 패턴을 찾지 못했고 "다음 페이지" 링크가 있으면, 다음 페이지로 이동하여 추적
+        if (!paginationData.lastPageNumber && paginationData.nextPageLink) {
+          console.log(`🔍 [NaverAdsPagination] "다음 페이지" 링크 추적 시작...`);
+          
+          let lastPageFound = maxLinkPage;
+          let attempts = 0;
+          const maxAttempts = 10;
+          let currentUrl = url;
+          
+          while (attempts < maxAttempts) {
+            attempts++;
+            
+            // 현재 페이지에서 "다음 페이지" 링크 찾기
+            const nextLinkInfo = await page.evaluate(() => {
+              const links = document.querySelectorAll('a[href*="page="], a[href*="&page="]');
+              for (const link of links) {
+                const linkText = (link as HTMLElement).textContent?.toLowerCase() || '';
+                const linkClass = (link as HTMLElement).className?.toLowerCase() || '';
+                if (linkText.includes('다음') || linkText.includes('next') || linkText.includes('>') || linkClass.includes('next')) {
+                  return (link as HTMLAnchorElement).href;
+                }
+              }
+              return null;
+            });
+            
+            if (!nextLinkInfo) {
+              // "다음 페이지" 링크가 없으면 마지막 페이지에 도달
+              console.log(`[NaverAdsPagination] "다음 페이지" 링크가 없음. 마지막 페이지에 도달한 것으로 추정.`);
+              break;
+            }
+            
+            // 다음 페이지로 이동
+            console.log(`[NaverAdsPagination] 다음 페이지로 이동 시도 ${attempts}/${maxAttempts}: ${nextLinkInfo}`);
+            try {
+              await page.goto(nextLinkInfo, { waitUntil: 'networkidle2', timeout: 30000 });
+              await new Promise(resolve => setTimeout(resolve, 2000)); // 페이지 안정화 대기
+              
+              // 현재 페이지에서 페이지 번호 및 "X/Y" 패턴 추출
+              const pageInfo = await page.evaluate(() => {
+                // 페이지 번호 추출
+                const links = document.querySelectorAll('a[href*="page="], a[href*="&page="]');
+                const pageNumbers = new Set<number>();
+                for (const link of links) {
+                  const href = (link as HTMLAnchorElement).href;
+                  const pageMatch = href.match(/[?&]page=(\d+)/);
+                  if (pageMatch) {
+                    const pageNum = parseInt(pageMatch[1], 10);
+                    if (!isNaN(pageNum) && pageNum > 0 && pageNum < 10000) {
+                      pageNumbers.add(pageNum);
+                    }
+                  }
+                }
+                
+                // "X/Y" 패턴 찾기
+                const bodyText = document.body.innerText || '';
+                const rangePattern = /(\d+)\s*\/\s*(\d+)/g;
+                const rangeMatches = Array.from(bodyText.matchAll(rangePattern));
+                
+                return {
+                  pageNumbers: Array.from(pageNumbers).sort((a, b) => a - b),
+                  rangeMatches: rangeMatches.map(m => ({
+                    first: parseInt(m[1], 10),
+                    second: parseInt(m[2], 10)
+                  }))
+                };
+              });
+              
+              // 페이지 번호 업데이트
+              if (pageInfo.pageNumbers.length > 0) {
+                const currentMax = Math.max(...pageInfo.pageNumbers);
+                if (currentMax > lastPageFound) {
+                  lastPageFound = currentMax;
+                }
+              }
+              
+              // "X/Y" 패턴에서 전체 페이지 수 확인
+              if (pageInfo.rangeMatches.length > 0) {
+                for (const match of pageInfo.rangeMatches) {
+                  const secondNum = match.second;
+                  if (!isNaN(secondNum) && secondNum > 0 && secondNum < 10000) {
+                    if (secondNum > lastPageFound) {
+                      lastPageFound = secondNum;
+                      console.log(`[NaverAdsPagination] "X/Y" 패턴에서 전체 페이지 수 발견: ${lastPageFound}`);
+                      break; // "X/Y" 패턴을 찾으면 즉시 중단
+                    }
+                  }
+                }
+              }
+              
+              currentUrl = nextLinkInfo;
+            } catch (error) {
+              console.error(`[NaverAdsPagination] 다음 페이지 이동 실패:`, error);
+              break;
+            }
+          }
+          
+          if (lastPageFound > maxLinkPage) {
+            console.log(`[NaverAdsPagination] "다음 페이지" 링크 추적 결과: 전체 페이지 수 ${lastPageFound} (초기 최대값: ${maxLinkPage})`);
+            paginationData.lastPageNumber = lastPageFound;
+            paginationData.currentPageNumber = paginationData.currentPageNumber || 1;
+          } else {
+            console.warn(`[NaverAdsPagination] "다음 페이지" 링크 추적 완료. 전체 페이지 수를 정확히 알 수 없음. 링크의 최대값(${maxLinkPage})을 사용합니다.`);
+          }
+          
+          // 원래 URL로 돌아가기
+          try {
+            await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
+            await new Promise(resolve => setTimeout(resolve, 1000));
+          } catch (error) {
+            console.error(`[NaverAdsPagination] 원래 URL로 복귀 실패:`, error);
+          }
+        }
+      }
 
       // 3. Pagination 정보 검증 및 생성
       // 실제 감지된 값을 사용 (임의 제한 없음)
