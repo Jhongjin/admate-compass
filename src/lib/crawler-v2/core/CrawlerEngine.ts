@@ -317,6 +317,7 @@ export class CrawlerEngine {
       retryDelay: 1000,
       concurrency: 3,
       enableMemoryMonitoring: true,
+      maxUrls: 10000, // Pagination 모드에서는 충분히 큰 값으로 설정 (모든 FAQ 크롤링)
       ...options,
     };
 

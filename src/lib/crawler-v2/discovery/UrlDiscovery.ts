@@ -1416,9 +1416,13 @@ export class UrlDiscovery {
                     const absoluteUrl = new URL(href, baseOrigin).href;
                     
                     // FAQ 링크 패턴 확인: /help/faq/{숫자}
-                    const faqPattern = /\/help\/faq\/\d+/;
-                    if (faqPattern.test(absoluteUrl)) {
-                      links.push(absoluteUrl);
+                    const faqPattern = /\/help\/faq\/(\d+)/;
+                    const match = absoluteUrl.match(faqPattern);
+                    if (match) {
+                      // FAQ ID만 추출하여 쿼리 파라미터 제거한 URL 생성
+                      const faqId = match[1];
+                      const cleanUrl = `${baseOrigin}/help/faq/${faqId}`;
+                      links.push(cleanUrl);
                     }
                   } catch (e) {
                     // URL 파싱 오류 무시
@@ -1443,19 +1447,30 @@ export class UrlDiscovery {
           }
         }
 
-        // 6. 추출된 FAQ 링크들을 DiscoveredUrl 배열로 변환
+        // 6. 추출된 FAQ 링크들을 DiscoveredUrl 배열로 변환 (중복 제거 확인)
+        const uniqueFaqIds = new Set<string>();
         Array.from(faqLinkSet).forEach((faqUrl) => {
-          discoveredPages.push({
-            url: faqUrl,
-            title: `FAQ ${faqUrl.match(/\/faq\/(\d+)/)?.[1] || 'Unknown'}`,
-            source: 'pattern',
-            depth: 1,
-            parentUrl: baseUrl,
-            path: [baseUrl, faqUrl],
-          });
+          // FAQ ID 추출하여 중복 체크
+          const faqIdMatch = faqUrl.match(/\/faq\/(\d+)/);
+          if (faqIdMatch) {
+            const faqId = faqIdMatch[1];
+            if (!uniqueFaqIds.has(faqId)) {
+              uniqueFaqIds.add(faqId);
+              discoveredPages.push({
+                url: faqUrl,
+                title: `FAQ ${faqId}`,
+                source: 'pattern',
+                depth: 1,
+                parentUrl: baseUrl,
+                path: [baseUrl, faqUrl],
+              });
+            } else {
+              console.log(`⚠️ [Pagination Discovery] 중복 FAQ 제거: ${faqUrl} (ID: ${faqId})`);
+            }
+          }
         });
 
-        console.log(`✅ [Pagination Discovery] 완료: ${discoveredPages.length}개 FAQ 링크 발견 (${paginationUrls.length}개 Pagination 페이지에서)`);
+        console.log(`✅ [Pagination Discovery] 완료: ${discoveredPages.length}개 고유 FAQ 링크 발견 (${paginationUrls.length}개 Pagination 페이지에서, 총 ${faqLinkSet.size}개 링크 중 중복 제거)`);
 
         return discoveredPages;
       } finally {
