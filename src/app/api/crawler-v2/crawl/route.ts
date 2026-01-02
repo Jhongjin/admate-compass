@@ -13,7 +13,7 @@ import { crawlerEngine, browserManager } from '@/lib/crawler-v2';
 import type { CrawlOptions, CrawlProgress } from '@/lib/crawler-v2';
 
 export const runtime = 'nodejs';
-export const maxDuration = 300; // 5분
+export const maxDuration = 900; // 15분 (Pagination 모드에서 많은 URL 크롤링 시 필요)
 
 /**
  * POST /api/crawler-v2/crawl

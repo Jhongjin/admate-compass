@@ -527,13 +527,20 @@ export class CrawlerEngine {
     }
 
     // 각 배치를 순차적으로 처리 (배치 내부는 병렬)
+    let batchIndex = 0;
     for (const batch of batches) {
+      batchIndex++;
+      console.log(`📦 [배치 크롤링] 배치 ${batchIndex}/${batches.length} 처리 중 (${batch.length}개 URL)`);
+      
       await Promise.all(
         batch.map((url, batchIndex) => {
           const globalIndex = urls.indexOf(url);
           return processUrl(url, globalIndex);
         })
       );
+
+      const completedSoFar = results.filter(r => r && (r.status === 'success' || r.status === 'failed')).length;
+      console.log(`📊 [배치 크롤링] 진행 상황: ${completedSoFar}/${urls.length} 완료 (${((completedSoFar / urls.length) * 100).toFixed(1)}%)`);
 
       // 배치 간 메모리 정리
       if (config.enableMemoryMonitoring && memoryMonitor.shouldCleanup()) {
