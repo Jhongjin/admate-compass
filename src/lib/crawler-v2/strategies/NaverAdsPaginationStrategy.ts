@@ -86,8 +86,8 @@ export class NaverAdsPaginationStrategy {
           const pageMatch = href.match(/[?&]page=(\d+)/);
           if (pageMatch) {
             const pageNum = parseInt(pageMatch[1], 10);
-            // 페이지 번호가 합리적인 범위 내인지 확인 (1~200)
-            if (!isNaN(pageNum) && pageNum > 0 && pageNum <= 200) {
+            // 페이지 번호가 유효한지 확인 (1 이상, 비정상적으로 큰 값만 필터링: 10000 이상)
+            if (!isNaN(pageNum) && pageNum > 0 && pageNum < 10000) {
               pageNumbers.add(pageNum);
             }
           }
@@ -126,13 +126,13 @@ export class NaverAdsPaginationStrategy {
             const firstNum = parseInt(match[1], 10);
             const secondNum = parseInt(match[2], 10);
             
-            // X가 Y보다 크거나 같고, 둘 다 합리적인 범위 내인지 확인
+            // X가 Y보다 크거나 같고, 둘 다 유효한지 확인 (비정상적으로 큰 값만 필터링: 10000 이상)
             if (!isNaN(firstNum) && !isNaN(secondNum) && 
                 firstNum > 0 && secondNum > 0 && 
                 firstNum <= secondNum && 
-                secondNum <= 200) { // 최대 200페이지로 제한
+                secondNum < 10000) {
               validRanges.push({ current: firstNum, total: secondNum });
-            } else if (!isNaN(secondNum) && secondNum > 0 && secondNum <= 200) {
+            } else if (!isNaN(secondNum) && secondNum > 0 && secondNum < 10000) {
               // X가 Y보다 크면 X는 무시하고 Y만 사용
               validRanges.push({ current: 1, total: secondNum });
             }
@@ -171,22 +171,20 @@ export class NaverAdsPaginationStrategy {
         const pageListPattern = /(?:이전|prev|previous)[\s\S]*?(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)[\s\S]*?(?:다음|next)/i;
         const pageListMatch = searchText.match(pageListPattern);
         if (pageListMatch) {
-          const numbers = pageListMatch.slice(1).map(Number).filter(n => !isNaN(n) && n > 0 && n <= 200); // 200 이하만 허용
+          const numbers = pageListMatch.slice(1).map(Number).filter(n => !isNaN(n) && n > 0 && n < 10000); // 비정상적으로 큰 값만 필터링
           if (numbers.length > 0) {
             result.extractedNumbers = numbers;
             result.currentPageNumber = Math.min(...numbers);
             const maxNumber = Math.max(...numbers);
             const minNumber = Math.min(...numbers);
             
-            // 숫자가 연속적이면 마지막 페이지 추정 (하지만 보수적으로)
-            if (numbers.length >= 3 && maxNumber - minNumber === numbers.length - 1) {
-              // 연속된 숫자: 마지막 페이지는 더 클 수 있지만 최대 50으로 제한
-              result.lastPageNumber = Math.min(maxNumber + 10, 50);
-            } else {
-              result.lastPageNumber = maxNumber;
-            }
+            // 숫자가 연속적이면 마지막 페이지 추정
+            // 예: "31 32 33 34 35" → 마지막 페이지는 35 이상일 수 있음
+            // 하지만 실제 마지막 페이지를 정확히 알 수 없으므로, 최대값을 사용
+            // (추가 로직: "X/Y" 패턴과 함께 사용하면 더 정확함)
+            result.lastPageNumber = maxNumber;
             result.paginationText = pageListMatch[0];
-            console.log(`[NaverAdsPagination] 페이지 리스트 패턴에서 발견: ${result.currentPageNumber}~${result.lastPageNumber}`);
+            console.log(`[NaverAdsPagination] 페이지 리스트 패턴에서 발견: ${result.currentPageNumber}~${result.lastPageNumber} (연속된 숫자 패턴)`);
             return result;
           }
         }
@@ -200,8 +198,8 @@ export class NaverAdsPaginationStrategy {
           
           for (const match of matches) {
             const num = parseInt(match[1], 10);
-            // 합리적인 페이지 번호 범위만 허용 (1~200)
-            if (!isNaN(num) && num > 0 && num <= 200) {
+            // 유효한 페이지 번호만 허용 (비정상적으로 큰 값만 필터링: 10000 이상)
+            if (!isNaN(num) && num > 0 && num < 10000) {
               allNumbers.push(num);
             }
           }
@@ -225,7 +223,7 @@ export class NaverAdsPaginationStrategy {
       console.log(`🔍 [NaverAdsPagination] 추출된 데이터:`, paginationData);
 
       // 3. Pagination 정보 검증 및 생성
-      // 전체 페이지 수가 비정상적으로 크면 제한 (예: 100 이하)
+      // 실제 감지된 값을 사용 (임의 제한 없음)
       let totalPages = paginationData.lastPageNumber;
       if (!totalPages || totalPages <= 1) {
         return {
@@ -239,17 +237,16 @@ export class NaverAdsPaginationStrategy {
         };
       }
 
-      // 비정상적으로 큰 페이지 수 제한 (100 이하로 제한)
-      if (totalPages > 100) {
-        console.warn(`⚠️ [NaverAdsPagination] 전체 페이지 수가 비정상적으로 큼: ${totalPages}, 100으로 제한`);
-        totalPages = 100;
-      }
-
       // 현재 페이지가 전체 페이지보다 크면 조정
       let currentPage = paginationData.currentPageNumber || 1;
       if (currentPage > totalPages) {
         console.warn(`⚠️ [NaverAdsPagination] 현재 페이지(${currentPage})가 전체 페이지(${totalPages})보다 큼, 1로 조정`);
         currentPage = 1;
+      }
+
+      // 비정상적으로 큰 값만 경고 (제한하지 않음)
+      if (totalPages > 1000) {
+        console.warn(`⚠️ [NaverAdsPagination] 전체 페이지 수가 매우 큼: ${totalPages}, 실제 값인지 확인 필요`);
       }
 
       // URL 패턴 분석
