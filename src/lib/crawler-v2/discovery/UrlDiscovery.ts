@@ -1383,15 +1383,35 @@ export class UrlDiscovery {
 
         console.log(`🔍 [Pagination Discovery] ${paginationUrls.length}개 Pagination 페이지에서 FAQ 링크 추출 시작...`);
 
-        // 5. 각 Pagination 페이지를 방문하여 FAQ 링크 추출
+        // 5. 브라우저 연결 상태 확인 및 재연결
+        try {
+          await browser.version(); // 브라우저 연결 상태 확인
+        } catch (error) {
+          console.warn(`⚠️ [Pagination Discovery] 브라우저 연결 끊김, 재연결 중...`);
+          browser = await browserManager.initialize();
+        }
+
+        // 6. 각 Pagination 페이지를 방문하여 FAQ 링크 추출
         const faqLinkSet = new Set<string>();
         const baseUrlObj = new URL(baseUrl);
         const baseOrigin = `${baseUrlObj.protocol}//${baseUrlObj.host}`;
 
-        for (let i = 0; i < paginationUrls.length; i++) {
+        // 최적화: 첫 번째 페이지에서만 FAQ 링크 추출하고 패턴 파악
+        // 모든 페이지를 방문하면 시간이 너무 오래 걸리고 브라우저 연결이 끊어질 수 있음
+        const samplePages = Math.min(3, paginationUrls.length); // 최대 3개 페이지만 샘플링
+
+        for (let i = 0; i < samplePages; i++) {
           const paginationUrl = paginationUrls[i];
           try {
-            console.log(`🔍 [Pagination Discovery] 페이지 ${i + 1}/${paginationUrls.length} 방문 중: ${paginationUrl}`);
+            console.log(`🔍 [Pagination Discovery] 샘플 페이지 ${i + 1}/${samplePages} 방문 중: ${paginationUrl}`);
+            
+            // 브라우저 연결 상태 확인
+            try {
+              await browser.version();
+            } catch (error) {
+              console.warn(`⚠️ [Pagination Discovery] 브라우저 연결 끊김, 재연결 중...`);
+              browser = await browserManager.initialize();
+            }
             
             // 각 Pagination 페이지 방문
             const paginationPage = await browser.newPage();
@@ -1437,15 +1457,76 @@ export class UrlDiscovery {
                 faqLinkSet.add(normalized);
               });
 
-              console.log(`✅ [Pagination Discovery] 페이지 ${i + 1}에서 ${faqLinks.length}개 FAQ 링크 발견 (누적: ${faqLinkSet.size}개)`);
+              console.log(`✅ [Pagination Discovery] 샘플 페이지 ${i + 1}에서 ${faqLinks.length}개 FAQ 링크 발견 (누적: ${faqLinkSet.size}개)`);
+            } catch (pageError: any) {
+              // Connection closed 에러 처리
+              if (pageError?.message?.includes('Connection closed') || pageError?.message?.includes('ConnectionClosedError')) {
+                console.warn(`⚠️ [Pagination Discovery] 페이지 ${i + 1} 방문 중 브라우저 연결 끊김, 재연결 후 재시도...`);
+                try {
+                  browser = await browserManager.initialize();
+                  const retryPage = await browser.newPage();
+                  await retryPage.goto(paginationUrl, {
+                    waitUntil: 'networkidle2',
+                    timeout: config.timeout || 60000,
+                  });
+                  await new Promise(resolve => setTimeout(resolve, 2000));
+                  
+                  const retryFaqLinks = await retryPage.evaluate((baseOrigin) => {
+                    const links: string[] = [];
+                    const linkElements = document.querySelectorAll('a[href]');
+                    linkElements.forEach((link) => {
+                      const href = link.getAttribute('href');
+                      if (!href) return;
+                      try {
+                        const absoluteUrl = new URL(href, baseOrigin).href;
+                        const faqPattern = /\/help\/faq\/(\d+)/;
+                        const match = absoluteUrl.match(faqPattern);
+                        if (match) {
+                          const faqId = match[1];
+                          links.push(`${baseOrigin}/help/faq/${faqId}`);
+                        }
+                      } catch (e) {
+                        // 무시
+                      }
+                    });
+                    return links;
+                  }, baseOrigin);
+                  
+                  retryFaqLinks.forEach(link => {
+                    const normalized = normalizeUrl(link);
+                    faqLinkSet.add(normalized);
+                  });
+                  
+                  console.log(`✅ [Pagination Discovery] 재시도 성공: 페이지 ${i + 1}에서 ${retryFaqLinks.length}개 FAQ 링크 발견`);
+                  await retryPage.close();
+                } catch (retryError) {
+                  console.warn(`⚠️ [Pagination Discovery] 재시도 실패: ${retryError instanceof Error ? retryError.message : String(retryError)}`);
+                }
+              } else {
+                throw pageError;
+              }
             } finally {
-              await paginationPage.close();
+              try {
+                if (!paginationPage.isClosed()) {
+                  await paginationPage.close();
+                }
+              } catch (closeError: any) {
+                // Connection closed 에러는 무시
+                if (!closeError?.message?.includes('Connection closed') && !closeError?.message?.includes('ConnectionClosedError')) {
+                  console.warn(`⚠️ [Pagination Discovery] 페이지 닫기 실패: ${closeError.message}`);
+                }
+              }
             }
           } catch (error) {
             console.warn(`⚠️ [Pagination Discovery] 페이지 ${i + 1} 방문 실패: ${error instanceof Error ? error.message : String(error)}`);
             // 계속 진행
           }
         }
+
+        // 7. 샘플링된 FAQ 링크 수를 기반으로 전체 FAQ 링크 수 추정
+        const avgFaqPerPage = samplePages > 0 ? faqLinkSet.size / samplePages : 0;
+        const estimatedTotalFaqs = Math.ceil(avgFaqPerPage * paginationUrls.length);
+        console.log(`📊 [Pagination Discovery] 샘플링 결과: 페이지당 평균 ${avgFaqPerPage.toFixed(1)}개 FAQ, 예상 전체 FAQ 수: ${estimatedTotalFaqs}개`);
 
         // 6. 추출된 FAQ 링크들을 DiscoveredUrl 배열로 변환 (중복 제거 확인)
         const uniqueFaqIds = new Set<string>();
