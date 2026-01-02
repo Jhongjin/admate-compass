@@ -45,16 +45,17 @@ export class NaverAdsPaginationStrategy {
           paginationText: string;
           lastPageNumber: number | null;
           currentPageNumber: number | null;
+          pageLinks: number[];
         } = {
           foundElements: [],
           extractedNumbers: [],
           paginationText: '',
           lastPageNumber: null,
           currentPageNumber: null,
+          pageLinks: [],
         };
 
-        // 1. Naver Ads FAQ 특화 pagination 선택자
-        // "이전 페이지 1 2 3 4 5 다음 페이지" 패턴 찾기
+        // 1. Pagination 요소 찾기
         const paginationSelectors = [
           '.pagination',
           '.paging',
@@ -74,57 +75,147 @@ export class NaverAdsPaginationStrategy {
           }
         }
 
-        // 2. 페이지 전체에서 pagination 텍스트 찾기
-        // "이전 페이지 1 2 3 4 5 다음 페이지" 또는 "1/35" 패턴
-        const bodyText = document.body.innerText || '';
+        // 2. Pagination 요소 내의 링크에서 실제 페이지 번호 추출 (가장 정확한 방법)
+        // Pagination 요소가 있으면 그 안에서만 검색, 없으면 전체 페이지에서 검색
+        const searchScope = paginationElement || document.body;
+        const allLinks = searchScope.querySelectorAll('a[href*="page="], a[href*="&page="]');
+        const pageNumbers = new Set<number>();
         
-        // "1/35" 패턴 찾기 (가장 정확)
-        const rangePattern = /(\d+)\s*\/\s*(\d+)/;
-        const rangeMatch = bodyText.match(rangePattern);
-        if (rangeMatch) {
-          result.currentPageNumber = parseInt(rangeMatch[1], 10);
-          result.lastPageNumber = parseInt(rangeMatch[2], 10);
-          result.paginationText = rangeMatch[0];
-          result.extractedNumbers = [result.currentPageNumber, result.lastPageNumber];
-          return result;
-        }
-
-        // "이전 페이지 1 2 3 4 5 다음 페이지" 패턴 찾기
-        const pageListPattern = /(?:이전|prev|previous)[\s\S]*?(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)[\s\S]*?(?:다음|next)/i;
-        const pageListMatch = bodyText.match(pageListPattern);
-        if (pageListMatch) {
-          const numbers = pageListMatch.slice(1).map(Number).filter(n => !isNaN(n) && n > 0);
-          result.extractedNumbers = numbers;
-          result.currentPageNumber = numbers[0];
-          // 마지막 페이지 번호는 추정 (연속된 숫자라면)
-          if (numbers.length >= 5) {
-            const maxNumber = Math.max(...numbers);
-            // 연속된 숫자라면 마지막 페이지는 더 클 수 있음
-            result.lastPageNumber = maxNumber + (numbers.length - 1);
-          } else {
-            result.lastPageNumber = Math.max(...numbers);
+        for (const link of allLinks) {
+          const href = (link as HTMLAnchorElement).href;
+          const pageMatch = href.match(/[?&]page=(\d+)/);
+          if (pageMatch) {
+            const pageNum = parseInt(pageMatch[1], 10);
+            // 페이지 번호가 합리적인 범위 내인지 확인 (1~200)
+            if (!isNaN(pageNum) && pageNum > 0 && pageNum <= 200) {
+              pageNumbers.add(pageNum);
+            }
           }
-          result.paginationText = pageListMatch[0];
+        }
+
+        if (pageNumbers.size > 0) {
+          result.pageLinks = Array.from(pageNumbers).sort((a, b) => a - b);
+          result.currentPageNumber = Math.min(...result.pageLinks);
+          result.lastPageNumber = Math.max(...result.pageLinks);
+          result.extractedNumbers = result.pageLinks;
+          result.paginationText = `페이지 링크에서 발견: ${result.pageLinks.join(', ')}`;
+          console.log(`[NaverAdsPagination] 페이지 링크에서 발견: ${result.pageLinks.length}개 (${result.pageLinks[0]}~${result.pageLinks[result.pageLinks.length - 1]})`);
           return result;
         }
 
-        // Pagination 요소에서 직접 추출
+        // 3. Pagination 요소에서 텍스트 추출
         if (paginationElement) {
           result.paginationText = paginationElement.textContent || '';
+        } else {
+          // Pagination 요소를 찾지 못한 경우, 페이지 전체에서 찾기
+          result.paginationText = document.body.innerText || '';
+        }
+
+        // 4. "X/Y" 패턴 찾기 (X/Y에서 Y가 전체 페이지)
+        // 주의: "529/35" 같은 경우 529는 무시하고 35만 사용
+        // Pagination 요소 내에서만 검색 (전체 페이지에서 검색하면 다른 숫자와 혼동 가능)
+        const searchText = paginationElement ? paginationElement.textContent || '' : result.paginationText;
+        const rangePattern = /(\d+)\s*\/\s*(\d+)/g;
+        const rangeMatches = Array.from(searchText.matchAll(rangePattern));
+        
+        if (rangeMatches.length > 0) {
+          // 모든 "X/Y" 패턴에서 Y 값만 수집 (X가 Y보다 크면 무시)
+          const validRanges: { current: number; total: number }[] = [];
           
-          // 숫자 추출
+          for (const match of rangeMatches) {
+            const firstNum = parseInt(match[1], 10);
+            const secondNum = parseInt(match[2], 10);
+            
+            // X가 Y보다 크거나 같고, 둘 다 합리적인 범위 내인지 확인
+            if (!isNaN(firstNum) && !isNaN(secondNum) && 
+                firstNum > 0 && secondNum > 0 && 
+                firstNum <= secondNum && 
+                secondNum <= 200) { // 최대 200페이지로 제한
+              validRanges.push({ current: firstNum, total: secondNum });
+            } else if (!isNaN(secondNum) && secondNum > 0 && secondNum <= 200) {
+              // X가 Y보다 크면 X는 무시하고 Y만 사용
+              validRanges.push({ current: 1, total: secondNum });
+            }
+          }
+          
+          if (validRanges.length > 0) {
+            // 가장 많이 나타나는 total 값 찾기
+            const totalCounts = new Map<number, number>();
+            validRanges.forEach(r => {
+              totalCounts.set(r.total, (totalCounts.get(r.total) || 0) + 1);
+            });
+            
+            let maxCount = 0;
+            let mostCommonTotal = validRanges[0].total;
+            totalCounts.forEach((count, num) => {
+              if (count > maxCount) {
+                maxCount = count;
+                mostCommonTotal = num;
+              }
+            });
+            
+            result.lastPageNumber = mostCommonTotal;
+            
+            // 현재 페이지는 첫 번째 유효한 범위의 첫 번째 숫자
+            const firstValid = validRanges.find(r => r.total === mostCommonTotal);
+            result.currentPageNumber = firstValid ? firstValid.current : 1;
+            
+            result.extractedNumbers = [result.currentPageNumber, result.lastPageNumber];
+            console.log(`[NaverAdsPagination] "X/Y" 패턴에서 발견: ${result.currentPageNumber}/${result.lastPageNumber}`);
+            return result;
+          }
+        }
+
+        // 5. "이전 페이지 1 2 3 4 5 다음 페이지" 패턴 찾기
+        // Pagination 요소 내에서만 검색
+        const pageListPattern = /(?:이전|prev|previous)[\s\S]*?(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)[\s\S]*?(?:다음|next)/i;
+        const pageListMatch = searchText.match(pageListPattern);
+        if (pageListMatch) {
+          const numbers = pageListMatch.slice(1).map(Number).filter(n => !isNaN(n) && n > 0 && n <= 200); // 200 이하만 허용
+          if (numbers.length > 0) {
+            result.extractedNumbers = numbers;
+            result.currentPageNumber = Math.min(...numbers);
+            const maxNumber = Math.max(...numbers);
+            const minNumber = Math.min(...numbers);
+            
+            // 숫자가 연속적이면 마지막 페이지 추정 (하지만 보수적으로)
+            if (numbers.length >= 3 && maxNumber - minNumber === numbers.length - 1) {
+              // 연속된 숫자: 마지막 페이지는 더 클 수 있지만 최대 50으로 제한
+              result.lastPageNumber = Math.min(maxNumber + 10, 50);
+            } else {
+              result.lastPageNumber = maxNumber;
+            }
+            result.paginationText = pageListMatch[0];
+            console.log(`[NaverAdsPagination] 페이지 리스트 패턴에서 발견: ${result.currentPageNumber}~${result.lastPageNumber}`);
+            return result;
+          }
+        }
+
+        // 6. Pagination 요소에서 숫자 직접 추출 (마지막 수단)
+        // 주의: 이 방법은 다른 숫자와 혼동될 수 있으므로 최후의 수단
+        if (paginationElement) {
           const numberPattern = /(\d+)/g;
           const matches = result.paginationText.matchAll(numberPattern);
+          const allNumbers: number[] = [];
+          
           for (const match of matches) {
             const num = parseInt(match[1], 10);
-            if (!isNaN(num) && num > 0) {
-              result.extractedNumbers.push(num);
+            // 합리적인 페이지 번호 범위만 허용 (1~200)
+            if (!isNaN(num) && num > 0 && num <= 200) {
+              allNumbers.push(num);
             }
           }
 
-          if (result.extractedNumbers.length > 0) {
-            result.currentPageNumber = Math.min(...result.extractedNumbers);
-            result.lastPageNumber = Math.max(...result.extractedNumbers);
+          if (allNumbers.length > 0) {
+            // 숫자가 너무 많으면 (다른 숫자와 혼동) 무시
+            if (allNumbers.length <= 10) {
+              result.extractedNumbers = allNumbers;
+              result.currentPageNumber = Math.min(...allNumbers);
+              result.lastPageNumber = Math.max(...allNumbers);
+              console.log(`[NaverAdsPagination] Pagination 요소에서 직접 추출: ${result.currentPageNumber}~${result.lastPageNumber}`);
+            } else {
+              console.warn(`[NaverAdsPagination] 추출된 숫자가 너무 많음 (${allNumbers.length}개), 무시`);
+            }
           }
         }
 
@@ -133,8 +224,10 @@ export class NaverAdsPaginationStrategy {
 
       console.log(`🔍 [NaverAdsPagination] 추출된 데이터:`, paginationData);
 
-      // 3. Pagination 정보 생성
-      if (!paginationData.lastPageNumber || paginationData.lastPageNumber <= 1) {
+      // 3. Pagination 정보 검증 및 생성
+      // 전체 페이지 수가 비정상적으로 크면 제한 (예: 100 이하)
+      let totalPages = paginationData.lastPageNumber;
+      if (!totalPages || totalPages <= 1) {
         return {
           pagination: null,
           success: false,
@@ -144,6 +237,19 @@ export class NaverAdsPaginationStrategy {
             extractedNumbers: paginationData.extractedNumbers,
           },
         };
+      }
+
+      // 비정상적으로 큰 페이지 수 제한 (100 이하로 제한)
+      if (totalPages > 100) {
+        console.warn(`⚠️ [NaverAdsPagination] 전체 페이지 수가 비정상적으로 큼: ${totalPages}, 100으로 제한`);
+        totalPages = 100;
+      }
+
+      // 현재 페이지가 전체 페이지보다 크면 조정
+      let currentPage = paginationData.currentPageNumber || 1;
+      if (currentPage > totalPages) {
+        console.warn(`⚠️ [NaverAdsPagination] 현재 페이지(${currentPage})가 전체 페이지(${totalPages})보다 큼, 1로 조정`);
+        currentPage = 1;
       }
 
       // URL 패턴 분석
@@ -162,8 +268,8 @@ export class NaverAdsPaginationStrategy {
       }
 
       const paginationInfo: PaginationInfo = {
-        currentPage: paginationData.currentPageNumber || 1,
-        totalPages: paginationData.lastPageNumber,
+        currentPage,
+        totalPages,
         pageUrlPattern: urlPattern.pattern,
         baseUrl: urlPattern.baseUrl,
         pageParamName: urlPattern.pageParamName,
