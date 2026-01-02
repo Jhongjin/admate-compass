@@ -351,7 +351,7 @@ export class NaverAdsPaginationStrategy {
           
           let lastPageFound = maxLinkPage;
           let attempts = 0;
-          const maxAttempts = 10;
+          const maxAttempts = 50; // 최대 시도 횟수 증가 (35페이지까지 추적 가능하도록)
           let currentUrl = url;
           
           while (attempts < maxAttempts) {
@@ -423,12 +423,20 @@ export class NaverAdsPaginationStrategy {
               // "X/Y" 패턴에서 전체 페이지 수 확인
               if (pageInfo.rangeMatches.length > 0) {
                 for (const match of pageInfo.rangeMatches) {
+                  const firstNum = match.first;
                   const secondNum = match.second;
-                  if (!isNaN(secondNum) && secondNum > 0 && secondNum < 10000) {
-                    if (secondNum > lastPageFound) {
-                      lastPageFound = secondNum;
-                      console.log(`[NaverAdsPagination] "X/Y" 패턴에서 전체 페이지 수 발견: ${lastPageFound}`);
-                      break; // "X/Y" 패턴을 찾으면 즉시 중단
+                  // X가 Y보다 크면 무시하고 Y만 사용 (예: 529/35 → 35만 사용)
+                  const validTotal = (!isNaN(firstNum) && !isNaN(secondNum) && firstNum <= secondNum) 
+                    ? secondNum 
+                    : secondNum;
+                  
+                  if (!isNaN(validTotal) && validTotal > 0 && validTotal < 10000) {
+                    if (validTotal > lastPageFound) {
+                      lastPageFound = validTotal;
+                      console.log(`[NaverAdsPagination] "X/Y" 패턴에서 전체 페이지 수 발견: ${lastPageFound} (${firstNum}/${secondNum})`);
+                      // "X/Y" 패턴을 찾으면 즉시 중단
+                      attempts = maxAttempts; // 루프 종료를 위해 attempts를 maxAttempts로 설정
+                      break;
                     }
                   }
                 }
