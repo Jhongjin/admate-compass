@@ -50,7 +50,7 @@ export async function POST(request: NextRequest) {
     const crawlOptions: Partial<CrawlOptions> = {
       maxDepth: isMaxDepthMode ? undefined : (Number.isFinite(parsedMaxDepth) ? parsedMaxDepth : 2),
       depthMode: isMaxDepthMode ? 'MAX' : (options?.depthMode || 'LIMITED'),
-      maxUrls: options?.maxUrls || 100,
+      maxUrls: paginationMode ? 10000 : (options?.maxUrls || 100), // Pagination 모드에서는 충분히 큰 값으로 설정
       respectRobots: options?.respectRobots !== false,
       domainLimit: options?.domainLimit !== false,
       discoverSubPages: paginationMode ? false : (options?.discoverSubPages || false), // Pagination 모드에서는 하위 페이지 발견 비활성화
