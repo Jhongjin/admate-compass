@@ -288,6 +288,91 @@ export class CrawlerEngine {
   }
 
   /**
+   * Pagination 모드 크롤링
+   * 
+   * @param baseUrl 부모 페이지 URL
+   * @param options 크롤링 옵션
+   * @param onProgress 진행률 콜백
+   * @returns 크롤링 결과 배열
+   */
+  async crawlWithPagination(
+    baseUrl: string,
+    options: Partial<CrawlOptions> = {},
+    onProgress?: (data: {
+      type: 'log' | 'batch_progress' | 'progress';
+      message: string;
+      current?: number;
+      total?: number;
+      result?: CrawlResult;
+      progress?: CrawlProgress;
+    }) => void
+  ): Promise<CrawlResult[]> {
+    const config: CrawlOptions = {
+      discoverSubPages: false, // Pagination 모드에서는 하위 페이지 발견 비활성화
+      timeout: 30000,
+      waitTime: 1000,
+      useCache: true,
+      cacheTTL: 24 * 60 * 60,
+      maxRetries: 3,
+      retryDelay: 1000,
+      concurrency: 3,
+      enableMemoryMonitoring: true,
+      ...options,
+    };
+
+    console.log(`🕷️ [Pagination Mode] 크롤링 시작: ${baseUrl}`);
+
+    try {
+      // 1. Pagination 페이지 발견
+      if (onProgress) {
+        onProgress({
+          type: 'log',
+          message: `Pagination 페이지 발견 중...`,
+        });
+      }
+
+      const discoveredUrls = await urlDiscovery.discoverPaginationPages(baseUrl, config);
+
+      if (discoveredUrls.length === 0) {
+        console.warn(`⚠️ [Pagination Mode] Pagination 페이지를 찾을 수 없습니다`);
+        if (onProgress) {
+          onProgress({
+            type: 'log',
+            message: `Pagination 페이지를 찾을 수 없습니다`,
+          });
+        }
+        return [];
+      }
+
+      console.log(`✅ [Pagination Mode] ${discoveredUrls.length}개 페이지 발견`);
+
+      if (onProgress) {
+        onProgress({
+          type: 'log',
+          message: `${discoveredUrls.length}개 페이지 발견, 크롤링 시작...`,
+        });
+      }
+
+      // 2. 각 페이지 크롤링 (병렬 처리)
+      const urlsToCrawl = discoveredUrls.map(u => u.url);
+      const results = await this.crawlUrls(urlsToCrawl, config, onProgress);
+
+      console.log(`✅ [Pagination Mode] 크롤링 완료: ${results.length}개 결과`);
+
+      return results;
+    } catch (error) {
+      console.error(`❌ [Pagination Mode] 크롤링 실패:`, error);
+      if (onProgress) {
+        onProgress({
+          type: 'log',
+          message: `크롤링 실패: ${error instanceof Error ? error.message : String(error)}`,
+        });
+      }
+      return [];
+    }
+  }
+
+  /**
    * 여러 URL 배치 크롤링 (개선: 병렬 처리 + 진행률 개선)
    */
   async crawlUrls(

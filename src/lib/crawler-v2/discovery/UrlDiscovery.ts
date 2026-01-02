@@ -8,6 +8,9 @@ import { sitemapParser } from './SitemapParser';
 import type { DiscoveredUrl, CrawlOptions } from '../types';
 import { extractDomain, getBaseUrl, normalizeUrl, isAllowedDomain, calculateDepth, buildUrlPath } from '../utils/url-utils';
 import { extractLinks } from '../utils/html-utils';
+import { generateAndValidatePageUrls } from '../utils/pagination-utils';
+import { naverAdsPaginationStrategy } from '../strategies/NaverAdsPaginationStrategy';
+import type { Page } from 'puppeteer-core';
 
 export class UrlDiscovery {
   /**
@@ -1307,6 +1310,97 @@ export class UrlDiscovery {
     });
 
     return filtered;
+  }
+
+  /**
+   * Pagination 기반 하위 페이지 발견
+   * 
+   * @param baseUrl 부모 페이지 URL (예: https://ads.naver.com/help/faq?categorySeq=136)
+   * @param options 크롤링 옵션
+   * @returns 발견된 페이지 URL 목록
+   */
+  async discoverPaginationPages(
+    baseUrl: string,
+    options: Partial<CrawlOptions> = {}
+  ): Promise<DiscoveredUrl[]> {
+    const config: CrawlOptions = {
+      timeout: 60000,
+      ...options,
+    };
+
+    console.log(`🔍 [Pagination Discovery] 시작: ${baseUrl}`);
+
+    const discoveredPages: DiscoveredUrl[] = [];
+    const baseDomain = extractDomain(baseUrl);
+
+    try {
+      // 1. 브라우저 및 페이지 준비
+      const browser = await browserManager.getBrowser();
+      if (!browser) {
+        throw new Error('브라우저를 초기화할 수 없습니다');
+      }
+
+      const page = await browser.newPage();
+      
+      try {
+        // 2. 부모 페이지 로드
+        console.log(`🔍 [Pagination Discovery] 부모 페이지 로드 중: ${baseUrl}`);
+        await page.goto(baseUrl, { 
+          waitUntil: 'networkidle2', 
+          timeout: config.timeout || 60000 
+        });
+        await new Promise(resolve => setTimeout(resolve, 2000)); // 페이지 안정화 대기
+
+        // 3. Pagination 감지
+        console.log(`🔍 [Pagination Discovery] Pagination 감지 중...`);
+        
+        // Naver Ads FAQ 페이지인지 확인
+        let detectionResult;
+        if (naverAdsPaginationStrategy.canHandle(baseUrl)) {
+          detectionResult = await naverAdsPaginationStrategy.detectPagination(page, baseUrl);
+        } else {
+          // 기본 pagination 감지 사용 (향후 확장 가능)
+          const { detectPagination } = await import('../utils/pagination-utils');
+          detectionResult = await detectPagination(page, baseUrl);
+        }
+
+        if (!detectionResult.success || !detectionResult.pagination) {
+          console.warn(`⚠️ [Pagination Discovery] Pagination을 찾을 수 없습니다: ${detectionResult.error}`);
+          return [];
+        }
+
+        const paginationInfo = detectionResult.pagination;
+        console.log(`✅ [Pagination Discovery] Pagination 감지 성공: ${paginationInfo.totalPages}페이지`);
+
+        // 4. 각 페이지 URL 생성 및 검증
+        const { urls, invalidUrls, errors } = generateAndValidatePageUrls(paginationInfo);
+        
+        if (invalidUrls.length > 0) {
+          console.warn(`⚠️ [Pagination Discovery] 유효하지 않은 URL ${invalidUrls.length}개 발견`);
+        }
+
+        // 5. DiscoveredUrl 배열 생성
+        urls.forEach((url, index) => {
+          discoveredPages.push({
+            url: normalizeUrl(url),
+            title: `페이지 ${index + 1}`,
+            source: 'pattern',
+            depth: 1,
+            parentUrl: baseUrl,
+            path: [baseUrl, url],
+          });
+        });
+
+        console.log(`✅ [Pagination Discovery] 완료: ${discoveredPages.length}개 페이지 발견`);
+
+        return discoveredPages;
+      } finally {
+        await page.close();
+      }
+    } catch (error) {
+      console.error('❌ [Pagination Discovery] 실패:', error);
+      return discoveredPages;
+    }
   }
 }
 
