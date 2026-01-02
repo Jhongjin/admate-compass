@@ -75,35 +75,7 @@ export class NaverAdsPaginationStrategy {
           }
         }
 
-        // 2. Pagination 요소 내의 링크에서 실제 페이지 번호 추출 (가장 정확한 방법)
-        // Pagination 요소가 있으면 그 안에서만 검색, 없으면 전체 페이지에서 검색
-        const searchScope = paginationElement || document.body;
-        const allLinks = searchScope.querySelectorAll('a[href*="page="], a[href*="&page="]');
-        const pageNumbers = new Set<number>();
-        
-        for (const link of allLinks) {
-          const href = (link as HTMLAnchorElement).href;
-          const pageMatch = href.match(/[?&]page=(\d+)/);
-          if (pageMatch) {
-            const pageNum = parseInt(pageMatch[1], 10);
-            // 페이지 번호가 유효한지 확인 (1 이상, 비정상적으로 큰 값만 필터링: 10000 이상)
-            if (!isNaN(pageNum) && pageNum > 0 && pageNum < 10000) {
-              pageNumbers.add(pageNum);
-            }
-          }
-        }
-
-        if (pageNumbers.size > 0) {
-          result.pageLinks = Array.from(pageNumbers).sort((a, b) => a - b);
-          result.currentPageNumber = Math.min(...result.pageLinks);
-          result.lastPageNumber = Math.max(...result.pageLinks);
-          result.extractedNumbers = result.pageLinks;
-          result.paginationText = `페이지 링크에서 발견: ${result.pageLinks.join(', ')}`;
-          console.log(`[NaverAdsPagination] 페이지 링크에서 발견: ${result.pageLinks.length}개 (${result.pageLinks[0]}~${result.pageLinks[result.pageLinks.length - 1]})`);
-          return result;
-        }
-
-        // 3. Pagination 요소에서 텍스트 추출
+        // 2. Pagination 요소에서 텍스트 추출 (먼저 "X/Y" 패턴을 찾기 위해)
         if (paginationElement) {
           result.paginationText = paginationElement.textContent || '';
         } else {
@@ -111,10 +83,12 @@ export class NaverAdsPaginationStrategy {
           result.paginationText = document.body.innerText || '';
         }
 
-        // 4. "X/Y" 패턴 찾기 (X/Y에서 Y가 전체 페이지)
+        // 3. "X/Y" 패턴 찾기 (가장 정확한 방법 - 전체 페이지 수를 알 수 있음)
         // 주의: "529/35" 같은 경우 529는 무시하고 35만 사용
         // Pagination 요소 내에서만 검색 (전체 페이지에서 검색하면 다른 숫자와 혼동 가능)
         const searchText = paginationElement ? paginationElement.textContent || '' : result.paginationText;
+        
+        // 먼저 "X/Y" 패턴을 찾아서 전체 페이지 수를 정확히 파악
         const rangePattern = /(\d+)\s*\/\s*(\d+)/g;
         const rangeMatches = Array.from(searchText.matchAll(rangePattern));
         
@@ -164,6 +138,83 @@ export class NaverAdsPaginationStrategy {
             console.log(`[NaverAdsPagination] "X/Y" 패턴에서 발견: ${result.currentPageNumber}/${result.lastPageNumber}`);
             return result;
           }
+        }
+
+        // 4. Pagination 요소 내의 링크에서 실제 페이지 번호 추출
+        // (링크의 최대값은 현재 보이는 페이지 범위일 뿐, 전체 페이지 수가 아님)
+        const searchScope = paginationElement || document.body;
+        const allLinks = searchScope.querySelectorAll('a[href*="page="], a[href*="&page="]');
+        const pageNumbers = new Set<number>();
+        let nextPageLink: HTMLAnchorElement | null = null;
+        let lastPageLink: HTMLAnchorElement | null = null;
+        
+        for (const link of allLinks) {
+          const href = (link as HTMLAnchorElement).href;
+          const pageMatch = href.match(/[?&]page=(\d+)/);
+          if (pageMatch) {
+            const pageNum = parseInt(pageMatch[1], 10);
+            // 페이지 번호가 유효한지 확인 (1 이상, 비정상적으로 큰 값만 필터링: 10000 이상)
+            if (!isNaN(pageNum) && pageNum > 0 && pageNum < 10000) {
+              pageNumbers.add(pageNum);
+            }
+          }
+          
+          // "다음 페이지" 링크 확인
+          const linkText = (link as HTMLElement).textContent?.toLowerCase() || '';
+          const linkClass = (link as HTMLElement).className?.toLowerCase() || '';
+          if ((linkText.includes('다음') || linkText.includes('next') || linkText.includes('>') || linkClass.includes('next')) && !nextPageLink) {
+            nextPageLink = link as HTMLAnchorElement;
+          }
+          
+          // "마지막 페이지" 링크 확인
+          if ((linkText.includes('마지막') || linkText.includes('last') || linkText.includes('끝') || linkClass.includes('last')) && !lastPageLink) {
+            lastPageLink = link as HTMLAnchorElement;
+          }
+        }
+
+        if (pageNumbers.size > 0) {
+          result.pageLinks = Array.from(pageNumbers).sort((a, b) => a - b);
+          result.currentPageNumber = Math.min(...result.pageLinks);
+          const maxLinkPage = Math.max(...result.pageLinks);
+          
+          // 마지막 페이지 링크가 있으면 그 링크의 페이지 번호를 사용
+          if (lastPageLink) {
+            const lastPageHref = lastPageLink.href;
+            const lastPageMatch = lastPageHref.match(/[?&]page=(\d+)/);
+            if (lastPageMatch) {
+              const lastPageNum = parseInt(lastPageMatch[1], 10);
+              if (!isNaN(lastPageNum) && lastPageNum > 0 && lastPageNum < 10000) {
+                result.lastPageNumber = lastPageNum;
+                console.log(`[NaverAdsPagination] 마지막 페이지 링크에서 발견: ${result.lastPageNumber}`);
+                result.extractedNumbers = result.pageLinks;
+                result.paginationText = `페이지 링크에서 발견: ${result.pageLinks.join(', ')}, 마지막 페이지: ${result.lastPageNumber}`;
+                return result;
+              }
+            }
+          }
+          
+          // "다음 페이지" 링크가 있으면 더 많은 페이지가 있을 수 있음
+          // 하지만 정확한 전체 페이지 수를 알 수 없으므로, 링크의 최대값을 사용하되 경고
+          if (nextPageLink) {
+            console.warn(`[NaverAdsPagination] "다음 페이지" 링크가 있지만 전체 페이지 수를 정확히 알 수 없음. 링크의 최대값(${maxLinkPage})을 사용합니다.`);
+            // "다음 페이지" 링크의 href에서 페이지 번호를 확인해볼 수 있음
+            const nextPageHref = nextPageLink.href;
+            const nextPageMatch = nextPageHref.match(/[?&]page=(\d+)/);
+            if (nextPageMatch) {
+              const nextPageNum = parseInt(nextPageMatch[1], 10);
+              if (!isNaN(nextPageNum) && nextPageNum > maxLinkPage) {
+                // 다음 페이지 번호가 현재 최대값보다 크면, 전체 페이지 수는 그보다 클 수 있음
+                // 하지만 정확히 알 수 없으므로 보수적으로 추정
+                console.warn(`[NaverAdsPagination] 다음 페이지 번호(${nextPageNum})가 현재 최대값(${maxLinkPage})보다 큼. 전체 페이지 수는 ${nextPageNum} 이상일 수 있습니다.`);
+              }
+            }
+          }
+          
+          result.lastPageNumber = maxLinkPage;
+          result.extractedNumbers = result.pageLinks;
+          result.paginationText = `페이지 링크에서 발견: ${result.pageLinks.join(', ')}`;
+          console.log(`[NaverAdsPagination] 페이지 링크에서 발견: ${result.pageLinks.length}개 (${result.pageLinks[0]}~${result.pageLinks[result.pageLinks.length - 1]})`);
+          return result;
         }
 
         // 5. "이전 페이지 1 2 3 4 5 다음 페이지" 패턴 찾기
