@@ -342,7 +342,11 @@ export class NaverAdsPaginationStrategy {
         const maxLinkPage = Math.max(...paginationData.pageLinks);
         
         // "X/Y" 패턴을 찾지 못했고 "다음 페이지" 링크가 있으면, 다음 페이지로 이동하여 추적
-        if (!paginationData.lastPageNumber && paginationData.nextPageLink) {
+        // lastPageNumber가 링크의 최대값으로만 설정되어 있으면 (즉, "X/Y" 패턴에서 찾지 못한 경우) 추적
+        const isFromLinkMax = paginationData.lastPageNumber === maxLinkPage;
+        
+        if (isFromLinkMax && paginationData.nextPageLink) {
+          console.log(`🔍 [NaverAdsPagination] "다음 페이지" 링크 추적 시작 (현재 최대값: ${maxLinkPage})...`);
           console.log(`🔍 [NaverAdsPagination] "다음 페이지" 링크 추적 시작...`);
           
           let lastPageFound = maxLinkPage;
