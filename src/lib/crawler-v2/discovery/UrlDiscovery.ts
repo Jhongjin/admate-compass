@@ -1421,13 +1421,22 @@ export class UrlDiscovery {
                 waitUntil: 'networkidle2',
                 timeout: config.timeout || 60000,
               });
-              await new Promise(resolve => setTimeout(resolve, 2000)); // 페이지 안정화 대기
+              await new Promise(resolve => setTimeout(resolve, 3000)); // 페이지 안정화 대기 (동적 콘텐츠 로드를 위해 증가)
 
-              // 스크롤을 내려서 동적 콘텐츠 로드 (FAQ 링크가 동적으로 로드될 수 있음)
+              // 스크롤을 여러 번 내려서 동적 콘텐츠 로드 (FAQ 링크가 동적으로 로드될 수 있음)
+              for (let scrollStep = 0; scrollStep < 3; scrollStep++) {
+                await paginationPage.evaluate((step) => {
+                  const scrollHeight = document.body.scrollHeight;
+                  const scrollPosition = (step + 1) * (scrollHeight / 3);
+                  window.scrollTo(0, scrollPosition);
+                }, scrollStep);
+                await new Promise(resolve => setTimeout(resolve, 500)); // 각 스크롤 후 대기
+              }
+              // 마지막으로 맨 아래로 스크롤
               await paginationPage.evaluate(() => {
                 window.scrollTo(0, document.body.scrollHeight);
               });
-              await new Promise(resolve => setTimeout(resolve, 1000)); // 스크롤 후 대기
+              await new Promise(resolve => setTimeout(resolve, 1000)); // 최종 스크롤 후 대기
 
               // FAQ 링크 추출 (Naver Ads FAQ 페이지의 링크 패턴: /help/faq/{id})
               // 더 정확한 선택자 사용: FAQ 리스트 영역을 우선적으로 찾기

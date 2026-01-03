@@ -123,7 +123,9 @@ export class NaverAdsPaginationStrategy {
         // 주의: "529/35" 같은 경우 529는 무시하고 35만 사용
         // 더 유연한 패턴: 공백이 없어도 됨 (예: "529/35", "1/35", "1 / 35")
         // 다양한 패턴 시도: "X/Y", "X of Y", "X 페이지 중 Y", "X페이지/Y페이지"
+        // "이전 페이지1/3다음 페이지" 같은 패턴도 찾기
         const rangePatterns = [
+          /(?:이전|prev|previous)[\s\S]*?(\d+)\s*\/\s*(\d+)[\s\S]*?(?:다음|next)/i,  // "이전 페이지1/3다음 페이지"
           /(\d+)\s*\/\s*(\d+)/g,  // "1/35", "529/35"
           /(\d+)\s+of\s+(\d+)/gi,  // "1 of 35"
           /(\d+)\s*페이지\s*중\s*(\d+)/g,  // "1 페이지 중 35"
@@ -136,7 +138,10 @@ export class NaverAdsPaginationStrategy {
           const matches = Array.from(searchText.matchAll(pattern));
           if (matches.length > 0) {
             rangeMatches.push(...matches);
-            break; // 첫 번째로 매치된 패턴 사용
+            // "이전 페이지1/3다음 페이지" 패턴을 우선 사용
+            if (pattern.source.includes('이전') || pattern.source.includes('prev')) {
+              break; // 이 패턴을 찾으면 즉시 사용
+            }
           }
         }
         
@@ -338,6 +343,13 @@ export class NaverAdsPaginationStrategy {
       console.log(`🔍 [NaverAdsPagination] 추출된 데이터:`, paginationData);
       
       // 2단계: "다음 페이지" 링크가 있고 "X/Y" 패턴을 찾지 못한 경우, 다음 페이지로 이동하여 추적
+      // 중요: "X/Y" 패턴을 찾았으면 "다음 페이지" 링크 추적을 하지 않음 (이미 정확한 전체 페이지 수를 알고 있음)
+      const hasXYPattern = paginationData.lastPageNumber && 
+                           paginationData.currentPageNumber && 
+                           paginationData.lastPageNumber > paginationData.currentPageNumber &&
+                           paginationData.lastPageNumber < 10000 && // 비정상적으로 큰 값 제외
+                           paginationData.lastPageNumber <= 100; // 합리적인 범위 내 (100페이지 이하)
+      
       if (paginationData.pageLinks && paginationData.pageLinks.length > 0) {
         const maxLinkPage = Math.max(...paginationData.pageLinks);
         
@@ -345,7 +357,8 @@ export class NaverAdsPaginationStrategy {
         // lastPageNumber가 링크의 최대값으로만 설정되어 있으면 (즉, "X/Y" 패턴에서 찾지 못한 경우) 추적
         const isFromLinkMax = paginationData.lastPageNumber === maxLinkPage;
         
-        if (isFromLinkMax && paginationData.nextPageLink) {
+        // "X/Y" 패턴을 찾지 않았을 때만 "다음 페이지" 링크 추적 실행
+        if (!hasXYPattern && isFromLinkMax && paginationData.nextPageLink) {
           console.log(`🔍 [NaverAdsPagination] "다음 페이지" 링크 추적 시작 (현재 최대값: ${maxLinkPage})...`);
           console.log(`🔍 [NaverAdsPagination] "다음 페이지" 링크 추적 시작...`);
           
