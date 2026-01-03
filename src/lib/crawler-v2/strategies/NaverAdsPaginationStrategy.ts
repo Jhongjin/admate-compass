@@ -125,7 +125,7 @@ export class NaverAdsPaginationStrategy {
         // 다양한 패턴 시도: "X/Y", "X of Y", "X 페이지 중 Y", "X페이지/Y페이지"
         // "이전 페이지1/3다음 페이지" 같은 패턴도 찾기
         const rangePatterns = [
-          /(?:이전|prev|previous)[\s\S]*?(\d+)\s*\/\s*(\d+)[\s\S]*?(?:다음|next)/i,  // "이전 페이지1/3다음 페이지"
+          /(?:이전|prev|previous)[\s\S]*?(\d+)\s*\/\s*(\d+)[\s\S]*?(?:다음|next)/gi,  // "이전 페이지1/3다음 페이지" (g 플래그 추가)
           /(\d+)\s*\/\s*(\d+)/g,  // "1/35", "529/35"
           /(\d+)\s+of\s+(\d+)/gi,  // "1 of 35"
           /(\d+)\s*페이지\s*중\s*(\d+)/g,  // "1 페이지 중 35"
