@@ -125,12 +125,13 @@ export class NaverAdsPaginationStrategy {
         // 다양한 패턴 시도: "X/Y", "X of Y", "X 페이지 중 Y", "X페이지/Y페이지"
         // "이전 페이지1/3다음 페이지" 같은 패턴도 찾기
         const rangePatterns = [
-          /(?:이전|prev|previous)[\s\S]*?(\d+)\s*\/\s*(\d+)[\s\S]*?(?:다음|next)/gi,  // "이전 페이지1/3다음 페이지" (g 플래그 추가)
-          /(\d+)\s*\/\s*(\d+)/g,  // "1/35", "529/35"
+          /(?:이전|prev|previous)[\s\S]*?페이지\s*(\d+)\s*\/\s*(\d+)[\s\S]*?(?:다음|next)/gi,  // "이전 페이지1/35다음 페이지" (페이지 단어 포함)
+          /(?:이전|prev|previous)[\s\S]*?(\d+)\s*\/\s*(\d+)[\s\S]*?(?:다음|next)/gi,  // "이전 페이지1/3다음 페이지" (페이지 단어 없어도 됨)
+          /페이지\s*(\d+)\s*\/\s*(\d+)/g,  // "페이지 1/35" (우선순위 높임)
+          /(\d+)\s*\/\s*(\d+)/g,  // "1/35", "529/35" (일반 패턴)
           /(\d+)\s+of\s+(\d+)/gi,  // "1 of 35"
           /(\d+)\s*페이지\s*중\s*(\d+)/g,  // "1 페이지 중 35"
           /(\d+)\s*페이지\s*\/\s*(\d+)\s*페이지/g,  // "1페이지/35페이지"
-          /페이지\s*(\d+)\s*\/\s*(\d+)/g,  // "페이지 1/35"
         ];
         
         let rangeMatches: RegExpMatchArray[] = [];
@@ -138,11 +139,18 @@ export class NaverAdsPaginationStrategy {
           const matches = Array.from(searchText.matchAll(pattern));
           if (matches.length > 0) {
             rangeMatches.push(...matches);
+            console.log(`[NaverAdsPagination] "X/Y" 패턴 발견: ${matches.length}개 매치, 패턴: ${pattern.source}`);
             // "이전 페이지1/3다음 페이지" 패턴을 우선 사용
             if (pattern.source.includes('이전') || pattern.source.includes('prev')) {
+              console.log(`[NaverAdsPagination] "이전/다음" 패턴 발견, 즉시 사용`);
               break; // 이 패턴을 찾으면 즉시 사용
             }
           }
+        }
+        
+        // 디버깅: "X/Y" 패턴을 찾지 못한 경우
+        if (rangeMatches.length === 0) {
+          console.warn(`[NaverAdsPagination] "X/Y" 패턴을 찾지 못함. 검색 텍스트 샘플: ${searchText.substring(0, 200)}`);
         }
         
         
