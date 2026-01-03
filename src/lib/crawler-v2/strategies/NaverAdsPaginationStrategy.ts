@@ -151,6 +151,8 @@ export class NaverAdsPaginationStrategy {
         // 디버깅: "X/Y" 패턴을 찾지 못한 경우
         if (rangeMatches.length === 0) {
           console.warn(`[NaverAdsPagination] "X/Y" 패턴을 찾지 못함. 검색 텍스트 샘플: ${searchText.substring(0, 200)}`);
+          // "X/Y" 패턴을 찾지 못했다는 플래그 설정
+          result.paginationText = 'NO_XY_PATTERN:' + result.paginationText;
         }
         
         
@@ -352,11 +354,16 @@ export class NaverAdsPaginationStrategy {
       
       // 2단계: "다음 페이지" 링크가 있고 "X/Y" 패턴을 찾지 못한 경우, 다음 페이지로 이동하여 추적
       // 중요: "X/Y" 패턴을 찾았으면 "다음 페이지" 링크 추적을 하지 않음 (이미 정확한 전체 페이지 수를 알고 있음)
-      const hasXYPattern = paginationData.lastPageNumber && 
+      // "X/Y" 패턴을 찾았는지 확인: paginationText에 "NO_XY_PATTERN:" 접두사가 없으면 찾은 것
+      const hasXYPattern = paginationData.paginationText && 
+                           !paginationData.paginationText.startsWith('NO_XY_PATTERN:') &&
+                           paginationData.lastPageNumber && 
                            paginationData.currentPageNumber && 
                            paginationData.lastPageNumber > paginationData.currentPageNumber &&
                            paginationData.lastPageNumber < 10000 && // 비정상적으로 큰 값 제외
                            paginationData.lastPageNumber <= 100; // 합리적인 범위 내 (100페이지 이하)
+      
+      console.log(`🔍 [NaverAdsPagination] "X/Y" 패턴 찾음 여부: ${hasXYPattern}, paginationText 시작: ${paginationData.paginationText?.substring(0, 50)}`);
       
       if (paginationData.pageLinks && paginationData.pageLinks.length > 0) {
         const maxLinkPage = Math.max(...paginationData.pageLinks);
@@ -364,6 +371,8 @@ export class NaverAdsPaginationStrategy {
         // "X/Y" 패턴을 찾지 못했고 "다음 페이지" 링크가 있으면, 다음 페이지로 이동하여 추적
         // lastPageNumber가 링크의 최대값으로만 설정되어 있으면 (즉, "X/Y" 패턴에서 찾지 못한 경우) 추적
         const isFromLinkMax = paginationData.lastPageNumber === maxLinkPage;
+        
+        console.log(`🔍 [NaverAdsPagination] 다음 페이지 링크 추적 조건: hasXYPattern=${hasXYPattern}, isFromLinkMax=${isFromLinkMax}, nextPageLink=${!!paginationData.nextPageLink}`);
         
         // "X/Y" 패턴을 찾지 않았을 때만 "다음 페이지" 링크 추적 실행
         if (!hasXYPattern && isFromLinkMax && paginationData.nextPageLink) {
