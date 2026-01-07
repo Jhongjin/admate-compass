@@ -252,7 +252,9 @@ export class NaverAdsPaginationStrategy {
                 result.lastPageNumber = lastPageNum;
                 console.log(`[NaverAdsPagination] 마지막 페이지 링크에서 발견: ${result.lastPageNumber}`);
                 result.extractedNumbers = result.pageLinks;
-                result.paginationText = `페이지 링크에서 발견: ${result.pageLinks.join(', ')}, 마지막 페이지: ${result.lastPageNumber}`;
+                // NO_XY_PATTERN 접두사가 있으면 유지
+                const prefix = result.paginationText.startsWith('NO_XY_PATTERN:') ? 'NO_XY_PATTERN:' : '';
+                result.paginationText = prefix + `페이지 링크에서 발견: ${result.pageLinks.join(', ')}, 마지막 페이지: ${result.lastPageNumber}`;
                 return result;
               }
             }
@@ -277,7 +279,9 @@ export class NaverAdsPaginationStrategy {
           // Phase 2에서 "다음 페이지" 링크를 클릭하여 마지막 페이지까지 추적할 예정
           result.lastPageNumber = maxLinkPage;
           result.extractedNumbers = result.pageLinks;
-          result.paginationText = `페이지 링크에서 발견: ${result.pageLinks.join(', ')}`;
+          // NO_XY_PATTERN 접두사가 있으면 유지
+          const prefix = result.paginationText.startsWith('NO_XY_PATTERN:') ? 'NO_XY_PATTERN:' : '';
+          result.paginationText = prefix + `페이지 링크에서 발견: ${result.pageLinks.join(', ')}`;
           console.log(`[NaverAdsPagination] 페이지 링크에서 발견: ${result.pageLinks.length}개 (${result.pageLinks[0]}~${result.pageLinks[result.pageLinks.length - 1]})`);
           return result;
         }
@@ -313,7 +317,9 @@ export class NaverAdsPaginationStrategy {
             // 하지만 실제 마지막 페이지를 정확히 알 수 없으므로, 최대값을 사용
             // (추가 로직: "X/Y" 패턴과 함께 사용하면 더 정확함)
             result.lastPageNumber = maxNumber;
-            result.paginationText = pageListMatch[0];
+            // NO_XY_PATTERN 접두사가 있으면 유지
+            const prefix = result.paginationText.startsWith('NO_XY_PATTERN:') ? 'NO_XY_PATTERN:' : '';
+            result.paginationText = prefix + pageListMatch[0];
             console.log(`[NaverAdsPagination] 페이지 리스트 패턴에서 발견: ${result.currentPageNumber}~${result.lastPageNumber} (연속된 숫자 패턴)`);
             return result;
           }
