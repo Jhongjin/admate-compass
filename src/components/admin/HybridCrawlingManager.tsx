@@ -2557,39 +2557,35 @@ export default function HybridCrawlingManager({
 
       {/* 타임아웃 경고 Alert */}
       {timeoutWarning?.show && (
-        <Alert className="bg-gradient-to-r from-yellow-500/20 via-orange-500/20 to-red-500/20 border-2 border-dashed border-yellow-500/50 text-yellow-100 mb-6 shadow-lg shadow-yellow-500/20">
-          <AlertTriangle className="h-6 w-6 text-yellow-400 animate-pulse" />
-          <AlertTitle className="text-yellow-200 font-bold text-lg mb-3 flex items-center gap-2">
-            <span>⚠️</span>
-            <span>타임아웃 위험 경고</span>
+        <Alert className="bg-[#1A1F2C] border border-amber-700/30 text-gray-100 mb-6 shadow-xl">
+          <AlertTriangle className="h-5 w-5 text-amber-400" />
+          <AlertTitle className="text-amber-300 font-semibold text-base mb-2">
+            타임아웃 위험 경고
           </AlertTitle>
-          <AlertDescription className="space-y-3">
-            <p className="text-base text-yellow-100/95 font-medium leading-relaxed">
+          <AlertDescription className="space-y-2 leading-relaxed">
+            <p className="text-sm text-gray-300">
               {timeoutWarning.message}
             </p>
-            <div className="mt-4 p-4 bg-black/20 rounded-lg space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-semibold text-yellow-200">발견된 URL:</span>
-                <Badge variant="outline" className="bg-yellow-500/30 border-yellow-500/70 text-yellow-100 text-base px-3 py-1 font-bold">
+            <div className="mt-2 flex items-center gap-4 text-xs">
+              <div className="flex items-center gap-2">
+                <span className="text-gray-400">발견된 URL:</span>
+                <Badge variant="outline" className="bg-amber-900/20 border-amber-700/30 text-amber-200">
                   {timeoutWarning.discoveredCount}개
                 </Badge>
               </div>
-              <div className="flex items-center justify-between">
-                <span className="text-sm font-semibold text-green-200">안정적 크롤링 가능:</span>
-                <Badge variant="outline" className="bg-green-500/30 border-green-500/70 text-green-100 text-base px-3 py-1 font-bold">
+              <div className="flex items-center gap-2">
+                <span className="text-gray-400">안정적 크롤링 가능:</span>
+                <Badge variant="outline" className="bg-amber-900/20 border-amber-700/30 text-amber-200">
                   {timeoutWarning.safeCrawlableCount}개
                 </Badge>
               </div>
             </div>
-            <p className="text-sm text-yellow-200/80 mt-4 leading-relaxed">
-              현재 설정으로는 일부만 처리되고 타임아웃될 수 있습니다. 안정적으로 크롤링하려면 URL 개수를 줄이거나 여러 번에 나누어 크롤링하는 것을 권장합니다.
-            </p>
-            <div className="flex justify-end mt-4">
+            <div className="flex justify-end mt-3">
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => setTimeoutWarning(null)}
-                className="border-yellow-500/70 text-yellow-200 hover:bg-yellow-500/30 hover:text-yellow-100 font-medium"
+                className="border-gray-600 text-gray-300 hover:bg-gray-700/50 transition-colors"
               >
                 닫기
               </Button>
