@@ -445,27 +445,13 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                 
                 console.warn('⚠️ 크롤러 경고:', warningMessage);
                 
-                // Alert 박스로 표시
+                // Alert 박스로만 표시 (Toast 제거)
                 setTimeoutWarning({
                   show: true,
                   discoveredCount,
                   safeCrawlableCount: safeCount,
                   message: warningMessage,
                 });
-                
-                // Toast로도 표시 (세련되고 심플한 스타일)
-                toast.warning(
-                  `타임아웃 위험: ${discoveredCount}개 발견, 안정적 크롤링 가능 ${safeCount}개`,
-                  {
-                    duration: 8000,
-                    className: 'bg-amber-900/20 border-amber-700/30 text-amber-100',
-                    description: '상세 내용은 경고 박스를 확인하세요.',
-                    action: {
-                      label: "확인",
-                      onClick: () => setTimeoutWarning(null),
-                    },
-                  }
-                );
               } else if (event.type === 'batch_progress') {
                 if (event.result) {
                   // discoveredUrls에서 제목 찾아서 덮어쓰기
