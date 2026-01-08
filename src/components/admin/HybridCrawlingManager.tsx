@@ -1018,9 +1018,12 @@ export default function HybridCrawlingManager({
             } else if (data.type === 'log') {
               // 로그 메시지 표시
               console.log('📝 크롤러 로그:', data.message);
-              // 중요 메시지는 toast로 표시
+              // 중요 메시지는 toast로 표시 (심플한 스타일)
               if (data.message.includes('⚠️') || data.message.includes('경고') || data.message.includes('위험')) {
-                toast.warning(data.message, { duration: 10000 });
+                toast.warning(data.message, { 
+                  duration: 6000,
+                  className: 'bg-amber-900/20 border-amber-700/30 text-amber-100',
+                });
               }
             } else if (data.type === 'warning') {
               // 타임아웃 경고 메시지 (명확한 Alert 박스로 표시)
@@ -1038,15 +1041,16 @@ export default function HybridCrawlingManager({
                 message: warningMessage,
               });
               
-              // Toast로도 표시 (명확한 메시지와 함께)
+              // Toast로도 표시 (세련되고 심플한 스타일)
               toast.warning(
-                `타임아웃 위험: 발견된 URL ${discoveredCount}개, 안정적 크롤링 가능 ${safeCount}개`,
+                `타임아웃 위험: ${discoveredCount}개 발견, 안정적 크롤링 가능 ${safeCount}개`,
                 {
-                  duration: 20000,
-                  description: '상세 내용은 경고 박스를 확인해주세요.',
+                  duration: 8000,
+                  className: 'bg-amber-900/20 border-amber-700/30 text-amber-100',
+                  description: '상세 내용은 경고 박스를 확인하세요.',
                   action: {
                     label: '확인',
-                    onClick: () => {},
+                    onClick: () => setTimeoutWarning(null),
                   },
                 }
               );

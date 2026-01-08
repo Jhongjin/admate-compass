@@ -430,9 +430,12 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
               const event = JSON.parse(line);
               if (event.type === 'log') {
                 setStatusMessage(event.message);
-                // 중요 메시지는 toast로 표시
+                // 중요 메시지는 toast로 표시 (심플한 스타일)
                 if (event.message.includes('⚠️') || event.message.includes('경고') || event.message.includes('위험') || event.message.includes('타임아웃')) {
-                  toast.warning(event.message, { duration: 10000 });
+                  toast.warning(event.message, { 
+                    duration: 6000,
+                    className: 'bg-amber-900/20 border-amber-700/30 text-amber-100',
+                  });
                 }
               } else if (event.type === 'warning') {
                 // 타임아웃 경고 메시지 (명확한 Alert 박스로 표시)
@@ -450,11 +453,13 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                   message: warningMessage,
                 });
                 
-                // Toast로도 표시 (명확한 메시지와 함께)
+                // Toast로도 표시 (세련되고 심플한 스타일)
                 toast.warning(
-                  `⚠️ 타임아웃 경고: ${discoveredCount}개 발견, 안정적 크롤링 가능 ${safeCount}개. 상세 내용은 경고 박스를 확인하세요.`,
+                  `타임아웃 위험: ${discoveredCount}개 발견, 안정적 크롤링 가능 ${safeCount}개`,
                   {
-                    duration: 20000,
+                    duration: 8000,
+                    className: 'bg-amber-900/20 border-amber-700/30 text-amber-100',
+                    description: '상세 내용은 경고 박스를 확인하세요.',
                     action: {
                       label: "확인",
                       onClick: () => setTimeoutWarning(null),

@@ -86,7 +86,18 @@ export default function RootLayout({
         <Providers>
           {children}
           <Toaster />
-          <SonnerToaster position="top-right" richColors />
+          <SonnerToaster 
+            position="top-right" 
+            theme="dark"
+            toastOptions={{
+              className: 'bg-[#1A1F2C] border border-gray-700/50 text-gray-100 shadow-xl',
+              style: {
+                background: '#1A1F2C',
+                border: '1px solid rgba(55, 65, 81, 0.5)',
+                color: '#F3F4F6',
+              },
+            }}
+          />
         </Providers>
         <Analytics />
         <SpeedInsights />
