@@ -1330,6 +1330,48 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
               </div>
             </div>
 
+            {/* 타임아웃 경고 Alert 박스 */}
+            {timeoutWarning?.show && (
+              <Alert className="bg-gradient-to-r from-yellow-600 via-orange-600 to-red-600 border-2 border-dashed border-white/50 text-white mb-6 animate-fade-in">
+                <AlertTriangle className="h-6 w-6 text-white animate-pulse" />
+                <AlertTitle className="text-white font-bold text-lg mb-2 flex items-center gap-2">
+                  ⚠️ 타임아웃 위험 경고
+                </AlertTitle>
+                <AlertDescription className="space-y-3 leading-relaxed">
+                  <p className="text-base text-white/90">
+                    {timeoutWarning.message}
+                  </p>
+                  <div className="mt-3 space-y-2 text-sm">
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold">발견된 URL:</span>
+                      <Badge variant="outline" className="bg-white/20 border-white/30 text-white">
+                        {timeoutWarning.discoveredCount}개
+                      </Badge>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-semibold">안정적 크롤링 가능:</span>
+                      <Badge variant="outline" className="bg-white/20 border-white/30 text-white">
+                        {timeoutWarning.safeCrawlableCount}개
+                      </Badge>
+                    </div>
+                  </div>
+                  <p className="text-xs text-white/80 mt-3">
+                    현재 설정으로는 일부만 처리되고 타임아웃될 수 있습니다. 안정적으로 크롤링하려면 URL 개수를 줄이거나 여러 번에 나누어 크롤링하는 것을 권장합니다.
+                  </p>
+                  <div className="flex justify-end">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setTimeoutWarning(null)}
+                      className="mt-4 border-white/50 text-white hover:bg-white/20 transition-colors"
+                    >
+                      닫기
+                    </Button>
+                  </div>
+                </AlertDescription>
+              </Alert>
+            )}
+
             <div className="mt-8 w-full max-w-sm">
               <Button
                 onClick={handleCrawl}
