@@ -9,6 +9,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Loader2, Play, CheckCircle, XCircle, Globe, Save, RefreshCw, ExternalLink, Link, AlertTriangle, Pencil, Check, X, CheckCircle2, Trash2 } from 'lucide-react';
 import { toast } from 'sonner';
+import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
 import {
   Dialog,
   DialogContent,
@@ -235,6 +236,12 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
   const [existingDbMap, setExistingDbMap] = useState<Map<string, string>>(new Map());
   const [dialogDbMap, setDialogDbMap] = useState<Map<string, string>>(new Map()); // 다이얼로그 전용 DB Map
   const [statusMessage, setStatusMessage] = useState<string>("크롤링 중...");
+  const [timeoutWarning, setTimeoutWarning] = useState<{
+    show: boolean;
+    message: string;
+    discoveredCount: number;
+    safeCrawlableCount: number;
+  } | null>(null);
 
 
   // --- Effects ---
@@ -423,6 +430,37 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
               const event = JSON.parse(line);
               if (event.type === 'log') {
                 setStatusMessage(event.message);
+                // 중요 메시지는 toast로 표시
+                if (event.message.includes('⚠️') || event.message.includes('경고') || event.message.includes('위험') || event.message.includes('타임아웃')) {
+                  toast.warning(event.message, { duration: 10000 });
+                }
+              } else if (event.type === 'warning') {
+                // 타임아웃 경고 메시지 (명확한 Alert 박스로 표시)
+                const warningMessage = event.message || '타임아웃 위험이 감지되었습니다.';
+                const discoveredCount = event.discoveredCount || 0;
+                const safeCount = event.safeCrawlableCount || 0;
+                
+                console.warn('⚠️ 크롤러 경고:', warningMessage);
+                
+                // Alert 박스로 표시
+                setTimeoutWarning({
+                  show: true,
+                  discoveredCount,
+                  safeCrawlableCount: safeCount,
+                  message: warningMessage,
+                });
+                
+                // Toast로도 표시 (명확한 메시지와 함께)
+                toast.warning(
+                  `⚠️ 타임아웃 경고: ${discoveredCount}개 발견, 안정적 크롤링 가능 ${safeCount}개. 상세 내용은 경고 박스를 확인하세요.`,
+                  {
+                    duration: 20000,
+                    action: {
+                      label: "확인",
+                      onClick: () => setTimeoutWarning(null),
+                    },
+                  }
+                );
               } else if (event.type === 'batch_progress') {
                 if (event.result) {
                   // discoveredUrls에서 제목 찾아서 덮어쓰기
