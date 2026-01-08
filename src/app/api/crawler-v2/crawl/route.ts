@@ -13,7 +13,8 @@ import { crawlerEngine, browserManager } from '@/lib/crawler-v2';
 import type { CrawlOptions, CrawlProgress } from '@/lib/crawler-v2';
 
 export const runtime = 'nodejs';
-export const maxDuration = 800; // 13.3분 (Vercel Pro 플랜 최대값, Pagination 모드에서 많은 URL 크롤링 시 필요)
+export const maxDuration = 300; // 5분 (Vercel Pro 플랜 실제 최대값)
+// 참고: 223개 FAQ 크롤링은 약 18-19분 소요되므로, 큐 시스템 사용 권장
 
 /**
  * POST /api/crawler-v2/crawl
