@@ -357,39 +357,20 @@ export class CrawlerEngine {
 
       console.log(`✅ [Pagination Mode] ${discoveredUrls.length}개 페이지 발견`);
 
-      // 2. 발견된 URL이 임계값 이상이면 배치 크롤링으로 처리
-      // 참고: 큐 시스템(CRAWL_SEED)은 seed URL을 재귀적으로 크롤링하는 방식이므로,
-      // 이미 추출된 개별 FAQ 링크에는 적합하지 않습니다.
-      // 대신 배치 크롤링을 사용하여 타임아웃 없이 처리합니다.
+      // 페이지 발견 직후 타임아웃 위험 체크 및 경고 전송 (배치 크롤링 시작 전)
+      const elapsedForDiscovery = Date.now() - functionStartTime;
+      const SAFETY_MARGIN = 30 * 1000; // 30초 여유
+      const MAX_EXECUTION_TIME = Math.max(60 * 1000, TOTAL_MAX_TIME - elapsedForDiscovery - SAFETY_MARGIN);
+      const AVG_CRAWL_TIME_PER_URL = 15; // 초
+      const CONCURRENCY = Math.min(config.concurrency || 3, 3);
+      const EFFECTIVE_CRAWL_TIME = AVG_CRAWL_TIME_PER_URL / CONCURRENCY;
+      const safeCrawlableCount = Math.floor((MAX_EXECUTION_TIME / 1000) / EFFECTIVE_CRAWL_TIME);
+      const urlsToCrawl = discoveredUrls.map(u => u.url);
+
+      // 타임아웃 위험 경고 (페이지 발견 직후 즉시 전송)
       if (discoveredUrls.length >= QUEUE_THRESHOLD) {
-        console.log(`📦 [Pagination Mode] 발견된 URL이 ${discoveredUrls.length}개로 많아 배치 크롤링으로 처리합니다.`);
-        
-        // 배치 크롤링으로 처리 (타임아웃 방지를 위해 작은 배치로 나누어 처리)
-        // Vercel 함수는 최대 5분(300초) 실행 가능하므로, 페이지 발견 시간을 고려하여 남은 시간 계산
-        const urlsToCrawl = discoveredUrls.map(u => u.url);
-        const elapsedForDiscovery = Date.now() - functionStartTime;
-        const SAFETY_MARGIN = 30 * 1000; // 30초 여유
-        const MAX_EXECUTION_TIME = Math.max(60 * 1000, TOTAL_MAX_TIME - elapsedForDiscovery - SAFETY_MARGIN); // 남은 시간 - 여유 시간
-        const startTime = Date.now(); // 배치 크롤링 시작 시간
-        const BATCH_SIZE = 20; // 한 번에 처리할 URL 수 (타임아웃 방지를 위해 적절히 설정)
-        
-        // 평균 URL 크롤링 시간 (초) - 경험치 기반
-        const AVG_CRAWL_TIME_PER_URL = 15; // 초
-        const CONCURRENCY = Math.min(config.concurrency || 3, 3);
-        const EFFECTIVE_CRAWL_TIME = AVG_CRAWL_TIME_PER_URL / CONCURRENCY; // 병렬 처리 고려
-        
-        // 안정적으로 크롤링 가능한 URL 개수 계산
-        const safeCrawlableCount = Math.floor((MAX_EXECUTION_TIME / 1000) / EFFECTIVE_CRAWL_TIME);
-        
-        console.log(`⏱️ [Pagination Mode] 타임아웃 정보: 페이지 발견 ${Math.round(elapsedForDiscovery / 1000)}초 소요, 남은 시간 ${Math.round(MAX_EXECUTION_TIME / 1000)}초 (전체: ${Math.round(TOTAL_MAX_TIME / 1000)}초)`);
-        console.log(`📊 [Pagination Mode] 안정적 크롤링 가능 개수: ${safeCrawlableCount}개 (현재: ${urlsToCrawl.length}개)`);
-        
-        // 타임아웃 위험 경고 (즉시 전송 - 배치 크롤링 시작 전)
         if (MAX_EXECUTION_TIME < 60 * 1000) {
-          const warningMessage = `⚠️ [Pagination Mode] 남은 시간이 매우 부족합니다 (${Math.round(MAX_EXECUTION_TIME / 1000)}초). 타임아웃이 발생할 가능성이 높습니다.`;
-          console.warn(warningMessage);
-          
-          // 경고 메시지를 여러 번 전송하여 확실히 전달
+          // 남은 시간이 매우 부족한 경우
           if (onProgress) {
             onProgress({
               type: 'warning',
@@ -397,18 +378,14 @@ export class CrawlerEngine {
               discoveredCount: urlsToCrawl.length,
               safeCrawlableCount: safeCrawlableCount,
             });
-            // 추가로 log 타입으로도 전송 (이중 전송)
+            // 추가로 log 타입으로도 전송
             onProgress({
               type: 'log',
               message: `⚠️ 타임아웃 경고: 발견된 URL이 ${urlsToCrawl.length}개로 많아 Vercel 타임아웃(5분)에 걸릴 가능성이 매우 높습니다. 안정적으로 크롤링하려면 약 ${safeCrawlableCount}개 이내로 제한하는 것을 강력히 권장합니다.`,
             });
           }
         } else if (urlsToCrawl.length > safeCrawlableCount * 1.5) {
-          // 안정적 개수보다 1.5배 이상 많으면 경고
-          const warningMessage = `⚠️ [Pagination Mode] 발견된 URL(${urlsToCrawl.length}개)이 안정적 크롤링 가능 개수(${safeCrawlableCount}개)보다 많습니다.`;
-          console.warn(warningMessage);
-          
-          // 경고 메시지를 여러 번 전송하여 확실히 전달
+          // 안정적 개수보다 1.5배 이상 많은 경우
           if (onProgress) {
             onProgress({
               type: 'warning',
@@ -416,13 +393,23 @@ export class CrawlerEngine {
               discoveredCount: urlsToCrawl.length,
               safeCrawlableCount: safeCrawlableCount,
             });
-            // 추가로 log 타입으로도 전송 (이중 전송)
+            // 추가로 log 타입으로도 전송
             onProgress({
               type: 'log',
               message: `⚠️ 타임아웃 위험: 발견된 URL이 ${urlsToCrawl.length}개로 많습니다. 안정적으로 크롤링하려면 약 ${safeCrawlableCount}개 이내로 제한하는 것을 권장합니다.`,
             });
           }
         }
+      }
+
+      // 2. 발견된 URL이 임계값 이상이면 배치 크롤링으로 처리
+      // 참고: 큐 시스템(CRAWL_SEED)은 seed URL을 재귀적으로 크롤링하는 방식이므로,
+      // 이미 추출된 개별 FAQ 링크에는 적합하지 않습니다.
+      // 대신 배치 크롤링을 사용하여 타임아웃 없이 처리합니다.
+      if (discoveredUrls.length >= QUEUE_THRESHOLD) {
+        console.log(`📦 [Pagination Mode] 발견된 URL이 ${discoveredUrls.length}개로 많아 배치 크롤링으로 처리합니다.`);
+        console.log(`⏱️ [Pagination Mode] 타임아웃 정보: 페이지 발견 ${Math.round(elapsedForDiscovery / 1000)}초 소요, 남은 시간 ${Math.round(MAX_EXECUTION_TIME / 1000)}초 (전체: ${Math.round(TOTAL_MAX_TIME / 1000)}초)`);
+        console.log(`📊 [Pagination Mode] 안정적 크롤링 가능 개수: ${safeCrawlableCount}개 (현재: ${urlsToCrawl.length}개)`);
         
         if (onProgress) {
           onProgress({
@@ -430,6 +417,10 @@ export class CrawlerEngine {
             message: `⚠️ 발견된 URL이 ${discoveredUrls.length}개로 많습니다 (임계값: ${QUEUE_THRESHOLD}개). 배치 크롤링으로 처리합니다...`,
           });
         }
+        
+        // 배치 크롤링으로 처리 (타임아웃 방지를 위해 작은 배치로 나누어 처리)
+        const startTime = Date.now(); // 배치 크롤링 시작 시간
+        const BATCH_SIZE = 20; // 한 번에 처리할 URL 수 (타임아웃 방지를 위해 적절히 설정)
         
         if (onProgress) {
           onProgress({

@@ -96,7 +96,7 @@ export async function POST(request: NextRequest) {
             return;
           }
           
-          results = await crawlerEngine.crawlWithPagination(urls[0], crawlOptions, (progress) => {
+          results = await crawlerEngine.crawlWithPagination(urls[0], crawlOptions, async (progress) => {
             try {
               // 경고 메시지 전송 (타임아웃 위험 등) - 최우선 처리
               if (progress.type === 'warning') {
@@ -108,14 +108,24 @@ export async function POST(request: NextRequest) {
                   current: progress.current,
                   total: progress.total,
                 }) + '\n';
+                // 스트림이 준비될 때까지 기다린 후 전송
+                await writer.ready;
                 writer.write(encoder.encode(warningData));
-                // 즉시 flush하여 전송 보장
+                // 추가로 log 타입으로도 전송하여 확실히 전달
+                const logData = JSON.stringify({
+                  type: 'log',
+                  message: progress.message,
+                  current: progress.current,
+                  total: progress.total,
+                }) + '\n';
+                await writer.ready;
+                writer.write(encoder.encode(logData));
                 return;
               }
 
               // 진행률 정보 전송
               if (progress.type === 'progress' && progress.progress) {
-                writer.write(
+                await writer.write(
                   encoder.encode(
                     JSON.stringify({
                       type: 'progress',
@@ -133,7 +143,7 @@ export async function POST(request: NextRequest) {
                   current: progress.current,
                   total: progress.total,
                 }) + '\n';
-                writer.write(encoder.encode(logData));
+                await writer.write(encoder.encode(logData));
                 
                 // 경고 키워드가 포함된 경우 warning으로도 전송
                 if (progress.message.includes('⚠️') || progress.message.includes('경고') || progress.message.includes('위험') || progress.message.includes('타임아웃')) {
@@ -143,13 +153,13 @@ export async function POST(request: NextRequest) {
                     current: progress.current,
                     total: progress.total,
                   }) + '\n';
-                  writer.write(encoder.encode(warningData));
+                  await writer.write(encoder.encode(warningData));
                 }
               }
 
               // 배치 진행 상황 전송
               if (progress.type === 'batch_progress') {
-                writer.write(
+                await writer.write(
                   encoder.encode(
                     JSON.stringify({
                       type: 'batch_progress',
@@ -164,7 +174,7 @@ export async function POST(request: NextRequest) {
 
               // 큐 시스템 정보 전송
               if (progress.type === 'queue_info') {
-                writer.write(
+                await writer.write(
                   encoder.encode(
                     JSON.stringify({
                       type: 'queue_info',
