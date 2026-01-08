@@ -137,6 +137,22 @@ export async function POST(request: NextRequest) {
                 )
               );
             }
+
+            // 큐 시스템 정보 전송
+            if (progress.type === 'queue_info') {
+              writer.write(
+                encoder.encode(
+                  JSON.stringify({
+                    type: 'queue_info',
+                    message: progress.message,
+                    current: progress.current,
+                    total: progress.total,
+                    jobIds: progress.jobIds || [],
+                    note: '큐 시스템으로 전환되었습니다. 백그라운드에서 자동으로 처리됩니다. 관리자 페이지에서 진행 상황을 확인할 수 있습니다.',
+                  }) + '\n'
+                )
+              );
+            }
           });
         } else {
           // 일반 모드
