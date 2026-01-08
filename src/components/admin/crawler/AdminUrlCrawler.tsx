@@ -1086,7 +1086,7 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
 
             {/* Options Grid */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-8 w-full max-w-3xl">
-              <div className={`flex flex-col gap-2 p-3 rounded-lg border transition-all ${
+              <div className={`flex flex-col gap-2 p-3 rounded-lg border transition-all min-h-[140px] ${
                 !options.paginationMode && options.discoverSubPages
                   ? 'bg-blue-500/10 border-blue-500/30' 
                   : 'bg-white/5 border-white/5'
@@ -1119,7 +1119,7 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                 )}
               </div>
 
-              <div className={`flex flex-col gap-2 p-3 rounded-lg border transition-all ${
+              <div className={`flex flex-col gap-2 p-3 rounded-lg border transition-all min-h-[140px] ${
                 options.paginationMode 
                   ? 'bg-purple-500/10 border-purple-500/30' 
                   : 'bg-white/5 border-white/5'
@@ -1150,7 +1150,7 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                 )}
               </div>
 
-              <div className={`flex flex-col gap-2 p-3 rounded-lg border ${
+              <div className={`flex flex-col gap-2 p-3 rounded-lg border min-h-[140px] ${
                 options.paginationMode ? 'opacity-50 bg-white/5 border-white/5' : 'bg-white/5 border-white/5'
               }`}>
                 <Label className="text-xs text-gray-400">최대 깊이</Label>
@@ -1186,7 +1186,7 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                 </p>
               </div>
 
-              <div className="flex flex-col gap-2 p-3 rounded-lg bg-white/5 border border-white/5">
+              <div className="flex flex-col gap-2 p-3 rounded-lg bg-white/5 border border-white/5 min-h-[140px]">
                 <Label className="text-xs text-gray-400">최대 페이지 수</Label>
                 <Input
                   type="number"
@@ -1197,7 +1197,7 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                 />
               </div>
 
-              <div className="flex flex-col gap-2 p-3 rounded-lg bg-white/5 border border-white/5">
+              <div className="flex flex-col gap-2 p-3 rounded-lg bg-white/5 border border-white/5 min-h-[140px]">
                 <Label className="text-xs text-gray-400">타임아웃 (ms)</Label>
                 <Input
                   type="number"
@@ -1210,7 +1210,7 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
 
             {/* 고급 옵션 */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4 w-full max-w-3xl">
-              <div className="flex flex-col gap-2 p-3 rounded-lg bg-white/5 border border-white/5">
+              <div className="flex flex-col gap-2 p-3 rounded-lg bg-white/5 border border-white/5 min-h-[120px]">
                 <Label className="text-xs text-gray-400">도메인 제한</Label>
                 <div className="flex items-center gap-2 mt-auto">
                   <Checkbox
@@ -1224,7 +1224,7 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                 <p className="text-[10px] text-gray-500 leading-tight">외부 도메인 링크 제외</p>
               </div>
 
-              <div className="flex flex-col gap-2 p-3 rounded-lg bg-white/5 border border-white/5">
+              <div className="flex flex-col gap-2 p-3 rounded-lg bg-white/5 border border-white/5 min-h-[120px]">
                 <Label className="text-xs text-gray-400">Robots.txt 준수</Label>
                 <div className="flex items-center gap-2 mt-auto">
                   <Checkbox
@@ -1237,7 +1237,7 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                 </div>
               </div>
 
-              <div className="flex flex-col gap-2 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
+              <div className="flex flex-col gap-2 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 min-h-[120px]">
                 <Label className="text-xs text-emerald-400">🚀 크롤러 V2</Label>
                 <div className="flex items-center gap-2 mt-auto">
                   <Checkbox
