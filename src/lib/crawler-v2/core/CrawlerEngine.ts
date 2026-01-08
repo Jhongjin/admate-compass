@@ -309,6 +309,9 @@ export class CrawlerEngine {
       jobIds?: string[];
     }) => void
   ): Promise<CrawlResult[]> {
+    const functionStartTime = Date.now(); // 함수 시작 시간 기록
+    const TOTAL_MAX_TIME = 5 * 60 * 1000; // 전체 최대 시간: 5분 (300초)
+    
     const config: CrawlOptions = {
       discoverSubPages: false, // Pagination 모드에서는 하위 페이지 발견 비활성화
       timeout: 30000,
@@ -367,11 +370,19 @@ export class CrawlerEngine {
         }
 
         // 배치 크롤링으로 처리 (타임아웃 방지를 위해 작은 배치로 나누어 처리)
-        // Vercel 함수는 최대 5분 실행 가능하므로, 4분 경과 시 현재까지의 결과를 반환
+        // Vercel 함수는 최대 5분(300초) 실행 가능하므로, 페이지 발견 시간을 고려하여 남은 시간 계산
         const urlsToCrawl = discoveredUrls.map(u => u.url);
-        const MAX_EXECUTION_TIME = 4 * 60 * 1000; // 4분 (타임아웃 여유를 두기 위해)
-        const startTime = Date.now();
-        const BATCH_SIZE = 10; // 한 번에 처리할 URL 수 (타임아웃 방지를 위해 작게 설정)
+        const elapsedForDiscovery = Date.now() - functionStartTime;
+        const SAFETY_MARGIN = 30 * 1000; // 30초 여유
+        const MAX_EXECUTION_TIME = Math.max(60 * 1000, TOTAL_MAX_TIME - elapsedForDiscovery - SAFETY_MARGIN); // 남은 시간 - 여유 시간
+        const startTime = Date.now(); // 배치 크롤링 시작 시간
+        const BATCH_SIZE = 20; // 한 번에 처리할 URL 수 (타임아웃 방지를 위해 적절히 설정)
+        
+        console.log(`⏱️ [Pagination Mode] 타임아웃 정보: 페이지 발견 ${Math.round(elapsedForDiscovery / 1000)}초 소요, 남은 시간 ${Math.round(MAX_EXECUTION_TIME / 1000)}초 (전체: ${Math.round(TOTAL_MAX_TIME / 1000)}초)`);
+        
+        if (MAX_EXECUTION_TIME < 60 * 1000) {
+          console.warn(`⚠️ [Pagination Mode] 남은 시간이 부족합니다 (${Math.round(MAX_EXECUTION_TIME / 1000)}초). 타임아웃이 발생할 수 있습니다.`);
+        }
         
         if (onProgress) {
           onProgress({
