@@ -378,10 +378,39 @@ export class CrawlerEngine {
         const startTime = Date.now(); // 배치 크롤링 시작 시간
         const BATCH_SIZE = 20; // 한 번에 처리할 URL 수 (타임아웃 방지를 위해 적절히 설정)
         
-        console.log(`⏱️ [Pagination Mode] 타임아웃 정보: 페이지 발견 ${Math.round(elapsedForDiscovery / 1000)}초 소요, 남은 시간 ${Math.round(MAX_EXECUTION_TIME / 1000)}초 (전체: ${Math.round(TOTAL_MAX_TIME / 1000)}초)`);
+        // 평균 URL 크롤링 시간 (초) - 경험치 기반
+        const AVG_CRAWL_TIME_PER_URL = 15; // 초
+        const CONCURRENCY = Math.min(config.concurrency || 3, 3);
+        const EFFECTIVE_CRAWL_TIME = AVG_CRAWL_TIME_PER_URL / CONCURRENCY; // 병렬 처리 고려
         
+        // 안정적으로 크롤링 가능한 URL 개수 계산
+        const safeCrawlableCount = Math.floor((MAX_EXECUTION_TIME / 1000) / EFFECTIVE_CRAWL_TIME);
+        
+        console.log(`⏱️ [Pagination Mode] 타임아웃 정보: 페이지 발견 ${Math.round(elapsedForDiscovery / 1000)}초 소요, 남은 시간 ${Math.round(MAX_EXECUTION_TIME / 1000)}초 (전체: ${Math.round(TOTAL_MAX_TIME / 1000)}초)`);
+        console.log(`📊 [Pagination Mode] 안정적 크롤링 가능 개수: ${safeCrawlableCount}개 (현재: ${urlsToCrawl.length}개)`);
+        
+        // 타임아웃 위험 경고
         if (MAX_EXECUTION_TIME < 60 * 1000) {
-          console.warn(`⚠️ [Pagination Mode] 남은 시간이 부족합니다 (${Math.round(MAX_EXECUTION_TIME / 1000)}초). 타임아웃이 발생할 수 있습니다.`);
+          const warningMessage = `⚠️ [Pagination Mode] 남은 시간이 매우 부족합니다 (${Math.round(MAX_EXECUTION_TIME / 1000)}초). 타임아웃이 발생할 가능성이 높습니다.`;
+          console.warn(warningMessage);
+          
+          if (onProgress) {
+            onProgress({
+              type: 'log',
+              message: `⚠️ 타임아웃 경고: 발견된 URL이 ${urlsToCrawl.length}개로 많아 Vercel 타임아웃(5분)에 걸릴 가능성이 높습니다. 안정적으로 크롤링하려면 약 ${safeCrawlableCount}개 이내로 제한하는 것을 권장합니다. 계속 진행하면 일부만 처리되고 타임아웃될 수 있습니다.`,
+            });
+          }
+        } else if (urlsToCrawl.length > safeCrawlableCount * 1.5) {
+          // 안정적 개수보다 1.5배 이상 많으면 경고
+          const warningMessage = `⚠️ [Pagination Mode] 발견된 URL(${urlsToCrawl.length}개)이 안정적 크롤링 가능 개수(${safeCrawlableCount}개)보다 많습니다.`;
+          console.warn(warningMessage);
+          
+          if (onProgress) {
+            onProgress({
+              type: 'log',
+              message: `⚠️ 타임아웃 위험: 발견된 URL이 ${urlsToCrawl.length}개로 많습니다. 안정적으로 크롤링하려면 약 ${safeCrawlableCount}개 이내로 제한하는 것을 권장합니다. 현재 설정으로는 일부만 처리되고 타임아웃될 수 있습니다.`,
+            });
+          }
         }
         
         if (onProgress) {
