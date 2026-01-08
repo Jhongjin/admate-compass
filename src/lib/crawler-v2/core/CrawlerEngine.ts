@@ -419,34 +419,56 @@ export class CrawlerEngine {
             });
           }
 
-          // 배치 크롤링 실행 (단일 배치만 처리)
+          // 배치 크롤링 실행 (개별 URL을 직접 처리하여 이중 배치 방지)
           try {
             const batchStartTime = Date.now();
-            const batchResults = await this.crawlUrls(batch, {
-              ...config,
-              concurrency: Math.min(config.concurrency || 3, 3), // 병렬 처리 수 제한
-              timeout: Math.min(config.timeout || 30000, remainingTime - 10000), // 남은 시간보다 10초 여유
-            }, (progress) => {
-              // 진행률 콜백을 전체 진행률로 변환
-              if (onProgress && progress.type === 'batch_progress') {
-                onProgress({
-                  type: 'batch_progress',
-                  message: `배치 ${batchNumber}: ${progress.message}`,
-                  current: results.length + (progress.current || 0),
-                  total: urlsToCrawl.length,
-                  result: progress.result,
-                });
-              } else if (onProgress) {
-                onProgress(progress);
+            const concurrency = Math.min(config.concurrency || 3, 3); // 병렬 처리 수 제한
+            const batchResults: CrawlResult[] = [];
+            
+            // 배치를 concurrency 크기의 작은 청크로 나누어 병렬 처리
+            for (let i = 0; i < batch.length; i += concurrency) {
+              // 타임아웃 재확인 (각 청크 처리 전)
+              const elapsed = Date.now() - startTime;
+              if (elapsed >= MAX_EXECUTION_TIME) {
+                console.warn(`⏰ [Pagination Mode] 타임아웃 임박 (${Math.round(elapsed / 1000)}초 경과). 배치 ${batchNumber} 중단.`);
+                break;
               }
-            });
 
-            // 결과 추가
-            for (const result of batchResults) {
-              if (!processedUrls.has(result.url)) {
-                results.push(result);
-                processedUrls.add(result.url);
+              const chunk = batch.slice(i, i + concurrency);
+              const chunkPromises = chunk.map(url => this.crawlUrl(url, {
+                ...config,
+                timeout: Math.min(config.timeout || 30000, MAX_EXECUTION_TIME - elapsed - 5000),
+              }));
+
+              const chunkResults = await Promise.all(chunkPromises);
+              
+              // 결과 추가
+              for (const result of chunkResults) {
+                if (!processedUrls.has(result.url)) {
+                  batchResults.push(result);
+                  processedUrls.add(result.url);
+                  
+                  if (onProgress) {
+                    onProgress({
+                      type: 'batch_progress',
+                      message: `배치 ${batchNumber}: ${result.url} 완료`,
+                      current: results.length + batchResults.length,
+                      total: urlsToCrawl.length,
+                      result: result,
+                    });
+                  }
+                }
               }
+
+              // 요청 간격 (서버 부하 방지)
+              if (i + concurrency < batch.length) {
+                await new Promise(resolve => setTimeout(resolve, 1000));
+              }
+            }
+
+            // 배치 결과를 전체 결과에 추가
+            for (const result of batchResults) {
+              results.push(result);
             }
 
             const batchElapsed = Date.now() - batchStartTime;
