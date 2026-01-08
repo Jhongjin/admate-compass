@@ -153,6 +153,22 @@ export async function POST(request: NextRequest) {
                 )
               );
             }
+
+            // 경고 메시지 전송 (타임아웃 위험 등)
+            if (progress.type === 'warning') {
+              writer.write(
+                encoder.encode(
+                  JSON.stringify({
+                    type: 'warning',
+                    message: progress.message,
+                    discoveredCount: (progress as any).discoveredCount,
+                    safeCrawlableCount: (progress as any).safeCrawlableCount,
+                    current: progress.current,
+                    total: progress.total,
+                  }) + '\n'
+                )
+              );
+            }
           });
         } else {
           // 일반 모드

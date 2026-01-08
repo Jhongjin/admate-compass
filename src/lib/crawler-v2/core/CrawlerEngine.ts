@@ -300,13 +300,15 @@ export class CrawlerEngine {
     baseUrl: string,
     options: Partial<CrawlOptions> = {},
     onProgress?: (data: {
-      type: 'log' | 'batch_progress' | 'progress' | 'queue_info';
+      type: 'log' | 'batch_progress' | 'progress' | 'queue_info' | 'warning';
       message: string;
       current?: number;
       total?: number;
       result?: CrawlResult;
       progress?: CrawlProgress;
       jobIds?: string[];
+      safeCrawlableCount?: number;
+      discoveredCount?: number;
     }) => void
   ): Promise<CrawlResult[]> {
     const functionStartTime = Date.now(); // 함수 시작 시간 기록
@@ -389,15 +391,17 @@ export class CrawlerEngine {
         console.log(`⏱️ [Pagination Mode] 타임아웃 정보: 페이지 발견 ${Math.round(elapsedForDiscovery / 1000)}초 소요, 남은 시간 ${Math.round(MAX_EXECUTION_TIME / 1000)}초 (전체: ${Math.round(TOTAL_MAX_TIME / 1000)}초)`);
         console.log(`📊 [Pagination Mode] 안정적 크롤링 가능 개수: ${safeCrawlableCount}개 (현재: ${urlsToCrawl.length}개)`);
         
-        // 타임아웃 위험 경고
+        // 타임아웃 위험 경고 (즉시 전송)
         if (MAX_EXECUTION_TIME < 60 * 1000) {
           const warningMessage = `⚠️ [Pagination Mode] 남은 시간이 매우 부족합니다 (${Math.round(MAX_EXECUTION_TIME / 1000)}초). 타임아웃이 발생할 가능성이 높습니다.`;
           console.warn(warningMessage);
           
           if (onProgress) {
             onProgress({
-              type: 'log',
-              message: `⚠️ 타임아웃 경고: 발견된 URL이 ${urlsToCrawl.length}개로 많아 Vercel 타임아웃(5분)에 걸릴 가능성이 높습니다. 안정적으로 크롤링하려면 약 ${safeCrawlableCount}개 이내로 제한하는 것을 권장합니다. 계속 진행하면 일부만 처리되고 타임아웃될 수 있습니다.`,
+              type: 'warning',
+              message: `⚠️ 타임아웃 경고: 발견된 URL이 ${urlsToCrawl.length}개로 많아 Vercel 타임아웃(5분)에 걸릴 가능성이 매우 높습니다. 안정적으로 크롤링하려면 약 ${safeCrawlableCount}개 이내로 제한하는 것을 강력히 권장합니다. 계속 진행하면 일부만 처리되고 타임아웃될 수 있습니다.`,
+              discoveredCount: urlsToCrawl.length,
+              safeCrawlableCount: safeCrawlableCount,
             });
           }
         } else if (urlsToCrawl.length > safeCrawlableCount * 1.5) {
@@ -407,8 +411,10 @@ export class CrawlerEngine {
           
           if (onProgress) {
             onProgress({
-              type: 'log',
+              type: 'warning',
               message: `⚠️ 타임아웃 위험: 발견된 URL이 ${urlsToCrawl.length}개로 많습니다. 안정적으로 크롤링하려면 약 ${safeCrawlableCount}개 이내로 제한하는 것을 권장합니다. 현재 설정으로는 일부만 처리되고 타임아웃될 수 있습니다.`,
+              discoveredCount: urlsToCrawl.length,
+              safeCrawlableCount: safeCrawlableCount,
             });
           }
         }

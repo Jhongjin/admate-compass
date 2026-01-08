@@ -1001,6 +1001,29 @@ export default function HybridCrawlingManager({
                   return p;
                 })
               );
+            } else if (data.type === 'log') {
+              // 로그 메시지 표시
+              console.log('📝 크롤러 로그:', data.message);
+              // 중요 메시지는 toast로 표시
+              if (data.message.includes('⚠️') || data.message.includes('경고') || data.message.includes('위험')) {
+                toast.warning(data.message, { duration: 10000 });
+              }
+            } else if (data.type === 'warning') {
+              // 타임아웃 경고 메시지 (명확하게 표시)
+              const warningMessage = data.message || '타임아웃 위험이 감지되었습니다.';
+              const discoveredCount = data.discoveredCount || 0;
+              const safeCount = data.safeCrawlableCount || 0;
+              
+              console.warn('⚠️ 크롤러 경고:', warningMessage);
+              
+              // 사용자에게 명확한 경고 표시
+              toast.warning(
+                `⚠️ 타임아웃 경고\n\n발견된 URL: ${discoveredCount}개\n안정적 크롤링 가능: ${safeCount}개\n\n현재 설정으로는 일부만 처리되고 타임아웃될 수 있습니다.`,
+                { 
+                  duration: 15000,
+                  description: warningMessage
+                }
+              );
             } else if (data.type === 'batch_progress' && data.result) {
               // 개별 URL 완료
               const result = data.result;
