@@ -1060,33 +1060,20 @@ export default function HybridCrawlingManager({
   async function saveV2ResultToDatabase(result: any, vendor: string) {
     const { data: existingDoc } = await supabase
       .from('documents')
-      .select('id, title, main_document_id')
+      .select('id')
       .eq('url', result.url)
       .single();
 
     if (existingDoc) {
       // 기존 문서 업데이트
-      // 🔥 중요: 제목과 main_document_id는 기존 값 유지 (그룹화 정보 보존)
-      const updateData: any = {
-        content: result.content,
-        status: 'indexed',
-        updated_at: new Date().toISOString(),
-      };
-
-      // 제목은 기존 제목 유지 (크롤링된 제목으로 덮어쓰지 않음)
-      // 단, 기존 제목이 "광고주센터" 같은 기본값이면 크롤링된 제목 사용
-      const existingTitle = existingDoc.title || '';
-      const isDefaultTitle = ['광고주센터', '도움말', 'Help', 'Advertiser Center', '광고주 센터'].includes(existingTitle.trim());
-      if (isDefaultTitle && result.title && result.title.trim() && result.title !== existingTitle) {
-        updateData.title = result.title;
-        console.log(`📝 기본 제목 감지, 크롤링된 제목으로 업데이트: "${existingTitle}" -> "${result.title}"`);
-      }
-      // main_document_id는 명시적으로 유지 (그룹화 정보 보존)
-      // updateData에 포함하지 않으면 기존 값이 유지됨
-
       await supabase
         .from('documents')
-        .update(updateData)
+        .update({
+          title: result.title,
+          content: result.content,
+          status: 'indexed',
+          updated_at: new Date().toISOString(),
+        })
         .eq('id', existingDoc.id);
     } else {
       // 새 문서 생성
@@ -1096,7 +1083,7 @@ export default function HybridCrawlingManager({
           title: result.title,
           url: result.url,
           content: result.content,
-          type: 'url',
+          source_type: 'url',
           source_vendor: vendor,
           status: 'indexed',
         });
