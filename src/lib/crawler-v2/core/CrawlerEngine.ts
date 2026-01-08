@@ -570,7 +570,7 @@ export class CrawlerEngine {
         });
       }
 
-      const urlsToCrawl = discoveredUrls.map(u => u.url);
+      // urlsToCrawl은 이미 위에서 정의되었으므로 재사용
       const results = await this.crawlUrls(urlsToCrawl, config, onProgress);
 
       console.log(`✅ [Pagination Mode] 크롤링 완료: ${results.length}개 결과`);
