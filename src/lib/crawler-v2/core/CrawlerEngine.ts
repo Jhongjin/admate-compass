@@ -352,120 +352,39 @@ export class CrawlerEngine {
 
       console.log(`✅ [Pagination Mode] ${discoveredUrls.length}개 페이지 발견`);
 
-      // 2. 발견된 URL이 임계값 이상이면 큐 시스템으로 전환
+      // 2. 발견된 URL이 임계값 이상이면 배치 크롤링으로 처리
+      // 참고: 큐 시스템(CRAWL_SEED)은 seed URL을 재귀적으로 크롤링하는 방식이므로,
+      // 이미 추출된 개별 FAQ 링크에는 적합하지 않습니다.
+      // 대신 배치 크롤링을 사용하여 타임아웃 없이 처리합니다.
       if (discoveredUrls.length >= QUEUE_THRESHOLD) {
-        console.log(`📦 [Pagination Mode] 발견된 URL이 ${discoveredUrls.length}개로 많아 큐 시스템으로 전환합니다.`);
+        console.log(`📦 [Pagination Mode] 발견된 URL이 ${discoveredUrls.length}개로 많아 배치 크롤링으로 처리합니다.`);
         
         if (onProgress) {
           onProgress({
             type: 'log',
-            message: `⚠️ 발견된 URL이 ${discoveredUrls.length}개로 많습니다 (임계값: ${QUEUE_THRESHOLD}개). 큐 시스템으로 전환합니다...`,
+            message: `⚠️ 발견된 URL이 ${discoveredUrls.length}개로 많습니다 (임계값: ${QUEUE_THRESHOLD}개). 배치 크롤링으로 처리합니다...`,
           });
         }
 
-        try {
-          const supabase = await createPureClient();
-          const urlsToCrawl = discoveredUrls.map(u => u.url);
-          const jobIds: string[] = [];
-          let enqueuedCount = 0;
-          const totalUrls = urlsToCrawl.length;
-
-          // 각 URL을 큐에 등록
-          for (const url of urlsToCrawl) {
-            try {
-              // 중복 방지: 같은 URL이 대기 또는 처리 중이면 기존 레코드 반환
-              const { data: existing } = await supabase
-                .from('processing_jobs')
-                .select('id')
-                .eq('job_type', 'CRAWL_SEED')
-                .eq('status', 'queued')
-                .contains('payload', { url })
-                .maybeSingle();
-
-              if (existing) {
-                jobIds.push(existing.id);
-                enqueuedCount++;
-                continue;
-              }
-
-              // 새 작업 등록
-              const { data, error } = await supabase
-                .from('processing_jobs')
-                .insert({
-                  document_id: null,
-                  job_type: 'CRAWL_SEED',
-                  status: 'queued',
-                  priority: 5,
-                  payload: {
-                    url,
-                    vendors: ['NAVER'], // 기본 벤더
-                    domainLimit: config.domainLimit !== false,
-                    respectRobots: config.respectRobots !== false,
-                    maxDepth: 1, // Pagination 모드에서는 단일 페이지만 크롤링
-                    extractSubPages: false,
-                    forceCrawl: false,
-                    deepCrawlTimeout: false,
-                    retryOn429: true,
-                  },
-                  attempts: 0,
-                  max_attempts: 3,
-                  scheduled_at: new Date().toISOString(),
-                })
-                .select('id')
-                .single();
-
-              if (error) {
-                console.error(`❌ [Pagination Mode] 큐 등록 실패 (${url}):`, error);
-                continue;
-              }
-
-              if (data) {
-                jobIds.push(data.id);
-                enqueuedCount++;
-              }
-
-              // 진행률 업데이트 (10개마다)
-              if (enqueuedCount % 10 === 0 && onProgress) {
-                onProgress({
-                  type: 'log',
-                  message: `큐 등록 진행 중: ${enqueuedCount}/${totalUrls}개 완료...`,
-                  current: enqueuedCount,
-                  total: totalUrls,
-                });
-              }
-            } catch (urlError) {
-              console.error(`❌ [Pagination Mode] URL 큐 등록 오류 (${url}):`, urlError);
-              continue;
-            }
-          }
-
-          console.log(`✅ [Pagination Mode] 큐 시스템 등록 완료: ${enqueuedCount}개 작업 등록됨`);
-
-          if (onProgress) {
-            onProgress({
-              type: 'queue_info',
-              message: `✅ 큐 시스템 등록 완료: ${enqueuedCount}개 작업이 큐에 등록되었습니다. 백그라운드에서 자동으로 처리됩니다.`,
-              current: enqueuedCount,
-              total: totalUrls,
-              jobIds,
-            });
-          }
-
-          // 큐 시스템 사용 시 빈 배열 반환 (실제 크롤링은 큐에서 처리)
-          return [];
-        } catch (queueError) {
-          console.error(`❌ [Pagination Mode] 큐 시스템 등록 실패:`, queueError);
-          
-          if (onProgress) {
-            onProgress({
-              type: 'log',
-              message: `⚠️ 큐 시스템 등록 실패. 직접 크롤링 모드로 전환합니다...`,
-            });
-          }
-
-          // 큐 시스템 등록 실패 시 직접 크롤링으로 폴백
-          // (타임아웃이 발생할 수 있지만 시도)
+        // 배치 크롤링으로 처리 (큐 시스템 대신)
+        // 이 방식은 타임아웃이 발생할 수 있지만, 모든 URL을 처리합니다.
+        const urlsToCrawl = discoveredUrls.map(u => u.url);
+        
+        if (onProgress) {
+          onProgress({
+            type: 'log',
+            message: `${urlsToCrawl.length}개 FAQ 링크를 배치 크롤링으로 처리합니다...`,
+            current: 0,
+            total: urlsToCrawl.length,
+          });
         }
+
+        // 배치 크롤링 실행
+        const results = await this.crawlUrls(urlsToCrawl, config, onProgress);
+
+        console.log(`✅ [Pagination Mode] 배치 크롤링 완료: ${results.length}개 결과`);
+
+        return results;
       }
 
       // 3. 발견된 URL이 임계값 미만이면 직접 크롤링
