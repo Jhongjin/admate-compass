@@ -1038,10 +1038,18 @@ export default function HybridCrawlingManager({
                 message: warningMessage,
               });
               
-              // 추가로 toast도 표시 (사용자가 놓칠 수 있으므로)
-              toast.warning('타임아웃 위험이 감지되었습니다. 상세 내용을 확인해주세요.', {
-                duration: 10000,
-              });
+              // Toast로도 표시 (명확한 메시지와 함께)
+              toast.warning(
+                `타임아웃 위험: 발견된 URL ${discoveredCount}개, 안정적 크롤링 가능 ${safeCount}개`,
+                {
+                  duration: 20000,
+                  description: '상세 내용은 경고 박스를 확인해주세요.',
+                  action: {
+                    label: '확인',
+                    onClick: () => {},
+                  },
+                }
+              );
             } else if (data.type === 'batch_progress' && data.result) {
               // 개별 URL 완료
               const result = data.result;
@@ -2559,40 +2567,43 @@ export default function HybridCrawlingManager({
 
       {/* 타임아웃 경고 Alert */}
       {timeoutWarning?.show && (
-        <Alert className="bg-yellow-500/10 border-yellow-500/50 text-yellow-200 mb-4">
-          <AlertTriangle className="h-5 w-5 text-yellow-400" />
-          <AlertTitle className="text-yellow-300 font-semibold mb-2">
-            ⚠️ 타임아웃 위험 경고
+        <Alert className="bg-gradient-to-r from-yellow-500/20 via-orange-500/20 to-red-500/20 border-2 border-dashed border-yellow-500/50 text-yellow-100 mb-6 shadow-lg shadow-yellow-500/20">
+          <AlertTriangle className="h-6 w-6 text-yellow-400 animate-pulse" />
+          <AlertTitle className="text-yellow-200 font-bold text-lg mb-3 flex items-center gap-2">
+            <span>⚠️</span>
+            <span>타임아웃 위험 경고</span>
           </AlertTitle>
-          <AlertDescription className="space-y-2">
-            <p className="text-sm text-yellow-200/90">
+          <AlertDescription className="space-y-3">
+            <p className="text-base text-yellow-100/95 font-medium leading-relaxed">
               {timeoutWarning.message}
             </p>
-            <div className="mt-3 space-y-1 text-sm">
-              <div className="flex items-center gap-2">
-                <span className="font-medium">발견된 URL:</span>
-                <Badge variant="outline" className="bg-yellow-500/20 border-yellow-500/50 text-yellow-300">
+            <div className="mt-4 p-4 bg-black/20 rounded-lg space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-semibold text-yellow-200">발견된 URL:</span>
+                <Badge variant="outline" className="bg-yellow-500/30 border-yellow-500/70 text-yellow-100 text-base px-3 py-1 font-bold">
                   {timeoutWarning.discoveredCount}개
                 </Badge>
               </div>
-              <div className="flex items-center gap-2">
-                <span className="font-medium">안정적 크롤링 가능:</span>
-                <Badge variant="outline" className="bg-green-500/20 border-green-500/50 text-green-300">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-semibold text-green-200">안정적 크롤링 가능:</span>
+                <Badge variant="outline" className="bg-green-500/30 border-green-500/70 text-green-100 text-base px-3 py-1 font-bold">
                   {timeoutWarning.safeCrawlableCount}개
                 </Badge>
               </div>
             </div>
-            <p className="text-xs text-yellow-200/70 mt-3">
+            <p className="text-sm text-yellow-200/80 mt-4 leading-relaxed">
               현재 설정으로는 일부만 처리되고 타임아웃될 수 있습니다. 안정적으로 크롤링하려면 URL 개수를 줄이거나 여러 번에 나누어 크롤링하는 것을 권장합니다.
             </p>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setTimeoutWarning(null)}
-              className="mt-3 border-yellow-500/50 text-yellow-300 hover:bg-yellow-500/20"
-            >
-              닫기
-            </Button>
+            <div className="flex justify-end mt-4">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setTimeoutWarning(null)}
+                className="border-yellow-500/70 text-yellow-200 hover:bg-yellow-500/30 hover:text-yellow-100 font-medium"
+              >
+                닫기
+              </Button>
+            </div>
           </AlertDescription>
         </Alert>
       )}
@@ -2607,15 +2618,15 @@ export default function HybridCrawlingManager({
         {/* 기본 옵션 그리드 */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           {/* Pagination 모드 */}
-          <div className={`flex flex-col gap-2 p-4 rounded-lg border transition-all ${
+          <div className={`flex flex-col gap-3 p-4 rounded-lg border-2 transition-all min-h-[140px] ${
             crawlOptions.paginationMode 
-              ? 'bg-purple-500/10 border-purple-500/30' 
+              ? 'bg-gradient-to-br from-purple-500/20 to-purple-600/10 border-purple-500/50 shadow-lg shadow-purple-500/20' 
               : 'bg-white/5 border-white/10'
           }`}>
-            <Label className="text-sm font-medium text-purple-300 flex items-center gap-2">
-              📄 Pagination 모드
-            </Label>
-            <div className="flex items-center gap-2 mt-auto">
+            <div className="flex items-center justify-between">
+              <Label className="text-sm font-semibold text-purple-300 flex items-center gap-2">
+                📄 Pagination 모드
+              </Label>
               <Checkbox
                 id="paginationMode"
                 checked={crawlOptions.paginationMode}
@@ -2624,36 +2635,36 @@ export default function HybridCrawlingManager({
                   setCrawlOptions(prev => ({
                     ...prev,
                     paginationMode: newPaginationMode,
-                    // Pagination 모드 활성화 시 깊이 1로 고정
                     ...(newPaginationMode && { maxDepth: '1' }),
                   }));
-                  // Pagination 모드 활성화 시 하위 페이지 발견 비활성화
                   if (newPaginationMode) {
                     setExtractSubPages(false);
                   }
                 }}
                 className="border-purple-500 data-[state=checked]:bg-purple-500"
               />
-              <span className="text-sm font-medium text-gray-300">사용</span>
             </div>
-            <p className="text-xs text-gray-400 leading-tight">
+            <p className="text-xs text-gray-400 leading-relaxed flex-1">
               부모 페이지만 입력하면 자동으로 모든 페이지 크롤링
             </p>
             {crawlOptions.paginationMode && (
-              <p className="text-xs text-purple-400/70 leading-tight mt-1">
-                ⚠️ 하위 페이지 발견 및 최대 깊이가 자동으로 비활성화됩니다
-              </p>
+              <div className="mt-auto pt-2 border-t border-purple-500/30">
+                <p className="text-xs text-purple-300/90 leading-tight flex items-center gap-1">
+                  <span>⚠️</span>
+                  <span>하위 페이지 발견 및 최대 깊이가 자동으로 비활성화됩니다</span>
+                </p>
+              </div>
             )}
           </div>
 
           {/* 하위 페이지 발견 */}
-          <div className={`flex flex-col gap-2 p-4 rounded-lg border transition-all ${
+          <div className={`flex flex-col gap-3 p-4 rounded-lg border-2 transition-all min-h-[140px] ${
             !crawlOptions.paginationMode && extractSubPages
-              ? 'bg-blue-500/10 border-blue-500/30' 
+              ? 'bg-gradient-to-br from-blue-500/20 to-blue-600/10 border-blue-500/50 shadow-lg shadow-blue-500/20' 
               : 'bg-white/5 border-white/10'
-          } ${crawlOptions.paginationMode ? 'opacity-50' : ''}`}>
-            <Label className="text-sm font-medium text-gray-300">하위 페이지 발견</Label>
-            <div className="flex items-center gap-2 mt-auto">
+          } ${crawlOptions.paginationMode ? 'opacity-50 cursor-not-allowed' : ''}`}>
+            <div className="flex items-center justify-between">
+              <Label className="text-sm font-semibold text-gray-300">하위 페이지 발견</Label>
               <Checkbox
                 id="extractSubPages"
                 checked={extractSubPages && !crawlOptions.paginationMode}
@@ -2661,7 +2672,6 @@ export default function HybridCrawlingManager({
                 onCheckedChange={(checked) => {
                   if (!crawlOptions.paginationMode) {
                     setExtractSubPages(!!checked);
-                    // 하위 페이지 발견 활성화 시 Pagination 모드 비활성화
                     if (checked) {
                       setCrawlOptions(prev => ({ ...prev, paginationMode: false }));
                     }
@@ -2669,23 +2679,26 @@ export default function HybridCrawlingManager({
                 }}
                 className="border-gray-500 data-[state=checked]:bg-blue-500"
               />
-              <span className="text-sm font-medium text-gray-300">사용</span>
             </div>
-            <p className="text-xs text-gray-400 leading-tight">
+            <p className="text-xs text-gray-400 leading-relaxed flex-1">
               sitemap.xml 및 링크 분석으로 하위 페이지 자동 추출
             </p>
             {crawlOptions.paginationMode && (
-              <p className="text-xs text-gray-500 leading-tight mt-1">
-                Pagination 모드 사용 시 비활성화
-              </p>
+              <div className="mt-auto pt-2 border-t border-gray-700">
+                <p className="text-xs text-gray-500 leading-tight">
+                  Pagination 모드 사용 시 비활성화
+                </p>
+              </div>
             )}
           </div>
 
           {/* 최대 깊이 */}
-          <div className={`flex flex-col gap-2 p-4 rounded-lg border ${
-            crawlOptions.paginationMode ? 'opacity-50 bg-white/5 border-white/10' : 'bg-white/5 border-white/10'
+          <div className={`flex flex-col gap-3 p-4 rounded-lg border-2 transition-all min-h-[140px] ${
+            crawlOptions.paginationMode 
+              ? 'opacity-50 bg-white/5 border-white/10 cursor-not-allowed' 
+              : 'bg-white/5 border-white/10'
           }`}>
-            <Label htmlFor="maxDepth" className="text-sm font-medium text-gray-300">
+            <Label htmlFor="maxDepth" className="text-sm font-semibold text-gray-300">
               최대 깊이
             </Label>
             <Select
@@ -2697,7 +2710,7 @@ export default function HybridCrawlingManager({
               }}
               disabled={crawlOptions.paginationMode}
             >
-              <SelectTrigger className="h-9 bg-gray-700/50 border-gray-600 text-white">
+              <SelectTrigger className="h-10 bg-gray-700/50 border-gray-600 text-white">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
@@ -2707,7 +2720,7 @@ export default function HybridCrawlingManager({
                 <SelectItem value="4">4</SelectItem>
               </SelectContent>
             </Select>
-            <p className="text-xs text-gray-400 leading-tight">
+            <p className="text-xs text-gray-400 leading-relaxed mt-auto">
               {crawlOptions.paginationMode 
                 ? 'Pagination 모드에서는 깊이 1로 고정'
                 : '재귀적으로 크롤링할 최대 깊이'}
@@ -2715,8 +2728,8 @@ export default function HybridCrawlingManager({
           </div>
 
           {/* 최대 페이지 수 */}
-          <div className="flex flex-col gap-2 p-4 rounded-lg bg-white/5 border border-white/10">
-            <Label htmlFor="maxUrls" className="text-sm font-medium text-gray-300">
+          <div className="flex flex-col gap-3 p-4 rounded-lg border-2 border-white/10 bg-white/5 min-h-[140px]">
+            <Label htmlFor="maxUrls" className="text-sm font-semibold text-gray-300">
               최대 페이지 수
             </Label>
             <Input
@@ -2729,19 +2742,19 @@ export default function HybridCrawlingManager({
                 const value = parseInt(e.target.value) || 500;
                 setCrawlOptions(prev => ({ ...prev, maxUrls: Math.min(1000, Math.max(1, value)) }));
               }}
-              className="h-9 bg-gray-700/50 border-gray-600 text-white"
+              className="h-10 bg-gray-700/50 border-gray-600 text-white"
             />
-            <p className="text-xs text-gray-400 leading-tight">
+            <p className="text-xs text-gray-400 leading-relaxed mt-auto">
               크롤링할 최대 페이지 수 제한
             </p>
           </div>
         </div>
 
         {/* 고급 옵션 그리드 */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 pt-2 border-t border-gray-700">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 pt-4 border-t border-gray-700">
           {/* 타임아웃 */}
-          <div className="flex flex-col gap-2 p-4 rounded-lg bg-white/5 border border-white/10">
-            <Label htmlFor="timeout" className="text-sm font-medium text-gray-300">
+          <div className="flex flex-col gap-3 p-4 rounded-lg border-2 border-white/10 bg-white/5 min-h-[120px]">
+            <Label htmlFor="timeout" className="text-sm font-semibold text-gray-300">
               타임아웃 (ms)
             </Label>
             <Input
@@ -2754,62 +2767,71 @@ export default function HybridCrawlingManager({
                 const value = parseInt(e.target.value) || 30000;
                 setCrawlOptions(prev => ({ ...prev, timeout: Math.max(1000, value) }));
               }}
-              className="h-9 bg-gray-700/50 border-gray-600 text-white"
+              className="h-10 bg-gray-700/50 border-gray-600 text-white"
             />
-            <p className="text-xs text-gray-400 leading-tight">
+            <p className="text-xs text-gray-400 leading-relaxed mt-auto">
               페이지 로드 타임아웃 시간
             </p>
           </div>
 
           {/* 도메인 제한 */}
-          <div className="flex flex-col gap-2 p-4 rounded-lg bg-white/5 border border-white/10">
-            <Label className="text-sm font-medium text-gray-300">도메인 제한</Label>
-            <div className="flex items-center gap-2 mt-auto">
+          <div className={`flex flex-col gap-3 p-4 rounded-lg border-2 transition-all min-h-[120px] ${
+            crawlOptions.domainLimit
+              ? 'bg-gradient-to-br from-blue-500/20 to-blue-600/10 border-blue-500/50 shadow-lg shadow-blue-500/20'
+              : 'bg-white/5 border-white/10'
+          }`}>
+            <div className="flex items-center justify-between">
+              <Label className="text-sm font-semibold text-gray-300">도메인 제한</Label>
               <Checkbox
                 id="domainLimit"
                 checked={crawlOptions.domainLimit}
                 onCheckedChange={(checked) => setCrawlOptions(prev => ({ ...prev, domainLimit: !!checked }))}
                 className="border-gray-500 data-[state=checked]:bg-blue-500"
               />
-              <span className="text-sm font-medium text-gray-300">사용</span>
             </div>
-            <p className="text-xs text-gray-400 leading-tight">
+            <p className="text-xs text-gray-400 leading-relaxed flex-1">
               외부 도메인 링크 제외
             </p>
           </div>
 
           {/* Robots.txt 준수 */}
-          <div className="flex flex-col gap-2 p-4 rounded-lg bg-white/5 border border-white/10">
-            <Label className="text-sm font-medium text-gray-300">Robots.txt 준수</Label>
-            <div className="flex items-center gap-2 mt-auto">
+          <div className={`flex flex-col gap-3 p-4 rounded-lg border-2 transition-all min-h-[120px] ${
+            crawlOptions.respectRobots
+              ? 'bg-gradient-to-br from-blue-500/20 to-blue-600/10 border-blue-500/50 shadow-lg shadow-blue-500/20'
+              : 'bg-white/5 border-white/10'
+          }`}>
+            <div className="flex items-center justify-between">
+              <Label className="text-sm font-semibold text-gray-300">Robots.txt 준수</Label>
               <Checkbox
                 id="respectRobots"
                 checked={crawlOptions.respectRobots}
                 onCheckedChange={(checked) => setCrawlOptions(prev => ({ ...prev, respectRobots: !!checked }))}
                 className="border-gray-500 data-[state=checked]:bg-blue-500"
               />
-              <span className="text-sm font-medium text-gray-300">사용</span>
             </div>
-            <p className="text-xs text-gray-400 leading-tight">
+            <p className="text-xs text-gray-400 leading-relaxed flex-1">
               robots.txt 규칙 준수
             </p>
           </div>
 
           {/* 크롤러 V2 */}
-          <div className="flex flex-col gap-2 p-4 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
-            <Label className="text-sm font-medium text-emerald-300 flex items-center gap-2">
-              🚀 크롤러 V2
-            </Label>
-            <div className="flex items-center gap-2 mt-auto">
+          <div className={`flex flex-col gap-3 p-4 rounded-lg border-2 transition-all min-h-[120px] ${
+            crawlOptions.useCrawlerV2
+              ? 'bg-gradient-to-br from-emerald-500/20 to-emerald-600/10 border-emerald-500/50 shadow-lg shadow-emerald-500/20'
+              : 'bg-emerald-500/10 border-emerald-500/20'
+          }`}>
+            <div className="flex items-center justify-between">
+              <Label className="text-sm font-semibold text-emerald-300 flex items-center gap-2">
+                🚀 크롤러 V2
+              </Label>
               <Checkbox
                 id="useCrawlerV2"
                 checked={crawlOptions.useCrawlerV2}
                 onCheckedChange={(checked) => setCrawlOptions(prev => ({ ...prev, useCrawlerV2: !!checked }))}
                 className="border-emerald-500 data-[state=checked]:bg-emerald-500"
               />
-              <span className="text-sm font-medium text-emerald-300">사용</span>
             </div>
-            <p className="text-xs text-emerald-400/70 leading-tight">
+            <p className="text-xs text-emerald-400/70 leading-relaxed flex-1">
               개선된 성능 및 안정성
             </p>
           </div>
