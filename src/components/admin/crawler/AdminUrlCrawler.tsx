@@ -1084,15 +1084,16 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
               </p>
             </div>
 
-            {/* Options Grid */}
+            {/* Options Grid - 2행으로 배치 (각 행 4개씩) */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-8 w-full max-w-3xl">
-              <div className={`flex flex-col gap-2 p-3 rounded-lg border transition-all min-h-[140px] ${
+              {/* 첫 번째 행: 기본 옵션 */}
+              <div className={`flex flex-col gap-3 p-4 rounded-lg border-2 transition-all min-h-[140px] ${
                 !options.paginationMode && options.discoverSubPages
-                  ? 'bg-blue-500/10 border-blue-500/30' 
-                  : 'bg-white/5 border-white/5'
-              } ${options.paginationMode ? 'opacity-50' : ''}`}>
-                <Label className="text-xs text-gray-400">하위 페이지 발견</Label>
-                <div className="flex items-center gap-2 mt-auto">
+                  ? 'bg-gradient-to-br from-blue-500/20 to-blue-600/10 border-blue-500/50 shadow-lg shadow-blue-500/20' 
+                  : 'bg-white/5 border-white/10'
+              } ${options.paginationMode ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm font-semibold text-gray-300">하위 페이지 발견</Label>
                   <Checkbox
                     id="discoverSubPages"
                     checked={options.discoverSubPages && !options.paginationMode}
@@ -1103,29 +1104,29 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                         setOptions({ 
                           ...options, 
                           discoverSubPages: newDiscoverSubPages,
-                          // 하위 페이지 발견 활성화 시 Pagination 모드 비활성화
                           paginationMode: newDiscoverSubPages ? false : options.paginationMode,
                         });
                       }
                     }}
                     className="border-gray-500 data-[state=checked]:bg-blue-500"
                   />
-                  <span className="text-sm font-medium text-gray-300">사용</span>
                 </div>
-                {options.paginationMode ? (
-                  <p className="text-[10px] text-gray-500 leading-tight">Pagination 모드 사용 시 비활성화</p>
-                ) : (
-                  <p className="text-[10px] text-gray-500 leading-tight">sitemap.xml 및 링크 분석으로 하위 페이지 자동 추출</p>
-                )}
+                <p className="text-xs text-gray-400 leading-relaxed flex-1">
+                  {options.paginationMode 
+                    ? 'Pagination 모드 사용 시 비활성화'
+                    : 'sitemap.xml 및 링크 분석으로 하위 페이지 자동 추출'}
+                </p>
               </div>
 
-              <div className={`flex flex-col gap-2 p-3 rounded-lg border transition-all min-h-[140px] ${
+              <div className={`flex flex-col gap-3 p-4 rounded-lg border-2 transition-all min-h-[140px] ${
                 options.paginationMode 
-                  ? 'bg-purple-500/10 border-purple-500/30' 
-                  : 'bg-white/5 border-white/5'
+                  ? 'bg-gradient-to-br from-purple-500/20 to-purple-600/10 border-purple-500/50 shadow-lg shadow-purple-500/20' 
+                  : 'bg-white/5 border-white/10'
               }`}>
-                <Label className="text-xs text-purple-400">📄 Pagination 모드</Label>
-                <div className="flex items-center gap-2 mt-auto">
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm font-semibold text-purple-300 flex items-center gap-2">
+                    📄 Pagination 모드
+                  </Label>
                   <Checkbox
                     id="paginationMode"
                     checked={options.paginationMode}
@@ -1134,26 +1135,34 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                       setOptions({ 
                         ...options, 
                         paginationMode: newPaginationMode,
-                        discoverSubPages: newPaginationMode ? false : options.discoverSubPages, // Pagination 모드 활성화 시 하위 페이지 발견 비활성화
-                        maxDepth: newPaginationMode ? 1 : options.maxDepth, // Pagination 모드 활성화 시 깊이 1로 고정
+                        discoverSubPages: newPaginationMode ? false : options.discoverSubPages,
+                        maxDepth: newPaginationMode ? 1 : options.maxDepth,
                       });
                     }}
                     className="border-purple-500 data-[state=checked]:bg-purple-500"
                   />
-                  <span className="text-sm font-medium text-purple-300">사용</span>
                 </div>
-                <p className="text-[10px] text-purple-500/70 leading-tight">부모 페이지만 입력하면 자동으로 모든 페이지 크롤링</p>
+                <p className="text-xs text-gray-400 leading-relaxed flex-1">
+                  부모 페이지만 입력하면 자동으로 모든 페이지 크롤링
+                </p>
                 {options.paginationMode && (
-                  <p className="text-[10px] text-purple-400/70 leading-tight mt-1">
-                    ⚠️ 하위 페이지 발견 및 최대 깊이가 자동으로 비활성화됩니다
-                  </p>
+                  <div className="mt-auto pt-2 border-t border-purple-500/30">
+                    <p className="text-xs text-purple-300/90 leading-tight flex items-center gap-1">
+                      <span>⚠️</span>
+                      <span>하위 페이지 발견 및 최대 깊이가 자동으로 비활성화됩니다</span>
+                    </p>
+                  </div>
                 )}
               </div>
 
-              <div className={`flex flex-col gap-2 p-3 rounded-lg border min-h-[140px] ${
-                options.paginationMode ? 'opacity-50 bg-white/5 border-white/5' : 'bg-white/5 border-white/5'
+              <div className={`flex flex-col gap-3 p-4 rounded-lg border-2 transition-all min-h-[140px] ${
+                options.paginationMode 
+                  ? 'opacity-50 bg-white/5 border-white/10 cursor-not-allowed' 
+                  : 'bg-white/5 border-white/10'
               }`}>
-                <Label className="text-xs text-gray-400">최대 깊이</Label>
+                <Label htmlFor="maxDepth" className="text-sm font-semibold text-gray-300">
+                  최대 깊이
+                </Label>
                 <Select
                   value={options.paginationMode ? '1' : String(options.maxDepth)}
                   onValueChange={(value) => {
@@ -1168,7 +1177,7 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                   }}
                   disabled={options.paginationMode}
                 >
-                  <SelectTrigger className="h-7 bg-transparent border-gray-600 text-white text-sm">
+                  <SelectTrigger className="h-10 bg-gray-700/50 border-gray-600 text-white">
                     <SelectValue placeholder="깊이 선택" />
                   </SelectTrigger>
                   <SelectContent>
@@ -1179,76 +1188,107 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                     <SelectItem value="MAX">Max (재귀)</SelectItem>
                   </SelectContent>
                 </Select>
-                <p className="text-[10px] text-gray-500 leading-tight">
+                <p className="text-xs text-gray-400 leading-relaxed mt-auto">
                   {options.paginationMode 
                     ? 'Pagination 모드에서는 깊이 1로 고정'
                     : 'Max + 하위 페이지 발견 사용 시: 발견된 하위 페이지를 실제로 열어 링크를 추가로 추출합니다.'}
                 </p>
               </div>
 
-              <div className="flex flex-col gap-2 p-3 rounded-lg bg-white/5 border border-white/5 min-h-[140px]">
-                <Label className="text-xs text-gray-400">최대 페이지 수</Label>
+              <div className="flex flex-col gap-3 p-4 rounded-lg border-2 border-white/10 bg-white/5 min-h-[140px]">
+                <Label htmlFor="maxUrls" className="text-sm font-semibold text-gray-300">
+                  최대 페이지 수
+                </Label>
                 <Input
+                  id="maxUrls"
                   type="number"
-                  min={1} max={300}
+                  min={1}
+                  max={1000}
                   value={options.maxUrls}
                   onChange={(e) => setOptions({ ...options, maxUrls: parseInt(e.target.value) || 50 })}
-                  className="h-7 bg-transparent border-gray-600 text-white text-sm"
+                  className="h-10 bg-gray-700/50 border-gray-600 text-white"
                 />
+                <p className="text-xs text-gray-400 leading-relaxed mt-auto">
+                  크롤링할 최대 페이지 수 제한
+                </p>
               </div>
 
-              <div className="flex flex-col gap-2 p-3 rounded-lg bg-white/5 border border-white/5 min-h-[140px]">
-                <Label className="text-xs text-gray-400">타임아웃 (ms)</Label>
+              {/* 두 번째 행: 고급 옵션 */}
+              <div className="flex flex-col gap-3 p-4 rounded-lg border-2 border-white/10 bg-white/5 min-h-[140px]">
+                <Label htmlFor="timeout" className="text-sm font-semibold text-gray-300">
+                  타임아웃 (ms)
+                </Label>
                 <Input
+                  id="timeout"
                   type="number"
-                  min={1000} value={options.timeout}
+                  min={1000}
+                  step={1000}
+                  value={options.timeout}
                   onChange={(e) => setOptions({ ...options, timeout: parseInt(e.target.value) || 30000 })}
-                  className="h-7 bg-transparent border-gray-600 text-white text-sm"
+                  className="h-10 bg-gray-700/50 border-gray-600 text-white"
                 />
+                <p className="text-xs text-gray-400 leading-relaxed mt-auto">
+                  페이지 로드 타임아웃 시간
+                </p>
               </div>
-            </div>
 
-            {/* 고급 옵션 */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-4 w-full max-w-3xl">
-              <div className="flex flex-col gap-2 p-3 rounded-lg bg-white/5 border border-white/5 min-h-[120px]">
-                <Label className="text-xs text-gray-400">도메인 제한</Label>
-                <div className="flex items-center gap-2 mt-auto">
+              <div className={`flex flex-col gap-3 p-4 rounded-lg border-2 transition-all min-h-[140px] ${
+                options.domainLimit
+                  ? 'bg-gradient-to-br from-blue-500/20 to-blue-600/10 border-blue-500/50 shadow-lg shadow-blue-500/20'
+                  : 'bg-white/5 border-white/10'
+              }`}>
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm font-semibold text-gray-300">도메인 제한</Label>
                   <Checkbox
                     id="domainLimit"
                     checked={options.domainLimit}
                     onCheckedChange={(c) => setOptions({ ...options, domainLimit: !!c })}
                     className="border-gray-500 data-[state=checked]:bg-blue-500"
                   />
-                  <span className="text-sm font-medium text-gray-300">사용</span>
                 </div>
-                <p className="text-[10px] text-gray-500 leading-tight">외부 도메인 링크 제외</p>
+                <p className="text-xs text-gray-400 leading-relaxed flex-1">
+                  외부 도메인 링크 제외
+                </p>
               </div>
 
-              <div className="flex flex-col gap-2 p-3 rounded-lg bg-white/5 border border-white/5 min-h-[120px]">
-                <Label className="text-xs text-gray-400">Robots.txt 준수</Label>
-                <div className="flex items-center gap-2 mt-auto">
+              <div className={`flex flex-col gap-3 p-4 rounded-lg border-2 transition-all min-h-[140px] ${
+                options.respectRobots
+                  ? 'bg-gradient-to-br from-blue-500/20 to-blue-600/10 border-blue-500/50 shadow-lg shadow-blue-500/20'
+                  : 'bg-white/5 border-white/10'
+              }`}>
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm font-semibold text-gray-300">Robots.txt 준수</Label>
                   <Checkbox
                     id="respectRobots"
                     checked={options.respectRobots}
                     onCheckedChange={(c) => setOptions({ ...options, respectRobots: !!c })}
                     className="border-gray-500 data-[state=checked]:bg-blue-500"
                   />
-                  <span className="text-sm font-medium text-gray-300">사용</span>
                 </div>
+                <p className="text-xs text-gray-400 leading-relaxed flex-1">
+                  robots.txt 규칙 준수
+                </p>
               </div>
 
-              <div className="flex flex-col gap-2 p-3 rounded-lg bg-emerald-500/10 border border-emerald-500/20 min-h-[120px]">
-                <Label className="text-xs text-emerald-400">🚀 크롤러 V2</Label>
-                <div className="flex items-center gap-2 mt-auto">
+              <div className={`flex flex-col gap-3 p-4 rounded-lg border-2 transition-all min-h-[140px] ${
+                options.useCrawlerV2
+                  ? 'bg-gradient-to-br from-emerald-500/20 to-emerald-600/10 border-emerald-500/50 shadow-lg shadow-emerald-500/20'
+                  : 'bg-emerald-500/10 border-emerald-500/20'
+              }`}>
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm font-semibold text-emerald-300 flex items-center gap-2">
+                    🚀 크롤러 V2
+                  </Label>
                   <Checkbox
                     id="useCrawlerV2"
                     checked={options.useCrawlerV2}
                     onCheckedChange={(c) => setOptions({ ...options, useCrawlerV2: !!c })}
                     className="border-emerald-500 data-[state=checked]:bg-emerald-500"
                   />
-                  <span className="text-sm font-medium text-emerald-300">사용</span>
                 </div>
-                <p className="text-[10px] text-emerald-500/70 leading-tight">개선된 성능 및 안정성</p>
+                <p className="text-xs text-emerald-400/70 leading-relaxed flex-1">
+                  개선된 성능 및 안정성
+                </p>
               </div>
             </div>
 
