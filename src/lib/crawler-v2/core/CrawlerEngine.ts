@@ -366,23 +366,99 @@ export class CrawlerEngine {
           });
         }
 
-        // 배치 크롤링으로 처리 (큐 시스템 대신)
-        // 이 방식은 타임아웃이 발생할 수 있지만, 모든 URL을 처리합니다.
+        // 배치 크롤링으로 처리 (타임아웃 방지를 위해 작은 배치로 나누어 처리)
+        // Vercel 함수는 최대 5분 실행 가능하므로, 4분 경과 시 현재까지의 결과를 반환
         const urlsToCrawl = discoveredUrls.map(u => u.url);
+        const MAX_EXECUTION_TIME = 4 * 60 * 1000; // 4분 (타임아웃 여유를 두기 위해)
+        const startTime = Date.now();
         
         if (onProgress) {
           onProgress({
             type: 'log',
-            message: `${urlsToCrawl.length}개 FAQ 링크를 배치 크롤링으로 처리합니다...`,
+            message: `${urlsToCrawl.length}개 FAQ 링크를 배치 크롤링으로 처리합니다 (타임아웃 방지를 위해 작은 배치로 나누어 처리)...`,
             current: 0,
             total: urlsToCrawl.length,
           });
         }
 
-        // 배치 크롤링 실행
-        const results = await this.crawlUrls(urlsToCrawl, config, onProgress);
+        // 타임아웃 체크가 포함된 배치 크롤링 실행
+        const results: CrawlResult[] = [];
+        const processedUrls = new Set<string>();
+        let currentIndex = 0;
+        const batchSize = Math.min(config.concurrency || 3, 5); // 배치 크기 제한
 
-        console.log(`✅ [Pagination Mode] 배치 크롤링 완료: ${results.length}개 결과`);
+        while (currentIndex < urlsToCrawl.length) {
+          // 타임아웃 체크
+          const elapsed = Date.now() - startTime;
+          if (elapsed >= MAX_EXECUTION_TIME) {
+            console.warn(`⏰ [Pagination Mode] 타임아웃 임박 (${Math.round(elapsed / 1000)}초 경과). 현재까지 ${results.length}개 처리 완료.`);
+            
+            if (onProgress) {
+              onProgress({
+                type: 'log',
+                message: `⚠️ 타임아웃 임박으로 인해 ${results.length}/${urlsToCrawl.length}개만 처리되었습니다. 나머지 ${urlsToCrawl.length - results.length}개는 다음에 처리해야 합니다.`,
+                current: results.length,
+                total: urlsToCrawl.length,
+              });
+            }
+            break;
+          }
+
+          // 다음 배치 추출
+          const batch = urlsToCrawl.slice(currentIndex, currentIndex + batchSize);
+          const remainingTime = MAX_EXECUTION_TIME - elapsed;
+          
+          if (onProgress) {
+            onProgress({
+              type: 'log',
+              message: `배치 ${Math.floor(currentIndex / batchSize) + 1} 처리 중: ${batch.length}개 URL (남은 시간: ${Math.round(remainingTime / 1000)}초)`,
+              current: currentIndex,
+              total: urlsToCrawl.length,
+            });
+          }
+
+          // 배치 크롤링 실행
+          try {
+            const batchResults = await this.crawlUrls(batch, {
+              ...config,
+              timeout: Math.min(config.timeout || 30000, remainingTime - 5000), // 남은 시간보다 5초 여유
+            }, onProgress);
+
+            // 결과 추가
+            for (const result of batchResults) {
+              if (!processedUrls.has(result.url)) {
+                results.push(result);
+                processedUrls.add(result.url);
+              }
+            }
+
+            currentIndex += batchSize;
+
+            if (onProgress) {
+              onProgress({
+                type: 'batch_progress',
+                message: `배치 완료: ${results.length}/${urlsToCrawl.length}개 처리됨`,
+                current: results.length,
+                total: urlsToCrawl.length,
+              });
+            }
+          } catch (batchError) {
+            console.error(`❌ [Pagination Mode] 배치 크롤링 오류:`, batchError);
+            // 오류가 발생해도 다음 배치 계속 처리
+            currentIndex += batchSize;
+          }
+        }
+
+        console.log(`✅ [Pagination Mode] 배치 크롤링 완료: ${results.length}/${urlsToCrawl.length}개 결과 (${Math.round((Date.now() - startTime) / 1000)}초 소요)`);
+
+        if (results.length < urlsToCrawl.length && onProgress) {
+          onProgress({
+            type: 'log',
+            message: `⚠️ 일부 URL이 처리되지 않았습니다: ${results.length}/${urlsToCrawl.length}개 완료. 나머지는 재시도가 필요합니다.`,
+            current: results.length,
+            total: urlsToCrawl.length,
+          });
+        }
 
         return results;
       }
