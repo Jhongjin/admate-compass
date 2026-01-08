@@ -1086,7 +1086,11 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
 
             {/* Options Grid */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-8 w-full max-w-3xl">
-              <div className="flex flex-col gap-2 p-3 rounded-lg bg-white/5 border border-white/5">
+              <div className={`flex flex-col gap-2 p-3 rounded-lg border transition-all ${
+                !options.paginationMode && options.discoverSubPages
+                  ? 'bg-blue-500/10 border-blue-500/30' 
+                  : 'bg-white/5 border-white/5'
+              } ${options.paginationMode ? 'opacity-50' : ''}`}>
                 <Label className="text-xs text-gray-400">하위 페이지 발견</Label>
                 <div className="flex items-center gap-2 mt-auto">
                   <Checkbox
@@ -1095,19 +1099,31 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                     disabled={options.paginationMode}
                     onCheckedChange={(c) => {
                       if (!options.paginationMode) {
-                        setOptions({ ...options, discoverSubPages: !!c });
+                        const newDiscoverSubPages = !!c;
+                        setOptions({ 
+                          ...options, 
+                          discoverSubPages: newDiscoverSubPages,
+                          // 하위 페이지 발견 활성화 시 Pagination 모드 비활성화
+                          paginationMode: newDiscoverSubPages ? false : options.paginationMode,
+                        });
                       }
                     }}
                     className="border-gray-500 data-[state=checked]:bg-blue-500"
                   />
                   <span className="text-sm font-medium text-gray-300">사용</span>
                 </div>
-                {options.paginationMode && (
+                {options.paginationMode ? (
                   <p className="text-[10px] text-gray-500 leading-tight">Pagination 모드 사용 시 비활성화</p>
+                ) : (
+                  <p className="text-[10px] text-gray-500 leading-tight">sitemap.xml 및 링크 분석으로 하위 페이지 자동 추출</p>
                 )}
               </div>
 
-              <div className="flex flex-col gap-2 p-3 rounded-lg bg-purple-500/10 border border-purple-500/20">
+              <div className={`flex flex-col gap-2 p-3 rounded-lg border transition-all ${
+                options.paginationMode 
+                  ? 'bg-purple-500/10 border-purple-500/30' 
+                  : 'bg-white/5 border-white/5'
+              }`}>
                 <Label className="text-xs text-purple-400">📄 Pagination 모드</Label>
                 <div className="flex items-center gap-2 mt-auto">
                   <Checkbox
@@ -1119,6 +1135,7 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                         ...options, 
                         paginationMode: newPaginationMode,
                         discoverSubPages: newPaginationMode ? false : options.discoverSubPages, // Pagination 모드 활성화 시 하위 페이지 발견 비활성화
+                        maxDepth: newPaginationMode ? 1 : options.maxDepth, // Pagination 모드 활성화 시 깊이 1로 고정
                       });
                     }}
                     className="border-purple-500 data-[state=checked]:bg-purple-500"
@@ -1126,20 +1143,30 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                   <span className="text-sm font-medium text-purple-300">사용</span>
                 </div>
                 <p className="text-[10px] text-purple-500/70 leading-tight">부모 페이지만 입력하면 자동으로 모든 페이지 크롤링</p>
+                {options.paginationMode && (
+                  <p className="text-[10px] text-purple-400/70 leading-tight mt-1">
+                    ⚠️ 하위 페이지 발견 및 최대 깊이가 자동으로 비활성화됩니다
+                  </p>
+                )}
               </div>
 
-              <div className="flex flex-col gap-2 p-3 rounded-lg bg-white/5 border border-white/5">
+              <div className={`flex flex-col gap-2 p-3 rounded-lg border ${
+                options.paginationMode ? 'opacity-50 bg-white/5 border-white/5' : 'bg-white/5 border-white/5'
+              }`}>
                 <Label className="text-xs text-gray-400">최대 깊이</Label>
                 <Select
-                  value={String(options.maxDepth)}
+                  value={options.paginationMode ? '1' : String(options.maxDepth)}
                   onValueChange={(value) => {
-                    if (value === 'MAX') {
-                      setOptions({ ...options, maxDepth: 'MAX' });
-                      return;
+                    if (!options.paginationMode) {
+                      if (value === 'MAX') {
+                        setOptions({ ...options, maxDepth: 'MAX' });
+                        return;
+                      }
+                      const parsed = Number.parseInt(value, 10);
+                      setOptions({ ...options, maxDepth: Number.isFinite(parsed) ? parsed : 1 });
                     }
-                    const parsed = Number.parseInt(value, 10);
-                    setOptions({ ...options, maxDepth: Number.isFinite(parsed) ? parsed : 1 });
                   }}
+                  disabled={options.paginationMode}
                 >
                   <SelectTrigger className="h-7 bg-transparent border-gray-600 text-white text-sm">
                     <SelectValue placeholder="깊이 선택" />
@@ -1153,7 +1180,9 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                   </SelectContent>
                 </Select>
                 <p className="text-[10px] text-gray-500 leading-tight">
-                  Max + 하위 페이지 발견 사용 시: 발견된 하위 페이지를 실제로 열어 링크를 추가로 추출합니다.
+                  {options.paginationMode 
+                    ? 'Pagination 모드에서는 깊이 1로 고정'
+                    : 'Max + 하위 페이지 발견 사용 시: 발견된 하위 페이지를 실제로 열어 링크를 추가로 추출합니다.'}
                 </p>
               </div>
 
