@@ -100,6 +100,7 @@ export async function POST(request: NextRequest) {
             try {
               // 경고 메시지 전송 (타임아웃 위험 등) - 최우선 처리
               if (progress.type === 'warning') {
+                console.log(`📤 [API] 경고 메시지 수신: ${progress.message.substring(0, 50)}...`);
                 const warningData = JSON.stringify({
                   type: 'warning',
                   message: progress.message,
@@ -110,7 +111,8 @@ export async function POST(request: NextRequest) {
                 }) + '\n';
                 // 스트림이 준비될 때까지 기다린 후 전송
                 await writer.ready;
-                writer.write(encoder.encode(warningData));
+                await writer.write(encoder.encode(warningData));
+                console.log(`✅ [API] 경고 메시지 전송 완료`);
                 // 추가로 log 타입으로도 전송하여 확실히 전달
                 const logData = JSON.stringify({
                   type: 'log',
@@ -119,7 +121,7 @@ export async function POST(request: NextRequest) {
                   total: progress.total,
                 }) + '\n';
                 await writer.ready;
-                writer.write(encoder.encode(logData));
+                await writer.write(encoder.encode(logData));
                 return;
               }
 

@@ -368,38 +368,53 @@ export class CrawlerEngine {
       const urlsToCrawl = discoveredUrls.map(u => u.url);
 
       // 타임아웃 위험 경고 (페이지 발견 직후 즉시 전송)
-      if (discoveredUrls.length >= QUEUE_THRESHOLD) {
-        if (MAX_EXECUTION_TIME < 60 * 1000) {
-          // 남은 시간이 매우 부족한 경우
-          if (onProgress) {
-            onProgress({
-              type: 'warning',
-              message: `⚠️ 타임아웃 경고: 발견된 URL이 ${urlsToCrawl.length}개로 많아 Vercel 타임아웃(5분)에 걸릴 가능성이 매우 높습니다. 안정적으로 크롤링하려면 약 ${safeCrawlableCount}개 이내로 제한하는 것을 강력히 권장합니다. 계속 진행하면 일부만 처리되고 타임아웃될 수 있습니다.`,
-              discoveredCount: urlsToCrawl.length,
-              safeCrawlableCount: safeCrawlableCount,
-            });
-            // 추가로 log 타입으로도 전송
-            onProgress({
-              type: 'log',
-              message: `⚠️ 타임아웃 경고: 발견된 URL이 ${urlsToCrawl.length}개로 많아 Vercel 타임아웃(5분)에 걸릴 가능성이 매우 높습니다. 안정적으로 크롤링하려면 약 ${safeCrawlableCount}개 이내로 제한하는 것을 강력히 권장합니다.`,
-            });
-          }
+      // 경고 조건: 발견된 URL이 100개 이상이거나, 안정적 크롤링 가능 개수보다 많은 경우
+      const shouldWarn = discoveredUrls.length >= QUEUE_THRESHOLD || urlsToCrawl.length > safeCrawlableCount;
+      
+      if (shouldWarn) {
+        console.log(`⚠️ [Pagination Mode] 경고 조건 충족: 발견=${urlsToCrawl.length}개, 안정적=${safeCrawlableCount}개, 남은시간=${Math.round(MAX_EXECUTION_TIME / 1000)}초`);
+        
+        // 경고 메시지 생성
+        let warningMessage: string;
+        let warningLevel: 'critical' | 'warning' = 'warning';
+        
+        if (MAX_EXECUTION_TIME < 30 * 1000) {
+          // 남은 시간이 30초 미만인 경우 (매우 위험)
+          warningLevel = 'critical';
+          warningMessage = `⚠️ 타임아웃 경고: 발견된 URL이 ${urlsToCrawl.length}개로 많아 Vercel 타임아웃(5분)에 걸릴 가능성이 매우 높습니다. 안정적으로 크롤링하려면 약 ${safeCrawlableCount}개 이내로 제한하는 것을 강력히 권장합니다. 계속 진행하면 일부만 처리되고 타임아웃될 수 있습니다.`;
+        } else if (urlsToCrawl.length > safeCrawlableCount * 2) {
+          // 안정적 개수보다 2배 이상 많은 경우 (위험)
+          warningLevel = 'critical';
+          warningMessage = `⚠️ 타임아웃 경고: 발견된 URL이 ${urlsToCrawl.length}개로 많아 Vercel 타임아웃(5분)에 걸릴 가능성이 매우 높습니다. 안정적으로 크롤링하려면 약 ${safeCrawlableCount}개 이내로 제한하는 것을 강력히 권장합니다. 현재 설정으로는 일부만 처리되고 타임아웃될 수 있습니다.`;
         } else if (urlsToCrawl.length > safeCrawlableCount * 1.5) {
-          // 안정적 개수보다 1.5배 이상 많은 경우
-          if (onProgress) {
-            onProgress({
-              type: 'warning',
-              message: `⚠️ 타임아웃 위험: 발견된 URL이 ${urlsToCrawl.length}개로 많습니다. 안정적으로 크롤링하려면 약 ${safeCrawlableCount}개 이내로 제한하는 것을 권장합니다. 현재 설정으로는 일부만 처리되고 타임아웃될 수 있습니다.`,
-              discoveredCount: urlsToCrawl.length,
-              safeCrawlableCount: safeCrawlableCount,
-            });
-            // 추가로 log 타입으로도 전송
-            onProgress({
-              type: 'log',
-              message: `⚠️ 타임아웃 위험: 발견된 URL이 ${urlsToCrawl.length}개로 많습니다. 안정적으로 크롤링하려면 약 ${safeCrawlableCount}개 이내로 제한하는 것을 권장합니다.`,
-            });
-          }
+          // 안정적 개수보다 1.5배 이상 많은 경우 (주의)
+          warningMessage = `⚠️ 타임아웃 위험: 발견된 URL이 ${urlsToCrawl.length}개로 많습니다. 안정적으로 크롤링하려면 약 ${safeCrawlableCount}개 이내로 제한하는 것을 권장합니다. 현재 설정으로는 일부만 처리되고 타임아웃될 수 있습니다.`;
+        } else {
+          // 안정적 개수보다 많지만 1.5배 이하인 경우 (경고)
+          warningMessage = `⚠️ 타임아웃 주의: 발견된 URL이 ${urlsToCrawl.length}개로 많습니다. 안정적으로 크롤링하려면 약 ${safeCrawlableCount}개 이내로 제한하는 것을 권장합니다.`;
         }
+        
+        // 경고 메시지 전송 (항상 전송)
+        if (onProgress) {
+          console.log(`📤 [Pagination Mode] 경고 메시지 전송 시도: ${warningMessage.substring(0, 50)}...`);
+          onProgress({
+            type: 'warning',
+            message: warningMessage,
+            discoveredCount: urlsToCrawl.length,
+            safeCrawlableCount: safeCrawlableCount,
+          });
+          console.log(`✅ [Pagination Mode] 경고 메시지 전송 완료`);
+          
+          // 추가로 log 타입으로도 전송하여 확실히 전달
+          onProgress({
+            type: 'log',
+            message: warningMessage,
+          });
+        } else {
+          console.warn(`⚠️ [Pagination Mode] onProgress 콜백이 없어 경고 메시지를 전송할 수 없습니다.`);
+        }
+      } else {
+        console.log(`✅ [Pagination Mode] 경고 조건 미충족: 발견=${urlsToCrawl.length}개, 안정적=${safeCrawlableCount}개`);
       }
 
       // 2. 발견된 URL이 임계값 이상이면 배치 크롤링으로 처리
