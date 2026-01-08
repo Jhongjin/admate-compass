@@ -364,13 +364,6 @@ export class CrawlerEngine {
       if (discoveredUrls.length >= QUEUE_THRESHOLD) {
         console.log(`📦 [Pagination Mode] 발견된 URL이 ${discoveredUrls.length}개로 많아 배치 크롤링으로 처리합니다.`);
         
-        if (onProgress) {
-          onProgress({
-            type: 'log',
-            message: `⚠️ 발견된 URL이 ${discoveredUrls.length}개로 많습니다 (임계값: ${QUEUE_THRESHOLD}개). 배치 크롤링으로 처리합니다...`,
-          });
-        }
-
         // 배치 크롤링으로 처리 (타임아웃 방지를 위해 작은 배치로 나누어 처리)
         // Vercel 함수는 최대 5분(300초) 실행 가능하므로, 페이지 발견 시간을 고려하여 남은 시간 계산
         const urlsToCrawl = discoveredUrls.map(u => u.url);
@@ -391,11 +384,12 @@ export class CrawlerEngine {
         console.log(`⏱️ [Pagination Mode] 타임아웃 정보: 페이지 발견 ${Math.round(elapsedForDiscovery / 1000)}초 소요, 남은 시간 ${Math.round(MAX_EXECUTION_TIME / 1000)}초 (전체: ${Math.round(TOTAL_MAX_TIME / 1000)}초)`);
         console.log(`📊 [Pagination Mode] 안정적 크롤링 가능 개수: ${safeCrawlableCount}개 (현재: ${urlsToCrawl.length}개)`);
         
-        // 타임아웃 위험 경고 (즉시 전송)
+        // 타임아웃 위험 경고 (즉시 전송 - 배치 크롤링 시작 전)
         if (MAX_EXECUTION_TIME < 60 * 1000) {
           const warningMessage = `⚠️ [Pagination Mode] 남은 시간이 매우 부족합니다 (${Math.round(MAX_EXECUTION_TIME / 1000)}초). 타임아웃이 발생할 가능성이 높습니다.`;
           console.warn(warningMessage);
           
+          // 경고 메시지를 여러 번 전송하여 확실히 전달
           if (onProgress) {
             onProgress({
               type: 'warning',
@@ -403,12 +397,18 @@ export class CrawlerEngine {
               discoveredCount: urlsToCrawl.length,
               safeCrawlableCount: safeCrawlableCount,
             });
+            // 추가로 log 타입으로도 전송 (이중 전송)
+            onProgress({
+              type: 'log',
+              message: `⚠️ 타임아웃 경고: 발견된 URL이 ${urlsToCrawl.length}개로 많아 Vercel 타임아웃(5분)에 걸릴 가능성이 매우 높습니다. 안정적으로 크롤링하려면 약 ${safeCrawlableCount}개 이내로 제한하는 것을 강력히 권장합니다.`,
+            });
           }
         } else if (urlsToCrawl.length > safeCrawlableCount * 1.5) {
           // 안정적 개수보다 1.5배 이상 많으면 경고
           const warningMessage = `⚠️ [Pagination Mode] 발견된 URL(${urlsToCrawl.length}개)이 안정적 크롤링 가능 개수(${safeCrawlableCount}개)보다 많습니다.`;
           console.warn(warningMessage);
           
+          // 경고 메시지를 여러 번 전송하여 확실히 전달
           if (onProgress) {
             onProgress({
               type: 'warning',
@@ -416,7 +416,19 @@ export class CrawlerEngine {
               discoveredCount: urlsToCrawl.length,
               safeCrawlableCount: safeCrawlableCount,
             });
+            // 추가로 log 타입으로도 전송 (이중 전송)
+            onProgress({
+              type: 'log',
+              message: `⚠️ 타임아웃 위험: 발견된 URL이 ${urlsToCrawl.length}개로 많습니다. 안정적으로 크롤링하려면 약 ${safeCrawlableCount}개 이내로 제한하는 것을 권장합니다.`,
+            });
           }
+        }
+        
+        if (onProgress) {
+          onProgress({
+            type: 'log',
+            message: `⚠️ 발견된 URL이 ${discoveredUrls.length}개로 많습니다 (임계값: ${QUEUE_THRESHOLD}개). 배치 크롤링으로 처리합니다...`,
+          });
         }
         
         if (onProgress) {

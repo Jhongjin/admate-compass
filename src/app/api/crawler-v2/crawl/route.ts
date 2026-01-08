@@ -97,77 +97,89 @@ export async function POST(request: NextRequest) {
           }
           
           results = await crawlerEngine.crawlWithPagination(urls[0], crawlOptions, (progress) => {
-            // 진행률 정보 전송
-            if (progress.type === 'progress' && progress.progress) {
-              writer.write(
-                encoder.encode(
-                  JSON.stringify({
-                    type: 'progress',
-                    ...progress.progress,
-                  }) + '\n'
-                )
-              );
-            }
+            try {
+              // 경고 메시지 전송 (타임아웃 위험 등) - 최우선 처리
+              if (progress.type === 'warning') {
+                const warningData = JSON.stringify({
+                  type: 'warning',
+                  message: progress.message,
+                  discoveredCount: (progress as any).discoveredCount,
+                  safeCrawlableCount: (progress as any).safeCrawlableCount,
+                  current: progress.current,
+                  total: progress.total,
+                }) + '\n';
+                writer.write(encoder.encode(warningData));
+                // 즉시 flush하여 전송 보장
+                return;
+              }
 
-            // 로그 메시지 전송
-            if (progress.type === 'log') {
-              writer.write(
-                encoder.encode(
-                  JSON.stringify({
-                    type: 'log',
-                    message: progress.message,
-                    current: progress.current,
-                    total: progress.total,
-                  }) + '\n'
-                )
-              );
-            }
+              // 진행률 정보 전송
+              if (progress.type === 'progress' && progress.progress) {
+                writer.write(
+                  encoder.encode(
+                    JSON.stringify({
+                      type: 'progress',
+                      ...progress.progress,
+                    }) + '\n'
+                  )
+                );
+              }
 
-            // 배치 진행 상황 전송
-            if (progress.type === 'batch_progress') {
-              writer.write(
-                encoder.encode(
-                  JSON.stringify({
-                    type: 'batch_progress',
-                    message: progress.message,
-                    current: progress.current,
-                    total: progress.total,
-                    result: progress.result,
-                  }) + '\n'
-                )
-              );
-            }
-
-            // 큐 시스템 정보 전송
-            if (progress.type === 'queue_info') {
-              writer.write(
-                encoder.encode(
-                  JSON.stringify({
-                    type: 'queue_info',
-                    message: progress.message,
-                    current: progress.current,
-                    total: progress.total,
-                    jobIds: progress.jobIds || [],
-                    note: '큐 시스템으로 전환되었습니다. 백그라운드에서 자동으로 처리됩니다. 관리자 페이지에서 진행 상황을 확인할 수 있습니다.',
-                  }) + '\n'
-                )
-              );
-            }
-
-            // 경고 메시지 전송 (타임아웃 위험 등)
-            if (progress.type === 'warning') {
-              writer.write(
-                encoder.encode(
-                  JSON.stringify({
+              // 로그 메시지 전송 (경고 키워드 포함 시 우선 처리)
+              if (progress.type === 'log') {
+                const logData = JSON.stringify({
+                  type: 'log',
+                  message: progress.message,
+                  current: progress.current,
+                  total: progress.total,
+                }) + '\n';
+                writer.write(encoder.encode(logData));
+                
+                // 경고 키워드가 포함된 경우 warning으로도 전송
+                if (progress.message.includes('⚠️') || progress.message.includes('경고') || progress.message.includes('위험') || progress.message.includes('타임아웃')) {
+                  const warningData = JSON.stringify({
                     type: 'warning',
                     message: progress.message,
-                    discoveredCount: (progress as any).discoveredCount,
-                    safeCrawlableCount: (progress as any).safeCrawlableCount,
                     current: progress.current,
                     total: progress.total,
-                  }) + '\n'
-                )
-              );
+                  }) + '\n';
+                  writer.write(encoder.encode(warningData));
+                }
+              }
+
+              // 배치 진행 상황 전송
+              if (progress.type === 'batch_progress') {
+                writer.write(
+                  encoder.encode(
+                    JSON.stringify({
+                      type: 'batch_progress',
+                      message: progress.message,
+                      current: progress.current,
+                      total: progress.total,
+                      result: progress.result,
+                    }) + '\n'
+                  )
+                );
+              }
+
+              // 큐 시스템 정보 전송
+              if (progress.type === 'queue_info') {
+                writer.write(
+                  encoder.encode(
+                    JSON.stringify({
+                      type: 'queue_info',
+                      message: progress.message,
+                      current: progress.current,
+                      total: progress.total,
+                      jobIds: progress.jobIds || [],
+                      note: '큐 시스템으로 전환되었습니다. 백그라운드에서 자동으로 처리됩니다. 관리자 페이지에서 진행 상황을 확인할 수 있습니다.',
+                    }) + '\n'
+                  )
+                );
+              }
+            } catch (streamError) {
+              // 스트림 오류는 로그만 남기고 계속 진행
+              console.error('스트림 전송 오류:', streamError);
             }
           });
         } else {
