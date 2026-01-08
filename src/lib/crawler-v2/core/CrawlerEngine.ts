@@ -371,11 +371,12 @@ export class CrawlerEngine {
         const urlsToCrawl = discoveredUrls.map(u => u.url);
         const MAX_EXECUTION_TIME = 4 * 60 * 1000; // 4분 (타임아웃 여유를 두기 위해)
         const startTime = Date.now();
+        const BATCH_SIZE = 10; // 한 번에 처리할 URL 수 (타임아웃 방지를 위해 작게 설정)
         
         if (onProgress) {
           onProgress({
             type: 'log',
-            message: `${urlsToCrawl.length}개 FAQ 링크를 배치 크롤링으로 처리합니다 (타임아웃 방지를 위해 작은 배치로 나누어 처리)...`,
+            message: `${urlsToCrawl.length}개 FAQ 링크를 배치 크롤링으로 처리합니다 (${BATCH_SIZE}개씩 배치 처리, 타임아웃 방지)...`,
             current: 0,
             total: urlsToCrawl.length,
           });
@@ -385,10 +386,10 @@ export class CrawlerEngine {
         const results: CrawlResult[] = [];
         const processedUrls = new Set<string>();
         let currentIndex = 0;
-        const batchSize = Math.min(config.concurrency || 3, 5); // 배치 크기 제한
+        let batchNumber = 0;
 
         while (currentIndex < urlsToCrawl.length) {
-          // 타임아웃 체크
+          // 타임아웃 체크 (매 배치 시작 전)
           const elapsed = Date.now() - startTime;
           if (elapsed >= MAX_EXECUTION_TIME) {
             console.warn(`⏰ [Pagination Mode] 타임아웃 임박 (${Math.round(elapsed / 1000)}초 경과). 현재까지 ${results.length}개 처리 완료.`);
@@ -405,24 +406,40 @@ export class CrawlerEngine {
           }
 
           // 다음 배치 추출
-          const batch = urlsToCrawl.slice(currentIndex, currentIndex + batchSize);
+          const batch = urlsToCrawl.slice(currentIndex, currentIndex + BATCH_SIZE);
           const remainingTime = MAX_EXECUTION_TIME - elapsed;
+          batchNumber++;
           
           if (onProgress) {
             onProgress({
               type: 'log',
-              message: `배치 ${Math.floor(currentIndex / batchSize) + 1} 처리 중: ${batch.length}개 URL (남은 시간: ${Math.round(remainingTime / 1000)}초)`,
-              current: currentIndex,
+              message: `배치 ${batchNumber} 처리 중: ${batch.length}개 URL (${results.length}/${urlsToCrawl.length} 완료, 남은 시간: ${Math.round(remainingTime / 1000)}초)`,
+              current: results.length,
               total: urlsToCrawl.length,
             });
           }
 
-          // 배치 크롤링 실행
+          // 배치 크롤링 실행 (단일 배치만 처리)
           try {
+            const batchStartTime = Date.now();
             const batchResults = await this.crawlUrls(batch, {
               ...config,
-              timeout: Math.min(config.timeout || 30000, remainingTime - 5000), // 남은 시간보다 5초 여유
-            }, onProgress);
+              concurrency: Math.min(config.concurrency || 3, 3), // 병렬 처리 수 제한
+              timeout: Math.min(config.timeout || 30000, remainingTime - 10000), // 남은 시간보다 10초 여유
+            }, (progress) => {
+              // 진행률 콜백을 전체 진행률로 변환
+              if (onProgress && progress.type === 'batch_progress') {
+                onProgress({
+                  type: 'batch_progress',
+                  message: `배치 ${batchNumber}: ${progress.message}`,
+                  current: results.length + (progress.current || 0),
+                  total: urlsToCrawl.length,
+                  result: progress.result,
+                });
+              } else if (onProgress) {
+                onProgress(progress);
+              }
+            });
 
             // 결과 추가
             for (const result of batchResults) {
@@ -432,29 +449,40 @@ export class CrawlerEngine {
               }
             }
 
-            currentIndex += batchSize;
+            const batchElapsed = Date.now() - batchStartTime;
+            console.log(`✅ [Pagination Mode] 배치 ${batchNumber} 완료: ${batchResults.length}개 처리 (${Math.round(batchElapsed / 1000)}초 소요)`);
+
+            currentIndex += BATCH_SIZE;
 
             if (onProgress) {
               onProgress({
                 type: 'batch_progress',
-                message: `배치 완료: ${results.length}/${urlsToCrawl.length}개 처리됨`,
+                message: `배치 ${batchNumber} 완료: ${results.length}/${urlsToCrawl.length}개 처리됨`,
                 current: results.length,
                 total: urlsToCrawl.length,
               });
             }
+
+            // 배치 처리 후 타임아웃 재확인
+            const totalElapsed = Date.now() - startTime;
+            if (totalElapsed >= MAX_EXECUTION_TIME) {
+              console.warn(`⏰ [Pagination Mode] 배치 처리 후 타임아웃 확인: ${Math.round(totalElapsed / 1000)}초 경과`);
+              break;
+            }
           } catch (batchError) {
-            console.error(`❌ [Pagination Mode] 배치 크롤링 오류:`, batchError);
+            console.error(`❌ [Pagination Mode] 배치 ${batchNumber} 크롤링 오류:`, batchError);
             // 오류가 발생해도 다음 배치 계속 처리
-            currentIndex += batchSize;
+            currentIndex += BATCH_SIZE;
           }
         }
 
-        console.log(`✅ [Pagination Mode] 배치 크롤링 완료: ${results.length}/${urlsToCrawl.length}개 결과 (${Math.round((Date.now() - startTime) / 1000)}초 소요)`);
+        const totalElapsed = Date.now() - startTime;
+        console.log(`✅ [Pagination Mode] 배치 크롤링 완료: ${results.length}/${urlsToCrawl.length}개 결과 (${Math.round(totalElapsed / 1000)}초 소요)`);
 
         if (results.length < urlsToCrawl.length && onProgress) {
           onProgress({
             type: 'log',
-            message: `⚠️ 일부 URL이 처리되지 않았습니다: ${results.length}/${urlsToCrawl.length}개 완료. 나머지는 재시도가 필요합니다.`,
+            message: `⚠️ 일부 URL이 처리되지 않았습니다: ${results.length}/${urlsToCrawl.length}개 완료. 나머지 ${urlsToCrawl.length - results.length}개는 재시도가 필요합니다.`,
             current: results.length,
             total: urlsToCrawl.length,
           });
