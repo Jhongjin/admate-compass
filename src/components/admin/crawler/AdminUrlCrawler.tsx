@@ -1323,7 +1323,7 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
 
             {/* 타임아웃 경고 Alert 박스 - 깔끔한 팝업 형태 */}
             {timeoutWarning?.show && (
-              <Alert className="bg-[#1A1F2C] border border-amber-700/30 text-gray-100 mb-6 shadow-xl">
+              <Alert className="bg-[#1A1F2C] border border-amber-700/30 text-gray-100 mt-8 mb-6 w-full max-w-3xl shadow-xl">
                 <AlertTriangle className="h-5 w-5 text-amber-400" />
                 <AlertTitle className="text-amber-300 font-semibold text-base mb-2">
                   타임아웃 위험 경고
