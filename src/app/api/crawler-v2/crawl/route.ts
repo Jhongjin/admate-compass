@@ -197,47 +197,47 @@ export async function POST(request: NextRequest) {
         } else {
           // 일반 모드
           results = await crawlerEngine.crawlUrls(urls, crawlOptions, (progress) => {
-            // 진행률 정보 전송
-            if (progress.type === 'progress' && progress.progress) {
-              writer.write(
-                encoder.encode(
-                  JSON.stringify({
-                    type: 'progress',
-                    ...progress.progress,
-                  }) + '\n'
-                )
-              );
-            }
+          // 진행률 정보 전송
+          if (progress.type === 'progress' && progress.progress) {
+            writer.write(
+              encoder.encode(
+                JSON.stringify({
+                  type: 'progress',
+                  ...progress.progress,
+                }) + '\n'
+              )
+            );
+          }
 
-            // 로그 메시지 전송
-            if (progress.type === 'log') {
-              writer.write(
-                encoder.encode(
-                  JSON.stringify({
-                    type: 'log',
-                    message: progress.message,
-                    current: progress.current,
-                    total: progress.total,
-                  }) + '\n'
-                )
-              );
-            }
+          // 로그 메시지 전송
+          if (progress.type === 'log') {
+            writer.write(
+              encoder.encode(
+                JSON.stringify({
+                  type: 'log',
+                  message: progress.message,
+                  current: progress.current,
+                  total: progress.total,
+                }) + '\n'
+              )
+            );
+          }
 
-            // 배치 진행 상황 전송
-            if (progress.type === 'batch_progress') {
-              writer.write(
-                encoder.encode(
-                  JSON.stringify({
-                    type: 'batch_progress',
-                    message: progress.message,
-                    current: progress.current,
-                    total: progress.total,
-                    result: progress.result,
-                  }) + '\n'
-                )
-              );
-            }
-          });
+          // 배치 진행 상황 전송
+          if (progress.type === 'batch_progress') {
+            writer.write(
+              encoder.encode(
+                JSON.stringify({
+                  type: 'batch_progress',
+                  message: progress.message,
+                  current: progress.current,
+                  total: progress.total,
+                  result: progress.result,
+                }) + '\n'
+              )
+            );
+          }
+        });
         }
 
         // 최종 완료 정보

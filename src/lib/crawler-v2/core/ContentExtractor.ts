@@ -62,7 +62,7 @@ export class ContentExtractor {
         // 일반 페이지는 URL을 fallback으로 사용
         finalTitle = title || url;
       }
-      
+
       return {
         title: finalTitle,
         content: cleanContent,
