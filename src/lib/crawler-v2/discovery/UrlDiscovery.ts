@@ -1398,7 +1398,7 @@ export class UrlDiscovery {
 
         // 빈 페이지 연속 카운터 (최적화: 연속으로 빈 페이지가 나오면 조기 종료)
         let consecutiveEmptyPages = 0;
-        const maxConsecutiveEmptyPages = 5; // 연속으로 5개 빈 페이지가 나오면 종료
+        const maxConsecutiveEmptyPages = 10; // 연속으로 10개 빈 페이지가 나오면 종료 (증가)
 
         // 모든 페이지를 방문하여 FAQ 링크 추출
         for (let i = 0; i < paginationUrls.length; i++) {
@@ -1421,22 +1421,31 @@ export class UrlDiscovery {
                 waitUntil: 'networkidle2',
                 timeout: config.timeout || 60000,
               });
-              await new Promise(resolve => setTimeout(resolve, 3000)); // 페이지 안정화 대기 (동적 콘텐츠 로드를 위해 증가)
+              await new Promise(resolve => setTimeout(resolve, 5000)); // 페이지 안정화 대기 증가 (동적 콘텐츠 로드를 위해)
 
               // 스크롤을 여러 번 내려서 동적 콘텐츠 로드 (FAQ 링크가 동적으로 로드될 수 있음)
-              for (let scrollStep = 0; scrollStep < 3; scrollStep++) {
+              for (let scrollStep = 0; scrollStep < 5; scrollStep++) { // 스크롤 횟수 증가
                 await paginationPage.evaluate((step) => {
                   const scrollHeight = document.body.scrollHeight;
-                  const scrollPosition = (step + 1) * (scrollHeight / 3);
+                  const scrollPosition = (step + 1) * (scrollHeight / 5);
                   window.scrollTo(0, scrollPosition);
                 }, scrollStep);
-                await new Promise(resolve => setTimeout(resolve, 500)); // 각 스크롤 후 대기
+                await new Promise(resolve => setTimeout(resolve, 1000)); // 각 스크롤 후 대기 시간 증가
               }
               // 마지막으로 맨 아래로 스크롤
               await paginationPage.evaluate(() => {
                 window.scrollTo(0, document.body.scrollHeight);
               });
-              await new Promise(resolve => setTimeout(resolve, 1000)); // 최종 스크롤 후 대기
+              await new Promise(resolve => setTimeout(resolve, 2000)); // 최종 스크롤 후 대기 시간 증가
+              
+              // 추가 대기: FAQ 리스트가 로드될 때까지 대기
+              try {
+                await paginationPage.waitForSelector('a[href*="/help/faq/"]', { timeout: 5000 }).catch(() => {
+                  // FAQ 링크가 없을 수도 있음 (빈 페이지)
+                });
+              } catch (e) {
+                // 선택자 대기 실패는 무시
+              }
 
               // FAQ 링크 추출 (Naver Ads FAQ 페이지의 링크 패턴: /help/faq/{id})
               // 더 정확한 선택자 사용: FAQ 리스트 영역을 우선적으로 찾기
@@ -1444,13 +1453,19 @@ export class UrlDiscovery {
                 const links: string[] = [];
                 const linkSet = new Set<string>(); // 중복 제거용
                 
-                // 1. FAQ 리스트 영역 우선 검색 (ul, ol, div 등 FAQ 리스트가 있을 수 있는 영역)
+                // 1. FAQ 리스트 영역 우선 검색 (더 넓은 범위의 선택자 사용)
                 const faqListSelectors = [
                   'ul a[href*="/help/faq/"]',
                   'ol a[href*="/help/faq/"]',
+                  'li a[href*="/help/faq/"]',
+                  'div a[href*="/help/faq/"]',
+                  'article a[href*="/help/faq/"]',
+                  'section a[href*="/help/faq/"]',
                   '.faq-list a[href*="/help/faq/"]',
                   '[class*="faq"] a[href*="/help/faq/"]',
                   '[class*="list"] a[href*="/help/faq/"]',
+                  '[class*="item"] a[href*="/help/faq/"]',
+                  '[class*="content"] a[href*="/help/faq/"]',
                 ];
                 
                 // 2. 모든 링크 검색 (fallback)
@@ -1458,27 +1473,31 @@ export class UrlDiscovery {
                 
                 // FAQ 리스트 영역에서 먼저 찾기
                 for (const selector of faqListSelectors) {
-                  const elements = document.querySelectorAll(selector);
-                  elements.forEach((link) => {
-                    const href = link.getAttribute('href');
-                    if (!href) return;
-                    
-                    try {
-                      const absoluteUrl = new URL(href, baseOrigin).href;
-                      const faqPattern = /\/help\/faq\/(\d+)/;
-                      const match = absoluteUrl.match(faqPattern);
-                      if (match) {
-                        const faqId = match[1];
-                        const cleanUrl = `${baseOrigin}/help/faq/${faqId}`;
-                        if (!linkSet.has(cleanUrl)) {
-                          linkSet.add(cleanUrl);
-                          links.push(cleanUrl);
+                  try {
+                    const elements = document.querySelectorAll(selector);
+                    elements.forEach((link) => {
+                      const href = link.getAttribute('href');
+                      if (!href) return;
+                      
+                      try {
+                        const absoluteUrl = new URL(href, baseOrigin).href;
+                        const faqPattern = /\/help\/faq\/(\d+)/;
+                        const match = absoluteUrl.match(faqPattern);
+                        if (match) {
+                          const faqId = match[1];
+                          const cleanUrl = `${baseOrigin}/help/faq/${faqId}`;
+                          if (!linkSet.has(cleanUrl)) {
+                            linkSet.add(cleanUrl);
+                            links.push(cleanUrl);
+                          }
                         }
+                      } catch (e) {
+                        // URL 파싱 오류 무시
                       }
-                    } catch (e) {
-                      // URL 파싱 오류 무시
-                    }
-                  });
+                    });
+                  } catch (e) {
+                    // 선택자 오류 무시
+                  }
                 }
                 
                 // 모든 링크에서도 찾기 (FAQ 리스트 영역에서 찾지 못한 경우)
@@ -1621,6 +1640,17 @@ export class UrlDiscovery {
                 // Connection closed 에러는 무시
                 if (!closeError?.message?.includes('Connection closed') && !closeError?.message?.includes('ConnectionClosedError')) {
                   console.warn(`⚠️ [Pagination Discovery] 페이지 닫기 실패: ${closeError.message}`);
+                }
+              }
+              
+              // 메모리 정리: 주기적으로 브라우저 연결 확인 및 정리
+              if (i > 0 && i % 5 === 0) {
+                try {
+                  // 브라우저 연결 상태 확인
+                  await browser.version();
+                } catch (error) {
+                  console.warn(`⚠️ [Pagination Discovery] 브라우저 연결 끊김 감지, 재연결 중...`);
+                  browser = await browserManager.initialize();
                 }
               }
             }

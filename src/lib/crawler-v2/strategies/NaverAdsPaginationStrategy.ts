@@ -381,14 +381,17 @@ export class NaverAdsPaginationStrategy {
         console.log(`🔍 [NaverAdsPagination] 다음 페이지 링크 추적 조건: hasXYPattern=${hasXYPattern}, isFromLinkMax=${isFromLinkMax}, nextPageLink=${!!paginationData.nextPageLink}`);
         
         // "X/Y" 패턴을 찾지 않았을 때만 "다음 페이지" 링크 추적 실행
+        // 단, 최대 시도 횟수를 제한하여 리소스 부족 방지
         if (!hasXYPattern && isFromLinkMax && paginationData.nextPageLink) {
           console.log(`🔍 [NaverAdsPagination] "다음 페이지" 링크 추적 시작 (현재 최대값: ${maxLinkPage})...`);
           console.log(`🔍 [NaverAdsPagination] "다음 페이지" 링크 추적 시작...`);
           
           let lastPageFound = maxLinkPage;
           let attempts = 0;
-          const maxAttempts = 50; // 최대 시도 횟수 증가 (35페이지까지 추적 가능하도록)
+          const maxAttempts = Math.min(20, maxLinkPage + 5); // 최대 시도 횟수 제한 (리소스 부족 방지)
           let currentUrl = url;
+          let consecutiveErrors = 0;
+          const maxConsecutiveErrors = 3; // 연속 에러 3회 발생 시 중단
           
           while (attempts < maxAttempts) {
             attempts++;
@@ -421,8 +424,8 @@ export class NaverAdsPaginationStrategy {
                 break;
               }
               
-              await page.goto(nextLinkInfo, { waitUntil: 'networkidle2', timeout: 30000 });
-              await new Promise(resolve => setTimeout(resolve, 2000)); // 페이지 안정화 대기
+              await page.goto(nextLinkInfo, { waitUntil: 'networkidle2', timeout: 20000 }); // 타임아웃 단축
+              await new Promise(resolve => setTimeout(resolve, 1500)); // 대기 시간 단축
               
               // 현재 페이지에서 페이지 번호 및 "X/Y" 패턴 추출
               const pageInfo = await page.evaluate(() => {
@@ -450,17 +453,31 @@ export class NaverAdsPaginationStrategy {
                   searchText += ' ' + (el.textContent || '');
                 });
                 
-                const rangePattern = /(\d+)\s*\/\s*(\d+)/g;
+                // 더 정확한 패턴 사용: "페이지 X/Y" 또는 "X/Y" (X가 Y보다 작거나 같아야 함)
+                const rangePattern = /(?:페이지\s*)?(\d+)\s*\/\s*(\d+)/g;
                 const rangeMatches = Array.from(searchText.matchAll(rangePattern));
                 
                 return {
                   pageNumbers: Array.from(pageNumbers).sort((a, b) => a - b),
-                  rangeMatches: rangeMatches.map(m => ({
-                    first: parseInt(m[1], 10),
-                    second: parseInt(m[2], 10)
-                  }))
+                  rangeMatches: rangeMatches
+                    .map(m => {
+                      const first = parseInt(m[1], 10);
+                      const second = parseInt(m[2], 10);
+                      // X가 Y보다 작거나 같고, 둘 다 유효한 경우만 반환
+                      if (!isNaN(first) && !isNaN(second) && first > 0 && second > 0 && first <= second && second < 10000) {
+                        return { first, second };
+                      }
+                      // X가 Y보다 크면 Y만 사용
+                      if (!isNaN(second) && second > 0 && second < 10000) {
+                        return { first: 1, second };
+                      }
+                      return null;
+                    })
+                    .filter((m): m is { first: number; second: number } => m !== null)
                 };
               });
+              
+              consecutiveErrors = 0; // 성공 시 에러 카운터 리셋
               
               // 페이지 번호 업데이트
               if (pageInfo.pageNumbers.length > 0) {
@@ -473,17 +490,12 @@ export class NaverAdsPaginationStrategy {
               // "X/Y" 패턴에서 전체 페이지 수 확인
               if (pageInfo.rangeMatches.length > 0) {
                 for (const match of pageInfo.rangeMatches) {
-                  const firstNum = match.first;
-                  const secondNum = match.second;
-                  // X가 Y보다 크면 무시하고 Y만 사용 (예: 529/35 → 35만 사용)
-                  const validTotal = (!isNaN(firstNum) && !isNaN(secondNum) && firstNum <= secondNum) 
-                    ? secondNum 
-                    : secondNum;
+                  const validTotal = match.second;
                   
-                  if (!isNaN(validTotal) && validTotal > 0 && validTotal < 10000) {
+                  if (validTotal > 0 && validTotal < 10000) {
                     if (validTotal > lastPageFound) {
                       lastPageFound = validTotal;
-                      console.log(`[NaverAdsPagination] "X/Y" 패턴에서 전체 페이지 수 발견: ${lastPageFound} (${firstNum}/${secondNum})`);
+                      console.log(`[NaverAdsPagination] "X/Y" 패턴에서 전체 페이지 수 발견: ${lastPageFound} (${match.first}/${match.second})`);
                       // "X/Y" 패턴을 찾으면 즉시 중단
                       attempts = maxAttempts; // 루프 종료를 위해 attempts를 maxAttempts로 설정
                       break;
@@ -492,15 +504,42 @@ export class NaverAdsPaginationStrategy {
                 }
               }
               
+              // 현재 페이지 번호 확인: URL에서 추출
+              const currentPageMatch = nextLinkInfo.match(/[?&]page=(\d+)/);
+              if (currentPageMatch) {
+                const currentPageNum = parseInt(currentPageMatch[1], 10);
+                // 현재 페이지가 발견한 최대 페이지보다 크면 중단 (잘못된 추적 방지)
+                if (!isNaN(currentPageNum) && currentPageNum > lastPageFound + 5) {
+                  console.warn(`[NaverAdsPagination] 현재 페이지(${currentPageNum})가 발견한 최대 페이지(${lastPageFound})보다 너무 큼. 추적 중단.`);
+                  break;
+                }
+              }
+              
               currentUrl = nextLinkInfo;
             } catch (error: any) {
+              consecutiveErrors++;
+              
+              // 연속 에러가 발생하면 중단
+              if (consecutiveErrors >= maxConsecutiveErrors) {
+                console.warn(`[NaverAdsPagination] 연속 ${consecutiveErrors}회 에러 발생. 추적 중단.`);
+                break;
+              }
+              
               // 프레임 분리 에러는 추적 중단하되, 현재까지 발견한 최대 페이지 수는 유지
               if (error?.message?.includes('detached') || error?.message?.includes('LifecycleWatcher')) {
                 console.warn(`[NaverAdsPagination] 프레임 분리 에러 발생. 현재까지 발견한 최대 페이지: ${lastPageFound}`);
                 break;
               }
+              
+              // 리소스 부족 에러도 중단
+              if (error?.message?.includes('ERR_INSUFFICIENT_RESOURCES')) {
+                console.warn(`[NaverAdsPagination] 리소스 부족 에러 발생. 추적 중단.`);
+                break;
+              }
+              
               console.error(`[NaverAdsPagination] 다음 페이지 이동 실패:`, error);
-              break;
+              // 에러 발생 시 잠시 대기 후 재시도
+              await new Promise(resolve => setTimeout(resolve, 1000));
             }
           }
           
@@ -515,7 +554,7 @@ export class NaverAdsPaginationStrategy {
           // 원래 URL로 돌아가기 (프레임이 분리되지 않은 경우에만)
           try {
             if (!page.isClosed()) {
-              await page.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
+              await page.goto(url, { waitUntil: 'networkidle2', timeout: 20000 });
               await new Promise(resolve => setTimeout(resolve, 1000));
             } else {
               console.warn(`[NaverAdsPagination] 페이지가 닫혀서 원래 URL로 복귀할 수 없습니다.`);
