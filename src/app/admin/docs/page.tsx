@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect, useCallback, Suspense } from "react";
+import { useState, useMemo, useEffect, useCallback, Suspense, startTransition, useDeferredValue } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import AdminThemeLayout from "@/components/layouts/AdminThemeLayout";
 import {
@@ -156,6 +156,7 @@ function AdminDocsPageContent() {
     const router = useRouter();
     const params = useSearchParams();
     const [activeTab, setActiveTab] = useState("documents");
+    const deferredActiveTab = useDeferredValue(activeTab);
     const [searchQuery, setSearchQuery] = useState("");
     const [selectedStatus, setSelectedStatus] = useState<string | null>(null);
     const [selectedType, setSelectedType] = useState<string>("all");
@@ -513,7 +514,7 @@ function AdminDocsPageContent() {
     }, [filteredDocs]);
 
     const documentGroups = useMemo(() => {
-        if (activeTab !== "crawling") return [];
+        if (deferredActiveTab !== "crawling") return [];
 
         // URL 정규화 함수 (trailing slash 제거, 소문자 변환)
         const normalizeUrlForGrouping = (url: string | null | undefined): string | null => {
@@ -626,7 +627,7 @@ function AdminDocsPageContent() {
             ...group,
             isExpanded: expandedGroups.has(index)
         }));
-    }, [filteredDocs, activeTab, expandedGroups]);
+    }, [filteredDocs, deferredActiveTab, expandedGroups]);
 
     const formatSize = (bytes: number) => {
         if (bytes === 0) return "0 B";
@@ -836,7 +837,7 @@ const getDocumentTypeBadgeClass = (type: string) => {
 
                 <VendorScopeBar selected={selectedVendors} onChange={setSelectedVendors} />
 
-                <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
+                <Tabs value={activeTab} onValueChange={(v) => startTransition(() => setActiveTab(v))} className="w-full">
                     <TabsList className="bg-[#131823] border border-white/5 p-1 rounded-xl mb-6">
                         <TabsTrigger
                             value="documents"
@@ -898,48 +899,53 @@ const getDocumentTypeBadgeClass = (type: string) => {
                     </TabsContent>
 
                     <TabsContent value="crawling" className="space-y-6">
-                        <AdminUrlCrawler
-                            defaultVendor={selectedVendors}
-                            onVendorChange={(vendors) => {
-                                // URL 크롤링 페이지에서 벤더 선택 변경 시 상단 벤더와 동기화
-                                setSelectedVendors(vendors);
-                            }}
-                            onSuccess={async () => {
-                                // 문서 목록 새로고침 및 캐시 무효화
-                                await queryClient.invalidateQueries({ queryKey: ['admin-documents'], exact: false });
-                                // 약간의 지연 후 새로고침 (DB 업데이트 완료 대기)
-                                setTimeout(async () => {
-                                    await refetch();
-                                }, 2000);
-                            }}
-                        />
+                        {deferredActiveTab === "crawling" ? (
+                            <>
+                                <AdminUrlCrawler
+                                    defaultVendor={selectedVendors}
+                                    onVendorChange={(vendors) => {
+                                        setSelectedVendors(vendors);
+                                    }}
+                                    onSuccess={async () => {
+                                        await queryClient.invalidateQueries({ queryKey: ['admin-documents'], exact: false });
+                                        setTimeout(async () => {
+                                            await refetch();
+                                        }, 2000);
+                                    }}
+                                />
 
-                        <div className="mt-8">
-                            <div className="flex items-center justify-between mb-4">
-                                <h2 className="text-xl font-bold text-white">크롤링된 문서 목록</h2>
-                                <Button variant="outline" onClick={() => refetch()} className="border-white/10 text-gray-400 hover:text-white">
-                                    <RefreshCw className="w-4 h-4 mr-2" />
-                                    새로고침
-                                </Button>
+                                <div className="mt-8">
+                                    <div className="flex items-center justify-between mb-4">
+                                        <h2 className="text-xl font-bold text-white">크롤링된 문서 목록</h2>
+                                        <Button variant="outline" onClick={() => refetch()} className="border-white/10 text-gray-400 hover:text-white">
+                                            <RefreshCw className="w-4 h-4 mr-2" />
+                                            새로고침
+                                        </Button>
+                                    </div>
+
+                                    <GroupedDocumentList
+                                        groups={documentGroups}
+                                        onToggleGroupExpansion={handleToggleGroupExpansion}
+                                        onToggleSubPageSelection={() => { }}
+                                        onToggleAllSubPages={() => { }}
+                                        onReindexDocument={handleReindexDocument}
+                                        onDownloadDocument={() => { }}
+                                        onDeleteDocument={(id) => setDeleteId(id)}
+                                        onSelectAll={handleSelectAll}
+                                        onSelectDocument={handleSelectDocument}
+                                        onBulkDelete={handleBulkDelete}
+                                        selectedDocuments={selectedDocs}
+                                        isAllSelected={selectedDocs.size > 0 && selectedDocs.size === filteredDocs.length}
+                                        actionLoading={actionLoading}
+                                        deletingDocument={deleteId}
+                                    />
+                                </div>
+                            </>
+                        ) : (
+                            <div className="flex items-center justify-center py-16">
+                                <Loader2 className="w-8 h-8 animate-spin text-blue-400" />
                             </div>
-
-                            <GroupedDocumentList
-                                groups={documentGroups}
-                                onToggleGroupExpansion={handleToggleGroupExpansion}
-                                onToggleSubPageSelection={() => { }}
-                                onToggleAllSubPages={() => { }}
-                                onReindexDocument={handleReindexDocument}
-                                onDownloadDocument={() => { }}
-                                onDeleteDocument={(id) => setDeleteId(id)}
-                                onSelectAll={handleSelectAll}
-                                onSelectDocument={handleSelectDocument}
-                                onBulkDelete={handleBulkDelete}
-                                selectedDocuments={selectedDocs}
-                                isAllSelected={selectedDocs.size > 0 && selectedDocs.size === filteredDocs.length}
-                                actionLoading={actionLoading}
-                                deletingDocument={deleteId}
-                            />
-                        </div>
+                        )}
                     </TabsContent>
                 </Tabs>
 
