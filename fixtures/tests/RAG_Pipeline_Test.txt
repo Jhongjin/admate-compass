@@ -1,0 +1,1 @@
+This is a comprehensive test document for the integrated RAG pipeline. It contains detailed information about Meta advertising policies, guidelines, and best practices for Korean advertisers. This document tests the complete pipeline including document processing, chunking, and embedding generation.

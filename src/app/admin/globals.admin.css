@@ -1,0 +1,366 @@
+/* 관리자 페이지 전용 CSS - 가독성 극대화 */
+
+/* 기본 레이아웃 개선 */
+.admin-container {
+  background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #334155 100%);
+  min-height: 100vh;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+/* 카드 스타일 강화 - 가독성 최우선 */
+.card-enhanced {
+  background: rgba(30, 41, 59, 0.95);
+  border: 1px solid rgba(148, 163, 184, 0.3);
+  border-radius: 16px;
+  backdrop-filter: blur(16px);
+  box-shadow: 
+    0 8px 32px rgba(0, 0, 0, 0.4),
+    0 4px 16px rgba(0, 0, 0, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.card-enhanced:hover {
+  border-color: rgba(59, 130, 246, 0.4);
+  box-shadow: 
+    0 10px 15px -3px rgba(0, 0, 0, 0.4),
+    0 4px 6px -2px rgba(0, 0, 0, 0.3),
+    0 0 0 1px rgba(59, 130, 246, 0.2),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15);
+  transform: translateY(-2px);
+}
+
+/* 텍스트 가독성 극대화 */
+.text-enhanced {
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+  letter-spacing: 0.025em;
+}
+
+.text-primary-enhanced {
+  color: #ffffff !important;
+  font-weight: 700;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.8);
+}
+
+.text-secondary-enhanced {
+  color: #e2e8f0 !important;
+  font-weight: 600;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+}
+
+.text-muted-enhanced {
+  color: #cbd5e1 !important;
+  font-weight: 500;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+/* 버튼 스타일 개선 - 고대비 */
+.btn-enhanced {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  border: 2px solid rgba(59, 130, 246, 0.5);
+  color: white !important;
+  font-weight: 700;
+  border-radius: 12px;
+  padding: 14px 28px;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 4px 16px rgba(59, 130, 246, 0.4);
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
+}
+
+.btn-enhanced:hover {
+  background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+  box-shadow: 0 8px 24px rgba(59, 130, 246, 0.5);
+  transform: translateY(-2px);
+  border-color: rgba(59, 130, 246, 0.8);
+}
+
+/* 프로그레스 바 개선 */
+.progress-enhanced {
+  background: rgba(30, 41, 59, 0.8);
+  border-radius: 8px;
+  height: 8px;
+  overflow: hidden;
+  position: relative;
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: 8px;
+  transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.progress-success .progress-fill {
+  background: linear-gradient(90deg, #10b981 0%, #059669 100%);
+}
+
+.progress-warning .progress-fill {
+  background: linear-gradient(90deg, #f59e0b 0%, #d97706 100%);
+}
+
+.progress-purple .progress-fill {
+  background: linear-gradient(90deg, #8b5cf6 0%, #7c3aed 100%);
+}
+
+.progress-fill::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+  animation: shimmer 2s infinite;
+}
+
+@keyframes shimmer {
+  0% { left: -100%; }
+  100% { left: 100%; }
+}
+
+.progress-with-percentage {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.progress-percentage {
+  font-size: 12px;
+  font-weight: 600;
+  color: #94a3b8;
+  min-width: 32px;
+  text-align: right;
+}
+
+/* 테이블 스타일 개선 */
+.table-enhanced {
+  background: rgba(15, 23, 42, 0.6);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.table-enhanced th {
+  background: rgba(30, 41, 59, 0.8);
+  color: #f8fafc;
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: 0.025em;
+  padding: 16px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.table-enhanced td {
+  padding: 16px;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.1);
+  color: #cbd5e1;
+  font-weight: 500;
+}
+
+.table-enhanced tr:hover {
+  background: rgba(59, 130, 246, 0.05);
+}
+
+/* 알림 스타일 개선 */
+.alert-enhanced {
+  border-radius: 12px;
+  padding: 16px 20px;
+  backdrop-filter: blur(8px);
+  border: 1px solid rgba(148, 163, 184, 0.2);
+}
+
+.alert-info {
+  background: rgba(59, 130, 246, 0.1);
+  border-color: rgba(59, 130, 246, 0.3);
+  color: #93c5fd;
+}
+
+.alert-success {
+  background: rgba(16, 185, 129, 0.1);
+  border-color: rgba(16, 185, 129, 0.3);
+  color: #6ee7b7;
+}
+
+.alert-warning {
+  background: rgba(245, 158, 11, 0.1);
+  border-color: rgba(245, 158, 11, 0.3);
+  color: #fcd34d;
+}
+
+.alert-error {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: rgba(239, 68, 68, 0.3);
+  color: #fca5a5;
+}
+
+/* 배지 스타일 개선 */
+.badge-enhanced {
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border: 1px solid;
+}
+
+.badge-success {
+  background: rgba(16, 185, 129, 0.2);
+  border-color: rgba(16, 185, 129, 0.4);
+  color: #6ee7b7;
+}
+
+.badge-warning {
+  background: rgba(245, 158, 11, 0.2);
+  border-color: rgba(245, 158, 11, 0.4);
+  color: #fcd34d;
+}
+
+.badge-info {
+  background: rgba(59, 130, 246, 0.2);
+  border-color: rgba(59, 130, 246, 0.4);
+  color: #93c5fd;
+}
+
+/* 모바일 최적화 */
+@media (max-width: 768px) {
+  .card-enhanced {
+    margin: 0 16px;
+    border-radius: 12px;
+  }
+  
+  .text-4xl {
+    font-size: 2rem;
+  }
+  
+  .text-2xl {
+    font-size: 1.5rem;
+  }
+  
+  .progress-with-percentage {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  
+  .progress-percentage {
+    align-self: flex-end;
+  }
+}
+
+/* 다크 모드 최적화 */
+@media (prefers-color-scheme: dark) {
+  .card-enhanced {
+    background: rgba(15, 23, 42, 0.9);
+    border-color: rgba(148, 163, 184, 0.25);
+  }
+  
+  .text-primary-enhanced {
+    color: #ffffff;
+  }
+  
+  .text-secondary-enhanced {
+    color: #e2e8f0;
+  }
+}
+
+/* 포커스 및 접근성 개선 */
+.card-enhanced:focus-within {
+  outline: 2px solid rgba(59, 130, 246, 0.5);
+  outline-offset: 2px;
+}
+
+.btn-enhanced:focus {
+  outline: 2px solid rgba(59, 130, 246, 0.5);
+  outline-offset: 2px;
+}
+
+/* 로딩 상태 개선 */
+.loading-shimmer {
+  background: linear-gradient(90deg, 
+    rgba(148, 163, 184, 0.1) 0%, 
+    rgba(148, 163, 184, 0.2) 50%, 
+    rgba(148, 163, 184, 0.1) 100%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s infinite;
+}
+
+@keyframes shimmer {
+  0% { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* 성능 지표 카드 특별 스타일 */
+.performance-card {
+  background: rgba(15, 23, 42, 0.95) !important;
+  border: 2px solid rgba(59, 130, 246, 0.3) !important;
+  backdrop-filter: blur(20px);
+}
+
+.performance-card .text-white {
+  color: #ffffff !important;
+  font-weight: 800 !important;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.9);
+  font-size: 1.1em;
+}
+
+.performance-card .text-gray-400 {
+  color: #e2e8f0 !important;
+  font-weight: 600 !important;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+}
+
+/* 데이터 내보내기 버튼 개선 */
+.export-button {
+  background: rgba(30, 41, 59, 0.9) !important;
+  border: 2px solid rgba(148, 163, 184, 0.4) !important;
+  color: #ffffff !important;
+  font-weight: 700 !important;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
+.export-button:hover {
+  background: rgba(59, 130, 246, 0.9) !important;
+  border-color: rgba(59, 130, 246, 0.6) !important;
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(59, 130, 246, 0.4);
+}
+
+/* 로그 카드 개선 */
+.log-card {
+  background: rgba(15, 23, 42, 0.95) !important;
+  border: 2px solid rgba(148, 163, 184, 0.3) !important;
+}
+
+.log-card .text-white {
+  color: #ffffff !important;
+  font-weight: 800 !important;
+  text-shadow: 0 2px 6px rgba(0, 0, 0, 0.9);
+}
+
+.log-card .text-gray-300 {
+  color: #e2e8f0 !important;
+  font-weight: 600 !important;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.7);
+}
+
+/* 스크롤바 스타일 개선 */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 8px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: rgba(30, 41, 59, 0.5);
+  border-radius: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.3);
+  border-radius: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.5);
+}

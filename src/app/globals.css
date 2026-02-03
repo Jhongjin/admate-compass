@@ -1,0 +1,1068 @@
+/* Google Fonts imports - 로컬 폰트로 대체하여 로딩 오류 방지 */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@100;200;300;400;500;600;700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@100;200;300;400;500;600;700;800;900&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer utilities {
+  .line-clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+}
+
+@layer base {
+  body {
+    @apply text-white;
+    font-family: 'Noto Sans KR', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    /* Lovable.dev Style Background - 전체 화면에 적용 */
+    background:
+      radial-gradient(circle at 20% 80%, rgba(120, 119, 198, 0.3) 0%, transparent 50%),
+      radial-gradient(circle at 80% 20%, rgba(255, 119, 198, 0.3) 0%, transparent 50%),
+      radial-gradient(circle at 40% 40%, rgba(120, 119, 198, 0.2) 0%, transparent 50%),
+      linear-gradient(180deg, #23262b 0%, #635488 50%, #9d6256 100%);
+    background-attachment: fixed;
+    position: relative;
+    min-height: 100vh;
+  }
+
+  /* Noise Texture */
+  body::after {
+    content: '';
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.05'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: -1;
+  }
+
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 0 0% 3.9%;
+    --card: 0 0% 100%;
+    --card-foreground: 0 0% 3.9%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 0 0% 3.9%;
+    --primary: 0 0% 9%;
+    --primary-foreground: 0 0% 98%;
+    --secondary: 0 0% 96.1%;
+    --secondary-foreground: 0 0% 9%;
+    --muted: 0 0% 96.1%;
+    --muted-foreground: 0 0% 45.1%;
+    --accent: 0 0% 96.1%;
+    --accent-foreground: 0 0% 9%;
+    --destructive: 0 84.2% 60.2%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 89.8%;
+    --input: 0 0% 89.8%;
+    --ring: 0 0% 3.9%;
+    --chart-1: 12 76% 61%;
+    --chart-2: 173 58% 39%;
+    --chart-3: 197 37% 24%;
+    --chart-4: 43 74% 66%;
+    --chart-5: 27 87% 67%;
+    --radius: 0.5rem;
+  }
+
+  .dark {
+    --background: 0 0% 3.9%;
+    --foreground: 0 0% 98%;
+    --card: 0 0% 3.9%;
+    --card-foreground: 0 0% 98%;
+    --popover: 0 0% 3.9%;
+    --popover-foreground: 0 0% 98%;
+    --primary: 0 0% 98%;
+    --primary-foreground: 0 0% 9%;
+    --secondary: 0 0% 14.9%;
+    --secondary-foreground: 0 0% 98%;
+    --muted: 0 0% 14.9%;
+    --muted-foreground: 0 0% 63.9%;
+    --accent: 0 0% 14.9%;
+    --accent-foreground: 0 0% 98%;
+    --destructive: 0 62.8% 30.6%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 0 0% 14.9%;
+    --input: 0 0% 14.9%;
+    --ring: 0 0% 83.1%;
+    --chart-1: 220 70% 50%;
+    --chart-2: 160 60% 45%;
+    --chart-3: 30 80% 55%;
+    --chart-4: 280 65% 60%;
+    --chart-5: 340 75% 55%;
+  }
+}
+
+@layer components {
+
+  /* Inter 폰트 클래스 (영문용) */
+  .font-inter {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  }
+
+  /* 나토 산스 KR 폰트 클래스 (한글용) */
+  .font-noto-ko {
+    font-family: 'Noto Sans KR', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  }
+
+  /* 고급 카드 스타일 - Glassmorphism + Neumorphism */
+  .card-enhanced {
+    background: linear-gradient(135deg,
+        rgba(255, 255, 255, 0.25) 0%,
+        rgba(255, 255, 255, 0.15) 50%,
+        rgba(255, 255, 255, 0.1) 100%) !important;
+    backdrop-filter: blur(20px) saturate(180%) !important;
+    border: 1px solid rgba(255, 255, 255, 0.3) !important;
+    box-shadow:
+      0 8px 32px rgba(0, 0, 0, 0.2),
+      0 2px 8px rgba(0, 0, 0, 0.1),
+      inset 0 1px 0 rgba(255, 255, 255, 0.2),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.05) !important;
+    border-radius: 20px !important;
+    position: relative !important;
+    overflow: hidden !important;
+  }
+
+  .card-enhanced::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: linear-gradient(90deg,
+        transparent 0%,
+        rgba(255, 255, 255, 0.4) 50%,
+        transparent 100%);
+    z-index: 1;
+  }
+
+  .card-enhanced:hover {
+    background: linear-gradient(135deg,
+        rgba(255, 255, 255, 0.35) 0%,
+        rgba(255, 255, 255, 0.25) 50%,
+        rgba(255, 255, 255, 0.15) 100%) !important;
+    border: 1px solid rgba(255, 255, 255, 0.4) !important;
+    transform: translateY(-4px) scale(1.02);
+    box-shadow:
+      0 20px 40px rgba(0, 0, 0, 0.3),
+      0 8px 16px rgba(0, 0, 0, 0.15),
+      inset 0 1px 0 rgba(255, 255, 255, 0.3),
+      inset 0 -1px 0 rgba(0, 0, 0, 0.05) !important;
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  /* 프리미엄 카드 스타일 */
+  .card-premium {
+    background: linear-gradient(135deg,
+        rgba(255, 255, 255, 0.3) 0%,
+        rgba(59, 130, 246, 0.15) 50%,
+        rgba(147, 51, 234, 0.1) 100%) !important;
+    backdrop-filter: blur(24px) saturate(200%) !important;
+    border: 1px solid rgba(59, 130, 246, 0.4) !important;
+    box-shadow:
+      0 12px 40px rgba(59, 130, 246, 0.15),
+      0 4px 12px rgba(0, 0, 0, 0.2),
+      inset 0 1px 0 rgba(255, 255, 255, 0.3),
+      inset 0 -1px 0 rgba(59, 130, 246, 0.1) !important;
+    border-radius: 24px !important;
+    position: relative !important;
+    overflow: hidden !important;
+  }
+
+  .card-premium::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background: linear-gradient(90deg,
+        transparent 0%,
+        rgba(59, 130, 246, 0.6) 25%,
+        rgba(147, 51, 234, 0.6) 75%,
+        transparent 100%);
+    z-index: 1;
+  }
+
+  .card-premium:hover {
+    background: linear-gradient(135deg,
+        rgba(255, 255, 255, 0.4) 0%,
+        rgba(59, 130, 246, 0.2) 50%,
+        rgba(147, 51, 234, 0.15) 100%) !important;
+    border: 1px solid rgba(59, 130, 246, 0.5) !important;
+    transform: translateY(-6px) scale(1.03);
+    box-shadow:
+      0 24px 48px rgba(59, 130, 246, 0.2),
+      0 12px 24px rgba(0, 0, 0, 0.3),
+      inset 0 1px 0 rgba(255, 255, 255, 0.4),
+      inset 0 -1px 0 rgba(59, 130, 246, 0.2) !important;
+    transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  /* 토글 버튼 개선 */
+  .toggle-enhanced {
+    @apply relative inline-flex h-6 w-11 items-center rounded-full transition-colors;
+    background: linear-gradient(90deg, #374151 0%, #4b5563 100%);
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
+  }
+
+  .toggle-enhanced.active {
+    background: linear-gradient(90deg, #3b82f6 0%, #1d4ed8 100%);
+    box-shadow:
+      inset 0 2px 4px rgba(0, 0, 0, 0.2),
+      0 0 0 3px rgba(59, 130, 246, 0.2);
+  }
+
+  .toggle-knob {
+    @apply inline-block h-4 w-4 transform rounded-full bg-white transition-transform;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+  }
+
+  .toggle-knob.active {
+    @apply translate-x-6;
+  }
+
+  /* 버튼 가시성 개선 */
+  .btn-primary-enhanced {
+    @apply bg-blue-600 hover:bg-blue-700 text-white font-medium px-4 py-2 rounded-lg;
+    background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+    box-shadow: 0 4px 14px rgba(59, 130, 246, 0.4);
+    transition: all 0.3s ease;
+  }
+
+  .btn-primary-enhanced:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 20px rgba(59, 130, 246, 0.6);
+  }
+
+  .btn-secondary-enhanced {
+    @apply bg-gray-600 hover:bg-gray-700 text-white font-medium px-4 py-2 rounded-lg;
+    background: linear-gradient(135deg, #4b5563 0%, #374151 100%);
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
+    transition: all 0.3s ease;
+  }
+
+  .btn-secondary-enhanced:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.4);
+  }
+
+  /* 고급 텍스트 스타일 */
+  .text-enhanced {
+    color: #ffffff !important;
+    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5) !important;
+    font-weight: 600 !important;
+    letter-spacing: -0.025em !important;
+  }
+
+  .text-muted-enhanced {
+    color: #f1f5f9 !important;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3) !important;
+    letter-spacing: -0.01em !important;
+  }
+
+  /* 카드 내부 텍스트 색상 (일관성 유지) */
+  .text-card-foreground {
+    color: #1d1f24 !important;
+  }
+
+  /* 그라데이션 텍스트 효과 */
+  .text-gradient {
+    background: linear-gradient(135deg, #ffffff 0%, #e5e7eb 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    text-shadow: none !important;
+  }
+
+  .text-gradient-premium {
+    background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 50%, #ec4899 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    text-shadow: none !important;
+  }
+
+  /* 고급 아이콘 스타일 */
+  .icon-enhanced {
+    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.3));
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .icon-enhanced:hover {
+    filter: drop-shadow(0 4px 8px rgba(0, 0, 0, 0.4));
+    transform: scale(1.1);
+  }
+
+  /* 고급 배지 스타일 */
+  .badge-premium {
+    background: linear-gradient(135deg,
+        rgba(255, 255, 255, 0.2) 0%,
+        rgba(59, 130, 246, 0.15) 100%) !important;
+    border: 1px solid rgba(255, 255, 255, 0.3) !important;
+    color: #e2e8f0 !important;
+    font-weight: 500 !important;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2) !important;
+    backdrop-filter: blur(10px) !important;
+  }
+
+  /* 카드 내부 요소 애니메이션 */
+  .card-content-animated {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .card-enhanced:hover .card-content-animated {
+    transform: translateY(-2px);
+  }
+
+
+  /* 스태거드 애니메이션을 위한 클래스 */
+  .stagger-1 {
+    animation-delay: 0.1s;
+  }
+
+  .stagger-2 {
+    animation-delay: 0.2s;
+  }
+
+  .stagger-3 {
+    animation-delay: 0.3s;
+  }
+
+  .stagger-4 {
+    animation-delay: 0.4s;
+  }
+
+  /* 새로운 채팅박스 스타일 (참고 사이트 기반) */
+  .chatbox-container {
+    width: 100%;
+    max-width: 900px;
+    margin: 0 auto;
+  }
+
+  .chatbox-form {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 12px;
+    width: 100%;
+    border-radius: 28px;
+    /* rounded-3xl */
+    border: 1px solid #3a3f47;
+    /* border-muted-border */
+    background-color: #2f333a;
+    /* bg-muted */
+    color: #e0e0e0;
+    /* text-base */
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+    /* shadow-xl */
+    transition: all 150ms ease-in-out;
+  }
+
+  .chatbox-form:focus-within {
+    border-color: rgba(118, 118, 118, 0.2);
+    /* focus-within:border-foreground/20 */
+  }
+
+  .chatbox-form:hover {
+    border-color: rgba(118, 118, 118, 0.1);
+    /* hover:border-foreground/10 */
+  }
+
+  .chatbox-form:focus-within:hover {
+    border-color: rgba(118, 118, 118, 0.2);
+    /* focus-within:hover:border-foreground/20 */
+  }
+
+  .chatbox-textarea {
+    background-color: transparent;
+    /* bg-transparent */
+    border: none;
+    outline: none;
+    resize: none;
+    font-size: 16px;
+    /* text-[16px] */
+    line-height: 1.5;
+    /* leading-snug */
+    color: #e0e0e0;
+    padding: 8px 0;
+    /* px-2 py-2 (adjusted for inner padding) */
+    min-height: 50px;
+    height: 50px;
+    box-sizing: border-box;
+    overflow-y: auto;
+    width: 100%;
+    flex: 1;
+  }
+
+  .chatbox-textarea::placeholder {
+    color: #888;
+    /* placeholder:text-muted-foreground */
+    white-space: nowrap;
+    /* placeholder-shown:whitespace-nowrap */
+    overflow: hidden;
+    text-overflow: ellipsis;
+    /* placeholder-shown:text-ellipsis */
+  }
+
+  /* 질문 입력 필드 플레이스홀더 스타일 */
+  .placeholder-white::placeholder {
+    color: #ffffff !important;
+    opacity: 1 !important;
+  }
+
+  .placeholder-white::-webkit-input-placeholder {
+    color: #ffffff !important;
+    opacity: 1 !important;
+  }
+
+  .placeholder-white::-moz-placeholder {
+    color: #ffffff !important;
+    opacity: 1 !important;
+  }
+
+  .placeholder-white:-ms-input-placeholder {
+    color: #ffffff !important;
+    opacity: 1 !important;
+  }
+
+  .chatbox-textarea:focus {
+    background-color: transparent;
+    /* focus:bg-transparent */
+    box-shadow: none;
+    /* focus-visible:ring-0 focus-visible:ring-offset-0 */
+  }
+
+  .chatbox-textarea:disabled {
+    cursor: not-allowed;
+    /* disabled:cursor-not-allowed */
+    opacity: 0.5;
+    /* disabled:opacity-50 */
+  }
+
+  .chatbox-send-button {
+    display: flex;
+    height: 32px;
+    /* h-8 */
+    width: 32px;
+    /* w-8 */
+    align-items: center;
+    justify-content: center;
+    border-radius: 9999px;
+    /* rounded-full */
+    background-color: #e0e0e0;
+    /* bg-foreground */
+    transition: opacity 150ms ease-out;
+    border: none;
+    cursor: pointer;
+  }
+
+  .chatbox-send-button:disabled {
+    cursor: not-allowed;
+    /* disabled:cursor-not-allowed */
+    opacity: 0.5;
+    /* disabled:opacity-50 */
+  }
+
+  .chatbox-send-button svg {
+    shrink-to-fit: 0;
+    /* shrink-0 */
+    height: 24px;
+    /* h-6 */
+    width: 24px;
+    /* w-6 */
+    color: #282c34;
+    /* text-background */
+    fill: currentColor;
+  }
+
+  /* 푸터 카드 호버 효과 */
+  .chatbox-form:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2), 0 10px 10px -5px rgba(0, 0, 0, 0.1);
+  }
+
+  /* 푸터 카드 버튼 스타일 개선 */
+  .chatbox-cta-button-primary {
+    background: linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%);
+    border: 1px solid rgba(59, 130, 246, 0.3);
+    color: #ffffff;
+    font-weight: 600;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .chatbox-cta-button-primary:hover {
+    background: linear-gradient(135deg, #2563eb 0%, #7c3aed 100%);
+    border-color: rgba(59, 130, 246, 0.5);
+    box-shadow: 0 8px 20px rgba(59, 130, 246, 0.3);
+    transform: translateY(-2px) scale(1.02);
+  }
+
+  .chatbox-cta-button-secondary {
+    background: rgba(47, 51, 58, 0.8);
+    border: 1px solid rgba(118, 118, 118, 0.4);
+    color: #e0e0e0;
+    font-weight: 600;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .chatbox-cta-button-secondary:hover {
+    background: rgba(47, 51, 58, 0.9);
+    border-color: rgba(118, 118, 118, 0.6);
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+    transform: translateY(-2px) scale(1.02);
+  }
+
+  /* 우상단 버튼 스타일 (참고 이미지 기반) */
+  .header-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    white-space: nowrap;
+    font-size: 14px;
+    font-weight: 500;
+    transition: all 100ms ease-in-out;
+    outline: none;
+    border-radius: 6px;
+    padding: 8px 16px;
+    height: 32px;
+    text-decoration: none;
+    cursor: pointer;
+  }
+
+  .header-btn-primary {
+    border: 1px solid #3a3f47;
+    background-color: #2f333a;
+    box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+    color: #e0e0e0;
+  }
+
+  .header-btn-primary:hover {
+    background-color: #4a4f57;
+    border-color: #5a5f67;
+  }
+
+  .header-btn-secondary {
+    background-color: #e0e0e0;
+    color: #2f333a;
+  }
+
+  .header-btn-secondary:hover {
+    background-color: #c0c0c0;
+  }
+
+  /* 현대적 미니멀 카드 스타일 (벤치마킹) */
+  .modern-card {
+    background: rgba(255, 255, 255, 0.95);
+    border: 1px solid rgba(0, 0, 0, 0.08);
+    border-radius: 16px;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    transition: all 0.2s ease-in-out;
+    backdrop-filter: blur(10px);
+  }
+
+  .modern-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+  }
+
+  .modern-card-dark {
+    background: rgba(31, 41, 55, 0.95);
+    border: 1px solid rgba(75, 85, 99, 0.2);
+    color: #f9fafb;
+  }
+
+  .modern-card-dark:hover {
+    background: rgba(31, 41, 55, 1);
+    border-color: rgba(75, 85, 99, 0.3);
+  }
+
+  .modern-text-primary {
+    color: #111827;
+    font-weight: 600;
+  }
+
+  .modern-text-secondary {
+    color: #6b7280;
+    font-weight: 400;
+  }
+
+  .modern-text-dark-primary {
+    color: #f9fafb;
+    font-weight: 600;
+  }
+
+  .modern-text-dark-secondary {
+    color: #d1d5db;
+    font-weight: 400;
+  }
+
+  .modern-button-primary {
+    background: #111827;
+    color: #ffffff;
+    border: none;
+    border-radius: 8px;
+    padding: 8px 16px;
+    font-weight: 500;
+    font-size: 14px;
+    transition: all 0.2s ease-in-out;
+    cursor: pointer;
+  }
+
+  .modern-button-primary:hover {
+    background: #374151;
+    transform: translateY(-1px);
+  }
+
+  .modern-button-secondary {
+    background: #f3f4f6;
+    color: #374151;
+    border: 1px solid #d1d5db;
+    border-radius: 8px;
+    padding: 8px 16px;
+    font-weight: 500;
+    font-size: 14px;
+    transition: all 0.2s ease-in-out;
+    cursor: pointer;
+  }
+
+  .modern-button-secondary:hover {
+    background: #e5e7eb;
+    border-color: #9ca3af;
+    transform: translateY(-1px);
+  }
+
+  .modern-icon {
+    width: 20px;
+    height: 20px;
+    color: #6b7280;
+  }
+
+  .modern-icon-dark {
+    color: #d1d5db;
+  }
+
+  /* 상태 표시 개선 */
+  .status-completed {
+    @apply bg-green-500/20 text-green-300 border border-green-500/30;
+    background: linear-gradient(135deg, rgba(34, 197, 94, 0.2) 0%, rgba(22, 163, 74, 0.1) 100%);
+  }
+
+  .status-processing {
+    @apply bg-yellow-500/20 text-yellow-300 border border-yellow-500/30;
+    background: linear-gradient(135deg, rgba(234, 179, 8, 0.2) 0%, rgba(202, 138, 4, 0.1) 100%);
+  }
+
+  .status-error {
+    @apply bg-red-500/20 text-red-300 border border-red-500/30;
+    background: linear-gradient(135deg, rgba(239, 68, 68, 0.2) 0%, rgba(220, 38, 38, 0.1) 100%);
+  }
+
+  /* Lovable.dev Style Background for sections */
+  .lovable-bg {
+    background: linear-gradient(180deg, #23262b 0%, #635488 50%, #9d6256 100%);
+    position: relative;
+  }
+
+  .lovable-bg::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background:
+      radial-gradient(circle at 20% 80%, rgba(120, 119, 198, 0.4) 0%, transparent 50%),
+      radial-gradient(circle at 80% 20%, rgba(255, 119, 198, 0.4) 0%, transparent 50%),
+      radial-gradient(circle at 40% 40%, rgba(120, 119, 198, 0.3) 0%, transparent 50%),
+      radial-gradient(circle at 60% 60%, rgba(59, 130, 246, 0.2) 0%, transparent 50%);
+    pointer-events: none;
+    z-index: 0;
+    animation: float 25s ease-in-out infinite;
+  }
+}
+
+/* Custom Animations for Background Patterns - Higher Priority */
+@keyframes float {
+
+  0%,
+  100% {
+    transform: translateY(0px) rotate(0deg);
+  }
+
+  50% {
+    transform: translateY(-20px) rotate(5deg);
+  }
+}
+
+.animate-float {
+  animation: float 6s ease-in-out infinite !important;
+}
+
+@keyframes enhanced-pulse {
+
+  0%,
+  100% {
+    opacity: 0.6;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+}
+
+.animate-enhanced-pulse {
+  animation: enhanced-pulse 4s ease-in-out infinite !important;
+}
+
+/* Custom Scrollbar Styles - Modern Design */
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
+
+.custom-scrollbar::-webkit-scrollbar {
+  width: 8px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+  border-radius: 4px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg,
+      rgba(255, 255, 255, 0.3) 0%,
+      rgba(255, 255, 255, 0.1) 50%,
+      rgba(255, 255, 255, 0.2) 100%);
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  backdrop-filter: blur(8px);
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg,
+      rgba(255, 255, 255, 0.4) 0%,
+      rgba(255, 255, 255, 0.2) 50%,
+      rgba(255, 255, 255, 0.3) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  transform: scale(1.05);
+}
+
+.custom-scrollbar::-webkit-scrollbar-thumb:active {
+  background: linear-gradient(180deg,
+      rgba(255, 255, 255, 0.5) 0%,
+      rgba(255, 255, 255, 0.3) 50%,
+      rgba(255, 255, 255, 0.4) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.custom-scrollbar::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* Chat-specific scrollbar styles - Enhanced */
+.chat-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
+
+.chat-scrollbar::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+.chat-scrollbar::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 6px;
+  margin: 2px;
+}
+
+.chat-scrollbar::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg,
+      rgba(255, 255, 255, 0.3) 0%,
+      rgba(255, 255, 255, 0.1) 50%,
+      rgba(255, 255, 255, 0.2) 100%);
+  border-radius: 6px;
+  border: 2px solid rgba(0, 0, 0, 0.1);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  backdrop-filter: blur(8px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.chat-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg,
+      rgba(255, 255, 255, 0.5) 0%,
+      rgba(255, 255, 255, 0.2) 50%,
+      rgba(255, 255, 255, 0.4) 100%);
+  border: 2px solid rgba(0, 0, 0, 0.2);
+  transform: scale(1.05);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.3),
+    0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+.chat-scrollbar::-webkit-scrollbar-thumb:active {
+  background: linear-gradient(180deg,
+      rgba(255, 255, 255, 0.6) 0%,
+      rgba(255, 255, 255, 0.3) 50%,
+      rgba(255, 255, 255, 0.5) 100%);
+  border: 2px solid rgba(0, 0, 0, 0.3);
+  transform: scale(0.98);
+}
+
+.chat-scrollbar::-webkit-scrollbar-corner {
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 6px;
+}
+
+/* Force scrollbar styling for all elements */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+*::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 6px;
+  margin: 2px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg,
+      rgba(255, 255, 255, 0.3) 0%,
+      rgba(255, 255, 255, 0.1) 50%,
+      rgba(255, 255, 255, 0.2) 100%);
+  border-radius: 6px;
+  border: 2px solid rgba(0, 0, 0, 0.1);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  backdrop-filter: blur(8px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.2),
+    0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg,
+      rgba(255, 255, 255, 0.5) 0%,
+      rgba(255, 255, 255, 0.2) 50%,
+      rgba(255, 255, 255, 0.4) 100%);
+  border: 2px solid rgba(0, 0, 0, 0.2);
+  transform: scale(1.05);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.3),
+    0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+*::-webkit-scrollbar-corner {
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 6px;
+}
+
+/* Additional scrollbar enhancements */
+html {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
+}
+
+body {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
+}
+
+/* Ensure all scrollable elements use custom scrollbar */
+div,
+section,
+article,
+main,
+aside,
+nav,
+header,
+footer {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.3) transparent;
+}
+
+div::-webkit-scrollbar,
+section::-webkit-scrollbar,
+article::-webkit-scrollbar,
+main::-webkit-scrollbar,
+aside::-webkit-scrollbar,
+nav::-webkit-scrollbar,
+header::-webkit-scrollbar,
+footer::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+div::-webkit-scrollbar-track,
+section::-webkit-scrollbar-track,
+article::-webkit-scrollbar-track,
+main::-webkit-scrollbar-track,
+aside::-webkit-scrollbar-track,
+nav::-webkit-scrollbar-track,
+header::-webkit-scrollbar-track,
+footer::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.1);
+  border-radius: 6px;
+  margin: 2px;
+}
+
+div::-webkit-scrollbar-thumb,
+section::-webkit-scrollbar-thumb,
+article::-webkit-scrollbar-thumb,
+main::-webkit-scrollbar-thumb,
+aside::-webkit-scrollbar-thumb,
+nav::-webkit-scrollbar-thumb,
+header::-webkit-scrollbar-thumb,
+footer::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg,
+      rgba(255, 255, 255, 0.4) 0%,
+      rgba(255, 255, 255, 0.2) 50%,
+      rgba(255, 255, 255, 0.3) 100%);
+  border-radius: 6px;
+  border: 2px solid rgba(0, 0, 0, 0.1);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  backdrop-filter: blur(8px);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.3),
+    0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+div::-webkit-scrollbar-thumb:hover,
+section::-webkit-scrollbar-thumb:hover,
+article::-webkit-scrollbar-thumb:hover,
+main::-webkit-scrollbar-thumb:hover,
+aside::-webkit-scrollbar-thumb:hover,
+nav::-webkit-scrollbar-thumb:hover,
+header::-webkit-scrollbar-thumb:hover,
+footer::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(180deg,
+      rgba(255, 255, 255, 0.6) 0%,
+      rgba(255, 255, 255, 0.3) 50%,
+      rgba(255, 255, 255, 0.5) 100%);
+  border: 2px solid rgba(0, 0, 0, 0.2);
+  transform: scale(1.05);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.4),
+    0 2px 6px rgba(0, 0, 0, 0.3);
+}
+
+
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+  }
+
+  /* Enhanced Progress Bar Styles */
+  .progress-enhanced {
+    @apply relative w-full overflow-hidden rounded-full bg-gray-700/50;
+    height: 8px;
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.2);
+  }
+
+  .progress-enhanced .progress-fill {
+    @apply h-full rounded-full transition-all duration-500 ease-out;
+    background: linear-gradient(90deg, #10b981, #059669);
+    box-shadow: 0 2px 4px rgba(16, 185, 129, 0.4);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .progress-enhanced .progress-fill::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
+    animation: shimmer 2s infinite;
+  }
+
+  .progress-enhanced .progress-fill::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    right: 4px;
+    width: 4px;
+    height: 4px;
+    background: white;
+    border-radius: 50%;
+    transform: translateY(-50%);
+    box-shadow: 0 0 6px rgba(255, 255, 255, 0.8);
+  }
+
+  @keyframes shimmer {
+    0% {
+      transform: translateX(-100%);
+    }
+
+    100% {
+      transform: translateX(100%);
+    }
+  }
+
+  /* Progress Bar Variants */
+  .progress-success .progress-fill {
+    background: linear-gradient(90deg, #10b981, #059669);
+    box-shadow: 0 2px 4px rgba(16, 185, 129, 0.4);
+  }
+
+  .progress-warning .progress-fill {
+    background: linear-gradient(90deg, #f59e0b, #d97706);
+    box-shadow: 0 2px 4px rgba(245, 158, 11, 0.4);
+  }
+
+  .progress-danger .progress-fill {
+    background: linear-gradient(90deg, #ef4444, #dc2626);
+    box-shadow: 0 2px 4px rgba(239, 68, 68, 0.4);
+  }
+
+  .progress-info .progress-fill {
+    background: linear-gradient(90deg, #3b82f6, #1d4ed8);
+    box-shadow: 0 2px 4px rgba(59, 130, 246, 0.4);
+  }
+
+  .progress-purple .progress-fill {
+    background: linear-gradient(90deg, #8b5cf6, #7c3aed);
+    box-shadow: 0 2px 4px rgba(139, 92, 246, 0.4);
+  }
+
+  /* Progress Bar with Percentage */
+  .progress-with-percentage {
+    @apply flex items-center space-x-3;
+  }
+
+  .progress-percentage {
+    @apply text-sm font-semibold text-white min-w-[3rem] text-right;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  }
+}

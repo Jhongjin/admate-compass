@@ -1,0 +1,61 @@
+{
+  "buildCommand": "npm run build",
+  "installCommand": "npm install",
+  "crons": [
+    {
+      "path": "/api/admin/logs/process-alerts",
+      "schedule": "0 9 * * *"
+    },
+    {
+      "path": "/api/jobs/consume",
+      "schedule": "*/1 * * * *"
+    }
+  ],
+  "functions": {
+    "src/app/api/admin/upload-new/route.ts": {
+      "maxDuration": 600
+    },
+    "src/app/api/rag/route.ts": {
+      "maxDuration": 120
+    },
+    "src/app/api/chatbot/route.ts": {
+      "maxDuration": 60
+    },
+    "src/app/api/admin/docs/upload/route.ts": {
+      "maxDuration": 300
+    },
+    "src/app/api/extract-pdf/route.ts": {
+      "maxDuration": 300
+    },
+    "src/app/api/extract-docx/route.ts": {
+      "maxDuration": 300
+    },
+    "src/app/api/puppeteer-crawl/route.ts": {
+      "maxDuration": 300
+    },
+    "src/app/api/jobs/consume/route.ts": {
+      "maxDuration": 600,
+      "memory": 3008
+    }
+  },
+  "regions": ["icn1"],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        {
+          "key": "X-Content-Type-Options",
+          "value": "nosniff"
+        },
+        {
+          "key": "X-Frame-Options",
+          "value": "DENY"
+        },
+        {
+          "key": "X-XSS-Protection",
+          "value": "1; mode=block"
+        }
+      ]
+    }
+  ]
+}

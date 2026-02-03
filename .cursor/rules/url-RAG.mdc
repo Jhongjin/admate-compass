@@ -1,0 +1,9 @@
+---
+description: @admin/docs url크롤링 페이지 템플릿
+globs:
+alwaysApply: false
+---
+
+# 참고파일 
+
+url-readme.md
