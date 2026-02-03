@@ -191,17 +191,10 @@ export default function CrawlToIndexTestPage() {
     // 🔥 URL이 있는 문서만 필터링하여 통계 계산
     const documentsWithUrl = recentDocuments.filter((d: Document) => d.url && d.url.trim().length > 0);
     if (!documentsWithUrl.length) {
-      console.warn('⚠️ [도메인 통계] URL이 있는 문서가 없습니다:', {
-        전체_문서: recentDocuments.length,
-        URL_있는_문서: documentsWithUrl.length,
-        문서_상세: recentDocuments.map((d: Document) => ({
-          id: d.id?.substring(0, 8),
-          title: d.title?.substring(0, 30),
-          url: d.url || 'NULL',
-          status: d.status,
-          type: d.type
-        }))
-      });
+      // 문서가 없을 때는 도메인 통계를 건너뜀 (초기 상태에서 정상)
+      if (recentDocuments.length > 0 && typeof window !== "undefined") {
+        console.log("[도메인 통계] URL이 있는 문서가 없어 통계를 표시하지 않습니다.");
+      }
       return null;
     }
 

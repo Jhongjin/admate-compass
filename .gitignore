@@ -111,6 +111,7 @@ test-*.json
 
 # Documentation files (keep only essential ones)
 docs/
+!src/app/admin/docs/
 
 # Scripts (keep only essential ones)
 scripts/
