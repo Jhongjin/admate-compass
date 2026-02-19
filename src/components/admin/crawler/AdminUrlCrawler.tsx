@@ -89,7 +89,7 @@ const DB_TO_VENDOR_MAP: Record<string, string> = {
 // 에러 메시지를 사용자 친화적인 한글로 변환
 const translateError = (error: string): string => {
   const errorLower = error.toLowerCase();
-  
+
   if (errorLower.includes('navigating frame was detached') || errorLower.includes('frame was detached')) {
     return '페이지 로딩 중 연결이 끊어졌습니다';
   }
@@ -120,7 +120,7 @@ const translateError = (error: string): string => {
   if (errorLower.includes('500') || errorLower.includes('internal server error')) {
     return '서버 오류가 발생했습니다 (500)';
   }
-  
+
   // 기본값: 원본 에러 메시지 반환 (한글이거나 짧은 경우)
   return error.length > 50 ? '크롤링 중 오류가 발생했습니다' : error;
 };
@@ -132,7 +132,7 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
   const [isSaving, setIsSaving] = useState(false);
   const [results, setResults] = useState<CrawlResult[]>([]);
   const [environment, setEnvironment] = useState<'local' | 'vercel' | 'unknown'>('unknown');
-  
+
   // 벤더를 배열로 관리 (문서 관리 페이지와 동일한 패턴)
   const [selectedVendors, setSelectedVendors] = useState<string[]>(() => {
     if (defaultVendor && defaultVendor.length > 0) {
@@ -158,25 +158,25 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
   });
 
   // vendorSelectValue 계산 (문서 관리 페이지와 동일)
-  const vendorSelectValue = selectedVendors.length === 0 
-    ? "all" 
-    : selectedVendors.length === 1 
-      ? selectedVendors[0] 
+  const vendorSelectValue = selectedVendors.length === 0
+    ? "all"
+    : selectedVendors.length === 1
+      ? selectedVendors[0]
       : "multiple";
 
   // 벤더 선택 변경 핸들러 (문서 관리 페이지와 동일)
   const handleVendorSelectChange = (value: string) => {
     if (value === "multiple") return;
-    
+
     let newVendors: string[] = [];
     if (value === "all") {
       newVendors = [];
     } else {
       newVendors = [value];
     }
-    
+
     setSelectedVendors(newVendors);
-    
+
     // 상위 컴포넌트에 변경 사항 전달
     if (onVendorChange) {
       onVendorChange(newVendors);
@@ -199,7 +199,7 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
         }
         return v;
       });
-      
+
       // 배열이 실제로 다를 때만 업데이트
       const currentStr = selectedVendors.sort().join(',');
       const newStr = newVendors.sort().join(',');
@@ -241,6 +241,7 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
     message: string;
     discoveredCount: number;
     safeCrawlableCount: number;
+    jobCount?: number;
   } | null>(null);
 
 
@@ -275,9 +276,9 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
           // 벤더 필터 적용 (프론트엔드에서)
           const filteredDocs = dbVendorFilter && dbVendorFilter.length > 0
             ? data.documents.filter((doc: any) => {
-                const docVendor = doc.source_vendor || 'META';
-                return dbVendorFilter.includes(docVendor);
-              })
+              const docVendor = doc.source_vendor || 'META';
+              return dbVendorFilter.includes(docVendor);
+            })
             : data.documents;
 
           console.log(`[fetchExistingUrls] DB에서 ${data.documents.length}개의 URL 문서를 가져옴 (필터링 후: ${filteredDocs.length}개)`);
@@ -328,7 +329,7 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
     const handleDocumentDeleted = (event: CustomEvent) => {
       const deletedDoc = event.detail;
       console.log('[handleDocumentDeleted] 문서 삭제 이벤트 수신:', deletedDoc);
-      
+
       // existingDbMap에서 삭제된 URL 제거
       if (deletedDoc.url) {
         const normalized = normalizeUrl(deletedDoc.url);
@@ -340,7 +341,7 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
           }
           return newMap;
         });
-        
+
         // dialogDbMap에서도 제거
         setDialogDbMap(prev => {
           const newMap = new Map(prev);
@@ -351,7 +352,7 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
           return newMap;
         });
       }
-      
+
       // DB에서 최신 상태 다시 가져오기 (벤더 필터 적용)
       fetchExistingUrls(selectedVendors.length > 0 ? selectedVendors : undefined);
     };
@@ -432,7 +433,7 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                 setStatusMessage(event.message);
                 // 중요 메시지는 toast로 표시 (심플한 스타일)
                 if (event.message.includes('⚠️') || event.message.includes('경고') || event.message.includes('위험') || event.message.includes('타임아웃')) {
-                  toast.warning(event.message, { 
+                  toast.warning(event.message, {
                     duration: 6000,
                     className: 'bg-amber-900/20 border-amber-700/30 text-amber-100',
                   });
@@ -442,15 +443,16 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                 const warningMessage = event.message || '타임아웃 위험이 감지되었습니다.';
                 const discoveredCount = event.discoveredCount || 0;
                 const safeCount = event.safeCrawlableCount || 0;
-                
+
                 console.warn('⚠️ 크롤러 경고:', warningMessage);
-                
+
                 // Alert 박스로만 표시 (Toast 제거)
                 setTimeoutWarning({
                   show: true,
                   discoveredCount,
                   safeCrawlableCount: safeCount,
                   message: warningMessage,
+                  jobCount: event.jobIds?.length || 0
                 });
               } else if (event.type === 'batch_progress') {
                 if (event.result) {
@@ -472,7 +474,7 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                   console.log(`[Discovery Logic] options.discoverSubPages: ${options.discoverSubPages}`);
                   console.log(`[Discovery Logic] isSubPageCrawl: ${isSubPageCrawl}`);
                   console.log(`[Discovery Logic] event.results 길이: ${newResults.length}`);
-                  
+
                   // 각 result의 discoveredUrls 확인
                   newResults.forEach((result, idx) => {
                     console.log(`[Discovery Logic] Result[${idx}]: url=${result.url}, discoveredUrls=${result.discoveredUrls ? result.discoveredUrls.length : 0}개`);
@@ -480,19 +482,19 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                       console.log(`[Discovery Logic] Result[${idx}]의 discoveredUrls:`, result.discoveredUrls.slice(0, 3).map(d => d.url));
                     }
                   });
-                  
+
                   const allDiscovered: Array<{ url: string; source: string; title?: string; parentUrl?: string }> = [];
                   // 정규화된 URL로 비교하기 위해 Set 생성 (같은 크롤링 세션 내 중복 제거용)
                   const existingUrlsNormalized = new Set<string>();
-                  
+
                   // 원본 시드 URL 찾기 (urlList의 첫 번째 URL 또는 results에서 시드 URL 찾기)
                   const seedUrlForDiscovery = urlList[0] || seedUrl || null;
-                  
+
                   // 같은 크롤링 세션 내에서만 중복 제거 (DB URL은 필터링하지 않음)
                   [...urlList, ...results.map(r => r.url), ...newResults.map(r => r.url)].forEach(url => {
                     existingUrlsNormalized.add(normalizeUrl(url));
                   });
-                  
+
                   // DB에 있는 URL은 필터링하지 않음 - 사용자가 선택할 수 있도록 모두 표시
 
                   console.log(`[Discovery Logic] 기존 URL Set 크기: ${existingUrlsNormalized.size}, 시드 URL: ${seedUrlForDiscovery}`);
@@ -504,17 +506,17 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                         const normalizedDiscoveredUrl = normalizeUrl(d.url);
                         // DB에 이미 있는 URL도 일단 추출 (사용자가 선택할 수 있도록)
                         // 원본 시드 URL을 부모로 설정 (시드 URL이 현재 result.url과 같으면 시드 URL 사용)
-                        const parentUrlForDiscovered = (seedUrlForDiscovery && normalizeUrl(result.url) === normalizeUrl(seedUrlForDiscovery)) 
-                          ? seedUrlForDiscovery 
+                        const parentUrlForDiscovered = (seedUrlForDiscovery && normalizeUrl(result.url) === normalizeUrl(seedUrlForDiscovery))
+                          ? seedUrlForDiscovery
                           : result.url;
-                        
+
                         // 중복 체크 (같은 크롤링 세션 내에서만)
                         if (!existingUrlsNormalized.has(normalizedDiscoveredUrl)) {
-                          allDiscovered.push({ 
-                            url: d.url, 
-                            source: result.url, 
-                            title: d.title, 
-                            parentUrl: parentUrlForDiscovered 
+                          allDiscovered.push({
+                            url: d.url,
+                            source: result.url,
+                            title: d.title,
+                            parentUrl: parentUrlForDiscovered
                           });
                           existingUrlsNormalized.add(normalizedDiscoveredUrl);
                           console.log(`[Discovery Logic] 하위 페이지 발견: "${d.url}" -> 부모: "${parentUrlForDiscovered}"`);
@@ -531,19 +533,19 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                   if (allDiscovered.length > 0) {
                     console.log(`[Discovery Logic] ${allDiscovered.length}개의 새로운 하위 페이지 발견 - 팝업 표시`);
                     console.log(`[Discovery Logic] 발견된 URL 샘플 (처음 5개):`, allDiscovered.slice(0, 5).map(d => d.url));
-                    
+
                     // 팝업 표시 전에 DB에서 최신 URL 목록 가져오기
                     console.log(`[Discovery Logic] 팝업 표시 전 DB 동기화 시작`);
                     const dbMap = await fetchExistingUrls();
                     console.log(`[Discovery Logic] DB 동기화 완료, DB URL 개수: ${dbMap.size}`);
-                    
+
                     // DB에 있는 URL 확인 로그
                     allDiscovered.slice(0, 5).forEach((item, idx) => {
                       const normalized = normalizeUrl(item.url);
                       const isInDb = dbMap.has(normalized);
                       console.log(`[Discovery Logic] [${idx + 1}] "${item.url}" -> DB에 있음: ${isInDb}`);
                     });
-                    
+
                     setDiscoveredUrls(allDiscovered);
                     setSelectedDiscoveredUrls(new Set(allDiscovered.map(d => d.url)));
                     setIsSelectionDialogOpen(true);
@@ -591,13 +593,13 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
       toast.error('URL을 입력해주세요.');
       return;
     }
-    
+
     // Pagination 모드일 때는 하나의 URL만 입력 가능
     if (options.paginationMode && urlList.length > 1) {
       toast.error('Pagination 모드에서는 하나의 URL만 입력할 수 있습니다.');
       return;
     }
-    
+
     await performCrawl(urlList);
   };
 
@@ -623,7 +625,7 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
 
     try {
       // 선택된 벤더가 없으면 기본값 사용
-      const vendor = selectedVendors.length > 0 
+      const vendor = selectedVendors.length > 0
         ? VENDOR_TO_DB_MAP[selectedVendors[0]] || 'META'
         : 'META';
 
@@ -694,7 +696,7 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
         // 팝업에서 추출된 제목을 우선 사용 (discoveryInfo.title)
         // 없으면 크롤링 결과의 제목 사용
         const finalTitle = discoveryInfo?.title || r.title;
-        
+
         return {
           ...r,
           title: finalTitle, // 팝업에서 추출된 제목으로 덮어쓰기
@@ -720,7 +722,7 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
       if (data.success) {
         toast.success(data.message);
         if (onSuccess) onSuccess();
-        
+
         // 저장된 URL 목록 추출 (성공적으로 저장된 URL들)
         const savedUrls = new Set<string>();
         // API 응답 구조: data.data.savedDocuments
@@ -732,12 +734,12 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
             }
           });
         }
-        
+
         console.log(`[handleSaveToDb] 저장된 URL 개수: ${savedUrls.size}개`);
         if (savedUrls.size > 0) {
           console.log(`[handleSaveToDb] 저장된 URL 목록 (처음 5개):`, Array.from(savedUrls).slice(0, 5));
         }
-        
+
         // 저장된 URL들을 results에서 제거 (재크롤링 후 저장된 경우도 포함)
         setResults(prev => {
           const filtered = prev.filter(r => {
@@ -759,7 +761,7 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
           console.log(`[handleSaveToDb] 결과 필터링: ${prev.length}개 -> ${filtered.length}개`);
           return filtered;
         });
-        
+
         await fetchExistingUrls();
         setDiscoveredUrls([]);
       } else {
@@ -776,9 +778,9 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
   // 실패한 URL 재인덱싱 (다시 크롤링) - 단일 URL만 처리
   const handleRetryFailedUrl = async (url: string) => {
     console.log(`[handleRetryFailedUrl] 실패한 URL 재시도: ${url}`);
-    
+
     // 해당 URL의 결과를 로딩 상태로 변경
-    setResults(prev => prev.map(r => 
+    setResults(prev => prev.map(r =>
       r.url === url ? { ...r, status: 'processing' as const } : r
     ));
 
@@ -823,7 +825,7 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                     title: discoveryInfo?.title || event.result.title
                   };
                   // 해당 URL의 결과만 업데이트
-                  setResults(prev => prev.map(r => 
+                  setResults(prev => prev.map(r =>
                     r.url === url ? resultWithTitle : r
                   ));
                 }
@@ -836,14 +838,14 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                     title: discoveryInfo?.title || newResult.title
                   };
                   // 해당 URL의 결과만 업데이트
-                  setResults(prev => prev.map(r => 
+                  setResults(prev => prev.map(r =>
                     r.url === url ? resultWithTitle : r
                   ));
                 }
                 toast.success(`재시도 완료: ${url}`);
               } else if (event.type === 'error') {
                 // 에러 발생 시 실패 상태로 업데이트
-                setResults(prev => prev.map(r => 
+                setResults(prev => prev.map(r =>
                   r.url === url ? { ...r, status: 'failed' as const, error: event.error || '크롤링 실패' } : r
                 ));
                 toast.error(event.error || '재시도 중 오류 발생');
@@ -856,7 +858,7 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
     } catch (error) {
       console.error('재시도 오류:', error);
       // 에러 발생 시 실패 상태로 업데이트
-      setResults(prev => prev.map(r => 
+      setResults(prev => prev.map(r =>
         r.url === url ? { ...r, status: 'failed' as const, error: error instanceof Error ? error.message : '크롤링 실패' } : r
       ));
       toast.error('재시도 중 오류가 발생했습니다.');
@@ -870,7 +872,7 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
       toast.warning('삭제할 실패한 결과가 없습니다.');
       return;
     }
-    
+
     if (confirm(`실패한 크롤링 결과 ${failedCount}개를 모두 삭제하시겠습니까?`)) {
       setResults(prev => prev.filter(r => r.status === 'success'));
       toast.success('실패한 결과가 삭제되었습니다.');
@@ -913,7 +915,7 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
   // 크롤링 결과 제목 저장
   const handleSaveResultTitle = (url: string) => {
     if (editingResultUrl === url) {
-      setResults(prev => prev.map(r => 
+      setResults(prev => prev.map(r =>
         r.url === url ? { ...r, title: editingResultTitle.trim() || r.title } : r
       ));
       setEditingResultUrl(null);
@@ -931,16 +933,16 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
   // 제목이 없는 URL의 제목을 페이지에서 가져오기
   const handleFetchTitle = async (index: number, url: string) => {
     if (fetchingTitleUrls.has(url)) return;
-    
+
     setFetchingTitleUrls(prev => new Set(prev).add(url));
-    
+
     try {
       const response = await fetch('/api/fetch-page-title', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ url }),
       });
-      
+
       if (response.ok) {
         const data = await response.json();
         if (data.title) {
@@ -971,21 +973,21 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
     const urlsWithoutTitle = discoveredUrls
       .map((item, index) => ({ item, index }))
       .filter(({ item }) => !item.title);
-    
+
     if (urlsWithoutTitle.length === 0) {
       toast.info('모든 URL에 제목이 있습니다.');
       return;
     }
-    
+
     toast.info(`${urlsWithoutTitle.length}개 URL의 제목을 가져오는 중...`);
-    
+
     // 병렬로 최대 5개씩 처리
     const batchSize = 5;
     for (let i = 0; i < urlsWithoutTitle.length; i += batchSize) {
       const batch = urlsWithoutTitle.slice(i, i + batchSize);
       await Promise.all(batch.map(({ item, index }) => handleFetchTitle(index, item.url)));
     }
-    
+
     toast.success('제목 가져오기 완료');
   };
 
@@ -994,7 +996,7 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
     discoveredUrls.forEach(item => {
       const normalizedItemUrl = normalizeUrl(item.url);
       // DB에 저장된 정보만 비교 (다이얼로그 전용 DB Map 사용, 없으면 existingDbMap 사용)
-      const isInDb = dialogDbMap.size > 0 
+      const isInDb = dialogDbMap.size > 0
         ? dialogDbMap.has(normalizedItemUrl)
         : existingDbMap.has(normalizedItemUrl);
       if (!isInDb) {
@@ -1011,10 +1013,10 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
       // 다이얼로그가 열릴 때마다 최신 DB 데이터 가져오기
       const dbMap = await fetchExistingUrls();
       console.log(`[handleDialogOpenChange] DB 동기화 완료, DB URL 개수: ${dbMap.size}`);
-      
+
       // 다이얼로그 전용 DB Map 업데이트 (즉시 반영)
       setDialogDbMap(new Map(dbMap));
-      
+
       // 동기화 후 발견된 URL과 DB 비교 결과 로그
       if (discoveredUrls.length > 0) {
         console.log(`[handleDialogOpenChange] 발견된 URL ${discoveredUrls.length}개와 DB 비교 시작`);
@@ -1107,7 +1109,7 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                 className="min-h-[100px] w-full text-center bg-transparent border-gray-700 focus:border-blue-500 focus:ring-1 focus:ring-blue-500 text-lg resize-none placeholder:text-gray-600"
               />
               <p className="text-xs text-gray-500">
-                {options.paginationMode 
+                {options.paginationMode
                   ? 'Pagination 모드: 하나의 부모 페이지 URL만 입력하세요 (예: https://ads.naver.com/help/faq?categorySeq=136)'
                   : '여러 URL을 입력하려면 줄바꿈으로 구분하세요.'}
               </p>
@@ -1116,11 +1118,10 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
             {/* Options Grid - 2행으로 배치 (각 행 4개씩) */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-8 w-full max-w-3xl">
               {/* 첫 번째 행: 기본 옵션 */}
-              <div className={`flex flex-col gap-3 p-4 rounded-lg border-2 transition-all min-h-[140px] ${
-                !options.paginationMode && options.discoverSubPages
-                  ? 'bg-gradient-to-br from-blue-500/20 to-blue-600/10 border-blue-500/50 shadow-lg shadow-blue-500/20' 
-                  : 'bg-white/5 border-white/10'
-              } ${options.paginationMode ? 'opacity-50 cursor-not-allowed' : ''}`}>
+              <div className={`flex flex-col gap-3 p-4 rounded-lg border-2 transition-all min-h-[140px] ${!options.paginationMode && options.discoverSubPages
+                ? 'bg-gradient-to-br from-blue-500/20 to-blue-600/10 border-blue-500/50 shadow-lg shadow-blue-500/20'
+                : 'bg-white/5 border-white/10'
+                } ${options.paginationMode ? 'opacity-50 cursor-not-allowed' : ''}`}>
                 <div className="flex items-center justify-between">
                   <Label className="text-sm font-semibold text-gray-300">하위 페이지 발견</Label>
                   <Checkbox
@@ -1130,8 +1131,8 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                     onCheckedChange={(c) => {
                       if (!options.paginationMode) {
                         const newDiscoverSubPages = !!c;
-                        setOptions({ 
-                          ...options, 
+                        setOptions({
+                          ...options,
                           discoverSubPages: newDiscoverSubPages,
                           paginationMode: newDiscoverSubPages ? false : options.paginationMode,
                         });
@@ -1141,17 +1142,16 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                   />
                 </div>
                 <p className="text-xs text-gray-400 leading-relaxed flex-1">
-                  {options.paginationMode 
+                  {options.paginationMode
                     ? 'Pagination 모드 사용 시 비활성화'
                     : 'sitemap.xml 및 링크 분석으로 하위 페이지 자동 추출'}
                 </p>
               </div>
 
-              <div className={`flex flex-col gap-3 p-4 rounded-lg border-2 transition-all min-h-[140px] ${
-                options.paginationMode 
-                  ? 'bg-gradient-to-br from-purple-500/20 to-purple-600/10 border-purple-500/50 shadow-lg shadow-purple-500/20' 
-                  : 'bg-white/5 border-white/10'
-              }`}>
+              <div className={`flex flex-col gap-3 p-4 rounded-lg border-2 transition-all min-h-[140px] ${options.paginationMode
+                ? 'bg-gradient-to-br from-purple-500/20 to-purple-600/10 border-purple-500/50 shadow-lg shadow-purple-500/20'
+                : 'bg-white/5 border-white/10'
+                }`}>
                 <div className="flex items-center justify-between">
                   <Label className="text-sm font-semibold text-purple-300 flex items-center gap-2">
                     📄 Pagination 모드
@@ -1161,8 +1161,8 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                     checked={options.paginationMode}
                     onCheckedChange={(c) => {
                       const newPaginationMode = !!c;
-                      setOptions({ 
-                        ...options, 
+                      setOptions({
+                        ...options,
                         paginationMode: newPaginationMode,
                         discoverSubPages: newPaginationMode ? false : options.discoverSubPages,
                         maxDepth: newPaginationMode ? 1 : options.maxDepth,
@@ -1184,11 +1184,10 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                 )}
               </div>
 
-              <div className={`flex flex-col gap-3 p-4 rounded-lg border-2 transition-all min-h-[140px] ${
-                options.paginationMode 
-                  ? 'opacity-50 bg-white/5 border-white/10 cursor-not-allowed' 
-                  : 'bg-white/5 border-white/10'
-              }`}>
+              <div className={`flex flex-col gap-3 p-4 rounded-lg border-2 transition-all min-h-[140px] ${options.paginationMode
+                ? 'opacity-50 bg-white/5 border-white/10 cursor-not-allowed'
+                : 'bg-white/5 border-white/10'
+                }`}>
                 <Label htmlFor="maxDepth" className="text-sm font-semibold text-gray-300">
                   최대 깊이
                 </Label>
@@ -1218,7 +1217,7 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-gray-400 leading-relaxed mt-auto">
-                  {options.paginationMode 
+                  {options.paginationMode
                     ? 'Pagination 모드에서는 깊이 1로 고정'
                     : 'Max + 하위 페이지 발견 사용 시: 발견된 하위 페이지를 실제로 열어 링크를 추가로 추출합니다.'}
                 </p>
@@ -1261,11 +1260,10 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                 </p>
               </div>
 
-              <div className={`flex flex-col gap-3 p-4 rounded-lg border-2 transition-all min-h-[140px] ${
-                options.domainLimit
-                  ? 'bg-gradient-to-br from-blue-500/20 to-blue-600/10 border-blue-500/50 shadow-lg shadow-blue-500/20'
-                  : 'bg-white/5 border-white/10'
-              }`}>
+              <div className={`flex flex-col gap-3 p-4 rounded-lg border-2 transition-all min-h-[140px] ${options.domainLimit
+                ? 'bg-gradient-to-br from-blue-500/20 to-blue-600/10 border-blue-500/50 shadow-lg shadow-blue-500/20'
+                : 'bg-white/5 border-white/10'
+                }`}>
                 <div className="flex items-center justify-between">
                   <Label className="text-sm font-semibold text-gray-300">도메인 제한</Label>
                   <Checkbox
@@ -1280,11 +1278,10 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                 </p>
               </div>
 
-              <div className={`flex flex-col gap-3 p-4 rounded-lg border-2 transition-all min-h-[140px] ${
-                options.respectRobots
-                  ? 'bg-gradient-to-br from-blue-500/20 to-blue-600/10 border-blue-500/50 shadow-lg shadow-blue-500/20'
-                  : 'bg-white/5 border-white/10'
-              }`}>
+              <div className={`flex flex-col gap-3 p-4 rounded-lg border-2 transition-all min-h-[140px] ${options.respectRobots
+                ? 'bg-gradient-to-br from-blue-500/20 to-blue-600/10 border-blue-500/50 shadow-lg shadow-blue-500/20'
+                : 'bg-white/5 border-white/10'
+                }`}>
                 <div className="flex items-center justify-between">
                   <Label className="text-sm font-semibold text-gray-300">Robots.txt 준수</Label>
                   <Checkbox
@@ -1299,11 +1296,10 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                 </p>
               </div>
 
-              <div className={`flex flex-col gap-3 p-4 rounded-lg border-2 transition-all min-h-[140px] ${
-                options.useCrawlerV2
-                  ? 'bg-gradient-to-br from-emerald-500/20 to-emerald-600/10 border-emerald-500/50 shadow-lg shadow-emerald-500/20'
-                  : 'bg-emerald-500/10 border-emerald-500/20'
-              }`}>
+              <div className={`flex flex-col gap-3 p-4 rounded-lg border-2 transition-all min-h-[140px] ${options.useCrawlerV2
+                ? 'bg-gradient-to-br from-emerald-500/20 to-emerald-600/10 border-emerald-500/50 shadow-lg shadow-emerald-500/20'
+                : 'bg-emerald-500/10 border-emerald-500/20'
+                }`}>
                 <div className="flex items-center justify-between">
                   <Label className="text-sm font-semibold text-emerald-300 flex items-center gap-2">
                     🚀 크롤러 V2
@@ -1326,13 +1322,13 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
               <Alert className="bg-[#1A1F2C] border border-amber-700/30 text-gray-100 mt-8 mb-6 w-full max-w-3xl shadow-xl">
                 <AlertTriangle className="h-5 w-5 text-amber-400" />
                 <AlertTitle className="text-amber-300 font-semibold text-base mb-2">
-                  타임아웃 위험 경고
+                  {timeoutWarning.jobCount ? '⏱️ 실행 시간 초과 및 백그라운드 전환' : '⚠️ 타임아웃 위험 경고'}
                 </AlertTitle>
                 <AlertDescription className="space-y-2 leading-relaxed">
                   <p className="text-sm text-gray-300">
                     {timeoutWarning.message}
                   </p>
-                  <div className="mt-2 flex items-center gap-4 text-xs">
+                  <div className="mt-2 flex flex-wrap items-center gap-4 text-xs">
                     <div className="flex items-center gap-2">
                       <span className="text-gray-400">발견된 URL:</span>
                       <Badge variant="outline" className="bg-amber-900/20 border-amber-700/30 text-amber-200">
@@ -1340,11 +1336,19 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                       </Badge>
                     </div>
                     <div className="flex items-center gap-2">
-                      <span className="text-gray-400">안정적 크롤링 가능:</span>
+                      <span className="text-gray-400">직접 크롤링:</span>
                       <Badge variant="outline" className="bg-amber-900/20 border-amber-700/30 text-amber-200">
                         {timeoutWarning.safeCrawlableCount}개
                       </Badge>
                     </div>
+                    {timeoutWarning.jobCount ? (
+                      <div className="flex items-center gap-2">
+                        <span className="text-gray-400">백그라운드 예약:</span>
+                        <Badge variant="outline" className="bg-blue-900/20 border-blue-700/30 text-blue-200">
+                          {timeoutWarning.jobCount}개 URL
+                        </Badge>
+                      </div>
+                    ) : null}
                   </div>
                   <div className="flex justify-end mt-3">
                     <Button
@@ -1529,8 +1533,8 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                                 </div>
                               ) : (
                                 <div className="flex items-center gap-2 group/title">
-                                  <span 
-                                    className="text-white font-medium truncate pr-4 flex-1 cursor-pointer hover:text-blue-400 transition-colors" 
+                                  <span
+                                    className="text-white font-medium truncate pr-4 flex-1 cursor-pointer hover:text-blue-400 transition-colors"
                                     title={result.title}
                                     onClick={() => handleStartEditResultTitle(result.url, result.title)}
                                   >
@@ -1676,11 +1680,11 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                 {discoveredUrls.map((item, i) => {
                   const normalizedItemUrl = normalizeUrl(item.url);
                   // DB에 저장된 정보만 비교 (다이얼로그 전용 DB Map 사용, 없으면 existingDbMap 사용)
-                  const isInDb = dialogDbMap.size > 0 
+                  const isInDb = dialogDbMap.size > 0
                     ? dialogDbMap.has(normalizedItemUrl)
                     : existingDbMap.has(normalizedItemUrl);
                   const isAlreadyCrawled = isInDb;
-                  
+
                   // 디버깅: 처음 5개만 상세 로그
                   if (i < 5) {
                     console.log(`[isAlreadyCrawled] URL[${i}]: "${item.url}"`, {
@@ -1693,7 +1697,7 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                       existingDbMapHas: existingDbMap.has(normalizedItemUrl)
                     });
                   }
-                  
+
                   return (
                     <div key={i}
                       className={`
@@ -1711,7 +1715,7 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                           className="border-gray-600 data-[state=checked]:border-blue-500"
                         />
                       </div>
-                      
+
                       {/* 제목 및 URL 영역 - Grid 두 번째 컬럼, 고정 너비 */}
                       <div className="min-w-0 overflow-hidden">
                         <label htmlFor={`url-${i}`} className="cursor-pointer block">
@@ -1762,8 +1766,8 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                             ) : (
                               // 일반 모드 - 편집 모드와 동일한 높이 유지
                               <div className="flex items-center gap-1 sm:gap-2 h-7">
-                                <span 
-                                  className="truncate flex-1 min-w-0 cursor-text" 
+                                <span
+                                  className="truncate flex-1 min-w-0 cursor-text"
                                   title={item.title}
                                   onDoubleClick={(e) => {
                                     e.stopPropagation();
@@ -1813,10 +1817,10 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                           </div>
                           {/* URL 영역 */}
                           <div className="text-xs text-blue-400/70 break-all mt-0.5 font-mono flex items-center gap-2">
-                            <a 
-                              href={item.url} 
-                              target="_blank" 
-                              rel="noreferrer" 
+                            <a
+                              href={item.url}
+                              target="_blank"
+                              rel="noreferrer"
                               className="text-blue-400 hover:text-blue-300 hover:underline flex items-center gap-1"
                               onClick={(e) => e.stopPropagation()}
                             >

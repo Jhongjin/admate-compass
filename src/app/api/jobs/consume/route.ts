@@ -4,6 +4,7 @@ import { ragProcessor, DocumentData } from '@/lib/services/RAGProcessor';
 import { simpleTextSplitter, TextSplit } from '@/lib/services/SimpleTextSplitter';
 import { sitemapDiscoveryService } from '@/lib/services/SitemapDiscoveryService';
 import { PuppeteerCrawlingService } from '@/lib/services/PuppeteerCrawlingService';
+import { CrawlerEngine } from '@/lib/crawler-v2/core/CrawlerEngine';
 import * as cheerio from 'cheerio';
 
 export const runtime = 'nodejs';
@@ -615,7 +616,7 @@ export async function processQueue() {
         const now = Date.now();
         const TIMEOUT_MS = 30 * 60 * 1000; // 30분
         const timeoutThreshold = new Date(now - TIMEOUT_MS).toISOString();
-        
+
         // 타임아웃된 processing 작업 조회 (빠른 쿼리)
         const { data: timeoutJobs } = await supabase
           .from('processing_jobs')
@@ -624,16 +625,16 @@ export async function processQueue() {
           .not('started_at', 'is', null)
           .lt('started_at', timeoutThreshold)
           .limit(10);
-        
+
         if (timeoutJobs && timeoutJobs.length > 0) {
           console.error(`[CRITICAL] ⏰ 타임아웃된 processing 작업 ${timeoutJobs.length}개 발견 - failed로 업데이트 시작`);
-          
+
           // 각 작업의 deepCrawlTimeout 옵션 확인하여 타임아웃 시간 조정
           for (const timeoutJob of timeoutJobs) {
             const deepCrawlTimeout = (timeoutJob.payload as any)?.deepCrawlTimeout === true;
             const jobTimeoutMs = deepCrawlTimeout ? 30 * 60 * 1000 : 15 * 60 * 1000;
             const startedAt = timeoutJob.started_at ? new Date(timeoutJob.started_at).getTime() : null;
-            
+
             if (startedAt && (now - startedAt) > jobTimeoutMs) {
               const timeoutMinutes = Math.round(jobTimeoutMs / (60 * 1000));
               await supabase
@@ -650,7 +651,7 @@ export async function processQueue() {
                 })
                 .eq('id', timeoutJob.id)
                 .eq('status', 'processing');
-              
+
               console.error(`[CRITICAL] ⏰ 타임아웃 작업 failed로 업데이트: ${timeoutJob.id.substring(0, 8)}... (타임아웃: ${timeoutMinutes}분)`);
             }
           }
@@ -658,7 +659,7 @@ export async function processQueue() {
       } catch (timeoutCheckError) {
         console.warn('[CRITICAL] ⚠️ 타임아웃 작업 체크 실패 (무시하고 계속 진행):', timeoutCheckError);
       }
-      
+
       // check-crawl-status와 완전히 동일한 패턴 사용 (정상 작동하는 패턴)
       // Promise.race나 타임아웃 없이 직접 await 사용
       console.error('[CRITICAL] 🔍 작업 조회 쿼리 시작 (check-crawl-status 패턴, 타임아웃 없음)...');
@@ -4918,6 +4919,102 @@ export async function processQueue() {
           details: finalErrorMessage,
           timeout: isTimeout
         }, { status: 500 });
+      }
+    }
+
+    // 🔥 CRAWL_V2 job 처리 (Overflow URLs)
+    if (job.job_type === 'CRAWL_V2') {
+      console.log(`🚀 [Consume] CRAWL_V2 작업 처리 시작: ${job.id} - URL: ${job.payload?.url}`);
+      const crawlerEngine = new CrawlerEngine();
+      try {
+        const url = job.payload?.url as string;
+        const options = job.payload?.options || {};
+        const documentId = job.document_id || `doc_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+
+        // 1. 크롤링 수행
+        const crawlResult = await crawlerEngine.crawlUrl(url, {
+          ...options,
+          discoverSubPages: false, // 개별 URL 크롤링이므로 하위 페이지 탐색 비활성화
+          paginationMode: false,   // 페이지네이션 비활성화
+          useCache: true           // 캐시 사용 권장 (백그라운드 처리 시 중복 방지)
+        });
+
+        if (crawlResult.status !== 'success' || !crawlResult.content) {
+          throw new Error(`크롤링 실패: ${crawlResult.error || '콘텐츠 없음'}`);
+        }
+
+        // 2. RAG 처리 및 인덱싱
+        const docData: DocumentData = {
+          id: documentId,
+          title: crawlResult.title || url,
+          content: crawlResult.content,
+          type: 'url',
+          url: url,
+          source_vendor: options.vendors?.[0] || 'META',
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+          main_document_id: job.payload?.main_document_id, // 상위 문서 ID가 있으면 연결
+          file_size: Buffer.byteLength(crawlResult.content, 'utf8'),
+          file_type: 'text/html'
+        };
+
+        const ragResult = await ragProcessor.processDocument(docData, true);
+
+        if (!ragResult.success) {
+          throw new Error(`RAG 처리 실패: ${ragResult.error}`);
+        }
+
+        // 3. 문서 상태 업데이트
+        const { error: docUpdateErr } = await supabase
+          .from('documents')
+          .update({
+            status: 'indexed',
+            chunk_count: ragResult.chunkCount,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', documentId);
+
+        if (docUpdateErr) {
+          console.error(`⚠️ [Consume] 문서 상태 업데이트 실패: ${documentId}`, docUpdateErr);
+        }
+
+        // 4. 작업 완료 처리
+        const finishedResult = {
+          note: 'crawl_v2_completed',
+          chunks: ragResult.chunkCount,
+          title: crawlResult.title,
+          url: crawlResult.url,
+          source: job.payload?.source || 'overflow'
+        };
+
+        await supabase
+          .from('processing_jobs')
+          .update({
+            status: 'completed',
+            finished_at: new Date().toISOString(),
+            result: finishedResult,
+            document_id: documentId
+          })
+          .eq('id', job.id);
+
+        console.log(`✅ [Consume] CRAWL_V2 작업 완료: ${job.id} - ${ragResult.chunkCount}개 청크 생성`);
+
+        return NextResponse.json({
+          success: true,
+          jobId: job.id,
+          status: 'completed',
+          chunks: ragResult.chunkCount
+        }, { status: 200 });
+
+      } catch (crawlError: any) {
+        const errorMessage = crawlError instanceof Error ? crawlError.message : String(crawlError);
+        console.error(`❌ [Consume] CRAWL_V2 처리 실패: ${job.id}`, {
+          url: job.payload?.url,
+          error: errorMessage
+        });
+
+        // 상위 catch 블록에서 처리하도록 throw
+        throw crawlError;
       }
     }
 

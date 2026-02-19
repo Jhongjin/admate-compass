@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic';
 
 type EnqueueBody = {
   documentId?: string | null;
-  jobType: 'OCR' | 'PDF_PARSE' | 'DOCX_PARSE' | 'CRAWL' | 'CRAWL_SEED' | 'EMBEDDING' | 'CHUNK_PROCESS';
+  jobType: 'OCR' | 'PDF_PARSE' | 'DOCX_PARSE' | 'CRAWL' | 'CRAWL_SEED' | 'CRAWL_V2' | 'EMBEDDING' | 'CHUNK_PROCESS';
   priority?: number;
   payload?: Record<string, unknown>;
 };
@@ -19,8 +19,8 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ success: false, error: 'jobType은 필수입니다.' }, { status: 400 });
     }
 
-    // CRAWL_SEED는 documentId가 없을 수 있음
-    const requiresDocumentId = !['CRAWL_SEED'].includes(body.jobType);
+    // CRAWL_SEED, CRAWL_V2는 documentId가 없을 수 있음
+    const requiresDocumentId = !['CRAWL_SEED', 'CRAWL_V2'].includes(body.jobType);
     if (requiresDocumentId && !body?.documentId) {
       return NextResponse.json({ success: false, error: 'documentId는 필수입니다.' }, { status: 400 });
     }

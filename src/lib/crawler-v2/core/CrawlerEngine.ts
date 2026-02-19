@@ -464,14 +464,27 @@ export class CrawlerEngine {
           // 타임아웃 체크 (매 배치 시작 전)
           const elapsed = Date.now() - startTime;
           if (elapsed >= MAX_EXECUTION_TIME) {
-            console.warn(`⏰ [Pagination Mode] 타임아웃 임박 (${Math.round(elapsed / 1000)}초 경과). 현재까지 ${results.length}개 처리 완료.`);
+            console.warn(`⏰ [Pagination Mode] 타임아웃 임박 (${Math.round(elapsed / 1000)}초 경과). 남은 ${urlsToCrawl.length - currentIndex}개 작업을 큐로 이관합니다.`);
+
+            const remainingUrls = urlsToCrawl.slice(currentIndex);
 
             if (onProgress) {
               onProgress({
                 type: 'log',
-                message: `⚠️ 타임아웃 임박으로 인해 ${results.length}/${urlsToCrawl.length}개만 처리되었습니다. 나머지 ${urlsToCrawl.length - results.length}개는 다음에 처리해야 합니다.`,
+                message: `⏰ 타임아웃 임박 (${Math.round(elapsed / 1000)}초 경과). 남은 ${remainingUrls.length}개 작업을 백그라운드 큐로 이관합니다...`,
+              });
+            }
+
+            // 남은 URL들을 백그라운드 큐로 이관
+            const jobIds = await this.enqueueOverflowUrls(remainingUrls, config);
+
+            if (onProgress) {
+              onProgress({
+                type: 'queue_info',
+                message: `✅ 남은 ${remainingUrls.length}개 작업이 백그라운드 큐로 성공적으로 이관되었습니다.`,
                 current: results.length,
                 total: urlsToCrawl.length,
+                jobIds: jobIds,
               });
             }
             break;
@@ -531,80 +544,41 @@ export class CrawlerEngine {
                   }
                 }
               }
-
-              // 요청 간격 (서버 부하 방지)
-              if (i + concurrency < batch.length) {
-                await new Promise(resolve => setTimeout(resolve, 1000));
-              }
             }
 
-            // 배치 결과를 전체 결과에 추가
-            for (const result of batchResults) {
-              results.push(result);
-            }
+            results.push(...batchResults);
+            currentIndex += batch.length;
 
-            const batchElapsed = Date.now() - batchStartTime;
-            console.log(`✅ [Pagination Mode] 배치 ${batchNumber} 완료: ${batchResults.length}개 처리 (${Math.round(batchElapsed / 1000)}초 소요)`);
+            const batchElapsed = (Date.now() - batchStartTime) / 1000;
+            console.log(`✅ [Pagination Mode] 배치 ${batchNumber} 완료: ${batchResults.length}개 (${batchElapsed.toFixed(1)}초)`);
 
-            currentIndex += BATCH_SIZE;
-
-            if (onProgress) {
-              onProgress({
-                type: 'batch_progress',
-                message: `배치 ${batchNumber} 완료: ${results.length}/${urlsToCrawl.length}개 처리됨`,
-                current: results.length,
-                total: urlsToCrawl.length,
-              });
-            }
-
-            // 배치 처리 후 타임아웃 재확인
-            const totalElapsed = Date.now() - startTime;
-            if (totalElapsed >= MAX_EXECUTION_TIME) {
-              console.warn(`⏰ [Pagination Mode] 배치 처리 후 타임아웃 확인: ${Math.round(totalElapsed / 1000)}초 경과`);
-              break;
-            }
           } catch (batchError) {
-            console.error(`❌ [Pagination Mode] 배치 ${batchNumber} 크롤링 오류:`, batchError);
-            // 오류가 발생해도 다음 배치 계속 처리
-            currentIndex += BATCH_SIZE;
+            console.error(`❌ [Pagination Mode] 배치 ${batchNumber} 처리 중 오류:`, batchError);
+            currentIndex += batch.length; // 오류 발생 시에도 다음 배치를 위해 인덱스 증가
           }
         }
 
-        const totalElapsed = Date.now() - startTime;
-        console.log(`✅ [Pagination Mode] 배치 크롤링 완료: ${results.length}/${urlsToCrawl.length}개 결과 (${Math.round(totalElapsed / 1000)}초 소요)`);
+        return results;
+      } else {
+        // 3. 발견된 URL이 적으면 직접 크롤링
+        console.log(`🚀 [Pagination Mode] 발견된 URL이 ${urlsToCrawl.length}개로 적어 직접 크롤링을 수행합니다.`);
 
-        if (results.length < urlsToCrawl.length && onProgress) {
+        if (onProgress) {
           onProgress({
             type: 'log',
-            message: `⚠️ 일부 URL이 처리되지 않았습니다: ${results.length}/${urlsToCrawl.length}개 완료. 나머지 ${urlsToCrawl.length - results.length}개는 재시도가 필요합니다.`,
-            current: results.length,
-            total: urlsToCrawl.length,
+            message: `${urlsToCrawl.length}개 FAQ 링크 크롤링 시작...`,
           });
         }
 
+        const results = await this.crawlUrls(urlsToCrawl, config, onProgress);
         return results;
       }
-
-      // 3. 발견된 URL이 임계값 미만이면 직접 크롤링
-      if (onProgress) {
-        onProgress({
-          type: 'log',
-          message: `${discoveredUrls.length}개 페이지 발견, 직접 크롤링 시작...`,
-        });
-      }
-
-      // urlsToCrawl은 이미 위에서 정의되었으므로 재사용
-      const results = await this.crawlUrls(urlsToCrawl, config, onProgress);
-
-      console.log(`✅ [Pagination Mode] 크롤링 완료: ${results.length}개 결과`);
-
-      return results;
     } catch (error) {
-      console.error(`❌ [Pagination Mode] 크롤링 실패:`, error);
+      console.error('❌ [Pagination Mode] 오류 발생:', error);
       if (onProgress) {
         onProgress({
           type: 'log',
-          message: `크롤링 실패: ${error instanceof Error ? error.message : String(error)}`,
+          message: `Pagination 크롤링 중 오류: ${error instanceof Error ? error.message : String(error)}`,
         });
       }
       return [];
@@ -612,13 +586,13 @@ export class CrawlerEngine {
   }
 
   /**
-   * 여러 URL 배치 크롤링 (개선: 병렬 처리 + 진행률 개선)
+   * 여러 URL 크롤링 (진행률 콜백 포함)
    */
   async crawlUrls(
     urls: string[],
     options: Partial<CrawlOptions> = {},
     onProgress?: (data: {
-      type: 'log' | 'batch_progress' | 'progress';
+      type: 'progress' | 'log' | 'batch_progress';
       message: string;
       current?: number;
       total?: number;
@@ -628,282 +602,205 @@ export class CrawlerEngine {
   ): Promise<CrawlResult[]> {
     const config: CrawlOptions = {
       discoverSubPages: false,
-      timeout: 30000,
-      waitTime: 1000,
-      useCache: true,
-      cacheTTL: 24 * 60 * 60,
-      maxRetries: 3,
-      retryDelay: 1000,
-      concurrency: 5, // 기본 병렬 처리 수 (Pagination 모드에서 많은 URL 처리 시 속도 향상)
-      enableMemoryMonitoring: true,
+      concurrency: 3,
       ...options,
     };
 
-    console.log(`🕷️ 배치 크롤링 시작: ${urls.length}개 URL (병렬 처리: ${config.concurrency || 1}개)`);
-
+    const total = urls.length;
+    let completed = 0;
+    let failed = 0;
     const results: CrawlResult[] = [];
     const startTime = Date.now();
     const completedTimes: number[] = [];
-    let completed = 0;
-    let failed = 0;
 
-    // 메모리 모니터링 시작
-    if (config.enableMemoryMonitoring) {
-      memoryMonitor.getCurrentMemory();
-    }
+    // 배치 처리 (concurrency 기준)
+    for (let i = 0; i < urls.length; i += config.concurrency!) {
+      const batch = urls.slice(i, i + config.concurrency!);
 
-    // 병렬 처리 함수
-    const processUrl = async (url: string, index: number): Promise<void> => {
-      const urlStartTime = Date.now();
+      if (onProgress) {
+        onProgress({
+          type: 'log',
+          message: `${i + 1}~${Math.min(i + config.concurrency!, total)}번째 URL 처리 중...`,
+          current: completed + failed,
+          total,
+        });
+      }
 
-      try {
-        if (onProgress) {
-          onProgress({
-            type: 'log',
-            message: `페이지 분석 중... (${index + 1}/${urls.length})`,
-            current: index + 1,
-            total: urls.length,
-          });
-        }
+      const batchPromises = batch.map((url) => this.crawlUrl(url, config));
+      const batchResults = await Promise.all(batchPromises);
 
-        const result = await this.crawlUrl(url, config);
-        results[index] = result;
-
+      for (const result of batchResults) {
+        results.push(result);
         if (result.status === 'success') {
           completed++;
+          completedTimes.push((Date.now() - startTime) / 1000);
         } else {
           failed++;
         }
 
-        const urlProcessingTime = (Date.now() - urlStartTime) / 1000;
-        completedTimes.push(urlProcessingTime);
-
-        // 진행률 계산
-        const totalCompleted = completed + failed;
-        const progress = (totalCompleted / urls.length) * 100;
-
-        // 평균 처리 시간 계산
-        const avgTime =
-          completedTimes.length > 0
-            ? completedTimes.reduce((a, b) => a + b, 0) / completedTimes.length
-            : 0;
-
-        // 예상 남은 시간 계산
-        const remaining = urls.length - totalCompleted;
-        const estimatedTimeRemaining = remaining * avgTime;
-
-        // 메모리 사용량
-        const memoryStats = memoryMonitor.getCurrentMemory();
-        const memoryUsageMB = memoryStats
-          ? memoryStats.heapUsed / (1024 * 1024)
-          : undefined;
-
-        // 캐시 히트율
-        const totalCacheRequests = this.cacheHits + this.cacheMisses;
-        const cacheHitRate =
-          totalCacheRequests > 0
-            ? (this.cacheHits / totalCacheRequests) * 100
-            : undefined;
-
+        // 상세 진행률 전송
         if (onProgress) {
-          const progressData: CrawlProgress = {
-            currentUrl: url,
-            totalUrls: urls.length,
-            completedUrls: completed,
-            failedUrls: failed,
-            progress,
-            stage: 'crawling',
-            message: `처리 중: ${url}`,
-            estimatedTimeRemaining,
-            averageTimePerUrl: avgTime,
-            memoryUsage: memoryUsageMB,
-            cacheHitRate,
+          const progress: CrawlProgress = {
+            total,
+            completed,
+            failed,
+            currentUrl: result.url,
+            percentage: Math.round(((completed + failed) / total) * 100),
+            elapsedTime: Math.round((Date.now() - startTime) / 1000),
+            estimatedTimeRemaining: this.calculateETA(
+              total,
+              completed + failed,
+              completedTimes
+            ),
           };
 
           onProgress({
             type: 'progress',
-            message: `진행률: ${progress.toFixed(1)}% (${completed} 성공, ${failed} 실패)`,
-            current: totalCompleted,
-            total: urls.length,
-            progress: progressData,
+            message: `${result.url} ${result.status === 'success' ? '완료' : '실패'}`,
+            progress,
           });
 
           onProgress({
             type: 'batch_progress',
-            message: `완료: ${url}`,
-            current: totalCompleted,
-            total: urls.length,
-            result: result,
+            message: result.title,
+            current: completed + failed,
+            total,
+            result,
           });
         }
-
-        // 요청 간격 (서버 부하 방지)
-        await new Promise((resolve) => setTimeout(resolve, 2000));
-      } catch (error) {
-        console.error(`❌ 크롤링 실패: ${url}`, error);
-        results[index] = {
-          url: normalizeUrl(url),
-          title: url,
-          content: '',
-          contentLength: 0,
-          type: 'general',
-          lastUpdated: new Date().toISOString(),
-          status: 'failed',
-          error: error instanceof Error ? error.message : String(error),
-        };
-        failed++;
-      }
-    };
-
-    // 병렬 처리 실행
-    const concurrency = config.concurrency || 1;
-    const batches: string[][] = [];
-
-    // URL을 배치로 분할
-    for (let i = 0; i < urls.length; i += concurrency) {
-      batches.push(urls.slice(i, i + concurrency));
-    }
-
-    // 각 배치를 순차적으로 처리 (배치 내부는 병렬)
-    let batchIndex = 0;
-    for (const batch of batches) {
-      batchIndex++;
-      console.log(`📦 [배치 크롤링] 배치 ${batchIndex}/${batches.length} 처리 중 (${batch.length}개 URL)`);
-
-      await Promise.all(
-        batch.map((url, batchIndex) => {
-          const globalIndex = urls.indexOf(url);
-          return processUrl(url, globalIndex);
-        })
-      );
-
-      const completedSoFar = results.filter(r => r && (r.status === 'success' || r.status === 'failed')).length;
-      console.log(`📊 [배치 크롤링] 진행 상황: ${completedSoFar}/${urls.length} 완료 (${((completedSoFar / urls.length) * 100).toFixed(1)}%)`);
-
-      // 배치 간 메모리 정리
-      if (config.enableMemoryMonitoring && memoryMonitor.shouldCleanup()) {
-        cacheManager.cleanup();
-        memoryMonitor.forceGC();
       }
     }
 
-    // 최종 결과 정렬 (원본 URL 순서 유지)
-    const sortedResults: CrawlResult[] = [];
-    for (const url of urls) {
-      const index = urls.indexOf(url);
-      if (results[index]) {
-        sortedResults.push(results[index]);
+    return results;
+  }
+
+  /**
+   * 타임아웃으로 처리하지 못한 URL들을 백그라운드 큐로 이관
+   */
+  private async enqueueOverflowUrls(urls: string[], options: Partial<CrawlOptions>): Promise<string[]> {
+    try {
+      console.log(`📦 [CrawlerEngine] ${urls.length}개 URL 백그라운드 큐 이관 시도...`);
+
+      const supabase = await createPureClient();
+      const jobIds: string[] = [];
+
+      // 한 번에 너무 많은 작업을 insert하면 오류가 발생할 수 있으므로 배치 처리 (chunk size: 50)
+      const chunkSize = 50;
+      for (let i = 0; i < urls.length; i += chunkSize) {
+        const chunk = urls.slice(i, i + chunkSize);
+        const inserts = chunk.map(url => ({
+          job_type: 'CRAWL_V2',
+          status: 'queued',
+          priority: 5,
+          payload: {
+            url,
+            options: {
+              ...options,
+              paginationMode: false, // 개별 URL 크롤링이므로 paginationMode 해제
+              discoverSubPages: false, // 연쇄 폭발 방지
+            },
+            source: 'overflow',
+            enqueued_at: new Date().toISOString(),
+          },
+          scheduled_at: new Date().toISOString(),
+          attempts: 0,
+          max_attempts: 3,
+        }));
+
+        const { data, error } = await supabase
+          .from('processing_jobs')
+          .insert(inserts)
+          .select('id');
+
+        if (error) {
+          console.error(`❌ [CrawlerEngine] 큐 이관 중 오류 (index ${i}):`, error);
+          continue;
+        }
+
+        if (data) {
+          jobIds.push(...data.map(item => item.id));
+        }
       }
+
+      console.log(`✅ [CrawlerEngine] ${jobIds.length}/${urls.length}개 작업 큐 이관 완료`);
+      return jobIds;
+    } catch (error) {
+      console.error('❌ [CrawlerEngine] enqueueOverflowUrls 예외 발생:', error);
+      return [];
     }
-
-    const totalTime = (Date.now() - startTime) / 1000;
-    const successCount = sortedResults.filter((r) => r.status === 'success').length;
-    const failedCount = sortedResults.filter((r) => r.status === 'failed').length;
-
-    console.log(
-      `✅ 배치 크롤링 완료: 성공 ${successCount}개, 실패 ${failedCount}개 (총 ${totalTime.toFixed(2)}초)`
-    );
-
-    // 최종 진행률 전송
-    if (onProgress) {
-      const finalProgress: CrawlProgress = {
-        currentUrl: '',
-        totalUrls: urls.length,
-        completedUrls: successCount,
-        failedUrls: failedCount,
-        progress: 100,
-        stage: 'completed',
-        message: `완료: ${successCount}개 성공, ${failedCount}개 실패`,
-        estimatedTimeRemaining: 0,
-        averageTimePerUrl: completedTimes.length > 0
-          ? completedTimes.reduce((a, b) => a + b, 0) / completedTimes.length
-          : 0,
-        memoryUsage: memoryMonitor.getCurrentMemory()?.heapUsed
-          ? memoryMonitor.getCurrentMemory()!.heapUsed / (1024 * 1024)
-          : undefined,
-        cacheHitRate:
-          this.cacheHits + this.cacheMisses > 0
-            ? (this.cacheHits / (this.cacheHits + this.cacheMisses)) * 100
-            : undefined,
-      };
-
-      onProgress({
-        type: 'progress',
-        message: `완료: ${successCount}개 성공, ${failedCount}개 실패`,
-        current: urls.length,
-        total: urls.length,
-        progress: finalProgress,
-      });
-    }
-
-    return sortedResults;
   }
 
   /**
    * 문서 타입 결정
    */
-  private determineDocumentType(url: string): 'policy' | 'help' | 'guide' | 'general' {
-    const lowerUrl = url.toLowerCase();
-
-    if (lowerUrl.includes('/policies/')) {
-      return 'policy';
-    }
-    if (lowerUrl.includes('/help/')) {
-      return 'help';
-    }
-    if (lowerUrl.includes('/docs/') || lowerUrl.includes('/guide/')) {
-      return 'guide';
-    }
-
+  private determineDocumentType(url: string): CrawlResult['type'] {
+    const path = url.toLowerCase();
+    if (path.includes('policy') || path.includes('terms')) return 'policy';
+    if (path.includes('help') || path.includes('faq')) return 'help';
+    if (path.includes('guide') || path.includes('howto')) return 'guide';
     return 'general';
   }
 
   /**
-   * 브라우저 정리
+   * ETA 계산
    */
-  async cleanup(): Promise<void> {
-    await browserManager.close();
-    // 캐시 정리
-    cacheManager.cleanup();
+  private calculateETA(
+    total: number,
+    current: number,
+    completedTimes: number[]
+  ): number {
+    if (current === 0 || completedTimes.length === 0) return 0;
+
+    // 최근 5개 처리 시간의 평균으로 계산
+    const recentTimes = completedTimes.slice(-5);
+    const avgTimePerUrl =
+      recentTimes.length > 1
+        ? (recentTimes[recentTimes.length - 1] - recentTimes[0]) /
+        (recentTimes.length - 1)
+        : completedTimes[completedTimes.length - 1] / current;
+
+    return Math.round(avgTimePerUrl * (total - current));
   }
 
   /**
-   * 통계 가져오기
+   * 통계 정보 반환
    */
-  getStats(): {
-    cacheHits: number;
-    cacheMisses: number;
-    cacheHitRate: number;
-    averageProcessingTime: number;
-    memoryStats: ReturnType<typeof cacheManager.getStats>;
-  } {
-    const totalCacheRequests = this.cacheHits + this.cacheMisses;
-    const cacheHitRate =
-      totalCacheRequests > 0 ? (this.cacheHits / totalCacheRequests) * 100 : 0;
-
-    const averageProcessingTime =
+  getStats() {
+    const avgTime =
       this.processingTimes.length > 0
-        ? this.processingTimes.reduce((a, b) => a + b, 0) / this.processingTimes.length
+        ? this.processingTimes.reduce((a, b) => a + b, 0) /
+        this.processingTimes.length
         : 0;
 
+    const totalRequests = this.cacheHits + this.cacheMisses;
+    const cacheHitRate =
+      totalRequests > 0 ? (this.cacheHits / totalRequests) * 100 : 0;
+
     return {
+      averageProcessingTime: avgTime,
+      cacheHitRate,
       cacheHits: this.cacheHits,
       cacheMisses: this.cacheMisses,
-      cacheHitRate,
-      averageProcessingTime,
-      memoryStats: cacheManager.getStats(),
+      memoryStats: memoryMonitor.getMemoryStats(),
     };
   }
 
   /**
-   * 통계 리셋
+   * 엔진 정리
    */
-  resetStats(): void {
+  async cleanup() {
+    await browserManager.cleanup();
+    cacheManager.cleanup();
+  }
+
+  /**
+   * 통계 초기화
+   */
+  resetStats() {
+    this.processingTimes = [];
     this.cacheHits = 0;
     this.cacheMisses = 0;
-    this.processingTimes = [];
   }
 }
 
-// 싱글톤 인스턴스
 export const crawlerEngine = new CrawlerEngine();
