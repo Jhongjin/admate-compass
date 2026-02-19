@@ -789,7 +789,7 @@ export class CrawlerEngine {
    * 엔진 정리
    */
   async cleanup() {
-    await browserManager.cleanup();
+    await browserManager.close();
     cacheManager.cleanup();
   }
 
