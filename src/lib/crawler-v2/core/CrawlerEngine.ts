@@ -339,15 +339,18 @@ export class CrawlerEngine {
     console.log(`🕷️ [Pagination Mode] 크롤링 시작: ${baseUrl}`);
 
     try {
-      // 1. Pagination 페이지 발견
+      // 1. Pagination 기반 하위 페이지 발견
+      if (onProgress) {
+        onProgress({ type: 'log', message: '🔍 Pagination 페이지 발견 시작...' });
+      }
+      const discoveredUrls = await urlDiscovery.discoverPaginationPages(baseUrl, config, onProgress);
+
       if (onProgress) {
         onProgress({
           type: 'log',
-          message: `Pagination 페이지 발견 중...`,
+          message: `✅ Pagination 발견 완료: ${discoveredUrls.length}개 URL 발견`
         });
       }
-
-      const discoveredUrls = await urlDiscovery.discoverPaginationPages(baseUrl, config);
 
       if (discoveredUrls.length === 0) {
         console.warn(`⚠️ [Pagination Mode] Pagination 페이지를 찾을 수 없습니다`);

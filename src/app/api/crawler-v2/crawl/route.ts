@@ -51,7 +51,7 @@ export async function POST(request: NextRequest) {
     const crawlOptions: Partial<CrawlOptions> = {
       maxDepth: isMaxDepthMode ? undefined : (Number.isFinite(parsedMaxDepth) ? parsedMaxDepth : 2),
       depthMode: isMaxDepthMode ? 'MAX' : (options?.depthMode || 'LIMITED'),
-      maxUrls: paginationMode ? 10000 : (options?.maxUrls || 100), // Pagination 모드에서는 충분히 큰 값으로 설정
+      maxUrls: options?.maxUrls || (paginationMode ? 500 : 100), // Pagination 모드에서는 기본적으로 더 많은 URL 허용
       respectRobots: options?.respectRobots !== false,
       domainLimit: options?.domainLimit !== false,
       discoverSubPages: paginationMode ? false : (options?.discoverSubPages || false), // Pagination 모드에서는 하위 페이지 발견 비활성화
@@ -80,7 +80,7 @@ export async function POST(request: NextRequest) {
     (async () => {
       try {
         let results: Awaited<ReturnType<typeof crawlerEngine.crawlUrls>>;
-        
+
         // Pagination 모드인 경우
         if (paginationMode) {
           if (urls.length !== 1) {
@@ -95,7 +95,7 @@ export async function POST(request: NextRequest) {
             await writer.close();
             return;
           }
-          
+
           results = await crawlerEngine.crawlWithPagination(urls[0], crawlOptions, async (progress) => {
             try {
               // 경고 메시지 전송 (타임아웃 위험 등) - 최우선 처리
@@ -146,7 +146,7 @@ export async function POST(request: NextRequest) {
                   total: progress.total,
                 }) + '\n';
                 await writer.write(encoder.encode(logData));
-                
+
                 // 경고 키워드가 포함된 경우 warning으로도 전송
                 if (progress.message.includes('⚠️') || progress.message.includes('경고') || progress.message.includes('위험') || progress.message.includes('타임아웃')) {
                   const warningData = JSON.stringify({
@@ -197,47 +197,47 @@ export async function POST(request: NextRequest) {
         } else {
           // 일반 모드
           results = await crawlerEngine.crawlUrls(urls, crawlOptions, (progress) => {
-          // 진행률 정보 전송
-          if (progress.type === 'progress' && progress.progress) {
-            writer.write(
-              encoder.encode(
-                JSON.stringify({
-                  type: 'progress',
-                  ...progress.progress,
-                }) + '\n'
-              )
-            );
-          }
+            // 진행률 정보 전송
+            if (progress.type === 'progress' && progress.progress) {
+              writer.write(
+                encoder.encode(
+                  JSON.stringify({
+                    type: 'progress',
+                    ...progress.progress,
+                  }) + '\n'
+                )
+              );
+            }
 
-          // 로그 메시지 전송
-          if (progress.type === 'log') {
-            writer.write(
-              encoder.encode(
-                JSON.stringify({
-                  type: 'log',
-                  message: progress.message,
-                  current: progress.current,
-                  total: progress.total,
-                }) + '\n'
-              )
-            );
-          }
+            // 로그 메시지 전송
+            if (progress.type === 'log') {
+              writer.write(
+                encoder.encode(
+                  JSON.stringify({
+                    type: 'log',
+                    message: progress.message,
+                    current: progress.current,
+                    total: progress.total,
+                  }) + '\n'
+                )
+              );
+            }
 
-          // 배치 진행 상황 전송
-          if (progress.type === 'batch_progress') {
-            writer.write(
-              encoder.encode(
-                JSON.stringify({
-                  type: 'batch_progress',
-                  message: progress.message,
-                  current: progress.current,
-                  total: progress.total,
-                  result: progress.result,
-                }) + '\n'
-              )
-            );
-          }
-        });
+            // 배치 진행 상황 전송
+            if (progress.type === 'batch_progress') {
+              writer.write(
+                encoder.encode(
+                  JSON.stringify({
+                    type: 'batch_progress',
+                    message: progress.message,
+                    current: progress.current,
+                    total: progress.total,
+                    result: progress.result,
+                  }) + '\n'
+                )
+              );
+            }
+          });
         }
 
         // 최종 완료 정보

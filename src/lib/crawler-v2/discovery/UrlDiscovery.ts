@@ -45,7 +45,7 @@ export class UrlDiscovery {
       console.log(`[UrlDiscovery] ====== 하위 페이지 발견 시작 ======`);
       console.log(`[UrlDiscovery] baseUrl: ${baseUrl}`);
       console.log(`[UrlDiscovery] config:`, JSON.stringify(config, null, 2));
-      
+
       // 1. 사이트맵에서 URL 발견
       console.log(`[UrlDiscovery] 1단계: 사이트맵에서 URL 발견 시작`);
       const sitemapUrls = await this.discoverFromSitemap(baseUrl, config);
@@ -161,7 +161,7 @@ export class UrlDiscovery {
 
     while (queue.length > 0 && discoveredByNormalized.size < maxUrls && visitedPages.size < maxRecursivePages) {
       iterationCount++;
-      
+
       // 타임아웃 체크
       const elapsed = Date.now() - startTime;
       if (elapsed > maxExecutionTime) {
@@ -242,13 +242,13 @@ export class UrlDiscovery {
     const finalResults = filtered.slice(0, maxUrls);
 
     console.log('[UrlDiscovery][MAX] ✅ 재귀 발견 완료: visitedPages=' + visitedPages.size + ', discovered=' + finalResults.length + '/' + maxUrls + ', iterations=' + iterationCount);
-    
+
     // 최소한 시드에서 발견한 링크라도 반환 (빈 결과 방지)
     if (finalResults.length === 0 && seedDiscovered.length > 0) {
       console.warn('[UrlDiscovery][MAX] ⚠️ 필터링 후 결과가 없어 시드에서 발견한 링크 반환: ' + seedDiscovered.length + '개');
       return seedDiscovered.slice(0, maxUrls);
     }
-    
+
     return finalResults;
   }
 
@@ -277,7 +277,7 @@ export class UrlDiscovery {
         try {
           const items = await sitemapParser.parseSitemap(sitemapUrl);
           totalSitemapUrls += items.length;
-          
+
           for (const item of items) {
             if (!item.loc) continue;
 
@@ -287,7 +287,7 @@ export class UrlDiscovery {
             // 도메인 제한 확인 (maxDepth 기반)
             const urlDomain = extractDomain(normalizedUrl);
             const baseDomain = extractDomain(baseUrl);
-            
+
             if (urlDomain !== baseDomain) {
               const maxDepth = config.maxDepth ?? 3; // 기본값 3
               if (maxDepth >= 4) {
@@ -342,11 +342,11 @@ export class UrlDiscovery {
           console.warn(`⚠️ 사이트맵 파싱 실패: ${sitemapUrl}`, error);
         }
       }
-      
+
       if (totalSitemapUrls > 0) {
         console.log(`✅ 사이트맵에서 총 ${totalSitemapUrls}개 URL 발견`);
       }
-      
+
       if (totalSitemapUrls > 0) {
         console.log(`✅ 사이트맵에서 총 ${totalSitemapUrls}개 URL 발견`);
       }
@@ -370,7 +370,7 @@ export class UrlDiscovery {
       console.log(`[discoverFromLinks] ====== 링크 발견 시작 ======`);
       console.log(`[discoverFromLinks] baseUrl: ${baseUrl}`);
       console.log(`[discoverFromLinks] config:`, JSON.stringify(config, null, 2));
-      
+
       let links: Array<{ url: string; text: string }> = [];
       const baseDomain = extractDomain(baseUrl);
       console.log(`[discoverFromLinks] baseDomain: ${baseDomain}`);
@@ -381,19 +381,19 @@ export class UrlDiscovery {
       if (browser) {
         try {
           let page = await browserManager.createPage();
-          
+
           // 네이버 광고 페이지 같은 SPA 사이트를 위한 설정
           const isNaverAds = baseUrl.includes('ads.naver.com');
           const waitTime = isNaverAds ? 8000 : 3000; // 네이버 광고는 더 오래 대기
-          
+
           await page.goto(baseUrl, {
             waitUntil: 'networkidle2',
             timeout: config.timeout || 60000, // 타임아웃 증가
           });
-          
+
           // JavaScript 실행 대기 (동적 링크 로딩)
           await new Promise(resolve => setTimeout(resolve, waitTime));
-          
+
           // 네이버 광고 페이지의 경우 더 적극적인 링크 추출
           if (isNaverAds) {
             try {
@@ -412,16 +412,16 @@ export class UrlDiscovery {
               ).catch(() => {
                 console.warn('[discoverFromLinks] 페이지 로드 대기 타임아웃 - 계속 진행');
               });
-              
+
               // 추가 대기 (JavaScript 실행 완료 대기)
               await new Promise(resolve => setTimeout(resolve, 5000));
-              
+
               // 1. 네비게이션 메뉴 클릭하여 서브 메뉴 열기
               await page.evaluate(() => {
                 // 모든 네비게이션 링크와 버튼 찾기 (더 넓은 범위)
                 const navLinks = document.querySelectorAll('nav a, header a, [role="navigation"] a, [class*="menu"] a, [class*="nav"] a, [class*="Menu"] a, [class*="Nav"] a, [class*="header"] a, [class*="Header"] a');
                 const navButtons = document.querySelectorAll('nav button, header button, [role="navigation"] button, [class*="menu"] button, [class*="Menu"] button, [class*="nav"] button, [class*="Nav"] button');
-                
+
                 // 링크 클릭 시도 (서브 메뉴 열기)
                 navLinks.forEach((link: Element) => {
                   try {
@@ -435,7 +435,7 @@ export class UrlDiscovery {
                     // 클릭 실패 무시
                   }
                 });
-                
+
                 // 버튼 클릭 시도 (드롭다운 열기)
                 navButtons.forEach((button: Element) => {
                   try {
@@ -449,7 +449,7 @@ export class UrlDiscovery {
                     // 클릭 실패 무시
                   }
                 });
-                
+
                 // 호버 이벤트도 발생
                 navLinks.forEach((link: Element) => {
                   try {
@@ -464,14 +464,14 @@ export class UrlDiscovery {
                   }
                 });
               });
-              
+
               // 메뉴 열림 대기 (더 오래 대기)
               await new Promise(resolve => setTimeout(resolve, 5000));
             } catch (e) {
               console.warn('⚠️ 네비게이션 메뉴 열기 실패:', e);
             }
           }
-          
+
           // 스크롤하여 lazy loading된 콘텐츠 로드 (여러 번, ads.naver.com은 더 많이)
           const scrollIterations = isNaverAds ? 5 : 3;
           for (let i = 0; i < scrollIterations; i++) {
@@ -490,7 +490,7 @@ export class UrlDiscovery {
                   );
                   window.scrollBy(0, distance);
                   totalHeight += distance;
-                  
+
                   if (totalHeight >= scrollHeight || totalHeight > 15000) {
                     clearInterval(timer);
                     resolve(null);
@@ -498,12 +498,12 @@ export class UrlDiscovery {
                 }, 150);
               });
             });
-            
+
             // 스크롤 후 콘텐츠 로딩 대기 (ads.naver.com은 더 오래)
             const scrollWaitTime = isNaverAds ? 3000 : 2000;
             await new Promise(resolve => setTimeout(resolve, scrollWaitTime));
           }
-          
+
           // 브라우저에서 직접 링크 추출 (JavaScript 실행 후)
           console.log(`[discoverFromLinks] 페이지에서 링크 추출 시작`);
           // 페이지의 모든 링크를 찾기 위해 추가 대기 (ads.naver.com은 더 오래 대기)
@@ -536,21 +536,21 @@ export class UrlDiscovery {
               }
             }
           }
-          
+
           // DOM 상태를 먼저 확인
           const domState = await page.evaluate(() => {
             const allLinks = document.querySelectorAll('a');
             const linksWithHref = document.querySelectorAll('a[href]');
             const currentUrl = window.location.href;
             const readyState = document.readyState;
-            
+
             // 샘플 링크 정보 수집
             const sampleLinks = Array.from(document.querySelectorAll('a[href]')).slice(0, 10).map(link => ({
               href: link.getAttribute('href'),
               text: link.textContent?.trim().substring(0, 50) || '',
               className: link.className || ''
             }));
-            
+
             return {
               allLinksCount: allLinks.length,
               linksWithHrefCount: linksWithHref.length,
@@ -559,7 +559,7 @@ export class UrlDiscovery {
               sampleLinks
             };
           });
-          
+
           console.log(`[discoverFromLinks] DOM 상태 확인:`);
           console.log(`[discoverFromLinks] - 전체 <a> 태그: ${domState.allLinksCount}개`);
           console.log(`[discoverFromLinks] - href 속성 있는 링크: ${domState.linksWithHrefCount}개`);
@@ -568,15 +568,15 @@ export class UrlDiscovery {
           if (domState.sampleLinks.length > 0) {
             console.log(`[discoverFromLinks] - 샘플 링크 (처음 10개):`, domState.sampleLinks);
           }
-          
+
           // 리다이렉트된 경우 경고
           if (domState.currentUrl !== baseUrl && !domState.currentUrl.startsWith(baseUrl)) {
             console.warn(`[discoverFromLinks] ⚠️ 페이지가 리다이렉트됨: ${baseUrl} -> ${domState.currentUrl}`);
             console.warn(`[discoverFromLinks] ⚠️ 링크 추출이 제대로 되지 않을 수 있습니다.`);
           }
-          
+
           links = await page.evaluate((baseDomain, maxDepth, baseUrl) => {
-            
+
             // 다양한 선택자로 링크 찾기 (네이버 광고, Instagram, Facebook 등 다양한 사이트 대응)
             const linkSelectors = [
               'a[href]',
@@ -601,21 +601,21 @@ export class UrlDiscovery {
               '[data-to]', // data-to 속성 (React Router)
               '[to]', // to 속성 (React Router Link)
             ];
-            
+
             // 숨겨진 요소도 포함 (display: none이 아닌 경우)
             const hiddenSelectors = [
               '[style*="display: none"]',
               '[hidden]',
               '[aria-hidden="true"]'
             ];
-            
+
             const linkElements = new Set<Element>();
             linkSelectors.forEach(selector => {
               try {
                 document.querySelectorAll(selector).forEach(el => {
                   // 숨겨진 요소는 제외 (단, aria-hidden만 있는 경우는 포함)
-                  const isHidden = (el as HTMLElement).offsetParent === null && 
-                                   (el as HTMLElement).style.display === 'none';
+                  const isHidden = (el as HTMLElement).offsetParent === null &&
+                    (el as HTMLElement).style.display === 'none';
                   if (!isHidden) {
                     linkElements.add(el);
                   }
@@ -624,12 +624,12 @@ export class UrlDiscovery {
                 // 선택자 오류 무시
               }
             });
-            
+
             // 모든 a 태그도 추가 (href가 없어도)
             try {
               document.querySelectorAll('a').forEach(el => {
-                const isHidden = (el as HTMLElement).offsetParent === null && 
-                               (el as HTMLElement).style.display === 'none';
+                const isHidden = (el as HTMLElement).offsetParent === null &&
+                  (el as HTMLElement).style.display === 'none';
                 if (!isHidden) {
                   linkElements.add(el);
                 }
@@ -637,22 +637,22 @@ export class UrlDiscovery {
             } catch (e) {
               // 선택자 오류 무시
             }
-            
+
             const extractedLinks: Array<{ url: string, text: string }> = [];
             const seenUrls = new Set<string>();
 
             linkElements.forEach(link => {
               // href 속성 또는 data-href, data-link, data-url, data-path, data-to, to 속성 확인
-              let href = link.getAttribute('href') || 
-                        link.getAttribute('data-href') || 
-                        link.getAttribute('data-link') || 
-                        link.getAttribute('data-url') ||
-                        link.getAttribute('data-path') ||
-                        link.getAttribute('data-to') ||
-                        link.getAttribute('to') ||
-                        (link as HTMLElement).onclick?.toString().match(/['"](https?:\/\/[^'"]+)['"]/)?.[1] ||
-                        (link as HTMLElement).onclick?.toString().match(/['"](\/[^'"]+)['"]/)?.[1];
-              
+              let href = link.getAttribute('href') ||
+                link.getAttribute('data-href') ||
+                link.getAttribute('data-link') ||
+                link.getAttribute('data-url') ||
+                link.getAttribute('data-path') ||
+                link.getAttribute('data-to') ||
+                link.getAttribute('to') ||
+                (link as HTMLElement).onclick?.toString().match(/['"](https?:\/\/[^'"]+)['"]/)?.[1] ||
+                (link as HTMLElement).onclick?.toString().match(/['"](\/[^'"]+)['"]/)?.[1];
+
               // onclick에서 URL 추출 시도
               if (!href) {
                 const onclick = link.getAttribute('onclick');
@@ -661,19 +661,19 @@ export class UrlDiscovery {
                   if (urlMatch) href = urlMatch[1];
                 }
               }
-              
+
               // React Router Link 컴포넌트의 경우 (to 속성)
               if (!href && link.tagName === 'A') {
                 const linkElement = link as HTMLElement;
                 // React Router의 경우 내부적으로 pathname을 저장할 수 있음
-                const reactProps = (linkElement as any).__reactInternalInstance || 
-                                 (linkElement as any).__reactFiber ||
-                                 (linkElement as any)._reactInternalFiber;
+                const reactProps = (linkElement as any).__reactInternalInstance ||
+                  (linkElement as any).__reactFiber ||
+                  (linkElement as any)._reactInternalFiber;
                 if (reactProps) {
                   // React 내부 속성에서 추출 시도 (복잡하므로 일단 스킵)
                 }
               }
-              
+
               // 클릭 이벤트 리스너에서 URL 추출 시도 (간단한 경우만)
               if (!href) {
                 const linkElement = link as HTMLElement;
@@ -687,22 +687,22 @@ export class UrlDiscovery {
                   }
                 });
               }
-              
+
               if (!href) return;
 
               try {
                 const fullUrl = new URL(href, window.location.href).href;
                 const urlDomain = new URL(fullUrl).hostname;
-                
+
                 // 중복 제거
                 const normalizedUrl = fullUrl.split('#')[0].split('?')[0];
                 if (seenUrls.has(normalizedUrl)) return;
                 seenUrls.add(normalizedUrl);
-                
+
                 // 도메인 필터링 (maxDepth 기반)
                 const isSameDomain = urlDomain === baseDomain;
                 let shouldInclude = false;
-                
+
                 if (maxDepth >= 4) {
                   // maxDepth 4: 모든 도메인 허용
                   shouldInclude = true;
@@ -715,17 +715,17 @@ export class UrlDiscovery {
                 }
 
                 if (shouldInclude &&
-                    fullUrl !== window.location.href &&
-                    !fullUrl.includes('#') &&
-                    !fullUrl.includes('javascript:') &&
-                    !fullUrl.includes('mailto:')) {
+                  fullUrl !== window.location.href &&
+                  !fullUrl.includes('#') &&
+                  !fullUrl.includes('javascript:') &&
+                  !fullUrl.includes('mailto:')) {
                   // 쿼리 파라미터가 있는 URL도 포함 (더 많은 링크를 찾기 위해)
-                  
+
                   // 확장자 필터링 (브라우저 내부에서 미리 필터링)
                   try {
                     const urlObj = new URL(fullUrl);
                     const pathname = urlObj.pathname.toLowerCase();
-                    
+
                     // 정적 리소스 확장자 제외
                     const excludedExtensions = [
                       '.css', '.js', '.json', '.xml', '.pdf',
@@ -736,7 +736,7 @@ export class UrlDiscovery {
                     ];
                     const hasExcludedExtension = excludedExtensions.some(ext => pathname.endsWith(ext));
                     if (hasExcludedExtension) return;
-                    
+
                     // 정적 리소스 경로 제외
                     const staticResourcePaths = [
                       '/static/', '/_next/static/', '/assets/', '/dist/', '/build/', '/public/',
@@ -745,16 +745,16 @@ export class UrlDiscovery {
                     ];
                     const isStaticResourcePath = staticResourcePaths.some(path => pathname.includes(path));
                     if (isStaticResourcePath) return;
-                    
+
                     // API 엔드포인트 제외
-                    if (pathname.startsWith('/api/') || 
-                        pathname.includes('/graphql') || 
-                        pathname.includes('/rest/') ||
-                        pathname.includes('/ajax/') ||
-                        pathname.includes('/endpoint/')) {
+                    if (pathname.startsWith('/api/') ||
+                      pathname.includes('/graphql') ||
+                      pathname.includes('/rest/') ||
+                      pathname.includes('/ajax/') ||
+                      pathname.includes('/endpoint/')) {
                       return;
                     }
-                    
+
                     // 푸터/법적 고지 링크 제외 (품질이 낮은 링크)
                     const lowQualityPaths = [
                       '/rules/', '/rule/', '/legal/', '/terms/', '/privacy/', '/policy/',
@@ -768,7 +768,7 @@ export class UrlDiscovery {
                     if (isLowQualityPath) {
                       return;
                     }
-                    
+
                     // 다른 도메인으로의 링크는 품질이 낮음 (maxDepth 4일 때는 제외하지 않음)
                     const isDifferentDomain = urlDomain !== baseDomain && !urlDomain.endsWith(`.${baseDomain}`);
                     if (isDifferentDomain && maxDepth >= 4) {
@@ -781,7 +781,7 @@ export class UrlDiscovery {
                       if (excludedDomains.some(domain => urlDomain === domain || urlDomain.endsWith(`.${domain}`))) {
                         return;
                       }
-                      
+
                       // ads.naver.com의 경우 다른 naver.com 서브도메인은 제외하지 않음 (maxDepth 4일 때는 허용)
                       // 이전 로직 제거: maxDepth 4일 때는 모든 도메인 허용
                     }
@@ -789,7 +789,7 @@ export class UrlDiscovery {
                     // URL 파싱 실패 시 제외
                     return;
                   }
-                  
+
                   // 텍스트 추출
                   let text = link.textContent?.trim() || '';
                   if (!text) {
@@ -798,7 +798,7 @@ export class UrlDiscovery {
                   if (!text && link.querySelector('img')) {
                     text = link.querySelector('img')?.getAttribute('alt') || '';
                   }
-                  
+
                   // 일반적인 링크 텍스트는 제목으로 사용하지 않음
                   const genericLinkTexts = [
                     'read more', 'more', 'learn more', 'see more', 'view more',
@@ -809,13 +809,13 @@ export class UrlDiscovery {
                     '→', '>', '>>', '...', '»'
                   ];
                   const normalizedText = text.toLowerCase().trim();
-                  const isGenericText = genericLinkTexts.some(gt => 
-                    normalizedText === gt || 
+                  const isGenericText = genericLinkTexts.some(gt =>
+                    normalizedText === gt ||
                     normalizedText === gt.replace(/\s+/g, '') ||
                     normalizedText.startsWith(gt + ' ') ||
                     normalizedText.endsWith(' ' + gt)
                   );
-                  
+
                   extractedLinks.push({
                     url: fullUrl,
                     text: isGenericText ? '' : text.replace(/\s+/g, ' ').trim(),
@@ -831,8 +831,8 @@ export class UrlDiscovery {
               const iframes = document.querySelectorAll('iframe');
               iframes.forEach(iframe => {
                 try {
-                  const iframeDoc = (iframe as HTMLIFrameElement).contentDocument || 
-                                  ((iframe as HTMLIFrameElement).contentWindow as any)?.document;
+                  const iframeDoc = (iframe as HTMLIFrameElement).contentDocument ||
+                    ((iframe as HTMLIFrameElement).contentWindow as any)?.document;
                   if (iframeDoc) {
                     const iframeLinks = iframeDoc.querySelectorAll('a[href]');
                     iframeLinks.forEach((iframeLink: Element) => {
@@ -842,11 +842,11 @@ export class UrlDiscovery {
                           const fullUrl = new URL(iframeHref, window.location.href).href;
                           const urlDomain = new URL(fullUrl).hostname;
                           const normalizedUrl = fullUrl.split('#')[0].split('?')[0];
-                          
+
                           if (!seenUrls.has(normalizedUrl)) {
                             const isSameDomain = urlDomain === baseDomain;
                             let shouldInclude = false;
-                            
+
                             if (maxDepth >= 4) {
                               shouldInclude = true;
                             } else if (maxDepth >= 3) {
@@ -854,12 +854,12 @@ export class UrlDiscovery {
                             } else {
                               shouldInclude = isSameDomain;
                             }
-                            
-                            if (shouldInclude && 
-                                fullUrl !== window.location.href &&
-                                !fullUrl.includes('#') &&
-                                !fullUrl.includes('javascript:') &&
-                                !fullUrl.includes('mailto:')) {
+
+                            if (shouldInclude &&
+                              fullUrl !== window.location.href &&
+                              !fullUrl.includes('#') &&
+                              !fullUrl.includes('javascript:') &&
+                              !fullUrl.includes('mailto:')) {
                               seenUrls.add(normalizedUrl);
                               extractedLinks.push({
                                 url: fullUrl,
@@ -880,14 +880,14 @@ export class UrlDiscovery {
             } catch (e) {
               // iframe 처리 실패 - 무시
             }
-            
+
             console.log(`[discoverFromLinks] page.evaluate 내부 - 추출된 링크: ${extractedLinks.length}개`);
             if (extractedLinks.length === 0) {
               console.log(`[discoverFromLinks] ⚠️ 링크가 추출되지 않음. DOM 상태 확인:`);
               console.log(`[discoverFromLinks] - document.querySelectorAll('a').length: ${document.querySelectorAll('a').length}`);
               console.log(`[discoverFromLinks] - document.querySelectorAll('a[href]').length: ${document.querySelectorAll('a[href]').length}`);
               console.log(`[discoverFromLinks] - document.querySelectorAll('[href]').length: ${document.querySelectorAll('[href]').length}`);
-              
+
               // 샘플 링크 출력
               const sampleLinks = Array.from(document.querySelectorAll('a[href]')).slice(0, 5);
               sampleLinks.forEach((link, idx) => {
@@ -897,10 +897,10 @@ export class UrlDiscovery {
                 console.log(`[discoverFromLinks] 샘플 링크 ${idx + 1}:`, { href, text, className });
               });
             }
-            
+
             return extractedLinks;
           }, baseDomain, config.maxDepth ?? 3, baseUrl);
-          
+
           console.log(`[discoverFromLinks] page.evaluate 완료 - 반환된 링크: ${links.length}개`);
           await page.close();
           console.log(`[discoverFromLinks] 🔗 Puppeteer에서 발견된 링크: ${links.length}개`);
@@ -925,11 +925,11 @@ export class UrlDiscovery {
           // Puppeteer 실패 시 HTML 파싱으로 폴백
           console.warn('⚠️ Puppeteer로 링크 추출 실패, HTML 파싱으로 폴백:', error);
           try {
-          const response = await fetch(baseUrl, {
-            headers: {
-              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            },
-          });
+            const response = await fetch(baseUrl, {
+              headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+              },
+            });
             if (response.ok) {
               const html = await response.text();
               links = extractLinks(html, baseUrl);
@@ -965,15 +965,15 @@ export class UrlDiscovery {
       const filteredLinks = links
         .filter(link => {
           const normalizedUrl = normalizeUrl(link.url);
-          
+
           try {
             const urlObj = new URL(normalizedUrl);
             const pathname = urlObj.pathname.toLowerCase();
-          
-          // 같은 URL 제외
-          if (normalizedUrl === baseUrl || normalizedUrl === normalizeUrl(baseUrl)) {
-            return false;
-          }
+
+            // 같은 URL 제외
+            if (normalizedUrl === baseUrl || normalizedUrl === normalizeUrl(baseUrl)) {
+              return false;
+            }
 
             // 확장자 필터링 (정적 리소스 파일 제외)
             const excludedExtensions = [
@@ -1001,14 +1001,14 @@ export class UrlDiscovery {
             }
 
             // API 엔드포인트 제외 (일반적으로 문서가 아닌 데이터 엔드포인트)
-            if (pathname.startsWith('/api/') || 
-                pathname.includes('/graphql') || 
-                pathname.includes('/rest/') ||
-                pathname.includes('/ajax/') ||
-                pathname.includes('/endpoint/')) {
+            if (pathname.startsWith('/api/') ||
+              pathname.includes('/graphql') ||
+              pathname.includes('/rest/') ||
+              pathname.includes('/ajax/') ||
+              pathname.includes('/endpoint/')) {
               return false;
             }
-            
+
             // 푸터/법적 고지 링크 필터링 (품질이 낮은 링크) - 완화
             // ads.naver.com의 경우 /help/, /support/ 같은 경로도 유용할 수 있으므로 제외하지 않음
             const lowQualityPaths = [
@@ -1021,15 +1021,15 @@ export class UrlDiscovery {
             // /help/, /support/, /contact/, /faq/는 제외하지 않음 (유용한 정보일 수 있음)
             const isLowQualityPath = lowQualityPaths.some(path => pathname.includes(path));
             if (isLowQualityPath) {
-            return false;
-          }
+              return false;
+            }
 
-          // 도메인 제한 확인 (maxDepth 기반)
-          const urlDomain = extractDomain(normalizedUrl);
-          const baseDomain = extractDomain(baseUrl);
+            // 도메인 제한 확인 (maxDepth 기반)
+            const urlDomain = extractDomain(normalizedUrl);
+            const baseDomain = extractDomain(baseUrl);
             const maxDepth = config.maxDepth ?? 3; // 기본값 3
             const isDifferentDomain = urlDomain !== baseDomain && !urlDomain.endsWith(`.${baseDomain}`);
-            
+
             // maxDepth 4일 때도 다른 도메인은 제외하거나 우선순위를 낮춤
             if (isDifferentDomain && maxDepth >= 4) {
               // help.naver.com, nca.naver.com 같은 다른 서비스는 제외
@@ -1041,51 +1041,51 @@ export class UrlDiscovery {
               if (excludedDomains.some(domain => urlDomain === domain || urlDomain.endsWith(`.${domain}`))) {
                 return false;
               }
-              
+
               // ads.naver.com의 경우 다른 naver.com 서브도메인은 제외하지 않음 (maxDepth 4일 때는 허용)
               // 이전 로직 제거: maxDepth 4일 때는 모든 도메인 허용
             }
-            
+
             if (urlDomain !== baseDomain) {
-            if (maxDepth >= 4) {
-              // maxDepth 4: 모든 도메인 허용 (domainLimit과 관계없이)
-              // 모든 도메인 허용
-            } else if (maxDepth >= 3) {
-              // maxDepth 3: domainLimit에 따라 다름
-              if (config.domainLimit === true) {
-                // domainLimit이 true면 하위 도메인도 제외 (같은 도메인만)
-                return false;
-              } else {
-                // domainLimit이 false면 하위 도메인 허용
-                if (!urlDomain.endsWith(`.${baseDomain}`)) {
+              if (maxDepth >= 4) {
+                // maxDepth 4: 모든 도메인 허용 (domainLimit과 관계없이)
+                // 모든 도메인 허용
+              } else if (maxDepth >= 3) {
+                // maxDepth 3: domainLimit에 따라 다름
+                if (config.domainLimit === true) {
+                  // domainLimit이 true면 하위 도메인도 제외 (같은 도메인만)
                   return false;
+                } else {
+                  // domainLimit이 false면 하위 도메인 허용
+                  if (!urlDomain.endsWith(`.${baseDomain}`)) {
+                    return false;
+                  }
                 }
+              } else {
+                // maxDepth 1-2: 정확히 같은 도메인만 허용
+                return false;
               }
-            } else {
-              // maxDepth 1-2: 정확히 같은 도메인만 허용
-              return false;
             }
-          }
 
-          // 허용된 도메인 확인 (maxDepth 4가 아닌 경우)
-          if (maxDepth < 4 && config.domainLimit && config.allowedDomains && config.allowedDomains.length > 0) {
-            if (!isAllowedDomain(normalizedUrl, config.allowedDomains)) {
-              return false;
+            // 허용된 도메인 확인 (maxDepth 4가 아닌 경우)
+            if (maxDepth < 4 && config.domainLimit && config.allowedDomains && config.allowedDomains.length > 0) {
+              if (!isAllowedDomain(normalizedUrl, config.allowedDomains)) {
+                return false;
+              }
             }
-          }
 
-          // 깊이 계산
-          const depth = calculateDepth(baseUrl, normalizedUrl);
-          
-          // 깊이 제한 확인
-          // maxDepth 4일 때는 다른 도메인(999)도 허용
-          if (config.depthMode !== 'MAX' && maxDepth && depth > maxDepth) {
-            if (maxDepth < 4 || depth !== 999) {
-              return false;
+            // 깊이 계산
+            const depth = calculateDepth(baseUrl, normalizedUrl);
+
+            // 깊이 제한 확인
+            // maxDepth 4일 때는 다른 도메인(999)도 허용
+            if (config.depthMode !== 'MAX' && maxDepth && depth > maxDepth) {
+              if (maxDepth < 4 || depth !== 999) {
+                return false;
+              }
             }
-          }
 
-          return true;
+            return true;
           } catch (e) {
             // URL 파싱 실패 시 제외
             return false;
@@ -1098,9 +1098,9 @@ export class UrlDiscovery {
           const pathname = urlObj.pathname.toLowerCase();
           const urlDomain = extractDomain(url);
           const baseDomain = extractDomain(baseUrl);
-          
+
           let qualityScore = 0;
-          
+
           // 1. 같은 도메인인 경우 높은 점수 (우선순위 강화)
           if (urlDomain === baseDomain) {
             qualityScore += 200; // 같은 도메인은 매우 높은 점수
@@ -1109,25 +1109,25 @@ export class UrlDiscovery {
           } else {
             qualityScore -= 50; // 다른 도메인은 낮은 점수
           }
-          
+
           // 2. 텍스트가 있는 링크는 높은 점수
           if (link.text && link.text.trim().length > 0) {
             qualityScore += 30;
           }
-          
+
           // 3. 깊이가 낮은 링크는 높은 점수
           const depth = calculateDepth(baseUrl, url);
           qualityScore += Math.max(0, 20 - depth * 2);
-          
+
           // 4. 경로가 짧은 링크는 높은 점수
           const pathLength = pathname.split('/').filter(p => p).length;
           qualityScore += Math.max(0, 15 - pathLength);
-          
+
           // 5. 쿼리 파라미터가 없는 링크는 높은 점수
           if (!url.includes('?')) {
             qualityScore += 10;
           }
-          
+
           // 6. 품질이 낮은 경로는 점수 감점 (완화)
           // ads.naver.com의 경우 /help/, /support/ 같은 경로도 유용할 수 있으므로 감점만 함
           const lowQualityPaths = ['/rules/', '/legal/', '/terms/', '/privacy/', '/login/'];
@@ -1135,20 +1135,20 @@ export class UrlDiscovery {
             qualityScore -= 50; // 품질 낮은 링크는 약간 감점 (완전 제외하지 않음)
           }
           // /help/, /support/는 감점하지 않음
-          
+
           // 7. ads.naver.com의 주요 경로는 높은 점수
           if (baseDomain === 'ads.naver.com') {
             const mainPaths = ['/start/', '/sa/', '/sub/', '/notice/', '/insight/'];
             if (mainPaths.some(path => pathname.startsWith(path))) {
               qualityScore += 30; // 주요 경로는 더 높은 점수
             }
-            
+
             // ads.naver.com의 경우 같은 도메인 링크에 추가 보너스
             if (urlDomain === 'ads.naver.com') {
               qualityScore += 50;
             }
           }
-          
+
           // 8. 다른 도메인 링크는 강하게 감점
           const isDifferentDomain = urlDomain !== baseDomain && !urlDomain.endsWith(`.${baseDomain}`);
           if (isDifferentDomain) {
@@ -1160,7 +1160,7 @@ export class UrlDiscovery {
               qualityScore -= 100; // maxDepth 4 미만일 때는 강하게 감점
             }
           }
-          
+
           return { ...link, qualityScore };
         })
         .filter(link => {
@@ -1168,18 +1168,18 @@ export class UrlDiscovery {
           const urlDomain = extractDomain(link.url);
           const baseDomain = extractDomain(baseUrl);
           const isSameDomain = urlDomain === baseDomain;
-          
+
           // 같은 도메인 링크는 항상 허용 (품질 점수와 관계없이)
           if (isSameDomain) {
             return true;
           }
-          
+
           // 다른 도메인 링크는 maxDepth 4일 때만 허용하되 품질 점수 기준 완화
           if (maxDepth >= 4) {
             // 다른 도메인은 품질 점수가 -100 이상이면 허용 (완화)
             return link.qualityScore >= -100;
           }
-          
+
           // maxDepth 4 미만일 때는 같은 도메인만 허용
           return link.qualityScore > 0;
         })
@@ -1188,11 +1188,11 @@ export class UrlDiscovery {
           if (b.qualityScore !== a.qualityScore) {
             return b.qualityScore - a.qualityScore;
           }
-          
+
           // 같은 점수면 텍스트가 있는 링크 우선
           if (a.text && !b.text) return -1;
           if (!a.text && b.text) return 1;
-          
+
           return 0;
         })
         .map(({ qualityScore, ...link }) => link); // qualityScore 제거
@@ -1210,7 +1210,7 @@ export class UrlDiscovery {
           path: buildUrlPath(baseUrl, normalizedUrl),
         });
       }
-      
+
       console.log(`✅ 필터링된 링크: ${discovered.length}개`);
     } catch (error) {
       console.warn('⚠️ 링크에서 URL 발견 실패:', error);
@@ -1240,7 +1240,7 @@ export class UrlDiscovery {
     // 필터링
     const filtered = urls.filter(url => {
       const urlDomain = extractDomain(url.url);
-      
+
       // maxDepth에 따른 도메인 필터링
       // maxDepth 1-2: 정확히 같은 도메인만 허용
       // maxDepth 3: domainLimit에 따라 다름 (true: 같은 도메인만, false: 하위 도메인 포함)
@@ -1270,8 +1270,8 @@ export class UrlDiscovery {
       // 허용된 도메인 확인 (maxDepth 4가 아닌 경우)
       const maxDepth = config.maxDepth ?? 3; // 기본값 3
       if (maxDepth < 4 && config.allowedDomains && config.allowedDomains.length > 0) {
-        const isAllowed = config.allowedDomains.some(domain => 
-          urlDomain === domain || 
+        const isAllowed = config.allowedDomains.some(domain =>
+          urlDomain === domain ||
           (maxDepth >= 3 && this.isSubdomain(urlDomain, domain))
         );
         if (!isAllowed) {
@@ -1317,11 +1317,18 @@ export class UrlDiscovery {
    * 
    * @param baseUrl 부모 페이지 URL (예: https://ads.naver.com/help/faq?categorySeq=136)
    * @param options 크롤링 옵션
+   * @param onProgress 진행률 콜백
    * @returns 발견된 페이지 URL 목록
    */
   async discoverPaginationPages(
     baseUrl: string,
-    options: Partial<CrawlOptions> = {}
+    options: Partial<CrawlOptions> = {},
+    onProgress?: (data: {
+      type: 'log' | 'progress';
+      message: string;
+      current?: number;
+      total?: number;
+    }) => void
   ): Promise<DiscoveredUrl[]> {
     const config: CrawlOptions = {
       timeout: 60000,
@@ -1329,13 +1336,15 @@ export class UrlDiscovery {
     };
 
     console.log(`🔍 [Pagination Discovery] 시작: ${baseUrl}`);
+    if (onProgress) {
+      onProgress({ type: 'log', message: 'Pagination 정보 분석 중...' });
+    }
 
     const discoveredPages: DiscoveredUrl[] = [];
     const baseDomain = extractDomain(baseUrl);
 
     try {
       // 1. 브라우저 및 페이지 준비
-      // 브라우저가 없으면 초기화
       let browser = browserManager.getBrowser();
       if (!browser) {
         console.log(`🔧 [Pagination Discovery] 브라우저가 없어 초기화 중...`);
@@ -1343,25 +1352,23 @@ export class UrlDiscovery {
       }
 
       const page = await browser.newPage();
-      
+
       try {
         // 2. 부모 페이지 로드
         console.log(`🔍 [Pagination Discovery] 부모 페이지 로드 중: ${baseUrl}`);
-        await page.goto(baseUrl, { 
-          waitUntil: 'networkidle2', 
-          timeout: config.timeout || 60000 
+        await page.goto(baseUrl, {
+          waitUntil: 'networkidle2',
+          timeout: config.timeout || 60000
         });
-        await new Promise(resolve => setTimeout(resolve, 2000)); // 페이지 안정화 대기
+        await new Promise(resolve => setTimeout(resolve, 2000));
 
         // 3. Pagination 감지
         console.log(`🔍 [Pagination Discovery] Pagination 감지 중...`);
-        
-        // Naver Ads FAQ 페이지인지 확인
+
         let detectionResult;
         if (naverAdsPaginationStrategy.canHandle(baseUrl)) {
           detectionResult = await naverAdsPaginationStrategy.detectPagination(page, baseUrl);
         } else {
-          // 기본 pagination 감지 사용 (향후 확장 가능)
           const { detectPagination } = await import('../utils/pagination-utils');
           detectionResult = await detectPagination(page, baseUrl);
         }
@@ -1374,307 +1381,128 @@ export class UrlDiscovery {
         const paginationInfo = detectionResult.pagination;
         console.log(`✅ [Pagination Discovery] Pagination 감지 성공: ${paginationInfo.totalPages}페이지`);
 
+        if (onProgress) {
+          onProgress({
+            type: 'log',
+            message: `Pagination 감지 성공: 총 ${paginationInfo.totalPages}페이지 발견`
+          });
+        }
+
         // 4. 각 페이지 URL 생성 및 검증
-        const { urls: paginationUrls, invalidUrls, errors } = generateAndValidatePageUrls(paginationInfo);
-        
+        const { urls: allPaginationUrls, invalidUrls } = generateAndValidatePageUrls(paginationInfo);
+
+        // maxUrls 제한 적용 (페이지 당 대략 10개로 가정하여 페이지 수 제한)
+        const maxPages = options.maxUrls ? Math.ceil(options.maxUrls / 10) : 50;
+        const paginationUrls = allPaginationUrls.slice(0, maxPages);
+
         if (invalidUrls.length > 0) {
           console.warn(`⚠️ [Pagination Discovery] 유효하지 않은 URL ${invalidUrls.length}개 발견`);
         }
 
-        console.log(`🔍 [Pagination Discovery] ${paginationUrls.length}개 Pagination 페이지에서 FAQ 링크 추출 시작...`);
+        console.log(`🔍 [Pagination Discovery] ${paginationUrls.length}개 Pagination 페이지에서 FAQ 링크 추출 시작 (병렬 처리)...`);
 
         // 5. 브라우저 연결 상태 확인 및 재연결
         try {
-          await browser.version(); // 브라우저 연결 상태 확인
+          await browser.version();
         } catch (error) {
           console.warn(`⚠️ [Pagination Discovery] 브라우저 연결 끊김, 재연결 중...`);
           browser = await browserManager.initialize();
         }
 
-        // 6. 각 Pagination 페이지를 방문하여 FAQ 링크 추출
+        // 6. 각 Pagination 페이지를 방문하여 FAQ 링크 추출 (병렬 처리)
         const faqLinkSet = new Set<string>();
         const baseUrlObj = new URL(baseUrl);
         const baseOrigin = `${baseUrlObj.protocol}//${baseUrlObj.host}`;
 
-        // 빈 페이지 연속 카운터 (최적화: 연속으로 빈 페이지가 나오면 조기 종료)
+        // 조항: 병렬 처리를 위해 p-limit 같은 라이브러리 대신 간단한 배치 처리 구현
+        // Vercel 환경을 고려하여 병렬도를 3으로 설정
+        const concurrency = 3;
         let consecutiveEmptyPages = 0;
-        const maxConsecutiveEmptyPages = 10; // 연속으로 10개 빈 페이지가 나오면 종료 (증가)
+        const maxConsecutiveEmptyPages = 5; // 병렬 처리 시에는 더 보수적으로 잡음
 
-        // 모든 페이지를 방문하여 FAQ 링크 추출
-        for (let i = 0; i < paginationUrls.length; i++) {
-          const paginationUrl = paginationUrls[i];
-          try {
-            console.log(`🔍 [Pagination Discovery] 페이지 ${i + 1}/${paginationUrls.length} 방문 중: ${paginationUrl}`);
-            
-            // 브라우저 연결 상태 확인
-            try {
-              await browser.version();
-            } catch (error) {
-              console.warn(`⚠️ [Pagination Discovery] 브라우저 연결 끊김, 재연결 중...`);
-              browser = await browserManager.initialize();
-            }
-            
-            // 각 Pagination 페이지 방문
-            const paginationPage = await browser.newPage();
-            try {
-              await paginationPage.goto(paginationUrl, {
-                waitUntil: 'networkidle2',
-                timeout: config.timeout || 60000,
-              });
-              await new Promise(resolve => setTimeout(resolve, 5000)); // 페이지 안정화 대기 증가 (동적 콘텐츠 로드를 위해)
+        for (let i = 0; i < paginationUrls.length; i += concurrency) {
+          const batch = paginationUrls.slice(i, i + concurrency);
+          console.log(`🔍 [Pagination Discovery] 배치 처리 중: ${i + 1}~${i + batch.length}/${paginationUrls.length}`);
 
-              // 스크롤을 여러 번 내려서 동적 콘텐츠 로드 (FAQ 링크가 동적으로 로드될 수 있음)
-              for (let scrollStep = 0; scrollStep < 5; scrollStep++) { // 스크롤 횟수 증가
-                await paginationPage.evaluate((step) => {
-                  const scrollHeight = document.body.scrollHeight;
-                  const scrollPosition = (step + 1) * (scrollHeight / 5);
-                  window.scrollTo(0, scrollPosition);
+          if (onProgress) {
+            onProgress({
+              type: 'log',
+              message: `페이지 발견 중: ${i + 1}/${paginationUrls.length} 페이지 처리 중...`,
+              current: i + 1,
+              total: paginationUrls.length
+            });
+          }
+
+          const batchResults = await Promise.all(batch.map(async (url, index) => {
+            const pageIdx = i + index;
+            let batchPage;
+            try {
+              batchPage = await browser!.newPage();
+              // 타임아웃 단축 (링크 추출용이므로)
+              await batchPage.goto(url, { waitUntil: 'networkidle2', timeout: 30000 });
+
+              // 대기 시간 최적화 (5초 -> 2초)
+              await new Promise(resolve => setTimeout(resolve, 2000));
+
+              // 스크롤 최적화 (5회 -> 2회)
+              for (let scrollStep = 0; scrollStep < 2; scrollStep++) {
+                await batchPage.evaluate((step) => {
+                  window.scrollTo(0, (step + 1) * (document.body.scrollHeight / 2));
                 }, scrollStep);
-                await new Promise(resolve => setTimeout(resolve, 1000)); // 각 스크롤 후 대기 시간 증가
-              }
-              // 마지막으로 맨 아래로 스크롤
-              await paginationPage.evaluate(() => {
-                window.scrollTo(0, document.body.scrollHeight);
-              });
-              await new Promise(resolve => setTimeout(resolve, 2000)); // 최종 스크롤 후 대기 시간 증가
-              
-              // 추가 대기: FAQ 리스트가 로드될 때까지 대기
-              try {
-                await paginationPage.waitForSelector('a[href*="/help/faq/"]', { timeout: 5000 }).catch(() => {
-                  // FAQ 링크가 없을 수도 있음 (빈 페이지)
-                });
-              } catch (e) {
-                // 선택자 대기 실패는 무시
+                await new Promise(resolve => setTimeout(resolve, 500));
               }
 
-              // FAQ 링크 추출 (Naver Ads FAQ 페이지의 링크 패턴: /help/faq/{id})
-              // 더 정확한 선택자 사용: FAQ 리스트 영역을 우선적으로 찾기
-              const faqLinks = await paginationPage.evaluate((baseOrigin) => {
+              const pageFaqLinks = await batchPage.evaluate((origin) => {
                 const links: string[] = [];
-                const linkSet = new Set<string>(); // 중복 제거용
-                
-                // 1. FAQ 리스트 영역 우선 검색 (더 넓은 범위의 선택자 사용)
-                const faqListSelectors = [
-                  'ul a[href*="/help/faq/"]',
-                  'ol a[href*="/help/faq/"]',
-                  'li a[href*="/help/faq/"]',
-                  'div a[href*="/help/faq/"]',
-                  'article a[href*="/help/faq/"]',
-                  'section a[href*="/help/faq/"]',
-                  '.faq-list a[href*="/help/faq/"]',
-                  '[class*="faq"] a[href*="/help/faq/"]',
-                  '[class*="list"] a[href*="/help/faq/"]',
-                  '[class*="item"] a[href*="/help/faq/"]',
-                  '[class*="content"] a[href*="/help/faq/"]',
-                ];
-                
-                // 2. 모든 링크 검색 (fallback)
-                const allLinkElements = document.querySelectorAll('a[href]');
-                
-                // FAQ 리스트 영역에서 먼저 찾기
-                for (const selector of faqListSelectors) {
-                  try {
-                    const elements = document.querySelectorAll(selector);
-                    elements.forEach((link) => {
-                      const href = link.getAttribute('href');
-                      if (!href) return;
-                      
-                      try {
-                        const absoluteUrl = new URL(href, baseOrigin).href;
-                        const faqPattern = /\/help\/faq\/(\d+)/;
-                        const match = absoluteUrl.match(faqPattern);
-                        if (match) {
-                          const faqId = match[1];
-                          const cleanUrl = `${baseOrigin}/help/faq/${faqId}`;
-                          if (!linkSet.has(cleanUrl)) {
-                            linkSet.add(cleanUrl);
-                            links.push(cleanUrl);
-                          }
-                        }
-                      } catch (e) {
-                        // URL 파싱 오류 무시
-                      }
-                    });
-                  } catch (e) {
-                    // 선택자 오류 무시
-                  }
-                }
-                
-                // 모든 링크에서도 찾기 (FAQ 리스트 영역에서 찾지 못한 경우)
-                allLinkElements.forEach((link) => {
+                const faqPattern = /\/help\/faq\/(\d+)/;
+                document.querySelectorAll('a[href]').forEach(link => {
                   const href = link.getAttribute('href');
                   if (!href) return;
-                  
                   try {
-                    const absoluteUrl = new URL(href, baseOrigin).href;
-                    const faqPattern = /\/help\/faq\/(\d+)/;
-                    const match = absoluteUrl.match(faqPattern);
-                    if (match) {
-                      const faqId = match[1];
-                      const cleanUrl = `${baseOrigin}/help/faq/${faqId}`;
-                      if (!linkSet.has(cleanUrl)) {
-                        linkSet.add(cleanUrl);
-                        links.push(cleanUrl);
-                      }
+                    const absoluteUrl = new URL(href, origin).href;
+                    if (faqPattern.test(absoluteUrl)) {
+                      links.push(absoluteUrl);
                     }
-                  } catch (e) {
-                    // URL 파싱 오류 무시
-                  }
+                  } catch (e) { }
                 });
-                
                 return links;
               }, baseOrigin);
 
-              faqLinks.forEach(link => {
-                const normalized = normalizeUrl(link);
-                faqLinkSet.add(normalized);
-              });
-
-              if (faqLinks.length === 0) {
-                consecutiveEmptyPages++;
-                console.log(`⚠️ [Pagination Discovery] 페이지 ${i + 1}에서 FAQ 링크 없음 (연속 빈 페이지: ${consecutiveEmptyPages}/${maxConsecutiveEmptyPages})`);
-                
-                // 연속으로 빈 페이지가 나오면 조기 종료
-                if (consecutiveEmptyPages >= maxConsecutiveEmptyPages) {
-                  console.log(`⏹️ [Pagination Discovery] 연속 ${maxConsecutiveEmptyPages}개 빈 페이지 발견, 조기 종료 (${i + 1}/${paginationUrls.length} 페이지까지 처리)`);
-                  break;
-                }
-              } else {
-                consecutiveEmptyPages = 0; // FAQ 링크가 있으면 카운터 리셋
-                console.log(`✅ [Pagination Discovery] 페이지 ${i + 1}에서 ${faqLinks.length}개 FAQ 링크 발견 (누적: ${faqLinkSet.size}개)`);
-              }
-            } catch (pageError: any) {
-              // Connection closed 에러 처리
-              if (pageError?.message?.includes('Connection closed') || pageError?.message?.includes('ConnectionClosedError')) {
-                console.warn(`⚠️ [Pagination Discovery] 페이지 ${i + 1} 방문 중 브라우저 연결 끊김, 재연결 후 재시도...`);
-                try {
-                  browser = await browserManager.initialize();
-                  const retryPage = await browser.newPage();
-                  await retryPage.goto(paginationUrl, {
-                    waitUntil: 'networkidle2',
-                    timeout: config.timeout || 60000,
-                  });
-                  await new Promise(resolve => setTimeout(resolve, 2000));
-                  
-                  // 스크롤을 내려서 동적 콘텐츠 로드
-                  await retryPage.evaluate(() => {
-                    window.scrollTo(0, document.body.scrollHeight);
-                  });
-                  await new Promise(resolve => setTimeout(resolve, 1000));
-
-                  const retryFaqLinks = await retryPage.evaluate((baseOrigin) => {
-                    const links: string[] = [];
-                    const linkSet = new Set<string>();
-                    
-                    // FAQ 리스트 영역 우선 검색
-                    const faqListSelectors = [
-                      'ul a[href*="/help/faq/"]',
-                      'ol a[href*="/help/faq/"]',
-                      '.faq-list a[href*="/help/faq/"]',
-                      '[class*="faq"] a[href*="/help/faq/"]',
-                      '[class*="list"] a[href*="/help/faq/"]',
-                    ];
-                    
-                    const allLinkElements = document.querySelectorAll('a[href]');
-                    
-                    for (const selector of faqListSelectors) {
-                      const elements = document.querySelectorAll(selector);
-                      elements.forEach((link) => {
-                        const href = link.getAttribute('href');
-                        if (!href) return;
-                        try {
-                          const absoluteUrl = new URL(href, baseOrigin).href;
-                          const faqPattern = /\/help\/faq\/(\d+)/;
-                          const match = absoluteUrl.match(faqPattern);
-                          if (match) {
-                            const faqId = match[1];
-                            const cleanUrl = `${baseOrigin}/help/faq/${faqId}`;
-                            if (!linkSet.has(cleanUrl)) {
-                              linkSet.add(cleanUrl);
-                              links.push(cleanUrl);
-                            }
-                          }
-                        } catch (e) { /* ignore */ }
-                      });
-                    }
-                    
-                    allLinkElements.forEach((link) => {
-                      const href = link.getAttribute('href');
-                      if (!href) return;
-                      try {
-                        const absoluteUrl = new URL(href, baseOrigin).href;
-                        const faqPattern = /\/help\/faq\/(\d+)/;
-                        const match = absoluteUrl.match(faqPattern);
-                        if (match) {
-                          const faqId = match[1];
-                          const cleanUrl = `${baseOrigin}/help/faq/${faqId}`;
-                          if (!linkSet.has(cleanUrl)) {
-                            linkSet.add(cleanUrl);
-                            links.push(cleanUrl);
-                          }
-                        }
-                      } catch (e) { /* ignore */ }
-                    });
-                    return links;
-                  }, baseOrigin);
-                  
-                  retryFaqLinks.forEach(link => {
-                    const normalized = normalizeUrl(link);
-                    faqLinkSet.add(normalized);
-                  });
-                  
-                  console.log(`✅ [Pagination Discovery] 재시도 성공: 페이지 ${i + 1}에서 ${retryFaqLinks.length}개 FAQ 링크 발견 (누적: ${faqLinkSet.size}개)`);
-                  await retryPage.close();
-                } catch (retryError) {
-                  console.warn(`⚠️ [Pagination Discovery] 재시도 실패: ${retryError instanceof Error ? retryError.message : String(retryError)}`);
-                }
-              } else {
-                throw pageError;
-              }
+              return pageFaqLinks;
+            } catch (err) {
+              console.warn(`⚠️ [Pagination Discovery] 페이지 ${pageIdx + 1} 방문 실패:`, err);
+              return [];
             } finally {
-              try {
-                if (!paginationPage.isClosed()) {
-                  await paginationPage.close();
-                }
-              } catch (closeError: any) {
-                // Connection closed 에러는 무시
-                if (!closeError?.message?.includes('Connection closed') && !closeError?.message?.includes('ConnectionClosedError')) {
-                  console.warn(`⚠️ [Pagination Discovery] 페이지 닫기 실패: ${closeError.message}`);
-                }
-              }
-              
-              // 메모리 정리: 주기적으로 브라우저 연결 확인 및 정리
-              if (i > 0 && i % 5 === 0) {
-                try {
-                  // 브라우저 연결 상태 확인
-                  await browser.version();
-                } catch (error) {
-                  console.warn(`⚠️ [Pagination Discovery] 브라우저 연결 끊김 감지, 재연결 중...`);
-                  browser = await browserManager.initialize();
-                }
-              }
+              if (batchPage) await batchPage.close().catch(() => { });
             }
-          } catch (error) {
-            consecutiveEmptyPages++; // 에러 발생 시 빈 페이지로 간주
-            console.warn(`⚠️ [Pagination Discovery] 페이지 ${i + 1} 방문 실패: ${error instanceof Error ? error.message : String(error)}`);
-            
-            // 연속으로 에러가 발생하면 조기 종료
-            if (consecutiveEmptyPages >= maxConsecutiveEmptyPages) {
-              console.log(`⏹️ [Pagination Discovery] 연속 ${maxConsecutiveEmptyPages}개 페이지 에러 발생, 조기 종료 (${i + 1}/${paginationUrls.length} 페이지까지 처리)`);
-              break;
-            }
-            // 계속 진행
+          }));
+
+          let batchFoundCount = 0;
+          batchResults.forEach(links => {
+            links.forEach(link => {
+              const normalized = normalizeUrl(link);
+              if (!faqLinkSet.has(normalized)) {
+                faqLinkSet.add(normalized);
+                batchFoundCount++;
+              }
+            });
+          });
+
+          if (batchFoundCount === 0) {
+            consecutiveEmptyPages++;
+          } else {
+            consecutiveEmptyPages = 0;
+          }
+
+          if (consecutiveEmptyPages >= maxConsecutiveEmptyPages) {
+            console.log(`⏹️ [Pagination Discovery] 연속 ${maxConsecutiveEmptyPages}개 배치 빈 결과 발견, 조기 종료`);
+            break;
           }
         }
 
-        // 7. 추출 완료 로그
-        const avgFaqPerPage = paginationUrls.length > 0 ? faqLinkSet.size / paginationUrls.length : 0;
-        console.log(`📊 [Pagination Discovery] 추출 완료: 페이지당 평균 ${avgFaqPerPage.toFixed(1)}개 FAQ, 총 ${faqLinkSet.size}개 고유 FAQ 링크 발견`);
-
-        // 6. 추출된 FAQ 링크들을 DiscoveredUrl 배열로 변환 (중복 제거 확인)
+        // 7. 결과 변환 및 중복 제거
         const uniqueFaqIds = new Set<string>();
         Array.from(faqLinkSet).forEach((faqUrl) => {
-          // FAQ ID 추출하여 중복 체크
           const faqIdMatch = faqUrl.match(/\/faq\/(\d+)/);
           if (faqIdMatch) {
             const faqId = faqIdMatch[1];
@@ -1688,17 +1516,21 @@ export class UrlDiscovery {
                 parentUrl: baseUrl,
                 path: [baseUrl, faqUrl],
               });
-            } else {
-              console.log(`⚠️ [Pagination Discovery] 중복 FAQ 제거: ${faqUrl} (ID: ${faqId})`);
             }
           }
         });
 
-        console.log(`✅ [Pagination Discovery] 완료: ${discoveredPages.length}개 고유 FAQ 링크 발견 (${paginationUrls.length}개 Pagination 페이지에서, 총 ${faqLinkSet.size}개 링크 중 중복 제거)`);
+        console.log(`✅ [Pagination Discovery] 완료: ${discoveredPages.length}개 FAQ 발견`);
+        if (onProgress) {
+          onProgress({
+            type: 'log',
+            message: `완료: 총 ${discoveredPages.length}개의 FAQ를 발견했습니다.`
+          });
+        }
 
         return discoveredPages;
       } finally {
-        await page.close();
+        await page.close().catch(() => { });
       }
     } catch (error) {
       console.error('❌ [Pagination Discovery] 실패:', error);
