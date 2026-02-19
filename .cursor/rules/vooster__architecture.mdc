@@ -1,0 +1,164 @@
+---
+description:
+globs:
+alwaysApply: true
+---
+# Technical Requirements Document (TRD)
+
+## 1. Executive Technical Summary
+- **Project Overview**: RAG(Retrieval-Augmented Generation) 기반의 AI 챗봇을 구축하여 Meta 광고 집행 관련 내부 FAQ에 대한 즉각적인 한국어 답변을 제공합니다. Next.js 프론트엔드와 FastAPI 백엔드를 사용하여 전체 시스템을 구축하고, Supabase Postgres 데이터베이스와 pgvector를 사용하여 효율적인 벡터 검색을 구현합니다.
+- **Core Technology Stack**: Next.js 15, TypeScript, React, shadcn/ui, tailwindcss, lucide-react, @tanstack/react-query, Supabase Postgres, pgvector, Python, FastAPI, LangChain, Ollama, Whisper, Tesseract, Slack API, Stripe, Vercel, date-fns
+- **Key Technical Objectives**: 평균 3초 이내의 응답 시간, 최대 50명의 동시 사용자 지원, 90일 질문/답변 로그 보존, 80% 이상의 긍정적 사용자 피드백.
+- **Critical Technical Assumptions**: 사내 SSO(SAML) 또는 OAuth 연동 가능, 초기 데이터 500문서, 일 변동 5문서 이하, 클라우드 비용 월 200달러 이내.
+
+## 2. Tech Stack
+
+| Category          | Technology / Library        | Reasoning (Why it's chosen for this project) |
+| ----------------- | --------------------------- | -------------------------------------------- |
+| Frontend Framework | Next.js 15                  | 서버 사이드 렌더링(SSR) 및 정적 사이트 생성(SSG)을 통한 성능 향상, 라우팅 및 API 핸들링 용이성 |
+| Language          | TypeScript                  | 정적 타입 검사를 통한 코드 안정성 및 유지보수성 향상 |
+| UI Library         | React                       | 컴포넌트 기반 개발 및 재사용성, 활발한 커뮤니티 지원 |
+| UI Components     | shadcn/ui                   | Tailwind CSS 기반의 재사용 가능한 UI 컴포넌트 제공, 디자인 시스템 일관성 유지 |
+| Styling           | tailwindcss                 | 유틸리티 기반 CSS 프레임워크, 빠른 스타일링 및 반응형 디자인 지원 |
+| Icons             | lucide-react                | 고품질의 SVG 아이콘 제공, UI 디자인 일관성 유지 |
+| Data Fetching     | @tanstack/react-query       | 서버 상태 관리 및 캐싱, 효율적인 데이터 패칭 및 업데이트 |
+| Database          | Supabase Postgres           | 안정적인 오픈 소스 관계형 데이터베이스, 확장성 및 보안성 |
+| Vector Store       | pgvector                    | Postgres 확장, 임베딩 벡터 저장 및 유사도 검색 기능 제공 |
+| Backend Framework | Python, FastAPI             | 고성능 API 개발, 비동기 처리 지원, 빠른 개발 속도 |
+| LLM Framework     | LangChain                   | LLM(Large Language Model) 통합 및 관리, RAG 파이프라인 구축 용이성 |
+| LLM               | Ollama                      | 로컬 LLM 실행 및 관리, 개인 정보 보호 및 낮은 지연 시간 |
+| Speech-to-Text    | Whisper                     | 음성 데이터를 텍스트로 변환, 음성 기반 질문 지원 (향후 확장 고려) |
+| OCR               | Tesseract                   | 이미지 기반 문서에서 텍스트 추출, 다양한 문서 형식 지원 |
+| Slack Integration | Slack API                   | Slack 알림 및 통합 기능 제공 (향후 확장 고려) |
+| Payment           | Stripe                      | 결제 시스템 연동 (제외 기능이지만 향후 확장 고려) |
+| Hosting           | Vercel                      | Next.js 애플리케이션 배포 및 호스팅, 자동 스케일링 및 CDN 지원 |
+| Date Library      | date-fns                    | 날짜 및 시간 관련 기능 제공, 일관성 있는 날짜 처리 |
+
+## 3. System Architecture Design
+
+### Top-Level building blocks
+- **Frontend (Next.js)**: 사용자 인터페이스 및 사용자 상호 작용을 처리합니다.
+    - UI 컴포넌트 (React, shadcn/ui)
+    - 데이터 패칭 및 상태 관리 (@tanstack/react-query)
+    - 라우팅
+- **Backend (FastAPI)**: API 엔드포인트 및 비즈니스 로직을 처리합니다.
+    - API 엔드포인트 (FastAPI)
+    - RAG 파이프라인 (LangChain, Ollama)
+    - 데이터베이스 상호 작용 (Supabase Postgres, pgvector)
+- **Database (Supabase Postgres)**: 문서 데이터 및 임베딩 벡터를 저장합니다.
+    - 문서 데이터
+    - 임베딩 벡터 (pgvector)
+    - 사용자 히스토리 및 즐겨찾기
+- **External Services**: Slack API, Stripe (향후 확장 고려)
+
+### Top-Level Component Interaction Diagram
+
+```mermaid
+graph LR
+    A[Frontend (Next.js)] --> B[Backend (FastAPI)]
+    B --> C[Database (Supabase Postgres)]
+    B --> D[LLM (Ollama)]
+    B --> E[LangChain]
+    B --> F[pgvector]
+```
+
+- Frontend (Next.js)는 사용자 인터페이스를 통해 질문을 받고 Backend (FastAPI)로 요청을 전송합니다.
+- Backend (FastAPI)는 LangChain을 사용하여 RAG 파이프라인을 실행하고, Ollama를 통해 LLM을 호출하여 답변을 생성합니다.
+- Backend (FastAPI)는 Supabase Postgres 데이터베이스와 pgvector를 사용하여 문서 데이터 및 임베딩 벡터를 저장하고 검색합니다.
+- Backend (FastAPI)는 Frontend (Next.js)로 답변 및 출처 정보를 반환합니다.
+
+### Code Organization & Convention
+
+**Domain-Driven Organization Strategy**
+- **Domain Separation**: `user`, `document`, `chatbot`, `admin` 등의 도메인으로 분리합니다.
+- **Layer-Based Architecture**: `presentation` (UI), `application` (비즈니스 로직), `domain` (도메인 모델), `infrastructure` (데이터 액세스, 외부 서비스) 레이어로 분리합니다.
+- **Feature-Based Modules**: 각 기능별로 모듈을 구성합니다 (예: `upload`, `search`, `feedback`).
+- **Shared Components**: 공통 유틸리티, 타입, 재사용 가능한 컴포넌트는 `shared` 모듈에 저장합니다.
+
+**Universal File & Folder Structure**
+```
+/
+├── frontend/                      # Next.js 프론트엔드
+│   ├── components/               # React 컴포넌트
+│   │   ├── chatbot/              # 챗봇 관련 컴포넌트
+│   │   ├── ui/                   # shadcn/ui 컴포넌트
+│   │   └── ...
+│   ├── pages/                    # Next.js 페이지
+│   │   ├── api/                # API 엔드포인트
+│   │   ├── _app.tsx
+│   │   └── index.tsx
+│   ├── styles/                   # CSS 스타일
+│   ├── utils/                    # 유틸리티 함수
+│   ├── types/                    # 타입 정의
+│   └── ...
+├── backend/                       # FastAPI 백엔드
+│   ├── app/                      # FastAPI 애플리케이션
+│   │   ├── api/                # API 엔드포인트
+│   │   │   ├── chatbot.py
+│   │   │   ├── document.py
+│   │   │   └── ...
+│   │   ├── core/               # 핵심 로직
+│   │   │   ├── llm.py
+│   │   │   ├── rag.py
+│   │   │   └── ...
+│   │   ├── models/             # 데이터 모델
+│   │   ├── db/                 # 데이터베이스 관련
+│   │   ├── utils/              # 유틸리티 함수
+│   │   └── main.py             # FastAPI 엔트리 포인트
+│   ├── scripts/                  # 스크립트
+│   └── ...
+├── data/                          # 데이터
+├── docs/                          # 문서
+├── .env                           # 환경 변수
+├── README.md                      # README 파일
+└── ...
+```
+
+### Data Flow & Communication Patterns
+- **Client-Server Communication**: Frontend (Next.js)는 API 요청을 Backend (FastAPI)로 전송하고, Backend (FastAPI)는 JSON 형식으로 응답합니다.
+- **Database Interaction**: Backend (FastAPI)는 Supabase Postgres와 pgvector를 사용하여 데이터베이스에 접근하고 쿼리를 실행합니다.
+- **External Service Integration**: Backend (FastAPI)는 LangChain을 통해 Ollama와 통합하여 LLM을 사용합니다.
+- **Data Synchronization**: 데이터베이스의 변경 사항은 필요에 따라 캐싱 또는 실시간 업데이트를 통해 Frontend에 반영합니다.
+
+## 4. Performance & Optimization Strategy
+- **캐싱**: 자주 사용되는 데이터는 캐싱하여 데이터베이스 부하를 줄입니다. (예: @tanstack/react-query 캐싱)
+- **데이터베이스 최적화**: 데이터베이스 쿼리 성능을 최적화하고, 인덱싱을 적절히 활용합니다.
+- **LLM 최적화**: LLM 추론 시간을 줄이기 위해 모델을 최적화하고, 프롬프트 엔지니어링을 통해 답변 품질을 향상시킵니다.
+- **코드 최적화**: 불필요한 연산을 줄이고, 효율적인 알고리즘을 사용하여 코드 실행 속도를 향상시킵니다.
+
+## 5. Implementation Roadmap & Milestones
+### Phase 1: Foundation (MVP Implementation)
+- **Core Infrastructure**: Next.js, FastAPI, Supabase Postgres, pgvector 설정 및 초기 데이터 모델 설계.
+- **Essential Features**: 문서 업로드/인덱싱, 기본 챗 UI, RAG 파이프라인 구축, 출처 표시 기능 구현.
+- **Basic Security**: 기본 인증 및 권한 관리 구현.
+- **Development Setup**: 개발 환경 설정 및 CI/CD 파이프라인 구축.
+- **Timeline**: 1~3주
+
+### Phase 2: Feature Enhancement
+- **Advanced Features**: 히스토리 기능, 피드백 수집, 관리자 대시보드 구현.
+- **Performance Optimization**: 시스템 성능 개선 및 응답 시간 최적화.
+- **Enhanced Security**: 보안 취약점 점검 및 보안 강화.
+- **Monitoring Implementation**: 시스템 모니터링 및 로깅 설정.
+- **Timeline**: 4~6주
+
+## 6. Risk Assessment & Mitigation Strategies
+### Technical Risk Analysis
+- **Technology Risks**: LLM 답변 품질 저하, RAG 파이프라인 성능 문제.
+    - **Mitigation Strategies**: 피드백 루프를 통해 모델 개선, 랭크스미스 리랭킹 적용, 프롬프트 엔지니어링.
+- **Performance Risks**: 데이터 증가에 따른 응답 시간 증가, 동시 사용자 증가에 따른 서버 부하 증가.
+    - **Mitigation Strategies**: 캐싱, 데이터베이스 최적화, 서버 스케일링.
+- **Security Risks**: 데이터 유출, 권한 없는 접근.
+    - **Mitigation Strategies**: 데이터 암호화, 접근 제어, 보안 감사.
+- **Integration Risks**: 외부 서비스 (Ollama, Supabase) 장애.
+    - **Mitigation Strategies**: 장애 감지 및 자동 복구, 대체 서비스 사용.
+
+### Project Delivery Risks
+- **Timeline Risks**: 개발 지연, 예상치 못한 문제 발생.
+    - **Contingency Plans**: 우선순위 재조정, 추가 리소스 투입, 기능 축소.
+- **Resource Risks**: 개발 인력 부족, 기술적 어려움.
+    - **Contingency Plans**: 추가 인력 확보, 외부 전문가 활용.
+- **Quality Risks**: 코드 품질 저하, 테스트 부족.
+    - **Contingency Plans**: 코드 리뷰 강화, 자동화된 테스트 도입.
+- **Deployment Risks**: 배포 실패, 환경 설정 문제.
+    - **Contingency Plans**: 롤백 계획, 자동화된 배포 파이프라인.
+

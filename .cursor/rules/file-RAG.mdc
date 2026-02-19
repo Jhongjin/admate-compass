@@ -1,0 +1,8 @@
+---
+description: @admin/docs 문서관리 페이지 문서 로드,업로드,인덱싱,청킹 및 supabase 기반 코드 작업시 참고
+globs:
+alwaysApply: false
+---
+
+# file-readme.md
+

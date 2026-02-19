@@ -1,0 +1,7 @@
+---
+description: main 페이지 작업시에만 참조
+globs:
+alwaysApply: false
+---
+
+# main-readme.md 파일 참고

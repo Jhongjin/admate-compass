@@ -1,0 +1,1506 @@
+/**
+ * 콘텐츠 추출기
+ * HTML에서 제목과 본문을 추출
+ * 
+ * 벤더별 제목 추출 전략:
+ * - 벤더별 제목 추출 로직은 TitleStrategyManager를 통해 관리됨
+ * - 각 벤더별 전략은 독립적으로 관리되므로 새로운 벤더 추가 시 기존 로직에 영향 없음
+ * - 전략 추가 방법: src/lib/crawler-v2/strategies/TitleStrategyManager.ts 참조
+ */
+
+import { Page } from 'puppeteer-core';
+import type { ContentExtractionOptions } from '../types';
+import { extractTextFromHtml, extractTitleFromHtml, cleanHtml, htmlToMarkdown, stripBoilerplate } from '../utils/html-utils';
+
+import { processTextEncoding } from '@/lib/utils/textEncoding';
+import { titleStrategyManager } from '../strategies/TitleStrategyManager';
+
+export class ContentExtractor {
+  private defaultOptions: ContentExtractionOptions = {
+    titleStrategy: 'auto',
+    contentSelectors: ['main', 'article', '.content', '.main-content', '[role="main"]', '.page-content'],
+    removeSelectors: [
+      'script', 'style', 'nav', 'footer', 'header', 'aside',
+      '.nav_area', '.header_area', '.footer_area', '.aside_area',
+      '.sidebar', '.gnb', '.lnb', '.footer', '.header',
+      '[role="navigation"]', '[role="banner"]', '[role="contentinfo"]',
+      '.u_skip', '#header', '#footer', '#gnb', '.quick_menu',
+      '.category_area', '.banner_area', '.ad_area', '.promotion_area'
+    ],
+    minContentLength: 100,
+  };
+
+  /**
+   * 페이지에서 콘텐츠 추출
+   */
+  async extractFromPage(
+    page: Page,
+    url: string,
+    options: Partial<ContentExtractionOptions> = {}
+  ): Promise<{ title: string; content: string }> {
+    const config = { ...this.defaultOptions, ...options };
+
+    try {
+      // 페이지 HTML 가져오기 (이미 로드된 상태)
+      const html = await page.content();
+
+      // 제목 추출
+      const title = await this.extractTitle(page, html, config.titleStrategy || 'auto', url);
+
+      // 콘텐츠 추출 (HTML 정리 포함)
+      const rawContent = await this.extractContent(page, html, config);
+
+      // 마크다운 변환 적용
+      const markdownContent = htmlToMarkdown(rawContent);
+
+      // 보일러플레이트 제거
+      const strippedContent = stripBoilerplate(markdownContent);
+
+      // UTF-8 인코딩 보장
+      const encodingResult = processTextEncoding(strippedContent, { strictMode: true });
+      const cleanContent = encodingResult.cleanedText;
+
+      if (!cleanContent || cleanContent.length < (config.minContentLength || 100)) {
+        throw new Error(`콘텐츠가 너무 짧습니다 (${cleanContent.length}자)`);
+      }
+
+
+      // FAQ 페이지인 경우 URL을 제목으로 사용하지 않음
+      const isNaverAdsFAQ = url.includes('ads.naver.com/help/faq/');
+      let finalTitle: string;
+
+      if (isNaverAdsFAQ) {
+        // FAQ 페이지는 제목을 찾지 못했을 때 URL을 사용하지 않음
+        // 대신 "제목 없음" 또는 빈 문자열 사용 (나중에 수동으로 수정 가능)
+        finalTitle = title || '제목 없음';
+      } else {
+        // 일반 페이지는 URL을 fallback으로 사용
+        finalTitle = title || url;
+      }
+
+      return {
+        title: finalTitle,
+        content: cleanContent,
+      };
+    } catch (error) {
+      console.error(`❌ 콘텐츠 추출 실패: ${url}`, error);
+      throw error;
+    }
+  }
+
+  /**
+   * 제목 추출 (개선: 더 다양한 전략 + 동적 로드 대기 + 페이지 상단 가장 큰 볼드체 우선)
+   */
+  private async extractTitle(
+    page: Page,
+    html: string,
+    strategy: 'h1' | 'title' | 'og:title' | 'auto',
+    url: string
+  ): Promise<string | null> {
+    try {
+      // 벤더별 제목 추출 전략 시도 (우선순위: 벤더별 특화 전략 > 기본 전략)
+      // 각 벤더별 전략은 독립적으로 관리되므로 새로운 벤더 추가 시 기존 로직에 영향 없음
+      try {
+        const strategyResult = await titleStrategyManager.extractTitle(url, page);
+        if (strategyResult.title) {
+          console.log(`✅ [ContentExtractor] 벤더별 전략으로 제목 추출 성공: "${strategyResult.title}" (출처: ${strategyResult.source})`);
+          return strategyResult.title;
+        }
+        // 전략이 적용되었지만 제목을 찾지 못한 경우, 기존 로직으로 fallback
+        console.log(`ℹ️ [ContentExtractor] 벤더별 전략 적용되었지만 제목을 찾지 못함, 기존 로직으로 fallback`);
+      } catch (strategyError) {
+        console.warn(`⚠️ [ContentExtractor] 벤더별 전략 실행 오류, 기존 로직으로 fallback:`, strategyError);
+      }
+
+      // 기존 제목 추출 로직 (fallback)
+      // 네이버 광고 페이지 같은 SPA의 경우 더 오래 대기
+      const isNaverAds = url.includes('ads.naver.com');
+      const isNaverAdsFAQ = isNaverAds && url.includes('/help/faq/');
+
+      if (isNaverAdsFAQ) {
+        // FAQ 페이지는 URL 파라미터로 콘텐츠가 동적으로 변경되므로 특별 처리
+        try {
+          // 초기 대기 (페이지 로드)
+          await new Promise(resolve => setTimeout(resolve, 3000));
+
+          // FAQ 제목이 로드될 때까지 대기 (최대 20초, 더 관대한 조건)
+          await page.waitForFunction(
+            () => {
+              // 페이지에 의미있는 텍스트가 있는지 확인
+              const bodyText = document.body.textContent || '';
+              // 최소한의 텍스트가 있는지 확인 (제목이 로드되었는지 간접적으로 확인)
+              if (bodyText.length < 100) {
+                return false;
+              }
+
+              // content_title 클래스를 최우선으로 확인 (Naver Ads FAQ 페이지의 표준 제목 클래스)
+              const contentTitle = document.querySelector('.content_title, h3.content_title, h2.content_title, h1.content_title');
+              if (contentTitle) {
+                const text = contentTitle.textContent?.trim() || '';
+                if (text && text.length >= 3 && text.length <= 200) {
+                  return true;
+                }
+              }
+
+              // FAQ 제목이 있는지 확인 (다양한 선택자 시도)
+              const selectors = [
+                'h1',
+                'h2',
+                'h3',
+                '[class*="title"]',
+                '[class*="question"]',
+                '[class*="faq"]',
+                'main h1',
+                'main h2',
+                'article h1',
+                'article h2',
+                '.content h1',
+                '.content h2',
+                '[role="heading"]',
+                '[data-testid*="title"]',
+                '[data-testid*="question"]'
+              ];
+
+              for (const selector of selectors) {
+                try {
+                  const elements = document.querySelectorAll(selector);
+                  for (const el of elements) {
+                    const text = el.textContent?.trim() || '';
+                    // 공통 텍스트 및 피드백 텍스트 제외
+                    const isCommon = ['광고주센터', '도움말', 'Help', 'Advertiser Center', '실전에 통하는'].includes(text);
+                    const isFeedback = text.includes('위 도움말') ||
+                      text.includes('도움이 되었나요') ||
+                      text.includes('위 내용으로 궁금한 점이 해결되지 않았나요') ||
+                      text.includes('궁금한 점이 해결되지 않았나요');
+                    const isNumeric = /^\d+[\s\-_]*$/.test(text);
+                    if (text.length >= 3 && text.length <= 150 && !isCommon && !isFeedback && !isNumeric) {
+                      return true;
+                    }
+                  }
+                } catch (e) {
+                  // 선택자 오류 무시
+                }
+              }
+              return false;
+            },
+            { timeout: 20000, polling: 500 }
+          ).catch(() => {
+            console.warn('⚠️ FAQ 제목 로드 대기 타임아웃 (계속 진행)');
+          });
+
+          // 추가 대기 (동적 콘텐츠 완전 로드)
+          await new Promise(resolve => setTimeout(resolve, 5000));
+        } catch (error) {
+          console.warn('⚠️ FAQ 페이지 제목 대기 실패 (계속 진행):', error);
+        }
+      } else {
+        const waitTime = isNaverAds ? 8000 : 5000;
+        await this.waitForPageStabilization(page, waitTime);
+
+        // 추가 대기 (동적 콘텐츠 로드)
+        if (isNaverAds) {
+          await new Promise(resolve => setTimeout(resolve, 3000));
+        }
+      }
+
+      // ⚠️ 주의: 아래 Naver Ads FAQ 특화 로직은 이제 TitleStrategyManager를 통해 처리됩니다.
+      // 전략 관리자가 먼저 실행되며, 제목을 찾지 못한 경우에만 아래 기존 로직이 fallback으로 실행됩니다.
+      // 새로운 벤더 추가 시 이 부분을 수정하지 말고, strategies/ 폴더에 새로운 전략 클래스를 생성하세요.
+      // 자세한 내용은 src/lib/crawler-v2/strategies/README.md 참조
+
+      // 기존 Naver Ads FAQ 로직 (fallback용 - 전략 관리자가 제목을 찾지 못한 경우에만 실행)
+      if (isNaverAdsFAQ) {
+        console.log(`🔍 [FAQ 제목 추출] 서버 측: FAQ 페이지 감지, 제목 추출 시작... URL: ${url}`);
+
+        // 서버 측에서 content_title 요소 확인
+        const contentTitleExists = await page.evaluate(() => {
+          const elements = document.querySelectorAll('.content_title, h3.content_title, h2.content_title, h1.content_title');
+          return {
+            count: elements.length,
+            texts: Array.from(elements).slice(0, 3).map(el => ({
+              text: el.textContent?.trim()?.substring(0, 100) || '',
+              tag: el.tagName,
+              className: el.className || ''
+            }))
+          };
+        });
+
+        if (contentTitleExists.count > 0) {
+          console.log(`✅ [FAQ 제목 추출] 서버 측: content_title 요소 ${contentTitleExists.count}개 발견`);
+          contentTitleExists.texts.forEach((item, idx) => {
+            console.log(`  ${idx + 1}. ${item.tag}: "${item.text}" (class: ${item.className})`);
+          });
+        } else {
+          console.warn(`⚠️ [FAQ 제목 추출] 서버 측: content_title 요소를 찾을 수 없습니다.`);
+
+          // 대체 선택자 확인
+          const altSelectors = await page.evaluate(() => {
+            const results: any = {};
+            const selectors = ['h3', '[class*="title"]', '.title_wrap h3', '.title_area h3', 'h3[class*="content"]'];
+            selectors.forEach(selector => {
+              const elements = Array.from(document.querySelectorAll(selector));
+              if (elements.length > 0) {
+                results[selector] = elements.slice(0, 3).map((el: Element) => ({
+                  text: el.textContent?.trim()?.substring(0, 100) || '',
+                  tag: el.tagName,
+                  className: el.className || ''
+                }));
+              }
+            });
+            return results;
+          });
+
+          console.log(`🔍 [FAQ 제목 추출] 서버 측: 대체 선택자 확인 결과:`);
+          Object.entries(altSelectors).forEach(([selector, items]: [string, any]) => {
+            if (items && items.length > 0) {
+              console.log(`  "${selector}": ${items.length}개 발견`);
+              items.forEach((item: any, idx: number) => {
+                console.log(`    ${idx + 1}. ${item.tag}: "${item.text}" (class: ${item.className})`);
+              });
+            }
+          });
+        }
+
+        // content_title 요소가 로드될 때까지 명시적으로 대기
+        try {
+          await page.waitForSelector('.content_title, h3.content_title, h2.content_title, h1.content_title', {
+            timeout: 10000,
+            visible: true
+          });
+          console.log(`✅ [FAQ 제목 추출] 서버 측: content_title 요소 로드 완료`);
+        } catch (error) {
+          console.warn(`⚠️ [FAQ 제목 추출] 서버 측: content_title 요소 대기 실패 (타임아웃 또는 요소 없음)`);
+        }
+      }
+      const titleResult = await page.evaluate((urlParam: string) => {
+        // 피드백/평가 관련 텍스트 필터링 함수
+        const isFeedbackText = (text: string): boolean => {
+          const lowerText = text.toLowerCase();
+          const feedbackKeywords = [
+            '위 도움말',
+            '도움이 되었나요',
+            '점 만점',
+            '별점',
+            '평가',
+            '피드백',
+            'was this help',
+            'helpful',
+            'rating',
+            'feedback',
+            '점수',
+            '만족도',
+            '의견',
+            '보내주셔서 감사합니다',
+            '위 내용으로 궁금한 점이 해결되지 않았나요',
+            '궁금한 점이 해결되지 않았나요',
+            '해결되지 않았나요',
+            '추가 문의',
+            '문의하기',
+            '질문이 남아있나요',
+            '자세히 알아보기',
+            '상품 더 알아보기',
+            '더 알아보기',
+            '더보기',
+            '카테고리 더보기',
+            '목록보기',
+            '전체보기',
+            'FAQ 목록',
+            '도움말 홈',
+            '이전 페이지',
+            '다음 페이지'
+          ];
+          return feedbackKeywords.some(keyword => lowerText.includes(keyword));
+        };
+
+        // 0. 페이지 상단 가장 큰 볼드체 텍스트 찾기 (h1/h2가 없을 때만 사용)
+        const findLargestBoldText = (): string | null => {
+          const allElements = Array.from(document.querySelectorAll('*'));
+          let largestElement: { element: Element; fontSize: number; fontWeight: number; y: number } | null = null;
+
+          for (const el of allElements) {
+            // nav, header, footer, aside 제외
+            const tagName = el.tagName?.toLowerCase() || '';
+            if (['nav', 'header', 'footer', 'aside', 'script', 'style'].includes(tagName)) continue;
+
+            const text = el.textContent?.trim() || '';
+            // 너무 짧거나 길면 제외
+            if (text.length < 3 || text.length > 150) continue;
+            // 일반적인 사이트 제목 제외 (광고주센터, 도움말 등)
+            if (['광고주센터', '도움말', 'Help', 'Advertiser Center', '성공전략', '성공 전략'].includes(text)) continue;
+            // 피드백/평가 텍스트 제외
+            if (isFeedbackText(text)) continue;
+            // 숫자만 있는 제목 제외
+            if (/^\d+[\s\-_]*$/.test(text)) continue;
+
+            const style = window.getComputedStyle(el);
+            const fontSize = parseFloat(style.fontSize) || 0;
+            const fontWeight = parseInt(style.fontWeight) || 400;
+            const rect = el.getBoundingClientRect();
+            const y = rect.top;
+
+            // 페이지 상단 500px 이내에 있고, 큰 폰트(18px 이상) 또는 볼드체(600 이상)인 경우
+            if (y >= 0 && y <= 500 && (fontSize >= 18 || fontWeight >= 600)) {
+              // 자식 요소가 있으면 제외 (부모 요소가 아닌 실제 텍스트 요소만)
+              const hasTextChildren = Array.from(el.children).some(child => {
+                const childText = child.textContent?.trim() || '';
+                return childText.length > 0 && childText.length < 150;
+              });
+
+              if (!hasTextChildren) {
+                if (!largestElement || fontSize > largestElement.fontSize ||
+                  (fontSize === largestElement.fontSize && fontWeight > largestElement.fontWeight)) {
+                  largestElement = { element: el, fontSize, fontWeight, y };
+                }
+              }
+            }
+          }
+
+          if (largestElement) {
+            const text = largestElement.element.textContent?.trim() || '';
+            // 일반적인 사이트 제목이 아닌 경우만 반환
+            const isNumeric = /^\d+[\s\-_]*$/.test(text);
+            const isCommonText = ['광고주센터', '도움말', 'Help', 'Advertiser Center', '성공전략', '성공 전략'].includes(text);
+            if (text.length >= 3 && text.length <= 150 &&
+              !isCommonText &&
+              !isNumeric &&
+              !isFeedbackText(text)) {
+              return text;
+            }
+          }
+
+          return null;
+        };
+
+        // Naver Ads FAQ 페이지 특화 제목 추출 (가장 먼저 실행 - 일반 로직보다 우선)
+        // URL 파라미터로 전달받은 URL을 사용하여 명확하게 감지
+        const isNaverAdsFAQ = urlParam.includes('ads.naver.com/help/faq/');
+        if (isNaverAdsFAQ) {
+          console.log('🔍 [FAQ 제목 추출] Naver Ads FAQ 페이지 감지, 제목 추출 시작...');
+          console.log('🔍 [FAQ 제목 추출] URL:', urlParam);
+
+          // 카테고리/섹션 제목 패턴 (일반적인 카테고리 제목 필터링)
+          const categoryPatterns = [
+            /^상품\s*안내$/,
+            /^커뮤니케이션\s*애드$/,
+            /^■\s*커뮤니케이션\s*애드$/,
+            /^[■□●○]\s*[가-힣\s]+$/, // 특수문자로 시작하는 짧은 텍스트 (카테고리 가능성)
+            /^[가-힣]{2,4}\s*안내$/, // "XX 안내" 패턴
+            /^[가-힣]{2,4}\s*[가-힣]{2,4}$/ // 2-4글자 + 2-4글자 (카테고리 가능성)
+          ];
+
+          // 네비게이션/메뉴 텍스트 제외 패턴 (전역으로 정의하여 모든 곳에서 사용)
+          const navigationPatterns = [
+            /^\[.*\]$/, // [검색광고], [광고 시작] 같은 패턴
+            /^[■□●○]\s*/, // 특수문자로 시작하는 텍스트 (카테고리 제목)
+            /^ㅤ/, // 특수 공백 문자로 시작하는 텍스트
+            /메뉴\s*(펼치기|닫기)/,
+            /검색어\s*입력/,
+            /바로가기\s*>?$/, // "바로가기 >" 패턴
+            /네이버\s*비즈니스\s*스쿨/, // "네이버 비즈니스 스쿨" 포함
+            /활용한\s*광고\s*등록\s*방법을\s*알아보세요/, // "활용한 광고 등록 방법을 알아보세요" 포함
+            /ADVoost\s*소재\s*활용한/, // "ADVoost 소재 활용한" 포함
+            /광고\s*등록\s*방법을\s*알아보세요/, // "광고 등록 방법을 알아보세요" 포함
+            /^광고\s*등록$/, // "광고 등록" 카테고리 제목
+            /^ADVoost\s*쇼핑\s*광고$/, // "ADVoost 쇼핑 광고" 카테고리 제목
+            /\.\.\./,
+            /^\s*$/
+          ];
+
+          // 완전히 새로운 접근: 모든 제목 후보를 수집하고 점수화 (필터링 최소화)
+          const collectAllTitleCandidates = (): Array<{ text: string, score: number, source: string }> => {
+            const candidates: Array<{ text: string, score: number, source: string }> = [];
+            const mainContent = document.querySelector('main, article, .content, .main-content, [role="main"]') || document.body;
+
+            console.log(`🔍 [FAQ 제목 추출] 메인 콘텐츠 영역: ${mainContent.tagName} (${mainContent.className || 'no-class'})`);
+
+            // 0. content_title 클래스를 가진 요소를 최우선으로 찾기 (Naver Ads FAQ 페이지의 표준 제목 클래스)
+            const contentTitleElements = Array.from(mainContent.querySelectorAll('.content_title, h3.content_title, h2.content_title, h1.content_title'));
+            console.log(`🔍 [FAQ 제목 추출] 발견된 content_title 클래스 요소: ${contentTitleElements.length}개`);
+
+            if (contentTitleElements.length === 0) {
+              // content_title이 없을 때 디버깅 정보 출력
+              console.log(`⚠️ [FAQ 제목 추출] content_title 클래스를 가진 요소를 찾을 수 없습니다.`);
+              console.log(`🔍 [FAQ 제목 추출] 대체 선택자 시도: h3, [class*="title"], [class*="content_title"]`);
+              const altSelectors = [
+                'h3',
+                '[class*="title"]',
+                '[class*="content_title"]',
+                '.title_wrap h3',
+                '.title_area h3'
+              ];
+              altSelectors.forEach(selector => {
+                const elements = Array.from(mainContent.querySelectorAll(selector));
+                if (elements.length > 0) {
+                  console.log(`  - "${selector}": ${elements.length}개 발견`);
+                  elements.slice(0, 3).forEach((el, idx) => {
+                    const text = el.textContent?.trim() || '';
+                    console.log(`    ${idx + 1}. "${text.substring(0, 50)}" (tag: ${el.tagName}, class: ${el.className})`);
+                  });
+                }
+              });
+            }
+
+            contentTitleElements.forEach((el, idx) => {
+              const rect = el.getBoundingClientRect();
+              const text = el.textContent?.trim() || '';
+              if (text && text.length >= 2 && text.length <= 200 && rect.top >= 0 && rect.top <= 2000) {
+                // content_title은 최고 우선순위 (점수 500)
+                let score = 500;
+                // 태그에 따른 추가 점수
+                if (el.tagName === 'H1') score += 50;
+                else if (el.tagName === 'H2') score += 40;
+                else if (el.tagName === 'H3') score += 30;
+                // 페이지 상단에 가까울수록 높은 점수
+                score += Math.max(0, 50 - Math.floor(rect.top / 20));
+                candidates.push({ text, score, source: 'content_title-class' });
+                console.log(`  ✅ content_title: "${text.substring(0, 50)}" (점수: ${score}, Y: ${Math.round(rect.top)})`);
+              }
+            });
+
+            // 1. 모든 h1, h2, h3, h4 수집 (네비게이션/UI 텍스트 제외)
+            const headings = Array.from(mainContent.querySelectorAll('h1, h2, h3, h4'));
+            console.log(`🔍 [FAQ 제목 추출] 발견된 heading 태그: ${headings.length}개`);
+
+            // 제외할 텍스트 패턴 (수집 단계에서 미리 필터링)
+            const excludedHeadingTexts = [
+              '도움말 카테고리',
+              '도움말',
+              '광고주센터',
+              '네이버 광고주센터',
+              '카테고리',
+              '카테고리 닫기',
+              '카테고리 열기'
+            ];
+
+            headings.forEach((el, idx) => {
+              const rect = el.getBoundingClientRect();
+              const text = el.textContent?.trim() || '';
+
+              // content_title 클래스를 가진 요소는 이미 수집했으므로 제외 (중복 방지)
+              if (el.classList.contains('content_title')) {
+                console.log(`  - ${el.tagName}: "${text.substring(0, 50)}" (제외: 이미 content_title로 수집됨)`);
+                return;
+              }
+
+              // 네비게이션/UI 텍스트 제외 (수집 단계에서 미리 필터링)
+              if (excludedHeadingTexts.some(excluded => text === excluded || text.includes(excluded))) {
+                console.log(`  - ${el.tagName}: "${text.substring(0, 50)}" (제외: 네비게이션/UI 텍스트)`);
+                return; // continue 대신 return 사용 (forEach 내부)
+              }
+
+              if (text && text.length >= 2 && text.length <= 200 && rect.top >= 0 && rect.top <= 2000) {
+                let score = 100;
+                if (el.tagName === 'H1') score += 50;
+                else if (el.tagName === 'H2') score += 30;
+                else if (el.tagName === 'H3') score += 10;
+                else if (el.tagName === 'H4') score -= 20; // h4는 점수 감점 (네비게이션/UI 가능성 높음)
+                // 페이지 상단에 가까울수록 높은 점수
+                score += Math.max(0, 50 - Math.floor(rect.top / 20));
+                // 첫 번째 제목에 보너스
+                if (idx === 0) score += 20;
+                candidates.push({ text, score, source: `heading-${el.tagName.toLowerCase()}` });
+                console.log(`  - ${el.tagName}: "${text.substring(0, 50)}" (점수: ${score}, Y: ${Math.round(rect.top)})`);
+              }
+            });
+
+            // 2. 클래스명에 title, question이 포함된 요소 수집 (FAQ 질문 제목 우선)
+            // 단, content_title은 이미 최우선으로 수집했으므로 제외
+            const titleElements = Array.from(mainContent.querySelectorAll('[class*="title"], [class*="question"], [class*="heading"], [class*="faq"], [class*="content"]'));
+            console.log(`🔍 [FAQ 제목 추출] 발견된 title/question 클래스 요소: ${titleElements.length}개`);
+            titleElements.forEach(el => {
+              // content_title 클래스를 가진 요소는 이미 수집했으므로 제외 (중복 방지)
+              if (el.classList.contains('content_title')) {
+                return;
+              }
+
+              const rect = el.getBoundingClientRect();
+              const text = el.textContent?.trim() || '';
+              if (text && text.length >= 2 && text.length <= 200 && rect.top >= 0 && rect.top <= 2000) {
+                // 카테고리 제목 제외
+                if (excludedHeadingTexts.some(excluded => text === excluded || text.includes(excluded))) {
+                  return;
+                }
+                let score = 80;
+                if (el.className.includes('title')) score += 30;
+                if (el.className.includes('question')) score += 25;
+                if (el.className.includes('faq')) score += 20; // FAQ 관련 클래스 보너스
+                if (el.className.includes('content')) score += 10; // content 클래스 보너스
+                score += Math.max(0, 30 - Math.floor(rect.top / 30));
+                candidates.push({ text, score, source: 'class-based' });
+                console.log(`  - class-based: "${text.substring(0, 50)}" (점수: ${score}, Y: ${Math.round(rect.top)})`);
+              }
+            });
+
+            // 2-1. FAQ 질문 리스트 영역에서 첫 번째 질문 찾기 (가장 우선)
+            // FAQ 질문들은 보통 리스트 형태로 배치되어 있고, "란?" 또는 "?"로 끝나는 패턴을 가짐
+            const faqListContainers = [
+              'ul li a',
+              'ol li a',
+              '.faq-list a',
+              '.question-list a',
+              '[class*="faq"] a',
+              '[class*="question"] a',
+              'main a',
+              'article a'
+            ];
+
+            let firstFaqQuestion: string | null = null;
+            for (const selector of faqListContainers) {
+              const links = Array.from(mainContent.querySelectorAll(selector));
+              console.log(`🔍 [FAQ 제목 추출] 선택자 "${selector}"에서 ${links.length}개 링크 발견`);
+
+              // 각 링크의 텍스트와 위치를 수집하여 정렬
+              const linkCandidates: Array<{ text: string, y: number, link: Element }> = [];
+
+              for (const link of links) {
+                const rect = link.getBoundingClientRect();
+                const text = link.textContent?.trim() || '';
+
+                // 네비게이션/메뉴 텍스트 제외
+                if (navigationPatterns.some(pattern => pattern.test(text))) {
+                  console.log(`  ❌ 네비게이션 텍스트 제외: "${text.substring(0, 50)}"`);
+                  continue;
+                }
+
+                // 너무 긴 텍스트 제외 (네비게이션 메뉴 전체 텍스트일 가능성)
+                if (text.length > 100) {
+                  console.log(`  ❌ 너무 긴 텍스트 제외: "${text.substring(0, 50)}..." (${text.length}자)`);
+                  continue;
+                }
+
+                // FAQ 질문 패턴: "란?" 또는 "?"로 끝나고, 카테고리 제목이 아닌 경우
+                if (text && text.length >= 3 && text.length <= 100 &&
+                  rect.top >= 0 && rect.top <= 2000 &&
+                  (text.endsWith('란?') || text.endsWith('?') || text.includes('?')) &&
+                  !excludedHeadingTexts.some(excluded => text === excluded || text.includes(excluded)) &&
+                  !categoryPatterns.some(pattern => pattern.test(text))) {
+
+                  linkCandidates.push({ text, y: rect.top, link });
+                  console.log(`  📝 FAQ 질문 후보: "${text.substring(0, 50)}" (Y: ${Math.round(rect.top)})`);
+                }
+              }
+
+              // Y 좌표 순으로 정렬하여 가장 위에 있는 질문 선택
+              if (linkCandidates.length > 0) {
+                linkCandidates.sort((a, b) => a.y - b.y);
+                const bestCandidate = linkCandidates[0];
+                firstFaqQuestion = bestCandidate.text;
+                let score = 150; // FAQ 질문 리스트는 최고 점수
+                score += Math.max(0, 50 - Math.floor(bestCandidate.y / 15));
+                candidates.push({ text: bestCandidate.text, score, source: `faq-list-${selector.replace(/\s+/g, '-')}` });
+                console.log(`  ✅ FAQ 질문 리스트에서 발견: "${bestCandidate.text.substring(0, 50)}" (점수: ${score}, Y: ${Math.round(bestCandidate.y)})`);
+                break; // 첫 번째 질문을 찾으면 다른 선택자 시도 중단
+              }
+            }
+
+            // 2-2. FAQ 질문 제목을 찾기 위한 더 구체적인 선택자 시도 (리스트에서 찾지 못한 경우)
+            if (!firstFaqQuestion) {
+              const faqQuestionSelectors = [
+                'article h1',
+                'article h2',
+                '.faq-content h1',
+                '.faq-content h2',
+                '.faq-question',
+                '[data-faq-question]',
+                '.question-title',
+                '.faq-title'
+              ];
+              faqQuestionSelectors.forEach(selector => {
+                const elements = Array.from(mainContent.querySelectorAll(selector));
+                elements.forEach(el => {
+                  const rect = el.getBoundingClientRect();
+                  const text = el.textContent?.trim() || '';
+                  if (text && text.length >= 3 && text.length <= 200 && rect.top >= 0 && rect.top <= 2000) {
+                    // 카테고리 제목 제외
+                    if (excludedHeadingTexts.some(excluded => text === excluded || text.includes(excluded))) {
+                      return;
+                    }
+                    let score = 120; // FAQ 질문 선택자는 높은 점수
+                    score += Math.max(0, 40 - Math.floor(rect.top / 20));
+                    candidates.push({ text, score, source: `faq-selector-${selector.replace(/\s+/g, '-')}` });
+                    console.log(`  - FAQ selector (${selector}): "${text.substring(0, 50)}" (점수: ${score}, Y: ${Math.round(rect.top)})`);
+                  }
+                });
+              });
+            }
+
+            // 3. 큰 폰트/볼드 텍스트 수집 (더 관대한 조건)
+            const allElements = Array.from(mainContent.querySelectorAll('*'));
+            let largeTextCount = 0;
+            allElements.forEach(el => {
+              const rect = el.getBoundingClientRect();
+              const text = el.textContent?.trim() || '';
+              if (text && text.length >= 3 && text.length <= 200 && rect.top >= 0 && rect.top <= 2000) {
+                const style = window.getComputedStyle(el);
+                const fontSize = parseFloat(style.fontSize) || 0;
+                const fontWeight = parseInt(style.fontWeight) || 400;
+
+                // 더 관대한 조건: 16px 이상 또는 500 이상
+                if (fontSize >= 16 || fontWeight >= 500) {
+                  let score = 60;
+                  if (fontSize >= 24) score += 20;
+                  if (fontWeight >= 700) score += 15;
+                  score += Math.max(0, 20 - Math.floor(rect.top / 50));
+                  candidates.push({ text, score, source: 'large-text' });
+                  largeTextCount++;
+                  if (largeTextCount <= 5) {
+                    console.log(`  - large-text: "${text.substring(0, 50)}" (점수: ${score}, 폰트: ${Math.round(fontSize)}px/${fontWeight}, Y: ${Math.round(rect.top)})`);
+                  }
+                }
+              }
+            });
+            console.log(`🔍 [FAQ 제목 추출] 발견된 큰 텍스트 요소: ${largeTextCount}개`);
+
+            console.log(`🔍 [FAQ 제목 추출] 총 후보 수집: ${candidates.length}개`);
+            return candidates;
+          };
+
+          // content_title 요소를 최우선으로 확인 (다른 로직보다 먼저 실행)
+          const mainContent = document.querySelector('main, article, .content, .main-content, [role="main"]') || document.body;
+          const contentTitleElements = Array.from(mainContent.querySelectorAll('.content_title, h3.content_title, h2.content_title, h1.content_title'));
+
+          // 디버깅 정보 수집
+          const debugInfo: any = {
+            contentTitleFound: contentTitleElements.length,
+            contentTitleTexts: []
+          };
+
+          if (contentTitleElements.length > 0) {
+            // content_title 요소가 있으면 즉시 반환 (최우선 처리)
+            for (let i = 0; i < contentTitleElements.length; i++) {
+              const el = contentTitleElements[i];
+              const rect = el.getBoundingClientRect();
+              const text = el.textContent?.trim() || '';
+
+              debugInfo.contentTitleTexts.push({
+                text: text.substring(0, 100),
+                tag: el.tagName,
+                y: Math.round(rect.top),
+                length: text.length
+              });
+
+              // 기본 유효성 검사 (content_title은 Y 좌표 체크 제거)
+              // Y 좌표가 음수인 경우는 스크롤 위치에 따라 요소가 화면 상단 밖에 있을 수 있음
+              // content_title은 페이지의 실제 제목이므로 Y 좌표와 무관하게 유효
+              // 단, 너무 멀리 떨어진 요소는 제외 (Y < -10000 또는 Y > 10000)
+              const isReasonablePosition = rect.top >= -10000 && rect.top <= 10000;
+
+              if (text && text.length >= 2 && text.length <= 200 && isReasonablePosition) {
+                // content_title은 최고 우선순위이므로 필터링 최소화
+                // 매우 명확한 잘못된 텍스트만 제외
+                const lowerText = text.toLowerCase();
+                const isVeryBad =
+                  text.length < 2 ||
+                  /^[\d\s\-_]+$/.test(text) || // 숫자만
+                  text === '도움말 카테고리' ||
+                  text === '광고주센터' ||
+                  text === '도움말' ||
+                  lowerText.includes('위 내용으로 궁금한 점이 해결되지 않았나요') ||
+                  lowerText.includes('의견 보내주셔서 감사합니다');
+
+                if (!isVeryBad) {
+                  return { type: 'faq', title: text, score: 1000, source: 'content_title-immediate', debugInfo };
+                }
+              }
+            }
+          }
+
+          // 제목 후보 수집 및 점수화
+          const candidates = collectAllTitleCandidates();
+
+          if (candidates.length === 0) {
+            console.warn('⚠️ [FAQ 제목 추출] 후보가 하나도 없음!');
+          } else {
+            console.log(`🔍 [FAQ 제목 추출] 수집된 후보: ${candidates.length}개`);
+          }
+
+          // 점수 순으로 정렬
+          candidates.sort((a, b) => b.score - a.score);
+
+          // 상위 10개 후보 로그
+          console.log('🔍 [FAQ 제목 추출] 상위 10개 후보:');
+          candidates.slice(0, 10).forEach((c, i) => {
+            console.log(`  ${i + 1}. "${c.text.substring(0, 60)}" (점수: ${c.score}, 출처: ${c.source})`);
+          });
+
+          // 필터링: 최소한의 필터링만 적용 (거의 모든 텍스트 허용)
+          const badPatterns = [
+            /^[\d\s\-_]+$/, // 숫자만 (FAQ ID)
+            /^광고주센터$/,
+            /^도움말$/,
+            /^도움말\s+카테고리$/, // "도움말 카테고리" 명시적 제외
+            /도움말\s*카테고리/, // "도움말 카테고리" 포함된 모든 텍스트 제외
+            /카테고리\s*(닫기|열기)/,
+            /위 내용으로 궁금한 점이 해결되지 않았나요/,
+            /궁금한 점이 해결되지 않았나요\?/,
+            /^성공전략$/,
+            /^성공 전략$/,
+            /^\[.*\]$/, // 대괄호로 둘러싸인 카테고리 제목 (예: [검색광고], [광고 시작])
+            /^[■□●○]\s*/, // 특수문자로 시작하는 텍스트 (카테고리 제목)
+            /^ㅤ/, // 특수 공백 문자로 시작하는 텍스트
+            /메뉴\s*(펼치기|닫기)/, // 메뉴 펼치기/닫기
+            /검색어\s*입력/, // 검색어 입력
+            /바로가기\s*>?$/, // 바로가기
+            /네이버\s*비즈니스\s*스쿨/, // 네이버 비즈니스 스쿨
+            /활용한\s*광고\s*등록\s*방법을\s*알아보세요/, // 광고 등록 방법을 알아보세요
+            /ADVoost\s*소재\s*활용한/, // "ADVoost 소재 활용한" 포함
+            /광고\s*등록\s*방법을\s*알아보세요/, // "광고 등록 방법을 알아보세요" 포함
+            /네이버\s*비즈니스\s*스쿨/, // "네이버 비즈니스 스쿨" 포함
+            /바로가기\s*>/, // "바로가기 >" 포함
+            /^광고\s*등록$/, // "광고 등록" 카테고리 제목
+            /^ADVoost\s*쇼핑\s*광고$/ // "ADVoost 쇼핑 광고" 카테고리 제목
+          ];
+
+          // 피드백/평가 관련 텍스트 필터링 함수 (FAQ 특화 로직용)
+          const isFeedbackText = (text: string): boolean => {
+            const lowerText = text.toLowerCase();
+            const feedbackKeywords = [
+              '위 도움말',
+              '도움이 되었나요',
+              '점 만점',
+              '별점',
+              '평가',
+              '피드백',
+              'was this help',
+              'helpful',
+              'rating',
+              'feedback',
+              '점수',
+              '만족도',
+              '의견',
+              '보내주셔서 감사합니다',
+              '의견 보내주셔서 감사합니다',
+              '위 내용으로 궁금한 점이 해결되지 않았나요',
+              '궁금한 점이 해결되지 않았나요',
+              '해결되지 않았나요',
+              '추가 문의',
+              '문의하기',
+              '질문이 남아있나요'
+            ];
+            return feedbackKeywords.some(keyword => lowerText.includes(keyword));
+          };
+
+          // 명시적으로 제외할 텍스트 목록 (카테고리/섹션 제목 포함)
+          const excludedTexts = [
+            '도움말 카테고리',
+            '도움말',
+            '광고주센터',
+            '네이버 광고주센터',
+            '성공전략',
+            '성공 전략',
+            '의견 보내주셔서 감사합니다.',
+            '의견 보내주셔서 감사합니다',
+            '상품 안내',
+            '커뮤니케이션 애드',
+            '커뮤니케이션',
+            '애드',
+            '광고 상품', // 카테고리 제목 추가
+            '검색광고',
+            '광고 시작',
+            '회원/계정관리',
+            '성과형 디스플레이광고',
+            '메뉴 펼치기',
+            '메뉴 닫기',
+            '검색어 입력',
+            '바로가기',
+            '네이버 비즈니스 스쿨',
+            '광고 등록', // 카테고리 제목
+            'ADVoost 쇼핑 광고', // 카테고리 제목
+            'ADVoost 쇼핑' // 카테고리 제목
+          ];
+
+          // 대괄호로 둘러싸인 카테고리 제목 패턴 (예: [검색광고], [광고 시작])
+          const bracketCategoryPattern = /^\[.*\]$/;
+
+          // URL에서 FAQ ID 추출
+          const urlMatch = window.location.href.match(/\/faq\/(\d+)/);
+          const faqId = urlMatch ? urlMatch[1] : null;
+
+          // 최고 점수 후보 찾기 (필터링 최소화)
+          for (const candidate of candidates) {
+            const text = candidate.text.trim();
+
+            // 명시적으로 제외할 텍스트 체크 (가장 먼저) - 포함 여부도 체크
+            if (excludedTexts.some(excluded => {
+              const normalizedText = text.toLowerCase();
+              const normalizedExcluded = excluded.toLowerCase();
+              return text === excluded || text.includes(excluded) || normalizedText.includes(normalizedExcluded);
+            })) {
+              console.log(`  ❌ 필터링됨: "${text.substring(0, 50)}" (제외 텍스트 목록)`);
+              continue;
+            }
+
+            // 피드백/평가 텍스트 제외
+            if (isFeedbackText(text)) {
+              console.log(`  ❌ 필터링됨: "${text.substring(0, 50)}" (피드백 텍스트)`);
+              continue;
+            }
+
+            // 네비게이션/메뉴 텍스트 패턴 제외 (navigationPatterns 사용)
+            if (navigationPatterns.some(pattern => pattern.test(text))) {
+              console.log(`  ❌ 필터링됨: "${text.substring(0, 50)}" (네비게이션/메뉴 텍스트)`);
+              continue;
+            }
+
+            // 카테고리/섹션 제목 패턴 제외
+            if (categoryPatterns.some(pattern => pattern.test(text))) {
+              console.log(`  ❌ 필터링됨: "${text.substring(0, 50)}" (카테고리/섹션 제목)`);
+              continue;
+            }
+
+            // 명확히 잘못된 패턴만 제외
+            if (badPatterns.some(pattern => pattern.test(text))) {
+              console.log(`  ❌ 필터링됨: "${text.substring(0, 50)}" (나쁜 패턴)`);
+              continue;
+            }
+
+            // 광고/프로모션 텍스트 명시적 체크
+            const lowerText = text.toLowerCase();
+            if (lowerText.includes('advoost') && lowerText.includes('소재') && lowerText.includes('활용한')) {
+              console.log(`  ❌ 필터링됨: "${text.substring(0, 50)}" (광고 텍스트: ADVoost 소재 활용한)`);
+              continue;
+            }
+            if (lowerText.includes('광고 등록 방법을 알아보세요')) {
+              console.log(`  ❌ 필터링됨: "${text.substring(0, 50)}" (광고 텍스트: 광고 등록 방법을 알아보세요)`);
+              continue;
+            }
+            if (lowerText.includes('네이버 비즈니스 스쿨')) {
+              console.log(`  ❌ 필터링됨: "${text.substring(0, 50)}" (광고 텍스트: 네이버 비즈니스 스쿨)`);
+              continue;
+            }
+            if (lowerText.includes('바로가기')) {
+              console.log(`  ❌ 필터링됨: "${text.substring(0, 50)}" (광고 텍스트: 바로가기)`);
+              continue;
+            }
+
+            // FAQ ID와 정확히 일치하는 경우 제외
+            if (faqId && text === faqId) {
+              console.log(`  ❌ 필터링됨: "${text}" (FAQ ID와 일치)`);
+              continue;
+            }
+
+            // 매우 짧은 텍스트만 제외 (2자 이상 허용)
+            if (text.length < 2) {
+              console.log(`  ❌ 필터링됨: "${text}" (너무 짧음)`);
+              continue;
+            }
+
+            // 일반적인 사이트 제목만 제외 (더 엄격하게)
+            if (text.length <= 10 && (
+              text === '네이버 광고주센터' ||
+              text === '광고주센터' ||
+              text === '도움말'
+            )) {
+              console.log(`  ❌ 필터링됨: "${text}" (일반 사이트 제목)`);
+              continue;
+            }
+
+            // 유효한 제목 발견
+            console.log(`✅ [FAQ 제목 추출 성공] "${text}" (점수: ${candidate.score}, 출처: ${candidate.source})`);
+            return { type: 'faq', title: text, score: candidate.score, source: candidate.source };
+          }
+
+          console.warn('⚠️ [FAQ 제목 추출] 모든 후보가 필터링됨');
+
+          // Fallback 1: 첫 번째 후보를 무조건 반환 (필터링 없이)
+          if (candidates.length > 0) {
+            const firstCandidate = candidates[0].text.trim();
+            console.log(`⚠️ [FAQ 제목 추출] 필터링 실패, 첫 번째 후보 반환: "${firstCandidate}"`);
+            return { type: 'faq', title: firstCandidate, score: candidates[0].score, source: candidates[0].source, debugInfo };
+          }
+
+          // Fallback 2: 페이지의 모든 텍스트 요소 중 첫 번째 의미있는 텍스트 찾기
+          console.log('🔍 [FAQ 제목 추출] Fallback: 모든 텍스트 요소 스캔 시작...');
+          const allTextElements = Array.from(document.querySelectorAll('*'));
+          for (const el of allTextElements) {
+            const tagName = el.tagName?.toLowerCase() || '';
+            // nav, header, footer, aside, script, style 제외
+            if (['nav', 'header', 'footer', 'aside', 'script', 'style', 'meta', 'link'].includes(tagName)) continue;
+
+            const rect = el.getBoundingClientRect();
+            const text = el.textContent?.trim() || '';
+
+            // 기본 조건: 3자 이상 200자 이하, 페이지 상단 2000px 이내
+            if (text.length >= 3 && text.length <= 200 && rect.top >= 0 && rect.top <= 2000) {
+              // 숫자만 있는 경우 제외
+              if (/^[\d\s\-_]+$/.test(text)) continue;
+
+              // 매우 짧은 일반 텍스트만 제외
+              if (text.length <= 2) continue;
+
+              // 첫 번째 유효한 텍스트 반환
+              console.log(`✅ [FAQ 제목 추출] Fallback 성공: "${text.substring(0, 60)}"`);
+              return { type: 'faq', title: text, score: 50, source: 'fallback-text' };
+            }
+          }
+
+          // Fallback 3: title 태그 확인
+          const titleElement = document.querySelector('title');
+          if (titleElement) {
+            let titleText = titleElement.textContent?.trim() || '';
+            console.log(`🔍 [FAQ 제목 추출] title 태그: "${titleText}"`);
+
+            // title 태그에서 불필요한 접미사 제거
+            titleText = titleText
+              .replace(/\s*[-|]\s*.*$/, '')
+              .replace(/\s*::\s*.*$/, '')
+              .trim();
+
+            // "광고주센터", "NAVER" 같은 일반적인 접미사 제거
+            const commonSuffixes = [
+              /\s*-\s*광고주센터.*$/i,
+              /\s*-\s*advertiser\s*center.*$/i,
+              /\s*-\s*naver.*$/i,
+              /\s*-\s*네이버.*$/i,
+              /\s*\|\s*광고주센터.*$/i,
+              /\s*\|\s*advertiser\s*center.*$/i,
+              /\s*\|\s*naver.*$/i,
+              /\s*\|\s*네이버.*$/i
+            ];
+            for (const suffix of commonSuffixes) {
+              titleText = titleText.replace(suffix, '').trim();
+            }
+
+            // 최소한의 필터링만 적용
+            const isBadTitle =
+              /^[\d\s\-_]+$/.test(titleText) || // 숫자만
+              (titleText.length <= 2);
+
+            if (titleText && titleText.length >= 3 && titleText.length <= 200 && !isBadTitle) {
+              console.log(`✅ [FAQ 제목 추출 성공] title 태그 fallback: "${titleText}"`);
+              return { type: 'faq', title: titleText, score: 40, source: 'title-tag' };
+            }
+          }
+
+          // Fallback 4: body의 첫 번째 텍스트 노드
+          const bodyText = document.body.textContent?.trim() || '';
+          if (bodyText.length > 0) {
+            const firstSentence = bodyText.split(/[.!?。！？\n]/)[0].trim();
+            if (firstSentence.length >= 3 && firstSentence.length <= 200) {
+              console.log(`✅ [FAQ 제목 추출] body 첫 문장 반환: "${firstSentence.substring(0, 60)}"`);
+              return { type: 'faq', title: firstSentence, score: 30, source: 'body-first-sentence' };
+            }
+          }
+
+          console.error('❌ [FAQ 제목 추출] 모든 방법 실패 - 제목을 찾을 수 없음');
+
+          // DOM 구조 정보 수집 (디버깅용)
+          const domInfo = {
+            url: window.location.href,
+            titleTag: document.querySelector('title')?.textContent?.trim() || null,
+            headings: Array.from(document.querySelectorAll('h1, h2, h3, h4')).map(el => ({
+              tag: el.tagName,
+              text: el.textContent?.trim()?.substring(0, 100) || '',
+              className: el.className || '',
+              id: el.id || '',
+              y: el.getBoundingClientRect().top
+            })).slice(0, 20), // 최대 20개만
+            mainContent: {
+              tag: (document.querySelector('main, article, .content, .main-content, [role="main"]') || document.body).tagName,
+              className: (document.querySelector('main, article, .content, .main-content, [role="main"]') || document.body).className || '',
+              topText: (document.querySelector('main, article, .content, .main-content, [role="main"]') || document.body).textContent?.trim()?.substring(0, 200) || ''
+            },
+            titleElements: Array.from(document.querySelectorAll('[class*="title"], [class*="question"], [class*="heading"]')).slice(0, 10).map(el => ({
+              tag: el.tagName,
+              text: el.textContent?.trim()?.substring(0, 100) || '',
+              className: el.className || '',
+              id: el.id || '',
+              y: el.getBoundingClientRect().top
+            })),
+            faqLinks: Array.from(document.querySelectorAll('ul li a, ol li a, .faq-list a, .question-list a')).slice(0, 10).map(el => ({
+              text: el.textContent?.trim()?.substring(0, 100) || '',
+              href: (el as HTMLAnchorElement).href || '',
+              className: el.className || ''
+            }))
+          };
+
+          return { type: 'faq', title: null, score: 0, source: 'failed', domInfo, debugInfo }; // DOM 정보 및 디버깅 정보 포함하여 반환
+        }
+
+        // 1. h1 태그 (가장 우선) - 메인 콘텐츠 영역 우선
+        const mainH1 = document.querySelector('main h1, article h1, .content h1, .main-content h1, [role="main"] h1');
+        if (mainH1) {
+          const text = mainH1.textContent?.trim() || '';
+          if (text && text.length >= 3 && text.length <= 150 &&
+            !['광고주센터', '도움말', 'Help', 'Advertiser Center', '실전에 통하는'].includes(text) &&
+            !isFeedbackText(text) && !text.includes('실전에 통하는')) {
+            return text;
+          }
+        }
+
+        // 일반 h1 태그
+        const h1Elements = Array.from(document.querySelectorAll('h1'));
+        for (const h1 of h1Elements) {
+          const text = h1.textContent?.trim() || '';
+          if (text && text.length >= 3 && text.length <= 150 &&
+            !['광고주센터', '도움말', 'Help', 'Advertiser Center', '실전에 통하는'].includes(text) &&
+            !isFeedbackText(text) && !text.includes('실전에 통하는')) {
+            return text;
+          }
+        }
+
+        // 2. h2 태그 (h1이 없을 때)
+        const h2Elements = Array.from(document.querySelectorAll('h2'));
+        for (const h2 of h2Elements) {
+          const rect = h2.getBoundingClientRect();
+          if (rect.top >= 0 && rect.top <= 500) {
+            const text = h2.textContent?.trim() || '';
+            // 숫자만 있는 제목인지 확인
+            const isNumeric = /^\d+[\s\-_]*$/.test(text);
+            if (text && text.length >= 3 && text.length <= 150 &&
+              !isNumeric &&
+              !['광고주센터', '도움말', 'Help', 'Advertiser Center', '실전에 통하는'].includes(text) &&
+              !isFeedbackText(text) && !text.includes('실전에 통하는')) {
+              return text;
+            }
+          }
+        }
+
+        // 페이지 상단 가장 큰 볼드체 텍스트 (h1/h2가 없을 때만 사용)
+        const largestBoldText = findLargestBoldText();
+        if (largestBoldText) {
+          return largestBoldText;
+        }
+
+        // 3. title 태그 (일반적인 사이트 제목이 아닌 경우만)
+        const titleElement = document.querySelector('title');
+        if (titleElement) {
+          let text = titleElement.textContent?.trim() || '';
+          // title 태그에서 불필요한 접미사 제거
+          text = text
+            .replace(/\s*[-|]\s*.*$/, '') // " - 사이트명" 또는 " | 사이트명" 제거
+            .replace(/\s*::\s*.*$/, '') // " :: 사이트명" 제거
+            .trim();
+
+          // "광고주센터", "NAVER" 같은 일반적인 접미사 제거
+          const commonSuffixes = [
+            /광고주센터.*$/i,
+            /advertiser\s*center.*$/i,
+            /naver.*$/i,
+            /네이버.*$/i
+          ];
+          for (const suffix of commonSuffixes) {
+            text = text.replace(suffix, '').trim();
+          }
+
+          // 숫자만 있는 제목인지 확인
+          const isNumeric = /^\d+[\s\-_]*$/.test(text);
+          if (text && text.length >= 3 && text.length <= 150 &&
+            !isNumeric &&
+            !['광고주센터', '도움말', 'Help', 'Advertiser Center'].includes(text) &&
+            !text.includes('광고주센터') && !text.includes('Advertiser Center') &&
+            !isFeedbackText(text)) {
+            return text;
+          }
+        }
+
+        // 4. og:title 메타 태그
+        const ogTitle = document.querySelector('meta[property="og:title"]');
+        if (ogTitle) {
+          const text = ogTitle.getAttribute('content')?.trim() || '';
+          // 숫자만 있는 제목인지 확인
+          const isNumeric = /^\d+[\s\-_]*$/.test(text);
+          if (text && text.length >= 3 && text.length <= 150 &&
+            !isNumeric &&
+            !['광고주센터', '도움말', 'Help', 'Advertiser Center'].includes(text) &&
+            !isFeedbackText(text)) {
+            return text;
+          }
+        }
+
+        // 5. data-testid 기반
+        const dataTestIdTitle = document.querySelector('[data-testid="page-title"]');
+        if (dataTestIdTitle) {
+          const text = dataTestIdTitle.textContent?.trim() || '';
+          // 숫자만 있는 제목인지 확인
+          const isNumeric = /^\d+[\s\-_]*$/.test(text);
+          if (text && text.length >= 3 && text.length <= 150 &&
+            !isNumeric &&
+            !['광고주센터', '도움말', 'Help', 'Advertiser Center'].includes(text) &&
+            !isFeedbackText(text)) {
+            return text;
+          }
+        }
+
+        // 6. 클래스 기반 셀렉터들
+        const classSelectors = [
+          '.page-title',
+          '.article-title',
+          '.post-title',
+          '.entry-title',
+          'h1.page-title',
+          'h1.article-title',
+          '.content-title',
+          '.main-title',
+          '[role="heading"][aria-level="1"]',
+          'h1[class*="title"]',
+          'h1[class*="heading"]',
+        ];
+        for (const selector of classSelectors) {
+          const element = document.querySelector(selector);
+          if (element) {
+            const text = element.textContent?.trim() || '';
+            // 숫자만 있는 제목인지 확인
+            const isNumeric = /^\d+[\s\-_]*$/.test(text);
+            if (text && text.length >= 3 && text.length <= 150 &&
+              !isNumeric &&
+              !['광고주센터', '도움말', 'Help', 'Advertiser Center'].includes(text) &&
+              !isFeedbackText(text)) {
+              return text;
+            }
+          }
+        }
+
+        return null;
+      }, url); // URL을 파라미터로 전달
+
+      // FAQ 특화 로직 결과 처리
+      let title: string | null = null;
+      if (titleResult && typeof titleResult === 'object' && 'type' in titleResult && titleResult.type === 'faq') {
+        const faqResult = titleResult as { type: string; title: string | null; score: number; source: string; domInfo?: any; debugInfo?: any };
+        title = faqResult.title;
+
+        // debugInfo 출력
+        if (faqResult.debugInfo) {
+          console.log(`🔍 [FAQ 제목 추출] page.evaluate 내부 디버깅 정보:`);
+          console.log(`  - content_title 요소 발견: ${faqResult.debugInfo.contentTitleFound}개`);
+          if (faqResult.debugInfo.contentTitleTexts && faqResult.debugInfo.contentTitleTexts.length > 0) {
+            faqResult.debugInfo.contentTitleTexts.forEach((item: any, idx: number) => {
+              console.log(`    ${idx + 1}. "${item.text}" (tag: ${item.tag}, Y: ${item.y}, length: ${item.length})`);
+            });
+          }
+        }
+
+        if (title) {
+          console.log(`✅ [FAQ 제목 추출] 서버 측: 제목 추출 성공 - "${title}" (출처: ${faqResult.source})`);
+        } else {
+          // 제목을 찾지 못한 경우 DOM 구조 정보 출력
+          console.error(`❌ [FAQ 제목 추출] 서버 측: 제목을 찾지 못함 - DOM 구조 정보 출력`);
+          if (faqResult.domInfo) {
+            console.log(`📋 [FAQ DOM 구조] URL: ${faqResult.domInfo.url}`);
+            console.log(`📋 [FAQ DOM 구조] title 태그: ${faqResult.domInfo.titleTag || '없음'}`);
+            console.log(`📋 [FAQ DOM 구조] 메인 콘텐츠: ${faqResult.domInfo.mainContent.tag} (${faqResult.domInfo.mainContent.className})`);
+            console.log(`📋 [FAQ DOM 구조] 메인 콘텐츠 상단 텍스트: ${faqResult.domInfo.mainContent.topText?.substring(0, 200) || '없음'}`);
+            console.log(`📋 [FAQ DOM 구조] 발견된 heading 태그: ${faqResult.domInfo.headings.length}개`);
+            faqResult.domInfo.headings.forEach((h: any, idx: number) => {
+              console.log(`  ${idx + 1}. ${h.tag}: "${h.text}" (class: ${h.className}, id: ${h.id}, Y: ${Math.round(h.y)})`);
+            });
+            console.log(`📋 [FAQ DOM 구조] 발견된 title/question 클래스 요소: ${faqResult.domInfo.titleElements.length}개`);
+            faqResult.domInfo.titleElements.forEach((el: any, idx: number) => {
+              console.log(`  ${idx + 1}. ${el.tag}: "${el.text}" (class: ${el.className}, id: ${el.id}, Y: ${Math.round(el.y)})`);
+            });
+            console.log(`📋 [FAQ DOM 구조] 발견된 FAQ 링크: ${faqResult.domInfo.faqLinks.length}개`);
+            faqResult.domInfo.faqLinks.forEach((link: any, idx: number) => {
+              console.log(`  ${idx + 1}. "${link.text}" (href: ${link.href}, class: ${link.className})`);
+            });
+          }
+        }
+      } else if (typeof titleResult === 'string') {
+        title = titleResult;
+      } else {
+        title = null;
+        if (isNaverAdsFAQ) {
+          console.warn(`⚠️ [FAQ 제목 추출] 서버 측: FAQ 페이지에서 제목을 찾지 못함 - null 반환`);
+        }
+      }
+
+      // 일반적인 사이트 제목 및 피드백 텍스트 필터링
+      if (title) {
+        const lowerTitle = title.toLowerCase();
+        const isGenericTitle = ['광고주센터', '도움말', 'Help', 'Advertiser Center', '실전에 통하는'].includes(title);
+        const isFeedback = [
+          '위 도움말',
+          '도움이 되었나요',
+          '점 만점',
+          '별점',
+          '평가',
+          '피드백',
+          'was this help',
+          'helpful',
+          'rating',
+          'feedback',
+          '점수',
+          '만족도',
+          '의견',
+          '보내주셔서 감사합니다',
+          '위 내용으로 궁금한 점이 해결되지 않았나요',
+          '궁금한 점이 해결되지 않았나요',
+          '해결되지 않았나요',
+          '추가 문의',
+          '문의하기',
+          '질문이 남아있나요'
+        ].some(keyword => lowerTitle.includes(keyword));
+
+        // "실전에 통하는" 같은 공통 문구가 포함된 경우 제외
+        const hasCommonPhrase = lowerTitle.includes('실전에 통하는');
+
+        // 숫자만 있는 제목인지 확인 (FAQ ID는 숫자지만 실제 제목은 문장 형태)
+        const isNumericTitle = /^\d+[\s\-_]*$/.test(title.trim());
+
+        // URL에서 FAQ ID 추출하여 제목과 비교 (Naver Ads FAQ 페이지인 경우)
+        let isFaqId = false;
+        if (url.includes('ads.naver.com/help/faq/')) {
+          const urlMatch = url.match(/\/faq\/(\d+)/);
+          if (urlMatch) {
+            const faqId = urlMatch[1];
+            // 제목이 FAQ ID와 정확히 일치하거나 숫자로만 구성된 경우
+            if (title.trim() === faqId || /^\d+$/.test(title.trim())) {
+              isFaqId = true;
+            }
+          }
+        }
+
+        // UI/네비게이션 텍스트 제외
+        const isUIText = [
+          '카테고리',
+          '닫기',
+          '열기',
+          '메뉴',
+          'category',
+          'close',
+          'open',
+          'menu'
+        ].some(keyword => lowerTitle.includes(keyword));
+
+        // "성공전략" 같은 공통 텍스트 제외
+        const isCommonText = ['성공전략', '성공 전략', '광고주센터', '도움말', 'Help', 'Advertiser Center', '실전에 통하는', '자주 묻는 질문', 'FAQ'].includes(title) || lowerTitle.includes('실전에 통하는') || lowerTitle.includes('성공전략') || lowerTitle.includes('성공 전략');
+
+        // 광고/프로모션 텍스트 제외 (FAQ 페이지에서 자주 나타나는 프로모션 텍스트)
+        const isPromotionalText =
+          (lowerTitle.includes('advoost') && lowerTitle.includes('소재') && lowerTitle.includes('활용한')) ||
+          lowerTitle.includes('광고 등록 방법을 알아보세요') ||
+          lowerTitle.includes('네이버 비즈니스 스쿨') ||
+          (lowerTitle.includes('바로가기') && lowerTitle.includes('>')) ||
+          lowerTitle.includes('advoost 소재 활용한 광고 등록 방법');
+
+        if (isGenericTitle || isFeedback || hasCommonPhrase || isUIText || isNumericTitle || isCommonText || isFaqId || isPromotionalText) {
+          console.warn(`⚠️ 일반적인 제목/피드백/UI 텍스트/숫자 제목/공통 텍스트/FAQ ID/프로모션 텍스트 감지, 제외: "${title}"`);
+          title = null;
+        }
+      }
+
+      // 모든 전략 실패 시 URL에서 추출 (단, FAQ 페이지는 제외)
+      if (!title && !url.includes('ads.naver.com/help/faq/')) {
+        try {
+          const urlObj = new URL(url);
+          const pathParts = urlObj.pathname.split('/').filter(p => p);
+          if (pathParts.length > 0) {
+            const lastPart = pathParts[pathParts.length - 1];
+            // 숫자만 있는 경우 제외 (FAQ ID 등)
+            if (/^\d+$/.test(lastPart)) {
+              return null;
+            }
+            // URL 인코딩된 한글 디코딩 시도
+            try {
+              title = decodeURIComponent(lastPart).replace(/[-_]/g, ' ');
+            } catch {
+              title = lastPart.replace(/[-_]/g, ' ');
+            }
+            // 숫자만 있는 제목인지 다시 확인
+            if (/^\d+[\s\-_]*$/.test(title.trim())) {
+              return null;
+            }
+          }
+        } catch {
+          // URL 파싱 실패 시 무시
+        }
+      }
+
+      return title;
+    } catch (error) {
+      console.warn('⚠️ 제목 추출 실패:', error);
+      return null;
+    }
+  }
+
+  /**
+   * 페이지 안정화 대기 (동적으로 로드되는 제목을 기다림)
+   */
+  private async waitForPageStabilization(page: Page, maxWaitTime: number = 5000): Promise<void> {
+    try {
+      // 제목이 변경되지 않을 때까지 대기 (최대 maxWaitTime)
+      const startTime = Date.now();
+      let previousLargestText: string | null = null;
+      let stableCount = 0;
+      const requiredStableCount = 3; // 연속 3번 동일하면 안정화된 것으로 간주
+
+      while (Date.now() - startTime < maxWaitTime) {
+        const currentLargestText = await page.evaluate(() => {
+          // 피드백/평가 관련 텍스트 필터링 함수
+          const isFeedbackText = (text: string): boolean => {
+            const lowerText = text.toLowerCase();
+            const feedbackKeywords = [
+              '위 도움말',
+              '도움이 되었나요',
+              '점 만점',
+              '별점',
+              '평가',
+              '피드백',
+              'was this help',
+              'helpful',
+              'rating',
+              'feedback',
+              '점수',
+              '만족도',
+              '의견',
+              '보내주셔서 감사합니다'
+            ];
+            return feedbackKeywords.some(keyword => lowerText.includes(keyword));
+          };
+
+          // h1 태그 우선 확인
+          const h1 = document.querySelector('h1')?.textContent?.trim();
+          if (h1 && h1.length >= 3 && h1.length <= 150 &&
+            !['광고주센터', '도움말', 'Help', 'Advertiser Center'].includes(h1) &&
+            !isFeedbackText(h1)) {
+            return h1;
+          }
+
+          // 페이지 상단 가장 큰 볼드체 텍스트 찾기
+          const allElements = Array.from(document.querySelectorAll('*'));
+          let largestElement: { element: Element; fontSize: number; fontWeight: number; y: number } | null = null;
+
+          for (const el of allElements) {
+            const tagName = el.tagName?.toLowerCase() || '';
+            if (['nav', 'header', 'footer', 'aside', 'script', 'style'].includes(tagName)) continue;
+
+            const text = el.textContent?.trim() || '';
+            if (text.length < 3 || text.length > 150) continue;
+            if (['광고주센터', '도움말', 'Help', 'Advertiser Center'].includes(text)) continue;
+            if (isFeedbackText(text)) continue;
+
+            const style = window.getComputedStyle(el);
+            const fontSize = parseFloat(style.fontSize) || 0;
+            const fontWeight = parseInt(style.fontWeight) || 400;
+            const rect = el.getBoundingClientRect();
+            const y = rect.top;
+
+            if (y >= 0 && y <= 500 && (fontSize >= 18 || fontWeight >= 600)) {
+              const hasTextChildren = Array.from(el.children).some(child => {
+                const childText = child.textContent?.trim() || '';
+                return childText.length > 0 && childText.length < 150;
+              });
+
+              if (!hasTextChildren) {
+                if (!largestElement || fontSize > largestElement.fontSize ||
+                  (fontSize === largestElement.fontSize && fontWeight > largestElement.fontWeight)) {
+                  largestElement = { element: el, fontSize, fontWeight, y };
+                }
+              }
+            }
+          }
+
+          if (largestElement) {
+            const text = largestElement.element.textContent?.trim() || '';
+            if (text.length >= 3 && text.length <= 150 &&
+              !['광고주센터', '도움말', 'Help', 'Advertiser Center'].includes(text) &&
+              !isFeedbackText(text)) {
+              return text;
+            }
+          }
+
+          return null;
+        });
+
+        if (currentLargestText === previousLargestText && currentLargestText) {
+          stableCount++;
+          if (stableCount >= requiredStableCount) {
+            // 제목이 안정화됨
+            return;
+          }
+        } else {
+          stableCount = 0;
+        }
+
+        previousLargestText = currentLargestText;
+
+        // 짧은 대기 후 다시 확인
+        await new Promise(resolve => setTimeout(resolve, 500));
+      }
+
+      // 최소 대기 시간 (동적 콘텐츠 로드 시간 확보)
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    } catch (error) {
+      console.warn('⚠️ 페이지 안정화 대기 실패 (계속 진행):', error);
+      // 에러가 발생해도 최소 대기 시간은 확보
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+  }
+
+  /**
+   * 콘텐츠 추출
+   */
+  private async extractContent(
+    page: Page,
+    html: string,
+    config: ContentExtractionOptions
+  ): Promise<string> {
+    try {
+      // 페이지에서 콘텐츠 영역 찾기
+      const content = await page.evaluate((selectors, removeSelectors) => {
+        // 불필요한 요소 제거
+        const elementsToRemove = document.querySelectorAll(removeSelectors.join(','));
+        elementsToRemove.forEach(el => el.remove());
+
+        // 콘텐츠 영역 찾기
+        for (const selector of selectors) {
+          const element = document.querySelector(selector);
+          if (element) {
+            return element.textContent || '';
+          }
+        }
+
+        // 콘텐츠 영역을 찾지 못하면 body 사용
+        return document.body?.textContent || '';
+      }, config.contentSelectors || [], config.removeSelectors || []);
+
+      // HTML 정리
+      const cleanedHtml = cleanHtml(html, config.removeSelectors);
+      const textContent = extractTextFromHtml(cleanedHtml);
+
+      // 페이지에서 추출한 콘텐츠와 HTML 파싱 결과 중 더 긴 것 사용
+      const finalContent = content.length > textContent.length ? content : textContent;
+
+      // 공백 정리
+      return finalContent.replace(/\s+/g, ' ').trim();
+    } catch (error) {
+      console.warn('⚠️ 콘텐츠 추출 실패, HTML 파싱으로 폴백:', error);
+
+      // 폴백: HTML 직접 파싱
+      const cleanedHtml = cleanHtml(html, config.removeSelectors || []);
+      return extractTextFromHtml(cleanedHtml).replace(/\s+/g, ' ').trim();
+    }
+  }
+
+  /**
+   * HTML 문자열에서 직접 콘텐츠 추출 (Puppeteer 없이)
+   */
+  extractFromHtml(
+    html: string,
+    url: string,
+    options: Partial<ContentExtractionOptions> = {}
+  ): { title: string; content: string } {
+    const config = { ...this.defaultOptions, ...options };
+
+    // 제목 추출
+    const title = extractTitleFromHtml(html, config.titleStrategy || 'auto') || url;
+
+    // 콘텐츠 추출
+    const cleanedHtml = cleanHtml(html, config.removeSelectors);
+    let content = extractTextFromHtml(cleanedHtml).replace(/\s+/g, ' ').trim();
+
+    // UTF-8 인코딩 보장
+    const encodingResult = processTextEncoding(content, { strictMode: true });
+    content = encodingResult.cleanedText;
+
+    if (!content || content.length < (config.minContentLength || 100)) {
+      throw new Error(`콘텐츠가 너무 짧습니다 (${content.length}자)`);
+    }
+
+    return { title, content };
+  }
+}
+
+// 싱글톤 인스턴스
+export const contentExtractor = new ContentExtractor();
+

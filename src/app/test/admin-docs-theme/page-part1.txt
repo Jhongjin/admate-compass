@@ -1,0 +1,200 @@
+"use client";
+
+import { useEffect, useMemo, useRef, useState, Suspense, useCallback } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { motion } from "framer-motion";
+import AdminLayout from "@/components/layouts/AdminLayout";
+import "@/app/admin/globals.admin.css";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Switch } from "@/components/ui/switch";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Separator } from "@/components/ui/separator";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Progress } from "@/components/ui/progress";
+import type { LucideIcon } from "lucide-react";
+import { Check, CheckCircle, Download, FileText, Globe, Loader2, RefreshCw, Search, Upload, XCircle, File, Link2, ArrowUp, ArrowDown, ArrowUpDown, FileSearch, Sparkles, Database, Info, Clock3, AlertTriangle, Settings, ChevronDown, ChevronRight, AlertCircle } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { createClient } from "@/lib/supabase/client";
+import { toast } from "sonner";
+import QueueMonitoringPanel from "@/components/admin/QueueMonitoringPanel";
+import { logger } from "@/lib/utils/logger";
+import { UrlDiscoveryPanel, type DiscoveredUrlItem } from "@/components/admin/UrlDiscoveryPanel";
+
+const ALL_VENDORS = ["Meta", "Naver", "Kakao", "Google", "X(Twitter)"] as const;
+
+// UI 벤더 이름을 DB ENUM 값으로 변환하는 매핑
+const VENDOR_TO_DB_MAP: Record<string, string> = {
+  "Meta": "META",
+  "Naver": "NAVER",
+  "Kakao": "KAKAO",
+  "Google": "GOOGLE",
+  "X(Twitter)": "OTHER", // X/Twitter는 OTHER로 매핑
+};
+
+// DB ENUM 값을 UI 벤더 이름으로 변환하는 역매핑
+const DB_TO_VENDOR_MAP: Record<string, string> = {
+  "META": "Meta",
+  "NAVER": "Naver",
+  "KAKAO": "Kakao",
+  "GOOGLE": "Google",
+  "OTHER": "X(Twitter)",
+};
+
+// UI 벤더 배열을 DB 값 배열로 변환
+function convertVendorsToDB(vendors: string[]): string[] {
+  return vendors.map(v => VENDOR_TO_DB_MAP[v] || "META").filter(Boolean);
+}
+
+const normalizeUrlForGrouping = (raw?: string | null): string | null => {
+  if (!raw) return null;
+
+  try {
+    const parsed = new URL(raw);
+    const origin = `${parsed.protocol}//${parsed.host}`;
+    const cleanedPath = parsed.pathname.replace(/\/+$/, "");
+    const finalPath = cleanedPath === "" ? "/" : `${cleanedPath}/`;
+    return `${origin}${finalPath}`;
+  } catch {
+    const sanitized = raw.split(/[?#]/)[0]?.trim();
+    if (!sanitized) {
+      return null;
+    }
+    const trimmed = sanitized.replace(/\/+$/, "");
+    if (trimmed === "") {
+      return "/";
+    }
+    return `${trimmed}/`;
+  }
+};
+
+function AdminDocsPageContent() {
+  const router = useRouter();
+  const params = useSearchParams();
+
+  // Hydration 오류 방지: 초기값을 항상 동일하게 설정 (기본 벤더 없음)
+  const [selectedVendors, setSelectedVendors] = useState<string[]>([]);
+  // Hydration 오류 방지: 초기값을 항상 동일하게 설정하고, useEffect에서 localStorage 읽기
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [typeFilter, setTypeFilter] = useState<string>("all");
+  const [viewMode, setViewMode] = useState<"card" | "list">("card");
+  const [searchQuery, setSearchQuery] = useState<string>("");
+  const [toolbarRefreshLoading, setToolbarRefreshLoading] = useState(false);
+  const [isClient, setIsClient] = useState(false);
+
+  // 클라이언트 마운트 확인 (Hydration 오류 방지)
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
+
+  // 보기 모드 및 필터 설정 localStorage에서 복원 (클라이언트에서만)
+  useEffect(() => {
+    if (!isClient || typeof window === 'undefined') return;
+    
+    // 보기 모드 복원 (유효한 값만 허용)
+    const savedViewMode = window.localStorage.getItem('adminDocsViewMode');
+    if (savedViewMode === 'card' || savedViewMode === 'list') {
+      setViewMode(savedViewMode);
+    } else if (savedViewMode) {
+      // 잘못된 값이 저장되어 있으면 'card'로 초기화하고 localStorage 업데이트
+      console.warn(`⚠️ 잘못된 viewMode 값 감지: "${savedViewMode}", 'card'로 초기화합니다.`);
+      setViewMode('card');
+      window.localStorage.setItem('adminDocsViewMode', 'card');
+    }
+    
+    // 필터 설정 복원
+    const savedStatusFilter = window.localStorage.getItem('adminDocsStatusFilter');
+    if (savedStatusFilter) {
+      setStatusFilter(savedStatusFilter);
+    }
+    
+    const savedTypeFilter = window.localStorage.getItem('adminDocsTypeFilter');
+    if (savedTypeFilter) {
+      setTypeFilter(savedTypeFilter);
+    }
+  }, [isClient]);
+
+  // 변경 시 저장
+  useEffect(() => {
+    if (!isClient || typeof window === 'undefined') return;
+    window.localStorage.setItem('adminDocsViewMode', viewMode);
+  }, [viewMode, isClient]);
+
+  // 필터 설정 localStorage 저장
+  useEffect(() => {
+    if (!isClient || typeof window === 'undefined') return;
+    window.localStorage.setItem('adminDocsStatusFilter', statusFilter);
+  }, [statusFilter, isClient]);
+
+  useEffect(() => {
+    if (!isClient || typeof window === 'undefined') return;
+    window.localStorage.setItem('adminDocsTypeFilter', typeFilter);
+  }, [typeFilter, isClient]);
+
+  // URL 파라미터에서 vendors 읽기 (클라이언트에서만)
+  useEffect(() => {
+    if (!isClient) return;
+    const fromUrl = params.get("vendors");
+    if (fromUrl) {
+      const vendors = decodeURIComponent(fromUrl).split(",").filter(Boolean);
+      if (vendors.length > 0) {
+        setSelectedVendors(vendors);
+        // 벤더가 변경되면 typeFilter를 'all'로 리셋하여 모든 문서 표시
+        if (typeFilter !== 'all') {
+          setTypeFilter('all');
+        }
+      }
+    }
+  }, [isClient, params]);
+  
+  // 벤더 변경 시 typeFilter 자동 리셋
+  useEffect(() => {
+    if (!isClient) return;
+    // 벤더가 선택되었고 typeFilter가 'all'이 아니면 리셋
+    const currentTypeFilter = typeFilter;
+    if (selectedVendors.length > 0 && currentTypeFilter !== 'all') {
+      console.log('🔄 벤더 변경 감지, typeFilter를 "all"로 리셋:', { 
+        selectedVendors, 
+        previousTypeFilter: currentTypeFilter 
+      });
+      setTypeFilter('all');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedVendors, isClient]);
+
+  useEffect(() => {
+    if (!isClient) return;
+    const q = selectedVendors.length ? `?vendors=${encodeURIComponent(selectedVendors.join(","))}` : "";
+    router.replace(`/admin/docs${q}`);
+  }, [selectedVendors, router, isClient]);
+
+  return (
+    <AdminLayout currentPage="docs">
+      {/* Header */}
+      <motion.div 
+        className="mb-8"
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5 }}
+      >
+        <div className="flex items-center justify-between">
+          <div>
+            <motion.h1 
+              className="text-4xl font-bold bg-gradient-to-r from-white via-blue-100 to-blue-200 bg-clip-text text-transparent mb-2 text-enhanced"
+              initial={{ opacity: 0, x: -20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.6, delay: 0.1 }}
+            >
+              📄 문서 관리
+            </motion.h1>
+            <motion.p 
+              className="text-secondary-enhanced text-lg"
+              initial={{ opacity: 0, x: -20 }}

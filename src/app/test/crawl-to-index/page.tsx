@@ -1,0 +1,2034 @@
+'use client';
+
+import React, { useState, useEffect, useRef } from 'react';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Badge } from '@/components/ui/badge';
+import { Progress } from '@/components/ui/progress';
+import {
+  Loader2,
+  Play,
+  CheckCircle,
+  XCircle,
+  Globe,
+  RefreshCw,
+  FileText,
+  Database,
+  Sparkles,
+  List,
+  Clock,
+  AlertCircle
+} from 'lucide-react';
+import { toast } from 'sonner';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { createClient } from '@/lib/supabase/client';
+
+// URL 타입 선언
+declare global {
+  interface Window {
+    URL: typeof URL;
+  }
+}
+
+interface JobStatus {
+  id: string;
+  status: 'pending' | 'processing' | 'completed' | 'failed';
+  job_type: string;
+  result?: any;
+  created_at: string;
+  updated_at: string;
+}
+
+interface Document {
+  id: string;
+  title: string;
+  type: string;
+  status: string;
+  chunk_count: number;
+  file_size: number;
+  created_at: string;
+  updated_at?: string;
+  url?: string;
+  source_vendor?: string;
+}
+
+export default function CrawlToIndexTestPage() {
+  const [url, setUrl] = useState<string>('https://ads.naver.com/');
+  const [isCrawling, setIsCrawling] = useState(false);
+  const [jobId, setJobId] = useState<string | null>(null);
+  const [jobIdReady, setJobIdReady] = useState(false); // 작업 ID가 준비되었는지 (DB 반영 대기)
+  const [nullCheckCount, setNullCheckCount] = useState(0); // null 반환 횟수 추적
+  const nullCheckCountRef = useRef(0); // ref로도 추적 (query 함수 내에서 사용)
+  const [currentStep, setCurrentStep] = useState<string>('');
+  const [progress, setProgress] = useState(0);
+  const [options, setOptions] = useState({
+    extractSubPages: true,
+    maxDepth: 3,
+    respectRobots: true,
+    domainLimit: true,
+  });
+  const intervalRef = useRef<NodeJS.Timeout | null>(null);
+  const queryClient = useQueryClient();
+
+  // 삭제 중 플래그 (자동 새로고침 일시 중지용)
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  // 작업 완료 토스트 중복 방지 플래그
+  const completionToastShownRef = useRef(false);
+
+  // 🔥 삭제된 문서 ID 목록 (영구 저장하여 자동 새로고침 시에도 필터링)
+  const [deletedDocumentIds, setDeletedDocumentIds] = useState<Set<string>>(new Set());
+
+  // 🔥 현재 크롤링 작업과 관련된 문서만 표시하기 위한 필터 (작업 완료 후 사용)
+  const [currentJobUrl, setCurrentJobUrl] = useState<string | null>(null);
+
+  // 문서 목록 조회 (3초마다 자동 새로고침, 삭제 중일 때는 중지)
+  const { data: documentsData, refetch: refetchDocuments } = useQuery({
+    queryKey: ['test-documents'],
+    queryFn: async () => {
+      // 🔥 캐시 버스팅을 위한 타임스탬프 추가
+      const cacheBuster = Date.now();
+      const res = await fetch(`/api/admin/upload-new?limit=200&status=indexed&_t=${cacheBuster}`, {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0',
+        }
+      });
+      if (!res.ok) throw new Error('Failed to fetch documents');
+      const data = await res.json();
+
+      // 상세 디버깅 로그
+      const documents = data?.data?.documents || [];
+      // 🔥 첫 번째 문서의 전체 구조 출력 (URL 필드 확인용)
+      const firstDoc = documents[0];
+      console.log('📥 문서 목록 조회:', {
+        success: data?.success,
+        total: documents.length,
+        response_structure: {
+          has_data: !!data?.data,
+          has_documents: !!data?.data?.documents,
+          is_array: Array.isArray(documents),
+          documents_type: typeof documents
+        },
+        documents: documents.slice(0, 5).map((d: Document) => ({
+          id: d.id?.substring(0, 8),
+          title: d.title,
+          url: d.url,
+          status: d.status,
+          chunk_count: d.chunk_count,
+          type: d.type
+        })),
+        all_documents_urls: documents.map((d: Document) => d.url).filter(Boolean),
+        // 🔥 첫 번째 문서의 전체 필드 출력
+        첫_문서_전체_필드: firstDoc ? Object.keys(firstDoc) : null,
+        첫_문서_전체_값: firstDoc ? {
+          ...firstDoc,
+          // 큰 필드는 제외
+          content: firstDoc.content ? `[${firstDoc.content.length}자]` : null
+        } : null,
+        첫_문서_URL_존재: firstDoc ? 'url' in firstDoc : false,
+        첫_문서_URL_값: firstDoc?.url,
+        첫_문서_URL_타입: firstDoc?.url ? typeof firstDoc.url : null,
+        첫_문서_document_url: firstDoc ? (firstDoc as any).document_url : null
+      });
+
+      return data;
+    },
+    refetchInterval: isDeleting ? false : 3000, // 삭제 중일 때는 자동 새로고침 중지
+  });
+
+  const supabase = createClient();
+
+  // 인덱싱된 문서 목록 (필터링 없이 모든 문서 표시 - 크롤링 테스트 목적)
+  // maxDepth와 상관없이 크롤된 모든 페이지 리스트를 보여줌
+  // 🔥 삭제된 문서는 항상 필터링하여 표시하지 않음
+  // 🔥 테스트 페이지에서는 모든 필터링 제거 - 백엔드에서 조회된 모든 문서 즉시 반환
+  // 메모이제이션 제거하여 documentsData 변경 시 즉시 반영
+  const recentDocuments = React.useMemo(() => {
+    const docs = documentsData?.data?.documents || [];
+
+    // 🔥 강제 디버깅 로그 (항상 출력)
+    if (typeof window !== 'undefined') {
+      const firstDoc = docs[0];
+      console.group('📋 [문서 목록] 최종 반환');
+      console.log('전체_문서:', docs.length);
+      console.log('documentsData_존재:', !!documentsData);
+      console.log('data_존재:', !!documentsData?.data);
+      console.log('documents_배열_존재:', !!documentsData?.data?.documents);
+      console.log('documentsData_전체:', documentsData);
+      console.log('첫_문서_정보:', firstDoc ? {
+        id: firstDoc.id?.substring(0, 8),
+        url: firstDoc.url,
+        title: firstDoc.title?.substring(0, 30),
+        status: firstDoc.status,
+        type: firstDoc.type
+      } : null);
+      // 🔥 첫 번째 문서의 모든 필드 출력
+      if (firstDoc) {
+        console.log('첫_문서_전체_필드:', Object.keys(firstDoc));
+        console.log('첫_문서_URL_존재:', 'url' in firstDoc);
+        console.log('첫_문서_URL_값:', firstDoc.url);
+        console.log('첫_문서_document_url:', (firstDoc as any).document_url);
+        console.log('첫_문서_전체_객체:', {
+          ...firstDoc,
+          content: firstDoc.content ? `[${firstDoc.content.length}자]` : null
+        });
+      }
+      console.log('모든_문서_URL:', docs.map((d: Document) => d.url).filter(Boolean));
+      console.groupEnd();
+    }
+
+    return docs;
+  }, [documentsData]);
+
+  // 도메인별 통계 계산
+  const domainStats = React.useMemo(() => {
+    // 🔥 URL이 있는 문서만 필터링하여 통계 계산
+    const documentsWithUrl = recentDocuments.filter((d: Document) => d.url && d.url.trim().length > 0);
+    if (!documentsWithUrl.length) {
+      // 문서가 없을 때는 도메인 통계를 건너뜀 (초기 상태에서 정상)
+      if (recentDocuments.length > 0 && typeof window !== "undefined") {
+        console.log("[도메인 통계] URL이 있는 문서가 없어 통계를 표시하지 않습니다.");
+      }
+      return null;
+    }
+
+    try {
+      const targetUrl = new URL(url);
+      const baseDomain = targetUrl.hostname;
+
+      // 도메인별 문서 수 집계
+      const domainMap = new Map<string, number>();
+      let sameDomainCount = 0;
+      let subdomainCount = 0;
+      let otherDomainCount = 0;
+
+      documentsWithUrl.forEach((doc: Document) => {
+        if (!doc.url) return;
+        try {
+          const docUrl = new URL(doc.url);
+          const docDomain = docUrl.hostname;
+
+          const count = domainMap.get(docDomain) || 0;
+          domainMap.set(docDomain, count + 1);
+
+          if (docDomain === baseDomain) {
+            sameDomainCount++;
+          } else if (docDomain.endsWith(`.${baseDomain}`)) {
+            subdomainCount++;
+          } else {
+            otherDomainCount++;
+          }
+        } catch {
+          // URL 파싱 실패 시 무시
+        }
+      });
+
+      // 도메인 목록을 문서 수 기준으로 정렬
+      const domainList = Array.from(domainMap.entries())
+        .map(([domain, count]) => ({
+          domain,
+          count,
+          isBaseDomain: domain === baseDomain,
+          isSubdomain: domain !== baseDomain && domain.endsWith(`.${baseDomain}`),
+          isOtherDomain: domain !== baseDomain && !domain.endsWith(`.${baseDomain}`)
+        }))
+        .sort((a, b) => b.count - a.count);
+
+      return {
+        baseDomain,
+        totalDocuments: documentsWithUrl.length, // URL이 있는 문서만 카운트
+        domainList,
+        sameDomainCount,
+        subdomainCount,
+        otherDomainCount,
+        domainCount: domainMap.size
+      };
+    } catch {
+      return null;
+    }
+  }, [recentDocuments, url]);
+
+  // 작업 상태 조회
+  const { data: jobStatus, refetch: refetchJob, isLoading: isLoadingJob } = useQuery({
+    queryKey: ['job-status', jobId],
+    queryFn: async () => {
+      if (!jobId) return null;
+
+      // Supabase에서 직접 작업 상태 조회
+      const { data, error } = await supabase
+        .from('processing_jobs')
+        .select('*')
+        .eq('id', jobId)
+        .maybeSingle();
+
+      if (error) {
+        console.error('❌ 작업 상태 조회 실패:', error);
+        throw new Error(`Failed to fetch job status: ${error.message}`);
+      }
+
+      // null인 경우 카운트 증가 (너무 많은 로그 방지)
+      if (!data) {
+        nullCheckCountRef.current += 1;
+        const currentCount = nullCheckCountRef.current;
+        // 처음 몇 번만 로그 출력 (너무 많은 경고 방지)
+        if (currentCount <= 3) {
+          console.log('🔍 작업 상태 조회:', jobId, `(시도 ${currentCount})`);
+        }
+        // 상태 업데이트는 useEffect에서 처리
+        return null;
+      }
+
+      // 데이터가 있으면 카운트 리셋
+      if (nullCheckCountRef.current > 0) {
+        nullCheckCountRef.current = 0;
+      }
+      // 🔥 실패한 작업의 에러 메시지 상세 출력
+      if (data.status === 'failed' && data.result) {
+        console.error('❌ [작업 실패] 상세 에러 정보:', {
+          jobId: data.id,
+          status: data.status,
+          job_type: data.job_type,
+          result_전체: data.result,
+          result_타입: typeof data.result,
+          result_배열여부: Array.isArray(data.result),
+          result_길이: Array.isArray(data.result) ? data.result.length : 'N/A',
+          result_첫번째: Array.isArray(data.result) ? data.result[0] : data.result,
+          error_메시지: Array.isArray(data.result)
+            ? (data.result[0]?.error || data.result[0]?.message || data.result[0])
+            : (data.result?.error || data.result?.message || data.result)
+        });
+      }
+
+      console.log('📊 작업 상태:', {
+        id: data.id,
+        status: data.status,
+        job_type: data.job_type,
+        result: data.result ? (Array.isArray(data.result) ? `Array(${data.result.length})` : Object.keys(data.result)) : null
+      });
+
+      return data as JobStatus | null;
+    },
+    enabled: !!jobId && jobIdReady, // jobId가 설정되고 준비된 후에만 쿼리 활성화
+    refetchInterval: (query) => {
+      // 작업이 완료되면 폴링 중지
+      const data = query.state.data;
+      if (data?.status === 'completed' || data?.status === 'failed') {
+        console.log('✅ 작업 완료, 폴링 중지:', data.status);
+        return false;
+      }
+      // null이 계속 반환되는 경우 (10회 이상) 폴링 간격 늘리기
+      if (nullCheckCountRef.current >= 10) {
+        return 5000; // 5초마다 폴링
+      }
+      return 2000; // 2초마다 폴링
+    },
+  });
+
+  // nullCheckCount 동기화 (ref -> state)
+  useEffect(() => {
+    setNullCheckCount(nullCheckCountRef.current);
+  }, [jobStatus]); // jobStatus가 변경될 때마다 동기화
+
+  // 작업 상태에 따른 진행 상황 업데이트
+  useEffect(() => {
+    if (!jobStatus) {
+      if (jobId && jobIdReady && !isLoadingJob) {
+        const currentNullCount = nullCheckCountRef.current;
+        // null 체크가 여러 번 반복되면 경고 (너무 많은 로그 방지)
+        if (currentNullCount >= 5 && currentNullCount % 5 === 0) {
+          console.warn('⚠️ 작업 ID가 있지만 상태를 조회할 수 없습니다:', jobId, `(시도 ${currentNullCount}회)`);
+        }
+        // 작업이 완료되어 삭제되었을 수 있음 - 문서 목록으로 확인
+        if (recentDocuments.length > 0) {
+          console.log('✅ 작업이 완료된 것으로 보입니다. 문서 목록에', recentDocuments.length, '개 문서가 있습니다.');
+          setCurrentStep(`인덱싱 완료! (${recentDocuments.length}개 문서)`);
+          setProgress(100);
+          setIsCrawling(false);
+          // 🔥 토스트 중복 방지
+          if (!completionToastShownRef.current) {
+            toast.success(`크롤링 및 인덱싱이 완료되었습니다! (${recentDocuments.length}개 문서)`);
+            completionToastShownRef.current = true;
+          }
+          // 상태 리셋
+          setJobId(null);
+          setJobIdReady(false);
+          nullCheckCountRef.current = 0;
+          setNullCheckCount(0);
+        } else if (currentNullCount < 3) {
+          // 처음 몇 번은 정상적인 대기 상태
+          setCurrentStep('작업 상태 조회 중...');
+          setProgress(5);
+        } else {
+          // 여러 번 null이 반환되면 작업이 빠르게 완료되었거나 처리 중일 수 있음
+          setCurrentStep('작업 처리 중... (문서 목록 확인 중)');
+          setProgress(10);
+        }
+      } else if (jobId && !jobIdReady) {
+        // 작업 ID는 있지만 아직 준비되지 않음
+        setCurrentStep('작업 등록 중...');
+        setProgress(2);
+      }
+      return;
+    }
+
+    const status = jobStatus.status;
+    const result = jobStatus.result || {};
+
+    console.log('🔄 작업 상태 업데이트:', { status, resultKeys: Object.keys(result) });
+
+    switch (status) {
+      case 'pending':
+        setCurrentStep('큐에 작업 추가됨 - 대기 중...');
+        setProgress(10);
+        break;
+      case 'processing':
+        // 🔥 하위 페이지 처리 진행률 표시 (subPageProgress)
+        if (result.subPageProgress) {
+          const { processed, total, completed, failed } = result.subPageProgress;
+          const percentage = total > 0 ? Math.round((processed / total) * 100) : 0;
+
+          // 메인 페이지(50%) + 하위 페이지 진행률(40% 비중)
+          const totalProgress = 50 + Math.round((percentage * 0.4));
+
+          setCurrentStep(`하위 페이지 처리 중... (${processed}/${total} 완료)`);
+          setProgress(totalProgress);
+        }
+        else if (result.status === 'crawling') {
+          setCurrentStep('크롤링 중...');
+          setProgress(30);
+        } else if (result.status === 'main_page_completed') {
+          setCurrentStep('메인 페이지 크롤링 완료 - 하위 페이지 처리 중... (대기 중)');
+          setProgress(50);
+        } else if (result.status === 'rag_processing') {
+          setCurrentStep('RAG 처리 중 (청킹 및 임베딩)...');
+          setProgress(70);
+        } else {
+          setCurrentStep('처리 중...');
+          setProgress(40);
+        }
+        break;
+      case 'completed':
+        // 🔥 작업 완료 후에도 문서 생성이 계속 진행되므로 진행 표시 유지
+        setCurrentStep('크롤링 완료! 문서 생성 및 인덱싱 중...');
+        setProgress(95); // 95%로 설정 (문서 생성 대기 중)
+        // 🔥 setIsCrawling(false)는 주석 처리하지 않음
+        // 문서 생성이 완료되면 pollDocuments 내부에서 false로 설정되지만,
+        // 새로운 크롤링을 시작할 수 있도록 여기서는 false로 설정하지 않음
+        // 대신 문서 생성 완료 시점에만 false로 설정 (pollDocuments 내부)
+
+        // 🔥 토스트 중복 방지: 이미 표시되었으면 스킵
+        if (completionToastShownRef.current) {
+          console.log('⚠️ [작업 완료] 토스트가 이미 표시되었습니다. 중복 실행 방지.');
+          break;
+        }
+
+        console.log('✅ [작업 완료] 문서 목록 강제 갱신 시작...');
+
+        // 작업 완료 후 문서 목록 강제 갱신 (지속 조회)
+        const refreshDocuments = async () => {
+          // 1. 캐시 무효화
+          await queryClient.cancelQueries({ queryKey: ['test-documents'] });
+          queryClient.removeQueries({ queryKey: ['test-documents'] });
+          queryClient.invalidateQueries({ queryKey: ['test-documents'] });
+
+          // 🔥 즉시 첫 번째 refetch 실행 (3초 대기 제거)
+          // 문서 목록 자동 새로고침(3초)과 겹치지 않도록 즉시 시작
+
+          // 🔥 예상 문서 수 확인 (작업 결과에서)
+          // subPageProgress.total이 있으면 그것을 최우선으로 사용
+          const expectedDocCount = result?.subPageProgress?.total || result?.totalDocuments || result?.subPageCount || null;
+          let lastDocCount = 0;
+          let stableCount = 0; // 문서 수가 변하지 않은 연속 횟수
+          const MAX_STABLE_COUNT = 10; // 10번 연속 동일하면 완료로 간주 (안정화 기준 강화)
+          const MAX_POLLING_TIME = 30 * 60 * 1000; // 최대 30분
+          const startTime = Date.now();
+
+          // 2. 지속적으로 refetch (문서 생성이 완료될 때까지)
+          const pollDocuments = async (attempt: number) => {
+            // 최대 폴링 시간 초과 체크
+            if (Date.now() - startTime > MAX_POLLING_TIME) {
+              console.warn('⚠️ [작업 완료] 최대 폴링 시간(30분) 초과. 폴링 중지.');
+              if (!completionToastShownRef.current) {
+                toast.warning('문서 생성이 오래 걸리고 있습니다. 잠시 후 다시 확인해주세요.');
+                completionToastShownRef.current = true;
+              }
+              return;
+            }
+
+            try {
+              const result = await refetchDocuments();
+              const allDocs = result.data?.data?.documents || [];
+              const indexedDocs = allDocs.filter((d: Document) => d.status === 'indexed');
+              const currentDocCount = indexedDocs.length;
+
+              console.log(`🔄 [작업 완료] Refetch 시도 ${attempt}:`, {
+                전체_문서: allDocs.length,
+                indexed_문서: currentDocCount,
+                예상_문서수: expectedDocCount,
+                이전_문서수: lastDocCount,
+                문서_증가: currentDocCount > lastDocCount ? `+${currentDocCount - lastDocCount}` : '변화없음',
+                첫_문서_URL: allDocs[0]?.url || 'N/A',
+                첫_문서_상태: allDocs[0]?.status,
+                첫_문서_청크수: allDocs[0]?.chunk_count || 0
+              });
+
+              // 🔥 중요: refetch 결과를 React Query 캐시에 즉시 반영
+              if (result.data) {
+                queryClient.setQueryData(['test-documents'], result.data);
+                queryClient.invalidateQueries({ queryKey: ['test-documents'] }); // 강제 리렌더링
+              }
+
+              // 문서 수가 증가했으면 카운터 리셋
+              if (currentDocCount > lastDocCount) {
+                stableCount = 0;
+                lastDocCount = currentDocCount;
+
+                // 예상 문서 수가 있고 도달했더라도 즉시 완료하지 않고 안정화 확인
+                if (expectedDocCount && currentDocCount >= expectedDocCount) {
+                  // 문서 수가 목표치에 도달했고 안정화되었는지 확인 (최소 3번 연속 동일)
+                  if (stableCount >= 3) {
+                    console.log('✅ [작업 완료] 예상 문서 수 달성 및 안정화:', currentDocCount, '개');
+                    setCurrentStep(`인덱싱 완료! (${currentDocCount}개 문서)`);
+                    setProgress(100);
+                    setIsCrawling(false);
+                    if (!completionToastShownRef.current) {
+                      toast.success(`크롤링 및 인덱싱이 완료되었습니다! (${currentDocCount}개 문서)`);
+                      completionToastShownRef.current = true;
+                    }
+                    return;
+                  } else {
+                    stableCount++; // 안정화 카운트 증가
+                    console.log('⏳ [작업 완료] 목표 달성 후 안정화 대기:', stableCount, '/ 3');
+                    // 99%에서 대기
+                    setCurrentStep(`인덱싱 마무리 중... (${currentDocCount}개 문서)`);
+                    setProgress(99);
+                  }
+                }
+              } else if (currentDocCount === lastDocCount && currentDocCount > 0) {
+                // 문서 수가 변하지 않았으면 카운터 증가
+                stableCount++;
+
+                // 예상 문서 수가 있는데 아직 도달하지 못했다면 완료하지 않음
+                if (expectedDocCount && currentDocCount < expectedDocCount) {
+                  console.log(`⏳ [작업 완료] 문서 수 부족, 대기 중... (${currentDocCount}/${expectedDocCount}) - 안정화 카운트: ${stableCount}`);
+                  // 안정화 카운트가 너무 높아지면(30회, 약 1~2분) 경고 메시지와 함께 강제 완료 고려 가능하지만,
+                  // 지금은 사용자 피드백에 따라 끝까지 기다리도록 함.
+                  // 단, 무한 대기를 방지하기 위해 MAX_POLLING_TIME(30분)이 존재함.
+                }
+                // 예상 문서 수가 없거나 도달했을 때 안정화 체크
+                else if (stableCount >= MAX_STABLE_COUNT) {
+                  console.log('✅ [작업 완료] 문서 수가 안정화됨:', currentDocCount, '개');
+                  setCurrentStep(`인덱싱 완료! (${currentDocCount}개 문서)`);
+                  setProgress(100);
+                  setIsCrawling(false); // 🔥 이제 완료 표시
+                  if (!completionToastShownRef.current) {
+                    toast.success(`크롤링 및 인덱싱이 완료되었습니다! (${currentDocCount}개 문서)`);
+                    completionToastShownRef.current = true;
+                  }
+                  return;
+                }
+              }
+
+              // 🔥 문서가 있으면 진행 상황 표시 (항상 업데이트)
+              if (currentDocCount > 0) {
+                // 완료 전까지는 최대 99%까지만 표시
+                const progressPercent = expectedDocCount
+                  ? Math.min(99, Math.round((currentDocCount / expectedDocCount) * 100))
+                  : Math.min(95, 90); // 예상 문서 수가 없으면 90%로 설정
+
+                setCurrentStep(`크롤링 완료! 문서 생성 중... (${currentDocCount}개 생성됨${expectedDocCount ? ` / 예상 ${expectedDocCount}개` : ''})`);
+                setProgress(progressPercent);
+
+                // 문서가 생성되면 크롤링 상태 유지 (완료 표시는 나중에)
+                setIsCrawling(true); // 문서 생성이 완료될 때까지 진행 표시 유지
+              } else {
+                // 문서가 아직 없으면 대기 중 메시지
+                setCurrentStep('크롤링 완료! 문서 생성 대기 중...');
+                setProgress(95);
+                setIsCrawling(true);
+              }
+
+              // 다음 폴링 스케줄 (점진적으로 간격 증가)
+              // 🔥 초기에는 더 빠르게 조회 (1초 → 2초 → 3초)
+              const delay = attempt <= 3 ? 1000 : attempt <= 10 ? 2000 : attempt < 30 ? 5000 : 10000;
+              setTimeout(() => pollDocuments(attempt + 1), delay);
+
+            } catch (error) {
+              console.error(`❌ [작업 완료] Refetch 시도 ${attempt} 실패:`, error);
+
+              // 에러 발생 시에도 재시도 (최대 30분)
+              if (Date.now() - startTime < MAX_POLLING_TIME) {
+                setTimeout(() => pollDocuments(attempt + 1), 5000);
+              }
+            }
+          };
+
+          // 🔥 즉시 첫 번째 refetch 실행 (문서 생성 확인)
+          try {
+            const immediateResult = await refetchDocuments();
+            const immediateDocs = immediateResult.data?.data?.documents || [];
+            const immediateIndexed = immediateDocs.filter((d: Document) => d.status === 'indexed');
+
+            console.log('🔄 [작업 완료] 즉시 Refetch 결과:', {
+              전체_문서: immediateDocs.length,
+              indexed_문서: immediateIndexed.length
+            });
+
+            if (immediateResult.data) {
+              queryClient.setQueryData(['test-documents'], immediateResult.data);
+              queryClient.invalidateQueries({ queryKey: ['test-documents'] });
+            }
+
+            if (immediateIndexed.length > 0) {
+              setCurrentStep(`크롤링 완료! 문서 생성 중... (${immediateIndexed.length}개 생성됨)`);
+              setProgress(Math.min(95, 90 + (immediateIndexed.length / (expectedDocCount || 100)) * 5));
+              setIsCrawling(true);
+            }
+          } catch (immediateError) {
+            console.error('❌ [작업 완료] 즉시 Refetch 실패:', immediateError);
+          }
+
+          // 초기 폴링 시작 (1초 후)
+          setTimeout(() => pollDocuments(1), 1000);
+
+          // 🔥 기존 로직 유지 (빠른 응답을 위한 초기 시도) - 병렬로 실행
+          (async () => {
+            for (let i = 0; i < 8; i++) {
+              const delay = i === 0 ? 500 : i * 1000; // 0.5초, 1초, 2초, 3초, 4초, 5초, 6초, 7초
+              await new Promise(resolve => setTimeout(resolve, delay));
+
+              try {
+                const result = await refetchDocuments();
+                const allDocs = result.data?.data?.documents || [];
+
+                console.log(`🔄 [작업 완료] 초기 Refetch 시도 ${i + 1}/8:`, {
+                  전체_문서: allDocs.length,
+                  첫_문서_URL: allDocs[0]?.url || 'N/A',
+                  첫_문서_상태: allDocs[0]?.status,
+                  첫_문서_청크수: allDocs[0]?.chunk_count || 0,
+                  indexed_문서_수: allDocs.filter((d: Document) => d.status === 'indexed').length
+                });
+
+                // 🔥 중요: refetch 결과를 React Query 캐시에 즉시 반영
+                if (result.data) {
+                  queryClient.setQueryData(['test-documents'], result.data);
+                  queryClient.invalidateQueries({ queryKey: ['test-documents'] }); // 강제 리렌더링
+                  console.log('✅ [작업 완료] React Query 캐시 업데이트 완료');
+                }
+
+                if (allDocs.length > 0) {
+                  // 문서가 조회되면 진행 표시 업데이트
+                  const indexedCount = allDocs.filter((d: Document) => d.status === 'indexed').length;
+                  console.log('✅ [작업 완료] 문서 목록 갱신 성공:', allDocs.length, '개 문서 (indexed:', indexedCount, '개)');
+
+                  // 🔥 진행 표시 즉시 업데이트
+                  setCurrentStep(`크롤링 완료! 문서 생성 중... (${indexedCount}개 생성됨${expectedDocCount ? ` / 예상 ${expectedDocCount}개` : ''})`);
+                  const progressPercent = expectedDocCount
+                    ? Math.min(95, Math.round((indexedCount / expectedDocCount) * 100))
+                    : Math.min(95, 90);
+                  setProgress(progressPercent);
+                  setIsCrawling(true); // 문서 생성이 완료될 때까지 진행 표시 유지
+
+                  if (!completionToastShownRef.current) {
+                    // 토스트는 나중에 완료 시 표시 (지금은 진행 중)
+                  }
+                  // 초기 시도에서 문서를 찾았어도 지속 폴링은 계속 진행 (문서 수 증가 확인)
+                  break;
+                } else if (i === 7) {
+                  // 마지막 시도에서도 문서가 없으면 백엔드 상태 확인
+                  console.warn('⚠️ [작업 완료] 모든 refetch 시도 후에도 문서가 없습니다. 백엔드 상태 확인 필요.');
+                  try {
+                    const checkResponse = await fetch('/api/admin/check-processing-status', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' }
+                    });
+                    const checkData = await checkResponse.json();
+                    console.log('🔍 [백엔드 상태 확인]', {
+                      success: checkData.success,
+                      processingCount: checkData.data?.processingCount || 0,
+                      pendingCount: checkData.data?.pendingCount || 0,
+                      synced: checkData.data?.synced || 0,
+                      results: checkData.data?.results?.slice(0, 3) || []
+                    });
+
+                    if (checkData.data?.synced > 0) {
+                      // 동기화가 발생했으면 다시 refetch
+                      await new Promise(resolve => setTimeout(resolve, 1000));
+                      const finalResult = await refetchDocuments();
+                      if (finalResult.data) {
+                        queryClient.setQueryData(['test-documents'], finalResult.data);
+                        queryClient.invalidateQueries({ queryKey: ['test-documents'] });
+                      }
+                      const finalDocs = finalResult.data?.data?.documents || [];
+                      const finalIndexed = finalDocs.filter((d: Document) => d.status === 'indexed');
+                      if (finalIndexed.length > 0) {
+                        // 🔥 진행 표시 업데이트
+                        setCurrentStep(`크롤링 완료! 문서 생성 중... (${finalIndexed.length}개 생성됨)`);
+                        const progressPercent = expectedDocCount
+                          ? Math.min(95, Math.round((finalIndexed.length / expectedDocCount) * 100))
+                          : Math.min(95, 90);
+                        setProgress(progressPercent);
+                        setIsCrawling(true);
+
+                        if (!completionToastShownRef.current) {
+                          // 토스트는 나중에 완료 시 표시
+                        }
+                      } else if (!completionToastShownRef.current) {
+                        // 문서가 없어도 진행 표시는 유지
+                        setCurrentStep('크롤링 완료! 문서 생성 대기 중...');
+                        setProgress(95);
+                        setIsCrawling(true);
+                        toast.warning('크롤링이 완료되었지만 문서가 조회되지 않습니다. 잠시 후 다시 확인해주세요.');
+                        completionToastShownRef.current = true;
+                      }
+                    }
+                  } catch (checkError) {
+                    console.error('❌ [백엔드 상태 확인 실패]:', checkError);
+                  }
+                }
+              } catch (error) {
+                console.error(`❌ [작업 완료] Refetch 시도 ${i + 1} 실패:`, error);
+              }
+            }
+          })();
+        };
+
+        refreshDocuments();
+
+        // 🔥 추가: 작업 완료 후 15초 후에 한 번 더 강제 refetch (문서 인덱싱 완료 대기)
+        setTimeout(async () => {
+          console.log('🔄 [작업 완료] 15초 후 추가 refetch 실행...');
+          try {
+            await queryClient.cancelQueries({ queryKey: ['test-documents'] });
+            queryClient.invalidateQueries({ queryKey: ['test-documents'] });
+            const finalResult = await refetchDocuments();
+
+            if (finalResult.data) {
+              queryClient.setQueryData(['test-documents'], finalResult.data);
+              queryClient.invalidateQueries({ queryKey: ['test-documents'] });
+
+              const finalDocs = finalResult.data?.data?.documents || [];
+              const finalIndexed = finalDocs.filter((d: Document) => d.status === 'indexed');
+              console.log('✅ [작업 완료] 15초 후 추가 refetch 결과:', {
+                전체_문서: finalDocs.length,
+                indexed_문서: finalIndexed.length
+              });
+
+              if (finalIndexed.length > 0) {
+                // 🔥 이미 완료된 상태(100%)라면 UI를 되돌리지 않음
+                // 문서 수만 업데이트하여 사용자에게 최신 정보 제공
+                const expectedDocCount = result?.totalDocuments || result?.subPageCount || null;
+                setCurrentStep(`인덱싱 완료! (${finalIndexed.length}개 문서${expectedDocCount ? ` / 예상 ${expectedDocCount}개` : ''})`);
+
+                // 진행률은 100% 유지 (이미 완료된 상태이므로)
+                setProgress(100);
+                setIsCrawling(false);
+              }
+            }
+          } catch (error) {
+            console.error('❌ [작업 완료] 15초 후 추가 refetch 실패:', error);
+          }
+        }, 15000); // 15초 후
+
+        break;
+      case 'failed':
+        // 🔥 실패 원인 확인 및 표시
+        const failedResult = jobStatus?.result;
+        let errorMessage = '알 수 없는 오류';
+        let errorDetails: any = null;
+
+        // failedResult가 배열인 경우
+        if (Array.isArray(failedResult) && failedResult.length > 0) {
+          const firstResult = failedResult[0];
+          errorMessage = firstResult?.error || firstResult?.message || firstResult?.details || JSON.stringify(firstResult).substring(0, 200) || '알 수 없는 오류';
+          errorDetails = firstResult;
+        }
+        // failedResult가 객체인 경우
+        else if (failedResult && typeof failedResult === 'object') {
+          errorMessage = failedResult.error || failedResult.message || failedResult.details || JSON.stringify(failedResult).substring(0, 200) || '알 수 없는 오류';
+          errorDetails = failedResult;
+        }
+        // failedResult가 문자열인 경우
+        else if (typeof failedResult === 'string') {
+          errorMessage = failedResult;
+        }
+
+        console.error('❌ [작업 실패] 상세 정보:', {
+          jobId: jobStatus?.id,
+          error: errorMessage,
+          result_전체: failedResult,
+          result_타입: typeof failedResult,
+          result_배열여부: Array.isArray(failedResult),
+          errorDetails: errorDetails
+        });
+
+        setCurrentStep(`처리 실패: ${errorMessage}`);
+        setProgress(0);
+        setIsCrawling(false);
+
+        // 🔥 실패 원인 토스트 표시
+        if (errorMessage && errorMessage !== '알 수 없는 오류') {
+          toast.error(`크롤링 실패: ${errorMessage}`, {
+            duration: 10000, // 10초간 표시
+            description: errorDetails ? JSON.stringify(errorDetails).substring(0, 200) : undefined
+          });
+        } else {
+          toast.error('크롤링 중 오류가 발생했습니다.');
+        }
+
+        // 🔥 실패 상태이지만 실제로 문서가 인덱싱되었는지 확인
+        const checkFailedJobDocuments = async () => {
+          console.log('🔍 [작업 실패] 문서 목록 확인 중...', {
+            errorMessage,
+            errorDetails
+          });
+
+          // 최소 3초 대기 (문서 인덱싱 완료 시간 고려)
+          await new Promise(resolve => setTimeout(resolve, 3000));
+
+          // 여러 번 refetch 시도
+          for (let i = 0; i < 5; i++) {
+            const delay = i === 0 ? 1000 : i * 1500; // 1초, 1.5초, 3초, 4.5초, 6초
+            await new Promise(resolve => setTimeout(resolve, delay));
+
+            try {
+              await queryClient.cancelQueries({ queryKey: ['test-documents'] });
+              queryClient.invalidateQueries({ queryKey: ['test-documents'] });
+              const result = await refetchDocuments();
+
+              const allDocs = result.data?.data?.documents || [];
+              const indexedDocs = allDocs.filter((d: Document) => d.status === 'indexed');
+
+              console.log(`🔍 [작업 실패] 문서 확인 시도 ${i + 1}/5:`, {
+                전체_문서: allDocs.length,
+                indexed_문서: indexedDocs.length,
+                첫_문서_URL: allDocs[0]?.url || 'N/A',
+                첫_문서_상태: allDocs[0]?.status
+              });
+
+              if (result.data) {
+                queryClient.setQueryData(['test-documents'], result.data);
+                queryClient.invalidateQueries({ queryKey: ['test-documents'] });
+              }
+
+              if (indexedDocs.length > 0) {
+                // 문서가 인덱싱되었다면 부분 성공으로 처리
+                console.log(`✅ [작업 실패] 부분 성공: ${indexedDocs.length}개 문서가 인덱싱되었습니다.`);
+                toast.warning(`크롤링 중 일부 오류가 발생했지만 ${indexedDocs.length}개 문서는 성공적으로 인덱싱되었습니다.`);
+                break;
+              } else if (i === 4) {
+                // 마지막 시도에서도 문서가 없으면 실제 실패
+                console.error('❌ [작업 실패] 실제 실패: 문서가 인덱싱되지 않았습니다.');
+                toast.error('크롤링 또는 인덱싱 중 오류가 발생했습니다.');
+              }
+            } catch (error) {
+              console.error(`❌ [작업 실패] 문서 확인 시도 ${i + 1} 실패:`, error);
+              if (i === 4) {
+                toast.error('크롤링 또는 인덱싱 중 오류가 발생했습니다.');
+              }
+            }
+          }
+        };
+
+        checkFailedJobDocuments();
+        break;
+    }
+  }, [jobStatus, refetchDocuments, jobId, isLoadingJob, recentDocuments.length]);
+
+  const handleStartCrawl = async () => {
+    if (!url.trim()) {
+      toast.error('URL을 입력해주세요.');
+      return;
+    }
+
+    // 🔥 새로운 크롤링 시작 시 상태 완전 초기화
+    setIsCrawling(true);
+    setJobId(null);
+    setJobIdReady(false); // 🔥 작업 ID 준비 상태도 초기화
+    setCurrentStep('작업 시작 중...');
+    setProgress(0);
+    completionToastShownRef.current = false; // 🔥 토스트 플래그 초기화
+
+    // 🔥 새로운 크롤링 시작 시 현재 작업 URL 설정
+    setCurrentJobUrl(url.trim());
+
+    try {
+      // 큐에 작업 추가
+      const response = await fetch('/api/jobs/enqueue', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          jobType: 'CRAWL_SEED',
+          payload: {
+            url: url.trim(),
+            extractSubPages: options.extractSubPages,
+            maxDepth: options.maxDepth,
+            respectRobots: options.respectRobots,
+            domainLimit: options.domainLimit,
+          },
+        }),
+      });
+
+      const data = await response.json();
+
+      console.log('📋 작업 추가 응답:', data);
+
+      if (data.success && data.jobId) {
+        console.log('✅ 작업 ID 설정:', data.jobId);
+        setJobId(data.jobId);
+        nullCheckCountRef.current = 0; // 카운트 리셋
+        setNullCheckCount(0);
+        completionToastShownRef.current = false; // 🔥 새 작업 시작 시 토스트 플래그 리셋
+        setDeletedDocumentIds(new Set()); // 🔥 새 작업 시작 시 삭제 ID 목록 초기화
+        // DB 반영을 위한 짧은 지연 후 쿼리 활성화
+        setTimeout(() => {
+          setJobIdReady(true);
+          console.log('✅ 작업 상태 조회 시작');
+        }, 500); // 500ms 지연으로 DB 반영 시간 확보
+        toast.success('크롤링 작업이 큐에 추가되었습니다.');
+      } else {
+        console.error('❌ 작업 추가 실패:', data);
+        throw new Error(data.error || '작업 추가 실패');
+      }
+    } catch (error) {
+      console.error('크롤링 시작 오류:', error);
+      toast.error('크롤링 시작 중 오류가 발생했습니다.');
+      setIsCrawling(false);
+      setCurrentStep('');
+      setProgress(0);
+    }
+  };
+
+  const handleStop = () => {
+    setIsCrawling(false);
+    setJobId(null);
+    setJobIdReady(false);
+    nullCheckCountRef.current = 0;
+    setNullCheckCount(0);
+    setCurrentStep('');
+    setProgress(0);
+    if (intervalRef.current) {
+      clearInterval(intervalRef.current);
+      intervalRef.current = null;
+    }
+  };
+
+  const handleDeleteDomainDocuments = async () => {
+    // 🔥 삭제 시 현재 작업 URL 초기화 (모든 문서 표시)
+    setCurrentJobUrl(null);
+
+    // 🔥 현재 표시된 문서에서 도메인 자동 감지
+    if (recentDocuments.length === 0) {
+      toast.error('삭제할 문서가 없습니다.');
+      return;
+    }
+
+    try {
+      // 표시된 문서에서 도메인별 문서 수 집계
+      const domainMap = new Map<string, { count: number; docIds: string[] }>();
+
+      recentDocuments.forEach((doc: Document) => {
+        if (!doc.url) return;
+        try {
+          const docUrl = new URL(doc.url);
+          const docDomain = docUrl.hostname;
+
+          const existing = domainMap.get(docDomain) || { count: 0, docIds: [] };
+          existing.count++;
+          existing.docIds.push(doc.id);
+          domainMap.set(docDomain, existing);
+        } catch {
+          // URL 파싱 실패 시 무시
+        }
+      });
+
+      // 가장 많은 문서를 가진 도메인 선택
+      const sortedDomains = Array.from(domainMap.entries())
+        .sort((a, b) => b[1].count - a[1].count);
+
+      if (sortedDomains.length === 0) {
+        toast.error('도메인을 추출할 수 없습니다.');
+        return;
+      }
+
+      const [primaryDomain, primaryData] = sortedDomains[0];
+
+      // 여러 도메인이 있는 경우 사용자에게 확인
+      let targetDomain = primaryDomain;
+      if (sortedDomains.length > 1) {
+        const domainList = sortedDomains.map(([domain, data]) =>
+          `${domain} (${data.count}개)`
+        ).join('\n');
+
+        const message = `다음 도메인들이 발견되었습니다:\n${domainList}\n\n가장 많은 문서를 가진 "${primaryDomain}" 도메인의 모든 문서를 삭제하시겠습니까?`;
+
+        if (!confirm(message)) {
+          return;
+        }
+        targetDomain = primaryDomain;
+      } else {
+        if (!confirm(`${primaryDomain} 도메인의 모든 문서(${primaryData.count}개)를 삭제하시겠습니까?`)) {
+          return;
+        }
+      }
+
+      const domain = targetDomain;
+      console.log('🗑️ [삭제 요청] 자동 감지된 도메인:', {
+        domain,
+        문서_수: primaryData.count,
+        전체_도메인_수: sortedDomains.length,
+        도메인_목록: sortedDomains.map(([d, data]) => `${d}: ${data.count}개`)
+      });
+
+      // 삭제 시작 플래그 설정 (자동 새로고침 중지)
+      setIsDeleting(true);
+
+      // 삭제 전 문서 수 및 삭제될 문서 ID 목록 확인
+      const beforeDeleteCount = recentDocuments.length;
+      const localDeletedIds = new Set(recentDocuments.map((doc: Document) => doc.id));
+      console.log(`🗑️ 삭제 전 문서 수: ${beforeDeleteCount}개`, {
+        삭제될_문서_ID: Array.from(localDeletedIds).slice(0, 5)
+      });
+
+      toast.info('도메인 문서 삭제 중...');
+
+      const response = await fetch('/api/admin/delete-domain-documents', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ domain }),
+      });
+
+      const data = await response.json();
+      console.log('🗑️ 삭제 API 응답:', data);
+
+      if (data.success) {
+        const deletedCount = data.deleted?.documents || 0;
+        const verifiedCount = data.deleted?.verified || deletedCount;
+        const remainingCount = data.deleted?.remaining || 0;
+        const verified = data.verified !== false;
+
+        console.log(`🗑️ 삭제 완료:`, {
+          삭제_요청: deletedCount,
+          검증_삭제: verifiedCount,
+          남은_문서: remainingCount,
+          검증_성공: verified,
+          삭제된_문서_ID: data.deletedDocuments?.map((d: any) => d.id.substring(0, 8)) || []
+        });
+
+        // 백엔드에서 실제로 삭제된 문서 ID 목록 저장
+        const backendDeletedIds = new Set<string>(
+          (data.deletedDocuments || [])
+            .map((d: any) => d.id as string)
+            .filter((id: string): id is string => typeof id === 'string' && id.length > 0)
+        );
+
+        // 🔥 삭제된 문서 ID를 상태에 영구 저장 (자동 새로고침 시에도 필터링)
+        setDeletedDocumentIds(prev => {
+          const newSet = new Set(prev);
+          backendDeletedIds.forEach((id: string) => newSet.add(id));
+          console.log('🗑️ [삭제 ID 저장] 삭제된 문서 ID 목록 업데이트:', {
+            기존_삭제_ID_수: prev.size,
+            새로_추가된_ID_수: backendDeletedIds.size,
+            총_삭제_ID_수: newSet.size
+          });
+          return newSet;
+        });
+
+        // React Query 캐시 완전히 제거 및 무효화
+        await queryClient.cancelQueries({ queryKey: ['test-documents'] });
+        queryClient.removeQueries({ queryKey: ['test-documents'] });
+        queryClient.clear(); // 모든 쿼리 캐시 클리어
+
+        // 🔥 상태 업데이트 후 최신 삭제 ID Set 생성 (refetch에서 사용)
+        const finalDeletedIds = new Set([...backendDeletedIds]);
+
+        // 즉시 refetch 실행 (캐시 없이, 필터링 없이)
+        const refetchWithRetry = async (retries = 10) => {
+          for (let i = 0; i < retries; i++) {
+            const delay = i === 0 ? 500 : i * 1000; // 첫 번째는 0.5초, 이후 1초씩 증가
+            await new Promise(resolve => setTimeout(resolve, delay));
+
+            try {
+              // 강제로 새로고침 (캐시 무시, 타임스탬프 추가하여 캐시 버스팅)
+              const cacheBuster = Date.now();
+              const result = await queryClient.fetchQuery({
+                queryKey: ['test-documents'],
+                queryFn: async () => {
+                  const res = await fetch(`/api/admin/upload-new?limit=200&status=indexed&_t=${cacheBuster}`, {
+                    cache: 'no-store',
+                    headers: {
+                      'Cache-Control': 'no-cache, no-store, must-revalidate',
+                      'Pragma': 'no-cache',
+                      'Expires': '0',
+                    }
+                  });
+                  if (!res.ok) throw new Error('Failed to fetch documents');
+                  return res.json();
+                },
+              });
+
+              const allDocs = result?.data?.documents || [];
+
+              // 🔥 삭제된 문서 ID로 필터링 (백엔드에서 삭제된 ID 사용)
+              const finalDocs = allDocs.filter((doc: Document) => {
+                return !finalDeletedIds.has(doc.id);
+              });
+
+              const afterDeleteCount = finalDocs.length;
+
+              console.log(`🔄 [삭제 후 Refetch] 시도 ${i + 1}/${retries}:`, {
+                전체_문서: allDocs.length,
+                삭제_ID_필터링_후: finalDocs.length,
+                삭제_전: beforeDeleteCount,
+                차이: beforeDeleteCount - afterDeleteCount,
+                백엔드_삭제_ID_수: backendDeletedIds.size,
+                사용중_삭제_ID_수: finalDeletedIds.size,
+                백엔드_검증: verified,
+                백엔드_남은_문서: remainingCount
+              });
+
+              // 삭제가 확인되면 중단
+              if (afterDeleteCount === 0 || afterDeleteCount < beforeDeleteCount) {
+                console.log(`✅ 문서 삭제 확인됨: ${beforeDeleteCount}개 → ${afterDeleteCount}개`);
+
+                // 필터링된 결과로 상태 업데이트
+                const filteredResult = {
+                  ...result,
+                  data: {
+                    ...result.data,
+                    documents: finalDocs,
+                    total: finalDocs.length
+                  }
+                };
+
+                // 🔥 UI 즉시 업데이트를 위해 필터링된 상태 강제 갱신
+                queryClient.setQueryData(['test-documents'], filteredResult);
+
+                // 🔥 추가: 캐시 무효화 및 강제 리렌더링 (여러 번 호출하여 확실히 반영)
+                queryClient.invalidateQueries({ queryKey: ['test-documents'], exact: true });
+                queryClient.invalidateQueries({ queryKey: ['test-documents'] });
+
+                // 🔥 강제 리렌더링을 위한 추가 무효화
+                await queryClient.refetchQueries({ queryKey: ['test-documents'] });
+
+                // 🔥 추가: 최종 확인을 위해 한 번 더 refetch (DB 반영 시간 고려)
+                setTimeout(async () => {
+                  try {
+                    const finalCacheBuster = Date.now();
+                    const finalRefetch = await queryClient.fetchQuery({
+                      queryKey: ['test-documents'],
+                      queryFn: async () => {
+                        const res = await fetch(`/api/admin/upload-new?limit=200&status=indexed&_t=${finalCacheBuster}`, {
+                          cache: 'no-store',
+                          headers: {
+                            'Cache-Control': 'no-cache, no-store, must-revalidate',
+                            'Pragma': 'no-cache',
+                            'Expires': '0',
+                          }
+                        });
+                        if (!res.ok) throw new Error('Failed to fetch documents');
+                        return res.json();
+                      },
+                    });
+
+                    const finalAllDocs = finalRefetch?.data?.documents || [];
+                    // 🔥 백엔드에서 삭제된 ID로 필터링
+                    const finalFilteredDocs = finalAllDocs.filter((doc: Document) => {
+                      return !finalDeletedIds.has(doc.id);
+                    });
+
+                    console.log(`🔄 [최종 확인] Refetch 결과:`, {
+                      전체_문서: finalAllDocs.length,
+                      필터링_후: finalFilteredDocs.length,
+                      삭제_ID_수: backendDeletedIds.size
+                    });
+
+                    // 최종 필터링된 결과로 캐시 업데이트
+                    const finalFilteredResult = {
+                      ...finalRefetch,
+                      data: {
+                        ...finalRefetch.data,
+                        documents: finalFilteredDocs,
+                        total: finalFilteredDocs.length
+                      }
+                    };
+
+                    queryClient.setQueryData(['test-documents'], finalFilteredResult);
+                    queryClient.invalidateQueries({ queryKey: ['test-documents'], exact: true });
+                    queryClient.invalidateQueries({ queryKey: ['test-documents'] });
+
+                    // 🔥 최종 강제 리렌더링
+                    await queryClient.refetchQueries({ queryKey: ['test-documents'] });
+                  } catch (finalError) {
+                    console.error('❌ 최종 refetch 실패:', finalError);
+                  }
+                }, 2000); // 2초 후 최종 확인
+
+                // 검증 메시지
+                if (!verified || remainingCount > 0) {
+                  toast.warning(`${deletedCount}개 문서 삭제 요청됨 (백엔드 검증: ${remainingCount}개 문서가 여전히 존재할 수 있음)`);
+                } else if (afterDeleteCount === 0) {
+                  toast.success(`모든 문서가 삭제되었습니다. (${deletedCount}개 삭제됨)`);
+                } else {
+                  toast.success(`${deletedCount}개 문서가 삭제되었습니다. (${afterDeleteCount}개 남음)`);
+                }
+
+                // 삭제 완료 플래그 해제 (자동 새로고침 재개)
+                setIsDeleting(false);
+                break;
+              }
+
+              // 마지막 시도에서도 삭제가 확인되지 않으면 경고
+              if (i === retries - 1 && afterDeleteCount >= beforeDeleteCount) {
+                console.error(`❌ 삭제 확인 실패: 문서가 여전히 ${afterDeleteCount}개 존재합니다.`, {
+                  백엔드_삭제_ID: Array.from(backendDeletedIds).slice(0, 5),
+                  남은_문서_ID: finalDocs.slice(0, 5).map((d: Document) => d.id.substring(0, 8)),
+                  백엔드_검증: verified,
+                  백엔드_남은_문서: remainingCount
+                });
+                toast.error(`문서 삭제가 완전히 반영되지 않았습니다. (${afterDeleteCount}개 문서 남음, 백엔드 검증: ${remainingCount}개)`);
+                setIsDeleting(false);
+              }
+            } catch (refetchError) {
+              console.error(`❌ Refetch 시도 ${i + 1} 실패:`, refetchError);
+              if (i === retries - 1) {
+                setIsDeleting(false);
+              }
+            }
+          }
+        };
+
+        await refetchWithRetry();
+
+        // 삭제 완료 후 백엔드 검증 API 호출
+        setTimeout(async () => {
+          try {
+            console.log('🔍 [삭제 후 검증] 백엔드 검증 API 호출...');
+            const verifyResponse = await fetch('/api/admin/verify-document-deletion', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ domain }),
+            });
+            const verifyData = await verifyResponse.json();
+
+            if (verifyData.success) {
+              const remainingInBackend = verifyData.data?.total || 0;
+              console.log(`🔍 [삭제 후 검증] 백엔드 남은 문서: ${remainingInBackend}개`);
+
+              if (remainingInBackend > 0) {
+                console.warn(`⚠️ [삭제 후 검증] 백엔드에 여전히 ${remainingInBackend}개 문서가 존재합니다.`);
+                toast.warning(`백엔드 검증: ${remainingInBackend}개 문서가 여전히 존재합니다.`);
+              } else {
+                console.log(`✅ [삭제 후 검증] 백엔드에서 모든 문서가 삭제되었습니다.`);
+
+                // 🔥 백엔드 검증 결과가 0개이면 캐시를 완전히 비우기
+                console.log('🗑️ [캐시 초기화] 백엔드 검증 결과 0개 - 캐시 완전 제거');
+
+                // 캐시 완전 제거
+                queryClient.removeQueries({ queryKey: ['test-documents'] });
+
+                // 빈 결과로 캐시 설정
+                const emptyResult = {
+                  success: true,
+                  data: {
+                    documents: [],
+                    total: 0
+                  }
+                };
+                queryClient.setQueryData(['test-documents'], emptyResult);
+
+                // 캐시 무효화 및 강제 리렌더링
+                queryClient.invalidateQueries({ queryKey: ['test-documents'], exact: true });
+                queryClient.invalidateQueries({ queryKey: ['test-documents'] });
+
+                // 강제 리렌더링을 위한 추가 무효화
+                await queryClient.refetchQueries({ queryKey: ['test-documents'] });
+
+                // 삭제된 문서 ID 목록도 초기화
+                setDeletedDocumentIds(new Set());
+              }
+            }
+          } catch (verifyError) {
+            console.error('❌ [삭제 후 검증] 검증 API 호출 실패:', verifyError);
+          }
+        }, 2000);
+
+        // 삭제 완료 후 추가로 한 번 더 강제 새로고침 (5초 후)
+        setTimeout(async () => {
+          console.log('🔄 [삭제 완료] 최종 새로고침 실행...');
+          await queryClient.cancelQueries({ queryKey: ['test-documents'] });
+          queryClient.invalidateQueries({ queryKey: ['test-documents'] });
+          await refetchDocuments();
+          setIsDeleting(false);
+        }, 5000);
+      } else {
+        setIsDeleting(false);
+        throw new Error(data.error || '문서 삭제 실패');
+      }
+    } catch (error) {
+      console.error('도메인 문서 삭제 오류:', error);
+      toast.error('도메인 문서 삭제 중 오류가 발생했습니다.');
+      setIsDeleting(false);
+    }
+  };
+
+  // 작업이 완료되었는지 문서 목록으로 확인 (null 상태가 지속될 때)
+  useEffect(() => {
+    const currentNullCount = nullCheckCountRef.current;
+    if (jobId && jobIdReady && !jobStatus && recentDocuments.length > 0 && !isLoadingJob && currentNullCount >= 3) {
+      // 작업 레코드가 없지만 문서가 인덱싱되어 있고, 여러 번 null이 반환되었으면 완료된 것으로 간주
+      const timeoutId = setTimeout(() => {
+        console.log('✅ 작업 완료 확인: 문서 목록에', recentDocuments.length, '개 문서가 인덱싱되어 있습니다.');
+        setCurrentStep(`인덱싱 완료! (${recentDocuments.length}개 문서)`);
+        setProgress(100);
+        setIsCrawling(false);
+        setJobId(null);
+        setJobIdReady(false);
+        nullCheckCountRef.current = 0;
+        setNullCheckCount(0);
+        // 🔥 토스트 중복 방지
+        if (!completionToastShownRef.current) {
+          toast.success(`크롤링 및 인덱싱이 완료되었습니다! (${recentDocuments.length}개 문서)`);
+          completionToastShownRef.current = true;
+        }
+      }, 3000); // 3초 후 확인 (작업 레코드 정리 시간 고려)
+
+      return () => clearTimeout(timeoutId);
+    }
+  }, [jobId, jobIdReady, jobStatus, recentDocuments.length, isLoadingJob]);
+
+  // 작업 결과 요약
+  const jobSummary = jobStatus?.result || {};
+
+  return (
+    <div className="container mx-auto p-6 space-y-6 max-w-7xl">
+      <Card>
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2">
+            <Globe className="h-5 w-5" />
+            크롤링 → 인덱싱 통합 테스트
+          </CardTitle>
+          <CardDescription>
+            크롤링부터 인덱싱 완료 후 문서 목록 업데이트까지 전체 프로세스를 테스트합니다.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          {/* URL 입력 */}
+          <div className="space-y-2">
+            <Label htmlFor="url">크롤링할 URL</Label>
+            <Input
+              id="url"
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              placeholder="https://example.com"
+              disabled={isCrawling}
+            />
+          </div>
+
+          {/* 옵션 설정 */}
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="extractSubPages">하위 페이지 추출</Label>
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="extractSubPages"
+                  checked={options.extractSubPages}
+                  onChange={(e) => setOptions({ ...options, extractSubPages: e.target.checked })}
+                  disabled={isCrawling}
+                  className="w-4 h-4"
+                />
+                <span className="text-sm text-muted-foreground">
+                  {options.extractSubPages ? '활성화' : '비활성화'}
+                </span>
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="maxDepth">최대 깊이 (1-4)</Label>
+              <Input
+                id="maxDepth"
+                type="number"
+                min="1"
+                max="4"
+                value={options.maxDepth}
+                onChange={(e) => setOptions({ ...options, maxDepth: parseInt(e.target.value) || 3 })}
+                disabled={isCrawling}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="respectRobots">robots.txt 존중</Label>
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="respectRobots"
+                  checked={options.respectRobots}
+                  onChange={(e) => setOptions({ ...options, respectRobots: e.target.checked })}
+                  disabled={isCrawling}
+                  className="w-4 h-4"
+                />
+              </div>
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="domainLimit">도메인 제한</Label>
+              <div className="flex items-center space-x-2">
+                <input
+                  type="checkbox"
+                  id="domainLimit"
+                  checked={options.domainLimit}
+                  onChange={(e) => setOptions({ ...options, domainLimit: e.target.checked })}
+                  disabled={isCrawling}
+                  className="w-4 h-4"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* 시작 버튼 및 도메인 문서 삭제 */}
+          <div className="space-y-2">
+            <div className="flex gap-2">
+              <Button
+                onClick={handleStartCrawl}
+                disabled={isCrawling}
+                className="flex-1"
+              >
+                {isCrawling ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    처리 중...
+                  </>
+                ) : (
+                  <>
+                    <Play className="mr-2 h-4 w-4" />
+                    크롤링 시작
+                  </>
+                )}
+              </Button>
+              {isCrawling && (
+                <Button
+                  onClick={handleStop}
+                  variant="outline"
+                >
+                  중지
+                </Button>
+              )}
+              {!isCrawling && (
+                <Button
+                  onClick={handleDeleteDomainDocuments}
+                  variant="destructive"
+                  disabled={!url.trim()}
+                >
+                  <XCircle className="mr-2 h-4 w-4" />
+                  도메인 문서 삭제
+                </Button>
+              )}
+            </div>
+
+            {/* 크롤링 상태 확인 버튼 */}
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-full"
+              onClick={async () => {
+                try {
+                  const targetUrl = new URL(url);
+                  const domain = targetUrl.hostname;
+
+                  // 크롤링 작업 상태 확인
+                  const statusResponse = await fetch('/api/admin/check-crawl-status', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ domain, jobId: jobId || undefined }),
+                  });
+
+                  const statusData = await statusResponse.json();
+
+                  if (statusData.success) {
+                    const { latestJob, summary, domainStats, jobs, dbVerification, progressAnalysis } = statusData.data;
+                    console.log('🔍 [크롤링 상태 확인]:', statusData.data);
+
+                    // 상세 정보를 콘솔에 출력
+                    if (jobs && jobs.length > 0) {
+                      console.log('📋 [작업 상세 정보]:', jobs.map((j: any) => ({
+                        jobId: j.jobId,
+                        status: j.status,
+                        startedAt: j.startedAt,
+                        finishedAt: j.finishedAt,
+                        subPagesCount: j.result?.subPagesCount || 0,
+                        totalChunks: j.result?.totalChunks || 0,
+                        documentsCount: j.documents?.length || 0
+                      })));
+                    }
+
+                    // 🔥 진행률 분석 결과 콘솔 출력
+                    if (progressAnalysis) {
+                      console.log('📊 [진행률 분석]:', {
+                        진행률: `${progressAnalysis.progressPercent}%`,
+                        처리_상태: progressAnalysis.subPageStatusCounts,
+                        멈춤_감지: progressAnalysis.isStuck,
+                        오래_처리중인_페이지: progressAnalysis.stuckSubPagesCount,
+                        상세: progressAnalysis.stuckSubPages
+                      });
+                    }
+
+                    // 🔥 DB 저장 확인 결과 콘솔 출력
+                    if (dbVerification) {
+                      console.log('💾 [DB 저장 확인 결과]:', {
+                        확인된_문서_수: dbVerification.sampleDocumentsChecked,
+                        실제_청크_수: dbVerification.actualChunksInDB,
+                        DB_청크_수: dbVerification.dbChunksCount,
+                        청크_일치: dbVerification.chunksMatch,
+                        임베딩_수: dbVerification.embeddingsCount,
+                        확인_상태: dbVerification.verificationStatus,
+                        샘플_URL: dbVerification.sampleUrls
+                      });
+                    }
+
+                    let message = '';
+                    if (latestJob) {
+                      message = `작업 상태: ${latestJob.status}`;
+                      if (latestJob.isCompleted) {
+                        const finishedAt = latestJob.finishedAt ? new Date(latestJob.finishedAt).toLocaleString('ko-KR') : '';
+                        message += ` ✅ 완료`;
+                        if (finishedAt) message += ` (${finishedAt})`;
+                        const result = latestJob.result as any;
+                        if (result?.subPagesCount) message += `\n하위 페이지: ${result.subPagesCount}개`;
+                        if (result?.totalChunks) message += `\n총 청크: ${result.totalChunks}개`;
+                      } else if (latestJob.isProcessing) {
+                        message += ` ⏳ 처리 중...`;
+                      } else if (latestJob.isFailed) {
+                        message += ` ❌ 실패`;
+                      }
+                    }
+
+                    if (summary) {
+                      message += `\n\n작업 통계: 완료 ${summary.completed}개, 처리중 ${summary.processing}개, 실패 ${summary.failed}개`;
+                    }
+
+                    if (domainStats) {
+                      message += `\n\n도메인 문서 (${domain}):`;
+                      message += `\n- 총 ${domainStats.total}개`;
+                      message += `\n- 인덱싱됨: ${domainStats.indexed}개 ✅`;
+                      message += `\n- 처리중: ${domainStats.processing}개 ⏳`;
+                      message += `\n- 실패: ${domainStats.failed}개 ❌`;
+                      message += `\n- 대기중: ${domainStats.pending}개`;
+                      if (domainStats.totalChunks > 0) {
+                        message += `\n- 총 청크: ${domainStats.totalChunks}개`;
+                      }
+                    }
+
+                    // 🔥 진행률 분석 결과 추가
+                    if (progressAnalysis) {
+                      message += `\n\n📊 진행률 분석:`;
+                      message += `\n- 진행률: ${progressAnalysis.progressPercent}%`;
+                      message += `\n- 완료: ${progressAnalysis.subPageStatusCounts.completed}개`;
+                      message += `\n- 처리중: ${progressAnalysis.subPageStatusCounts.processing}개`;
+                      message += `\n- 실패: ${progressAnalysis.subPageStatusCounts.failed}개`;
+                      message += `\n- 대기중: ${progressAnalysis.subPageStatusCounts.pending}개`;
+                      if (progressAnalysis.isStuck) {
+                        message += `\n- ⚠️ 멈춤 감지: 처리 완료되었지만 처리중 상태인 페이지가 있습니다`;
+                      }
+                      if (progressAnalysis.hasStuckSubPages) {
+                        message += `\n- ⚠️ 오래 처리중: ${progressAnalysis.stuckSubPagesCount}개 페이지가 10분 이상 처리중입니다`;
+                      }
+                    }
+
+                    // 🔥 DB 저장 확인 결과 추가
+                    if (dbVerification) {
+                      message += `\n\n💾 DB 저장 확인:`;
+                      message += `\n- 확인된 문서: ${dbVerification.sampleDocumentsChecked}개`;
+                      message += `\n- 실제 청크 (DB): ${dbVerification.actualChunksInDB}개`;
+                      message += `\n- 임베딩 벡터: ${dbVerification.embeddingsCount}개`;
+                      if (dbVerification.verificationStatus === 'verified') {
+                        message += `\n- 상태: ✅ DB에 정상 저장됨`;
+                      } else {
+                        message += `\n- 상태: ⚠️ 저장 불완전 (청크: ${dbVerification.actualChunksInDB}개, 임베딩: ${dbVerification.embeddingsCount}개)`;
+                      }
+                    }
+
+                    toast.info(message, { duration: 15000 });
+                  } else {
+                    toast.error(`상태 확인 실패: ${statusData.error || '알 수 없는 오류'}`);
+                  }
+                } catch (error) {
+                  console.error('크롤링 상태 확인 오류:', error);
+                  toast.error('크롤링 상태 확인 중 오류가 발생했습니다.');
+                }
+              }}
+            >
+              <Database className="h-4 w-4 mr-2" />
+              크롤링 상태 확인
+            </Button>
+          </div>
+
+          {/* 진행 상황 */}
+          {isCrawling && (
+            <Card className="bg-muted/50">
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <Clock className="h-4 w-4" />
+                  진행 상황
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between text-sm">
+                    <span className="text-muted-foreground">{currentStep}</span>
+                    <span className="font-medium">{progress}%</span>
+                  </div>
+                  <Progress value={progress} className="h-2" />
+                </div>
+
+                {jobStatus && (
+                  <div className="space-y-2 text-sm">
+                    <div className="flex items-center gap-2">
+                      <Badge variant={jobStatus.status === 'completed' ? 'default' : 'secondary'}>
+                        {jobStatus.status}
+                      </Badge>
+                      <span className="text-muted-foreground">
+                        작업 ID: {jobStatus.id.substring(0, 8)}...
+                      </span>
+                    </div>
+
+                    {jobSummary.chunkCount && (
+                      <div className="flex items-center gap-2 text-muted-foreground">
+                        <FileText className="h-4 w-4" />
+                        <span>청크 수: {jobSummary.chunkCount}개</span>
+                      </div>
+                    )}
+
+                    {jobSummary.subPageCount !== undefined && (
+                      <div className="flex items-center gap-2 text-muted-foreground">
+                        <Globe className="h-4 w-4" />
+                        <span>하위 페이지: {jobSummary.subPageCount}개</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* 도메인 통계 */}
+      {domainStats && (
+        <Card className="bg-blue-50 dark:bg-blue-950/20">
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Globe className="h-5 w-5" />
+              도메인 분포 통계 (maxDepth {options.maxDepth})
+            </CardTitle>
+            <CardDescription>
+              크롤링된 문서의 도메인별 분포를 확인합니다
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            {/* 전체 통계 */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="space-y-1">
+                <div className="text-sm text-muted-foreground">전체 문서</div>
+                <div className="text-2xl font-bold">{domainStats.totalDocuments}개</div>
+              </div>
+              <div className="space-y-1">
+                <div className="text-sm text-muted-foreground">기본 도메인</div>
+                <div className="text-2xl font-bold text-green-600">{domainStats.sameDomainCount}개</div>
+                <div className="text-xs text-muted-foreground">{domainStats.baseDomain}</div>
+              </div>
+              <div className="space-y-1">
+                <div className="text-sm text-muted-foreground">하위 도메인</div>
+                <div className="text-2xl font-bold text-blue-600">{domainStats.subdomainCount}개</div>
+                {domainStats.subdomainCount > 0 && (
+                  <div className="text-xs text-green-600">✅ 정상 (maxDepth 3)</div>
+                )}
+              </div>
+              <div className="space-y-1">
+                <div className="text-sm text-muted-foreground">다른 도메인</div>
+                <div className="text-2xl font-bold text-red-600">{domainStats.otherDomainCount}개</div>
+                {domainStats.otherDomainCount > 0 && options.maxDepth < 4 && (
+                  <div className="text-xs text-red-600">⚠️ 예상과 다름 (maxDepth 3)</div>
+                )}
+                {domainStats.otherDomainCount > 0 && options.maxDepth >= 4 && (
+                  <div className="text-xs text-green-600">✅ 정상 (maxDepth 4)</div>
+                )}
+              </div>
+            </div>
+
+            {/* 도메인별 상세 목록 */}
+            <div className="space-y-2">
+              <div className="text-sm font-semibold">도메인별 문서 수 ({domainStats.domainCount}개 도메인)</div>
+              <div className="space-y-1 max-h-48 overflow-y-auto">
+                {domainStats.domainList.length === 0 ? (
+                  <div className="text-sm text-muted-foreground p-2">도메인 정보 없음</div>
+                ) : (
+                  domainStats.domainList.map((item) => (
+                    <div
+                      key={item.domain}
+                      className="flex items-center justify-between p-2 rounded-md bg-background border text-sm"
+                      title={`도메인: ${item.domain}, 타입: ${item.isBaseDomain ? '기본' : item.isSubdomain ? '하위' : '외부'}`}
+                    >
+                      <div className="flex items-center gap-2 flex-1 min-w-0">
+                        {item.isBaseDomain && (
+                          <Badge variant="default" className="text-xs">기본</Badge>
+                        )}
+                        {item.isSubdomain && (
+                          <Badge variant="secondary" className="text-xs">하위</Badge>
+                        )}
+                        {item.isOtherDomain && (
+                          <Badge variant="destructive" className="text-xs">외부</Badge>
+                        )}
+                        <span className="font-mono text-xs truncate">{item.domain}</span>
+                      </div>
+                      <span className="font-semibold ml-2">{item.count}개</span>
+                    </div>
+                  ))
+                )}
+              </div>
+              {/* 디버깅: 도메인 상세 정보 */}
+              {process.env.NODE_ENV === 'development' && domainStats.domainList.length > 0 && (
+                <div className="mt-2 p-2 bg-muted rounded text-xs">
+                  <div className="font-semibold mb-1">디버깅 정보:</div>
+                  <div>전체 도메인 수: {domainStats.domainCount}개</div>
+                  <div>기본 도메인: {domainStats.sameDomainCount}개</div>
+                  <div>하위 도메인: {domainStats.subdomainCount}개</div>
+                  <div>다른 도메인: {domainStats.otherDomainCount}개</div>
+                  <div className="mt-1">도메인 목록: {domainStats.domainList.map(d => d.domain).join(', ')}</div>
+                </div>
+              )}
+            </div>
+
+            {/* maxDepth별 검증 메시지 */}
+            <div className="p-3 rounded-md bg-muted space-y-1">
+              {options.maxDepth === 3 && (
+                <>
+                  <div className="text-sm font-semibold">maxDepth 3 검증:</div>
+                  <div className="text-xs space-y-1">
+                    {domainStats.subdomainCount > 0 ? (
+                      <div className="text-green-600">✅ 하위 도메인 포함됨 (정상)</div>
+                    ) : (
+                      <div className="text-yellow-600">⚠️ 하위 도메인 없음</div>
+                    )}
+                    {domainStats.otherDomainCount === 0 ? (
+                      <div className="text-green-600">✅ 다른 도메인 제외됨 (정상)</div>
+                    ) : (
+                      <div className="text-red-600">❌ 다른 도메인 포함됨 (비정상)</div>
+                    )}
+                  </div>
+                </>
+              )}
+              {options.maxDepth === 4 && (
+                <>
+                  <div className="text-sm font-semibold">maxDepth 4 검증:</div>
+                  <div className="text-xs space-y-1">
+                    {domainStats.otherDomainCount > 0 ? (
+                      <div className="text-green-600">✅ 다른 도메인 포함됨 (정상)</div>
+                    ) : (
+                      <div className="text-yellow-600">⚠️ 다른 도메인 없음 (외부 링크가 없을 수 있음)</div>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* 문서 목록 */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle className="flex items-center gap-2">
+                <List className="h-5 w-5" />
+                인덱싱된 문서 목록
+              </CardTitle>
+              <CardDescription>
+                크롤링 및 인덱싱이 완료된 문서가 자동으로 표시됩니다 (3초마다 자동 새로고침)
+              </CardDescription>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={async () => {
+                  try {
+                    const targetUrl = new URL(url);
+                    const domain = targetUrl.hostname;
+
+                    // 크롤링 작업 상태 확인
+                    const statusResponse = await fetch('/api/admin/check-crawl-status', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ domain, jobId: jobId || undefined }),
+                    });
+
+                    const statusData = await statusResponse.json();
+
+                    if (statusData.success) {
+                      const { latestJob, summary, domainStats, jobs } = statusData.data;
+                      console.log('🔍 [크롤링 상태 확인]:', statusData.data);
+
+                      // 상세 정보를 콘솔에 출력
+                      if (jobs && jobs.length > 0) {
+                        console.log('📋 [작업 상세 정보]:', jobs.map((j: any) => ({
+                          jobId: j.jobId,
+                          status: j.status,
+                          startedAt: j.startedAt,
+                          finishedAt: j.finishedAt,
+                          subPagesCount: j.result?.subPagesCount || 0,
+                          totalChunks: j.result?.totalChunks || 0,
+                          documentsCount: j.documents?.length || 0
+                        })));
+                      }
+
+                      let message = '';
+                      if (latestJob) {
+                        message = `작업 상태: ${latestJob.status}`;
+                        if (latestJob.isCompleted) {
+                          const finishedAt = latestJob.finishedAt ? new Date(latestJob.finishedAt).toLocaleString('ko-KR') : '';
+                          message += ` ✅ 완료`;
+                          if (finishedAt) message += ` (${finishedAt})`;
+                          const result = latestJob.result as any;
+                          if (result?.subPagesCount) message += `\n하위 페이지: ${result.subPagesCount}개`;
+                          if (result?.totalChunks) message += `\n총 청크: ${result.totalChunks}개`;
+                        } else if (latestJob.isProcessing) {
+                          message += ` ⏳ 처리 중...`;
+                        } else if (latestJob.isFailed) {
+                          message += ` ❌ 실패`;
+                        }
+                      }
+
+                      if (summary) {
+                        message += `\n\n작업 통계: 완료 ${summary.completed}개, 처리중 ${summary.processing}개, 실패 ${summary.failed}개`;
+                      }
+
+                      if (domainStats) {
+                        message += `\n\n도메인 문서 (${domain}):`;
+                        message += `\n- 총 ${domainStats.total}개`;
+                        message += `\n- 인덱싱됨: ${domainStats.indexed}개 ✅`;
+                        message += `\n- 처리중: ${domainStats.processing}개 ⏳`;
+                        message += `\n- 실패: ${domainStats.failed}개 ❌`;
+                        message += `\n- 대기중: ${domainStats.pending}개`;
+                        if (domainStats.totalChunks > 0) {
+                          message += `\n- 총 청크: ${domainStats.totalChunks}개`;
+                        }
+                      }
+
+                      toast.info(message, { duration: 10000 });
+                    } else {
+                      toast.error(`상태 확인 실패: ${statusData.error || '알 수 없는 오류'}`);
+                    }
+
+                    // 문서 삭제 확인도 함께 수행
+                    const response = await fetch('/api/admin/verify-document-deletion', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ domain }),
+                    });
+
+                    const data = await response.json();
+
+                    if (data.success) {
+                      console.log('🔍 [백엔드 데이터 확인]:', data.data);
+                    }
+                  } catch (error) {
+                    console.error('백엔드 데이터 확인 오류:', error);
+                    toast.error('백엔드 데이터 확인 중 오류가 발생했습니다.');
+                  }
+                }}
+              >
+                <Database className="h-4 w-4 mr-2" />
+                크롤링 상태 확인
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => refetchDocuments()}
+              >
+                <RefreshCw className="h-4 w-4 mr-2" />
+                새로고침
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {documentsData?.isLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+            </div>
+          ) : recentDocuments.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-8 text-center">
+              <AlertCircle className="h-12 w-12 text-muted-foreground mb-4" />
+              <p className="text-muted-foreground">
+                아직 인덱싱된 문서가 없습니다.
+              </p>
+              <p className="text-sm text-muted-foreground mt-2">
+                크롤링을 시작하면 완료된 문서가 여기에 표시됩니다.
+              </p>
+              {/* 디버깅 정보 */}
+              {documentsData?.data?.documents && documentsData.data.documents.length > 0 && (
+                <div className="mt-4 p-3 bg-blue-50 dark:bg-blue-950/20 rounded-md text-left max-w-md">
+                  <p className="text-xs font-semibold text-blue-800 dark:text-blue-200 mb-2">
+                    📊 크롤링 테스트 정보:
+                  </p>
+                  <div className="space-y-1 text-xs text-blue-700 dark:text-blue-300">
+                    <p>전체 문서: {documentsData.data.documents.length}개</p>
+                    <p>표시된 문서: {recentDocuments.length}개</p>
+                    <p>대상 도메인: {url ? new URL(url).hostname : 'N/A'}</p>
+                    <p>maxDepth: {options.maxDepth}</p>
+                    <p className="mt-2 font-semibold">첫 번째 문서 정보:</p>
+                    <p className="pl-2">- URL: {documentsData.data.documents[0]?.url || 'N/A (URL 없음)'}</p>
+                    <p className="pl-2">- 제목: {documentsData.data.documents[0]?.title?.substring(0, 40) || 'N/A'}</p>
+                    <p className="pl-2">- 상태: {documentsData.data.documents[0]?.status || 'N/A'}</p>
+                    <p className="pl-2">- 청크 수: {documentsData.data.documents[0]?.chunk_count || 0}개</p>
+                    {documentsData.data.documents[0]?.url && (
+                      <p className="pl-2">- 도메인: {(() => {
+                        try {
+                          return new URL(documentsData.data.documents[0].url).hostname;
+                        } catch {
+                          return '파싱 실패';
+                        }
+                      })()}</p>
+                    )}
+                  </div>
+                  <div className="mt-3 p-2 bg-blue-100 dark:bg-blue-900/30 rounded text-xs">
+                    <p className="font-semibold text-blue-800 dark:text-blue-200 mb-1">
+                      ℹ️ 크롤링 테스트 모드:
+                    </p>
+                    <p className="text-blue-700 dark:text-blue-300">
+                      maxDepth와 상관없이 크롤된 모든 문서를 표시합니다.
+                    </p>
+                    <p className="text-blue-700 dark:text-blue-300 mt-1">
+                      크롤링이 정상적으로 수행되었는지 확인할 수 있습니다.
+                    </p>
+                  </div>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <div className="text-sm text-muted-foreground">
+                총 {recentDocuments.length}개 문서 (최근 인덱싱된 문서)
+              </div>
+              <div className="space-y-2">
+                {recentDocuments.slice(0, 20).map((doc: Document) => (
+                  <Card key={doc.id} className="border-l-4 border-l-green-500">
+                    <CardContent className="p-4">
+                      <div className="flex items-start justify-between">
+                        <div className="flex-1 space-y-2">
+                          <div className="flex items-center gap-2">
+                            <CheckCircle className="h-4 w-4 text-green-500" />
+                            <h3 className="font-semibold">{doc.title}</h3>
+                          </div>
+                          {doc.url ? (
+                            <p className="text-sm text-muted-foreground break-all">
+                              {doc.url}
+                            </p>
+                          ) : (
+                            <p className="text-sm text-muted-foreground italic">
+                              URL 없음 (문서 ID: {doc.id.substring(0, 8)}...)
+                            </p>
+                          )}
+                          <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                            <span className="flex items-center gap-1">
+                              <FileText className="h-3 w-3" />
+                              청크: {doc.chunk_count}개
+                            </span>
+                            <span className="flex items-center gap-1">
+                              <Database className="h-3 w-3" />
+                              상태: {doc.status}
+                            </span>
+                            {doc.source_vendor && (
+                              <Badge variant="outline">{doc.source_vendor}</Badge>
+                            )}
+                          </div>
+                        </div>
+                        <div className="flex flex-col items-end gap-2">
+                          <Badge variant={doc.status === 'indexed' ? 'default' : 'secondary'}>
+                            {doc.status}
+                          </Badge>
+                          <span className="text-xs text-muted-foreground">
+                            {new Date(doc.created_at).toLocaleString('ko-KR')}
+                          </span>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+              {recentDocuments.length > 20 && (
+                <div className="text-center text-sm text-muted-foreground">
+                  ... 외 {recentDocuments.length - 20}개 문서
+                </div>
+              )}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* 프로세스 플로우 설명 */}
+      <Card className="bg-blue-50 dark:bg-blue-950/20">
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2">
+            <Sparkles className="h-5 w-5" />
+            프로세스 플로우
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="space-y-3 text-sm">
+            <div className="flex items-center gap-3">
+              <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center font-bold">
+                1
+              </div>
+              <div>
+                <strong>크롤링 시작</strong> - URL을 큐에 추가하고 크롤링 시작
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center font-bold">
+                2
+              </div>
+              <div>
+                <strong>콘텐츠 추출</strong> - 웹페이지에서 텍스트 및 메타데이터 추출
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center font-bold">
+                3
+              </div>
+              <div>
+                <strong>청킹</strong> - 텍스트를 의미 있는 청크로 분할
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-500 text-white flex items-center justify-center font-bold">
+                4
+              </div>
+              <div>
+                <strong>임베딩 생성</strong> - 각 청크에 대한 벡터 임베딩 생성
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="flex-shrink-0 w-8 h-8 rounded-full bg-green-500 text-white flex items-center justify-center font-bold">
+                5
+              </div>
+              <div>
+                <strong>인덱싱 완료</strong> - 벡터 데이터베이스에 저장 및 문서 목록 업데이트
+              </div>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  );
+}
+
