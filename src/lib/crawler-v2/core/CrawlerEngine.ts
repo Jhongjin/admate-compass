@@ -781,7 +781,7 @@ export class CrawlerEngine {
       cacheHitRate,
       cacheHits: this.cacheHits,
       cacheMisses: this.cacheMisses,
-      memoryStats: memoryMonitor.getMemoryStats(),
+      memoryStats: memoryMonitor.getCurrentMemory(),
     };
   }
 
