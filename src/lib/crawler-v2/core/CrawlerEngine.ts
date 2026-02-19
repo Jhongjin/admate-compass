@@ -641,12 +641,12 @@ export class CrawlerEngine {
         // 상세 진행률 전송
         if (onProgress) {
           const progress: CrawlProgress = {
-            total,
-            completed,
-            failed,
+            totalUrls: total,
+            completedUrls: completed,
+            failedUrls: failed,
             currentUrl: result.url,
-            percentage: Math.round(((completed + failed) / total) * 100),
-            elapsedTime: Math.round((Date.now() - startTime) / 1000),
+            progress: Math.round(((completed + failed) / total) * 100),
+            stage: 'crawling',
             estimatedTimeRemaining: this.calculateETA(
               total,
               completed + failed,
