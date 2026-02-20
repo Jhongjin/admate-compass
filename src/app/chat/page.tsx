@@ -9,8 +9,8 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { Sheet, SheetContent } from "@/components/ui/sheet";
-import { 
-  Send, Bot, User, ThumbsUp, ThumbsDown, History, FileText, 
+import {
+  Send, Bot, User, ThumbsUp, ThumbsDown, History, FileText,
   MessageSquare, Clock, Settings, PanelRight, PanelLeft,
   ChevronRight, ChevronLeft, BookOpen, X, RefreshCw, Trash2,
   AlertTriangle, HelpCircle, Copy, Check
@@ -142,13 +142,13 @@ function GmailStyleLayout() {
   const [vendorFilter, setVendorFilter] = useState<string[] | null>(null);
   const [isSendingEmail, setIsSendingEmail] = useState(false);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
-  
-  
+
+
   // 테마 및 설정 상태
   const [currentTheme, setCurrentTheme] = useState<string>("dark");
   const [density, setDensity] = useState<"default" | "comfortable" | "compact">("default");
   const [inboxType, setInboxType] = useState<"default" | "important" | "unread">("default");
-  
+
   // 패널 폭 및 드래그 상태
   const [rightPanelWidth, setRightPanelWidth] = useState(360);
   const [isDragging, setIsDragging] = useState(false);
@@ -156,7 +156,7 @@ function GmailStyleLayout() {
   const [isMobileLeftOpen, setIsMobileLeftOpen] = useState(false);
   const [isMobileRightOpen, setIsMobileRightOpen] = useState(false);
   const [hasProcessedInitialQuestion, setHasProcessedInitialQuestion] = useState(false);
-  
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const searchParams = useSearchParams();
@@ -186,7 +186,7 @@ function GmailStyleLayout() {
     setInboxType(savedInboxType);
   }, []);
 
-  
+
 
   // 우측 패널 폭 복원
   useEffect(() => {
@@ -236,7 +236,7 @@ function GmailStyleLayout() {
     };
 
     window.addEventListener('openAuthModal', handleOpenAuthModal);
-    
+
     return () => {
       window.removeEventListener('openAuthModal', handleOpenAuthModal);
     };
@@ -284,13 +284,13 @@ function GmailStyleLayout() {
   useEffect(() => {
     const question = searchParams?.get('q');
     const vendorsParam = searchParams?.get('vendors');
-    
+
     // 벤더 필터 파라미터 처리
     if (vendorsParam) {
       const vendors = vendorsParam.split(',').map(v => v.trim()).filter(Boolean);
       setVendorFilter(vendors.length > 0 ? vendors : null);
     }
-    
+
     if (question && question.trim() && isInitialized && messages.length === 1 && user && !hasProcessedInitialQuestion) {
       // 초기화 완료 후 초기 메시지만 있을 때만 실행 (중복 방지)
       setHasProcessedInitialQuestion(true);
@@ -349,7 +349,7 @@ function GmailStyleLayout() {
 
     const reader = response.body?.getReader();
     const decoder = new TextDecoder();
-    
+
     if (!reader) {
       throw new Error('스트림을 읽을 수 없습니다.');
     }
@@ -360,7 +360,7 @@ function GmailStyleLayout() {
 
     while (true) {
       const { done, value } = await reader.read();
-      
+
       if (done) {
         if (buffer.trim()) {
           logger.warn('⚠️ 스트림 종료 시 남은 버퍼:', buffer.substring(0, 100));
@@ -369,7 +369,7 @@ function GmailStyleLayout() {
       }
 
       buffer += decoder.decode(value, { stream: true });
-      
+
       while (buffer.length > 0) {
         const dataIndex = buffer.indexOf('data: ');
         if (dataIndex === -1) {
@@ -377,10 +377,10 @@ function GmailStyleLayout() {
         }
 
         buffer = buffer.slice(dataIndex);
-        
+
         const nextDataIndex = buffer.indexOf('\n\ndata: ', 6);
         const doubleNewlineIndex = buffer.indexOf('\n\n', 6);
-        
+
         let dataEndIndex: number;
         if (nextDataIndex !== -1) {
           dataEndIndex = nextDataIndex;
@@ -398,47 +398,47 @@ function GmailStyleLayout() {
         }
 
         let jsonStr = dataBlock;
-        
+
         if (jsonStr.startsWith('data: ')) {
           jsonStr = jsonStr.slice(6).trim();
         }
-        
+
         jsonStr = jsonStr.replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]/g, '');
 
         try {
           if (!jsonStr || jsonStr.length === 0) {
             continue;
           }
-          
+
           const trimmedJson = jsonStr.trim();
           if (!trimmedJson.startsWith('{') && !trimmedJson.startsWith('[')) {
             continue;
           }
-          
+
           const data = JSON.parse(jsonStr);
-          
+
           if (!data || typeof data !== 'object') {
             continue;
           }
-          
+
           if (data.type === 'chunk') {
             fullContent += data.data?.content || '';
-            setMessages(prev => prev.map(msg => 
-              msg.id === aiResponseId 
+            setMessages(prev => prev.map(msg =>
+              msg.id === aiResponseId
                 ? { ...msg, content: fullContent }
                 : msg
             ));
           } else if (data.type === 'done') {
-            setMessages(prev => prev.map(msg => 
-              msg.id === aiResponseId 
-                ? { 
-                    ...msg, 
-                    content: fullContent,
-                    sources: data.data?.sources || [],
-                    noDataFound: data.data?.noDataFound || false,
-                    showContactOption: data.data?.showContactOption || false,
-                    relatedQuestions: data.data?.relatedQuestions || []
-                  }
+            setMessages(prev => prev.map(msg =>
+              msg.id === aiResponseId
+                ? {
+                  ...msg,
+                  content: fullContent,
+                  sources: data.data?.sources || [],
+                  noDataFound: data.data?.noDataFound || false,
+                  showContactOption: data.data?.showContactOption || false,
+                  relatedQuestions: data.data?.relatedQuestions || []
+                }
                 : msg
             ));
           } else if (data.type === 'error') {
@@ -456,7 +456,7 @@ function GmailStyleLayout() {
       try {
         const finalMessage = currentMessages.find(msg => msg.id === aiResponseId) || aiResponse;
         const uniqueId = `conv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${userMessage.id}_${aiResponseId}`;
-        
+
         const saveResponse = await fetch('/api/conversations', {
           method: 'POST',
           headers: {
@@ -470,7 +470,7 @@ function GmailStyleLayout() {
             sources: finalMessage.sources || [],
           }),
         });
-        
+
         if (saveResponse.ok) {
           const saveData = await saveResponse.json();
           if (saveData.success) {
@@ -492,7 +492,7 @@ function GmailStyleLayout() {
     if (!question.trim() || isLoading) {
       return;
     }
-    
+
     if (!user) {
       return;
     }
@@ -504,9 +504,9 @@ function GmailStyleLayout() {
       id: Date.now().toString(),
       type: "user",
       content: currentInput,
-      timestamp: new Date().toLocaleTimeString('ko-KR', { 
-        hour: '2-digit', 
-        minute: '2-digit' 
+      timestamp: new Date().toLocaleTimeString('ko-KR', {
+        hour: '2-digit',
+        minute: '2-digit'
       }),
     };
 
@@ -540,7 +540,7 @@ function GmailStyleLayout() {
     if (!inputValue.trim() || isLoading) {
       return;
     }
-    
+
     if (!user) {
       toast({
         title: "로그인 필요",
@@ -551,10 +551,10 @@ function GmailStyleLayout() {
       return;
     }
 
-    const existingUserMessage = messages.find(msg => 
+    const existingUserMessage = messages.find(msg =>
       msg.type === 'user' && msg.content.trim() === inputValue.trim()
     );
-    
+
     if (existingUserMessage) {
       logger.log('이미 같은 질문이 있습니다. 중복을 방지합니다.');
       return;
@@ -567,9 +567,9 @@ function GmailStyleLayout() {
       id: Date.now().toString(),
       type: "user",
       content: currentInput,
-      timestamp: new Date().toLocaleTimeString('ko-KR', { 
-        hour: '2-digit', 
-        minute: '2-digit' 
+      timestamp: new Date().toLocaleTimeString('ko-KR', {
+        hour: '2-digit',
+        minute: '2-digit'
       }),
     };
 
@@ -582,9 +582,9 @@ function GmailStyleLayout() {
       id: aiResponseId,
       type: "assistant",
       content: '',
-      timestamp: new Date().toLocaleTimeString('ko-KR', { 
-        hour: '2-digit', 
-        minute: '2-digit' 
+      timestamp: new Date().toLocaleTimeString('ko-KR', {
+        hour: '2-digit',
+        minute: '2-digit'
       }),
       sources: [],
       feedback: { helpful: null, count: 0 },
@@ -592,33 +592,36 @@ function GmailStyleLayout() {
       showContactOption: false
     };
 
+    // AI 응답 플레이스홀더를 상태에 추가 (이 부분이 빠져있었음)
+    setMessages(prev => [...prev, aiResponse]);
+
     try {
       await processStreamingResponse(currentInput, userMessage, aiResponseId, aiResponse, [...messages, userMessage]);
     } catch (error) {
       logger.error('❌ 채팅 API 오류:', error);
-      
+
       const errorMessage = error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.';
       let userFriendlyMessage = errorMessage;
       if (errorMessage.includes('Unexpected token') || errorMessage.includes('JSON') || errorMessage.includes('data:')) {
         userFriendlyMessage = '서버 응답을 처리하는 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.';
       }
-      
+
       setError(userFriendlyMessage);
-      
+
       const errorMessageObj: Message = {
         id: (Date.now() + 1).toString(),
         type: "assistant",
         content: `죄송합니다. 현재 서비스에 일시적인 문제가 발생했습니다.\n\n${userFriendlyMessage}\n\n잠시 후 다시 시도해주세요.`,
-        timestamp: new Date().toLocaleTimeString('ko-KR', { 
-          hour: '2-digit', 
-          minute: '2-digit' 
+        timestamp: new Date().toLocaleTimeString('ko-KR', {
+          hour: '2-digit',
+          minute: '2-digit'
         }),
         sources: [],
         feedback: { helpful: null, count: 0 },
       };
 
       setMessages(prev => [...prev, errorMessageObj]);
-      
+
       toast({
         title: "오류 발생",
         description: "AI 응답을 받는 중 문제가 발생했습니다.",
@@ -645,41 +648,41 @@ function GmailStyleLayout() {
   // 세션 종료 시 자동 저장
   useEffect(() => {
     let isUnmounting = false;
-    
+
     const saveConversationOnUnmount = async () => {
       if (isUnmounting || isSavingRef.current) {
         return;
       }
-      
+
       isUnmounting = true;
-      
+
       const currentUser = userRef.current;
       const currentMessages = messagesRef.current;
       const currentSavedIds = savedMessageIdsRef.current;
-      
+
       if (currentUser && currentMessages.length > 1) {
         try {
           const userMessages = currentMessages.filter(msg => msg.type === 'user');
           const aiMessages = currentMessages.filter(msg => msg.type === 'assistant');
-          
+
           const conversationPairs = [];
           for (let i = 0; i < Math.min(userMessages.length, aiMessages.length); i++) {
             const userMsg = userMessages[i];
             const aiMsg = aiMessages[i];
-            
+
             if (!currentSavedIds.has(userMsg.id) && !currentSavedIds.has(aiMsg.id)) {
               conversationPairs.push({ userMsg, aiMsg });
             }
           }
-          
+
           if (conversationPairs.length === 0) {
             return;
           }
-          
+
           let savedCount = 0;
           for (const { userMsg, aiMsg } of conversationPairs) {
             const uniqueId = `conv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${userMsg.id}_${aiMsg.id}`;
-            
+
             const response = await fetch('/api/conversations', {
               method: 'POST',
               headers: {
@@ -693,7 +696,7 @@ function GmailStyleLayout() {
                 sources: aiMsg.sources || [],
               }),
             });
-            
+
             if (response.ok) {
               const data = await response.json();
               if (data.success) {
@@ -733,12 +736,12 @@ function GmailStyleLayout() {
       id: `sending-${Date.now()}`,
       type: "assistant",
       content: "📧 페이스북 담당팀에 문의 메일을 발송 중입니다...",
-      timestamp: new Date().toLocaleTimeString('ko-KR', { 
-        hour: '2-digit', 
-        minute: '2-digit' 
+      timestamp: new Date().toLocaleTimeString('ko-KR', {
+        hour: '2-digit',
+        minute: '2-digit'
       }),
     };
-    
+
     setMessages(prev => [...prev, sendingMessage]);
 
     try {
@@ -760,7 +763,7 @@ function GmailStyleLayout() {
       }
 
       const data = await response.json();
-      
+
       if (data.success && data.emailLink) {
         logger.log('📧 메일 링크:', data.emailLink);
         try {
@@ -769,35 +772,35 @@ function GmailStyleLayout() {
           logger.error('❌ 메일 클라이언트 열기 실패:', error);
           window.location.href = data.emailLink;
         }
-        
+
         const successMessage: Message = {
           id: `success-${Date.now()}`,
           type: "assistant",
           content: "✅ 페이스북 담당팀에 문의사항이 메일로 정상 발송되었습니다.\n\n📧 **발송 정보:**\n- 수신자: fb@nasmedia.co.kr\n- 문의 내용: " + actualQuestion.substring(0, 50) + (actualQuestion.length > 50 ? "..." : "") + "\n- 발송 시간: " + new Date().toLocaleString('ko-KR') + "\n\n💡 **메일 클라이언트가 열리지 않는다면:**\n직접 fb@nasmedia.co.kr로 메일을 보내주세요.\n\n담당팀에서 검토 후 답변을 드릴 예정입니다.",
-          timestamp: new Date().toLocaleTimeString('ko-KR', { 
-            hour: '2-digit', 
-            minute: '2-digit' 
+          timestamp: new Date().toLocaleTimeString('ko-KR', {
+            hour: '2-digit',
+            minute: '2-digit'
           }),
         };
-        
-        setMessages(prev => prev.map(msg => 
+
+        setMessages(prev => prev.map(msg =>
           msg.id === sendingMessage.id ? successMessage : msg
         ));
       }
     } catch (error) {
       logger.error("Error sending contact email:", error);
-      
+
       const errorMessage: Message = {
         id: `error-${Date.now()}`,
         type: "assistant",
         content: "❌ 메일 발송 중 오류가 발생했습니다.\n\n**오류 내용:**\n" + (error instanceof Error ? error.message : "알 수 없는 오류") + "\n\n잠시 후 다시 시도해주시거나, 직접 fb@nasmedia.co.kr로 문의해주세요.",
-        timestamp: new Date().toLocaleTimeString('ko-KR', { 
-          hour: '2-digit', 
-          minute: '2-digit' 
+        timestamp: new Date().toLocaleTimeString('ko-KR', {
+          hour: '2-digit',
+          minute: '2-digit'
         }),
       };
-      
-      setMessages(prev => prev.map(msg => 
+
+      setMessages(prev => prev.map(msg =>
         msg.id === sendingMessage.id ? errorMessage : msg
       ));
     } finally {
@@ -838,10 +841,10 @@ function GmailStyleLayout() {
   // 대화 로드
   const handleLoadConversation = useCallback(async (conversation: any) => {
     setIsLoading(true);
-    
+
     const fetchFeedback = async (conversationId: string) => {
       if (!user?.id) return { helpful: null, count: 0 };
-      
+
       try {
         const response = await fetch(`/api/feedback?userId=${encodeURIComponent(user.id)}&conversationId=${encodeURIComponent(conversationId)}`);
         if (response.ok) {
@@ -873,18 +876,18 @@ function GmailStyleLayout() {
           id: "2",
           type: "user",
           content: conversation.user_message || conversation.title || "대화 내용",
-          timestamp: new Date(conversation.createdAt || conversation.created_at).toLocaleTimeString('ko-KR', { 
-            hour: '2-digit', 
-            minute: '2-digit' 
+          timestamp: new Date(conversation.createdAt || conversation.created_at).toLocaleTimeString('ko-KR', {
+            hour: '2-digit',
+            minute: '2-digit'
           }),
         },
         {
           id: `ai_${conversationId}`,
           type: "assistant",
           content: conversation.ai_response || "AI 응답을 불러올 수 없습니다.",
-          timestamp: new Date(conversation.createdAt || conversation.created_at).toLocaleTimeString('ko-KR', { 
-            hour: '2-digit', 
-            minute: '2-digit' 
+          timestamp: new Date(conversation.createdAt || conversation.created_at).toLocaleTimeString('ko-KR', {
+            hour: '2-digit',
+            minute: '2-digit'
           }),
           sources: conversation.sources || [],
           feedback: feedback,
@@ -942,21 +945,21 @@ function GmailStyleLayout() {
       return;
     }
 
-    setMessages(prev => prev.map(msg => 
-      msg.id === messageId 
-        ? { 
-            ...msg, 
-            feedback: { 
-              helpful, 
-              count: msg.feedback?.helpful === null ? 1 : (msg.feedback?.count || 0) 
-            } 
+    setMessages(prev => prev.map(msg =>
+      msg.id === messageId
+        ? {
+          ...msg,
+          feedback: {
+            helpful,
+            count: msg.feedback?.helpful === null ? 1 : (msg.feedback?.count || 0)
           }
+        }
         : msg
     ));
 
     try {
       const messageSources = message?.sources || [];
-      
+
       const response = await fetch('/api/feedback', {
         method: 'POST',
         headers: {
@@ -981,8 +984,8 @@ function GmailStyleLayout() {
       }
     } catch (error) {
       logger.error('피드백 저장 오류:', error);
-      setMessages(prev => prev.map(msg => 
-        msg.id === messageId 
+      setMessages(prev => prev.map(msg =>
+        msg.id === messageId
           ? { ...msg, feedback: { helpful: null, count: 0 } }
           : msg
       ));
@@ -1022,16 +1025,16 @@ function GmailStyleLayout() {
     e.preventDefault();
     e.stopPropagation();
     setIsDragging(true);
-    
+
     const startX = e.clientX;
     const startWidth = rightPanelWidth;
-    
+
     const handleMouseMove = (e: MouseEvent) => {
       const deltaX = startX - e.clientX; // 우측 패널은 왼쪽으로 드래그하면 넓어짐
       const newWidth = Math.min(Math.max(startWidth + deltaX, 280), 600);
       setRightPanelWidth(newWidth);
     };
-    
+
     const handleMouseUp = () => {
       setIsDragging(false);
       document.removeEventListener('mousemove', handleMouseMove);
@@ -1039,7 +1042,7 @@ function GmailStyleLayout() {
       document.body.style.cursor = '';
       document.body.style.userSelect = '';
     };
-    
+
     document.body.style.cursor = 'ew-resize';
     document.body.style.userSelect = 'none';
     document.addEventListener('mousemove', handleMouseMove);
@@ -1120,11 +1123,10 @@ function GmailStyleLayout() {
                       setSelectedMenu("inbox");
                       handleNewChat();
                     }}
-                    className={`w-12 h-12 flex items-center justify-center rounded-lg border transition-all ${
-                      selectedMenu === "inbox"
+                    className={`w-12 h-12 flex items-center justify-center rounded-lg border transition-all ${selectedMenu === "inbox"
                         ? "bg-blue-500/20 text-blue-100 border-blue-400/40 shadow-[0_0_12px_rgba(66,133,244,0.35)]"
                         : "text-gray-400 border-transparent hover:bg-gray-800"
-                    }`}
+                      }`}
                     title="새 대화하기"
                     aria-current={selectedMenu === "inbox" ? "page" : undefined}
                   >
@@ -1135,11 +1137,10 @@ function GmailStyleLayout() {
 
                   <button
                     onClick={() => setSelectedMenu("history")}
-                    className={`w-12 h-12 flex items-center justify-center rounded-lg border transition-all ${
-                      selectedMenu === "history"
+                    className={`w-12 h-12 flex items-center justify-center rounded-lg border transition-all ${selectedMenu === "history"
                         ? "bg-blue-500/20 text-blue-100 border-blue-400/40 shadow-[0_0_12px_rgba(66,133,244,0.35)]"
                         : "text-gray-400 border-transparent hover:bg-gray-800"
-                    }`}
+                      }`}
                     title="히스토리"
                     aria-current={selectedMenu === "history" ? "page" : undefined}
                   >
@@ -1148,11 +1149,10 @@ function GmailStyleLayout() {
 
                   <button
                     onClick={() => setSelectedMenu("saved")}
-                    className={`w-12 h-12 flex items-center justify-center rounded-lg border transition-all ${
-                      selectedMenu === "saved"
+                    className={`w-12 h-12 flex items-center justify-center rounded-lg border transition-all ${selectedMenu === "saved"
                         ? "bg-blue-500/20 text-blue-100 border-blue-400/40 shadow-[0_0_12px_rgba(66,133,244,0.35)]"
                         : "text-gray-400 border-transparent hover:bg-gray-800"
-                    }`}
+                      }`}
                     title="저장된 답변"
                     aria-current={selectedMenu === "saved" ? "page" : undefined}
                   >
@@ -1211,11 +1211,10 @@ function GmailStyleLayout() {
 
                   <button
                     onClick={() => setSelectedMenu("history")}
-                    className={`w-full flex items-center gap-3 px-3 py-2 rounded-r-full text-sm font-medium transition-colors ${
-                      selectedMenu === "history"
+                    className={`w-full flex items-center gap-3 px-3 py-2 rounded-r-full text-sm font-medium transition-colors ${selectedMenu === "history"
                         ? "bg-blue-50 text-blue-600"
                         : "hover:bg-gray-800"
-                    }`}
+                      }`}
                     style={selectedMenu !== "history" ? { color: theme.textSecondary } : {}}
                   >
                     <History className="w-5 h-5" />
@@ -1224,11 +1223,10 @@ function GmailStyleLayout() {
 
                   <button
                     onClick={() => setSelectedMenu("saved")}
-                    className={`w-full flex items-center gap-3 px-3 py-2 rounded-r-full text-sm font-medium transition-colors ${
-                      selectedMenu === "saved"
+                    className={`w-full flex items-center gap-3 px-3 py-2 rounded-r-full text-sm font-medium transition-colors ${selectedMenu === "saved"
                         ? "bg-blue-50 text-blue-600"
                         : "hover:bg-gray-800"
-                    }`}
+                      }`}
                     style={selectedMenu !== "saved" ? { color: theme.textSecondary } : {}}
                   >
                     <BookOpen className="w-5 h-5" />
@@ -1237,9 +1235,9 @@ function GmailStyleLayout() {
                 </div>
 
                 {selectedMenu === "history" && user && (
-                  <div 
+                  <div
                     className="mt-4 flex flex-col overflow-hidden"
-        style={{ backgroundColor: DEFAULT_PANEL_BG, minHeight: 0 }}
+                    style={{ backgroundColor: DEFAULT_PANEL_BG, minHeight: 0 }}
                   >
                     <div className="px-4 pb-2">
                       <p className="text-sm font-medium" style={{ color: theme.textPrimary }}>
@@ -1249,15 +1247,15 @@ function GmailStyleLayout() {
                         최근 대화 30개가 표시됩니다
                       </p>
                     </div>
-                    <div 
+                    <div
                       className="flex-1 overflow-hidden rounded-lg border"
-                      style={{ 
+                      style={{
                         borderColor: 'rgba(255, 255, 255, 0.1)',
                         boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.02)',
                         minHeight: 0
                       }}
                     >
-                      <HistoryPanel 
+                      <HistoryPanel
                         onLoadConversation={handleLoadConversation}
                         onNewChat={handleNewChat}
                         userId={user.id}
@@ -1286,7 +1284,7 @@ function GmailStyleLayout() {
                 {selectedMenu === "saved" && user && (
                   <div
                     className="mt-4 flex flex-col overflow-hidden"
-        style={{ backgroundColor: DEFAULT_PANEL_BG, minHeight: 0 }}
+                    style={{ backgroundColor: DEFAULT_PANEL_BG, minHeight: 0 }}
                   >
                     <div className="px-4 pb-2">
                       <p className="text-sm font-medium" style={{ color: theme.textPrimary }}>
@@ -1348,15 +1346,15 @@ function GmailStyleLayout() {
       >
         {/* 그라데이션 오버레이 - gemini_theme 스타일 */}
         <div className="absolute inset-0 bg-gradient-to-br from-blue-900/20 via-transparent to-purple-900/20 pointer-events-none rounded-lg" />
-        
+
         {/* 상단 바 - 실제 메인 페이지 헤더 스타일 */}
         <div className="h-16 border-b flex items-center justify-between px-4 relative z-10" style={{ backgroundColor: 'rgba(19, 24, 35, 0.8)', backdropFilter: 'blur(12px)', borderColor: 'rgba(255, 255, 255, 0.1)' }}>
           <div className="flex items-center gap-4">
             {/* AdMate 로고 */}
             <Link href="/" className="block">
-              <motion.div 
+              <motion.div
                 className="cursor-pointer"
-                whileHover={{ 
+                whileHover={{
                   scale: 1.05,
                   transition: { duration: 0.3 }
                 }}
@@ -1411,13 +1409,12 @@ function GmailStyleLayout() {
             {sortedMessages().map((message) => (
               <div
                 key={message.id}
-                className={`flex gap-4 p-4 rounded-lg hover:bg-opacity-50 transition-colors ${
-                  message.type === "user" ? "justify-end" : "justify-start"
-                }`}
+                className={`flex gap-4 p-4 rounded-lg hover:bg-opacity-50 transition-colors ${message.type === "user" ? "justify-end" : "justify-start"
+                  }`}
                 style={{ backgroundColor: 'transparent' }}
               >
                 {message.type === "assistant" && (
-                  <div 
+                  <div
                     className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0"
                     style={{ background: 'linear-gradient(135deg, #4285f4, #9c27b0)' }}
                   >
@@ -1425,18 +1422,17 @@ function GmailStyleLayout() {
                   </div>
                 )}
                 <div
-                  className={`max-w-[75%] rounded-xl px-4 py-3 ${
-                    message.type === "user"
+                  className={`max-w-[75%] rounded-xl px-4 py-3 ${message.type === "user"
                       ? "text-white"
                       : "border"
-                  }`}
-                  style={message.type === "user" 
+                    }`}
+                  style={message.type === "user"
                     ? { background: 'linear-gradient(135deg, #4285f4, #9c27b0)' }
-                    : { 
-                        backgroundColor: 'rgba(19, 24, 35, 0.6)', 
-                        borderColor: 'rgba(255, 255, 255, 0.1)',
-                        color: theme.textPrimary
-                      }}
+                    : {
+                      backgroundColor: 'rgba(19, 24, 35, 0.6)',
+                      borderColor: 'rgba(255, 255, 255, 0.1)',
+                      color: theme.textPrimary
+                    }}
                 >
                   <div className="flex items-center gap-2 mb-2">
                     <span className="text-xs font-semibold">
@@ -1483,24 +1479,24 @@ function GmailStyleLayout() {
                     </div>
                   )}
                   {message.type === "assistant" && message.showContactOption && (
-                    <div 
+                    <div
                       className="mt-5 rounded-2xl border relative overflow-hidden shadow-lg"
-                      style={{ 
+                      style={{
                         borderColor: `${theme.accent}33`,
                         background: `linear-gradient(135deg, ${theme.accent}15, rgba(255,255,255,0.08))`,
                       }}
                     >
-                      <div 
+                      <div
                         className="absolute inset-0 opacity-40"
-                        style={{ 
+                        style={{
                           background: `radial-gradient(circle at top right, ${theme.accent}66, transparent 60%)`
                         }}
                       />
                       <div className="relative p-4 sm:p-5 flex flex-col gap-4">
                         <div className="flex items-start gap-4">
-                          <div 
+                          <div
                             className="w-12 h-12 rounded-2xl flex items-center justify-center shadow-lg"
-                            style={{ 
+                            style={{
                               background: `linear-gradient(145deg, ${theme.accent}, ${theme.accent}CC)`
                             }}
                           >
@@ -1539,17 +1535,17 @@ function GmailStyleLayout() {
                       </div>
                     </div>
                   )}
-                  
+
                   {message.type === "assistant" && (
                     <div className="flex gap-2 mt-3">
-                      <Button 
-                        variant="ghost" 
-                        size="sm" 
+                      <Button
+                        variant="ghost"
+                        size="sm"
                         className="h-7 px-2"
                         onClick={() => handleCopyMessage(message.id, message.content)}
                         title="답변 복사"
-                        style={{ 
-                          color: copiedMessageId === message.id ? theme.accent : theme.textSecondary 
+                        style={{
+                          color: copiedMessageId === message.id ? theme.accent : theme.textSecondary
                         }}
                       >
                         {copiedMessageId === message.id ? (
@@ -1558,26 +1554,26 @@ function GmailStyleLayout() {
                           <Copy className="w-3 h-3" />
                         )}
                       </Button>
-                      <Button 
-                        variant="ghost" 
-                        size="sm" 
+                      <Button
+                        variant="ghost"
+                        size="sm"
                         className="h-7 px-2"
                         onClick={() => handleFeedback(message.id, true)}
                         title="도움됨"
-                        style={{ 
-                          color: message.feedback?.helpful === true ? theme.accent : theme.textSecondary 
+                        style={{
+                          color: message.feedback?.helpful === true ? theme.accent : theme.textSecondary
                         }}
                       >
                         <ThumbsUp className="w-3 h-3" />
                       </Button>
-                      <Button 
-                        variant="ghost" 
-                        size="sm" 
+                      <Button
+                        variant="ghost"
+                        size="sm"
                         className="h-7 px-2"
                         onClick={() => handleFeedback(message.id, false)}
                         title="도움 안됨"
-                        style={{ 
-                          color: message.feedback?.helpful === false ? theme.accent : theme.textSecondary 
+                        style={{
+                          color: message.feedback?.helpful === false ? theme.accent : theme.textSecondary
                         }}
                       >
                         <ThumbsDown className="w-3 h-3" />
@@ -1586,7 +1582,7 @@ function GmailStyleLayout() {
                   )}
                 </div>
                 {message.type === "user" && (
-                  <div 
+                  <div
                     className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0"
                     style={{ backgroundColor: theme.border }}
                   >
@@ -1597,13 +1593,13 @@ function GmailStyleLayout() {
             ))}
             {isLoading && !hasPendingAssistantMessage && (
               <div className="flex gap-4 justify-start">
-                <div 
+                <div
                   className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0"
                   style={{ background: 'linear-gradient(135deg, #4285f4, #9c27b0)' }}
                 >
                   <Bot className="w-6 h-6 text-white" />
                 </div>
-                <div 
+                <div
                   className="rounded-xl px-4 py-3 border"
                   style={{ backgroundColor: 'rgba(19, 24, 35, 0.6)', borderColor: 'rgba(255, 255, 255, 0.1)' }}
                 >
@@ -1634,15 +1630,15 @@ function GmailStyleLayout() {
                 }}
                 placeholder={user ? "메시지를 입력하세요..." : "로그인이 필요합니다..."}
                 className="flex-1 min-h-[60px] max-h-[120px] resize-none"
-                style={{ 
-                  backgroundColor: 'rgba(19, 24, 35, 0.6)', 
+                style={{
+                  backgroundColor: 'rgba(19, 24, 35, 0.6)',
                   borderColor: 'rgba(255, 255, 255, 0.1)',
-                  color: theme.textPrimary 
+                  color: theme.textPrimary
                 }}
                 rows={1}
                 disabled={isLoading}
               />
-              <Button 
+              <Button
                 className="px-6 h-[60px] rounded-xl"
                 onClick={handleSendMessage}
                 disabled={isLoading || !inputValue.trim()}
@@ -1668,18 +1664,18 @@ function GmailStyleLayout() {
           >
             {/* 그라데이션 오버레이 */}
             <div className="absolute inset-0 bg-gradient-to-br from-blue-900/20 via-transparent to-purple-900/20 pointer-events-none rounded-lg" />
-            
+
             {/* 드래그 핸들 */}
             <div
               onMouseDown={handleRightPanelResize}
               className="absolute left-0 top-0 bottom-0 w-1 cursor-ew-resize hover:w-1.5 transition-all z-10 group"
-              style={{ 
+              style={{
                 backgroundColor: isDragging ? theme.accent : 'transparent',
               }}
             >
-              <div 
+              <div
                 className="absolute left-0 top-0 bottom-0 w-1 group-hover:w-1.5 transition-all"
-                style={{ 
+                style={{
                   backgroundColor: isDragging ? theme.accent : 'rgba(255, 255, 255, 0.2)',
                   opacity: isDragging ? 1 : 0.5
                 }}
@@ -1688,7 +1684,7 @@ function GmailStyleLayout() {
 
             <div className="p-4 border-b flex items-center justify-between relative z-10" style={{ borderColor: 'rgba(255, 255, 255, 0.1)' }}>
               <div className="flex items-center gap-3">
-                <div 
+                <div
                   className="w-10 h-10 rounded-lg flex items-center justify-center"
                   style={{ background: 'linear-gradient(135deg, #4285f4, #9c27b0)' }}
                 >
@@ -1709,7 +1705,7 @@ function GmailStyleLayout() {
               </Button>
             </div>
 
-            <div 
+            <div
               className="flex-1 overflow-y-auto p-4 space-y-6 text-sm leading-relaxed [&_*]:text-sm [&_*]:leading-relaxed relative z-10"
               style={{
                 backgroundColor: 'transparent',
@@ -1725,7 +1721,7 @@ function GmailStyleLayout() {
               {/* 관련 자료 - 실제 컴포넌트 사용 */}
               {messages.length > 1 && !isLoading ? (
                 <div className="space-y-4">
-                  <RelatedResources 
+                  <RelatedResources
                     userQuestion={messages[messages.length - 2]?.content}
                     aiResponse={messages[messages.length - 1]?.content}
                     sources={(messages[messages.length - 1]?.sources ?? []).map(source => ({
@@ -1767,8 +1763,8 @@ function GmailStyleLayout() {
                   </div>
                   <h3 className="text-xl font-semibold mb-3" style={{ color: theme.textPrimary }}>질문을 시작해보세요</h3>
                   <p className="text-sm max-w-sm leading-relaxed" style={{ color: theme.textSecondary }}>
-                    멀티 플랫폼 광고 정책, 타겟팅, 예산 설정 등에 대해 궁금한 점이 있으시면 
-                    좌측 채팅창에서 질문해주세요. 관련 자료와 유사한 질문들이 
+                    멀티 플랫폼 광고 정책, 타겟팅, 예산 설정 등에 대해 궁금한 점이 있으시면
+                    좌측 채팅창에서 질문해주세요. 관련 자료와 유사한 질문들이
                     여기에 표시됩니다.
                   </p>
                 </div>
@@ -1818,7 +1814,7 @@ function GmailStyleLayout() {
               </div>
               <div className="flex-1 overflow-y-auto py-2">
                 {selectedMenu === "history" && user && (
-                  <HistoryPanel 
+                  <HistoryPanel
                     onLoadConversation={(conv) => {
                       handleLoadConversation(conv);
                       setIsMobileLeftOpen(false);
@@ -1881,7 +1877,7 @@ function GmailStyleLayout() {
               </div>
               <div className="flex-1 overflow-y-auto p-4">
                 {messages.length > 1 && !isLoading ? (
-                  <RelatedResources 
+                  <RelatedResources
                     userQuestion={messages[messages.length - 2]?.content}
                     aiResponse={messages[messages.length - 1]?.content}
                     sources={messages[messages.length - 1]?.sources?.map(s => ({
@@ -1899,8 +1895,8 @@ function GmailStyleLayout() {
                     </div>
                     <h3 className="text-xl font-semibold mb-3" style={{ color: theme.textPrimary }}>질문을 시작해보세요</h3>
                     <p className="text-sm max-w-sm leading-relaxed" style={{ color: theme.textSecondary }}>
-                      멀티 플랫폼 광고 정책, 타겟팅, 예산 설정 등에 대해 궁금한 점이 있으시면 
-                      좌측 채팅창에서 질문해주세요. 관련 자료와 유사한 질문들이 
+                      멀티 플랫폼 광고 정책, 타겟팅, 예산 설정 등에 대해 궁금한 점이 있으시면
+                      좌측 채팅창에서 질문해주세요. 관련 자료와 유사한 질문들이
                       여기에 표시됩니다.
                     </p>
                   </div>

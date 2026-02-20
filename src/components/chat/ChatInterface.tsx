@@ -7,12 +7,12 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
-import { 
-  Send, 
-  Bot, 
-  User, 
-  Loader2, 
-  MessageSquare, 
+import {
+  Send,
+  Bot,
+  User,
+  Loader2,
+  MessageSquare,
   ExternalLink,
   ThumbsUp,
   ThumbsDown,
@@ -107,7 +107,7 @@ export function ChatInterface({ className, initialQuestion }: ChatInterfaceProps
 
     try {
       console.log('🚀 챗봇 스트림 API 호출 시작:', inputMessage.trim());
-      
+
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: {
@@ -123,30 +123,91 @@ export function ChatInterface({ className, initialQuestion }: ChatInterfaceProps
         throw new Error(`서버 오류: ${response.status} ${response.statusText}`);
       }
 
-      // 일반 JSON 응답 처리
-      console.log('📝 일반 JSON 응답 처리');
-      const data = await response.json();
-      console.log('📝 일반 JSON 응답:', data);
-      
-      setMessages(prev => prev.map(msg => 
-        msg.id === botMessageId 
-          ? { 
-              ...msg, 
-              content: data.response?.message || data.message || '답변을 생성할 수 없습니다.',
-              sources: data.response?.sources || data.sources || [],
-              confidence: data.confidence || 0,
-              processingTime: data.processingTime || 0,
-              noDataFound: data.response?.noDataFound || false,
-              showContactOption: data.response?.showContactOption || false
+      // 스트리밍 응답 처리
+      const reader = response.body?.getReader();
+      const decoder = new TextDecoder();
+
+      if (!reader) {
+        throw new Error('스트림을 읽을 수 없습니다.');
+      }
+
+      let buffer = '';
+      let fullContent = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        while (buffer.length > 0) {
+          const dataIndex = buffer.indexOf('data: ');
+          if (dataIndex === -1) break;
+
+          buffer = buffer.slice(dataIndex);
+          const nextDataIndex = buffer.indexOf('\n\ndata: ', 6);
+          const doubleNewlineIndex = buffer.indexOf('\n\n', 6);
+
+          let dataEndIndex: number;
+          if (nextDataIndex !== -1) {
+            dataEndIndex = nextDataIndex;
+          } else if (doubleNewlineIndex !== -1) {
+            dataEndIndex = doubleNewlineIndex;
+          } else {
+            break;
+          }
+
+          const dataBlock = buffer.slice(6, dataEndIndex).trim();
+          buffer = buffer.slice(dataEndIndex + 2);
+
+          if (!dataBlock) continue;
+
+          try {
+            let jsonStr = dataBlock;
+            if (jsonStr.startsWith('data: ')) {
+              jsonStr = jsonStr.slice(6).trim();
             }
-          : msg
-      ));
+            // 제어 문자 제거
+            jsonStr = jsonStr.replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]/g, '');
+
+            const data = JSON.parse(jsonStr);
+
+            if (data.type === 'chunk') {
+              fullContent += data.data?.content || '';
+              setMessages(prev => prev.map(msg =>
+                msg.id === botMessageId
+                  ? { ...msg, content: fullContent }
+                  : msg
+              ));
+            } else if (data.type === 'done') {
+              setMessages(prev => prev.map(msg =>
+                msg.id === botMessageId
+                  ? {
+                    ...msg,
+                    content: fullContent,
+                    sources: data.data?.sources || [],
+                    confidence: data.data?.confidence || 0,
+                    processingTime: data.data?.processingTime || 0,
+                    noDataFound: data.data?.noDataFound || false,
+                    showContactOption: data.data?.showContactOption || false
+                  }
+                  : msg
+              ));
+            } else if (data.type === 'error') {
+              throw new Error(data.data?.message || '답변 생성 중 오류가 발생했습니다.');
+            }
+          } catch (parseError) {
+            console.error('❌ JSON 파싱 오류:', parseError);
+            continue;
+          }
+        }
+      }
 
     } catch (error) {
       console.error('❌ 챗봇 응답 오류:', error);
-      
+
       let errorContent = '죄송합니다. 답변을 생성하는 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.';
-      
+
       if (error instanceof Error) {
         if (error.message.includes('서버 오류')) {
           errorContent = '서버에 일시적인 문제가 발생했습니다. 잠시 후 다시 시도해주세요.';
@@ -158,7 +219,7 @@ export function ChatInterface({ className, initialQuestion }: ChatInterfaceProps
           errorContent = `오류: ${error.message}`;
         }
       }
-      
+
       const errorMessage: Message = {
         id: (Date.now() + 1).toString(),
         type: 'bot',
@@ -209,9 +270,9 @@ export function ChatInterface({ className, initialQuestion }: ChatInterfaceProps
   };
 
   const formatTime = (date: Date) => {
-    return date.toLocaleTimeString('ko-KR', { 
-      hour: '2-digit', 
-      minute: '2-digit' 
+    return date.toLocaleTimeString('ko-KR', {
+      hour: '2-digit',
+      minute: '2-digit'
     });
   };
 
@@ -223,25 +284,23 @@ export function ChatInterface({ className, initialQuestion }: ChatInterfaceProps
           {messages.map((message) => (
             <div
               key={message.id}
-              className={`flex gap-3 ${
-                message.type === 'user' ? 'justify-end' : 'justify-start'
-              }`}
+              className={`flex gap-3 ${message.type === 'user' ? 'justify-end' : 'justify-start'
+                }`}
             >
               {message.type === 'bot' && (
                 <div className="w-8 h-8 rounded-full bg-red-500 flex items-center justify-center flex-shrink-0">
                   <span className="text-white text-xs font-medium">AI</span>
                 </div>
               )}
-              
+
               <div
-                className={`max-w-[80%] rounded-lg px-4 py-3 ${
-                  message.type === 'user'
+                className={`max-w-[80%] rounded-lg px-4 py-3 ${message.type === 'user'
                     ? 'bg-blue-600 text-white'
                     : 'bg-gray-800 text-white'
-                }`}
+                  }`}
               >
                 <div className="whitespace-pre-wrap leading-relaxed text-sm">{message.content}</div>
-                
+
                 {/* 봇 메시지 추가 정보 */}
                 {message.type === 'bot' && (
                   <div className="mt-3 space-y-2">
@@ -273,7 +332,7 @@ export function ChatInterface({ className, initialQuestion }: ChatInterfaceProps
                         </div>
                       </div>
                     )}
-                    
+
                     {/* 피드백 버튼들 */}
                     <div className="flex items-center space-x-2 mt-2">
                       <button className="text-xs text-gray-400 hover:text-white flex items-center gap-1">
@@ -292,7 +351,7 @@ export function ChatInterface({ className, initialQuestion }: ChatInterfaceProps
                   </div>
                 )}
               </div>
-              
+
               {message.type === 'user' && (
                 <div className="w-8 h-8 rounded-full bg-gray-600 flex items-center justify-center flex-shrink-0">
                   <User className="w-4 h-4 text-white" />
@@ -300,7 +359,7 @@ export function ChatInterface({ className, initialQuestion }: ChatInterfaceProps
               )}
             </div>
           ))}
-          
+
           {/* 로딩 인디케이터 */}
           {isLoading && (
             <div className="flex gap-3 justify-start">
@@ -313,13 +372,13 @@ export function ChatInterface({ className, initialQuestion }: ChatInterfaceProps
               </div>
             </div>
           )}
-          
+
           <div ref={messagesEndRef} />
         </div>
       </ScrollArea>
-      
+
       <Separator className="bg-gray-700" />
-      
+
       {/* 입력 영역 */}
       <div className="p-4">
         <div className="flex gap-2">
