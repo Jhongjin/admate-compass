@@ -9,58 +9,7 @@ import { embeddingService } from './EmbeddingService';
 /**
  * 임베딩 생성 유틸리티 (로컬/원격 서비스 사용)
  */
-async function generateRealEmbedding(text: string): Promise<number[]> {
-  try {
-    const result = await embeddingService.generateEmbedding(text);
-    return result.embedding;
-  } catch (error) {
-    console.warn('⚠️ 실제 임베딩 생성 실패, 기본값 반환:', error);
-    const embeddingDim = embeddingService.getEmbeddingDimension();
-    return new Array(embeddingDim).fill(0);
-  }
-}
-try {
-  // 환경변수에서 임베딩 차원 수 가져오기
-  const embeddingDim = parseInt(process.env.EMBEDDING_DIM || '1024');
 
-  // 간단한 해시 기반 임베딩 생성 (실제 임베딩은 아니지만 테스트용)
-  const hash = simpleHash(text);
-  const embedding = new Array(embeddingDim).fill(0);
-
-  // 해시값을 기반으로 임베딩 벡터 생성
-  for (let i = 0; i < embeddingDim; i++) {
-    embedding[i] = Math.sin(hash + i) * 0.1;
-  }
-
-  return embedding;
-} catch (error) {
-  console.warn('⚠️ 임베딩 생성 실패, 기본값 반환:', error);
-  const embeddingDim = parseInt(process.env.EMBEDDING_DIM || '1024');
-  return new Array(embeddingDim).fill(0);
-}
-}
-
-/**
- * 간단한 해시 함수
- */
-function simpleHash(str: string): number {
-  try {
-    if (!str || typeof str !== 'string') {
-      return 0;
-    }
-
-    let hash = 0;
-    for (let i = 0; i < str.length; i++) {
-      const char = str.charCodeAt(i);
-      hash = ((hash << 5) - hash) + char;
-      hash = hash & hash; // 32bit 정수로 변환
-    }
-    return Math.abs(hash);
-  } catch (error) {
-    console.warn('⚠️ 해시 생성 실패, 기본값 반환:', error);
-    return 12345; // 기본 해시값
-  }
-}
 
 export interface SemanticBoundary {
   position: number; // 텍스트 내 위치 (문자 인덱스)
