@@ -121,22 +121,16 @@ ${questionKeywords.length > 0 ? `**질문 핵심 키워드:** ${questionKeywords
    * 답변 형식 가이드라인 생성
    */
   buildAnswerFormatGuidelines(query: string): string {
-    return `**답변 가이드라인:**
-1. **질문 관련성 필수**: 
-   - 반드시 사용자 질문("${query}")과 직접 관련된 내용만 답변하세요
-   - 질문의 핵심 키워드와 관련 없는 정보는 포함하지 마세요
-2. **정확성 우선**: 제공된 문서에 명시된 내용만을 정확하게 전달하세요. 문서에 없는 정보는 절대 생성하지 마세요.
-3. **구체성 강화**: 
-   - 문서에 명시된 구체적인 수치, 절차, 예시를 포함하세요
-   - 문서에 없는 예시는 만들지 마세요
-4. **출처 명시 필수**: 답변의 모든 정보에 대해 [출처 X] 형태로 출처를 반드시 명시하세요.
-5. **정보 부족 시 안내**: 문서에 없는 정보에 대해서는 담당팀 문의를 안내하세요.
-
-**답변 형식:**
+    return `**답변 형식:**
+- **검증 계획 (비공개)**: 답변을 작성하기 전, 문서 내의 어떤 구체적인 부분이 질문에 대한 근거가 되는지 스스로 먼저 확인하세요. (이 단계는 답변에 직접적으로 드러내지 않아도 됩니다.)
 - **핵심 답변 먼저**: 질문("${query}")과 직접 관련된 문서 내용을 바탕으로 핵심 답변을 1-2문장으로 먼저 제시
 - **상세 설명**: 질문과 직접 관련된 문서의 구체적인 설명과 근거를 [출처 X]와 함께 제시
 - **구체적 예시**: 질문과 관련된 문서의 실제 예시나 시나리오만 포함
-- **정보 부족 시**: 질문과 관련된 정보가 문서에 없으면 "제공된 문서에서 찾을 수 없습니다. 담당팀에 문의해주세요"라고 명확히 안내`;
+- **정보 부족 시**: 질문과 관련된 정보가 문서에 없거나, 문서 내용이 불완전(잘린 텍스트 등)하면 **절대 추측하지 말고** "제공된 문서에서 관련 정보를 찾을 수 없습니다. 추가 정보가 필요하시면 담당팀에 문의해주세요"라고 답변하세요.
+
+**신뢰도 자가 진단:**
+- 답변의 각 문장이 실제 문서의 몇 행/몇 단락에 근거하는지 스스로 확인하세요.
+- 확신이 80% 미만인 정보는 답변에서 제외하세요.`;
   }
 
   /**
@@ -147,10 +141,10 @@ ${questionKeywords.length > 0 ? `**질문 핵심 키워드:** ${questionKeywords
       // 제외된 출처 필터링
       const sourceTitle = result.documentTitle || '';
       const isExcluded = excludedSources.some(excluded => sourceTitle.includes(excluded));
-      
+
       // 의심스러운 숫자 패턴이 있는 출처 필터링
       const hasSuspiciousPattern = suspiciousNumberPatterns.some(pattern => sourceTitle.includes(pattern));
-      
+
       return !isExcluded && !hasSuspiciousPattern;
     });
 
@@ -162,7 +156,7 @@ ${questionKeywords.length > 0 ? `**질문 핵심 키워드:** ${questionKeywords
       const content = result.content || '';
       const title = result.documentTitle || '문서';
       const source = result.documentUrl || result.url || result.metadata?.source || '';
-      
+
       return `[출처 ${index + 1}] ${title}${source ? ` (${source})` : ''}\n${content.substring(0, 800)}`;
     }).join('\n\n---\n\n');
 
