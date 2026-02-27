@@ -1699,154 +1699,58 @@ export async function POST(request: NextRequest) {
     console.log('- NEXT_PUBLIC_SUPABASE_URL:', process.env.NEXT_PUBLIC_SUPABASE_URL ? '✅ 설정됨' : '❌ 미설정');
     console.log('- SUPABASE_SERVICE_ROLE_KEY:', process.env.SUPABASE_SERVICE_ROLE_KEY ? '✅ 설정됨' : '❌ 미설정');
 
-    console.log(`🚀 RAG 챗봇 응답 생성 시작: "${message}"`);
-    if (vendorFilter) {
-      console.log(`🏷️ 벤더 필터 적용: ${vendorFilter.join(', ')}`);
-    }
+    console.log(`🚀 RAG 챗봇 스트림 생성 응답 개시: "${message}"`);
 
-    // 1. RAG 검색 (출처 수 제한, 벤더 필터 적용) - 더 많은 결과 가져오기
-    let searchResults = await searchSimilarChunks(message, 15, vendorFilter); // 초기 검색은 더 많이 가져옴 (10 -> 15로 증가)
-    console.log(`📊 초기 검색 결과: ${searchResults.length}개`);
+    // 스트리밍 응답 생성 (헤더 우선 전송을 위해 검색 로직을 내부로 이동)
+    const stream = new ReadableStream({
+      async start(controller) {
+        const streamStartTime = Date.now();
+        try {
+          // 1. RAG 검색 (타임아웃 적용: 15초)
+          console.log('🔍 [Stream] RAG 검색 시작...');
+          console.time('RAG_Search');
 
-    // 벤더 감지가 실패했지만 검색 결과에서 벤더가 명확한 경우, 벤더 필터 재적용
-    if (!vendorFilter && searchResults.length > 0) {
-      const resultVendors = new Set<string>();
-      searchResults.forEach(r => {
-        if (r.sourceVendor) {
-          resultVendors.add(r.sourceVendor.toUpperCase());
-        }
-      });
+          let searchResults: SearchResult[] = [];
 
-      // 검색 결과의 벤더가 하나로 명확한 경우, 해당 벤더로 필터링하여 재검색
-      if (resultVendors.size === 1) {
-        const dominantVendor = Array.from(resultVendors)[0];
-        console.log(`🔄 검색 결과에서 벤더 자동 감지: ${dominantVendor} - 재검색 진행`);
-        searchResults = await searchSimilarChunks(message, 3, [dominantVendor]);
-        vendorFilter = [dominantVendor];
-      } else if (resultVendors.size > 1) {
-        // 여러 벤더가 섞여 있는 경우, 유사도가 높은 상위 결과의 벤더를 우선
-        const topVendor = searchResults[0]?.sourceVendor?.toUpperCase();
-        if (topVendor) {
-          const topVendorCount = searchResults.filter(r => r.sourceVendor?.toUpperCase() === topVendor).length;
-          const totalCount = searchResults.length;
+          // 타임아웃 처리를 위한 프로미스 레이스
+          const searchTimeoutPromise = new Promise<SearchResult[]>((_, reject) =>
+            setTimeout(() => reject(new Error('RAG 검색 타임아웃 (15초)')), 15000)
+          );
 
-          // 상위 벤더가 50% 이상을 차지하면 해당 벤더로 필터링
-          if (topVendorCount / totalCount >= 0.5) {
-            console.log(`🔄 상위 벤더 필터링: ${topVendor} (${topVendorCount}/${totalCount}) - 재검색 진행`);
-            searchResults = await searchSimilarChunks(message, 3, [topVendor]);
-            vendorFilter = [topVendor];
-          }
-        }
-      }
-    }
-
-    // 최종 결과 선택: 유사도 우선, 잘린 숫자 패턴 필터링 고려
-    // 잘린 숫자 패턴 필터링을 고려하여 더 많은 결과 가져오기
-    const finalLimit = 8; // 5 -> 8로 증가 (더 많은 정보 포함)
-
-    // 벤더 필터가 있는 경우, 해당 벤더 결과만 유지
-    if (vendorFilter && vendorFilter.length > 0) {
-      const beforeFilter = searchResults.length;
-      searchResults = searchResults.filter(r => {
-        const resultVendor = r.sourceVendor?.toUpperCase();
-        return vendorFilter.some(vf => vf.toUpperCase() === resultVendor);
-      });
-      if (beforeFilter !== searchResults.length) {
-        console.log(`🔍 벤더 필터 적용: ${beforeFilter}개 → ${searchResults.length}개 (${vendorFilter.join(', ')}만 유지)`);
-      }
-    }
-
-    // 유사도 순으로 정렬하여 상위 결과 선택 (파일/URL 균형보다 유사도 우선)
-    searchResults = searchResults
-      .sort((a, b) => (b.similarity || 0) - (a.similarity || 0))
-      .slice(0, finalLimit);
-
-    // 파일과 URL 통계 로깅
-    const urlResults = searchResults.filter(r => r.metadata?.sourceType === 'url' || r.metadata?.documentType === 'url');
-    const fileResults = searchResults.filter(r => r.metadata?.sourceType === 'file' || (r.metadata?.documentType && r.metadata.documentType !== 'url'));
-    console.log(`📊 최종 검색 결과: 상위 ${searchResults.length}개 (유사도 순, 파일 ${fileResults.length}개 + URL ${urlResults.length}개)`);
-
-    // 검색 결과 상세 로그 및 타입별 통계
-    if (searchResults.length > 0) {
-      // 타입별 통계 계산
-      const urlResults = searchResults.filter(r => r.metadata?.sourceType === 'url' || r.metadata?.documentType === 'url');
-      const fileResults = searchResults.filter(r => r.metadata?.sourceType === 'file' || (r.metadata?.documentType && r.metadata.documentType !== 'url'));
-
-      // 벤더별 통계 계산
-      const vendorStats: Record<string, number> = {};
-      searchResults.forEach(r => {
-        const vendor = r.sourceVendor || 'UNKNOWN';
-        vendorStats[vendor] = (vendorStats[vendor] || 0) + 1;
-      });
-
-      console.log('📋 검색 결과 상세:');
-      console.log(`  📊 타입별 통계: URL ${urlResults.length}개, 파일 ${fileResults.length}개 (총 ${searchResults.length}개)`);
-      console.log(`  🏷️ 벤더별 통계: ${Object.entries(vendorStats).map(([v, c]) => `${v} ${c}개`).join(', ')}`);
-
-      searchResults.forEach((result, index) => {
-        const resultType = result.metadata?.sourceType || result.metadata?.documentType || 'unknown';
-        const typeLabel = resultType === 'url' ? '🌐 URL' : '📄 파일';
-        console.log(`  [${index + 1}] ${typeLabel} - 제목: ${result.documentTitle}, 벤더: ${result.sourceVendor || '없음'}, 유사도: ${result.similarity || 'N/A'}`);
-      });
-
-      // 타입 불균형 경고
-      if (urlResults.length === 0 && fileResults.length > 0) {
-        console.log('⚠️ 경고: URL 검색 결과가 없습니다. URL 문서가 검색되지 않았을 수 있습니다.');
-      } else if (fileResults.length === 0 && urlResults.length > 0) {
-        console.log('⚠️ 경고: 파일 검색 결과가 없습니다. 파일 문서가 검색되지 않았을 수 있습니다.');
-      }
-
-      // 벤더 불일치 경고 (벤더 필터가 있는데 다른 벤더 결과가 포함된 경우)
-      if (vendorFilter && vendorFilter.length > 0) {
-        const mismatchedVendors = searchResults.filter(r =>
-          r.sourceVendor && !vendorFilter.includes(r.sourceVendor.toUpperCase())
-        );
-        if (mismatchedVendors.length > 0) {
-          console.log(`⚠️ 경고: 벤더 필터(${vendorFilter.join(', ')})와 다른 벤더 결과 ${mismatchedVendors.length}개 포함됨`);
-        }
-      }
-    } else {
-      console.log('⚠️ 검색 결과가 없습니다. RAG 검색이 제대로 작동하지 않을 수 있습니다.');
-    }
-
-    // 2. 검색 결과가 없거나 유사도가 낮으면 관련 내용 없음 응답
-    const hasRelevantResults = searchResults.length > 0 &&
-      searchResults.some(result => result.similarity > 0.3); // 유사도 30% 이상인 결과가 있는지 확인
-
-    if (!hasRelevantResults) {
-      console.log('⚠️ RAG 검색 결과가 없거나 유사도가 낮음. 관련 내용 없음 응답');
-
-      // 벤더가 감지되었는데 문서가 없는 경우 벤더별 메시지
-      let noDataMessage = "죄송합니다. 제공된 내부 문서에서 관련 정보를 찾을 수 없습니다.";
-
-      if (vendorFilter && vendorFilter.length > 0) {
-        const vendorName = getVendorDisplayName(vendorFilter[0]);
-        noDataMessage = `죄송합니다. ${vendorName} 관련 내부 문서를 찾을 수 없습니다.\n\n현재 ${vendorName} 광고 정책 문서가 등록되지 않았거나, 검색 결과가 없습니다.\n\n📧 **더 정확한 답변을 원하시면:**\n담당팀에 직접 문의해주시면 더 구체적인 답변을 받으실 수 있습니다.`;
-      } else {
-        noDataMessage = "죄송합니다. 제공된 내부 문서에서 관련 정보를 찾을 수 없습니다.\n\n📧 **더 정확한 답변을 원하시면:**\n담당팀에 직접 문의해주시면 더 구체적인 답변을 받으실 수 있습니다.";
-      }
-
-      // noDataFound인 경우에도 스트리밍으로 응답
-      const stream = new ReadableStream({
-        async start(controller) {
           try {
-            // noData 메시지를 스트림으로 전송
-            const words = noDataMessage.split(' ');
-            for (let i = 0; i < words.length; i++) {
-              const chunk = words[i] + (i < words.length - 1 ? ' ' : '');
-              const streamResponse = {
-                type: 'chunk',
-                data: {
-                  content: chunk
-                }
-              };
+            searchResults = await Promise.race([
+              searchSimilarChunks(message, 15, vendorFilter),
+              searchTimeoutPromise
+            ]);
+            console.timeEnd('RAG_Search');
+          } catch (searchError) {
+            console.error('❌ [Stream] RAG 검색 실패 또는 타임아웃:', searchError);
+            console.timeEnd('RAG_Search');
+            // 검색 실패 시 빈 결과로 진행 (나중에 fallback 핸들링됨)
+            searchResults = [];
+          }
 
-              const chunkData = `data: ${JSON.stringify(streamResponse)}\n\n`;
-              controller.enqueue(new TextEncoder().encode(chunkData));
-              await new Promise(resolve => setTimeout(resolve, 30));
+          // 2. 검색 결과가 없거나 유사도가 낮으면 관련 내용 없음 응답
+          const hasRelevantResults = searchResults.length > 0 &&
+            searchResults.some(result => result.similarity > 0.3);
+
+          if (!hasRelevantResults) {
+            console.log('⚠️ [Stream] 관련 검색 결과 없음. 폴백 응답 생성.');
+            let noDataMessage = "죄송합니다. 제공된 내부 문서에서 관련 정보를 찾을 수 없습니다.";
+            if (vendorFilter && vendorFilter.length > 0) {
+              const vendorName = getVendorDisplayName(vendorFilter[0]);
+              noDataMessage = `죄송합니다. ${vendorName} 관련 내부 문서를 찾을 수 없습니다.\n\n현재 ${vendorName} 광고 정책 문서가 등록되지 않았거나, 검색 결과가 없습니다.\n\n📧 **더 정확한 답변을 원하시면:**\n담당팀에 직접 문의해주시면 더 구체적인 답변을 받으실 수 있습니다.`;
+            } else {
+              noDataMessage = "죄송합니다. 제공된 내부 문서에서 관련 정보를 찾을 수 없습니다.\n\n📧 **더 정확한 답변을 원하시면:**\n담당팀에 직접 문의해주시면 더 구체적인 답변을 받으실 수 있습니다.";
             }
 
-            // 최종 메타데이터 전송
+            const words = noDataMessage.split(' ');
+            for (const word of words) {
+              const chunk = `data: ${JSON.stringify({ type: 'chunk', data: { content: word + ' ' } })}\n\n`;
+              controller.enqueue(new TextEncoder().encode(chunk));
+              await new Promise(r => setTimeout(r, 20));
+            }
+
             const finalData = {
               type: 'done',
               data: {
@@ -1855,163 +1759,66 @@ export async function POST(request: NextRequest) {
                 processingTime: Date.now() - startTime,
                 model: 'no-data',
                 noDataFound: true,
-                showContactOption: true
+                showContactOption: true,
+                relatedQuestions: []
               }
             };
-
-            const finalChunk = `data: ${JSON.stringify(finalData)}\n\n`;
-            controller.enqueue(new TextEncoder().encode(finalChunk));
+            controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(finalData)}\n\n`));
             controller.close();
-          } catch (error) {
-            console.error('❌ 스트림 생성 오류:', error);
-            controller.error(error);
+            return;
           }
-        }
-      });
 
-      return new Response(stream, {
-        headers: {
-          'Content-Type': 'text/event-stream',
-          'Cache-Control': 'no-cache',
-          'Connection': 'keep-alive',
-        },
-      });
-    }
+          // 3. 검색 결과 정제 및 신뢰도 계산
+          const finalLimit = 8;
+          let filteredResults = searchResults
+            .sort((a, b) => (b.similarity || 0) - (a.similarity || 0))
+            .slice(0, finalLimit);
 
-    // 3. 일반 JSON 응답 생성
-    console.log('🚀 일반 JSON 답변 생성 시작');
+          const confidence = calculateConfidence(filteredResults);
+          const sources = filteredResults.map(result => ({
+            id: result.id,
+            title: result.documentTitle,
+            url: result.documentUrl,
+            updatedAt: result.metadata?.updatedAt || new Date().toISOString(),
+            excerpt: (result.content || '').substring(0, 200).replace(/\0/g, '').trim(),
+            similarity: result.similarity,
+            sourceType: result.metadata?.sourceType,
+            documentType: result.metadata?.documentType
+          }));
 
-    // 신뢰도 계산
-    const confidence = calculateConfidence(searchResults);
+          // 4. 관련 질문 및 답변 생성 (병렬 실행)
+          console.log('🤖 [Stream] Claude 답변 및 관련 질문 생성 시작...');
+          const relatedQuestionsPromise = generateRelatedQuestions(message, filteredResults, vendorFilter);
 
-    // 처리 시간 계산
-    const processingTime = Date.now() - startTime;
+          // Claude 스트림 답변 생성
+          const fullAnswer = await generateStreamAnswerWithClaude(message, filteredResults, controller);
+          const relatedQuestions = await relatedQuestionsPromise.catch(() => []);
 
-    // 출처 정보 생성
-    const sources = searchResults.map(result => {
-      console.log(`📚 출처 정보: 제목="${result.documentTitle}", URL="${result.documentUrl}", 유사도=${result.similarity}`);
-
-      // 강력한 excerpt 디코딩 및 정리
-      let excerpt = result.content.substring(0, 200) + (result.content.length > 200 ? '...' : '');
-      try {
-        // 1. null 문자 제거
-        excerpt = excerpt.replace(/\0/g, '');
-
-        // 2. 제어 문자 제거 (탭, 줄바꿈, 캐리지 리턴 제외)
-        excerpt = excerpt.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '');
-
-        // 3. UTF-8 인코딩 보장
-        excerpt = Buffer.from(excerpt, 'utf-8').toString('utf-8');
-
-        // 4. 연속된 공백을 하나로 정리
-        excerpt = excerpt.replace(/\s+/g, ' ');
-
-        // 5. 앞뒤 공백 제거
-        excerpt = excerpt.trim();
-
-        console.log(`🔧 excerpt 정리 완료: "${excerpt.substring(0, 30)}..."`);
-      } catch (error) {
-        console.warn('⚠️ excerpt 인코딩 변환 실패, 기본 정리만 적용:', error);
-        // 기본 정리만 적용
-        excerpt = excerpt.replace(/\0/g, '').replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g, '').trim();
-      }
-
-      return {
-        id: result.id,
-        title: result.documentTitle,
-        url: result.documentUrl,
-        updatedAt: result.metadata?.updatedAt || new Date().toISOString(),
-        excerpt: excerpt,
-        similarity: result.similarity,
-        sourceType: result.metadata?.sourceType,
-        documentType: result.metadata?.documentType
-      };
-    });
-
-    // 관련 질문 생성 (비동기로 시작, 스트림 완료 후 사용)
-    // 벤더 필터 정보도 전달하여 벤더별 문서 기반 질문 생성
-    const relatedQuestionsPromise = searchResults.length > 0
-      ? generateRelatedQuestions(message, searchResults, vendorFilter)
-      : Promise.resolve([]);
-
-    // 스트리밍 응답 생성
-    const stream = new ReadableStream({
-      async start(controller) {
-        try {
-          let fullAnswer = '';
-
-          // Claude 스트림 답변 생성 (fullAnswer를 반환하도록 수정 필요)
-          // 임시로 빈 문자열로 시작하고, 스트림에서 수집
-          const answerPromise = generateStreamAnswerWithClaude(message, searchResults, controller);
-
-          // 스트림 완료 대기
-          fullAnswer = await answerPromise;
-
-          // 관련 질문 생성 완료 대기
-          const relatedQuestions = await relatedQuestionsPromise;
-
-          // 스트림 완료 후 최종 메타데이터 전송
-          // 담당자 문의 버튼은 항상 표시 (사용자가 추가 정보를 요청할 수 있도록)
-          const shouldShowContactOption = true;
-
-          console.log(`📊 답변 품질 평가: confidence=${confidence}, shouldShowContactOption=${shouldShowContactOption}`);
-          console.log(`💡 관련 질문 생성 완료: ${relatedQuestions.length}개`);
-
-          // 최종 메타데이터 전송
-          try {
-            const finalData = {
-              type: 'done',
-              data: {
-                sources: sources || [],
-                confidence: confidence || 0.8,
-                processingTime: processingTime || 0,
-                model: 'claude-3-5-sonnet-20241022',
-                noDataFound: false,
-                showContactOption: shouldShowContactOption || false,
-                relatedQuestions: relatedQuestions || []
-              }
-            };
-
-            // JSON 직렬화 시도
-            let jsonStr: string;
-            try {
-              jsonStr = JSON.stringify(finalData);
-            } catch (stringifyError) {
-              console.error('❌ 최종 메타데이터 JSON.stringify 실패:', stringifyError);
-              // 직렬화 실패 시 최소한의 데이터만 전송
-              jsonStr = JSON.stringify({
-                type: 'done',
-                data: {
-                  sources: [],
-                  confidence: 0.8,
-                  processingTime: processingTime || 0,
-                  model: 'claude-3-5-sonnet-20241022',
-                  noDataFound: false,
-                  showContactOption: false,
-                  relatedQuestions: []
-                }
-              });
-            }
-
-            const finalChunk = `data: ${jsonStr}\n\n`;
-            controller.enqueue(new TextEncoder().encode(finalChunk));
-            controller.close();
-          } catch (error) {
-            console.error('❌ 최종 메타데이터 전송 오류:', error);
-            // 오류 발생 시에도 스트림 종료
-            controller.close();
-          }
-        } catch (error) {
-          console.error('❌ 스트림 생성 오류:', error);
-          const errorData = {
-            type: 'error',
+          // 5. 최종 메타데이터 전송
+          const finalData = {
+            type: 'done',
             data: {
-              message: '답변 생성 중 오류가 발생했습니다.',
-              error: error instanceof Error ? error.message : '알 수 없는 오류'
+              sources,
+              confidence,
+              processingTime: Date.now() - startTime,
+              model: 'claude-3-5-sonnet-20241022',
+              noDataFound: false,
+              showContactOption: true,
+              relatedQuestions
             }
           };
-          const errorChunk = `data: ${JSON.stringify(errorData)}\n\n`;
-          controller.enqueue(new TextEncoder().encode(errorChunk));
+
+          controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(finalData)}\n\n`));
+          controller.close();
+          console.log(`✅ [Stream] 모든 처리 완료: 소요시간 ${Date.now() - startTime}ms`);
+
+        } catch (error) {
+          console.error('❌ [Stream] 스트림 처리 중 치명적 오류:', error);
+          const errorData = {
+            type: 'error',
+            data: { message: '답변 생성 중 오류가 발생했습니다.', error: String(error) }
+          };
+          controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(errorData)}\n\n`));
           controller.close();
         }
       }
@@ -2026,20 +1833,10 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error) {
-    console.error('❌ RAG 응답 생성 실패:', error);
-    console.error('❌ 에러 상세:', JSON.stringify(error, null, 2));
-
-    const processingTime = Date.now() - startTime;
-
+    console.error('❌ POST 핸들러 치명적 오류:', error);
     return NextResponse.json({
-      response: {
-        message: '죄송합니다. 현재 서비스에 일시적인 문제가 발생했습니다. 잠시 후 다시 시도해주세요.',
-        content: '죄송합니다. 현재 서비스에 일시적인 문제가 발생했습니다. 잠시 후 다시 시도해주세요.',
-        sources: []
-      },
-      confidence: 0,
-      processingTime,
-      model: 'error'
+      error: '서버 내부 오류가 발생했습니다.',
+      details: String(error)
     }, { status: 500 });
   }
 }
