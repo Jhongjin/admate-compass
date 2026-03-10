@@ -74,7 +74,7 @@ ${sources?.map((source: any, index: number) =>
     try {
       console.log('🔄 Claude 3.5 Sonnet 요약 시도...');
       message = await anthropic.messages.create({
-        model: 'claude-3-5-sonnet-latest',
+        model: 'claude-sonnet-4-6',
         max_tokens: 1024,
         messages: [{ role: 'user', content: summaryPrompt }]
       });
