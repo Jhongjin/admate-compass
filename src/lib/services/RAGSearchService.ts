@@ -438,7 +438,7 @@ ${context}
         try {
           console.log('🔄 Claude 3.5 Sonnet 호출 시도...');
           message = await this.anthropic.messages.create({
-            model: 'claude-3-5-sonnet-20240620',
+            model: 'claude-3-5-sonnet-latest',
             max_tokens: 4000,
             messages: [{ role: 'user', content: enhancedPrompt }],
           });

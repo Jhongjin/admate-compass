@@ -2749,8 +2749,8 @@ export class RAGProcessor {
 
       // 검색 임계값 상수 정의 (더 공격적인 Fallback 전략)
       const SEARCH_THRESHOLDS = {
-        primary: 0.6,      // 기본 검색 임계값
-        secondary: 0.35,   // 1차 Fallback
+        primary: 0.45,      // 기본 검색 임계값 (0.6 -> 0.45 하향 조정)
+        secondary: 0.3,    // 1차 Fallback (0.35 -> 0.3)
         tertiary: 0.15,    // 2차 Fallback
         minimum: 0.05      // 최소 임계값
       };
@@ -2804,13 +2804,13 @@ export class RAGProcessor {
           query: searchQuery,
           queryKeywords,
           weights: {
-            vectorSimilarity: 0.35, // 벡터 유사도 가중치 (0.4 → 0.35로 감소, 키워드 매칭 강화)
-            keywordMatch: 0.3, // 키워드 매칭 가중치 (0.25 → 0.3로 증가)
+            vectorSimilarity: 0.35, // 벡터 유사도 가중치
+            keywordMatch: 0.35, // 키워드 매칭 가중치 (0.3 -> 0.35로 증가)
             sectionTitle: 0.2, // 섹션 제목 일치 가중치
-            documentTitle: 0.1, // 문서 제목 일치 가중치
+            documentTitle: 0.05, // 문서 제목 일치 가중치
             keywordDensity: 0.05, // 키워드 밀도 가중치
           },
-          minRelevanceScore: 0.2, // 최소 관련성 점수 (0.15 → 0.2로 상향, 더 엄격한 필터링)
+          minRelevanceScore: 0.12, // 최소 관련성 점수 (0.2 -> 0.12로 하향 지원)
         });
 
         // 잘린 텍스트 필터링 적용 (더 엄격한 필터링)
