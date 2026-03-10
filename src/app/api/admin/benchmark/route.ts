@@ -8,6 +8,7 @@ import { ChunkingBenchmark } from '@/lib/utils/chunkingBenchmark';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300; // 5분
+export const dynamic = 'force-dynamic';
 
 export async function POST(request: NextRequest) {
   try {

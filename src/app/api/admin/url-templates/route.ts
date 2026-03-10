@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+export const dynamic = 'force-dynamic';
 import { createClient } from '@/lib/supabase/client';
 
 // 템플릿 조회
@@ -6,9 +7,9 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const vendor = searchParams.get('vendor');
-    
+
     const supabase = createClient();
-    
+
     let query = supabase
       .from('url_templates')
       .select('*')
@@ -33,7 +34,7 @@ export async function GET(request: NextRequest) {
         'Instagram Business (영어)': ['https://business.instagram.com/help/'],
         'Meta 개발자 문서 (영어)': ['https://developers.facebook.com/docs/marketing-api/']
       };
-      
+
       return NextResponse.json({
         success: true,
         templates: defaultTemplates
@@ -64,7 +65,7 @@ export async function GET(request: NextRequest) {
 export async function POST(request: NextRequest) {
   try {
     const { templates } = await request.json();
-    
+
     if (!templates || typeof templates !== 'object') {
       return NextResponse.json(
         { error: '유효하지 않은 템플릿 데이터입니다.' },
@@ -73,7 +74,7 @@ export async function POST(request: NextRequest) {
     }
 
     const supabase = createClient();
-    
+
     // 기존 템플릿 모두 삭제
     const { error: deleteError } = await supabase
       .from('url_templates')
@@ -126,7 +127,7 @@ export async function POST(request: NextRequest) {
 export async function PUT(request: NextRequest) {
   try {
     const { name, urls, vendor } = await request.json();
-    
+
     if (!name || !Array.isArray(urls)) {
       return NextResponse.json(
         { error: '템플릿 이름과 URL 배열이 필요합니다.' },
@@ -135,10 +136,10 @@ export async function PUT(request: NextRequest) {
     }
 
     const supabase = createClient();
-    
+
     // vendor 기본값 설정
     const templateVendor = vendor || 'META';
-    
+
     // 템플릿이 존재하는지 확인
     const { data: existingTemplate, error: checkError } = await supabase
       .from('url_templates')
@@ -207,7 +208,7 @@ export async function DELETE(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const name = searchParams.get('name');
-    
+
     if (!name) {
       return NextResponse.json(
         { error: '템플릿 이름이 필요합니다.' },
@@ -216,7 +217,7 @@ export async function DELETE(request: NextRequest) {
     }
 
     const supabase = createClient();
-    
+
     const { error } = await supabase
       .from('url_templates')
       .delete()

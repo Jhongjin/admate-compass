@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   try {
@@ -27,7 +28,7 @@ export async function GET(request: NextRequest) {
 
   } catch (error) {
     console.error('❌ 상태 확인 API 오류:', error);
-    
+
     // 에러 발생 시에도 기본값 반환
     return NextResponse.json({
       success: true,

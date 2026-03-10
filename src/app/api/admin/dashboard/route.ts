@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+export const dynamic = 'force-dynamic';
 
 export async function GET(request: NextRequest) {
   try {
@@ -103,11 +104,11 @@ export async function GET(request: NextRequest) {
     const oneWeekAgo = new Date();
     oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
 
-    const weeklyQuestions = conversations?.filter(conv => 
+    const weeklyQuestions = conversations?.filter(conv =>
       new Date(conv.created_at) >= oneWeekAgo
     ).length || 0;
 
-    const weeklyUsers = users?.filter(user => 
+    const weeklyUsers = users?.filter(user =>
       user.last_sign_in && new Date(user.last_sign_in) >= oneWeekAgo
     ).length || 0;
 
@@ -120,7 +121,7 @@ export async function GET(request: NextRequest) {
     // 일일 질문 수 계산 (최근 24시간)
     const oneDayAgo = new Date();
     oneDayAgo.setHours(oneDayAgo.getHours() - 24);
-    const dailyQuestions = conversations?.filter(conv => 
+    const dailyQuestions = conversations?.filter(conv =>
       new Date(conv.created_at) >= oneDayAgo
     ).length || 0;
 
@@ -129,8 +130,8 @@ export async function GET(request: NextRequest) {
 
     // 사용자 만족도 계산 (5점 만점 기준)
     // helpful 비율을 5점 만점으로 변환 (helpful 비율 * 4 + 1, 최소 1점)
-    const userSatisfaction = totalFeedback > 0 
-      ? (helpfulFeedback / totalFeedback) * 4 + 1 
+    const userSatisfaction = totalFeedback > 0
+      ? (helpfulFeedback / totalFeedback) * 4 + 1
       : null;
 
     // 실제 데이터 기반 성능 지표 계산
@@ -192,19 +193,19 @@ export async function GET(request: NextRequest) {
     }
 
     // Progress 바 계산 (실제 상태 기반)
-    const overallProgress = totalDocuments > 0 
-      ? Math.round((completedDocuments / totalDocuments) * 100) 
+    const overallProgress = totalDocuments > 0
+      ? Math.round((completedDocuments / totalDocuments) * 100)
       : 0;
     const databaseProgress = 100; // 연결 상태이므로 100%
     const llmProgress = 98; // LLM 서비스 상태 (실제로는 API 응답률 기반으로 계산 가능)
-    const vectorStoreProgress = totalDocuments > 0 
-      ? Math.round((completedDocuments / totalDocuments) * 100) 
+    const vectorStoreProgress = totalDocuments > 0
+      ? Math.round((completedDocuments / totalDocuments) * 100)
       : 0;
 
     // 동시 사용자 수 계산 (최근 1시간 내 활성 사용자)
     const oneHourAgo = new Date();
     oneHourAgo.setHours(oneHourAgo.getHours() - 1);
-    const activeUsers = conversations?.filter(conv => 
+    const activeUsers = conversations?.filter(conv =>
       new Date(conv.created_at) >= oneHourAgo
     ).length || 0;
 
@@ -291,7 +292,7 @@ export async function GET(request: NextRequest) {
 
   } catch (error) {
     console.error('❌ 대시보드 통계 API 오류:', error);
-    
+
     return NextResponse.json({
       success: true,
       data: {

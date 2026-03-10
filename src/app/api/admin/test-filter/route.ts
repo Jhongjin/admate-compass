@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+export const dynamic = 'force-dynamic';
 import { createClient } from '@supabase/supabase-js';
 
 export async function GET(request: NextRequest) {
@@ -36,35 +37,35 @@ export async function GET(request: NextRequest) {
     // 각 필터링 조건별로 테스트
     const tests = {
       // 1. title에 facebook.com이 포함된 문서들
-      facebookInTitle: allDocs.filter(doc => 
+      facebookInTitle: allDocs.filter(doc =>
         doc.title && doc.title.includes('facebook.com')
       ),
-      
+
       // 2. title에 instagram.com이 포함된 문서들
-      instagramInTitle: allDocs.filter(doc => 
+      instagramInTitle: allDocs.filter(doc =>
         doc.title && doc.title.includes('instagram.com')
       ),
-      
+
       // 3. title에 meta.com이 포함된 문서들
-      metaInTitle: allDocs.filter(doc => 
+      metaInTitle: allDocs.filter(doc =>
         doc.title && doc.title.includes('meta.com')
       ),
-      
+
       // 4. title에 developers.facebook.com이 포함된 문서들
-      developersFacebookInTitle: allDocs.filter(doc => 
+      developersFacebookInTitle: allDocs.filter(doc =>
         doc.title && doc.title.includes('developers.facebook.com')
       ),
-      
+
       // 5. title에 business.instagram.com이 포함된 문서들
-      businessInstagramInTitle: allDocs.filter(doc => 
+      businessInstagramInTitle: allDocs.filter(doc =>
         doc.title && doc.title.includes('business.instagram.com')
       ),
-      
+
       // 6. 전체 Meta 관련 문서들 (OR 조건)
-      allMetaDocs: allDocs.filter(doc => 
+      allMetaDocs: allDocs.filter(doc =>
         doc.title && (
-          doc.title.includes('facebook.com') || 
-          doc.title.includes('instagram.com') || 
+          doc.title.includes('facebook.com') ||
+          doc.title.includes('instagram.com') ||
           doc.title.includes('meta.com') ||
           doc.title.includes('developers.facebook.com') ||
           doc.title.includes('business.instagram.com')
@@ -117,9 +118,9 @@ export async function GET(request: NextRequest) {
 
   } catch (error) {
     console.error('❌ 필터링 테스트 오류:', error);
-    
+
     return NextResponse.json(
-      { 
+      {
         success: false,
         error: '필터링 테스트 중 오류가 발생했습니다.',
         details: error instanceof Error ? error.message : String(error)

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+export const dynamic = 'force-dynamic';
 import { createPureClient } from '@/lib/supabase/server';
 
 export async function GET(request: Request) {
@@ -30,15 +31,15 @@ export async function GET(request: Request) {
       (docs || []).forEach((d: any) => { vendorByDoc[d.id] = d.source_vendor || 'UNKNOWN'; });
     }
 
-    function avg(ns: number[]) { return ns.length ? Math.round(ns.reduce((a,b)=>a+b,0)/ns.length) : 0; }
+    function avg(ns: number[]) { return ns.length ? Math.round(ns.reduce((a, b) => a + b, 0) / ns.length) : 0; }
     function max(ns: number[]) { return ns.length ? Math.max(...ns) : 0; }
     function p95(ns: number[]) {
-      if (!ns.length) return 0; const s=[...ns].sort((a,b)=>a-b); const idx=Math.floor(0.95*(s.length-1)); return s[idx];
+      if (!ns.length) return 0; const s = [...ns].sort((a, b) => a - b); const idx = Math.floor(0.95 * (s.length - 1)); return s[idx];
     }
-    function p90(ns: number[]) { if (!ns.length) return 0; const s=[...ns].sort((a,b)=>a-b); const idx=Math.floor(0.90*(s.length-1)); return s[idx]; }
-    function p99(ns: number[]) { if (!ns.length) return 0; const s=[...ns].sort((a,b)=>a-b); const idx=Math.floor(0.99*(s.length-1)); return s[idx]; }
+    function p90(ns: number[]) { if (!ns.length) return 0; const s = [...ns].sort((a, b) => a - b); const idx = Math.floor(0.90 * (s.length - 1)); return s[idx]; }
+    function p99(ns: number[]) { if (!ns.length) return 0; const s = [...ns].sort((a, b) => a - b); const idx = Math.floor(0.99 * (s.length - 1)); return s[idx]; }
 
-    const nums = (k: string) => rows.map(r => Number(r[k]||0)).filter(n => Number.isFinite(n));
+    const nums = (k: string) => rows.map(r => Number(r[k] || 0)).filter(n => Number.isFinite(n));
     const overall = {
       count: rows.length,
       avgTotalMs: avg(nums('total_ms')),
@@ -66,21 +67,21 @@ export async function GET(request: Request) {
     const vendorAggregates = Object.entries(byVendor).map(([vendor, arr]: [string, any[]]) => ({
       vendor,
       count: arr.length,
-      avgTotalMs: avg(arr.map(x=>Number(x.total_ms||0))),
-      p90TotalMs: p90(arr.map(x=>Number(x.total_ms||0))),
-      p95TotalMs: p95(arr.map(x=>Number(x.total_ms||0))),
-      p99TotalMs: p99(arr.map(x=>Number(x.total_ms||0))),
-      maxTotalMs: max(arr.map(x=>Number(x.total_ms||0))),
-      avgOcrMs: avg(arr.map(x=>Number(x.ocr_ms||0))),
-      p90OcrMs: p90(arr.map(x=>Number(x.ocr_ms||0))),
-      p95OcrMs: p95(arr.map(x=>Number(x.ocr_ms||0))),
-      p99OcrMs: p99(arr.map(x=>Number(x.ocr_ms||0))),
-      maxOcrMs: max(arr.map(x=>Number(x.ocr_ms||0))),
-      avgEmbMs: avg(arr.map(x=>Number(x.emb_ms||0))),
-      p90EmbMs: p90(arr.map(x=>Number(x.emb_ms||0))),
-      p95EmbMs: p95(arr.map(x=>Number(x.emb_ms||0))),
-      p99EmbMs: p99(arr.map(x=>Number(x.emb_ms||0))),
-      maxEmbMs: max(arr.map(x=>Number(x.emb_ms||0))),
+      avgTotalMs: avg(arr.map(x => Number(x.total_ms || 0))),
+      p90TotalMs: p90(arr.map(x => Number(x.total_ms || 0))),
+      p95TotalMs: p95(arr.map(x => Number(x.total_ms || 0))),
+      p99TotalMs: p99(arr.map(x => Number(x.total_ms || 0))),
+      maxTotalMs: max(arr.map(x => Number(x.total_ms || 0))),
+      avgOcrMs: avg(arr.map(x => Number(x.ocr_ms || 0))),
+      p90OcrMs: p90(arr.map(x => Number(x.ocr_ms || 0))),
+      p95OcrMs: p95(arr.map(x => Number(x.ocr_ms || 0))),
+      p99OcrMs: p99(arr.map(x => Number(x.ocr_ms || 0))),
+      maxOcrMs: max(arr.map(x => Number(x.ocr_ms || 0))),
+      avgEmbMs: avg(arr.map(x => Number(x.emb_ms || 0))),
+      p90EmbMs: p90(arr.map(x => Number(x.emb_ms || 0))),
+      p95EmbMs: p95(arr.map(x => Number(x.emb_ms || 0))),
+      p99EmbMs: p99(arr.map(x => Number(x.emb_ms || 0))),
+      maxEmbMs: max(arr.map(x => Number(x.emb_ms || 0))),
     }));
 
     // 실패율 계산: processing_jobs 테이블에서 최근 N시간 내 실패한 작업 수 / 전체 작업 수
@@ -91,7 +92,7 @@ export async function GET(request: Request) {
         .from('processing_jobs')
         .select('status')
         .gte('created_at', gte);
-      
+
       if (jobsData && jobsData.length > 0) {
         const total = jobsData.length;
         const failed = jobsData.filter(j => j.status === 'failed' || j.status === 'error').length;
@@ -103,7 +104,7 @@ export async function GET(request: Request) {
         .from('processing_jobs')
         .select('status')
         .limit(1000);
-      
+
       if (jobsData && jobsData.length > 0) {
         const total = jobsData.length;
         const failed = jobsData.filter(j => j.status === 'failed' || j.status === 'error').length;

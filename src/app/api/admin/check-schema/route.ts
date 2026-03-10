@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+export const dynamic = 'force-dynamic';
 import { createClient } from '@supabase/supabase-js';
 
 export async function GET(request: NextRequest) {
@@ -59,9 +60,9 @@ export async function GET(request: NextRequest) {
 
   } catch (error) {
     console.error('❌ 스키마 확인 오류:', error);
-    
+
     return NextResponse.json(
-      { 
+      {
         success: false,
         error: '스키마 확인 중 오류가 발생했습니다.',
         details: error instanceof Error ? error.message : String(error)

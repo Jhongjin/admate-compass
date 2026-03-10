@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+export const dynamic = 'force-dynamic';
 import { createClient } from '@supabase/supabase-js';
 
 export async function GET(request: NextRequest) {
@@ -34,10 +35,10 @@ export async function GET(request: NextRequest) {
     console.log('📋 데이터베이스의 모든 문서:', allDocs);
 
     // Meta 관련 문서들 필터링
-    const metaDocs = allDocs.filter(doc => 
+    const metaDocs = allDocs.filter(doc =>
       doc.url && (
-        doc.url.includes('facebook.com') || 
-        doc.url.includes('instagram.com') || 
+        doc.url.includes('facebook.com') ||
+        doc.url.includes('instagram.com') ||
         doc.url.includes('meta.com') ||
         doc.url.includes('developers.facebook.com') ||
         doc.url.includes('business.instagram.com')
@@ -70,9 +71,9 @@ export async function GET(request: NextRequest) {
 
   } catch (error) {
     console.error('❌ 데이터베이스 디버깅 오류:', error);
-    
+
     return NextResponse.json(
-      { 
+      {
         success: false,
         error: '데이터베이스 디버깅 중 오류가 발생했습니다.',
         details: error instanceof Error ? error.message : String(error)
