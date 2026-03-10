@@ -27,8 +27,10 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 1. [SUMMARY] 태그가 이미 답변에 포함되어 있는지 확인 (가장 빠르고 비용 효율적)
+    // 1. [SUMMARY] 태그가 이미 답변에 포함되어 있는지 확인 (포인트 추출용)
     const summaryTag = '[SUMMARY]';
+    let extractedKeyPoints: string[] | null = null;
+
     if (aiResponse.includes(summaryTag)) {
       const summaryPart = aiResponse.split(summaryTag)[1].trim();
       const lines = summaryPart.split('\n')
@@ -36,21 +38,14 @@ export async function POST(request: NextRequest) {
         .filter((line: string) => line.startsWith('-') || line.startsWith('*') || (line.length > 0 && !line.startsWith('추가로')));
 
       if (lines.length > 0) {
-        console.log('✅ 답변 내 [SUMMARY] 태그에서 직접 요약 추출 성공');
-        return NextResponse.json({
-          keyPoints: lines.slice(0, 5).map((l: string) => l.replace(/^[-*]\s*/, '')),
-          documentHighlights: sources?.slice(0, 2).map((source: any) =>
-            source.excerpt.substring(0, 80) + '...'
-          ) || [],
-          confidence: 0.95
-        }, {
-          headers: { 'Content-Type': 'application/json; charset=utf-8' }
-        });
+        extractedKeyPoints = lines.slice(0, 5).map((l: string) => l.replace(/^[-*]\s*/, ''));
+        console.log('✅ 답변 내 [SUMMARY] 태그에서 포인트 추출 성공');
       }
     }
 
-    // 요약 생성을 위한 프롬프트
-    const summaryPrompt = `다음 질문과 답변을 바탕으로 5줄 이하의 핵심 요약을 생성해주세요.
+    // 신뢰도 평가 및 요약 생성을 위한 강화된 프롬프트
+    const evaluationPrompt = `당신은 RAG(Retrieval-Augmented Generation) 시스템의 답변 정확도를 평가하고 요약하는 전문가입니다.
+제공된 "참고 문서"를 근거로 "답변"의 신뢰도를 측정하고 핵심 내용을 요약해주세요.
 
 질문: ${userQuestion}
 
@@ -58,64 +53,66 @@ export async function POST(request: NextRequest) {
 
 참고 문서:
 ${sources?.map((source: any, index: number) =>
-      `${index + 1}. ${source.title} (${source.sourceType === 'file' ? '파일' : '웹페이지'})
-   내용: ${source.excerpt.substring(0, 200)}...`
+      `${index + 1}. ${source.title}
+   내용: ${source.excerpt.substring(0, 500)}...`
     ).join('\n') || '없음'}
 
 요구사항:
-1. 답변의 핵심 내용만 5줄 이하로 요약
-2. 도입부 문구나 "Meta 광고 정책에 대해 궁금하신 점이 있으시군요" 같은 표현 사용 금지
-3. 구체적이고 실용적인 정보 중심으로 작성
-4. 각 줄은 간결하고 명확하게 작성
-5. JSON 형식으로 응답
+1. **신뢰도 평가 (Confidence Score)**:
+   - 1.0: 답변의 모든 내용이 참고 문서에 명확히 근거함.
+   - 0.8: 대부분 근거하나 일부 모호한 표현이 있음.
+   - 0.5: 문서에 없는 정보가 섞여 있거나 일부 추측이 포함됨 (할루시네이션 주의).
+   - 0.3 이하: 문서 내용과 모순되거나 근거를 전혀 찾을 수 없음.
+   - 특히 잘린 숫자 패턴(예: 3 | 500만)을 잘못 해석하여 답변했다면 낮은 점수를 부여하세요.
 
-응답 형식 (JSON만 반환):
+2. **핵심 요약 (Key Points)**:
+   - 답변의 핵심 내용만 3~5줄로 요약.
+   - 문서에 근거한 사실 위주로 작성.
+
+3. **응답 형식 (반드시 아래 JSON 형식만 반환)**:
 {
   "keyPoints": ["핵심 포인트 1", "핵심 포인트 2", "핵심 포인트 3"],
-  "documentHighlights": ["문서 하이라이트 1", "문서 하이라이트 2"],
-  "confidence": 0.85
+  "documentHighlights": ["근거가 된 문서의 핵심 문구 1", "근거가 된 문서의 핵심 문구 2"],
+  "confidence": 0.0~1.0 사이의 실수
 }`;
 
     let summaryText = '';
 
-    // 2. Claude를 사용하여 요약 생성 시도
+    // 2. Claude를 사용하여 평가 및 요약 생성 시도
     if (anthropic) {
       try {
-        console.log('🤖 Claude 요약 생성 시도');
+        console.log('🤖 Claude를 통한 신뢰도 평가 시작');
         const message = await anthropic.messages.create({
           model: 'claude-sonnet-4-6',
           max_tokens: 1024,
-          messages: [{ role: 'user', content: summaryPrompt }]
+          messages: [{ role: 'user', content: evaluationPrompt }]
         });
 
         summaryText = message.content
           .filter((block: any) => block.type === 'text')
           .map((block: any) => block.text)
           .join('');
-        console.log('✅ Claude 요약 생성 완료');
       } catch (claudeError: any) {
-        console.error('⚠️ Claude 요약 생성 실패:', claudeError.message);
-        // 실패 시 다음 단계(GPT)로 넘어감
+        console.error('⚠️ Claude 평가 실패:', claudeError.message);
       }
     }
 
-    // 3. Claude 실패 또는 미설정 시 GPT로 폴백
+    // 3. Claude 실패 시 GPT로 폴백
     if (!summaryText && openai) {
       try {
-        console.log('🤖 OpenAI GPT 요약 생성 시도 (폴백)');
+        console.log('🤖 OpenAI GPT를 통한 신뢰도 평가 시작 (폴백)');
         const completion = await openai.chat.completions.create({
           model: 'gpt-4o-2024-08-06',
           messages: [
-            { role: 'system', content: '당신은 광고 정책 요약 전문가입니다. 반드시 JSON 형식으로만 응답하세요.' },
-            { role: 'user', content: summaryPrompt }
+            { role: 'system', content: '당신은 답변의 정확성과 할루시네이션을 판별하는 평가 전문가입니다. 반드시 JSON으로만 응답하세요.' },
+            { role: 'user', content: evaluationPrompt }
           ],
           response_format: { type: 'json_object' }
         });
 
         summaryText = completion.choices[0].message.content || '';
-        console.log('✅ GPT 요약 생성 완료');
       } catch (gptError: any) {
-        console.error('❌ GPT 요약 생성 최종 실패:', gptError.message);
+        console.error('❌ GPT 평가 최종 실패:', gptError.message);
       }
     }
 
@@ -126,26 +123,28 @@ ${sources?.map((source: any, index: number) =>
         const jsonText = jsonMatch ? jsonMatch[0] : summaryText;
         const summaryData = JSON.parse(jsonText);
 
+        // 이미 추출된 포인트가 있다면 가급적 이를 사용하되, 평가 결과가 너무 낮으면 AI 요약을 따름
+        const finalKeyPoints = (extractedKeyPoints && summaryData.confidence > 0.7)
+          ? extractedKeyPoints
+          : (summaryData.keyPoints || []);
+
         return NextResponse.json({
-          keyPoints: Array.isArray(summaryData.keyPoints) ? summaryData.keyPoints.slice(0, 5) : [],
+          keyPoints: finalKeyPoints.slice(0, 5),
           documentHighlights: Array.isArray(summaryData.documentHighlights) ? summaryData.documentHighlights.slice(0, 3) : [],
-          confidence: summaryData.confidence || 0.8
+          confidence: summaryData.confidence || 0.5
         }, {
           headers: { 'Content-Type': 'application/json; charset=utf-8' }
         });
       } catch (e) {
-        console.error('❌ 요약 JSON 파싱 실패');
+        console.error('❌ 결과 파싱 실패');
       }
     }
 
     // 모든 시도 실패 시 최종 Fallback
     const finalFallback = {
-      keyPoints: [
-        aiResponse.split('.')[0]?.trim() || '답변의 핵심 내용을 확인해주세요.',
-        '상세 내용은 좌측 답변 본문을 참고하시기 바랍니다.'
-      ].filter(p => p.length > 5),
+      keyPoints: extractedKeyPoints || ['답변의 신뢰도를 평가할 수 없습니다.'],
       documentHighlights: [],
-      confidence: 0.5
+      confidence: 0.1
     };
 
     return NextResponse.json(finalFallback, {
