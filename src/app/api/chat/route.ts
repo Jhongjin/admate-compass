@@ -1722,13 +1722,15 @@ export async function POST(request: NextRequest) {
           );
 
           try {
+            console.log(`⏱️ [Stream] Search Start (Timeout: 10s, Message: "${message.substring(0, 30)}...")`);
             searchResults = await Promise.race([
               searchSimilarChunks(message, 15, vendorFilter),
               searchTimeoutPromise
             ]);
+            console.log(`✅ [Stream] Search Finished: Found ${searchResults.length} chunks`);
             console.timeEnd('RAG_Search');
           } catch (searchError) {
-            console.error('❌ [Stream] RAG 검색 실패 또는 타임아웃:', searchError);
+            console.error('❌ [Stream] RAG Search Timeout or Failed:', searchError);
             console.timeEnd('RAG_Search');
             // 검색 실패 시 빈 결과로 진행 (나중에 fallback 핸들링됨)
             searchResults = [];
@@ -1790,13 +1792,23 @@ export async function POST(request: NextRequest) {
             documentType: result.metadata?.documentType
           }));
 
-          // 4. 관련 질문 및 답변 생성 (병렬 실행)
-          console.log('🤖 [Stream] Claude 답변 및 관련 질문 생성 시작...');
-          const relatedQuestionsPromise = generateRelatedQuestions(message, filteredResults, vendorFilter);
+          // 3. 답변 생성
+          const filteredResultsForAnswer = searchResults.filter(r => r.similarity > 0.3);
+          console.log(`🤖 [Stream] Generating answer with ${filteredResultsForAnswer.length} relevant results`);
 
-          // Claude 스트림 답변 생성
-          const fullAnswer = await generateStreamAnswerWithClaude(message, filteredResults, controller);
-          const relatedQuestions = await relatedQuestionsPromise.catch(() => []);
+          // 관련 질문 생성을 비동기로 시작 (답변 생성과 병렬)
+          console.log('💡 [Stream] Starting related questions generation...');
+          const relatedQuestionsPromise = generateRelatedQuestions(message, filteredResultsForAnswer, vendorFilter);
+
+          // Claude 스트림 답변 생성 호출
+          console.log('✍️ [Stream] Calling generateStreamAnswerWithClaude...');
+          const fullAnswer = await generateStreamAnswerWithClaude(message, filteredResultsForAnswer, controller);
+          console.log('✅ [Stream] Answer generation completed');
+
+          const relatedQuestions = await relatedQuestionsPromise.catch(e => {
+            console.warn('⚠️ [Stream] Related questions failed:', e);
+            return [];
+          });
 
           // 5. 최종 메타데이터 전송
           const finalData = {

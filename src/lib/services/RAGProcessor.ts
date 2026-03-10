@@ -112,8 +112,7 @@ export class RAGProcessor {
       const hasOpenAIKey = Boolean(process.env.OPENAI_EMBEDDING_API_KEY || process.env.OPENAI_API_KEY);
 
       console.log(
-        `[DEBUG] EMBEDDING_PROVIDER: ${providerEnvRaw ?? 'undefined'} (해석값: ${
-          hasExplicitProvider ? providerEnv : 'auto'
+        `[DEBUG] EMBEDDING_PROVIDER: ${providerEnvRaw ?? 'undefined'} (해석값: ${hasExplicitProvider ? providerEnv : 'auto'
         }), OpenAIKeyPresent: ${hasOpenAIKey}`,
       );
 
@@ -148,8 +147,7 @@ export class RAGProcessor {
       }
     }
     console.log(
-      `[DEBUG] ENABLE_BGE_FALLBACK: ${process.env.ENABLE_BGE_FALLBACK ?? 'undefined'} (허용 여부: ${
-        this.allowBgeFallback
+      `[DEBUG] ENABLE_BGE_FALLBACK: ${process.env.ENABLE_BGE_FALLBACK ?? 'undefined'} (허용 여부: ${this.allowBgeFallback
       })`,
     );
   }
@@ -333,10 +331,10 @@ export class RAGProcessor {
 
     try {
       console.log('🔄 BGE-M3 임베딩 서비스 초기화 시작 (타임아웃: 5분 - 서버리스 환경 고려)...');
-      
+
       // 싱글톤 인스턴스 사용
       this.embeddingService = globalEmbeddingService;
-      
+
       // 이미 초기화되어 있으면 즉시 반환
       if (this.embeddingService.initialized) {
         console.log('✅ BGE-M3 임베딩 서비스가 이미 초기화되어 있음 (캐시 재사용)');
@@ -350,45 +348,45 @@ export class RAGProcessor {
       const INIT_TIMEOUT = 10 * 60 * 1000; // 10분 (OpenAI fallback이므로 충분한 시간 제공)
       console.log('⏳ BGE-M3 모델 초기화 중... (타임아웃: 10분, 서버리스 환경에서는 매우 느릴 수 있습니다)');
       console.log('   OpenAI API 할당량 초과로 인한 fallback이므로 초기화에 시간이 걸릴 수 있습니다.');
-      
+
       // 하트비트 콜백 설정 (EmbeddingService의 setInterval에서 호출됨)
       if (this.currentJobId) {
         console.log(`[CRITICAL] 🚀 BGE-M3 초기화 시작 - 하트비트 콜백 설정 (jobId: ${this.currentJobId})`);
-        
+
         this.embeddingService.setHeartbeatCallback(async (elapsed: number, remaining: number) => {
           try {
             const supabase = await this.getSupabaseClient();
             if (!supabase) {
               return;
             }
-            
+
             // 작업 상태 확인 (취소되었는지 확인)
             const { data: jobStatus } = await supabase
               .from('processing_jobs')
               .select('status')
               .eq('id', this.currentJobId!)
               .maybeSingle();
-            
+
             if (jobStatus?.status === 'cancelled') {
               // 작업이 취소되었으면 하트비트 콜백 제거
               console.log(`[CRITICAL] ⚠️ 작업이 취소되었습니다. 하트비트 콜백을 제거합니다. (jobId: ${this.currentJobId})`);
               this.embeddingService?.setHeartbeatCallback(null);
               return;
             }
-            
+
             const elapsedSeconds = (elapsed / 1000).toFixed(1);
             const remainingSeconds = (remaining / 1000).toFixed(1);
             const dbUpdateStartTime = Date.now();
-            
+
             // 저장할 값 확인 (밀리초 단위)
             console.log(`[CRITICAL] 📊 DB 업데이트 값 확인: elapsed=${elapsed}ms (${elapsedSeconds}초), remaining=${remaining}ms (${remainingSeconds}초)`);
-            
+
             const currentResult = (await supabase
               .from('processing_jobs')
               .select('result')
               .eq('id', this.currentJobId!)
               .maybeSingle())?.data?.result || {};
-            
+
             const updateData = {
               result: {
                 ...currentResult,
@@ -399,22 +397,22 @@ export class RAGProcessor {
               },
               updated_at: new Date().toISOString()
             };
-            
+
             console.log(`[CRITICAL] 📤 DB 업데이트 데이터:`, {
               bgeM3InitElapsed: updateData.result.bgeM3InitElapsed,
               bgeM3InitRemaining: updateData.result.bgeM3InitRemaining,
               message: updateData.result.message
             });
-            
+
             const updateResult = await supabase
               .from('processing_jobs')
               .update(updateData)
               .eq('id', this.currentJobId!)
               .neq('status', 'cancelled')
               .select('id');
-            
+
             const dbUpdateElapsed = Date.now() - dbUpdateStartTime;
-            
+
             if (updateResult.error) {
               console.warn(`[CRITICAL] ⚠️ BGE-M3 초기화 하트비트 DB 업데이트 실패:`, updateResult.error);
             } else {
@@ -428,13 +426,13 @@ export class RAGProcessor {
           }
         });
       }
-      
+
       // 초기화 실행 (EmbeddingService 내부의 setInterval이 하트비트를 처리)
       await this.embeddingService.initialize('bge-m3', INIT_TIMEOUT);
-      
+
       // 초기화 완료 후 하트비트 콜백 제거
       this.embeddingService.setHeartbeatCallback(null);
-      
+
       const elapsed = Date.now() - initStartMs;
       console.log(`✅ BGE-M3 임베딩 서비스 초기화 성공: ${elapsed}ms (${(elapsed / 1000).toFixed(1)}초)`);
       this.embeddingServiceInitialized = true;
@@ -443,7 +441,7 @@ export class RAGProcessor {
       const elapsed = Date.now() - (this.embeddingService ? Date.now() : 0);
       const errorMessage = error instanceof Error ? error.message : String(error);
       const errorStack = error instanceof Error ? error.stack : undefined;
-      
+
       console.error(`[CRITICAL] ❌ BGE-M3 임베딩 서비스 초기화 실패 (경과: ${(elapsed / 1000).toFixed(1)}초):`, {
         error: errorMessage,
         errorType: error instanceof Error ? error.constructor.name : typeof error,
@@ -453,7 +451,7 @@ export class RAGProcessor {
         isNetworkError: errorMessage.includes('network') || errorMessage.includes('fetch') || errorMessage.includes('ECONNREFUSED'),
         isMemoryError: errorMessage.includes('memory') || errorMessage.includes('ENOMEM'),
       });
-      
+
       // 초기화 실패 시 에러를 던져서 사용자에게 알림
       throw new Error(`BGE-M3 임베딩 서비스 초기화 실패: ${errorMessage}. 
       
@@ -597,29 +595,29 @@ export class RAGProcessor {
   private async getSupabaseClient() {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
-    
+
     console.log('🔍 Supabase 환경 변수 체크:');
     console.log('  - NEXT_PUBLIC_SUPABASE_URL:', supabaseUrl ? '설정됨' : '없음');
     console.log('  - SUPABASE_SERVICE_ROLE_KEY:', supabaseKey ? '설정됨' : '없음');
     console.log('  - NODE_ENV:', process.env.NODE_ENV);
-    
+
     // 환경 변수 체크
     if (!supabaseUrl || !supabaseKey) {
       console.warn('⚠️ Supabase 환경 변수가 설정되지 않음. 메모리 모드로 전환');
       return null;
     }
-    
+
     // 더미 URL 체크
     if (supabaseUrl === 'https://dummy.supabase.co' || supabaseUrl.includes('dummy')) {
       console.warn('⚠️ 더미 Supabase URL 감지. 메모리 모드로 전환');
       return null;
     }
-    
+
     try {
       // 직접 Supabase 클라이언트 생성 (createPureClient 대신)
       const client = createClient(supabaseUrl, supabaseKey);
       console.log('✅ Supabase 클라이언트 생성 성공 (직접 생성)');
-      
+
       // 연결 테스트
       const { data, error } = await client.from('documents').select('count').limit(1);
       if (error) {
@@ -627,7 +625,7 @@ export class RAGProcessor {
         return null;
       }
       console.log('✅ Supabase 연결 테스트 성공');
-      
+
       return client;
     } catch (error) {
       console.error('❌ Supabase 클라이언트 생성 실패:', error);
@@ -664,7 +662,7 @@ export class RAGProcessor {
 
       const isDuplicate = data && data.length > 0;
       console.log('🔍 중복 검사 결과:', { title, isDuplicate });
-      
+
       return isDuplicate;
     } catch (error) {
       console.error('❌ 중복 검사 중 오류:', error);
@@ -778,12 +776,12 @@ export class RAGProcessor {
           } catch (openAIError: any) {
             // OpenAI API 실패 시 BGE-M3로 자동 전환
             const errorMessage = openAIError instanceof Error ? openAIError.message : String(openAIError);
-            const isQuotaError = errorMessage.includes('429') || 
-                                errorMessage.includes('quota') || 
-                                errorMessage.includes('insufficient_quota') ||
-                                (openAIError as any)?.status === 429 ||
-                                (openAIError as any)?.code === 'insufficient_quota';
-            
+            const isQuotaError = errorMessage.includes('429') ||
+              errorMessage.includes('quota') ||
+              errorMessage.includes('insufficient_quota') ||
+              (openAIError as any)?.status === 429 ||
+              (openAIError as any)?.code === 'insufficient_quota';
+
             if (isQuotaError) {
               console.error(`❌ OpenAI API 할당량 초과 (429). BGE-M3로 자동 전환합니다.`);
               console.error(`   에러 상세: ${errorMessage}`);
@@ -797,8 +795,7 @@ export class RAGProcessor {
             }
             if (!this.allowBgeFallback) {
               throw new Error(
-                `OpenAI 임베딩 실패 (BGE fallback 비활성화). 에러 상세: ${
-                  openAIErrorDetails ? JSON.stringify(openAIErrorDetails) : errorMessage
+                `OpenAI 임베딩 실패 (BGE fallback 비활성화). 에러 상세: ${openAIErrorDetails ? JSON.stringify(openAIErrorDetails) : errorMessage
                 }`,
               );
             }
@@ -820,13 +817,13 @@ export class RAGProcessor {
       const embeddingInitStartMs = Date.now();
       console.log('🔄 BGE-M3 임베딩 서비스 초기화 시작... (OpenAI API 실패로 인한 fallback)');
       console.log('   서버리스 환경에서는 모델 다운로드에 시간이 걸릴 수 있습니다 (최대 10분).');
-      
+
       // OpenAI API 실패로 인한 fallback이므로 embeddingProvider를 임시로 'bge-m3'로 변경
       const originalProvider = this.embeddingProvider;
       const originalInitialized = this.embeddingServiceInitialized;
       this.embeddingProvider = 'bge-m3';
       this.embeddingServiceInitialized = false; // BGE-M3 초기화를 위해 리셋
-      
+
       let embeddingService: EmbeddingService | null;
       try {
         embeddingService = await this.initializeEmbeddingService();
@@ -834,7 +831,7 @@ export class RAGProcessor {
         // 원래 상태로 복원
         this.embeddingProvider = originalProvider;
         this.embeddingServiceInitialized = originalInitialized;
-        
+
         const elapsed = Date.now() - embeddingInitStartMs;
         const errorMessage = initError instanceof Error ? initError.message : String(initError);
         console.error(`[CRITICAL] ❌ BGE-M3 임베딩 서비스 초기화 중 예외 발생 (경과: ${(elapsed / 1000).toFixed(1)}초):`, {
@@ -844,16 +841,16 @@ export class RAGProcessor {
         });
         throw initError;
       }
-      
+
       if (!embeddingService) {
         // 원래 상태로 복원
         this.embeddingProvider = originalProvider;
         this.embeddingServiceInitialized = originalInitialized;
-        
+
         const elapsed = Date.now() - embeddingInitStartMs;
         throw new Error(`BGE-M3 임베딩 서비스 초기화 실패: initializeEmbeddingService()가 null을 반환했습니다 (경과: ${(elapsed / 1000).toFixed(1)}초). 서버리스 환경에서 모델 다운로드가 실패했을 수 있습니다.`);
       }
-      
+
       // BGE-M3 초기화 성공 시 provider는 'bge-m3'로 유지 (다음 요청에서도 BGE-M3 사용)
       console.log(`✅ BGE-M3 임베딩 서비스 초기화 완료 - embeddingProvider를 'bge-m3'로 변경했습니다.`);
 
@@ -947,7 +944,7 @@ export class RAGProcessor {
         console.warn('⚠️ Supabase 연결 없음. 메모리 모드로 동작');
         return;
       }
-      
+
       console.log(`[CRITICAL] ✅ Supabase 연결 확인 완료: ${document.title} (경과: ${Date.now() - docSaveStartTime}ms)`);
 
       // 원본 바이너리 데이터가 있으면 content에 저장, 없으면 텍스트 내용 저장
@@ -972,12 +969,12 @@ export class RAGProcessor {
       // 대용량 파일 처리를 위한 최적화
       const isLargeFile = document.file_size > 12 * 1024 * 1024; // 12MB 이상
       const timeoutMs = isLargeFile ? 300000 : 30000; // 대용량 파일: 5분, 일반 파일: 30초
-      
+
       console.log(`⏱️ 데이터베이스 저장 시작 (타임아웃: ${timeoutMs}ms, 파일크기: ${document.file_size}bytes, 대용량파일: ${isLargeFile})`);
-      
+
       // 대용량 파일의 경우 content 필드를 비우고 메타데이터만 저장 (타임아웃 방지)
       const contentForStorage = isLargeFile ? '' : contentToStore;
-      
+
       if (isLargeFile) {
         console.log('⚠️ 대용량 파일 감지 - content 필드 비우고 메타데이터만 저장 (타임아웃 방지)');
         console.log('💾 대용량 파일은 다운로드 불가, AI 검색만 가능');
@@ -985,7 +982,7 @@ export class RAGProcessor {
         console.log('📊 Base64 인코딩 후 크기:', contentToStore.length, 'characters');
         console.log('💡 해결책: Supabase Storage 또는 AWS S3 사용 권장');
       }
-      
+
       // 먼저 기존 문서가 있는지 확인 (main_document_id 포함)
       const { data: existingDoc, error: checkError } = await supabase
         .from('documents')
@@ -999,7 +996,7 @@ export class RAGProcessor {
       }
 
       const isUpdate = !!existingDoc;
-      
+
       const documentData: any = {
         id: document.id,
         // 🔥 기존 문서가 있으면 title 필드 제외 (기존 제목 유지)
@@ -1071,17 +1068,17 @@ export class RAGProcessor {
 
       console.log(`[CRITICAL] 📝 DB ${isUpdate ? '업데이트' : '삽입'} 시작: ${document.title} (타임아웃: ${timeoutMs}ms)`);
       const dbOpStartTime = Date.now();
-      
+
       const { error } = await Promise.race([
         isUpdate
           ? supabase
-              .from('documents')
-              .update(documentData)
-              .eq('id', document.id)
+            .from('documents')
+            .update(documentData)
+            .eq('id', document.id)
           : supabase
-              .from('documents')
-              .insert(documentData),
-        new Promise((_, reject) => 
+            .from('documents')
+            .insert(documentData),
+        new Promise((_, reject) =>
           setTimeout(() => {
             const elapsed = Date.now() - dbOpStartTime;
             reject(new Error(`Database operation timeout: ${timeoutMs}ms 초과 (경과: ${elapsed}ms)`));
@@ -1090,7 +1087,7 @@ export class RAGProcessor {
       ]) as any;
 
       const dbOpElapsed = Date.now() - dbOpStartTime;
-      
+
       if (error) {
         console.error(`[CRITICAL] ❌ 문서 저장 오류: ${document.title} (소요 시간: ${dbOpElapsed}ms)`, error);
         console.error('❌ 문서 저장 오류 상세:', {
@@ -1115,7 +1112,7 @@ export class RAGProcessor {
         .select('main_document_id')
         .eq('id', document.id)
         .maybeSingle();
-      
+
       if (verifyError) {
         console.error(`[CRITICAL] ❌ 저장된 main_document_id 확인 실패:`, verifyError);
       } else {
@@ -1126,7 +1123,7 @@ export class RAGProcessor {
           일치여부: document.main_document_id === savedDoc?.main_document_id,
           documentData에포함: documentData.main_document_id || 'null'
         });
-        
+
         // 저장된 값이 예상과 다르면 경고
         if (document.main_document_id !== undefined && document.main_document_id !== null) {
           if (savedDoc?.main_document_id !== document.main_document_id) {
@@ -1138,7 +1135,7 @@ export class RAGProcessor {
       // document_metadata 테이블에도 저장
       // MIME type에서 실제 파일 확장자 추출 (예: application/pdf -> pdf, application/vnd.openxmlformats-officedocument.wordprocessingml.document -> docx)
       let fileType = 'pdf'; // 기본값
-      
+
       // URL 타입 문서는 txt로 처리 (document_metadata.type 제약 조건 준수)
       if (document.type === 'url') {
         fileType = 'txt';
@@ -1182,7 +1179,7 @@ export class RAGProcessor {
         updated_at: document.updated_at,
         original_file_name: document.original_file_name ?? document.title,
       };
-      
+
       // 원본 바이너리 데이터가 있으면 metadata에 저장
       const metadataPayload: Record<string, any> = {};
       if (originalBinaryData) {
@@ -1217,7 +1214,7 @@ export class RAGProcessor {
       if (Object.keys(metadataPayload).length > 0) {
         metadataRecord.metadata = metadataPayload;
       }
-      
+
       // document_metadata도 UPSERT 방식으로 처리
       const { data: existingMetadata } = await supabase
         .from('document_metadata')
@@ -1227,12 +1224,12 @@ export class RAGProcessor {
 
       const { error: metadataError } = existingMetadata
         ? await supabase
-            .from('document_metadata')
-            .update(metadataRecord)
-            .eq('id', document.id)
+          .from('document_metadata')
+          .update(metadataRecord)
+          .eq('id', document.id)
         : await supabase
-            .from('document_metadata')
-            .insert(metadataRecord);
+          .from('document_metadata')
+          .insert(metadataRecord);
 
       if (metadataError) {
         console.error('❌ 문서 메타데이터 저장 오류:', metadataError);
@@ -1253,13 +1250,13 @@ export class RAGProcessor {
   async saveChunksToDatabase(chunks: ChunkData[], document?: DocumentData): Promise<number> {
     console.log(`[CRITICAL] 💾 saveChunksToDatabase 호출: 청크 ${chunks.length}개, document?.main_document_id=${document?.main_document_id || 'null'}`);
     let supabase = await this.getSupabaseClient();
-    
+
     // Supabase 연결 확인
     if (!supabase) {
       console.warn('⚠️ Supabase 연결 없음. 청크 저장 건너뛰기');
       return 0;
     }
-    
+
     try {
       const chunkSaveStartTime = Date.now();
       console.log(`[CRITICAL] 💾 청크 저장 시작: ${chunks.length}개 청크 (문서 ID: ${chunks[0]?.metadata.document_id || 'unknown'})`);
@@ -1267,10 +1264,10 @@ export class RAGProcessor {
       // 청크 데이터 준비 (id는 SERIAL이므로 제외)
       const chunkInserts = chunks.map((chunk, index) => {
         // chunk_id 생성: id의 마지막 부분 사용 또는 index 사용
-        const chunkIdFromMetadata = chunk.metadata.chunk_index !== undefined 
-          ? String(chunk.metadata.chunk_index) 
+        const chunkIdFromMetadata = chunk.metadata.chunk_index !== undefined
+          ? String(chunk.metadata.chunk_index)
           : chunk.id.split('_').pop() || String(index);
-        
+
         return {
           id: chunk.id, // 문자열 ID는 id 필드에 저장
           document_id: chunk.metadata.document_id,
@@ -1304,18 +1301,18 @@ export class RAGProcessor {
       // 작은 파일은 배치 처리 없이 한 번에 저장, 큰 파일만 배치 처리
       const isLargeBatch = chunkInserts.length > 500;
       let savedCount = 0;
-      
+
       if (isLargeBatch) {
         // 큰 파일만 배치 처리 (500개 초과)
         const batchSize = 50; // 큰 배치는 50개씩
         console.log(`💾 큰 파일 청크 저장 시작: ${chunkInserts.length}개 청크, 배치 크기: ${batchSize}`);
-        
+
         for (let i = 0; i < chunkInserts.length; i += batchSize) {
           const batch = chunkInserts.slice(i, i + batchSize);
           const batchStartMs = Date.now();
-          
+
           console.log(`💾 청크 배치 저장 중: ${i + 1}-${Math.min(i + batchSize, chunkInserts.length)}/${chunkInserts.length}`);
-          
+
           const { error } = await supabase
             .from('document_chunks')
             .insert(batch);
@@ -1324,11 +1321,11 @@ export class RAGProcessor {
             console.error('❌ 청크 배치 저장 오류:', error);
             throw error;
           }
-          
+
           savedCount += batch.length;
           const batchMs = Date.now() - batchStartMs;
           console.log(`✅ 청크 배치 저장 완료: ${savedCount}/${chunkInserts.length} (${batchMs}ms)`);
-          
+
           // 배치 간 짧은 대기 (데이터베이스 부하 방지)
           if (i + batchSize < chunkInserts.length) {
             await new Promise(resolve => setTimeout(resolve, 200));
@@ -1338,7 +1335,7 @@ export class RAGProcessor {
         // 작은 파일은 한 번에 저장 (지연 없음)
         console.log(`💾 작은 파일 청크 저장 시작: ${chunkInserts.length}개 청크 (한 번에 저장)`);
         const saveStartMs = Date.now();
-        
+
         const { error } = await supabase
           .from('document_chunks')
           .insert(chunkInserts);
@@ -1347,7 +1344,7 @@ export class RAGProcessor {
           console.error('❌ 청크 저장 오류:', error);
           throw error;
         }
-        
+
         savedCount = chunkInserts.length;
         const saveMs = Date.now() - saveStartMs;
         const chunkSaveElapsed = Date.now() - chunkSaveStartTime;
@@ -1363,9 +1360,9 @@ export class RAGProcessor {
         .from('document_chunks')
         .select('*', { count: 'exact', head: true })
         .eq('document_id', documentId);
-      
+
       const finalCount = actualSavedCount || savedCount;
-      
+
       if (countError) {
         console.warn('⚠️ 저장된 청크 개수 확인 오류:', countError);
       } else if (finalCount !== savedCount) {
@@ -1380,13 +1377,13 @@ export class RAGProcessor {
           .select('main_document_id')
           .eq('id', documentId)
           .maybeSingle();
-        
+
         const updateData: any = {
           chunk_count: finalCount,
           status: 'indexed',
           updated_at: new Date().toISOString()
         };
-        
+
         // main_document_id 우선순위: 1) 전달받은 값 (null 포함), 2) 기존 문서의 값
         // 재처리 시 명시적으로 전달된 main_document_id는 null이든 아니든 그대로 사용해야 함
         if (document?.main_document_id !== undefined) {
@@ -1400,7 +1397,7 @@ export class RAGProcessor {
         } else {
           console.log(`[CRITICAL] ⚠️ chunk_count 업데이트 시 main_document_id 없음: document?.main_document_id=${document?.main_document_id}, existingDoc?.main_document_id=${existingDoc?.main_document_id}`);
         }
-        
+
         console.log(`[CRITICAL] 📝 chunk_count 업데이트 데이터:`, { chunk_count: finalCount, main_document_id: updateData.main_document_id || 'null', documentId });
         const { error: updateError } = await supabase
           .from('documents')
@@ -1411,14 +1408,14 @@ export class RAGProcessor {
           console.error('❌ 문서 chunk_count 업데이트 오류:', updateError);
         } else {
           console.log(`[CRITICAL] ✅ 문서 chunk_count 업데이트 완료: ${finalCount}개 청크, main_document_id: ${updateData.main_document_id || 'null'}`);
-          
+
           // 업데이트 후 실제로 저장된 main_document_id 확인
           const { data: updatedDoc, error: verifyError } = await supabase
             .from('documents')
             .select('main_document_id, chunk_count, status')
             .eq('id', documentId)
             .maybeSingle();
-          
+
           if (verifyError) {
             console.error(`[CRITICAL] ❌ chunk_count 업데이트 후 main_document_id 확인 실패:`, verifyError);
           } else {
@@ -1431,7 +1428,7 @@ export class RAGProcessor {
               상태: updatedDoc?.status,
               일치여부: updateData.main_document_id === updatedDoc?.main_document_id
             });
-            
+
             // 저장된 값이 예상과 다르면 경고
             if (updateData.main_document_id !== undefined && updateData.main_document_id !== null) {
               if (updatedDoc?.main_document_id !== updateData.main_document_id) {
@@ -1444,7 +1441,7 @@ export class RAGProcessor {
         // document_metadata의 chunk_count와 embedding_count도 업데이트
         const { error: metadataUpdateError } = await supabase
           .from('document_metadata')
-          .update({ 
+          .update({
             chunk_count: finalCount,
             embedding_count: finalCount,
             status: 'completed',
@@ -1471,10 +1468,10 @@ export class RAGProcessor {
             .from('document_chunks')
             .select('*', { count: 'exact', head: true })
             .eq('document_id', documentId);
-          
+
           const savedCount = actualSavedCount || 0;
           console.warn(`⚠️ 청크 저장 실패, 실제 저장된 청크: ${savedCount}개`);
-          
+
           // 부분적으로 저장된 경우 chunk_count 업데이트 (main_document_id 유지)
           if (savedCount > 0) {
             // main_document_id 우선순위: 1) 전달받은 값, 2) 기존 문서의 값
@@ -1483,32 +1480,32 @@ export class RAGProcessor {
               .select('main_document_id')
               .eq('id', documentId)
               .maybeSingle();
-            
+
             const updateData: any = {
               chunk_count: savedCount,
               status: 'indexed',
               updated_at: new Date().toISOString()
             };
-            
+
             // main_document_id 우선순위: 1) 전달받은 값, 2) 기존 문서의 값
             if (document?.main_document_id) {
               updateData.main_document_id = document.main_document_id;
             } else if (existingDoc?.main_document_id) {
               updateData.main_document_id = existingDoc.main_document_id;
             }
-            
+
             await supabase
               .from('documents')
               .update(updateData)
               .eq('id', documentId);
           }
-          
+
           return savedCount;
         }
       } catch (recoveryError) {
         console.error('❌ 청크 개수 복구 시도 실패:', recoveryError);
       }
-      
+
       throw new Error(`청크 저장 실패: ${error instanceof Error ? error.message : 'Unknown error'}`);
     }
   }
@@ -1523,13 +1520,13 @@ export class RAGProcessor {
   ): Promise<TextEncodingResult> {
     try {
       console.log(`📄 서버사이드 텍스트 추출 시작: ${fileName}`);
-      
+
       const fileExtension = fileName.toLowerCase().split('.').pop();
-      
+
       switch (fileExtension) {
         case 'pdf':
           try {
-            const pdfParse = (await import('pdf-parse')).default as (buf: Buffer) => Promise<{ text: string }>; 
+            const pdfParse = (await import('pdf-parse')).default as (buf: Buffer) => Promise<{ text: string }>;
             const parsed = await pdfParse(fileBuffer);
             return processTextEncoding(parsed?.text ?? '', { strictMode: true, preserveOriginal: true });
           } catch (err) {
@@ -1537,7 +1534,7 @@ export class RAGProcessor {
             const pdfPlaceholder = `PDF 문서: ${fileName}\n\n텍스트 추출에 실패했습니다. 원본은 저장되어 있으며, 관리자에게 문의하세요.\n\n파일 크기: ${fileBuffer.length} bytes\n저장 시간: ${new Date().toLocaleString('ko-KR')}`;
             return processTextEncoding(pdfPlaceholder, { strictMode: true, preserveOriginal: true });
           }
-          
+
         case 'docx':
           try {
             const mammothMod = (await import('mammoth')).default as { extractRawText: (args: { buffer: Buffer }) => Promise<{ value: string }> };
@@ -1548,7 +1545,7 @@ export class RAGProcessor {
             const docxPlaceholder = `DOCX 문서: ${fileName}\n\n텍스트 추출에 실패했습니다. 원본은 저장되어 있으며, 관리자에게 문의하세요.\n\n파일 크기: ${fileBuffer.length} bytes\n저장 시간: ${new Date().toLocaleString('ko-KR')}`;
             return processTextEncoding(docxPlaceholder, { strictMode: true, preserveOriginal: true });
           }
-          
+
         case 'txt':
           // TXT 파일은 다양한 인코딩 시도
           const encodings: BufferEncoding[] = ['utf-8', 'latin1'];
@@ -1559,12 +1556,12 @@ export class RAGProcessor {
             try {
               const text = fileBuffer.toString(encoding);
               const result = processTextEncoding(text, { strictMode: true });
-              
+
               // 한글 비율로 최적 인코딩 선택
               const koreanChars = (text.match(/[\uAC00-\uD7AF]/g) || []).length;
               const totalChars = text.length;
               const koreanRatio = totalChars > 0 ? koreanChars / totalChars : 0;
-              
+
               if (koreanRatio > bestScore) {
                 bestScore = koreanRatio;
                 bestResult = result;
@@ -1579,7 +1576,7 @@ export class RAGProcessor {
           }
 
           return bestResult;
-          
+
         default:
           // 기본적으로 UTF-8로 시도
           const text = fileBuffer.toString('utf-8');
@@ -1587,7 +1584,7 @@ export class RAGProcessor {
       }
     } catch (error) {
       console.error(`❌ 서버사이드 텍스트 추출 실패: ${fileName}`, error);
-      
+
       return {
         originalText: fileName,
         cleanedText: `[파일 처리 오류: ${fileName}]`,
@@ -1616,7 +1613,7 @@ export class RAGProcessor {
         fileSize: document.file_size,
         fileType: document.file_type
       });
-      
+
       // 대용량 파일 처리 시 타임아웃 설정
       // CHUNK_PROCESS는 분할된 텍스트(500KB)이지만 충분한 처리 시간 필요
       const isChunkProcess = document.title?.includes('분할');
@@ -1625,43 +1622,43 @@ export class RAGProcessor {
       // 분할 처리(500KB)는 5분, 일반 대용량 파일은 8분, 일반 파일은 2분
       // 분할 처리 시 청킹/임베딩 최적화로 처리 시간 단축, 타임아웃은 여유있게 설정
       const timeoutMs = isChunkProcess ? 300000 : (isLargeFile ? 480000 : 120000); // 분할: 5분, 대용량: 8분, 일반: 2분
-      
+
       if (isChunkProcess) {
         console.log('⚠️ 분할 처리 - 타임아웃 설정:', timeoutMs + 'ms (5분)');
       } else if (isLargeFile) {
         console.log('⚠️ 대용량 파일 처리 - 타임아웃 설정:', timeoutMs + 'ms (8분)');
       }
-      
+
       // AbortController를 사용하여 타임아웃 시 실제로 작업 중단
       const abortController = new AbortController();
       const timeoutId = setTimeout(() => {
         abortController.abort();
-        }, timeoutMs);
-      
+      }, timeoutMs);
+
       try {
         const processPromise = this.processDocumentInternal(document, skipDuplicate, originalBinaryData, abortController.signal);
         const result = await processPromise;
         clearTimeout(timeoutId);
-      return result;
+        return result;
       } catch (error) {
         clearTimeout(timeoutId);
-        
+
         // AbortError인 경우 타임아웃으로 처리
         if (error instanceof Error && (error.name === 'AbortError' || abortController.signal.aborted)) {
           throw new Error(`문서 처리 타임아웃 (${(timeoutMs / 1000).toFixed(0)}초 초과) - 파일 크기: ${(document.file_size / (1024 * 1024)).toFixed(2)}MB`);
         }
         throw error;
       }
-      
+
     } catch (error) {
       console.error('❌ RAG 문서 처리 실패:', error);
-      
+
       // 타임아웃 에러인지 확인
       const isTimeout = error instanceof Error && error.message.includes('타임아웃');
       const errorMessage = isTimeout
         ? `문서 처리 시간이 초과되었습니다. (파일 크기: ${(document.file_size / (1024 * 1024)).toFixed(2)}MB)`
         : error instanceof Error ? error.message : '문서 처리 중 오류가 발생했습니다.';
-      
+
       return {
         documentId: document.id,
         chunkCount: 0,
@@ -1670,7 +1667,7 @@ export class RAGProcessor {
       };
     }
   }
-  
+
   private async processDocumentInternal(document: DocumentData, skipDuplicate: boolean = false, originalBinaryData?: string, abortSignal?: AbortSignal): Promise<{
     documentId: string;
     chunkCount: number;
@@ -1705,7 +1702,7 @@ export class RAGProcessor {
         contentLength: document.content.length,
         contentLengthKB: (document.content.length / 1024).toFixed(2)
       });
-      
+
       // PDF 바이너리 데이터인 경우 텍스트 추출 실패로 처리
       if (document.content && document.content.startsWith('BINARY_DATA:')) {
         console.error('❌ PDF 바이너리 데이터 감지 - 텍스트 추출 실패로 인해 청킹 불가');
@@ -1716,14 +1713,14 @@ export class RAGProcessor {
           fileSize: document.file_size,
           note: 'PDF에서 텍스트를 추출하지 못했습니다. 파일이 손상되었거나 텍스트가 없는 이미지 기반 PDF일 수 있습니다.'
         });
-        
+
         // 문서는 저장 (청크 없이) - 다운로드용으로만 사용
         const supabase = await this.getSupabaseClient();
         if (supabase) {
           try {
             await this.saveDocumentToDatabase(document, originalBinaryData);
             console.log('✅ PDF 문서 저장 완료 (청크 없음 - 다운로드용으로만 사용)');
-            
+
             // 문서 상태를 indexed로 업데이트 (청크 없어도 저장 완료, main_document_id 유지)
             // main_document_id 우선순위: 1) 전달받은 값, 2) 기존 문서의 값
             const { data: existingDoc } = await supabase
@@ -1731,25 +1728,25 @@ export class RAGProcessor {
               .select('main_document_id')
               .eq('id', document.id)
               .maybeSingle();
-            
+
             const updateData: any = {
               status: 'indexed',
               chunk_count: 0,
               updated_at: new Date().toISOString()
             };
-            
+
             // main_document_id 우선순위: 1) 전달받은 값, 2) 기존 문서의 값
             if (document.main_document_id) {
               updateData.main_document_id = document.main_document_id;
             } else if (existingDoc?.main_document_id) {
               updateData.main_document_id = existingDoc.main_document_id;
             }
-            
+
             const { error: updateError } = await supabase
               .from('documents')
               .update(updateData)
               .eq('id', document.id);
-            
+
             if (updateError) {
               console.error('❌ 문서 상태 업데이트 실패:', updateError);
             } else {
@@ -1765,7 +1762,7 @@ export class RAGProcessor {
             };
           }
         }
-        
+
         // 텍스트 추출 실패 시 명확한 에러 메시지 반환
         return {
           documentId: document.id,
@@ -1774,15 +1771,15 @@ export class RAGProcessor {
           error: 'PDF에서 텍스트를 추출하지 못했습니다. 파일이 손상되었거나 텍스트가 없는 이미지 기반 PDF일 수 있습니다. AI 검색은 불가능하며 다운로드용으로만 저장되었습니다.'
         };
       }
-      
+
       // 텍스트 문서인 경우에만 인코딩 처리
       let processedContent = document.content;
       if (document.content && !document.content.startsWith('BINARY_DATA:')) {
-        const encodingResult = processTextEncoding(document.content, { 
+        const encodingResult = processTextEncoding(document.content, {
           strictMode: true,
-          preserveOriginal: true 
+          preserveOriginal: true
         });
-        
+
         console.log(`🔧 텍스트 인코딩 결과:`, {
           originalLength: encodingResult.originalText.length,
           cleanedLength: encodingResult.cleanedText.length,
@@ -1790,31 +1787,31 @@ export class RAGProcessor {
           hasIssues: encodingResult.hasIssues,
           issues: encodingResult.issues
         });
-        
+
         processedContent = encodingResult.cleanedText;
       }
-      
+
       const processedDocument = {
         ...document,
         content: processedContent
       };
-      
+
       // AbortSignal 체크
       if (abortSignal?.aborted) {
         throw new Error('문서 처리가 중단되었습니다.');
       }
-      
+
       // 통합 청킹 서비스 사용
       const chunks = await this.chunkDocumentWithUnifiedService(processedDocument);
       const chunkingMs = Date.now() - chunkingStartMs;
-      
+
       // AbortSignal 체크
       if (abortSignal?.aborted) {
         throw new Error('문서 처리가 중단되었습니다.');
       }
       const avgChunkSize = chunks.length > 0 ? Math.round(chunks.reduce((sum, c) => sum + c.content.length, 0) / chunks.length) : 0;
       const totalChunkSize = chunks.reduce((sum, c) => sum + c.content.length, 0);
-      
+
       // 초기 청킹 결과 로깅 (강제 재청킹 전)
       const initialChunkCount = chunks.length;
       console.log('✅ 문서 청킹 완료 (초기):', {
@@ -1829,21 +1826,21 @@ export class RAGProcessor {
         contentLength: processedContent.length,
         contentLengthKB: (processedContent.length / 1024).toFixed(2),
         coverage: initialChunkCount > 0 ? `${((totalChunkSize / processedContent.length) * 100).toFixed(1)}%` : '0%',
-        note: initialChunkCount === 1 && processedContent.length > 500 
-          ? '⚠️ 1개 청크만 생성됨 - 강제 재청킹 필요' 
-          : initialChunkCount > 1 
-          ? '✅ 여러 청크 생성됨 (정상)' 
-          : '⚠️ 청크가 없음',
+        note: initialChunkCount === 1 && processedContent.length > 500
+          ? '⚠️ 1개 청크만 생성됨 - 강제 재청킹 필요'
+          : initialChunkCount > 1
+            ? '✅ 여러 청크 생성됨 (정상)'
+            : '⚠️ 청크가 없음',
         willCheckForcedRechunking: initialChunkCount === 1 && processedContent.length > 500
       });
-      
+
       // 청킹 결과 검증: 내용이 긴데 청크가 1개만 생성된 경우 강제 재청킹
       // AdaptiveChunkingService에서 이미 강제 분할을 시도했을 수 있지만, 
       // 여전히 1개만 있다면 RAGProcessor에서도 강제 재청킹 시도
       // 조건 완화: 500자 이상이면 재청킹 시도 (기존: 10000자)
       let wasForcedRechunking = false;
       const shouldForceRechunk = chunks.length === 1 && processedContent.length > 500;
-      
+
       console.log('🔍 청킹 결과 검증:', {
         documentId: document.id,
         title: document.title,
@@ -1852,11 +1849,11 @@ export class RAGProcessor {
         willCheckForcedRechunking: shouldForceRechunk,
         condition: `chunks.length (${chunks.length}) === 1 && processedContent.length (${processedContent.length}) > 500`
       });
-      
+
       if (shouldForceRechunk) {
         const firstChunkSize = chunks[0]?.content?.length || 0;
         const coverage = processedContent.length > 0 ? (firstChunkSize / processedContent.length) * 100 : 0;
-        
+
         console.error('❌ 청킹 최적화 실패: 내용이 긴데 청크가 1개만 생성되었습니다.', {
           documentId: document.id,
           title: document.title,
@@ -1874,7 +1871,7 @@ export class RAGProcessor {
           timestamp: new Date().toISOString(),
           note: '이 로그 직후 강제 재청킹이 실행되어야 합니다.'
         });
-        
+
         // 강제 재청킹 시도 (무조건 실행, coverage 조건 제거)
         // CRITICAL: 이 로그는 반드시 출력되어야 함
         console.error('[CRITICAL] 🔄 RAGProcessor: 강제 재청킹 시도 (무조건 실행)...', {
@@ -1885,27 +1882,27 @@ export class RAGProcessor {
           condition: `chunks.length === ${chunks.length} && processedContent.length (${processedContent.length}) > 500`,
           timestamp: new Date().toISOString()
         });
-        
+
         try {
           // 내용 길이에 따라 동적으로 청크 크기 결정
           // 목표: 최소 3개 이상의 청크 생성 (짧은 문서의 경우)
           // 긴 문서는 최대 50개까지
           const targetChunkCount = Math.max(3, Math.min(50, Math.floor(processedContent.length / 500)));
           const forcedChunkSize = Math.max(300, Math.min(2000, Math.floor(processedContent.length / targetChunkCount)));
-          
+
           console.log(`📏 강제 재청킹 설정: 목표 ${targetChunkCount}개 청크, 청크 크기 ${forcedChunkSize}자`);
-          
+
           const forcedChunks: ChunkData[] = [];
           let loopCount = 0;
           for (let i = 0; i < processedContent.length; i += forcedChunkSize) {
             loopCount++;
             let chunkEnd = Math.min(i + forcedChunkSize, processedContent.length);
-            
+
             // 숫자 패턴 보호: 잘린 숫자 방지
             if (chunkEnd < processedContent.length) {
               const nearEndText = processedContent.slice(Math.max(0, chunkEnd - 30), Math.min(processedContent.length, chunkEnd + 30));
               const truncatedNumberPattern = /\d+\s*\|\s*\d+/;
-              
+
               if (truncatedNumberPattern.test(nearEndText)) {
                 // 잘린 숫자 패턴 발견 - 완전한 숫자까지 포함하도록 조정
                 const beforeCut = processedContent.slice(i, chunkEnd);
@@ -1920,7 +1917,7 @@ export class RAGProcessor {
                 }
               }
             }
-            
+
             const chunkContent = processedContent.slice(i, chunkEnd).trim();
             if (chunkContent.length > 0) {
               forcedChunks.push({
@@ -1942,7 +1939,7 @@ export class RAGProcessor {
               });
             }
           }
-          
+
           console.log(`📊 강제 재청킹 루프 완료:`, {
             documentId: document.id,
             loopCount,
@@ -1951,7 +1948,7 @@ export class RAGProcessor {
             forcedChunkSize,
             expectedChunks: Math.ceil(processedContent.length / forcedChunkSize)
           });
-          
+
           if (forcedChunks.length > 1) {
             console.log(`✅ 강제 재청킹 완료: ${forcedChunks.length}개 청크 생성 (기존: ${chunks.length}개, 목표: ${targetChunkCount}개)`, {
               documentId: document.id,
@@ -2003,7 +2000,7 @@ export class RAGProcessor {
                 });
               }
             }
-            
+
             if (smallerForcedChunks.length > 1) {
               console.log(`✅ 강제 재청킹 재시도 성공: ${smallerForcedChunks.length}개 청크 생성`);
               chunks.length = 0;
@@ -2024,7 +2021,7 @@ export class RAGProcessor {
           });
         }
       }
-      
+
       // OpenAI 임베딩 사용 시 청크 크기/토큰 제한을 맞추기 위해 마지막으로 보정
       const providerAwareChunks = this.normalizeChunksForEmbeddingProvider(chunks, document);
       if (providerAwareChunks !== chunks) {
@@ -2043,7 +2040,7 @@ export class RAGProcessor {
       const finalChunkCount = chunks.length;
       const finalAvgChunkSize = finalChunkCount > 0 ? Math.round(chunks.reduce((sum, c) => sum + c.content.length, 0) / finalChunkCount) : 0;
       const finalTotalChunkSize = chunks.reduce((sum, c) => sum + c.content.length, 0);
-      
+
       // 최종 청킹 결과 로깅 (항상 출력) - 이 로그는 반드시 출력되어야 함
       // CRITICAL: 이 로그는 반드시 출력되어야 함
       console.error('[CRITICAL] 📊 최종 청킹 결과 (반드시 출력):', {
@@ -2057,13 +2054,13 @@ export class RAGProcessor {
         coverage: finalChunkCount > 0 ? `${((finalTotalChunkSize / processedContent.length) * 100).toFixed(1)}%` : '0%',
         wasForcedRechunking,
         contentLength: processedContent.length,
-        note: wasForcedRechunking 
+        note: wasForcedRechunking
           ? `✅ 강제 재청킹 실행됨: ${initialChunkCount}개 → ${finalChunkCount}개`
           : finalChunkCount > 1
-          ? '✅ AdaptiveChunkingService에서 이미 여러 청크 생성됨'
-          : '⚠️ 1개 청크만 생성됨 (강제 재청킹 필요했지만 실행되지 않음)'
+            ? '✅ AdaptiveChunkingService에서 이미 여러 청크 생성됨'
+            : '⚠️ 1개 청크만 생성됨 (강제 재청킹 필요했지만 실행되지 않음)'
       });
-      
+
       if (wasForcedRechunking) {
         console.log('✅ 최종 청킹 결과 (강제 재청킹 후):', {
           chunkCount: finalChunkCount,
@@ -2129,7 +2126,7 @@ export class RAGProcessor {
       const chunksWithEmbeddings = await this.generateEmbeddings(chunks);
       const embeddingMs = Date.now() - embeddingStartMs;
       console.log(`✅ 임베딩 생성 완료: ${chunksWithEmbeddings.length}개 청크 (${(embeddingMs / 1000).toFixed(1)}초)`);
-      
+
       // AbortSignal 체크
       if (abortSignal?.aborted) {
         throw new Error('문서 처리가 중단되었습니다.');
@@ -2155,7 +2152,7 @@ export class RAGProcessor {
           await this.saveDocumentToDatabase(document, originalBinaryData);
           const docSaveMs = Date.now() - docSaveStartMs;
           console.log('✅ 문서 데이터베이스 저장 완료', { time: `${docSaveMs}ms` });
-          
+
           // AbortSignal 체크
           if (abortSignal?.aborted) {
             throw new Error('문서 처리가 중단되었습니다.');
@@ -2173,17 +2170,17 @@ export class RAGProcessor {
               if (abortSignal?.aborted) {
                 throw new Error('문서 처리가 중단되었습니다.');
               }
-              
+
               const batch = chunksWithEmbeddings.slice(i, i + SAVE_BATCH_SIZE);
               const batchSaveStartMs = Date.now();
               console.log(`💾 청크 저장 배치: ${i + 1}-${Math.min(i + SAVE_BATCH_SIZE, chunksWithEmbeddings.length)}/${chunksWithEmbeddings.length}`);
-              
+
               const batchSaved = await this.saveChunksToDatabase(batch, document);
               savedChunkCount += batchSaved;
-              
+
               const batchSaveMs = Date.now() - batchSaveStartMs;
               console.log(`✅ 청크 저장 배치 완료: ${savedChunkCount}/${chunksWithEmbeddings.length} (${batchSaveMs}ms)`);
-              
+
               // 배치 간 짧은 대기 (분할 처리 시 지연 제거)
               if (i + SAVE_BATCH_SIZE < chunksWithEmbeddings.length) {
                 // 분할 처리 시 지연 없이 처리 (이미 충분히 작은 단위)
@@ -2210,7 +2207,7 @@ export class RAGProcessor {
               avgTimePerChunk: savedChunkCount > 0 ? `${(chunkSaveMs / savedChunkCount).toFixed(1)}ms` : 'N/A'
             });
           }
-          
+
           // 저장된 청크 개수가 생성된 청크 개수와 다른 경우 경고
           if (savedChunkCount !== chunks.length) {
             console.warn(`⚠️ 청크 저장 불일치: 생성 ${chunks.length}개, 저장 ${savedChunkCount}개`);
@@ -2226,7 +2223,7 @@ export class RAGProcessor {
             totalChunks: chunks.length,
             note: '부분 저장된 청크가 있을 수 있습니다. 데이터 일관성을 확인해주세요.'
           });
-          
+
           // 에러를 다시 throw하여 상위로 전파
           throw new Error(`데이터베이스 저장 실패: ${errorMessage}`);
         }
@@ -2247,7 +2244,7 @@ export class RAGProcessor {
           console.warn('⚠️ 저장된 청크 개수 확인 실패:', countError);
         }
       }
-      
+
       // 전체 처리 시간 요약
       const totalProcessingMs = Date.now() - processDocumentStartMs;
       console.log('✅ RAG 문서 처리 완료:', {
@@ -2318,27 +2315,27 @@ export class RAGProcessor {
       const chunkData: ChunkData[] = result.chunks.map((chunk) => {
         // section_title 길이 제한 (인덱스 크기 제한 방지: 최대 200자)
         const sectionTitle = chunk.metadata.sectionTitle;
-        const limitedSectionTitle = sectionTitle && sectionTitle.length > 200 
-          ? sectionTitle.substring(0, 200) 
+        const limitedSectionTitle = sectionTitle && sectionTitle.length > 200
+          ? sectionTitle.substring(0, 200)
           : sectionTitle;
-        
+
         return {
-        id: chunk.id,
-        content: chunk.content,
-        metadata: {
-          document_id: chunk.metadata.documentId,
-          chunk_index: chunk.metadata.chunkIndex,
-          source: chunk.metadata.documentTitle,
-          created_at: new Date().toISOString(),
-          chunk_type: chunk.metadata.chunkType,
+          id: chunk.id,
+          content: chunk.content,
+          metadata: {
+            document_id: chunk.metadata.documentId,
+            chunk_index: chunk.metadata.chunkIndex,
+            source: chunk.metadata.documentTitle,
+            created_at: new Date().toISOString(),
+            chunk_type: chunk.metadata.chunkType,
             section_title: limitedSectionTitle,
-          keywords: chunk.metadata.keywords,
-          importance: chunk.metadata.importance,
-          hierarchy_level: chunk.metadata.hierarchyLevel,
-          start_char: chunk.metadata.startChar,
-          end_char: chunk.metadata.endChar,
-          original_length: chunk.metadata.endChar - chunk.metadata.startChar,
-        } as any,
+            keywords: chunk.metadata.keywords,
+            importance: chunk.metadata.importance,
+            hierarchy_level: chunk.metadata.hierarchyLevel,
+            start_char: chunk.metadata.startChar,
+            end_char: chunk.metadata.endChar,
+            original_length: chunk.metadata.endChar - chunk.metadata.startChar,
+          } as any,
         };
       });
 
@@ -2415,7 +2412,7 @@ export class RAGProcessor {
         });
         return [];
       }
-      
+
       // 텍스트 길이 확인 및 경고
       const trimmedContent = document.content.trim();
       if (trimmedContent.length < 50) {
@@ -2466,13 +2463,13 @@ export class RAGProcessor {
       // 언어 감지 (간단한 버전)
       const koreanCharCount = (document.content.match(/[가-힣]/g) || []).length;
       const englishCharCount = (document.content.match(/[a-zA-Z]/g) || []).length;
-      const language: 'ko' | 'en' | 'mixed' = 
+      const language: 'ko' | 'en' | 'mixed' =
         koreanCharCount > englishCharCount ? 'ko' :
-        englishCharCount > koreanCharCount * 2 ? 'en' : 'mixed';
+          englishCharCount > koreanCharCount * 2 ? 'en' : 'mixed';
 
       // 분할 처리 감지 (제목에 "분할" 포함)
       const isChunkProcess = document.title?.includes('분할');
-      
+
       // 적응적 청킹 설정
       // 분할 처리 시: 더 큰 청크 크기로 청킹하여 청크 수 감소 (처리 시간 단축)
       const chunkingConfig: AdaptiveChunkingConfig = {
@@ -2492,14 +2489,14 @@ export class RAGProcessor {
         language: language,
         optimizeForSpeed: isChunkProcess
       });
-      
+
       const adaptiveChunks = await adaptiveChunkingService.chunkDocument(
         document.content,
         document.id,
         document.title,
         chunkingConfig
       );
-      
+
       // CRITICAL: 이 로그는 반드시 출력되어야 함
       console.error('[CRITICAL] 📦 적응적 청킹 결과:', {
         documentId: document.id,
@@ -2512,8 +2509,8 @@ export class RAGProcessor {
         note: adaptiveChunks.length === 1 && document.content.length > 10000
           ? '⚠️ 1개 청크만 반환됨 - RAGProcessor에서 강제 재청킹 필요'
           : adaptiveChunks.length > 1
-          ? '✅ 여러 청크 반환됨 (정상)'
-          : '⚠️ 청크가 없음',
+            ? '✅ 여러 청크 반환됨 (정상)'
+            : '⚠️ 청크가 없음',
         critical: '이 로그는 반드시 출력되어야 합니다.'
       });
 
@@ -2521,29 +2518,29 @@ export class RAGProcessor {
       const chunkData: ChunkData[] = adaptiveChunks.map((chunk) => {
         // section_title 길이 제한 (인덱스 크기 제한 방지: 최대 200자)
         const sectionTitle = chunk.metadata.sectionTitle;
-        const limitedSectionTitle = sectionTitle && sectionTitle.length > 200 
-          ? sectionTitle.substring(0, 200) 
+        const limitedSectionTitle = sectionTitle && sectionTitle.length > 200
+          ? sectionTitle.substring(0, 200)
           : sectionTitle;
-        
+
         return {
-        id: chunk.id,
-        content: chunk.content,
-        metadata: {
-          document_id: chunk.metadata.documentId,
-          chunk_index: chunk.metadata.chunkIndex,
-          source: chunk.metadata.documentTitle,
-          created_at: new Date().toISOString(),
-          // 추가 메타데이터 확장
-          chunk_type: chunk.metadata.chunkType,
+          id: chunk.id,
+          content: chunk.content,
+          metadata: {
+            document_id: chunk.metadata.documentId,
+            chunk_index: chunk.metadata.chunkIndex,
+            source: chunk.metadata.documentTitle,
+            created_at: new Date().toISOString(),
+            // 추가 메타데이터 확장
+            chunk_type: chunk.metadata.chunkType,
             section_title: limitedSectionTitle,
-          keywords: chunk.metadata.keywords,
-          importance: chunk.metadata.importance,
-          confidence: chunk.metadata.confidence,
-          // 계층 정보
-          hierarchy_level: chunk.metadata.hierarchyLevel,
-          parent_chunk_id: chunk.metadata.parentChunkId,
-          children_chunk_ids: chunk.metadata.childrenChunkIds,
-        } as any, // 타입 확장을 위해 any 사용
+            keywords: chunk.metadata.keywords,
+            importance: chunk.metadata.importance,
+            confidence: chunk.metadata.confidence,
+            // 계층 정보
+            hierarchy_level: chunk.metadata.hierarchyLevel,
+            parent_chunk_id: chunk.metadata.parentChunkId,
+            children_chunk_ids: chunk.metadata.childrenChunkIds,
+          } as any, // 타입 확장을 위해 any 사용
         };
       });
 
@@ -2560,8 +2557,8 @@ export class RAGProcessor {
         note: chunkData.length === 1 && document.content.length > 10000
           ? '⚠️ 1개 청크만 반환됨 - RAGProcessor에서 강제 재청킹 필요'
           : chunkData.length > 1
-          ? '✅ 여러 청크 반환됨 (정상)'
-          : '⚠️ 청크가 없음'
+            ? '✅ 여러 청크 반환됨 (정상)'
+            : '⚠️ 청크가 없음'
       });
 
       return chunkData;
@@ -2579,11 +2576,11 @@ export class RAGProcessor {
     try {
       const content = document.content;
       const contentLength = content.length;
-      
+
       // 표준 청크 크기 사용 (800-1000자 범위)
       let chunkSize = 800; // 표준 청크 크기
       let overlap = 100; // 표준 겹침 크기
-      
+
       // 문서 크기에 따라 미세 조정 (표준 범위 내에서)
       if (contentLength < 1000) {
         chunkSize = 400; // 작은 문서: 400자 (표준 범위 내)
@@ -2595,14 +2592,14 @@ export class RAGProcessor {
         chunkSize = 1000; // 큰 문서: 1000자 (표준 범위 최대값)
         overlap = 150;
       }
-      
+
       const chunks: string[] = [];
       let start = 0;
-      
+
       while (start < content.length && chunks.length < 500) {
         const end = Math.min(start + chunkSize, content.length);
         let chunk = content.slice(start, end);
-        
+
         // 문장 경계에서 자르기
         if (end < content.length) {
           const lastSentenceEnd = Math.max(
@@ -2614,16 +2611,16 @@ export class RAGProcessor {
             chunk = chunk.slice(0, lastSentenceEnd + 2);
           }
         }
-        
+
         const trimmedChunk = chunk.trim();
         if (trimmedChunk.length > 50) {
           chunks.push(trimmedChunk);
         }
-        
+
         start = end - overlap;
         if (start <= 0) start = end;
       }
-      
+
       return chunks.map((chunk, index) => ({
         id: `${document.id}_chunk_${index}`,
         content: chunk,
@@ -2651,34 +2648,38 @@ export class RAGProcessor {
    */
   async searchSimilarChunks(query: string, limit: number = 5, vendorFilter: string[] | null = null): Promise<ChunkData[]> {
     try {
-      // 쿼리 확장 (동의어/관련어 추가) - 임베딩 생성 전에 수행
-      const { expandQuery } = await import('./search/QueryExpansionService');
-      
-      // 벤더 필터에서 도메인 감지
-      let domain: 'meta' | 'naver' | 'kakao' | 'google' | 'general' = 'general';
-      if (vendorFilter && vendorFilter.length > 0) {
-        const vendor = vendorFilter[0].toLowerCase();
-        if (vendor.includes('meta') || vendor.includes('facebook') || vendor.includes('instagram')) {
-          domain = 'meta';
-        } else if (vendor.includes('naver')) {
-          domain = 'naver';
-        } else if (vendor.includes('kakao')) {
-          domain = 'kakao';
-        } else if (vendor.includes('google')) {
-          domain = 'google';
+      let searchQuery = query;
+      try {
+        const { expandQuery } = await import('./search/QueryExpansionService');
+
+        // 벤더 필터에서 도메인 감지
+        let domain: 'meta' | 'naver' | 'kakao' | 'google' | 'general' = 'general';
+        if (vendorFilter && vendorFilter.length > 0) {
+          const vendor = vendorFilter[0].toLowerCase();
+          if (vendor.includes('meta') || vendor.includes('facebook') || vendor.includes('instagram')) {
+            domain = 'meta';
+          } else if (vendor.includes('naver')) {
+            domain = 'naver';
+          } else if (vendor.includes('kakao')) {
+            domain = 'kakao';
+          } else if (vendor.includes('google')) {
+            domain = 'google';
+          }
         }
+
+        searchQuery = expandQuery(query, { domain, maxExpansions: 3 });
+
+        if (searchQuery !== query) {
+          console.log(`🔍 [RAGProcessor] 쿼리 확장: "${query}" → "${searchQuery}"`);
+        }
+      } catch (expandError) {
+        console.warn('⚠️ [RAGProcessor] 쿼리 확장 실패 (기본 쿼리 사용):', expandError);
+        searchQuery = query;
       }
-      
-      const expandedQuery = expandQuery(query, { domain, maxExpansions: 3 });
-      const searchQuery = expandedQuery; // 확장된 쿼리 사용
-      
-      if (expandedQuery !== query) {
-        console.log(`🔍 쿼리 확장: "${query}" → "${expandedQuery}"`);
-      }
-      
-      console.log('🔍 벡터 검색 시작:', searchQuery);
+
+      console.log(`🔍 [RAGProcessor] 벡터 검색 시작: "${searchQuery}" (Provider: ${this.embeddingProvider})`);
       if (vendorFilter && vendorFilter.length > 0) {
-        console.log('🏷️ 벤더 필터 적용:', vendorFilter);
+        console.log('🏷️ [RAGProcessor] 벤더 필터 적용:', vendorFilter);
       }
       const supabase = await this.getSupabaseClient();
 
@@ -2690,13 +2691,13 @@ export class RAGProcessor {
       // 쿼리 임베딩 생성 (BGE-M3 또는 OpenAI만 사용)
       console.log('🧠 쿼리 임베딩 생성 중...');
       let queryEmbedding: number[];
-      
+
       // OpenAI Embeddings API 사용
       if (this.embeddingProvider === 'openai') {
         if (!this.openAIEmbeddingService || !this.openAIEmbeddingService.initialized) {
           throw new Error('OpenAI Embeddings API가 초기화되지 않았습니다. OPENAI_API_KEY 환경 변수를 확인하세요.');
         }
-        
+
         console.log('🔄 OpenAI로 쿼리 임베딩 생성 중...');
         const result = await this.openAIEmbeddingService.generateEmbedding(searchQuery);
         queryEmbedding = result.embedding;
@@ -2704,18 +2705,18 @@ export class RAGProcessor {
       } else {
         // BGE-M3 사용
         const embeddingService = await this.initializeEmbeddingService();
-        
+
         if (!embeddingService) {
           throw new Error('BGE-M3 임베딩 서비스 초기화 실패');
         }
-        
+
         console.log('🔄 BGE-M3로 쿼리 임베딩 생성 중...');
         const result = await embeddingService.generateEmbedding(searchQuery, {
           model: 'bge-m3',
           normalize: true
         });
         queryEmbedding = result.embedding;
-        
+
         // 차원 확인
         const embeddingDim = parseInt(process.env.EMBEDDING_DIM || '1024');
         if (queryEmbedding.length !== embeddingDim) {
@@ -2745,7 +2746,7 @@ export class RAGProcessor {
 
       // 하이브리드 검색: 벡터 검색과 키워드 검색을 동시에 수행
       console.log('🔀 하이브리드 검색 시작: 벡터 + 키워드 검색 결합');
-      
+
       // 검색 임계값 상수 정의 (더 공격적인 Fallback 전략)
       const SEARCH_THRESHOLDS = {
         primary: 0.6,      // 기본 검색 임계값
@@ -2753,7 +2754,7 @@ export class RAGProcessor {
         tertiary: 0.15,    // 2차 Fallback
         minimum: 0.05      // 최소 임계값
       };
-      
+
       // 1단계: 벡터 검색 (기본 임계값 0.6)
       const vectorChunks = await this.performVectorSearch(
         supabase,
@@ -2791,14 +2792,14 @@ export class RAGProcessor {
       if (chunks.length > 0) {
         console.log('🎯 Cross-Encoder 재랭킹 시작: 관련성 점수 기반 재정렬');
         const { crossEncoderRerank } = await import('./search/CrossEncoderReranker');
-        
+
         // 쿼리 키워드 추출
         const queryKeywords = searchQuery
           .toLowerCase()
           .split(/\s+/)
           .filter(word => word.length > 1)
           .filter(word => !['에', '를', '을', '의', '와', '과', '은', '는', '이', '가', '에 대해', '알려주세요', '어떻게', '무엇', '왜', '언제', '어디'].includes(word));
-        
+
         chunks = crossEncoderRerank(chunks, {
           query: searchQuery,
           queryKeywords,
@@ -2811,7 +2812,7 @@ export class RAGProcessor {
           },
           minRelevanceScore: 0.2, // 최소 관련성 점수 (0.15 → 0.2로 상향, 더 엄격한 필터링)
         });
-        
+
         // 잘린 텍스트 필터링 적용 (더 엄격한 필터링)
         const { filterTruncatedSearchResults } = await import('./search/TruncatedTextFilter');
         const { valid: filteredChunks, filtered: truncatedFiltered } = filterTruncatedSearchResults(
@@ -2821,7 +2822,7 @@ export class RAGProcessor {
             keepIfHasKeywords: queryKeywords,
           }
         );
-        
+
         if (truncatedFiltered.length > 0) {
           console.log(`⚠️ 잘린 텍스트 패턴으로 ${truncatedFiltered.length}개 결과 필터링됨`);
           // 필터링된 결과의 이유 로깅
@@ -2829,27 +2830,27 @@ export class RAGProcessor {
             console.log(`  - 필터링됨: ${reason.substring(0, 50)}... (유사도: ${result.similarity?.toFixed(3)})`);
           });
         }
-        
+
         chunks = filteredChunks;
-        
+
         // 평균 유사도 향상을 위한 추가 부스팅
         // 키워드 매칭이 있는 결과에 추가 점수 부여
         const boostedChunks = chunks.map(chunk => {
           const content = chunk.content.toLowerCase();
           const docTitle = (chunk.metadata?.document_title || '').toLowerCase();
           const sectionTitle = (chunk.metadata?.section_title || '').toLowerCase();
-          
+
           let boost = 0;
-          
+
           // 쿼리 키워드가 콘텐츠에 포함된 경우 (더 강력한 부스팅)
           for (const keyword of queryKeywords) {
             const keywordLower = keyword.toLowerCase();
-            
+
             // 정확한 단어 매칭 (공백으로 구분) - 최우선
             const exactMatch = new RegExp(`\\b${keywordLower}\\b`, 'i');
             if (exactMatch.test(chunk.content)) {
               boost += 0.15; // 정확한 매칭 15% 부스팅 (기존 10%에서 증가)
-              
+
               // 중요한 키워드인 경우 추가 부스팅
               const importantKeywords = ['광고', '정책', '계정', '생성', '등록', '절차', '방법', '설정', '관리'];
               if (importantKeywords.some(ik => keywordLower.includes(ik.toLowerCase()))) {
@@ -2858,39 +2859,39 @@ export class RAGProcessor {
             } else if (content.includes(keywordLower)) {
               boost += 0.08; // 부분 매칭 8% 부스팅 (기존 5%에서 증가)
             }
-            
+
             // 문서 제목에 키워드가 포함된 경우 (더 높은 가중치)
             if (docTitle.includes(keywordLower)) {
               boost += 0.15; // 문서 제목 매칭 15% 부스팅 (기존 10%에서 증가)
             }
-            
+
             // 섹션 제목에 키워드가 포함된 경우 (더 높은 가중치)
             if (sectionTitle.includes(keywordLower)) {
               boost += 0.2; // 섹션 제목 매칭 20% 부스팅 (기존 15%에서 증가)
             }
           }
-          
+
           // 쿼리 전체가 콘텐츠에 포함된 경우 (매우 높은 부스팅)
           const queryLower = searchQuery.toLowerCase();
           if (content.includes(queryLower)) {
             boost += 0.25; // 전체 쿼리 매칭 25% 부스팅
           }
-          
+
           // 부스팅된 유사도 계산 (최대 1.0으로 제한)
           const boostedSimilarity = Math.min(1.0, (chunk.similarity || 0) + boost);
-          
+
           return {
             ...chunk,
             similarity: boostedSimilarity,
           };
         });
-        
+
         // 부스팅된 유사도 기준으로 재정렬
         boostedChunks.sort((a, b) => (b.similarity || 0) - (a.similarity || 0));
-        
+
         // 최종 결과 수 제한
         chunks = boostedChunks.slice(0, limit);
-        
+
         const finalAvgSimilarity = chunks.length > 0
           ? chunks.reduce((sum, c) => sum + (c.similarity || 0), 0) / chunks.length
           : 0;
@@ -2899,14 +2900,14 @@ export class RAGProcessor {
 
       // 4단계: 하이브리드 검색 결과가 부족하면 Fallback 전략 실행 (더 공격적인 전략)
       // 결과가 3개 미만이거나 평균 유사도가 0.5 미만이면 Fallback 실행
-      const avgSimilarity = chunks.length > 0 
-        ? chunks.reduce((sum, c) => sum + (c.similarity || 0), 0) / chunks.length 
+      const avgSimilarity = chunks.length > 0
+        ? chunks.reduce((sum, c) => sum + (c.similarity || 0), 0) / chunks.length
         : 0;
       const needsFallback = chunks.length < 3 || avgSimilarity < 0.5;
-      
+
       if (needsFallback) {
         console.log(`⚠️ 하이브리드 검색 결과 부족 (${chunks.length}개, 평균 유사도: ${avgSimilarity.toFixed(3)}) - Fallback 전략 실행`);
-        
+
         // 4-1단계: 벡터 검색 임계값을 낮춰서 재검색 (0.35)
         const lowerThresholdChunks = await this.performVectorSearch(
           supabase,
@@ -2916,22 +2917,22 @@ export class RAGProcessor {
           SEARCH_THRESHOLDS.secondary,
           useWeightedSearch
         );
-        
+
         // 더 나은 결과가 있으면 사용 (결과가 더 많거나 평균 유사도가 더 높으면)
         const lowerAvgSimilarity = lowerThresholdChunks.length > 0
           ? lowerThresholdChunks.reduce((sum, c) => sum + (c.similarity || 0), 0) / lowerThresholdChunks.length
           : 0;
-        
-        if (lowerThresholdChunks.length > chunks.length || 
-            (lowerThresholdChunks.length > 0 && lowerAvgSimilarity > avgSimilarity)) {
+
+        if (lowerThresholdChunks.length > chunks.length ||
+          (lowerThresholdChunks.length > 0 && lowerAvgSimilarity > avgSimilarity)) {
           console.log(`✅ Fallback 1단계 검색 성공: ${lowerThresholdChunks.length}개 결과 발견 (평균 유사도: ${lowerAvgSimilarity.toFixed(3)})`);
           chunks = lowerThresholdChunks;
         }
       }
 
       // 4-2단계: 여전히 결과가 부족하면 임계값을 더 낮춰서 재검색 (0.15)
-      const currentAvgSimilarity = chunks.length > 0 
-        ? chunks.reduce((sum, c) => sum + (c.similarity || 0), 0) / chunks.length 
+      const currentAvgSimilarity = chunks.length > 0
+        ? chunks.reduce((sum, c) => sum + (c.similarity || 0), 0) / chunks.length
         : 0;
       if (chunks.length < 3 || currentAvgSimilarity < 0.4) {
         console.log(`⚠️ Fallback 1단계 검색 결과 부족 (${chunks.length}개, 평균 유사도: ${currentAvgSimilarity.toFixed(3)}) - 임계값을 ${SEARCH_THRESHOLDS.tertiary}로 낮춰서 재검색`);
@@ -2943,13 +2944,13 @@ export class RAGProcessor {
           SEARCH_THRESHOLDS.tertiary,
           useWeightedSearch
         );
-        
+
         const veryLowAvgSimilarity = veryLowThresholdChunks.length > 0
           ? veryLowThresholdChunks.reduce((sum, c) => sum + (c.similarity || 0), 0) / veryLowThresholdChunks.length
           : 0;
-        
-        if (veryLowThresholdChunks.length > chunks.length || 
-            (veryLowThresholdChunks.length > 0 && veryLowAvgSimilarity > currentAvgSimilarity)) {
+
+        if (veryLowThresholdChunks.length > chunks.length ||
+          (veryLowThresholdChunks.length > 0 && veryLowAvgSimilarity > currentAvgSimilarity)) {
           console.log(`✅ Fallback 2단계 검색 성공: ${veryLowThresholdChunks.length}개 결과 발견 (평균 유사도: ${veryLowAvgSimilarity.toFixed(3)})`);
           chunks = veryLowThresholdChunks;
         }
@@ -2966,7 +2967,7 @@ export class RAGProcessor {
           SEARCH_THRESHOLDS.minimum,
           useWeightedSearch
         );
-        
+
         if (minimumThresholdChunks.length > 0) {
           const minAvgSimilarity = minimumThresholdChunks.reduce((sum, c) => sum + (c.similarity || 0), 0) / minimumThresholdChunks.length;
           console.log(`✅ Fallback 3단계 검색 성공: ${minimumThresholdChunks.length}개 결과 발견 (평균 유사도: ${minAvgSimilarity.toFixed(3)})`);
@@ -2985,7 +2986,7 @@ export class RAGProcessor {
           SEARCH_THRESHOLDS.secondary, // 0.35 임계값 사용
           useWeightedSearch
         );
-        
+
         if (noFilterChunks.length > chunks.length) {
           const noFilterAvgSimilarity = noFilterChunks.reduce((sum, c) => sum + (c.similarity || 0), 0) / noFilterChunks.length;
           console.log(`✅ 벤더 필터 제거 후 검색 성공: ${noFilterChunks.length}개 결과 발견 (평균 유사도: ${noFilterAvgSimilarity.toFixed(3)})`);
@@ -3003,7 +3004,7 @@ export class RAGProcessor {
       const urlChunks = chunks.filter(c => (c.metadata as any).sourceType === 'url');
       const fileChunks = chunks.filter(c => (c.metadata as any).sourceType === 'file');
       console.log(`📊 최종 검색 결과 타입별 통계: URL ${urlChunks.length}개, 파일 ${fileChunks.length}개 (총 ${chunks.length}개)`);
-      
+
       // 유사도 분포 로그
       const similarities = chunks.map(c => c.similarity || 0).filter(s => s > 0);
       if (similarities.length > 0) {
@@ -3012,7 +3013,7 @@ export class RAGProcessor {
         const minSimilarity = Math.min(...similarities);
         console.log(`📊 유사도 분포: 평균 ${avgSimilarity.toFixed(3)}, 최대 ${maxSimilarity.toFixed(3)}, 최소 ${minSimilarity.toFixed(3)}`);
       }
-      
+
       if (urlChunks.length === 0 && fileChunks.length > 0) {
         console.log('⚠️ 경고: URL 검색 결과가 없습니다. URL 문서가 검색되지 않았을 수 있습니다.');
       } else if (fileChunks.length === 0 && urlChunks.length > 0) {
@@ -3040,7 +3041,7 @@ export class RAGProcessor {
   ): Promise<ChunkData[]> {
     try {
       let data, error;
-      
+
       if (useWeightedSearch) {
         const result = await supabase.rpc('search_documents_with_weights', {
           query_embedding: queryEmbedding,
@@ -3072,11 +3073,11 @@ export class RAGProcessor {
         const isUrl = documentType === 'url';
         const chunkId = item.chunk_id || item.id || '';
         const documentId = item.document_id || item.metadata?.document_id || '';
-        
-        const finalSimilarity = item.weighted_similarity !== undefined 
-          ? item.weighted_similarity 
+
+        const finalSimilarity = item.weighted_similarity !== undefined
+          ? item.weighted_similarity
           : item.similarity;
-        
+
         return {
           id: item.chunk_id,
           chunkId: chunkId,
@@ -3116,7 +3117,7 @@ export class RAGProcessor {
     try {
       // 키워드 추출
       const queryKeywords = this.extractQueryKeywords(query);
-      
+
       if (queryKeywords.length === 0) {
         return [];
       }
@@ -3160,7 +3161,7 @@ export class RAGProcessor {
       );
 
       const { scoreKeywordResults } = await import('./search/HybridSearchService');
-      
+
       const chunks: ChunkData[] = chunksData
         .filter((c: any) => documentMap.has(c.document_id))
         .map((item: any) => {
@@ -3202,10 +3203,10 @@ export class RAGProcessor {
    */
   private extractQueryKeywords(query: string): string[] {
     const queryLower = query.toLowerCase();
-    
+
     // 불용어 목록
     const stopWords = ['에', '를', '을', '의', '와', '과', '에 대해', '에 대해 설명', '알려줘', '소개해줘', '설명해줘', '가이드', '가이드를', '알려', '소개', '설명', '에 대해', '설명해', '알려주', '소개해'];
-    
+
     // 복합 키워드 패턴
     const compoundPatterns = [
       /전환\s*api/gi,
@@ -3217,9 +3218,9 @@ export class RAGProcessor {
       /conversion\s*api/gi,
       /conversionapi/gi,
     ];
-    
+
     const queryKeywords: string[] = [];
-    
+
     // 복합 키워드 먼저 추출
     compoundPatterns.forEach(pattern => {
       const matches = queryLower.match(pattern);
@@ -3232,18 +3233,18 @@ export class RAGProcessor {
         });
       }
     });
-    
+
     // 나머지 단어 추출
     const words = queryLower.split(/\s+/);
     words.forEach(word => {
       const cleaned = word.trim();
-      if (cleaned.length > 1 && 
-          !stopWords.includes(cleaned) && 
-          !queryKeywords.some(kw => cleaned.includes(kw) || kw.includes(cleaned))) {
+      if (cleaned.length > 1 &&
+        !stopWords.includes(cleaned) &&
+        !queryKeywords.some(kw => cleaned.includes(kw) || kw.includes(cleaned))) {
         queryKeywords.push(cleaned);
       }
     });
-    
+
     return Array.from(new Set(queryKeywords));
   }
 
@@ -3251,8 +3252,8 @@ export class RAGProcessor {
    * Fallback 키워드 검색 (벤더 필터 지원, 복합 키워드 처리)
    */
   private async fallbackKeywordSearch(
-    query: string, 
-    limit: number, 
+    query: string,
+    limit: number,
     supabase: any,
     vendorFilter: string[] | null = null
   ): Promise<ChunkData[]> {
@@ -3261,16 +3262,16 @@ export class RAGProcessor {
       if (vendorFilter && vendorFilter.length > 0) {
         console.log('🏷️ 키워드 검색에도 벤더 필터 적용:', vendorFilter);
       }
-      
+
       // 키워드 추출 (공통 메서드 사용)
       const searchTerms = this.extractQueryKeywords(query);
-      
+
       if (searchTerms.length === 0) {
         searchTerms.push(query); // 키워드가 없으면 전체 쿼리 사용
       }
-      
+
       console.log(`🔑 추출된 키워드: ${searchTerms.join(', ')}`);
-      
+
       // 키워드 검색 쿼리 구성 (별도 쿼리로 분리하여 documents 테이블과 조인)
       // 1단계: document_chunks에서 키워드로 검색 (대소문자 무시, 부분 일치)
       const orConditions = searchTerms.map(term => `content.ilike.%${term}%`).join(',');
@@ -3279,19 +3280,19 @@ export class RAGProcessor {
         .select('chunk_id, content, metadata, document_id')
         .or(orConditions)
         .limit(limit * 3); // 더 많은 결과를 가져와서 벤더 필터 후에도 충분한 결과 확보
-      
+
       if (chunksError) {
         console.error('❌ 키워드 검색 (chunks) 오류:', chunksError);
         return [];
       }
-      
+
       if (!chunksData || chunksData.length === 0) {
         console.log('⚠️ 키워드 검색 결과 없음');
         return [];
       }
-      
+
       console.log(`📊 키워드 검색으로 ${chunksData.length}개 청크 발견`);
-      
+
       // 2단계: documents 테이블에서 문서 정보 조회 (벤더 필터 적용)
       const documentIds = [...new Set(chunksData.map((c: any) => c.document_id))];
       let documentsQuery = supabase
@@ -3299,20 +3300,20 @@ export class RAGProcessor {
         .select('id, title, source_vendor, type, status')
         .in('id', documentIds)
         .eq('status', 'indexed');
-      
+
       // 벤더 필터 적용
       if (vendorFilter && vendorFilter.length > 0) {
         const normalizedVendorFilter = vendorFilter.map(v => v.toUpperCase());
         documentsQuery = documentsQuery.in('source_vendor', normalizedVendorFilter);
       }
-      
+
       const { data: documentsData, error: documentsError } = await documentsQuery;
-      
+
       if (documentsError) {
         console.error('❌ 키워드 검색 (documents) 오류:', documentsError);
         return [];
       }
-      
+
       // 벤더 필터로 인해 결과가 없으면 필터를 완화하여 재검색
       if (!documentsData || documentsData.length === 0) {
         if (vendorFilter && vendorFilter.length > 0) {
@@ -3323,17 +3324,17 @@ export class RAGProcessor {
             .select('id, title, source_vendor, type, status')
             .in('id', documentIds)
             .eq('status', 'indexed');
-          
+
           if (allDocumentsError) {
             console.error('❌ 키워드 검색 (documents, 필터 제거) 오류:', allDocumentsError);
             return [];
           }
-          
+
           if (!allDocumentsData || allDocumentsData.length === 0) {
             console.log('⚠️ 키워드 검색 결과 없음 (벤더 필터 제거 후에도)');
             return [];
           }
-          
+
           // 벤더 필터 없이 결과 반환
           const documentMap = new Map<string, any>(
             allDocumentsData.map((d: any) => [d.id, d])
@@ -3341,14 +3342,14 @@ export class RAGProcessor {
           const data = chunksData
             .filter((c: any) => documentMap.has(c.document_id))
             .slice(0, limit);
-          
+
           const chunks: ChunkData[] = (data || []).map((item: any) => {
             const doc = documentMap.get(item.document_id);
             if (!doc) return null;
-            
+
             const documentType = doc.type || 'file';
             const isUrl = documentType === 'url';
-            
+
             return {
               id: item.chunk_id,
               content: item.content,
@@ -3364,7 +3365,7 @@ export class RAGProcessor {
               similarity: 0.5,
             };
           }).filter((c: ChunkData | null): c is ChunkData => c !== null);
-          
+
           console.log(`✅ 키워드 검색 완료 (벤더 필터 제거): ${chunks.length}개 결과`);
           return chunks;
         } else {
@@ -3372,7 +3373,7 @@ export class RAGProcessor {
           return [];
         }
       }
-      
+
       // 3단계: chunks와 documents를 조인하여 최종 결과 생성
       interface DocumentInfo {
         id: string;
@@ -3381,7 +3382,7 @@ export class RAGProcessor {
         type: string;
         status: string;
       }
-      
+
       const documentMap = new Map<string, DocumentInfo>(
         documentsData.map((d: any) => [d.id, d as DocumentInfo])
       );
@@ -3392,10 +3393,10 @@ export class RAGProcessor {
       const chunks: ChunkData[] = (data || []).map((item: any) => {
         const doc = documentMap.get(item.document_id);
         if (!doc) return null; // 문서 정보가 없으면 제외
-        
+
         const documentType = doc.type || 'file';
         const isUrl = documentType === 'url';
-        
+
         return {
           id: item.chunk_id,
           content: item.content,

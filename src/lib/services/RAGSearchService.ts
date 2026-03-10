@@ -4,6 +4,8 @@
  */
 
 import { createClient } from '@supabase/supabase-js';
+import Anthropic from '@anthropic-ai/sdk';
+import OpenAI from 'openai';
 import { SimpleEmbeddingService } from './SimpleEmbeddingService';
 import { OpenAIEmbeddingService, openAIEmbeddingService } from './OpenAIEmbeddingService';
 import { GeminiService } from './GeminiService';
@@ -36,6 +38,9 @@ export class RAGSearchService {
   private embeddingService: SimpleEmbeddingService | null = null;
   private openAIEmbeddingService: OpenAIEmbeddingService | null = null;
   private useOpenAIEmbedding: boolean = false;
+  private anthropic: Anthropic | null = null;
+  private openai: OpenAI | null = null;
+  private activeModel: string = 'fallback';
 
   constructor() {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -52,6 +57,9 @@ export class RAGSearchService {
       console.warn('⚠️ Supabase 환경변수가 설정되지 않았습니다. Fallback 모드로 전환합니다.');
       console.warn('필요한 환경변수: NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY');
 
+      // AI 클라이언트 초기화 (Fallback 모드에서도 가능하면 초기화)
+      this.initAIProviders();
+
       // 프로덕션 환경에서는 더미 클라이언트 사용
       if (process.env.NODE_ENV === 'production') {
         this.supabase = createClient('https://dummy.supabase.co', 'dummy-key');
@@ -65,6 +73,7 @@ export class RAGSearchService {
 
     try {
       this.supabase = createClient(supabaseUrl, supabaseKey);
+      this.initAIProviders();
 
       // OpenAI 임베딩 서비스 사용 가능 여부 확인
       if (openAIEmbeddingService.initialized) {
@@ -358,43 +367,24 @@ export class RAGSearchService {
   }
 
   /**
-   * 코사인 유사도 계산 (개선된 버전)
+   * AI 프로바이더 초기화
    */
-  private calculateCosineSimilarity(vecA: number[], vecB: number[]): number {
-    if (vecA.length !== vecB.length) {
-      console.warn('벡터 차원이 다릅니다:', vecA.length, vecB.length);
-      return 0;
+  private initAIProviders() {
+    // Anthropic (Claude) 초기화
+    if (process.env.ANTHROPIC_API_KEY) {
+      this.anthropic = new Anthropic({
+        apiKey: process.env.ANTHROPIC_API_KEY,
+      });
+      console.log('✅ Anthropic API 클라이언트 초기화 완료');
     }
 
-    if (vecA.length === 0 || vecB.length === 0) {
-      return 0;
+    // OpenAI (GPT) 초기화
+    if (process.env.OPENAI_API_KEY) {
+      this.openai = new OpenAI({
+        apiKey: process.env.OPENAI_API_KEY,
+      });
+      console.log('✅ OpenAI API 클라이언트 초기화 완료');
     }
-
-    let dotProduct = 0;
-    let normA = 0;
-    let normB = 0;
-
-    for (let i = 0; i < vecA.length; i++) {
-      const a = Number(vecA[i]) || 0;
-      const b = Number(vecB[i]) || 0;
-
-      dotProduct += a * b;
-      normA += a * a;
-      normB += b * b;
-    }
-
-    if (normA === 0 || normB === 0) {
-      return 0;
-    }
-
-    const similarity = dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
-
-    // NaN이나 Infinity 체크
-    if (!isFinite(similarity)) {
-      return 0;
-    }
-
-    return Math.max(0, Math.min(1, similarity)); // 0-1 범위로 제한
   }
 
   /**
@@ -406,34 +396,14 @@ export class RAGSearchService {
       searchResults.some(result => result.similarity > 0.3); // 유사도 30% 이상인 결과가 있는지 확인
 
     if (!hasRelevantResults) {
+      this.activeModel = 'no-data';
       return '죄송합니다. 제공된 내부 문서에서 질문과 관련된 정보를 찾을 수 없습니다.\n\n📧 **더 정확한 답변을 원하시면:**\n담당팀(fb@nasmedia.co.kr)에 직접 문의해주시면 더 구체적인 답변을 받으실 수 있습니다.';
     }
 
-    try {
-      // Fallback 모드인 경우 간단한 답변 생성
-      if (!this.supabase) {
-        console.log('⚠️ Fallback 모드: 간단한 답변 생성');
-        return this.generateFallbackAnswer(query, searchResults);
-      }
+    const context = this.buildContextFromSearchResults(searchResults);
+    console.log(`📝 컨텍스트 길이: ${context.length}자`);
 
-      // Gemini 서비스 초기화
-      console.log('🔍 Gemini 서비스 초기화 중...');
-      const geminiService = new GeminiService();
-
-      // API 키 확인
-      if (!process.env.GOOGLE_API_KEY) {
-        console.log('⚠️ Google API 키가 설정되지 않았습니다. 기본 답변 생성 모드로 전환합니다.');
-        return this.generateFallbackAnswer(query, searchResults);
-      }
-
-      console.log('✅ Gemini 서비스 사용 가능, 답변 생성 시작');
-
-      // 검색 결과를 컨텍스트로 구성
-      const context = this.buildContextFromSearchResults(searchResults);
-      console.log(`📝 컨텍스트 길이: ${context.length}자`);
-
-      // Gemini를 통한 답변 생성 (강화된 프롬프트)
-      const enhancedPrompt = `질문: ${query}
+    const enhancedPrompt = `질문: ${query}
 
 관련 문서 내용:
 ${context}
@@ -447,25 +417,67 @@ ${context}
 - 답변 시 "제공된 문서에 따르면" 또는 "Meta 정책 문서에 의하면"이라고 출처를 명시하세요
 - Meta 외의 다른 회사나 서비스에 대한 정보는 절대 제공하지 마세요`;
 
-      const llmResponse = await geminiService.generateAnswer(enhancedPrompt);
-
-      console.log(`✅ Gemini 답변 생성 완료: ${llmResponse.processingTime}ms, 신뢰도: ${llmResponse.confidence}`);
-      console.log(`📝 생성된 답변 길이: ${llmResponse.answer.length}자`);
-
-      return llmResponse.answer;
-
-    } catch (error) {
-      console.error('LLM 답변 생성 실패:', error);
-      return this.generateFallbackAnswer(query, searchResults);
+    // 1. Google Gemini 시도
+    if (process.env.GOOGLE_API_KEY) {
+      try {
+        console.log('🔍 Gemini 서비스로 답변 생성 시도...');
+        const geminiService = new GeminiService();
+        const llmResponse = await geminiService.generateAnswer(enhancedPrompt);
+        this.activeModel = llmResponse.model || process.env.GOOGLE_MODEL || 'gemini-1.5-flash';
+        return llmResponse.answer;
+      } catch (geminiError) {
+        console.error('❌ Gemini 답변 생성 실패:', geminiError);
+      }
     }
+
+    // 2. Anthropic Claude 시도
+    if (this.anthropic) {
+      try {
+        console.log('🔍 Anthropic Claude로 답변 생성 시도...');
+        const message = await this.anthropic.messages.create({
+          model: 'claude-3-5-sonnet-20241022',
+          max_tokens: 4000,
+          messages: [{ role: 'user', content: enhancedPrompt }],
+        });
+        this.activeModel = 'claude-3-5-sonnet';
+        const content = message.content[0];
+        if (content && 'text' in content) {
+          return content.text;
+        }
+      } catch (claudeError) {
+        console.error('❌ Claude 답변 생성 실패:', claudeError);
+      }
+    }
+
+    // 3. OpenAI GPT 시도
+    if (this.openai) {
+      try {
+        console.log('🔍 OpenAI GPT로 답변 생성 시도...');
+        const completion = await this.openai.chat.completions.create({
+          model: 'gpt-4o-mini',
+          messages: [{ role: 'user', content: enhancedPrompt }],
+          max_tokens: 2000,
+        });
+        this.activeModel = 'gpt-4o-mini';
+        return completion.choices[0]?.message?.content || '';
+      } catch (gptError) {
+        console.error('❌ GPT 답변 생성 실패:', gptError);
+      }
+    }
+
+    // 모든 LLM 실패 시 Fallback
+    console.log('⚠️ 모든 LLM 프로바이더 사용 불가, Fallback 답변 생성');
+    this.activeModel = 'fallback';
+    return this.generateFallbackAnswer(query, searchResults);
   }
+
 
   /**
    * 검색 결과를 컨텍스트로 구성
    */
   private buildContextFromSearchResults(searchResults: SearchResult[]): string {
     return searchResults
-      .map((result, index) => `[출처 ${index + 1}] ${result.content}`)
+      .map((result, index) => `[출처 ${index + 1}] ${result.content} `)
       .join('\n\n');
   }
 
@@ -481,46 +493,46 @@ ${context}
 
     // Meta 광고 정책 관련 질문에 대한 구조화된 답변
     if (lowerQuery.includes('광고') && lowerQuery.includes('정책')) {
-      return `**Meta 광고 정책 안내**
+      return `** Meta 광고 정책 안내 **
 
-제공된 내부 문서를 바탕으로 답변드립니다.
+  제공된 내부 문서를 바탕으로 답변드립니다.
 
-**검색된 관련 정보:**
-${searchResults.map((result, index) => `${index + 1}. ${result.content.substring(0, 200)}...`).join('\n')}
+** 검색된 관련 정보:**
+  ${searchResults.map((result, index) => `${index + 1}. ${result.content.substring(0, 200)}...`).join('\n')}
 
-📧 **더 자세한 정보가 필요하시면:**
-담당팀(fb@nasmedia.co.kr)에 문의해주시면 더 구체적인 답변을 받으실 수 있습니다.`;
+📧 ** 더 자세한 정보가 필요하시면:**
+  담당팀(fb@nasmedia.co.kr)에 문의해주시면 더 구체적인 답변을 받으실 수 있습니다.`;
     }
 
     // Facebook/Instagram 관련 질문
     if (lowerQuery.includes('facebook') || lowerQuery.includes('instagram')) {
-      return `**Facebook/Instagram 광고 안내**
+      return `** Facebook / Instagram 광고 안내 **
 
-제공된 내부 문서를 바탕으로 답변드립니다.
+  제공된 내부 문서를 바탕으로 답변드립니다.
 
-**검색된 관련 정보:**
-${searchResults.map((result, index) => `${index + 1}. ${result.content.substring(0, 200)}...`).join('\n')}
+** 검색된 관련 정보:**
+  ${searchResults.map((result, index) => `${index + 1}. ${result.content.substring(0, 200)}...`).join('\n')}
 
-📧 **더 자세한 정보가 필요하시면:**
-담당팀(fb@nasmedia.co.kr)에 문의해주시면 더 구체적인 답변을 받으실 수 있습니다.`;
+📧 ** 더 자세한 정보가 필요하시면:**
+  담당팀(fb@nasmedia.co.kr)에 문의해주시면 더 구체적인 답변을 받으실 수 있습니다.`;
     }
 
     // 기본 답변
     const topResult = searchResults[0];
     const content = this.extractRelevantContent(topResult.content, query);
 
-    return `**Meta 광고 FAQ 안내**
+    return `** Meta 광고 FAQ 안내 **
 
-검색된 정보에 따르면:
+  검색된 정보에 따르면:
 
 ${content}
 
-**추가 정보:**
-- Meta 비즈니스 도움말: https://www.facebook.com/business/help
-- 광고 정책: https://www.facebook.com/policies/ads
-- 광고 관리자: https://business.facebook.com
+** 추가 정보:**
+  - Meta 비즈니스 도움말: https://www.facebook.com/business/help
+  - 광고 정책: https://www.facebook.com/policies/ads
+  - 광고 관리자: https://business.facebook.com
 
-이 정보가 도움이 되었나요? 더 자세한 내용이 필요하시면 다른 질문을 해주세요.`;
+이 정보가 도움이 되었나요 ? 더 자세한 내용이 필요하시면 다른 질문을 해주세요.`;
   }
 
   /**
@@ -577,7 +589,7 @@ ${content}
 
       // 1. 유사한 문서 청크 검색 (임계값을 더 낮춰서 더 많은 결과 검색)
       const searchResults = await this.searchSimilarChunks(query, 5, 0.01);
-      console.log(`📊 검색 결과: ${searchResults.length}개`);
+      console.log(`📊 검색 결과: ${searchResults.length} 개`);
 
       // 2. 답변 생성
       const answer = await this.generateAnswer(query, searchResults);
@@ -588,17 +600,17 @@ ${content}
       // 4. 처리 시간 계산
       const processingTime = Date.now() - startTime;
 
-      // 5. LLM 사용 여부 확인 (Gemini 서비스 사용)
-      const isLLMGenerated = !!process.env.GOOGLE_API_KEY;
+      // 5. LLM 사용 여부 확인
+      const isLLMGenerated = this.activeModel !== 'fallback' && this.activeModel !== 'no-data' && this.activeModel !== 'error';
 
-      console.log(`✅ RAG 응답 생성 완료: ${processingTime}ms, 신뢰도: ${confidence}`);
+      console.log(`✅ RAG 응답 생성 완료: ${processingTime} ms, 신뢰도: ${confidence}, 모델: ${this.activeModel} `);
 
       return {
         answer,
         sources: searchResults,
         confidence,
         processingTime,
-        model: isLLMGenerated ? (process.env.GOOGLE_MODEL || 'gemini-1.5-flash') : 'fallback',
+        model: this.activeModel,
         isLLMGenerated
       };
 
