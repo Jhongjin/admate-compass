@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
+import OpenAI from 'openai';
 
 // 동적 렌더링 강제 (SSE 방지)
 export const dynamic = 'force-dynamic';
@@ -8,6 +9,11 @@ export const runtime = 'nodejs';
 // Claude AI 초기화
 const anthropic = process.env.ANTHROPIC_API_KEY
   ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
+  : null;
+
+// OpenAI (GPT) 초기화 (폴백용)
+const openai = process.env.OPENAI_API_KEY
+  ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
   : null;
 
 export async function POST(request: NextRequest) {
@@ -21,28 +27,29 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Claude API가 설정되지 않은 경우 fallback 응답
-    if (!anthropic) {
-      console.log('⚠️ Claude API가 설정되지 않음. Fallback 요약 생성');
-      const fallbackResponse = {
-        keyPoints: [
-          aiResponse.split('.')[0]?.trim() || '답변의 첫 번째 핵심 내용',
-          aiResponse.split('.')[1]?.trim() || '답변의 두 번째 핵심 내용',
-          aiResponse.split('.')[2]?.trim() || '답변의 세 번째 핵심 내용'
-        ].filter(point => point.length > 10).slice(0, 5),
-        documentHighlights: sources?.slice(0, 2).map((source: any) =>
-          source.excerpt.substring(0, 80) + '...'
-        ) || [],
-        confidence: 0.7
-      };
-      return NextResponse.json(fallbackResponse, {
-        headers: {
-          'Content-Type': 'application/json; charset=utf-8',
-        },
-      });
+    // 1. [SUMMARY] 태그가 이미 답변에 포함되어 있는지 확인 (가장 빠르고 비용 효율적)
+    const summaryTag = '[SUMMARY]';
+    if (aiResponse.includes(summaryTag)) {
+      const summaryPart = aiResponse.split(summaryTag)[1].trim();
+      const lines = summaryPart.split('\n')
+        .map(line => line.trim())
+        .filter(line => line.startsWith('-') || line.startsWith('*') || (line.length > 0 && !line.startsWith('추가로')));
+
+      if (lines.length > 0) {
+        console.log('✅ 답변 내 [SUMMARY] 태그에서 직접 요약 추출 성공');
+        return NextResponse.json({
+          keyPoints: lines.slice(0, 5).map(l => l.replace(/^[-*]\s*/, '')),
+          documentHighlights: sources?.slice(0, 2).map((source: any) =>
+            source.excerpt.substring(0, 80) + '...'
+          ) || [],
+          confidence: 0.95
+        }, {
+          headers: { 'Content-Type': 'application/json; charset=utf-8' }
+        });
+      }
     }
 
-    // Claude를 사용한 답변 요약 생성
+    // 요약 생성을 위한 프롬프트
     const summaryPrompt = `다음 질문과 답변을 바탕으로 5줄 이하의 핵심 요약을 생성해주세요.
 
 질문: ${userQuestion}
@@ -69,106 +76,84 @@ ${sources?.map((source: any, index: number) =>
   "confidence": 0.85
 }`;
 
-    console.log('🤖 Claude 요약 생성 시작');
-    let message;
-    try {
-      console.log('🔄 Claude 3.5 Sonnet 요약 시도...');
-      message = await anthropic.messages.create({
-        model: 'claude-sonnet-4-6',
-        max_tokens: 1024,
-        messages: [{ role: 'user', content: summaryPrompt }]
-      });
-    } catch (sonnetError: any) {
-      if (sonnetError.status === 404) {
-        console.warn('⚠️ Claude 3.5 Sonnet 을 찾을 수 없음. Haiku로 폴백합니다.');
-        message = await anthropic.messages.create({
-          model: 'claude-3-haiku-20240307',
+    let summaryText = '';
+
+    // 2. Claude를 사용하여 요약 생성 시도
+    if (anthropic) {
+      try {
+        console.log('🤖 Claude 요약 생성 시도');
+        const message = await anthropic.messages.create({
+          model: 'claude-sonnet-4-6',
           max_tokens: 1024,
           messages: [{ role: 'user', content: summaryPrompt }]
         });
-      } else {
-        throw sonnetError;
+
+        summaryText = message.content
+          .filter((block: any) => block.type === 'text')
+          .map((block: any) => block.text)
+          .join('');
+        console.log('✅ Claude 요약 생성 완료');
+      } catch (claudeError: any) {
+        console.error('⚠️ Claude 요약 생성 실패:', claudeError.message);
+        // 실패 시 다음 단계(GPT)로 넘어감
       }
     }
 
-    const summaryText = message.content
-      .filter((block: any) => block.type === 'text')
-      .map((block: any) => block.text)
-      .join('');
+    // 3. Claude 실패 또는 미설정 시 GPT로 폴백
+    if (!summaryText && openai) {
+      try {
+        console.log('🤖 OpenAI GPT 요약 생성 시도 (폴백)');
+        const completion = await openai.chat.completions.create({
+          model: 'gpt-4o-2024-08-06',
+          messages: [
+            { role: 'system', content: '당신은 광고 정책 요약 전문가입니다. 반드시 JSON 형식으로만 응답하세요.' },
+            { role: 'user', content: summaryPrompt }
+          ],
+          response_format: { type: 'json_object' }
+        });
 
-    console.log('✅ Claude 요약 생성 완료');
-    console.log('- 요약 길이:', summaryText.length);
-    console.log('- 요약 미리보기:', summaryText.substring(0, 100) + '...');
-
-    // JSON 파싱 시도
-    try {
-      // JSON 부분만 추출 (```json ... ``` 형태일 수 있음)
-      const jsonMatch = summaryText.match(/\{[\s\S]*\}/);
-      const jsonText = jsonMatch ? jsonMatch[0] : summaryText;
-
-      const summaryData = JSON.parse(jsonText);
-
-      // 데이터 검증 및 정리
-      const validatedData = {
-        keyPoints: Array.isArray(summaryData.keyPoints)
-          ? summaryData.keyPoints.filter((point: string) => point && point.trim().length > 0).slice(0, 5)
-          : [],
-        documentHighlights: Array.isArray(summaryData.documentHighlights)
-          ? summaryData.documentHighlights.filter((highlight: string) => highlight && highlight.trim().length > 0).slice(0, 3)
-          : [],
-        confidence: typeof summaryData.confidence === 'number'
-          ? Math.min(Math.max(summaryData.confidence, 0), 1)
-          : 0.8
-      };
-
-      // 응답 헤더 명시적으로 설정
-      return NextResponse.json(validatedData, {
-        headers: {
-          'Content-Type': 'application/json; charset=utf-8',
-        },
-      });
-
-    } catch (parseError) {
-      console.error('❌ JSON 파싱 오류:', parseError);
-      console.log('⚠️ Fallback 요약 생성');
-
-      // JSON 파싱 실패 시 fallback 응답
-      const fallbackResponse = {
-        keyPoints: [
-          aiResponse.split('.')[0]?.trim() || '답변의 첫 번째 핵심 내용',
-          aiResponse.split('.')[1]?.trim() || '답변의 두 번째 핵심 내용',
-          aiResponse.split('.')[2]?.trim() || '답변의 세 번째 핵심 내용'
-        ].filter(point => point.length > 10).slice(0, 5),
-        documentHighlights: sources?.slice(0, 2).map((source: any) =>
-          source.excerpt.substring(0, 80) + '...'
-        ) || [],
-        confidence: 0.7
-      };
-
-      return NextResponse.json(fallbackResponse, {
-        headers: {
-          'Content-Type': 'application/json; charset=utf-8',
-        },
-      });
+        summaryText = completion.choices[0].message.content || '';
+        console.log('✅ GPT 요약 생성 완료');
+      } catch (gptError: any) {
+        console.error('❌ GPT 요약 생성 최종 실패:', gptError.message);
+      }
     }
 
-  } catch (error) {
-    console.error('❌ 요약 생성 오류:', error);
+    // 결과 파싱 및 반환
+    if (summaryText) {
+      try {
+        const jsonMatch = summaryText.match(/\{[\s\S]*\}/);
+        const jsonText = jsonMatch ? jsonMatch[0] : summaryText;
+        const summaryData = JSON.parse(jsonText);
 
-    // Claude API 오류 시 fallback 응답
-    const fallbackResponse = {
+        return NextResponse.json({
+          keyPoints: Array.isArray(summaryData.keyPoints) ? summaryData.keyPoints.slice(0, 5) : [],
+          documentHighlights: Array.isArray(summaryData.documentHighlights) ? summaryData.documentHighlights.slice(0, 3) : [],
+          confidence: summaryData.confidence || 0.8
+        }, {
+          headers: { 'Content-Type': 'application/json; charset=utf-8' }
+        });
+      } catch (e) {
+        console.error('❌ 요약 JSON 파싱 실패');
+      }
+    }
+
+    // 모든 시도 실패 시 최종 Fallback
+    const finalFallback = {
       keyPoints: [
-        '답변 요약을 생성할 수 없습니다.',
-        '기본 정보를 확인해주세요.'
-      ],
+        aiResponse.split('.')[0]?.trim() || '답변의 핵심 내용을 확인해주세요.',
+        '상세 내용은 좌측 답변 본문을 참고하시기 바랍니다.'
+      ].filter(p => p.length > 5),
       documentHighlights: [],
-      confidence: 0.3
+      confidence: 0.5
     };
 
-    return NextResponse.json(fallbackResponse, {
-      headers: {
-        'Content-Type': 'application/json; charset=utf-8',
-      },
+    return NextResponse.json(finalFallback, {
+      headers: { 'Content-Type': 'application/json; charset=utf-8' }
     });
+
+  } catch (error) {
+    console.error('❌ 요약 API 최종 에러:', error);
+    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 });
   }
 }
