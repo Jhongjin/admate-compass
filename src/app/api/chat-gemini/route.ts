@@ -93,26 +93,27 @@ function getFallbackSearchResults(query: string, limit: number): SearchResult[] 
  * Google AI (Gemini) API를 통한 답변 생성 (재시도 로직 포함)
  */
 async function generateAnswerWithGemini(
-  message: string, 
+  message: string,
   searchResults: SearchResult[]
 ): Promise<string> {
   const maxRetries = 3;
   let lastError: Error | null = null;
-  
+
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       console.log(`🤖 Google AI (Gemini) 답변 생성 시작 (시도 ${attempt}/${maxRetries})`);
-      
+
       const googleApiKey = process.env.GOOGLE_API_KEY;
       if (!googleApiKey) {
+        console.warn('⚠️ GOOGLE_API_KEY is missing. Gemini API calls will fail.');
         throw new Error('GOOGLE_API_KEY 환경변수가 설정되지 않았습니다.');
       }
-      
+
       // 검색 결과를 컨텍스트로 변환
-      const context = searchResults.map(result => 
+      const context = searchResults.map(result =>
         `[${result.metadata?.title || '문서'}]: ${result.content.substring(0, 300)}`
       ).join('\n');
-      
+
       // 프롬프트 구성
       const prompt = `다음은 Meta 광고 정책과 관련된 문서들입니다. 사용자의 질문에 대해 이 정보를 바탕으로 정확하고 도움이 되는 답변을 한국어로 제공해주세요.
 
@@ -130,7 +131,7 @@ ${context}
 답변:`;
 
       console.log('📤 Google AI (Gemini) 요청 시작');
-      
+
       // Google AI (Gemini) API 호출
       const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent?key=${googleApiKey}`, {
         method: 'POST',
@@ -153,7 +154,7 @@ ${context}
       });
 
       console.log('📡 Google AI (Gemini) 응답 상태:', response.status);
-      
+
       if (!response.ok) {
         const errorText = await response.text();
         console.error('❌ Google AI (Gemini) 응답 오류:', errorText);
@@ -162,22 +163,22 @@ ${context}
 
       const data = await response.json();
       console.log('✅ Google AI (Gemini) 답변 생성 완료:', data);
-      
+
       // Google AI API 응답 형식에 따라 파싱
       return data.candidates?.[0]?.content?.parts?.[0]?.text?.trim() || '답변을 생성할 수 없습니다.';
 
     } catch (error) {
       lastError = error as Error;
       console.error(`❌ Google AI (Gemini) 답변 생성 실패 (시도 ${attempt}/${maxRetries}):`, error);
-      
+
       if (attempt < maxRetries) {
         const delay = attempt * 2000; // 2초, 4초, 6초 대기
-        console.log(`⏳ ${delay/1000}초 후 재시도...`);
+        console.log(`⏳ ${delay / 1000}초 후 재시도...`);
         await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
   }
-  
+
   // 모든 재시도 실패
   console.error('❌ 모든 재시도 실패:', lastError);
   throw lastError || new Error('Google AI (Gemini) API 연결 실패');
@@ -209,7 +210,7 @@ export async function POST(request: NextRequest) {
     ragService = new RAGSearchService();
     const ragSearchResults = await ragService.searchSimilarChunks(message, parseInt(process.env.TOP_K || '5'));
     console.log(`📊 Google AI (Gemini) 검색 결과: ${ragSearchResults.length}개`);
-    
+
     // RAGSearchResult를 VectorStorageService SearchResult로 변환
     const searchResults = convertRAGSearchResults(ragSearchResults);
 
@@ -232,13 +233,13 @@ export async function POST(request: NextRequest) {
 
     // 3. Google AI (Gemini) 답변 생성
     console.log('🚀 Google AI (Gemini) 답변 생성 시작');
-    
+
     let answer: string;
     try {
       answer = await generateAnswerWithGemini(message, searchResults);
     } catch (error) {
       console.error('❌ Google AI (Gemini) 연결 실패:', error);
-      
+
       // Google AI 서버 연결 실패 시 적절한 오류 메시지 반환
       return NextResponse.json({
         response: {
@@ -254,10 +255,10 @@ export async function POST(request: NextRequest) {
         model: 'gemini-connection-failed'
       });
     }
-    
+
     // 신뢰도 계산
     const confidence = calculateConfidence(searchResults);
-    
+
     // 처리 시간 계산
     const processingTime = Date.now() - startTime;
 

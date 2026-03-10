@@ -45,13 +45,13 @@ export class RAGSearchService {
     console.log('📊 환경 변수 상태:', {
       hasSupabaseUrl: !!supabaseUrl,
       hasSupabaseKey: !!supabaseKey,
-      supabaseUrl: supabaseUrl ? supabaseUrl.substring(0, 30) + '...' : 'undefined'
+      supabaseUrl: supabaseUrl ? supabaseUrl.substring(0, 30) + (supabaseUrl.length > 30 ? '...' : '') : 'undefined'
     });
 
     if (!supabaseUrl || !supabaseKey) {
       console.warn('⚠️ Supabase 환경변수가 설정되지 않았습니다. Fallback 모드로 전환합니다.');
       console.warn('필요한 환경변수: NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY');
-      
+
       // 프로덕션 환경에서는 더미 클라이언트 사용
       if (process.env.NODE_ENV === 'production') {
         this.supabase = createClient('https://dummy.supabase.co', 'dummy-key');
@@ -59,13 +59,13 @@ export class RAGSearchService {
         console.log('✅ RAGSearchService 초기화 완료 (Fallback 모드)');
         return;
       }
-      
+
       throw new Error('Supabase 환경변수가 설정되지 않았습니다. .env.local 파일을 확인해주세요.');
     }
 
     try {
       this.supabase = createClient(supabaseUrl, supabaseKey);
-      
+
       // OpenAI 임베딩 서비스 사용 가능 여부 확인
       if (openAIEmbeddingService.initialized) {
         this.openAIEmbeddingService = openAIEmbeddingService;
@@ -93,13 +93,13 @@ export class RAGSearchService {
   ): Promise<SearchResult[]> {
     try {
       console.log(`🔍 RAG 벡터 검색 시작: "${query}"`);
-      
+
       // Fallback 모드인 경우 샘플 데이터 반환
       if (!this.supabase) {
         console.log('⚠️ Fallback 모드: 샘플 데이터 반환');
         return this.getFallbackSearchResults(query, limit);
       }
-      
+
       // 질문을 임베딩으로 변환 (OpenAI 우선, 없으면 SimpleEmbeddingService)
       let queryEmbedding: number[];
       try {
@@ -140,9 +140,9 @@ export class RAGSearchService {
           similarityThreshold,
           0.4
         );
-        
-        if (lowerThresholdResults.length > 0 && 
-            lowerThresholdResults.some(r => r.similarity > 0.3)) {
+
+        if (lowerThresholdResults.length > 0 &&
+          lowerThresholdResults.some(r => r.similarity > 0.3)) {
           console.log(`✅ 2단계 검색 성공: ${lowerThresholdResults.length}개 결과 발견`);
           searchResults = lowerThresholdResults;
         }
@@ -157,7 +157,7 @@ export class RAGSearchService {
           similarityThreshold,
           0.2
         );
-        
+
         if (veryLowThresholdResults.length > 0) {
           console.log(`✅ 3단계 검색 성공: ${veryLowThresholdResults.length}개 결과 발견`);
           searchResults = veryLowThresholdResults;
@@ -168,14 +168,14 @@ export class RAGSearchService {
       const validSimilarityResults = searchResults.filter(
         (result): result is SearchResult => result !== null
       );
-      
+
       // 질문 키워드 추출 (잘린 텍스트 필터링 및 재랭킹에 사용)
       const queryKeywords = query
         .toLowerCase()
         .split(/\s+/)
         .filter(word => word.length > 1)
         .filter(word => !['에', '를', '을', '의', '와', '과', '은', '는', '이', '가', '에 대해', '알려주세요'].includes(word));
-      
+
       // 잘린 텍스트 필터링 (질문 키워드 추출하여 관련성 높은 결과는 보존)
       const { valid: filteredResults, filtered: truncatedFiltered } = filterTruncatedSearchResults(
         validSimilarityResults,
@@ -193,7 +193,7 @@ export class RAGSearchService {
       }
 
       // 검색 결과 재랭킹 (관련성 점수 기반)
-      
+
       // 검색 결과 재랭킹 (관련성 점수 기반)
       const rerankedResults = rerankSearchResults(filteredResults, {
         query,
@@ -262,7 +262,7 @@ export class RAGSearchService {
       const results: SearchResult[] = (data || [])
         .map((item: any) => {
           const similarity = item.similarity || 0;
-          
+
           // 최소 임계값 필터링
           if (similarity < minThreshold) {
             return null;
@@ -299,7 +299,7 @@ export class RAGSearchService {
    */
   private getFallbackSearchResults(query: string, limit: number): SearchResult[] {
     const lowerQuery = query.toLowerCase();
-    
+
     // Meta 광고 정책 관련 질문에 대한 샘플 데이터
     if (lowerQuery.includes('광고') || lowerQuery.includes('정책')) {
       return [
@@ -325,7 +325,7 @@ export class RAGSearchService {
         }
       ].slice(0, limit);
     }
-    
+
     // Facebook/Instagram 관련 질문
     if (lowerQuery.includes('facebook') || lowerQuery.includes('instagram')) {
       return [
@@ -341,7 +341,7 @@ export class RAGSearchService {
         }
       ].slice(0, limit);
     }
-    
+
     // 기본 샘플 데이터
     return [
       {
@@ -377,7 +377,7 @@ export class RAGSearchService {
     for (let i = 0; i < vecA.length; i++) {
       const a = Number(vecA[i]) || 0;
       const b = Number(vecB[i]) || 0;
-      
+
       dotProduct += a * b;
       normA += a * a;
       normB += b * b;
@@ -388,7 +388,7 @@ export class RAGSearchService {
     }
 
     const similarity = dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));
-    
+
     // NaN이나 Infinity 체크
     if (!isFinite(similarity)) {
       return 0;
@@ -402,9 +402,9 @@ export class RAGSearchService {
    */
   async generateAnswer(query: string, searchResults: SearchResult[]): Promise<string> {
     // 검색 결과가 없거나 유사도가 낮으면 관련 내용 없음 응답
-    const hasRelevantResults = searchResults.length > 0 && 
+    const hasRelevantResults = searchResults.length > 0 &&
       searchResults.some(result => result.similarity > 0.3); // 유사도 30% 이상인 결과가 있는지 확인
-    
+
     if (!hasRelevantResults) {
       return '죄송합니다. 제공된 내부 문서에서 질문과 관련된 정보를 찾을 수 없습니다.\n\n📧 **더 정확한 답변을 원하시면:**\n담당팀(fb@nasmedia.co.kr)에 직접 문의해주시면 더 구체적인 답변을 받으실 수 있습니다.';
     }
@@ -419,7 +419,7 @@ export class RAGSearchService {
       // Gemini 서비스 초기화
       console.log('🔍 Gemini 서비스 초기화 중...');
       const geminiService = new GeminiService();
-      
+
       // API 키 확인
       if (!process.env.GOOGLE_API_KEY) {
         console.log('⚠️ Google API 키가 설정되지 않았습니다. 기본 답변 생성 모드로 전환합니다.');
@@ -427,11 +427,11 @@ export class RAGSearchService {
       }
 
       console.log('✅ Gemini 서비스 사용 가능, 답변 생성 시작');
-      
+
       // 검색 결과를 컨텍스트로 구성
       const context = this.buildContextFromSearchResults(searchResults);
       console.log(`📝 컨텍스트 길이: ${context.length}자`);
-      
+
       // Gemini를 통한 답변 생성 (강화된 프롬프트)
       const enhancedPrompt = `질문: ${query}
 
@@ -451,7 +451,7 @@ ${context}
 
       console.log(`✅ Gemini 답변 생성 완료: ${llmResponse.processingTime}ms, 신뢰도: ${llmResponse.confidence}`);
       console.log(`📝 생성된 답변 길이: ${llmResponse.answer.length}자`);
-      
+
       return llmResponse.answer;
 
     } catch (error) {
@@ -478,7 +478,7 @@ ${context}
     }
 
     const lowerQuery = query.toLowerCase();
-    
+
     // Meta 광고 정책 관련 질문에 대한 구조화된 답변
     if (lowerQuery.includes('광고') && lowerQuery.includes('정책')) {
       return `**Meta 광고 정책 안내**
@@ -491,7 +491,7 @@ ${searchResults.map((result, index) => `${index + 1}. ${result.content.substring
 📧 **더 자세한 정보가 필요하시면:**
 담당팀(fb@nasmedia.co.kr)에 문의해주시면 더 구체적인 답변을 받으실 수 있습니다.`;
     }
-    
+
     // Facebook/Instagram 관련 질문
     if (lowerQuery.includes('facebook') || lowerQuery.includes('instagram')) {
       return `**Facebook/Instagram 광고 안내**
@@ -504,11 +504,11 @@ ${searchResults.map((result, index) => `${index + 1}. ${result.content.substring
 📧 **더 자세한 정보가 필요하시면:**
 담당팀(fb@nasmedia.co.kr)에 문의해주시면 더 구체적인 답변을 받으실 수 있습니다.`;
     }
-    
+
     // 기본 답변
     const topResult = searchResults[0];
     const content = this.extractRelevantContent(topResult.content, query);
-    
+
     return `**Meta 광고 FAQ 안내**
 
 검색된 정보에 따르면:
@@ -532,28 +532,28 @@ ${content}
       .replace(/\s+/g, ' ')
       .replace(/\n+/g, ' ')
       .trim();
-    
+
     // 연속된 공백 제거
     cleanedContent = cleanedContent.replace(/\s{2,}/g, ' ');
-    
+
     // 문장 단위로 정리
     const sentences = cleanedContent.split(/[.!?]+/).filter(s => s.trim().length > 10);
-    
+
     // 한글이 포함된 문장 우선 선택
-    const koreanSentences = sentences.filter(sentence => 
+    const koreanSentences = sentences.filter(sentence =>
       /[\u3131-\u3163\uac00-\ud7a3]/.test(sentence)
     );
-    
+
     if (koreanSentences.length > 0) {
       return koreanSentences.slice(0, 3).join('. ').trim() + '.';
     }
-    
+
     // 한글 문장이 없으면 영문 문장도 포함하여 반환
     const allSentences = sentences.slice(0, 3);
     if (allSentences.length > 0) {
       return allSentences.join('. ').trim() + '.';
     }
-    
+
     // 문장이 없으면 원본 내용의 일부 반환
     return cleanedContent.substring(0, 500);
   }
@@ -581,13 +581,13 @@ ${content}
 
       // 2. 답변 생성
       const answer = await this.generateAnswer(query, searchResults);
-      
+
       // 3. 신뢰도 계산
       const confidence = this.calculateConfidence(searchResults);
-      
+
       // 4. 처리 시간 계산
       const processingTime = Date.now() - startTime;
-      
+
       // 5. LLM 사용 여부 확인 (Gemini 서비스 사용)
       const isLLMGenerated = !!process.env.GOOGLE_API_KEY;
 
@@ -598,13 +598,13 @@ ${content}
         sources: searchResults,
         confidence,
         processingTime,
-        model: isLLMGenerated ? 'qwen2.5:1.5b' : 'fallback',
+        model: isLLMGenerated ? (process.env.GOOGLE_MODEL || 'gemini-1.5-flash') : 'fallback',
         isLLMGenerated
       };
 
     } catch (error) {
       console.error('RAG 응답 생성 실패:', error);
-      
+
       // Supabase 연결 오류인 경우 특별한 메시지 제공
       if (error instanceof Error && error.message.includes('Supabase')) {
         return {
@@ -616,7 +616,7 @@ ${content}
           isLLMGenerated: false
         };
       }
-      
+
       return {
         answer: '죄송합니다. 현재 서비스에 일시적인 문제가 발생했습니다. 잠시 후 다시 시도해주세요.',
         sources: [],
@@ -633,15 +633,15 @@ ${content}
    */
   private calculateConfidence(searchResults: SearchResult[]): number {
     if (searchResults.length === 0) return 0;
-    
+
     // 상위 결과의 유사도 기반 신뢰도 계산
     const topSimilarity = searchResults[0].similarity;
-    
+
     if (topSimilarity >= 0.9) return 0.95;
     if (topSimilarity >= 0.8) return 0.85;
     if (topSimilarity >= 0.7) return 0.75;
     if (topSimilarity >= 0.6) return 0.65;
-    
+
     // 그 외에는 매우 낮은 신뢰도
     return 0.3;
   }
