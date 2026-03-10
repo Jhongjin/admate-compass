@@ -1320,7 +1320,7 @@ async function generateStreamAnswerWithGPT(
 
     console.log('📝 GPT API 호출 시작');
     const stream = await openai.chat.completions.create({
-      model: 'gpt-4o-2024-08-06',
+      model: 'gpt-5-mini-2025-08-07',
       messages: [
         {
           role: 'user',
@@ -1408,7 +1408,7 @@ async function generateStreamAnswerWithGPT(
     // 추정치 로깅 (정확도는 낮지만 참고용)
     await logApiUsage(
       'gpt',
-      'gpt-4o-mini',
+      'gpt-5-mini-2025-08-07',
       estimatedPromptTokens,
       estimatedCompletionTokens,
       estimatedTotalTokens,
@@ -1462,7 +1462,7 @@ ${documentContents}
 위의 문서 내용을 기반으로 사용자 질문과 관련된 예측 질문 3~4개를 생성하세요.`;
 
     const completion = await openai.chat.completions.create({
-      model: 'gpt-4o-2024-08-06',
+      model: 'gpt-5-mini-2025-08-07',
       messages: [{ role: 'user', content: prompt }],
       max_tokens: 500,
     });
@@ -1507,7 +1507,7 @@ async function generateAnswerWithGPT(
 
     console.log('📝 GPT API 호출 시작');
     const completion = await openai.chat.completions.create({
-      model: 'gpt-4o-mini',
+      model: 'gpt-5-mini-2025-08-07',
       messages: [
         {
           role: 'user',
@@ -1537,7 +1537,7 @@ async function generateAnswerWithGPT(
       const usage = completion.usage;
       await logApiUsage(
         'gpt',
-        'gpt-4o-2024-08-06',
+        'gpt-5-mini-2025-08-07',
         usage.prompt_tokens || 0,
         usage.completion_tokens || 0,
         usage.total_tokens || 0,

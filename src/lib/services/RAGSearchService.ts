@@ -471,11 +471,11 @@ ${context}
       try {
         console.log('🔍 OpenAI GPT로 답변 생성 시도...');
         const completion = await this.openai.chat.completions.create({
-          model: 'gpt-4o-mini',
+          model: 'gpt-5-mini-2025-08-07',
           messages: [{ role: 'user', content: enhancedPrompt }],
           max_tokens: 2000,
         });
-        this.activeModel = 'gpt-4o-mini';
+        this.activeModel = 'gpt-5-mini-2025-08-07';
         return completion.choices[0]?.message?.content || '';
       } catch (gptError) {
         console.error('❌ GPT 답변 생성 실패:', gptError);

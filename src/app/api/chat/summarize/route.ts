@@ -102,7 +102,7 @@ ${sources?.map((source: any, index: number) =>
       try {
         console.log('🤖 OpenAI GPT를 통한 신뢰도 평가 시작 (폴백)');
         const completion = await openai.chat.completions.create({
-          model: 'gpt-4o-2024-08-06',
+          model: 'gpt-5-mini-2025-08-07',
           messages: [
             { role: 'system', content: '당신은 답변의 정확성과 할루시네이션을 판별하는 평가 전문가입니다. 반드시 JSON으로만 응답하세요.' },
             { role: 'user', content: evaluationPrompt }
