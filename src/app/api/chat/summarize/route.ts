@@ -6,7 +6,7 @@ export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
 // Claude AI 초기화
-const anthropic = process.env.ANTHROPIC_API_KEY 
+const anthropic = process.env.ANTHROPIC_API_KEY
   ? new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
   : null;
 
@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
           aiResponse.split('.')[1]?.trim() || '답변의 두 번째 핵심 내용',
           aiResponse.split('.')[2]?.trim() || '답변의 세 번째 핵심 내용'
         ].filter(point => point.length > 10).slice(0, 5),
-        documentHighlights: sources?.slice(0, 2).map((source: any) => 
+        documentHighlights: sources?.slice(0, 2).map((source: any) =>
           source.excerpt.substring(0, 80) + '...'
         ) || [],
         confidence: 0.7
@@ -50,10 +50,10 @@ export async function POST(request: NextRequest) {
 답변: ${aiResponse}
 
 참고 문서:
-${sources?.map((source: any, index: number) => 
-  `${index + 1}. ${source.title} (${source.sourceType === 'file' ? '파일' : '웹페이지'})
+${sources?.map((source: any, index: number) =>
+      `${index + 1}. ${source.title} (${source.sourceType === 'file' ? '파일' : '웹페이지'})
    내용: ${source.excerpt.substring(0, 200)}...`
-).join('\n') || '없음'}
+    ).join('\n') || '없음'}
 
 요구사항:
 1. 답변의 핵심 내용만 5줄 이하로 요약
@@ -71,7 +71,7 @@ ${sources?.map((source: any, index: number) =>
 
     console.log('🤖 Claude 요약 생성 시작');
     const message = await anthropic.messages.create({
-      model: 'claude-3-5-haiku-20241022',
+      model: 'claude-3-5-sonnet-20241022',
       max_tokens: 1024,
       messages: [
         {
@@ -85,7 +85,7 @@ ${sources?.map((source: any, index: number) =>
       .filter((block: any) => block.type === 'text')
       .map((block: any) => block.text)
       .join('');
-    
+
     console.log('✅ Claude 요약 생성 완료');
     console.log('- 요약 길이:', summaryText.length);
     console.log('- 요약 미리보기:', summaryText.substring(0, 100) + '...');
@@ -95,19 +95,19 @@ ${sources?.map((source: any, index: number) =>
       // JSON 부분만 추출 (```json ... ``` 형태일 수 있음)
       const jsonMatch = summaryText.match(/\{[\s\S]*\}/);
       const jsonText = jsonMatch ? jsonMatch[0] : summaryText;
-      
+
       const summaryData = JSON.parse(jsonText);
-      
+
       // 데이터 검증 및 정리
       const validatedData = {
-        keyPoints: Array.isArray(summaryData.keyPoints) 
+        keyPoints: Array.isArray(summaryData.keyPoints)
           ? summaryData.keyPoints.filter((point: string) => point && point.trim().length > 0).slice(0, 5)
           : [],
         documentHighlights: Array.isArray(summaryData.documentHighlights)
           ? summaryData.documentHighlights.filter((highlight: string) => highlight && highlight.trim().length > 0).slice(0, 3)
           : [],
-        confidence: typeof summaryData.confidence === 'number' 
-          ? Math.min(Math.max(summaryData.confidence, 0), 1) 
+        confidence: typeof summaryData.confidence === 'number'
+          ? Math.min(Math.max(summaryData.confidence, 0), 1)
           : 0.8
       };
 
@@ -121,7 +121,7 @@ ${sources?.map((source: any, index: number) =>
     } catch (parseError) {
       console.error('❌ JSON 파싱 오류:', parseError);
       console.log('⚠️ Fallback 요약 생성');
-      
+
       // JSON 파싱 실패 시 fallback 응답
       const fallbackResponse = {
         keyPoints: [
@@ -129,12 +129,12 @@ ${sources?.map((source: any, index: number) =>
           aiResponse.split('.')[1]?.trim() || '답변의 두 번째 핵심 내용',
           aiResponse.split('.')[2]?.trim() || '답변의 세 번째 핵심 내용'
         ].filter(point => point.length > 10).slice(0, 5),
-        documentHighlights: sources?.slice(0, 2).map((source: any) => 
+        documentHighlights: sources?.slice(0, 2).map((source: any) =>
           source.excerpt.substring(0, 80) + '...'
         ) || [],
         confidence: 0.7
       };
-      
+
       return NextResponse.json(fallbackResponse, {
         headers: {
           'Content-Type': 'application/json; charset=utf-8',
@@ -144,7 +144,7 @@ ${sources?.map((source: any, index: number) =>
 
   } catch (error) {
     console.error('❌ 요약 생성 오류:', error);
-    
+
     // Claude API 오류 시 fallback 응답
     const fallbackResponse = {
       keyPoints: [
@@ -154,7 +154,7 @@ ${sources?.map((source: any, index: number) =>
       documentHighlights: [],
       confidence: 0.3
     };
-    
+
     return NextResponse.json(fallbackResponse, {
       headers: {
         'Content-Type': 'application/json; charset=utf-8',
