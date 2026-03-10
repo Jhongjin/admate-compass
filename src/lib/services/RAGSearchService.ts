@@ -434,12 +434,29 @@ ${context}
     if (this.anthropic) {
       try {
         console.log('🔍 Anthropic Claude로 답변 생성 시도...');
-        const message = await this.anthropic.messages.create({
-          model: 'claude-3-5-sonnet-20240620',
-          max_tokens: 4000,
-          messages: [{ role: 'user', content: enhancedPrompt }],
-        });
-        this.activeModel = 'claude-3-5-sonnet';
+        let message;
+        try {
+          console.log('🔄 Claude 3.5 Sonnet 호출 시도...');
+          message = await this.anthropic.messages.create({
+            model: 'claude-3-5-sonnet-20240620',
+            max_tokens: 4000,
+            messages: [{ role: 'user', content: enhancedPrompt }],
+          });
+          this.activeModel = 'claude-3-5-sonnet';
+        } catch (sonnetError: any) {
+          if (sonnetError.status === 404) {
+            console.warn('⚠️ Claude 3.5 Sonnet 을 찾을 수 없음. Haiku로 폴백합니다.');
+            message = await this.anthropic.messages.create({
+              model: 'claude-3-haiku-20240307',
+              max_tokens: 4000,
+              messages: [{ role: 'user', content: enhancedPrompt }],
+            });
+            this.activeModel = 'claude-3-haiku';
+          } else {
+            throw sonnetError;
+          }
+        }
+
         const content = message.content[0];
         if (content && 'text' in content) {
           return content.text;

@@ -70,16 +70,26 @@ ${sources?.map((source: any, index: number) =>
 }`;
 
     console.log('🤖 Claude 요약 생성 시작');
-    const message = await anthropic.messages.create({
-      model: 'claude-3-5-sonnet-20240620',
-      max_tokens: 1024,
-      messages: [
-        {
-          role: 'user',
-          content: summaryPrompt
-        }
-      ]
-    });
+    let message;
+    try {
+      console.log('🔄 Claude 3.5 Sonnet 요약 시도...');
+      message = await anthropic.messages.create({
+        model: 'claude-3-5-sonnet-20240620',
+        max_tokens: 1024,
+        messages: [{ role: 'user', content: summaryPrompt }]
+      });
+    } catch (sonnetError: any) {
+      if (sonnetError.status === 404) {
+        console.warn('⚠️ Claude 3.5 Sonnet 을 찾을 수 없음. Haiku로 폴백합니다.');
+        message = await anthropic.messages.create({
+          model: 'claude-3-haiku-20240307',
+          max_tokens: 1024,
+          messages: [{ role: 'user', content: summaryPrompt }]
+        });
+      } else {
+        throw sonnetError;
+      }
+    }
 
     const summaryText = message.content
       .filter((block: any) => block.type === 'text')
