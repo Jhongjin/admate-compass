@@ -1023,9 +1023,6 @@ async function generateStreamAnswerWithClaude(
         } catch (jsonError) {
           console.error('❌ Fallback JSON 직렬화 오류:', jsonError);
         }
-
-        // 자연스러운 타이핑 효과를 위한 지연
-        await new Promise(resolve => setTimeout(resolve, 50));
       }
       return fallbackAnswer;
     }
@@ -1128,7 +1125,6 @@ async function generateStreamAnswerWithClaude(
             } catch (jsonError) {
               console.error('❌ Fallback JSON 직렬화 오류:', jsonError);
             }
-            await new Promise(resolve => setTimeout(resolve, 50));
           }
           return fallbackAnswer;
         }
@@ -1148,7 +1144,6 @@ async function generateStreamAnswerWithClaude(
           } catch (jsonError) {
             console.error('❌ Fallback JSON 직렬화 오류:', jsonError);
           }
-          await new Promise(resolve => setTimeout(resolve, 50));
         }
         return fallbackAnswer;
       }
@@ -1170,31 +1165,16 @@ async function generateStreamAnswerWithClaude(
           };
 
           try {
-            // JSON 직렬화 시도 (안전한 처리)
-            let jsonStr: string;
-            try {
-              jsonStr = JSON.stringify(streamResponse);
-            } catch (stringifyError) {
-              console.error('❌ JSON.stringify 실패:', stringifyError);
-              // 직렬화 실패 시 간단한 형식으로 재시도
-              jsonStr = JSON.stringify({
-                type: 'chunk',
-                data: { content: chunkText.replace(/[\x00-\x1F\x7F]/g, '') } // 제어 문자 제거
-              });
-            }
-
-            const chunkData = `data: ${jsonStr}\n\n`;
-            controller.enqueue(new TextEncoder().encode(chunkData));
+            const jsonStr = JSON.stringify(streamResponse);
+            controller.enqueue(new TextEncoder().encode(`data: ${jsonStr}\n\n`));
           } catch (jsonError) {
             console.error('❌ JSON 직렬화/전송 오류:', jsonError);
-            // 최후의 수단: 텍스트만 전송
+            // 최후의 수단: 텍스트만 전송 (제어 문자 제거)
             try {
               const safeText = chunkText.replace(/[\x00-\x1F\x7F]/g, '');
-              const fallbackData = `data: ${JSON.stringify({ type: 'chunk', data: { content: safeText } })}\n\n`;
-              controller.enqueue(new TextEncoder().encode(fallbackData));
+              controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ type: 'chunk', data: { content: safeText } })}\n\n`));
             } catch (fallbackError) {
               console.error('❌ Fallback 전송도 실패:', fallbackError);
-              // 전송 실패는 무시하고 계속 진행
             }
           }
         }
@@ -1842,7 +1822,7 @@ export async function POST(request: NextRequest) {
               sources,
               confidence,
               processingTime: Date.now() - startTime,
-              model: 'claude-3-5-sonnet-20240620',
+              model: 'claude-sonnet-4-6',
               noDataFound: false,
               showContactOption: true,
               relatedQuestions
@@ -1868,8 +1848,9 @@ export async function POST(request: NextRequest) {
     return new Response(stream, {
       headers: {
         'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
+        'Cache-Control': 'no-cache, no-transform',
         'Connection': 'keep-alive',
+        'X-Accel-Buffering': 'no',
       },
     });
 
