@@ -32,13 +32,13 @@ export async function POST(request: NextRequest) {
     if (aiResponse.includes(summaryTag)) {
       const summaryPart = aiResponse.split(summaryTag)[1].trim();
       const lines = summaryPart.split('\n')
-        .map(line => line.trim())
-        .filter(line => line.startsWith('-') || line.startsWith('*') || (line.length > 0 && !line.startsWith('추가로')));
+        .map((line: string) => line.trim())
+        .filter((line: string) => line.startsWith('-') || line.startsWith('*') || (line.length > 0 && !line.startsWith('추가로')));
 
       if (lines.length > 0) {
         console.log('✅ 답변 내 [SUMMARY] 태그에서 직접 요약 추출 성공');
         return NextResponse.json({
-          keyPoints: lines.slice(0, 5).map(l => l.replace(/^[-*]\s*/, '')),
+          keyPoints: lines.slice(0, 5).map((l: string) => l.replace(/^[-*]\s*/, '')),
           documentHighlights: sources?.slice(0, 2).map((source: any) =>
             source.excerpt.substring(0, 80) + '...'
           ) || [],
