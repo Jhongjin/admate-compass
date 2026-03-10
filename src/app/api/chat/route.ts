@@ -1328,7 +1328,7 @@ async function generateStreamAnswerWithGPT(
         }
       ],
       stream: true,
-      max_tokens: 4000,
+      max_completion_tokens: 4000,
     });
 
     console.log('✅ GPT API 스트림 시작 완료');
@@ -1464,7 +1464,7 @@ ${documentContents}
     const completion = await openai.chat.completions.create({
       model: 'gpt-5-mini-2025-08-07',
       messages: [{ role: 'user', content: prompt }],
-      max_tokens: 500,
+      max_completion_tokens: 500,
     });
 
     const responseText = completion.choices[0]?.message?.content || '';
@@ -1514,7 +1514,7 @@ async function generateAnswerWithGPT(
           content: prompt
         }
       ],
-      max_tokens: 4096,
+      max_completion_tokens: 4096,
     });
 
     let answer = completion.choices[0]?.message?.content || '답변을 생성할 수 없습니다.';

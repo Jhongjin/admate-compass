@@ -473,7 +473,7 @@ ${context}
         const completion = await this.openai.chat.completions.create({
           model: 'gpt-5-mini-2025-08-07',
           messages: [{ role: 'user', content: enhancedPrompt }],
-          max_tokens: 2000,
+          max_completion_tokens: 2000,
         });
         this.activeModel = 'gpt-5-mini-2025-08-07';
         return completion.choices[0]?.message?.content || '';
