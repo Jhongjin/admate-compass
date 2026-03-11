@@ -1444,31 +1444,28 @@ function GmailStyleLayout() {
                     <ReactMarkdown
                       remarkPlugins={[remarkGfm]}
                       components={{
-                        h1: ({ children }) => <h1 className="text-xl font-bold text-blue-300 mb-4 mt-6 border-b border-blue-500/30 pb-2">{children}</h1>,
-                        h2: ({ children }) => <h2 className="text-lg font-semibold text-blue-200 mb-3 mt-5 border-l-4 border-blue-400 pl-3">{children}</h2>,
-                        h3: ({ children }) => <h3 className="text-base font-semibold text-blue-100 mb-2 mt-4">{children}</h3>,
-                        p: ({ children }) => <p className="mb-4 leading-[1.7] text-gray-200 last:mb-0">{children}</p>,
+                        h1: ({ children }) => <h1 className="text-xl font-bold text-blue-300 mb-3 mt-4 border-b border-blue-500/30 pb-1">{children}</h1>,
+                        h2: ({ children }) => <h2 className="text-lg font-semibold text-blue-200 mb-2 mt-3 border-l-4 border-blue-400 pl-3">{children}</h2>,
+                        h3: ({ children }) => <h3 className="text-base font-semibold text-blue-100 mb-1.5 mt-2">{children}</h3>,
+                        p: ({ children }) => <p className="mb-3 leading-[1.7] text-gray-200 last:mb-0">{children}</p>,
                         strong: ({ children }) => <strong className="font-bold text-blue-300">{children}</strong>,
-                        ul: ({ children }) => <ul className="list-disc list-inside space-y-2 mb-4 pl-2">{children}</ul>,
-                        ol: ({ children }) => <ol className="list-decimal list-inside space-y-2 mb-4 pl-2">{children}</ol>,
-                        li: ({ children }) => <li className="mb-1">{children}</li>,
+                        ul: ({ children }) => <ul className="list-disc list-inside space-y-1.5 mb-3 pl-2">{children}</ul>,
+                        ol: ({ children }) => <ol className="list-decimal list-inside space-y-1.5 mb-3 pl-2">{children}</ol>,
+                        li: ({ children }) => <li className="mb-0.5">{children}</li>,
                         code: ({ children }) => (
                           <code className="bg-gray-800 text-yellow-200 px-1.5 py-0.5 rounded text-xs font-mono">
                             {children}
                           </code>
                         ),
                         blockquote: ({ children }) => (
-                          <blockquote className="border-l-4 border-blue-400 pl-4 py-2 my-4 bg-blue-900/20 rounded-r-lg italic text-blue-100">
+                          <blockquote className="border-l-2 border-blue-400 pl-3 py-1 my-3 bg-blue-900/20 rounded-r-md italic text-blue-100 text-sm">
                             {children}
                           </blockquote>
                         ),
                         del: ({ children }) => (
-                          <Badge
-                            variant="outline"
-                            className="mx-1 bg-blue-500/10 text-[#38BDF8] border-blue-400/30 font-medium px-2 py-0.5 rounded-full text-[10px] sm:text-xs cursor-default hover:bg-blue-500/20 transition-colors inline-flex items-center"
-                          >
-                            {children}
-                          </Badge>
+                          <span className="inline-flex items-center text-[#38BDF8] font-semibold text-[11px] sm:text-xs mx-0.5 px-0.5 py-0 rounded hover:bg-blue-500/10 transition-colors cursor-default">
+                            ({children})
+                          </span>
                         ),
                       }}
                     >

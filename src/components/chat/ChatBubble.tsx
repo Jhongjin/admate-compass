@@ -13,22 +13,22 @@ import { useToast } from "@/hooks/use-toast";
 const customMarkdownComponents = {
   // 제목 스타일링
   h1: ({ children }: { children?: React.ReactNode }) => (
-    <h1 className="text-2xl font-extrabold text-[#7DD3FC] mb-6 mt-8 border-b-2 border-blue-500/40 pb-3 tracking-tight">
+    <h1 className="text-xl font-extrabold text-[#7DD3FC] mb-3 mt-4 border-b border-blue-500/30 pb-1 tracking-tight">
       {children}
     </h1>
   ),
   h2: ({ children }: { children?: React.ReactNode }) => (
-    <h2 className="text-xl font-bold text-[#38BDF8] mb-5 mt-7 border-l-4 border-blue-400 pl-4 py-1 bg-blue-500/5 rounded-r-md">
+    <h2 className="text-lg font-bold text-[#38BDF8] mb-2 mt-3 border-l-4 border-blue-400 pl-3 py-0.5 bg-blue-500/5 rounded-r-md">
       {children}
     </h2>
   ),
   h3: ({ children }: { children?: React.ReactNode }) => (
-    <h3 className="text-lg font-bold text-[#bae6fd] mb-4 mt-6 flex items-center before:content-['•'] before:mr-2 before:text-blue-400">
+    <h3 className="text-base font-bold text-[#bae6fd] mb-1.5 mt-2.5 flex items-center before:content-['•'] before:mr-2 before:text-blue-400">
       {children}
     </h3>
   ),
   h4: ({ children }: { children?: React.ReactNode }) => (
-    <h4 className="text-base font-semibold text-blue-50 mb-3 mt-4 underline underline-offset-4 decoration-blue-500/30">
+    <h4 className="text-sm font-semibold text-blue-50 mb-1 mt-2 underline underline-offset-4 decoration-blue-500/20">
       {children}
     </h4>
   ),
@@ -66,17 +66,17 @@ const customMarkdownComponents = {
   ),
   // 리스트
   ul: ({ children }: { children?: React.ReactNode }) => (
-    <ul className="space-y-3 my-5 pl-1">
+    <ul className="space-y-1.5 my-3 pl-5 list-disc">
       {children}
     </ul>
   ),
   ol: ({ children }: { children?: React.ReactNode }) => (
-    <ol className="space-y-3 my-5 pl-1 list-decimal list-inside">
+    <ol className="space-y-1.5 my-3 pl-5 list-decimal">
       {children}
     </ol>
   ),
   li: ({ children }: { children?: React.ReactNode }) => (
-    <li className="text-gray-200 leading-relaxed pl-5 relative before:absolute before:left-0 before:top-[0.6em] before:w-1.5 before:h-1.5 before:bg-blue-400/60 before:rounded-full">
+    <li className="text-gray-200 leading-relaxed mb-0.5 last:mb-0">
       {children}
     </li>
   ),
@@ -94,8 +94,8 @@ const customMarkdownComponents = {
   ),
   // 인용문
   blockquote: ({ children }: { children?: React.ReactNode }) => (
-    <blockquote className="border-l-4 border-[#38BDF8] pl-5 py-4 my-6 bg-blue-900/30 rounded-r-xl shadow-inner-lg">
-      <div className="text-[#E0F2FE] italic font-medium leading-relaxed">
+    <blockquote className="border-l-2 border-[#38BDF8] pl-4 py-2 my-4 bg-blue-900/20 rounded-r-md">
+      <div className="text-[#E0F2FE] italic text-sm leading-relaxed">
         {children}
       </div>
     </blockquote>
@@ -139,18 +139,15 @@ const customMarkdownComponents = {
   ),
   // 단락
   p: ({ children }: { children?: React.ReactNode }) => (
-    <p className="mb-6 text-gray-200 leading-[1.8] tracking-tight last:mb-0">
+    <p className="mb-3 text-gray-200 leading-[1.7] tracking-tight last:mb-0">
       {children}
     </p>
   ),
   // 출처 칩 (~~출처 X~~ 형태로 전처리됨)
   del: ({ children }: { children?: React.ReactNode }) => (
-    <Badge
-      variant="outline"
-      className="mx-1 bg-blue-500/10 text-[#38BDF8] border-blue-400/30 font-medium px-2 py-0.5 rounded-full text-[10px] sm:text-xs cursor-default hover:bg-blue-500/20 transition-colors inline-flex items-center"
-    >
-      {children}
-    </Badge>
+    <span className="inline-flex items-center text-[#38BDF8] font-semibold text-[11px] sm:text-xs mx-0.5 px-1 py-0 rounded hover:bg-blue-500/10 transition-colors cursor-default">
+      ({children})
+    </span>
   ),
 };
 
@@ -220,6 +217,7 @@ export default function ChatBubble({
   // 출처 표기([출처 X])를 Markdown 칩(~~출처 X~~)으로 변환
   const formatCitations = (text: string): string => {
     if (!text) return '';
+    // [출처 X] -> ~~출처 X~~ 변환 (Badge 형태에서 심플 아이콘/괄호 형태로 변경 예정)
     return text.replace(/\[출처\s*(\d+)\]/g, '~~출처 $1~~');
   };
 
