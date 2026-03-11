@@ -26,6 +26,8 @@ export interface DiscoveryOptions {
   allowedDomains?: string[];
   domainLimit?: boolean; // 도메인 제한 (true: 같은 도메인만, false: 하위 도메인 포함)
   timeout?: number; // 타임아웃 (ms)
+  strictPathLimit?: boolean; // 입력된 URL의 첫 번째 서브디렉토리 경로 강제 (예: /ko/ 외 배제)
+  requiredPathPattern?: string; // 강제할 경로 패턴 (내부용)
 }
 
 export class SitemapDiscoveryService {
@@ -112,6 +114,14 @@ export class SitemapDiscoveryService {
     preloadedHtml?: string
   ): Promise<DiscoveredUrl[]> {
     const config = { ...this.defaultOptions, ...options };
+
+    // strictPathLimit 설정 시 첫 번째 서브디렉토리(예: /ko/) 추출
+    if (config.strictPathLimit && !config.requiredPathPattern) {
+      config.requiredPathPattern = this.extractPathPattern(baseUrl);
+      if (config.requiredPathPattern) {
+        console.error(`[CRITICAL] 🛡️ 경로 제한 활성화: ${config.requiredPathPattern} 패턴만 허용`);
+      }
+    }
 
     // maxDepth 3 이상일 때는 BFS depth 탐색 사용 (더 많은 URL 발견 가능)
     if (config.maxDepth >= 3) {
@@ -208,6 +218,14 @@ export class SitemapDiscoveryService {
     preloadedHtml?: string
   ): Promise<DepthAwareDiscoveredUrl[]> {
     const config = { ...this.defaultOptions, ...options };
+
+    // strictPathLimit 설정 시 첫 번째 서브디렉토리(예: /ko/) 추출
+    if (config.strictPathLimit && !config.requiredPathPattern) {
+      config.requiredPathPattern = this.extractPathPattern(baseUrl);
+      if (config.requiredPathPattern) {
+        console.error(`[CRITICAL] 🛡️ BFS 경로 제한 활성화: ${config.requiredPathPattern} 패턴만 허용`);
+      }
+    }
 
     if (!this.browser) {
       await this.initialize();
@@ -1051,12 +1069,39 @@ export class SitemapDiscoveryService {
   }
 
   /**
+   * URL에서 첫 번째 서브디렉토리 패턴 추출 (예: /ko/)
+   */
+  private extractPathPattern(urlStr: string): string | undefined {
+    try {
+      const url = new URL(urlStr);
+      const parts = url.pathname.split('/').filter(Boolean);
+      return parts.length > 0 ? `/${parts[0]}/` : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
    * URL 유효성 검사
    */
   private isValidUrl(url: string, baseDomain: string, config: DiscoveryOptions): boolean {
     try {
       const urlObj = new URL(url);
       const urlDomain = urlObj.hostname;
+
+      // 경로 패턴 제한 (strictPathLimit)
+      if (config.strictPathLimit && config.requiredPathPattern) {
+        const pattern = config.requiredPathPattern;
+        const patternWithoutSlash = pattern.endsWith('/') ? pattern.slice(0, -1) : pattern;
+        const pathname = urlObj.pathname;
+
+        // 패턴으로 시작하지 않고, 패턴(슬래시 제외)과도 일치하지 않으면 배제
+        if (!pathname.startsWith(pattern) && pathname !== patternWithoutSlash) {
+          // 예외: 루트('/')는 일단 허용할지 검토 필요하나, 
+          // 사용자의 요청은 "이 패턴과 일치하지 않는 링크는 배제"하는 것이므로 엄격하게 적용
+          return false;
+        }
+      }
 
       // #region agent log
       fetch('http://127.0.0.1:7242/ingest/c0851aaf-3b55-4357-b1b0-24aecd475e3c', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'SitemapDiscoveryService.ts:1040', message: 'isValidUrl 호출', data: { url, urlDomain, baseDomain, maxDepth: config.maxDepth, domainLimit: config.domainLimit }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'E' }) }).catch(() => { });

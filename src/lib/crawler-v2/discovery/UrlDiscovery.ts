@@ -29,6 +29,15 @@ export class UrlDiscovery {
       ...options,
     };
 
+    // strictPathLimit 설정 시 첫 번째 서브디렉토리(예: /ko/) 추출
+    if (config.strictPathLimit) {
+      const pattern = this.extractPathPattern(baseUrl);
+      if (pattern) {
+        (config as any).requiredPathPattern = pattern;
+        console.error(`[UrlDiscovery] 🛡️ 경로 제한 활성화: ${pattern} 패턴만 허용`);
+      }
+    }
+
     console.log(`🔍 URL 발견 시작: ${baseUrl}`, config);
 
     // MAX 모드: 재귀(병렬 BFS)로 하위 페이지 링크까지 추출
@@ -1220,6 +1229,19 @@ export class UrlDiscovery {
   }
 
   /**
+   * URL에서 첫 번째 서브디렉토리 패턴 추출 (예: /ko/)
+   */
+  private extractPathPattern(urlStr: string): string | undefined {
+    try {
+      const url = new URL(urlStr);
+      const parts = url.pathname.split('/').filter(Boolean);
+      return parts.length > 0 ? `/${parts[0]}/` : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
    * 도메인이 하위 도메인인지 확인
    */
   private isSubdomain(subDomain: string, baseDomain: string): boolean {
@@ -1239,6 +1261,24 @@ export class UrlDiscovery {
   ): DiscoveredUrl[] {
     // 필터링
     const filtered = urls.filter(url => {
+      // 경로 패턴 제한 (strictPathLimit)
+      if (config.strictPathLimit) {
+        const pattern = (config as any).requiredPathPattern;
+        if (pattern) {
+          try {
+            const urlObj = new URL(url.url);
+            const pathname = urlObj.pathname;
+            const patternWithoutSlash = pattern.endsWith('/') ? pattern.slice(0, -1) : pattern;
+
+            if (!pathname.startsWith(pattern) && pathname !== patternWithoutSlash) {
+              return false;
+            }
+          } catch (e) {
+            return false;
+          }
+        }
+      }
+
       const urlDomain = extractDomain(url.url);
 
       // maxDepth에 따른 도메인 필터링

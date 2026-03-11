@@ -51,6 +51,8 @@ export interface CrawlOptions {
   concurrency?: number;
   /** 메모리 모니터링 활성화 */
   enableMemoryMonitoring?: boolean;
+  /** 입력된 URL의 첫 번째 서브디렉토리 경로 강제 (예: /ko/ 외 배제) */
+  strictPathLimit?: boolean;
 }
 
 /**
@@ -162,13 +164,13 @@ export interface CrawlProgress {
 /**
  * 크롤링 작업 상태
  */
-export type CrawlJobStatus = 
-  | 'pending' 
-  | 'discovering' 
-  | 'crawling' 
-  | 'processing' 
-  | 'completed' 
-  | 'failed' 
+export type CrawlJobStatus =
+  | 'pending'
+  | 'discovering'
+  | 'crawling'
+  | 'processing'
+  | 'completed'
+  | 'failed'
   | 'cancelled';
 
 /**

@@ -21,7 +21,14 @@ export const maxDuration = 300; // 5분 (Vercel Pro 최대값)
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { url, maxDepth = 3, maxUrls = 150, respectRobots = true, domainLimit = true } = body;
+    const {
+      url,
+      maxDepth = 3,
+      maxUrls = 150,
+      respectRobots = true,
+      domainLimit = true,
+      strictPathLimit = false
+    } = body;
 
     if (!url || typeof url !== 'string') {
       return NextResponse.json(
@@ -45,7 +52,7 @@ export async function POST(request: NextRequest) {
     const supabase = await createPureClient();
 
     // Feature flag 확인 (서버 사이드 환경 변수)
-    const enableDepthSelection = 
+    const enableDepthSelection =
       process.env.ENABLE_DEPTH_SELECTION_MODE === 'true' ||
       process.env.NEXT_PUBLIC_ENABLE_DEPTH_SELECTION_MODE === 'true';
     if (!enableDepthSelection) {
@@ -89,6 +96,7 @@ export async function POST(request: NextRequest) {
         maxUrls,
         respectRobotsTxt: respectRobots,
         includeExternal: !domainLimit,
+        strictPathLimit, // 경로 제한 옵션 추가
         allowedDomains: domainLimit ? [new URL(url).hostname] : undefined,
       });
 

@@ -231,6 +231,7 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
     waitTime: 1000,
     useCrawlerV2: true, // 크롤러 V2 사용 (기본값: true)
     paginationMode: false, // Pagination 모드 (부모 페이지만 입력하면 자동으로 모든 페이지 크롤링)
+    strictPathLimit: true, // 입력된 URL의 첫 번째 서브디렉토리 경로 강제 (기본값: true)
   });
 
   const [existingDbMap, setExistingDbMap] = useState<Map<string, string>>(new Map());
@@ -1313,6 +1314,27 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
                 </div>
                 <p className="text-xs text-emerald-400/70 leading-relaxed flex-1">
                   개선된 성능 및 안정성
+                </p>
+              </div>
+
+              {/* 추가 옵션: 언어 경로 제한 */}
+              <div className={`flex flex-col gap-3 p-4 rounded-lg border-2 transition-all min-h-[140px] ${options.strictPathLimit
+                ? 'bg-gradient-to-br from-amber-500/20 to-amber-600/10 border-amber-500/50 shadow-lg shadow-amber-500/20'
+                : 'bg-white/5 border-white/10'
+                }`}>
+                <div className="flex items-center justify-between">
+                  <Label className="text-sm font-semibold text-amber-300 flex items-center gap-2">
+                    🌐 언어 경로 제한
+                  </Label>
+                  <Checkbox
+                    id="strictPathLimit"
+                    checked={options.strictPathLimit}
+                    onCheckedChange={(c) => setOptions({ ...options, strictPathLimit: !!c })}
+                    className="border-amber-500 data-[state=checked]:bg-amber-500"
+                  />
+                </div>
+                <p className="text-xs text-amber-400/70 leading-relaxed flex-1">
+                  입력된 URL의 첫 경로(예: /ko/)만 수집하고 타 언어 경로는 제외합니다.
                 </p>
               </div>
             </div>
