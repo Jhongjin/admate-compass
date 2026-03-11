@@ -53,11 +53,12 @@ export async function POST(request: NextRequest) {
    - 문서에 없는 내용을 AI가 스스로 추론하거나 외부 지식을 섞어 답변했다면 '근거 없음'으로 간주하여 감점하세요.
    - 특히 잘린 숫자(예: 3 | 500만)를 문맥 없이 잘못 해석한 경우 큰 폭으로 감점하세요.
 
-2. **Groundedness Score (신뢰도 수치)**:
-   - 1.0: 답변의 모든 문장이 참고 문서에서 직접적으로 지원됨. (완벽한 근거 기반)
-   - 0.8: 핵심 주장은 모두 지원되나, 일부 설명적 어구가 문서에 없거나 일반적인 상식임.
-   - 0.5: 답변의 절반 정도가 문서에 근거하지 않거나, 문서 내용을 AI가 자의적으로 해석함.
-   - 0.3 이하: 답변의 핵심 정보가 문서 내용과 다르거나, 근거를 전혀 찾을 수 없는 할루시네이션(Hallucination).
+2. **Groundedness Score (신뢰도 수치 산출 기준)**:
+   * AI의 습관적인 중간 점수(0.5) 부여를 금지합니다. 아래 기준에 맞춰 과감하게 평가하세요.
+   - **0.9 ~ 1.0 (최상)**: 답변의 모든 실질적 내용이 문서에 명시됨.
+   - **0.7 ~ 0.8 (양호)**: 핵심 내용은 문서에 근거하나, 일부 배경 설명이 일반 상식이거나 문서에 생략됨.
+   - **0.3 ~ 0.4 (주의)**: 핵심 주장 중 일부가 문서와 다르거나, 근거를 찾을 수 없는 내용이 섞임.
+   - **0.0 ~ 0.2 (위험)**: 답변의 주된 내용이 문서에 없거나 문서 내용과 정면으로 모순됨(할루시네이션).
 
 3. **요구사항**:
    - 답변의 핵심 포인트 3~5개를 불렛 포인트로 요약.
@@ -71,7 +72,7 @@ export async function POST(request: NextRequest) {
 참고 문서:
 ${sources?.map((source: any, index: number) =>
       `${index + 1}. ${source.title}
-   내용: ${source.excerpt.substring(0, 700)}...`
+   내용: ${source.excerpt.substring(0, 3000)}...` // 700 -> 3000자 확대
     ).join('\n') || '없음'}
 
 응답 형식 (반드시 아래 JSON 형식만 반환):
@@ -128,15 +129,18 @@ ${sources?.map((source: any, index: number) =>
         const jsonText = jsonMatch ? jsonMatch[0] : summaryText;
         const summaryData = JSON.parse(jsonText);
 
-        // 이미 추출된 포인트가 있다면 가급적 이를 사용하되, 평가 결과가 너무 낮으면 AI 요약을 따름
-        const finalKeyPoints = (extractedKeyPoints && summaryData.confidence > 0.7)
+        // 신뢰도 누락 시 기본값은 0.0으로 하여 사용자에게 잘못된 안심을 주지 않음
+        const finalConfidence = typeof summaryData.confidence === 'number' ? summaryData.confidence : 0.0;
+
+        // 이미 추출된 포인트가 있다면 가급적 이를 사용하되, 평가 결과가 아주 낮으면 AI 요약을 따름
+        const finalKeyPoints = (extractedKeyPoints && finalConfidence > 0.4)
           ? extractedKeyPoints
           : (summaryData.keyPoints || []);
 
         return NextResponse.json({
           keyPoints: finalKeyPoints.slice(0, 5),
           documentHighlights: Array.isArray(summaryData.documentHighlights) ? summaryData.documentHighlights.slice(0, 3) : [],
-          confidence: summaryData.confidence || 0.5
+          confidence: finalConfidence
         }, {
           headers: { 'Content-Type': 'application/json; charset=utf-8' }
         });
@@ -145,11 +149,11 @@ ${sources?.map((source: any, index: number) =>
       }
     }
 
-    // 모든 시도 실패 시 최종 Fallback
+    // 모든 시도 실패 시 최종 Fallback (신뢰도는 0.0으로 설정)
     const finalFallback = {
       keyPoints: extractedKeyPoints || ['답변의 신뢰도를 평가할 수 없습니다.'],
       documentHighlights: [],
-      confidence: 0.1
+      confidence: 0.0
     };
 
     return NextResponse.json(finalFallback, {
