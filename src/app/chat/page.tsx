@@ -1466,14 +1466,23 @@ function GmailStyleLayout() {
                             {children}
                           </blockquote>
                         ),
-                        sup: ({ children }) => (
-                          <span className="inline-flex items-center text-[#38BDF8] font-bold text-[10px] sm:text-[11px] mx-0.5 opacity-90">
-                            ({children})
-                          </span>
-                        ),
+                        a: ({ href, children }) => {
+                          if (href?.startsWith('citation:')) {
+                            return (
+                              <span className="inline-flex items-center text-[#38BDF8] font-bold text-[10px] sm:text-[11px] mx-0.5 opacity-90">
+                                ({children})
+                              </span>
+                            );
+                          }
+                          return (
+                            <a href={href} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">
+                              {children}
+                            </a>
+                          );
+                        },
                       }}
                     >
-                      {message.content.replace(/\[출처\s*(\d+)\]/g, '<sup>출처 $1</sup>')}
+                      {message.content.replace(/\[출처\s*(\d+)\]/g, '[출처 $1](citation:$1)')}
                     </ReactMarkdown>
                   </div>
                   {message.sources && message.sources.length > 0 && (

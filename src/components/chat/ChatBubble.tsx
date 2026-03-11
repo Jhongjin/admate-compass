@@ -81,17 +81,26 @@ const customMarkdownComponents = {
     </li>
   ),
   // 링크
-  a: ({ href, children, ...props }: { href?: string; children?: React.ReactNode;[key: string]: any }) => (
-    <a
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="text-blue-400 hover:text-blue-300 underline decoration-blue-400/50 hover:decoration-blue-300 transition-colors"
-      {...props}
-    >
-      {children}
-    </a>
-  ),
+  a: ({ href, children, ...props }: { href?: string; children?: React.ReactNode;[key: string]: any }) => {
+    if (href?.startsWith('citation:')) {
+      return (
+        <span className="inline-flex items-center text-[#38BDF8] font-bold text-[10px] sm:text-[11px] mx-0.5 opacity-90 cursor-default hover:underline transition-all">
+          ({children})
+        </span>
+      );
+    }
+    return (
+      <a
+        href={href}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-blue-400 hover:text-blue-300 underline decoration-blue-400/50 hover:decoration-blue-300 transition-colors"
+        {...props}
+      >
+        {children}
+      </a>
+    );
+  },
   // 인용문
   blockquote: ({ children }: { children?: React.ReactNode }) => (
     <blockquote className="border-l-2 border-[#38BDF8] pl-4 py-2 my-4 bg-blue-900/20 rounded-r-md">
@@ -142,12 +151,6 @@ const customMarkdownComponents = {
     <p className="mb-3 text-gray-200 leading-[1.7] tracking-tight last:mb-0">
       {children}
     </p>
-  ),
-  // 출처 표기 (<sup> 태그로 전처리됨)
-  sup: ({ children }: { children?: React.ReactNode }) => (
-    <span className="inline-flex items-center text-[#38BDF8] font-bold text-[10px] sm:text-[11px] mx-0.5 hover:underline transition-all cursor-default opacity-90">
-      ({children})
-    </span>
   ),
 };
 
@@ -214,11 +217,11 @@ export default function ChatBubble({
 
   const isUser = type === "user";
 
-  // 출처 표기([출처 X])를 Markdown <sup> 태그로 변환
+  // 출처 표기([출처 X])를 Markdown 링크로 변환
   const formatCitations = (text: string): string => {
     if (!text) return '';
-    // [출처 X] -> <sup>출처 X</sup> 변환 (그리디 매칭 방지를 위해 HTML 태그 사용)
-    return text.replace(/\[출처\s*(\d+)\]/g, '<sup>출처 $1</sup>');
+    // [출처 X] -> [출처 X](citation:X) 변환 (그리디 매칭 방지 및 호환성 확보)
+    return text.replace(/\[출처\s*(\d+)\]/g, '[출처 $1](citation:$1)');
   };
 
   // 강력한 텍스트 디코딩 함수
