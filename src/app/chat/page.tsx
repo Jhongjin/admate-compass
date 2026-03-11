@@ -1446,7 +1446,11 @@ function GmailStyleLayout() {
                       components={{
                         h1: ({ children }) => <h1 className="text-xl font-bold text-blue-300 mb-3 mt-4 border-b border-blue-500/30 pb-1">{children}</h1>,
                         h2: ({ children }) => <h2 className="text-lg font-semibold text-blue-200 mb-2 mt-3 border-l-4 border-blue-400 pl-3">{children}</h2>,
-                        h3: ({ children }) => <h3 className="text-base font-semibold text-blue-100 mb-1.5 mt-2">{children}</h3>,
+                        h3: ({ children }) => (
+                          <h3 className="text-sm sm:text-base font-bold text-[#bae6fd] mb-2 mt-4 flex items-center bg-blue-500/10 px-2 py-1 rounded-sm border-l-2 border-blue-400/50">
+                            {children}
+                          </h3>
+                        ),
                         p: ({ children }) => <p className="mb-3 leading-[1.7] text-gray-200 last:mb-0">{children}</p>,
                         strong: ({ children }) => <strong className="font-bold text-blue-300">{children}</strong>,
                         ul: ({ children }) => <ul className="list-disc list-inside space-y-1.5 mb-3 pl-2">{children}</ul>,
@@ -1462,14 +1466,14 @@ function GmailStyleLayout() {
                             {children}
                           </blockquote>
                         ),
-                        del: ({ children }) => (
-                          <span className="inline-flex items-center text-[#38BDF8] font-semibold text-[11px] sm:text-xs mx-0.5 px-0.5 py-0 rounded hover:bg-blue-500/10 transition-colors cursor-default">
+                        sup: ({ children }) => (
+                          <span className="inline-flex items-center text-[#38BDF8] font-bold text-[10px] sm:text-[11px] mx-0.5 opacity-90">
                             ({children})
                           </span>
                         ),
                       }}
                     >
-                      {message.content.replace(/\[출처\s*(\d+)\]/g, '~~출처 $1~~')}
+                      {message.content.replace(/\[출처\s*(\d+)\]/g, '<sup>출처 $1</sup>')}
                     </ReactMarkdown>
                   </div>
                   {message.sources && message.sources.length > 0 && (

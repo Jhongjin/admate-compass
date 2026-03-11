@@ -23,7 +23,7 @@ const customMarkdownComponents = {
     </h2>
   ),
   h3: ({ children }: { children?: React.ReactNode }) => (
-    <h3 className="text-base font-bold text-[#bae6fd] mb-1.5 mt-2.5 flex items-center before:content-['•'] before:mr-2 before:text-blue-400">
+    <h3 className="text-sm sm:text-base font-bold text-[#bae6fd] mb-2 mt-4 flex items-center bg-blue-500/10 px-2 py-1 rounded-sm border-l-2 border-blue-400/50 shadow-sm">
       {children}
     </h3>
   ),
@@ -143,9 +143,9 @@ const customMarkdownComponents = {
       {children}
     </p>
   ),
-  // 출처 칩 (~~출처 X~~ 형태로 전처리됨)
-  del: ({ children }: { children?: React.ReactNode }) => (
-    <span className="inline-flex items-center text-[#38BDF8] font-semibold text-[11px] sm:text-xs mx-0.5 px-1 py-0 rounded hover:bg-blue-500/10 transition-colors cursor-default">
+  // 출처 표기 (<sup> 태그로 전처리됨)
+  sup: ({ children }: { children?: React.ReactNode }) => (
+    <span className="inline-flex items-center text-[#38BDF8] font-bold text-[10px] sm:text-[11px] mx-0.5 hover:underline transition-all cursor-default opacity-90">
       ({children})
     </span>
   ),
@@ -214,11 +214,11 @@ export default function ChatBubble({
 
   const isUser = type === "user";
 
-  // 출처 표기([출처 X])를 Markdown 칩(~~출처 X~~)으로 변환
+  // 출처 표기([출처 X])를 Markdown <sup> 태그로 변환
   const formatCitations = (text: string): string => {
     if (!text) return '';
-    // [출처 X] -> ~~출처 X~~ 변환 (Badge 형태에서 심플 아이콘/괄호 형태로 변경 예정)
-    return text.replace(/\[출처\s*(\d+)\]/g, '~~출처 $1~~');
+    // [출처 X] -> <sup>출처 X</sup> 변환 (그리디 매칭 방지를 위해 HTML 태그 사용)
+    return text.replace(/\[출처\s*(\d+)\]/g, '<sup>출처 $1</sup>');
   };
 
   // 강력한 텍스트 디코딩 함수
