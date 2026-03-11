@@ -741,6 +741,7 @@ export class UrlDiscovery {
                       const patternWithSlash = requiredPathPattern.endsWith('/') ? requiredPathPattern : requiredPathPattern + '/';
 
                       if (!pathname.startsWith(patternWithSlash) && pathname !== patternWithoutSlash) {
+                        console.log(`[discoverFromLinks] 🛡️ 경로 패턴 불일치로 제외: ${pathname} (패턴: ${requiredPathPattern})`);
                         return;
                       }
                     }
@@ -1100,6 +1101,7 @@ export class UrlDiscovery {
                 const patternWithSlash = pattern.endsWith('/') ? pattern : pattern + '/';
 
                 if (!pathname.startsWith(patternWithSlash) && pathname !== patternWithoutSlash) {
+                  // console.log(`[discoverFromLinks] 🛡️ 경로 패턴 불일치로 제외 (filterAndSort): ${pathname} (패턴: ${pattern})`);
                   return false;
                 }
               }
@@ -1291,8 +1293,10 @@ export class UrlDiscovery {
             const urlObj = new URL(url.url);
             const pathname = urlObj.pathname;
             const patternWithoutSlash = pattern.endsWith('/') ? pattern.slice(0, -1) : pattern;
+            const patternWithSlash = pattern.endsWith('/') ? pattern : pattern + '/';
 
-            if (!pathname.startsWith(pattern) && pathname !== patternWithoutSlash) {
+            if (!pathname.startsWith(patternWithSlash) && pathname !== patternWithoutSlash) {
+              console.log(`[UrlDiscovery] 🛡️ 경로 패턴 불일치로 제외: ${url.url} (패턴: ${pattern})`);
               return false;
             }
           } catch (e) {

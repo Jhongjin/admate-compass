@@ -461,17 +461,39 @@ export class SitemapDiscoveryService {
         console.error(`[CRITICAL] ⚠️ robots.txt 접근 실패: ${robotsResponse.status} ${robotsResponse.statusText}`);
       }
 
-      // 기본 sitemap.xml 시도
-      const defaultSitemapUrl = `${this.getBaseUrl(baseUrl)}/sitemap.xml`;
-      console.error(`[CRITICAL] 📄 기본 sitemap.xml 시도: ${defaultSitemapUrl}`);
+      // 기본 및 대체 sitemap URL 목록 생성
+      const baseOrigin = this.getBaseUrl(baseUrl);
+      const fallbackUrls = [
+        `${baseOrigin}/sitemap.xml`,
+        `${baseOrigin}/sitemap_index.xml`,
+        `${baseOrigin}/sitemaps.xml`,
+      ];
 
-      try {
-        const sitemapUrls = await this.parseSitemap(defaultSitemapUrl, baseDomain, config);
-        discoveredUrls.push(...sitemapUrls);
-        console.error(`[CRITICAL] ✅ 기본 sitemap.xml 처리 완료: ${sitemapUrls.length}개 URL 발견`);
-      } catch (sitemapError) {
-        console.error(`[CRITICAL] ❌ 기본 sitemap.xml 처리 실패 (계속 진행):`, sitemapError);
-        // 기본 sitemap 실패해도 계속 진행
+      // 언어 패턴 감지 및 전용 사이트맵 추가
+      const pathPattern = this.extractPathPattern(baseUrl);
+      if (pathPattern) {
+        const lang = pathPattern.replace(/\//g, ''); // /ko/ -> ko
+        if (lang) {
+          fallbackUrls.push(`${baseOrigin}/${lang}.sitemap.xml`);
+          fallbackUrls.push(`${baseOrigin}/${lang}.sitemapindex.xml`);
+          fallbackUrls.push(`${baseOrigin}/${lang}-sitemap.xml`);
+        }
+      }
+
+      // 중복 제거 및 robots.txt에서 이미 처리된 것 제외 (이미 discoveredUrls에 들어감)
+      // 정확한 기명칭은 이미 수행된 sitemapUrl을 추적할 필요가 있으나, parseSitemap 내부에서 캐싱되거나 중복 처리가 되어있으므로 일단 진행
+
+      for (const sitemapUrl of Array.from(new Set(fallbackUrls))) {
+        console.error(`[CRITICAL] 📄 폴백 Sitemap 처리 시도: ${sitemapUrl}`);
+        try {
+          const sitemapUrls = await this.parseSitemap(sitemapUrl, baseDomain, config);
+          discoveredUrls.push(...sitemapUrls);
+          if (sitemapUrls.length > 0) {
+            console.error(`[CRITICAL] ✅ 폴백 Sitemap 처리 완료: ${sitemapUrl} - ${sitemapUrls.length}개 URL 발견`);
+          }
+        } catch (sitemapError) {
+          // 개별 실패 무시
+        }
       }
 
       console.error(`[CRITICAL] 📊 Sitemap 탐색 최종 결과: ${discoveredUrls.length}개 URL 발견`);
@@ -576,27 +598,11 @@ export class SitemapDiscoveryService {
         return [];
       }
 
-      // XML 전처리: 잘못된 속성 형식 수정
-      // "Attribute without value" 오류 방지를 위해 속성 정규화
+      // XML 전처리: 제어 문자 제거 및 기본 정규화
       let normalizedXml = xmlContent
-        // 잘못된 속성 형식 수정 (attr > → attr="")
-        .replace(/(\w+)\s+>/g, '$1="">')
-        // 따옴표 없는 속성 값 수정 (attr=value → attr="value")
-        .replace(/(\w+)=([^"'\s>]+)(?=\s|\/?>)/g, (match, attr, value) => {
-          // 이미 따옴표가 있으면 그대로 유지
-          if (value.startsWith('"') || value.startsWith("'")) {
-            return match;
-          }
-          // 특수 문자나 공백이 있으면 따옴표 추가
-          if (value.includes(' ') || value.includes('=') || value.includes('>')) {
-            return `${attr}="${value}"`;
-          }
-          return match;
-        })
-        // 잘못된 XML 문자 제거 (제어 문자 등)
-        .replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]/g, '')
-        // CDATA 섹션 보존
-        .replace(/<!\[CDATA\[(.*?)\]\]>/gs, '<![CDATA[$1]]>');
+        .replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]/g, '') // 제어 문자 제거
+        .replace(/&(?![a-zA-Z]+;|#\d+;)/g, '&amp;') // 잘못된 & 문자 수정
+        .trim();
 
       // xml2js 파서 옵션 설정 (엄격한 모드 완화)
       const parseOptions = {

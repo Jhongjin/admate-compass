@@ -41,7 +41,7 @@ export class SitemapParser {
       let normalizedXml = xmlContent
         .replace(/[\x00-\x08\x0B-\x0C\x0E-\x1F\x7F]/g, '') // 제어 문자 제거
         .replace(/&(?![a-zA-Z]+;|#\d+;)/g, '&amp;') // 잘못된 & 문자 수정
-        .replace(/<([^>]+)\s+([^=]+)\s*>/g, '<$1 $2="">') // 속성 값 없는 경우 처리
+        // .replace(/<([^>]+)\s+([^=]+)\s*>/g, '<$1 $2="">') // 속성 값 없는 경우 처리 - XML 구조 파손 위험으로 제거
         .trim();
 
       // XML 파싱 옵션 (관대한 모드)
@@ -150,13 +150,26 @@ export class SitemapParser {
     try {
       const baseUrlObj = new URL(baseUrl);
       const baseOrigin = `${baseUrlObj.protocol}//${baseUrlObj.host}`;
+      const pathname = baseUrlObj.pathname.toLowerCase();
 
-      return [
+      const urls = [
         `${baseOrigin}/sitemap.xml`,
         `${baseOrigin}/sitemap_index.xml`,
         `${baseOrigin}/sitemaps.xml`,
         `${baseOrigin}/sitemap1.xml`,
       ];
+
+      // 언어 패턴 감지 (예: /ko/, /en/)
+      const langMatch = pathname.match(/^\/([a-z]{2}(?:-[a-z]{2})?)\//i);
+      if (langMatch && langMatch[1]) {
+        const lang = langMatch[1];
+        urls.push(`${baseOrigin}/${lang}.sitemap.xml`);
+        urls.push(`${baseOrigin}/${lang}.sitemapindex.xml`);
+        urls.push(`${baseOrigin}/${lang}-sitemap.xml`);
+        urls.push(`${baseOrigin}/sitemap-${lang}.xml`);
+      }
+
+      return Array.from(new Set(urls)); // 중복 제거
     } catch {
       // URL 파싱 실패 시 빈 배열 반환
       return [];
