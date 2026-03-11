@@ -1124,8 +1124,8 @@ function GmailStyleLayout() {
                       handleNewChat();
                     }}
                     className={`w-12 h-12 flex items-center justify-center rounded-lg border transition-all ${selectedMenu === "inbox"
-                        ? "bg-blue-500/20 text-blue-100 border-blue-400/40 shadow-[0_0_12px_rgba(66,133,244,0.35)]"
-                        : "text-gray-400 border-transparent hover:bg-gray-800"
+                      ? "bg-blue-500/20 text-blue-100 border-blue-400/40 shadow-[0_0_12px_rgba(66,133,244,0.35)]"
+                      : "text-gray-400 border-transparent hover:bg-gray-800"
                       }`}
                     title="새 대화하기"
                     aria-current={selectedMenu === "inbox" ? "page" : undefined}
@@ -1138,8 +1138,8 @@ function GmailStyleLayout() {
                   <button
                     onClick={() => setSelectedMenu("history")}
                     className={`w-12 h-12 flex items-center justify-center rounded-lg border transition-all ${selectedMenu === "history"
-                        ? "bg-blue-500/20 text-blue-100 border-blue-400/40 shadow-[0_0_12px_rgba(66,133,244,0.35)]"
-                        : "text-gray-400 border-transparent hover:bg-gray-800"
+                      ? "bg-blue-500/20 text-blue-100 border-blue-400/40 shadow-[0_0_12px_rgba(66,133,244,0.35)]"
+                      : "text-gray-400 border-transparent hover:bg-gray-800"
                       }`}
                     title="히스토리"
                     aria-current={selectedMenu === "history" ? "page" : undefined}
@@ -1150,8 +1150,8 @@ function GmailStyleLayout() {
                   <button
                     onClick={() => setSelectedMenu("saved")}
                     className={`w-12 h-12 flex items-center justify-center rounded-lg border transition-all ${selectedMenu === "saved"
-                        ? "bg-blue-500/20 text-blue-100 border-blue-400/40 shadow-[0_0_12px_rgba(66,133,244,0.35)]"
-                        : "text-gray-400 border-transparent hover:bg-gray-800"
+                      ? "bg-blue-500/20 text-blue-100 border-blue-400/40 shadow-[0_0_12px_rgba(66,133,244,0.35)]"
+                      : "text-gray-400 border-transparent hover:bg-gray-800"
                       }`}
                     title="저장된 답변"
                     aria-current={selectedMenu === "saved" ? "page" : undefined}
@@ -1212,8 +1212,8 @@ function GmailStyleLayout() {
                   <button
                     onClick={() => setSelectedMenu("history")}
                     className={`w-full flex items-center gap-3 px-3 py-2 rounded-r-full text-sm font-medium transition-colors ${selectedMenu === "history"
-                        ? "bg-blue-50 text-blue-600"
-                        : "hover:bg-gray-800"
+                      ? "bg-blue-50 text-blue-600"
+                      : "hover:bg-gray-800"
                       }`}
                     style={selectedMenu !== "history" ? { color: theme.textSecondary } : {}}
                   >
@@ -1224,8 +1224,8 @@ function GmailStyleLayout() {
                   <button
                     onClick={() => setSelectedMenu("saved")}
                     className={`w-full flex items-center gap-3 px-3 py-2 rounded-r-full text-sm font-medium transition-colors ${selectedMenu === "saved"
-                        ? "bg-blue-50 text-blue-600"
-                        : "hover:bg-gray-800"
+                      ? "bg-blue-50 text-blue-600"
+                      : "hover:bg-gray-800"
                       }`}
                     style={selectedMenu !== "saved" ? { color: theme.textSecondary } : {}}
                   >
@@ -1423,8 +1423,8 @@ function GmailStyleLayout() {
                 )}
                 <div
                   className={`max-w-[75%] rounded-xl px-4 py-3 ${message.type === "user"
-                      ? "text-white"
-                      : "border"
+                    ? "text-white"
+                    : "border"
                     }`}
                   style={message.type === "user"
                     ? { background: 'linear-gradient(135deg, #4285f4, #9c27b0)' }
@@ -1444,18 +1444,35 @@ function GmailStyleLayout() {
                     <ReactMarkdown
                       remarkPlugins={[remarkGfm]}
                       components={{
-                        p: ({ children }) => <p className="mb-2">{children}</p>,
-                        strong: ({ children }) => <strong className="font-bold">{children}</strong>,
-                        ul: ({ children }) => <ul className="list-disc list-inside space-y-1 mb-2">{children}</ul>,
-                        ol: ({ children }) => <ol className="list-decimal list-inside space-y-1 mb-2">{children}</ol>,
+                        h1: ({ children }) => <h1 className="text-xl font-bold text-blue-300 mb-4 mt-6 border-b border-blue-500/30 pb-2">{children}</h1>,
+                        h2: ({ children }) => <h2 className="text-lg font-semibold text-blue-200 mb-3 mt-5 border-l-4 border-blue-400 pl-3">{children}</h2>,
+                        h3: ({ children }) => <h3 className="text-base font-semibold text-blue-100 mb-2 mt-4">{children}</h3>,
+                        p: ({ children }) => <p className="mb-4 leading-[1.7] text-gray-200 last:mb-0">{children}</p>,
+                        strong: ({ children }) => <strong className="font-bold text-blue-300">{children}</strong>,
+                        ul: ({ children }) => <ul className="list-disc list-inside space-y-2 mb-4 pl-2">{children}</ul>,
+                        ol: ({ children }) => <ol className="list-decimal list-inside space-y-2 mb-4 pl-2">{children}</ol>,
+                        li: ({ children }) => <li className="mb-1">{children}</li>,
                         code: ({ children }) => (
                           <code className="bg-gray-800 text-yellow-200 px-1.5 py-0.5 rounded text-xs font-mono">
                             {children}
                           </code>
                         ),
+                        blockquote: ({ children }) => (
+                          <blockquote className="border-l-4 border-blue-400 pl-4 py-2 my-4 bg-blue-900/20 rounded-r-lg italic text-blue-100">
+                            {children}
+                          </blockquote>
+                        ),
+                        del: ({ children }) => (
+                          <Badge
+                            variant="outline"
+                            className="mx-1 bg-blue-500/10 text-[#38BDF8] border-blue-400/30 font-medium px-2 py-0.5 rounded-full text-[10px] sm:text-xs cursor-default hover:bg-blue-500/20 transition-colors inline-flex items-center"
+                          >
+                            {children}
+                          </Badge>
+                        ),
                       }}
                     >
-                      {message.content}
+                      {message.content.replace(/\[출처\s*(\d+)\]/g, '~~출처 $1~~')}
                     </ReactMarkdown>
                   </div>
                   {message.sources && message.sources.length > 0 && (
