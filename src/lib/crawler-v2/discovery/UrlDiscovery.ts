@@ -284,7 +284,7 @@ export class UrlDiscovery {
       let totalSitemapUrls = 0;
       for (const sitemapUrl of allSitemapUrls) {
         try {
-          const items = await sitemapParser.parseSitemap(sitemapUrl);
+          const items = await sitemapParser.parseSitemap(sitemapUrl, extractDomain(baseUrl), config); // baseDomain과 config 전달
           totalSitemapUrls += items.length;
 
           for (const item of items) {
@@ -584,7 +584,7 @@ export class UrlDiscovery {
             console.warn(`[discoverFromLinks] ⚠️ 링크 추출이 제대로 되지 않을 수 있습니다.`);
           }
 
-          links = await page.evaluate((baseDomain, maxDepth, baseUrl) => {
+          links = await page.evaluate((baseDomain, maxDepth, baseUrl, strictPathLimit, requiredPathPattern) => {
 
             // 다양한 선택자로 링크 찾기 (네이버 광고, Instagram, Facebook 등 다양한 사이트 대응)
             const linkSelectors = [
@@ -734,6 +734,16 @@ export class UrlDiscovery {
                   try {
                     const urlObj = new URL(fullUrl);
                     const pathname = urlObj.pathname.toLowerCase();
+
+                    // 경로 패턴 제한 (strictPathLimit) 추가
+                    if (strictPathLimit && requiredPathPattern) {
+                      const patternWithoutSlash = requiredPathPattern.endsWith('/') ? requiredPathPattern.slice(0, -1) : requiredPathPattern;
+                      const patternWithSlash = requiredPathPattern.endsWith('/') ? requiredPathPattern : requiredPathPattern + '/';
+
+                      if (!pathname.startsWith(patternWithSlash) && pathname !== patternWithoutSlash) {
+                        return;
+                      }
+                    }
 
                     // 정적 리소스 확장자 제외
                     const excludedExtensions = [
@@ -908,7 +918,7 @@ export class UrlDiscovery {
             }
 
             return extractedLinks;
-          }, baseDomain, config.maxDepth ?? 3, baseUrl);
+          }, baseDomain, config.maxDepth ?? 3, baseUrl, config.strictPathLimit, (config as any).requiredPathPattern);
 
           console.log(`[discoverFromLinks] page.evaluate 완료 - 반환된 링크: ${links.length}개`);
           await page.close();
@@ -1076,10 +1086,22 @@ export class UrlDiscovery {
               }
             }
 
-            // 허용된 도메인 확인 (maxDepth 4가 아닌 경우)
             if (maxDepth < 4 && config.domainLimit && config.allowedDomains && config.allowedDomains.length > 0) {
               if (!isAllowedDomain(normalizedUrl, config.allowedDomains)) {
                 return false;
+              }
+            }
+
+            // 경로 패턴 제한 (strictPathLimit) 추가
+            if (config.strictPathLimit) {
+              const pattern = (config as any).requiredPathPattern;
+              if (pattern) {
+                const patternWithoutSlash = pattern.endsWith('/') ? pattern.slice(0, -1) : pattern;
+                const patternWithSlash = pattern.endsWith('/') ? pattern : pattern + '/';
+
+                if (!pathname.startsWith(patternWithSlash) && pathname !== patternWithoutSlash) {
+                  return false;
+                }
               }
             }
 

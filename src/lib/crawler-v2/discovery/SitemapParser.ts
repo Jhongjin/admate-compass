@@ -11,7 +11,7 @@ export class SitemapParser {
   /**
    * 사이트맵 URL에서 URL 목록 추출
    */
-  async parseSitemap(sitemapUrl: string): Promise<SitemapItem[]> {
+  async parseSitemap(sitemapUrl: string, baseDomain?: string, config?: any): Promise<SitemapItem[]> {
     try {
       console.log(`📄 사이트맵 파싱 시작: ${sitemapUrl}`);
 
@@ -50,7 +50,7 @@ export class SitemapParser {
         mergeAttrs: true,
         trim: true,
         normalize: true,
-        normalizeTags: false,
+        normalizeTags: true, // 태그 자동 소문자화
         explicitRoot: false,
         ignoreAttrs: false,
         attrkey: '_attr',
@@ -68,12 +68,14 @@ export class SitemapParser {
       }
 
       // 사이트맵 인덱스인 경우 (sitemapindex)
-      // 다양한 가능한 구조 확인
-      const sitemapIndex = result.sitemapindex || result['sitemap:index'] || result['sitemap-index'];
-      if (sitemapIndex?.sitemap) {
-        const sitemaps = Array.isArray(sitemapIndex.sitemap)
-          ? sitemapIndex.sitemap
-          : [sitemapIndex.sitemap];
+      // explicitRoot: false이므로 result 자체가 sitemapindex일 수도 있고 속성으로 있을 수도 있음
+      const sitemapIndex = result.sitemapindex || result.sitemap_index || result;
+      const sitemapItems = sitemapIndex.sitemap || sitemapIndex.sitemapindex?.sitemap;
+
+      if (sitemapItems) {
+        const sitemaps = Array.isArray(sitemapItems)
+          ? sitemapItems
+          : [sitemapItems];
 
         const allUrls: SitemapItem[] = [];
 
@@ -81,7 +83,7 @@ export class SitemapParser {
         for (const sitemap of sitemaps) {
           if (sitemap.loc) {
             try {
-              const urls = await this.parseSitemap(sitemap.loc);
+              const urls = await this.parseSitemap(sitemap.loc, baseDomain, config);
               allUrls.push(...urls);
               if (urls.length > 0) {
                 console.log(`✅ 하위 사이트맵 처리 완료: ${sitemap.loc} - ${urls.length}개 URL`);
@@ -95,17 +97,19 @@ export class SitemapParser {
         if (allUrls.length > 0) {
           console.log(`✅ 사이트맵 인덱스 처리 완료: ${sitemapUrl} - 총 ${allUrls.length}개 URL`);
         }
-        
+
         return allUrls;
       }
 
       // 일반 사이트맵인 경우 (urlset)
-      // 다양한 가능한 구조 확인
-      const urlSet = result.urlset || result['url:set'] || result['url-set'];
-      if (urlSet?.url) {
-        const urls = Array.isArray(urlSet.url)
-          ? urlSet.url
-          : [urlSet.url];
+      // explicitRoot: false이므로 result 자체가 urlset일 수도 있고 속성으로 있을 수도 있음
+      const urlSet = result.urlset || result.url_set || result;
+      const urlItems = urlSet.url || urlSet.urlset?.url;
+
+      if (urlItems) {
+        const urls = Array.isArray(urlItems)
+          ? urlItems
+          : [urlItems];
 
         const items = urls.map((item: any) => ({
           loc: item.loc || '',
@@ -113,11 +117,11 @@ export class SitemapParser {
           changefreq: item.changefreq,
           priority: item.priority ? parseFloat(item.priority) : undefined,
         })).filter((item: SitemapItem) => item.loc);
-        
+
         if (items.length > 0) {
           console.log(`✅ 사이트맵 파싱 완료: ${sitemapUrl} - ${items.length}개 URL`);
         }
-        
+
         return items;
       }
 

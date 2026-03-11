@@ -446,9 +446,9 @@ export class SitemapDiscoveryService {
             console.error(`[CRITICAL] 📄 Sitemap 처리 시작: ${sitemapUrl}`);
 
             try {
-              const sitemapUrls = await this.parseSitemap(sitemapUrl, baseDomain, config);
-              discoveredUrls.push(...sitemapUrls);
-              console.error(`[CRITICAL] ✅ Sitemap 처리 완료: ${sitemapUrl} - ${sitemapUrls.length}개 URL 발견`);
+              const urls = await this.parseSitemap(sitemapUrl, baseDomain, config);
+              discoveredUrls.push(...urls);
+              console.error(`[CRITICAL] ✅ Sitemap 처리 완료: ${sitemapUrl} - ${urls.length}개 URL 발견`);
             } catch (sitemapError) {
               console.error(`[CRITICAL] ❌ Sitemap 처리 실패 (계속 진행): ${sitemapUrl}`, sitemapError);
               // 개별 sitemap 실패해도 계속 진행
@@ -624,12 +624,19 @@ export class SitemapDiscoveryService {
       let urlsetFilteredCount = 0;
 
       // sitemapindex인 경우
-      if (result.sitemapindex) {
-        const sitemaps = result.sitemapindex.sitemap || [];
+      // explicitRoot: false이므로 result 자체가 sitemapindex일 수도 있고 속성으로 있을 수도 있음
+      const sitemapIndex = result.sitemapindex || result.sitemap_index || result;
+      const sitemapItems = sitemapIndex.sitemap || (result.sitemapindex ? result.sitemapindex.sitemap : null);
+
+      if (sitemapItems) {
+        const sitemaps = Array.isArray(sitemapItems) ? sitemapItems : [sitemapItems];
         sitemapIndexCount = sitemaps.length;
         console.error(`[CRITICAL] 📋 Sitemap Index 발견: ${sitemapIndexCount}개 하위 sitemap`);
         for (const sitemap of sitemaps) {
-          const subSitemapUrl = sitemap.loc[0];
+          const loc = sitemap.loc;
+          const subSitemapUrl = Array.isArray(loc) ? loc[0] : loc;
+          if (!subSitemapUrl) continue;
+
           console.error(`[CRITICAL] 📄 하위 Sitemap 처리: ${subSitemapUrl}`);
           const subUrls = await this.parseSitemap(subSitemapUrl, baseDomain, config);
           discoveredUrls.push(...subUrls);
@@ -638,14 +645,21 @@ export class SitemapDiscoveryService {
       }
 
       // urlset인 경우
-      if (result.urlset) {
-        const urls = result.urlset.url || [];
+      // explicitRoot: false이므로 result 자체가 urlset일 수도 있고 속성으로 있을 수도 있음
+      const urlSet = result.urlset || result.url_set || result;
+      const urlItems = urlSet.url || (result.urlset ? result.urlset.url : null);
+
+      if (urlItems) {
+        const urls = Array.isArray(urlItems) ? urlItems : [urlItems];
         urlsetCount = urls.length;
         console.error(`[CRITICAL] 📋 URL Set 발견: ${urlsetCount}개 URL`);
         for (const url of urls) {
-          const urlString = url.loc[0];
-          const lastmod = url.lastmod ? url.lastmod[0] : undefined;
-          const priority = url.priority ? parseFloat(url.priority[0]) : undefined;
+          const loc = url.loc;
+          const urlString = Array.isArray(loc) ? loc[0] : loc;
+          if (!urlString) continue;
+
+          const lastmod = Array.isArray(url.lastmod) ? url.lastmod[0] : url.lastmod;
+          const priority = Array.isArray(url.priority) ? parseFloat(url.priority[0]) : (url.priority ? parseFloat(url.priority) : undefined);
 
           if (this.isValidUrl(urlString, baseDomain, config)) {
             discoveredUrls.push({
@@ -662,7 +676,7 @@ export class SitemapDiscoveryService {
         console.error(`[CRITICAL] 📊 URL Set 필터링: ${urlsetCount}개 중 ${discoveredUrls.length}개 통과, ${urlsetFilteredCount}개 제외`);
       }
 
-      if (!result.sitemapindex && !result.urlset) {
+      if (!sitemapItems && !urlItems) {
         console.error(`[CRITICAL] ⚠️ Sitemap 형식 인식 실패: sitemapindex도 urlset도 아님`);
         console.error(`[CRITICAL] 📄 Sitemap 내용 미리보기 (처음 500자): ${xmlContent.substring(0, 500)}`);
       }
