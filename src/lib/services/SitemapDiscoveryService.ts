@@ -261,17 +261,16 @@ export class SitemapDiscoveryService {
 
     // BFS 루프
     let processedCount = 0;
-    // maxDepth 4일 때는 더 많은 페이지를 처리할 수 있도록 maxProcessed 증가
-    // maxDepth 4는 외부 도메인까지 탐색하므로 더 많은 처리 시간이 필요
-    const maxProcessed = config.maxDepth >= 4 
-      ? config.maxUrls * 5  // maxDepth 4: 더 많은 처리 허용
-      : config.maxUrls * 3; // maxDepth 1-3: 기존 제한 유지
+    // 수집 범위 완전성 확보를 위해 처리 한도 대폭 증가
+    const maxProcessed = config.maxDepth >= 4
+      ? config.maxUrls * 10 // maxDepth 4: 10배 허용 (대규모 사이트 대응)
+      : config.maxUrls * 5;  // maxDepth 1-3: 5배 허용
 
     const startTime = Date.now();
-    // maxDepth 4일 때는 더 긴 타임아웃 허용 (외부 도메인 탐색 시간 고려)
-    const timeout = config.maxDepth >= 4 
-      ? (config.timeout || 180000)  // maxDepth 4: 3분
-      : (config.timeout || 120000);  // maxDepth 1-3: 2분
+    // 타임아웃 상향 조정 및 최적화
+    const timeout = config.maxDepth >= 4
+      ? (config.timeout || 300000)  // maxDepth 4: 5분
+      : (config.timeout || 180000);  // maxDepth 1-3: 3분
 
     while (queue.length > 0 && processedCount < maxProcessed) {
       // 타임아웃 체크
@@ -298,17 +297,17 @@ export class SitemapDiscoveryService {
         // 현재 페이지에서 링크 추출
         const nextDepth = current.depth + 1;
         // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/c0851aaf-3b55-4357-b1b0-24aecd475e3c',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SitemapDiscoveryService.ts:295',message:'BFS: discoverFromLinks 호출 전',data:{currentUrl:current.url,currentDepth:current.depth,nextDepth,baseDomain},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+        fetch('http://127.0.0.1:7242/ingest/c0851aaf-3b55-4357-b1b0-24aecd475e3c', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'SitemapDiscoveryService.ts:295', message: 'BFS: discoverFromLinks 호출 전', data: { currentUrl: current.url, currentDepth: current.depth, nextDepth, baseDomain }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'C' }) }).catch(() => { });
         // #endregion
         const linkUrls = await this.discoverFromLinks(current.url, config, current.depth === 0 ? preloadedHtml : undefined);
         // #region agent log
-        fetch('http://127.0.0.1:7242/ingest/c0851aaf-3b55-4357-b1b0-24aecd475e3c',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SitemapDiscoveryService.ts:297',message:'BFS: discoverFromLinks 결과',data:{currentUrl:current.url,linkUrlsCount:linkUrls.length,linkUrls:linkUrls.slice(0,5).map(u=>u.url)},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'C'})}).catch(()=>{});
+        fetch('http://127.0.0.1:7242/ingest/c0851aaf-3b55-4357-b1b0-24aecd475e3c', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'SitemapDiscoveryService.ts:297', message: 'BFS: discoverFromLinks 결과', data: { currentUrl: current.url, linkUrlsCount: linkUrls.length, linkUrls: linkUrls.slice(0, 5).map(u => u.url) }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'C' }) }).catch(() => { });
         // #endregion
 
         let validLinksCount = 0;
         let skippedVisitedCount = 0;
         let skippedInvalidCount = 0;
-        
+
         for (const linkUrl of linkUrls) {
           const normalized = this.normalizeUrl(linkUrl.url);
 
@@ -320,13 +319,13 @@ export class SitemapDiscoveryService {
             }
             continue;
           }
-          
+
           // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/c0851aaf-3b55-4357-b1b0-24aecd475e3c',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SitemapDiscoveryService.ts:306',message:'BFS: isValidUrl 호출 전',data:{linkUrl:linkUrl.url,baseDomain,maxDepth:config.maxDepth,domainLimit:config.domainLimit},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+          fetch('http://127.0.0.1:7242/ingest/c0851aaf-3b55-4357-b1b0-24aecd475e3c', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'SitemapDiscoveryService.ts:306', message: 'BFS: isValidUrl 호출 전', data: { linkUrl: linkUrl.url, baseDomain, maxDepth: config.maxDepth, domainLimit: config.domainLimit }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'D' }) }).catch(() => { });
           // #endregion
           const isValid = this.isValidUrl(linkUrl.url, baseDomain, config);
           // #region agent log
-          fetch('http://127.0.0.1:7242/ingest/c0851aaf-3b55-4357-b1b0-24aecd475e3c',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SitemapDiscoveryService.ts:307',message:'BFS: isValidUrl 결과',data:{linkUrl:linkUrl.url,isValid,baseDomain,maxDepth:config.maxDepth,domainLimit:config.domainLimit},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'D'})}).catch(()=>{});
+          fetch('http://127.0.0.1:7242/ingest/c0851aaf-3b55-4357-b1b0-24aecd475e3c', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'SitemapDiscoveryService.ts:307', message: 'BFS: isValidUrl 결과', data: { linkUrl: linkUrl.url, isValid, baseDomain, maxDepth: config.maxDepth, domainLimit: config.domainLimit }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'D' }) }).catch(() => { });
           // #endregion
           if (!isValid) {
             skippedInvalidCount++;
@@ -358,7 +357,7 @@ export class SitemapDiscoveryService {
             });
           }
         }
-        
+
         if (linkUrls.length > 0) {
           console.error(`[CRITICAL] 📊 BFS 링크 처리 통계 (${current.url}): 총 ${linkUrls.length}개 → 유효 ${validLinksCount}개 (건너뜀: 방문 ${skippedVisitedCount}개, 무효 ${skippedInvalidCount}개)`);
         }
@@ -379,7 +378,7 @@ export class SitemapDiscoveryService {
 
     console.error(`[CRITICAL] ✅ BFS depth 탐색 완료: 총 ${filteredPages.length}개 발견 (처리: ${processedCount}개, 필터링 전: ${discoveredPages.length}개)`);
     console.error(`[CRITICAL] 📊 Depth별 통계:`, this.getDepthStatistics(filteredPages));
-    
+
     if (filteredPages.length === 0 && discoveredPages.length > 0) {
       console.error(`[CRITICAL] ⚠️ 발견된 ${discoveredPages.length}개 페이지가 모두 필터링되었습니다. 필터 조건을 확인해주세요.`);
       console.error(`[CRITICAL] 📋 필터링 전 샘플 URL (최대 10개):`, discoveredPages.slice(0, 10).map(p => ({ url: p.url, depth: p.depth, source: p.source })));
@@ -490,17 +489,17 @@ export class SitemapDiscoveryService {
       let xmlContent: string;
       const arrayBuffer = await response.arrayBuffer();
       const buffer = Buffer.from(arrayBuffer);
-      
+
       // Content-Type과 파일 확장자로 gzip 여부 판단
       const isGzipByExtension = sitemapUrl.endsWith('.gz');
       const isGzipByContentType = contentType.includes('gzip') || contentType.includes('application/gzip');
-      
+
       // 실제 바이너리 내용 확인: gzip magic number (1f 8b) 확인
       const isGzipByMagic = buffer.length >= 2 && buffer[0] === 0x1f && buffer[1] === 0x8b;
-      
+
       // HTML Content-Type이지만 실제로는 gzip인 경우 처리
       const isHtmlContentTypeButGzip = isHtmlContentType && (isGzipByExtension || isGzipByMagic);
-      
+
       const isGzip = isGzipByExtension || isGzipByContentType || isGzipByMagic || isHtmlContentTypeButGzip;
 
       if (isGzip) {
@@ -518,7 +517,7 @@ export class SitemapDiscoveryService {
             isGzipByMagic,
             firstBytes: buffer.slice(0, 10).toString('hex')
           });
-          
+
           // gzip 해제 실패 시 일반 텍스트로 시도
           try {
             xmlContent = buffer.toString('utf-8');
@@ -767,7 +766,7 @@ export class SitemapDiscoveryService {
         // 콘텐츠가 충분한지 확인 (정적 HTML로 충분한 경우)
         const bodyText = $('body').text().trim();
         const hasSubstantialContent = bodyText.length > 500; // 500자 이상의 텍스트가 있으면 정적 HTML로 판단
-        
+
         // maxDepth 4인 경우 또는 발견된 링크가 5개 미만인 경우 Puppeteer도 시도
         // (Facebook 같은 동적 사이트는 Cheerio만으로는 충분한 링크를 찾지 못할 수 있음)
         const shouldTryPuppeteer = config.maxDepth >= 4 || discoveredUrls.length < 5;
@@ -808,11 +807,11 @@ export class SitemapDiscoveryService {
 
             // 현재 URL 확인 (로그인 페이지로 리다이렉트되었는지 체크)
             const currentUrl = page.url();
-            const isLoginPage = currentUrl.includes('/login') || 
-                               currentUrl.includes('/signin') || 
-                               currentUrl.includes('facebook.com/login') ||
-                               currentUrl.includes('facebook.com/business') && currentUrl.includes('login');
-            
+            const isLoginPage = currentUrl.includes('/login') ||
+              currentUrl.includes('/signin') ||
+              currentUrl.includes('facebook.com/login') ||
+              currentUrl.includes('facebook.com/business') && currentUrl.includes('login');
+
             if (isLoginPage && !baseUrl.includes('/login') && !baseUrl.includes('/signin')) {
               console.error(`[CRITICAL] ⚠️ 로그인 페이지로 리다이렉트됨: ${currentUrl} (원본: ${baseUrl})`);
               // 로그인 페이지로 리다이렉트된 경우에도 일단 링크 추출 시도
@@ -825,7 +824,7 @@ export class SitemapDiscoveryService {
             const isFacebook = baseUrl.includes('facebook.com');
             const waitTime = (config.maxDepth >= 4 || isFacebook) ? 8000 : (isLoginPage ? 5000 : 2000);
             await new Promise(resolve => setTimeout(resolve, waitTime));
-            
+
             // 추가 스크롤로 lazy-loaded 콘텐츠 로드 시도
             if (config.maxDepth >= 4 || baseUrl.includes('facebook.com')) {
               try {
@@ -854,7 +853,7 @@ export class SitemapDiscoveryService {
                 'a[data-testid]', // Facebook의 data-testid를 가진 링크
                 'a[aria-label]', // aria-label을 가진 링크
               ];
-              
+
               const linkElements = new Set<Element>();
               linkSelectors.forEach(selector => {
                 try {
@@ -863,7 +862,7 @@ export class SitemapDiscoveryService {
                   // 선택자 오류 무시
                 }
               });
-              
+
               const links: Array<{ url: string, title: string }> = [];
 
               // 하위 도메인 체크 함수
@@ -1034,11 +1033,11 @@ export class SitemapDiscoveryService {
    */
   private isSameRootDomain(domain1: string, domain2: string): boolean {
     // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/c0851aaf-3b55-4357-b1b0-24aecd475e3c',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SitemapDiscoveryService.ts:1027',message:'isSameRootDomain 호출',data:{domain1,domain2},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    fetch('http://127.0.0.1:7242/ingest/c0851aaf-3b55-4357-b1b0-24aecd475e3c', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'SitemapDiscoveryService.ts:1027', message: 'isSameRootDomain 호출', data: { domain1, domain2 }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'A' }) }).catch(() => { });
     // #endregion
     if (domain1 === domain2) {
       // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/c0851aaf-3b55-4357-b1b0-24aecd475e3c',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SitemapDiscoveryService.ts:1030',message:'isSameRootDomain: 같은 도메인',data:{domain1,domain2,result:true},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      fetch('http://127.0.0.1:7242/ingest/c0851aaf-3b55-4357-b1b0-24aecd475e3c', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'SitemapDiscoveryService.ts:1030', message: 'isSameRootDomain: 같은 도메인', data: { domain1, domain2, result: true }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'A' }) }).catch(() => { });
       // #endregion
       return true;
     }
@@ -1046,7 +1045,7 @@ export class SitemapDiscoveryService {
     const root2 = this.extractRootDomain(domain2);
     const result = root1 === root2;
     // #region agent log
-    fetch('http://127.0.0.1:7242/ingest/c0851aaf-3b55-4357-b1b0-24aecd475e3c',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SitemapDiscoveryService.ts:1033',message:'isSameRootDomain: 루트 도메인 비교',data:{domain1,domain2,root1,root2,result},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+    fetch('http://127.0.0.1:7242/ingest/c0851aaf-3b55-4357-b1b0-24aecd475e3c', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'SitemapDiscoveryService.ts:1033', message: 'isSameRootDomain: 루트 도메인 비교', data: { domain1, domain2, root1, root2, result }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'A' }) }).catch(() => { });
     // #endregion
     return result;
   }
@@ -1060,52 +1059,41 @@ export class SitemapDiscoveryService {
       const urlDomain = urlObj.hostname;
 
       // #region agent log
-      fetch('http://127.0.0.1:7242/ingest/c0851aaf-3b55-4357-b1b0-24aecd475e3c',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SitemapDiscoveryService.ts:1040',message:'isValidUrl 호출',data:{url,urlDomain,baseDomain,maxDepth:config.maxDepth,domainLimit:config.domainLimit},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
+      fetch('http://127.0.0.1:7242/ingest/c0851aaf-3b55-4357-b1b0-24aecd475e3c', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ location: 'SitemapDiscoveryService.ts:1040', message: 'isValidUrl 호출', data: { url, urlDomain, baseDomain, maxDepth: config.maxDepth, domainLimit: config.domainLimit }, timestamp: Date.now(), sessionId: 'debug-session', runId: 'run1', hypothesisId: 'E' }) }).catch(() => { });
       // #endregion
 
-      // maxDepth에 따른 도메인 필터링
-      // maxDepth 1-2: 정확히 같은 도메인만 허용
-      // maxDepth 3: domainLimit에 따라 다름 (true: 같은 도메인만, false: 하위 도메인 포함)
-      // maxDepth 4: domainLimit에 따라 다름 (true: 같은 루트 도메인만, false: 모든 도메인 허용)
+      // maxDepth에 따른 도메인 필터링 개선
+      // maxDepth 1: 정확히 같은 도메인만 허용
+      // maxDepth 2-3: domainLimit=true면 같은 도메인만, false면 하위 도메인 포함
+      // maxDepth 4: domainLimit=true면 같은 루트 도메인 허용, false면 모든 도메인 허용
       if (urlDomain !== baseDomain) {
         if (config.maxDepth >= 4) {
-          // maxDepth 4: domainLimit에 따라 다름
           if (config.domainLimit === true) {
-            // domainLimit이 true면 같은 루트 도메인만 허용 (예: ko-kr.facebook.com과 www.facebook.com)
-            const result = this.isSameRootDomain(urlDomain, baseDomain);
-            // #region agent log
-            fetch('http://127.0.0.1:7242/ingest/c0851aaf-3b55-4357-b1b0-24aecd475e3c',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'SitemapDiscoveryService.ts:1053',message:'isValidUrl: maxDepth 4 + domainLimit true',data:{urlDomain,baseDomain,result},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'E'})}).catch(()=>{});
-            // #endregion
-            return result;
-          } else {
-            // domainLimit이 false면 모든 도메인 허용
-            return true;
+            // 루트 도메인이 같으면 허용 (Meta 등 대형 플랫폼 대응)
+            return this.isSameRootDomain(urlDomain, baseDomain);
           }
-        } else if (config.maxDepth >= 3) {
-          // maxDepth 3: domainLimit에 따라 다름
+          return true; // 모든 도메인 허용
+        } else if (config.maxDepth >= 2) {
+          // depth 2 이상부터는 도메인 제한 옵션에 따라 유연하게 처리
           if (config.domainLimit === true) {
-            // domainLimit이 true면 하위 도메인도 제외 (같은 도메인만)
-            return false;
-          } else {
-            // domainLimit이 false면 하위 도메인 허용
-            if (this.isSubdomain(urlDomain, baseDomain)) {
-              // 하위 도메인은 허용
+            // Meta 계열 서브도메인(ko-kr.facebook.com) 등은 동일 루트인 경우 예외적으로 허용 검토
+            // 사용자 요청에 따른 '완전성' 확보를 위해 동일 루트 도메인은 기본 허용 (depth 3 이상)
+            if (config.maxDepth >= 3 && this.isSameRootDomain(urlDomain, baseDomain)) {
               return true;
-            } else {
-              // 하위 도메인이 아니면 제외
-              return false;
             }
+            return false;
           }
+          // domainLimit false면 하위 도메인 허용
+          return this.isSubdomain(urlDomain, baseDomain);
         } else {
-          // maxDepth 1-2: 정확히 같은 도메인만 허용
           return false;
         }
       }
 
       // 허용된 도메인 목록 확인 (maxDepth 4가 아닌 경우)
       if (config.maxDepth < 4 && config.allowedDomains && config.allowedDomains.length > 0) {
-        const isAllowed = config.allowedDomains.some(domain => 
-          urlDomain === domain || 
+        const isAllowed = config.allowedDomains.some(domain =>
+          urlDomain === domain ||
           (config.maxDepth >= 3 && this.isSubdomain(urlDomain, domain))
         );
         if (!isAllowed) {
@@ -1161,40 +1149,29 @@ export class SitemapDiscoveryService {
         const urlObj = new URL(page.url);
         const urlDomain = urlObj.hostname;
 
-        // maxDepth에 따른 도메인 필터링
-        // maxDepth 1-2: 정확히 같은 도메인만 허용
-        // maxDepth 3: domainLimit에 따라 다름 (true: 같은 도메인만, false: 하위 도메인 포함)
-        // maxDepth 4: domainLimit에 따라 다름 (true: 같은 루트 도메인만, false: 모든 도메인 허용)
+        // maxDepth에 따른 필터링 (isValidUrl과 동기화)
         if (urlDomain !== baseDomain) {
           if (config.maxDepth >= 4) {
-            // maxDepth 4: domainLimit에 따라 다름
-            if (config.domainLimit === true) {
-              // domainLimit이 true면 같은 루트 도메인만 허용 (예: ko-kr.facebook.com과 www.facebook.com)
-              if (!this.isSameRootDomain(urlDomain, baseDomain)) {
-                filteredOut.push({ url: page.url, reason: `도메인 제한 활성화 (루트 도메인 불일치): ${urlDomain} !== ${baseDomain}` });
-                return;
-              }
-              // 같은 루트 도메인이면 허용 - 계속 진행
-            } else {
-              // domainLimit이 false면 모든 도메인 허용
-              // 허용됨 - 계속 진행
+            if (config.domainLimit === true && !this.isSameRootDomain(urlDomain, baseDomain)) {
+              filteredOut.push({ url: page.url, reason: `도메인 제한 (루트 불일치): ${urlDomain}` });
+              return;
             }
           } else if (config.maxDepth >= 3) {
-            // maxDepth 3: domainLimit에 따라 다름
-            if (config.domainLimit === true) {
-              // domainLimit이 true면 하위 도메인도 제외 (같은 도메인만)
-              filteredOut.push({ url: page.url, reason: `도메인 제한 활성화: ${urlDomain} !== ${baseDomain}` });
+            if (config.domainLimit === true && !this.isSameRootDomain(urlDomain, baseDomain)) {
+              filteredOut.push({ url: page.url, reason: `도메인 제한: ${urlDomain}` });
               return;
-            } else {
-              // domainLimit이 false면 하위 도메인 허용
-              if (!this.isSubdomain(urlDomain, baseDomain)) {
-                filteredOut.push({ url: page.url, reason: `도메인 불일치 (하위 도메인 아님): ${urlDomain} !== ${baseDomain}` });
-                return;
-              }
+            }
+            if (config.domainLimit === false && !this.isSubdomain(urlDomain, baseDomain)) {
+              filteredOut.push({ url: page.url, reason: `하위 도메인 아님: ${urlDomain}` });
+              return;
+            }
+          } else if (config.maxDepth >= 2) {
+            if (config.domainLimit === true && urlDomain !== baseDomain) {
+              filteredOut.push({ url: page.url, reason: `도메인 불일치: ${urlDomain}` });
+              return;
             }
           } else {
-            // maxDepth 1-2: 정확히 같은 도메인만 허용
-            filteredOut.push({ url: page.url, reason: `도메인 불일치: ${urlDomain} !== ${baseDomain}` });
+            filteredOut.push({ url: page.url, reason: `도메인 불일치 (depth 1): ${urlDomain}` });
             return;
           }
         }
@@ -1203,8 +1180,8 @@ export class SitemapDiscoveryService {
         // maxDepth 4 + domainLimit=true일 때는 이미 루트 도메인 체크를 했으므로 추가 체크 불필요
         // maxDepth 4 + domainLimit=false일 때는 모든 도메인 허용하므로 체크 불필요
         if (config.maxDepth < 4 && config.allowedDomains && config.allowedDomains.length > 0) {
-          const isAllowed = config.allowedDomains.some(domain => 
-            urlDomain === domain || 
+          const isAllowed = config.allowedDomains.some(domain =>
+            urlDomain === domain ||
             (config.maxDepth >= 3 && this.isSubdomain(urlDomain, domain))
           );
           if (!isAllowed) {
@@ -1242,9 +1219,15 @@ export class SitemapDiscoveryService {
       }
     }
 
-    // 우선순위별 정렬 (sitemap > links > pattern)
+    // 우선순위별 정렬 (sitemap > links > pattern) 및 가중치 부여
     const sourcePriority = { sitemap: 1, robots: 1, links: 2, pattern: 3 };
+
+    // 경로 기반 우선순위 계산 (입력된 URL과 경로가 유사할수록 우선순위 높임)
+    const baseUrlObj = new URL(this.normalizeUrl(config.allowedDomains?.[0] || 'http://' + baseDomain));
+    const basePath = baseUrlObj.pathname.replace(/\/$/, '');
+
     filteredPages.sort((a, b) => {
+      // 1. 소스 우선순위
       const priorityA = sourcePriority[a.source] || 4;
       const priorityB = sourcePriority[b.source] || 4;
 
@@ -1252,9 +1235,25 @@ export class SitemapDiscoveryService {
         return priorityA - priorityB;
       }
 
-      // 같은 소스인 경우 priority 값으로 정렬
+      // 2. 경로 유사도 가중치 (고도화: 입력 경로 하위 페이지 우선)
+      if (basePath && basePath !== '/') {
+        const pathA = new URL(a.url).pathname;
+        const pathB = new URL(b.url).pathname;
+        const startsWithA = pathA.startsWith(basePath);
+        const startsWithB = pathB.startsWith(basePath);
+
+        if (startsWithA && !startsWithB) return -1;
+        if (!startsWithA && startsWithB) return 1;
+      }
+
+      // 3. 같은 소스인 경우 priority 값으로 정렬
       if (a.priority && b.priority) {
         return b.priority - a.priority;
+      }
+
+      // 4. Depth 우선 (낮은 depth 먼저)
+      if (a.depth && b.depth && a.depth !== b.depth) {
+        return a.depth - b.depth;
       }
 
       return 0;

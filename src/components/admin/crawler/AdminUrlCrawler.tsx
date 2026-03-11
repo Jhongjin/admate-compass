@@ -223,11 +223,11 @@ export function AdminUrlCrawler({ onSuccess, defaultVendor, onVendorChange }: Ad
 
   const [options, setOptions] = useState({
     discoverSubPages: false,
-    maxDepth: 4 as number | 'MAX', // ads.naver.com 같은 사이트는 깊이 4로 크롤링
-    maxUrls: 100, // 더 많은 URL 추출
+    maxDepth: 4 as number | 'MAX', // 4 이상은 외부/서브도메인 포함 탐색
+    maxUrls: 300, // 수집 범위 완전성 확보를 위해 기본값 상향 (기존 100)
     respectRobots: true,
     domainLimit: true,
-    timeout: 30000,
+    timeout: 60000, // 기본 타임아웃 1분으로 상향
     waitTime: 1000,
     useCrawlerV2: true, // 크롤러 V2 사용 (기본값: true)
     paginationMode: false, // Pagination 모드 (부모 페이지만 입력하면 자동으로 모든 페이지 크롤링)
