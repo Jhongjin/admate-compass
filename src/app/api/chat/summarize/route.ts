@@ -43,22 +43,19 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // 신뢰도 평가 및 요약 생성을 위한 강화된 프롬프트 (비판적 검증 및 보수적 평가 중심)
-    const evaluationPrompt = `당신은 RAG(Retrieval-Augmented Generation) 시스템의 답변 신뢰성을 엄격하게 판별하는 '독립 검증 전문가'입니다.
-제공된 "참고 문서"만을 법적 증거와 같이 엄중히 다루어 "답변"의 모든 실질적 주장을 검증하고 신뢰도를 산출하세요.
+    // 신뢰도 평가 및 요약 생성을 위한 혁신 프롬프트 (v2.9 - 객관적 이진 검증)
+    const evaluationPrompt = `당신은 RAG 시스템의 답변을 개별 주장 단위로 쪼개어 사실 관계를 이진 판단(Yes/No)하는 '데이터 검증 엔진'입니다.
 
-[검증 프로세스 (Thinking Process)]
-1. **주장 추출**: 답변에서 날짜, 숫자, 정책, 절차, 고유 명사 등 검증 가능한 모든 개별 주장을 나열하세요.
-2. **증거 대조**: 각 주장이 참고 문서의 어느 위치에 명시되어 있는지 확인하세요. 단순히 유사한 맥락이 있는 것이 아니라, 구체적인 텍스트로 존재해야 합니다.
-3. **불일치 식별**: 문서에 없거나, 문서 내용에서 논리적으로 비약된 부분, AI가 임의로 추론하거나 일반 상식으로 채워넣은 부분을 '비검증 주장(Unverified Claims)'으로 분류하세요.
+[검증 프로토콜]
+1. 답변을 5~10개의 독립적인 원자적 주장(Atomic Claims)으로 분해하세요.
+2. 각 주장이 제공된 "참고 문서"에 명시되어 있는지 확인하세요.
+3. 판단 기준:
+   - **Supported: Yes** -> 문서에 명시적 근거가 있음.
+   - **Supported: No** -> 문서에 없거나, AI의 추론/일반 지식이 포함됨.
 
-[평가 기준 (수치 산출)]
-* **절대 금기**: 근거가 확실하지 않은 상태에서 0.9 이상의 고득점을 주는 '모델의 낙관적 편향'을 경계하세요.
-- **0.9 ~ 1.0 (완벽)**: 답변의 모든 단어와 수치가 문서에 명시됨. 단 하나의 사소한 추론이나 부연 설명도 자의적이지 않음.
-- **0.7 ~ 0.8 (양호)**: 핵심 주장은 명확한 근거가 있으나, 어문 연결을 위한 사소한 부연 설명에 문서에 없는 상식적 내용이 포함됨.
-- **0.4 ~ 0.6 (주의)**: 핵심 주장의 일부가 문서에서 확인되지 않거나, 문서의 파편화된 정보를 AI가 무리하게 연결하여 해석함.
-- **0.1 ~ 0.3 (위험)**: 핵심 주장 중 상당수가 문서에 없거나 문서 내용과 정면으로 대치됨 (할루시네이션 가능성 매우 높음).
-- **0.0 (불능)**: 답변과 문서 사이에 어떠한 유의미한 상관관계를 찾을 수 없음.
+[주의사항]
+- AI 모델 특유의 '낙관적 편향'을 버리고, 증거가 없는 모든 사소한 추측은 "Supported: No"로 처리하세요.
+- 당신은 직접적인 점수를 매기지 않습니다. 오직 각 주장의 참/거짓만 판별하세요.
 
 질문: ${userQuestion}
 
@@ -72,10 +69,12 @@ ${sources?.map((source: any, index: number) =>
 
 응답 형식 (반드시 아래 JSON 형식만 반환):
 {
-  "unverifiedClaims": ["문서에서 근거를 찾을 수 없는 주장 1", "추론이 포함된 부분 2"],
+  "claims": [
+    { "claim": "주장 내용 1", "supported": "Yes" },
+    { "claim": "주장 내용 2", "supported": "No" }
+  ],
   "keyPoints": ["핵심 요약 1", "핵심 요약 2"],
-  "documentHighlights": ["근거가 된 실제 문구 1", "실제 문구 2"],
-  "confidence": 0.0~1.0 사이의 실수 (보수적으로 산출)
+  "documentHighlights": ["근거가 된 실제 문구 1", "실제 문구 2"]
 }`;
 
     let summaryText = '';
@@ -127,10 +126,34 @@ ${sources?.map((source: any, index: number) =>
         const jsonText = jsonMatch ? jsonMatch[0] : summaryText;
         const summaryData = JSON.parse(jsonText);
 
-        // 신뢰도 누락 시 기본값은 0.0으로 하여 사용자에게 잘못된 안심을 주지 않음
-        const finalConfidence = typeof summaryData.confidence === 'number' ? summaryData.confidence : 0.0;
+        // --- 알고리즘 개편 (v2.9): 수학적 비율 기반 신뢰도 산출 ---
 
-        // 이미 추출된 포인트가 있다면 가급적 이를 사용하되, 평가 결과가 아주 낮으면 AI 요약을 따름
+        // 1. Groundedness Ratio (주장 검증 성공률): 70% 비중
+        const claims = Array.isArray(summaryData.claims) ? summaryData.claims : [];
+        const supportedCount = claims.filter((c: any) => c.supported === 'Yes' || c.supported === true).length;
+        const groundednessRatio = claims.length > 0 ? supportedCount / claims.length : 0.0;
+
+        // 2. Retrieval Score (검색 유사도 평균): 30% 비중
+        // sources 내의 score 값 활용 (0~1 사이로 가정, 보통 벡터 유사도는 0.7~0.9 사이임)
+        const validSourceScores = sources
+          ?.map((s: any) => s.score)
+          .filter((s: any) => typeof s === 'number' && s > 0) || [];
+        const avgRetrievalScore = validSourceScores.length > 0
+          ? validSourceScores.reduce((a: number, b: number) => a + b, 0) / validSourceScores.length
+          : 0.8; // 검색 점수 부재 시 기본값 0.8 (안정성)
+
+        // 3. 최종 신뢰도 합산 공식
+        let finalConfidence = (groundednessRatio * 0.7) + (avgRetrievalScore * 0.3);
+
+        // 검색 점수가 너무 낮은 경우(관련 없는 문서)는 감점 페널티 적용
+        if (avgRetrievalScore < 0.6) {
+          finalConfidence *= 0.8;
+        }
+
+        // 범위 보정 (0.0 ~ 1.0)
+        finalConfidence = Math.max(0.0, Math.min(1.0, finalConfidence));
+
+        // 결과 반환 로직 동기화 (기존 필드 유지)
         const finalKeyPoints = (extractedKeyPoints && finalConfidence > 0.4)
           ? extractedKeyPoints
           : (summaryData.keyPoints || []);
@@ -138,7 +161,13 @@ ${sources?.map((source: any, index: number) =>
         return NextResponse.json({
           keyPoints: finalKeyPoints.slice(0, 5),
           documentHighlights: Array.isArray(summaryData.documentHighlights) ? summaryData.documentHighlights.slice(0, 3) : [],
-          confidence: finalConfidence
+          confidence: parseFloat(finalConfidence.toFixed(2)),
+          _debug: { // 디버깅용 (필요 시 클라이언트에서 무시 가능)
+            groundednessRatio,
+            avgRetrievalScore,
+            totalClaims: claims.length,
+            supportedCount
+          }
         }, {
           headers: { 'Content-Type': 'application/json; charset=utf-8' }
         });
