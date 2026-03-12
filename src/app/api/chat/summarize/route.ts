@@ -54,10 +54,11 @@ export async function POST(request: NextRequest) {
    - 특히 잘린 숫자(예: 3 | 500만)를 문맥 없이 잘못 해석한 경우 큰 폭으로 감점하세요.
 
 2. **Groundedness Score (신뢰도 수치 산출 기준)**:
-   * AI의 습관적인 중간 점수(0.5) 부여를 금지합니다. 아래 기준에 맞춰 과감하게 평가하세요.
+   * AI의 습관적인 특정 점수(0.35 등) 부여를 금지합니다. 아래 기준에 맞춰 객관적이고 과감하게 평가하세요.
    - **0.9 ~ 1.0 (최상)**: 답변의 모든 실질적 내용이 문서에 명시됨.
-   - **0.7 ~ 0.8 (양호)**: 핵심 내용은 문서에 근거하나, 일부 배경 설명이 일반 상식이거나 문서에 생략됨.
-   - **0.3 ~ 0.4 (주의)**: 핵심 주장 중 일부가 문서와 다르거나, 근거를 찾을 수 없는 내용이 섞임.
+   - **0.7 ~ 0.8 (양호)**: 핵심 내용은 문서에 근거하나, 일부 부연 설명이 일반 상식이거나 문서에 생략됨.
+   - **0.5 ~ 0.6 (보통)**: 중요 정보의 절반 정도만 문서에서 확인 가능하며, 일부 모호한 추정이 포함됨.
+   - **0.3 ~ 0.4 (주의)**: 핵심 주장 중 일부가 문서와 다르거나, 근거를 찾을 수 없는 내용이 상당수 섞임.
    - **0.0 ~ 0.2 (위험)**: 답변의 주된 내용이 문서에 없거나 문서 내용과 정면으로 모순됨(할루시네이션).
 
 3. **요구사항**:
@@ -72,7 +73,7 @@ export async function POST(request: NextRequest) {
 참고 문서:
 ${sources?.map((source: any, index: number) =>
       `${index + 1}. ${source.title}
-   내용: ${source.excerpt.substring(0, 3000)}...` // 700 -> 3000자 확대
+   내용: ${source.excerpt.substring(0, 10000)}...` // 3000 -> 10000자 대폭 확대 (근거 확인 누락 방지)
     ).join('\n') || '없음'}
 
 응답 형식 (반드시 아래 JSON 형식만 반환):
@@ -89,8 +90,9 @@ ${sources?.map((source: any, index: number) =>
       try {
         console.log('🤖 Claude를 통한 신뢰도 평가 시작');
         const message = await anthropic.messages.create({
-          model: 'claude-sonnet-4-6',
+          model: 'claude-3-5-sonnet-20240620', // 모델명 최신화
           max_tokens: 1024,
+          temperature: 0, // 일관된 평가를 위해 0으로 고정
           messages: [{ role: 'user', content: evaluationPrompt }]
         });
 
@@ -108,11 +110,12 @@ ${sources?.map((source: any, index: number) =>
       try {
         console.log('🤖 OpenAI GPT를 통한 신뢰도 평가 시작 (폴백)');
         const completion = await openai.chat.completions.create({
-          model: 'gpt-5-mini-2025-08-07',
+          model: 'gpt-4o', // 안정적인 지능형 모델로 변경
           messages: [
             { role: 'system', content: '당신은 답변의 정확성과 할루시네이션을 판별하는 평가 전문가입니다. 반드시 JSON으로만 응답하세요.' },
             { role: 'user', content: evaluationPrompt }
           ],
+          temperature: 0, // 일관된 평가를 위해 0으로 고정
           response_format: { type: 'json_object' }
         });
 
