@@ -220,11 +220,13 @@ export default function ChatBubble({
 
   const isUser = type === "user";
 
-  // 출처 표기([출처 X])를 Markdown 링크로 변환
+  // 본문 내 인라인 출처 표기([출처 X]) 제거
   const formatCitations = (text: string): string => {
     if (!text) return '';
-    // [출처 X] -> [출처 X](citation:X) 변환 (그리디 매칭 방지 및 호환성 확보)
-    return text.replace(/\[출처\s*(\d+)\]/g, '[출처 $1](citation:$1)');
+    // 문장 중간이나 끝에 오는 [출처 X] 패턴 제거 (참고자료 목록의 시작 부분은 보존하기 위해 앞에 공백이나 텍스트가 있는 경우만 선별)
+    // 단, AI가 줄바꿈 후 바로 [출처 X]를 적는 경우도 있으므로 전체적으로 제거하되, 참고자료 섹션 이후는 건드리지 않는 것이 좋으나
+    // 사용자 요청에 따라 우선 본문 내의 패턴을 적극적으로 제거합니다.
+    return text.replace(/\s*\[출처\s*\d+\]/g, '');
   };
 
   // 강력한 텍스트 디코딩 함수

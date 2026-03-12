@@ -1467,13 +1467,6 @@ function GmailStyleLayout() {
                           </blockquote>
                         ),
                         a: ({ href, children }) => {
-                          if (href?.startsWith('citation:')) {
-                            return (
-                              <span className="inline-flex items-center bg-blue-500/10 text-[#38BDF8] border border-blue-500/20 font-bold text-[9px] sm:text-[10px] mx-0.5 px-1.5 py-0 rounded-full opacity-90">
-                                {children}
-                              </span>
-                            );
-                          }
                           return (
                             <a href={href} target="_blank" rel="noopener noreferrer" className="text-blue-400 hover:underline">
                               {children}
@@ -1482,7 +1475,7 @@ function GmailStyleLayout() {
                         },
                       }}
                     >
-                      {message.content.replace(/\[출처\s*(\d+)\]/g, '[출처 $1](citation:$1)')}
+                      {message.content.replace(/\s*\[출처\s*\d+\]/g, '')}
                     </ReactMarkdown>
                   </div>
                   {message.sources && message.sources.length > 0 && (
