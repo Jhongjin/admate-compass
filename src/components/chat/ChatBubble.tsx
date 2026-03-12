@@ -13,22 +13,22 @@ import { useToast } from "@/hooks/use-toast";
 const customMarkdownComponents = {
   // 제목 스타일링
   h1: ({ children }: { children?: React.ReactNode }) => (
-    <h1 className="text-xl font-extrabold text-[#7DD3FC] mb-3 mt-4 border-b border-blue-500/30 pb-1 tracking-tight">
+    <h1 className="text-xl font-extrabold text-[#7DD3FC] mb-4 mt-6 border-b border-blue-500/30 pb-2 tracking-tight">
       {children}
     </h1>
   ),
   h2: ({ children }: { children?: React.ReactNode }) => (
-    <h2 className="text-lg font-bold text-[#38BDF8] mb-2 mt-3 border-l-4 border-blue-400 pl-3 py-0.5 bg-blue-500/5 rounded-r-md">
+    <h2 className="text-lg font-bold text-[#38BDF8] mb-3 mt-5 border-l-4 border-blue-400 pl-4 py-1 bg-blue-500/5 rounded-r-md">
       {children}
     </h2>
   ),
   h3: ({ children }: { children?: React.ReactNode }) => (
-    <h3 className="text-sm sm:text-base font-bold text-[#bae6fd] mb-2 mt-4 flex items-center bg-blue-500/10 px-2 py-1 rounded-sm border-l-2 border-blue-400/50 shadow-sm">
+    <h3 className="text-[15px] sm:text-[16px] font-bold text-[#bae6fd] mb-2.5 mt-5 flex items-center bg-white/5 px-3 py-1.5 rounded-sm border-l-4 border-[#38BDF8] shadow-sm tracking-tight">
       {children}
     </h3>
   ),
   h4: ({ children }: { children?: React.ReactNode }) => (
-    <h4 className="text-sm font-semibold text-blue-50 mb-1 mt-2 underline underline-offset-4 decoration-blue-500/20">
+    <h4 className="text-[14px] sm:text-[15px] font-semibold text-blue-50 mb-2 mt-4 underline underline-offset-4 decoration-blue-500/30">
       {children}
     </h4>
   ),
@@ -66,17 +66,17 @@ const customMarkdownComponents = {
   ),
   // 리스트
   ul: ({ children }: { children?: React.ReactNode }) => (
-    <ul className="space-y-1.5 my-3 pl-5 list-disc">
+    <ul className="space-y-2 my-4 pl-6 list-disc marker:text-blue-400">
       {children}
     </ul>
   ),
   ol: ({ children }: { children?: React.ReactNode }) => (
-    <ol className="space-y-1.5 my-3 pl-5 list-decimal">
+    <ol className="space-y-2 my-4 pl-6 list-decimal marker:text-blue-400 marker:font-bold text-gray-200">
       {children}
     </ol>
   ),
   li: ({ children }: { children?: React.ReactNode }) => (
-    <li className="text-gray-200 leading-relaxed mb-0.5 last:mb-0">
+    <li className="text-[14px] text-gray-200 leading-relaxed mb-1 last:mb-0 pl-1">
       {children}
     </li>
   ),
@@ -84,8 +84,8 @@ const customMarkdownComponents = {
   a: ({ href, children, ...props }: { href?: string; children?: React.ReactNode;[key: string]: any }) => {
     if (href?.startsWith('citation:')) {
       return (
-        <span className="inline-flex items-center text-[#38BDF8] font-bold text-[10px] sm:text-[11px] mx-0.5 opacity-90 cursor-default hover:underline transition-all">
-          ({children})
+        <span className="inline-flex items-center bg-blue-500/10 text-[#38BDF8] border border-blue-500/20 font-bold text-[9px] sm:text-[10px] mx-0.5 px-1.5 py-0 rounded-full opacity-90 cursor-default shadow-sm hover:bg-blue-500/20 transition-all">
+          {children}
         </span>
       );
     }
@@ -147,11 +147,14 @@ const customMarkdownComponents = {
     </td>
   ),
   // 단락
-  p: ({ children }: { children?: React.ReactNode }) => (
-    <p className="mb-3 text-gray-200 leading-[1.7] tracking-tight last:mb-0">
-      {children}
-    </p>
-  ),
+  p: ({ children }: { children?: React.ReactNode }) => {
+    // 특정 키워드로 시작하는 단락(핵심 답변 등)에 대해 특별 스타일 적용 검토 가능
+    return (
+      <p className="mb-4 text-[14px] text-gray-200 leading-[1.75] tracking-tight last:mb-0">
+        {children}
+      </p>
+    );
+  },
 };
 
 interface Source {

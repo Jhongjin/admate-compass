@@ -1440,37 +1440,37 @@ function GmailStyleLayout() {
                     </span>
                     <span className="text-xs" style={{ color: theme.textSecondary }}>{message.timestamp}</span>
                   </div>
-                  <div className="text-sm leading-relaxed mb-3">
+                  <div className="text-sm leading-relaxed mb-3 max-w-[800px] w-full">
                     <ReactMarkdown
                       remarkPlugins={[remarkGfm]}
                       components={{
-                        h1: ({ children }) => <h1 className="text-xl font-bold text-blue-300 mb-3 mt-4 border-b border-blue-500/30 pb-1">{children}</h1>,
-                        h2: ({ children }) => <h2 className="text-lg font-semibold text-blue-200 mb-2 mt-3 border-l-4 border-blue-400 pl-3">{children}</h2>,
+                        h1: ({ children }) => <h1 className="text-xl font-extrabold text-[#7DD3FC] mb-4 mt-6 border-b border-blue-500/30 pb-2 tracking-tight">{children}</h1>,
+                        h2: ({ children }) => <h2 className="text-lg font-bold text-[#38BDF8] mb-3 mt-5 border-l-4 border-blue-400 pl-4 py-1 bg-blue-500/5 rounded-r-md">{children}</h2>,
                         h3: ({ children }) => (
-                          <h3 className="text-sm sm:text-base font-bold text-[#bae6fd] mb-2 mt-4 flex items-center bg-blue-500/10 px-2 py-1 rounded-sm border-l-2 border-blue-400/50">
+                          <h3 className="text-[15px] sm:text-[16px] font-bold text-[#bae6fd] mb-2.5 mt-5 flex items-center bg-white/5 px-3 py-1.5 rounded-sm border-l-4 border-[#38BDF8] shadow-sm">
                             {children}
                           </h3>
                         ),
-                        p: ({ children }) => <p className="mb-3 leading-[1.7] text-gray-200 last:mb-0">{children}</p>,
+                        p: ({ children }) => <p className="mb-4 text-[14px] leading-[1.75] text-gray-200 last:mb-0">{children}</p>,
                         strong: ({ children }) => <strong className="font-bold text-blue-300">{children}</strong>,
-                        ul: ({ children }) => <ul className="list-disc list-inside space-y-1.5 mb-3 pl-2">{children}</ul>,
-                        ol: ({ children }) => <ol className="list-decimal list-inside space-y-1.5 mb-3 pl-2">{children}</ol>,
-                        li: ({ children }) => <li className="mb-0.5">{children}</li>,
+                        ul: ({ children }) => <ul className="space-y-2 my-4 pl-6 list-disc marker:text-blue-400">{children}</ul>,
+                        ol: ({ children }) => <ol className="list-decimal list-inside space-y-2 my-4 pl-6 marker:text-blue-400 marker:font-bold">{children}</ol>,
+                        li: ({ children }) => <li className="mb-1 text-[14px]">{children}</li>,
                         code: ({ children }) => (
                           <code className="bg-gray-800 text-yellow-200 px-1.5 py-0.5 rounded text-xs font-mono">
                             {children}
                           </code>
                         ),
                         blockquote: ({ children }) => (
-                          <blockquote className="border-l-2 border-blue-400 pl-3 py-1 my-3 bg-blue-900/20 rounded-r-md italic text-blue-100 text-sm">
+                          <blockquote className="border-l-2 border-blue-400 pl-4 py-2 my-4 bg-blue-900/20 rounded-r-md italic text-blue-100 text-sm">
                             {children}
                           </blockquote>
                         ),
                         a: ({ href, children }) => {
                           if (href?.startsWith('citation:')) {
                             return (
-                              <span className="inline-flex items-center text-[#38BDF8] font-bold text-[10px] sm:text-[11px] mx-0.5 opacity-90">
-                                ({children})
+                              <span className="inline-flex items-center bg-blue-500/10 text-[#38BDF8] border border-blue-500/20 font-bold text-[9px] sm:text-[10px] mx-0.5 px-1.5 py-0 rounded-full opacity-90">
+                                {children}
                               </span>
                             );
                           }
