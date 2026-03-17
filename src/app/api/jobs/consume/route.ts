@@ -2389,22 +2389,21 @@ export async function processQueue() {
                 };
               }
 
-              // 중복 문서가 있으면 정리 (processing 상태이면서 chunk_count=0인 중복 문서 삭제)
+              // 중복 문서 정리 로직 고도화: 'processing' 중인 청크 0개 문서 + 'failed' 상태인 문서 삭제
               if (docsByUrl.length > 1) {
                 console.warn(`⚠️ URL 중복 문서 발견: ${docsByUrl.length}개, 정리 시작: ${targetUrl}`);
                 const duplicateIds = docsByUrl.slice(1).map(d => d.id); // 첫 번째(최신) 제외한 나머지
 
-                // 중복 문서 중 processing 상태이면서 chunk_count=0인 것만 삭제
+                // 삭제 대상: processing 상태이면서 chunk_count=0인 것 OR status가 failed인 것
                 const { data: duplicatesToDelete } = await supabase
                   .from('documents')
                   .select('id, status, chunk_count')
                   .in('id', duplicateIds)
-                  .eq('status', 'processing')
-                  .eq('chunk_count', 0);
+                  .or('status.eq.failed,and(status.eq.processing,chunk_count.eq.0)');
 
                 if (duplicatesToDelete && duplicatesToDelete.length > 0) {
                   const deleteIds = duplicatesToDelete.map(d => d.id);
-                  console.log(`[CRITICAL] 🗑️ 중복 문서 삭제: ${deleteIds.length}개 (processing, chunk_count=0)`);
+                  console.log(`[CRITICAL] 🗑️ 중복 문서 삭제: ${deleteIds.length}개 (failed 상태 또는 빈 processing 문서)`);
 
                   // 관련 청크, 메타데이터, 로그도 함께 삭제
                   await supabase.from('document_chunks').delete().in('document_id', deleteIds);
@@ -2439,7 +2438,7 @@ export async function processQueue() {
                       .from('documents')
                       .update({ status: 'failed', updated_at: nowIso })
                       .in('id', remainingIds)
-                      .neq('status', 'indexed'); // indexed는 변경하지 않음
+                      .neq('status', 'indexed');
 
                     console.log(`[CRITICAL] ⚠️ 중복 문서 failed 상태로 변경: ${remainingIds.length}개`);
                   }
@@ -2447,6 +2446,12 @@ export async function processQueue() {
               }
             }
           }
+
+          // 🔥 벤더 자동 할당 로직 (URL 기반)
+          let currentVendor = dbVendor;
+          if (targetUrl.includes('google.com')) currentVendor = 'GOOGLE';
+          else if (targetUrl.includes('naver.com')) currentVendor = 'NAVER';
+          else if (targetUrl.includes('facebook.com') || targetUrl.includes('instagram.com')) currentVendor = 'META';
 
           const resolvedDocumentId = documentIdOverride || existingDoc?.id || `doc_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
@@ -2475,7 +2480,7 @@ export async function processQueue() {
                 status: 'processing', // pending -> processing으로 변경
                 file_size: fileSize,
                 file_type: 'text/html',
-                source_vendor: dbVendor,
+                source_vendor: currentVendor,
                 content,
                 url: targetUrl,
                 main_document_id: parentDocumentId || null, // 부모 문서 ID 설정
@@ -2509,7 +2514,7 @@ export async function processQueue() {
                 status: 'processing', // pending -> processing으로 변경
                 file_size: fileSize,
                 file_type: 'text/html',
-                source_vendor: dbVendor,
+                source_vendor: currentVendor,
                 content,
                 url: targetUrl,
                 main_document_id: parentDocumentId || null,
@@ -2541,7 +2546,7 @@ export async function processQueue() {
                 chunk_count: 0,
                 file_size: fileSize,
                 file_type: 'text/html',
-                source_vendor: dbVendor,
+                source_vendor: currentVendor,
                 content,
                 url: targetUrl,
                 main_document_id: parentDocumentId || null, // 부모 문서 ID 설정
@@ -2604,7 +2609,7 @@ export async function processQueue() {
             file_size: fileSize,
             file_type: 'text/html',
             url: targetUrl,
-            source_vendor: dbVendor,
+            source_vendor: currentVendor,
             created_at: existingDoc?.created_at || nowIso,
             updated_at: nowIso,
           });
@@ -5381,12 +5386,33 @@ export async function processQueue() {
           };
         }
 
+        // 🔥 Circular reference 방지를 위한 처리 (JSON 안전 직렬화)
+        let safeResult = {};
+        try {
+          // 간단한 객체인 경우 바로 사용, 복잡한 경우 필수 필드만 추출
+          if (resultUpdate && typeof resultUpdate === 'object') {
+            // Error 객체가 포함되어 있을 수 있으므로 문자열화 후 다시 파싱하여 순환 참조 제거
+            safeResult = JSON.parse(JSON.stringify(resultUpdate, (key, value) => {
+              if (key === 'error' && value instanceof Error) return value.message;
+              if (key === 'stack') return undefined; // 스택은 너무 길 수 있으므로 제외하거나 별도 처리
+              return value;
+            }));
+          }
+        } catch (stringifyError) {
+          console.warn('[CRITICAL] ⚠️ resultUpdate 직렬화 실패 (순환 참조 의심):', stringifyError);
+          safeResult = {
+            error: errorMessage.substring(0, 1000),
+            note: 'sanitized_due_to_circular_reference',
+            timestamp: new Date().toISOString()
+          };
+        }
+
         await supabase
           .from('processing_jobs')
           .update({
             status: status,
-            error: status === 'failed' ? errorMessage : null, // 완료 시 에러 필드 비움
-            result: resultUpdate,
+            error: status === 'failed' ? errorMessage.substring(0, 2000) : null,
+            result: safeResult,
             finished_at: new Date().toISOString()
           })
           .eq('id', processingJob.id)
