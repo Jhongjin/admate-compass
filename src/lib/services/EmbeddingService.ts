@@ -44,11 +44,12 @@ export class EmbeddingService {
       }
 
       console.log(`🔄 임베딩 모델 초기화 중: ${model} (처음 로드 시 시간이 걸릴 수 있습니다)`);
-      
+
       // Vercel 서버리스 환경 감지: /tmp 디렉토리 사용 가능 여부 확인
       const isVercel = process.env.VERCEL === '1' || typeof process.env.VERCEL !== 'undefined';
-      const cacheDir = isVercel ? '/tmp/.cache/transformers' : './.cache/transformers';
-      
+      const path = await import('path');
+      const cacheDir = isVercel ? '/tmp/.cache/transformers' : path.join(process.cwd(), '.model_cache');
+
       // 캐시 디렉토리 생성 (필요한 경우)
       if (isVercel) {
         try {
@@ -63,32 +64,32 @@ export class EmbeddingService {
           console.warn('⚠️ 캐시 디렉토리 생성 실패 (계속 진행):', mkdirError);
         }
       }
-      
+
       console.log(`📂 임베딩 모델 캐시 경로: ${cacheDir} (Vercel: ${isVercel})`);
-      
+
       // 환경 변수 설정 (Xenova Transformers가 사용)
       if (isVercel) {
         process.env.HF_HOME = '/tmp/.cache';
         process.env.TRANSFORMERS_CACHE = cacheDir;
         console.log(`🔧 환경 변수 설정: HF_HOME=/tmp/.cache, TRANSFORMERS_CACHE=${cacheDir}`);
       }
-      
+
       // 동적으로 pipeline을 import하여 빌드 시 오류 방지
       const initStartMs = Date.now();
       console.log('📦 @xenova/transformers 모듈 로딩 중...');
       const { pipeline } = await import('@xenova/transformers');
       const importMs = Date.now() - initStartMs;
       console.log(`✅ 모듈 로딩 완료: ${importMs}ms`);
-      
+
       // BGE-M3 모델 초기화 (동기 방식 + 진행 상황 추적)
       const modelInitStartMs = Date.now();
       console.log('🔄 BGE-M3 모델 초기화 시작 (다운로드/로딩 중...)');
       console.log(`📂 캐시 디렉토리: ${cacheDir}`);
-      
+
       // 진행 상황 추적을 위한 하트비트 로깅 및 DB 업데이트 (15초마다)
       let lastHeartbeatTime = modelInitStartMs;
       let heartbeatCount = 0;
-      
+
       // 하트비트 실행 함수 (재사용)
       const executeHeartbeat = async () => {
         const now = Date.now();
@@ -97,11 +98,11 @@ export class EmbeddingService {
         const remaining = Math.max(0, initTimeout - elapsed);
         const remainingSeconds = (remaining / 1000).toFixed(1);
         heartbeatCount++;
-        
+
         // 하트비트 로깅 및 DB 업데이트
         console.log(`⏳ BGE-M3 모델 초기화 진행 중... (경과: ${elapsedSeconds}초, 하트비트: ${heartbeatCount}회, 캐시: ${cacheDir})`);
         lastHeartbeatTime = now;
-        
+
         // DB 업데이트 콜백 실행 (있는 경우)
         if (this.heartbeatCallback) {
           try {
@@ -114,49 +115,49 @@ export class EmbeddingService {
         } else {
           console.log(`[CRITICAL] ℹ️ 하트비트 콜백이 설정되지 않음 (jobId가 없거나 콜백이 제거됨)`);
         }
-        
+
         // 30초 이상 경과 시 경고 로그 추가
         if (elapsed > 30000) {
           console.warn(`⚠️ BGE-M3 모델 초기화가 오래 걸리고 있습니다 (${elapsedSeconds}초 경과). 서버리스 환경에서 모델 다운로드가 느릴 수 있습니다.`);
         }
-        
+
         // 60초 이상 경과 시 추가 경고
         if (elapsed > 60000) {
           console.warn(`⚠️ BGE-M3 모델 초기화가 매우 오래 걸리고 있습니다 (${elapsedSeconds}초 경과). 네트워크 상태를 확인해주세요.`);
         }
       };
-      
+
       // 즉시 첫 하트비트 실행 (진행 상황을 즉시 반영)
       console.log(`[CRITICAL] 🚀 첫 하트비트 즉시 실행 (초기화 시작 직후)`);
       await executeHeartbeat().catch((err) => {
         console.warn('[CRITICAL] ⚠️ 첫 하트비트 실행 실패 (계속 진행):', err);
       });
-      
+
       const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-      
+
       // 하트비트 루프: pipeline() 호출 중에도 주기적으로 하트비트 실행
       let heartbeatLoopActive = true;
       let heartbeatLoopCount = 0;
-      
+
       const runHeartbeatLoop = async (): Promise<void> => {
         console.log('[CRITICAL] 🔁 하트비트 루프 활성화: 15초 주기로 실행됩니다.');
         try {
           while (heartbeatLoopActive) {
             await sleep(15000);
-            
+
             if (!heartbeatLoopActive) {
               break;
             }
-            
+
             const sinceLastHeartbeat = Date.now() - lastHeartbeatTime;
             if (sinceLastHeartbeat > 30000) {
               console.warn(`[CRITICAL] ⚠️ 하트비트가 ${Math.round(sinceLastHeartbeat / 1000)}초 동안 발생하지 않았습니다. 즉시 하트비트를 실행합니다.`);
             }
-            
+
             heartbeatLoopCount++;
             const elapsed = Date.now() - modelInitStartMs;
             const timeSinceLastHeartbeat = elapsed - (lastHeartbeatTime - modelInitStartMs);
-            
+
             console.log(`[CRITICAL] 💓 하트비트 루프 실행 (${heartbeatLoopCount}회): 경과 ${(elapsed / 1000).toFixed(1)}초, 마지막 하트비트로부터 ${(timeSinceLastHeartbeat / 1000).toFixed(1)}초 경과`);
             await executeHeartbeat().catch((err) => {
               console.warn('[CRITICAL] ⚠️ 하트비트 루프 실행 실패:', err);
@@ -166,15 +167,15 @@ export class EmbeddingService {
           console.log('[CRITICAL] 💤 하트비트 루프 종료');
         }
       };
-      
+
       console.log(`[CRITICAL] 🔄 하트비트 루프 시작: 15초마다 정기 하트비트 실행`);
       const heartbeatLoopPromise = runHeartbeatLoop();
-      
+
       try {
         console.log(`📥 BGE-M3 모델 다운로드/로딩 시작 (quantized: true, cache: ${cacheDir})`);
         console.log(`[CRITICAL] 📥 모델 다운로드 시작 - 하트비트 루프가 pipeline() 호출과 병렬로 실행됩니다.`);
         console.log(`[CRITICAL] ⏱️ 예상 소요 시간: 40-90초 (서버리스 환경, 네트워크 상태에 따라 다름)`);
-        
+
         // 모델 초기화 진행 (하트비트 루프와 병렬 실행)
         const pipelineStartTime = Date.now();
         const pipelinePromise = pipeline('feature-extraction', 'Xenova/bge-m3', {
@@ -186,18 +187,18 @@ export class EmbeddingService {
           local_files_only: false,
           revision: 'main'
         });
-        
+
         // pipeline() 실행 (하트비트 루프는 별도로 계속 실행)
         const pipelineResult = await pipelinePromise;
         this.pipeline = pipelineResult as any;
-        
+
         const pipelineElapsed = Date.now() - pipelineStartTime;
         console.log(`[CRITICAL] ✅ pipeline() 호출 완료: ${pipelineElapsed}ms (${(pipelineElapsed / 1000).toFixed(1)}초)`);
-        
+
         // pipeline() 완료 후 하트비트 루프 정리
         heartbeatLoopActive = false;
         await heartbeatLoopPromise;
-        
+
         const modelInitMs = Date.now() - modelInitStartMs;
         const modelInitSeconds = (modelInitMs / 1000).toFixed(1);
         console.log(`✅ BGE-M3 파이프라인 인스턴스 생성 완료`);
@@ -213,12 +214,12 @@ export class EmbeddingService {
       }
       this.currentModel = model;
       this.isInitialized = true;
-      
+
       console.log('✅ 임베딩 모델 초기화 완료 - BGE-M3 (1024차원)');
     } catch (error) {
       console.error('❌ 임베딩 모델 초기화 실패:', error);
       console.error('상세 오류:', error);
-      
+
       // 초기화 실패 시 더미 모드로 전환하지 않고 오류를 던짐
       throw new Error(`임베딩 모델 초기화 실패: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -232,7 +233,7 @@ export class EmbeddingService {
     options: EmbeddingOptions = {}
   ): Promise<EmbeddingResult> {
     const startTime = Date.now();
-    
+
     try {
       if (!this.isInitialized) {
         console.log('🔄 임베딩 서비스 초기화 중...');
@@ -245,14 +246,14 @@ export class EmbeddingService {
 
       // 텍스트 전처리
       const processedText = this.preprocessText(text);
-      
+
       // 빈 텍스트 검증
       if (!processedText || processedText.trim().length === 0) {
         throw new Error('빈 텍스트는 임베딩을 생성할 수 없습니다.');
       }
-      
+
       console.log(`🔄 임베딩 생성 중: "${processedText.substring(0, 50)}..."`);
-      
+
       // 임베딩 생성
       const result = await this.pipeline(processedText, {
         pooling: 'mean',
@@ -266,7 +267,7 @@ export class EmbeddingService {
 
       // 결과 처리
       const embedding = Array.from(result.data) as number[];
-      
+
       // 임베딩 유효성 검증
       if (!embedding || embedding.length === 0) {
         throw new Error('생성된 임베딩이 비어있습니다.');
@@ -297,13 +298,13 @@ export class EmbeddingService {
       };
     } catch (error) {
       console.error('❌ 임베딩 생성 실패:', error);
-      
+
       // 초기화 실패인 경우 더미 모드로 전환
       if (error instanceof Error && error.message.includes('초기화 실패')) {
         console.warn('⚠️ 임베딩 모델 초기화 실패로 더미 모드로 전환합니다.');
-        
+
         const dummyEmbedding = new Array(1536).fill(0).map(() => Math.random() - 0.5);
-        
+
         return {
           embedding: dummyEmbedding,
           model: 'dummy',
@@ -311,7 +312,7 @@ export class EmbeddingService {
           processingTime: Date.now() - startTime
         };
       }
-      
+
       // 다른 오류는 그대로 던짐
       throw error;
     }
@@ -341,16 +342,16 @@ export class EmbeddingService {
       for (let i = 0; i < texts.length; i += batchSize) {
         const batch = texts.slice(i, i + batchSize);
         const processedBatch = batch.map(text => this.preprocessText(text));
-        
+
         console.log(`배치 처리 중: ${i + 1}-${Math.min(i + batchSize, texts.length)}/${texts.length}`);
-        
+
         const batchResults = await Promise.all(
           processedBatch.map(async (text) => {
             const result = await this.pipeline!(text, {
               pooling: 'mean',
               normalize: options.normalize ?? true
             });
-            
+
             return {
               embedding: Array.from(result.data) as number[],
               model: this.currentModel || 'bge-m3',
@@ -359,7 +360,7 @@ export class EmbeddingService {
             };
           })
         );
-        
+
         results.push(...batchResults);
       }
 

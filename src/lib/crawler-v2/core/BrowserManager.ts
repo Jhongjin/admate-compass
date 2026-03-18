@@ -223,6 +223,7 @@ export class BrowserManager {
           ignoreDefaultArgs: ['--enable-automation'],
           executablePath,
           defaultViewport: { width, height },
+          userDataDir: join(process.cwd(), '.puppeteer_cache'), // ✅ C 드라이브 용량 부족 해결: D 드라이브(루트)에 캐시 저장
         };
 
         console.log(`🔧 로컬 환경: Chrome 실행 파일 경로: ${executablePath}`);

@@ -225,6 +225,7 @@ export class PuppeteerCrawlingService {
               '--disable-blink-features=AutomationControlled',
               '--disable-web-security',
             ],
+            userDataDir: path.join(process.cwd(), '.puppeteer_cache'), // ✅ C 드라이브 용량 부족 해결: D 드라이브(루트)에 캐시 저장
           });
           console.log(`✅ Puppeteer 브라우저 초기화 완료 (로컬 환경: ${executablePath || 'default'})`);
         }
