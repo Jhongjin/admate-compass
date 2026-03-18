@@ -23,6 +23,7 @@ export interface CrawledDocumentData {
     source: 'sitemap' | 'robots' | 'links' | 'pattern';
     depth: number;
   }>;
+  error?: string;
 }
 
 export class PuppeteerCrawlingService {

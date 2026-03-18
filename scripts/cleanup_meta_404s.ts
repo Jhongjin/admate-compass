@@ -1,6 +1,6 @@
 import { createClient } from '@supabase/supabase-js';
 import * as dotenv from 'dotenv';
-import { PuppeteerCrawlingService } from '../lib/services/PuppeteerCrawlingService.js'; // Use .js for tsx compatibility sometimes or just let it resolve
+import { PuppeteerCrawlingService } from '../src/lib/services/PuppeteerCrawlingService.js';
 
 dotenv.config({ path: '.env.local' });
 
@@ -44,18 +44,18 @@ async function cleanupMeta404s() {
             // 404 여부만 빠르게 확인하기 위해 subpage 추출 제외
             const result = await puppeteerService.crawlMetaPage(url, false, true);
 
-            const is404 = result.error === '404 Page Not Found' ||
+            const is404 = result && (result.error === '404 Page Not Found' ||
                 result.title.includes('페이지를 찾을 수 없음') ||
-                result.title.includes('Page Not Found');
+                result.title.includes('Page Not Found'));
 
-            if (is404) {
+            if (result && is404) {
                 console.log(`🗑️ 제거 (404): ${url}`);
                 await supabase.from('processing_jobs').delete().eq('id', job.id);
                 if (job.document_id) {
                     await supabase.from('documents').delete().eq('id', job.document_id);
                 }
                 removedCount++;
-            } else {
+            } else if (result) {
                 console.log(`🔄 재시도 (유효): ${url} (Title: ${result.title.substring(0, 30)}...)`);
                 await supabase.from('processing_jobs').update({
                     status: 'queued',
