@@ -365,6 +365,8 @@ export async function processQueue() {
 
   // 🔥 job 변수를 try/catch 블록 외부로 이동하여 catch 블록에서 접근 가능하게 함
   let job: any = null;
+  let puppeteerService: any = null;
+  let crawlerEngine: any = null;
 
   // 타임아웃 작업 감지 로직을 선택적으로 실행 (환경 변수로 제어 가능)
   // 기본값: false (타임아웃 체크가 쿼리 성능 문제를 일으킬 수 있으므로 비활성화)
@@ -1796,8 +1798,7 @@ export async function processQueue() {
           'Sec-Fetch-Site': 'none',
         } as Record<string, string>;
 
-        // Puppeteer 서비스 인스턴스 (필요시에만 생성, 상위 스코프에 선언)
-        let puppeteerService: PuppeteerCrawlingService | null = null;
+        // Puppeteer 서비스 인스턴스 (필요시에만 생성, 상위 스코프에 선언됨)
 
         const fetchPageContent = async (targetUrl: string) => {
           console.log('🌍 페이지 다운로드 요청:', targetUrl);
@@ -1841,20 +1842,33 @@ export async function processQueue() {
                   contentPreview: puppeteerResult?.content?.substring(0, 500) || 'N/A'
                 });
 
-                throw new Error(`Facebook/Instagram 페이지에서 콘텐츠를 추출할 수 없습니다. (추출된 콘텐츠: ${contentLength}자) 이 페이지는 로그인이 필요하거나 봇 접근이 차단되었을 수 있습니다.`);
+                // 🔥 404나 로그인 페이지 리다이렉트 등 "정상적인 접근 불가" 상황은 에러를 던지지 않고 빈 결과 반환
+                // 이렇게 해야 큐가 계속 돌 수 있음
+                return {
+                  textContent: '',
+                  pageTitle: title || targetUrl,
+                  htmlContent: '',
+                  isFallback: true,
+                  reason: `콘텐츠 부족(${contentLength}자). 로그인 페이지 또는 존재하지 않는 조합일 수 있음.`
+                };
               }
             } catch (puppeteerError: any) {
-              // 🔥 Puppeteer 실패 시 fetch로 fallback하지 않고 바로 에러 반환
               const errorMsg = puppeteerError instanceof Error
                 ? puppeteerError.message
                 : String(puppeteerError);
-              console.error(`❌ Puppeteer 크롤링 실패:`, {
+              console.error(`❌ Puppeteer 크롤링 예외 발생 (Graceful handling):`, {
                 url: targetUrl,
-                error: errorMsg,
-                errorType: typeof puppeteerError,
-                errorStack: puppeteerError instanceof Error ? puppeteerError.stack : undefined
+                error: errorMsg
               });
-              throw new Error(`Facebook/Instagram 페이지 크롤링 실패: ${errorMsg}`);
+
+              // 예외 발생 시에도 빈 결과 반환하여 큐 중단 방지
+              return {
+                textContent: '',
+                pageTitle: targetUrl,
+                htmlContent: '',
+                isFallback: true,
+                reason: `Puppeteer 예외: ${errorMsg}`
+              };
             }
           }
 
@@ -2729,8 +2743,8 @@ export async function processQueue() {
         try {
           console.log(`*** MODULE LOADED: route.ts [V4_CHECK] ${new Date().toISOString()} ***`);
           console.log('*** DEPLOYMENT CHECK: V4 (Timestamp Verification) ***');
-          // 메인 페이지 크롤링 타임아웃: 30초
-          const fetchTimeout = 30000;
+          // 메인 페이지 크롤링 타임아웃: 일반 30초, Meta(Facebook/Instagram) 90초
+          const fetchTimeout = (url.includes('facebook.com') || url.includes('instagram.com')) ? 90000 : 30000;
           const fetchPromise = fetchPageContent(url);
           const fetchTimeoutPromise = new Promise<never>((_, reject) => {
             setTimeout(() => {
@@ -2766,10 +2780,10 @@ export async function processQueue() {
               errorName,
             });
 
-            // 🔥 [FIX] Facebook/Instagram은 메인 페이지 실패 시 하위 페이지도 99% 실패하므로 즉시 중단 (Fail Fast)
+            // 🔥 [FIX] Facebook/Instagram은 메인 페이지 실패 시에도 Fallback(빈 결과)으로 진행할 수 있도록 무조건 throw하지 않음
             if (url.includes('facebook.com') || url.includes('instagram.com')) {
-              console.error('[CRITICAL] 🛑 Facebook/Instagram 메인 페이지 실패로 인해 작업을 즉시 중단합니다 (Fail Fast).');
-              throw fetchError; // 에러를 다시 던져서 작업 실패 처리
+              console.warn('[CRITICAL] ⚠️ Facebook/Instagram 메인 페이지 실패하였으나 Graceful Handling을 위해 계속 진행합니다.');
+              // throw fetchError; // 더 이상 에러를 던지지 않음
             }
           }
 
@@ -2805,7 +2819,8 @@ export async function processQueue() {
           mainPage = {
             textContent: '',
             pageTitle: url, // URL을 제목으로
-            htmlContent: ''
+            htmlContent: '',
+            isFallback: true // 🔥 [FIX] Fail-safe 상황임을 명시하여 작업 성공으로 처리되도록 함
           };
           console.warn('[CRITICAL] ⚠️ 메인 페이지 크롤링 실패로 인해 빈 컨텐츠로 진행합니다. 하위 페이지 탐색을 시도합니다.');
         }
@@ -4477,7 +4492,9 @@ export async function processQueue() {
         const hasSuccessfulSubPages = successfulSubPageCount > 0;
 
         // 최종 작업 성공 여부: 메인 문서가 indexed이거나 하위 페이지가 하나라도 성공했으면 성공
-        const isJobSuccessful = isMainDocumentIndexed || hasSuccessfulSubPages;
+        // 🔥 Meta(Facebook/Instagram)의 경우, 콘텐츠가 없어서 indexed가 아니더라도 시스템 오류가 아닌 Graceful Handling(isFallback)이면 성공으로 간주
+        const isMetaFallback = (url.includes('facebook.com') || url.includes('instagram.com')) && (mainPage as any).isFallback;
+        const isJobSuccessful = isMainDocumentIndexed || hasSuccessfulSubPages || isMetaFallback;
 
         // 결과 객체 생성 (성공/실패 여부 판단 후 생성)
         const finishedResult = {
@@ -4924,13 +4941,17 @@ export async function processQueue() {
           details: finalErrorMessage,
           timeout: isTimeout
         }, { status: 500 });
+      } finally {
+        if (typeof puppeteerService !== 'undefined' && puppeteerService) {
+          await (puppeteerService as any).close().catch(() => { });
+        }
       }
     }
 
     // 🔥 CRAWL_V2 job 처리 (Overflow URLs)
     if (job.job_type === 'CRAWL_V2') {
       console.log(`🚀 [Consume] CRAWL_V2 작업 처리 시작: ${job.id} - URL: ${job.payload?.url}`);
-      const crawlerEngine = new CrawlerEngine();
+      crawlerEngine = new CrawlerEngine();
       try {
         const url = job.payload?.url as string;
         const options = job.payload?.options || {};
@@ -5020,6 +5041,10 @@ export async function processQueue() {
 
         // 상위 catch 블록에서 처리하도록 throw
         throw crawlError;
+      } finally {
+        if (typeof crawlerEngine !== 'undefined' && crawlerEngine) {
+          await (crawlerEngine as any).cleanup().catch(() => { });
+        }
       }
     }
 

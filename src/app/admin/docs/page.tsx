@@ -127,11 +127,10 @@ function VendorScopeBar({ selected, onChange }: { selected: string[]; onChange: 
                         <button
                             key={v}
                             onClick={() => toggle(v)}
-                            className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-200 whitespace-nowrap ${
-                                selected.includes(v)
+                            className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all duration-200 whitespace-nowrap ${selected.includes(v)
                                     ? "bg-blue-600 text-white shadow-md shadow-blue-500/20"
                                     : "bg-white/5 text-gray-300 hover:bg-white/10 hover:text-white"
-                            }`}
+                                }`}
                             aria-label={`${v} ${selected.includes(v) ? '선택됨' : '선택 안됨'}`}
                         >
                             {v}
@@ -222,7 +221,7 @@ function AdminDocsPageContent() {
                 .from("documents")
                 .select("id,title,type,status,updated_at,chunk_count,source_vendor,url,document_url,main_document_id,file_size,created_at,metadata")
                 .order("updated_at", { ascending: false })
-                .limit(1000);
+                .limit(100000);
 
             if (dbVendors.length > 0) {
                 q = q.in("source_vendor", dbVendors);
@@ -249,18 +248,18 @@ function AdminDocsPageContent() {
             return hasProcessing ? 3000 : false;
         },
     });
-    
+
     // 새로고침 시 문서 상태 자동 동기화 (useEffect 사용)
     useEffect(() => {
         if (data?.data?.documents) {
             const documents = data.data.documents;
             // processing 상태이지만 chunk_count > 0인 문서 자동 수정
-            const stuckDocs = documents.filter((doc: any) => 
+            const stuckDocs = documents.filter((doc: any) =>
                 doc.status === 'processing' && doc.chunk_count > 0
             );
             if (stuckDocs.length > 0) {
                 // 백그라운드에서 자동 수정 (사용자 경험 방해 없음)
-                fetch('/api/admin/sync-status', { method: 'POST' }).catch(() => {});
+                fetch('/api/admin/sync-status', { method: 'POST' }).catch(() => { });
             }
         }
     }, [data]);
@@ -312,26 +311,26 @@ function AdminDocsPageContent() {
         mutationFn: async ({ documentId, title }: { documentId: string; title: string }) => {
             const loadingKey = `${documentId}_reindex`;
             console.log('🔄 [reindexMutation] mutationFn 시작:', { documentId, title });
-            
+
             // 로딩 상태 즉시 설정
             setActionLoading(prev => ({ ...prev, [loadingKey]: true }));
-            
+
             // 문서 상태를 즉시 'processing'으로 업데이트 (UI 반응성 향상)
             try {
                 const { error: statusError } = await supabase
                     .from('documents')
-                    .update({ 
+                    .update({
                         status: 'processing',
                         updated_at: new Date().toISOString()
                     })
                     .eq('id', documentId);
-                
+
                 if (statusError) {
                     console.warn('⚠️ 상태 업데이트 실패 (계속 진행):', statusError);
                 } else {
                     console.log('✅ 문서 상태를 processing으로 업데이트 완료');
                     // 쿼리 무효화하여 UI 즉시 반영
-                    queryClient.invalidateQueries({ 
+                    queryClient.invalidateQueries({
                         queryKey: ['admin-documents'],
                         exact: false
                     });
@@ -339,16 +338,16 @@ function AdminDocsPageContent() {
             } catch (statusUpdateError) {
                 console.warn('⚠️ 상태 업데이트 중 오류 (계속 진행):', statusUpdateError);
             }
-            
+
             const res = await fetch(`/api/admin/upload/${documentId}/reindex`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                 },
             });
-            
+
             console.log('📡 재인덱싱 응답 상태:', res.status, res.statusText);
-            
+
             if (!res.ok) {
                 // 에러 시 로딩 상태 해제
                 setActionLoading(prev => {
@@ -356,7 +355,7 @@ function AdminDocsPageContent() {
                     delete newState[loadingKey];
                     return newState;
                 });
-                
+
                 let errorMessage = '재인덱싱에 실패했습니다.';
                 let errorDetails = '';
                 try {
@@ -364,7 +363,7 @@ function AdminDocsPageContent() {
                     errorMessage = errorData.error || errorData.message || errorMessage;
                     errorDetails = errorData.details || '';
                     console.error('❌ 재인덱싱 오류 응답:', errorData);
-                    
+
                     // details가 있으면 메시지에 포함
                     if (errorDetails) {
                         errorMessage = `${errorMessage}\n\n${errorDetails}`;
@@ -376,7 +375,7 @@ function AdminDocsPageContent() {
                 }
                 throw new Error(errorMessage);
             }
-            
+
             const result = await res.json();
             console.log('✅ 재인덱싱 성공:', result);
             return result;
@@ -384,23 +383,23 @@ function AdminDocsPageContent() {
         onSuccess: (data, variables) => {
             const loadingKey = `${variables.documentId}_reindex`;
             console.log('✅ [reindexMutation] onSuccess 호출:', { data, variables });
-            
+
             // 로딩 상태 해제
             setActionLoading(prev => {
                 const newState = { ...prev };
                 delete newState[loadingKey];
                 return newState;
             });
-            
+
             // 모든 admin-documents 쿼리 무효화
-            queryClient.invalidateQueries({ 
+            queryClient.invalidateQueries({
                 queryKey: ['admin-documents'],
                 exact: false
             });
-            
+
             // 명시적으로 refetch 호출
             refetch();
-            
+
             toast({
                 title: "재인덱싱 완료",
                 description: `${variables.title} 문서의 재인덱싱이 완료되었습니다. (${data.document?.chunkCount || data.chunkCount || 0}개 청크)`,
@@ -409,20 +408,20 @@ function AdminDocsPageContent() {
         onError: (error, variables) => {
             const loadingKey = `${variables.documentId}_reindex`;
             console.error('❌ [reindexMutation] onError 호출:', { error, variables });
-            
+
             // 에러 시 로딩 상태 해제
             setActionLoading(prev => {
                 const newState = { ...prev };
                 delete newState[loadingKey];
                 return newState;
             });
-            
+
             // 쿼리 무효화하여 상태 복구
-            queryClient.invalidateQueries({ 
+            queryClient.invalidateQueries({
                 queryKey: ['admin-documents'],
                 exact: false
             });
-            
+
             toast({
                 title: "재인덱싱 실패",
                 description: error.message || '재인덱싱 중 오류가 발생했습니다.',
@@ -435,7 +434,7 @@ function AdminDocsPageContent() {
     const handleReindexDocument = useCallback((id: string, title: string) => {
         console.log('🔄 [handleReindexDocument] ====== 함수 호출 시작 ======');
         console.log('🔄 [handleReindexDocument] 파라미터:', { id, title });
-        
+
         if (!id || !title) {
             console.error('❌ [handleReindexDocument] 잘못된 파라미터:', { id, title });
             toast({
@@ -445,7 +444,7 @@ function AdminDocsPageContent() {
             });
             return;
         }
-        
+
         if (!reindexMutation?.mutate) {
             console.error('❌ [handleReindexDocument] reindexMutation.mutate가 없음');
             toast({
@@ -455,7 +454,7 @@ function AdminDocsPageContent() {
             });
             return;
         }
-        
+
         // 이미 처리 중인 경우 중복 요청 방지
         if (reindexMutation.isPending) {
             console.warn('⚠️ [handleReindexDocument] 이미 재인덱싱이 진행 중입니다.');
@@ -466,14 +465,14 @@ function AdminDocsPageContent() {
             });
             return;
         }
-        
+
         try {
             console.log('🔄 [handleReindexDocument] mutation.mutate 호출 직전');
             console.log('🔄 [handleReindexDocument] 전달할 데이터:', { documentId: id, title });
-            
+
             // mutate 호출
             reindexMutation.mutate({ documentId: id, title });
-            
+
             console.log('🔄 [handleReindexDocument] mutation.mutate 호출 완료 (비동기이므로 즉시 반환됨)');
         } catch (error) {
             console.error('❌ [handleReindexDocument] mutation 호출 중 동기 에러:', error);
@@ -484,7 +483,7 @@ function AdminDocsPageContent() {
                 variant: "destructive",
             });
         }
-        
+
         console.log('🔄 [handleReindexDocument] ====== 함수 호출 종료 ======');
     }, [reindexMutation, toast]);
 
@@ -494,7 +493,7 @@ function AdminDocsPageContent() {
         return documents.filter((doc: Document) => {
             const matchesSearch = doc.title.toLowerCase().includes(searchQuery.toLowerCase());
             const matchesTab = activeTab === "documents" ? doc.type !== 'url' : doc.type === 'url';
-            const matchesType = selectedType === "all" || 
+            const matchesType = selectedType === "all" ||
                 (selectedType === "pdf" && doc.type === "pdf") ||
                 (selectedType === "docx" && doc.type === "docx") ||
                 (selectedType === "txt" && doc.type === "txt") ||
@@ -547,11 +546,11 @@ function AdminDocsPageContent() {
             const metadata = doc.metadata || {};
             const parentUrl = metadata.parentUrl || null;
             const isSubPage = !!parentUrl;
-            
+
             // 그룹 키 결정: 하위 페이지면 부모 URL (정규화), 아니면(메인 페이지) 본인 URL (정규화)
             const rawGroupKey = parentUrl || doc.url;
             const groupKey = normalizeUrlForGrouping(rawGroupKey);
-            
+
             if (!groupKey) return;
 
             if (!groupMap.has(groupKey)) {
@@ -563,7 +562,7 @@ function AdminDocsPageContent() {
 
                 // 메인 문서 찾기 (정규화된 URL로 매칭)
                 const mainDoc = urlToDocMap.get(groupKey);
-                
+
                 groupMap.set(groupKey, {
                     domain,
                     mainUrl: mainDoc?.url || rawGroupKey || groupKey, // 원본 URL 사용
@@ -581,7 +580,7 @@ function AdminDocsPageContent() {
             }
 
             const group = groupMap.get(groupKey);
-            
+
             const groupedDoc = {
                 ...doc,
                 url: doc.url || '',
@@ -600,7 +599,7 @@ function AdminDocsPageContent() {
                     group.mainDocument = groupedDoc;
                 }
             }
-            
+
             group.totalChunks += (doc.chunk_count || 0);
         });
 
@@ -609,8 +608,8 @@ function AdminDocsPageContent() {
             // 메인 문서가 없고 하위 페이지만 있는 경우 처리
             if (!group.mainDocument && group.subPages.length > 0) {
                 const firstSub = group.subPages[0];
-                group.mainDocument = { 
-                    ...firstSub, 
+                group.mainDocument = {
+                    ...firstSub,
                     title: `[원본 없음] ${firstSub.title}`,
                     url: group.mainUrl,
                     isMainUrl: true
@@ -684,7 +683,7 @@ function AdminDocsPageContent() {
         }
     };
 
-const getDocumentTypeBadgeClass = (type: string) => {
+    const getDocumentTypeBadgeClass = (type: string) => {
         switch (type) {
             case 'pdf':
                 return 'bg-red-500/15 text-red-200 border-red-500/30';
@@ -712,10 +711,10 @@ const getDocumentTypeBadgeClass = (type: string) => {
     const handleSelectDocument = (id: string | string[]) => {
         const newSelected = new Set(selectedDocs);
         const ids = Array.isArray(id) ? id : [id];
-        
+
         // 모든 ID가 선택되어 있는지 확인
         const allSelected = ids.every(docId => newSelected.has(docId));
-        
+
         if (allSelected) {
             // 모두 선택되어 있으면 모두 해제
             ids.forEach(docId => newSelected.delete(docId));
@@ -723,7 +722,7 @@ const getDocumentTypeBadgeClass = (type: string) => {
             // 일부만 선택되어 있거나 모두 해제되어 있으면 모두 선택
             ids.forEach(docId => newSelected.add(docId));
         }
-        
+
         setSelectedDocs(newSelected);
     };
 
@@ -1037,119 +1036,119 @@ const getDocumentTypeBadgeClass = (type: string) => {
                                 </div>
                                 <div className="overflow-x-auto">
                                     <table className="w-full">
-                                    <thead>
-                                        <tr className="border-b border-white/5 bg-white/[0.02]">
+                                        <thead>
+                                            <tr className="border-b border-white/5 bg-white/[0.02]">
                                                 <th className="px-4 py-4 w-12 text-center text-xs font-medium text-gray-400 uppercase tracking-wider"></th>
-                                            <th className="px-6 py-4 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">문서명</th>
-                                            <th className="px-6 py-4 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">유형</th>
-                                            <th className="px-6 py-4 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">벤더</th>
-                                            <th className="px-6 py-4 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">상태</th>
-                                            <th className="px-6 py-4 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">크기</th>
-                                            <th className="px-6 py-4 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">청크</th>
-                                            <th className="px-6 py-4 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">등록일</th>
-                                            <th className="px-6 py-4 text-right text-xs font-medium text-gray-400 uppercase tracking-wider">관리</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-white/5">
-                                        {isLoading ? (
-                                            <tr>
-                                                <td colSpan={8} className="px-6 py-8 text-center text-gray-500">
-                                                    <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" />
-                                                    데이터를 불러오는 중...
-                                                </td>
+                                                <th className="px-6 py-4 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">문서명</th>
+                                                <th className="px-6 py-4 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">유형</th>
+                                                <th className="px-6 py-4 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">벤더</th>
+                                                <th className="px-6 py-4 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">상태</th>
+                                                <th className="px-6 py-4 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">크기</th>
+                                                <th className="px-6 py-4 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">청크</th>
+                                                <th className="px-6 py-4 text-left text-xs font-medium text-gray-400 uppercase tracking-wider">등록일</th>
+                                                <th className="px-6 py-4 text-right text-xs font-medium text-gray-400 uppercase tracking-wider">관리</th>
                                             </tr>
-                                        ) : filteredDocs.length === 0 ? (
-                                            <tr>
-                                                <td colSpan={8} className="px-6 py-8 text-center text-gray-500">
-                                                    등록된 문서가 없습니다.
-                                                </td>
-                                            </tr>
-                                        ) : (
-                                            filteredDocs.map((doc: Document) => (
-                                                <tr
-                                                    key={doc.id}
-                                                    className="hover:bg-white/[0.02] transition-colors"
-                                                >
-                                                    <td className="px-4 py-4 w-12 text-center" onClick={(e) => e.stopPropagation()}>
-                                                        <Checkbox
-                                                            checked={selectedDocs.has(doc.id)}
-                                                            onCheckedChange={() => handleSelectDocument(doc.id)}
-                                                            className="bg-[#1D2340] border-[#2F3B66] hover:border-blue-400 hover:bg-[#1F2A4F] data-[state=checked]:bg-blue-500 data-[state=checked]:border-blue-400"
-                                                        />
-                                                    </td>
-                                                    <td className="px-6 py-4 whitespace-nowrap">
-                                                        <div className="flex items-center">
-                                                            <div className="p-2 rounded-lg bg-white/5 mr-3">
-                                                                {getFileIcon(doc.type)}
-                                                            </div>
-                                                            <div>
-                                                                <button
-                                                                    type="button"
-                                                                    onClick={() => handleDocumentRowClick(doc)}
-                                                                    className="text-sm font-medium text-white hover:underline"
-                                                                >
-                                                                    {doc.title}
-                                                                </button>
-                                                            </div>
-                                                        </div>
-                                                    </td>
-                                                    <td className="px-6 py-4 whitespace-nowrap">
-                                                        <Badge variant="outline" className={`text-xs font-semibold ${getDocumentTypeBadgeClass(doc.type)}`}>
-                                                            {getDocumentTypeLabel(doc.type)}
-                                                        </Badge>
-                                                    </td>
-                                                    <td className="px-6 py-4 whitespace-nowrap">
-                                                        <Badge variant="secondary" className="bg-white/5 text-gray-300 border-white/10">
-                                                            {doc.source_vendor ? (DB_TO_VENDOR_MAP[doc.source_vendor] || doc.source_vendor) : 'Unknown'}
-                                                        </Badge>
-                                                    </td>
-                                                    <td className="px-6 py-4 whitespace-nowrap">
-                                                        <Badge variant="outline" className={getStatusColor(doc.status)}>
-                                                            {getStatusText(doc.status)}
-                                                        </Badge>
-                                                    </td>
-                                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-400">
-                                                        {doc.file_size ? formatSize(doc.file_size) : '-'}
-                                                    </td>
-                                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-400">
-                                                        {doc.chunk_count || 0}
-                                                    </td>
-                                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-400">
-                                                        {new Date(doc.created_at).toLocaleDateString()}
-                                                    </td>
-                                                    <td className="px-6 py-4 whitespace-nowrap text-right">
-                                                        <DropdownMenu>
-                                                            <DropdownMenuTrigger asChild>
-                                                                <Button variant="ghost" size="icon" className="text-gray-400 hover:text-white">
-                                                                    <MoreVertical className="w-4 h-4" />
-                                                                </Button>
-                                                            </DropdownMenuTrigger>
-                                                            <DropdownMenuContent align="end" className="bg-[#1A1F2C] border-white/10 text-white">
-                                                                <DropdownMenuItem className="hover:bg-white/5 cursor-pointer">
-                                                                    <Eye className="w-4 h-4 mr-2" />
-                                                                    상세 보기
-                                                                </DropdownMenuItem>
-                                                                <DropdownMenuItem className="hover:bg-white/5 cursor-pointer">
-                                                                    <Download className="w-4 h-4 mr-2" />
-                                                                    다운로드
-                                                                </DropdownMenuItem>
-                                                                <DropdownMenuItem
-                                                                    className="text-red-400 hover:bg-red-500/10 cursor-pointer"
-                                                                    onClick={() => setDeleteId(doc.id)}
-                                                                >
-                                                                    <Trash2 className="w-4 h-4 mr-2" />
-                                                                    삭제
-                                                                </DropdownMenuItem>
-                                                            </DropdownMenuContent>
-                                                        </DropdownMenu>
+                                        </thead>
+                                        <tbody className="divide-y divide-white/5">
+                                            {isLoading ? (
+                                                <tr>
+                                                    <td colSpan={8} className="px-6 py-8 text-center text-gray-500">
+                                                        <Loader2 className="w-6 h-6 animate-spin mx-auto mb-2" />
+                                                        데이터를 불러오는 중...
                                                     </td>
                                                 </tr>
-                                            ))
-                                        )}
-                                    </tbody>
-                                </table>
+                                            ) : filteredDocs.length === 0 ? (
+                                                <tr>
+                                                    <td colSpan={8} className="px-6 py-8 text-center text-gray-500">
+                                                        등록된 문서가 없습니다.
+                                                    </td>
+                                                </tr>
+                                            ) : (
+                                                filteredDocs.map((doc: Document) => (
+                                                    <tr
+                                                        key={doc.id}
+                                                        className="hover:bg-white/[0.02] transition-colors"
+                                                    >
+                                                        <td className="px-4 py-4 w-12 text-center" onClick={(e) => e.stopPropagation()}>
+                                                            <Checkbox
+                                                                checked={selectedDocs.has(doc.id)}
+                                                                onCheckedChange={() => handleSelectDocument(doc.id)}
+                                                                className="bg-[#1D2340] border-[#2F3B66] hover:border-blue-400 hover:bg-[#1F2A4F] data-[state=checked]:bg-blue-500 data-[state=checked]:border-blue-400"
+                                                            />
+                                                        </td>
+                                                        <td className="px-6 py-4 whitespace-nowrap">
+                                                            <div className="flex items-center">
+                                                                <div className="p-2 rounded-lg bg-white/5 mr-3">
+                                                                    {getFileIcon(doc.type)}
+                                                                </div>
+                                                                <div>
+                                                                    <button
+                                                                        type="button"
+                                                                        onClick={() => handleDocumentRowClick(doc)}
+                                                                        className="text-sm font-medium text-white hover:underline"
+                                                                    >
+                                                                        {doc.title}
+                                                                    </button>
+                                                                </div>
+                                                            </div>
+                                                        </td>
+                                                        <td className="px-6 py-4 whitespace-nowrap">
+                                                            <Badge variant="outline" className={`text-xs font-semibold ${getDocumentTypeBadgeClass(doc.type)}`}>
+                                                                {getDocumentTypeLabel(doc.type)}
+                                                            </Badge>
+                                                        </td>
+                                                        <td className="px-6 py-4 whitespace-nowrap">
+                                                            <Badge variant="secondary" className="bg-white/5 text-gray-300 border-white/10">
+                                                                {doc.source_vendor ? (DB_TO_VENDOR_MAP[doc.source_vendor] || doc.source_vendor) : 'Unknown'}
+                                                            </Badge>
+                                                        </td>
+                                                        <td className="px-6 py-4 whitespace-nowrap">
+                                                            <Badge variant="outline" className={getStatusColor(doc.status)}>
+                                                                {getStatusText(doc.status)}
+                                                            </Badge>
+                                                        </td>
+                                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-400">
+                                                            {doc.file_size ? formatSize(doc.file_size) : '-'}
+                                                        </td>
+                                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-400">
+                                                            {doc.chunk_count || 0}
+                                                        </td>
+                                                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-400">
+                                                            {new Date(doc.created_at).toLocaleDateString()}
+                                                        </td>
+                                                        <td className="px-6 py-4 whitespace-nowrap text-right">
+                                                            <DropdownMenu>
+                                                                <DropdownMenuTrigger asChild>
+                                                                    <Button variant="ghost" size="icon" className="text-gray-400 hover:text-white">
+                                                                        <MoreVertical className="w-4 h-4" />
+                                                                    </Button>
+                                                                </DropdownMenuTrigger>
+                                                                <DropdownMenuContent align="end" className="bg-[#1A1F2C] border-white/10 text-white">
+                                                                    <DropdownMenuItem className="hover:bg-white/5 cursor-pointer">
+                                                                        <Eye className="w-4 h-4 mr-2" />
+                                                                        상세 보기
+                                                                    </DropdownMenuItem>
+                                                                    <DropdownMenuItem className="hover:bg-white/5 cursor-pointer">
+                                                                        <Download className="w-4 h-4 mr-2" />
+                                                                        다운로드
+                                                                    </DropdownMenuItem>
+                                                                    <DropdownMenuItem
+                                                                        className="text-red-400 hover:bg-red-500/10 cursor-pointer"
+                                                                        onClick={() => setDeleteId(doc.id)}
+                                                                    >
+                                                                        <Trash2 className="w-4 h-4 mr-2" />
+                                                                        삭제
+                                                                    </DropdownMenuItem>
+                                                                </DropdownMenuContent>
+                                                            </DropdownMenu>
+                                                        </td>
+                                                    </tr>
+                                                ))
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
                             </div>
-                        </div>
                         ) : (
                             <div className="bg-[#131823] border border-white/5 rounded-3xl p-6">
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -1307,7 +1306,7 @@ function DocumentStatsPanel({ documents }: { documents: Document[] }) {
             const createdAt = new Date(doc.created_at).getTime();
             return createdAt >= oneDayAgo;
         }).length;
-        const processing = documents.filter(doc => 
+        const processing = documents.filter(doc =>
             doc.status === 'processing' || doc.status === 'queued'
         ).length;
         const failedLast7Days = documents.filter(doc => {

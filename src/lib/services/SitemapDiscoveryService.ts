@@ -46,8 +46,9 @@ export class SitemapDiscoveryService {
     try {
       console.log('🔧 SitemapDiscoveryService 브라우저 초기화 중...');
 
-      // Vercel 환경에서 @sparticuz/chromium 사용
-      const isVercel = process.env.VERCEL === '1' || process.env.AWS_LAMBDA_FUNCTION_NAME;
+      // Vercel 환경인지 확인
+      const isWindows = process.platform === 'win32';
+      const isVercel = (process.env.VERCEL === '1' || process.env.AWS_LAMBDA_FUNCTION_NAME) && !isWindows;
 
       if (isVercel) {
         // Vercel 환경: @sparticuz/chromium 사용

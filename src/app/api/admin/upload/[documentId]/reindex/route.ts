@@ -23,7 +23,7 @@ export async function POST(
 ) {
   try {
     const { documentId } = await params;
-    
+
     if (!documentId) {
       return NextResponse.json(
         { success: false, error: '문서 ID가 필요합니다.' },
@@ -42,7 +42,7 @@ export async function POST(
       .select('id, title, content, url, document_url, type, source_vendor, main_document_id, status, created_at, file_type, file_size, original_file_name, sanitized_file_name, chunk_count')
       .eq('id', documentId)
       .maybeSingle();
-    
+
     console.log(`📋 문서 조회 결과:`, {
       id: document?.id,
       title: document?.title,
@@ -72,13 +72,13 @@ export async function POST(
 
     // 기존 청크 삭제
     console.log(`🗑️ 기존 청크 삭제 중...`);
-    
+
     // 삭제 전 청크 개수 확인
     const { count: beforeCount } = await supabase
       .from('document_chunks')
       .select('*', { count: 'exact', head: true })
       .eq('document_id', documentId);
-    
+
     const { error: deleteError } = await supabase
       .from('document_chunks')
       .delete()
@@ -98,7 +98,7 @@ export async function POST(
     console.log(`🔄 문서 상태를 'processing'으로 업데이트 중...`);
     const { error: statusError, data: updatedDoc } = await supabase
       .from('documents')
-      .update({ 
+      .update({
         status: 'processing',
         chunk_count: 0,
         updated_at: new Date().toISOString()
@@ -120,7 +120,7 @@ export async function POST(
     // 문서 타입에 따른 재인덱싱 처리
     if (document.type === 'url') {
       const effectiveUrl = document.url || document.document_url;
-      
+
       if (!effectiveUrl) {
         return NextResponse.json(
           { success: false, error: 'URL 문서에 URL 정보가 없습니다.' },
@@ -129,64 +129,69 @@ export async function POST(
       }
 
       console.log(`🌐 URL 재인덱싱 시작: ${effectiveUrl}`);
-      
+
       try {
         let contentToProcess: string;
         let pageTitle: string = document.title;
-        
+
         // 1. 먼저 크롤링 시도
         console.log(`🔄 URL 크롤링 시도 중...`);
         const crawlingService = new PuppeteerCrawlingService();
-        const crawledData = await crawlingService.crawlMetaPage(effectiveUrl, false, false, 1);
-        
-        if (crawledData && crawledData.content && crawledData.content.length >= 100) {
-          // 크롤링 성공
-          console.log(`✅ URL 크롤링 완료: ${crawledData.content.length}자`);
-          contentToProcess = crawledData.content;
-          
-          // 크롤링된 제목이 있으면 사용 (기존 제목이 URL과 같거나 비어있는 경우만)
-          if (crawledData.title && (document.title === effectiveUrl || !document.title || document.title.trim() === '')) {
-            pageTitle = crawledData.title;
-          }
-        } else {
-          // 크롤링 실패 - 기존 content 사용
-          console.warn(`⚠️ URL 크롤링 실패 또는 콘텐츠 부족. 기존 저장된 content 사용 시도...`);
-          console.warn(`⚠️ 크롤링 결과: ${crawledData?.content?.length || 0}자, 기존 content: ${document.content?.length || 0}자`);
-          
-          if (document.content && document.content.length >= 100) {
-            console.log(`✅ 기존 content 사용: ${document.content.length}자`);
-            contentToProcess = document.content;
-          } else if (document.content && document.content.length > 0) {
-            // content가 있지만 100자 미만인 경우에도 사용 (최소한의 콘텐츠라도)
-            console.warn(`⚠️ 기존 content가 짧지만 사용: ${document.content.length}자`);
-            contentToProcess = document.content;
+        try {
+          const crawledData = await crawlingService.crawlMetaPage(effectiveUrl, false, false, 1);
+
+          if (crawledData && crawledData.content && crawledData.content.length >= 100) {
+            // 크롤링 성공
+            console.log(`✅ URL 크롤링 완료: ${crawledData.content.length}자`);
+            contentToProcess = crawledData.content;
+
+            // 크롤링된 제목이 있으면 사용 (기존 제목이 URL과 같거나 비어있는 경우만)
+            if (crawledData.title && (document.title === effectiveUrl || !document.title || document.title.trim() === '')) {
+              pageTitle = crawledData.title;
+            }
           } else {
-            // 기존 content도 없는 경우 - 문서 삭제 또는 상태 업데이트 권장
-            const errorDetails = {
-              documentId,
-              url: effectiveUrl,
-              title: document.title,
-              crawledContentLength: crawledData?.content?.length || 0,
-              existingContentLength: document.content?.length || 0,
-              hasCrawledData: !!crawledData,
-              hasExistingContent: !!document.content,
-              status: document.status
-            };
-            console.error('❌ 재인덱싱 불가능 - content 없음:', errorDetails);
-            
-            // 문서 상태를 'failed'로 업데이트하고 명확한 에러 메시지 반환
-            await supabase
-              .from('documents')
-              .update({ 
-                status: 'failed',
-                updated_at: new Date().toISOString()
-              })
-              .eq('id', documentId);
-            
-            throw new Error(`재인덱싱 불가능: 문서에 저장된 콘텐츠가 없습니다. URL 크롤링도 실패했습니다. (크롤링: ${crawledData?.content?.length || 0}자, 저장된 content: ${document.content?.length || 0}자). 이 문서는 삭제하거나 다시 크롤링해야 합니다.`);
+            // 크롤링 실패 - 기존 content 사용
+            console.warn(`⚠️ URL 크롤링 실패 또는 콘텐츠 부족. 기존 저장된 content 사용 시도...`);
+            console.warn(`⚠️ 크롤링 결과: ${crawledData?.content?.length || 0}자, 기존 content: ${document.content?.length || 0}자`);
+
+            if (document.content && document.content.length >= 100) {
+              console.log(`✅ 기존 content 사용: ${document.content.length}자`);
+              contentToProcess = document.content;
+            } else if (document.content && document.content.length > 0) {
+              // content가 있지만 100자 미만인 경우에도 사용 (최소한의 콘텐츠라도)
+              console.warn(`⚠️ 기존 content가 짧지만 사용: ${document.content.length}자`);
+              contentToProcess = document.content;
+            } else {
+              // 기존 content도 없는 경우 - 문서 삭제 또는 상태 업데이트 권장
+              const errorDetails = {
+                documentId,
+                url: effectiveUrl,
+                title: document.title,
+                crawledContentLength: crawledData?.content?.length || 0,
+                existingContentLength: document.content?.length || 0,
+                hasCrawledData: !!crawledData,
+                hasExistingContent: !!document.content,
+                status: document.status
+              };
+              console.error('❌ 재인덱싱 불가능 - content 없음:', errorDetails);
+
+              // 문서 상태를 'failed'로 업데이트하고 명확한 에러 메시지 반환
+              await supabase
+                .from('documents')
+                .update({
+                  status: 'failed',
+                  updated_at: new Date().toISOString()
+                })
+                .eq('id', documentId);
+
+              throw new Error(`재인덱싱 불가능: 문서에 저장된 콘텐츠가 없습니다. URL 크롤링도 실패했습니다. (크롤링: ${crawledData?.content?.length || 0}자, 저장된 content: ${document.content?.length || 0}자). 이 문서는 삭제하거나 다시 크롤링해야 합니다.`);
+            }
           }
+        } finally {
+          // 🔥 브라우저 종료 (Vercel EAGAIN 에러 방지 핵심)
+          await crawlingService.close().catch(e => console.error('⚠️ 브라우저 종료 오류:', e));
         }
-        
+
         console.log(`📝 제목 결정: 기존="${document.title}", 최종="${pageTitle}"`);
 
         // main_document_id 보존
@@ -213,7 +218,7 @@ export async function POST(
           // 재인덱싱 시 제목은 기존 제목 유지 (변경하지 않음)
           const { error: finalStatusError } = await supabase
             .from('documents')
-            .update({ 
+            .update({
               status: 'indexed',
               chunk_count: ragResult.chunkCount || 0,
               // title은 기존 제목 유지 (재인덱싱 시 제목 변경 방지)
@@ -248,7 +253,7 @@ export async function POST(
           // RAG 처리 실패
           await supabase
             .from('documents')
-            .update({ 
+            .update({
               status: 'failed',
               updated_at: new Date().toISOString()
             })
@@ -262,18 +267,18 @@ export async function POST(
 
       } catch (crawlError) {
         console.error('❌ 크롤링/인덱싱 오류:', crawlError);
-        
+
         // 실패 시 상태를 failed로 변경
         await supabase
           .from('documents')
-          .update({ 
+          .update({
             status: 'failed',
             updated_at: new Date().toISOString()
           })
           .eq('id', documentId);
-        
+
         return NextResponse.json(
-          { 
+          {
             success: false,
             error: '재인덱싱에 실패했습니다.',
             details: crawlError instanceof Error ? crawlError.message : String(crawlError)
@@ -284,18 +289,18 @@ export async function POST(
 
     } else if (document.type === 'file') {
       console.log(`📁 파일 재인덱싱 시작: ${document.title}`);
-      
+
       let contentToProcess = document.content || '';
       let fileType = document.file_type || 'text/plain';
       let fileSize = document.file_size || 0;
-      
+
       // PDF/DOCX 파일의 경우 Storage에서 원본 파일을 가져와서 텍스트 추출 시도
       const fileName = document.original_file_name || document.sanitized_file_name || document.title;
       const fileExtension = fileName?.toLowerCase().split('.').pop();
-      
+
       if ((fileExtension === 'pdf' || fileExtension === 'docx') && (!contentToProcess || contentToProcess.includes('PDF 문서:') || contentToProcess.includes('DOCX 문서:') || contentToProcess.includes('텍스트 추출이 비활성화'))) {
         console.log('📥 Storage에서 원본 파일 다운로드 시도:', fileName);
-        
+
         try {
           // Storage에서 파일 찾기 (document_id로 경로 검색)
           const { data: files, error: listError } = await supabase.storage
@@ -304,23 +309,23 @@ export async function POST(
               limit: 100,
               sortBy: { column: 'created_at', order: 'desc' }
             });
-          
+
           if (!listError && files && files.length > 0) {
             // 가장 최근 파일 찾기
             const latestFile = files[0];
             const filePath = `${documentId}/${latestFile.name}`;
-            
+
             console.log(`📥 Storage 파일 다운로드: ${filePath}`);
             const { data: fileData, error: downloadError } = await supabase.storage
               .from(STORAGE_BUCKET)
               .download(filePath);
-            
+
             if (!downloadError && fileData) {
               const arrayBuffer = await fileData.arrayBuffer();
               const fileBuffer = Buffer.from(arrayBuffer);
-              
+
               console.log(`✅ Storage 파일 다운로드 완료: ${fileBuffer.length} bytes`);
-              
+
               // RAGProcessor의 extractTextFromFile 사용
               const ragProcessor = new RAGProcessor();
               const extractionResult = await ragProcessor.extractTextFromFile(
@@ -328,11 +333,11 @@ export async function POST(
                 fileName,
                 fileType
               );
-              
+
               contentToProcess = extractionResult.cleanedText;
               fileSize = fileBuffer.length;
               fileType = fileExtension === 'pdf' ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document';
-              
+
               console.log(`✅ 텍스트 추출 완료: ${contentToProcess.length}자`);
             } else {
               console.warn('⚠️ Storage 파일 다운로드 실패, 기존 content 사용:', downloadError);
@@ -345,7 +350,7 @@ export async function POST(
           // Storage 오류 시 기존 content 사용
         }
       }
-      
+
       if (!contentToProcess || contentToProcess.trim() === '') {
         return NextResponse.json(
           { success: false, error: '파일 문서에 콘텐츠가 없습니다. 파일을 다시 업로드해주세요.' },
@@ -374,7 +379,7 @@ export async function POST(
           // 문서 상태를 'indexed'로 업데이트
           const { error: finalStatusError } = await supabase
             .from('documents')
-            .update({ 
+            .update({
               status: 'indexed',
               chunk_count: ragResult.chunkCount || 0,
               updated_at: new Date().toISOString()
@@ -406,7 +411,7 @@ export async function POST(
           // RAG 처리 실패
           await supabase
             .from('documents')
-            .update({ 
+            .update({
               status: 'failed',
               updated_at: new Date().toISOString()
             })
@@ -420,18 +425,18 @@ export async function POST(
 
       } catch (processError) {
         console.error('❌ 파일 재인덱싱 오류:', processError);
-        
+
         // 실패 시 상태를 failed로 변경
         await supabase
           .from('documents')
-          .update({ 
+          .update({
             status: 'failed',
             updated_at: new Date().toISOString()
           })
           .eq('id', documentId);
-        
+
         return NextResponse.json(
-          { 
+          {
             success: false,
             error: '재인덱싱에 실패했습니다.',
             details: processError instanceof Error ? processError.message : String(processError)
@@ -439,7 +444,7 @@ export async function POST(
           { status: 500 }
         );
       }
-      
+
     } else {
       return NextResponse.json(
         { success: false, error: '지원하지 않는 문서 타입입니다.' },
@@ -454,11 +459,11 @@ export async function POST(
       error: error instanceof Error ? error.message : String(error),
       stack: error instanceof Error ? error.stack : undefined
     });
-    
+
     const errorMessage = error instanceof Error ? error.message : String(error);
-    
+
     return NextResponse.json(
-      { 
+      {
         success: false,
         error: '재인덱싱에 실패했습니다.',
         message: errorMessage,

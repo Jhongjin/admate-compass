@@ -6,6 +6,8 @@
 import puppeteerCore, { Browser, Page, HTTPResponse } from 'puppeteer-core';
 import chromium from '@sparticuz/chromium';
 import { DocumentIndexingService } from './DocumentIndexingService';
+import fs from 'fs';
+import path from 'path';
 
 export interface CrawledDocumentData {
   id: string;
@@ -127,122 +129,103 @@ export class PuppeteerCrawlingService {
 
   async init(): Promise<void> {
     if (!this.browser) {
-      console.log('🚀 Puppeteer 브라우저 초기화 중...');
+      console.log('🚀 Puppeteer 브라우저 초기화 중... (Version: 2024-03-18-V2)');
 
       try {
-        // Vercel 환경에서는 chromium을 사용
-        const isVercel = process.env.VERCEL === '1';
+        // Vercel 환경인지 확인
+        // VERCEL=1 이 있어도 실제 환경이 Windows이면 로컬 브라우저 선호
+        const isWindows = process.platform === 'win32';
+        const vercelEnv = process.env.VERCEL;
+        const isVercel = vercelEnv === '1' && !isWindows;
+
+        console.log(`🔍 [DIAGNOSTIC] OS Platform: ${process.platform}`);
+        console.log(`🔍 [DIAGNOSTIC] VERCEL Env: ${vercelEnv}`);
+        console.log(`🔍 [DIAGNOSTIC] Is Vercel Detection: ${isVercel}`);
+        console.log(`🔍 [DIAGNOSTIC] Is Windows: ${isWindows}`);
+
         let executablePath: string | undefined;
 
         if (isVercel) {
-          // Vercel 환경: @sparticuz/chromium 사용 (동적 크롤링 필수)
+          console.log('🚀 [DIAGNOSTIC] Using VERCEL mode (Linux/sparticuz-chromium)');
+          // Vercel 서버리스 환경 (Linux): @sparticuz/chromium 사용
           try {
-            // Chromium 바이너리 경로 가져오기
-            // Vercel 서버리스 환경에서는 자동으로 Chromium 바이너리를 포함함
-            const executablePath = await chromium.executablePath();
-            console.log(`📁 Chromium 실행 경로: ${executablePath}`);
+            executablePath = await chromium.executablePath();
+            console.log(`📁 Vercel Chromium 실행 경로: ${executablePath}`);
 
-            // 실행 파일 존재 여부 확인 (fs 모듈 사용)
-            try {
-              const fs = await import('fs/promises');
-              const stats = await fs.stat(executablePath);
-              if (!stats.isFile()) {
-                throw new Error(`Chromium 실행 파일이 유효하지 않습니다: ${executablePath}`);
-              }
-              console.log(`✅ Chromium 실행 파일 확인 완료: ${executablePath} (${stats.size} bytes)`);
-            } catch (statError: any) {
-              console.warn(`⚠️ Chromium 실행 파일 확인 실패 (계속 진행): ${statError.message}`);
-            }
-
-            // @sparticuz/chromium의 기본 args와 headless 설정 사용
-            // Vercel 서버리스 환경에 최적화된 args
             const chromiumArgs = [
               ...chromium.args,
               '--no-sandbox',
               '--disable-setuid-sandbox',
               '--disable-dev-shm-usage',
               '--disable-gpu',
-              '--disable-software-rasterizer',
-              '--disable-extensions',
-              '--disable-background-networking',
-              '--disable-background-timer-throttling',
-              '--disable-backgrounding-occluded-windows',
-              '--disable-breakpad',
-              '--disable-client-side-phishing-detection',
-              '--disable-default-apps',
-              '--disable-features=TranslateUI',
-              '--disable-hang-monitor',
-              '--disable-ipc-flooding-protection',
-              '--disable-popup-blocking',
-              '--disable-prompt-on-repost',
-              '--disable-renderer-backgrounding',
-              '--disable-sync',
-              '--disable-translate',
-              '--metrics-recording-only',
-              '--no-first-run',
-              '--safebrowsing-disable-auto-update',
-              '--password-store=basic',
-              '--use-mock-keychain',
-              '--single-process',
-              '--disable-blink-features=AutomationControlled', // ✅ Stealth: 자동화 제어 숨기기
-              // Vercel 서버리스 환경을 위한 추가 옵션
-              '--disable-setuid-sandbox',
+              '--disable-blink-features=AutomationControlled',
               '--disable-web-security',
-              '--disable-features=VizDisplayCompositor',
             ];
-
-            console.log(`🔧 Chromium args 개수: ${chromiumArgs.length}`);
 
             this.browser = await puppeteerCore.launch({
               args: chromiumArgs,
-              defaultViewport: {
-                width: 1280,
-                height: 720,
-              },
+              defaultViewport: { width: 1280, height: 720 },
               executablePath: executablePath,
-              headless: true, // Vercel 서버리스 환경에서는 항상 headless 모드
+              headless: true,
             });
-            console.log('✅ Puppeteer 브라우저 초기화 완료 (Vercel 환경: @sparticuz/chromium)');
+            console.log('✅ Puppeteer 브라우저 초기화 완료 (@sparticuz/chromium)');
           } catch (chromiumError: any) {
-            const errorMsg = chromiumError?.message || String(chromiumError);
-            const errorStack = chromiumError?.stack || 'No stack available';
-            const errorCode = chromiumError?.code || 'NO_CODE';
-            console.error('❌ @sparticuz/chromium 초기화 실패:', {
-              message: errorMsg,
-              name: chromiumError?.name || 'UnknownError',
-              code: errorCode,
-              stack: errorStack,
-              fullError: chromiumError
-            });
-            
-            // libnss3.so 에러인 경우 특별 처리
-            if (errorMsg.includes('libnss3.so') || errorMsg.includes('shared libraries')) {
-              console.error('❌ [CRITICAL] libnss3.so 에러 감지 - @sparticuz/chromium 버전 또는 Vercel 설정 확인 필요');
-              console.error('❌ [CRITICAL] 해결 방법:');
-              console.error('   1. @sparticuz/chromium을 최신 버전으로 업데이트');
-              console.error('   2. Vercel 프로젝트 설정에서 Node.js 버전 확인');
-              console.error('   3. vercel.json에 functions 설정 추가 확인');
-            }
-            
-            // 동적 크롤링이 필수이므로 에러를 throw
-            throw new Error(`Chromium 초기화 실패 (Code: ${errorCode}): ${errorMsg}. 동적 크롤링을 사용할 수 없습니다. Vercel 빌드 설정을 확인해주세요.`);
+            console.error('❌ @sparticuz/chromium 초기화 실패:', chromiumError.message);
+            throw new Error(`Chromium 초기화 실패: ${chromiumError.message}. Vercel 설정을 확인해주세요.`);
           }
         } else {
-          // 로컬 환경: 일반 Puppeteer 사용 (동적 크롤링 필수)
+          // 로컬 환경 (Windows/Mac/Linux): 시스템 브라우저 사용
+          console.log(`💻 로컬 환경 브라우저 검색 중 (Platform: ${process.platform})...`);
+
+          if (isWindows) {
+            const winPaths = [
+              'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
+              'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+              'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
+              'C:\\Program Files\\Microsoft\\Edge\\Application\\msedge.exe',
+            ];
+
+            console.log(`🔍 [DIAGNOSTIC] Checking Windows paths: ${winPaths.length} locations`);
+            for (const p of winPaths) {
+              const exists = fs.existsSync(p);
+              console.log(`🔍 [DIAGNOSTIC] Path: ${p} - Exists: ${exists}`);
+              if (exists) {
+                executablePath = p;
+                break;
+              }
+            }
+          } else if (process.platform === 'darwin') {
+            const macPaths = [
+              '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome',
+              '/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge',
+            ];
+            for (const p of macPaths) {
+              if (fs.existsSync(p)) {
+                executablePath = p;
+                break;
+              }
+            }
+          }
+
+          if (!executablePath) {
+            console.warn('⚠️ 시스템 브라우저를 찾을 수 없습니다. puppeteer-core가 기본 경로를 시도합니다.');
+          } else {
+            console.log(`✅ 브라우저 발견: ${executablePath}`);
+          }
+
+          console.log(`🚀 [DIAGNOSTIC] Launching with executablePath: ${executablePath || 'default'}`);
           this.browser = await puppeteerCore.launch({
+            executablePath: executablePath,
             headless: true,
             args: [
               '--no-sandbox',
               '--disable-setuid-sandbox',
               '--disable-dev-shm-usage',
-              '--disable-blink-features=AutomationControlled', // ✅ Stealth 추가
+              '--disable-blink-features=AutomationControlled',
               '--disable-web-security',
-              '--allow-running-insecure-content',
-              '--disable-features=VizDisplayCompositor'
             ],
-            ignoreDefaultArgs: ['--enable-automation'], // 이미 설정되어 있음
           });
-          console.log('✅ Puppeteer 브라우저 초기화 완료 (로컬 환경)');
+          console.log(`✅ Puppeteer 브라우저 초기화 완료 (로컬 환경: ${executablePath || 'default'})`);
         }
       } catch (error: any) {
         console.error('❌ Puppeteer 브라우저 초기화 실패:', error.message);
@@ -340,9 +323,9 @@ export class PuppeteerCrawlingService {
       let response: HTTPResponse | null = null;
 
       const isMetaDomain = url.includes('facebook.com') || url.includes('instagram.com');
-      const waitUntilOption = isMetaDomain ? 'networkidle2' : 'domcontentloaded';
-      const timeoutMs = isMetaDomain ? 90000 : 60000;
-      const backoff = [5000, 15000, 30000];
+      const waitUntilOption = isMetaDomain ? 'domcontentloaded' : 'networkidle2'; // Meta는 domcontentloaded 후 특정 요소 대기로 변경
+      const timeoutMs = isMetaDomain ? 60000 : 60000; // 타임아웃 현실화
+      const backoff = [5000, 10000]; // 리트라이 간격 조정
 
       const toMobileUrl = (targetUrl: string) => {
         try {
@@ -396,7 +379,7 @@ export class PuppeteerCrawlingService {
         const mobileUrl = toMobileUrl(url);
         if (mobileUrl !== url) {
           console.warn(`⚠️ 모바일 도메인으로 재시도: ${mobileUrl}`);
-          await page.close().catch(() => {});
+          await page.close().catch(() => { });
           page = await browser.newPage();
           await page.setUserAgent(userAgent);
           await page.setViewport({ width: 1920, height: 1080 });
@@ -425,10 +408,18 @@ export class PuppeteerCrawlingService {
         return null;
       }
 
-      // 랜덤 대기 (봇 탐지 우회)
-      const waitTime = Math.random() * 2000 + 1000;
-      console.log(`⏳ 봇 탐지 우회 대기: ${Math.round(waitTime)}ms`);
-      await new Promise(resolve => setTimeout(resolve, waitTime));
+      // 봇 탐지 우회 대기
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      // 🔥 핵심 콘텐츠 로드 대기 (Meta Ads Guide 특화)
+      if (isMetaDomain) {
+        console.log(`⏳ Meta 핵심 콘텐츠 요소 대기...`);
+        try {
+          await page.waitForSelector('main, article, .content, [role="main"]', { timeout: 15000 });
+        } catch (e) {
+          console.warn('⚠️ 핵심 콘텐츠 요소 대기 타임아웃, 계속 진행함');
+        }
+      }
 
       // 🔥 쿠키 배너 클릭 시도 (공용 selector)
       try {
@@ -442,9 +433,9 @@ export class PuppeteerCrawlingService {
           '#cookie-banner button',
           '.cookie-banner button',
         ];
-        
+
         let cookieClicked = false;
-        
+
         // CSS selector 시도
         for (const selector of cookieBannerSelectors) {
           if (cookieClicked) break;
@@ -455,7 +446,7 @@ export class PuppeteerCrawlingService {
                 const style = window.getComputedStyle(el);
                 return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
               });
-              
+
               if (isVisible) {
                 await cookieButton.click();
                 console.log(`✅ 쿠키 배너 클릭 성공: ${selector}`);
@@ -469,22 +460,22 @@ export class PuppeteerCrawlingService {
             continue;
           }
         }
-        
+
         // 텍스트 기반 selector 시도 - CSS selector로 실패한 경우에만
         if (!cookieClicked) {
           try {
             const clicked = await page.evaluate(() => {
               const buttons = Array.from(document.querySelectorAll('button, [role="button"]'));
               const acceptTexts = ['Accept', '수락', '동의', 'accept', 'ACCEPT'];
-              
+
               for (const btn of buttons) {
                 const text = btn.textContent?.toLowerCase() || '';
                 if (acceptTexts.some(acceptText => text.includes(acceptText.toLowerCase()))) {
                   const style = window.getComputedStyle(btn);
-                  const isVisible = style.display !== 'none' && 
-                                   style.visibility !== 'hidden' && 
-                                   style.opacity !== '0';
-                  
+                  const isVisible = style.display !== 'none' &&
+                    style.visibility !== 'hidden' &&
+                    style.opacity !== '0';
+
                   if (isVisible) {
                     (btn as HTMLElement).click();
                     return true;
@@ -493,7 +484,7 @@ export class PuppeteerCrawlingService {
               }
               return false;
             });
-            
+
             if (clicked) {
               console.log(`✅ 쿠키 배너 클릭 성공 (텍스트 기반)`);
               await new Promise(resolve => setTimeout(resolve, 1000)); // 클릭 후 대기
