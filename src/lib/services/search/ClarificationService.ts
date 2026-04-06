@@ -11,36 +11,56 @@ export interface ClarificationResult {
 export class ClarificationService {
     /**
      * 검색 결과에서 재확인이 필요한지 판별합니다.
-     * 1단계: 벤더(플랫폼) 중복 확인
+     * 1단계: 벤더(플랫폼) 중복 확인 (이미 필터링된 경우 스킵)
      * 2단계: 동일 벤더 내 상품 중복 확인
      */
-    detectClarificationNeed(searchResults: SearchResult[]): ClarificationResult {
-        // 벤더 판별을 위한 임계값은 낮게 설정하여 모호한 질문(예: '광고 정책?') 대응
+    detectClarificationNeed(searchResults: SearchResult[], currentVendorFilter: string[] | null = null): ClarificationResult {
+        if (searchResults.length === 0) {
+            return { type: 'none', options: [], question: '' };
+        }
+
+        // [최우선순위] 강한 매칭(Strong Match) 확인
+        // 최상위 결과의 유사도가 0.8 이상이면 사용자 의도가 명확한 것으로 간주하여 재확인 생략
+        if (searchResults[0].similarity > 0.8) {
+            console.log(`[Clarification] Strong match detected (${searchResults[0].similarity.toFixed(2)}), skipping clarification.`);
+            return { type: 'none', options: [], question: '' };
+        }
+
+        // 벤더 판별을 위한 임계값 (모호한 질문 대응)
         const vendorCheckResults = searchResults.filter(r => r.similarity > 0.2);
-        // 상품 판별을 위한 임계값은 조금 더 높게 유지
+        // 상품 판별을 위한 임계값 (조금 더 엄격)
         const productCheckResults = searchResults.filter(r => r.similarity > 0.4);
 
         if (vendorCheckResults.length === 0) {
             return { type: 'none', options: [], question: '' };
         }
 
+        // 1단계: 벤더(플랫폼) 중복 확인
+        // 이미 벤더 필터가 적용된 상태라면 벤더 재확인은 건너뜀
         const vendors = new Set<string>();
-        vendorCheckResults.forEach(r => {
-            let vendor = r.metadata?.source_vendor;
-            // 벤더가 'OTHER'이거나 없는 경우 제목에서 추론
-            if (!vendor || vendor.toUpperCase() === 'OTHER') {
-                const inferred = this.inferVendorFromTitle(r.documentTitle || '');
-                if (inferred) {
-                    vendor = inferred;
-                } else {
-                    // 추론 실패 시 'OTHER'는 무시하여 사용자에게 노출되지 않도록 함
-                    vendor = null;
+        if (!currentVendorFilter || currentVendorFilter.length === 0) {
+            vendorCheckResults.forEach(r => {
+                let vendor = r.metadata?.source_vendor;
+                if (!vendor || vendor.toUpperCase() === 'OTHER') {
+                    const inferred = this.inferVendorFromTitle(r.documentTitle || '');
+                    if (inferred) vendor = inferred;
+                    else vendor = null;
                 }
+                if (vendor && vendor.toUpperCase() !== 'OTHER') {
+                    vendors.add(vendor.toUpperCase());
+                }
+            });
+
+            // [추가] 상위 N개 벤더 편향 체크 (Top 3 Bias)
+            // 상위 3개 결과가 모두 동일한 벤더에서 왔다면 하향 임계값에 걸린 다른 벤더 노이즈 무시
+            const top3Vendors = new Set(searchResults.slice(0, 3).map(r => r.metadata?.source_vendor).filter(v => v && v !== 'OTHER'));
+            if (top3Vendors.size === 1 && vendors.size > 1) {
+                const dominantVendor = Array.from(top3Vendors)[0];
+                console.log(`[Clarification] Dominant vendor detected (${dominantVendor}) in top 3, skipping vendor clarification.`);
+                vendors.clear();
+                vendors.add(dominantVendor);
             }
-            if (vendor && vendor.toUpperCase() !== 'OTHER') {
-                vendors.add(vendor.toUpperCase());
-            }
-        });
+        }
 
         if (vendors.size > 1) {
             const sortedVendors = Array.from(vendors).sort();

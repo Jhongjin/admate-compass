@@ -1710,9 +1710,14 @@ export async function POST(request: NextRequest) {
             pendingVendorFilter = [selectedVendor];
             console.log(`✅ 사용자 벤더 선택 감지: ${selectedVendor}`);
           } else {
-            // 2. 상품명 선택 확인 (이전 메시지에서 상품명 목록 추출 필요 - 여기선 단순 포함 여부)
-            // 실제 구현에서는 이전 메시지의 옵션을 파싱하거나 세션에 저장해야 함
-            // 여기선 간단히 벤더 필터가 우선 적용되도록 함
+            // 2. 벤더 컨텍스트 상속 
+            // 사용자의 직접적인 선택은 없지만(예: "1페이지"), 이전 AI 질문이 특정 벤더에 국한된 경우
+            // AI의 마지막 메시지에서 벤더 키워드를 찾아 상속합니다.
+            const inferredFromAi = clarificationService.findSelectedOption(lastAiMessage.content, vendorOptions);
+            if (inferredFromAi) {
+              pendingVendorFilter = [inferredFromAi];
+              console.log(`✅ 이전 AI 질문에서 벤더 컨텍스트 상속: ${inferredFromAi}`);
+            }
           }
         }
       }
@@ -1812,7 +1817,7 @@ export async function POST(request: NextRequest) {
           // --- 다중 매칭 재확인 처리 로직 (Turn 1: 질문 생성) ---
           // 사용자가 이미 특정 벤더를 선택한 경우가 아니라면 재확인 필요성 체크
           if (!pendingVendorFilter && searchResults.length > 0) {
-            const clarification = clarificationService.detectClarificationNeed(searchResults as any);
+            const clarification = clarificationService.detectClarificationNeed(searchResults as any, vendorFilter);
 
             if (clarification.type !== 'none') {
               console.log(`📢 다중 매칭 감지 (${clarification.type}): 재확인 질문을 생성합니다.`);
