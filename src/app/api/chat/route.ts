@@ -1931,14 +1931,21 @@ export async function POST(request: NextRequest) {
           // 80% 이상의 신뢰도를 위해 충분한 분석 결과 확보하되, 사용자에게는 문서 단위 중복 제거하여 노출
           const finalLimit = 8;
 
-          // 중복 제거 (documentId 기준, 유사도 높은 항목 우선 보존)
+          // 중복 제거 (정규화된 제목 기준, 유사도 높은 항목 우선 보존)
+          // 데이터상 documentId가 달라도 사용자에게는 동일 제목이면 동일 문서로 인지되므로 '제목 정규화' 기반 통합
           const uniqueDocs = new Map<string, SearchResult>();
           searchResults
             .sort((a, b) => (b.similarity || 0) - (a.similarity || 0))
             .forEach(result => {
-              const docId = result.documentId || result.metadata?.document_id || result.documentTitle;
-              if (docId && !uniqueDocs.has(docId)) {
-                uniqueDocs.set(docId, result);
+              // 1. 제목에서 "(N페이지)" 부분을 제거하여 순수 문서 제목 추출 (정규화)
+              const rawTitle = result.documentTitle || '';
+              const normalizedTitle = rawTitle.replace(/\s*\(\d+페이지\)$/, '').trim();
+
+              // 2. 공백 및 특수문자 제거하여 고유 키 생성 (예: "제한 업종" -> "제한업종")
+              const docKey = normalizedTitle.toLowerCase().replace(/[^a-z0-9가-힣]/g, '');
+
+              if (docKey && !uniqueDocs.has(docKey)) {
+                uniqueDocs.set(docKey, result);
               }
             });
 
