@@ -24,7 +24,12 @@ export class ClarificationService {
         // 1단계: 벤더(플랫폼) 중복 확인
         const vendors = new Set<string>();
         highSimilarityResults.forEach(r => {
-            const vendor = r.metadata?.source_vendor;
+            let vendor = r.metadata?.source_vendor;
+            // 벤더가 'OTHER'이거나 없는 경우 제목에서 추론
+            if (!vendor || vendor.toUpperCase() === 'OTHER') {
+                const inferred = this.inferVendorFromTitle(r.documentTitle || '');
+                if (inferred) vendor = inferred;
+            }
             if (vendor) vendors.add(vendor.toUpperCase());
         });
 
@@ -59,6 +64,19 @@ export class ClarificationService {
         }
 
         return { type: 'none', options: [], question: '' };
+    }
+
+    /**
+     * 제목에서 벤더명 추론
+     */
+    private inferVendorFromTitle(title: string): string | null {
+        const lowerTitle = title.toLowerCase();
+        if (lowerTitle.includes('네이버') || lowerTitle.includes('naver')) return 'NAVER';
+        if (lowerTitle.includes('카카오') || lowerTitle.includes('kakao')) return 'KAKAO';
+        if (lowerTitle.includes('메타') || lowerTitle.includes('meta') || lowerTitle.includes('facebook') || lowerTitle.includes('instagram')) return 'META';
+        if (lowerTitle.includes('구글') || lowerTitle.includes('google')) return 'GOOGLE';
+        if (lowerTitle.includes('트위터') || lowerTitle.includes('twitter') || lowerTitle.includes(' x ') || lowerTitle.includes('엑스')) return 'X(TWITTER)';
+        return null;
     }
 
     /**
