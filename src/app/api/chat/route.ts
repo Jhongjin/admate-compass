@@ -1927,11 +1927,22 @@ export async function POST(request: NextRequest) {
             return;
           }
 
-          // 3. 검색 결과 정제 및 신뢰도 계산
+          // 3. 검색 결과 정제 (중복 제거 포함)
+          // 80% 이상의 신뢰도를 위해 충분한 분석 결과 확보하되, 사용자에게는 문서 단위 중복 제거하여 노출
           const finalLimit = 8;
-          let filteredResults = searchResults
+
+          // 중복 제거 (documentId 기준, 유사도 높은 항목 우선 보존)
+          const uniqueDocs = new Map<string, SearchResult>();
+          searchResults
             .sort((a, b) => (b.similarity || 0) - (a.similarity || 0))
-            .slice(0, finalLimit);
+            .forEach(result => {
+              const docId = result.documentId || result.metadata?.document_id || result.documentTitle;
+              if (docId && !uniqueDocs.has(docId)) {
+                uniqueDocs.set(docId, result);
+              }
+            });
+
+          let filteredResults = Array.from(uniqueDocs.values()).slice(0, finalLimit);
 
           const confidence = calculateConfidence(filteredResults);
           const sources = filteredResults.map(result => ({
