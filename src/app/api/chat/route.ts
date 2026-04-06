@@ -5,6 +5,7 @@ import { createClient } from '@supabase/supabase-js';
 import { ragProcessor, ChunkData } from '@/lib/services/RAGProcessor';
 import { crossEncoderRerank } from '@/lib/services/search/CrossEncoderReranker';
 import { promptBuilder, SearchResult as PromptSearchResult } from '@/lib/services/prompting/PromptBuilder';
+import { clarificationService, ClarificationResult } from '@/lib/services/search/ClarificationService';
 
 // Claude AI 초기화 (환경변수 확인)
 console.log('🔑 환경변수 확인:');
@@ -1627,6 +1628,32 @@ function calculateConfidence(searchResults: SearchResult[]): number {
 }
 
 /**
+ * LLM을 사용한 재확인 질문 생성
+ */
+async function generateClarificationQuestionWithLLM(
+  query: string,
+  options: string[]
+): Promise<string> {
+  try {
+    if (!anthropic) return '';
+
+    const prompt = promptBuilder.buildClarificationPrompt(query, options);
+
+    const response = await anthropic.messages.create({
+      model: 'claude-sonnet-4-6',
+      max_tokens: 200,
+      messages: [{ role: 'user', content: prompt }]
+    });
+
+    const text = response.content[0].type === 'text' ? response.content[0].text : '';
+    return text.trim().replace(/^"/, '').replace(/"$/, '');
+  } catch (error) {
+    console.error('❌ LLM 재확인 질문 생성 실패:', error);
+    return '';
+  }
+}
+
+/**
  * POST /api/chat
  */
 export async function POST(request: NextRequest) {
@@ -1660,48 +1687,82 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // --- 다중 매칭 재확인 처리 로직 (Turn 2: 선택 처리) ---
+    let pendingVendorFilter: string[] | null = null;
+    let pendingProductFilter: string | null = null;
+
+    if (conversationHistory && conversationHistory.length >= 2) {
+      const lastAiMessage = conversationHistory[conversationHistory.length - 1];
+      if (lastAiMessage.role === 'assistant') {
+        // 이전 질문이 재확인 질문이었는지 확인
+        // 질문 텍스트 패턴으로 유추 (더 정확하게는 metadata를 쓰면 좋으나 현재는 텍스트 기반)
+        const isClarification = lastAiMessage.content.includes('중 어느 플랫폼') ||
+          lastAiMessage.content.includes('어떤 상품에 대해');
+
+        if (isClarification) {
+          console.log('🔄 이전 메시지가 재확인 질문임이 감지되었습니다.');
+
+          // 1. 벤더 선택 확인
+          const vendorOptions = ['NAVER', 'KAKAO', 'META', 'GOOGLE', 'X(TWITTER)'];
+          const selectedVendor = clarificationService.findSelectedOption(message, vendorOptions);
+
+          if (selectedVendor) {
+            pendingVendorFilter = [selectedVendor];
+            console.log(`✅ 사용자 벤더 선택 감지: ${selectedVendor}`);
+          } else {
+            // 2. 상품명 선택 확인 (이전 메시지에서 상품명 목록 추출 필요 - 여기선 단순 포함 여부)
+            // 실제 구현에서는 이전 메시지의 옵션을 파싱하거나 세션에 저장해야 함
+            // 여기선 간단히 벤더 필터가 우선 적용되도록 함
+          }
+        }
+      }
+    }
+    // --------------------------------------------------
+
     // 벤더 자동 감지 (요청에 vendors가 없으면 질문에서 감지)
-    let vendorFilter: string[] | null = null;
+    let vendorFilter: string[] | null = pendingVendorFilter;
 
-    if (vendors && Array.isArray(vendors) && vendors.length > 0) {
-      // 요청에 벤더가 명시된 경우
-      vendorFilter = vendors.map((v: any) => String(v).toUpperCase());
-      console.log(`🏷️ 요청에서 벤더 필터 받음: ${vendorFilter.join(', ')}`);
-    } else {
-      // 질문에서 벤더 자동 감지 (키워드 기반 - 빠르고 안정적)
-      console.log('🔍 질문에서 벤더 자동 감지 시작...');
-      const lowerMessage = message.toLowerCase();
-      const detected: string[] = [];
-
-      // 키워드 기반 감지 (우선순위: 명시적 언급 > 암묵적 언급)
-      // 한글과 영문 모두 체크
-      if (message.includes('네이버') || lowerMessage.includes('naver') || lowerMessage.includes('검색광고')) {
-        detected.push('NAVER');
-      }
-      if (message.includes('카카오') || lowerMessage.includes('kakao') || message.includes('비즈보드')) {
-        detected.push('KAKAO');
-      }
-      if (message.includes('구글') || lowerMessage.includes('google') || lowerMessage.includes('google ads')) {
-        detected.push('GOOGLE');
-      }
-      if (message.includes('트위터') || lowerMessage.includes('twitter') || lowerMessage.includes(' x ') || message.includes('엑스')) {
-        detected.push('X(TWITTER)');
-      }
-      // META 감지: 한글 "메타" 추가, 전환API 관련 키워드도 고려
-      if (message.includes('메타') || lowerMessage.includes('meta') ||
-        lowerMessage.includes('인스타') || lowerMessage.includes('instagram') ||
-        message.includes('페이스북') || lowerMessage.includes('facebook') ||
-        lowerMessage.includes('threads') ||
-        message.includes('전환API') || message.includes('전환 API') ||
-        lowerMessage.includes('conversion api') || lowerMessage.includes('conversionapi')) {
-        detected.push('META');
-      }
-
-      if (detected.length > 0) {
-        vendorFilter = detected;
-        console.log(`✅ 키워드 기반 벤더 감지 성공: ${vendorFilter.join(', ')}`);
+    if (!vendorFilter) {
+      if (vendors && Array.isArray(vendors) && vendors.length > 0) {
+        // 요청에 벤더가 명시된 경우
+        vendorFilter = vendors.map((v: any) => String(v).toUpperCase());
+        console.log(`🏷️ 요청에서 벤더 필터 받음: ${vendorFilter.join(', ')}`);
       } else {
-        console.log('⚠️ 벤더 감지 결과 없음, 전체 검색 진행');
+        // 질문에서 벤더 자동 감지 (키워드 기반 - 빠르고 안정적)
+        console.log('🔍 질문에서 벤더 자동 감지 시작...');
+        const lowerMessage = message.toLowerCase();
+        const detected: string[] = [];
+
+        // 키워드 기반 감지 (우선순위: 명시적 언급 > 암묵적 언급)
+        // 한글과 영문 모두 체크
+        if (message.includes('네이버') || lowerMessage.includes('naver') || lowerMessage.includes('검색광고')) {
+          detected.push('NAVER');
+        }
+        if (message.includes('카카오') || lowerMessage.includes('kakao') || message.includes('비즈보드')) {
+          detected.push('KAKAO');
+        }
+        if (message.includes('구글') || lowerMessage.includes('google') || lowerMessage.includes('google ads')) {
+          detected.push('GOOGLE');
+        }
+        if (message.includes('트위터') || lowerMessage.includes('twitter') || lowerMessage.includes(' x ') || message.includes('엑스')) {
+          detected.push('X(TWITTER)');
+        }
+        // META 감지: 한글 "메타" 추가, 전환API 관련 키워드도 고려
+        if (message.includes('메타') || lowerMessage.includes('meta') ||
+          lowerMessage.includes('인스타') || lowerMessage.includes('instagram') ||
+          message.includes('페이스북') || lowerMessage.includes('facebook') ||
+          lowerMessage.includes('threads') ||
+          message.includes('전환API') || message.includes('전환 API') ||
+          lowerMessage.includes('conversion api') || lowerMessage.includes('conversionapi')) {
+          detected.push('META');
+        }
+
+        if (detected.length > 0) {
+          vendorFilter = detected;
+          console.log(`✅ 키워드 기반 벤더 감지 성공: ${vendorFilter.join(', ')}`);
+        } else {
+          console.log('⚠️ 벤더 감지 결과 없음, 전체 검색 진행');
+        }
       }
     }
 
@@ -1747,6 +1808,50 @@ export async function POST(request: NextRequest) {
             // 검색 실패 시 빈 결과로 진행 (나중에 fallback 핸들링됨)
             searchResults = [];
           }
+
+          // --- 다중 매칭 재확인 처리 로직 (Turn 1: 질문 생성) ---
+          // 사용자가 이미 특정 벤더를 선택한 경우가 아니라면 재확인 필요성 체크
+          if (!pendingVendorFilter && searchResults.length > 0) {
+            const clarification = clarificationService.detectClarificationNeed(searchResults as any);
+
+            if (clarification.type !== 'none') {
+              console.log(`📢 다중 매칭 감지 (${clarification.type}): 재확인 질문을 생성합니다.`);
+
+              // 상품 중복의 경우 LLM을 통해 더 자연스러운 질문 생성 시도
+              let question = clarification.question;
+              if (clarification.type === 'product' && anthropic) {
+                const llmQuestion = await generateClarificationQuestionWithLLM(message, clarification.options);
+                if (llmQuestion) question = llmQuestion;
+              }
+
+              // 질문 스트리밍 전송
+              const words = question.split(' ');
+              for (const word of words) {
+                const chunk = `data: ${JSON.stringify({ type: 'chunk', data: { content: word + ' ' } })}\n\n`;
+                controller.enqueue(new TextEncoder().encode(chunk));
+                await new Promise(r => setTimeout(r, 20));
+              }
+
+              // 메타데이터 전송 (선택지 포함)
+              const finalData = {
+                type: 'done',
+                data: {
+                  sources: [],
+                  confidence: 1.0,
+                  processingTime: Date.now() - startTime,
+                  model: 'clarification',
+                  isClarification: true,
+                  clarificationType: clarification.type,
+                  options: clarification.options,
+                  relatedQuestions: []
+                }
+              };
+              controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(finalData)}\n\n`));
+              controller.close();
+              return;
+            }
+          }
+          // --------------------------------------------------
 
           // 2. 검색 결과가 없거나 유사도가 낮으면 관련 내용 없음 응답
           const hasRelevantResults = searchResults.length > 0 &&
