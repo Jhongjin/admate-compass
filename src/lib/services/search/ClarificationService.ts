@@ -11,11 +11,18 @@ export interface ClarificationResult {
 export class ClarificationService {
     /**
      * 검색 결과에서 재확인이 필요한지 판별합니다.
-     * 1단계: 벤더(플랫폼) 중복 확인 (이미 필터링된 경우 스킵)
-     * 2단계: 동일 벤더 내 상품 중복 확인
+     * ① 질문 내 상품명 명시 시 재확인 생략 (우선순위 높음)
+     * ② 강한 매칭(0.8+) 시 생략
+     * ③ 벤더 상위 3개 편향 시 생략
      */
-    detectClarificationNeed(searchResults: SearchResult[], currentVendorFilter: string[] | null = null): ClarificationResult {
+    detectClarificationNeed(searchResults: SearchResult[], prompt: string = '', currentVendorFilter: string[] | null = null): ClarificationResult {
         if (searchResults.length === 0) {
+            return { type: 'none', options: [], question: '' };
+        }
+
+        // [Rule 1] 질문 내 상품명 명시 확인
+        if (this.isProductMentioned(prompt, searchResults)) {
+            console.log(`[Clarification] Product name explicitly mentioned in prompt, skipping clarification.`);
             return { type: 'none', options: [], question: '' };
         }
 
@@ -114,6 +121,48 @@ export class ClarificationService {
             lowerTitle.includes('엑스')) return 'X(TWITTER)';
 
         return null;
+    }
+
+    /**
+     * 사용자 질문에 검색 결과 중 특정 상품 이름이 포함되어 있는지 확인합니다.
+     */
+    private isProductMentioned(prompt: string, searchResults: SearchResult[]): boolean {
+        if (!prompt) return false;
+
+        // 상위 5개 결과의 제목 확인 (유사도 0.3 이상)
+        const candidates = searchResults
+            .filter(r => r.similarity > 0.3)
+            .slice(0, 5);
+
+        for (const res of candidates) {
+            const title = res.documentTitle || '';
+            if (title.length < 2) continue;
+
+            // 특정 상품을 명시했는지 확인
+            // 공백 제거 및 소문자 변환으로 비교 정확도 향상
+            const cleanPrompt = prompt.replace(/\s+/g, '').toLowerCase();
+            const cleanTitle = title.replace(/\s+/g, '').toLowerCase();
+
+            // 1. 전체 매칭: 제목이 질문에 포함되어 있거나 그 반대
+            if (cleanPrompt.includes(cleanTitle) || cleanTitle.includes(cleanPrompt)) {
+                return true;
+            }
+
+            // 2. 키워드 매칭: 상세 상품명 내 핵심 단어가 포함되었는지 확인
+            const productName = this.extractProductName(title);
+            if (productName && productName.length >= 2) {
+                // 상품명을 단어 단위로 쪼개어 핵심 키워드 추출 (예: "카카오", "비즈보드", "MO")
+                const keywords = productName.split(/[\s()]/).filter(k => k.length >= 2);
+                for (const keyword of keywords) {
+                    const cleanKeyword = keyword.toLowerCase();
+                    if (cleanPrompt.includes(cleanKeyword)) {
+                        console.log(`[Clarification] Keyword match found: "${keyword}" in prompt.`);
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
     }
 
     /**

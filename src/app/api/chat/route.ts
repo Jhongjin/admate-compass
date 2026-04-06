@@ -1687,37 +1687,66 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // --- 다중 매칭 재확인 처리 로직 (Turn 2: 선택 처리) ---
-    let pendingVendorFilter: string[] | null = null;
-    let pendingProductFilter: string | null = null;
+    // --- 지능형 재확인 고도화: 컨텍스트 누적 및 횟수 제한 (Rule 2 & 3) ---
+    let inheritedVendorFilter: string[] | null = null;
+    let inheritedProductKeyword: string | null = null;
+    let clarificationCount = 0;
+    const vendorOptionsForScan = ['NAVER', 'KAKAO', 'META', 'GOOGLE', 'X(TWITTER)'];
+
+    if (conversationHistory && conversationHistory.length > 0) {
+      for (let i = conversationHistory.length - 1; i >= 0; i--) {
+        const msg = conversationHistory[i];
+        if (msg.role === 'assistant') {
+          const isClari = msg.content.includes('중 어느 플랫폼') ||
+            msg.content.includes('어떤 상품에 대해') ||
+            msg.content.includes('어느 페이지의 내용');
+          if (isClari) clarificationCount++;
+
+          if (!inheritedVendorFilter) {
+            const inf = clarificationService.findSelectedOption(msg.content, vendorOptionsForScan);
+            if (inf) inheritedVendorFilter = [inf];
+          }
+
+          // 상품명 컨텍스트 추출 (괄호 안의 상품명이나 질문 대상 상품 추출)
+          if (!inheritedProductKeyword && isClari) {
+            // "카카오 비즈보드 (MO) 1페이지와..." 같은 패턴에서 상품명 추출
+            const productPart = msg.content.split(' 중 ')[0] || msg.content.split('와(과) ')[0];
+            if (productPart.length > 2 && productPart.length < 50) {
+              inheritedProductKeyword = productPart.trim();
+              console.log(`📍 대화 이력에서 상품 컨텍스트 추출: ${inheritedProductKeyword}`);
+            }
+          }
+        }
+        if (msg.role === 'user' && !inheritedVendorFilter) {
+          const inf = clarificationService.findSelectedOption(msg.content, vendorOptionsForScan);
+          if (inf) inheritedVendorFilter = [inf];
+        }
+      }
+    }
+
+    // 2. 다중 매칭 재확인 처리 로직 (선택 처리)
+    let pendingVendorFilter: string[] | null = inheritedVendorFilter;
+
+    // [Rule 2] 상품 컨텍스트 누적 적용: 이전 상품 키워드가 있다면 현재 질문에 보정하여 검색
+    // 예: 이전 질문이 "카카오 비즈보드 (MO)" 였고 현재 질문이 "1페이지"라면
+    // 검색 질의를 "카카오 비즈보드 (MO) 1페이지"로 보정하여 다중 매칭(루프) 방지
+    const searchMessage = inheritedProductKeyword && !message.includes(inheritedProductKeyword)
+      ? `${inheritedProductKeyword} ${message}`
+      : message;
 
     if (conversationHistory && conversationHistory.length >= 2) {
       const lastAiMessage = conversationHistory[conversationHistory.length - 1];
       if (lastAiMessage.role === 'assistant') {
-        // 이전 질문이 재확인 질문이었는지 확인
-        // 질문 텍스트 패턴으로 유추 (더 정확하게는 metadata를 쓰면 좋으나 현재는 텍스트 기반)
         const isClarification = lastAiMessage.content.includes('중 어느 플랫폼') ||
-          lastAiMessage.content.includes('어떤 상품에 대해');
+          lastAiMessage.content.includes('어떤 상품에 대해') ||
+          lastAiMessage.content.includes('어느 페이지의 내용');
 
         if (isClarification) {
-          console.log('🔄 이전 메시지가 재확인 질문임이 감지되었습니다.');
-
-          // 1. 벤더 선택 확인
-          const vendorOptions = ['NAVER', 'KAKAO', 'META', 'GOOGLE', 'X(TWITTER)'];
-          const selectedVendor = clarificationService.findSelectedOption(message, vendorOptions);
-
+          console.log('🔄 직전 메시지가 재확인 질문임이 감지되었습니다.');
+          const selectedVendor = clarificationService.findSelectedOption(message, vendorOptionsForScan);
           if (selectedVendor) {
             pendingVendorFilter = [selectedVendor];
             console.log(`✅ 사용자 벤더 선택 감지: ${selectedVendor}`);
-          } else {
-            // 2. 벤더 컨텍스트 상속 
-            // 사용자의 직접적인 선택은 없지만(예: "1페이지"), 이전 AI 질문이 특정 벤더에 국한된 경우
-            // AI의 마지막 메시지에서 벤더 키워드를 찾아 상속합니다.
-            const inferredFromAi = clarificationService.findSelectedOption(lastAiMessage.content, vendorOptions);
-            if (inferredFromAi) {
-              pendingVendorFilter = [inferredFromAi];
-              console.log(`✅ 이전 AI 질문에서 벤더 컨텍스트 상속: ${inferredFromAi}`);
-            }
           }
         }
       }
@@ -1800,9 +1829,9 @@ export async function POST(request: NextRequest) {
           );
 
           try {
-            console.log(`⏱️ [Stream] Search Start (Timeout: 10s, Message: "${message.substring(0, 30)}...")`);
+            console.log(`⏱️ [Stream] Search Start (Timeout: 10s, Message: "${searchMessage.substring(0, 30)}...")`);
             searchResults = await Promise.race([
-              searchSimilarChunks(message, 50, vendorFilter),
+              searchSimilarChunks(searchMessage, 50, vendorFilter),
               searchTimeoutPromise
             ]);
             console.log(`✅ [Stream] Search Finished: Found ${searchResults.length} chunks`);
@@ -1815,9 +1844,11 @@ export async function POST(request: NextRequest) {
           }
 
           // --- 다중 매칭 재확인 처리 로직 (Turn 1: 질문 생성) ---
-          // 사용자가 이미 특정 벤더를 선택한 경우가 아니라면 재확인 필요성 체크
-          if (!pendingVendorFilter && searchResults.length > 0) {
-            const clarification = clarificationService.detectClarificationNeed(searchResults as any, vendorFilter);
+          // ① 사용자가 이미 특정 벤더를 선택한 경우가 아니고
+          // ② 동일 대화 내 재확인 질문이 아직 나가지 않았을 때만 (Max 1회 제한 - Rule 3)
+          // 재확인 필요성 체크 시 사용자 질문(message)도 함께 전달 (상품명 감지 - Rule 1)
+          if (!pendingVendorFilter && searchResults.length > 0 && clarificationCount < 1) {
+            const clarification = clarificationService.detectClarificationNeed(searchResults as any, searchMessage, vendorFilter);
 
             if (clarification.type !== 'none') {
               console.log(`📢 다중 매칭 감지 (${clarification.type}): 재확인 질문을 생성합니다.`);
