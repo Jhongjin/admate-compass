@@ -15,22 +15,31 @@ export class ClarificationService {
      * 2단계: 동일 벤더 내 상품 중복 확인
      */
     detectClarificationNeed(searchResults: SearchResult[]): ClarificationResult {
-        const highSimilarityResults = searchResults.filter(r => r.similarity > 0.4);
+        // 벤더 판별을 위한 임계값은 낮게 설정하여 모호한 질문(예: '광고 정책?') 대응
+        const vendorCheckResults = searchResults.filter(r => r.similarity > 0.2);
+        // 상품 판별을 위한 임계값은 조금 더 높게 유지
+        const productCheckResults = searchResults.filter(r => r.similarity > 0.4);
 
-        if (highSimilarityResults.length === 0) {
+        if (vendorCheckResults.length === 0) {
             return { type: 'none', options: [], question: '' };
         }
 
-        // 1단계: 벤더(플랫폼) 중복 확인
         const vendors = new Set<string>();
-        highSimilarityResults.forEach(r => {
+        vendorCheckResults.forEach(r => {
             let vendor = r.metadata?.source_vendor;
             // 벤더가 'OTHER'이거나 없는 경우 제목에서 추론
             if (!vendor || vendor.toUpperCase() === 'OTHER') {
                 const inferred = this.inferVendorFromTitle(r.documentTitle || '');
-                if (inferred) vendor = inferred;
+                if (inferred) {
+                    vendor = inferred;
+                } else {
+                    // 추론 실패 시 'OTHER'는 무시하여 사용자에게 노출되지 않도록 함
+                    vendor = null;
+                }
             }
-            if (vendor) vendors.add(vendor.toUpperCase());
+            if (vendor && vendor.toUpperCase() !== 'OTHER') {
+                vendors.add(vendor.toUpperCase());
+            }
         });
 
         if (vendors.size > 1) {
@@ -43,13 +52,10 @@ export class ClarificationService {
             };
         }
 
-        // 2단계: 동일 벤더 내 상품 중복 확인
-        // 제목에서 관보성 있는 키워드(상품명) 추출
+        // 2단계: 동일 벤더 내 상품 중복 확인 (이미 벤더가 하나로 좁혀진 경우)
         const productTitles = new Set<string>();
-        highSimilarityResults.forEach(r => {
+        productCheckResults.forEach(r => {
             const title = r.documentTitle || '';
-            // 제목에서 핵심 상품명 추출 로직 (보통 대괄호나 특정 패턴 사용)
-            // 예: "[성과형 디스플레이 광고] 정책 가이드" -> "성과형 디스플레이 광고"
             const productName = this.extractProductName(title);
             if (productName) productTitles.add(productName);
         });
@@ -71,11 +77,22 @@ export class ClarificationService {
      */
     private inferVendorFromTitle(title: string): string | null {
         const lowerTitle = title.toLowerCase();
+        // 네이버
         if (lowerTitle.includes('네이버') || lowerTitle.includes('naver')) return 'NAVER';
-        if (lowerTitle.includes('카카오') || lowerTitle.includes('kakao')) return 'KAKAO';
-        if (lowerTitle.includes('메타') || lowerTitle.includes('meta') || lowerTitle.includes('facebook') || lowerTitle.includes('instagram')) return 'META';
+        // 카카오
+        if (lowerTitle.includes('카카오') || lowerTitle.includes('kakao') || lowerTitle.includes('kakaobusiness')) return 'KAKAO';
+        // 메타/페이스북/인스타그램
+        if (lowerTitle.includes('메타') || lowerTitle.includes('meta') ||
+            lowerTitle.includes('페이스북') || lowerTitle.includes('facebook') ||
+            lowerTitle.includes('인스타그램') || lowerTitle.includes('instagram') ||
+            lowerTitle.includes('인스타')) return 'META';
+        // 구글
         if (lowerTitle.includes('구글') || lowerTitle.includes('google')) return 'GOOGLE';
-        if (lowerTitle.includes('트위터') || lowerTitle.includes('twitter') || lowerTitle.includes(' x ') || lowerTitle.includes('엑스')) return 'X(TWITTER)';
+        // X (트위터)
+        if (lowerTitle.includes('트위터') || lowerTitle.includes('twitter') ||
+            lowerTitle.includes(' x ') || lowerTitle.startsWith('x ') ||
+            lowerTitle.includes('엑스')) return 'X(TWITTER)';
+
         return null;
     }
 
@@ -88,7 +105,7 @@ export class ClarificationService {
             'KAKAO': '카카오',
             'META': '메타(페이스북/인스타그램)',
             'GOOGLE': '구글',
-            'X(TWITTER)': 'X(트위터)',
+            'X(TWITTER)': 'X(Twitter/트위터)',
         };
         return names[vendor] || vendor;
     }
