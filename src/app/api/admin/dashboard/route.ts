@@ -34,14 +34,8 @@ export async function GET(request: NextRequest) {
       console.error('❌ 청크 조회 오류:', chunksError);
     }
 
-    // 3. 실제 임베딩 통계 조회
-    const { data: embeddings, error: embeddingsError } = await supabase
-      .from('document_embeddings')
-      .select('id, document_id');
-
-    if (embeddingsError) {
-      console.error('❌ 임베딩 조회 오류:', embeddingsError);
-    }
+    // 3. 실제 임베딩 통계 조회 (이 프로젝트에서는 chunks에 임베딩이 포함되어 있으므로 chunks와 동일)
+    // 하단의 집계 로직에서 처리됨
 
     // 4. 실제 대화 통계 조회
     const { data: conversations, error: convError } = await supabase
@@ -55,7 +49,7 @@ export async function GET(request: NextRequest) {
     // 5. 실제 피드백 통계 조회
     const { data: feedback, error: feedbackError } = await supabase
       .from('feedback')
-      .select('id, rating, created_at, helpful');
+      .select('id, created_at, helpful');
 
     // 6. 팀별 사용자 통계 조회
     const { data: teamStats, error: teamStatsError } = await supabase
@@ -98,7 +92,7 @@ export async function GET(request: NextRequest) {
     const pendingDocuments = documents?.filter(doc => doc.status === 'processing').length || 0;
     const processingDocuments = documents?.filter(doc => doc.status === 'processing').length || 0;
     const totalChunks = chunks?.length || 0;
-    const totalEmbeddings = embeddings?.length || 0;
+    const totalEmbeddings = totalChunks;
 
     // 주간 통계 계산 (최근 7일)
     const oneWeekAgo = new Date();
