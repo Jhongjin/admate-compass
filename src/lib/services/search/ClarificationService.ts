@@ -105,7 +105,7 @@ export class ClarificationService {
             'KAKAO': '카카오',
             'META': '메타(페이스북/인스타그램)',
             'GOOGLE': '구글',
-            'X(TWITTER)': 'X(Twitter/트위터)',
+            'X(TWITTER)': '트위터',
         };
         return names[vendor] || vendor;
     }

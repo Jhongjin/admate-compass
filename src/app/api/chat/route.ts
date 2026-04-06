@@ -1797,7 +1797,7 @@ export async function POST(request: NextRequest) {
           try {
             console.log(`⏱️ [Stream] Search Start (Timeout: 10s, Message: "${message.substring(0, 30)}...")`);
             searchResults = await Promise.race([
-              searchSimilarChunks(message, 15, vendorFilter),
+              searchSimilarChunks(message, 50, vendorFilter),
               searchTimeoutPromise
             ]);
             console.log(`✅ [Stream] Search Finished: Found ${searchResults.length} chunks`);
