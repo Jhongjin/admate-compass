@@ -1074,11 +1074,22 @@ async function generateStreamAnswerWithClaude(
     } catch (streamIterError) {
       console.error('❌ Claude 스트리밍 루프 중 오류 발생:', streamIterError);
 
-      // 만약 답변이 아직 하나도 생성되지 않은 초기 단계에서 에러가 났다면(예: 크레딧 부족)
-      // OpenAI GPT로 전환하여 답변 생성을 다시 시도합니다.
-      if (fullAnswer.length < 50 && openai) {
-        console.warn('⚠️ 스트리밍 초기 단계 장애 감지 - GPT로 긴급 전환 시도');
+      // Claude 서버 부하(overloaded_error) 또는 기타 오류 발생 시 GPT로 전환하여 답변 완성을 시도합니다.
+      if (openai) {
+        console.warn('⚠️ Claude 장애 감지 - GPT로 긴급 전환하여 답변 생성을 마무리합니다.');
+
         try {
+          // 이미 생성된 답변이 있는 경우, 사용자에게 전환 안내를 하고 GPT가 이어서 답변하도록 유도
+          if (fullAnswer.length > 0) {
+            const fallbackNotice = `\n\n(Claude 서버 부하로 인해 GPT로 전환하여 답변을 계속합니다...)\n\n`;
+            controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ type: 'chunk', data: { content: fallbackNotice } })}\n\n`));
+
+            // GPT에게는 지금까지의 답변 내용을 참고하여 이어서 작성하도록 요청할 수 있으나, 
+            // 여기서는 단순하게 GPT에게 처음부터 다시 요청하되, 
+            // 스트림은 끊기지 않고 이어서 사용자에게 전달되도록 합니다.
+            // (참고: generateStreamAnswerWithGPT는 내부적으로 fullAnswer를 새로 생성하여 controller에 보냄)
+          }
+
           return await generateStreamAnswerWithGPT(query, searchResults, controller);
         } catch (gptError) {
           console.error('❌ GPT 긴급 전환 폴백도 실패:', gptError);

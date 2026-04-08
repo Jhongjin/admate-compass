@@ -136,6 +136,13 @@ export class ClarificationService {
             });
 
             const data = await response.json();
+
+            // 에러 응답 처리 (예: overloaded_error)
+            if (data.error || !data.content || data.content.length === 0) {
+                console.warn('[ClarificationLLM] Claude API returned error or empty response, trying fallback:', data.error);
+                return await this.askGPTForClarification(userPrompt, searchSummary, systemPrompt);
+            }
+
             const text = data.content[0].text;
 
             // JSON 파싱 (코드 블록 제거 등 정제)
@@ -149,7 +156,54 @@ export class ClarificationService {
                 question: parsed.question || ''
             };
         } catch (error) {
-            console.error('[ClarificationLLM] Error calling LLM:', error);
+            console.error('[ClarificationLLM] Error calling Claude LLM, trying fallback:', error);
+            return await this.askGPTForClarification(userPrompt, searchSummary, systemPrompt);
+        }
+    }
+
+    /**
+     * Claude 장애 시 GPT를 사용하여 의도 분석 수행
+     */
+    private async askGPTForClarification(
+        userPrompt: string,
+        searchSummary: string,
+        systemPrompt: string
+    ): Promise<{
+        needsClarification: boolean;
+        type: 'none' | 'vendor' | 'product';
+        options: string[];
+        question: string;
+    }> {
+        const openaiKey = process.env.OPENAI_API_KEY;
+        if (!openaiKey) {
+            return { needsClarification: false, type: 'none', options: [], question: '' };
+        }
+
+        try {
+            const OpenAI = (await import('openai')).default;
+            const openai = new OpenAI({ apiKey: openaiKey });
+
+            const completion = await openai.chat.completions.create({
+                model: 'gpt-4o-mini',
+                messages: [
+                    { role: 'system', content: systemPrompt },
+                    { role: 'user', content: `사용자 질문: "${userPrompt}"\n\n검색된 문서 목록 (상위 5개):\n${searchSummary}` }
+                ],
+                temperature: 0,
+                response_format: { type: 'json_object' }
+            });
+
+            const content = completion.choices[0].message.content || '{}';
+            const parsed = JSON.parse(content);
+
+            return {
+                needsClarification: parsed.needsClarification || false,
+                type: parsed.type || 'none',
+                options: parsed.options || [],
+                question: parsed.question || ''
+            };
+        } catch (error) {
+            console.error('[ClarificationLLM] GPT Fallback failed:', error);
             return { needsClarification: false, type: 'none', options: [], question: '' };
         }
     }
