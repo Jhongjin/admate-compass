@@ -77,6 +77,8 @@ export class URLChunkingStrategy implements DocumentTypeChunkingStrategy {
       metadata?: Record<string, any>;
     }
   ): Promise<ChunkingResult> {
+    const config = this.getStrategyConfig(content.length, options?.contentType);
+
     // 청킹 전 노이즈 텍스트 필터링
     const cleanedContent = this.filterNoiseText(content);
     if (!cleanedContent || cleanedContent.trim().length === 0) {
