@@ -129,29 +129,46 @@ export class ClarificationService {
     private isProductMentioned(prompt: string, searchResults: SearchResult[]): boolean {
         if (!prompt) return false;
 
-        // 상위 5개 결과의 제목 확인 (유사도 0.3 이상)
+        const cleanPrompt = prompt.replace(/\s+/g, '').toLowerCase();
+
+        // 0. 질문 자체가 이미 특정 상품명(예: 쇼핑검색광고, 파워링크)을 포함하고 있는지 체크
+        // 검색 결과에 의존하기 전에 질문의 핵심 명사들을 확인
+        const commonProducts = ['쇼핑검색광고', '사이트검색광고', '파워링크', '비즈보드', '디스플레이광고', '성과형디스플레이'];
+        for (const p of commonProducts) {
+            if (cleanPrompt.includes(p)) {
+                console.log(`[Clarification] common product "${p}" found in prompt.`);
+                return true;
+            }
+        }
+
+        // 상위 10개 결과의 제목 확인 (유사도 0.25 이상으로 확대)
         const candidates = searchResults
-            .filter(r => r.similarity > 0.3)
-            .slice(0, 5);
+            .filter(r => r.similarity > 0.25)
+            .slice(0, 10);
 
         for (const res of candidates) {
             const title = res.documentTitle || '';
-            if (title.length < 2) continue;
+            const cleanTitle = title.replace(/\s+/g, '').toLowerCase()
+                .replace(/\(\d+페이지\)$/, ''); // 페이지 정보 제거
 
-            // 특정 상품을 명시했는지 확인
-            // 공백 제거 및 소문자 변환으로 비교 정확도 향상
-            const cleanPrompt = prompt.replace(/\s+/g, '').toLowerCase();
-            const cleanTitle = title.replace(/\s+/g, '').toLowerCase();
+            if (cleanTitle.length < 2) continue;
 
             // 1. 전체 매칭: 제목이 질문에 포함되어 있거나 그 반대
             if (cleanPrompt.includes(cleanTitle) || cleanTitle.includes(cleanPrompt)) {
+                console.log(`[Clarification] Title match found: "${cleanTitle}" in prompt.`);
                 return true;
             }
 
             // 2. 키워드 매칭: 상세 상품명 내 핵심 단어가 포함되었는지 확인
             const productName = this.extractProductName(title);
             if (productName && productName.length >= 2) {
-                // 상품명을 단어 단위로 쪼개어 핵심 키워드 추출 (예: "카카오", "비즈보드", "MO")
+                const cleanProductName = productName.replace(/\s+/g, '').toLowerCase();
+                if (cleanPrompt.includes(cleanProductName)) {
+                    console.log(`[Clarification] Product name match found: "${cleanProductName}" in prompt.`);
+                    return true;
+                }
+
+                // 상품명을 단어 단위로 쪼개어 핵심 키워드 추출
                 const keywords = productName.split(/[\s()]/).filter(k => k.length >= 2);
                 for (const keyword of keywords) {
                     const cleanKeyword = keyword.toLowerCase();
@@ -184,20 +201,23 @@ export class ClarificationService {
      * 패턴: [상품명] ... 또는 (상품명) ... 등
      */
     private extractProductName(title: string): string {
+        // 우선순위 0: (N페이지) 형식 제거
+        let cleanTitle = title.replace(/\s*\(\d+페이지\)$/, '').trim();
+
         // 1. 대괄호 패턴: [상품명]
-        const bracketMatch = title.match(/\[(.*?)\]/);
+        const bracketMatch = cleanTitle.match(/\[(.*?)\]/);
         if (bracketMatch && bracketMatch[1]) {
             return bracketMatch[1].trim();
         }
 
         // 2. 하이픈/콜론 구분: 상품명 - ...
-        const splitMatch = title.split(/[-:]/);
+        const splitMatch = cleanTitle.split(/[-:]/);
         if (splitMatch.length > 1 && splitMatch[0].length < 30) {
             return splitMatch[0].trim();
         }
 
         // 3. 기본값: 전체 제목 (너무 길면 자름)
-        return title.length > 20 ? title.substring(0, 20).trim() : title;
+        return cleanTitle.length > 25 ? cleanTitle.substring(0, 25).trim() : cleanTitle;
     }
 
     /**

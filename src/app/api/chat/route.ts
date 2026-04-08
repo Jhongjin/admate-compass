@@ -1709,11 +1709,22 @@ export async function POST(request: NextRequest) {
 
           // 상품명 컨텍스트 추출 (괄호 안의 상품명이나 질문 대상 상품 추출)
           if (!inheritedProductKeyword && isClari) {
-            // "카카오 비즈보드 (MO) 1페이지와..." 같은 패턴에서 상품명 추출
-            const productPart = msg.content.split(' 중 ')[0] || msg.content.split('와(과) ')[0];
-            if (productPart.length > 2 && productPart.length < 50) {
-              inheritedProductKeyword = productPart.trim();
-              console.log(`📍 대화 이력에서 상품 컨텍스트 추출: ${inheritedProductKeyword}`);
+            // "문의하신 내용과 관련하여 https, 검색광고... 등 여러 상품이 확인됩니다." 패턴 처리
+            if (msg.content.includes(' 등 여러 상품')) {
+              const listPart = msg.content.split('관련하여 ')[1]?.split(' 등 여러')[0];
+              if (listPart) {
+                // 첫 번째 상품명을 후보로 추출 (보통 쉼표로 구분됨)
+                inheritedProductKeyword = listPart.split(',')[0].trim();
+              }
+            } else {
+              // 기존 패턴: " 중 " 또는 "와(과) " 기준
+              const productPart = msg.content.split(' 중 ')[0] || msg.content.split('와(과) ')[0];
+              if (productPart.length > 2 && productPart.length < 50) {
+                inheritedProductKeyword = productPart.trim();
+              }
+            }
+            if (inheritedProductKeyword) {
+              console.log(`📍 대화 이력에서 상품 컨텍스트 추출 성공: ${inheritedProductKeyword}`);
             }
           }
         }
@@ -1847,11 +1858,13 @@ export async function POST(request: NextRequest) {
           // ① 사용자가 이미 특정 벤더를 선택한 경우가 아니고
           // ② 동일 대화 내 재확인 질문이 아직 나가지 않았을 때만 (Max 1회 제한 - Rule 3)
           // 재확인 필요성 체크 시 사용자 질문(message)도 함께 전달 (상품명 감지 - Rule 1)
-          if (!pendingVendorFilter && searchResults.length > 0 && clarificationCount < 1) {
+          const skipClarification = pendingVendorFilter || clarificationCount >= 1;
+
+          if (!skipClarification && searchResults.length > 0) {
             const clarification = clarificationService.detectClarificationNeed(searchResults as any, searchMessage, vendorFilter);
 
             if (clarification.type !== 'none') {
-              console.log(`📢 다중 매칭 감지 (${clarification.type}): 재확인 질문을 생성합니다.`);
+              console.log(`📢 다중 매칭 감지 (${clarification.type}): 재확인 질문을 생성합니다. (Count: ${clarificationCount})`);
 
               // 상품 중복의 경우 LLM을 통해 더 자연스러운 질문 생성 시도
               let question = clarification.question;
@@ -1886,6 +1899,8 @@ export async function POST(request: NextRequest) {
               controller.close();
               return;
             }
+          } else if (clarificationCount >= 1) {
+            console.log(`⏭️ 재확인 횟수 제한(${clarificationCount})에 도달 또는 이미 선택됨. 답변 모드로 강제 진행합니다.`);
           }
           // --------------------------------------------------
 
@@ -1937,8 +1952,11 @@ export async function POST(request: NextRequest) {
           searchResults
             .sort((a, b) => (b.similarity || 0) - (a.similarity || 0))
             .forEach(result => {
-              // 1. 제목에서 "(N페이지)" 부분을 제거하여 순수 문서 제목 추출 (정규화)
+              // 0. 노이즈 제목 필터링 (URL 형식 등)
               const rawTitle = result.documentTitle || '';
+              if (rawTitle.startsWith('http') || rawTitle.length < 3) return;
+
+              // 1. 제목에서 "(N페이지)" 부분을 제거하여 순수 문서 제목 추출 (정규화)
               const normalizedTitle = rawTitle.replace(/\s*\(\d+페이지\)$/, '').trim();
 
               // 2. 공백 및 특수문자 제거하여 고유 키 생성 (예: "제한 업종" -> "제한업종")
