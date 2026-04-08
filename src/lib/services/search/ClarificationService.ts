@@ -132,11 +132,22 @@ export class ClarificationService {
         const cleanPrompt = prompt.replace(/\s+/g, '').toLowerCase();
 
         // 0. 질문 자체가 이미 특정 상품명(예: 쇼핑검색광고, 파워링크)을 포함하고 있는지 체크
-        // 검색 결과에 의존하기 전에 질문의 핵심 명사들을 확인
-        const commonProducts = ['쇼핑검색광고', '사이트검색광고', '파워링크', '비즈보드', '디스플레이광고', '성과형디스플레이'];
+        // 검색 결과에 의존하기 전에 주요 브랜드 및 상품 키워드 확인 (재확인 생략 유도)
+        const commonProducts = [
+            // NAVER
+            '쇼핑검색광고', '사이트검색광고', '파워링크', '쇼핑윈도', '플레이스광고', '성과형디스플레이', 'GFA', '브랜드검색', '신제품검색',
+            // KAKAO
+            '비즈보드', '카카오모먼트', '디스플레이광고', '메시지광고', '카카오톡채널', '싱크', 'Sync', '픽셀', 'SDK',
+            // META
+            '릴스', 'Reels', '인스타그램', 'Instagram', '페이스북', 'Facebook', '타겟', '맞춤타겟', '유사타겟', '픽셀', 'Pixel', '전환API', 'CAPI',
+            // GOOGLE / ETC
+            '검색광고', '유튜브', 'YouTube', '디스플레이', 'GDN', '앱광고', 'SA', 'DA'
+        ];
+
         for (const p of commonProducts) {
-            if (cleanPrompt.includes(p)) {
-                console.log(`[Clarification] common product "${p}" found in prompt.`);
+            const cleanP = p.replace(/\s+/g, '').toLowerCase();
+            if (cleanPrompt.includes(cleanP)) {
+                console.log(`[Clarification] common product "${p}" found in prompt context.`);
                 return true;
             }
         }
@@ -210,8 +221,8 @@ export class ClarificationService {
             return bracketMatch[1].trim();
         }
 
-        // 2. 하이픈/콜론 구분: 상품명 - ...
-        const splitMatch = cleanTitle.split(/[-:]/);
+        // 2. 하이픈/콜론/파이프 구분: 상품명 - ... 또는 상품명 | ...
+        const splitMatch = cleanTitle.split(/[-:|]/);
         if (splitMatch.length > 1 && splitMatch[0].length < 30) {
             return splitMatch[0].trim();
         }
