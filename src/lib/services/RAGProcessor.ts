@@ -5,7 +5,7 @@
 
 import { RecursiveCharacterTextSplitter } from 'langchain/text_splitter';
 import { createClient } from '@supabase/supabase-js';
-import { createPureClient } from '../supabase/server';
+import { createPureClient } from '../supabase/pure';
 import { processTextEncoding, TextEncodingResult } from '../utils/textEncoding';
 import { adaptiveChunkingService, AdaptiveChunkingConfig } from './AdaptiveChunkingService';
 import { contentTypeDetector } from './ContentTypeDetector';
@@ -94,6 +94,13 @@ export class RAGProcessor {
       chunkOverlap: 100, // 청크 간 겹침 (100자로 감소)
       separators: ['\n\n', '\n', '.', '!', '?', ';', ' ', ''], // 분할 기준
     });
+
+    // [DEBUG] 추가
+    console.log(`[DEBUG] RAGProcessor 생성자 호출됨. PID: ${process.pid}`);
+    console.log(`[DEBUG] process.env.OPENAI_API_KEY 존재 여부: ${Boolean(process.env.OPENAI_API_KEY)}`);
+    if (process.env.OPENAI_API_KEY) {
+      console.log(`[DEBUG] Key preview: ${process.env.OPENAI_API_KEY.substring(0, 10)}...`);
+    }
 
     // 해시 임베딩 모드 우선 확인 (환경 변수 디버깅)
     const hashEmbeddingEnv = process.env.USE_HASH_EMBEDDING;

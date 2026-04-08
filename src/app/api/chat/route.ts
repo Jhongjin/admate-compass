@@ -1862,7 +1862,7 @@ export async function POST(request: NextRequest) {
           const skipClarification = pendingVendorFilter || clarificationCount >= 1;
 
           if (!skipClarification && searchResults.length > 0) {
-            const clarification = clarificationService.detectClarificationNeed(searchResults as any, searchMessage, vendorFilter);
+            const clarification = await clarificationService.detectClarificationNeedWithLLM(searchResults as any, searchMessage, vendorFilter);
 
             if (clarification.type !== 'none') {
               console.log(`📢 다중 매칭 감지 (${clarification.type}): 재확인 질문을 생성합니다. (Count: ${clarificationCount})`);

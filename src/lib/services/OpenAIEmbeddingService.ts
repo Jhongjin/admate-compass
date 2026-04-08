@@ -41,6 +41,22 @@ export class OpenAIEmbeddingService {
   }
 
   /**
+   * 환경 변수에서 키를 다시 로드하여 서비스 재초기화
+   */
+  public reinitialize(): boolean {
+    const newKey = process.env.OPENAI_EMBEDDING_API_KEY || process.env.OPENAI_API_KEY || null;
+    if (newKey) {
+      this.apiKey = newKey;
+      this.client = new OpenAI({
+        apiKey: this.apiKey,
+      });
+      console.log('✅ OpenAI Embedding Service 재초기화 완료 (수동)');
+      return true;
+    }
+    return false;
+  }
+
+  /**
    * 초기화 상태 확인
    */
   get initialized(): boolean {

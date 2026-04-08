@@ -13,13 +13,13 @@ export interface AlternativeDocument {
 }
 
 export class AlternativeCrawlingService {
-  
+
   /**
    * 방법 1: 공개 API 활용
    */
   async crawlWithPublicAPIs(): Promise<AlternativeDocument[]> {
     const documents: AlternativeDocument[] = [];
-    
+
     try {
       // Wikipedia API 활용
       const wikipediaUrls = [
@@ -27,7 +27,7 @@ export class AlternativeCrawlingService {
         'https://ko.wikipedia.org/wiki/Instagram',
         'https://ko.wikipedia.org/wiki/Meta_Platforms'
       ];
-      
+
       for (const url of wikipediaUrls) {
         try {
           const response = await fetch(url);
@@ -35,7 +35,7 @@ export class AlternativeCrawlingService {
             const html = await response.text();
             const content = this.extractTextFromHTML(html);
             const title = this.extractTitleFromHTML(html);
-            
+
             if (content && content.length > 100) {
               documents.push({
                 title: title || url,
@@ -51,14 +51,14 @@ export class AlternativeCrawlingService {
           console.error(`Wikipedia API 크롤링 실패: ${url}`, error);
         }
       }
-      
+
     } catch (error) {
       console.error('공개 API 크롤링 실패:', error);
     }
-    
+
     return documents;
   }
-  
+
   /**
    * 방법 2: 정적 데이터 활용
    */
@@ -132,27 +132,27 @@ export class AlternativeCrawlingService {
       }
     ];
   }
-  
+
   /**
    * 방법 3: RSS 피드 활용
    */
   async crawlRSSFeeds(): Promise<AlternativeDocument[]> {
     const documents: AlternativeDocument[] = [];
-    
+
     try {
       // Meta 공식 블로그 RSS (예시)
       const rssUrls = [
         'https://about.fb.com/news/rss/',
         'https://developers.facebook.com/blog/rss/'
       ];
-      
+
       for (const rssUrl of rssUrls) {
         try {
           const response = await fetch(rssUrl);
           if (response.ok) {
             const xml = await response.text();
             const items = this.parseRSSFeed(xml);
-            
+
             for (const item of items) {
               documents.push({
                 title: item.title,
@@ -168,61 +168,61 @@ export class AlternativeCrawlingService {
           console.error(`RSS 피드 크롤링 실패: ${rssUrl}`, error);
         }
       }
-      
+
     } catch (error) {
       console.error('RSS 피드 크롤링 실패:', error);
     }
-    
+
     return documents;
   }
-  
+
   private extractTextFromHTML(html: string): string {
     // HTML 태그 제거
     let text = html.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '');
     text = text.replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '');
     text = text.replace(/<[^>]+>/g, ' ');
-    
+
     // 특수 문자 정리
     text = text.replace(/&nbsp;/g, ' ');
     text = text.replace(/&amp;/g, '&');
     text = text.replace(/&lt;/g, '<');
     text = text.replace(/&gt;/g, '>');
     text = text.replace(/&quot;/g, '"');
-    
+
     // 공백 정리
     text = text.replace(/\s+/g, ' ').trim();
-    
+
     return text;
   }
-  
+
   private extractTitleFromHTML(html: string): string | null {
     const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
     if (titleMatch) {
       return titleMatch[1].trim();
     }
-    
+
     const h1Match = html.match(/<h1[^>]*>([^<]+)<\/h1>/i);
     if (h1Match) {
       return h1Match[1].trim();
     }
-    
+
     return null;
   }
-  
-  private parseRSSFeed(xml: string): Array<{title: string, description: string, link: string, pubDate: string}> {
-    const items: Array<{title: string, description: string, link: string, pubDate: string}> = [];
-    
+
+  private parseRSSFeed(xml: string): Array<{ title: string, description: string, link: string, pubDate: string }> {
+    const items: Array<{ title: string, description: string, link: string, pubDate: string }> = [];
+
     try {
       // 간단한 RSS 파싱 (실제로는 더 정교한 파서 필요)
       const itemMatches = xml.match(/<item>[\s\S]*?<\/item>/gi);
-      
+
       if (itemMatches) {
         for (const item of itemMatches) {
           const titleMatch = item.match(/<title[^>]*>([^<]+)<\/title>/i);
           const descMatch = item.match(/<description[^>]*>([^<]+)<\/description>/i);
           const linkMatch = item.match(/<link[^>]*>([^<]+)<\/link>/i);
           const dateMatch = item.match(/<pubDate[^>]*>([^<]+)<\/pubDate>/i);
-          
+
           if (titleMatch && descMatch && linkMatch) {
             items.push({
               title: titleMatch[1].trim(),
@@ -236,8 +236,29 @@ export class AlternativeCrawlingService {
     } catch (error) {
       console.error('RSS 파싱 오류:', error);
     }
-    
+
     return items;
+  }
+
+  /**
+   * 네이버 광고 도움말 크롤링 등록 (순차 ID 스캔 방식)
+   */
+  async registerNaverAdsHelp(startId: number = 1, endId: number = 1000): Promise<any> {
+    try {
+      const { naverAdsCrawlingService } = await import('./NaverAdsCrawlingService');
+      console.log(`🚀 [AlternativeCrawlingService] 네이버 광고 도움말 등록 시작... (범위: ${startId} ~ ${endId})`);
+      const result = await naverAdsCrawlingService.discoverAndEnqueue(startId, endId);
+      return {
+        success: true,
+        ...result
+      };
+    } catch (error) {
+      console.error('❌ [AlternativeCrawlingService] 네이버 광고 도움말 등록 실패:', error);
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error)
+      };
+    }
   }
 }
 

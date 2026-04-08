@@ -10,6 +10,151 @@ export interface ClarificationResult {
 
 export class ClarificationService {
     /**
+     * [LLM 기반] 검색 결과에서 재확인이 필요한지 판별합니다. (비동기)
+     * 비용 최적화를 위해 명확한 케이스는 LLM 없이 즉시 통과시킵니다.
+     */
+    async detectClarificationNeedWithLLM(
+        searchResults: SearchResult[],
+        prompt: string = '',
+        currentVendorFilter: string[] | null = null
+    ): Promise<ClarificationResult> {
+        if (searchResults.length === 0) {
+            return { type: 'none', options: [], question: '' };
+        }
+
+        // --- 단계 1: LLM 호출 없이 통과되는 '명확한 케이스' 선별 (비용 및 속도 최적화) ---
+
+        // 1.1. 질문 내 상품명 명시 확인 (Rule 1)
+        if (this.isProductMentioned(prompt, searchResults)) {
+            console.log(`[ClarificationLLM] Product name recognized in prompt, bypassing LLM.`);
+            return { type: 'none', options: [], question: '' };
+        }
+
+        // 1.2. 강한 매칭(Strong Match) 확인
+        if (searchResults[0].similarity > 0.8) {
+            console.log(`[ClarificationLLM] Strong match (${searchResults[0].similarity.toFixed(2)}), bypassing LLM.`);
+            return { type: 'none', options: [], question: '' };
+        }
+
+        // 1.3. 검색 결과 벤더가 모두 동일하거나 이미 필터링된 상태 (Rule 2)
+        const activeVendors = new Set(
+            searchResults
+                .filter(r => r.similarity > 0.2)
+                .map(r => r.metadata?.source_vendor)
+                .filter(v => v && v !== 'OTHER')
+        );
+
+        if (activeVendors.size <= 1 || (currentVendorFilter && currentVendorFilter.length === 1)) {
+            const vendor = currentVendorFilter?.[0] || Array.from(activeVendors)[0];
+            console.log(`[ClarificationLLM] Single vendor focus detected (${vendor || 'ALL'}), bypassing LLM.`);
+
+            // 단일 벤더 내 상품 중복만 체크 (동기 방식 재사용)
+            const result = this.detectClarificationNeed(searchResults, prompt, currentVendorFilter);
+            if (result.type === 'vendor') return { type: 'none', options: [], question: '' }; // 벤더 재확인은 불필요
+            return result;
+        }
+
+        // --- 단계 2: 모호한 경우에만 LLM(Claude Haiku) 호출 ---
+
+        // 상위 5개 결과 요약
+        const topTitles = searchResults
+            .slice(0, 5)
+            .map(r => `- [${r.metadata?.source_vendor || '불명'}] ${r.documentTitle} (유사도: ${r.similarity.toFixed(2)})`)
+            .join('\n');
+
+        console.log(`[ClarificationLLM] Ambiguity detected. Calling LLM for intent analysis...`);
+        const judgement = await this.askLLMForClarification(prompt, topTitles);
+
+        if (!judgement.needsClarification) {
+            return { type: 'none', options: [], question: '' };
+        }
+
+        return {
+            type: judgement.type,
+            options: judgement.options,
+            question: judgement.question
+        };
+    }
+
+    /**
+     * LLM(Claude Haiku)에게 재확인 필요 여부 문의
+     */
+    private async askLLMForClarification(
+        userPrompt: string,
+        searchSummary: string
+    ): Promise<{
+        needsClarification: boolean;
+        type: 'none' | 'vendor' | 'product';
+        options: string[];
+        question: string;
+    }> {
+        // 환경변수에서 Anthropic API 키 확인
+        const apiKey = process.env.ANTHROPIC_API_KEY;
+        if (!apiKey) {
+            console.warn('[ClarificationLLM] No Anthropic API key found, bypassing clarification.');
+            return { needsClarification: false, type: 'none', options: [], question: '' };
+        }
+
+        const systemPrompt = `
+당신은 광고 플랫폼 AI 어시스턴트의 의도 분석 모듈입니다.
+사용자의 질문과 검색된 문서 목록을 보고, 추가 확인(Clarification)이 필요한지 판단하세요.
+
+[판단 규칙]
+1. 사용자 질문이 특정 플랫폼(네이버/카카오/메타/구글/X)을 이미 명시했다면 -> needsClarification: false
+2. 사용자 질문이 특정 상품/기능을 명시했다면 -> needsClarification: false
+   (예: "릴스 소재", "파워링크 키워드", "카카오 비즈보드", "전환 API" 등)
+3. 검색 결과가 동일한 플랫폼의 같은 주제를 다루고 있다면 -> needsClarification: false
+4. 검색 결과에 여러 플랫폼(벤더)이 혼재되어 질문 의도가 어느 쪽인지 모호한 경우 -> type: "vendor"
+5. 동일 플랫폼 내에서 서로 무관한 여러 상품이 매칭되어 선택이 필요한 경우 -> type: "product"
+
+응답은 반드시 아래 JSON 형식으로만 답하세요.
+{
+  "needsClarification": boolean,
+  "type": "none" | "vendor" | "product",
+  "options": string[],
+  "question": "사용자에게 보여줄 정중한 재확인 질문"
+}
+`.trim();
+
+        try {
+            const response = await fetch('https://api.anthropic.com/v1/messages', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-api-key': apiKey,
+                    'anthropic-version': '2023-06-01'
+                },
+                body: JSON.stringify({
+                    model: 'claude-3-haiku-20240307',
+                    max_tokens: 300,
+                    system: systemPrompt,
+                    messages: [
+                        { role: 'user', content: `사용자 질문: "${userPrompt}"\n\n검색된 문서 목록 (상위 5개):\n${searchSummary}` }
+                    ],
+                    temperature: 0
+                })
+            });
+
+            const data = await response.json();
+            const text = data.content[0].text;
+
+            // JSON 파싱 (코드 블록 제거 등 정제)
+            const cleanJson = text.replace(/```json|```/g, '').trim();
+            const parsed = JSON.parse(cleanJson);
+
+            return {
+                needsClarification: parsed.needsClarification || false,
+                type: parsed.type || 'none',
+                options: parsed.options || [],
+                question: parsed.question || ''
+            };
+        } catch (error) {
+            console.error('[ClarificationLLM] Error calling LLM:', error);
+            return { needsClarification: false, type: 'none', options: [], question: '' };
+        }
+    }
+
+    /**
      * 검색 결과에서 재확인이 필요한지 판별합니다.
      * ① 질문 내 상품명 명시 시 재확인 생략 (우선순위 높음)
      * ② 강한 매칭(0.8+) 시 생략

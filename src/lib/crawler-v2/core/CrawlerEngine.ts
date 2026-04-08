@@ -19,7 +19,7 @@ import { retryManager } from '../utils/RetryManager';
 import { memoryMonitor } from '../utils/MemoryMonitor';
 import type { CrawlResult, CrawlOptions, DiscoveredUrl, CrawlProgress } from '../types';
 import { extractDomain, normalizeUrl, isAllowedDomain } from '../utils/url-utils';
-import { createPureClient } from '@/lib/supabase/server';
+import { createPureClient } from '../../supabase/pure';
 
 export class CrawlerEngine {
   private processingTimes: number[] = [];
@@ -121,12 +121,109 @@ export class CrawlerEngine {
     } catch (error) {
       console.error(`❌ URL 크롤링 실패: ${url}`, error);
 
+      // ✅ [특수 대응] 브라우저 실행 실패 시 네이버 광고 도움말에 한해 fetch로 대안 크롤링 시도
+      if (url.includes('ads.naver.com/help/faq/')) {
+        console.log(`📡 [CrawlerEngine] 브라우저 실패로 인한 fetch 대안 크롤링 시도: ${url}`);
+        try {
+          const response = await fetch(url, {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+            }
+          });
+
+          if (response.ok) {
+            const html = await response.text();
+
+            // 간단한 제목 및 본문 추출 (Regex 활용)
+            const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
+            const title = titleMatch ? titleMatch[1].trim() : url;
+
+            let content = '';
+
+            // 1. 네이버 특화 RSC 데이터 추출 시도 (Smart Editor 텍스트 등)
+            if (url.includes('ads.naver.com')) {
+              // RSC 데이터 내의 SE-TEXT 마커 사이의 텍스트 추출 시도
+              const seTextMatch = html.match(/SE-TEXT \{ --\\u003e([\s\S]*?)\\u003c!-- \} SE-TEXT/g);
+              if (seTextMatch) {
+                content = seTextMatch.map(m => m.replace(/\\u[0-9a-fA-F]{4}/g, (match) => {
+                  return String.fromCharCode(parseInt(match.replace('\\u', ''), 16));
+                }).replace(/<[^>]+>/g, ' ')).join('\n');
+              }
+
+              // 2. 만약 RSC 방식 실패 시 JSON content 필드 시도
+              if (content.length < 100) {
+                const jsonContentMatch = html.match(/\\"content\\":\\"(.*?)\\"/);
+                if (jsonContentMatch) {
+                  content = jsonContentMatch[1].replace(/\\n/g, '\n').replace(/\\"/g, '"').replace(/<[^>]+>/g, ' ');
+                }
+              }
+
+              // 3. 최신 Naver RSC 구조 (htmlData 필드) 대응 추가 🛠️
+              if (content.length < 100) {
+                const htmlDataMatch = html.match(/"htmlData":"(.*?)"/);
+                if (htmlDataMatch) {
+                  let rawHtml = htmlDataMatch[1];
+                  // 유니코드 복원 (\u003c -> < 등)
+                  rawHtml = rawHtml.replace(/\\u([0-9a-fA-F]{4})/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+                  rawHtml = rawHtml.replace(/\\"/g, '"');
+                  content = rawHtml.replace(/<[^>]+>/g, ' ');
+                }
+              }
+            }
+
+            // 4. 일반적인 텍스트 추출 (폴백)
+            if (content.length < 100) {
+              // 메타데이터에서 설명 추출 시도 (Facebook 등 대응)
+              const metaDescMatch = html.match(/<meta[^>]*property="og:description"[^>]*content="([^"]*)"/i) ||
+                html.match(/<meta[^>]*name="description"[^>]*content="([^"]*)"/i);
+
+              if (metaDescMatch && metaDescMatch[1].length > 50) {
+                content = metaDescMatch[1];
+                console.log(`📡 [CrawlerEngine] 메타데이터에서 본문 대체 추출 성공: ${url.substring(0, 50)}...`);
+              } else {
+                const tempHtml = html.replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+                  .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '');
+                content = tempHtml.replace(/<[^>]+>/g, ' ');
+              }
+            }
+            content = content.replace(/\s+/g, ' ').trim();
+
+            if (content.length > 0) {
+              console.log(`✅ [CrawlerEngine] fetch 대안 크롤링 성공: ${url} (${content.length}자)`);
+              const result: CrawlResult = {
+                url: url,
+                title,
+                content,
+                contentLength: content.length,
+                type: 'help',
+                lastUpdated: new Date().toISOString(),
+                status: content.length > 50 ? 'success' : 'failed', // 최소 50자는 되어야 성공으로 간주
+                error: content.length > 50 ? undefined : '추출된 본문이 너무 짧습니다 (50자 미만)',
+              };
+
+              // 캐시에 저장 (성공 시에만)
+              if (config.useCache && result.status === 'success') {
+                cacheManager.set(url, result, config.cacheTTL);
+              }
+
+              return result;
+            } else {
+              console.warn(`⚠️ [CrawlerEngine] fetch 응답은 OK였으나 본문 추출에 실패했습니다: ${url}`);
+            }
+          } else {
+            console.warn(`⚠️ [CrawlerEngine] fetch 대안 크롤링 HTTP 오류: ${response.status} ${response.statusText}`);
+          }
+        } catch (fetchError) {
+          console.error(`❌ [CrawlerEngine] fetch 대안 크롤링 중 예외 발생: ${url}`, fetchError);
+        }
+      }
+
       return {
-        url: normalizedUrl,
+        url: url,
         title: url,
         content: '',
         contentLength: 0,
-        type: 'general',
+        type: 'help',
         lastUpdated: new Date().toISOString(),
         status: 'failed',
         error: error instanceof Error ? error.message : String(error),

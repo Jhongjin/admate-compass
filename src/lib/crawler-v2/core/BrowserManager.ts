@@ -3,6 +3,7 @@
  * Puppeteer 브라우저 인스턴스의 생명주기 관리
  */
 
+import os from 'os';
 import puppeteerCore, { Browser, Page } from 'puppeteer-core';
 import chromium from '@sparticuz/chromium';
 import { existsSync } from 'fs';
@@ -60,6 +61,11 @@ export class BrowserManager {
     // 2. Windows 일반 경로 확인
     if (process.platform === 'win32') {
       const windowsPaths: string[] = [
+        // 사용자가 명시적으로 요청한 네이버 웨일 (기업 방화벽 대응)
+        'C:\\Program Files\\Naver\\Naver Whale\\Application\\whale.exe',
+        'C:\\Program Files (x86)\\Naver\\Naver Whale\\Application\\whale.exe',
+
+        // 표준 크롬 경로
         'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
         'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
       ];
@@ -219,11 +225,23 @@ export class BrowserManager {
 
         const launchOptions: any = {
           headless,
-          args: config.args || defaultArgs,
+          args: [
+            ...(config.args || defaultArgs),
+            '--disable-extensions',
+            '--disable-component-update',
+            '--disable-background-networking',
+            '--disable-background-timer-throttling',
+            '--disable-backgrounding-occluded-windows',
+            '--ipc-connection-timeout=10000',
+            '--disable-dev-shm-usage',
+            '--no-sandbox',
+            '--headless=new', // ✅ 최신 헤드리스 모드 명시적 사용
+          ],
           ignoreDefaultArgs: ['--enable-automation'],
+          pipe: true, // ✅ 윈도우에서 WebSocket 대신 Pipe 사용으로 안정성 강화 (Code: 0 해결책)
           executablePath,
           defaultViewport: { width, height },
-          userDataDir: join(process.cwd(), '.puppeteer_cache'), // ✅ C 드라이브 용량 부족 해결: D 드라이브(루트)에 캐시 저장
+          userDataDir: join(os.tmpdir(), `puppeteer_cache_${process.pid}`), // ✅ 프로세스별 고유 캐시 디렉토리 사용하여 잠금 충돌 방지
         };
 
         console.log(`🔧 로컬 환경: Chrome 실행 파일 경로: ${executablePath}`);
