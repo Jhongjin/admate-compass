@@ -78,10 +78,10 @@ async function cleanup() {
     const dryRun = process.argv.includes('--dry-run');
     console.log(`🚀 RAG 데이터 클린업 시작 (Dry run: ${dryRun})`);
 
-    // 1. 모든 문서 가져오기
+    // 1. 모든 문서 가져오기 (source_vendor 포함) 🛡️
     const { data: documents, error } = await supabase
         .from('documents')
-        .select('id, title, content');
+        .select('id, title, content, source_vendor');
 
     if (error) {
         console.error('문서 조회 실패:', error);
@@ -104,8 +104,14 @@ async function cleanup() {
         const cleanTitle = stripBoilerplate(originalTitle);
         const cleanContent = stripBoilerplate(originalContent);
 
-        // 100자 미만 문서 삭제 대상
+        // 100자 미만 문서 삭제 대상 (단, pending 상태이거나 NAVER 문서는 제외) 🛡️
         if (cleanContent.length < 100) {
+            // NAVER 문서는 특수 관리 중이므로 삭제 제외
+            if (doc.source_vendor === 'NAVER') {
+                console.log(`⏩ [Naver skip] [${doc.id}] ${cleanTitle.substring(0, 30)}...`);
+                continue;
+            }
+
             console.log(`🗑️ 삭제 (너무 짧음): [${doc.id}] ${cleanTitle.substring(0, 30)}... (${cleanContent.length}자)`);
             if (!dryRun) {
                 await supabase.from('documents').delete().eq('id', doc.id);

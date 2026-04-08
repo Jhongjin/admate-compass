@@ -80,8 +80,14 @@ async function cleanupV2() {
         const cleanTitle = stripBoilerplate(originalTitle);
         const cleanContent = stripBoilerplate(originalContent);
 
-        // A. 너무 짧은 문서 (노이즈 제외 후 100자 미만)
+        // A. 너무 짧은 문서 (노이즈 제외 후 100자 미만) 🛡️
         if (cleanContent.length < 100) {
+            // NAVER 문서는 특수 관리 중이므로 삭제 제외
+            if (doc.url?.includes('ads.naver.com')) {
+                console.log(`⏩ [Naver skip] ${doc.id} | 제목: ${cleanTitle.substring(0, 20)}...`);
+                continue;
+            }
+
             console.log(`🗑️ [삭제-저품질] ${doc.id} | 길이: ${cleanContent.length}자 | 제목: ${cleanTitle.substring(0, 20)}...`);
             if (!dryRun) {
                 await supabase.from('documents').delete().eq('id', doc.id);

@@ -1,4 +1,4 @@
-import { createPureClient } from '../lib/supabase/pure';
+import { createPureClient } from '../src/lib/supabase/pure';
 import * as dotenv from 'dotenv';
 import path from 'path';
 
@@ -45,8 +45,6 @@ async function cleanNoisyChunks() {
     }
 
     // 3. 10자 이하이며 문장 부호가 없는 짧은 노이즈 삭제 (패턴 기반)
-    // Supabase에서 직접 필터링하기 어려우므로 일부 가져와서 판단하거나 like 사용
-    // 여기서는 위험을 줄이기 위해 명시적인 like 패턴 사용
     const shortNoiseShortcuts = ['어떤', '것을', '및', '또는', '등'];
     for (const word of shortNoiseShortcuts) {
         const { count, error } = await supabase
@@ -72,13 +70,11 @@ async function cleanNoisyChunks() {
         }
     }
 
-    // 5. 정규식 등을 활용한 추가 정제 (옵션: 10자 이하이면서 한글만 있는 경우 등)
-    // 서비스 역할 키가 있으므로 RPC를 호출하거나 전체 스캔 후 삭제 가능
-    // 여기서는 안전하게 1~5자 사이의 특정 불용어 조합만 추가로 처리
+    // 5. 정규식 등을 활용한 추가 정제
     const tinyNoise = await supabase
         .from('document_chunks')
         .select('id, content')
-        .lte('content', '     ') // 짧은 텍스트 대략적 필터
+        .lte('content', '     ')
         .limit(1000);
 
     if (tinyNoise.data) {
