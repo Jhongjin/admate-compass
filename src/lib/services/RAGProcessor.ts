@@ -2737,19 +2737,8 @@ export class RAGProcessor {
         ? vendorFilter.map(v => v.toUpperCase())
         : null;
 
-      // 가중치 기반 검색 함수 사용 여부 확인
-      let useWeightedSearch = false;
-      try {
-        const testResult = await supabase.rpc('search_documents_with_weights', {
-          query_embedding: queryEmbedding,
-          match_threshold: 0.6, // 0.7 → 0.6으로 조정 (더 많은 결과)
-          match_count: 1,
-          vendor_filter: normalizedVendorFilter,
-        });
-        useWeightedSearch = !testResult.error;
-      } catch {
-        useWeightedSearch = false;
-      }
+      // 가중치 기반 검색 사용 (performVectorSearch 내부에서 폴백 처리됨)
+      const useWeightedSearch = true;
 
       // 하이브리드 검색: 벡터 검색과 키워드 검색을 동시에 수행
       console.log('🔀 하이브리드 검색 시작: 벡터 + 키워드 검색 결합');
@@ -3050,14 +3039,29 @@ export class RAGProcessor {
       let data, error;
 
       if (useWeightedSearch) {
+        // 가중치 검색 우선 시도
         const result = await supabase.rpc('search_documents_with_weights', {
           query_embedding: queryEmbedding,
           match_threshold: threshold,
           match_count: limit,
           vendor_filter: vendorFilter,
         });
-        data = result.data;
-        error = result.error;
+
+        if (!result.error) {
+          data = result.data;
+          error = result.error;
+        } else {
+          // 실패 시 일반 벡터 검색으로 폴백
+          console.warn('⚠️ 가중치 검색 실패, 일반 벡터 검색으로 폴백합니다.', result.error);
+          const fallbackResult = await supabase.rpc('search_documents', {
+            query_embedding: queryEmbedding,
+            match_threshold: threshold,
+            match_count: limit,
+            vendor_filter: vendorFilter,
+          });
+          data = fallbackResult.data;
+          error = fallbackResult.error;
+        }
       } else {
         const result = await supabase.rpc('search_documents', {
           query_embedding: queryEmbedding,
