@@ -77,10 +77,23 @@ export class URLChunkingStrategy implements DocumentTypeChunkingStrategy {
       metadata?: Record<string, any>;
     }
   ): Promise<ChunkingResult> {
-    const config = this.getStrategyConfig(content.length, options?.contentType);
+    // 청킹 전 노이즈 텍스트 필터링
+    const cleanedContent = this.filterNoiseText(content);
+    if (!cleanedContent || cleanedContent.trim().length === 0) {
+      return {
+        chunks: [],
+        metadata: {
+          totalChunks: 0,
+          averageChunkSize: 0,
+          coverage: 0,
+          documentType: 'url',
+          strategy: 'url-optimized',
+        },
+      };
+    }
 
-    // HTML 구조 정보 추출
-    const structureInfo = extractHTMLStructureFromText(content);
+    // HTML 구조 정보 추출 (원본 기준이 아닌 필터링된 텍스트 기준)
+    const structureInfo = extractHTMLStructureFromText(cleanedContent);
 
     const textSplitter = new RecursiveCharacterTextSplitter({
       chunkSize: config.chunkSize,
@@ -88,18 +101,18 @@ export class URLChunkingStrategy implements DocumentTypeChunkingStrategy {
       separators: config.separators,
     });
 
-    const textChunks = await textSplitter.splitText(content);
+    const textChunks = await textSplitter.splitText(cleanedContent);
 
     // 전체 청크 컨텍스트 준비 (TF-IDF 계산용)
     const allChunks = textChunks.map(chunk => chunk.trim());
 
     const chunks: UnifiedChunk[] = textChunks.map((chunk, index) => {
-      let startChar = content.indexOf(chunk);
+      let startChar = cleanedContent.indexOf(chunk);
       let endChar = startChar + chunk.length;
-      
+
       // 잘린 텍스트 방지를 위한 경계 조정
       const adjustedBoundary = adjustChunkBoundary(
-        content,
+        cleanedContent,
         startChar,
         endChar,
         {
@@ -109,12 +122,12 @@ export class URLChunkingStrategy implements DocumentTypeChunkingStrategy {
           preserveSentences: true,
         }
       );
-      
+
       startChar = adjustedBoundary.start;
       endChar = adjustedBoundary.end;
-      
-      const trimmedChunk = content.slice(startChar, endChar).trim();
-      const position = startChar / content.length; // 문서 내 위치 (0-1)
+
+      const trimmedChunk = cleanedContent.slice(startChar, endChar).trim();
+      const position = startChar / cleanedContent.length; // 문서 내 위치 (0-1)
 
       // 청크가 속한 섹션 정보 찾기
       const sectionInfo = findSectionForChunk(startChar, endChar, structureInfo.sections);
@@ -136,8 +149,8 @@ export class URLChunkingStrategy implements DocumentTypeChunkingStrategy {
           headingLevel: sectionInfo?.level,
         },
         {
-          totalLength: content.length,
-          averageChunkSize: content.length / textChunks.length,
+          totalLength: cleanedContent.length,
+          averageChunkSize: cleanedContent.length / textChunks.length,
         }
       );
 
@@ -189,6 +202,56 @@ export class URLChunkingStrategy implements DocumentTypeChunkingStrategy {
         strategy: 'url-optimized',
       },
     };
+  }
+
+  /**
+   * 청킹 전 노이즈 텍스트 필터링
+   * URL 크롤링 결과에서 네비게이션, 푸터, 단순 버튼 텍스트 등을 라인 단위로 제거
+   */
+  private filterNoiseText(text: string): string {
+    if (!text) return '';
+
+    const lines = text.split('\n');
+    const noisePatterns = [
+      /^(문의하기|로그인|회원가입|광고주|비즈니스|홈|목록|전체메뉴|카테고리|검색)$/,
+      /^(받아보세요|함께하세요|시작하기|구독하기|알아보기|더보기|신청하기|다운로드)$/,
+      /^(X|Facebook|Instagram|YouTube|Blog|LinkedIn|KakaoTalk|Naver|Twitter)$/i,
+      /^.[가-힣]{1,2}$/, // 너무 짧은 단편 (예: "어떤", "것을") - 문법적 불용어 가능성
+      /^\[(자세히|더|검색|전체)\]$/,
+      /^[\d\s\|\-\_\>]+$/, // 숫자와 특수문자만 있는 라인
+      /^(뉴스레터\s*구독하기|신규\s*광고주라면|무료\s*체험하기)$/,
+      /^[■□●○▶▷◀▼▲]\s*.*$/, // 특수문자로 시작하는 내비게이션 제목
+      /^바로가기\s*>?$/
+    ];
+
+    const filteredLines = lines
+      .map(line => line.trim())
+      .filter(line => {
+        if (!line) return false;
+
+        // 특정 노이즈 패턴과 정확히 일치하는지 확인
+        const isNoise = noisePatterns.some(pattern => pattern.test(line));
+        if (isNoise) return false;
+
+        // 문장 부호 없이 끝나는 5자 이하의 매우 짧은 텍스트는 노이즈 가능성이 높음
+        if (line.length <= 5 && !/[.!?:]/.test(line)) {
+          // 하지만 숫자로 시작하거나 (순서 표시) 헤딩 스타일이면 유지할 수도 있음
+          // 여기서는 보수적으로 3자 이내만 제거
+          if (line.length <= 3 && !/^\d+/.test(line)) return false;
+        }
+
+        // 메뉴 텍스트 뭉침 현상 감지 (공백 없이 여러 단어가 붙어있는 경우)
+        // ex: "문의하기회원로그인광고주"
+        if (line.includes('문의하기') && line.includes('로그인')) return false;
+        if (line.includes('뉴스레터') && line.includes('구독하기')) {
+          // 긴 문장이면 유지하되 20자 이내면 노이즈 처리
+          if (line.length < 20) return false;
+        }
+
+        return true;
+      });
+
+    return filteredLines.join('\n');
   }
 }
 

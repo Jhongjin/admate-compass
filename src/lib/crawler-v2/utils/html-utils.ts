@@ -224,14 +224,26 @@ export function extractImageUrls(html: string, baseUrl: string): string[] {
 export function cleanHtml(html: string, removeSelectors: string[] = []): string {
   let cleaned = html;
 
-  // 기본 제거 선택자
-  const defaultSelectors = ['script', 'style', 'noscript', 'nav', 'footer', 'header', 'aside'];
+  // 기본 제거 선택자 (태그 기반)
+  const defaultSelectors = [
+    'script', 'style', 'noscript', 'nav', 'footer', 'header', 'aside',
+    'form', 'button', 'svg', 'iframe', 'canvas', 'audio', 'video'
+  ];
   const allSelectors = [...defaultSelectors, ...removeSelectors];
 
   for (const selector of allSelectors) {
-    const pattern = new RegExp(`<${selector}[^>]*>[\s\S]*?<\/${selector}>`, 'gi');
-    cleaned = cleaned.replace(pattern, '');
+    // 태그 기반 제거
+    const tagPattern = new RegExp(`<${selector}[^>]*>[\\s\\S]*?<\\/${selector}>`, 'gi');
+    cleaned = cleaned.replace(tagPattern, ' ');
+
+    // 단일 태그(self-closing) 처리
+    const selfClosingPattern = new RegExp(`<${selector}[^>]*\\/>`, 'gi');
+    cleaned = cleaned.replace(selfClosingPattern, ' ');
   }
+
+  // 추가적인 속성 기반 노이즈 제거 (Regex 기반 한계가 있으나 주요 사례 대응)
+  cleaned = cleaned.replace(/<(div|section|span|ul|li)[^>]*(role=["'](navigation|banner|contentinfo|complementary)["'])[^>]*>[\s\S]*?<\/\1>/gi, ' ');
+  cleaned = cleaned.replace(/<(div|section|span)[^>]*(class=["'][^"']*(breadcrumb|gnb|lnb|sidebar|footer|header|nav|ad-)[^"']*)["'][^>]*>[\s\S]*?<\/\1>/gi, ' ');
 
   return cleaned;
 }
@@ -309,12 +321,22 @@ export function stripBoilerplate(text: string): string {
     /^의견 보내기$/m,
     /^도움이 되었나요\?$/m,
     /^위 내용으로 궁금한 점이 해결되지 않았나요$/m,
+    /^궁금한 점이 해결되지 않았나요\?$/m,
     /^\[목록\]$/m,
     /^맨 위로$/m,
     /^이전 페이지$/m,
     /^다음 페이지$/m,
     /^카테고리 단가도움말.*$/m,
-    /^검색어 입력 창텍스트.*$/m
+    /^검색어 입력 창텍스트.*$/m,
+    /^회원 로그인.*$/m,
+    /^신규 광고주라면\?$/m,
+    /^뉴스레터 구독하기$/m,
+    /^받아보세요\.$/m,
+    /^함께하세요\.$/m,
+    /^문의하기회원.*$/m,
+    /^(X|Facebook|Instagram|YouTube|Blog|LinkedIn|KakaoTalk|Naver)$/i,
+    /^[■□●○▶▷▶▼▲]\s*.*$/m, // 특수문자로 시작하는 내비게이션성 제목
+    /^바로가기\s*>?$/m
   ];
 
   let cleaned = text;

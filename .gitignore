@@ -142,5 +142,19 @@ preview/
 
 # Backup folders (exclude from build)
 AdMate_전체코드완료_임시/
-backup/!src/app/gemini_pro_theme/admin/docs
+AdMate_전체코드완료_최종/
+AdMate_전체코드완료/
 crawler_success_temp/
+
+# RAG / AI Models & Cache
+.model_cache/
+.puppeteer_cache/
+.cache/
+.npx/
+.npm/
+
+# Crawler temp data
+*.html
+*.pdf
+AdMate_AdMate_RAG_Crawler_Data/
+AdMate_RAG_Crawler_Data/
