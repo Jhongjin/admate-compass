@@ -84,7 +84,7 @@ ${sources?.map((source: any, index: number) =>
       try {
         console.log('🤖 Claude를 통한 신뢰도 평가 시작');
         const message = await anthropic.messages.create({
-          model: 'claude-3-5-sonnet-20241022', // 표준 모델명으로 수정
+          model: 'claude-sonnet-4-6', // 사용자의 시나리오(2025년 이후)에 대응하는 최신 모델로 수정
           max_tokens: 1024,
           temperature: 0, // 일관된 평가를 위해 0으로 고정
           messages: [{ role: 'user', content: evaluationPrompt }]

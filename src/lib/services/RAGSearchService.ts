@@ -436,18 +436,18 @@ ${context}
         console.log('🔍 Anthropic Claude로 답변 생성 시도...');
         let message;
         try {
-          console.log('🔄 Claude 3.5 Sonnet 호출 시도...');
+          console.log('🔄 Claude 4.6 Sonnet 호출 시도...');
           message = await this.anthropic.messages.create({
-            model: 'claude-3-5-sonnet-20241022', // 표준 모델명으로 수정
+            model: 'claude-sonnet-4-6', // 표준 모델명으로 수정
             max_tokens: 4000,
             messages: [{ role: 'user', content: enhancedPrompt }],
           });
           this.activeModel = 'claude-3-5-sonnet';
         } catch (sonnetError: any) {
           if (sonnetError.status === 404) {
-            console.warn('⚠️ Claude 3.5 Sonnet 을 찾을 수 없음. Haiku로 폴백합니다.');
+            console.warn('⚠️ Claude 4.6 Sonnet 을 찾을 수 없음. Haiku 4.5로 폴백합니다.');
             message = await this.anthropic.messages.create({
-              model: 'claude-3-5-haiku-20241022', // 표준 모델명으로 수정
+              model: 'claude-haiku-4-5-20251001', // 표준 모델명으로 수정
               max_tokens: 4000,
               messages: [{ role: 'user', content: enhancedPrompt }],
             });

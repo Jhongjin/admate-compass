@@ -1004,9 +1004,9 @@ async function generateStreamAnswerWithClaude(
     let stream: any;
     try {
       try {
-        console.log('🔄 Claude 3.5 Sonnet 스트림 호출 시도...');
+        console.log('🔄 Claude 4.6 Sonnet 스트림 호출 시도...');
         stream = await anthropic.messages.stream({
-          model: 'claude-3-5-sonnet-20241022', // 표준 모델명으로 수정
+          model: 'claude-sonnet-4-6', // 사용자의 시나리오(2025년 이후)에 대응하는 최신 모델로 수정
           max_tokens: 4000,
           messages: [{ role: 'user', content: prompt }]
         });
