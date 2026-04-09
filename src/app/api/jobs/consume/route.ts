@@ -1736,6 +1736,7 @@ export async function processQueue() {
       });
 
       const crawlStartMs = Date.now();
+      let actualDocumentId = job.document_id || `doc_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
 
       try {
         // payload 유효성 검증
@@ -1745,20 +1746,33 @@ export async function processQueue() {
 
         const url = job.payload?.url as string;
         const vendors = (job.payload?.vendors as string[]) || [];
-        const domainLimit = job.payload?.domainLimit as boolean ?? true;
-        const forceCrawl = job.payload?.forceCrawl as boolean ?? false;
-        const respectRobots = forceCrawl ? false : (job.payload?.respectRobots as boolean ?? true);
-        const maxDepthRaw = Number(job.payload?.maxDepth);
-        const maxDepth = Number.isFinite(maxDepthRaw) && maxDepthRaw > 0 ? maxDepthRaw : 2;
-        // extractSubPages를 명시적으로 boolean으로 변환 (문자열 "true"도 처리)
-        const extractSubPagesRaw = job.payload?.extractSubPages;
-        const extractSubPages = extractSubPagesRaw === true || extractSubPagesRaw === 'true';
-        const deepCrawlTimeout = job.payload?.deepCrawlTimeout as boolean ?? false;
-        const retryOn429 = job.payload?.retryOn429 as boolean ?? true;
 
         if (!url || typeof url !== 'string' || url.trim().length === 0) {
           throw new Error(`CRAWL_SEED job payload에 유효한 url이 없습니다. (url: ${url})`);
         }
+
+        // 🔥 [BugFix] 기존 URL이 있는 경우, actualDocumentId를 미리 조회하여 일관성 유지
+        // 이 과정이 없으면 progress 업데이트 시 임시 ID(doc_...)가 사용되어 인덱싱 혼선 발생
+        const { data: existingDocs } = await supabase
+          .from('documents')
+          .select('id')
+          .eq('url', url)
+          .order('created_at', { ascending: false })
+          .limit(1);
+
+        if (existingDocs && existingDocs.length > 0) {
+          actualDocumentId = existingDocs[0].id;
+        }
+
+        const forceCrawl = job.payload?.forceCrawl as boolean ?? false;
+        const respectRobots = forceCrawl ? false : (job.payload?.respectRobots as boolean ?? true);
+        const maxDepthRaw = Number(job.payload?.maxDepth);
+        const maxDepth = Number.isFinite(maxDepthRaw) && maxDepthRaw > 0 ? maxDepthRaw : 2;
+        const extractSubPagesRaw = job.payload?.extractSubPages;
+        const extractSubPages = extractSubPagesRaw === true || extractSubPagesRaw === 'true';
+        const deepCrawlTimeout = job.payload?.deepCrawlTimeout as boolean ?? false;
+        const retryOn429 = job.payload?.retryOn429 as boolean ?? true;
+        const domainLimit = job.payload?.domainLimit as boolean ?? true;
 
         let seedUrl: URL;
         try {
@@ -1768,7 +1782,7 @@ export async function processQueue() {
         }
 
         const dbVendor = vendors[0] || 'META';
-        const documentId = job.document_id || `doc_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+        const documentId = actualDocumentId;
 
         console.error('[CRITICAL] 🔍 CRAWL_SEED 파라미터 확인:', {
           url,
@@ -2292,7 +2306,46 @@ export async function processQueue() {
             }
           }
 
+          // 🔥 네이버 도움말 RSC 구조(htmlData) 추출 대응 (중복 로직 패치)
+          if (targetUrl.includes('naver.com') && (!textContent || textContent.length < 200)) {
+            console.log('🔍 네이버 RSC 구조(htmlData) 추출 시도...');
+            const htmlDataMatch = htmlContent.match(/"htmlData"\s*:\s*"((?:\\"|[^"])*)"/);
+            if (htmlDataMatch && htmlDataMatch[1]) {
+              try {
+                // 이스케이프된 HTML 문자열 디코딩
+                const decodedHtml = htmlDataMatch[1]
+                  .replace(/\\"/g, '"')
+                  .replace(/\\n/g, '\n')
+                  .replace(/\\t/g, '\t')
+                  .replace(/\\\\/g, '\\');
+
+                const $htmlData = cheerio.load(decodedHtml);
+                const rscText = extractTextWithStructure($htmlData('body').length > 0 ? $htmlData('body') : $htmlData.root());
+
+                if (rscText && rscText.length > textContent.length) {
+                  console.log(`✅ 네이버 RSC(htmlData)에서 본문 추출 성공: ${rscText.length}자`);
+                  textContent = rscText;
+                }
+              } catch (e) {
+                console.error('❌ 네이버 RSC 디코딩 실패:', e);
+              }
+            }
+          }
+
+          // 🔥 최종 폴백: 여전히 본문이 비어있다면 메타데이터라도 활용
+          if (!textContent || textContent.trim().length < 50) {
+            const ogDesc = $('meta[property="og:description"]').attr('content');
+            const metaDesc = $('meta[name="description"]').attr('content');
+            const fallbackText = ogDesc || metaDesc;
+
+            if (fallbackText && fallbackText.length > (textContent?.length || 0)) {
+              console.log(`⚠️ 본문 추출 실패로 메타데이터 사용 (폴백): ${fallbackText.length}자`);
+              textContent = fallbackText;
+            }
+          }
+
           console.log(`📄 추출된 텍스트 길이: ${textContent.length}자 (원본 HTML: ${htmlContent.length}자, Cheerio 사용)`);
+
 
           return { textContent, pageTitle, htmlContent };
         };
@@ -2614,7 +2667,7 @@ export async function processQueue() {
           console.log(`[CRITICAL] ✅ RAGProcessor에 jobId 설정 완료: ${job.id} (BGE-M3 초기화 하트비트 DB 업데이트 활성화)`);
 
           // RAG 처리 전체에 타임아웃 추가 (60초)
-          const ragProcessTimeout = 60000;
+          const ragProcessTimeout = 120000;
           const ragProcessPromise = ragProcessor.processDocument({
             id: resolvedDocumentId,
             title,
@@ -2728,7 +2781,7 @@ export async function processQueue() {
               result: {
                 ...currentResult, // 기존 result 유지
                 url: url || currentResult.url,
-                documentId: documentId || currentResult.documentId,
+                documentId: actualDocumentId || currentResult.documentId,
                 status: 'main_page_crawling',
                 message: '메인 페이지 크롤링 중...'
               }
@@ -2836,7 +2889,7 @@ export async function processQueue() {
               result: {
                 ...currentResult, // 기존 result 유지
                 url: url || currentResult.url,
-                documentId: documentId || currentResult.documentId,
+                documentId: actualDocumentId || currentResult.documentId,
                 status: 'main_page_rag_processing',
                 message: '메인 페이지 RAG 처리 중... (임베딩 모델 초기화 포함)',
                 crawlElapsed: Date.now() - mainPageStartTime
@@ -2926,6 +2979,10 @@ export async function processQueue() {
             }, ragTimeout);
           });
           mainDocResult = await Promise.race([ragPromise, ragTimeoutPromise]) as Awaited<ReturnType<typeof upsertAndProcessDocument>>;
+
+          // 🔥 [FIX] upsertAndProcessDocument가 반환한 실제 문서 ID 사용 (기존 URL 중복 시 중요)
+          // 802e3dbd-ea72-44a6-8f9f-63721c749fc4 작업 등에서 documentId와 mainDocResult.documentId가 다른 문제 해결
+          actualDocumentId = mainDocResult.documentId || documentId;
         } catch (upsertError) {
           console.error('[CRITICAL] ❌ 메인 문서 처리 실패:', upsertError);
           // 타임아웃 에러인 경우 더 자세한 정보 제공
@@ -2950,7 +3007,7 @@ export async function processQueue() {
         }
 
         const mainPageElapsed = Date.now() - mainPageStartTime;
-        console.error('[CRITICAL] 📄 메인 문서 처리 완료:', { documentId, success: mainDocResult.success, chunkCount: mainDocResult.chunkCount, elapsed: mainPageElapsed });
+        console.error('[CRITICAL] 📄 메인 문서 처리 완료:', { documentId: actualDocumentId, success: mainDocResult.success, chunkCount: mainDocResult.chunkCount, elapsed: mainPageElapsed });
 
         // 하트비트 업데이트: 메인 페이지 처리 완료 (기존 result 유지)
         try {
@@ -4299,7 +4356,7 @@ export async function processQueue() {
 
         console.error('[CRITICAL] ✅ CRAWL_SEED 작업 완료 - 상태 업데이트 시작:', {
           jobId: job.id,
-          documentId,
+          documentId: actualDocumentId,
           title: mainPage.pageTitle,
           chunkCount: mainDocResult.chunkCount,
           crawlTimeMs: Date.now() - crawlStartMs
@@ -4308,17 +4365,17 @@ export async function processQueue() {
         // 🔥 원자적 업데이트: documents 테이블 먼저 업데이트 후 processing_jobs 업데이트
         // 1. 메인 문서 상태 업데이트 (chunk_count > 0이면 무조건 indexed로 업데이트)
         let mainDocUpdated = false;
-        if (documentId && mainDocResult.chunkCount > 0) {
+        if (actualDocumentId && mainDocResult.chunkCount > 0) {
           // 먼저 현재 상태 확인 (중복 방지를 위해 maybeSingle 사용)
           const { data: currentDoc, error: currentDocError } = await supabase
             .from('documents')
             .select('id, status, chunk_count')
-            .eq('id', documentId)
+            .eq('id', actualDocumentId)
             .maybeSingle();
 
           if (currentDocError && currentDocError.code !== 'PGRST116') {
             console.error('[CRITICAL] ⚠️ 메인 문서 조회 실패:', {
-              documentId,
+              documentId: actualDocumentId,
               error: currentDocError
             });
           }
@@ -4327,7 +4384,7 @@ export async function processQueue() {
           if (currentDoc && (currentDoc.status === 'indexed' || (currentDoc.chunk_count && currentDoc.chunk_count > 0))) {
             mainDocUpdated = true;
             console.log('[CRITICAL] ✅ 메인 문서는 이미 indexed 상태:', {
-              documentId,
+              documentId: actualDocumentId,
               status: currentDoc.status,
               chunkCount: currentDoc.chunk_count
             });
@@ -4340,20 +4397,20 @@ export async function processQueue() {
                 chunk_count: mainDocResult.chunkCount,
                 updated_at: new Date().toISOString()
               })
-              .eq('id', documentId)
+              .eq('id', actualDocumentId)
               .neq('status', 'indexed') // 이미 indexed인 경우는 제외 (불필요한 업데이트 방지)
               .select('id, status, chunk_count')
               .maybeSingle();
 
             if (docUpdateError) {
               console.error('[CRITICAL] ⚠️ 메인 문서 상태 업데이트 실패:', {
-                documentId,
+                documentId: actualDocumentId,
                 error: docUpdateError
               });
             } else if (docUpdateData) {
               mainDocUpdated = true;
               console.log('[CRITICAL] ✅ 메인 문서 상태 업데이트 완료:', {
-                documentId,
+                documentId: actualDocumentId,
                 status: `${currentDoc?.status || 'unknown'} -> indexed`,
                 chunkCount: mainDocResult.chunkCount,
                 updatedDocument: docUpdateData
@@ -4363,19 +4420,19 @@ export async function processQueue() {
               const { data: recheckDoc } = await supabase
                 .from('documents')
                 .select('id, status, chunk_count')
-                .eq('id', documentId)
+                .eq('id', actualDocumentId)
                 .maybeSingle();
 
               if (recheckDoc && (recheckDoc.status === 'indexed' || (recheckDoc.chunk_count && recheckDoc.chunk_count > 0))) {
                 mainDocUpdated = true;
                 console.log('[CRITICAL] ✅ 메인 문서 상태 재확인: indexed 상태 확인', {
-                  documentId,
+                  documentId: actualDocumentId,
                   status: recheckDoc.status,
                   chunkCount: recheckDoc.chunk_count
                 });
               } else {
                 console.warn('[CRITICAL] ⚠️ 메인 문서 상태 업데이트 실패: 업데이트 후에도 indexed 상태가 아님', {
-                  documentId,
+                  documentId: actualDocumentId,
                   currentStatus: recheckDoc?.status || 'unknown',
                   currentChunkCount: recheckDoc?.chunk_count || 0
                 });
@@ -4483,7 +4540,7 @@ export async function processQueue() {
 
         // 메인 문서 업데이트 성공 여부 확인
         const isMainDocumentIndexed = mainDocUpdated &&
-          documentId &&
+          actualDocumentId &&
           mainDocResult &&
           mainDocResult.chunkCount > 0;
 
@@ -4499,7 +4556,7 @@ export async function processQueue() {
         // 결과 객체 생성 (성공/실패 여부 판단 후 생성)
         const finishedResult = {
           url,
-          documentId,
+          documentId: actualDocumentId,
           title: mainPage.pageTitle,
           chunkCount: mainDocResult.chunkCount,
           vendors,
@@ -4520,7 +4577,7 @@ export async function processQueue() {
           // 메인 문서와 모든 하위 페이지가 실패했을 때만 failed로 처리
           console.error('[CRITICAL] ❌ 메인 문서 및 모든 하위 페이지 인덱싱 실패 - 작업을 failed로 처리', {
             jobId: job.id,
-            documentId,
+            documentId: actualDocumentId,
             mainDocUpdated,
             mainDocChunkCount: mainDocResult.chunkCount,
             successfulSubPageCount,
@@ -4550,14 +4607,14 @@ export async function processQueue() {
           }
 
           // 메인 문서도 failed로 업데이트 (아직 processing 상태인 경우만)
-          if (documentId) {
+          if (actualDocumentId) {
             await supabase
               .from('documents')
               .update({
                 status: 'failed',
                 updated_at: new Date().toISOString()
               })
-              .eq('id', documentId)
+              .eq('id', actualDocumentId)
               .eq('status', 'processing'); // processing 상태인 경우만 failed로 변경
           }
 
@@ -4578,17 +4635,17 @@ export async function processQueue() {
         if (!isMainDocumentIndexed && hasSuccessfulSubPages) {
           console.log('[CRITICAL] ⚠️ 메인 문서는 실패했지만 하위 페이지가 성공 - 메인 문서 상태 재확인', {
             jobId: job.id,
-            documentId,
+            documentId: actualDocumentId,
             mainDocChunkCount: mainDocResult.chunkCount,
             successfulSubPageCount
           });
 
           // 메인 문서의 현재 상태 확인
-          if (documentId) {
+          if (actualDocumentId) {
             const { data: currentMainDoc } = await supabase
               .from('documents')
               .select('id, status, chunk_count')
-              .eq('id', documentId)
+              .eq('id', actualDocumentId)
               .maybeSingle();
 
             // 메인 문서가 processing 상태이고 chunk_count가 0이면, 하위 페이지가 성공했으므로 indexed로 업데이트
@@ -4606,12 +4663,12 @@ export async function processQueue() {
                     chunk_count: totalSubPageChunks,
                     updated_at: new Date().toISOString()
                   })
-                  .eq('id', documentId)
+                  .eq('id', actualDocumentId)
                   .eq('status', 'processing');
 
                 if (!mainDocUpdateError) {
                   console.log('[CRITICAL] ✅ 메인 문서 상태 업데이트 완료 (하위 페이지 성공 기반):', {
-                    documentId,
+                    documentId: actualDocumentId,
                     status: 'processing -> indexed',
                     chunkCount: totalSubPageChunks
                   });
@@ -4626,13 +4683,13 @@ export async function processQueue() {
         // 3.5. 작업 완료 전 "처리중 0개 청크" 문서 정리
         // 작업이 완료되기 전에 해당 작업과 연결된 모든 "처리중 0개 청크" 문서 정리
         try {
-          if (documentId) {
+          if (actualDocumentId) {
             // 메인 문서와 연결된 모든 하위 페이지 중 "처리중 0개 청크" 문서 조회
             const { data: orphanedSubPages } = await supabase
               .from('documents')
               .select('id, url, status, chunk_count, main_document_id')
               .eq('type', 'url')
-              .eq('main_document_id', documentId)
+              .eq('main_document_id', actualDocumentId)
               .eq('status', 'processing')
               .eq('chunk_count', 0);
 
@@ -4691,7 +4748,7 @@ export async function processQueue() {
             const { data: mainDoc } = await supabase
               .from('documents')
               .select('id, status, chunk_count')
-              .eq('id', documentId)
+              .eq('id', actualDocumentId)
               .eq('status', 'processing')
               .eq('chunk_count', 0)
               .maybeSingle();
@@ -4701,7 +4758,7 @@ export async function processQueue() {
               const { data: mainDocJobs } = await supabase
                 .from('processing_jobs')
                 .select('id, status')
-                .eq('document_id', documentId)
+                .eq('document_id', actualDocumentId)
                 .in('status', ['queued', 'processing', 'retrying'])
                 .neq('id', job.id);
 
@@ -4710,10 +4767,10 @@ export async function processQueue() {
                 await supabase
                   .from('documents')
                   .update({ status: 'failed', updated_at: new Date().toISOString() })
-                  .eq('id', documentId)
+                  .eq('id', actualDocumentId)
                   .eq('status', 'processing')
                   .eq('chunk_count', 0);
-                console.log(`[CRITICAL] ✅ 작업 완료 전 "처리중 0개 청크" 메인 문서 ${documentId} failed로 변경`);
+                console.log(`[CRITICAL] ✅ 작업 완료 전 "처리중 0개 청크" 메인 문서 ${actualDocumentId} failed로 변경`);
               }
             }
           }
@@ -4746,8 +4803,8 @@ export async function processQueue() {
         };
 
         // document_id가 없었던 경우 설정
-        if (!job.document_id && documentId) {
-          jobUpdateData.document_id = documentId;
+        if (!job.document_id && actualDocumentId) {
+          jobUpdateData.document_id = actualDocumentId;
         }
 
         const { error: updateError, data: updateData } = await supabase
@@ -4784,7 +4841,7 @@ export async function processQueue() {
             jobId: job.id,
             updatedRows: updateData.length,
             status: 'completed',
-            documentId: updateData[0]?.document_id || documentId || 'none',
+            documentId: updateData[0]?.document_id || actualDocumentId || 'none',
             finishedAt: updateData[0]?.finished_at || 'none',
             documentsUpdated: {
               main: mainDocUpdated,
@@ -4820,13 +4877,14 @@ export async function processQueue() {
           errorMessage.toLowerCase().includes('function execution') ||
           crawlError instanceof Error && crawlError.name === 'TimeoutError';
 
-        const documentId = job.document_id || (job.payload as any)?.documentId;
+        // 80. 실제 처리된 문서 ID 우선 (fallback으로 payload 확인)
+        const documentIdForError = actualDocumentId || (job.payload as any)?.documentId;
 
         // 타임아웃인 경우: 부분 성공 확인
-        if (isTimeout && documentId) {
+        if (isTimeout && documentIdForError) {
           console.error('[CRITICAL] ⏱️ 타임아웃 감지 - 부분 성공 확인 시작:', {
             jobId: job.id,
-            documentId,
+            documentId: documentIdForError,
             errorMessage
           });
 
@@ -4834,17 +4892,17 @@ export async function processQueue() {
           const { data: indexedDocs } = await supabase
             .from('documents')
             .select('id, url, status, chunk_count, main_document_id')
-            .or(`id.eq.${documentId},main_document_id.eq.${documentId}`)
+            .or(`id.eq.${documentIdForError},main_document_id.eq.${documentIdForError}`)
             .eq('status', 'indexed')
             .gt('chunk_count', 0);
 
           const indexedCount = indexedDocs?.length || 0;
-          const mainDocIndexed = indexedDocs?.some(d => d.id === documentId) || false;
-          const subPageIndexed = indexedDocs?.some(d => d.main_document_id === documentId) || false;
+          const mainDocIndexed = indexedDocs?.some(d => d.id === documentIdForError) || false;
+          const subPageIndexed = indexedDocs?.some(d => d.main_document_id === documentIdForError) || false;
 
           console.error('[CRITICAL] 📊 타임아웃 시 부분 성공 확인 결과:', {
             jobId: job.id,
-            documentId,
+            documentId: documentIdForError,
             indexedCount,
             mainDocIndexed,
             subPageIndexed,
@@ -4898,7 +4956,7 @@ export async function processQueue() {
           ? `타임아웃 발생 (Vercel 함수 실행 시간 제한 초과): ${errorMessage}`
           : errorMessage;
 
-        if (documentId) {
+        if (actualDocumentId) {
           // processing 상태인 문서만 failed로 업데이트 (이미 indexed인 문서는 유지)
           const { error: docFailError } = await supabase
             .from('documents')
@@ -4906,17 +4964,17 @@ export async function processQueue() {
               status: 'failed',
               updated_at: new Date().toISOString()
             })
-            .eq('id', documentId)
+            .eq('id', actualDocumentId)
             .eq('status', 'processing');
 
           if (docFailError) {
             console.error('[CRITICAL] ⚠️ 문서 실패 상태 업데이트 실패:', {
-              documentId,
+              documentId: actualDocumentId,
               error: docFailError
             });
           } else {
             console.log('[CRITICAL] ✅ 문서 실패 상태 업데이트 완료:', {
-              documentId,
+              documentId: actualDocumentId,
               status: 'processing -> failed'
             });
           }
@@ -4948,9 +5006,10 @@ export async function processQueue() {
       }
     }
 
-    // 🔥 CRAWL_V2 job 처리 (Overflow URLs)
-    if (job.job_type === 'CRAWL_V2') {
-      console.log(`🚀 [Consume] CRAWL_V2 작업 처리 시작: ${job.id} - URL: ${job.payload?.url}`);
+    // 🔥 CRAWL_V2 또는 CRAWL job 처리 (Overflow URLs)
+    // DB 제약조건에 따라 CRAWL_V2 대신 CRAWL을 사용할 수 있도록 지원
+    if (job.job_type === 'CRAWL_V2' || job.job_type === 'CRAWL') {
+      console.log(`🚀 [Consume] ${job.job_type} 작업 처리 시작: ${job.id} - URL: ${job.payload?.url}`);
       crawlerEngine = new CrawlerEngine();
       try {
         const url = job.payload?.url as string;
@@ -4976,7 +5035,7 @@ export async function processQueue() {
           content: crawlResult.content,
           type: 'url',
           url: url,
-          source_vendor: options.vendors?.[0] || 'META',
+          source_vendor: (job.payload?.vendor as string) || 'META',
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
           main_document_id: job.payload?.main_document_id, // 상위 문서 ID가 있으면 연결
