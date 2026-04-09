@@ -1840,23 +1840,36 @@ export async function POST(request: NextRequest) {
           // 빈 공백이나 무의미한 데이터를 먼저 보내서 브라우저가 응답 헤더를 조기에 받도록 유도
           controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ type: 'chunk', data: { content: ' ' } })}\n\n`));
 
-          // 1. RAG 검색 (타임아웃 적용: 10초)
+          // 1. RAG 검색 (타임아웃 적용: 25초)
           console.log('🔍 [Stream] RAG 검색 시작...');
           console.time('RAG_Search');
 
           let searchResults: SearchResult[] = [];
 
-          // 타임아웃 처리를 위한 프로미스 레이스 (15초 -> 10초로 단축하여 Vercel Free 플랜 최적화)
+          // 타임아웃 처리를 위한 프로미스 레이스 (10초 -> 25초로 연장)
+          // 스트리밍이 이미 시작되었으므로 Vercel의 10초 제한을 회피할 수 있음
           const searchTimeoutPromise = new Promise<SearchResult[]>((_, reject) =>
-            setTimeout(() => reject(new Error('RAG 검색 타임아웃 (10초)')), 10000)
+            setTimeout(() => reject(new Error('RAG 검색 타임아웃 (25초)')), 25000)
           );
 
           try {
-            console.log(`⏱️ [Stream] Search Start (Timeout: 10s, Message: "${searchMessage.substring(0, 30)}...")`);
+            console.log(`⏱️ [Stream] Search Start (Timeout: 25s, Message: "${searchMessage.substring(0, 30)}...")`);
+
+            // 검색 중 연결 유지를 위해 심박 신호(Heartbeat) 보강
+            const heartbeat = setInterval(() => {
+              try {
+                controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ type: 'chunk', data: { content: '' } })}\n\n`));
+              } catch (e) {
+                clearInterval(heartbeat);
+              }
+            }, 3000);
+
             searchResults = await Promise.race([
               searchSimilarChunks(searchMessage, 50, vendorFilter),
               searchTimeoutPromise
             ]);
+
+            clearInterval(heartbeat);
             console.log(`✅ [Stream] Search Finished: Found ${searchResults.length} chunks`);
             console.timeEnd('RAG_Search');
           } catch (searchError) {
