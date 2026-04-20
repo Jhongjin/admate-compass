@@ -27,163 +27,128 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 1. [SUMMARY] 태그가 이미 답변에 포함되어 있는지 확인 (포인트 추출용)
-    const summaryTag = '[SUMMARY]';
-    let extractedKeyPoints: string[] | null = null;
+    // 0. 검색 엔진 신뢰도 산출 (Retrieval Score)
+    const validSourceScores = sources
+      ?.map((s: any) => s.score || s.similarity)
+      .filter((s: any) => typeof s === 'number' && s > 0) || [];
+    const retrievalConf = validSourceScores.length > 0
+      ? Math.min(1.0, validSourceScores.reduce((a: number, b: number) => a + b, 0) / validSourceScores.length)
+      : 0.5;
 
-    if (aiResponse.includes(summaryTag)) {
-      const summaryPart = aiResponse.split(summaryTag)[1].trim();
-      const lines = summaryPart.split('\n')
-        .map((line: string) => line.trim())
-        .filter((line: string) => line.startsWith('-') || line.startsWith('*') || (line.length > 0 && !line.startsWith('추가로')));
+    // 1단계: 요약 생성 (Summarizer) - gpt-4o-mini 사용
+    let keyPoints: string[] = [];
+    let documentHighlights: string[] = [];
 
-      if (lines.length > 0) {
-        extractedKeyPoints = lines.slice(0, 5).map((l: string) => l.replace(/^[-*]\s*/, ''));
-        console.log('✅ 답변 내 [SUMMARY] 태그에서 포인트 추출 성공');
-      }
-    }
-
-    // 신뢰도 평가 및 요약 생성을 위한 혁신 프롬프트 (v2.9 - 객관적 이진 검증)
-    const evaluationPrompt = `당신은 RAG 시스템의 답변을 개별 주장 단위로 쪼개어 사실 관계를 이진 판단(Yes/No)하는 '데이터 검증 엔진'입니다.
-
-[검증 프로토콜]
-1. 답변을 5~10개의 독립적인 원자적 주장(Atomic Claims)으로 분해하세요.
-2. 각 주장이 제공된 "참고 문서"에 명시되어 있는지 확인하세요.
-3. 판단 기준:
-   - **Supported: Yes** -> 문서에 명시적 근거가 있음.
-   - **Supported: No** -> 문서에 없거나, AI의 추론/일반 지식이 포함됨.
-
-[주의사항]
-- AI 모델 특유의 '낙관적 편향'을 버리고, 증거가 없는 모든 사소한 추측은 "Supported: No"로 처리하세요.
-- 당신은 직접적인 점수를 매기지 않습니다. 오직 각 주장의 참/거짓만 판별하세요.
-
-질문: ${userQuestion}
-
-답변: ${aiResponse}
-
-참고 문서:
-${sources?.map((source: any, index: number) =>
-      `${index + 1}. ${source.title}
-   내용: ${source.excerpt.substring(0, 10000)}...`
-    ).join('\n') || '없음'}
-
-응답 형식 (반드시 아래 JSON 형식만 반환):
-{
-  "claims": [
-    { "claim": "주장 내용 1", "supported": "Yes" },
-    { "claim": "주장 내용 2", "supported": "No" }
-  ],
-  "keyPoints": ["핵심 요약 1", "핵심 요약 2"],
-  "documentHighlights": ["근거가 된 실제 문구 1", "실제 문구 2"]
-}`;
-
-    let summaryText = '';
-
-    // 2. Claude를 사용하여 평가 및 요약 생성 시도
-    if (anthropic) {
+    if (openai) {
       try {
-        console.log('🤖 Claude를 통한 신뢰도 평가 시작');
-        const message = await anthropic.messages.create({
-          model: 'claude-sonnet-4-6', // 사용자의 시나리오(2025년 이후)에 대응하는 최신 모델로 수정
-          max_tokens: 1024,
-          temperature: 0, // 일관된 평가를 위해 0으로 고정
-          messages: [{ role: 'user', content: evaluationPrompt }]
-        });
-
-        summaryText = message.content
-          .filter((block: any) => block.type === 'text')
-          .map((block: any) => block.text)
-          .join('');
-      } catch (claudeError: any) {
-        console.error('⚠️ Claude 평가 실패:', claudeError.message);
-      }
-    }
-
-    // 3. Claude 실패 시 GPT로 폴백
-    if (!summaryText && openai) {
-      try {
-        console.log('🤖 OpenAI GPT를 통한 신뢰도 평가 시작 (폴백)');
-        const completion = await openai.chat.completions.create({
-          model: 'gpt-4o', // 안정적인 지능형 모델로 변경
+        console.log('🤖 [Step 1] 요약 생성 시작 (Summarizer: gpt-4o-mini)');
+        const summaryCompletion = await openai.chat.completions.create({
+          model: 'gpt-4o-mini',
           messages: [
-            { role: 'system', content: '당신은 답변의 정확성과 할루시네이션을 판별하는 평가 전문가입니다. 반드시 JSON으로만 응답하세요.' },
-            { role: 'user', content: evaluationPrompt }
+            {
+              role: 'system',
+              content: `당신은 긴 답변을 핵심 포인트로 요약하는 전문가입니다. 
+제공된 답변 내용에서 가장 중요한 3~5가지 포인트를 추출하고, 해당 포인트의 근거가 되는 답변 내 핵심 문구를 함께 제공하세요. 
+반드시 JSON 형식으로만 응답하세요.`
+            },
+            {
+              role: 'user',
+              content: `질문: ${userQuestion}\n\n답변: ${aiResponse}\n\n반드시 다음 구조의 JSON으로 응답하세요: {"keyPoints": ["포인트1", "포인트2"], "documentHighlights": ["근거문구1", "근거문구2"]}`
+            }
           ],
-          temperature: 0, // 일관된 평가를 위해 0으로 고정
+          temperature: 0,
           response_format: { type: 'json_object' }
         });
 
-        summaryText = completion.choices[0].message.content || '';
-      } catch (gptError: any) {
-        console.error('❌ GPT 평가 최종 실패:', gptError.message);
+        const summaryData = JSON.parse(summaryCompletion.choices[0].message.content || '{}');
+        keyPoints = summaryData.keyPoints || [];
+        documentHighlights = summaryData.documentHighlights || [];
+      } catch (err) {
+        console.error('❌ Summarizer 에러:', err);
       }
     }
 
-    // 결과 파싱 및 반환
-    if (summaryText) {
-      try {
-        const jsonMatch = summaryText.match(/\{[\s\S]*\}/);
-        const jsonText = jsonMatch ? jsonMatch[0] : summaryText;
-        const summaryData = JSON.parse(jsonText);
-
-        // --- 알고리즘 개편 (v2.9): 수학적 비율 기반 신뢰도 산출 ---
-
-        // 1. Groundedness Ratio (주장 검증 성공률): 70% 비중
-        const claims = Array.isArray(summaryData.claims) ? summaryData.claims : [];
-        const supportedCount = claims.filter((c: any) => c.supported === 'Yes' || c.supported === true).length;
-        const groundednessRatio = claims.length > 0 ? supportedCount / claims.length : 0.0;
-
-        // 2. Retrieval Score (검색 유사도 평균): 30% 비중
-        // sources 내의 score 값 활용 (0~1 사이로 가정, 보통 벡터 유사도는 0.7~0.9 사이임)
-        const validSourceScores = sources
-          ?.map((s: any) => s.score)
-          .filter((s: any) => typeof s === 'number' && s > 0) || [];
-        const avgRetrievalScore = validSourceScores.length > 0
-          ? validSourceScores.reduce((a: number, b: number) => a + b, 0) / validSourceScores.length
-          : 0.8; // 검색 점수 부재 시 기본값 0.8 (안정성)
-
-        // 3. 최종 신뢰도 합산 공식
-        let finalConfidence = (groundednessRatio * 0.7) + (avgRetrievalScore * 0.3);
-
-        // 검색 점수가 너무 낮은 경우(관련 없는 문서)는 감점 페널티 적용
-        if (avgRetrievalScore < 0.6) {
-          finalConfidence *= 0.8;
-        }
-
-        // 범위 보정 (0.0 ~ 1.0)
-        finalConfidence = Math.max(0.0, Math.min(1.0, finalConfidence));
-
-        // 결과 반환 로직 동기화 (기존 필드 유지)
-        const finalKeyPoints = (extractedKeyPoints && finalConfidence > 0.4)
-          ? extractedKeyPoints
-          : (summaryData.keyPoints || []);
-
-        return NextResponse.json({
-          keyPoints: finalKeyPoints.slice(0, 5),
-          documentHighlights: Array.isArray(summaryData.documentHighlights) ? summaryData.documentHighlights.slice(0, 3) : [],
-          confidence: parseFloat(finalConfidence.toFixed(2)),
-          _debug: { // 디버깅용 (필요 시 클라이언트에서 무시 가능)
-            groundednessRatio,
-            avgRetrievalScore,
-            totalClaims: claims.length,
-            supportedCount
-          }
-        }, {
-          headers: { 'Content-Type': 'application/json; charset=utf-8' }
-        });
-      } catch (e) {
-        console.error('❌ 결과 파싱 실패');
-      }
-    }
-
-    // 모든 시도 실패 시 최종 Fallback (신뢰도는 0.0으로 설정)
-    const finalFallback = {
-      keyPoints: extractedKeyPoints || ['답변의 신뢰도를 평가할 수 없습니다.'],
-      documentHighlights: [],
-      confidence: 0.0
+    // 2단계: 신뢰도 평가 (Judge) - gpt-4o-mini 사용
+    let judgeResult = {
+      confidence: 0.7,
+      subscores: { grounding: 0.7, relevance: 0.7, completeness: 0.7, nonHallucination: 0.7, citationCoverage: 0.7 },
+      unsupportedClaims: [] as string[],
+      notes: ""
     };
 
-    return NextResponse.json(finalFallback, {
+    if (openai && keyPoints.length > 0) {
+      try {
+        console.log('🤖 [Step 2] 신뢰도 평가 시작 (Judge: gpt-4o-mini)');
+        const judgePrompt = `
+당신은 요약된 내용이 원본 출처(Sources)에 근거하는지 정밀하게 평가하는 신뢰도 평가관(Judge)입니다.
+
+[평가 축]
+1. grounding: 요약 포인트가 출처 문서로 뒷받침되는가?
+2. relevance: 질문 의도에 직접적으로 부합하는가?
+3. completeness: 핵심 조건이나 제약 사항이 누락되지 않았는가?
+4. nonHallucination: 출처에 없는 내용을 임의로 추측하지 않았는가?
+5. citationCoverage: 각 포인트별로 충분한 근거가 존재하는가?
+
+[입력 데이터]
+- 질문: ${userQuestion}
+- 요약 포인트: ${JSON.stringify(keyPoints)}
+- 출처 문서(Sources):
+${sources?.map((s: any, i: number) => `[출처 ${i}] ${s.title}: ${s.excerpt.substring(0, 1000)}`).join('\n')}
+
+반드시 아래 JSON 스키마로만 응답하세요:
+{
+  "confidence": float(0~1),
+  "subscores": {
+    "grounding": float(0~1),
+    "relevance": float(0~1),
+    "completeness": float(0~1),
+    "nonHallucination": float(0~1),
+    "citationCoverage": float(0~1)
+  },
+  "unsupportedClaims": ["근거 부족 주장 내용"],
+  "notes": "평가 총평"
+}`;
+        const judgeCompletion = await openai.chat.completions.create({
+          model: 'gpt-4o-mini',
+          messages: [
+            { role: 'system', content: '객관적이고 엄격한 데이터 검증 엔진입니다. 반드시 JSON으로만 응답하세요.' },
+            { role: 'user', content: judgePrompt }
+          ],
+          temperature: 0,
+          response_format: { type: 'json_object' }
+        });
+
+        judgeResult = JSON.parse(judgeCompletion.choices[0].message.content || '{}');
+      } catch (err) {
+        console.error('❌ Judge 에러:', err);
+      }
+    }
+
+    // 3. 최종 신뢰도 계산 (A+B+D 혼합 방식)
+    // 공식: final_conf = 0.6 * judge_conf + 0.4 * retrieval_conf
+    const judgeConf = judgeResult.confidence || 0.7;
+    let finalConfidence = (0.6 * judgeConf) + (0.4 * retrievalConf);
+
+    // [개선안 E] 실패 폴백 개선: 출처가 1개 이상이면 최소 0.5 보장
+    if (sources && sources.length > 0 && finalConfidence < 0.5) {
+      finalConfidence = 0.5 + (finalConfidence * 0.1); // 0.5 ~ 0.6 사이로 보정
+    }
+
+    // [개선안 F] 결과 반환
+    return NextResponse.json({
+      keyPoints: keyPoints.slice(0, 5),
+      documentHighlights: documentHighlights.slice(0, 3),
+      confidence: parseFloat(finalConfidence.toFixed(2)),
+      subscores: judgeResult.subscores,
+      unsupportedClaims: judgeResult.unsupportedClaims,
+      notes: judgeResult.notes,
+      _debug: {
+        judgeConf,
+        retrievalConf,
+        summarizerModel: 'gpt-4o-mini',
+        judgeModel: 'gpt-4o-mini'
+      }
+    }, {
       headers: { 'Content-Type': 'application/json; charset=utf-8' }
     });
 
