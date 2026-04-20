@@ -119,9 +119,21 @@ ${questionKeywords.length > 0 ? `**질문 핵심 키워드:** ${questionKeywords
 
   /**
    * 답변 형식 가이드라인 생성
+   * 질문의 유형(단순/상세)에 따라 다른 지침 반환
    */
-  buildAnswerFormatGuidelines(query: string): string {
-    return `**답변 작성 가이드라인 (가독성 최우선):**
+  buildAnswerFormatGuidelines(query: string, isSimple: boolean = false): string {
+    if (isSimple) {
+      return `**답변 작성 가이드라인 (단순/확인형 질문용):**
+
+**1. 답변 구조:**
+- **핵심 답변**: 질문("${query}")에 대해 2~4문장 내외로 간결하고 정확하게 답변하세요. 불필요한 서술은 생략합니다.
+- **[참고자료]**: 답변의 근거가 된 문서 제목을 나열하세요. (중복 제거 필수)
+
+**2. 주의사항:**
+- 간결함이 최우선입니다. 장황한 요약이나 상세 설명을 생략하고 즉각적인 정보만 제공하세요.`;
+    }
+
+    return `**답변 작성 가이드라인 (상세/절차형 질문용):**
 
 **1. 답변 구조 (반드시 준수):**
 아래 구조를 따라 답변을 작성하세요. 각 섹션 사이에는 적합한 여백을 두어 시각적 위계를 확보하세요.
@@ -134,40 +146,29 @@ ${questionKeywords.length > 0 ? `**질문 핵심 키워드:** ${questionKeywords
 - 질문("${query}")에 대한 **최종 결론 및 가장 중요한 핵심 내용**을 여기에 작성하세요. 이 섹션은 사용자에게 가장 먼저 강조되어야 합니다.
 
 ### [상세 설명]
-- **논리적 위계**: 정보가 절차나 순서를 포함할 경우 **반드시 1, 2, 3... 순서대로 숫자를 증가**시켜 번호를 매기세요. (절대 모든 항목을 1.로 시작하지 마세요)
-- **범주별 조직화**: 정보의 범주가 바뀔 때는 **소제목(###)**을 작성하고 그 아래에 상세 내용을 불렛 포인트(-)로 조직화하여 가독성을 높이세요.
-- **가독성**: 긴 문장보다는 핵심 위주의 간결한 문장을 사용하세요. 문단 사이에는 적절한 여백을 두세요.
+- **논리적 위계**: 정보가 절차나 순서를 포함할 경우 **반드시 1, 2, 3... 순서대로 숫자를 증가**시켜 번호를 매기세요.
+- **범주별 조직화**: 정보의 범주가 바뀔 때는 **소제목(###)**을 작성하고 그 아래에 상세 내용을 불렛 포인트(-)로 조직화하세요.
+- **가독성**: 긴 문장보다는 핵심 위주의 간결한 문장을 사용하세요.
 
 ### [참고자료]
 - 답변에 사용된 모든 출처의 목록을 나열하세요. 질문에 직접적인 답변의 근거가 되는 문서들만 포함하세요.
-- **중복 제거**: 동일한 문서의 여러 페이지(청크)가 참조된 경우, 문서 제목으로 중복을 제거하여 **문서당 한 줄씩만** 나열세요.
+- **중복 제거**: 동일한 문서의 여러 페이지가 참조된 경우, 문서 제목으로 중복을 제거하여 **문서당 한 줄씩만** 나열세요.
 ---
 
 **2. 시각적 위계 확보 (매우 중요):**
-- **인라인 출처 표기 금지**: 답변 본문(핵심 요약, 핵심 답변, 상세 설명) 중간에 \`[출처 X]\`, \`(출처 X)\` 등의 기호를 **절대 삽입하지 마세요.**
-- **소제목 의무화**: 정보를 구분할 때 단순히 **굵은 글씨**만 사용하지 말고, 반드시 \`### 소제목\` 형식을 사용하여 시각적 위계를 만드세요.
-- **번호 매기기 규칙**: 절차형 답변의 경우 \`1.\`, \`2.\`, \`3.\`과 같이 순차적으로 번호를 매기세요. **절대 \`1.\`을 반복하여 사용하지 마세요.**
-- **불렛 포인트 활용**: 상세 나열 단계에서는 반드시 불렛 포인트(-)를 사용하여 가독성을 높이세요.
-- **핵심 정보 강조**: 숫자나 핵심 키워드는 **두껍게** 표시하세요.
-
-**3. 기타 주의사항:**
-- **검증 계획 (비공개)**: 답변을 작성하기 전, 문서 내의 어떤 구체적인 부분이 질문에 대한 근거가 되는지 스스로 먼저 확인하세요.
-- **정보 부족 시**: 질문과 관련된 정보가 문서에 없거나 불완전하면 절대 추측하지 말고 "제공된 문서에서 관련 정보를 찾을 수 없습니다. 추가 정보가 필요하시면 담당팀에 문의해주세요"라고 답변하세요.
-- **자가 진단**: 답변의 각 문장이 실제 문서의 몇 행/몇 단락에 근거하는지 스스로 확인하고, 확신이 80% 미만인 정보는 제외하세요.`;
+- **인라인 출처 표기 금지**: 답변 본문 중간에 `[출처 X]`, `(출처 X)` 등의 기호를 **절대 삽입하지 마세요.**
+- **소제목 의무화**: 정보를 구분할 때 반드시 `### 소제목` 형식을 사용하세요.
+- **번호 매기기 규칙**: 절차형 답변의 경우 `1.`, `2.`, `3.`과 같이 순차적으로 번호를 매기세요. **절대 `1.`을 반복하지 마세요.**`;
   }
 
   /**
-   * 검색 결과를 참고 문서 형식으로 변환
+   * 검색 결과를 참고 문서 형식으로 변환 (문장 단위 절삭 개선)
    */
   buildReferenceDocuments(searchResults: SearchResult[], excludedSources: string[] = [], suspiciousNumberPatterns: string[] = []): string {
-    const validResults = searchResults.filter((result, index) => {
-      // 제외된 출처 필터링
+    const validResults = searchResults.filter((result) => {
       const sourceTitle = result.documentTitle || '';
       const isExcluded = excludedSources.some(excluded => sourceTitle.includes(excluded));
-
-      // 의심스러운 숫자 패턴이 있는 출처 필터링
       const hasSuspiciousPattern = suspiciousNumberPatterns.some(pattern => sourceTitle.includes(pattern));
-
       return !isExcluded && !hasSuspiciousPattern;
     });
 
@@ -175,15 +176,51 @@ ${questionKeywords.length > 0 ? `**질문 핵심 키워드:** ${questionKeywords
       return '**참고 문서:**\n(관련 문서가 없습니다.)\n';
     }
 
+    const MAX_LEN = 800;
+    const MIN_SENTENCE_BOUND = Math.floor(MAX_LEN * 0.6); // 480자
+
     const documents = validResults.map((result, index) => {
-      const content = result.content || '';
+      let content = result.content || '';
       const title = result.documentTitle || '문서';
       const source = result.documentUrl || result.url || result.metadata?.source || '';
 
-      return `[출처 ${index + 1}] ${title}${source ? ` (${source})` : ''}\n${content.substring(0, 800)}`;
-    }).join('\n\n---\n\n');
+      if (content.length > MAX_LEN) {
+        const truncated = content.substring(0, MAX_LEN);
+        // 한국어 문장 종결 및 영문 마침표 기준 마지막 위치 탐색
+        const lastSentenceEnd = Math.max(
+          truncated.lastIndexOf('다. '),
+          truncated.lastIndexOf('요. '),
+          truncated.lastIndexOf('.\n'),
+          truncated.lastIndexOf('. ')
+        );
 
-    return `**참고 문서:**\n\n${documents}\n\n`;
+        // 60% 지점(480자) 이후에 문장 종결점이 있는 경우에만 문장 단위 절삭 적용
+        if (lastSentenceEnd > MIN_SENTENCE_BOUND) {
+          content = truncated.substring(0, lastSentenceEnd + 1) + ' [이하 생략]';
+        } else {
+          // 문장 종결점을 찾지 못하면 해당 청크는 신뢰도가 낮으므로 제외 처리 (개선안 반영)
+          return null;
+        }
+      }
+
+      return `[출처 ${index + 1}] ${title}${source ? ` (${source})` : ''}\n${content}`;
+    }).filter(doc => doc !== null).join('\n\n---\n\n');
+
+    return `**참고 문서:**\n\n${documents || '(신뢰할 수 있는 참고 문장이 부족하여 제외되었습니다.)'}\n\n`;
+  }
+
+  /**
+   * 질문 유형(단순/상세) 판별 로직
+   */
+  private isSimpleQuery(query: string): boolean {
+    const simpleKeywords = ['있나요', '인가요', '인가요?', '있습니까', '금액은', '어디서', '언제', '누가', '무엇', '얼마'];
+    const complexKeywords = ['방법', '절차', '가이드', '차이', '비교', '설명', '특징', '이유'];
+
+    const hasSimpleKeyword = simpleKeywords.some(k => query.includes(k));
+    const hasComplexKeyword = complexKeywords.some(k => query.includes(k));
+
+    // 질문이 짧고 단순 키워드를 포함하며 복잡 키워드가 없는 경우
+    return (query.length < 25 && hasSimpleKeyword && !hasComplexKeyword);
   }
 
   /**
@@ -191,46 +228,51 @@ ${questionKeywords.length > 0 ? `**질문 핵심 키워드:** ${questionKeywords
    */
   buildFinalChecklist(query: string, excludedSources: string[] = []): string {
     return `**답변 전 최종 확인 체크리스트:**
-1. 답변에 포함된 모든 정보가 "참고 문서"에 명시되어 있는가?
-2. 답변의 모든 내용이 사용자 질문("${query}")과 직접 관련이 있는가?
-3. 숫자나 금액 정보가 완전한 형태로 문서에 명시되어 있는가? 
-   - 잘린 텍스트 아님 (예: "3 | 500만" 같은 패턴 제외)
-   - 파이프(|) 문자나 공백으로 구분된 숫자는 사용하지 않았는가?
-4. **답변 본문(텍스트) 내에 인라인 출처 마커([출처 X])가 포함되지 않았는가?** (출처는 오직 하단 참고자료 섹션에만 있어야 함)
-5. 문서에 없는 정보를 추론하거나 생성하지 않았는가?
-${excludedSources.length > 0 ? `6. **제외된 출처 목록에 있는 출처를 참조하지 않았는가?** (제외된 출처: ${excludedSources.join(', ')})` : ''}`;
+1. 답변에 포함된 모든 정보가 "참고 문서"에 정확히 명시되어 있는가?
+2. 숫자나 금액 정보가 문장 속에서 완전한 형태로 존재하는가? (잘린 텍스트 "3 | 500만" 등 사용 금지)
+3. **답변 본문 내에 인라인 출처 마커([출처 X])가 절대 포함되지 않았는가?**
+4. 질문("${query}")의 의도에 직결되는 정보 위주로 작성되었는가?
+5. 문서에 없는 내용을 상식이나 추측으로 보완하지 않았는가?`;
   }
 
   /**
-   * 전체 프롬프트 생성
+   * 전체 프롬프트 생성 (순서 최적화: 문서 -> 체크리스트 -> 규칙 -> 포맷)
    */
   buildPrompt(options: PromptBuilderOptions): string {
     const { query, searchResults, vendors = [], components = {} } = options;
 
-    // 검색 결과를 참고 문서로 변환
+    // 질문 유형 판별
+    const isSimple = this.isSimpleQuery(query);
+
+    // 1. 참고 문서 (문장 단위 절삭 적용)
     const referenceDocuments = this.buildReferenceDocuments(
       searchResults,
       components.excludedSources || [],
       components.suspiciousNumberPatterns || []
     );
 
-    // 각 컴포넌트 생성
-    const documentBasedAnswer = components.documentBasedAnswer || this.buildDocumentBasedAnswerRules(query, components.questionKeywords);
-    const vendorGuidelines = components.vendorSpecificGuidelines || this.buildVendorSpecificGuidelines(vendors);
-    const hallucinationPrevention = components.hallucinationPrevention || this.buildHallucinationPreventionRules();
-    const answerFormat = components.answerFormat || this.buildAnswerFormatGuidelines(query);
+    // 2. 최종 확인 체크리스트 (참고 문서 직후로 이동 - 개선안 3)
     const finalChecklist = this.buildFinalChecklist(query, components.excludedSources || []);
 
+    // 3. 답변 및 할루시네이션 방지 규칙
+    const documentBasedAnswer = components.documentBasedAnswer || this.buildDocumentBasedAnswerRules(query, components.questionKeywords);
+    const hallucinationPrevention = components.hallucinationPrevention || this.buildHallucinationPreventionRules();
+
+    // 4. 벤더별 가이드라인
+    const vendorGuidelines = components.vendorSpecificGuidelines || this.buildVendorSpecificGuidelines(vendors);
+
+    // 5. 답변 형식 가이드라인 (단순/상세 구분 - 개선안 2)
+    const answerFormat = components.answerFormat || this.buildAnswerFormatGuidelines(query, isSimple);
+
     // 프롬프트 조합
-    let prompt = `${referenceDocuments}\n\n${documentBasedAnswer}\n\n`;
+    let prompt = `${referenceDocuments}\n\n${finalChecklist}\n\n${documentBasedAnswer}\n\n`;
 
     if (vendorGuidelines) {
       prompt += `${vendorGuidelines}\n\n`;
     }
 
-    prompt += `${hallucinationPrevention}\n\n${answerFormat}\n\n${finalChecklist}\n\n**⚠️ 절대 사용 금지 예시:**\n`;
-    prompt += `- "3 | 500만" → 이것은 잘린 텍스트입니다. "500만"이라고 추론하지 마세요.\n`;
-    prompt += `- 위와 같은 패턴이 있으면 해당 숫자 정보는 완전히 무시하고, "제공된 문서에서 해당 정보를 찾을 수 없습니다"라고 답변하세요.\n\n`;
+    prompt += `${hallucinationPrevention}\n\n${answerFormat}\n\n`;
+    prompt += `**⚠️ 금지 사항 리마인드:** 잘린 숫자(예: "3 | 500만")는 절대 사용하지 마세요.\n\n`;
     prompt += `답변:`;
 
     return prompt;
