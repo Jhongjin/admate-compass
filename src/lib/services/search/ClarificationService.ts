@@ -436,14 +436,34 @@ export class ClarificationService {
     findSelectedOption(message: string, options: string[]): string | null {
         const cleanMessage = message.replace(/\s+/g, '').toLowerCase();
 
+        // 벤더별 영문/한글 동의어 매핑
+        const vendorSynonyms: Record<string, string[]> = {
+            'NAVER': ['naver', '네이버', '검색광고'],
+            'KAKAO': ['kakao', '카카오', '비즈보드', '모먼트'],
+            'META': ['meta', '메타', 'facebook', '페이스북', 'instagram', '인스타그램', '인스타', 'reels', '릴스'],
+            'GOOGLE': ['google', '구글', 'youtube', '유튜브'],
+            'X(TWITTER)': ['twitter', '트위터', ' x ', '엑스'],
+        };
+
         for (const option of options) {
+            const upOption = option.toUpperCase();
+
+            // 1. 동의어 매핑 확인 (벤더인 경우)
+            if (vendorSynonyms[upOption]) {
+                const isMatch = vendorSynonyms[upOption].some(syn =>
+                    cleanMessage === syn.replace(/\s+/g, '').toLowerCase() ||
+                    cleanMessage.includes(syn.replace(/\s+/g, '').toLowerCase())
+                );
+                if (isMatch) return option;
+            }
+
+            // 2. 일반 텍스트 매칭
             const cleanOption = option.replace(/\s+/g, '').toLowerCase();
-            // 완전 일치 또는 메시지에 옵션이 포함됨
             if (cleanMessage === cleanOption || cleanMessage.includes(cleanOption)) {
                 return option;
             }
 
-            // 벤더의 경우 한글 이름도 체크
+            // 3. 표시 이름 매칭
             const displayName = this.getVendorDisplayName(option).replace(/\s+/g, '').toLowerCase();
             if (cleanMessage.includes(displayName)) {
                 return option;

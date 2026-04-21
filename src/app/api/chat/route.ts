@@ -1778,11 +1778,15 @@ export async function POST(request: NextRequest) {
         : message;
 
     if (conversationHistory && conversationHistory.length >= 2) {
-      const lastAiMessage = conversationHistory[conversationHistory.length - 1];
-      if (lastAiMessage.role === 'assistant') {
-        const isClarification = lastAiMessage.content.includes('중 어느 플랫폼') ||
-          lastAiMessage.content.includes('어떤 상품에 대해') ||
-          lastAiMessage.content.includes('어느 페이지의 내용');
+      // 직전 메시지(Assistant)가 재확인 질문이었는지 확인
+      // 대화 이력의 마지막(-1)은 현재 유저 메시지이므로, 그 앞(-2)을 확인해야 함
+      const lastAssistantMessage = conversationHistory[conversationHistory.length - 2];
+
+      if (lastAssistantMessage && lastAssistantMessage.role === 'assistant') {
+        const isClarification = lastAssistantMessage.content.includes('중 어느 플랫폼') ||
+          lastAssistantMessage.content.includes('어떤 상품에 대해') ||
+          lastAssistantMessage.content.includes('어느 페이지의 내용') ||
+          lastAssistantMessage.isClarification === true; // 메타데이터 필드도 체크
 
         if (isClarification) {
           console.log('🔄 직전 메시지가 재확인 질문임이 감지되었습니다.');
