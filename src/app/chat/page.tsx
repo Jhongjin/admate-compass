@@ -143,6 +143,7 @@ function GmailStyleLayout() {
   const [vendorFilter, setVendorFilter] = useState<string[] | null>(null);
   const [isSendingEmail, setIsSendingEmail] = useState(false);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
+  const [lastUserQuery, setLastUserQuery] = useState<string | null>(null);
 
 
   // 테마 및 설정 상태
@@ -326,6 +327,7 @@ function GmailStyleLayout() {
       },
       body: JSON.stringify({
         message: question.trim(),
+        originalQuery: lastUserQuery,
         conversationHistory: currentMessages.slice(-10),
         vendors: vendorFilter,
       }),
@@ -442,6 +444,15 @@ function GmailStyleLayout() {
                 }
                 : msg
             ));
+
+            // 클래리피케이션인 경우 원본 쿼리 보존, 아닌 경우 초기화
+            if (data.data?.isClarification) {
+              if (!lastUserQuery) {
+                setLastUserQuery(question);
+              }
+            } else {
+              setLastUserQuery(null);
+            }
           } else if (data.type === 'error') {
             throw new Error(data.data?.message || '답변 생성 중 오류가 발생했습니다.');
           }

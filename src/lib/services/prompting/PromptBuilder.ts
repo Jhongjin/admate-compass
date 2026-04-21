@@ -34,6 +34,7 @@ export interface PromptComponents {
 
 export interface PromptBuilderOptions {
   query: string;
+  originalQuery?: string;
   searchResults: SearchResult[];
   vendors?: string[];
   components?: PromptComponents;
@@ -75,10 +76,14 @@ export class PromptBuilder {
   /**
    * 문서 기반 답변 규칙 생성
    */
-  buildDocumentBasedAnswerRules(query: string, questionKeywords: string[] = []): string {
+  buildDocumentBasedAnswerRules(query: string, originalQuery?: string, questionKeywords: string[] = []): string {
+    const queryContext = originalQuery && originalQuery !== query
+      ? `원본 질문: "${originalQuery}"\n추가 답변: "${query}"`
+      : `질문: "${query}"`;
+
     return `**중요 안내:**
 - 위의 "참고 문서"에 포함된 모든 정보를 충분히 검토하세요.
-- 사용자 질문과 관련된 모든 내용을 찾아 답변에 포함하세요.
+- 사용자 질문(${queryContext})과 관련된 모든 내용을 찾아 답변에 포함하세요.
 - 예를 들어, 질문이 "연동형/비연동형"에 대한 것이라면, 참고 문서에서 "연동형", "비연동형", "방식", "지급시점", "지급방법", "정산기준", "단가" 등의 키워드가 포함된 모든 내용을 찾아 답변에 포함하세요.
 - 질문이 "집행금액"에 대한 것이라면, "최소집행", "집행금액", "500만원" 등의 키워드가 포함된 모든 내용을 찾아 답변에 포함하세요.
 - 참고 문서에 관련 정보가 있으면 반드시 답변에 포함하고, "찾을 수 없습니다"라고 답변하지 마세요.
@@ -121,12 +126,16 @@ ${questionKeywords.length > 0 ? `**질문 핵심 키워드:** ${questionKeywords
    * 답변 형식 가이드라인 생성
    * 질문의 유형(단순/상세)에 따라 다른 지침 반환
    */
-  buildAnswerFormatGuidelines(query: string, isSimple: boolean = false): string {
+  buildAnswerFormatGuidelines(query: string, originalQuery?: string, isSimple: boolean = false): string {
+    const queryContext = originalQuery && originalQuery !== query
+      ? `"${originalQuery}" + "${query}"`
+      : `"${query}"`;
+
     if (isSimple) {
       return `**답변 작성 가이드라인 (단순/확인형 질문용):**
 
 **1. 답변 구조:**
-- **핵심 답변**: 질문("${query}")에 대해 2~4문장 내외로 간결하고 정확하게 답변하세요. 불필요한 서술은 생략합니다.
+- **핵심 답변**: 질문(${queryContext})에 대해 2~4문장 내외로 간결하고 정확하게 답변하세요. 불필요한 서술은 생략합니다.
 - **[참고자료]**: 답변의 근거가 된 문서 제목을 나열하세요. (중복 제거 필수)
 
 **2. 주의사항:**
@@ -143,7 +152,7 @@ ${questionKeywords.length > 0 ? `**질문 핵심 키워드:** ${questionKeywords
 - 전체 답변 내용을 2줄 내외의 핵심 포인트로 요약하세요.
 
 ### [핵심 답변]
-- 질문("${query}")에 대한 **최종 결론 및 가장 중요한 핵심 내용**을 여기에 작성하세요. 이 섹션은 사용자에게 가장 먼저 강조되어야 합니다.
+- 질문(${queryContext})에 대한 **최종 결론 및 가장 중요한 핵심 내용**을 여기에 작성하세요. 이 섹션은 사용자에게 가장 먼저 강조되어야 합니다.
 
 ### [상세 설명]
 - **논리적 위계**: 정보가 절차나 순서를 포함할 경우 **반드시 1, 2, 3... 순서대로 숫자를 증가**시켜 번호를 매기세요.
@@ -160,6 +169,7 @@ ${questionKeywords.length > 0 ? `**질문 핵심 키워드:** ${questionKeywords
 - **소제목 의무화**: 정보를 구분할 때 반드시 \`### 소제목\` 형식을 사용하세요.
 - **번호 매기기 규칙**: 절차형 답변의 경우 \`1.\`, \`2.\`, \`3.\`과 같이 순차적으로 번호를 매기세요. **절대 \`1.\`을 반복하지 마세요.**`;
   }
+
 
   /**
    * 검색 결과를 참고 문서 형식으로 변환 (문장 단위 절삭 개선)
@@ -255,14 +265,14 @@ ${questionKeywords.length > 0 ? `**질문 핵심 키워드:** ${questionKeywords
     const finalChecklist = this.buildFinalChecklist(query, components.excludedSources || []);
 
     // 3. 답변 및 할루시네이션 방지 규칙
-    const documentBasedAnswer = components.documentBasedAnswer || this.buildDocumentBasedAnswerRules(query, components.questionKeywords);
+    const documentBasedAnswer = components.documentBasedAnswer || this.buildDocumentBasedAnswerRules(query, options.originalQuery, components.questionKeywords);
     const hallucinationPrevention = components.hallucinationPrevention || this.buildHallucinationPreventionRules();
 
     // 4. 벤더별 가이드라인
     const vendorGuidelines = components.vendorSpecificGuidelines || this.buildVendorSpecificGuidelines(vendors);
 
     // 5. 답변 형식 가이드라인 (단순/상세 구분 - 개선안 2)
-    const answerFormat = components.answerFormat || this.buildAnswerFormatGuidelines(query, isSimple);
+    const answerFormat = components.answerFormat || this.buildAnswerFormatGuidelines(query, options.originalQuery, isSimple);
 
     // 프롬프트 조합
     let prompt = `${referenceDocuments}\n\n${finalChecklist}\n\n${documentBasedAnswer}\n\n`;
