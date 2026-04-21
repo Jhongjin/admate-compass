@@ -38,6 +38,7 @@ interface Message {
     url?: string;
     updatedAt?: string;
     excerpt?: string;
+    sourceVendor?: string;
   }>;
   feedback?: {
     helpful: boolean | null;
@@ -730,12 +731,31 @@ function GmailStyleLayout() {
     const userName = user?.user_metadata?.name || user?.email?.split('@')[0] || '사용자';
     const userEmail = user?.email || '';
 
+    // 벤더 감지 로직
+    let detectedVendor = 'adso'; // 기본값
+
+    // 1. 소스에서 벤더 감지
+    if (lastAiMessage?.sources && lastAiMessage.sources.length > 0) {
+      const firstVendor = lastAiMessage.sources.find(s => s.sourceVendor)?.sourceVendor;
+      if (firstVendor) {
+        detectedVendor = firstVendor;
+      }
+    }
+
+    // 2. 키워드로 벤더 보정 (소스가 없거나 부정확할 경우)
+    const lowerContent = (actualQuestion + actualAiResponse).toLowerCase();
+    if (lowerContent.includes('google') || lowerContent.includes('구글')) detectedVendor = 'GOOGLE';
+    else if (lowerContent.includes('meta') || lowerContent.includes('메타') || lowerContent.includes('facebook') || lowerContent.includes('페이스북')) detectedVendor = 'META';
+    else if (lowerContent.includes('kakao') || lowerContent.includes('카카오')) detectedVendor = 'KAKAO';
+    else if (lowerContent.includes('naver') || lowerContent.includes('네이버')) detectedVendor = 'NAVER';
+    else if (lowerContent.includes('트위터') || lowerContent.includes('twitter') || lowerContent.includes(' x ')) detectedVendor = 'X(TWITTER)';
+
     setIsSendingEmail(true);
 
     const sendingMessage: Message = {
       id: `sending-${Date.now()}`,
       type: "assistant",
-      content: "📧 페이스북 담당팀에 문의 메일을 발송 중입니다...",
+      content: "📧 담당팀에 문의 메일을 발송 중입니다...",
       timestamp: new Date().toLocaleTimeString('ko-KR', {
         hour: '2-digit',
         minute: '2-digit'
@@ -754,7 +774,8 @@ function GmailStyleLayout() {
           question: actualQuestion,
           aiResponse: actualAiResponse,
           userName,
-          userEmail
+          userEmail,
+          vendor: detectedVendor
         }),
       });
 
@@ -765,7 +786,10 @@ function GmailStyleLayout() {
       const data = await response.json();
 
       if (data.success && data.emailLink) {
-        logger.log('📧 메일 링크:', data.emailLink);
+        const teamName = data.teamName || '담당팀';
+        const recipientEmail = data.recipientEmail || 'fb@nasmedia.co.kr';
+
+        logger.log(`📧 메일 링크 (${teamName}):`, data.emailLink);
         try {
           window.open(data.emailLink, '_blank');
         } catch (error) {
@@ -776,7 +800,7 @@ function GmailStyleLayout() {
         const successMessage: Message = {
           id: `success-${Date.now()}`,
           type: "assistant",
-          content: "✅ 페이스북 담당팀에 문의사항이 메일로 정상 발송되었습니다.\n\n📧 **발송 정보:**\n- 수신자: fb@nasmedia.co.kr\n- 문의 내용: " + actualQuestion.substring(0, 50) + (actualQuestion.length > 50 ? "..." : "") + "\n- 발송 시간: " + new Date().toLocaleString('ko-KR') + "\n\n💡 **메일 클라이언트가 열리지 않는다면:**\n직접 fb@nasmedia.co.kr로 메일을 보내주세요.\n\n담당팀에서 검토 후 답변을 드릴 예정입니다.",
+          content: `✅ ${teamName}에 문의사항이 메일로 정상 발송되었습니다.\n\n📧 **발송 정보:**\n- 수신자: ${recipientEmail}\n- 문의 내용: ` + actualQuestion.substring(0, 50) + (actualQuestion.length > 50 ? "..." : "") + "\n- 발송 시간: " + new Date().toLocaleString('ko-KR') + `\n\n💡 **메일 클라이언트가 열리지 않는다면:**\n직접 ${recipientEmail}로 메일을 보내주세요.\n\n담당팀에서 검토 후 답변을 드릴 예정입니다.`,
           timestamp: new Date().toLocaleTimeString('ko-KR', {
             hour: '2-digit',
             minute: '2-digit'
@@ -793,7 +817,7 @@ function GmailStyleLayout() {
       const errorMessage: Message = {
         id: `error-${Date.now()}`,
         type: "assistant",
-        content: "❌ 메일 발송 중 오류가 발생했습니다.\n\n**오류 내용:**\n" + (error instanceof Error ? error.message : "알 수 없는 오류") + "\n\n잠시 후 다시 시도해주시거나, 직접 fb@nasmedia.co.kr로 문의해주세요.",
+        content: "❌ 메일 발송 중 오류가 발생했습니다.\n\n**오류 내용:**\n" + (error instanceof Error ? error.message : "알 수 없는 오류") + "\n\n잠시 후 다시 시도해주시거나, 직접 담당팀으로 문의해주세요.",
         timestamp: new Date().toLocaleTimeString('ko-KR', {
           hour: '2-digit',
           minute: '2-digit'
