@@ -1776,26 +1776,45 @@ function GmailStyleLayout() {
               {/* 관련 자료 - 실제 컴포넌트 사용 */}
               {messages.length > 1 && !isLoading ? (
                 <div className="space-y-4">
-                  <RelatedResources
-                    userQuestion={messages[messages.length - 2]?.content}
-                    aiResponse={messages[messages.length - 1]?.content}
-                    sources={(messages[messages.length - 1]?.sources ?? []).map(source => ({
-                      id: source.id,
-                      title: source.title,
-                      url: source.url,
-                      updatedAt: source.updatedAt || new Date().toISOString(),
-                      excerpt: source.excerpt || '',
-                      sourceType: 'url' as const,
-                      documentType: 'document',
-                    }))}
-                    relatedQuestions={messages[messages.length - 1]?.relatedQuestions}
-                    onQuestionClick={(question) => {
-                      setInputValue(question);
-                      setTimeout(() => {
-                        handleSendMessage();
-                      }, 100);
-                    }}
-                  />
+                  {(() => {
+                    // 실제 AI 답변 메시지 찾기 (sources가 있는 마지막 assistant 메시지)
+                    const reverseIndex = [...messages].reverse().findIndex(msg =>
+                      msg.type === "assistant" && msg.sources && msg.sources.length > 0
+                    );
+
+                    if (reverseIndex === -1) return null;
+
+                    const aiMsgIndex = messages.length - 1 - reverseIndex;
+                    const aiMsg = messages[aiMsgIndex];
+
+                    // 해당 AI 답변에 대응하는 바로 이전 사용자 메시지 찾기
+                    const userMsg = [...messages.slice(0, aiMsgIndex)].reverse().find(msg => msg.type === "user");
+
+                    if (!userMsg) return null;
+
+                    return (
+                      <RelatedResources
+                        userQuestion={userMsg.content}
+                        aiResponse={aiMsg.content}
+                        sources={(aiMsg.sources ?? []).map(source => ({
+                          id: source.id,
+                          title: source.title,
+                          url: source.url,
+                          updatedAt: source.updatedAt || new Date().toISOString(),
+                          excerpt: source.excerpt || '',
+                          sourceType: 'url' as const,
+                          documentType: 'document',
+                        }))}
+                        relatedQuestions={aiMsg.relatedQuestions}
+                        onQuestionClick={(question) => {
+                          setInputValue(question);
+                          setTimeout(() => {
+                            handleSendMessage();
+                          }, 100);
+                        }}
+                      />
+                    );
+                  })()}
                 </div>
               ) : messages.length > 1 && isLoading ? (
                 <div className="flex flex-col items-center justify-center py-16 text-center">
