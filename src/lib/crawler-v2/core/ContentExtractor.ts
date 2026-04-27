@@ -12,7 +12,7 @@ import { Page } from 'puppeteer-core';
 import type { ContentExtractionOptions } from '../types';
 import { extractTextFromHtml, extractTitleFromHtml, cleanHtml, htmlToMarkdown, stripBoilerplate } from '../utils/html-utils';
 
-import { processTextEncoding } from '@/lib/utils/textEncoding';
+import { processTextEncoding } from '../../utils/textEncoding';
 import { titleStrategyManager } from '../strategies/TitleStrategyManager';
 
 export class ContentExtractor {
@@ -1446,12 +1446,12 @@ export class ContentExtractor {
         for (const selector of selectors) {
           const element = document.querySelector(selector);
           if (element) {
-            return element.textContent || '';
+            return element.innerHTML || '';
           }
         }
 
         // 콘텐츠 영역을 찾지 못하면 body 사용
-        return document.body?.textContent || '';
+        return document.body?.innerHTML || '';
       }, config.contentSelectors || [], config.removeSelectors || []);
 
       // HTML 정리

@@ -61,13 +61,16 @@ export class BrowserManager {
     // 2. Windows 일반 경로 확인
     if (process.platform === 'win32') {
       const windowsPaths: string[] = [
-        // 사용자가 명시적으로 요청한 네이버 웨일 (기업 방화벽 대응)
-        'C:\\Program Files\\Naver\\Naver Whale\\Application\\whale.exe',
-        'C:\\Program Files (x86)\\Naver\\Naver Whale\\Application\\whale.exe',
+        // Edge가 샌드박스 이슈가 적어 Windows 로컬에서 최우선으로 시도 (기업 환경 호환)
+        'C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe',
 
         // 표준 크롬 경로
         'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
         'C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe',
+
+        // 사용자가 명시적으로 요청한 네이버 웨일 (기업 방화벽 대응)
+        'C:\\Program Files\\Naver\\Naver Whale\\Application\\whale.exe',
+        'C:\\Program Files (x86)\\Naver\\Naver Whale\\Application\\whale.exe',
       ];
 
       // 사용자별 설치 경로
@@ -211,37 +214,16 @@ export class BrowserManager {
         }
 
         // Chrome을 찾은 경우에만 실행 시도
-        const defaultArgs = [
-          '--no-sandbox',
-          '--disable-setuid-sandbox',
-          '--disable-dev-shm-usage',
-          '--disable-blink-features=AutomationControlled',
-          '--disable-web-security',
-          '--allow-running-insecure-content',
-          '--disable-features=VizDisplayCompositor',
-          ...(isWindows ? ['--disable-gpu', '--disable-software-rasterizer'] : []),
-        ];
-
-
         const launchOptions: any = {
-          headless,
+          headless: 'new', // ✅ 최신 기본 헤드리스 모드
           args: [
-            ...(config.args || defaultArgs),
-            '--disable-extensions',
-            '--disable-component-update',
-            '--disable-background-networking',
-            '--disable-background-timer-throttling',
-            '--disable-backgrounding-occluded-windows',
-            '--ipc-connection-timeout=10000',
-            '--disable-dev-shm-usage',
             '--no-sandbox',
-            '--headless=new', // ✅ 최신 헤드리스 모드 명시적 사용
+            '--disable-setuid-sandbox',
+            '--disable-dev-shm-usage',
+            '--disable-gpu', // ✅ 로컬 환경에서 안정성 향상
           ],
-          ignoreDefaultArgs: ['--enable-automation'],
-          pipe: true, // ✅ 윈도우에서 WebSocket 대신 Pipe 사용으로 안정성 강화 (Code: 0 해결책)
           executablePath,
           defaultViewport: { width, height },
-          userDataDir: join(os.tmpdir(), `puppeteer_cache_${process.pid}`), // ✅ 프로세스별 고유 캐시 디렉토리 사용하여 잠금 충돌 방지
         };
 
         console.log(`🔧 로컬 환경: Chrome 실행 파일 경로: ${executablePath}`);

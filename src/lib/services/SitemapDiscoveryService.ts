@@ -3,6 +3,7 @@ import chromium from '@sparticuz/chromium';
 import * as cheerio from 'cheerio';
 import { parseStringPromise } from 'xml2js';
 import { gunzipSync } from 'zlib';
+import { browserManager } from '../crawler-v2/core/BrowserManager';
 
 export interface DiscoveredUrl {
   url: string;
@@ -44,66 +45,21 @@ export class SitemapDiscoveryService {
     if (this.browser) return;
 
     try {
-      console.log('🔧 SitemapDiscoveryService 브라우저 초기화 중...');
-
-      // Vercel 환경인지 확인
-      const isWindows = process.platform === 'win32';
-      const isVercel = (process.env.VERCEL === '1' || process.env.AWS_LAMBDA_FUNCTION_NAME) && !isWindows;
-
-      if (isVercel) {
-        // Vercel 환경: @sparticuz/chromium 사용
-        try {
-          // @sparticuz/chromium의 executablePath()가 실패할 수 있으므로 try-catch
-          const executablePath = await chromium.executablePath();
-
-          this.browser = await puppeteer.launch({
-            args: chromium.args as string[],
-            defaultViewport: {
-              width: 1280,
-              height: 720,
-            },
-            executablePath: executablePath,
-            headless: true,
-          });
-          console.log('✅ SitemapDiscoveryService 브라우저 초기화 완료 (Vercel 환경: @sparticuz/chromium)');
-        } catch (chromiumError) {
-          // @sparticuz/chromium 초기화 실패 시 Puppeteer 없이 진행 (Cheerio만 사용)
-          // 이는 정상적인 fallback이므로 에러가 아닙니다
-          console.log('ℹ️ @sparticuz/chromium 초기화 실패 (예상된 동작), Cheerio만 사용하여 계속 진행합니다');
-          this.browser = null; // 브라우저를 null로 유지하여 Cheerio만 사용
-          return; // 에러를 throw하지 않고 정상 종료
-        }
-      } else {
-        // 로컬 환경: 일반 Puppeteer 사용
-        this.browser = await puppeteer.launch({
-          headless: true,
-          args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-blink-features=AutomationControlled',
-            '--disable-web-security',
-            '--allow-running-insecure-content',
-            '--disable-features=VizDisplayCompositor'
-          ],
-          ignoreDefaultArgs: ['--enable-automation'],
-        });
-        console.log('✅ SitemapDiscoveryService 브라우저 초기화 완료 (로컬 환경)');
-      }
+      console.log('🔧 SitemapDiscoveryService 브라우저 초기화 중 (BrowserManager 활용)...');
+      this.browser = await browserManager.initialize();
+      console.log('✅ SitemapDiscoveryService 브라우저 초기화 완료 (BrowserManager 통합)');
     } catch (error) {
-      // 일반적인 초기화 실패 시에도 에러를 throw하지 않고 Cheerio만 사용
-      // 이는 정상적인 fallback이므로 에러가 아닙니다
-      console.log('ℹ️ Puppeteer 초기화 실패 (예상된 동작), Cheerio만 사용하여 계속 진행합니다');
-      this.browser = null; // 브라우저를 null로 유지하여 Cheerio만 사용
+      console.error('ℹ️ SitemapDiscoveryService 브라우저 초기화 실패, Cheerio만 사용:', error);
+      this.browser = null;
     }
   }
 
   async close(): Promise<void> {
-    if (this.browser) {
-      await this.browser.close();
-      this.browser = null;
-      console.log('🔒 SitemapDiscoveryService 브라우저 종료');
-    }
+    // BrowserManager는 공유 인스턴스일 수 있으므로 직접 닫지 않고 null 처리만 하거나
+    // SitemapDiscoveryService가 직접 관리하는 브라우저인 경우에만 닫음
+    // 여기서는 shared browserManager를 사용하므로 cleanup()을 호출하는 대신 참조만 해제
+    this.browser = null;
+    console.log('🔒 SitemapDiscoveryService 브라우저 참조 해제');
   }
 
   /**
@@ -860,12 +816,12 @@ export class SitemapDiscoveryService {
             // 페이지가 완전히 로드될 때까지 대기 (JavaScript 실행 대기)
             // maxDepth 4이거나 Facebook 같은 동적 사이트는 더 오래 대기
             // 로그인 페이지로 리다이렉트된 경우에도 충분한 대기 시간 필요
-            const isFacebook = baseUrl.includes('facebook.com');
+            const isFacebook = baseUrl.includes('facebook.com') || baseUrl.includes('instagram.com');
             const waitTime = (config.maxDepth >= 4 || isFacebook) ? 8000 : (isLoginPage ? 5000 : 2000);
             await new Promise(resolve => setTimeout(resolve, waitTime));
 
             // 추가 스크롤로 lazy-loaded 콘텐츠 로드 시도
-            if (config.maxDepth >= 4 || baseUrl.includes('facebook.com')) {
+            if (config.maxDepth >= 4 || baseUrl.includes('facebook.com') || baseUrl.includes('instagram.com')) {
               try {
                 await page.evaluate(() => {
                   window.scrollTo(0, document.body.scrollHeight);

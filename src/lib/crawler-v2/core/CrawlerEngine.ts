@@ -13,6 +13,7 @@
 import { Page } from 'puppeteer-core';
 import { browserManager } from './BrowserManager';
 import { contentExtractor } from './ContentExtractor';
+import { accordionManager } from './AccordionManager';
 import { urlDiscovery } from '../discovery/UrlDiscovery';
 import { cacheManager } from '../utils/CacheManager';
 import { retryManager } from '../utils/RetryManager';
@@ -296,50 +297,19 @@ export class CrawlerEngine {
         });
 
         // 네이버 광고 페이지는 더 오래 대기 (동적 콘텐츠 로드 시간 확보)
-        const scrollWaitTime = isNaverAds ? 8000 : 2000; // FAQ 페이지는 8초로 증가
+        const scrollWaitTime = isNaverAds ? 8000 : 2000;
         await new Promise(resolve => setTimeout(resolve, scrollWaitTime));
-
-        // 네이버 광고 FAQ 페이지의 경우 추가로 DOM 변경 감지 대기
-        if (isNaverAds && url.includes('/help/faq/')) {
-          try {
-            console.log('⏳ [CrawlerEngine] FAQ 페이지 DOM 안정화 대기 중...');
-            await page.waitForFunction(
-              () => {
-                // 페이지 상단에 큰 텍스트가 있는지 확인
-                const allElements = Array.from(document.querySelectorAll('*'));
-                for (const el of allElements) {
-                  const tagName = el.tagName?.toLowerCase() || '';
-                  if (['nav', 'header', 'footer', 'aside', 'script', 'style'].includes(tagName)) continue;
-
-                  const text = el.textContent?.trim() || '';
-                  if (text.length < 3 || text.length > 150) continue;
-                  if (['광고주센터', '도움말', 'Help', 'Advertiser Center'].includes(text)) continue;
-
-                  const style = window.getComputedStyle(el);
-                  const fontSize = parseFloat(style.fontSize) || 0;
-                  const fontWeight = parseInt(style.fontWeight) || 400;
-                  const rect = el.getBoundingClientRect();
-                  const y = rect.top;
-
-                  if (y >= 0 && y <= 500 && (fontSize >= 18 || fontWeight >= 600)) {
-                    return true;
-                  }
-                }
-                return false;
-              },
-              { timeout: 10000 }
-            ).catch(() => {
-              console.warn('⚠️ 네이버 광고 페이지 DOM 변경 대기 타임아웃 (계속 진행)');
-            });
-          } catch (error) {
-            console.warn('⚠️ 네이버 광고 페이지 DOM 변경 감지 실패 (계속 진행):', error);
-          }
-        }
       } catch (scrollError) {
         console.warn('⚠️ 스크롤 실패 (무시):', scrollError);
         // 스크롤 실패해도 최소 대기 시간은 확보
         const minWaitTime = isNaverAds ? 5000 : 2000;
         await new Promise(resolve => setTimeout(resolve, minWaitTime));
+      }
+
+      // 아코디언 확장 (Instagram/Facebook/Meta 도움말 대상)
+      if (accordionManager.shouldExpand(url)) {
+        console.log(`[CrawlerEngine] 아코디언 확장 시도: ${url}`);
+        await accordionManager.expandAll(page);
       }
 
       // 콘텐츠 추출 (내부에서 추가 안정화 대기 수행)

@@ -262,6 +262,10 @@ export function htmlToMarkdown(html: string): string {
   markdown = markdown.replace(/<h3[^>]*>([\s\S]*?)<\/h3>/gi, '\n### $1\n');
   markdown = markdown.replace(/<h4[^>]*>([\s\S]*?)<\/h4>/gi, '\n#### $1\n');
 
+  // 아코디언 헤더 및 기타 역할 헤더 처리 (공백 제거 포함)
+  markdown = markdown.replace(/<[^>]*data-rag-section-header=["']true["'][^>]*>([\s\S]*?)<\/[^>]+>/gi, (match, p1) => `\n### ${p1.trim()}\n`);
+  markdown = markdown.replace(/<[^>]*role=["']heading["'][^>]*aria-level=["']3["'][^>]*>([\s\S]*?)<\/[^>]+>/gi, (match, p1) => `\n### ${p1.trim()}\n`);
+
   // 2. 강조 변환
   markdown = markdown.replace(/<strong[^>]*>([\s\S]*?)<\/strong>/gi, '**$1**');
   markdown = markdown.replace(/<b[^>]*>([\s\S]*?)<\/b>/gi, '**$1**');
