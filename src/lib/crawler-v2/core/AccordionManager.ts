@@ -109,7 +109,7 @@ export class AccordionManager {
                             }
                         }, targetElement);
 
-                        await targetElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                        await targetElement.scrollIntoView();
                         await targetElement.click();
                         totalExpanded++;
 
