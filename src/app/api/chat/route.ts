@@ -1588,7 +1588,7 @@ export async function POST(request: NextRequest) {
             }, 3000);
 
             searchResults = await Promise.race([
-              searchSimilarChunks(searchMessage, 60, vendorFilter),
+              searchSimilarChunks(searchMessage, 15, vendorFilter),
               searchTimeoutPromise
             ]);
 
