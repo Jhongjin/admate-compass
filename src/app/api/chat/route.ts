@@ -521,25 +521,45 @@ async function generateRelatedQuestions(
       if (matches) {
         specificPhrases.push(...matches.map(m => m.trim()).filter(m => m.length > 5));
       }
-    });
+    })    let response: any;
+    // OpenAI 우선 순위로 변경
+    if (openai) {
+      try {
+        return await generateRelatedQuestionsWithGPT(query, searchResults, vendorFilter);
+      } catch (gptError) {
+        console.error('❌ GPT 관련 질문 생성 실패, Claude로 fallback 시도:', gptError);
+      }
+    }
 
-    const uniquePhrases = Array.from(new Set(specificPhrases)).slice(0, 8);
-    const phrasesInfo = uniquePhrases.length > 0
-      ? `\n**문서에서 발견된 구체적인 문구 (이 문구들을 기반으로 질문 생성):**\n${uniquePhrases.map((p, i) => `${i + 1}. "${p}"`).join('\n')}\n\n위의 문구들 중 하나 이상을 포함하는 질문만 생성하세요.\n`
-      : '';
+    if (!anthropic) {
+      return [];
+    }
 
-    const prompt = `당신은 검색된 문서 내용을 기반으로 관련 예측 질문을 생성하는 AI입니다.
-
-**사용자 질문:** ${query}${vendorInfo}
-
-**검색된 문서 내용 (이 내용만을 기반으로 질문 생성):**
-${documentContents}${keywordsInfo}${phrasesInfo}
-
-**절대 필수 사항:**
-1. **문서 내용만 사용**: 위의 "검색된 문서 내용"에 명시된 내용만을 기반으로 질문을 생성하세요. 문서에 없는 내용에 대한 질문은 절대 생성하지 마세요.
-2. **사용자 질문과 직접 관련**: 사용자 질문("${query}")과 직접적으로 관련된 문서 내용만 사용하세요.
-3. **벤더 정보 반영**: ${vendors.length > 0 ? `선택된 벤더(${vendors.map(v => getVendorDisplayName(v)).join(', ')})의 문서 내용만 기반으로 질문을 생성하세요.` : '문서에 명시된 벤더 정보를 반영하세요.'}
-4. **구체적 내용 인용**: 각 질문은 문서에서 구체적으로 언급된 주제, 기능, 절차, 정책, 수치 등을 직접 인용하여 다뤄야 합니다.
+    try {
+      console.log('📝 Claude API 관련 질문 생성 호출 시도 (Model: claude-sonnet-4-6)');
+      response = await anthropic.messages.create({
+        model: 'claude-sonnet-4-6',
+        max_tokens: 500,
+        messages: [{ role: 'user', content: prompt }]
+      });
+    } catch (apiError: any) {
+      console.warn(`⚠️ Claude 관련 질문 생성 실패 (상태: ${apiError.status}):`, apiError.message);
+      if (apiError.status === 404) {
+        console.warn('⚠️ Claude 3.5 Sonnet 을 찾을 수 없음. Haiku로 폴백합니다.');
+        try {
+          response = await anthropic.messages.create({
+            model: 'claude-3-haiku-20240307',
+            max_tokens: 500,
+            messages: [{ role: 'user', content: prompt }]
+          });
+        } catch (haikuError) {
+          console.error('❌ Claude 3 Haiku 호출도 실패:', haikuError);
+          return [];
+        }
+      } else {
+        return [];
+      }
+    }: 각 질문은 문서에서 구체적으로 언급된 주제, 기능, 절차, 정책, 수치 등을 직접 인용하여 다뤄야 합니다.
 5. **문서의 특정 섹션 참조**: 문서의 특정 섹션(예: "02|네이버페이리워드광고", "프리미엄패키지", "스마트스토어" 등)에서 언급된 내용만 사용하세요.
 
 **절대 금지 사항 (중요 - 반드시 준수):**
@@ -715,24 +735,9 @@ async function generateStreamAnswerWithClaude(
     console.log('- 질문:', query);
     console.log('- 검색 결과 수:', searchResults.length);
 
-    // Claude API가 설정되지 않은 경우 GPT로 fallback 시도
+    // Claude API가 설정되지 않은 경우 Fallback 답변 생성
     if (!anthropic) {
-      console.log('⚠️ Claude API가 설정되지 않음. GPT로 fallback 시도');
-      console.log('🔍 환경변수 확인:', {
-        ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY ? '설정됨' : '설정되지 않음',
-        OPENAI_API_KEY: process.env.OPENAI_API_KEY ? '설정됨' : '설정되지 않음',
-        API_KEY_LENGTH: process.env.ANTHROPIC_API_KEY?.length || 0
-      });
-
-      if (openai) {
-        try {
-          return await generateStreamAnswerWithGPT(query, searchResults, controller, originalQuery);
-        } catch (gptError) {
-          console.error('❌ GPT fallback도 실패:', gptError);
-        }
-      }
-
-      // GPT도 없거나 실패하면 fallback 답변 생성
+      console.log('⚠️ Claude API가 설정되지 않음. Fallback 답변 생성');
       const fallbackAnswer = generateFallbackAnswer(query, searchResults);
 
       // Fallback 답변을 청크 단위로 전송
@@ -797,18 +802,7 @@ async function generateStreamAnswerWithClaude(
       console.log('✅ Claude API 스트림 시작 완료');
     } catch (apiError) {
       console.error('❌ Claude API 스트림 호출 실패:', apiError);
-      // Claude 실패 시 GPT로 fallback 시도
-      if (openai) {
-        console.log('🔄 Claude 실패 - GPT로 fallback 시도');
-        try {
-          return await generateStreamAnswerWithGPT(query, searchResults, controller);
-        } catch (gptError) {
-          console.error('❌ GPT fallback도 실패:', gptError);
-          const fallbackAnswer = generateFallbackAnswer(query, searchResults);
-          // ... (생략된 기존 fallback 전송 로직)
-          return fallbackAnswer;
-        }
-      }
+      throw apiError;
     }
 
     let fullAnswer = '';
@@ -845,29 +839,6 @@ async function generateStreamAnswerWithClaude(
       }
     } catch (streamIterError) {
       console.error('❌ Claude 스트리밍 루프 중 오류 발생:', streamIterError);
-
-      // Claude 서버 부하(overloaded_error) 또는 기타 오류 발생 시 GPT로 전환하여 답변 완성을 시도합니다.
-      if (openai) {
-        console.warn('⚠️ Claude 장애 감지 - GPT로 긴급 전환하여 답변 생성을 마무리합니다.');
-
-        try {
-          // 이미 생성된 답변이 있는 경우, 사용자에게 전환 안내를 하고 GPT가 이어서 답변하도록 유도
-          if (fullAnswer.length > 0) {
-            const fallbackNotice = `\n\n(Claude 서버 부하로 인해 GPT로 전환하여 답변을 계속합니다...)\n\n`;
-            controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ type: 'chunk', data: { content: fallbackNotice } })}\n\n`));
-
-            // GPT에게는 지금까지의 답변 내용을 참고하여 이어서 작성하도록 요청할 수 있으나, 
-            // 여기서는 단순하게 GPT에게 처음부터 다시 요청하되, 
-            // 스트림은 끊기지 않고 이어서 사용자에게 전달되도록 합니다.
-            // (참고: generateStreamAnswerWithGPT는 내부적으로 fullAnswer를 새로 생성하여 controller에 보냄)
-          }
-
-          return await generateStreamAnswerWithGPT(query, searchResults, controller);
-        } catch (gptError) {
-          console.error('❌ GPT 긴급 전환 폴백도 실패:', gptError);
-        }
-      }
-
       throw streamIterError;
     }
 
@@ -1091,7 +1062,7 @@ function appendPostProcessing(fullAnswer: string, searchResults: SearchResult[],
 }
 
 /**
- * GPT를 사용한 스트림 답변 생성 (보조 LLM)
+ * GPT를 사용한 스트림 답변 생성 (우선순위 1)
  */
 async function generateStreamAnswerWithGPT(
   query: string,
@@ -1100,43 +1071,90 @@ async function generateStreamAnswerWithGPT(
   originalQuery?: string
 ): Promise<string> {
   try {
-    console.log('🤖 GPT 스트림 답변 생성 시작');
+    console.log('🤖 GPT 스트림 답변 생성 시작 (우선순위 1)');
 
     if (!openai) {
-      throw new Error('OpenAI API가 설정되지 않았습니다.');
+      console.log('⚠️ OpenAI API가 설정되지 않음. Claude로 fallback 시도');
+      if (anthropic) {
+        try {
+          return await generateStreamAnswerWithClaude(query, searchResults, controller, originalQuery);
+        } catch (claudeError) {
+          console.error('❌ Claude fallback도 실패:', claudeError);
+        }
+      }
+      const fallbackAnswer = generateFallbackAnswer(query, searchResults);
+      const words = fallbackAnswer.split(' ');
+      for (let i = 0; i < words.length; i++) {
+        const chunk = words[i] + (i < words.length - 1 ? ' ' : '');
+        const streamResponse = { type: 'chunk', data: { content: chunk } };
+        try {
+          controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(streamResponse)}\n\n`));
+        } catch (jsonError) {}
+      }
+      return fallbackAnswer;
     }
 
     // [UNIFICATION] 공통 프롬프트 생성 헬퍼 사용
     const prompt = prepareUnifiedPrompt(query, searchResults, originalQuery);
 
     console.log('📝 GPT API 호출 시작');
-    const stream = await openai.chat.completions.create({
-      model: 'gpt-5-mini-2025-08-07',
-      messages: [{ role: 'user', content: prompt }],
-      stream: true,
-      max_completion_tokens: 4000,
-    });
-
-    console.log('✅ GPT API 스트림 시작 완료');
-
-    let fullAnswer = '';
-    for await (const chunk of stream) {
-      const content = chunk.choices[0]?.delta?.content;
-      if (content) {
-        fullAnswer += content;
-
-        const streamResponse = {
-          type: 'chunk',
-          data: { content }
-        };
-
+    let stream: any;
+    try {
+      stream = await openai.chat.completions.create({
+        model: 'gpt-5-mini-2025-08-07',
+        messages: [{ role: 'user', content: prompt }],
+        stream: true,
+        max_completion_tokens: 4000,
+      });
+      console.log('✅ GPT API 스트림 시작 완료');
+    } catch (apiError) {
+      console.error('❌ GPT API 스트림 호출 실패:', apiError);
+      if (anthropic) {
+        console.log('🔄 GPT 실패 - Claude로 fallback 시도');
         try {
-          const chunkData = `data: ${JSON.stringify(streamResponse)}\n\n`;
-          controller.enqueue(new TextEncoder().encode(chunkData));
-        } catch (jsonError) {
-          console.error('❌ GPT JSON 직렬화/전송 오류:', jsonError);
+          return await generateStreamAnswerWithClaude(query, searchResults, controller, originalQuery);
+        } catch (claudeError) {
+          console.error('❌ Claude fallback도 실패:', claudeError);
         }
       }
+      throw apiError;
+    }
+
+    let fullAnswer = '';
+    try {
+      for await (const chunk of stream) {
+        const content = chunk.choices[0]?.delta?.content;
+        if (content) {
+          fullAnswer += content;
+
+          const streamResponse = {
+            type: 'chunk',
+            data: { content }
+          };
+
+          try {
+            const chunkData = `data: ${JSON.stringify(streamResponse)}\n\n`;
+            controller.enqueue(new TextEncoder().encode(chunkData));
+          } catch (jsonError) {
+            console.error('❌ GPT JSON 직렬화/전송 오류:', jsonError);
+          }
+        }
+      }
+    } catch (streamIterError) {
+      console.error('❌ GPT 스트리밍 루프 중 오류 발생:', streamIterError);
+      if (anthropic) {
+        console.warn('⚠️ GPT 장애 감지 - Claude로 긴급 전환하여 답변 생성을 마무리합니다.');
+        try {
+          if (fullAnswer.length > 0) {
+            const fallbackNotice = `\n\n(OpenAI 서버 부하로 인해 Claude로 전환하여 답변을 계속합니다...)\n\n`;
+            controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify({ type: 'chunk', data: { content: fallbackNotice } })}\n\n`));
+          }
+          return await generateStreamAnswerWithClaude(query, searchResults, controller, originalQuery);
+        } catch (claudeError) {
+          console.error('❌ Claude 긴급 전환 폴백도 실패:', claudeError);
+        }
+      }
+      throw streamIterError;
     }
 
     // [UNIFICATION] 공통 사후 처리 로직 사용
@@ -1738,10 +1756,10 @@ export async function POST(request: NextRequest) {
           console.log('💡 [Stream] Starting related questions generation...');
           const relatedQuestionsPromise = generateRelatedQuestions(message, filteredResultsForAnswer, vendorFilter);
 
-          // Claude 스트림 답변 생성 호출 (원본 쿼리 전달로 답변 품질 향상)
-          console.log('✍️ [Stream] Calling generateStreamAnswerWithClaude...');
+          // GPT 스트림 답변 생성 호출 (우선순위 변경: OpenAI 우선)
+          console.log('✍️ [Stream] Calling generateStreamAnswerWithGPT...');
           const finalOriginalQuery = recoveredOriginalQuery || message;
-          const fullAnswer = await generateStreamAnswerWithClaude(message, filteredResultsForAnswer, controller, finalOriginalQuery);
+          const fullAnswer = await generateStreamAnswerWithGPT(message, filteredResultsForAnswer, controller, finalOriginalQuery);
           console.log('✅ [Stream] Answer generation completed');
 
           const relatedQuestions = await relatedQuestionsPromise.catch(e => {
