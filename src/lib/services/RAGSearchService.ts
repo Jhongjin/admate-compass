@@ -438,7 +438,7 @@ ${context}
         try {
           console.log('🔄 Claude 4.6 Sonnet 호출 시도...');
           message = await this.anthropic.messages.create({
-            model: 'claude-sonnet-4-6', // 표준 모델명으로 수정
+            model: 'claude-3-5-sonnet-20241022', // 표준 모델명으로 수정
             max_tokens: 4000,
             messages: [{ role: 'user', content: enhancedPrompt }],
           });
@@ -447,7 +447,7 @@ ${context}
           if (sonnetError.status === 404) {
             console.warn('⚠️ Claude 4.6 Sonnet 을 찾을 수 없음. Haiku 4.5로 폴백합니다.');
             message = await this.anthropic.messages.create({
-              model: 'claude-haiku-4-5-20251001', // 표준 모델명으로 수정
+              model: 'claude-3-5-haiku-20241022', // 표준 모델명으로 수정
               max_tokens: 4000,
               messages: [{ role: 'user', content: enhancedPrompt }],
             });
@@ -471,7 +471,7 @@ ${context}
       try {
         console.log('🔍 OpenAI GPT로 답변 생성 시도...');
         const completion = await this.openai.chat.completions.create({
-          model: 'gpt-4o', // 표준 모델명으로 수정 (기존: gpt-5-mini-2025-08-07)
+          model: 'gpt-4o-mini', // 표준 모델명으로 수정 (기존: gpt-5-mini-2025-08-07)
           messages: [{ role: 'user', content: enhancedPrompt }],
           max_completion_tokens: 2000,
         });

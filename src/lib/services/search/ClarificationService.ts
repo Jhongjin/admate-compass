@@ -125,7 +125,7 @@ export class ClarificationService {
                     'anthropic-version': '2023-06-01'
                 },
                 body: JSON.stringify({
-                    model: 'claude-haiku-4-5-20251001', // 사용자의 시나리오(2025년 이후)에 대응하는 최신 모델로 수정
+                    model: 'claude-3-5-haiku-20241022', // 올바른 최신 Haiku 모델명으로 수정
                     max_tokens: 300,
                     system: systemPrompt,
                     messages: [
