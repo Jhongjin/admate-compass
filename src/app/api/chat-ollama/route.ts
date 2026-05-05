@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createCompassServiceClient } from '@/lib/supabase/compass';
+import { createCompassServiceClient, getCompassDbSchema } from '@/lib/supabase/compass';
 import { RAGSearchService } from '@/lib/services/RAGSearchService';
 import { generateResponse } from '@/lib/services/ollama';
 
@@ -295,6 +295,34 @@ function calculateConfidence(searchResults: SearchResult[]): number {
   return Math.min(avgSimilarity * 100, 100);
 }
 
+function buildVerifiedSources(searchResults: SearchResult[]) {
+  return searchResults.map(result => {
+    console.log(`📚 Vultr+Ollama 출처 정보: 제목="${result.metadata?.title || '문서'}", 유사도=${result.similarity}`);
+    return {
+      id: result.chunk_id,
+      title: result.documentTitle || result.metadata?.title || 'Meta 광고 정책 문서',
+      url: result.documentUrl || result.metadata?.source_url || result.metadata?.document_url || result.metadata?.url || '',
+      updatedAt: result.metadata?.updatedAt || new Date().toISOString(),
+      excerpt: result.content.substring(0, 200) + (result.content.length > 200 ? '...' : ''),
+      similarity: result.similarity,
+      score: result.score ?? result.similarity,
+      retrievalMethod: result.retrievalMethod || result.metadata?.retrievalMethod || 'vector',
+      sourceQuality: result.sourceQuality || {
+        hasDocumentId: Boolean(result.documentId),
+        hasTitle: Boolean(result.documentTitle || result.metadata?.title),
+        hasUrl: Boolean(result.documentUrl || result.metadata?.source_url || result.metadata?.document_url || result.metadata?.url),
+        hasExcerpt: Boolean(result.content),
+        isFallback: false,
+        warnings: [],
+      },
+      documentId: result.documentId || result.metadata?.documentId || result.metadata?.document_id,
+      chunkId: result.chunk_id,
+      sourceType: result.metadata?.type || 'document',
+      documentType: result.metadata?.documentType || 'policy'
+    };
+  });
+}
+
 
 /**
  * Vultr+Ollama 전용 Chat API
@@ -359,6 +387,7 @@ export async function POST(request: NextRequest) {
           content: "죄송합니다. 현재 제공된 문서에서 관련 정보를 찾을 수 없습니다. 더 구체적인 질문을 해주시거나 다른 키워드로 시도해보세요.",
           sources: [],
           noDataFound: true,
+          schema: getCompassDbSchema(),
           showContactOption: true
         },
         confidence: 0,
@@ -370,6 +399,10 @@ export async function POST(request: NextRequest) {
     // 3. Vultr+Ollama 답변 생성 (프록시 API 사용)
     console.log('🚀 Vultr+Ollama 프록시 답변 생성 시작');
     
+    const sources = buildVerifiedSources(verifiedSearchResults);
+    const confidence = calculateConfidence(verifiedSearchResults);
+    const schema = getCompassDbSchema();
+
     // Ollama만 사용 - fallback 없음
     let answer: string;
     try {
@@ -377,54 +410,25 @@ export async function POST(request: NextRequest) {
     } catch (error) {
       console.error('❌ Ollama 연결 실패:', error);
       
-      // Ollama 서버 연결 실패 시 적절한 오류 메시지 반환
+      // Ollama 생성 실패와 retrieval 실패를 분리하기 위해 검증된 sources는 보존한다.
       return NextResponse.json({
         response: {
           message: "Ollama 서버에 연결할 수 없습니다. Vultr 서버에서 Ollama 서비스를 시작해주세요.",
           content: "Ollama 서버에 연결할 수 없습니다. Vultr 서버에서 Ollama 서비스를 시작해주세요.",
-          sources: [],
+          sources,
           noDataFound: false,
+          schema,
           showContactOption: true,
           error: true
         },
-        confidence: 0,
+        confidence,
         processingTime: Date.now() - startTime,
         model: 'ollama-connection-failed'
       });
     }
-    
-    // 신뢰도 계산
-    const confidence = calculateConfidence(verifiedSearchResults);
-    
+
     // 처리 시간 계산
     const processingTime = Date.now() - startTime;
-
-    // 출처 정보 생성
-    const sources = verifiedSearchResults.map(result => {
-      console.log(`📚 Vultr+Ollama 출처 정보: 제목="${result.metadata?.title || '문서'}", 유사도=${result.similarity}`);
-      return {
-        id: result.chunk_id,
-        title: result.documentTitle || result.metadata?.title || 'Meta 광고 정책 문서',
-        url: result.documentUrl || result.metadata?.source_url || result.metadata?.document_url || result.metadata?.url || '',
-        updatedAt: result.metadata?.updatedAt || new Date().toISOString(),
-        excerpt: result.content.substring(0, 200) + (result.content.length > 200 ? '...' : ''),
-        similarity: result.similarity,
-        score: result.score ?? result.similarity,
-        retrievalMethod: result.retrievalMethod || result.metadata?.retrievalMethod || 'vector',
-        sourceQuality: result.sourceQuality || {
-          hasDocumentId: Boolean(result.documentId),
-          hasTitle: Boolean(result.documentTitle || result.metadata?.title),
-          hasUrl: Boolean(result.documentUrl || result.metadata?.source_url || result.metadata?.document_url || result.metadata?.url),
-          hasExcerpt: Boolean(result.content),
-          isFallback: false,
-          warnings: [],
-        },
-        documentId: result.documentId || result.metadata?.documentId || result.metadata?.document_id,
-        chunkId: result.chunk_id,
-        sourceType: result.metadata?.type || 'document',
-        documentType: result.metadata?.documentType || 'policy'
-      };
-    });
     
     return NextResponse.json({
       response: {
@@ -432,6 +436,7 @@ export async function POST(request: NextRequest) {
         content: answer,
         sources,
         noDataFound: false,
+        schema,
         showContactOption: false
       },
       confidence,
@@ -472,6 +477,7 @@ export async function POST(request: NextRequest) {
         content: errorMessage,
         sources: [],
         noDataFound: true,
+        schema: getCompassDbSchema(),
         showContactOption: true
       },
       confidence: 0,

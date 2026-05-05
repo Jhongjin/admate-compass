@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { createCompassServiceClient, getCompassDbSchema } from '@/lib/supabase/compass';
 
 export async function GET(request: NextRequest) {
   const startTime = Date.now();
@@ -45,13 +46,11 @@ export async function GET(request: NextRequest) {
 
     // Supabase 연결 확인
     try {
-      const { createClient } = await import('@supabase/supabase-js');
-      
       const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
       const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
       if (supabaseUrl && supabaseKey) {
-        const supabase = createClient(supabaseUrl, supabaseKey);
+        const supabase = createCompassServiceClient();
         const { error } = await supabase
           .from('documents')
           .select('id')
@@ -59,6 +58,7 @@ export async function GET(request: NextRequest) {
 
         health.services.supabase = {
           status: error ? 'unhealthy' : 'healthy',
+          schema: getCompassDbSchema(),
           error: error?.message
         };
       } else {

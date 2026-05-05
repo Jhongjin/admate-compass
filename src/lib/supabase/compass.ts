@@ -1,17 +1,21 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 import { createBrowserClient } from "@supabase/ssr";
 
-const DEFAULT_COMPASS_SCHEMA = "public";
 const ALLOWED_COMPASS_SCHEMAS = new Set(["public", "compass"]);
 
+function getDefaultCompassSchema() {
+  return process.env.NODE_ENV === "production" ? "compass" : "public";
+}
+
 export function getCompassDbSchema() {
-  const configuredSchema = process.env.COMPASS_DB_SCHEMA?.trim() || DEFAULT_COMPASS_SCHEMA;
+  const defaultSchema = getDefaultCompassSchema();
+  const configuredSchema = process.env.COMPASS_DB_SCHEMA?.trim() || defaultSchema;
 
   if (!ALLOWED_COMPASS_SCHEMAS.has(configuredSchema)) {
     console.warn(
-      `Unsupported COMPASS_DB_SCHEMA "${configuredSchema}". Falling back to ${DEFAULT_COMPASS_SCHEMA}.`
+      `Unsupported COMPASS_DB_SCHEMA "${configuredSchema}". Falling back to ${defaultSchema}.`
     );
-    return DEFAULT_COMPASS_SCHEMA;
+    return defaultSchema;
   }
 
   return configuredSchema;
