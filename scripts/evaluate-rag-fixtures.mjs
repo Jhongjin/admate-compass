@@ -25,6 +25,7 @@ const limit = Number(limitArg?.split("=")[1] || process.env.RAG_EVAL_LIMIT || 0)
 
 const allowedRetrievalMethods = new Set(["vector", "keyword", "hybrid", "fallback"]);
 const allowedVendors = new Set(["ANY", "NONE", "KAKAO", "META", "NAVER", "GOOGLE"]);
+const allowedCategories = new Set(["vendor-specific", "generic-policy", "out-of-scope"]);
 const vendorTerms = {
   META: ["meta", "facebook", "페이스북", "instagram", "인스타그램", "릴스", "reels"],
   KAKAO: ["kakao", "카카오", "카카오톡", "톡채널", "비즈보드", "모먼트"],
@@ -90,9 +91,25 @@ function validateFixtureSchema(fixtures) {
       fail(`${label}.expectedVendor must be one of ${Array.from(allowedVendors).join(", ")}`);
     }
 
+    if (fixture.category && !allowedCategories.has(fixture.category)) {
+      fail(`${label}.category must be one of ${Array.from(allowedCategories).join(", ")}`);
+    }
+
     assertArray(fixture.expectedSourceTitle, `${label}.expectedSourceTitle`);
     assertArray(fixture.mustContain, `${label}.mustContain`);
     assertArray(fixture.mustNotContain, `${label}.mustNotContain`);
+    if (fixture.sourceMustContain !== undefined) {
+      assertArray(fixture.sourceMustContain, `${label}.sourceMustContain`);
+    }
+    if (fixture.sourceMustNotContain !== undefined) {
+      assertArray(fixture.sourceMustNotContain, `${label}.sourceMustNotContain`);
+    }
+    if (fixture.generationMustContain !== undefined) {
+      assertArray(fixture.generationMustContain, `${label}.generationMustContain`);
+    }
+    if (fixture.generationMustNotContain !== undefined) {
+      assertArray(fixture.generationMustNotContain, `${label}.generationMustNotContain`);
+    }
     assertArray(fixture.requireRetrievalMethods, `${label}.requireRetrievalMethods`);
 
     for (const method of fixture.requireRetrievalMethods || []) {
@@ -115,6 +132,13 @@ function validateFixtureSchema(fixtures) {
       fail(`${label}.requireSourceQuality must be boolean`);
     }
   }
+}
+
+function fixtureCategory(fixture) {
+  if (fixture.category) return fixture.category;
+  if (fixture.expectedVendor === "NONE") return "out-of-scope";
+  if (fixture.expectedVendor === "ANY") return "generic-policy";
+  return "vendor-specific";
 }
 
 function normalizeText(value) {
@@ -202,57 +226,74 @@ function detectQueryIntent(query) {
   };
 }
 
+function shouldRunGenerationAssertions(payload) {
+  const model = String(payload?.model || payload?.response?.model || "");
+  if (!model) return false;
+  return ![
+    "ollama-connection-failed",
+    "vultr-ollama-no-data",
+  ].includes(model);
+}
+
 function collectResponseFailures(fixture, payload) {
-  const failures = [];
+  const sourceFailures = [];
+  const generationFailures = [];
   const response = payload?.response;
   if (!response || typeof response !== "object") {
-    return ["response must be an object"];
+    return {
+      sourceFailures: ["response must be an object"],
+      generationFailures,
+    };
   }
 
   const sources = Array.isArray(response.sources) ? response.sources : [];
-  const responseText = normalizeText([
-    sourceOnly ? "" : response.message,
-    sourceOnly ? "" : response.content,
-    sourceBlob(sources),
+  const sourceText = normalizeText(sourceBlob(sources));
+  const generationText = normalizeText([
+    response.message,
+    response.content,
   ].join(" "));
+  const sourceMustContain = fixture.sourceMustContain || fixture.mustContain || [];
+  const sourceMustNotContain = fixture.sourceMustNotContain || fixture.mustNotContain || [];
+  const generationMustContain = fixture.generationMustContain || [];
+  const generationMustNotContain = fixture.generationMustNotContain || [];
 
   const noDataFound = response.noDataFound === true;
   if (noDataFound !== fixture.expectNoDataFound) {
-    failures.push(`expected noDataFound=${fixture.expectNoDataFound}, received ${noDataFound}`);
+    sourceFailures.push(`expected noDataFound=${fixture.expectNoDataFound}, received ${noDataFound}`);
   }
 
   if (sources.length < fixture.minSources) {
-    failures.push(`expected at least ${fixture.minSources} source(s), received ${sources.length}`);
+    sourceFailures.push(`expected at least ${fixture.minSources} source(s), received ${sources.length}`);
   }
 
   const confidence = Number(payload.confidence);
   if (!Number.isFinite(confidence) || confidence < fixture.minConfidence) {
-    failures.push(`confidence ${payload.confidence} below minimum ${fixture.minConfidence}`);
+    sourceFailures.push(`confidence ${payload.confidence} below minimum ${fixture.minConfidence}`);
   }
 
-  for (const term of fixture.mustContain) {
-    if (!responseText.includes(normalizeText(term))) {
-      failures.push(`missing required term "${term}"`);
+  for (const term of sourceMustContain) {
+    if (!sourceText.includes(normalizeText(term))) {
+      sourceFailures.push(`source missing required term "${term}"`);
     }
   }
 
-  for (const term of fixture.mustNotContain) {
-    if (term && responseText.includes(normalizeText(term))) {
-      failures.push(`contains forbidden term "${term}"`);
+  for (const term of sourceMustNotContain) {
+    if (term && sourceText.includes(normalizeText(term))) {
+      sourceFailures.push(`source contains forbidden term "${term}"`);
     }
   }
 
   if (!hasExpectedTitle(sourceBlob(sources), fixture.expectedSourceTitle)) {
-    failures.push("sources do not match expected title hints");
+    sourceFailures.push("sources do not match expected title hints");
   }
 
   if (fixture.requireSourceQuality) {
     for (const [index, source] of sources.entries()) {
       if (!source?.sourceQuality || typeof source.sourceQuality !== "object") {
-        failures.push(`source[${index}] missing sourceQuality`);
+        sourceFailures.push(`source[${index}] missing sourceQuality`);
       }
       if (source?.sourceQuality?.isFallback === true || source?.retrievalMethod === "fallback") {
-        failures.push(`source[${index}] must not be fallback evidence`);
+        sourceFailures.push(`source[${index}] must not be fallback evidence`);
       }
     }
   }
@@ -261,25 +302,40 @@ function collectResponseFailures(fixture, payload) {
     const methods = new Set(sources.map((source) => source?.retrievalMethod).filter(Boolean));
     const matched = fixture.requireRetrievalMethods.some((method) => methods.has(method));
     if (!matched) {
-      failures.push(`expected one of retrieval methods ${fixture.requireRetrievalMethods.join(", ")}, received ${Array.from(methods).join(", ") || "(none)"}`);
+      sourceFailures.push(`expected one of retrieval methods ${fixture.requireRetrievalMethods.join(", ")}, received ${Array.from(methods).join(", ") || "(none)"}`);
     }
   }
 
   const duplicateTitleCount = countDuplicateTitles(sources);
   if (fixture.maxDuplicateTitles > 0 && duplicateTitleCount > fixture.maxDuplicateTitles) {
-    failures.push(`duplicate title count ${duplicateTitleCount} exceeds ${fixture.maxDuplicateTitles}`);
+    sourceFailures.push(`duplicate title count ${duplicateTitleCount} exceeds ${fixture.maxDuplicateTitles}`);
   }
 
   const distinctTitleCount = countDistinctTitles(sources);
   if (distinctTitleCount < fixture.minDistinctTitles) {
-    failures.push(`distinct title count ${distinctTitleCount} below ${fixture.minDistinctTitles}`);
+    sourceFailures.push(`distinct title count ${distinctTitleCount} below ${fixture.minDistinctTitles}`);
   }
 
-  return failures;
+  if (!sourceOnly && shouldRunGenerationAssertions(payload)) {
+    for (const term of generationMustContain) {
+      if (!generationText.includes(normalizeText(term))) {
+        generationFailures.push(`answer missing required term "${term}"`);
+      }
+    }
+
+    for (const term of generationMustNotContain) {
+      if (term && generationText.includes(normalizeText(term))) {
+        generationFailures.push(`answer contains forbidden term "${term}"`);
+      }
+    }
+  }
+
+  return { sourceFailures, generationFailures };
 }
 
 function validateResponseAgainstFixture(fixture, payload) {
-  for (const failure of collectResponseFailures(fixture, payload)) {
+  const { sourceFailures } = collectResponseFailures(fixture, payload);
+  for (const failure of sourceFailures) {
     fail(`${fixture.id}: ${failure}`);
   }
 }
@@ -316,7 +372,12 @@ function buildDiagnostic(fixture, payload) {
   return {
     fixtureId: fixture.id,
     question: fixture.question,
+    category: fixtureCategory(fixture),
     expectedVendor,
+    assertionTypes: {
+      sourceOnly: true,
+      generation: !sourceOnly && shouldRunGenerationAssertions(payload),
+    },
     queryIntent,
     fixtureAmbiguity: expectedVendor !== "ANY"
       && expectedVendor !== "NONE"
@@ -329,7 +390,7 @@ function buildDiagnostic(fixture, payload) {
       model: payload?.model,
     },
     finalSources: sources.map(summarizeSource),
-    failures: collectResponseFailures(fixture, payload),
+    ...collectResponseFailures(fixture, payload),
   };
 }
 
@@ -390,7 +451,8 @@ if (runEndpoint) {
 }
 
 if (diagnostics) {
-  const passCount = diagnosticResults.filter((result) => result.failures.length === 0).length;
+  const passCount = diagnosticResults.filter((result) => result.sourceFailures.length === 0).length;
+  const generationFailCount = diagnosticResults.filter((result) => result.generationFailures.length > 0).length;
   console.log(JSON.stringify({
     ok: process.exitCode ? false : true,
     mode: runEndpoint ? "endpoint-diagnostics" : "fixture-schema-diagnostics",
@@ -399,6 +461,7 @@ if (diagnostics) {
     evaluatedCount: selectedFixtures.length,
     passCount,
     failCount: diagnosticResults.length - passCount,
+    generationFailCount,
     results: diagnosticResults,
   }, null, 2));
 }
