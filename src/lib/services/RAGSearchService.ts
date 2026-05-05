@@ -36,6 +36,7 @@ export interface SourceQuality {
   vendorMatch?: boolean;
   vendorMismatch?: boolean;
   sourceVendor?: VendorIntent | 'UNKNOWN';
+  policyTitleMatch?: boolean;
 }
 
 export interface SearchResult {
@@ -55,6 +56,8 @@ export interface SearchResult {
   sourceVendor?: VendorIntent | 'UNKNOWN';
   sourceVendors?: VendorIntent[];
   topicMatch?: boolean;
+  topicExactMatch?: boolean;
+  policyTitleMatch?: boolean;
   retrievalMethod: RetrievalMethod;
   documentId: string;
   documentTitle: string;
@@ -307,7 +310,17 @@ export class RAGSearchService {
     const lexicalOverlap = this.calculateLexicalOverlap(sourceText, options.intent.keywords);
     const vendorAlignment = this.calculateVendorAlignment(sourceText, options.intent.vendors);
     const topicMatch = this.hasTopicMatch(sourceText, options.intent.topics);
-    const keywordScore = this.calculateKeywordScore(content, documentTitle, options.keywords || [], lexicalOverlap, topicMatch);
+    const topicExactMatch = this.hasExactTopicMatch(sourceText, options.intent.topics);
+    const policyTitleMatch = this.hasPolicyGradeTitle(documentTitle, result.metadata);
+    const keywordScore = this.calculateKeywordScore(
+      content,
+      documentTitle,
+      options.keywords || [],
+      lexicalOverlap,
+      topicMatch,
+      topicExactMatch,
+      policyTitleMatch
+    );
     const sourceQuality = this.buildSourceQuality({
       documentId,
       documentTitle,
@@ -320,6 +333,7 @@ export class RAGSearchService {
       vendorMatch: vendorAlignment.match,
       vendorMismatch: vendorAlignment.mismatch,
       sourceVendor: vendorAlignment.primaryVendor,
+      policyTitleMatch,
     });
     const hybridScore = this.calculateHybridScore({
       vectorScore,
@@ -331,6 +345,16 @@ export class RAGSearchService {
       vendorMatch: vendorAlignment.match,
       vendorMismatch: vendorAlignment.mismatch,
       topicMatch,
+      topicExactMatch,
+      policyTitleMatch,
+      genericPolicyIntent: this.isGenericPolicyIntent(options.intent),
+      originalMetaSeed: this.isOriginalMetaSeedCandidate({
+        chunkId,
+        corpus: options.corpus,
+        sourceVendor: vendorAlignment.primaryVendor,
+        metadata: result.metadata,
+      }),
+      hasUrl: sourceQuality.hasUrl,
     });
     const rankReason = this.buildRankReason({
       vectorScore,
@@ -341,6 +365,9 @@ export class RAGSearchService {
       vendorMatch: vendorAlignment.match,
       vendorMismatch: vendorAlignment.mismatch,
       topicMatch,
+      topicExactMatch,
+      policyTitleMatch,
+      genericPolicyIntent: this.isGenericPolicyIntent(options.intent),
     });
 
     return {
@@ -360,6 +387,8 @@ export class RAGSearchService {
       sourceVendor: vendorAlignment.primaryVendor,
       sourceVendors: vendorAlignment.sourceVendors,
       topicMatch,
+      topicExactMatch,
+      policyTitleMatch,
       retrievalMethod: options.retrievalMethod,
       documentId,
       documentTitle,
@@ -380,6 +409,8 @@ export class RAGSearchService {
         sourceVendor: vendorAlignment.primaryVendor,
         sourceVendors: vendorAlignment.sourceVendors,
         topicMatch,
+        topicExactMatch,
+        policyTitleMatch,
         originalTitle: documentTitle,
         documentId,
         sourceQualityWarnings: sourceQuality.warnings,
@@ -391,9 +422,10 @@ export class RAGSearchService {
   private mergeDedupeAndRankCandidates(candidates: SearchResult[], limit: number, intent: QueryIntent): SearchResult[] {
     const byKey = new Map<string, SearchResult>();
     const hasTargetVendorRescueCandidate = candidates.some(candidate => this.isTargetVendorRescueCandidate(candidate, intent));
+    const hasGenericTopicRescueCandidate = candidates.some(candidate => this.isGenericTopicRescueCandidate(candidate, intent));
 
     for (const candidate of candidates) {
-      if (!this.isVerifiedEvidence(candidate, intent, hasTargetVendorRescueCandidate)) {
+      if (!this.isVerifiedEvidence(candidate, intent, hasTargetVendorRescueCandidate, hasGenericTopicRescueCandidate)) {
         continue;
       }
 
@@ -417,6 +449,7 @@ export class RAGSearchService {
     const ranked = Array.from(byKey.values())
       .sort((a, b) => (b.hybridScore || 0) - (a.hybridScore || 0));
     const rescueCandidate = ranked.find(candidate => this.isTargetVendorRescueCandidate(candidate, intent));
+    const genericRescueCandidate = ranked.find(candidate => this.isGenericTopicRescueCandidate(candidate, intent));
     const selected = ranked.filter((candidate) => {
         const docKey = candidate.documentId || candidate.id;
         const titleKey = candidate.documentTitle || docKey;
@@ -432,6 +465,24 @@ export class RAGSearchService {
         return true;
       })
       .slice(0, limit);
+
+    if (
+      genericRescueCandidate
+      && !selected.some(candidate => candidate.id === genericRescueCandidate.id)
+      && selected.length > 0
+    ) {
+      genericRescueCandidate.rankReason = Array.from(new Set([
+        ...(genericRescueCandidate.rankReason || []),
+        'generic_topic_rescue',
+      ]));
+      const replacementIndex = this.findWeakestGenericPolicyReplacementIndex(selected, intent);
+      selected[replacementIndex] = genericRescueCandidate;
+      return selected.sort((a, b) => {
+        if (a.id === genericRescueCandidate.id) return -1;
+        if (b.id === genericRescueCandidate.id) return 1;
+        return (b.hybridScore || 0) - (a.hybridScore || 0);
+      });
+    }
 
     if (
       rescueCandidate
@@ -469,6 +520,8 @@ export class RAGSearchService {
       ...(incoming.sourceVendors || []),
     ]));
     const topicMatch = existing.topicMatch === true || incoming.topicMatch === true;
+    const topicExactMatch = existing.topicExactMatch === true || incoming.topicExactMatch === true;
+    const policyTitleMatch = existing.policyTitleMatch === true || incoming.policyTitleMatch === true;
     const retrievalMethod: RetrievalMethod = vectorScore > 0 && keywordScore > 0 ? 'hybrid' : existing.retrievalMethod;
     const evidenceType: EvidenceType = retrievalMethod === 'hybrid' ? 'hybrid' : existing.evidenceType || incoming.evidenceType || retrievalMethod;
     const hybridScore = this.calculateHybridScore({
@@ -481,6 +534,11 @@ export class RAGSearchService {
       vendorMatch,
       vendorMismatch,
       topicMatch,
+      topicExactMatch,
+      policyTitleMatch,
+      genericPolicyIntent: false,
+      originalMetaSeed: false,
+      hasUrl: existing.sourceQuality.hasUrl || incoming.sourceQuality.hasUrl,
     });
     const warnings = Array.from(new Set([
       ...existing.sourceQuality.warnings,
@@ -506,6 +564,8 @@ export class RAGSearchService {
       vendorMatch,
       vendorMismatch,
       topicMatch,
+      topicExactMatch,
+      policyTitleMatch,
       documentUrl: existing.documentUrl || incoming.documentUrl,
       sourceQuality: {
         ...existing.sourceQuality,
@@ -516,6 +576,7 @@ export class RAGSearchService {
         vendorMatch,
         vendorMismatch,
         sourceVendor,
+        policyTitleMatch,
       },
       metadata: {
         ...(existing.metadata || {}),
@@ -531,12 +592,19 @@ export class RAGSearchService {
         sourceVendor,
         sourceVendors,
         topicMatch,
+        topicExactMatch,
+        policyTitleMatch,
         sourceQualityWarnings: warnings,
       },
     };
   }
 
-  private isVerifiedEvidence(candidate: SearchResult, intent: QueryIntent, hasTargetVendorRescueCandidate: boolean): boolean {
+  private isVerifiedEvidence(
+    candidate: SearchResult,
+    intent: QueryIntent,
+    hasTargetVendorRescueCandidate: boolean,
+    hasGenericTopicRescueCandidate: boolean
+  ): boolean {
     if (!candidate.content?.trim()) return false;
     if (candidate.retrievalMethod === 'fallback') return false;
     if (candidate.sourceQuality.isFallback === true) return false;
@@ -549,8 +617,19 @@ export class RAGSearchService {
     const hasVendorIntent = intent.vendors.length > 0;
     const hasTopicIntent = intent.topics.length > 0;
     const hasIntent = hasVendorIntent || hasTopicIntent;
+    const genericPolicyIntent = this.isGenericPolicyIntent(intent);
 
     if (hybridScore < 0.25) return false;
+    if (
+      genericPolicyIntent
+      && hasGenericTopicRescueCandidate
+      && this.isVectorOnlyMetaSeed(candidate)
+      && !candidate.topicExactMatch
+      && keywordScore === 0
+      && lexicalOverlap <= 0.2
+    ) {
+      return false;
+    }
     if (
       hasTargetVendorRescueCandidate
       && this.isExplicitNonMetaIntent(intent)
@@ -577,6 +656,7 @@ export class RAGSearchService {
     }
 
     if (candidate.vendorMatch) return true;
+    if (genericPolicyIntent && candidate.topicExactMatch && candidate.policyTitleMatch && lexicalOverlap >= 0.15) return true;
     if (keywordScore >= 0.35 && lexicalOverlap >= 0.12) return true;
     if (lexicalOverlap >= (hasIntent ? 0.2 : 0.28)) return true;
     if (vectorScore >= 0.82 && lexicalOverlap >= 0.12) return true;
@@ -685,7 +765,15 @@ export class RAGSearchService {
     )).slice(0, 8);
   }
 
-  private calculateKeywordScore(content: string, title: string, keywords: string[], lexicalOverlap: number, topicMatch: boolean): number {
+  private calculateKeywordScore(
+    content: string,
+    title: string,
+    keywords: string[],
+    lexicalOverlap: number,
+    topicMatch: boolean,
+    topicExactMatch: boolean = false,
+    policyTitleMatch: boolean = false
+  ): number {
     if (keywords.length === 0) {
       return 0;
     }
@@ -701,7 +789,9 @@ export class RAGSearchService {
 
     const rawScore = score / Math.max(1, keywords.length);
     const topicBoost = topicMatch ? 0.12 : 0;
-    return Math.max(0, Math.min(1, (rawScore * 0.75) + (lexicalOverlap * 0.25) + topicBoost));
+    const topicExactBoost = topicExactMatch ? 0.12 : 0;
+    const policyTitleBoost = policyTitleMatch ? 0.05 : 0;
+    return Math.max(0, Math.min(1, (rawScore * 0.75) + (lexicalOverlap * 0.25) + topicBoost + topicExactBoost + policyTitleBoost));
   }
 
   private resolveVectorScore(result: any, queryEmbedding?: number[]): number {
@@ -810,6 +900,43 @@ export class RAGSearchService {
     );
   }
 
+  private isGenericPolicyIntent(intent: QueryIntent): boolean {
+    return (
+      intent.vendors.length === 0
+      && intent.topics.length > 0
+      && intent.adPolicyTerms.length > 0
+      && !intent.isOutOfScope
+    );
+  }
+
+  private isOriginalMetaSeedCandidate(input: {
+    chunkId: string;
+    corpus: RetrievalCorpus;
+    sourceVendor: VendorIntent | 'UNKNOWN';
+    metadata?: any;
+  }): boolean {
+    const chunkId = String(input.chunkId || '');
+    return Boolean(
+      input.corpus === 'ollama_document_chunks'
+      && input.sourceVendor === 'META'
+      && !input.metadata?.rag_gate
+      && !chunkId.startsWith('rag3d_')
+      && !chunkId.startsWith('rag3j_')
+    );
+  }
+
+  private isVectorOnlyMetaSeed(candidate: SearchResult): boolean {
+    return Boolean(
+      candidate.corpus === 'ollama_document_chunks'
+      && candidate.sourceVendor === 'META'
+      && candidate.retrievalMethod === 'vector'
+      && (candidate.keywordScore || 0) === 0
+      && !candidate.metadata?.rag_gate
+      && !String(candidate.id || '').startsWith('rag3d_')
+      && !String(candidate.id || '').startsWith('rag3j_')
+    );
+  }
+
   private isTargetVendorRescueCandidate(candidate: SearchResult, intent: QueryIntent): boolean {
     const targetVendor = intent.vendors.find(vendor => vendor === 'KAKAO' || vendor === 'NAVER' || vendor === 'GOOGLE');
     if (!targetVendor) return false;
@@ -820,6 +947,43 @@ export class RAGSearchService {
     if ((candidate.hybridScore || 0) < 0.35) return false;
     if (!candidate.sourceQuality.hasExcerpt || candidate.sourceQuality.isFallback) return false;
     return this.hasVendorProductTerm(candidate, targetVendor);
+  }
+
+  private isGenericTopicRescueCandidate(candidate: SearchResult, intent: QueryIntent): boolean {
+    if (!this.isGenericPolicyIntent(intent)) return false;
+    if (!candidate.sourceQuality.hasExcerpt || candidate.sourceQuality.isFallback) return false;
+    if (!candidate.topicExactMatch) return false;
+    if (!candidate.policyTitleMatch) return false;
+    if ((candidate.hybridScore || 0) < 0.35) return false;
+    if ((candidate.keywordScore || 0) < 0.3 && (candidate.lexicalOverlap || 0) < 0.25) return false;
+
+    const ragGate = String(candidate.metadata?.rag_gate || '');
+    if (candidate.corpus === 'ollama_document_chunks' && (ragGate === 'RAG-3F' || ragGate === 'RAG-3K')) {
+      return true;
+    }
+
+    return candidate.corpus === 'document_chunks' && (candidate.keywordScore || 0) >= 0.35;
+  }
+
+  private findWeakestGenericPolicyReplacementIndex(selected: SearchResult[], intent: QueryIntent): number {
+    const metaSeedIndex = selected.findIndex(candidate => (
+      this.isGenericPolicyIntent(intent)
+      && this.isVectorOnlyMetaSeed(candidate)
+      && !candidate.topicExactMatch
+    ));
+
+    if (metaSeedIndex >= 0) return metaSeedIndex;
+
+    let weakestIndex = selected.length - 1;
+    let weakestScore = Number.POSITIVE_INFINITY;
+    selected.forEach((candidate, index) => {
+      const score = candidate.hybridScore || 0;
+      if (score < weakestScore) {
+        weakestScore = score;
+        weakestIndex = index;
+      }
+    });
+    return weakestIndex;
   }
 
   private hasVendorProductTerm(candidate: SearchResult, vendor: VendorIntent): boolean {
@@ -839,6 +1003,44 @@ export class RAGSearchService {
     return topics.some(topic => sourceTopics.includes(topic));
   }
 
+  private hasExactTopicMatch(sourceText: string, topics: TopicIntent[]): boolean {
+    if (topics.length === 0) return false;
+    const specs: Record<TopicIntent, string[]> = {
+      review: ['심사', '승인', '반려', '집행 기준', '준수사항', '심사 가이드'],
+      youth: ['청소년', '유해', '성인', '연령', '청소년 보호'],
+      false_claim: ['허위', '과장', '오인', '기만', '거짓'],
+      price: ['가격', '할인', '할인율', '표시', '소재'],
+      event: ['이벤트', '경품', '참여', '당첨'],
+      rights: ['상표', '저작권', '초상권', '권리', '침해'],
+      hate: ['혐오', '차별', '비하', '증오'],
+      gambling: ['도박', '사행', '사행성', '금지', '제한', '불가', '허용'],
+      spec: ['사이즈', '크기', '파일', '형식', '스펙', '동영상', '이미지', '카루셀'],
+    };
+
+    return topics.some(topic => specs[topic].some(term => sourceText.includes(term)));
+  }
+
+  private hasPolicyGradeTitle(title: string, metadata?: any): boolean {
+    const text = this.normalizeSearchText([
+      title,
+      metadata?.canonical_title,
+      metadata?.source_title,
+      metadata?.title,
+      metadata?.source,
+    ].filter(Boolean).join(' '));
+    return [
+      '정책',
+      '운영정책',
+      '집행기준',
+      '집행 기준',
+      '심사 가이드',
+      '광고등록기준',
+      '광고 등록 기준',
+      '가이드',
+      '클린센터',
+    ].some(term => text.includes(term));
+  }
+
   private buildSourceQuality(input: {
     documentId: string;
     documentTitle: string;
@@ -851,6 +1053,7 @@ export class RAGSearchService {
     vendorMatch: boolean;
     vendorMismatch: boolean;
     sourceVendor: VendorIntent | 'UNKNOWN';
+    policyTitleMatch: boolean;
   }): SourceQuality {
     const hasDocumentId = Boolean(input.documentId);
     const hasTitle = Boolean(input.documentTitle && input.documentTitle !== 'Unknown');
@@ -869,6 +1072,7 @@ export class RAGSearchService {
     if (input.vendorMismatch) qualityScore -= 0.18;
     if (input.vendorMatch) qualityScore += 0.08;
     if (input.lexicalOverlap >= 0.2) qualityScore += 0.06;
+    if (input.policyTitleMatch) qualityScore += 0.05;
     qualityScore = Math.max(0, Math.min(1, qualityScore));
 
     return {
@@ -885,6 +1089,7 @@ export class RAGSearchService {
       vendorMatch: input.vendorMatch,
       vendorMismatch: input.vendorMismatch,
       sourceVendor: input.sourceVendor,
+      policyTitleMatch: input.policyTitleMatch,
     };
   }
 
@@ -898,6 +1103,11 @@ export class RAGSearchService {
     vendorMatch: boolean;
     vendorMismatch: boolean;
     topicMatch: boolean;
+    topicExactMatch: boolean;
+    policyTitleMatch: boolean;
+    genericPolicyIntent: boolean;
+    originalMetaSeed: boolean;
+    hasUrl: boolean;
   }): number {
     const baseScore =
       input.vectorScore * 0.42
@@ -912,9 +1122,28 @@ export class RAGSearchService {
       : 0;
     const vendorBoost = input.vendorMatch ? 0.18 : 0;
     const topicBoost = input.topicMatch ? 0.08 : 0;
+    const topicExactBoost = input.topicExactMatch ? 0.12 : 0;
+    const policyTitleBoost = input.policyTitleMatch ? 0.08 : 0;
     const mismatchPenalty = input.vendorMismatch ? 0.28 : 0;
     const vectorOnlyPenalty = input.vectorScore > 0 && input.keywordScore === 0 && input.lexicalOverlap < 0.12 ? 0.22 : 0;
     const missingLexicalPenalty = input.lexicalOverlap === 0 ? 0.08 : 0;
+    const genericMetaSeedPenalty =
+      input.genericPolicyIntent
+      && input.originalMetaSeed
+      && input.vectorScore > 0
+      && input.keywordScore === 0
+      && !input.topicExactMatch
+      && !input.hasUrl
+      && input.lexicalOverlap <= 0.2
+        ? 0.3
+        : 0;
+    const ragTopicRescueBoost =
+      input.genericPolicyIntent
+      && input.topicExactMatch
+      && input.policyTitleMatch
+      && input.keywordScore >= 0.3
+        ? 0.1
+        : 0;
 
     return Math.max(0, Math.min(1,
       baseScore
@@ -922,9 +1151,13 @@ export class RAGSearchService {
       + documentChunkBoost
       + vendorBoost
       + topicBoost
+      + topicExactBoost
+      + policyTitleBoost
+      + ragTopicRescueBoost
       - mismatchPenalty
       - vectorOnlyPenalty
       - missingLexicalPenalty
+      - genericMetaSeedPenalty
     ));
   }
 
@@ -937,6 +1170,9 @@ export class RAGSearchService {
     vendorMatch: boolean;
     vendorMismatch: boolean;
     topicMatch: boolean;
+    topicExactMatch: boolean;
+    policyTitleMatch: boolean;
+    genericPolicyIntent: boolean;
   }): string[] {
     const reasons: string[] = [];
     if (input.vectorScore > 0) reasons.push('vector_match');
@@ -945,6 +1181,9 @@ export class RAGSearchService {
     if (input.vendorMatch) reasons.push('vendor_match');
     if (input.vendorMismatch) reasons.push('vendor_mismatch_penalty');
     if (input.topicMatch) reasons.push('topic_match');
+    if (input.topicExactMatch) reasons.push('topic_exact_match');
+    if (input.policyTitleMatch) reasons.push('policy_title_match');
+    if (input.genericPolicyIntent && input.topicExactMatch) reasons.push('generic_policy_topic_boost');
     if (input.sourceQuality.hasTitle) reasons.push('has_title');
     if (input.sourceQuality.hasUrl) reasons.push('has_url');
     if (input.corpus === 'document_chunks') reasons.push('document_chunks_keyword_corpus');
