@@ -35,6 +35,7 @@ export interface SourceQuality {
   lexicalOverlap?: number;
   vendorMatch?: boolean;
   vendorMismatch?: boolean;
+  sourceVendor?: VendorIntent | 'UNKNOWN';
 }
 
 export interface SearchResult {
@@ -51,6 +52,8 @@ export interface SearchResult {
   lexicalOverlap?: number;
   vendorMatch?: boolean;
   vendorMismatch?: boolean;
+  sourceVendor?: VendorIntent | 'UNKNOWN';
+  sourceVendors?: VendorIntent[];
   topicMatch?: boolean;
   retrievalMethod: RetrievalMethod;
   documentId: string;
@@ -296,7 +299,11 @@ export class RAGSearchService {
     if (!content.trim()) warnings.push('missing_excerpt');
 
     const vectorScore = this.resolveVectorScore(result, options.queryEmbedding);
-    const sourceText = this.buildCandidateSearchText(content, documentTitle, result.metadata);
+    const sourceText = this.buildCandidateSearchText(content, documentTitle, {
+      ...(result.metadata || {}),
+      document_id: documentId,
+      chunk_id: chunkId,
+    });
     const lexicalOverlap = this.calculateLexicalOverlap(sourceText, options.intent.keywords);
     const vendorAlignment = this.calculateVendorAlignment(sourceText, options.intent.vendors);
     const topicMatch = this.hasTopicMatch(sourceText, options.intent.topics);
@@ -312,6 +319,7 @@ export class RAGSearchService {
       lexicalOverlap,
       vendorMatch: vendorAlignment.match,
       vendorMismatch: vendorAlignment.mismatch,
+      sourceVendor: vendorAlignment.primaryVendor,
     });
     const hybridScore = this.calculateHybridScore({
       vectorScore,
@@ -349,6 +357,8 @@ export class RAGSearchService {
       lexicalOverlap,
       vendorMatch: vendorAlignment.match,
       vendorMismatch: vendorAlignment.mismatch,
+      sourceVendor: vendorAlignment.primaryVendor,
+      sourceVendors: vendorAlignment.sourceVendors,
       topicMatch,
       retrievalMethod: options.retrievalMethod,
       documentId,
@@ -367,7 +377,10 @@ export class RAGSearchService {
         lexicalOverlap,
         vendorMatch: vendorAlignment.match,
         vendorMismatch: vendorAlignment.mismatch,
+        sourceVendor: vendorAlignment.primaryVendor,
+        sourceVendors: vendorAlignment.sourceVendors,
         topicMatch,
+        originalTitle: documentTitle,
         documentId,
         sourceQualityWarnings: sourceQuality.warnings,
       },
@@ -377,9 +390,10 @@ export class RAGSearchService {
 
   private mergeDedupeAndRankCandidates(candidates: SearchResult[], limit: number, intent: QueryIntent): SearchResult[] {
     const byKey = new Map<string, SearchResult>();
+    const hasTargetVendorRescueCandidate = candidates.some(candidate => this.isTargetVendorRescueCandidate(candidate, intent));
 
     for (const candidate of candidates) {
-      if (!this.isVerifiedEvidence(candidate, intent)) {
+      if (!this.isVerifiedEvidence(candidate, intent, hasTargetVendorRescueCandidate)) {
         continue;
       }
 
@@ -400,9 +414,10 @@ export class RAGSearchService {
     const documentCounts = new Map<string, number>();
     const titleCounts = new Map<string, number>();
 
-    return Array.from(byKey.values())
-      .sort((a, b) => (b.hybridScore || 0) - (a.hybridScore || 0))
-      .filter((candidate) => {
+    const ranked = Array.from(byKey.values())
+      .sort((a, b) => (b.hybridScore || 0) - (a.hybridScore || 0));
+    const rescueCandidate = ranked.find(candidate => this.isTargetVendorRescueCandidate(candidate, intent));
+    const selected = ranked.filter((candidate) => {
         const docKey = candidate.documentId || candidate.id;
         const titleKey = candidate.documentTitle || docKey;
         const docCount = documentCounts.get(docKey) || 0;
@@ -417,6 +432,25 @@ export class RAGSearchService {
         return true;
       })
       .slice(0, limit);
+
+    if (
+      rescueCandidate
+      && !selected.some(candidate => candidate.id === rescueCandidate.id)
+      && selected.length > 0
+    ) {
+      rescueCandidate.rankReason = Array.from(new Set([
+        ...(rescueCandidate.rankReason || []),
+        'target_vendor_document_chunks_rescue',
+      ]));
+      selected[selected.length - 1] = rescueCandidate;
+      return selected.sort((a, b) => {
+        if (a.id === rescueCandidate.id) return -1;
+        if (b.id === rescueCandidate.id) return 1;
+        return (b.hybridScore || 0) - (a.hybridScore || 0);
+      });
+    }
+
+    return selected;
   }
 
   private mergeDuplicateCandidate(existing: SearchResult, incoming: SearchResult): SearchResult {
@@ -429,6 +463,11 @@ export class RAGSearchService {
     const lexicalOverlap = Math.max(existing.lexicalOverlap || 0, incoming.lexicalOverlap || 0);
     const vendorMatch = existing.vendorMatch === true || incoming.vendorMatch === true;
     const vendorMismatch = existing.vendorMismatch === true && incoming.vendorMismatch === true;
+    const sourceVendor = this.chooseMergedSourceVendor(existing, incoming);
+    const sourceVendors = Array.from(new Set([
+      ...(existing.sourceVendors || []),
+      ...(incoming.sourceVendors || []),
+    ]));
     const topicMatch = existing.topicMatch === true || incoming.topicMatch === true;
     const retrievalMethod: RetrievalMethod = vectorScore > 0 && keywordScore > 0 ? 'hybrid' : existing.retrievalMethod;
     const evidenceType: EvidenceType = retrievalMethod === 'hybrid' ? 'hybrid' : existing.evidenceType || incoming.evidenceType || retrievalMethod;
@@ -476,6 +515,7 @@ export class RAGSearchService {
         lexicalOverlap,
         vendorMatch,
         vendorMismatch,
+        sourceVendor,
       },
       metadata: {
         ...(existing.metadata || {}),
@@ -488,13 +528,15 @@ export class RAGSearchService {
         lexicalOverlap,
         vendorMatch,
         vendorMismatch,
+        sourceVendor,
+        sourceVendors,
         topicMatch,
         sourceQualityWarnings: warnings,
       },
     };
   }
 
-  private isVerifiedEvidence(candidate: SearchResult, intent: QueryIntent): boolean {
+  private isVerifiedEvidence(candidate: SearchResult, intent: QueryIntent, hasTargetVendorRescueCandidate: boolean): boolean {
     if (!candidate.content?.trim()) return false;
     if (candidate.retrievalMethod === 'fallback') return false;
     if (candidate.sourceQuality.isFallback === true) return false;
@@ -509,7 +551,30 @@ export class RAGSearchService {
     const hasIntent = hasVendorIntent || hasTopicIntent;
 
     if (hybridScore < 0.25) return false;
-    if (candidate.vendorMismatch && !candidate.vendorMatch) return false;
+    if (
+      hasTargetVendorRescueCandidate
+      && this.isExplicitNonMetaIntent(intent)
+      && this.isMetaOnlyOllamaMismatch(candidate, intent)
+      && lexicalOverlap < 0.45
+      && keywordScore < 0.5
+    ) {
+      return false;
+    }
+    if (
+      candidate.vendorMismatch
+      && !candidate.vendorMatch
+      && hasTargetVendorRescueCandidate
+    ) {
+      return false;
+    }
+    if (
+      candidate.vendorMismatch
+      && !candidate.vendorMatch
+      && lexicalOverlap < 0.12
+      && keywordScore < 0.2
+    ) {
+      return false;
+    }
 
     if (candidate.vendorMatch) return true;
     if (keywordScore >= 0.35 && lexicalOverlap >= 0.12) return true;
@@ -568,6 +633,12 @@ export class RAGSearchService {
     }
 
     return vendors;
+  }
+
+  private choosePrimaryVendor(sourceVendors: VendorIntent[], queryVendors: VendorIntent[]): VendorIntent | 'UNKNOWN' {
+    if (sourceVendors.length === 0) return 'UNKNOWN';
+    const queryMatch = queryVendors.find(vendor => sourceVendors.includes(vendor));
+    return queryMatch || sourceVendors[0];
   }
 
   private detectTopics(text: string): TopicIntent[] {
@@ -684,6 +755,8 @@ export class RAGSearchService {
       metadata?.source_url,
       metadata?.document_url,
       metadata?.url,
+      metadata?.document_id,
+      metadata?.chunk_id,
     ].filter(Boolean).join(' '));
   }
 
@@ -693,16 +766,71 @@ export class RAGSearchService {
     return Math.max(0, Math.min(1, matched.length / keywords.length));
   }
 
-  private calculateVendorAlignment(sourceText: string, vendors: VendorIntent[]): { match: boolean; mismatch: boolean } {
+  private calculateVendorAlignment(sourceText: string, vendors: VendorIntent[]): {
+    match: boolean;
+    mismatch: boolean;
+    primaryVendor: VendorIntent | 'UNKNOWN';
+    sourceVendors: VendorIntent[];
+  } {
+    const sourceVendors = this.detectVendors(sourceText);
+    const primaryVendor = this.choosePrimaryVendor(sourceVendors, vendors);
     if (vendors.length === 0) {
-      return { match: false, mismatch: false };
+      return { match: false, mismatch: false, primaryVendor, sourceVendors };
     }
 
-    const sourceVendors = this.detectVendors(sourceText);
     const match = vendors.some(vendor => sourceVendors.includes(vendor));
     const mismatch = sourceVendors.length > 0 && !match;
 
-    return { match, mismatch };
+    return { match, mismatch, primaryVendor, sourceVendors };
+  }
+
+  private chooseMergedSourceVendor(existing: SearchResult, incoming: SearchResult): VendorIntent | 'UNKNOWN' {
+    if (existing.vendorMatch && existing.sourceVendor && existing.sourceVendor !== 'UNKNOWN') {
+      return existing.sourceVendor;
+    }
+    if (incoming.vendorMatch && incoming.sourceVendor && incoming.sourceVendor !== 'UNKNOWN') {
+      return incoming.sourceVendor;
+    }
+    if (existing.sourceVendor && existing.sourceVendor !== 'UNKNOWN') return existing.sourceVendor;
+    if (incoming.sourceVendor && incoming.sourceVendor !== 'UNKNOWN') return incoming.sourceVendor;
+    return 'UNKNOWN';
+  }
+
+  private isExplicitNonMetaIntent(intent: QueryIntent): boolean {
+    return intent.vendors.some(vendor => vendor === 'KAKAO' || vendor === 'NAVER' || vendor === 'GOOGLE');
+  }
+
+  private isMetaOnlyOllamaMismatch(candidate: SearchResult, intent: QueryIntent): boolean {
+    return Boolean(
+      candidate.corpus === 'ollama_document_chunks'
+      && candidate.sourceVendor === 'META'
+      && candidate.vendorMismatch
+      && !candidate.vendorMatch
+      && this.isExplicitNonMetaIntent(intent)
+    );
+  }
+
+  private isTargetVendorRescueCandidate(candidate: SearchResult, intent: QueryIntent): boolean {
+    const targetVendor = intent.vendors.find(vendor => vendor === 'KAKAO' || vendor === 'NAVER' || vendor === 'GOOGLE');
+    if (!targetVendor) return false;
+    if (candidate.corpus !== 'document_chunks') return false;
+    if (candidate.sourceVendor !== targetVendor) return false;
+    if ((candidate.lexicalOverlap || 0) < 0.18) return false;
+    if ((candidate.keywordScore || 0) < 0.35) return false;
+    if ((candidate.hybridScore || 0) < 0.35) return false;
+    if (!candidate.sourceQuality.hasExcerpt || candidate.sourceQuality.isFallback) return false;
+    return this.hasVendorProductTerm(candidate, targetVendor);
+  }
+
+  private hasVendorProductTerm(candidate: SearchResult, vendor: VendorIntent): boolean {
+    const text = this.buildCandidateSearchText(candidate.content, candidate.documentTitle, candidate.metadata);
+    const terms: Record<VendorIntent, string[]> = {
+      META: ['meta', 'facebook', '페이스북', 'instagram', '인스타그램', '릴스', 'reels'],
+      KAKAO: ['kakao', '카카오', '카카오톡', '톡채널', '비즈보드', '모먼트'],
+      NAVER: ['naver', '네이버', '검색광고', '쇼핑검색', '파워링크', '브랜드검색'],
+      GOOGLE: ['google', '구글', 'youtube', '유튜브', 'gdn', 'google ads', 'display'],
+    };
+    return terms[vendor].some(term => text.includes(term));
   }
 
   private hasTopicMatch(sourceText: string, topics: TopicIntent[]): boolean {
@@ -722,6 +850,7 @@ export class RAGSearchService {
     lexicalOverlap: number;
     vendorMatch: boolean;
     vendorMismatch: boolean;
+    sourceVendor: VendorIntent | 'UNKNOWN';
   }): SourceQuality {
     const hasDocumentId = Boolean(input.documentId);
     const hasTitle = Boolean(input.documentTitle && input.documentTitle !== 'Unknown');
@@ -755,6 +884,7 @@ export class RAGSearchService {
       lexicalOverlap: input.lexicalOverlap,
       vendorMatch: input.vendorMatch,
       vendorMismatch: input.vendorMismatch,
+      sourceVendor: input.sourceVendor,
     };
   }
 

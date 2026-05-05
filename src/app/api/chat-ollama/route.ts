@@ -29,6 +29,8 @@ interface SearchResult {
   lexicalOverlap?: number;
   vendorMatch?: boolean;
   vendorMismatch?: boolean;
+  sourceVendor?: string;
+  sourceVendors?: string[];
   topicMatch?: boolean;
   retrievalMethod?: 'vector' | 'keyword' | 'hybrid' | 'fallback';
   documentId?: string;
@@ -47,6 +49,7 @@ interface SearchResult {
     lexicalOverlap?: number;
     vendorMatch?: boolean;
     vendorMismatch?: boolean;
+    sourceVendor?: string;
   };
   metadata: any;
 }
@@ -94,6 +97,8 @@ async function searchWithOllamaRAG(
       lexicalOverlap: result.lexicalOverlap,
       vendorMatch: result.vendorMatch,
       vendorMismatch: result.vendorMismatch,
+      sourceVendor: result.sourceVendor,
+      sourceVendors: result.sourceVendors,
       topicMatch: result.topicMatch,
       retrievalMethod: result.retrievalMethod,
       documentId: result.documentId,
@@ -334,9 +339,13 @@ function calculateConfidence(searchResults: SearchResult[]): number {
 function buildVerifiedSources(searchResults: SearchResult[]) {
   return searchResults.map(result => {
     console.log(`📚 Vultr+Ollama 출처 정보: 제목="${result.metadata?.title || '문서'}", 유사도=${result.similarity}`);
+    const originalTitle = result.documentTitle || result.metadata?.originalTitle || result.metadata?.title || 'Meta 광고 정책 문서';
+    const sourceVendor = result.sourceVendor || result.metadata?.sourceVendor || result.sourceQuality?.sourceVendor || 'UNKNOWN';
+    const displayTitle = normalizeSourceTitle(originalTitle, sourceVendor, result.content);
     return {
       id: result.chunk_id,
-      title: result.documentTitle || result.metadata?.title || 'Meta 광고 정책 문서',
+      title: displayTitle,
+      originalTitle,
       url: result.documentUrl || result.metadata?.source_url || result.metadata?.document_url || result.metadata?.url || '',
       updatedAt: result.metadata?.updatedAt || new Date().toISOString(),
       excerpt: result.content.substring(0, 200) + (result.content.length > 200 ? '...' : ''),
@@ -352,6 +361,8 @@ function buildVerifiedSources(searchResults: SearchResult[]) {
       lexicalOverlap: result.lexicalOverlap ?? result.metadata?.lexicalOverlap,
       vendorMatch: result.vendorMatch ?? result.metadata?.vendorMatch,
       vendorMismatch: result.vendorMismatch ?? result.metadata?.vendorMismatch,
+      sourceVendor,
+      sourceVendors: result.sourceVendors ?? result.metadata?.sourceVendors,
       topicMatch: result.topicMatch ?? result.metadata?.topicMatch,
       sourceQuality: result.sourceQuality || {
         hasDocumentId: Boolean(result.documentId),
@@ -367,6 +378,63 @@ function buildVerifiedSources(searchResults: SearchResult[]) {
       documentType: result.metadata?.documentType || 'policy'
     };
   });
+}
+
+function normalizeSourceTitle(title: string, sourceVendor: string, content: string): string {
+  const blob = `${title} ${content}`.toLowerCase();
+
+  if (
+    sourceVendor === 'KAKAO'
+    || blob.includes('카카오')
+    || blob.includes('kakao')
+    || blob.includes('비즈보드')
+    || blob.includes('카카오톡')
+    || blob.includes('모먼트')
+  ) {
+    return appendOriginalTitle('카카오 광고 심사 가이드', title);
+  }
+
+  if (
+    sourceVendor === 'NAVER'
+    || blob.includes('네이버')
+    || blob.includes('naver')
+    || blob.includes('쇼핑검색')
+    || blob.includes('파워링크')
+    || blob.includes('브랜드검색')
+  ) {
+    return appendOriginalTitle('네이버 광고 가이드', title);
+  }
+
+  if (
+    sourceVendor === 'GOOGLE'
+    || blob.includes('google')
+    || blob.includes('구글')
+    || blob.includes('youtube')
+    || blob.includes('유튜브')
+    || blob.includes('gdn')
+  ) {
+    return appendOriginalTitle('Google Ads 가이드', title);
+  }
+
+  if (
+    sourceVendor === 'META'
+    || blob.includes('meta')
+    || blob.includes('메타')
+    || blob.includes('facebook')
+    || blob.includes('페이스북')
+  ) {
+    return title && title !== 'Unknown' ? title : 'Meta 광고 정책';
+  }
+
+  return title && title !== 'Unknown' ? title : '광고 정책 문서';
+}
+
+function appendOriginalTitle(normalizedTitle: string, originalTitle: string): string {
+  if (!originalTitle || originalTitle === 'Unknown') return normalizedTitle;
+  if (originalTitle.includes(normalizedTitle) || normalizedTitle.includes(originalTitle)) {
+    return normalizedTitle;
+  }
+  return `${normalizedTitle}: ${originalTitle}`;
 }
 
 
