@@ -11,6 +11,7 @@
     "type-check": "tsc --noEmit",
     "check:rag-contract": "node scripts/check-rag-contract.mjs",
     "check:rag-source-quality": "node scripts/check-rag-source-quality.mjs",
+    "evaluate:rag-fixtures": "node scripts/evaluate-rag-fixtures.mjs",
     "check:admin-debug-surface": "node scripts/check-admin-debug-surface.mjs",
     "check:compass-schema-readiness": "node scripts/check-compass-schema-readiness.mjs",
     "check:compass-table-references": "node scripts/check-compass-table-references.mjs",
@@ -18,7 +19,7 @@
     "smoke:compass-rag-contract": "node scripts/smoke-compass-rag-contract.mjs",
     "smoke:chat-ollama-local": "node scripts/smoke-chat-ollama-local.mjs",
     "gate6c:dry-run": "node scripts/gate6c-local-import-runner.mjs",
-    "verify:harness": "node scripts/check-rag-contract.mjs && node scripts/check-rag-source-quality.mjs && node scripts/check-admin-debug-surface.mjs",
+    "verify:harness": "node scripts/check-rag-contract.mjs && node scripts/check-rag-source-quality.mjs && node scripts/evaluate-rag-fixtures.mjs && node scripts/check-admin-debug-surface.mjs",
     "verify:migration": "node scripts/check-compass-schema-readiness.mjs && node scripts/check-compass-table-references.mjs && node scripts/smoke-compass-rag-contract.mjs && node scripts/check-migration-env.mjs"
   },
   "dependencies": {
