@@ -20,7 +20,13 @@ interface SearchResult {
   content: string;
   similarity: number;
   score?: number;
-  retrievalMethod?: 'vector' | 'keyword' | 'fallback';
+  hybridScore?: number;
+  vectorScore?: number;
+  keywordScore?: number;
+  corpus?: string;
+  evidenceType?: string;
+  rankReason?: string[];
+  retrievalMethod?: 'vector' | 'keyword' | 'hybrid' | 'fallback';
   documentId?: string;
   documentTitle?: string;
   documentUrl?: string;
@@ -31,6 +37,9 @@ interface SearchResult {
     hasExcerpt: boolean;
     isFallback: boolean;
     warnings: string[];
+    linkedToDocument?: boolean;
+    qualityScore?: number;
+    corpus?: string;
   };
   metadata: any;
 }
@@ -69,6 +78,12 @@ async function searchWithOllamaRAG(
       content: result.content,
       similarity: result.similarity,
       score: result.score,
+      hybridScore: result.hybridScore,
+      vectorScore: result.vectorScore,
+      keywordScore: result.keywordScore,
+      corpus: result.corpus,
+      evidenceType: result.evidenceType,
+      rankReason: result.rankReason,
       retrievalMethod: result.retrievalMethod,
       documentId: result.documentId,
       documentTitle: result.documentTitle,
@@ -295,8 +310,12 @@ ${searchResults.map((result, index) => `${index + 1}. ${result.metadata?.title |
 function calculateConfidence(searchResults: SearchResult[]): number {
   if (searchResults.length === 0) return 0;
   
-  const avgSimilarity = searchResults.reduce((sum, result) => sum + result.similarity, 0) / searchResults.length;
-  return Math.min(avgSimilarity * 100, 100);
+  const avgScore = searchResults.reduce((sum, result) => {
+    const retrievalScore = result.hybridScore ?? result.score ?? result.similarity;
+    const qualityScore = result.sourceQuality?.qualityScore ?? 0.6;
+    return sum + (retrievalScore * 0.8) + (qualityScore * 0.2);
+  }, 0) / searchResults.length;
+  return Math.min(avgScore * 100, 100);
 }
 
 function buildVerifiedSources(searchResults: SearchResult[]) {
@@ -310,7 +329,13 @@ function buildVerifiedSources(searchResults: SearchResult[]) {
       excerpt: result.content.substring(0, 200) + (result.content.length > 200 ? '...' : ''),
       similarity: result.similarity,
       score: result.score ?? result.similarity,
+      hybridScore: result.hybridScore ?? result.metadata?.hybridScore,
+      vectorScore: result.vectorScore ?? result.metadata?.vectorScore,
+      keywordScore: result.keywordScore ?? result.metadata?.keywordScore,
       retrievalMethod: result.retrievalMethod || result.metadata?.retrievalMethod || 'vector',
+      evidenceType: result.evidenceType || result.metadata?.evidenceType || result.retrievalMethod || 'vector',
+      corpus: result.corpus || result.metadata?.corpus,
+      rankReason: result.rankReason || result.metadata?.rankReason || [],
       sourceQuality: result.sourceQuality || {
         hasDocumentId: Boolean(result.documentId),
         hasTitle: Boolean(result.documentTitle || result.metadata?.title),

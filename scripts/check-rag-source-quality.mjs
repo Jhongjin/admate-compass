@@ -36,10 +36,21 @@ else {
       const similarity = Number(source.similarity)
       if (!Number.isFinite(similarity) || similarity < 0 || similarity > 1) fail(`source[${index}].similarity must be 0..1`)
     }
+    for (const field of ['score', 'hybridScore', 'vectorScore', 'keywordScore']) {
+      if (source[field] !== undefined) {
+        const value = Number(source[field])
+        if (!Number.isFinite(value) || value < 0 || value > 1) fail(`source[${index}].${field} must be 0..1`)
+      }
+    }
     if (!source.retrievalMethod) fail(`source[${index}] missing retrievalMethod`)
     if (source.retrievalMethod === 'fallback') fail(`source[${index}] must not be fallback-only`)
+    if (source.evidenceType && source.evidenceType === 'fallback') fail(`source[${index}] must not use fallback evidence`)
     if (!source.sourceQuality || typeof source.sourceQuality !== 'object') fail(`source[${index}] missing sourceQuality`)
     if (source.sourceQuality?.isFallback === true) fail(`source[${index}].sourceQuality.isFallback must not be true`)
+    if (source.sourceQuality?.qualityScore !== undefined) {
+      const qualityScore = Number(source.sourceQuality.qualityScore)
+      if (!Number.isFinite(qualityScore) || qualityScore < 0 || qualityScore > 1) fail(`source[${index}].sourceQuality.qualityScore must be 0..1`)
+    }
   }
 }
 

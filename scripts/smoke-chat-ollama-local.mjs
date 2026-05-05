@@ -86,6 +86,10 @@ const sourceSummary = sources.slice(0, 3).map((source) => ({
   hasTitle: typeof source?.title === "string" && source.title.length > 0,
   hasExcerpt: typeof source?.excerpt === "string" && source.excerpt.length > 0,
   similarityType: typeof source?.similarity,
+  scoreType: typeof source?.score,
+  hybridScoreType: source?.hybridScore === undefined ? "undefined" : typeof source.hybridScore,
+  corpus: source?.corpus || null,
+  evidenceType: source?.evidenceType || null,
   retrievalMethod: source?.retrievalMethod || null,
   hasSourceQuality: !!source?.sourceQuality,
 }));

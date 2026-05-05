@@ -7,25 +7,40 @@ import { createCompassServiceClient } from '@/lib/supabase/compass';
 import { SimpleEmbeddingService } from './SimpleEmbeddingService';
 import { generateResponse } from './ollama';
 
+export type RetrievalMethod = 'vector' | 'keyword' | 'hybrid' | 'fallback';
+export type RetrievalCorpus = 'ollama_document_chunks' | 'document_chunks' | 'fallback';
+export type EvidenceType = 'vector' | 'keyword' | 'hybrid' | 'fallback';
+
+export interface SourceQuality {
+  hasDocumentId: boolean;
+  hasTitle: boolean;
+  hasUrl: boolean;
+  hasExcerpt: boolean;
+  isFallback: boolean;
+  warnings: string[];
+  linkedToDocument?: boolean;
+  qualityScore?: number;
+  corpus?: RetrievalCorpus;
+}
+
 export interface SearchResult {
   id: string;
   content: string;
   similarity: number;
   score: number;
-  retrievalMethod: 'vector' | 'keyword' | 'fallback';
+  hybridScore?: number;
+  vectorScore?: number;
+  keywordScore?: number;
+  corpus?: RetrievalCorpus;
+  evidenceType?: EvidenceType;
+  rankReason?: string[];
+  retrievalMethod: RetrievalMethod;
   documentId: string;
   documentTitle: string;
   documentUrl?: string;
   chunkIndex: number;
   metadata?: any;
-  sourceQuality: {
-    hasDocumentId: boolean;
-    hasTitle: boolean;
-    hasUrl: boolean;
-    hasExcerpt: boolean;
-    isFallback: boolean;
-    warnings: string[];
-  };
+  sourceQuality: SourceQuality;
 }
 
 export interface ChatResponse {
@@ -100,194 +115,473 @@ export class RAGSearchService {
       const queryEmbedding = queryEmbeddingResult.embedding;
       console.log(`📊 질문 임베딩 생성 완료: ${queryEmbedding.length}차원`);
 
-      // 벡터 검색을 위한 RPC 함수 호출 시도
-      let searchResults;
-      let error;
-      let retrievalMethod: SearchResult['retrievalMethod'] = 'vector';
+      const [vectorCandidates, keywordCandidates] = await Promise.all([
+        this.searchVectorCandidates(queryEmbedding, limit),
+        this.searchKeywordCandidates(query, limit)
+      ]);
 
-      const runKeywordSearch = async () => {
-        // RPC가 실패하거나 결과가 비어 있으면 키워드 기반 검색으로 app smoke 경로를 유지한다.
-        const keywords = query.toLowerCase().split(' ').filter(word => word.length >= 2);
-        console.log('🔍 키워드 검색:', keywords);
+      console.log(`📊 Hybrid 후보 수집 결과: vector=${vectorCandidates.length}, keyword=${keywordCandidates.length}`);
+      const rankedResults = this.mergeDedupeAndRankCandidates(
+        [...vectorCandidates, ...keywordCandidates],
+        limit
+      );
 
-        let keywordQuery = this.supabase
-          .from('ollama_document_chunks')
-          .select(`
-            chunk_id,
-            content,
-            metadata,
-            embedding
-          `);
-
-        if (keywords.length > 0) {
-          const keywordConditions = keywords.map(keyword => `content.ilike.%${keyword}%`);
-          console.log('🔍 키워드 검색 조건:', keywordConditions);
-          keywordQuery = keywordQuery.or(keywordConditions.join(','));
-        } else {
-          console.log('🔍 키워드 없음, 모든 청크 조회');
-        }
-
-        return keywordQuery.limit(limit * 5);
-      };
-
-      try {
-        console.log('🔍 벡터 검색 RPC 함수 호출 시도');
-        const { data, error: rpcError } = await this.supabase.rpc('search_ollama_documents', {
-          query_embedding: queryEmbedding,
-          match_threshold: 0.001,
-          match_count: limit
-        });
-
-        if (rpcError) {
-          console.warn('⚠️ RPC 함수 오류, 직접 쿼리로 전환:', rpcError);
-          throw rpcError;
-        }
-
-        searchResults = data;
-        console.log('✅ 벡터 검색 RPC 함수 성공');
-        if (!searchResults || searchResults.length === 0) {
-          console.log('⚠️ RPC 검색 결과 0개, 키워드 검색으로 전환');
-          const { data: keywordData, error: keywordError } = await runKeywordSearch();
-          searchResults = keywordData;
-          error = keywordError;
-          retrievalMethod = 'keyword';
-          console.log(`📊 키워드 검색 결과: ${searchResults?.length || 0}개`);
-        }
-      } catch (rpcError) {
-        console.log('⚠️ RPC 함수 실패, 키워드 검색으로 전환');
-        const { data, error: directError } = await runKeywordSearch();
-
-        searchResults = data;
-        error = directError;
-        retrievalMethod = 'keyword';
-        console.log(`📊 키워드 검색 결과: ${searchResults?.length || 0}개`);
-      }
-
-      if (error) {
-        console.error('벡터 검색 오류:', error);
-        throw error;
-      }
-
-      console.log(`📊 데이터베이스 조회 결과: ${searchResults?.length || 0}개`);
-
-      // 디버깅을 위한 상세 로그
-      if (searchResults && searchResults.length > 0) {
-        console.log('🔍 검색된 청크 샘플:', searchResults.slice(0, 2).map((chunk: any) => ({
-          chunk_id: chunk.chunk_id,
-          content_preview: chunk.content?.substring(0, 100) + '...',
-          has_embedding: !!chunk.embedding,
-          metadata: chunk.metadata
+      if (rankedResults.length > 0) {
+        console.log('🔍 Hybrid 검색 결과 샘플:', rankedResults.slice(0, 2).map((chunk) => ({
+          chunk_id: chunk.id,
+          corpus: chunk.corpus,
+          retrievalMethod: chunk.retrievalMethod,
+          hybridScore: chunk.hybridScore,
+          vectorScore: chunk.vectorScore,
+          keywordScore: chunk.keywordScore,
+          warnings: chunk.sourceQuality.warnings
         })));
-
-        // 각 청크의 유사도 계산 과정 로그
-        console.log('🔍 유사도 계산 과정:');
-        searchResults.slice(0, 3).forEach((chunk: any, index: number) => {
-          if (chunk.embedding) {
-            try {
-              let storedEmbedding;
-              if (typeof chunk.embedding === 'string') {
-                storedEmbedding = JSON.parse(chunk.embedding);
-              } else if (Array.isArray(chunk.embedding)) {
-                storedEmbedding = chunk.embedding;
-              } else {
-                console.log(`  청크 ${index + 1}: ${chunk.chunk_id} = 알 수 없는 임베딩 형식: ${typeof chunk.embedding}`);
-                return;
-              }
-
-              if (storedEmbedding && Array.isArray(storedEmbedding) && storedEmbedding.length > 0) {
-                const similarity = this.calculateCosineSimilarity(queryEmbedding, storedEmbedding);
-                console.log(`  청크 ${index + 1}: ${chunk.chunk_id} = ${similarity.toFixed(6)}`);
-              } else {
-                console.log(`  청크 ${index + 1}: ${chunk.chunk_id} = 유효하지 않은 임베딩 배열`);
-              }
-            } catch (error) {
-              console.log(`  청크 ${index + 1}: ${chunk.chunk_id} = 임베딩 파싱 실패: ${error}`);
-            }
-          } else {
-            console.log(`  청크 ${index + 1}: ${chunk.chunk_id} = 임베딩 없음`);
-          }
-        });
       } else {
-        console.log('⚠️ 검색 결과가 없습니다. 데이터베이스에 문서가 있는지 확인하세요.');
+        console.log('⚠️ Hybrid 검색 결과가 없습니다. 데이터베이스에 문서가 있는지 확인하세요.');
       }
 
-      // 클라이언트에서 유사도 계산 및 필터링
-      const filteredResults = (searchResults || [])
-        .map((result: any) => {
-          // 임베딩 데이터 파싱
-          let storedEmbedding: number[];
-          try {
-            if (typeof result.embedding === 'string') {
-              storedEmbedding = JSON.parse(result.embedding);
-            } else if (Array.isArray(result.embedding)) {
-              storedEmbedding = result.embedding;
-            } else {
-              console.warn(`알 수 없는 임베딩 형식: ${typeof result.embedding}`);
-              return null;
-            }
-
-            // 임베딩 배열 유효성 검사
-            if (!Array.isArray(storedEmbedding) || storedEmbedding.length === 0) {
-              console.warn(`유효하지 않은 임베딩 배열: ${storedEmbedding}`);
-              return null;
-            }
-          } catch (error) {
-            console.warn(`임베딩 파싱 실패: ${error}`);
-            return null;
-          }
-
-          // 유사도 계산 (코사인 유사도)
-          const similarity = this.calculateCosineSimilarity(queryEmbedding, storedEmbedding);
-          console.log(`🔍 유사도 계산: ${result.chunk_id} = ${similarity.toFixed(4)}`);
-          const documentId = result.document_id || result.metadata?.document_id || result.chunk_id.split('_chunk_')[0];
-          const documentTitle = result.metadata?.title || result.title || 'Unknown';
-          const documentUrl = result.metadata?.source_url || result.metadata?.document_url || result.metadata?.url;
-          const warnings: string[] = [];
-
-          if (!documentId) warnings.push('missing_document_id');
-          if (!documentTitle || documentTitle === 'Unknown') warnings.push('missing_title');
-          if (!documentUrl) warnings.push('missing_url');
-          if (!result.content || result.content.trim().length === 0) warnings.push('missing_excerpt');
-
-          return {
-            id: result.chunk_id,
-            content: result.content,
-            similarity: similarity,
-            score: similarity,
-            retrievalMethod,
-            documentId,
-            documentTitle,
-            documentUrl,
-            chunkIndex: parseInt(result.chunk_id.split('_chunk_')[1]) || 0,
-            metadata: {
-              ...(result.metadata || {}),
-              retrievalMethod,
-              score: similarity,
-              documentId,
-              sourceQualityWarnings: warnings,
-            },
-            sourceQuality: {
-              hasDocumentId: Boolean(documentId),
-              hasTitle: Boolean(documentTitle && documentTitle !== 'Unknown'),
-              hasUrl: Boolean(documentUrl),
-              hasExcerpt: Boolean(result.content && result.content.trim().length > 0),
-              isFallback: result.metadata?.type === 'fallback',
-              warnings,
-            },
-          };
-        })
-        .filter((result: any) => result !== null) // 임계값 완전 제거 - 모든 결과 확인
-        .sort((a: any, b: any) => b.similarity - a.similarity)
-        .slice(0, limit);
-
-      console.log(`✅ 검색 완료: ${filteredResults.length}개 결과 (임계값: ${similarityThreshold})`);
-      return filteredResults as SearchResult[];
+      console.log(`✅ 검색 완료: ${rankedResults.length}개 결과 (임계값: ${similarityThreshold})`);
+      return rankedResults;
 
     } catch (error) {
       console.error('❌ RAG 검색 실패:', error);
       // 오류 발생 시에도 fallback 데이터 반환
       return this.getFallbackSearchResults(query, limit);
     }
+  }
+
+  private async searchVectorCandidates(queryEmbedding: number[], limit: number): Promise<SearchResult[]> {
+    try {
+      console.log('🔍 벡터 검색 RPC 함수 호출 시도');
+      const { data, error } = await this.supabase.rpc('search_ollama_documents', {
+        query_embedding: queryEmbedding,
+        match_threshold: 0.001,
+        match_count: limit * 3
+      });
+
+      if (error) {
+        console.warn('⚠️ RPC 함수 오류. keyword 채널은 계속 실행됩니다:', error);
+        return [];
+      }
+
+      console.log(`✅ 벡터 검색 RPC 함수 성공: ${data?.length || 0}개`);
+      return (data || [])
+        .map((result: any) => this.normalizeCandidate(result, {
+          queryEmbedding,
+          retrievalMethod: 'vector',
+          corpus: 'ollama_document_chunks',
+          evidenceType: 'vector',
+        }))
+        .filter((result: SearchResult | null): result is SearchResult => result !== null);
+    } catch (error) {
+      console.warn('⚠️ 벡터 검색 실패. keyword 채널은 계속 실행됩니다:', error);
+      return [];
+    }
+  }
+
+  private async searchKeywordCandidates(query: string, limit: number): Promise<SearchResult[]> {
+    const keywords = this.extractKeywords(query);
+    console.log('🔍 Hybrid keyword 검색:', keywords);
+
+    if (keywords.length === 0) {
+      return [];
+    }
+
+    const [ollamaResults, documentChunkResults] = await Promise.all([
+      this.searchKeywordTable('ollama_document_chunks', keywords, limit),
+      this.searchKeywordTable('document_chunks', keywords, limit)
+    ]);
+
+    return [...ollamaResults, ...documentChunkResults]
+      .map((result) => this.normalizeCandidate(result.row, {
+        keywords,
+        retrievalMethod: 'keyword',
+        corpus: result.corpus,
+        evidenceType: 'keyword',
+      }))
+      .filter((result: SearchResult | null): result is SearchResult => result !== null);
+  }
+
+  private async searchKeywordTable(
+    tableName: 'ollama_document_chunks' | 'document_chunks',
+    keywords: string[],
+    limit: number
+  ): Promise<Array<{ row: any; corpus: RetrievalCorpus }>> {
+    try {
+      const selectColumns = tableName === 'ollama_document_chunks'
+        ? 'chunk_id, document_id, content, metadata, embedding'
+        : 'id, document_id, chunk_id, content, metadata';
+      const keywordConditions = keywords.map(keyword => `content.ilike.%${keyword}%`);
+
+      const { data, error } = await this.supabase
+        .from(tableName)
+        .select(selectColumns)
+        .or(keywordConditions.join(','))
+        .limit(limit * 8);
+
+      if (error) {
+        console.warn(`⚠️ ${tableName} keyword 검색 실패:`, error);
+        return [];
+      }
+
+      console.log(`📊 ${tableName} keyword 검색 결과: ${data?.length || 0}개`);
+      return (data || []).map((row: any) => ({
+        row,
+        corpus: tableName,
+      }));
+    } catch (error) {
+      console.warn(`⚠️ ${tableName} keyword 검색 예외:`, error);
+      return [];
+    }
+  }
+
+  private normalizeCandidate(
+    result: any,
+    options: {
+      queryEmbedding?: number[];
+      keywords?: string[];
+      retrievalMethod: RetrievalMethod;
+      corpus: RetrievalCorpus;
+      evidenceType: EvidenceType;
+    }
+  ): SearchResult | null {
+    const content = typeof result.content === 'string' ? result.content : '';
+    const rawChunkId = result.id ?? result.chunk_id;
+    const chunkId = String(rawChunkId || `${result.document_id || 'unknown'}_chunk_0`);
+    const documentId = result.document_id || result.metadata?.document_id || this.inferDocumentId(chunkId);
+    const documentTitle = result.metadata?.title || result.title || result.metadata?.source || 'Unknown';
+    const documentUrl = result.metadata?.source_url || result.metadata?.document_url || result.metadata?.url;
+    const chunkIndex = this.inferChunkIndex(chunkId, result.chunk_id);
+    const warnings: string[] = [];
+
+    if (!documentId) warnings.push('missing_document_id');
+    if (!documentTitle || documentTitle === 'Unknown') warnings.push('missing_title');
+    if (!documentUrl) warnings.push('missing_url');
+    if (!content.trim()) warnings.push('missing_excerpt');
+
+    const vectorScore = this.resolveVectorScore(result, options.queryEmbedding);
+    const keywordScore = this.calculateKeywordScore(content, documentTitle, options.keywords || []);
+    const sourceQuality = this.buildSourceQuality({
+      documentId,
+      documentTitle,
+      documentUrl,
+      content,
+      metadata: result.metadata,
+      corpus: options.corpus,
+      warnings,
+    });
+    const hybridScore = this.calculateHybridScore({
+      vectorScore,
+      keywordScore,
+      sourceQualityScore: sourceQuality.qualityScore || 0,
+      retrievalMethod: options.retrievalMethod,
+    });
+    const rankReason = this.buildRankReason({
+      vectorScore,
+      keywordScore,
+      sourceQuality,
+      corpus: options.corpus,
+    });
+
+    return {
+      id: chunkId,
+      content,
+      similarity: vectorScore || keywordScore || hybridScore,
+      score: hybridScore,
+      hybridScore,
+      vectorScore,
+      keywordScore,
+      corpus: options.corpus,
+      evidenceType: options.evidenceType,
+      rankReason,
+      retrievalMethod: options.retrievalMethod,
+      documentId,
+      documentTitle,
+      documentUrl,
+      chunkIndex,
+      metadata: {
+        ...(result.metadata || {}),
+        retrievalMethod: options.retrievalMethod,
+        evidenceType: options.evidenceType,
+        corpus: options.corpus,
+        score: hybridScore,
+        hybridScore,
+        vectorScore,
+        keywordScore,
+        documentId,
+        sourceQualityWarnings: sourceQuality.warnings,
+      },
+      sourceQuality,
+    };
+  }
+
+  private mergeDedupeAndRankCandidates(candidates: SearchResult[], limit: number): SearchResult[] {
+    const byKey = new Map<string, SearchResult>();
+
+    for (const candidate of candidates) {
+      if (!this.isVerifiedEvidence(candidate)) {
+        continue;
+      }
+
+      const dedupeKeys = this.getDedupeKeys(candidate);
+      const existingKey = dedupeKeys.find(key => byKey.has(key));
+
+      if (!existingKey) {
+        byKey.set(dedupeKeys[0], candidate);
+        continue;
+      }
+
+      const existing = byKey.get(existingKey)!;
+      const merged = this.mergeDuplicateCandidate(existing, candidate);
+      byKey.delete(existingKey);
+      byKey.set(this.getDedupeKeys(merged)[0], merged);
+    }
+
+    const documentCounts = new Map<string, number>();
+    const titleCounts = new Map<string, number>();
+
+    return Array.from(byKey.values())
+      .sort((a, b) => (b.hybridScore || 0) - (a.hybridScore || 0))
+      .filter((candidate) => {
+        const docKey = candidate.documentId || candidate.id;
+        const titleKey = candidate.documentTitle || docKey;
+        const docCount = documentCounts.get(docKey) || 0;
+        const titleCount = titleCounts.get(titleKey) || 0;
+
+        if (docCount >= 2 || titleCount >= 2) {
+          return false;
+        }
+
+        documentCounts.set(docKey, docCount + 1);
+        titleCounts.set(titleKey, titleCount + 1);
+        return true;
+      })
+      .slice(0, limit);
+  }
+
+  private mergeDuplicateCandidate(existing: SearchResult, incoming: SearchResult): SearchResult {
+    const vectorScore = Math.max(existing.vectorScore || 0, incoming.vectorScore || 0);
+    const keywordScore = Math.max(existing.keywordScore || 0, incoming.keywordScore || 0);
+    const sourceQualityScore = Math.max(
+      existing.sourceQuality.qualityScore || 0,
+      incoming.sourceQuality.qualityScore || 0
+    );
+    const retrievalMethod: RetrievalMethod = vectorScore > 0 && keywordScore > 0 ? 'hybrid' : existing.retrievalMethod;
+    const evidenceType: EvidenceType = retrievalMethod === 'hybrid' ? 'hybrid' : existing.evidenceType || incoming.evidenceType || retrievalMethod;
+    const hybridScore = this.calculateHybridScore({
+      vectorScore,
+      keywordScore,
+      sourceQualityScore,
+      retrievalMethod,
+    });
+    const warnings = Array.from(new Set([
+      ...existing.sourceQuality.warnings,
+      ...incoming.sourceQuality.warnings,
+    ]));
+    const rankReason = Array.from(new Set([
+      ...(existing.rankReason || []),
+      ...(incoming.rankReason || []),
+      retrievalMethod === 'hybrid' ? 'matched_vector_and_keyword' : '',
+    ].filter(Boolean)));
+
+    return {
+      ...existing,
+      similarity: Math.max(existing.similarity, incoming.similarity),
+      score: hybridScore,
+      hybridScore,
+      vectorScore,
+      keywordScore,
+      retrievalMethod,
+      evidenceType,
+      rankReason,
+      documentUrl: existing.documentUrl || incoming.documentUrl,
+      sourceQuality: {
+        ...existing.sourceQuality,
+        hasUrl: existing.sourceQuality.hasUrl || incoming.sourceQuality.hasUrl,
+        qualityScore: sourceQualityScore,
+        warnings,
+      },
+      metadata: {
+        ...(existing.metadata || {}),
+        retrievalMethod,
+        evidenceType,
+        score: hybridScore,
+        hybridScore,
+        vectorScore,
+        keywordScore,
+        sourceQualityWarnings: warnings,
+      },
+    };
+  }
+
+  private isVerifiedEvidence(candidate: SearchResult): boolean {
+    return Boolean(
+      candidate.content?.trim()
+      && candidate.retrievalMethod !== 'fallback'
+      && candidate.sourceQuality.isFallback !== true
+      && (candidate.hybridScore || 0) > 0
+    );
+  }
+
+  private getDedupeKeys(candidate: SearchResult): string[] {
+    return [
+      `chunk:${candidate.id}`,
+      `doc-index:${candidate.documentId}:${candidate.chunkIndex}`,
+      `content:${this.contentFingerprint(candidate.content)}`,
+    ].filter(Boolean);
+  }
+
+  private extractKeywords(query: string): string[] {
+    const stopwords = new Set([
+      '무엇인가요', '무엇', '어떤', '있는', '없는', '해주세요', '알려줘', '기준은', '기준',
+      '광고', '정책', '관련', '대한', '그리고', '또는', 'the', 'and', 'for', 'with'
+    ]);
+
+    return Array.from(new Set(
+      query
+        .toLowerCase()
+        .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+        .split(/\s+/)
+        .map(word => word.trim())
+        .filter(word => word.length >= 2 && !stopwords.has(word))
+    )).slice(0, 8);
+  }
+
+  private calculateKeywordScore(content: string, title: string, keywords: string[]): number {
+    if (keywords.length === 0) {
+      return 0;
+    }
+
+    const contentLower = content.toLowerCase();
+    const titleLower = (title || '').toLowerCase();
+    let score = 0;
+
+    for (const keyword of keywords) {
+      if (contentLower.includes(keyword)) score += 1;
+      if (titleLower.includes(keyword)) score += 0.7;
+    }
+
+    return Math.max(0, Math.min(1, score / Math.max(1, keywords.length)));
+  }
+
+  private resolveVectorScore(result: any, queryEmbedding?: number[]): number {
+    const rpcSimilarity = Number(result.similarity ?? result.score ?? result.match_score);
+    if (Number.isFinite(rpcSimilarity) && rpcSimilarity > 0) {
+      return Math.max(0, Math.min(1, rpcSimilarity));
+    }
+
+    if (!queryEmbedding || !result.embedding) {
+      return 0;
+    }
+
+    const storedEmbedding = this.parseEmbedding(result.embedding);
+    if (!storedEmbedding) {
+      return 0;
+    }
+
+    return this.calculateCosineSimilarity(queryEmbedding, storedEmbedding);
+  }
+
+  private parseEmbedding(embedding: unknown): number[] | null {
+    try {
+      if (typeof embedding === 'string') {
+        return JSON.parse(embedding);
+      }
+
+      if (Array.isArray(embedding)) {
+        return embedding as number[];
+      }
+    } catch (error) {
+      console.warn(`임베딩 파싱 실패: ${error}`);
+    }
+
+    return null;
+  }
+
+  private buildSourceQuality(input: {
+    documentId: string;
+    documentTitle: string;
+    documentUrl?: string;
+    content: string;
+    metadata?: any;
+    corpus: RetrievalCorpus;
+    warnings: string[];
+  }): SourceQuality {
+    const hasDocumentId = Boolean(input.documentId);
+    const hasTitle = Boolean(input.documentTitle && input.documentTitle !== 'Unknown');
+    const hasUrl = Boolean(input.documentUrl);
+    const hasExcerpt = Boolean(input.content && input.content.trim().length > 0);
+    const isFallback = input.metadata?.type === 'fallback' || input.corpus === 'fallback';
+    const qualityScore = [
+      hasDocumentId,
+      hasTitle,
+      hasUrl,
+      hasExcerpt,
+      !isFallback,
+    ].filter(Boolean).length / 5;
+
+    return {
+      hasDocumentId,
+      hasTitle,
+      hasUrl,
+      hasExcerpt,
+      isFallback,
+      warnings: input.warnings,
+      linkedToDocument: Boolean(input.metadata?.document_id || input.metadata?.source_url || input.metadata?.document_url),
+      qualityScore,
+      corpus: input.corpus,
+    };
+  }
+
+  private calculateHybridScore(input: {
+    vectorScore: number;
+    keywordScore: number;
+    sourceQualityScore: number;
+    retrievalMethod: RetrievalMethod;
+  }): number {
+    const baseScore =
+      input.vectorScore * 0.55
+      + input.keywordScore * 0.25
+      + input.sourceQualityScore * 0.20;
+    const methodBoost = input.retrievalMethod === 'hybrid' ? 0.08 : 0;
+
+    return Math.max(0, Math.min(1, baseScore + methodBoost));
+  }
+
+  private buildRankReason(input: {
+    vectorScore: number;
+    keywordScore: number;
+    sourceQuality: SourceQuality;
+    corpus: RetrievalCorpus;
+  }): string[] {
+    const reasons: string[] = [];
+    if (input.vectorScore > 0) reasons.push('vector_match');
+    if (input.keywordScore > 0) reasons.push('keyword_match');
+    if (input.sourceQuality.hasTitle) reasons.push('has_title');
+    if (input.sourceQuality.hasUrl) reasons.push('has_url');
+    if (input.corpus === 'document_chunks') reasons.push('document_chunks_keyword_corpus');
+    return reasons;
+  }
+
+  private inferDocumentId(chunkId: string): string {
+    return chunkId.includes('_chunk_') ? chunkId.split('_chunk_')[0] : chunkId;
+  }
+
+  private inferChunkIndex(chunkId: string, rawChunkId?: unknown): number {
+    if (typeof rawChunkId === 'number') {
+      return rawChunkId;
+    }
+
+    const match = chunkId.match(/_chunk_(\d+)/);
+    return match ? Number(match[1]) : 0;
+  }
+
+  private contentFingerprint(content: string): string {
+    return content
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 240)
+      .toLowerCase();
   }
 
   /**
@@ -731,13 +1025,17 @@ ${content}
   private calculateConfidence(searchResults: SearchResult[]): number {
     if (searchResults.length === 0) return 0;
 
-    // 상위 결과의 유사도 기반 신뢰도 계산
-    const topSimilarity = searchResults[0].similarity;
+    // Hybrid score와 source quality를 함께 반영한다.
+    const topScore = searchResults[0].hybridScore ?? searchResults[0].similarity;
+    const averageQuality = searchResults.reduce((sum, result) => (
+      sum + (result.sourceQuality.qualityScore || 0)
+    ), 0) / searchResults.length;
+    const confidence = (topScore * 0.75) + (averageQuality * 0.25);
 
-    if (topSimilarity >= 0.9) return 0.95;
-    if (topSimilarity >= 0.8) return 0.85;
-    if (topSimilarity >= 0.7) return 0.75;
-    if (topSimilarity >= 0.6) return 0.65;
+    if (confidence >= 0.9) return 0.95;
+    if (confidence >= 0.8) return 0.85;
+    if (confidence >= 0.7) return 0.75;
+    if (confidence >= 0.6) return 0.65;
 
     // 그 외에는 매우 낮은 신뢰도
     return 0.3;
