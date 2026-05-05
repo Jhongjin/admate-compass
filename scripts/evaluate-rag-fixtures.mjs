@@ -6,6 +6,7 @@ import path from "node:path";
 const root = process.cwd();
 const args = new Set(process.argv.slice(2));
 const runEndpoint = args.has("--run");
+const sourceOnly = args.has("--source-only");
 const fixtureArg = process.argv.find((arg) => arg.startsWith("--fixtures="));
 const endpointArg = process.argv.find((arg) => arg.startsWith("--endpoint="));
 const limitArg = process.argv.find((arg) => arg.startsWith("--limit="));
@@ -143,8 +144,8 @@ function validateResponseAgainstFixture(fixture, payload) {
 
   const sources = Array.isArray(response.sources) ? response.sources : [];
   const responseText = normalizeText([
-    response.message,
-    response.content,
+    sourceOnly ? "" : response.message,
+    sourceOnly ? "" : response.content,
     sourceBlob(sources),
   ].join(" "));
 
@@ -264,6 +265,7 @@ if (!process.exitCode) {
   console.log(JSON.stringify({
     ok: true,
     mode: runEndpoint ? "endpoint" : "fixture-schema",
+    sourceOnly,
     fixtureCount: fixtures.length,
     evaluatedCount: selectedFixtures.length,
   }, null, 2));

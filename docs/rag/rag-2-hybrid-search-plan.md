@@ -53,6 +53,27 @@ Fallback, mock, and empty sources are not valid grounding evidence.
 
 `noDataFound` should remain true when no verified source survives retrieval, dedupe, and evidence gating.
 
+## RAG-2D Intent And Evidence Gate
+
+RAG-2D adds deterministic intent scoring before final source selection.
+
+Intent signals:
+
+- vendor intent: Meta/Facebook/Instagram, Kakao, Naver, Google/YouTube/GDN
+- topic intent: review, youth, false claim, price, event, rights, hate, gambling, specs
+- out-of-scope categories: weather, recipe/food, finance, entertainment, personal medical advice
+
+Evidence scoring:
+
+- vendor match boosts source ranking
+- explicit vendor mismatch strongly penalizes ranking
+- lexical overlap is required for weak vector-only candidates
+- `document_chunks` remains keyword-only, but receives a boost when keyword, lexical, and metadata evidence align
+- `missing_url` is a penalty, not a rejection
+- missing/empty excerpt and fallback/mock sources remain rejected
+
+Out-of-scope queries return no verified evidence unless they also contain strong ad, policy, or platform terms.
+
 ## Next Gates
 
 1. Add fixture-based evaluation for hybrid recall and source diversity.

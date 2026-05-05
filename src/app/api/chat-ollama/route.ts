@@ -26,6 +26,10 @@ interface SearchResult {
   corpus?: string;
   evidenceType?: string;
   rankReason?: string[];
+  lexicalOverlap?: number;
+  vendorMatch?: boolean;
+  vendorMismatch?: boolean;
+  topicMatch?: boolean;
   retrievalMethod?: 'vector' | 'keyword' | 'hybrid' | 'fallback';
   documentId?: string;
   documentTitle?: string;
@@ -40,6 +44,9 @@ interface SearchResult {
     linkedToDocument?: boolean;
     qualityScore?: number;
     corpus?: string;
+    lexicalOverlap?: number;
+    vendorMatch?: boolean;
+    vendorMismatch?: boolean;
   };
   metadata: any;
 }
@@ -84,6 +91,10 @@ async function searchWithOllamaRAG(
       corpus: result.corpus,
       evidenceType: result.evidenceType,
       rankReason: result.rankReason,
+      lexicalOverlap: result.lexicalOverlap,
+      vendorMatch: result.vendorMatch,
+      vendorMismatch: result.vendorMismatch,
+      topicMatch: result.topicMatch,
       retrievalMethod: result.retrievalMethod,
       documentId: result.documentId,
       documentTitle: result.documentTitle,
@@ -313,7 +324,9 @@ function calculateConfidence(searchResults: SearchResult[]): number {
   const avgScore = searchResults.reduce((sum, result) => {
     const retrievalScore = result.hybridScore ?? result.score ?? result.similarity;
     const qualityScore = result.sourceQuality?.qualityScore ?? 0.6;
-    return sum + (retrievalScore * 0.8) + (qualityScore * 0.2);
+    const lexicalScore = result.lexicalOverlap ?? result.sourceQuality?.lexicalOverlap ?? 0;
+    const vendorPenalty = result.vendorMismatch || result.sourceQuality?.vendorMismatch ? 0.15 : 0;
+    return sum + (retrievalScore * 0.62) + (qualityScore * 0.2) + (lexicalScore * 0.18) - vendorPenalty;
   }, 0) / searchResults.length;
   return Math.min(avgScore * 100, 100);
 }
@@ -336,6 +349,10 @@ function buildVerifiedSources(searchResults: SearchResult[]) {
       evidenceType: result.evidenceType || result.metadata?.evidenceType || result.retrievalMethod || 'vector',
       corpus: result.corpus || result.metadata?.corpus,
       rankReason: result.rankReason || result.metadata?.rankReason || [],
+      lexicalOverlap: result.lexicalOverlap ?? result.metadata?.lexicalOverlap,
+      vendorMatch: result.vendorMatch ?? result.metadata?.vendorMatch,
+      vendorMismatch: result.vendorMismatch ?? result.metadata?.vendorMismatch,
+      topicMatch: result.topicMatch ?? result.metadata?.topicMatch,
       sourceQuality: result.sourceQuality || {
         hasDocumentId: Boolean(result.documentId),
         hasTitle: Boolean(result.documentTitle || result.metadata?.title),
