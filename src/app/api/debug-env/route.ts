@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getOllamaEndpointStatus } from '@/lib/services/ollamaEndpoint';
 
 export async function GET() {
   try {
@@ -18,12 +19,17 @@ export async function GET() {
       },
       OLLAMA_BASE_URL: {
         exists: !!process.env.OLLAMA_BASE_URL,
-        value: process.env.OLLAMA_BASE_URL || 'undefined'
+        length: process.env.OLLAMA_BASE_URL?.length || 0
+      },
+      VULTR_OLLAMA_URL: {
+        exists: !!process.env.VULTR_OLLAMA_URL,
+        length: process.env.VULTR_OLLAMA_URL?.length || 0
       },
       OLLAMA_DEFAULT_MODEL: {
         exists: !!process.env.OLLAMA_DEFAULT_MODEL,
-        value: process.env.OLLAMA_DEFAULT_MODEL || 'undefined'
+        length: process.env.OLLAMA_DEFAULT_MODEL?.length || 0
       },
+      OLLAMA_ENDPOINT: getOllamaEndpointStatus(),
       NODE_ENV: process.env.NODE_ENV
     };
     

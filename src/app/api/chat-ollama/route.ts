@@ -2,10 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createCompassServiceClient, getCompassDbSchema } from '@/lib/supabase/compass';
 import { RAGSearchService } from '@/lib/services/RAGSearchService';
 import { generateResponse } from '@/lib/services/ollama';
+import { getOllamaEndpointStatus, resolveOllamaEndpoint } from '@/lib/services/ollamaEndpoint';
 
 // Vultr+Ollama 전용 시스템 초기화
 console.log('🔑 Vultr+Ollama 환경변수 확인:');
-console.log('- OLLAMA_BASE_URL:', process.env.OLLAMA_BASE_URL ? '설정됨' : '설정되지 않음');
+console.log('- Ollama endpoint:', getOllamaEndpointStatus());
 console.log('- NEXT_PUBLIC_SUPABASE_URL:', process.env.NEXT_PUBLIC_SUPABASE_URL ? '설정됨' : '설정되지 않음');
 console.log('- SUPABASE_SERVICE_ROLE_KEY:', process.env.SUPABASE_SERVICE_ROLE_KEY ? '설정됨' : '설정되지 않음');
 
@@ -117,8 +118,11 @@ function getFallbackSearchResults(query: string, limit: number): SearchResult[] 
            try {
              console.log(`🤖 Vultr Ollama 직접 연결 답변 생성 시작 (시도 ${attempt}/${maxRetries})`);
              
-             const vultrUrl = process.env.VULTR_OLLAMA_URL || 'http://141.164.52.52';
-             console.log('🔗 Vultr URL:', vultrUrl);
+             const ollamaEndpoint = resolveOllamaEndpoint();
+             if (!ollamaEndpoint.baseUrl) {
+               throw new Error('Ollama endpoint is not configured for this environment.');
+             }
+             console.log('🔗 Ollama endpoint:', getOllamaEndpointStatus());
     
     // 검색 결과를 컨텍스트로 변환
     const context = searchResults.map(result => 
@@ -144,7 +148,7 @@ ${context}
     console.log('📤 Vultr Ollama 직접 요청 시작');
     
            // Vultr Ollama 서버로 직접 요청 (타임아웃 60초로 증가)
-           const response = await fetch(`${vultrUrl}/api/generate`, {
+           const response = await fetch(`${ollamaEndpoint.baseUrl}/api/generate`, {
              method: 'POST',
              headers: {
                'Content-Type': 'application/json',
@@ -333,7 +337,7 @@ export async function POST(request: NextRequest) {
   
   // API 핸들러 내에서 환경변수 재확인
   console.log('🔍 Vultr+Ollama API 핸들러 내 환경변수 확인:');
-  console.log('- OLLAMA_BASE_URL:', process.env.OLLAMA_BASE_URL ? '설정됨' : '설정되지 않음');
+  console.log('- Ollama endpoint:', getOllamaEndpointStatus());
   console.log('- NEXT_PUBLIC_SUPABASE_URL:', process.env.NEXT_PUBLIC_SUPABASE_URL ? '설정됨' : '설정되지 않음');
   
   try {
@@ -360,7 +364,7 @@ export async function POST(request: NextRequest) {
 
     // 환경변수 상태 확인
     console.log('🔧 Vultr+Ollama 환경변수 상태:');
-    console.log('- OLLAMA_BASE_URL:', process.env.OLLAMA_BASE_URL ? '✅ 설정됨' : '❌ 미설정');
+    console.log('- Ollama endpoint:', getOllamaEndpointStatus());
     console.log('- NEXT_PUBLIC_SUPABASE_URL:', process.env.NEXT_PUBLIC_SUPABASE_URL ? '✅ 설정됨' : '❌ 미설정');
     console.log('- SUPABASE_SERVICE_ROLE_KEY:', process.env.SUPABASE_SERVICE_ROLE_KEY ? '✅ 설정됨' : '❌ 미설정');
 

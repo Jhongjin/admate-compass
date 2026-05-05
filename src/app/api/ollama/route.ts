@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { generateResponse, getAvailableModels, checkOllamaHealth } from '@/lib/services/ollama';
+import { getOllamaEndpointStatus, resolveOllamaEndpoint } from '@/lib/services/ollamaEndpoint';
 
 // 기본 헤더 설정
 const headers = {
@@ -22,32 +23,25 @@ export async function GET() {
   try {
     console.log('🔍 Ollama API GET 요청 - 서버 상태 확인');
     
-    // 환경 변수 직접 확인
-    const ollamaUrl = process.env.OLLAMA_BASE_URL;
-    console.log('🔧 환경 변수 직접 확인:', {
-      OLLAMA_BASE_URL: ollamaUrl,
-      NODE_ENV: process.env.NODE_ENV,
-      hasOllamaUrl: !!ollamaUrl,
-      allEnvKeys: Object.keys(process.env).filter(key => key.includes('OLLAMA')),
-      allEnvKeysCount: Object.keys(process.env).length
-    });
-    
-    // 환경 변수가 없으면 기본값 사용 (Nginx 프록시를 통해 접근)
-    const baseUrl = ollamaUrl || 'http://141.164.52.52';
-    console.log('🔧 사용할 Ollama URL:', baseUrl);
+    const endpoint = resolveOllamaEndpoint();
+    console.log('🔧 Ollama endpoint:', getOllamaEndpointStatus());
     
     // 직접 URL로 헬스 체크
     let isHealthy = false;
     let models = [];
     
     try {
-      console.log('🔍 Ollama 서버 헬스 체크:', baseUrl);
+      if (!endpoint.baseUrl) {
+        throw new Error('Ollama endpoint is not configured');
+      }
+
+      console.log('🔍 Ollama 서버 헬스 체크');
       
       // 타임아웃 설정 (60초)
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 60000);
       
-      const healthResponse = await fetch(`${baseUrl}/api/tags`, {
+      const healthResponse = await fetch(`${endpoint.baseUrl}/api/tags`, {
         signal: controller.signal,
         headers: {
           'Accept': 'application/json',
@@ -61,13 +55,12 @@ export async function GET() {
       console.log('🔍 헬스 체크 결과:', { 
         isHealthy, 
         status: healthResponse.status,
-        statusText: healthResponse.statusText,
-        url: baseUrl
+        statusText: healthResponse.statusText
       });
       
       if (isHealthy) {
         try {
-          const modelsResponse = await fetch(`${baseUrl}/api/tags`, {
+          const modelsResponse = await fetch(`${endpoint.baseUrl}/api/tags`, {
             signal: controller.signal,
             headers: {
               'Accept': 'application/json',
@@ -90,15 +83,13 @@ export async function GET() {
       } else {
         console.error('❌ 서버 헬스 체크 실패:', {
           status: healthResponse.status,
-          statusText: healthResponse.statusText,
-          url: baseUrl
+          statusText: healthResponse.statusText
         });
       }
     } catch (error) {
       console.error('❌ Ollama 서버 연결 오류:', {
         error: error instanceof Error ? error.message : String(error),
-        name: error instanceof Error ? error.name : 'Unknown',
-        url: baseUrl
+        name: error instanceof Error ? error.name : 'Unknown'
       });
       isHealthy = false;
     }
@@ -109,8 +100,8 @@ export async function GET() {
       timestamp: new Date().toISOString(),
       server: {
         healthy: isHealthy,
-        baseUrl: baseUrl,
-        actualUrl: baseUrl,
+        ...getOllamaEndpointStatus(),
+        reachable: isHealthy,
         availableModels: models.map((model: any) => ({
           name: model.name,
           size: `${(model.size / 1024 / 1024 / 1024).toFixed(2)}GB`,
@@ -141,7 +132,8 @@ export async function GET() {
       details: error instanceof Error ? error.message : String(error),
       server: {
         healthy: false,
-        baseUrl: process.env.OLLAMA_BASE_URL || 'http://141.164.52.52'
+        ...getOllamaEndpointStatus(),
+        reachable: false
       }
     }, {
       status: 500,
@@ -172,14 +164,16 @@ export async function POST(request: NextRequest) {
 
     console.log(`💬 Ollama API 메시지 수신: "${message}" (모델: ${model})`);
 
-    // 환경 변수에서 URL 가져오기 (Nginx 프록시를 통해 접근)
-    const ollamaUrl = process.env.OLLAMA_BASE_URL || 'http://141.164.52.52';
-    console.log('🔧 POST 요청에서 사용할 Ollama URL:', ollamaUrl);
+    const endpoint = resolveOllamaEndpoint();
+    console.log('🔧 POST 요청 Ollama endpoint:', getOllamaEndpointStatus());
 
     // Ollama 서버 상태 확인
     let isHealthy = false;
     try {
-      const healthResponse = await fetch(`${ollamaUrl}/api/tags`);
+      if (!endpoint.baseUrl) {
+        throw new Error('Ollama endpoint is not configured');
+      }
+      const healthResponse = await fetch(`${endpoint.baseUrl}/api/tags`);
       isHealthy = healthResponse.ok;
       console.log('🔍 POST 요청 헬스 체크 결과:', { isHealthy, status: healthResponse.status });
     } catch (error) {

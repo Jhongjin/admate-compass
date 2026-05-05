@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { checkOllamaHealth } from '@/lib/services/ollama';
+import { getOllamaEndpointStatus } from '@/lib/services/ollamaEndpoint';
 
 export async function GET() {
   try {
@@ -11,9 +12,8 @@ export async function GET() {
     // 환경 변수 상태 확인
     const envStatus = {
       ollama: {
-        baseUrl: process.env.OLLAMA_BASE_URL || 'http://141.164.52.52',
-        defaultModel: process.env.OLLAMA_DEFAULT_MODEL || 'tinyllama:1.1b',
-        configured: !!process.env.OLLAMA_BASE_URL
+        ...getOllamaEndpointStatus(),
+        defaultModelConfigured: !!process.env.OLLAMA_DEFAULT_MODEL
       },
       gemini: {
         apiKey: !!process.env.GEMINI_API_KEY,

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createCompassServiceClient, getCompassDbSchema } from '@/lib/supabase/compass';
+import { getOllamaEndpointStatus, resolveOllamaEndpoint } from '@/lib/services/ollamaEndpoint';
 
 export async function GET(request: NextRequest) {
   const startTime = Date.now();
@@ -17,8 +18,18 @@ export async function GET(request: NextRequest) {
 
     // Ollama 서비스 상태 확인
     try {
-      const ollamaUrl = process.env.OLLAMA_BASE_URL || 'http://localhost:11434';
-      const response = await fetch(`${ollamaUrl}/api/tags`, {
+      const endpoint = resolveOllamaEndpoint();
+      if (!endpoint.baseUrl) {
+        health.services.ollama = {
+          status: 'unhealthy',
+          ...getOllamaEndpointStatus(),
+          reachable: false,
+          error: 'Ollama endpoint is not configured'
+        };
+        throw new Error('ollama_health_recorded');
+      }
+
+      const response = await fetch(`${endpoint.baseUrl}/api/tags`, {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' },
         signal: AbortSignal.timeout(5000) // 5초 타임아웃
@@ -28,20 +39,28 @@ export async function GET(request: NextRequest) {
         const data = await response.json();
         health.services.ollama = {
           status: 'healthy',
+          ...getOllamaEndpointStatus(),
+          reachable: true,
           models: data.models?.length || 0,
           responseTime: Date.now() - startTime
         };
       } else {
         health.services.ollama = {
           status: 'unhealthy',
+          ...getOllamaEndpointStatus(),
+          reachable: false,
           error: `HTTP ${response.status}`
         };
       }
     } catch (error) {
-      health.services.ollama = {
-        status: 'unhealthy',
-        error: error instanceof Error ? error.message : String(error)
-      };
+      if (!(error instanceof Error && error.message === 'ollama_health_recorded')) {
+        health.services.ollama = {
+          status: 'unhealthy',
+          ...getOllamaEndpointStatus(),
+          reachable: false,
+          error: error instanceof Error ? error.message : String(error)
+        };
+      }
     }
 
     // Supabase 연결 확인

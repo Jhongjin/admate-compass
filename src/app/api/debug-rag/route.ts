@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { RAGSearchService } from '@/lib/services/RAGSearchService';
+import { getOllamaEndpointStatus } from '@/lib/services/ollamaEndpoint';
 
 export async function GET() {
   try {
@@ -10,7 +11,9 @@ export async function GET() {
       NEXT_PUBLIC_SUPABASE_URL: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
       SUPABASE_SERVICE_ROLE_KEY: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
       OLLAMA_BASE_URL: !!process.env.OLLAMA_BASE_URL,
-      OLLAMA_DEFAULT_MODEL: process.env.OLLAMA_DEFAULT_MODEL,
+      VULTR_OLLAMA_URL: !!process.env.VULTR_OLLAMA_URL,
+      OLLAMA_DEFAULT_MODEL: !!process.env.OLLAMA_DEFAULT_MODEL,
+      OLLAMA_ENDPOINT: getOllamaEndpointStatus(),
       NODE_ENV: process.env.NODE_ENV
     };
     

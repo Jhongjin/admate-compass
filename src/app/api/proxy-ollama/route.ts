@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getOllamaEndpointStatus, resolveOllamaEndpoint } from '@/lib/services/ollamaEndpoint';
 
 /**
  * Vercel → Vultr Ollama 프록시 API
@@ -8,15 +9,25 @@ export async function POST(request: NextRequest) {
   try {
     console.log('🔄 Vercel → Vultr Ollama 프록시 시작');
     
-    const vultrUrl = process.env.VULTR_OLLAMA_URL || 'http://141.164.52.52:11434';
-    console.log('🔗 Vultr URL:', vultrUrl);
+    const endpoint = resolveOllamaEndpoint();
+    if (!endpoint.baseUrl) {
+      return NextResponse.json({
+        error: 'Ollama endpoint is not configured',
+        endpoint: getOllamaEndpointStatus()
+      }, { status: 503 });
+    }
+    console.log('🔗 Ollama endpoint:', getOllamaEndpointStatus());
     
     // 요청 본문을 Vultr로 전달
     const requestBody = await request.json();
-    console.log('📤 프록시 요청:', requestBody);
+    console.log('📤 프록시 요청:', {
+      hasPrompt: typeof requestBody?.prompt === 'string',
+      model: requestBody?.model || null,
+      stream: requestBody?.stream === true
+    });
     
     // Vultr Ollama 서버로 요청 전달
-    const response = await fetch(`${vultrUrl}/api/generate`, {
+    const response = await fetch(`${endpoint.baseUrl}/api/generate`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',

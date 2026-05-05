@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getOllamaEndpointStatus, resolveOllamaEndpoint } from '@/lib/services/ollamaEndpoint';
 
 // 기본 헤더 설정
 const headers = {
@@ -21,18 +22,21 @@ export async function GET() {
   try {
     console.log('🔍 Ollama 서버 진단 시작');
     
-    const baseUrl = process.env.OLLAMA_BASE_URL || 'http://141.164.52.52';
+    const endpoint = resolveOllamaEndpoint();
     const results = {
       timestamp: new Date().toISOString(),
-      serverUrl: baseUrl,
+      endpoint: getOllamaEndpointStatus(),
       tests: [] as any[]
     };
 
     // 1. 기본 연결 테스트
     try {
       console.log('🔍 1. 기본 연결 테스트');
+      if (!endpoint.baseUrl) {
+        throw new Error('Ollama endpoint is not configured');
+      }
       const startTime = Date.now();
-      const response = await fetch(`${baseUrl}/api/tags`, {
+      const response = await fetch(`${endpoint.baseUrl}/api/tags`, {
         method: 'GET',
         headers: {
           'Accept': 'application/json',
@@ -55,7 +59,7 @@ export async function GET() {
         // 2. 모델 목록 조회 테스트
         try {
           console.log('🔍 2. 모델 목록 조회 테스트');
-          const modelsResponse = await fetch(`${baseUrl}/api/tags`, {
+          const modelsResponse = await fetch(`${endpoint.baseUrl}/api/tags`, {
             method: 'GET',
             headers: {
               'Accept': 'application/json',
@@ -93,7 +97,7 @@ export async function GET() {
         // 3. 간단한 채팅 테스트
         try {
           console.log('🔍 3. 간단한 채팅 테스트');
-          const chatResponse = await fetch(`${baseUrl}/api/generate`, {
+          const chatResponse = await fetch(`${endpoint.baseUrl}/api/generate`, {
             method: 'POST',
             headers: {
               'Accept': 'application/json',

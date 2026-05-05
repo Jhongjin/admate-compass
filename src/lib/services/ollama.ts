@@ -1,19 +1,9 @@
-// 환경 변수 강제 로딩
-const loadEnvVar = (key: string, defaultValue: string): string => {
-  const value = process.env[key];
-  console.log(`🔧 환경 변수 로딩: ${key} = ${value || 'undefined'}`);
-  return value || defaultValue;
-};
-
-export const OLLAMA_BASE_URL = loadEnvVar('OLLAMA_BASE_URL', 'http://141.164.52.52');
+import { buildOllamaApiUrl, getOllamaEndpointStatus } from './ollamaEndpoint';
 
 // 디버깅을 위한 로그
 console.log('🔧 Ollama 서비스 초기화:', {
-  baseUrl: OLLAMA_BASE_URL,
   env: process.env.NODE_ENV,
-  hasEnvVar: !!process.env.OLLAMA_BASE_URL,
-  allEnvVars: Object.keys(process.env).filter(key => key.includes('OLLAMA')),
-  processEnvKeys: Object.keys(process.env).slice(0, 10) // 처음 10개 키만 표시
+  endpoint: getOllamaEndpointStatus(),
 });
 
 export interface OllamaResponse {
@@ -55,7 +45,7 @@ export async function generateResponse(
       ? prompt.substring(0, maxPromptLength) + '...'
       : prompt;
     
-    const response = await fetch(`${OLLAMA_BASE_URL}/api/generate`, {
+    const response = await fetch(buildOllamaApiUrl('/api/generate'), {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -109,7 +99,7 @@ export async function generateResponse(
 
 export async function getAvailableModels(): Promise<OllamaModel[]> {
   try {
-    const response = await fetch(`${OLLAMA_BASE_URL}/api/tags`);
+    const response = await fetch(buildOllamaApiUrl('/api/tags'));
     
     if (!response.ok) {
       throw new Error(`Ollama API error: ${response.statusText}`);
@@ -133,7 +123,7 @@ export async function getAvailableModels(): Promise<OllamaModel[]> {
 
 export async function checkOllamaHealth(): Promise<boolean> {
   try {
-    const response = await fetch(`${OLLAMA_BASE_URL}/api/tags`);
+    const response = await fetch(buildOllamaApiUrl('/api/tags'));
     return response.ok;
   } catch (error) {
     console.error('Ollama health check failed:', error);
