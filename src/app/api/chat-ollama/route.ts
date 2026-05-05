@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { createCompassServiceClient } from '@/lib/supabase/compass';
 import { RAGSearchService } from '@/lib/services/RAGSearchService';
 import { generateResponse } from '@/lib/services/ollama';
 
@@ -9,22 +9,28 @@ console.log('- OLLAMA_BASE_URL:', process.env.OLLAMA_BASE_URL ? '설정됨' : '�
 console.log('- NEXT_PUBLIC_SUPABASE_URL:', process.env.NEXT_PUBLIC_SUPABASE_URL ? '설정됨' : '설정되지 않음');
 console.log('- SUPABASE_SERVICE_ROLE_KEY:', process.env.SUPABASE_SERVICE_ROLE_KEY ? '설정됨' : '설정되지 않음');
 
-// 환경변수 값 직접 출력 (디버깅용)
-console.log('- OLLAMA_BASE_URL 값:', process.env.OLLAMA_BASE_URL);
-console.log('- NEXT_PUBLIC_SUPABASE_URL 값:', process.env.NEXT_PUBLIC_SUPABASE_URL);
-
 // Supabase 클라이언트 초기화
 const supabase = process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY 
-  ? createClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL,
-      process.env.SUPABASE_SERVICE_ROLE_KEY
-    )
+  ? createCompassServiceClient()
   : null;
 
 interface SearchResult {
   chunk_id: string;
   content: string;
   similarity: number;
+  score?: number;
+  retrievalMethod?: 'vector' | 'keyword' | 'fallback';
+  documentId?: string;
+  documentTitle?: string;
+  documentUrl?: string;
+  sourceQuality?: {
+    hasDocumentId: boolean;
+    hasTitle: boolean;
+    hasUrl: boolean;
+    hasExcerpt: boolean;
+    isFallback: boolean;
+    warnings: string[];
+  };
   metadata: any;
 }
 
@@ -47,8 +53,8 @@ async function searchWithOllamaRAG(
     console.log(`🔍 Vultr+Ollama RAG 검색 시작: "${query}"`);
     
     if (!supabase) {
-      console.warn('⚠️ Supabase 클라이언트가 없음. Fallback 데이터 사용');
-      return getFallbackSearchResults(query, limit);
+      console.warn('⚠️ Supabase 클라이언트가 없음. 근거 없는 답변 생성을 중단합니다.');
+      return [];
     }
 
     // RAGSearchService 사용 (Ollama 전용)
@@ -61,12 +67,18 @@ async function searchWithOllamaRAG(
       chunk_id: result.id,
       content: result.content,
       similarity: result.similarity,
+      score: result.score,
+      retrievalMethod: result.retrievalMethod,
+      documentId: result.documentId,
+      documentTitle: result.documentTitle,
+      documentUrl: result.documentUrl,
+      sourceQuality: result.sourceQuality,
       metadata: result.metadata
     }));
     
   } catch (error) {
     console.error('❌ Vultr+Ollama RAG 검색 실패:', error);
-    return getFallbackSearchResults(query, limit);
+    return [];
   }
 }
 
@@ -140,7 +152,7 @@ ${context}
                'Connection': 'keep-alive'
              },
              body: JSON.stringify({
-               model: 'mistral:7b',
+               model: process.env.OLLAMA_DEFAULT_MODEL || process.env.OLLAMA_MODEL || 'mistral:7b',
                prompt: prompt,
                stream: false,
                options: {
@@ -225,7 +237,7 @@ ${context}
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'mistral:7b',
+        model: process.env.OLLAMA_DEFAULT_MODEL || process.env.OLLAMA_MODEL || 'mistral:7b',
         prompt: prompt,
         stream: false,
         options: {
@@ -329,9 +341,17 @@ export async function POST(request: NextRequest) {
     // 1. Vultr+Ollama RAG 검색
     const searchResults = await searchWithOllamaRAG(message, 3);
     console.log(`📊 Vultr+Ollama 검색 결과: ${searchResults.length}개`);
+    const verifiedSearchResults = searchResults.filter((result) => {
+      const hasGrounding = typeof result.content === 'string' && result.content.trim().length > 0;
+      const isFallback = result.retrievalMethod === 'fallback' || result.sourceQuality?.isFallback === true || result.metadata?.type === 'fallback';
+      return hasGrounding && !isFallback;
+    });
+    if (verifiedSearchResults.length !== searchResults.length) {
+      console.warn(`⚠️ 근거 검증에서 제외된 검색 결과: ${searchResults.length - verifiedSearchResults.length}개`);
+    }
 
     // 2. 검색 결과가 없으면 관련 내용 없음 응답
-    if (searchResults.length === 0) {
+    if (verifiedSearchResults.length === 0) {
       console.log('⚠️ Vultr+Ollama RAG 검색 결과가 없음. 관련 내용 없음 응답');
       return NextResponse.json({
         response: {
@@ -353,7 +373,7 @@ export async function POST(request: NextRequest) {
     // Ollama만 사용 - fallback 없음
     let answer: string;
     try {
-      answer = await generateAnswerWithOllamaDirect(message, searchResults);
+      answer = await generateAnswerWithOllamaDirect(message, verifiedSearchResults);
     } catch (error) {
       console.error('❌ Ollama 연결 실패:', error);
       
@@ -374,21 +394,33 @@ export async function POST(request: NextRequest) {
     }
     
     // 신뢰도 계산
-    const confidence = calculateConfidence(searchResults);
+    const confidence = calculateConfidence(verifiedSearchResults);
     
     // 처리 시간 계산
     const processingTime = Date.now() - startTime;
 
     // 출처 정보 생성
-    const sources = searchResults.map(result => {
+    const sources = verifiedSearchResults.map(result => {
       console.log(`📚 Vultr+Ollama 출처 정보: 제목="${result.metadata?.title || '문서'}", 유사도=${result.similarity}`);
       return {
         id: result.chunk_id,
-        title: result.metadata?.title || 'Meta 광고 정책 문서',
-        url: result.metadata?.url || '',
+        title: result.documentTitle || result.metadata?.title || 'Meta 광고 정책 문서',
+        url: result.documentUrl || result.metadata?.source_url || result.metadata?.document_url || result.metadata?.url || '',
         updatedAt: result.metadata?.updatedAt || new Date().toISOString(),
         excerpt: result.content.substring(0, 200) + (result.content.length > 200 ? '...' : ''),
         similarity: result.similarity,
+        score: result.score ?? result.similarity,
+        retrievalMethod: result.retrievalMethod || result.metadata?.retrievalMethod || 'vector',
+        sourceQuality: result.sourceQuality || {
+          hasDocumentId: Boolean(result.documentId),
+          hasTitle: Boolean(result.documentTitle || result.metadata?.title),
+          hasUrl: Boolean(result.documentUrl || result.metadata?.source_url || result.metadata?.document_url || result.metadata?.url),
+          hasExcerpt: Boolean(result.content),
+          isFallback: false,
+          warnings: [],
+        },
+        documentId: result.documentId || result.metadata?.documentId || result.metadata?.document_id,
+        chunkId: result.chunk_id,
         sourceType: result.metadata?.type || 'document',
         documentType: result.metadata?.documentType || 'policy'
       };
