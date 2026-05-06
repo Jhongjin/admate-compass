@@ -112,10 +112,9 @@ function ChatPageContent() {
         {
           id: "1",
           type: "assistant",
-          content: "안녕하세요! Vultr+Ollama 기반 Meta 광고 FAQ AI 챗봇입니다. 광고 정책, 가이드라인, 설정 방법 등에 대해 궁금한 점이 있으시면 자유롭게 질문해주세요. 한국어로 질문하시면 됩니다.",
+          content: "안녕하세요! AdMate Compass입니다. 광고 플랫폼 정책, 가이드라인, 설정 방법에 대해 궁금한 점을 질문하면 RAG 기반 답변과 관련 출처를 함께 제공합니다.",
           timestamp: "방금 전",
           sources: [],
-          model: "vultr-ollama-tinyllama"
         },
       ]);
       setIsInitialized(true);
@@ -318,6 +317,11 @@ function ChatPageContent() {
         }),
         sources: data.response.sources || [],
         feedback: { helpful: null, count: 0 },
+        noDataFound: data.response.noDataFound || false,
+        showContactOption: data.response.showContactOption || false,
+        confidence: data.confidence,
+        processingTime: data.processingTime,
+        model: data.model
       };
 
       setMessages(prev => [...prev, aiResponse]);
@@ -687,10 +691,9 @@ function ChatPageContent() {
       {
         id: "1",
         type: "assistant",
-        content: "안녕하세요! Vultr+Ollama 기반 Meta 광고 FAQ AI 챗봇입니다. 광고 정책, 가이드라인, 설정 방법 등에 대해 궁금한 점이 있으시면 자유롭게 질문해주세요. 한국어로 질문하시면 됩니다.",
+        content: "안녕하세요! AdMate Compass입니다. 광고 플랫폼 정책, 가이드라인, 설정 방법에 대해 궁금한 점을 질문하면 RAG 기반 답변과 관련 출처를 함께 제공합니다.",
         timestamp: "방금 전",
         sources: [],
-        model: "vultr-ollama-tinyllama"
       },
     ]);
     setError(null);
@@ -735,7 +738,7 @@ function ChatPageContent() {
         {
           id: "1",
           type: "assistant",
-          content: "안녕하세요! 메타 광고 FAQ AI 챗봇입니다. 광고 정책, 가이드라인, 설정 방법 등에 대해 궁금한 점이 있으시면 자유롭게 질문해주세요. 한국어로 질문하시면 됩니다.",
+          content: "안녕하세요! AdMate Compass입니다. 광고 플랫폼 정책, 가이드라인, 설정 방법에 대해 궁금한 점을 질문하면 RAG 기반 답변과 관련 출처를 함께 제공합니다.",
           timestamp: "방금 전",
           sources: [],
         },
@@ -854,29 +857,39 @@ function ChatPageContent() {
     }, 100);
   };
 
+  const latestAssistantMessage = [...messages].reverse().find((message) => message.type === "assistant");
+  const latestUserMessage = [...messages].reverse().find((message) => message.type === "user");
+  const latestSources = latestAssistantMessage?.sources || [];
+  const latestHasSources = latestSources.length > 0;
+  const latestNoDataFound = latestAssistantMessage?.noDataFound === true;
+  const latestGenerationLimited = latestAssistantMessage?.model === "ollama-connection-failed" && latestHasSources;
+
   const chatHeader = (
-    <div className="card-enhanced border-b border-white/20 px-4 py-3 rounded-none">
+    <div className="border-b border-[#E5E5E5] bg-[#F7F7F7]/95 px-4 py-2.5 backdrop-blur rounded-none">
       <div className="max-w-7xl mx-auto flex items-center justify-between">
         <div className="flex items-center space-x-3">
-          <div className="w-8 h-8 bg-gradient-to-br from-orange-400 to-pink-500 rounded-full flex items-center justify-center shadow-lg">
-            <Bot className="w-4 h-4 text-white" />
+          <div className="w-8 h-8 rounded-lg border border-[#D8DAF4] bg-[#ECEDF9] flex items-center justify-center">
+            <Bot className="w-4 h-4 text-[#5E6AD2]" />
           </div>
           <div>
-            <h2 className="text-sm font-semibold text-white">
-              Vultr+Ollama Meta 광고 FAQ AI 챗봇
+            <h2 className="text-sm font-semibold text-[#0D0D0D]">
+              AdMate Compass 정책 검색
             </h2>
-            <p className="text-xs text-gray-300">
-              챗봇 답변에 대한 만족도를 평가해주세요. 품질개선에 큰 도움이 됩니다.
+            <p className="text-xs text-[#5E5E5E]">
+              정책 답변과 근거 문서를 함께 확인합니다.
             </p>
           </div>
         </div>
         
         <div className="flex items-center space-x-2">
+          <Badge variant="outline" className="hidden rounded-md border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] text-emerald-700 sm:inline-flex">
+            Compass 색인 연결
+          </Badge>
           <Button
             variant="ghost"
             size="sm"
             onClick={toggleRightPanel}
-            className="hidden lg:flex items-center space-x-2 h-8 px-3 text-gray-300 hover:text-white hover:bg-gray-700/50 transition-all duration-200 rounded-md"
+            className="hidden lg:flex items-center space-x-2 h-8 px-3 text-[#5E5E5E] hover:text-[#0D0D0D] hover:bg-[#ECECEC] transition-colors rounded-md"
           >
             {isRightPanelCollapsed ? (
               <PanelRight className="w-4 h-4" />
@@ -888,14 +901,14 @@ function ChatPageContent() {
             </span>
           </Button>
           
-          <Separator orientation="vertical" className="h-6 bg-gray-600 hidden lg:block" />
+          <Separator orientation="vertical" className="h-6 bg-[#E5E5E5] hidden lg:block" />
           
           
           <Button
             variant="ghost"
             size="sm"
             onClick={handleNewChat}
-            className="flex items-center space-x-2 h-8 px-3 text-gray-300 hover:text-white hover:bg-gray-700/50 transition-all duration-200 rounded-md"
+            className="flex items-center space-x-2 h-8 px-3 text-[#5E5E5E] hover:text-[#0D0D0D] hover:bg-[#ECECEC] transition-colors rounded-md"
           >
             <MessageSquare className="w-4 h-4" />
             <span className="text-xs">새 대화</span>
@@ -937,10 +950,10 @@ function ChatPageContent() {
 
   return (
     <MainLayout chatHeader={chatHeader}>
-      <div className="flex h-[calc(100vh-8rem)] mt-32">
+      <div className="flex h-[calc(100vh-8rem)] mt-32 bg-[#F7F7F7]">
         {/* 1번 패널: 대화 히스토리 */}
         {!isLeftPanelCollapsed && (
-          <div className="w-72 border-r border-gray-800/50 h-full">
+          <div className="w-72 border-r border-[#E5E5E5] h-full bg-white">
             <HistoryPanel 
               onLoadConversation={handleLoadConversation}
               onNewChat={handleNewChat}
@@ -955,7 +968,7 @@ function ChatPageContent() {
         
         {/* 접힌 상태의 좌측 패널 */}
         {isLeftPanelCollapsed && (
-          <div className="w-12 border-r border-gray-800/50 h-full">
+          <div className="w-12 border-r border-[#E5E5E5] h-full bg-white">
             <HistoryPanel 
               onLoadConversation={handleLoadConversation}
               onNewChat={handleNewChat}
@@ -970,15 +983,15 @@ function ChatPageContent() {
 
         {/* 2번 패널: 채팅 영역 */}
         <motion.div 
-          className="flex flex-col border-r border-gray-800/50 h-full lg:border-r"
+          className="flex flex-col border-r border-[#E5E5E5] h-full lg:border-r bg-[#F7F7F7]"
           animate={{ 
             width: isRightPanelCollapsed ? '100%' : `${leftPanelWidth}%`,
             transition: isDragging ? { duration: 0 } : { duration: 0.2, ease: "easeOut" }
           }}
         >
-          <div className="h-4"></div>
+          <div className="h-3"></div>
 
-          <div className="flex-1 overflow-y-auto p-2 sm:p-4 space-y-3 sm:space-y-4 custom-scrollbar" style={{ backgroundColor: '#212121' }}>
+          <div className="flex-1 overflow-y-auto p-2 sm:p-4 space-y-3 sm:space-y-4 custom-scrollbar bg-[#F7F7F7]">
             {messages.map((message) => (
               <ChatBubble
                 key={message.id}
@@ -999,16 +1012,17 @@ function ChatPageContent() {
             {isLoading && (
               <div className="flex justify-start">
                 <div className="max-w-3xl">
-                  <div className="card-enhanced px-4 py-3">
+                  <div className="rounded-lg border border-[#E5E5E5] bg-white px-4 py-3 shadow-sm">
                     <div className="flex items-start space-x-3">
-                      <div className="w-8 h-8 bg-gradient-to-br from-orange-400 to-pink-500 rounded-full flex items-center justify-center flex-shrink-0 shadow-lg">
-                        <span className="text-white text-sm font-medium">AI</span>
+                      <div className="w-8 h-8 rounded-lg border border-[#D8DAF4] bg-[#ECEDF9] flex items-center justify-center flex-shrink-0">
+                        <Bot className="w-4 h-4 text-[#5E6AD2]" />
                       </div>
                       <div className="flex-1">
-                        <div className="flex space-x-1">
-                          <div className="w-2 h-2 bg-orange-400 rounded-full animate-bounce"></div>
-                          <div className="w-2 h-2 bg-orange-400 rounded-full animate-bounce" style={{ animationDelay: "0.1s" }}></div>
-                          <div className="w-2 h-2 bg-orange-400 rounded-full animate-bounce" style={{ animationDelay: "0.2s" }}></div>
+                        <div className="mb-2 text-sm font-medium text-[#0D0D0D]">Compass가 근거를 확인하고 있습니다</div>
+                        <div className="flex flex-wrap gap-2 text-xs text-[#5E5E5E]">
+                          <span className="rounded-md border border-[#E5E5E5] bg-[#F7F7F7] px-2 py-1">질문 분석 중</span>
+                          <span className="rounded-md border border-[#E5E5E5] bg-[#F7F7F7] px-2 py-1">색인 검색 중</span>
+                          <span className="rounded-md border border-[#E5E5E5] bg-[#F7F7F7] px-2 py-1">근거 검증 중</span>
                         </div>
                       </div>
                     </div>
@@ -1016,10 +1030,23 @@ function ChatPageContent() {
                 </div>
               </div>
             )}
+
+            {messages.length > 1 && (
+              <div className="lg:hidden">
+                <RelatedResources
+                  userQuestion={latestUserMessage?.content}
+                  aiResponse={latestAssistantMessage?.content}
+                  sources={latestSources as any}
+                  noDataFound={latestNoDataFound}
+                  generationLimited={latestGenerationLimited}
+                  compact
+                />
+              </div>
+            )}
             
           </div>
 
-          <div className="backdrop-blur-sm border-t border-gray-800/50 p-2 sm:p-3" style={{ backgroundColor: '#212121' }}>
+          <div className="border-t border-[#E5E5E5] bg-white p-2 sm:p-3">
             <div className="max-w-4xl mx-auto">
               <div className="flex space-x-2 sm:space-x-3">
                 <div className="flex-1 relative">
@@ -1028,9 +1055,9 @@ function ChatPageContent() {
                     value={inputValue}
                     onChange={(e) => setInputValue(e.target.value)}
                     onKeyDown={handleKeyPress}
-                    placeholder="메타 광고에 대해 궁금한 점을 질문해주세요..."
-                    className="pr-10 sm:pr-12 resize-none min-h-[40px] sm:min-h-[44px] max-h-[100px] sm:max-h-[120px] text-sm sm:text-base border-gray-600 text-white placeholder-gray-400 focus:border-gray-500"
-                    style={{ backgroundColor: '#1a1a1a', borderRadius: '8px' }}
+                    placeholder="광고 플랫폼 정책과 가이드에 대해 궁금한 점을 질문해주세요..."
+                    className="pr-10 sm:pr-12 resize-none min-h-[40px] sm:min-h-[44px] max-h-[100px] sm:max-h-[120px] text-sm sm:text-base border-[#D4D4D4] bg-white text-[#0D0D0D] placeholder-[#9A9A9A] focus:border-[#5E6AD2] focus:ring-[#ECEDF9]"
+                    style={{ borderRadius: '8px' }}
                     disabled={isLoading}
                     rows={1}
                   />
@@ -1038,18 +1065,18 @@ function ChatPageContent() {
                     size="sm"
                     onClick={handleSendMessage}
                     disabled={!inputValue.trim() || isLoading}
-                    className="absolute right-1 sm:right-2 bottom-1 sm:bottom-2 h-7 w-7 sm:h-8 sm:w-8 p-0 bg-red-500 hover:bg-red-600 text-white shadow-lg rounded-full"
+                    className="absolute right-1 sm:right-2 bottom-1 sm:bottom-2 h-7 w-7 sm:h-8 sm:w-8 p-0 bg-[#0D0D0D] hover:bg-[#2A2A2A] text-white rounded-md"
                   >
                     <Send className="w-3 h-3 sm:w-4 sm:h-4" />
                   </Button>
                 </div>
               </div>
               
-              <div className="mt-2 sm:mt-3 flex items-center justify-between text-xs text-gray-400">
+              <div className="mt-2 sm:mt-3 flex items-center justify-between text-xs text-[#777777]">
                 <p className="hidden sm:block">Enter 키로 전송, Shift + Enter로 줄바꿈</p>
                 <p className="sm:hidden">Enter로 전송</p>
                 {error && (
-                  <div className="flex items-center space-x-1 text-red-400">
+                  <div className="flex items-center space-x-1 text-[#D93025]">
                     <AlertCircle className="w-3 h-3" />
                     <span className="hidden sm:inline">연결 오류</span>
                   </div>
@@ -1061,7 +1088,7 @@ function ChatPageContent() {
 
         {!isRightPanelCollapsed && (
           <div 
-            className="w-1 bg-gray-800 hover:bg-orange-500 cursor-col-resize transition-colors duration-200 hidden lg:block"
+            className="w-1 bg-[#E5E5E5] hover:bg-[#CBD0EF] cursor-col-resize transition-colors duration-200 hidden lg:block"
             onMouseDown={handleResize}
             style={{ cursor: 'col-resize' }}
           />
@@ -1082,30 +1109,31 @@ function ChatPageContent() {
                 opacity: 0,
                 transition: { duration: 0.2, ease: "easeIn" }
               }}
-              className="hidden lg:flex flex-col bg-gradient-to-b from-[#FDFBF6] to-[#FAF8F3] rounded-lg h-full overflow-hidden"
-              style={{ borderRadius: '12px' }}
+              className="hidden lg:flex flex-col bg-white h-full overflow-hidden"
             >
-            <div className="bg-gradient-to-r from-[#FDFBF6] to-[#FAF8F3] border-b border-orange-200/30 p-4">
+            <div className="border-b border-[#E5E5E5] bg-white p-4">
               <div className="flex items-center space-x-3">
-                <div className="w-10 h-10 bg-gradient-to-br from-yellow-400 to-orange-500 rounded-full flex items-center justify-center shadow-lg">
-                  <BookOpen className="w-5 h-5 text-white" />
+                <div className="w-10 h-10 rounded-lg border border-[#D8DAF4] bg-[#ECEDF9] flex items-center justify-center">
+                  <BookOpen className="w-5 h-5 text-[#5E6AD2]" />
                 </div>
                 <div>
-                  <h3 className="text-lg font-semibold text-black">관련 자료</h3>
-                  <p className="text-sm text-gray-800">질문과 관련된 문서와 가이드라인</p>
+                  <h3 className="text-base font-semibold text-[#0D0D0D]">근거 문서</h3>
+                  <p className="text-sm text-[#5E5E5E]">현재 답변에 사용된 Compass 색인</p>
                 </div>
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-4 space-y-4">
+            <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-[#F7F7F7]">
               {/* 질문이 있을 때만 관련 자료와 빠른 질문 표시 */}
               {messages.length > 1 ? (
                 <>
                   {/* 관련 자료 컴포넌트 - 상단 배치 */}
                   <RelatedResources 
-                    userQuestion={messages[messages.length - 2]?.content}
-                    aiResponse={messages[messages.length - 1]?.content}
-                    sources={messages[messages.length - 1]?.sources as any || []}
+                    userQuestion={latestUserMessage?.content}
+                    aiResponse={latestAssistantMessage?.content}
+                    sources={latestSources as any}
+                    noDataFound={latestNoDataFound}
+                    generationLimited={latestGenerationLimited}
                   />
                   
                   {/* 빠른 질문 컴포넌트 - 하단 배치 */}
@@ -1117,14 +1145,12 @@ function ChatPageContent() {
               ) : (
                 /* 초기 상태 - 안내 메시지 */
                 <div className="flex flex-col items-center justify-center py-16 text-center">
-                  <div className="w-20 h-20 bg-gradient-to-br from-orange-200 to-pink-200 rounded-full flex items-center justify-center mb-6">
-                    <BookOpen className="w-10 h-10 text-orange-600" />
+                  <div className="w-16 h-16 rounded-lg border border-[#E5E5E5] bg-white flex items-center justify-center mb-5">
+                    <BookOpen className="w-8 h-8 text-[#5E6AD2]" />
                   </div>
-                  <h3 className="text-xl font-semibold text-gray-800 mb-3">질문을 시작해보세요</h3>
-                  <p className="text-sm text-gray-600 max-w-sm leading-relaxed">
-                    Meta 광고 정책, 타겟팅, 예산 설정 등에 대해 궁금한 점이 있으시면 
-                    좌측 채팅창에서 질문해주세요. 관련 자료와 유사한 질문들이 
-                    여기에 표시됩니다.
+                  <h3 className="text-base font-semibold text-[#0D0D0D] mb-2">질문을 시작해보세요</h3>
+                  <p className="text-sm text-[#5E5E5E] max-w-sm leading-relaxed">
+                    광고 플랫폼 정책이나 소재 기준을 질문하면 관련 근거 문서가 이 영역에 표시됩니다.
                   </p>
                 </div>
               )}
