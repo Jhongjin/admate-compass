@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ThumbsUp, ThumbsDown, ExternalLink, Calendar, FileText, User, Download, Globe, Bot, Clock, Activity } from "lucide-react";
+import { ThumbsUp, ThumbsDown, Calendar, FileText, User, Download, Globe, Bot, Clock, Activity, CheckCircle2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -16,6 +16,26 @@ interface Source {
   excerpt: string;
   sourceType?: 'file' | 'url';
   documentType?: string;
+  retrievalMethod?: string;
+  corpus?: string;
+  evidenceType?: string;
+  sourceVendor?: string;
+  score?: number;
+  hybridScore?: number;
+  similarity?: number;
+  sourceQuality?: {
+    hasDocumentId?: boolean;
+    hasTitle?: boolean;
+    hasUrl?: boolean;
+    hasExcerpt?: boolean;
+    isFallback?: boolean;
+    warnings?: string[];
+    qualityScore?: number;
+    sourceVendor?: string;
+    vendorMatch?: boolean;
+    vendorMismatch?: boolean;
+    lexicalOverlap?: number;
+  };
 }
 
 interface ChatBubbleProps {
@@ -51,6 +71,50 @@ export default function ChatBubble({
   const [showSources, setShowSources] = useState(false);
 
   const isUser = type === "user";
+  const hasVerifiedSources = sources.length > 0 && !noDataFound;
+  const generationLimited = model === 'ollama-connection-failed';
+
+  const getEvidenceLabel = (source: Source) => {
+    const method = source.retrievalMethod?.toLowerCase();
+
+    if (method?.includes('hybrid')) return '의미+문구 근거';
+    if (method?.includes('keyword')) return '문구 일치 근거';
+    if (method?.includes('vector')) return '의미 유사 근거';
+
+    return '검증 근거';
+  };
+
+  const getSourceAccessLabel = (source: Source) => {
+    if (source.url || source.sourceQuality?.hasUrl) return '원문 확인 가능';
+    if (source.excerpt || source.sourceQuality?.hasExcerpt) return '원문 일부 확인 가능';
+
+    return '내부 색인 문서';
+  };
+
+  const getCorpusLabel = (source: Source) => {
+    const corpus = source.corpus?.toLowerCase();
+
+    if (corpus?.includes('document_chunks')) return '내부 색인 문서';
+    if (corpus?.includes('ollama_document_chunks')) return '정책 근거 색인';
+
+    return 'Compass 색인';
+  };
+
+  const getDisplayTitle = (source: Source, index: number) => {
+    const cleanedTitle = source.title?.replace(/_chunk_\d+/g, `_page_${index + 1}`).trim();
+    return cleanedTitle || `근거 문서 ${index + 1}`;
+  };
+
+  const getSourceScore = (source: Source) => {
+    const rawScore = source.hybridScore ?? source.score ?? source.similarity ?? source.sourceQuality?.qualityScore;
+
+    if (typeof rawScore !== 'number' || Number.isNaN(rawScore)) {
+      return null;
+    }
+
+    const normalized = rawScore > 1 ? rawScore : rawScore * 100;
+    return `${Math.round(normalized)}%`;
+  };
 
   // 파일 다운로드 핸들러
   const handleFileDownload = async (source: Source) => {
@@ -105,18 +169,18 @@ export default function ChatBubble({
 
   return (
     <div className={`flex ${isUser ? "justify-end" : "justify-start"} mb-3 sm:mb-4`}>
-      <div className={`max-w-[85%] sm:max-w-3xl ${isUser ? "order-2" : "order-1"}`}>
+      <div className={`max-w-[92%] sm:max-w-3xl ${isUser ? "order-2" : "order-1"}`}>
         {isUser ? (
           <div className="px-3 py-2 sm:px-4 sm:py-3">
             <div className="flex items-start space-x-2 sm:space-x-3">
-              <div className="w-6 h-6 sm:w-8 sm:h-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center flex-shrink-0">
+              <div className="w-6 h-6 sm:w-8 sm:h-8 bg-neutral-900 rounded-full flex items-center justify-center flex-shrink-0">
                 <User className="w-3 h-3 sm:w-4 sm:h-4 text-white" />
               </div>
               
               <div className="flex-1 min-w-0">
                 <div
-                  className="rounded-xl px-3 py-2 sm:px-4 sm:py-3 text-white shadow-lg"
-                  style={{ backgroundColor: '#1a1a1a' }}
+                  className="rounded-lg px-3 py-2 sm:px-4 sm:py-3 text-white shadow-sm"
+                  style={{ backgroundColor: '#171717' }}
                 >
                   <div className="text-sm sm:text-sm leading-relaxed text-white prose prose-invert prose-sm max-w-none">
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>
@@ -130,15 +194,45 @@ export default function ChatBubble({
         ) : (
           <div className="px-3 py-2 sm:px-4 sm:py-3">
             <div className="flex items-start space-x-2 sm:space-x-3">
-              <div className="w-6 h-6 sm:w-8 sm:h-8 bg-gradient-to-br from-orange-400 to-pink-500 rounded-full flex items-center justify-center flex-shrink-0">
-                <span className="text-white text-xs sm:text-sm font-medium">AI</span>
+              <div className="w-6 h-6 sm:w-8 sm:h-8 bg-[#ECEDF9] border border-[#D8DAF4] rounded-full flex items-center justify-center flex-shrink-0">
+                <Bot className="w-3 h-3 sm:w-4 sm:h-4 text-[#5E6AD2]" />
               </div>
               
               <div className="flex-1 min-w-0">
-                <div className="text-sm sm:text-sm leading-relaxed text-white prose prose-invert prose-sm max-w-none">
-                  <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                    {content}
-                  </ReactMarkdown>
+                <div className="rounded-lg border border-[#E5E5E5] bg-white p-4 text-[#0D0D0D] shadow-sm">
+                  <div className="mb-3 flex flex-wrap items-center gap-2">
+                    <Badge variant="outline" className="rounded-md border-[#D8DAF4] bg-[#F4F5FF] px-2 py-0.5 text-[11px] font-medium text-[#4F56B8]">
+                      Compass 답변
+                    </Badge>
+                    {hasVerifiedSources && (
+                      <Badge variant="outline" className="rounded-md border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
+                        근거 문서 확인
+                      </Badge>
+                    )}
+                    {generationLimited && hasVerifiedSources && (
+                      <Badge variant="outline" className="rounded-md border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+                        생성 답변 일시 제한
+                      </Badge>
+                    )}
+                  </div>
+
+                  {generationLimited && hasVerifiedSources && (
+                    <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900">
+                      답변 생성은 일시적으로 제한되었지만, 관련 근거 문서를 찾았습니다. 아래 근거를 먼저 확인해 주세요.
+                    </div>
+                  )}
+
+                  {noDataFound && (
+                    <div className="mb-3 rounded-md border border-[#E5E5E5] bg-[#F7F7F7] px-3 py-2 text-xs leading-relaxed text-[#5E5E5E]">
+                      현재 Compass 문서 기준으로 확인 가능한 근거를 찾지 못했습니다. 플랫폼명이나 정책 항목을 조금 더 구체적으로 입력해 주세요.
+                    </div>
+                  )}
+
+                  <div className="text-sm leading-relaxed text-[#1F1F1F] prose prose-sm max-w-none prose-headings:text-[#0D0D0D] prose-strong:text-[#0D0D0D] prose-a:text-[#5E6AD2] prose-li:my-0.5">
+                    <ReactMarkdown remarkPlugins={[remarkGfm]}>
+                      {content}
+                    </ReactMarkdown>
+                  </div>
                 </div>
                 
                 {/* Sources for assistant messages */}
@@ -148,11 +242,11 @@ export default function ChatBubble({
                       variant="ghost"
                       size="sm"
                       onClick={() => setShowSources(!showSources)}
-                      className="text-xs text-blue-300 hover:text-blue-100 p-2 h-auto hover:bg-blue-900/20 border border-blue-500/30 rounded-lg transition-all duration-200"
+                      className="h-auto rounded-lg border border-[#D8DAF4] bg-white p-2 text-xs font-medium text-[#4F56B8] shadow-sm transition-colors hover:bg-[#F4F5FF] hover:text-[#3F45A0]"
                     >
                       <FileText className="w-4 h-4 mr-2" />
-                      출처 {sources.length}개 보기
-                      <span className="ml-1 text-blue-400">
+                      근거 문서 {sources.length}개 보기
+                      <span className="ml-1 text-[#5E6AD2]">
                         {showSources ? '▲' : '▼'}
                       </span>
                     </Button>
@@ -160,27 +254,25 @@ export default function ChatBubble({
                     {showSources && (
                       <div className="mt-3 space-y-3">
                         {sources.map((source, index) => (
-                          <Card key={source.id} className="modern-card-dark border-gray-600/50 bg-gray-800/80 backdrop-blur-sm shadow-xl hover:shadow-2xl transition-all duration-300">
-                            <CardContent className="p-6">
-                              <div className="flex items-start space-x-4">
-                                <div className="flex-shrink-0">
-                                  <div className="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center shadow-lg">
-                                    <span className="text-white text-sm font-bold">{index + 1}</span>
-                                  </div>
+                          <Card key={source.id} className="rounded-lg border-[#E5E5E5] bg-white shadow-sm transition-colors hover:border-[#D4D4D4]">
+                            <CardContent className="p-4">
+                              <div className="flex items-start gap-3">
+                                <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md border border-[#E5E5E5] bg-[#F7F7F7] text-xs font-semibold text-[#5E5E5E]">
+                                  {index + 1}
                                 </div>
                                 <div className="flex-1 min-w-0">
-                                  <div className="flex items-start justify-between mb-3">
-                                    <h4 className="text-base font-semibold text-white truncate pr-2 leading-tight">
-                                      {source.title.replace(/_chunk_\d+/g, `_page_${index + 1}`)}
+                                  <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+                                    <h4 className="text-sm font-semibold leading-snug text-[#0D0D0D]">
+                                      {getDisplayTitle(source, index)}
                                     </h4>
-                                    <div className="flex items-center space-x-2">
+                                    <div className="flex flex-shrink-0 items-center gap-1">
                                       {source.url && (
                                         <>
                                           {source.sourceType === 'file' ? (
                                             <Button
                                               variant="ghost"
                                               size="sm"
-                                              className="text-xs text-green-400 hover:text-green-300 p-2 h-8 hover:bg-green-900/30 rounded-lg transition-all duration-200"
+                                              className="h-8 rounded-md px-2 text-xs text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800"
                                               onClick={() => handleFileDownload(source)}
                                               title="파일 다운로드"
                                             >
@@ -190,7 +282,7 @@ export default function ChatBubble({
                                             <Button
                                               variant="ghost"
                                               size="sm"
-                                              className="text-xs text-blue-400 hover:text-blue-300 p-2 h-8 hover:bg-blue-900/30 rounded-lg transition-all duration-200"
+                                              className="h-8 rounded-md px-2 text-xs text-[#4F56B8] hover:bg-[#F4F5FF] hover:text-[#3F45A0]"
                                               onClick={() => handleUrlOpen(source)}
                                               title="웹페이지 열기"
                                             >
@@ -201,33 +293,37 @@ export default function ChatBubble({
                                       )}
                                     </div>
                                   </div>
-                                  <p className="text-sm text-gray-300 mb-4 line-clamp-3 leading-relaxed">
+                                  <p className="mb-3 line-clamp-4 text-sm leading-relaxed text-[#3F3F3F]">
                                     {source.excerpt}
                                   </p>
-                                  <div className="flex items-center justify-between">
-                                    <div className="flex items-center text-sm text-gray-400">
-                                      <Calendar className="w-4 h-4 mr-2" />
-                                      {new Date(source.updatedAt).toLocaleDateString('ko-KR')}
+                                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                                    <div className="flex flex-wrap items-center gap-2 text-xs text-[#5E5E5E]">
+                                      <span className="inline-flex items-center gap-1">
+                                        <Calendar className="h-3.5 w-3.5" />
+                                        {new Date(source.updatedAt).toLocaleDateString('ko-KR')}
+                                      </span>
+                                      <span className="inline-flex items-center gap-1">
+                                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                                        {getSourceAccessLabel(source)}
+                                      </span>
                                     </div>
-                                    <div className="flex items-center space-x-3">
-                                      <Badge variant="secondary" className="text-xs bg-blue-600/30 text-blue-300 border-blue-500/50 px-3 py-1">
-                                        출처 {index + 1}
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <Badge variant="secondary" className="rounded-md border border-[#D8DAF4] bg-[#F4F5FF] px-2 py-1 text-[11px] font-medium text-[#4F56B8]">
+                                        {getEvidenceLabel(source)}
                                       </Badge>
-                                      <Badge 
-                                        variant="outline" 
-                                        className={`text-xs px-3 py-1 ${
-                                          source.sourceType === 'file' 
-                                            ? 'bg-green-600/30 text-green-300 border-green-500/50' 
-                                            : 'bg-purple-600/30 text-purple-300 border-purple-500/50'
-                                        }`}
-                                      >
-                                        {source.sourceType === 'file' ? '📄 파일' : '🌐 웹페이지'}
+                                      <Badge variant="outline" className="rounded-md border-[#E5E5E5] bg-[#F7F7F7] px-2 py-1 text-[11px] text-[#5E5E5E]">
+                                        {getCorpusLabel(source)}
                                       </Badge>
+                                      {getSourceScore(source) && (
+                                        <Badge variant="outline" className="rounded-md border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] text-emerald-700">
+                                          관련도 {getSourceScore(source)}
+                                        </Badge>
+                                      )}
                                       {source.sourceType === 'file' ? (
                                         <Button
                                           variant="ghost"
                                           size="sm"
-                                          className="text-xs text-green-400 hover:text-green-300 hover:bg-green-900/30 px-3 py-2 h-8 transition-all duration-200 rounded-lg"
+                                          className="h-8 rounded-md px-2 text-xs text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800"
                                           onClick={() => handleFileDownload(source)}
                                           title="파일 다운로드"
                                         >
@@ -238,7 +334,7 @@ export default function ChatBubble({
                                         <Button
                                           variant="ghost"
                                           size="sm"
-                                          className="text-xs text-blue-400 hover:text-blue-300 hover:bg-blue-900/30 px-3 py-2 h-8 transition-all duration-200 rounded-lg"
+                                          className="h-8 rounded-md px-2 text-xs text-[#4F56B8] hover:bg-[#F4F5FF] hover:text-[#3F45A0]"
                                           onClick={() => handleUrlOpen(source)}
                                           title="웹페이지 열기"
                                         >
@@ -260,20 +356,20 @@ export default function ChatBubble({
                 
                 {/* Contact option for no data found */}
                 {showContactOption && (
-                  <Card className="mt-3 border-orange-200 bg-orange-50 dark:border-orange-800 dark:bg-orange-950/50">
+                  <Card className="mt-3 rounded-lg border-amber-200 bg-amber-50">
                     <CardContent className="p-4">
                       <div className="flex items-start space-x-3">
                         <div className="flex-shrink-0">
-                          <div className="w-8 h-8 bg-orange-500 rounded-full flex items-center justify-center">
-                            <span className="text-white text-sm font-bold">!</span>
+                          <div className="w-8 h-8 rounded-md border border-amber-200 bg-white flex items-center justify-center">
+                            <span className="text-amber-700 text-sm font-bold">!</span>
                           </div>
                         </div>
                         <div className="flex-1 min-w-0">
-                          <h4 className="text-sm font-semibold text-orange-900 dark:text-orange-100 mb-1">
-                            페이스북 담당팀에 문의하시겠습니까?
+                          <h4 className="text-sm font-semibold text-amber-950 mb-1">
+                            추가 확인이 필요한 질문입니다
                           </h4>
-                          <p className="text-xs text-orange-700 dark:text-orange-300 mb-3">
-                            관련 정보가 없어 답변을 드릴 수 없습니다. 담당팀에 직접 문의하시면 더 정확한 답변을 받으실 수 있습니다.
+                          <p className="text-xs text-amber-800 mb-3">
+                            Compass 문서 기준으로 충분한 근거를 찾지 못했습니다. 담당자에게 문의하면 더 정확한 확인을 받을 수 있습니다.
                           </p>
                           <Button
                             onClick={() => {
@@ -285,9 +381,9 @@ export default function ChatBubble({
                                 window.dispatchEvent(event);
                               }
                             }}
-                            className="w-full bg-orange-500 hover:bg-orange-600 text-white text-sm py-2 transition-all duration-200 transform hover:scale-105 active:scale-95"
+                            className="w-full rounded-md bg-[#171717] py-2 text-sm text-white transition-colors hover:bg-[#2A2A2A]"
                           >
-                            📧 담당팀에 문의하기
+                            담당자에게 문의하기
                           </Button>
                         </div>
                       </div>
@@ -295,25 +391,25 @@ export default function ChatBubble({
                   </Card>
                 )}
 
-                {/* Vultr+Ollama 정보 표시 */}
+                {/* Runtime status */}
                 {(confidence !== undefined || processingTime !== undefined || model) && (
-                  <div className="mt-3 flex items-center gap-3 text-xs text-gray-400">
+                  <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-[#5E5E5E]">
                     {confidence !== undefined && (
-                      <span className="flex items-center gap-1">
+                      <span className="flex items-center gap-1 rounded-md border border-[#E5E5E5] bg-white px-2 py-1">
                         <Activity className="h-3 w-3" />
-                        신뢰도: {Math.round(confidence)}%
+                        근거 신뢰도 {Math.round(confidence)}%
                       </span>
                     )}
                     {processingTime !== undefined && (
-                      <span className="flex items-center gap-1">
+                      <span className="flex items-center gap-1 rounded-md border border-[#E5E5E5] bg-white px-2 py-1">
                         <Clock className="h-3 w-3" />
                         {processingTime}ms
                       </span>
                     )}
                     {model && (
-                      <span className="flex items-center gap-1">
+                      <span className="flex items-center gap-1 rounded-md border border-[#E5E5E5] bg-white px-2 py-1">
                         <Bot className="h-3 w-3" />
-                        {model}
+                        {generationLimited ? '생성 답변 제한' : '생성 답변 완료'}
                       </span>
                     )}
                   </div>
@@ -326,33 +422,29 @@ export default function ChatBubble({
                       variant="ghost"
                       size="sm"
                       onClick={() => onFeedback(true)}
-                      className={`text-xs p-2 h-auto transition-all duration-200 transform hover:scale-105 active:scale-95 ${
+                      className={`h-auto rounded-md border p-2 text-xs transition-colors ${
                         feedback.helpful === true
-                          ? "text-green-400 bg-green-500/20 border border-green-500/30 shadow-lg shadow-green-500/20"
-                          : "text-gray-300 hover:text-green-400 hover:bg-green-500/20 hover:border hover:border-green-500/30 hover:shadow-lg hover:shadow-green-500/20"
+                          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+                          : "border-[#E5E5E5] bg-white text-[#5E5E5E] hover:bg-emerald-50 hover:text-emerald-700"
                       }`}
                     >
-                      <ThumbsUp className={`w-3 h-3 mr-1 transition-transform duration-200 ${
-                        feedback.helpful === true ? "scale-110" : ""
-                      }`} />
+                      <ThumbsUp className="w-3 h-3 mr-1" />
                       <span className="hidden sm:inline">도움됨</span>
                     </Button>
                     <Button
                       variant="ghost"
                       size="sm"
                       onClick={() => onFeedback(false)}
-                      className={`text-xs p-2 h-auto transition-all duration-200 transform hover:scale-105 active:scale-95 ${
+                      className={`h-auto rounded-md border p-2 text-xs transition-colors ${
                         feedback.helpful === false
-                          ? "text-red-400 bg-red-500/20 border border-red-500/30 shadow-lg shadow-red-500/20"
-                          : "text-gray-300 hover:text-red-400 hover:bg-red-500/20 hover:border hover:border-red-500/30 hover:shadow-lg hover:shadow-red-500/20"
+                          ? "border-red-200 bg-red-50 text-red-700"
+                          : "border-[#E5E5E5] bg-white text-[#5E5E5E] hover:bg-red-50 hover:text-red-700"
                       }`}
                     >
-                      <ThumbsDown className={`w-3 h-3 mr-1 transition-transform duration-200 ${
-                        feedback.helpful === false ? "scale-110" : ""
-                      }`} />
+                      <ThumbsDown className="w-3 h-3 mr-1" />
                       <span className="hidden sm:inline">도움안됨</span>
                     </Button>
-                    <span className="text-xs text-gray-400">{timestamp}</span>
+                    <span className="text-xs text-[#777777]">{timestamp}</span>
                   </div>
                 )}
               </div>
