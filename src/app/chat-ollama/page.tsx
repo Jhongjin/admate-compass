@@ -60,6 +60,7 @@ function ChatPageContent() {
   const [leftPanelWidth, setLeftPanelWidth] = useState(65);
   const [isRightPanelCollapsed, setIsRightPanelCollapsed] = useState(false);
   const [isLeftPanelCollapsed, setIsLeftPanelCollapsed] = useState(false);
+  const [isMobileLayout, setIsMobileLayout] = useState(false);
   const [historyRefreshTrigger, setHistoryRefreshTrigger] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const [hasProcessedInitialQuestion, setHasProcessedInitialQuestion] = useState(false);
@@ -123,15 +124,17 @@ function ChatPageContent() {
 
 
   useEffect(() => {
-    const handleResize = () => {
-      if (window.innerWidth < 1024) {
+    const handleViewportResize = () => {
+      const isMobile = window.innerWidth < 1024;
+      setIsMobileLayout(isMobile);
+      if (isMobile) {
         setIsRightPanelCollapsed(true);
       }
     };
 
-    handleResize();
-    window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
+    handleViewportResize();
+    window.addEventListener('resize', handleViewportResize);
+    return () => window.removeEventListener('resize', handleViewportResize);
   }, []);
 
   // 로그인 상태 확인
@@ -867,21 +870,52 @@ function ChatPageContent() {
   const chatHeader = (
     <div className="border-b border-[#E5E5E5] bg-[#F7F7F7]/95 px-4 py-2.5 backdrop-blur rounded-none">
       <div className="max-w-7xl mx-auto flex items-center justify-between">
-        <div className="flex items-center space-x-3">
+        <div className="min-w-0 flex items-center space-x-3">
           <div className="w-8 h-8 rounded-lg border border-[#D8DAF4] bg-[#ECEDF9] flex items-center justify-center">
             <Bot className="w-4 h-4 text-[#5E6AD2]" />
           </div>
-          <div>
-            <h2 className="text-sm font-semibold text-[#0D0D0D]">
+          <div className="min-w-0">
+            <h2 className="truncate text-sm font-semibold text-[#0D0D0D]">
               AdMate Compass 정책 검색
             </h2>
-            <p className="text-xs text-[#5E5E5E]">
+            <p className="hidden text-xs text-[#5E5E5E] sm:block">
               정책 답변과 근거 문서를 함께 확인합니다.
             </p>
           </div>
         </div>
         
         <div className="flex items-center space-x-2">
+          <Sheet open={historyOpen} onOpenChange={setHistoryOpen}>
+            <SheetTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                aria-label="대화 히스토리 열기"
+                className="flex h-8 items-center space-x-2 rounded-md px-2 text-[#5E5E5E] transition-colors hover:bg-[#ECECEC] hover:text-[#0D0D0D] lg:hidden"
+              >
+                <History className="w-4 h-4" />
+                <span className="hidden text-xs sm:inline">히스토리</span>
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="left" className="w-[min(88vw,22rem)] bg-white p-0">
+              <SheetTitle className="sr-only">대화 히스토리</SheetTitle>
+              <HistoryPanel
+                onLoadConversation={(conversation) => {
+                  handleLoadConversation(conversation);
+                  setHistoryOpen(false);
+                }}
+                onNewChat={() => {
+                  handleNewChat();
+                  setHistoryOpen(false);
+                }}
+                userId={user?.id || "anonymous"}
+                className="h-full"
+                isCollapsed={false}
+                onToggle={() => setHistoryOpen(false)}
+                refreshTrigger={historyRefreshTrigger}
+              />
+            </SheetContent>
+          </Sheet>
           <Badge variant="outline" className="hidden rounded-md border-emerald-200 bg-emerald-50 px-2 py-1 text-[11px] text-emerald-700 sm:inline-flex">
             Compass 색인 연결
           </Badge>
@@ -909,9 +943,10 @@ function ChatPageContent() {
             size="sm"
             onClick={handleNewChat}
             className="flex items-center space-x-2 h-8 px-3 text-[#5E5E5E] hover:text-[#0D0D0D] hover:bg-[#ECECEC] transition-colors rounded-md"
+            aria-label="새 대화"
           >
             <MessageSquare className="w-4 h-4" />
-            <span className="text-xs">새 대화</span>
+            <span className="hidden text-xs sm:inline">새 대화</span>
           </Button>
         </div>
       </div>
@@ -950,10 +985,10 @@ function ChatPageContent() {
 
   return (
     <MainLayout chatHeader={chatHeader}>
-      <div className="flex h-[calc(100vh-8rem)] mt-32 bg-[#F7F7F7]">
+      <div className="flex h-[calc(100vh-8rem)] w-full overflow-hidden mt-32 bg-[#F7F7F7]">
         {/* 1번 패널: 대화 히스토리 */}
         {!isLeftPanelCollapsed && (
-          <div className="w-72 border-r border-[#E5E5E5] h-full bg-white">
+          <div className="hidden w-72 border-r border-[#E5E5E5] h-full bg-white lg:block">
             <HistoryPanel 
               onLoadConversation={handleLoadConversation}
               onNewChat={handleNewChat}
@@ -968,7 +1003,7 @@ function ChatPageContent() {
         
         {/* 접힌 상태의 좌측 패널 */}
         {isLeftPanelCollapsed && (
-          <div className="w-12 border-r border-[#E5E5E5] h-full bg-white">
+          <div className="hidden w-12 border-r border-[#E5E5E5] h-full bg-white lg:block">
             <HistoryPanel 
               onLoadConversation={handleLoadConversation}
               onNewChat={handleNewChat}
@@ -983,15 +1018,15 @@ function ChatPageContent() {
 
         {/* 2번 패널: 채팅 영역 */}
         <motion.div 
-          className="flex flex-col border-r border-[#E5E5E5] h-full lg:border-r bg-[#F7F7F7]"
+          className="flex min-w-0 flex-col h-full bg-[#F7F7F7] lg:border-r lg:border-[#E5E5E5]"
           animate={{ 
-            width: isRightPanelCollapsed ? '100%' : `${leftPanelWidth}%`,
+            width: isMobileLayout || isRightPanelCollapsed ? '100%' : `${leftPanelWidth}%`,
             transition: isDragging ? { duration: 0 } : { duration: 0.2, ease: "easeOut" }
           }}
         >
           <div className="h-3"></div>
 
-          <div className="flex-1 overflow-y-auto p-2 sm:p-4 space-y-3 sm:space-y-4 custom-scrollbar bg-[#F7F7F7]">
+          <div className="flex-1 min-w-0 overflow-y-auto p-2 sm:p-4 space-y-3 sm:space-y-4 custom-scrollbar bg-[#F7F7F7]">
             {messages.map((message) => (
               <ChatBubble
                 key={message.id}
@@ -1032,7 +1067,7 @@ function ChatPageContent() {
             )}
 
             {messages.length > 1 && (
-              <div className="lg:hidden">
+              <div className="min-w-0 lg:hidden">
                 <RelatedResources
                   userQuestion={latestUserMessage?.content}
                   aiResponse={latestAssistantMessage?.content}
@@ -1047,9 +1082,9 @@ function ChatPageContent() {
           </div>
 
           <div className="border-t border-[#E5E5E5] bg-white p-2 sm:p-3">
-            <div className="max-w-4xl mx-auto">
-              <div className="flex space-x-2 sm:space-x-3">
-                <div className="flex-1 relative">
+            <div className="mx-auto w-full max-w-4xl min-w-0">
+              <div className="flex min-w-0 space-x-2 sm:space-x-3">
+                <div className="relative min-w-0 flex-1">
                   <Textarea
                     ref={textareaRef}
                     value={inputValue}
