@@ -137,8 +137,8 @@ function ChatPageContent() {
   // 로그인 상태 확인
   useEffect(() => {
     if (!loading && !user) {
-      // 로그인하지 않은 사용자는 메인 페이지로 리다이렉트
-      window.location.href = '/';
+      // 로그인하지 않은 사용자는 Compass 로그인 화면으로 리다이렉트
+      window.location.href = '/login?next=/chat-ollama';
     }
   }, [loading, user]);
 
