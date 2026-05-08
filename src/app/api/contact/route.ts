@@ -13,11 +13,11 @@ export async function POST(request: NextRequest) {
     }
 
     // 이메일 내용 구성
-    const emailSubject = `[Meta FAQ 챗봇] 문의사항: ${question.substring(0, 50)}...`;
+    const emailSubject = `[AdMate Compass] 문의사항: ${question.substring(0, 50)}...`;
     const emailBody = `
 안녕하세요,
 
-Meta FAQ 챗봇을 통해 문의사항이 접수되었습니다.
+AdMate Compass를 통해 문의사항이 접수되었습니다.
 
 **문의 시간:**
 ${new Date().toLocaleString('ko-KR')}
@@ -29,7 +29,7 @@ ${question}
 위 문의사항에 대해 답변을 제공해 주시기 바랍니다.
 
 감사합니다.
-Meta FAQ 챗봇 시스템
+AdMate Compass 시스템
     `.trim();
 
     // 이메일 링크 생성 (mailto:)

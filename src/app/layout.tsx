@@ -4,8 +4,11 @@ import Providers from "./providers";
 import { Toaster } from "@/components/ui/toaster";
 
 export const metadata: Metadata = {
-  title: "Ad-Mate - AI-powered Meta advertising FAQ chatbot",
-  description: "AI-powered Meta advertising FAQ chatbot",
+  title: "AdMate Compass - Policy Intelligence Agent",
+  description: "AdMate Compass는 광고 플랫폼 정책과 가이드를 검색하고 답하는 RAG 기반 Policy Intelligence Agent입니다.",
+  alternates: {
+    canonical: "https://compass.admate.ai.kr",
+  },
 };
 
 export default function RootLayout({

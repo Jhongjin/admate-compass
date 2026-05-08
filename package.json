@@ -1,7 +1,7 @@
 {
-  "name": "meta-faq-chatbot",
+  "name": "admate-compass",
   "version": "1.0.0",
-  "description": "Meta 광고 정책 AI 챗봇 - RAG 기반 FAQ 시스템",
+  "description": "AdMate Compass - 광고 플랫폼 정책과 가이드를 검색하고 답하는 RAG 기반 Policy Intelligence Agent",
   "private": true,
   "scripts": {
     "dev": "next dev",
