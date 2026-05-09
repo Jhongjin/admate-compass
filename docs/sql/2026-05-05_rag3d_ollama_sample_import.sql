@@ -1,0 +1,32 @@
+-- Gate RAG-3D: ollama_document_chunks sample import SQL preparation.
+-- STATUS: BLOCKED / NON-EXECUTABLE.
+--
+-- This file intentionally contains no INSERT statement.
+--
+-- Reason:
+-- - Input CSV C:/Users/Administrator/Downloads/rag3c_ollama_candidates.csv
+--   contains content_preview only, not full source chunk content.
+-- - Input CSV does not contain embedding vectors.
+-- - Gate RAG-3D explicitly requires that executable INSERT SQL must not be
+--   prepared when embedding values are absent.
+--
+-- Target table for a future approved import:
+-- - compass.ollama_document_chunks only
+--
+-- Future required steps before creating executable INSERT SQL:
+-- 1. Rehydrate full content for selected source_chunk_id values from
+--    compass.document_chunks with SELECT-only query.
+-- 2. Generate or copy vector(1024) embeddings for each selected full content row.
+-- 3. Verify row count <= 100.
+-- 4. Verify chunk_id uniqueness using a stable prefix:
+--    rag3d_{source_vendor}_{source_chunk_id}
+-- 5. Verify metadata contains:
+--    source_vendor, canonical_title, source_title, source_url,
+--    source_document_id, source_chunk_id, topic_labels, fixture_matches,
+--    quality_score, rag_gate, imported_from.
+-- 6. Prepare INSERT into compass.ollama_document_chunks only.
+--
+-- Safe no-op marker query:
+select
+  'RAG-3D sample import SQL is blocked until full content and embedding vectors are available.' as status,
+  'no write executed' as action;
