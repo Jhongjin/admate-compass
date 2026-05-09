@@ -67,8 +67,8 @@
       }
     },
     "currentProductionBaseline": {
-      "status": "expected-fail-until-logic-patch",
-      "basis": "NoData-1 found this query is currently classified as generic policy intent and can retain three generic sources."
+      "status": "expected-pass",
+      "basis": "NoData-6 adds a narrow unavailable policy target guard for far-future or impossible policy-standard requests."
     }
   },
   {
@@ -115,8 +115,8 @@
       }
     },
     "currentProductionBaseline": {
-      "status": "expected-fail-until-logic-patch",
-      "basis": "Current generic policy intent can be triggered by ad-review terms even when the platform is not in the Compass corpus."
+      "status": "expected-pass",
+      "basis": "NoData-6 adds a narrow unsupported platform guard for platform-like Ads targets outside the Compass vendor set."
     }
   },
   {

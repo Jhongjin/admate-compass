@@ -6,6 +6,7 @@
 import { createCompassServiceClient } from '@/lib/supabase/compass';
 import { SimpleEmbeddingService } from './SimpleEmbeddingService';
 import { generateResponse } from './ollama';
+import { detectUnavailablePolicyTarget } from './ragNoDataIntentBoundary.mjs';
 
 export type RetrievalMethod = 'vector' | 'keyword' | 'hybrid' | 'fallback';
 export type RetrievalCorpus = 'ollama_document_chunks' | 'document_chunks' | 'fallback';
@@ -19,6 +20,8 @@ export interface QueryIntent {
   keywords: string[];
   adPolicyTerms: string[];
   outOfScopeTerms: string[];
+  unavailablePolicyTarget: boolean;
+  unavailablePolicyTargetReason?: 'future_impossible' | 'fictional_platform';
   isOutOfScope: boolean;
 }
 
@@ -140,10 +143,12 @@ export class RAGSearchService {
         topics: intent.topics,
         keywordCount: intent.keywords.length,
         outOfScopeTerms: intent.outOfScopeTerms,
+        unavailablePolicyTarget: intent.unavailablePolicyTarget,
+        unavailablePolicyTargetReason: intent.unavailablePolicyTargetReason,
         isOutOfScope: intent.isOutOfScope,
       });
 
-      if (intent.isOutOfScope) {
+      if (intent.isOutOfScope || intent.unavailablePolicyTarget) {
         console.log('⚠️ 광고/정책 범위 밖 질문으로 판단하여 검색을 중단합니다.');
         return [];
       }
@@ -685,6 +690,7 @@ export class RAGSearchService {
       '날씨', '기온', '우산', '미세먼지', '김치찌개', '레시피', '요리', '맛집',
       '주식', '코인', '환율', '연예', '영화 추천', '건강 상담', '진단', '치료'
     ]);
+    const unavailablePolicyTarget = detectUnavailablePolicyTarget(query);
     const keywords = this.extractKeywords(query);
 
     return {
@@ -693,6 +699,8 @@ export class RAGSearchService {
       keywords,
       adPolicyTerms,
       outOfScopeTerms,
+      unavailablePolicyTarget: unavailablePolicyTarget.isUnavailablePolicyTarget,
+      unavailablePolicyTargetReason: unavailablePolicyTarget.reason,
       isOutOfScope: outOfScopeTerms.length > 0 && adPolicyTerms.length === 0,
     };
   }
@@ -906,6 +914,7 @@ export class RAGSearchService {
       && intent.topics.length > 0
       && intent.adPolicyTerms.length > 0
       && !intent.isOutOfScope
+      && !intent.unavailablePolicyTarget
     );
   }
 

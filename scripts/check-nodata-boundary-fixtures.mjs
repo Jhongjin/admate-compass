@@ -2,6 +2,7 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import { detectUnavailablePolicyTarget } from "../src/lib/services/ragNoDataIntentBoundary.mjs";
 
 const root = process.cwd();
 const fixturePath = path.join(root, "docs/rag/rag-nodata-boundary-fixtures.json");
@@ -201,6 +202,30 @@ function validateBaseline(fixture) {
   assertString(baseline.basis, `${label}.basis`);
 }
 
+function validateIntentBoundary(fixture) {
+  const result = detectUnavailablePolicyTarget(fixture.question, { currentYear: 2026 });
+  const label = `${fixture.id}.intentBoundary`;
+  const unavailableCaseTypes = new Map([
+    ["future-impossible-policy", "future_impossible"],
+    ["fictional-platform", "fictional_platform"],
+  ]);
+
+  if (unavailableCaseTypes.has(fixture.caseType)) {
+    const expectedReason = unavailableCaseTypes.get(fixture.caseType);
+    if (!result.isUnavailablePolicyTarget) {
+      fail(`${label} must be classified as unavailable policy target`);
+    }
+    if (result.reason !== expectedReason) {
+      fail(`${label} expected reason=${expectedReason}, received ${result.reason || "(none)"}`);
+    }
+    return;
+  }
+
+  if (result.isUnavailablePolicyTarget) {
+    fail(`${label} must not be classified as unavailable policy target`);
+  }
+}
+
 function validateSourcePreservationContract(fixture) {
   const expected = fixture.expected;
   const response = makeMockResponse(fixture);
@@ -302,6 +327,7 @@ for (const [index, fixture] of fixtures.entries()) {
 
   validateExpectedContract(fixture);
   validateBaseline(fixture);
+  validateIntentBoundary(fixture);
   validateSourcePreservationContract(fixture);
   validateGenerationLimitedContract(fixture);
 
@@ -338,7 +364,8 @@ if (!process.exitCode) {
     sourcePreservationCases,
     generationLimitedSourcePreservationCases: generationLimitedCases,
     currentProductionBaseline: Object.fromEntries(baselineCounts),
-    productionLogicExecuted: false,
+    intentBoundaryHelperChecked: true,
+    ragSearchExecuted: false,
     productionApiCalled: false,
   }, null, 2));
 }
