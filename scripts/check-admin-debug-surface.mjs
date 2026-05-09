@@ -51,6 +51,7 @@ function walk(dir) {
 let warnings = 0
 let approvedPublic = 0
 let productionGuarded = 0
+let adminSessionGuarded = 0
 const warningCounts = {
   'repair-mutation': 0,
   'production-disabled-candidate': 0,
@@ -89,6 +90,30 @@ function hasProductionDisabledGuard(text) {
   return handlerCount > 0
 }
 
+function hasAdminSessionGuard(text) {
+  const handlerPattern =
+    /export\s+async\s+function\s+(?:GET|POST|PUT|PATCH|DELETE|OPTIONS)\s*\([^)]*\)\s*\{/g
+  const guardPattern =
+    /const\s+guardResponse\s*=\s*guardProductionAdminSessionRoute\s*\(\s*\)\s*;?\s*if\s*\(\s*guardResponse\s*\)\s*return\s+guardResponse\s*;?/s
+  let match
+  let handlerCount = 0
+  while ((match = handlerPattern.exec(text)) !== null) {
+    handlerCount += 1
+    const prologue = text.slice(handlerPattern.lastIndex, handlerPattern.lastIndex + 400)
+    const guardMatch = guardPattern.exec(prologue)
+    if (!guardMatch) {
+      return false
+    }
+
+    const beforeGuard = prologue.slice(0, guardMatch.index)
+    if (/\S/.test(beforeGuard)) {
+      return false
+    }
+  }
+
+  return handlerCount > 0
+}
+
 for (const file of walk(apiRoot)) {
   const relative = path.relative(root, file)
   const text = fs.readFileSync(file, 'utf8')
@@ -102,6 +127,8 @@ for (const file of walk(apiRoot)) {
       category === 'repair-mutation' || category === 'production-disabled-candidate'
     if (canBeProductionDisabled && hasProductionDisabledGuard(text)) {
       productionGuarded += 1
+    } else if (category === 'admin-diagnostic' && hasAdminSessionGuard(text)) {
+      adminSessionGuarded += 1
     } else {
       warningCounts[category] += 1
       warnings += 1
@@ -116,7 +143,7 @@ for (const file of walk(apiRoot)) {
 
 if (!process.exitCode) {
   console.log(
-    `[check-admin-debug-surface] ok (${warnings} review warnings, ${productionGuarded} production disabled guards, ${approvedPublic} public allowlist)`,
+    `[check-admin-debug-surface] ok (${warnings} review warnings, ${productionGuarded} production disabled guards, ${adminSessionGuarded} admin-session guards, ${approvedPublic} public allowlist)`,
   )
   for (const [category, count] of Object.entries(warningCounts)) {
     if (count > 0) {

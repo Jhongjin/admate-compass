@@ -19,3 +19,22 @@ export function guardProductionAdminDebugRoute() {
     },
   );
 }
+
+export function guardProductionAdminSessionRoute() {
+  if (process.env.NODE_ENV !== 'production') {
+    return null;
+  }
+
+  return NextResponse.json(
+    {
+      success: false,
+      error: 'Authentication required',
+    },
+    {
+      status: 401,
+      headers: {
+        'cache-control': 'no-store',
+      },
+    },
+  );
+}
