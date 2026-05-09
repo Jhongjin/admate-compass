@@ -1,0 +1,194 @@
+[
+  {
+    "id": "valid-meta-exaggeration-landing",
+    "question": "Meta 광고 소재에서 과장 표현과 랜딩 페이지 관련 주의사항을 알려줘",
+    "caseType": "clearly-valid-policy",
+    "expected": {
+      "noDataFound": false,
+      "minSources": 1,
+      "maxSources": 3,
+      "sourcesRetained": true,
+      "allowGenerationLimited": true,
+      "generationLimitedPreservesSources": true,
+      "sourcePolicy": "retain_verified_sources",
+      "copyClass": "grounded_policy_answer",
+      "copyExpectation": {
+        "sample": "근거 문서를 기준으로 Meta 광고 소재의 과장 표현과 랜딩 페이지 주의사항을 안내합니다.",
+        "requiredFragments": ["근거", "Meta", "랜딩"],
+        "forbiddenFragments": ["retrievalMethod", "sourceQuality", "ollama_document_chunks", "embedding", "hybrid score", "RAGSearchService"]
+      }
+    },
+    "currentProductionBaseline": {
+      "status": "expected-pass",
+      "basis": "UI-QA-3C source-found fixture retained verified sources."
+    }
+  },
+  {
+    "id": "valid-generic-price-discount",
+    "question": "광고 소재에 가격이나 할인율을 표시할 때 플랫폼 공통으로 주의할 점은?",
+    "caseType": "generic-valid-policy",
+    "expected": {
+      "noDataFound": false,
+      "minSources": 1,
+      "maxSources": 3,
+      "sourcesRetained": true,
+      "allowGenerationLimited": true,
+      "generationLimitedPreservesSources": true,
+      "sourcePolicy": "retain_verified_sources",
+      "copyClass": "generic_policy_guidance",
+      "copyExpectation": {
+        "sample": "플랫폼별 정책은 다를 수 있으므로 근거 문서를 기준으로 가격과 할인율 표현의 공통 주의사항을 안내합니다.",
+        "requiredFragments": ["플랫폼", "근거", "가격"],
+        "forbiddenFragments": ["retrievalMethod", "sourceQuality", "ollama_document_chunks", "embedding", "hybrid score", "RAGSearchService"]
+      }
+    },
+    "currentProductionBaseline": {
+      "status": "expected-pass",
+      "basis": "Current classifier treats generic ad-policy terms as in-scope generic policy intent."
+    }
+  },
+  {
+    "id": "future-impossible-mars-3027",
+    "question": "화성 거주용 산소 농장 광고의 3027년 심사 기준을 알려줘",
+    "caseType": "future-impossible-policy",
+    "expected": {
+      "noDataFound": true,
+      "minSources": 0,
+      "maxSources": 0,
+      "sourcesRetained": false,
+      "allowGenerationLimited": false,
+      "generationLimitedPreservesSources": false,
+      "sourcePolicy": "hide_generic_sources",
+      "copyClass": "unavailable_policy_target",
+      "copyExpectation": {
+        "sample": "Compass 문서 기준으로 해당 시대, 장소, 업종의 심사 기준 근거를 찾지 못했습니다. 실제 플랫폼명이나 확인하려는 정책 범위를 다시 입력해 주세요.",
+        "requiredFragments": ["Compass 문서", "근거를 찾지 못했습니다", "실제 플랫폼명"],
+        "forbiddenFragments": ["retrievalMethod", "sourceQuality", "ollama_document_chunks", "embedding", "hybrid score", "RAGSearchService"]
+      }
+    },
+    "currentProductionBaseline": {
+      "status": "expected-fail-until-logic-patch",
+      "basis": "NoData-1 found this query is currently classified as generic policy intent and can retain three generic sources."
+    }
+  },
+  {
+    "id": "valid-fictional-product-meta",
+    "question": "Meta에서 가상의 순간이동 장치 광고를 운영한다면 과장 표현과 안전성 주장에 어떤 주의가 필요해?",
+    "caseType": "fictional-product-real-platform",
+    "expected": {
+      "noDataFound": false,
+      "minSources": 1,
+      "maxSources": 3,
+      "sourcesRetained": true,
+      "allowGenerationLimited": true,
+      "generationLimitedPreservesSources": true,
+      "sourcePolicy": "retain_verified_sources",
+      "copyClass": "hypothetical_product_with_real_policy",
+      "copyExpectation": {
+        "sample": "해당 가상 제품에 대한 전용 정책은 확인되지 않지만, Meta의 과장 표현과 안전성 주장 관련 근거를 기준으로 일반 주의사항을 안내합니다.",
+        "requiredFragments": ["가상 제품", "Meta", "근거"],
+        "forbiddenFragments": ["retrievalMethod", "sourceQuality", "ollama_document_chunks", "embedding", "hybrid score", "RAGSearchService"]
+      }
+    },
+    "currentProductionBaseline": {
+      "status": "expected-pass",
+      "basis": "The desired behavior intentionally keeps real-platform policy sources for hypothetical products."
+    }
+  },
+  {
+    "id": "fictional-platform-moontok",
+    "question": "MoonTok Ads에서 순간이동 장치 광고 심사 기준을 알려줘",
+    "caseType": "fictional-platform",
+    "expected": {
+      "noDataFound": true,
+      "minSources": 0,
+      "maxSources": 0,
+      "sourcesRetained": false,
+      "allowGenerationLimited": false,
+      "generationLimitedPreservesSources": false,
+      "sourcePolicy": "hide_generic_sources",
+      "copyClass": "unavailable_platform",
+      "copyExpectation": {
+        "sample": "Compass 문서에서 해당 플랫폼의 정책 근거를 찾지 못했습니다. Meta, Google, Naver, Kakao처럼 실제 플랫폼명을 입력해 주세요.",
+        "requiredFragments": ["Compass 문서", "정책 근거를 찾지 못했습니다", "실제 플랫폼명"],
+        "forbiddenFragments": ["retrievalMethod", "sourceQuality", "ollama_document_chunks", "embedding", "hybrid score", "RAGSearchService"]
+      }
+    },
+    "currentProductionBaseline": {
+      "status": "expected-fail-until-logic-patch",
+      "basis": "Current generic policy intent can be triggered by ad-review terms even when the platform is not in the Compass corpus."
+    }
+  },
+  {
+    "id": "valid-longform-wellness-multiplatform",
+    "question": "새로운 웰니스 앱 광고를 Meta, Google, Naver, Kakao에 집행하려고 하는데, 효능 표현과 후기 사용, 랜딩 페이지 고지에서 공통으로 조심해야 할 점을 길게 정리해줘",
+    "caseType": "korean-longform-ambiguous-policy",
+    "expected": {
+      "noDataFound": false,
+      "minSources": 1,
+      "maxSources": 3,
+      "sourcesRetained": true,
+      "allowGenerationLimited": true,
+      "generationLimitedPreservesSources": true,
+      "sourcePolicy": "retain_verified_sources",
+      "copyClass": "multiplatform_policy_guidance",
+      "copyExpectation": {
+        "sample": "플랫폼별 세부 기준은 다를 수 있으므로 근거 문서가 확인되는 범위에서 효능 표현, 후기 사용, 랜딩 페이지 고지의 공통 주의사항을 정리합니다.",
+        "requiredFragments": ["플랫폼", "근거 문서", "효능"],
+        "forbiddenFragments": ["retrievalMethod", "sourceQuality", "ollama_document_chunks", "embedding", "hybrid score", "RAGSearchService"]
+      }
+    },
+    "currentProductionBaseline": {
+      "status": "expected-pass",
+      "basis": "This remains a real multi-platform policy-planning question and should keep source evidence."
+    }
+  },
+  {
+    "id": "out-of-scope-weather",
+    "question": "내일 서울 날씨 알려줘",
+    "caseType": "out-of-scope-weather",
+    "expected": {
+      "noDataFound": true,
+      "minSources": 0,
+      "maxSources": 0,
+      "sourcesRetained": false,
+      "allowGenerationLimited": false,
+      "generationLimitedPreservesSources": false,
+      "sourcePolicy": "hide_sources",
+      "copyClass": "out_of_scope",
+      "copyExpectation": {
+        "sample": "Compass 문서 기준으로 관련 광고 정책 근거를 찾지 못했습니다. 광고 플랫폼 정책이나 심사 기준에 대한 질문을 입력해 주세요.",
+        "requiredFragments": ["Compass 문서", "광고 정책 근거를 찾지 못했습니다", "광고 플랫폼 정책"],
+        "forbiddenFragments": ["retrievalMethod", "sourceQuality", "ollama_document_chunks", "embedding", "hybrid score", "RAGSearchService"]
+      }
+    },
+    "currentProductionBaseline": {
+      "status": "expected-pass",
+      "basis": "Existing out-of-scope terms should keep weather questions in noDataFound."
+    }
+  },
+  {
+    "id": "out-of-scope-recipe",
+    "question": "김치찌개 맛있게 끓이는 법 알려줘",
+    "caseType": "out-of-scope-recipe",
+    "expected": {
+      "noDataFound": true,
+      "minSources": 0,
+      "maxSources": 0,
+      "sourcesRetained": false,
+      "allowGenerationLimited": false,
+      "generationLimitedPreservesSources": false,
+      "sourcePolicy": "hide_sources",
+      "copyClass": "out_of_scope",
+      "copyExpectation": {
+        "sample": "Compass 문서 기준으로 관련 광고 정책 근거를 찾지 못했습니다. 광고 플랫폼 정책이나 심사 기준에 대한 질문을 입력해 주세요.",
+        "requiredFragments": ["Compass 문서", "광고 정책 근거를 찾지 못했습니다", "광고 플랫폼 정책"],
+        "forbiddenFragments": ["retrievalMethod", "sourceQuality", "ollama_document_chunks", "embedding", "hybrid score", "RAGSearchService"]
+      }
+    },
+    "currentProductionBaseline": {
+      "status": "expected-pass",
+      "basis": "Existing out-of-scope terms should keep recipe questions in noDataFound."
+    }
+  }
+]
