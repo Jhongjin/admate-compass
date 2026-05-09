@@ -19,6 +19,14 @@ const productionDisabledCandidates = new Set([
   path.join('src', 'app', 'api', 'debug-embedding-data', 'route.ts'),
   path.join('src', 'app', 'api', 'debug-env', 'route.ts'),
   path.join('src', 'app', 'api', 'debug-rag', 'route.ts'),
+  path.join('src', 'app', 'api', 'admin', 'check-db', 'route.ts'),
+  path.join('src', 'app', 'api', 'admin', 'check-schema', 'route.ts'),
+  path.join('src', 'app', 'api', 'admin', 'debug-db', 'route.ts'),
+  path.join('src', 'app', 'api', 'admin', 'test-filter', 'route.ts'),
+  path.join('src', 'app', 'api', 'check-data-integrity', 'route.ts'),
+  path.join('src', 'app', 'api', 'check-embedding-dimension', 'route.ts'),
+  path.join('src', 'app', 'api', 'check-real-embedding-dimension', 'route.ts'),
+  path.join('src', 'app', 'api', 'check-table-constraints', 'route.ts'),
   path.join('src', 'app', 'api', 'ollama', 'local-test', 'route.ts'),
   path.join('src', 'app', 'api', 'test-huggingface', 'route.ts'),
   path.join('src', 'app', 'api', 'test-integration', 'route.ts'),
@@ -28,15 +36,7 @@ const productionDisabledCandidates = new Set([
   path.join('src', 'app', 'api', 'test-rpc-function', 'route.ts'),
 ])
 const adminDiagnosticRoutes = new Set([
-  path.join('src', 'app', 'api', 'admin', 'check-db', 'route.ts'),
-  path.join('src', 'app', 'api', 'admin', 'check-schema', 'route.ts'),
-  path.join('src', 'app', 'api', 'admin', 'debug-db', 'route.ts'),
-  path.join('src', 'app', 'api', 'admin', 'test-filter', 'route.ts'),
   path.join('src', 'app', 'api', 'admin', 'users', 'check-admin', 'route.ts'),
-  path.join('src', 'app', 'api', 'check-data-integrity', 'route.ts'),
-  path.join('src', 'app', 'api', 'check-embedding-dimension', 'route.ts'),
-  path.join('src', 'app', 'api', 'check-real-embedding-dimension', 'route.ts'),
-  path.join('src', 'app', 'api', 'check-table-constraints', 'route.ts'),
 ])
 
 function walk(dir) {
@@ -50,6 +50,7 @@ function walk(dir) {
 
 let warnings = 0
 let approvedPublic = 0
+let productionGuarded = 0
 const warningCounts = {
   'repair-mutation': 0,
   'production-disabled-candidate': 0,
@@ -64,6 +65,30 @@ function warningCategory(relative) {
   return 'unclassified-debug'
 }
 
+function hasProductionDisabledGuard(text) {
+  const handlerPattern =
+    /export\s+async\s+function\s+(?:GET|POST|PUT|PATCH|DELETE|OPTIONS)\s*\([^)]*\)\s*\{/g
+  const guardPattern =
+    /const\s+guardResponse\s*=\s*guardProductionAdminDebugRoute\s*\(\s*\)\s*;?\s*if\s*\(\s*guardResponse\s*\)\s*return\s+guardResponse\s*;?/s
+  let match
+  let handlerCount = 0
+  while ((match = handlerPattern.exec(text)) !== null) {
+    handlerCount += 1
+    const prologue = text.slice(handlerPattern.lastIndex, handlerPattern.lastIndex + 400)
+    const guardMatch = guardPattern.exec(prologue)
+    if (!guardMatch) {
+      return false
+    }
+
+    const beforeGuard = prologue.slice(0, guardMatch.index)
+    if (/\S/.test(beforeGuard)) {
+      return false
+    }
+  }
+
+  return handlerCount > 0
+}
+
 for (const file of walk(apiRoot)) {
   const relative = path.relative(root, file)
   const text = fs.readFileSync(file, 'utf8')
@@ -73,9 +98,15 @@ for (const file of walk(apiRoot)) {
   }
   if (!isPublicAllowlisted && debugRoutePattern.test(relative)) {
     const category = warningCategory(relative)
-    warningCounts[category] += 1
-    warnings += 1
-    console.warn(`[check-admin-debug-surface] review ${category} route before production: ${relative}`)
+    const canBeProductionDisabled =
+      category === 'repair-mutation' || category === 'production-disabled-candidate'
+    if (canBeProductionDisabled && hasProductionDisabledGuard(text)) {
+      productionGuarded += 1
+    } else {
+      warningCounts[category] += 1
+      warnings += 1
+      console.warn(`[check-admin-debug-surface] review ${category} route before production: ${relative}`)
+    }
   }
   if (sensitiveEnvPattern.test(text) && /NextResponse\.json\([^)]*process\.env/s.test(text)) {
     console.error(`[check-admin-debug-surface] possible env value response in ${relative}`)
@@ -85,7 +116,7 @@ for (const file of walk(apiRoot)) {
 
 if (!process.exitCode) {
   console.log(
-    `[check-admin-debug-surface] ok (${warnings} review warnings, ${approvedPublic} public allowlist)`,
+    `[check-admin-debug-surface] ok (${warnings} review warnings, ${productionGuarded} production disabled guards, ${approvedPublic} public allowlist)`,
   )
   for (const [category, count] of Object.entries(warningCounts)) {
     if (count > 0) {

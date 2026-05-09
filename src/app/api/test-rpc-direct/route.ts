@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { guardProductionAdminDebugRoute } from '@/lib/adminDebugGuard';
 
 export async function GET(request: NextRequest) {
+  const guardResponse = guardProductionAdminDebugRoute();
+  if (guardResponse) return guardResponse;
+
   try {
     console.log('🔍 RPC 함수 직접 테스트 시작');
     
@@ -16,6 +19,7 @@ export async function GET(request: NextRequest) {
       }, { status: 500 });
     }
     
+    const { createClient } = await import('@supabase/supabase-js');
     const supabase = createClient(supabaseUrl, supabaseKey);
     
     // 테스트용 임베딩 생성 (1024차원)

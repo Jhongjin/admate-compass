@@ -1,9 +1,15 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { RAGSearchService } from '@/lib/services/RAGSearchService';
-import { getOllamaEndpointStatus } from '@/lib/services/ollamaEndpoint';
+import { NextResponse } from 'next/server';
+import { guardProductionAdminDebugRoute } from '@/lib/adminDebugGuard';
 
 export async function GET() {
+  const guardResponse = guardProductionAdminDebugRoute();
+  if (guardResponse) return guardResponse;
+
   try {
+    const [{ RAGSearchService }, { getOllamaEndpointStatus }] = await Promise.all([
+      import('@/lib/services/RAGSearchService'),
+      import('@/lib/services/ollamaEndpoint'),
+    ]);
     console.log('🔍 RAG 디버깅 시작');
     
     // 환경변수 확인

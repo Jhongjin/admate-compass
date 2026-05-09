@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { guardProductionAdminDebugRoute } from '@/lib/adminDebugGuard';
 
 export async function GET(request: NextRequest) {
+  const guardResponse = guardProductionAdminDebugRoute();
+  if (guardResponse) return guardResponse;
+
   try {
     console.log('🔍 데이터베이스 상태 디버깅 시작');
     
@@ -16,6 +19,7 @@ export async function GET(request: NextRequest) {
       }, { status: 500 });
     }
     
+    const { createClient } = await import('@supabase/supabase-js');
     const supabase = createClient(supabaseUrl, supabaseKey);
     
     // 1. ollama_document_chunks 테이블 상태 확인

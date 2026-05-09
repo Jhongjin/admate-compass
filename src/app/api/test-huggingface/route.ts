@@ -1,10 +1,14 @@
 import { NextResponse } from 'next/server';
+import { guardProductionAdminDebugRoute } from '@/lib/adminDebugGuard';
 
 /**
  * Hugging Face API test endpoint.
  * Keep responses secret-safe: never return env var names, credential values, or internal debug output.
  */
 export async function GET() {
+  const guardResponse = guardProductionAdminDebugRoute();
+  if (guardResponse) return guardResponse;
+
   try {
     const huggingfaceApiKey = process.env.HUGGINGFACE_API_KEY;
     if (!huggingfaceApiKey) {

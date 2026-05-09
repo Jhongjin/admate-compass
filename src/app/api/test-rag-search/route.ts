@@ -1,8 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getRAGSearchService } from '@/lib/services/RAGSearchService';
+import { guardProductionAdminDebugRoute } from '@/lib/adminDebugGuard';
 
 export async function POST(request: NextRequest) {
+  const guardResponse = guardProductionAdminDebugRoute();
+  if (guardResponse) return guardResponse;
+
   try {
+    const { getRAGSearchService } = await import('@/lib/services/RAGSearchService');
     console.log('🔍 RAG 검색 테스트 시작');
     
     const body = await request.json();

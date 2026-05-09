@@ -1,7 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { NextResponse } from 'next/server';
+import { guardProductionAdminDebugRoute } from '@/lib/adminDebugGuard';
 
 export async function POST() {
+  const guardResponse = guardProductionAdminDebugRoute();
+  if (guardResponse) return guardResponse;
+
   try {
     console.log('🔧 고아 청크 수정 시작');
     
@@ -16,6 +19,7 @@ export async function POST() {
       }, { status: 500 });
     }
     
+    const { createClient } = await import('@supabase/supabase-js');
     const supabase = createClient(supabaseUrl, supabaseKey);
     
     // 1. 고아 청크 확인

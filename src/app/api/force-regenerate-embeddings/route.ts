@@ -1,8 +1,10 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
-import { SimpleEmbeddingService } from '@/lib/services/SimpleEmbeddingService';
+import { NextResponse } from 'next/server';
+import { guardProductionAdminDebugRoute } from '@/lib/adminDebugGuard';
 
 export async function POST() {
+  const guardResponse = guardProductionAdminDebugRoute();
+  if (guardResponse) return guardResponse;
+
   try {
     console.log('🔄 강제 임베딩 재생성 시작');
     
@@ -17,6 +19,10 @@ export async function POST() {
       }, { status: 500 });
     }
     
+    const [{ createClient }, { SimpleEmbeddingService }] = await Promise.all([
+      import('@supabase/supabase-js'),
+      import('@/lib/services/SimpleEmbeddingService'),
+    ]);
     const supabase = createClient(supabaseUrl, supabaseKey);
     const embeddingService = new SimpleEmbeddingService();
     

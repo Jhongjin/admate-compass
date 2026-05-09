@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { guardProductionAdminDebugRoute } from '@/lib/adminDebugGuard';
 
 // 기본 헤더 설정
 const headers = {
@@ -10,6 +11,9 @@ const headers = {
 
 // OPTIONS 메서드
 export async function OPTIONS() {
+  const guardResponse = guardProductionAdminDebugRoute();
+  if (guardResponse) return guardResponse;
+
   return new NextResponse(null, {
     status: 200,
     headers,
@@ -18,6 +22,9 @@ export async function OPTIONS() {
 
 // GET 메서드 - 로컬 테스트용 모의 응답
 export async function GET() {
+  const guardResponse = guardProductionAdminDebugRoute();
+  if (guardResponse) return guardResponse;
+
   try {
     console.log('🔍 로컬 테스트 모드 - 모의 Ollama 서버 응답');
     
@@ -90,6 +97,9 @@ export async function GET() {
 
 // POST 메서드 - 로컬 테스트용 모의 채팅 응답
 export async function POST(request: NextRequest) {
+  const guardResponse = guardProductionAdminDebugRoute();
+  if (guardResponse) return guardResponse;
+
   try {
     const body = await request.json();
     const { message, model = 'tinyllama:1.1b' } = body;

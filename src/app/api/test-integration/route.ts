@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { guardProductionAdminDebugRoute } from '@/lib/adminDebugGuard';
 
 export async function GET() {
+  const guardResponse = guardProductionAdminDebugRoute();
+  if (guardResponse) return guardResponse;
+
   return NextResponse.json({
     success: true,
     message: 'Integration test endpoint is available',
@@ -10,6 +14,9 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
+  const guardResponse = guardProductionAdminDebugRoute();
+  if (guardResponse) return guardResponse;
+
   try {
     const body = await request.json();
     

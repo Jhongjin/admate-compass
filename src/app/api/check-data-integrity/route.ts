@@ -1,7 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { guardProductionAdminDebugRoute } from '@/lib/adminDebugGuard';
 
 export async function GET() {
+  const guardResponse = guardProductionAdminDebugRoute();
+  if (guardResponse) return guardResponse;
+
   try {
     console.log('🔍 데이터 무결성 확인 시작');
     
@@ -16,6 +19,7 @@ export async function GET() {
       }, { status: 500 });
     }
     
+    const { createClient } = await import('@supabase/supabase-js');
     const supabase = createClient(supabaseUrl, supabaseKey);
     
     // 1. documents 테이블 상태 확인

@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { guardProductionAdminDebugRoute } from '@/lib/adminDebugGuard';
 
 export async function GET(request: NextRequest) {
+  const guardResponse = guardProductionAdminDebugRoute();
+  if (guardResponse) return guardResponse;
+
   try {
     const { vectorStorageService } = await import('@/lib/services/VectorStorageService');
     
