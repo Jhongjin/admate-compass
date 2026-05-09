@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { createCompassServiceClient } from '@/lib/supabase/compass';
 
 // 환경 변수 확인 및 조건부 클라이언트 생성
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -8,7 +8,7 @@ const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 let supabase: any = null;
 
 if (supabaseUrl && supabaseKey) {
-  supabase = createClient(supabaseUrl, supabaseKey);
+  supabase = createCompassServiceClient();
 }
 
 export async function GET(request: NextRequest) {
@@ -87,23 +87,23 @@ export async function GET(request: NextRequest) {
 
     // 4. 통계 계산
     const totalDocuments = documents?.length || 0;
-    const completedDocuments = documents?.filter((doc: { status: string }) => 
+    const completedDocuments = documents?.filter((doc: { status: string }) =>
       doc.status === 'completed' || doc.status === 'indexed'
     ).length || 0;
-    const pendingDocuments = documents?.filter((doc: { status: string }) => 
+    const pendingDocuments = documents?.filter((doc: { status: string }) =>
       doc.status === 'pending' || doc.status === 'waiting'
     ).length || 0;
-    const processingDocuments = documents?.filter((doc: { status: string }) => 
+    const processingDocuments = documents?.filter((doc: { status: string }) =>
       doc.status === 'processing' || doc.status === 'indexing' || doc.status === 'crawling'
     ).length || 0;
     const totalChunks = chunks?.length || 0;
     const totalEmbeddings = embeddings?.length || 0;
 
     // 5. 시스템 상태 계산
-    const errorCount = documents?.filter((doc: { status: string }) => 
+    const errorCount = documents?.filter((doc: { status: string }) =>
       doc.status === 'error' || doc.status === 'failed'
     ).length || 0;
-    
+
     let overallStatus: 'healthy' | 'warning' | 'error' = 'healthy';
     if (errorCount > 0) {
       overallStatus = 'error';
@@ -113,7 +113,7 @@ export async function GET(request: NextRequest) {
 
     // 6. 성능 메트릭 계산
     const avgChunksPerDoc = totalDocuments > 0 ? Math.round(totalChunks / totalDocuments) : 0;
-    const indexingCompletionRate = totalDocuments > 0 ? 
+    const indexingCompletionRate = totalDocuments > 0 ?
       Math.round((completedDocuments / totalDocuments) * 100) : 0;
 
     const performanceMetrics = [
@@ -138,7 +138,7 @@ export async function GET(request: NextRequest) {
       {
         metric: '인덱싱 완료율',
         value: `${indexingCompletionRate}%`,
-        status: indexingCompletionRate >= 90 ? 'excellent' : 
+        status: indexingCompletionRate >= 90 ? 'excellent' :
                 indexingCompletionRate >= 70 ? 'good' : 'warning',
         trend: '+0%'
       }

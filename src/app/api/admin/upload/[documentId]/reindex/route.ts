@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { createCompassServiceClient } from '@/lib/supabase/compass';
 
 export async function POST(
   request: NextRequest,
@@ -7,7 +7,7 @@ export async function POST(
 ) {
   try {
     const { documentId } = await params;
-    
+
     if (!documentId) {
       return NextResponse.json(
         { error: '문서 ID가 필요합니다.' },
@@ -28,7 +28,7 @@ export async function POST(
       );
     }
 
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    const supabase = createCompassServiceClient();
 
     // 문서 정보 조회
     console.log(`📋 문서 정보 조회 중: ${documentId}`);
@@ -77,7 +77,7 @@ export async function POST(
     console.log(`🔄 문서 상태를 'processing'으로 업데이트 중...`);
     const { error: statusError } = await supabase
       .from('documents')
-      .update({ 
+      .update({
         status: 'processing',
         updated_at: new Date().toISOString()
       })
@@ -96,10 +96,10 @@ export async function POST(
     // 문서 타입에 따른 재인덱싱 처리
     if (document.type === 'url') {
       console.log(`🌐 URL 재인덱싱 시작: ${document.url}`);
-      
+
       // 간단한 더미 청크 생성 (테스트용)
       console.log(`📦 테스트용 더미 청크 생성 중...`);
-      
+
       const dummyChunks = [
         {
           content: `Meta 광고 정책 문서 - ${document.title}`,
@@ -153,7 +153,7 @@ export async function POST(
       console.log(`🔄 문서 상태를 'completed'로 업데이트 중...`);
       const { error: finalStatusError } = await supabase
         .from('documents')
-        .update({ 
+        .update({
           status: 'completed',
           updated_at: new Date().toISOString()
         })
@@ -171,13 +171,13 @@ export async function POST(
 
     } else if (document.type === 'file') {
       console.log(`📁 파일 재인덱싱 시작: ${document.title}`);
-      
+
       // 파일의 경우 원본 파일이 필요하므로 에러 처리
       return NextResponse.json(
         { error: '파일 재인덱싱은 지원되지 않습니다. 파일을 다시 업로드해주세요.' },
         { status: 400 }
       );
-      
+
     } else {
       return NextResponse.json(
         { error: '지원하지 않는 문서 타입입니다.' },
@@ -200,9 +200,9 @@ export async function POST(
 
   } catch (error) {
     console.error('재인덱싱 오류:', error);
-    
+
     return NextResponse.json(
-      { 
+      {
         success: false,
         error: '재인덱싱에 실패했습니다.',
         details: error instanceof Error ? error.message : String(error)

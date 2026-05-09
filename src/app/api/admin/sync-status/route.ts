@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createPureClient } from '@/lib/supabase/server';
+import { createCompassServiceClient } from '@/lib/supabase/compass';
 
 export async function POST(request: NextRequest) {
   try {
     // Supabase 클라이언트 생성
-    const supabase = await createPureClient();
-    
+    const supabase = createCompassServiceClient();
+
     console.log('문서 상태 동기화 시작...');
 
     // "Introduction to the Advertising Standards" 문서들 조회
@@ -51,12 +51,12 @@ export async function POST(request: NextRequest) {
       // 상태와 청크 수가 일치하지 않는 경우 수정
       if (doc.chunk_count !== chunkCount) {
         console.log(`청크 수 불일치 감지: DB=${doc.chunk_count}, 실제=${chunkCount}`);
-        
+
         const newStatus = chunkCount > 0 ? 'indexed' : 'failed';
-        
+
         const { error: updateError } = await supabase
           .from('documents')
-          .update({ 
+          .update({
             chunk_count: chunkCount,
             status: newStatus,
             updated_at: new Date().toISOString()
@@ -83,10 +83,10 @@ export async function POST(request: NextRequest) {
       } else if (doc.status === 'processing' && chunkCount > 0) {
         // 처리중 상태이지만 청크가 있는 경우 indexed로 변경
         console.log(`처리중 상태이지만 청크가 있음: ${doc.id}`);
-        
+
         const { error: updateError } = await supabase
           .from('documents')
-          .update({ 
+          .update({
             status: 'indexed',
             updated_at: new Date().toISOString()
           })
@@ -132,20 +132,20 @@ export async function POST(request: NextRequest) {
 
   } catch (error) {
     console.error('동기화 오류:', error);
-    
+
     // 환경 변수 관련 에러인 경우 특별 처리
     if (error instanceof Error && error.message.includes('환경 변수')) {
       return NextResponse.json(
-        { 
+        {
           error: '데이터베이스 연결 설정 오류',
           details: 'Supabase 환경 변수가 올바르게 설정되지 않았습니다.'
         },
         { status: 500 }
       );
     }
-    
+
     return NextResponse.json(
-      { 
+      {
         error: '문서 상태 동기화 중 오류가 발생했습니다.',
         details: error instanceof Error ? error.message : String(error)
       },

@@ -1,4 +1,4 @@
-import { createClient } from '@supabase/supabase-js';
+import { createCompassServiceClient } from '@/lib/supabase/compass';
 import { DocumentChunk } from './TextChunkingService';
 import { EmbeddingResult } from './EmbeddingService';
 
@@ -42,13 +42,13 @@ export class VectorStorageService {
       // 빌드 시에는 더미 클라이언트를 사용하여 오류 방지
       if (process.env.NODE_ENV === 'production') {
         console.warn('프로덕션 환경에서 Supabase 환경변수가 누락되었습니다. 더미 클라이언트를 사용합니다.');
-        this.supabase = createClient('https://dummy.supabase.co', 'dummy-key');
+        this.supabase = createCompassServiceClient();
         return;
       }
       throw new Error('Supabase 환경변수가 설정되지 않았습니다. .env.local 파일을 확인해주세요.');
     }
 
-    this.supabase = createClient(supabaseUrl, supabaseKey);
+    this.supabase = createCompassServiceClient();
   }
 
   /**
@@ -94,9 +94,9 @@ export class VectorStorageService {
           default: return 'pdf'; // 기본값
         }
       };
-      
+
       const metadataType = documentData.type === 'file' ? getFileType(documentData.title) : documentData.type;
-      
+
       // 원본 파일 데이터를 metadata에 저장 (파일인 경우에만)
       const metadata: any = {};
       if (documentData.type === 'file' && documentData.fileData) {
@@ -105,7 +105,7 @@ export class VectorStorageService {
         metadata.fileSize = documentData.size || 0;
         metadata.uploadedAt = documentData.uploadedAt;
       }
-      
+
       console.log(`document_metadata 저장 시도: ${documentData.id}`, {
         id: documentData.id,
         title: documentData.title,
@@ -175,19 +175,19 @@ export class VectorStorageService {
       // 임베딩 유효성 검증
       for (let i = 0; i < embeddings.length; i++) {
         const embedding = embeddings[i];
-        
+
         if (!embedding.embedding || !Array.isArray(embedding.embedding)) {
           throw new Error(`청크 ${i}: 임베딩이 배열이 아닙니다.`);
         }
-        
+
         if (embedding.embedding.length === 0) {
           throw new Error(`청크 ${i}: 임베딩이 비어있습니다.`);
         }
-        
+
         if (embedding.embedding.length !== 1024) {
           throw new Error(`청크 ${i}: 임베딩 차원 수 오류 (${embedding.embedding.length}/1024)`);
         }
-        
+
         if (!embedding.embedding.every(item => typeof item === 'number' && !isNaN(item))) {
           throw new Error(`청크 ${i}: 임베딩에 유효하지 않은 숫자가 포함되어 있습니다.`);
         }
@@ -240,7 +240,7 @@ export class VectorStorageService {
     try {
       // status 값 검증 및 변환
       const validStatus = ['pending', 'completed', 'failed'].includes(status) ? status : 'pending';
-      
+
       const updateData: any = {
         status: validStatus,
         updated_at: new Date().toISOString()
@@ -255,12 +255,12 @@ export class VectorStorageService {
         status: validStatus === 'completed' ? 'indexed' : validStatus,
         updated_at: new Date().toISOString()
       };
-      
+
       // documents 테이블에도 chunk_count 업데이트
       if (chunkCount !== undefined) {
         docUpdateData.chunk_count = chunkCount;
       }
-      
+
       const { error: docError } = await this.supabase
         .from('documents')
         .update(docUpdateData)
@@ -307,7 +307,7 @@ export class VectorStorageService {
     try {
       const { error } = await this.supabase
         .from('documents')
-        .update({ 
+        .update({
           title: newTitle,
           updated_at: new Date().toISOString()
         })
@@ -598,10 +598,10 @@ export class VectorStorageService {
       // 데이터 변환: document_metadata의 type을 documents의 type으로 사용
       const transformedData = (data || []).map(doc => {
         // document_metadata가 배열로 반환될 수 있으므로 첫 번째 요소 사용
-        const metadata = Array.isArray(doc.document_metadata) 
-          ? doc.document_metadata[0] 
+        const metadata = Array.isArray(doc.document_metadata)
+          ? doc.document_metadata[0]
           : doc.document_metadata;
-          
+
         return {
           ...doc,
           type: metadata?.type || doc.type, // 실제 파일 타입 사용
@@ -639,7 +639,7 @@ export class VectorStorageService {
       const totalDocuments = documents?.length || 0;
       const indexedDocuments = documents?.filter(doc => doc.status === 'completed').length || 0;
       const totalChunks = documents?.reduce((sum, doc) => sum + (doc.chunk_count || 0), 0) || 0;
-      
+
       // 임베딩 수는 청크 수와 동일하다고 가정 (실제로는 document_chunks 테이블에서 계산해야 함)
       const totalEmbeddings = totalChunks;
 

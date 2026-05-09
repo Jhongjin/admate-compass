@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { createCompassServiceClient } from '@/lib/supabase/compass';
 
 // 환경 변수 확인 및 조건부 클라이언트 생성
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -8,7 +8,7 @@ const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 let supabase: any = null;
 
 if (supabaseUrl && supabaseKey) {
-  supabase = createClient(supabaseUrl, supabaseKey);
+  supabase = createCompassServiceClient();
 }
 
 export interface SystemMetrics {
@@ -155,11 +155,11 @@ async function getSystemStatus() {
       .from('documents')
       .select('status');
 
-    const errorCount = documents?.filter((doc: any) => 
+    const errorCount = documents?.filter((doc: any) =>
       doc.status === 'error' || doc.status === 'failed'
     ).length || 0;
 
-    const processingCount = documents?.filter((doc: any) => 
+    const processingCount = documents?.filter((doc: any) =>
       doc.status === 'processing' || doc.status === 'indexing'
     ).length || 0;
 
@@ -193,7 +193,7 @@ async function getSystemMetrics(): Promise<SystemMetrics> {
   // 실제 환경에서는 시스템 메트릭을 수집하는 서비스와 연동
   // 현재는 시뮬레이션된 데이터 반환
   const now = new Date();
-  
+
   return {
     timestamp: now.toISOString(),
     cpu: {

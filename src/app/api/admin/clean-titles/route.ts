@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/client';
+import { createCompassBrowserClient } from '@/lib/supabase/compass';
 
 export async function POST(request: NextRequest) {
   try {
-    const supabase = createClient();
-    
+    const supabase = createCompassBrowserClient();
+
     // 모든 URL 문서 조회
     const { data: documents, error: fetchError } = await supabase
       .from('documents')
@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
       try {
         // 괄호와 그 안의 URL 정보 제거
         const cleanTitle = doc.title.replace(/\s*\([^)]*\)$/, '');
-        
+
         if (cleanTitle !== doc.title) {
           // documents 테이블 업데이트
           const { error: docError } = await supabase

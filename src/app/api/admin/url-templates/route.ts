@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase/client';
+import { createCompassBrowserClient } from '@/lib/supabase/compass';
 
 // 템플릿 조회
 export async function GET() {
   try {
-    const supabase = createClient();
-    
+    const supabase = createCompassBrowserClient();
+
     const { data: templates, error } = await supabase
       .from('url_templates')
       .select('*')
@@ -23,7 +23,7 @@ export async function GET() {
         'Instagram Business (영어)': ['https://business.instagram.com/help/'],
         'Meta 개발자 문서 (영어)': ['https://developers.facebook.com/docs/marketing-api/']
       };
-      
+
       return NextResponse.json({
         success: true,
         templates: defaultTemplates
@@ -54,7 +54,7 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const { templates } = await request.json();
-    
+
     if (!templates || typeof templates !== 'object') {
       return NextResponse.json(
         { error: '유효하지 않은 템플릿 데이터입니다.' },
@@ -62,8 +62,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const supabase = createClient();
-    
+    const supabase = createCompassBrowserClient();
+
     // 기존 템플릿 모두 삭제
     const { error: deleteError } = await supabase
       .from('url_templates')
@@ -116,7 +116,7 @@ export async function POST(request: NextRequest) {
 export async function PUT(request: NextRequest) {
   try {
     const { name, urls } = await request.json();
-    
+
     if (!name || !Array.isArray(urls)) {
       return NextResponse.json(
         { error: '템플릿 이름과 URL 배열이 필요합니다.' },
@@ -124,8 +124,8 @@ export async function PUT(request: NextRequest) {
       );
     }
 
-    const supabase = createClient();
-    
+    const supabase = createCompassBrowserClient();
+
     // 템플릿이 존재하는지 확인
     const { data: existingTemplate, error: checkError } = await supabase
       .from('url_templates')
@@ -194,7 +194,7 @@ export async function DELETE(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const name = searchParams.get('name');
-    
+
     if (!name) {
       return NextResponse.json(
         { error: '템플릿 이름이 필요합니다.' },
@@ -202,8 +202,8 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    const supabase = createClient();
-    
+    const supabase = createCompassBrowserClient();
+
     const { error } = await supabase
       .from('url_templates')
       .delete()

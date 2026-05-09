@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { createCompassServiceClient } from '@/lib/supabase/compass';
 
 export async function POST(request: NextRequest) {
   try {
@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    const supabase = createCompassServiceClient();
 
     // 먼저 모든 문서 조회
     const { data: allDocs, error: allDocsError } = await supabase
@@ -34,10 +34,10 @@ export async function POST(request: NextRequest) {
     console.log('📋 데이터베이스의 모든 문서:', allDocs.length, '개');
 
     // Meta 관련 문서들만 필터링 (title에 facebook, instagram, meta 포함)
-    const metaDocs = allDocs.filter(doc => 
+    const metaDocs = allDocs.filter(doc =>
       doc.title && (
-        doc.title.includes('facebook.com') || 
-        doc.title.includes('instagram.com') || 
+        doc.title.includes('facebook.com') ||
+        doc.title.includes('instagram.com') ||
         doc.title.includes('meta.com') ||
         doc.title.includes('developers.facebook.com') ||
         doc.title.includes('business.instagram.com')
@@ -115,7 +115,7 @@ export async function POST(request: NextRequest) {
         // 문서 상태를 'indexed'로 업데이트 (데이터베이스 제약 조건에 맞게)
         const { error: statusError } = await supabase
           .from('documents')
-          .update({ 
+          .update({
             status: 'indexed',
             chunk_count: dummyChunks.length,
             updated_at: new Date().toISOString()
@@ -155,9 +155,9 @@ export async function POST(request: NextRequest) {
 
   } catch (error) {
     console.error('❌ 간단한 인덱싱 오류:', error);
-    
+
     return NextResponse.json(
-      { 
+      {
         success: false,
         error: '간단한 인덱싱 중 오류가 발생했습니다.',
         details: error instanceof Error ? error.message : String(error)

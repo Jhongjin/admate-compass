@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { createCompassServiceClient } from '@/lib/supabase/compass';
 
 // 환경 변수 확인 및 조건부 클라이언트 생성
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -8,7 +8,7 @@ const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 let supabase: any = null;
 
 if (supabaseUrl && supabaseKey) {
-  supabase = createClient(supabaseUrl, supabaseKey);
+  supabase = createCompassServiceClient();
 }
 
 // 문서 다운로드
@@ -49,7 +49,7 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error('문서 액션 오류:', error);
     return NextResponse.json(
-      { 
+      {
         error: '문서 액션 처리 중 오류가 발생했습니다.',
         details: error instanceof Error ? error.message : String(error)
       },
@@ -78,7 +78,7 @@ async function handleDownload(documentId: string) {
     // URL 문서인 경우
     if (document.type === 'url') {
       let actualUrl = document.title; // 기본값으로 title 사용
-      
+
       // documents 테이블에서 url 필드 확인
       if (document.url) {
         actualUrl = document.url;
@@ -97,12 +97,12 @@ async function handleDownload(documentId: string) {
 
       // 문서명에서 URL 정보 제거 (괄호와 URL 부분 제거)
       const cleanTitle = document.title.replace(/\s*\([^)]*\)$/, '');
-      
+
       const content = `문서명: ${cleanTitle}\nURL: ${actualUrl}\n\n이 URL은 ${new Date(document.created_at).toLocaleString('ko-KR')}에 크롤링되었습니다.\n상태: ${document.status}\n청크 수: ${document.chunk_count}`;
-      
+
       // UTF-8 인코딩으로 Buffer 생성
       const buffer = Buffer.from(content, 'utf8');
-      
+
       return new NextResponse(buffer, {
         headers: {
           'Content-Type': 'text/plain; charset=utf-8',
@@ -145,10 +145,10 @@ async function handleDownload(documentId: string) {
 
       // 청크들을 합쳐서 텍스트 문서로 제공
       const fullContent = chunks?.map((chunk: any) => chunk.content).join('\n\n') || '';
-      
+
       let mimeType = 'text/plain; charset=utf-8';
       let extension = 'txt';
-      
+
       if (actualFileType === 'pdf') {
         mimeType = 'text/plain; charset=utf-8';
         extension = 'txt';
@@ -159,13 +159,13 @@ async function handleDownload(documentId: string) {
         mimeType = 'text/plain; charset=utf-8';
         extension = 'txt';
       }
-      
+
       // UTF-8로 인코딩된 Buffer 생성
       const buffer = Buffer.from(fullContent, 'utf-8');
-      
+
       // 파일명 URL 인코딩
       const encodedFilename = encodeURIComponent(`${document.title}_extracted_text.${extension}`);
-      
+
       return new NextResponse(buffer, {
         headers: {
           'Content-Type': mimeType,
@@ -177,10 +177,10 @@ async function handleDownload(documentId: string) {
 
     // 원본 파일 데이터가 있는 경우
     const fileBuffer = Buffer.from(fileData, 'base64');
-    
+
     let mimeType = 'application/octet-stream';
     let extension = 'bin';
-    
+
     if (actualFileType === 'pdf') {
       mimeType = 'application/pdf';
       extension = 'pdf';
@@ -191,10 +191,10 @@ async function handleDownload(documentId: string) {
       mimeType = 'text/plain; charset=utf-8';
       extension = 'txt';
     }
-    
+
     // 파일명 URL 인코딩
     const encodedFilename = encodeURIComponent(`${document.title}.${extension}`);
-    
+
     return new NextResponse(fileBuffer, {
       headers: {
         'Content-Type': mimeType,
@@ -302,7 +302,7 @@ async function handlePreview(documentId: string) {
 async function handleReindex(documentId: string) {
   try {
     console.log(`🔄 재인덱싱 시작: ${documentId}`);
-    
+
     // 문서 정보 조회
     const { data: document, error: docError } = await supabase
       .from('documents')
@@ -335,7 +335,7 @@ async function handleReindex(documentId: string) {
     console.log(`🔄 상태를 processing으로 변경 중...`);
     const { error: updateError } = await supabase
       .from('documents')
-      .update({ 
+      .update({
         status: 'processing',
         chunk_count: 0,
         updated_at: new Date().toISOString()
@@ -353,28 +353,28 @@ async function handleReindex(documentId: string) {
     // URL 문서인 경우 실제 재인덱싱 수행
     if (document.type === 'url' && document.url) {
       console.log(`🌐 URL 재인덱싱 시작: ${document.url}`);
-      
+
       try {
         // 서버리스 환경에서는 기본적인 URL 정보만 업데이트
         console.log(`📄 서버리스 환경에서 URL 처리: ${document.url}`);
-        
+
         // 문서 상태를 completed로 업데이트
         const { error: finalUpdateError } = await supabase
           .from('documents')
-          .update({ 
+          .update({
             status: 'completed',
             updated_at: new Date().toISOString()
           })
           .eq('id', documentId);
-        
+
         if (finalUpdateError) {
           console.error('❌ 최종 상태 업데이트 실패:', finalUpdateError);
         } else {
           console.log(`✅ 문서 상태를 completed로 업데이트 완료`);
         }
-        
+
         console.log(`✅ 재인덱싱 완료`);
-        
+
         return NextResponse.json({
           success: true,
           message: 'URL 문서 상태가 업데이트되었습니다. (서버리스 환경에서는 실제 크롤링이 제한됩니다)',
@@ -383,19 +383,19 @@ async function handleReindex(documentId: string) {
             status: 'completed'
           }
         });
-        
+
       } catch (crawlError) {
         console.error('❌ 크롤링/인덱싱 오류:', crawlError);
-        
+
         // 실패 시 상태를 failed로 변경
         await supabase
           .from('documents')
-          .update({ 
+          .update({
             status: 'failed',
             updated_at: new Date().toISOString()
           })
           .eq('id', documentId);
-        
+
         return NextResponse.json(
           { error: `재인덱싱 실패: ${crawlError instanceof Error ? crawlError.message : String(crawlError)}` },
           { status: 500 }
@@ -404,7 +404,7 @@ async function handleReindex(documentId: string) {
     } else {
       // 파일 문서인 경우 실제 재인덱싱 수행
       console.log(`📁 파일 문서 재인덱싱 시작: ${document.title}`);
-      
+
       try {
         // 메타데이터에서 원본 파일 정보 조회
         const { data: metadata, error: metaError } = await supabase
@@ -426,39 +426,39 @@ async function handleReindex(documentId: string) {
         // 원본 파일 데이터가 있는 경우 재인덱싱
         if (metadata.file_data) {
           console.log(`🔄 파일 데이터로 재인덱싱 시작...`);
-          
+
           // DocumentIndexingService를 사용하여 재인덱싱
           const { documentIndexingService } = await import('@/lib/services/DocumentIndexingService');
-          
+
           // Base64 데이터를 Blob으로 변환
           const base64Data = metadata.file_data.split(',')[1]; // data:application/pdf;base64, 부분 제거
           const binaryData = Buffer.from(base64Data, 'base64');
           const blob = new Blob([binaryData], { type: metadata.mime_type || 'application/octet-stream' });
-          
+
           // File 객체 생성
-          const file = new File([blob], document.title, { 
-            type: metadata.mime_type || 'application/octet-stream' 
+          const file = new File([blob], document.title, {
+            type: metadata.mime_type || 'application/octet-stream'
           });
 
           // 재인덱싱 수행
           const result = await documentIndexingService.indexFile(file, {}, documentId);
-          
+
           if (result.status === 'failed') {
             throw new Error(result.error || '파일 재인덱싱에 실패했습니다.');
           }
 
           console.log(`✅ 파일 재인덱싱 완료: ${result.chunksProcessed}개 청크`);
-          
+
           // 문서 상태를 completed로 업데이트
           const { error: finalUpdateError } = await supabase
             .from('documents')
-            .update({ 
+            .update({
               status: 'completed',
               chunk_count: result.chunksProcessed,
               updated_at: new Date().toISOString()
             })
             .eq('id', documentId);
-          
+
           if (finalUpdateError) {
             console.error('❌ 최종 상태 업데이트 실패:', finalUpdateError);
           } else {
@@ -475,19 +475,19 @@ async function handleReindex(documentId: string) {
               embeddingsGenerated: result.embeddingsGenerated
             }
           });
-          
+
         } else {
           // 원본 파일 데이터가 없는 경우 상태만 변경
           console.log(`⚠️ 원본 파일 데이터가 없음: 상태만 변경`);
-          
+
           const { error: finalUpdateError } = await supabase
             .from('documents')
-            .update({ 
+            .update({
               status: 'completed',
               updated_at: new Date().toISOString()
             })
             .eq('id', documentId);
-          
+
           if (finalUpdateError) {
             console.error('❌ 상태 업데이트 실패:', finalUpdateError);
           }
@@ -501,19 +501,19 @@ async function handleReindex(documentId: string) {
             }
           });
         }
-        
+
       } catch (fileError) {
         console.error('❌ 파일 재인덱싱 오류:', fileError);
-        
+
         // 실패 시 상태를 failed로 변경
         await supabase
           .from('documents')
-          .update({ 
+          .update({
             status: 'failed',
             updated_at: new Date().toISOString()
           })
           .eq('id', documentId);
-        
+
         return NextResponse.json(
           { error: `파일 재인덱싱 실패: ${fileError instanceof Error ? fileError.message : String(fileError)}` },
           { status: 500 }

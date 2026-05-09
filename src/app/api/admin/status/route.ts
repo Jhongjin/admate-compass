@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { createCompassServiceClient } from '@/lib/supabase/compass';
 
 export async function GET(request: NextRequest) {
   try {
@@ -11,7 +11,7 @@ export async function GET(request: NextRequest) {
     if (!supabaseUrl || !supabaseKey) {
       console.error('❌ Supabase 환경변수 누락');
       return NextResponse.json(
-        { 
+        {
           success: false,
           error: 'Supabase 환경변수가 설정되지 않았습니다.',
           stats: {
@@ -29,7 +29,7 @@ export async function GET(request: NextRequest) {
 
     console.log('✅ Supabase 환경변수 확인 완료');
 
-    const supabase = createClient(supabaseUrl, supabaseKey);
+    const supabase = createCompassServiceClient();
 
     // 문서 조회 (document_metadata와 조인하여 실제 파일 타입 가져오기)
     console.log('📋 문서 조회 시작...');
@@ -51,7 +51,7 @@ export async function GET(request: NextRequest) {
     if (docsError) {
       console.error('❌ 문서 조회 실패:', docsError);
       return NextResponse.json(
-        { 
+        {
           success: false,
           error: `문서 조회 실패: ${docsError.message}`,
           stats: {
@@ -93,10 +93,10 @@ export async function GET(request: NextRequest) {
     // 문서에 청크 수 추가 및 실제 파일 타입 변환
     const documentsWithChunks = documents?.map(doc => {
       // document_metadata가 배열로 반환될 수 있으므로 첫 번째 요소 사용
-      const metadata = Array.isArray(doc.document_metadata) 
-        ? doc.document_metadata[0] 
+      const metadata = Array.isArray(doc.document_metadata)
+        ? doc.document_metadata[0]
         : doc.document_metadata;
-        
+
       // 상태 동기화: document_metadata의 상태를 우선시
       let finalStatus = doc.status;
       if (metadata?.status) {
@@ -104,11 +104,11 @@ export async function GET(request: NextRequest) {
         if (metadata.status !== doc.status) {
           console.log(`🔄 상태 동기화 필요: ${doc.id} (${doc.status} -> ${metadata.status})`);
           finalStatus = metadata.status;
-          
+
           // 비동기적으로 상태 업데이트 (응답 속도를 위해)
           supabase
             .from('documents')
-            .update({ 
+            .update({
               status: metadata.status,
               updated_at: new Date().toISOString()
             })
@@ -122,7 +122,7 @@ export async function GET(request: NextRequest) {
             });
         }
       }
-        
+
       return {
         ...doc,
         status: finalStatus, // 동기화된 상태 사용
@@ -136,7 +136,7 @@ export async function GET(request: NextRequest) {
     // 통계 계산
     const stats = {
       total: documentsWithChunks.length,
-      completed: documentsWithChunks.filter(doc => 
+      completed: documentsWithChunks.filter(doc =>
         doc.status === 'completed' || doc.status === 'indexed'
       ).length,
       pending: documentsWithChunks.filter(doc => doc.status === 'pending').length,
@@ -154,9 +154,9 @@ export async function GET(request: NextRequest) {
 
   } catch (error) {
     console.error('❌ 상태 확인 API 오류:', error);
-    
+
     return NextResponse.json(
-      { 
+      {
         success: false,
         error: '상태 확인 중 오류가 발생했습니다.',
         details: error instanceof Error ? error.message : String(error),

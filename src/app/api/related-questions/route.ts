@@ -1,15 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { createCompassServiceClient } from '@/lib/supabase/compass';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
+const supabase = createCompassServiceClient();
 
 export async function POST(request: NextRequest) {
   try {
     const { message } = await request.json();
-    
+
     if (!message || typeof message !== 'string') {
       return NextResponse.json(
         { error: '메시지가 필요합니다.' },
@@ -44,7 +41,7 @@ export async function POST(request: NextRequest) {
     ];
 
     const extractedQuestions = new Set<string>();
-    
+
     chunksData.forEach(chunk => {
       questionPatterns.forEach(pattern => {
         const matches = chunk.content.match(pattern);
@@ -85,10 +82,10 @@ export async function POST(request: NextRequest) {
 function calculateSimilarity(text1: string, text2: string): number {
   const words1 = text1.toLowerCase().split(/\s+/);
   const words2 = text2.toLowerCase().split(/\s+/);
-  
+
   const intersection = words1.filter(word => words2.includes(word));
   const union = [...new Set([...words1, ...words2])];
-  
+
   return intersection.length / union.length;
 }
 
