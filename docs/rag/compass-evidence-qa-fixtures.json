@@ -1,0 +1,268 @@
+[
+  {
+    "id": "eqa-source-found-meta-policy",
+    "synthetic": true,
+    "requestLabel": "Meta landing page claim review",
+    "evidenceState": "source-found",
+    "answerSummary": "근거 문서를 기준으로 랜딩 페이지와 광고 문구의 일관성을 확인해야 합니다.",
+    "sourcePanel": {
+      "sourceLabel": "Meta 광고 정책 검토 메모",
+      "sourceCategory": "platform-policy",
+      "freshnessLabel": "2026-05-01 검토",
+      "reviewStatus": "accepted",
+      "evidenceRecordLabel": "검토된 정책 근거 A",
+      "verifiedFacts": [
+        "랜딩 페이지는 광고에서 약속한 정보와 일치해야 합니다.",
+        "성과나 효능 표현은 확인 가능한 근거와 함께 제시해야 합니다."
+      ],
+      "generatedInterpretation": "캠페인 문구는 조건과 제한 사항을 함께 보여주는 방향으로 조정하는 것이 안전합니다."
+    },
+    "expectedDisplayText": [
+      "Meta 광고 정책 검토 메모",
+      "platform-policy",
+      "2026-05-01 검토",
+      "accepted",
+      "검토된 정책 근거 A"
+    ],
+    "expectedExcludedText": [
+      "retrievalMethod",
+      "sourceQuality",
+      "hybridScore",
+      "sourcesCount",
+      "ollama_document_chunks"
+    ]
+  },
+  {
+    "id": "eqa-source-found-generic-policy",
+    "synthetic": true,
+    "requestLabel": "Generic ad review checklist",
+    "evidenceState": "source-found",
+    "answerSummary": "일반 광고 심사에서는 오인 가능성, 조건 표시, 권리 침해 여부를 함께 확인합니다.",
+    "sourcePanel": {
+      "sourceLabel": "공통 광고 심사 체크리스트",
+      "sourceCategory": "policy-note",
+      "freshnessLabel": "최근 검토됨",
+      "reviewStatus": "accepted",
+      "evidenceRecordLabel": "공통 정책 근거 B",
+      "verifiedFacts": [
+        "주요 조건은 소비자가 확인 가능한 위치에 표시되어야 합니다.",
+        "상표와 초상권 사용은 별도 권리 확인이 필요합니다."
+      ],
+      "generatedInterpretation": "플랫폼별 세부 기준은 추가 근거와 함께 다시 확인해야 합니다."
+    },
+    "expectedDisplayText": [
+      "공통 광고 심사 체크리스트",
+      "policy-note",
+      "최근 검토됨",
+      "accepted"
+    ],
+    "expectedExcludedText": [
+      "schema=compass",
+      "vectorScore",
+      "keywordScore",
+      "RAGSearchService"
+    ]
+  },
+  {
+    "id": "eqa-nodata-future-policy",
+    "synthetic": true,
+    "requestLabel": "Impossible future policy request",
+    "evidenceState": "noData",
+    "answerSummary": "요청한 범위에서 확인 가능한 근거를 찾지 못했습니다.",
+    "sourcePanel": {
+      "noDataReason": "아직 존재하지 않는 정책 시점입니다.",
+      "checkedScope": "2026년까지의 로컬 합성 정책 근거",
+      "reviewStatus": "unavailable"
+    },
+    "expectedDisplayText": [
+      "요청한 범위에서 확인 가능한 근거를 찾지 못했습니다.",
+      "아직 존재하지 않는 정책 시점입니다.",
+      "2026년까지의 로컬 합성 정책 근거",
+      "unavailable"
+    ],
+    "expectedExcludedText": [
+      "허용됩니다",
+      "문제가 없습니다",
+      "정책상 안전합니다",
+      "sourceLabel"
+    ]
+  },
+  {
+    "id": "eqa-nodata-fictional-platform",
+    "synthetic": true,
+    "requestLabel": "Fictional platform policy request",
+    "evidenceState": "noData",
+    "answerSummary": "플랫폼명이나 정책 범위를 좁혀 다시 확인해 주세요.",
+    "sourcePanel": {
+      "noDataReason": "확인 가능한 플랫폼 근거가 없습니다.",
+      "checkedScope": "지원 플랫폼 정책 근거",
+      "reviewStatus": "unavailable"
+    },
+    "expectedDisplayText": [
+      "플랫폼명이나 정책 범위를 좁혀 다시 확인해 주세요.",
+      "확인 가능한 플랫폼 근거가 없습니다.",
+      "지원 플랫폼 정책 근거"
+    ],
+    "expectedExcludedText": [
+      "Meta 광고 정책 검토 메모",
+      "Google 정책 근거",
+      "Naver 정책 근거",
+      "Kakao 정책 근거"
+    ]
+  },
+  {
+    "id": "eqa-generation-limited-with-sources",
+    "synthetic": true,
+    "requestLabel": "Answer generation limited after retrieval",
+    "evidenceState": "generation-limited",
+    "answerSummary": "답변 생성은 제한되었지만 확인된 근거는 아래에서 볼 수 있습니다.",
+    "sourcePanel": {
+      "sourceLabel": "검토된 광고 심사 근거",
+      "sourceCategory": "approved-reference",
+      "freshnessLabel": "2026-04-28 관찰",
+      "reviewStatus": "limited",
+      "evidenceRecordLabel": "제한 상태 근거 C",
+      "limitationReason": "답변 생성 단계가 제한되어 요약 범위를 줄였습니다.",
+      "partialSourceSummary": "광고 주장과 랜딩 페이지 조건 표시가 함께 언급된 근거입니다.",
+      "verifiedFacts": [
+        "확인된 근거는 광고 주장과 조건 표시의 연결을 다룹니다."
+      ],
+      "generatedInterpretation": "구체적인 집행 판단은 추가 검토가 필요합니다."
+    },
+    "expectedDisplayText": [
+      "답변 생성은 제한되었지만 확인된 근거는 아래에서 볼 수 있습니다.",
+      "검토된 광고 심사 근거",
+      "limited",
+      "답변 생성 단계가 제한되어 요약 범위를 줄였습니다."
+    ],
+    "expectedExcludedText": [
+      "generic failure",
+      "noData",
+      "source retrieval failed"
+    ]
+  },
+  {
+    "id": "eqa-generation-limited-expired-source",
+    "synthetic": true,
+    "requestLabel": "Expired evidence cannot upgrade support",
+    "evidenceState": "generation-limited",
+    "answerSummary": "일부 근거만 확인되어 제한된 요약으로 표시합니다.",
+    "sourcePanel": {
+      "sourceLabel": "만료된 벤치마크 참고",
+      "sourceCategory": "benchmark-note",
+      "freshnessLabel": "만료됨",
+      "reviewStatus": "expired",
+      "evidenceRecordLabel": "만료 근거 D",
+      "limitationReason": "근거의 검토 기한이 지나 완전한 지원 상태로 표시할 수 없습니다.",
+      "partialSourceSummary": "과거 벤치마크 조건만 확인되었습니다.",
+      "verifiedFacts": [
+        "이 근거는 현재 정책 지원 여부를 단독으로 증명하지 않습니다."
+      ],
+      "generatedInterpretation": "최신 근거가 확보되기 전에는 제한 상태로 유지해야 합니다."
+    },
+    "expectedDisplayText": [
+      "일부 근거만 확인되어 제한된 요약으로 표시합니다.",
+      "만료된 벤치마크 참고",
+      "expired",
+      "근거의 검토 기한이 지나 완전한 지원 상태로 표시할 수 없습니다."
+    ],
+    "expectedExcludedText": [
+      "accepted",
+      "완전히 지원됨",
+      "Compass가 검증했습니다"
+    ]
+  },
+  {
+    "id": "eqa-rejected-source-no-supported-upgrade",
+    "synthetic": true,
+    "requestLabel": "Rejected source should not look supported",
+    "evidenceState": "noData",
+    "answerSummary": "사용 가능한 승인 근거가 없어 지원 상태로 표시하지 않습니다.",
+    "sourcePanel": {
+      "noDataReason": "후보 근거가 rejected 상태입니다.",
+      "checkedScope": "검토 완료 근거",
+      "reviewStatus": "rejected"
+    },
+    "expectedDisplayText": [
+      "사용 가능한 승인 근거가 없어 지원 상태로 표시하지 않습니다.",
+      "후보 근거가 rejected 상태입니다.",
+      "검토 완료 근거",
+      "rejected"
+    ],
+    "expectedExcludedText": [
+      "accepted",
+      "source-found",
+      "지원됨"
+    ]
+  },
+  {
+    "id": "eqa-redacted-identifier-display",
+    "synthetic": true,
+    "requestLabel": "Synthetic internal identifiers are redacted",
+    "evidenceState": "source-found",
+    "answerSummary": "식별자는 고객 표시용 라벨로 대체된 근거만 보여줍니다.",
+    "redactionInput": {
+      "accountId": "mock-account-id-raw",
+      "campaignId": "mock-campaign-id-raw",
+      "traceId": "mock-trace-id-raw",
+      "retrievalId": "mock-retrieval-id-raw"
+    },
+    "sourcePanel": {
+      "sourceLabel": "승인된 캠페인 검토 요약",
+      "sourceCategory": "analyst-note",
+      "freshnessLabel": "2026-05-03 검토",
+      "reviewStatus": "accepted",
+      "evidenceRecordLabel": "검토된 근거 E",
+      "verifiedFacts": [
+        "표시 가능한 캠페인 라벨과 정책 메모만 포함합니다."
+      ],
+      "generatedInterpretation": "내부 식별자 없이도 사용자는 근거 상태를 확인할 수 있습니다."
+    },
+    "expectedDisplayText": [
+      "승인된 캠페인 검토 요약",
+      "analyst-note",
+      "검토된 근거 E"
+    ],
+    "expectedExcludedText": [
+      "mock-account-id-raw",
+      "mock-campaign-id-raw",
+      "mock-trace-id-raw",
+      "mock-retrieval-id-raw",
+      "accountId",
+      "campaignId",
+      "traceId",
+      "retrievalId"
+    ]
+  },
+  {
+    "id": "eqa-long-mixed-language-source-panel",
+    "synthetic": true,
+    "requestLabel": "Long Korean mixed-language policy answer",
+    "evidenceState": "source-found",
+    "answerSummary": "긴 한국어 답변에서도 Google Ads, Meta, Naver 같은 영문 플랫폼명과 URL 형태의 참고 라벨이 출처 정보와 분리되어 표시되어야 합니다.",
+    "sourcePanel": {
+      "sourceLabel": "긴 혼합 언어 정책 근거 https://example.invalid/policy-reference",
+      "sourceCategory": "uploaded-reference",
+      "freshnessLabel": "2026-05-04 갱신",
+      "reviewStatus": "accepted",
+      "evidenceRecordLabel": "혼합 언어 근거 F",
+      "verifiedFacts": [
+        "Google Ads, Meta, Naver 정책 명칭은 출처 제목 안에서 줄바꿈 가능한 텍스트로 취급합니다.",
+        "URL 형태의 라벨은 공개 예시 도메인만 사용합니다."
+      ],
+      "generatedInterpretation": "긴 문장과 URL형 텍스트는 출처 패널의 검토 상태와 섞이지 않아야 합니다."
+    },
+    "expectedDisplayText": [
+      "긴 혼합 언어 정책 근거",
+      "https://example.invalid/policy-reference",
+      "2026-05-04 갱신",
+      "accepted"
+    ],
+    "expectedExcludedText": [
+      "private-dashboard",
+      "signedUrl",
+      "rawProviderResponse",
+      "authorization"
+    ]
+  }
+]
