@@ -3,6 +3,17 @@ import fs from 'node:fs'
 const input = process.argv[2] || process.env.RAG_RESPONSE_FILE || ''
 const requiredResponseFields = ['message', 'sources']
 const requiredSourceFields = ['id', 'title', 'excerpt']
+const allowedSourceTypes = new Set([
+  'policy-note',
+  'platform-policy',
+  'approved-reference',
+  'analyst-note',
+  'benchmark-note',
+  'uploaded-reference',
+  'unknown-reviewed-source',
+])
+const allowedVendorScopes = new Set(['meta', 'google', 'naver', 'kakao', 'multi-platform', 'generic'])
+const internalNamePattern = /\b(retrievalMethod|sourceQuality|ollama_document_chunks|embedding|hybridScore|vectorScore|keywordScore|RAGSearchService)\b/i
 
 function fail(message) {
   console.error(`[check-rag-source-quality] ${message}`)
@@ -22,15 +33,30 @@ if (!fs.existsSync(input)) {
 const data = JSON.parse(fs.readFileSync(input, 'utf8'))
 const response = data.response || data
 const confidenceHolder = data.response ? data : response
+const expectedMetadata = data.expectedMetadata || response.expectedMetadata || {}
 for (const field of requiredResponseFields) {
   if (response[field] === undefined || response[field] === null || response[field] === '') fail(`missing response field ${field}`)
 }
 
+if (typeof response.message === 'string' && internalNamePattern.test(response.message)) fail('response.message exposes internal source implementation names')
+
 if (!Array.isArray(response.sources)) fail('sources must be an array')
 else {
+  const titleCounts = new Map()
   for (const [index, source] of response.sources.entries()) {
     for (const field of requiredSourceFields) {
       if (source[field] === undefined || source[field] === null || source[field] === '') fail(`source[${index}] missing ${field}`)
+    }
+    const titleKey = String(source.title).trim().toLowerCase()
+    titleCounts.set(titleKey, (titleCounts.get(titleKey) || 0) + 1)
+    if (!source.url && !source.sourceReference) fail(`source[${index}] missing url or sourceReference`)
+    if (!source.sourceType) fail(`source[${index}] missing sourceType`)
+    else if (!allowedSourceTypes.has(source.sourceType)) fail(`source[${index}].sourceType is not allowlisted`)
+    if (!source.vendorScope) fail(`source[${index}] missing vendorScope`)
+    else if (!allowedVendorScopes.has(source.vendorScope)) fail(`source[${index}].vendorScope is not allowlisted`)
+    if (expectedMetadata.vendorScope && source.vendorScope !== expectedMetadata.vendorScope) fail(`source[${index}].vendorScope must be ${expectedMetadata.vendorScope}`)
+    for (const field of ['title', 'excerpt', 'sourceLabel', 'sourceType']) {
+      if (typeof source[field] === 'string' && internalNamePattern.test(source[field])) fail(`source[${index}].${field} exposes internal source implementation names`)
     }
     if (source.similarity !== undefined) {
       const similarity = Number(source.similarity)
@@ -51,6 +77,10 @@ else {
       const qualityScore = Number(source.sourceQuality.qualityScore)
       if (!Number.isFinite(qualityScore) || qualityScore < 0 || qualityScore > 1) fail(`source[${index}].sourceQuality.qualityScore must be 0..1`)
     }
+  }
+  const maxDuplicateTitleCount = Number(expectedMetadata.maxDuplicateTitleCount || 1)
+  for (const [title, count] of titleCounts.entries()) {
+    if (count > maxDuplicateTitleCount) fail(`duplicate source title exceeds limit: ${title}`)
   }
 }
 
