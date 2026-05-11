@@ -141,4 +141,3 @@ For this blocker note:
 git diff --check -- docs/tasks/2026-05-11_compass_evidence_qa_target_confirmation_v1.md
 npm run verify:harness
 ```
-
