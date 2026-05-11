@@ -7,19 +7,20 @@ import MainLayout from "@/components/layouts/MainLayout";
 import ChatBubble from "@/components/chat/ChatBubble";
 import HistoryPanel from "@/components/chat/HistoryPanel";
 import QuickQuestions from "@/components/chat/QuickQuestions";
-import RelatedResources from "@/components/chat/RelatedResources";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
-import { Card, CardContent } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
-import { Send, Bot, User, Star, ThumbsUp, ThumbsDown, RotateCcw, AlertCircle, CheckCircle, History, FileText, Target, Lightbulb, BookOpen, MessageSquare, Trash2, RefreshCw, PanelLeft, PanelRight, Maximize2, Minimize2 } from "lucide-react";
+import { Send, Bot, User, Star, ThumbsUp, ThumbsDown, RotateCcw, AlertCircle, CheckCircle, History, FileText, Target, Lightbulb, BookOpen, MessageSquare, Trash2, RefreshCw, PanelLeft, PanelRight, Maximize2, Minimize2, ChevronDown, ChevronUp, ExternalLink, Download, Search } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
+
+type ChatUiState = "initial-empty" | "source-found" | "noData" | "generation-limited" | "error";
 
 interface Message {
   id: string;
@@ -32,6 +33,7 @@ interface Message {
     url?: string;
     updatedAt: string;
     excerpt: string;
+    sourceType?: "file" | "url" | "document" | string;
   }>;
   feedback?: {
     helpful: boolean | null;
@@ -42,6 +44,281 @@ interface Message {
   confidence?: number;
   processingTime?: number;
   model?: string;
+  uiState?: ChatUiState;
+}
+
+const INITIAL_GREETING = "안녕하세요. Compass에서 광고 정책과 심사 기준을 질문해 주세요.";
+const NO_DATA_MESSAGE = "Compass could not find usable evidence in current documents. Narrow the platform, policy item, or creative type and try again.";
+const GENERATION_LIMITED_MESSAGE = "답변 생성이 일시적으로 제한되었습니다. 확인된 근거 문서는 아래에서 계속 확인할 수 있습니다.";
+const ERROR_MESSAGE = "일시적인 서비스 오류로 답변을 만들지 못했습니다. 잠시 후 다시 시도해 주세요.";
+
+const getInitialMessage = (): Message => ({
+  id: "1",
+  type: "assistant",
+  content: INITIAL_GREETING,
+  timestamp: "방금 전",
+  sources: [],
+});
+
+const sanitizeSources = (sources: unknown): NonNullable<Message["sources"]> => {
+  if (!Array.isArray(sources)) return [];
+
+  return sources
+    .filter((source) => source && typeof source === "object")
+    .map((source, index) => {
+      const item = source as Record<string, unknown>;
+      const sourceQuality = item.sourceQuality && typeof item.sourceQuality === "object"
+        ? item.sourceQuality as Record<string, unknown>
+        : undefined;
+
+      return {
+        id: String(item.id || item.chunkId || item.documentId || `source-${index + 1}`),
+        title: String(item.title || item.originalTitle || `근거 문서 ${index + 1}`),
+        url: typeof item.url === "string" && item.url.trim() ? item.url : undefined,
+        updatedAt: typeof item.updatedAt === "string" ? item.updatedAt : new Date().toISOString(),
+        excerpt: String(item.excerpt || item.content || ""),
+        sourceType: typeof item.sourceType === "string" ? item.sourceType : undefined,
+        isFallback: sourceQuality?.isFallback === true,
+      };
+    })
+    .filter((source) => !source.isFallback && Boolean(source.title || source.excerpt))
+    .map(({ isFallback, ...source }) => source);
+};
+
+function SourceStatePanel({
+  state,
+  sources,
+  compact = false,
+  userQuestion,
+  showContactOption = false,
+  onContact,
+  onRetry,
+}: {
+  state: ChatUiState;
+  sources: NonNullable<Message["sources"]>;
+  compact?: boolean;
+  userQuestion?: string;
+  showContactOption?: boolean;
+  onContact?: () => void;
+  onRetry?: () => void;
+}) {
+  const [cardsVisible, setCardsVisible] = useState(true);
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const hasSources = sources.length > 0;
+  const isLimited = state === "generation-limited";
+  const isNoData = state === "noData";
+  const isError = state === "error";
+  const isInitial = state === "initial-empty";
+  const heading = isLimited ? "생성 답변 제한" : hasSources ? "근거 문서" : "근거 문서 없음";
+
+  const toggleExpanded = (sourceId: string) => {
+    setExpandedIds((current) => {
+      const next = new Set(current);
+      if (next.has(sourceId)) {
+        next.delete(sourceId);
+      } else {
+        next.add(sourceId);
+      }
+      return next;
+    });
+  };
+
+  const handleSourceOpen = async (source: NonNullable<Message["sources"]>[number]) => {
+    if (!source.url) return;
+
+    if (source.sourceType === "file") {
+      try {
+        const response = await fetch(source.url);
+        if (!response.ok) throw new Error("download failed");
+        const blob = await response.blob();
+        const downloadUrl = window.URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = downloadUrl;
+        link.download = source.title || "compass-source";
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        window.URL.revokeObjectURL(downloadUrl);
+      } catch (downloadError) {
+        console.error("근거 문서 다운로드 오류:", downloadError);
+        alert("파일을 여는 중 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.");
+      }
+      return;
+    }
+
+    window.open(source.url, "_blank", "noopener,noreferrer");
+  };
+
+  if (isInitial) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 text-center">
+        <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-lg border border-[#E5E5E5] bg-white">
+          <BookOpen className="h-8 w-8 text-[#5E6AD2]" />
+        </div>
+        <h3 className="mb-2 text-base font-semibold text-[#0D0D0D]">질문을 시작해보세요</h3>
+        <p className="max-w-sm text-sm leading-relaxed text-[#5E5E5E]">
+          질문을 시작하면 근거 문서가 여기에 표시됩니다.
+        </p>
+      </div>
+    );
+  }
+
+  if (isNoData || isError) {
+    return (
+      <Card className="w-full rounded-lg border-[#E5E5E5] bg-white shadow-sm">
+        <CardHeader className="pb-2">
+          <CardTitle className="flex items-center gap-2 text-sm font-semibold text-[#0D0D0D]">
+            {isError ? <AlertCircle className="h-4 w-4 text-[#D93025]" /> : <Search className="h-4 w-4 text-[#9E5700]" />}
+            {heading}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3 p-4 pt-0">
+          <p className="text-sm leading-6 text-[#5E5E5E]">
+            {isError ? ERROR_MESSAGE : NO_DATA_MESSAGE}
+          </p>
+          {isNoData && (
+            <div className="rounded-md border border-[#E5E5E5] bg-[#F7F7F7] p-3 text-xs leading-5 text-[#5E5E5E]">
+              플랫폼명, 정책 항목, 소재 유형을 함께 입력하면 더 좁은 범위로 확인할 수 있습니다.
+            </div>
+          )}
+          <div className="flex flex-wrap gap-2">
+            {isError && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={onRetry}
+                className="h-9 rounded-md border-[#D8DAF4] bg-[#F4F5FF] px-3 text-xs text-[#4F56B8] hover:bg-[#ECEDF9]"
+              >
+                다시 시도
+              </Button>
+            )}
+            {isNoData && showContactOption && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={onContact}
+                className="h-9 rounded-md border-amber-200 bg-amber-50 px-3 text-xs text-amber-800 hover:bg-amber-100"
+              >
+                문의
+              </Button>
+            )}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="w-full rounded-lg border-[#E5E5E5] bg-white shadow-sm">
+      <CardHeader className="pb-3">
+        <CardTitle className="flex flex-wrap items-center gap-2 text-sm font-semibold text-[#0D0D0D]">
+          <BookOpen className="h-4 w-4 text-[#5E6AD2]" />
+          <span>{heading}</span>
+          <Badge variant="outline" className="rounded-md border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] text-emerald-700">
+            {sources.length}개
+          </Badge>
+          {isLimited && (
+            <Badge variant="outline" className="rounded-md border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] text-amber-700">
+              생성 답변 제한
+            </Badge>
+          )}
+        </CardTitle>
+        {userQuestion && !compact && (
+          <p className="line-clamp-2 text-xs leading-5 text-[#777777]">
+            질문: {userQuestion}
+          </p>
+        )}
+      </CardHeader>
+      <CardContent className="space-y-3">
+        {isLimited && (
+          <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
+            답변 생성은 일시적으로 제한되었지만, 확인된 근거 문서는 아래에서 계속 확인할 수 있습니다.
+          </div>
+        )}
+
+        <Button
+          type="button"
+          variant="ghost"
+          size="sm"
+          onClick={() => setCardsVisible((visible) => !visible)}
+          className="h-9 rounded-lg border border-[#D8DAF4] bg-white px-3 text-xs font-medium text-[#4F56B8] shadow-sm transition-colors hover:bg-[#F4F5FF] hover:text-[#3F45A0]"
+        >
+          <FileText className="mr-2 h-4 w-4" />
+          근거 문서 {sources.length}개 보기
+          {cardsVisible ? <ChevronUp className="ml-2 h-3.5 w-3.5" /> : <ChevronDown className="ml-2 h-3.5 w-3.5" />}
+        </Button>
+
+        {cardsVisible && (
+          <div className="space-y-3">
+            {sources.slice(0, compact ? 3 : 6).map((source, index) => {
+              const isExpanded = expandedIds.has(source.id);
+              const title = source.title?.replace(/_chunk_\d+/g, `_page_${index + 1}`) || `근거 문서 ${index + 1}`;
+
+              return (
+                <div key={`${source.id}-${index}`} className="rounded-lg border border-[#E5E5E5] bg-white p-3">
+                  <div className="flex items-start gap-3">
+                    <div className="flex h-7 w-7 flex-none items-center justify-center rounded-md border border-[#E5E5E5] bg-[#F7F7F7] text-xs font-semibold text-[#5E5E5E]">
+                      {index + 1}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-start justify-between gap-2">
+                        <h4 className="line-clamp-2 break-words text-sm font-semibold leading-5 text-[#0D0D0D]">
+                          {title}
+                        </h4>
+                        <div className="flex flex-none items-center gap-1">
+                          {source.url && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="sm"
+                              className="h-8 w-8 rounded-md p-0 text-[#5E5E5E] hover:bg-[#F4F5FF] hover:text-[#5E6AD2]"
+                              onClick={() => handleSourceOpen(source)}
+                              title={source.sourceType === "file" ? "파일 다운로드" : "열기"}
+                              aria-label={source.sourceType === "file" ? "파일 다운로드" : "근거 문서 열기"}
+                            >
+                              {source.sourceType === "file" ? <Download className="h-4 w-4" /> : <ExternalLink className="h-4 w-4" />}
+                            </Button>
+                          )}
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 rounded-md p-0 text-[#5E5E5E] hover:bg-[#F4F4F4] hover:text-[#0D0D0D]"
+                            onClick={() => toggleExpanded(source.id)}
+                            title={isExpanded ? "접기" : "펼치기"}
+                            aria-label={isExpanded ? "근거 문서 접기" : "근거 문서 펼치기"}
+                          >
+                            {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                          </Button>
+                        </div>
+                      </div>
+
+                      <p className={`${isExpanded ? "" : "line-clamp-3"} mt-2 break-words text-xs leading-5 text-[#5E5E5E]`}>
+                        {source.excerpt || "표시할 원문 일부가 없습니다."}
+                      </p>
+
+                      {isExpanded && (
+                        <div className="mt-3 flex flex-wrap gap-1.5 border-t border-[#E5E5E5] pt-3">
+                          <Badge variant="outline" className="rounded-md border-[#D8DAF4] bg-[#F4F5FF] px-2 py-0.5 text-[11px] text-[#4F56B8]">
+                            검증 근거
+                          </Badge>
+                          <Badge variant="outline" className="rounded-md border-[#E5E5E5] bg-white px-2 py-0.5 text-[11px] text-[#5E5E5E]">
+                            Compass 색인
+                          </Badge>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
 }
 
 function ChatPageContent() {
@@ -50,6 +327,7 @@ function ChatPageContent() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isInitialized, setIsInitialized] = useState(false);
   const [inputValue, setInputValue] = useState("");
+  const [lastSubmittedQuestion, setLastSubmittedQuestion] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [conversationId, setConversationId] = useState<string | null>(null);
@@ -109,15 +387,7 @@ function ChatPageContent() {
   // 초기 메시지 설정
   useEffect(() => {
     if (!isInitialized) {
-      setMessages([
-        {
-          id: "1",
-          type: "assistant",
-          content: "안녕하세요! AdMate Compass입니다. 광고 플랫폼 정책, 가이드라인, 설정 방법에 대해 궁금한 점을 질문하면 RAG 기반 답변과 관련 출처를 함께 제공합니다.",
-          timestamp: "방금 전",
-          sources: [],
-        },
-      ]);
+      setMessages([getInitialMessage()]);
       setIsInitialized(true);
     }
   }, [isInitialized]);
@@ -262,6 +532,46 @@ function ChatPageContent() {
     };
   }, []);
 
+  const buildAssistantMessageFromResponse = (data: any): Message => {
+    const safeSources = sanitizeSources(data?.response?.sources);
+    const model = typeof data?.model === "string" ? data.model : undefined;
+    const noDataFound = data?.response?.noDataFound === true && safeSources.length === 0;
+    const generationLimited = model === "ollama-connection-failed" && safeSources.length > 0;
+    const rawContent = data?.response?.message || data?.response?.content || "답변을 생성할 수 없습니다.";
+    const uiState: ChatUiState | undefined = generationLimited ? "generation-limited" : noDataFound ? "noData" : undefined;
+
+    return {
+      id: (Date.now() + 1).toString(),
+      type: "assistant",
+      content: generationLimited ? GENERATION_LIMITED_MESSAGE : noDataFound ? NO_DATA_MESSAGE : String(rawContent),
+      timestamp: new Date().toLocaleTimeString('ko-KR', {
+        hour: '2-digit',
+        minute: '2-digit'
+      }),
+      sources: safeSources,
+      feedback: { helpful: null, count: 0 },
+      noDataFound,
+      showContactOption: data?.response?.showContactOption === true,
+      confidence: typeof data?.confidence === "number" ? data.confidence : undefined,
+      processingTime: typeof data?.processingTime === "number" ? data.processingTime : undefined,
+      model,
+      uiState,
+    };
+  };
+
+  const buildErrorMessage = (): Message => ({
+    id: (Date.now() + 1).toString(),
+    type: "assistant",
+    content: ERROR_MESSAGE,
+    timestamp: new Date().toLocaleTimeString('ko-KR', {
+      hour: '2-digit',
+      minute: '2-digit'
+    }),
+    sources: [],
+    feedback: { helpful: null, count: 0 },
+    uiState: "error",
+  });
+
   const handleSendMessageWithQuestion = async (question: string) => {
     if (!question.trim() || isLoading) return;
 
@@ -287,6 +597,7 @@ function ChatPageContent() {
 
     setIsLoading(true);
     setError(null);
+    setLastSubmittedQuestion(question.trim());
 
     // 현재 메시지 상태를 기반으로 API 호출
     const currentMessages = [...messages, userMessage];
@@ -310,22 +621,7 @@ function ChatPageContent() {
         throw new Error(data.message || data.error || '응답을 받는 중 오류가 발생했습니다.');
       }
 
-      const aiResponse: Message = {
-        id: (Date.now() + 1).toString(),
-        type: "assistant",
-        content: data.response.message || data.response.content || '답변을 생성할 수 없습니다.',
-        timestamp: new Date().toLocaleTimeString('ko-KR', { 
-          hour: '2-digit', 
-          minute: '2-digit' 
-        }),
-        sources: data.response.sources || [],
-        feedback: { helpful: null, count: 0 },
-        noDataFound: data.response.noDataFound || false,
-        showContactOption: data.response.showContactOption || false,
-        confidence: data.confidence,
-        processingTime: data.processingTime,
-        model: data.model
-      };
+      const aiResponse = buildAssistantMessageFromResponse(data);
 
       setMessages(prev => [...prev, aiResponse]);
       
@@ -365,21 +661,8 @@ function ChatPageContent() {
 
     } catch (error) {
       console.error('채팅 API 오류:', error);
-      setError(error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.');
-      
-      const errorMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        type: "assistant",
-        content: `죄송합니다. 현재 서비스에 일시적인 문제가 발생했습니다.\n\n${error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.'}\n\n잠시 후 다시 시도해주세요.`,
-        timestamp: new Date().toLocaleTimeString('ko-KR', { 
-          hour: '2-digit', 
-          minute: '2-digit' 
-        }),
-        sources: [],
-        feedback: { helpful: null, count: 0 },
-      };
-
-      setMessages(prev => [...prev, errorMessage]);
+      setError(ERROR_MESSAGE);
+      setMessages(prev => [...prev, buildErrorMessage()]);
       
       toast({
         title: "오류 발생",
@@ -419,6 +702,7 @@ function ChatPageContent() {
     setInputValue("");
     setIsLoading(true);
     setError(null);
+    setLastSubmittedQuestion(currentInput);
 
     // 현재 메시지 상태를 기반으로 API 호출
     const currentMessages = [...messages, userMessage];
@@ -442,22 +726,7 @@ function ChatPageContent() {
         throw new Error(data.message || data.error || '응답을 받는 중 오류가 발생했습니다.');
       }
 
-      const aiResponse: Message = {
-        id: (Date.now() + 1).toString(),
-        type: "assistant",
-        content: data.response.message || data.response.content || '답변을 생성할 수 없습니다.',
-        timestamp: new Date().toLocaleTimeString('ko-KR', { 
-          hour: '2-digit', 
-          minute: '2-digit' 
-        }),
-        sources: data.response.sources || [],
-        feedback: { helpful: null, count: 0 },
-        noDataFound: data.response.noDataFound || false,
-        showContactOption: data.response.showContactOption || false,
-        confidence: data.confidence,
-        processingTime: data.processingTime,
-        model: data.model
-      };
+      const aiResponse = buildAssistantMessageFromResponse(data);
 
       setMessages(prev => [...prev, aiResponse]);
       
@@ -497,21 +766,8 @@ function ChatPageContent() {
 
     } catch (error) {
       console.error('채팅 API 오류:', error);
-      setError(error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.');
-      
-      const errorMessage: Message = {
-        id: (Date.now() + 1).toString(),
-        type: "assistant",
-        content: `죄송합니다. 현재 서비스에 일시적인 문제가 발생했습니다.\n\n${error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.'}\n\n잠시 후 다시 시도해주세요.`,
-        timestamp: new Date().toLocaleTimeString('ko-KR', { 
-          hour: '2-digit', 
-          minute: '2-digit' 
-        }),
-        sources: [],
-        feedback: { helpful: null, count: 0 },
-      };
-
-      setMessages(prev => [...prev, errorMessage]);
+      setError(ERROR_MESSAGE);
+      setMessages(prev => [...prev, buildErrorMessage()]);
       
       toast({
         title: "오류 발생",
@@ -529,6 +785,16 @@ function ChatPageContent() {
       e.preventDefault();
       handleSendMessage();
     }
+  };
+
+  const handleRetry = () => {
+    const latestQuestion = [...messages].reverse().find((message) => message.type === "user")?.content || "";
+    const question = lastSubmittedQuestion || latestQuestion;
+    if (!question.trim()) return;
+
+    setInputValue(question);
+    setError(null);
+    setTimeout(() => textareaRef.current?.focus(), 0);
   };
 
   const handleContactRequest = async (question: string) => {
@@ -690,16 +956,9 @@ function ChatPageContent() {
       }
     }
     
-    setMessages([
-      {
-        id: "1",
-        type: "assistant",
-        content: "안녕하세요! AdMate Compass입니다. 광고 플랫폼 정책, 가이드라인, 설정 방법에 대해 궁금한 점을 질문하면 RAG 기반 답변과 관련 출처를 함께 제공합니다.",
-        timestamp: "방금 전",
-        sources: [],
-      },
-    ]);
+    setMessages([getInitialMessage()]);
     setError(null);
+    setLastSubmittedQuestion("");
     setConversationId(null);
     setSavedMessageIds(new Set());
     setIsInitialized(true);
@@ -738,13 +997,7 @@ function ChatPageContent() {
       const feedback = await fetchFeedback(conversationId);
 
       setMessages([
-        {
-          id: "1",
-          type: "assistant",
-          content: "안녕하세요! AdMate Compass입니다. 광고 플랫폼 정책, 가이드라인, 설정 방법에 대해 궁금한 점을 질문하면 RAG 기반 답변과 관련 출처를 함께 제공합니다.",
-          timestamp: "방금 전",
-          sources: [],
-        },
+        getInitialMessage(),
         {
           id: "2",
           type: "user",
@@ -762,7 +1015,7 @@ function ChatPageContent() {
             hour: '2-digit', 
             minute: '2-digit' 
           }),
-          sources: conversation.sources || [],
+          sources: sanitizeSources(conversation.sources),
           feedback: feedback,
         },
       ]);
@@ -862,10 +1115,20 @@ function ChatPageContent() {
 
   const latestAssistantMessage = [...messages].reverse().find((message) => message.type === "assistant");
   const latestUserMessage = [...messages].reverse().find((message) => message.type === "user");
-  const latestSources = latestAssistantMessage?.sources || [];
+  const latestSources = sanitizeSources(latestAssistantMessage?.sources || []);
   const latestHasSources = latestSources.length > 0;
   const latestNoDataFound = latestAssistantMessage?.noDataFound === true;
-  const latestGenerationLimited = latestAssistantMessage?.model === "ollama-connection-failed" && latestHasSources;
+  const latestGenerationLimited = latestAssistantMessage?.uiState === "generation-limited" || (latestAssistantMessage?.model === "ollama-connection-failed" && latestHasSources);
+  const latestIsError = latestAssistantMessage?.uiState === "error";
+  const latestPanelState: ChatUiState = latestGenerationLimited
+    ? "generation-limited"
+    : latestNoDataFound
+      ? "noData"
+      : latestIsError
+        ? "error"
+        : latestHasSources
+          ? "source-found"
+          : "initial-empty";
 
   const chatHeader = (
     <div className="border-b border-[#E5E5E5] bg-[#F7F7F7]/95 px-4 py-2.5 backdrop-blur rounded-none">
@@ -1033,14 +1296,14 @@ function ChatPageContent() {
                 type={message.type}
                 content={message.content}
                 timestamp={message.timestamp}
-                sources={message.sources}
+                sources={[]}
                 feedback={message.feedback}
                 onFeedback={(helpful) => handleFeedback(message.id, helpful)}
                 noDataFound={message.noDataFound}
-                showContactOption={message.showContactOption}
+                showContactOption={false}
                 confidence={message.confidence}
                 processingTime={message.processingTime}
-                model={message.model}
+                model={message.uiState === "generation-limited" ? message.model : undefined}
               />
             ))}
             
@@ -1068,12 +1331,13 @@ function ChatPageContent() {
 
             {messages.length > 1 && (
               <div className="min-w-0 lg:hidden">
-                <RelatedResources
+                <SourceStatePanel
+                  state={latestPanelState}
                   userQuestion={latestUserMessage?.content}
-                  aiResponse={latestAssistantMessage?.content}
-                  sources={latestSources as any}
-                  noDataFound={latestNoDataFound}
-                  generationLimited={latestGenerationLimited}
+                  sources={latestSources}
+                  showContactOption={latestAssistantMessage?.showContactOption}
+                  onContact={() => handleContactRequest(latestUserMessage?.content || "")}
+                  onRetry={handleRetry}
                   compact
                 />
               </div>
@@ -1162,13 +1426,13 @@ function ChatPageContent() {
               {/* 질문이 있을 때만 관련 자료와 빠른 질문 표시 */}
               {messages.length > 1 ? (
                 <>
-                  {/* 관련 자료 컴포넌트 - 상단 배치 */}
-                  <RelatedResources 
+                  <SourceStatePanel
+                    state={latestPanelState}
                     userQuestion={latestUserMessage?.content}
-                    aiResponse={latestAssistantMessage?.content}
-                    sources={latestSources as any}
-                    noDataFound={latestNoDataFound}
-                    generationLimited={latestGenerationLimited}
+                    sources={latestSources}
+                    showContactOption={latestAssistantMessage?.showContactOption}
+                    onContact={() => handleContactRequest(latestUserMessage?.content || "")}
+                    onRetry={handleRetry}
                   />
                   
                   {/* 빠른 질문 컴포넌트 - 하단 배치 */}
@@ -1178,16 +1442,7 @@ function ChatPageContent() {
                   />
                 </>
               ) : (
-                /* 초기 상태 - 안내 메시지 */
-                <div className="flex flex-col items-center justify-center py-16 text-center">
-                  <div className="w-16 h-16 rounded-lg border border-[#E5E5E5] bg-white flex items-center justify-center mb-5">
-                    <BookOpen className="w-8 h-8 text-[#5E6AD2]" />
-                  </div>
-                  <h3 className="text-base font-semibold text-[#0D0D0D] mb-2">질문을 시작해보세요</h3>
-                  <p className="text-sm text-[#5E5E5E] max-w-sm leading-relaxed">
-                    광고 플랫폼 정책이나 소재 기준을 질문하면 관련 근거 문서가 이 영역에 표시됩니다.
-                  </p>
-                </div>
+                <SourceStatePanel state="initial-empty" sources={[]} />
               )}
             </div>
             </motion.div>
