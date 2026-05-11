@@ -443,7 +443,7 @@ export class RAGSearchService {
       }
 
       const existing = byKey.get(existingKey)!;
-      const merged = this.mergeDuplicateCandidate(existing, candidate);
+      const merged = this.mergeDuplicateCandidate(existing, candidate, intent);
       byKey.delete(existingKey);
       byKey.set(this.getDedupeKeys(merged)[0], merged);
     }
@@ -509,7 +509,7 @@ export class RAGSearchService {
     return selected;
   }
 
-  private mergeDuplicateCandidate(existing: SearchResult, incoming: SearchResult): SearchResult {
+  private mergeDuplicateCandidate(existing: SearchResult, incoming: SearchResult, intent: QueryIntent): SearchResult {
     const vectorScore = Math.max(existing.vectorScore || 0, incoming.vectorScore || 0);
     const keywordScore = Math.max(existing.keywordScore || 0, incoming.keywordScore || 0);
     const sourceQualityScore = Math.max(
@@ -529,20 +529,34 @@ export class RAGSearchService {
     const policyTitleMatch = existing.policyTitleMatch === true || incoming.policyTitleMatch === true;
     const retrievalMethod: RetrievalMethod = vectorScore > 0 && keywordScore > 0 ? 'hybrid' : existing.retrievalMethod;
     const evidenceType: EvidenceType = retrievalMethod === 'hybrid' ? 'hybrid' : existing.evidenceType || incoming.evidenceType || retrievalMethod;
+    const corpus = existing.corpus || incoming.corpus || 'ollama_document_chunks';
+    const originalMetaSeed =
+      this.isOriginalMetaSeedCandidate({
+        chunkId: existing.id,
+        corpus,
+        sourceVendor: existing.sourceVendor || 'UNKNOWN',
+        metadata: existing.metadata,
+      })
+      || this.isOriginalMetaSeedCandidate({
+        chunkId: incoming.id,
+        corpus,
+        sourceVendor: incoming.sourceVendor || 'UNKNOWN',
+        metadata: incoming.metadata,
+      });
     const hybridScore = this.calculateHybridScore({
       vectorScore,
       keywordScore,
       sourceQualityScore,
       retrievalMethod,
-      corpus: existing.corpus || incoming.corpus || 'ollama_document_chunks',
+      corpus,
       lexicalOverlap,
       vendorMatch,
       vendorMismatch,
       topicMatch,
       topicExactMatch,
       policyTitleMatch,
-      genericPolicyIntent: false,
-      originalMetaSeed: false,
+      genericPolicyIntent: this.isGenericPolicyIntent(intent),
+      originalMetaSeed,
       hasUrl: existing.sourceQuality.hasUrl || incoming.sourceQuality.hasUrl,
     });
     const warnings = Array.from(new Set([
