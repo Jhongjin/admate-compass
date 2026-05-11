@@ -63,4 +63,3 @@ This gate did not perform:
 - package or lockfile changes
 - UI changes
 - secret, token, cookie, session, credential, signed URL, or raw provider output
-
