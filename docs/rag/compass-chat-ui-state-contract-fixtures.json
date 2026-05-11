@@ -1,0 +1,873 @@
+{
+  "contract": {
+    "name": "compass-chat-ui-state-contract",
+    "version": "2/3",
+    "syntheticOnly": true,
+    "routeSurface": "chat-ollama",
+    "productionApiCalled": false,
+    "ragSearchExecuted": false,
+    "browserUsed": false,
+    "dbTouched": false
+  },
+  "forbiddenInternalText": [
+    "schema=compass",
+    "sourcesCount",
+    "retrievalMethod",
+    "sourceQuality",
+    "hybridScore",
+    "vectorScore",
+    "keywordScore",
+    "ollama_document_chunks",
+    "RAGSearchService",
+    "raw source",
+    "raw provider",
+    "raw payload",
+    "provider payload",
+    "stack trace",
+    "/api/chat-ollama",
+    "token",
+    "cookie",
+    "credential",
+    "secret",
+    "signedUrl",
+    "apiKey",
+    "privateKey",
+    "authorization",
+    "bearer",
+    "password",
+    ".env",
+    "SUPABASE",
+    "GEMINI",
+    "ANTHROPIC",
+    "OPENAI"
+  ],
+  "fixtures": [
+    {
+      "id": "chat-ui-initial-empty-source-panel",
+      "synthetic": true,
+      "routeSurface": "chat-ollama",
+      "viewportClass": "desktop-lg",
+      "state": "initial-empty",
+      "message": {
+        "role": "assistant",
+        "content": "안녕하세요. Compass에서 광고 정책과 심사 기준을 질문해 주세요.",
+        "sources": [],
+        "noDataFound": false
+      },
+      "sources": [],
+      "expectedVisibleText": [
+        "안녕하세요",
+        "Compass",
+        "광고 정책",
+        "질문해 주세요",
+        "질문을 시작하면 근거 문서가 여기에 표시됩니다"
+      ],
+      "expectedHiddenText": [
+        "source count",
+        "근거 문서 0개",
+        "근거 문서 없음",
+        "오류",
+        "Compass could not find usable evidence",
+        "verified source",
+        "schema=compass",
+        "sourcesCount",
+        "retrievalMethod",
+        "sourceQuality",
+        "hybridScore",
+        "vectorScore",
+        "keywordScore",
+        "ollama_document_chunks",
+        "RAGSearchService",
+        "raw source",
+        "raw provider",
+        "raw payload",
+        "provider payload",
+        "stack trace",
+        "/api/chat-ollama",
+        "token",
+        "cookie",
+        "credential",
+        "secret",
+        "signedUrl",
+        "apiKey",
+        "privateKey",
+        "authorization",
+        "bearer",
+        "password",
+        ".env",
+        "SUPABASE",
+        "GEMINI",
+        "ANTHROPIC",
+        "OPENAI"
+      ],
+      "expectedControls": [
+        {
+          "id": "source-toggle",
+          "label": "근거 문서 보기",
+          "available": false
+        }
+      ],
+      "panelExpectation": {
+        "surface": "right-panel",
+        "heading": "근거 문서",
+        "sourceCount": 0,
+        "emptyState": "질문을 시작하면 근거 문서가 여기에 표시됩니다",
+        "compactPanelRendered": false
+      },
+      "notes": "Initial desktop state keeps the source panel empty without implying answer evidence."
+    },
+    {
+      "id": "chat-ui-source-found-three-sources",
+      "synthetic": true,
+      "routeSurface": "chat-ollama",
+      "viewportClass": "desktop-lg",
+      "state": "source-found",
+      "message": {
+        "role": "assistant",
+        "content": "Compass 답변: 근거 문서를 기준으로 광고 문구와 랜딩 페이지의 표현 일관성을 확인해야 합니다.",
+        "sources": ["source-meta-landing", "source-google-claim", "source-naver-review"],
+        "noDataFound": false
+      },
+      "sources": [
+        {
+          "id": "source-meta-landing",
+          "title": "Meta 광고 랜딩 페이지 표현 가이드",
+          "excerpt": "광고에서 약속한 혜택과 랜딩 페이지의 주요 조건은 사용자가 쉽게 확인할 수 있어야 합니다.",
+          "url": "https://example.invalid/policies/meta-landing"
+        },
+        {
+          "id": "source-google-claim",
+          "title": "Google Ads 주장 표현 검토 참고",
+          "excerpt": "성과, 할인, 조건 표시는 확인 가능한 근거와 함께 명확하게 제시해야 합니다.",
+          "url": "https://example.invalid/policies/google-claims"
+        },
+        {
+          "id": "source-naver-review",
+          "title": "Naver 광고 심사 공통 체크",
+          "excerpt": "소비자가 오인할 수 있는 표현은 제한 조건과 함께 표시해야 합니다."
+        }
+      ],
+      "expectedVisibleText": [
+        "Compass 답변",
+        "근거 문서 3개 보기",
+        "근거 문서",
+        "Meta 광고 랜딩 페이지 표현 가이드",
+        "Google Ads 주장 표현 검토 참고",
+        "Naver 광고 심사 공통 체크"
+      ],
+      "expectedHiddenText": [
+        "schema=compass",
+        "sourcesCount",
+        "retrievalMethod",
+        "sourceQuality",
+        "hybridScore",
+        "vectorScore",
+        "keywordScore",
+        "ollama_document_chunks",
+        "RAGSearchService",
+        "raw source",
+        "raw provider",
+        "raw payload",
+        "provider payload",
+        "stack trace",
+        "/api/chat-ollama",
+        "token",
+        "cookie",
+        "credential",
+        "secret",
+        "signedUrl",
+        "apiKey",
+        "privateKey",
+        "authorization",
+        "bearer",
+        "password",
+        ".env",
+        "SUPABASE",
+        "GEMINI",
+        "ANTHROPIC",
+        "OPENAI"
+      ],
+      "expectedControls": [
+        {
+          "id": "source-toggle",
+          "label": "근거 문서 3개 보기",
+          "available": true
+        },
+        {
+          "id": "expand-source-card",
+          "label": "펼치기",
+          "available": true
+        },
+        {
+          "id": "open-source-url",
+          "label": "열기",
+          "available": true
+        }
+      ],
+      "panelExpectation": {
+        "surface": "right-panel",
+        "heading": "근거 문서",
+        "sourceCount": 3,
+        "cardsVisible": true,
+        "compactPanelRendered": false
+      },
+      "notes": "Desktop source-found state verifies count, cards, and safe URL affordance."
+    },
+    {
+      "id": "chat-ui-source-found-long-korean-title",
+      "synthetic": true,
+      "routeSurface": "chat-ollama",
+      "viewportClass": "desktop-lg",
+      "state": "source-found",
+      "message": {
+        "role": "assistant",
+        "content": "Compass 답변: 긴 한국어 정책 제목과 발췌도 근거 문서 카드에서 읽을 수 있어야 합니다.",
+        "sources": ["source-long-korean-title"],
+        "noDataFound": false
+      },
+      "sources": [
+        {
+          "id": "source-long-korean-title",
+          "title": "플랫폼별 건강기능식품 광고 소재의 효능 표현, 후기 사용, 랜딩 페이지 고지 사항에 대한 매우 긴 한국어 검토 메모",
+          "excerpt": "효능 표현과 후기 문구는 사용자가 광고와 랜딩 페이지에서 동일한 조건을 확인할 수 있도록 제한 사항과 함께 표시해야 합니다.",
+          "url": "https://example.invalid/policies/long-korean-title"
+        }
+      ],
+      "expectedVisibleText": [
+        "Compass 답변",
+        "근거 문서 1개 보기",
+        "매우 긴 한국어 검토 메모",
+        "효능 표현",
+        "제한 사항"
+      ],
+      "expectedHiddenText": [
+        "horizontal page scroll",
+        "schema=compass",
+        "sourcesCount",
+        "retrievalMethod",
+        "sourceQuality",
+        "hybridScore",
+        "vectorScore",
+        "keywordScore",
+        "ollama_document_chunks",
+        "RAGSearchService",
+        "raw source",
+        "raw provider",
+        "raw payload",
+        "provider payload",
+        "stack trace",
+        "/api/chat-ollama",
+        "token",
+        "cookie",
+        "credential",
+        "secret",
+        "signedUrl",
+        "apiKey",
+        "privateKey",
+        "authorization",
+        "bearer",
+        "password",
+        ".env",
+        "SUPABASE",
+        "GEMINI",
+        "ANTHROPIC",
+        "OPENAI"
+      ],
+      "expectedControls": [
+        {
+          "id": "source-toggle",
+          "label": "근거 문서 1개 보기",
+          "available": true
+        },
+        {
+          "id": "expand-source-card",
+          "label": "펼치기",
+          "available": true
+        }
+      ],
+      "panelExpectation": {
+        "surface": "right-panel",
+        "heading": "근거 문서",
+        "sourceCount": 1,
+        "cardsVisible": true,
+        "longTextWrapRequired": true
+      },
+      "notes": "Long Korean fixture keeps wrapping expectation in the offline contract."
+    },
+    {
+      "id": "chat-ui-nodata-empty-source-panel",
+      "synthetic": true,
+      "routeSurface": "chat-ollama",
+      "viewportClass": "desktop-lg",
+      "state": "noData",
+      "message": {
+        "role": "assistant",
+        "content": "Compass could not find usable evidence in current documents. Narrow the platform, policy item, or creative type and try again.",
+        "sources": [],
+        "noDataFound": true
+      },
+      "sources": [],
+      "expectedVisibleText": [
+        "Compass could not find usable evidence in current documents",
+        "Narrow the platform, policy item, or creative type",
+        "근거 문서 없음"
+      ],
+      "expectedHiddenText": [
+        "근거 문서 1개 보기",
+        "verified source",
+        "accepted",
+        "allowed",
+        "safe",
+        "no issue",
+        "schema=compass",
+        "sourcesCount",
+        "retrievalMethod",
+        "sourceQuality",
+        "hybridScore",
+        "vectorScore",
+        "keywordScore",
+        "ollama_document_chunks",
+        "RAGSearchService",
+        "raw source",
+        "raw provider",
+        "raw payload",
+        "provider payload",
+        "stack trace",
+        "/api/chat-ollama",
+        "token",
+        "cookie",
+        "credential",
+        "secret",
+        "signedUrl",
+        "apiKey",
+        "privateKey",
+        "authorization",
+        "bearer",
+        "password",
+        ".env",
+        "SUPABASE",
+        "GEMINI",
+        "ANTHROPIC",
+        "OPENAI"
+      ],
+      "expectedControls": [
+        {
+          "id": "source-toggle",
+          "label": "근거 문서 보기",
+          "available": false
+        },
+        {
+          "id": "contact-support",
+          "label": "문의",
+          "available": true
+        }
+      ],
+      "panelExpectation": {
+        "surface": "right-panel",
+        "heading": "근거 문서 없음",
+        "sourceCount": 0,
+        "cardsVisible": false,
+        "narrowingGuidanceVisible": true
+      },
+      "notes": "NoData state is distinct from source-found and does not imply approval."
+    },
+    {
+      "id": "chat-ui-generation-limited-sources-preserved",
+      "synthetic": true,
+      "routeSurface": "chat-ollama",
+      "viewportClass": "desktop-lg",
+      "state": "generation-limited",
+      "message": {
+        "role": "assistant",
+        "content": "답변 생성이 일시적으로 제한되었습니다. 확인된 근거 문서는 아래에서 계속 확인할 수 있습니다.",
+        "sources": ["source-limited-meta", "source-limited-kakao"],
+        "noDataFound": false,
+        "modelLabel": "generation-limited"
+      },
+      "sources": [
+        {
+          "id": "source-limited-meta",
+          "title": "Meta 광고 소재 제한 표현 참고",
+          "excerpt": "소재 표현은 사용자가 확인 가능한 조건과 함께 제시되어야 합니다.",
+          "url": "https://example.invalid/policies/limited-meta"
+        },
+        {
+          "id": "source-limited-kakao",
+          "title": "Kakao 광고 심사 주의사항",
+          "excerpt": "제한 업종과 주요 조건은 광고 소재와 연결된 화면에서 확인 가능해야 합니다."
+        }
+      ],
+      "expectedVisibleText": [
+        "답변 생성이 일시적으로 제한되었습니다",
+        "확인된 근거 문서는 아래에서 계속 확인할 수 있습니다",
+        "생성 답변 제한",
+        "근거 문서 2개 보기",
+        "Meta 광고 소재 제한 표현 참고",
+        "Kakao 광고 심사 주의사항"
+      ],
+      "expectedHiddenText": [
+        "근거 문서 없음",
+        "Compass could not find usable evidence",
+        "provider stack",
+        "transport error",
+        "schema=compass",
+        "sourcesCount",
+        "retrievalMethod",
+        "sourceQuality",
+        "hybridScore",
+        "vectorScore",
+        "keywordScore",
+        "ollama_document_chunks",
+        "RAGSearchService",
+        "raw source",
+        "raw provider",
+        "raw payload",
+        "provider payload",
+        "stack trace",
+        "/api/chat-ollama",
+        "token",
+        "cookie",
+        "credential",
+        "secret",
+        "signedUrl",
+        "apiKey",
+        "privateKey",
+        "authorization",
+        "bearer",
+        "password",
+        ".env",
+        "SUPABASE",
+        "GEMINI",
+        "ANTHROPIC",
+        "OPENAI"
+      ],
+      "expectedControls": [
+        {
+          "id": "source-toggle",
+          "label": "근거 문서 2개 보기",
+          "available": true
+        },
+        {
+          "id": "expand-source-card",
+          "label": "펼치기",
+          "available": true
+        }
+      ],
+      "panelExpectation": {
+        "surface": "right-panel",
+        "heading": "생성 답변 제한",
+        "sourceCount": 2,
+        "cardsVisible": true,
+        "limitationBannerVisible": true
+      },
+      "notes": "Generation-limited state preserves retrieved source evidence."
+    },
+    {
+      "id": "chat-ui-error-no-sources",
+      "synthetic": true,
+      "routeSurface": "chat-ollama",
+      "viewportClass": "desktop-lg",
+      "state": "error",
+      "message": {
+        "role": "assistant",
+        "content": "일시적인 서비스 오류로 답변을 만들지 못했습니다. 잠시 후 다시 시도해 주세요.",
+        "sources": [],
+        "noDataFound": false
+      },
+      "sources": [],
+      "expectedVisibleText": [
+        "일시적인 서비스 오류",
+        "잠시 후 다시 시도해 주세요",
+        "근거 문서 없음"
+      ],
+      "expectedHiddenText": [
+        "verified source",
+        "근거 문서 1개 보기",
+        "stack trace",
+        "provider payload",
+        "/api/chat-ollama",
+        "token",
+        "cookie",
+        "credential",
+        "secret",
+        "signedUrl",
+        "schema=compass",
+        "sourcesCount",
+        "retrievalMethod",
+        "sourceQuality",
+        "hybridScore",
+        "vectorScore",
+        "keywordScore",
+        "ollama_document_chunks",
+        "RAGSearchService",
+        "raw source",
+        "raw provider",
+        "raw payload",
+        "apiKey",
+        "privateKey",
+        "authorization",
+        "bearer",
+        "password",
+        ".env",
+        "SUPABASE",
+        "GEMINI",
+        "ANTHROPIC",
+        "OPENAI"
+      ],
+      "expectedControls": [
+        {
+          "id": "source-toggle",
+          "label": "근거 문서 보기",
+          "available": false
+        },
+        {
+          "id": "retry",
+          "label": "다시 시도",
+          "available": true
+        },
+        {
+          "id": "new-chat",
+          "label": "새 대화",
+          "available": true
+        }
+      ],
+      "panelExpectation": {
+        "surface": "right-panel",
+        "heading": "근거 문서 없음",
+        "sourceCount": 0,
+        "cardsVisible": false,
+        "errorSafeEmptyState": true,
+        "inputRemainsReachable": true
+      },
+      "notes": "Error state does not invent evidence and keeps recovery controls reachable."
+    },
+    {
+      "id": "chat-ui-mobile-source-found-compact-panel",
+      "synthetic": true,
+      "routeSurface": "chat-ollama",
+      "viewportClass": "mobile",
+      "state": "source-found",
+      "message": {
+        "role": "assistant",
+        "content": "Compass 답변: 모바일에서도 근거 문서가 답변 아래 compact panel로 표시됩니다.",
+        "sources": ["source-mobile-meta"],
+        "noDataFound": false
+      },
+      "sources": [
+        {
+          "id": "source-mobile-meta",
+          "title": "Meta 모바일 광고 정책 근거",
+          "excerpt": "모바일 화면에서도 근거 제목과 발췌는 줄바꿈 가능한 텍스트로 표시합니다.",
+          "url": "https://example.invalid/policies/mobile-meta"
+        }
+      ],
+      "expectedVisibleText": [
+        "Compass 답변",
+        "근거 문서 1개 보기",
+        "근거 문서",
+        "Meta 모바일 광고 정책 근거"
+      ],
+      "expectedHiddenText": [
+        "desktop right panel",
+        "fixed overlay",
+        "horizontal page scroll",
+        "schema=compass",
+        "sourcesCount",
+        "retrievalMethod",
+        "sourceQuality",
+        "hybridScore",
+        "vectorScore",
+        "keywordScore",
+        "ollama_document_chunks",
+        "RAGSearchService",
+        "raw source",
+        "raw provider",
+        "raw payload",
+        "provider payload",
+        "stack trace",
+        "/api/chat-ollama",
+        "token",
+        "cookie",
+        "credential",
+        "secret",
+        "signedUrl",
+        "apiKey",
+        "privateKey",
+        "authorization",
+        "bearer",
+        "password",
+        ".env",
+        "SUPABASE",
+        "GEMINI",
+        "ANTHROPIC",
+        "OPENAI"
+      ],
+      "expectedControls": [
+        {
+          "id": "source-toggle",
+          "label": "근거 문서 1개 보기",
+          "available": true
+        },
+        {
+          "id": "expand-source-card",
+          "label": "펼치기",
+          "available": true
+        }
+      ],
+      "panelExpectation": {
+        "surface": "compact-panel",
+        "heading": "근거 문서",
+        "sourceCount": 1,
+        "cardsVisible": true,
+        "compactPanelRendered": true,
+        "insideChatScrollArea": true,
+        "inputBarNotCovered": true,
+        "fingerTargetControls": true,
+        "desktopRightPanelRendered": false
+      },
+      "notes": "Mobile source-found state keeps sources below messages in the chat scroll area."
+    },
+    {
+      "id": "chat-ui-mobile-nodata-compact-panel",
+      "synthetic": true,
+      "routeSurface": "chat-ollama",
+      "viewportClass": "mobile",
+      "state": "noData",
+      "message": {
+        "role": "assistant",
+        "content": "Compass could not find usable evidence in current documents. Narrow the platform, policy item, or creative type and try again.",
+        "sources": [],
+        "noDataFound": true
+      },
+      "sources": [],
+      "expectedVisibleText": [
+        "Compass could not find usable evidence in current documents",
+        "Narrow the platform, policy item, or creative type",
+        "근거 문서 없음"
+      ],
+      "expectedHiddenText": [
+        "verified source",
+        "accepted",
+        "allowed",
+        "safe",
+        "no issue",
+        "fixed overlay",
+        "dead-end overlay",
+        "schema=compass",
+        "sourcesCount",
+        "retrievalMethod",
+        "sourceQuality",
+        "hybridScore",
+        "vectorScore",
+        "keywordScore",
+        "ollama_document_chunks",
+        "RAGSearchService",
+        "raw source",
+        "raw provider",
+        "raw payload",
+        "provider payload",
+        "stack trace",
+        "/api/chat-ollama",
+        "token",
+        "cookie",
+        "credential",
+        "secret",
+        "signedUrl",
+        "apiKey",
+        "privateKey",
+        "authorization",
+        "bearer",
+        "password",
+        ".env",
+        "SUPABASE",
+        "GEMINI",
+        "ANTHROPIC",
+        "OPENAI"
+      ],
+      "expectedControls": [
+        {
+          "id": "source-toggle",
+          "label": "근거 문서 보기",
+          "available": false
+        }
+      ],
+      "panelExpectation": {
+        "surface": "compact-panel",
+        "heading": "근거 문서 없음",
+        "sourceCount": 0,
+        "cardsVisible": false,
+        "compactPanelRendered": true,
+        "insideChatScrollArea": true,
+        "inputBarNotCovered": true,
+        "desktopRightPanelRendered": false
+      },
+      "notes": "Mobile noData keeps guidance reachable without source-card shells."
+    },
+    {
+      "id": "chat-ui-mobile-generation-limited-compact-panel",
+      "synthetic": true,
+      "routeSurface": "chat-ollama",
+      "viewportClass": "small-mobile",
+      "state": "generation-limited",
+      "message": {
+        "role": "assistant",
+        "content": "답변 생성이 일시적으로 제한되었습니다. 확인된 근거 문서는 아래에서 계속 확인할 수 있습니다.",
+        "sources": ["source-small-mobile-limited"],
+        "noDataFound": false,
+        "modelLabel": "generation-limited"
+      },
+      "sources": [
+        {
+          "id": "source-small-mobile-limited",
+          "title": "작은 모바일 화면용 제한 상태 근거",
+          "excerpt": "긴 제목, 배지, 버튼은 작은 모바일 화면에서도 입력창을 가리지 않고 줄바꿈되어야 합니다."
+        }
+      ],
+      "expectedVisibleText": [
+        "답변 생성이 일시적으로 제한되었습니다",
+        "생성 답변 제한",
+        "근거 문서 1개 보기",
+        "작은 모바일 화면용 제한 상태 근거"
+      ],
+      "expectedHiddenText": [
+        "근거 문서 없음",
+        "fixed overlay",
+        "provider stack",
+        "transport error",
+        "schema=compass",
+        "sourcesCount",
+        "retrievalMethod",
+        "sourceQuality",
+        "hybridScore",
+        "vectorScore",
+        "keywordScore",
+        "ollama_document_chunks",
+        "RAGSearchService",
+        "raw source",
+        "raw provider",
+        "raw payload",
+        "provider payload",
+        "stack trace",
+        "/api/chat-ollama",
+        "token",
+        "cookie",
+        "credential",
+        "secret",
+        "signedUrl",
+        "apiKey",
+        "privateKey",
+        "authorization",
+        "bearer",
+        "password",
+        ".env",
+        "SUPABASE",
+        "GEMINI",
+        "ANTHROPIC",
+        "OPENAI"
+      ],
+      "expectedControls": [
+        {
+          "id": "source-toggle",
+          "label": "근거 문서 1개 보기",
+          "available": true
+        },
+        {
+          "id": "expand-source-card",
+          "label": "펼치기",
+          "available": true
+        }
+      ],
+      "panelExpectation": {
+        "surface": "compact-panel",
+        "heading": "생성 답변 제한",
+        "sourceCount": 1,
+        "cardsVisible": true,
+        "limitationBannerVisible": true,
+        "compactPanelRendered": true,
+        "insideChatScrollArea": true,
+        "inputBarNotCovered": true,
+        "fingerTargetControls": true,
+        "desktopRightPanelRendered": false
+      },
+      "notes": "Small mobile generation-limited state preserves source inspection."
+    },
+    {
+      "id": "chat-ui-mobile-error-no-panel-trap",
+      "synthetic": true,
+      "routeSurface": "chat-ollama",
+      "viewportClass": "mobile",
+      "state": "error",
+      "message": {
+        "role": "assistant",
+        "content": "일시적인 서비스 오류로 답변을 만들지 못했습니다. 잠시 후 다시 시도해 주세요.",
+        "sources": [],
+        "noDataFound": false
+      },
+      "sources": [],
+      "expectedVisibleText": [
+        "일시적인 서비스 오류",
+        "잠시 후 다시 시도해 주세요",
+        "근거 문서 없음"
+      ],
+      "expectedHiddenText": [
+        "verified source",
+        "fixed overlay",
+        "dead-end overlay",
+        "stack trace",
+        "/api/chat-ollama",
+        "token",
+        "cookie",
+        "credential",
+        "secret",
+        "signedUrl",
+        "schema=compass",
+        "sourcesCount",
+        "retrievalMethod",
+        "sourceQuality",
+        "hybridScore",
+        "vectorScore",
+        "keywordScore",
+        "ollama_document_chunks",
+        "RAGSearchService",
+        "raw source",
+        "raw provider",
+        "raw payload",
+        "provider payload",
+        "apiKey",
+        "privateKey",
+        "authorization",
+        "bearer",
+        "password",
+        ".env",
+        "SUPABASE",
+        "GEMINI",
+        "ANTHROPIC",
+        "OPENAI"
+      ],
+      "expectedControls": [
+        {
+          "id": "source-toggle",
+          "label": "근거 문서 보기",
+          "available": false
+        },
+        {
+          "id": "retry",
+          "label": "다시 시도",
+          "available": true
+        }
+      ],
+      "panelExpectation": {
+        "surface": "compact-panel",
+        "heading": "근거 문서 없음",
+        "sourceCount": 0,
+        "cardsVisible": false,
+        "compactPanelRendered": true,
+        "insideChatScrollArea": true,
+        "inputBarNotCovered": true,
+        "deadEndOverlay": false,
+        "desktopRightPanelRendered": false
+      },
+      "notes": "Mobile error state must not trap the source panel over chat recovery controls."
+    }
+  ]
+}
