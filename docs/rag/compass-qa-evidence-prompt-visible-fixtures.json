@@ -1,0 +1,175 @@
+{
+  "contract": {
+    "name": "compass-qa-evidence-prompt-visible",
+    "version": "1",
+    "mode": "offline_static_evidence_contract",
+    "productionApiCalled": false,
+    "browserUsed": false,
+    "sessionMaterialUsed": false,
+    "ragSearchExecuted": false,
+    "dbTouched": false
+  },
+  "forbiddenEvidenceText": [
+    "raw provider",
+    "raw payload",
+    "cookie",
+    "token",
+    "credential",
+    "secret",
+    "signedUrl",
+    "apiKey",
+    "privateKey",
+    "authorization",
+    "bearer",
+    "password",
+    ".env",
+    "SUPABASE",
+    "GEMINI",
+    "ANTHROPIC",
+    "OPENAI",
+    "source_run_hash",
+    "fingerprint"
+  ],
+  "records": [
+    {
+      "id": "authenticated-source-found-visible-prompt-record",
+      "fixtureId": "source-found-meta-policy",
+      "prompt": "Meta 광고 소재에서 과장 표현과 랜딩 페이지 관련 주의사항을 알려줘",
+      "expectedState": "source-found",
+      "resultVerdict": "pass",
+      "evidenceCapture": {
+        "promptVisible": true,
+        "resultLinkedToPrompt": true,
+        "terminalStateVisible": true,
+        "promptVisibilityAssertion": "The submitted prompt is visible in the same sanitized evidence set as the assistant result.",
+        "captureSurface": "sanitized_screenshot",
+        "viewportClass": "desktop",
+        "evidenceLabel": "desktop-source-found-redacted.png"
+      },
+      "sanitizedResponseShape": {
+        "httpStatus": 200,
+        "ok": true,
+        "noDataFound": false,
+        "sourceCount": 3,
+        "generationLimited": true,
+        "errorFlag": false
+      },
+      "expectedVisibleText": [
+        "Meta 광고 소재",
+        "근거 문서",
+        "생성 답변 제한"
+      ],
+      "expectedHiddenText": [
+        "raw provider",
+        "raw payload",
+        "retrievalMethod",
+        "sourceQuality",
+        "hybridScore",
+        "source_run_hash",
+        "fingerprint"
+      ],
+      "notes": "Pass/fail evidence is valid because the prompt is visible with the captured source-found result."
+    },
+    {
+      "id": "authenticated-nodata-visible-prompt-record",
+      "fixtureId": "future-impossible-mars-3027",
+      "prompt": "화성 거주용 산소 농장 광고의 3027년 심사 기준을 알려줘",
+      "expectedState": "noData",
+      "resultVerdict": "pass",
+      "evidenceCapture": {
+        "promptVisible": true,
+        "resultLinkedToPrompt": true,
+        "terminalStateVisible": true,
+        "promptVisibilityAssertion": "The noData screenshot or paired sanitized shape must show this exact submitted prompt context.",
+        "captureSurface": "sanitized_screenshot_and_shape",
+        "viewportClass": "desktop",
+        "evidenceLabel": "desktop-nodata-redacted.png"
+      },
+      "sanitizedResponseShape": {
+        "httpStatus": 200,
+        "ok": true,
+        "noDataFound": true,
+        "sourceCount": 0,
+        "generationLimited": false,
+        "errorFlag": false
+      },
+      "expectedVisibleText": [
+        "화성 거주용 산소 농장",
+        "근거 문서 없음",
+        "Compass 문서"
+      ],
+      "expectedHiddenText": [
+        "근거 문서 3개",
+        "raw provider",
+        "raw payload",
+        "source_run_hash",
+        "fingerprint"
+      ],
+      "notes": "A noData pass must bind the visible user prompt to the noData state so generic-source screenshots cannot be misattributed."
+    },
+    {
+      "id": "mobile-long-policy-visible-prompt-record",
+      "fixtureId": "long-korean-platform-policy",
+      "prompt": "Meta, Google, Naver, Kakao에서 화장품 광고 소재를 운영할 때 플랫폼별 주의사항을 구분해서 설명해줘",
+      "expectedState": "generation-limited",
+      "resultVerdict": "pass",
+      "evidenceCapture": {
+        "promptVisible": true,
+        "resultLinkedToPrompt": true,
+        "terminalStateVisible": true,
+        "promptVisibilityAssertion": "The mobile capture includes the submitted prompt above the limited answer and source panel.",
+        "captureSurface": "sanitized_screenshot",
+        "viewportClass": "mobile",
+        "evidenceLabel": "mobile-long-policy-redacted.png"
+      },
+      "sanitizedResponseShape": {
+        "httpStatus": 200,
+        "ok": true,
+        "noDataFound": false,
+        "sourceCount": 3,
+        "generationLimited": true,
+        "errorFlag": false
+      },
+      "expectedVisibleText": [
+        "화장품 광고 소재",
+        "생성 답변 제한",
+        "근거 문서"
+      ],
+      "expectedHiddenText": [
+        "horizontal page scroll",
+        "raw provider",
+        "raw payload",
+        "source_run_hash",
+        "fingerprint"
+      ],
+      "notes": "Mobile evidence remains usable only when the long prompt and result state are tied in the capture record."
+    },
+    {
+      "id": "inconclusive-nodata-hidden-prompt-record",
+      "fixtureId": "future-impossible-mars-3027",
+      "prompt": "화성 거주용 산소 농장 광고의 3027년 심사 기준을 알려줘",
+      "expectedState": "noData",
+      "resultVerdict": "blocked",
+      "evidenceCapture": {
+        "promptVisible": false,
+        "resultLinkedToPrompt": false,
+        "terminalStateVisible": true,
+        "promptVisibilityAssertion": "The captured UI state does not show the submitted prompt, so this evidence cannot be used as pass or fail.",
+        "captureSurface": "sanitized_screenshot",
+        "viewportClass": "desktop",
+        "evidenceLabel": "desktop-nodata-inconclusive-redacted.png"
+      },
+      "expectedVisibleText": [
+        "근거 문서 없음"
+      ],
+      "expectedHiddenText": [
+        "raw provider",
+        "raw payload",
+        "source_run_hash",
+        "fingerprint"
+      ],
+      "blockReason": "prompt_not_visible",
+      "notes": "This is the only allowed prompt-hidden example: it must be recorded as blocked/inconclusive, never as pass or fail."
+    }
+  ]
+}
