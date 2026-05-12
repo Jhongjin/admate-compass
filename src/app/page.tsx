@@ -313,9 +313,9 @@ export default function HomePage() {
                   <Database className="h-5 w-5" />
                 </div>
                 <div>
-                  <h2 className="font-nanum text-xl font-bold text-white">관리자 영역</h2>
+                  <h2 className="font-nanum text-xl font-bold text-white">운영 안내</h2>
                   <p className="font-nanum text-sm text-gray-300">
-                    관리자 도구는 공개 루트에서 직접 호출하지 않으며, 권한 확인은 각 관리자 화면에서 진행합니다.
+                    운영 도구는 로그인 후 권한이 확인된 화면에서만 사용할 수 있습니다.
                   </p>
                 </div>
               </div>
@@ -325,10 +325,10 @@ export default function HomePage() {
                   <Settings className="mt-0.5 h-5 w-5 flex-none text-gray-300" />
                   <div className="space-y-2">
                     <p className="font-nanum text-sm leading-6 text-gray-300">
-                      관리자 문서 관리, 모니터링, 사용자/로그 관리는 로그인 후 각 관리자 화면에서 확인합니다.
+                      문서 관리, 모니터링, 사용자/로그 관리는 승인된 운영 화면에서 확인합니다.
                     </p>
                     <p className="font-nanum text-xs leading-5 text-gray-400">
-                      공개 landing에서는 정책 검색 진입과 제품 안내만 노출하고, 관리자 상태 점검은 별도 운영 화면으로 분리합니다.
+                      공개 첫 화면에서는 정책 검색 진입과 제품 안내만 노출하고, 운영 상태 점검은 별도 화면으로 분리합니다.
                     </p>
                   </div>
                 </div>

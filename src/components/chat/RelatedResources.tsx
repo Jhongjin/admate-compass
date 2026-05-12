@@ -237,6 +237,7 @@ export default function RelatedResources({
                           className="h-7 w-7 rounded-md p-0 text-[#5E5E5E] hover:bg-[#F4F5FF] hover:text-[#5E6AD2]"
                           onClick={() => source.sourceType === "file" ? handleFileDownload(source) : handleUrlOpen(source)}
                           title={source.sourceType === "file" ? "파일 다운로드" : "원문 열기"}
+                          aria-label={source.sourceType === "file" ? "근거 문서 파일 다운로드" : "근거 문서 원문 열기"}
                         >
                           {source.sourceType === "file" ? <Download className="h-3.5 w-3.5" /> : <ExternalLink className="h-3.5 w-3.5" />}
                         </Button>
@@ -247,6 +248,7 @@ export default function RelatedResources({
                         className="h-7 w-7 rounded-md p-0 text-[#5E5E5E] hover:bg-[#F4F4F4] hover:text-[#0D0D0D]"
                         onClick={() => toggleExpanded(source.id)}
                         title={isExpanded ? "접기" : "펼치기"}
+                        aria-label={isExpanded ? "근거 문서 접기" : "근거 문서 펼치기"}
                       >
                         {isExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
                       </Button>
@@ -278,7 +280,7 @@ export default function RelatedResources({
                     <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-[#E5E5E5] pt-3 text-xs text-[#777777]">
                       <span className="inline-flex items-center gap-1">
                         <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
-                        Compass verified source
+                        Compass 검증 근거
                       </span>
                       <span className="inline-flex items-center gap-1">
                         {source.sourceType === "file" ? <FileText className="h-3.5 w-3.5" /> : <Globe className="h-3.5 w-3.5" />}

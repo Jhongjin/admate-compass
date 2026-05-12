@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { ChatSource, ChatUiState } from "@/components/chat/chatUiStateTypes";
 
-const NO_DATA_MESSAGE = "Compass could not find usable evidence in current documents. Narrow the platform, policy item, or creative type and try again.";
+const NO_DATA_MESSAGE = "현재 Compass 문서에서 확인 가능한 근거를 찾지 못했습니다. 플랫폼명, 정책 항목, 소재 유형을 더 구체적으로 입력해 주세요.";
 const ERROR_MESSAGE = "일시적인 서비스 오류로 답변을 만들지 못했습니다. 잠시 후 다시 시도해 주세요.";
 
 interface SourceStatePanelProps {
