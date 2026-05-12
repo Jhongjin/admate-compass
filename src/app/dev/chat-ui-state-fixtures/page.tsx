@@ -18,6 +18,11 @@ interface ChatUiStateFixture {
   routeSurface: string;
   viewportClass: ViewportClass;
   state: ChatUiState;
+  promptExpectation?: {
+    userPrompt: string;
+    promptVisible: boolean;
+    resultLinkedToPrompt: boolean;
+  };
   message: {
     role: "assistant" | "user";
     content: string;
@@ -85,9 +90,11 @@ function getValidatedFixtures() {
 function FixtureTranscript({ fixture }: { fixture: ChatUiStateFixture }) {
   return (
     <div className="space-y-3">
-      <div className="ml-auto max-w-[88%] rounded-lg bg-[#0D0D0D] px-4 py-3 text-sm leading-6 text-white">
-        Fixture review question
-      </div>
+      {fixture.promptExpectation?.userPrompt && (
+        <div className="ml-auto max-w-[88%] rounded-lg bg-[#0D0D0D] px-4 py-3 text-sm leading-6 text-white">
+          {fixture.promptExpectation.userPrompt}
+        </div>
+      )}
       <div className="max-w-[92%] rounded-lg border border-[#E5E5E5] bg-white px-4 py-3 text-sm leading-6 text-[#0D0D0D] shadow-sm">
         {fixture.message.content}
       </div>
@@ -101,7 +108,7 @@ function FixturePanel({ fixture, compact }: { fixture: ChatUiStateFixture; compa
       state={fixture.state}
       sources={fixture.sources}
       compact={compact}
-      userQuestion="Fixture review question"
+      userQuestion={fixture.promptExpectation?.userPrompt}
       showContactOption={hasAvailableControl(fixture, "contact-support")}
       sourceOpenMode="noop"
     />

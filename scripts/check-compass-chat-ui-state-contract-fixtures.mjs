@@ -5,6 +5,7 @@ import path from "node:path";
 
 const root = process.cwd();
 const fixturePath = path.join(root, "docs/rag/compass-chat-ui-state-contract-fixtures.json");
+const devRendererPath = path.join(root, "src/app/dev/chat-ui-state-fixtures/page.tsx");
 
 const allowedStates = new Set([
   "initial-empty",
@@ -154,6 +155,7 @@ function collectDisplayStrings(fixture) {
   }
 
   visit({
+    promptExpectation: fixture.promptExpectation,
     message: fixture.message,
     sources: fixture.sources,
     expectedVisibleText: fixture.expectedVisibleText,
@@ -162,6 +164,38 @@ function collectDisplayStrings(fixture) {
   });
 
   return strings;
+}
+
+function validatePromptExpectation(fixture, label) {
+  const promptExpectation = fixture.promptExpectation;
+
+  if (fixture.state === "initial-empty") {
+    if (promptExpectation !== undefined) {
+      fail(`${label}.initial-empty must not include promptExpectation`);
+    }
+    return;
+  }
+
+  if (!isPlainObject(promptExpectation)) {
+    fail(`${label}.promptExpectation must be an object for conversational states`);
+    return;
+  }
+
+  assertString(promptExpectation.userPrompt, `${label}.promptExpectation.userPrompt`);
+  assertBoolean(promptExpectation.promptVisible, `${label}.promptExpectation.promptVisible`);
+  assertBoolean(promptExpectation.resultLinkedToPrompt, `${label}.promptExpectation.resultLinkedToPrompt`);
+
+  if (promptExpectation.promptVisible !== true) {
+    fail(`${label}.promptExpectation.promptVisible must be true`);
+  }
+
+  if (promptExpectation.resultLinkedToPrompt !== true) {
+    fail(`${label}.promptExpectation.resultLinkedToPrompt must be true`);
+  }
+
+  if (includesText(fixture.message?.content, promptExpectation.userPrompt)) {
+    fail(`${label}.message.content must not duplicate the user prompt`);
+  }
 }
 
 function requireHiddenTextCoverage(hiddenText, fixtureLabel, fragments) {
@@ -186,6 +220,27 @@ function validateContract(contract) {
   for (const flag of operationalBooleanFlags) {
     assertBoolean(contract[flag], `contract.${flag}`);
     if (contract[flag] !== false) fail(`contract.${flag} must be false`);
+  }
+}
+
+function validateDevRendererPromptBinding() {
+  if (!fs.existsSync(devRendererPath)) {
+    fail(`dev renderer not found: ${path.relative(root, devRendererPath)}`);
+    return;
+  }
+
+  const source = fs.readFileSync(devRendererPath, "utf8");
+  if (!source.includes("fixture.promptExpectation?.userPrompt")) {
+    fail("dev fixture renderer must read fixture.promptExpectation.userPrompt");
+  }
+  if (!source.includes("{fixture.promptExpectation.userPrompt}")) {
+    fail("dev fixture renderer must render the fixture-specific user prompt");
+  }
+  if (!source.includes("userQuestion={fixture.promptExpectation?.userPrompt}")) {
+    fail("dev fixture renderer must pass the fixture prompt to SourceStatePanel");
+  }
+  if (source.includes("Fixture review question")) {
+    fail("dev fixture renderer must not use the old generic fixture prompt");
   }
 }
 
@@ -360,6 +415,7 @@ if (!isPlainObject(payload)) {
 }
 
 validateContract(payload.contract);
+validateDevRendererPromptBinding();
 assertStringArray(payload.forbiddenInternalText, "forbiddenInternalText", requiredForbiddenInternalText.length);
 requireHiddenTextCoverage(payload.forbiddenInternalText || [], "forbiddenInternalText", requiredForbiddenInternalText);
 
@@ -377,6 +433,7 @@ const stateCounts = new Map();
 const mobileStateCounts = new Map();
 let sourceFoundLongTitleCases = 0;
 let generationLimitedSourcePreservationCases = 0;
+let promptBoundConversationCases = 0;
 
 for (const [index, fixture] of payload.fixtures.entries()) {
   const label = `fixtures[${index}]`;
@@ -434,6 +491,7 @@ for (const [index, fixture] of payload.fixtures.entries()) {
   requireHiddenTextCoverage(fixture.expectedHiddenText || [], label, requiredForbiddenInternalText);
   validateControls(fixture, label);
   validatePanelExpectation(fixture, label);
+  validatePromptExpectation(fixture, label);
   validateStateContract(fixture, label);
   validateDisplayTextSafety(fixture, label, payload.forbiddenInternalText || []);
   assertString(fixture.notes, `${label}.notes`);
@@ -447,6 +505,9 @@ for (const [index, fixture] of payload.fixtures.entries()) {
   }
   if (fixture.state === "generation-limited" && fixture.sources.length > 0) {
     generationLimitedSourcePreservationCases += 1;
+  }
+  if (fixture.state !== "initial-empty" && fixture.promptExpectation?.promptVisible === true) {
+    promptBoundConversationCases += 1;
   }
 }
 
@@ -463,6 +524,9 @@ if (sourceFoundLongTitleCases < 1) fail("expected at least one long Korean sourc
 if (generationLimitedSourcePreservationCases < 2) {
   fail("expected at least two generation-limited source preservation fixtures");
 }
+if (promptBoundConversationCases < payload.fixtures.length - (stateCounts.get("initial-empty") || 0)) {
+  fail("all conversational fixtures must include prompt-visible binding");
+}
 
 if (!process.exitCode) {
   console.log(JSON.stringify({
@@ -474,6 +538,7 @@ if (!process.exitCode) {
     forbiddenInternalTextCount: payload.forbiddenInternalText.length,
     sourceFoundLongTitleCases,
     generationLimitedSourcePreservationCases,
+    promptBoundConversationCases,
     productionApiCalled: false,
     ragSearchExecuted: false,
     browserUsed: false,

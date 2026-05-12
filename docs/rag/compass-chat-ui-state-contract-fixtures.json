@@ -122,6 +122,11 @@
       "routeSurface": "chat-ollama",
       "viewportClass": "desktop-lg",
       "state": "source-found",
+      "promptExpectation": {
+        "userPrompt": "광고 문구와 랜딩 페이지 표현을 함께 검토할 때 어떤 근거를 확인해야 하나요?",
+        "promptVisible": true,
+        "resultLinkedToPrompt": true
+      },
       "message": {
         "role": "assistant",
         "content": "Compass 답변: 근거 문서를 기준으로 광고 문구와 랜딩 페이지의 표현 일관성을 확인해야 합니다.",
@@ -219,6 +224,11 @@
       "routeSurface": "chat-ollama",
       "viewportClass": "desktop-lg",
       "state": "source-found",
+      "promptExpectation": {
+        "userPrompt": "건강기능식품 광고 소재의 효능 표현과 후기 사용 기준을 자세히 확인해줘",
+        "promptVisible": true,
+        "resultLinkedToPrompt": true
+      },
       "message": {
         "role": "assistant",
         "content": "Compass 답변: 긴 한국어 정책 제목과 발췌도 근거 문서 카드에서 읽을 수 있어야 합니다.",
@@ -300,6 +310,11 @@
       "routeSurface": "chat-ollama",
       "viewportClass": "desktop-lg",
       "state": "noData",
+      "promptExpectation": {
+        "userPrompt": "화성 거주용 산소 농장 광고의 3027년 심사 기준을 알려줘",
+        "promptVisible": true,
+        "resultLinkedToPrompt": true
+      },
       "message": {
         "role": "assistant",
         "content": "Compass could not find usable evidence in current documents. Narrow the platform, policy item, or creative type and try again.",
@@ -377,6 +392,11 @@
       "routeSurface": "chat-ollama",
       "viewportClass": "desktop-lg",
       "state": "generation-limited",
+      "promptExpectation": {
+        "userPrompt": "Meta와 Kakao 광고 소재 제한 표현을 근거 문서와 함께 비교해줘",
+        "promptVisible": true,
+        "resultLinkedToPrompt": true
+      },
       "message": {
         "role": "assistant",
         "content": "답변 생성이 일시적으로 제한되었습니다. 확인된 근거 문서는 아래에서 계속 확인할 수 있습니다.",
@@ -468,6 +488,11 @@
       "routeSurface": "chat-ollama",
       "viewportClass": "desktop-lg",
       "state": "error",
+      "promptExpectation": {
+        "userPrompt": "일시적인 서비스 오류가 발생했을 때 복구 안내가 어떻게 보여야 하나요?",
+        "promptVisible": true,
+        "resultLinkedToPrompt": true
+      },
       "message": {
         "role": "assistant",
         "content": "일시적인 서비스 오류로 답변을 만들지 못했습니다. 잠시 후 다시 시도해 주세요.",
@@ -547,6 +572,11 @@
       "routeSurface": "chat-ollama",
       "viewportClass": "mobile",
       "state": "source-found",
+      "promptExpectation": {
+        "userPrompt": "모바일에서 Meta 광고 정책 근거를 확인할 때 출처 패널은 어떻게 보여야 하나요?",
+        "promptVisible": true,
+        "resultLinkedToPrompt": true
+      },
       "message": {
         "role": "assistant",
         "content": "Compass 답변: 모바일에서도 근거 문서가 답변 아래 compact panel로 표시됩니다.",
@@ -633,6 +663,11 @@
       "routeSurface": "chat-ollama",
       "viewportClass": "mobile",
       "state": "noData",
+      "promptExpectation": {
+        "userPrompt": "MoonTok Ads에서 순간이동 장치 광고 심사 기준을 알려줘",
+        "promptVisible": true,
+        "resultLinkedToPrompt": true
+      },
       "message": {
         "role": "assistant",
         "content": "Compass could not find usable evidence in current documents. Narrow the platform, policy item, or creative type and try again.",
@@ -709,6 +744,11 @@
       "routeSurface": "chat-ollama",
       "viewportClass": "small-mobile",
       "state": "generation-limited",
+      "promptExpectation": {
+        "userPrompt": "작은 모바일 화면에서도 제한 상태 근거 문서를 확인할 수 있나요?",
+        "promptVisible": true,
+        "resultLinkedToPrompt": true
+      },
       "message": {
         "role": "assistant",
         "content": "답변 생성이 일시적으로 제한되었습니다. 확인된 근거 문서는 아래에서 계속 확인할 수 있습니다.",
@@ -797,6 +837,11 @@
       "routeSurface": "chat-ollama",
       "viewportClass": "mobile",
       "state": "error",
+      "promptExpectation": {
+        "userPrompt": "모바일 오류 상태에서도 입력창과 다시 시도 안내가 보여야 하나요?",
+        "promptVisible": true,
+        "resultLinkedToPrompt": true
+      },
       "message": {
         "role": "assistant",
         "content": "일시적인 서비스 오류로 답변을 만들지 못했습니다. 잠시 후 다시 시도해 주세요.",
