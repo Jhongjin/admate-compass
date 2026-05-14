@@ -54,8 +54,8 @@ export default function MainLayout({ children, chatHeader }: MainLayoutProps) {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gray-900 flex items-center justify-center">
-        <div className="text-white text-xl">로딩 중...</div>
+      <div className="flex min-h-screen items-center justify-center bg-[#F4F5F0]">
+        <div className="text-xl text-[#34423A]">로딩 중...</div>
       </div>
     );
   }
@@ -63,11 +63,9 @@ export default function MainLayout({ children, chatHeader }: MainLayoutProps) {
 
 
   return (
-    <div className="min-h-screen" style={{
-      background: 'linear-gradient(180deg, #0d1421 0%, #512da8 50%, #cc4125 100%)'
-    }}>
-      {/* 헤더 - Lovable.dev 스타일, 스크롤 시에도 고정 */}
-      <header className="fixed top-0 left-0 right-0 z-50 bg-black/20 backdrop-blur-md border-b border-white/10">
+    <div className="min-h-screen bg-[#F4F5F0] text-[#111713]">
+      {/* 헤더 - Compass evidence desk shell */}
+      <header className="fixed left-0 right-0 top-0 z-50 border-b border-[#D8DCCF] bg-[#FBFBF7]/95 backdrop-blur-md">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex justify-between items-center h-16 py-3">
             {/* AdMate 로고 */}
@@ -84,12 +82,12 @@ export default function MainLayout({ children, chatHeader }: MainLayoutProps) {
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.5 }}
                 >
-                  <motion.img 
+                  <motion.img
                     src="/admate-logo.png" 
                     alt="AdMate" 
                     className="h-24 w-auto"
                     whileHover={{
-                      filter: "brightness(1.1) drop-shadow(0 4px 8px rgba(255, 107, 53, 0.3))",
+                      filter: "brightness(1.02) drop-shadow(0 3px 8px rgba(31, 122, 77, 0.18))",
                       transition: { duration: 0.2 }
                     }}
                   />

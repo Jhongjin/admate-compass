@@ -887,17 +887,17 @@ function ChatPageContent() {
           : "initial-empty";
 
   const chatHeader = (
-    <div className="rounded-none border-b border-[#D8DCCF] bg-[#F8F8F3]/95 px-4 py-2.5 backdrop-blur">
+    <div className="rounded-none border-b border-[#D8DCCF] bg-[#FBFBF7]/95 px-4 py-2.5 backdrop-blur">
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-3">
         <div className="min-w-0 flex items-center space-x-3">
           <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-[#C6D9CB] bg-[#EDF7EF]">
             <Bot className="h-4 w-4 text-[#1F7A4D]" />
           </div>
           <div className="min-w-0">
-            <h2 className="truncate text-sm font-semibold text-[#0D0D0D]">
+            <h2 className="truncate text-sm font-semibold text-[#111713]">
               Compass Policy Evidence Desk
             </h2>
-            <p className="hidden text-xs text-[#5E5E5E] sm:block">
+            <p className="hidden text-xs text-[#5F6C62] sm:block">
               광고 정책 답변과 확인된 근거 문서를 한 화면에서 검토합니다.
             </p>
           </div>
@@ -910,7 +910,7 @@ function ChatPageContent() {
                 variant="ghost"
                 size="sm"
                 aria-label="대화 히스토리 열기"
-                className="flex h-8 items-center space-x-2 rounded-md px-2 text-[#5E5E5E] transition-colors hover:bg-[#ECECEC] hover:text-[#0D0D0D] lg:hidden"
+                className="flex h-8 items-center space-x-2 rounded-md px-2 text-[#5F6C62] transition-colors hover:bg-[#EDF7EF] hover:text-[#111713] lg:hidden"
               >
                 <History className="w-4 h-4" />
                 <span className="hidden text-xs sm:inline">히스토리</span>
@@ -945,7 +945,7 @@ function ChatPageContent() {
             variant="ghost"
             size="sm"
             onClick={toggleRightPanel}
-            className="hidden lg:flex items-center space-x-2 h-8 px-3 text-[#5E5E5E] hover:text-[#0D0D0D] hover:bg-[#ECECEC] transition-colors rounded-md"
+            className="hidden h-8 items-center space-x-2 rounded-md px-3 text-[#5F6C62] transition-colors hover:bg-[#EDF7EF] hover:text-[#111713] lg:flex"
           >
             {isRightPanelCollapsed ? (
               <PanelRight className="w-4 h-4" />
@@ -957,14 +957,14 @@ function ChatPageContent() {
             </span>
           </Button>
           
-          <Separator orientation="vertical" className="h-6 bg-[#E5E5E5] hidden lg:block" />
+          <Separator orientation="vertical" className="hidden h-6 bg-[#D8DCCF] lg:block" />
           
           
           <Button
             variant="ghost"
             size="sm"
             onClick={handleNewChat}
-            className="flex items-center space-x-2 h-8 px-3 text-[#5E5E5E] hover:text-[#0D0D0D] hover:bg-[#ECECEC] transition-colors rounded-md"
+            className="flex h-8 items-center space-x-2 rounded-md px-3 text-[#5F6C62] transition-colors hover:bg-[#EDF7EF] hover:text-[#111713]"
             aria-label="새 대화"
           >
             <MessageSquare className="w-4 h-4" />
@@ -981,8 +981,8 @@ function ChatPageContent() {
       <MainLayout>
         <div className="flex items-center justify-center h-[calc(100vh-8rem)] mt-32">
           <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
-            <p className="text-gray-600">로그인 상태를 확인하는 중...</p>
+            <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-b-2 border-[#1F7A4D]"></div>
+            <p className="text-[#667066]">로그인 상태를 확인하는 중...</p>
           </div>
         </div>
       </MainLayout>
@@ -998,7 +998,7 @@ function ChatPageContent() {
               <p className="font-bold">로그인이 필요합니다</p>
               <p className="text-sm">채팅 기능을 사용하려면 먼저 로그인해주세요.</p>
             </div>
-            <p className="text-gray-600">잠시 후 메인 페이지로 이동합니다...</p>
+            <p className="text-[#667066]">잠시 후 메인 페이지로 이동합니다...</p>
           </div>
         </div>
       </MainLayout>
@@ -1075,8 +1075,8 @@ function ChatPageContent() {
                         <Bot className="h-4 w-4 text-[#1F7A4D]" />
                       </div>
                       <div className="flex-1">
-                        <div className="mb-2 text-sm font-medium text-[#0D0D0D]">Compass가 정책 근거를 대조하고 있습니다</div>
-                        <div className="flex flex-wrap gap-2 text-xs text-[#5E5E5E]">
+                        <div className="mb-2 text-sm font-medium text-[#111713]">Compass가 정책 근거를 대조하고 있습니다</div>
+                        <div className="flex flex-wrap gap-2 text-xs text-[#5F6C62]">
                           <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1">질문 범위 확인</span>
                           <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1">색인 검색</span>
                           <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1">출처 검증</span>
@@ -1114,7 +1114,7 @@ function ChatPageContent() {
                     onChange={(e) => setInputValue(e.target.value)}
                     onKeyDown={handleKeyPress}
                     placeholder="광고 플랫폼 정책과 가이드에 대해 궁금한 점을 질문해주세요..."
-                    className="max-h-[100px] min-h-[40px] resize-none border-[#D4D8CE] bg-white pr-10 text-sm text-[#0D0D0D] placeholder-[#8B9388] focus:border-[#1F7A4D] focus:ring-[#E7F4EA] sm:max-h-[120px] sm:min-h-[44px] sm:pr-12 sm:text-base"
+                    className="max-h-[100px] min-h-[40px] resize-none border-[#D4D8CE] bg-white pr-10 text-sm text-[#111713] placeholder-[#8B9388] focus:border-[#1F7A4D] focus:ring-[#E7F4EA] sm:max-h-[120px] sm:min-h-[44px] sm:pr-12 sm:text-base"
                     style={{ borderRadius: '8px' }}
                     disabled={isLoading}
                     rows={1}
@@ -1130,7 +1130,7 @@ function ChatPageContent() {
                 </div>
               </div>
               
-              <div className="mt-2 sm:mt-3 flex items-center justify-between text-xs text-[#777777]">
+              <div className="mt-2 flex items-center justify-between text-xs text-[#6D756C] sm:mt-3">
                 <p className="hidden sm:block">Enter 키로 전송, Shift + Enter로 줄바꿈</p>
                 <p className="sm:hidden">Enter로 전송</p>
                 {error && (
@@ -1175,8 +1175,8 @@ function ChatPageContent() {
                   <BookOpen className="h-5 w-5 text-[#1F7A4D]" />
                 </div>
                 <div>
-                  <h3 className="text-base font-semibold text-[#0D0D0D]">근거 문서</h3>
-                  <p className="text-sm text-[#5E5E5E]">답변 판정에 사용된 Compass 색인</p>
+                  <h3 className="text-base font-semibold text-[#111713]">근거 문서</h3>
+                  <p className="text-sm text-[#5F6C62]">답변 판정에 사용된 Compass 색인</p>
                 </div>
               </div>
             </div>

@@ -173,14 +173,14 @@ export default function ChatBubble({
         {isUser ? (
           <div className="px-3 py-2 sm:px-4 sm:py-3">
             <div className="flex items-start space-x-2 sm:space-x-3">
-              <div className="w-6 h-6 sm:w-8 sm:h-8 bg-neutral-900 rounded-full flex items-center justify-center flex-shrink-0">
+              <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-[#111713] sm:h-8 sm:w-8">
                 <User className="w-3 h-3 sm:w-4 sm:h-4 text-white" />
               </div>
               
               <div className="flex-1 min-w-0">
                 <div
-                  className="rounded-lg px-3 py-2 sm:px-4 sm:py-3 text-white shadow-sm"
-                  style={{ backgroundColor: '#171717' }}
+                  className="rounded-lg border border-[#111713] px-3 py-2 text-white shadow-sm sm:px-4 sm:py-3"
+                  style={{ backgroundColor: '#111713' }}
                 >
                   <div className="text-sm sm:text-sm leading-relaxed text-white prose prose-invert prose-sm max-w-none">
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>
@@ -194,14 +194,14 @@ export default function ChatBubble({
         ) : (
           <div className="px-3 py-2 sm:px-4 sm:py-3">
             <div className="flex items-start space-x-2 sm:space-x-3">
-              <div className="w-6 h-6 sm:w-8 sm:h-8 bg-[#ECEDF9] border border-[#D8DAF4] rounded-full flex items-center justify-center flex-shrink-0">
-                <Bot className="w-3 h-3 sm:w-4 sm:h-4 text-[#5E6AD2]" />
+              <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full border border-[#C6D9CB] bg-[#EDF7EF] sm:h-8 sm:w-8">
+                <Bot className="h-3 w-3 text-[#1F7A4D] sm:h-4 sm:w-4" />
               </div>
               
               <div className="flex-1 min-w-0">
-                <div className="rounded-lg border border-[#E5E5E5] bg-white p-4 text-[#0D0D0D] shadow-sm">
+                <div className="rounded-lg border border-[#D6D8CD] bg-white p-4 text-[#111713] shadow-sm">
                   <div className="mb-3 flex flex-wrap items-center gap-2">
-                    <Badge variant="outline" className="rounded-md border-[#D8DAF4] bg-[#F4F5FF] px-2 py-0.5 text-[11px] font-medium text-[#4F56B8]">
+                    <Badge variant="outline" className="rounded-md border-[#C6D9CB] bg-[#EDF7EF] px-2 py-0.5 text-[11px] font-medium text-[#1F7A4D]">
                       Compass 답변
                     </Badge>
                     {hasVerifiedSources && (
@@ -223,12 +223,12 @@ export default function ChatBubble({
                   )}
 
                   {noDataFound && (
-                    <div className="mb-3 rounded-md border border-[#E5E5E5] bg-[#F7F7F7] px-3 py-2 text-xs leading-relaxed text-[#5E5E5E]">
+                    <div className="mb-3 rounded-md border border-[#D8DCCF] bg-[#FBFBF7] px-3 py-2 text-xs leading-relaxed text-[#5F6C62]">
                       현재 Compass 문서 기준으로 확인 가능한 근거를 찾지 못했습니다. 플랫폼명이나 정책 항목을 조금 더 구체적으로 입력해 주세요.
                     </div>
                   )}
 
-                  <div className="text-sm leading-relaxed text-[#1F1F1F] prose prose-sm max-w-none prose-headings:text-[#0D0D0D] prose-strong:text-[#0D0D0D] prose-a:text-[#5E6AD2] prose-li:my-0.5">
+                  <div className="prose prose-sm max-w-none text-sm leading-relaxed text-[#1F1F1F] prose-headings:text-[#111713] prose-strong:text-[#111713] prose-a:text-[#1F7A4D] prose-li:my-0.5">
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>
                       {content}
                     </ReactMarkdown>
@@ -242,11 +242,11 @@ export default function ChatBubble({
                       variant="ghost"
                       size="sm"
                       onClick={() => setShowSources(!showSources)}
-                      className="h-auto rounded-lg border border-[#D8DAF4] bg-white p-2 text-xs font-medium text-[#4F56B8] shadow-sm transition-colors hover:bg-[#F4F5FF] hover:text-[#3F45A0]"
+                      className="h-auto rounded-lg border border-[#C6D9CB] bg-white p-2 text-xs font-medium text-[#1F7A4D] shadow-sm transition-colors hover:bg-[#EDF7EF] hover:text-[#176B42]"
                     >
-                      <FileText className="w-4 h-4 mr-2" />
+                      <FileText className="mr-2 h-4 w-4" />
                       근거 문서 {sources.length}개 보기
-                      <span className="ml-1 text-[#5E6AD2]">
+                      <span className="ml-1 text-[#1F7A4D]">
                         {showSources ? '▲' : '▼'}
                       </span>
                     </Button>
@@ -254,15 +254,15 @@ export default function ChatBubble({
                     {showSources && (
                       <div className="mt-3 space-y-3">
                         {sources.map((source, index) => (
-                          <Card key={source.id} className="rounded-lg border-[#E5E5E5] bg-white shadow-sm transition-colors hover:border-[#D4D4D4]">
+                          <Card key={source.id} className="rounded-lg border-[#D8DCCF] bg-[#FBFBF7] shadow-sm transition-colors hover:border-[#9AB9A3]">
                             <CardContent className="p-4">
                               <div className="flex items-start gap-3">
-                                <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md border border-[#E5E5E5] bg-[#F7F7F7] text-xs font-semibold text-[#5E5E5E]">
+                                <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md border border-[#C6D9CB] bg-[#EDF7EF] text-xs font-semibold text-[#1F7A4D]">
                                   {index + 1}
                                 </div>
                                 <div className="flex-1 min-w-0">
                                   <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                                    <h4 className="text-sm font-semibold leading-snug text-[#0D0D0D]">
+                                    <h4 className="text-sm font-semibold leading-snug text-[#111713]">
                                       {getDisplayTitle(source, index)}
                                     </h4>
                                     <div className="flex flex-shrink-0 items-center gap-1">
@@ -282,7 +282,7 @@ export default function ChatBubble({
                                             <Button
                                               variant="ghost"
                                               size="sm"
-                                              className="h-8 rounded-md px-2 text-xs text-[#4F56B8] hover:bg-[#F4F5FF] hover:text-[#3F45A0]"
+                                              className="h-8 rounded-md px-2 text-xs text-[#1F7A4D] hover:bg-[#EDF7EF] hover:text-[#176B42]"
                                               onClick={() => handleUrlOpen(source)}
                                               title="웹페이지 열기"
                                             >
@@ -297,7 +297,7 @@ export default function ChatBubble({
                                     {source.excerpt}
                                   </p>
                                   <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-                                    <div className="flex flex-wrap items-center gap-2 text-xs text-[#5E5E5E]">
+                                    <div className="flex flex-wrap items-center gap-2 text-xs text-[#5F6C62]">
                                       <span className="inline-flex items-center gap-1">
                                         <Calendar className="h-3.5 w-3.5" />
                                         {new Date(source.updatedAt).toLocaleDateString('ko-KR')}
@@ -308,10 +308,10 @@ export default function ChatBubble({
                                       </span>
                                     </div>
                                     <div className="flex flex-wrap items-center gap-2">
-                                      <Badge variant="secondary" className="rounded-md border border-[#D8DAF4] bg-[#F4F5FF] px-2 py-1 text-[11px] font-medium text-[#4F56B8]">
+                                      <Badge variant="secondary" className="rounded-md border border-[#C6D9CB] bg-[#EDF7EF] px-2 py-1 text-[11px] font-medium text-[#1F7A4D]">
                                         {getEvidenceLabel(source)}
                                       </Badge>
-                                      <Badge variant="outline" className="rounded-md border-[#E5E5E5] bg-[#F7F7F7] px-2 py-1 text-[11px] text-[#5E5E5E]">
+                                      <Badge variant="outline" className="rounded-md border-[#D8DCCF] bg-white px-2 py-1 text-[11px] text-[#5F6C62]">
                                         {getCorpusLabel(source)}
                                       </Badge>
                                       {getSourceScore(source) && (
@@ -334,7 +334,7 @@ export default function ChatBubble({
                                         <Button
                                           variant="ghost"
                                           size="sm"
-                                          className="h-8 rounded-md px-2 text-xs text-[#4F56B8] hover:bg-[#F4F5FF] hover:text-[#3F45A0]"
+                                          className="h-8 rounded-md px-2 text-xs text-[#1F7A4D] hover:bg-[#EDF7EF] hover:text-[#176B42]"
                                           onClick={() => handleUrlOpen(source)}
                                           title="웹페이지 열기"
                                         >
@@ -381,7 +381,7 @@ export default function ChatBubble({
                                 window.dispatchEvent(event);
                               }
                             }}
-                            className="w-full rounded-md bg-[#171717] py-2 text-sm text-white transition-colors hover:bg-[#2A2A2A]"
+                            className="w-full rounded-md bg-[#111713] py-2 text-sm text-white transition-colors hover:bg-[#243028]"
                           >
                             담당자에게 문의하기
                           </Button>
@@ -393,21 +393,21 @@ export default function ChatBubble({
 
                 {/* Runtime status */}
                 {(confidence !== undefined || processingTime !== undefined || model) && (
-                  <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-[#5E5E5E]">
+                  <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-[#5F6C62]">
                     {confidence !== undefined && (
-                      <span className="flex items-center gap-1 rounded-md border border-[#E5E5E5] bg-white px-2 py-1">
+                      <span className="flex items-center gap-1 rounded-md border border-[#D8DCCF] bg-white px-2 py-1">
                         <Activity className="h-3 w-3" />
                         근거 신뢰도 {Math.round(confidence)}%
                       </span>
                     )}
                     {processingTime !== undefined && (
-                      <span className="flex items-center gap-1 rounded-md border border-[#E5E5E5] bg-white px-2 py-1">
+                      <span className="flex items-center gap-1 rounded-md border border-[#D8DCCF] bg-white px-2 py-1">
                         <Clock className="h-3 w-3" />
                         {processingTime}ms
                       </span>
                     )}
                     {model && (
-                      <span className="flex items-center gap-1 rounded-md border border-[#E5E5E5] bg-white px-2 py-1">
+                      <span className="flex items-center gap-1 rounded-md border border-[#D8DCCF] bg-white px-2 py-1">
                         <Bot className="h-3 w-3" />
                         {generationLimited ? '생성 답변 제한' : '생성 답변 완료'}
                       </span>
@@ -425,7 +425,7 @@ export default function ChatBubble({
                       className={`h-auto rounded-md border p-2 text-xs transition-colors ${
                         feedback.helpful === true
                           ? "border-emerald-200 bg-emerald-50 text-emerald-700"
-                          : "border-[#E5E5E5] bg-white text-[#5E5E5E] hover:bg-emerald-50 hover:text-emerald-700"
+                          : "border-[#D8DCCF] bg-white text-[#5F6C62] hover:bg-[#EDF7EF] hover:text-[#1F7A4D]"
                       }`}
                     >
                       <ThumbsUp className="w-3 h-3 mr-1" />
@@ -438,7 +438,7 @@ export default function ChatBubble({
                       className={`h-auto rounded-md border p-2 text-xs transition-colors ${
                         feedback.helpful === false
                           ? "border-red-200 bg-red-50 text-red-700"
-                          : "border-[#E5E5E5] bg-white text-[#5E5E5E] hover:bg-red-50 hover:text-red-700"
+                          : "border-[#D8DCCF] bg-white text-[#5F6C62] hover:bg-red-50 hover:text-red-700"
                       }`}
                     >
                       <ThumbsDown className="w-3 h-3 mr-1" />

@@ -81,11 +81,11 @@ export default function SourceStatePanel({
   if (isInitial) {
     return (
       <div className="flex flex-col items-center justify-center py-16 text-center">
-        <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-lg border border-[#E5E5E5] bg-white">
-          <BookOpen className="h-8 w-8 text-[#5E6AD2]" />
+        <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-lg border border-[#C6D9CB] bg-[#EDF7EF]">
+          <BookOpen className="h-8 w-8 text-[#1F7A4D]" />
         </div>
-        <h3 className="mb-2 text-base font-semibold text-[#0D0D0D]">질문을 시작해보세요</h3>
-        <p className="max-w-sm text-sm leading-relaxed text-[#5E5E5E]">
+        <h3 className="mb-2 text-base font-semibold text-[#111713]">질문을 시작해보세요</h3>
+        <p className="max-w-sm text-sm leading-relaxed text-[#5F6C62]">
           질문을 시작하면 근거 문서가 여기에 표시됩니다.
         </p>
       </div>
@@ -94,19 +94,19 @@ export default function SourceStatePanel({
 
   if (isNoData || isError) {
     return (
-      <Card className="w-full rounded-lg border-[#E5E5E5] bg-white shadow-sm">
+      <Card className="w-full rounded-lg border-[#D6D8CD] bg-white shadow-sm">
         <CardHeader className="pb-2">
-          <CardTitle className="flex items-center gap-2 text-sm font-semibold text-[#0D0D0D]">
+          <CardTitle className="flex items-center gap-2 text-sm font-semibold text-[#111713]">
             {isError ? <AlertCircle className="h-4 w-4 text-[#D93025]" /> : <Search className="h-4 w-4 text-[#9E5700]" />}
             {heading}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3 p-4 pt-0">
-          <p className="text-sm leading-6 text-[#5E5E5E]">
+          <p className="text-sm leading-6 text-[#5F6C62]">
             {isError ? ERROR_MESSAGE : NO_DATA_MESSAGE}
           </p>
           {isNoData && (
-            <div className="rounded-md border border-[#E5E5E5] bg-[#F7F7F7] p-3 text-xs leading-5 text-[#5E5E5E]">
+            <div className="rounded-md border border-[#D8DCCF] bg-[#FBFBF7] p-3 text-xs leading-5 text-[#5F6C62]">
               플랫폼명, 정책 항목, 소재 유형을 함께 입력하면 더 좁은 범위로 확인할 수 있습니다.
             </div>
           )}
@@ -117,7 +117,7 @@ export default function SourceStatePanel({
                 variant="outline"
                 size="sm"
                 onClick={onRetry}
-                className="h-9 rounded-md border-[#D8DAF4] bg-[#F4F5FF] px-3 text-xs text-[#4F56B8] hover:bg-[#ECEDF9]"
+                className="h-9 rounded-md border-[#C6D9CB] bg-[#EDF7EF] px-3 text-xs text-[#1F7A4D] hover:bg-[#E3F1E7]"
               >
                 다시 시도
               </Button>
@@ -140,12 +140,12 @@ export default function SourceStatePanel({
   }
 
   return (
-    <Card className="w-full rounded-lg border-[#E5E5E5] bg-white shadow-sm">
+    <Card className="w-full rounded-lg border-[#D6D8CD] bg-white shadow-sm">
       <CardHeader className="pb-3">
-        <CardTitle className="flex flex-wrap items-center gap-2 text-sm font-semibold text-[#0D0D0D]">
-          <BookOpen className="h-4 w-4 text-[#5E6AD2]" />
+        <CardTitle className="flex flex-wrap items-center gap-2 text-sm font-semibold text-[#111713]">
+          <BookOpen className="h-4 w-4 text-[#1F7A4D]" />
           <span>{heading}</span>
-          <Badge variant="outline" className="rounded-md border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] text-emerald-700">
+          <Badge variant="outline" className="rounded-md border-[#C6D9CB] bg-[#EDF7EF] px-2 py-0.5 text-[11px] text-[#1F7A4D]">
             {sources.length}개
           </Badge>
           {isLimited && (
@@ -172,7 +172,7 @@ export default function SourceStatePanel({
           variant="ghost"
           size="sm"
           onClick={() => setCardsVisible((visible) => !visible)}
-          className="h-9 rounded-lg border border-[#D8DAF4] bg-white px-3 text-xs font-medium text-[#4F56B8] shadow-sm transition-colors hover:bg-[#F4F5FF] hover:text-[#3F45A0]"
+          className="h-9 rounded-lg border border-[#C6D9CB] bg-white px-3 text-xs font-medium text-[#1F7A4D] shadow-sm transition-colors hover:bg-[#EDF7EF] hover:text-[#176B42]"
         >
           <FileText className="mr-2 h-4 w-4" />
           근거 문서 {sources.length}개 보기
@@ -186,14 +186,14 @@ export default function SourceStatePanel({
               const title = source.title?.replace(/_chunk_\d+/g, `_page_${index + 1}`) || `근거 문서 ${index + 1}`;
 
               return (
-                <div key={`${source.id}-${index}`} className="rounded-lg border border-[#E5E5E5] bg-white p-3">
+                <div key={`${source.id}-${index}`} className="rounded-lg border border-[#D8DCCF] bg-[#FBFBF7] p-3">
                   <div className="flex items-start gap-3">
-                    <div className="flex h-7 w-7 flex-none items-center justify-center rounded-md border border-[#E5E5E5] bg-[#F7F7F7] text-xs font-semibold text-[#5E5E5E]">
+                    <div className="flex h-7 w-7 flex-none items-center justify-center rounded-md border border-[#C6D9CB] bg-[#EDF7EF] text-xs font-semibold text-[#1F7A4D]">
                       {index + 1}
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-start justify-between gap-2">
-                        <h4 className="line-clamp-2 break-words text-sm font-semibold leading-5 text-[#0D0D0D]">
+                        <h4 className="line-clamp-2 break-words text-sm font-semibold leading-5 text-[#111713]">
                           {title}
                         </h4>
                         <div className="flex flex-none items-center gap-1">
@@ -202,7 +202,7 @@ export default function SourceStatePanel({
                               type="button"
                               variant="ghost"
                               size="sm"
-                              className="h-8 w-8 rounded-md p-0 text-[#5E5E5E] hover:bg-[#F4F5FF] hover:text-[#5E6AD2]"
+                              className="h-8 w-8 rounded-md p-0 text-[#5F6C62] hover:bg-[#EDF7EF] hover:text-[#1F7A4D]"
                               onClick={() => handleSourceOpen(source)}
                               title={source.sourceType === "file" ? "파일 다운로드" : "열기"}
                               aria-label={source.sourceType === "file" ? "파일 다운로드" : "근거 문서 열기"}
@@ -214,7 +214,7 @@ export default function SourceStatePanel({
                             type="button"
                             variant="ghost"
                             size="sm"
-                            className="h-8 w-8 rounded-md p-0 text-[#5E5E5E] hover:bg-[#F4F4F4] hover:text-[#0D0D0D]"
+                            className="h-8 w-8 rounded-md p-0 text-[#5F6C62] hover:bg-[#F0F2EA] hover:text-[#111713]"
                             onClick={() => toggleExpanded(source.id)}
                             title={isExpanded ? "접기" : "펼치기"}
                             aria-label={isExpanded ? "근거 문서 접기" : "근거 문서 펼치기"}
@@ -224,16 +224,16 @@ export default function SourceStatePanel({
                         </div>
                       </div>
 
-                      <p className={`${isExpanded ? "" : "line-clamp-3"} mt-2 break-words text-xs leading-5 text-[#5E5E5E]`}>
+                      <p className={`${isExpanded ? "" : "line-clamp-3"} mt-2 break-words text-xs leading-5 text-[#5F6C62]`}>
                         {source.excerpt || "표시할 원문 일부가 없습니다."}
                       </p>
 
                       {isExpanded && (
-                        <div className="mt-3 flex flex-wrap gap-1.5 border-t border-[#E5E5E5] pt-3">
-                          <Badge variant="outline" className="rounded-md border-[#D8DAF4] bg-[#F4F5FF] px-2 py-0.5 text-[11px] text-[#4F56B8]">
+                        <div className="mt-3 flex flex-wrap gap-1.5 border-t border-[#D8DCCF] pt-3">
+                          <Badge variant="outline" className="rounded-md border-[#C6D9CB] bg-[#EDF7EF] px-2 py-0.5 text-[11px] text-[#1F7A4D]">
                             검증 근거
                           </Badge>
-                          <Badge variant="outline" className="rounded-md border-[#E5E5E5] bg-white px-2 py-0.5 text-[11px] text-[#5E5E5E]">
+                          <Badge variant="outline" className="rounded-md border-[#D8DCCF] bg-white px-2 py-0.5 text-[11px] text-[#5F6C62]">
                             Compass 색인
                           </Badge>
                         </div>

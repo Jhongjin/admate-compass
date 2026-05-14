@@ -62,18 +62,15 @@ function LoginPageContent() {
   };
 
   return (
-    <div
-      className="min-h-screen"
-      style={{ background: "linear-gradient(180deg, #0d1421 0%, #512da8 52%, #cc4125 100%)" }}
-    >
-      <header className="border-b border-white/10 bg-black/20 backdrop-blur-md">
+    <div className="min-h-screen bg-[#F4F5F0] text-[#111713]">
+      <header className="border-b border-[#D8DCCF] bg-[#FBFBF7]/95 backdrop-blur-md">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
           <Link href="/" className="block" aria-label="AdMate Compass home">
             <img src="/admate-logo.png" alt="AdMate" className="h-20 w-auto" />
           </Link>
           <Link
             href="/"
-            className="rounded-lg border border-white/15 px-3 py-2 text-sm font-medium text-blue-100 transition-colors hover:bg-white/10 hover:text-white"
+            className="rounded-lg border border-[#C6D9CB] bg-[#EDF7EF] px-3 py-2 text-sm font-medium text-[#1F7A4D] transition-colors hover:bg-[#E3F1E7]"
           >
             Compass 홈
           </Link>
@@ -82,8 +79,8 @@ function LoginPageContent() {
 
       <main className="px-6 pb-16 pt-12 md:pt-20">
         <section className="mx-auto grid max-w-6xl grid-cols-1 gap-8 lg:grid-cols-[0.95fr_1.05fr] lg:items-center">
-          <div className="space-y-6 text-white">
-            <div className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/10 px-3 py-1 text-sm text-blue-100">
+          <div className="space-y-6 text-[#111713]">
+            <div className="inline-flex items-center gap-2 rounded-md border border-[#C6D9CB] bg-[#EDF7EF] px-3 py-1 text-sm text-[#1F7A4D]">
               <ShieldCheck className="h-4 w-4" aria-hidden="true" />
               compass.admate.ai.kr
             </div>
@@ -91,19 +88,19 @@ function LoginPageContent() {
               <h1 className="font-nanum text-4xl font-bold leading-tight md:text-5xl">
                 AdMate Compass 로그인
               </h1>
-              <p className="max-w-2xl font-nanum text-lg leading-8 text-blue-100">
+              <p className="max-w-2xl font-nanum text-lg leading-8 text-[#34423A]">
                 정책 검색을 이용하려면 AdMate 계정으로 로그인하세요.
               </p>
-              <p className="max-w-2xl text-sm leading-7 text-gray-300">
+              <p className="max-w-2xl text-sm leading-7 text-[#667066]">
                 로그인 후 요청하신 Compass 화면으로 돌아갑니다. 접근 권한이 없다면 이용 신청을 진행해주세요.
               </p>
             </div>
           </div>
 
-          <div className="rounded-lg border border-white/15 bg-white p-6 shadow-2xl shadow-black/20 md:p-8">
+          <div className="rounded-lg border border-[#D6D8CD] bg-white p-6 shadow-sm md:p-8">
             <div className="mb-6 flex items-start gap-3">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-[#D8DAF4] bg-[#ECEDF9]">
-                <LockKeyhole className="h-5 w-5 text-[#5E6AD2]" aria-hidden="true" />
+              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-[#C6D9CB] bg-[#EDF7EF]">
+                <LockKeyhole className="h-5 w-5 text-[#1F7A4D]" aria-hidden="true" />
               </div>
               <div>
                 <h2 className="text-xl font-semibold text-[#0D0D0D]">AdMate 계정으로 계속</h2>
@@ -170,7 +167,7 @@ function LoginPageContent() {
             <div className="mt-6 grid gap-3 border-t border-[#E5E5E5] pt-5 text-sm">
               <a
                 href={ACCESS_REQUEST_URL}
-                className="inline-flex items-center justify-between rounded-lg border border-[#D8DAF4] bg-[#F5F6FF] px-4 py-3 font-medium text-[#4F46C6] transition-colors hover:bg-[#ECEDF9]"
+                className="inline-flex items-center justify-between rounded-lg border border-[#E9D59B] bg-[#FFF8E6] px-4 py-3 font-medium text-[#8A6418] transition-colors hover:bg-[#FFF3CF]"
               >
                 <span>접근 권한이 없다면 이용 신청</span>
                 <ExternalLink className="h-4 w-4" aria-hidden="true" />
@@ -191,7 +188,7 @@ function LoginPageContent() {
 
 export default function LoginPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen bg-[#0d1421] text-white">Loading...</div>}>
+    <Suspense fallback={<div className="min-h-screen bg-[#F4F5F0] text-[#111713]">Loading...</div>}>
       <LoginPageContent />
     </Suspense>
   );
