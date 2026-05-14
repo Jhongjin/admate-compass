@@ -221,7 +221,7 @@ export default function ChatBubble({
 
                   {generationLimited && hasVerifiedSources && (
                     <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900">
-                      검토 메모 작성은 일시적으로 제한되었지만, 검색된 근거는 유지됩니다. 오른쪽 근거 보드에서 원문과 인용 후보를 먼저 확인해 주세요.
+                      검토 메모 작성은 일시적으로 제한되었지만, 검색된 근거는 유지됩니다. 근거 보드에서 원문과 인용 후보를 먼저 확인해 주세요.
                     </div>
                   )}
 
@@ -271,7 +271,7 @@ export default function ChatBubble({
                                       <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#758070]">
                                         인용 후보 {index + 1}
                                       </div>
-                                      <h4 className="text-sm font-semibold leading-snug text-[#111713]">
+                                      <h4 className="line-clamp-2 break-words text-sm font-semibold leading-snug text-[#111713]">
                                         {getDisplayTitle(source, index)}
                                       </h4>
                                     </div>
