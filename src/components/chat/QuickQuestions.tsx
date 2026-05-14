@@ -36,11 +36,11 @@ const questionCategories: QuestionCategory[] = [
     icon: <FileText className="w-4 h-4" />,
     color: "border-[#B9D8E2] bg-[#EAF4F7] text-[#1F6F8B]",
     questions: [
-      "페이스북 광고 정책 위반 시 대처 방법",
-      "금지된 광고 콘텐츠는 무엇인가요?",
-      "광고 승인 거부 사유 확인 방법",
-      "연령 제한 광고 설정 방법",
-      "개인정보 보호 정책 준수 가이드"
+      "Meta 금융 광고 소재에서 필수 고지 문구와 제한 표현을 확인해줘",
+      "건강기능식품 광고에서 심사 리스크가 높은 표현을 출처와 함께 정리해줘",
+      "정치·사회 이슈 광고 집행 전 확인해야 할 정책 근거를 찾아줘",
+      "연령 제한이 필요한 업종의 타겟팅 정책 근거를 확인해줘",
+      "개인정보 수집 랜딩 페이지 광고의 정책 검토 포인트를 알려줘"
     ]
   },
   {
@@ -49,11 +49,11 @@ const questionCategories: QuestionCategory[] = [
     icon: <Target className="w-4 h-4" />,
     color: "border-[#C6D9CB] bg-[#EDF7EF] text-[#1F7A4D]",
     questions: [
-      "페이스북 광고 타겟팅 옵션 설정",
-      "관심사 기반 타겟팅 활용법",
-      "리타겟팅 광고 설정 방법",
-      "룩얼라이크 오디언스 생성",
-      "지역별 타겟팅 최적화"
+      "민감 카테고리에서 사용할 수 없는 타겟팅 조건을 확인해줘",
+      "리타겟팅 광고 운영 전에 확인해야 할 개인정보 정책 근거를 찾아줘",
+      "룩얼라이크 오디언스 사용 시 제한되는 업종이나 표현이 있는지 검토해줘",
+      "지역 타겟팅 광고에서 고지나 차별 리스크가 있는지 확인해줘",
+      "미성년자 대상 광고 타겟팅 정책을 출처 기준으로 정리해줘"
     ]
   },
   {
@@ -62,11 +62,11 @@ const questionCategories: QuestionCategory[] = [
     icon: <DollarSign className="w-4 h-4" />,
     color: "border-[#E9D59B] bg-[#FFF8E6] text-[#8A6418]",
     questions: [
-      "광고 예산 설정 및 관리 방법",
-      "입찰 전략 선택 가이드",
-      "CPC vs CPM 차이점과 선택 기준",
-      "일일 예산 vs 총 예산 설정",
-      "입찰 가격 최적화 방법"
+      "금융 업종 캠페인 예산 증액 전 정책상 추가 확인이 필요한 항목을 알려줘",
+      "전환 최적화 캠페인에서 랜딩 페이지 정책 리스크를 검토해줘",
+      "앱 설치 캠페인 집행 전 심사 거절 가능성이 있는 소재 요소를 찾아줘",
+      "프로모션 문구가 포함된 캠페인의 가격 표시 정책 근거를 확인해줘",
+      "성과형 캠페인에서 과장 표현으로 볼 수 있는 문구 기준을 정리해줘"
     ]
   },
   {
@@ -75,11 +75,11 @@ const questionCategories: QuestionCategory[] = [
     icon: <BarChart3 className="w-4 h-4" />,
     color: "border-[#D6D8CD] bg-[#FBFBF7] text-[#5F6C62]",
     questions: [
-      "광고 성과 지표 해석 방법",
-      "ROAS 계산 및 분석",
-      "A/B 테스트 설계 및 실행",
-      "광고 보고서 분석 가이드",
-      "성과 개선을 위한 최적화 팁"
+      "심사 거절이 반복되는 소재의 정책 원인 후보를 정리해줘",
+      "광고주 문의 답변에 사용할 수 있는 공식 정책 근거를 찾아줘",
+      "캠페인 운영 중단 판단 전에 확인할 정책 체크리스트를 만들어줘",
+      "소재 수정안이 기존 거절 사유를 해소하는지 검토해줘",
+      "보고서에 남길 정책 검토 근거와 출처 요약을 작성해줘"
     ]
   }
 ];
@@ -200,6 +200,9 @@ export default function QuickQuestions({ onQuestionClick, currentQuestion }: Qui
   return (
     <Card className="w-full rounded-lg border-[#D6D8CD] bg-white shadow-sm">
       <CardHeader className="pb-3">
+        <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#758070]">
+          Operator prompts
+        </div>
         <CardTitle className="flex items-center space-x-2 text-sm font-semibold text-[#111713]">
           <Sparkles className="h-4 w-4 text-[#1F7A4D]" />
           <span>{currentQuestion ? '후속 검토 질문' : '정책 검토 시작점'}</span>
@@ -207,6 +210,9 @@ export default function QuickQuestions({ onQuestionClick, currentQuestion }: Qui
             {currentQuestion ? vectorBasedQuestions.length : questionCategories.reduce((total, cat) => total + cat.questions.length, 0)}개
           </Badge>
         </CardTitle>
+        <p className="mt-2 text-xs leading-5 text-[#5F6C62]">
+          정책 항목, 업종, 소재 표현을 함께 넣어 근거 중심으로 질문을 좁힙니다.
+        </p>
         <Separator className="bg-[#D8DCCF]" />
       </CardHeader>
       <CardContent className="space-y-3">

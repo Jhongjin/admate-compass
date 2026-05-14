@@ -935,6 +935,9 @@ function ChatPageContent() {
               />
             </SheetContent>
           </Sheet>
+          <Badge variant="outline" className="rounded-md border-[#D6D8CD] bg-white px-2 py-1 text-[11px] text-[#5F6C62] sm:hidden">
+            정책 데스크
+          </Badge>
           <Badge variant="outline" className="hidden rounded-md border-[#C6D9CB] bg-[#EDF7EF] px-2 py-1 text-[11px] text-[#1F7A4D] sm:inline-flex">
             출처 검토
           </Badge>
@@ -1089,7 +1092,13 @@ function ChatPageContent() {
             )}
 
             {messages.length > 1 && (
-              <div className="min-w-0 lg:hidden">
+              <div className="min-w-0 px-1 pb-2 lg:hidden">
+                <div className="mb-2 flex items-center justify-between gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#6D756C]">
+                  <span>Mobile evidence board</span>
+                  <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1 text-[#34423A]">
+                    {latestSources.length}개 출처
+                  </span>
+                </div>
                 <SourceStatePanel
                   state={latestPanelState}
                   userQuestion={latestUserMessage?.content}
@@ -1132,7 +1141,7 @@ function ChatPageContent() {
               
               <div className="mt-2 flex items-center justify-between text-xs text-[#6D756C] sm:mt-3">
                 <p className="hidden sm:block">플랫폼, 정책 항목, 소재 유형을 함께 쓰면 출처 검토가 더 정확해집니다.</p>
-                <p className="sm:hidden">Enter로 전송</p>
+                <p className="sm:hidden">답변 아래 근거 보드 표시</p>
                 {error && (
                   <div className="flex items-center space-x-1 text-[#D93025]">
                     <AlertCircle className="w-3 h-3" />

@@ -212,6 +212,11 @@ export default function ChatBubble({
                         생성 답변 일시 제한
                       </Badge>
                     )}
+                    {noDataFound && (
+                      <Badge variant="outline" className="rounded-md border-[#E9D59B] bg-[#FFF8E6] px-2 py-0.5 text-[11px] font-medium text-[#8A6418]">
+                        근거 없음
+                      </Badge>
+                    )}
                   </div>
 
                   {generationLimited && hasVerifiedSources && (
@@ -221,8 +226,8 @@ export default function ChatBubble({
                   )}
 
                   {noDataFound && (
-                    <div className="mb-3 rounded-md border border-[#D8DCCF] bg-[#FBFBF7] px-3 py-2 text-xs leading-relaxed text-[#5F6C62]">
-                      현재 Compass 문서 기준으로 확인 가능한 근거를 찾지 못했습니다. 플랫폼명이나 정책 항목을 조금 더 구체적으로 입력해 주세요.
+                    <div className="mb-3 rounded-md border border-[#E9D59B] bg-[#FFF8E6] px-3 py-2 text-xs leading-relaxed text-[#6B5316]">
+                      현재 색인에서 바로 확인 가능한 근거가 없습니다. 플랫폼, 정책 항목, 소재 유형을 좁혀 다시 검토해 주세요.
                     </div>
                   )}
 
@@ -393,7 +398,7 @@ export default function ChatBubble({
                 {(confidenceValue !== undefined || processingTime !== undefined || model) && (
                   <div className="mt-3 rounded-lg border border-[#D8DCCF] bg-white p-3 text-xs text-[#5F6C62] shadow-sm">
                     <div className="mb-2 flex flex-wrap items-center gap-2">
-                      <span className="font-semibold text-[#111713]">검토 상태</span>
+                      <span className="font-semibold text-[#111713]">정책 검토 상태</span>
                       {model && (
                         <span className="flex items-center gap-1 rounded-md border border-[#D8DCCF] bg-[#FBFBF7] px-2 py-1">
                           <Bot className="h-3 w-3" />

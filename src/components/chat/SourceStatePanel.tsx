@@ -39,6 +39,11 @@ export default function SourceStatePanel({
   const isError = state === "error";
   const isInitial = state === "initial-empty";
   const heading = isLimited ? "생성 답변 제한" : hasSources ? "근거 문서" : "근거 문서 없음";
+  const stateDescription = isLimited
+    ? "답변 문장은 제한되었지만, 검색된 근거는 검토할 수 있습니다."
+    : hasSources
+      ? "질문에 연결된 출처를 확인하고 최종 판단 전 원문을 대조합니다."
+      : "현재 상태에서 표시할 출처가 없습니다.";
 
   const toggleExpanded = (sourceId: string) => {
     setExpandedIds((current) => {
@@ -96,6 +101,9 @@ export default function SourceStatePanel({
     return (
       <Card className="w-full rounded-lg border-[#D6D8CD] bg-white shadow-sm">
         <CardHeader className="pb-2">
+          <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#758070]">
+            Review outcome
+          </div>
           <CardTitle className="flex items-center gap-2 text-sm font-semibold text-[#111713]">
             {isError ? <AlertCircle className="h-4 w-4 text-[#D93025]" /> : <Search className="h-4 w-4 text-[#9E5700]" />}
             {heading}
@@ -130,7 +138,7 @@ export default function SourceStatePanel({
                 onClick={onContact}
                 className="h-9 rounded-md border-amber-200 bg-amber-50 px-3 text-xs text-amber-800 hover:bg-amber-100"
               >
-                문의
+                담당자 문의
               </Button>
             )}
           </div>
@@ -142,6 +150,9 @@ export default function SourceStatePanel({
   return (
     <Card className="w-full rounded-lg border-[#D6D8CD] bg-white shadow-sm">
       <CardHeader className="pb-3">
+        <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#758070]">
+          Evidence review
+        </div>
         <CardTitle className="flex flex-wrap items-center gap-2 text-sm font-semibold text-[#111713]">
           <ShieldCheck className="h-4 w-4 text-[#1F7A4D]" />
           <span>{heading}</span>
@@ -154,6 +165,9 @@ export default function SourceStatePanel({
             </Badge>
           )}
         </CardTitle>
+        <p className="text-xs leading-5 text-[#5F6C62]">
+          {stateDescription}
+        </p>
         {userQuestion && !compact && (
           <p className="line-clamp-2 text-xs leading-5 text-[#777777]">
             질문: {userQuestion}
@@ -167,7 +181,7 @@ export default function SourceStatePanel({
           </div>
         )}
 
-        {hasSources && (
+        {hasSources && !compact && (
           <div className="grid gap-2 rounded-lg border border-[#D8DCCF] bg-[#FBFBF7] p-3 text-xs text-[#5F6C62]">
             <div className="font-semibold text-[#111713]">운영 검토 기준</div>
             <div className="flex flex-wrap gap-1.5">
@@ -183,10 +197,12 @@ export default function SourceStatePanel({
           variant="ghost"
           size="sm"
           onClick={() => setCardsVisible((visible) => !visible)}
-          className="h-9 rounded-lg border border-[#C6D9CB] bg-white px-3 text-xs font-medium text-[#1F7A4D] shadow-sm transition-colors hover:bg-[#EDF7EF] hover:text-[#176B42]"
+          className="h-9 w-full justify-between rounded-lg border border-[#C6D9CB] bg-white px-3 text-xs font-medium text-[#1F7A4D] shadow-sm transition-colors hover:bg-[#EDF7EF] hover:text-[#176B42]"
         >
-          <FileText className="mr-2 h-4 w-4" />
-          근거 문서 {sources.length}개 보기
+          <span className="flex items-center">
+            <FileText className="mr-2 h-4 w-4" />
+            근거 문서 {sources.length}개 보기
+          </span>
           {cardsVisible ? <ChevronUp className="ml-2 h-3.5 w-3.5" /> : <ChevronDown className="ml-2 h-3.5 w-3.5" />}
         </Button>
 
@@ -204,7 +220,7 @@ export default function SourceStatePanel({
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#758070]">
-                        Policy source
+                        Source {index + 1}
                       </div>
                       <div className="flex items-start justify-between gap-2">
                         <h4 className="line-clamp-2 break-words text-sm font-semibold leading-5 text-[#111713]">
