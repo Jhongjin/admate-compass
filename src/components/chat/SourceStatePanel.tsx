@@ -85,7 +85,7 @@ export default function SourceStatePanel({
 
   if (isInitial) {
     return (
-      <div className="flex flex-col items-center justify-center py-16 text-center">
+      <div className="flex flex-col items-center justify-center py-10 text-center sm:py-16">
         <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-lg border border-[#C6D9CB] bg-[#EDF7EF]">
           <BookOpen className="h-8 w-8 text-[#1F7A4D]" />
         </div>
@@ -100,7 +100,7 @@ export default function SourceStatePanel({
   if (isNoData || isError) {
     return (
       <Card className="w-full rounded-lg border-[#D6D8CD] bg-white shadow-sm">
-        <CardHeader className="pb-2">
+        <CardHeader className="p-4 pb-2">
           <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#758070]">
             검토 결과
           </div>
@@ -160,7 +160,7 @@ export default function SourceStatePanel({
 
   return (
     <Card className="w-full rounded-lg border-[#D6D8CD] bg-white shadow-sm">
-      <CardHeader className="pb-3">
+      <CardHeader className={compact ? "p-3 pb-2" : "p-4 pb-3"}>
         <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#758070]">
           근거 검토
         </div>
@@ -176,7 +176,7 @@ export default function SourceStatePanel({
             </Badge>
           )}
         </CardTitle>
-        <p className="text-xs leading-5 text-[#5F6C62]">
+        <p className="line-clamp-2 text-xs leading-5 text-[#5F6C62]">
           {stateDescription}
         </p>
         {userQuestion && !compact && (
@@ -185,9 +185,9 @@ export default function SourceStatePanel({
           </p>
         )}
       </CardHeader>
-      <CardContent className="space-y-3">
+      <CardContent className={compact ? "space-y-2 p-3 pt-0" : "space-y-3 p-4 pt-0"}>
         {isLimited && (
-          <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
+          <div className={`${compact ? "p-2.5" : "p-3"} rounded-md border border-amber-200 bg-amber-50 text-xs leading-5 text-amber-900`}>
             답변 생성은 일시적으로 제한되었지만, 확인된 근거 문서는 아래에서 계속 확인할 수 있습니다. 원문 대조 후 운영 판단에 사용해 주세요.
           </div>
         )}
@@ -225,13 +225,13 @@ export default function SourceStatePanel({
               const title = source.title?.replace(/_chunk_\d+/g, `_page_${index + 1}`) || `근거 문서 ${index + 1}`;
 
               return (
-                <div key={`${source.id}-${index}`} className="rounded-lg border border-[#D8DCCF] bg-[#FBFBF7] p-3 transition-colors hover:border-[#B9C9BB]">
-                  <div className="flex items-start gap-3">
-                    <div className="flex h-7 w-7 flex-none items-center justify-center rounded-md border border-[#C6D9CB] bg-[#EDF7EF] text-xs font-semibold text-[#1F7A4D]">
+                <div key={`${source.id}-${index}`} className={`${compact ? "p-2.5" : "p-3"} rounded-lg border border-[#D8DCCF] bg-[#FBFBF7] transition-colors hover:border-[#B9C9BB]`}>
+                  <div className={`flex items-start ${compact ? "gap-2" : "gap-3"}`}>
+                    <div className={`${compact ? "h-6 w-6" : "h-7 w-7"} flex flex-none items-center justify-center rounded-md border border-[#C6D9CB] bg-[#EDF7EF] text-xs font-semibold text-[#1F7A4D]`}>
                       {index + 1}
                     </div>
                     <div className="min-w-0 flex-1">
-                      <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#758070]">
+                      <div className={`${compact ? "mb-0.5" : "mb-1"} text-[11px] font-semibold uppercase tracking-[0.12em] text-[#758070]`}>
                         인용 후보 {index + 1}
                       </div>
                       <div className="flex items-start justify-between gap-2">
@@ -266,7 +266,7 @@ export default function SourceStatePanel({
                         </div>
                       </div>
 
-                      <p className={`${isExpanded ? "" : "line-clamp-3"} mt-2 break-words text-xs leading-5 text-[#5F6C62]`}>
+                      <p className={`${isExpanded ? "" : compact ? "line-clamp-2" : "line-clamp-3"} mt-2 break-words text-xs leading-5 text-[#5F6C62]`}>
                         {source.excerpt || "표시할 원문 일부가 없습니다."}
                       </p>
 

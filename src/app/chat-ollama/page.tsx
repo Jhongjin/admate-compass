@@ -982,7 +982,7 @@ function ChatPageContent() {
   if (loading) {
     return (
       <MainLayout>
-        <div className="flex items-center justify-center h-[calc(100vh-8rem)] mt-32">
+        <div className="mt-32 flex h-[calc(100dvh-8rem)] items-center justify-center">
           <div className="text-center">
             <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-b-2 border-[#1F7A4D]"></div>
             <p className="text-[#667066]">로그인 상태를 확인하는 중...</p>
@@ -995,7 +995,7 @@ function ChatPageContent() {
   if (!user) {
     return (
       <MainLayout>
-        <div className="flex items-center justify-center h-[calc(100vh-8rem)] mt-32">
+        <div className="mt-32 flex h-[calc(100dvh-8rem)] items-center justify-center">
           <div className="text-center">
             <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
               <p className="font-bold">로그인이 필요합니다</p>
@@ -1010,7 +1010,7 @@ function ChatPageContent() {
 
   return (
     <MainLayout chatHeader={chatHeader}>
-      <div className="mt-32 flex h-[calc(100vh-8rem)] w-full overflow-hidden bg-[#F4F5F0]">
+      <div className="mt-32 flex h-[calc(100dvh-8rem)] w-full overflow-hidden bg-[#F4F5F0]">
         {/* 1번 패널: 대화 히스토리 */}
         {!isLeftPanelCollapsed && (
           <div className="hidden h-full w-72 border-r border-[#D8DCCF] bg-white lg:block">
