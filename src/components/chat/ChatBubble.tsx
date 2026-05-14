@@ -204,12 +204,12 @@ export default function ChatBubble({
                     </Badge>
                     {hasVerifiedSources && (
                       <Badge variant="outline" className="rounded-md border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
-                        출처 연결
+                        근거 연결
                       </Badge>
                     )}
                     {generationLimited && hasVerifiedSources && (
                       <Badge variant="outline" className="rounded-md border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
-                        생성 답변 일시 제한
+                        검토 메모 제한
                       </Badge>
                     )}
                     {noDataFound && (
@@ -221,7 +221,7 @@ export default function ChatBubble({
 
                   {generationLimited && hasVerifiedSources && (
                     <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900">
-                      답변 문장은 일시적으로 제한되었지만, 검색된 근거는 유지됩니다. 오른쪽 근거 보드에서 원문과 인용 후보를 먼저 확인해 주세요.
+                      검토 메모 작성은 일시적으로 제한되었지만, 검색된 근거는 유지됩니다. 오른쪽 근거 보드에서 원문과 인용 후보를 먼저 확인해 주세요.
                     </div>
                   )}
 
@@ -248,7 +248,7 @@ export default function ChatBubble({
                       className="h-auto rounded-lg border border-[#C6D9CB] bg-white p-2 text-xs font-medium text-[#1F7A4D] shadow-sm transition-colors hover:bg-[#EDF7EF] hover:text-[#176B42]"
                     >
                       <FileText className="mr-2 h-4 w-4" />
-                      근거 문서 {sources.length}개 보기
+                      인용 후보 {sources.length}개 검토
                       <span className="ml-1 text-[#1F7A4D]">
                         {showSources ? '▲' : '▼'}
                       </span>
