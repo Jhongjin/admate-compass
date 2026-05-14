@@ -40,9 +40,9 @@ export default function SourceStatePanel({
   const isInitial = state === "initial-empty";
   const heading = isLimited ? "생성 답변 제한" : hasSources ? "근거 문서" : "근거 문서 없음";
   const stateDescription = isLimited
-    ? "답변 문장은 제한되었지만, 검색된 근거는 검토할 수 있습니다."
+    ? "답변 문장은 제한되었지만, 검색된 근거와 인용 후보는 검토할 수 있습니다."
     : hasSources
-      ? "질문에 연결된 출처를 확인하고 최종 판단 전 원문을 대조합니다."
+      ? "질문에 연결된 출처를 확인하고 최종 판단 전 원문과 인용 후보를 대조합니다."
       : "현재 상태에서 표시할 출처가 없습니다.";
 
   const toggleExpanded = (sourceId: string) => {
@@ -102,7 +102,7 @@ export default function SourceStatePanel({
       <Card className="w-full rounded-lg border-[#D6D8CD] bg-white shadow-sm">
         <CardHeader className="pb-2">
           <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#758070]">
-            Review outcome
+            검토 결과
           </div>
           <CardTitle className="flex items-center gap-2 text-sm font-semibold text-[#111713]">
             {isError ? <AlertCircle className="h-4 w-4 text-[#D93025]" /> : <Search className="h-4 w-4 text-[#9E5700]" />}
@@ -116,6 +116,17 @@ export default function SourceStatePanel({
           {isNoData && (
             <div className="rounded-md border border-[#D8DCCF] bg-[#FBFBF7] p-3 text-xs leading-5 text-[#5F6C62]">
               플랫폼명, 정책 항목, 소재 유형을 함께 입력하면 더 좁은 범위로 확인할 수 있습니다.
+            </div>
+          )}
+          {isNoData && (
+            <div className="grid gap-2 rounded-md border border-[#E9D59B] bg-[#FFF8E6] p-3 text-xs leading-5 text-[#6B5316]">
+              <div className="font-semibold text-[#111713]">다시 검토할 때 포함하면 좋은 정보</div>
+              <div className="flex flex-wrap gap-1.5">
+                <span className="rounded-md border border-[#E9D59B] bg-white px-2 py-1">플랫폼</span>
+                <span className="rounded-md border border-[#E9D59B] bg-white px-2 py-1">업종/상품</span>
+                <span className="rounded-md border border-[#E9D59B] bg-white px-2 py-1">소재 표현</span>
+                <span className="rounded-md border border-[#E9D59B] bg-white px-2 py-1">랜딩 페이지 조건</span>
+              </div>
             </div>
           )}
           <div className="flex flex-wrap gap-2">
@@ -151,7 +162,7 @@ export default function SourceStatePanel({
     <Card className="w-full rounded-lg border-[#D6D8CD] bg-white shadow-sm">
       <CardHeader className="pb-3">
         <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#758070]">
-          Evidence review
+          근거 검토
         </div>
         <CardTitle className="flex flex-wrap items-center gap-2 text-sm font-semibold text-[#111713]">
           <ShieldCheck className="h-4 w-4 text-[#1F7A4D]" />
@@ -177,7 +188,7 @@ export default function SourceStatePanel({
       <CardContent className="space-y-3">
         {isLimited && (
           <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
-            답변 생성은 일시적으로 제한되었지만, 확인된 근거 문서는 아래에서 계속 확인할 수 있습니다.
+            답변 생성은 일시적으로 제한되었지만, 확인된 근거 문서는 아래에서 계속 확인할 수 있습니다. 원문 대조 후 운영 판단에 사용해 주세요.
           </div>
         )}
 
@@ -187,6 +198,7 @@ export default function SourceStatePanel({
             <div className="flex flex-wrap gap-1.5">
               <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1">출처 제목 확인</span>
               <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1">원문 일부 대조</span>
+              <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1">인용 후보 선별</span>
               <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1">최종 판단 전 원문 확인</span>
             </div>
           </div>
@@ -220,7 +232,7 @@ export default function SourceStatePanel({
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#758070]">
-                        Source {index + 1}
+                        인용 후보 {index + 1}
                       </div>
                       <div className="flex items-start justify-between gap-2">
                         <h4 className="line-clamp-2 break-words text-sm font-semibold leading-5 text-[#111713]">

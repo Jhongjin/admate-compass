@@ -221,13 +221,13 @@ export default function ChatBubble({
 
                   {generationLimited && hasVerifiedSources && (
                     <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900">
-                      답변 생성은 일시적으로 제한되었지만, 관련 근거 문서를 찾았습니다. 아래 근거를 먼저 확인해 주세요.
+                      답변 문장은 일시적으로 제한되었지만, 검색된 근거는 유지됩니다. 오른쪽 근거 보드에서 원문과 인용 후보를 먼저 확인해 주세요.
                     </div>
                   )}
 
                   {noDataFound && (
                     <div className="mb-3 rounded-md border border-[#E9D59B] bg-[#FFF8E6] px-3 py-2 text-xs leading-relaxed text-[#6B5316]">
-                      현재 색인에서 바로 확인 가능한 근거가 없습니다. 플랫폼, 정책 항목, 소재 유형을 좁혀 다시 검토해 주세요.
+                      현재 색인에서 바로 확인 가능한 근거가 없습니다. 플랫폼, 정책 항목, 소재 표현을 좁혀 다시 검토해 주세요.
                     </div>
                   )}
 

@@ -1094,7 +1094,7 @@ function ChatPageContent() {
             {messages.length > 1 && (
               <div className="min-w-0 px-1 pb-2 lg:hidden">
                 <div className="mb-2 flex items-center justify-between gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#6D756C]">
-                  <span>Mobile evidence board</span>
+                  <span>근거 검토 보드</span>
                   <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1 text-[#34423A]">
                     {latestSources.length}개 출처
                   </span>
@@ -1140,7 +1140,7 @@ function ChatPageContent() {
               </div>
               
               <div className="mt-2 flex items-center justify-between text-xs text-[#6D756C] sm:mt-3">
-                <p className="hidden sm:block">플랫폼, 정책 항목, 소재 유형을 함께 쓰면 출처 검토가 더 정확해집니다.</p>
+                <p className="hidden sm:block">플랫폼, 정책 항목, 소재 표현을 함께 쓰면 인용 가능한 근거를 더 좁혀 볼 수 있습니다.</p>
                 <p className="sm:hidden">답변 아래 근거 보드 표시</p>
                 {error && (
                   <div className="flex items-center space-x-1 text-[#D93025]">
@@ -1185,7 +1185,7 @@ function ChatPageContent() {
                 </div>
                 <div>
                   <h3 className="text-base font-semibold text-[#111713]">정책 근거 보드</h3>
-                  <p className="text-sm text-[#5F6C62]">답변에 연결된 출처와 운영 검토 포인트</p>
+                  <p className="text-sm text-[#5F6C62]">답변에 연결된 출처, 인용 후보, 운영 검토 포인트</p>
                 </div>
               </div>
             </div>

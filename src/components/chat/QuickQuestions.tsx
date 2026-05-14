@@ -201,7 +201,7 @@ export default function QuickQuestions({ onQuestionClick, currentQuestion }: Qui
     <Card className="w-full rounded-lg border-[#D6D8CD] bg-white shadow-sm">
       <CardHeader className="pb-3">
         <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#758070]">
-          Operator prompts
+          검토 질문
         </div>
         <CardTitle className="flex items-center space-x-2 text-sm font-semibold text-[#111713]">
           <Sparkles className="h-4 w-4 text-[#1F7A4D]" />
@@ -211,7 +211,7 @@ export default function QuickQuestions({ onQuestionClick, currentQuestion }: Qui
           </Badge>
         </CardTitle>
         <p className="mt-2 text-xs leading-5 text-[#5F6C62]">
-          정책 항목, 업종, 소재 표현을 함께 넣어 근거 중심으로 질문을 좁힙니다.
+          정책 항목, 업종, 소재 표현을 함께 넣어 인용 가능한 근거 중심으로 질문을 좁힙니다.
         </p>
         <Separator className="bg-[#D8DCCF]" />
       </CardHeader>
@@ -246,7 +246,7 @@ export default function QuickQuestions({ onQuestionClick, currentQuestion }: Qui
                 <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-lg border border-[#E9D59B] bg-[#FFF8E6]">
                   <Lightbulb className="h-6 w-6 text-[#8A6418]" />
                 </div>
-                <p className="text-sm text-[#5F6C62]">후속 검토 질문을 찾을 수 없습니다</p>
+                <p className="text-sm text-[#5F6C62]">후속 검토 질문을 찾을 수 없습니다. 플랫폼과 소재 표현을 더 구체화해 주세요.</p>
               </div>
             )}
           </div>
