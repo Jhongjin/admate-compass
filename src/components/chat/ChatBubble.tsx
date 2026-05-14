@@ -170,7 +170,7 @@ export default function ChatBubble({
 
   return (
     <div className={`flex ${isUser ? "justify-end" : "justify-start"} mb-3 sm:mb-4`}>
-      <div className={`max-w-[92%] sm:max-w-3xl ${isUser ? "order-2" : "order-1"}`}>
+      <div className={`${isUser ? "order-2 max-w-[92%]" : "order-1 max-w-[96%]"} sm:max-w-3xl`}>
         {isUser ? (
           <div className="px-3 py-2 sm:px-4 sm:py-3">
             <div className="flex items-start space-x-2 sm:space-x-3">
@@ -197,7 +197,7 @@ export default function ChatBubble({
               </div>
               
               <div className="flex-1 min-w-0">
-                <div className="rounded-lg border border-[#D6D8CD] bg-white p-4 text-[#111713] shadow-sm">
+                <div className="rounded-lg border border-[#D6D8CD] bg-white p-3 text-[#111713] shadow-sm sm:p-4">
                   <div className="mb-3 flex flex-wrap items-center gap-2 border-b border-[#EEF0E8] pb-3">
                     <Badge variant="outline" className="rounded-md border-[#C6D9CB] bg-[#EDF7EF] px-2 py-0.5 text-[11px] font-medium text-[#1F7A4D]">
                       정책 검토 메모
@@ -245,10 +245,12 @@ export default function ChatBubble({
                       variant="ghost"
                       size="sm"
                       onClick={() => setShowSources(!showSources)}
-                      className="h-auto rounded-lg border border-[#C6D9CB] bg-white p-2 text-xs font-medium text-[#1F7A4D] shadow-sm transition-colors hover:bg-[#EDF7EF] hover:text-[#176B42]"
+                      className="h-auto w-full justify-between rounded-lg border border-[#C6D9CB] bg-white p-2 text-xs font-medium text-[#1F7A4D] shadow-sm transition-colors hover:bg-[#EDF7EF] hover:text-[#176B42] sm:w-auto"
                     >
-                      <FileText className="mr-2 h-4 w-4" />
-                      인용 후보 {sources.length}개 검토
+                      <span className="flex min-w-0 items-center">
+                        <FileText className="mr-2 h-4 w-4 flex-none" />
+                        <span className="truncate">인용 후보 {sources.length}개 검토</span>
+                      </span>
                       <span className="ml-1 text-[#1F7A4D]">
                         {showSources ? '▲' : '▼'}
                       </span>
@@ -258,8 +260,8 @@ export default function ChatBubble({
                       <div className="mt-3 space-y-3">
                         {sources.map((source, index) => (
                           <Card key={source.id} className="rounded-lg border-[#D8DCCF] bg-[#FBFBF7] shadow-sm transition-colors hover:border-[#9AB9A3]">
-                            <CardContent className="p-4">
-                              <div className="flex items-start gap-3">
+                            <CardContent className="p-3 sm:p-4">
+                              <div className="flex items-start gap-2 sm:gap-3">
                                 <div className="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-md border border-[#C6D9CB] bg-[#EDF7EF] text-xs font-semibold text-[#1F7A4D]">
                                   {index + 1}
                                 </div>
