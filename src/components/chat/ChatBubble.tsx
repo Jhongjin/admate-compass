@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ThumbsUp, ThumbsDown, Calendar, FileText, User, Download, Globe, Bot, Clock, Activity, CheckCircle2, ShieldCheck } from "lucide-react";
+import { ThumbsUp, ThumbsDown, Calendar, FileText, User, Download, ExternalLink, Clock, Activity, CheckCircle2, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -160,11 +160,11 @@ export default function ChatBubble({
   // URL 링크 핸들러
   const handleUrlOpen = (source: Source) => {
     if (source.url) {
-      console.log(`🌐 웹페이지 열기: ${source.url}`);
+      console.log(`근거 원문 열기: ${source.url}`);
       window.open(source.url, '_blank');
     } else {
-      console.error('웹페이지 URL이 없습니다:', source);
-      alert('열 수 있는 웹페이지 URL을 찾을 수 없습니다.');
+      console.error('근거 원문 URL이 없습니다:', source);
+      alert('열 수 있는 근거 원문 URL을 찾을 수 없습니다.');
     }
   };
 
@@ -238,7 +238,7 @@ export default function ChatBubble({
                   </div>
                 </div>
                 
-                {/* Sources for assistant messages */}
+                {/* Evidence drawer for assistant messages */}
                 {sources.length > 0 && (
                   <div className="mt-4">
                     <Button
@@ -265,9 +265,14 @@ export default function ChatBubble({
                                 </div>
                                 <div className="flex-1 min-w-0">
                                   <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
-                                    <h4 className="text-sm font-semibold leading-snug text-[#111713]">
-                                      {getDisplayTitle(source, index)}
-                                    </h4>
+                                    <div className="min-w-0">
+                                      <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#758070]">
+                                        인용 후보 {index + 1}
+                                      </div>
+                                      <h4 className="text-sm font-semibold leading-snug text-[#111713]">
+                                        {getDisplayTitle(source, index)}
+                                      </h4>
+                                    </div>
                                     <div className="flex flex-shrink-0 items-center gap-1">
                                       {source.url && (
                                         <>
@@ -287,9 +292,9 @@ export default function ChatBubble({
                                               size="sm"
                                               className="h-8 rounded-md px-2 text-xs text-[#1F7A4D] hover:bg-[#EDF7EF] hover:text-[#176B42]"
                                               onClick={() => handleUrlOpen(source)}
-                                              title="웹페이지 열기"
+                                              title="근거 원문 열기"
                                             >
-                                              <Globe className="w-4 h-4" />
+                                              <ExternalLink className="w-4 h-4" />
                                             </Button>
                                           )}
                                         </>
@@ -331,7 +336,7 @@ export default function ChatBubble({
                                           title="파일 다운로드"
                                         >
                                           <Download className="w-4 h-4 mr-2" />
-                                          다운로드
+                                          파일 저장
                                         </Button>
                                       ) : (
                                         <Button
@@ -339,10 +344,10 @@ export default function ChatBubble({
                                           size="sm"
                                           className="h-8 rounded-md px-2 text-xs text-[#1F7A4D] hover:bg-[#EDF7EF] hover:text-[#176B42]"
                                           onClick={() => handleUrlOpen(source)}
-                                          title="웹페이지 열기"
+                                          title="근거 원문 열기"
                                         >
-                                          <Globe className="w-4 h-4 mr-2" />
-                                          웹페이지
+                                          <ExternalLink className="w-4 h-4 mr-2" />
+                                          원문 열기
                                         </Button>
                                       )}
                                     </div>
@@ -394,15 +399,15 @@ export default function ChatBubble({
                   </Card>
                 )}
 
-                {/* Runtime status */}
+                {/* Policy desk review status */}
                 {(confidenceValue !== undefined || processingTime !== undefined || model) && (
                   <div className="mt-3 rounded-lg border border-[#D8DCCF] bg-white p-3 text-xs text-[#5F6C62] shadow-sm">
                     <div className="mb-2 flex flex-wrap items-center gap-2">
                       <span className="font-semibold text-[#111713]">정책 검토 상태</span>
                       {model && (
                         <span className="flex items-center gap-1 rounded-md border border-[#D8DCCF] bg-[#FBFBF7] px-2 py-1">
-                          <Bot className="h-3 w-3" />
-                          {generationLimited ? '답변 생성 제한' : '답변 생성 완료'}
+                          <ShieldCheck className="h-3 w-3" />
+                          {generationLimited ? '검토 메모 제한' : '검토 메모 작성 완료'}
                         </span>
                       )}
                       {processingTime !== undefined && (
@@ -432,7 +437,7 @@ export default function ChatBubble({
                   </div>
                 )}
 
-                {/* Feedback buttons for assistant messages */}
+                {/* Evidence review feedback */}
                 {feedback && onFeedback && (
                   <div className="flex items-center space-x-2 mt-3">
                     <Button
@@ -446,7 +451,7 @@ export default function ChatBubble({
                       }`}
                     >
                       <ThumbsUp className="w-3 h-3 mr-1" />
-                      <span className="hidden sm:inline">도움됨</span>
+                      <span className="hidden sm:inline">검토에 유용</span>
                     </Button>
                     <Button
                       variant="ghost"
@@ -459,7 +464,7 @@ export default function ChatBubble({
                       }`}
                     >
                       <ThumbsDown className="w-3 h-3 mr-1" />
-                      <span className="hidden sm:inline">도움안됨</span>
+                      <span className="hidden sm:inline">근거 부족</span>
                     </Button>
                     <span className="text-xs text-[#777777]">{timestamp}</span>
                   </div>
