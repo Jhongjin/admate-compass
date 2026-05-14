@@ -32,9 +32,9 @@ interface QuestionCategory {
 const questionCategories: QuestionCategory[] = [
   {
     id: "policy",
-    title: "광고 정책 관련",
+    title: "정책 리스크 확인",
     icon: <FileText className="w-4 h-4" />,
-    color: "bg-blue-500",
+    color: "border-[#B9D8E2] bg-[#EAF4F7] text-[#1F6F8B]",
     questions: [
       "페이스북 광고 정책 위반 시 대처 방법",
       "금지된 광고 콘텐츠는 무엇인가요?",
@@ -45,9 +45,9 @@ const questionCategories: QuestionCategory[] = [
   },
   {
     id: "targeting",
-    title: "타겟팅 관련",
+    title: "타겟팅 검토",
     icon: <Target className="w-4 h-4" />,
-    color: "bg-green-500",
+    color: "border-[#C6D9CB] bg-[#EDF7EF] text-[#1F7A4D]",
     questions: [
       "페이스북 광고 타겟팅 옵션 설정",
       "관심사 기반 타겟팅 활용법",
@@ -58,9 +58,9 @@ const questionCategories: QuestionCategory[] = [
   },
   {
     id: "budget",
-    title: "예산 및 입찰 관련",
+    title: "예산·입찰 판단",
     icon: <DollarSign className="w-4 h-4" />,
-    color: "bg-purple-500",
+    color: "border-[#E9D59B] bg-[#FFF8E6] text-[#8A6418]",
     questions: [
       "광고 예산 설정 및 관리 방법",
       "입찰 전략 선택 가이드",
@@ -71,9 +71,9 @@ const questionCategories: QuestionCategory[] = [
   },
   {
     id: "analytics",
-    title: "성과 분석 관련",
+    title: "성과 기준 확인",
     icon: <BarChart3 className="w-4 h-4" />,
-    color: "bg-orange-500",
+    color: "border-[#D6D8CD] bg-[#FBFBF7] text-[#5F6C62]",
     questions: [
       "광고 성과 지표 해석 방법",
       "ROAS 계산 및 분석",
@@ -198,16 +198,16 @@ export default function QuickQuestions({ onQuestionClick, currentQuestion }: Qui
   };
 
   return (
-    <Card className="w-full bg-gradient-to-br from-white/95 to-[#FAF8F3]/95 backdrop-blur-sm border-orange-200/30 shadow-lg">
+    <Card className="w-full rounded-lg border-[#D6D8CD] bg-white shadow-sm">
       <CardHeader className="pb-3">
-        <CardTitle className="flex items-center space-x-2 text-gray-800 text-sm font-medium">
-          <Sparkles className="w-4 h-4 text-orange-500" />
-          <span>{currentQuestion ? '관련 질문' : '빠른 질문'}</span>
-          <Badge variant="secondary" className="text-xs bg-orange-100 text-orange-700 border-orange-200">
+        <CardTitle className="flex items-center space-x-2 text-sm font-semibold text-[#111713]">
+          <Sparkles className="h-4 w-4 text-[#1F7A4D]" />
+          <span>{currentQuestion ? '후속 검토 질문' : '정책 검토 시작점'}</span>
+          <Badge variant="outline" className="rounded-md border-[#C6D9CB] bg-[#EDF7EF] px-2 py-0.5 text-[11px] text-[#1F7A4D]">
             {currentQuestion ? vectorBasedQuestions.length : questionCategories.reduce((total, cat) => total + cat.questions.length, 0)}개
           </Badge>
         </CardTitle>
-        <Separator className="bg-orange-200/50" />
+        <Separator className="bg-[#D8DCCF]" />
       </CardHeader>
       <CardContent className="space-y-3">
         {currentQuestion ? (
@@ -215,10 +215,10 @@ export default function QuickQuestions({ onQuestionClick, currentQuestion }: Qui
           <div className="space-y-2">
             {isLoadingVectorQuestions ? (
               <div className="text-center py-8">
-                <div className="w-12 h-12 bg-gradient-to-br from-orange-200 to-pink-200 rounded-full flex items-center justify-center mx-auto mb-3">
-                  <div className="w-6 h-6 border-2 border-orange-300 border-t-orange-600 rounded-full animate-spin"></div>
+                <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-lg border border-[#C6D9CB] bg-[#EDF7EF]">
+                  <div className="h-6 w-6 animate-spin rounded-full border-2 border-[#C6D9CB] border-t-[#1F7A4D]"></div>
                 </div>
-                <p className="text-sm text-gray-600">관련 질문을 찾는 중...</p>
+                <p className="text-sm text-[#5F6C62]">후속 검토 질문을 찾는 중...</p>
               </div>
             ) : vectorBasedQuestions.length > 0 ? (
               vectorBasedQuestions.map((question, index) => (
@@ -227,20 +227,20 @@ export default function QuickQuestions({ onQuestionClick, currentQuestion }: Qui
                   variant="outline"
                   size="sm"
                   onClick={() => onQuestionClick(question)}
-                  className="w-full justify-start text-left h-auto p-3 text-xs text-gray-700 hover:text-gray-800 hover:bg-orange-50 hover:border-orange-200 transition-all duration-200 border-gray-200"
+                  className="h-auto w-full justify-start border-[#D8DCCF] p-3 text-left text-xs text-[#34423A] transition-colors hover:border-[#B9C9BB] hover:bg-[#FBFBF7] hover:text-[#111713]"
                 >
                   <div className="flex items-start space-x-3">
-                    <div className="w-2 h-2 bg-orange-500 rounded-full mt-2 flex-shrink-0"></div>
+                    <div className="mt-2 h-2 w-2 flex-shrink-0 rounded-full bg-[#1F7A4D]"></div>
                     <span className="line-clamp-2 text-left">{question}</span>
                   </div>
                 </Button>
               ))
             ) : (
               <div className="text-center py-8">
-                <div className="w-12 h-12 bg-gradient-to-br from-orange-200 to-pink-200 rounded-full flex items-center justify-center mx-auto mb-3">
-                  <Lightbulb className="w-6 h-6 text-orange-600" />
+                <div className="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-lg border border-[#E9D59B] bg-[#FFF8E6]">
+                  <Lightbulb className="h-6 w-6 text-[#8A6418]" />
                 </div>
-                <p className="text-sm text-gray-600">관련 질문을 찾을 수 없습니다</p>
+                <p className="text-sm text-[#5F6C62]">후속 검토 질문을 찾을 수 없습니다</p>
               </div>
             )}
           </div>
@@ -252,21 +252,21 @@ export default function QuickQuestions({ onQuestionClick, currentQuestion }: Qui
                 variant="outline"
                 size="sm"
                 onClick={() => toggleCategory(category.id)}
-                className="w-full justify-between h-auto p-3 text-left hover:bg-orange-50 hover:border-orange-200 transition-all duration-200 border-gray-200"
+                className="h-auto w-full justify-between border-[#D8DCCF] p-3 text-left transition-colors hover:border-[#B9C9BB] hover:bg-[#FBFBF7]"
               >
                 <div className="flex items-center space-x-3">
-                  <div className={`w-8 h-8 ${category.color} rounded-full flex items-center justify-center`}>
+                  <div className={`flex h-8 w-8 items-center justify-center rounded-lg border ${category.color}`}>
                     {category.icon}
                   </div>
                   <div className="flex-1 text-left">
-                    <h4 className="text-sm font-medium text-gray-800">{category.title}</h4>
-                    <p className="text-xs text-gray-600">{category.questions.length}개 질문</p>
+                    <h4 className="text-sm font-medium text-[#111713]">{category.title}</h4>
+                    <p className="text-xs text-[#5F6C62]">{category.questions.length}개 질문</p>
                   </div>
                 </div>
                 {expandedCategories.has(category.id) ? (
-                  <ChevronDown className="w-4 h-4 text-gray-500" />
+                  <ChevronDown className="h-4 w-4 text-[#5F6C62]" />
                 ) : (
-                  <ChevronRight className="w-4 h-4 text-gray-500" />
+                  <ChevronRight className="h-4 w-4 text-[#5F6C62]" />
                 )}
               </Button>
               
@@ -278,10 +278,10 @@ export default function QuickQuestions({ onQuestionClick, currentQuestion }: Qui
                       variant="outline"
                       size="sm"
                       onClick={() => onQuestionClick(question)}
-                      className="w-full justify-start text-left h-auto p-2 text-xs text-gray-700 hover:text-gray-800 hover:bg-orange-50 hover:border-orange-200 transition-all duration-200 border-gray-200"
+                      className="h-auto w-full justify-start border-[#D8DCCF] p-2 text-left text-xs text-[#34423A] transition-colors hover:border-[#B9C9BB] hover:bg-[#FBFBF7] hover:text-[#111713]"
                     >
                       <div className="flex items-start space-x-2">
-                        <div className="w-1.5 h-1.5 bg-orange-400 rounded-full mt-2 flex-shrink-0"></div>
+                        <div className="mt-2 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-[#1F7A4D]"></div>
                         <span className="line-clamp-2 text-left">{question}</span>
                       </div>
                     </Button>

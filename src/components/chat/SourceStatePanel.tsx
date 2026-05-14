@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { AlertCircle, BookOpen, ChevronDown, ChevronUp, Download, ExternalLink, FileText, Search } from "lucide-react";
+import { AlertCircle, BookOpen, ChevronDown, ChevronUp, Download, ExternalLink, FileText, Search, ShieldCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -84,9 +84,9 @@ export default function SourceStatePanel({
         <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-lg border border-[#C6D9CB] bg-[#EDF7EF]">
           <BookOpen className="h-8 w-8 text-[#1F7A4D]" />
         </div>
-        <h3 className="mb-2 text-base font-semibold text-[#111713]">질문을 시작해보세요</h3>
+        <h3 className="mb-2 text-base font-semibold text-[#111713]">정책 검토를 시작해보세요</h3>
         <p className="max-w-sm text-sm leading-relaxed text-[#5F6C62]">
-          질문을 시작하면 근거 문서가 여기에 표시됩니다.
+          질문을 시작하면 근거 문서가 여기에 표시됩니다. 플랫폼, 정책 항목, 소재 유형을 함께 입력하면 더 정확합니다.
         </p>
       </div>
     );
@@ -143,7 +143,7 @@ export default function SourceStatePanel({
     <Card className="w-full rounded-lg border-[#D6D8CD] bg-white shadow-sm">
       <CardHeader className="pb-3">
         <CardTitle className="flex flex-wrap items-center gap-2 text-sm font-semibold text-[#111713]">
-          <BookOpen className="h-4 w-4 text-[#1F7A4D]" />
+          <ShieldCheck className="h-4 w-4 text-[#1F7A4D]" />
           <span>{heading}</span>
           <Badge variant="outline" className="rounded-md border-[#C6D9CB] bg-[#EDF7EF] px-2 py-0.5 text-[11px] text-[#1F7A4D]">
             {sources.length}개
@@ -167,6 +167,17 @@ export default function SourceStatePanel({
           </div>
         )}
 
+        {hasSources && (
+          <div className="grid gap-2 rounded-lg border border-[#D8DCCF] bg-[#FBFBF7] p-3 text-xs text-[#5F6C62]">
+            <div className="font-semibold text-[#111713]">운영 검토 기준</div>
+            <div className="flex flex-wrap gap-1.5">
+              <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1">출처 제목 확인</span>
+              <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1">원문 일부 대조</span>
+              <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1">최종 판단 전 원문 확인</span>
+            </div>
+          </div>
+        )}
+
         <Button
           type="button"
           variant="ghost"
@@ -186,12 +197,15 @@ export default function SourceStatePanel({
               const title = source.title?.replace(/_chunk_\d+/g, `_page_${index + 1}`) || `근거 문서 ${index + 1}`;
 
               return (
-                <div key={`${source.id}-${index}`} className="rounded-lg border border-[#D8DCCF] bg-[#FBFBF7] p-3">
+                <div key={`${source.id}-${index}`} className="rounded-lg border border-[#D8DCCF] bg-[#FBFBF7] p-3 transition-colors hover:border-[#B9C9BB]">
                   <div className="flex items-start gap-3">
                     <div className="flex h-7 w-7 flex-none items-center justify-center rounded-md border border-[#C6D9CB] bg-[#EDF7EF] text-xs font-semibold text-[#1F7A4D]">
                       {index + 1}
                     </div>
                     <div className="min-w-0 flex-1">
+                      <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#758070]">
+                        Policy source
+                      </div>
                       <div className="flex items-start justify-between gap-2">
                         <h4 className="line-clamp-2 break-words text-sm font-semibold leading-5 text-[#111713]">
                           {title}

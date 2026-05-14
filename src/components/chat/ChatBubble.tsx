@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ThumbsUp, ThumbsDown, Calendar, FileText, User, Download, Globe, Bot, Clock, Activity, CheckCircle2 } from "lucide-react";
+import { ThumbsUp, ThumbsDown, Calendar, FileText, User, Download, Globe, Bot, Clock, Activity, CheckCircle2, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -73,6 +73,7 @@ export default function ChatBubble({
   const isUser = type === "user";
   const hasVerifiedSources = sources.length > 0 && !noDataFound;
   const generationLimited = model === 'ollama-connection-failed';
+  const confidenceValue = typeof confidence === 'number' ? Math.max(0, Math.min(100, Math.round(confidence))) : undefined;
 
   const getEvidenceLabel = (source: Source) => {
     const method = source.retrievalMethod?.toLowerCase();
@@ -173,15 +174,12 @@ export default function ChatBubble({
         {isUser ? (
           <div className="px-3 py-2 sm:px-4 sm:py-3">
             <div className="flex items-start space-x-2 sm:space-x-3">
-              <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full bg-[#111713] sm:h-8 sm:w-8">
+              <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-lg bg-[#111713] sm:h-8 sm:w-8">
                 <User className="w-3 h-3 sm:w-4 sm:h-4 text-white" />
               </div>
               
               <div className="flex-1 min-w-0">
-                <div
-                  className="rounded-lg border border-[#111713] px-3 py-2 text-white shadow-sm sm:px-4 sm:py-3"
-                  style={{ backgroundColor: '#111713' }}
-                >
+                <div className="rounded-lg border border-[#111713] bg-[#111713] px-3 py-2 text-white shadow-sm sm:px-4 sm:py-3">
                   <div className="text-sm sm:text-sm leading-relaxed text-white prose prose-invert prose-sm max-w-none">
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>
                       {content}
@@ -194,19 +192,19 @@ export default function ChatBubble({
         ) : (
           <div className="px-3 py-2 sm:px-4 sm:py-3">
             <div className="flex items-start space-x-2 sm:space-x-3">
-              <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-full border border-[#C6D9CB] bg-[#EDF7EF] sm:h-8 sm:w-8">
-                <Bot className="h-3 w-3 text-[#1F7A4D] sm:h-4 sm:w-4" />
+              <div className="flex h-6 w-6 flex-shrink-0 items-center justify-center rounded-lg border border-[#C6D9CB] bg-[#EDF7EF] sm:h-8 sm:w-8">
+                <ShieldCheck className="h-3 w-3 text-[#1F7A4D] sm:h-4 sm:w-4" />
               </div>
               
               <div className="flex-1 min-w-0">
                 <div className="rounded-lg border border-[#D6D8CD] bg-white p-4 text-[#111713] shadow-sm">
-                  <div className="mb-3 flex flex-wrap items-center gap-2">
+                  <div className="mb-3 flex flex-wrap items-center gap-2 border-b border-[#EEF0E8] pb-3">
                     <Badge variant="outline" className="rounded-md border-[#C6D9CB] bg-[#EDF7EF] px-2 py-0.5 text-[11px] font-medium text-[#1F7A4D]">
-                      Compass 답변
+                      정책 검토 메모
                     </Badge>
                     {hasVerifiedSources && (
                       <Badge variant="outline" className="rounded-md border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
-                        근거 문서 확인
+                        출처 연결
                       </Badge>
                     )}
                     {generationLimited && hasVerifiedSources && (
@@ -392,25 +390,39 @@ export default function ChatBubble({
                 )}
 
                 {/* Runtime status */}
-                {(confidence !== undefined || processingTime !== undefined || model) && (
-                  <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-[#5F6C62]">
-                    {confidence !== undefined && (
-                      <span className="flex items-center gap-1 rounded-md border border-[#D8DCCF] bg-white px-2 py-1">
-                        <Activity className="h-3 w-3" />
-                        근거 신뢰도 {Math.round(confidence)}%
-                      </span>
-                    )}
-                    {processingTime !== undefined && (
-                      <span className="flex items-center gap-1 rounded-md border border-[#D8DCCF] bg-white px-2 py-1">
-                        <Clock className="h-3 w-3" />
-                        {processingTime}ms
-                      </span>
-                    )}
-                    {model && (
-                      <span className="flex items-center gap-1 rounded-md border border-[#D8DCCF] bg-white px-2 py-1">
-                        <Bot className="h-3 w-3" />
-                        {generationLimited ? '생성 답변 제한' : '생성 답변 완료'}
-                      </span>
+                {(confidenceValue !== undefined || processingTime !== undefined || model) && (
+                  <div className="mt-3 rounded-lg border border-[#D8DCCF] bg-white p-3 text-xs text-[#5F6C62] shadow-sm">
+                    <div className="mb-2 flex flex-wrap items-center gap-2">
+                      <span className="font-semibold text-[#111713]">검토 상태</span>
+                      {model && (
+                        <span className="flex items-center gap-1 rounded-md border border-[#D8DCCF] bg-[#FBFBF7] px-2 py-1">
+                          <Bot className="h-3 w-3" />
+                          {generationLimited ? '답변 생성 제한' : '답변 생성 완료'}
+                        </span>
+                      )}
+                      {processingTime !== undefined && (
+                        <span className="flex items-center gap-1 rounded-md border border-[#D8DCCF] bg-[#FBFBF7] px-2 py-1">
+                          <Clock className="h-3 w-3" />
+                          {processingTime}ms
+                        </span>
+                      )}
+                    </div>
+                    {confidenceValue !== undefined && (
+                      <div>
+                        <div className="mb-1 flex items-center justify-between gap-3">
+                          <span className="flex items-center gap-1 font-medium text-[#34423A]">
+                            <Activity className="h-3 w-3" />
+                            근거 신뢰도
+                          </span>
+                          <span className="font-semibold text-[#111713]">{confidenceValue}%</span>
+                        </div>
+                        <div className="h-1.5 rounded-full bg-[#E9ECE3]">
+                          <div
+                            className="h-1.5 rounded-full bg-[#1F7A4D]"
+                            style={{ width: `${confidenceValue}%` }}
+                          />
+                        </div>
+                      </div>
                     )}
                   </div>
                 )}

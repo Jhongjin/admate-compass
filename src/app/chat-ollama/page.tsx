@@ -39,7 +39,7 @@ interface Message {
   uiState?: ChatUiState;
 }
 
-const INITIAL_GREETING = "안녕하세요. Compass에서 광고 정책과 심사 기준을 질문해 주세요.";
+const INITIAL_GREETING = "안녕하세요. Compass Policy Desk입니다. 플랫폼, 정책 항목, 소재 유형을 함께 입력하면 확인 가능한 근거와 검토 포인트를 정리해 드립니다.";
 const NO_DATA_MESSAGE = "Compass could not find usable evidence in current documents. Narrow the platform, policy item, or creative type and try again.";
 const GENERATION_LIMITED_MESSAGE = "답변 생성이 일시적으로 제한되었습니다. 확인된 근거 문서는 아래에서 계속 확인할 수 있습니다.";
 const ERROR_MESSAGE = "일시적인 서비스 오류로 답변을 만들지 못했습니다. 잠시 후 다시 시도해 주세요.";
@@ -895,10 +895,10 @@ function ChatPageContent() {
           </div>
           <div className="min-w-0">
             <h2 className="truncate text-sm font-semibold text-[#111713]">
-              Compass Policy Evidence Desk
+              Compass Policy Desk
             </h2>
             <p className="hidden text-xs text-[#5F6C62] sm:block">
-              광고 정책 답변과 확인된 근거 문서를 한 화면에서 검토합니다.
+              정책 답변, 출처, 검토 상태를 한 화면에서 운영자가 확인합니다.
             </p>
           </div>
         </div>
@@ -936,10 +936,10 @@ function ChatPageContent() {
             </SheetContent>
           </Sheet>
           <Badge variant="outline" className="hidden rounded-md border-[#C6D9CB] bg-[#EDF7EF] px-2 py-1 text-[11px] text-[#1F7A4D] sm:inline-flex">
-            색인 연결
+            출처 검토
           </Badge>
           <Badge variant="outline" className="hidden rounded-md border-[#E9D59B] bg-[#FFF8E6] px-2 py-1 text-[11px] text-[#8A6418] md:inline-flex">
-            근거 우선
+            정책 근거 우선
           </Badge>
           <Button
             variant="ghost"
@@ -1075,11 +1075,11 @@ function ChatPageContent() {
                         <Bot className="h-4 w-4 text-[#1F7A4D]" />
                       </div>
                       <div className="flex-1">
-                        <div className="mb-2 text-sm font-medium text-[#111713]">Compass가 정책 근거를 대조하고 있습니다</div>
+                        <div className="mb-2 text-sm font-medium text-[#111713]">Compass가 정책 데스크 검토를 준비하고 있습니다</div>
                         <div className="flex flex-wrap gap-2 text-xs text-[#5F6C62]">
                           <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1">질문 범위 확인</span>
                           <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1">색인 검색</span>
-                          <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1">출처 검증</span>
+                          <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1">근거 대조</span>
                         </div>
                       </div>
                     </div>
@@ -1113,7 +1113,7 @@ function ChatPageContent() {
                     value={inputValue}
                     onChange={(e) => setInputValue(e.target.value)}
                     onKeyDown={handleKeyPress}
-                    placeholder="광고 플랫폼 정책과 가이드에 대해 궁금한 점을 질문해주세요..."
+                    placeholder="예: Meta 금융 광고 소재 심사 기준과 필요한 고지 문구를 확인해줘"
                     className="max-h-[100px] min-h-[40px] resize-none border-[#D4D8CE] bg-white pr-10 text-sm text-[#111713] placeholder-[#8B9388] focus:border-[#1F7A4D] focus:ring-[#E7F4EA] sm:max-h-[120px] sm:min-h-[44px] sm:pr-12 sm:text-base"
                     style={{ borderRadius: '8px' }}
                     disabled={isLoading}
@@ -1131,7 +1131,7 @@ function ChatPageContent() {
               </div>
               
               <div className="mt-2 flex items-center justify-between text-xs text-[#6D756C] sm:mt-3">
-                <p className="hidden sm:block">Enter 키로 전송, Shift + Enter로 줄바꿈</p>
+                <p className="hidden sm:block">플랫폼, 정책 항목, 소재 유형을 함께 쓰면 출처 검토가 더 정확해집니다.</p>
                 <p className="sm:hidden">Enter로 전송</p>
                 {error && (
                   <div className="flex items-center space-x-1 text-[#D93025]">
@@ -1175,8 +1175,8 @@ function ChatPageContent() {
                   <BookOpen className="h-5 w-5 text-[#1F7A4D]" />
                 </div>
                 <div>
-                  <h3 className="text-base font-semibold text-[#111713]">근거 문서</h3>
-                  <p className="text-sm text-[#5F6C62]">답변 판정에 사용된 Compass 색인</p>
+                  <h3 className="text-base font-semibold text-[#111713]">정책 근거 보드</h3>
+                  <p className="text-sm text-[#5F6C62]">답변에 연결된 출처와 운영 검토 포인트</p>
                 </div>
               </div>
             </div>
