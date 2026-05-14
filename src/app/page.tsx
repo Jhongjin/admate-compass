@@ -60,9 +60,15 @@ const platformCategories = [
 ];
 
 const deskSignals = [
-  { label: "Answer", value: "근거 기반", icon: MessageSquare },
-  { label: "Evidence", value: "출처 보존", icon: BookOpen },
-  { label: "Boundary", value: "생성 제한 표시", icon: ShieldCheck },
+  { label: "Query", value: "정책 질문 접수", icon: MessageSquare },
+  { label: "Evidence", value: "문서 근거 대조", icon: BookOpen },
+  { label: "Decision", value: "심사 리스크 분리", icon: ShieldCheck },
+];
+
+const evidenceLanes = [
+  { label: "Source", value: "플랫폼 정책 원문", tone: "text-[#1F7A4D]" },
+  { label: "Coverage", value: "근거 충분", tone: "text-[#176B42]" },
+  { label: "Boundary", value: "답변 범위 표시", tone: "text-[#8A6418]" },
 ];
 
 const primaryActions = [
@@ -129,10 +135,10 @@ export default function HomePage() {
                   AdMate Compass
                 </h1>
                 <p className="font-nanum text-lg leading-8 text-[#34423A] sm:text-xl">
-                  광고 정책 질문을 근거 문서, 출처 상태, 생성 제한 여부와 함께 검토하는 정책 판단 데스크입니다.
+                  광고 심사 질문을 근거 문서와 함께 판정하는 정책 인텔리전스 데스크입니다.
                 </p>
                 <p className="font-nanum text-sm leading-7 text-[#5F6C62]">
-                  운영자가 바로 질문하고, 답변 옆에서 확인된 근거를 비교하며, 근거가 부족한 질문은 별도 상태로 분리해 봅니다.
+                  플랫폼별 정책 원문, 출처 상태, 답변 범위를 한 화면에 묶어 광고 운영자가 반복 확인하는 기준을 빠르게 고정합니다.
                 </p>
               </div>
 
@@ -155,9 +161,9 @@ export default function HomePage() {
             <div className="rounded-lg border border-[#D6D8CD] bg-[#FFFFFF] p-5 shadow-sm sm:p-6">
               <div className="mb-5 flex items-start justify-between gap-4">
                 <div>
-                  <h2 className="font-nanum text-xl font-bold text-[#111713]">질문 작성</h2>
+                  <h2 className="font-nanum text-xl font-bold text-[#111713]">정책 조회</h2>
                   <p className="mt-2 font-nanum text-sm leading-6 text-[#667066]">
-                    질문을 보내면 Compass 채팅 데스크에서 답변과 근거 패널을 함께 엽니다.
+                    질문을 보내면 답변과 근거 패널이 함께 열립니다.
                   </p>
                 </div>
                 <div className="rounded-lg border border-[#C6D9CB] bg-[#EDF7EF] p-3 text-[#1F7A4D]">
@@ -204,6 +210,23 @@ export default function HomePage() {
                     <ArrowRight className="h-4 w-4 text-[#5C695F]" />
                   </button>
                 ))}
+              </div>
+
+              <div className="mt-5 rounded-lg border border-[#E0E2D9] bg-[#FBFBF7] p-4">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <p className="font-nanum text-sm font-bold text-[#172018]">Evidence queue</p>
+                  <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1 text-[11px] font-semibold text-[#6D756C]">
+                    Review ready
+                  </span>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-3">
+                  {evidenceLanes.map((lane) => (
+                    <div key={lane.label} className="rounded-md border border-[#E6E8DF] bg-white px-3 py-3">
+                      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#7A8379]">{lane.label}</p>
+                      <p className={`mt-1 font-nanum text-sm font-bold ${lane.tone}`}>{lane.value}</p>
+                    </div>
+                  ))}
+                </div>
               </div>
             </div>
           </motion.div>
