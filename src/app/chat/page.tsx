@@ -854,6 +854,11 @@ function ChatPageContent() {
   const reviewStatusLabel = isLoading ? "근거 검색 중" : latestSourceCount > 0 ? "출처 대조 가능" : hasActiveReview ? "근거 보강 필요" : "접수 대기";
   const reviewCaseId = latestUserMessage ? `CASE-${latestUserMessage.id.slice(-6).toUpperCase()}` : "CASE-READY";
   const sourceCoverageLabel = latestSourceCount > 0 ? `${Math.min(latestSourceCount, 3)}/${latestSourceCount} previewed` : "0 sources";
+  const evidenceRoomStages = [
+    { id: "intake", label: "INTAKE", value: hasActiveReview ? "질문 접수" : "대기" },
+    { id: "ledger", label: "LEDGER", value: latestSourceCount > 0 ? `${latestSourceCount}개 출처` : "출처 없음" },
+    { id: "decision", label: "DECISION", value: latestSourceCount > 0 ? "대조 가능" : "보강 필요" },
+  ];
 
   const chatHeader = (
     <div className="border-b border-[#D8DCCF] bg-[#FBFBF7]/95 px-4 py-3 backdrop-blur rounded-none">
@@ -1205,6 +1210,18 @@ function ChatPageContent() {
                           {latestSourceCount}개
                         </span>
                       </div>
+                    </div>
+                    <div className="grid border-b border-[#E2E5DA] bg-[#FBFBF7] sm:grid-cols-3">
+                      {evidenceRoomStages.map((stage) => (
+                        <div key={stage.id} className="border-b border-[#E2E5DA] px-4 py-3 last:border-b-0 sm:border-b-0 sm:border-r sm:last:border-r-0">
+                          <div className="font-mono text-[10px] font-semibold tracking-[0.14em] text-[#758070]">
+                            {stage.label}
+                          </div>
+                          <div className="mt-1 truncate text-xs font-semibold text-[#111713]">
+                            {stage.value}
+                          </div>
+                        </div>
+                      ))}
                     </div>
                     <div className="divide-y divide-[#E2E5DA]">
                       {latestSources.length > 0 ? (
