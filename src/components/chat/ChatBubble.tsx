@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import { ThumbsUp, ThumbsDown, Calendar, FileText, User, Download, ExternalLink, Clock, Activity, CheckCircle2, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -69,6 +69,7 @@ export default function ChatBubble({
   model,
 }: ChatBubbleProps) {
   const [showSources, setShowSources] = useState(false);
+  const sourcePanelId = useId();
 
   const isUser = type === "user";
   const hasVerifiedSources = sources.length > 0 && !noDataFound;
@@ -245,6 +246,8 @@ export default function ChatBubble({
                       variant="ghost"
                       size="sm"
                       onClick={() => setShowSources(!showSources)}
+                      aria-expanded={showSources}
+                      aria-controls={sourcePanelId}
                       className="h-auto w-full justify-between rounded-lg border border-[#C6D9CB] bg-white p-2 text-xs font-medium text-[#1F7A4D] shadow-sm transition-colors hover:bg-[#EDF7EF] hover:text-[#176B42] sm:w-auto"
                     >
                       <span className="flex min-w-0 items-center">
@@ -257,7 +260,7 @@ export default function ChatBubble({
                     </Button>
                     
                     {showSources && (
-                      <div className="mt-3 space-y-3">
+                      <div id={sourcePanelId} className="mt-3 space-y-3">
                         {sources.map((source, index) => (
                           <Card key={source.id} className="rounded-lg border-[#D8DCCF] bg-[#FBFBF7] shadow-sm transition-colors hover:border-[#9AB9A3]">
                             <CardContent className="p-3 sm:p-4">
@@ -285,6 +288,7 @@ export default function ChatBubble({
                                               className="h-8 rounded-md px-2 text-xs text-emerald-700 hover:bg-emerald-50 hover:text-emerald-800"
                                               onClick={() => handleFileDownload(source)}
                                               title="파일 다운로드"
+                                              aria-label={`${getDisplayTitle(source, index)} 파일 다운로드`}
                                             >
                                               <Download className="w-4 h-4" />
                                             </Button>
@@ -295,6 +299,7 @@ export default function ChatBubble({
                                               className="h-8 rounded-md px-2 text-xs text-[#1F7A4D] hover:bg-[#EDF7EF] hover:text-[#176B42]"
                                               onClick={() => handleUrlOpen(source)}
                                               title="근거 원문 열기"
+                                              aria-label={`${getDisplayTitle(source, index)} 근거 원문 열기`}
                                             >
                                               <ExternalLink className="w-4 h-4" />
                                             </Button>
