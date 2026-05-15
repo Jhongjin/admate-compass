@@ -852,6 +852,8 @@ function ChatPageContent() {
   const latestSources = latestAssistantMessage?.sources?.slice(0, 3) || [];
   const hasActiveReview = messages.length > 1;
   const reviewStatusLabel = isLoading ? "근거 검색 중" : latestSourceCount > 0 ? "출처 대조 가능" : hasActiveReview ? "근거 보강 필요" : "접수 대기";
+  const reviewCaseId = latestUserMessage ? `CASE-${latestUserMessage.id.slice(-6).toUpperCase()}` : "CASE-READY";
+  const sourceCoverageLabel = latestSourceCount > 0 ? `${Math.min(latestSourceCount, 3)}/${latestSourceCount} previewed` : "0 sources";
 
   const chatHeader = (
     <div className="border-b border-[#D8DCCF] bg-[#FBFBF7]/95 px-4 py-3 backdrop-blur rounded-none">
@@ -1000,6 +1002,20 @@ function ChatPageContent() {
                 </span>
               </div>
             </div>
+            <div className="mx-auto mt-2 grid max-w-4xl gap-1.5 font-mono text-[11px] text-[#5F6C62] sm:grid-cols-3">
+              <div className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1.5">
+                <span className="text-[#8A9388]">CASE</span>
+                <span className="ml-2 font-semibold text-[#111713]">{reviewCaseId}</span>
+              </div>
+              <div className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1.5">
+                <span className="text-[#8A9388]">SOURCES</span>
+                <span className="ml-2 font-semibold text-[#111713]">{sourceCoverageLabel}</span>
+              </div>
+              <div className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1.5">
+                <span className="text-[#8A9388]">MODE</span>
+                <span className="ml-2 font-semibold text-[#111713]">POLICY-REVIEW</span>
+              </div>
+            </div>
           </div>
 
           <div className="custom-scrollbar flex-1 space-y-3 overflow-y-auto bg-[#F4F5F0] p-2 sm:space-y-4 sm:p-4">
@@ -1144,6 +1160,20 @@ function ChatPageContent() {
                     {latestSourceCount} sources
                   </span>
                   <span className="text-[#758070]">{reviewStatusLabel}</span>
+                </div>
+              </div>
+              <div className="mt-3 grid gap-2 font-mono text-[11px] text-[#5F6C62] sm:grid-cols-3">
+                <div className="rounded-md border border-[#D8DCCF] bg-[#FBFBF7] px-2 py-1.5">
+                  <div className="text-[#8A9388]">CASE</div>
+                  <div className="mt-0.5 truncate font-semibold text-[#111713]">{reviewCaseId}</div>
+                </div>
+                <div className="rounded-md border border-[#D8DCCF] bg-[#FBFBF7] px-2 py-1.5">
+                  <div className="text-[#8A9388]">LEDGER</div>
+                  <div className="mt-0.5 truncate font-semibold text-[#111713]">{sourceCoverageLabel}</div>
+                </div>
+                <div className="rounded-md border border-[#D8DCCF] bg-[#FBFBF7] px-2 py-1.5">
+                  <div className="text-[#8A9388]">STATUS</div>
+                  <div className="mt-0.5 truncate font-semibold text-[#111713]">{reviewStatusLabel}</div>
                 </div>
               </div>
               {latestUserMessage && (
