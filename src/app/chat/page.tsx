@@ -849,6 +849,7 @@ function ChatPageContent() {
   const latestUserMessage = [...messages].reverse().find((message) => message.type === "user");
   const latestAssistantMessage = [...messages].reverse().find((message) => message.type === "assistant");
   const latestSourceCount = latestAssistantMessage?.sources?.length || 0;
+  const latestSources = latestAssistantMessage?.sources?.slice(0, 3) || [];
   const hasActiveReview = messages.length > 1;
   const reviewStatusLabel = isLoading ? "근거 검색 중" : latestSourceCount > 0 ? "출처 대조 가능" : hasActiveReview ? "근거 보강 필요" : "접수 대기";
 
@@ -1161,6 +1162,51 @@ function ChatPageContent() {
               {/* 질문이 있을 때만 관련 자료와 빠른 질문 표시 */}
               {messages.length > 1 ? (
                 <>
+                  <div className="rounded-xl border border-[#D8DCCF] bg-white shadow-sm">
+                    <div className="border-b border-[#E2E5DA] px-4 py-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#758070]">
+                            Evidence terminal
+                          </div>
+                          <h4 className="mt-1 truncate text-sm font-semibold text-[#111713]">인용 후보 점검 로그</h4>
+                        </div>
+                        <span className="flex-none rounded-md border border-[#C6D9CB] bg-[#EDF7EF] px-2 py-1 text-xs font-medium text-[#1F7A4D]">
+                          {latestSourceCount}개
+                        </span>
+                      </div>
+                    </div>
+                    <div className="divide-y divide-[#E2E5DA]">
+                      {latestSources.length > 0 ? (
+                        latestSources.map((source, index) => (
+                          <div key={`${source.id}-${index}`} className="grid grid-cols-[2.25rem_1fr] gap-3 px-4 py-3">
+                            <div className="flex h-8 w-8 items-center justify-center rounded-md border border-[#C6D9CB] bg-[#EDF7EF] text-[11px] font-semibold text-[#1F7A4D]">
+                              {String(index + 1).padStart(2, "0")}
+                            </div>
+                            <div className="min-w-0">
+                              <div className="line-clamp-2 break-words text-xs font-semibold leading-5 text-[#111713]">
+                                {source.title || `근거 문서 ${index + 1}`}
+                              </div>
+                              <p className="mt-1 line-clamp-2 break-words text-xs leading-5 text-[#5F6C62]">
+                                {source.excerpt || "원문 일부가 표시되지 않았습니다."}
+                              </p>
+                              <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-[#758070]">
+                                <span className="rounded-md border border-[#D8DCCF] bg-[#FBFBF7] px-2 py-0.5">출처 대조</span>
+                                <span className="rounded-md border border-[#D8DCCF] bg-[#FBFBF7] px-2 py-0.5">
+                                  {source.updatedAt ? new Date(source.updatedAt).toLocaleDateString("ko-KR") : "날짜 미확인"}
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        ))
+                      ) : (
+                        <div className="px-4 py-4 text-xs leading-5 text-[#5F6C62]">
+                          아직 연결된 인용 후보가 없습니다. 질문 범위를 좁히면 이 영역에 출처 점검 로그가 표시됩니다.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
                   {/* 관련 자료 컴포넌트 - 상단 배치 */}
                   <RelatedResources 
                     userQuestion={messages[messages.length - 2]?.content}
