@@ -886,6 +886,34 @@ function ChatPageContent() {
         </div>
         
         <div className="flex flex-none items-center space-x-2">
+          <Sheet open={historyOpen} onOpenChange={setHistoryOpen}>
+            <SheetTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="flex h-8 items-center space-x-2 rounded-md border border-[#D8DCCF] bg-white px-3 text-[#34423A] transition-colors hover:bg-[#EDF7EF] hover:text-[#111713] lg:hidden"
+              >
+                <History className="h-4 w-4" />
+                <span className="text-xs">히스토리</span>
+              </Button>
+            </SheetTrigger>
+            <SheetContent side="left" className="w-[min(20rem,calc(100vw-2rem))] border-[#D8DCCF] bg-[#FBFBF7] p-0">
+              <SheetTitle className="sr-only">대화 히스토리</SheetTitle>
+              <HistoryPanel
+                onLoadConversation={handleLoadConversation}
+                onNewChat={() => {
+                  void handleNewChat();
+                  setHistoryOpen(false);
+                }}
+                userId={user?.id || "anonymous"}
+                className="h-full"
+                isCollapsed={false}
+                onToggle={() => setHistoryOpen(false)}
+                refreshTrigger={historyRefreshTrigger}
+              />
+            </SheetContent>
+          </Sheet>
+
           <Button
             variant="ghost"
             size="sm"
@@ -916,6 +944,120 @@ function ChatPageContent() {
           </Button>
         </div>
       </div>
+    </div>
+  );
+
+  const renderEvidenceWorkspace = () => (
+    <div className="space-y-4">
+      {/* 질문이 있을 때만 관련 자료와 빠른 질문 표시 */}
+      {messages.length > 1 ? (
+        <>
+          <div className="rounded-xl border border-[#D8DCCF] bg-white shadow-sm">
+            <div className="border-b border-[#E2E5DA] px-4 py-3">
+              <div className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#758070]">
+                    Evidence terminal
+                  </div>
+                  <h4 className="mt-1 truncate text-sm font-semibold text-[#111713]">인용 후보 점검 로그</h4>
+                </div>
+                <span className="flex-none rounded-md border border-[#C6D9CB] bg-[#EDF7EF] px-2 py-1 text-xs font-medium text-[#1F7A4D]">
+                  {latestSourceCount}개
+                </span>
+              </div>
+            </div>
+            <div className="grid border-b border-[#E2E5DA] bg-[#FBFBF7] sm:grid-cols-3">
+              {evidenceRoomStages.map((stage) => (
+                <div key={stage.id} className="border-b border-[#E2E5DA] px-4 py-3 last:border-b-0 sm:border-b-0 sm:border-r sm:last:border-r-0">
+                  <div className="font-mono text-[10px] font-semibold tracking-[0.14em] text-[#758070]">
+                    {stage.label}
+                  </div>
+                  <div className="mt-1 truncate text-xs font-semibold text-[#111713]">
+                    {stage.value}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="divide-y divide-[#E2E5DA]">
+              {latestSources.length > 0 ? (
+                latestSources.map((source, index) => (
+                  <div key={`${source.id}-${index}`} className="grid grid-cols-[2.25rem_1fr] gap-3 px-4 py-3">
+                    <div className="flex h-8 w-8 items-center justify-center rounded-md border border-[#C6D9CB] bg-[#EDF7EF] text-[11px] font-semibold text-[#1F7A4D]">
+                      {String(index + 1).padStart(2, "0")}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="line-clamp-2 break-words text-xs font-semibold leading-5 text-[#111713]">
+                        {source.title || `근거 문서 ${index + 1}`}
+                      </div>
+                      <p className="mt-1 line-clamp-2 break-words text-xs leading-5 text-[#5F6C62]">
+                        {source.excerpt || "원문 일부가 표시되지 않았습니다."}
+                      </p>
+                      <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-[#758070]">
+                        <span className="rounded-md border border-[#D8DCCF] bg-[#FBFBF7] px-2 py-0.5">출처 대조</span>
+                        <span className="rounded-md border border-[#D8DCCF] bg-[#FBFBF7] px-2 py-0.5">
+                          {source.updatedAt ? new Date(source.updatedAt).toLocaleDateString("ko-KR") : "날짜 미확인"}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                ))
+              ) : (
+                <div className="px-4 py-4 text-xs leading-5 text-[#5F6C62]">
+                  아직 연결된 인용 후보가 없습니다. 질문 범위를 좁히면 이 영역에 출처 점검 로그가 표시됩니다.
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* 관련 자료 컴포넌트 - 상단 배치 */}
+          <RelatedResources
+            userQuestion={messages[messages.length - 2]?.content}
+            aiResponse={messages[messages.length - 1]?.content}
+            sources={messages[messages.length - 1]?.sources as any || []}
+          />
+
+          {/* 빠른 질문 컴포넌트 - 하단 배치 */}
+          <QuickQuestions
+            onQuestionClick={handleQuickQuestionClick}
+            currentQuestion={messages[messages.length - 2]?.content}
+          />
+        </>
+      ) : (
+        /* 초기 상태 - 안내 메시지 */
+        <div className="space-y-4 py-8 lg:py-0">
+          <div className="rounded-xl border border-[#D8DCCF] bg-white p-4 shadow-sm">
+            <div className="mb-3 flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-[#C6D9CB] bg-[#EDF7EF]">
+                <Target className="h-5 w-5 text-[#1F7A4D]" />
+              </div>
+              <div className="min-w-0">
+                <h3 className="text-sm font-semibold text-[#111713]">정책 검토를 시작하세요</h3>
+                <p className="text-xs text-[#5F6C62]">질문을 보내면 이 패널이 근거 보드로 전환됩니다.</p>
+              </div>
+            </div>
+            <p className="text-xs leading-5 text-[#5F6C62]">
+              인용 후보, 관련 자료, 후속 검토 질문을 함께 표시해 최종 판단 전 확인해야 할 항목을 놓치지 않도록 구성합니다.
+            </p>
+          </div>
+          <div className="grid gap-2">
+            {[
+              ["01", "질문 범위 고정", "플랫폼과 업종을 먼저 고정합니다."],
+              ["02", "소재 문구 확인", "심사 리스크가 있는 표현을 분리합니다."],
+              ["03", "출처 대조", "답변 전 원문 일부와 인용 후보를 확인합니다."],
+            ].map(([step, title, description]) => (
+              <div key={step} className="grid grid-cols-[2.5rem_1fr] gap-3 rounded-lg border border-[#D8DCCF] bg-white p-3">
+                <div className="flex h-8 w-8 items-center justify-center rounded-md border border-[#C6D9CB] bg-[#EDF7EF] text-[11px] font-semibold text-[#1F7A4D]">
+                  {step}
+                </div>
+                <div className="min-w-0">
+                  <div className="text-xs font-semibold text-[#111713]">{title}</div>
+                  <p className="mt-0.5 text-xs leading-5 text-[#5F6C62]">{description}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 
@@ -951,10 +1093,10 @@ function ChatPageContent() {
 
   return (
     <MainLayout chatHeader={chatHeader}>
-      <div className="mt-32 flex h-[calc(100vh-8rem)] bg-[#F4F5F0]">
+      <div className="mt-32 flex h-[calc(100vh-8rem)] overflow-hidden bg-[#F4F5F0]">
         {/* 1번 패널: 대화 히스토리 */}
         {!isLeftPanelCollapsed && (
-          <div className="h-full w-72 border-r border-[#D8DCCF] bg-[#FBFBF7]">
+          <div className="hidden h-full w-72 border-r border-[#D8DCCF] bg-[#FBFBF7] lg:block">
             <HistoryPanel 
               onLoadConversation={handleLoadConversation}
               onNewChat={handleNewChat}
@@ -969,7 +1111,7 @@ function ChatPageContent() {
         
         {/* 접힌 상태의 좌측 패널 */}
         {isLeftPanelCollapsed && (
-          <div className="h-full w-12 border-r border-[#D8DCCF] bg-[#FBFBF7]">
+          <div className="hidden h-full w-12 border-r border-[#D8DCCF] bg-[#FBFBF7] lg:block">
             <HistoryPanel 
               onLoadConversation={handleLoadConversation}
               onNewChat={handleNewChat}
@@ -984,7 +1126,7 @@ function ChatPageContent() {
 
         {/* 2번 패널: 채팅 영역 */}
         <motion.div 
-          className="flex h-full flex-col border-r border-[#D8DCCF] bg-[#F4F5F0] lg:border-r"
+          className="flex h-full min-w-0 flex-1 flex-col border-r border-[#D8DCCF] bg-[#F4F5F0] lg:border-r"
           animate={{ 
             width: isRightPanelCollapsed ? '100%' : `${leftPanelWidth}%`,
             transition: isDragging ? { duration: 0 } : { duration: 0.2, ease: "easeOut" }
@@ -1082,6 +1224,31 @@ function ChatPageContent() {
                 </div>
               </div>
             )}
+
+            <section className="mx-auto w-full max-w-4xl lg:hidden">
+              <div className="mb-3 rounded-lg border border-[#D8DCCF] bg-[#FBFBF7] p-3 shadow-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="min-w-0">
+                    <h3 className="text-sm font-semibold text-[#111713]">근거 작업공간</h3>
+                    <p className="mt-1 text-xs leading-5 text-[#5F6C62]">출처, 후속 질문, 검토 기준</p>
+                  </div>
+                  <span className="flex-none rounded-md border border-[#C6D9CB] bg-[#EDF7EF] px-2 py-1 text-xs font-medium text-[#1F7A4D]">
+                    {latestSourceCount} sources
+                  </span>
+                </div>
+                {latestUserMessage && (
+                  <div className="mt-3 rounded-md border border-[#D8DCCF] bg-white p-2.5">
+                    <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#758070]">
+                      Current question
+                    </div>
+                    <p className="line-clamp-2 break-words text-xs leading-5 text-[#34423A]">
+                      {latestUserMessage.content}
+                    </p>
+                  </div>
+                )}
+              </div>
+              {renderEvidenceWorkspace()}
+            </section>
             
           </div>
 
@@ -1193,116 +1360,8 @@ function ChatPageContent() {
               )}
             </div>
 
-            <div className="flex-1 space-y-4 overflow-y-auto p-4">
-              {/* 질문이 있을 때만 관련 자료와 빠른 질문 표시 */}
-              {messages.length > 1 ? (
-                <>
-                  <div className="rounded-xl border border-[#D8DCCF] bg-white shadow-sm">
-                    <div className="border-b border-[#E2E5DA] px-4 py-3">
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#758070]">
-                            Evidence terminal
-                          </div>
-                          <h4 className="mt-1 truncate text-sm font-semibold text-[#111713]">인용 후보 점검 로그</h4>
-                        </div>
-                        <span className="flex-none rounded-md border border-[#C6D9CB] bg-[#EDF7EF] px-2 py-1 text-xs font-medium text-[#1F7A4D]">
-                          {latestSourceCount}개
-                        </span>
-                      </div>
-                    </div>
-                    <div className="grid border-b border-[#E2E5DA] bg-[#FBFBF7] sm:grid-cols-3">
-                      {evidenceRoomStages.map((stage) => (
-                        <div key={stage.id} className="border-b border-[#E2E5DA] px-4 py-3 last:border-b-0 sm:border-b-0 sm:border-r sm:last:border-r-0">
-                          <div className="font-mono text-[10px] font-semibold tracking-[0.14em] text-[#758070]">
-                            {stage.label}
-                          </div>
-                          <div className="mt-1 truncate text-xs font-semibold text-[#111713]">
-                            {stage.value}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="divide-y divide-[#E2E5DA]">
-                      {latestSources.length > 0 ? (
-                        latestSources.map((source, index) => (
-                          <div key={`${source.id}-${index}`} className="grid grid-cols-[2.25rem_1fr] gap-3 px-4 py-3">
-                            <div className="flex h-8 w-8 items-center justify-center rounded-md border border-[#C6D9CB] bg-[#EDF7EF] text-[11px] font-semibold text-[#1F7A4D]">
-                              {String(index + 1).padStart(2, "0")}
-                            </div>
-                            <div className="min-w-0">
-                              <div className="line-clamp-2 break-words text-xs font-semibold leading-5 text-[#111713]">
-                                {source.title || `근거 문서 ${index + 1}`}
-                              </div>
-                              <p className="mt-1 line-clamp-2 break-words text-xs leading-5 text-[#5F6C62]">
-                                {source.excerpt || "원문 일부가 표시되지 않았습니다."}
-                              </p>
-                              <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-[#758070]">
-                                <span className="rounded-md border border-[#D8DCCF] bg-[#FBFBF7] px-2 py-0.5">출처 대조</span>
-                                <span className="rounded-md border border-[#D8DCCF] bg-[#FBFBF7] px-2 py-0.5">
-                                  {source.updatedAt ? new Date(source.updatedAt).toLocaleDateString("ko-KR") : "날짜 미확인"}
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                        ))
-                      ) : (
-                        <div className="px-4 py-4 text-xs leading-5 text-[#5F6C62]">
-                          아직 연결된 인용 후보가 없습니다. 질문 범위를 좁히면 이 영역에 출처 점검 로그가 표시됩니다.
-                        </div>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* 관련 자료 컴포넌트 - 상단 배치 */}
-                  <RelatedResources 
-                    userQuestion={messages[messages.length - 2]?.content}
-                    aiResponse={messages[messages.length - 1]?.content}
-                    sources={messages[messages.length - 1]?.sources as any || []}
-                  />
-                  
-                  {/* 빠른 질문 컴포넌트 - 하단 배치 */}
-                  <QuickQuestions 
-                    onQuestionClick={handleQuickQuestionClick} 
-                    currentQuestion={messages[messages.length - 2]?.content}
-                  />
-                </>
-              ) : (
-                /* 초기 상태 - 안내 메시지 */
-                <div className="space-y-4 py-8">
-                  <div className="rounded-xl border border-[#D8DCCF] bg-white p-4 shadow-sm">
-                    <div className="mb-3 flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-[#C6D9CB] bg-[#EDF7EF]">
-                        <Target className="h-5 w-5 text-[#1F7A4D]" />
-                      </div>
-                      <div>
-                        <h3 className="text-sm font-semibold text-[#111713]">정책 검토를 시작하세요</h3>
-                        <p className="text-xs text-[#5F6C62]">질문을 보내면 이 패널이 근거 보드로 전환됩니다.</p>
-                      </div>
-                    </div>
-                    <p className="text-xs leading-5 text-[#5F6C62]">
-                      인용 후보, 관련 자료, 후속 검토 질문을 함께 표시해 최종 판단 전 확인해야 할 항목을 놓치지 않도록 구성합니다.
-                    </p>
-                  </div>
-                  <div className="grid gap-2">
-                    {[
-                      ["01", "질문 범위 고정", "플랫폼과 업종을 먼저 고정합니다."],
-                      ["02", "소재 문구 확인", "심사 리스크가 있는 표현을 분리합니다."],
-                      ["03", "출처 대조", "답변 전 원문 일부와 인용 후보를 확인합니다."],
-                    ].map(([step, title, description]) => (
-                      <div key={step} className="grid grid-cols-[2.5rem_1fr] gap-3 rounded-lg border border-[#D8DCCF] bg-white p-3">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-md border border-[#C6D9CB] bg-[#EDF7EF] text-[11px] font-semibold text-[#1F7A4D]">
-                          {step}
-                        </div>
-                        <div className="min-w-0">
-                          <div className="text-xs font-semibold text-[#111713]">{title}</div>
-                          <p className="mt-0.5 text-xs leading-5 text-[#5F6C62]">{description}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+            <div className="flex-1 overflow-y-auto p-4">
+              {renderEvidenceWorkspace()}
             </div>
             </motion.div>
           )}
