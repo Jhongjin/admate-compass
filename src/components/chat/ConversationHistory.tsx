@@ -8,7 +8,6 @@ import { Separator } from "@/components/ui/separator";
 import { 
   History, 
   Clock, 
-  MessageSquare, 
   Trash2, 
   ChevronRight,
   Loader2,
@@ -58,12 +57,12 @@ export default function ConversationHistory({
       const data = await response.json();
       
       if (!response.ok) {
-        throw new Error(data.error || '대화 히스토리를 불러오는 중 오류가 발생했습니다.');
+        throw new Error(data.error || '검토 기록을 불러오는 중 오류가 발생했습니다.');
       }
       
       setConversations(data.conversations || []);
     } catch (error) {
-      console.error('대화 히스토리 로드 오류:', error);
+      console.error('검토 기록 로드 오류:', error);
       setError(error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.');
     } finally {
       setLoading(false);
@@ -83,13 +82,13 @@ export default function ConversationHistory({
       const data = await response.json();
       
       if (!response.ok) {
-        throw new Error(data.error || '대화를 삭제하는 중 오류가 발생했습니다.');
+        throw new Error(data.error || '검토 기록을 삭제하는 중 오류가 발생했습니다.');
       }
       
       setConversations(prev => prev.filter(conv => conv.conversation_id !== conversationId));
       onDeleteConversation?.(conversationId);
     } catch (error) {
-      console.error('대화 삭제 오류:', error);
+      console.error('검토 기록 삭제 오류:', error);
       setError(error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.');
     } finally {
       setDeletingId(null);
@@ -102,18 +101,19 @@ export default function ConversationHistory({
 
   if (!userId) {
       return (
-    <Card className="w-full bg-gradient-to-br from-gray-800/90 to-gray-900/90 backdrop-blur-sm border-gray-700/50 shadow-lg">
+    <Card className="w-full overflow-hidden rounded-lg border-[#D6D8CD] bg-white shadow-sm">
+      <div className="h-1 bg-[#1F7A4D]" />
       <CardHeader className="pb-3">
-        <CardTitle className="flex items-center space-x-2 text-white text-sm font-medium">
-          <History className="w-4 h-4" />
-          <span>대화 히스토리</span>
+        <CardTitle className="flex items-center space-x-2 text-sm font-medium text-[#111713]">
+          <History className="h-4 w-4 text-[#1F7A4D]" />
+          <span>검토 기록</span>
         </CardTitle>
       </CardHeader>
       <CardContent>
         <div className="flex items-center justify-center py-6">
           <div className="text-center">
-            <MessageSquare className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-            <p className="text-sm text-gray-300">로그인 후 대화 히스토리를 확인할 수 있습니다.</p>
+            <FileText className="mx-auto mb-2 h-8 w-8 text-[#8A9388]" />
+            <p className="text-sm text-[#5F6C62]">로그인 후 정책 검토 기록을 확인할 수 있습니다.</p>
           </div>
         </div>
       </CardContent>
@@ -122,13 +122,14 @@ export default function ConversationHistory({
   }
 
   return (
-    <Card className="w-full bg-gradient-to-br from-gray-800/90 to-gray-900/90 backdrop-blur-sm border-gray-700/50 shadow-lg">
+    <Card className="w-full overflow-hidden rounded-lg border-[#D6D8CD] bg-white shadow-sm">
+      <div className="h-1 bg-[#1F7A4D]" />
       <CardHeader className="pb-3">
         <CardTitle className="flex items-center justify-between">
           <div className="flex items-center space-x-2">
-            <History className="w-4 h-4 text-orange-400" />
-            <span className="text-white text-sm font-medium">대화 히스토리</span>
-            <Badge variant="secondary" className="text-xs bg-orange-500/20 text-orange-300 border-orange-500/30">
+            <History className="h-4 w-4 text-[#1F7A4D]" />
+            <span className="text-sm font-medium text-[#111713]">최근 검토 기록</span>
+            <Badge variant="secondary" className="border-[#C6D9CB] bg-[#EDF7EF] text-xs text-[#1F7A4D]">
               {conversations.length}개
             </Badge>
           </div>
@@ -137,7 +138,7 @@ export default function ConversationHistory({
             size="sm"
             onClick={loadConversations}
             disabled={loading}
-            className="h-8 w-8 p-0 text-gray-400 hover:text-white hover:bg-gray-700/50"
+            className="h-8 w-8 rounded-md p-0 text-[#5F6C62] hover:bg-[#EDF7EF] hover:text-[#111713]"
           >
             {loading ? (
               <Loader2 className="w-4 h-4 animate-spin" />
@@ -146,32 +147,44 @@ export default function ConversationHistory({
             )}
           </Button>
         </CardTitle>
-        <Separator className="bg-gray-700/50" />
+        <Separator className="bg-[#D8DCCF]" />
       </CardHeader>
       <CardContent className="space-y-3">
         {error && (
-          <div className="flex items-center space-x-2 p-3 bg-red-500/10 border border-red-500/20 rounded-lg backdrop-blur-sm">
-            <AlertCircle className="w-4 h-4 text-red-400" />
-            <span className="text-sm text-red-300">{error}</span>
+          <div className="flex items-center space-x-2 rounded-lg border border-red-200 bg-red-50 p-3">
+            <AlertCircle className="h-4 w-4 text-red-600" />
+            <span className="text-sm text-red-700">{error}</span>
           </div>
         )}
         
         {loading && conversations.length === 0 ? (
           <div className="flex items-center justify-center py-8">
             <div className="flex flex-col items-center space-y-3">
-              <Loader2 className="w-6 h-6 animate-spin text-orange-400" />
-              <span className="text-sm text-gray-300">대화 히스토리를 불러오는 중...</span>
+              <Loader2 className="h-6 w-6 animate-spin text-[#1F7A4D]" />
+              <span className="text-sm text-[#5F6C62]">검토 기록 장부를 불러오는 중...</span>
+              <div className="w-44 space-y-1.5">
+                <div className="h-2 rounded-full bg-[#E6E9DF]" />
+                <div className="h-2 w-2/3 rounded-full bg-[#E6E9DF]" />
+              </div>
             </div>
           </div>
         ) : conversations.length === 0 ? (
           <div className="text-center py-8">
             <div className="flex flex-col items-center space-y-3">
-              <div className="p-3 bg-gray-700/50 rounded-full">
-                <MessageSquare className="w-8 h-8 text-gray-400" />
+              <div className="rounded-lg border border-[#D8DCCF] bg-[#FBFBF7] p-3">
+                <FileText className="h-8 w-8 text-[#8A9388]" />
               </div>
               <div>
-                <p className="text-sm text-gray-300 font-medium">아직 대화 히스토리가 없습니다</p>
-                <p className="text-xs text-gray-400 mt-1">AI 챗봇과 대화를 시작해보세요!</p>
+                <p className="text-sm font-medium text-[#34423A]">아직 검토 기록이 없습니다</p>
+                <p className="mt-1 text-xs text-[#5F6C62]">정책 항목, 플랫폼명, 소재 표현을 함께 남기면 이후 인용 검토가 쉬워집니다.</p>
+              </div>
+              <div className="grid w-full gap-2 pt-1 text-left text-xs text-[#5F6C62]">
+                <div className="rounded-md border border-[#D8DCCF] bg-white px-3 py-2">
+                  기록 기준: 질문, 응답, 연결된 근거 문서
+                </div>
+                <div className="rounded-md border border-[#D8DCCF] bg-white px-3 py-2">
+                  검토 흐름: 최근 사례를 다시 열어 정책 표현을 비교
+                </div>
               </div>
             </div>
           </div>
@@ -180,30 +193,30 @@ export default function ConversationHistory({
             {conversations.map((conversation) => (
               <Card
                 key={conversation.id}
-                className="group bg-gradient-to-r from-gray-800/60 to-gray-700/60 border-gray-600/30 hover:from-gray-700/70 hover:to-gray-600/70 transition-all duration-200 cursor-pointer backdrop-blur-sm shadow-sm hover:shadow-md"
+                className="group cursor-pointer rounded-lg border-[#D8DCCF] bg-[#FBFBF7] shadow-sm transition-colors duration-200 hover:border-[#B9C9BB] hover:bg-white"
               >
                 <CardContent className="p-3">
                   <div className="flex items-start justify-between">
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start space-x-2">
-                        <div className="p-1.5 bg-orange-500/20 rounded-full mt-0.5">
-                          <FileText className="w-3 h-3 text-orange-400" />
+                        <div className="mt-0.5 rounded-md border border-[#C6D9CB] bg-[#EDF7EF] p-1.5">
+                          <FileText className="h-3 w-3 text-[#1F7A4D]" />
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-white truncate leading-relaxed">
+                          <p className="truncate text-sm font-medium leading-relaxed text-[#111713]">
                             {conversation.user_message}
                           </p>
                           <div className="flex items-center space-x-2 mt-2">
-                            <div className="flex items-center text-xs text-gray-400 bg-gray-700/50 px-2 py-1 rounded-full">
-                              <Clock className="w-3 h-3 mr-1" />
+                            <div className="flex items-center rounded-md border border-[#D8DCCF] bg-white px-2 py-1 text-xs text-[#5F6C62]">
+                              <Clock className="mr-1 h-3 w-3" />
                               {formatDistanceToNow(new Date(conversation.created_at), { 
                                 addSuffix: true, 
                                 locale: ko 
                               })}
                             </div>
                             {conversation.sources && conversation.sources.length > 0 && (
-                              <Badge variant="outline" className="text-xs bg-blue-500/20 text-blue-300 border-blue-500/30">
-                                출처 {conversation.sources.length}개
+                              <Badge variant="outline" className="border-[#C6D9CB] bg-[#EDF7EF] text-xs text-[#1F7A4D]">
+                                근거 {conversation.sources.length}개
                               </Badge>
                             )}
                           </div>
@@ -211,12 +224,12 @@ export default function ConversationHistory({
                       </div>
                     </div>
                     
-                    <div className="flex items-center space-x-1 ml-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="ml-2 flex items-center space-x-1 opacity-100 transition-opacity sm:opacity-0 sm:group-hover:opacity-100 sm:group-focus-within:opacity-100">
                       <Button
                         variant="ghost"
                         size="sm"
                         onClick={() => onLoadConversation?.(conversation)}
-                        className="h-8 w-8 p-0 text-gray-300 hover:text-white hover:bg-orange-500/20"
+                        className="h-8 w-8 rounded-md p-0 text-[#5F6C62] hover:bg-[#EDF7EF] hover:text-[#111713]"
                       >
                         <ChevronRight className="w-4 h-4" />
                       </Button>
@@ -225,7 +238,7 @@ export default function ConversationHistory({
                         size="sm"
                         onClick={() => handleDeleteConversation(conversation.conversation_id)}
                         disabled={deletingId === conversation.conversation_id}
-                        className="h-8 w-8 p-0 text-red-400 hover:text-red-300 hover:bg-red-500/20"
+                        className="h-8 w-8 rounded-md p-0 text-red-600 hover:bg-red-50 hover:text-red-700"
                       >
                         {deletingId === conversation.conversation_id ? (
                           <Loader2 className="w-4 h-4 animate-spin" />

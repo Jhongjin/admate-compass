@@ -157,8 +157,8 @@ export default function RelatedResources({
       <Card className="w-full rounded-lg border-[#E5E5E5] bg-white shadow-sm">
         <CardContent className="p-4">
           <div className="flex items-center gap-3 text-sm text-[#5E5E5E]">
-            <div className="h-4 w-4 animate-spin rounded-full border-2 border-[#CBD0EF] border-t-[#5E6AD2]" />
-            근거 문서를 확인하는 중입니다.
+            <div className="h-4 w-4 animate-spin rounded-full border-2 border-[#D8DED9] border-t-[#1F7A4D]" />
+            인용 후보와 원문 근거를 확인하는 중입니다.
           </div>
         </CardContent>
       </Card>
@@ -167,11 +167,12 @@ export default function RelatedResources({
 
   if (noDataFound || validSources.length === 0) {
     return (
-      <Card className="w-full rounded-lg border-[#E5E5E5] bg-white shadow-sm">
+      <Card className="w-full overflow-hidden rounded-lg border-[#E5E5E5] bg-white shadow-sm">
+        <div className="h-1 bg-[#9E5700]" />
         <CardHeader className="pb-2">
           <CardTitle className="flex items-center gap-2 text-sm font-semibold text-[#0D0D0D]">
             <Search className="h-4 w-4 text-[#9E5700]" />
-            근거 문서 없음
+            검토 가능한 근거 없음
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3 p-4 pt-0">
@@ -181,23 +182,38 @@ export default function RelatedResources({
           <div className="rounded-md border border-[#E5E5E5] bg-[#F7F7F7] p-3 text-xs leading-5 text-[#5E5E5E]">
             예: "카카오 광고 가격 할인 표시 기준", "Google Ads 도박 정책", "네이버 청소년 유해 콘텐츠 기준"
           </div>
+          <div className="grid gap-2 text-xs text-[#5E5E5E] sm:grid-cols-3">
+            <div className="rounded-md border border-[#E5E5E5] bg-white px-3 py-2">
+              <p className="font-semibold text-[#0D0D0D]">플랫폼</p>
+              <p className="mt-1">Meta, Google, 네이버 등</p>
+            </div>
+            <div className="rounded-md border border-[#E5E5E5] bg-white px-3 py-2">
+              <p className="font-semibold text-[#0D0D0D]">정책 항목</p>
+              <p className="mt-1">가격, 금융, 청소년, 의료</p>
+            </div>
+            <div className="rounded-md border border-[#E5E5E5] bg-white px-3 py-2">
+              <p className="font-semibold text-[#0D0D0D]">소재 표현</p>
+              <p className="mt-1">문구나 랜딩 맥락 포함</p>
+            </div>
+          </div>
         </CardContent>
       </Card>
     );
   }
 
   return (
-    <Card className="w-full rounded-lg border-[#E5E5E5] bg-white shadow-sm">
+    <Card className="w-full overflow-hidden rounded-lg border-[#E5E5E5] bg-white shadow-sm">
+      <div className="h-1 bg-[#1F7A4D]" />
       <CardHeader className="pb-3">
         <CardTitle className="flex flex-wrap items-center gap-2 text-sm font-semibold text-[#0D0D0D]">
-          <BookOpen className="h-4 w-4 text-[#5E6AD2]" />
-          <span>근거 문서</span>
+          <BookOpen className="h-4 w-4 text-[#1F7A4D]" />
+          <span>정책 인용 후보</span>
           <Badge variant="outline" className="rounded-md border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] text-emerald-700">
             {validSources.length}개
           </Badge>
           {generationLimited && (
             <Badge variant="outline" className="rounded-md border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] text-amber-700">
-              생성 답변 제한
+              검토 메모 제한
             </Badge>
           )}
         </CardTitle>
@@ -210,7 +226,10 @@ export default function RelatedResources({
       <CardContent className="space-y-3">
         {generationLimited && (
           <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
-            답변 생성은 일시적으로 제한되었지만, 관련 근거 문서는 보존되었습니다.
+            <p className="font-semibold">검토 메모 작성 제한</p>
+            <p className="mt-1">
+              확인된 정책 근거와 원문 링크는 보존되었습니다. 인용 후보를 먼저 확인한 뒤 답변을 재시도해 주세요.
+            </p>
           </div>
         )}
 
@@ -219,10 +238,10 @@ export default function RelatedResources({
           const score = getScoreLabel(source);
 
           return (
-            <div key={`${source.id}-${index}`} className="rounded-lg border border-[#E5E5E5] bg-white p-3">
+            <div key={`${source.id}-${index}`} className="rounded-lg border border-[#D8DCCF] border-l-4 border-l-[#1F7A4D] bg-[#FBFBF7] p-3 transition-colors hover:bg-white">
               <div className="flex items-start gap-3">
-                <div className="flex h-7 w-7 flex-none items-center justify-center rounded-md border border-[#E5E5E5] bg-[#F7F7F7] text-xs font-semibold text-[#5E5E5E]">
-                  {index + 1}
+                <div className="flex h-8 w-10 flex-none items-center justify-center rounded-md border border-[#C6D9CB] bg-white text-[10px] font-bold text-[#1F7A4D]">
+                  {String(index + 1).padStart(2, "0")}
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex items-start justify-between gap-2">
@@ -234,7 +253,7 @@ export default function RelatedResources({
                         <Button
                           variant="ghost"
                           size="sm"
-                          className="h-7 w-7 rounded-md p-0 text-[#5E5E5E] hover:bg-[#F4F5FF] hover:text-[#5E6AD2]"
+                          className="h-7 w-7 rounded-md p-0 text-[#5E5E5E] hover:bg-[#EDF7EF] hover:text-[#1F7A4D]"
                           onClick={() => source.sourceType === "file" ? handleFileDownload(source) : handleUrlOpen(source)}
                           title={source.sourceType === "file" ? "파일 다운로드" : "원문 열기"}
                           aria-label={source.sourceType === "file" ? "근거 문서 파일 다운로드" : "근거 문서 원문 열기"}
@@ -255,12 +274,12 @@ export default function RelatedResources({
                     </div>
                   </div>
 
-                  <p className={`${isExpanded ? "" : "line-clamp-3"} mt-2 break-words text-xs leading-5 text-[#5E5E5E]`}>
+                  <p className={`${isExpanded ? "" : "line-clamp-3"} mt-2 break-words border-t border-[#E2E5DA] pt-2 text-xs leading-5 text-[#5E5E5E]`}>
                     {source.excerpt || "표시할 원문 일부가 없습니다."}
                   </p>
 
                   <div className="mt-3 flex flex-wrap gap-1.5">
-                    <Badge variant="outline" className="rounded-md border-[#D8DAF4] bg-[#F4F5FF] px-2 py-0.5 text-[11px] text-[#4F56B8]">
+                    <Badge variant="outline" className="rounded-md border-[#C6D9CB] bg-[#EDF7EF] px-2 py-0.5 text-[11px] text-[#1F7A4D]">
                       {getEvidenceLabel(source)}
                     </Badge>
                     <Badge variant="outline" className="rounded-md border-[#E5E5E5] bg-[#F7F7F7] px-2 py-0.5 text-[11px] text-[#5E5E5E]">
@@ -280,7 +299,7 @@ export default function RelatedResources({
                     <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-[#E5E5E5] pt-3 text-xs text-[#777777]">
                       <span className="inline-flex items-center gap-1">
                         <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
-                        Compass 검증 근거
+                        정책 검증 근거
                       </span>
                       <span className="inline-flex items-center gap-1">
                         {source.sourceType === "file" ? <FileText className="h-3.5 w-3.5" /> : <Globe className="h-3.5 w-3.5" />}

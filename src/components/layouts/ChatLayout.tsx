@@ -1,9 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import { ArrowLeft, Menu, Settings } from "lucide-react";
+import { FileText, History, Home, Menu, Settings, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
+import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import Link from "next/link";
 import { motion } from "framer-motion";
 
@@ -15,23 +15,23 @@ export default function ChatLayout({ children }: ChatLayoutProps) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const navigation = [
-    { name: "홈", href: "/", icon: "🏠" },
-    { name: "채팅", href: "/chat", icon: "💬" },
-    { name: "히스토리", href: "/history", icon: "📚" },
+    { name: "홈", href: "/", icon: <Home className="h-4 w-4" /> },
+    { name: "정책 검토", href: "/chat", icon: <ShieldCheck className="h-4 w-4" /> },
+    { name: "검토 기록", href: "/history", icon: <History className="h-4 w-4" /> },
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 via-blue-900 to-indigo-900">
-      {/* Header - Dark theme with glassmorphism */}
-      <header className="bg-black/20 backdrop-blur-md border-b border-white/10 sticky top-0 z-50">
+    <div className="min-h-screen bg-[#F4F5F0] text-[#111713]">
+      {/* Header - Compass policy evidence desk shell */}
+      <header className="sticky top-0 z-50 border-b border-[#D8DCCF] bg-[#FBFBF7]/95 backdrop-blur-md">
         <div className="px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-14 sm:h-16">
-            <div className="flex items-center space-x-2 sm:space-x-3">
-              <Link href="/" className="block">
+          <div className="flex h-14 items-center justify-between gap-3 sm:h-16">
+            <div className="flex min-w-0 items-center space-x-2 sm:space-x-3">
+              <Link href="/" className="block shrink-0" aria-label="AdMate Compass 홈으로 이동">
                 <motion.div 
-                  className="cursor-pointer"
+                  className="flex h-12 cursor-pointer items-center overflow-hidden sm:h-14"
                   whileHover={{ 
-                    scale: 1.05,
+                    scale: 1.02,
                     transition: { duration: 0.3 }
                   }}
                   whileTap={{ scale: 0.95 }}
@@ -39,7 +39,7 @@ export default function ChatLayout({ children }: ChatLayoutProps) {
                   <motion.img 
                     src="/admate-logo.png" 
                     alt="AdMate" 
-                    className="h-16 w-auto"
+                    className="max-h-10 w-auto sm:max-h-12"
                     whileHover={{
                       filter: "brightness(1.1) drop-shadow(0 4px 8px rgba(255, 107, 53, 0.3))",
                       transition: { duration: 0.2 }
@@ -47,46 +47,64 @@ export default function ChatLayout({ children }: ChatLayoutProps) {
                   />
                 </motion.div>
               </Link>
-              <div className="hidden sm:block">
-                <h1 className="text-base sm:text-lg font-semibold text-white truncate">
-                  메타 광고 FAQ 챗봇
+              <div className="hidden min-w-0 sm:block">
+                <h1 className="truncate text-base font-semibold text-[#111713] sm:text-lg">
+                  Compass 정책 근거 데스크
                 </h1>
+                <p className="text-xs text-[#5F6C62]">정책 근거와 인용 후보를 검토합니다.</p>
               </div>
             </div>
             
-            <div className="flex items-center space-x-1 sm:space-x-2">
-              <Button variant="ghost" size="sm" className="h-8 w-8 p-0 hidden sm:flex text-white hover:bg-white/10">
+            <div className="flex shrink-0 items-center space-x-1 sm:space-x-2">
+              <div className="hidden items-center gap-2 rounded-md border border-[#D8DCCF] bg-white px-2.5 py-1.5 text-xs text-[#34423A] md:flex">
+                <span className="h-2 w-2 rounded-full bg-[#1F7A4D]" />
+                <span className="font-medium">Evidence Desk</span>
+                <span className="text-[#8A9388]">정책 검증 모드</span>
+              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                aria-label="검토 설정"
+                className="hidden h-8 w-8 rounded-md p-0 text-[#5F6C62] hover:bg-[#EDF7EF] hover:text-[#111713] sm:flex"
+              >
                 <Settings className="h-4 w-4" />
               </Button>
               
               {/* Mobile menu */}
               <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
                 <SheetTrigger asChild>
-                  <Button variant="ghost" size="sm" className="md:hidden h-8 w-8 p-0 text-white hover:bg-white/10">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    aria-label="정책 검토 메뉴 열기"
+                    aria-expanded={sidebarOpen}
+                    className="h-8 w-8 rounded-md p-0 text-[#5F6C62] hover:bg-[#EDF7EF] hover:text-[#111713] md:hidden"
+                  >
                     <Menu className="h-4 w-4" />
                   </Button>
                 </SheetTrigger>
-                <SheetContent side="right" className="w-72 sm:w-80 bg-gray-900/95 backdrop-blur-md border-gray-700">
-                  <nav className="flex-1 px-2 py-4 space-y-1">
+                <SheetContent side="right" className="w-72 border-[#D8DCCF] bg-[#FBFBF7] sm:w-80">
+                  <SheetTitle className="sr-only">Compass 정책 검토 메뉴</SheetTitle>
+                  <nav aria-label="Compass 모바일 메뉴" className="flex-1 space-y-1 px-2 py-4">
                     {navigation.map((item) => (
                       <Link
                         key={item.name}
                         href={item.href}
-                        className="group flex items-center px-3 py-3 text-sm font-medium rounded-lg text-gray-300 hover:bg-white/10 hover:text-white transition-colors"
+                        className="group flex items-center rounded-lg px-3 py-3 text-sm font-medium text-[#34423A] transition-colors hover:bg-[#EDF7EF] hover:text-[#111713]"
                         onClick={() => setSidebarOpen(false)}
                       >
-                        <span className="mr-3 text-lg">{item.icon}</span>
+                        <span className="mr-3 text-[#1F7A4D]">{item.icon}</span>
                         {item.name}
                       </Link>
                     ))}
                   </nav>
                   
-                  <div className="border-t border-gray-700 pt-4 mt-4">
+                  <div className="mt-4 border-t border-[#D8DCCF] pt-4">
                     <div className="flex items-center space-x-3 px-3">
-                      <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
-                        <span className="text-white text-sm font-medium">사</span>
+                      <div className="flex h-8 w-8 items-center justify-center rounded-md border border-[#C6D9CB] bg-[#EDF7EF]">
+                        <FileText className="h-4 w-4 text-[#1F7A4D]" />
                       </div>
-                      <span className="text-sm text-gray-300">사용자</span>
+                      <span className="min-w-0 truncate text-sm text-[#34423A]">운영자 검토 세션</span>
                     </div>
                   </div>
                 </SheetContent>
