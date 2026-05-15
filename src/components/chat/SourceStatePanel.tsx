@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useId, useState } from "react";
 import { AlertCircle, BookOpen, ChevronDown, ChevronUp, Download, ExternalLink, FileText, Search, ShieldCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -33,6 +33,7 @@ export default function SourceStatePanel({
 }: SourceStatePanelProps) {
   const [cardsVisible, setCardsVisible] = useState(true);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const sourceListId = useId();
   const hasSources = sources.length > 0;
   const isLimited = state === "generation-limited";
   const isNoData = state === "noData";
@@ -56,6 +57,9 @@ export default function SourceStatePanel({
       return next;
     });
   };
+
+  const getSourceExcerptId = (source: ChatSource, index: number) =>
+    `${sourceListId}-excerpt-${index}-${source.id.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
 
   const handleSourceOpen = async (source: ChatSource) => {
     if (!source.url || sourceOpenMode === "noop") return;
@@ -209,6 +213,8 @@ export default function SourceStatePanel({
           variant="ghost"
           size="sm"
           onClick={() => setCardsVisible((visible) => !visible)}
+          aria-expanded={cardsVisible}
+          aria-controls={sourceListId}
           className="h-9 w-full justify-between rounded-lg border border-[#C6D9CB] bg-white px-3 text-xs font-medium text-[#1F7A4D] shadow-sm transition-colors hover:bg-[#EDF7EF] hover:text-[#176B42]"
         >
           <span className="flex items-center">
@@ -219,13 +225,14 @@ export default function SourceStatePanel({
         </Button>
 
         {cardsVisible && (
-          <div className="space-y-3">
+          <div id={sourceListId} role="list" aria-label="근거 문서 목록" className="space-y-3">
             {sources.slice(0, compact ? 3 : 6).map((source, index) => {
               const isExpanded = expandedIds.has(source.id);
               const title = source.title?.replace(/_chunk_\d+/g, `_page_${index + 1}`) || `근거 문서 ${index + 1}`;
+              const sourceExcerptId = getSourceExcerptId(source, index);
 
               return (
-                <div key={`${source.id}-${index}`} className={`${compact ? "p-2.5" : "p-3"} rounded-lg border border-[#D8DCCF] bg-[#FBFBF7] transition-colors hover:border-[#B9C9BB]`}>
+                <div key={`${source.id}-${index}`} role="listitem" className={`${compact ? "p-2.5" : "p-3"} rounded-lg border border-[#D8DCCF] bg-[#FBFBF7] transition-colors hover:border-[#B9C9BB]`}>
                   <div className={`flex items-start ${compact ? "gap-2" : "gap-3"}`}>
                     <div className={`${compact ? "h-6 w-6" : "h-7 w-7"} flex flex-none items-center justify-center rounded-md border border-[#C6D9CB] bg-[#EDF7EF] text-xs font-semibold text-[#1F7A4D]`}>
                       {index + 1}
@@ -247,7 +254,7 @@ export default function SourceStatePanel({
                               className="h-8 w-8 rounded-md p-0 text-[#5F6C62] hover:bg-[#EDF7EF] hover:text-[#1F7A4D]"
                               onClick={() => handleSourceOpen(source)}
                               title={source.sourceType === "file" ? "파일 다운로드" : "열기"}
-                              aria-label={source.sourceType === "file" ? "파일 다운로드" : "근거 문서 열기"}
+                              aria-label={source.sourceType === "file" ? `${title} 파일 다운로드` : `${title} 근거 문서 열기`}
                             >
                               {source.sourceType === "file" ? <Download className="h-4 w-4" /> : <ExternalLink className="h-4 w-4" />}
                             </Button>
@@ -259,14 +266,16 @@ export default function SourceStatePanel({
                             className="h-8 w-8 rounded-md p-0 text-[#5F6C62] hover:bg-[#F0F2EA] hover:text-[#111713]"
                             onClick={() => toggleExpanded(source.id)}
                             title={isExpanded ? "접기" : "펼치기"}
-                            aria-label={isExpanded ? "근거 문서 접기" : "근거 문서 펼치기"}
+                            aria-label={isExpanded ? `${title} 원문 일부 접기` : `${title} 원문 일부 펼치기`}
+                            aria-expanded={isExpanded}
+                            aria-controls={sourceExcerptId}
                           >
                             {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
                           </Button>
                         </div>
                       </div>
 
-                      <p className={`${isExpanded ? "" : compact ? "line-clamp-2" : "line-clamp-3"} mt-2 break-words text-xs leading-5 text-[#5F6C62]`}>
+                      <p id={sourceExcerptId} className={`${isExpanded ? "" : compact ? "line-clamp-2" : "line-clamp-3"} mt-2 break-words text-xs leading-5 text-[#5F6C62]`}>
                         {source.excerpt || "표시할 원문 일부가 없습니다."}
                       </p>
 
