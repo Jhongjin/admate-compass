@@ -846,6 +846,12 @@ function ChatPageContent() {
     }, 100);
   };
 
+  const latestUserMessage = [...messages].reverse().find((message) => message.type === "user");
+  const latestAssistantMessage = [...messages].reverse().find((message) => message.type === "assistant");
+  const latestSourceCount = latestAssistantMessage?.sources?.length || 0;
+  const hasActiveReview = messages.length > 1;
+  const reviewStatusLabel = isLoading ? "근거 검색 중" : latestSourceCount > 0 ? "출처 대조 가능" : hasActiveReview ? "근거 보강 필요" : "접수 대기";
+
   const chatHeader = (
     <div className="border-b border-[#D8DCCF] bg-[#FBFBF7]/95 px-4 py-3 backdrop-blur rounded-none">
       <div className="max-w-7xl mx-auto flex items-center justify-between gap-3">
@@ -860,6 +866,9 @@ function ChatPageContent() {
               </h2>
               <Badge variant="outline" className="hidden rounded-md border-[#C6D9CB] bg-[#EDF7EF] px-2 py-0.5 text-[11px] font-medium text-[#1F7A4D] sm:inline-flex">
                 Evidence mode
+              </Badge>
+              <Badge variant="outline" className="hidden rounded-md border-[#D8DCCF] bg-white px-2 py-0.5 text-[11px] font-medium text-[#5F6C62] md:inline-flex">
+                {reviewStatusLabel}
               </Badge>
             </div>
             <p className="truncate text-xs text-[#5F6C62]">
@@ -974,15 +983,49 @@ function ChatPageContent() {
           }}
         >
           <div className="border-b border-[#E2E5DA] bg-[#FBFBF7] px-4 py-2">
-            <div className="mx-auto flex max-w-4xl flex-wrap items-center gap-2 text-xs text-[#5F6C62]">
-              <span className="font-semibold text-[#111713]">검토 작업대</span>
-              <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1">질문</span>
-              <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1">정책 답변</span>
-              <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1">출처 대조</span>
+            <div className="mx-auto grid max-w-4xl gap-2 text-xs text-[#5F6C62] sm:grid-cols-[1fr_auto] sm:items-center">
+              <div className="flex min-w-0 flex-wrap items-center gap-2">
+                <span className="font-semibold text-[#111713]">검토 작업대</span>
+                <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1">질문 접수</span>
+                <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1">정책 답변</span>
+                <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1">출처 대조</span>
+              </div>
+              <div className="flex flex-wrap gap-1.5 sm:justify-end">
+                <span className="rounded-md border border-[#C6D9CB] bg-[#EDF7EF] px-2 py-1 font-medium text-[#1F7A4D]">
+                  인용 후보 {latestSourceCount}개
+                </span>
+                <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1">
+                  {reviewStatusLabel}
+                </span>
+              </div>
             </div>
           </div>
 
           <div className="custom-scrollbar flex-1 space-y-3 overflow-y-auto bg-[#F4F5F0] p-2 sm:space-y-4 sm:p-4">
+            {!hasActiveReview && (
+              <div className="mx-auto max-w-4xl rounded-lg border border-[#D8DCCF] bg-[#FBFBF7] p-3 shadow-sm sm:p-4">
+                <div className="grid gap-3 sm:grid-cols-[1.1fr_0.9fr] sm:items-start">
+                  <div>
+                    <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#758070]">
+                      Review intake
+                    </div>
+                    <h3 className="text-sm font-semibold text-[#111713]">정책 판단에 필요한 단서를 먼저 정리합니다</h3>
+                    <p className="mt-1 max-w-xl text-xs leading-5 text-[#5F6C62]">
+                      플랫폼, 업종, 소재 문구, 랜딩 조건을 함께 입력하면 답변과 인용 후보를 더 안정적으로 대조할 수 있습니다.
+                    </p>
+                  </div>
+                  <div className="grid gap-1.5 text-xs text-[#34423A]">
+                    {["플랫폼/게재면", "업종/상품", "소재 표현", "랜딩 페이지 조건"].map((item) => (
+                      <div key={item} className="flex items-center gap-2 rounded-md border border-[#D8DCCF] bg-white px-2.5 py-2">
+                        <CheckCircle className="h-3.5 w-3.5 flex-none text-[#1F7A4D]" />
+                        <span className="truncate">{item}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
             {messages.map((message) => (
               <ChatBubble
                 key={message.id}
@@ -1085,15 +1128,33 @@ function ChatPageContent() {
               className="hidden h-full flex-col overflow-hidden bg-[#FBFBF7] lg:flex"
             >
             <div className="border-b border-[#D8DCCF] bg-white p-4">
-              <div className="flex items-center space-x-3">
-                <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-[#C6D9CB] bg-[#EDF7EF] shadow-sm">
-                  <BookOpen className="h-5 w-5 text-[#1F7A4D]" />
+              <div className="flex items-start justify-between gap-3">
+                <div className="flex min-w-0 items-center space-x-3">
+                  <div className="flex h-10 w-10 flex-none items-center justify-center rounded-lg border border-[#C6D9CB] bg-[#EDF7EF] shadow-sm">
+                    <BookOpen className="h-5 w-5 text-[#1F7A4D]" />
+                  </div>
+                  <div className="min-w-0">
+                    <h3 className="truncate text-base font-semibold text-[#111713]">근거 작업공간</h3>
+                    <p className="truncate text-sm text-[#5F6C62]">출처, 후속 질문, 검토 기준</p>
+                  </div>
                 </div>
-                <div>
-                  <h3 className="text-base font-semibold text-[#111713]">근거 작업공간</h3>
-                  <p className="text-sm text-[#5F6C62]">출처, 후속 질문, 검토 기준</p>
+                <div className="flex flex-none flex-col items-end gap-1 text-xs">
+                  <span className="rounded-md border border-[#C6D9CB] bg-[#EDF7EF] px-2 py-1 font-medium text-[#1F7A4D]">
+                    {latestSourceCount} sources
+                  </span>
+                  <span className="text-[#758070]">{reviewStatusLabel}</span>
                 </div>
               </div>
+              {latestUserMessage && (
+                <div className="mt-3 rounded-md border border-[#D8DCCF] bg-[#FBFBF7] p-3">
+                  <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#758070]">
+                    Current question
+                  </div>
+                  <p className="line-clamp-2 break-words text-xs leading-5 text-[#34423A]">
+                    {latestUserMessage.content}
+                  </p>
+                </div>
+              )}
             </div>
 
             <div className="flex-1 space-y-4 overflow-y-auto p-4">
@@ -1115,14 +1176,38 @@ function ChatPageContent() {
                 </>
               ) : (
                 /* 초기 상태 - 안내 메시지 */
-                <div className="flex flex-col items-center justify-center py-16 text-center">
-                  <div className="mb-6 flex h-20 w-20 items-center justify-center rounded-xl border border-[#C6D9CB] bg-[#EDF7EF]">
-                    <BookOpen className="h-10 w-10 text-[#1F7A4D]" />
+                <div className="space-y-4 py-8">
+                  <div className="rounded-xl border border-[#D8DCCF] bg-white p-4 shadow-sm">
+                    <div className="mb-3 flex items-center gap-3">
+                      <div className="flex h-10 w-10 items-center justify-center rounded-lg border border-[#C6D9CB] bg-[#EDF7EF]">
+                        <Target className="h-5 w-5 text-[#1F7A4D]" />
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-semibold text-[#111713]">정책 검토를 시작하세요</h3>
+                        <p className="text-xs text-[#5F6C62]">질문을 보내면 이 패널이 근거 보드로 전환됩니다.</p>
+                      </div>
+                    </div>
+                    <p className="text-xs leading-5 text-[#5F6C62]">
+                      인용 후보, 관련 자료, 후속 검토 질문을 함께 표시해 최종 판단 전 확인해야 할 항목을 놓치지 않도록 구성합니다.
+                    </p>
                   </div>
-                  <h3 className="mb-3 text-lg font-semibold text-[#111713]">정책 검토를 시작하세요</h3>
-                  <p className="max-w-sm text-sm leading-relaxed text-[#5F6C62]">
-                    질문을 보내면 인용 후보, 관련 자료, 후속 검토 질문이 이 작업공간에 정리됩니다.
-                  </p>
+                  <div className="grid gap-2">
+                    {[
+                      ["01", "질문 범위 고정", "플랫폼과 업종을 먼저 고정합니다."],
+                      ["02", "소재 문구 확인", "심사 리스크가 있는 표현을 분리합니다."],
+                      ["03", "출처 대조", "답변 전 원문 일부와 인용 후보를 확인합니다."],
+                    ].map(([step, title, description]) => (
+                      <div key={step} className="grid grid-cols-[2.5rem_1fr] gap-3 rounded-lg border border-[#D8DCCF] bg-white p-3">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-md border border-[#C6D9CB] bg-[#EDF7EF] text-[11px] font-semibold text-[#1F7A4D]">
+                          {step}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-xs font-semibold text-[#111713]">{title}</div>
+                          <p className="mt-0.5 text-xs leading-5 text-[#5F6C62]">{description}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
