@@ -20,7 +20,9 @@ function read(relativePath) {
 }
 
 const service = read("src/lib/services/CompassSourceProposalService.ts");
+const reviewService = read("src/lib/services/CompassSourceProposalReviewService.ts");
 const route = read("src/app/api/admin/source-ops/proposals/route.ts");
+const page = read("src/app/admin/source-ops/page.tsx");
 
 for (const token of [
   "proposal-only",
@@ -53,6 +55,42 @@ for (const forbidden of [
 
 if (!route.includes("buildCompassSourceProposalRun")) {
   fail("proposal route must use CompassSourceProposalService");
+}
+
+for (const token of [
+  "deterministic-policy-review-v1",
+  "llmUsed: false",
+  "needsHumanReview: true",
+  "mutationEnabled: false",
+  "diffSummary",
+  "relevanceScore",
+]) {
+  if (!reviewService.includes(token)) {
+    fail(`proposal review contract missing ${token}`);
+  }
+}
+
+for (const forbidden of [
+  "CompassAnswerLlmService",
+  "@anthropic-ai/sdk",
+  "@google/generative-ai",
+  "openrouter",
+  "generateContent",
+  "chat.completions",
+  "embeddingService",
+  "EmbeddingService",
+]) {
+  if (reviewService.includes(forbidden) || service.includes(forbidden) || route.includes(forbidden)) {
+    fail(`proposal review path must not use LLM or embedding providers: ${forbidden}`);
+  }
+}
+
+if (!page.includes("/api/admin/source-ops/proposals?maxSources=7") || page.includes("fetch=true")) {
+  fail("source ops page must fetch proposal preview through GET without enabling network fetch");
+}
+
+if (page.includes("fetch(\"/api/admin/source-ops/proposals\",") || page.includes("method: \"POST\"") || page.includes("method: 'POST'")) {
+  fail("source ops page must not expose proposal queue/apply POST actions");
 }
 
 if (!process.exitCode) {

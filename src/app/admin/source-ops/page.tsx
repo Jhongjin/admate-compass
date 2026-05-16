@@ -58,6 +58,51 @@ interface SourceOpsPlan {
   generatedAt: string;
 }
 
+interface ProposalReview {
+  classifier: "deterministic-policy-review-v1";
+  llmUsed: false;
+  relevanceLevel: "high" | "medium" | "low" | "blocked";
+  relevanceScore: number;
+  signals: string[];
+  diffSummary: string;
+  recommendation: string;
+  needsHumanReview: true;
+  mutationEnabled: false;
+}
+
+interface ProposalCandidate {
+  id: string;
+  sourceId: string;
+  vendor: SourceOpsItem["vendor"];
+  label: string;
+  url: string;
+  host: string;
+  status: "candidate_ready" | "fetch_disabled" | "fetch_failed" | "blocked";
+  reason: string;
+  sourceStatus?: SourceStatus;
+  riskLevel: "low" | "medium" | "high";
+  wouldFetch: boolean;
+  wouldIndex: false;
+  wouldPromote: false;
+  review: ProposalReview;
+}
+
+interface ProposalRun {
+  mode: "proposal-only";
+  dryRun: true;
+  mutationEnabled: false;
+  fetchEnabled: boolean;
+  collectionOwner: "backend-agent";
+  generatedAt: string;
+  candidates: ProposalCandidate[];
+  safetyNotes: string[];
+  queue?: {
+    enabled: boolean;
+    productionBlocked: boolean;
+    canPersist?: boolean;
+  };
+}
+
 const statusLabels: Record<SourceStatus, string> = {
   indexed: "색인됨",
   stale: "갱신 필요",
@@ -74,24 +119,39 @@ const vendorAccent: Record<SourceOpsItem["vendor"], string> = {
 
 export default function SourceOpsPage() {
   const [plan, setPlan] = useState<SourceOpsPlan | null>(null);
+  const [proposalRun, setProposalRun] = useState<ProposalRun | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [proposalError, setProposalError] = useState<string | null>(null);
 
   const loadPlan = async () => {
     try {
       setIsRefreshing(true);
       setError(null);
-      const response = await fetch("/api/admin/source-ops", { cache: "no-store" });
+      setProposalError(null);
+      const [response, proposalResponse] = await Promise.all([
+        fetch("/api/admin/source-ops", { cache: "no-store" }),
+        fetch("/api/admin/source-ops/proposals?maxSources=7", { cache: "no-store" }),
+      ]);
       const payload = await response.json();
+      const proposalPayload = await proposalResponse.json();
 
       if (!response.ok || !payload.success) {
         throw new Error(payload.error || "소스 관제 상태를 불러오지 못했습니다.");
       }
 
       setPlan(payload.data);
+
+      if (proposalResponse.ok && proposalPayload.success) {
+        setProposalRun(proposalPayload.data);
+      } else {
+        setProposalRun(null);
+        setProposalError(proposalPayload.error || "후보 프리뷰를 불러오지 못했습니다.");
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "소스 관제 상태를 불러오지 못했습니다.");
+      setProposalRun(null);
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
@@ -150,6 +210,14 @@ export default function SourceOpsPage() {
           </Alert>
         )}
 
+        {proposalError && (
+          <Alert className="border-amber-500/30 bg-amber-950/30 text-amber-100">
+            <AlertTriangle className="h-4 w-4" />
+            <AlertTitle>후보 프리뷰 오류</AlertTitle>
+            <AlertDescription>{proposalError}</AlertDescription>
+          </Alert>
+        )}
+
         {plan && (
           <>
             <div className="grid gap-4 md:grid-cols-4">
@@ -193,6 +261,91 @@ export default function SourceOpsPage() {
               <AlertTitle>운영 권장안</AlertTitle>
               <AlertDescription>{plan.scheduleRecommendation}</AlertDescription>
             </Alert>
+
+            {proposalRun && (
+              <Card className="border-cyan-400/20 bg-cyan-950/10 text-white">
+                <CardHeader>
+                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                    <div>
+                      <CardTitle className="flex items-center gap-2">
+                        <Bot className="h-5 w-5 text-cyan-300" />
+                        수집 후보 프리뷰
+                      </CardTitle>
+                      <CardDescription className="mt-2 text-gray-300">
+                        DB 저장 없이 후보의 관련성, 차이 요약, 검토 우선순위를 미리 계산합니다.
+                      </CardDescription>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Badge className="border-emerald-400/30 bg-emerald-500/10 text-emerald-100">
+                        {proposalRun.mode}
+                      </Badge>
+                      <Badge className="border-white/20 bg-white/5 text-gray-200">
+                        queue {proposalRun.queue?.enabled ? "enabled" : "disabled"}
+                      </Badge>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <div className="overflow-x-auto">
+                    <Table>
+                      <TableHeader>
+                        <TableRow className="border-white/10 hover:bg-transparent">
+                          <TableHead className="text-gray-300">소스</TableHead>
+                          <TableHead className="text-gray-300">관련성</TableHead>
+                          <TableHead className="text-gray-300">차이 요약</TableHead>
+                          <TableHead className="text-gray-300">안전</TableHead>
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {proposalRun.candidates.map((candidate) => (
+                          <TableRow key={candidate.id} className="border-white/10 align-top">
+                            <TableCell className="min-w-[180px]">
+                              <div className="flex flex-col gap-1">
+                                <div className="flex flex-wrap gap-2">
+                                  <Badge variant="outline" className={vendorAccent[candidate.vendor]}>
+                                    {candidate.vendor}
+                                  </Badge>
+                                  <Badge variant="outline" className={riskClassName(candidate.riskLevel)}>
+                                    {candidate.riskLevel}
+                                  </Badge>
+                                </div>
+                                <span className="font-medium text-white">{candidate.label}</span>
+                                <span className="max-w-xs break-all text-xs text-gray-500">{candidate.url}</span>
+                              </div>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex flex-col gap-2">
+                                <Badge className={reviewClassName(candidate.review.relevanceLevel)}>
+                                  {candidate.review.relevanceLevel} · {candidate.review.relevanceScore}
+                                </Badge>
+                                <span className="text-xs text-gray-400">
+                                  {candidate.review.signals.slice(0, 3).join(" · ")}
+                                </span>
+                              </div>
+                            </TableCell>
+                            <TableCell className="max-w-xl text-sm text-gray-300">
+                              <p>{candidate.review.diffSummary}</p>
+                              <p className="mt-2 text-xs text-cyan-100">{candidate.review.recommendation}</p>
+                            </TableCell>
+                            <TableCell>
+                              <div className="flex flex-col gap-2">
+                                <Badge className="bg-emerald-500/15 text-emerald-100">
+                                  <CheckCircle2 className="mr-1 h-3 w-3" />
+                                  no apply
+                                </Badge>
+                                <span className="text-xs text-gray-500">
+                                  index {String(candidate.wouldIndex)} · promote {String(candidate.wouldPromote)}
+                                </span>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  </div>
+                </CardContent>
+              </Card>
+            )}
 
             <div className="grid gap-4 lg:grid-cols-2">
               {plan.sources.map((source) => (
@@ -309,4 +462,17 @@ function statusClassName(status: SourceStatus) {
   if (status === "stale") return "border-amber-400/40 bg-amber-500/10 text-amber-100";
   if (status === "unavailable") return "border-red-400/40 bg-red-500/10 text-red-100";
   return "border-gray-400/40 bg-gray-500/10 text-gray-100";
+}
+
+function riskClassName(risk: ProposalCandidate["riskLevel"]) {
+  if (risk === "high") return "border-red-400/40 bg-red-500/10 text-red-100";
+  if (risk === "medium") return "border-amber-400/40 bg-amber-500/10 text-amber-100";
+  return "border-emerald-400/40 bg-emerald-500/10 text-emerald-100";
+}
+
+function reviewClassName(level: ProposalReview["relevanceLevel"]) {
+  if (level === "high") return "bg-cyan-500/15 text-cyan-100";
+  if (level === "medium") return "bg-amber-500/15 text-amber-100";
+  if (level === "blocked") return "bg-red-500/15 text-red-100";
+  return "bg-white/10 text-gray-200";
 }

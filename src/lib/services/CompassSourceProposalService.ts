@@ -4,6 +4,10 @@ import {
   type CompassPolicySource,
   type CompassSourceOpsItem,
 } from './CompassSourceOpsService';
+import {
+  reviewCompassSourceProposalCandidate,
+  type CompassSourceProposalReview,
+} from './CompassSourceProposalReviewService';
 
 type ProposalStatus = 'candidate_ready' | 'fetch_disabled' | 'fetch_failed' | 'blocked';
 
@@ -27,6 +31,7 @@ export interface CompassSourceProposalCandidate {
   wouldFetch: boolean;
   wouldIndex: false;
   wouldPromote: false;
+  review: CompassSourceProposalReview;
   safety: {
     allowedHost: boolean;
     proposalOnly: true;
@@ -125,6 +130,13 @@ async function buildCandidate(
     wouldFetch: fetchEnabled,
     wouldIndex: false,
     wouldPromote: false,
+    review: reviewCompassSourceProposalCandidate({
+      source,
+      status: 'fetch_disabled',
+      sourceStatus,
+      allowedHost,
+      headingCount: 0,
+    }),
     safety: {
       allowedHost,
       proposalOnly: true,
@@ -137,6 +149,13 @@ async function buildCandidate(
       ...baseCandidate,
       status: 'blocked',
       reason: 'Source URL is not allowlisted for Compass policy collection.',
+      review: reviewCompassSourceProposalCandidate({
+        source,
+        status: 'blocked',
+        sourceStatus,
+        allowedHost,
+        headingCount: 0,
+      }),
     };
   }
 
@@ -146,17 +165,36 @@ async function buildCandidate(
 
   try {
     const preview = await fetchPreview(sourceUrl);
+    const review = reviewCompassSourceProposalCandidate({
+      source,
+      status: 'candidate_ready',
+      sourceStatus,
+      allowedHost,
+      headingCount: preview.headings.length,
+      contentLength: preview.contentLength,
+    });
+
     return {
       ...baseCandidate,
       status: 'candidate_ready',
       reason: 'Preview fetched for operator review. No corpus mutation was performed.',
+      review,
       ...preview,
     };
   } catch (error) {
+    const review = reviewCompassSourceProposalCandidate({
+      source,
+      status: 'fetch_failed',
+      sourceStatus,
+      allowedHost,
+      headingCount: 0,
+    });
+
     return {
       ...baseCandidate,
       status: 'fetch_failed',
       reason: error instanceof Error ? error.message : String(error),
+      review,
     };
   }
 }

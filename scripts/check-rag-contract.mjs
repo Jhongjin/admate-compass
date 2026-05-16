@@ -13,6 +13,7 @@ const requiredFiles = [
   'scripts/check-compass-source-proposal-contract.mjs',
   'scripts/check-compass-source-proposal-queue-contract.mjs',
   'src/lib/services/CompassSourceProposalService.ts',
+  'src/lib/services/CompassSourceProposalReviewService.ts',
   'src/lib/services/CompassSourceProposalQueueService.ts',
   'src/lib/services/DocumentIndexingService.ts',
   'src/lib/services/EmbeddingService.ts',
@@ -90,6 +91,14 @@ if (fs.existsSync(sourceProposalQueueServicePath)) {
   const text = fs.readFileSync(sourceProposalQueueServicePath, 'utf8')
   for (const field of ['COMPASS_SOURCE_PROPOSAL_QUEUE_ENABLED', 'source_proposal_runs', 'source_proposal_queue', 'would_promote: false']) {
     if (!text.includes(field)) fail(`Compass source proposal queue contract missing ${field}`)
+  }
+}
+
+const sourceProposalReviewServicePath = path.join(root, 'src/lib/services/CompassSourceProposalReviewService.ts')
+if (fs.existsSync(sourceProposalReviewServicePath)) {
+  const text = fs.readFileSync(sourceProposalReviewServicePath, 'utf8')
+  for (const field of ['deterministic-policy-review-v1', 'llmUsed: false', 'needsHumanReview: true', 'mutationEnabled: false']) {
+    if (!text.includes(field)) fail(`Compass source proposal review contract missing ${field}`)
   }
 }
 

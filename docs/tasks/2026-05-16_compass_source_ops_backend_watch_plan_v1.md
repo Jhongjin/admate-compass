@@ -30,6 +30,8 @@ Implemented:
   - returns a proposal-only dry run for source collection candidates
   - does not write documents, chunks, embeddings, or URL templates
   - marks every candidate with `wouldIndex: false` and `wouldPromote: false`
+  - includes deterministic review metadata: relevance score, diff summary, recommendation
+  - does not call an LLM; `llmUsed` remains `false`
   - keeps network preview fetching disabled unless `COMPASS_SOURCE_PROPOSAL_FETCH_ENABLED=true`
 - `POST /api/admin/source-ops/proposals`
   - accepts only `{ "dryRun": true }`
@@ -42,6 +44,8 @@ Implemented:
   - production SQL apply is a human-only step
 - `/admin/source-ops`
   - read-only admin page for source coverage, cadence, and backend recommendations
+  - read-only proposal preview table for deterministic relevance/diff summaries
+  - no queue/apply/promote/index controls
 - admin navigation item: `소스 관제`
 - `npm run check:compass-source-ops-contract`
   - included in `verify:harness`
