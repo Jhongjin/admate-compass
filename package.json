@@ -11,6 +11,7 @@
     "type-check": "tsc --noEmit",
     "check:rag-contract": "node scripts/check-rag-contract.mjs",
     "check:compass-evidence-contract": "node scripts/check-compass-evidence-contract.mjs",
+    "check:compass-chunking-contract": "node scripts/check-compass-chunking-contract.mjs",
     "check:rag-source-quality": "node scripts/check-rag-source-quality.mjs",
     "check:rag-source-quality:sample": "node scripts/check-rag-source-quality.mjs docs/rag/rag-source-quality-sample-response.json",
     "check:nodata-boundary": "node scripts/check-nodata-boundary-fixtures.mjs",
@@ -27,7 +28,7 @@
     "smoke:compass-rag-contract": "node scripts/smoke-compass-rag-contract.mjs",
     "smoke:chat-ollama-local": "node scripts/smoke-chat-ollama-local.mjs",
     "gate6c:dry-run": "node scripts/gate6c-local-import-runner.mjs",
-    "verify:harness": "node scripts/check-rag-contract.mjs && npm run check:compass-evidence-contract && npm run check:rag-source-quality:sample && node scripts/evaluate-rag-fixtures.mjs && node scripts/check-nodata-boundary-fixtures.mjs && node scripts/check-compass-evidence-qa-fixtures.mjs && npm run check:compass-qa-evidence-prompt-visible && node scripts/check-compass-chat-ui-state-contract-fixtures.mjs && npm run check:compass-dev-fixture-renderer && npm run check:compass-source-panel-rendering && node scripts/check-admin-debug-surface.mjs",
+    "verify:harness": "node scripts/check-rag-contract.mjs && npm run check:compass-evidence-contract && npm run check:compass-chunking-contract && npm run check:rag-source-quality:sample && node scripts/evaluate-rag-fixtures.mjs && node scripts/check-nodata-boundary-fixtures.mjs && node scripts/check-compass-evidence-qa-fixtures.mjs && npm run check:compass-qa-evidence-prompt-visible && node scripts/check-compass-chat-ui-state-contract-fixtures.mjs && npm run check:compass-dev-fixture-renderer && npm run check:compass-source-panel-rendering && node scripts/check-admin-debug-surface.mjs",
     "verify:migration": "node scripts/check-compass-schema-readiness.mjs && node scripts/check-compass-table-references.mjs && node scripts/smoke-compass-rag-contract.mjs && node scripts/check-migration-env.mjs"
   },
   "dependencies": {

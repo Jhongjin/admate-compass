@@ -8,6 +8,7 @@ const requiredFiles = [
   'src/app/api/feedback/route.ts',
   'src/lib/services/RAGSearchService.ts',
   'src/lib/services/CompassAnswerLlmService.ts',
+  'scripts/check-compass-chunking-contract.mjs',
   'src/lib/services/DocumentIndexingService.ts',
   'src/lib/services/EmbeddingService.ts',
   'src/lib/services/VectorStorageService.ts',
@@ -52,6 +53,14 @@ if (fs.existsSync(answerServicePath)) {
   const text = fs.readFileSync(answerServicePath, 'utf8')
   for (const field of ['CompassAnswerProvider', 'OPENROUTER_API_KEY', 'COMPASS_ANSWER_MODELS', 'generateCompassAnswer', 'provider', 'data_collection']) {
     if (!text.includes(field)) fail(`Compass answer LLM contract missing ${field}`)
+  }
+}
+
+const chunkingServicePath = path.join(root, 'src/lib/services/TextChunkingService.ts')
+if (fs.existsSync(chunkingServicePath)) {
+  const text = fs.readFileSync(chunkingServicePath, 'utf8')
+  for (const field of ['policy-recursive-v2', 'url-policy-recursive-v2', 'signalScore', 'sourceUrl']) {
+    if (!text.includes(field)) fail(`Compass chunking contract missing ${field}`)
   }
 }
 

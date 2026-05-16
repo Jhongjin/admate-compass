@@ -201,6 +201,12 @@ export class VectorStorageService {
         embedding: embeddings[index].embedding, // 이미 검증된 배열
         metadata: {
           ...chunk.metadata,
+          source_title: chunk.metadata.sourceTitle || (chunk.metadata as any).title,
+          source_url: chunk.metadata.sourceUrl || (chunk.metadata as any).url || (chunk.metadata as any).source_url || (chunk.metadata as any).document_url,
+          document_url: chunk.metadata.sourceUrl || (chunk.metadata as any).url || (chunk.metadata as any).document_url || (chunk.metadata as any).source_url,
+          chunking_strategy: chunk.metadata.chunkingStrategy,
+          content_length: chunk.content.length,
+          signal_score: chunk.metadata.signalScore,
           model: embeddings[index].model,
           dimension: embeddings[index].dimension,
           processingTime: embeddings[index].processingTime,

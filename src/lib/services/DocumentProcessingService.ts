@@ -112,18 +112,7 @@ export class DocumentProcessingService {
    * URL 처리
    */
   async processUrl(url: string, title?: string): Promise<ProcessedDocument> {
-    const content = `URL: ${url}\n\n이 URL은 서버리스 환경에서 크롤링할 수 없습니다. 관리자에게 문의하세요.`;
-    
-    return {
-      content,
-      metadata: {
-        title: title || this.extractTitleFromUrl(url),
-        type: 'url',
-        size: url.length,
-        extractedAt: new Date().toISOString(),
-        source: url,
-      }
-    };
+    throw new Error(`URL crawling is not available in the serverless document processing path: ${this.extractTitleFromUrl(url || title || '')}`);
   }
 
   /**

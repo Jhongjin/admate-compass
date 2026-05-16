@@ -22,10 +22,19 @@ export interface DocumentChunk {
     chunkIndex: number;
     startChar: number;
     endChar: number;
+    chunkingStrategy?: string;
+    contentLength?: number;
+    originalLength?: number;
+    signalScore?: number;
+    sourceTitle?: string;
+    sourceUrl?: string;
     pageNumber?: number;
     chunkType?: 'text' | 'table' | 'image' | 'title';
   };
 }
+
+const POLICY_CHUNKING_STRATEGY = 'policy-recursive-v2';
+const URL_POLICY_CHUNKING_STRATEGY = 'url-policy-recursive-v2';
 
 export class TextChunkingService {
   private textSplitter: RecursiveCharacterTextSplitter;
@@ -62,8 +71,11 @@ export class TextChunkingService {
     metadata: Record<string, any> = {}
   ): Promise<ChunkedDocument> {
     try {
+      const normalizedText = this.normalizeTextForChunking(text);
+      const enrichedMetadata = this.enrichChunkMetadata(metadata, POLICY_CHUNKING_STRATEGY, text.length);
+
       // LangChain을 사용한 청킹
-      const documents = await this.textSplitter.createDocuments([text], [metadata]);
+      const documents = await this.textSplitter.createDocuments([normalizedText], [enrichedMetadata]);
       
       const chunks: DocumentChunk[] = documents.map((doc, index) => ({
         content: doc.pageContent,
@@ -71,6 +83,8 @@ export class TextChunkingService {
           chunkIndex: index,
           startChar: 0, // LangChain에서는 정확한 위치를 제공하지 않음
           endChar: doc.pageContent.length,
+          contentLength: doc.pageContent.length,
+          signalScore: this.calculateSignalScore(doc.pageContent),
           ...doc.metadata
         }
       }));
@@ -82,9 +96,9 @@ export class TextChunkingService {
         chunks: classifiedChunks,
         metadata: {
           totalChunks: chunks.length,
-          averageChunkSize: Math.round(
-            chunks.reduce((sum, chunk) => sum + chunk.content.length, 0) / chunks.length
-          ),
+          averageChunkSize: chunks.length > 0
+            ? Math.round(chunks.reduce((sum, chunk) => sum + chunk.content.length, 0) / chunks.length)
+            : 0,
           originalLength: text.length
         }
       };
@@ -138,10 +152,15 @@ export class TextChunkingService {
     metadata: Record<string, any> = {}
   ): Promise<ChunkedDocument> {
     try {
+      const normalizedText = this.normalizeTextForChunking(text);
+      const enrichedMetadata = this.enrichChunkMetadata(metadata, metadata.chunkingStrategy || POLICY_CHUNKING_STRATEGY, text.length);
+
       // 한국어 문장 구분자 추가
       const koreanSeparators = [
         '\n\n', // 문단 구분
         '\n',   // 줄 구분
+        '다. ',  // 한국어 서술문
+        '요. ',  // 한국어 구어체
         '. ',   // 마침표
         '! ',   // 감탄부
         '? ',   // 의문부
@@ -159,7 +178,7 @@ export class TextChunkingService {
         keepSeparator: true
       });
 
-      const documents = await koreanSplitter.createDocuments([text], [metadata]);
+      const documents = await koreanSplitter.createDocuments([normalizedText], [enrichedMetadata]);
       
       const chunks: DocumentChunk[] = documents.map((doc, index) => ({
         content: doc.pageContent,
@@ -167,6 +186,8 @@ export class TextChunkingService {
           chunkIndex: index,
           startChar: 0,
           endChar: doc.pageContent.length,
+          contentLength: doc.pageContent.length,
+          signalScore: this.calculateSignalScore(doc.pageContent),
           ...doc.metadata
         }
       }));
@@ -177,9 +198,9 @@ export class TextChunkingService {
         chunks: classifiedChunks,
         metadata: {
           totalChunks: chunks.length,
-          averageChunkSize: Math.round(
-            chunks.reduce((sum, chunk) => sum + chunk.content.length, 0) / chunks.length
-          ),
+          averageChunkSize: chunks.length > 0
+            ? Math.round(chunks.reduce((sum, chunk) => sum + chunk.content.length, 0) / chunks.length)
+            : 0,
           originalLength: text.length
         }
       };
@@ -271,11 +292,81 @@ export class TextChunkingService {
       case 'txt':
         return this.chunkKoreanText(text, metadata);
       case 'url':
-        // URL은 다양한 콘텐츠 타입이 섞여있으므로 일반 청킹 사용
-        return this.chunkText(text, metadata);
+        return this.chunkKoreanText(text, {
+          ...metadata,
+          chunkingStrategy: URL_POLICY_CHUNKING_STRATEGY
+        });
       default:
         return this.chunkText(text, metadata);
     }
+  }
+
+  private enrichChunkMetadata(
+    metadata: Record<string, any>,
+    chunkingStrategy: string,
+    originalLength: number
+  ): Record<string, any> {
+    return {
+      ...metadata,
+      chunkingStrategy,
+      originalLength,
+      sourceTitle: metadata.sourceTitle || metadata.title,
+      sourceUrl: metadata.sourceUrl || metadata.url || metadata.source_url || metadata.document_url
+    };
+  }
+
+  private normalizeTextForChunking(text: string): string {
+    const normalizedLines = String(text || '')
+      .replace(/\r\n/g, '\n')
+      .replace(/[\u200B-\u200D\uFEFF]/g, '')
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line.length > 0)
+      .filter((line) => !this.isLikelyBoilerplateLine(line))
+      .join('\n');
+
+    return normalizedLines
+      .replace(/[ \t]{2,}/g, ' ')
+      .replace(/\n{3,}/g, '\n\n')
+      .trim();
+  }
+
+  private isLikelyBoilerplateLine(line: string): boolean {
+    const normalized = line.toLowerCase();
+    const exactBoilerplate = new Set([
+      'login',
+      'sign up',
+      'menu',
+      'close',
+      'search',
+      '로그인',
+      '회원가입',
+      '메뉴',
+      '닫기',
+      '검색'
+    ]);
+
+    if (exactBoilerplate.has(normalized)) return true;
+    if (/^(\|?\s*){6,}$/.test(line)) return true;
+    if (/^[-_=*]{6,}$/.test(line)) return true;
+
+    return false;
+  }
+
+  private calculateSignalScore(content: string): number {
+    const normalized = content.toLowerCase();
+    const policyTerms = [
+      '광고', '정책', '심사', '승인', '반려', '집행', '소재', '제한', '금지',
+      'meta', 'facebook', 'instagram', 'kakao', 'naver', 'google', 'youtube'
+    ];
+    const boilerplateTerms = ['cookie', 'privacy settings', '로그인', '회원가입', '메뉴', '__next_data__'];
+    const lengthScore = Math.min(content.trim().length / 800, 1);
+    const policyScore = policyTerms.filter((term) => normalized.includes(term)).length / 5;
+    const boilerplatePenalty = boilerplateTerms.filter((term) => normalized.includes(term)).length * 0.15;
+    const hangulRatio = (content.match(/[\u3131-\u3163\uac00-\ud7a3]/g)?.length || 0) / Math.max(content.length, 1);
+    const languageScore = Math.min(hangulRatio * 2, 0.3);
+
+    return Math.max(0, Math.min(1, lengthScore * 0.45 + policyScore * 0.4 + languageScore - boilerplatePenalty));
   }
 }
 
