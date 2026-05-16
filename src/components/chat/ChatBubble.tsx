@@ -69,7 +69,11 @@ export default function ChatBubble({
   model,
 }: ChatBubbleProps) {
   const isUser = type === "user";
-  const generationLimited = model === 'ollama-connection-failed';
+  const generationLimited = Boolean(model && (
+    model === 'ollama-connection-failed'
+    || model === 'compass-answer-connection-failed'
+    || model.endsWith('-connection-failed')
+  ));
   const hasVerifiedSources = sources.length > 0 && !noDataFound;
   const [showSources, setShowSources] = useState(generationLimited && hasVerifiedSources);
   const sourcePanelId = useId();

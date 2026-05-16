@@ -18,20 +18,22 @@ interface WebIntegrationStatus {
     message: string;
   };
   services: {
-    ollama: ServiceStatus;
-    gemini: ServiceStatus;
+    answer: ServiceStatus;
     rag: ServiceStatus;
   };
   environment: {
+    answer: {
+      provider: string;
+      modelLabel: string;
+      configured: boolean;
+    };
+    openrouter: {
+      configured: boolean;
+      modelsConfigured: boolean;
+    };
     ollama: {
       baseUrl: string;
       defaultModel: string;
-      configured: boolean;
-    };
-    gemini: {
-      apiKey: boolean;
-      googleApiKey: boolean;
-      model: string;
       configured: boolean;
     };
     supabase: {
@@ -141,7 +143,7 @@ export default function WebIntegrationDashboardPage() {
           <div>
             <h1 className="text-3xl font-bold mb-2">웹 통합 서비스 대시보드</h1>
             <p className="text-muted-foreground">
-              Vultr+Ollama 기반 웹 통합 서비스의 실시간 상태를 모니터링합니다.
+              Compass RAG와 답변 LLM 런타임의 실시간 상태를 모니터링합니다.
             </p>
           </div>
           <Button onClick={fetchStatus} disabled={isLoading} className="flex items-center gap-2">
@@ -180,14 +182,13 @@ export default function WebIntegrationDashboardPage() {
           </Card>
 
           {/* 서비스별 상태 */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {Object.entries(status.services).map(([serviceName, serviceStatus]) => (
               <Card key={serviceName}>
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     {getStatusIcon(serviceStatus.status)}
-                    {serviceName === 'ollama' ? 'Ollama 서버' :
-                     serviceName === 'gemini' ? 'Gemini 백업' :
+                    {serviceName === 'answer' ? '답변 LLM' :
                      serviceName === 'rag' ? 'RAG 시스템' : serviceName}
                   </CardTitle>
                   <CardDescription className="flex items-center gap-2">
@@ -221,12 +222,50 @@ export default function WebIntegrationDashboardPage() {
               </CardDescription>
             </CardHeader>
             <CardContent>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                {/* Answer runtime 설정 */}
+                <div className="space-y-2">
+                  <h4 className="font-semibold flex items-center gap-2">
+                    <Bot className="h-4 w-4" />
+                    답변 LLM
+                  </h4>
+                  <div className="space-y-1 text-sm">
+                    <div className="flex justify-between">
+                      <span>런타임:</span>
+                      <Badge variant={status.environment.answer.configured ? "default" : "outline"}>
+                        {status.environment.answer.provider}
+                      </Badge>
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      모델: {status.environment.answer.modelLabel}
+                    </div>
+                  </div>
+                </div>
+
+                {/* OpenRouter 설정 */}
+                <div className="space-y-2">
+                  <h4 className="font-semibold flex items-center gap-2">
+                    <Cloud className="h-4 w-4" />
+                    OpenRouter
+                  </h4>
+                  <div className="space-y-1 text-sm">
+                    <div className="flex justify-between">
+                      <span>API:</span>
+                      <Badge variant={status.environment.openrouter.configured ? "default" : "outline"}>
+                        {status.environment.openrouter.configured ? "설정됨" : "미설정"}
+                      </Badge>
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      모델 목록: {status.environment.openrouter.modelsConfigured ? "환경 지정" : "기본 순서"}
+                    </div>
+                  </div>
+                </div>
+
                 {/* Ollama 설정 */}
                 <div className="space-y-2">
                   <h4 className="font-semibold flex items-center gap-2">
                     <Bot className="h-4 w-4" />
-                    Ollama 설정
+                    Ollama 대체
                   </h4>
                   <div className="space-y-1 text-sm">
                     <div className="flex justify-between">
@@ -240,25 +279,6 @@ export default function WebIntegrationDashboardPage() {
                     </div>
                     <div className="text-xs text-muted-foreground">
                       모델: {status.environment.ollama.defaultModel}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Gemini 설정 */}
-                <div className="space-y-2">
-                  <h4 className="font-semibold flex items-center gap-2">
-                    <Cloud className="h-4 w-4" />
-                    Gemini 설정
-                  </h4>
-                  <div className="space-y-1 text-sm">
-                    <div className="flex justify-between">
-                      <span>API 키:</span>
-                      <Badge variant={status.environment.gemini.configured ? "default" : "outline"}>
-                        {status.environment.gemini.configured ? "설정됨" : "미설정"}
-                      </Badge>
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      모델: {status.environment.gemini.model}
                     </div>
                   </div>
                 </div>

@@ -1,25 +1,35 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { checkOllamaHealth } from '@/lib/services/ollama';
 import { getOllamaEndpointStatus } from '@/lib/services/ollamaEndpoint';
+import { getCompassAnswerRuntimeStatus } from '@/lib/services/CompassAnswerLlmService';
 
 export async function GET() {
   try {
     console.log('🔍 웹 통합 서비스 상태 확인 시작');
     
-    // Ollama 서버 상태 확인
-    const ollamaHealthy = await checkOllamaHealth();
+    const answerRuntime = getCompassAnswerRuntimeStatus();
+    const ollamaHealthy = answerRuntime.provider === 'ollama' ? await checkOllamaHealth() : false;
+    const answerReady = answerRuntime.provider === 'openrouter'
+      ? answerRuntime.openrouterConfigured
+      : ollamaHealthy;
+    const ollamaEndpointStatus = getOllamaEndpointStatus();
     
     // 환경 변수 상태 확인
     const envStatus = {
-      ollama: {
-        ...getOllamaEndpointStatus(),
-        defaultModelConfigured: !!process.env.OLLAMA_DEFAULT_MODEL
+      answer: {
+        provider: answerRuntime.provider,
+        modelLabel: answerRuntime.modelLabel,
+        configured: answerReady
       },
-      gemini: {
-        apiKey: !!process.env.GEMINI_API_KEY,
-        googleApiKey: !!process.env.GOOGLE_API_KEY,
-        model: process.env.GOOGLE_MODEL || 'gemini-1.5-flash',
-        configured: !!(process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY)
+      openrouter: {
+        configured: answerRuntime.openrouterConfigured,
+        modelsConfigured: !!(process.env.COMPASS_ANSWER_MODELS || process.env.COMPASS_ANSWER_MODEL)
+      },
+      ollama: {
+        ...ollamaEndpointStatus,
+        baseUrl: ollamaEndpointStatus.source,
+        defaultModel: process.env.OLLAMA_DEFAULT_MODEL || process.env.OLLAMA_MODEL || 'mistral:7b',
+        defaultModelConfigured: !!process.env.OLLAMA_DEFAULT_MODEL
       },
       supabase: {
         url: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -28,12 +38,12 @@ export async function GET() {
       }
     };
     
-    // 서비스 상태 계산 (Vultr+Ollama 전용)
+    // 서비스 상태 계산
     const services = {
-      ollama: {
-        status: ollamaHealthy ? 'healthy' : 'unhealthy',
+      answer: {
+        status: answerReady ? (answerRuntime.provider === 'openrouter' ? 'ready' : 'healthy') : 'not_configured',
         priority: 'primary',
-        description: '주 LLM 모델 (Vultr + Ollama)'
+        description: `답변 LLM 런타임 (${answerRuntime.provider})`
       },
       rag: {
         status: envStatus.supabase.configured ? 'ready' : 'not_configured',
@@ -42,15 +52,15 @@ export async function GET() {
       }
     };
     
-    // 전체 상태 계산 (Vultr+Ollama 전용)
-    const overallStatus = ollamaHealthy ? 'operational' : 'critical';
+    // 전체 상태 계산
+    const overallStatus = answerReady && envStatus.supabase.configured ? 'operational' : 'critical';
     
     const statusInfo = {
       overall: {
         status: overallStatus,
         message: overallStatus === 'operational' ? 
-          'Vultr+Ollama 전용 서비스가 정상적으로 작동 중입니다.' :
-          'Vultr+Ollama 서비스에 문제가 발생했습니다.'
+          'Compass 답변 LLM과 RAG 서비스가 정상적으로 작동 중입니다.' :
+          'Compass 답변 LLM 또는 RAG 설정을 확인해야 합니다.'
       },
       services,
       environment: envStatus,
@@ -60,8 +70,9 @@ export async function GET() {
     
     console.log('✅ 웹 통합 서비스 상태 확인 완료:', {
       overallStatus,
+      answerProvider: answerRuntime.provider,
+      answerReady,
       ollamaHealthy,
-      geminiConfigured: envStatus.gemini.configured,
       supabaseConfigured: envStatus.supabase.configured
     });
     

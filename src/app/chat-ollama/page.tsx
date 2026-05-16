@@ -288,11 +288,19 @@ function ChatPageContent() {
     };
   }, []);
 
+  const isGenerationLimitedModel = (model?: string) => {
+    return Boolean(model && (
+      model === "ollama-connection-failed"
+      || model === "compass-answer-connection-failed"
+      || model.endsWith("-connection-failed")
+    ));
+  };
+
   const buildAssistantMessageFromResponse = (data: any): Message => {
     const safeSources = sanitizeSources(data?.response?.sources);
     const model = typeof data?.model === "string" ? data.model : undefined;
     const noDataFound = data?.response?.noDataFound === true && safeSources.length === 0;
-    const generationLimited = model === "ollama-connection-failed" && safeSources.length > 0;
+    const generationLimited = isGenerationLimitedModel(model) && safeSources.length > 0;
     const rawContent = data?.response?.message || data?.response?.content || "답변을 생성할 수 없습니다.";
     const uiState: ChatUiState | undefined = generationLimited ? "generation-limited" : noDataFound ? "noData" : undefined;
 
@@ -874,7 +882,7 @@ function ChatPageContent() {
   const latestSources = sanitizeSources(latestAssistantMessage?.sources || []);
   const latestHasSources = latestSources.length > 0;
   const latestNoDataFound = latestAssistantMessage?.noDataFound === true;
-  const latestGenerationLimited = latestAssistantMessage?.uiState === "generation-limited" || (latestAssistantMessage?.model === "ollama-connection-failed" && latestHasSources);
+  const latestGenerationLimited = latestAssistantMessage?.uiState === "generation-limited" || (isGenerationLimitedModel(latestAssistantMessage?.model) && latestHasSources);
   const latestIsError = latestAssistantMessage?.uiState === "error";
   const latestPanelState: ChatUiState = latestGenerationLimited
     ? "generation-limited"

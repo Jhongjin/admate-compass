@@ -24,6 +24,7 @@ const endpoint =
 const limit = Number(limitArg?.split("=")[1] || process.env.RAG_EVAL_LIMIT || 0);
 
 const allowedRetrievalMethods = new Set(["vector", "keyword", "hybrid", "fallback"]);
+const allowedEvidenceDecisions = new Set(["verified", "weak", "rejected"]);
 const allowedVendors = new Set(["ANY", "NONE", "KAKAO", "META", "NAVER", "GOOGLE"]);
 const allowedCategories = new Set(["vendor-specific", "generic-policy", "out-of-scope"]);
 const vendorTerms = {
@@ -131,6 +132,28 @@ function validateFixtureSchema(fixtures) {
     if (typeof fixture.requireSourceQuality !== "boolean") {
       fail(`${label}.requireSourceQuality must be boolean`);
     }
+
+    if (fixture.requireEvidenceDecision !== undefined && typeof fixture.requireEvidenceDecision !== "boolean") {
+      fail(`${label}.requireEvidenceDecision must be boolean when provided`);
+    }
+
+    if (fixture.allowedEvidenceDecisions !== undefined) {
+      if (assertArray(fixture.allowedEvidenceDecisions, `${label}.allowedEvidenceDecisions`)) {
+        for (const decision of fixture.allowedEvidenceDecisions) {
+          if (!allowedEvidenceDecisions.has(decision)) {
+            fail(`${label}.allowedEvidenceDecisions contains invalid decision: ${decision}`);
+          }
+        }
+      }
+    }
+
+    if (fixture.forbidRejectedEvidence !== undefined && typeof fixture.forbidRejectedEvidence !== "boolean") {
+      fail(`${label}.forbidRejectedEvidence must be boolean when provided`);
+    }
+
+    if (fixture.minVerifiedEvidence !== undefined && (!Number.isFinite(Number(fixture.minVerifiedEvidence)) || Number(fixture.minVerifiedEvidence) < 0)) {
+      fail(`${label}.minVerifiedEvidence must be a non-negative number when provided`);
+    }
   }
 }
 
@@ -229,9 +252,12 @@ function detectQueryIntent(query) {
 function shouldRunGenerationAssertions(payload) {
   const model = String(payload?.model || payload?.response?.model || "");
   if (!model) return false;
+  if (model.endsWith("-connection-failed")) return false;
   return ![
     "ollama-connection-failed",
     "vultr-ollama-no-data",
+    "compass-answer-no-data",
+    "compass-answer-error",
   ].includes(model);
 }
 
@@ -298,6 +324,47 @@ function collectResponseFailures(fixture, payload) {
     }
   }
 
+  const requireEvidenceDecision = fixture.requireEvidenceDecision === true || fixture.requireSourceQuality === true;
+  const allowedFixtureDecisions = new Set(fixture.allowedEvidenceDecisions || Array.from(allowedEvidenceDecisions));
+  const minVerifiedEvidence = Number(fixture.minVerifiedEvidence || 0);
+  let verifiedEvidenceCount = 0;
+
+  if (requireEvidenceDecision || minVerifiedEvidence > 0 || fixture.forbidRejectedEvidence === true) {
+    for (const [index, source] of sources.entries()) {
+      const decision = source?.evidenceDecision;
+      if (!allowedEvidenceDecisions.has(decision)) {
+        sourceFailures.push(`source[${index}] missing valid evidenceDecision`);
+        continue;
+      }
+
+      if (!allowedFixtureDecisions.has(decision)) {
+        sourceFailures.push(`source[${index}] evidenceDecision ${decision} is not allowed`);
+      }
+
+      if (decision === "verified") {
+        verifiedEvidenceCount++;
+      }
+
+      if ((fixture.forbidRejectedEvidence === true || fixture.requireSourceQuality === true) && decision === "rejected") {
+        sourceFailures.push(`source[${index}] must not be rejected evidence`);
+      }
+
+      if (source?.sourceQuality?.isFallback === true || source?.retrievalMethod === "fallback") {
+        if (decision === "verified") {
+          sourceFailures.push(`source[${index}] fallback evidence must not be verified`);
+        }
+      }
+
+      if (requireEvidenceDecision && !Array.isArray(source?.evidenceDecisionReason)) {
+        sourceFailures.push(`source[${index}] missing evidenceDecisionReason`);
+      }
+    }
+
+    if (verifiedEvidenceCount < minVerifiedEvidence) {
+      sourceFailures.push(`verified evidence count ${verifiedEvidenceCount} below minimum ${minVerifiedEvidence}`);
+    }
+  }
+
   if (fixture.requireRetrievalMethods?.length > 0) {
     const methods = new Set(sources.map((source) => source?.retrievalMethod).filter(Boolean));
     const matched = fixture.requireRetrievalMethods.some((method) => methods.has(method));
@@ -352,6 +419,8 @@ function summarizeSource(source, index) {
     corpus: source?.corpus,
     retrievalMethod: source?.retrievalMethod,
     evidenceType: source?.evidenceType,
+    evidenceDecision: source?.evidenceDecision,
+    evidenceDecisionReason: source?.evidenceDecisionReason || [],
     hybridScore: source?.hybridScore,
     vectorScore: source?.vectorScore,
     keywordScore: source?.keywordScore,
@@ -361,6 +430,26 @@ function summarizeSource(source, index) {
     rankReason: source?.rankReason || [],
     sourceQuality: source?.sourceQuality,
   };
+}
+
+function countEvidenceDecisions(sources) {
+  const counts = {
+    verified: 0,
+    weak: 0,
+    rejected: 0,
+    missing: 0,
+  };
+
+  for (const source of sources) {
+    const decision = source?.evidenceDecision;
+    if (decision === "verified" || decision === "weak" || decision === "rejected") {
+      counts[decision]++;
+    } else {
+      counts.missing++;
+    }
+  }
+
+  return counts;
 }
 
 function buildDiagnostic(fixture, payload) {
@@ -388,6 +477,7 @@ function buildDiagnostic(fixture, payload) {
       confidence: payload?.confidence,
       sourcesCount: sources.length,
       model: payload?.model,
+      evidenceDecisionCounts: countEvidenceDecisions(sources),
     },
     finalSources: sources.map(summarizeSource),
     ...collectResponseFailures(fixture, payload),
