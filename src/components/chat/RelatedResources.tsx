@@ -239,16 +239,16 @@ export default function RelatedResources({
 
           return (
             <div key={`${source.id}-${index}`} className="rounded-lg border border-[#D8DCCF] border-l-4 border-l-[#1F7A4D] bg-[#FBFBF7] p-3 transition-colors hover:bg-white">
-              <div className="flex items-start gap-3">
+              <div className="grid grid-cols-[2.5rem_minmax(0,1fr)] gap-2 sm:gap-3">
                 <div className="flex h-8 w-10 flex-none items-center justify-center rounded-md border border-[#C6D9CB] bg-white text-[10px] font-bold text-[#1F7A4D]">
                   {String(index + 1).padStart(2, "0")}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <div className="flex items-start justify-between gap-2">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                     <h4 className="line-clamp-2 break-words text-sm font-semibold leading-5 text-[#0D0D0D]">
                       {getDisplayTitle(source, index)}
                     </h4>
-                    <div className="flex flex-none items-center gap-1">
+                    <div className="flex flex-none items-center gap-1 self-start">
                       {source.url && (
                         <Button
                           variant="ghost"

@@ -287,7 +287,7 @@ export function ChatInterface({ className, initialQuestion }: ChatInterfaceProps
             return (
             <div
               key={message.id}
-              className={`flex gap-3 ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}
+              className={`flex min-w-0 gap-2 sm:gap-3 ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}
             >
               {message.type === 'bot' && (
                 <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg border border-[#C6D9CB] bg-[#EDF7EF]">
@@ -296,7 +296,7 @@ export function ChatInterface({ className, initialQuestion }: ChatInterfaceProps
               )}
               
               <div
-                className={`min-w-0 rounded-lg border px-4 py-3 shadow-sm ${
+                className={`min-w-0 rounded-lg border px-3 py-3 shadow-sm sm:px-4 ${
                   message.type === 'user'
                     ? 'max-w-[88%] border-[#111713] bg-[#111713] text-white sm:max-w-2xl'
                     : 'w-full max-w-4xl border-[#D6D8CD] bg-white text-[#111713]'
@@ -371,7 +371,7 @@ export function ChatInterface({ className, initialQuestion }: ChatInterfaceProps
                     {/* 출처 정보 */}
                     {message.sources && message.sources.length > 0 && (
                       <div className="rounded-lg border border-[#D8DCCF] bg-[#FBFBF7] p-3">
-                        <div className="mb-2 flex items-center justify-between gap-3">
+                        <div className="mb-2 flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
                           <div className="flex items-center gap-2 text-xs font-semibold text-[#111713]">
                             <FileText className="h-4 w-4 text-[#1F7A4D]" />
                             근거 문서 {message.sources.length}개 보기
@@ -390,7 +390,7 @@ export function ChatInterface({ className, initialQuestion }: ChatInterfaceProps
                                   <div className="mt-1 line-clamp-3 leading-5 text-[#5F6C62]">{getSourceExcerpt(source)}</div>
                                 </div>
                               </div>
-                              <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                              <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
                                 <span className="rounded-md border border-[#D8DCCF] bg-[#FBFBF7] px-2 py-1 text-[#5F6C62]">
                                   관련도 {formatSimilarity(source.similarity) || '확인 전'}
                                 </span>
@@ -399,7 +399,7 @@ export function ChatInterface({ className, initialQuestion }: ChatInterfaceProps
                                     href={source.url}
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[#1F7A4D] transition-colors hover:bg-[#EDF7EF]"
+                                    className="inline-flex items-center gap-1 self-start rounded-md px-2 py-1 text-[#1F7A4D] transition-colors hover:bg-[#EDF7EF]"
                                   >
                                     <ExternalLink className="w-3 h-3" />
                                     원문 보기
@@ -492,7 +492,7 @@ export function ChatInterface({ className, initialQuestion }: ChatInterfaceProps
       
       {/* 입력 영역 */}
       <div className="border-t border-[#E2E4D9] bg-[#FBFBF7] p-3 sm:p-4">
-        <div className="mx-auto flex max-w-5xl gap-2">
+        <div className="mx-auto flex max-w-5xl min-w-0 gap-2">
           <Input
             ref={inputRef}
             value={inputMessage}
@@ -500,12 +500,12 @@ export function ChatInterface({ className, initialQuestion }: ChatInterfaceProps
             onKeyPress={handleKeyPress}
             placeholder="플랫폼, 정책 항목, 소재 표현을 함께 입력하세요..."
             disabled={isLoading}
-            className="h-11 flex-1 rounded-lg border-[#C9CDBF] bg-white text-[#111713] placeholder:text-[#758070] focus:border-[#1F7A4D] focus:ring-2 focus:ring-[#C6D9CB]"
+            className="h-11 min-w-0 flex-1 rounded-lg border-[#C9CDBF] bg-white text-[#111713] placeholder:text-[#758070] focus:border-[#1F7A4D] focus:ring-2 focus:ring-[#C6D9CB]"
           />
           <Button
             onClick={handleSendMessage}
             disabled={!inputMessage.trim() || isLoading}
-            className="h-11 rounded-lg bg-[#111713] px-4 text-white transition-colors hover:bg-[#243028] disabled:bg-[#A8B0A7]"
+            className="h-11 flex-none rounded-lg bg-[#111713] px-4 text-white transition-colors hover:bg-[#243028] disabled:bg-[#A8B0A7]"
             aria-label="질문 보내기"
           >
             {isLoading ? (

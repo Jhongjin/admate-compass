@@ -62,30 +62,30 @@ function LoginPageContent() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F4F5F0] text-[#111713]">
+    <div className="min-h-[100dvh] bg-[#F4F5F0] text-[#111713]">
       <header className="border-b border-[#D8DCCF] bg-[#FBFBF7]/95 backdrop-blur-md">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
           <Link href="/" className="block" aria-label="AdMate Compass home">
-            <img src="/admate-logo.png" alt="AdMate" className="h-20 w-auto" />
+            <img src="/admate-logo.png" alt="AdMate" className="h-12 w-auto sm:h-14" />
           </Link>
           <Link
             href="/"
-            className="rounded-lg border border-[#C6D9CB] bg-[#EDF7EF] px-3 py-2 text-sm font-medium text-[#1F7A4D] transition-colors hover:bg-[#E3F1E7]"
+            className="whitespace-nowrap rounded-lg border border-[#C6D9CB] bg-[#EDF7EF] px-3 py-2 text-sm font-medium text-[#1F7A4D] transition-colors hover:bg-[#E3F1E7]"
           >
             Compass 홈
           </Link>
         </div>
       </header>
 
-      <main className="px-6 pb-16 pt-12 md:pt-20">
-        <section className="mx-auto grid max-w-6xl grid-cols-1 gap-8 lg:grid-cols-[0.95fr_1.05fr] lg:items-center">
+      <main className="px-4 pb-16 pt-10 sm:px-6 md:pt-20">
+        <section className="mx-auto grid max-w-6xl grid-cols-1 gap-6 lg:grid-cols-[0.95fr_1.05fr] lg:items-center">
           <div className="space-y-6 text-[#111713]">
             <div className="inline-flex items-center gap-2 rounded-md border border-[#C6D9CB] bg-[#EDF7EF] px-3 py-1 text-sm text-[#1F7A4D]">
               <ShieldCheck className="h-4 w-4" aria-hidden="true" />
               compass.admate.ai.kr
             </div>
             <div className="space-y-4">
-              <h1 className="font-nanum text-4xl font-bold leading-tight md:text-5xl">
+              <h1 className="font-nanum text-3xl font-bold leading-tight sm:text-4xl md:text-5xl">
                 AdMate Compass 로그인
               </h1>
               <p className="max-w-2xl font-nanum text-lg leading-8 text-[#34423A]">
@@ -97,7 +97,7 @@ function LoginPageContent() {
             </div>
           </div>
 
-          <div className="rounded-lg border border-[#D6D8CD] bg-white p-6 shadow-sm md:p-8">
+          <div className="rounded-lg border border-[#D6D8CD] bg-white p-5 shadow-sm md:p-8">
             <div className="mb-6 flex items-start gap-3">
               <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-[#C6D9CB] bg-[#EDF7EF]">
                 <LockKeyhole className="h-5 w-5 text-[#1F7A4D]" aria-hidden="true" />
@@ -167,10 +167,10 @@ function LoginPageContent() {
             <div className="mt-6 grid gap-3 border-t border-[#E5E5E5] pt-5 text-sm">
               <a
                 href={ACCESS_REQUEST_URL}
-                className="inline-flex items-center justify-between rounded-lg border border-[#E9D59B] bg-[#FFF8E6] px-4 py-3 font-medium text-[#8A6418] transition-colors hover:bg-[#FFF3CF]"
+                className="inline-flex items-center justify-between gap-3 rounded-lg border border-[#E9D59B] bg-[#FFF8E6] px-4 py-3 font-medium text-[#8A6418] transition-colors hover:bg-[#FFF3CF]"
               >
-                <span>접근 권한이 없다면 이용 신청</span>
-                <ExternalLink className="h-4 w-4" aria-hidden="true" />
+                <span className="min-w-0 break-words">접근 권한이 없다면 이용 신청</span>
+                <ExternalLink className="h-4 w-4 flex-none" aria-hidden="true" />
               </a>
               <Link
                 href="/"

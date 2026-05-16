@@ -118,7 +118,7 @@ export default function HomePage() {
 
   return (
     <MainLayout>
-      <div className="min-h-screen bg-[#F4F5F0] pt-28 pb-14 text-[#111713]">
+      <div className="min-h-[100dvh] bg-[#F4F5F0] pt-28 pb-14 text-[#111713]">
         <section className="mx-auto max-w-7xl px-4 sm:px-6">
           <motion.div
             initial={{ opacity: 0, y: 14 }}
@@ -236,7 +236,7 @@ export default function HomePage() {
           {primaryActions.map((action) => {
             const Icon = action.icon;
             return (
-              <Link key={action.title} href={action.href}>
+              <Link key={action.title} href={action.href} className="block h-full">
                 <Card className="h-full rounded-lg border-[#D6D8CD] bg-white shadow-sm transition hover:-translate-y-0.5 hover:border-[#9AB9A3]">
                   <CardContent className="flex h-full items-start gap-4 p-5">
                     <div className="rounded-lg border border-[#DFE5DA] bg-[#F2F7EE] p-3 text-[#1F7A4D]">

@@ -861,9 +861,9 @@ function ChatPageContent() {
   ];
 
   const chatHeader = (
-    <div className="border-b border-[#D8DCCF] bg-[#FBFBF7]/95 px-4 py-3 backdrop-blur rounded-none">
-      <div className="max-w-7xl mx-auto flex items-center justify-between gap-3">
-        <div className="flex min-w-0 items-center space-x-3">
+    <div className="rounded-none border-b border-[#D8DCCF] bg-[#FBFBF7]/95 px-3 py-2 backdrop-blur sm:px-4 sm:py-3">
+      <div className="mx-auto flex max-w-7xl items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2 sm:gap-3">
           <div className="flex h-9 w-9 flex-none items-center justify-center rounded-lg border border-[#C6D9CB] bg-[#EDF7EF] shadow-sm">
             <FileText className="h-4 w-4 text-[#1F7A4D]" />
           </div>
@@ -879,22 +879,23 @@ function ChatPageContent() {
                 {reviewStatusLabel}
               </Badge>
             </div>
-            <p className="truncate text-xs text-[#5F6C62]">
+            <p className="hidden truncate text-xs text-[#5F6C62] sm:block">
               질문, 검토 메모, 인용 후보를 한 화면에서 대조합니다.
             </p>
           </div>
         </div>
         
-        <div className="flex flex-none items-center space-x-2">
+        <div className="flex flex-none items-center gap-1 sm:gap-2">
           <Sheet open={historyOpen} onOpenChange={setHistoryOpen}>
             <SheetTrigger asChild>
               <Button
                 variant="ghost"
                 size="sm"
-                className="flex h-8 items-center space-x-2 rounded-md border border-[#D8DCCF] bg-white px-3 text-[#34423A] transition-colors hover:bg-[#EDF7EF] hover:text-[#111713] lg:hidden"
+                aria-label="대화 히스토리 열기"
+                className="flex h-8 items-center gap-1.5 rounded-md border border-[#D8DCCF] bg-white px-2 text-[#34423A] transition-colors hover:bg-[#EDF7EF] hover:text-[#111713] sm:px-3 lg:hidden"
               >
-                <History className="h-4 w-4" />
-                <span className="text-xs">히스토리</span>
+                <History className="h-4 w-4" aria-hidden="true" />
+                <span className="hidden text-xs sm:inline">히스토리</span>
               </Button>
             </SheetTrigger>
             <SheetContent side="left" className="w-[min(20rem,calc(100vw-2rem))] border-[#D8DCCF] bg-[#FBFBF7] p-0">
@@ -937,10 +938,11 @@ function ChatPageContent() {
             variant="ghost"
             size="sm"
             onClick={handleNewChat}
-            className="flex h-8 items-center space-x-2 rounded-md border border-[#D8DCCF] bg-white px-3 text-[#34423A] transition-colors hover:bg-[#EDF7EF] hover:text-[#111713]"
+            aria-label="새 대화 시작"
+            className="flex h-8 items-center gap-1.5 rounded-md border border-[#D8DCCF] bg-white px-2 text-[#34423A] transition-colors hover:bg-[#EDF7EF] hover:text-[#111713] sm:px-3"
           >
-            <MessageSquare className="w-4 h-4" />
-            <span className="text-xs">새 대화</span>
+            <MessageSquare className="w-4 h-4" aria-hidden="true" />
+            <span className="hidden text-xs sm:inline">새 대화</span>
           </Button>
         </div>
       </div>
@@ -948,31 +950,31 @@ function ChatPageContent() {
   );
 
   const renderEvidenceWorkspace = () => (
-    <div className="space-y-4">
+    <div className="min-w-0 space-y-4">
       {/* 질문이 있을 때만 관련 자료와 빠른 질문 표시 */}
       {messages.length > 1 ? (
         <>
           <div className="rounded-xl border border-[#D8DCCF] bg-white shadow-sm">
-            <div className="border-b border-[#E2E5DA] px-4 py-3">
+            <div className="border-b border-[#E2E5DA] px-3 py-3 sm:px-4">
               <div className="flex items-center justify-between gap-3">
                 <div className="min-w-0">
                   <div className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#758070]">
                     Evidence terminal
                   </div>
-                  <h4 className="mt-1 truncate text-sm font-semibold text-[#111713]">인용 후보 점검 로그</h4>
+                  <h4 className="mt-1 break-words text-sm font-semibold text-[#111713] sm:truncate">인용 후보 점검 로그</h4>
                 </div>
-                <span className="flex-none rounded-md border border-[#C6D9CB] bg-[#EDF7EF] px-2 py-1 text-xs font-medium text-[#1F7A4D]">
+                <span className="flex-none whitespace-nowrap rounded-md border border-[#C6D9CB] bg-[#EDF7EF] px-2 py-1 text-xs font-medium text-[#1F7A4D]">
                   {latestSourceCount}개
                 </span>
               </div>
             </div>
-            <div className="grid border-b border-[#E2E5DA] bg-[#FBFBF7] sm:grid-cols-3">
+            <div className="grid grid-cols-1 border-b border-[#E2E5DA] bg-[#FBFBF7] sm:grid-cols-3">
               {evidenceRoomStages.map((stage) => (
-                <div key={stage.id} className="border-b border-[#E2E5DA] px-4 py-3 last:border-b-0 sm:border-b-0 sm:border-r sm:last:border-r-0">
+                <div key={stage.id} className="min-w-0 border-b border-[#E2E5DA] px-3 py-3 last:border-b-0 sm:border-b-0 sm:border-r sm:px-4 sm:last:border-r-0">
                   <div className="font-mono text-[10px] font-semibold tracking-[0.14em] text-[#758070]">
                     {stage.label}
                   </div>
-                  <div className="mt-1 truncate text-xs font-semibold text-[#111713]">
+                  <div className="mt-1 break-words text-xs font-semibold text-[#111713] sm:truncate">
                     {stage.value}
                   </div>
                 </div>
@@ -981,7 +983,7 @@ function ChatPageContent() {
             <div className="divide-y divide-[#E2E5DA]">
               {latestSources.length > 0 ? (
                 latestSources.map((source, index) => (
-                  <div key={`${source.id}-${index}`} className="grid grid-cols-[2.25rem_1fr] gap-3 px-4 py-3">
+                  <div key={`${source.id}-${index}`} className="grid grid-cols-[2rem_minmax(0,1fr)] gap-2 px-3 py-3 sm:grid-cols-[2.25rem_minmax(0,1fr)] sm:gap-3 sm:px-4">
                     <div className="flex h-8 w-8 items-center justify-center rounded-md border border-[#C6D9CB] bg-[#EDF7EF] text-[11px] font-semibold text-[#1F7A4D]">
                       {String(index + 1).padStart(2, "0")}
                     </div>
@@ -1045,7 +1047,7 @@ function ChatPageContent() {
               ["02", "소재 문구 확인", "심사 리스크가 있는 표현을 분리합니다."],
               ["03", "출처 대조", "답변 전 원문 일부와 인용 후보를 확인합니다."],
             ].map(([step, title, description]) => (
-              <div key={step} className="grid grid-cols-[2.5rem_1fr] gap-3 rounded-lg border border-[#D8DCCF] bg-white p-3">
+              <div key={step} className="grid grid-cols-[2.25rem_minmax(0,1fr)] gap-3 rounded-lg border border-[#D8DCCF] bg-white p-3 sm:grid-cols-[2.5rem_minmax(0,1fr)]">
                 <div className="flex h-8 w-8 items-center justify-center rounded-md border border-[#C6D9CB] bg-[#EDF7EF] text-[11px] font-semibold text-[#1F7A4D]">
                   {step}
                 </div>
@@ -1065,10 +1067,10 @@ function ChatPageContent() {
   if (loading) {
     return (
       <MainLayout>
-        <div className="flex items-center justify-center h-[calc(100vh-8rem)] mt-32">
+        <div className="mt-32 flex h-[calc(100dvh-8rem)] items-center justify-center bg-[#F4F5F0] px-4">
           <div className="text-center">
-            <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
-            <p className="text-gray-600">로그인 상태를 확인하는 중...</p>
+            <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-2 border-[#D8DCCF] border-t-[#1F7A4D]"></div>
+            <p className="text-[#5F6C62]">로그인 상태를 확인하는 중...</p>
           </div>
         </div>
       </MainLayout>
@@ -1078,13 +1080,13 @@ function ChatPageContent() {
   if (!user) {
     return (
       <MainLayout>
-        <div className="flex items-center justify-center h-[calc(100vh-8rem)] mt-32">
-          <div className="text-center">
-            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
-              <p className="font-bold">로그인이 필요합니다</p>
-              <p className="text-sm">채팅 기능을 사용하려면 먼저 로그인해주세요.</p>
+        <div className="mt-32 flex h-[calc(100dvh-8rem)] items-center justify-center bg-[#F4F5F0] px-4">
+          <div className="w-full max-w-sm text-center">
+            <div className="mb-4 rounded-lg border border-[#E9D59B] bg-[#FFF8E6] px-4 py-3 text-[#6B5316]">
+              <p className="font-bold text-[#111713]">로그인이 필요합니다</p>
+              <p className="mt-1 text-sm leading-6">채팅 기능을 사용하려면 먼저 로그인해주세요.</p>
             </div>
-            <p className="text-gray-600">잠시 후 메인 페이지로 이동합니다...</p>
+            <p className="text-sm text-[#5F6C62]">잠시 후 메인 페이지로 이동합니다...</p>
           </div>
         </div>
       </MainLayout>
@@ -1093,7 +1095,7 @@ function ChatPageContent() {
 
   return (
     <MainLayout chatHeader={chatHeader}>
-      <div className="mt-32 flex h-[calc(100vh-8rem)] overflow-hidden bg-[#F4F5F0]">
+      <div className="mt-32 flex h-[calc(100dvh-8rem)] min-w-0 overflow-hidden bg-[#F4F5F0]">
         {/* 1번 패널: 대화 히스토리 */}
         {!isLeftPanelCollapsed && (
           <div className="hidden h-full w-72 border-r border-[#D8DCCF] bg-[#FBFBF7] lg:block">
@@ -1132,7 +1134,7 @@ function ChatPageContent() {
             transition: isDragging ? { duration: 0 } : { duration: 0.2, ease: "easeOut" }
           }}
         >
-          <div className="border-b border-[#E2E5DA] bg-[#FBFBF7] px-4 py-2">
+          <div className="border-b border-[#E2E5DA] bg-[#FBFBF7] px-3 py-2 sm:px-4">
             <div className="mx-auto grid max-w-4xl gap-2 text-xs text-[#5F6C62] sm:grid-cols-[1fr_auto] sm:items-center">
               <div className="flex min-w-0 flex-wrap items-center gap-2">
                 <span className="font-semibold text-[#111713]">검토 작업대</span>
@@ -1150,17 +1152,17 @@ function ChatPageContent() {
               </div>
             </div>
             <div className="mx-auto mt-2 grid max-w-4xl gap-1.5 font-mono text-[11px] text-[#5F6C62] sm:grid-cols-3">
-              <div className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1.5">
+              <div className="min-w-0 rounded-md border border-[#D8DCCF] bg-white px-2 py-1.5">
                 <span className="text-[#8A9388]">CASE</span>
-                <span className="ml-2 font-semibold text-[#111713]">{reviewCaseId}</span>
+                <span className="ml-2 break-all font-semibold text-[#111713]">{reviewCaseId}</span>
               </div>
-              <div className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1.5">
+              <div className="min-w-0 rounded-md border border-[#D8DCCF] bg-white px-2 py-1.5">
                 <span className="text-[#8A9388]">SOURCES</span>
-                <span className="ml-2 font-semibold text-[#111713]">{sourceCoverageLabel}</span>
+                <span className="ml-2 break-words font-semibold text-[#111713]">{sourceCoverageLabel}</span>
               </div>
-              <div className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1.5">
+              <div className="min-w-0 rounded-md border border-[#D8DCCF] bg-white px-2 py-1.5">
                 <span className="text-[#8A9388]">MODE</span>
-                <span className="ml-2 font-semibold text-[#111713]">POLICY-REVIEW</span>
+                <span className="ml-2 break-words font-semibold text-[#111713]">POLICY-REVIEW</span>
               </div>
             </div>
           </div>
@@ -1208,7 +1210,7 @@ function ChatPageContent() {
               <div className="flex justify-start">
                 <div className="max-w-3xl">
                   <div className="rounded-lg border border-[#D6D8CD] bg-white px-4 py-3 shadow-sm">
-                    <div className="flex items-start space-x-3">
+                    <div className="flex items-start gap-3">
                       <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg border border-[#C6D9CB] bg-[#EDF7EF]">
                         <FileText className="h-4 w-4 text-[#1F7A4D]" />
                       </div>
@@ -1225,14 +1227,14 @@ function ChatPageContent() {
               </div>
             )}
 
-            <section className="mx-auto w-full max-w-4xl lg:hidden">
+            <section className="mx-auto w-full max-w-4xl overflow-hidden lg:hidden">
               <div className="mb-3 rounded-lg border border-[#D8DCCF] bg-[#FBFBF7] p-3 shadow-sm">
                 <div className="flex items-start justify-between gap-3">
                   <div className="min-w-0">
                     <h3 className="text-sm font-semibold text-[#111713]">근거 작업공간</h3>
                     <p className="mt-1 text-xs leading-5 text-[#5F6C62]">출처, 후속 질문, 검토 기준</p>
                   </div>
-                  <span className="flex-none rounded-md border border-[#C6D9CB] bg-[#EDF7EF] px-2 py-1 text-xs font-medium text-[#1F7A4D]">
+                  <span className="flex-none whitespace-nowrap rounded-md border border-[#C6D9CB] bg-[#EDF7EF] px-2 py-1 text-xs font-medium text-[#1F7A4D]">
                     {latestSourceCount} sources
                   </span>
                 </div>
@@ -1277,7 +1279,7 @@ function ChatPageContent() {
                 </div>
               </div>
               
-              <div className="mt-2 flex items-center justify-between text-xs text-[#5F6C62] sm:mt-3">
+              <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs text-[#5F6C62] sm:mt-3">
                 <p className="hidden sm:block">Enter 키로 전송, Shift + Enter로 줄바꿈</p>
                 <p className="sm:hidden">Enter로 전송</p>
                 {error && (

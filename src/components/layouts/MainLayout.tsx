@@ -85,7 +85,7 @@ export default function MainLayout({ children, chatHeader }: MainLayoutProps) {
                   <motion.img
                     src="/admate-logo.png" 
                     alt="AdMate" 
-                    className="h-24 w-auto"
+                    className="h-12 w-auto sm:h-14"
                     whileHover={{
                       filter: "brightness(1.02) drop-shadow(0 3px 8px rgba(31, 122, 77, 0.18))",
                       transition: { duration: 0.2 }

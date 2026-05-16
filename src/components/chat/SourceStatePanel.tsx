@@ -254,9 +254,9 @@ export default function SourceStatePanel({
                               className="h-8 w-8 rounded-md p-0 text-[#5F6C62] hover:bg-[#EDF7EF] hover:text-[#1F7A4D]"
                               onClick={() => handleSourceOpen(source)}
                               title={source.sourceType === "file" ? "파일 다운로드" : "열기"}
-                              aria-label={source.sourceType === "file" ? `${title} 파일 다운로드` : `${title} 근거 문서 열기`}
+                              aria-label={source.sourceType === "file" ? "파일 다운로드" : "근거 문서 열기"}
                             >
-                              {source.sourceType === "file" ? <Download className="h-4 w-4" /> : <ExternalLink className="h-4 w-4" />}
+                              {source.sourceType === "file" ? <Download className="h-4 w-4" aria-hidden="true" /> : <ExternalLink className="h-4 w-4" aria-hidden="true" />}
                             </Button>
                           )}
                           <Button
@@ -266,11 +266,11 @@ export default function SourceStatePanel({
                             className="h-8 w-8 rounded-md p-0 text-[#5F6C62] hover:bg-[#F0F2EA] hover:text-[#111713]"
                             onClick={() => toggleExpanded(source.id)}
                             title={isExpanded ? "접기" : "펼치기"}
-                            aria-label={isExpanded ? `${title} 원문 일부 접기` : `${title} 원문 일부 펼치기`}
+                            aria-label={isExpanded ? "근거 문서 접기" : "근거 문서 펼치기"}
                             aria-expanded={isExpanded}
                             aria-controls={sourceExcerptId}
                           >
-                            {isExpanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                            {isExpanded ? <ChevronUp className="h-4 w-4" aria-hidden="true" /> : <ChevronDown className="h-4 w-4" aria-hidden="true" />}
                           </Button>
                         </div>
                       </div>

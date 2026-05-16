@@ -12,7 +12,6 @@ import {
   FileText, 
   ChevronDown, 
   ChevronRight,
-  Sparkles,
   Lightbulb
 } from "lucide-react";
 
@@ -203,8 +202,8 @@ export default function QuickQuestions({ onQuestionClick, currentQuestion }: Qui
         <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#758070]">
           검토 질문
         </div>
-        <CardTitle className="flex items-center space-x-2 text-sm font-semibold text-[#111713]">
-          <Sparkles className="h-4 w-4 text-[#1F7A4D]" />
+        <CardTitle className="flex flex-wrap items-center gap-2 text-sm font-semibold text-[#111713]">
+          <FileText className="h-4 w-4 text-[#1F7A4D]" />
           <span>{currentQuestion ? '후속 검토 질문' : '정책 검토 시작점'}</span>
           <Badge variant="outline" className="rounded-md border-[#C6D9CB] bg-[#EDF7EF] px-2 py-0.5 text-[11px] text-[#1F7A4D]">
             {currentQuestion ? vectorBasedQuestions.length : questionCategories.reduce((total, cat) => total + cat.questions.length, 0)}개
@@ -235,9 +234,9 @@ export default function QuickQuestions({ onQuestionClick, currentQuestion }: Qui
                   onClick={() => onQuestionClick(question)}
                   className="h-auto w-full justify-start border-[#D8DCCF] p-3 text-left text-xs text-[#34423A] transition-colors hover:border-[#B9C9BB] hover:bg-[#FBFBF7] hover:text-[#111713]"
                 >
-                  <div className="flex items-start space-x-3">
+                  <div className="flex min-w-0 items-start gap-3">
                     <div className="mt-2 h-2 w-2 flex-shrink-0 rounded-full bg-[#1F7A4D]"></div>
-                    <span className="line-clamp-2 text-left">{question}</span>
+                    <span className="line-clamp-2 min-w-0 break-words text-left">{question}</span>
                   </div>
                 </Button>
               ))
@@ -260,12 +259,12 @@ export default function QuickQuestions({ onQuestionClick, currentQuestion }: Qui
                 onClick={() => toggleCategory(category.id)}
                 className="h-auto w-full justify-between border-[#D8DCCF] p-3 text-left transition-colors hover:border-[#B9C9BB] hover:bg-[#FBFBF7]"
               >
-                <div className="flex items-center space-x-3">
+                <div className="flex min-w-0 items-center gap-3">
                   <div className={`flex h-8 w-8 items-center justify-center rounded-lg border ${category.color}`}>
                     {category.icon}
                   </div>
-                  <div className="flex-1 text-left">
-                    <h4 className="text-sm font-medium text-[#111713]">{category.title}</h4>
+                  <div className="min-w-0 flex-1 text-left">
+                    <h4 className="truncate text-sm font-medium text-[#111713]">{category.title}</h4>
                     <p className="text-xs text-[#5F6C62]">{category.questions.length}개 질문</p>
                   </div>
                 </div>
@@ -286,9 +285,9 @@ export default function QuickQuestions({ onQuestionClick, currentQuestion }: Qui
                       onClick={() => onQuestionClick(question)}
                       className="h-auto w-full justify-start border-[#D8DCCF] p-2 text-left text-xs text-[#34423A] transition-colors hover:border-[#B9C9BB] hover:bg-[#FBFBF7] hover:text-[#111713]"
                     >
-                      <div className="flex items-start space-x-2">
+                      <div className="flex min-w-0 items-start gap-2">
                         <div className="mt-2 h-1.5 w-1.5 flex-shrink-0 rounded-full bg-[#1F7A4D]"></div>
-                        <span className="line-clamp-2 text-left">{question}</span>
+                        <span className="line-clamp-2 min-w-0 break-words text-left">{question}</span>
                       </div>
                     </Button>
                   ))}
