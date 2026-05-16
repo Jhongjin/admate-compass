@@ -151,7 +151,46 @@
           "reasons": ["placeholder_content", "source_quality_incomplete"]
         }
       ]
+    },
+    {
+      "caseId": "stale-source-rejected",
+      "question": "Can an outdated Google policy snapshot support a current campaign answer?",
+      "expectedOutcome": "noDataFound",
+      "expectedVerifiedCount": 0,
+      "packets": [
+        {
+          "caseId": "stale-source-rejected",
+          "agent": "policy_evidence_agent",
+          "claim": "The policy source is too stale to support a current answer.",
+          "sourceId": "google-policy-stale",
+          "sourceUrl": "https://support.google.com/adspolicy",
+          "sourceTitle": "Google Ads Policy Snapshot",
+          "vendor": "GOOGLE",
+          "topic": "policy",
+          "publishedOrFetchedAt": "2025-01-01T00:00:00.000Z",
+          "excerpt": "The stored source is an older snapshot and requires a fresh official-source read before answering.",
+          "chunkId": "google-policy-stale::chunk-001",
+          "retrievalScore": 0.79,
+          "evidenceDecision": "rejected",
+          "reasons": ["stale_source", "source_quality_complete"]
+        },
+        {
+          "caseId": "stale-source-rejected",
+          "agent": "media_product_evidence_agent",
+          "claim": "The product setup evidence does not refresh the stale policy condition.",
+          "sourceId": "google-product-stale",
+          "sourceUrl": "https://support.google.com/google-ads",
+          "sourceTitle": "Google Ads Product Guide Snapshot",
+          "vendor": "GOOGLE",
+          "topic": "product_setup",
+          "publishedOrFetchedAt": "2025-01-01T00:00:00.000Z",
+          "excerpt": "The product guide snapshot cannot prove the current policy condition without a fresh official source.",
+          "chunkId": "google-product-stale::chunk-004",
+          "retrievalScore": 0.66,
+          "evidenceDecision": "weak",
+          "reasons": ["stale_source", "missing_current_policy_confirmation"]
+        }
+      ]
     }
   ]
 }
-

@@ -70,6 +70,44 @@ let hasAnswerCase = false
 let hasWeakOnlyCase = false
 let hasVendorConflict = false
 let hasPlaceholderRejected = false
+let hasStaleSource = false
+
+function isCompleteLineage(packet) {
+  return Boolean(
+    packet.sourceId?.trim()
+      && packet.sourceUrl?.trim()
+      && packet.sourceTitle?.trim()
+      && packet.vendor?.trim()
+      && packet.chunkId?.trim()
+      && packet.publishedOrFetchedAt?.trim(),
+  )
+}
+
+function isVerifiedPacket(packet) {
+  return packet.evidenceDecision === 'verified'
+    && isCompleteLineage(packet)
+    && Number(packet.retrievalScore) >= 0.72
+    && packet.excerpt.trim().length >= 30
+    && packet.reasons.includes('source_quality_complete')
+    && !packet.reasons.includes('placeholder_content')
+    && !packet.reasons.includes('vendor_mismatch')
+    && !packet.reasons.includes('stale_source')
+}
+
+function reviewOutcomeForCase(packets) {
+  const verifiedPackets = packets.filter(isVerifiedPacket)
+  const conflicts = new Set()
+  for (const packet of packets) {
+    for (const conflict of ['vendor_mismatch', 'stale_source', 'placeholder_content']) {
+      if (packet.reasons.includes(conflict)) conflicts.add(conflict)
+    }
+  }
+  return {
+    outcome: verifiedPackets.length > 0 && conflicts.size === 0 ? 'answer' : 'noDataFound',
+    verifiedCount: verifiedPackets.length,
+    conflicts: Array.from(conflicts),
+  }
+}
 
 for (const [caseIndex, testCase] of (fixture.cases || []).entries()) {
   const casePrefix = `cases[${caseIndex}]`
@@ -132,6 +170,7 @@ for (const [caseIndex, testCase] of (fixture.cases || []).entries()) {
     }
     if (packet.evidenceDecision === 'weak') weakCount += 1
     if (packet.reasons.includes('vendor_mismatch')) hasVendorConflict = true
+    if (packet.reasons.includes('stale_source')) hasStaleSource = true
     if (packet.reasons.includes('placeholder_content')) {
       hasPlaceholderRejected = hasPlaceholderRejected || packet.evidenceDecision === 'rejected'
     }
@@ -152,6 +191,14 @@ for (const [caseIndex, testCase] of (fixture.cases || []).entries()) {
 
   if (testCase.expectedOutcome === 'noDataFound' && verifiedCount === 0 && weakCount > 0) {
     hasWeakOnlyCase = true
+  }
+
+  const review = reviewOutcomeForCase(testCase.packets)
+  if (review.outcome !== testCase.expectedOutcome) {
+    fail(`${casePrefix}.expectedOutcome does not match Team Lead review outcome`)
+  }
+  if (review.verifiedCount !== Number(testCase.expectedVerifiedCount)) {
+    fail(`${casePrefix}.expectedVerifiedCount does not match Team Lead verified packet count`)
   }
 }
 
@@ -184,5 +231,6 @@ if (!hasAnswerCase) fail('missing answer fixture case')
 if (!hasWeakOnlyCase) fail('missing weak-only noDataFound fixture case')
 if (!hasVendorConflict) fail('missing vendor_mismatch rejection fixture')
 if (!hasPlaceholderRejected) fail('missing rejected placeholder fixture')
+if (!hasStaleSource) fail('missing stale_source fixture')
 
 if (!process.exitCode) console.log('[check-compass-three-agent-reviewer-contract] ok')

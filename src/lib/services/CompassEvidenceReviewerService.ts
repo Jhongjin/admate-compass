@@ -72,7 +72,8 @@ function isVerifiedPacket(packet: CompassEvidencePacket): boolean {
     && packet.excerpt.trim().length >= MIN_VERIFIED_EXCERPT_LENGTH
     && packet.reasons.includes('source_quality_complete')
     && !packet.reasons.includes('placeholder_content')
-    && !packet.reasons.includes('vendor_mismatch');
+    && !packet.reasons.includes('vendor_mismatch')
+    && !packet.reasons.includes('stale_source');
 }
 
 function normalizeKey(value: string): string {
