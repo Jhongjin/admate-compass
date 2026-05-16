@@ -716,6 +716,7 @@ export class DocumentIndexingService {
         id: documentId,
         title: url,
         type: 'url',
+        url: url,
         uploadedAt: new Date().toISOString()
       });
 

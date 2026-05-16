@@ -10,6 +10,8 @@ const requiredFiles = [
   'src/lib/services/CompassAnswerLlmService.ts',
   'scripts/check-compass-chunking-contract.mjs',
   'scripts/check-compass-source-ops-contract.mjs',
+  'scripts/check-compass-source-proposal-contract.mjs',
+  'src/lib/services/CompassSourceProposalService.ts',
   'src/lib/services/DocumentIndexingService.ts',
   'src/lib/services/EmbeddingService.ts',
   'src/lib/services/VectorStorageService.ts',
@@ -70,6 +72,14 @@ if (fs.existsSync(sourceOpsServicePath)) {
   const text = fs.readFileSync(sourceOpsServicePath, 'utf8')
   for (const field of ['COMPASS_POLICY_SOURCES', 'backend-agent', 'mutationEnabled: false', 'manualCollectionRecommended: false']) {
     if (!text.includes(field)) fail(`Compass source ops contract missing ${field}`)
+  }
+}
+
+const sourceProposalServicePath = path.join(root, 'src/lib/services/CompassSourceProposalService.ts')
+if (fs.existsSync(sourceProposalServicePath)) {
+  const text = fs.readFileSync(sourceProposalServicePath, 'utf8')
+  for (const field of ['proposal-only', 'dryRun: true', 'mutationEnabled: false', 'wouldPromote: false', 'COMPASS_SOURCE_PROPOSAL_FETCH_ENABLED']) {
+    if (!text.includes(field)) fail(`Compass source proposal contract missing ${field}`)
   }
 }
 

@@ -55,12 +55,16 @@ for (const token of [
 
 for (const token of [
   "title: koreanTitle",
-  "url: url",
   "type: 'url'",
 ]) {
   if (!indexingService.includes(token)) {
     fail(`DocumentIndexingService URL metadata path missing ${token}`);
   }
+}
+
+const indexUrlBlock = indexingService.match(/async indexURL[\s\S]*?\/\*\*\s*\n\s*\* 여러 파일을 배치 인덱싱/);
+if (!indexUrlBlock || !/saveDocument\(\{[\s\S]*url: url/.test(indexUrlBlock[0])) {
+  fail("DocumentIndexingService.indexURL must persist documents.url for URL provenance and duplicate detection");
 }
 
 if (documentProcessingService.includes("이 URL은 서버리스 환경에서 크롤링할 수 없습니다")) {

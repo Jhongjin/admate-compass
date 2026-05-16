@@ -20,7 +20,9 @@ function read(relativePath) {
 }
 
 const service = read("src/lib/services/CompassSourceOpsService.ts");
+const proposalService = read("src/lib/services/CompassSourceProposalService.ts");
 const route = read("src/app/api/admin/source-ops/route.ts");
+const proposalRoute = read("src/app/api/admin/source-ops/proposals/route.ts");
 const page = read("src/app/admin/source-ops/page.tsx");
 const layout = read("src/components/layouts/AdminLayout.tsx");
 
@@ -44,6 +46,22 @@ for (const token of [
 
 if (!route.includes("buildCompassSourceOpsPlan")) {
   fail("source ops API must use CompassSourceOpsService");
+}
+
+for (const token of [
+  "proposal-only",
+  "dryRun: true",
+  "mutationEnabled: false",
+  "COMPASS_SOURCE_PROPOSAL_FETCH_ENABLED",
+  "isAllowedPolicyHost",
+]) {
+  if (!proposalService.includes(token)) {
+    fail(`source proposal service missing ${token}`);
+  }
+}
+
+if (!proposalRoute.includes("buildCompassSourceProposalRun")) {
+  fail("source proposal API must use CompassSourceProposalService");
 }
 
 for (const token of ["Compass 소스 관제", "review-only", "크롤링/청킹/임베딩 실행 없음"]) {

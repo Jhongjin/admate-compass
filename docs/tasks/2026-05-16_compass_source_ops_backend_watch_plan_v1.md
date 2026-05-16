@@ -26,11 +26,22 @@ Implemented:
   - explicit `mutationEnabled: false`
 - `GET /api/admin/source-ops`
   - returns the source operations plan and safety notes
+- `GET /api/admin/source-ops/proposals`
+  - returns a proposal-only dry run for source collection candidates
+  - does not write documents, chunks, embeddings, or URL templates
+  - marks every candidate with `wouldIndex: false` and `wouldPromote: false`
+  - keeps network preview fetching disabled unless `COMPASS_SOURCE_PROPOSAL_FETCH_ENABLED=true`
 - `/admin/source-ops`
   - read-only admin page for source coverage, cadence, and backend recommendations
 - admin navigation item: `소스 관제`
 - `npm run check:compass-source-ops-contract`
   - included in `verify:harness`
+- `npm run check:compass-source-proposal-contract`
+  - asserts the proposal path does not import corpus mutation services
+  - asserts the proposal path remains dry-run/proposal-only by default
+- URL provenance guard
+  - `DocumentIndexingService.indexURL()` now persists `documents.url`
+  - `npm run check:compass-chunking-contract` verifies the URL path keeps provenance for duplicate detection and source matching
 
 ## Safety Boundary
 
@@ -54,13 +65,12 @@ It must not:
 
 ## Next Implementation Step
 
-Build `WebPageExtractionService` in proposal mode:
+Promote the proposal API into a durable backend source-watch job:
 
-1. fetch allowlisted official source URLs
-2. parse HTML with structured extraction, not regex-only stripping
-3. remove navigation/page chrome
-4. preserve canonical URL, headings, locale, and policy section labels
-5. output a proposal object only
-6. store nothing unless a future apply gate is explicitly approved
+1. run the proposal API from a scheduled backend job
+2. store proposal results in a dedicated queue table
+3. add AI relevance classification and diff summaries
+4. keep production corpus promotion behind an explicit approval/apply gate
+5. only after approval, call the existing chunking and embedding path
 
-After proposal output exists, add a cron-ready route that remains disabled unless an explicit env flag is set.
+The current implementation is intentionally stateless and read-only so the UI can confirm coverage before any production SQL, cron activation, or corpus mutation is introduced.
