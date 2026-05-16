@@ -11,6 +11,7 @@ import { detectUnavailablePolicyTarget } from './ragNoDataIntentBoundary.mjs';
 export type RetrievalMethod = 'vector' | 'keyword' | 'hybrid' | 'fallback';
 export type RetrievalCorpus = 'ollama_document_chunks' | 'document_chunks' | 'fallback';
 export type EvidenceType = 'vector' | 'keyword' | 'hybrid' | 'fallback';
+export type EvidenceDecision = 'verified' | 'weak' | 'rejected';
 export type VendorIntent = 'META' | 'KAKAO' | 'NAVER' | 'GOOGLE';
 export type TopicIntent = 'review' | 'youth' | 'false_claim' | 'price' | 'event' | 'rights' | 'hate' | 'gambling' | 'spec';
 
@@ -52,6 +53,8 @@ export interface SearchResult {
   keywordScore?: number;
   corpus?: RetrievalCorpus;
   evidenceType?: EvidenceType;
+  evidenceDecision?: EvidenceDecision;
+  evidenceDecisionReason?: string[];
   rankReason?: string[];
   lexicalOverlap?: number;
   vendorMatch?: boolean;
@@ -305,6 +308,7 @@ export class RAGSearchService {
     if (!documentTitle || documentTitle === 'Unknown') warnings.push('missing_title');
     if (!documentUrl) warnings.push('missing_url');
     if (!content.trim()) warnings.push('missing_excerpt');
+    if (this.isPlaceholderContent(content)) warnings.push('placeholder_content');
 
     const vectorScore = this.resolveVectorScore(result, options.queryEmbedding);
     const sourceText = this.buildCandidateSearchText(content, documentTitle, {
@@ -374,6 +378,20 @@ export class RAGSearchService {
       policyTitleMatch,
       genericPolicyIntent: this.isGenericPolicyIntent(options.intent),
     });
+    const evidenceDecision = this.decideEvidence({
+      content,
+      sourceQuality,
+      retrievalMethod: options.retrievalMethod,
+      corpus: options.corpus,
+      hybridScore,
+      vectorScore,
+      keywordScore,
+      lexicalOverlap,
+      vendorMatch: vendorAlignment.match,
+      vendorMismatch: vendorAlignment.mismatch,
+      topicExactMatch,
+      policyTitleMatch,
+    });
 
     return {
       id: chunkId,
@@ -385,6 +403,8 @@ export class RAGSearchService {
       keywordScore,
       corpus: options.corpus,
       evidenceType: options.evidenceType,
+      evidenceDecision: evidenceDecision.decision,
+      evidenceDecisionReason: evidenceDecision.reasons,
       rankReason,
       lexicalOverlap,
       vendorMatch: vendorAlignment.match,
@@ -404,6 +424,8 @@ export class RAGSearchService {
         retrievalMethod: options.retrievalMethod,
         evidenceType: options.evidenceType,
         corpus: options.corpus,
+        evidenceDecision: evidenceDecision.decision,
+        evidenceDecisionReason: evidenceDecision.reasons,
         score: hybridScore,
         hybridScore,
         vectorScore,
@@ -1114,6 +1136,99 @@ export class RAGSearchService {
       sourceVendor: input.sourceVendor,
       policyTitleMatch: input.policyTitleMatch,
     };
+  }
+
+  private decideEvidence(input: {
+    content: string;
+    sourceQuality: SourceQuality;
+    retrievalMethod: RetrievalMethod;
+    corpus: RetrievalCorpus;
+    hybridScore: number;
+    vectorScore: number;
+    keywordScore: number;
+    lexicalOverlap: number;
+    vendorMatch: boolean;
+    vendorMismatch: boolean;
+    topicExactMatch: boolean;
+    policyTitleMatch: boolean;
+  }): { decision: EvidenceDecision; reasons: string[] } {
+    const reasons: string[] = [];
+    const sourceQualityScore = input.sourceQuality.qualityScore || 0;
+
+    if (this.isPlaceholderContent(input.content) || input.sourceQuality.warnings.includes('placeholder_content')) {
+      reasons.push('placeholder_content');
+    }
+    if (input.retrievalMethod === 'fallback' || input.corpus === 'fallback' || input.sourceQuality.isFallback) {
+      reasons.push('fallback_evidence');
+    }
+    if (!input.sourceQuality.hasExcerpt) reasons.push('missing_excerpt');
+    if (!input.sourceQuality.hasTitle) reasons.push('missing_title');
+    if (!input.sourceQuality.hasDocumentId) reasons.push('missing_document_id');
+    if (!input.sourceQuality.hasUrl) reasons.push('missing_url');
+    if (input.vendorMismatch && !input.vendorMatch) reasons.push('vendor_mismatch');
+
+    if (
+      reasons.includes('placeholder_content')
+      || reasons.includes('fallback_evidence')
+      || reasons.includes('missing_excerpt')
+      || (
+        reasons.includes('vendor_mismatch')
+        && input.lexicalOverlap < 0.35
+        && input.keywordScore < 0.45
+      )
+    ) {
+      return {
+        decision: 'rejected',
+        reasons: Array.from(new Set([...reasons, 'not_answerable'])),
+      };
+    }
+
+    const hasStrongScore = input.hybridScore >= 0.5 || input.keywordScore >= 0.45 || input.vectorScore >= 0.86;
+    const hasGroundingSignal =
+      input.lexicalOverlap >= 0.18
+      || input.vendorMatch
+      || input.topicExactMatch
+      || input.policyTitleMatch;
+    const hasSourceShape =
+      input.sourceQuality.hasDocumentId
+      && input.sourceQuality.hasTitle
+      && input.sourceQuality.hasExcerpt
+      && sourceQualityScore >= 0.65;
+
+    if (hasStrongScore && hasGroundingSignal && hasSourceShape) {
+      return {
+        decision: 'verified',
+        reasons: Array.from(new Set([
+          'source_quality_complete',
+          input.vendorMatch ? 'vendor_topic_match' : '',
+          input.topicExactMatch ? 'topic_exact_match' : '',
+          input.policyTitleMatch ? 'policy_title_match' : '',
+          input.retrievalMethod === 'hybrid' ? 'hybrid_retrieval' : `${input.retrievalMethod}_retrieval`,
+        ].filter(Boolean))),
+      };
+    }
+
+    const weakReasons = [
+      ...reasons,
+      !hasStrongScore ? 'score_below_verified_threshold' : '',
+      !hasGroundingSignal ? 'weak_grounding_signal' : '',
+      !hasSourceShape ? 'incomplete_source_shape' : '',
+    ].filter(Boolean);
+
+    return {
+      decision: 'weak',
+      reasons: Array.from(new Set(weakReasons.length > 0 ? weakReasons : ['needs_team_lead_review'])),
+    };
+  }
+
+  private isPlaceholderContent(content: string): boolean {
+    const normalized = this.normalizeSearchText(content);
+    return [
+      '이 url은 서버리스 환경에서 크롤링할 수 없습니다',
+      '이 pdf 파일은 서버리스 환경에서 텍스트 추출이 제한됩니다',
+      'docx 파일은 서버리스 환경에서 처리할 수 없습니다',
+      'pdf 처리 중 오류가 발생했습니다',
+    ].some(pattern => normalized.includes(pattern));
   }
 
   private calculateHybridScore(input: {

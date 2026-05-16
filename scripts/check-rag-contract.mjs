@@ -38,4 +38,12 @@ if (fs.existsSync(searchPath)) {
   }
 }
 
+const ragServicePath = path.join(root, 'src/lib/services/RAGSearchService.ts')
+if (fs.existsSync(ragServicePath)) {
+  const text = fs.readFileSync(ragServicePath, 'utf8')
+  for (const field of ['EvidenceDecision', 'evidenceDecision', 'evidenceDecisionReason', 'decideEvidence', 'placeholder_content']) {
+    if (!text.includes(field)) fail(`RAG search evidence contract missing ${field}`)
+  }
+}
+
 if (!process.exitCode) console.log('[check-rag-contract] ok')
