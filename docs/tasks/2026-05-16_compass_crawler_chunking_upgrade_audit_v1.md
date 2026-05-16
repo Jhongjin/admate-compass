@@ -50,6 +50,19 @@ Prepare a real `WebPageExtractionService` and a read-only corpus audit script th
 
 That audit can rank the worst source families without changing production data.
 
+Implemented follow-up:
+
+- `npm run audit:compass-corpus-source-quality`
+  - read-only sample audit for `document_chunks` and `ollama_document_chunks`
+  - reports missing `source_url`, missing `chunking_strategy`, missing/low `signal_score`, likely placeholder URL content, and likely page chrome
+  - reads parent `documents` rows as fallback for title/url/status/type context
+  - reports weak policy titles, possible vendor mismatch, and duplicate content fingerprints
+  - prints hashed chunk/document tokens, source host, compact buckets, and issue names only; it does not print raw content, metadata, or embeddings
+  - skips safely when Compass Supabase environment is unavailable
+- `npm run check:compass-corpus-audit-contract`
+  - keeps the audit script read-only and redacted
+  - included in `verify:harness`
+
 ## Later Upgrade Path
 
 1. Add a dedicated crawler extraction layer using a structured parser or crawl worker outside the serverless request path.
