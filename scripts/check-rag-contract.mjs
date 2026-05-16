@@ -9,6 +9,7 @@ const requiredFiles = [
   'src/lib/services/RAGSearchService.ts',
   'src/lib/services/CompassAnswerLlmService.ts',
   'scripts/check-compass-chunking-contract.mjs',
+  'scripts/check-compass-source-ops-contract.mjs',
   'src/lib/services/DocumentIndexingService.ts',
   'src/lib/services/EmbeddingService.ts',
   'src/lib/services/VectorStorageService.ts',
@@ -61,6 +62,14 @@ if (fs.existsSync(chunkingServicePath)) {
   const text = fs.readFileSync(chunkingServicePath, 'utf8')
   for (const field of ['policy-recursive-v2', 'url-policy-recursive-v2', 'signalScore', 'sourceUrl']) {
     if (!text.includes(field)) fail(`Compass chunking contract missing ${field}`)
+  }
+}
+
+const sourceOpsServicePath = path.join(root, 'src/lib/services/CompassSourceOpsService.ts')
+if (fs.existsSync(sourceOpsServicePath)) {
+  const text = fs.readFileSync(sourceOpsServicePath, 'utf8')
+  for (const field of ['COMPASS_POLICY_SOURCES', 'backend-agent', 'mutationEnabled: false', 'manualCollectionRecommended: false']) {
+    if (!text.includes(field)) fail(`Compass source ops contract missing ${field}`)
   }
 }
 

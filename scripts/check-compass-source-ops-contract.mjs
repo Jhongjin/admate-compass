@@ -1,0 +1,61 @@
+#!/usr/bin/env node
+
+import fs from "node:fs";
+import path from "node:path";
+
+const root = process.cwd();
+
+function fail(message) {
+  console.error(`[check-compass-source-ops-contract] ${message}`);
+  process.exitCode = 1;
+}
+
+function read(relativePath) {
+  const fullPath = path.join(root, relativePath);
+  if (!fs.existsSync(fullPath)) {
+    fail(`missing ${relativePath}`);
+    return "";
+  }
+  return fs.readFileSync(fullPath, "utf8");
+}
+
+const service = read("src/lib/services/CompassSourceOpsService.ts");
+const route = read("src/app/api/admin/source-ops/route.ts");
+const page = read("src/app/admin/source-ops/page.tsx");
+const layout = read("src/components/layouts/AdminLayout.tsx");
+
+for (const vendor of ["META", "KAKAO", "NAVER", "GOOGLE"]) {
+  if (!service.includes(vendor)) {
+    fail(`source registry missing ${vendor}`);
+  }
+}
+
+for (const token of [
+  "review-only",
+  "backend-agent",
+  "mutationEnabled: false",
+  "manualCollectionRecommended: false",
+  "proposal queue",
+]) {
+  if (!service.includes(token)) {
+    fail(`source ops safety contract missing ${token}`);
+  }
+}
+
+if (!route.includes("buildCompassSourceOpsPlan")) {
+  fail("source ops API must use CompassSourceOpsService");
+}
+
+for (const token of ["Compass 소스 관제", "review-only", "크롤링/청킹/임베딩 실행 없음"]) {
+  if (!page.includes(token)) {
+    fail(`source ops page missing ${token}`);
+  }
+}
+
+if (!layout.includes("/admin/source-ops") || !layout.includes("소스 관제")) {
+  fail("admin navigation must expose source ops page");
+}
+
+if (!process.exitCode) {
+  console.log("[check-compass-source-ops-contract] ok");
+}
