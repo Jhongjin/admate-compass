@@ -68,6 +68,7 @@ interface ExtractedPreview {
 const MAX_SOURCES_PER_RUN = Number(process.env.COMPASS_SOURCE_PROPOSAL_MAX_SOURCES || 6);
 const MAX_FETCH_BYTES = Number(process.env.COMPASS_SOURCE_PROPOSAL_MAX_BYTES || 200_000);
 const FETCH_TIMEOUT_MS = Number(process.env.COMPASS_SOURCE_PROPOSAL_TIMEOUT_MS || 8000);
+const MIN_PREVIEW_CHARS = Number(process.env.COMPASS_SOURCE_PROPOSAL_MIN_PREVIEW_CHARS || 160);
 
 export async function buildCompassSourceProposalRun(
   options: BuildProposalOptions = {},
@@ -267,7 +268,7 @@ function extractPreview(html: string, finalUrl: string): ExtractedPreview {
     || html;
   const contentPreview = normalizeText(stripTags(removePageChrome(mainHtml))).slice(0, 1200);
 
-  return {
+  const preview = {
     title: normalizeText(title),
     canonicalUrl,
     headings,
@@ -275,6 +276,50 @@ function extractPreview(html: string, finalUrl: string): ExtractedPreview {
     contentLength: contentPreview.length,
     fetchedAt: new Date().toISOString(),
   };
+
+  validateExtractedPreview(preview, finalUrl);
+  return preview;
+}
+
+function validateExtractedPreview(
+  preview: ExtractedPreview,
+  finalUrl: string,
+): void {
+  const signalText = [
+    preview.title,
+    preview.canonicalUrl,
+    finalUrl,
+    ...preview.headings,
+    preview.contentPreview,
+  ].join(' ').toLowerCase();
+
+  const hasPolicySignal = [
+    'ads',
+    'adspolicy',
+    'advertis',
+    'business',
+    'campaign',
+    'facebook',
+    'google',
+    'instagram',
+    'kakao',
+    'meta',
+    'naver',
+    'policy',
+    'support',
+    '\uad11\uace0',
+    '\uac80\uc218',
+    '\uc815\ucc45',
+    '\ub3c4\uc6c0\ub9d0',
+  ].some((term) => signalText.includes(term));
+
+  if (preview.contentPreview.length < 80 || (preview.contentPreview.length < MIN_PREVIEW_CHARS && preview.headings.length === 0)) {
+    throw new Error('Preview fetch produced too little readable policy content.');
+  }
+
+  if (!hasPolicySignal) {
+    throw new Error('Preview fetch lacks enough readable policy signal for Compass review.');
+  }
 }
 
 function removePageChrome(html: string): string {

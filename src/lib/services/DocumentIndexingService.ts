@@ -19,6 +19,16 @@ export interface IndexingOptions {
   batchSize?: number;
 }
 
+const MIN_URL_CONTENT_CHARS = 280;
+const URL_PLACEHOLDER_PATTERNS = [
+  'URL crawling is not available',
+  'serverless document processing path',
+  '이 URL은 서버리스 환경에서 크롤링할 수 없습니다',
+  'URL 형태로 저장되었습니다',
+  '실제 내용은 관리자가 별도로 처리',
+  '관리자에게 문의',
+];
+
 export class DocumentIndexingService {
   /**
    * 문서명을 한글로 변환
@@ -347,6 +357,28 @@ export class DocumentIndexingService {
     return title;
   }
 
+  private assertIndexableUrlContent(content: string, url: string): string {
+    const normalizedContent = String(content || '').replace(/\s+/g, ' ').trim();
+
+    if (!normalizedContent) {
+      throw new Error(`URL content is empty and cannot be indexed: ${url}`);
+    }
+
+    if (normalizedContent.length < MIN_URL_CONTENT_CHARS) {
+      throw new Error(`URL content is too short to index safely: ${url}`);
+    }
+
+    const matchedPlaceholder = URL_PLACEHOLDER_PATTERNS.find((pattern) =>
+      normalizedContent.toLowerCase().includes(pattern.toLowerCase())
+    );
+
+    if (matchedPlaceholder) {
+      throw new Error(`URL content appears to be placeholder text and cannot be indexed: ${matchedPlaceholder}`);
+    }
+
+    return normalizedContent;
+  }
+
   /**
    * 파일을 인덱싱
    */
@@ -553,6 +585,7 @@ export class DocumentIndexingService {
       console.log(`📄 콘텐츠 길이: ${crawledContent.length}자`);
       console.log(`📋 받은 메타데이터:`, metadata);
       console.log(`🆔 사용할 문서 ID: ${documentId}`);
+      const indexableContent = this.assertIndexableUrlContent(crawledContent, url);
 
       // 1. URL 중복 체크 (재인덱싱이 아닌 경우에만)
       if (!metadata?.documentId) {
@@ -600,9 +633,9 @@ export class DocumentIndexingService {
       }
 
       // 4. 텍스트 청킹
-      console.log(`📄 텍스트 청킹 시작: ${crawledContent.length}자`);
+      console.log(`📄 텍스트 청킹 시작: ${indexableContent.length}자`);
       const chunkedDoc = await textChunkingService.chunkDocument(
-        crawledContent,
+        indexableContent,
         'url',
         {
           title: koreanTitle,
@@ -734,6 +767,7 @@ export class DocumentIndexingService {
 
       // 3. URL 크롤링 및 텍스트 추출
       const processedDoc = await documentProcessingService.processUrl(url);
+      const indexableContent = this.assertIndexableUrlContent(processedDoc.content, url);
       console.log(`URL 처리 완료: ${processedDoc.metadata.title}`);
 
       // 4. 문서명을 한글로 변환
@@ -744,7 +778,7 @@ export class DocumentIndexingService {
 
       // 6. 텍스트 청킹
       const chunkedDoc = await textChunkingService.chunkDocument(
-        processedDoc.content,
+        indexableContent,
         'url',
         {
           title: koreanTitle,

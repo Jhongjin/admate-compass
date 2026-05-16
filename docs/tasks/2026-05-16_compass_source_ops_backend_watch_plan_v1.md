@@ -33,6 +33,7 @@ Implemented:
   - includes deterministic review metadata: relevance score, diff summary, recommendation
   - does not call an LLM; `llmUsed` remains `false`
   - keeps network preview fetching disabled unless `COMPASS_SOURCE_PROPOSAL_FETCH_ENABLED=true`
+  - rejects too-short or low-signal preview fetches before they can become review candidates
 - `POST /api/admin/source-ops/proposals`
   - accepts only `{ "dryRun": true }`
   - persists to the proposal queue only when `COMPASS_SOURCE_PROPOSAL_QUEUE_ENABLED=true`

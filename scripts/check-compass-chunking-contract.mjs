@@ -67,12 +67,49 @@ if (!indexUrlBlock || !/saveDocument\(\{[\s\S]*url: url/.test(indexUrlBlock[0]))
   fail("DocumentIndexingService.indexURL must persist documents.url for URL provenance and duplicate detection");
 }
 
+const indexCrawledContentBlock = indexingService.match(/async indexCrawledContent[\s\S]*?\/\*\*\s*\n\s*\* URL을 인덱싱/);
+if (!indexCrawledContentBlock) {
+  fail("DocumentIndexingService.indexCrawledContent block not found");
+}
+
+for (const token of [
+  "assertIndexableUrlContent",
+  "MIN_URL_CONTENT_CHARS",
+  "URL_PLACEHOLDER_PATTERNS",
+  "URL crawling is not available",
+  "serverless document processing path",
+  "이 URL은 서버리스 환경에서 크롤링할 수 없습니다",
+  "URL 형태로 저장되었습니다",
+  "실제 내용은 관리자가 별도로 처리",
+  "관리자에게 문의",
+]) {
+  if (!indexingService.includes(token)) {
+    fail(`DocumentIndexingService URL fail-closed guard missing ${token}`);
+  }
+}
+
+function assertGuardBeforeChunking(block, label) {
+  const guardIndex = block.indexOf("assertIndexableUrlContent");
+  const chunkIndex = block.indexOf("chunkDocument");
+  if (guardIndex === -1 || chunkIndex === -1 || guardIndex > chunkIndex) {
+    fail(`${label} must validate URL content before chunkDocument`);
+  }
+}
+
+if (indexUrlBlock) assertGuardBeforeChunking(indexUrlBlock[0], "DocumentIndexingService.indexURL");
+if (indexCrawledContentBlock) assertGuardBeforeChunking(indexCrawledContentBlock[0], "DocumentIndexingService.indexCrawledContent");
+
 if (documentProcessingService.includes("이 URL은 서버리스 환경에서 크롤링할 수 없습니다")) {
   fail("DocumentProcessingService must not create placeholder URL content for indexing");
 }
 
-if (!/async processUrl[\s\S]*throw new Error/.test(documentProcessingService)) {
+const processUrlBlock = documentProcessingService.match(/async processUrl[\s\S]*?\/\*\*\s*\n\s*\* 텍스트 정리/);
+if (!processUrlBlock || !processUrlBlock[0].includes("throw new Error")) {
   fail("DocumentProcessingService.processUrl must fail closed until a real extractor is wired");
+}
+
+if (processUrlBlock?.[0].includes("return {")) {
+  fail("DocumentProcessingService.processUrl must not return indexable URL placeholder content");
 }
 
 if (!process.exitCode) {

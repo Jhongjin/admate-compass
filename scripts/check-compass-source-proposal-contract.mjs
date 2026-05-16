@@ -31,7 +31,11 @@ for (const token of [
   "wouldIndex: false",
   "wouldPromote: false",
   "COMPASS_SOURCE_PROPOSAL_FETCH_ENABLED",
+  "COMPASS_SOURCE_PROPOSAL_MIN_PREVIEW_CHARS",
   "isAllowedPolicyHost",
+  "validateExtractedPreview",
+  "Preview fetch produced too little readable policy content",
+  "Preview fetch lacks enough readable policy signal",
 ]) {
   if (!service.includes(token)) {
     fail(`proposal safety contract missing ${token}`);
