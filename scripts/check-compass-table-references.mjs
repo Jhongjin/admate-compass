@@ -18,6 +18,8 @@ const compassTables = [
   "processing_metrics",
   "document_chunk_weights",
   "ad_policies",
+  "source_proposal_runs",
+  "source_proposal_queue",
 ];
 
 const schemaAwareMarkers = [

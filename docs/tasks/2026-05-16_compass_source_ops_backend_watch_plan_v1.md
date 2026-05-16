@@ -31,6 +31,15 @@ Implemented:
   - does not write documents, chunks, embeddings, or URL templates
   - marks every candidate with `wouldIndex: false` and `wouldPromote: false`
   - keeps network preview fetching disabled unless `COMPASS_SOURCE_PROPOSAL_FETCH_ENABLED=true`
+- `POST /api/admin/source-ops/proposals`
+  - accepts only `{ "dryRun": true }`
+  - persists to the proposal queue only when `COMPASS_SOURCE_PROPOSAL_QUEUE_ENABLED=true`
+  - remains blocked in production until a separate authenticated internal apply path exists
+- Proposal queue SQL
+  - `docs/sql/2026-05-16_compass_source_proposal_queue.sql`
+  - `docs/sql/2026-05-16_compass_source_proposal_queue_rollback.sql`
+  - `docs/sql/2026-05-16_compass_source_proposal_queue_verify.sql`
+  - production SQL apply is a human-only step
 - `/admin/source-ops`
   - read-only admin page for source coverage, cadence, and backend recommendations
 - admin navigation item: `소스 관제`
@@ -39,6 +48,10 @@ Implemented:
 - `npm run check:compass-source-proposal-contract`
   - asserts the proposal path does not import corpus mutation services
   - asserts the proposal path remains dry-run/proposal-only by default
+- `npm run check:compass-source-proposal-queue-contract`
+  - asserts queue SQL keeps `dry_run`, `mutation_enabled`, `would_index`, and `would_promote` locked safe
+  - asserts queue service writes only to `source_proposal_runs` and `source_proposal_queue`
+  - asserts production POST is session-blocked
 - URL provenance guard
   - `DocumentIndexingService.indexURL()` now persists `documents.url`
   - `npm run check:compass-chunking-contract` verifies the URL path keeps provenance for duplicate detection and source matching
@@ -65,12 +78,13 @@ It must not:
 
 ## Next Implementation Step
 
-Promote the proposal API into a durable backend source-watch job:
+Promote the proposal queue into a durable backend source-watch job:
 
 1. run the proposal API from a scheduled backend job
-2. store proposal results in a dedicated queue table
-3. add AI relevance classification and diff summaries
-4. keep production corpus promotion behind an explicit approval/apply gate
-5. only after approval, call the existing chunking and embedding path
+2. apply the proposal queue SQL through production SQL editor
+3. store proposal results in the dedicated queue table from an authenticated internal worker
+4. add AI relevance classification and diff summaries
+5. keep production corpus promotion behind an explicit approval/apply gate
+6. only after approval, call the existing chunking and embedding path
 
-The current implementation is intentionally stateless and read-only so the UI can confirm coverage before any production SQL, cron activation, or corpus mutation is introduced.
+The current production posture remains non-mutating by default so the UI can confirm coverage before any production SQL, cron activation, or corpus promotion is introduced.

@@ -1,5 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { buildCompassSourceProposalRun } from '@/lib/services/CompassSourceProposalService';
+import {
+  getCompassSourceProposalQueueState,
+  persistCompassSourceProposalRun,
+} from '@/lib/services/CompassSourceProposalQueueService';
+import { guardProductionAdminSessionRoute } from '@/lib/adminDebugGuard';
 
 export async function GET(request: NextRequest) {
   try {
@@ -13,7 +18,10 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({
       success: true,
-      data: proposalRun,
+      data: {
+        ...proposalRun,
+        queue: getCompassSourceProposalQueueState(),
+      },
     });
   } catch (error) {
     console.error('Compass source proposal read failed:', error);
@@ -21,6 +29,53 @@ export async function GET(request: NextRequest) {
       {
         success: false,
         error: 'Compass source proposal status could not be loaded.',
+      },
+      { status: 500 },
+    );
+  }
+}
+
+export async function POST(request: NextRequest) {
+  const productionGuard = guardProductionAdminSessionRoute();
+  if (productionGuard) return productionGuard;
+
+  try {
+    const body = await request.json().catch(() => ({}));
+
+    if (body?.dryRun !== true) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Source proposal queue writes require dryRun: true.',
+        },
+        { status: 409 },
+      );
+    }
+
+    const maxSources = Number(body?.maxSources || undefined) || undefined;
+    const proposalRun = await buildCompassSourceProposalRun({
+      sourceId: typeof body?.sourceId === 'string' ? body.sourceId : undefined,
+      maxSources,
+      fetchPreview: body?.fetch === true,
+    });
+    const queue = await persistCompassSourceProposalRun(proposalRun, {
+      requestedSourceId: typeof body?.sourceId === 'string' ? body.sourceId : undefined,
+      maxSources,
+    });
+
+    return NextResponse.json({
+      success: true,
+      data: {
+        ...proposalRun,
+        queue,
+      },
+    });
+  } catch (error) {
+    console.error('Compass source proposal queue write failed:', error);
+    return NextResponse.json(
+      {
+        success: false,
+        error: 'Compass source proposal queue write failed.',
       },
       { status: 500 },
     );
