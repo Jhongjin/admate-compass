@@ -46,6 +46,7 @@ Implemented:
 - `/admin/source-ops`
   - read-only admin page for source coverage, cadence, and backend recommendations
   - read-only proposal preview table for deterministic relevance/diff summaries
+  - read-only proposal queue snapshot so operators can see whether the durable queue is disabled, unavailable, or readable
   - no queue/apply/promote/index controls
 - admin navigation item: `소스 관제`
 - `npm run check:compass-source-ops-contract`

@@ -61,6 +61,10 @@ if (!route.includes("buildCompassSourceProposalRun")) {
   fail("proposal route must use CompassSourceProposalService");
 }
 
+if (!route.includes("readCompassSourceProposalQueueSnapshot") || !route.includes("queueSnapshot")) {
+  fail("proposal route must expose read-only proposal queue snapshot");
+}
+
 for (const token of [
   "deterministic-policy-review-v1",
   "llmUsed: false",
@@ -91,6 +95,10 @@ for (const forbidden of [
 
 if (!page.includes("/api/admin/source-ops/proposals?maxSources=7") || page.includes("fetch=true")) {
   fail("source ops page must fetch proposal preview through GET without enabling network fetch");
+}
+
+if (!page.includes("queueSnapshot") || !page.includes("queue {proposalRun.queueSnapshot.readStatus}")) {
+  fail("source ops page must render read-only proposal queue status");
 }
 
 if (page.includes("fetch(\"/api/admin/source-ops/proposals\",") || page.includes("method: \"POST\"") || page.includes("method: 'POST'")) {

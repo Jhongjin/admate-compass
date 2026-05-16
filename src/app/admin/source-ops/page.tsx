@@ -101,7 +101,34 @@ interface ProposalRun {
     productionBlocked: boolean;
     canPersist?: boolean;
   };
+  queueSnapshot?: {
+    enabled: boolean;
+    productionBlocked: boolean;
+    canPersist: boolean;
+    readStatus: "disabled" | "unavailable" | "ready";
+    pendingCandidates: number;
+    latestRun?: {
+      id: string;
+      status: string;
+      candidateCount: number;
+      fetchEnabled: boolean;
+      createdAt: string;
+    };
+    recentCandidates: Array<{
+      id: string;
+      sourceId: string;
+      vendor: string;
+      label: string;
+      proposalStatus: string;
+      reviewStatus: string;
+      riskLevel: string;
+      createdAt: string;
+    }>;
+    reason: string;
+  };
 }
+
+type QueueReadStatus = NonNullable<ProposalRun["queueSnapshot"]>["readStatus"];
 
 const statusLabels: Record<SourceStatus, string> = {
   indexed: "색인됨",
@@ -286,6 +313,62 @@ export default function SourceOpsPage() {
                   </div>
                 </CardHeader>
                 <CardContent>
+                  {proposalRun.queueSnapshot && (
+                    <div className="mb-5 rounded-xl border border-white/10 bg-white/[0.03] p-4">
+                      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                        <div>
+                          <div className="flex flex-wrap items-center gap-2">
+                            <Badge className={queueStatusClassName(proposalRun.queueSnapshot.readStatus)}>
+                              queue {proposalRun.queueSnapshot.readStatus}
+                            </Badge>
+                            <Badge variant="outline" className="border-white/15 text-gray-300">
+                              pending {proposalRun.queueSnapshot.pendingCandidates}
+                            </Badge>
+                            <Badge variant="outline" className="border-white/15 text-gray-300">
+                              persist {proposalRun.queueSnapshot.canPersist ? "ready" : "blocked"}
+                            </Badge>
+                          </div>
+                          <p className="mt-3 max-w-3xl text-sm text-gray-300">
+                            {proposalRun.queueSnapshot.reason}
+                          </p>
+                        </div>
+
+                        {proposalRun.queueSnapshot.latestRun && (
+                          <div className="min-w-[220px] rounded-lg border border-white/10 bg-black/20 p-3 text-sm">
+                            <p className="text-xs uppercase tracking-[0.18em] text-gray-500">latest run</p>
+                            <p className="mt-2 font-medium text-white">
+                              {proposalRun.queueSnapshot.latestRun.status} · {proposalRun.queueSnapshot.latestRun.candidateCount} candidates
+                            </p>
+                            <p className="mt-1 text-xs text-gray-400">
+                              fetch {String(proposalRun.queueSnapshot.latestRun.fetchEnabled)} · {formatDate(proposalRun.queueSnapshot.latestRun.createdAt)}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+
+                      {proposalRun.queueSnapshot.recentCandidates.length > 0 && (
+                        <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+                          {proposalRun.queueSnapshot.recentCandidates.map((candidate) => (
+                            <div key={candidate.id} className="rounded-lg border border-white/10 bg-black/20 p-3">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <Badge variant="outline" className="border-cyan-400/30 text-cyan-100">
+                                  {candidate.vendor}
+                                </Badge>
+                                <Badge variant="outline" className={riskClassName(candidate.riskLevel as ProposalCandidate["riskLevel"])}>
+                                  {candidate.riskLevel}
+                                </Badge>
+                              </div>
+                              <p className="mt-2 truncate text-sm font-medium text-white">{candidate.label}</p>
+                              <p className="mt-1 text-xs text-gray-500">
+                                {candidate.proposalStatus} · {candidate.reviewStatus}
+                              </p>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
+
                   <div className="overflow-x-auto">
                     <Table>
                       <TableHeader>
@@ -475,4 +558,21 @@ function reviewClassName(level: ProposalReview["relevanceLevel"]) {
   if (level === "medium") return "bg-amber-500/15 text-amber-100";
   if (level === "blocked") return "bg-red-500/15 text-red-100";
   return "bg-white/10 text-gray-200";
+}
+
+function queueStatusClassName(status: QueueReadStatus) {
+  if (status === "ready") return "bg-emerald-500/15 text-emerald-100";
+  if (status === "unavailable") return "bg-amber-500/15 text-amber-100";
+  return "bg-white/10 text-gray-200";
+}
+
+function formatDate(value: string) {
+  const time = new Date(value).getTime();
+  if (!Number.isFinite(time)) return "unknown";
+  return new Intl.DateTimeFormat("ko-KR", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(time);
 }

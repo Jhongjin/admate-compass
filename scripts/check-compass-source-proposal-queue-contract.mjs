@@ -73,12 +73,22 @@ for (const token of [
   "process.env.NODE_ENV === 'production'",
   "source_proposal_runs",
   "source_proposal_queue",
+  "readCompassSourceProposalQueueSnapshot",
+  "readStatus: 'disabled'",
+  "readStatus: 'unavailable'",
+  "readStatus: 'ready'",
+  "pendingCandidates",
+  "recentCandidates",
   "would_index: false",
   "would_promote: false",
 ]) {
   if (!service.includes(token)) {
     fail(`queue service missing ${token}`);
   }
+}
+
+if (!route.includes("queueSnapshot") || !route.includes("readCompassSourceProposalQueueSnapshot")) {
+  fail("proposal route must expose queue readback without enabling persistence");
 }
 
 if (!route.includes("guardProductionAdminSessionRoute")) {

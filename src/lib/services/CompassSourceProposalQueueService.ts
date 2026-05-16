@@ -18,6 +18,32 @@ export interface CompassSourceProposalQueueResult {
   reason: string;
 }
 
+export interface CompassSourceProposalQueueSnapshot {
+  enabled: boolean;
+  productionBlocked: boolean;
+  canPersist: boolean;
+  readStatus: 'disabled' | 'unavailable' | 'ready';
+  pendingCandidates: number;
+  latestRun?: {
+    id: string;
+    status: string;
+    candidateCount: number;
+    fetchEnabled: boolean;
+    createdAt: string;
+  };
+  recentCandidates: Array<{
+    id: string;
+    sourceId: string;
+    vendor: string;
+    label: string;
+    proposalStatus: string;
+    reviewStatus: string;
+    riskLevel: string;
+    createdAt: string;
+  }>;
+  reason: string;
+}
+
 export function getCompassSourceProposalQueueState() {
   const enabled = process.env.COMPASS_SOURCE_PROPOSAL_QUEUE_ENABLED === 'true';
   const productionBlocked = process.env.NODE_ENV === 'production';
@@ -27,6 +53,110 @@ export function getCompassSourceProposalQueueState() {
     productionBlocked,
     canPersist: enabled && !productionBlocked,
   };
+}
+
+export async function readCompassSourceProposalQueueSnapshot(
+  limit = 5,
+): Promise<CompassSourceProposalQueueSnapshot> {
+  const queueState = getCompassSourceProposalQueueState();
+  const base = {
+    enabled: queueState.enabled,
+    productionBlocked: queueState.productionBlocked,
+    canPersist: queueState.canPersist,
+  };
+
+  if (!queueState.enabled) {
+    return {
+      ...base,
+      readStatus: 'disabled',
+      pendingCandidates: 0,
+      recentCandidates: [],
+      reason: 'Queue persistence is disabled, so no durable proposal queue is expected in this environment.',
+    };
+  }
+
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    return {
+      ...base,
+      readStatus: 'unavailable',
+      pendingCandidates: 0,
+      recentCandidates: [],
+      reason: 'Proposal queue tables cannot be read because the Compass service database environment is unavailable.',
+    };
+  }
+
+  try {
+    const supabase = createCompassServiceClient();
+    const safeLimit = Math.max(1, Math.min(limit, 20));
+    const { data: runs, error: runError } = await supabase
+      .from('source_proposal_runs')
+      .select('id,status,candidate_count,fetch_enabled,created_at')
+      .order('created_at', { ascending: false })
+      .limit(1);
+
+    if (runError) {
+      return {
+        ...base,
+        readStatus: 'unavailable',
+        pendingCandidates: 0,
+        recentCandidates: [],
+        reason: 'Proposal queue run table is not readable in the current Compass schema.',
+      };
+    }
+
+    const { data: candidates, error: candidateError, count } = await supabase
+      .from('source_proposal_queue')
+      .select('id,source_id,vendor,label,proposal_status,review_status,risk_level,created_at', {
+        count: 'exact',
+      })
+      .eq('review_status', 'pending')
+      .order('created_at', { ascending: false })
+      .limit(safeLimit);
+
+    if (candidateError) {
+      return {
+        ...base,
+        readStatus: 'unavailable',
+        pendingCandidates: 0,
+        recentCandidates: [],
+        reason: 'Proposal queue candidate table is not readable in the current Compass schema.',
+      };
+    }
+
+    const latestRunRow = Array.isArray(runs) ? runs[0] : undefined;
+
+    return {
+      ...base,
+      readStatus: 'ready',
+      pendingCandidates: count || 0,
+      latestRun: latestRunRow ? {
+        id: String(latestRunRow.id),
+        status: String(latestRunRow.status || 'unknown'),
+        candidateCount: Number(latestRunRow.candidate_count || 0),
+        fetchEnabled: Boolean(latestRunRow.fetch_enabled),
+        createdAt: String(latestRunRow.created_at || ''),
+      } : undefined,
+      recentCandidates: (Array.isArray(candidates) ? candidates : []).map((candidate) => ({
+        id: String(candidate.id),
+        sourceId: String(candidate.source_id),
+        vendor: String(candidate.vendor),
+        label: String(candidate.label),
+        proposalStatus: String(candidate.proposal_status),
+        reviewStatus: String(candidate.review_status),
+        riskLevel: String(candidate.risk_level),
+        createdAt: String(candidate.created_at || ''),
+      })),
+      reason: 'Proposal queue is readable. Rows shown here are proposal-only and are not corpus promotions.',
+    };
+  } catch {
+    return {
+      ...base,
+      readStatus: 'unavailable',
+      pendingCandidates: 0,
+      recentCandidates: [],
+      reason: 'Proposal queue readback is unavailable in this environment.',
+    };
+  }
 }
 
 export async function persistCompassSourceProposalRun(

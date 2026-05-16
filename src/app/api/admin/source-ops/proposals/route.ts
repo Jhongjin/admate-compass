@@ -3,6 +3,7 @@ import { buildCompassSourceProposalRun } from '@/lib/services/CompassSourcePropo
 import {
   getCompassSourceProposalQueueState,
   persistCompassSourceProposalRun,
+  readCompassSourceProposalQueueSnapshot,
 } from '@/lib/services/CompassSourceProposalQueueService';
 import { guardProductionAdminSessionRoute } from '@/lib/adminDebugGuard';
 
@@ -21,6 +22,7 @@ export async function GET(request: NextRequest) {
       data: {
         ...proposalRun,
         queue: getCompassSourceProposalQueueState(),
+        queueSnapshot: await readCompassSourceProposalQueueSnapshot(),
       },
     });
   } catch (error) {
