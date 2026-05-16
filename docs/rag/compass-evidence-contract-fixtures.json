@@ -1,0 +1,148 @@
+{
+  "fixturePack": "AdMate Compass Evidence Contract Fixtures v1",
+  "mode": "local_contract_only",
+  "sideEffects": {
+    "dbRead": false,
+    "dbWrite": false,
+    "crawlerRun": false,
+    "embeddingGeneration": false,
+    "llmCall": false,
+    "productionCall": false
+  },
+  "roles": {
+    "teamLead": {
+      "name": "Compass Team Lead",
+      "responsibility": "최종 답변 소유, 중복 제거, 충돌 판단, 출처 품질 검증, noData 결정"
+    },
+    "agent1": {
+      "name": "Policy Evidence Agent",
+      "responsibility": "정책, 심사 기준, 금지/제한/예외 조건 근거 패킷 수집"
+    },
+    "agent2": {
+      "name": "Media Product Evidence Agent",
+      "responsibility": "매체 상품, 지면, 스펙, 운영 조건 근거 패킷 수집"
+    }
+  },
+  "answerPolicy": {
+    "verifiedEvidenceRequired": true,
+    "specialistsReturnEvidenceOnly": true,
+    "teamLeadOwnsFinalAnswer": true,
+    "generationLimitedPreservesSources": true,
+    "noDataWhenOnlyWeakOrRejected": true,
+    "vendorConflictRequiresNarrowing": true
+  },
+  "packets": [
+    {
+      "caseId": "meta-youth-policy-verified",
+      "agent": "agent1",
+      "claim": "Meta 청소년 관련 광고는 연령, 상품군, 표현 방식에 따라 제한 검토가 필요하다.",
+      "sourceId": "meta-policy-youth-001",
+      "documentId": "meta-ad-policy-2024",
+      "documentTitle": "Meta Advertising Standards",
+      "sourceUrl": "https://www.facebook.com/policies/ads/",
+      "excerpt": "광고 정책은 연령 제한, 민감한 상품군, 오해를 유발할 수 있는 표현을 함께 검토하도록 요구한다.",
+      "retrievalMethod": "hybrid",
+      "corpus": "official_policy",
+      "vendor": "meta",
+      "topic": "youth",
+      "score": 0.91,
+      "evidenceDecision": "verified",
+      "evidenceDecisionReason": [
+        "source_quality_complete",
+        "vendor_topic_match",
+        "official_policy_source"
+      ],
+      "updatedAt": "2026-05-16T00:00:00.000Z"
+    },
+    {
+      "caseId": "kakao-bizboard-spec-verified",
+      "agent": "agent2",
+      "claim": "카카오 비즈보드 소재 검토는 지면 스펙과 랜딩/소재 표현 조건을 함께 확인해야 한다.",
+      "sourceId": "kakao-bizboard-spec-001",
+      "documentId": "kakao-bizboard-guide",
+      "documentTitle": "Kakao Bizboard Operating Guide",
+      "sourceUrl": "https://business.kakao.com/",
+      "excerpt": "비즈보드 운영 조건은 소재 규격, 랜딩 조건, 심사 제한 요소를 함께 확인하는 방식으로 검토한다.",
+      "retrievalMethod": "keyword",
+      "corpus": "approved_reference",
+      "vendor": "kakao",
+      "topic": "spec",
+      "score": 0.82,
+      "evidenceDecision": "verified",
+      "evidenceDecisionReason": [
+        "source_quality_complete",
+        "vendor_topic_match",
+        "approved_reference"
+      ],
+      "updatedAt": "2026-05-16T00:00:00.000Z"
+    },
+    {
+      "caseId": "generic-price-weak",
+      "agent": "agent2",
+      "claim": "광고 상품 단가는 캠페인 목표와 구매 방식에 따라 달라질 수 있다.",
+      "sourceId": "generic-price-note-001",
+      "documentId": "generic-media-note",
+      "documentTitle": "Generic Media Planning Note",
+      "excerpt": "단가 관련 설명은 특정 매체의 최신 공식 가격표가 아니라 일반적인 운영 메모에서 나온 것이다.",
+      "retrievalMethod": "keyword",
+      "corpus": "analyst_note",
+      "vendor": "generic",
+      "topic": "price",
+      "score": 0.48,
+      "evidenceDecision": "weak",
+      "evidenceDecisionReason": [
+        "missing_source_url",
+        "generic_vendor_scope",
+        "needs_official_price_source"
+      ]
+    },
+    {
+      "caseId": "placeholder-url-rejected",
+      "agent": "agent1",
+      "claim": "이 URL은 서버리스 환경에서 크롤링할 수 없습니다.",
+      "sourceId": "placeholder-url-001",
+      "documentId": "url-placeholder-doc",
+      "documentTitle": "URL Placeholder",
+      "excerpt": "URL: https://example.invalid/policy 이 URL은 서버리스 환경에서 크롤링할 수 없습니다. 관리자에게 문의하세요.",
+      "retrievalMethod": "fallback",
+      "corpus": "placeholder",
+      "vendor": "generic",
+      "topic": "review",
+      "score": 0.11,
+      "evidenceDecision": "rejected",
+      "evidenceDecisionReason": [
+        "placeholder_content",
+        "fallback_evidence",
+        "not_answerable"
+      ]
+    },
+    {
+      "caseId": "vendor-conflict-rejected",
+      "agent": "agent1",
+      "claim": "네이버 검색광고 정책을 묻는 질문에 Meta 정책 문서가 상위 후보로 올라왔다.",
+      "sourceId": "vendor-conflict-001",
+      "documentId": "meta-ad-policy-2024",
+      "documentTitle": "Meta Advertising Standards",
+      "sourceUrl": "https://www.facebook.com/policies/ads/",
+      "excerpt": "질문 대상 매체와 다른 공급자의 정책 문서가 검색되어 최종 답변 근거로 사용할 수 없다.",
+      "retrievalMethod": "vector",
+      "corpus": "official_policy",
+      "vendor": "meta",
+      "topic": "review",
+      "score": 0.64,
+      "evidenceDecision": "rejected",
+      "evidenceDecisionReason": [
+        "vendor_mismatch",
+        "requires_narrowing"
+      ],
+      "updatedAt": "2026-05-16T00:00:00.000Z"
+    }
+  ],
+  "expectedSummary": {
+    "verified": 2,
+    "weak": 1,
+    "rejected": 2,
+    "placeholderRejected": true,
+    "vendorConflictRejected": true
+  }
+}
