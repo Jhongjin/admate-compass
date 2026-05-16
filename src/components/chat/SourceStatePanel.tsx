@@ -19,6 +19,7 @@ interface SourceStatePanelProps {
   sourceOpenMode?: "active" | "noop";
   onContact?: () => void;
   onRetry?: () => void;
+  onPromptSelect?: (question: string) => void;
 }
 
 export default function SourceStatePanel({
@@ -30,6 +31,7 @@ export default function SourceStatePanel({
   sourceOpenMode = "active",
   onContact,
   onRetry,
+  onPromptSelect,
 }: SourceStatePanelProps) {
   const [cardsVisible, setCardsVisible] = useState(true);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
@@ -45,6 +47,11 @@ export default function SourceStatePanel({
     : hasSources
       ? "질문에 연결된 출처를 확인하고 최종 판단 전 원문과 인용 후보를 대조합니다."
       : "현재 상태에서 표시할 출처가 없습니다.";
+  const noDataPromptChips = [
+    "플랫폼과 업종을 포함해서 다시 검토해줘",
+    "소재 표현과 랜딩 조건 기준으로 찾아줘",
+    "공식 정책 근거가 있는 항목만 좁혀줘",
+  ];
 
   const toggleExpanded = (sourceId: string) => {
     setExpandedIds((current) => {
@@ -60,6 +67,24 @@ export default function SourceStatePanel({
 
   const getSourceExcerptId = (source: ChatSource, index: number) =>
     `${sourceListId}-excerpt-${index}-${source.id.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+
+  const getSourceKindLabel = (source: ChatSource) => {
+    if (source.sourceType === "file") return "파일 근거";
+    if (source.sourceType === "url" || source.url) return "URL 근거";
+    return "색인 근거";
+  };
+
+  const getSourceAccessLabel = (source: ChatSource) => {
+    if (source.url) return "원문 확인 가능";
+    if (source.excerpt) return "원문 일부 확인";
+    return "원문 대조 필요";
+  };
+
+  const getSourceDeskLabel = (source: ChatSource) => {
+    if (source.sourceType === "document") return "정책 문서";
+    if (source.sourceType === "file") return "업로드 문서";
+    return "Compass 정책 보드";
+  };
 
   const handleSourceOpen = async (source: ChatSource) => {
     if (!source.url || sourceOpenMode === "noop") return;
@@ -130,6 +155,24 @@ export default function SourceStatePanel({
                 <span className="rounded-md border border-[#E9D59B] bg-white px-2 py-1">업종/상품</span>
                 <span className="rounded-md border border-[#E9D59B] bg-white px-2 py-1">소재 표현</span>
                 <span className="rounded-md border border-[#E9D59B] bg-white px-2 py-1">랜딩 페이지 조건</span>
+              </div>
+            </div>
+          )}
+          {isNoData && (
+            <div className="grid gap-2 rounded-md border border-[#D8DCCF] bg-[#FBFBF7] p-3 text-xs leading-5 text-[#5F6C62]">
+              <div className="font-semibold text-[#111713]">바로 좁혀볼 질문</div>
+              <div className="flex flex-wrap gap-1.5">
+                {noDataPromptChips.map((prompt) => (
+                  <button
+                    key={prompt}
+                    type="button"
+                    onClick={() => onPromptSelect?.(prompt)}
+                    disabled={!onPromptSelect}
+                    className="rounded-md border border-[#D8DCCF] bg-white px-2.5 py-1.5 text-left text-[11px] font-medium text-[#34423A] transition-colors hover:border-[#B9C9BB] hover:bg-[#EDF7EF] disabled:cursor-default disabled:opacity-80"
+                  >
+                    {prompt}
+                  </button>
+                ))}
               </div>
             </div>
           )}
@@ -273,6 +316,18 @@ export default function SourceStatePanel({
                             {isExpanded ? <ChevronUp className="h-4 w-4" aria-hidden="true" /> : <ChevronDown className="h-4 w-4" aria-hidden="true" />}
                           </Button>
                         </div>
+                      </div>
+
+                      <div className="mt-2 flex flex-wrap gap-1.5">
+                        <Badge variant="outline" className="rounded-md border-[#C6D9CB] bg-[#EDF7EF] px-2 py-0.5 text-[11px] text-[#1F7A4D]">
+                          {getSourceKindLabel(source)}
+                        </Badge>
+                        <Badge variant="outline" className="rounded-md border-[#D8DCCF] bg-white px-2 py-0.5 text-[11px] text-[#5F6C62]">
+                          {getSourceAccessLabel(source)}
+                        </Badge>
+                        <Badge variant="outline" className="rounded-md border-[#E9D59B] bg-[#FFF8E6] px-2 py-0.5 text-[11px] text-[#8A6418]">
+                          {getSourceDeskLabel(source)}
+                        </Badge>
                       </div>
 
                       <p id={sourceExcerptId} className={`${isExpanded ? "" : compact ? "line-clamp-2" : "line-clamp-3"} mt-2 break-words text-xs leading-5 text-[#5F6C62]`}>

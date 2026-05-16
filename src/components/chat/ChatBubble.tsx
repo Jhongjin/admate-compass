@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, useState } from "react";
-import { ThumbsUp, ThumbsDown, Calendar, FileText, User, Download, ExternalLink, Clock, Activity, CheckCircle2, ShieldCheck } from "lucide-react";
+import { ThumbsUp, ThumbsDown, Calendar, FileText, User, Download, ExternalLink, Clock, Activity, CheckCircle2, ShieldCheck, ChevronDown, ChevronUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -68,12 +68,11 @@ export default function ChatBubble({
   processingTime,
   model,
 }: ChatBubbleProps) {
-  const [showSources, setShowSources] = useState(false);
-  const sourcePanelId = useId();
-
   const isUser = type === "user";
-  const hasVerifiedSources = sources.length > 0 && !noDataFound;
   const generationLimited = model === 'ollama-connection-failed';
+  const hasVerifiedSources = sources.length > 0 && !noDataFound;
+  const [showSources, setShowSources] = useState(generationLimited && hasVerifiedSources);
+  const sourcePanelId = useId();
   const confidenceValue = typeof confidence === 'number' ? Math.max(0, Math.min(100, Math.round(confidence))) : undefined;
 
   const getEvidenceLabel = (source: Source) => {
@@ -255,7 +254,7 @@ export default function ChatBubble({
                         <span className="truncate">인용 후보 {sources.length}개 검토</span>
                       </span>
                       <span className="ml-1 text-[#1F7A4D]">
-                        {showSources ? '▲' : '▼'}
+                        {showSources ? <ChevronUp className="h-3.5 w-3.5" aria-hidden="true" /> : <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />}
                       </span>
                     </Button>
                     

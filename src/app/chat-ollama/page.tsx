@@ -1106,6 +1106,7 @@ function ChatPageContent() {
                   showContactOption={latestAssistantMessage?.showContactOption}
                   onContact={() => handleContactRequest(latestUserMessage?.content || "")}
                   onRetry={handleRetry}
+                  onPromptSelect={handleQuickQuestionClick}
                   compact
                 />
               </div>
@@ -1201,6 +1202,7 @@ function ChatPageContent() {
                     showContactOption={latestAssistantMessage?.showContactOption}
                     onContact={() => handleContactRequest(latestUserMessage?.content || "")}
                     onRetry={handleRetry}
+                    onPromptSelect={handleQuickQuestionClick}
                   />
                   
                   {/* 빠른 질문 컴포넌트 - 하단 배치 */}
