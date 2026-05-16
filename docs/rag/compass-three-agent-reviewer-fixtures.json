@@ -1,0 +1,157 @@
+{
+  "fixturePack": "compass-three-agent-reviewer-v1",
+  "mode": "local_contract_only",
+  "canonicalAnswerRoute": "/api/chat-ollama",
+  "legacyAnswerRoute": "/api/chatbot",
+  "sideEffects": {
+    "db": false,
+    "network": false,
+    "llm": false,
+    "embedding": false,
+    "corpusMutation": false
+  },
+  "roles": {
+    "teamLead": {
+      "label": "Team Lead Reviewer",
+      "responsibility": "Deduplicate and verify evidence packets before any final answer is produced."
+    },
+    "agent1": {
+      "label": "Policy Evidence Agent",
+      "responsibility": "Extract policy and enforcement evidence packets only."
+    },
+    "agent2": {
+      "label": "Media/Product Evidence Agent",
+      "responsibility": "Extract product and placement evidence packets only."
+    }
+  },
+  "answerPolicy": {
+    "specialistAgentsWriteFinalAnswer": false,
+    "teamLeadOwnsFinalAnswer": true,
+    "verifiedEvidenceRequired": true,
+    "rejectedEvidenceExcluded": true,
+    "weakOnlyReturnsNoData": true
+  },
+  "cases": [
+    {
+      "caseId": "meta-alcohol-verified",
+      "question": "Can a Meta campaign promote alcohol products?",
+      "expectedOutcome": "answer",
+      "expectedVerifiedCount": 2,
+      "packets": [
+        {
+          "caseId": "meta-alcohol-verified",
+          "agent": "policy_evidence_agent",
+          "claim": "Meta alcohol ads require policy eligibility and regional restrictions before launch.",
+          "sourceId": "meta-policy-alcohol",
+          "sourceUrl": "https://www.facebook.com/policies/ads/restricted_content/alcohol",
+          "sourceTitle": "Meta Advertising Standards - Alcohol",
+          "vendor": "META",
+          "topic": "restricted_content",
+          "publishedOrFetchedAt": "2026-05-16T00:00:00.000Z",
+          "excerpt": "Advertisers must comply with applicable local laws, industry codes, and Meta targeting restrictions for alcohol ads.",
+          "chunkId": "meta-policy-alcohol::chunk-001",
+          "retrievalScore": 0.91,
+          "evidenceDecision": "verified",
+          "reasons": ["source_quality_complete", "vendor_match", "policy_topic_match"]
+        },
+        {
+          "caseId": "meta-alcohol-verified",
+          "agent": "media_product_evidence_agent",
+          "claim": "Audience and placement setup must be checked before operating alcohol promotion campaigns.",
+          "sourceId": "meta-business-help-alcohol",
+          "sourceUrl": "https://www.facebook.com/business/help",
+          "sourceTitle": "Meta Business Help - Ads Review",
+          "vendor": "META",
+          "topic": "ads_review",
+          "publishedOrFetchedAt": "2026-05-16T00:00:00.000Z",
+          "excerpt": "Campaign setup should be reviewed against advertising policies and product restrictions before delivery.",
+          "chunkId": "meta-business-help-alcohol::chunk-004",
+          "retrievalScore": 0.84,
+          "evidenceDecision": "verified",
+          "reasons": ["source_quality_complete", "vendor_match", "product_context_match"]
+        }
+      ]
+    },
+    {
+      "caseId": "kakao-source-weak-only",
+      "question": "Does Kakao confirm the same rule in the indexed corpus?",
+      "expectedOutcome": "noDataFound",
+      "expectedVerifiedCount": 0,
+      "packets": [
+        {
+          "caseId": "kakao-source-weak-only",
+          "agent": "policy_evidence_agent",
+          "claim": "The indexed source hints at review requirements but does not confirm the requested policy.",
+          "sourceId": "kakao-review-guide",
+          "sourceUrl": "https://business.kakao.com/info/displayad",
+          "sourceTitle": "Kakao Business Guide",
+          "vendor": "KAKAO",
+          "topic": "review",
+          "publishedOrFetchedAt": "2026-05-16T00:00:00.000Z",
+          "excerpt": "The source contains general review language but not enough detail to support the requested answer.",
+          "chunkId": "kakao-review-guide::chunk-002",
+          "retrievalScore": 0.61,
+          "evidenceDecision": "weak",
+          "reasons": ["low_retrieval_score", "insufficient_policy_detail"]
+        },
+        {
+          "caseId": "kakao-source-weak-only",
+          "agent": "media_product_evidence_agent",
+          "claim": "The product setup source does not confirm the requested policy condition.",
+          "sourceId": "kakao-product-guide",
+          "sourceUrl": "https://business.kakao.com/info/moment",
+          "sourceTitle": "Kakao Moment Guide",
+          "vendor": "KAKAO",
+          "topic": "product_setup",
+          "publishedOrFetchedAt": "2026-05-16T00:00:00.000Z",
+          "excerpt": "The product guide explains campaign setup but does not prove the policy condition in the question.",
+          "chunkId": "kakao-product-guide::chunk-007",
+          "retrievalScore": 0.58,
+          "evidenceDecision": "weak",
+          "reasons": ["low_retrieval_score", "missing_policy_confirmation"]
+        }
+      ]
+    },
+    {
+      "caseId": "vendor-conflict-rejected",
+      "question": "Can Meta rules be answered from a Naver source?",
+      "expectedOutcome": "noDataFound",
+      "expectedVerifiedCount": 0,
+      "packets": [
+        {
+          "caseId": "vendor-conflict-rejected",
+          "agent": "policy_evidence_agent",
+          "claim": "The packet uses a Naver policy source for a Meta policy question.",
+          "sourceId": "naver-policy-generic",
+          "sourceUrl": "https://saedu.naver.com",
+          "sourceTitle": "Naver Search Ad Guide",
+          "vendor": "NAVER",
+          "topic": "policy",
+          "publishedOrFetchedAt": "2026-05-16T00:00:00.000Z",
+          "excerpt": "This source belongs to a different vendor and cannot ground a Meta-specific answer.",
+          "chunkId": "naver-policy-generic::chunk-003",
+          "retrievalScore": 0.83,
+          "evidenceDecision": "rejected",
+          "reasons": ["vendor_mismatch", "source_quality_complete"]
+        },
+        {
+          "caseId": "vendor-conflict-rejected",
+          "agent": "media_product_evidence_agent",
+          "claim": "The packet contains placeholder crawl text and must be excluded.",
+          "sourceId": "meta-placeholder-url",
+          "sourceUrl": "https://www.facebook.com/business/help",
+          "sourceTitle": "Meta Business Help Placeholder",
+          "vendor": "META",
+          "topic": "crawl_placeholder",
+          "publishedOrFetchedAt": "2026-05-16T00:00:00.000Z",
+          "excerpt": "Serverless placeholder content could not process this page and must not be used as evidence.",
+          "chunkId": "meta-placeholder-url::chunk-000",
+          "retrievalScore": 0.77,
+          "evidenceDecision": "rejected",
+          "reasons": ["placeholder_content", "source_quality_incomplete"]
+        }
+      ]
+    }
+  ]
+}
+

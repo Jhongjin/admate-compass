@@ -81,7 +81,9 @@ export async function GET() {
     timestamp: new Date().toISOString(),
     methods: ['GET', 'POST', 'OPTIONS'],
     version: 'chatbot-v1',
-    endpoint: '/api/chatbot'
+    endpoint: '/api/chatbot',
+    legacy: true,
+    canonicalEndpoint: '/api/chat-ollama'
   }, {
     status: 200,
     headers,
