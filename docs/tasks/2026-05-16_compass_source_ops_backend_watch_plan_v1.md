@@ -84,11 +84,16 @@ It must not:
 
 Promote the proposal queue into a durable backend source-watch job:
 
-1. run the proposal API from a scheduled backend job
-2. apply the proposal queue SQL through production SQL editor
-3. store proposal results in the dedicated queue table from an authenticated internal worker
-4. add AI relevance classification and diff summaries
-5. keep production corpus promotion behind an explicit approval/apply gate
-6. only after approval, call the existing chunking and embedding path
+1. apply the proposal queue SQL in staging/local Supabase first
+2. set the smoke environment to `COMPASS_DB_SCHEMA=compass` and `COMPASS_SOURCE_PROPOSAL_QUEUE_ENABLED=true`
+3. run a dry-run POST smoke outside production and verify rows only in `source_proposal_runs` and `source_proposal_queue`
+4. design the authenticated internal worker/apply path; production POST remains blocked until that path exists
+5. after the worker path is approved, apply the same SQL through the production SQL editor and immediately run the verify SQL
+6. run the proposal API from a scheduled backend job that writes only proposal rows
+7. add optional AI relevance classification and richer diff summaries after deterministic review remains stable
+8. keep production corpus promotion behind an explicit approval/apply gate
+9. only after approval, call the existing chunking and embedding path
+
+Production SQL alone does not enable queue persistence. The production API still blocks queue writes until an authenticated internal worker/apply path is implemented and approved.
 
 The current production posture remains non-mutating by default so the UI can confirm coverage before any production SQL, cron activation, or corpus promotion is introduced.

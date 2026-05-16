@@ -56,7 +56,13 @@ for (const token of [
   }
 }
 
-for (const token of ["source_proposal_runs", "source_proposal_queue"]) {
+for (const token of [
+  "source_proposal_runs",
+  "source_proposal_queue",
+  "pg_indexes",
+  "information_schema.triggers",
+  "information_schema.role_table_grants",
+]) {
   if (!verify.includes(token)) {
     fail(`source proposal queue verify missing ${token}`);
   }
