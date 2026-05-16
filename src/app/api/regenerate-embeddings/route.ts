@@ -1,8 +1,12 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { SimpleEmbeddingService } from '@/lib/services/SimpleEmbeddingService';
+import { guardProductionAdminDebugRoute } from '@/lib/adminDebugGuard';
 
 export async function POST() {
+  const guardResponse = guardProductionAdminDebugRoute();
+  if (guardResponse) return guardResponse;
+
   try {
     console.log('🔄 임베딩 재생성 시작');
     

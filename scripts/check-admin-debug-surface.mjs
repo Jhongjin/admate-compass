@@ -3,7 +3,7 @@ import path from 'node:path'
 
 const root = process.cwd()
 const apiRoot = path.join(root, 'src/app/api')
-const debugRoutePattern = /(debug|test|fix|force-regenerate|migrate|check-)/i
+const debugRoutePattern = /(debug|test|fix|regenerate|migrate|check-)/i
 const sensitiveEnvPattern = /(SERVICE_ROLE|SECRET|TOKEN|PASSWORD|PRIVATE_KEY|API_KEY)/
 const publicAllowlist = new Set([
   path.join('src', 'app', 'api', 'latest-update', 'route.ts'),
@@ -12,6 +12,7 @@ const repairMutationRoutes = new Set([
   path.join('src', 'app', 'api', 'fix-embedding-dimension', 'route.ts'),
   path.join('src', 'app', 'api', 'fix-orphaned-chunks', 'route.ts'),
   path.join('src', 'app', 'api', 'force-regenerate-embeddings', 'route.ts'),
+  path.join('src', 'app', 'api', 'regenerate-embeddings', 'route.ts'),
   path.join('src', 'app', 'api', 'admin', 'migrate', 'route.ts'),
 ])
 const productionDisabledCandidates = new Set([
