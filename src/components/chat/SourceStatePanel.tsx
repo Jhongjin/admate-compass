@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, useState } from "react";
-import { AlertCircle, BookOpen, ChevronDown, ChevronUp, Download, ExternalLink, FileText, Search, ShieldCheck } from "lucide-react";
+import { AlertCircle, BookOpen, CheckCircle2, ChevronDown, ChevronUp, Download, ExternalLink, FileText, Fingerprint, Link2, Search, ShieldCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -84,6 +84,33 @@ export default function SourceStatePanel({
     if (source.sourceType === "document") return "정책 문서";
     if (source.sourceType === "file") return "업로드 문서";
     return "Compass 정책 보드";
+  };
+
+  const getSourceVendorLabel = (source: ChatSource) => {
+    const text = `${source.title || ""} ${source.url || ""}`.toLowerCase();
+    if (text.includes("meta") || text.includes("facebook") || text.includes("instagram")) return "Meta";
+    if (text.includes("google") || text.includes("youtube")) return "Google";
+    if (text.includes("naver")) return "Naver";
+    if (text.includes("kakao")) return "Kakao";
+    return "매체 미확인";
+  };
+
+  const getSourceIntegrityLabel = (source: ChatSource) => {
+    if (source.url && source.excerpt) return "원문+발췌";
+    if (source.url) return "원문 링크";
+    if (source.excerpt) return "발췌 있음";
+    return "대조 필요";
+  };
+
+  const sourceLedger = {
+    total: sources.length,
+    urlCount: sources.filter((source) => Boolean(source.url)).length,
+    excerptCount: sources.filter((source) => Boolean(source.excerpt)).length,
+    vendorCount: new Set(
+      sources
+        .map(getSourceVendorLabel)
+        .filter((label) => label !== "매체 미확인")
+    ).size,
   };
 
   const handleSourceOpen = async (source: ChatSource) => {
@@ -231,6 +258,32 @@ export default function SourceStatePanel({
             질문: {userQuestion}
           </p>
         )}
+        {hasSources && (
+          <div className="mt-3 rounded-lg border border-[#D8DCCF] bg-[#FBFBF7] p-2.5">
+            <div className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#758070]">
+              <Fingerprint className="h-3.5 w-3.5 text-[#1F7A4D]" />
+              근거 원장
+            </div>
+            <div className={`grid gap-1.5 text-[11px] ${compact ? "grid-cols-2" : "grid-cols-4"}`}>
+              <div className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1.5">
+                <span className="block font-semibold text-[#111713]">{sourceLedger.total}</span>
+                출처
+              </div>
+              <div className="rounded-md border border-[#C6D9CB] bg-white px-2 py-1.5">
+                <span className="block font-semibold text-[#1F7A4D]">{sourceLedger.urlCount}</span>
+                원문 링크
+              </div>
+              <div className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1.5">
+                <span className="block font-semibold text-[#111713]">{sourceLedger.excerptCount}</span>
+                발췌 있음
+              </div>
+              <div className="rounded-md border border-[#E9D59B] bg-white px-2 py-1.5">
+                <span className="block font-semibold text-[#8A6418]">{sourceLedger.vendorCount}</span>
+                매체 신호
+              </div>
+            </div>
+          </div>
+        )}
       </CardHeader>
       <CardContent className={compact ? "space-y-2 p-3 pt-0" : "space-y-3 p-4 pt-0"}>
         {isLimited && (
@@ -319,14 +372,23 @@ export default function SourceStatePanel({
                       </div>
 
                       <div className="mt-2 flex flex-wrap gap-1.5">
+                        <Badge variant="outline" className="rounded-md border-[#D8DCCF] bg-white px-2 py-0.5 text-[11px] text-[#34423A]">
+                          <Fingerprint className="mr-1 h-3 w-3 text-[#758070]" />
+                          {getSourceVendorLabel(source)}
+                        </Badge>
                         <Badge variant="outline" className="rounded-md border-[#C6D9CB] bg-[#EDF7EF] px-2 py-0.5 text-[11px] text-[#1F7A4D]">
+                          <CheckCircle2 className="mr-1 h-3 w-3" />
                           {getSourceKindLabel(source)}
                         </Badge>
                         <Badge variant="outline" className="rounded-md border-[#D8DCCF] bg-white px-2 py-0.5 text-[11px] text-[#5F6C62]">
+                          <Link2 className="mr-1 h-3 w-3" />
                           {getSourceAccessLabel(source)}
                         </Badge>
                         <Badge variant="outline" className="rounded-md border-[#E9D59B] bg-[#FFF8E6] px-2 py-0.5 text-[11px] text-[#8A6418]">
                           {getSourceDeskLabel(source)}
+                        </Badge>
+                        <Badge variant="outline" className="rounded-md border-[#D8DCCF] bg-white px-2 py-0.5 text-[11px] text-[#5F6C62]">
+                          {getSourceIntegrityLabel(source)}
                         </Badge>
                       </div>
 

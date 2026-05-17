@@ -156,6 +156,9 @@
         "Compass 답변",
         "근거 문서 3개 보기",
         "근거 문서",
+        "근거 원장",
+        "원문 링크",
+        "매체 신호",
         "Meta 광고 랜딩 페이지 표현 가이드",
         "Google Ads 주장 표현 검토 참고",
         "Naver 광고 심사 공통 체크"
@@ -214,6 +217,8 @@
         "heading": "근거 문서",
         "sourceCount": 3,
         "cardsVisible": true,
+        "sourceLedgerVisible": true,
+        "sourceIdentityVisible": true,
         "compactPanelRendered": false
       },
       "notes": "Desktop source-found state verifies count, cards, and safe URL affordance."
@@ -246,6 +251,8 @@
       "expectedVisibleText": [
         "Compass 답변",
         "근거 문서 1개 보기",
+        "근거 원장",
+        "발췌 있음",
         "매우 긴 한국어 검토 메모",
         "효능 표현",
         "제한 사항"
@@ -300,6 +307,8 @@
         "heading": "근거 문서",
         "sourceCount": 1,
         "cardsVisible": true,
+        "sourceLedgerVisible": true,
+        "sourceIdentityVisible": true,
         "longTextWrapRequired": true
       },
       "notes": "Long Korean fixture keeps wrapping expectation in the offline contract."
@@ -422,6 +431,8 @@
         "확인된 근거 문서는 아래에서 계속 확인할 수 있습니다",
         "생성 답변 제한",
         "근거 문서 2개 보기",
+        "근거 원장",
+        "매체 신호",
         "Meta 광고 소재 제한 표현 참고",
         "Kakao 광고 심사 주의사항"
       ],
@@ -478,6 +489,8 @@
         "heading": "생성 답변 제한",
         "sourceCount": 2,
         "cardsVisible": true,
+        "sourceLedgerVisible": true,
+        "sourceIdentityVisible": true,
         "limitationBannerVisible": true
       },
       "notes": "Generation-limited state preserves retrieved source evidence."
@@ -595,6 +608,8 @@
         "Compass 답변",
         "근거 문서 1개 보기",
         "근거 문서",
+        "근거 원장",
+        "원문 링크",
         "Meta 모바일 광고 정책 근거"
       ],
       "expectedHiddenText": [
@@ -649,6 +664,8 @@
         "heading": "근거 문서",
         "sourceCount": 1,
         "cardsVisible": true,
+        "sourceLedgerVisible": true,
+        "sourceIdentityVisible": true,
         "compactPanelRendered": true,
         "insideChatScrollArea": true,
         "inputBarNotCovered": true,
@@ -767,6 +784,8 @@
         "답변 생성이 일시적으로 제한되었습니다",
         "생성 답변 제한",
         "근거 문서 1개 보기",
+        "근거 원장",
+        "발췌 있음",
         "작은 모바일 화면용 제한 상태 근거"
       ],
       "expectedHiddenText": [
@@ -822,6 +841,8 @@
         "heading": "생성 답변 제한",
         "sourceCount": 1,
         "cardsVisible": true,
+        "sourceLedgerVisible": true,
+        "sourceIdentityVisible": true,
         "limitationBannerVisible": true,
         "compactPanelRendered": true,
         "insideChatScrollArea": true,

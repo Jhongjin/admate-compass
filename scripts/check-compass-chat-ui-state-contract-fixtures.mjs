@@ -343,6 +343,8 @@ function validateStateContract(fixture, label) {
       fail(`${label}.source-found visible text must include matching source count`);
     }
     if (fixture.panelExpectation.cardsVisible !== true) fail(`${label}.source-found must show source cards`);
+    if (fixture.panelExpectation.sourceLedgerVisible !== true) fail(`${label}.source-found must show source ledger`);
+    if (fixture.panelExpectation.sourceIdentityVisible !== true) fail(`${label}.source-found must show source identity strip`);
   }
 
   if (fixture.state === "noData") {
@@ -359,6 +361,8 @@ function validateStateContract(fixture, label) {
     if (fixture.panelExpectation.limitationBannerVisible !== true) {
       fail(`${label}.generation-limited must show limitation banner`);
     }
+    if (fixture.panelExpectation.sourceLedgerVisible !== true) fail(`${label}.generation-limited must show source ledger`);
+    if (fixture.panelExpectation.sourceIdentityVisible !== true) fail(`${label}.generation-limited must show source identity strip`);
     if (!includesText(expectedVisible, "생성 답변 제한")) {
       fail(`${label}.generation-limited must include limited-generation panel heading`);
     }

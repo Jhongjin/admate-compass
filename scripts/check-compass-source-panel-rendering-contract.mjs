@@ -29,6 +29,13 @@ const requiredPanelSnippets = [
   "sourceOpenMode === \"noop\"",
   "userQuestion && !compact",
   "질문: {userQuestion}",
+  "const getSourceVendorLabel",
+  "const getSourceIntegrityLabel",
+  "const sourceLedger =",
+  "근거 원장",
+  "원문 링크",
+  "발췌 있음",
+  "매체 신호",
   "aria-label={source.sourceType === \"file\" ? \"파일 다운로드\" : \"근거 문서 열기\"}",
   "aria-label={isExpanded ? \"근거 문서 접기\" : \"근거 문서 펼치기\"}",
 ];
@@ -172,6 +179,11 @@ function assertFixturePairing(payload) {
 
     if (fixture.state === "source-found" && !hasSources) {
       fail(`${label}.source-found must include sources`);
+    }
+
+    if (hasSources) {
+      if (panel.sourceLedgerVisible !== true) fail(`${label}.source ledger must be visible when sources exist`);
+      if (panel.sourceIdentityVisible !== true) fail(`${label}.source identity strip must be visible when sources exist`);
     }
 
     if (fixture.state === "noData") {
