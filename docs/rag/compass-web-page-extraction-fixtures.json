@@ -1,0 +1,114 @@
+{
+  "fixturePack": "compass-web-page-extraction-v1",
+  "mode": "local_contract_only",
+  "sideEffects": {
+    "db": false,
+    "network": false,
+    "llm": false,
+    "embedding": false,
+    "corpusMutation": false,
+    "cron": false,
+    "apply": false
+  },
+  "fixtures": [
+    {
+      "id": "accepted-meta-policy-sanitizes-page-chrome",
+      "input": {
+        "finalUrl": "https://www.facebook.com/policies/ads/",
+        "fetchedAt": "2026-05-17T00:00:00.000Z",
+        "rawHtml": "<!doctype html><html><head><title>Meta Advertising Standards - Ads Policy</title><link rel=\"canonical\" href=\"https://www.facebook.com/policies/ads/\" /><script>window.__NEXT_DATA__='chrome';</script><style>.hidden{display:none}</style></head><body><header>Login menu search</header><nav>Products Help Search</nav><main><h1>Meta 광고 정책</h1><h2>광고 심사 기준</h2><p>Meta advertising standards explain how advertisers must prepare campaign creative, landing page claims, restricted content, prohibited practices, and business verification before ads can run.</p><p>운영자는 광고 소재, 랜딩 페이지, 타겟 조건, 제한 콘텐츠, 금지 업종, 심사 절차를 확인해야 하며 캠페인 집행 전 정책 위반 가능성을 검토해야 합니다.</p><p>This official policy guide supports advertising review decisions for Facebook, Instagram, campaign approval, advertiser responsibility, and business support workflows.</p></main><footer>Company links footer privacy cookie settings</footer></body></html>"
+      },
+      "expected": {
+        "status": "accepted",
+        "canonicalUrl": "https://www.facebook.com/policies/ads/",
+        "sourceTitle": "Meta Advertising Standards - Ads Policy",
+        "language": "mixed",
+        "boilerplateRemoved": true,
+        "boilerplateRemovedTypesIncludes": ["script", "style", "header", "footer", "nav"],
+        "headings": ["Meta 광고 정책", "광고 심사 기준"],
+        "policySignalsInclude": ["vendor:meta", "policy:advertising", "policy:review", "policy:campaign", "policy:support"],
+        "contentTextIncludes": ["Meta advertising standards", "광고 소재", "제한 콘텐츠", "campaign approval"],
+        "contentTextExcludes": ["window.__NEXT_DATA__", "Login menu search", "Company links footer"]
+      }
+    },
+    {
+      "id": "accepted-google-policy-canonical-href-first",
+      "input": {
+        "finalUrl": "https://support.google.com/adspolicy/answer/6008942?hl=ko",
+        "fetchedAt": "2026-05-17T00:00:00.000Z",
+        "rawHtml": "<html><head><title>Google Ads Policy Help</title><link href=\"https://support.google.com/adspolicy/answer/6008942?hl=ko\" rel=\"canonical\" /></head><body><article><h1>Google 광고 정책 도움말</h1><p>Google Ads policy help explains advertiser requirements, adspolicy compliance, campaign review, creative restrictions, prohibited content, business verification, landing page transparency, and support steps for approved advertising.</p><p>이 공식 도움말은 광고 심사, 캠페인 집행, 소재 검토, 제한 콘텐츠, 승인 절차, 광고주 책임, 비즈니스 지원 기준을 설명합니다.</p><p>운영자는 Google Ads 캠페인 전에 제품, 서비스, 랜딩 페이지, 타겟팅 조건이 정책과 심사 기준을 충족하는지 확인해야 합니다.</p></article></body></html>"
+      },
+      "expected": {
+        "status": "accepted",
+        "canonicalUrl": "https://support.google.com/adspolicy/answer/6008942?hl=ko",
+        "sourceTitle": "Google Ads Policy Help",
+        "language": "mixed",
+        "boilerplateRemoved": false,
+        "headings": ["Google 광고 정책 도움말"],
+        "policySignalsInclude": ["vendor:google", "policy:advertising", "policy:review", "policy:campaign", "policy:support"],
+        "contentTextIncludes": ["Google Ads policy help", "adspolicy compliance", "광고 심사", "랜딩 페이지"],
+        "contentTextExcludes": ["<article>", "</html>"]
+      }
+    },
+    {
+      "id": "rejects-decoded-raw-html-leakage",
+      "input": {
+        "finalUrl": "https://www.facebook.com/policies/ads/raw-example",
+        "fetchedAt": "2026-05-17T00:00:00.000Z",
+        "rawHtml": "<html><head><title>Meta Raw HTML Policy Capture</title></head><body><main><h1>Meta 광고 정책</h1><p>&lt;html&gt;&lt;body&gt;raw mirrored crawler payload&lt;/body&gt;&lt;/html&gt; Meta advertising policy campaign review creative approval restricted content business support material appears here but the captured page is raw HTML text.</p><p>광고 심사 정책과 캠페인 검토 문구가 충분해 보여도 원문 HTML이 노출되면 큐나 청크에 들어가면 안 됩니다.</p></main></body></html>"
+      },
+      "expectedRejection": {
+        "reasonsInclude": ["raw_html_detected"],
+        "contentText": ""
+      }
+    },
+    {
+      "id": "rejects-secret-like-content",
+      "input": {
+        "finalUrl": "https://support.google.com/adspolicy/answer/secret-example",
+        "fetchedAt": "2026-05-17T00:00:00.000Z",
+        "rawHtml": "<html><head><title>Google Ads Policy Secret Capture</title></head><body><main><h1>Google 광고 정책</h1><p>Google Ads policy campaign review, advertising support, prohibited content, advertiser responsibility, business verification, and creative approval guidance are visible.</p><p>Authorization: Bearer REDACTED_SECRET_VALUE must never survive extraction, logging, queue review, chunking, embedding, or prompts.</p><p>광고 심사 정책과 캠페인 지원 문구가 있어도 인증성 문자열이 있으면 안전하게 거절해야 합니다.</p></main></body></html>"
+      },
+      "expectedRejection": {
+        "reasonsInclude": ["secret_like_text"],
+        "contentText": ""
+      }
+    },
+    {
+      "id": "rejects-private-internal-url",
+      "input": {
+        "finalUrl": "http://127.0.0.1:3000/admin/source-ops",
+        "fetchedAt": "2026-05-17T00:00:00.000Z",
+        "rawHtml": "<html><head><title>Internal Meta Ads Policy Mirror</title></head><body><main><h1>Meta 광고 정책</h1><p>Meta advertising campaign review, creative approval, restricted content, prohibited practices, business support, advertiser responsibility, and policy guidance are present in this internal admin mirror.</p><p>광고 심사 정책과 캠페인 검토 내용이 충분해도 localhost 또는 사설 네트워크 URL은 수집 후보가 될 수 없습니다.</p></main></body></html>"
+      },
+      "expectedRejection": {
+        "reasonsInclude": ["unsupported_url_scheme", "private_or_internal_url", "host_not_allowlisted"],
+        "contentText": ""
+      }
+    },
+    {
+      "id": "rejects-non-allowlisted-host",
+      "input": {
+        "finalUrl": "https://example.com/meta-ads-policy-copy",
+        "fetchedAt": "2026-05-17T00:00:00.000Z",
+        "rawHtml": "<html><head><title>Copied Meta Ads Policy</title></head><body><main><h1>Meta 광고 정책 복사본</h1><p>Meta advertising standards, campaign review, creative restrictions, prohibited content, business verification, landing page transparency, advertiser responsibility, and support guidance are copied here.</p><p>광고 심사 정책과 캠페인 검토 문구가 충분해도 공식 허용 호스트가 아니면 Compass 수집 후보로 통과하지 않습니다.</p></main></body></html>"
+      },
+      "expectedRejection": {
+        "reasonsInclude": ["host_not_allowlisted", "canonical_url_not_allowlisted"],
+        "contentText": ""
+      }
+    },
+    {
+      "id": "rejects-placeholder-low-signal-content",
+      "input": {
+        "finalUrl": "https://ads.naver.com/policy-placeholder",
+        "fetchedAt": "2026-05-17T00:00:00.000Z",
+        "rawHtml": "<html><head><title>Naver Ads placeholder</title></head><body><main><h1>광고 정책</h1><p>URL crawling is not available in this serverless document processing path. 이 URL은 서버리스 환경에서 크롤링할 수 없습니다. URL 형태로 저장되었습니다. 실제 내용은 관리자가 별도로 처리합니다. 관리자에게 문의하세요.</p></main></body></html>"
+      },
+      "expectedRejection": {
+        "reasonsInclude": ["placeholder_or_low_signal_content", "insufficient_readable_content"],
+        "contentText": ""
+      }
+    }
+  ]
+}
