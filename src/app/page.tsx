@@ -20,9 +20,7 @@ import {
   ShieldCheck,
 } from "lucide-react";
 import MainLayout from "@/components/layouts/MainLayout";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/hooks/useAuth";
@@ -34,41 +32,46 @@ const ADMATE_HOME_URL = "https://home.admate.ai.kr";
 const platformCategories = [
   {
     name: "Meta",
+    short: "META",
     description: "Facebook, Instagram 광고 정책과 소재 가이드",
     preset: "Meta 광고 정책에서 랜딩 URL과 소재 표현 기준을 근거 문서와 함께 확인해줘",
   },
   {
     name: "Google/YouTube",
+    short: "GOOG",
     description: "Google Ads, YouTube 광고 정책과 제한 소재 기준",
     preset: "Google과 YouTube 광고 정책에서 제한 소재와 랜딩 기준을 근거 문서와 함께 확인해줘",
   },
   {
     name: "Naver",
+    short: "NVR",
     description: "네이버 광고 운영정책과 심사 기준",
     preset: "Naver 광고 운영정책에서 소재 심사 기준을 근거 문서와 함께 확인해줘",
   },
   {
     name: "Kakao",
+    short: "KKO",
     description: "카카오 광고 정책과 업종별 제한 기준",
     preset: "Kakao 광고 정책에서 업종 제한과 소재 심사 기준을 근거 문서와 함께 확인해줘",
   },
   {
     name: "Expansion",
+    short: "EXP",
     description: "TikTok, X 등 확장 플랫폼 정책 확인",
     preset: "확장 광고 플랫폼의 광고 정책에서 확인해야 할 제한 기준을 근거 문서와 함께 정리해줘",
   },
 ];
 
 const deskSignals = [
-  { label: "Query", value: "정책 질문 접수", icon: MessageSquare },
-  { label: "Evidence", value: "문서 근거 대조", icon: BookOpen },
-  { label: "Decision", value: "심사 리스크 분리", icon: ShieldCheck },
+  { label: "Question", value: "질문 수신", detail: "정책 문맥 고정", icon: MessageSquare },
+  { label: "Evidence", value: "근거 대조", detail: "원문/출처 검토", icon: BookOpen },
+  { label: "Reviewer", value: "팀장 검토", detail: "중복/충돌 분리", icon: ShieldCheck },
 ];
 
 const evidenceLanes = [
-  { label: "Source", value: "플랫폼 정책 원문", tone: "text-[#1F7A4D]" },
-  { label: "Coverage", value: "근거 충분", tone: "text-[#176B42]" },
-  { label: "Boundary", value: "답변 범위 표시", tone: "text-[#8A6418]" },
+  { label: "Source", value: "플랫폼 정책 원문", detail: "canonical source", tone: "#8FD7B8" },
+  { label: "Coverage", value: "근거 충분", detail: "chunk metadata", tone: "#E7C66A" },
+  { label: "Boundary", value: "답변 범위 표시", detail: "no-data gate", tone: "#B7C7E7" },
 ];
 
 const primaryActions = [
@@ -90,6 +93,19 @@ const primaryActions = [
     href: "/history",
     icon: History,
   },
+];
+
+const reviewerRows = [
+  { label: "Agent 1", value: "문서 후보 추출", state: "candidate" },
+  { label: "Agent 2", value: "대체 근거 확인", state: "cross-check" },
+  { label: "Lead", value: "충돌/중복 검토", state: "final review" },
+];
+
+const guardrails = [
+  "확인된 근거가 있으면 출처를 보존",
+  "생성 제한 상태에서도 근거 패널 유지",
+  "범위 밖 질문은 noData로 분리",
+  "운영 화면은 권한 확인 후 접근",
 ];
 
 export default function HomePage() {
@@ -118,270 +134,342 @@ export default function HomePage() {
 
   return (
     <MainLayout>
-      <div className="min-h-[100dvh] bg-[#F4F5F0] pt-28 pb-14 text-[#111713]">
-        <section className="mx-auto max-w-7xl px-4 sm:px-6">
+      <main className="relative min-h-[100dvh] overflow-x-hidden bg-[#101820] text-[#F7F5EE]">
+        <div
+          className="pointer-events-none fixed inset-0 opacity-[0.34]"
+          aria-hidden="true"
+          style={{
+            backgroundImage:
+              "linear-gradient(rgba(255,255,255,0.045) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.035) 1px, transparent 1px)",
+            backgroundSize: "36px 36px",
+            maskImage: "linear-gradient(to bottom, black, transparent 86%)",
+          }}
+        />
+        <div
+          className="pointer-events-none absolute right-[-12rem] top-20 h-[34rem] w-[34rem] rounded-full bg-[#477C63]/24 blur-3xl"
+          aria-hidden="true"
+        />
+        <div
+          className="pointer-events-none absolute left-[-10rem] top-[42rem] h-[26rem] w-[26rem] rounded-full bg-[#C9A84B]/16 blur-3xl"
+          aria-hidden="true"
+        />
+
+        <section className="relative mx-auto max-w-[1400px] px-4 pb-10 pt-28 sm:px-6 lg:px-8">
           <motion.div
-            initial={{ opacity: 0, y: 14 }}
+            initial={{ opacity: 0, y: 18 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.45 }}
-            className="grid gap-5 lg:grid-cols-[1.05fr_0.95fr] lg:items-stretch"
+            transition={{ duration: 0.6, ease: [0.32, 0.72, 0, 1] }}
+            className="grid gap-4 lg:grid-cols-[minmax(0,1.18fr)_minmax(360px,0.82fr)]"
           >
-            <div className="rounded-lg border border-[#D6D8CD] bg-[#FBFBF7] p-5 shadow-sm sm:p-7">
-              <Badge className="mb-5 rounded-md border-[#B9D7C4] bg-[#EAF5EE] px-3 py-1 text-[#176B42] hover:bg-[#EAF5EE]">
-                Policy Evidence Desk
-              </Badge>
-              <div className="max-w-3xl space-y-4">
-                <h1 className="font-nanum text-3xl font-bold leading-tight text-[#111713] sm:text-5xl">
-                  AdMate Compass
-                </h1>
-                <p className="font-nanum text-lg leading-8 text-[#34423A] sm:text-xl">
-                  광고 심사 질문을 근거 문서와 함께 판정하는 정책 인텔리전스 데스크입니다.
-                </p>
-                <p className="font-nanum text-sm leading-7 text-[#5F6C62]">
-                  플랫폼별 정책 원문, 출처 상태, 답변 범위를 한 화면에 묶어 광고 운영자가 반복 확인하는 기준을 빠르게 고정합니다.
-                </p>
-              </div>
-
-              <div className="mt-7 grid gap-3 sm:grid-cols-3">
-                {deskSignals.map((signal) => {
-                  const Icon = signal.icon;
-                  return (
-                    <div key={signal.label} className="rounded-lg border border-[#E0E2D9] bg-white px-4 py-3">
-                      <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.12em] text-[#6D756C]">
-                        <Icon className="h-4 w-4 text-[#1F7A4D]" />
-                        {signal.label}
-                      </div>
-                      <p className="mt-2 font-nanum text-sm font-semibold text-[#172018]">{signal.value}</p>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-
-            <div className="rounded-lg border border-[#D6D8CD] bg-[#FFFFFF] p-5 shadow-sm sm:p-6">
-              <div className="mb-5 flex items-start justify-between gap-4">
+            <section className="relative overflow-hidden rounded-[12px] border border-white/12 bg-[#141F21] p-5 shadow-[0_30px_90px_rgba(0,0,0,0.28)] sm:p-7 lg:p-8">
+              <div
+                className="absolute inset-0 opacity-70"
+                aria-hidden="true"
+                style={{
+                  background:
+                    "radial-gradient(circle at 78% 16%, rgba(143,215,184,0.18), transparent 34%), linear-gradient(135deg, rgba(255,255,255,0.08), transparent 42%)",
+                }}
+              />
+              <div className="relative grid min-h-[360px] content-between gap-8 lg:min-h-[520px]">
                 <div>
-                  <h2 className="font-nanum text-xl font-bold text-[#111713]">정책 조회</h2>
-                  <p className="mt-2 font-nanum text-sm leading-6 text-[#667066]">
-                    질문을 보내면 답변과 근거 패널이 함께 열립니다.
+                  <div className="mb-5 flex flex-wrap items-center gap-2">
+                    <span className="inline-flex h-7 items-center rounded-full border border-[#8FD7B8]/35 bg-[#8FD7B8]/10 px-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#BFE8D5]">
+                      Policy Evidence Desk
+                    </span>
+                    <span className="inline-flex h-7 items-center rounded-full border border-white/12 bg-white/6 px-3 text-[11px] font-semibold text-white/66">
+                      3-agent review
+                    </span>
+                  </div>
+
+                  <h1 className="max-w-5xl text-[clamp(2.6rem,6vw,5.8rem)] font-black leading-[0.94] tracking-[0] text-white">
+                    AdMate Compass
+                  </h1>
+                  <p className="mt-6 max-w-3xl text-lg leading-8 text-[#DDE7E0] sm:text-xl">
+                    광고 정책 질문을 근거 원문, 출처 품질, 검토 경계와 함께 판정하는 정책 인텔리전스 데스크입니다.
+                  </p>
+                  <p className="mt-4 max-w-2xl text-sm leading-7 text-white/56">
+                    운영자는 답변 문장보다 먼저 어떤 문서가 쓰였고, 어떤 범위는 보류됐는지 확인합니다.
+                    Compass는 그 판단 순서를 화면 구조로 고정합니다.
                   </p>
                 </div>
-                <div className="rounded-lg border border-[#C6D9CB] bg-[#EDF7EF] p-3 text-[#1F7A4D]">
-                  <Search className="h-5 w-5" />
+
+                <div className="grid grid-cols-3 gap-2 sm:gap-3">
+                  {deskSignals.map((signal, index) => {
+                    const Icon = signal.icon;
+                    return (
+                      <motion.article
+                        key={signal.label}
+                        initial={{ opacity: 0, y: 12 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.5, delay: 0.08 * index, ease: [0.32, 0.72, 0, 1] }}
+                        className="rounded-[10px] border border-white/10 bg-white/[0.055] p-3 shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] sm:p-4"
+                      >
+                        <div className="flex items-center justify-between gap-2 text-[10px] font-semibold uppercase tracking-[0.08em] text-white/48 sm:text-[11px] sm:tracking-[0.14em]">
+                          {signal.label}
+                          <Icon className="h-4 w-4 text-[#8FD7B8]" aria-hidden="true" />
+                        </div>
+                        <strong className="mt-4 block text-sm font-black text-white sm:mt-5 sm:text-lg">{signal.value}</strong>
+                        <span className="mt-1 hidden text-xs font-medium text-white/50 sm:block">{signal.detail}</span>
+                      </motion.article>
+                    );
+                  })}
                 </div>
               </div>
+            </section>
 
-              <form onSubmit={submitQuestion} className="space-y-4">
-                <div className="relative">
-                  <Input
-                    ref={inputRef}
-                    value={question}
-                    onChange={(event) => setQuestion(event.target.value)}
-                    placeholder="예: Meta 광고 랜딩 URL 정책에서 확인해야 할 기준은?"
-                    className="h-14 rounded-lg border-[#D4D8CE] bg-[#FBFBF7] pr-14 text-base text-[#111713] placeholder:text-[#8B9388] focus:border-[#1F7A4D] focus:ring-[#E7F4EA]"
-                  />
-                  <Button
-                    type="submit"
-                    size="icon"
-                    className="absolute right-2 top-2 h-10 w-10 rounded-lg bg-[#111713] text-white hover:bg-[#243028]"
-                    aria-label="정책 질문 제출"
-                  >
-                    <Send className="h-4 w-4" />
-                  </Button>
-                </div>
-
-                {!user && (
-                  <div className="flex items-start gap-2 rounded-lg border border-[#E6C36A] bg-[#FFF7DA] p-3 text-sm text-[#6B5315]">
-                    <LockKeyhole className="mt-0.5 h-4 w-4 flex-none" />
-                    <p>답변 생성 화면에서 로그인이 필요할 수 있습니다. 접근 권한은 Sentinel에서 요청합니다.</p>
+            <section className="rounded-[12px] border border-white/12 bg-[#F7F5EE] p-4 text-[#101820] shadow-[0_30px_90px_rgba(0,0,0,0.24)] sm:p-5">
+              <div className="rounded-[10px] border border-[#CBD6CD] bg-[#FFFDF7] p-4 sm:p-5">
+                <div className="mb-5 flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[#477C63]">Ask with evidence</p>
+                    <h2 className="mt-2 text-2xl font-black tracking-[0] text-[#101820]">정책 조회</h2>
+                    <p className="mt-2 text-sm leading-6 text-[#5D6C63]">
+                      질문을 보내면 답변과 근거 패널이 함께 열립니다.
+                    </p>
                   </div>
-                )}
-              </form>
+                  <div className="grid h-12 w-12 place-items-center rounded-[10px] border border-[#BED2C2] bg-[#EAF5EE] text-[#1F7A4D]">
+                    <Search className="h-5 w-5" aria-hidden="true" />
+                  </div>
+                </div>
 
-              <div className="mt-5 grid gap-2">
-                {platformCategories.slice(0, 3).map((category) => (
-                  <button
-                    key={category.name}
-                    type="button"
-                    onClick={() => applyPlatformPreset(category.preset)}
-                    className="flex items-center justify-between rounded-lg border border-[#E0E2D9] bg-[#FBFBF7] px-4 py-3 text-left transition hover:border-[#9AB9A3] hover:bg-[#F0F7F2]"
-                  >
-                    <span className="font-nanum text-sm font-semibold text-[#172018]">{category.name}</span>
-                    <ArrowRight className="h-4 w-4 text-[#5C695F]" />
-                  </button>
-                ))}
+                <form onSubmit={submitQuestion} className="space-y-4">
+                  <div className="relative">
+                    <Input
+                      ref={inputRef}
+                      value={question}
+                      onChange={(event) => setQuestion(event.target.value)}
+                      placeholder="예: Meta 광고 랜딩 URL 정책에서 확인해야 할 기준은?"
+                      className="h-14 rounded-[10px] border-[#C9D2CC] bg-[#F7F5EE] pr-14 text-base text-[#101820] placeholder:text-[#7D8B82] focus:border-[#1F7A4D] focus:ring-[#E7F4EA]"
+                    />
+                    <Button
+                      type="submit"
+                      size="icon"
+                      className="absolute right-2 top-2 h-10 w-10 rounded-[8px] bg-[#101820] text-white transition duration-300 [transition-timing-function:cubic-bezier(0.32,0.72,0,1)] hover:bg-[#26342E] active:scale-[0.98]"
+                      aria-label="정책 질문 제출"
+                    >
+                      <Send className="h-4 w-4" aria-hidden="true" />
+                    </Button>
+                  </div>
+
+                  {!user && (
+                    <div className="flex items-start gap-2 rounded-[10px] border border-[#E2C46C] bg-[#FFF7DA] p-3 text-sm leading-6 text-[#6B5315]">
+                      <LockKeyhole className="mt-1 h-4 w-4 flex-none" aria-hidden="true" />
+                      <p>답변 생성 화면에서 로그인이 필요할 수 있습니다. 접근 권한은 Sentinel에서 요청합니다.</p>
+                    </div>
+                  )}
+                </form>
+
+                <div className="mt-5 grid gap-2">
+                  {platformCategories.slice(0, 3).map((category) => (
+                    <button
+                      key={category.name}
+                      type="button"
+                      onClick={() => applyPlatformPreset(category.preset)}
+                      className="group grid grid-cols-[42px_minmax(0,1fr)_auto] items-center gap-3 rounded-[10px] border border-[#D9E1DA] bg-white px-3 py-3 text-left transition duration-300 [transition-timing-function:cubic-bezier(0.32,0.72,0,1)] hover:-translate-y-0.5 hover:border-[#9AB9A3] hover:bg-[#F0F7F2]"
+                    >
+                      <span className="grid h-9 w-9 place-items-center rounded-[8px] bg-[#101820] text-[10px] font-black text-white">
+                        {category.short}
+                      </span>
+                      <span className="min-w-0">
+                        <strong className="block text-sm font-black text-[#172018]">{category.name}</strong>
+                        <span className="block truncate text-xs text-[#667066]">{category.description}</span>
+                      </span>
+                      <ArrowRight className="h-4 w-4 text-[#5C695F] transition group-hover:translate-x-0.5" aria-hidden="true" />
+                    </button>
+                  ))}
+                </div>
               </div>
 
-              <div className="mt-5 rounded-lg border border-[#E0E2D9] bg-[#FBFBF7] p-4">
+              <div className="mt-4 rounded-[10px] border border-[#C9D2CC] bg-[#121C1F] p-4 text-white">
                 <div className="mb-3 flex items-center justify-between gap-3">
-                  <p className="font-nanum text-sm font-bold text-[#172018]">Evidence queue</p>
-                  <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1 text-[11px] font-semibold text-[#6D756C]">
+                  <p className="text-sm font-black">Evidence queue</p>
+                  <span className="rounded-full border border-white/14 bg-white/8 px-2.5 py-1 text-[11px] font-semibold text-white/62">
                     Review ready
                   </span>
                 </div>
                 <div className="grid gap-2 sm:grid-cols-3">
                   {evidenceLanes.map((lane) => (
-                    <div key={lane.label} className="rounded-md border border-[#E6E8DF] bg-white px-3 py-3">
-                      <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-[#7A8379]">{lane.label}</p>
-                      <p className={`mt-1 font-nanum text-sm font-bold ${lane.tone}`}>{lane.value}</p>
+                    <div key={lane.label} className="rounded-[8px] border border-white/10 bg-white/[0.055] px-3 py-3">
+                      <p className="text-[10px] font-semibold uppercase tracking-[0.16em] text-white/42">{lane.label}</p>
+                      <p className="mt-2 text-sm font-black" style={{ color: lane.tone }}>
+                        {lane.value}
+                      </p>
+                      <p className="mt-1 text-[11px] text-white/42">{lane.detail}</p>
                     </div>
                   ))}
                 </div>
               </div>
-            </div>
+            </section>
           </motion.div>
         </section>
 
-        <section className="mx-auto mt-5 grid max-w-7xl grid-cols-1 gap-3 px-4 sm:px-6 md:grid-cols-3">
-          {primaryActions.map((action) => {
-            const Icon = action.icon;
-            return (
-              <Link key={action.title} href={action.href} className="block h-full">
-                <Card className="h-full rounded-lg border-[#D6D8CD] bg-white shadow-sm transition hover:-translate-y-0.5 hover:border-[#9AB9A3]">
-                  <CardContent className="flex h-full items-start gap-4 p-5">
-                    <div className="rounded-lg border border-[#DFE5DA] bg-[#F2F7EE] p-3 text-[#1F7A4D]">
-                      <Icon className="h-5 w-5" />
-                    </div>
-                    <div className="min-w-0">
-                      <h3 className="font-nanum text-base font-bold text-[#111713]">{action.title}</h3>
-                      <p className="mt-2 font-nanum text-sm leading-6 text-[#667066]">{action.description}</p>
-                    </div>
-                  </CardContent>
-                </Card>
-              </Link>
-            );
-          })}
-        </section>
-
-        <section className="mx-auto mt-5 grid max-w-7xl grid-cols-1 gap-3 px-4 sm:px-6 md:grid-cols-2">
-          <a href={ACCESS_REQUEST_URL} target="_blank" rel="noopener noreferrer">
-            <Card className="h-full rounded-lg border-[#D6D8CD] bg-white shadow-sm transition hover:-translate-y-0.5 hover:border-[#D8B45F]">
-              <CardContent className="flex items-center justify-between gap-4 p-5">
-                <div className="flex items-start gap-4">
-                  <div className="rounded-lg border border-[#E9D59B] bg-[#FFF8E6] p-3 text-[#8A6418]">
-                    <ShieldCheck className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <h3 className="font-nanum text-base font-bold text-[#111713]">접근 요청</h3>
-                    <p className="mt-2 font-nanum text-sm text-[#667066]">Sentinel에서 Compass 접근 권한을 요청합니다.</p>
-                  </div>
-                </div>
-                <ArrowRight className="h-4 w-4 text-[#5C695F]" />
-              </CardContent>
-            </Card>
-          </a>
-
-          <a href={ADMATE_HOME_URL} target="_blank" rel="noopener noreferrer">
-            <Card className="h-full rounded-lg border-[#D6D8CD] bg-white shadow-sm transition hover:-translate-y-0.5 hover:border-[#9AB9A3]">
-              <CardContent className="flex items-center justify-between gap-4 p-5">
-                <div className="flex items-start gap-4">
-                  <div className="rounded-lg border border-[#DFE5DA] bg-[#F2F7EE] p-3 text-[#1F7A4D]">
-                    <Home className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <h3 className="font-nanum text-base font-bold text-[#111713]">AdMate 홈</h3>
-                    <p className="mt-2 font-nanum text-sm text-[#667066]">AdMate 제품군 연결 관문으로 이동합니다.</p>
-                  </div>
-                </div>
-                <ArrowRight className="h-4 w-4 text-[#5C695F]" />
-              </CardContent>
-            </Card>
-          </a>
-        </section>
-
-        <section className="mx-auto mt-10 max-w-7xl px-4 sm:px-6">
-          <div className="mb-4 flex flex-col justify-between gap-2 sm:flex-row sm:items-end">
-            <div>
-              <h2 className="font-nanum text-2xl font-bold text-[#111713]">정책 범위</h2>
-              <p className="mt-2 font-nanum text-sm text-[#667066]">
-                플랫폼별 프리셋을 선택해 질문을 빠르게 구성합니다.
-              </p>
+        <section className="relative mx-auto grid max-w-[1400px] grid-cols-1 gap-4 px-4 pb-8 sm:px-6 lg:grid-cols-[0.75fr_1.25fr] lg:px-8">
+          <div className="rounded-[12px] border border-white/10 bg-white/[0.055] p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]">
+            <div className="mb-5 flex items-center gap-3">
+              <div className="grid h-11 w-11 place-items-center rounded-[10px] border border-[#8FD7B8]/30 bg-[#8FD7B8]/10 text-[#8FD7B8]">
+                <Database className="h-5 w-5" aria-hidden="true" />
+              </div>
+              <div>
+                <p className="text-[11px] font-black uppercase tracking-[0.18em] text-white/42">Source ledger</p>
+                <h2 className="text-xl font-black tracking-[0] text-white">정책 범위</h2>
+              </div>
+            </div>
+            <div className="grid gap-2">
+              {platformCategories.map((category) => (
+                <button
+                  key={category.name}
+                  type="button"
+                  onClick={() => applyPlatformPreset(category.preset)}
+                  className="group grid grid-cols-[46px_minmax(0,1fr)_auto] items-center gap-3 rounded-[10px] border border-white/9 bg-white/[0.045] px-3 py-3 text-left transition duration-300 [transition-timing-function:cubic-bezier(0.32,0.72,0,1)] hover:-translate-y-0.5 hover:border-[#8FD7B8]/32 hover:bg-white/[0.075]"
+                >
+                  <span className="grid h-9 w-9 place-items-center rounded-[8px] border border-white/10 bg-[#F7F5EE] text-[10px] font-black text-[#101820]">
+                    {category.short}
+                  </span>
+                  <span className="min-w-0">
+                    <strong className="block text-sm font-black text-white">{category.name}</strong>
+                    <span className="block truncate text-xs text-white/48">{category.description}</span>
+                  </span>
+                  <Search className="h-4 w-4 text-[#8FD7B8]" aria-hidden="true" />
+                </button>
+              ))}
             </div>
           </div>
 
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-5">
-            {platformCategories.map((category) => (
-              <button
-                key={category.name}
-                type="button"
-                onClick={() => applyPlatformPreset(category.preset)}
-                className="rounded-lg border border-[#D6D8CD] bg-white p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-[#9AB9A3] hover:bg-[#FBFBF7]"
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-nanum text-base font-bold text-[#111713]">{category.name}</span>
-                  <Search className="h-4 w-4 text-[#1F7A4D]" />
-                </div>
-                <p className="mt-3 font-nanum text-sm leading-6 text-[#667066]">{category.description}</p>
-              </button>
-            ))}
+          <div className="grid gap-4 md:grid-cols-3">
+            {primaryActions.map((action) => {
+              const Icon = action.icon;
+              return (
+                <Link key={action.title} href={action.href} className="group block h-full">
+                  <article className="flex h-full min-h-[210px] flex-col justify-between rounded-[12px] border border-white/10 bg-[#F7F5EE] p-5 text-[#101820] shadow-[0_24px_70px_rgba(0,0,0,0.22)] transition duration-300 [transition-timing-function:cubic-bezier(0.32,0.72,0,1)] hover:-translate-y-1">
+                    <div>
+                      <div className="grid h-11 w-11 place-items-center rounded-[10px] border border-[#C9D2CC] bg-white text-[#1F7A4D]">
+                        <Icon className="h-5 w-5" aria-hidden="true" />
+                      </div>
+                      <h3 className="mt-6 text-xl font-black tracking-[0]">{action.title}</h3>
+                      <p className="mt-3 text-sm leading-6 text-[#667066]">{action.description}</p>
+                    </div>
+                    <span className="mt-7 inline-flex items-center gap-2 text-sm font-black text-[#101820]">
+                      열기
+                      <ArrowRight className="h-4 w-4 transition group-hover:translate-x-1" aria-hidden="true" />
+                    </span>
+                  </article>
+                </Link>
+              );
+            })}
           </div>
         </section>
 
-        <section className="mx-auto mt-10 grid max-w-7xl grid-cols-1 gap-4 px-4 sm:px-6 lg:grid-cols-[0.95fr_1.05fr]">
-          <Card className="rounded-lg border-[#D6D8CD] bg-white shadow-sm">
-            <CardContent className="p-6">
+        <section className="relative mx-auto grid max-w-[1400px] grid-cols-1 gap-4 px-4 pb-14 sm:px-6 lg:grid-cols-[1.1fr_0.9fr] lg:px-8">
+          <div className="rounded-[12px] border border-white/10 bg-[#F7F5EE] p-5 text-[#101820] shadow-[0_24px_70px_rgba(0,0,0,0.2)] sm:p-6">
+            <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[#477C63]">Lead review stack</p>
+                <h2 className="mt-2 text-2xl font-black tracking-[0]">후보 답변을 합치기 전에 충돌을 먼저 봅니다.</h2>
+              </div>
+              <span className="w-fit rounded-full border border-[#C9D2CC] bg-white px-3 py-1 text-[11px] font-bold text-[#667066]">
+                canary provider pinned
+              </span>
+            </div>
+            <div className="grid gap-2 md:grid-cols-3">
+              {reviewerRows.map((row, index) => (
+                <article key={row.label} className="rounded-[10px] border border-[#D9E1DA] bg-white p-4">
+                  <span className="text-[10px] font-black uppercase tracking-[0.16em] text-[#7D8B82]">{row.label}</span>
+                  <strong className="mt-5 block text-lg font-black text-[#101820]">{row.value}</strong>
+                  <div className="mt-5 h-2 overflow-hidden rounded-full bg-[#E7ECE8]">
+                    <div
+                      className="h-full rounded-full bg-[#477C63]"
+                      style={{ width: `${50 + index * 22}%` }}
+                    />
+                  </div>
+                  <em className="mt-3 block text-xs not-italic text-[#667066]">{row.state}</em>
+                </article>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid gap-4">
+            <article className="rounded-[12px] border border-white/10 bg-white/[0.055] p-5">
               <div className="mb-5 flex items-center gap-3">
-                <div className="rounded-lg border border-[#DFE5DA] bg-[#F2F7EE] p-3 text-[#1F7A4D]">
-                  <Clock className="h-5 w-5" />
-                </div>
+                <Clock className="h-5 w-5 text-[#E7C66A]" aria-hidden="true" />
                 <div>
-                  <h2 className="font-nanum text-xl font-bold text-[#111713]">최근 업데이트</h2>
-                  <p className="font-nanum text-sm text-[#667066]">현재 색인 업데이트 신호를 표시합니다.</p>
+                  <p className="text-[11px] font-black uppercase tracking-[0.18em] text-white/42">Index update</p>
+                  <h2 className="text-xl font-black tracking-[0] text-white">최근 업데이트</h2>
                 </div>
               </div>
-
               {updateLoading ? (
                 <div className="space-y-3">
-                  <Skeleton className="h-5 w-2/3 bg-[#E4E6DE]" />
-                  <Skeleton className="h-4 w-full bg-[#E4E6DE]" />
-                  <Skeleton className="h-4 w-4/5 bg-[#E4E6DE]" />
+                  <Skeleton className="h-5 w-2/3 bg-white/12" />
+                  <Skeleton className="h-4 w-full bg-white/12" />
+                  <Skeleton className="h-4 w-4/5 bg-white/12" />
                 </div>
               ) : updateError ? (
-                <p className="font-nanum text-sm leading-6 text-[#667066]">
+                <p className="text-sm leading-6 text-white/58">
                   최근 업데이트 정보를 불러오지 못했습니다. 정책 검색은 채팅 데스크에서 계속 사용할 수 있습니다.
                 </p>
               ) : latestUpdate?.hasUpdates ? (
                 <div className="space-y-3">
-                  <p className="font-nanum text-sm leading-6 text-[#34423A]">{latestUpdate.message}</p>
-                  <p className="font-nanum text-xs text-[#6D756C]">기준: {latestUpdate.displayDate}</p>
+                  <p className="text-sm leading-6 text-white/72">{latestUpdate.message}</p>
+                  <p className="text-xs text-white/42">기준: {latestUpdate.displayDate}</p>
                 </div>
               ) : (
-                <p className="font-nanum text-sm leading-6 text-[#667066]">
+                <p className="text-sm leading-6 text-white/58">
                   표시할 최근 업데이트가 없습니다. 문서 업데이트 데이터가 수집되면 이 영역에 표시됩니다.
                 </p>
               )}
-            </CardContent>
-          </Card>
+            </article>
 
-          <Card className="rounded-lg border-[#D6D8CD] bg-white shadow-sm">
-            <CardContent className="p-6">
+            <article className="rounded-[12px] border border-white/10 bg-white/[0.055] p-5">
               <div className="mb-5 flex items-center gap-3">
-                <div className="rounded-lg border border-[#DFE5DA] bg-[#F2F7EE] p-3 text-[#1F7A4D]">
-                  <Database className="h-5 w-5" />
-                </div>
+                <CheckCircle className="h-5 w-5 text-[#8FD7B8]" aria-hidden="true" />
                 <div>
-                  <h2 className="font-nanum text-xl font-bold text-[#111713]">운영 원칙</h2>
-                  <p className="font-nanum text-sm text-[#667066]">답변과 근거를 분리해 검토합니다.</p>
+                  <p className="text-[11px] font-black uppercase tracking-[0.18em] text-white/42">Guardrails</p>
+                  <h2 className="text-xl font-black tracking-[0] text-white">운영 원칙</h2>
                 </div>
               </div>
-
-              <div className="grid gap-3 sm:grid-cols-2">
-                {[
-                  "확인된 근거가 있으면 출처를 보존",
-                  "생성 제한 상태에서도 근거 패널 유지",
-                  "범위 밖 질문은 noData로 분리",
-                  "운영 화면은 권한 확인 후 접근",
-                ].map((item) => (
-                  <div key={item} className="flex items-start gap-2 rounded-lg border border-[#E0E2D9] bg-[#FBFBF7] p-3">
-                    <CheckCircle className="mt-0.5 h-4 w-4 flex-none text-[#1F7A4D]" />
-                    <p className="font-nanum text-sm leading-6 text-[#34423A]">{item}</p>
+              <div className="grid gap-2">
+                {guardrails.map((item) => (
+                  <div key={item} className="flex items-start gap-3 rounded-[8px] border border-white/8 bg-white/[0.04] p-3">
+                    <span className="mt-2 h-1.5 w-1.5 rounded-full bg-[#8FD7B8]" aria-hidden="true" />
+                    <p className="text-sm leading-6 text-white/68">{item}</p>
                   </div>
                 ))}
               </div>
-            </CardContent>
-          </Card>
+            </article>
+          </div>
         </section>
-      </div>
+
+        <section className="relative mx-auto grid max-w-[1400px] grid-cols-1 gap-3 px-4 pb-16 sm:px-6 md:grid-cols-2 lg:px-8">
+          <a href={ACCESS_REQUEST_URL} target="_blank" rel="noopener noreferrer" className="group block">
+            <article className="flex min-h-[128px] items-center justify-between gap-4 rounded-[12px] border border-[#E7C66A]/26 bg-[#E7C66A]/12 p-5 text-white transition duration-300 [transition-timing-function:cubic-bezier(0.32,0.72,0,1)] hover:-translate-y-0.5">
+              <div className="flex items-start gap-4">
+                <div className="grid h-11 w-11 place-items-center rounded-[10px] border border-[#E7C66A]/32 bg-[#E7C66A]/14 text-[#E7C66A]">
+                  <ShieldCheck className="h-5 w-5" aria-hidden="true" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black">접근 요청</h3>
+                  <p className="mt-2 text-sm leading-6 text-white/58">Sentinel에서 Compass 접근 권한을 요청합니다.</p>
+                </div>
+              </div>
+              <ArrowRight className="h-4 w-4 text-white/60 transition group-hover:translate-x-1" aria-hidden="true" />
+            </article>
+          </a>
+
+          <a href={ADMATE_HOME_URL} target="_blank" rel="noopener noreferrer" className="group block">
+            <article className="flex min-h-[128px] items-center justify-between gap-4 rounded-[12px] border border-white/10 bg-white/[0.055] p-5 text-white transition duration-300 [transition-timing-function:cubic-bezier(0.32,0.72,0,1)] hover:-translate-y-0.5">
+              <div className="flex items-start gap-4">
+                <div className="grid h-11 w-11 place-items-center rounded-[10px] border border-white/12 bg-white/8 text-[#8FD7B8]">
+                  <Home className="h-5 w-5" aria-hidden="true" />
+                </div>
+                <div>
+                  <h3 className="text-base font-black">AdMate 홈</h3>
+                  <p className="mt-2 text-sm leading-6 text-white/58">AdMate 제품군 연결 관문으로 이동합니다.</p>
+                </div>
+              </div>
+              <ArrowRight className="h-4 w-4 text-white/60 transition group-hover:translate-x-1" aria-hidden="true" />
+            </article>
+          </a>
+        </section>
+      </main>
     </MainLayout>
   );
 }
