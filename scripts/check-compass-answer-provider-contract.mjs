@@ -42,7 +42,13 @@ const legacyRoute = read('src/app/api/chatbot/route.ts')
 const envExample = read('.env.example')
 const providerDoc = read('docs/tasks/2026-05-17_compass_answer_llm_provider_boundary_v1.md')
 const decisionDoc = read('docs/tasks/2026-05-17_compass_reliability_3agent_openrouter_graphrag_plan_v3.md')
+const canaryDoc = read('docs/tasks/2026-05-17_compass_openrouter_canary_readiness_checklist_v1.md')
 const packageJson = JSON.parse(read('package.json') || '{}')
+
+const nonCommentEnvLines = envExample
+  .split(/\r?\n/)
+  .map((line) => line.trim())
+  .filter((line) => line && !line.startsWith('#'))
 
 for (const token of [
   "export type CompassAnswerProvider = 'openrouter' | 'ollama'",
@@ -80,11 +86,16 @@ for (const token of [
 
 for (const token of [
   'COMPASS_ANSWER_PROVIDER=ollama',
+  'Do not use COMPASS_ANSWER_PROVIDER=auto as a deployment default before canary',
   'COMPASS_ANSWER_MODELS=<OPENROUTER_MODEL_FALLBACKS_COMMA_SEPARATED>',
   'OPENROUTER_API_KEY=<SERVER_ONLY_OPENROUTER_API_KEY>',
   'OPENROUTER_BASE_URL=https://openrouter.ai/api/v1',
 ]) {
   if (!envExample.includes(token)) fail(`.env.example missing placeholder ${token}`)
+}
+
+if (nonCommentEnvLines.some((line) => /^COMPASS_ANSWER_PROVIDER\s*=\s*auto\b/i.test(line))) {
+  fail('.env.example must not default COMPASS_ANSWER_PROVIDER to auto before OpenRouter canary')
 }
 
 for (const forbidden of [
@@ -108,6 +119,8 @@ for (const token of [
   'No runtime provider behavior changes are made by this document',
   'The current auto mode can switch to OpenRouter when a server-side key is',
   'OpenRouter key is registered, tested, printed, or validated in this slice',
+  'OpenRouter Canary Gate',
+  'activated by an explicit canary gate',
   'COMPASS_ANSWER_PROVIDER=ollama',
   'COMPASS_ANSWER_PROVIDER=openrouter',
   'server-only',
@@ -116,22 +129,42 @@ for (const token of [
 }
 
 for (const token of [
+  'readiness contract',
+  'No runtime provider behavior is changed in this slice',
+  'server-side secret',
+  'COMPASS_ANSWER_PROVIDER=ollama',
+  'COMPASS_ANSWER_PROVIDER=openrouter',
+  'COMPASS_ANSWER_MODELS',
+  'NEXT_PUBLIC_OPENROUTER_*',
+  'NEXT_PUBLIC_COMPASS_OPENROUTER_*',
+  'Rollback',
+]) {
+  if (!canaryDoc.includes(token)) fail(`OpenRouter canary readiness doc missing ${token}`)
+}
+
+for (const token of [
   'Make `/api/chat-ollama` the canonical answer runtime.',
   'Use OpenRouter as the future answer-model gateway.',
+  'OpenRouter first means an approved explicit provider selection',
   'Treat `/api/chatbot` as legacy until removed or adapted.',
 ]) {
   if (!decisionDoc.includes(token)) fail(`reliability decision doc missing ${token}`)
 }
 
-for (const forbidden of [
-  'console.log(process.env.OPENROUTER_API_KEY',
-  'console.error(process.env.OPENROUTER_API_KEY',
-  'console.log(apiKey',
-  'console.error(apiKey',
-  'NEXT_PUBLIC_OPENROUTER',
+const secretLogPattern = /console\.(log|error|warn|info)\s*\([^)]*(OPENROUTER_API_KEY|COMPASS_OPENROUTER_API_KEY|\bapiKey\b)[^)]*\)/i
+for (const [label, text] of [
+  ['CompassAnswerLlmService', service],
+  ['canonical answer route', canonicalRoute],
 ]) {
+  const match = text.match(secretLogPattern)
+  if (match) {
+    fail(`${label} may expose OpenRouter secret material through console logging`)
+  }
+}
+
+for (const forbidden of ['NEXT_PUBLIC_OPENROUTER']) {
   if (service.includes(forbidden) || canonicalRoute.includes(forbidden)) {
-    fail(`answer provider path may expose OpenRouter secret or public config: ${forbidden}`)
+    fail(`answer provider path may expose OpenRouter public config: ${forbidden}`)
   }
 }
 

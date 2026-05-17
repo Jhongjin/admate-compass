@@ -89,6 +89,8 @@ The Team Lead may use only packets with verified source lineage. Rejected, fallb
 Future production gateway:
 
 - OpenRouter first when configured.
+- OpenRouter first means an approved explicit provider selection, not an
+  accidental switch caused only by a server-side key appearing in `auto` mode.
 - Local Ollama remains development/failure-isolation fallback only.
 - Provider/model metadata should be logged without secret values.
 - Evidence decision must remain separate from model output.
@@ -222,4 +224,3 @@ Phase 5: GraphRAG sidecar
 Use a three-agent reviewer architecture, OpenRouter as the model gateway, and GraphRAG as a measured sidecar POC.
 
 The strongest near-term accuracy gain is not the graph itself. It is better source freshness, chunk provenance, embedding quality, independent evidence extraction, and a Team Lead reviewer that refuses weak answers.
-
