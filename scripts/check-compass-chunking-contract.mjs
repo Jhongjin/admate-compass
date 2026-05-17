@@ -23,6 +23,7 @@ const chunkingService = read("src/lib/services/TextChunkingService.ts");
 const vectorStorageService = read("src/lib/services/VectorStorageService.ts");
 const indexingService = read("src/lib/services/DocumentIndexingService.ts");
 const documentProcessingService = read("src/lib/services/DocumentProcessingService.ts");
+const extractionPlan = read("docs/tasks/2026-05-17_compass_web_page_extraction_service_contract_plan_v1.md");
 
 for (const token of [
   "policy-recursive-v2",
@@ -119,6 +120,39 @@ if (!processUrlBlock || !processUrlBlock[0].includes("throw new Error")) {
 
 if (processUrlBlock?.[0].includes("return {")) {
   fail("DocumentProcessingService.processUrl must not return indexable URL placeholder content");
+}
+
+for (const token of [
+  "WebPageExtractionService",
+  "not implemented in this gate",
+  "`DocumentProcessingService.processUrl` remains fail-closed",
+  "`SimpleDocumentProcessingService.processUrlDocument` remains placeholder-only",
+  "`HybridCrawlingManager` calls `/api/puppeteer-crawler`",
+  "no matching",
+  "automated source-watch path",
+  "`/api/admin/upload/[documentId]/reindex`",
+  "`/api/admin/direct-process`",
+  "`/api/admin/simple-index`",
+  "canonicalUrl",
+  "sourceTitle",
+  "contentText",
+  "contentHash",
+  "extractedAt",
+  "sourceQuality",
+  "boilerplateRemoved",
+  "allowed official policy hosts",
+  "robots and rate-limit respect",
+  "no raw HTML",
+  "no credentials, cookies, sessions, tokens",
+  "no direct writes to `documents`, `document_chunks`, `ollama_document_chunks`",
+  "no dummy chunks or null-embedding completion",
+  "proposal queue first",
+  "separate approval/apply",
+  "Do not skip from crawler output directly to corpus chunks",
+]) {
+  if (!extractionPlan.includes(token)) {
+    fail(`web page extraction contract plan missing ${token}`);
+  }
 }
 
 if (!process.exitCode) {
