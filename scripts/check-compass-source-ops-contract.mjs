@@ -74,9 +74,26 @@ for (const token of [
   "queueSnapshot",
   "queue {proposalRun.queueSnapshot.readStatus}",
   "pending {proposalRun.queueSnapshot.pendingCandidates}",
+  "ReadOnlyQueueInventory",
+  "AI 제안 소스 검토 인벤토리",
+  "승인 기능 준비중",
+  "승인/반려/색인/승격 동작을 실행하지 않습니다",
+  "/api/admin/source-ops/proposals?maxSources=7&queueLimit=20",
 ]) {
   if (!page.includes(token)) {
     fail(`source ops page missing queue readback token ${token}`);
+  }
+}
+
+for (const forbidden of [
+  "method: \"POST\"",
+  "method: 'POST'",
+  "fetch=true",
+  "POST /api/admin/source-ops/proposals",
+  "POST /api/internal/source-proposals/dry-run",
+]) {
+  if (page.includes(forbidden)) {
+    fail(`source ops page must remain read-only and must not include ${forbidden}`);
   }
 }
 

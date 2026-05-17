@@ -116,9 +116,19 @@ interface ProposalRun {
     };
     recentCandidates: Array<{
       id: string;
+      runId: string;
       sourceId: string;
       vendor: string;
       label: string;
+      url: string;
+      host: string;
+      canonicalUrl?: string;
+      title?: string;
+      contentPreview?: string;
+      contentLength?: number;
+      fetchedAt?: string;
+      sourceStatus?: SourceStatus;
+      reason: string;
       proposalStatus: string;
       reviewStatus: string;
       riskLevel: string;
@@ -159,7 +169,7 @@ export default function SourceOpsPage() {
       setProposalError(null);
       const [response, proposalResponse] = await Promise.all([
         fetch("/api/admin/source-ops", { cache: "no-store" }),
-        fetch("/api/admin/source-ops/proposals?maxSources=7", { cache: "no-store" }),
+        fetch("/api/admin/source-ops/proposals?maxSources=7&queueLimit=20", { cache: "no-store" }),
       ]);
       const payload = await response.json();
       const proposalPayload = await proposalResponse.json();
@@ -347,24 +357,7 @@ export default function SourceOpsPage() {
                       </div>
 
                       {proposalRun.queueSnapshot.recentCandidates.length > 0 && (
-                        <div className="mt-4 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-                          {proposalRun.queueSnapshot.recentCandidates.map((candidate) => (
-                            <div key={candidate.id} className="rounded-lg border border-white/10 bg-black/20 p-3">
-                              <div className="flex flex-wrap items-center gap-2">
-                                <Badge variant="outline" className="border-cyan-400/30 text-cyan-100">
-                                  {candidate.vendor}
-                                </Badge>
-                                <Badge variant="outline" className={riskClassName(candidate.riskLevel as ProposalCandidate["riskLevel"])}>
-                                  {candidate.riskLevel}
-                                </Badge>
-                              </div>
-                              <p className="mt-2 truncate text-sm font-medium text-white">{candidate.label}</p>
-                              <p className="mt-1 text-xs text-gray-500">
-                                {candidate.proposalStatus} · {candidate.reviewStatus}
-                              </p>
-                            </div>
-                          ))}
-                        </div>
+                        <ReadOnlyQueueInventory candidates={proposalRun.queueSnapshot.recentCandidates} />
                       )}
                     </div>
                   )}
@@ -534,6 +527,122 @@ function Metric({ label, value }: { label: string; value: number }) {
   );
 }
 
+function ReadOnlyQueueInventory({
+  candidates,
+}: {
+  candidates: NonNullable<ProposalRun["queueSnapshot"]>["recentCandidates"];
+}) {
+  return (
+    <div className="mt-5 rounded-xl border border-white/10 bg-black/20 p-4">
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge className="border-cyan-400/30 bg-cyan-500/10 text-cyan-100">
+              읽기 전용 큐
+            </Badge>
+            <Badge className="border-white/15 bg-white/5 text-gray-200">
+              승인 기능 준비중
+            </Badge>
+          </div>
+          <h3 className="mt-3 text-lg font-semibold text-white">AI 제안 소스 검토 인벤토리</h3>
+          <p className="mt-1 max-w-3xl text-sm text-gray-300">
+            백엔드 에이전트가 남긴 후보를 운영자가 확인하는 영역입니다. 이 화면은 URL, 사유, 프리뷰만 보여주며
+            승인/반려/색인/승격 동작을 실행하지 않습니다.
+          </p>
+        </div>
+        <div className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-xs text-gray-300">
+          pending review · {candidates.length} shown
+        </div>
+      </div>
+
+      <div className="mt-4 overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow className="border-white/10 hover:bg-transparent">
+              <TableHead className="min-w-[260px] text-gray-300">후보 소스</TableHead>
+              <TableHead className="min-w-[260px] text-gray-300">프리뷰 / 사유</TableHead>
+              <TableHead className="min-w-[180px] text-gray-300">큐 상태</TableHead>
+              <TableHead className="min-w-[170px] text-gray-300">다음 동작</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {candidates.map((candidate) => (
+              <TableRow key={candidate.id} className="border-white/10 align-top">
+                <TableCell>
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant="outline" className={vendorBadgeClassName(candidate.vendor)}>
+                        {candidate.vendor}
+                      </Badge>
+                      <Badge variant="outline" className={riskClassName(candidate.riskLevel as ProposalCandidate["riskLevel"])}>
+                        {candidate.riskLevel}
+                      </Badge>
+                      {candidate.sourceStatus && (
+                        <Badge variant="outline" className={statusClassName(candidate.sourceStatus)}>
+                          {statusLabels[candidate.sourceStatus]}
+                        </Badge>
+                      )}
+                    </div>
+                    <div>
+                      <p className="font-medium text-white">{candidate.title || candidate.label}</p>
+                      <p className="mt-1 text-xs text-gray-400">{candidate.label}</p>
+                    </div>
+                    <div className="max-w-sm break-all text-xs text-gray-500">
+                      {candidate.canonicalUrl || candidate.url}
+                    </div>
+                    {candidate.url && (
+                      <a
+                        href={candidate.url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex items-center gap-1 text-xs text-cyan-200 hover:text-cyan-100"
+                      >
+                        원본 열기 <ExternalLink className="h-3 w-3" />
+                      </a>
+                    )}
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <div className="max-w-xl space-y-3 text-sm text-gray-300">
+                    <p>{candidate.contentPreview || "프리뷰 본문 없음"}</p>
+                    <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3 text-xs text-gray-400">
+                      {candidate.reason || "제안 사유 없음"}
+                    </div>
+                    <div className="flex flex-wrap gap-2 text-xs text-gray-500">
+                      <span>host {candidate.host || "unknown"}</span>
+                      {typeof candidate.contentLength === "number" && <span>chars {candidate.contentLength}</span>}
+                      {candidate.fetchedAt && <span>fetched {formatDate(candidate.fetchedAt)}</span>}
+                    </div>
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <div className="space-y-2 text-xs text-gray-400">
+                    <Badge className="bg-white/10 text-gray-100">{candidate.proposalStatus}</Badge>
+                    <div>review {candidate.reviewStatus}</div>
+                    <div className="truncate">run {shortId(candidate.runId)}</div>
+                    <div>{formatDate(candidate.createdAt)}</div>
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <div className="space-y-2">
+                    <Badge className="bg-emerald-500/15 text-emerald-100">
+                      <Lock className="mr-1 h-3 w-3" />
+                      read-only
+                    </Badge>
+                    <p className="text-xs leading-5 text-gray-400">
+                      승인/반려와 색인은 별도 게이트가 생기기 전까지 비활성입니다.
+                    </p>
+                  </div>
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
+  );
+}
+
 function sourceTypeLabel(type: SourceOpsItem["sourceType"]) {
   if (type === "policy") return "정책";
   if (type === "help") return "도움말";
@@ -551,6 +660,13 @@ function riskClassName(risk: ProposalCandidate["riskLevel"]) {
   if (risk === "high") return "border-red-400/40 bg-red-500/10 text-red-100";
   if (risk === "medium") return "border-amber-400/40 bg-amber-500/10 text-amber-100";
   return "border-emerald-400/40 bg-emerald-500/10 text-emerald-100";
+}
+
+function vendorBadgeClassName(vendor: string) {
+  if (vendor === "META" || vendor === "KAKAO" || vendor === "NAVER" || vendor === "GOOGLE") {
+    return vendorAccent[vendor];
+  }
+  return "border-gray-400/40 bg-gray-500/10 text-gray-100";
 }
 
 function reviewClassName(level: ProposalReview["relevanceLevel"]) {
@@ -575,4 +691,9 @@ function formatDate(value: string) {
     hour: "2-digit",
     minute: "2-digit",
   }).format(time);
+}
+
+function shortId(value: string) {
+  if (!value) return "unknown";
+  return value.length > 8 ? value.slice(0, 8) : value;
 }

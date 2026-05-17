@@ -93,12 +93,24 @@ for (const forbidden of [
   }
 }
 
-if (!page.includes("/api/admin/source-ops/proposals?maxSources=7") || page.includes("fetch=true")) {
+if (!page.includes("/api/admin/source-ops/proposals?maxSources=7&queueLimit=20") || page.includes("fetch=true")) {
   fail("source ops page must fetch proposal preview through GET without enabling network fetch");
 }
 
 if (!page.includes("queueSnapshot") || !page.includes("queue {proposalRun.queueSnapshot.readStatus}")) {
   fail("source ops page must render read-only proposal queue status");
+}
+
+for (const token of [
+  "ReadOnlyQueueInventory",
+  "읽기 전용 큐",
+  "승인 기능 준비중",
+  "read-only",
+  "승인/반려와 색인은 별도 게이트",
+]) {
+  if (!page.includes(token)) {
+    fail(`source ops page must render read-only proposal inventory token: ${token}`);
+  }
 }
 
 if (page.includes("fetch(\"/api/admin/source-ops/proposals\",") || page.includes("method: \"POST\"") || page.includes("method: 'POST'")) {

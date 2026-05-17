@@ -33,9 +33,19 @@ export interface CompassSourceProposalQueueSnapshot {
   };
   recentCandidates: Array<{
     id: string;
+    runId: string;
     sourceId: string;
     vendor: string;
     label: string;
+    url: string;
+    host: string;
+    canonicalUrl?: string;
+    title?: string;
+    contentPreview?: string;
+    contentLength?: number;
+    fetchedAt?: string;
+    sourceStatus?: string;
+    reason: string;
     proposalStatus: string;
     reviewStatus: string;
     riskLevel: string;
@@ -106,9 +116,29 @@ export async function readCompassSourceProposalQueueSnapshot(
 
     const { data: candidates, error: candidateError, count } = await supabase
       .from('source_proposal_queue')
-      .select('id,source_id,vendor,label,proposal_status,review_status,risk_level,created_at', {
-        count: 'exact',
-      })
+      .select(
+        [
+          'id',
+          'run_id',
+          'source_id',
+          'vendor',
+          'label',
+          'url',
+          'host',
+          'canonical_url',
+          'title',
+          'proposal_status',
+          'review_status',
+          'risk_level',
+          'content_preview',
+          'content_length',
+          'fetched_at',
+          'source_status',
+          'reason',
+          'created_at',
+        ].join(','),
+        { count: 'exact' },
+      )
       .eq('review_status', 'pending')
       .order('created_at', { ascending: false })
       .limit(safeLimit);
@@ -124,6 +154,9 @@ export async function readCompassSourceProposalQueueSnapshot(
     }
 
     const latestRunRow = Array.isArray(runs) ? runs[0] : undefined;
+    const candidateRows: Array<Record<string, unknown>> = Array.isArray(candidates)
+      ? candidates as unknown as Array<Record<string, unknown>>
+      : [];
 
     return {
       ...base,
@@ -136,11 +169,21 @@ export async function readCompassSourceProposalQueueSnapshot(
         fetchEnabled: Boolean(latestRunRow.fetch_enabled),
         createdAt: String(latestRunRow.created_at || ''),
       } : undefined,
-      recentCandidates: (Array.isArray(candidates) ? candidates : []).map((candidate) => ({
+      recentCandidates: candidateRows.map((candidate) => ({
         id: String(candidate.id),
+        runId: String(candidate.run_id),
         sourceId: String(candidate.source_id),
         vendor: String(candidate.vendor),
         label: String(candidate.label),
+        url: String(candidate.url || ''),
+        host: String(candidate.host || ''),
+        canonicalUrl: candidate.canonical_url ? String(candidate.canonical_url) : undefined,
+        title: candidate.title ? String(candidate.title) : undefined,
+        contentPreview: candidate.content_preview ? String(candidate.content_preview) : undefined,
+        contentLength: Number.isFinite(Number(candidate.content_length)) ? Number(candidate.content_length) : undefined,
+        fetchedAt: candidate.fetched_at ? String(candidate.fetched_at) : undefined,
+        sourceStatus: candidate.source_status ? String(candidate.source_status) : undefined,
+        reason: String(candidate.reason || ''),
         proposalStatus: String(candidate.proposal_status),
         reviewStatus: String(candidate.review_status),
         riskLevel: String(candidate.risk_level),

@@ -11,6 +11,7 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const maxSources = Number(searchParams.get('maxSources') || undefined) || undefined;
+    const queueLimit = Number(searchParams.get('queueLimit') || undefined) || undefined;
     const proposalRun = await buildCompassSourceProposalRun({
       sourceId: searchParams.get('sourceId') || undefined,
       maxSources,
@@ -22,7 +23,7 @@ export async function GET(request: NextRequest) {
       data: {
         ...proposalRun,
         queue: getCompassSourceProposalQueueState(),
-        queueSnapshot: await readCompassSourceProposalQueueSnapshot(),
+        queueSnapshot: await readCompassSourceProposalQueueSnapshot(queueLimit),
       },
     });
   } catch (error) {

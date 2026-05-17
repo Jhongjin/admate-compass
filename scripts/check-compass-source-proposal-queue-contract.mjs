@@ -79,6 +79,12 @@ for (const token of [
   "readStatus: 'ready'",
   "pendingCandidates",
   "recentCandidates",
+  "runId",
+  "canonicalUrl",
+  "contentPreview",
+  "contentLength",
+  "fetchedAt",
+  "sourceStatus",
   "would_index: false",
   "would_promote: false",
 ]) {
@@ -89,6 +95,10 @@ for (const token of [
 
 if (!route.includes("queueSnapshot") || !route.includes("readCompassSourceProposalQueueSnapshot")) {
   fail("proposal route must expose queue readback without enabling persistence");
+}
+
+if (!route.includes("queueLimit") || !route.includes("readCompassSourceProposalQueueSnapshot(queueLimit)")) {
+  fail("proposal route must expose bounded queueLimit for read-only queue inventory");
 }
 
 if (!route.includes("guardProductionAdminSessionRoute")) {
