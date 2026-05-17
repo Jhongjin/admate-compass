@@ -51,6 +51,61 @@
       }
     },
     {
+      "id": "accepted-kakao-korean-policy-source-quality",
+      "input": {
+        "finalUrl": "https://business.kakao.com/help/policy/advertising-review",
+        "fetchedAt": "2026-05-17T00:00:00.000Z",
+        "rawHtml": "<html><head><title>카카오 비즈니스 광고 심사 가이드</title><link rel=\"canonical\" href=\"https://business.kakao.com/help/policy/advertising-review\" /></head><body><aside>바로가기 고객센터 메뉴</aside><main><h1>카카오 광고 심사 정책</h1><h2>소재와 랜딩 검수 기준</h2><p>카카오 비즈니스 광고 가이드는 캠페인 집행 전 소재, 랜딩 페이지, 업종 제한, 금지 표현, 승인 절차, 반려 사유, 광고주 책임을 확인하도록 안내합니다.</p><p>운영자는 광고 소재의 문구, 이미지, 랜딩 페이지의 사업자 정보, 가격 표시, 이벤트 조건, 제한 콘텐츠, 고객센터 문의 경로를 함께 검수해야 합니다.</p><p>이 도움말은 카카오 광고 심사와 비즈니스 캠페인 운영 기준을 설명하며, 소재 승인 이후에도 정책 변경과 가이드 업데이트를 확인해야 한다고 안내합니다.</p><p>광고주가 이벤트 혜택, 할인 조건, 사전 고지, 개인정보 수집 문구를 표시하는 경우에는 사용자가 랜딩 페이지에서 동일한 조건을 확인할 수 있어야 하며, 허위 또는 과장 표현은 심사 반려 사유가 될 수 있습니다.</p><p>운영팀은 캠페인 소재와 랜딩의 사업자 정보, 상품 설명, 제한 업종 여부, 고객센터 접근성을 함께 기록해 이후 문의나 재심사 요청의 근거로 남겨야 합니다.</p></main><footer>회사소개 개인정보처리방침</footer></body></html>"
+      },
+      "expected": {
+        "status": "accepted",
+        "canonicalUrl": "https://business.kakao.com/help/policy/advertising-review",
+        "sourceTitle": "카카오 비즈니스 광고 심사 가이드",
+        "language": "ko",
+        "boilerplateRemoved": true,
+        "boilerplateRemovedTypesIncludes": ["footer"],
+        "headings": ["카카오 광고 심사 정책", "소재와 랜딩 검수 기준"],
+        "policySignalsInclude": ["vendor:kakao", "policy:advertising", "policy:review", "policy:campaign", "policy:support"],
+        "contentTextIncludes": ["카카오 비즈니스 광고 가이드", "소재", "랜딩 페이지", "반려 사유"],
+        "contentTextExcludes": ["개인정보처리방침"],
+        "sourceQuality": {
+          "hasTitle": true,
+          "hasUrl": true,
+          "hasExcerpt": true,
+          "linkedToDocument": false,
+          "minQualityScore": 0.6,
+          "warningsLength": 0
+        }
+      }
+    },
+    {
+      "id": "accepted-naver-relative-canonical-policy-source",
+      "input": {
+        "finalUrl": "https://ads.naver.com/help/review-guide?tracking=compass",
+        "fetchedAt": "2026-05-17T00:00:00.000Z",
+        "rawHtml": "<html><head><title>네이버 광고 검수 가이드</title><link rel=\"canonical\" href=\"/policy/review-guide\" /></head><body><main><h1>네이버 광고 검수 정책</h1><p>네이버 광고 운영 가이드는 광고주가 캠페인 등록 전에 소재 문구, 이미지, 랜딩 페이지, 사업자 정보, 업종 제한, 금지 표현, 승인 기준을 확인하도록 설명합니다.</p><p>검색광고와 디스플레이 광고의 검수 절차는 소재 품질, 사용자 오인 가능성, 가격 표시, 이벤트 조건, 고객센터 안내, 비즈니스 정보와 연결됩니다.</p><p>운영자는 광고 심사 결과가 반려되면 정책 가이드와 도움말을 근거로 수정 사유를 확인하고, 랜딩 페이지와 소재를 다시 점검해야 합니다.</p><p>소재 안의 가격, 혜택, 기간, 대상 조건은 랜딩 페이지와 일치해야 하며, 이용자가 상품 또는 서비스 정보를 확인하기 어려운 경우 검수 과정에서 보완 요청이 발생할 수 있습니다.</p><p>네이버 광고 운영자는 캠페인 목적, 소재 유형, 업종 제한, 랜딩 연결 상태, 고객센터 노출 여부를 함께 확인해 승인 이후에도 동일한 기준으로 품질을 관리해야 합니다.</p></main></body></html>"
+      },
+      "expected": {
+        "status": "accepted",
+        "canonicalUrl": "https://ads.naver.com/policy/review-guide",
+        "sourceTitle": "네이버 광고 검수 가이드",
+        "language": "ko",
+        "boilerplateRemoved": false,
+        "headings": ["네이버 광고 검수 정책"],
+        "policySignalsInclude": ["vendor:naver", "policy:advertising", "policy:review", "policy:campaign", "policy:support"],
+        "contentTextIncludes": ["네이버 광고 운영 가이드", "소재 문구", "랜딩 페이지", "반려되면"],
+        "contentTextExcludes": ["tracking=compass"],
+        "sourceQuality": {
+          "hasTitle": true,
+          "hasUrl": true,
+          "hasExcerpt": true,
+          "linkedToDocument": false,
+          "minQualityScore": 0.6,
+          "warningsLength": 0
+        }
+      }
+    },
+    {
       "id": "rejects-decoded-raw-html-leakage",
       "input": {
         "finalUrl": "https://www.facebook.com/policies/ads/raw-example",
@@ -96,6 +151,44 @@
       "expectedRejection": {
         "reasonsInclude": ["host_not_allowlisted", "canonical_url_not_allowlisted"],
         "contentText": ""
+      }
+    },
+    {
+      "id": "rejects-cross-host-canonical-even-when-final-host-allowed",
+      "input": {
+        "finalUrl": "https://support.google.com/help/answer/compass-policy-source",
+        "fetchedAt": "2026-05-17T00:00:00.000Z",
+        "rawHtml": "<html><head><title>Google Ads Policy Canonical Mismatch</title><link rel=\"canonical\" href=\"https://example.com/copied-google-ads-policy\" /></head><body><main><h1>Google 광고 정책 도움말</h1><p>Google Ads policy guidance, advertiser responsibility, campaign review, creative approval, restricted content, prohibited practices, business verification, landing page transparency, and support steps are visible in this captured page.</p><p>광고 심사, 캠페인 집행, 소재 승인, 제한 콘텐츠, 금지 표현, 랜딩 페이지 검토, 비즈니스 지원 기준이 충분해 보여도 canonical URL이 공식 허용 호스트 밖이면 수집 후보가 될 수 없습니다.</p></main></body></html>"
+      },
+      "expectedRejection": {
+        "reasonsInclude": ["canonical_url_not_allowlisted"],
+        "contentText": "",
+        "sourceQuality": {
+          "hasTitle": true,
+          "hasUrl": true,
+          "hasExcerpt": false,
+          "qualityScore": 0,
+          "warningsInclude": ["canonical_url_not_allowlisted"]
+        }
+      }
+    },
+    {
+      "id": "rejects-allowed-host-with-insufficient-policy-signal",
+      "input": {
+        "finalUrl": "https://support.google.com/help/answer/account-navigation",
+        "fetchedAt": "2026-05-17T00:00:00.000Z",
+        "rawHtml": "<html><head><title>Google Help Center Account Navigation</title></head><body><main><h1>계정 도움말 탐색</h1><p>이 도움말은 사용자가 계정 화면에서 언어, 알림, 프로필, 접근성 설정을 찾는 방법을 설명합니다. 제품 화면의 메뉴 위치, 저장 버튼, 안내 문구, 고객센터 이동 경로를 정리합니다.</p><p>관리자는 화면 구성을 확인하고 조직 내부 안내 문서를 업데이트할 수 있습니다. 그러나 이 문서는 Compass가 답변 근거로 삼아야 하는 매체 운영 규칙, 집행 조건, 화면별 판정 기준을 충분히 제공하지 않습니다.</p><p>공식 호스트에 있더라도 주제 신호가 약한 일반 도움말은 내부 지식 후보나 청크로 승격하지 않아야 합니다.</p></main></body></html>"
+      },
+      "expectedRejection": {
+        "reasonsInclude": ["insufficient_policy_signal"],
+        "contentText": "",
+        "sourceQuality": {
+          "hasTitle": true,
+          "hasUrl": true,
+          "hasExcerpt": false,
+          "qualityScore": 0,
+          "warningsInclude": ["insufficient_policy_signal"]
+        }
       }
     },
     {

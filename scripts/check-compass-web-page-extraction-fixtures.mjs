@@ -41,6 +41,39 @@ function assertArrayIncludes(actual, expected, label) {
   }
 }
 
+function assertSourceQuality(actual, expected, label) {
+  if (!expected) return
+  if (!actual || typeof actual !== 'object') {
+    fail(`${label}.sourceQuality must be present`)
+    return
+  }
+
+  for (const key of ['hasTitle', 'hasUrl', 'hasExcerpt', 'linkedToDocument']) {
+    if (expected[key] !== undefined && actual[key] !== expected[key]) {
+      fail(`${label}.sourceQuality.${key} mismatch`)
+    }
+  }
+
+  if (expected.qualityScore !== undefined && actual.qualityScore !== expected.qualityScore) {
+    fail(`${label}.sourceQuality.qualityScore must be ${expected.qualityScore}`)
+  }
+
+  if (expected.minQualityScore !== undefined && Number(actual.qualityScore) < expected.minQualityScore) {
+    fail(`${label}.sourceQuality.qualityScore must be at least ${expected.minQualityScore}`)
+  }
+
+  if (expected.warningsLength !== undefined) {
+    const warningsLength = Array.isArray(actual.warnings) ? actual.warnings.length : -1
+    if (warningsLength !== expected.warningsLength) {
+      fail(`${label}.sourceQuality.warnings length must be ${expected.warningsLength}`)
+    }
+  }
+
+  for (const warning of expected.warningsInclude || []) {
+    assertArrayIncludes(actual.warnings, warning, `${label}.sourceQuality.warnings`)
+  }
+}
+
 function assertNoRawHtml(value, label) {
   const serialized = JSON.stringify(value)
   if (/<\/?(?:html|head|body|script|style|nav|header|footer|main|article|section|div|span|p|h[1-6]|meta|link)\b/i.test(serialized)) {
@@ -198,6 +231,8 @@ if (typeof service?.validateWebPageExtractionSafety !== 'function') {
 
 let acceptedCases = 0
 let rejectedCases = 0
+const acceptedVendors = new Set()
+const fixtureIds = new Set()
 
 for (const [index, testCase] of (fixture.fixtures || []).entries()) {
   const label = `fixtures[${index}] ${testCase.id || 'unknown'}`
@@ -207,6 +242,10 @@ for (const [index, testCase] of (fixture.fixtures || []).entries()) {
     fail(`${label} must include id, input.finalUrl, and input.rawHtml`)
     continue
   }
+  if (fixtureIds.has(testCase.id)) {
+    fail(`${label}.id must be unique`)
+  }
+  fixtureIds.add(testCase.id)
 
   const result = service.extractWebPageForCompass(input.rawHtml, input.finalUrl, {
     fetchedAt: input.fetchedAt,
@@ -271,6 +310,7 @@ for (const [index, testCase] of (fixture.fixtures || []).entries()) {
     }
     for (const token of expected.policySignalsInclude || []) {
       assertArrayIncludes(result.policySignals, token, `${label}.policySignals`)
+      if (token.startsWith('vendor:')) acceptedVendors.add(token)
     }
     for (const token of expected.contentTextIncludes || []) {
       assertIncludes(result.contentText, token, `${label}.contentText`)
@@ -278,6 +318,7 @@ for (const [index, testCase] of (fixture.fixtures || []).entries()) {
     for (const token of expected.contentTextExcludes || []) {
       assertExcludes(result.contentText, token, `${label}.contentText`)
     }
+    assertSourceQuality(result.sourceQuality, expected.sourceQuality, label)
   } else if (testCase.expectedRejection) {
     rejectedCases += 1
     const expected = testCase.expectedRejection
@@ -294,13 +335,27 @@ for (const [index, testCase] of (fixture.fixtures || []).entries()) {
     if (result.sourceQuality?.qualityScore !== 0) {
       fail(`${label}.sourceQuality.qualityScore must be 0 for rejected extraction`)
     }
+    assertSourceQuality(result.sourceQuality, expected.sourceQuality, label)
   } else {
     fail(`${label} must include expected or expectedRejection`)
   }
 }
 
-if (acceptedCases < 2) fail('expected at least two accepted extraction fixtures')
-if (rejectedCases < 4) fail('expected at least four rejected extraction fixtures')
+if (acceptedCases < 4) fail('expected at least four accepted extraction fixtures')
+if (rejectedCases < 6) fail('expected at least six rejected extraction fixtures')
+for (const vendorSignal of ['vendor:meta', 'vendor:google', 'vendor:kakao', 'vendor:naver']) {
+  if (!acceptedVendors.has(vendorSignal)) {
+    fail(`accepted fixtures must cover ${vendorSignal}`)
+  }
+}
+for (const requiredId of [
+  'accepted-kakao-korean-policy-source-quality',
+  'accepted-naver-relative-canonical-policy-source',
+  'rejects-cross-host-canonical-even-when-final-host-allowed',
+  'rejects-allowed-host-with-insufficient-policy-signal',
+]) {
+  if (!fixtureIds.has(requiredId)) fail(`fixture pack missing ${requiredId}`)
+}
 
 if (packageJson.scripts?.['check:compass-web-page-extraction'] !== 'node scripts/check-compass-web-page-extraction-fixtures.mjs') {
   fail('package script check:compass-web-page-extraction is missing or changed')
