@@ -20,6 +20,7 @@ function read(relativePath) {
 }
 
 const route = read('src/app/api/internal/source-proposals/dry-run/route.ts')
+const smokeScript = read('scripts/smoke-compass-source-proposal-worker-local.mjs')
 const packageJson = JSON.parse(read('package.json') || '{}')
 
 for (const token of [
@@ -81,8 +82,58 @@ if (packageJson.scripts?.['check:compass-source-proposal-worker-contract'] !== '
   fail('package script check:compass-source-proposal-worker-contract is missing or changed')
 }
 
+if (packageJson.scripts?.['smoke:compass-source-proposal-worker'] !== 'node scripts/smoke-compass-source-proposal-worker-local.mjs') {
+  fail('package script smoke:compass-source-proposal-worker is missing or changed')
+}
+
 if (!String(packageJson.scripts?.['verify:harness'] || '').includes('check:compass-source-proposal-worker-contract')) {
   fail('verify:harness must include check:compass-source-proposal-worker-contract')
+}
+
+if (String(packageJson.scripts?.['verify:harness'] || '').includes('smoke:compass-source-proposal-worker')) {
+  fail('verify:harness must not run the source proposal worker smoke')
+}
+
+for (const token of [
+  'COMPASS_SOURCE_PROPOSAL_WORKER_SMOKE_ENV',
+  'COMPASS_SOURCE_PROPOSAL_WORKER_SMOKE_URL',
+  'http://127.0.0.1:3000/api/internal/source-proposals/dry-run',
+  'process.env.NODE_ENV === "production"',
+  'process.env.VERCEL_ENV === "production"',
+  'smokeEnv !== "local" && smokeEnv !== "staging"',
+  'smokeEnv === "local" && hostname !== "localhost" && hostname !== "127.0.0.1"',
+  'hostname === "admate.ai.kr" || hostname.endsWith(".admate.ai.kr")',
+  'staging|preview|dev|test|local',
+  'Refusing to run staging smoke against a production-like AdMate host.',
+  'COMPASS_SOURCE_PROPOSAL_WORKER_KEY',
+  'Authorization: `Bearer ${workerKey}`',
+  'JSON.stringify({ dryRun: true, maxSources: 1, fetch: false })',
+  'mutationEnabled',
+  'queueSnapshot.readStatus',
+  'createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY',
+  'would_index',
+  'would_promote',
+  'review_status',
+  'endpointHost: endpointUrl.host',
+]) {
+  if (!smokeScript.includes(token)) {
+    fail(`smoke script missing ${token}`)
+  }
+}
+
+for (const forbidden of [
+  'console.log(workerKey)',
+  'console.error(workerKey)',
+  'SUPABASE_SERVICE_ROLE_KEY=${',
+  'NEXT_PUBLIC_SUPABASE_URL=${',
+  'endpoint: endpoint',
+  'endpoint: process.env',
+  'endpoint, schema',
+  'payload?.error',
+]) {
+  if (smokeScript.includes(forbidden)) {
+    fail(`smoke script may log secrets or full endpoint: ${forbidden}`)
+  }
 }
 
 if (!process.exitCode) {
