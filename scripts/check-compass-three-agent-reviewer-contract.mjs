@@ -71,6 +71,7 @@ let hasWeakOnlyCase = false
 let hasVendorConflict = false
 let hasPlaceholderRejected = false
 let hasStaleSource = false
+let hasDedupedEvidence = false
 
 function isCompleteLineage(packet) {
   return Boolean(
@@ -94,10 +95,30 @@ function isVerifiedPacket(packet) {
     && !packet.reasons.includes('stale_source')
 }
 
+function normalizeReviewKey(value) {
+  return String(value || '').trim().toLowerCase().replace(/\s+/g, ' ')
+}
+
+function dedupePackets(packets) {
+  const seen = new Set()
+  return packets.filter((packet) => {
+    const key = [
+      normalizeReviewKey(packet.sourceId),
+      normalizeReviewKey(packet.chunkId),
+      normalizeReviewKey(packet.claim),
+    ].join('::')
+
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
 function reviewOutcomeForCase(packets) {
-  const verifiedPackets = packets.filter(isVerifiedPacket)
+  const dedupedPackets = dedupePackets(packets)
+  const verifiedPackets = dedupedPackets.filter(isVerifiedPacket)
   const conflicts = new Set()
-  for (const packet of packets) {
+  for (const packet of dedupedPackets) {
     for (const conflict of ['vendor_mismatch', 'stale_source', 'placeholder_content']) {
       if (packet.reasons.includes(conflict)) conflicts.add(conflict)
     }
@@ -105,6 +126,7 @@ function reviewOutcomeForCase(packets) {
   return {
     outcome: verifiedPackets.length > 0 && conflicts.size === 0 ? 'answer' : 'noDataFound',
     verifiedCount: verifiedPackets.length,
+    dedupedCount: dedupedPackets.length,
     conflicts: Array.from(conflicts),
   }
 }
@@ -180,10 +202,6 @@ for (const [caseIndex, testCase] of (fixture.cases || []).entries()) {
     fail(`${casePrefix} must include packets from both specialist agents`)
   }
 
-  if (Number(testCase.expectedVerifiedCount) !== verifiedCount) {
-    fail(`${casePrefix}.expectedVerifiedCount does not match verified packet count`)
-  }
-
   if (testCase.expectedOutcome === 'answer') {
     hasAnswerCase = true
     if (verifiedCount === 0) fail(`${casePrefix} answer case must include verified evidence`)
@@ -200,6 +218,14 @@ for (const [caseIndex, testCase] of (fixture.cases || []).entries()) {
   if (review.verifiedCount !== Number(testCase.expectedVerifiedCount)) {
     fail(`${casePrefix}.expectedVerifiedCount does not match Team Lead verified packet count`)
   }
+  if (typeof testCase.expectedDedupedPacketCount !== 'undefined') {
+    if (review.dedupedCount !== Number(testCase.expectedDedupedPacketCount)) {
+      fail(`${casePrefix}.expectedDedupedPacketCount does not match Team Lead deduped packet count`)
+    }
+  }
+  if (review.dedupedCount < testCase.packets.length) {
+    hasDedupedEvidence = true
+  }
 }
 
 for (const requiredText of [
@@ -211,6 +237,7 @@ for (const requiredText of [
   "canonicalAnswerRoute: '/api/chat-ollama'",
   "legacyAnswerRoute: '/api/chatbot'",
   'reviewCompassEvidencePackets',
+  'uniquePackets',
 ]) {
   if (!serviceText.includes(requiredText)) fail(`reviewer service missing ${requiredText}`)
 }
@@ -232,5 +259,6 @@ if (!hasWeakOnlyCase) fail('missing weak-only noDataFound fixture case')
 if (!hasVendorConflict) fail('missing vendor_mismatch rejection fixture')
 if (!hasPlaceholderRejected) fail('missing rejected placeholder fixture')
 if (!hasStaleSource) fail('missing stale_source fixture')
+if (!hasDedupedEvidence) fail('missing duplicate evidence dedupe fixture')
 
 if (!process.exitCode) console.log('[check-compass-three-agent-reviewer-contract] ok')

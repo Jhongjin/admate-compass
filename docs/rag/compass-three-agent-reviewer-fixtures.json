@@ -73,6 +73,47 @@
       ]
     },
     {
+      "caseId": "meta-duplicate-evidence-deduped",
+      "question": "If both Compass evidence agents return the same Meta policy chunk, should the Team Lead count it twice?",
+      "expectedOutcome": "answer",
+      "expectedVerifiedCount": 1,
+      "expectedDedupedPacketCount": 1,
+      "packets": [
+        {
+          "caseId": "meta-duplicate-evidence-deduped",
+          "agent": "policy_evidence_agent",
+          "claim": "Meta ads for restricted products require policy eligibility and operator review before launch.",
+          "sourceId": "meta-policy-restricted-content",
+          "sourceUrl": "https://www.facebook.com/policies/ads/restricted_content",
+          "sourceTitle": "Meta Advertising Standards - Restricted Content",
+          "vendor": "META",
+          "topic": "restricted_content",
+          "publishedOrFetchedAt": "2026-05-16T00:00:00.000Z",
+          "excerpt": "Advertisers must confirm that restricted products meet Meta policy eligibility and local operating requirements before launch.",
+          "chunkId": "meta-policy-restricted-content::chunk-002",
+          "retrievalScore": 0.9,
+          "evidenceDecision": "verified",
+          "reasons": ["source_quality_complete", "vendor_match", "policy_topic_match"]
+        },
+        {
+          "caseId": "meta-duplicate-evidence-deduped",
+          "agent": "media_product_evidence_agent",
+          "claim": "Meta ads for restricted products require policy eligibility and operator review before launch.",
+          "sourceId": "meta-policy-restricted-content",
+          "sourceUrl": "https://www.facebook.com/policies/ads/restricted_content",
+          "sourceTitle": "Meta Advertising Standards - Restricted Content",
+          "vendor": "META",
+          "topic": "restricted_content",
+          "publishedOrFetchedAt": "2026-05-16T00:00:00.000Z",
+          "excerpt": "Advertisers must confirm that restricted products meet Meta policy eligibility and local operating requirements before launch.",
+          "chunkId": "meta-policy-restricted-content::chunk-002",
+          "retrievalScore": 0.88,
+          "evidenceDecision": "verified",
+          "reasons": ["source_quality_complete", "vendor_match", "product_context_match"]
+        }
+      ]
+    },
+    {
       "caseId": "kakao-source-weak-only",
       "question": "Does Kakao confirm the same rule in the indexed corpus?",
       "expectedOutcome": "noDataFound",
