@@ -13,6 +13,7 @@ const allowedSourceTypes = new Set([
   'unknown-reviewed-source',
 ])
 const allowedVendorScopes = new Set(['meta', 'google', 'naver', 'kakao', 'multi-platform', 'generic'])
+const requiredFixtureSideEffects = ['db', 'network', 'llm', 'embedding', 'corpusMutation', 'cron', 'apply']
 const vendorHostAllowlist = {
   meta: ['facebook.com', 'instagram.com', 'meta.com'],
   google: ['support.google.com', 'ads.google.com', 'youtube.com'],
@@ -72,6 +73,10 @@ function parseHttpUrl(value) {
   }
 }
 
+function isUrlLikeReference(value) {
+  return /^[a-z][a-z0-9+.-]*:/i.test(String(value || '').trim())
+}
+
 function pushInternalLeakError(errors, source, index, fields) {
   for (const field of fields) {
     if (typeof source[field] === 'string' && internalNamePattern.test(source[field])) {
@@ -80,22 +85,24 @@ function pushInternalLeakError(errors, source, index, fields) {
   }
 }
 
-function validateSourceUrl(errors, source, index) {
-  if (!source.url) return
+function validateSourceUrlField(errors, source, index, field) {
+  if (!source[field]) return
+  if (field === 'sourceReference' && !isUrlLikeReference(source[field])) return
 
-  const parsedUrl = parseHttpUrl(source.url)
+  const parsedUrl = parseHttpUrl(source[field])
   if (!parsedUrl) {
-    errors.push(`source[${index}].url must be a valid http(s) URL`)
+    errors.push(`source[${index}].${field} must be a valid http(s) URL`)
     return
   }
 
   if (isPrivateOrInternalHost(parsedUrl.hostname)) {
-    errors.push(`source[${index}].url must not point to private or internal hosts`)
+    errors.push(`source[${index}].${field} must not point to private or internal hosts`)
   }
 
   const allowedHosts = vendorHostAllowlist[source.vendorScope]
   if (allowedHosts && !isAllowedHost(parsedUrl.hostname, allowedHosts)) {
-    errors.push(`source[${index}].vendorScope ${source.vendorScope} URL host mismatch: ${parsedUrl.hostname}`)
+    const fieldLabel = field === 'url' ? 'URL' : 'sourceReference'
+    errors.push(`source[${index}].vendorScope ${source.vendorScope} ${fieldLabel} host mismatch: ${parsedUrl.hostname}`)
   }
 }
 
@@ -139,7 +146,8 @@ function validateResponseEnvelope(data, label) {
       }
 
       pushInternalLeakError(errors, source, index, ['title', 'excerpt', 'sourceLabel', 'sourceType', 'url', 'sourceReference'])
-      validateSourceUrl(errors, source, index)
+      validateSourceUrlField(errors, source, index, 'url')
+      validateSourceUrlField(errors, source, index, 'sourceReference')
 
       if (source.similarity !== undefined) {
         const similarity = Number(source.similarity)
@@ -196,6 +204,18 @@ function validateResponseEnvelope(data, label) {
 }
 
 function validateFixtureSuite(data) {
+  if (data.fixturePack !== 'rag-source-quality-v2') {
+    fail('fixture suite must declare fixturePack rag-source-quality-v2')
+  }
+  if (data.mode !== 'checker_only') {
+    fail('fixture suite must stay checker_only')
+  }
+  for (const key of requiredFixtureSideEffects) {
+    if (data.sideEffects?.[key] !== false) {
+      fail(`fixture suite sideEffects.${key} must be false`)
+    }
+  }
+
   if (!Array.isArray(data.fixtures)) {
     fail('fixture suite must include fixtures array')
     return

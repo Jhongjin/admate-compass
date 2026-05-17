@@ -138,6 +138,68 @@
           }
         ]
       }
+    },
+    {
+      "id": "reject-private-source-reference-url",
+      "expectedValid": false,
+      "expectedFailureFragments": ["sourceReference must not point to private or internal hosts"],
+      "confidence": 68,
+      "expectedMetadata": {
+        "vendorScope": "meta",
+        "maxDuplicateTitleCount": 1
+      },
+      "response": {
+        "message": "Meta 정책 근거는 사용자에게 내부 네트워크 주소를 sourceReference로 노출하지 않아야 합니다.",
+        "sources": [
+          {
+            "id": "meta-private-reference-url",
+            "title": "Meta 광고 정책 근거",
+            "excerpt": "광고 소재와 랜딩 페이지의 정책 일관성을 확인해야 한다는 공식 근거입니다.",
+            "sourceReference": "http://localhost:3000/internal/documents/meta-policy",
+            "sourceType": "platform-policy",
+            "sourceLabel": "Meta Business Help",
+            "vendorScope": "meta",
+            "retrievalMethod": "hybrid",
+            "sourceQuality": {
+              "hasTitle": true,
+              "hasExcerpt": true,
+              "isFallback": false,
+              "qualityScore": 0.78
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "reject-source-reference-host-mismatch",
+      "expectedValid": false,
+      "expectedFailureFragments": ["vendorScope naver sourceReference host mismatch"],
+      "confidence": 74,
+      "expectedMetadata": {
+        "vendorScope": "naver",
+        "maxDuplicateTitleCount": 1
+      },
+      "response": {
+        "message": "네이버 검색광고 정책 근거로 표시되는 URL형 sourceReference는 네이버 공식 호스트에 속해야 합니다.",
+        "sources": [
+          {
+            "id": "naver-mismatched-reference-url",
+            "title": "네이버 검색광고 정책 근거",
+            "excerpt": "검색광고 소재와 랜딩 페이지는 심사 기준과 업종 제한을 충족해야 한다는 설명입니다.",
+            "sourceReference": "https://support.google.com/adspolicy/answer/6008942",
+            "sourceType": "platform-policy",
+            "sourceLabel": "Naver SearchAd Help",
+            "vendorScope": "naver",
+            "retrievalMethod": "hybrid",
+            "sourceQuality": {
+              "hasTitle": true,
+              "hasExcerpt": true,
+              "isFallback": false,
+              "qualityScore": 0.82
+            }
+          }
+        ]
+      }
     }
   ]
 }
