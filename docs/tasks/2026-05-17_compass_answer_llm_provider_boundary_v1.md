@@ -2,15 +2,15 @@
 
 Date: 2026-05-17
 Repo: admate-compass
-Status: provider activation contract
+Status: provider activation contract, canary-safe default pinned
 
 ## Scope
 
 This record documents the current Compass answer-model provider boundary before
 any OpenRouter production activation.
 
-No runtime provider behavior changes are made by this document. No real
-OpenRouter key is registered, tested, printed, or validated in this slice.
+No real OpenRouter key is registered, tested, printed, or validated in this
+slice.
 
 ## Current Runtime
 
@@ -28,14 +28,14 @@ Current behavior:
 ```text
 COMPASS_ANSWER_PROVIDER=ollama      -> Ollama
 COMPASS_ANSWER_PROVIDER=openrouter  -> OpenRouter
-COMPASS_ANSWER_PROVIDER=auto/empty  -> OpenRouter if a server-side key exists, otherwise Ollama
+COMPASS_ANSWER_PROVIDER=auto/empty  -> Ollama (canary protected default)
 ```
 
 Important risk:
 
-The current auto mode can switch to OpenRouter when a server-side key is
-registered. That is acceptable only when the deployment gate intentionally wants
-that behavior. Until the OpenRouter canary is approved, keep:
+A server-side key alone must not switch Compass to OpenRouter before canary.
+OpenRouter activation requires explicit provider selection. Until the OpenRouter
+canary is approved, keep:
 
 ```text
 COMPASS_ANSWER_PROVIDER=ollama
@@ -57,8 +57,8 @@ availability are reviewed.
 
 ## OpenRouter Canary Gate
 
-OpenRouter must be activated by an explicit canary gate, not by accidental
-`auto` mode behavior.
+OpenRouter must be activated by an explicit canary gate, not by accidental key
+presence or `auto` mode behavior.
 
 Before canary:
 
@@ -106,7 +106,7 @@ be printed.
 
 ## No-Touch Confirmation
 
-This slice does not:
+This boundary does not:
 
 - change `/api/chat-ollama` behavior
 - change `/api/chatbot` behavior

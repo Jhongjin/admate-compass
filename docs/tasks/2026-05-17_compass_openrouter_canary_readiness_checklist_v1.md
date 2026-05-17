@@ -8,8 +8,8 @@ Status: readiness contract
 
 This checklist prepares Compass for a future OpenRouter answer-model canary
 without registering, testing, printing, or validating any real secret value.
-
-No runtime provider behavior is changed in this slice.
+The runtime default is canary-safe: OpenRouter is not selected merely because a
+server-side key exists.
 
 ## Current Default
 
@@ -21,6 +21,14 @@ COMPASS_ANSWER_PROVIDER=ollama
 
 This prevents `auto` mode from switching to OpenRouter merely because a
 server-side key exists in an environment.
+
+Provider behavior before canary:
+
+```text
+COMPASS_ANSWER_PROVIDER=ollama      -> Ollama
+COMPASS_ANSWER_PROVIDER=openrouter  -> OpenRouter
+COMPASS_ANSWER_PROVIDER=auto/empty  -> Ollama
+```
 
 Deployment examples must not use `COMPASS_ANSWER_PROVIDER=auto` as the default
 before canary approval.

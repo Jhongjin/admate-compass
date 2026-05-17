@@ -54,9 +54,9 @@ for (const token of [
   "export type CompassAnswerProvider = 'openrouter' | 'ollama'",
   'OPENROUTER_API_KEY',
   'COMPASS_OPENROUTER_API_KEY',
+  "process.env.COMPASS_ANSWER_PROVIDER || 'ollama'",
   "configured === 'openrouter'",
   "configured === 'ollama'",
-  "hasOpenRouterKey() ? 'openrouter' : 'ollama'",
   'DEFAULT_OPENROUTER_MODELS',
   'resolveOpenRouterModels',
   'resolveOpenRouterBaseUrl',
@@ -116,9 +116,10 @@ for (const forbidden of [
 
 for (const token of [
   'OpenRouter adapter already exists',
-  'No runtime provider behavior changes are made by this document',
-  'The current auto mode can switch to OpenRouter when a server-side key is',
-  'OpenRouter key is registered, tested, printed, or validated in this slice',
+  'canary-safe default pinned',
+  'A server-side key alone must not switch Compass to OpenRouter before canary',
+  'COMPASS_ANSWER_PROVIDER=auto/empty  -> Ollama',
+  'No real OpenRouter key is registered',
   'OpenRouter Canary Gate',
   'activated by an explicit canary gate',
   'COMPASS_ANSWER_PROVIDER=ollama',
@@ -130,7 +131,8 @@ for (const token of [
 
 for (const token of [
   'readiness contract',
-  'No runtime provider behavior is changed in this slice',
+  'The runtime default is canary-safe',
+  'COMPASS_ANSWER_PROVIDER=auto/empty  -> Ollama',
   'server-side secret',
   'COMPASS_ANSWER_PROVIDER=ollama',
   'COMPASS_ANSWER_PROVIDER=openrouter',
@@ -170,6 +172,10 @@ for (const forbidden of ['NEXT_PUBLIC_OPENROUTER']) {
 
 if (packageJson.scripts?.['check:compass-answer-provider-contract'] !== 'node scripts/check-compass-answer-provider-contract.mjs') {
   fail('package script check:compass-answer-provider-contract is missing or changed')
+}
+
+if (service.includes("hasOpenRouterKey() ? 'openrouter' : 'ollama'")) {
+  fail('Compass answer provider must not auto-switch to OpenRouter from key presence before canary')
 }
 
 if (!String(packageJson.scripts?.['verify:harness'] || '').includes('check:compass-answer-provider-contract')) {

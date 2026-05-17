@@ -54,12 +54,12 @@ function hasOpenRouterKey(): boolean {
 }
 
 function resolveProvider(): CompassAnswerProvider {
-  const configured = String(process.env.COMPASS_ANSWER_PROVIDER || 'auto').trim().toLowerCase();
+  const configured = String(process.env.COMPASS_ANSWER_PROVIDER || 'ollama').trim().toLowerCase();
 
   if (configured === 'openrouter') return 'openrouter';
   if (configured === 'ollama') return 'ollama';
 
-  return hasOpenRouterKey() ? 'openrouter' : 'ollama';
+  return 'ollama';
 }
 
 function resolveOpenRouterModels(): string[] {
