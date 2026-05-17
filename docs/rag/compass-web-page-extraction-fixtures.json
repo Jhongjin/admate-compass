@@ -130,6 +130,30 @@
       }
     },
     {
+      "id": "rejects-secret-like-final-url-query",
+      "input": {
+        "finalUrl": "https://support.google.com/adspolicy/answer/token-example?access_token=REDACTED_SECRET_VALUE&hl=ko",
+        "fetchedAt": "2026-05-17T00:00:00.000Z",
+        "rawHtml": "<html><head><title>Google Ads Policy URL Secret Capture</title></head><body><main><h1>Google 광고 정책</h1><p>Google Ads policy campaign review, advertising support, prohibited content, advertiser responsibility, business verification, creative approval, restricted content, and landing page review guidance are visible.</p><p>광고 심사 정책과 캠페인 지원 문구가 있어도 수집 URL에 인증성 query 값이 있으면 결과 객체나 큐에 남기지 않고 거절해야 합니다.</p></main></body></html>"
+      },
+      "expectedRejection": {
+        "reasonsInclude": ["secret_like_text"],
+        "contentText": ""
+      }
+    },
+    {
+      "id": "rejects-secret-like-canonical-url-query",
+      "input": {
+        "finalUrl": "https://www.facebook.com/policies/ads/canonical-secret",
+        "fetchedAt": "2026-05-17T00:00:00.000Z",
+        "rawHtml": "<html><head><title>Meta Ads Policy Canonical Secret Capture</title><link rel=\"canonical\" href=\"https://www.facebook.com/policies/ads/canonical-secret?session_id=REDACTED_SECRET_VALUE\" /></head><body><main><h1>Meta 광고 정책</h1><p>Meta advertising standards, campaign review, creative approval, restricted content, prohibited practices, business support, advertiser responsibility, and landing page guidance are visible.</p><p>광고 심사 정책과 캠페인 검토 내용이 충분해도 canonical URL에 세션성 query 값이 있으면 수집 후보를 거절하고 출력 URL에서 민감 query를 제거해야 합니다.</p></main></body></html>"
+      },
+      "expectedRejection": {
+        "reasonsInclude": ["secret_like_text"],
+        "contentText": ""
+      }
+    },
+    {
       "id": "rejects-private-internal-url",
       "input": {
         "finalUrl": "http://127.0.0.1:3000/admin/source-ops",

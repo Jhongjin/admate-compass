@@ -86,6 +86,8 @@ const SECRET_LIKE_PATTERNS = [
   /\bX-Amz-Signature=/i,
 ];
 
+const SECRET_LIKE_QUERY_KEY_PATTERN = /(?:api[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token|session(?:[_-]?id)?|credential|cookie|secret|signature|x-amz-signature)/i;
+
 const RAW_HTML_TEXT_PATTERN = /<\/?(?:html|head|body|script|style|nav|header|footer|main|article|section|div|span|p|h[1-6]|meta|link)\b[^>]*>/i;
 
 const PLACEHOLDER_PATTERNS = [
@@ -183,7 +185,12 @@ export function extractWebPageForCompass(
   const minContentChars = options.minContentChars ?? DEFAULT_MIN_CONTENT_CHARS;
   const minPolicySignals = options.minPolicySignals ?? DEFAULT_MIN_POLICY_SIGNALS;
 
-  if (containsSecretLikeText(rawHtml) || containsSecretLikeText(contentCandidate)) {
+  if (
+    containsSecretLikeText(rawHtml)
+    || containsSecretLikeText(contentCandidate)
+    || (finalUrlValue && containsSecretLikeUrl(finalUrlValue))
+    || (canonicalUrlValue && containsSecretLikeUrl(canonicalUrlValue))
+  ) {
     rejectionReasons.push('secret_like_text');
   }
 
@@ -207,7 +214,7 @@ export function extractWebPageForCompass(
   const status: WebPageExtractionStatus = uniqueRejections.length > 0 ? 'rejected' : 'accepted';
   const contentText = status === 'accepted' ? contentCandidate : '';
   const warnings = status === 'accepted' ? [] : uniqueRejections;
-  const canonicalUrl = canonicalUrlValue?.toString() || finalUrlValue?.toString() || '';
+  const canonicalUrl = sanitizeUrlForExtractionOutput(canonicalUrlValue?.toString() || finalUrlValue?.toString() || '');
   const result: WebPageExtractionResult = {
     status,
     canonicalUrl,
@@ -408,6 +415,27 @@ function isPlaceholderOrLowSignalContent(value: string): boolean {
 
 function containsSecretLikeText(value: string): boolean {
   return SECRET_LIKE_PATTERNS.some((pattern) => pattern.test(value));
+}
+
+function containsSecretLikeUrl(url: URL): boolean {
+  if (containsSecretLikeText(url.toString())) return true;
+
+  return Array.from(url.searchParams.keys()).some((key) => (
+    SECRET_LIKE_QUERY_KEY_PATTERN.test(key) && Boolean(url.searchParams.get(key)?.trim())
+  ));
+}
+
+function sanitizeUrlForExtractionOutput(value: string): string {
+  const url = safeUrl(value);
+  if (!url) return value;
+
+  for (const key of Array.from(url.searchParams.keys())) {
+    if (SECRET_LIKE_QUERY_KEY_PATTERN.test(key)) {
+      url.searchParams.delete(key);
+    }
+  }
+
+  return url.toString();
 }
 
 function isAllowedPolicyHost(hostname: string, allowedHosts: string[]): boolean {
