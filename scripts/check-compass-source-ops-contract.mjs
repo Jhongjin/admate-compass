@@ -86,6 +86,15 @@ for (const token of [
   "queue write",
   "pending {proposalRun.queueSnapshot.pendingCandidates}",
   "QueueReadOnlySummary",
+  "SourceProposalControlLedger",
+  "제안 승격 차단 원장",
+  "Source proposal control ledger",
+  "proposal mode",
+  "dry run · mutation false",
+  "operator review only",
+  "apply surface",
+  "corpus promotion",
+  "documents/chunks writes 없음",
   "검토 상태 분포",
   "위험도 분포",
   "ReadOnlyQueueInventory",
@@ -119,6 +128,14 @@ for (const forbidden of [
 
 if (!layout.includes("/admin/source-ops") || !layout.includes("소스 관제")) {
   fail("admin navigation must expose source ops page");
+}
+
+if (
+  !layout.includes("w-full overflow-x-hidden") ||
+  !layout.includes("flex-1 min-w-0") ||
+  !layout.includes("py-6 min-w-0")
+) {
+  fail("admin source ops shell must allow table-heavy pages to shrink on mobile");
 }
 
 for (const token of [

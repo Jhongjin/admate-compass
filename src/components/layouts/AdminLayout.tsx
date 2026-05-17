@@ -25,7 +25,7 @@ export default function AdminLayout({ children, currentPage = "dashboard" }: Adm
   ];
 
   return (
-    <div className="admin-container min-h-screen bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
+    <div className="admin-container min-h-screen w-full overflow-x-hidden bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
       {/* Header - Modern glassmorphism design */}
       <header className="fixed top-0 left-0 right-0 z-50 bg-black/20 backdrop-blur-md border-b border-white/10">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
@@ -150,9 +150,9 @@ export default function AdminLayout({ children, currentPage = "dashboard" }: Adm
         </div>
 
         {/* Main content */}
-        <div className="md:pl-64 flex-1">
-          <main className="py-6">
-            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="md:pl-64 flex-1 min-w-0">
+          <main className="py-6 min-w-0">
+            <div className="max-w-7xl mx-auto min-w-0 px-4 sm:px-6 lg:px-8">
               {children}
             </div>
           </main>

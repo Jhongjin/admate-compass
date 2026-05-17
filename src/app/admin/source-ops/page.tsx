@@ -376,6 +376,8 @@ export default function SourceOpsPage() {
                         )}
                       </div>
 
+                      <SourceProposalControlLedger proposalRun={proposalRun} />
+
                       <QueueReadOnlySummary snapshot={proposalRun.queueSnapshot} />
 
                       {proposalRun.queueSnapshot.recentCandidates.length > 0 && (
@@ -539,6 +541,65 @@ export default function SourceOpsPage() {
         )}
       </div>
     </AdminLayout>
+  );
+}
+
+function SourceProposalControlLedger({ proposalRun }: { proposalRun: ProposalRun }) {
+  const snapshot = proposalRun.queueSnapshot;
+  const queueReadValue = snapshot?.readStatus || (proposalRun.queue?.readEnabled ? "enabled" : "disabled");
+  const queueWriteValue = proposalRun.queue?.writeEnabled ? "configured" : "disabled";
+  const productionState = snapshot?.productionBlocked || proposalRun.queue?.productionBlocked
+    ? "production blocked"
+    : "local only";
+  const controlCells = [
+    {
+      label: "proposal mode",
+      value: proposalRun.mode,
+      detail: proposalRun.dryRun ? "dry run · mutation false" : "검토 필요",
+    },
+    {
+      label: "queue read",
+      value: queueReadValue,
+      detail: "operator review only",
+    },
+    {
+      label: "queue write",
+      value: queueWriteValue,
+      detail: productionState,
+    },
+    {
+      label: "apply surface",
+      value: "disabled",
+      detail: "승인/반려/색인/승격 동작 없음",
+    },
+    {
+      label: "corpus promotion",
+      value: "blocked",
+      detail: "documents/chunks writes 없음",
+    },
+  ];
+
+  return (
+    <div className="mt-5 rounded-xl border border-cyan-400/15 bg-black/25 p-4">
+      <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+        <div>
+          <p className="text-xs uppercase tracking-[0.18em] text-cyan-100/80">제안 승격 차단 원장</p>
+          <h3 className="mt-2 text-lg font-semibold text-white">Source proposal control ledger</h3>
+        </div>
+        <Badge className="border-emerald-400/30 bg-emerald-500/10 text-emerald-100">
+          read-only review
+        </Badge>
+      </div>
+      <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
+        {controlCells.map((cell) => (
+          <div key={cell.label} className="min-h-[96px] rounded-lg border border-white/10 bg-white/[0.04] p-3">
+            <p className="text-[11px] uppercase tracking-[0.14em] text-gray-500">{cell.label}</p>
+            <p className="mt-2 break-words text-base font-semibold text-white">{cell.value}</p>
+            <p className="mt-2 text-xs leading-5 text-gray-400">{cell.detail}</p>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 
