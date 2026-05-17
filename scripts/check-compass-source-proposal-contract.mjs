@@ -61,6 +61,16 @@ if (!route.includes("buildCompassSourceProposalRun")) {
   fail("proposal route must use CompassSourceProposalService");
 }
 
+for (const token of [
+  "process.env.NODE_ENV === 'production'",
+  "const fetchPreview",
+  "fetchPreview,",
+]) {
+  if (!route.includes(token)) {
+    fail(`proposal GET route must keep production fetch preview disabled via ${token}`);
+  }
+}
+
 if (!route.includes("readCompassSourceProposalQueueSnapshot") || !route.includes("queueSnapshot")) {
   fail("proposal route must expose read-only proposal queue snapshot");
 }
@@ -99,6 +109,16 @@ if (!page.includes("/api/admin/source-ops/proposals?maxSources=7&queueLimit=20")
 
 if (!page.includes("queueSnapshot") || !page.includes("queue {proposalRun.queueSnapshot.readStatus}")) {
   fail("source ops page must render read-only proposal queue status");
+}
+
+for (const token of [
+  "QueueReadOnlySummary",
+  "검토 상태 분포",
+  "위험도 분포",
+]) {
+  if (!page.includes(token)) {
+    fail(`source ops page must render read-only proposal queue summary token: ${token}`);
+  }
 }
 
 for (const token of [

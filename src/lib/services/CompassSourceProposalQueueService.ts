@@ -11,6 +11,8 @@ export interface CompassSourceProposalQueueRequest {
 
 export interface CompassSourceProposalQueueResult {
   enabled: boolean;
+  readEnabled: boolean;
+  writeEnabled: boolean;
   persisted: boolean;
   productionBlocked: boolean;
   runId?: string;
@@ -20,10 +22,22 @@ export interface CompassSourceProposalQueueResult {
 
 export interface CompassSourceProposalQueueSnapshot {
   enabled: boolean;
+  readEnabled: boolean;
+  writeEnabled: boolean;
   productionBlocked: boolean;
   canPersist: boolean;
   readStatus: 'disabled' | 'unavailable' | 'ready';
   pendingCandidates: number;
+  reviewStatusCounts: {
+    pending: number;
+    rejected: number;
+    expired: number;
+  };
+  riskLevelCounts: {
+    low: number;
+    medium: number;
+    high: number;
+  };
   latestRun?: {
     id: string;
     status: string;
@@ -55,33 +69,52 @@ export interface CompassSourceProposalQueueSnapshot {
 }
 
 export function getCompassSourceProposalQueueState() {
-  const enabled = process.env.COMPASS_SOURCE_PROPOSAL_QUEUE_ENABLED === 'true';
+  const writeEnabled = process.env.COMPASS_SOURCE_PROPOSAL_QUEUE_ENABLED === 'true';
+  const readEnabled = process.env.COMPASS_SOURCE_PROPOSAL_QUEUE_READ_ENABLED === 'true' || writeEnabled;
   const productionBlocked = process.env.NODE_ENV === 'production';
 
   return {
-    enabled,
+    enabled: writeEnabled,
+    readEnabled,
+    writeEnabled,
     productionBlocked,
-    canPersist: enabled && !productionBlocked,
+    canPersist: writeEnabled && !productionBlocked,
   };
 }
+
+const EMPTY_QUEUE_REVIEW_COUNTS = {
+  pending: 0,
+  rejected: 0,
+  expired: 0,
+};
+
+const EMPTY_QUEUE_RISK_COUNTS = {
+  low: 0,
+  medium: 0,
+  high: 0,
+};
 
 export async function readCompassSourceProposalQueueSnapshot(
   limit = 5,
 ): Promise<CompassSourceProposalQueueSnapshot> {
   const queueState = getCompassSourceProposalQueueState();
   const base = {
-    enabled: queueState.enabled,
+    enabled: queueState.readEnabled,
+    readEnabled: queueState.readEnabled,
+    writeEnabled: queueState.writeEnabled,
     productionBlocked: queueState.productionBlocked,
     canPersist: queueState.canPersist,
   };
 
-  if (!queueState.enabled) {
+  if (!queueState.readEnabled) {
     return {
       ...base,
       readStatus: 'disabled',
       pendingCandidates: 0,
+      reviewStatusCounts: EMPTY_QUEUE_REVIEW_COUNTS,
+      riskLevelCounts: EMPTY_QUEUE_RISK_COUNTS,
       recentCandidates: [],
-      reason: 'Queue persistence is disabled, so no durable proposal queue is expected in this environment.',
+      reason: 'Proposal queue readback is disabled. Enable COMPASS_SOURCE_PROPOSAL_QUEUE_READ_ENABLED=true for read-only status checks.',
     };
   }
 
@@ -90,6 +123,8 @@ export async function readCompassSourceProposalQueueSnapshot(
       ...base,
       readStatus: 'unavailable',
       pendingCandidates: 0,
+      reviewStatusCounts: EMPTY_QUEUE_REVIEW_COUNTS,
+      riskLevelCounts: EMPTY_QUEUE_RISK_COUNTS,
       recentCandidates: [],
       reason: 'Proposal queue tables cannot be read because the Compass service database environment is unavailable.',
     };
@@ -109,6 +144,8 @@ export async function readCompassSourceProposalQueueSnapshot(
         ...base,
         readStatus: 'unavailable',
         pendingCandidates: 0,
+        reviewStatusCounts: EMPTY_QUEUE_REVIEW_COUNTS,
+        riskLevelCounts: EMPTY_QUEUE_RISK_COUNTS,
         recentCandidates: [],
         reason: 'Proposal queue run table is not readable in the current Compass schema.',
       };
@@ -148,6 +185,8 @@ export async function readCompassSourceProposalQueueSnapshot(
         ...base,
         readStatus: 'unavailable',
         pendingCandidates: 0,
+        reviewStatusCounts: EMPTY_QUEUE_REVIEW_COUNTS,
+        riskLevelCounts: EMPTY_QUEUE_RISK_COUNTS,
         recentCandidates: [],
         reason: 'Proposal queue candidate table is not readable in the current Compass schema.',
       };
@@ -157,11 +196,17 @@ export async function readCompassSourceProposalQueueSnapshot(
     const candidateRows: Array<Record<string, unknown>> = Array.isArray(candidates)
       ? candidates as unknown as Array<Record<string, unknown>>
       : [];
+    const [reviewStatusCounts, riskLevelCounts] = await Promise.all([
+      readQueueReviewStatusCounts(supabase),
+      readQueueRiskLevelCounts(supabase),
+    ]);
 
     return {
       ...base,
       readStatus: 'ready',
       pendingCandidates: count || 0,
+      reviewStatusCounts,
+      riskLevelCounts,
       latestRun: latestRunRow ? {
         id: String(latestRunRow.id),
         status: String(latestRunRow.status || 'unknown'),
@@ -196,6 +241,8 @@ export async function readCompassSourceProposalQueueSnapshot(
       ...base,
       readStatus: 'unavailable',
       pendingCandidates: 0,
+      reviewStatusCounts: EMPTY_QUEUE_REVIEW_COUNTS,
+      riskLevelCounts: EMPTY_QUEUE_RISK_COUNTS,
       recentCandidates: [],
       reason: 'Proposal queue readback is unavailable in this environment.',
     };
@@ -211,6 +258,8 @@ export async function persistCompassSourceProposalRun(
   if (!queueState.enabled) {
     return {
       enabled: false,
+      readEnabled: queueState.readEnabled,
+      writeEnabled: queueState.writeEnabled,
       persisted: false,
       productionBlocked: queueState.productionBlocked,
       candidateCount: proposalRun.candidates.length,
@@ -221,6 +270,8 @@ export async function persistCompassSourceProposalRun(
   if (queueState.productionBlocked) {
     return {
       enabled: true,
+      readEnabled: queueState.readEnabled,
+      writeEnabled: queueState.writeEnabled,
       persisted: false,
       productionBlocked: true,
       candidateCount: proposalRun.candidates.length,
@@ -265,12 +316,56 @@ export async function persistCompassSourceProposalRun(
 
   return {
     enabled: true,
+    readEnabled: queueState.readEnabled,
+    writeEnabled: queueState.writeEnabled,
     persisted: true,
     productionBlocked: false,
     runId: runRow.id,
     candidateCount: proposalRun.candidates.length,
     reason: 'Proposal run persisted to the dry-run queue. No corpus mutation was performed.',
   };
+}
+
+async function readQueueReviewStatusCounts(supabase: ReturnType<typeof createCompassServiceClient>) {
+  const [pending, rejected, expired] = await Promise.all([
+    countQueueRows(supabase, 'review_status', 'pending'),
+    countQueueRows(supabase, 'review_status', 'rejected'),
+    countQueueRows(supabase, 'review_status', 'expired'),
+  ]);
+
+  return {
+    pending,
+    rejected,
+    expired,
+  };
+}
+
+async function readQueueRiskLevelCounts(supabase: ReturnType<typeof createCompassServiceClient>) {
+  const [low, medium, high] = await Promise.all([
+    countQueueRows(supabase, 'risk_level', 'low'),
+    countQueueRows(supabase, 'risk_level', 'medium'),
+    countQueueRows(supabase, 'risk_level', 'high'),
+  ]);
+
+  return {
+    low,
+    medium,
+    high,
+  };
+}
+
+async function countQueueRows(
+  supabase: ReturnType<typeof createCompassServiceClient>,
+  column: 'review_status' | 'risk_level',
+  value: string,
+): Promise<number> {
+  const { count, error } = await supabase
+    .from('source_proposal_queue')
+    .select('id', { count: 'exact', head: true })
+    .eq(column, value);
+
+  if (error) return 0;
+  return count || 0;
 }
 
 function toQueueRow(candidate: CompassSourceProposalCandidate, runId: string) {

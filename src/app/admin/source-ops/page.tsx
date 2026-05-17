@@ -98,15 +98,29 @@ interface ProposalRun {
   safetyNotes: string[];
   queue?: {
     enabled: boolean;
+    readEnabled: boolean;
+    writeEnabled: boolean;
     productionBlocked: boolean;
     canPersist?: boolean;
   };
   queueSnapshot?: {
     enabled: boolean;
+    readEnabled: boolean;
+    writeEnabled: boolean;
     productionBlocked: boolean;
     canPersist: boolean;
     readStatus: "disabled" | "unavailable" | "ready";
     pendingCandidates: number;
+    reviewStatusCounts: {
+      pending: number;
+      rejected: number;
+      expired: number;
+    };
+    riskLevelCounts: {
+      low: number;
+      medium: number;
+      high: number;
+    };
     latestRun?: {
       id: string;
       status: string;
@@ -317,7 +331,10 @@ export default function SourceOpsPage() {
                         {proposalRun.mode}
                       </Badge>
                       <Badge className="border-white/20 bg-white/5 text-gray-200">
-                        queue {proposalRun.queue?.enabled ? "enabled" : "disabled"}
+                        queue read {proposalRun.queueSnapshot?.readEnabled || proposalRun.queue?.readEnabled ? "enabled" : "disabled"}
+                      </Badge>
+                      <Badge className="border-white/20 bg-white/5 text-gray-200">
+                        queue write {proposalRun.queue?.writeEnabled ? "enabled" : "disabled"}
                       </Badge>
                     </div>
                   </div>
@@ -355,6 +372,8 @@ export default function SourceOpsPage() {
                           </div>
                         )}
                       </div>
+
+                      <QueueReadOnlySummary snapshot={proposalRun.queueSnapshot} />
 
                       {proposalRun.queueSnapshot.recentCandidates.length > 0 && (
                         <ReadOnlyQueueInventory candidates={proposalRun.queueSnapshot.recentCandidates} />
@@ -523,6 +542,68 @@ function Metric({ label, value }: { label: string; value: number }) {
     <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
       <p className="text-xs text-gray-500">{label}</p>
       <p className="mt-1 text-xl font-semibold text-white">{value}</p>
+    </div>
+  );
+}
+
+function QueueReadOnlySummary({
+  snapshot,
+}: {
+  snapshot: NonNullable<ProposalRun["queueSnapshot"]>;
+}) {
+  const reviewItems = [
+    { label: "검토 대기", value: snapshot.reviewStatusCounts.pending },
+    { label: "반려", value: snapshot.reviewStatusCounts.rejected },
+    { label: "만료", value: snapshot.reviewStatusCounts.expired },
+  ];
+  const riskItems = [
+    { label: "낮음", value: snapshot.riskLevelCounts.low },
+    { label: "보통", value: snapshot.riskLevelCounts.medium },
+    { label: "높음", value: snapshot.riskLevelCounts.high },
+  ];
+
+  return (
+    <div className="mt-5 grid gap-3 lg:grid-cols-2">
+      <QueueSummaryCard
+        title="검토 상태 분포"
+        description="후보 큐는 읽기 전용으로만 집계됩니다."
+        items={reviewItems}
+      />
+      <QueueSummaryCard
+        title="위험도 분포"
+        description="높은 위험도 후보는 승인 게이트 전까지 색인되지 않습니다."
+        items={riskItems}
+      />
+    </div>
+  );
+}
+
+function QueueSummaryCard({
+  title,
+  description,
+  items,
+}: {
+  title: string;
+  description: string;
+  items: Array<{ label: string; value: number }>;
+}) {
+  return (
+    <div className="rounded-xl border border-white/10 bg-black/20 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-medium text-white">{title}</p>
+          <p className="mt-1 text-xs text-gray-400">{description}</p>
+        </div>
+        <Lock className="h-4 w-4 shrink-0 text-emerald-300" aria-hidden="true" />
+      </div>
+      <div className="mt-4 grid grid-cols-3 gap-2">
+        {items.map((item) => (
+          <div key={item.label} className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
+            <p className="text-[11px] text-gray-500">{item.label}</p>
+            <p className="mt-1 text-2xl font-semibold tabular-nums text-white">{item.value}</p>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

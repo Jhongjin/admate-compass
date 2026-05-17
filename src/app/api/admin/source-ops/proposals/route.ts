@@ -12,10 +12,13 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const maxSources = Number(searchParams.get('maxSources') || undefined) || undefined;
     const queueLimit = Number(searchParams.get('queueLimit') || undefined) || undefined;
+    const fetchPreview = process.env.NODE_ENV === 'production'
+      ? false
+      : searchParams.get('fetch') === 'true';
     const proposalRun = await buildCompassSourceProposalRun({
       sourceId: searchParams.get('sourceId') || undefined,
       maxSources,
-      fetchPreview: searchParams.get('fetch') === 'true',
+      fetchPreview,
     });
 
     return NextResponse.json({

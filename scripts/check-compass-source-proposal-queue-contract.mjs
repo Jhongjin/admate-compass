@@ -69,8 +69,11 @@ for (const token of [
 }
 
 for (const token of [
+  "COMPASS_SOURCE_PROPOSAL_QUEUE_READ_ENABLED",
   "COMPASS_SOURCE_PROPOSAL_QUEUE_ENABLED",
   "process.env.NODE_ENV === 'production'",
+  "readEnabled",
+  "writeEnabled",
   "source_proposal_runs",
   "source_proposal_queue",
   "readCompassSourceProposalQueueSnapshot",
@@ -78,6 +81,10 @@ for (const token of [
   "readStatus: 'unavailable'",
   "readStatus: 'ready'",
   "pendingCandidates",
+  "reviewStatusCounts",
+  "riskLevelCounts",
+  "readQueueReviewStatusCounts",
+  "readQueueRiskLevelCounts",
   "recentCandidates",
   "runId",
   "canonicalUrl",
