@@ -103,6 +103,15 @@ if (documentProcessingService.includes("이 URL은 서버리스 환경에서 크
   fail("DocumentProcessingService must not create placeholder URL content for indexing");
 }
 
+for (const forbidden of [
+  "CompassSourcePreviewParser",
+  "extractCompassSourcePreview",
+]) {
+  if (indexingService.includes(forbidden) || documentProcessingService.includes(forbidden)) {
+    fail(`URL indexing/chunking must remain fail-closed and must not use proposal preview parser: ${forbidden}`);
+  }
+}
+
 const processUrlBlock = documentProcessingService.match(/async processUrl[\s\S]*?\/\*\*\s*\n\s*\* 텍스트 정리/);
 if (!processUrlBlock || !processUrlBlock[0].includes("throw new Error")) {
   fail("DocumentProcessingService.processUrl must fail closed until a real extractor is wired");

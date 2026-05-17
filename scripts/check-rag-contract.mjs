@@ -11,8 +11,10 @@ const requiredFiles = [
   'scripts/check-compass-chunking-contract.mjs',
   'scripts/check-compass-source-ops-contract.mjs',
   'scripts/check-compass-source-proposal-contract.mjs',
+  'scripts/check-compass-source-preview-parser-fixtures.mjs',
   'scripts/check-compass-source-proposal-queue-contract.mjs',
   'src/lib/services/CompassSourceProposalService.ts',
+  'src/lib/services/CompassSourcePreviewParser.ts',
   'src/lib/services/CompassSourceProposalReviewService.ts',
   'src/lib/services/CompassSourceProposalQueueService.ts',
   'src/lib/services/DocumentIndexingService.ts',
@@ -81,8 +83,16 @@ if (fs.existsSync(sourceOpsServicePath)) {
 const sourceProposalServicePath = path.join(root, 'src/lib/services/CompassSourceProposalService.ts')
 if (fs.existsSync(sourceProposalServicePath)) {
   const text = fs.readFileSync(sourceProposalServicePath, 'utf8')
-  for (const field of ['proposal-only', 'dryRun: true', 'mutationEnabled: false', 'wouldPromote: false', 'COMPASS_SOURCE_PROPOSAL_FETCH_ENABLED']) {
+  for (const field of ['proposal-only', 'dryRun: true', 'mutationEnabled: false', 'wouldPromote: false', 'COMPASS_SOURCE_PROPOSAL_FETCH_ENABLED', 'extractCompassSourcePreview']) {
     if (!text.includes(field)) fail(`Compass source proposal contract missing ${field}`)
+  }
+}
+
+const sourcePreviewParserPath = path.join(root, 'src/lib/services/CompassSourcePreviewParser.ts')
+if (fs.existsSync(sourcePreviewParserPath)) {
+  const text = fs.readFileSync(sourcePreviewParserPath, 'utf8')
+  for (const field of ['CompassSourcePreview', 'extractCompassSourcePreview', 'validateCompassSourcePreview']) {
+    if (!text.includes(field)) fail(`Compass source preview parser contract missing ${field}`)
   }
 }
 

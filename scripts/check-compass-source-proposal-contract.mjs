@@ -20,9 +20,11 @@ function read(relativePath) {
 }
 
 const service = read("src/lib/services/CompassSourceProposalService.ts");
+const parserService = read("src/lib/services/CompassSourcePreviewParser.ts");
 const reviewService = read("src/lib/services/CompassSourceProposalReviewService.ts");
 const route = read("src/app/api/admin/source-ops/proposals/route.ts");
 const page = read("src/app/admin/source-ops/page.tsx");
+const packageJson = JSON.parse(read("package.json") || "{}");
 
 for (const token of [
   "proposal-only",
@@ -33,12 +35,58 @@ for (const token of [
   "COMPASS_SOURCE_PROPOSAL_FETCH_ENABLED",
   "COMPASS_SOURCE_PROPOSAL_MIN_PREVIEW_CHARS",
   "isAllowedPolicyHost",
-  "validateExtractedPreview",
+  "CompassSourcePreviewParser",
+  "extractCompassSourcePreview",
   "Preview fetch produced too little readable policy content",
   "Preview fetch lacks enough readable policy signal",
-]) {
-  if (!service.includes(token)) {
+].filter(Boolean)) {
+  const source = token === "CompassSourcePreviewParser" || token === "extractCompassSourcePreview"
+    ? service
+    : `${service}\n${parserService}`;
+  if (!source.includes(token)) {
     fail(`proposal safety contract missing ${token}`);
+  }
+}
+
+for (const token of [
+  "extractCompassSourcePreview",
+  "validateCompassSourcePreview",
+]) {
+  if (!parserService.includes(token)) {
+    fail(`preview parser missing ${token}`);
+  }
+}
+
+for (const forbidden of [
+  "function extractPreview",
+  "function validateExtractedPreview",
+  "function removePageChrome",
+  "function stripTags",
+  "function decodeEntities",
+  "function matchFirst",
+]) {
+  if (service.includes(forbidden)) {
+    fail(`proposal service must not keep duplicate preview parser helper ${forbidden}`);
+  }
+}
+
+for (const forbidden of [
+  "fetch(",
+  "process.env",
+  "createClient",
+  "createCompassServiceClient",
+  "supabase",
+  "DocumentIndexingService",
+  "VectorStorageService",
+  "EmbeddingService",
+  "CompassAnswerLlmService",
+  "@anthropic-ai/sdk",
+  "@google/generative-ai",
+  "chat.completions",
+  "node:fs",
+]) {
+  if (parserService.includes(forbidden)) {
+    fail(`preview parser must remain pure and must not include ${forbidden}`);
   }
 }
 
@@ -135,6 +183,14 @@ for (const token of [
 
 if (page.includes("fetch(\"/api/admin/source-ops/proposals\",") || page.includes("method: \"POST\"") || page.includes("method: 'POST'")) {
   fail("source ops page must not expose proposal queue/apply POST actions");
+}
+
+if (packageJson.scripts?.["check:compass-source-preview-parser"] !== "node scripts/check-compass-source-preview-parser-fixtures.mjs") {
+  fail("package script check:compass-source-preview-parser is missing or changed");
+}
+
+if (!String(packageJson.scripts?.["verify:harness"] || "").includes("check:compass-source-preview-parser")) {
+  fail("verify:harness must include check:compass-source-preview-parser");
 }
 
 if (!process.exitCode) {

@@ -1,0 +1,55 @@
+{
+  "fixturePack": "compass-source-preview-parser-v1",
+  "mode": "local_contract_only",
+  "sideEffects": {
+    "db": false,
+    "network": false,
+    "llm": false,
+    "embedding": false,
+    "corpusMutation": false
+  },
+  "fixtures": [
+    {
+      "id": "meta-policy-main-removes-page-chrome",
+      "finalUrl": "https://www.facebook.com/business/help/example",
+      "minPreviewChars": 160,
+      "fetchedAt": "2026-05-17T00:00:00.000Z",
+      "html": "<!doctype html><html><head><title>Meta Ads 광고 정책 &amp; 비즈니스 도움말</title><link rel=\"canonical\" href=\"https://www.facebook.com/business/help/example\" /><script>window.__DATA__='hidden';</script><style>.hidden{display:none}</style></head><body><header>로그인 메뉴</header><nav>navigation</nav><main><h1>광고 정책</h1><h2>검수 기준</h2><h3>제한 콘텐츠</h3><p>Meta 광고 정책은 캠페인 운영자가 비즈니스 목적, 광고 소재, 타겟 조건을 검수 기준에 맞춰 확인하도록 안내합니다.</p><p>이 도움말은 policy review, advertising campaign, business support 내용을 포함하며 운영자는 집행 전에 제한 콘텐츠 조건을 확인해야 합니다.</p></main><footer>footer company links</footer></body></html>",
+      "expected": {
+        "title": "Meta Ads 광고 정책 & 비즈니스 도움말",
+        "canonicalUrl": "https://www.facebook.com/business/help/example",
+        "headings": ["광고 정책", "검수 기준", "제한 콘텐츠"],
+        "contentPreviewIncludes": ["Meta 광고 정책", "캠페인", "검수 기준", "advertising campaign"],
+        "contentPreviewExcludes": ["로그인 메뉴", "navigation", "footer company links", "window.__DATA__"],
+        "contentLengthEqualsPreviewLength": true
+      }
+    },
+    {
+      "id": "google-policy-canonical-href-first",
+      "finalUrl": "https://support.google.com/adspolicy/answer/example",
+      "minPreviewChars": 160,
+      "fetchedAt": "2026-05-17T00:00:00.000Z",
+      "html": "<html><head><title>Google Ads Policy Help</title><link href=\"https://support.google.com/adspolicy/answer/example\" rel=\"canonical\" /></head><body><article><h1>Google 광고 정책</h1><p>Google Ads policy support explains advertising requirements for campaign review, adspolicy compliance, business verification, and advertiser responsibility before ads can run.</p><p>운영자는 광고 캠페인과 정책 검수 조건을 확인하고, 제품 또는 서비스가 Google Ads 제한 사항에 해당하는지 검토해야 합니다.</p></article></body></html>",
+      "expected": {
+        "title": "Google Ads Policy Help",
+        "canonicalUrl": "https://support.google.com/adspolicy/answer/example",
+        "headings": ["Google 광고 정책"],
+        "contentPreviewIncludes": ["Google Ads policy support", "adspolicy compliance", "광고 캠페인"],
+        "contentLengthEqualsPreviewLength": true
+      }
+    },
+    {
+      "id": "too-short-preview-fails",
+      "finalUrl": "https://example.com/ads-policy",
+      "html": "<html><body><main>광고 정책</main></body></html>",
+      "expectedErrorIncludes": "too little readable policy content"
+    },
+    {
+      "id": "no-policy-signal-fails",
+      "finalUrl": "https://example.com/docs/quality",
+      "minPreviewChars": 120,
+      "html": "<html><body><main><h1>Quality guide</h1><p>This long generic document describes publishing quality, editorial workflow, asset naming, review notes, scheduling cadence, revision ownership, release coordination, and archive hygiene.</p><p>The content is intentionally long enough to pass size checks but should fail because it has no Compass collection signal or media operations terminology.</p></main></body></html>",
+      "expectedErrorIncludes": "lacks enough readable policy signal"
+    }
+  ]
+}
