@@ -1,0 +1,143 @@
+{
+  "fixturePack": "rag-source-quality-v2",
+  "mode": "checker_only",
+  "sideEffects": {
+    "db": false,
+    "network": false,
+    "llm": false,
+    "embedding": false,
+    "corpusMutation": false,
+    "cron": false,
+    "apply": false
+  },
+  "fixtures": [
+    {
+      "id": "valid-meta-official-url-provenance",
+      "expectedValid": true,
+      "confidence": 88,
+      "expectedMetadata": {
+        "vendorScope": "meta",
+        "maxDuplicateTitleCount": 1
+      },
+      "response": {
+        "message": "Meta 광고 소재와 랜딩 페이지는 공식 정책 근거를 기준으로 일관성과 조건 표시를 확인해야 합니다.",
+        "sources": [
+          {
+            "id": "meta-official-policy-url",
+            "title": "Meta 광고 정책 공식 근거",
+            "excerpt": "광고 소재와 랜딩 페이지는 사용자가 기대하는 정보와 일관되어야 하며 오해를 유발하는 표현을 피해야 합니다.",
+            "url": "https://www.facebook.com/business/help/223106797811279",
+            "sourceReference": "meta-official-policy-url",
+            "sourceType": "platform-policy",
+            "sourceLabel": "Meta Business Help",
+            "vendorScope": "meta",
+            "similarity": 0.87,
+            "retrievalMethod": "hybrid",
+            "sourceQuality": {
+              "hasUrl": true,
+              "hasTitle": true,
+              "hasExcerpt": true,
+              "isFallback": false,
+              "qualityScore": 0.92
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "reject-vendor-url-host-mismatch",
+      "expectedValid": false,
+      "expectedFailureFragments": ["vendorScope kakao URL host mismatch"],
+      "confidence": 76,
+      "expectedMetadata": {
+        "vendorScope": "kakao",
+        "maxDuplicateTitleCount": 1
+      },
+      "response": {
+        "message": "카카오 광고 심사 기준을 설명한다고 주장하지만 출처 URL은 다른 vendor 공식 호스트입니다.",
+        "sources": [
+          {
+            "id": "kakao-mismatched-google-url",
+            "title": "카카오 광고 심사 근거",
+            "excerpt": "카카오 광고 소재, 랜딩 페이지, 제한 업종, 승인 기준을 확인해야 한다는 설명입니다.",
+            "url": "https://support.google.com/help/answer/account-navigation",
+            "sourceType": "platform-policy",
+            "sourceLabel": "Kakao 정책 참고",
+            "vendorScope": "kakao",
+            "retrievalMethod": "hybrid",
+            "sourceQuality": {
+              "hasUrl": true,
+              "hasTitle": true,
+              "hasExcerpt": true,
+              "isFallback": false,
+              "qualityScore": 0.81
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "reject-internal-source-reference-leak",
+      "expectedValid": false,
+      "expectedFailureFragments": ["sourceReference exposes internal source implementation names"],
+      "confidence": 72,
+      "expectedMetadata": {
+        "vendorScope": "meta",
+        "maxDuplicateTitleCount": 1
+      },
+      "response": {
+        "message": "Meta 정책 답변은 사용자에게 내부 저장소 식별자를 노출하지 않아야 합니다.",
+        "sources": [
+          {
+            "id": "meta-internal-reference-leak",
+            "title": "Meta 광고 정책 근거",
+            "excerpt": "광고 소재와 랜딩 페이지의 일관성을 확인해야 한다는 근거입니다.",
+            "sourceReference": "ollama_document_chunks:123",
+            "sourceType": "platform-policy",
+            "sourceLabel": "Meta 광고 정책 참고",
+            "vendorScope": "meta",
+            "retrievalMethod": "hybrid",
+            "sourceQuality": {
+              "hasTitle": true,
+              "hasExcerpt": true,
+              "isFallback": false,
+              "qualityScore": 0.83
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "reject-url-present-quality-has-url-false",
+      "expectedValid": false,
+      "expectedFailureFragments": ["sourceQuality.hasUrl conflicts with source.url"],
+      "confidence": 84,
+      "expectedMetadata": {
+        "vendorScope": "google",
+        "maxDuplicateTitleCount": 1
+      },
+      "response": {
+        "message": "Google 광고 정책 근거 URL이 있는 경우 sourceQuality도 URL 보유 상태를 일관되게 표시해야 합니다.",
+        "sources": [
+          {
+            "id": "google-url-quality-conflict",
+            "title": "Google Ads 정책 근거",
+            "excerpt": "광고주 요구사항과 랜딩 페이지 투명성을 확인해야 한다는 정책 근거입니다.",
+            "url": "https://support.google.com/adspolicy/answer/6008942",
+            "sourceType": "platform-policy",
+            "sourceLabel": "Google Ads Policy Help",
+            "vendorScope": "google",
+            "retrievalMethod": "hybrid",
+            "sourceQuality": {
+              "hasUrl": false,
+              "hasTitle": true,
+              "hasExcerpt": true,
+              "isFallback": false,
+              "qualityScore": 0.86
+            }
+          }
+        ]
+      }
+    }
+  ]
+}
