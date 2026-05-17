@@ -2,6 +2,8 @@ import { createCompassServiceClient } from '@/lib/supabase/compass';
 
 export type CompassSourceVendor = 'META' | 'KAKAO' | 'NAVER' | 'GOOGLE';
 export type CompassSourceStatus = 'indexed' | 'candidate_only' | 'stale' | 'unavailable';
+export type CompassSourceAgentAction = 'watch' | 'queue_exact_url' | 'queue_domain_discovery' | 'review_extraction' | 'refresh_candidate';
+export type CompassSourceReviewUrgency = 'normal' | 'due' | 'blocked';
 
 export interface CompassPolicySource {
   id: string;
@@ -27,10 +29,13 @@ interface StoredDocument {
 
 export interface CompassSourceOpsItem extends CompassPolicySource {
   status: CompassSourceStatus;
+  agentAction: CompassSourceAgentAction;
+  reviewUrgency: CompassSourceReviewUrgency;
   matchedDocuments: number;
   indexedDocuments: number;
   totalChunks: number;
   latestDocumentAt?: string;
+  nextReviewAt?: string;
   matchedDocumentTitles: string[];
   recommendation: string;
 }
@@ -128,7 +133,9 @@ export const COMPASS_POLICY_SOURCES: CompassPolicySource[] = [
 
 export async function buildCompassSourceOpsPlan(): Promise<CompassSourceOpsPlan> {
   const documents = await readStoredDocuments();
-  const sources = COMPASS_POLICY_SOURCES.map((source) => buildSourceItem(source, documents));
+  const generatedAt = new Date().toISOString();
+  const generatedAtMs = new Date(generatedAt).getTime();
+  const sources = COMPASS_POLICY_SOURCES.map((source) => buildSourceItem(source, documents, generatedAtMs));
   const summary = {
     totalSources: sources.length,
     indexedSources: sources.filter((source) => source.status === 'indexed').length,
@@ -150,7 +157,7 @@ export async function buildCompassSourceOpsPlan(): Promise<CompassSourceOpsPlan>
     ],
     sources,
     summary,
-    generatedAt: new Date().toISOString(),
+    generatedAt,
   };
 }
 
@@ -178,11 +185,16 @@ async function readStoredDocuments(): Promise<StoredDocument[]> {
   }
 }
 
-function buildSourceItem(source: CompassPolicySource, documents: StoredDocument[]): CompassSourceOpsItem {
+function buildSourceItem(
+  source: CompassPolicySource,
+  documents: StoredDocument[],
+  generatedAtMs: number,
+): CompassSourceOpsItem {
   const matched = documents.filter((document) => documentMatchesSource(document, source));
   const indexedDocuments = matched.filter((document) => isIndexedStatus(document.status));
   const latestDocumentAt = latestTimestamp(matched);
   const isStale = latestDocumentAt ? daysSince(latestDocumentAt) > source.cadenceDays : false;
+  const nextReviewAt = latestDocumentAt ? addDaysIso(latestDocumentAt, source.cadenceDays) : undefined;
   const status: CompassSourceStatus = matched.length === 0
     ? 'candidate_only'
     : indexedDocuments.length === 0
@@ -190,20 +202,48 @@ function buildSourceItem(source: CompassPolicySource, documents: StoredDocument[
       : isStale
         ? 'stale'
         : 'indexed';
+  const agentAction = buildAgentAction(source, status);
+  const reviewUrgency = buildReviewUrgency(status, latestDocumentAt, nextReviewAt, generatedAtMs);
 
   return {
     ...source,
     status,
+    agentAction,
+    reviewUrgency,
     matchedDocuments: matched.length,
     indexedDocuments: indexedDocuments.length,
     totalChunks: matched.reduce((sum, document) => sum + Number(document.chunk_count || 0), 0),
     latestDocumentAt,
+    nextReviewAt,
     matchedDocumentTitles: matched
       .map((document) => document.title || document.url || document.id)
       .filter(Boolean)
       .slice(0, 4),
     recommendation: buildRecommendation(source, status),
   };
+}
+
+function buildAgentAction(
+  source: CompassPolicySource,
+  status: CompassSourceStatus,
+): CompassSourceAgentAction {
+  if (status === 'indexed') return 'watch';
+  if (status === 'stale') return 'refresh_candidate';
+  if (status === 'unavailable') return 'review_extraction';
+  if (source.discoveryMode === 'exact_url') return 'queue_exact_url';
+  return 'queue_domain_discovery';
+}
+
+function buildReviewUrgency(
+  status: CompassSourceStatus,
+  latestDocumentAt: string | undefined,
+  nextReviewAt: string | undefined,
+  generatedAtMs: number,
+): CompassSourceReviewUrgency {
+  if (status === 'unavailable') return 'blocked';
+  if (!latestDocumentAt) return 'due';
+  if (!nextReviewAt) return 'due';
+  return new Date(nextReviewAt).getTime() <= generatedAtMs ? 'due' : 'normal';
 }
 
 function documentMatchesSource(document: StoredDocument, source: CompassPolicySource): boolean {
@@ -263,6 +303,12 @@ function daysSince(timestamp: string): number {
   const time = new Date(timestamp).getTime();
   if (!Number.isFinite(time)) return Number.POSITIVE_INFINITY;
   return (Date.now() - time) / (1000 * 60 * 60 * 24);
+}
+
+function addDaysIso(timestamp: string, days: number): string | undefined {
+  const time = new Date(timestamp).getTime();
+  if (!Number.isFinite(time)) return undefined;
+  return new Date(time + days * 24 * 60 * 60 * 1000).toISOString();
 }
 
 function safeUrl(value: string): URL | null {

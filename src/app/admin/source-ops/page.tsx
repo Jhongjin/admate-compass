@@ -32,10 +32,13 @@ interface SourceOpsItem {
   cadenceDays: number;
   discoveryMode: "exact_url" | "domain_discovery";
   status: SourceStatus;
+  agentAction: "watch" | "queue_exact_url" | "queue_domain_discovery" | "review_extraction" | "refresh_candidate";
+  reviewUrgency: "normal" | "due" | "blocked";
   matchedDocuments: number;
   indexedDocuments: number;
   totalChunks: number;
   latestDocumentAt?: string;
+  nextReviewAt?: string;
   matchedDocumentTitles: string[];
   recommendation: string;
 }
@@ -479,6 +482,8 @@ export default function SourceOpsPage() {
                       {source.recommendation}
                     </div>
 
+                    <SourceAgentSchedule source={source} />
+
                     {source.matchedDocumentTitles.length > 0 && (
                       <div className="space-y-2">
                         <p className="text-xs uppercase tracking-[0.18em] text-gray-500">matched documents</p>
@@ -534,6 +539,33 @@ export default function SourceOpsPage() {
         )}
       </div>
     </AdminLayout>
+  );
+}
+
+function SourceAgentSchedule({ source }: { source: SourceOpsItem }) {
+  return (
+    <div className="rounded-lg border border-cyan-400/15 bg-cyan-950/10 p-3">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <p className="text-xs uppercase tracking-[0.18em] text-cyan-100/80">AI 수집 스케줄</p>
+        <Badge variant="outline" className={urgencyClassName(source.reviewUrgency)}>
+          {urgencyLabel(source.reviewUrgency)}
+        </Badge>
+      </div>
+      <div className="grid gap-2 sm:grid-cols-3">
+        <ScheduleMetric label="다음 동작" value={agentActionLabel(source.agentAction)} />
+        <ScheduleMetric label="점검 기한" value={source.nextReviewAt ? formatScheduleDate(source.nextReviewAt) : "즉시 검토"} />
+        <ScheduleMetric label="검토 주기" value={`${source.cadenceDays}일`} />
+      </div>
+    </div>
+  );
+}
+
+function ScheduleMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-md border border-white/10 bg-black/20 px-3 py-2">
+      <p className="text-[11px] text-gray-500">{label}</p>
+      <p className="mt-1 text-sm font-medium text-white">{value}</p>
+    </div>
   );
 }
 
@@ -730,6 +762,26 @@ function sourceTypeLabel(type: SourceOpsItem["sourceType"]) {
   return "진입점";
 }
 
+function agentActionLabel(action: SourceOpsItem["agentAction"]) {
+  if (action === "watch") return "변경 감시";
+  if (action === "refresh_candidate") return "갱신 후보";
+  if (action === "review_extraction") return "추출 확인";
+  if (action === "queue_exact_url") return "정확 URL 제안";
+  return "도메인 탐색";
+}
+
+function urgencyLabel(urgency: SourceOpsItem["reviewUrgency"]) {
+  if (urgency === "blocked") return "확인 필요";
+  if (urgency === "due") return "대기열 필요";
+  return "정상";
+}
+
+function urgencyClassName(urgency: SourceOpsItem["reviewUrgency"]) {
+  if (urgency === "blocked") return "border-red-400/40 bg-red-500/10 text-red-100";
+  if (urgency === "due") return "border-amber-400/40 bg-amber-500/10 text-amber-100";
+  return "border-emerald-400/40 bg-emerald-500/10 text-emerald-100";
+}
+
 function statusClassName(status: SourceStatus) {
   if (status === "indexed") return "border-emerald-400/40 bg-emerald-500/10 text-emerald-100";
   if (status === "stale") return "border-amber-400/40 bg-amber-500/10 text-amber-100";
@@ -771,6 +823,15 @@ function formatDate(value: string) {
     day: "2-digit",
     hour: "2-digit",
     minute: "2-digit",
+  }).format(time);
+}
+
+function formatScheduleDate(value: string) {
+  const time = new Date(value).getTime();
+  if (!Number.isFinite(time)) return "unknown";
+  return new Intl.DateTimeFormat("ko-KR", {
+    month: "2-digit",
+    day: "2-digit",
   }).format(time);
 }
 

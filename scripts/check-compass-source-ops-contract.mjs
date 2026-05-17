@@ -25,6 +25,7 @@ const route = read("src/app/api/admin/source-ops/route.ts");
 const proposalRoute = read("src/app/api/admin/source-ops/proposals/route.ts");
 const page = read("src/app/admin/source-ops/page.tsx");
 const layout = read("src/components/layouts/AdminLayout.tsx");
+const scheduleDoc = read("docs/tasks/2026-05-17_compass_source_ops_agent_schedule_contract_result_v1.md");
 
 for (const vendor of ["META", "KAKAO", "NAVER", "GOOGLE"]) {
   if (!service.includes(vendor)) {
@@ -38,6 +39,14 @@ for (const token of [
   "mutationEnabled: false",
   "manualCollectionRecommended: false",
   "proposal queue",
+  "agentAction",
+  "reviewUrgency",
+  "nextReviewAt",
+  "buildAgentAction",
+  "queue_exact_url",
+  "queue_domain_discovery",
+  "review_extraction",
+  "refresh_candidate",
 ]) {
   if (!service.includes(token)) {
     fail(`source ops safety contract missing ${token}`);
@@ -84,6 +93,12 @@ for (const token of [
   "승인 기능 준비중",
   "승인/반려/색인/승격 동작을 실행하지 않습니다",
   "/api/admin/source-ops/proposals?maxSources=7&queueLimit=20",
+  "AI 수집 스케줄",
+  "SourceAgentSchedule",
+  "agentActionLabel",
+  "urgencyClassName",
+  "formatScheduleDate",
+  "즉시 검토",
 ]) {
   if (!page.includes(token)) {
     fail(`source ops page missing queue readback token ${token}`);
@@ -104,6 +119,20 @@ for (const forbidden of [
 
 if (!layout.includes("/admin/source-ops") || !layout.includes("소스 관제")) {
   fail("admin navigation must expose source ops page");
+}
+
+for (const token of [
+  "agentAction",
+  "nextReviewAt",
+  "reviewUrgency",
+  "does not add Vercel Cron",
+  "does not enable production queue writes",
+  "operator-visible mode",
+  "read-only",
+]) {
+  if (!scheduleDoc.includes(token)) {
+    fail(`source ops schedule contract doc missing ${token}`);
+  }
 }
 
 if (!process.exitCode) {
