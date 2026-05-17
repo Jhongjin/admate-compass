@@ -25,6 +25,7 @@ const verify = read("docs/sql/2026-05-16_compass_source_proposal_queue_verify.sq
 const service = read("src/lib/services/CompassSourceProposalQueueService.ts");
 const route = read("src/app/api/admin/source-ops/proposals/route.ts");
 const tableReferenceCheck = read("scripts/check-compass-table-references.mjs");
+const reviewApplyPlan = read("docs/tasks/2026-05-17_compass_source_proposal_review_apply_contract_plan_v1.md");
 
 for (const token of [
   "create table if not exists compass.source_proposal_runs",
@@ -134,6 +135,29 @@ for (const forbidden of [
 for (const token of ["source_proposal_runs", "source_proposal_queue"]) {
   if (!tableReferenceCheck.includes(`"${token}"`)) {
     fail(`table reference checker missing ${token}`);
+  }
+}
+
+for (const token of [
+  "docs and guard only",
+  "does not yet have an",
+  "`dry_run=true`",
+  "`mutation_enabled=false`",
+  "`would_index=false`",
+  "`would_promote=false`",
+  "`review_status` is limited",
+  "authenticated admin or internal worker authority",
+  "required review reason",
+  "immutable review audit trail",
+  "idempotency key and apply lock",
+  "Do not skip from proposal queue directly to corpus promotion",
+  "approve or reject buttons on `/admin/source-ops`",
+  "`POST` apply controls from the source ops page",
+  "direct writes to `documents`, `document_chunks`, `ollama_document_chunks`, or",
+  "Production persistence remains blocked",
+]) {
+  if (!reviewApplyPlan.includes(token)) {
+    fail(`source proposal review/apply plan missing ${token}`);
   }
 }
 
