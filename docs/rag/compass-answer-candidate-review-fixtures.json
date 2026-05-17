@@ -1,0 +1,300 @@
+{
+  "fixturePack": "compass-answer-candidate-review-v1",
+  "mode": "local_contract_only",
+  "canonicalAnswerRoute": "/api/chat-ollama",
+  "legacyAnswerRoute": "/api/chatbot",
+  "sideEffects": {
+    "db": false,
+    "network": false,
+    "llm": false,
+    "embedding": false,
+    "corpusMutation": false,
+    "providerSwitch": false
+  },
+  "roles": {
+    "teamLead": {
+      "label": "Team Lead Answer Reviewer",
+      "responsibility": "검증된 근거와 답변 후보를 중복 제거한 뒤 최종 답변 또는 noDataFound를 결정한다."
+    },
+    "agent1": {
+      "label": "Policy Evidence Agent",
+      "responsibility": "정책 근거에 묶인 답변 후보 초안만 제출한다."
+    },
+    "agent2": {
+      "label": "Media/Product Evidence Agent",
+      "responsibility": "매체 상품과 운영 조건 근거에 묶인 답변 후보 초안만 제출한다."
+    }
+  },
+  "answerPolicy": {
+    "specialistCandidatesAreDraftsOnly": true,
+    "teamLeadOwnsFinalAnswer": true,
+    "verifiedEvidenceRequired": true,
+    "candidateEvidenceIdsMustMatchVerifiedPackets": true,
+    "conflictReturnsNoData": true,
+    "weakOnlyReturnsNoData": true,
+    "noProviderSwitch": true
+  },
+  "cases": [
+    {
+      "caseId": "meta-alcohol-answer-candidates-reviewed",
+      "question": "Meta에서 주류 캠페인을 집행할 때 어떤 조건을 먼저 봐야 하나요?",
+      "expectedReview": {
+        "outcome": "answer",
+        "selectedCandidateCount": 2,
+        "rejectedCandidateCount": 0,
+        "verifiedSourceIds": ["meta-policy-alcohol", "meta-business-help-alcohol"],
+        "finalAnswerIncludes": ["확인된 내부 근거 기준 답변입니다.", "Meta 주류 광고", "연령 제한", "근거:"]
+      },
+      "packets": [
+        {
+          "caseId": "meta-alcohol-answer-candidates-reviewed",
+          "agent": "policy_evidence_agent",
+          "claim": "Meta alcohol ads require policy eligibility and regional restrictions before launch.",
+          "sourceId": "meta-policy-alcohol",
+          "sourceUrl": "https://www.facebook.com/policies/ads/restricted_content/alcohol",
+          "sourceTitle": "Meta Advertising Standards - Alcohol",
+          "vendor": "META",
+          "topic": "restricted_content",
+          "publishedOrFetchedAt": "2026-05-16T00:00:00.000Z",
+          "excerpt": "Advertisers must comply with applicable local laws, industry codes, and Meta targeting restrictions for alcohol ads.",
+          "chunkId": "meta-policy-alcohol::chunk-001",
+          "retrievalScore": 0.92,
+          "evidenceDecision": "verified",
+          "reasons": ["source_quality_complete", "vendor_match", "policy_topic_match"]
+        },
+        {
+          "caseId": "meta-alcohol-answer-candidates-reviewed",
+          "agent": "media_product_evidence_agent",
+          "claim": "Audience and placement setup must be checked before operating alcohol promotion campaigns.",
+          "sourceId": "meta-business-help-alcohol",
+          "sourceUrl": "https://www.facebook.com/business/help",
+          "sourceTitle": "Meta Business Help - Ads Review",
+          "vendor": "META",
+          "topic": "ads_review",
+          "publishedOrFetchedAt": "2026-05-16T00:00:00.000Z",
+          "excerpt": "Campaign setup should be reviewed against advertising policies and product restrictions before delivery.",
+          "chunkId": "meta-business-help-alcohol::chunk-004",
+          "retrievalScore": 0.84,
+          "evidenceDecision": "verified",
+          "reasons": ["source_quality_complete", "vendor_match", "product_context_match"]
+        }
+      ],
+      "candidates": [
+        {
+          "caseId": "meta-alcohol-answer-candidates-reviewed",
+          "candidateId": "policy-agent-meta-alcohol-answer",
+          "agent": "policy_evidence_agent",
+          "answerDraft": "Meta 주류 광고는 지역 법규와 플랫폼 제한 조건을 먼저 확인해야 하며, 연령 제한과 민감 상품군 기준을 함께 대조해야 합니다.",
+          "supportingChunkIds": ["meta-policy-alcohol::chunk-001"],
+          "limitationNotes": ["지역별 세부 법규는 최신 공식 문서 확인 필요"],
+          "confidence": 0.87
+        },
+        {
+          "caseId": "meta-alcohol-answer-candidates-reviewed",
+          "candidateId": "product-agent-meta-alcohol-answer",
+          "agent": "media_product_evidence_agent",
+          "answerDraft": "운영 단계에서는 타게팅, 지면, 캠페인 설정이 광고 정책과 충돌하지 않는지 사전 검토해야 합니다.",
+          "supportingChunkIds": ["meta-business-help-alcohol::chunk-004"],
+          "limitationNotes": ["구매 방식별 상세 조건은 별도 상품 문서 확인 필요"],
+          "confidence": 0.78
+        }
+      ]
+    },
+    {
+      "caseId": "kakao-weak-candidates-no-data",
+      "question": "색인된 문서만으로 카카오 심사 제한 조건을 확정할 수 있나요?",
+      "expectedReview": {
+        "outcome": "noDataFound",
+        "selectedCandidateCount": 0,
+        "rejectedCandidateCount": 2,
+        "verifiedSourceIds": [],
+        "requiredReasons": ["no_verified_evidence", "no_supported_answer_candidate"]
+      },
+      "packets": [
+        {
+          "caseId": "kakao-weak-candidates-no-data",
+          "agent": "policy_evidence_agent",
+          "claim": "The indexed source hints at review requirements but does not confirm the requested policy.",
+          "sourceId": "kakao-review-guide",
+          "sourceUrl": "https://business.kakao.com/info/displayad",
+          "sourceTitle": "Kakao Business Guide",
+          "vendor": "KAKAO",
+          "topic": "review",
+          "publishedOrFetchedAt": "2026-05-16T00:00:00.000Z",
+          "excerpt": "The source contains general review language but not enough detail to support the requested answer.",
+          "chunkId": "kakao-review-guide::chunk-002",
+          "retrievalScore": 0.61,
+          "evidenceDecision": "weak",
+          "reasons": ["low_retrieval_score", "insufficient_policy_detail"]
+        },
+        {
+          "caseId": "kakao-weak-candidates-no-data",
+          "agent": "media_product_evidence_agent",
+          "claim": "The product setup source does not confirm the requested policy condition.",
+          "sourceId": "kakao-product-guide",
+          "sourceUrl": "https://business.kakao.com/info/moment",
+          "sourceTitle": "Kakao Moment Guide",
+          "vendor": "KAKAO",
+          "topic": "product_setup",
+          "publishedOrFetchedAt": "2026-05-16T00:00:00.000Z",
+          "excerpt": "The product guide explains campaign setup but does not prove the policy condition in the question.",
+          "chunkId": "kakao-product-guide::chunk-007",
+          "retrievalScore": 0.58,
+          "evidenceDecision": "weak",
+          "reasons": ["low_retrieval_score", "missing_policy_confirmation"]
+        }
+      ],
+      "candidates": [
+        {
+          "caseId": "kakao-weak-candidates-no-data",
+          "candidateId": "policy-agent-kakao-weak-answer",
+          "agent": "policy_evidence_agent",
+          "answerDraft": "카카오 심사 기준은 일부 언급되지만 질문의 제한 조건을 확정할 정도로 충분하지 않습니다.",
+          "supportingChunkIds": ["kakao-review-guide::chunk-002"],
+          "limitationNotes": ["공식 세부 정책 근거가 부족함"],
+          "confidence": 0.51
+        },
+        {
+          "caseId": "kakao-weak-candidates-no-data",
+          "candidateId": "product-agent-kakao-weak-answer",
+          "agent": "media_product_evidence_agent",
+          "answerDraft": "상품 설정 문서만으로는 정책 제한 조건을 확정할 수 없어 추가 근거가 필요합니다.",
+          "supportingChunkIds": ["kakao-product-guide::chunk-007"],
+          "limitationNotes": ["상품 문서가 정책 결론을 직접 뒷받침하지 않음"],
+          "confidence": 0.49
+        }
+      ]
+    },
+    {
+      "caseId": "meta-vendor-conflict-candidate-rejected",
+      "question": "Meta 질문을 Naver 출처 후보로 답해도 되나요?",
+      "expectedReview": {
+        "outcome": "noDataFound",
+        "selectedCandidateCount": 0,
+        "rejectedCandidateCount": 2,
+        "verifiedSourceIds": [],
+        "conflicts": ["vendor_mismatch", "placeholder_content"],
+        "requiredReasons": ["conflict_review_required", "no_supported_answer_candidate"]
+      },
+      "packets": [
+        {
+          "caseId": "meta-vendor-conflict-candidate-rejected",
+          "agent": "policy_evidence_agent",
+          "claim": "The packet uses a Naver policy source for a Meta policy question.",
+          "sourceId": "naver-policy-generic",
+          "sourceUrl": "https://saedu.naver.com",
+          "sourceTitle": "Naver Search Ad Guide",
+          "vendor": "NAVER",
+          "topic": "policy",
+          "publishedOrFetchedAt": "2026-05-16T00:00:00.000Z",
+          "excerpt": "This source belongs to a different vendor and cannot ground a Meta-specific answer.",
+          "chunkId": "naver-policy-generic::chunk-003",
+          "retrievalScore": 0.83,
+          "evidenceDecision": "rejected",
+          "reasons": ["vendor_mismatch", "source_quality_complete"]
+        },
+        {
+          "caseId": "meta-vendor-conflict-candidate-rejected",
+          "agent": "media_product_evidence_agent",
+          "claim": "The packet contains placeholder crawl text and must be excluded.",
+          "sourceId": "meta-placeholder-url",
+          "sourceUrl": "https://www.facebook.com/business/help",
+          "sourceTitle": "Meta Business Help Placeholder",
+          "vendor": "META",
+          "topic": "crawl_placeholder",
+          "publishedOrFetchedAt": "2026-05-16T00:00:00.000Z",
+          "excerpt": "Serverless placeholder content could not process this page and must not be used as evidence.",
+          "chunkId": "meta-placeholder-url::chunk-000",
+          "retrievalScore": 0.77,
+          "evidenceDecision": "rejected",
+          "reasons": ["placeholder_content", "source_quality_incomplete"]
+        }
+      ],
+      "candidates": [
+        {
+          "caseId": "meta-vendor-conflict-candidate-rejected",
+          "candidateId": "policy-agent-conflict-answer",
+          "agent": "policy_evidence_agent",
+          "answerDraft": "Meta 질문에 네이버 정책 출처를 근거로 답하려는 후보는 매체 불일치로 사용할 수 없습니다.",
+          "supportingChunkIds": ["naver-policy-generic::chunk-003"],
+          "limitationNotes": ["질문 대상 매체와 출처 매체가 다름"],
+          "confidence": 0.74
+        },
+        {
+          "caseId": "meta-vendor-conflict-candidate-rejected",
+          "candidateId": "product-agent-placeholder-answer",
+          "agent": "media_product_evidence_agent",
+          "answerDraft": "placeholder crawl text에 묶인 후보는 답변 후보로 승격할 수 없습니다.",
+          "supportingChunkIds": ["meta-placeholder-url::chunk-000"],
+          "limitationNotes": ["placeholder content"],
+          "confidence": 0.72
+        }
+      ]
+    },
+    {
+      "caseId": "unsupported-candidate-chunk-rejected",
+      "question": "검증된 패킷과 연결되지 않은 후보도 최종 답변으로 쓸 수 있나요?",
+      "expectedReview": {
+        "outcome": "noDataFound",
+        "selectedCandidateCount": 0,
+        "rejectedCandidateCount": 2,
+        "verifiedSourceIds": ["google-policy-verified", "google-product-verified"],
+        "requiredReasons": ["verified_evidence_available", "no_supported_answer_candidate", "answer_candidate_rejected"]
+      },
+      "packets": [
+        {
+          "caseId": "unsupported-candidate-chunk-rejected",
+          "agent": "policy_evidence_agent",
+          "claim": "Google policy packet is verified and can support only matching chunk references.",
+          "sourceId": "google-policy-verified",
+          "sourceUrl": "https://support.google.com/adspolicy",
+          "sourceTitle": "Google Ads Policy Help",
+          "vendor": "GOOGLE",
+          "topic": "policy",
+          "publishedOrFetchedAt": "2026-05-16T00:00:00.000Z",
+          "excerpt": "Google Ads policy guidance must be tied to a matching official source chunk before answering.",
+          "chunkId": "google-policy-verified::chunk-002",
+          "retrievalScore": 0.83,
+          "evidenceDecision": "verified",
+          "reasons": ["source_quality_complete", "vendor_match", "policy_topic_match"]
+        },
+        {
+          "caseId": "unsupported-candidate-chunk-rejected",
+          "agent": "media_product_evidence_agent",
+          "claim": "Google product setup packet is verified and can support only matching chunk references.",
+          "sourceId": "google-product-verified",
+          "sourceUrl": "https://support.google.com/google-ads",
+          "sourceTitle": "Google Ads Product Help",
+          "vendor": "GOOGLE",
+          "topic": "product_setup",
+          "publishedOrFetchedAt": "2026-05-16T00:00:00.000Z",
+          "excerpt": "Campaign setup guidance must be checked against matching product documentation before use.",
+          "chunkId": "google-product-verified::chunk-005",
+          "retrievalScore": 0.81,
+          "evidenceDecision": "verified",
+          "reasons": ["source_quality_complete", "vendor_match", "product_context_match"]
+        }
+      ],
+      "candidates": [
+        {
+          "caseId": "unsupported-candidate-chunk-rejected",
+          "candidateId": "policy-agent-missing-support-answer",
+          "agent": "policy_evidence_agent",
+          "answerDraft": "정책 후보가 검증된 패킷과 연결되지 않은 chunk를 참조하므로 최종 답변에 사용할 수 없습니다.",
+          "supportingChunkIds": ["google-policy-missing::chunk-999"],
+          "limitationNotes": ["supporting chunk not verified"],
+          "confidence": 0.82
+        },
+        {
+          "caseId": "unsupported-candidate-chunk-rejected",
+          "candidateId": "product-agent-low-confidence-answer",
+          "agent": "media_product_evidence_agent",
+          "answerDraft": "상품 후보는 검증된 chunk를 참조하지만 신뢰도가 낮아 팀장 검토에서 제외됩니다.",
+          "supportingChunkIds": ["google-product-verified::chunk-005"],
+          "limitationNotes": ["candidate confidence below threshold"],
+          "confidence": 0.43
+        }
+      ]
+    }
+  ]
+}
