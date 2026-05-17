@@ -20,6 +20,8 @@ function read(relativePath) {
 }
 
 const route = read('src/app/api/internal/source-proposals/dry-run/route.ts')
+const workerService = read('src/lib/services/CompassSourceProposalWorkerService.ts')
+const refactorDoc = read('docs/tasks/2026-05-17_compass_source_proposal_worker_service_refactor_result_v1.md')
 const smokeScript = read('scripts/smoke-compass-source-proposal-worker-local.mjs')
 const packageJson = JSON.parse(read('package.json') || '{}')
 
@@ -33,11 +35,7 @@ for (const token of [
   "authorization.toLowerCase().startsWith('bearer ')",
   'timingSafeEqual',
   'body?.dryRun !== true',
-  'buildCompassSourceProposalRun',
-  'persistCompassSourceProposalRun',
-  'readCompassSourceProposalQueueSnapshot',
-  'mutationEnabled: proposalRun.mutationEnabled',
-  'candidateCount: proposalRun.candidates.length',
+  'runCompassSourceProposalWorkerDryRun',
   "'cache-control': 'no-store'",
 ]) {
   if (!route.includes(token)) {
@@ -45,18 +43,30 @@ for (const token of [
   }
 }
 
+for (const token of [
+  'buildCompassSourceProposalRun',
+  'persistCompassSourceProposalRun',
+  'readCompassSourceProposalQueueSnapshot',
+  'mutationEnabled: proposalRun.mutationEnabled',
+  'candidateCount: proposalRun.candidates.length',
+]) {
+  if (!workerService.includes(token)) {
+    fail(`worker service missing ${token}`)
+  }
+}
+
 const productionCheckIndex = route.indexOf("process.env.NODE_ENV === 'production'")
 const enabledCheckIndex = route.indexOf('if (!isWorkerEnabled())')
 const authCheckIndex = route.indexOf('hasWorkerAccess(request)')
-const persistIndex = route.indexOf('const queue = await persistCompassSourceProposalRun')
-if (productionCheckIndex < 0 || enabledCheckIndex < 0 || authCheckIndex < 0 || persistIndex < 0) {
+const serviceInvokeIndex = route.indexOf('await runCompassSourceProposalWorkerDryRun')
+if (productionCheckIndex < 0 || enabledCheckIndex < 0 || authCheckIndex < 0 || serviceInvokeIndex < 0) {
   fail('worker route guard ordering cannot be evaluated')
 } else {
   if (productionCheckIndex > enabledCheckIndex || enabledCheckIndex > authCheckIndex) {
     fail('worker route must block production, then disabled worker, then auth')
   }
-  if (authCheckIndex > persistIndex) {
-    fail('worker route must authenticate before queue persistence')
+  if (authCheckIndex > serviceInvokeIndex) {
+    fail('worker route must authenticate before worker service execution')
   }
 }
 
@@ -73,8 +83,35 @@ for (const forbidden of [
   'SimpleEmbeddingService',
   'generateCompassAnswer',
 ]) {
-  if (route.includes(forbidden)) {
-    fail(`worker route must not import or call corpus/embedding/answer mutation API: ${forbidden}`)
+  if (route.includes(forbidden) || workerService.includes(forbidden)) {
+    fail(`worker route/service must not import or call corpus/embedding/answer mutation API: ${forbidden}`)
+  }
+}
+
+for (const forbidden of [
+  'NextRequest',
+  'NextResponse',
+  'process.env',
+  'authorization',
+  'timingSafeEqual',
+]) {
+  if (workerService.includes(forbidden)) {
+    fail(`worker service must not own route auth or environment guard concerns: ${forbidden}`)
+  }
+}
+
+for (const token of [
+  'runCompassSourceProposalWorkerDryRun',
+  'production returns `404`',
+  'Bearer authentication is required',
+  'proposal-only',
+  'does not add',
+  'production worker enablement',
+  'corpus writes',
+  'chunking, embedding, indexing, answer generation',
+]) {
+  if (!refactorDoc.includes(token)) {
+    fail(`worker service refactor doc missing ${token}`)
   }
 }
 

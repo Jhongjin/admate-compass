@@ -1,10 +1,6 @@
 import { timingSafeEqual } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
-import { buildCompassSourceProposalRun } from '@/lib/services/CompassSourceProposalService';
-import {
-  persistCompassSourceProposalRun,
-  readCompassSourceProposalQueueSnapshot,
-} from '@/lib/services/CompassSourceProposalQueueService';
+import { runCompassSourceProposalWorkerDryRun } from '@/lib/services/CompassSourceProposalWorkerService';
 
 export const dynamic = 'force-dynamic';
 
@@ -91,30 +87,16 @@ export async function POST(request: NextRequest) {
   }
 
   const maxSources = Number(body?.maxSources || undefined) || undefined;
-  const proposalRun = await buildCompassSourceProposalRun({
+  const data = await runCompassSourceProposalWorkerDryRun({
     sourceId: typeof body?.sourceId === 'string' ? body.sourceId : undefined,
     maxSources,
     fetchPreview: body?.fetch === true,
-  });
-  const queue = await persistCompassSourceProposalRun(proposalRun, {
-    requestedSourceId: typeof body?.sourceId === 'string' ? body.sourceId : undefined,
-    maxSources,
   });
 
   return NextResponse.json(
     {
       success: true,
-      data: {
-        mode: proposalRun.mode,
-        dryRun: proposalRun.dryRun,
-        mutationEnabled: proposalRun.mutationEnabled,
-        fetchEnabled: proposalRun.fetchEnabled,
-        generatedAt: proposalRun.generatedAt,
-        candidateCount: proposalRun.candidates.length,
-        safetyNotes: proposalRun.safetyNotes,
-        queue,
-        queueSnapshot: await readCompassSourceProposalQueueSnapshot(),
-      },
+      data,
     },
     {
       headers: {
@@ -123,4 +105,3 @@ export async function POST(request: NextRequest) {
     },
   );
 }
-
