@@ -63,15 +63,15 @@ const platformCategories = [
 ];
 
 const deskSignals = [
-  { label: "Question", value: "질문 수신", detail: "정책 문맥 고정", icon: MessageSquare },
-  { label: "Evidence", value: "근거 대조", detail: "원문/출처 검토", icon: BookOpen },
-  { label: "Reviewer", value: "팀장 검토", detail: "중복/충돌 분리", icon: ShieldCheck },
+  { label: "질문", value: "질문 수신", detail: "정책 문맥 고정", icon: MessageSquare },
+  { label: "근거", value: "근거 대조", detail: "원문/출처 검토", icon: BookOpen },
+  { label: "검토", value: "팀장 검토", detail: "중복/충돌 분리", icon: ShieldCheck },
 ];
 
 const evidenceLanes = [
-  { label: "Source", value: "플랫폼 정책 원문", detail: "canonical source", tone: "#8FD7B8" },
-  { label: "Coverage", value: "근거 충분", detail: "chunk metadata", tone: "#E7C66A" },
-  { label: "Boundary", value: "답변 범위 표시", detail: "no-data gate", tone: "#B7C7E7" },
+  { label: "출처", value: "플랫폼 정책 원문", detail: "대표 원문 주소", tone: "#8FD7B8" },
+  { label: "범위", value: "근거 충분", detail: "문서 구간 확인", tone: "#E7C66A" },
+  { label: "경계", value: "답변 범위 표시", detail: "범위 밖 질문 보류", tone: "#B7C7E7" },
 ];
 
 const primaryActions = [
@@ -96,15 +96,15 @@ const primaryActions = [
 ];
 
 const reviewerRows = [
-  { label: "Agent 1", value: "문서 후보 추출", state: "candidate" },
-  { label: "Agent 2", value: "대체 근거 확인", state: "cross-check" },
-  { label: "Lead", value: "충돌/중복 검토", state: "final review" },
+  { label: "검토자 1", value: "문서 후보 추출", state: "후보 정리" },
+  { label: "검토자 2", value: "대체 근거 확인", state: "교차 확인" },
+  { label: "팀장", value: "충돌/중복 검토", state: "최종 검토" },
 ];
 
 const guardrails = [
   "확인된 근거가 있으면 출처를 보존",
   "생성 제한 상태에서도 근거 패널 유지",
-  "범위 밖 질문은 noData로 분리",
+  "범위 밖 질문은 답변 보류로 분리",
   "운영 화면은 권한 확인 후 접근",
 ];
 
@@ -174,10 +174,10 @@ export default function HomePage() {
                 <div>
                   <div className="mb-5 flex flex-wrap items-center gap-2">
                     <span className="inline-flex h-7 items-center rounded-full border border-[#8FD7B8]/35 bg-[#8FD7B8]/10 px-3 text-[11px] font-semibold uppercase tracking-[0.18em] text-[#BFE8D5]">
-                      Policy Evidence Desk
+                      정책 근거 데스크
                     </span>
                     <span className="inline-flex h-7 items-center rounded-full border border-white/12 bg-white/6 px-3 text-[11px] font-semibold text-white/66">
-                      3-agent review
+                      3단계 검토
                     </span>
                   </div>
 
@@ -221,7 +221,7 @@ export default function HomePage() {
               <div className="rounded-[10px] border border-[#CBD6CD] bg-[#FFFDF7] p-4 sm:p-5">
                 <div className="mb-5 flex items-start justify-between gap-4">
                   <div>
-                    <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[#477C63]">Ask with evidence</p>
+                    <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[#477C63]">근거와 함께 질문</p>
                     <h2 className="mt-2 text-2xl font-black tracking-[0] text-[#101820]">정책 조회</h2>
                     <p className="mt-2 text-sm leading-6 text-[#5D6C63]">
                       질문을 보내면 답변과 근거 패널이 함께 열립니다.
@@ -282,9 +282,9 @@ export default function HomePage() {
 
               <div className="mt-4 rounded-[10px] border border-[#C9D2CC] bg-[#121C1F] p-4 text-white">
                 <div className="mb-3 flex items-center justify-between gap-3">
-                  <p className="text-sm font-black">Evidence queue</p>
+                  <p className="text-sm font-black">근거 확인 순서</p>
                   <span className="rounded-full border border-white/14 bg-white/8 px-2.5 py-1 text-[11px] font-semibold text-white/62">
-                    Review ready
+                    검토 준비
                   </span>
                 </div>
                 <div className="grid gap-2 sm:grid-cols-3">
@@ -310,7 +310,7 @@ export default function HomePage() {
                 <Database className="h-5 w-5" aria-hidden="true" />
               </div>
               <div>
-                <p className="text-[11px] font-black uppercase tracking-[0.18em] text-white/42">Source ledger</p>
+                <p className="text-[11px] font-black uppercase tracking-[0.18em] text-white/42">출처 장부</p>
                 <h2 className="text-xl font-black tracking-[0] text-white">정책 범위</h2>
               </div>
             </div>
@@ -363,11 +363,11 @@ export default function HomePage() {
           <div className="rounded-[12px] border border-white/10 bg-[#F7F5EE] p-5 text-[#101820] shadow-[0_24px_70px_rgba(0,0,0,0.2)] sm:p-6">
             <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div>
-                <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[#477C63]">Lead review stack</p>
+                <p className="text-[11px] font-black uppercase tracking-[0.18em] text-[#477C63]">팀장 검토 흐름</p>
                 <h2 className="mt-2 text-2xl font-black tracking-[0]">후보 답변을 합치기 전에 충돌을 먼저 봅니다.</h2>
               </div>
               <span className="w-fit rounded-full border border-[#C9D2CC] bg-white px-3 py-1 text-[11px] font-bold text-[#667066]">
-                canary provider pinned
+                기본 제공자 유지
               </span>
             </div>
             <div className="grid gap-2 md:grid-cols-3">
@@ -392,7 +392,7 @@ export default function HomePage() {
               <div className="mb-5 flex items-center gap-3">
                 <Clock className="h-5 w-5 text-[#E7C66A]" aria-hidden="true" />
                 <div>
-                  <p className="text-[11px] font-black uppercase tracking-[0.18em] text-white/42">Index update</p>
+                  <p className="text-[11px] font-black uppercase tracking-[0.18em] text-white/42">문서 업데이트</p>
                   <h2 className="text-xl font-black tracking-[0] text-white">최근 업데이트</h2>
                 </div>
               </div>
@@ -422,7 +422,7 @@ export default function HomePage() {
               <div className="mb-5 flex items-center gap-3">
                 <CheckCircle className="h-5 w-5 text-[#8FD7B8]" aria-hidden="true" />
                 <div>
-                  <p className="text-[11px] font-black uppercase tracking-[0.18em] text-white/42">Guardrails</p>
+                  <p className="text-[11px] font-black uppercase tracking-[0.18em] text-white/42">답변 안전 기준</p>
                   <h2 className="text-xl font-black tracking-[0] text-white">운영 원칙</h2>
                 </div>
               </div>
