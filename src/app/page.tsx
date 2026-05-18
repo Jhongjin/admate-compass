@@ -20,16 +20,17 @@ const supportedMedia = [
   { id: "gdn", name: "GDN" },
 ] as const;
 
-const trustSignals = [
-  "공식 정책 문서와 운영 기준을 우선 확인",
-  "답변에 사용한 출처와 관련 문단을 함께 표시",
-  "조건이 부족하거나 충돌하는 내용은 확인 필요로 분리",
+const compassSummary = [
+  ["매체별 기준", "Meta, Google/YouTube, Naver, Kakao 기준을 나눠 확인합니다."],
+  ["소재 조건", "업종, 문구, 이미지, 랜딩 페이지 조건을 함께 봅니다."],
+  ["근거 문서", "답변에 참고한 문서와 관련 내용을 함께 표시합니다."],
+  ["확인 필요", "조건이 부족하거나 애매한 부분은 따로 표시합니다."],
 ] as const;
 
-const reviewScope = [
-  ["매체", "플랫폼별 정책"],
-  ["소재", "표현과 랜딩 조건"],
-  ["근거", "문서와 판단 기준"],
+const previewRows = [
+  ["가능한 표현", "정책 기준에 맞는 문구와 표현 범위를 정리합니다."],
+  ["주의할 표현", "심사에서 보류될 수 있는 문구와 조건을 구분합니다."],
+  ["추가 확인 필요", "랜딩 페이지나 업종 정보가 더 필요한 항목을 따로 표시합니다."],
 ] as const;
 
 type MediaId = (typeof supportedMedia)[number]["id"];
@@ -120,7 +121,7 @@ export default function HomePage() {
   }
 
   return (
-    <main className="relative min-h-[100dvh] overflow-hidden bg-[#ECEFF2] font-sans text-[#172033]">
+    <main className="compass-gate-copy relative min-h-[100dvh] overflow-hidden bg-[#ECEFF2] font-sans text-[#172033]">
       <div
         className="pointer-events-none fixed inset-0 opacity-[0.56]"
         aria-hidden="true"
@@ -173,8 +174,8 @@ export default function HomePage() {
             }}
           />
 
-          <div className="relative grid gap-8 xl:grid-cols-[minmax(0,0.86fr)_minmax(330px,0.72fr)] xl:items-start">
-            <div>
+          <div className="relative">
+            <div className="max-w-[760px]">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="inline-flex min-h-7 items-center rounded-[8px] border border-[#AEB8C3] bg-[#EEF2F5] px-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#293B5A]">
                   compass.admate.ai.kr
@@ -184,57 +185,78 @@ export default function HomePage() {
                 </span>
               </div>
 
-              <h1 className="mt-8 max-w-[680px] text-[clamp(2rem,3.2vw,3.35rem)] font-semibold leading-[1.18] tracking-normal text-[#172033] [text-wrap:balance]">
-                매체 정책을 근거와 함께 확인하세요.
+              <h1 className="mt-8 max-w-[720px] text-[clamp(2.35rem,4.4vw,4.7rem)] font-semibold leading-[1.06] tracking-normal text-[#172033] [text-wrap:balance]">
+                광고 심사 기준을 매체별 근거와 함께 확인하세요.
               </h1>
-              <p className="mt-5 max-w-[620px] text-base leading-8 text-[#344052] sm:text-lg">
-                Compass는 광고 상품과 소재 조건을 매체별 정책 기준에 맞춰 확인하는 AdMate의 정책 확인 도구입니다.
+              <p className="mt-5 max-w-[630px] text-base leading-8 text-[#344052] sm:text-lg">
+                Compass는 광고 상품, 소재 문구, 랜딩 조건을 주요 매체 정책 기준에 맞춰 정리합니다.
               </p>
               <p className="mt-3 max-w-[610px] text-sm leading-7 text-[#68707C]">
-                지원 매체, 관련 문서, 확인이 필요한 조건을 한 화면에서 비교합니다.
+                답변에는 참고한 문서와 추가 확인이 필요한 조건을 함께 표시합니다.
               </p>
+            </div>
 
-              <div className="mt-8 grid gap-4 md:grid-cols-[0.92fr_1.08fr]">
-                <div className="rounded-[8px] border border-[#CDD5DD] bg-white/72 p-4">
-                  <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#293B5A]">확인 기준</p>
-                  <div className="mt-4 grid gap-3">
-                    {reviewScope.map(([label, value]) => (
-                      <div key={label} className="grid grid-cols-[3.5rem_minmax(0,1fr)] gap-3">
-                        <span className="rounded-[6px] bg-[#172033] px-2 py-1 text-center text-xs font-bold text-white">{label}</span>
-                        <span className="text-sm font-semibold leading-6 text-[#344052]">{value}</span>
-                      </div>
-                    ))}
+            <div className="mt-8 rounded-[10px] border border-[#D9D4C8] bg-white/72 p-4 sm:p-5">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-sm font-bold text-[#172033]">Compass가 정리하는 내용</p>
+                <span className="text-xs font-semibold text-[#7A5518]">질문, 기준, 근거를 한 화면에서 확인</span>
+              </div>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                {compassSummary.map(([title, detail]) => (
+                  <div key={title} className="rounded-[8px] border border-[#E1DED6] bg-[#FBF7EE] p-4">
+                    <CheckCircle className="h-4 w-4 text-[#A67B2D]" aria-hidden="true" />
+                    <p className="mt-3 text-sm font-bold text-[#172033]">{title}</p>
+                    <p className="mt-2 text-xs leading-5 text-[#68707C]">{detail}</p>
                   </div>
-                </div>
-
-                <div className="rounded-[8px] border border-[#D9D4C8] bg-white/62 p-4">
-                  <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#7A5518]">신뢰 신호</p>
-                  <div className="mt-4 grid gap-3">
-                    {trustSignals.map((item) => (
-                      <div key={item} className="flex items-start gap-3">
-                        <CheckCircle className="mt-0.5 h-4 w-4 flex-none text-[#A67B2D]" aria-hidden="true" />
-                        <p className="text-sm leading-6 text-[#344052]">{item}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+                ))}
               </div>
             </div>
 
-            <div className="rounded-[10px] border border-[#CED6DD] bg-[#F4F6F7]/92 p-4 shadow-[0_18px_46px_rgba(23,32,51,0.08)]">
-              <img
-                src="/compass-policy-map.svg"
-                alt="매체 정책과 근거 문서가 연결된 Compass 화면 예시"
-                className="h-auto w-full rounded-[8px]"
-              />
-              <div className="mt-4 grid grid-cols-2 gap-3">
-                <div className="rounded-[8px] border border-[#D8DDE1] bg-white p-3">
-                  <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#7A5518]">출처</p>
-                  <p className="mt-2 text-sm font-bold leading-6 text-[#172033]">공식 문서 우선</p>
+            <div className="mt-5 grid gap-4 rounded-[10px] border border-[#CDD5DD] bg-[#F4F6F7]/92 p-4 shadow-[0_18px_46px_rgba(23,32,51,0.08)] sm:p-5 lg:grid-cols-[minmax(0,0.82fr)_minmax(320px,1fr)]">
+              <div className="flex min-h-full flex-col rounded-[8px] bg-[#FBF7EE] p-4">
+                <p className="text-sm font-bold text-[#7A5518]">정책 확인 미리보기</p>
+                <h2 className="mt-3 max-w-[420px] text-2xl font-semibold leading-tight text-[#172033] [text-wrap:balance]">
+                  질문을 기준, 근거, 확인 필요 항목으로 나눠 보여줍니다.
+                </h2>
+                <div className="mt-5 rounded-[8px] border border-[#D9D4C8] bg-white p-4">
+                  <p className="text-xs font-semibold text-[#68707C]">질문 예시</p>
+                  <p className="mt-2 text-sm font-bold leading-6 text-[#172033]">
+                    건강기능식품 광고 문구를 Meta와 Google 기준으로 확인
+                  </p>
                 </div>
-                <div className="rounded-[8px] border border-[#D8DDE1] bg-white p-3">
-                  <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#293B5A]">검토</p>
-                  <p className="mt-2 text-sm font-bold leading-6 text-[#172033]">보류 조건 분리</p>
+                <div className="mt-3 grid gap-2">
+                  {previewRows.map(([title, detail]) => (
+                    <div key={title} className="rounded-[8px] border border-[#E1DED6] bg-white px-4 py-3">
+                      <p className="text-sm font-bold text-[#172033]">{title}</p>
+                      <p className="mt-1 text-xs leading-5 text-[#68707C]">{detail}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-[8px] border border-[#D8DDE1] bg-white p-3">
+                <img
+                  src="/compass-policy-map.svg"
+                  alt="매체 정책과 근거 문서가 연결된 Compass 화면 예시"
+                  className="h-auto w-full rounded-[8px]"
+                />
+                <div className="mt-3 grid grid-cols-3 gap-2">
+                  {["질문", "근거", "결과"].map((label) => (
+                    <div key={label} className="rounded-[7px] bg-[#172033] px-3 py-2 text-center text-xs font-bold text-white">
+                      {label}
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-3 rounded-[8px] bg-[#172033] p-4 text-white">
+                  <p className="text-xs font-bold text-[#D5B978]">결과 화면 구성</p>
+                  <div className="mt-3 grid gap-2">
+                    {["답변 초안", "근거 문서", "확인 필요"].map((label) => (
+                      <div key={label} className="flex items-center justify-between rounded-[7px] border border-white/10 bg-white/[0.06] px-3 py-2">
+                        <span className="text-xs font-semibold text-white/65">{label}</span>
+                        <CheckCircle className="h-3.5 w-3.5 text-[#D5B978]" aria-hidden="true" />
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>
@@ -242,7 +264,7 @@ export default function HomePage() {
 
           <div className="relative mt-8 rounded-[10px] border border-[#D9D4C8] bg-[#F5EFE3]/92 p-4">
             <div className="mb-4 flex items-center justify-between gap-4">
-              <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#7A5518]">지원 매체</p>
+              <p className="text-sm font-bold text-[#7A5518]">지원 매체</p>
               <span className="hidden text-xs font-semibold text-[#68707C] sm:inline">주요 매체 정책 기준을 함께 확인합니다</span>
             </div>
             <div className="compass-media-marquee">
@@ -273,9 +295,9 @@ export default function HomePage() {
           <div className="flex items-start justify-between gap-4">
             <div>
               <p className="text-xs font-semibold tracking-[0.02em] text-[#7A5518]">로그인</p>
-              <h2 className="mt-2 text-2xl font-semibold leading-tight text-[#172033]">Compass로 이동</h2>
+              <h2 className="mt-2 text-2xl font-semibold leading-tight text-[#172033]">Compass 정책 확인 화면 열기</h2>
               <p className="mt-3 text-sm leading-6 text-[#68707C]">
-                AdMate 계정 확인 후 정책 확인 화면으로 이동합니다.
+                AdMate 계정으로 로그인하면 질문 기록과 검토 내용을 이어서 확인할 수 있습니다.
               </p>
             </div>
             <div className="grid h-12 w-12 flex-none place-items-center rounded-[8px] border border-[#D5B978] bg-[#FFF3D8] text-[#7A5518]">
@@ -305,7 +327,7 @@ export default function HomePage() {
           </div>
 
           <p className="mt-5 text-xs leading-5 text-[#68707C]">
-            로그인 전에는 질문 기록과 정책 문서 내용이 표시되지 않습니다.
+            로그인 후 최근 질문과 정책 문서 내용을 확인할 수 있습니다.
           </p>
         </motion.aside>
       </section>

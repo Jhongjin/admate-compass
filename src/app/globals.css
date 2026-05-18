@@ -89,6 +89,11 @@
 }
 
 @layer components {
+  .compass-gate-copy {
+    word-break: keep-all;
+    overflow-wrap: break-word;
+  }
+
   .compass-media-marquee {
     overflow: hidden;
     mask-image: linear-gradient(90deg, transparent, black 8%, black 92%, transparent);
