@@ -10,7 +10,8 @@ import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/useAuth";
 import { sanitizeCompassNextPath } from "@/lib/auth/safeNext";
 
-const ACCESS_REQUEST_URL = "https://sentinel.admate.ai.kr/access-request";
+const ACCESS_REQUEST_URL = "https://sentinel.admate.ai.kr/access-request?product=compass";
+const ADMATE_HOME_URL = "https://home.admate.ai.kr";
 
 function LoginPageContent() {
   const router = useRouter();
@@ -192,10 +193,10 @@ function LoginPageContent() {
                 <ExternalLink className="h-4 w-4 flex-none" aria-hidden="true" />
               </a>
               <Link
-                href="/"
+                href={ADMATE_HOME_URL}
                 className="inline-flex items-center justify-center rounded-lg border border-[#E5E5E5] px-4 py-3 font-medium text-[#303030] transition-colors hover:bg-[#F7F7F7]"
               >
-                Compass 홈으로 돌아가기
+                AdMate 홈페이지로 이동
               </Link>
             </div>
           </div>
