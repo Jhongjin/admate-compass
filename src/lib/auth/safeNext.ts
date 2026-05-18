@@ -1,4 +1,6 @@
-const ALLOWED_COMPASS_NEXT_PATHS = new Set(["/", "/chat-ollama", "/history"]);
+const DEFAULT_COMPASS_NEXT_PATH = "/desk";
+const LEGACY_COMPASS_DESK_PATH = "/chat-ollama";
+const ALLOWED_COMPASS_NEXT_PATHS = new Set(["/", "/desk", LEGACY_COMPASS_DESK_PATH, "/history"]);
 const SENSITIVE_QUERY_KEY_PATTERN =
   /^(?:token|access_token|refresh_token|id_token|api_key|apikey|secret|password|code)$/i;
 
@@ -6,7 +8,7 @@ const COMPASS_NEXT_BASE_URL = "https://compass.admate.ai.kr";
 
 export function sanitizeCompassNextPath(value: unknown): string {
   if (typeof value !== "string") {
-    return "/";
+    return DEFAULT_COMPASS_NEXT_PATH;
   }
 
   const next = value.trim().slice(0, 500);
@@ -18,7 +20,7 @@ export function sanitizeCompassNextPath(value: unknown): string {
     next.includes("\\") ||
     /^javascript:/i.test(next)
   ) {
-    return "/";
+    return DEFAULT_COMPASS_NEXT_PATH;
   }
 
   let parsed: URL;
@@ -26,19 +28,19 @@ export function sanitizeCompassNextPath(value: unknown): string {
   try {
     parsed = new URL(next, COMPASS_NEXT_BASE_URL);
   } catch {
-    return "/";
+    return DEFAULT_COMPASS_NEXT_PATH;
   }
 
   if (parsed.origin !== COMPASS_NEXT_BASE_URL) {
-    return "/";
+    return DEFAULT_COMPASS_NEXT_PATH;
   }
 
   if (parsed.pathname === "/api" || parsed.pathname.startsWith("/api/")) {
-    return "/";
+    return DEFAULT_COMPASS_NEXT_PATH;
   }
 
   if (!ALLOWED_COMPASS_NEXT_PATHS.has(parsed.pathname)) {
-    return "/";
+    return DEFAULT_COMPASS_NEXT_PATH;
   }
 
   const safeSearchParams = new URLSearchParams();
@@ -50,5 +52,8 @@ export function sanitizeCompassNextPath(value: unknown): string {
   });
 
   const query = safeSearchParams.toString();
-  return query ? `${parsed.pathname}?${query}` : parsed.pathname;
+  const pathname =
+    parsed.pathname === LEGACY_COMPASS_DESK_PATH ? DEFAULT_COMPASS_NEXT_PATH : parsed.pathname;
+
+  return query ? `${pathname}?${query}` : pathname;
 }

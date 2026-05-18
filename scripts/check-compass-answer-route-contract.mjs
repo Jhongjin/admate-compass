@@ -2,7 +2,8 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 const root = process.cwd()
-const chatPagePath = path.join(root, 'src/app/chat-ollama/page.tsx')
+const chatPagePath = path.join(root, 'src/app/desk/page.tsx')
+const legacyChatPagePath = path.join(root, 'src/app/chat-ollama/page.tsx')
 const canonicalRoutePath = path.join(root, 'src/app/api/chat-ollama/route.ts')
 const legacyRoutePath = path.join(root, 'src/app/api/chatbot/route.ts')
 const decisionDocPath = path.join(root, 'docs/tasks/2026-05-17_compass_reliability_3agent_openrouter_graphrag_plan_v3.md')
@@ -13,13 +14,14 @@ function fail(message) {
   process.exitCode = 1
 }
 
-for (const filePath of [chatPagePath, canonicalRoutePath, legacyRoutePath, decisionDocPath, packagePath]) {
+for (const filePath of [chatPagePath, legacyChatPagePath, canonicalRoutePath, legacyRoutePath, decisionDocPath, packagePath]) {
   if (!fs.existsSync(filePath)) fail(`missing required file: ${path.relative(root, filePath)}`)
 }
 
 if (process.exitCode) process.exit()
 
 const chatPageText = fs.readFileSync(chatPagePath, 'utf8')
+const legacyChatPageText = fs.readFileSync(legacyChatPagePath, 'utf8')
 const canonicalRouteText = fs.readFileSync(canonicalRoutePath, 'utf8')
 const legacyRouteText = fs.readFileSync(legacyRoutePath, 'utf8')
 const decisionDocText = fs.readFileSync(decisionDocPath, 'utf8')
@@ -32,7 +34,13 @@ for (const requiredText of [
   'noDataFound',
   'sanitizeSources',
 ]) {
-  if (!chatPageText.includes(requiredText)) fail(`chat page missing ${requiredText}`)
+  if (!chatPageText.includes(requiredText)) fail(`desk page missing ${requiredText}`)
+}
+
+for (const requiredText of [
+  'redirect(suffix ? `/desk?${suffix}` : "/desk")',
+]) {
+  if (!legacyChatPageText.includes(requiredText)) fail(`legacy chat page missing ${requiredText}`)
 }
 
 for (const requiredText of [

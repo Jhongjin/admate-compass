@@ -16,7 +16,7 @@ import {
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 
-const COMPASS_DESK_PATH = "/chat-ollama";
+const COMPASS_DESK_PATH = "/desk";
 const LOGIN_URL = `/login?next=${encodeURIComponent(COMPASS_DESK_PATH)}`;
 const ACCESS_REQUEST_URL = "https://sentinel.admate.ai.kr/access-request?product=compass";
 const ADMATE_HOME_URL = "https://home.admate.ai.kr";

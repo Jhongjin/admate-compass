@@ -215,7 +215,7 @@ function validateContract(contract) {
   assertString(contract.name, "contract.name");
   assertString(contract.version, "contract.version");
   if (contract.syntheticOnly !== true) fail("contract.syntheticOnly must be true");
-  if (contract.routeSurface !== "chat-ollama") fail("contract.routeSurface must be chat-ollama");
+  if (contract.routeSurface !== "desk") fail("contract.routeSurface must be desk");
 
   for (const flag of operationalBooleanFlags) {
     assertBoolean(contract[flag], `contract.${flag}`);
@@ -453,7 +453,7 @@ for (const [index, fixture] of payload.fixtures.entries()) {
 
   assertBoolean(fixture.synthetic, `${label}.synthetic`);
   if (fixture.synthetic !== true) fail(`${label}.synthetic must be true`);
-  if (fixture.routeSurface !== "chat-ollama") fail(`${label}.routeSurface must be chat-ollama`);
+  if (fixture.routeSurface !== "desk") fail(`${label}.routeSurface must be desk`);
   if (!allowedViewportClasses.has(fixture.viewportClass)) {
     fail(`${label}.viewportClass must be one of ${Array.from(allowedViewportClasses).join(", ")}`);
   }

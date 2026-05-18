@@ -3,7 +3,7 @@
     "name": "compass-chat-ui-state-contract",
     "version": "2/3",
     "syntheticOnly": true,
-    "routeSurface": "chat-ollama",
+    "routeSurface": "desk",
     "productionApiCalled": false,
     "ragSearchExecuted": false,
     "browserUsed": false,
@@ -45,7 +45,7 @@
     {
       "id": "chat-ui-initial-empty-source-panel",
       "synthetic": true,
-      "routeSurface": "chat-ollama",
+      "routeSurface": "desk",
       "viewportClass": "desktop-lg",
       "state": "initial-empty",
       "message": {
@@ -119,7 +119,7 @@
     {
       "id": "chat-ui-source-found-three-sources",
       "synthetic": true,
-      "routeSurface": "chat-ollama",
+      "routeSurface": "desk",
       "viewportClass": "desktop-lg",
       "state": "source-found",
       "promptExpectation": {
@@ -226,7 +226,7 @@
     {
       "id": "chat-ui-source-found-long-korean-title",
       "synthetic": true,
-      "routeSurface": "chat-ollama",
+      "routeSurface": "desk",
       "viewportClass": "desktop-lg",
       "state": "source-found",
       "promptExpectation": {
@@ -316,7 +316,7 @@
     {
       "id": "chat-ui-nodata-empty-source-panel",
       "synthetic": true,
-      "routeSurface": "chat-ollama",
+      "routeSurface": "desk",
       "viewportClass": "desktop-lg",
       "state": "noData",
       "promptExpectation": {
@@ -398,7 +398,7 @@
     {
       "id": "chat-ui-generation-limited-sources-preserved",
       "synthetic": true,
-      "routeSurface": "chat-ollama",
+      "routeSurface": "desk",
       "viewportClass": "desktop-lg",
       "state": "generation-limited",
       "promptExpectation": {
@@ -498,7 +498,7 @@
     {
       "id": "chat-ui-error-no-sources",
       "synthetic": true,
-      "routeSurface": "chat-ollama",
+      "routeSurface": "desk",
       "viewportClass": "desktop-lg",
       "state": "error",
       "promptExpectation": {
@@ -582,7 +582,7 @@
     {
       "id": "chat-ui-mobile-source-found-compact-panel",
       "synthetic": true,
-      "routeSurface": "chat-ollama",
+      "routeSurface": "desk",
       "viewportClass": "mobile",
       "state": "source-found",
       "promptExpectation": {
@@ -677,7 +677,7 @@
     {
       "id": "chat-ui-mobile-nodata-compact-panel",
       "synthetic": true,
-      "routeSurface": "chat-ollama",
+      "routeSurface": "desk",
       "viewportClass": "mobile",
       "state": "noData",
       "promptExpectation": {
@@ -758,7 +758,7 @@
     {
       "id": "chat-ui-mobile-generation-limited-compact-panel",
       "synthetic": true,
-      "routeSurface": "chat-ollama",
+      "routeSurface": "desk",
       "viewportClass": "small-mobile",
       "state": "generation-limited",
       "promptExpectation": {
@@ -855,7 +855,7 @@
     {
       "id": "chat-ui-mobile-error-no-panel-trap",
       "synthetic": true,
-      "routeSurface": "chat-ollama",
+      "routeSurface": "desk",
       "viewportClass": "mobile",
       "state": "error",
       "promptExpectation": {

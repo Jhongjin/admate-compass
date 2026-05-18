@@ -84,7 +84,7 @@ function getValidatedFixtures() {
     return [];
   }
 
-  return payload.fixtures.filter((fixture) => fixture.synthetic && fixture.routeSurface === "chat-ollama");
+  return payload.fixtures.filter((fixture) => fixture.synthetic && fixture.routeSurface === "desk");
 }
 
 function FixtureTranscript({ fixture }: { fixture: ChatUiStateFixture }) {
