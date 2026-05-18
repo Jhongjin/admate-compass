@@ -16,7 +16,7 @@ function LoginPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user, loading, signIn } = useAuth();
-  const [email, setEmail] = useState("");
+  const [emailLocalPart, setEmailLocalPart] = useState("");
   const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
@@ -32,17 +32,26 @@ function LoginPageContent() {
     }
   }, [loading, router, safeNext, user]);
 
+  const normalizeEmailLocalPart = (value: string) =>
+    value
+      .trim()
+      .replace(/\s/g, "")
+      .replace(/@nasmedia\.co\.kr$/i, "")
+      .replace(/@.*$/g, "");
+
   const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setMessage(null);
 
-    const normalizedEmail = email.trim();
+    const normalizedEmailLocalPart = normalizeEmailLocalPart(emailLocalPart);
 
-    if (!normalizedEmail || !password) {
+    if (!normalizedEmailLocalPart || !password) {
       setMessage("이메일과 비밀번호를 입력해주세요.");
       return;
     }
 
+    const normalizedEmail = `${normalizedEmailLocalPart}@nasmedia.co.kr`;
+    setEmailLocalPart(normalizedEmailLocalPart);
     setIsSubmitting(true);
 
     try {
@@ -115,19 +124,29 @@ function LoginPageContent() {
                 <Label htmlFor="email" className="text-sm font-semibold text-[#303030]">
                   이메일
                 </Label>
-                <div className="relative">
-                  <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8A8A8A]" />
-                  <Input
-                    id="email"
-                    type="email"
-                    value={email}
-                    onChange={(event) => setEmail(event.target.value)}
-                    placeholder="name@nasmedia.co.kr"
-                    autoComplete="email"
-                    className="border-[#D8D8D8] bg-white pl-10 text-[#0D0D0D] placeholder:text-[#9A9A9A]"
-                    disabled={isSubmitting}
-                    required
-                  />
+                <div className="flex flex-col overflow-hidden rounded-lg border border-[#D8D8D8] bg-white transition-colors focus-within:border-[#1F7A4D] focus-within:ring-2 focus-within:ring-[#E7F4EA] sm:flex-row">
+                  <div className="relative min-w-0 flex-1">
+                    <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8A8A8A]" />
+                    <input
+                      id="email"
+                      type="text"
+                      inputMode="email"
+                      value={emailLocalPart}
+                      onChange={(event) => setEmailLocalPart(normalizeEmailLocalPart(event.target.value))}
+                      placeholder="name"
+                      autoComplete="username"
+                      className="h-10 w-full min-w-0 bg-transparent pl-10 pr-3 text-sm text-[#0D0D0D] outline-none placeholder:text-[#9A9A9A] disabled:cursor-not-allowed disabled:opacity-60"
+                      disabled={isSubmitting}
+                      aria-describedby="email-domain"
+                      required
+                    />
+                  </div>
+                  <span
+                    id="email-domain"
+                    className="border-t border-[#E5E5E5] bg-[#EDF7EF] px-3 py-2.5 text-sm font-bold text-[#4B6556] sm:border-l sm:border-t-0"
+                  >
+                    @nasmedia.co.kr
+                  </span>
                 </div>
               </div>
 
