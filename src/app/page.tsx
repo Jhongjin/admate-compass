@@ -33,6 +33,12 @@ const previewRows = [
   ["추가 확인 필요", "랜딩 페이지나 업종 정보가 더 필요한 항목을 따로 표시합니다."],
 ] as const;
 
+const answerVerificationFlow = [
+  ["복수 관점 초안", "질문을 여러 관점에서 해석해 답변 후보를 만듭니다."],
+  ["교차 검토", "근거, 누락, 충돌 가능성을 비교해 답변의 약한 부분을 점검합니다."],
+  ["최종 답변 정리", "더 신뢰할 수 있는 결론과 함께 필요한 주의점을 표시합니다."],
+] as const;
+
 type MediaId = (typeof supportedMedia)[number]["id"];
 
 function MediaLogo({ id }: { id: MediaId }) {
@@ -248,12 +254,23 @@ export default function HomePage() {
                   ))}
                 </div>
                 <div className="mt-3 rounded-[8px] bg-[#172033] p-4 text-white">
-                  <p className="text-xs font-bold text-[#D5B978]">결과 화면 구성</p>
-                  <div className="mt-3 grid gap-2">
-                    {["답변 초안", "근거 문서", "확인 필요"].map((label) => (
-                      <div key={label} className="flex items-center justify-between rounded-[7px] border border-white/10 bg-white/[0.06] px-3 py-2">
-                        <span className="text-xs font-semibold text-white/65">{label}</span>
-                        <CheckCircle className="h-3.5 w-3.5 text-[#D5B978]" aria-hidden="true" />
+                  <p className="text-xs font-bold text-[#D5B978]">답변 검증 흐름</p>
+                  <h3 className="mt-2 text-xl font-semibold leading-tight text-white [text-wrap:balance]">
+                    하나의 답을 바로 내놓지 않습니다
+                  </h3>
+                  <p className="mt-3 text-xs leading-5 text-white/68">
+                    Compass는 서로 다른 관점의 답변 후보를 비교하고, 근거와 누락 가능성을 검토한 뒤 업무에 쓸 수 있는 최종 답변으로 정리합니다.
+                  </p>
+                  <div className="mt-4 grid gap-2">
+                    {answerVerificationFlow.map(([title, detail], index) => (
+                      <div key={title} className="rounded-[7px] border border-white/10 bg-white/[0.06] px-3 py-2.5">
+                        <div className="flex items-center gap-2">
+                          <span className="grid h-5 w-5 flex-none place-items-center rounded-full bg-[#D5B978] text-[11px] font-black text-[#172033]">
+                            {index + 1}
+                          </span>
+                          <span className="text-xs font-bold text-white">{title}</span>
+                        </div>
+                        <p className="mt-1.5 pl-7 text-xs leading-5 text-white/64">{detail}</p>
                       </div>
                     ))}
                   </div>
