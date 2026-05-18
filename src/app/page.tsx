@@ -4,28 +4,25 @@ import { useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { ArrowRight, CheckCircle, FileText, Map, Search } from "lucide-react";
+import { ArrowRight, CheckCircle, Search } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 
 const COMPASS_DESK_PATH = "/desk";
 const LOGIN_URL = `/login?next=${encodeURIComponent(COMPASS_DESK_PATH)}`;
 const ACCESS_REQUEST_URL = "https://sentinel.admate.ai.kr/access-request?product=compass";
 
-const reviewItems = [
-  ["매체", "플랫폼별 정책 기준 확인"],
-  ["조건", "업종, 소재 표현, 랜딩 정보 정리"],
-  ["근거", "관련 문서와 답변 기준 확인"],
+const supportedMedia = ["Meta", "Google/YouTube", "Naver", "Kakao", "GDN", "YouTube"];
+
+const trustSignals = [
+  "공식 정책 문서와 운영 기준을 우선 확인",
+  "답변에 사용한 출처와 관련 문단을 함께 표시",
+  "조건이 부족하거나 충돌하는 내용은 확인 필요로 분리",
 ] as const;
 
-const policyBoardRows = [
-  ["질문", "건강기능식품 프로모션 소재 가능 여부"],
-  ["확인 항목", "매체 / 업종 / 소재 표현 / 랜딩"],
-  ["결과 보기", "답변과 근거 문서를 함께 확인"],
-] as const;
-
-const accessNotes = [
-  "로그인 후 요청한 Compass 화면으로 이동합니다.",
-  "질문 기록과 문서 내용은 로그인한 사용자에게만 표시됩니다.",
+const reviewScope = [
+  ["매체", "플랫폼별 정책"],
+  ["소재", "표현과 랜딩 조건"],
+  ["근거", "문서와 판단 기준"],
 ] as const;
 
 export default function HomePage() {
@@ -51,7 +48,7 @@ export default function HomePage() {
   return (
     <main className="relative min-h-[100dvh] overflow-hidden bg-[#ECEFF2] font-sans text-[#172033]">
       <div
-        className="pointer-events-none fixed inset-0 opacity-[0.58]"
+        className="pointer-events-none fixed inset-0 opacity-[0.56]"
         aria-hidden="true"
         style={{
           backgroundImage:
@@ -61,7 +58,7 @@ export default function HomePage() {
         }}
       />
       <div
-        className="pointer-events-none absolute -right-56 top-24 h-[34rem] w-[68rem] rounded-full border border-[#A67B2D]/25 bg-[#F2DFC0]/24"
+        className="pointer-events-none absolute -right-56 top-24 h-[34rem] w-[68rem] rounded-full border border-[#A67B2D]/22 bg-[#F2DFC0]/20"
         aria-hidden="true"
         style={{ transform: "rotate(-12deg)" }}
       />
@@ -86,7 +83,7 @@ export default function HomePage() {
         </div>
       </header>
 
-      <section className="relative mx-auto grid max-w-[1400px] gap-5 px-4 py-8 sm:px-6 sm:py-12 lg:grid-cols-[minmax(0,1.1fr)_410px] lg:px-8">
+      <section className="relative mx-auto grid max-w-[1400px] gap-5 px-4 py-8 sm:px-6 sm:py-12 lg:grid-cols-[minmax(0,1.12fr)_390px] lg:px-8">
         <motion.section
           initial={{ opacity: 0, y: 18 }}
           animate={{ opacity: 1, y: 0 }}
@@ -98,11 +95,11 @@ export default function HomePage() {
             aria-hidden="true"
             style={{
               background:
-                "linear-gradient(112deg, transparent 0 59%, rgba(166,123,45,0.14) 59% 59.45%, transparent 59.45% 100%), radial-gradient(circle at 84% 18%, rgba(41,59,90,0.12), transparent 17rem)",
+                "linear-gradient(112deg, transparent 0 61%, rgba(166,123,45,0.13) 61% 61.42%, transparent 61.42% 100%), radial-gradient(circle at 84% 18%, rgba(41,59,90,0.10), transparent 18rem)",
             }}
           />
 
-          <div className="relative grid gap-9 xl:grid-cols-[minmax(0,0.9fr)_minmax(340px,0.78fr)] xl:items-start">
+          <div className="relative grid gap-8 xl:grid-cols-[minmax(0,0.86fr)_minmax(330px,0.72fr)] xl:items-start">
             <div>
               <div className="flex flex-wrap items-center gap-2">
                 <span className="inline-flex min-h-7 items-center rounded-[8px] border border-[#AEB8C3] bg-[#EEF2F5] px-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#293B5A]">
@@ -113,84 +110,71 @@ export default function HomePage() {
                 </span>
               </div>
 
-              <h1 className="mt-8 max-w-3xl text-[clamp(2.35rem,4.4vw,4.55rem)] font-bold leading-[1.04] tracking-normal text-[#172033]">
-                광고 정책 확인을
-                <br />
-                시작하세요.
+              <h1 className="mt-8 max-w-[680px] text-[clamp(2rem,3.2vw,3.35rem)] font-semibold leading-[1.18] tracking-normal text-[#172033] [text-wrap:balance]">
+                매체 정책을 근거와 함께 확인하세요.
               </h1>
-              <p className="mt-5 max-w-2xl text-base leading-8 text-[#344052] sm:text-lg">
-                Compass는 매체별 광고 정책과 소재 기준을 확인하고, 질문에 필요한 근거를 함께 보는 작업 공간입니다.
+              <p className="mt-5 max-w-[620px] text-base leading-8 text-[#344052] sm:text-lg">
+                Compass는 광고 상품과 소재 조건을 매체별 정책 기준에 맞춰 확인하는 AdMate의 정책 확인 도구입니다.
               </p>
-              <p className="mt-3 max-w-xl text-sm leading-7 text-[#68707C]">
-                AdMate 계정으로 로그인하면 Compass 작업 화면으로 이동합니다. 로그인 전에는 질문 기록과 문서 내용을 불러오지 않습니다.
+              <p className="mt-3 max-w-[610px] text-sm leading-7 text-[#68707C]">
+                지원 매체, 관련 문서, 확인이 필요한 조건을 한 화면에서 비교합니다.
               </p>
 
-              <div className="mt-8 grid gap-3 sm:grid-cols-[1fr_1.15fr]">
+              <div className="mt-8 grid gap-4 md:grid-cols-[0.92fr_1.08fr]">
                 <div className="rounded-[8px] border border-[#D9D4C8] bg-[#F5EFE3]/90 p-4">
-                  <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#7A5518]">확인 범위</p>
+                  <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#7A5518]">지원 매체</p>
+                  <div className="mt-4 flex flex-wrap gap-2">
+                    {supportedMedia.map((media) => (
+                      <span
+                        key={media}
+                        className="rounded-[7px] border border-[#D9D4C8] bg-white px-3 py-2 text-sm font-semibold text-[#172033]"
+                      >
+                        {media}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="rounded-[8px] border border-[#CDD5DD] bg-white/72 p-4">
+                  <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#293B5A]">확인 기준</p>
                   <div className="mt-4 grid gap-3">
-                    {reviewItems.map(([label, value]) => (
-                      <div key={label} className="grid grid-cols-[3.4rem_minmax(0,1fr)] gap-3">
+                    {reviewScope.map(([label, value]) => (
+                      <div key={label} className="grid grid-cols-[3.5rem_minmax(0,1fr)] gap-3">
                         <span className="rounded-[6px] bg-[#172033] px-2 py-1 text-center text-xs font-bold text-white">{label}</span>
                         <span className="text-sm font-semibold leading-6 text-[#344052]">{value}</span>
                       </div>
                     ))}
                   </div>
                 </div>
+              </div>
 
-                <div className="rounded-[8px] border border-[#CDD5DD] bg-white/70 p-4">
-                  <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#293B5A]">작업 흐름</p>
-                  <div className="mt-4 grid grid-cols-3 gap-2">
-                    {["질문", "기준", "답변"].map((label, index) => (
-                      <div key={label} className="rounded-[8px] border border-[#DEE3E7] bg-[#F8F6F1] px-3 py-3">
-                        <p className="text-[11px] font-bold text-[#A67B2D]">0{index + 1}</p>
-                        <p className="mt-2 text-sm font-bold text-[#172033]">{label}</p>
-                      </div>
-                    ))}
-                  </div>
+              <div className="mt-4 rounded-[8px] border border-[#D9D4C8] bg-white/62 p-4">
+                <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#7A5518]">신뢰 신호</p>
+                <div className="mt-4 grid gap-3">
+                  {trustSignals.map((item) => (
+                    <div key={item} className="flex items-start gap-3">
+                      <CheckCircle className="mt-0.5 h-4 w-4 flex-none text-[#A67B2D]" aria-hidden="true" />
+                      <p className="text-sm leading-6 text-[#344052]">{item}</p>
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
 
             <div className="rounded-[10px] border border-[#CED6DD] bg-[#F4F6F7]/92 p-4 shadow-[0_18px_46px_rgba(23,32,51,0.08)]">
-              <div className="flex items-center justify-between gap-3 border-b border-[#D8DDE1] pb-3">
-                <div>
-                  <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#68707C]">정책 확인 보드</p>
-                  <h2 className="mt-1 text-lg font-bold text-[#172033]">로그인 후 확인할 수 있는 화면입니다.</h2>
-                </div>
-                <div className="grid h-10 w-10 place-items-center rounded-[8px] border border-[#D5B978] bg-[#FFF3D8] text-[#7A5518]">
-                  <Map className="h-5 w-5" aria-hidden="true" />
-                </div>
-              </div>
-
-              <div className="mt-4 rounded-[8px] border border-[#D8DDE1] bg-white p-3">
-                <div className="flex items-center gap-2 rounded-[8px] border border-[#DEE3E7] bg-[#F8F6F1] px-3 py-3">
-                  <Search className="h-4 w-4 flex-none text-[#293B5A]" aria-hidden="true" />
-                  <span className="truncate text-sm font-semibold text-[#344052]">정책 기준을 질문합니다</span>
-                </div>
-
-                <div className="mt-4 grid gap-3">
-                  {policyBoardRows.map(([label, value], index) => (
-                    <div key={label} className="rounded-[8px] border border-[#E1E3E5] bg-[#FBFAF7] p-3">
-                      <div className="flex items-center justify-between gap-3">
-                        <span className="text-xs font-bold text-[#A67B2D]">0{index + 1}</span>
-                        <span className="rounded-[6px] border border-[#D8DDE1] bg-white px-2 py-1 text-[11px] font-semibold text-[#5B6472]">
-                          {label}
-                        </span>
-                      </div>
-                      <p className="mt-3 text-sm font-bold leading-6 text-[#172033]">{value}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              <div className="mt-4 grid grid-cols-[1fr_3.5rem] gap-3">
+              <img
+                src="/compass-policy-map.svg"
+                alt="매체 정책과 근거 문서가 연결된 Compass 화면 예시"
+                className="h-auto w-full rounded-[8px]"
+              />
+              <div className="mt-4 grid grid-cols-2 gap-3">
                 <div className="rounded-[8px] border border-[#D8DDE1] bg-white p-3">
-                  <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#68707C]">표시 정보</p>
-                  <p className="mt-2 text-sm font-bold text-[#172033]">답변, 관련 기준, 확인 필요 항목</p>
+                  <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#7A5518]">출처</p>
+                  <p className="mt-2 text-sm font-bold leading-6 text-[#172033]">공식 문서 우선</p>
                 </div>
-                <div className="grid place-items-center rounded-[8px] bg-[#172033] text-center text-white">
-                  <FileText className="h-5 w-5" aria-hidden="true" />
+                <div className="rounded-[8px] border border-[#D8DDE1] bg-white p-3">
+                  <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#293B5A]">검토</p>
+                  <p className="mt-2 text-sm font-bold leading-6 text-[#172033]">보류 조건 분리</p>
                 </div>
               </div>
             </div>
@@ -206,9 +190,9 @@ export default function HomePage() {
           <div className="flex items-start justify-between gap-4">
             <div>
               <p className="text-xs font-semibold tracking-[0.02em] text-[#7A5518]">로그인</p>
-              <h2 className="mt-2 text-2xl font-bold leading-tight text-[#172033]">Compass 이용하기</h2>
+              <h2 className="mt-2 text-2xl font-semibold leading-tight text-[#172033]">Compass로 이동</h2>
               <p className="mt-3 text-sm leading-6 text-[#68707C]">
-                AdMate 계정으로 로그인하면 Compass 작업 화면으로 이동합니다.
+                AdMate 계정 확인 후 정책 확인 화면으로 이동합니다.
               </p>
             </div>
             <div className="grid h-12 w-12 flex-none place-items-center rounded-[8px] border border-[#D5B978] bg-[#FFF3D8] text-[#7A5518]">
@@ -216,21 +200,9 @@ export default function HomePage() {
             </div>
           </div>
 
-          <div className="mt-7 rounded-[8px] border border-[#D9D4C8] bg-[#F8F3E7] p-4">
-            <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#7A5518]">로그인 후 제공되는 기능</p>
-            <div className="mt-4 grid gap-3">
-              {["정책 질문", "관련 기준 확인", "답변 기록 조회"].map((item) => (
-                <div key={item} className="flex items-center gap-3 rounded-[8px] border border-[#E0D7C5] bg-white px-3 py-3">
-                  <CheckCircle className="h-4 w-4 flex-none text-[#A67B2D]" aria-hidden="true" />
-                  <span className="text-sm font-bold text-[#172033]">{item}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
           <Link
             href={LOGIN_URL}
-            className="mt-6 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-[8px] bg-[#172033] px-5 py-3 text-sm font-bold text-white transition duration-300 [transition-timing-function:cubic-bezier(0.32,0.72,0,1)] hover:bg-[#273755] active:scale-[0.98]"
+            className="mt-7 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-[8px] bg-[#172033] px-5 py-3 text-sm font-bold text-white transition duration-300 [transition-timing-function:cubic-bezier(0.32,0.72,0,1)] hover:bg-[#273755] active:scale-[0.98]"
           >
             AdMate 계정으로 로그인
             <ArrowRight className="h-4 w-4" aria-hidden="true" />
@@ -249,17 +221,9 @@ export default function HomePage() {
             </a>
           </div>
 
-          <div className="mt-5 rounded-[10px] bg-[#172033] p-4 text-white">
-            <p className="text-[11px] font-bold uppercase tracking-[0.14em] text-white/42">안내</p>
-            <div className="mt-4 grid gap-3">
-              {accessNotes.map((item) => (
-                <div key={item} className="flex items-start gap-3">
-                  <span className="mt-1.5 h-1.5 w-1.5 flex-none rounded-full bg-[#D5B978]" aria-hidden="true" />
-                  <p className="text-sm leading-6 text-white/72">{item}</p>
-                </div>
-              ))}
-            </div>
-          </div>
+          <p className="mt-5 text-xs leading-5 text-[#68707C]">
+            로그인 전에는 질문 기록과 정책 문서 내용이 표시되지 않습니다.
+          </p>
         </motion.aside>
       </section>
     </main>
