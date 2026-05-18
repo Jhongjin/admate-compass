@@ -8,6 +8,7 @@ export type WebPageExtractionRejectionReason =
   | 'private_or_internal_url'
   | 'host_not_allowlisted'
   | 'canonical_url_not_allowlisted'
+  | 'raw_html_too_large'
   | 'secret_like_text'
   | 'raw_html_detected'
   | 'placeholder_or_low_signal_content'
@@ -30,6 +31,7 @@ export interface WebPageExtractionOptions {
   allowedHosts?: string[];
   minContentChars?: number;
   minPolicySignals?: number;
+  maxRawHtmlBytes?: number;
 }
 
 export interface WebPageExtractionResult {
@@ -55,6 +57,7 @@ interface PageChromeRule {
 
 const DEFAULT_MIN_CONTENT_CHARS = 320;
 const DEFAULT_MIN_POLICY_SIGNALS = 3;
+const DEFAULT_MAX_RAW_HTML_BYTES = 512_000;
 
 const DEFAULT_ALLOWED_POLICY_HOSTS = [
   'facebook.com',
@@ -132,6 +135,11 @@ export function extractWebPageForCompass(
   const rawHtml = String(html || '');
   const finalUrlValue = safeUrl(finalUrl);
   const rejectionReasons: WebPageExtractionRejectionReason[] = [];
+  const maxRawHtmlBytes = options.maxRawHtmlBytes ?? DEFAULT_MAX_RAW_HTML_BYTES;
+
+  if (approximateUtf8ByteLength(rawHtml) > maxRawHtmlBytes) {
+    rejectionReasons.push('raw_html_too_large');
+  }
 
   if (!finalUrlValue) {
     rejectionReasons.push('invalid_url');
@@ -492,6 +500,26 @@ function buildContentHash(value: string): string {
   }
 
   return `fnv1a:${(hash >>> 0).toString(16).padStart(8, '0')}`;
+}
+
+function approximateUtf8ByteLength(value: string): number {
+  let bytes = 0;
+
+  for (let index = 0; index < value.length; index += 1) {
+    const codePoint = value.charCodeAt(index);
+    if (codePoint <= 0x7f) {
+      bytes += 1;
+    } else if (codePoint <= 0x7ff) {
+      bytes += 2;
+    } else if (codePoint >= 0xd800 && codePoint <= 0xdbff && index + 1 < value.length) {
+      bytes += 4;
+      index += 1;
+    } else {
+      bytes += 3;
+    }
+  }
+
+  return bytes;
 }
 
 function unique<T>(values: T[]): T[] {

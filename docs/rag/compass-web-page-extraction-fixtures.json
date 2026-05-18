@@ -154,6 +154,26 @@
       }
     },
     {
+      "id": "rejects-oversized-raw-html-before-queue-review",
+      "input": {
+        "finalUrl": "https://www.facebook.com/policies/ads/oversized-policy-source",
+        "fetchedAt": "2026-05-17T00:00:00.000Z",
+        "maxRawHtmlBytes": 180,
+        "rawHtml": "<html><head><title>Meta Ads Policy Oversized Capture</title></head><body><main><h1>Meta 광고 정책</h1><p>Meta advertising standards explain campaign review, creative approval, restricted content, prohibited practices, business verification, advertiser responsibility, landing page transparency, and support guidance for Facebook and Instagram advertising.</p><p>광고 심사 정책과 캠페인 검토 내용이 충분해 보여도 원문 HTML이 허용 byte 한도를 넘으면 큐 검토, 청크, 임베딩, 답변 후보에 들어가기 전에 거절해야 합니다.</p><p>운영자는 큰 페이지를 그대로 넣지 않고 별도의 승인된 수집 경계와 요약 절차가 준비된 뒤에만 검토해야 합니다.</p></main></body></html>"
+      },
+      "expectedRejection": {
+        "reasonsInclude": ["raw_html_too_large"],
+        "contentText": "",
+        "sourceQuality": {
+          "hasTitle": true,
+          "hasUrl": true,
+          "hasExcerpt": false,
+          "qualityScore": 0,
+          "warningsInclude": ["raw_html_too_large"]
+        }
+      }
+    },
+    {
       "id": "rejects-private-internal-url",
       "input": {
         "finalUrl": "http://127.0.0.1:3000/admin/source-ops",

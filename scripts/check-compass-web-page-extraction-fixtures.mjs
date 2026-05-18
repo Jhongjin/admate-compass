@@ -116,6 +116,7 @@ for (const token of [
   'boilerplateRemoved',
   'policySignals',
   'rejectionReasons',
+  'raw_html_too_large',
   'raw_html_detected',
   'secret_like_text',
   'private_or_internal_url',
@@ -251,6 +252,7 @@ for (const [index, testCase] of (fixture.fixtures || []).entries()) {
     fetchedAt: input.fetchedAt,
     minContentChars: input.minContentChars,
     minPolicySignals: input.minPolicySignals,
+    maxRawHtmlBytes: input.maxRawHtmlBytes,
     allowedHosts: input.allowedHosts,
   })
 
