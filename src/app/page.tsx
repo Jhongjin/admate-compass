@@ -254,7 +254,7 @@ export default function HomePage() {
                   {!user && (
                     <div className="flex items-start gap-2 rounded-[10px] border border-[#E2C46C] bg-[#FFF7DA] p-3 text-sm leading-6 text-[#6B5315]">
                       <LockKeyhole className="mt-1 h-4 w-4 flex-none" aria-hidden="true" />
-                      <p>답변 생성 화면에서 로그인이 필요할 수 있습니다. 접근 권한은 Sentinel에서 요청합니다.</p>
+                      <p>답변 생성 화면에서 로그인이 필요할 수 있습니다. 접근 권한은 AdMate 가입 요청으로 확인합니다.</p>
                     </div>
                   )}
                 </form>
@@ -446,8 +446,8 @@ export default function HomePage() {
                   <ShieldCheck className="h-5 w-5" aria-hidden="true" />
                 </div>
                 <div>
-                  <h3 className="text-base font-black">접근 요청</h3>
-                  <p className="mt-2 text-sm leading-6 text-white/58">Sentinel에서 Compass 접근 권한을 요청합니다.</p>
+                  <h3 className="text-base font-black">AdMate 가입 요청</h3>
+                  <p className="mt-2 text-sm leading-6 text-white/58">Compass 사용 권한은 AdMate 가입 요청으로 확인합니다.</p>
                 </div>
               </div>
               <ArrowRight className="h-4 w-4 text-white/60 transition group-hover:translate-x-1" aria-hidden="true" />

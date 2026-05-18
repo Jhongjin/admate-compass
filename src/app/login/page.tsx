@@ -92,7 +92,7 @@ function LoginPageContent() {
                 정책 검색을 이용하려면 AdMate 계정으로 로그인하세요.
               </p>
               <p className="max-w-2xl text-sm leading-7 text-[#667066]">
-                로그인 후 요청하신 Compass 화면으로 돌아갑니다. 접근 권한이 없다면 이용 신청을 진행해주세요.
+                로그인 후 요청하신 Compass 화면으로 돌아갑니다. 접근 권한이 없다면 AdMate 가입 요청을 진행해주세요.
               </p>
             </div>
           </div>
@@ -169,7 +169,7 @@ function LoginPageContent() {
                 href={ACCESS_REQUEST_URL}
                 className="inline-flex items-center justify-between gap-3 rounded-lg border border-[#E9D59B] bg-[#FFF8E6] px-4 py-3 font-medium text-[#8A6418] transition-colors hover:bg-[#FFF3CF]"
               >
-                <span className="min-w-0 break-words">접근 권한이 없다면 이용 신청</span>
+                <span className="min-w-0 break-words">AdMate 가입 요청</span>
                 <ExternalLink className="h-4 w-4 flex-none" aria-hidden="true" />
               </a>
               <Link
