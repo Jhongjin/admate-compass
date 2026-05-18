@@ -11,7 +11,14 @@ const COMPASS_DESK_PATH = "/desk";
 const LOGIN_URL = `/login?next=${encodeURIComponent(COMPASS_DESK_PATH)}`;
 const ACCESS_REQUEST_URL = "https://sentinel.admate.ai.kr/access-request?product=compass";
 
-const supportedMedia = ["Meta", "Google/YouTube", "Naver", "Kakao", "GDN", "YouTube"];
+const supportedMedia = [
+  { id: "meta", name: "Meta" },
+  { id: "google", name: "Google" },
+  { id: "youtube", name: "YouTube" },
+  { id: "naver", name: "Naver" },
+  { id: "kakao", name: "Kakao" },
+  { id: "gdn", name: "GDN" },
+] as const;
 
 const trustSignals = [
   "공식 정책 문서와 운영 기준을 우선 확인",
@@ -24,6 +31,73 @@ const reviewScope = [
   ["소재", "표현과 랜딩 조건"],
   ["근거", "문서와 판단 기준"],
 ] as const;
+
+type MediaId = (typeof supportedMedia)[number]["id"];
+
+function MediaLogo({ id }: { id: MediaId }) {
+  if (id === "meta") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5">
+        <path
+          d="M4.2 14.3c1.1-3.6 2.7-5.4 4.6-5.4 1.4 0 2.4 1 3.2 2.2.8-1.2 1.8-2.2 3.2-2.2 1.9 0 3.5 1.8 4.6 5.4.6 1.9-.2 3.4-1.7 3.4-1.2 0-2.2-.8-3.5-2.4l-2.6-3.2-2.6 3.2c-1.3 1.6-2.3 2.4-3.5 2.4-1.5 0-2.3-1.5-1.7-3.4Z"
+          fill="none"
+          stroke="#2764D9"
+          strokeWidth="1.9"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
+    );
+  }
+
+  if (id === "google") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5">
+        <circle cx="12" cy="12" r="9" fill="#F8F6F1" />
+        <path d="M12 5.2a6.7 6.7 0 0 1 4.6 1.8l-2 2A3.8 3.8 0 0 0 12 8a4 4 0 0 0 0 8 3.7 3.7 0 0 0 3.8-2.9H12v-2.6h6.6c.1.5.2 1 .2 1.6 0 4-2.7 6.7-6.8 6.7A6.8 6.8 0 1 1 12 5.2Z" fill="#4285F4" />
+        <path d="M5.9 8.3 8.2 10A4 4 0 0 1 12 8c1 0 1.9.3 2.6 1l2-2A6.7 6.7 0 0 0 12 5.2a6.8 6.8 0 0 0-6.1 3.1Z" fill="#EA4335" />
+        <path d="M12 18.8c1.8 0 3.4-.6 4.6-1.8l-2.2-1.8A4 4 0 0 1 8.2 14l-2.3 1.8a6.8 6.8 0 0 0 6.1 3Z" fill="#34A853" />
+        <path d="M8.2 14a4.1 4.1 0 0 1 0-4L5.9 8.3a6.8 6.8 0 0 0 0 7.5L8.2 14Z" fill="#FBBC05" />
+      </svg>
+    );
+  }
+
+  if (id === "youtube") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5">
+        <rect x="3" y="6.5" width="18" height="11" rx="3" fill="#D62828" />
+        <path d="M10.6 9.2 15.4 12l-4.8 2.8V9.2Z" fill="#FFFFFF" />
+      </svg>
+    );
+  }
+
+  if (id === "naver") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5">
+        <rect x="4" y="4" width="16" height="16" rx="4" fill="#03C75A" />
+        <path d="M8 8h3.1l2.8 4.1V8H16v8h-3.1l-2.8-4.1V16H8V8Z" fill="#FFFFFF" />
+      </svg>
+    );
+  }
+
+  if (id === "kakao") {
+    return (
+      <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5">
+        <path d="M12 5.3c5 0 8.7 2.8 8.7 6.4S17 18 12 18c-.8 0-1.6-.1-2.4-.2l-3.1 1.8.8-2.9c-2.4-1.1-4-2.9-4-5 0-3.6 3.7-6.4 8.7-6.4Z" fill="#FEE500" />
+        <path d="M8.5 9h1.8v2.2L12.1 9h2.1l-2.2 2.6 2.4 3.4h-2.2l-1.4-2.1-.5.6V15H8.5V9Z" fill="#3A1D1D" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg viewBox="0 0 24 24" aria-hidden="true" className="h-5 w-5">
+      <rect x="4" y="4" width="7" height="7" rx="2" fill="#172033" />
+      <rect x="13" y="4" width="7" height="7" rx="2" fill="#D5B978" />
+      <rect x="4" y="13" width="7" height="7" rx="2" fill="#D5B978" />
+      <rect x="13" y="13" width="7" height="7" rx="2" fill="#172033" />
+    </svg>
+  );
+}
 
 export default function HomePage() {
   const router = useRouter();
@@ -121,20 +195,6 @@ export default function HomePage() {
               </p>
 
               <div className="mt-8 grid gap-4 md:grid-cols-[0.92fr_1.08fr]">
-                <div className="rounded-[8px] border border-[#D9D4C8] bg-[#F5EFE3]/90 p-4">
-                  <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#7A5518]">지원 매체</p>
-                  <div className="mt-4 flex flex-wrap gap-2">
-                    {supportedMedia.map((media) => (
-                      <span
-                        key={media}
-                        className="rounded-[7px] border border-[#D9D4C8] bg-white px-3 py-2 text-sm font-semibold text-[#172033]"
-                      >
-                        {media}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-
                 <div className="rounded-[8px] border border-[#CDD5DD] bg-white/72 p-4">
                   <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#293B5A]">확인 기준</p>
                   <div className="mt-4 grid gap-3">
@@ -146,17 +206,17 @@ export default function HomePage() {
                     ))}
                   </div>
                 </div>
-              </div>
 
-              <div className="mt-4 rounded-[8px] border border-[#D9D4C8] bg-white/62 p-4">
-                <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#7A5518]">신뢰 신호</p>
-                <div className="mt-4 grid gap-3">
-                  {trustSignals.map((item) => (
-                    <div key={item} className="flex items-start gap-3">
-                      <CheckCircle className="mt-0.5 h-4 w-4 flex-none text-[#A67B2D]" aria-hidden="true" />
-                      <p className="text-sm leading-6 text-[#344052]">{item}</p>
-                    </div>
-                  ))}
+                <div className="rounded-[8px] border border-[#D9D4C8] bg-white/62 p-4">
+                  <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#7A5518]">신뢰 신호</p>
+                  <div className="mt-4 grid gap-3">
+                    {trustSignals.map((item) => (
+                      <div key={item} className="flex items-start gap-3">
+                        <CheckCircle className="mt-0.5 h-4 w-4 flex-none text-[#A67B2D]" aria-hidden="true" />
+                        <p className="text-sm leading-6 text-[#344052]">{item}</p>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
             </div>
@@ -176,6 +236,29 @@ export default function HomePage() {
                   <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#293B5A]">검토</p>
                   <p className="mt-2 text-sm font-bold leading-6 text-[#172033]">보류 조건 분리</p>
                 </div>
+              </div>
+            </div>
+          </div>
+
+          <div className="relative mt-8 rounded-[10px] border border-[#D9D4C8] bg-[#F5EFE3]/92 p-4">
+            <div className="mb-4 flex items-center justify-between gap-4">
+              <p className="text-[11px] font-bold uppercase tracking-[0.12em] text-[#7A5518]">지원 매체</p>
+              <span className="hidden text-xs font-semibold text-[#68707C] sm:inline">주요 매체 정책 기준을 함께 확인합니다</span>
+            </div>
+            <div className="compass-media-marquee">
+              <div className="compass-media-track">
+                {[...supportedMedia, ...supportedMedia].map((media, index) => (
+                  <div
+                    key={`${media.id}-${index}`}
+                    className="mr-3 inline-flex min-h-14 items-center gap-3 rounded-[8px] border border-[#D8DDE1] bg-white px-4 py-3 shadow-[0_10px_24px_rgba(23,32,51,0.05)]"
+                    aria-hidden={index >= supportedMedia.length}
+                  >
+                    <span className="grid h-9 w-9 place-items-center rounded-[8px] bg-[#F8F6F1]">
+                      <MediaLogo id={media.id} />
+                    </span>
+                    <span className="whitespace-nowrap text-sm font-bold text-[#172033]">{media.name}</span>
+                  </div>
+                ))}
               </div>
             </div>
           </div>

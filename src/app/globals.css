@@ -89,6 +89,37 @@
 }
 
 @layer components {
+  .compass-media-marquee {
+    overflow: hidden;
+    mask-image: linear-gradient(90deg, transparent, black 8%, black 92%, transparent);
+  }
+
+  .compass-media-track {
+    display: flex;
+    width: max-content;
+    animation: compass-media-marquee 28s linear infinite;
+  }
+
+  .compass-media-marquee:hover .compass-media-track {
+    animation-play-state: paused;
+  }
+
+  @keyframes compass-media-marquee {
+    from {
+      transform: translateX(0);
+    }
+
+    to {
+      transform: translateX(-50%);
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .compass-media-track {
+      animation: none;
+    }
+  }
+
   /* Inter 폰트 클래스 (영문용) */
   .font-inter {
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
