@@ -41,6 +41,52 @@ function walkFiles(relativeDir) {
   return files
 }
 
+function collectConsoleCalls(text) {
+  const calls = []
+  const consolePattern = /console\.(?:log|error|warn|info|debug)\s*\(/g
+  let match
+
+  while ((match = consolePattern.exec(text))) {
+    let index = match.index
+    let depth = 0
+    let inString = null
+    let escaped = false
+
+    for (; index < text.length; index += 1) {
+      const char = text[index]
+
+      if (inString) {
+        if (escaped) {
+          escaped = false
+        } else if (char === '\\') {
+          escaped = true
+        } else if (char === inString) {
+          inString = null
+        }
+        continue
+      }
+
+      if (char === '"' || char === "'" || char === '`') {
+        inString = char
+        continue
+      }
+
+      if (char === '(') {
+        depth += 1
+      } else if (char === ')') {
+        depth -= 1
+        if (depth === 0) {
+          calls.push(text.slice(match.index, index + 1))
+          consolePattern.lastIndex = index + 1
+          break
+        }
+      }
+    }
+  }
+
+  return calls
+}
+
 const checkedFiles = [
   'src/app/page.tsx',
   'src/app/login/page.tsx',
@@ -66,6 +112,8 @@ for (const relativePath of checkedFiles) {
 
 const publicRoute = read('src/app/api/compass-answer/route.ts')
 const legacyRoute = read('src/app/api/chat-ollama/route.ts')
+const legacyProviderRoute = read('src/app/api/chat-huggingface/route.ts')
+const legacyProviderService = read('src/lib/services/ollama.ts')
 const healthRoute = read('src/app/api/health/route.ts')
 const webIntegrationStatusRoute = read('src/app/api/web-integration-status/route.ts')
 const packageJson = JSON.parse(read('package.json') || '{}')
@@ -120,6 +168,33 @@ for (const forbidden of [
 ]) {
   if (legacyRoute.includes(forbidden) || publicRoute.includes(forbidden)) {
     fail(`Compass answer routes must not expose provider-specific response field ${forbidden}`)
+  }
+}
+
+for (const [relativePath, text] of [
+  ['src/lib/services/ollama.ts', legacyProviderService],
+  ['src/app/api/chat-ollama/route.ts', legacyRoute],
+  ['src/app/api/chat-huggingface/route.ts', legacyProviderRoute],
+]) {
+  for (const consoleCall of collectConsoleCalls(text)) {
+    for (const forbidden of [
+      /\bollama\b/i,
+      /hugging\s*face/i,
+      /\brailway\b/i,
+      /OPENROUTER/i,
+      /COMPASS_ANSWER/i,
+      /HUGGINGFACE/i,
+      /NEXT_PUBLIC_SUPABASE/i,
+      /SUPABASE_SERVICE/i,
+      /modelLabel/i,
+      /endpoint/i,
+      /baseUrl/i,
+      /apiKey/i,
+    ]) {
+      if (forbidden.test(consoleCall)) {
+        fail(`${relativePath} has provider-internal or env-status console logging: ${forbidden}`)
+      }
+    }
   }
 }
 

@@ -1,12 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createCompassServiceClient, getCompassDbSchema } from '@/lib/supabase/compass';
 import { RAGSearchService, type EvidenceDecision } from '@/lib/services/RAGSearchService';
-import { generateCompassAnswer, getCompassAnswerRuntimeStatus } from '@/lib/services/CompassAnswerLlmService';
-
-// Compass answer runtime initialization. Secret values are never printed.
-console.log('🔑 Compass answer runtime:', getCompassAnswerRuntimeStatus());
-console.log('- NEXT_PUBLIC_SUPABASE_URL:', process.env.NEXT_PUBLIC_SUPABASE_URL ? '설정됨' : '설정되지 않음');
-console.log('- SUPABASE_SERVICE_ROLE_KEY:', process.env.SUPABASE_SERVICE_ROLE_KEY ? '설정됨' : '설정되지 않음');
+import { generateCompassAnswer } from '@/lib/services/CompassAnswerLlmService';
 
 // Supabase 클라이언트 초기화
 const supabase = process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY 
@@ -70,10 +65,10 @@ async function searchWithCompassRAG(
   limit: number = 5
 ): Promise<SearchResult[]> {
   try {
-    console.log(`🔍 Compass RAG 검색 시작: "${query}"`);
+    console.log('Compass evidence retrieval started', { queryLength: query.length });
     
     if (!supabase) {
-      console.warn('⚠️ Supabase 클라이언트가 없음. 근거 없는 답변 생성을 중단합니다.');
+      console.warn('Compass evidence store is unavailable');
       return [];
     }
 
@@ -81,7 +76,7 @@ async function searchWithCompassRAG(
     const ragService = new RAGSearchService();
     const searchResults = await ragService.searchSimilarChunks(query, limit);
     
-    console.log(`📊 Compass RAG 검색 결과: ${searchResults.length}개`);
+    console.log('Compass evidence retrieval completed', { resultCount: searchResults.length });
     
     return searchResults.map(result => ({
       chunk_id: result.id,
@@ -111,7 +106,9 @@ async function searchWithCompassRAG(
     }));
     
   } catch (error) {
-    console.error('❌ Compass RAG 검색 실패:', error);
+    console.error('Compass evidence retrieval failed', {
+      errorName: error instanceof Error ? error.name : 'UnknownError',
+    });
     return [];
   }
 }
@@ -134,7 +131,6 @@ function calculateConfidence(searchResults: SearchResult[]): number {
 
 function buildVerifiedSources(searchResults: SearchResult[]) {
   return searchResults.map(result => {
-    console.log(`📚 Compass 출처 정보: 제목="${result.metadata?.title || '문서'}", 유사도=${result.similarity}`);
     const originalTitle = result.documentTitle || result.metadata?.originalTitle || result.metadata?.title || 'Meta 광고 정책 문서';
     const sourceVendor = result.sourceVendor || result.metadata?.sourceVendor || result.sourceQuality?.sourceVendor || 'UNKNOWN';
     const displayTitle = normalizeSourceTitle(originalTitle, sourceVendor, result.content);
@@ -242,11 +238,7 @@ function appendOriginalTitle(normalizedTitle: string, originalTitle: string): st
  */
 export async function POST(request: NextRequest) {
   const startTime = Date.now();
-  
-  // API 핸들러 내에서 환경변수 재확인. Secret values are never printed.
-  console.log('🔍 Compass API 핸들러 내 환경변수 확인:');
-  console.log('- Answer runtime:', getCompassAnswerRuntimeStatus());
-  console.log('- NEXT_PUBLIC_SUPABASE_URL:', process.env.NEXT_PUBLIC_SUPABASE_URL ? '설정됨' : '설정되지 않음');
+  console.log('Compass answer runtime request started');
   
   try {
     // JSON 파싱 오류 방지
@@ -254,7 +246,9 @@ export async function POST(request: NextRequest) {
     try {
       requestBody = await request.json();
     } catch (parseError) {
-      console.error('❌ JSON 파싱 오류:', parseError);
+      console.error('Compass answer request payload parsing failed', {
+        errorName: parseError instanceof Error ? parseError.name : 'UnknownError',
+      });
       return NextResponse.json(
         { error: '잘못된 JSON 형식입니다.' },
         { status: 400 }
@@ -270,17 +264,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 환경변수 상태 확인. Secret values are never printed.
-    console.log('🔧 Compass 환경변수 상태:');
-    console.log('- Answer runtime:', getCompassAnswerRuntimeStatus());
-    console.log('- NEXT_PUBLIC_SUPABASE_URL:', process.env.NEXT_PUBLIC_SUPABASE_URL ? '✅ 설정됨' : '❌ 미설정');
-    console.log('- SUPABASE_SERVICE_ROLE_KEY:', process.env.SUPABASE_SERVICE_ROLE_KEY ? '✅ 설정됨' : '❌ 미설정');
-
-    console.log(`🚀 Compass RAG 챗봇 응답 생성 시작: "${message}"`);
-
     // 1. Compass RAG 검색
     const searchResults = await searchWithCompassRAG(message, 3);
-    console.log(`📊 Compass 검색 결과: ${searchResults.length}개`);
+    console.log('Compass answer evidence selected', { resultCount: searchResults.length });
     const verifiedSearchResults = searchResults.filter((result) => {
       const hasGrounding = typeof result.content === 'string' && result.content.trim().length > 0;
       const isFallback = result.retrievalMethod === 'fallback' || result.sourceQuality?.isFallback === true || result.metadata?.type === 'fallback';
@@ -288,12 +274,12 @@ export async function POST(request: NextRequest) {
       return hasGrounding && !isFallback && !isRejected;
     });
     if (verifiedSearchResults.length !== searchResults.length) {
-      console.warn(`⚠️ 근거 검증에서 제외된 검색 결과: ${searchResults.length - verifiedSearchResults.length}개`);
+      console.warn('Compass answer evidence filtered', { filteredCount: searchResults.length - verifiedSearchResults.length });
     }
 
     // 2. 검색 결과가 없으면 관련 내용 없음 응답
     if (verifiedSearchResults.length === 0) {
-      console.log('⚠️ Compass RAG 검색 결과가 없음. 관련 내용 없음 응답');
+      console.log('Compass answer request completed without grounded evidence');
       return NextResponse.json({
         response: {
           message: "죄송합니다. 현재 제공된 문서에서 관련 정보를 찾을 수 없습니다. 더 구체적인 질문을 해주시거나 다른 키워드로 시도해보세요.",
@@ -310,7 +296,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 3. 설정된 답변 LLM으로 생성. Retrieval/source contract remains provider-agnostic.
-    console.log('🚀 Compass 답변 LLM 생성 시작');
+    console.log('Compass answer generation started');
     
     const sources = buildVerifiedSources(verifiedSearchResults);
     const confidence = calculateConfidence(verifiedSearchResults);
@@ -320,7 +306,9 @@ export async function POST(request: NextRequest) {
     try {
       answerResult = await generateCompassAnswer(message, verifiedSearchResults);
     } catch (error) {
-      console.error('❌ Compass 답변 LLM 생성 실패:', error);
+      console.error('Compass answer generation failed', {
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+      });
       
       // 답변 LLM 실패와 retrieval 실패를 분리하기 위해 검증된 sources는 보존한다.
       return NextResponse.json({
@@ -341,6 +329,7 @@ export async function POST(request: NextRequest) {
 
     // 처리 시간 계산
     const processingTime = Date.now() - startTime;
+    console.log('Compass answer runtime request completed', { processingTime });
     
     return NextResponse.json({
       response: {
@@ -357,17 +346,17 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error) {
-    console.error('❌ Compass RAG 응답 생성 실패:', error);
+    console.error('Compass answer runtime request failed', {
+      errorName: error instanceof Error ? error.name : 'UnknownError',
+    });
     
     // 에러 상세 정보 로깅
     if (error instanceof Error) {
-      console.error('❌ 에러 상세:', {
+      console.error('Compass answer runtime error detail:', {
         name: error.name,
-        message: error.message,
-        stack: error.stack
       });
     } else {
-      console.error('❌ 에러 상세:', JSON.stringify(error, null, 2));
+      console.error('Compass answer runtime error detail:', { name: 'UnknownError' });
     }
     
     const processingTime = Date.now() - startTime;

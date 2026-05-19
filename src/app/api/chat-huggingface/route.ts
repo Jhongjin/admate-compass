@@ -2,10 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { RAGSearchService } from '@/lib/services/RAGSearchService';
 
-// Hugging Face + Vercel 전용 시스템
-console.log('🔑 Hugging Face 환경변수 확인:');
-console.log('- HUGGINGFACE_API_KEY:', process.env.HUGGINGFACE_API_KEY ? '설정됨' : '설정되지 않음');
-
 // Supabase 클라이언트 초기화
 const supabase = process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY 
   ? createClient(
@@ -29,7 +25,7 @@ async function generateAnswerWithHuggingFace(
   searchResults: SearchResult[]
 ): Promise<string> {
   try {
-    console.log('🤖 Hugging Face 답변 생성 시작');
+    console.log('Compass answer generation started');
     
     const apiKey = process.env.HUGGINGFACE_API_KEY;
     if (!apiKey) {
@@ -70,18 +66,20 @@ ${context}
     });
 
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error('❌ Hugging Face API 오류:', errorText);
+      await response.text();
+      console.error('Compass answer runtime error response received', { status: response.status });
       throw new Error(`Hugging Face API error: ${response.status}`);
     }
 
     const data = await response.json();
-    console.log('✅ Hugging Face 답변 생성 완료');
+    console.log('Compass answer generation completed');
     
     return data[0]?.generated_text?.trim() || '답변을 생성할 수 없습니다.';
 
   } catch (error) {
-    console.error('❌ Hugging Face 답변 생성 실패:', error);
+    console.error('Compass answer generation failed', {
+      errorName: error instanceof Error ? error.name : 'UnknownError',
+    });
     
     // Fallback 답변 생성
     if (searchResults.length > 0) {
@@ -112,10 +110,10 @@ async function searchWithHuggingFaceRAG(
   limit: number = 5
 ): Promise<SearchResult[]> {
   try {
-    console.log(`🔍 Hugging Face RAG 검색 시작: "${query}"`);
+    console.log('Compass evidence retrieval started', { queryLength: query.length });
     
     if (!supabase) {
-      console.warn('⚠️ Supabase 클라이언트가 없음. Fallback 데이터 사용');
+      console.warn('Compass evidence store is unavailable; using local fallback evidence');
       return getFallbackSearchResults(query, limit);
     }
 
@@ -123,7 +121,7 @@ async function searchWithHuggingFaceRAG(
     const ragService = new RAGSearchService();
     const searchResults = await ragService.searchSimilarChunks(query, limit);
     
-    console.log(`📊 Hugging Face RAG 검색 결과: ${searchResults.length}개`);
+    console.log('Compass evidence retrieval completed', { resultCount: searchResults.length });
     
     return searchResults.map(result => ({
       chunk_id: result.id,
@@ -133,7 +131,9 @@ async function searchWithHuggingFaceRAG(
     }));
     
   } catch (error) {
-    console.error('❌ Hugging Face RAG 검색 실패:', error);
+    console.error('Compass evidence retrieval failed', {
+      errorName: error instanceof Error ? error.name : 'UnknownError',
+    });
     return getFallbackSearchResults(query, limit);
   }
 }
@@ -171,6 +171,7 @@ function calculateConfidence(searchResults: SearchResult[]): number {
  */
 export async function POST(request: NextRequest) {
   const startTime = Date.now();
+  console.log('Compass answer runtime request started');
   
   try {
     const requestBody = await request.json();
@@ -183,11 +184,9 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    console.log(`🚀 Hugging Face RAG 챗봇 응답 생성 시작: "${message}"`);
-
     // 1. Hugging Face RAG 검색
     const searchResults = await searchWithHuggingFaceRAG(message, 3);
-    console.log(`📊 Hugging Face 검색 결과: ${searchResults.length}개`);
+    console.log('Compass answer evidence selected', { resultCount: searchResults.length });
 
     // 2. 검색 결과가 없으면 관련 내용 없음 응답
     if (searchResults.length === 0) {
@@ -206,7 +205,7 @@ export async function POST(request: NextRequest) {
     }
 
     // 3. Hugging Face 답변 생성
-    console.log('🚀 Hugging Face 답변 생성 시작');
+    console.log('Compass answer generation requested');
     
     const confidence = calculateConfidence(searchResults);
     const processingTime = Date.now() - startTime;
@@ -225,6 +224,7 @@ export async function POST(request: NextRequest) {
 
     // Hugging Face 답변 생성
     const answer = await generateAnswerWithHuggingFace(message, searchResults);
+    console.log('Compass answer runtime request completed', { processingTime });
     
     return NextResponse.json({
       response: {
@@ -240,7 +240,9 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error) {
-    console.error('❌ Hugging Face RAG 응답 생성 실패:', error);
+    console.error('Compass answer runtime request failed', {
+      errorName: error instanceof Error ? error.name : 'UnknownError',
+    });
     
     const processingTime = Date.now() - startTime;
     

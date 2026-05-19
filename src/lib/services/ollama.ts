@@ -1,10 +1,4 @@
-import { buildOllamaApiUrl, getOllamaEndpointStatus } from './ollamaEndpoint';
-
-// 디버깅을 위한 로그
-console.log('🔧 Ollama 서비스 초기화:', {
-  env: process.env.NODE_ENV,
-  endpoint: getOllamaEndpointStatus(),
-});
+import { buildOllamaApiUrl } from './ollamaEndpoint';
 
 export interface OllamaResponse {
   model: string;
@@ -37,7 +31,7 @@ export async function generateResponse(
   model: string = 'tinyllama:1.1b'
 ): Promise<string> {
   try {
-    console.log('🚀 Ollama API 호출 시작:', { model, promptLength: prompt.length });
+    console.log('Compass answer runtime request started', { promptLength: prompt.length });
     
     // 프롬프트 길이 제한 (성능 최적화)
     const maxPromptLength = 2000;
@@ -63,16 +57,16 @@ export async function generateResponse(
       signal: AbortSignal.timeout(5000) // 5초 타임아웃
     });
 
-    console.log('📡 Ollama API 응답 상태:', response.status);
+    console.log('Compass answer runtime response received', { status: response.status });
 
     if (!response.ok) {
-      const errorText = await response.text();
-      console.error('❌ Ollama API 오류 응답:', errorText);
+      await response.text();
+      console.error('Compass answer runtime error response received', { status: response.status });
       throw new Error(`Ollama API error: ${response.status} ${response.statusText}`);
     }
 
     const data: OllamaResponse = await response.json();
-    console.log('✅ Ollama API 응답 성공:', { responseLength: data.response?.length });
+    console.log('Compass answer runtime request completed', { responseLength: data.response?.length });
     
     if (!data.response || data.response.trim().length === 0) {
       throw new Error('Ollama API returned empty response');
@@ -80,7 +74,9 @@ export async function generateResponse(
     
     return data.response.trim();
   } catch (error) {
-    console.error('❌ Ollama API 오류 상세:', error);
+    console.error('Compass answer runtime request failed', {
+      errorName: error instanceof Error ? error.name : 'UnknownError',
+    });
     
     // 에러 타입별 처리
     if (error instanceof Error) {
@@ -111,11 +107,13 @@ export async function getAvailableModels(): Promise<OllamaModel[]> {
     if (data && data.models && Array.isArray(data.models)) {
       return data.models;
     } else {
-      console.warn('⚠️ Ollama API 응답에 models 배열이 없습니다:', data);
+      console.warn('answer runtime catalog response was invalid');
       return [];
     }
   } catch (error) {
-    console.error('Ollama API error:', error);
+    console.error('answer runtime catalog request failed', {
+      errorName: error instanceof Error ? error.name : 'UnknownError',
+    });
     // 오류 발생 시 빈 배열 반환
     return [];
   }
@@ -126,7 +124,9 @@ export async function checkOllamaHealth(): Promise<boolean> {
     const response = await fetch(buildOllamaApiUrl('/api/tags'));
     return response.ok;
   } catch (error) {
-    console.error('Ollama health check failed:', error);
+    console.error('answer runtime health check failed', {
+      errorName: error instanceof Error ? error.name : 'UnknownError',
+    });
     return false;
   }
 }

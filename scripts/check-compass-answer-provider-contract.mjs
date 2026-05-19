@@ -53,6 +53,7 @@ const nonCommentEnvLines = envExample
 
 for (const token of [
   "export type CompassAnswerProvider = 'openrouter' | 'ollama'",
+  'export function getCompassAnswerRuntimeStatus',
   'OPENROUTER_API_KEY',
   'COMPASS_OPENROUTER_API_KEY',
   "process.env.COMPASS_ANSWER_PROVIDER || 'ollama'",
@@ -77,11 +78,14 @@ for (const token of [
 
 for (const token of [
   'generateCompassAnswer',
-  'getCompassAnswerRuntimeStatus',
   "model: 'compass-answer-connection-failed'",
   "model: 'compass-answer'",
 ]) {
   if (!legacyCompatibilityRoute.includes(token)) fail(`legacy compatibility route missing ${token}`)
+}
+
+if (legacyCompatibilityRoute.includes('getCompassAnswerRuntimeStatus')) {
+  fail('legacy compatibility route must not log or expose answer runtime status')
 }
 
 for (const token of [
