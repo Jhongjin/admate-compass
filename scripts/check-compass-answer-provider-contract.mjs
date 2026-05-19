@@ -39,6 +39,7 @@ function walkFiles(relativeDir) {
 const service = read('src/lib/services/CompassAnswerLlmService.ts')
 const canonicalRoute = read('src/app/api/compass-answer/route.ts')
 const legacyCompatibilityRoute = read('src/app/api/chat-ollama/route.ts')
+const answerHandler = read('src/lib/server/compassAnswerHandler.ts')
 const legacyRoute = read('src/app/api/chatbot/route.ts')
 const envExample = read('.env.example')
 const providerDoc = read('docs/tasks/2026-05-17_compass_answer_llm_provider_boundary_v1.md')
@@ -71,9 +72,10 @@ for (const token of [
 }
 
 for (const token of [
-  "export { POST } from '../chat-ollama/route'",
+  "export { POST } from '@/lib/server/compassAnswerHandler'",
 ]) {
   if (!canonicalRoute.includes(token)) fail(`canonical route missing ${token}`)
+  if (!legacyCompatibilityRoute.includes(token)) fail(`legacy compatibility route missing ${token}`)
 }
 
 for (const token of [
@@ -81,11 +83,11 @@ for (const token of [
   "model: 'compass-answer-connection-failed'",
   "model: 'compass-answer'",
 ]) {
-  if (!legacyCompatibilityRoute.includes(token)) fail(`legacy compatibility route missing ${token}`)
+  if (!answerHandler.includes(token)) fail(`neutral answer handler missing ${token}`)
 }
 
-if (legacyCompatibilityRoute.includes('getCompassAnswerRuntimeStatus')) {
-  fail('legacy compatibility route must not log or expose answer runtime status')
+if (answerHandler.includes('getCompassAnswerRuntimeStatus')) {
+  fail('neutral answer handler must not log or expose answer runtime status')
 }
 
 for (const token of [
@@ -169,7 +171,7 @@ for (const token of [
 const secretLogPattern = /console\.(log|error|warn|info)\s*\([^)]*(OPENROUTER_API_KEY|COMPASS_OPENROUTER_API_KEY|\bapiKey\b)[^)]*\)/i
 for (const [label, text] of [
   ['CompassAnswerLlmService', service],
-  ['legacy compatibility answer route', legacyCompatibilityRoute],
+  ['neutral answer handler', answerHandler],
 ]) {
   const match = text.match(secretLogPattern)
   if (match) {
@@ -178,13 +180,13 @@ for (const [label, text] of [
 }
 
 for (const forbidden of ['NEXT_PUBLIC_OPENROUTER']) {
-  if (service.includes(forbidden) || canonicalRoute.includes(forbidden) || legacyCompatibilityRoute.includes(forbidden)) {
+  if (service.includes(forbidden) || canonicalRoute.includes(forbidden) || legacyCompatibilityRoute.includes(forbidden) || answerHandler.includes(forbidden)) {
     fail(`answer provider path may expose OpenRouter public config: ${forbidden}`)
   }
 }
 
 for (const forbidden of ['answerProvider']) {
-  if (canonicalRoute.includes(forbidden) || legacyCompatibilityRoute.includes(forbidden)) {
+  if (canonicalRoute.includes(forbidden) || legacyCompatibilityRoute.includes(forbidden) || answerHandler.includes(forbidden)) {
     fail(`answer route response must not expose provider-specific field: ${forbidden}`)
   }
 }

@@ -112,6 +112,7 @@ for (const relativePath of checkedFiles) {
 
 const publicRoute = read('src/app/api/compass-answer/route.ts')
 const legacyRoute = read('src/app/api/chat-ollama/route.ts')
+const answerHandler = read('src/lib/server/compassAnswerHandler.ts')
 const legacyProviderRoute = read('src/app/api/chat-huggingface/route.ts')
 const legacyProviderService = read('src/lib/services/ollama.ts')
 const healthRoute = read('src/app/api/health/route.ts')
@@ -126,12 +127,12 @@ for (const removedPage of [
   assertMissing(removedPage)
 }
 
-if (!publicRoute.includes("export { POST } from '../chat-ollama/route'")) {
-  fail('src/app/api/compass-answer/route.ts must alias the legacy compatibility answer handler')
+if (!publicRoute.includes("export { POST } from '@/lib/server/compassAnswerHandler'")) {
+  fail('src/app/api/compass-answer/route.ts must alias the neutral answer handler')
 }
 
-if (!legacyRoute.includes('export async function POST')) {
-  fail('src/app/api/chat-ollama/route.ts must keep legacy compatibility POST handler')
+if (!legacyRoute.includes("export { POST } from '@/lib/server/compassAnswerHandler'")) {
+  fail('src/app/api/chat-ollama/route.ts must keep legacy compatibility POST handler alias')
 }
 
 for (const token of [
@@ -166,14 +167,14 @@ for (const forbidden of [
   'model: answerResult.model',
   'provider: answerResult.provider',
 ]) {
-  if (legacyRoute.includes(forbidden) || publicRoute.includes(forbidden)) {
+  if (legacyRoute.includes(forbidden) || publicRoute.includes(forbidden) || answerHandler.includes(forbidden)) {
     fail(`Compass answer routes must not expose provider-specific response field ${forbidden}`)
   }
 }
 
 for (const [relativePath, text] of [
   ['src/lib/services/ollama.ts', legacyProviderService],
-  ['src/app/api/chat-ollama/route.ts', legacyRoute],
+  ['src/lib/server/compassAnswerHandler.ts', answerHandler],
   ['src/app/api/chat-huggingface/route.ts', legacyProviderRoute],
 ]) {
   for (const consoleCall of collectConsoleCalls(text)) {

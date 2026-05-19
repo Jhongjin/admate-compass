@@ -182,7 +182,8 @@ if (fixture.fixturePack !== 'compass-answer-candidate-review-v1') {
   fail('fixturePack must be compass-answer-candidate-review-v1')
 }
 if (fixture.mode !== 'local_contract_only') fail('mode must be local_contract_only')
-if (fixture.canonicalAnswerRoute !== '/api/chat-ollama') fail('canonicalAnswerRoute must be /api/chat-ollama')
+if (fixture.canonicalAnswerRoute !== '/api/compass-answer') fail('canonicalAnswerRoute must be /api/compass-answer')
+if (fixture.legacyCompatibilityRoute !== '/api/chat-ollama') fail('legacyCompatibilityRoute must be /api/chat-ollama')
 if (fixture.legacyAnswerRoute !== '/api/chatbot') fail('legacyAnswerRoute must be /api/chatbot')
 
 for (const [key, value] of Object.entries(fixture.sideEffects || {})) {

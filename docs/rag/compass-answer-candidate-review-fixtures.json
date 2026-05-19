@@ -1,7 +1,8 @@
 {
   "fixturePack": "compass-answer-candidate-review-v1",
   "mode": "local_contract_only",
-  "canonicalAnswerRoute": "/api/chat-ollama",
+  "canonicalAnswerRoute": "/api/compass-answer",
+  "legacyCompatibilityRoute": "/api/chat-ollama",
   "legacyAnswerRoute": "/api/chatbot",
   "sideEffects": {
     "db": false,

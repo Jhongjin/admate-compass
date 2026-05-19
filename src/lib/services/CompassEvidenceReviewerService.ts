@@ -21,7 +21,8 @@ export interface CompassEvidencePacket {
 
 export interface CompassTeamLeadReview {
   outcome: CompassReviewerOutcome;
-  canonicalAnswerRoute: '/api/chat-ollama';
+  canonicalAnswerRoute: '/api/compass-answer';
+  legacyCompatibilityRoute: '/api/chat-ollama';
   legacyAnswerRoute: '/api/chatbot';
   verifiedPackets: CompassEvidencePacket[];
   weakPackets: CompassEvidencePacket[];
@@ -31,7 +32,8 @@ export interface CompassTeamLeadReview {
 }
 
 export const COMPASS_ANSWER_ROUTE_POLICY = {
-  canonicalAnswerRoute: '/api/chat-ollama',
+  canonicalAnswerRoute: '/api/compass-answer',
+  legacyCompatibilityRoute: '/api/chat-ollama',
   legacyAnswerRoute: '/api/chatbot',
   specialistAgentsWriteFinalAnswer: false,
   teamLeadOwnsFinalAnswer: true,
@@ -138,6 +140,7 @@ export function reviewCompassEvidencePackets(packets: CompassEvidencePacket[]): 
   return {
     outcome: verifiedPackets.length > 0 && conflicts.length === 0 ? 'answer' : 'noDataFound',
     canonicalAnswerRoute: COMPASS_ANSWER_ROUTE_POLICY.canonicalAnswerRoute,
+    legacyCompatibilityRoute: COMPASS_ANSWER_ROUTE_POLICY.legacyCompatibilityRoute,
     legacyAnswerRoute: COMPASS_ANSWER_ROUTE_POLICY.legacyAnswerRoute,
     verifiedPackets,
     weakPackets,

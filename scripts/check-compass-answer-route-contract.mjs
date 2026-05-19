@@ -7,6 +7,7 @@ const legacyChatPagePath = path.join(root, 'src/app/chat-ollama/page.tsx')
 const legacyChatAliasPagePath = path.join(root, 'src/app/chat/page.tsx')
 const publicAnswerRoutePath = path.join(root, 'src/app/api/compass-answer/route.ts')
 const legacyAnswerRoutePath = path.join(root, 'src/app/api/chat-ollama/route.ts')
+const answerHandlerPath = path.join(root, 'src/lib/server/compassAnswerHandler.ts')
 const legacyRoutePath = path.join(root, 'src/app/api/chatbot/route.ts')
 const decisionDocPath = path.join(root, 'docs/tasks/2026-05-17_compass_reliability_3agent_openrouter_graphrag_plan_v3.md')
 const packagePath = path.join(root, 'package.json')
@@ -16,7 +17,7 @@ function fail(message) {
   process.exitCode = 1
 }
 
-for (const filePath of [chatPagePath, legacyChatPagePath, legacyChatAliasPagePath, publicAnswerRoutePath, legacyAnswerRoutePath, legacyRoutePath, decisionDocPath, packagePath]) {
+for (const filePath of [chatPagePath, legacyChatPagePath, legacyChatAliasPagePath, publicAnswerRoutePath, legacyAnswerRoutePath, answerHandlerPath, legacyRoutePath, decisionDocPath, packagePath]) {
   if (!fs.existsSync(filePath)) fail(`missing required file: ${path.relative(root, filePath)}`)
 }
 
@@ -27,6 +28,7 @@ const legacyChatPageText = fs.readFileSync(legacyChatPagePath, 'utf8')
 const legacyChatAliasPageText = fs.readFileSync(legacyChatAliasPagePath, 'utf8')
 const publicAnswerRouteText = fs.readFileSync(publicAnswerRoutePath, 'utf8')
 const legacyAnswerRouteText = fs.readFileSync(legacyAnswerRoutePath, 'utf8')
+const answerHandlerText = fs.readFileSync(answerHandlerPath, 'utf8')
 const legacyRouteText = fs.readFileSync(legacyRoutePath, 'utf8')
 const decisionDocText = fs.readFileSync(decisionDocPath, 'utf8')
 const packageJson = JSON.parse(fs.readFileSync(packagePath, 'utf8'))
@@ -53,13 +55,13 @@ for (const requiredText of [
 }
 
 for (const requiredText of [
-  "export { POST } from '../chat-ollama/route'",
+  "export { POST } from '@/lib/server/compassAnswerHandler'",
 ]) {
   if (!publicAnswerRouteText.includes(requiredText)) fail(`public answer route missing ${requiredText}`)
+  if (!legacyAnswerRouteText.includes(requiredText)) fail(`legacy compatibility answer route missing ${requiredText}`)
 }
 
 for (const requiredText of [
-  'POST /api/chat-ollama',
   'generateCompassAnswer',
   'buildVerifiedSources',
   'verifiedSearchResults',
@@ -67,7 +69,7 @@ for (const requiredText of [
   "model: 'compass-answer-connection-failed'",
   "model: 'compass-answer'",
 ]) {
-  if (!legacyAnswerRouteText.includes(requiredText)) fail(`legacy compatibility answer route missing ${requiredText}`)
+  if (!answerHandlerText.includes(requiredText)) fail(`neutral answer handler missing ${requiredText}`)
 }
 
 for (const forbiddenText of [
@@ -75,8 +77,8 @@ for (const forbiddenText of [
   'checkOllamaHealth',
   'answerProvider',
 ]) {
-  if (legacyAnswerRouteText.includes(forbiddenText)) {
-    fail(`legacy compatibility answer route must not use legacy Ollama-only behavior: ${forbiddenText}`)
+  if (answerHandlerText.includes(forbiddenText)) {
+    fail(`neutral answer handler must not use legacy Ollama-only behavior: ${forbiddenText}`)
   }
 }
 

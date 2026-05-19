@@ -1,1 +1,1 @@
-export { POST } from '../chat-ollama/route';
+export { POST } from '@/lib/server/compassAnswerHandler';

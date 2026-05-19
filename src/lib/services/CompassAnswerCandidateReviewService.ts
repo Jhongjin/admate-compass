@@ -18,7 +18,8 @@ export interface CompassAnswerCandidate {
 
 export interface CompassTeamLeadAnswerReview {
   outcome: CompassReviewerOutcome;
-  canonicalAnswerRoute: '/api/chat-ollama';
+  canonicalAnswerRoute: '/api/compass-answer';
+  legacyCompatibilityRoute: '/api/chat-ollama';
   legacyAnswerRoute: '/api/chatbot';
   specialistCandidatesAreDraftsOnly: true;
   teamLeadOwnsFinalAnswer: true;
@@ -125,6 +126,7 @@ export function reviewCompassAnswerCandidates(
   return {
     outcome,
     canonicalAnswerRoute: evidenceReview.canonicalAnswerRoute,
+    legacyCompatibilityRoute: evidenceReview.legacyCompatibilityRoute,
     legacyAnswerRoute: evidenceReview.legacyAnswerRoute,
     specialistCandidatesAreDraftsOnly: true,
     teamLeadOwnsFinalAnswer: true,
