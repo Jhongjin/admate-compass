@@ -109,6 +109,22 @@
     animation-play-state: paused;
   }
 
+  .compass-review-rail {
+    word-break: keep-all;
+    text-wrap: pretty;
+  }
+
+  .compass-review-step {
+    min-width: 0;
+    overflow-wrap: break-word;
+  }
+
+  .compass-review-step p,
+  .compass-review-step span {
+    min-width: 0;
+    text-wrap: pretty;
+  }
+
   @keyframes compass-media-marquee {
     from {
       transform: translateX(0);

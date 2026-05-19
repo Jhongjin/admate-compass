@@ -34,9 +34,9 @@ const previewRows = [
 ] as const;
 
 const answerVerificationFlow = [
-  ["질문 조건 확인", "플랫폼, 업종, 소재 표현과 필요한 조건을 먼저 정리합니다."],
-  ["출처 대조", "공식 정책과 운영 문서의 출처를 확인해 기준 충돌과 누락을 살핍니다."],
-  ["최종 답변 정리", "확인한 출처와 추가 확인 필요 항목을 분리해 업무에 쓸 수 있게 정리합니다."],
+  ["1차 검토안", "질문 조건 확인", "플랫폼, 업종, 소재 표현과 필요한 조건을 먼저 정리합니다."],
+  ["2차 검토안", "공식 기준 확인", "공식 정책과 운영 기준을 확인해 충돌하거나 빠진 기준을 살핍니다."],
+  ["최종 확인", "추가 확인 필요 항목", "공식 기준을 확인해 바로 활용할 답변으로 정리하고, 더 확인할 조건은 따로 남깁니다."],
 ] as const;
 
 const mediaScopes = [
@@ -48,9 +48,9 @@ const mediaScopes = [
 ] as const;
 
 const gatePrinciples = [
-  "로그인 후 Compass 정책 확인 화면으로 이동합니다.",
-  "사용 권한이 필요하다면 AdMate 이용 권한 요청으로 확인합니다.",
-  "답변은 공식 정책과 운영 문서, 참고 문단을 기준으로 정리합니다.",
+  "로그인 후 Compass 정책 확인 화면이 열립니다.",
+  "권한이 없으면 AdMate 이용 권한 요청으로 이어집니다.",
+  "답변은 공식 기준과 참고 문단을 함께 확인해 정리합니다.",
 ] as const;
 
 type MediaId = (typeof supportedMedia)[number]["id"];
@@ -178,7 +178,7 @@ export default function HomePage() {
         </div>
       </header>
 
-      <section className="relative mx-auto grid max-w-[1400px] gap-5 px-4 py-8 sm:px-6 sm:py-12 lg:grid-cols-[minmax(0,1.12fr)_390px] lg:px-8">
+      <section className="relative mx-auto grid max-w-[1400px] gap-5 px-4 py-8 sm:px-6 sm:py-12 lg:grid-cols-[minmax(0,1.12fr)_390px] lg:items-start lg:px-8">
         <motion.section
           initial={{ opacity: 0, y: 18 }}
           animate={{ opacity: 1, y: 0 }}
@@ -219,7 +219,7 @@ export default function HomePage() {
             <div className="mt-8 rounded-[10px] border border-[#D9D4C8] bg-white/72 p-4 sm:p-5">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <p className="text-sm font-bold text-[#172033]">Compass가 정리하는 내용</p>
-                <span className="text-xs font-semibold text-[#7A5518]">질문, 기준, 근거, 추가 확인 필요 조건을 한 화면에서 확인</span>
+                <span className="text-xs font-semibold text-[#7A5518]">질문, 기준, 근거를 한 화면에서 확인</span>
               </div>
               <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 {compassSummary.map(([title, detail]) => (
@@ -268,23 +268,24 @@ export default function HomePage() {
                   ))}
                 </div>
                 <div className="mt-3 rounded-[8px] bg-[#172033] p-4 text-white">
-                  <p className="text-xs font-bold text-[#D5B978]">답변 검토 흐름</p>
+                  <p className="text-xs font-bold text-[#D5B978]">3단계 검토 흐름</p>
                   <h3 className="mt-2 text-xl font-semibold leading-tight text-white [text-wrap:balance]">
-                    근거를 확인한 뒤 답변을 정리합니다
+                    1차 검토안부터 최종 확인까지 이어집니다
                   </h3>
                   <p className="mt-3 text-xs leading-5 text-white/68">
-                    Compass는 질문 조건을 확인하고 출처를 대조한 뒤, 확인한 기준과 추가 확인 필요 항목을 업무에 쓸 수 있는 형태로 정리합니다.
+                    질문 조건과 공식 기준을 차례로 확인한 뒤, 추가 확인 필요 항목을 분리해 바로 활용할 답변으로 정리합니다.
                   </p>
-                  <div className="mt-4 grid gap-2">
-                    {answerVerificationFlow.map(([title, detail], index) => (
-                      <div key={title} className="rounded-[7px] border border-white/10 bg-white/[0.06] px-3 py-2.5">
+                  <div className="compass-review-rail mt-4 grid gap-2 lg:grid-cols-3">
+                    {answerVerificationFlow.map(([stage, title, detail], index) => (
+                      <div key={stage} className="compass-review-step rounded-[7px] border border-white/10 bg-white/[0.06] px-3 py-2.5">
                         <div className="flex items-center gap-2">
                           <span className="grid h-5 w-5 flex-none place-items-center rounded-full bg-[#D5B978] text-[11px] font-black text-[#172033]">
                             {index + 1}
                           </span>
-                          <span className="text-xs font-bold text-white">{title}</span>
+                          <span className="text-[11px] font-black text-[#D5B978]">{stage}</span>
                         </div>
-                        <p className="mt-1.5 pl-7 text-xs leading-5 text-white/64">{detail}</p>
+                        <p className="mt-2 text-sm font-bold leading-5 text-white">{title}</p>
+                        <p className="mt-1.5 text-xs leading-5 text-white/64">{detail}</p>
                       </div>
                     ))}
                   </div>
@@ -336,9 +337,9 @@ export default function HomePage() {
           <div className="flex items-start justify-between gap-4">
             <div>
               <p className="text-xs font-semibold tracking-[0.02em] text-[#7A5518]">로그인</p>
-              <h2 className="mt-2 text-2xl font-semibold leading-tight text-[#172033]">Compass 정책 확인 화면 열기</h2>
+              <h2 className="mt-2 text-2xl font-semibold leading-tight text-[#172033]">Compass 열기</h2>
               <p className="mt-3 text-sm leading-6 text-[#68707C]">
-                AdMate 계정으로 로그인하면 질문 기록, 출처, 추가 확인 필요 항목을 이어서 확인할 수 있습니다.
+                로그인하면 정책 질문, 출처, 추가 확인 필요 항목을 이어서 확인할 수 있습니다.
               </p>
             </div>
             <div className="grid h-12 w-12 flex-none place-items-center rounded-[8px] border border-[#D5B978] bg-[#FFF3D8] text-[#7A5518]">
@@ -365,6 +366,22 @@ export default function HomePage() {
             >
               AdMate 이용 권한 요청
             </a>
+          </div>
+
+          <div className="mt-5 rounded-[10px] border border-[#D9D4C8] bg-white/72 p-4">
+            <p className="text-sm font-bold text-[#172033]">로그인 후 확인 흐름</p>
+            <div className="mt-3 space-y-2">
+              {[
+                ["1차 검토안", "질문 조건 확인"],
+                ["2차 검토안", "공식 기준 확인"],
+                ["최종 확인", "답변과 추가 확인 필요 항목 정리"],
+              ].map(([stage, detail]) => (
+                <div key={stage} className="flex items-center justify-between gap-3 rounded-[7px] border border-[#E1DED6] bg-[#FBF7EE] px-3 py-2">
+                  <span className="text-xs font-bold text-[#7A5518]">{stage}</span>
+                  <span className="text-right text-xs font-semibold leading-5 text-[#5B6472]">{detail}</span>
+                </div>
+              ))}
+            </div>
           </div>
 
           <div className="mt-5 rounded-[10px] border border-[#CDD5DD] bg-[#F4F6F7]/86 p-4">

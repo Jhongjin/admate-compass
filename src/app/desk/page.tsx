@@ -894,36 +894,41 @@ function ChatPageContent() {
           : "initial-empty";
   const needsAdditionalReview = latestNoDataFound || latestGenerationLimited || latestIsError;
   const finalReviewReady = latestHasSources && !needsAdditionalReview;
-  const reliabilityPostureItems = [
+  const reviewPostureItems = [
     {
-      label: "출처",
-      value: latestHasSources ? `${latestSources.length}개 확인` : "대기",
+      label: "1차 검토안",
+      value: lastSubmittedQuestion ? "질문 조건 확인" : "대기",
       Icon: CheckCircle,
-      className: latestHasSources
+      className: lastSubmittedQuestion
         ? "border-[#C6D9CB] bg-[#EDF7EF] text-[#1F7A4D]"
+        : "border-[#D8DCCF] bg-white text-[#5F6C62]",
+      iconClassName: lastSubmittedQuestion ? "text-[#1F7A4D]" : "text-[#8B9388]",
+    },
+    {
+      label: "2차 검토안",
+      value: latestHasSources ? `공식 기준 ${latestSources.length}개 확인` : "공식 기준 확인",
+      Icon: BookOpen,
+      className: latestHasSources
+        ? "border-[#C6D9CB] bg-white text-[#1F7A4D]"
         : "border-[#D8DCCF] bg-white text-[#5F6C62]",
       iconClassName: latestHasSources ? "text-[#1F7A4D]" : "text-[#8B9388]",
     },
     {
-      label: "추가 확인 필요",
-      value: needsAdditionalReview ? "필요" : "대기",
-      Icon: AlertCircle,
+      label: "최종 확인",
+      value: finalReviewReady ? "답변 준비" : needsAdditionalReview ? "추가 확인 필요 항목" : "대기",
+      Icon: needsAdditionalReview ? AlertCircle : Target,
       className: needsAdditionalReview
         ? "border-[#E9D59B] bg-[#FFF8E6] text-[#8A6418]"
-        : "border-[#D8DCCF] bg-white text-[#5F6C62]",
-      iconClassName: needsAdditionalReview ? "text-[#9E5700]" : "text-[#8B9388]",
-    },
-    {
-      label: "답변 정리",
-      value: finalReviewReady ? "준비" : needsAdditionalReview ? "보류" : "대기",
-      Icon: Target,
-      className: finalReviewReady
-        ? "border-[#C6D9CB] bg-white text-[#1F7A4D]"
-        : "border-[#D8DCCF] bg-white text-[#5F6C62]",
-      iconClassName: finalReviewReady ? "text-[#1F7A4D]" : "text-[#8B9388]",
+        : finalReviewReady
+          ? "border-[#C6D9CB] bg-white text-[#1F7A4D]"
+          : "border-[#D8DCCF] bg-white text-[#5F6C62]",
+      iconClassName: needsAdditionalReview
+        ? "text-[#9E5700]"
+        : finalReviewReady
+          ? "text-[#1F7A4D]"
+          : "text-[#8B9388]",
     },
   ] as const;
-
   const chatHeader = (
     <div className="rounded-none border-b border-[#D8DCCF] bg-[#FBFBF7]/95 px-4 py-2 backdrop-blur">
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-3">
@@ -936,7 +941,7 @@ function ChatPageContent() {
               Compass 정책 확인 화면
             </h2>
             <p className="hidden text-xs text-[#5F6C62] sm:block">
-              정책 답변, 출처, 확인 상태를 한 화면에서 확인합니다.
+              질문 조건 확인부터 최종 확인까지 한 화면에서 확인합니다.
             </p>
           </div>
         </div>
@@ -980,7 +985,7 @@ function ChatPageContent() {
             출처 확인
           </Badge>
           <Badge variant="outline" className="hidden rounded-md border-[#E9D59B] bg-[#FFF8E6] px-2 py-1 text-[11px] text-[#8A6418] md:inline-flex">
-            출처 확인 우선
+            공식 기준 확인
           </Badge>
           <Button
             variant="ghost"
@@ -1013,18 +1018,18 @@ function ChatPageContent() {
           </Button>
         </div>
       </div>
-      <div className="mx-auto mt-2 grid max-w-7xl grid-cols-3 gap-1.5 text-[11px] sm:flex sm:items-center sm:gap-2">
-        {reliabilityPostureItems.map(({ label, value, Icon, className, iconClassName }) => {
+      <div className="compass-review-rail mx-auto mt-2 grid max-w-7xl grid-cols-3 gap-1.5 text-[11px] sm:flex sm:items-center sm:gap-2">
+        {reviewPostureItems.map(({ label, value, Icon, className, iconClassName }) => {
           const PostureIcon = Icon;
 
           return (
             <div
               key={label}
-              className={`flex min-w-0 items-center gap-1.5 rounded-md border px-2 py-1 ${className}`}
+              className={`compass-review-step flex min-w-0 items-center gap-1.5 rounded-md border px-2 py-1 ${className}`}
             >
               <PostureIcon className={`h-3.5 w-3.5 flex-none ${iconClassName}`} />
-              <span className="truncate font-semibold">{label}</span>
-              <span className="ml-auto flex-none text-[10px] opacity-80">{value}</span>
+              <span className="font-semibold">{label}</span>
+              <span className="ml-auto min-w-0 text-right text-[10px] leading-4 opacity-80">{value}</span>
             </div>
           );
         })}
@@ -1132,11 +1137,11 @@ function ChatPageContent() {
                         <Bot className="h-4 w-4 text-[#1F7A4D]" />
                       </div>
                       <div className="flex-1">
-                        <div className="mb-2 text-sm font-medium text-[#111713]">Compass가 질문 조건을 확인하고 있습니다</div>
+                        <div className="mb-2 text-sm font-medium text-[#111713]">Compass가 1차 검토안을 정리하고 있습니다</div>
                         <div className="flex flex-wrap gap-2 text-xs text-[#5F6C62]">
                           <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1">질문 조건 확인</span>
-                          <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1">관련 문서 찾기</span>
-                          <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1">출처 대조</span>
+                          <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1">공식 기준 확인</span>
+                          <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1">최종 확인</span>
                         </div>
                       </div>
                     </div>
