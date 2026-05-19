@@ -100,6 +100,12 @@ function assertNoSecretLikeText(value, label) {
   }
 }
 
+function assertExactHeadings(actual, expected, label) {
+  const actualSerialized = JSON.stringify(Array.isArray(actual) ? actual : [])
+  const expectedSerialized = JSON.stringify(expected)
+  if (actualSerialized !== expectedSerialized) fail(`${label}.headings mismatch`)
+}
+
 function assertRejectedCanonicalUrlIsSafe(value, label) {
   const canonicalUrl = String(value || '')
   if (!canonicalUrl) return
@@ -156,6 +162,50 @@ function normalizeHostname(hostname) {
   return String(hostname || '').trim().toLowerCase().replace(/\.$/, '')
 }
 
+function buildContentHash(value) {
+  let hash = 0x811c9dc5
+
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index)
+    hash = Math.imul(hash, 0x01000193)
+  }
+
+  return `fnv1a:${(hash >>> 0).toString(16).padStart(8, '0')}`
+}
+
+function listSourceFiles(relativeDirectory) {
+  const directory = path.join(root, relativeDirectory)
+  if (!fs.existsSync(directory)) {
+    fail(`missing ${relativeDirectory}`)
+    return []
+  }
+
+  const files = []
+  const entries = fs.readdirSync(directory, { withFileTypes: true })
+
+  for (const entry of entries) {
+    const fullPath = path.join(directory, entry.name)
+    if (entry.isDirectory()) {
+      files.push(...listSourceFiles(path.relative(root, fullPath)))
+      continue
+    }
+
+    if (entry.isFile() && /\.(?:ts|tsx)$/.test(entry.name)) {
+      files.push(fullPath)
+    }
+  }
+
+  return files
+}
+
+function shouldSkipWebPageExtractionWiringScan(fullPath) {
+  const relativePath = path.relative(root, fullPath).replace(/\\/g, '/')
+
+  return relativePath === 'src/lib/services/WebPageExtractionService.ts'
+    || /(?:^|\/)__tests__\//.test(relativePath)
+    || /\.(?:test|spec)\.(?:ts|tsx)$/.test(relativePath)
+}
+
 const serviceText = read(servicePath)
 const fixtureText = read(fixturePath)
 const packageJson = JSON.parse(read('package.json') || '{}')
@@ -205,19 +255,14 @@ for (const forbidden of [
   }
 }
 
-for (const relativePath of [
-  'src/lib/services/CompassSourceProposalService.ts',
-  'src/lib/services/CompassSourceProposalWorkerService.ts',
-  'src/lib/services/DocumentIndexingService.ts',
-  'src/lib/services/DocumentProcessingService.ts',
-  'src/lib/services/VectorStorageService.ts',
-  'src/app/api/internal/source-proposals/dry-run/route.ts',
-  'src/app/api/admin/source-ops/proposals/route.ts',
-  'src/app/api/admin/upload/[documentId]/reindex/route.ts',
-  'src/app/api/admin/direct-process/route.ts',
-  'src/app/api/admin/simple-index/route.ts',
+for (const fullPath of [
+  ...listSourceFiles('src/app'),
+  ...listSourceFiles('src/lib'),
 ]) {
-  const text = read(relativePath)
+  if (shouldSkipWebPageExtractionWiringScan(fullPath)) continue
+
+  const relativePath = path.relative(root, fullPath).replace(/\\/g, '/')
+  const text = read(fullPath)
   for (const forbidden of [
     'WebPageExtractionService',
     'extractWebPageForCompass',
@@ -286,6 +331,18 @@ if (typeof service?.validateWebPageExtractionSafety !== 'function') {
   fail('service export validateWebPageExtractionSafety must be a function')
 }
 
+const publicEnvelopeSafetyProbe = service.validateWebPageExtractionSafety({
+  status: 'accepted',
+  rejectionReasons: [],
+  contentText: 'safe policy content',
+  canonicalUrl: 'https://support.google.com/adspolicy/answer/probe?access_token=REDACTED_SECRET_VALUE',
+  sourceTitle: '&lt;div&gt;raw mirrored title&lt;/div&gt;',
+  headings: ['Authorization: Bearer REDACTED_SECRET_VALUE'],
+})
+
+assertArrayIncludes(publicEnvelopeSafetyProbe, 'secret_like_text', 'validateWebPageExtractionSafety public envelope probe')
+assertArrayIncludes(publicEnvelopeSafetyProbe, 'raw_html_detected', 'validateWebPageExtractionSafety public envelope probe')
+
 let acceptedCases = 0
 let rejectedCases = 0
 const acceptedVendors = new Set()
@@ -317,6 +374,10 @@ for (const [index, testCase] of (fixture.fixtures || []).entries()) {
 
   if (!String(result.contentHash || '').startsWith('fnv1a:')) {
     fail(`${label}.contentHash must use deterministic sanitized hash prefix`)
+  }
+  const expectedContentHash = buildContentHash(`${result.canonicalUrl}\n${result.contentText}`)
+  if (result.contentHash !== expectedContentHash) {
+    fail(`${label}.contentHash must exactly match sanitized canonicalUrl/contentText hash`)
   }
   if (input.fetchedAt && result.extractedAt !== input.fetchedAt) {
     fail(`${label}.extractedAt should be deterministic from fixture`)
@@ -359,9 +420,7 @@ for (const [index, testCase] of (fixture.fixtures || []).entries()) {
       fail(`${label}.boilerplateRemoved mismatch`)
     }
     if (Array.isArray(expected.headings)) {
-      const actual = JSON.stringify(result.headings)
-      const wanted = JSON.stringify(expected.headings)
-      if (actual !== wanted) fail(`${label}.headings mismatch`)
+      assertExactHeadings(result.headings, expected.headings, label)
     }
     for (const token of expected.boilerplateRemovedTypesIncludes || []) {
       assertArrayIncludes(result.boilerplateRemovedTypes, token, `${label}.boilerplateRemovedTypes`)
@@ -393,6 +452,12 @@ for (const [index, testCase] of (fixture.fixtures || []).entries()) {
     }
     if (expected.contentText !== undefined && result.contentText !== expected.contentText) {
       fail(`${label}.contentText must be ${JSON.stringify(expected.contentText)}`)
+    }
+    if (expected.sourceTitle !== undefined && result.sourceTitle !== expected.sourceTitle) {
+      fail(`${label}.sourceTitle must be ${JSON.stringify(expected.sourceTitle)}`)
+    }
+    if (Array.isArray(expected.headings)) {
+      assertExactHeadings(result.headings, expected.headings, label)
     }
     if (result.sourceQuality?.qualityScore !== 0) {
       fail(`${label}.sourceQuality.qualityScore must be 0 for rejected extraction`)

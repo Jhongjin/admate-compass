@@ -171,8 +171,17 @@ export function extractWebPageForCompass(
     rejectionReasons.push('canonical_url_not_allowlisted');
   }
 
-  const title = normalizeText(decodeEntities(matchFirst(rawHtml, /<title[^>]*>([\s\S]*?)<\/title>/i)));
-  const headings = extractHeadings(rawHtml);
+  const extractedTitle = normalizeText(decodeEntities(matchFirst(rawHtml, /<title[^>]*>([\s\S]*?)<\/title>/i)));
+  const extractedHeadings = extractHeadings(rawHtml);
+  const publicMetadataSafetyReasons = unique([
+    ...getPublicEnvelopeFieldSafetyReasons(extractedTitle),
+    ...extractedHeadings.flatMap((heading) => getPublicEnvelopeFieldSafetyReasons(heading)),
+  ]);
+  const title = sanitizePublicEnvelopeText(extractedTitle);
+  const headings = extractedHeadings
+    .map((heading) => sanitizePublicEnvelopeText(heading))
+    .filter(Boolean)
+    .slice(0, 12);
   const fullChromeResult = removePageChrome(rawHtml);
   const mainHtml = matchFirst(fullChromeResult.html, /<main[^>]*>([\s\S]*?)<\/main>/i)
     || matchFirst(fullChromeResult.html, /<article[^>]*>([\s\S]*?)<\/article>/i)
@@ -181,7 +190,13 @@ export function extractWebPageForCompass(
   const mainChromeResult = removePageChrome(mainHtml);
   const removedBoilerplateTypes = unique([...fullChromeResult.removedTypes, ...mainChromeResult.removedTypes]);
   const contentCandidate = normalizeText(stripTags(mainChromeResult.html));
-  const sourceTitle = title || headings[0] || safeHostnameForExtractionOutput(canonicalUrlValue) || safeHostnameForExtractionOutput(finalUrlValue) || '';
+  const canonicalUrlCandidate = canonicalUrlValue?.toString() || finalUrlValue?.toString() || '';
+  const canonicalUrlSafetyReasons = getPublicEnvelopeFieldSafetyReasons(canonicalUrlCandidate);
+  const sourceTitle = title
+    || headings[0]
+    || (publicMetadataSafetyReasons.length > 0
+      ? ''
+      : safeHostnameForExtractionOutput(canonicalUrlValue) || safeHostnameForExtractionOutput(finalUrlValue) || '');
   const signalText = [
     sourceTitle,
     canonicalUrlValue?.toString(),
@@ -193,6 +208,14 @@ export function extractWebPageForCompass(
   const minContentChars = options.minContentChars ?? DEFAULT_MIN_CONTENT_CHARS;
   const minPolicySignals = options.minPolicySignals ?? DEFAULT_MIN_POLICY_SIGNALS;
 
+  if (publicMetadataSafetyReasons.length > 0) {
+    rejectionReasons.push(...publicMetadataSafetyReasons);
+  }
+
+  if (canonicalUrlSafetyReasons.length > 0) {
+    rejectionReasons.push(...canonicalUrlSafetyReasons);
+  }
+
   if (
     containsSecretLikeText(rawHtml)
     || containsSecretLikeText(contentCandidate)
@@ -202,7 +225,7 @@ export function extractWebPageForCompass(
     rejectionReasons.push('secret_like_text');
   }
 
-  if (RAW_HTML_TEXT_PATTERN.test(contentCandidate)) {
+  if (containsRawHtmlLikeText(contentCandidate)) {
     rejectionReasons.push('raw_html_detected');
   }
 
@@ -222,7 +245,7 @@ export function extractWebPageForCompass(
   const status: WebPageExtractionStatus = uniqueRejections.length > 0 ? 'rejected' : 'accepted';
   const contentText = status === 'accepted' ? contentCandidate : '';
   const warnings = status === 'accepted' ? [] : uniqueRejections;
-  const canonicalUrl = sanitizeUrlForExtractionOutput(canonicalUrlValue?.toString() || finalUrlValue?.toString() || '');
+  const canonicalUrl = sanitizeUrlForExtractionOutput(canonicalUrlCandidate);
   const result: WebPageExtractionResult = {
     status,
     canonicalUrl,
@@ -252,35 +275,48 @@ export function extractWebPageForCompass(
   }
 
   const safeRejections = unique([...uniqueRejections, ...safetyReasons]);
+  const safeCanonicalUrl = sanitizeUrlForExtractionOutput(result.canonicalUrl);
+  const safeSourceTitle = sanitizePublicEnvelopeText(result.sourceTitle);
+  const safeHeadings = result.headings
+    .map((heading) => sanitizePublicEnvelopeText(heading))
+    .filter(Boolean);
 
   return {
     ...result,
     status: 'rejected',
+    canonicalUrl: safeCanonicalUrl,
+    sourceTitle: safeSourceTitle,
     contentText: '',
-    contentHash: buildContentHash(`${canonicalUrl}\n`),
+    contentHash: buildContentHash(`${safeCanonicalUrl}\n`),
     sourceQuality: buildSourceQuality({
       status: 'rejected',
-      sourceTitle,
-      canonicalUrl,
+      sourceTitle: safeSourceTitle,
+      canonicalUrl: safeCanonicalUrl,
       contentText: '',
       policySignals,
       warnings: safeRejections,
     }),
+    headings: safeHeadings,
     rejectionReasons: safeRejections,
   };
 }
 
 export function validateWebPageExtractionSafety(
-  extraction: Pick<WebPageExtractionResult, 'contentText' | 'status' | 'rejectionReasons'>,
+  extraction: Pick<WebPageExtractionResult, 'contentText' | 'status' | 'rejectionReasons'>
+    & Partial<Pick<WebPageExtractionResult, 'canonicalUrl' | 'sourceTitle' | 'headings'>>,
 ): WebPageExtractionRejectionReason[] {
   const reasons: WebPageExtractionRejectionReason[] = [];
+  const publicEnvelopeValues = [
+    extraction.contentText,
+    extraction.sourceTitle,
+    extraction.canonicalUrl,
+    ...(Array.isArray(extraction.headings) ? extraction.headings : []),
+  ];
 
-  if (extraction.contentText && RAW_HTML_TEXT_PATTERN.test(extraction.contentText)) {
-    reasons.push('raw_html_detected');
-  }
+  for (const value of publicEnvelopeValues) {
+    if (!value) continue;
 
-  if (containsSecretLikeText(extraction.contentText)) {
-    reasons.push('secret_like_text');
+    reasons.push(...getPublicEnvelopeFieldSafetyReasons(value));
   }
 
   if (extraction.status === 'accepted' && extraction.rejectionReasons.length > 0) {
@@ -422,7 +458,60 @@ function isPlaceholderOrLowSignalContent(value: string): boolean {
 }
 
 function containsSecretLikeText(value: string): boolean {
-  return SECRET_LIKE_PATTERNS.some((pattern) => pattern.test(value));
+  return buildSafetyScanCandidates(value).some((candidate) => (
+    SECRET_LIKE_PATTERNS.some((pattern) => pattern.test(candidate))
+  ));
+}
+
+function containsRawHtmlLikeText(value: string): boolean {
+  return buildSafetyScanCandidates(value).some((candidate) => RAW_HTML_TEXT_PATTERN.test(candidate));
+}
+
+function getPublicEnvelopeFieldSafetyReasons(value?: string): WebPageExtractionRejectionReason[] {
+  const normalized = normalizeText(value);
+  const reasons: WebPageExtractionRejectionReason[] = [];
+
+  if (!normalized) return reasons;
+
+  if (containsRawHtmlLikeText(normalized)) {
+    reasons.push('raw_html_detected');
+  }
+
+  if (containsSecretLikeText(normalized)) {
+    reasons.push('secret_like_text');
+  }
+
+  return unique(reasons);
+}
+
+function sanitizePublicEnvelopeText(value?: string): string {
+  const normalized = normalizeText(value);
+  if (!normalized) return '';
+  if (getPublicEnvelopeFieldSafetyReasons(normalized).length > 0) return '';
+  return normalized;
+}
+
+function buildSafetyScanCandidates(value?: string): string[] {
+  const normalized = normalizeText(value);
+  if (!normalized) return [];
+
+  const entityDecoded = normalizeText(decodeEntities(normalized));
+  const uriDecoded = normalizeText(decodeUriComponentSafely(normalized));
+  const entityAndUriDecoded = normalizeText(decodeUriComponentSafely(entityDecoded));
+
+  return unique([normalized, entityDecoded, uriDecoded, entityAndUriDecoded].filter(Boolean));
+}
+
+function decodeUriComponentSafely(value: string): string {
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    try {
+      return decodeURI(value);
+    } catch {
+      return value;
+    }
+  }
 }
 
 function containsSecretLikeUrl(url: URL): boolean {
@@ -435,7 +524,7 @@ function containsSecretLikeUrl(url: URL): boolean {
 
 function sanitizeUrlForExtractionOutput(value: string): string {
   const url = safeUrl(value);
-  if (!url) return value;
+  if (!url) return '';
   if (url.protocol !== 'https:' || isPrivateOrInternalHost(url.hostname)) return '';
 
   for (const key of Array.from(url.searchParams.keys())) {
@@ -444,7 +533,10 @@ function sanitizeUrlForExtractionOutput(value: string): string {
     }
   }
 
-  return url.toString();
+  const safeValue = url.toString();
+  if (getPublicEnvelopeFieldSafetyReasons(safeValue).length > 0) return '';
+
+  return safeValue;
 }
 
 function safeHostnameForExtractionOutput(url: URL | null): string {

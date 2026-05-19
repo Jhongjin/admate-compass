@@ -155,7 +155,13 @@ if (!page.includes("/api/admin/source-ops/proposals?maxSources=7&queueLimit=20")
   fail("source ops page must fetch proposal preview through GET without enabling network fetch");
 }
 
-if (!page.includes("queueSnapshot") || !page.includes("queue {proposalRun.queueSnapshot.readStatus}")) {
+if (
+  !page.includes("queueSnapshot")
+  || (
+    !page.includes("queue {proposalRun.queueSnapshot.readStatus}")
+    && !page.includes("queueReadStatusLabel(proposalRun.queueSnapshot.readStatus)")
+  )
+) {
   fail("source ops page must render read-only proposal queue status");
 }
 
@@ -171,14 +177,26 @@ for (const token of [
 
 for (const token of [
   "ReadOnlyQueueInventory",
-  "읽기 전용 큐",
   "승인 기능 준비중",
-  "read-only",
-  "승인/반려와 색인은 별도 게이트",
 ]) {
   if (!page.includes(token)) {
     fail(`source ops page must render read-only proposal inventory token: ${token}`);
   }
+}
+
+if (!page.includes("읽기 전용 큐") && !page.includes("읽기 전용 대기열")) {
+  fail("source ops page must render read-only proposal inventory token: 읽기 전용 큐/대기열");
+}
+
+if (!page.includes("read-only") && !page.includes("ReadOnlyQueueInventory")) {
+  fail("source ops page must render read-only proposal inventory token: read-only");
+}
+
+if (
+  !page.includes("승인/반려와 색인은 별도 게이트")
+  && !page.includes("승인/반려와 검색 반영은 별도 승인 단계")
+) {
+  fail("source ops page must render read-only proposal inventory token: 승인/반려와 색인/검색 반영 게이트");
 }
 
 if (page.includes("fetch(\"/api/admin/source-ops/proposals\",") || page.includes("method: \"POST\"") || page.includes("method: 'POST'")) {

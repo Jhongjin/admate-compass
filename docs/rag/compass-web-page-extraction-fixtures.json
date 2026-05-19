@@ -146,6 +146,62 @@
       }
     },
     {
+      "id": "rejects-secret-like-title-without-exposing-source-title",
+      "input": {
+        "finalUrl": "https://support.google.com/adspolicy/answer/secret-title-example",
+        "fetchedAt": "2026-05-17T00:00:00.000Z",
+        "rawHtml": "<html><head><title>access_token=REDACTED_SECRET_VALUE_GOOGLE_POLICY_TITLE</title></head><body><main><p>Google Ads policy guidance explains advertising review, campaign approval, creative restrictions, prohibited content, advertiser responsibility, business verification, landing page transparency, and support steps for approved advertising.</p><p>광고 심사 정책과 캠페인 운영 기준, 소재 승인 절차, 제한 콘텐츠, 금지 표현, 비즈니스 지원 기준을 충분히 설명합니다.</p><p>본문은 공식 정책 신호를 제공하지만 공개 title 필드에 인증성 문자열이 있으면 후보를 거절하고 제목을 비워야 합니다.</p></main></body></html>"
+      },
+      "expectedRejection": {
+        "reasonsInclude": ["secret_like_text"],
+        "contentText": "",
+        "sourceTitle": "",
+        "headings": []
+      }
+    },
+    {
+      "id": "rejects-secret-like-heading-without-exposing-heading",
+      "input": {
+        "finalUrl": "https://support.google.com/adspolicy/answer/secret-heading-example",
+        "fetchedAt": "2026-05-17T00:00:00.000Z",
+        "rawHtml": "<html><head><title>Google Ads Policy Heading Guard</title></head><body><main><h1>Authorization: Bearer REDACTED_SECRET_VALUE_GOOGLE_HEADING</h1><p>Google Ads policy guidance explains advertising review, campaign approval, creative restrictions, prohibited content, advertiser responsibility, business verification, landing page transparency, and support steps for approved advertising.</p><p>광고 심사 정책과 캠페인 운영 기준, 소재 승인 절차, 제한 콘텐츠, 금지 표현, 비즈니스 지원 기준을 충분히 설명합니다.</p><p>본문은 충분한 정책 신호를 제공하지만 공개 heading 필드에 인증성 문자열이 있으면 후보를 거절하고 heading 배열에서는 제거해야 합니다.</p></main></body></html>"
+      },
+      "expectedRejection": {
+        "reasonsInclude": ["secret_like_text"],
+        "contentText": "",
+        "sourceTitle": "Google Ads Policy Heading Guard",
+        "headings": []
+      }
+    },
+    {
+      "id": "rejects-escaped-raw-html-title-without-exposing-source-title",
+      "input": {
+        "finalUrl": "https://www.facebook.com/policies/ads/raw-title-example",
+        "fetchedAt": "2026-05-17T00:00:00.000Z",
+        "rawHtml": "<html><head><title>&lt;div&gt;Meta Ads Policy Raw Title&lt;/div&gt;</title></head><body><main><p>Meta advertising standards explain campaign review, creative approval, restricted content, prohibited practices, business verification, advertiser responsibility, landing page transparency, and support guidance for Facebook and Instagram advertising.</p><p>광고 심사 정책과 캠페인 검토 내용, 소재 승인 절차, 제한 콘텐츠, 금지 표현, 비즈니스 지원 기준을 충분히 설명합니다.</p><p>본문은 공식 정책 신호를 제공하지만 공개 title 필드가 escaped raw HTML이면 후보를 거절하고 제목을 비워야 합니다.</p></main></body></html>"
+      },
+      "expectedRejection": {
+        "reasonsInclude": ["raw_html_detected"],
+        "contentText": "",
+        "sourceTitle": "",
+        "headings": []
+      }
+    },
+    {
+      "id": "rejects-escaped-raw-html-heading-without-exposing-heading",
+      "input": {
+        "finalUrl": "https://www.facebook.com/policies/ads/raw-heading-example",
+        "fetchedAt": "2026-05-17T00:00:00.000Z",
+        "rawHtml": "<html><head><title>Meta Ads Policy Heading Guard</title></head><body><main><h1>&lt;section&gt;Meta 광고 정책&lt;/section&gt;</h1><p>Meta advertising standards explain campaign review, creative approval, restricted content, prohibited practices, business verification, advertiser responsibility, landing page transparency, and support guidance for Facebook and Instagram advertising.</p><p>광고 심사 정책과 캠페인 검토 내용, 소재 승인 절차, 제한 콘텐츠, 금지 표현, 비즈니스 지원 기준을 충분히 설명합니다.</p><p>본문은 공식 정책 신호를 제공하지만 공개 heading 필드가 escaped raw HTML이면 후보를 거절하고 heading 배열에서는 제거해야 합니다.</p></main></body></html>"
+      },
+      "expectedRejection": {
+        "reasonsInclude": ["raw_html_detected"],
+        "contentText": "",
+        "sourceTitle": "Meta Ads Policy Heading Guard",
+        "headings": []
+      }
+    },
+    {
       "id": "rejects-secret-like-final-url-query",
       "input": {
         "finalUrl": "https://support.google.com/adspolicy/answer/token-example?access_token=REDACTED_SECRET_VALUE&hl=ko",
