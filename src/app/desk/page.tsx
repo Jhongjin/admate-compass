@@ -429,7 +429,7 @@ function ChatPageContent() {
       
       toast({
         title: "오류 발생",
-        description: "AI 응답을 받는 중 문제가 발생했습니다.",
+        description: "답변을 받는 중 문제가 발생했습니다.",
         variant: "destructive",
         duration: 5000,
       });
@@ -534,7 +534,7 @@ function ChatPageContent() {
       
       toast({
         title: "오류 발생",
-        description: "AI 응답을 받는 중 문제가 발생했습니다.",
+        description: "답변을 받는 중 문제가 발생했습니다.",
         variant: "destructive",
         duration: 5000,
       });
@@ -755,7 +755,7 @@ function ChatPageContent() {
     };
 
     try {
-      // AI 응답 메시지의 피드백 정보 가져오기
+      // 답변 메시지의 피드백 정보 가져오기
       const conversationId = conversation.conversation_id || conversation.id;
       const feedback = await fetchFeedback(conversationId);
 
@@ -773,7 +773,7 @@ function ChatPageContent() {
         {
           id: `ai_${conversationId}`,
           type: "assistant",
-          content: conversation.ai_response || "AI 응답을 불러올 수 없습니다.",
+          content: conversation.ai_response || "답변을 불러올 수 없습니다.",
           timestamp: new Date(conversation.createdAt || conversation.created_at).toLocaleTimeString('ko-KR', { 
             hour: '2-digit', 
             minute: '2-digit' 
@@ -896,8 +896,8 @@ function ChatPageContent() {
   const finalReviewReady = latestHasSources && !needsAdditionalReview;
   const reviewPostureItems = [
     {
-      label: "LLM1 후보",
-      value: lastSubmittedQuestion ? "질문 조건 분석" : "대기",
+      label: "1차 검토",
+      value: lastSubmittedQuestion ? "질문 조건 정리" : "대기",
       Icon: CheckCircle,
       className: lastSubmittedQuestion
         ? "border-[#C6D9CB] bg-[#EDF7EF] text-[#1F7A4D]"
@@ -905,8 +905,8 @@ function ChatPageContent() {
       iconClassName: lastSubmittedQuestion ? "text-[#1F7A4D]" : "text-[#8B9388]",
     },
     {
-      label: "LLM2 후보",
-      value: latestHasSources ? `출처 ${latestSources.length}개 대조` : "출처 대조 검토",
+      label: "출처 대조",
+      value: latestHasSources ? `출처 ${latestSources.length}개 대조` : "정책 원문 확인",
       Icon: BookOpen,
       className: latestHasSources
         ? "border-[#C6D9CB] bg-white text-[#1F7A4D]"
@@ -914,7 +914,7 @@ function ChatPageContent() {
       iconClassName: latestHasSources ? "text-[#1F7A4D]" : "text-[#8B9388]",
     },
     {
-      label: "팀장 LLM",
+      label: "최종 검토",
       value: finalReviewReady ? "최종 답변 정리" : needsAdditionalReview ? "추가 확인 필요 항목" : "대기",
       Icon: needsAdditionalReview ? AlertCircle : Target,
       className: needsAdditionalReview
@@ -941,7 +941,7 @@ function ChatPageContent() {
               Compass 정책 확인 화면
             </h2>
             <p className="hidden text-xs text-[#5F6C62] sm:block">
-              질문 조건부터 팀장 LLM 최종 검토까지 한 화면에서 확인합니다.
+              1차 검토부터 출처 대조, 최종 검토까지 한 화면에서 확인합니다.
             </p>
           </div>
         </div>
@@ -1137,11 +1137,11 @@ function ChatPageContent() {
                         <Bot className="h-4 w-4 text-[#1F7A4D]" />
                       </div>
                       <div className="flex-1">
-                        <div className="mb-2 text-sm font-medium text-[#111713]">Compass가 LLM1 후보를 정리하고 있습니다</div>
+                        <div className="mb-2 text-sm font-medium text-[#111713]">Compass가 1차 검토를 정리하고 있습니다</div>
                         <div className="flex flex-wrap gap-2 text-xs text-[#5F6C62]">
-                          <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1">질문 조건 분석</span>
-                          <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1">출처 대조 검토</span>
-                          <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1">팀장 LLM 최종 검토</span>
+                          <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1">1차 검토</span>
+                          <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1">출처 대조</span>
+                          <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1">최종 검토</span>
                         </div>
                       </div>
                     </div>

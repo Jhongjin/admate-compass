@@ -195,13 +195,10 @@ if (!legacyRoute.includes("export { POST } from '@/lib/server/compassAnswerHandl
 }
 
 for (const forbidden of [
-  '1차 검토안',
-  '2차 검토안',
-  '최종 확인',
-  '질문 조건 확인',
-  '공식 기준 확인',
-  '답변 준비',
-  'Compass가 1차',
+  'LLM1 후보',
+  'LLM2 후보',
+  '팀장 LLM',
+  '3-agent',
 ]) {
   if (deskPage.includes(forbidden)) {
     fail(`src/app/desk/page.tsx must not expose legacy review label "${forbidden}"`)
@@ -209,12 +206,12 @@ for (const forbidden of [
 }
 
 for (const required of [
-  'LLM1 후보',
-  'LLM2 후보',
-  '팀장 LLM',
+  '1차 검토',
+  '출처 대조',
+  '최종 검토',
 ]) {
   if (!deskPage.includes(required)) {
-    fail(`src/app/desk/page.tsx missing three-agent review label "${required}"`)
+    fail(`src/app/desk/page.tsx missing public review label "${required}"`)
   }
 }
 

@@ -16,7 +16,7 @@ const ADMATE_HOME_URL = "https://home.admate.ai.kr";
 const loginStatusStrip = [
   { label: "로그인", value: "보호됨" },
   { label: "출처", value: "근거 확인" },
-  { label: "검토", value: "3-agent" },
+  { label: "검토", value: "3단계" },
 ] as const;
 
 const loginProofCards = [
@@ -38,9 +38,9 @@ const loginProofCards = [
 ] as const;
 
 const loginReviewSteps = [
-  "LLM1 후보",
-  "LLM2 후보",
-  "팀장 LLM 최종 검토",
+  "1차 검토",
+  "출처 대조",
+  "최종 검토",
 ] as const;
 
 function LoginPageContent() {
@@ -125,7 +125,7 @@ function LoginPageContent() {
               compass.admate.ai.kr
             </div>
             <div className="space-y-4">
-              <h1 className="mt-4 text-3xl font-semibold tracking-normal leading-tight">
+              <h1 className="mt-4 text-[30px] font-semibold leading-[36px] tracking-normal [text-wrap:balance]">
                 AdMate Compass 정책 확인
               </h1>
               <p className="max-w-2xl text-lg leading-8 text-[#34423A]">
@@ -153,7 +153,7 @@ function LoginPageContent() {
                 <div>
                   <p className="text-xs font-semibold text-[#111713]">정책 확인 화면</p>
                   <p className="mt-1 text-[11px] leading-5 text-[#667066]">
-                    두 후보 답변과 팀장 LLM 최종 검토 흐름을 로그인 후 한 화면에서 확인합니다.
+                    1차 검토, 출처 대조, 최종 검토 흐름을 로그인 후 한 화면에서 확인합니다.
                   </p>
                 </div>
                 <span className="shrink-0 rounded-md border border-[#D8DCCF] bg-white px-2 py-1 text-[11px] font-semibold text-[#34423A]">

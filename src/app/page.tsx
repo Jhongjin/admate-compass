@@ -34,9 +34,9 @@ const previewRows = [
 ] as const;
 
 const answerVerificationFlow = [
-  ["LLM1 후보", "질문 조건 분석", "플랫폼, 업종, 소재 표현과 랜딩 조건을 기준별로 정리합니다."],
-  ["LLM2 후보", "출처 대조 검토", "공식 정책과 AdMate 확인 기준을 따로 검토해 누락과 충돌을 찾습니다."],
-  ["팀장 LLM 최종 검토", "운영 판단 정리", "두 후보를 비교한 뒤 근거, 답변, 추가 확인 필요 항목을 분리합니다."],
+  ["1차 검토", "질문 조건 정리", "플랫폼, 업종, 소재 표현과 랜딩 조건을 기준별로 정리합니다."],
+  ["출처 대조", "정책 원문 확인", "공식 정책과 AdMate 확인 기준을 대조해 누락과 충돌을 찾습니다."],
+  ["최종 검토", "답변 근거 정리", "두 검토 결과를 비교해 최종 답변과 추가 확인 필요 항목을 분리합니다."],
 ] as const;
 
 const mediaScopes = [
@@ -50,7 +50,7 @@ const mediaScopes = [
 const gatePrinciples = [
   "로그인 후 Compass 정책 확인 화면이 열립니다.",
   "권한이 없으면 AdMate 이용 권한 요청으로 이어집니다.",
-  "정책 판단에 필요한 근거를 함께 확인할 수 있습니다.",
+  "정책 원문, 출처, 불확실 항목을 나눠 확인할 수 있습니다.",
 ] as const;
 
 type MediaId = (typeof supportedMedia)[number]["id"];
@@ -205,7 +205,7 @@ export default function HomePage() {
                 </span>
               </div>
 
-              <h1 className="mt-7 max-w-[640px] text-3xl font-semibold leading-tight tracking-normal text-[#172033] [text-wrap:balance]">
+              <h1 className="mt-7 max-w-[640px] text-[30px] font-semibold leading-[36px] tracking-normal text-[#172033] [text-wrap:balance]">
                 AdMate Compass 정책 확인
               </h1>
               <p className="mt-5 max-w-[630px] text-base leading-8 text-[#344052] sm:text-lg">
@@ -236,7 +236,7 @@ export default function HomePage() {
               <div className="flex min-h-full flex-col rounded-[8px] bg-[#FBF7EE] p-4">
                 <p className="text-sm font-bold text-[#7A5518]">정책 확인 미리보기</p>
                 <h2 className="mt-3 max-w-[420px] text-2xl font-semibold leading-tight text-[#172033] [text-wrap:balance]">
-                  Compass 답변 근거 확인
+                  정책 근거 확인
                 </h2>
                 <div className="mt-5 rounded-[8px] border border-[#D9D4C8] bg-white p-4">
                   <p className="text-xs font-semibold text-[#68707C]">질문 예시</p>
@@ -270,10 +270,10 @@ export default function HomePage() {
                 <div className="mt-3 rounded-[8px] bg-[#172033] p-4 text-white">
                   <p className="text-xs font-bold text-[#D5B978]">3단계 검토 흐름</p>
                   <h3 className="mt-2 text-xl font-semibold leading-tight text-white [text-wrap:balance]">
-                    LLM 후보 2개를 팀장 LLM이 최종 검토합니다
+                    두 검토 결과를 비교해 최종 답변을 정리합니다
                   </h3>
                   <p className="mt-3 text-xs leading-5 text-white/68">
-                    정책 판단에 필요한 근거를 함께 확인할 수 있도록 후보 답변과 최종 검토를 분리합니다.
+                    정책 원문, 확인한 출처, 불확실한 항목을 나눠 정책 판단에 필요한 근거를 확인합니다.
                   </p>
                   <div className="compass-review-rail mt-4 grid gap-2 lg:grid-cols-3">
                     {answerVerificationFlow.map(([stage, title, detail], index) => (
@@ -375,9 +375,9 @@ export default function HomePage() {
             </div>
             <div className="mt-3 space-y-2">
               {[
-                ["LLM1 후보", "질문 조건 분석"],
-                ["LLM2 후보", "출처 대조 검토"],
-                ["팀장 LLM", "최종 답변과 추가 확인 항목 정리"],
+                ["1차 검토", "질문 조건 정리"],
+                ["출처 대조", "정책 원문과 출처 확인"],
+                ["최종 검토", "최종 답변과 추가 확인 항목 정리"],
               ].map(([stage, detail]) => (
                 <div key={stage} className="flex items-center justify-between gap-3 rounded-[7px] border border-[#E1DED6] bg-[#FBF7EE] px-3 py-2">
                   <span className="text-xs font-bold text-[#7A5518]">{stage}</span>
