@@ -177,7 +177,7 @@ export default function RelatedResources({
         </CardHeader>
         <CardContent className="space-y-3 p-4 pt-0">
           <p className="text-sm leading-6 text-[#5E5E5E]">
-            현재 Compass 문서 기준으로 확인 가능한 출처를 찾지 못했습니다. 플랫폼명, 정책 항목, 소재 유형을 더 구체적으로 입력해 주세요.
+            현재 Compass 문서 기준으로 확인 가능한 출처를 찾지 못했습니다. 광고 매체, 확인할 정책, 소재/랜딩 맥락을 더 구체적으로 입력해 주세요.
           </p>
           <div className="rounded-md border border-[#E5E5E5] bg-[#F7F7F7] p-3 text-xs leading-5 text-[#5E5E5E]">
             예: "카카오 광고 가격 할인 표시 기준", "Google Ads 도박 정책", "네이버 청소년 유해 콘텐츠 기준"
@@ -188,11 +188,11 @@ export default function RelatedResources({
               <p className="mt-1">Meta, Google, 네이버 등</p>
             </div>
             <div className="rounded-md border border-[#E5E5E5] bg-white px-3 py-2">
-              <p className="font-semibold text-[#0D0D0D]">정책 항목</p>
+              <p className="font-semibold text-[#0D0D0D]">확인할 정책</p>
               <p className="mt-1">가격, 금융, 청소년, 의료</p>
             </div>
             <div className="rounded-md border border-[#E5E5E5] bg-white px-3 py-2">
-              <p className="font-semibold text-[#0D0D0D]">소재 표현</p>
+              <p className="font-semibold text-[#0D0D0D]">소재/랜딩 맥락</p>
               <p className="mt-1">문구나 랜딩 맥락 포함</p>
             </div>
           </div>
@@ -213,7 +213,7 @@ export default function RelatedResources({
           </Badge>
           {generationLimited && (
             <Badge variant="outline" className="rounded-md border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] text-amber-700">
-              답변 정리 제한
+              답변 범위 제한
             </Badge>
           )}
         </CardTitle>
@@ -226,7 +226,7 @@ export default function RelatedResources({
       <CardContent className="space-y-3">
         {generationLimited && (
           <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
-            <p className="font-semibold">답변 정리 제한</p>
+            <p className="font-semibold">답변 범위 제한</p>
             <p className="mt-1">
               확인한 출처와 원문 링크는 유지됩니다. 출처를 먼저 확인한 뒤 다시 시도해 주세요.
             </p>

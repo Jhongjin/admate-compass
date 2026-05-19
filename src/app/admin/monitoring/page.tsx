@@ -373,7 +373,7 @@ export default function SystemMonitoringPage() {
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2 text-lg text-white">
                 <Zap className="w-5 h-5" />
-                LLM 서비스
+                답변 생성 상태
               </CardTitle>
             </CardHeader>
             <CardContent>
@@ -391,15 +391,15 @@ export default function SystemMonitoringPage() {
             <CardHeader className="pb-3">
               <CardTitle className="flex items-center gap-2 text-lg text-white">
                 <BarChart3 className="w-5 h-5" />
-                벡터 스토어
+                근거 검색 상태
               </CardTitle>
             </CardHeader>
             <CardContent>
               <div className="flex items-center space-x-2">
                 {getStatusIcon(monitoringData?.systemStatus.vectorStore || 'error')}
                 <span className={`font-medium ${getStatusColor(monitoringData?.systemStatus.vectorStore || 'error')}`}>
-                  {monitoringData?.systemStatus.vectorStore === 'indexed' ? '인덱싱 완료' : 
-                   monitoringData?.systemStatus.vectorStore === 'indexing' ? '인덱싱 중' : '오류'}
+                  {monitoringData?.systemStatus.vectorStore === 'indexed' ? '검색 준비 완료' :
+                   monitoringData?.systemStatus.vectorStore === 'indexing' ? '검색 준비 중' : '오류'}
                 </span>
               </div>
             </CardContent>
@@ -414,7 +414,7 @@ export default function SystemMonitoringPage() {
         >
           <Tabs defaultValue="metrics" className="space-y-6">
             <TabsList className="grid w-full grid-cols-4 bg-gray-800/80 border-gray-700">
-              <TabsTrigger value="metrics" className="data-[state=active]:bg-gray-700">성능 메트릭</TabsTrigger>
+              <TabsTrigger value="metrics" className="data-[state=active]:bg-gray-700">성능 지표</TabsTrigger>
               <TabsTrigger value="logs" className="data-[state=active]:bg-gray-700">시스템 로그</TabsTrigger>
               <TabsTrigger value="alerts" className="data-[state=active]:bg-gray-700">알림</TabsTrigger>
               <TabsTrigger value="performance" className="data-[state=active]:bg-gray-700">성능 통계</TabsTrigger>
@@ -663,24 +663,24 @@ export default function SystemMonitoringPage() {
                   </CardContent>
                 </Card>
 
-                {/* 벡터 스토어 */}
+                {/* 근거 검색 */}
                 <Card className="bg-gray-800/80 backdrop-blur-sm border-gray-700/50">
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2 text-white">
                       <BarChart3 className="w-5 h-5" />
-                      벡터 스토어
+                      근거 검색
                     </CardTitle>
                   </CardHeader>
                   <CardContent>
                     <div className="space-y-3">
                       <div className="flex justify-between text-sm">
-                        <span className="text-gray-300">벡터 수</span>
+                        <span className="text-gray-300">검색 근거 수</span>
                         <span className="text-white font-medium">
                           {monitoringData?.metrics.vectorStore.totalVectors.toLocaleString()}개
                         </span>
                       </div>
                       <div className="flex justify-between text-sm">
-                        <span className="text-gray-300">인덱스 크기</span>
+                        <span className="text-gray-300">검색 자료 크기</span>
                         <span className="text-white font-medium">
                           {formatBytes(monitoringData?.metrics.vectorStore.indexSize || 0)}
                         </span>
@@ -822,7 +822,7 @@ export default function SystemMonitoringPage() {
                     <div className="text-2xl font-bold text-white">
                       {monitoringData?.performance.avgResponseTime.toFixed(1)}ms
                     </div>
-                    <div className="text-sm text-gray-400">API 응답 시간</div>
+                    <div className="text-sm text-gray-400">응답 시간</div>
                   </CardContent>
                 </Card>
 
@@ -837,7 +837,7 @@ export default function SystemMonitoringPage() {
                     <div className="text-2xl font-bold text-white">
                       {monitoringData?.performance.requestsPerMinute}
                     </div>
-                    <div className="text-sm text-gray-400">RPM</div>
+                    <div className="text-sm text-gray-400">분당 요청</div>
                   </CardContent>
                 </Card>
 

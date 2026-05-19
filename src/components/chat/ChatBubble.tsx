@@ -212,7 +212,7 @@ export default function ChatBubble({
                     )}
                     {generationLimited && hasVerifiedSources && (
                       <Badge variant="outline" className="rounded-md border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
-                        답변 정리 제한
+                        답변 범위 제한
                       </Badge>
                     )}
                     {noDataFound && (
@@ -224,7 +224,7 @@ export default function ChatBubble({
 
                   {generationLimited && hasVerifiedSources && (
                     <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900">
-                      답변 정리는 일시적으로 제한되었지만, 확인된 출처는 유지됩니다. 출처 확인 화면에서 원문과 확인한 출처를 먼저 확인해 주세요.
+                      답변 범위는 일시적으로 제한되었지만, 확인된 출처는 유지됩니다. 출처 확인 화면에서 원문과 확인한 출처를 먼저 확인해 주세요.
                     </div>
                   )}
 
@@ -413,17 +413,17 @@ export default function ChatBubble({
                 {(confidenceValue !== undefined || processingTime !== undefined || model) && (
                   <div className="mt-3 rounded-lg border border-[#D8DCCF] bg-white p-3 text-xs text-[#5F6C62] shadow-sm">
                     <div className="mb-2 flex flex-wrap items-center gap-2">
-                      <span className="font-semibold text-[#111713]">정책 검토 상태</span>
+                      <span className="font-semibold text-[#111713]">근거 확인 상태</span>
                       {model && (
                         <span className="flex items-center gap-1 rounded-md border border-[#D8DCCF] bg-[#FBFBF7] px-2 py-1">
                           <ShieldCheck className="h-3 w-3" />
-                            {generationLimited ? '답변 정리 제한' : '정책 답변 정리 완료'}
+                            {generationLimited ? '답변 범위 제한' : '근거 확인 완료'}
                         </span>
                       )}
                       {processingTime !== undefined && (
                         <span className="flex items-center gap-1 rounded-md border border-[#D8DCCF] bg-[#FBFBF7] px-2 py-1">
                           <Clock className="h-3 w-3" />
-                          {processingTime}ms
+                          방금 확인
                         </span>
                       )}
                     </div>

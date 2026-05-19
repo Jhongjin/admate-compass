@@ -158,10 +158,10 @@ interface ProposalRun {
 type QueueReadStatus = NonNullable<ProposalRun["queueSnapshot"]>["readStatus"];
 
 const statusLabels: Record<SourceStatus, string> = {
-  indexed: "색인됨",
+  indexed: "검색 준비 완료",
   stale: "갱신 필요",
-  candidate_only: "후보",
-  unavailable: "미색인",
+  candidate_only: "문서 후보",
+  unavailable: "문서 없음",
 };
 
 const vendorAccent: Record<SourceOpsItem["vendor"], string> = {
@@ -192,7 +192,7 @@ export default function SourceOpsPage() {
       const proposalPayload = await proposalResponse.json();
 
       if (!response.ok || !payload.success) {
-        throw new Error(payload.error || "소스 관제 상태를 불러오지 못했습니다.");
+        throw new Error(payload.error || "문서 관제 상태를 불러오지 못했습니다.");
       }
 
       setPlan(payload.data);
@@ -201,10 +201,10 @@ export default function SourceOpsPage() {
         setProposalRun(proposalPayload.data);
       } else {
         setProposalRun(null);
-        setProposalError(proposalPayload.error || "후보 프리뷰를 불러오지 못했습니다.");
+        setProposalError(proposalPayload.error || "후보 미리보기를 불러오지 못했습니다.");
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "소스 관제 상태를 불러오지 못했습니다.");
+      setError(err instanceof Error ? err.message : "문서 관제 상태를 불러오지 못했습니다.");
       setProposalRun(null);
     } finally {
       setIsLoading(false);
@@ -238,12 +238,12 @@ export default function SourceOpsPage() {
         <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
           <div>
             <Badge className="mb-3 border-cyan-400/30 bg-cyan-500/10 text-cyan-100">
-              backend source watch
+              문서 후보 확인
             </Badge>
-            <h1 className="text-3xl font-bold text-white">Compass 소스 관제</h1>
+            <h1 className="text-3xl font-bold text-white">Compass 문서 관제</h1>
             <p className="mt-2 max-w-3xl text-sm text-gray-300">
-              매체별 정책 URL과 문서 상태를 확인하는 읽기 전용 화면입니다. 수집과 청킹은 백엔드 에이전트가 후보를 만들고,
-              운영자는 여기서 상태와 갱신 필요 여부를 확인하는 구조로 둡니다.
+              매체별 정책 URL과 문서 상태를 확인하는 읽기 전용 화면입니다. 수집 후보와 문서 구간은 자동으로 준비되고,
+              운영자는 여기서 상태와 갱신 필요 여부를 확인합니다.
             </p>
           </div>
           <Button
@@ -259,7 +259,7 @@ export default function SourceOpsPage() {
         {error && (
           <Alert className="border-red-500/30 bg-red-950/40 text-red-100">
             <AlertTriangle className="h-4 w-4" />
-            <AlertTitle>소스 관제 오류</AlertTitle>
+            <AlertTitle>문서 관제 오류</AlertTitle>
             <AlertDescription>{error}</AlertDescription>
           </Alert>
         )}
@@ -267,7 +267,7 @@ export default function SourceOpsPage() {
         {proposalError && (
           <Alert className="border-amber-500/30 bg-amber-950/30 text-amber-100">
             <AlertTriangle className="h-4 w-4" />
-            <AlertTitle>후보 프리뷰 오류</AlertTitle>
+            <AlertTitle>후보 미리보기 오류</AlertTitle>
             <AlertDescription>{proposalError}</AlertDescription>
           </Alert>
         )}
@@ -277,14 +277,14 @@ export default function SourceOpsPage() {
             <div className="grid gap-4 md:grid-cols-4">
               <Card className="border-white/10 bg-white/5 text-white">
                 <CardHeader className="pb-2">
-                  <CardDescription className="text-gray-400">정책 소스</CardDescription>
+                  <CardDescription className="text-gray-400">정책 문서</CardDescription>
                   <CardTitle className="text-3xl">{plan.summary.totalSources}</CardTitle>
                 </CardHeader>
-                <CardContent className="text-sm text-gray-300">등록된 매체별 관제 후보</CardContent>
+                <CardContent className="text-sm text-gray-300">등록된 매체별 문서 후보</CardContent>
               </Card>
               <Card className="border-white/10 bg-white/5 text-white">
                 <CardHeader className="pb-2">
-                  <CardDescription className="text-gray-400">색인 커버리지</CardDescription>
+                  <CardDescription className="text-gray-400">검색 준비율</CardDescription>
                   <CardTitle className="text-3xl">{coverage}%</CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -296,17 +296,17 @@ export default function SourceOpsPage() {
                   <CardDescription className="text-gray-400">갱신 필요</CardDescription>
                   <CardTitle className="text-3xl">{plan.summary.staleSources}</CardTitle>
                 </CardHeader>
-                <CardContent className="text-sm text-gray-300">권장 주기 초과 소스</CardContent>
+                <CardContent className="text-sm text-gray-300">권장 주기를 넘긴 문서</CardContent>
               </Card>
               <Card className="border-white/10 bg-white/5 text-white">
                 <CardHeader className="pb-2">
                   <CardDescription className="text-gray-400">실행 모드</CardDescription>
                   <CardTitle className="flex items-center gap-2 text-lg">
                     <Lock className="h-4 w-4 text-emerald-300" />
-                    review-only
+                    검토 전용
                   </CardTitle>
                 </CardHeader>
-                <CardContent className="text-sm text-gray-300">크롤링/청킹/임베딩 실행 없음</CardContent>
+                <CardContent className="text-sm text-gray-300">수집/문서 구간 생성/검색 반영 실행 없음</CardContent>
               </Card>
             </div>
 
@@ -323,21 +323,21 @@ export default function SourceOpsPage() {
                     <div>
                       <CardTitle className="flex items-center gap-2">
                         <Bot className="h-5 w-5 text-cyan-300" />
-                        수집 후보 프리뷰
+                        수집 후보 미리보기
                       </CardTitle>
                       <CardDescription className="mt-2 text-gray-300">
-                        DB 저장 없이 후보의 관련성, 차이 요약, 검토 우선순위를 미리 계산합니다.
+                        저장 없이 후보의 관련성, 차이 요약, 검토 우선순위를 미리 계산합니다.
                       </CardDescription>
                     </div>
                     <div className="flex flex-wrap gap-2">
                       <Badge className="border-emerald-400/30 bg-emerald-500/10 text-emerald-100">
-                        {proposalRun.mode}
+                        {modeLabel(proposalRun.mode)}
                       </Badge>
                       <Badge className="border-white/20 bg-white/5 text-gray-200">
-                        queue read {proposalRun.queueSnapshot?.readEnabled || proposalRun.queue?.readEnabled ? "enabled" : "disabled"}
+                        검토 대기열 확인 {enabledLabel(Boolean(proposalRun.queueSnapshot?.readEnabled || proposalRun.queue?.readEnabled))}
                       </Badge>
                       <Badge className="border-white/20 bg-white/5 text-gray-200">
-                        queue write {proposalRun.queue?.writeEnabled ? "enabled" : "disabled"}
+                        대기열 저장 {enabledLabel(Boolean(proposalRun.queue?.writeEnabled))}
                       </Badge>
                     </div>
                   </div>
@@ -349,13 +349,13 @@ export default function SourceOpsPage() {
                         <div>
                           <div className="flex flex-wrap items-center gap-2">
                             <Badge className={queueStatusClassName(proposalRun.queueSnapshot.readStatus)}>
-                              queue {proposalRun.queueSnapshot.readStatus}
+                              검토 대기열 {queueReadStatusLabel(proposalRun.queueSnapshot.readStatus)}
                             </Badge>
                             <Badge variant="outline" className="border-white/15 text-gray-300">
-                              pending {proposalRun.queueSnapshot.pendingCandidates}
+                              검토 대기 {proposalRun.queueSnapshot.pendingCandidates}
                             </Badge>
                             <Badge variant="outline" className="border-white/15 text-gray-300">
-                              persist {proposalRun.queueSnapshot.canPersist ? "ready" : "blocked"}
+                              저장 {proposalRun.queueSnapshot.canPersist ? "가능" : "차단"}
                             </Badge>
                           </div>
                           <p className="mt-3 max-w-3xl text-sm text-gray-300">
@@ -365,12 +365,12 @@ export default function SourceOpsPage() {
 
                         {proposalRun.queueSnapshot.latestRun && (
                           <div className="min-w-[220px] rounded-lg border border-white/10 bg-black/20 p-3 text-sm">
-                            <p className="text-xs uppercase tracking-[0.18em] text-gray-500">latest run</p>
+                            <p className="text-xs uppercase tracking-[0.18em] text-gray-500">최근 확인</p>
                             <p className="mt-2 font-medium text-white">
-                              {proposalRun.queueSnapshot.latestRun.status} · {proposalRun.queueSnapshot.latestRun.candidateCount} candidates
+                              {proposalRun.queueSnapshot.latestRun.status} · 후보 {proposalRun.queueSnapshot.latestRun.candidateCount}개
                             </p>
                             <p className="mt-1 text-xs text-gray-400">
-                              fetch {String(proposalRun.queueSnapshot.latestRun.fetchEnabled)} · {formatDate(proposalRun.queueSnapshot.latestRun.createdAt)}
+                              수집 {booleanLabel(proposalRun.queueSnapshot.latestRun.fetchEnabled)} · {formatDate(proposalRun.queueSnapshot.latestRun.createdAt)}
                             </p>
                           </div>
                         )}
@@ -390,7 +390,7 @@ export default function SourceOpsPage() {
                     <Table>
                       <TableHeader>
                         <TableRow className="border-white/10 hover:bg-transparent">
-                          <TableHead className="text-gray-300">소스</TableHead>
+                          <TableHead className="text-gray-300">문서</TableHead>
                           <TableHead className="text-gray-300">관련성</TableHead>
                           <TableHead className="text-gray-300">차이 요약</TableHead>
                           <TableHead className="text-gray-300">안전</TableHead>
@@ -406,7 +406,7 @@ export default function SourceOpsPage() {
                                     {candidate.vendor}
                                   </Badge>
                                   <Badge variant="outline" className={riskClassName(candidate.riskLevel)}>
-                                    {candidate.riskLevel}
+                                    {riskLabel(candidate.riskLevel)}
                                   </Badge>
                                 </div>
                                 <span className="font-medium text-white">{candidate.label}</span>
@@ -416,7 +416,7 @@ export default function SourceOpsPage() {
                             <TableCell>
                               <div className="flex flex-col gap-2">
                                 <Badge className={reviewClassName(candidate.review.relevanceLevel)}>
-                                  {candidate.review.relevanceLevel} · {candidate.review.relevanceScore}
+                                  {relevanceLabel(candidate.review.relevanceLevel)} · {candidate.review.relevanceScore}
                                 </Badge>
                                 <span className="text-xs text-gray-400">
                                   {candidate.review.signals.slice(0, 3).join(" · ")}
@@ -431,10 +431,10 @@ export default function SourceOpsPage() {
                               <div className="flex flex-col gap-2">
                                 <Badge className="bg-emerald-500/15 text-emerald-100">
                                   <CheckCircle2 className="mr-1 h-3 w-3" />
-                                  no apply
+                                  반영 안 함
                                 </Badge>
                                 <span className="text-xs text-gray-500">
-                                  index {String(candidate.wouldIndex)} · promote {String(candidate.wouldPromote)}
+                                  검색 반영 {booleanLabel(candidate.wouldIndex)} · 승인 반영 {booleanLabel(candidate.wouldPromote)}
                                 </span>
                               </div>
                             </TableCell>
@@ -472,14 +472,14 @@ export default function SourceOpsPage() {
                   <CardContent className="space-y-4">
                     <div className="grid grid-cols-3 gap-3 text-sm">
                       <Metric label="문서" value={source.matchedDocuments} />
-                      <Metric label="색인" value={source.indexedDocuments} />
-                      <Metric label="청크" value={source.totalChunks} />
+                      <Metric label="검색 준비" value={source.indexedDocuments} />
+                      <Metric label="문서 구간" value={source.totalChunks} />
                     </div>
 
                     <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3 text-sm text-gray-300">
                       <div className="mb-2 flex items-center gap-2 text-gray-100">
                         <Bot className="h-4 w-4 text-cyan-300" />
-                        백엔드 판단
+                        수집 후보 판단
                       </div>
                       {source.recommendation}
                     </div>
@@ -528,7 +528,7 @@ export default function SourceOpsPage() {
                         <TableCell>
                           <Badge className="bg-emerald-500/15 text-emerald-100">
                             <CheckCircle2 className="mr-1 h-3 w-3" />
-                            enforced
+                            적용됨
                           </Badge>
                         </TableCell>
                       </TableRow>
@@ -553,29 +553,29 @@ function SourceProposalControlLedger({ proposalRun }: { proposalRun: ProposalRun
     : "local only";
   const controlCells = [
     {
-      label: "proposal mode",
-      value: proposalRun.mode,
-      detail: proposalRun.dryRun ? "dry run · mutation false" : "검토 필요",
+      label: "제안 방식",
+      value: modeLabel(proposalRun.mode),
+      detail: proposalRun.dryRun ? "미리보기 · 변경 없음" : "검토 필요",
     },
     {
-      label: "queue read",
-      value: queueReadValue,
-      detail: "operator review only",
+      label: "대기열 확인",
+      value: queueReadStatusLabel(queueReadValue),
+      detail: "운영자 검토 전용",
     },
     {
-      label: "queue write",
-      value: queueWriteValue,
-      detail: productionState,
+      label: "대기열 저장",
+      value: queueWriteStatusLabel(queueWriteValue),
+      detail: productionStateLabel(productionState),
     },
     {
-      label: "apply surface",
-      value: "disabled",
-      detail: "승인/반려/색인/승격 동작 없음",
+      label: "반영 기능",
+      value: "비활성",
+      detail: "승인/반려/검색 반영 동작 없음",
     },
     {
-      label: "corpus promotion",
-      value: "blocked",
-      detail: "documents/chunks writes 없음",
+      label: "문서 반영",
+      value: "차단",
+      detail: "문서/문서 구간 저장 없음",
     },
   ];
 
@@ -583,11 +583,11 @@ function SourceProposalControlLedger({ proposalRun }: { proposalRun: ProposalRun
     <div className="mt-5 rounded-xl border border-cyan-400/15 bg-black/25 p-4">
       <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
         <div>
-          <p className="text-xs uppercase tracking-[0.18em] text-cyan-100/80">제안 승격 차단 원장</p>
-          <h3 className="mt-2 text-lg font-semibold text-white">Source proposal control ledger</h3>
+          <p className="text-xs uppercase tracking-[0.18em] text-cyan-100/80">후보 반영 차단 내역</p>
+          <h3 className="mt-2 text-lg font-semibold text-white">문서 후보 반영 차단 내역</h3>
         </div>
         <Badge className="border-emerald-400/30 bg-emerald-500/10 text-emerald-100">
-          read-only review
+          검토 전용
         </Badge>
       </div>
       <div className="mt-4 grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
@@ -607,7 +607,7 @@ function SourceAgentSchedule({ source }: { source: SourceOpsItem }) {
   return (
     <div className="rounded-lg border border-cyan-400/15 bg-cyan-950/10 p-3">
       <div className="mb-3 flex items-center justify-between gap-3">
-        <p className="text-xs uppercase tracking-[0.18em] text-cyan-100/80">AI 수집 스케줄</p>
+        <p className="text-xs uppercase tracking-[0.18em] text-cyan-100/80">수집 점검 일정</p>
         <Badge variant="outline" className={urgencyClassName(source.reviewUrgency)}>
           {urgencyLabel(source.reviewUrgency)}
         </Badge>
@@ -659,12 +659,12 @@ function QueueReadOnlySummary({
     <div className="mt-5 grid gap-3 lg:grid-cols-2">
       <QueueSummaryCard
         title="검토 상태 분포"
-        description="후보 큐는 읽기 전용으로만 집계됩니다."
+        description="후보 대기열은 읽기 전용으로만 집계됩니다."
         items={reviewItems}
       />
       <QueueSummaryCard
         title="위험도 분포"
-        description="높은 위험도 후보는 승인 게이트 전까지 색인되지 않습니다."
+        description="높은 위험도 후보는 승인 전까지 검색에 반영되지 않습니다."
         items={riskItems}
       />
     </div>
@@ -712,20 +712,20 @@ function ReadOnlyQueueInventory({
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <Badge className="border-cyan-400/30 bg-cyan-500/10 text-cyan-100">
-              읽기 전용 큐
+              읽기 전용 대기열
             </Badge>
             <Badge className="border-white/15 bg-white/5 text-gray-200">
               승인 기능 준비중
             </Badge>
           </div>
-          <h3 className="mt-3 text-lg font-semibold text-white">AI 제안 소스 검토 인벤토리</h3>
+          <h3 className="mt-3 text-lg font-semibold text-white">문서 후보 검토 목록</h3>
           <p className="mt-1 max-w-3xl text-sm text-gray-300">
-            백엔드 에이전트가 남긴 후보를 운영자가 확인하는 영역입니다. 이 화면은 URL, 사유, 프리뷰만 보여주며
-            승인/반려/색인/승격 동작을 실행하지 않습니다.
+            자동으로 준비된 후보를 운영자가 확인하는 영역입니다. 이 화면은 URL, 사유, 미리보기만 보여주며
+            승인/반려/검색 반영 동작을 실행하지 않습니다.
           </p>
         </div>
         <div className="rounded-lg border border-white/10 bg-white/[0.03] px-3 py-2 text-xs text-gray-300">
-          pending review · {candidates.length} shown
+          검토 대기 · {candidates.length}개 표시
         </div>
       </div>
 
@@ -733,9 +733,9 @@ function ReadOnlyQueueInventory({
         <Table>
           <TableHeader>
             <TableRow className="border-white/10 hover:bg-transparent">
-              <TableHead className="min-w-[260px] text-gray-300">후보 소스</TableHead>
-              <TableHead className="min-w-[260px] text-gray-300">프리뷰 / 사유</TableHead>
-              <TableHead className="min-w-[180px] text-gray-300">큐 상태</TableHead>
+              <TableHead className="min-w-[260px] text-gray-300">후보 문서</TableHead>
+              <TableHead className="min-w-[260px] text-gray-300">미리보기 / 사유</TableHead>
+              <TableHead className="min-w-[180px] text-gray-300">대기열 상태</TableHead>
               <TableHead className="min-w-[170px] text-gray-300">다음 동작</TableHead>
             </TableRow>
           </TableHeader>
@@ -749,7 +749,7 @@ function ReadOnlyQueueInventory({
                         {candidate.vendor}
                       </Badge>
                       <Badge variant="outline" className={riskClassName(candidate.riskLevel as ProposalCandidate["riskLevel"])}>
-                        {candidate.riskLevel}
+                        {riskLabel(candidate.riskLevel)}
                       </Badge>
                       {candidate.sourceStatus && (
                         <Badge variant="outline" className={statusClassName(candidate.sourceStatus)}>
@@ -778,22 +778,22 @@ function ReadOnlyQueueInventory({
                 </TableCell>
                 <TableCell>
                   <div className="max-w-xl space-y-3 text-sm text-gray-300">
-                    <p>{candidate.contentPreview || "프리뷰 본문 없음"}</p>
+                    <p>{candidate.contentPreview || "미리보기 본문 없음"}</p>
                     <div className="rounded-lg border border-white/10 bg-white/[0.03] p-3 text-xs text-gray-400">
-                      {candidate.reason || "제안 사유 없음"}
+                      {candidate.reason || "후보 사유 없음"}
                     </div>
                     <div className="flex flex-wrap gap-2 text-xs text-gray-500">
-                      <span>host {candidate.host || "unknown"}</span>
-                      {typeof candidate.contentLength === "number" && <span>chars {candidate.contentLength}</span>}
-                      {candidate.fetchedAt && <span>fetched {formatDate(candidate.fetchedAt)}</span>}
+                      <span>도메인 {candidate.host || "확인 안 됨"}</span>
+                      {typeof candidate.contentLength === "number" && <span>본문 {candidate.contentLength.toLocaleString()}자</span>}
+                      {candidate.fetchedAt && <span>확인일 {formatDate(candidate.fetchedAt)}</span>}
                     </div>
                   </div>
                 </TableCell>
                 <TableCell>
                   <div className="space-y-2 text-xs text-gray-400">
-                    <Badge className="bg-white/10 text-gray-100">{candidate.proposalStatus}</Badge>
-                    <div>review {candidate.reviewStatus}</div>
-                    <div className="truncate">run {shortId(candidate.runId)}</div>
+                    <Badge className="bg-white/10 text-gray-100">{proposalStatusLabel(candidate.proposalStatus)}</Badge>
+                    <div>검토 {reviewStatusLabel(candidate.reviewStatus)}</div>
+                    <div className="truncate">확인 {shortId(candidate.runId)}</div>
                     <div>{formatDate(candidate.createdAt)}</div>
                   </div>
                 </TableCell>
@@ -801,10 +801,10 @@ function ReadOnlyQueueInventory({
                   <div className="space-y-2">
                     <Badge className="bg-emerald-500/15 text-emerald-100">
                       <Lock className="mr-1 h-3 w-3" />
-                      read-only
+                      검토 전용
                     </Badge>
                     <p className="text-xs leading-5 text-gray-400">
-                      승인/반려와 색인은 별도 게이트가 생기기 전까지 비활성입니다.
+                      승인/반려와 검색 반영은 별도 승인 단계가 생기기 전까지 비활성입니다.
                     </p>
                   </div>
                 </TableCell>
@@ -829,6 +829,70 @@ function agentActionLabel(action: SourceOpsItem["agentAction"]) {
   if (action === "review_extraction") return "추출 확인";
   if (action === "queue_exact_url") return "정확 URL 제안";
   return "도메인 탐색";
+}
+
+function modeLabel(mode: string) {
+  if (mode === "review-only") return "검토 전용";
+  if (mode === "proposal-only") return "후보 검토";
+  return mode;
+}
+
+function enabledLabel(enabled: boolean) {
+  return enabled ? "가능" : "꺼짐";
+}
+
+function booleanLabel(value: boolean) {
+  return value ? "예" : "아니오";
+}
+
+function queueReadStatusLabel(status: string) {
+  if (status === "ready" || status === "enabled") return "준비됨";
+  if (status === "unavailable") return "확인 필요";
+  if (status === "disabled") return "꺼짐";
+  return status;
+}
+
+function queueWriteStatusLabel(status: string) {
+  if (status === "configured") return "설정됨";
+  if (status === "disabled") return "꺼짐";
+  return status;
+}
+
+function productionStateLabel(status: string) {
+  if (status === "production blocked") return "운영 반영 차단";
+  if (status === "local only") return "로컬 확인 전용";
+  return status;
+}
+
+function riskLabel(risk: string) {
+  if (risk === "high") return "높음";
+  if (risk === "medium") return "보통";
+  if (risk === "low") return "낮음";
+  return risk;
+}
+
+function relevanceLabel(level: string) {
+  if (level === "high") return "높음";
+  if (level === "medium") return "보통";
+  if (level === "low") return "낮음";
+  if (level === "blocked") return "차단";
+  return level;
+}
+
+function proposalStatusLabel(status: string) {
+  if (status === "pending") return "대기";
+  if (status === "approved") return "승인";
+  if (status === "rejected") return "반려";
+  if (status === "expired") return "만료";
+  return status;
+}
+
+function reviewStatusLabel(status: string) {
+  if (status === "pending") return "대기";
+  if (status === "approved") return "승인";
+  if (status === "rejected") return "반려";
+  if (status === "expired") return "만료";
+  return status;
 }
 
 function urgencyLabel(urgency: SourceOpsItem["reviewUrgency"]) {

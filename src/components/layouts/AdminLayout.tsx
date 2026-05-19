@@ -19,7 +19,7 @@ export default function AdminLayout({ children, currentPage = "dashboard" }: Adm
   const navigation = [
     { name: "대시보드", href: "/admin", icon: BarChart3, current: currentPage === "dashboard" },
     { name: "문서 관리", href: "/admin/docs", icon: FileText, current: currentPage === "docs" },
-    { name: "소스 관제", href: "/admin/source-ops", icon: Globe, current: currentPage === "source-ops" },
+    { name: "문서 관제", href: "/admin/source-ops", icon: Globe, current: currentPage === "source-ops" },
     { name: "통계", href: "/admin/stats", icon: Activity, current: currentPage === "stats" },
     { name: "로그", href: "/admin/logs", icon: Users, current: currentPage === "logs" },
   ];
