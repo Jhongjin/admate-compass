@@ -198,8 +198,6 @@ const compassAnswerLocalSmokeScript = read('scripts/smoke-compass-answer-local.m
 const providerNamedDiagnosticRouteFiles = [
   'src/app/api/ollama/route.ts',
   'src/app/api/proxy-ollama/route.ts',
-  'src/app/api/chat-railway/route.ts',
-  'src/app/api/railway-status/route.ts',
   'src/app/api/chatbot/route.ts',
   'src/app/api/debug-env/route.ts',
   'src/app/api/debug-rag/route.ts',
@@ -210,8 +208,6 @@ const proxyRoute = read('src/app/api/proxy-ollama/route.ts')
 const productionDebugGuardRequiredRouteFiles = [
   'src/app/api/ollama/route.ts',
   'src/app/api/proxy-ollama/route.ts',
-  'src/app/api/chat-railway/route.ts',
-  'src/app/api/railway-status/route.ts',
   'src/app/api/debug-env/route.ts',
   'src/app/api/debug-rag/route.ts',
 ]
@@ -234,6 +230,8 @@ for (const removedPage of [
 for (const removedRoute of [
   'src/app/api/chat-huggingface/route.ts',
   'src/app/api/test-huggingface/route.ts',
+  'src/app/api/chat-railway/route.ts',
+  'src/app/api/railway-status/route.ts',
 ]) {
   assertMissing(removedRoute)
 }

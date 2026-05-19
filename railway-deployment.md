@@ -1,5 +1,7 @@
 # Railway + Ollama 배포 가이드
 
+> Historical note: 이 문서는 과거 Railway/Ollama 실험 기록입니다. 현재 공개 답변 API의 canonical route는 `/api/compass-answer`이며, Railway diagnostic route는 운영 표면에서 제거되었습니다. 실제 runtime URL이나 env 값은 이 문서에 기록하지 않습니다.
+
 ## 🚂 Railway에 Ollama 배포하기
 
 ### 1. Railway 계정 생성 및 프로젝트 생성
@@ -41,25 +43,21 @@ ollama list
 
 ### 4. Vercel 환경변수 업데이트
 
-Vercel 대시보드에서 다음 환경변수 추가:
-
-```
-RAILWAY_OLLAMA_URL=https://your-railway-app.up.railway.app
-```
+과거 실험에서는 별도 런타임 URL을 Vercel 환경변수로 연결했습니다. 현재 운영 경로는 `/api/compass-answer`를 기준으로 정리하며, 실제 runtime URL이나 env 값은 문서와 로그에 남기지 않습니다.
 
 ### 5. 테스트
 
 Railway 서비스가 정상 작동하는지 확인:
 
 ```bash
-curl -X POST "https://your-railway-app.up.railway.app/api/generate" \
+curl -X POST "<private-runtime-url>/api/generate" \
   -H "Content-Type: application/json" \
   -d '{"model":"mistral:7b","prompt":"안녕하세요","stream":false}'
 ```
 
 ## 🔄 Vercel에서 Railway 사용
 
-Railway 배포 완료 후, Vercel에서 `/api/chat-railway` 엔드포인트를 사용하여 Ollama에 연결할 수 있습니다.
+Railway 배포 완료 후 앱에서 사용하는 공개 답변 경로는 `/api/compass-answer`입니다. 과거 diagnostic route는 운영 표면에서 제거되었으며, 이 문서는 해당 이력 확인용으로만 유지합니다.
 
 ### 장점:
 - ✅ Vercel 타임아웃 제한 없음
