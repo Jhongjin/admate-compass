@@ -60,6 +60,7 @@ for (const relativePath of checkedFiles) {
 
 const publicRoute = read('src/app/api/compass-answer/route.ts')
 const legacyRoute = read('src/app/api/chat-ollama/route.ts')
+const webIntegrationStatusRoute = read('src/app/api/web-integration-status/route.ts')
 const packageJson = JSON.parse(read('package.json') || '{}')
 
 if (!publicRoute.includes("export { POST } from '../chat-ollama/route'")) {
@@ -68,6 +69,35 @@ if (!publicRoute.includes("export { POST } from '../chat-ollama/route'")) {
 
 if (!legacyRoute.includes('export async function POST')) {
   fail('src/app/api/chat-ollama/route.ts must keep legacy compatibility POST handler')
+}
+
+for (const token of [
+  'answerRuntime: {',
+  'configured: answerReady',
+  "mode: 'managed'",
+  "description: 'Compass 답변 런타임'",
+  'runtimeConfigured:',
+  'answerReady,',
+]) {
+  if (!webIntegrationStatusRoute.includes(token)) {
+    fail(`src/app/api/web-integration-status/route.ts missing neutral status token ${token}`)
+  }
+}
+
+for (const forbidden of [
+  'provider:',
+  'modelLabel',
+  'openrouter:',
+  'ollama:',
+  'baseUrl:',
+  'defaultModel',
+  'answerProvider',
+  'ollamaHealthy',
+  'modelsConfigured',
+]) {
+  if (webIntegrationStatusRoute.includes(forbidden)) {
+    fail(`src/app/api/web-integration-status/route.ts must not expose provider-specific status field ${forbidden}`)
+  }
 }
 
 if (packageJson.scripts?.['check:compass-public-provider-naming'] !== 'node scripts/check-compass-public-provider-naming.mjs') {
