@@ -112,6 +112,7 @@ for (const relativePath of checkedFiles) {
 
 const publicRoute = read('src/app/api/compass-answer/route.ts')
 const legacyRoute = read('src/app/api/chat-ollama/route.ts')
+const deskPage = read('src/app/desk/page.tsx')
 const answerHandler = read('src/lib/server/compassAnswerHandler.ts')
 const legacyProviderRoute = read('src/app/api/chat-huggingface/route.ts')
 const legacyProviderService = read('src/lib/services/ollama.ts')
@@ -133,6 +134,30 @@ if (!publicRoute.includes("export { POST } from '@/lib/server/compassAnswerHandl
 
 if (!legacyRoute.includes("export { POST } from '@/lib/server/compassAnswerHandler'")) {
   fail('src/app/api/chat-ollama/route.ts must keep legacy compatibility POST handler alias')
+}
+
+for (const forbidden of [
+  '1차 검토안',
+  '2차 검토안',
+  '최종 확인',
+  '질문 조건 확인',
+  '공식 기준 확인',
+  '답변 준비',
+  'Compass가 1차',
+]) {
+  if (deskPage.includes(forbidden)) {
+    fail(`src/app/desk/page.tsx must not expose legacy review label "${forbidden}"`)
+  }
+}
+
+for (const required of [
+  'LLM1 후보',
+  'LLM2 후보',
+  '팀장 LLM',
+]) {
+  if (!deskPage.includes(required)) {
+    fail(`src/app/desk/page.tsx missing three-agent review label "${required}"`)
+  }
 }
 
 for (const token of [

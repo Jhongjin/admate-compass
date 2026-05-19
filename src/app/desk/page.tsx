@@ -896,8 +896,8 @@ function ChatPageContent() {
   const finalReviewReady = latestHasSources && !needsAdditionalReview;
   const reviewPostureItems = [
     {
-      label: "1차 검토안",
-      value: lastSubmittedQuestion ? "질문 조건 확인" : "대기",
+      label: "LLM1 후보",
+      value: lastSubmittedQuestion ? "질문 조건 분석" : "대기",
       Icon: CheckCircle,
       className: lastSubmittedQuestion
         ? "border-[#C6D9CB] bg-[#EDF7EF] text-[#1F7A4D]"
@@ -905,8 +905,8 @@ function ChatPageContent() {
       iconClassName: lastSubmittedQuestion ? "text-[#1F7A4D]" : "text-[#8B9388]",
     },
     {
-      label: "2차 검토안",
-      value: latestHasSources ? `공식 기준 ${latestSources.length}개 확인` : "공식 기준 확인",
+      label: "LLM2 후보",
+      value: latestHasSources ? `출처 ${latestSources.length}개 대조` : "출처 대조 검토",
       Icon: BookOpen,
       className: latestHasSources
         ? "border-[#C6D9CB] bg-white text-[#1F7A4D]"
@@ -914,8 +914,8 @@ function ChatPageContent() {
       iconClassName: latestHasSources ? "text-[#1F7A4D]" : "text-[#8B9388]",
     },
     {
-      label: "최종 확인",
-      value: finalReviewReady ? "답변 준비" : needsAdditionalReview ? "추가 확인 필요 항목" : "대기",
+      label: "팀장 LLM",
+      value: finalReviewReady ? "최종 답변 정리" : needsAdditionalReview ? "추가 확인 필요 항목" : "대기",
       Icon: needsAdditionalReview ? AlertCircle : Target,
       className: needsAdditionalReview
         ? "border-[#E9D59B] bg-[#FFF8E6] text-[#8A6418]"
@@ -941,7 +941,7 @@ function ChatPageContent() {
               Compass 정책 확인 화면
             </h2>
             <p className="hidden text-xs text-[#5F6C62] sm:block">
-              질문 조건 확인부터 최종 확인까지 한 화면에서 확인합니다.
+              질문 조건부터 팀장 LLM 최종 검토까지 한 화면에서 확인합니다.
             </p>
           </div>
         </div>
@@ -985,7 +985,7 @@ function ChatPageContent() {
             출처 확인
           </Badge>
           <Badge variant="outline" className="hidden rounded-md border-[#E9D59B] bg-[#FFF8E6] px-2 py-1 text-[11px] text-[#8A6418] md:inline-flex">
-            공식 기준 확인
+            공식 기준 대조
           </Badge>
           <Button
             variant="ghost"
@@ -1137,11 +1137,11 @@ function ChatPageContent() {
                         <Bot className="h-4 w-4 text-[#1F7A4D]" />
                       </div>
                       <div className="flex-1">
-                        <div className="mb-2 text-sm font-medium text-[#111713]">Compass가 1차 검토안을 정리하고 있습니다</div>
+                        <div className="mb-2 text-sm font-medium text-[#111713]">Compass가 LLM1 후보를 정리하고 있습니다</div>
                         <div className="flex flex-wrap gap-2 text-xs text-[#5F6C62]">
-                          <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1">질문 조건 확인</span>
-                          <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1">공식 기준 확인</span>
-                          <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1">최종 확인</span>
+                          <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1">질문 조건 분석</span>
+                          <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1">출처 대조 검토</span>
+                          <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1">팀장 LLM 최종 검토</span>
                         </div>
                       </div>
                     </div>
