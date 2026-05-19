@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { guardProductionAdminDebugRoute } from '@/lib/adminDebugGuard';
 import { getOllamaEndpointStatus, resolveOllamaEndpoint } from '@/lib/services/ollamaEndpoint';
 
 /**
@@ -6,6 +7,9 @@ import { getOllamaEndpointStatus, resolveOllamaEndpoint } from '@/lib/services/o
  * Vercel 서버리스 함수에서 Vultr Ollama 서버로 요청을 중계
  */
 export async function POST(request: NextRequest) {
+  const guardResponse = guardProductionAdminDebugRoute();
+  if (guardResponse) return guardResponse;
+
   try {
     console.log('🔄 Vercel → Vultr Ollama 프록시 시작');
     

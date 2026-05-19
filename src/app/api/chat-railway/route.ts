@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { guardProductionAdminDebugRoute } from '@/lib/adminDebugGuard';
 import { RAGSearchService, SearchResult as RAGSearchResult } from '@/lib/services/RAGSearchService';
 import { SearchResult } from '@/lib/services/VectorStorageService';
 
@@ -179,6 +180,9 @@ function calculateConfidence(searchResults: SearchResult[]): number {
  * POST /api/chat-railway
  */
 export async function POST(request: NextRequest) {
+  const guardResponse = guardProductionAdminDebugRoute();
+  if (guardResponse) return guardResponse;
+
   const startTime = Date.now();
   let ragService: RAGSearchService | undefined;
 

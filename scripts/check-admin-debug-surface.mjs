@@ -24,11 +24,17 @@ const productionDisabledCandidates = new Set([
   path.join('src', 'app', 'api', 'admin', 'check-schema', 'route.ts'),
   path.join('src', 'app', 'api', 'admin', 'debug-db', 'route.ts'),
   path.join('src', 'app', 'api', 'admin', 'test-filter', 'route.ts'),
+  path.join('src', 'app', 'api', 'chat-huggingface', 'route.ts'),
+  path.join('src', 'app', 'api', 'chat-railway', 'route.ts'),
   path.join('src', 'app', 'api', 'check-data-integrity', 'route.ts'),
   path.join('src', 'app', 'api', 'check-embedding-dimension', 'route.ts'),
   path.join('src', 'app', 'api', 'check-real-embedding-dimension', 'route.ts'),
   path.join('src', 'app', 'api', 'check-table-constraints', 'route.ts'),
+  path.join('src', 'app', 'api', 'ollama', 'route.ts'),
+  path.join('src', 'app', 'api', 'ollama', 'diagnose', 'route.ts'),
   path.join('src', 'app', 'api', 'ollama', 'local-test', 'route.ts'),
+  path.join('src', 'app', 'api', 'proxy-ollama', 'route.ts'),
+  path.join('src', 'app', 'api', 'railway-status', 'route.ts'),
   path.join('src', 'app', 'api', 'test-huggingface', 'route.ts'),
   path.join('src', 'app', 'api', 'test-integration', 'route.ts'),
   path.join('src', 'app', 'api', 'test-proxy', 'route.ts'),
@@ -122,7 +128,8 @@ for (const file of walk(apiRoot)) {
   if (isPublicAllowlisted) {
     approvedPublic += 1
   }
-  if (!isPublicAllowlisted && debugRoutePattern.test(relative)) {
+  const isExplicitProductionDisabledCandidate = productionDisabledCandidates.has(relative)
+  if (!isPublicAllowlisted && (debugRoutePattern.test(relative) || isExplicitProductionDisabledCandidate)) {
     const category = warningCategory(relative)
     const canBeProductionDisabled =
       category === 'repair-mutation' || category === 'production-disabled-candidate'

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { guardProductionAdminDebugRoute } from '@/lib/adminDebugGuard';
 import { generateResponse, getAvailableModels, checkOllamaHealth } from '@/lib/services/ollama';
 import { getOllamaEndpointStatus, resolveOllamaEndpoint } from '@/lib/services/ollamaEndpoint';
 
@@ -12,6 +13,9 @@ const headers = {
 
 // OPTIONS 메서드
 export async function OPTIONS() {
+  const guardResponse = guardProductionAdminDebugRoute();
+  if (guardResponse) return guardResponse;
+
   return new NextResponse(null, {
     status: 200,
     headers,
@@ -20,6 +24,9 @@ export async function OPTIONS() {
 
 // GET 메서드 - Ollama 서버 상태 및 모델 목록 확인
 export async function GET() {
+  const guardResponse = guardProductionAdminDebugRoute();
+  if (guardResponse) return guardResponse;
+
   try {
     console.log('🔍 Ollama API GET 요청 - 서버 상태 확인');
     
@@ -144,6 +151,9 @@ export async function GET() {
 
 // POST 메서드 - Ollama를 통한 응답 생성
 export async function POST(request: NextRequest) {
+  const guardResponse = guardProductionAdminDebugRoute();
+  if (guardResponse) return guardResponse;
+
   console.log('🚀 Ollama API POST 요청 시작');
   
   try {

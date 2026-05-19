@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { guardProductionAdminDebugRoute } from '@/lib/adminDebugGuard';
 import { RAGSearchService } from '@/lib/services/RAGSearchService';
 
 // Supabase 클라이언트 초기화
@@ -170,6 +171,9 @@ function calculateConfidence(searchResults: SearchResult[]): number {
  * POST /api/chat-huggingface
  */
 export async function POST(request: NextRequest) {
+  const guardResponse = guardProductionAdminDebugRoute();
+  if (guardResponse) return guardResponse;
+
   const startTime = Date.now();
   console.log('Compass answer runtime request started');
   

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { guardProductionAdminDebugRoute } from '@/lib/adminDebugGuard';
 import { getOllamaEndpointStatus, resolveOllamaEndpoint } from '@/lib/services/ollamaEndpoint';
 
 // 기본 헤더 설정
@@ -11,6 +12,9 @@ const headers = {
 
 // OPTIONS 메서드
 export async function OPTIONS() {
+  const guardResponse = guardProductionAdminDebugRoute();
+  if (guardResponse) return guardResponse;
+
   return new NextResponse(null, {
     status: 200,
     headers,
@@ -19,6 +23,9 @@ export async function OPTIONS() {
 
 // GET 메서드 - Ollama 서버 진단
 export async function GET() {
+  const guardResponse = guardProductionAdminDebugRoute();
+  if (guardResponse) return guardResponse;
+
   try {
     console.log('🔍 Ollama 서버 진단 시작');
     
