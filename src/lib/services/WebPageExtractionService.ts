@@ -181,7 +181,7 @@ export function extractWebPageForCompass(
   const mainChromeResult = removePageChrome(mainHtml);
   const removedBoilerplateTypes = unique([...fullChromeResult.removedTypes, ...mainChromeResult.removedTypes]);
   const contentCandidate = normalizeText(stripTags(mainChromeResult.html));
-  const sourceTitle = title || headings[0] || canonicalUrlValue?.hostname || finalUrlValue?.hostname || '';
+  const sourceTitle = title || headings[0] || safeHostnameForExtractionOutput(canonicalUrlValue) || safeHostnameForExtractionOutput(finalUrlValue) || '';
   const signalText = [
     sourceTitle,
     canonicalUrlValue?.toString(),
@@ -436,6 +436,7 @@ function containsSecretLikeUrl(url: URL): boolean {
 function sanitizeUrlForExtractionOutput(value: string): string {
   const url = safeUrl(value);
   if (!url) return value;
+  if (url.protocol !== 'https:' || isPrivateOrInternalHost(url.hostname)) return '';
 
   for (const key of Array.from(url.searchParams.keys())) {
     if (SECRET_LIKE_QUERY_KEY_PATTERN.test(key)) {
@@ -444,6 +445,11 @@ function sanitizeUrlForExtractionOutput(value: string): string {
   }
 
   return url.toString();
+}
+
+function safeHostnameForExtractionOutput(url: URL | null): string {
+  if (!url || url.protocol !== 'https:' || isPrivateOrInternalHost(url.hostname)) return '';
+  return url.hostname;
 }
 
 function isAllowedPolicyHost(hostname: string, allowedHosts: string[]): boolean {

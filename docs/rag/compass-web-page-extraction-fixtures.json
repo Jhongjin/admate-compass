@@ -198,6 +198,33 @@
       },
       "expectedRejection": {
         "reasonsInclude": ["unsupported_url_scheme", "private_or_internal_url", "host_not_allowlisted"],
+        "canonicalUrl": "",
+        "contentText": ""
+      }
+    },
+    {
+      "id": "rejects-private-10-network-url-without-exporting-host",
+      "input": {
+        "finalUrl": "https://10.4.5.6/admin/source-ops?session_id=REDACTED_SECRET_VALUE",
+        "fetchedAt": "2026-05-17T00:00:00.000Z",
+        "rawHtml": "<html><head><title>Private Network Ads Policy Mirror</title></head><body><main><h1>Google 광고 정책</h1><p>Google Ads policy campaign review, advertising support, prohibited content, advertiser responsibility, business verification, creative approval, restricted content, and landing page review guidance are visible.</p><p>광고 심사 정책과 캠페인 지원 문구가 충분해도 사설 네트워크 URL과 세션성 query 값은 결과 canonical URL에 남기지 않아야 합니다.</p></main></body></html>"
+      },
+      "expectedRejection": {
+        "reasonsInclude": ["private_or_internal_url", "host_not_allowlisted", "canonical_url_not_allowlisted", "secret_like_text"],
+        "canonicalUrl": "",
+        "contentText": ""
+      }
+    },
+    {
+      "id": "rejects-metadata-host-canonical-without-exporting-host",
+      "input": {
+        "finalUrl": "https://support.google.com/adspolicy/answer/metadata-canonical-example",
+        "fetchedAt": "2026-05-17T00:00:00.000Z",
+        "rawHtml": "<html><head><title>Google Ads Policy Metadata Canonical Capture</title><link rel=\"canonical\" href=\"https://169.254.169.254/latest/meta-data/iam/security-credentials/?access_token=REDACTED_SECRET_VALUE\" /></head><body><main><h1>Google 광고 정책</h1><p>Google Ads policy campaign review, advertising support, prohibited content, advertiser responsibility, business verification, creative approval, restricted content, and landing page review guidance are visible.</p><p>광고 심사 정책과 캠페인 지원 문구가 충분해도 metadata style canonical URL은 수집 후보가 될 수 없고 결과 canonical URL에도 남기면 안 됩니다.</p></main></body></html>"
+      },
+      "expectedRejection": {
+        "reasonsInclude": ["canonical_url_not_allowlisted", "secret_like_text"],
+        "canonicalUrl": "",
         "contentText": ""
       }
     },

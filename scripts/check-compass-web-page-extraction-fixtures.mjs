@@ -100,6 +100,62 @@ function assertNoSecretLikeText(value, label) {
   }
 }
 
+function assertRejectedCanonicalUrlIsSafe(value, label) {
+  const canonicalUrl = String(value || '')
+  if (!canonicalUrl) return
+
+  let parsed
+  try {
+    parsed = new URL(canonicalUrl)
+  } catch {
+    fail(`${label}.canonicalUrl must be empty or a valid safe URL`)
+    return
+  }
+
+  if (parsed.protocol !== 'https:') {
+    fail(`${label}.canonicalUrl must not expose unsupported URL schemes`)
+  }
+  if (isPrivateOrInternalHost(parsed.hostname)) {
+    fail(`${label}.canonicalUrl must not expose private/internal hosts`)
+  }
+
+  for (const [key, val] of parsed.searchParams.entries()) {
+    if (SECRET_LIKE_QUERY_KEY_PATTERN.test(key) && String(val || '').trim()) {
+      fail(`${label}.canonicalUrl must not expose secret-like query values`)
+    }
+  }
+}
+
+const SECRET_LIKE_QUERY_KEY_PATTERN = /(?:api[_-]?key|access[_-]?token|refresh[_-]?token|id[_-]?token|session(?:[_-]?id)?|credential|cookie|secret|signature|x-amz-signature)/i
+
+function isPrivateOrInternalHost(hostname) {
+  const host = normalizeHostname(hostname).replace(/^\[|\]$/g, '')
+
+  if (!host) return true
+  if (host === 'localhost' || host.endsWith('.localhost')) return true
+  if (host.endsWith('.local') || host.endsWith('.internal') || host.endsWith('.corp')) return true
+  if (host === 'metadata.google.internal') return true
+  if (host === '::1' || host.startsWith('fe80:') || host.startsWith('fc') || host.startsWith('fd')) return true
+
+  const ipv4Parts = host.split('.').map((part) => Number(part))
+  if (ipv4Parts.length === 4 && ipv4Parts.every((part) => Number.isInteger(part) && part >= 0 && part <= 255)) {
+    const [first, second] = ipv4Parts
+    if (first === 0 || first === 10 || first === 127) return true
+    if (first === 169 && second === 254) return true
+    if (first === 172 && second >= 16 && second <= 31) return true
+    if (first === 192 && second === 168) return true
+    if (first === 100 && second >= 64 && second <= 127) return true
+    if (first === 198 && (second === 18 || second === 19)) return true
+    if (first >= 224) return true
+  }
+
+  return false
+}
+
+function normalizeHostname(hostname) {
+  return String(hostname || '').trim().toLowerCase().replace(/\.$/, '')
+}
+
 const serviceText = read(servicePath)
 const fixtureText = read(fixturePath)
 const packageJson = JSON.parse(read('package.json') || '{}')
@@ -328,8 +384,12 @@ for (const [index, testCase] of (fixture.fixtures || []).entries()) {
     if (result.status !== 'rejected') {
       fail(`${label} expected rejected status but got ${result.status}`)
     }
+    assertRejectedCanonicalUrlIsSafe(result.canonicalUrl, label)
     for (const reason of expected.reasonsInclude || []) {
       assertArrayIncludes(result.rejectionReasons, reason, `${label}.rejectionReasons`)
+    }
+    if (expected.canonicalUrl !== undefined && result.canonicalUrl !== expected.canonicalUrl) {
+      fail(`${label}.canonicalUrl must be ${JSON.stringify(expected.canonicalUrl)}`)
     }
     if (expected.contentText !== undefined && result.contentText !== expected.contentText) {
       fail(`${label}.contentText must be ${JSON.stringify(expected.contentText)}`)
