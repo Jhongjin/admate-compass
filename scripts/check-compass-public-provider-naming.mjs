@@ -187,7 +187,6 @@ const publicRoute = read('src/app/api/compass-answer/route.ts')
 const legacyRoute = read('src/app/api/chat-ollama/route.ts')
 const deskPage = read('src/app/desk/page.tsx')
 const answerHandler = read('src/lib/server/compassAnswerHandler.ts')
-const legacyProviderRoute = read('src/app/api/chat-huggingface/route.ts')
 const legacyProviderService = read('src/lib/services/ollama.ts')
 const healthRoute = read('src/app/api/health/route.ts')
 const webIntegrationStatusRoute = read('src/app/api/web-integration-status/route.ts')
@@ -202,8 +201,6 @@ const providerNamedDiagnosticRouteFiles = [
   'src/app/api/chat-railway/route.ts',
   'src/app/api/railway-status/route.ts',
   'src/app/api/chatbot/route.ts',
-  'src/app/api/chat-huggingface/route.ts',
-  'src/app/api/test-huggingface/route.ts',
   'src/app/api/debug-env/route.ts',
   'src/app/api/debug-rag/route.ts',
 ]
@@ -215,8 +212,6 @@ const productionDebugGuardRequiredRouteFiles = [
   'src/app/api/proxy-ollama/route.ts',
   'src/app/api/chat-railway/route.ts',
   'src/app/api/railway-status/route.ts',
-  'src/app/api/chat-huggingface/route.ts',
-  'src/app/api/test-huggingface/route.ts',
   'src/app/api/debug-env/route.ts',
   'src/app/api/debug-rag/route.ts',
 ]
@@ -234,6 +229,13 @@ for (const removedPage of [
   'src/app/test-railway/page.tsx',
 ]) {
   assertMissing(removedPage)
+}
+
+for (const removedRoute of [
+  'src/app/api/chat-huggingface/route.ts',
+  'src/app/api/test-huggingface/route.ts',
+]) {
+  assertMissing(removedRoute)
 }
 
 if (!publicRoute.includes("export { POST } from '@/lib/server/compassAnswerHandler'")) {
@@ -316,7 +318,6 @@ for (const forbidden of [
 for (const [relativePath, text] of [
   ['src/lib/services/ollama.ts', legacyProviderService],
   ['src/lib/server/compassAnswerHandler.ts', answerHandler],
-  ['src/app/api/chat-huggingface/route.ts', legacyProviderRoute],
 ]) {
   for (const consoleCall of collectConsoleCalls(text)) {
     for (const forbidden of [
