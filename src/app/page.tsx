@@ -21,22 +21,36 @@ const supportedMedia = [
 ] as const;
 
 const compassSummary = [
-  ["매체별 기준", "Meta, Google/YouTube, Naver, Kakao 기준을 나눠 확인합니다."],
-  ["소재 조건", "업종, 문구, 이미지, 랜딩 페이지 조건을 함께 봅니다."],
-  ["근거 문서", "답변에 참고한 문서와 관련 내용을 함께 표시합니다."],
-  ["확인 필요", "조건이 부족하거나 애매한 부분은 따로 표시합니다."],
+  ["광고 정책 질문", "업종, 소재 문구, 이미지, 랜딩 페이지 조건을 질문 단위로 정리합니다."],
+  ["공식 정책과 운영 문서 우선", "매체 공식 정책과 내부 운영 문서를 먼저 확인합니다."],
+  ["출처와 참고 문단", "답변에 사용한 출처와 연결된 문단을 함께 보여줍니다."],
+  ["추가 확인 필요", "조건이 부족하거나 기준이 충돌하면 결론과 분리해 표시합니다."],
 ] as const;
 
 const previewRows = [
   ["가능한 표현", "정책 기준에 맞는 문구와 표현 범위를 정리합니다."],
   ["주의할 표현", "심사에서 보류될 수 있는 문구와 조건을 구분합니다."],
-  ["추가 확인 필요", "랜딩 페이지나 업종 정보가 더 필요한 항목을 따로 표시합니다."],
+  ["추가 확인 필요", "업종 허가, 랜딩 고지, 이미지 맥락처럼 추가 정보가 필요한 조건을 따로 둡니다."],
 ] as const;
 
 const answerVerificationFlow = [
-  ["복수 관점 초안", "질문을 여러 관점에서 해석해 답변 후보를 만듭니다."],
-  ["교차 검토", "근거, 누락, 충돌 가능성을 비교해 답변의 약한 부분을 점검합니다."],
-  ["최종 답변 정리", "더 신뢰할 수 있는 결론과 함께 필요한 주의점을 표시합니다."],
+  ["1차 검토", "질문 조건과 매체 기준을 맞춰 1차 답변 후보를 만듭니다."],
+  ["교차 검토", "다른 기준으로 2차 답변 후보를 비교하고 누락과 충돌 가능성을 점검합니다."],
+  ["최종 정리", "최종 검토 단계에서 근거와 추가 확인 필요 항목을 분리해 최종 답변을 정리합니다."],
+] as const;
+
+const mediaScopes = [
+  "검색광고",
+  "소셜",
+  "영상",
+  "디스플레이",
+  "커머스",
+] as const;
+
+const gatePrinciples = [
+  "로그인 후 Compass 정책 확인 화면으로 이동합니다.",
+  "사용 권한이 필요하다면 AdMate 이용 권한 요청으로 확인합니다.",
+  "답변은 공식 정책과 운영 문서, 참고 문단을 기준으로 정리합니다.",
 ] as const;
 
 type MediaId = (typeof supportedMedia)[number]["id"];
@@ -120,7 +134,7 @@ export default function HomePage() {
     return (
       <main className="grid min-h-[100dvh] place-items-center bg-[#ECEFF2] px-6 text-[#172033]">
         <div className="rounded-[8px] border border-[#D6D2C8] bg-[#FBF7EE] px-6 py-5 text-center shadow-[0_22px_60px_rgba(23,32,51,0.09)]">
-          <p className="text-sm font-semibold text-[#5B6472]">Compass 접속 상태를 확인하고 있습니다.</p>
+          <p className="text-sm font-semibold text-[#5B6472]">Compass 이용 가능 여부를 확인하고 있습니다.</p>
         </div>
       </main>
     );
@@ -153,7 +167,7 @@ export default function HomePage() {
         <div className="mx-auto flex h-20 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
           <div className="flex items-center gap-3">
             <img src="/admate-logo.png" alt="AdMate" className="h-12 w-auto sm:h-14" />
-            <span className="hidden text-sm font-semibold text-[#5B6472] sm:inline">Compass</span>
+            <span className="hidden text-sm font-semibold text-[#5B6472] sm:inline">AdMate Compass</span>
           </div>
           <Link
             href={LOGIN_URL}
@@ -191,21 +205,21 @@ export default function HomePage() {
                 </span>
               </div>
 
-              <h1 className="mt-8 max-w-[720px] text-[clamp(2.35rem,4.4vw,4.7rem)] font-semibold leading-[1.06] tracking-normal text-[#172033] [text-wrap:balance]">
-                광고 심사 기준을 매체별 근거와 함께 확인하세요.
+              <h1 className="mt-7 max-w-[640px] text-3xl font-semibold leading-tight tracking-normal text-[#172033] [text-wrap:balance]">
+                AdMate Compass 정책 확인
               </h1>
               <p className="mt-5 max-w-[630px] text-base leading-8 text-[#344052] sm:text-lg">
-                Compass는 광고 상품, 소재 문구, 랜딩 조건을 주요 매체 정책 기준에 맞춰 정리합니다.
+                광고 정책 질문을 공식 정책과 운영 문서 기준으로 확인하고, 매체별 근거와 참고 문단을 함께 정리합니다.
               </p>
               <p className="mt-3 max-w-[610px] text-sm leading-7 text-[#68707C]">
-                답변에는 참고한 문서와 추가 확인이 필요한 조건을 함께 표시합니다.
+                조건이 부족하거나 기준이 충돌하면 바로 결론을 내리지 않고 추가 확인 필요 항목으로 분리합니다.
               </p>
             </div>
 
             <div className="mt-8 rounded-[10px] border border-[#D9D4C8] bg-white/72 p-4 sm:p-5">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <p className="text-sm font-bold text-[#172033]">Compass가 정리하는 내용</p>
-                <span className="text-xs font-semibold text-[#7A5518]">질문, 기준, 근거를 한 화면에서 확인</span>
+                <span className="text-xs font-semibold text-[#7A5518]">질문, 기준, 근거, 추가 확인 필요 조건을 한 화면에서 확인</span>
               </div>
               <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 {compassSummary.map(([title, detail]) => (
@@ -222,7 +236,7 @@ export default function HomePage() {
               <div className="flex min-h-full flex-col rounded-[8px] bg-[#FBF7EE] p-4">
                 <p className="text-sm font-bold text-[#7A5518]">정책 확인 미리보기</p>
                 <h2 className="mt-3 max-w-[420px] text-2xl font-semibold leading-tight text-[#172033] [text-wrap:balance]">
-                  질문을 기준, 근거, 확인 필요 항목으로 나눠 보여줍니다.
+                  답변과 근거, 추가 확인 필요 항목을 분리해 보여줍니다.
                 </h2>
                 <div className="mt-5 rounded-[8px] border border-[#D9D4C8] bg-white p-4">
                   <p className="text-xs font-semibold text-[#68707C]">질문 예시</p>
@@ -254,12 +268,12 @@ export default function HomePage() {
                   ))}
                 </div>
                 <div className="mt-3 rounded-[8px] bg-[#172033] p-4 text-white">
-                  <p className="text-xs font-bold text-[#D5B978]">답변 검증 흐름</p>
+                  <p className="text-xs font-bold text-[#D5B978]">답변 검토 흐름</p>
                   <h3 className="mt-2 text-xl font-semibold leading-tight text-white [text-wrap:balance]">
-                    하나의 답을 바로 내놓지 않습니다
+                    근거를 확인한 뒤 답변을 정리합니다
                   </h3>
                   <p className="mt-3 text-xs leading-5 text-white/68">
-                    Compass는 서로 다른 관점의 답변 후보를 비교하고, 근거와 누락 가능성을 검토한 뒤 업무에 쓸 수 있는 최종 답변으로 정리합니다.
+                    Compass는 여러 관점의 답변 초안을 비교하고, 근거와 누락 가능성을 확인한 뒤 업무에 쓸 수 있는 형태로 정리합니다.
                   </p>
                   <div className="mt-4 grid gap-2">
                     {answerVerificationFlow.map(([title, detail], index) => (
@@ -300,6 +314,16 @@ export default function HomePage() {
                 ))}
               </div>
             </div>
+            <div className="mt-4 grid gap-2 sm:grid-cols-5">
+              {mediaScopes.map((scope) => (
+                <span
+                  key={scope}
+                  className="rounded-[7px] border border-[#E1DED6] bg-white/74 px-3 py-2 text-center text-xs font-bold text-[#5B6472]"
+                >
+                  {scope}
+                </span>
+              ))}
+            </div>
           </div>
         </motion.section>
 
@@ -314,7 +338,7 @@ export default function HomePage() {
               <p className="text-xs font-semibold tracking-[0.02em] text-[#7A5518]">로그인</p>
               <h2 className="mt-2 text-2xl font-semibold leading-tight text-[#172033]">Compass 정책 확인 화면 열기</h2>
               <p className="mt-3 text-sm leading-6 text-[#68707C]">
-                AdMate 계정으로 로그인하면 질문 기록과 검토 내용을 이어서 확인할 수 있습니다.
+                AdMate 계정으로 로그인하면 질문 기록, 출처, 추가 확인 필요 항목을 이어서 확인할 수 있습니다.
               </p>
             </div>
             <div className="grid h-12 w-12 flex-none place-items-center rounded-[8px] border border-[#D5B978] bg-[#FFF3D8] text-[#7A5518]">
@@ -331,21 +355,29 @@ export default function HomePage() {
           </Link>
 
           <div className="mt-5 rounded-[10px] border border-[#D9D4C8] bg-white/72 p-4">
-            <p className="text-sm font-bold text-[#172033]">아직 권한이 없다면</p>
+            <p className="text-sm font-bold text-[#172033]">사용 권한이 필요하다면</p>
             <p className="mt-2 text-xs leading-5 text-[#68707C]">
-              Compass 사용 권한은 AdMate 가입 요청 후 확인됩니다.
+              Compass 사용 권한은 AdMate 이용 권한 요청 후 확인됩니다.
             </p>
             <a
               href={ACCESS_REQUEST_URL}
               className="mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-[8px] border border-[#D5B978] bg-[#FFF3D8] px-4 py-2.5 text-sm font-bold text-[#7A5518] transition duration-300 [transition-timing-function:cubic-bezier(0.32,0.72,0,1)] hover:bg-[#FFE8B3] active:scale-[0.98]"
             >
-              AdMate 가입 요청
+              AdMate 이용 권한 요청
             </a>
           </div>
 
-          <p className="mt-5 text-xs leading-5 text-[#68707C]">
-            로그인 후 최근 질문과 정책 문서 내용을 확인할 수 있습니다.
-          </p>
+          <div className="mt-5 rounded-[10px] border border-[#CDD5DD] bg-[#F4F6F7]/86 p-4">
+            <p className="text-sm font-bold text-[#172033]">운영 원칙</p>
+            <div className="mt-3 space-y-2">
+              {gatePrinciples.map((principle) => (
+                <p key={principle} className="flex gap-2 text-xs leading-5 text-[#68707C]">
+                  <span className="mt-2 h-1.5 w-1.5 flex-none rounded-full bg-[#A67B2D]" aria-hidden="true" />
+                  <span>{principle}</span>
+                </p>
+              ))}
+            </div>
+          </div>
         </motion.aside>
       </section>
     </main>
