@@ -1,12 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { motion } from "framer-motion";
 import "@/app/admin/globals.admin.css";
 import { Menu, BarChart3, FileText, Activity, Users, Globe } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import Link from "next/link";
+import { CompassTopbar } from "./CompassTopbar";
 
 interface AdminLayoutProps {
   children: React.ReactNode;
@@ -26,45 +26,10 @@ export default function AdminLayout({ children, currentPage = "dashboard" }: Adm
 
   return (
     <div className="admin-container min-h-screen w-full overflow-x-hidden bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900">
-      {/* Header - Modern glassmorphism design */}
-      <header className="fixed top-0 left-0 right-0 z-50 bg-black/20 backdrop-blur-md border-b border-white/10">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16 py-3">
-            {/* AdMate 로고 - 완전히 왼쪽으로 이동 */}
-            <div className="flex items-center">
-              <Link href="/" className="block">
-                <motion.div 
-                  className="cursor-pointer"
-                  whileHover={{ 
-                    scale: 1.05,
-                    transition: { duration: 0.3 }
-                  }}
-                  whileTap={{ scale: 0.95 }}
-                >
-                  <motion.img 
-                    src="/brand/admate-compass-lockup.svg"
-                    alt="AdMate Compass"
-                    className="h-24 w-auto"
-                    whileHover={{
-                      filter: "brightness(1.1) drop-shadow(0 4px 8px rgba(255, 107, 53, 0.3))",
-                      transition: { duration: 0.2 }
-                    }}
-                  />
-                </motion.div>
-              </Link>
-            </div>
-            
-            {/* 관리자 대시보드 텍스트 - 우측으로 이동 */}
-            <div className="flex items-center space-x-2">
-              <div className="hidden md:block text-right">
-                <h1 className="text-lg font-semibold text-white">관리자 대시보드</h1>
-                <p className="text-xs text-gray-300">시스템 관리 및 모니터링</p>
-              </div>
-              
-              {/* Mobile menu */}
+      <CompassTopbar title="관리자 대시보드" subtitle="시스템 관리 및 모니터링">
               <Sheet open={sidebarOpen} onOpenChange={setSidebarOpen}>
                 <SheetTrigger asChild>
-                  <Button variant="ghost" size="sm" className="md:hidden h-8 w-8 p-0 text-white hover:bg-white/10">
+                  <Button variant="ghost" size="sm" className="h-9 w-9 rounded-md border border-[#D7DCE3] bg-white/88 p-0 text-[#293B5A] hover:bg-[#F8F6F1] hover:text-[#172033] md:hidden">
                     <Menu className="h-4 w-4" />
                   </Button>
                 </SheetTrigger>
@@ -108,10 +73,7 @@ export default function AdminLayout({ children, currentPage = "dashboard" }: Adm
                   </div>
                 </SheetContent>
               </Sheet>
-            </div>
-          </div>
-        </div>
-      </header>
+      </CompassTopbar>
 
       <div className="flex pt-16">
         {/* Sidebar - Desktop */}

@@ -1,12 +1,10 @@
 "use client";
 
 import { useAuth } from "@/hooks/useAuth";
-import { UserProfileDropdown } from "./UserProfileDropdown";
 import { AuthModal } from "./AuthModal";
 import { Toaster } from "@/components/ui/toaster";
 import { useEffect, useState } from "react";
-import { motion } from "framer-motion";
-import Link from "next/link";
+import { CompassTopbar } from "./CompassTopbar";
 
 interface MainLayoutProps {
   children: React.ReactNode;
@@ -14,7 +12,7 @@ interface MainLayoutProps {
 }
 
 export default function MainLayout({ children, chatHeader }: MainLayoutProps) {
-  const { user, loading, signOut } = useAuth();
+  const { loading } = useAuth();
   const [envError, setEnvError] = useState<string | null>(null);
   const [authModalOpen, setAuthModalOpen] = useState(false);
   const [authModalMode, setAuthModalMode] = useState<"signin" | "signup">("signin");
@@ -43,15 +41,6 @@ export default function MainLayout({ children, chatHeader }: MainLayoutProps) {
     };
   }, []);
 
-  // 로그아웃 핸들러
-  const handleSignOut = async () => {
-    try {
-      await signOut();
-    } catch (error) {
-      console.error('로그아웃 오류:', error);
-    }
-  };
-
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center bg-[#F4F5F0]">
@@ -64,42 +53,7 @@ export default function MainLayout({ children, chatHeader }: MainLayoutProps) {
 
   return (
     <div className="min-h-screen bg-[#F4F5F0] text-[#111713]">
-      {/* 헤더 - Compass evidence desk shell */}
-      <header className="fixed left-0 right-0 top-0 z-50 border-b border-[#D8DCCF] bg-[#FBFBF7]/95 backdrop-blur-md">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center h-16 py-3">
-            {/* AdMate 로고 */}
-            <div className="flex items-center">
-              <Link href="/" className="block">
-                <motion.div 
-                  className="cursor-pointer"
-                  whileHover={{ 
-                    scale: 1.05,
-                    transition: { duration: 0.3 }
-                  }}
-                  whileTap={{ scale: 0.95 }}
-                  initial={{ opacity: 0, y: -10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.5 }}
-                >
-                  <motion.img
-                    src="/brand/admate-compass-lockup.svg"
-                    alt="AdMate Compass"
-                    className="h-12 w-auto sm:h-14"
-                    whileHover={{
-                      filter: "brightness(1.02) drop-shadow(0 3px 8px rgba(31, 122, 77, 0.18))",
-                      transition: { duration: 0.2 }
-                    }}
-                  />
-                </motion.div>
-              </Link>
-            </div>
-
-            {/* 사용자 프로필 */}
-            <UserProfileDropdown user={user} onSignOut={handleSignOut} />
-          </div>
-        </div>
-      </header>
+      <CompassTopbar title="Compass 근거 확인" subtitle="정책 질문과 확인한 출처를 함께 관리합니다." />
 
       {/* 채팅 헤더 */}
       {chatHeader && (

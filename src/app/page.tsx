@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { ArrowRight, CheckCircle, FileCheck2, Search, ShieldCheck } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import { SiteSwitchDropdown } from "@/components/layouts/SiteSwitchDropdown";
 
 const COMPASS_DESK_PATH = "/desk";
 const LOGIN_URL = `/login?next=${encodeURIComponent(COMPASS_DESK_PATH)}`;
@@ -164,22 +165,25 @@ export default function HomePage() {
         style={{ transform: "rotate(16deg)" }}
       />
 
-      <header className="relative border-b border-[#D8D6CF] bg-[#F8F6F1]/94">
-        <div className="mx-auto flex h-20 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
+      <header className="fixed left-0 right-0 top-0 z-50 border-b border-[#D8D6CF] bg-[#F8F6F1]/94 backdrop-blur-md">
+        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-3 px-4 sm:px-6 lg:px-8">
           <div className="flex items-center gap-3">
-            <img src="/brand/admate-compass-lockup.svg" alt="AdMate Compass" className="h-12 w-auto sm:h-14" />
+            <img src="/brand/admate-compass-lockup.svg" alt="AdMate Compass" className="h-12 w-auto" />
             <span className="hidden text-sm font-semibold text-[#5B6472] sm:inline">AdMate Compass</span>
           </div>
-          <Link
-            href={LOGIN_URL}
-            className="inline-flex min-h-10 items-center justify-center rounded-[8px] bg-[#172033] px-4 py-2 text-sm font-bold text-white transition duration-300 [transition-timing-function:cubic-bezier(0.32,0.72,0,1)] hover:bg-[#273755] active:scale-[0.98]"
-          >
-            로그인
-          </Link>
+          <div className="flex items-center gap-2">
+            <SiteSwitchDropdown />
+            <Link
+              href={LOGIN_URL}
+              className="inline-flex min-h-10 items-center justify-center rounded-[8px] bg-[#172033] px-4 py-2 text-sm font-bold text-white transition duration-300 [transition-timing-function:cubic-bezier(0.32,0.72,0,1)] hover:bg-[#273755] active:scale-[0.98]"
+            >
+              로그인
+            </Link>
+          </div>
         </div>
       </header>
 
-      <section className="relative mx-auto grid max-w-[1400px] gap-5 px-4 py-8 sm:px-6 sm:py-12 lg:grid-cols-[minmax(0,1.12fr)_390px] lg:items-start lg:px-8">
+      <section className="relative mx-auto grid max-w-[1400px] gap-5 px-4 pb-8 pt-24 sm:px-6 sm:pb-12 sm:pt-28 lg:grid-cols-[minmax(0,1.12fr)_390px] lg:items-start lg:px-8">
         <motion.section
           initial={{ opacity: 0, y: 18 }}
           animate={{ opacity: 1, y: 0 }}

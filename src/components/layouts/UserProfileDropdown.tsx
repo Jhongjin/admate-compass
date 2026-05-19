@@ -1,9 +1,16 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
-import { User, Settings, Lock, Trash2, ChevronDown, Shield } from "lucide-react";
-import { motion, AnimatePresence } from "framer-motion";
-import { useAuth } from "@/hooks/useAuth";
+import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import { LogIn, LogOut, Lock, Shield, Trash2, UserCircle, UserPlus } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { PasswordChangeModal } from "./PasswordChangeModal";
 import { DeleteAccountModal } from "./DeleteAccountModal";
 
@@ -12,197 +19,132 @@ interface UserProfileDropdownProps {
   onSignOut: () => void;
 }
 
+const ACCESS_REQUEST_URL = "https://home.admate.ai.kr/access-request?product=compass";
+const ACCOUNT_URL = "https://sentinel.admate.ai.kr/account";
+
 export function UserProfileDropdown({ user, onSignOut }: UserProfileDropdownProps) {
-  const [isOpen, setIsOpen] = useState(false);
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
-  const dropdownRef = useRef<HTMLDivElement>(null);
-  const { signOut } = useAuth();
-
-  // 관리자 권한 상태
   const [isAdmin, setIsAdmin] = useState(false);
-  const [adminLoading, setAdminLoading] = useState(true);
 
-  // 관리자 권한 체크
+  const displayName = useMemo(
+    () => user?.user_metadata?.name || user?.user_metadata?.full_name || user?.email || "AdMate 계정",
+    [user],
+  );
+
+  const initials = useMemo(() => {
+    const value = displayName?.trim() || "A";
+    return value.slice(0, 1).toUpperCase();
+  }, [displayName]);
+
   useEffect(() => {
     const checkAdminStatus = async () => {
       if (!user?.email) {
         setIsAdmin(false);
-        setAdminLoading(false);
         return;
       }
 
       try {
-        const response = await fetch('/api/admin/users/check-admin', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ email: user.email })
+        const response = await fetch("/api/admin/users/check-admin", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: user.email }),
         });
-
         const data = await response.json();
         setIsAdmin(data.success && data.isAdmin);
       } catch (error) {
-        console.error('관리자 권한 확인 오류:', error);
+        console.error("관리자 권한 확인 오류:", error);
         setIsAdmin(false);
-      } finally {
-        setAdminLoading(false);
       }
     };
 
     checkAdminStatus();
   }, [user?.email]);
 
-  // 모든 hooks를 조건부 return 이전에 정의
-  useEffect(() => {
-    const handleClickOutside = (event: MouseEvent) => {
-      if (dropdownRef.current && !dropdownRef.current.contains(event.target as Node)) {
-        setIsOpen(false);
-      }
-    };
-
-    document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
-  }, []);
-
-  const handleSignOut = async () => {
-    try {
-      const { error } = await signOut();
-      if (error) {
-        console.error('로그아웃 오류:', error);
-        alert('로그아웃 중 오류가 발생했습니다: ' + (error as any)?.message || '알 수 없는 오류');
-        return;
-      }
-      onSignOut();
-      setIsOpen(false);
-    } catch (error) {
-      console.error('로그아웃 오류:', error);
-      alert('로그아웃 중 오류가 발생했습니다.');
-    }
-  };
-
-  // user가 null일 때 로그인 버튼 표시
   if (!user) {
     return (
-      <div className="flex items-center space-x-4">
+      <div className="flex items-center gap-2">
         <button
-          onClick={() => {
-            // 로그인 모달을 열기 위한 이벤트 발생
-            window.dispatchEvent(new CustomEvent('openAuthModal', { detail: { mode: 'signin' } }));
-          }}
-          className="text-sm font-medium text-gray-300 hover:text-blue-400 transition-colors duration-200"
+          type="button"
+          onClick={() => window.dispatchEvent(new CustomEvent("openAuthModal", { detail: { mode: "signin" } }))}
+          className="inline-flex h-10 items-center gap-2 rounded-md border border-[#D7DCE3] bg-white/88 px-3 text-sm font-bold text-[#293B5A] transition-colors hover:bg-[#F8F6F1] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2764D9] focus-visible:ring-offset-2"
         >
-          로그인
+          <LogIn className="h-4 w-4" aria-hidden="true" />
+          <span className="hidden sm:inline">로그인</span>
         </button>
-        <button
-          onClick={() => {
-            // 이용 권한 요청 모달을 열기 위한 이벤트 발생
-            window.dispatchEvent(new CustomEvent('openAuthModal', { detail: { mode: 'signup' } }));
-          }}
-          className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-all duration-200 hover:shadow-lg"
+        <Link
+          href={ACCESS_REQUEST_URL}
+          className="hidden h-10 items-center gap-2 rounded-md bg-[#172033] px-3 text-sm font-bold text-white transition-colors hover:bg-[#273755] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2764D9] focus-visible:ring-offset-2 sm:inline-flex"
         >
-          이용 권한 요청
-        </button>
+          <UserPlus className="h-4 w-4" aria-hidden="true" />
+          AdMate 계정
+        </Link>
       </div>
     );
   }
 
   return (
     <>
-      <div className="relative" ref={dropdownRef}>
-        <button
-          onClick={() => setIsOpen(!isOpen)}
-          className="flex items-center space-x-2 text-gray-300 hover:text-white transition-colors duration-200 rounded-lg hover:bg-white/5 p-2"
-        >
-          <User className="w-4 h-4" />
-          <span className="text-sm font-medium">{user?.user_metadata?.name || user?.email || '사용자'}</span>
-          <ChevronDown className={`w-4 h-4 transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
-        </button>
+      <DropdownMenu>
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            className="inline-flex h-10 max-w-[190px] items-center gap-2 rounded-md border border-[#D7DCE3] bg-white/88 px-2.5 text-sm font-semibold text-[#172033] shadow-sm transition-colors hover:bg-[#F8F6F1] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2764D9] focus-visible:ring-offset-2"
+          >
+            <span className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-[#2764D9] text-xs font-black text-white">
+              {initials}
+            </span>
+            <span className="hidden min-w-0 truncate sm:block">{displayName}</span>
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" className="w-72 border-[#D7DCE3] bg-white p-2 text-[#172033] shadow-xl">
+          <DropdownMenuLabel className="px-3 py-2">
+            <span className="block text-sm font-bold text-[#172033]">{displayName}</span>
+            <span className="mt-0.5 block truncate text-xs font-medium text-[#68707C]">
+              {user?.email || "AdMate 계정"}
+            </span>
+          </DropdownMenuLabel>
+          <DropdownMenuSeparator className="bg-[#E3E6EA]" />
+          <DropdownMenuItem asChild className="cursor-pointer rounded-md focus:bg-[#F4F7FB]">
+            <Link href={ACCOUNT_URL} className="flex items-center gap-2">
+              <UserCircle className="h-4 w-4" aria-hidden="true" />
+              내 정보
+            </Link>
+          </DropdownMenuItem>
+          {isAdmin ? (
+            <>
+              <DropdownMenuItem asChild className="cursor-pointer rounded-md focus:bg-[#F4F7FB]">
+                <Link href="/admin" className="flex items-center gap-2 text-[#2764D9]">
+                  <Shield className="h-4 w-4" aria-hidden="true" />
+                  관리자 페이지
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator className="bg-[#E3E6EA]" />
+            </>
+          ) : null}
+          <DropdownMenuItem
+            className="cursor-pointer rounded-md focus:bg-[#F4F7FB]"
+            onSelect={() => setShowPasswordModal(true)}
+          >
+            <Lock className="mr-2 h-4 w-4" aria-hidden="true" />
+            비밀번호 변경
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            className="cursor-pointer rounded-md text-red-600 focus:bg-red-50 focus:text-red-700"
+            onSelect={() => setShowDeleteModal(true)}
+          >
+            <Trash2 className="mr-2 h-4 w-4" aria-hidden="true" />
+            회원탈퇴
+          </DropdownMenuItem>
+          <DropdownMenuSeparator className="bg-[#E3E6EA]" />
+          <DropdownMenuItem className="cursor-pointer rounded-md focus:bg-[#F4F7FB]" onSelect={onSignOut}>
+            <LogOut className="mr-2 h-4 w-4" aria-hidden="true" />
+            로그아웃
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
 
-        <AnimatePresence>
-          {isOpen && (
-            <motion.div
-              className="absolute right-0 top-full mt-2 w-64 bg-gray-900 border border-gray-700 rounded-lg shadow-xl z-50"
-              initial={{ opacity: 0, y: -10, scale: 0.95 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: -10, scale: 0.95 }}
-              transition={{ duration: 0.2 }}
-            >
-              {/* User Info */}
-              <div className="p-4 border-b border-gray-700">
-                <div className="flex items-center space-x-3">
-                  <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center">
-                    <User className="w-5 h-5 text-white" />
-                  </div>
-                  <div>
-                    <p className="text-white font-medium">{user?.user_metadata?.name || '사용자'}</p>
-                    <p className="text-gray-400 text-sm">{user?.email || '이메일 없음'}</p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Menu Items */}
-              <div className="py-2">
-                {/* 관리자 메뉴 */}
-                {isAdmin && (
-                  <>
-                    <a
-                      href="/admin"
-                      className="w-full flex items-center space-x-3 px-4 py-3 text-blue-400 hover:text-blue-300 hover:bg-gray-800 transition-colors duration-200"
-                    >
-                      <Shield className="w-4 h-4" />
-                      <span>관리자 페이지</span>
-                    </a>
-                    
-                    {/* 구분선 */}
-                    <div className="border-t border-gray-700 my-2"></div>
-                  </>
-                )}
-
-                <button
-                  onClick={() => {
-                    setShowPasswordModal(true);
-                    setIsOpen(false);
-                  }}
-                  className="w-full flex items-center space-x-3 px-4 py-3 text-gray-300 hover:text-white hover:bg-gray-800 transition-colors duration-200"
-                >
-                  <Lock className="w-4 h-4" />
-                  <span>비밀번호 변경</span>
-                </button>
-
-                <button
-                  onClick={() => {
-                    setShowDeleteModal(true);
-                    setIsOpen(false);
-                  }}
-                  className="w-full flex items-center space-x-3 px-4 py-3 text-red-400 hover:text-red-300 hover:bg-gray-800 transition-colors duration-200"
-                >
-                  <Trash2 className="w-4 h-4" />
-                  <span>회원탈퇴</span>
-                </button>
-
-                <button
-                  onClick={handleSignOut}
-                  className="w-full flex items-center space-x-3 px-4 py-3 text-gray-300 hover:text-white hover:bg-gray-800 transition-colors duration-200"
-                >
-                  <Settings className="w-4 h-4" />
-                  <span>로그아웃</span>
-                </button>
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
-
-      {/* Password Change Modal */}
-      <PasswordChangeModal
-        isOpen={showPasswordModal}
-        onClose={() => setShowPasswordModal(false)}
-        user={user}
-      />
-
-      {/* Delete Account Modal */}
+      <PasswordChangeModal isOpen={showPasswordModal} onClose={() => setShowPasswordModal(false)} user={user} />
       <DeleteAccountModal
         isOpen={showDeleteModal}
         onClose={() => setShowDeleteModal(false)}

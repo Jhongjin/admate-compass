@@ -5,7 +5,7 @@ import { FileText, History, Home, Menu, Settings, ShieldCheck } from "lucide-rea
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import Link from "next/link";
-import { motion } from "framer-motion";
+import { CompassTopbar } from "./CompassTopbar";
 
 interface ChatLayoutProps {
   children: React.ReactNode;
@@ -22,40 +22,7 @@ export default function ChatLayout({ children }: ChatLayoutProps) {
 
   return (
     <div className="min-h-screen bg-[#F4F5F0] text-[#111713]">
-      {/* Header - Compass policy answer shell */}
-      <header className="sticky top-0 z-50 border-b border-[#D8DCCF] bg-[#FBFBF7]/95 backdrop-blur-md">
-        <div className="px-4 sm:px-6 lg:px-8">
-          <div className="flex h-14 items-center justify-between gap-3 sm:h-16">
-            <div className="flex min-w-0 items-center space-x-2 sm:space-x-3">
-              <Link href="/" className="block shrink-0" aria-label="AdMate Compass 홈으로 이동">
-                <motion.div 
-                  className="flex h-12 cursor-pointer items-center overflow-hidden sm:h-14"
-                  whileHover={{ 
-                    scale: 1.02,
-                    transition: { duration: 0.3 }
-                  }}
-                  whileTap={{ scale: 0.95 }}
-                >
-                  <motion.img 
-                    src="/brand/admate-compass-lockup.svg"
-                    alt="AdMate Compass"
-                    className="max-h-10 w-auto sm:max-h-12"
-                    whileHover={{
-                      filter: "brightness(1.1) drop-shadow(0 4px 8px rgba(255, 107, 53, 0.3))",
-                      transition: { duration: 0.2 }
-                    }}
-                  />
-                </motion.div>
-              </Link>
-              <div className="hidden min-w-0 sm:block">
-                <h1 className="truncate text-base font-semibold text-[#111713] sm:text-lg">
-                  Compass 근거 확인 화면
-                </h1>
-                <p className="text-xs text-[#5F6C62]">정책 답변과 확인한 출처를 함께 확인합니다.</p>
-              </div>
-            </div>
-            
-            <div className="flex shrink-0 items-center space-x-1 sm:space-x-2">
+      <CompassTopbar title="Compass 근거 확인 화면" subtitle="정책 답변과 확인한 출처를 함께 확인합니다.">
               <div className="hidden items-center gap-2 rounded-md border border-[#D8DCCF] bg-white px-2.5 py-1.5 text-xs text-[#34423A] md:flex">
                 <span className="h-2 w-2 rounded-full bg-[#1F7A4D]" />
                 <span className="font-medium">출처 확인</span>
@@ -109,13 +76,10 @@ export default function ChatLayout({ children }: ChatLayoutProps) {
                   </div>
                 </SheetContent>
               </Sheet>
-            </div>
-          </div>
-        </div>
-      </header>
+      </CompassTopbar>
 
       {/* Main content - Full width for chat */}
-      <main className="flex-1">
+      <main className="flex-1 pt-16">
         {children}
       </main>
     </div>

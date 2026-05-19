@@ -12,22 +12,35 @@ export function useAuth() {
   useEffect(() => {
     // 현재 세션 확인
     const getSession = async () => {
-      const { data: { session } } = await supabase.auth.getSession();
-      setUser(session?.user ?? null);
-      setLoading(false);
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        setUser(session?.user ?? null);
+      } catch (error) {
+        console.warn('인증 세션 확인을 건너뜁니다:', error);
+        setUser(null);
+      } finally {
+        setLoading(false);
+      }
     };
 
     getSession();
 
     // 인증 상태 변경 감지
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
-        setUser(session?.user ?? null);
-        setLoading(false);
-      }
-    );
+    let subscription: { unsubscribe: () => void } | null = null;
+    try {
+      const authState = supabase.auth.onAuthStateChange(
+        async (event, session) => {
+          setUser(session?.user ?? null);
+          setLoading(false);
+        }
+      );
+      subscription = authState.data.subscription;
+    } catch (error) {
+      console.warn('인증 상태 감지를 건너뜁니다:', error);
+      setLoading(false);
+    }
 
-    return () => subscription.unsubscribe();
+    return () => subscription?.unsubscribe();
   }, [supabase.auth]);
 
   const checkEmailExists = async (email: string): Promise<boolean> => {
