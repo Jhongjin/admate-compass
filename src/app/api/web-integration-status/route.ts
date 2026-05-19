@@ -11,6 +11,7 @@ export async function GET() {
     const answerReady = answerRuntime.provider === 'openrouter'
       ? answerRuntime.openrouterConfigured
       : managedRuntimeReady;
+    const documentStoreReady = !!(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY);
     
     // 환경 변수 상태 확인
     const envStatus = {
@@ -18,8 +19,8 @@ export async function GET() {
         configured: answerReady,
         mode: 'managed'
       },
-      supabase: {
-        configured: !!(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY)
+      documentStore: {
+        configured: documentStoreReady
       }
     };
     
@@ -31,14 +32,14 @@ export async function GET() {
         description: 'Compass 답변 런타임'
       },
       rag: {
-        status: envStatus.supabase.configured ? 'ready' : 'not_configured',
+        status: envStatus.documentStore.configured ? 'ready' : 'not_configured',
         priority: 'support',
-        description: '문서 검색 시스템 (Supabase + pgvector)'
+        description: '문서 검색 시스템'
       }
     };
     
     // 전체 상태 계산
-    const overallStatus = answerReady && envStatus.supabase.configured ? 'operational' : 'critical';
+    const overallStatus = answerReady && envStatus.documentStore.configured ? 'operational' : 'critical';
     
     const statusInfo = {
       overall: {
@@ -57,7 +58,7 @@ export async function GET() {
       overallStatus,
       answerReady,
       runtimeConfigured: envStatus.answerRuntime.configured,
-      supabaseConfigured: envStatus.supabase.configured
+      documentStoreConfigured: envStatus.documentStore.configured
     });
     
     return NextResponse.json(statusInfo, {
@@ -69,15 +70,20 @@ export async function GET() {
     });
     
   } catch (error) {
-    console.error('❌ 웹 통합 서비스 상태 확인 실패:', error);
+    console.error('❌ 웹 통합 서비스 상태 확인 실패:', {
+      errorName: error instanceof Error ? error.name : 'UnknownError',
+    });
     
     return NextResponse.json({
       overall: {
         status: 'error',
         message: '서비스 상태 확인 중 오류가 발생했습니다.'
       },
-      error: error instanceof Error ? error.message : String(error),
-      timestamp: new Date().toISOString()
+      services: {},
+      environment: {},
+      timestamp: new Date().toISOString(),
+      version: 'web-integration-v1.0',
+      error: 'status_check_failed'
     }, {
       status: 500,
       headers: {

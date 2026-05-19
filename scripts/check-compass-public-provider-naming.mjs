@@ -268,6 +268,7 @@ for (const token of [
   'managed:',
   'reachable:',
   'documentStore',
+  'responseTime',
 ]) {
   if (!healthRoute.includes(token)) {
     fail(`src/app/api/health/route.ts missing neutral health token ${token}`)
@@ -283,6 +284,16 @@ for (const forbidden of [
   'models:',
   'source:',
   'Environment variables not set',
+  'uptime:',
+  'process.uptime',
+  'memory:',
+  'process.memoryUsage',
+  'environment: process.env.NODE_ENV',
+  'schema:',
+  'getCompassDbSchema',
+  'error?.message',
+  'String(error)',
+  '`HTTP ${response.status}`',
 ]) {
   if (healthRoute.includes(forbidden)) {
     fail(`src/app/api/health/route.ts must not expose provider-specific health field ${forbidden}`)
@@ -391,6 +402,7 @@ for (const token of [
   'configured: answerReady',
   "mode: 'managed'",
   "description: 'Compass 답변 런타임'",
+  'documentStore: {',
   'runtimeConfigured:',
   'answerReady,',
 ]) {
@@ -409,9 +421,36 @@ for (const forbidden of [
   'answerProvider',
   'ollamaHealthy',
   'modelsConfigured',
+  'supabase: {',
+  'Supabase + pgvector',
+  'error.message',
+  'String(error)',
 ]) {
   if (webIntegrationStatusRoute.includes(forbidden)) {
     fail(`src/app/api/web-integration-status/route.ts must not expose provider-specific status field ${forbidden}`)
+  }
+}
+
+for (const [relativePath, text] of [
+  ['src/app/api/health/route.ts', healthRoute],
+  ['src/app/api/web-integration-status/route.ts', webIntegrationStatusRoute],
+]) {
+  for (const snippet of collectNextJsonResponses(text)) {
+    for (const forbidden of [
+      { pattern: /\buptime\b/, label: 'process uptime' },
+      { pattern: /\bmemory\b/, label: 'process memory' },
+      { pattern: /environment\s*:\s*process\.env\.NODE_ENV/, label: 'runtime environment' },
+      { pattern: /\bschema\s*:/, label: 'database schema' },
+      { pattern: /error\?\.[a-zA-Z_$][\w$]*/, label: 'raw optional error field' },
+      { pattern: /error\.message/, label: 'raw error message' },
+      { pattern: /String\s*\(\s*error\s*\)/, label: 'raw stringified error' },
+      { pattern: /HTTP\s+\$\{?response\.status\}?/, label: 'raw upstream HTTP status' },
+      { pattern: /Supabase\s*\+\s*pgvector/i, label: 'storage technology stack' },
+    ]) {
+      if (forbidden.pattern.test(snippet)) {
+        fail(`${relativePath} public response must not expose ${forbidden.label}`)
+      }
+    }
   }
 }
 

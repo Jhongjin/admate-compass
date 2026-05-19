@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { createCompassServiceClient, getCompassDbSchema } from '@/lib/supabase/compass';
+import { createCompassServiceClient } from '@/lib/supabase/compass';
 import { resolveOllamaEndpoint } from '@/lib/services/ollamaEndpoint';
 
 export async function GET(request: NextRequest) {
@@ -9,9 +9,6 @@ export async function GET(request: NextRequest) {
     const health = {
       status: 'healthy',
       timestamp: new Date().toISOString(),
-      uptime: process.uptime(),
-      memory: process.memoryUsage(),
-      environment: process.env.NODE_ENV,
       services: {} as any,
       responseTime: 0
     };
@@ -24,8 +21,7 @@ export async function GET(request: NextRequest) {
           status: 'unhealthy',
           configured: false,
           managed: true,
-          reachable: false,
-          error: 'Answer runtime is not configured'
+          reachable: false
         };
         throw new Error('answer_runtime_health_recorded');
       }
@@ -41,16 +37,14 @@ export async function GET(request: NextRequest) {
           status: 'healthy',
           configured: true,
           managed: true,
-          reachable: true,
-          responseTime: Date.now() - startTime
+          reachable: true
         };
       } else {
         health.services.answerRuntime = {
           status: 'unhealthy',
           configured: true,
           managed: true,
-          reachable: false,
-          error: `HTTP ${response.status}`
+          reachable: false
         };
       }
     } catch (error) {
@@ -59,8 +53,7 @@ export async function GET(request: NextRequest) {
           status: 'unhealthy',
           configured: false,
           managed: true,
-          reachable: false,
-          error: 'Answer runtime health check failed'
+          reachable: false
         };
       }
     }
@@ -78,20 +71,16 @@ export async function GET(request: NextRequest) {
           .limit(1);
 
         health.services.documentStore = {
-          status: error ? 'unhealthy' : 'healthy',
-          schema: getCompassDbSchema(),
-          error: error?.message
+          status: error ? 'unhealthy' : 'healthy'
         };
       } else {
         health.services.documentStore = {
-          status: 'unhealthy',
-          error: 'Document store is not configured'
+          status: 'unhealthy'
         };
       }
     } catch (error) {
       health.services.documentStore = {
-        status: 'unhealthy',
-        error: 'Document store health check failed'
+        status: 'unhealthy'
       };
     }
 
@@ -117,12 +106,14 @@ export async function GET(request: NextRequest) {
     });
 
   } catch (error) {
-    console.error('Health check failed:', error);
+    console.error('Health check failed:', {
+      errorName: error instanceof Error ? error.name : 'UnknownError',
+    });
     
     return NextResponse.json({
       status: 'unhealthy',
       timestamp: new Date().toISOString(),
-      error: error instanceof Error ? error.message : String(error),
+      error: 'health_check_failed',
       responseTime: Date.now() - startTime
     }, { status: 503 });
   }
