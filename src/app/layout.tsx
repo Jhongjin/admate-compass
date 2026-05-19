@@ -9,6 +9,11 @@ export const metadata: Metadata = {
   alternates: {
     canonical: "https://compass.admate.ai.kr",
   },
+  icons: {
+    icon: [{ url: "/favicon.svg", type: "image/svg+xml" }],
+    shortcut: "/favicon.svg",
+    apple: "/brand/admate-compass-mark.svg",
+  },
 };
 
 export default function RootLayout({

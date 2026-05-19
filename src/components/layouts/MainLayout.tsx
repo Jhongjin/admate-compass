@@ -83,8 +83,8 @@ export default function MainLayout({ children, chatHeader }: MainLayoutProps) {
                   transition={{ duration: 0.5 }}
                 >
                   <motion.img
-                    src="/admate-logo.png" 
-                    alt="AdMate" 
+                    src="/brand/admate-compass-lockup.svg"
+                    alt="AdMate Compass"
                     className="h-12 w-auto sm:h-14"
                     whileHover={{
                       filter: "brightness(1.02) drop-shadow(0 3px 8px rgba(31, 122, 77, 0.18))",

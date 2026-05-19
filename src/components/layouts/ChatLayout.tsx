@@ -37,8 +37,8 @@ export default function ChatLayout({ children }: ChatLayoutProps) {
                   whileTap={{ scale: 0.95 }}
                 >
                   <motion.img 
-                    src="/admate-logo.png" 
-                    alt="AdMate" 
+                    src="/brand/admate-compass-lockup.svg"
+                    alt="AdMate Compass"
                     className="max-h-10 w-auto sm:max-h-12"
                     whileHover={{
                       filter: "brightness(1.1) drop-shadow(0 4px 8px rgba(255, 107, 53, 0.3))",
