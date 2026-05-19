@@ -29,7 +29,6 @@ const productionDisabledCandidates = new Set([
   path.join('src', 'app', 'api', 'check-real-embedding-dimension', 'route.ts'),
   path.join('src', 'app', 'api', 'check-table-constraints', 'route.ts'),
   path.join('src', 'app', 'api', 'ollama', 'route.ts'),
-  path.join('src', 'app', 'api', 'proxy-ollama', 'route.ts'),
   path.join('src', 'app', 'api', 'test-integration', 'route.ts'),
   path.join('src', 'app', 'api', 'test-rag-search', 'route.ts'),
   path.join('src', 'app', 'api', 'test-rpc-direct', 'route.ts'),

@@ -197,17 +197,13 @@ const compassAnswerLocalSmokeScript = read('scripts/smoke-compass-answer-local.m
 
 const providerNamedDiagnosticRouteFiles = [
   'src/app/api/ollama/route.ts',
-  'src/app/api/proxy-ollama/route.ts',
   'src/app/api/chatbot/route.ts',
   'src/app/api/debug-env/route.ts',
   'src/app/api/debug-rag/route.ts',
 ]
 
-const proxyRoute = read('src/app/api/proxy-ollama/route.ts')
-
 const productionDebugGuardRequiredRouteFiles = [
   'src/app/api/ollama/route.ts',
-  'src/app/api/proxy-ollama/route.ts',
   'src/app/api/debug-env/route.ts',
   'src/app/api/debug-rag/route.ts',
 ]
@@ -228,6 +224,7 @@ for (const removedPage of [
 }
 
 for (const removedRoute of [
+  'src/app/api/proxy-ollama/route.ts',
   'src/app/api/chat-huggingface/route.ts',
   'src/app/api/test-huggingface/route.ts',
   'src/app/api/chat-railway/route.ts',
@@ -369,33 +366,6 @@ for (const relativePath of providerNamedDiagnosticRouteFiles) {
         fail(`${relativePath} public response/console must not expose ${forbidden.label}`)
       }
     }
-  }
-}
-
-for (const forbidden of [
-  { pattern: /\.\.\.\s*data/, label: 'upstream response spread' },
-  { pattern: /NextResponse\.json\s*\(\s*data\s*\)/, label: 'raw upstream response passthrough' },
-]) {
-  if (forbidden.pattern.test(proxyRoute)) {
-    fail(`src/app/api/proxy-ollama/route.ts must not expose ${forbidden.label}`)
-  }
-}
-
-for (const required of [
-  'buildPublicGenerateResponse',
-  "model: 'compass-answer'",
-  'response:',
-  'done:',
-  'context:',
-  'total_duration:',
-  'load_duration:',
-  'prompt_eval_count:',
-  'prompt_eval_duration:',
-  'eval_count:',
-  'eval_duration:',
-]) {
-  if (!proxyRoute.includes(required)) {
-    fail(`src/app/api/proxy-ollama/route.ts missing allowlisted generate field ${required}`)
   }
 }
 
