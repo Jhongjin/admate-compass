@@ -10,20 +10,20 @@ import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/useAuth";
 import { sanitizeCompassNextPath } from "@/lib/auth/safeNext";
 
-const ACCESS_REQUEST_URL = "https://sentinel.admate.ai.kr/access-request?product=compass";
+const ACCESS_REQUEST_URL = "https://home.admate.ai.kr/access-request?product=compass";
 const ADMATE_HOME_URL = "https://home.admate.ai.kr";
 
 const loginStatusStrip = [
   { label: "로그인", value: "보호됨" },
-  { label: "출처", value: "확인 후 표시" },
-  { label: "답변", value: "3단계 정리" },
+  { label: "출처", value: "근거 확인" },
+  { label: "검토", value: "3-agent" },
 ] as const;
 
 const loginProofCards = [
   {
     label: "기준",
     title: "정책 기준 확인",
-    detail: "매체별 정책과 운영 기준을 로그인 후 확인합니다.",
+    detail: "공식 정책과 AdMate 확인 기준을 로그인 후 확인합니다.",
   },
   {
     label: "출처",
@@ -33,14 +33,14 @@ const loginProofCards = [
   {
     label: "정리",
     title: "최종 답변 정리",
-    detail: "추가 확인 필요 항목을 분리해 업무에 바로 쓸 수 있게 정리합니다.",
+    detail: "추가 확인 필요 항목을 분리해 운영 판단에 참고할 답변으로 정리합니다.",
   },
 ] as const;
 
 const loginReviewSteps = [
-  "질문 조건 확인",
-  "출처 대조",
-  "최종 답변 정리",
+  "LLM1 후보",
+  "LLM2 후보",
+  "팀장 LLM 최종 검토",
 ] as const;
 
 function LoginPageContent() {
@@ -153,11 +153,11 @@ function LoginPageContent() {
                 <div>
                   <p className="text-xs font-semibold text-[#111713]">정책 확인 화면</p>
                   <p className="mt-1 text-[11px] leading-5 text-[#667066]">
-                    질문 조건, 출처 확인, 최종 답변 정리 흐름을 로그인 후 한 화면에서 확인합니다.
+                    두 후보 답변과 팀장 LLM 최종 검토 흐름을 로그인 후 한 화면에서 확인합니다.
                   </p>
                 </div>
                 <span className="shrink-0 rounded-md border border-[#D8DCCF] bg-white px-2 py-1 text-[11px] font-semibold text-[#34423A]">
-                  출처 확인 우선
+                  근거 확인 우선
                 </span>
               </div>
             </div>

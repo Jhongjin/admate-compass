@@ -4,12 +4,12 @@ import { useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { ArrowRight, CheckCircle, Search } from "lucide-react";
+import { ArrowRight, CheckCircle, FileCheck2, Search, ShieldCheck } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 
 const COMPASS_DESK_PATH = "/desk";
 const LOGIN_URL = `/login?next=${encodeURIComponent(COMPASS_DESK_PATH)}`;
-const ACCESS_REQUEST_URL = "https://sentinel.admate.ai.kr/access-request?product=compass";
+const ACCESS_REQUEST_URL = "https://home.admate.ai.kr/access-request?product=compass";
 
 const supportedMedia = [
   { id: "meta", name: "Meta" },
@@ -22,7 +22,7 @@ const supportedMedia = [
 
 const compassSummary = [
   ["광고 정책 질문", "업종, 소재 문구, 이미지, 랜딩 페이지 조건을 질문 단위로 정리합니다."],
-  ["공식 정책과 운영 기준 우선", "매체 공식 정책과 운영 기준 문서를 먼저 확인합니다."],
+  ["공식 정책과 AdMate 확인 기준 우선", "매체 공식 정책과 AdMate 확인 기준을 함께 대조합니다."],
   ["출처와 참고 문단", "답변에 사용한 출처와 연결된 문단을 함께 보여줍니다."],
   ["추가 확인 필요", "조건이 부족하거나 기준이 충돌하면 결론과 분리해 표시합니다."],
 ] as const;
@@ -34,9 +34,9 @@ const previewRows = [
 ] as const;
 
 const answerVerificationFlow = [
-  ["1차 검토안", "질문 조건 확인", "플랫폼, 업종, 소재 표현과 필요한 조건을 먼저 정리합니다."],
-  ["2차 검토안", "공식 기준 확인", "공식 정책과 운영 기준을 확인해 충돌하거나 빠진 기준을 살핍니다."],
-  ["최종 확인", "추가 확인 필요 항목", "공식 기준을 확인해 바로 활용할 답변으로 정리하고, 더 확인할 조건은 따로 남깁니다."],
+  ["LLM1 후보", "질문 조건 분석", "플랫폼, 업종, 소재 표현과 랜딩 조건을 기준별로 정리합니다."],
+  ["LLM2 후보", "출처 대조 검토", "공식 정책과 AdMate 확인 기준을 따로 검토해 누락과 충돌을 찾습니다."],
+  ["팀장 LLM 최종 검토", "운영 판단 정리", "두 후보를 비교한 뒤 근거, 답변, 추가 확인 필요 항목을 분리합니다."],
 ] as const;
 
 const mediaScopes = [
@@ -50,7 +50,7 @@ const mediaScopes = [
 const gatePrinciples = [
   "로그인 후 Compass 정책 확인 화면이 열립니다.",
   "권한이 없으면 AdMate 이용 권한 요청으로 이어집니다.",
-  "답변은 공식 기준과 참고 문단을 함께 확인해 정리합니다.",
+  "정책 판단에 필요한 근거를 함께 확인할 수 있습니다.",
 ] as const;
 
 type MediaId = (typeof supportedMedia)[number]["id"];
@@ -209,7 +209,7 @@ export default function HomePage() {
                 AdMate Compass 정책 확인
               </h1>
               <p className="mt-5 max-w-[630px] text-base leading-8 text-[#344052] sm:text-lg">
-                광고 정책 질문을 공식 정책과 운영 문서 기준으로 확인하고, 매체별 근거와 참고 문단을 함께 정리해 답변 정확도를 높입니다.
+                광고 정책 질문을 공식 정책과 AdMate 확인 기준으로 대조하고, 매체별 근거와 참고 문단을 함께 정리합니다.
               </p>
               <p className="mt-3 max-w-[610px] text-sm leading-7 text-[#68707C]">
                 조건이 부족하거나 기준이 충돌하면 바로 결론을 내리지 않고 추가 확인 필요 항목으로 분리합니다.
@@ -218,7 +218,7 @@ export default function HomePage() {
 
             <div className="mt-8 rounded-[10px] border border-[#D9D4C8] bg-white/72 p-4 sm:p-5">
               <div className="flex flex-wrap items-center justify-between gap-3">
-                <p className="text-sm font-bold text-[#172033]">Compass가 정리하는 내용</p>
+                <p className="text-sm font-bold text-[#172033]">Compass 확인 기준</p>
                 <span className="text-xs font-semibold text-[#7A5518]">질문, 기준, 근거를 한 화면에서 확인</span>
               </div>
               <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
@@ -236,7 +236,7 @@ export default function HomePage() {
               <div className="flex min-h-full flex-col rounded-[8px] bg-[#FBF7EE] p-4">
                 <p className="text-sm font-bold text-[#7A5518]">정책 확인 미리보기</p>
                 <h2 className="mt-3 max-w-[420px] text-2xl font-semibold leading-tight text-[#172033] [text-wrap:balance]">
-                  답변과 근거, 추가 확인 필요 항목을 분리해 보여줍니다.
+                  Compass 답변 근거 확인
                 </h2>
                 <div className="mt-5 rounded-[8px] border border-[#D9D4C8] bg-white p-4">
                   <p className="text-xs font-semibold text-[#68707C]">질문 예시</p>
@@ -270,10 +270,10 @@ export default function HomePage() {
                 <div className="mt-3 rounded-[8px] bg-[#172033] p-4 text-white">
                   <p className="text-xs font-bold text-[#D5B978]">3단계 검토 흐름</p>
                   <h3 className="mt-2 text-xl font-semibold leading-tight text-white [text-wrap:balance]">
-                    1차 검토안부터 최종 확인까지 이어집니다
+                    LLM 후보 2개를 팀장 LLM이 최종 검토합니다
                   </h3>
                   <p className="mt-3 text-xs leading-5 text-white/68">
-                    질문 조건과 공식 기준을 차례로 확인한 뒤, 추가 확인 필요 항목을 분리해 바로 활용할 답변으로 정리합니다.
+                    정책 판단에 필요한 근거를 함께 확인할 수 있도록 후보 답변과 최종 검토를 분리합니다.
                   </p>
                   <div className="compass-review-rail mt-4 grid gap-2 lg:grid-cols-3">
                     {answerVerificationFlow.map(([stage, title, detail], index) => (
@@ -369,12 +369,15 @@ export default function HomePage() {
           </div>
 
           <div className="mt-5 rounded-[10px] border border-[#D9D4C8] bg-white/72 p-4">
-            <p className="text-sm font-bold text-[#172033]">로그인 후 확인 흐름</p>
+            <div className="flex items-center gap-2">
+              <FileCheck2 className="h-4 w-4 text-[#A67B2D]" aria-hidden="true" />
+              <p className="text-sm font-bold text-[#172033]">로그인 후 검토 흐름</p>
+            </div>
             <div className="mt-3 space-y-2">
               {[
-                ["1차 검토안", "질문 조건 확인"],
-                ["2차 검토안", "공식 기준 확인"],
-                ["최종 확인", "답변과 추가 확인 필요 항목 정리"],
+                ["LLM1 후보", "질문 조건 분석"],
+                ["LLM2 후보", "출처 대조 검토"],
+                ["팀장 LLM", "최종 답변과 추가 확인 항목 정리"],
               ].map(([stage, detail]) => (
                 <div key={stage} className="flex items-center justify-between gap-3 rounded-[7px] border border-[#E1DED6] bg-[#FBF7EE] px-3 py-2">
                   <span className="text-xs font-bold text-[#7A5518]">{stage}</span>
@@ -385,7 +388,10 @@ export default function HomePage() {
           </div>
 
           <div className="mt-5 rounded-[10px] border border-[#CDD5DD] bg-[#F4F6F7]/86 p-4">
-            <p className="text-sm font-bold text-[#172033]">운영 원칙</p>
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="h-4 w-4 text-[#293B5A]" aria-hidden="true" />
+              <p className="text-sm font-bold text-[#172033]">신뢰 신호</p>
+            </div>
             <div className="mt-3 space-y-2">
               {gatePrinciples.map((principle) => (
                 <p key={principle} className="flex gap-2 text-xs leading-5 text-[#68707C]">
