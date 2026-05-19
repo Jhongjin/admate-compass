@@ -142,6 +142,9 @@ const checkedFiles = [
 
 const forbiddenPatterns = [
   { pattern: /\bollama\b/i, label: 'provider name "ollama"' },
+  { pattern: /\bopenrouter\b/i, label: 'provider gateway name "openrouter"' },
+  { pattern: /\bllm\b/i, label: 'internal implementation name "LLM"' },
+  { pattern: /\bagent\b/i, label: 'internal implementation name "agent"' },
   { pattern: /chat-ollama/i, label: 'legacy route name "chat-ollama"' },
   { pattern: /AdMate 가입 요청/, label: 'legacy access CTA "AdMate 가입 요청"' },
   { pattern: /접근 권한/, label: 'legacy access wording "접근 권한"' },

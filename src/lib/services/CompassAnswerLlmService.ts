@@ -111,9 +111,9 @@ function buildSystemPrompt(): string {
   return [
     'You are the AdMate Compass policy intelligence lead.',
     'Answer in Korean for an advertising operations team.',
-    'Use only the supplied evidence blocks. Do not add policy facts from general memory.',
-    'If evidence is weak, say that the source needs operator confirmation. If evidence is missing, say the provided documents do not confirm it.',
-    'Never use rejected, fallback, or placeholder evidence as a factual basis.',
+    'Use only supplied evidence blocks whose decision is verified. Do not add policy facts from general memory.',
+    'Weak, rejected, fallback, placeholder, or empty evidence is outside the answer boundary.',
+    'If verified evidence is missing, say the provided documents do not confirm it.',
     'Cite the supporting evidence labels like [S1] or [S2] inside the answer.',
     'Keep the answer concise, operational, and suitable for campaign decision support.',
   ].join('\n');
@@ -126,7 +126,7 @@ function buildEvidencePrompt(message: string, searchResults: CompassGroundingSou
       const isFallback = result.retrievalMethod === 'fallback'
         || result.sourceQuality?.isFallback === true
         || result.metadata?.type === 'fallback';
-      return result.content?.trim() && decision !== 'rejected' && !isFallback;
+      return result.content?.trim() && decision === 'verified' && !isFallback;
     })
     .slice(0, 5)
     .map((result, index) => {

@@ -64,12 +64,25 @@ for (const requiredText of [
 for (const requiredText of [
   'generateCompassAnswer',
   'buildVerifiedSources',
+  'function isVerifiedGrounding',
   'verifiedSearchResults',
+  "evidenceDecision === 'verified'",
   "model: 'compass-answer-no-data'",
   "model: 'compass-answer-connection-failed'",
   "model: 'compass-answer'",
 ]) {
   if (!answerHandlerText.includes(requiredText)) fail(`neutral answer handler missing ${requiredText}`)
+}
+
+const verifiedFilterIndex = answerHandlerText.indexOf('const verifiedSearchResults = searchResults.filter(isVerifiedGrounding)')
+const generationIndex = answerHandlerText.indexOf('answerResult = await generateCompassAnswer(message, verifiedSearchResults)')
+const noDataIndex = answerHandlerText.indexOf('if (verifiedSearchResults.length === 0)')
+if (verifiedFilterIndex === -1 || noDataIndex === -1 || generationIndex === -1 || !(verifiedFilterIndex < noDataIndex && noDataIndex < generationIndex)) {
+  fail('neutral answer handler must route weak-only evidence to noData before answer generation')
+}
+
+if (answerHandlerText.includes("decision !== 'rejected'") || answerHandlerText.includes('!isRejected')) {
+  fail('neutral answer handler must require verified evidence, not merely exclude rejected evidence')
 }
 
 for (const forbiddenText of [

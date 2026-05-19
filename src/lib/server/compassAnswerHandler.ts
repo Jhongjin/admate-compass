@@ -231,6 +231,19 @@ function appendOriginalTitle(normalizedTitle: string, originalTitle: string): st
   return `${normalizedTitle}: ${originalTitle}`;
 }
 
+function getEvidenceDecision(result: SearchResult): string | undefined {
+  return result.evidenceDecision || result.metadata?.evidenceDecision;
+}
+
+function isVerifiedGrounding(result: SearchResult): boolean {
+  const hasGrounding = typeof result.content === 'string' && result.content.trim().length > 0;
+  const isFallback = result.retrievalMethod === 'fallback'
+    || result.sourceQuality?.isFallback === true
+    || result.metadata?.type === 'fallback';
+  const evidenceDecision = getEvidenceDecision(result);
+  return hasGrounding && !isFallback && evidenceDecision === 'verified';
+}
+
 
 /**
  * Compass answer API handler.
@@ -266,12 +279,7 @@ export async function POST(request: NextRequest) {
     // 1. Compass RAG 검색
     const searchResults = await searchWithCompassRAG(message, 3);
     console.log('Compass answer evidence selected', { resultCount: searchResults.length });
-    const verifiedSearchResults = searchResults.filter((result) => {
-      const hasGrounding = typeof result.content === 'string' && result.content.trim().length > 0;
-      const isFallback = result.retrievalMethod === 'fallback' || result.sourceQuality?.isFallback === true || result.metadata?.type === 'fallback';
-      const isRejected = (result.evidenceDecision || result.metadata?.evidenceDecision) === 'rejected';
-      return hasGrounding && !isFallback && !isRejected;
-    });
+    const verifiedSearchResults = searchResults.filter(isVerifiedGrounding);
     if (verifiedSearchResults.length !== searchResults.length) {
       console.warn('Compass answer evidence filtered', { filteredCount: searchResults.length - verifiedSearchResults.length });
     }

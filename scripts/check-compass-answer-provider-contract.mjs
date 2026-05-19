@@ -207,6 +207,16 @@ if (service.includes("hasOpenRouterKey() ? 'openrouter' : 'ollama'")) {
   fail('Compass answer provider must not auto-switch to OpenRouter from key presence before canary')
 }
 
+for (const forbiddenDefault of [
+  "process.env.COMPASS_ANSWER_PROVIDER || 'openrouter'",
+  'hasOpenRouterKey() &&',
+  "hasOpenRouterKey() ? 'openrouter'",
+]) {
+  if (service.includes(forbiddenDefault)) {
+    fail(`Compass answer provider must not default or auto-switch to OpenRouter: ${forbiddenDefault}`)
+  }
+}
+
 if (!String(packageJson.scripts?.['verify:harness'] || '').includes('check:compass-answer-provider-contract')) {
   fail('verify:harness must include check:compass-answer-provider-contract')
 }
