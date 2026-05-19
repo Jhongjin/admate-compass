@@ -18,9 +18,11 @@ const fixturePath = path.resolve(
 );
 const endpoint =
   endpointArg?.split("=")[1] ||
+  process.env.COMPASS_ANSWER_EVAL_ENDPOINT ||
+  process.env.COMPASS_ANSWER_SMOKE_URL ||
   process.env.RAG_EVAL_ENDPOINT ||
   process.env.CHAT_OLLAMA_SMOKE_URL ||
-  "http://127.0.0.1:3000/api/chat-ollama";
+  "http://127.0.0.1:3000/api/compass-answer";
 const limit = Number(limitArg?.split("=")[1] || process.env.RAG_EVAL_LIMIT || 0);
 
 const allowedRetrievalMethods = new Set(["vector", "keyword", "hybrid", "fallback"]);
@@ -484,7 +486,7 @@ function buildDiagnostic(fixture, payload) {
   };
 }
 
-async function callChatEndpoint(fixture) {
+async function callCompassAnswerEndpoint(fixture) {
   const response = await fetch(endpoint, {
     method: "POST",
     headers: {
@@ -532,7 +534,7 @@ const diagnosticResults = [];
 
 if (runEndpoint) {
   for (const fixture of selectedFixtures) {
-    const payload = await callChatEndpoint(fixture);
+    const payload = await callCompassAnswerEndpoint(fixture);
     if (payload) {
       if (diagnostics) diagnosticResults.push(buildDiagnostic(fixture, payload));
       validateResponseAgainstFixture(fixture, payload);

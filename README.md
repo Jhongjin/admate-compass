@@ -1,14 +1,14 @@
-# Meta 광고 FAQ AI 챗봇 - Vultr+Ollama 전용
+# AdMate Compass
 
-RAG(Retrieval-Augmented Generation) 기반의 AI 챗봇으로 Meta 광고 집행 관련 내부 FAQ에 대한 즉각적인 한국어 답변을 제공합니다. Vultr VPS에서 호스팅되는 Ollama 서버를 사용하여 완전히 독립적인 AI 시스템을 구축했습니다.
+AdMate Compass는 사내 문서와 운영 가이드를 기반으로 업무 질문에 대한 근거 있는 한국어 답변을 제공하는 RAG(Retrieval-Augmented Generation) 서비스입니다. 공개 API는 `POST /api/compass-answer`를 기준으로 사용하며, 기존 연동을 위해 `POST /api/chat-ollama`는 legacy compatibility alias로 유지합니다.
 
 ## 🚀 주요 기능
 
-- **AI 챗봇 대화**: 자연어로 질문하면 AI가 관련 문서를 찾아 정확한 답변을 제공
-- **히스토리 관리**: 이전 질문과 답변을 언제든지 확인 가능
+- **Compass 답변**: 자연어 질문에 대해 관련 문서를 찾고 근거와 함께 답변 제공
+- **문서 기반 검색**: 업로드 문서와 수집 자료를 기반으로 답변 후보와 출처 검토
+- **히스토리 관리**: 이전 질문과 답변을 확인하고 업무 맥락 유지
 - **보안 & 권한 관리**: 사내 보안 정책에 맞춘 접근 제어와 데이터 보호
-- **실시간 동기화**: 최신 정책과 가이드라인이 실시간으로 반영
-- **스마트 메일 알림**: 답변 불가 시 담당팀 자동 연결 및 시스템 오류 알림
+- **문의 및 알림**: 답변이 어려운 경우 담당팀 문의 흐름과 시스템 알림 지원
 
 ## 🛠️ 기술 스택
 
@@ -22,8 +22,7 @@ RAG(Retrieval-Augmented Generation) 기반의 AI 챗봇으로 Meta 광고 집행
 ### Backend & Database
 - **Supabase**: 백엔드 서비스 (PostgreSQL + pgvector)
 - **Vercel**: 프론트엔드 호스팅 및 서버리스 함수
-- **Vultr VPS**: Ollama 서버 호스팅
-- **Ollama**: 로컬 LLM 서버 (tinyllama, llama2, mistral 등)
+- **Compass 답변 런타임**: 서버 내부 환경 변수로 관리되는 답변 생성 런타임
 
 ### RAG 시스템
 - **pgvector**: 벡터 임베딩 저장 및 유사도 검색
@@ -34,8 +33,8 @@ RAG(Retrieval-Augmented Generation) 기반의 AI 챗봇으로 Meta 광고 집행
 
 ### 1. 저장소 클론
 ```bash
-git clone https://github.com/your-username/meta-faq.git
-cd meta-faq
+git clone <repository-url>
+cd admate-compass
 ```
 
 ### 2. 의존성 설치
@@ -48,17 +47,18 @@ npm install
 
 ```env
 # Supabase
-NEXT_PUBLIC_SUPABASE_URL=your_supabase_url
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
-SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
+NEXT_PUBLIC_SUPABASE_URL=<supabase-project-url>
+NEXT_PUBLIC_SUPABASE_ANON_KEY=<supabase-anon-key>
+SUPABASE_SERVICE_ROLE_KEY=<supabase-service-role-key>
 
-# Ollama (Vultr VPS)
-OLLAMA_BASE_URL=https://your-vultr-server.com/ollama
-OLLAMA_DEFAULT_MODEL=tinyllama:1.1b
+# Compass 답변 런타임 (server-only)
+COMPASS_ANSWER_PROVIDER=<server-runtime>
+COMPASS_ANSWER_MODEL=<server-runtime-model>
+COMPASS_ANSWER_TIMEOUT_MS=<timeout-ms>
 
-# 기타 설정
-EMBEDDING_DIM=1024
-TOP_K=5
+# RAG 설정
+EMBEDDING_DIM=<embedding-dimension>
+TOP_K=<retrieval-count>
 ```
 
 ### 4. 개발 서버 실행
@@ -66,7 +66,7 @@ TOP_K=5
 npm run dev
 ```
 
-브라우저에서 `http://localhost:3000`을 열어 확인하세요.
+브라우저에서 `<local-dev-url>`을 열어 확인하세요.
 
 ## 🚀 배포
 
@@ -76,11 +76,10 @@ npm run dev
 3. 환경 변수 설정
 4. 자동 배포 완료
 
-### Vultr VPS 설정
-1. Vultr VPS 서버 생성 및 Ollama 설치
-2. Nginx 리버스 프록시 설정
-3. 방화벽 포트 11434 열기
-4. Ollama 모델 다운로드 (tinyllama, llama2 등)
+### 서버 내부 런타임 설정
+1. 배포 환경에 server-only 환경 변수 등록
+2. 문서 저장소와 벡터 검색 설정 확인
+3. Compass 답변 API 상태 확인
 
 ## 📁 프로젝트 구조
 
@@ -105,7 +104,8 @@ src/
 
 ## 🔧 주요 API 엔드포인트
 
-- `POST /api/chat-ollama`: Ollama 기반 채팅 메시지 처리
+- `POST /api/compass-answer`: Compass 답변 처리 (canonical)
+- `POST /api/chat-ollama`: `/api/compass-answer` legacy compatibility alias
 - `POST /api/upload`: 문서 업로드
 - `GET /api/documents`: 문서 목록 조회
 - `POST /api/feedback`: 피드백 저장

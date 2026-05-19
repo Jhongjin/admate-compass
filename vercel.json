@@ -1,6 +1,9 @@
 {
   "version": 2,
   "functions": {
+    "src/app/api/compass-answer/route.ts": {
+      "maxDuration": 60
+    },
     "src/app/api/chat-ollama/route.ts": {
       "maxDuration": 60
     }

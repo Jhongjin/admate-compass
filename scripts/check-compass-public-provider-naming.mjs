@@ -192,6 +192,9 @@ const legacyProviderService = read('src/lib/services/ollama.ts')
 const healthRoute = read('src/app/api/health/route.ts')
 const webIntegrationStatusRoute = read('src/app/api/web-integration-status/route.ts')
 const packageJson = JSON.parse(read('package.json') || '{}')
+const vercelJson = JSON.parse(read('vercel.json') || '{}')
+const evaluateRagFixturesScript = read('scripts/evaluate-rag-fixtures.mjs')
+const compassAnswerLocalSmokeScript = read('scripts/smoke-compass-answer-local.mjs')
 
 const providerNamedDiagnosticRouteFiles = [
   'src/app/api/ollama/route.ts',
@@ -458,8 +461,48 @@ if (packageJson.scripts?.['check:compass-public-provider-naming'] !== 'node scri
   fail('package script check:compass-public-provider-naming is missing or changed')
 }
 
+if (packageJson.scripts?.['smoke:compass-answer-local'] !== 'node scripts/smoke-compass-answer-local.mjs') {
+  fail('package script smoke:compass-answer-local is missing or changed')
+}
+
 if (!String(packageJson.scripts?.['verify:harness'] || '').includes('check:compass-public-provider-naming')) {
   fail('verify:harness must include check:compass-public-provider-naming')
+}
+
+if (vercelJson.functions?.['src/app/api/compass-answer/route.ts']?.maxDuration !== 60) {
+  fail('vercel.json must set src/app/api/compass-answer/route.ts maxDuration to 60')
+}
+
+if (!compassAnswerLocalSmokeScript.includes('COMPASS_ANSWER_SMOKE_URL')) {
+  fail('scripts/smoke-compass-answer-local.mjs must prefer COMPASS_ANSWER_SMOKE_URL')
+}
+
+if (!compassAnswerLocalSmokeScript.includes('COMPASS_ANSWER_SMOKE_QUERY')) {
+  fail('scripts/smoke-compass-answer-local.mjs must prefer COMPASS_ANSWER_SMOKE_QUERY')
+}
+
+if (!compassAnswerLocalSmokeScript.includes('http://127.0.0.1:3000/api/compass-answer')) {
+  fail('scripts/smoke-compass-answer-local.mjs must default to /api/compass-answer')
+}
+
+const compassEvalEndpointIndex = evaluateRagFixturesScript.indexOf('process.env.COMPASS_ANSWER_EVAL_ENDPOINT')
+const compassSmokeEndpointIndex = evaluateRagFixturesScript.indexOf('process.env.COMPASS_ANSWER_SMOKE_URL')
+const legacySmokeEndpointIndex = evaluateRagFixturesScript.indexOf('process.env.CHAT_OLLAMA_SMOKE_URL')
+
+if (compassEvalEndpointIndex === -1) {
+  fail('scripts/evaluate-rag-fixtures.mjs must prefer COMPASS_ANSWER_EVAL_ENDPOINT')
+}
+
+if (compassSmokeEndpointIndex === -1) {
+  fail('scripts/evaluate-rag-fixtures.mjs must prefer COMPASS_ANSWER_SMOKE_URL')
+}
+
+if (legacySmokeEndpointIndex !== -1 && legacySmokeEndpointIndex < compassSmokeEndpointIndex) {
+  fail('scripts/evaluate-rag-fixtures.mjs must check COMPASS_ANSWER_SMOKE_URL before legacy CHAT_OLLAMA_SMOKE_URL')
+}
+
+if (!evaluateRagFixturesScript.includes('http://127.0.0.1:3000/api/compass-answer')) {
+  fail('scripts/evaluate-rag-fixtures.mjs must default to /api/compass-answer')
 }
 
 if (!process.exitCode) {

@@ -3,14 +3,15 @@ import path from "node:path";
 
 const root = process.cwd();
 const ragServicePath = path.join(root, "src/lib/services/RAGSearchService.ts");
-const chatRoutePath = path.join(root, "src/app/api/chat-ollama/route.ts");
+const compassAnswerRoutePath = path.join(root, "src/app/api/compass-answer/route.ts");
+const compassAnswerHandlerPath = path.join(root, "src/lib/server/compassAnswerHandler.ts");
 
 function fail(message) {
   console.error(`[smoke-compass-rag-contract] ${message}`);
   process.exitCode = 1;
 }
 
-for (const file of [ragServicePath, chatRoutePath]) {
+for (const file of [ragServicePath, compassAnswerRoutePath, compassAnswerHandlerPath]) {
   if (!fs.existsSync(file)) {
     fail(`missing required file: ${path.relative(root, file)}`);
   }
@@ -21,7 +22,8 @@ if (process.exitCode) {
 }
 
 const ragService = fs.readFileSync(ragServicePath, "utf8");
-const chatRoute = fs.readFileSync(chatRoutePath, "utf8");
+const compassAnswerRoute = fs.readFileSync(compassAnswerRoutePath, "utf8");
+const compassAnswerHandler = fs.readFileSync(compassAnswerHandlerPath, "utf8");
 
 const ragContractFields = [
   "sources: SearchResult[]",
@@ -47,9 +49,13 @@ const routeContractFragments = [
 ];
 
 for (const fragment of routeContractFragments) {
-  if (!chatRoute.includes(fragment)) {
-    fail(`chat route response contract missing fragment: ${fragment}`);
+  if (!compassAnswerHandler.includes(fragment)) {
+    fail(`compass answer handler response contract missing fragment: ${fragment}`);
   }
+}
+
+if (!compassAnswerRoute.includes("export { POST } from '@/lib/server/compassAnswerHandler'")) {
+  fail("compass answer route must alias the canonical answer handler");
 }
 
 if (!ragService.includes("search_ollama_documents")) {
