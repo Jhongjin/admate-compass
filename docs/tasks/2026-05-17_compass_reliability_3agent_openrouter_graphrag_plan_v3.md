@@ -32,7 +32,8 @@ Compass should maximize trust by strengthening evidence governance first, not by
 
 Recommended target:
 
-- Make `/api/chat-ollama` the canonical answer runtime.
+- Make `/api/compass-answer` the public-facing canonical answer runtime.
+- Keep `/api/chat-ollama` as a legacy compatibility endpoint.
 - Treat `/api/chatbot` as legacy until removed or adapted.
 - Use OpenRouter as the future answer-model gateway.
 - Add a three-agent reviewer contract before changing production retrieval.
@@ -191,7 +192,8 @@ Phase 0: documentation and contracts
 
 Phase 1: canonical answer path
 
-- mark `/api/chat-ollama` canonical
+- mark `/api/compass-answer` as public-facing canonical
+- keep `/api/chat-ollama` as legacy compatibility
 - isolate `/api/chatbot` as legacy
 - ensure source cards, no-data, and rejected evidence behavior match
 

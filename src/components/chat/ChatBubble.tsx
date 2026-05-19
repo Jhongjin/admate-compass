@@ -70,8 +70,7 @@ export default function ChatBubble({
 }: ChatBubbleProps) {
   const isUser = type === "user";
   const generationLimited = Boolean(model && (
-    model === 'ollama-connection-failed'
-    || model === 'compass-answer-connection-failed'
+    model === 'compass-answer-connection-failed'
     || model.endsWith('-connection-failed')
   ));
   const hasVerifiedSources = sources.length > 0 && !noDataFound;
@@ -99,8 +98,8 @@ export default function ChatBubble({
   const getCorpusLabel = (source: Source) => {
     const corpus = source.corpus?.toLowerCase();
 
+    if (corpus?.endsWith('_document_chunks')) return '정책 근거 색인';
     if (corpus?.includes('document_chunks')) return '내부 색인 문서';
-    if (corpus?.includes('ollama_document_chunks')) return '정책 근거 색인';
 
     return 'Compass 색인';
   };

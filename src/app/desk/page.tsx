@@ -290,8 +290,7 @@ function ChatPageContent() {
 
   const isGenerationLimitedModel = (model?: string) => {
     return Boolean(model && (
-      model === "ollama-connection-failed"
-      || model === "compass-answer-connection-failed"
+      model === "compass-answer-connection-failed"
       || model.endsWith("-connection-failed")
     ));
   };
@@ -368,7 +367,7 @@ function ChatPageContent() {
     setMessages(currentMessages);
 
     try {
-      const response = await fetch('/api/chat-ollama', {
+      const response = await fetch('/api/compass-answer', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -473,7 +472,7 @@ function ChatPageContent() {
     setMessages(currentMessages);
 
     try {
-      const response = await fetch('/api/chat-ollama', {
+      const response = await fetch('/api/compass-answer', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

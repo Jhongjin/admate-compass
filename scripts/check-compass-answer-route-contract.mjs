@@ -5,7 +5,8 @@ const root = process.cwd()
 const chatPagePath = path.join(root, 'src/app/desk/page.tsx')
 const legacyChatPagePath = path.join(root, 'src/app/chat-ollama/page.tsx')
 const legacyChatAliasPagePath = path.join(root, 'src/app/chat/page.tsx')
-const canonicalRoutePath = path.join(root, 'src/app/api/chat-ollama/route.ts')
+const publicAnswerRoutePath = path.join(root, 'src/app/api/compass-answer/route.ts')
+const legacyAnswerRoutePath = path.join(root, 'src/app/api/chat-ollama/route.ts')
 const legacyRoutePath = path.join(root, 'src/app/api/chatbot/route.ts')
 const decisionDocPath = path.join(root, 'docs/tasks/2026-05-17_compass_reliability_3agent_openrouter_graphrag_plan_v3.md')
 const packagePath = path.join(root, 'package.json')
@@ -15,7 +16,7 @@ function fail(message) {
   process.exitCode = 1
 }
 
-for (const filePath of [chatPagePath, legacyChatPagePath, legacyChatAliasPagePath, canonicalRoutePath, legacyRoutePath, decisionDocPath, packagePath]) {
+for (const filePath of [chatPagePath, legacyChatPagePath, legacyChatAliasPagePath, publicAnswerRoutePath, legacyAnswerRoutePath, legacyRoutePath, decisionDocPath, packagePath]) {
   if (!fs.existsSync(filePath)) fail(`missing required file: ${path.relative(root, filePath)}`)
 }
 
@@ -24,13 +25,14 @@ if (process.exitCode) process.exit()
 const chatPageText = fs.readFileSync(chatPagePath, 'utf8')
 const legacyChatPageText = fs.readFileSync(legacyChatPagePath, 'utf8')
 const legacyChatAliasPageText = fs.readFileSync(legacyChatAliasPagePath, 'utf8')
-const canonicalRouteText = fs.readFileSync(canonicalRoutePath, 'utf8')
+const publicAnswerRouteText = fs.readFileSync(publicAnswerRoutePath, 'utf8')
+const legacyAnswerRouteText = fs.readFileSync(legacyAnswerRoutePath, 'utf8')
 const legacyRouteText = fs.readFileSync(legacyRoutePath, 'utf8')
 const decisionDocText = fs.readFileSync(decisionDocPath, 'utf8')
 const packageJson = JSON.parse(fs.readFileSync(packagePath, 'utf8'))
 
 for (const requiredText of [
-  "fetch('/api/chat-ollama'",
+  "fetch('/api/compass-answer'",
   'buildAssistantMessageFromResponse',
   'generation-limited',
   'noDataFound',
@@ -39,11 +41,21 @@ for (const requiredText of [
   if (!chatPageText.includes(requiredText)) fail(`desk page missing ${requiredText}`)
 }
 
+if (chatPageText.includes("fetch('/api/chat-ollama'") || chatPageText.includes('fetch("/api/chat-ollama"')) {
+  fail('desk page must use public-neutral /api/compass-answer for user-facing answer requests')
+}
+
 for (const requiredText of [
   'redirect(suffix ? `/desk?${suffix}` : "/desk")',
 ]) {
   if (!legacyChatPageText.includes(requiredText)) fail(`legacy chat page missing ${requiredText}`)
   if (!legacyChatAliasPageText.includes(requiredText)) fail(`legacy chat alias page missing ${requiredText}`)
+}
+
+for (const requiredText of [
+  "export { POST } from '../chat-ollama/route'",
+]) {
+  if (!publicAnswerRouteText.includes(requiredText)) fail(`public answer route missing ${requiredText}`)
 }
 
 for (const requiredText of [
@@ -55,15 +67,15 @@ for (const requiredText of [
   "model: 'compass-answer-connection-failed'",
   'answerProvider',
 ]) {
-  if (!canonicalRouteText.includes(requiredText)) fail(`canonical route missing ${requiredText}`)
+  if (!legacyAnswerRouteText.includes(requiredText)) fail(`legacy compatibility answer route missing ${requiredText}`)
 }
 
 for (const forbiddenText of [
   "generateResponse(message.trim(), 'tinyllama:1.1b')",
   'checkOllamaHealth',
 ]) {
-  if (canonicalRouteText.includes(forbiddenText)) {
-    fail(`canonical route must not use legacy Ollama-only behavior: ${forbiddenText}`)
+  if (legacyAnswerRouteText.includes(forbiddenText)) {
+    fail(`legacy compatibility answer route must not use legacy Ollama-only behavior: ${forbiddenText}`)
   }
 }
 
@@ -71,13 +83,15 @@ for (const requiredText of [
   "version: 'chatbot-v1'",
   "endpoint: '/api/chatbot'",
   'legacy: true',
-  "canonicalEndpoint: '/api/chat-ollama'",
+  "canonicalEndpoint: '/api/compass-answer'",
+  "legacyCompatibilityEndpoint: '/api/chat-ollama'",
 ]) {
   if (!legacyRouteText.includes(requiredText)) fail(`legacy route missing ${requiredText}`)
 }
 
 for (const requiredText of [
-  'Make `/api/chat-ollama` the canonical answer runtime.',
+  'Make `/api/compass-answer` the public-facing canonical answer runtime.',
+  'Keep `/api/chat-ollama` as a legacy compatibility endpoint.',
   'Treat `/api/chatbot` as legacy until removed or adapted.',
 ]) {
   if (!decisionDocText.includes(requiredText)) fail(`decision doc missing ${requiredText}`)

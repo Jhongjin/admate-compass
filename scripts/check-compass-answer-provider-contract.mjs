@@ -37,7 +37,8 @@ function walkFiles(relativeDir) {
 }
 
 const service = read('src/lib/services/CompassAnswerLlmService.ts')
-const canonicalRoute = read('src/app/api/chat-ollama/route.ts')
+const canonicalRoute = read('src/app/api/compass-answer/route.ts')
+const legacyCompatibilityRoute = read('src/app/api/chat-ollama/route.ts')
 const legacyRoute = read('src/app/api/chatbot/route.ts')
 const envExample = read('.env.example')
 const providerDoc = read('docs/tasks/2026-05-17_compass_answer_llm_provider_boundary_v1.md')
@@ -69,17 +70,24 @@ for (const token of [
 }
 
 for (const token of [
-  'generateCompassAnswer',
-  'getCompassAnswerRuntimeStatus',
-  'answerProvider',
-  "model: 'compass-answer-connection-failed'",
+  "export { POST } from '../chat-ollama/route'",
 ]) {
   if (!canonicalRoute.includes(token)) fail(`canonical route missing ${token}`)
 }
 
 for (const token of [
+  'generateCompassAnswer',
+  'getCompassAnswerRuntimeStatus',
+  'answerProvider',
+  "model: 'compass-answer-connection-failed'",
+]) {
+  if (!legacyCompatibilityRoute.includes(token)) fail(`legacy compatibility route missing ${token}`)
+}
+
+for (const token of [
   'legacy: true',
-  "canonicalEndpoint: '/api/chat-ollama'",
+  "canonicalEndpoint: '/api/compass-answer'",
+  "legacyCompatibilityEndpoint: '/api/chat-ollama'",
 ]) {
   if (!legacyRoute.includes(token)) fail(`legacy route missing ${token}`)
 }
@@ -145,7 +153,8 @@ for (const token of [
 }
 
 for (const token of [
-  'Make `/api/chat-ollama` the canonical answer runtime.',
+  'Make `/api/compass-answer` the public-facing canonical answer runtime.',
+  'Keep `/api/chat-ollama` as a legacy compatibility endpoint.',
   'Use OpenRouter as the future answer-model gateway.',
   'OpenRouter first means an approved explicit provider selection',
   'Treat `/api/chatbot` as legacy until removed or adapted.',
@@ -156,7 +165,7 @@ for (const token of [
 const secretLogPattern = /console\.(log|error|warn|info)\s*\([^)]*(OPENROUTER_API_KEY|COMPASS_OPENROUTER_API_KEY|\bapiKey\b)[^)]*\)/i
 for (const [label, text] of [
   ['CompassAnswerLlmService', service],
-  ['canonical answer route', canonicalRoute],
+  ['legacy compatibility answer route', legacyCompatibilityRoute],
 ]) {
   const match = text.match(secretLogPattern)
   if (match) {
@@ -165,7 +174,7 @@ for (const [label, text] of [
 }
 
 for (const forbidden of ['NEXT_PUBLIC_OPENROUTER']) {
-  if (service.includes(forbidden) || canonicalRoute.includes(forbidden)) {
+  if (service.includes(forbidden) || canonicalRoute.includes(forbidden) || legacyCompatibilityRoute.includes(forbidden)) {
     fail(`answer provider path may expose OpenRouter public config: ${forbidden}`)
   }
 }

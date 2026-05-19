@@ -83,7 +83,8 @@ export async function GET() {
     version: 'chatbot-v1',
     endpoint: '/api/chatbot',
     legacy: true,
-    canonicalEndpoint: '/api/chat-ollama'
+    canonicalEndpoint: '/api/compass-answer',
+    legacyCompatibilityEndpoint: '/api/chat-ollama'
   }, {
     status: 200,
     headers,

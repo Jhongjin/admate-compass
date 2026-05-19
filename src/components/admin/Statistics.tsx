@@ -230,7 +230,7 @@ export default function Statistics({ stats: propStats }: StatisticsProps) {
                 <Users className="w-6 h-6 text-white" />
               </div>
               <h3 className="font-medium text-white mb-1">사용자 관리</h3>
-              <p className="text-sm text-gray-300">접근 권한 설정</p>
+              <p className="text-sm text-gray-300">사용 권한 설정</p>
             </div>
             
             <div className="text-center p-4 bg-purple-500/20 rounded-lg hover:bg-purple-500/30 transition-colors">

@@ -69,7 +69,7 @@ const getAvailabilityLabel = (source: SourceItem) => {
 const getCorpusLabel = (source: SourceItem) => {
   const corpus = source.corpus?.toLowerCase();
 
-  if (corpus?.includes("ollama_document_chunks")) return "정책 근거 색인";
+  if (corpus?.endsWith("_document_chunks")) return "정책 근거 색인";
   if (corpus?.includes("document_chunks")) return "내부 문서 색인";
 
   return "Compass 색인";
