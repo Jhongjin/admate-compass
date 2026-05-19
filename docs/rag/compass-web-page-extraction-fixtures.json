@@ -28,7 +28,15 @@
         "headings": ["Meta 광고 정책", "광고 심사 기준"],
         "policySignalsInclude": ["vendor:meta", "policy:advertising", "policy:review", "policy:campaign", "policy:support"],
         "contentTextIncludes": ["Meta advertising standards", "광고 소재", "제한 콘텐츠", "campaign approval"],
-        "contentTextExcludes": ["window.__NEXT_DATA__", "Login menu search", "Company links footer"]
+        "contentTextExcludes": ["window.__NEXT_DATA__", "Login menu search", "Company links footer"],
+        "sourceQuality": {
+          "hasTitle": true,
+          "hasUrl": true,
+          "hasExcerpt": true,
+          "linkedToDocument": false,
+          "minQualityScore": 0.6,
+          "warningsLength": 0
+        }
       }
     },
     {
@@ -47,7 +55,15 @@
         "headings": ["Google 광고 정책 도움말"],
         "policySignalsInclude": ["vendor:google", "policy:advertising", "policy:review", "policy:campaign", "policy:support"],
         "contentTextIncludes": ["Google Ads policy help", "adspolicy compliance", "광고 심사", "랜딩 페이지"],
-        "contentTextExcludes": ["<article>", "</html>"]
+        "contentTextExcludes": ["<article>", "</html>"],
+        "sourceQuality": {
+          "hasTitle": true,
+          "hasUrl": true,
+          "hasExcerpt": true,
+          "linkedToDocument": false,
+          "minQualityScore": 0.6,
+          "warningsLength": 0
+        }
       }
     },
     {
