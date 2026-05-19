@@ -6,38 +6,35 @@ export async function GET() {
   if (guardResponse) return guardResponse;
 
   try {
-    const { getOllamaEndpointStatus } = await import('@/lib/services/ollamaEndpoint');
+    const { resolveOllamaEndpoint } = await import('@/lib/services/ollamaEndpoint');
     console.log('🔍 환경변수 디버깅 시작');
+    const answerEndpoint = resolveOllamaEndpoint();
     
     // 환경변수 확인 (값은 마스킹)
     const envStatus = {
-      NEXT_PUBLIC_SUPABASE_URL: {
-        exists: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
-        length: process.env.NEXT_PUBLIC_SUPABASE_URL?.length || 0,
-        prefix: process.env.NEXT_PUBLIC_SUPABASE_URL?.substring(0, 20) + '...' || 'undefined'
+      documentStore: {
+        publicUrlConfigured: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
+        serviceCredentialConfigured: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
       },
-      SUPABASE_SERVICE_ROLE_KEY: {
-        exists: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
-        length: process.env.SUPABASE_SERVICE_ROLE_KEY?.length || 0,
-        prefix: process.env.SUPABASE_SERVICE_ROLE_KEY?.substring(0, 20) + '...' || 'undefined'
+      answerRuntime: {
+        baseUrlConfigured: !!process.env.OLLAMA_BASE_URL,
+        fallbackUrlConfigured: !!process.env.VULTR_OLLAMA_URL,
+        defaultModelConfigured: !!process.env.OLLAMA_DEFAULT_MODEL,
+        endpointStatus: {
+          runtimeConfigured: answerEndpoint.configured,
+          usingDevelopmentFallback: answerEndpoint.isDevelopmentFallback,
+        },
       },
-      OLLAMA_BASE_URL: {
-        exists: !!process.env.OLLAMA_BASE_URL,
-        length: process.env.OLLAMA_BASE_URL?.length || 0
-      },
-      VULTR_OLLAMA_URL: {
-        exists: !!process.env.VULTR_OLLAMA_URL,
-        length: process.env.VULTR_OLLAMA_URL?.length || 0
-      },
-      OLLAMA_DEFAULT_MODEL: {
-        exists: !!process.env.OLLAMA_DEFAULT_MODEL,
-        length: process.env.OLLAMA_DEFAULT_MODEL?.length || 0
-      },
-      OLLAMA_ENDPOINT: getOllamaEndpointStatus(),
-      NODE_ENV: process.env.NODE_ENV
+      nodeEnv: process.env.NODE_ENV
     };
     
-    console.log('📊 환경변수 상태:', envStatus);
+    console.log('📊 환경변수 상태:', {
+      documentStoreConfigured:
+        envStatus.documentStore.publicUrlConfigured &&
+        envStatus.documentStore.serviceCredentialConfigured,
+      answerRuntimeConfigured: envStatus.answerRuntime.endpointStatus.runtimeConfigured,
+      usingDevelopmentFallback: envStatus.answerRuntime.endpointStatus.usingDevelopmentFallback,
+    });
     
     return NextResponse.json({
       success: true,
@@ -49,7 +46,7 @@ export async function GET() {
     console.error('❌ 환경변수 디버깅 실패:', error);
     return NextResponse.json({
       success: false,
-      error: error instanceof Error ? error.message : String(error),
+      error: '환경변수 디버깅 중 오류가 발생했습니다.',
       timestamp: new Date().toISOString()
     }, { status: 500 });
   }

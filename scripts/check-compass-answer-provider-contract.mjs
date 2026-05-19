@@ -93,9 +93,17 @@ if (answerHandler.includes('getCompassAnswerRuntimeStatus')) {
 for (const token of [
   'legacy: true',
   "canonicalEndpoint: '/api/compass-answer'",
-  "legacyCompatibilityEndpoint: '/api/chat-ollama'",
 ]) {
   if (!legacyRoute.includes(token)) fail(`legacy route missing ${token}`)
+}
+
+for (const forbidden of [
+  "legacyCompatibilityEndpoint: '/api/chat-ollama'",
+  'legacyCompatibilityEndpoint: "/api/chat-ollama"',
+]) {
+  if (legacyRoute.includes(forbidden)) {
+    fail(`legacy route must not advertise provider-named compatibility endpoint: ${forbidden}`)
+  }
 }
 
 for (const token of [

@@ -6,24 +6,38 @@ export async function GET() {
   if (guardResponse) return guardResponse;
 
   try {
-    const [{ RAGSearchService }, { getOllamaEndpointStatus }] = await Promise.all([
+    const [{ RAGSearchService }, { resolveOllamaEndpoint }] = await Promise.all([
       import('@/lib/services/RAGSearchService'),
       import('@/lib/services/ollamaEndpoint'),
     ]);
     console.log('🔍 RAG 디버깅 시작');
+    const answerEndpoint = resolveOllamaEndpoint();
     
     // 환경변수 확인
     const envStatus = {
-      NEXT_PUBLIC_SUPABASE_URL: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
-      SUPABASE_SERVICE_ROLE_KEY: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
-      OLLAMA_BASE_URL: !!process.env.OLLAMA_BASE_URL,
-      VULTR_OLLAMA_URL: !!process.env.VULTR_OLLAMA_URL,
-      OLLAMA_DEFAULT_MODEL: !!process.env.OLLAMA_DEFAULT_MODEL,
-      OLLAMA_ENDPOINT: getOllamaEndpointStatus(),
-      NODE_ENV: process.env.NODE_ENV
+      documentStore: {
+        publicUrlConfigured: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
+        serviceCredentialConfigured: !!process.env.SUPABASE_SERVICE_ROLE_KEY,
+      },
+      answerRuntime: {
+        baseUrlConfigured: !!process.env.OLLAMA_BASE_URL,
+        fallbackUrlConfigured: !!process.env.VULTR_OLLAMA_URL,
+        defaultModelConfigured: !!process.env.OLLAMA_DEFAULT_MODEL,
+        endpointStatus: {
+          runtimeConfigured: answerEndpoint.configured,
+          usingDevelopmentFallback: answerEndpoint.isDevelopmentFallback,
+        },
+      },
+      nodeEnv: process.env.NODE_ENV
     };
     
-    console.log('📊 환경변수 상태:', envStatus);
+    console.log('📊 환경변수 상태:', {
+      documentStoreConfigured:
+        envStatus.documentStore.publicUrlConfigured &&
+        envStatus.documentStore.serviceCredentialConfigured,
+      answerRuntimeConfigured: envStatus.answerRuntime.endpointStatus.runtimeConfigured,
+      usingDevelopmentFallback: envStatus.answerRuntime.endpointStatus.usingDevelopmentFallback,
+    });
     
     // RAGSearchService 초기화 테스트
     let ragService;
@@ -69,7 +83,7 @@ export async function GET() {
     console.error('❌ RAG 디버깅 실패:', error);
     return NextResponse.json({
       success: false,
-      error: error instanceof Error ? error.message : String(error),
+      error: 'RAG 디버깅 중 오류가 발생했습니다.',
       timestamp: new Date().toISOString()
     }, { status: 500 });
   }

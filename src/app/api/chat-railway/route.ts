@@ -91,17 +91,20 @@ function getFallbackSearchResults(query: string, limit: number): SearchResult[] 
 }
 
 /**
- * Railway Ollama 연결을 통한 답변 생성
+ * Managed answer service 연결을 통한 답변 생성
  */
-async function generateAnswerWithRailwayOllama(
+async function generateAnswerWithManagedRuntime(
   message: string, 
   searchResults: SearchResult[]
 ): Promise<string> {
   try {
-    console.log('🚂 Railway Ollama 연결 답변 생성 시작');
+    console.log('🚂 Managed answer service response generation started');
     
     const railwayUrl = process.env.RAILWAY_OLLAMA_URL || 'https://meta-faq-ollama-production.up.railway.app';
-    console.log('🔗 Railway URL:', railwayUrl);
+    console.log('🔗 Managed answer service configuration:', {
+      runtimeConfigured: Boolean(process.env.RAILWAY_OLLAMA_URL),
+      usingDefaultRuntime: !process.env.RAILWAY_OLLAMA_URL,
+    });
     
     // 검색 결과를 컨텍스트로 변환
     const context = searchResults.map(result => 
@@ -124,9 +127,9 @@ ${context}
 
 답변:`;
 
-    console.log('📤 Railway Ollama 요청 시작');
+    console.log('📤 Managed answer service request started');
     
-    // Railway Ollama 서버로 요청
+    // Managed answer service 서버로 요청
     const response = await fetch(`${railwayUrl}/api/generate`, {
       method: 'POST',
       headers: {
@@ -147,21 +150,24 @@ ${context}
       signal: AbortSignal.timeout(30000) // 30초 타임아웃
     });
 
-    console.log('📡 Railway Ollama 응답 상태:', response.status);
+    console.log('📡 Managed answer service response status:', response.status);
     
     if (!response.ok) {
       const errorText = await response.text();
-      console.error('❌ Railway Ollama 응답 오류:', errorText);
-      throw new Error(`Railway Ollama error: ${response.status} - ${errorText}`);
+      console.error('❌ Managed answer service upstream error:', {
+        status: response.status,
+        bodyLength: errorText.length,
+      });
+      throw new Error(`Managed answer service error: ${response.status}`);
     }
 
     const data = await response.json();
-    console.log('✅ Railway Ollama 답변 생성 완료:', data);
+    console.log('✅ Managed answer service response generation completed');
     
     return data.response?.trim() || '답변을 생성할 수 없습니다.';
 
   } catch (error) {
-    console.error('❌ Railway Ollama 답변 생성 실패:', error);
+    console.error('❌ Managed answer service response generation failed:', error);
     throw error;
   }
 }
@@ -176,7 +182,7 @@ function calculateConfidence(searchResults: SearchResult[]): number {
 }
 
 /**
- * Railway+Ollama 전용 Chat API
+ * Managed answer service 전용 Chat API
  * POST /api/chat-railway
  */
 export async function POST(request: NextRequest) {
@@ -188,20 +194,24 @@ export async function POST(request: NextRequest) {
 
   try {
     const { message } = await request.json();
-    console.log(`🚂 Railway+Ollama RAG 챗봇 응답 생성 시작: "${message}"`);
+    console.log('🚂 Managed answer service RAG response generation started:', {
+      messageLength: typeof message === 'string' ? message.length : 0,
+    });
 
     // 1. RAGSearchService 초기화 및 검색
-    console.log('🔍 Railway+Ollama RAG 검색 시작:', `"${message}"`);
+    console.log('🔍 Managed answer service RAG search started:', {
+      messageLength: typeof message === 'string' ? message.length : 0,
+    });
     ragService = new RAGSearchService();
     const ragSearchResults = await ragService.searchSimilarChunks(message, parseInt(process.env.TOP_K || '5'));
-    console.log(`📊 Railway+Ollama 검색 결과: ${ragSearchResults.length}개`);
+    console.log(`📊 Managed answer service search results: ${ragSearchResults.length}`);
     
     // RAGSearchResult를 VectorStorageService SearchResult로 변환
     const searchResults = convertRAGSearchResults(ragSearchResults);
 
     // 2. 검색 결과가 없으면 관련 내용 없음 응답
     if (searchResults.length === 0) {
-      console.log('⚠️ Railway+Ollama RAG 검색 결과가 없음. 관련 내용 없음 응답');
+      console.log('⚠️ Managed answer service RAG search returned no results');
       return NextResponse.json({
         response: {
           message: "죄송합니다. 현재 제공된 문서에서 관련 정보를 찾을 수 없습니다. 더 구체적인 질문을 해주시거나 다른 키워드로 시도해보세요.",
@@ -212,24 +222,24 @@ export async function POST(request: NextRequest) {
         },
         confidence: 0,
         processingTime: Date.now() - startTime,
-        model: 'railway-ollama-no-data'
+        model: 'compass-answer-no-data'
       });
     }
 
-    // 3. Railway+Ollama 답변 생성
-    console.log('🚂 Railway+Ollama 답변 생성 시작');
+    // 3. Managed answer service 답변 생성
+    console.log('🚂 Managed answer service answer generation started');
     
     let answer: string;
     try {
-      answer = await generateAnswerWithRailwayOllama(message, searchResults);
+      answer = await generateAnswerWithManagedRuntime(message, searchResults);
     } catch (error) {
-      console.error('❌ Railway Ollama 연결 실패:', error);
+      console.error('❌ Managed answer service connection failed:', error);
       
-      // Railway Ollama 서버 연결 실패 시 적절한 오류 메시지 반환
+      // Managed answer service 서버 연결 실패 시 적절한 오류 메시지 반환
       return NextResponse.json({
         response: {
-          message: "Railway Ollama 서버에 연결할 수 없습니다. 서버 상태를 확인해주세요.",
-          content: "Railway Ollama 서버에 연결할 수 없습니다. 서버 상태를 확인해주세요.",
+          message: "Compass answer service is currently unavailable. Please check the service status.",
+          content: "Compass answer service is currently unavailable. Please check the service status.",
           sources: [],
           noDataFound: false,
           showContactOption: true,
@@ -237,7 +247,7 @@ export async function POST(request: NextRequest) {
         },
         confidence: 0,
         processingTime: Date.now() - startTime,
-        model: 'railway-ollama-connection-failed'
+        model: 'compass-answer-connection-failed'
       });
     }
     
@@ -254,7 +264,7 @@ export async function POST(request: NextRequest) {
       content: result.content.substring(0, 150) + '...'
     }));
 
-    console.log('✅ Railway+Ollama RAG 챗봇 응답 생성 완료');
+    console.log('✅ Managed answer service RAG response generation completed');
 
     return NextResponse.json({
       response: {
@@ -266,11 +276,11 @@ export async function POST(request: NextRequest) {
       },
       confidence: confidence,
       processingTime: processingTime,
-      model: process.env.OLLAMA_DEFAULT_MODEL || 'mistral:7b'
+      model: 'compass-answer'
     });
 
   } catch (error) {
-    console.error('❌ Railway+Ollama RAG 챗봇 응답 생성 실패:', error);
+    console.error('❌ Managed answer service RAG response generation failed:', error);
     return NextResponse.json({
       response: {
         message: "죄송합니다. 서비스 처리 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.",

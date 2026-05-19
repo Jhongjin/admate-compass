@@ -87,9 +87,17 @@ for (const requiredText of [
   "endpoint: '/api/chatbot'",
   'legacy: true',
   "canonicalEndpoint: '/api/compass-answer'",
-  "legacyCompatibilityEndpoint: '/api/chat-ollama'",
 ]) {
   if (!legacyRouteText.includes(requiredText)) fail(`legacy route missing ${requiredText}`)
+}
+
+for (const forbiddenText of [
+  "legacyCompatibilityEndpoint: '/api/chat-ollama'",
+  'legacyCompatibilityEndpoint: "/api/chat-ollama"',
+]) {
+  if (legacyRouteText.includes(forbiddenText)) {
+    fail(`legacy route must not advertise legacy provider-named endpoint: ${forbiddenText}`)
+  }
 }
 
 for (const requiredText of [

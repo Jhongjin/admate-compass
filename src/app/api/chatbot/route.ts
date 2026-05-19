@@ -83,8 +83,7 @@ export async function GET() {
     version: 'chatbot-v1',
     endpoint: '/api/chatbot',
     legacy: true,
-    canonicalEndpoint: '/api/compass-answer',
-    legacyCompatibilityEndpoint: '/api/chat-ollama'
+    canonicalEndpoint: '/api/compass-answer'
   }, {
     status: 200,
     headers,
@@ -135,17 +134,17 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    // Ollama 서버 상태 확인
+    // 답변 런타임 상태 확인
     const isOllamaHealthy = await checkOllamaHealth();
-    console.log('🔍 Ollama 서버 상태:', isOllamaHealthy ? '정상' : '오류');
+    console.log('🔍 Answer runtime status:', isOllamaHealthy ? 'reachable' : 'unreachable');
 
-    // Ollama 단일 모델 사용 (백업 제거)
+    // 답변 런타임 단일 모델 사용 (백업 제거)
     let response;
     
     if (isOllamaHealthy) {
       try {
-        // RAG + Ollama 서비스 사용
-        console.log('🤖 RAG + Ollama 서비스 호출');
+        // RAG + 답변 런타임 서비스 사용
+        console.log('🤖 RAG + answer runtime service request');
         const { getRAGSearchService } = await import('@/lib/services/RAGSearchService');
         const ragService = getRAGSearchService();
         response = await ragService.generateChatResponse(message.trim());
@@ -154,13 +153,13 @@ export async function POST(request: NextRequest) {
         const enrichedSources = await enrichSearchResults(response.sources);
         response.sources = enrichedSources;
         
-        console.log('✅ RAG + Ollama 응답 완료');
+        console.log('✅ RAG + answer runtime response completed');
       } catch (ragError) {
-        console.error('❌ RAG + Ollama 서비스 오류:', ragError);
+        console.error('❌ RAG + answer runtime service error:', ragError);
         
-        // RAG 오류 시 직접 Ollama 사용
+        // RAG 오류 시 직접 답변 런타임 사용
         try {
-          console.log('🤖 직접 Ollama 서버 사용 시도');
+          console.log('🤖 Direct answer runtime fallback started');
           const ollamaResponse = await generateResponse(message.trim(), 'tinyllama:1.1b');
           
           response = {
@@ -168,13 +167,13 @@ export async function POST(request: NextRequest) {
             sources: [],
             confidence: 0.7,
             processingTime: 2000,
-            model: 'tinyllama:1.1b',
+            model: 'compass-answer',
             isLLMGenerated: true
           };
           
-          console.log('✅ 직접 Ollama 응답 완료');
+          console.log('✅ Direct answer runtime fallback completed');
         } catch (ollamaError) {
-          console.error('❌ 직접 Ollama도 실패:', ollamaError);
+          console.error('❌ Direct answer runtime fallback failed:', ollamaError);
           response = {
             answer: '죄송합니다. 현재 서비스에 일시적인 문제가 발생했습니다. 잠시 후 다시 시도해주세요.',
             sources: [],
@@ -186,8 +185,8 @@ export async function POST(request: NextRequest) {
         }
       }
     } else {
-      // Ollama 서버가 비정상인 경우 오류 응답
-      console.error('❌ Ollama 서버 비정상 - 서비스 중단');
+      // 답변 런타임이 비정상인 경우 오류 응답
+      console.error('❌ Answer runtime unavailable - service paused');
       response = {
         answer: '죄송합니다. 현재 AI 서비스에 일시적인 문제가 발생했습니다. 잠시 후 다시 시도해주세요.',
         sources: [],
@@ -200,19 +199,16 @@ export async function POST(request: NextRequest) {
 
     // 응답 구성 및 모니터링 로그
     console.log('📊 웹 통합 서비스 응답 데이터:', {
-      answer: response.answer,
       sourcesCount: response.sources?.length || 0,
-      sources: response.sources,
-      model: response.model,
       isLLMGenerated: response.isLLMGenerated,
       confidence: response.confidence,
       processingTime: response.processingTime
     });
     
     // 모니터링을 위한 상세 로그
-    console.log('🔍 Vultr+Ollama 서비스 상태:', {
-      ollamaHealthy: isOllamaHealthy,
-      primaryModel: response.model,
+    console.log('🔍 Managed answer service status:', {
+      runtimeReachable: isOllamaHealthy,
+      primaryModel: 'compass-answer',
       responseQuality: response.confidence > 0.7 ? '높음' : response.confidence > 0.4 ? '보통' : '낮음',
       sourcesFound: response.sources?.length || 0
     });
@@ -231,7 +227,7 @@ export async function POST(request: NextRequest) {
         })),
         confidence: Math.round((response.confidence || 0) * 100),
         processingTime: response.processingTime || 0,
-        model: response.model || 'unknown',
+        model: response.isLLMGenerated ? 'compass-answer' : 'compass-answer-connection-failed',
         isLLMGenerated: response.isLLMGenerated || false
       }
     };

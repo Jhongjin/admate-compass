@@ -87,6 +87,52 @@ function collectConsoleCalls(text) {
   return calls
 }
 
+function collectNextJsonResponses(text) {
+  const calls = []
+  const responsePattern = /NextResponse\.json\s*\(/g
+  let match
+
+  while ((match = responsePattern.exec(text))) {
+    let index = match.index
+    let depth = 0
+    let inString = null
+    let escaped = false
+
+    for (; index < text.length; index += 1) {
+      const char = text[index]
+
+      if (inString) {
+        if (escaped) {
+          escaped = false
+        } else if (char === '\\') {
+          escaped = true
+        } else if (char === inString) {
+          inString = null
+        }
+        continue
+      }
+
+      if (char === '"' || char === "'" || char === '`') {
+        inString = char
+        continue
+      }
+
+      if (char === '(') {
+        depth += 1
+      } else if (char === ')') {
+        depth -= 1
+        if (depth === 0) {
+          calls.push(text.slice(match.index, index + 1))
+          responsePattern.lastIndex = index + 1
+          break
+        }
+      }
+    }
+  }
+
+  return calls
+}
+
 const checkedFiles = [
   'src/app/page.tsx',
   'src/app/login/page.tsx',
@@ -119,6 +165,18 @@ const legacyProviderService = read('src/lib/services/ollama.ts')
 const healthRoute = read('src/app/api/health/route.ts')
 const webIntegrationStatusRoute = read('src/app/api/web-integration-status/route.ts')
 const packageJson = JSON.parse(read('package.json') || '{}')
+
+const providerNamedDiagnosticRouteFiles = [
+  'src/app/api/ollama/route.ts',
+  'src/app/api/proxy-ollama/route.ts',
+  'src/app/api/chat-railway/route.ts',
+  'src/app/api/railway-status/route.ts',
+  'src/app/api/chatbot/route.ts',
+  'src/app/api/debug-env/route.ts',
+  'src/app/api/debug-rag/route.ts',
+]
+
+const proxyRoute = read('src/app/api/proxy-ollama/route.ts')
 
 for (const removedPage of [
   'src/app/test-ollama/page.tsx',
@@ -221,6 +279,63 @@ for (const [relativePath, text] of [
         fail(`${relativePath} has provider-internal or env-status console logging: ${forbidden}`)
       }
     }
+  }
+}
+
+for (const relativePath of providerNamedDiagnosticRouteFiles) {
+  const text = read(relativePath)
+  const publicSurfaceSnippets = [
+    ...collectConsoleCalls(text),
+    ...collectNextJsonResponses(text),
+  ]
+
+  for (const snippet of publicSurfaceSnippets) {
+    for (const forbidden of [
+      { pattern: /\bOllama\b/i, label: 'provider name Ollama' },
+      { pattern: /\bRailway\b/i, label: 'infra name Railway' },
+      { pattern: /\bVultr\b/i, label: 'infra name Vultr' },
+      { pattern: /ollama-v1/i, label: 'provider-specific version ollama-v1' },
+      { pattern: /railway-ollama/i, label: 'provider-specific model railway-ollama-*' },
+      { pattern: /\/api\/chat-ollama/i, label: 'provider-named legacy endpoint /api/chat-ollama' },
+      { pattern: /\/api\/ollama/i, label: 'provider-named endpoint /api/ollama' },
+      { pattern: /meta-faq-ollama-production/i, label: 'default runtime URL' },
+      { pattern: /https?:\/\/[^'"`\s)]*ollama/i, label: 'runtime URL containing provider name' },
+      { pattern: /\bOLLAMA_[A-Z_]+\b/, label: 'provider-specific env key' },
+      { pattern: /\bVULTR_OLLAMA_URL\b/, label: 'provider-specific env key' },
+      { pattern: /getOllamaEndpointStatus\s*\(/, label: 'provider-specific endpoint status helper in public surface' },
+      { pattern: /\burl\s*:\s*(?:railwayUrl|process\.env\.RAILWAY_OLLAMA_URL)/, label: 'runtime URL field' },
+    ]) {
+      if (forbidden.pattern.test(snippet)) {
+        fail(`${relativePath} public response/console must not expose ${forbidden.label}`)
+      }
+    }
+  }
+}
+
+for (const forbidden of [
+  { pattern: /\.\.\.\s*data/, label: 'upstream response spread' },
+  { pattern: /NextResponse\.json\s*\(\s*data\s*\)/, label: 'raw upstream response passthrough' },
+]) {
+  if (forbidden.pattern.test(proxyRoute)) {
+    fail(`src/app/api/proxy-ollama/route.ts must not expose ${forbidden.label}`)
+  }
+}
+
+for (const required of [
+  'buildPublicGenerateResponse',
+  "model: 'compass-answer'",
+  'response:',
+  'done:',
+  'context:',
+  'total_duration:',
+  'load_duration:',
+  'prompt_eval_count:',
+  'prompt_eval_duration:',
+  'eval_count:',
+  'eval_duration:',
+]) {
+  if (!proxyRoute.includes(required)) {
+    fail(`src/app/api/proxy-ollama/route.ts missing allowlisted generate field ${required}`)
   }
 }
 

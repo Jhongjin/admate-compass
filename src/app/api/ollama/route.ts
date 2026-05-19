@@ -1,7 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { guardProductionAdminDebugRoute } from '@/lib/adminDebugGuard';
-import { generateResponse, getAvailableModels, checkOllamaHealth } from '@/lib/services/ollama';
-import { getOllamaEndpointStatus, resolveOllamaEndpoint } from '@/lib/services/ollamaEndpoint';
+import { generateResponse } from '@/lib/services/ollama';
+import { resolveOllamaEndpoint } from '@/lib/services/ollamaEndpoint';
+
+function getAnswerRuntimeStatus(isReachable = false) {
+  const endpoint = resolveOllamaEndpoint();
+  return {
+    runtimeConfigured: endpoint.configured,
+    runtimeReachable: isReachable,
+    usingDevelopmentFallback: endpoint.isDevelopmentFallback,
+  };
+}
 
 // 기본 헤더 설정
 const headers = {
@@ -22,27 +31,30 @@ export async function OPTIONS() {
   });
 }
 
-// GET 메서드 - Ollama 서버 상태 및 모델 목록 확인
+// GET 메서드 - 답변 런타임 상태 및 모델 목록 확인
 export async function GET() {
   const guardResponse = guardProductionAdminDebugRoute();
   if (guardResponse) return guardResponse;
 
   try {
-    console.log('🔍 Ollama API GET 요청 - 서버 상태 확인');
+    console.log('🔍 Answer runtime GET request - checking service status');
     
     const endpoint = resolveOllamaEndpoint();
-    console.log('🔧 Ollama endpoint:', getOllamaEndpointStatus());
+    console.log('🔧 Answer runtime configuration:', {
+      runtimeConfigured: endpoint.configured,
+      usingDevelopmentFallback: endpoint.isDevelopmentFallback,
+    });
     
-    // 직접 URL로 헬스 체크
+    // 직접 런타임 헬스 체크
     let isHealthy = false;
     let models = [];
     
     try {
       if (!endpoint.baseUrl) {
-        throw new Error('Ollama endpoint is not configured');
+        throw new Error('Answer runtime is not configured');
       }
 
-      console.log('🔍 Ollama 서버 헬스 체크');
+      console.log('🔍 Answer runtime health check');
       
       // 타임아웃 설정 (60초)
       const controller = new AbortController();
@@ -78,7 +90,7 @@ export async function GET() {
           if (modelsResponse.ok) {
             const modelsData = await modelsResponse.json();
             models = modelsData.models || [];
-            console.log('📋 사용 가능한 모델:', models);
+            console.log('📋 Available answer models count:', models.length);
           } else {
             console.error('❌ 모델 목록 조회 실패:', modelsResponse.status, modelsResponse.statusText);
             models = [];
@@ -94,7 +106,7 @@ export async function GET() {
         });
       }
     } catch (error) {
-      console.error('❌ Ollama 서버 연결 오류:', {
+      console.error('❌ Answer runtime connection error:', {
         error: error instanceof Error ? error.message : String(error),
         name: error instanceof Error ? error.name : 'Unknown'
       });
@@ -103,11 +115,11 @@ export async function GET() {
     
     const response = {
       success: true,
-      message: 'Ollama API가 정상적으로 작동합니다.',
+      message: 'Compass answer service is operational.',
       timestamp: new Date().toISOString(),
       server: {
         healthy: isHealthy,
-        ...getOllamaEndpointStatus(),
+        ...getAnswerRuntimeStatus(isHealthy),
         reachable: isHealthy,
         availableModels: models.map((model: any) => ({
           name: model.name,
@@ -116,8 +128,8 @@ export async function GET() {
         }))
       },
       methods: ['GET', 'POST', 'OPTIONS'],
-      version: 'ollama-v1',
-      endpoint: '/api/ollama'
+      version: 'compass-answer',
+      recommendedEndpoint: '/api/compass-answer'
     };
 
     console.log('📤 최종 API 응답:', {
@@ -131,15 +143,14 @@ export async function GET() {
       headers,
     });
   } catch (error) {
-    console.error('❌ Ollama API GET 요청 오류:', error);
+    console.error('❌ Answer runtime GET request error:', error);
     
     return NextResponse.json({
       success: false,
-      error: 'Ollama 서버 상태 확인 중 오류가 발생했습니다.',
-      details: error instanceof Error ? error.message : String(error),
+      error: 'Compass answer service status check failed.',
       server: {
         healthy: false,
-        ...getOllamaEndpointStatus(),
+        ...getAnswerRuntimeStatus(false),
         reachable: false
       }
     }, {
@@ -149,12 +160,12 @@ export async function GET() {
   }
 }
 
-// POST 메서드 - Ollama를 통한 응답 생성
+// POST 메서드 - 답변 런타임을 통한 응답 생성
 export async function POST(request: NextRequest) {
   const guardResponse = guardProductionAdminDebugRoute();
   if (guardResponse) return guardResponse;
 
-  console.log('🚀 Ollama API POST 요청 시작');
+  console.log('🚀 Answer runtime POST request started');
   
   try {
     // 요청 본문 파싱
@@ -172,16 +183,22 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    console.log(`💬 Ollama API 메시지 수신: "${message}" (모델: ${model})`);
+    console.log('💬 Answer runtime message received:', {
+      messageLength: message.length,
+      requestedModel: Boolean(model),
+    });
 
     const endpoint = resolveOllamaEndpoint();
-    console.log('🔧 POST 요청 Ollama endpoint:', getOllamaEndpointStatus());
+    console.log('🔧 Answer runtime POST configuration:', {
+      runtimeConfigured: endpoint.configured,
+      usingDevelopmentFallback: endpoint.isDevelopmentFallback,
+    });
 
-    // Ollama 서버 상태 확인
+    // 답변 런타임 상태 확인
     let isHealthy = false;
     try {
       if (!endpoint.baseUrl) {
-        throw new Error('Ollama endpoint is not configured');
+        throw new Error('Answer runtime is not configured');
       }
       const healthResponse = await fetch(`${endpoint.baseUrl}/api/tags`);
       isHealthy = healthResponse.ok;
@@ -193,45 +210,45 @@ export async function POST(request: NextRequest) {
     if (!isHealthy) {
       return NextResponse.json({
         success: false,
-        error: 'Ollama 서버 연결 오류',
-        details: 'Ollama 서버에 연결할 수 없습니다. 서버 상태를 확인해주세요.'
+        error: 'Compass answer service connection error',
+        details: 'Compass answer service is currently unavailable. Please check the service status.'
       }, {
         status: 503,
         headers,
       });
     }
 
-    // Ollama를 통한 응답 생성
+    // 답변 런타임을 통한 응답 생성
     const startTime = Date.now();
     const response = await generateResponse(message.trim(), model);
     const processingTime = Date.now() - startTime;
 
-    console.log('✅ Ollama 응답 완료');
+    console.log('✅ Answer runtime response completed');
 
     const apiResponse = {
       success: true,
       response: {
         message: response,
-        model: model,
+        model: 'compass-answer',
         processingTime: processingTime,
-        server: 'Ollama (Vultr)',
+        server: 'managed answer service',
         timestamp: new Date().toISOString()
       }
     };
 
-    console.log('📤 Ollama API 응답 전송');
+    console.log('📤 Answer runtime API response sent');
     return NextResponse.json(apiResponse, {
       status: 200,
       headers,
     });
 
   } catch (error) {
-    console.error('❌ Ollama API POST 요청 오류:', error);
+    console.error('❌ Answer runtime POST request error:', error);
     
     return NextResponse.json({
       success: false,
-      error: 'Ollama 응답 생성 중 오류가 발생했습니다.',
-      details: error instanceof Error ? error.message : String(error)
+      error: 'Compass answer service failed to generate a response.',
+      details: 'Answer runtime processing failed.'
     }, {
       status: 500,
       headers,
