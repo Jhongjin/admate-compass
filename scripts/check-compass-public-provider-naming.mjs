@@ -19,6 +19,12 @@ function read(relativePath) {
   return fs.readFileSync(fullPath, 'utf8')
 }
 
+function assertMissing(relativePath) {
+  if (fs.existsSync(path.join(root, relativePath))) {
+    fail(`${relativePath} must be removed from the browser-accessible app surface`)
+  }
+}
+
 function walkFiles(relativeDir) {
   const dir = path.join(root, relativeDir)
   if (!fs.existsSync(dir)) return []
@@ -60,8 +66,17 @@ for (const relativePath of checkedFiles) {
 
 const publicRoute = read('src/app/api/compass-answer/route.ts')
 const legacyRoute = read('src/app/api/chat-ollama/route.ts')
+const healthRoute = read('src/app/api/health/route.ts')
 const webIntegrationStatusRoute = read('src/app/api/web-integration-status/route.ts')
 const packageJson = JSON.parse(read('package.json') || '{}')
+
+for (const removedPage of [
+  'src/app/test-ollama/page.tsx',
+  'src/app/test-ollama-response/page.tsx',
+  'src/app/test-railway/page.tsx',
+]) {
+  assertMissing(removedPage)
+}
 
 if (!publicRoute.includes("export { POST } from '../chat-ollama/route'")) {
   fail('src/app/api/compass-answer/route.ts must alias the legacy compatibility answer handler')
@@ -69,6 +84,43 @@ if (!publicRoute.includes("export { POST } from '../chat-ollama/route'")) {
 
 if (!legacyRoute.includes('export async function POST')) {
   fail('src/app/api/chat-ollama/route.ts must keep legacy compatibility POST handler')
+}
+
+for (const token of [
+  'answerRuntime',
+  'configured:',
+  'managed:',
+  'reachable:',
+  'documentStore',
+]) {
+  if (!healthRoute.includes(token)) {
+    fail(`src/app/api/health/route.ts missing neutral health token ${token}`)
+  }
+}
+
+for (const forbidden of [
+  'services.ollama',
+  'getOllamaEndpointStatus',
+  'modelLabel',
+  'defaultModel',
+  'answerProvider',
+  'models:',
+  'source:',
+  'Environment variables not set',
+]) {
+  if (healthRoute.includes(forbidden)) {
+    fail(`src/app/api/health/route.ts must not expose provider-specific health field ${forbidden}`)
+  }
+}
+
+for (const forbidden of [
+  'answerProvider',
+  'model: answerResult.model',
+  'provider: answerResult.provider',
+]) {
+  if (legacyRoute.includes(forbidden) || publicRoute.includes(forbidden)) {
+    fail(`Compass answer routes must not expose provider-specific response field ${forbidden}`)
+  }
 }
 
 for (const token of [

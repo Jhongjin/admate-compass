@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createCompassServiceClient, getCompassDbSchema } from '@/lib/supabase/compass';
-import { getOllamaEndpointStatus, resolveOllamaEndpoint } from '@/lib/services/ollamaEndpoint';
+import { resolveOllamaEndpoint } from '@/lib/services/ollamaEndpoint';
 
 export async function GET(request: NextRequest) {
   const startTime = Date.now();
@@ -16,17 +16,18 @@ export async function GET(request: NextRequest) {
       responseTime: 0
     };
 
-    // Ollama 서비스 상태 확인
+    // Answer runtime status. Public JSON stays provider-neutral.
     try {
       const endpoint = resolveOllamaEndpoint();
       if (!endpoint.baseUrl) {
-        health.services.ollama = {
+        health.services.answerRuntime = {
           status: 'unhealthy',
-          ...getOllamaEndpointStatus(),
+          configured: false,
+          managed: true,
           reachable: false,
-          error: 'Ollama endpoint is not configured'
+          error: 'Answer runtime is not configured'
         };
-        throw new Error('ollama_health_recorded');
+        throw new Error('answer_runtime_health_recorded');
       }
 
       const response = await fetch(`${endpoint.baseUrl}/api/tags`, {
@@ -36,60 +37,61 @@ export async function GET(request: NextRequest) {
       });
 
       if (response.ok) {
-        const data = await response.json();
-        health.services.ollama = {
+        health.services.answerRuntime = {
           status: 'healthy',
-          ...getOllamaEndpointStatus(),
+          configured: true,
+          managed: true,
           reachable: true,
-          models: data.models?.length || 0,
           responseTime: Date.now() - startTime
         };
       } else {
-        health.services.ollama = {
+        health.services.answerRuntime = {
           status: 'unhealthy',
-          ...getOllamaEndpointStatus(),
+          configured: true,
+          managed: true,
           reachable: false,
           error: `HTTP ${response.status}`
         };
       }
     } catch (error) {
-      if (!(error instanceof Error && error.message === 'ollama_health_recorded')) {
-        health.services.ollama = {
+      if (!(error instanceof Error && error.message === 'answer_runtime_health_recorded')) {
+        health.services.answerRuntime = {
           status: 'unhealthy',
-          ...getOllamaEndpointStatus(),
+          configured: false,
+          managed: true,
           reachable: false,
-          error: error instanceof Error ? error.message : String(error)
+          error: 'Answer runtime health check failed'
         };
       }
     }
 
     // Supabase 연결 확인
     try {
-      const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+      const dbUrlConfigured = Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL);
       const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
-      if (supabaseUrl && supabaseKey) {
+      if (dbUrlConfigured && supabaseKey) {
         const supabase = createCompassServiceClient();
         const { error } = await supabase
           .from('documents')
           .select('id')
           .limit(1);
 
-        health.services.supabase = {
+        health.services.documentStore = {
           status: error ? 'unhealthy' : 'healthy',
           schema: getCompassDbSchema(),
           error: error?.message
         };
       } else {
-        health.services.supabase = {
+        health.services.documentStore = {
           status: 'unhealthy',
-          error: 'Environment variables not set'
+          error: 'Document store is not configured'
         };
       }
     } catch (error) {
-      health.services.supabase = {
+      health.services.documentStore = {
         status: 'unhealthy',
-        error: error instanceof Error ? error.message : String(error)
+        error: 'Document store health check failed'
       };
     }
 

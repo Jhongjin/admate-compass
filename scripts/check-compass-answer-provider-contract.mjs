@@ -78,8 +78,8 @@ for (const token of [
 for (const token of [
   'generateCompassAnswer',
   'getCompassAnswerRuntimeStatus',
-  'answerProvider',
   "model: 'compass-answer-connection-failed'",
+  "model: 'compass-answer'",
 ]) {
   if (!legacyCompatibilityRoute.includes(token)) fail(`legacy compatibility route missing ${token}`)
 }
@@ -176,6 +176,12 @@ for (const [label, text] of [
 for (const forbidden of ['NEXT_PUBLIC_OPENROUTER']) {
   if (service.includes(forbidden) || canonicalRoute.includes(forbidden) || legacyCompatibilityRoute.includes(forbidden)) {
     fail(`answer provider path may expose OpenRouter public config: ${forbidden}`)
+  }
+}
+
+for (const forbidden of ['answerProvider']) {
+  if (canonicalRoute.includes(forbidden) || legacyCompatibilityRoute.includes(forbidden)) {
+    fail(`answer route response must not expose provider-specific field: ${forbidden}`)
   }
 }
 

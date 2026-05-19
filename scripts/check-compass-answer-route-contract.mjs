@@ -65,7 +65,7 @@ for (const requiredText of [
   'verifiedSearchResults',
   "model: 'compass-answer-no-data'",
   "model: 'compass-answer-connection-failed'",
-  'answerProvider',
+  "model: 'compass-answer'",
 ]) {
   if (!legacyAnswerRouteText.includes(requiredText)) fail(`legacy compatibility answer route missing ${requiredText}`)
 }
@@ -73,6 +73,7 @@ for (const requiredText of [
 for (const forbiddenText of [
   "generateResponse(message.trim(), 'tinyllama:1.1b')",
   'checkOllamaHealth',
+  'answerProvider',
 ]) {
   if (legacyAnswerRouteText.includes(forbiddenText)) {
     fail(`legacy compatibility answer route must not use legacy Ollama-only behavior: ${forbiddenText}`)

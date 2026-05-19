@@ -335,8 +335,7 @@ export async function POST(request: NextRequest) {
         },
         confidence,
         processingTime: Date.now() - startTime,
-        model: 'compass-answer-connection-failed',
-        answerProvider: getCompassAnswerRuntimeStatus().provider
+        model: 'compass-answer-connection-failed'
       });
     }
 
@@ -350,13 +349,11 @@ export async function POST(request: NextRequest) {
         sources,
         noDataFound: false,
         schema,
-        showContactOption: false,
-        answerProvider: answerResult.provider
+        showContactOption: false
       },
       confidence,
       processingTime,
-      model: answerResult.model,
-      answerProvider: answerResult.provider
+      model: 'compass-answer'
     });
 
   } catch (error) {
