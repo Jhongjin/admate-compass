@@ -54,7 +54,7 @@ export function ChatInterface({ className, initialQuestion }: ChatInterfaceProps
     {
       id: '1',
       type: 'bot',
-      content: 'Compass evidence desk입니다. 플랫폼, 정책 항목, 소재 표현을 함께 적어주시면 확인 가능한 근거와 검토 메모를 분리해서 정리합니다.',
+      content: 'Compass 정책 데스크입니다. 플랫폼, 정책 항목, 소재 표현을 함께 적어주시면 확인 가능한 근거와 검토 메모를 분리해서 정리합니다.',
       timestamp: new Date()
     }
   ]);
@@ -257,7 +257,7 @@ export function ChatInterface({ className, initialQuestion }: ChatInterfaceProps
           <div className="min-w-0">
             <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#758070]">
               <ClipboardCheck className="h-3.5 w-3.5 text-[#1F7A4D]" />
-              Policy evidence console
+              정책 근거 콘솔
             </div>
             <p className="mt-1 text-sm font-semibold text-[#111713]">질문, 검토 메모, 근거 문서를 한 화면에서 대조합니다.</p>
           </div>
@@ -353,9 +353,9 @@ export function ChatInterface({ className, initialQuestion }: ChatInterfaceProps
                       <div className="rounded-lg border border-[#E9D59B] bg-[#FFF8E6] p-3 text-xs leading-5 text-[#6B5316]">
                         <div className="mb-1 flex items-center gap-2 font-semibold text-[#111713]">
                           <Search className="h-3.5 w-3.5 text-[#9E5700]" />
-                          Compass could not find usable evidence
+                          확인 가능한 근거가 없습니다
                         </div>
-                        플랫폼명, 정책 항목, 소재 표현, 랜딩 조건을 더 좁히면 근거 색인을 다시 확인할 수 있습니다.
+                        더 구체적으로 입력하면 문서 근거를 다시 확인할 수 있습니다.
                         {message.showContactOption && (
                           <button
                             type="button"

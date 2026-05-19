@@ -97,12 +97,12 @@ export function UserProfileDropdown({ user, onSignOut }: UserProfileDropdownProp
         </button>
         <button
           onClick={() => {
-            // 회원가입 모달을 열기 위한 이벤트 발생
+            // 이용 권한 요청 모달을 열기 위한 이벤트 발생
             window.dispatchEvent(new CustomEvent('openAuthModal', { detail: { mode: 'signup' } }));
           }}
           className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-all duration-200 hover:shadow-lg"
         >
-          회원가입
+          이용 권한 요청
         </button>
       </div>
     );

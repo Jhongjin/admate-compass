@@ -39,8 +39,8 @@ interface Message {
   uiState?: ChatUiState;
 }
 
-const INITIAL_GREETING = "안녕하세요. Compass Policy Desk입니다. 플랫폼, 정책 항목, 소재 유형을 함께 입력하면 확인 가능한 근거와 검토 포인트를 정리해 드립니다.";
-const NO_DATA_MESSAGE = "Compass could not find usable evidence in current documents. Narrow the platform, policy item, or creative type and try again.";
+const INITIAL_GREETING = "안녕하세요. Compass 정책 데스크입니다. 플랫폼, 정책 항목, 소재 유형을 함께 입력하면 확인 가능한 근거와 검토 포인트를 정리해 드립니다.";
+const NO_DATA_MESSAGE = "현재 Compass 문서에서 확인 가능한 근거를 찾지 못했습니다. 더 구체적으로 입력하면 문서 근거를 다시 확인할 수 있습니다.";
 const GENERATION_LIMITED_MESSAGE = "답변 생성이 일시적으로 제한되었습니다. 확인된 근거 문서는 아래에서 계속 확인할 수 있습니다.";
 const ERROR_MESSAGE = "일시적인 서비스 오류로 답변을 만들지 못했습니다. 잠시 후 다시 시도해 주세요.";
 
@@ -892,9 +892,40 @@ function ChatPageContent() {
         : latestHasSources
           ? "source-found"
           : "initial-empty";
+  const needsAdditionalReview = latestNoDataFound || latestGenerationLimited || latestIsError;
+  const finalReviewReady = latestHasSources && !needsAdditionalReview;
+  const reliabilityPostureItems = [
+    {
+      label: "근거",
+      value: latestHasSources ? `${latestSources.length}개 확인` : "대기",
+      Icon: CheckCircle,
+      className: latestHasSources
+        ? "border-[#C6D9CB] bg-[#EDF7EF] text-[#1F7A4D]"
+        : "border-[#D8DCCF] bg-white text-[#5F6C62]",
+      iconClassName: latestHasSources ? "text-[#1F7A4D]" : "text-[#8B9388]",
+    },
+    {
+      label: "추가 확인 필요",
+      value: needsAdditionalReview ? "필요" : "대기",
+      Icon: AlertCircle,
+      className: needsAdditionalReview
+        ? "border-[#E9D59B] bg-[#FFF8E6] text-[#8A6418]"
+        : "border-[#D8DCCF] bg-white text-[#5F6C62]",
+      iconClassName: needsAdditionalReview ? "text-[#9E5700]" : "text-[#8B9388]",
+    },
+    {
+      label: "최종 검토",
+      value: finalReviewReady ? "준비" : needsAdditionalReview ? "보류" : "대기",
+      Icon: Target,
+      className: finalReviewReady
+        ? "border-[#C6D9CB] bg-white text-[#1F7A4D]"
+        : "border-[#D8DCCF] bg-white text-[#5F6C62]",
+      iconClassName: finalReviewReady ? "text-[#1F7A4D]" : "text-[#8B9388]",
+    },
+  ] as const;
 
   const chatHeader = (
-    <div className="rounded-none border-b border-[#D8DCCF] bg-[#FBFBF7]/95 px-4 py-2.5 backdrop-blur">
+    <div className="rounded-none border-b border-[#D8DCCF] bg-[#FBFBF7]/95 px-4 py-2 backdrop-blur">
       <div className="mx-auto flex max-w-7xl items-center justify-between gap-3">
         <div className="min-w-0 flex items-center space-x-3">
           <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-[#C6D9CB] bg-[#EDF7EF]">
@@ -902,7 +933,7 @@ function ChatPageContent() {
           </div>
           <div className="min-w-0">
             <h2 className="truncate text-sm font-semibold text-[#111713]">
-              Compass Policy Desk
+              Compass 정책 데스크
             </h2>
             <p className="hidden text-xs text-[#5F6C62] sm:block">
               정책 답변, 출처, 검토 상태를 한 화면에서 운영자가 확인합니다.
@@ -981,6 +1012,22 @@ function ChatPageContent() {
             <span className="hidden text-xs sm:inline">새 대화</span>
           </Button>
         </div>
+      </div>
+      <div className="mx-auto mt-2 grid max-w-7xl grid-cols-3 gap-1.5 text-[11px] sm:flex sm:items-center sm:gap-2">
+        {reliabilityPostureItems.map(({ label, value, Icon, className, iconClassName }) => {
+          const PostureIcon = Icon;
+
+          return (
+            <div
+              key={label}
+              className={`flex min-w-0 items-center gap-1.5 rounded-md border px-2 py-1 ${className}`}
+            >
+              <PostureIcon className={`h-3.5 w-3.5 flex-none ${iconClassName}`} />
+              <span className="truncate font-semibold">{label}</span>
+              <span className="ml-auto flex-none text-[10px] opacity-80">{value}</span>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

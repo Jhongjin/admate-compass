@@ -351,7 +351,7 @@ function validateStateContract(fixture, label) {
     if (sourceCount !== 0) fail(`${label}.noData must not include sources`);
     if (fixture.message.noDataFound !== true) fail(`${label}.noData message.noDataFound must be true`);
     if (fixture.panelExpectation.cardsVisible !== false) fail(`${label}.noData must not show source cards`);
-    if (!includesText(expectedVisible, "Compass could not find usable evidence")) {
+    if (!includesText(expectedVisible, "확인 가능한 근거")) {
       fail(`${label}.noData must include vendor-neutral noData copy`);
     }
   }

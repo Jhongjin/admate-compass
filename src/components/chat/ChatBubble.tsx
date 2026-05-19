@@ -230,7 +230,8 @@ export default function ChatBubble({
 
                   {noDataFound && (
                     <div className="mb-3 rounded-md border border-[#E9D59B] bg-[#FFF8E6] px-3 py-2 text-xs leading-relaxed text-[#6B5316]">
-                      현재 색인에서 바로 확인 가능한 근거가 없습니다. 플랫폼, 정책 항목, 소재 표현을 좁혀 다시 검토해 주세요.
+                      <span className="font-semibold text-[#111713]">확인 가능한 근거가 없습니다.</span>{" "}
+                      더 구체적으로 입력하면 문서 근거를 다시 확인할 수 있습니다.
                     </div>
                   )}
 
