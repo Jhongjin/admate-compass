@@ -34,9 +34,9 @@ const previewRows = [
 ] as const;
 
 const answerVerificationFlow = [
-  ["1차 검토", "질문 조건과 매체 기준을 맞춰 1차 답변 후보를 만듭니다."],
-  ["교차 검토", "다른 기준으로 2차 답변 후보를 비교하고 누락과 충돌 가능성을 점검합니다."],
-  ["최종 정리", "최종 검토 단계에서 근거와 추가 확인 필요 항목을 분리해 최종 답변을 정리합니다."],
+  ["LLM1 답변 후보", "질문 조건과 매체 기준을 맞춰 첫 번째 답변 후보를 만듭니다."],
+  ["LLM2 답변 후보", "다른 관점의 답변 후보와 비교해 누락과 충돌 가능성을 점검합니다."],
+  ["팀장 최종 검토", "근거, 정책 정확도, 추가 확인 필요 항목을 분리해 최종 답변을 정리합니다."],
 ] as const;
 
 const mediaScopes = [
@@ -209,7 +209,7 @@ export default function HomePage() {
                 AdMate Compass 정책 확인
               </h1>
               <p className="mt-5 max-w-[630px] text-base leading-8 text-[#344052] sm:text-lg">
-                광고 정책 질문을 공식 정책과 운영 문서 기준으로 확인하고, 매체별 근거와 참고 문단을 함께 정리합니다.
+                광고 정책 질문을 공식 정책과 운영 문서 기준으로 확인하고, 매체별 근거와 참고 문단을 함께 정리해 답변 정확도를 높입니다.
               </p>
               <p className="mt-3 max-w-[610px] text-sm leading-7 text-[#68707C]">
                 조건이 부족하거나 기준이 충돌하면 바로 결론을 내리지 않고 추가 확인 필요 항목으로 분리합니다.
@@ -273,7 +273,7 @@ export default function HomePage() {
                     근거를 확인한 뒤 답변을 정리합니다
                   </h3>
                   <p className="mt-3 text-xs leading-5 text-white/68">
-                    Compass는 여러 관점의 답변 초안을 비교하고, 근거와 누락 가능성을 확인한 뒤 업무에 쓸 수 있는 형태로 정리합니다.
+                    Compass는 두 답변 후보를 비교하고 팀장 최종 검토 단계에서 근거와 누락 가능성을 확인한 뒤 업무에 쓸 수 있는 형태로 정리합니다.
                   </p>
                   <div className="mt-4 grid gap-2">
                     {answerVerificationFlow.map(([title, detail], index) => (

@@ -103,14 +103,14 @@ export function AuthModal({ isOpen, onClose, mode }: AuthModalProps) {
         
         if (error) {
           toast({
-            title: "회원가입 실패",
+            title: "이용 권한 요청 실패",
             description: error.message,
             variant: "destructive",
           });
         } else {
           toast({
-            title: "✅ 회원가입 성공",
-            description: "회원가입이 완료되었습니다! 이메일을 확인하여 계정을 활성화해주세요.",
+            title: "이용 권한 요청이 접수되었습니다",
+            description: "이메일을 확인하여 계정을 활성화해 주세요.",
           });
           onClose();
           setFormData({ email: "@nasmedia.co.kr", password: "", confirmPassword: "", name: "" });
@@ -126,7 +126,7 @@ export function AuthModal({ isOpen, onClose, mode }: AuthModalProps) {
           });
         } else {
           toast({
-            title: "✅ 로그인 성공",
+            title: "로그인되었습니다",
             description: "로그인이 완료되었습니다!",
           });
           onClose();
@@ -229,7 +229,7 @@ export function AuthModal({ isOpen, onClose, mode }: AuthModalProps) {
           {/* Header */}
           <div className="flex items-center justify-between p-6 border-b border-white/10">
             <h2 className="text-2xl font-bold text-white">
-              {isSignUp ? "회원가입" : "로그인"}
+              {isSignUp ? "이용 권한 요청" : "로그인"}
             </h2>
             <button
               onClick={onClose}
@@ -342,23 +342,23 @@ export function AuthModal({ isOpen, onClose, mode }: AuthModalProps) {
               {isSubmitting ? (
                 <div className="flex items-center justify-center space-x-2">
                   <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                  <span>{isSignUp ? "회원가입 중..." : "로그인 중..."}</span>
+                  <span>{isSignUp ? "요청 중..." : "로그인 중..."}</span>
                 </div>
               ) : (
-                <span>{isSignUp ? "회원가입" : "로그인"}</span>
+                <span>{isSignUp ? "이용 권한 요청" : "로그인"}</span>
               )}
             </Button>
 
             {/* Toggle Mode */}
             <div className="text-center pt-4 border-t border-white/10">
               <p className="text-gray-400 text-sm">
-                {isSignUp ? "이미 계정이 있으신가요?" : "계정이 없으신가요?"}
+                {isSignUp ? "이미 계정이 있으신가요?" : "이용 권한이 필요하신가요?"}
                 <button
                   type="button"
                   onClick={toggleMode}
                   className="ml-2 text-blue-400 hover:text-blue-300 font-medium transition-colors"
                 >
-                  {isSignUp ? "로그인" : "회원가입"}
+                  {isSignUp ? "로그인" : "이용 권한 요청"}
                 </button>
               </p>
             </div>

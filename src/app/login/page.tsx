@@ -95,14 +95,14 @@ function LoginPageContent() {
               compass.admate.ai.kr
             </div>
             <div className="space-y-4">
-              <h1 className="font-nanum text-3xl font-bold leading-tight sm:text-4xl md:text-5xl">
-                AdMate Compass 로그인
+              <h1 className="font-nanum text-3xl font-semibold leading-tight tracking-normal">
+                AdMate Compass 정책 확인
               </h1>
               <p className="max-w-2xl font-nanum text-lg leading-8 text-[#34423A]">
-                정책 검색을 이용하려면 AdMate 계정으로 로그인하세요.
+                정책 검색과 근거 문서 확인을 위해 AdMate 계정으로 로그인하세요.
               </p>
               <p className="max-w-2xl text-sm leading-7 text-[#667066]">
-                로그인 후 요청하신 Compass 화면으로 돌아갑니다. 사용 권한이 필요하다면 AdMate 이용 권한 요청을 진행해주세요.
+                로그인 후 요청하신 Compass 화면으로 돌아갑니다. 사용 권한이 필요하다면 AdMate 이용 권한을 요청해 주세요.
               </p>
             </div>
           </div>
