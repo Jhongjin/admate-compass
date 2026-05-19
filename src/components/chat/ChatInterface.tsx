@@ -103,7 +103,6 @@ export function ChatInterface({ className, initialQuestion }: ChatInterfaceProps
     // 중복 요청 방지: 마지막 메시지가 같은 내용인지 확인
     const lastMessage = messages[messages.length - 1];
     if (lastMessage && lastMessage.type === 'user' && lastMessage.content === trimmedMessage) {
-      console.log('중복 요청 방지: 동일한 메시지가 이미 전송되었습니다.');
       return;
     }
 
@@ -133,8 +132,6 @@ export function ChatInterface({ className, initialQuestion }: ChatInterfaceProps
     setMessages(prev => [...prev, botMessage]);
 
     try {
-      console.log('Compass chat API 호출 시작:', trimmedMessage);
-      
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: {
@@ -143,16 +140,12 @@ export function ChatInterface({ className, initialQuestion }: ChatInterfaceProps
         body: JSON.stringify({ message: trimmedMessage }),
       });
 
-      console.log('API 응답 상태:', response.status, response.statusText);
-
       if (!response.ok) {
-        console.error('API 응답 오류:', response.status, response.statusText);
-        throw new Error(`서버 오류: ${response.status} ${response.statusText}`);
+        throw new Error(`서버 오류: ${response.status}`);
       }
 
       // 일반 JSON 응답 처리
       const data = await response.json();
-      console.log('일반 JSON 응답:', data);
       
       setMessages(prev => prev.map(msg => 
         msg.id === botMessageId 
@@ -169,8 +162,6 @@ export function ChatInterface({ className, initialQuestion }: ChatInterfaceProps
       ));
 
     } catch (error) {
-      console.error('챗봇 응답 오류:', error);
-      
       let errorContent = '죄송합니다. 답변을 생성하는 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요.';
       
       if (error instanceof Error) {
@@ -181,7 +172,7 @@ export function ChatInterface({ className, initialQuestion }: ChatInterfaceProps
         } else if (error.message.includes('JSON 파싱')) {
           errorContent = '서버 응답 형식에 문제가 있습니다. 관리자에게 문의해주세요.';
         } else {
-          errorContent = `오류: ${error.message}`;
+          errorContent = '일시적인 오류가 발생했습니다. 잠시 후 다시 시도해주세요.';
         }
       }
       

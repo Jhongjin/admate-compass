@@ -140,6 +140,10 @@ const checkedFiles = [
   ...walkFiles('src/components'),
 ]
 
+const publicDebugSurfaceFiles = [
+  'src/components/chat/ChatInterface.tsx',
+]
+
 const forbiddenPatterns = [
   { pattern: /\bollama\b/i, label: 'provider name "ollama"' },
   { pattern: /\bopenrouter\b/i, label: 'provider gateway name "openrouter"' },
@@ -155,6 +159,26 @@ for (const relativePath of checkedFiles) {
   for (const { pattern, label } of forbiddenPatterns) {
     if (pattern.test(text)) {
       fail(`${relativePath} must not expose ${label}`)
+    }
+  }
+}
+
+for (const relativePath of publicDebugSurfaceFiles) {
+  const text = read(relativePath)
+  for (const consoleCall of collectConsoleCalls(text)) {
+    for (const forbidden of [
+      { pattern: /\btrimmedMessage\b/, label: 'raw request message' },
+      { pattern: /\binputMessage\b/, label: 'raw input message' },
+      { pattern: /\bmessageText\b/, label: 'raw message argument' },
+      { pattern: /\bdata\b/, label: 'raw response payload' },
+      { pattern: /\bresponse(?:\.statusText)?\b/, label: 'raw response metadata' },
+      { pattern: /\berror\b/, label: 'raw error object' },
+      { pattern: /\bbody\b/, label: 'request body' },
+      { pattern: /\/api\/chat/i, label: 'internal chat route' },
+    ]) {
+      if (forbidden.pattern.test(consoleCall)) {
+        fail(`${relativePath} console logging must not expose ${forbidden.label}`)
+      }
     }
   }
 }
