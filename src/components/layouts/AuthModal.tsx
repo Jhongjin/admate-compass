@@ -229,7 +229,7 @@ export function AuthModal({ isOpen, onClose, mode }: AuthModalProps) {
           {/* Header */}
           <div className="flex items-center justify-between p-6 border-b border-white/10">
             <h2 className="text-2xl font-bold text-white">
-              {isSignUp ? "이용 권한 요청" : "로그인"}
+              {isSignUp ? "AdMate 이용 권한 요청" : "로그인"}
             </h2>
             <button
               onClick={onClose}
@@ -345,7 +345,7 @@ export function AuthModal({ isOpen, onClose, mode }: AuthModalProps) {
                   <span>{isSignUp ? "요청 중..." : "로그인 중..."}</span>
                 </div>
               ) : (
-                <span>{isSignUp ? "이용 권한 요청" : "로그인"}</span>
+                <span>{isSignUp ? "AdMate 이용 권한 요청" : "로그인"}</span>
               )}
             </Button>
 
@@ -358,7 +358,7 @@ export function AuthModal({ isOpen, onClose, mode }: AuthModalProps) {
                   onClick={toggleMode}
                   className="ml-2 text-blue-400 hover:text-blue-300 font-medium transition-colors"
                 >
-                  {isSignUp ? "로그인" : "이용 권한 요청"}
+                  {isSignUp ? "로그인" : "AdMate 이용 권한 요청"}
                 </button>
               </p>
             </div>

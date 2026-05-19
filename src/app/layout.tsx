@@ -4,8 +4,8 @@ import Providers from "./providers";
 import { Toaster } from "@/components/ui/toaster";
 
 export const metadata: Metadata = {
-  title: "AdMate Compass - Policy Intelligence Agent",
-  description: "AdMate Compass는 광고 플랫폼 정책과 가이드를 검색하고 답하는 RAG 기반 Policy Intelligence Agent입니다.",
+  title: "AdMate Compass - 광고 정책 확인 도구",
+  description: "AdMate Compass는 광고 플랫폼 정책과 가이드를 검색하고, 정책 근거 확인을 돕는 도구입니다.",
   alternates: {
     canonical: "https://compass.admate.ai.kr",
   },

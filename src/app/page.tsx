@@ -10,6 +10,7 @@ import { useAuth } from "@/hooks/useAuth";
 const COMPASS_DESK_PATH = "/desk";
 const LOGIN_URL = `/login?next=${encodeURIComponent(COMPASS_DESK_PATH)}`;
 const ACCESS_REQUEST_URL = "https://home.admate.ai.kr/access-request?product=compass";
+const ADMATE_HOME_URL = "https://home.admate.ai.kr";
 
 const supportedMedia = [
   { id: "meta", name: "Meta" },
@@ -34,9 +35,9 @@ const previewRows = [
 ] as const;
 
 const answerVerificationFlow = [
-  ["1차 검토", "질문 조건 정리", "플랫폼, 업종, 소재 표현과 랜딩 조건을 기준별로 정리합니다."],
-  ["출처 대조", "정책 원문 확인", "공식 정책과 AdMate 확인 기준을 대조해 누락과 충돌을 찾습니다."],
-  ["최종 검토", "답변 근거 정리", "두 검토 결과를 비교해 최종 답변과 추가 확인 필요 항목을 분리합니다."],
+  ["1차 후보", "근거 수집", "첫 번째 후보가 질문 조건과 공식 정책 근거를 모아 답변 초안을 정리합니다."],
+  ["2차 후보", "근거 재확인", "두 번째 후보가 같은 질문을 다시 검토해 누락된 근거와 다른 해석을 찾습니다."],
+  ["팀장 최종 검토", "충돌/중복/근거 확인", "팀장이 두 후보의 충돌, 중복, 근거를 비교해 최종 답변을 확정합니다."],
 ] as const;
 
 const mediaScopes = [
@@ -205,10 +206,10 @@ export default function HomePage() {
                 </span>
               </div>
 
-              <h1 className="mt-7 max-w-[640px] text-[30px] font-semibold leading-[36px] tracking-normal text-[#172033] [text-wrap:balance]">
+              <h1 className="mt-4 max-w-[640px] text-3xl font-semibold leading-tight tracking-normal text-[#172033] [text-wrap:balance]">
                 AdMate Compass 정책 확인
               </h1>
-              <p className="mt-5 max-w-[630px] text-base leading-8 text-[#344052] sm:text-lg">
+              <p className="mt-4 max-w-[630px] text-base leading-8 text-[#344052] sm:text-lg">
                 광고 정책 질문을 공식 정책과 AdMate 확인 기준으로 대조하고, 매체별 근거와 참고 문단을 함께 정리합니다.
               </p>
               <p className="mt-3 max-w-[610px] text-sm leading-7 text-[#68707C]">
@@ -358,7 +359,7 @@ export default function HomePage() {
           <div className="mt-5 rounded-[10px] border border-[#D9D4C8] bg-white/72 p-4">
             <p className="text-sm font-bold text-[#172033]">사용 권한이 필요하다면</p>
             <p className="mt-2 text-xs leading-5 text-[#68707C]">
-              Compass 사용 권한은 AdMate 이용 권한 요청 후 확인됩니다.
+              AdMate 이용 권한 요청에서 Compass 사용 권한을 신청할 수 있습니다.
             </p>
             <a
               href={ACCESS_REQUEST_URL}
@@ -366,6 +367,12 @@ export default function HomePage() {
             >
               AdMate 이용 권한 요청
             </a>
+            <Link
+              href={ADMATE_HOME_URL}
+              className="mt-3 inline-flex min-h-11 w-full items-center justify-center rounded-[8px] border border-[#D9D4C8] bg-white/72 px-4 py-2.5 text-sm font-bold text-[#344052] transition duration-300 [transition-timing-function:cubic-bezier(0.32,0.72,0,1)] hover:bg-[#F8F6F1] active:scale-[0.98]"
+            >
+              AdMate 홈페이지로 이동
+            </Link>
           </div>
 
           <div className="mt-5 rounded-[10px] border border-[#D9D4C8] bg-white/72 p-4">
@@ -375,9 +382,9 @@ export default function HomePage() {
             </div>
             <div className="mt-3 space-y-2">
               {[
-                ["1차 검토", "질문 조건 정리"],
-                ["출처 대조", "정책 원문과 출처 확인"],
-                ["최종 검토", "최종 답변과 추가 확인 항목 정리"],
+                ["1차 후보", "질문 조건과 공식 정책 근거 수집"],
+                ["2차 후보", "누락 근거와 다른 해석 재확인"],
+                ["팀장 최종 검토", "충돌/중복/근거 확인 후 최종 답변 확정"],
               ].map(([stage, detail]) => (
                 <div key={stage} className="flex items-center justify-between gap-3 rounded-[7px] border border-[#E1DED6] bg-[#FBF7EE] px-3 py-2">
                   <span className="text-xs font-bold text-[#7A5518]">{stage}</span>

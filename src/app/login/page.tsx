@@ -38,9 +38,18 @@ const loginProofCards = [
 ] as const;
 
 const loginReviewSteps = [
-  "1차 검토",
-  "출처 대조",
-  "최종 검토",
+  {
+    label: "1차 후보",
+    detail: "질문 조건과 공식 정책 근거 수집",
+  },
+  {
+    label: "2차 후보",
+    detail: "누락 근거와 다른 해석 재확인",
+  },
+  {
+    label: "팀장 최종 검토",
+    detail: "충돌/중복/근거 확인 후 최종 답변 확정",
+  },
 ] as const;
 
 function LoginPageContent() {
@@ -153,7 +162,7 @@ function LoginPageContent() {
                 <div>
                   <p className="text-xs font-semibold text-[#111713]">정책 확인 화면</p>
                   <p className="mt-1 text-[11px] leading-5 text-[#667066]">
-                    1차 검토, 출처 대조, 최종 검토 흐름을 로그인 후 한 화면에서 확인합니다.
+                    1차 후보와 2차 후보가 근거를 모으고, 팀장이 충돌/중복/근거를 확인해 최종 답변을 확정하는 흐름을 로그인 후 한 화면에서 확인합니다.
                   </p>
                 </div>
                 <span className="shrink-0 rounded-md border border-[#D8DCCF] bg-white px-2 py-1 text-[11px] font-semibold text-[#34423A]">
@@ -175,11 +184,12 @@ function LoginPageContent() {
             <div className="mt-4 grid overflow-hidden rounded-lg border border-[#D8DCCF] bg-[#FFF8E6] sm:grid-cols-3">
               {loginReviewSteps.map((step, index) => (
                 <span
-                  key={step}
-                  className={`grid min-h-[54px] content-center gap-1 px-3 py-2 text-xs font-black leading-tight text-[#111713] ${index > 0 ? "border-t border-[#E7D9AF] sm:border-l sm:border-t-0" : ""}`}
+                  key={step.label}
+                  className={`grid min-h-[74px] content-center gap-1 px-3 py-2 text-xs leading-tight text-[#111713] ${index > 0 ? "border-t border-[#E7D9AF] sm:border-l sm:border-t-0" : ""}`}
                 >
                   <em className="text-[10px] font-black not-italic text-[#1F7A4D]">{String(index + 1).padStart(2, "0")}</em>
-                  {step}
+                  <strong className="font-black">{step.label}</strong>
+                  <small className="text-[10px] font-semibold leading-4 text-[#667066]">{step.detail}</small>
                 </span>
               ))}
             </div>
