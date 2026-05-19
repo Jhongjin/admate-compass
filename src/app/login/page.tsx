@@ -13,6 +13,36 @@ import { sanitizeCompassNextPath } from "@/lib/auth/safeNext";
 const ACCESS_REQUEST_URL = "https://sentinel.admate.ai.kr/access-request?product=compass";
 const ADMATE_HOME_URL = "https://home.admate.ai.kr";
 
+const loginStatusStrip = [
+  { label: "로그인", value: "보호됨" },
+  { label: "출처", value: "확인 후 표시" },
+  { label: "답변", value: "3단계 정리" },
+] as const;
+
+const loginProofCards = [
+  {
+    label: "기준",
+    title: "정책 기준 확인",
+    detail: "매체별 정책과 운영 기준을 로그인 후 확인합니다.",
+  },
+  {
+    label: "출처",
+    title: "출처 근거 확인",
+    detail: "답변에 사용된 문서와 원문 링크를 함께 확인합니다.",
+  },
+  {
+    label: "정리",
+    title: "최종 답변 정리",
+    detail: "추가 확인 필요 항목을 분리해 업무에 바로 쓸 수 있게 정리합니다.",
+  },
+] as const;
+
+const loginReviewSteps = [
+  "질문 조건 확인",
+  "출처 대조",
+  "최종 답변 정리",
+] as const;
+
 function LoginPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -89,21 +119,69 @@ function LoginPageContent() {
 
       <main className="px-4 pb-16 pt-10 sm:px-6 md:pt-20">
         <section className="mx-auto grid max-w-6xl grid-cols-1 gap-6 lg:grid-cols-[0.95fr_1.05fr] lg:items-center">
-          <div className="space-y-6 text-[#111713]">
+          <div className="rounded-lg border border-[#D6D8CD] border-t-4 border-t-[#111713] bg-white p-6 text-[#111713] shadow-sm md:p-8">
             <div className="inline-flex items-center gap-2 rounded-md border border-[#C6D9CB] bg-[#EDF7EF] px-3 py-1 text-sm text-[#1F7A4D]">
               <ShieldCheck className="h-4 w-4" aria-hidden="true" />
               compass.admate.ai.kr
             </div>
             <div className="space-y-4">
-              <h1 className="font-nanum text-3xl font-semibold leading-tight tracking-normal">
+              <h1 className="mt-4 text-3xl font-semibold tracking-normal leading-tight">
                 AdMate Compass 정책 확인
               </h1>
-              <p className="max-w-2xl font-nanum text-lg leading-8 text-[#34423A]">
-                정책 검색과 근거 문서 확인을 위해 AdMate 계정으로 로그인하세요.
+              <p className="max-w-2xl text-lg leading-8 text-[#34423A]">
+                정책 기준과 확인한 출처를 이어서 보려면 AdMate 계정으로 로그인하세요.
               </p>
               <p className="max-w-2xl text-sm leading-7 text-[#667066]">
                 로그인 후 요청하신 Compass 화면으로 돌아갑니다. 사용 권한이 필요하다면 AdMate 이용 권한을 요청해 주세요.
               </p>
+            </div>
+
+            <div className="mt-6 grid overflow-hidden rounded-lg border border-[#D8DCCF] bg-[#FFFDF7] sm:grid-cols-3">
+              {loginStatusStrip.map((item, index) => (
+                <span
+                  key={item.label}
+                  className={`grid min-h-[58px] content-center gap-1 px-3 py-2 ${index > 0 ? "border-t border-[#E5E0D6] sm:border-l sm:border-t-0" : ""}`}
+                >
+                  <em className="text-[10px] font-black not-italic tracking-[0.08em] text-[#746A5B]">{item.label}</em>
+                  <strong className="text-sm font-black leading-tight text-[#111713]">{item.value}</strong>
+                </span>
+              ))}
+            </div>
+
+            <div className="mt-5 rounded-lg border border-[#D8DCCF] bg-[#F8F7F1] p-4">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+                <div>
+                  <p className="text-xs font-semibold text-[#111713]">정책 확인 화면</p>
+                  <p className="mt-1 text-[11px] leading-5 text-[#667066]">
+                    질문 조건, 출처 확인, 최종 답변 정리 흐름을 로그인 후 한 화면에서 확인합니다.
+                  </p>
+                </div>
+                <span className="shrink-0 rounded-md border border-[#D8DCCF] bg-white px-2 py-1 text-[11px] font-semibold text-[#34423A]">
+                  출처 확인 우선
+                </span>
+              </div>
+            </div>
+
+            <div className="mt-5 grid gap-3 sm:grid-cols-3">
+              {loginProofCards.map((card) => (
+                <article key={card.label} className="min-h-[126px] rounded-lg border border-[#D8DCCF] bg-[#FBFBF7] p-4">
+                  <p className="text-[10px] font-black text-[#1F7A4D]">{card.label}</p>
+                  <strong className="mt-2 block text-sm font-black leading-snug text-[#111713]">{card.title}</strong>
+                  <span className="mt-2 block text-xs leading-5 text-[#667066]">{card.detail}</span>
+                </article>
+              ))}
+            </div>
+
+            <div className="mt-4 grid overflow-hidden rounded-lg border border-[#D8DCCF] bg-[#FFF8E6] sm:grid-cols-3">
+              {loginReviewSteps.map((step, index) => (
+                <span
+                  key={step}
+                  className={`grid min-h-[54px] content-center gap-1 px-3 py-2 text-xs font-black leading-tight text-[#111713] ${index > 0 ? "border-t border-[#E7D9AF] sm:border-l sm:border-t-0" : ""}`}
+                >
+                  <em className="text-[10px] font-black not-italic text-[#1F7A4D]">{String(index + 1).padStart(2, "0")}</em>
+                  {step}
+                </span>
+              ))}
             </div>
           </div>
 
@@ -115,7 +193,7 @@ function LoginPageContent() {
               <div>
                 <h2 className="text-xl font-semibold text-[#0D0D0D]">AdMate 계정으로 계속</h2>
                 <p className="mt-1 text-sm leading-6 text-[#5E5E5E]">
-                  Compass 정책 검색과 근거 문서 확인을 위해 로그인합니다.
+                  Compass 정책 기준과 확인한 출처를 보려면 로그인합니다.
                 </p>
               </div>
             </div>

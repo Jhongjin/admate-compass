@@ -60,7 +60,7 @@
         "Compass",
         "광고 정책",
         "질문해 주세요",
-        "질문을 시작하면 근거 문서가 여기에 표시됩니다"
+        "질문을 시작하면 확인한 출처가 여기에 표시됩니다"
       ],
       "expectedHiddenText": [
         "source count",
@@ -103,15 +103,15 @@
       "expectedControls": [
         {
           "id": "source-toggle",
-          "label": "근거 문서 보기",
+        "label": "확인한 출처 보기",
           "available": false
         }
       ],
       "panelExpectation": {
         "surface": "right-panel",
-        "heading": "근거 문서",
+        "heading": "확인한 출처",
         "sourceCount": 0,
-        "emptyState": "질문을 시작하면 근거 문서가 여기에 표시됩니다",
+        "emptyState": "질문을 시작하면 확인한 출처가 여기에 표시됩니다",
         "compactPanelRendered": false
       },
       "notes": "Initial desktop state keeps the source panel empty without implying answer evidence."
@@ -129,7 +129,7 @@
       },
       "message": {
         "role": "assistant",
-        "content": "Compass 답변: 근거 문서를 기준으로 광고 문구와 랜딩 페이지의 표현 일관성을 확인해야 합니다.",
+        "content": "Compass 답변: 확인한 출처를 기준으로 광고 문구와 랜딩 페이지의 표현 일관성을 확인해야 합니다.",
         "sources": ["source-meta-landing", "source-google-claim", "source-naver-review"],
         "noDataFound": false
       },
@@ -143,7 +143,7 @@
         {
           "id": "source-google-claim",
           "title": "Google Ads 주장 표현 검토 참고",
-          "excerpt": "성과, 할인, 조건 표시는 확인 가능한 근거와 함께 명확하게 제시해야 합니다.",
+          "excerpt": "성과, 할인, 조건 표시는 확인 가능한 출처와 함께 명확하게 제시해야 합니다.",
           "url": "https://example.invalid/policies/google-claims"
         },
         {
@@ -154,11 +154,11 @@
       ],
       "expectedVisibleText": [
         "Compass 답변",
-        "근거 문서 3개 보기",
-        "근거 문서",
-        "근거 원장",
+        "확인한 출처 3개 보기",
+        "확인한 출처",
+        "확인한 출처",
         "원문 링크",
-        "매체 신호",
+        "매체 확인",
         "Meta 광고 랜딩 페이지 표현 가이드",
         "Google Ads 주장 표현 검토 참고",
         "Naver 광고 심사 공통 체크"
@@ -198,7 +198,7 @@
       "expectedControls": [
         {
           "id": "source-toggle",
-          "label": "근거 문서 3개 보기",
+        "label": "확인한 출처 3개 보기",
           "available": true
         },
         {
@@ -214,7 +214,7 @@
       ],
       "panelExpectation": {
         "surface": "right-panel",
-        "heading": "근거 문서",
+        "heading": "확인한 출처",
         "sourceCount": 3,
         "cardsVisible": true,
         "sourceLedgerVisible": true,
@@ -236,24 +236,24 @@
       },
       "message": {
         "role": "assistant",
-        "content": "Compass 답변: 긴 한국어 정책 제목과 발췌도 근거 문서 카드에서 읽을 수 있어야 합니다.",
+        "content": "Compass 답변: 긴 한국어 정책 제목과 발췌도 출처 카드에서 읽을 수 있어야 합니다.",
         "sources": ["source-long-korean-title"],
         "noDataFound": false
       },
       "sources": [
         {
           "id": "source-long-korean-title",
-          "title": "플랫폼별 건강기능식품 광고 소재의 효능 표현, 후기 사용, 랜딩 페이지 고지 사항에 대한 매우 긴 한국어 검토 메모",
+          "title": "플랫폼별 건강기능식품 광고 소재의 효능 표현, 후기 사용, 랜딩 페이지 고지 사항에 대한 매우 긴 한국어 확인 문서",
           "excerpt": "효능 표현과 후기 문구는 사용자가 광고와 랜딩 페이지에서 동일한 조건을 확인할 수 있도록 제한 사항과 함께 표시해야 합니다.",
           "url": "https://example.invalid/policies/long-korean-title"
         }
       ],
       "expectedVisibleText": [
         "Compass 답변",
-        "근거 문서 1개 보기",
-        "근거 원장",
+        "확인한 출처 1개 보기",
+        "확인한 출처",
         "발췌 있음",
-        "매우 긴 한국어 검토 메모",
+        "매우 긴 한국어 확인 문서",
         "효능 표현",
         "제한 사항"
       ],
@@ -293,7 +293,7 @@
       "expectedControls": [
         {
           "id": "source-toggle",
-          "label": "근거 문서 1개 보기",
+        "label": "확인한 출처 1개 보기",
           "available": true
         },
         {
@@ -304,7 +304,7 @@
       ],
       "panelExpectation": {
         "surface": "right-panel",
-        "heading": "근거 문서",
+        "heading": "확인한 출처",
         "sourceCount": 1,
         "cardsVisible": true,
         "sourceLedgerVisible": true,
@@ -326,15 +326,15 @@
       },
       "message": {
         "role": "assistant",
-        "content": "현재 Compass 문서에서 확인 가능한 근거를 찾지 못했습니다. 더 구체적으로 입력하면 문서 근거를 다시 확인할 수 있습니다.",
+        "content": "현재 Compass 문서에서 확인 가능한 출처를 찾지 못했습니다. 더 구체적으로 입력하면 관련 문서를 다시 확인할 수 있습니다.",
         "sources": [],
         "noDataFound": true
       },
       "sources": [],
       "expectedVisibleText": [
-        "현재 Compass 문서에서 확인 가능한 근거를 찾지 못했습니다",
-        "더 구체적으로 입력하면 문서 근거를 다시 확인할 수 있습니다",
-        "근거 문서 없음"
+        "현재 Compass 문서에서 확인 가능한 출처를 찾지 못했습니다",
+        "더 구체적으로 입력하면 관련 문서를 다시 확인할 수 있습니다",
+        "확인한 출처 없음"
       ],
       "expectedHiddenText": [
         "근거 문서 1개 보기",
@@ -377,7 +377,7 @@
       "expectedControls": [
         {
           "id": "source-toggle",
-          "label": "근거 문서 보기",
+        "label": "확인한 출처 보기",
           "available": false
         },
         {
@@ -388,7 +388,7 @@
       ],
       "panelExpectation": {
         "surface": "right-panel",
-        "heading": "근거 문서 없음",
+        "heading": "확인한 출처 없음",
         "sourceCount": 0,
         "cardsVisible": false,
         "narrowingGuidanceVisible": true
@@ -402,13 +402,13 @@
       "viewportClass": "desktop-lg",
       "state": "generation-limited",
       "promptExpectation": {
-        "userPrompt": "Meta와 Kakao 광고 소재 제한 표현을 근거 문서와 함께 비교해줘",
+        "userPrompt": "Meta와 Kakao 광고 소재 제한 표현을 확인한 출처와 함께 비교해줘",
         "promptVisible": true,
         "resultLinkedToPrompt": true
       },
       "message": {
         "role": "assistant",
-        "content": "답변 생성이 일시적으로 제한되었습니다. 확인된 근거 문서는 아래에서 계속 확인할 수 있습니다.",
+        "content": "답변 정리가 일시적으로 제한되었습니다. 확인한 출처는 아래에서 계속 확인할 수 있습니다.",
         "sources": ["source-limited-meta", "source-limited-kakao"],
         "noDataFound": false,
         "modelLabel": "generation-limited"
@@ -427,12 +427,12 @@
         }
       ],
       "expectedVisibleText": [
-        "답변 생성이 일시적으로 제한되었습니다",
-        "확인된 근거 문서는 아래에서 계속 확인할 수 있습니다",
-        "생성 답변 제한",
-        "근거 문서 2개 보기",
-        "근거 원장",
-        "매체 신호",
+        "답변 정리가 일시적으로 제한되었습니다",
+        "확인한 출처는 아래에서 계속 확인할 수 있습니다",
+        "답변 정리 제한",
+        "확인한 출처 2개 보기",
+        "확인한 출처",
+        "매체 확인",
         "Meta 광고 소재 제한 표현 참고",
         "Kakao 광고 심사 주의사항"
       ],
@@ -475,7 +475,7 @@
       "expectedControls": [
         {
           "id": "source-toggle",
-          "label": "근거 문서 2개 보기",
+        "label": "확인한 출처 2개 보기",
           "available": true
         },
         {
@@ -486,7 +486,7 @@
       ],
       "panelExpectation": {
         "surface": "right-panel",
-        "heading": "생성 답변 제한",
+        "heading": "답변 정리 제한",
         "sourceCount": 2,
         "cardsVisible": true,
         "sourceLedgerVisible": true,
@@ -516,7 +516,7 @@
       "expectedVisibleText": [
         "일시적인 서비스 오류",
         "잠시 후 다시 시도해 주세요",
-        "근거 문서 없음"
+        "확인한 출처 없음"
       ],
       "expectedHiddenText": [
         "verified source",
@@ -555,7 +555,7 @@
       "expectedControls": [
         {
           "id": "source-toggle",
-          "label": "근거 문서 보기",
+        "label": "확인한 출처 보기",
           "available": false
         },
         {
@@ -571,7 +571,7 @@
       ],
       "panelExpectation": {
         "surface": "right-panel",
-        "heading": "근거 문서 없음",
+        "heading": "확인한 출처 없음",
         "sourceCount": 0,
         "cardsVisible": false,
         "errorSafeEmptyState": true,
@@ -586,31 +586,31 @@
       "viewportClass": "mobile",
       "state": "source-found",
       "promptExpectation": {
-        "userPrompt": "모바일에서 Meta 광고 정책 근거를 확인할 때 출처 패널은 어떻게 보여야 하나요?",
+        "userPrompt": "모바일에서 Meta 광고 정책 출처를 확인할 때 출처 패널은 어떻게 보여야 하나요?",
         "promptVisible": true,
         "resultLinkedToPrompt": true
       },
       "message": {
         "role": "assistant",
-        "content": "Compass 답변: 모바일에서도 근거 문서가 답변 아래 compact panel로 표시됩니다.",
+        "content": "Compass 답변: 모바일에서도 확인한 출처가 답변 아래 compact panel로 표시됩니다.",
         "sources": ["source-mobile-meta"],
         "noDataFound": false
       },
       "sources": [
         {
           "id": "source-mobile-meta",
-          "title": "Meta 모바일 광고 정책 근거",
-          "excerpt": "모바일 화면에서도 근거 제목과 발췌는 줄바꿈 가능한 텍스트로 표시합니다.",
+          "title": "Meta 모바일 광고 정책 출처",
+          "excerpt": "모바일 화면에서도 출처 제목과 발췌는 줄바꿈 가능한 텍스트로 표시합니다.",
           "url": "https://example.invalid/policies/mobile-meta"
         }
       ],
       "expectedVisibleText": [
         "Compass 답변",
-        "근거 문서 1개 보기",
-        "근거 문서",
-        "근거 원장",
+        "확인한 출처 1개 보기",
+        "확인한 출처",
+        "확인한 출처",
         "원문 링크",
-        "Meta 모바일 광고 정책 근거"
+        "Meta 모바일 광고 정책 출처"
       ],
       "expectedHiddenText": [
         "desktop right panel",
@@ -650,7 +650,7 @@
       "expectedControls": [
         {
           "id": "source-toggle",
-          "label": "근거 문서 1개 보기",
+        "label": "확인한 출처 1개 보기",
           "available": true
         },
         {
@@ -661,7 +661,7 @@
       ],
       "panelExpectation": {
         "surface": "compact-panel",
-        "heading": "근거 문서",
+        "heading": "확인한 출처",
         "sourceCount": 1,
         "cardsVisible": true,
         "sourceLedgerVisible": true,
@@ -687,15 +687,15 @@
       },
       "message": {
         "role": "assistant",
-        "content": "현재 Compass 문서에서 확인 가능한 근거를 찾지 못했습니다. 더 구체적으로 입력하면 문서 근거를 다시 확인할 수 있습니다.",
+        "content": "현재 Compass 문서에서 확인 가능한 출처를 찾지 못했습니다. 더 구체적으로 입력하면 관련 문서를 다시 확인할 수 있습니다.",
         "sources": [],
         "noDataFound": true
       },
       "sources": [],
       "expectedVisibleText": [
-        "현재 Compass 문서에서 확인 가능한 근거를 찾지 못했습니다",
-        "더 구체적으로 입력하면 문서 근거를 다시 확인할 수 있습니다",
-        "근거 문서 없음"
+        "현재 Compass 문서에서 확인 가능한 출처를 찾지 못했습니다",
+        "더 구체적으로 입력하면 관련 문서를 다시 확인할 수 있습니다",
+        "확인한 출처 없음"
       ],
       "expectedHiddenText": [
         "verified source",
@@ -739,13 +739,13 @@
       "expectedControls": [
         {
           "id": "source-toggle",
-          "label": "근거 문서 보기",
+        "label": "확인한 출처 보기",
           "available": false
         }
       ],
       "panelExpectation": {
         "surface": "compact-panel",
-        "heading": "근거 문서 없음",
+        "heading": "확인한 출처 없음",
         "sourceCount": 0,
         "cardsVisible": false,
         "compactPanelRendered": true,
@@ -762,13 +762,13 @@
       "viewportClass": "small-mobile",
       "state": "generation-limited",
       "promptExpectation": {
-        "userPrompt": "작은 모바일 화면에서도 제한 상태 근거 문서를 확인할 수 있나요?",
+        "userPrompt": "작은 모바일 화면에서도 제한 상태의 확인한 출처를 볼 수 있나요?",
         "promptVisible": true,
         "resultLinkedToPrompt": true
       },
       "message": {
         "role": "assistant",
-        "content": "답변 생성이 일시적으로 제한되었습니다. 확인된 근거 문서는 아래에서 계속 확인할 수 있습니다.",
+        "content": "답변 정리가 일시적으로 제한되었습니다. 확인한 출처는 아래에서 계속 확인할 수 있습니다.",
         "sources": ["source-small-mobile-limited"],
         "noDataFound": false,
         "modelLabel": "generation-limited"
@@ -776,17 +776,17 @@
       "sources": [
         {
           "id": "source-small-mobile-limited",
-          "title": "작은 모바일 화면용 제한 상태 근거",
+          "title": "작은 모바일 화면용 제한 상태 출처",
           "excerpt": "긴 제목, 배지, 버튼은 작은 모바일 화면에서도 입력창을 가리지 않고 줄바꿈되어야 합니다."
         }
       ],
       "expectedVisibleText": [
-        "답변 생성이 일시적으로 제한되었습니다",
-        "생성 답변 제한",
-        "근거 문서 1개 보기",
-        "근거 원장",
+        "답변 정리가 일시적으로 제한되었습니다",
+        "답변 정리 제한",
+        "확인한 출처 1개 보기",
+        "확인한 출처",
         "발췌 있음",
-        "작은 모바일 화면용 제한 상태 근거"
+        "작은 모바일 화면용 제한 상태 출처"
       ],
       "expectedHiddenText": [
         "근거 문서 없음",
@@ -827,7 +827,7 @@
       "expectedControls": [
         {
           "id": "source-toggle",
-          "label": "근거 문서 1개 보기",
+        "label": "확인한 출처 1개 보기",
           "available": true
         },
         {
@@ -838,7 +838,7 @@
       ],
       "panelExpectation": {
         "surface": "compact-panel",
-        "heading": "생성 답변 제한",
+        "heading": "답변 정리 제한",
         "sourceCount": 1,
         "cardsVisible": true,
         "sourceLedgerVisible": true,
@@ -873,7 +873,7 @@
       "expectedVisibleText": [
         "일시적인 서비스 오류",
         "잠시 후 다시 시도해 주세요",
-        "근거 문서 없음"
+        "확인한 출처 없음"
       ],
       "expectedHiddenText": [
         "verified source",
@@ -913,7 +913,7 @@
       "expectedControls": [
         {
           "id": "source-toggle",
-          "label": "근거 문서 보기",
+        "label": "확인한 출처 보기",
           "available": false
         },
         {
@@ -924,7 +924,7 @@
       ],
       "panelExpectation": {
         "surface": "compact-panel",
-        "heading": "근거 문서 없음",
+        "heading": "확인한 출처 없음",
         "sourceCount": 0,
         "cardsVisible": false,
         "compactPanelRendered": true,

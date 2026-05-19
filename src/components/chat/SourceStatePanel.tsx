@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { ChatSource, ChatUiState } from "@/components/chat/chatUiStateTypes";
 
-const NO_DATA_MESSAGE = "현재 Compass 문서에서 확인 가능한 근거를 찾지 못했습니다. 플랫폼명, 정책 항목, 소재 유형을 더 구체적으로 입력해 주세요.";
+const NO_DATA_MESSAGE = "현재 Compass 문서에서 확인 가능한 출처를 찾지 못했습니다. 플랫폼명, 정책 항목, 소재 유형을 더 구체적으로 입력해 주세요.";
 const ERROR_MESSAGE = "일시적인 서비스 오류로 답변을 만들지 못했습니다. 잠시 후 다시 시도해 주세요.";
 
 interface SourceStatePanelProps {
@@ -41,16 +41,16 @@ export default function SourceStatePanel({
   const isNoData = state === "noData";
   const isError = state === "error";
   const isInitial = state === "initial-empty";
-  const heading = isLimited ? "생성 답변 제한" : hasSources ? "근거 문서" : "근거 문서 없음";
+  const heading = isLimited ? "답변 정리 제한" : hasSources ? "확인한 출처" : "확인한 출처 없음";
   const stateDescription = isLimited
-    ? "답변 문장은 제한되었지만, 검색된 근거와 인용 후보는 검토할 수 있습니다."
+    ? "답변 문장은 제한되었지만, 확인한 출처는 계속 확인할 수 있습니다."
     : hasSources
-      ? "질문에 연결된 출처를 확인하고 최종 판단 전 원문과 인용 후보를 대조합니다."
+      ? "질문에 연결된 출처를 확인하고 최종 판단 전 원문과 발췌 내용을 대조합니다."
       : "현재 상태에서 표시할 출처가 없습니다.";
   const noDataPromptChips = [
     "플랫폼과 업종을 포함해서 다시 검토해줘",
     "소재 표현과 랜딩 조건 기준으로 찾아줘",
-    "공식 정책 근거가 있는 항목만 좁혀줘",
+    "공식 정책 출처가 있는 항목만 좁혀줘",
   ];
 
   const toggleExpanded = (sourceId: string) => {
@@ -69,9 +69,9 @@ export default function SourceStatePanel({
     `${sourceListId}-excerpt-${index}-${source.id.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
 
   const getSourceKindLabel = (source: ChatSource) => {
-    if (source.sourceType === "file") return "파일 근거";
-    if (source.sourceType === "url" || source.url) return "URL 근거";
-    return "색인 근거";
+    if (source.sourceType === "file") return "파일 출처";
+    if (source.sourceType === "url" || source.url) return "웹 출처";
+    return "관련 문서";
   };
 
   const getSourceAccessLabel = (source: ChatSource) => {
@@ -83,7 +83,7 @@ export default function SourceStatePanel({
   const getSourceDeskLabel = (source: ChatSource) => {
     if (source.sourceType === "document") return "정책 문서";
     if (source.sourceType === "file") return "업로드 문서";
-    return "Compass 정책 보드";
+    return "Compass 문서";
   };
 
   const getSourceVendorLabel = (source: ChatSource) => {
@@ -130,7 +130,7 @@ export default function SourceStatePanel({
         document.body.removeChild(link);
         window.URL.revokeObjectURL(downloadUrl);
       } catch (downloadError) {
-        console.error("근거 문서 다운로드 오류:", downloadError);
+        console.error("출처 문서 다운로드 오류:", downloadError);
         alert("파일을 여는 중 문제가 발생했습니다. 잠시 후 다시 시도해 주세요.");
       }
       return;
@@ -145,9 +145,9 @@ export default function SourceStatePanel({
         <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-lg border border-[#C6D9CB] bg-[#EDF7EF]">
           <BookOpen className="h-8 w-8 text-[#1F7A4D]" />
         </div>
-        <h3 className="mb-2 text-base font-semibold text-[#111713]">정책 검토를 시작해보세요</h3>
+        <h3 className="mb-2 text-base font-semibold text-[#111713]">정책 확인을 시작해보세요</h3>
         <p className="max-w-sm text-sm leading-relaxed text-[#5F6C62]">
-          질문을 시작하면 근거 문서가 여기에 표시됩니다. 플랫폼, 정책 항목, 소재 유형을 함께 입력하면 더 정확합니다.
+          질문을 시작하면 확인한 출처가 여기에 표시됩니다. 플랫폼, 정책 항목, 소재 유형을 함께 입력하면 더 정확합니다.
         </p>
       </div>
     );
@@ -236,7 +236,7 @@ export default function SourceStatePanel({
     <Card className="w-full rounded-lg border-[#D6D8CD] bg-white shadow-sm">
       <CardHeader className={compact ? "p-3 pb-2" : "p-4 pb-3"}>
         <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#758070]">
-          근거 검토
+          출처 확인
         </div>
         <CardTitle className="flex flex-wrap items-center gap-2 text-sm font-semibold text-[#111713]">
           <ShieldCheck className="h-4 w-4 text-[#1F7A4D]" />
@@ -246,7 +246,7 @@ export default function SourceStatePanel({
           </Badge>
           {isLimited && (
             <Badge variant="outline" className="rounded-md border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] text-amber-700">
-              생성 답변 제한
+              답변 정리 제한
             </Badge>
           )}
         </CardTitle>
@@ -262,7 +262,7 @@ export default function SourceStatePanel({
           <div className="mt-3 rounded-lg border border-[#D8DCCF] bg-[#FBFBF7] p-2.5">
             <div className="mb-2 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#758070]">
               <Fingerprint className="h-3.5 w-3.5 text-[#1F7A4D]" />
-              근거 원장
+              확인한 출처
             </div>
             <div className={`grid gap-1.5 text-[11px] ${compact ? "grid-cols-2" : "grid-cols-4"}`}>
               <div className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1.5">
@@ -279,7 +279,7 @@ export default function SourceStatePanel({
               </div>
               <div className="rounded-md border border-[#E9D59B] bg-white px-2 py-1.5">
                 <span className="block font-semibold text-[#8A6418]">{sourceLedger.vendorCount}</span>
-                매체 신호
+                매체 확인
               </div>
             </div>
           </div>
@@ -288,17 +288,17 @@ export default function SourceStatePanel({
       <CardContent className={compact ? "space-y-2 p-3 pt-0" : "space-y-3 p-4 pt-0"}>
         {isLimited && (
           <div className={`${compact ? "p-2.5" : "p-3"} rounded-md border border-amber-200 bg-amber-50 text-xs leading-5 text-amber-900`}>
-            답변 생성은 일시적으로 제한되었지만, 확인된 근거 문서는 아래에서 계속 확인할 수 있습니다. 원문 대조 후 운영 판단에 사용해 주세요.
+            답변 정리는 일시적으로 제한되었지만, 확인한 출처는 아래에서 계속 확인할 수 있습니다. 원문 대조 후 운영 판단에 사용해 주세요.
           </div>
         )}
 
         {hasSources && !compact && (
           <div className="grid gap-2 rounded-lg border border-[#D8DCCF] bg-[#FBFBF7] p-3 text-xs text-[#5F6C62]">
-            <div className="font-semibold text-[#111713]">운영 검토 기준</div>
+            <div className="font-semibold text-[#111713]">출처 확인 기준</div>
             <div className="flex flex-wrap gap-1.5">
               <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1">출처 제목 확인</span>
               <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1">원문 일부 대조</span>
-              <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1">인용 후보 선별</span>
+              <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1">확인한 출처 선별</span>
               <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1">최종 판단 전 원문 확인</span>
             </div>
           </div>
@@ -315,16 +315,16 @@ export default function SourceStatePanel({
         >
           <span className="flex items-center">
             <FileText className="mr-2 h-4 w-4" />
-            근거 문서 {sources.length}개 보기
+            확인한 출처 {sources.length}개 보기
           </span>
           {cardsVisible ? <ChevronUp className="ml-2 h-3.5 w-3.5" /> : <ChevronDown className="ml-2 h-3.5 w-3.5" />}
         </Button>
 
         {cardsVisible && (
-          <div id={sourceListId} role="list" aria-label="근거 문서 목록" className="space-y-3">
+          <div id={sourceListId} role="list" aria-label="확인한 출처 목록" className="space-y-3">
             {sources.slice(0, compact ? 3 : 6).map((source, index) => {
               const isExpanded = expandedIds.has(source.id);
-              const title = source.title?.replace(/_chunk_\d+/g, `_page_${index + 1}`) || `근거 문서 ${index + 1}`;
+              const title = source.title?.replace(/_chunk_\d+/g, `_page_${index + 1}`) || `출처 문서 ${index + 1}`;
               const sourceExcerptId = getSourceExcerptId(source, index);
 
               return (
@@ -335,7 +335,7 @@ export default function SourceStatePanel({
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className={`${compact ? "mb-0.5" : "mb-1"} text-[11px] font-semibold uppercase tracking-[0.12em] text-[#758070]`}>
-                        인용 후보 {index + 1}
+                        확인한 출처 {index + 1}
                       </div>
                       <div className="flex items-start justify-between gap-2">
                         <h4 className="line-clamp-2 break-words text-sm font-semibold leading-5 text-[#111713]">
@@ -350,7 +350,7 @@ export default function SourceStatePanel({
                               className="h-8 w-8 rounded-md p-0 text-[#5F6C62] hover:bg-[#EDF7EF] hover:text-[#1F7A4D]"
                               onClick={() => handleSourceOpen(source)}
                               title={source.sourceType === "file" ? "파일 다운로드" : "열기"}
-                              aria-label={source.sourceType === "file" ? "파일 다운로드" : "근거 문서 열기"}
+                              aria-label={source.sourceType === "file" ? "파일 다운로드" : "출처 문서 열기"}
                             >
                               {source.sourceType === "file" ? <Download className="h-4 w-4" aria-hidden="true" /> : <ExternalLink className="h-4 w-4" aria-hidden="true" />}
                             </Button>
@@ -362,7 +362,7 @@ export default function SourceStatePanel({
                             className="h-8 w-8 rounded-md p-0 text-[#5F6C62] hover:bg-[#F0F2EA] hover:text-[#111713]"
                             onClick={() => toggleExpanded(source.id)}
                             title={isExpanded ? "접기" : "펼치기"}
-                            aria-label={isExpanded ? "근거 문서 접기" : "근거 문서 펼치기"}
+                            aria-label={isExpanded ? "출처 문서 접기" : "출처 문서 펼치기"}
                             aria-expanded={isExpanded}
                             aria-controls={sourceExcerptId}
                           >
@@ -399,10 +399,10 @@ export default function SourceStatePanel({
                       {isExpanded && (
                         <div className="mt-3 flex flex-wrap gap-1.5 border-t border-[#D8DCCF] pt-3">
                           <Badge variant="outline" className="rounded-md border-[#C6D9CB] bg-[#EDF7EF] px-2 py-0.5 text-[11px] text-[#1F7A4D]">
-                            검증 근거
+                            확인한 출처
                           </Badge>
                           <Badge variant="outline" className="rounded-md border-[#D8DCCF] bg-white px-2 py-0.5 text-[11px] text-[#5F6C62]">
-                            Compass 색인
+                            Compass 문서
                           </Badge>
                         </div>
                       )}

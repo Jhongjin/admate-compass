@@ -39,9 +39,9 @@ interface Message {
   uiState?: ChatUiState;
 }
 
-const INITIAL_GREETING = "안녕하세요. Compass 정책 데스크입니다. 플랫폼, 정책 항목, 소재 유형을 함께 입력하면 확인 가능한 근거와 검토 포인트를 정리해 드립니다.";
-const NO_DATA_MESSAGE = "현재 Compass 문서에서 확인 가능한 근거를 찾지 못했습니다. 더 구체적으로 입력하면 문서 근거를 다시 확인할 수 있습니다.";
-const GENERATION_LIMITED_MESSAGE = "답변 생성이 일시적으로 제한되었습니다. 확인된 근거 문서는 아래에서 계속 확인할 수 있습니다.";
+const INITIAL_GREETING = "안녕하세요. Compass 정책 확인 화면입니다. 플랫폼, 정책 항목, 소재 유형을 함께 입력하면 확인 가능한 출처와 추가 확인 필요 항목을 정리해 드립니다.";
+const NO_DATA_MESSAGE = "현재 Compass 문서에서 확인 가능한 출처를 찾지 못했습니다. 더 구체적으로 입력하면 관련 문서를 다시 확인할 수 있습니다.";
+const GENERATION_LIMITED_MESSAGE = "답변 정리가 일시적으로 제한되었습니다. 확인한 출처는 아래에서 계속 확인할 수 있습니다.";
 const ERROR_MESSAGE = "일시적인 서비스 오류로 답변을 만들지 못했습니다. 잠시 후 다시 시도해 주세요.";
 
 const getInitialMessage = (): Message => ({
@@ -65,7 +65,7 @@ const sanitizeSources = (sources: unknown): NonNullable<Message["sources"]> => {
 
       return {
         id: String(item.id || item.chunkId || item.documentId || `source-${index + 1}`),
-        title: String(item.title || item.originalTitle || `근거 문서 ${index + 1}`),
+        title: String(item.title || item.originalTitle || `출처 문서 ${index + 1}`),
         url: typeof item.url === "string" && item.url.trim() ? item.url : undefined,
         updatedAt: typeof item.updatedAt === "string" ? item.updatedAt : new Date().toISOString(),
         excerpt: String(item.excerpt || item.content || ""),
@@ -896,7 +896,7 @@ function ChatPageContent() {
   const finalReviewReady = latestHasSources && !needsAdditionalReview;
   const reliabilityPostureItems = [
     {
-      label: "근거",
+      label: "출처",
       value: latestHasSources ? `${latestSources.length}개 확인` : "대기",
       Icon: CheckCircle,
       className: latestHasSources
@@ -914,7 +914,7 @@ function ChatPageContent() {
       iconClassName: needsAdditionalReview ? "text-[#9E5700]" : "text-[#8B9388]",
     },
     {
-      label: "최종 검토",
+      label: "답변 정리",
       value: finalReviewReady ? "준비" : needsAdditionalReview ? "보류" : "대기",
       Icon: Target,
       className: finalReviewReady
@@ -933,10 +933,10 @@ function ChatPageContent() {
           </div>
           <div className="min-w-0">
             <h2 className="truncate text-sm font-semibold text-[#111713]">
-              Compass 정책 데스크
+              Compass 정책 확인 화면
             </h2>
             <p className="hidden text-xs text-[#5F6C62] sm:block">
-              정책 답변, 출처, 검토 상태를 한 화면에서 운영자가 확인합니다.
+              정책 답변, 출처, 확인 상태를 한 화면에서 확인합니다.
             </p>
           </div>
         </div>
@@ -974,13 +974,13 @@ function ChatPageContent() {
             </SheetContent>
           </Sheet>
           <Badge variant="outline" className="rounded-md border-[#D6D8CD] bg-white px-2 py-1 text-[11px] text-[#5F6C62] sm:hidden">
-            정책 데스크
+            정책 확인
           </Badge>
           <Badge variant="outline" className="hidden rounded-md border-[#C6D9CB] bg-[#EDF7EF] px-2 py-1 text-[11px] text-[#1F7A4D] sm:inline-flex">
-            출처 검토
+            출처 확인
           </Badge>
           <Badge variant="outline" className="hidden rounded-md border-[#E9D59B] bg-[#FFF8E6] px-2 py-1 text-[11px] text-[#8A6418] md:inline-flex">
-            정책 근거 우선
+            출처 확인 우선
           </Badge>
           <Button
             variant="ghost"
@@ -1132,11 +1132,11 @@ function ChatPageContent() {
                         <Bot className="h-4 w-4 text-[#1F7A4D]" />
                       </div>
                       <div className="flex-1">
-                        <div className="mb-2 text-sm font-medium text-[#111713]">Compass가 정책 데스크 검토를 준비하고 있습니다</div>
+                        <div className="mb-2 text-sm font-medium text-[#111713]">Compass가 질문 조건을 확인하고 있습니다</div>
                         <div className="flex flex-wrap gap-2 text-xs text-[#5F6C62]">
-                          <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1">질문 범위 확인</span>
-                          <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1">색인 검색</span>
-                          <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1">근거 대조</span>
+                          <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1">질문 조건 확인</span>
+                          <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1">관련 문서 찾기</span>
+                          <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1">출처 대조</span>
                         </div>
                       </div>
                     </div>
@@ -1148,7 +1148,7 @@ function ChatPageContent() {
             {messages.length > 1 && (
               <div className="min-w-0 px-1 pb-2 lg:hidden">
                 <div className="mb-2 flex items-center justify-between gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#6D756C]">
-                  <span>근거 검토 보드</span>
+                  <span>출처 확인</span>
                   <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1 text-[#34423A]">
                     {latestSources.length}개 출처
                   </span>
@@ -1196,7 +1196,7 @@ function ChatPageContent() {
               
               <div className="mt-2 flex items-center justify-between text-xs text-[#6D756C] sm:mt-3">
                 <p className="hidden sm:block">플랫폼, 정책 항목, 소재 표현을 함께 쓰면 인용 가능한 근거를 더 좁혀 볼 수 있습니다.</p>
-                <p className="sm:hidden">답변 아래 근거 보드 표시</p>
+                <p className="sm:hidden">답변 아래 출처 확인 표시</p>
                 {error && (
                   <div className="flex items-center space-x-1 text-[#D93025]">
                     <AlertCircle className="w-3 h-3" />
@@ -1239,8 +1239,8 @@ function ChatPageContent() {
                   <BookOpen className="h-5 w-5 text-[#1F7A4D]" />
                 </div>
                 <div>
-                  <h3 className="text-base font-semibold text-[#111713]">정책 근거 보드</h3>
-                  <p className="text-sm text-[#5F6C62]">답변에 연결된 출처, 인용 후보, 운영 검토 포인트</p>
+                  <h3 className="text-base font-semibold text-[#111713]">근거 확인 화면</h3>
+                  <p className="text-sm text-[#5F6C62]">답변에 연결된 출처, 확인한 문서, 추가 확인 필요 항목</p>
                 </div>
               </div>
             </div>

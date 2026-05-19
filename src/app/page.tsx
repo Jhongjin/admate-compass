@@ -22,7 +22,7 @@ const supportedMedia = [
 
 const compassSummary = [
   ["광고 정책 질문", "업종, 소재 문구, 이미지, 랜딩 페이지 조건을 질문 단위로 정리합니다."],
-  ["공식 정책과 운영 문서 우선", "매체 공식 정책과 내부 운영 문서를 먼저 확인합니다."],
+  ["공식 정책과 운영 기준 우선", "매체 공식 정책과 운영 기준 문서를 먼저 확인합니다."],
   ["출처와 참고 문단", "답변에 사용한 출처와 연결된 문단을 함께 보여줍니다."],
   ["추가 확인 필요", "조건이 부족하거나 기준이 충돌하면 결론과 분리해 표시합니다."],
 ] as const;
@@ -34,9 +34,9 @@ const previewRows = [
 ] as const;
 
 const answerVerificationFlow = [
-  ["LLM1 답변 후보", "질문 조건과 매체 기준을 맞춰 첫 번째 답변 후보를 만듭니다."],
-  ["LLM2 답변 후보", "다른 관점의 답변 후보와 비교해 누락과 충돌 가능성을 점검합니다."],
-  ["팀장 최종 검토", "근거, 정책 정확도, 추가 확인 필요 항목을 분리해 최종 답변을 정리합니다."],
+  ["질문 조건 확인", "플랫폼, 업종, 소재 표현과 필요한 조건을 먼저 정리합니다."],
+  ["출처 대조", "공식 정책과 운영 문서의 출처를 확인해 기준 충돌과 누락을 살핍니다."],
+  ["최종 답변 정리", "확인한 출처와 추가 확인 필요 항목을 분리해 업무에 쓸 수 있게 정리합니다."],
 ] as const;
 
 const mediaScopes = [
@@ -257,7 +257,7 @@ export default function HomePage() {
               <div className="rounded-[8px] border border-[#D8DDE1] bg-white p-3">
                 <img
                   src="/compass-policy-map.svg"
-                  alt="매체 정책과 근거 문서가 연결된 Compass 화면 예시"
+                  alt="매체 정책과 출처 문서가 연결된 Compass 화면 예시"
                   className="h-auto w-full rounded-[8px]"
                 />
                 <div className="mt-3 grid grid-cols-3 gap-2">
@@ -273,7 +273,7 @@ export default function HomePage() {
                     근거를 확인한 뒤 답변을 정리합니다
                   </h3>
                   <p className="mt-3 text-xs leading-5 text-white/68">
-                    Compass는 두 답변 후보를 비교하고 팀장 최종 검토 단계에서 근거와 누락 가능성을 확인한 뒤 업무에 쓸 수 있는 형태로 정리합니다.
+                    Compass는 질문 조건을 확인하고 출처를 대조한 뒤, 확인한 기준과 추가 확인 필요 항목을 업무에 쓸 수 있는 형태로 정리합니다.
                   </p>
                   <div className="mt-4 grid gap-2">
                     {answerVerificationFlow.map(([title, detail], index) => (

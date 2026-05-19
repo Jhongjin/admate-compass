@@ -339,7 +339,7 @@ function validateStateContract(fixture, label) {
 
   if (fixture.state === "source-found") {
     if (sourceCount < 1) fail(`${label}.source-found must include at least one source`);
-    if (!includesText(expectedVisible, `근거 문서 ${sourceCount}개 보기`)) {
+    if (!includesText(expectedVisible, `확인한 출처 ${sourceCount}개 보기`)) {
       fail(`${label}.source-found visible text must include matching source count`);
     }
     if (fixture.panelExpectation.cardsVisible !== true) fail(`${label}.source-found must show source cards`);
@@ -351,7 +351,7 @@ function validateStateContract(fixture, label) {
     if (sourceCount !== 0) fail(`${label}.noData must not include sources`);
     if (fixture.message.noDataFound !== true) fail(`${label}.noData message.noDataFound must be true`);
     if (fixture.panelExpectation.cardsVisible !== false) fail(`${label}.noData must not show source cards`);
-    if (!includesText(expectedVisible, "확인 가능한 근거")) {
+    if (!includesText(expectedVisible, "확인 가능한 출처")) {
       fail(`${label}.noData must include vendor-neutral noData copy`);
     }
   }
@@ -363,7 +363,7 @@ function validateStateContract(fixture, label) {
     }
     if (fixture.panelExpectation.sourceLedgerVisible !== true) fail(`${label}.generation-limited must show source ledger`);
     if (fixture.panelExpectation.sourceIdentityVisible !== true) fail(`${label}.generation-limited must show source identity strip`);
-    if (!includesText(expectedVisible, "생성 답변 제한")) {
+    if (!includesText(expectedVisible, "답변 정리 제한")) {
       fail(`${label}.generation-limited must include limited-generation panel heading`);
     }
   }

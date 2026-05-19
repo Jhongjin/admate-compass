@@ -55,7 +55,7 @@ Theme interpretation:
 | Dark/gradient shell remains | `MainLayout`, `chatHeader`, loading state, input region, right panel | Compass should now read as an operational knowledge console |
 | Split-pane behavior is useful but visually noisy | manual left/right resize, collapse buttons, gradient divider | Keep behavior, reduce visual weight |
 | Right source panel is visually disconnected | cream/orange gradient in `chat-ollama/page.tsx` and decorative `RelatedResources` cards | Source evidence should feel part of the same trust surface |
-| Loading state uses orange/pink bot motif | `chat-ollama/page.tsx` loading bubble | Should become neutral "검색 중 / 근거 확인 중" status |
+| Loading state uses orange/pink bot motif | `chat-ollama/page.tsx` loading bubble | Should become neutral "검색 중 / 출처 확인 중" status |
 | No-data and generation-limited state is fragmented | `ChatBubble` now has better copy, page/right panel still lacks a unified state model | The page should explain what is known, unknown, and still available |
 | Internal fields are not normalized at page level | response has `retrievalMethod`, `sourceQuality`, `corpus`, scores | User-facing labels need one consistent mapping across answer and side panel |
 | Long Korean excerpts can crowd cards | answer/source cards and right panel use dense text in flexible panes | Need stable line clamp, break-word, min-width, and mobile drawer behavior |
@@ -114,17 +114,17 @@ Keep internal fields out of the UI. Use these mappings consistently in `ChatBubb
 
 | Internal signal | User-facing label |
 | --- | --- |
-| `retrievalMethod=hybrid` | 의미+문구 근거 |
-| `retrievalMethod=vector` | 의미 유사 근거 |
-| `retrievalMethod=keyword` | 문구 일치 근거 |
+| `retrievalMethod=hybrid` | 의미+문구 일치 |
+| `retrievalMethod=vector` | 의미 유사 |
+| `retrievalMethod=keyword` | 문구 일치 |
 | `sourceQuality.hasUrl=true` or `url` exists | 원문 확인 가능 |
 | excerpt exists / `sourceQuality.hasExcerpt=true` | 원문 일부 확인 가능 |
-| no source URL but valid excerpt | 내부 색인 문서 |
-| `sourceQuality.isFallback=true` | 일반 사용자 화면에서는 근거로 노출하지 않음 |
-| `corpus=ollama_document_chunks` | 정책 근거 색인 |
-| `corpus=document_chunks` | 내부 문서 색인 |
-| `model=ollama-connection-failed` with sources | 답변 생성은 일시 제한, 근거 문서 확인 가능 |
-| `noDataFound=true` | 현재 Compass 문서 기준으로 확인 가능한 근거 없음 |
+| no source URL but valid excerpt | 관련 문서 |
+| `sourceQuality.isFallback=true` | 일반 사용자 화면에서는 출처로 노출하지 않음 |
+| `corpus=ollama_document_chunks` | 관련 문서 |
+| `corpus=document_chunks` | Compass 문서 |
+| `model=ollama-connection-failed` with sources | 답변 정리는 일시 제한, 출처 문서 확인 가능 |
+| `noDataFound=true` | 현재 Compass 문서 기준으로 확인 가능한 출처 없음 |
 
 Avoid:
 
@@ -142,8 +142,8 @@ Avoid:
 
 Page should show:
 
-- answer card status: `근거 문서 확인`
-- source count: `근거 문서 3개`
+- answer card status: `출처 문서 확인`
+- source count: `확인한 출처 3개`
 - source cards ordered by rank
 - concise score wording: `관련도 92%`, not `hybridScore`
 - right panel mirrors the same source titles and excerpts
@@ -155,8 +155,8 @@ This is the current production MVP fallback state when Ollama generation is unav
 User copy:
 
 ```text
-답변 생성은 일시적으로 제한되었지만, 관련 근거 문서를 찾았습니다.
-아래 근거 문서를 먼저 확인해 주세요.
+답변 정리는 일시적으로 제한되었지만, 관련 출처 문서를 찾았습니다.
+아래 출처 문서를 먼저 확인해 주세요.
 ```
 
 Behavior:
@@ -165,14 +165,14 @@ Behavior:
 - do not show an empty-answer error if sources exist
 - do not hide the source panel
 - keep model/error details out of normal UI
-- optionally show a compact amber badge: `생성 답변 일시 제한`
+- optionally show a compact amber badge: `답변 정리 일시 제한`
 
 ### No Data Found
 
 User copy:
 
 ```text
-현재 Compass 문서 기준으로 확인 가능한 근거를 찾지 못했습니다.
+현재 Compass 문서 기준으로 확인 가능한 출처를 찾지 못했습니다.
 플랫폼명, 상품명, 정책 항목을 조금 더 구체적으로 입력해 주세요.
 ```
 
@@ -189,8 +189,8 @@ Replace decorative bot typing with deterministic status steps:
 
 ```text
 질문 분석 중
-Compass 색인 검색 중
-근거 문서 검증 중
+관련 문서 찾는 중
+출처 문서 확인 중
 답변 구성 중
 ```
 
@@ -202,7 +202,7 @@ Use a red-tinted operational alert:
 
 ```text
 요청 처리 중 문제가 발생했습니다.
-근거 검색 상태를 확인한 뒤 다시 시도해 주세요.
+출처 확인 상태를 확인한 뒤 다시 시도해 주세요.
 ```
 
 If the API returns sources and only generation failed, use the generation-limited state instead of generic error.
@@ -244,8 +244,8 @@ Changes:
 
 - remove cream/orange gradient panel
 - make right panel a white bordered evidence panel
-- title: `근거 문서`
-- subtitle: `현재 답변에 사용된 Compass 색인`
+- title: `확인한 출처`
+- subtitle: `현재 답변에 사용된 출처 문서`
 - show source count, verified/limited/no-data badge
 - remove default sample resources when no sources exist on a real answer
 - convert source cards to compact list rows:
@@ -264,7 +264,7 @@ Primary file:
 
 Changes:
 
-- when right panel collapses below desktop, show a compact `근거 문서 보기` button near the latest answer or input area
+- when right panel collapses below desktop, show a compact `확인한 출처 보기` button near the latest answer or input area
 - reuse existing `Sheet` components if possible
 - source drawer contains the same `RelatedResources` list
 - avoid duplicating data transformation logic in multiple places

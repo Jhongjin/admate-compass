@@ -9,7 +9,7 @@ const fixturePath = path.join(root, "docs/rag/compass-chat-ui-state-contract-fix
 
 const requiredPanelSnippets = [
   "const NO_DATA_MESSAGE",
-  "현재 Compass 문서에서 확인 가능한 근거를 찾지 못했습니다",
+  "현재 Compass 문서에서 확인 가능한 출처를 찾지 못했습니다",
   "플랫폼명, 정책 항목, 소재 유형",
   "const ERROR_MESSAGE",
   "일시적인 서비스 오류로 답변을 만들지 못했습니다",
@@ -17,10 +17,10 @@ const requiredPanelSnippets = [
   "state === \"noData\"",
   "state === \"error\"",
   "state === \"initial-empty\"",
-  "const heading = isLimited ? \"생성 답변 제한\" : hasSources ? \"근거 문서\" : \"근거 문서 없음\"",
-  "질문을 시작하면 근거 문서가 여기에 표시됩니다",
-  "답변 생성은 일시적으로 제한되었지만",
-  "근거 문서 {sources.length}개 보기",
+  "const heading = isLimited ? \"답변 정리 제한\" : hasSources ? \"확인한 출처\" : \"확인한 출처 없음\"",
+  "질문을 시작하면 확인한 출처가 여기에 표시됩니다",
+  "답변 정리는 일시적으로 제한되었지만",
+  "확인한 출처 {sources.length}개 보기",
   "sources.slice(0, compact ? 3 : 6)",
   "line-clamp-2 break-words",
   "line-clamp-3",
@@ -32,12 +32,12 @@ const requiredPanelSnippets = [
   "const getSourceVendorLabel",
   "const getSourceIntegrityLabel",
   "const sourceLedger =",
-  "근거 원장",
+  "확인한 출처",
   "원문 링크",
   "발췌 있음",
-  "매체 신호",
-  "aria-label={source.sourceType === \"file\" ? \"파일 다운로드\" : \"근거 문서 열기\"}",
-  "aria-label={isExpanded ? \"근거 문서 접기\" : \"근거 문서 펼치기\"}",
+  "매체 확인",
+  "aria-label={source.sourceType === \"file\" ? \"파일 다운로드\" : \"출처 문서 열기\"}",
+  "aria-label={isExpanded ? \"출처 문서 접기\" : \"출처 문서 펼치기\"}",
 ];
 
 const forbiddenPanelSnippets = [

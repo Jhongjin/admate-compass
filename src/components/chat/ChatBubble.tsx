@@ -81,32 +81,32 @@ export default function ChatBubble({
   const getEvidenceLabel = (source: Source) => {
     const method = source.retrievalMethod?.toLowerCase();
 
-    if (method?.includes('hybrid')) return '의미+문구 근거';
-    if (method?.includes('keyword')) return '문구 일치 근거';
-    if (method?.includes('vector')) return '의미 유사 근거';
+    if (method?.includes('hybrid')) return '의미+문구 일치';
+    if (method?.includes('keyword')) return '문구 일치';
+    if (method?.includes('vector')) return '의미 유사';
 
-    return '검증 근거';
+    return '출처 확인';
   };
 
   const getSourceAccessLabel = (source: Source) => {
     if (source.url || source.sourceQuality?.hasUrl) return '원문 확인 가능';
     if (source.excerpt || source.sourceQuality?.hasExcerpt) return '원문 일부 확인 가능';
 
-    return '내부 색인 문서';
+    return '관련 문서';
   };
 
   const getCorpusLabel = (source: Source) => {
     const corpus = source.corpus?.toLowerCase();
 
-    if (corpus?.endsWith('_document_chunks')) return '정책 근거 색인';
-    if (corpus?.includes('document_chunks')) return '내부 색인 문서';
+    if (corpus?.endsWith('_document_chunks')) return '관련 문서';
+    if (corpus?.includes('document_chunks')) return 'Compass 문서';
 
-    return 'Compass 색인';
+    return 'Compass 문서';
   };
 
   const getDisplayTitle = (source: Source, index: number) => {
     const cleanedTitle = source.title?.replace(/_chunk_\d+/g, `_page_${index + 1}`).trim();
-    return cleanedTitle || `근거 문서 ${index + 1}`;
+    return cleanedTitle || `출처 문서 ${index + 1}`;
   };
 
   const getSourceScore = (source: Source) => {
@@ -163,11 +163,11 @@ export default function ChatBubble({
   // URL 링크 핸들러
   const handleUrlOpen = (source: Source) => {
     if (source.url) {
-      console.log(`근거 원문 열기: ${source.url}`);
+      console.log(`출처 원문 열기: ${source.url}`);
       window.open(source.url, '_blank');
     } else {
-      console.error('근거 원문 URL이 없습니다:', source);
-      alert('열 수 있는 근거 원문 URL을 찾을 수 없습니다.');
+      console.error('출처 원문 URL이 없습니다:', source);
+      alert('열 수 있는 출처 원문 URL을 찾을 수 없습니다.');
     }
   };
 
@@ -203,35 +203,35 @@ export default function ChatBubble({
                 <div className="rounded-lg border border-[#D6D8CD] bg-white p-3 text-[#111713] shadow-sm sm:p-4">
                   <div className="mb-3 flex flex-wrap items-center gap-2 border-b border-[#EEF0E8] pb-3">
                     <Badge variant="outline" className="rounded-md border-[#C6D9CB] bg-[#EDF7EF] px-2 py-0.5 text-[11px] font-medium text-[#1F7A4D]">
-                      정책 검토 메모
+                      정책 답변
                     </Badge>
                     {hasVerifiedSources && (
                       <Badge variant="outline" className="rounded-md border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
-                        근거 연결
+                        출처 연결
                       </Badge>
                     )}
                     {generationLimited && hasVerifiedSources && (
                       <Badge variant="outline" className="rounded-md border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
-                        검토 메모 제한
+                        답변 정리 제한
                       </Badge>
                     )}
                     {noDataFound && (
                       <Badge variant="outline" className="rounded-md border-[#E9D59B] bg-[#FFF8E6] px-2 py-0.5 text-[11px] font-medium text-[#8A6418]">
-                        근거 없음
+                        출처 없음
                       </Badge>
                     )}
                   </div>
 
                   {generationLimited && hasVerifiedSources && (
                     <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900">
-                      검토 메모 작성은 일시적으로 제한되었지만, 검색된 근거는 유지됩니다. 근거 보드에서 원문과 인용 후보를 먼저 확인해 주세요.
+                      답변 정리는 일시적으로 제한되었지만, 확인된 출처는 유지됩니다. 출처 확인 화면에서 원문과 확인한 출처를 먼저 확인해 주세요.
                     </div>
                   )}
 
                   {noDataFound && (
                     <div className="mb-3 rounded-md border border-[#E9D59B] bg-[#FFF8E6] px-3 py-2 text-xs leading-relaxed text-[#6B5316]">
-                      <span className="font-semibold text-[#111713]">확인 가능한 근거가 없습니다.</span>{" "}
-                      더 구체적으로 입력하면 문서 근거를 다시 확인할 수 있습니다.
+                      <span className="font-semibold text-[#111713]">확인 가능한 출처가 없습니다.</span>{" "}
+                      더 구체적으로 입력하면 관련 문서를 다시 확인할 수 있습니다.
                     </div>
                   )}
 
@@ -255,7 +255,7 @@ export default function ChatBubble({
                     >
                       <span className="flex min-w-0 items-center">
                         <FileText className="mr-2 h-4 w-4 flex-none" />
-                        <span className="truncate">인용 후보 {sources.length}개 검토</span>
+                        <span className="truncate">확인한 출처 {sources.length}개 보기</span>
                       </span>
                       <span className="ml-1 text-[#1F7A4D]">
                         {showSources ? <ChevronUp className="h-3.5 w-3.5" aria-hidden="true" /> : <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />}
@@ -275,7 +275,7 @@ export default function ChatBubble({
                                   <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
                                     <div className="min-w-0">
                                       <div className="mb-1 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#758070]">
-                                        인용 후보 {index + 1}
+                                        확인한 출처 {index + 1}
                                       </div>
                                       <h4 className="line-clamp-2 break-words text-sm font-semibold leading-snug text-[#111713]">
                                         {getDisplayTitle(source, index)}
@@ -301,8 +301,8 @@ export default function ChatBubble({
                                               size="sm"
                                               className="h-8 rounded-md px-2 text-xs text-[#1F7A4D] hover:bg-[#EDF7EF] hover:text-[#176B42]"
                                               onClick={() => handleUrlOpen(source)}
-                                              title="근거 원문 열기"
-                                              aria-label={`${getDisplayTitle(source, index)} 근거 원문 열기`}
+                                              title="출처 원문 열기"
+                                              aria-label={`${getDisplayTitle(source, index)} 출처 원문 열기`}
                                             >
                                               <ExternalLink className="w-4 h-4" />
                                             </Button>
@@ -354,7 +354,7 @@ export default function ChatBubble({
                                           size="sm"
                                           className="h-8 rounded-md px-2 text-xs text-[#1F7A4D] hover:bg-[#EDF7EF] hover:text-[#176B42]"
                                           onClick={() => handleUrlOpen(source)}
-                                          title="근거 원문 열기"
+                                          title="출처 원문 열기"
                                         >
                                           <ExternalLink className="w-4 h-4 mr-2" />
                                           원문 열기
@@ -387,7 +387,7 @@ export default function ChatBubble({
                             추가 확인이 필요한 질문입니다
                           </h4>
                           <p className="text-xs text-amber-800 mb-3">
-                            Compass 문서 기준으로 충분한 근거를 찾지 못했습니다. 담당자에게 문의하면 더 정확한 확인을 받을 수 있습니다.
+                            Compass 문서 기준으로 충분한 출처를 찾지 못했습니다. 담당자에게 문의하면 더 정확한 확인을 받을 수 있습니다.
                           </p>
                           <Button
                             onClick={() => {
@@ -417,7 +417,7 @@ export default function ChatBubble({
                       {model && (
                         <span className="flex items-center gap-1 rounded-md border border-[#D8DCCF] bg-[#FBFBF7] px-2 py-1">
                           <ShieldCheck className="h-3 w-3" />
-                          {generationLimited ? '검토 메모 제한' : '검토 메모 작성 완료'}
+                            {generationLimited ? '답변 정리 제한' : '정책 답변 정리 완료'}
                         </span>
                       )}
                       {processingTime !== undefined && (
@@ -432,7 +432,7 @@ export default function ChatBubble({
                         <div className="mb-1 flex items-center justify-between gap-3">
                           <span className="flex items-center gap-1 font-medium text-[#34423A]">
                             <Activity className="h-3 w-3" />
-                            근거 신뢰도
+                            출처 일치도
                           </span>
                           <span className="font-semibold text-[#111713]">{confidenceValue}%</span>
                         </div>
@@ -474,7 +474,7 @@ export default function ChatBubble({
                       }`}
                     >
                       <ThumbsDown className="w-3 h-3 mr-1" />
-                      <span className="hidden sm:inline">근거 부족</span>
+                      <span className="hidden sm:inline">출처 부족</span>
                     </Button>
                     <span className="text-xs text-[#777777]">{timestamp}</span>
                   </div>

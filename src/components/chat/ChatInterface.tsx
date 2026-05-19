@@ -54,7 +54,7 @@ export function ChatInterface({ className, initialQuestion }: ChatInterfaceProps
     {
       id: '1',
       type: 'bot',
-      content: 'Compass 정책 데스크입니다. 플랫폼, 정책 항목, 소재 표현을 함께 적어주시면 확인 가능한 근거와 검토 메모를 분리해서 정리합니다.',
+      content: 'Compass 정책 확인 화면입니다. 플랫폼, 정책 항목, 소재 표현을 함께 적어주시면 확인 가능한 출처와 정책 답변을 분리해서 정리합니다.',
       timestamp: new Date()
     }
   ]);
@@ -257,9 +257,9 @@ export function ChatInterface({ className, initialQuestion }: ChatInterfaceProps
           <div className="min-w-0">
             <div className="flex items-center gap-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#758070]">
               <ClipboardCheck className="h-3.5 w-3.5 text-[#1F7A4D]" />
-              정책 근거 콘솔
+              출처 확인
             </div>
-            <p className="mt-1 text-sm font-semibold text-[#111713]">질문, 검토 메모, 근거 문서를 한 화면에서 대조합니다.</p>
+            <p className="mt-1 text-sm font-semibold text-[#111713]">질문, 정책 답변, 출처 문서를 한 화면에서 대조합니다.</p>
           </div>
           <div className="grid grid-cols-3 gap-1.5 text-[11px] text-[#5F6C62] sm:min-w-[280px]">
             <div className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1.5">
@@ -268,7 +268,7 @@ export function ChatInterface({ className, initialQuestion }: ChatInterfaceProps
             </div>
             <div className="rounded-md border border-[#C6D9CB] bg-[#EDF7EF] px-2 py-1.5">
               <span className="block font-semibold text-[#1F7A4D]">{messages.reduce((count, message) => count + (message.sources?.length || 0), 0)}</span>
-              근거
+              출처
             </div>
             <div className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1.5">
               <span className="block font-semibold text-[#111713]">{isLoading ? '검토중' : '대기'}</span>
@@ -311,16 +311,16 @@ export function ChatInterface({ className, initialQuestion }: ChatInterfaceProps
                         : 'border-[#C6D9CB] bg-[#EDF7EF] text-[#1F7A4D]'
                     }`}
                   >
-                    {message.type === 'user' ? '검토 질문' : '정책 검토 메모'}
+                    {message.type === 'user' ? '정책 질문' : '정책 답변'}
                   </Badge>
                   {message.type === 'bot' && message.sources && message.sources.length > 0 && (
                     <Badge variant="outline" className="rounded-md border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] text-emerald-700">
-                      근거 연결
+                      출처 연결
                     </Badge>
                   )}
                   {message.type === 'bot' && message.noDataFound && (
                     <Badge variant="outline" className="rounded-md border-[#E9D59B] bg-[#FFF8E6] px-2 py-0.5 text-[11px] text-[#8A6418]">
-                      검토 근거 없음
+                      출처 없음
                     </Badge>
                   )}
                   <span className={`text-[11px] ${message.type === 'user' ? 'text-white/55' : 'text-[#777777]'}`}>
@@ -336,7 +336,7 @@ export function ChatInterface({ className, initialQuestion }: ChatInterfaceProps
                   <div className="space-y-3">
                     <div className="flex items-center gap-2 text-sm text-[#5F6C62]">
                       <Loader2 className="h-4 w-4 animate-spin text-[#1F7A4D]" />
-                      근거 문서와 정책 문맥을 대조하는 중입니다.
+                      출처 문서와 정책 문맥을 대조하는 중입니다.
                     </div>
                     <div className="grid gap-2 sm:grid-cols-3">
                       <div className="h-2 rounded-full bg-[#E9ECE3]" />
@@ -353,9 +353,9 @@ export function ChatInterface({ className, initialQuestion }: ChatInterfaceProps
                       <div className="rounded-lg border border-[#E9D59B] bg-[#FFF8E6] p-3 text-xs leading-5 text-[#6B5316]">
                         <div className="mb-1 flex items-center gap-2 font-semibold text-[#111713]">
                           <Search className="h-3.5 w-3.5 text-[#9E5700]" />
-                          확인 가능한 근거가 없습니다
+                          확인 가능한 출처가 없습니다
                         </div>
-                        더 구체적으로 입력하면 문서 근거를 다시 확인할 수 있습니다.
+                        더 구체적으로 입력하면 관련 문서를 다시 확인할 수 있습니다.
                         {message.showContactOption && (
                           <button
                             type="button"
@@ -374,7 +374,7 @@ export function ChatInterface({ className, initialQuestion }: ChatInterfaceProps
                         <div className="mb-2 flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between sm:gap-3">
                           <div className="flex items-center gap-2 text-xs font-semibold text-[#111713]">
                             <FileText className="h-4 w-4 text-[#1F7A4D]" />
-                            근거 문서 {message.sources.length}개 보기
+                            확인한 출처 {message.sources.length}개 보기
                           </div>
                           <span className="text-[11px] text-[#758070]">최종 판단 전 원문 대조</span>
                         </div>
@@ -416,7 +416,7 @@ export function ChatInterface({ className, initialQuestion }: ChatInterfaceProps
                       <div className="rounded-lg border border-[#D8DCCF] bg-[#FBFBF7] p-3 text-xs leading-5 text-[#5F6C62]">
                         <div className="mb-1 flex items-center gap-2 font-semibold text-[#111713]">
                           <FileText className="h-3.5 w-3.5 text-[#758070]" />
-                          근거 문서 대기
+                          출처 확인 대기
                         </div>
                         이 답변에는 표시 가능한 출처가 없습니다. 정책 판단에는 추가 원문 확인이 필요합니다.
                       </div>
@@ -427,7 +427,7 @@ export function ChatInterface({ className, initialQuestion }: ChatInterfaceProps
                         <div>
                           <div className="mb-1 flex items-center gap-1 font-semibold text-[#111713]">
                             <ClipboardCheck className="h-3.5 w-3.5 text-[#1F7A4D]" />
-                            근거 신뢰도
+                            출처 일치도
                           </div>
                           {formatConfidence(message.confidence) !== null ? (
                             <div className="flex items-center gap-2">
@@ -458,7 +458,7 @@ export function ChatInterface({ className, initialQuestion }: ChatInterfaceProps
                       </button>
                       <button className="inline-flex items-center gap-1 rounded-md border border-[#D8DCCF] bg-white px-2 py-1 text-xs text-[#5F6C62] transition-colors hover:bg-[#FFF8E6] hover:text-[#8A6418]">
                         <ThumbsDown className="h-3.5 w-3.5" />
-                        근거 부족
+                        출처 부족
                       </button>
                       <button className="inline-flex items-center gap-1 rounded-md border border-[#D8DCCF] bg-white px-2 py-1 text-xs text-[#5F6C62] transition-colors hover:bg-[#F5F4EC] hover:text-[#111713]">
                         <Bookmark className="h-3.5 w-3.5" />

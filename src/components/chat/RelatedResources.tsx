@@ -46,33 +46,33 @@ interface RelatedResourcesProps {
 
 const getDisplayTitle = (source: SourceItem, index: number) => {
   const cleaned = source.title?.replace(/_chunk_\d+/g, `_page_${index + 1}`).trim();
-  return cleaned || `근거 문서 ${index + 1}`;
+  return cleaned || `출처 문서 ${index + 1}`;
 };
 
 const getEvidenceLabel = (source: SourceItem) => {
   const method = source.retrievalMethod?.toLowerCase() || source.evidenceType?.toLowerCase();
 
-  if (method?.includes("hybrid")) return "의미+문구 근거";
-  if (method?.includes("keyword")) return "문구 일치 근거";
-  if (method?.includes("vector")) return "의미 유사 근거";
+  if (method?.includes("hybrid")) return "의미+문구 일치";
+  if (method?.includes("keyword")) return "문구 일치";
+  if (method?.includes("vector")) return "의미 유사";
 
-  return "검증 근거";
+  return "출처 확인";
 };
 
 const getAvailabilityLabel = (source: SourceItem) => {
   if (source.url || source.sourceQuality?.hasUrl) return "원문 확인 가능";
   if (source.excerpt || source.sourceQuality?.hasExcerpt) return "원문 일부 확인 가능";
 
-  return "내부 색인 문서";
+  return "관련 문서";
 };
 
 const getCorpusLabel = (source: SourceItem) => {
   const corpus = source.corpus?.toLowerCase();
 
-  if (corpus?.endsWith("_document_chunks")) return "정책 근거 색인";
-  if (corpus?.includes("document_chunks")) return "내부 문서 색인";
+  if (corpus?.endsWith("_document_chunks")) return "관련 문서";
+  if (corpus?.includes("document_chunks")) return "Compass 문서";
 
-  return "Compass 색인";
+  return "Compass 문서";
 };
 
 const getScoreLabel = (source: SourceItem) => {
@@ -158,7 +158,7 @@ export default function RelatedResources({
         <CardContent className="p-4">
           <div className="flex items-center gap-3 text-sm text-[#5E5E5E]">
             <div className="h-4 w-4 animate-spin rounded-full border-2 border-[#D8DED9] border-t-[#1F7A4D]" />
-            인용 후보와 원문 근거를 확인하는 중입니다.
+            확인한 출처와 원문 링크를 확인하는 중입니다.
           </div>
         </CardContent>
       </Card>
@@ -172,12 +172,12 @@ export default function RelatedResources({
         <CardHeader className="pb-2">
           <CardTitle className="flex items-center gap-2 text-sm font-semibold text-[#0D0D0D]">
             <Search className="h-4 w-4 text-[#9E5700]" />
-            검토 가능한 근거 없음
+            확인한 출처 없음
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3 p-4 pt-0">
           <p className="text-sm leading-6 text-[#5E5E5E]">
-            현재 Compass 문서 기준으로 확인 가능한 근거를 찾지 못했습니다. 플랫폼명, 정책 항목, 소재 유형을 더 구체적으로 입력해 주세요.
+            현재 Compass 문서 기준으로 확인 가능한 출처를 찾지 못했습니다. 플랫폼명, 정책 항목, 소재 유형을 더 구체적으로 입력해 주세요.
           </p>
           <div className="rounded-md border border-[#E5E5E5] bg-[#F7F7F7] p-3 text-xs leading-5 text-[#5E5E5E]">
             예: "카카오 광고 가격 할인 표시 기준", "Google Ads 도박 정책", "네이버 청소년 유해 콘텐츠 기준"
@@ -207,13 +207,13 @@ export default function RelatedResources({
       <CardHeader className="pb-3">
         <CardTitle className="flex flex-wrap items-center gap-2 text-sm font-semibold text-[#0D0D0D]">
           <BookOpen className="h-4 w-4 text-[#1F7A4D]" />
-          <span>정책 인용 후보</span>
+          <span>확인한 출처</span>
           <Badge variant="outline" className="rounded-md border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] text-emerald-700">
             {validSources.length}개
           </Badge>
           {generationLimited && (
             <Badge variant="outline" className="rounded-md border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] text-amber-700">
-              검토 메모 제한
+              답변 정리 제한
             </Badge>
           )}
         </CardTitle>
@@ -226,9 +226,9 @@ export default function RelatedResources({
       <CardContent className="space-y-3">
         {generationLimited && (
           <div className="rounded-md border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-900">
-            <p className="font-semibold">검토 메모 작성 제한</p>
+            <p className="font-semibold">답변 정리 제한</p>
             <p className="mt-1">
-              확인된 정책 근거와 원문 링크는 보존되었습니다. 인용 후보를 먼저 확인한 뒤 답변을 재시도해 주세요.
+              확인한 출처와 원문 링크는 유지됩니다. 출처를 먼저 확인한 뒤 다시 시도해 주세요.
             </p>
           </div>
         )}
@@ -256,7 +256,7 @@ export default function RelatedResources({
                           className="h-7 w-7 rounded-md p-0 text-[#5E5E5E] hover:bg-[#EDF7EF] hover:text-[#1F7A4D]"
                           onClick={() => source.sourceType === "file" ? handleFileDownload(source) : handleUrlOpen(source)}
                           title={source.sourceType === "file" ? "파일 다운로드" : "원문 열기"}
-                          aria-label={source.sourceType === "file" ? "근거 문서 파일 다운로드" : "근거 문서 원문 열기"}
+                          aria-label={source.sourceType === "file" ? "출처 문서 파일 다운로드" : "출처 문서 원문 열기"}
                         >
                           {source.sourceType === "file" ? <Download className="h-3.5 w-3.5" /> : <ExternalLink className="h-3.5 w-3.5" />}
                         </Button>
@@ -267,7 +267,7 @@ export default function RelatedResources({
                         className="h-7 w-7 rounded-md p-0 text-[#5E5E5E] hover:bg-[#F4F4F4] hover:text-[#0D0D0D]"
                         onClick={() => toggleExpanded(source.id)}
                         title={isExpanded ? "접기" : "펼치기"}
-                        aria-label={isExpanded ? "근거 문서 접기" : "근거 문서 펼치기"}
+                        aria-label={isExpanded ? "출처 문서 접기" : "출처 문서 펼치기"}
                       >
                         {isExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
                       </Button>
@@ -299,7 +299,7 @@ export default function RelatedResources({
                     <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-[#E5E5E5] pt-3 text-xs text-[#777777]">
                       <span className="inline-flex items-center gap-1">
                         <ShieldCheck className="h-3.5 w-3.5 text-emerald-600" />
-                        정책 검증 근거
+                        정책 출처 확인
                       </span>
                       <span className="inline-flex items-center gap-1">
                         {source.sourceType === "file" ? <FileText className="h-3.5 w-3.5" /> : <Globe className="h-3.5 w-3.5" />}
