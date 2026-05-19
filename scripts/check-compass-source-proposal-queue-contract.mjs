@@ -23,9 +23,124 @@ const sql = read("docs/sql/2026-05-16_compass_source_proposal_queue.sql").toLowe
 const rollback = read("docs/sql/2026-05-16_compass_source_proposal_queue_rollback.sql").toLowerCase();
 const verify = read("docs/sql/2026-05-16_compass_source_proposal_queue_verify.sql").toLowerCase();
 const service = read("src/lib/services/CompassSourceProposalQueueService.ts");
+const proposalService = read("src/lib/services/CompassSourceProposalService.ts");
+const workerService = read("src/lib/services/CompassSourceProposalWorkerService.ts");
 const route = read("src/app/api/admin/source-ops/proposals/route.ts");
+const workerRoute = read("src/app/api/internal/source-proposals/dry-run/route.ts");
+const sourceOpsPage = read("src/app/admin/source-ops/page.tsx");
 const tableReferenceCheck = read("scripts/check-compass-table-references.mjs");
 const reviewApplyPlan = read("docs/tasks/2026-05-17_compass_source_proposal_review_apply_contract_plan_v1.md");
+
+const proposalBoundaryFiles = [
+  ["src/lib/services/CompassSourceProposalService.ts", proposalService],
+  ["src/lib/services/CompassSourceProposalQueueService.ts", service],
+  ["src/lib/services/CompassSourceProposalWorkerService.ts", workerService],
+  ["src/app/api/admin/source-ops/proposals/route.ts", route],
+  ["src/app/api/internal/source-proposals/dry-run/route.ts", workerRoute],
+  ["src/app/admin/source-ops/page.tsx", sourceOpsPage],
+];
+
+const corpusTables = [
+  "documents",
+  "document_chunks",
+  "embeddings",
+  "ollama_document_chunks",
+];
+
+const writeMethods = [
+  "insert",
+  "upsert",
+  "update",
+  "delete",
+];
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function assertNoCorpusTableWrites(files) {
+  for (const [relativePath, text] of files) {
+    for (const table of corpusTables) {
+      for (const method of writeMethods) {
+        const pattern = new RegExp(
+          `\\.from\\(\\s*['"\`]${escapeRegExp(table)}['"\`]\\s*\\)[\\s\\S]{0,1200}?\\.${method}\\s*\\(`,
+          "m",
+        );
+        if (pattern.test(text)) {
+          fail(`${relativePath} must not ${method} corpus table ${table} from the source proposal boundary`);
+        }
+      }
+    }
+  }
+}
+
+function assertNoPlaceholderEmbeddingFixtures(files) {
+  const forbiddenPatterns = [
+    [/dummyChunk\b/i, "dummyChunk"],
+    [/dummy\s+chunks/i, "dummy chunks"],
+    [/new\s+Array\s*\([^)]*\)\s*\.fill\s*\(\s*0\s*\)/, "new Array(...).fill(0)"],
+    [/\bembedding\s*:\s*null\b/, "embedding: null"],
+    [/\.is\s*\(\s*['"]embedding['"]\s*,\s*null\s*\)/, ".is('embedding', null)"],
+  ];
+
+  for (const [relativePath, text] of files) {
+    for (const [pattern, label] of forbiddenPatterns) {
+      if (pattern.test(text)) {
+        fail(`${relativePath} must not use placeholder embedding fixture pattern: ${label}`);
+      }
+    }
+  }
+}
+
+function assertQueueServiceWriteTargetsAreAllowlisted() {
+  const allowedWriteTargets = new Set(["source_proposal_runs", "source_proposal_queue"]);
+  const fromChainPattern = /\.from\(\s*['"`]([^'"`]+)['"`]\s*\)([\s\S]*?)(?=\n\s*(?:const|let|if|return|throw|try|catch|await|}\)|}\s*$)|$)/g;
+  let match;
+
+  while ((match = fromChainPattern.exec(service)) !== null) {
+    const [, table, chain] = match;
+    const writes = writeMethods.filter((method) => new RegExp(`\\.${method}\\s*\\(`).test(chain));
+    if (writes.length > 0 && !allowedWriteTargets.has(table)) {
+      fail(`queue service write chain must target only source_proposal_runs/source_proposal_queue, got ${table}`);
+    }
+  }
+}
+
+function assertSourceOpsPageDoesNotExposeApplyActions() {
+  const proposalEndpointFetchPattern = /fetch\(\s*["']\/api\/admin\/source-ops\/proposals(?:\?[^"']*)?["']\s*,\s*\{([\s\S]*?)\}\s*\)/g;
+  let match;
+
+  while ((match = proposalEndpointFetchPattern.exec(sourceOpsPage)) !== null) {
+    const options = match[1];
+    if (/\bmethod\s*:\s*["'](?:POST|PATCH|DELETE)["']/.test(options)) {
+      fail("source ops page must not call proposals endpoint with POST/PATCH/DELETE");
+    }
+  }
+
+  const forbiddenButtonActionPattern = /<Button\b[\s\S]{0,500}?(?:approve|reject|apply|promote|승인|반려|적용|승격)[\s\S]{0,500}?<\/Button>/i;
+  if (forbiddenButtonActionPattern.test(sourceOpsPage)) {
+    fail("source ops page must not render approve/reject/apply/promote proposal buttons");
+  }
+
+  const forbiddenHandlerPattern = /\b(?:onClick|onSubmit)\s*=\s*\{[^}]*\b(?:approve|reject|apply|promote)(?:Source|Proposal|Candidate|Run|Queue)?\b[^}]*\}/i;
+  if (forbiddenHandlerPattern.test(sourceOpsPage)) {
+    fail("source ops page must not wire approve/reject/apply/promote handlers");
+  }
+}
+
+function assertCompletedStatusDoesNotWriteCorpusSuccess(files) {
+  for (const [relativePath, text] of files) {
+    for (const table of corpusTables) {
+      const pattern = new RegExp(
+        `\\.from\\(\\s*['"\`]${escapeRegExp(table)}['"\`]\\s*\\)[\\s\\S]{0,1200}?\\.(?:insert|upsert|update)\\s*\\([\\s\\S]{0,800}?(?:status\\s*:\\s*['"\`]completed['"\`]|indexed_at|embedding_status\\s*:\\s*['"\`](?:completed|success)['"\`])`,
+        "m",
+      );
+      if (pattern.test(text)) {
+        fail(`${relativePath} must not couple status completed/index success writes to corpus table ${table}`);
+      }
+    }
+  }
+}
 
 for (const token of [
   "create table if not exists compass.source_proposal_runs",
@@ -131,6 +246,12 @@ for (const forbidden of [
     fail(`queue path must not import or call corpus mutation API: ${forbidden}`);
   }
 }
+
+assertNoCorpusTableWrites(proposalBoundaryFiles);
+assertNoPlaceholderEmbeddingFixtures(proposalBoundaryFiles);
+assertQueueServiceWriteTargetsAreAllowlisted();
+assertSourceOpsPageDoesNotExposeApplyActions();
+assertCompletedStatusDoesNotWriteCorpusSuccess(proposalBoundaryFiles);
 
 for (const token of ["source_proposal_runs", "source_proposal_queue"]) {
   if (!tableReferenceCheck.includes(`"${token}"`)) {
