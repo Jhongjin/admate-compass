@@ -199,11 +199,31 @@ const providerNamedDiagnosticRouteFiles = [
   'src/app/api/chat-railway/route.ts',
   'src/app/api/railway-status/route.ts',
   'src/app/api/chatbot/route.ts',
+  'src/app/api/chat-huggingface/route.ts',
+  'src/app/api/test-huggingface/route.ts',
   'src/app/api/debug-env/route.ts',
   'src/app/api/debug-rag/route.ts',
 ]
 
 const proxyRoute = read('src/app/api/proxy-ollama/route.ts')
+
+const productionDebugGuardRequiredRouteFiles = [
+  'src/app/api/ollama/route.ts',
+  'src/app/api/proxy-ollama/route.ts',
+  'src/app/api/chat-railway/route.ts',
+  'src/app/api/railway-status/route.ts',
+  'src/app/api/chat-huggingface/route.ts',
+  'src/app/api/test-huggingface/route.ts',
+  'src/app/api/debug-env/route.ts',
+  'src/app/api/debug-rag/route.ts',
+]
+
+for (const relativePath of productionDebugGuardRequiredRouteFiles) {
+  const text = read(relativePath)
+  if (!/guardProductionAdminDebugRoute\s*\(\s*\)/.test(text)) {
+    fail(`${relativePath} must call guardProductionAdminDebugRoute()`)
+  }
+}
 
 for (const removedPage of [
   'src/app/test-ollama/page.tsx',
@@ -316,9 +336,12 @@ for (const relativePath of providerNamedDiagnosticRouteFiles) {
   for (const snippet of publicSurfaceSnippets) {
     for (const forbidden of [
       { pattern: /\bOllama\b/i, label: 'provider name Ollama' },
+      { pattern: /\bHugging\s*Face\b/i, label: 'provider name Hugging Face' },
+      { pattern: /\bhuggingface\b/i, label: 'provider name huggingface' },
       { pattern: /\bRailway\b/i, label: 'infra name Railway' },
       { pattern: /\bVultr\b/i, label: 'infra name Vultr' },
       { pattern: /ollama-v1/i, label: 'provider-specific version ollama-v1' },
+      { pattern: /huggingface-/i, label: 'provider-specific model huggingface-*' },
       { pattern: /railway-ollama/i, label: 'provider-specific model railway-ollama-*' },
       { pattern: /\/api\/chat-ollama/i, label: 'provider-named legacy endpoint /api/chat-ollama' },
       { pattern: /\/api\/ollama/i, label: 'provider-named endpoint /api/ollama' },

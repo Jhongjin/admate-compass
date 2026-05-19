@@ -18,6 +18,23 @@ interface SearchResult {
   metadata: any;
 }
 
+const PROVIDER_REFERENCE_PATTERN = /\b(?:hugging\s*face|huggingface)\b|허깅\s*페이스/gi;
+
+function neutralizeProviderReferences(value: string): string {
+  return value.replace(PROVIDER_REFERENCE_PATTERN, 'answer runtime');
+}
+
+function getGeneratedAnswer(data: any, prompt: string): string {
+  const generatedText = Array.isArray(data) && typeof data[0]?.generated_text === 'string'
+    ? data[0].generated_text
+    : '';
+  const withoutPrompt = generatedText.startsWith(prompt)
+    ? generatedText.slice(prompt.length)
+    : generatedText.replace(prompt, '');
+  const answer = neutralizeProviderReferences(withoutPrompt).trim();
+  return answer || '답변을 생성할 수 없습니다.';
+}
+
 /**
  * Hugging Face를 통한 답변 생성
  */
@@ -69,13 +86,13 @@ ${context}
     if (!response.ok) {
       await response.text();
       console.error('Compass answer runtime error response received', { status: response.status });
-      throw new Error(`Hugging Face API error: ${response.status}`);
+      throw new Error(`Answer runtime error: ${response.status}`);
     }
 
     const data = await response.json();
     console.log('Compass answer generation completed');
     
-    return data[0]?.generated_text?.trim() || '답변을 생성할 수 없습니다.';
+    return getGeneratedAnswer(data, prompt);
 
   } catch (error) {
     console.error('Compass answer generation failed', {
@@ -204,7 +221,7 @@ export async function POST(request: NextRequest) {
         },
         confidence: 0,
         processingTime: Date.now() - startTime,
-        model: 'huggingface-no-data'
+        model: 'compass-answer-no-data'
       });
     }
 
@@ -240,7 +257,7 @@ export async function POST(request: NextRequest) {
       },
       confidence,
       processingTime,
-      model: 'huggingface-dialogpt'
+      model: 'compass-answer'
     });
 
   } catch (error) {
@@ -252,15 +269,15 @@ export async function POST(request: NextRequest) {
     
     return NextResponse.json({
       response: {
-        message: '죄송합니다. 현재 Hugging Face 서비스에 일시적인 문제가 발생했습니다. 잠시 후 다시 시도해주세요.',
-        content: '죄송합니다. 현재 Hugging Face 서비스에 일시적인 문제가 발생했습니다. 잠시 후 다시 시도해주세요.',
+        message: '죄송합니다. 현재 답변 서비스에 일시적인 문제가 발생했습니다. 잠시 후 다시 시도해주세요.',
+        content: '죄송합니다. 현재 답변 서비스에 일시적인 문제가 발생했습니다. 잠시 후 다시 시도해주세요.',
         sources: [],
         noDataFound: true,
         showContactOption: true
       },
       confidence: 0,
       processingTime,
-      model: 'huggingface-error'
+      model: 'compass-answer-error'
     }, { status: 500 });
   }
 }

@@ -40,34 +40,32 @@ export async function GET() {
     });
 
     if (!response.ok) {
-      console.error('Hugging Face API error status:', response.status);
+      console.error('Compass diagnostic provider request failed', { status: response.status });
       return NextResponse.json(
         {
           success: false,
-          error: 'Provider request failed',
+          message: 'Diagnostic check failed',
         },
         { status: 502 },
       );
     }
 
-    const data = await response.json();
+    await response.json();
 
     return NextResponse.json({
       success: true,
-      message: 'Hugging Face API test succeeded',
-      response: data,
-      testPrompt,
+      message: 'Diagnostic check succeeded',
     });
   } catch (error) {
     console.error(
-      'Hugging Face API test failed:',
+      'Compass diagnostic provider check failed',
       error instanceof Error ? error.name : 'UnknownError',
     );
 
     return NextResponse.json(
       {
         success: false,
-        error: 'Hugging Face API test failed',
+        message: 'Diagnostic check failed',
       },
       { status: 500 },
     );

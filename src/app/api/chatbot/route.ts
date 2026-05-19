@@ -110,7 +110,7 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    console.log(`💬 Chatbot API 메시지 수신: "${message}"`);
+    console.log('💬 Chatbot API 메시지 수신:', { messageLength: message.length });
 
     // 환경 변수 확인
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -234,7 +234,6 @@ export async function POST(request: NextRequest) {
 
     console.log('📤 최종 API 응답:', {
       sourcesCount: apiResponse.response.sources.length,
-      sources: apiResponse.response.sources
     });
 
     console.log('📤 Chatbot API 응답 전송');
@@ -244,12 +243,14 @@ export async function POST(request: NextRequest) {
     });
 
   } catch (error) {
-    console.error('❌ Chatbot API POST 요청 오류:', error);
+    console.error('❌ Chatbot API POST 요청 오류:', {
+      errorName: error instanceof Error ? error.name : 'UnknownError',
+    });
     
     return NextResponse.json({
       success: false,
       error: '챗봇 응답 생성 중 오류가 발생했습니다.',
-      details: error instanceof Error ? error.message : String(error)
+      details: '일시적인 처리 오류가 발생했습니다. 잠시 후 다시 시도해주세요.'
     }, {
       status: 500,
       headers,
