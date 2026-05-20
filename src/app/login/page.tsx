@@ -1,9 +1,9 @@
 "use client";
 
-import { FormEvent, Suspense, useEffect, useMemo, useState } from "react";
+import { FormEvent, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowRight, ExternalLink, LockKeyhole, Mail, ShieldCheck } from "lucide-react";
+import { ArrowRight, ExternalLink, LockKeyhole, Mail } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -13,44 +13,198 @@ import { sanitizeCompassNextPath } from "@/lib/auth/safeNext";
 const ACCESS_REQUEST_URL = "https://home.admate.ai.kr/access-request?product=compass";
 const ADMATE_HOME_URL = "https://home.admate.ai.kr";
 
-const loginStatusStrip = [
-  { label: "로그인", value: "보호됨" },
-  { label: "출처", value: "근거 확인" },
-  { label: "검토", value: "3단계" },
-] as const;
-
-const loginProofCards = [
+const compassIntroItems = [
   {
-    label: "기준",
-    title: "정책 기준 확인",
-    detail: "공식 정책과 AdMate 확인 기준을 로그인 후 확인합니다.",
+    label: "01",
+    title: "질문 조건에 맞는 공식 정책 수집",
+    detail: "플랫폼 정책, 도움말, 운영 기준에서 답변에 필요한 근거를 먼저 모읍니다.",
   },
   {
-    label: "출처",
-    title: "출처 근거 확인",
-    detail: "답변에 사용된 문서와 원문 링크를 함께 확인합니다.",
+    label: "02",
+    title: "출처와 조건을 함께 대조",
+    detail: "충돌하거나 중복되는 근거, 빠진 조건을 다시 확인해 판단 위험을 낮춥니다.",
   },
   {
-    label: "정리",
-    title: "최종 답변 정리",
-    detail: "추가 확인 필요 항목을 분리해 운영 판단에 참고할 답변으로 정리합니다.",
+    label: "03",
+    title: "운영 판단에 쓸 답변으로 정리",
+    detail: "확인된 내용과 추가 확인이 필요한 부분을 구분해 바로 읽히는 답변으로 제공합니다.",
   },
 ] as const;
 
-const loginReviewSteps = [
-  {
-    label: "1차 후보",
-    detail: "질문 조건과 공식 정책 근거 수집",
-  },
-  {
-    label: "2차 후보",
-    detail: "누락 근거와 다른 해석 재확인",
-  },
-  {
-    label: "팀장 최종 검토",
-    detail: "충돌/중복/근거 확인 후 최종 답변 확정",
-  },
-] as const;
+type HeadlineParticle = {
+  x: number;
+  y: number;
+  size: number;
+  drift: number;
+};
+
+function ReactiveHeadline({ children }: { children: string }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const particlesRef = useRef<HeadlineParticle[]>([]);
+  const pointerRef = useRef({ x: 0, y: 0, active: false });
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    const context = canvas?.getContext("2d");
+
+    if (!canvas || !context) {
+      return;
+    }
+
+    const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    let frameId = 0;
+    let time = 0;
+
+    const createTextLines = (context2d: CanvasRenderingContext2D, maxWidth: number) => {
+      const words = children.split(" ");
+      const lines: string[] = [];
+      let currentLine = "";
+
+      words.forEach((word) => {
+        const nextLine = currentLine ? `${currentLine} ${word}` : word;
+
+        if (context2d.measureText(nextLine).width <= maxWidth || !currentLine) {
+          currentLine = nextLine;
+          return;
+        }
+
+        lines.push(currentLine);
+        currentLine = word;
+      });
+
+      if (currentLine) {
+        lines.push(currentLine);
+      }
+
+      return lines;
+    };
+
+    const buildParticles = () => {
+      const { width, height } = canvas.getBoundingClientRect();
+      const sampleCanvas = document.createElement("canvas");
+      const sampleContext = sampleCanvas.getContext("2d");
+
+      if (!sampleContext) {
+        return;
+      }
+
+      sampleCanvas.width = Math.max(1, Math.floor(width));
+      sampleCanvas.height = Math.max(1, Math.floor(height));
+      sampleContext.clearRect(0, 0, width, height);
+      sampleContext.font =
+        "600 30px Inter, 'Nanum Barun Gothic', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
+      sampleContext.textBaseline = "top";
+      sampleContext.fillStyle = "#111713";
+
+      const lineHeight = 36;
+      const lines = createTextLines(sampleContext, width);
+      lines.forEach((line, index) => {
+        sampleContext.fillText(line, 0, index * lineHeight);
+      });
+
+      const imageData = sampleContext.getImageData(0, 0, sampleCanvas.width, sampleCanvas.height);
+      const particles: HeadlineParticle[] = [];
+      const step = width < 420 ? 5 : 4;
+
+      for (let y = 0; y < imageData.height; y += step) {
+        for (let x = 0; x < imageData.width; x += step) {
+          const alpha = imageData.data[(y * imageData.width + x) * 4 + 3];
+
+          if (alpha > 30) {
+            particles.push({
+              x,
+              y,
+              size: alpha > 160 ? 1.45 : 1.05,
+              drift: (x * 0.017 + y * 0.031) % Math.PI,
+            });
+          }
+        }
+      }
+
+      particlesRef.current = particles;
+    };
+
+    const resize = () => {
+      const rect = canvas.getBoundingClientRect();
+      const ratio = window.devicePixelRatio || 1;
+      canvas.width = Math.max(1, Math.floor(rect.width * ratio));
+      canvas.height = Math.max(1, Math.floor(rect.height * ratio));
+      context.setTransform(ratio, 0, 0, ratio, 0, 0);
+      buildParticles();
+    };
+
+    const draw = () => {
+      const { width, height } = canvas.getBoundingClientRect();
+      const pointer = pointerRef.current;
+      const particles = particlesRef.current;
+
+      context.clearRect(0, 0, width, height);
+      context.fillStyle = "rgba(31, 122, 77, 0.62)";
+
+      particles.forEach((particle) => {
+        let x = particle.x;
+        let y = particle.y;
+
+        if (!prefersReducedMotion) {
+          x += Math.sin(time / 34 + particle.drift) * 0.7;
+          y += Math.cos(time / 38 + particle.drift) * 0.45;
+        }
+
+        if (pointer.active && !prefersReducedMotion) {
+          const dx = x - pointer.x;
+          const dy = y - pointer.y;
+          const distance = Math.hypot(dx, dy);
+          const radius = 86;
+
+          if (distance > 0 && distance < radius) {
+            const force = (radius - distance) / radius;
+            x += (dx / distance) * force * 12;
+            y += (dy / distance) * force * 8;
+          }
+        }
+
+        context.globalAlpha = 0.36 + (particle.size - 1) * 0.22;
+        context.beginPath();
+        context.arc(x, y, particle.size, 0, Math.PI * 2);
+        context.fill();
+      });
+
+      if (!prefersReducedMotion) {
+        time += 1;
+        frameId = window.requestAnimationFrame(draw);
+      }
+    };
+
+    resize();
+    draw();
+    window.addEventListener("resize", resize);
+
+    return () => {
+      window.removeEventListener("resize", resize);
+      window.cancelAnimationFrame(frameId);
+    };
+  }, [children]);
+
+  return (
+    <div
+      className="compass-reactive-headline relative"
+      onPointerMove={(event) => {
+        const rect = event.currentTarget.getBoundingClientRect();
+        pointerRef.current = {
+          x: event.clientX - rect.left,
+          y: event.clientY - rect.top,
+          active: true,
+        };
+      }}
+      onPointerLeave={() => {
+        pointerRef.current = { x: 0, y: 0, active: false };
+      }}
+    >
+      <h1 className="compass-gate-headline relative z-10">{children}</h1>
+      <canvas ref={canvasRef} className="absolute inset-0 z-20 h-full w-full" aria-hidden="true" />
+    </div>
+  );
+}
 
 function LoginPageContent() {
   const router = useRouter();
@@ -127,83 +281,42 @@ function LoginPageContent() {
       </header>
 
       <main className="px-4 pb-16 pt-10 sm:px-6 md:pt-20">
-        <section className="mx-auto grid max-w-6xl grid-cols-1 gap-6 lg:grid-cols-[0.95fr_1.05fr] lg:items-center">
+        <section className="mx-auto grid max-w-6xl grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.1fr)_420px] lg:items-center">
           <div className="rounded-lg border border-[#D6D8CD] border-t-4 border-t-[#111713] bg-white p-6 text-[#111713] shadow-sm md:p-8">
-            <div className="inline-flex items-center gap-2 rounded-md border border-[#C6D9CB] bg-[#EDF7EF] px-3 py-1 text-sm text-[#1F7A4D]">
-              <ShieldCheck className="h-4 w-4" aria-hidden="true" />
-              compass.admate.ai.kr
+            <div className="inline-flex items-center rounded-md border border-[#C6D9CB] bg-[#EDF7EF] px-3 py-1 text-sm font-semibold text-[#1F7A4D]">
+              AdMate Compass
             </div>
-            <div className="space-y-4">
-              <h1 className="mt-4 text-[30px] font-semibold leading-[36px] tracking-normal [text-wrap:balance]">
-                AdMate Compass 정책 확인
-              </h1>
-              <p className="max-w-2xl text-lg leading-8 text-[#34423A]">
-                정책 기준과 확인한 출처를 이어서 보려면 AdMate 계정으로 로그인하세요.
-              </p>
-              <p className="max-w-2xl text-sm leading-7 text-[#667066]">
-                로그인 후 요청하신 Compass 화면으로 돌아갑니다. 사용 권한이 필요하다면 AdMate 이용 권한을 요청해 주세요.
+            <div className="mt-4 space-y-4">
+              <ReactiveHeadline>정책 판단의 근거를 놓치지 않습니다</ReactiveHeadline>
+              <p className="compass-gate-copy max-w-2xl text-lg leading-8 text-[#34423A]">
+                질문 조건에 맞는 공식 정책과 출처를 모으고, 충돌·중복·누락 근거를 다시 확인해 운영 판단에 쓸 답변으로 정리합니다.
               </p>
             </div>
 
-            <div className="mt-6 grid overflow-hidden rounded-lg border border-[#D8DCCF] bg-[#FFFDF7] sm:grid-cols-3">
-              {loginStatusStrip.map((item, index) => (
-                <span
-                  key={item.label}
-                  className={`grid min-h-[58px] content-center gap-1 px-3 py-2 ${index > 0 ? "border-t border-[#E5E0D6] sm:border-l sm:border-t-0" : ""}`}
-                >
-                  <em className="text-[10px] font-black not-italic tracking-[0.08em] text-[#746A5B]">{item.label}</em>
-                  <strong className="text-sm font-black leading-tight text-[#111713]">{item.value}</strong>
-                </span>
-              ))}
-            </div>
-
-            <div className="mt-5 rounded-lg border border-[#D8DCCF] bg-[#F8F7F1] p-4">
-              <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
-                <div>
-                  <p className="text-xs font-semibold text-[#111713]">정책 확인 화면</p>
-                  <p className="mt-1 text-[11px] leading-5 text-[#667066]">
-                    1차 후보와 2차 후보가 근거를 모으고, 팀장이 충돌/중복/근거를 확인해 최종 답변을 확정하는 흐름을 로그인 후 한 화면에서 확인합니다.
-                  </p>
-                </div>
-                <span className="shrink-0 rounded-md border border-[#D8DCCF] bg-white px-2 py-1 text-[11px] font-semibold text-[#34423A]">
-                  근거 확인 우선
-                </span>
-              </div>
-            </div>
-
-            <div className="mt-5 grid gap-3 sm:grid-cols-3">
-              {loginProofCards.map((card) => (
-                <article key={card.label} className="min-h-[126px] rounded-lg border border-[#D8DCCF] bg-[#FBFBF7] p-4">
-                  <p className="text-[10px] font-black text-[#1F7A4D]">{card.label}</p>
-                  <strong className="mt-2 block text-sm font-black leading-snug text-[#111713]">{card.title}</strong>
-                  <span className="mt-2 block text-xs leading-5 text-[#667066]">{card.detail}</span>
+            <div className="mt-8 grid gap-3">
+              {compassIntroItems.map((item) => (
+                <article key={item.label} className="rounded-lg border border-[#D8DCCF] bg-[#FBFBF7] p-4">
+                  <div className="flex gap-4">
+                    <span className="mt-0.5 text-xs font-black text-[#1F7A4D]">{item.label}</span>
+                    <div>
+                      <strong className="block text-base font-semibold leading-6 text-[#111713]">{item.title}</strong>
+                      <p className="compass-gate-copy mt-1 text-sm leading-6 text-[#667066]">{item.detail}</p>
+                    </div>
+                  </div>
                 </article>
-              ))}
-            </div>
-
-            <div className="mt-4 grid overflow-hidden rounded-lg border border-[#D8DCCF] bg-[#FFF8E6] sm:grid-cols-3">
-              {loginReviewSteps.map((step, index) => (
-                <span
-                  key={step.label}
-                  className={`grid min-h-[74px] content-center gap-1 px-3 py-2 text-xs leading-tight text-[#111713] ${index > 0 ? "border-t border-[#E7D9AF] sm:border-l sm:border-t-0" : ""}`}
-                >
-                  <em className="text-[10px] font-black not-italic text-[#1F7A4D]">{String(index + 1).padStart(2, "0")}</em>
-                  <strong className="font-black">{step.label}</strong>
-                  <small className="text-[10px] font-semibold leading-4 text-[#667066]">{step.detail}</small>
-                </span>
               ))}
             </div>
           </div>
 
-          <div className="rounded-lg border border-[#D6D8CD] bg-white p-5 shadow-sm md:p-8">
+          <div className="rounded-lg border border-[#D6D8CD] border-t-4 border-t-[#1F7A4D] bg-white p-5 shadow-sm md:p-8">
             <div className="mb-6 flex items-start gap-3">
               <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-[#C6D9CB] bg-[#EDF7EF]">
                 <LockKeyhole className="h-5 w-5 text-[#1F7A4D]" aria-hidden="true" />
               </div>
               <div>
-                <h2 className="text-xl font-semibold text-[#0D0D0D]">AdMate 계정으로 계속</h2>
+                <h2 className="text-xl font-semibold text-[#0D0D0D]">AdMate 계정으로 로그인</h2>
                 <p className="mt-1 text-sm leading-6 text-[#5E5E5E]">
-                  Compass 정책 기준과 확인한 출처를 보려면 로그인합니다.
+                  회사 이메일로 로그인해 Compass 작업 공간을 이용하세요.
                 </p>
               </div>
             </div>
