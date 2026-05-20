@@ -94,23 +94,89 @@
     overflow-wrap: break-word;
   }
 
-  .compass-reactive-headline {
-    isolation: isolate;
+  .compass-gate-pill-row {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
   }
 
-  .compass-gate-headline {
+  .compass-gate-pill-row span {
+    display: inline-flex;
+    min-height: 28px;
+    align-items: center;
+    border: 1px solid #B8C9D8;
+    border-radius: 8px;
+    background: #F5F9FC;
+    padding: 0 11px;
+    color: #314760;
+    font-size: 11px;
+    font-weight: 850;
+    line-height: 1;
+    white-space: nowrap;
+  }
+
+  .compass-gate-pill-row span:first-child {
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+
+  .compass-gate-pill-row span:nth-child(2) {
+    border-color: #E3C87E;
+    background: #FFF8E6;
+    color: #8A6418;
+    letter-spacing: 0;
+  }
+
+  .compass-reactive-headline {
+    position: relative;
+    display: block;
+    width: fit-content;
+    max-width: 100%;
     color: #111713;
     font-size: 30px;
     font-weight: 600;
     line-height: 36px;
-    letter-spacing: 0;
-    text-wrap: pretty;
+    letter-spacing: 0px;
     word-break: keep-all;
+    overflow-wrap: break-word;
   }
 
-  .compass-reactive-headline canvas {
-    border-radius: 8px;
+  .compass-reactive-headline__text {
+    position: relative;
+    z-index: 1;
+  }
+
+  .compass-reactive-headline__canvas {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+    display: block;
+    width: 100%;
+    height: 100%;
+    opacity: 0.58;
     pointer-events: none;
+  }
+
+  .compass-login-email-field {
+    display: flex;
+    align-items: center;
+    overflow: hidden;
+    border: 1px solid #D8DCCF;
+    border-radius: 8px;
+    background: #F4F5F0;
+    transition:
+      border-color 180ms ease,
+      box-shadow 180ms ease;
+  }
+
+  .compass-login-email-field:focus-within {
+    border-color: #1F7A4D;
+    box-shadow: 0 0 0 3px #E7F4EA;
+  }
+
+  .compass-login-email-field input:focus-visible {
+    outline: 0;
   }
 
   .compass-media-marquee {
@@ -155,8 +221,24 @@
   }
 
   @media (prefers-reduced-motion: reduce) {
+    .compass-reactive-headline__canvas {
+      opacity: 0.42;
+    }
+
     .compass-media-track {
       animation: none;
+    }
+  }
+
+  @media (max-width: 420px) {
+    .compass-login-email-field {
+      align-items: stretch;
+      flex-direction: column;
+    }
+
+    .compass-login-email-field span {
+      border-top: 1px solid #D8DCCF;
+      border-left: 0;
     }
   }
 

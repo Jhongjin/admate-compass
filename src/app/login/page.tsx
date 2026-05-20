@@ -3,9 +3,6 @@
 import { FormEvent, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowRight, ExternalLink, LockKeyhole, Mail } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/useAuth";
 import { sanitizeCompassNextPath } from "@/lib/auth/safeNext";
@@ -32,177 +29,256 @@ const compassIntroItems = [
 ] as const;
 
 type HeadlineParticle = {
+  baseX: number;
+  baseY: number;
   x: number;
   y: number;
-  size: number;
-  drift: number;
+  vx: number;
+  vy: number;
+  tone: "ink" | "green" | "gold";
+};
+
+const HEADLINE_PARTICLE_GAP = 5;
+const HEADLINE_POINTER_RADIUS = 78;
+const HEADLINE_MAX_PARTICLES = 1250;
+
+const getLineHeight = (computedStyle: CSSStyleDeclaration, fontSize: number) => {
+  const parsedLineHeight = Number.parseFloat(computedStyle.lineHeight);
+
+  return Number.isFinite(parsedLineHeight) ? parsedLineHeight : fontSize * 1.25;
+};
+
+const getWrappedLines = (
+  text: string,
+  maxWidth: number,
+  context: CanvasRenderingContext2D,
+) => {
+  const words = text.split(" ");
+  const lines: string[] = [];
+  let currentLine = "";
+
+  for (const word of words) {
+    const nextLine = currentLine ? `${currentLine} ${word}` : word;
+
+    if (currentLine && context.measureText(nextLine).width > maxWidth) {
+      lines.push(currentLine);
+      currentLine = word;
+    } else {
+      currentLine = nextLine;
+    }
+  }
+
+  if (currentLine) {
+    lines.push(currentLine);
+  }
+
+  return lines;
 };
 
 function ReactiveHeadline({ children }: { children: string }) {
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const particlesRef = useRef<HeadlineParticle[]>([]);
-  const pointerRef = useRef({ x: 0, y: 0, active: false });
+  const headingRef = useRef<HTMLHeadingElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
 
   useEffect(() => {
+    const heading = headingRef.current;
     const canvas = canvasRef.current;
-    const context = canvas?.getContext("2d");
 
-    if (!canvas || !context) {
+    if (!heading || !canvas) {
       return;
     }
 
-    const prefersReducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const context = canvas.getContext("2d");
+
+    if (!context) {
+      return;
+    }
+
+    const reducedMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const pointer = { x: 0, y: 0, active: false };
+    let particles: HeadlineParticle[] = [];
     let frameId = 0;
-    let time = 0;
+    let isReducedMotion = reducedMotionQuery.matches;
+    let tick = 0;
 
-    const createTextLines = (context2d: CanvasRenderingContext2D, maxWidth: number) => {
-      const words = children.split(" ");
-      const lines: string[] = [];
-      let currentLine = "";
+    const drawParticles = (motionEnabled: boolean) => {
+      const width = canvas.width / Math.min(window.devicePixelRatio || 1, 2);
+      const height = canvas.height / Math.min(window.devicePixelRatio || 1, 2);
 
-      words.forEach((word) => {
-        const nextLine = currentLine ? `${currentLine} ${word}` : word;
+      context.clearRect(0, 0, width, height);
 
-        if (context2d.measureText(nextLine).width <= maxWidth || !currentLine) {
-          currentLine = nextLine;
-          return;
-        }
+      for (const particle of particles) {
+        const color = particle.tone === "green" ? "#1F7A4D" : particle.tone === "gold" ? "#D99A20" : "#111713";
 
-        lines.push(currentLine);
-        currentLine = word;
-      });
-
-      if (currentLine) {
-        lines.push(currentLine);
+        context.beginPath();
+        context.fillStyle = color;
+        context.globalAlpha = particle.tone === "ink" ? 0.44 : 0.66;
+        const wave = motionEnabled
+          ? Math.sin((tick + particle.baseX * 0.12 + particle.baseY * 0.08) * 0.08) * 0.45
+          : 0;
+        const drift = motionEnabled ? Math.cos((tick + particle.baseY * 0.11) * 0.07) * 0.28 : 0;
+        const radius = motionEnabled
+          ? 1.02 + (Math.sin(tick * 0.08 + particle.baseX * 0.03) + 1) * 0.08
+          : 1;
+        context.arc(particle.x + wave, particle.y + drift, radius, 0, Math.PI * 2);
+        context.fill();
       }
 
-      return lines;
+      context.globalAlpha = 1;
     };
 
     const buildParticles = () => {
-      const { width, height } = canvas.getBoundingClientRect();
-      const sampleCanvas = document.createElement("canvas");
-      const sampleContext = sampleCanvas.getContext("2d");
+      const devicePixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+      const bounds = heading.getBoundingClientRect();
+      const computedStyle = getComputedStyle(heading);
+      const width = Math.max(1, Math.ceil(bounds.width));
+      const height = Math.max(1, Math.ceil(bounds.height));
+      const scanCanvas = document.createElement("canvas");
+      const scanContext = scanCanvas.getContext("2d", { willReadFrequently: true });
 
-      if (!sampleContext) {
+      if (!scanContext) {
         return;
       }
 
-      sampleCanvas.width = Math.max(1, Math.floor(width));
-      sampleCanvas.height = Math.max(1, Math.floor(height));
-      sampleContext.clearRect(0, 0, width, height);
-      sampleContext.font =
-        "600 30px Inter, 'Nanum Barun Gothic', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif";
-      sampleContext.textBaseline = "top";
-      sampleContext.fillStyle = "#111713";
+      canvas.width = Math.ceil(width * devicePixelRatio);
+      canvas.height = Math.ceil(height * devicePixelRatio);
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${height}px`;
+      context.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
 
-      const lineHeight = 36;
-      const lines = createTextLines(sampleContext, width);
+      scanCanvas.width = width;
+      scanCanvas.height = height;
+      scanContext.clearRect(0, 0, width, height);
+      scanContext.fillStyle = "#000";
+      scanContext.font = `${computedStyle.fontWeight} ${computedStyle.fontSize} / ${computedStyle.lineHeight} ${computedStyle.fontFamily}`;
+      scanContext.letterSpacing = computedStyle.letterSpacing;
+      scanContext.textBaseline = "top";
+
+      const fontSize = Number.parseFloat(computedStyle.fontSize);
+      const lineHeight = getLineHeight(computedStyle, fontSize);
+      const lines = getWrappedLines(children, width, scanContext);
+
       lines.forEach((line, index) => {
-        sampleContext.fillText(line, 0, index * lineHeight);
+        scanContext.fillText(line, 0, index * lineHeight);
       });
 
-      const imageData = sampleContext.getImageData(0, 0, sampleCanvas.width, sampleCanvas.height);
-      const particles: HeadlineParticle[] = [];
-      const step = width < 420 ? 5 : 4;
+      const imageData = scanContext.getImageData(0, 0, width, height).data;
+      const nextParticles: HeadlineParticle[] = [];
 
-      for (let y = 0; y < imageData.height; y += step) {
-        for (let x = 0; x < imageData.width; x += step) {
-          const alpha = imageData.data[(y * imageData.width + x) * 4 + 3];
+      for (let y = 0; y < height; y += HEADLINE_PARTICLE_GAP) {
+        for (let x = 0; x < width; x += HEADLINE_PARTICLE_GAP) {
+          const alpha = imageData[(y * width + x) * 4 + 3];
 
-          if (alpha > 30) {
-            particles.push({
+          if (alpha > 80) {
+            const toneSeed = (x * 13 + y * 7) % 19;
+            nextParticles.push({
+              baseX: x,
+              baseY: y,
               x,
               y,
-              size: alpha > 160 ? 1.45 : 1.05,
-              drift: (x * 0.017 + y * 0.031) % Math.PI,
+              vx: 0,
+              vy: 0,
+              tone: toneSeed === 0 ? "gold" : toneSeed < 4 ? "green" : "ink",
             });
           }
         }
       }
 
-      particlesRef.current = particles;
+      particles =
+        nextParticles.length > HEADLINE_MAX_PARTICLES
+          ? nextParticles.filter((_, index) => index % Math.ceil(nextParticles.length / HEADLINE_MAX_PARTICLES) === 0)
+          : nextParticles;
+
+      drawParticles(!isReducedMotion);
     };
 
-    const resize = () => {
-      const rect = canvas.getBoundingClientRect();
-      const ratio = window.devicePixelRatio || 1;
-      canvas.width = Math.max(1, Math.floor(rect.width * ratio));
-      canvas.height = Math.max(1, Math.floor(rect.height * ratio));
-      context.setTransform(ratio, 0, 0, ratio, 0, 0);
-      buildParticles();
-    };
+    const animate = () => {
+      tick += 1;
 
-    const draw = () => {
-      const { width, height } = canvas.getBoundingClientRect();
-      const pointer = pointerRef.current;
-      const particles = particlesRef.current;
-
-      context.clearRect(0, 0, width, height);
-      context.fillStyle = "rgba(31, 122, 77, 0.62)";
-
-      particles.forEach((particle) => {
-        let x = particle.x;
-        let y = particle.y;
-
-        if (!prefersReducedMotion) {
-          x += Math.sin(time / 34 + particle.drift) * 0.7;
-          y += Math.cos(time / 38 + particle.drift) * 0.45;
-        }
-
-        if (pointer.active && !prefersReducedMotion) {
-          const dx = x - pointer.x;
-          const dy = y - pointer.y;
+      for (const particle of particles) {
+        if (pointer.active) {
+          const dx = particle.x - pointer.x;
+          const dy = particle.y - pointer.y;
           const distance = Math.hypot(dx, dy);
-          const radius = 86;
 
-          if (distance > 0 && distance < radius) {
-            const force = (radius - distance) / radius;
-            x += (dx / distance) * force * 12;
-            y += (dy / distance) * force * 8;
+          if (distance > 0 && distance < HEADLINE_POINTER_RADIUS) {
+            const force = (1 - distance / HEADLINE_POINTER_RADIUS) * 2.1;
+            particle.vx += (dx / distance) * force;
+            particle.vy += (dy / distance) * force;
           }
         }
 
-        context.globalAlpha = 0.36 + (particle.size - 1) * 0.22;
-        context.beginPath();
-        context.arc(x, y, particle.size, 0, Math.PI * 2);
-        context.fill();
-      });
-
-      if (!prefersReducedMotion) {
-        time += 1;
-        frameId = window.requestAnimationFrame(draw);
+        particle.vx += (particle.baseX - particle.x) * 0.075;
+        particle.vy += (particle.baseY - particle.y) * 0.075;
+        particle.vx *= 0.82;
+        particle.vy *= 0.82;
+        particle.x += particle.vx;
+        particle.y += particle.vy;
       }
+
+      drawParticles(true);
+      frameId = window.requestAnimationFrame(animate);
     };
 
-    resize();
-    draw();
-    window.addEventListener("resize", resize);
+    const startAnimation = () => {
+      window.cancelAnimationFrame(frameId);
+
+      if (!isReducedMotion) {
+        frameId = window.requestAnimationFrame(animate);
+        return;
+      }
+
+      for (const particle of particles) {
+        particle.x = particle.baseX;
+        particle.y = particle.baseY;
+        particle.vx = 0;
+        particle.vy = 0;
+      }
+
+      drawParticles(false);
+    };
+
+    const handlePointerMove = (event: PointerEvent) => {
+      const bounds = canvas.getBoundingClientRect();
+      pointer.x = event.clientX - bounds.left;
+      pointer.y = event.clientY - bounds.top;
+      pointer.active = true;
+    };
+
+    const handlePointerLeave = () => {
+      pointer.active = false;
+    };
+
+    const handleMotionPreferenceChange = (event: MediaQueryListEvent) => {
+      isReducedMotion = event.matches;
+      startAnimation();
+    };
+
+    const resizeObserver = new ResizeObserver(() => {
+      buildParticles();
+      startAnimation();
+    });
+
+    buildParticles();
+    startAnimation();
+    resizeObserver.observe(heading);
+    heading.addEventListener("pointermove", handlePointerMove);
+    heading.addEventListener("pointerleave", handlePointerLeave);
+    reducedMotionQuery.addEventListener("change", handleMotionPreferenceChange);
 
     return () => {
-      window.removeEventListener("resize", resize);
       window.cancelAnimationFrame(frameId);
+      resizeObserver.disconnect();
+      heading.removeEventListener("pointermove", handlePointerMove);
+      heading.removeEventListener("pointerleave", handlePointerLeave);
+      reducedMotionQuery.removeEventListener("change", handleMotionPreferenceChange);
     };
   }, [children]);
 
   return (
-    <div
-      className="compass-reactive-headline relative"
-      onPointerMove={(event) => {
-        const rect = event.currentTarget.getBoundingClientRect();
-        pointerRef.current = {
-          x: event.clientX - rect.left,
-          y: event.clientY - rect.top,
-          active: true,
-        };
-      }}
-      onPointerLeave={() => {
-        pointerRef.current = { x: 0, y: 0, active: false };
-      }}
-    >
-      <h1 className="compass-gate-headline relative z-10">{children}</h1>
-      <canvas ref={canvasRef} className="absolute inset-0 z-20 h-full w-full" aria-hidden="true" />
-    </div>
+    <h1 ref={headingRef} className="compass-reactive-headline mt-4">
+      <span className="compass-reactive-headline__text">{children}</span>
+      <canvas ref={canvasRef} className="compass-reactive-headline__canvas" aria-hidden="true" />
+    </h1>
   );
 }
 
@@ -268,8 +344,14 @@ function LoginPageContent() {
     <div className="min-h-[100dvh] bg-[#F4F5F0] text-[#111713]">
       <header className="border-b border-[#D8DCCF] bg-[#FBFBF7]/95 backdrop-blur-md">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
-          <Link href="/" className="block" aria-label="AdMate Compass home">
-            <img src="/brand/admate-compass-lockup.svg" alt="AdMate Compass" className="h-12 w-auto sm:h-14" />
+          <Link href="/" className="flex min-w-0 items-center gap-3" aria-label="AdMate Compass home">
+            <img src="/brand/admate-compass-mark.svg" alt="" className="h-9 w-9 rounded-md" aria-hidden="true" />
+            <span className="min-w-0">
+              <span className="block truncate text-lg font-bold leading-5 text-[#111713]">AdMate Compass</span>
+              <span className="hidden text-[10px] font-semibold uppercase leading-3 tracking-[0.16em] text-[#667066] sm:block">
+                POLICY EVIDENCE
+              </span>
+            </span>
           </Link>
           <Link
             href="/"
@@ -283,8 +365,9 @@ function LoginPageContent() {
       <main className="px-4 pb-16 pt-10 sm:px-6 md:pt-20">
         <section className="mx-auto grid max-w-6xl grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.1fr)_420px] lg:items-center">
           <div className="rounded-lg border border-[#D6D8CD] border-t-4 border-t-[#111713] bg-white p-6 text-[#111713] shadow-sm md:p-8">
-            <div className="inline-flex items-center rounded-md border border-[#C6D9CB] bg-[#EDF7EF] px-3 py-1 text-sm font-semibold text-[#1F7A4D]">
-              AdMate Compass
+            <div className="compass-gate-pill-row" aria-label="Compass 서비스 정보">
+              <span>COMPASS.ADMATE.AI.KR</span>
+              <span>정책 기준 확인</span>
             </div>
             <div className="mt-4 space-y-4">
               <ReactiveHeadline>정책 판단의 근거를 놓치지 않습니다</ReactiveHeadline>
@@ -309,61 +392,55 @@ function LoginPageContent() {
           </div>
 
           <div className="rounded-lg border border-[#D6D8CD] border-t-4 border-t-[#1F7A4D] bg-white p-5 shadow-sm md:p-8">
-            <div className="mb-6 flex items-start gap-3">
-              <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-[#C6D9CB] bg-[#EDF7EF]">
-                <LockKeyhole className="h-5 w-5 text-[#1F7A4D]" aria-hidden="true" />
-              </div>
-              <div>
-                <h2 className="text-xl font-semibold text-[#0D0D0D]">AdMate 계정으로 로그인</h2>
-                <p className="mt-1 text-sm leading-6 text-[#5E5E5E]">
-                  회사 이메일로 로그인해 Compass 작업 공간을 이용하세요.
-                </p>
-              </div>
+            <div className="mb-6">
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#667066]">AdMate Compass</p>
+              <h2 className="mt-2 text-xl font-semibold text-[#0D0D0D]">AdMate 계정으로 로그인</h2>
+              <p className="mt-2 text-xs leading-5 text-[#667066]">
+                회사 이메일로 로그인해 Compass 작업 공간을 이용하세요.
+              </p>
             </div>
 
             <form className="space-y-4" onSubmit={handleSubmit}>
-              <div className="space-y-2">
-                <Label htmlFor="email" className="text-sm font-semibold text-[#303030]">
+              <div>
+                <Label htmlFor="email" className="mb-2 block text-sm font-medium text-[#34423A]">
                   이메일
                 </Label>
-                <div className="flex flex-col overflow-hidden rounded-lg border border-[#D8D8D8] bg-white transition-colors focus-within:border-[#1F7A4D] focus-within:ring-2 focus-within:ring-[#E7F4EA] sm:flex-row">
-                  <div className="relative min-w-0 flex-1">
-                    <Mail className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-[#8A8A8A]" />
-                    <input
-                      id="email"
-                      type="text"
-                      inputMode="email"
-                      value={emailLocalPart}
-                      onChange={(event) => setEmailLocalPart(normalizeEmailLocalPart(event.target.value))}
-                      placeholder="name"
-                      autoComplete="username"
-                      className="h-10 w-full min-w-0 bg-transparent pl-10 pr-3 text-sm text-[#0D0D0D] outline-none placeholder:text-[#9A9A9A] disabled:cursor-not-allowed disabled:opacity-60"
-                      disabled={isSubmitting}
-                      aria-describedby="email-domain"
-                      required
-                    />
-                  </div>
+                <div className="compass-login-email-field">
+                  <input
+                    id="email"
+                    type="text"
+                    inputMode="email"
+                    autoComplete="username"
+                    required
+                    value={emailLocalPart}
+                    onChange={(event) => setEmailLocalPart(normalizeEmailLocalPart(event.target.value))}
+                    className="min-w-0 flex-1 bg-transparent px-3 py-2.5 text-sm text-[#0D0D0D] outline-none disabled:cursor-not-allowed disabled:opacity-60"
+                    placeholder="name"
+                    aria-describedby="email-domain"
+                    disabled={isSubmitting}
+                  />
                   <span
                     id="email-domain"
-                    className="border-t border-[#E5E5E5] bg-[#EDF7EF] px-3 py-2.5 text-sm font-bold text-[#4B6556] sm:border-l sm:border-t-0"
+                    aria-label="고정 이메일 도메인"
+                    className="shrink-0 border-l border-[#D8DCCF] bg-[#EDF7EF] px-3 py-2.5 text-sm font-bold text-[#4B6556]"
                   >
                     @nasmedia.co.kr
                   </span>
                 </div>
               </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="password" className="text-sm font-semibold text-[#303030]">
+              <div>
+                <Label htmlFor="password" className="mb-2 block text-sm font-medium text-[#34423A]">
                   비밀번호
                 </Label>
-                <Input
+                <input
                   id="password"
                   type="password"
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
                   placeholder="비밀번호를 입력하세요"
                   autoComplete="current-password"
-                  className="border-[#D8D8D8] bg-white text-[#0D0D0D] placeholder:text-[#9A9A9A]"
+                  className="w-full rounded-lg border border-[#D8DCCF] bg-[#F4F5F0] px-3 py-2.5 text-sm text-[#0D0D0D] outline-none transition-colors placeholder:text-[#9A9A9A] focus:border-[#1F7A4D] disabled:cursor-not-allowed disabled:opacity-60"
                   disabled={isSubmitting}
                   required
                 />
@@ -375,27 +452,33 @@ function LoginPageContent() {
                 </div>
               )}
 
-              <Button
+              <button
                 type="submit"
-                className="h-11 w-full gap-2 rounded-lg bg-[#0D0D0D] text-white hover:bg-[#303030]"
+                className="inline-flex w-full items-center justify-center rounded-lg bg-[#0D0D0D] px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
                 disabled={isSubmitting}
               >
-                {isSubmitting ? "로그인 중..." : "로그인"}
-                <ArrowRight className="h-4 w-4" aria-hidden="true" />
-              </Button>
+                {isSubmitting ? "로그인 중..." : "로그인하고 계속"}
+              </button>
             </form>
 
-            <div className="mt-6 grid gap-3 border-t border-[#E5E5E5] pt-5 text-sm">
+            <div className="mt-6 space-y-3 rounded-lg border border-[#D8DCCF] bg-[#F4F5F0] p-4">
+              <p className="text-sm font-medium text-[#111713]">Compass 이용 권한이 필요하신가요?</p>
+              <p className="text-xs leading-5 text-[#667066]">
+                권한이 없거나 처음 이용하는 경우, AdMate 이용 권한을 요청해주세요.
+              </p>
               <a
                 href={ACCESS_REQUEST_URL}
-                className="inline-flex items-center justify-between gap-3 rounded-lg border border-[#E9D59B] bg-[#FFF8E6] px-4 py-3 font-medium text-[#8A6418] transition-colors hover:bg-[#FFF3CF]"
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex w-full items-center justify-center rounded-lg border border-[#D8DCCF] bg-white px-4 py-2.5 text-sm font-semibold text-[#34423A] transition-colors hover:bg-[#FBFBF7]"
               >
-                <span className="min-w-0 break-words">AdMate 이용 권한 요청</span>
-                <ExternalLink className="h-4 w-4 flex-none" aria-hidden="true" />
+                Compass 이용 권한 요청
               </a>
               <Link
                 href={ADMATE_HOME_URL}
-                className="inline-flex items-center justify-center rounded-lg border border-[#E5E5E5] px-4 py-3 font-medium text-[#303030] transition-colors hover:bg-[#F7F7F7]"
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex w-full items-center justify-center rounded-lg px-4 py-2 text-sm font-medium text-[#667066] transition-colors hover:text-[#111713]"
               >
                 AdMate 홈페이지로 이동
               </Link>
