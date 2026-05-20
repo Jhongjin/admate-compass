@@ -62,6 +62,7 @@ export function SiteSwitchDropdown() {
       <DropdownMenuTrigger asChild>
         <button
           type="button"
+          aria-label="사이트 이동"
           className="inline-flex h-10 items-center gap-2 rounded-md border border-[#D7DCE3] bg-white/88 px-3 text-sm font-semibold text-[#293B5A] shadow-sm transition-colors hover:border-[#C4CEDA] hover:bg-[#F8F6F1] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2764D9] focus-visible:ring-offset-2"
         >
           <Sparkles className="h-4 w-4 text-[#A67B2D]" aria-hidden="true" />

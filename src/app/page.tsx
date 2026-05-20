@@ -169,7 +169,6 @@ export default function HomePage() {
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-3 px-4 sm:px-6 lg:px-8">
           <div className="flex items-center gap-3">
             <img src="/brand/admate-compass-lockup.svg" alt="AdMate Compass" className="h-12 w-auto" />
-            <span className="hidden text-sm font-semibold text-[#5B6472] sm:inline">AdMate Compass</span>
           </div>
           <div className="flex items-center gap-2">
             <SiteSwitchDropdown />
