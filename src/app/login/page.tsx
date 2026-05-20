@@ -440,7 +440,7 @@ function LoginPageContent() {
                   onChange={(event) => setPassword(event.target.value)}
                   placeholder="비밀번호를 입력하세요"
                   autoComplete="current-password"
-                  className="w-full rounded-lg border border-[#D8DCCF] bg-[#F4F5F0] px-3 py-2.5 text-sm text-[#0D0D0D] outline-none transition-colors placeholder:text-[#9A9A9A] focus:border-[#1F7A4D] disabled:cursor-not-allowed disabled:opacity-60"
+                  className="w-full rounded-lg border border-[#D8DCCF] bg-white px-3 py-2.5 text-sm text-[#0D0D0D] outline-none transition-colors placeholder:text-[#9A9A9A] focus:border-[#1F7A4D] disabled:cursor-not-allowed disabled:opacity-60"
                   disabled={isSubmitting}
                   required
                 />
