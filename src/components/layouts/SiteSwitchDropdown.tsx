@@ -72,31 +72,31 @@ export function SiteSwitchDropdown() {
       </DropdownMenuTrigger>
       <DropdownMenuContent
         align="end"
-        className="w-[432px] max-w-[calc(100vw-2rem)] rounded-[10px] border-[#D7DCE3] bg-white p-3 text-[#172033] shadow-[0_24px_70px_rgba(16,24,32,0.18)]"
+        className="w-[400px] max-w-[calc(100vw-1.5rem)] rounded-[10px] border-[#D7DCE3] bg-white p-2.5 text-[#172033] shadow-[0_24px_70px_rgba(16,24,32,0.18)]"
       >
-        <DropdownMenuLabel className="px-4 py-3 text-[13px] font-bold uppercase tracking-[0.2em] text-[#68707C]">
+        <DropdownMenuLabel className="px-3 py-2.5 text-[11px] font-bold uppercase tracking-[0.18em] text-[#68707C]">
           ADMATE SUITE
         </DropdownMenuLabel>
-        <DropdownMenuSeparator className="mb-2 bg-[#D8DEE6]" />
+        <DropdownMenuSeparator className="mb-1.5 bg-[#D8DEE6]" />
         {sites.map((site) => (
           <DropdownMenuItem key={site.label} asChild className="cursor-pointer rounded-[8px] p-0 focus:bg-[#F4F7FB]">
             <Link
               href={site.href}
-              className="grid min-h-[76px] w-full grid-cols-[56px_minmax(0,1fr)] items-center gap-4 px-4 py-3"
+              className="grid min-h-[64px] w-full grid-cols-[46px_minmax(0,1fr)] items-center gap-3 px-3 py-2.5"
             >
-              <span className="grid h-14 w-14 shrink-0 place-items-center rounded-[10px] border border-[#D7DCE3] bg-[#F8F6F1]">
-                <site.icon className="h-[22px] w-[22px] text-[#2764D9]" aria-hidden="true" />
+              <span className="grid h-11 w-11 shrink-0 place-items-center rounded-[8px] border border-[#D7DCE3] bg-[#F8F6F1]">
+                <site.icon className="h-5 w-5 text-[#2764D9]" aria-hidden="true" />
               </span>
               <span className="min-w-0 flex-1">
-                <span className="flex items-center gap-2 text-[17px] font-extrabold leading-tight text-[#172033]">
+                <span className="flex min-w-0 items-center gap-2 text-[15px] font-extrabold leading-tight text-[#172033]">
                   {site.label}
                   {site.active ? (
-                    <span className="rounded-[8px] bg-[#FFF3D8] px-2 py-1 text-xs font-bold text-[#7A5518]">
+                    <span className="shrink-0 rounded-[7px] bg-[#FFF3D8] px-1.5 py-0.5 text-[10px] font-bold text-[#7A5518]">
                       현재
                     </span>
                   ) : null}
                 </span>
-                <span className="mt-1 block text-[15px] font-medium leading-5 text-[#68707C]">{site.description}</span>
+                <span className="mt-0.5 block text-[13px] font-medium leading-5 text-[#68707C]">{site.description}</span>
               </span>
             </Link>
           </DropdownMenuItem>
