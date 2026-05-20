@@ -98,20 +98,15 @@
     display: flex;
     flex-wrap: wrap;
     align-items: center;
-    gap: 8px;
+    gap: 0;
   }
 
   .compass-gate-pill-row span {
     display: inline-flex;
-    min-height: 28px;
     align-items: center;
-    border: 1px solid #B8C9D8;
-    border-radius: 8px;
-    background: #F5F9FC;
-    padding: 0 11px;
-    color: #314760;
+    color: #667066;
     font-size: 11px;
-    font-weight: 850;
+    font-weight: 700;
     line-height: 1;
     white-space: nowrap;
   }
@@ -122,10 +117,18 @@
   }
 
   .compass-gate-pill-row span:nth-child(2) {
-    border-color: #E3C87E;
-    background: #FFF8E6;
-    color: #8A6418;
+    color: #667066;
     letter-spacing: 0;
+  }
+
+  .compass-gate-pill-row span + span::before {
+    content: "";
+    display: inline-block;
+    width: 3px;
+    height: 3px;
+    margin: 0 8px;
+    border-radius: 999px;
+    background: #A8B0A7;
   }
 
   .compass-reactive-headline {

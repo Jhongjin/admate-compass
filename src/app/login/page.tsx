@@ -363,16 +363,16 @@ function LoginPageContent() {
       </header>
 
       <main className="px-4 pb-16 pt-10 sm:px-6 md:pt-20">
-        <section className="mx-auto grid max-w-6xl grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.1fr)_420px] lg:items-center">
+        <section className="mx-auto grid max-w-6xl grid-cols-1 gap-6 lg:grid-cols-[minmax(0,1.1fr)_420px] lg:items-start">
           <div className="rounded-lg border border-[#D6D8CD] border-t-4 border-t-[#111713] bg-white p-6 text-[#111713] shadow-sm md:p-8">
             <div className="compass-gate-pill-row" aria-label="Compass 서비스 정보">
               <span>COMPASS.ADMATE.AI.KR</span>
               <span>정책 기준 확인</span>
             </div>
             <div className="mt-4 space-y-4">
-              <ReactiveHeadline>정책 판단의 근거를 놓치지 않습니다</ReactiveHeadline>
-              <p className="compass-gate-copy max-w-2xl text-lg leading-8 text-[#34423A]">
-                질문 조건에 맞는 공식 정책과 출처를 모으고, 충돌·중복·누락 근거를 다시 확인해 운영 판단에 쓸 답변으로 정리합니다.
+              <ReactiveHeadline>정책 기준을 근거와 함께 확인합니다</ReactiveHeadline>
+              <p className="compass-gate-copy max-w-2xl text-sm leading-6 text-[#34423A]">
+                질문 조건에 맞는 공식 정책과 출처를 모아, 운영 판단에 필요한 답변으로 정리합니다.
               </p>
             </div>
 
@@ -382,7 +382,7 @@ function LoginPageContent() {
                   <div className="flex gap-4">
                     <span className="mt-0.5 text-xs font-black text-[#1F7A4D]">{item.label}</span>
                     <div>
-                      <strong className="block text-base font-semibold leading-6 text-[#111713]">{item.title}</strong>
+                      <strong className="block text-sm font-semibold leading-6 text-[#111713]">{item.title}</strong>
                       <p className="compass-gate-copy mt-1 text-sm leading-6 text-[#667066]">{item.detail}</p>
                     </div>
                   </div>
@@ -461,24 +461,26 @@ function LoginPageContent() {
               </button>
             </form>
 
-            <div className="mt-6 space-y-3 rounded-lg border border-[#D8DCCF] bg-[#F4F5F0] p-4">
-              <p className="text-sm font-medium text-[#111713]">Compass 이용 권한이 필요하신가요?</p>
-              <p className="text-xs leading-5 text-[#667066]">
-                권한이 없거나 처음 이용하는 경우, AdMate 이용 권한을 요청해주세요.
-              </p>
-              <a
-                href={ACCESS_REQUEST_URL}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex w-full items-center justify-center rounded-lg border border-[#D8DCCF] bg-white px-4 py-2.5 text-sm font-semibold text-[#34423A] transition-colors hover:bg-[#FBFBF7]"
-              >
-                Compass 이용 권한 요청
-              </a>
+            <div className="mt-6">
+              <div className="space-y-3 rounded-lg border border-[#D8DCCF] bg-[#F4F5F0] p-4">
+                <p className="text-sm font-medium text-[#111713]">Compass 이용 권한이 필요하신가요?</p>
+                <p className="text-xs leading-5 text-[#667066]">
+                  처음 이용하거나 권한이 없는 경우, AdMate 이용 권한을 요청해주세요.
+                </p>
+                <a
+                  href={ACCESS_REQUEST_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex w-full items-center justify-center rounded-lg border border-[#D8DCCF] bg-white px-4 py-2.5 text-sm font-semibold text-[#34423A] transition-colors hover:bg-[#FBFBF7]"
+                >
+                  Compass 이용 권한 요청
+                </a>
+              </div>
               <Link
                 href={ADMATE_HOME_URL}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex w-full items-center justify-center rounded-lg px-4 py-2 text-sm font-medium text-[#667066] transition-colors hover:text-[#111713]"
+                className="mt-3 inline-flex w-full items-center justify-center px-4 py-2 text-sm font-medium text-[#667066] transition-colors hover:text-[#111713]"
               >
                 AdMate 홈페이지로 이동
               </Link>
