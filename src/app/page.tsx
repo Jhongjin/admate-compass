@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { CheckCircle } from "lucide-react";
+import CompassCampaignSurvivorPanel from "./CompassCampaignSurvivorPanel";
 import { SiteSwitchDropdown } from "@/components/layouts/SiteSwitchDropdown";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/useAuth";
@@ -1037,7 +1038,7 @@ export default function HomePage() {
             </div>
           </aside>
 
-          <CompassCampaignDodgerPanel />
+          <CompassCampaignSurvivorPanel />
         </motion.div>
       </section>
     </main>
