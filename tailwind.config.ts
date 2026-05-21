@@ -1,5 +1,20 @@
 import type { Config } from 'tailwindcss';
 
+const compassSansFontStack = [
+	'Geist',
+	'Geist Fallback',
+	'Noto Sans KR',
+	'ui-sans-serif',
+	'system-ui',
+	'-apple-system',
+	'BlinkMacSystemFont',
+	'Segoe UI',
+	'Roboto',
+	'Helvetica Neue',
+	'Arial',
+	'sans-serif',
+];
+
 const config = {
   darkMode: ['class'],
   content: [
@@ -18,19 +33,7 @@ const config = {
   	},
   	extend: {
   		fontFamily: {
-  			sans: [
-  				'Inter',
-  				'ui-sans-serif',
-  				'system-ui',
-  				'-apple-system',
-  				'BlinkMacSystemFont',
-  				'Segoe UI',
-  				'Roboto',
-  				'Helvetica Neue',
-  				'Arial',
-  				'Noto Sans',
-  				'sans-serif'
-  			],
+        sans: compassSansFontStack,
   			serif: [
   				'Merriweather',
   				'ui-serif',
@@ -40,18 +43,8 @@ const config = {
   				'Times',
   				'serif'
   			],
-  			nanum: [
-  				'Nanum Barun Gothic',
-  				'ui-sans-serif',
-  				'system-ui',
-  				'sans-serif'
-  			],
-  			inter: [
-  				'Inter',
-  				'ui-sans-serif',
-  				'system-ui',
-  				'sans-serif'
-  			]
+        nanum: compassSansFontStack,
+        inter: compassSansFontStack
   		},
   		colors: {
   			border: 'hsl(var(--border))',

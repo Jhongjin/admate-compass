@@ -1,6 +1,5 @@
-/* Google Fonts imports - 로컬 폰트로 대체하여 로딩 오류 방지 */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@100;200;300;400;500;600;700;800;900&display=swap');
-@import url('https://fonts.googleapis.com/css2?family=Nanum+Barun+Gothic:wght@400;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Geist:wght@100..900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@100..900&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -9,7 +8,7 @@
 @layer base {
   body {
     @apply text-[#111713];
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    font-family: var(--compass-font-sans);
     /* Compass evidence desk background */
     background:
       linear-gradient(90deg, rgba(17, 23, 19, 0.035) 1px, transparent 1px),
@@ -34,6 +33,7 @@
     z-index: -1;
   }
   :root {
+    --compass-font-sans: "Geist", "Geist Fallback", "Noto Sans KR", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
     --background: 0 0% 100%;
     --foreground: 0 0% 3.9%;
     --card: 0 0% 100%;
@@ -258,14 +258,10 @@
     }
   }
 
-  /* Inter 폰트 클래스 (영문용) */
-  .font-inter {
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-  }
-
-  /* 나눔바른고딕 폰트 클래스 (한글용) */
+  /* Legacy font utility aliases now resolve to the Compass Geist stack. */
+  .font-inter,
   .font-nanum {
-    font-family: 'Nanum Barun Gothic', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+    font-family: var(--compass-font-sans);
   }
 
   /* 고급 카드 스타일 - Glassmorphism + Neumorphism */
