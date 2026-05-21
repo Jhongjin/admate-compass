@@ -349,15 +349,17 @@ function updateStage(game: GameState) {
   }
 }
 
-function getRiskWords(label: string) {
-  return label.split(/\s+/).filter(Boolean);
+function getRiskDisplayLabel(label: string) {
+  if (label === "LANDING MISMATCH") return "LANDING CHECK";
+  if (label === "MISSING EVIDENCE") return "EVIDENCE GAP";
+
+  return label.length > 15 ? label.slice(0, 15) : label;
 }
 
 function measureRiskBox(label: string) {
-  const words = getRiskWords(label);
-  const rows = Math.max(...words.map((word) => word.length), 4);
-  const width = clamp(words.length * 15 + 16, 34, 58);
-  const height = clamp(rows * 9 + 24, 58, 118);
+  const displayLabel = getRiskDisplayLabel(label);
+  const width = label.includes("MISMATCH") || label.includes("EVIDENCE") ? 42 : 38;
+  const height = clamp(displayLabel.length * 6.8 + 30, 78, 146);
 
   return { height, width };
 }
@@ -678,9 +680,7 @@ function drawBackground(context: CanvasRenderingContext2D, game: GameState) {
 
 function drawRisk(context: CanvasRenderingContext2D, risk: RiskObject) {
   const warning = risk.label.includes("POLICY") || risk.label.includes("MISSING") || risk.label.includes("EXPIRED");
-  const words = getRiskWords(risk.label);
-  const columnGap = words.length > 1 ? 12 : 0;
-  const totalColumnsWidth = words.length * 9 + Math.max(0, words.length - 1) * columnGap;
+  const displayLabel = getRiskDisplayLabel(risk.label);
 
   context.save();
   context.translate(risk.x + risk.width / 2, risk.y + risk.height / 2);
@@ -696,22 +696,16 @@ function drawRisk(context: CanvasRenderingContext2D, risk: RiskObject) {
   roundedRect(context, -risk.width / 2 + 5, -risk.height / 2 + 5, risk.width - 10, 4, 2);
   context.fill();
 
+  context.fillStyle = "rgba(255, 253, 247, 0.18)";
+  roundedRect(context, -3, -risk.height / 2 + 14, 6, risk.height - 28, 3);
+  context.fill();
+
   context.fillStyle = "#fffdf7";
-  context.font = "800 8.5px Geist, Arial, sans-serif";
+  context.font = "900 10px Geist, Arial, sans-serif";
   context.textAlign = "center";
   context.textBaseline = "middle";
-
-  for (let wordIndex = 0; wordIndex < words.length; wordIndex += 1) {
-    const word = words[wordIndex];
-    const characters = Array.from(word);
-    const x = -totalColumnsWidth / 2 + wordIndex * (9 + columnGap) + 4.5;
-    const lineHeight = 8.7;
-    const startY = -(characters.length - 1) * lineHeight * 0.5 + 5;
-
-    for (let characterIndex = 0; characterIndex < characters.length; characterIndex += 1) {
-      context.fillText(characters[characterIndex], x, startY + characterIndex * lineHeight);
-    }
-  }
+  context.rotate(-Math.PI / 2);
+  context.fillText(displayLabel, 0, 1);
 
   context.restore();
 }
