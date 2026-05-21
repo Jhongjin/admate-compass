@@ -456,16 +456,24 @@ export default function HomePage() {
         style={{ transform: "rotate(16deg)" }}
       />
 
-      <header className="fixed left-0 right-0 top-0 z-50 border-b border-[#D8D6CF] bg-[#F8F6F1]/94 backdrop-blur-md">
-        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-3 px-4 sm:px-6 lg:px-8">
-          <Link href="/" className="flex min-w-0 items-center gap-3" aria-label="AdMate Compass home">
-            <img src="/brand/admate-compass-lockup.svg" alt="AdMate Compass" className="h-12 w-auto" />
+      <header className="fixed left-0 right-0 top-0 z-50 h-16 border-b border-[#E2E8F0] bg-white/95 text-[#0F172A] backdrop-blur-[14px]">
+        <div className="mx-auto flex h-full max-w-7xl items-center justify-between gap-3 px-4 sm:px-6 lg:px-8">
+          <Link href="/" className="flex min-w-0 items-center gap-3 text-[#0F172A]" aria-label="AdMate Compass home">
+            <span className="grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-[6px] bg-white" aria-hidden="true">
+              <img src="/brand/admate-compass-mark.svg" alt="" className="block h-full w-full" />
+            </span>
+            <span className="min-w-0">
+              <strong className="block truncate text-lg font-bold leading-5 text-[#0F172A]">AdMate Compass</strong>
+              <em className="mt-px hidden text-[10px] font-semibold uppercase not-italic leading-3 tracking-[0.16em] text-[#64748B] sm:block">
+                POLICY EVIDENCE DESK
+              </em>
+            </span>
           </Link>
           <div className="flex items-center gap-2">
             <SiteSwitchDropdown />
             <Link
               href="#compass-login"
-              className="inline-flex min-h-10 items-center justify-center rounded-[8px] bg-[#172033] px-4 py-2 text-sm font-bold text-white transition duration-300 [transition-timing-function:cubic-bezier(0.32,0.72,0,1)] hover:bg-[#273755] active:scale-[0.98]"
+              className="inline-flex min-h-10 min-w-24 items-center justify-center rounded-[8px] bg-[#101820] px-4 py-2 text-[13px] font-extrabold text-white shadow-[0_10px_24px_rgba(16,24,32,0.12)] transition duration-300 [transition-timing-function:cubic-bezier(0.32,0.72,0,1)] hover:bg-[#17211F] active:scale-[0.98]"
             >
               로그인
             </Link>
@@ -473,7 +481,7 @@ export default function HomePage() {
         </div>
       </header>
 
-      <section className="relative mx-auto grid max-w-[1400px] gap-5 px-4 pb-8 pt-24 sm:px-6 sm:pb-12 sm:pt-28 lg:grid-cols-[minmax(0,1.12fr)_390px] lg:items-start lg:px-8">
+      <section className="relative mx-auto grid max-w-[1400px] items-stretch gap-5 px-4 pb-8 pt-24 sm:px-6 sm:pb-12 sm:pt-28 lg:grid-cols-[minmax(0,1.12fr)_390px] lg:px-8">
         <motion.section
           initial={{ opacity: 0, y: 18 }}
           animate={{ opacity: 1, y: 0 }}
@@ -621,7 +629,7 @@ export default function HomePage() {
           initial={{ opacity: 0, y: 18 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.58, delay: 0.06, ease: [0.32, 0.72, 0, 1] }}
-          className="scroll-mt-24 rounded-[10px] border border-[#D2CEC4] border-t-[5px] border-t-[#A67B2D] bg-[#FBF7EE] p-5 shadow-[0_28px_80px_rgba(23,32,51,0.11)] sm:p-7"
+          className="flex scroll-mt-24 flex-col rounded-[10px] border border-[#D2CEC4] border-t-[5px] border-t-[#A67B2D] bg-[#FBF7EE] p-5 shadow-[0_28px_80px_rgba(23,32,51,0.11)] sm:p-7 lg:h-full"
         >
           <div className="mb-6">
             <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7A5518]">ADMATE COMPASS</p>
@@ -645,7 +653,7 @@ export default function HomePage() {
                   required
                   value={emailLocalPart}
                   onChange={(event) => setEmailLocalPart(normalizeEmailLocalPart(event.target.value))}
-                  className="min-w-0 flex-1 bg-white px-3 py-2.5 text-sm text-[#0D0D0D] outline-none disabled:cursor-not-allowed disabled:opacity-60"
+                  className="min-w-0 flex-1 bg-[#FFFFFF] px-3 py-2.5 text-sm text-[#0D0D0D] outline-none disabled:cursor-not-allowed disabled:opacity-60"
                   placeholder="name"
                   aria-describedby="compass-root-email-domain"
                   disabled={isSubmitting}
@@ -671,7 +679,7 @@ export default function HomePage() {
                 onChange={(event) => setPassword(event.target.value)}
                 placeholder="비밀번호를 입력하세요"
                 autoComplete="current-password"
-                className="w-full rounded-[8px] border border-[#D8DCCF] bg-white px-3 py-2.5 text-sm text-[#0D0D0D] outline-none transition-colors placeholder:text-[#9A9A9A] focus:border-[#A67B2D] disabled:cursor-not-allowed disabled:opacity-60"
+                className="compass-login-password-field w-full rounded-[8px] border border-[#D8DCCF] bg-[#FFFFFF] px-3 py-2.5 text-sm text-[#0D0D0D] outline-none transition-colors placeholder:text-[#9A9A9A] focus:border-[#A67B2D] disabled:cursor-not-allowed disabled:opacity-60"
                 disabled={isSubmitting}
                 required
               />

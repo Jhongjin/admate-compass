@@ -173,6 +173,12 @@
       box-shadow 180ms ease;
   }
 
+  .compass-login-email-field input,
+  .compass-login-password-field {
+    background: #FFFFFF;
+    background-color: #FFFFFF;
+  }
+
   .compass-login-email-field:focus-within {
     border-color: #1F7A4D;
     box-shadow: 0 0 0 3px #E7F4EA;
@@ -180,6 +186,13 @@
 
   .compass-login-email-field input:focus-visible {
     outline: 0;
+  }
+
+  .compass-login-email-field input:-webkit-autofill,
+  .compass-login-password-field:-webkit-autofill {
+    -webkit-box-shadow: 0 0 0 1000px #FFFFFF inset;
+    -webkit-text-fill-color: #0D0D0D;
+    caret-color: #0D0D0D;
   }
 
   .compass-media-marquee {
