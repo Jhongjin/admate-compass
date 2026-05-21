@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
@@ -49,8 +49,17 @@ const mediaScopes = [
   "커머스",
 ] as const;
 
-const sourceMaterialGlyphs =
-  "policy source evidence review trust exception route verified official media criteria context claim";
+const campaignRiskTerms = [
+  "SOURCE GAP",
+  "POLICY FLAG",
+  "UTM GAP",
+  "LANDING MISMATCH",
+  "BUDGET SPIKE",
+  "MISSING EVIDENCE",
+  "CLAIM DRIFT",
+  "CHANNEL RISK",
+  "EXPIRED CLAIM",
+] as const;
 
 type HeadlineParticle = {
   baseX: number;
@@ -64,13 +73,14 @@ type HeadlineParticle = {
 
 type MediaId = (typeof supportedMedia)[number]["id"];
 
-type SourceOceanParticle = {
-  char: string;
+type CampaignRiskTerm = {
+  label: (typeof campaignRiskTerms)[number];
   x: number;
   y: number;
-  vx: number;
-  vy: number;
-  density: number;
+  width: number;
+  height: number;
+  speed: number;
+  lane: number;
 };
 
 const HEADLINE_PARTICLE_GAP = 5;
@@ -390,8 +400,13 @@ function MediaLogo({ id }: { id: MediaId }) {
   );
 }
 
-function CompassSourceMaterialPanel() {
+function CompassCampaignDodgerPanel() {
+  const panelRef = useRef<HTMLDivElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const activeKeysRef = useRef(new Set<string>());
+  const [score, setScore] = useState(0);
+  const [bestScore, setBestScore] = useState(0);
+  const [isArmed, setIsArmed] = useState(false);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -406,321 +421,279 @@ function CompassSourceMaterialPanel() {
       return;
     }
 
-    const reducedMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const glyphs = sourceMaterialGlyphs.replace(/\s/g, "").toUpperCase().split("");
-    const spatialGrid = new Map<number, number[]>();
-    const cellSize = 20;
-    const smoothingRadius = 18;
-    const smoothingRadiusSquared = smoothingRadius * smoothingRadius;
-    const restDensity = 6;
-    const gravity = 280;
-    const pressure = 45;
-    const viscosity = 0.9;
-    const waveForce = 60;
-    let particles: SourceOceanParticle[] = [];
+    const storedBest = window.sessionStorage.getItem("compass-campaign-dodger-best");
+    const parsedBest = storedBest ? Number.parseInt(storedBest, 10) : 0;
+
+    if (Number.isFinite(parsedBest) && parsedBest > 0) {
+      setBestScore(parsedBest);
+    }
+
+    let terms: CampaignRiskTerm[] = [];
     let frameId = 0;
-    let phase = 0;
-    let isReducedMotion = reducedMotionQuery.matches;
+    let lastTime = performance.now();
+    let spawnTimer = 0;
+    let scoreValue = 0;
+    let bestValue = Number.isFinite(parsedBest) ? parsedBest : 0;
+    let lastScoreCommit = 0;
     const fontFamily = getComputedStyle(document.documentElement).getPropertyValue("--compass-font-sans");
-    const mouse = { x: -1000, y: -1000 };
-
-    const getActiveHeight = (height: number) => Math.max(1, height);
-
-    const hashCell = (x: number, y: number) => x * 10000 + y;
-
-    const buildSpatialGrid = () => {
-      spatialGrid.clear();
-
-      for (let index = 0; index < particles.length; index += 1) {
-        const particle = particles[index];
-        const x = Math.floor(particle.x / cellSize);
-        const y = Math.floor(particle.y / cellSize);
-        const key = hashCell(x, y);
-        const existing = spatialGrid.get(key);
-
-        if (existing) {
-          existing.push(index);
-        } else {
-          spatialGrid.set(key, [index]);
-        }
-      }
+    const player = {
+      x: 0,
+      targetX: 0,
+      y: 0,
+      width: 54,
+      height: 12,
     };
 
-    const getNeighbors = (index: number) => {
-      const particle = particles[index];
-      const x = Math.floor(particle.x / cellSize);
-      const y = Math.floor(particle.y / cellSize);
-      const neighbors: number[] = [];
-
-      for (let dx = -1; dx <= 1; dx += 1) {
-        for (let dy = -1; dy <= 1; dy += 1) {
-          const cell = spatialGrid.get(hashCell(x + dx, y + dy));
-
-          if (cell) {
-            for (const neighborIndex of cell) {
-              if (neighborIndex !== index) {
-                neighbors.push(neighborIndex);
-              }
-            }
-          }
-        }
-      }
-
-      return neighbors;
-    };
-
-    const draw = () => {
+    const getSize = () => {
       const devicePixelRatio = Math.min(window.devicePixelRatio || 1, 2);
-      const width = canvas.width / devicePixelRatio;
-      const height = canvas.height / devicePixelRatio;
+      return {
+        devicePixelRatio,
+        width: canvas.width / devicePixelRatio,
+        height: canvas.height / devicePixelRatio,
+      };
+    };
+
+    const resetRound = () => {
+      const { width, height } = getSize();
+      terms = [];
+      scoreValue = 0;
+      spawnTimer = 0.2;
+      player.x = width / 2;
+      player.targetX = width / 2;
+      player.y = height - 28;
+      setScore(0);
+    };
+
+    const spawnTerm = () => {
+      const { width } = getSize();
+      const label = campaignRiskTerms[Math.floor(Math.random() * campaignRiskTerms.length)];
+
+      context.save();
+      context.font = `800 10px ${fontFamily}`;
+      const termWidth = Math.ceil(context.measureText(label).width) + 20;
+      context.restore();
+
+      const maxX = Math.max(16, width - termWidth - 16);
+      terms.push({
+        label,
+        x: 16 + Math.random() * Math.max(1, maxX - 16),
+        y: -24,
+        width: termWidth,
+        height: 22,
+        speed: 54 + Math.random() * 42 + Math.min(40, scoreValue * 1.4),
+        lane: Math.floor(Math.random() * 5),
+      });
+    };
+
+    const commitScore = () => {
+      setScore(scoreValue);
+
+      if (scoreValue > bestValue) {
+        bestValue = scoreValue;
+        window.sessionStorage.setItem("compass-campaign-dodger-best", String(bestValue));
+        setBestScore(bestValue);
+      }
+    };
+
+    const draw = (focused: boolean) => {
+      const { width, height } = getSize();
 
       context.clearRect(0, 0, width, height);
       context.save();
-      context.fillStyle = "rgba(251, 247, 238, 0.42)";
+      context.fillStyle = "rgba(251, 247, 238, 0.68)";
       context.fillRect(0, 0, width, height);
-      context.font = `9px ${fontFamily}`;
-      context.textBaseline = "middle";
-      context.textAlign = "center";
 
-      for (const particle of particles) {
-        const speed = Math.hypot(particle.vx, particle.vy);
-        const speedNorm = Math.min(1, speed / 120);
-        const densityNorm = Math.min(1, particle.density / (restDensity * 1.7));
-        const green = 58 + Math.round(densityNorm * 58);
-        const blue = 60 + Math.round(speedNorm * 44);
-        const alpha = 0.42 + speedNorm * 0.3 + densityNorm * 0.18;
-
-        context.fillStyle = `rgba(23, ${green}, ${blue}, ${Math.min(0.9, alpha)})`;
-        context.fillText(particle.char, particle.x, particle.y);
+      context.strokeStyle = "rgba(23, 32, 51, 0.07)";
+      context.lineWidth = 1;
+      for (let lane = 1; lane < 5; lane += 1) {
+        const x = (width / 5) * lane;
+        context.beginPath();
+        context.moveTo(x, 8);
+        context.lineTo(x, height - 8);
+        context.stroke();
       }
 
-      if (mouse.x > 0 && mouse.y > 0) {
-        context.beginPath();
-        context.arc(mouse.x, mouse.y, 80, 0, Math.PI * 2);
-        context.strokeStyle = "rgba(31, 122, 77, 0.12)";
+      context.font = `800 10px ${fontFamily}`;
+      context.textBaseline = "middle";
+
+      for (const term of terms) {
+        const heat = Math.min(1, term.y / Math.max(1, height));
+        context.fillStyle = term.lane % 3 === 0 ? "rgba(166, 123, 45, 0.16)" : "rgba(31, 122, 77, 0.13)";
+        context.strokeStyle = term.lane % 3 === 0 ? "rgba(166, 123, 45, 0.34)" : "rgba(31, 122, 77, 0.3)";
         context.lineWidth = 1;
+        context.beginPath();
+        context.roundRect(term.x, term.y, term.width, term.height, 6);
+        context.fill();
         context.stroke();
+        context.fillStyle = `rgba(23, 32, 51, ${0.72 + heat * 0.18})`;
+        context.fillText(term.label, term.x + 10, term.y + term.height / 2);
+      }
+
+      context.fillStyle = focused ? "#1F7A4D" : "#172033";
+      context.strokeStyle = "rgba(23, 32, 51, 0.28)";
+      context.lineWidth = 1;
+      context.beginPath();
+      context.roundRect(player.x - player.width / 2, player.y, player.width, player.height, 6);
+      context.fill();
+      context.stroke();
+
+      context.fillStyle = "rgba(251, 247, 238, 0.9)";
+      context.fillRect(player.x - 12, player.y + 4, 24, 3);
+
+      if (!focused) {
+        context.fillStyle = "rgba(251, 247, 238, 0.7)";
+        context.fillRect(0, 0, width, height);
+        context.beginPath();
+        context.arc(width * 0.5, height * 0.54, 30, 0, Math.PI * 2);
+        context.strokeStyle = "rgba(31, 122, 77, 0.18)";
+        context.stroke();
+        context.fillStyle = "rgba(23, 32, 51, 0.58)";
+        context.font = `700 10px ${fontFamily}`;
+        context.textAlign = "center";
+        context.fillText("CLICK TO CHECK", width * 0.5, height * 0.54 + 4);
       }
 
       context.restore();
     };
 
-    const simulate = (deltaSeconds: number) => {
-      const width = canvas.width / Math.min(window.devicePixelRatio || 1, 2);
-      const height = canvas.height / Math.min(window.devicePixelRatio || 1, 2);
-      const activeHeight = getActiveHeight(height);
-      const pressureK = pressure * 0.8;
-      const nearPressureK = pressure * 1.2;
-      const surfaceY = activeHeight * 0.55;
-
-      buildSpatialGrid();
-
-      for (let index = 0; index < particles.length; index += 1) {
-        let density = 0;
-        const particle = particles[index];
-
-        for (const neighborIndex of getNeighbors(index)) {
-          const neighbor = particles[neighborIndex];
-          const dx = neighbor.x - particle.x;
-          const dy = neighbor.y - particle.y;
-          const distanceSquared = dx * dx + dy * dy;
-
-          if (distanceSquared < smoothingRadiusSquared) {
-            const distance = Math.sqrt(distanceSquared);
-            const q = 1 - distance / smoothingRadius;
-            density += q * q;
-          }
-        }
-
-        particle.density = density;
-      }
-
-      for (let index = 0; index < particles.length; index += 1) {
-        const particle = particles[index];
-
-        particle.vy += gravity * deltaSeconds;
-
-        if (particle.y < surfaceY + 52) {
-          const waveX = Math.sin(phase + particle.x * 0.008) * waveForce;
-          const waveY = Math.cos(phase * 0.7 + particle.x * 0.012) * waveForce * 0.4;
-          const surfaceFactor = Math.max(0, 1 - (surfaceY + 52 - particle.y) / 104);
-          particle.vx += waveX * deltaSeconds * surfaceFactor;
-          particle.vy += waveY * deltaSeconds * surfaceFactor;
-        }
-
-        if (mouse.x > 0) {
-          const dx = particle.x - mouse.x;
-          const dy = particle.y - mouse.y;
-          const distance = Math.hypot(dx, dy);
-
-          if (distance < 90 && distance > 0.1) {
-            const force = (90 - distance) * 18;
-            particle.vx += (dx / distance) * force * deltaSeconds;
-            particle.vy += (dy / distance) * force * deltaSeconds;
-          }
-        }
-
-        for (const neighborIndex of getNeighbors(index)) {
-          const neighbor = particles[neighborIndex];
-          const dx = neighbor.x - particle.x;
-          const dy = neighbor.y - particle.y;
-          const distanceSquared = dx * dx + dy * dy;
-
-          if (distanceSquared < smoothingRadiusSquared && distanceSquared > 0.01) {
-            const distance = Math.sqrt(distanceSquared);
-            const q = 1 - distance / smoothingRadius;
-            const nx = dx / distance;
-            const ny = dy / distance;
-            const pressureAverage = (particle.density + neighbor.density - restDensity * 2) * 0.5;
-            const pressureForce = pressureK * pressureAverage * q + nearPressureK * q * q;
-
-            particle.vx -= nx * pressureForce * deltaSeconds;
-            particle.vy -= ny * pressureForce * deltaSeconds;
-
-            particle.vx += (neighbor.vx - particle.vx) * viscosity * q * deltaSeconds;
-            particle.vy += (neighbor.vy - particle.vy) * viscosity * q * deltaSeconds;
-          }
-        }
-      }
-
-      for (const particle of particles) {
-        particle.vx *= 0.998;
-        particle.vy *= 0.998;
-
-        const speed = Math.hypot(particle.vx, particle.vy);
-
-        if (speed > 300) {
-          particle.vx *= 300 / speed;
-          particle.vy *= 300 / speed;
-        }
-
-        particle.x += particle.vx * deltaSeconds;
-        particle.y += particle.vy * deltaSeconds;
-
-        const margin = 4;
-
-        if (particle.x < margin) {
-          particle.x = margin;
-          particle.vx *= -0.3;
-        }
-
-        if (particle.x > width - margin) {
-          particle.x = width - margin;
-          particle.vx *= -0.3;
-        }
-
-        if (particle.y > activeHeight - margin) {
-          particle.y = activeHeight - margin;
-          particle.vy *= -0.3;
-        }
-
-        if (particle.y < margin) {
-          particle.y = margin;
-          particle.vy *= -0.1;
-        }
-      }
-
-      phase += deltaSeconds * 2.5;
-    };
-
-    const buildParticles = () => {
+    const rebuildCanvas = () => {
       const bounds = canvas.getBoundingClientRect();
       const devicePixelRatio = Math.min(window.devicePixelRatio || 1, 2);
       const width = Math.max(1, Math.round(bounds.width));
       const height = Math.max(1, Math.round(bounds.height));
-      const activeHeight = getActiveHeight(height);
-      const count = Math.min(2500, Math.max(1400, Math.floor((width * activeHeight) / 135)));
-      const columns = Math.ceil(Math.sqrt(count * 2.5));
-      const spacing = Math.max(5, Math.min(7, width / Math.max(56, columns)));
-      const startX = width * 0.05;
-      const startY = 0;
-      const nextParticles: SourceOceanParticle[] = [];
 
       canvas.width = Math.ceil(width * devicePixelRatio);
       canvas.height = Math.ceil(height * devicePixelRatio);
       context.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
-      context.textBaseline = "middle";
-
-      for (let index = 0; index < count; index += 1) {
-        const column = index % columns;
-        const row = Math.floor(index / columns);
-
-        nextParticles.push({
-          char: glyphs[index % glyphs.length],
-          x: startX + column * spacing + (Math.random() - 0.5) * 2,
-          y: startY + row * spacing + (Math.random() - 0.5) * 2,
-          vx: 0,
-          vy: 0,
-          density: 0,
-        });
-      }
-
-      particles = nextParticles;
-      draw();
+      player.y = height - 28;
+      player.x = Math.min(Math.max(player.x || width / 2, player.width / 2 + 8), width - player.width / 2 - 8);
+      player.targetX = player.x;
+      draw(document.activeElement === panelRef.current);
     };
 
-    const animate = () => {
-      const delta = 1 / 60;
-      simulate(delta * 0.5);
-      simulate(delta * 0.5);
-      draw();
-      frameId = window.requestAnimationFrame(animate);
-    };
+    const tick = (time: number) => {
+      const focused = document.activeElement === panelRef.current;
+      const { width, height } = getSize();
+      const deltaSeconds = Math.min(0.035, (time - lastTime) / 1000 || 1 / 60);
+      lastTime = time;
 
-    const start = () => {
-      window.cancelAnimationFrame(frameId);
+      if (focused) {
+        const keys = activeKeysRef.current;
+        const keyDirection = (keys.has("ArrowRight") || keys.has("KeyD") ? 1 : 0) - (keys.has("ArrowLeft") || keys.has("KeyA") ? 1 : 0);
+        player.targetX += keyDirection * 260 * deltaSeconds;
+        player.targetX = Math.min(Math.max(player.targetX, player.width / 2 + 8), width - player.width / 2 - 8);
+        player.x += (player.targetX - player.x) * Math.min(1, 14 * deltaSeconds);
 
-      if (isReducedMotion) {
-        for (let index = 0; index < 40; index += 1) {
-          simulate(1 / 90);
+        spawnTimer -= deltaSeconds;
+        if (spawnTimer <= 0) {
+          spawnTerm();
+          spawnTimer = Math.max(0.42, 1.08 - scoreValue * 0.014);
         }
-        draw();
-        return;
+
+        const playerLeft = player.x - player.width / 2;
+        const playerRight = player.x + player.width / 2;
+        const playerTop = player.y;
+        const playerBottom = player.y + player.height;
+
+        for (const term of terms) {
+          term.y += term.speed * deltaSeconds;
+
+          if (
+            term.x < playerRight &&
+            term.x + term.width > playerLeft &&
+            term.y < playerBottom &&
+            term.y + term.height > playerTop
+          ) {
+            commitScore();
+            resetRound();
+            break;
+          }
+        }
+
+        const remainingTerms: CampaignRiskTerm[] = [];
+        for (const term of terms) {
+          if (term.y > height + 12) {
+            scoreValue += 1;
+          } else {
+            remainingTerms.push(term);
+          }
+        }
+        terms = remainingTerms;
+
+        if (scoreValue !== lastScoreCommit && scoreValue % 3 === 0) {
+          lastScoreCommit = scoreValue;
+          commitScore();
+        }
       }
 
-      frameId = window.requestAnimationFrame(animate);
-    };
-
-    const handleMotionPreferenceChange = (event: MediaQueryListEvent) => {
-      isReducedMotion = event.matches;
-      start();
+      draw(focused);
+      frameId = window.requestAnimationFrame(tick);
     };
 
     const handlePointerMove = (event: PointerEvent) => {
       const bounds = canvas.getBoundingClientRect();
-      mouse.x = event.clientX - bounds.left;
-      mouse.y = event.clientY - bounds.top;
+      player.targetX = Math.min(Math.max(event.clientX - bounds.left, player.width / 2 + 8), bounds.width - player.width / 2 - 8);
     };
 
-    const handlePointerLeave = () => {
-      mouse.x = -1000;
-      mouse.y = -1000;
+    const handlePointerDown = (event: PointerEvent) => {
+      panelRef.current?.focus();
+      handlePointerMove(event);
+      setIsArmed(true);
     };
 
-    const resizeObserver = new ResizeObserver(() => {
-      buildParticles();
-      start();
-    });
+    const resizeObserver = new ResizeObserver(rebuildCanvas);
 
-    buildParticles();
-    start();
+    rebuildCanvas();
+    resetRound();
+    frameId = window.requestAnimationFrame(tick);
     resizeObserver.observe(canvas);
     canvas.addEventListener("pointermove", handlePointerMove);
-    canvas.addEventListener("pointerleave", handlePointerLeave);
-    reducedMotionQuery.addEventListener("change", handleMotionPreferenceChange);
+    canvas.addEventListener("pointerdown", handlePointerDown);
 
     return () => {
       window.cancelAnimationFrame(frameId);
       resizeObserver.disconnect();
       canvas.removeEventListener("pointermove", handlePointerMove);
-      canvas.removeEventListener("pointerleave", handlePointerLeave);
-      reducedMotionQuery.removeEventListener("change", handleMotionPreferenceChange);
+      canvas.removeEventListener("pointerdown", handlePointerDown);
     };
   }, []);
 
+  const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "ArrowLeft" || event.key === "ArrowRight" || event.code === "KeyA" || event.code === "KeyD") {
+      event.preventDefault();
+      activeKeysRef.current.add(event.code);
+      setIsArmed(true);
+    }
+  };
+
+  const handleKeyUp = (event: KeyboardEvent<HTMLDivElement>) => {
+    activeKeysRef.current.delete(event.code);
+  };
+
   return (
-    <div className="compass-source-material mt-4 hidden lg:block lg:flex-1" aria-label="Compass source verification signal">
+    <div
+      ref={panelRef}
+      className="compass-source-material compass-campaign-dodger mt-4 hidden lg:block lg:flex-1"
+      tabIndex={0}
+      role="application"
+      aria-label="Compass campaign term dodger"
+      onFocus={() => setIsArmed(true)}
+      onBlur={() => {
+        activeKeysRef.current.clear();
+        setIsArmed(false);
+      }}
+      onKeyDown={handleKeyDown}
+      onKeyUp={handleKeyUp}
+    >
       <canvas ref={canvasRef} className="compass-source-material__canvas" aria-hidden="true" />
+      <div className="compass-campaign-dodger__hud" aria-hidden="true">
+        <span>TERM DODGER</span>
+        <strong>{score.toString().padStart(2, "0")}</strong>
+        <em>BEST {bestScore.toString().padStart(2, "0")}</em>
+      </div>
+      <span className="sr-only">
+        {isArmed ? "Campaign term dodger active. Use left and right arrow keys." : "Focus or click to play campaign term dodger."}
+      </span>
     </div>
   );
 }
@@ -1064,7 +1037,7 @@ export default function HomePage() {
             </div>
           </aside>
 
-          <CompassSourceMaterialPanel />
+          <CompassCampaignDodgerPanel />
         </motion.div>
       </section>
     </main>

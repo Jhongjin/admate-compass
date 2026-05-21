@@ -259,6 +259,64 @@
     opacity: 0.92;
   }
 
+  .compass-campaign-dodger {
+    cursor: crosshair;
+    outline: none;
+  }
+
+  .compass-campaign-dodger:focus-visible {
+    box-shadow:
+      0 0 0 3px rgba(31, 122, 77, 0.18),
+      0 18px 48px rgba(23, 32, 51, 0.07);
+  }
+
+  .compass-campaign-dodger__hud {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    right: 10px;
+    z-index: 4;
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    align-items: center;
+    gap: 8px;
+    pointer-events: none;
+    color: #172033;
+    font-size: 10px;
+    letter-spacing: 0;
+  }
+
+  .compass-campaign-dodger__hud span,
+  .compass-campaign-dodger__hud strong,
+  .compass-campaign-dodger__hud em {
+    min-width: 0;
+    border: 1px solid rgba(23, 32, 51, 0.12);
+    border-radius: 6px;
+    background: rgba(251, 247, 238, 0.72);
+    padding: 5px 7px;
+    line-height: 1;
+    box-shadow: 0 6px 18px rgba(23, 32, 51, 0.05);
+  }
+
+  .compass-campaign-dodger__hud span {
+    overflow: hidden;
+    color: #68707C;
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .compass-campaign-dodger__hud strong {
+    color: #1F7A4D;
+    font-weight: 800;
+  }
+
+  .compass-campaign-dodger__hud em {
+    color: #A67B2D;
+    font-style: normal;
+    font-weight: 700;
+  }
+
   .compass-review-rail {
     word-break: keep-all;
     text-wrap: pretty;
