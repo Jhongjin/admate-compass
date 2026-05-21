@@ -1,15 +1,15 @@
 "use client";
 
-import { useEffect } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { ArrowRight, CheckCircle, FileCheck2, Search, ShieldCheck } from "lucide-react";
-import { useAuth } from "@/hooks/useAuth";
+import { CheckCircle } from "lucide-react";
 import { SiteSwitchDropdown } from "@/components/layouts/SiteSwitchDropdown";
+import { Label } from "@/components/ui/label";
+import { useAuth } from "@/hooks/useAuth";
 
 const COMPASS_DESK_PATH = "/desk";
-const LOGIN_URL = `/login?next=${encodeURIComponent(COMPASS_DESK_PATH)}`;
 const ACCESS_REQUEST_URL = "https://home.admate.ai.kr/access-request?product=compass";
 const ADMATE_HOME_URL = "https://home.admate.ai.kr";
 
@@ -22,23 +22,23 @@ const supportedMedia = [
   { id: "gdn", name: "GDN" },
 ] as const;
 
-const compassSummary = [
-  ["광고 정책 질문", "업종, 소재 문구, 이미지, 랜딩 페이지 조건을 질문 단위로 정리합니다."],
-  ["공식 정책과 AdMate 확인 기준 우선", "매체 공식 정책과 AdMate 확인 기준을 함께 대조합니다."],
-  ["출처와 참고 문단", "답변에 사용한 출처와 연결된 문단을 함께 보여줍니다."],
-  ["추가 확인 필요", "조건이 부족하거나 기준이 충돌하면 결론과 분리해 표시합니다."],
+const compassHighlights = [
+  ["지원 매체", "Meta, Google/YouTube, Naver, Kakao, GDN 등 주요 매체 기준을 함께 확인합니다."],
+  ["정책 기준", "공식 정책과 AdMate 확인 기준을 출처 문단과 함께 대조합니다."],
+  ["신뢰 신호", "불확실한 조건은 결론과 분리해 추가 확인 필요 항목으로 표시합니다."],
+  ["3-agent 검토", "1차 후보, 2차 후보, 팀장 최종 검토 흐름으로 답변을 정리합니다."],
 ] as const;
 
 const previewRows = [
   ["가능한 표현", "정책 기준에 맞는 문구와 표현 범위를 정리합니다."],
   ["주의할 표현", "심사에서 보류될 수 있는 문구와 조건을 구분합니다."],
-  ["추가 확인 필요", "업종 허가, 랜딩 고지, 이미지 맥락처럼 추가 정보가 필요한 조건을 따로 둡니다."],
+  ["추가 확인 필요", "업종 허가, 랜딩 고지, 이미지 맥락처럼 더 확인할 정보를 따로 둡니다."],
 ] as const;
 
 const answerVerificationFlow = [
-  ["1차 후보", "근거 수집", "첫 번째 후보가 질문 조건과 공식 정책 근거를 모아 답변 초안을 정리합니다."],
-  ["2차 후보", "근거 재확인", "두 번째 후보가 같은 질문을 다시 검토해 누락된 근거와 다른 해석을 찾습니다."],
-  ["팀장 최종 검토", "충돌/중복/근거 확인", "팀장이 두 후보의 충돌, 중복, 근거를 비교해 최종 답변을 확정합니다."],
+  ["1차 후보", "근거 수집", "질문 조건과 공식 정책 근거를 모아 답변 초안을 만듭니다."],
+  ["2차 후보", "근거 재확인", "같은 질문을 다시 검토해 누락된 근거와 다른 해석을 찾습니다."],
+  ["팀장 최종 검토", "충돌/중복 확인", "두 후보를 비교해 충돌, 중복, 근거 부족 항목을 정리합니다."],
 ] as const;
 
 const mediaScopes = [
@@ -49,13 +49,269 @@ const mediaScopes = [
   "커머스",
 ] as const;
 
-const gatePrinciples = [
-  "로그인 후 Compass 정책 확인 화면이 열립니다.",
-  "권한이 없으면 AdMate 이용 권한 요청으로 이어집니다.",
-  "정책 원문, 출처, 불확실 항목을 나눠 확인할 수 있습니다.",
-] as const;
+type HeadlineParticle = {
+  baseX: number;
+  baseY: number;
+  x: number;
+  y: number;
+  vx: number;
+  vy: number;
+  tone: "ink" | "blue" | "gold";
+};
 
 type MediaId = (typeof supportedMedia)[number]["id"];
+
+const HEADLINE_PARTICLE_GAP = 5;
+const HEADLINE_POINTER_RADIUS = 78;
+const HEADLINE_MAX_PARTICLES = 1250;
+
+const getLineHeight = (computedStyle: CSSStyleDeclaration, fontSize: number) => {
+  const parsedLineHeight = Number.parseFloat(computedStyle.lineHeight);
+
+  return Number.isFinite(parsedLineHeight) ? parsedLineHeight : fontSize * 1.25;
+};
+
+const getWrappedLines = (
+  text: string,
+  maxWidth: number,
+  context: CanvasRenderingContext2D,
+) => {
+  const words = text.split(" ");
+  const lines: string[] = [];
+  let currentLine = "";
+
+  for (const word of words) {
+    const nextLine = currentLine ? `${currentLine} ${word}` : word;
+
+    if (currentLine && context.measureText(nextLine).width > maxWidth) {
+      lines.push(currentLine);
+      currentLine = word;
+    } else {
+      currentLine = nextLine;
+    }
+  }
+
+  if (currentLine) {
+    lines.push(currentLine);
+  }
+
+  return lines;
+};
+
+const normalizeEmailLocalPart = (value: string) =>
+  value
+    .trim()
+    .replace(/\s/g, "")
+    .replace(/@nasmedia\.co\.kr$/i, "")
+    .replace(/@.*$/g, "");
+
+function ReactiveHeadline({ children }: { children: string }) {
+  const headingRef = useRef<HTMLHeadingElement | null>(null);
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  useEffect(() => {
+    const heading = headingRef.current;
+    const canvas = canvasRef.current;
+
+    if (!heading || !canvas) {
+      return;
+    }
+
+    const context = canvas.getContext("2d");
+
+    if (!context) {
+      return;
+    }
+
+    const reducedMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const pointer = { x: 0, y: 0, active: false };
+    let particles: HeadlineParticle[] = [];
+    let frameId = 0;
+    let isReducedMotion = reducedMotionQuery.matches;
+    let tick = 0;
+
+    const drawParticles = (motionEnabled: boolean) => {
+      const devicePixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+      const width = canvas.width / devicePixelRatio;
+      const height = canvas.height / devicePixelRatio;
+
+      context.clearRect(0, 0, width, height);
+
+      for (const particle of particles) {
+        const color = particle.tone === "blue" ? "#293B5A" : particle.tone === "gold" ? "#A67B2D" : "#172033";
+
+        context.beginPath();
+        context.fillStyle = color;
+        context.globalAlpha = particle.tone === "ink" ? 0.44 : 0.66;
+        const wave = motionEnabled
+          ? Math.sin((tick + particle.baseX * 0.12 + particle.baseY * 0.08) * 0.08) * 0.45
+          : 0;
+        const drift = motionEnabled ? Math.cos((tick + particle.baseY * 0.11) * 0.07) * 0.28 : 0;
+        const radius = motionEnabled
+          ? 1.02 + (Math.sin(tick * 0.08 + particle.baseX * 0.03) + 1) * 0.08
+          : 1;
+        context.arc(particle.x + wave, particle.y + drift, radius, 0, Math.PI * 2);
+        context.fill();
+      }
+
+      context.globalAlpha = 1;
+    };
+
+    const buildParticles = () => {
+      const devicePixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+      const bounds = heading.getBoundingClientRect();
+      const computedStyle = getComputedStyle(heading);
+      const width = Math.max(1, Math.ceil(bounds.width));
+      const height = Math.max(1, Math.ceil(bounds.height));
+      const scanCanvas = document.createElement("canvas");
+      const scanContext = scanCanvas.getContext("2d", { willReadFrequently: true });
+
+      if (!scanContext) {
+        return;
+      }
+
+      canvas.width = Math.ceil(width * devicePixelRatio);
+      canvas.height = Math.ceil(height * devicePixelRatio);
+      canvas.style.width = `${width}px`;
+      canvas.style.height = `${height}px`;
+      context.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+
+      scanCanvas.width = width;
+      scanCanvas.height = height;
+      scanContext.clearRect(0, 0, width, height);
+      scanContext.fillStyle = "#000";
+      scanContext.font = `${computedStyle.fontWeight} ${computedStyle.fontSize} / ${computedStyle.lineHeight} ${computedStyle.fontFamily}`;
+      scanContext.letterSpacing = computedStyle.letterSpacing;
+      scanContext.textBaseline = "top";
+
+      const fontSize = Number.parseFloat(computedStyle.fontSize);
+      const lineHeight = getLineHeight(computedStyle, fontSize);
+      const lines = getWrappedLines(children, width, scanContext);
+
+      lines.forEach((line, index) => {
+        scanContext.fillText(line, 0, index * lineHeight);
+      });
+
+      const imageData = scanContext.getImageData(0, 0, width, height).data;
+      const nextParticles: HeadlineParticle[] = [];
+
+      for (let y = 0; y < height; y += HEADLINE_PARTICLE_GAP) {
+        for (let x = 0; x < width; x += HEADLINE_PARTICLE_GAP) {
+          const alpha = imageData[(y * width + x) * 4 + 3];
+
+          if (alpha > 80) {
+            const toneSeed = (x * 13 + y * 7) % 19;
+            nextParticles.push({
+              baseX: x,
+              baseY: y,
+              x,
+              y,
+              vx: 0,
+              vy: 0,
+              tone: toneSeed === 0 ? "gold" : toneSeed < 4 ? "blue" : "ink",
+            });
+          }
+        }
+      }
+
+      particles =
+        nextParticles.length > HEADLINE_MAX_PARTICLES
+          ? nextParticles.filter((_, index) => index % Math.ceil(nextParticles.length / HEADLINE_MAX_PARTICLES) === 0)
+          : nextParticles;
+
+      drawParticles(!isReducedMotion);
+    };
+
+    const animate = () => {
+      tick += 1;
+
+      for (const particle of particles) {
+        if (pointer.active) {
+          const dx = particle.x - pointer.x;
+          const dy = particle.y - pointer.y;
+          const distance = Math.hypot(dx, dy);
+
+          if (distance > 0 && distance < HEADLINE_POINTER_RADIUS) {
+            const force = (1 - distance / HEADLINE_POINTER_RADIUS) * 2.1;
+            particle.vx += (dx / distance) * force;
+            particle.vy += (dy / distance) * force;
+          }
+        }
+
+        particle.vx += (particle.baseX - particle.x) * 0.075;
+        particle.vy += (particle.baseY - particle.y) * 0.075;
+        particle.vx *= 0.82;
+        particle.vy *= 0.82;
+        particle.x += particle.vx;
+        particle.y += particle.vy;
+      }
+
+      drawParticles(true);
+      frameId = window.requestAnimationFrame(animate);
+    };
+
+    const startAnimation = () => {
+      window.cancelAnimationFrame(frameId);
+
+      if (!isReducedMotion) {
+        frameId = window.requestAnimationFrame(animate);
+        return;
+      }
+
+      for (const particle of particles) {
+        particle.x = particle.baseX;
+        particle.y = particle.baseY;
+        particle.vx = 0;
+        particle.vy = 0;
+      }
+
+      drawParticles(false);
+    };
+
+    const handlePointerMove = (event: PointerEvent) => {
+      const bounds = canvas.getBoundingClientRect();
+      pointer.x = event.clientX - bounds.left;
+      pointer.y = event.clientY - bounds.top;
+      pointer.active = true;
+    };
+
+    const handlePointerLeave = () => {
+      pointer.active = false;
+    };
+
+    const handleMotionPreferenceChange = (event: MediaQueryListEvent) => {
+      isReducedMotion = event.matches;
+      startAnimation();
+    };
+
+    const resizeObserver = new ResizeObserver(() => {
+      buildParticles();
+      startAnimation();
+    });
+
+    buildParticles();
+    startAnimation();
+    resizeObserver.observe(heading);
+    heading.addEventListener("pointermove", handlePointerMove);
+    heading.addEventListener("pointerleave", handlePointerLeave);
+    reducedMotionQuery.addEventListener("change", handleMotionPreferenceChange);
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      resizeObserver.disconnect();
+      heading.removeEventListener("pointermove", handlePointerMove);
+      heading.removeEventListener("pointerleave", handlePointerLeave);
+      reducedMotionQuery.removeEventListener("change", handleMotionPreferenceChange);
+    };
+  }, [children]);
+
+  return (
+    <h1 ref={headingRef} className="compass-reactive-headline mt-4 max-w-[660px]">
+      <span className="compass-reactive-headline__text">{children}</span>
+      <canvas ref={canvasRef} className="compass-reactive-headline__canvas" aria-hidden="true" />
+    </h1>
+  );
+}
 
 function MediaLogo({ id }: { id: MediaId }) {
   if (id === "meta") {
@@ -65,9 +321,9 @@ function MediaLogo({ id }: { id: MediaId }) {
           d="M4.2 14.3c1.1-3.6 2.7-5.4 4.6-5.4 1.4 0 2.4 1 3.2 2.2.8-1.2 1.8-2.2 3.2-2.2 1.9 0 3.5 1.8 4.6 5.4.6 1.9-.2 3.4-1.7 3.4-1.2 0-2.2-.8-3.5-2.4l-2.6-3.2-2.6 3.2c-1.3 1.6-2.3 2.4-3.5 2.4-1.5 0-2.3-1.5-1.7-3.4Z"
           fill="none"
           stroke="#2764D9"
-          strokeWidth="1.9"
           strokeLinecap="round"
           strokeLinejoin="round"
+          strokeWidth="1.9"
         />
       </svg>
     );
@@ -124,13 +380,48 @@ function MediaLogo({ id }: { id: MediaId }) {
 
 export default function HomePage() {
   const router = useRouter();
-  const { user, loading } = useAuth();
+  const { user, loading, signIn } = useAuth();
+  const [emailLocalPart, setEmailLocalPart] = useState("");
+  const [password, setPassword] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (!loading && user) {
       router.replace(COMPASS_DESK_PATH);
     }
   }, [loading, router, user]);
+
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setMessage(null);
+
+    const normalizedEmailLocalPart = normalizeEmailLocalPart(emailLocalPart);
+
+    if (!normalizedEmailLocalPart || !password) {
+      setMessage("이메일과 비밀번호를 입력해주세요.");
+      return;
+    }
+
+    const normalizedEmail = `${normalizedEmailLocalPart}@nasmedia.co.kr`;
+    setEmailLocalPart(normalizedEmailLocalPart);
+    setIsSubmitting(true);
+
+    try {
+      const { error } = await signIn(normalizedEmail, password);
+
+      if (error) {
+        setMessage(error.message);
+        return;
+      }
+
+      router.replace(COMPASS_DESK_PATH);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "로그인 중 오류가 발생했습니다.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   if (loading || user) {
     return (
@@ -167,13 +458,13 @@ export default function HomePage() {
 
       <header className="fixed left-0 right-0 top-0 z-50 border-b border-[#D8D6CF] bg-[#F8F6F1]/94 backdrop-blur-md">
         <div className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-3 px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center gap-3">
+          <Link href="/" className="flex min-w-0 items-center gap-3" aria-label="AdMate Compass home">
             <img src="/brand/admate-compass-lockup.svg" alt="AdMate Compass" className="h-12 w-auto" />
-          </div>
+          </Link>
           <div className="flex items-center gap-2">
             <SiteSwitchDropdown />
             <Link
-              href={LOGIN_URL}
+              href="#compass-login"
               className="inline-flex min-h-10 items-center justify-center rounded-[8px] bg-[#172033] px-4 py-2 text-sm font-bold text-white transition duration-300 [transition-timing-function:cubic-bezier(0.32,0.72,0,1)] hover:bg-[#273755] active:scale-[0.98]"
             >
               로그인
@@ -200,33 +491,26 @@ export default function HomePage() {
 
           <div className="relative">
             <div className="max-w-[760px]">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="inline-flex min-h-7 items-center rounded-[8px] border border-[#AEB8C3] bg-[#EEF2F5] px-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#293B5A]">
-                  compass.admate.ai.kr
-                </span>
-                <span className="inline-flex min-h-7 items-center rounded-[8px] border border-[#D5B978] bg-[#FFF3D8] px-3 text-[11px] font-semibold text-[#7A5518]">
-                  정책 기준 확인
-                </span>
-              </div>
+              <p className="text-xs font-semibold uppercase tracking-[0.16em] text-[#68707C]">
+                ADMATE COMPASS · 정책 근거 확인
+              </p>
 
-              <h1 className="mt-4 max-w-[640px] text-3xl font-semibold leading-tight tracking-normal text-[#172033] [text-wrap:balance]">
-                AdMate Compass 정책 확인
-              </h1>
+              <ReactiveHeadline>광고 정책을 근거와 함께 확인하세요.</ReactiveHeadline>
               <p className="mt-4 max-w-[630px] text-base leading-8 text-[#344052] sm:text-lg">
-                광고 정책 질문을 공식 정책과 AdMate 확인 기준으로 대조하고, 매체별 근거와 참고 문단을 함께 정리합니다.
+                Compass는 광고 정책 질문에 필요한 출처와 확인 기준을 모아, 바로 검토할 수 있는 답변으로 정리합니다.
               </p>
               <p className="mt-3 max-w-[610px] text-sm leading-7 text-[#68707C]">
-                조건이 부족하거나 기준이 충돌하면 바로 결론을 내리지 않고 추가 확인 필요 항목으로 분리합니다.
+                정책 원문, AdMate 확인 기준, 추가 확인이 필요한 조건을 한 화면에서 나눠 볼 수 있습니다.
               </p>
             </div>
 
             <div className="mt-8 rounded-[10px] border border-[#D9D4C8] bg-white/72 p-4 sm:p-5">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <p className="text-sm font-bold text-[#172033]">Compass 확인 기준</p>
-                <span className="text-xs font-semibold text-[#7A5518]">질문, 기준, 근거를 한 화면에서 확인</span>
+                <span className="text-xs font-semibold text-[#7A5518]">정확한 근거와 남은 확인 사항을 함께 표시</span>
               </div>
               <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                {compassSummary.map(([title, detail]) => (
+                {compassHighlights.map(([title, detail]) => (
                   <div key={title} className="rounded-[8px] border border-[#E1DED6] bg-[#FBF7EE] p-4">
                     <CheckCircle className="h-4 w-4 text-[#A67B2D]" aria-hidden="true" />
                     <p className="mt-3 text-sm font-bold text-[#172033]">{title}</p>
@@ -240,7 +524,7 @@ export default function HomePage() {
               <div className="flex min-h-full flex-col rounded-[8px] bg-[#FBF7EE] p-4">
                 <p className="text-sm font-bold text-[#7A5518]">정책 확인 미리보기</p>
                 <h2 className="mt-3 max-w-[420px] text-2xl font-semibold leading-tight text-[#172033] [text-wrap:balance]">
-                  정책 근거 확인
+                  질문 조건과 출처를 함께 봅니다
                 </h2>
                 <div className="mt-5 rounded-[8px] border border-[#D9D4C8] bg-white p-4">
                   <p className="text-xs font-semibold text-[#68707C]">질문 예시</p>
@@ -272,12 +556,12 @@ export default function HomePage() {
                   ))}
                 </div>
                 <div className="mt-3 rounded-[8px] bg-[#172033] p-4 text-white">
-                  <p className="text-xs font-bold text-[#D5B978]">3단계 검토 흐름</p>
+                  <p className="text-xs font-bold text-[#D5B978]">3-agent 검토 구조</p>
                   <h3 className="mt-2 text-xl font-semibold leading-tight text-white [text-wrap:balance]">
-                    두 검토 결과를 비교해 최종 답변을 정리합니다
+                    두 후보 답변을 비교해 최종 검토합니다
                   </h3>
                   <p className="mt-3 text-xs leading-5 text-white/68">
-                    정책 원문, 확인한 출처, 불확실한 항목을 나눠 정책 판단에 필요한 근거를 확인합니다.
+                    같은 질문을 두 번 확인하고, 마지막에 팀장이 근거와 불확실한 조건을 다시 정리합니다.
                   </p>
                   <div className="compass-review-rail mt-4 grid gap-2 lg:grid-cols-3">
                     {answerVerificationFlow.map(([stage, title, detail], index) => (
@@ -301,7 +585,7 @@ export default function HomePage() {
           <div className="relative mt-8 rounded-[10px] border border-[#D9D4C8] bg-[#F5EFE3]/92 p-4">
             <div className="mb-4 flex items-center justify-between gap-4">
               <p className="text-sm font-bold text-[#7A5518]">지원 매체</p>
-              <span className="hidden text-xs font-semibold text-[#68707C] sm:inline">주요 매체 정책 기준을 함께 확인합니다</span>
+              <span className="hidden text-xs font-semibold text-[#68707C] sm:inline">외부 이미지 없이 주요 매체를 빠르게 구분합니다</span>
             </div>
             <div className="compass-media-marquee">
               <div className="compass-media-track">
@@ -333,84 +617,104 @@ export default function HomePage() {
         </motion.section>
 
         <motion.aside
+          id="compass-login"
           initial={{ opacity: 0, y: 18 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.58, delay: 0.06, ease: [0.32, 0.72, 0, 1] }}
-          className="rounded-[10px] border border-[#D2CEC4] border-t-[5px] border-t-[#A67B2D] bg-[#FBF7EE] p-5 shadow-[0_28px_80px_rgba(23,32,51,0.11)] sm:p-7"
+          className="scroll-mt-24 rounded-[10px] border border-[#D2CEC4] border-t-[5px] border-t-[#A67B2D] bg-[#FBF7EE] p-5 shadow-[0_28px_80px_rgba(23,32,51,0.11)] sm:p-7"
         >
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <p className="text-xs font-semibold tracking-[0.02em] text-[#7A5518]">로그인</p>
-              <h2 className="mt-2 text-2xl font-semibold leading-tight text-[#172033]">Compass 열기</h2>
-              <p className="mt-3 text-sm leading-6 text-[#68707C]">
-                로그인하면 정책 질문, 출처, 추가 확인 필요 항목을 이어서 확인할 수 있습니다.
-              </p>
-            </div>
-            <div className="grid h-12 w-12 flex-none place-items-center rounded-[8px] border border-[#D5B978] bg-[#FFF3D8] text-[#7A5518]">
-              <Search className="h-5 w-5" aria-hidden="true" />
-            </div>
+          <div className="mb-6">
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7A5518]">ADMATE COMPASS</p>
+            <h2 className="mt-2 text-2xl font-semibold leading-tight text-[#172033]">AdMate 계정으로 로그인</h2>
+            <p className="mt-3 text-sm leading-6 text-[#68707C]">
+              회사 이메일로 로그인해 Compass 작업 공간을 이용하세요.
+            </p>
           </div>
 
-          <Link
-            href={LOGIN_URL}
-            className="mt-7 inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-[8px] bg-[#172033] px-5 py-3 text-sm font-bold text-white transition duration-300 [transition-timing-function:cubic-bezier(0.32,0.72,0,1)] hover:bg-[#273755] active:scale-[0.98]"
-          >
-            AdMate 계정으로 로그인
-            <ArrowRight className="h-4 w-4" aria-hidden="true" />
-          </Link>
+          <form className="space-y-4" onSubmit={handleSubmit}>
+            <div>
+              <Label htmlFor="compass-root-email" className="mb-2 block text-sm font-medium text-[#344052]">
+                이메일
+              </Label>
+              <div className="compass-login-email-field">
+                <input
+                  id="compass-root-email"
+                  type="text"
+                  inputMode="email"
+                  autoComplete="username"
+                  required
+                  value={emailLocalPart}
+                  onChange={(event) => setEmailLocalPart(normalizeEmailLocalPart(event.target.value))}
+                  className="min-w-0 flex-1 bg-white px-3 py-2.5 text-sm text-[#0D0D0D] outline-none disabled:cursor-not-allowed disabled:opacity-60"
+                  placeholder="name"
+                  aria-describedby="compass-root-email-domain"
+                  disabled={isSubmitting}
+                />
+                <span
+                  id="compass-root-email-domain"
+                  aria-label="고정 이메일 도메인"
+                  className="shrink-0 border-l border-[#D8DCCF] bg-[#F4F6F7] px-3 py-2.5 text-sm font-bold text-[#4E5B67]"
+                >
+                  @nasmedia.co.kr
+                </span>
+              </div>
+            </div>
+
+            <div>
+              <Label htmlFor="compass-root-password" className="mb-2 block text-sm font-medium text-[#344052]">
+                비밀번호
+              </Label>
+              <input
+                id="compass-root-password"
+                type="password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                placeholder="비밀번호를 입력하세요"
+                autoComplete="current-password"
+                className="w-full rounded-[8px] border border-[#D8DCCF] bg-white px-3 py-2.5 text-sm text-[#0D0D0D] outline-none transition-colors placeholder:text-[#9A9A9A] focus:border-[#A67B2D] disabled:cursor-not-allowed disabled:opacity-60"
+                disabled={isSubmitting}
+                required
+              />
+            </div>
+
+            {message && (
+              <div className="rounded-[8px] border border-[#F5C2C7] bg-[#FFF7F7] px-3 py-2 text-sm leading-6 text-[#B42318]">
+                {message}
+              </div>
+            )}
+
+            <button
+              type="submit"
+              className="inline-flex min-h-12 w-full items-center justify-center rounded-[8px] bg-[#172033] px-5 py-3 text-sm font-bold text-white transition duration-300 [transition-timing-function:cubic-bezier(0.32,0.72,0,1)] hover:bg-[#273755] disabled:cursor-not-allowed disabled:opacity-60 active:scale-[0.98]"
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? "로그인 중..." : "로그인하고 계속"}
+            </button>
+          </form>
 
           <div className="mt-5 rounded-[10px] border border-[#D9D4C8] bg-white/72 p-4">
-            <p className="text-sm font-bold text-[#172033]">사용 권한이 필요하다면</p>
+            <p className="text-sm font-bold text-[#172033]">Compass 이용 권한이 필요하신가요?</p>
             <p className="mt-2 text-xs leading-5 text-[#68707C]">
-              AdMate 이용 권한 요청에서 Compass 사용 권한을 신청할 수 있습니다.
+              처음 이용하거나 권한이 없는 경우, AdMate 이용 권한을 요청해주세요.
             </p>
             <a
               href={ACCESS_REQUEST_URL}
+              target="_blank"
+              rel="noreferrer"
               className="mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-[8px] border border-[#D5B978] bg-[#FFF3D8] px-4 py-2.5 text-sm font-bold text-[#7A5518] transition duration-300 [transition-timing-function:cubic-bezier(0.32,0.72,0,1)] hover:bg-[#FFE8B3] active:scale-[0.98]"
             >
-              AdMate 이용 권한 요청
+              Compass 이용 권한 요청
             </a>
-            <Link
-              href={ADMATE_HOME_URL}
-              className="mt-3 inline-flex min-h-11 w-full items-center justify-center rounded-[8px] border border-[#D9D4C8] bg-white/72 px-4 py-2.5 text-sm font-bold text-[#344052] transition duration-300 [transition-timing-function:cubic-bezier(0.32,0.72,0,1)] hover:bg-[#F8F6F1] active:scale-[0.98]"
-            >
-              AdMate 홈페이지로 이동
-            </Link>
           </div>
 
-          <div className="mt-5 rounded-[10px] border border-[#D9D4C8] bg-white/72 p-4">
-            <div className="flex items-center gap-2">
-              <FileCheck2 className="h-4 w-4 text-[#A67B2D]" aria-hidden="true" />
-              <p className="text-sm font-bold text-[#172033]">로그인 후 검토 흐름</p>
-            </div>
-            <div className="mt-3 space-y-2">
-              {[
-                ["1차 후보", "질문 조건과 공식 정책 근거 수집"],
-                ["2차 후보", "누락 근거와 다른 해석 재확인"],
-                ["팀장 최종 검토", "충돌/중복/근거 확인 후 최종 답변 확정"],
-              ].map(([stage, detail]) => (
-                <div key={stage} className="flex items-center justify-between gap-3 rounded-[7px] border border-[#E1DED6] bg-[#FBF7EE] px-3 py-2">
-                  <span className="text-xs font-bold text-[#7A5518]">{stage}</span>
-                  <span className="text-right text-xs font-semibold leading-5 text-[#5B6472]">{detail}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="mt-5 rounded-[10px] border border-[#CDD5DD] bg-[#F4F6F7]/86 p-4">
-            <div className="flex items-center gap-2">
-              <ShieldCheck className="h-4 w-4 text-[#293B5A]" aria-hidden="true" />
-              <p className="text-sm font-bold text-[#172033]">신뢰 신호</p>
-            </div>
-            <div className="mt-3 space-y-2">
-              {gatePrinciples.map((principle) => (
-                <p key={principle} className="flex gap-2 text-xs leading-5 text-[#68707C]">
-                  <span className="mt-2 h-1.5 w-1.5 flex-none rounded-full bg-[#A67B2D]" aria-hidden="true" />
-                  <span>{principle}</span>
-                </p>
-              ))}
-            </div>
-          </div>
+          <a
+            href={ADMATE_HOME_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="mt-3 inline-flex w-full items-center justify-center px-4 py-2 text-sm font-semibold text-[#68707C] transition-colors hover:text-[#172033]"
+          >
+            AdMate 홈페이지로 이동
+          </a>
         </motion.aside>
       </section>
     </main>
