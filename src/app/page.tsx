@@ -26,7 +26,7 @@ const compassHighlights = [
   ["지원 매체", "Meta, Google/YouTube, Naver, Kakao, GDN 등 주요 매체 기준을 함께 확인합니다."],
   ["정책 기준", "공식 정책과 AdMate 확인 기준을 출처 문단과 함께 대조합니다."],
   ["신뢰 신호", "불확실한 조건은 결론과 분리해 추가 확인 필요 항목으로 표시합니다."],
-  ["3-agent 검토", "1차 후보, 2차 후보, 팀장 최종 검토 흐름으로 답변을 정리합니다."],
+  ["출처 비교", "여러 근거를 나란히 보고 적용 가능한 기준과 예외 조건을 구분합니다."],
 ] as const;
 
 const previewRows = [
@@ -35,10 +35,10 @@ const previewRows = [
   ["추가 확인 필요", "업종 허가, 랜딩 고지, 이미지 맥락처럼 더 확인할 정보를 따로 둡니다."],
 ] as const;
 
-const answerVerificationFlow = [
-  ["1차 후보", "근거 수집", "질문 조건과 공식 정책 근거를 모아 답변 초안을 만듭니다."],
-  ["2차 후보", "근거 재확인", "같은 질문을 다시 검토해 누락된 근거와 다른 해석을 찾습니다."],
-  ["팀장 최종 검토", "충돌/중복 확인", "두 후보를 비교해 충돌, 중복, 근거 부족 항목을 정리합니다."],
+const sourceConfidenceFlow = [
+  ["출처 수집", "공식 정책 확인", "질문 조건과 관련된 정책 원문, 도움말, 운영 기준을 먼저 모읍니다."],
+  ["기준 대조", "조건 비교", "매체별 표현 기준과 예외 조건을 나란히 보고 차이를 구분합니다."],
+  ["확신도 표시", "남은 확인 사항", "근거가 부족한 부분은 결론과 분리해 추가 확인 항목으로 남깁니다."],
 ] as const;
 
 const mediaScopes = [
@@ -445,19 +445,10 @@ export default function HomePage() {
           maskImage: "linear-gradient(to bottom, black, transparent 84%)",
         }}
       />
-      <div
-        className="pointer-events-none absolute -right-56 top-24 h-[34rem] w-[68rem] rounded-full border border-[#A67B2D]/22 bg-[#F2DFC0]/20"
-        aria-hidden="true"
-        style={{ transform: "rotate(-12deg)" }}
-      />
-      <div
-        className="pointer-events-none absolute -left-56 bottom-[-18rem] h-[34rem] w-[54rem] rounded-full border border-[#293B5A]/18 bg-[#DDE5ED]/40"
-        aria-hidden="true"
-        style={{ transform: "rotate(16deg)" }}
-      />
+      <div className="pointer-events-none absolute inset-x-0 top-16 h-px bg-[#111713]/10" aria-hidden="true" />
 
-      <header className="fixed left-0 right-0 top-0 z-50 h-16 border-b border-[#E2E8F0] bg-white/95 text-[#0F172A] backdrop-blur-[14px]">
-        <div className="mx-auto flex h-full max-w-7xl items-center justify-between gap-3 px-4 sm:px-6 lg:px-8">
+      <header className="fixed left-0 right-0 top-0 z-50 border-b border-[#D8DCCF] bg-[#FBFBF7]/95 text-[#111713] backdrop-blur-[14px]">
+        <div className="mx-auto flex min-h-14 max-w-7xl items-center justify-between gap-2 px-4 py-2 sm:min-h-16 sm:gap-3 sm:px-6 lg:px-8">
           <Link href="/" className="flex min-w-0 items-center gap-3 text-[#0F172A]" aria-label="AdMate Compass home">
             <span className="grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-[6px] bg-white" aria-hidden="true">
               <img src="/brand/admate-compass-mark.svg" alt="" className="block h-full w-full" />
@@ -465,15 +456,15 @@ export default function HomePage() {
             <span className="min-w-0">
               <strong className="block truncate text-lg font-bold leading-5 text-[#0F172A]">AdMate Compass</strong>
               <em className="mt-px hidden text-[10px] font-semibold uppercase not-italic leading-3 tracking-[0.16em] text-[#64748B] sm:block">
-                POLICY EVIDENCE DESK
+                정책 출처 확인
               </em>
             </span>
           </Link>
-          <div className="flex items-center gap-2">
+          <div className="flex shrink-0 items-center gap-2">
             <SiteSwitchDropdown />
             <Link
               href="#compass-login"
-              className="inline-flex min-h-10 min-w-24 items-center justify-center rounded-[8px] bg-[#101820] px-4 py-2 text-[13px] font-extrabold text-white shadow-[0_10px_24px_rgba(16,24,32,0.12)] transition duration-300 [transition-timing-function:cubic-bezier(0.32,0.72,0,1)] hover:bg-[#17211F] active:scale-[0.98]"
+              className="inline-flex min-h-10 min-w-20 items-center justify-center rounded-[8px] bg-[#111713] px-3.5 py-2 text-[13px] font-extrabold text-white shadow-[0_10px_24px_rgba(17,23,19,0.12)] transition duration-300 [transition-timing-function:cubic-bezier(0.32,0.72,0,1)] hover:bg-[#223128] active:scale-[0.98] sm:min-w-24 sm:px-4"
             >
               로그인
             </Link>
@@ -505,7 +496,7 @@ export default function HomePage() {
 
               <ReactiveHeadline>광고 정책을 근거와 함께 확인하세요.</ReactiveHeadline>
               <p className="mt-4 max-w-[630px] text-base leading-8 text-[#344052] sm:text-lg">
-                Compass는 광고 정책 질문에 필요한 출처와 확인 기준을 모아, 바로 검토할 수 있는 답변으로 정리합니다.
+                Compass는 광고 정책 질문에 필요한 출처와 확인 기준을 모아, 적용 가능한 근거를 빠르게 비교하도록 돕습니다.
               </p>
               <p className="mt-3 max-w-[610px] text-sm leading-7 text-[#68707C]">
                 정책 원문, AdMate 확인 기준, 추가 확인이 필요한 조건을 한 화면에서 나눠 볼 수 있습니다.
@@ -515,7 +506,7 @@ export default function HomePage() {
             <div className="mt-8 rounded-[10px] border border-[#D9D4C8] bg-white/72 p-4 sm:p-5">
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <p className="text-sm font-bold text-[#172033]">Compass 확인 기준</p>
-                <span className="text-xs font-semibold text-[#7A5518]">정확한 근거와 남은 확인 사항을 함께 표시</span>
+                <span className="text-xs font-semibold text-[#1F7A4D]">정확한 근거와 남은 확인 사항을 함께 표시</span>
               </div>
               <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 {compassHighlights.map(([title, detail]) => (
@@ -564,21 +555,21 @@ export default function HomePage() {
                   ))}
                 </div>
                 <div className="mt-3 rounded-[8px] bg-[#172033] p-4 text-white">
-                  <p className="text-xs font-bold text-[#D5B978]">3-agent 검토 구조</p>
+                  <p className="text-xs font-bold text-[#BFD8C5]">출처 신뢰도 확인</p>
                   <h3 className="mt-2 text-xl font-semibold leading-tight text-white [text-wrap:balance]">
-                    두 후보 답변을 비교해 최종 검토합니다
+                    근거별 차이를 비교해 판단합니다
                   </h3>
                   <p className="mt-3 text-xs leading-5 text-white/68">
-                    같은 질문을 두 번 확인하고, 마지막에 팀장이 근거와 불확실한 조건을 다시 정리합니다.
+                    공식 출처와 적용 조건을 나란히 확인하고, 불확실한 부분은 별도로 표시합니다.
                   </p>
                   <div className="compass-review-rail mt-4 grid gap-2 lg:grid-cols-3">
-                    {answerVerificationFlow.map(([stage, title, detail], index) => (
+                    {sourceConfidenceFlow.map(([stage, title, detail], index) => (
                       <div key={stage} className="compass-review-step rounded-[7px] border border-white/10 bg-white/[0.06] px-3 py-2.5">
                         <div className="flex items-center gap-2">
-                          <span className="grid h-5 w-5 flex-none place-items-center rounded-full bg-[#D5B978] text-[11px] font-black text-[#172033]">
+                          <span className="grid h-5 w-5 flex-none place-items-center rounded-full bg-[#BFD8C5] text-[11px] font-black text-[#172033]">
                             {index + 1}
                           </span>
-                          <span className="text-[11px] font-black text-[#D5B978]">{stage}</span>
+                          <span className="text-[11px] font-black text-[#BFD8C5]">{stage}</span>
                         </div>
                         <p className="mt-2 text-sm font-bold leading-5 text-white">{title}</p>
                         <p className="mt-1.5 text-xs leading-5 text-white/64">{detail}</p>
@@ -629,10 +620,10 @@ export default function HomePage() {
           initial={{ opacity: 0, y: 18 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.58, delay: 0.06, ease: [0.32, 0.72, 0, 1] }}
-          className="flex scroll-mt-24 flex-col rounded-[10px] border border-[#D2CEC4] border-t-[5px] border-t-[#A67B2D] bg-[#FBF7EE] p-5 shadow-[0_28px_80px_rgba(23,32,51,0.11)] sm:p-7 lg:h-full"
+          className="flex scroll-mt-24 flex-col rounded-[10px] border border-[#D2CEC4] border-t-[5px] border-t-[#1F7A4D] bg-[#FBF7EE] p-5 shadow-[0_28px_80px_rgba(23,32,51,0.11)] sm:p-7 lg:sticky lg:top-24 lg:self-start"
         >
           <div className="mb-6">
-            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#7A5518]">ADMATE COMPASS</p>
+            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#1F7A4D]">ADMATE COMPASS</p>
             <h2 className="mt-2 text-2xl font-semibold leading-tight text-[#172033]">AdMate 계정으로 로그인</h2>
             <p className="mt-3 text-sm leading-6 text-[#68707C]">
               회사 이메일로 로그인해 Compass 작업 공간을 이용하세요.
@@ -679,7 +670,7 @@ export default function HomePage() {
                 onChange={(event) => setPassword(event.target.value)}
                 placeholder="비밀번호를 입력하세요"
                 autoComplete="current-password"
-                className="compass-login-password-field w-full rounded-[8px] border border-[#D8DCCF] bg-[#FFFFFF] px-3 py-2.5 text-sm text-[#0D0D0D] outline-none transition-colors placeholder:text-[#9A9A9A] focus:border-[#A67B2D] disabled:cursor-not-allowed disabled:opacity-60"
+                className="compass-login-password-field w-full rounded-[8px] border border-[#D8DCCF] bg-[#FFFFFF] px-3 py-2.5 text-sm text-[#0D0D0D] outline-none transition-colors placeholder:text-[#9A9A9A] focus:border-[#1F7A4D] disabled:cursor-not-allowed disabled:opacity-60"
                 disabled={isSubmitting}
                 required
               />

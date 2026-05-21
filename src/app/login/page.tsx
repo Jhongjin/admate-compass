@@ -343,19 +343,19 @@ function LoginPageContent() {
   return (
     <div className="min-h-[100dvh] bg-[#F4F5F0] text-[#111713]">
       <header className="border-b border-[#D8DCCF] bg-[#FBFBF7]/95 backdrop-blur-md">
-        <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
+        <div className="mx-auto flex min-h-14 max-w-7xl items-center justify-between gap-2 px-4 py-2 sm:min-h-16 sm:px-6 lg:px-8">
           <Link href="/" className="flex min-w-0 items-center gap-3" aria-label="AdMate Compass home">
             <img src="/brand/admate-compass-mark.svg" alt="" className="h-9 w-9 rounded-md" aria-hidden="true" />
             <span className="min-w-0">
               <span className="block truncate text-lg font-bold leading-5 text-[#111713]">AdMate Compass</span>
               <span className="hidden text-[10px] font-semibold uppercase leading-3 tracking-[0.16em] text-[#667066] sm:block">
-                POLICY EVIDENCE
+                정책 출처 확인
               </span>
             </span>
           </Link>
           <Link
             href="/"
-            className="whitespace-nowrap rounded-lg border border-[#C6D9CB] bg-[#EDF7EF] px-3 py-2 text-sm font-medium text-[#1F7A4D] transition-colors hover:bg-[#E3F1E7]"
+            className="inline-flex min-h-10 items-center whitespace-nowrap rounded-lg border border-[#C6D9CB] bg-[#EDF7EF] px-3 py-2 text-sm font-medium text-[#1F7A4D] transition-colors hover:bg-[#E3F1E7]"
           >
             Compass 홈
           </Link>
@@ -372,7 +372,7 @@ function LoginPageContent() {
             <div className="mt-4 space-y-4">
               <ReactiveHeadline>정책 기준을 근거와 함께 확인합니다</ReactiveHeadline>
               <p className="compass-gate-copy max-w-2xl text-sm leading-6 text-[#34423A]">
-                질문 조건에 맞는 공식 정책과 출처를 모아, 운영 판단에 필요한 답변으로 정리합니다.
+                질문 조건에 맞는 공식 정책과 출처를 모아, 적용 가능한 기준과 추가 확인 사항을 구분합니다.
               </p>
             </div>
 
@@ -414,7 +414,7 @@ function LoginPageContent() {
                     required
                     value={emailLocalPart}
                     onChange={(event) => setEmailLocalPart(normalizeEmailLocalPart(event.target.value))}
-                    className="min-w-0 flex-1 bg-transparent px-3 py-2.5 text-sm text-[#0D0D0D] outline-none disabled:cursor-not-allowed disabled:opacity-60"
+                    className="min-h-11 min-w-0 flex-1 bg-transparent px-3 py-2.5 text-sm text-[#0D0D0D] outline-none disabled:cursor-not-allowed disabled:opacity-60"
                     placeholder="name"
                     aria-describedby="email-domain"
                     disabled={isSubmitting}
@@ -422,7 +422,7 @@ function LoginPageContent() {
                   <span
                     id="email-domain"
                     aria-label="고정 이메일 도메인"
-                    className="shrink-0 border-l border-[#D8DCCF] bg-[#EDF7EF] px-3 py-2.5 text-sm font-bold text-[#4B6556]"
+                    className="min-h-11 shrink-0 border-l border-[#D8DCCF] bg-[#EDF7EF] px-3 py-2.5 text-sm font-bold text-[#4B6556]"
                   >
                     @nasmedia.co.kr
                   </span>
@@ -440,7 +440,7 @@ function LoginPageContent() {
                   onChange={(event) => setPassword(event.target.value)}
                   placeholder="비밀번호를 입력하세요"
                   autoComplete="current-password"
-                  className="w-full rounded-lg border border-[#D8DCCF] bg-white px-3 py-2.5 text-sm text-[#0D0D0D] outline-none transition-colors placeholder:text-[#9A9A9A] focus:border-[#1F7A4D] disabled:cursor-not-allowed disabled:opacity-60"
+                  className="compass-login-password-field min-h-11 w-full rounded-lg border border-[#D8DCCF] bg-white px-3 py-2.5 text-sm text-[#0D0D0D] outline-none transition-colors placeholder:text-[#9A9A9A] focus:border-[#1F7A4D] disabled:cursor-not-allowed disabled:opacity-60"
                   disabled={isSubmitting}
                   required
                 />
