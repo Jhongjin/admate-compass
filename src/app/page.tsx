@@ -424,7 +424,7 @@ function CompassSourceMaterialPanel() {
     const fontFamily = getComputedStyle(document.documentElement).getPropertyValue("--compass-font-sans");
     const mouse = { x: -1000, y: -1000 };
 
-    const getActiveHeight = (height: number) => Math.max(1, Math.min(height - 4, 340));
+    const getActiveHeight = (height: number) => Math.max(1, height);
 
     const hashCell = (x: number, y: number) => x * 10000 + y;
 
@@ -629,11 +629,11 @@ function CompassSourceMaterialPanel() {
       const width = Math.max(1, Math.round(bounds.width));
       const height = Math.max(1, Math.round(bounds.height));
       const activeHeight = getActiveHeight(height);
-      const count = Math.min(2500, Math.max(1400, Math.floor((width * activeHeight) / 55)));
+      const count = Math.min(2500, Math.max(1400, Math.floor((width * activeHeight) / 135)));
       const columns = Math.ceil(Math.sqrt(count * 2.5));
       const spacing = Math.max(5, Math.min(7, width / Math.max(56, columns)));
       const startX = width * 0.05;
-      const startY = activeHeight * 0.45;
+      const startY = 0;
       const nextParticles: SourceOceanParticle[] = [];
 
       canvas.width = Math.ceil(width * devicePixelRatio);
