@@ -64,17 +64,13 @@ type HeadlineParticle = {
 
 type MediaId = (typeof supportedMedia)[number]["id"];
 
-type SourceGlyphParticle = {
-  glyph: string;
-  baseX: number;
-  baseY: number;
+type SourceOceanParticle = {
+  char: string;
   x: number;
   y: number;
-  phase: number;
-  speed: number;
-  size: number;
-  alpha: number;
-  tone: "ink" | "green" | "gold";
+  vx: number;
+  vy: number;
+  density: number;
 };
 
 const HEADLINE_PARTICLE_GAP = 5;
@@ -411,63 +407,220 @@ function CompassSourceMaterialPanel() {
     }
 
     const reducedMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
-    const glyphs = sourceMaterialGlyphs.replace(/\s/g, "").split("");
-    let particles: SourceGlyphParticle[] = [];
+    const glyphs = sourceMaterialGlyphs.replace(/\s/g, "").toUpperCase().split("");
+    const spatialGrid = new Map<number, number[]>();
+    const cellSize = 20;
+    const smoothingRadius = 18;
+    const smoothingRadiusSquared = smoothingRadius * smoothingRadius;
+    const restDensity = 6;
+    const gravity = 280;
+    const pressure = 45;
+    const viscosity = 0.9;
+    const waveForce = 60;
+    let particles: SourceOceanParticle[] = [];
     let frameId = 0;
-    let tick = 0;
+    let phase = 0;
     let isReducedMotion = reducedMotionQuery.matches;
     const fontFamily = getComputedStyle(document.documentElement).getPropertyValue("--compass-font-sans");
+    const mouse = { x: -1000, y: -1000 };
 
-    const draw = (motionEnabled: boolean) => {
+    const getActiveHeight = (height: number) => Math.max(1, Math.min(height - 4, 340));
+
+    const hashCell = (x: number, y: number) => x * 10000 + y;
+
+    const buildSpatialGrid = () => {
+      spatialGrid.clear();
+
+      for (let index = 0; index < particles.length; index += 1) {
+        const particle = particles[index];
+        const x = Math.floor(particle.x / cellSize);
+        const y = Math.floor(particle.y / cellSize);
+        const key = hashCell(x, y);
+        const existing = spatialGrid.get(key);
+
+        if (existing) {
+          existing.push(index);
+        } else {
+          spatialGrid.set(key, [index]);
+        }
+      }
+    };
+
+    const getNeighbors = (index: number) => {
+      const particle = particles[index];
+      const x = Math.floor(particle.x / cellSize);
+      const y = Math.floor(particle.y / cellSize);
+      const neighbors: number[] = [];
+
+      for (let dx = -1; dx <= 1; dx += 1) {
+        for (let dy = -1; dy <= 1; dy += 1) {
+          const cell = spatialGrid.get(hashCell(x + dx, y + dy));
+
+          if (cell) {
+            for (const neighborIndex of cell) {
+              if (neighborIndex !== index) {
+                neighbors.push(neighborIndex);
+              }
+            }
+          }
+        }
+      }
+
+      return neighbors;
+    };
+
+    const draw = () => {
       const devicePixelRatio = Math.min(window.devicePixelRatio || 1, 2);
       const width = canvas.width / devicePixelRatio;
       const height = canvas.height / devicePixelRatio;
-      const surfaceY = height * 0.44;
 
       context.clearRect(0, 0, width, height);
       context.save();
-      context.globalCompositeOperation = "source-over";
-
-      const surfaceGradient = context.createLinearGradient(0, surfaceY - 16, 0, height);
-      surfaceGradient.addColorStop(0, "rgba(31, 122, 77, 0.03)");
-      surfaceGradient.addColorStop(1, "rgba(23, 32, 51, 0.08)");
-      context.fillStyle = surfaceGradient;
-      context.beginPath();
-      context.moveTo(0, surfaceY + 8);
-
-      for (let x = 0; x <= width + 12; x += 12) {
-        const wave = motionEnabled ? Math.sin(tick * 0.018 + x * 0.032) * 6 : Math.sin(x * 0.032) * 3;
-        context.lineTo(x, surfaceY + wave);
-      }
-
-      context.lineTo(width, height);
-      context.lineTo(0, height);
-      context.closePath();
-      context.fill();
+      context.fillStyle = "rgba(251, 247, 238, 0.42)";
+      context.fillRect(0, 0, width, height);
+      context.font = `9px ${fontFamily}`;
+      context.textBaseline = "middle";
+      context.textAlign = "center";
 
       for (const particle of particles) {
-        const wave = motionEnabled
-          ? Math.sin(tick * particle.speed + particle.phase + particle.baseX * 0.015) * (7 + particle.size * 0.18)
-          : Math.sin(particle.phase) * 1.8;
-        const swell = motionEnabled
-          ? Math.cos(tick * 0.011 + particle.phase + particle.baseY * 0.018) * 4
-          : 0;
-        const drift = motionEnabled ? Math.sin(tick * 0.006 + particle.phase) * 8 : 0;
-        const x = particle.x + drift;
-        const y = particle.y + wave + swell;
-        const color =
-          particle.tone === "green"
-            ? "31, 122, 77"
-            : particle.tone === "gold"
-              ? "122, 85, 24"
-              : "23, 32, 51";
+        const speed = Math.hypot(particle.vx, particle.vy);
+        const speedNorm = Math.min(1, speed / 120);
+        const densityNorm = Math.min(1, particle.density / (restDensity * 1.7));
+        const green = 58 + Math.round(densityNorm * 58);
+        const blue = 60 + Math.round(speedNorm * 44);
+        const alpha = 0.42 + speedNorm * 0.3 + densityNorm * 0.18;
 
-        context.font = `${particle.size}px ${fontFamily}`;
-        context.fillStyle = `rgba(${color}, ${particle.alpha})`;
-        context.fillText(particle.glyph, x, y);
+        context.fillStyle = `rgba(23, ${green}, ${blue}, ${Math.min(0.9, alpha)})`;
+        context.fillText(particle.char, particle.x, particle.y);
+      }
+
+      if (mouse.x > 0 && mouse.y > 0) {
+        context.beginPath();
+        context.arc(mouse.x, mouse.y, 80, 0, Math.PI * 2);
+        context.strokeStyle = "rgba(31, 122, 77, 0.12)";
+        context.lineWidth = 1;
+        context.stroke();
       }
 
       context.restore();
+    };
+
+    const simulate = (deltaSeconds: number) => {
+      const width = canvas.width / Math.min(window.devicePixelRatio || 1, 2);
+      const height = canvas.height / Math.min(window.devicePixelRatio || 1, 2);
+      const activeHeight = getActiveHeight(height);
+      const pressureK = pressure * 0.8;
+      const nearPressureK = pressure * 1.2;
+      const surfaceY = activeHeight * 0.55;
+
+      buildSpatialGrid();
+
+      for (let index = 0; index < particles.length; index += 1) {
+        let density = 0;
+        const particle = particles[index];
+
+        for (const neighborIndex of getNeighbors(index)) {
+          const neighbor = particles[neighborIndex];
+          const dx = neighbor.x - particle.x;
+          const dy = neighbor.y - particle.y;
+          const distanceSquared = dx * dx + dy * dy;
+
+          if (distanceSquared < smoothingRadiusSquared) {
+            const distance = Math.sqrt(distanceSquared);
+            const q = 1 - distance / smoothingRadius;
+            density += q * q;
+          }
+        }
+
+        particle.density = density;
+      }
+
+      for (let index = 0; index < particles.length; index += 1) {
+        const particle = particles[index];
+
+        particle.vy += gravity * deltaSeconds;
+
+        if (particle.y < surfaceY + 52) {
+          const waveX = Math.sin(phase + particle.x * 0.008) * waveForce;
+          const waveY = Math.cos(phase * 0.7 + particle.x * 0.012) * waveForce * 0.4;
+          const surfaceFactor = Math.max(0, 1 - (surfaceY + 52 - particle.y) / 104);
+          particle.vx += waveX * deltaSeconds * surfaceFactor;
+          particle.vy += waveY * deltaSeconds * surfaceFactor;
+        }
+
+        if (mouse.x > 0) {
+          const dx = particle.x - mouse.x;
+          const dy = particle.y - mouse.y;
+          const distance = Math.hypot(dx, dy);
+
+          if (distance < 90 && distance > 0.1) {
+            const force = (90 - distance) * 18;
+            particle.vx += (dx / distance) * force * deltaSeconds;
+            particle.vy += (dy / distance) * force * deltaSeconds;
+          }
+        }
+
+        for (const neighborIndex of getNeighbors(index)) {
+          const neighbor = particles[neighborIndex];
+          const dx = neighbor.x - particle.x;
+          const dy = neighbor.y - particle.y;
+          const distanceSquared = dx * dx + dy * dy;
+
+          if (distanceSquared < smoothingRadiusSquared && distanceSquared > 0.01) {
+            const distance = Math.sqrt(distanceSquared);
+            const q = 1 - distance / smoothingRadius;
+            const nx = dx / distance;
+            const ny = dy / distance;
+            const pressureAverage = (particle.density + neighbor.density - restDensity * 2) * 0.5;
+            const pressureForce = pressureK * pressureAverage * q + nearPressureK * q * q;
+
+            particle.vx -= nx * pressureForce * deltaSeconds;
+            particle.vy -= ny * pressureForce * deltaSeconds;
+
+            particle.vx += (neighbor.vx - particle.vx) * viscosity * q * deltaSeconds;
+            particle.vy += (neighbor.vy - particle.vy) * viscosity * q * deltaSeconds;
+          }
+        }
+      }
+
+      for (const particle of particles) {
+        particle.vx *= 0.998;
+        particle.vy *= 0.998;
+
+        const speed = Math.hypot(particle.vx, particle.vy);
+
+        if (speed > 300) {
+          particle.vx *= 300 / speed;
+          particle.vy *= 300 / speed;
+        }
+
+        particle.x += particle.vx * deltaSeconds;
+        particle.y += particle.vy * deltaSeconds;
+
+        const margin = 4;
+
+        if (particle.x < margin) {
+          particle.x = margin;
+          particle.vx *= -0.3;
+        }
+
+        if (particle.x > width - margin) {
+          particle.x = width - margin;
+          particle.vx *= -0.3;
+        }
+
+        if (particle.y > activeHeight - margin) {
+          particle.y = activeHeight - margin;
+          particle.vy *= -0.3;
+        }
+
+        if (particle.y < margin) {
+          particle.y = margin;
+          particle.vy *= -0.1;
+        }
+      }
+
+      phase += deltaSeconds * 2.5;
     };
 
     const buildParticles = () => {
@@ -475,8 +628,13 @@ function CompassSourceMaterialPanel() {
       const devicePixelRatio = Math.min(window.devicePixelRatio || 1, 2);
       const width = Math.max(1, Math.round(bounds.width));
       const height = Math.max(1, Math.round(bounds.height));
-      const count = Math.min(420, Math.max(220, Math.floor((width * height) / 132)));
-      const nextParticles: SourceGlyphParticle[] = [];
+      const activeHeight = getActiveHeight(height);
+      const count = Math.min(2500, Math.max(1400, Math.floor((width * activeHeight) / 55)));
+      const columns = Math.ceil(Math.sqrt(count * 2.5));
+      const spacing = Math.max(5, Math.min(7, width / Math.max(56, columns)));
+      const startX = width * 0.05;
+      const startY = activeHeight * 0.45;
+      const nextParticles: SourceOceanParticle[] = [];
 
       canvas.width = Math.ceil(width * devicePixelRatio);
       canvas.height = Math.ceil(height * devicePixelRatio);
@@ -484,33 +642,28 @@ function CompassSourceMaterialPanel() {
       context.textBaseline = "middle";
 
       for (let index = 0; index < count; index += 1) {
-        const lane = index / count;
-        const rowSeed = Math.pow(lane, 0.52);
-        const baseX = ((index * 37) % count) / count * width + Math.sin(index * 2.17) * 9;
-        const baseY = height * (0.43 + rowSeed * 0.5) + Math.sin(index * 1.7) * 10;
-        const toneSeed = index % 17;
+        const column = index % columns;
+        const row = Math.floor(index / columns);
 
         nextParticles.push({
-          glyph: glyphs[index % glyphs.length],
-          baseX,
-          baseY,
-          x: baseX,
-          y: Math.min(height - 8, baseY),
-          phase: index * 0.73,
-          speed: 0.012 + (index % 11) * 0.0012,
-          size: 8 + (index % 5) * 1.25,
-          alpha: 0.2 + Math.min(0.48, rowSeed * 0.5),
-          tone: toneSeed === 0 ? "gold" : toneSeed < 5 ? "green" : "ink",
+          char: glyphs[index % glyphs.length],
+          x: startX + column * spacing + (Math.random() - 0.5) * 2,
+          y: startY + row * spacing + (Math.random() - 0.5) * 2,
+          vx: 0,
+          vy: 0,
+          density: 0,
         });
       }
 
       particles = nextParticles;
-      draw(!isReducedMotion);
+      draw();
     };
 
     const animate = () => {
-      tick += 1;
-      draw(true);
+      const delta = 1 / 60;
+      simulate(delta * 0.5);
+      simulate(delta * 0.5);
+      draw();
       frameId = window.requestAnimationFrame(animate);
     };
 
@@ -518,8 +671,10 @@ function CompassSourceMaterialPanel() {
       window.cancelAnimationFrame(frameId);
 
       if (isReducedMotion) {
-        tick = 10;
-        draw(false);
+        for (let index = 0; index < 40; index += 1) {
+          simulate(1 / 90);
+        }
+        draw();
         return;
       }
 
@@ -531,6 +686,17 @@ function CompassSourceMaterialPanel() {
       start();
     };
 
+    const handlePointerMove = (event: PointerEvent) => {
+      const bounds = canvas.getBoundingClientRect();
+      mouse.x = event.clientX - bounds.left;
+      mouse.y = event.clientY - bounds.top;
+    };
+
+    const handlePointerLeave = () => {
+      mouse.x = -1000;
+      mouse.y = -1000;
+    };
+
     const resizeObserver = new ResizeObserver(() => {
       buildParticles();
       start();
@@ -539,11 +705,15 @@ function CompassSourceMaterialPanel() {
     buildParticles();
     start();
     resizeObserver.observe(canvas);
+    canvas.addEventListener("pointermove", handlePointerMove);
+    canvas.addEventListener("pointerleave", handlePointerLeave);
     reducedMotionQuery.addEventListener("change", handleMotionPreferenceChange);
 
     return () => {
       window.cancelAnimationFrame(frameId);
       resizeObserver.disconnect();
+      canvas.removeEventListener("pointermove", handlePointerMove);
+      canvas.removeEventListener("pointerleave", handlePointerLeave);
       reducedMotionQuery.removeEventListener("change", handleMotionPreferenceChange);
     };
   }, []);
