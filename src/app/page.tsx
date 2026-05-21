@@ -1,6 +1,6 @@
 "use client";
 
-import { CSSProperties, FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
@@ -49,12 +49,8 @@ const mediaScopes = [
   "커머스",
 ] as const;
 
-const sourceMaterialRows = [
-  ["SOURCE", "POLICY", "VERIFIED", "TRUST", "REVIEW", "ROUTE"],
-  ["POLICY", "EXCEPTION", "SOURCE", "REVIEW", "TRUST", "VERIFIED"],
-  ["TRUST", "ROUTE", "VERIFIED", "POLICY", "SOURCE", "EXCEPTION"],
-  ["REVIEW", "SOURCE", "TRUST", "VERIFIED", "ROUTE", "POLICY"],
-] as const;
+const sourceMaterialGlyphs =
+  "policy source evidence review trust exception route verified official media criteria context claim";
 
 type HeadlineParticle = {
   baseX: number;
@@ -67,6 +63,19 @@ type HeadlineParticle = {
 };
 
 type MediaId = (typeof supportedMedia)[number]["id"];
+
+type SourceGlyphParticle = {
+  glyph: string;
+  baseX: number;
+  baseY: number;
+  x: number;
+  y: number;
+  phase: number;
+  speed: number;
+  size: number;
+  alpha: number;
+  tone: "ink" | "green" | "gold";
+};
 
 const HEADLINE_PARTICLE_GAP = 5;
 const HEADLINE_POINTER_RADIUS = 78;
@@ -386,21 +395,162 @@ function MediaLogo({ id }: { id: MediaId }) {
 }
 
 function CompassSourceMaterialPanel() {
+  const canvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  useEffect(() => {
+    const canvas = canvasRef.current;
+
+    if (!canvas) {
+      return;
+    }
+
+    const context = canvas.getContext("2d");
+
+    if (!context) {
+      return;
+    }
+
+    const reducedMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const glyphs = sourceMaterialGlyphs.replace(/\s/g, "").split("");
+    let particles: SourceGlyphParticle[] = [];
+    let frameId = 0;
+    let tick = 0;
+    let isReducedMotion = reducedMotionQuery.matches;
+    const fontFamily = getComputedStyle(document.documentElement).getPropertyValue("--compass-font-sans");
+
+    const draw = (motionEnabled: boolean) => {
+      const devicePixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+      const width = canvas.width / devicePixelRatio;
+      const height = canvas.height / devicePixelRatio;
+      const surfaceY = height * 0.44;
+
+      context.clearRect(0, 0, width, height);
+      context.save();
+      context.globalCompositeOperation = "source-over";
+
+      const surfaceGradient = context.createLinearGradient(0, surfaceY - 16, 0, height);
+      surfaceGradient.addColorStop(0, "rgba(31, 122, 77, 0.03)");
+      surfaceGradient.addColorStop(1, "rgba(23, 32, 51, 0.08)");
+      context.fillStyle = surfaceGradient;
+      context.beginPath();
+      context.moveTo(0, surfaceY + 8);
+
+      for (let x = 0; x <= width + 12; x += 12) {
+        const wave = motionEnabled ? Math.sin(tick * 0.018 + x * 0.032) * 6 : Math.sin(x * 0.032) * 3;
+        context.lineTo(x, surfaceY + wave);
+      }
+
+      context.lineTo(width, height);
+      context.lineTo(0, height);
+      context.closePath();
+      context.fill();
+
+      for (const particle of particles) {
+        const wave = motionEnabled
+          ? Math.sin(tick * particle.speed + particle.phase + particle.baseX * 0.015) * (7 + particle.size * 0.18)
+          : Math.sin(particle.phase) * 1.8;
+        const swell = motionEnabled
+          ? Math.cos(tick * 0.011 + particle.phase + particle.baseY * 0.018) * 4
+          : 0;
+        const drift = motionEnabled ? Math.sin(tick * 0.006 + particle.phase) * 8 : 0;
+        const x = particle.x + drift;
+        const y = particle.y + wave + swell;
+        const color =
+          particle.tone === "green"
+            ? "31, 122, 77"
+            : particle.tone === "gold"
+              ? "122, 85, 24"
+              : "23, 32, 51";
+
+        context.font = `${particle.size}px ${fontFamily}`;
+        context.fillStyle = `rgba(${color}, ${particle.alpha})`;
+        context.fillText(particle.glyph, x, y);
+      }
+
+      context.restore();
+    };
+
+    const buildParticles = () => {
+      const bounds = canvas.getBoundingClientRect();
+      const devicePixelRatio = Math.min(window.devicePixelRatio || 1, 2);
+      const width = Math.max(1, Math.round(bounds.width));
+      const height = Math.max(1, Math.round(bounds.height));
+      const count = Math.min(420, Math.max(220, Math.floor((width * height) / 132)));
+      const nextParticles: SourceGlyphParticle[] = [];
+
+      canvas.width = Math.ceil(width * devicePixelRatio);
+      canvas.height = Math.ceil(height * devicePixelRatio);
+      context.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+      context.textBaseline = "middle";
+
+      for (let index = 0; index < count; index += 1) {
+        const lane = index / count;
+        const rowSeed = Math.pow(lane, 0.52);
+        const baseX = ((index * 37) % count) / count * width + Math.sin(index * 2.17) * 9;
+        const baseY = height * (0.43 + rowSeed * 0.5) + Math.sin(index * 1.7) * 10;
+        const toneSeed = index % 17;
+
+        nextParticles.push({
+          glyph: glyphs[index % glyphs.length],
+          baseX,
+          baseY,
+          x: baseX,
+          y: Math.min(height - 8, baseY),
+          phase: index * 0.73,
+          speed: 0.012 + (index % 11) * 0.0012,
+          size: 8 + (index % 5) * 1.25,
+          alpha: 0.2 + Math.min(0.48, rowSeed * 0.5),
+          tone: toneSeed === 0 ? "gold" : toneSeed < 5 ? "green" : "ink",
+        });
+      }
+
+      particles = nextParticles;
+      draw(!isReducedMotion);
+    };
+
+    const animate = () => {
+      tick += 1;
+      draw(true);
+      frameId = window.requestAnimationFrame(animate);
+    };
+
+    const start = () => {
+      window.cancelAnimationFrame(frameId);
+
+      if (isReducedMotion) {
+        tick = 10;
+        draw(false);
+        return;
+      }
+
+      frameId = window.requestAnimationFrame(animate);
+    };
+
+    const handleMotionPreferenceChange = (event: MediaQueryListEvent) => {
+      isReducedMotion = event.matches;
+      start();
+    };
+
+    const resizeObserver = new ResizeObserver(() => {
+      buildParticles();
+      start();
+    });
+
+    buildParticles();
+    start();
+    resizeObserver.observe(canvas);
+    reducedMotionQuery.addEventListener("change", handleMotionPreferenceChange);
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      resizeObserver.disconnect();
+      reducedMotionQuery.removeEventListener("change", handleMotionPreferenceChange);
+    };
+  }, []);
+
   return (
-    <div className="compass-source-material mt-4 hidden lg:block" aria-label="Compass source verification signal">
-      <div className="compass-source-material__field" aria-hidden="true">
-        {sourceMaterialRows.map((row, rowIndex) => (
-          <div
-            key={`source-material-row-${rowIndex}`}
-            className="compass-source-material__row"
-            style={{ "--row-index": rowIndex } as CSSProperties}
-          >
-            {[...row, ...row].map((term, termIndex) => (
-              <span key={`${term}-${rowIndex}-${termIndex}`}>{term}</span>
-            ))}
-          </div>
-        ))}
-      </div>
+    <div className="compass-source-material mt-4 hidden lg:block lg:flex-1" aria-label="Compass source verification signal">
+      <canvas ref={canvasRef} className="compass-source-material__canvas" aria-hidden="true" />
     </div>
   );
 }
@@ -647,7 +797,7 @@ export default function HomePage() {
           initial={{ opacity: 0, y: 18 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.58, delay: 0.06, ease: [0.32, 0.72, 0, 1] }}
-          className="scroll-mt-24 lg:sticky lg:top-24 lg:self-start"
+          className="flex h-full scroll-mt-24 flex-col lg:self-stretch"
         >
           <aside className="flex flex-col rounded-[10px] border border-[#D2CEC4] border-t-[5px] border-t-[#1F7A4D] bg-[#FBF7EE] p-5 shadow-[0_28px_80px_rgba(23,32,51,0.11)] sm:p-7">
             <div className="mb-6">
