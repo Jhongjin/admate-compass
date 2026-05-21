@@ -661,7 +661,7 @@ export default function HomePage() {
                 <span
                   id="compass-root-email-domain"
                   aria-label="고정 이메일 도메인"
-                  className="shrink-0 border-l border-[#D8DCCF] bg-[#F4F6F7] px-3 py-2.5 text-sm font-bold text-[#4E5B67]"
+                  className="shrink-0 border-l border-[#D8DCCF] bg-[#F8F8F5] px-3 py-2.5 text-sm font-normal text-[#4E5B67]"
                 >
                   @nasmedia.co.kr
                 </span>
@@ -709,20 +709,20 @@ export default function HomePage() {
               href={ACCESS_REQUEST_URL}
               target="_blank"
               rel="noreferrer"
-              className="mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-[8px] border border-[#D5B978] bg-[#FFF3D8] px-4 py-2.5 text-sm font-bold text-[#7A5518] transition duration-300 [transition-timing-function:cubic-bezier(0.32,0.72,0,1)] hover:bg-[#FFE8B3] active:scale-[0.98]"
+              className="mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-[8px] border border-[#D8DCCF] bg-white px-4 py-2.5 text-sm font-semibold text-[#344052] transition duration-300 [transition-timing-function:cubic-bezier(0.32,0.72,0,1)] hover:bg-[#F8F8F5] active:scale-[0.98]"
             >
               Compass 이용 권한 요청
             </a>
-          </div>
 
-          <a
-            href={ADMATE_HOME_URL}
-            target="_blank"
-            rel="noreferrer"
-            className="mt-3 inline-flex w-full items-center justify-center px-4 py-2 text-sm font-semibold text-[#68707C] transition-colors hover:text-[#172033]"
-          >
-            AdMate 홈페이지로 이동
-          </a>
+            <a
+              href={ADMATE_HOME_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-3 inline-flex w-full items-center justify-center px-4 py-2 text-sm font-medium text-[#68707C] transition-colors hover:text-[#172033]"
+            >
+              AdMate 홈페이지로 이동
+            </a>
+          </div>
         </motion.aside>
       </section>
     </main>
