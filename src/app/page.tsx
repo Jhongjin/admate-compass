@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { CSSProperties, FormEvent, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
@@ -47,6 +47,13 @@ const mediaScopes = [
   "영상",
   "디스플레이",
   "커머스",
+] as const;
+
+const sourceMaterialRows = [
+  ["SOURCE", "POLICY", "VERIFIED", "TRUST", "REVIEW", "ROUTE"],
+  ["POLICY", "EXCEPTION", "SOURCE", "REVIEW", "TRUST", "VERIFIED"],
+  ["TRUST", "ROUTE", "VERIFIED", "POLICY", "SOURCE", "EXCEPTION"],
+  ["REVIEW", "SOURCE", "TRUST", "VERIFIED", "ROUTE", "POLICY"],
 ] as const;
 
 type HeadlineParticle = {
@@ -378,6 +385,26 @@ function MediaLogo({ id }: { id: MediaId }) {
   );
 }
 
+function CompassSourceMaterialPanel() {
+  return (
+    <div className="compass-source-material mt-4 hidden lg:block" aria-label="Compass source verification signal">
+      <div className="compass-source-material__field" aria-hidden="true">
+        {sourceMaterialRows.map((row, rowIndex) => (
+          <div
+            key={`source-material-row-${rowIndex}`}
+            className="compass-source-material__row"
+            style={{ "--row-index": rowIndex } as CSSProperties}
+          >
+            {[...row, ...row].map((term, termIndex) => (
+              <span key={`${term}-${rowIndex}-${termIndex}`}>{term}</span>
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 export default function HomePage() {
   const router = useRouter();
   const { user, loading, signIn } = useAuth();
@@ -615,106 +642,110 @@ export default function HomePage() {
           </div>
         </motion.section>
 
-        <motion.aside
+        <motion.div
           id="compass-login"
           initial={{ opacity: 0, y: 18 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.58, delay: 0.06, ease: [0.32, 0.72, 0, 1] }}
-          className="flex scroll-mt-24 flex-col rounded-[10px] border border-[#D2CEC4] border-t-[5px] border-t-[#1F7A4D] bg-[#FBF7EE] p-5 shadow-[0_28px_80px_rgba(23,32,51,0.11)] sm:p-7 lg:sticky lg:top-24 lg:self-start"
+          className="scroll-mt-24 lg:sticky lg:top-24 lg:self-start"
         >
-          <div className="mb-6">
-            <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#1F7A4D]">ADMATE COMPASS</p>
-            <h2 className="mt-2 text-2xl font-semibold leading-tight text-[#172033]">AdMate 계정으로 로그인</h2>
-            <p className="mt-3 text-sm leading-6 text-[#68707C]">
-              회사 이메일로 로그인해 Compass 작업 공간을 이용하세요.
-            </p>
-          </div>
+          <aside className="flex flex-col rounded-[10px] border border-[#D2CEC4] border-t-[5px] border-t-[#1F7A4D] bg-[#FBF7EE] p-5 shadow-[0_28px_80px_rgba(23,32,51,0.11)] sm:p-7">
+            <div className="mb-6">
+              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#1F7A4D]">ADMATE COMPASS</p>
+              <h2 className="mt-2 text-2xl font-semibold leading-tight text-[#172033]">AdMate 계정으로 로그인</h2>
+              <p className="mt-3 text-sm leading-6 text-[#68707C]">
+                회사 이메일로 로그인해 Compass 작업 공간을 이용하세요.
+              </p>
+            </div>
 
-          <form className="space-y-4" onSubmit={handleSubmit}>
-            <div>
-              <Label htmlFor="compass-root-email" className="mb-2 block text-sm font-medium text-[#344052]">
-                이메일
-              </Label>
-              <div className="compass-login-email-field">
+            <form className="space-y-4" onSubmit={handleSubmit}>
+              <div>
+                <Label htmlFor="compass-root-email" className="mb-2 block text-sm font-medium text-[#344052]">
+                  이메일
+                </Label>
+                <div className="compass-login-email-field">
+                  <input
+                    id="compass-root-email"
+                    type="text"
+                    inputMode="email"
+                    autoComplete="username"
+                    required
+                    value={emailLocalPart}
+                    onChange={(event) => setEmailLocalPart(normalizeEmailLocalPart(event.target.value))}
+                    className="min-w-0 flex-1 bg-[#FFFFFF] px-3 py-2.5 text-sm text-[#0D0D0D] outline-none disabled:cursor-not-allowed disabled:opacity-60"
+                    placeholder="name"
+                    aria-describedby="compass-root-email-domain"
+                    disabled={isSubmitting}
+                  />
+                  <span
+                    id="compass-root-email-domain"
+                    aria-label="고정 이메일 도메인"
+                    className="shrink-0 border-l border-[#D8DCCF] bg-[#F8F8F5] px-3 py-2.5 text-sm font-normal text-[#4E5B67]"
+                  >
+                    @nasmedia.co.kr
+                  </span>
+                </div>
+              </div>
+
+              <div>
+                <Label htmlFor="compass-root-password" className="mb-2 block text-sm font-medium text-[#344052]">
+                  비밀번호
+                </Label>
                 <input
-                  id="compass-root-email"
-                  type="text"
-                  inputMode="email"
-                  autoComplete="username"
-                  required
-                  value={emailLocalPart}
-                  onChange={(event) => setEmailLocalPart(normalizeEmailLocalPart(event.target.value))}
-                  className="min-w-0 flex-1 bg-[#FFFFFF] px-3 py-2.5 text-sm text-[#0D0D0D] outline-none disabled:cursor-not-allowed disabled:opacity-60"
-                  placeholder="name"
-                  aria-describedby="compass-root-email-domain"
+                  id="compass-root-password"
+                  type="password"
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  placeholder="비밀번호를 입력하세요"
+                  autoComplete="current-password"
+                  className="compass-login-password-field w-full rounded-[8px] border border-[#D8DCCF] bg-[#FFFFFF] px-3 py-2.5 text-sm text-[#0D0D0D] outline-none transition-colors placeholder:text-[#9A9A9A] focus:border-[#1F7A4D] disabled:cursor-not-allowed disabled:opacity-60"
                   disabled={isSubmitting}
+                  required
                 />
-                <span
-                  id="compass-root-email-domain"
-                  aria-label="고정 이메일 도메인"
-                  className="shrink-0 border-l border-[#D8DCCF] bg-[#F8F8F5] px-3 py-2.5 text-sm font-normal text-[#4E5B67]"
-                >
-                  @nasmedia.co.kr
-                </span>
               </div>
-            </div>
 
-            <div>
-              <Label htmlFor="compass-root-password" className="mb-2 block text-sm font-medium text-[#344052]">
-                비밀번호
-              </Label>
-              <input
-                id="compass-root-password"
-                type="password"
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                placeholder="비밀번호를 입력하세요"
-                autoComplete="current-password"
-                className="compass-login-password-field w-full rounded-[8px] border border-[#D8DCCF] bg-[#FFFFFF] px-3 py-2.5 text-sm text-[#0D0D0D] outline-none transition-colors placeholder:text-[#9A9A9A] focus:border-[#1F7A4D] disabled:cursor-not-allowed disabled:opacity-60"
+              {message && (
+                <div className="rounded-[8px] border border-[#F5C2C7] bg-[#FFF7F7] px-3 py-2 text-sm leading-6 text-[#B42318]">
+                  {message}
+                </div>
+              )}
+
+              <button
+                type="submit"
+                className="inline-flex min-h-12 w-full items-center justify-center rounded-[8px] bg-[#172033] px-5 py-3 text-sm font-bold text-white transition duration-300 [transition-timing-function:cubic-bezier(0.32,0.72,0,1)] hover:bg-[#273755] disabled:cursor-not-allowed disabled:opacity-60 active:scale-[0.98]"
                 disabled={isSubmitting}
-                required
-              />
+              >
+                {isSubmitting ? "로그인 중..." : "로그인하고 계속"}
+              </button>
+            </form>
+
+            <div className="mt-5 rounded-[10px] border border-[#D9D4C8] bg-white/72 p-4">
+              <p className="text-sm font-bold text-[#172033]">Compass 이용 권한이 필요하신가요?</p>
+              <p className="mt-2 text-xs leading-5 text-[#68707C]">
+                처음 이용하거나 권한이 없는 경우, AdMate 이용 권한을 요청해주세요.
+              </p>
+              <a
+                href={ACCESS_REQUEST_URL}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-[8px] border border-[#D8DCCF] bg-white px-4 py-2.5 text-sm font-semibold text-[#344052] transition duration-300 [transition-timing-function:cubic-bezier(0.32,0.72,0,1)] hover:bg-[#F8F8F5] active:scale-[0.98]"
+              >
+                Compass 이용 권한 요청
+              </a>
+
+              <a
+                href={ADMATE_HOME_URL}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-3 inline-flex w-full items-center justify-center px-4 py-2 text-sm font-medium text-[#68707C] transition-colors hover:text-[#172033]"
+              >
+                AdMate 홈페이지로 이동
+              </a>
             </div>
+          </aside>
 
-            {message && (
-              <div className="rounded-[8px] border border-[#F5C2C7] bg-[#FFF7F7] px-3 py-2 text-sm leading-6 text-[#B42318]">
-                {message}
-              </div>
-            )}
-
-            <button
-              type="submit"
-              className="inline-flex min-h-12 w-full items-center justify-center rounded-[8px] bg-[#172033] px-5 py-3 text-sm font-bold text-white transition duration-300 [transition-timing-function:cubic-bezier(0.32,0.72,0,1)] hover:bg-[#273755] disabled:cursor-not-allowed disabled:opacity-60 active:scale-[0.98]"
-              disabled={isSubmitting}
-            >
-              {isSubmitting ? "로그인 중..." : "로그인하고 계속"}
-            </button>
-          </form>
-
-          <div className="mt-5 rounded-[10px] border border-[#D9D4C8] bg-white/72 p-4">
-            <p className="text-sm font-bold text-[#172033]">Compass 이용 권한이 필요하신가요?</p>
-            <p className="mt-2 text-xs leading-5 text-[#68707C]">
-              처음 이용하거나 권한이 없는 경우, AdMate 이용 권한을 요청해주세요.
-            </p>
-            <a
-              href={ACCESS_REQUEST_URL}
-              target="_blank"
-              rel="noreferrer"
-              className="mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-[8px] border border-[#D8DCCF] bg-white px-4 py-2.5 text-sm font-semibold text-[#344052] transition duration-300 [transition-timing-function:cubic-bezier(0.32,0.72,0,1)] hover:bg-[#F8F8F5] active:scale-[0.98]"
-            >
-              Compass 이용 권한 요청
-            </a>
-
-            <a
-              href={ADMATE_HOME_URL}
-              target="_blank"
-              rel="noreferrer"
-              className="mt-3 inline-flex w-full items-center justify-center px-4 py-2 text-sm font-medium text-[#68707C] transition-colors hover:text-[#172033]"
-            >
-              AdMate 홈페이지로 이동
-            </a>
-          </div>
-        </motion.aside>
+          <CompassSourceMaterialPanel />
+        </motion.div>
       </section>
     </main>
   );
