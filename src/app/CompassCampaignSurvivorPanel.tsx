@@ -349,28 +349,37 @@ function updateStage(game: GameState) {
   }
 }
 
-function measureRiskWidth(label: string) {
-  return clamp(label.length * 8.2 + 24, 66, 152);
+function getRiskWords(label: string) {
+  return label.split(/\s+/).filter(Boolean);
+}
+
+function measureRiskBox(label: string) {
+  const words = getRiskWords(label);
+  const rows = Math.max(...words.map((word) => word.length), 4);
+  const width = clamp(words.length * 15 + 16, 34, 58);
+  const height = clamp(rows * 9 + 24, 58, 118);
+
+  return { height, width };
 }
 
 function spawnRisk(game: GameState, offsetX = 0) {
   const stage = getStage(game);
   const label = choose(RISK_TERMS);
-  const width = measureRiskWidth(label);
-  const x = clamp(Math.random() * (GAME_WIDTH - width - 24) + 12 + offsetX, 10, GAME_WIDTH - width - 10);
+  const box = measureRiskBox(label);
+  const x = clamp(Math.random() * (GAME_WIDTH - box.width - 24) + 12 + offsetX, 10, GAME_WIDTH - box.width - 10);
   const speed = (stage.baseSpeed + Math.random() * stage.speedVariance) * 48;
   const sway = Math.random() < stage.swayChance ? (Math.random() > 0.5 ? 1 : -1) * (22 + Math.random() * 24) : 0;
 
   game.risks.push({
-    height: 24,
+    height: box.height,
     label,
     phase: Math.random() * Math.PI * 2,
     sway,
     vx: 0,
     vy: speed,
-    width,
+    width: box.width,
     x,
-    y: -28,
+    y: -box.height - 8,
   });
 }
 
@@ -669,21 +678,41 @@ function drawBackground(context: CanvasRenderingContext2D, game: GameState) {
 
 function drawRisk(context: CanvasRenderingContext2D, risk: RiskObject) {
   const warning = risk.label.includes("POLICY") || risk.label.includes("MISSING") || risk.label.includes("EXPIRED");
+  const words = getRiskWords(risk.label);
+  const columnGap = words.length > 1 ? 12 : 0;
+  const totalColumnsWidth = words.length * 9 + Math.max(0, words.length - 1) * columnGap;
 
   context.save();
   context.translate(risk.x + risk.width / 2, risk.y + risk.height / 2);
-  context.rotate(Math.sin(risk.phase) * 0.035);
-  roundedRect(context, -risk.width / 2, -risk.height / 2, risk.width, risk.height, 7);
+  context.rotate(Math.sin(risk.phase) * 0.025);
+  roundedRect(context, -risk.width / 2, -risk.height / 2, risk.width, risk.height, 10);
   context.fillStyle = warning ? "rgba(186, 74, 58, 0.92)" : "rgba(25, 34, 53, 0.9)";
   context.fill();
   context.strokeStyle = warning ? "rgba(255, 226, 202, 0.9)" : "rgba(220, 228, 224, 0.7)";
   context.lineWidth = 1;
   context.stroke();
+
+  context.fillStyle = warning ? "rgba(255, 226, 202, 0.92)" : "rgba(220, 228, 224, 0.78)";
+  roundedRect(context, -risk.width / 2 + 5, -risk.height / 2 + 5, risk.width - 10, 4, 2);
+  context.fill();
+
   context.fillStyle = "#fffdf7";
-  context.font = "700 10px Geist, Arial, sans-serif";
+  context.font = "800 8.5px Geist, Arial, sans-serif";
   context.textAlign = "center";
   context.textBaseline = "middle";
-  context.fillText(risk.label, 0, 1);
+
+  for (let wordIndex = 0; wordIndex < words.length; wordIndex += 1) {
+    const word = words[wordIndex];
+    const characters = Array.from(word);
+    const x = -totalColumnsWidth / 2 + wordIndex * (9 + columnGap) + 4.5;
+    const lineHeight = 8.7;
+    const startY = -(characters.length - 1) * lineHeight * 0.5 + 5;
+
+    for (let characterIndex = 0; characterIndex < characters.length; characterIndex += 1) {
+      context.fillText(characters[characterIndex], x, startY + characterIndex * lineHeight);
+    }
+  }
+
   context.restore();
 }
 
