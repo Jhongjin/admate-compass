@@ -207,18 +207,19 @@ const STAGES: StageConfig[] = [
 ];
 
 const RISK_TERMS = [
-  "SOURCE GAP",
-  "POLICY FLAG",
-  "UTM GAP",
-  "LANDING MISMATCH",
-  "BUDGET SPIKE",
-  "MISSING EVIDENCE",
-  "CLAIM DRIFT",
-  "CHANNEL RISK",
-  "EXPIRED CLAIM",
-  "CREATIVE RISK",
-  "LOW TRUST",
-  "TARGET GAP",
+  "정책위험",
+  "출처누락",
+  "근거부족",
+  "예산급증",
+  "랜딩오류",
+  "기간만료",
+  "소재위험",
+  "타겟오류",
+  "KPI급락",
+  "UTM누락",
+  "ROAS하락",
+  "CTR저하",
+  "채널위험",
 ] as const;
 
 const GAME_OVER_COMMENTS = [
@@ -350,16 +351,17 @@ function updateStage(game: GameState) {
 }
 
 function getRiskDisplayLabel(label: string) {
-  if (label === "LANDING MISMATCH") return "LANDING CHECK";
-  if (label === "MISSING EVIDENCE") return "EVIDENCE GAP";
+  return label.replace(/\s+/g, "");
+}
 
-  return label.length > 15 ? label.slice(0, 15) : label;
+function getRiskGlyphs(label: string) {
+  return Array.from(getRiskDisplayLabel(label));
 }
 
 function measureRiskBox(label: string) {
-  const displayLabel = getRiskDisplayLabel(label);
-  const width = label.includes("MISMATCH") || label.includes("EVIDENCE") ? 42 : 38;
-  const height = clamp(displayLabel.length * 6.8 + 30, 78, 146);
+  const glyphCount = getRiskGlyphs(label).length;
+  const width = glyphCount > 4 ? 52 : 48;
+  const height = clamp(glyphCount * 22 + 30, 104, 160);
 
   return { height, width };
 }
@@ -679,8 +681,15 @@ function drawBackground(context: CanvasRenderingContext2D, game: GameState) {
 }
 
 function drawRisk(context: CanvasRenderingContext2D, risk: RiskObject) {
-  const warning = risk.label.includes("POLICY") || risk.label.includes("MISSING") || risk.label.includes("EXPIRED");
-  const displayLabel = getRiskDisplayLabel(risk.label);
+  const warning =
+    risk.label.includes("위험") ||
+    risk.label.includes("오류") ||
+    risk.label.includes("누락") ||
+    risk.label.includes("만료") ||
+    risk.label.includes("급락") ||
+    risk.label.includes("하락") ||
+    risk.label.includes("저하");
+  const glyphs = getRiskGlyphs(risk.label);
 
   context.save();
   context.translate(risk.x + risk.width / 2, risk.y + risk.height / 2);
@@ -696,16 +705,21 @@ function drawRisk(context: CanvasRenderingContext2D, risk: RiskObject) {
   roundedRect(context, -risk.width / 2 + 5, -risk.height / 2 + 5, risk.width - 10, 4, 2);
   context.fill();
 
-  context.fillStyle = "rgba(255, 253, 247, 0.18)";
-  roundedRect(context, -3, -risk.height / 2 + 14, 6, risk.height - 28, 3);
+  context.fillStyle = warning ? "rgba(255, 253, 247, 0.11)" : "rgba(255, 253, 247, 0.14)";
+  roundedRect(context, -risk.width / 2 + 8, -risk.height / 2 + 16, risk.width - 16, risk.height - 28, 8);
   context.fill();
 
   context.fillStyle = "#fffdf7";
-  context.font = "900 10px Geist, Arial, sans-serif";
+  context.font = '900 16px Geist, "Malgun Gothic", "Apple SD Gothic Neo", Arial, sans-serif';
   context.textAlign = "center";
   context.textBaseline = "middle";
-  context.rotate(-Math.PI / 2);
-  context.fillText(displayLabel, 0, 1);
+
+  const lineHeight = Math.min(22, (risk.height - 34) / Math.max(glyphs.length, 1));
+  const startY = -((glyphs.length - 1) * lineHeight) / 2 + 2;
+
+  glyphs.forEach((glyph, index) => {
+    context.fillText(glyph, 0, startY + index * lineHeight);
+  });
 
   context.restore();
 }
