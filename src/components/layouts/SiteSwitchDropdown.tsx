@@ -62,12 +62,12 @@ export function SiteSwitchDropdown() {
       <DropdownMenuTrigger asChild>
         <button
           type="button"
-          aria-label="서비스 이동"
-          className="inline-flex h-10 min-w-10 items-center justify-center gap-2 rounded-[8px] border border-[#D8DCCF] bg-white/90 px-3 text-sm font-semibold text-[#34423A] shadow-[0_8px_20px_rgba(17,23,19,0.07)] transition duration-200 [transition-timing-function:cubic-bezier(0.32,0.72,0,1)] hover:border-[#BFC7BA] hover:bg-[#F7FAF6] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1F7A4D] focus-visible:ring-offset-2 sm:min-w-[126px] sm:px-3.5"
+          aria-label="사이트 이동"
+          className="inline-flex h-10 min-w-10 items-center justify-center gap-2 rounded-[8px] border border-[#D7DCE3] bg-white/90 px-3 text-sm font-semibold text-[#25314A] shadow-[0_10px_24px_rgba(16,24,32,0.08)] transition duration-300 [transition-timing-function:cubic-bezier(0.32,0.72,0,1)] hover:border-[#C4CEDA] hover:bg-[#F8F6F1] active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#172033] focus-visible:ring-offset-2 sm:min-w-[132px] sm:px-4"
         >
-          <ShieldCheck className="h-4 w-4 text-[#1F7A4D]" aria-hidden="true" />
-          <span className="hidden sm:inline">서비스 이동</span>
-          <ChevronDown className="h-4 w-4 text-[#667066]" aria-hidden="true" />
+          <ShieldCheck className="h-4 w-4 text-[#177D4E]" aria-hidden="true" />
+          <span className="hidden sm:inline">사이트 이동</span>
+          <ChevronDown className="h-4 w-4 text-[#177D4E]" aria-hidden="true" />
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent

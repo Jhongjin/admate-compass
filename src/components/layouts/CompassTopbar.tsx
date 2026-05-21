@@ -32,11 +32,11 @@ export function CompassTopbar({
   return (
     <header
       className={cn(
-        "fixed left-0 right-0 top-0 z-50 border-b border-[#D8DCCF] bg-[#FBFBF7]/95 text-[#111713] backdrop-blur-md",
+        "fixed left-0 right-0 top-0 z-50 border-b border-[#E2E8F0] bg-white/95 text-[#0F172A] backdrop-blur-md",
         className,
       )}
     >
-      <div className="mx-auto flex min-h-14 max-w-7xl items-center justify-between gap-2 px-4 py-2 sm:min-h-16 sm:gap-3 sm:px-6 lg:px-8">
+      <div className="mx-auto flex min-h-16 max-w-7xl items-center justify-between gap-2 px-4 py-2 sm:gap-3 sm:px-6 lg:px-8">
         <div className="flex min-w-0 items-center gap-3">
           <Link href={leftHref} className="block shrink-0 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1F7A4D] focus-visible:ring-offset-2" aria-label="AdMate Compass 홈">
             <span
@@ -46,15 +46,15 @@ export function CompassTopbar({
             />
           </Link>
           <div className="min-w-0">
-            <span className="block truncate text-lg font-bold leading-5 text-[#111713]">AdMate Compass</span>
-            <span className="hidden text-[10px] font-semibold uppercase leading-3 tracking-[0.16em] text-[#667066] sm:block">
-              정책 출처 확인
-            </span>
+            <span className="block truncate text-lg font-bold leading-5 text-[#0F172A]">AdMate Compass</span>
+            <em className="hidden text-[10px] font-semibold uppercase not-italic leading-3 tracking-[0.16em] text-[#64748B] sm:block">
+              policy evidence desk
+            </em>
           </div>
           {title ? (
-            <div className="hidden min-w-0 border-l border-[#D8DCCF] pl-3 md:block">
-              <p className="truncate text-sm font-bold text-[#111713]">{title}</p>
-              {subtitle ? <p className="truncate text-xs text-[#667066]">{subtitle}</p> : null}
+            <div className="hidden min-w-0 border-l border-[#E2E8F0] pl-3 md:block">
+              <p className="truncate text-sm font-bold text-[#0F172A]">{title}</p>
+              {subtitle ? <p className="truncate text-xs text-[#64748B]">{subtitle}</p> : null}
             </div>
           ) : null}
         </div>

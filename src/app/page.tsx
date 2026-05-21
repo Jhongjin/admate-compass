@@ -447,8 +447,8 @@ export default function HomePage() {
       />
       <div className="pointer-events-none absolute inset-x-0 top-16 h-px bg-[#111713]/10" aria-hidden="true" />
 
-      <header className="fixed left-0 right-0 top-0 z-50 border-b border-[#D8DCCF] bg-[#FBFBF7]/95 text-[#111713] backdrop-blur-[14px]">
-        <div className="mx-auto flex min-h-14 max-w-7xl items-center justify-between gap-2 px-4 py-2 sm:min-h-16 sm:gap-3 sm:px-6 lg:px-8">
+      <header className="fixed left-0 right-0 top-0 z-50 border-b border-[#E2E8F0] bg-white/95 text-[#0F172A] backdrop-blur-[14px]">
+        <div className="mx-auto flex min-h-16 max-w-7xl items-center justify-between gap-2 px-4 py-2 sm:gap-3 sm:px-6 lg:px-8">
           <Link href="/" className="flex min-w-0 items-center gap-3 text-[#0F172A]" aria-label="AdMate Compass home">
             <span className="grid h-9 w-9 shrink-0 place-items-center overflow-hidden rounded-[6px] bg-white" aria-hidden="true">
               <img src="/brand/admate-compass-mark.svg" alt="" className="block h-full w-full" />
@@ -456,7 +456,7 @@ export default function HomePage() {
             <span className="min-w-0">
               <strong className="block truncate text-lg font-bold leading-5 text-[#0F172A]">AdMate Compass</strong>
               <em className="mt-px hidden text-[10px] font-semibold uppercase not-italic leading-3 tracking-[0.16em] text-[#64748B] sm:block">
-                정책 출처 확인
+                policy evidence desk
               </em>
             </span>
           </Link>
