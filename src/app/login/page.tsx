@@ -43,6 +43,16 @@ const HEADLINE_PARTICLE_GAP = 5;
 const HEADLINE_POINTER_RADIUS = 78;
 const HEADLINE_MAX_PARTICLES = 1250;
 
+const loginErrorMessages: Record<string, string> = {
+  account_not_allowed: "요청한 제품 접근 권한을 확인할 수 없습니다.",
+  handoff_disabled: "AdMate 로그인 연결이 아직 활성화되지 않았습니다. 담당자에게 문의해주세요.",
+  handoff_unavailable: "로그인 연결을 준비할 수 없습니다. 잠시 후 다시 시도해주세요.",
+  invalid_credentials: "계정 정보를 확인해주세요.",
+  missing_credentials: "이메일과 비밀번호를 입력해주세요.",
+  origin_not_allowed: "로그인 요청 경로를 확인해주세요.",
+  rate_limited: "로그인 요청이 많습니다. 잠시 후 다시 시도해주세요.",
+};
+
 const getLineHeight = (computedStyle: CSSStyleDeclaration, fontSize: number) => {
   const parsedLineHeight = Number.parseFloat(computedStyle.lineHeight);
 
@@ -297,9 +307,7 @@ function LoginPageContent() {
   const coreProductLoginAction = getCompassCoreProductLoginAction();
   const loginError = searchParams?.get("login_error");
   const loginMessage = loginError
-    ? loginError === "missing_credentials"
-      ? "이메일과 비밀번호를 입력해주세요."
-      : "계정 정보를 확인해주세요."
+    ? loginErrorMessages[loginError] ?? "계정 정보를 확인해주세요."
     : null;
 
   useEffect(() => {
