@@ -29,6 +29,11 @@ export type CompassProductSession = {
     canSubmit: boolean;
     canManage: boolean;
   };
+  adminNavigation: {
+    canManageAccessRequests: boolean;
+    canManageOrganizations: boolean;
+    canManageUsers: boolean;
+  };
 };
 
 type HandoffCodeResult =
@@ -231,7 +236,10 @@ export function readCompassProductSessionFromRequest(
     const parsed = JSON.parse(decodeBase64Url(payload)) as unknown;
     if (!isCompassProductSession(parsed)) return null;
     if (parsed.expiresAt <= Math.floor(Date.now() / 1000)) return null;
-    return parsed;
+    return {
+      ...parsed,
+      adminNavigation: readAdminNavigation(parsed.adminNavigation),
+    };
   } catch {
     return null;
   }
@@ -330,6 +338,7 @@ function readCompassProductSession(
       canSubmit: Boolean(permissions?.can_submit ?? permissions?.canSubmit),
       canManage: Boolean(permissions?.can_manage ?? permissions?.canManage),
     },
+    adminNavigation: readAdminNavigation(root.admin_navigation ?? root.adminNavigation),
   };
 }
 
@@ -353,6 +362,20 @@ function isCompassProductSession(value: unknown): value is CompassProductSession
     typeof permissions?.canSubmit === "boolean" &&
     typeof permissions?.canManage === "boolean"
   );
+}
+
+function readAdminNavigation(value: unknown): CompassProductSession["adminNavigation"] {
+  const adminNavigation = asRecord(value);
+
+  return {
+    canManageAccessRequests: Boolean(
+      adminNavigation?.can_manage_access_requests ?? adminNavigation?.canManageAccessRequests,
+    ),
+    canManageOrganizations: Boolean(
+      adminNavigation?.can_manage_organizations ?? adminNavigation?.canManageOrganizations,
+    ),
+    canManageUsers: Boolean(adminNavigation?.can_manage_users ?? adminNavigation?.canManageUsers),
+  };
 }
 
 function asRecord(value: unknown): Record<string, unknown> | null {

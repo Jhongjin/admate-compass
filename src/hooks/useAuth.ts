@@ -18,6 +18,11 @@ type CompassAccountMeResponse = {
     canManage?: boolean;
   };
   rolesLabel?: string;
+  adminNavigation?: {
+    canManageAccessRequests?: boolean;
+    canManageOrganizations?: boolean;
+    canManageUsers?: boolean;
+  };
 };
 
 function productSessionPayloadToUser(payload: CompassAccountMeResponse): User | null {
@@ -47,6 +52,11 @@ function productSessionPayloadToUser(payload: CompassAccountMeResponse): User | 
       admate_product: "compass",
       admate_roles_label: payload.rolesLabel,
       admate_permissions: payload.permissions,
+      admate_admin_navigation: {
+        canManageAccessRequests: Boolean(payload.adminNavigation?.canManageAccessRequests),
+        canManageOrganizations: Boolean(payload.adminNavigation?.canManageOrganizations),
+        canManageUsers: Boolean(payload.adminNavigation?.canManageUsers),
+      },
     },
     created_at: "1970-01-01T00:00:00.000Z",
   } as User;

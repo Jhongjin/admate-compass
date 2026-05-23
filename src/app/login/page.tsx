@@ -323,6 +323,16 @@ function LoginPageContent() {
       .replace(/@nasmedia\.co\.kr$/i, "")
       .replace(/@.*$/g, "");
 
+  if (loading || user) {
+    return (
+      <div className="grid min-h-[100dvh] place-items-center bg-[#F4F5F0] px-6 text-[#111713]">
+        <div className="rounded-lg border border-[#D8DCCF] bg-white px-6 py-5 text-center shadow-sm">
+          <p className="text-sm font-semibold text-[#34423A]">AdMate 계정을 확인하고 있습니다.</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-[100dvh] bg-[#F4F5F0] text-[#111713]">
       <header className="border-b border-[#D8DCCF] bg-[#FBFBF7]/95 backdrop-blur-md">

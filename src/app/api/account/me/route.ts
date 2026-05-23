@@ -25,5 +25,6 @@ export function GET(request: NextRequest) {
     profile: session.profile,
     permissions: session.permissions,
     rolesLabel: session.rolesLabel,
+    adminNavigation: session.adminNavigation,
   });
 }
