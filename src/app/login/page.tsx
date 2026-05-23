@@ -1,11 +1,11 @@
 "use client";
 
-import { FormEvent, Suspense, useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/useAuth";
-import { buildCompassCoreAuthStartPath } from "@/lib/auth/coreStartPath";
+import { getCompassCoreProductLoginAction } from "@/lib/auth/coreStartPath";
 import { sanitizeCompassNextPath } from "@/lib/auth/safeNext";
 
 const ACCESS_REQUEST_URL = "https://home.admate.ai.kr/access-request?product=compass";
@@ -286,20 +286,21 @@ function ReactiveHeadline({ children }: { children: string }) {
 function LoginPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { user, loading, signIn } = useAuth();
+  const { user, loading } = useAuth();
   const [emailLocalPart, setEmailLocalPart] = useState("");
   const [password, setPassword] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
 
   const safeNext = useMemo(
     () => sanitizeCompassNextPath(searchParams?.get("next")),
     [searchParams],
   );
-  const coreAuthStartPath = useMemo(
-    () => buildCompassCoreAuthStartPath(safeNext),
-    [safeNext],
-  );
+  const coreProductLoginAction = getCompassCoreProductLoginAction();
+  const loginError = searchParams?.get("login_error");
+  const loginMessage = loginError
+    ? loginError === "missing_credentials"
+      ? "이메일과 비밀번호를 입력해주세요."
+      : "계정 정보를 확인해주세요."
+    : null;
 
   useEffect(() => {
     if (!loading && user) {
@@ -313,37 +314,6 @@ function LoginPageContent() {
       .replace(/\s/g, "")
       .replace(/@nasmedia\.co\.kr$/i, "")
       .replace(/@.*$/g, "");
-
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setMessage(null);
-
-    const normalizedEmailLocalPart = normalizeEmailLocalPart(emailLocalPart);
-
-    if (!normalizedEmailLocalPart || !password) {
-      setMessage("이메일과 비밀번호를 입력해주세요.");
-      return;
-    }
-
-    const normalizedEmail = `${normalizedEmailLocalPart}@nasmedia.co.kr`;
-    setEmailLocalPart(normalizedEmailLocalPart);
-    setIsSubmitting(true);
-
-    try {
-      const { error } = await signIn(normalizedEmail, password);
-
-      if (error) {
-        setMessage(error.message);
-        return;
-      }
-
-      router.replace(safeNext);
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "로그인 중 오류가 발생했습니다.");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
 
   return (
     <div className="min-h-[100dvh] bg-[#F4F5F0] text-[#111713]">
@@ -405,20 +375,9 @@ function LoginPageContent() {
               </p>
             </div>
 
-            <Link
-              href={coreAuthStartPath}
-              className="mb-5 inline-flex w-full items-center justify-center rounded-lg bg-[#0D0D0D] px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
-            >
-              AdMate 통합 로그인으로 계속
-            </Link>
-
-            <div className="mb-5 flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#667066]">
-              <span className="h-px flex-1 bg-[#D8DCCF]" />
-              Compass 계정
-              <span className="h-px flex-1 bg-[#D8DCCF]" />
-            </div>
-
-            <form className="space-y-4" onSubmit={handleSubmit}>
+            <form className="space-y-4" action={coreProductLoginAction} method="post">
+              <input type="hidden" name="product" value="compass" />
+              <input type="hidden" name="next" value={safeNext} />
               <div>
                 <Label htmlFor="email" className="mb-2 block text-sm font-medium text-[#34423A]">
                   이메일
@@ -426,6 +385,7 @@ function LoginPageContent() {
                 <div className="compass-login-email-field">
                   <input
                     id="email"
+                    name="email_local_part"
                     type="text"
                     inputMode="email"
                     autoComplete="username"
@@ -435,7 +395,6 @@ function LoginPageContent() {
                     className="min-h-11 min-w-0 flex-1 bg-transparent px-3 py-2.5 text-sm text-[#0D0D0D] outline-none disabled:cursor-not-allowed disabled:opacity-60"
                     placeholder="name"
                     aria-describedby="email-domain"
-                    disabled={isSubmitting}
                   />
                   <span
                     id="email-domain"
@@ -453,29 +412,28 @@ function LoginPageContent() {
                 </Label>
                 <input
                   id="password"
+                  name="password"
                   type="password"
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
                   placeholder="비밀번호를 입력하세요"
                   autoComplete="current-password"
                   className="compass-login-password-field min-h-11 w-full rounded-lg border border-[#D8DCCF] bg-white px-3 py-2.5 text-sm text-[#0D0D0D] outline-none transition-colors placeholder:text-[#9A9A9A] focus:border-[#1F7A4D] disabled:cursor-not-allowed disabled:opacity-60"
-                  disabled={isSubmitting}
                   required
                 />
               </div>
 
-              {message && (
+              {loginMessage && (
                 <div className="rounded-lg border border-[#F5C2C7] bg-[#FFF7F7] px-3 py-2 text-sm leading-6 text-[#B42318]">
-                  {message}
+                  {loginMessage}
                 </div>
               )}
 
               <button
                 type="submit"
                 className="inline-flex w-full items-center justify-center rounded-lg bg-[#0D0D0D] px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
-                disabled={isSubmitting}
               >
-                {isSubmitting ? "로그인 중..." : "로그인하고 계속"}
+                로그인하고 계속
               </button>
             </form>
 

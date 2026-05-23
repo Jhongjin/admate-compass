@@ -61,7 +61,7 @@ export function CompassTopbar({
 
         <div className="flex shrink-0 items-center gap-2">
           {children}
-          <SiteSwitchDropdown />
+          <SiteSwitchDropdown isAuthenticated={Boolean(user)} />
           <UserProfileDropdown user={user} loading={loading} onSignOut={handleSignOut} />
         </div>
       </div>

@@ -29,34 +29,40 @@ const sites = [
   {
     label: "Compass",
     description: "정책 출처 비교와 확인",
-    href: "https://sentinel.admate.ai.kr/auth/product/start?product=compass&next=/",
+    product: "compass",
+    directHref: "https://compass.admate.ai.kr",
+    handoffHref: "https://sentinel.admate.ai.kr/auth/product/start?product=compass&next=/",
     icon: Compass,
     active: true,
   },
   {
     label: "Sentinel",
     description: "실시간 모니터링과 사전 확인",
-    href: "https://sentinel.admate.ai.kr",
+    directHref: "https://sentinel.admate.ai.kr",
     icon: Radar,
     active: false,
   },
   {
     label: "Lens",
     description: "캡처 검수와 작업 기록",
-    href: "https://sentinel.admate.ai.kr/auth/product/start?product=lens&next=/",
+    product: "lens",
+    directHref: "https://lens.admate.ai.kr",
+    handoffHref: "https://sentinel.admate.ai.kr/auth/product/start?product=lens&next=/",
     icon: ScanLine,
     active: false,
   },
   {
     label: "Foresight",
     description: "성과 예측과 기준선 관리",
-    href: "https://sentinel.admate.ai.kr/auth/product/start?product=foresight&next=/",
+    product: "foresight",
+    directHref: "https://foresight.admate.ai.kr",
+    handoffHref: "https://sentinel.admate.ai.kr/auth/product/start?product=foresight&next=/",
     icon: LineChart,
     active: false,
   },
 ] as const;
 
-export function SiteSwitchDropdown() {
+export function SiteSwitchDropdown({ isAuthenticated = false }: { isAuthenticated?: boolean }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -78,10 +84,17 @@ export function SiteSwitchDropdown() {
           ADMATE SERVICES
         </DropdownMenuLabel>
         <DropdownMenuSeparator className="mb-1 bg-[#D8DCCF]" />
-        {sites.map((site) => (
+        {sites.map((site) => {
+          const href = "handoffHref" in site && isAuthenticated
+            ? site.handoffHref
+            : "directHref" in site
+              ? site.directHref
+              : site.href;
+
+          return (
           <DropdownMenuItem key={site.label} asChild className="cursor-pointer rounded-[8px] p-0 focus:bg-[#F4F8F5]">
             <Link
-              href={site.href}
+              href={href}
               className="grid min-h-[54px] w-full grid-cols-[38px_minmax(0,1fr)] items-center gap-2.5 px-2.5 py-2"
             >
               <span className="grid h-9 w-9 shrink-0 place-items-center rounded-[8px] border border-[#D8DCCF] bg-[#F4F8F5]">
@@ -100,7 +113,8 @@ export function SiteSwitchDropdown() {
               </span>
             </Link>
           </DropdownMenuItem>
-        ))}
+          );
+        })}
       </DropdownMenuContent>
     </DropdownMenu>
   );

@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, KeyboardEvent, useEffect, useRef, useState } from "react";
+import { KeyboardEvent, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
@@ -9,7 +9,7 @@ import CompassCampaignSurvivorPanel from "./CompassCampaignSurvivorPanel";
 import { SiteSwitchDropdown } from "@/components/layouts/SiteSwitchDropdown";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/useAuth";
-import { buildCompassCoreAuthStartPath } from "@/lib/auth/coreStartPath";
+import { getCompassCoreProductLoginAction } from "@/lib/auth/coreStartPath";
 
 const COMPASS_DESK_PATH = "/desk";
 const ACCESS_REQUEST_URL = "https://home.admate.ai.kr/access-request?product=compass";
@@ -702,49 +702,16 @@ function CompassCampaignDodgerPanel() {
 
 export default function HomePage() {
   const router = useRouter();
-  const { user, loading, signIn } = useAuth();
-  const coreAuthStartPath = buildCompassCoreAuthStartPath(COMPASS_DESK_PATH);
+  const { user, loading } = useAuth();
+  const coreProductLoginAction = getCompassCoreProductLoginAction();
   const [emailLocalPart, setEmailLocalPart] = useState("");
   const [password, setPassword] = useState("");
-  const [isSubmitting, setIsSubmitting] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
 
   useEffect(() => {
     if (!loading && user) {
       router.replace(COMPASS_DESK_PATH);
     }
   }, [loading, router, user]);
-
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setMessage(null);
-
-    const normalizedEmailLocalPart = normalizeEmailLocalPart(emailLocalPart);
-
-    if (!normalizedEmailLocalPart || !password) {
-      setMessage("이메일과 비밀번호를 입력해주세요.");
-      return;
-    }
-
-    const normalizedEmail = `${normalizedEmailLocalPart}@nasmedia.co.kr`;
-    setEmailLocalPart(normalizedEmailLocalPart);
-    setIsSubmitting(true);
-
-    try {
-      const { error } = await signIn(normalizedEmail, password);
-
-      if (error) {
-        setMessage(error.message);
-        return;
-      }
-
-      router.replace(COMPASS_DESK_PATH);
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "로그인 중 오류가 발생했습니다.");
-    } finally {
-      setIsSubmitting(false);
-    }
-  };
 
   if (loading || user) {
     return (
@@ -784,9 +751,9 @@ export default function HomePage() {
             </span>
           </Link>
           <div className="flex shrink-0 items-center gap-2">
-            <SiteSwitchDropdown />
+            <SiteSwitchDropdown isAuthenticated={false} />
             <Link
-              href={coreAuthStartPath}
+              href="#compass-login"
               className="inline-flex min-h-10 min-w-20 items-center justify-center rounded-[8px] bg-[#111713] px-3.5 py-2 text-[13px] font-extrabold text-white shadow-[0_10px_24px_rgba(17,23,19,0.12)] transition duration-300 [transition-timing-function:cubic-bezier(0.32,0.72,0,1)] hover:bg-[#223128] active:scale-[0.98] sm:min-w-24 sm:px-4"
             >
               로그인
@@ -954,20 +921,9 @@ export default function HomePage() {
               </p>
             </div>
 
-            <Link
-              href={coreAuthStartPath}
-              className="mb-5 inline-flex min-h-12 w-full items-center justify-center rounded-[8px] bg-[#172033] px-5 py-3 text-sm font-bold text-white transition duration-300 [transition-timing-function:cubic-bezier(0.32,0.72,0,1)] hover:bg-[#273755] active:scale-[0.98]"
-            >
-              AdMate 통합 로그인으로 계속
-            </Link>
-
-            <div className="mb-5 flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#68707C]">
-              <span className="h-px flex-1 bg-[#D9D4C8]" />
-              Compass 계정
-              <span className="h-px flex-1 bg-[#D9D4C8]" />
-            </div>
-
-            <form className="space-y-4" onSubmit={handleSubmit}>
+            <form className="space-y-4" action={coreProductLoginAction} method="post">
+              <input type="hidden" name="product" value="compass" />
+              <input type="hidden" name="next" value={COMPASS_DESK_PATH} />
               <div>
                 <Label htmlFor="compass-root-email" className="mb-2 block text-sm font-medium text-[#344052]">
                   이메일
@@ -975,6 +931,7 @@ export default function HomePage() {
                 <div className="compass-login-email-field">
                   <input
                     id="compass-root-email"
+                    name="email_local_part"
                     type="text"
                     inputMode="email"
                     autoComplete="username"
@@ -984,7 +941,6 @@ export default function HomePage() {
                     className="min-w-0 flex-1 bg-[#FFFFFF] px-3 py-2.5 text-sm text-[#0D0D0D] outline-none disabled:cursor-not-allowed disabled:opacity-60"
                     placeholder="name"
                     aria-describedby="compass-root-email-domain"
-                    disabled={isSubmitting}
                   />
                   <span
                     id="compass-root-email-domain"
@@ -1002,29 +958,22 @@ export default function HomePage() {
                 </Label>
                 <input
                   id="compass-root-password"
+                  name="password"
                   type="password"
                   value={password}
                   onChange={(event) => setPassword(event.target.value)}
                   placeholder="비밀번호를 입력하세요"
                   autoComplete="current-password"
                   className="compass-login-password-field w-full rounded-[8px] border border-[#D8DCCF] bg-[#FFFFFF] px-3 py-2.5 text-sm text-[#0D0D0D] outline-none transition-colors placeholder:text-[#9A9A9A] focus:border-[#1F7A4D] disabled:cursor-not-allowed disabled:opacity-60"
-                  disabled={isSubmitting}
                   required
                 />
               </div>
 
-              {message && (
-                <div className="rounded-[8px] border border-[#F5C2C7] bg-[#FFF7F7] px-3 py-2 text-sm leading-6 text-[#B42318]">
-                  {message}
-                </div>
-              )}
-
               <button
                 type="submit"
                 className="inline-flex min-h-12 w-full items-center justify-center rounded-[8px] bg-[#172033] px-5 py-3 text-sm font-bold text-white transition duration-300 [transition-timing-function:cubic-bezier(0.32,0.72,0,1)] hover:bg-[#273755] disabled:cursor-not-allowed disabled:opacity-60 active:scale-[0.98]"
-                disabled={isSubmitting}
               >
-                {isSubmitting ? "로그인 중..." : "로그인하고 계속"}
+                로그인하고 계속
               </button>
             </form>
 
