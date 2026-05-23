@@ -23,7 +23,7 @@ export function CompassTopbar({
   subtitle,
   children,
 }: CompassTopbarProps) {
-  const { user, signOut } = useAuth();
+  const { user, loading, signOut } = useAuth();
 
   const handleSignOut = async () => {
     await signOut();
@@ -62,7 +62,7 @@ export function CompassTopbar({
         <div className="flex shrink-0 items-center gap-2">
           {children}
           <SiteSwitchDropdown />
-          <UserProfileDropdown user={user} onSignOut={handleSignOut} />
+          <UserProfileDropdown user={user} loading={loading} onSignOut={handleSignOut} />
         </div>
       </div>
     </header>
