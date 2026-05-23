@@ -29,7 +29,7 @@ const sites = [
   {
     label: "Compass",
     description: "정책 출처 비교와 확인",
-    href: "https://compass.admate.ai.kr",
+    href: "https://sentinel.admate.ai.kr/auth/product/start?product=compass&next=/",
     icon: Compass,
     active: true,
   },
@@ -43,14 +43,14 @@ const sites = [
   {
     label: "Lens",
     description: "캡처 검수와 작업 기록",
-    href: "https://lens.admate.ai.kr",
+    href: "https://sentinel.admate.ai.kr/auth/product/start?product=lens&next=/",
     icon: ScanLine,
     active: false,
   },
   {
     label: "Foresight",
     description: "성과 예측과 기준선 관리",
-    href: "https://foresight.admate.ai.kr",
+    href: "https://sentinel.admate.ai.kr/auth/product/start?product=foresight&next=/",
     icon: LineChart,
     active: false,
   },

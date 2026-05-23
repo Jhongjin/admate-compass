@@ -9,6 +9,7 @@ import CompassCampaignSurvivorPanel from "./CompassCampaignSurvivorPanel";
 import { SiteSwitchDropdown } from "@/components/layouts/SiteSwitchDropdown";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/useAuth";
+import { buildCompassCoreAuthStartPath } from "@/lib/auth/coreStartPath";
 
 const COMPASS_DESK_PATH = "/desk";
 const ACCESS_REQUEST_URL = "https://home.admate.ai.kr/access-request?product=compass";
@@ -702,6 +703,7 @@ function CompassCampaignDodgerPanel() {
 export default function HomePage() {
   const router = useRouter();
   const { user, loading, signIn } = useAuth();
+  const coreAuthStartPath = buildCompassCoreAuthStartPath(COMPASS_DESK_PATH);
   const [emailLocalPart, setEmailLocalPart] = useState("");
   const [password, setPassword] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -784,7 +786,7 @@ export default function HomePage() {
           <div className="flex shrink-0 items-center gap-2">
             <SiteSwitchDropdown />
             <Link
-              href="#compass-login"
+              href={coreAuthStartPath}
               className="inline-flex min-h-10 min-w-20 items-center justify-center rounded-[8px] bg-[#111713] px-3.5 py-2 text-[13px] font-extrabold text-white shadow-[0_10px_24px_rgba(17,23,19,0.12)] transition duration-300 [transition-timing-function:cubic-bezier(0.32,0.72,0,1)] hover:bg-[#223128] active:scale-[0.98] sm:min-w-24 sm:px-4"
             >
               로그인
@@ -950,6 +952,19 @@ export default function HomePage() {
               <p className="mt-3 text-sm leading-6 text-[#68707C]">
                 회사 이메일로 로그인해 Compass 작업 공간을 이용하세요.
               </p>
+            </div>
+
+            <Link
+              href={coreAuthStartPath}
+              className="mb-5 inline-flex min-h-12 w-full items-center justify-center rounded-[8px] bg-[#172033] px-5 py-3 text-sm font-bold text-white transition duration-300 [transition-timing-function:cubic-bezier(0.32,0.72,0,1)] hover:bg-[#273755] active:scale-[0.98]"
+            >
+              AdMate 통합 로그인으로 계속
+            </Link>
+
+            <div className="mb-5 flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#68707C]">
+              <span className="h-px flex-1 bg-[#D9D4C8]" />
+              Compass 계정
+              <span className="h-px flex-1 bg-[#D9D4C8]" />
             </div>
 
             <form className="space-y-4" onSubmit={handleSubmit}>

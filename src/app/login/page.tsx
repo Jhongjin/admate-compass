@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/useAuth";
+import { buildCompassCoreAuthStartPath } from "@/lib/auth/coreStartPath";
 import { sanitizeCompassNextPath } from "@/lib/auth/safeNext";
 
 const ACCESS_REQUEST_URL = "https://home.admate.ai.kr/access-request?product=compass";
@@ -295,6 +296,10 @@ function LoginPageContent() {
     () => sanitizeCompassNextPath(searchParams?.get("next")),
     [searchParams],
   );
+  const coreAuthStartPath = useMemo(
+    () => buildCompassCoreAuthStartPath(safeNext),
+    [safeNext],
+  );
 
   useEffect(() => {
     if (!loading && user) {
@@ -398,6 +403,19 @@ function LoginPageContent() {
               <p className="mt-2 text-xs leading-5 text-[#667066]">
                 회사 이메일로 로그인해 Compass 작업 공간을 이용하세요.
               </p>
+            </div>
+
+            <Link
+              href={coreAuthStartPath}
+              className="mb-5 inline-flex w-full items-center justify-center rounded-lg bg-[#0D0D0D] px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+            >
+              AdMate 통합 로그인으로 계속
+            </Link>
+
+            <div className="mb-5 flex items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#667066]">
+              <span className="h-px flex-1 bg-[#D8DCCF]" />
+              Compass 계정
+              <span className="h-px flex-1 bg-[#D8DCCF]" />
             </div>
 
             <form className="space-y-4" onSubmit={handleSubmit}>

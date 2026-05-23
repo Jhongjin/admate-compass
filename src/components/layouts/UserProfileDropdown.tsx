@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { LogIn, LogOut, Shield, UserCircle, UserPlus } from "lucide-react";
+import { buildCompassCoreAuthStartPath } from "@/lib/auth/coreStartPath";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -26,6 +27,7 @@ const USERS_URL = "https://sentinel.admate.ai.kr/users";
 
 export function UserProfileDropdown({ user, loading = false, onSignOut }: UserProfileDropdownProps) {
   const [isAdmin, setIsAdmin] = useState(false);
+  const compassAuthStartPath = buildCompassCoreAuthStartPath("/desk");
 
   const displayName = useMemo(
     () => user?.user_metadata?.name || user?.user_metadata?.full_name || user?.email || "AdMate 계정",
@@ -77,14 +79,13 @@ export function UserProfileDropdown({ user, loading = false, onSignOut }: UserPr
   if (!user) {
     return (
       <div className="flex items-center gap-2">
-        <button
-          type="button"
-          onClick={() => window.dispatchEvent(new CustomEvent("openAuthModal", { detail: { mode: "signin" } }))}
+        <Link
+          href={compassAuthStartPath}
           className="inline-flex h-10 items-center gap-2 rounded-md border border-[#D8DCCF] bg-white/90 px-3 text-sm font-bold text-[#34423A] transition-colors hover:bg-[#F7FAF6] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1F7A4D] focus-visible:ring-offset-2"
         >
           <LogIn className="h-4 w-4" aria-hidden="true" />
           <span className="hidden sm:inline">로그인</span>
-        </button>
+        </Link>
         <Link
           href={ACCESS_REQUEST_URL}
           className="hidden h-10 items-center gap-2 rounded-md bg-[#111713] px-3 text-sm font-bold text-white transition-colors hover:bg-[#223128] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1F7A4D] focus-visible:ring-offset-2 sm:inline-flex"

@@ -4,22 +4,97 @@ import { useState, useEffect } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { User } from "@supabase/supabase-js";
 
+type CompassAccountMeResponse = {
+  ok?: boolean;
+  authenticated?: boolean;
+  subject?: string;
+  profile?: {
+    displayName?: string;
+    email?: string;
+  };
+  permissions?: {
+    canView?: boolean;
+    canSubmit?: boolean;
+    canManage?: boolean;
+  };
+  rolesLabel?: string;
+};
+
+function productSessionPayloadToUser(payload: CompassAccountMeResponse): User | null {
+  const email = payload.profile?.email?.trim();
+  const subject = payload.subject?.trim();
+
+  if (!payload.ok || !payload.authenticated || !email || !subject) {
+    return null;
+  }
+
+  const displayName = payload.profile?.displayName?.trim() || email;
+
+  return {
+    id: subject,
+    aud: "authenticated",
+    role: "authenticated",
+    email,
+    app_metadata: {
+      provider: "admate-core",
+      providers: ["admate-core"],
+    },
+    user_metadata: {
+      email,
+      name: displayName,
+      full_name: displayName,
+      display_name: displayName,
+      admate_product: "compass",
+      admate_roles_label: payload.rolesLabel,
+      admate_permissions: payload.permissions,
+    },
+    created_at: "1970-01-01T00:00:00.000Z",
+  } as User;
+}
+
+async function fetchCompassProductSessionUser(): Promise<User | null> {
+  try {
+    const response = await fetch("/api/account/me", {
+      cache: "no-store",
+      credentials: "same-origin",
+    });
+
+    if (!response.ok) return null;
+
+    const payload = (await response.json()) as CompassAccountMeResponse;
+    return productSessionPayloadToUser(payload);
+  } catch (error) {
+    console.warn("Compass 제품 세션 확인을 건너뜁니다:", error);
+    return null;
+  }
+}
+
 export function useAuth() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const supabase = createClient();
 
   useEffect(() => {
+    let isMounted = true;
+
     // 현재 세션 확인
     const getSession = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
-        setUser(session?.user ?? null);
+        const resolvedUser = session?.user ?? (await fetchCompassProductSessionUser());
+
+        if (isMounted) {
+          setUser(resolvedUser);
+        }
       } catch (error) {
         console.warn('인증 세션 확인을 건너뜁니다:', error);
-        setUser(null);
+        if (isMounted) {
+          setUser(null);
+        }
       } finally {
-        setLoading(false);
+        if (isMounted) {
+          setLoading(false);
+        }
       }
     };
 
@@ -30,17 +105,26 @@ export function useAuth() {
     try {
       const authState = supabase.auth.onAuthStateChange(
         async (event, session) => {
-          setUser(session?.user ?? null);
-          setLoading(false);
+          const resolvedUser = session?.user ?? (await fetchCompassProductSessionUser());
+
+          if (isMounted) {
+            setUser(resolvedUser);
+            setLoading(false);
+          }
         }
       );
       subscription = authState.data.subscription;
     } catch (error) {
       console.warn('인증 상태 감지를 건너뜁니다:', error);
-      setLoading(false);
+      if (isMounted) {
+        setLoading(false);
+      }
     }
 
-    return () => subscription?.unsubscribe();
+    return () => {
+      isMounted = false;
+      subscription?.unsubscribe();
+    };
   }, [supabase.auth]);
 
   const checkEmailExists = async (email: string): Promise<boolean> => {
@@ -173,10 +257,25 @@ export function useAuth() {
   const signOut = async () => {
     try {
       const { error } = await supabase.auth.signOut();
+      const productLogoutError = await fetch("/api/auth/logout", {
+        method: "POST",
+        credentials: "same-origin",
+      })
+        .then((response) => (response.ok ? null : new Error("product_session_logout_failed")))
+        .catch((logoutError) => logoutError);
+
+      setUser(null);
+
       if (error) {
         console.error('로그아웃 오류:', error);
         return { error: { message: '로그아웃 중 오류가 발생했습니다.' } };
       }
+
+      if (productLogoutError) {
+        console.error('Compass 제품 세션 로그아웃 오류:', productLogoutError);
+        return { error: { message: '로그아웃 중 오류가 발생했습니다.' } };
+      }
+
       return { error: null };
     } catch (error: any) {
       console.error('로그아웃 오류:', error);
