@@ -39,7 +39,7 @@ const sites = [
     label: "Sentinel",
     description: "실시간 모니터링과 사전 확인",
     directHref: "https://sentinel.admate.ai.kr",
-    handoffHref: "https://sentinel.admate.ai.kr/dashboard",
+    handoffHref: "https://sentinel.admate.ai.kr/auth/product/start?product=sentinel&next=/dashboard",
     icon: Radar,
     active: false,
   },
