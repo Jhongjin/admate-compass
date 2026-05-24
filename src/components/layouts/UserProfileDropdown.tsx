@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { buildCompassCoreAuthStartPath } from "@/lib/auth/coreStartPath";
 import {
@@ -8,7 +8,6 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuLabel,
-  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
@@ -25,6 +24,7 @@ const ORGANIZATIONS_URL = "https://sentinel.admate.ai.kr/users/organizations";
 const USERS_URL = "https://sentinel.admate.ai.kr/users";
 
 export function UserProfileDropdown({ user, loading = false, onSignOut }: UserProfileDropdownProps) {
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const compassAuthStartPath = buildCompassCoreAuthStartPath("/desk");
 
   const displayName = useMemo(
@@ -52,6 +52,15 @@ export function UserProfileDropdown({ user, loading = false, onSignOut }: UserPr
       canManageUsers: Boolean(value?.canManageUsers),
     };
   }, [user]);
+
+  const handleSignOut = async () => {
+    setIsLoggingOut(true);
+    try {
+      await Promise.resolve(onSignOut());
+    } finally {
+      setIsLoggingOut(false);
+    }
+  };
 
   if (loading && !user) {
     return (
@@ -102,7 +111,6 @@ export function UserProfileDropdown({ user, loading = false, onSignOut }: UserPr
           </span>
           <span className="mt-1 block truncate text-xs font-bold text-[#1F7A4D]">{rolesLabel}</span>
         </DropdownMenuLabel>
-        <DropdownMenuSeparator className="bg-[#D8DCCF]" />
         {adminNavigation.canManageAccessRequests ? (
           <DropdownMenuItem asChild className="cursor-pointer rounded-md px-3 py-2 text-sm font-semibold focus:bg-[#F4F8F5]">
             <Link href={ACCESS_REQUESTS_URL}>권한 요청 관리</Link>
@@ -118,17 +126,18 @@ export function UserProfileDropdown({ user, loading = false, onSignOut }: UserPr
             <Link href={USERS_URL}>사용자 관리</Link>
           </DropdownMenuItem>
         ) : null}
-        {adminNavigation.canManageAccessRequests ||
-        adminNavigation.canManageOrganizations ||
-        adminNavigation.canManageUsers ? (
-          <DropdownMenuSeparator className="bg-[#D8DCCF]" />
-        ) : null}
         <DropdownMenuItem asChild className="cursor-pointer rounded-md px-3 py-2 text-sm font-semibold focus:bg-[#F4F8F5]">
           <Link href={ACCOUNT_URL}>내 계정</Link>
         </DropdownMenuItem>
-        <DropdownMenuSeparator className="bg-[#D8DCCF]" />
-        <DropdownMenuItem className="cursor-pointer rounded-md px-3 py-2 text-sm font-semibold focus:bg-[#F4F8F5]" onSelect={onSignOut}>
-          로그아웃
+        <DropdownMenuItem
+          disabled={isLoggingOut}
+          className="cursor-pointer rounded-md px-3 py-2 text-sm font-semibold focus:bg-[#F4F8F5] disabled:pointer-events-none disabled:opacity-60"
+          onSelect={event => {
+            event.preventDefault();
+            void handleSignOut();
+          }}
+        >
+          {isLoggingOut ? "로그아웃 중..." : "로그아웃"}
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
