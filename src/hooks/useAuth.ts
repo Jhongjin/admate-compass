@@ -79,6 +79,17 @@ async function fetchCompassProductSessionUser(): Promise<User | null> {
   }
 }
 
+async function resolveAuthenticatedUser(supabaseSessionUser?: User | null): Promise<User | null> {
+  const productSessionUser = await fetchCompassProductSessionUser();
+  if (productSessionUser) return productSessionUser;
+
+  if (process.env.NODE_ENV === "production") {
+    return null;
+  }
+
+  return supabaseSessionUser ?? null;
+}
+
 export function useAuth() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
@@ -91,7 +102,7 @@ export function useAuth() {
     const getSession = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
-        const resolvedUser = session?.user ?? (await fetchCompassProductSessionUser());
+        const resolvedUser = await resolveAuthenticatedUser(session?.user);
 
         if (isMounted) {
           setUser(resolvedUser);
@@ -115,7 +126,7 @@ export function useAuth() {
     try {
       const authState = supabase.auth.onAuthStateChange(
         async (event, session) => {
-          const resolvedUser = session?.user ?? (await fetchCompassProductSessionUser());
+          const resolvedUser = await resolveAuthenticatedUser(session?.user);
 
           if (isMounted) {
             setUser(resolvedUser);
