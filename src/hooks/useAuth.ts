@@ -25,6 +25,14 @@ type CompassAccountMeResponse = {
   };
 };
 
+const COMPASS_LOGOUT_NEXT_URL = "https://compass.admate.ai.kr/login?logout=complete";
+const SENTINEL_LOGOUT_URL = "https://sentinel.admate.ai.kr/auth/logout";
+
+function buildSentinelLogoutUrl(nextUrl: string) {
+  const params = new URLSearchParams({ next: nextUrl });
+  return `${SENTINEL_LOGOUT_URL}?${params.toString()}`;
+}
+
 function productSessionPayloadToUser(payload: CompassAccountMeResponse): User | null {
   const email = payload.profile?.email?.trim();
   const subject = payload.subject?.trim();
@@ -301,6 +309,8 @@ export function useAuth() {
     } catch (error: any) {
       console.error('로그아웃 오류:', error);
       return { error: { message: '로그아웃 중 오류가 발생했습니다.' } };
+    } finally {
+      window.location.assign(buildSentinelLogoutUrl(COMPASS_LOGOUT_NEXT_URL));
     }
   };
 
