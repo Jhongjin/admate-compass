@@ -31,7 +31,7 @@ const sites = [
     description: "정책 출처 비교와 확인",
     product: "compass",
     directHref: "https://compass.admate.ai.kr",
-    handoffHref: "https://sentinel.admate.ai.kr/auth/product/start?product=compass&next=/",
+    handoffHref: "https://sentinel.admate.ai.kr/auth/product/start?product=compass&next=/desk",
     icon: Compass,
     active: true,
   },
@@ -63,7 +63,7 @@ const sites = [
   },
 ] as const;
 
-export function SiteSwitchDropdown({ isAuthenticated = false }: { isAuthenticated?: boolean }) {
+export function SiteSwitchDropdown(_props: { isAuthenticated?: boolean }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -86,9 +86,9 @@ export function SiteSwitchDropdown({ isAuthenticated = false }: { isAuthenticate
         </DropdownMenuLabel>
         <DropdownMenuSeparator className="mb-1 bg-[#D8DCCF]" />
         {sites.map((site) => {
-          const href = "handoffHref" in site && isAuthenticated
+          const href = "handoffHref" in site
             ? site.handoffHref
-            : "directHref" in site
+            : "directHref" in site && typeof site.directHref === "string"
               ? site.directHref
               : site.href;
 
