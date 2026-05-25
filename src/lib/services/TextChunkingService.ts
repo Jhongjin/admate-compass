@@ -77,17 +77,7 @@ export class TextChunkingService {
       // LangChain을 사용한 청킹
       const documents = await this.textSplitter.createDocuments([normalizedText], [enrichedMetadata]);
       
-      const chunks: DocumentChunk[] = documents.map((doc, index) => ({
-        content: doc.pageContent,
-        metadata: {
-          chunkIndex: index,
-          startChar: 0, // LangChain에서는 정확한 위치를 제공하지 않음
-          endChar: doc.pageContent.length,
-          contentLength: doc.pageContent.length,
-          signalScore: this.calculateSignalScore(doc.pageContent),
-          ...doc.metadata
-        }
-      }));
+      const chunks = this.createChunksWithOffsets(normalizedText, documents);
 
       // 청크 타입 분류
       const classifiedChunks = this.classifyChunkTypes(chunks);
@@ -180,17 +170,7 @@ export class TextChunkingService {
 
       const documents = await koreanSplitter.createDocuments([normalizedText], [enrichedMetadata]);
       
-      const chunks: DocumentChunk[] = documents.map((doc, index) => ({
-        content: doc.pageContent,
-        metadata: {
-          chunkIndex: index,
-          startChar: 0,
-          endChar: doc.pageContent.length,
-          contentLength: doc.pageContent.length,
-          signalScore: this.calculateSignalScore(doc.pageContent),
-          ...doc.metadata
-        }
-      }));
+      const chunks = this.createChunksWithOffsets(normalizedText, documents);
 
       const classifiedChunks = this.classifyChunkTypes(chunks);
 
@@ -313,6 +293,64 @@ export class TextChunkingService {
       sourceTitle: metadata.sourceTitle || metadata.title,
       sourceUrl: metadata.sourceUrl || metadata.url || metadata.source_url || metadata.document_url
     };
+  }
+
+  private createChunksWithOffsets(
+    sourceText: string,
+    documents: Array<{ pageContent: string; metadata: Record<string, any> }>
+  ): DocumentChunk[] {
+    const offsets = this.calculateChunkOffsets(sourceText, documents.map((doc) => doc.pageContent));
+
+    return documents.map((doc, index) => ({
+      content: doc.pageContent,
+      metadata: {
+        ...doc.metadata,
+        chunkIndex: index,
+        startChar: offsets[index].startChar,
+        endChar: offsets[index].endChar,
+        contentLength: doc.pageContent.length,
+        signalScore: this.calculateSignalScore(doc.pageContent)
+      }
+    }));
+  }
+
+  private calculateChunkOffsets(
+    sourceText: string,
+    chunkTexts: string[]
+  ): Array<{ startChar: number; endChar: number }> {
+    let previousStartChar = -1;
+
+    return chunkTexts.map((chunkText, index) => {
+      if (!chunkText) {
+        throw new Error(`청크 ${index}의 내용이 비어 있어 offset을 계산할 수 없습니다`);
+      }
+
+      const searchStart = Math.max(0, previousStartChar + 1);
+      const startChar = sourceText.indexOf(chunkText, searchStart);
+
+      if (startChar < 0) {
+        throw new Error(`청크 ${index}의 내용을 normalized source text에서 찾을 수 없습니다`);
+      }
+
+      const endChar = startChar + chunkText.length;
+      const sourceSlice = sourceText.slice(startChar, endChar);
+
+      if (
+        startChar < 0 ||
+        endChar <= startChar ||
+        endChar > sourceText.length ||
+        sourceSlice !== chunkText
+      ) {
+        throw new Error(`청크 ${index}의 offset 계약 검증에 실패했습니다`);
+      }
+
+      previousStartChar = startChar;
+
+      return {
+        startChar,
+        endChar
+      };
+    });
   }
 
   private normalizeTextForChunking(text: string): string {

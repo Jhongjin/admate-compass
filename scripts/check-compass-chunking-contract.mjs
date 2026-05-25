@@ -29,12 +29,40 @@ for (const token of [
   "policy-recursive-v2",
   "url-policy-recursive-v2",
   "normalizeTextForChunking",
+  "createChunksWithOffsets",
+  "calculateChunkOffsets",
   "calculateSignalScore",
   "sourceTitle",
   "sourceUrl",
 ]) {
   if (!chunkingService.includes(token)) {
     fail(`TextChunkingService missing ${token}`);
+  }
+}
+
+const langChainOffsetPathCount = (chunkingService.match(/createChunksWithOffsets\(normalizedText,\s*documents\)/g) || []).length;
+if (langChainOffsetPathCount < 2) {
+  fail("TextChunkingService LangChain chunk paths must assign source-text offsets after splitting");
+}
+
+for (const token of [
+  "previousStartChar + 1",
+  "sourceText.indexOf(chunkText, searchStart)",
+  "endChar > sourceText.length",
+  "sourceText.slice(startChar, endChar)",
+  "sourceSlice !== chunkText",
+]) {
+  if (!chunkingService.includes(token)) {
+    fail(`TextChunkingService chunk offset accuracy guard missing ${token}`);
+  }
+}
+
+for (const forbidden of [
+  "startChar: 0, // LangChain",
+  "endChar: doc.pageContent.length",
+]) {
+  if (chunkingService.includes(forbidden)) {
+    fail(`TextChunkingService must not use per-chunk 0..length offsets after LangChain splitting: ${forbidden}`);
   }
 }
 
