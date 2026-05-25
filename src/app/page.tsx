@@ -17,7 +17,7 @@ const ACCESS_REQUEST_URL = "https://home.admate.ai.kr/access-request?product=com
 const ADMATE_HOME_URL = "https://home.admate.ai.kr";
 
 const loginErrorMessages: Record<string, string> = {
-  account_not_allowed: "요청한 제품 접근 권한을 확인할 수 없습니다.",
+  account_not_allowed: "요청한 제품 이용 권한을 확인할 수 없습니다.",
   handoff_disabled: "AdMate 로그인 연결이 아직 활성화되지 않았습니다. 담당자에게 문의해주세요.",
   handoff_unavailable: "로그인 연결을 준비할 수 없습니다. 잠시 후 다시 시도해주세요.",
   invalid_credentials: "계정 정보를 확인해주세요.",
@@ -734,7 +734,8 @@ export default function HomePage() {
 
   useEffect(() => {
     if (!loading && user) {
-      router.replace(COMPASS_DESK_PATH);
+      const params = new URLSearchParams(window.location.search);
+      router.replace(sanitizeCompassNextPath(params.get("next")));
     }
   }, [loading, router, user]);
 

@@ -52,6 +52,17 @@ const getInitialMessage = (): Message => ({
   sources: [],
 });
 
+function CompassAuthRedirectState({ message }: { message: string }) {
+  return (
+    <main className="grid min-h-[100dvh] place-items-center bg-[#F4F5F0] px-6 text-[#111713]">
+      <div className="text-center">
+        <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-[#D8DCCF] border-b-[#1F7A4D]" />
+        <p className="text-sm font-medium text-[#5F6C62]">{message}</p>
+      </div>
+    </main>
+  );
+}
+
 const sanitizeSources = (sources: unknown): NonNullable<Message["sources"]> => {
   if (!Array.isArray(sources)) return [];
 
@@ -1039,32 +1050,11 @@ function ChatPageContent() {
 
   // 로딩 중이거나 로그인하지 않은 경우
   if (loading) {
-    return (
-      <MainLayout>
-        <div className="mt-32 flex h-[calc(100dvh-8rem)] items-center justify-center">
-          <div className="text-center">
-            <div className="mx-auto mb-4 h-12 w-12 animate-spin rounded-full border-b-2 border-[#1F7A4D]"></div>
-            <p className="text-[#667066]">로그인 상태를 확인하는 중...</p>
-          </div>
-        </div>
-      </MainLayout>
-    );
+    return <CompassAuthRedirectState message="로그인 상태를 확인하는 중..." />;
   }
 
   if (!user) {
-    return (
-      <MainLayout>
-        <div className="mt-32 flex h-[calc(100dvh-8rem)] items-center justify-center">
-          <div className="text-center">
-            <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
-              <p className="font-bold">로그인이 필요합니다</p>
-              <p className="text-sm">채팅 기능을 사용하려면 먼저 로그인해주세요.</p>
-            </div>
-            <p className="text-[#667066]">잠시 후 메인 페이지로 이동합니다...</p>
-          </div>
-        </div>
-      </MainLayout>
-    );
+    return <CompassAuthRedirectState message="Compass 로그인 화면으로 이동하는 중..." />;
   }
 
   return (
