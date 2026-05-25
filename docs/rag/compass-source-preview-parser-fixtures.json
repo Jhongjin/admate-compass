@@ -40,16 +40,44 @@
     },
     {
       "id": "too-short-preview-fails",
-      "finalUrl": "https://example.com/ads-policy",
+      "finalUrl": "https://support.google.com/adspolicy/answer/too-short",
       "html": "<html><body><main>광고 정책</main></body></html>",
       "expectedErrorIncludes": "too little readable policy content"
     },
     {
       "id": "no-policy-signal-fails",
-      "finalUrl": "https://example.com/docs/quality",
+      "finalUrl": "https://support.google.com/adspolicy/answer/generic-quality",
       "minPreviewChars": 120,
       "html": "<html><body><main><h1>Quality guide</h1><p>This long generic document describes publishing quality, editorial workflow, asset naming, review notes, scheduling cadence, revision ownership, release coordination, and archive hygiene.</p><p>The content is intentionally long enough to pass size checks but should fail because it has no Compass collection signal or media operations terminology.</p></main></body></html>",
       "expectedErrorIncludes": "lacks enough readable policy signal"
+    },
+    {
+      "id": "rejects-secret-like-title-before-queue",
+      "finalUrl": "https://support.google.com/adspolicy/answer/secret-preview",
+      "fetchedAt": "2026-05-17T00:00:00.000Z",
+      "html": "<html><head><title>access_token=REDACTED_SECRET_VALUE_GOOGLE_POLICY_TITLE</title></head><body><main><h1>Google 광고 정책</h1><p>Google Ads policy support explains advertising campaign review, adspolicy compliance, creative approval, prohibited content, business verification, landing page transparency, and support workflows.</p><p>광고 심사 정책과 캠페인 운영 기준, 소재 승인 절차, 제한 콘텐츠, 금지 표현, 비즈니스 지원 기준을 충분히 설명합니다.</p></main></body></html>",
+      "expectedErrorIncludes": "secret_like_text"
+    },
+    {
+      "id": "rejects-escaped-raw-html-content-before-queue",
+      "finalUrl": "https://www.facebook.com/policies/ads/raw-preview",
+      "fetchedAt": "2026-05-17T00:00:00.000Z",
+      "html": "<html><head><title>Meta Ads Policy Raw Preview</title></head><body><main><h1>Meta 광고 정책</h1><p>&lt;html&gt;&lt;body&gt;raw mirrored crawler payload&lt;/body&gt;&lt;/html&gt; Meta advertising policy campaign review creative approval restricted content business support material appears here but escaped raw HTML must not enter the proposal queue.</p><p>광고 심사 정책과 캠페인 검토 문구가 충분해 보여도 원문 HTML이 노출되면 preview 후보에 들어가면 안 됩니다.</p></main></body></html>",
+      "expectedErrorIncludes": "raw_html_detected"
+    },
+    {
+      "id": "rejects-private-internal-final-url-before-queue",
+      "finalUrl": "https://10.4.5.6/admin/source-ops?session_id=REDACTED_SECRET_VALUE",
+      "fetchedAt": "2026-05-17T00:00:00.000Z",
+      "html": "<html><head><title>Private Network Ads Policy Mirror</title></head><body><main><h1>Google 광고 정책</h1><p>Google Ads policy campaign review, advertising support, prohibited content, advertiser responsibility, business verification, creative approval, restricted content, and landing page review guidance are visible.</p><p>광고 심사 정책과 캠페인 지원 문구가 충분해도 사설 네트워크 URL과 세션성 query 값은 proposal preview에 보존되면 안 됩니다.</p></main></body></html>",
+      "expectedErrorIncludes": "private_or_internal_url"
+    },
+    {
+      "id": "rejects-canonical-url-outside-allowlist-before-queue",
+      "finalUrl": "https://support.google.com/adspolicy/answer/canonical-mismatch",
+      "fetchedAt": "2026-05-17T00:00:00.000Z",
+      "html": "<html><head><title>Google Ads Policy Canonical Guard</title><link rel=\"canonical\" href=\"https://example.com/copied-google-ads-policy\" /></head><body><main><h1>Google 광고 정책 도움말</h1><p>Google Ads policy guidance, advertiser responsibility, campaign review, creative approval, restricted content, prohibited practices, business verification, landing page transparency, and support steps are visible in this captured page.</p><p>광고 심사, 캠페인 집행, 소재 승인, 제한 콘텐츠, 금지 표현, 랜딩 페이지 검토, 비즈니스 지원 기준이 충분해 보여도 canonical URL이 공식 허용 호스트 밖이면 preview 후보가 될 수 없습니다.</p></main></body></html>",
+      "expectedErrorIncludes": "canonical_url_not_allowlisted"
     }
   ]
 }
