@@ -1,11 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { clearCompassProductSessionCookie } from "@/lib/auth/coreHandoff";
+import { sanitizeCompassNextPath } from "@/lib/auth/safeNext";
 
 export const dynamic = "force-dynamic";
 
-const DEFAULT_LOGOUT_REDIRECT = "/";
+const DEFAULT_CORE_LOGOUT_URL = "https://sentinel.admate.ai.kr/auth/logout";
 
-const ALLOWED_ABSOLUTE_HOSTS = new Set([
+const ALLOWED_LOCAL_LOGOUT_NEXT_HOSTS = new Set([
   "compass.admate.ai.kr",
   "lens.admate.ai.kr",
   "foresight.admate.ai.kr",
@@ -21,53 +22,73 @@ const NO_STORE_HEADERS = {
   Vary: "Cookie",
 };
 
-const LOGIN_ERROR_PATTERN = /^[a-z0-9_-]+$/i;
-
-function isSafeRelativePath(value: string) {
-  return value.startsWith("/") && !value.startsWith("//") && !value.includes("\\");
-}
-
-function normalizeLegacyLoginRedirect(url: URL) {
-  if (url.pathname !== "/login") {
-    return url;
-  }
-
-  const normalized = new URL("/", url.origin);
-  const next = url.searchParams.get("next");
-  const loginError = url.searchParams.get("login_error") || url.searchParams.get("auth_error");
-
-  if (next && isSafeRelativePath(next) && !next.startsWith("/api")) {
-    normalized.searchParams.set("next", next);
-  }
-
-  if (loginError && LOGIN_ERROR_PATTERN.test(loginError)) {
-    normalized.searchParams.set("login_error", loginError);
-  }
-
-  return normalized;
-}
-
-function resolveLogoutRedirect(request: NextRequest) {
+function resolveProductRedirect(request: NextRequest) {
   const next = request.nextUrl.searchParams.get("next")?.trim();
+  return new URL(sanitizeCompassNextPath(next), request.nextUrl.origin);
+}
 
-  if (!next || next.includes("\\")) {
-    return new URL(DEFAULT_LOGOUT_REDIRECT, request.nextUrl.origin);
+function isSafeLocalProtocol(url: URL) {
+  if (process.env.NODE_ENV === "production") {
+    return url.protocol === "https:";
   }
 
-  if (isSafeRelativePath(next)) {
-    return normalizeLegacyLoginRedirect(new URL(next, request.nextUrl.origin));
+  return url.protocol === "https:" || url.protocol === "http:";
+}
+
+function isSelfLogoutRedirect(url: URL, request: NextRequest) {
+  return url.host === request.nextUrl.host && url.pathname === "/auth/logout";
+}
+
+function resolveLocalScopeRedirect(request: NextRequest) {
+  const next = request.nextUrl.searchParams.get("next")?.trim();
+  const fallback = new URL("/", request.nextUrl.origin);
+
+  if (!next || next.includes("\\") || /^javascript:/i.test(next)) {
+    return fallback;
+  }
+
+  if (next.startsWith("/") && !next.startsWith("//")) {
+    return resolveProductRedirect(request);
   }
 
   try {
     const url = new URL(next);
-    if (url.protocol === "https:" && ALLOWED_ABSOLUTE_HOSTS.has(url.host)) {
-      return normalizeLegacyLoginRedirect(url);
+    if (
+      isSafeLocalProtocol(url) &&
+      ALLOWED_LOCAL_LOGOUT_NEXT_HOSTS.has(url.host) &&
+      !isSelfLogoutRedirect(url, request)
+    ) {
+      return url;
     }
   } catch {
-    // Fall through to the default logout target.
+    // Fall through to the product root.
   }
 
-  return new URL(DEFAULT_LOGOUT_REDIRECT, request.nextUrl.origin);
+  return fallback;
+}
+
+function getCoreLogoutUrl() {
+  const value = process.env.ADMATE_CORE_LOGOUT_URL?.trim() || DEFAULT_CORE_LOGOUT_URL;
+  try {
+    const url = new URL(value);
+    if (isSafeLocalProtocol(url)) return url;
+  } catch {
+    // Fall through to the default Core logout endpoint.
+  }
+
+  return new URL(DEFAULT_CORE_LOGOUT_URL);
+}
+
+function resolveLogoutRedirect(request: NextRequest) {
+  const productRedirect = resolveProductRedirect(request);
+
+  if (request.nextUrl.searchParams.get("scope") === "local") {
+    return resolveLocalScopeRedirect(request);
+  }
+
+  const coreLogoutUrl = getCoreLogoutUrl();
+  coreLogoutUrl.searchParams.set("next", productRedirect.toString());
+  return coreLogoutUrl;
 }
 
 export function GET(request: NextRequest) {
