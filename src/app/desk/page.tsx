@@ -167,7 +167,7 @@ function ChatPageContent() {
   useEffect(() => {
     if (!loading && !user) {
       const requestedPath = `${window.location.pathname}${window.location.search}`;
-      window.location.href = `/login?next=${encodeURIComponent(requestedPath)}`;
+      window.location.href = `/?next=${encodeURIComponent(requestedPath)}`;
     }
   }, [loading, user]);
 

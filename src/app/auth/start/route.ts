@@ -36,9 +36,9 @@ export async function GET(request: NextRequest) {
 }
 
 function redirectToLocalLogin(requestUrl: string, next: string, reason: string) {
-  const loginUrl = new URL("/login", getCompassOrigin(requestUrl));
+  const loginUrl = new URL("/", getCompassOrigin(requestUrl));
   loginUrl.searchParams.set("next", sanitizeCompassNextPath(next));
-  loginUrl.searchParams.set("auth_error", reason);
+  loginUrl.searchParams.set("login_error", reason);
 
   return NextResponse.redirect(loginUrl);
 }

@@ -10,10 +10,22 @@ import { SiteSwitchDropdown } from "@/components/layouts/SiteSwitchDropdown";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/useAuth";
 import { getCompassCoreProductLoginAction } from "@/lib/auth/coreStartPath";
+import { sanitizeCompassNextPath } from "@/lib/auth/safeNext";
 
 const COMPASS_DESK_PATH = "/desk";
 const ACCESS_REQUEST_URL = "https://home.admate.ai.kr/access-request?product=compass";
 const ADMATE_HOME_URL = "https://home.admate.ai.kr";
+
+const loginErrorMessages: Record<string, string> = {
+  account_not_allowed: "요청한 제품 접근 권한을 확인할 수 없습니다.",
+  handoff_disabled: "AdMate 로그인 연결이 아직 활성화되지 않았습니다. 담당자에게 문의해주세요.",
+  handoff_unavailable: "로그인 연결을 준비할 수 없습니다. 잠시 후 다시 시도해주세요.",
+  invalid_credentials: "계정 정보를 확인해주세요.",
+  invalid_product: "로그인 대상 제품을 확인할 수 없습니다.",
+  missing_credentials: "이메일과 비밀번호를 입력해주세요.",
+  origin_not_allowed: "로그인 요청 경로를 확인해주세요.",
+  rate_limited: "로그인 요청이 많습니다. 잠시 후 다시 시도해주세요.",
+};
 
 const supportedMedia = [
   { id: "meta", name: "Meta" },
@@ -706,6 +718,19 @@ export default function HomePage() {
   const coreProductLoginAction = getCompassCoreProductLoginAction();
   const [emailLocalPart, setEmailLocalPart] = useState("");
   const [password, setPassword] = useState("");
+  const [formNextPath, setFormNextPath] = useState(COMPASS_DESK_PATH);
+  const [loginMessage, setLoginMessage] = useState<string | null>(null);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const loginError = params.get("login_error") || params.get("auth_error");
+
+    setFormNextPath(sanitizeCompassNextPath(params.get("next")));
+
+    if (loginError) {
+      setLoginMessage(loginErrorMessages[loginError] ?? "계정 정보를 확인해주세요.");
+    }
+  }, []);
 
   useEffect(() => {
     if (!loading && user) {
@@ -923,7 +948,7 @@ export default function HomePage() {
 
             <form className="space-y-4" action={coreProductLoginAction} method="post">
               <input type="hidden" name="product" value="compass" />
-              <input type="hidden" name="next" value={COMPASS_DESK_PATH} />
+              <input type="hidden" name="next" value={formNextPath} />
               <div>
                 <Label htmlFor="compass-root-email" className="mb-2 block text-sm font-medium text-[#344052]">
                   이메일
@@ -975,6 +1000,12 @@ export default function HomePage() {
               >
                 로그인하고 계속
               </button>
+
+              {loginMessage && (
+                <div className="rounded-[8px] border border-[#F5C2C7] bg-[#FFF7F7] px-3 py-2 text-sm leading-6 text-[#B42318]" role="status" aria-live="polite">
+                  {loginMessage}
+                </div>
+              )}
             </form>
 
             <div className="mt-5 rounded-[10px] border border-[#D9D4C8] bg-white/72 p-4">

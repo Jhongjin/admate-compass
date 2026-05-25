@@ -21,8 +21,30 @@ const NO_STORE_HEADERS = {
   Vary: "Cookie",
 };
 
+const LOGIN_ERROR_PATTERN = /^[a-z0-9_-]+$/i;
+
 function isSafeRelativePath(value: string) {
   return value.startsWith("/") && !value.startsWith("//") && !value.includes("\\");
+}
+
+function normalizeLegacyLoginRedirect(url: URL) {
+  if (url.pathname !== "/login") {
+    return url;
+  }
+
+  const normalized = new URL("/", url.origin);
+  const next = url.searchParams.get("next");
+  const loginError = url.searchParams.get("login_error") || url.searchParams.get("auth_error");
+
+  if (next && isSafeRelativePath(next) && !next.startsWith("/api")) {
+    normalized.searchParams.set("next", next);
+  }
+
+  if (loginError && LOGIN_ERROR_PATTERN.test(loginError)) {
+    normalized.searchParams.set("login_error", loginError);
+  }
+
+  return normalized;
 }
 
 function resolveLogoutRedirect(request: NextRequest) {
@@ -33,13 +55,13 @@ function resolveLogoutRedirect(request: NextRequest) {
   }
 
   if (isSafeRelativePath(next)) {
-    return new URL(next, request.nextUrl.origin);
+    return normalizeLegacyLoginRedirect(new URL(next, request.nextUrl.origin));
   }
 
   try {
     const url = new URL(next);
     if (url.protocol === "https:" && ALLOWED_ABSOLUTE_HOSTS.has(url.host)) {
-      return url;
+      return normalizeLegacyLoginRedirect(url);
     }
   } catch {
     // Fall through to the default logout target.
