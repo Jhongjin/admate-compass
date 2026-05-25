@@ -170,6 +170,8 @@
     border: 1px solid #D8DCCF;
     border-radius: 8px;
     background: #FFFFFF;
+    background-clip: padding-box;
+    contain: paint;
     transition:
       border-color 180ms ease,
       box-shadow 180ms ease;
@@ -180,6 +182,7 @@
     background: #FFFFFF;
     background-color: #FFFFFF;
     min-width: 0;
+    background-clip: padding-box;
   }
 
   .compass-login-email-field:focus-within {
@@ -193,7 +196,7 @@
 
   .compass-login-email-field input:-webkit-autofill,
   .compass-login-password-field:-webkit-autofill {
-    -webkit-box-shadow: 0 0 0 1000px #FFFFFF inset;
+    -webkit-box-shadow: 0 0 0 32px #FFFFFF inset;
     -webkit-text-fill-color: #0D0D0D;
     caret-color: #0D0D0D;
   }
