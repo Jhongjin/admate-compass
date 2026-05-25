@@ -3,7 +3,7 @@ import { clearCompassProductSessionCookie } from "@/lib/auth/coreHandoff";
 
 export const dynamic = "force-dynamic";
 
-const DEFAULT_LOGOUT_REDIRECT = "/login?logout=complete";
+const DEFAULT_LOGOUT_REDIRECT = "/";
 
 const ALLOWED_ABSOLUTE_HOSTS = new Set([
   "compass.admate.ai.kr",

@@ -25,7 +25,7 @@ type CompassAccountMeResponse = {
   };
 };
 
-const COMPASS_LOGOUT_NEXT_URL = "https://compass.admate.ai.kr/login?logout=complete";
+const COMPASS_LOGOUT_NEXT_URL = "https://compass.admate.ai.kr/";
 const SENTINEL_LOGOUT_URL = "https://sentinel.admate.ai.kr/auth/logout";
 
 function buildSentinelLogoutUrl(nextUrl: string) {
