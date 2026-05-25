@@ -1,7 +1,11 @@
-import { NextResponse } from 'next/server';
+import { NextRequest, NextResponse } from 'next/server';
+import { guardCompassProductAdminSessionRoute } from '@/lib/adminProductSessionGuard';
 import { buildCompassSourceOpsPlan } from '@/lib/services/CompassSourceOpsService';
 
-export async function GET() {
+export async function GET(request: NextRequest) {
+  const sessionGuard = guardCompassProductAdminSessionRoute(request);
+  if (sessionGuard) return sessionGuard;
+
   try {
     const plan = await buildCompassSourceOpsPlan();
     return NextResponse.json({

@@ -14,7 +14,6 @@ import {
 interface UserProfileDropdownProps {
   user: any;
   loading?: boolean;
-  onSignOut: () => void;
 }
 
 const ACCESS_REQUEST_URL = "https://home.admate.ai.kr/access-request?product=compass";
@@ -22,8 +21,9 @@ const ACCOUNT_URL = "https://sentinel.admate.ai.kr/account";
 const ACCESS_REQUESTS_URL = "https://sentinel.admate.ai.kr/users/access-requests";
 const ORGANIZATIONS_URL = "https://sentinel.admate.ai.kr/users/organizations";
 const USERS_URL = "https://sentinel.admate.ai.kr/users";
+const COMPASS_LOGOUT_PATH = "/auth/logout?next=/";
 
-export function UserProfileDropdown({ user, loading = false, onSignOut }: UserProfileDropdownProps) {
+export function UserProfileDropdown({ user, loading = false }: UserProfileDropdownProps) {
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const compassAuthStartPath = buildCompassCoreAuthStartPath("/desk");
 
@@ -53,13 +53,9 @@ export function UserProfileDropdown({ user, loading = false, onSignOut }: UserPr
     };
   }, [user]);
 
-  const handleSignOut = async () => {
+  const handleSignOut = () => {
     setIsLoggingOut(true);
-    try {
-      await Promise.resolve(onSignOut());
-    } finally {
-      setIsLoggingOut(false);
-    }
+    window.location.assign(COMPASS_LOGOUT_PATH);
   };
 
   if (loading && !user) {
@@ -134,7 +130,7 @@ export function UserProfileDropdown({ user, loading = false, onSignOut }: UserPr
           className="cursor-pointer rounded-md px-3 py-2 text-sm font-semibold focus:bg-[#F4F8F5] disabled:pointer-events-none disabled:opacity-60"
           onSelect={event => {
             event.preventDefault();
-            void handleSignOut();
+            handleSignOut();
           }}
         >
           {isLoggingOut ? "로그아웃 중..." : "로그아웃"}

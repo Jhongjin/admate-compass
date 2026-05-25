@@ -25,13 +25,7 @@ type CompassAccountMeResponse = {
   };
 };
 
-const COMPASS_LOGOUT_NEXT_URL = "https://compass.admate.ai.kr/";
-const SENTINEL_LOGOUT_URL = "https://sentinel.admate.ai.kr/auth/logout";
-
-function buildSentinelLogoutUrl(nextUrl: string) {
-  const params = new URLSearchParams({ next: nextUrl });
-  return `${SENTINEL_LOGOUT_URL}?${params.toString()}`;
-}
+const COMPASS_LOGOUT_PATH = "/auth/logout?next=/";
 
 function productSessionPayloadToUser(payload: CompassAccountMeResponse): User | null {
   const email = payload.profile?.email?.trim();
@@ -285,32 +279,12 @@ export function useAuth() {
 
   const signOut = async () => {
     try {
-      const { error } = await supabase.auth.signOut();
-      const productLogoutError = await fetch("/api/auth/logout", {
-        method: "POST",
-        credentials: "same-origin",
-      })
-        .then((response) => (response.ok ? null : new Error("product_session_logout_failed")))
-        .catch((logoutError) => logoutError);
-
       setUser(null);
-
-      if (error) {
-        console.error('로그아웃 오류:', error);
-        return { error: { message: '로그아웃 중 오류가 발생했습니다.' } };
-      }
-
-      if (productLogoutError) {
-        console.error('Compass 제품 세션 로그아웃 오류:', productLogoutError);
-        return { error: { message: '로그아웃 중 오류가 발생했습니다.' } };
-      }
-
+      window.location.assign(COMPASS_LOGOUT_PATH);
       return { error: null };
     } catch (error: any) {
       console.error('로그아웃 오류:', error);
       return { error: { message: '로그아웃 중 오류가 발생했습니다.' } };
-    } finally {
-      window.location.assign(buildSentinelLogoutUrl(COMPASS_LOGOUT_NEXT_URL));
     }
   };
 

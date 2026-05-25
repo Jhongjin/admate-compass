@@ -5,9 +5,13 @@ import {
   persistCompassSourceProposalRun,
   readCompassSourceProposalQueueSnapshot,
 } from '@/lib/services/CompassSourceProposalQueueService';
+import { guardCompassProductAdminSessionRoute } from '@/lib/adminProductSessionGuard';
 import { guardProductionAdminSessionRoute } from '@/lib/adminDebugGuard';
 
 export async function GET(request: NextRequest) {
+  const sessionGuard = guardCompassProductAdminSessionRoute(request);
+  if (sessionGuard) return sessionGuard;
+
   try {
     const { searchParams } = new URL(request.url);
     const maxSources = Number(searchParams.get('maxSources') || undefined) || undefined;
