@@ -310,5 +310,264 @@
       },
       "expectedErrorIncludes": "reason code is not allowlisted"
     }
+  ],
+  "snapshotConflictCases": [
+    {
+      "id": "reject-decision-accepted-for-current-snapshot",
+      "input": {
+        "decisionRef": "duplicate-coverage-admin-rejection-sanitizes-secret-like-reason",
+        "currentReviewSnapshotHash": "review_snapshot_meta_ads_001"
+      },
+      "expected": {
+        "contract": "compass-source-proposal-review-decision-snapshot-conflict-contract-v1",
+        "classification": "accepted_current_snapshot",
+        "mutationEnabled": false,
+        "llmUsed": false,
+        "noCorpusMutation": true,
+        "noApplyAction": true,
+        "decision": "reject",
+        "proposalId": "proposal_meta_ads_standards_20260526",
+        "sourceId": "meta-ads-standards",
+        "idempotencyKey": "reject_meta_ads_standards_once",
+        "expectedSnapshotHash": "review_snapshot_meta_ads_001",
+        "currentReviewSnapshotHash": "review_snapshot_meta_ads_001"
+      }
+    },
+    {
+      "id": "approve-decision-accepted-for-current-snapshot",
+      "input": {
+        "decisionRef": "official-policy-admin-approval-sanitizes-secret-like-reason",
+        "currentReviewSnapshotHash": "review_snapshot_google_ads_policy_003"
+      },
+      "expected": {
+        "contract": "compass-source-proposal-review-decision-snapshot-conflict-contract-v1",
+        "classification": "accepted_current_snapshot",
+        "mutationEnabled": false,
+        "llmUsed": false,
+        "noCorpusMutation": true,
+        "noApplyAction": true,
+        "decision": "approve",
+        "proposalId": "proposal_google_ads_policy_help_20260526",
+        "sourceId": "google-ads-policy-help",
+        "idempotencyKey": "approve_google_ads_policy_help_once",
+        "expectedSnapshotHash": "review_snapshot_google_ads_policy_003",
+        "currentReviewSnapshotHash": "review_snapshot_google_ads_policy_003"
+      }
+    },
+    {
+      "id": "exact-reject-idempotency-replay-is-duplicate",
+      "input": {
+        "decisionRef": "duplicate-coverage-admin-rejection-sanitizes-secret-like-reason",
+        "priorDecisionRef": "duplicate-coverage-admin-rejection-sanitizes-secret-like-reason",
+        "currentReviewSnapshotHash": "review_snapshot_meta_ads_changed_after_retry"
+      },
+      "expected": {
+        "contract": "compass-source-proposal-review-decision-snapshot-conflict-contract-v1",
+        "classification": "duplicate_idempotent_replay",
+        "mutationEnabled": false,
+        "llmUsed": false,
+        "noCorpusMutation": true,
+        "noApplyAction": true,
+        "decision": "reject",
+        "proposalId": "proposal_meta_ads_standards_20260526",
+        "sourceId": "meta-ads-standards",
+        "idempotencyKey": "reject_meta_ads_standards_once",
+        "expectedSnapshotHash": "review_snapshot_meta_ads_001",
+        "currentReviewSnapshotHash": "review_snapshot_meta_ads_changed_after_retry"
+      }
+    },
+    {
+      "id": "stale-review-snapshot-is-conflict",
+      "input": {
+        "decisionRef": "worker-approval-keeps-apply-review-only-expectations",
+        "currentReviewSnapshotHash": "review_snapshot_naver_ads_policy_refreshed"
+      },
+      "expected": {
+        "contract": "compass-source-proposal-review-decision-snapshot-conflict-contract-v1",
+        "classification": "snapshot_conflict",
+        "mutationEnabled": false,
+        "llmUsed": false,
+        "noCorpusMutation": true,
+        "noApplyAction": true,
+        "decision": "approve",
+        "proposalId": "proposal_naver_ads_policy_20260526",
+        "sourceId": "naver-ads-policy",
+        "idempotencyKey": "approve_naver_ads_policy_once",
+        "expectedSnapshotHash": "review_snapshot_naver_ads_policy_004",
+        "currentReviewSnapshotHash": "review_snapshot_naver_ads_policy_refreshed"
+      }
+    },
+    {
+      "id": "cross-decision-idempotency-key-reuse-is-conflict",
+      "input": {
+        "decisionRef": "official-policy-admin-approval-sanitizes-secret-like-reason",
+        "priorDecisionEnvelope": {
+          "contract": "compass-source-proposal-rejection-decision-v1",
+          "decision": "reject",
+          "mutationEnabled": false,
+          "llmUsed": false,
+          "actor": {
+            "actorType": "admin",
+            "actorId": "admin-reviewer"
+          },
+          "reason": {
+            "code": "duplicate_coverage",
+            "summary": "Previous rejection envelope using the same idempotency key."
+          },
+          "audit": {
+            "proposalId": "proposal_google_ads_policy_help_20260526",
+            "sourceId": "google-ads-policy-help",
+            "sourceHost": "support.google.com",
+            "decidedAt": "2026-05-25T18:20:00.000Z",
+            "reviewSnapshotHash": "review_snapshot_google_ads_policy_003",
+            "idempotencyKey": "approve_google_ads_policy_help_once",
+            "decisionFingerprint": "reject_a11ce001"
+          },
+          "expectations": {
+            "requiresCurrentSnapshot": true,
+            "expectedSnapshotHash": "review_snapshot_google_ads_policy_003",
+            "idempotentBy": ["proposalId", "decision", "idempotencyKey"],
+            "noCorpusMutation": true,
+            "noApplyAction": true
+          }
+        },
+        "currentReviewSnapshotHash": "review_snapshot_google_ads_policy_003"
+      },
+      "expected": {
+        "contract": "compass-source-proposal-review-decision-snapshot-conflict-contract-v1",
+        "classification": "idempotency_conflict",
+        "mutationEnabled": false,
+        "llmUsed": false,
+        "noCorpusMutation": true,
+        "noApplyAction": true,
+        "decision": "approve",
+        "proposalId": "proposal_google_ads_policy_help_20260526",
+        "sourceId": "google-ads-policy-help",
+        "idempotencyKey": "approve_google_ads_policy_help_once",
+        "expectedSnapshotHash": "review_snapshot_google_ads_policy_003",
+        "currentReviewSnapshotHash": "review_snapshot_google_ads_policy_003"
+      }
+    },
+    {
+      "id": "mismatched-source-idempotency-key-reuse-is-conflict",
+      "input": {
+        "decisionRef": "blocked-host-worker-rejection-keeps-snapshot-idempotency",
+        "priorDecisionEnvelope": {
+          "contract": "compass-source-proposal-rejection-decision-v1",
+          "decision": "reject",
+          "mutationEnabled": false,
+          "llmUsed": false,
+          "actor": {
+            "actorType": "internal_worker",
+            "actorId": "source-proposal-review-worker"
+          },
+          "reason": {
+            "code": "source_blocked",
+            "summary": "Previous rejection envelope for a different source using the same idempotency key."
+          },
+          "audit": {
+            "proposalId": "proposal_other_source_20260526",
+            "sourceId": "other-source",
+            "sourceHost": "other.example.invalid",
+            "decidedAt": "2026-05-26T00:00:00.000Z",
+            "reviewSnapshotHash": "review_snapshot_blocked_host_002",
+            "idempotencyKey": "reject_untrusted_partner_blog_once",
+            "decisionFingerprint": "reject_b10c0002"
+          },
+          "expectations": {
+            "requiresCurrentSnapshot": true,
+            "expectedSnapshotHash": "review_snapshot_blocked_host_002",
+            "idempotentBy": ["proposalId", "decision", "idempotencyKey"],
+            "noCorpusMutation": true,
+            "noApplyAction": true
+          }
+        },
+        "currentReviewSnapshotHash": "review_snapshot_blocked_host_002"
+      },
+      "expected": {
+        "contract": "compass-source-proposal-review-decision-snapshot-conflict-contract-v1",
+        "classification": "idempotency_conflict",
+        "mutationEnabled": false,
+        "llmUsed": false,
+        "noCorpusMutation": true,
+        "noApplyAction": true,
+        "decision": "reject",
+        "proposalId": "proposal_untrusted_partner_blog_20260526",
+        "sourceId": "untrusted-partner-blog",
+        "idempotencyKey": "reject_untrusted_partner_blog_once",
+        "expectedSnapshotHash": "review_snapshot_blocked_host_002",
+        "currentReviewSnapshotHash": "review_snapshot_blocked_host_002"
+      }
+    },
+    {
+      "id": "malformed-envelope-classifies-without-throwing",
+      "input": {
+        "decisionEnvelope": {
+          "contract": "compass-source-proposal-approval-decision-v1",
+          "decision": "approve",
+          "mutationEnabled": false,
+          "llmUsed": false,
+          "audit": {
+            "proposalId": "proposal_missing_expectations"
+          }
+        },
+        "currentReviewSnapshotHash": "review_snapshot_missing_expectations"
+      },
+      "expected": {
+        "contract": "compass-source-proposal-review-decision-snapshot-conflict-contract-v1",
+        "classification": "malformed_decision_envelope",
+        "mutationEnabled": false,
+        "llmUsed": false,
+        "noCorpusMutation": true,
+        "noApplyAction": true,
+        "currentReviewSnapshotHash": "review_snapshot_missing_expectations"
+      }
+    },
+    {
+      "id": "bad-decision-fingerprint-classifies-as-malformed",
+      "input": {
+        "decisionEnvelope": {
+          "contract": "compass-source-proposal-approval-decision-v1",
+          "decision": "approve",
+          "mutationEnabled": false,
+          "llmUsed": false,
+          "actor": {
+            "actorType": "admin",
+            "actorId": "admin-reviewer"
+          },
+          "reason": {
+            "code": "manual_review_passed",
+            "summary": "Fingerprint shape should be enforced before apply review."
+          },
+          "audit": {
+            "proposalId": "proposal_bad_fingerprint_20260526",
+            "sourceId": "bad-fingerprint-source",
+            "sourceHost": "support.google.com",
+            "decidedAt": "2026-05-26T00:00:00.000Z",
+            "reviewSnapshotHash": "review_snapshot_bad_fingerprint",
+            "idempotencyKey": "approve_bad_fingerprint_once",
+            "decisionFingerprint": "reject_badshape"
+          },
+          "expectations": {
+            "requiresCurrentSnapshot": true,
+            "expectedSnapshotHash": "review_snapshot_bad_fingerprint",
+            "idempotentBy": ["proposalId", "decision", "idempotencyKey"],
+            "noCorpusMutation": true,
+            "noApplyAction": true,
+            "approvedForApplyReviewOnly": true
+          }
+        },
+        "currentReviewSnapshotHash": "review_snapshot_bad_fingerprint"
+      },
+      "expected": {
+        "contract": "compass-source-proposal-review-decision-snapshot-conflict-contract-v1",
+        "classification": "malformed_decision_envelope",
+        "mutationEnabled": false,
+        "llmUsed": false,
+        "noCorpusMutation": true,
+        "noApplyAction": true,
+        "currentReviewSnapshotHash": "review_snapshot_bad_fingerprint"
+      }
+    }
   ]
 }

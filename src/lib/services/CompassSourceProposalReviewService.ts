@@ -148,6 +148,38 @@ export interface CompassSourceProposalApprovalDecision {
   };
 }
 
+export type CompassSourceProposalReviewDecision =
+  | CompassSourceProposalRejectionDecision
+  | CompassSourceProposalApprovalDecision;
+
+export type CompassSourceProposalReviewDecisionSnapshotConflictClassification =
+  | 'accepted_current_snapshot'
+  | 'duplicate_idempotent_replay'
+  | 'snapshot_conflict'
+  | 'idempotency_conflict'
+  | 'malformed_decision_envelope';
+
+export interface CompassSourceProposalReviewDecisionSnapshotConflictInput {
+  decisionEnvelope: unknown;
+  currentReviewSnapshotHash: string;
+  priorDecisionEnvelope?: unknown;
+}
+
+export interface CompassSourceProposalReviewDecisionSnapshotConflictResult {
+  contract: 'compass-source-proposal-review-decision-snapshot-conflict-contract-v1';
+  classification: CompassSourceProposalReviewDecisionSnapshotConflictClassification;
+  mutationEnabled: false;
+  llmUsed: false;
+  noCorpusMutation: true;
+  noApplyAction: true;
+  decision?: 'approve' | 'reject';
+  proposalId?: string;
+  sourceId?: string;
+  idempotencyKey?: string;
+  expectedSnapshotHash?: string;
+  currentReviewSnapshotHash?: string;
+}
+
 export function reviewCompassSourceProposalCandidate(
   input: CompassSourceProposalReviewInput,
 ): CompassSourceProposalReview {
@@ -271,6 +303,48 @@ export function buildCompassSourceProposalRejectionDecision(
   };
 }
 
+export function classifyCompassSourceProposalReviewDecisionSnapshotConflict(
+  input: CompassSourceProposalReviewDecisionSnapshotConflictInput,
+): CompassSourceProposalReviewDecisionSnapshotConflictResult {
+  const currentReviewSnapshotHash = sanitizeOptionalAuditValue(input.currentReviewSnapshotHash);
+  const decisionEnvelope = parseReviewDecisionEnvelope(input.decisionEnvelope);
+
+  if (!currentReviewSnapshotHash || !decisionEnvelope) {
+    return buildSnapshotConflictResult('malformed_decision_envelope', {
+      currentReviewSnapshotHash,
+    });
+  }
+
+  const baseResult = {
+    decision: decisionEnvelope.decision,
+    proposalId: decisionEnvelope.audit.proposalId,
+    sourceId: decisionEnvelope.audit.sourceId,
+    idempotencyKey: decisionEnvelope.audit.idempotencyKey,
+    expectedSnapshotHash: decisionEnvelope.expectations.expectedSnapshotHash,
+    currentReviewSnapshotHash,
+  };
+
+  const priorDecisionEnvelope = parseReviewDecisionEnvelope(input.priorDecisionEnvelope);
+
+  if (input.priorDecisionEnvelope !== undefined && !priorDecisionEnvelope) {
+    return buildSnapshotConflictResult('malformed_decision_envelope', baseResult);
+  }
+
+  if (priorDecisionEnvelope && hasIdempotencyKeyReuseConflict(decisionEnvelope, priorDecisionEnvelope)) {
+    return buildSnapshotConflictResult('idempotency_conflict', baseResult);
+  }
+
+  if (priorDecisionEnvelope && areSameDecisionReplay(decisionEnvelope, priorDecisionEnvelope)) {
+    return buildSnapshotConflictResult('duplicate_idempotent_replay', baseResult);
+  }
+
+  if (decisionEnvelope.expectations.expectedSnapshotHash !== currentReviewSnapshotHash) {
+    return buildSnapshotConflictResult('snapshot_conflict', baseResult);
+  }
+
+  return buildSnapshotConflictResult('accepted_current_snapshot', baseResult);
+}
+
 export function buildCompassSourceProposalApprovalDecision(
   input: CompassSourceProposalApprovalDecisionInput,
 ): CompassSourceProposalApprovalDecision {
@@ -337,6 +411,88 @@ export function buildCompassSourceProposalApprovalDecision(
       approvedForApplyReviewOnly: true,
     },
   };
+}
+
+function parseReviewDecisionEnvelope(value: unknown): CompassSourceProposalReviewDecision | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+
+  const envelope = value as Partial<CompassSourceProposalReviewDecision>;
+  const audit = envelope.audit;
+  const expectations = envelope.expectations;
+
+  if (envelope.mutationEnabled !== false || envelope.llmUsed !== false) return undefined;
+  if (envelope.decision !== 'reject' && envelope.decision !== 'approve') return undefined;
+  if (envelope.decision === 'reject' && envelope.contract !== 'compass-source-proposal-rejection-decision-v1') {
+    return undefined;
+  }
+  if (envelope.decision === 'approve' && envelope.contract !== 'compass-source-proposal-approval-decision-v1') {
+    return undefined;
+  }
+  if (!audit || typeof audit !== 'object' || !expectations || typeof expectations !== 'object') return undefined;
+  if (
+    !isNonEmptyString(audit.proposalId)
+    || !isNonEmptyString(audit.sourceId)
+    || !isNonEmptyString(audit.sourceHost)
+    || !isNonEmptyString(audit.decidedAt)
+    || !isNonEmptyString(audit.reviewSnapshotHash)
+    || !isNonEmptyString(audit.idempotencyKey)
+    || !isNonEmptyString(audit.decisionFingerprint)
+  ) {
+    return undefined;
+  }
+  if (!isDecisionFingerprintForDecision(envelope.decision, audit.decisionFingerprint)) return undefined;
+  if (expectations.requiresCurrentSnapshot !== true) return undefined;
+  if (expectations.expectedSnapshotHash !== audit.reviewSnapshotHash) return undefined;
+  if (!Array.isArray(expectations.idempotentBy)) return undefined;
+  if (expectations.idempotentBy.join('\u001f') !== 'proposalId\u001fdecision\u001fidempotencyKey') return undefined;
+  if (expectations.noCorpusMutation !== true || expectations.noApplyAction !== true) return undefined;
+  const approvalExpectation = expectations as { approvedForApplyReviewOnly?: unknown };
+  if (envelope.decision === 'approve' && approvalExpectation.approvedForApplyReviewOnly !== true) return undefined;
+  if (envelope.decision === 'reject' && 'approvedForApplyReviewOnly' in approvalExpectation) return undefined;
+
+  return envelope as CompassSourceProposalReviewDecision;
+}
+
+function buildSnapshotConflictResult(
+  classification: CompassSourceProposalReviewDecisionSnapshotConflictClassification,
+  details: Partial<CompassSourceProposalReviewDecisionSnapshotConflictResult> = {},
+): CompassSourceProposalReviewDecisionSnapshotConflictResult {
+  return {
+    contract: 'compass-source-proposal-review-decision-snapshot-conflict-contract-v1',
+    classification,
+    mutationEnabled: false,
+    llmUsed: false,
+    noCorpusMutation: true,
+    noApplyAction: true,
+    ...details,
+  };
+}
+
+function hasIdempotencyKeyReuseConflict(
+  decisionEnvelope: CompassSourceProposalReviewDecision,
+  priorDecisionEnvelope: CompassSourceProposalReviewDecision,
+): boolean {
+  if (decisionEnvelope.audit.idempotencyKey !== priorDecisionEnvelope.audit.idempotencyKey) return false;
+
+  return (
+    decisionEnvelope.audit.proposalId !== priorDecisionEnvelope.audit.proposalId
+    || decisionEnvelope.audit.sourceId !== priorDecisionEnvelope.audit.sourceId
+    || decisionEnvelope.decision !== priorDecisionEnvelope.decision
+    || decisionEnvelope.audit.decisionFingerprint !== priorDecisionEnvelope.audit.decisionFingerprint
+  );
+}
+
+function areSameDecisionReplay(
+  decisionEnvelope: CompassSourceProposalReviewDecision,
+  priorDecisionEnvelope: CompassSourceProposalReviewDecision,
+): boolean {
+  return (
+    decisionEnvelope.audit.idempotencyKey === priorDecisionEnvelope.audit.idempotencyKey
+    && decisionEnvelope.audit.proposalId === priorDecisionEnvelope.audit.proposalId
+    && decisionEnvelope.audit.sourceId === priorDecisionEnvelope.audit.sourceId
+    && decisionEnvelope.decision === priorDecisionEnvelope.decision
+    && decisionEnvelope.audit.decisionFingerprint === priorDecisionEnvelope.audit.decisionFingerprint
+  );
 }
 
 function scoreToLevel(score: number): CompassSourceProposalReview['relevanceLevel'] {
@@ -415,6 +571,16 @@ function isKnownApprovalReasonCode(value: string): value is CompassSourceProposa
     'high_confidence_candidate',
     'manual_review_passed',
   ].includes(value);
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === 'string' && value.trim().length > 0;
+}
+
+function isDecisionFingerprintForDecision(decision: 'approve' | 'reject', value: string): boolean {
+  return decision === 'approve'
+    ? /^approve_[0-9a-f]{8}$/.test(value)
+    : /^reject_[0-9a-f]{8}$/.test(value);
 }
 
 function sanitizeAuditValue(value: string, fieldName: string, context: string): string {

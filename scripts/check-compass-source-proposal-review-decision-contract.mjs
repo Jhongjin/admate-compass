@@ -59,14 +59,18 @@ function loadReviewServiceForFixtureGate() {
 
   const buildRejectionDecision = module.exports.buildCompassSourceProposalRejectionDecision
   const buildApprovalDecision = module.exports.buildCompassSourceProposalApprovalDecision
+  const classifySnapshotConflict = module.exports.classifyCompassSourceProposalReviewDecisionSnapshotConflict
   if (typeof buildRejectionDecision !== 'function') {
     throw new Error('buildCompassSourceProposalRejectionDecision export was not found')
   }
   if (typeof buildApprovalDecision !== 'function') {
     throw new Error('buildCompassSourceProposalApprovalDecision export was not found')
   }
+  if (typeof classifySnapshotConflict !== 'function') {
+    throw new Error('classifyCompassSourceProposalReviewDecisionSnapshotConflict export was not found')
+  }
 
-  return { buildRejectionDecision, buildApprovalDecision }
+  return { buildRejectionDecision, buildApprovalDecision, classifySnapshotConflict }
 }
 
 function assertJsonEquals(actual, expected, label) {
@@ -230,10 +234,17 @@ function assertApprovalReviewOnlyEnvelope(decision, label) {
 for (const token of [
   'buildCompassSourceProposalRejectionDecision',
   'buildCompassSourceProposalApprovalDecision',
+  'classifyCompassSourceProposalReviewDecisionSnapshotConflict',
   'compass-source-proposal-rejection-decision-v1',
   'compass-source-proposal-approval-decision-v1',
+  'compass-source-proposal-review-decision-snapshot-conflict-contract-v1',
   "decision: 'reject'",
   "decision: 'approve'",
+  'accepted_current_snapshot',
+  'duplicate_idempotent_replay',
+  'snapshot_conflict',
+  'idempotency_conflict',
+  'malformed_decision_envelope',
   'mutationEnabled: false',
   'llmUsed: false',
   'requiresCurrentSnapshot: true',
@@ -290,8 +301,9 @@ for (const [key, value] of Object.entries(fixtures.sideEffects || {})) {
 
 let buildRejectionDecision
 let buildApprovalDecision
+let classifySnapshotConflict
 try {
-  ;({ buildRejectionDecision, buildApprovalDecision } = loadReviewServiceForFixtureGate())
+  ;({ buildRejectionDecision, buildApprovalDecision, classifySnapshotConflict } = loadReviewServiceForFixtureGate())
 } catch (error) {
   fail(`review decision fixture evaluation failed: ${error instanceof Error ? error.message : String(error)}`)
 }
@@ -403,6 +415,85 @@ for (const [index, testCase] of invalidApprovalCases.entries()) {
       fail(`${label} expected error including "${testCase.expectedErrorIncludes}", got "${message}"`)
     }
   }
+}
+
+const snapshotConflictCases = Array.isArray(fixtures.snapshotConflictCases) ? fixtures.snapshotConflictCases : []
+if (snapshotConflictCases.length < 6) {
+  fail('review decision fixture pack must include snapshot conflict classification cases')
+}
+
+const decisionById = new Map()
+for (const testCase of [...validCases, ...validApprovalCases]) {
+  if (testCase?.id && testCase.expected) decisionById.set(testCase.id, testCase.expected)
+}
+
+function resolveDecisionFixture(reference, label) {
+  if (reference === undefined) return undefined
+  if (reference && typeof reference === 'object' && !Array.isArray(reference)) return reference
+  if (typeof reference !== 'string') {
+    fail(`${label} must reference a fixture id or inline decision envelope`)
+    return undefined
+  }
+  const decision = decisionById.get(reference)
+  if (!decision) fail(`${label} references unknown decision fixture ${reference}`)
+  return decision
+}
+
+function assertSnapshotConflictResult(result, expected, label) {
+  assertJsonEquals(result, expected, label)
+  if (result.contract !== 'compass-source-proposal-review-decision-snapshot-conflict-contract-v1') {
+    fail(`${label} must use snapshot conflict contract v1`)
+  }
+  if (
+    ![
+      'accepted_current_snapshot',
+      'duplicate_idempotent_replay',
+      'snapshot_conflict',
+      'idempotency_conflict',
+      'malformed_decision_envelope',
+    ].includes(result.classification)
+  ) {
+    fail(`${label} has unknown classification ${result.classification}`)
+  }
+  if (
+    result.mutationEnabled !== false
+    || result.llmUsed !== false
+    || result.noCorpusMutation !== true
+    || result.noApplyAction !== true
+  ) {
+    fail(`${label} must remain a local non-mutating checker`)
+  }
+}
+
+for (const [index, testCase] of snapshotConflictCases.entries()) {
+  const label = `snapshotConflictCases[${index}] ${testCase.id || 'unknown'}`
+  if (!testCase.id || !testCase.input || !testCase.expected) {
+    fail(`${label} must include id, input, and expected`)
+    continue
+  }
+  if (caseIds.has(testCase.id)) fail(`${label}.id must be unique`)
+  caseIds.add(testCase.id)
+
+  const decisionEnvelope = resolveDecisionFixture(testCase.input.decisionRef, `${label}.input.decisionRef`)
+    ?? testCase.input.decisionEnvelope
+  const priorDecisionEnvelope = resolveDecisionFixture(testCase.input.priorDecisionRef, `${label}.input.priorDecisionRef`)
+    ?? testCase.input.priorDecisionEnvelope
+
+  let result
+  try {
+    result = classifySnapshotConflict({
+      decisionEnvelope,
+      currentReviewSnapshotHash: testCase.input.currentReviewSnapshotHash,
+      ...(testCase.input.hasOwnProperty('priorDecisionRef') || testCase.input.hasOwnProperty('priorDecisionEnvelope')
+        ? { priorDecisionEnvelope }
+        : {}),
+    })
+  } catch (error) {
+    fail(`${label} should classify without throwing: ${error instanceof Error ? error.message : String(error)}`)
+    continue
+  }
+
+  assertSnapshotConflictResult(result, testCase.expected, label)
 }
 
 if (
