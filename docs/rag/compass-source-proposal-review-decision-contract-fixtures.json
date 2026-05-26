@@ -1,0 +1,162 @@
+{
+  "fixturePack": "compass-source-proposal-review-decision-contract-v1",
+  "mode": "local_contract_only",
+  "sideEffects": {
+    "network": false,
+    "database": false,
+    "llm": false,
+    "environment": false,
+    "corpusMutation": false,
+    "applyAction": false
+  },
+  "validCases": [
+    {
+      "id": "duplicate-coverage-admin-rejection-sanitizes-secret-like-reason",
+      "input": {
+        "proposalId": "proposal_meta_ads_standards_20260526",
+        "source": {
+          "id": "meta-ads-standards",
+          "vendor": "META",
+          "label": "Meta advertising standards",
+          "url": "https://www.facebook.com/policies/ads/",
+          "sourceType": "policy",
+          "priority": "core",
+          "cadenceDays": 14,
+          "discoveryMode": "exact_url"
+        },
+        "actor": {
+          "actorType": "admin",
+          "actorId": "admin-reviewer token=raw-secret-value",
+          "displayName": "Policy reviewer bearer abc123"
+        },
+        "reason": {
+          "code": "duplicate_coverage",
+          "summary": "Existing indexed coverage is current; api_key=should-not-leak"
+        },
+        "decidedAt": "2026-05-26T02:15:00+09:00",
+        "reviewSnapshotHash": "review_snapshot_meta_ads_001",
+        "idempotencyKey": "reject_meta_ads_standards_once"
+      },
+      "expected": {
+        "contract": "compass-source-proposal-rejection-decision-v1",
+        "decision": "reject",
+        "mutationEnabled": false,
+        "llmUsed": false,
+        "actor": {
+          "actorType": "admin",
+          "actorId": "admin-reviewer [redacted]",
+          "displayName": "Policy reviewer [redacted]"
+        },
+        "reason": {
+          "code": "duplicate_coverage",
+          "summary": "Existing indexed coverage is current; [redacted]"
+        },
+        "audit": {
+          "proposalId": "proposal_meta_ads_standards_20260526",
+          "sourceId": "meta-ads-standards",
+          "sourceHost": "www.facebook.com",
+          "decidedAt": "2026-05-25T17:15:00.000Z",
+          "reviewSnapshotHash": "review_snapshot_meta_ads_001",
+          "idempotencyKey": "reject_meta_ads_standards_once",
+          "decisionFingerprint": "reject_126dc9bb"
+        },
+        "expectations": {
+          "requiresCurrentSnapshot": true,
+          "expectedSnapshotHash": "review_snapshot_meta_ads_001",
+          "idempotentBy": ["proposalId", "decision", "idempotencyKey"],
+          "noCorpusMutation": true,
+          "noApplyAction": true
+        }
+      }
+    },
+    {
+      "id": "blocked-host-worker-rejection-keeps-snapshot-idempotency",
+      "input": {
+        "proposalId": "proposal_untrusted_partner_blog_20260526",
+        "source": {
+          "id": "untrusted-partner-blog",
+          "vendor": "GOOGLE",
+          "label": "Untrusted partner blog",
+          "url": "https://partner.example.invalid/ads-policy-summary",
+          "sourceType": "help",
+          "priority": "support",
+          "cadenceDays": 30,
+          "discoveryMode": "domain_discovery"
+        },
+        "actor": {
+          "actorType": "internal_worker",
+          "actorId": "source-proposal-review-worker"
+        },
+        "reason": {
+          "code": "source_blocked",
+          "summary": "Host is not allowlisted for Compass source proposals."
+        },
+        "decidedAt": "2026-05-26T00:00:00.000Z",
+        "reviewSnapshotHash": "review_snapshot_blocked_host_002",
+        "idempotencyKey": "reject_untrusted_partner_blog_once"
+      },
+      "expected": {
+        "contract": "compass-source-proposal-rejection-decision-v1",
+        "decision": "reject",
+        "mutationEnabled": false,
+        "llmUsed": false,
+        "actor": {
+          "actorType": "internal_worker",
+          "actorId": "source-proposal-review-worker"
+        },
+        "reason": {
+          "code": "source_blocked",
+          "summary": "Host is not allowlisted for Compass source proposals."
+        },
+        "audit": {
+          "proposalId": "proposal_untrusted_partner_blog_20260526",
+          "sourceId": "untrusted-partner-blog",
+          "sourceHost": "partner.example.invalid",
+          "decidedAt": "2026-05-26T00:00:00.000Z",
+          "reviewSnapshotHash": "review_snapshot_blocked_host_002",
+          "idempotencyKey": "reject_untrusted_partner_blog_once",
+          "decisionFingerprint": "reject_23a8b0ef"
+        },
+        "expectations": {
+          "requiresCurrentSnapshot": true,
+          "expectedSnapshotHash": "review_snapshot_blocked_host_002",
+          "idempotentBy": ["proposalId", "decision", "idempotencyKey"],
+          "noCorpusMutation": true,
+          "noApplyAction": true
+        }
+      }
+    }
+  ],
+  "invalidCases": [
+    {
+      "id": "missing-reason-summary-is-rejected",
+      "inputPatch": {
+        "reason": {
+          "code": "out_of_scope",
+          "summary": "   "
+        }
+      },
+      "expectedErrorIncludes": "reason.summary is required"
+    },
+    {
+      "id": "unknown-actor-type-is-rejected",
+      "inputPatch": {
+        "actor": {
+          "actorType": "guest",
+          "actorId": "external-user"
+        }
+      },
+      "expectedErrorIncludes": "actorType must be admin or internal_worker"
+    },
+    {
+      "id": "unknown-reason-code-is-rejected",
+      "inputPatch": {
+        "reason": {
+          "code": "approve_anyway",
+          "summary": "This must not pass the rejection-only review gate."
+        }
+      },
+      "expectedErrorIncludes": "reason code is not allowlisted"
+    }
+  ]
+}
