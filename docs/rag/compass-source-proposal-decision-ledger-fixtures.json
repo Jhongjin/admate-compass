@@ -1,0 +1,340 @@
+{
+  "fixturePack": "compass-source-proposal-decision-ledger-contract-v1",
+  "mode": "local_contract_only",
+  "sideEffects": {
+    "network": false,
+    "database": false,
+    "llm": false,
+    "environment": false,
+    "corpusMutation": false,
+    "applyAction": false
+  },
+  "safetyFlags": {
+    "mutationEnabled": false,
+    "llmUsed": false,
+    "noCorpusMutation": true,
+    "noApplyAction": true
+  },
+  "cases": [
+    {
+      "id": "approval-current-snapshot-captured-for-later-apply-review-only",
+      "input": {
+        "decisionRef": "official-policy-admin-approval-sanitizes-secret-like-reason",
+        "proposalSnapshot": {
+          "proposalId": "proposal_google_ads_policy_help_20260526",
+          "sourceId": "google-ads-policy-help",
+          "sourceHost": "support.google.com",
+          "queueCandidateId": "queue_google_ads_policy_help",
+          "runId": "run_decision_ledger_fixture",
+          "currentReviewSnapshotHash": "review_snapshot_google_ads_policy_003",
+          "proposalStatus": "candidate_ready",
+          "reviewStatus": "pending"
+        }
+      },
+      "expected": {
+        "contract": "compass-source-proposal-decision-ledger-v1",
+        "status": "accepted_current_snapshot",
+        "mutationEnabled": false,
+        "llmUsed": false,
+        "noCorpusMutation": true,
+        "noApplyAction": true,
+        "ledger": {
+          "accepted": true,
+          "action": "captured_for_later_apply_review",
+          "persistence": "disabled_contract_only",
+          "reviewDecisionCapturedForLaterApplyReviewOnly": true
+        },
+        "reason": "Approval review decision captured for later apply review only. No apply action was performed.",
+        "decision": "approve",
+        "proposalId": "proposal_google_ads_policy_help_20260526",
+        "sourceId": "google-ads-policy-help",
+        "sourceHost": "support.google.com",
+        "queueCandidateId": "queue_google_ads_policy_help",
+        "runId": "run_decision_ledger_fixture",
+        "idempotencyKey": "approve_google_ads_policy_help_once",
+        "decisionFingerprint": "approve_1eb6a538",
+        "expectedSnapshotHash": "review_snapshot_google_ads_policy_003",
+        "currentReviewSnapshotHash": "review_snapshot_google_ads_policy_003",
+        "proposalStatus": "candidate_ready",
+        "reviewStatus": "pending",
+        "approvalScope": "approved_for_later_apply_review_only"
+      }
+    },
+    {
+      "id": "exact-idempotent-replay-is-returned-without-new-capture",
+      "input": {
+        "decisionRef": "worker-approval-keeps-apply-review-only-expectations",
+        "priorDecisionRef": "worker-approval-keeps-apply-review-only-expectations",
+        "proposalSnapshot": {
+          "proposalId": "proposal_naver_ads_policy_20260526",
+          "sourceId": "naver-ads-policy",
+          "sourceHost": "ads.naver.com",
+          "queueCandidateId": "queue_naver_ads_policy",
+          "runId": "run_decision_ledger_fixture",
+          "currentReviewSnapshotHash": "review_snapshot_naver_ads_policy_refreshed",
+          "proposalStatus": "candidate_ready",
+          "reviewStatus": "approved"
+        }
+      },
+      "expected": {
+        "contract": "compass-source-proposal-decision-ledger-v1",
+        "status": "duplicate_idempotent_replay",
+        "mutationEnabled": false,
+        "llmUsed": false,
+        "noCorpusMutation": true,
+        "noApplyAction": true,
+        "ledger": {
+          "accepted": true,
+          "action": "replayed_existing_decision",
+          "persistence": "disabled_contract_only",
+          "reviewDecisionCapturedForLaterApplyReviewOnly": true
+        },
+        "reason": "Exact idempotent replay detected; existing review decision remains captured for later apply review only.",
+        "decision": "approve",
+        "proposalId": "proposal_naver_ads_policy_20260526",
+        "sourceId": "naver-ads-policy",
+        "sourceHost": "ads.naver.com",
+        "queueCandidateId": "queue_naver_ads_policy",
+        "runId": "run_decision_ledger_fixture",
+        "idempotencyKey": "approve_naver_ads_policy_once",
+        "decisionFingerprint": "approve_82035d41",
+        "expectedSnapshotHash": "review_snapshot_naver_ads_policy_004",
+        "currentReviewSnapshotHash": "review_snapshot_naver_ads_policy_refreshed",
+        "proposalStatus": "candidate_ready",
+        "reviewStatus": "approved",
+        "approvalScope": "approved_for_later_apply_review_only"
+      }
+    },
+    {
+      "id": "stale-snapshot-is-rejected-without-capture",
+      "input": {
+        "decisionRef": "official-policy-admin-approval-sanitizes-secret-like-reason",
+        "proposalSnapshot": {
+          "proposalId": "proposal_google_ads_policy_help_20260526",
+          "sourceId": "google-ads-policy-help",
+          "sourceHost": "support.google.com",
+          "queueCandidateId": "queue_google_ads_policy_help",
+          "runId": "run_decision_ledger_fixture",
+          "currentReviewSnapshotHash": "review_snapshot_google_ads_policy_refreshed",
+          "proposalStatus": "candidate_ready",
+          "reviewStatus": "pending"
+        }
+      },
+      "expected": {
+        "contract": "compass-source-proposal-decision-ledger-v1",
+        "status": "snapshot_conflict",
+        "mutationEnabled": false,
+        "llmUsed": false,
+        "noCorpusMutation": true,
+        "noApplyAction": true,
+        "ledger": {
+          "accepted": false,
+          "action": "rejected_without_capture",
+          "persistence": "disabled_contract_only",
+          "reviewDecisionCapturedForLaterApplyReviewOnly": false
+        },
+        "reason": "Decision was based on a stale review snapshot and must be reviewed again.",
+        "decision": "approve",
+        "proposalId": "proposal_google_ads_policy_help_20260526",
+        "sourceId": "google-ads-policy-help",
+        "sourceHost": "support.google.com",
+        "queueCandidateId": "queue_google_ads_policy_help",
+        "runId": "run_decision_ledger_fixture",
+        "idempotencyKey": "approve_google_ads_policy_help_once",
+        "decisionFingerprint": "approve_1eb6a538",
+        "expectedSnapshotHash": "review_snapshot_google_ads_policy_003",
+        "currentReviewSnapshotHash": "review_snapshot_google_ads_policy_refreshed",
+        "proposalStatus": "candidate_ready",
+        "reviewStatus": "pending",
+        "approvalScope": "approved_for_later_apply_review_only"
+      }
+    },
+    {
+      "id": "idempotency-key-reuse-with-different-payload-is-rejected",
+      "input": {
+        "decisionRef": "official-policy-admin-approval-sanitizes-secret-like-reason",
+        "priorDecisionEnvelope": {
+          "contract": "compass-source-proposal-rejection-decision-v1",
+          "decision": "reject",
+          "mutationEnabled": false,
+          "llmUsed": false,
+          "noCorpusMutation": true,
+          "noApplyAction": true,
+          "actor": {
+            "actorType": "admin",
+            "actorId": "admin-reviewer"
+          },
+          "reason": {
+            "code": "duplicate_coverage",
+            "summary": "Previous rejection envelope using the same idempotency key."
+          },
+          "audit": {
+            "proposalId": "proposal_google_ads_policy_help_20260526",
+            "sourceId": "google-ads-policy-help",
+            "sourceHost": "support.google.com",
+            "decidedAt": "2026-05-25T18:20:00.000Z",
+            "reviewSnapshotHash": "review_snapshot_google_ads_policy_003",
+            "idempotencyKey": "approve_google_ads_policy_help_once",
+            "decisionFingerprint": "reject_a11ce001"
+          },
+          "expectations": {
+            "requiresCurrentSnapshot": true,
+            "expectedSnapshotHash": "review_snapshot_google_ads_policy_003",
+            "idempotentBy": ["proposalId", "decision", "idempotencyKey"],
+            "noCorpusMutation": true,
+            "noApplyAction": true
+          }
+        },
+        "proposalSnapshot": {
+          "proposalId": "proposal_google_ads_policy_help_20260526",
+          "sourceId": "google-ads-policy-help",
+          "sourceHost": "support.google.com",
+          "queueCandidateId": "queue_google_ads_policy_help",
+          "runId": "run_decision_ledger_fixture",
+          "currentReviewSnapshotHash": "review_snapshot_google_ads_policy_003",
+          "proposalStatus": "candidate_ready",
+          "reviewStatus": "pending"
+        }
+      },
+      "expected": {
+        "contract": "compass-source-proposal-decision-ledger-v1",
+        "status": "idempotency_conflict",
+        "mutationEnabled": false,
+        "llmUsed": false,
+        "noCorpusMutation": true,
+        "noApplyAction": true,
+        "ledger": {
+          "accepted": false,
+          "action": "rejected_without_capture",
+          "persistence": "disabled_contract_only",
+          "reviewDecisionCapturedForLaterApplyReviewOnly": false
+        },
+        "reason": "Idempotency key was already used for a different proposal decision payload.",
+        "decision": "approve",
+        "proposalId": "proposal_google_ads_policy_help_20260526",
+        "sourceId": "google-ads-policy-help",
+        "sourceHost": "support.google.com",
+        "queueCandidateId": "queue_google_ads_policy_help",
+        "runId": "run_decision_ledger_fixture",
+        "idempotencyKey": "approve_google_ads_policy_help_once",
+        "decisionFingerprint": "approve_1eb6a538",
+        "expectedSnapshotHash": "review_snapshot_google_ads_policy_003",
+        "currentReviewSnapshotHash": "review_snapshot_google_ads_policy_003",
+        "proposalStatus": "candidate_ready",
+        "reviewStatus": "pending",
+        "approvalScope": "approved_for_later_apply_review_only"
+      }
+    },
+    {
+      "id": "malformed-envelope-is-rejected-with-safety-flags",
+      "input": {
+        "decisionEnvelope": {
+          "contract": "compass-source-proposal-approval-decision-v1",
+          "decision": "approve",
+          "mutationEnabled": false,
+          "llmUsed": false,
+          "noCorpusMutation": true,
+          "noApplyAction": true,
+          "audit": {
+            "proposalId": "proposal_missing_expectations"
+          }
+        },
+        "proposalSnapshot": {
+          "proposalId": "proposal_missing_expectations",
+          "sourceId": "missing-expectations-source",
+          "sourceHost": "support.google.com",
+          "currentReviewSnapshotHash": "review_snapshot_missing_expectations",
+          "proposalStatus": "candidate_ready",
+          "reviewStatus": "pending"
+        }
+      },
+      "expected": {
+        "contract": "compass-source-proposal-decision-ledger-v1",
+        "status": "malformed_decision_envelope",
+        "mutationEnabled": false,
+        "llmUsed": false,
+        "noCorpusMutation": true,
+        "noApplyAction": true,
+        "ledger": {
+          "accepted": false,
+          "action": "rejected_without_capture",
+          "persistence": "disabled_contract_only",
+          "reviewDecisionCapturedForLaterApplyReviewOnly": false
+        },
+        "reason": "Decision envelope is malformed or does not match the proposal review decision contract.",
+        "currentReviewSnapshotHash": "review_snapshot_missing_expectations"
+      }
+    },
+    {
+      "id": "unknown-proposal-is-rejected-without-capture",
+      "input": {
+        "decisionRef": "duplicate-coverage-admin-rejection-sanitizes-secret-like-reason"
+      },
+      "expected": {
+        "contract": "compass-source-proposal-decision-ledger-v1",
+        "status": "unknown_proposal",
+        "mutationEnabled": false,
+        "llmUsed": false,
+        "noCorpusMutation": true,
+        "noApplyAction": true,
+        "ledger": {
+          "accepted": false,
+          "action": "rejected_without_capture",
+          "persistence": "disabled_contract_only",
+          "reviewDecisionCapturedForLaterApplyReviewOnly": false
+        },
+        "reason": "Decision references a proposal that is not present in the current proposal snapshot fixture.",
+        "decision": "reject",
+        "proposalId": "proposal_meta_ads_standards_20260526",
+        "sourceId": "meta-ads-standards",
+        "sourceHost": "www.facebook.com",
+        "idempotencyKey": "reject_meta_ads_standards_once",
+        "decisionFingerprint": "reject_126dc9bb",
+        "expectedSnapshotHash": "review_snapshot_meta_ads_001"
+      }
+    },
+    {
+      "id": "non-pending-proposal-is-rejected-without-capture",
+      "input": {
+        "decisionRef": "duplicate-coverage-admin-rejection-sanitizes-secret-like-reason",
+        "proposalSnapshot": {
+          "proposalId": "proposal_meta_ads_standards_20260526",
+          "sourceId": "meta-ads-standards",
+          "sourceHost": "www.facebook.com",
+          "queueCandidateId": "queue_meta_ads_standards",
+          "runId": "run_decision_ledger_fixture",
+          "currentReviewSnapshotHash": "review_snapshot_meta_ads_001",
+          "proposalStatus": "candidate_ready",
+          "reviewStatus": "rejected"
+        }
+      },
+      "expected": {
+        "contract": "compass-source-proposal-decision-ledger-v1",
+        "status": "non_pending_proposal",
+        "mutationEnabled": false,
+        "llmUsed": false,
+        "noCorpusMutation": true,
+        "noApplyAction": true,
+        "ledger": {
+          "accepted": false,
+          "action": "rejected_without_capture",
+          "persistence": "disabled_contract_only",
+          "reviewDecisionCapturedForLaterApplyReviewOnly": false
+        },
+        "reason": "Decision was not captured because the proposal is no longer pending.",
+        "decision": "reject",
+        "proposalId": "proposal_meta_ads_standards_20260526",
+        "sourceId": "meta-ads-standards",
+        "sourceHost": "www.facebook.com",
+        "queueCandidateId": "queue_meta_ads_standards",
+        "runId": "run_decision_ledger_fixture",
+        "idempotencyKey": "reject_meta_ads_standards_once",
+        "decisionFingerprint": "reject_126dc9bb",
+        "expectedSnapshotHash": "review_snapshot_meta_ads_001",
+        "currentReviewSnapshotHash": "review_snapshot_meta_ads_001",
+        "proposalStatus": "candidate_ready",
+        "reviewStatus": "rejected"
+      }
+    }
+  ]
+}

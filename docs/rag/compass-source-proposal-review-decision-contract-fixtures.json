@@ -42,6 +42,8 @@
         "decision": "reject",
         "mutationEnabled": false,
         "llmUsed": false,
+        "noCorpusMutation": true,
+        "noApplyAction": true,
         "actor": {
           "actorType": "admin",
           "actorId": "admin-reviewer [redacted]",
@@ -100,6 +102,8 @@
         "decision": "reject",
         "mutationEnabled": false,
         "llmUsed": false,
+        "noCorpusMutation": true,
+        "noApplyAction": true,
         "actor": {
           "actorType": "internal_worker",
           "actorId": "source-proposal-review-worker"
@@ -160,6 +164,8 @@
         "decision": "approve",
         "mutationEnabled": false,
         "llmUsed": false,
+        "noCorpusMutation": true,
+        "noApplyAction": true,
         "actor": {
           "actorType": "admin",
           "actorId": "admin-approval-reviewer [redacted]",
@@ -219,6 +225,8 @@
         "decision": "approve",
         "mutationEnabled": false,
         "llmUsed": false,
+        "noCorpusMutation": true,
+        "noApplyAction": true,
         "actor": {
           "actorType": "internal_worker",
           "actorId": "source-proposal-review-worker"
@@ -406,6 +414,8 @@
           "decision": "reject",
           "mutationEnabled": false,
           "llmUsed": false,
+          "noCorpusMutation": true,
+          "noApplyAction": true,
           "actor": {
             "actorType": "admin",
             "actorId": "admin-reviewer"
@@ -457,6 +467,8 @@
           "decision": "reject",
           "mutationEnabled": false,
           "llmUsed": false,
+          "noCorpusMutation": true,
+          "noApplyAction": true,
           "actor": {
             "actorType": "internal_worker",
             "actorId": "source-proposal-review-worker"
@@ -507,6 +519,8 @@
           "decision": "approve",
           "mutationEnabled": false,
           "llmUsed": false,
+          "noCorpusMutation": true,
+          "noApplyAction": true,
           "audit": {
             "proposalId": "proposal_missing_expectations"
           }
@@ -531,6 +545,8 @@
           "decision": "approve",
           "mutationEnabled": false,
           "llmUsed": false,
+          "noCorpusMutation": true,
+          "noApplyAction": true,
           "actor": {
             "actorType": "admin",
             "actorId": "admin-reviewer"

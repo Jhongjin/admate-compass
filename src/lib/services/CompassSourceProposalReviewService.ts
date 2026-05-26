@@ -88,6 +88,8 @@ export interface CompassSourceProposalRejectionDecision {
   decision: 'reject';
   mutationEnabled: false;
   llmUsed: false;
+  noCorpusMutation: true;
+  noApplyAction: true;
   actor: {
     actorType: CompassSourceProposalRejectionActorType;
     actorId: string;
@@ -120,6 +122,8 @@ export interface CompassSourceProposalApprovalDecision {
   decision: 'approve';
   mutationEnabled: false;
   llmUsed: false;
+  noCorpusMutation: true;
+  noApplyAction: true;
   actor: {
     actorType: CompassSourceProposalApprovalActorType;
     actorId: string;
@@ -275,6 +279,8 @@ export function buildCompassSourceProposalRejectionDecision(
     decision: 'reject',
     mutationEnabled: false,
     llmUsed: false,
+    noCorpusMutation: true,
+    noApplyAction: true,
     actor: {
       actorType: input.actor.actorType,
       actorId,
@@ -307,7 +313,7 @@ export function classifyCompassSourceProposalReviewDecisionSnapshotConflict(
   input: CompassSourceProposalReviewDecisionSnapshotConflictInput,
 ): CompassSourceProposalReviewDecisionSnapshotConflictResult {
   const currentReviewSnapshotHash = sanitizeOptionalAuditValue(input.currentReviewSnapshotHash);
-  const decisionEnvelope = parseReviewDecisionEnvelope(input.decisionEnvelope);
+  const decisionEnvelope = parseCompassSourceProposalReviewDecisionEnvelope(input.decisionEnvelope);
 
   if (!currentReviewSnapshotHash || !decisionEnvelope) {
     return buildSnapshotConflictResult('malformed_decision_envelope', {
@@ -324,7 +330,7 @@ export function classifyCompassSourceProposalReviewDecisionSnapshotConflict(
     currentReviewSnapshotHash,
   };
 
-  const priorDecisionEnvelope = parseReviewDecisionEnvelope(input.priorDecisionEnvelope);
+  const priorDecisionEnvelope = parseCompassSourceProposalReviewDecisionEnvelope(input.priorDecisionEnvelope);
 
   if (input.priorDecisionEnvelope !== undefined && !priorDecisionEnvelope) {
     return buildSnapshotConflictResult('malformed_decision_envelope', baseResult);
@@ -384,6 +390,8 @@ export function buildCompassSourceProposalApprovalDecision(
     decision: 'approve',
     mutationEnabled: false,
     llmUsed: false,
+    noCorpusMutation: true,
+    noApplyAction: true,
     actor: {
       actorType: input.actor.actorType,
       actorId,
@@ -413,14 +421,23 @@ export function buildCompassSourceProposalApprovalDecision(
   };
 }
 
-function parseReviewDecisionEnvelope(value: unknown): CompassSourceProposalReviewDecision | undefined {
+export function parseCompassSourceProposalReviewDecisionEnvelope(
+  value: unknown,
+): CompassSourceProposalReviewDecision | undefined {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
 
   const envelope = value as Partial<CompassSourceProposalReviewDecision>;
   const audit = envelope.audit;
   const expectations = envelope.expectations;
 
-  if (envelope.mutationEnabled !== false || envelope.llmUsed !== false) return undefined;
+  if (
+    envelope.mutationEnabled !== false
+    || envelope.llmUsed !== false
+    || envelope.noCorpusMutation !== true
+    || envelope.noApplyAction !== true
+  ) {
+    return undefined;
+  }
   if (envelope.decision !== 'reject' && envelope.decision !== 'approve') return undefined;
   if (envelope.decision === 'reject' && envelope.contract !== 'compass-source-proposal-rejection-decision-v1') {
     return undefined;

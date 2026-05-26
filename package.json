@@ -23,6 +23,7 @@
     "check:compass-source-preview-parser": "node scripts/check-compass-source-preview-parser-fixtures.mjs",
     "check:compass-web-page-extraction": "node scripts/check-compass-web-page-extraction-fixtures.mjs",
     "check:compass-source-proposal-review-decision-contract": "node scripts/check-compass-source-proposal-review-decision-contract.mjs",
+    "check:compass-source-proposal-decision-ledger-contract": "node scripts/check-compass-source-proposal-decision-ledger-contract.mjs",
     "check:compass-source-proposal-queue-contract": "node scripts/check-compass-source-proposal-queue-contract.mjs",
     "check:compass-source-proposal-worker-contract": "node scripts/check-compass-source-proposal-worker-contract.mjs",
     "check:rag-source-quality": "node scripts/check-rag-source-quality.mjs",

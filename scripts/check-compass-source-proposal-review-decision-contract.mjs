@@ -133,8 +133,13 @@ function assertRejectOnlyEnvelope(decision, label) {
   if (decision.decision !== 'reject') {
     fail(`${label} must be rejection-only`)
   }
-  if (decision.mutationEnabled !== false || decision.llmUsed !== false) {
-    fail(`${label} must keep mutationEnabled=false and llmUsed=false`)
+  if (
+    decision.mutationEnabled !== false
+    || decision.llmUsed !== false
+    || decision.noCorpusMutation !== true
+    || decision.noApplyAction !== true
+  ) {
+    fail(`${label} must keep mutationEnabled=false, llmUsed=false, noCorpusMutation=true, and noApplyAction=true`)
   }
   if (decision.expectations?.requiresCurrentSnapshot !== true) {
     fail(`${label} must require the current review snapshot`)
@@ -184,8 +189,13 @@ function assertApprovalReviewOnlyEnvelope(decision, label) {
   if (decision.decision !== 'approve') {
     fail(`${label} must be an approval decision`)
   }
-  if (decision.mutationEnabled !== false || decision.llmUsed !== false) {
-    fail(`${label} must keep mutationEnabled=false and llmUsed=false`)
+  if (
+    decision.mutationEnabled !== false
+    || decision.llmUsed !== false
+    || decision.noCorpusMutation !== true
+    || decision.noApplyAction !== true
+  ) {
+    fail(`${label} must keep mutationEnabled=false, llmUsed=false, noCorpusMutation=true, and noApplyAction=true`)
   }
   if (decision.expectations?.requiresCurrentSnapshot !== true) {
     fail(`${label} must require the current review snapshot`)
@@ -247,6 +257,8 @@ for (const token of [
   'malformed_decision_envelope',
   'mutationEnabled: false',
   'llmUsed: false',
+  'noCorpusMutation: true',
+  'noApplyAction: true',
   'requiresCurrentSnapshot: true',
   "idempotentBy: ['proposalId', 'decision', 'idempotencyKey']",
   'noCorpusMutation: true',
