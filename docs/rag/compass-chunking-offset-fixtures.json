@@ -1,0 +1,69 @@
+{
+  "fixturePack": "compass-chunking-offset-v1",
+  "mode": "local_contract_only",
+  "sideEffects": {
+    "db": false,
+    "network": false,
+    "llm": false,
+    "embedding": false,
+    "corpusMutation": false,
+    "cron": false,
+    "apply": false
+  },
+  "fixtures": [
+    {
+      "id": "repeated-identical-policy-blocks-advance-occurrences",
+      "sourceText": "policy block\npolicy block\npolicy block",
+      "chunkTexts": [
+        "policy block",
+        "policy block",
+        "policy block"
+      ],
+      "expectedOffsets": [
+        { "startChar": 0, "endChar": 12 },
+        { "startChar": 13, "endChar": 25 },
+        { "startChar": 26, "endChar": 38 }
+      ]
+    },
+    {
+      "id": "overlapping-repeated-phrases-search-from-next-start",
+      "sourceText": "ABC ABC ABC",
+      "chunkTexts": [
+        "ABC ABC",
+        "ABC ABC"
+      ],
+      "expectedOffsets": [
+        { "startChar": 0, "endChar": 7 },
+        { "startChar": 4, "endChar": 11 }
+      ]
+    },
+    {
+      "id": "dense-character-overlap-does-not-search-from-previous-end",
+      "sourceText": "aaaaaa",
+      "chunkTexts": [
+        "aaaa",
+        "aaaa",
+        "aaa"
+      ],
+      "expectedOffsets": [
+        { "startChar": 0, "endChar": 4 },
+        { "startChar": 1, "endChar": 5 },
+        { "startChar": 2, "endChar": 5 }
+      ]
+    },
+    {
+      "id": "normalized-policy-copy-repeats-with-overlap",
+      "sourceText": "광고 심사 기준은 소재와 랜딩 페이지를 함께 확인합니다.\n광고 심사 기준은 소재와 랜딩 페이지를 함께 확인합니다.\n소재와 랜딩 페이지를 함께 확인합니다.",
+      "chunkTexts": [
+        "광고 심사 기준은 소재와 랜딩 페이지를 함께 확인합니다.\n광고 심사 기준은",
+        "광고 심사 기준은 소재와 랜딩 페이지를 함께 확인합니다.",
+        "소재와 랜딩 페이지를 함께 확인합니다."
+      ],
+      "expectedOffsets": [
+        { "startChar": 0, "endChar": 41 },
+        { "startChar": 32, "endChar": 63 },
+        { "startChar": 42, "endChar": 63 }
+      ]
+    }
+  ]
+}

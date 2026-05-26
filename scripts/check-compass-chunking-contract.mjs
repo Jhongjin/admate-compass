@@ -2,6 +2,8 @@
 
 import fs from "node:fs";
 import path from "node:path";
+import vm from "node:vm";
+import ts from "typescript";
 
 const root = process.cwd();
 
@@ -24,6 +26,150 @@ const vectorStorageService = read("src/lib/services/VectorStorageService.ts");
 const indexingService = read("src/lib/services/DocumentIndexingService.ts");
 const documentProcessingService = read("src/lib/services/DocumentProcessingService.ts");
 const extractionPlan = read("docs/tasks/2026-05-17_compass_web_page_extraction_service_contract_plan_v1.md");
+const offsetFixtureText = read("docs/rag/compass-chunking-offset-fixtures.json");
+
+function assertArrayEquals(actual, expected, label) {
+  const actualSerialized = JSON.stringify(actual);
+  const expectedSerialized = JSON.stringify(expected);
+  if (actualSerialized !== expectedSerialized) {
+    fail(`${label} mismatch: expected ${expectedSerialized}, got ${actualSerialized}`);
+  }
+}
+
+function loadTextChunkingServiceForFixtureGate(serviceText) {
+  const transpiled = ts.transpileModule(serviceText, {
+    compilerOptions: {
+      module: ts.ModuleKind.CommonJS,
+      target: ts.ScriptTarget.ES2020,
+      esModuleInterop: true,
+    },
+    fileName: path.join(root, "src/lib/services/TextChunkingService.ts"),
+  });
+
+  const module = { exports: {} };
+  const sandbox = {
+    module,
+    exports: module.exports,
+    console,
+    Error,
+    Math,
+    String,
+    require(specifier) {
+      if (specifier === "langchain/text_splitter") {
+        return {
+          RecursiveCharacterTextSplitter: class RecursiveCharacterTextSplitter {
+            constructor(options = {}) {
+              this.options = options;
+            }
+
+            async createDocuments(texts = [], metadatas = []) {
+              return texts.map((pageContent, index) => ({
+                pageContent,
+                metadata: metadatas[index] || {},
+              }));
+            }
+          },
+        };
+      }
+
+      throw new Error(`Unexpected fixture gate import: ${specifier}`);
+    },
+  };
+
+  vm.runInNewContext(transpiled.outputText, sandbox, {
+    filename: path.join(root, "src/lib/services/TextChunkingService.ts"),
+  });
+
+  const ServiceConstructor = module.exports.TextChunkingService;
+  if (typeof ServiceConstructor !== "function") {
+    throw new Error("TextChunkingService export was not found after local evaluation");
+  }
+
+  const service = new ServiceConstructor();
+  if (typeof service.calculateChunkOffsets !== "function") {
+    throw new Error("TextChunkingService.calculateChunkOffsets is not runtime-accessible");
+  }
+
+  return service;
+}
+
+function assertOffsetFixtures(fixtureText) {
+  let service;
+  try {
+    service = loadTextChunkingServiceForFixtureGate(chunkingService);
+  } catch (error) {
+    fail(`TextChunkingService fixture evaluation failed: ${error instanceof Error ? error.message : String(error)}`);
+    return;
+  }
+
+  let fixturePack;
+  try {
+    fixturePack = JSON.parse(fixtureText);
+  } catch (error) {
+    fail(`chunk offset fixture JSON is invalid: ${error instanceof Error ? error.message : String(error)}`);
+    return;
+  }
+
+  if (fixturePack.fixturePack !== "compass-chunking-offset-v1") {
+    fail("chunk offset fixturePack must be compass-chunking-offset-v1");
+  }
+  if (fixturePack.mode !== "local_contract_only") {
+    fail("chunk offset fixture mode must be local_contract_only");
+  }
+
+  for (const [key, value] of Object.entries(fixturePack.sideEffects || {})) {
+    if (value !== false) fail(`chunk offset fixture sideEffects.${key} must be false`);
+  }
+
+  const fixtures = Array.isArray(fixturePack.fixtures) ? fixturePack.fixtures : [];
+  if (fixtures.length < 4) {
+    fail("chunk offset fixtures must cover repeated and overlapping cases");
+  }
+
+  const fixtureIds = new Set();
+  for (const [index, testCase] of fixtures.entries()) {
+    const label = `chunk offset fixtures[${index}] ${testCase.id || "unknown"}`;
+
+    if (!testCase.id || typeof testCase.sourceText !== "string" || !Array.isArray(testCase.chunkTexts) || !Array.isArray(testCase.expectedOffsets)) {
+      fail(`${label} must include id, sourceText, chunkTexts, and expectedOffsets`);
+      continue;
+    }
+    if (fixtureIds.has(testCase.id)) {
+      fail(`${label}.id must be unique`);
+    }
+    fixtureIds.add(testCase.id);
+    if (testCase.chunkTexts.length !== testCase.expectedOffsets.length) {
+      fail(`${label} chunkTexts and expectedOffsets length mismatch`);
+      continue;
+    }
+
+    let actualOffsets = [];
+    try {
+      actualOffsets = service.calculateChunkOffsets(testCase.sourceText, testCase.chunkTexts);
+    } catch (error) {
+      fail(`${label} failed: ${error instanceof Error ? error.message : String(error)}`);
+      continue;
+    }
+
+    assertArrayEquals(actualOffsets, testCase.expectedOffsets, label);
+
+    for (const [offsetIndex, offset] of actualOffsets.entries()) {
+      const chunkText = testCase.chunkTexts[offsetIndex];
+      if (testCase.sourceText.slice(offset.startChar, offset.endChar) !== chunkText) {
+        fail(`${label}.expectedOffsets[${offsetIndex}] must slice back to the chunk text`);
+      }
+    }
+  }
+
+  for (const requiredId of [
+    "repeated-identical-policy-blocks-advance-occurrences",
+    "overlapping-repeated-phrases-search-from-next-start",
+    "dense-character-overlap-does-not-search-from-previous-end",
+    "normalized-policy-copy-repeats-with-overlap",
+  ]) {
+    if (!fixtureIds.has(requiredId)) fail(`chunk offset fixture pack missing ${requiredId}`);
+  }
+}
 
 for (const token of [
   "policy-recursive-v2",
@@ -182,6 +328,8 @@ for (const token of [
     fail(`web page extraction contract plan missing ${token}`);
   }
 }
+
+assertOffsetFixtures(offsetFixtureText);
 
 if (!process.exitCode) {
   console.log("[check-compass-chunking-contract] ok");
