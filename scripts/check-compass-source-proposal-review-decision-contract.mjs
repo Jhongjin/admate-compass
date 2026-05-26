@@ -57,12 +57,16 @@ function loadReviewServiceForFixtureGate() {
     filename: path.join(root, servicePath),
   })
 
-  const buildDecision = module.exports.buildCompassSourceProposalRejectionDecision
-  if (typeof buildDecision !== 'function') {
+  const buildRejectionDecision = module.exports.buildCompassSourceProposalRejectionDecision
+  const buildApprovalDecision = module.exports.buildCompassSourceProposalApprovalDecision
+  if (typeof buildRejectionDecision !== 'function') {
     throw new Error('buildCompassSourceProposalRejectionDecision export was not found')
   }
+  if (typeof buildApprovalDecision !== 'function') {
+    throw new Error('buildCompassSourceProposalApprovalDecision export was not found')
+  }
 
-  return { buildDecision }
+  return { buildRejectionDecision, buildApprovalDecision }
 }
 
 function assertJsonEquals(actual, expected, label) {
@@ -169,16 +173,74 @@ function assertRejectOnlyEnvelope(decision, label) {
   })
 }
 
+function assertApprovalReviewOnlyEnvelope(decision, label) {
+  if (decision.contract !== 'compass-source-proposal-approval-decision-v1') {
+    fail(`${label} must use the approval decision contract`)
+  }
+  if (decision.decision !== 'approve') {
+    fail(`${label} must be an approval decision`)
+  }
+  if (decision.mutationEnabled !== false || decision.llmUsed !== false) {
+    fail(`${label} must keep mutationEnabled=false and llmUsed=false`)
+  }
+  if (decision.expectations?.requiresCurrentSnapshot !== true) {
+    fail(`${label} must require the current review snapshot`)
+  }
+  if (decision.expectations?.expectedSnapshotHash !== decision.audit?.reviewSnapshotHash) {
+    fail(`${label} expectedSnapshotHash must mirror audit.reviewSnapshotHash`)
+  }
+  assertJsonEquals(
+    decision.expectations?.idempotentBy,
+    ['proposalId', 'decision', 'idempotencyKey'],
+    `${label}.expectations.idempotentBy`,
+  )
+  if (decision.expectations?.noCorpusMutation !== true || decision.expectations?.noApplyAction !== true) {
+    fail(`${label} must explicitly block corpus mutation and apply action`)
+  }
+  if (decision.expectations?.approvedForApplyReviewOnly !== true) {
+    fail(`${label} must remain approved for later apply review only`)
+  }
+  if (!/^approve_[0-9a-f]{8}$/.test(decision.audit?.decisionFingerprint || '')) {
+    fail(`${label} audit.decisionFingerprint must be a stable approval fingerprint`)
+  }
+
+  const forbiddenKeys = new Set([
+    'applyPlan',
+    'applyTarget',
+    'applyAction',
+    'corpusWrite',
+    'corpusMutation',
+    'documentWrite',
+    'documentChunkWrite',
+    'embeddingWrite',
+    'wouldIndex',
+    'wouldPromote',
+    'promote',
+    'promotion',
+  ])
+
+  visitValues(decision, (value, pathParts) => {
+    const key = pathParts[pathParts.length - 1]
+    if (forbiddenKeys.has(key)) {
+      fail(`${label} must not expose apply/corpus mutation field ${pathParts.join('.')}`)
+    }
+  })
+}
+
 for (const token of [
   'buildCompassSourceProposalRejectionDecision',
+  'buildCompassSourceProposalApprovalDecision',
   'compass-source-proposal-rejection-decision-v1',
+  'compass-source-proposal-approval-decision-v1',
   "decision: 'reject'",
+  "decision: 'approve'",
   'mutationEnabled: false',
   'llmUsed: false',
   'requiresCurrentSnapshot: true',
   "idempotentBy: ['proposalId', 'decision', 'idempotencyKey']",
   'noCorpusMutation: true',
   'noApplyAction: true',
+  'approvedForApplyReviewOnly: true',
   'sanitizeAuditValue',
   'stableDecisionFingerprint',
 ]) {
@@ -226,9 +288,10 @@ for (const [key, value] of Object.entries(fixtures.sideEffects || {})) {
   if (value !== false) fail(`fixture sideEffects.${key} must be false`)
 }
 
-let buildDecision
+let buildRejectionDecision
+let buildApprovalDecision
 try {
-  ;({ buildDecision } = loadReviewServiceForFixtureGate())
+  ;({ buildRejectionDecision, buildApprovalDecision } = loadReviewServiceForFixtureGate())
 } catch (error) {
   fail(`review decision fixture evaluation failed: ${error instanceof Error ? error.message : String(error)}`)
 }
@@ -251,8 +314,8 @@ for (const [index, testCase] of validCases.entries()) {
   let first
   let second
   try {
-    first = buildDecision(testCase.input)
-    second = buildDecision(testCase.input)
+    first = buildRejectionDecision(testCase.input)
+    second = buildRejectionDecision(testCase.input)
   } catch (error) {
     fail(`${label} unexpectedly threw: ${error instanceof Error ? error.message : String(error)}`)
     continue
@@ -261,6 +324,36 @@ for (const [index, testCase] of validCases.entries()) {
   assertJsonEquals(first, second, `${label} deterministic repeat`)
   assertJsonEquals(first, testCase.expected, `${label} expected decision`)
   assertRejectOnlyEnvelope(first, label)
+  assertNoSecretLikeOutput(first, label)
+}
+
+const validApprovalCases = Array.isArray(fixtures.validApprovalCases) ? fixtures.validApprovalCases : []
+if (validApprovalCases.length < 2) {
+  fail('review decision fixture pack must include at least two valid approval cases')
+}
+
+for (const [index, testCase] of validApprovalCases.entries()) {
+  const label = `validApprovalCases[${index}] ${testCase.id || 'unknown'}`
+  if (!testCase.id || !testCase.input || !testCase.expected) {
+    fail(`${label} must include id, input, and expected`)
+    continue
+  }
+  if (caseIds.has(testCase.id)) fail(`${label}.id must be unique`)
+  caseIds.add(testCase.id)
+
+  let first
+  let second
+  try {
+    first = buildApprovalDecision(testCase.input)
+    second = buildApprovalDecision(testCase.input)
+  } catch (error) {
+    fail(`${label} unexpectedly threw: ${error instanceof Error ? error.message : String(error)}`)
+    continue
+  }
+
+  assertJsonEquals(first, second, `${label} deterministic repeat`)
+  assertJsonEquals(first, testCase.expected, `${label} expected decision`)
+  assertApprovalReviewOnlyEnvelope(first, label)
   assertNoSecretLikeOutput(first, label)
 }
 
@@ -278,7 +371,31 @@ for (const [index, testCase] of invalidCases.entries()) {
   }
 
   try {
-    buildDecision(deepMerge(baseInput, testCase.inputPatch))
+    buildRejectionDecision(deepMerge(baseInput, testCase.inputPatch))
+    fail(`${label} should have failed validation`)
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    if (!message.includes(testCase.expectedErrorIncludes)) {
+      fail(`${label} expected error including "${testCase.expectedErrorIncludes}", got "${message}"`)
+    }
+  }
+}
+
+const invalidApprovalCases = Array.isArray(fixtures.invalidApprovalCases) ? fixtures.invalidApprovalCases : []
+if (invalidApprovalCases.length < 3) {
+  fail('review decision fixture pack must include validation approval cases')
+}
+
+const baseApprovalInput = validApprovalCases[0]?.input
+for (const [index, testCase] of invalidApprovalCases.entries()) {
+  const label = `invalidApprovalCases[${index}] ${testCase.id || 'unknown'}`
+  if (!testCase.id || !testCase.inputPatch || !testCase.expectedErrorIncludes) {
+    fail(`${label} must include id, inputPatch, and expectedErrorIncludes`)
+    continue
+  }
+
+  try {
+    buildApprovalDecision(deepMerge(baseApprovalInput, testCase.inputPatch))
     fail(`${label} should have failed validation`)
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)

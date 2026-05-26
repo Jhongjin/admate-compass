@@ -127,6 +127,126 @@
       }
     }
   ],
+  "validApprovalCases": [
+    {
+      "id": "official-policy-admin-approval-sanitizes-secret-like-reason",
+      "input": {
+        "proposalId": "proposal_google_ads_policy_help_20260526",
+        "source": {
+          "id": "google-ads-policy-help",
+          "vendor": "GOOGLE",
+          "label": "Google Ads policy help",
+          "url": "https://support.google.com/adspolicy/answer/6008942",
+          "sourceType": "policy",
+          "priority": "core",
+          "cadenceDays": 14,
+          "discoveryMode": "exact_url"
+        },
+        "actor": {
+          "actorType": "admin",
+          "actorId": "admin-approval-reviewer token=raw-secret-value",
+          "displayName": "Approval reviewer bearer abc123"
+        },
+        "reason": {
+          "code": "official_policy_source",
+          "summary": "Official policy URL fills the source coverage gap; api_key=should-not-leak"
+        },
+        "decidedAt": "2026-05-26T03:20:00+09:00",
+        "reviewSnapshotHash": "review_snapshot_google_ads_policy_003",
+        "idempotencyKey": "approve_google_ads_policy_help_once"
+      },
+      "expected": {
+        "contract": "compass-source-proposal-approval-decision-v1",
+        "decision": "approve",
+        "mutationEnabled": false,
+        "llmUsed": false,
+        "actor": {
+          "actorType": "admin",
+          "actorId": "admin-approval-reviewer [redacted]",
+          "displayName": "Approval reviewer [redacted]"
+        },
+        "reason": {
+          "code": "official_policy_source",
+          "summary": "Official policy URL fills the source coverage gap; [redacted]"
+        },
+        "audit": {
+          "proposalId": "proposal_google_ads_policy_help_20260526",
+          "sourceId": "google-ads-policy-help",
+          "sourceHost": "support.google.com",
+          "decidedAt": "2026-05-25T18:20:00.000Z",
+          "reviewSnapshotHash": "review_snapshot_google_ads_policy_003",
+          "idempotencyKey": "approve_google_ads_policy_help_once",
+          "decisionFingerprint": "approve_1eb6a538"
+        },
+        "expectations": {
+          "requiresCurrentSnapshot": true,
+          "expectedSnapshotHash": "review_snapshot_google_ads_policy_003",
+          "idempotentBy": ["proposalId", "decision", "idempotencyKey"],
+          "noCorpusMutation": true,
+          "noApplyAction": true,
+          "approvedForApplyReviewOnly": true
+        }
+      }
+    },
+    {
+      "id": "worker-approval-keeps-apply-review-only-expectations",
+      "input": {
+        "proposalId": "proposal_naver_ads_policy_20260526",
+        "source": {
+          "id": "naver-ads-policy",
+          "vendor": "NAVER",
+          "label": "Naver ads policy entry",
+          "url": "https://ads.naver.com/",
+          "sourceType": "entrypoint",
+          "priority": "core",
+          "cadenceDays": 7,
+          "discoveryMode": "domain_discovery"
+        },
+        "actor": {
+          "actorType": "internal_worker",
+          "actorId": "source-proposal-review-worker"
+        },
+        "reason": {
+          "code": "manual_review_passed",
+          "summary": "Manual review passed for later apply review only."
+        },
+        "decidedAt": "2026-05-26T00:00:00.000Z",
+        "reviewSnapshotHash": "review_snapshot_naver_ads_policy_004",
+        "idempotencyKey": "approve_naver_ads_policy_once"
+      },
+      "expected": {
+        "contract": "compass-source-proposal-approval-decision-v1",
+        "decision": "approve",
+        "mutationEnabled": false,
+        "llmUsed": false,
+        "actor": {
+          "actorType": "internal_worker",
+          "actorId": "source-proposal-review-worker"
+        },
+        "reason": {
+          "code": "manual_review_passed",
+          "summary": "Manual review passed for later apply review only."
+        },
+        "audit": {
+          "proposalId": "proposal_naver_ads_policy_20260526",
+          "sourceId": "naver-ads-policy",
+          "sourceHost": "ads.naver.com",
+          "decidedAt": "2026-05-26T00:00:00.000Z",
+          "reviewSnapshotHash": "review_snapshot_naver_ads_policy_004",
+          "idempotencyKey": "approve_naver_ads_policy_once",
+          "decisionFingerprint": "approve_82035d41"
+        },
+        "expectations": {
+          "requiresCurrentSnapshot": true,
+          "expectedSnapshotHash": "review_snapshot_naver_ads_policy_004",
+          "idempotentBy": ["proposalId", "decision", "idempotencyKey"],
+          "noCorpusMutation": true,
+          "noApplyAction": true,
+          "approvedForApplyReviewOnly": true
+        }
+      }
+    }
+  ],
   "invalidCases": [
     {
       "id": "missing-reason-summary-is-rejected",
@@ -154,6 +274,38 @@
         "reason": {
           "code": "approve_anyway",
           "summary": "This must not pass the rejection-only review gate."
+        }
+      },
+      "expectedErrorIncludes": "reason code is not allowlisted"
+    }
+  ],
+  "invalidApprovalCases": [
+    {
+      "id": "missing-approval-reason-summary-is-rejected",
+      "inputPatch": {
+        "reason": {
+          "code": "fills_policy_gap",
+          "summary": "   "
+        }
+      },
+      "expectedErrorIncludes": "reason.summary is required"
+    },
+    {
+      "id": "unknown-approval-actor-type-is-rejected",
+      "inputPatch": {
+        "actor": {
+          "actorType": "guest",
+          "actorId": "external-user"
+        }
+      },
+      "expectedErrorIncludes": "actorType must be admin or internal_worker"
+    },
+    {
+      "id": "unknown-approval-reason-code-is-rejected",
+      "inputPatch": {
+        "reason": {
+          "code": "approve_anyway",
+          "summary": "This must not pass the approval allowlist."
         }
       },
       "expectedErrorIncludes": "reason code is not allowlisted"

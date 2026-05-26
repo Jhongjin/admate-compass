@@ -24,6 +24,7 @@ export interface CompassSourceProposalReview {
 }
 
 export type CompassSourceProposalRejectionActorType = 'admin' | 'internal_worker';
+export type CompassSourceProposalApprovalActorType = 'admin' | 'internal_worker';
 
 export type CompassSourceProposalRejectionReasonCode =
   | 'duplicate_coverage'
@@ -33,8 +34,21 @@ export type CompassSourceProposalRejectionReasonCode =
   | 'out_of_scope'
   | 'superseded_source';
 
+export type CompassSourceProposalApprovalReasonCode =
+  | 'official_policy_source'
+  | 'fills_policy_gap'
+  | 'stale_source_refresh'
+  | 'high_confidence_candidate'
+  | 'manual_review_passed';
+
 export interface CompassSourceProposalRejectionActorInput {
   actorType: CompassSourceProposalRejectionActorType;
+  actorId: string;
+  displayName?: string;
+}
+
+export interface CompassSourceProposalApprovalActorInput {
+  actorType: CompassSourceProposalApprovalActorType;
   actorId: string;
   displayName?: string;
 }
@@ -44,11 +58,26 @@ export interface CompassSourceProposalRejectionReasonInput {
   summary: string;
 }
 
+export interface CompassSourceProposalApprovalReasonInput {
+  code: CompassSourceProposalApprovalReasonCode;
+  summary: string;
+}
+
 export interface CompassSourceProposalRejectionDecisionInput {
   proposalId: string;
   source: CompassPolicySource;
   actor: CompassSourceProposalRejectionActorInput;
   reason: CompassSourceProposalRejectionReasonInput;
+  decidedAt: string;
+  reviewSnapshotHash: string;
+  idempotencyKey: string;
+}
+
+export interface CompassSourceProposalApprovalDecisionInput {
+  proposalId: string;
+  source: CompassPolicySource;
+  actor: CompassSourceProposalApprovalActorInput;
+  reason: CompassSourceProposalApprovalReasonInput;
   decidedAt: string;
   reviewSnapshotHash: string;
   idempotencyKey: string;
@@ -83,6 +112,39 @@ export interface CompassSourceProposalRejectionDecision {
     idempotentBy: ['proposalId', 'decision', 'idempotencyKey'];
     noCorpusMutation: true;
     noApplyAction: true;
+  };
+}
+
+export interface CompassSourceProposalApprovalDecision {
+  contract: 'compass-source-proposal-approval-decision-v1';
+  decision: 'approve';
+  mutationEnabled: false;
+  llmUsed: false;
+  actor: {
+    actorType: CompassSourceProposalApprovalActorType;
+    actorId: string;
+    displayName?: string;
+  };
+  reason: {
+    code: CompassSourceProposalApprovalReasonCode;
+    summary: string;
+  };
+  audit: {
+    proposalId: string;
+    sourceId: string;
+    sourceHost: string;
+    decidedAt: string;
+    reviewSnapshotHash: string;
+    idempotencyKey: string;
+    decisionFingerprint: string;
+  };
+  expectations: {
+    requiresCurrentSnapshot: true;
+    expectedSnapshotHash: string;
+    idempotentBy: ['proposalId', 'decision', 'idempotencyKey'];
+    noCorpusMutation: true;
+    noApplyAction: true;
+    approvedForApplyReviewOnly: true;
   };
 }
 
@@ -145,14 +207,15 @@ export function reviewCompassSourceProposalCandidate(
 export function buildCompassSourceProposalRejectionDecision(
   input: CompassSourceProposalRejectionDecisionInput,
 ): CompassSourceProposalRejectionDecision {
-  const proposalId = sanitizeAuditValue(input.proposalId, 'proposalId');
-  const actorId = sanitizeAuditValue(input.actor.actorId, 'actorId');
+  const proposalId = sanitizeAuditValue(input.proposalId, 'proposalId', 'Rejection decision');
+  const actorId = sanitizeAuditValue(input.actor.actorId, 'actorId', 'Rejection decision');
   const displayName = sanitizeOptionalAuditValue(input.actor.displayName);
-  const reasonSummary = sanitizeAuditValue(input.reason.summary, 'reason.summary');
-  const reviewSnapshotHash = sanitizeAuditValue(input.reviewSnapshotHash, 'reviewSnapshotHash');
-  const idempotencyKey = sanitizeAuditValue(input.idempotencyKey, 'idempotencyKey');
-  const decidedAt = normalizeIsoTimestamp(input.decidedAt);
-  const sourceHost = getSourceHost(input.source.url);
+  const reasonSummary = sanitizeAuditValue(input.reason.summary, 'reason.summary', 'Rejection decision');
+  const reviewSnapshotHash = sanitizeAuditValue(input.reviewSnapshotHash, 'reviewSnapshotHash', 'Rejection decision');
+  const idempotencyKey = sanitizeAuditValue(input.idempotencyKey, 'idempotencyKey', 'Rejection decision');
+  const decidedAt = normalizeIsoTimestamp(input.decidedAt, 'Rejection decision');
+  const sourceId = sanitizeAuditValue(input.source.id, 'source.id', 'Rejection decision');
+  const sourceHost = getSourceHost(input.source.url, 'Rejection decision');
 
   if (input.actor.actorType !== 'admin' && input.actor.actorType !== 'internal_worker') {
     throw new Error('Rejection decision actorType must be admin or internal_worker.');
@@ -162,10 +225,10 @@ export function buildCompassSourceProposalRejectionDecision(
     throw new Error('Rejection decision reason code is not allowlisted.');
   }
 
-  const decisionFingerprint = stableDecisionFingerprint([
+  const decisionFingerprint = stableDecisionFingerprint('reject', [
     'reject',
     proposalId,
-    input.source.id,
+    sourceId,
     input.actor.actorType,
     actorId,
     input.reason.code,
@@ -191,7 +254,7 @@ export function buildCompassSourceProposalRejectionDecision(
     },
     audit: {
       proposalId,
-      sourceId: sanitizeAuditValue(input.source.id, 'source.id'),
+      sourceId,
       sourceHost,
       decidedAt,
       reviewSnapshotHash,
@@ -204,6 +267,74 @@ export function buildCompassSourceProposalRejectionDecision(
       idempotentBy: ['proposalId', 'decision', 'idempotencyKey'],
       noCorpusMutation: true,
       noApplyAction: true,
+    },
+  };
+}
+
+export function buildCompassSourceProposalApprovalDecision(
+  input: CompassSourceProposalApprovalDecisionInput,
+): CompassSourceProposalApprovalDecision {
+  const proposalId = sanitizeAuditValue(input.proposalId, 'proposalId', 'Approval decision');
+  const actorId = sanitizeAuditValue(input.actor.actorId, 'actorId', 'Approval decision');
+  const displayName = sanitizeOptionalAuditValue(input.actor.displayName);
+  const reasonSummary = sanitizeAuditValue(input.reason.summary, 'reason.summary', 'Approval decision');
+  const reviewSnapshotHash = sanitizeAuditValue(input.reviewSnapshotHash, 'reviewSnapshotHash', 'Approval decision');
+  const idempotencyKey = sanitizeAuditValue(input.idempotencyKey, 'idempotencyKey', 'Approval decision');
+  const decidedAt = normalizeIsoTimestamp(input.decidedAt, 'Approval decision');
+  const sourceId = sanitizeAuditValue(input.source.id, 'source.id', 'Approval decision');
+  const sourceHost = getSourceHost(input.source.url, 'Approval decision');
+
+  if (input.actor.actorType !== 'admin' && input.actor.actorType !== 'internal_worker') {
+    throw new Error('Approval decision actorType must be admin or internal_worker.');
+  }
+
+  if (!isKnownApprovalReasonCode(input.reason.code)) {
+    throw new Error('Approval decision reason code is not allowlisted.');
+  }
+
+  const decisionFingerprint = stableDecisionFingerprint('approve', [
+    'approve',
+    proposalId,
+    sourceId,
+    input.actor.actorType,
+    actorId,
+    input.reason.code,
+    reasonSummary,
+    decidedAt,
+    reviewSnapshotHash,
+    idempotencyKey,
+  ]);
+
+  return {
+    contract: 'compass-source-proposal-approval-decision-v1',
+    decision: 'approve',
+    mutationEnabled: false,
+    llmUsed: false,
+    actor: {
+      actorType: input.actor.actorType,
+      actorId,
+      ...(displayName ? { displayName } : {}),
+    },
+    reason: {
+      code: input.reason.code,
+      summary: reasonSummary,
+    },
+    audit: {
+      proposalId,
+      sourceId,
+      sourceHost,
+      decidedAt,
+      reviewSnapshotHash,
+      idempotencyKey,
+      decisionFingerprint,
+    },
+    expectations: {
+      requiresCurrentSnapshot: true,
+      expectedSnapshotHash: reviewSnapshotHash,
+      idempotentBy: ['proposalId', 'decision', 'idempotencyKey'],
+      noCorpusMutation: true,
+      noApplyAction: true,
+      approvedForApplyReviewOnly: true,
     },
   };
 }
@@ -276,10 +407,20 @@ function isKnownRejectionReasonCode(value: string): value is CompassSourcePropos
   ].includes(value);
 }
 
-function sanitizeAuditValue(value: string, fieldName: string): string {
+function isKnownApprovalReasonCode(value: string): value is CompassSourceProposalApprovalReasonCode {
+  return [
+    'official_policy_source',
+    'fills_policy_gap',
+    'stale_source_refresh',
+    'high_confidence_candidate',
+    'manual_review_passed',
+  ].includes(value);
+}
+
+function sanitizeAuditValue(value: string, fieldName: string, context: string): string {
   const sanitized = sanitizeOptionalAuditValue(value);
   if (!sanitized) {
-    throw new Error(`Rejection decision ${fieldName} is required.`);
+    throw new Error(`${context} ${fieldName} is required.`);
   }
   return sanitized;
 }
@@ -298,26 +439,26 @@ function sanitizeOptionalAuditValue(value?: string): string | undefined {
   return sanitized || undefined;
 }
 
-function normalizeIsoTimestamp(value: string): string {
-  const sanitized = sanitizeAuditValue(value, 'decidedAt');
+function normalizeIsoTimestamp(value: string, context: string): string {
+  const sanitized = sanitizeAuditValue(value, 'decidedAt', context);
   const date = new Date(sanitized);
 
   if (Number.isNaN(date.getTime())) {
-    throw new Error('Rejection decision decidedAt must be an ISO timestamp.');
+    throw new Error(`${context} decidedAt must be an ISO timestamp.`);
   }
 
   return date.toISOString();
 }
 
-function getSourceHost(sourceUrl: string): string {
+function getSourceHost(sourceUrl: string, context: string): string {
   try {
     return new URL(sourceUrl).host.toLowerCase();
   } catch {
-    throw new Error('Rejection decision source.url must be a valid URL.');
+    throw new Error(`${context} source.url must be a valid URL.`);
   }
 }
 
-function stableDecisionFingerprint(parts: string[]): string {
+function stableDecisionFingerprint(prefix: 'reject' | 'approve', parts: string[]): string {
   let hash = 2166136261;
   const input = parts.join('\u001f');
 
@@ -326,5 +467,5 @@ function stableDecisionFingerprint(parts: string[]): string {
     hash = Math.imul(hash, 16777619);
   }
 
-  return `reject_${(hash >>> 0).toString(16).padStart(8, '0')}`;
+  return `${prefix}_${(hash >>> 0).toString(16).padStart(8, '0')}`;
 }
