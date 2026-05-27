@@ -54,6 +54,22 @@ if (fs.existsSync(ragServicePath)) {
   for (const field of ['EvidenceDecision', 'evidenceDecision', 'evidenceDecisionReason', 'decideEvidence', 'placeholder_content']) {
     if (!text.includes(field)) fail(`RAG search evidence contract missing ${field}`)
   }
+  for (const marker of [
+    'isGenericPolicyIntent',
+    'hasExactTopicMatch',
+    'hasPolicyGradeTitle',
+    'isGenericTopicRescueCandidate',
+    'findWeakestGenericPolicyReplacementIndex',
+    'generic_topic_rescue',
+    'generic_vector_seed_penalty',
+    'topic_exact_match',
+    'policy_title_match',
+  ]) {
+    if (!text.includes(marker)) fail(`RAG-3O generic policy guard missing ${marker}`)
+  }
+  if (!text.includes('genericMetaSeedPenalty')) {
+    fail('RAG-3O generic policy guard missing genericMetaSeedPenalty')
+  }
 }
 
 const answerServicePath = path.join(root, 'src/lib/services/CompassAnswerLlmService.ts')

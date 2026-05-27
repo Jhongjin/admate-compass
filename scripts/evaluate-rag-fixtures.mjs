@@ -410,6 +410,13 @@ function validateResponseAgainstFixture(fixture, payload) {
 }
 
 function summarizeSource(source, index) {
+  const sourceQuality = source?.sourceQuality && typeof source.sourceQuality === "object"
+    ? {
+      ...source.sourceQuality,
+      policyTitleMatch: source.sourceQuality.policyTitleMatch ?? source?.policyTitleMatch,
+    }
+    : source?.sourceQuality;
+
   return {
     rank: index + 1,
     id: source?.id,
@@ -429,8 +436,10 @@ function summarizeSource(source, index) {
     lexicalOverlap: source?.lexicalOverlap,
     vendorMatch: source?.vendorMatch,
     vendorMismatch: source?.vendorMismatch,
+    topicExactMatch: source?.topicExactMatch,
+    policyTitleMatch: source?.policyTitleMatch ?? source?.sourceQuality?.policyTitleMatch,
     rankReason: source?.rankReason || [],
-    sourceQuality: source?.sourceQuality,
+    sourceQuality,
   };
 }
 

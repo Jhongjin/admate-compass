@@ -321,6 +321,12 @@ export class RAGSearchService {
     const topicMatch = this.hasTopicMatch(sourceText, options.intent.topics);
     const topicExactMatch = this.hasExactTopicMatch(sourceText, options.intent.topics);
     const policyTitleMatch = this.hasPolicyGradeTitle(documentTitle, result.metadata);
+    const originalMetaSeed = this.isOriginalMetaSeedCandidate({
+      chunkId,
+      corpus: options.corpus,
+      sourceVendor: vendorAlignment.primaryVendor,
+      metadata: result.metadata,
+    });
     const keywordScore = this.calculateKeywordScore(
       content,
       documentTitle,
@@ -357,12 +363,7 @@ export class RAGSearchService {
       topicExactMatch,
       policyTitleMatch,
       genericPolicyIntent: this.isGenericPolicyIntent(options.intent),
-      originalMetaSeed: this.isOriginalMetaSeedCandidate({
-        chunkId,
-        corpus: options.corpus,
-        sourceVendor: vendorAlignment.primaryVendor,
-        metadata: result.metadata,
-      }),
+      originalMetaSeed,
       hasUrl: sourceQuality.hasUrl,
     });
     const rankReason = this.buildRankReason({
@@ -377,6 +378,8 @@ export class RAGSearchService {
       topicExactMatch,
       policyTitleMatch,
       genericPolicyIntent: this.isGenericPolicyIntent(options.intent),
+      originalMetaSeed,
+      hasUrl: sourceQuality.hasUrl,
     });
     const evidenceDecision = this.decideEvidence({
       content,
@@ -1311,6 +1314,8 @@ export class RAGSearchService {
     topicExactMatch: boolean;
     policyTitleMatch: boolean;
     genericPolicyIntent: boolean;
+    originalMetaSeed: boolean;
+    hasUrl: boolean;
   }): string[] {
     const reasons: string[] = [];
     if (input.vectorScore > 0) reasons.push('vector_match');
@@ -1322,6 +1327,17 @@ export class RAGSearchService {
     if (input.topicExactMatch) reasons.push('topic_exact_match');
     if (input.policyTitleMatch) reasons.push('policy_title_match');
     if (input.genericPolicyIntent && input.topicExactMatch) reasons.push('generic_policy_topic_boost');
+    if (
+      input.genericPolicyIntent
+      && input.originalMetaSeed
+      && input.vectorScore > 0
+      && input.keywordScore === 0
+      && !input.topicExactMatch
+      && !input.hasUrl
+      && input.lexicalOverlap <= 0.2
+    ) {
+      reasons.push('generic_vector_seed_penalty');
+    }
     if (input.sourceQuality.hasTitle) reasons.push('has_title');
     if (input.sourceQuality.hasUrl) reasons.push('has_url');
     if (input.corpus === 'document_chunks') reasons.push('document_chunks_keyword_corpus');
