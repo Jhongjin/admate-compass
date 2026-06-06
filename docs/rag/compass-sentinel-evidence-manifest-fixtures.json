@@ -1,0 +1,146 @@
+[
+  {
+    "contractVersion": "compass-sentinel-evidence-manifest-v1",
+    "evidenceStatus": "verified_evidence_present",
+    "reviewStatus": "accepted",
+    "answerDisposition": "answer_ready",
+    "evidenceCounts": {
+      "verified": 2,
+      "weak": 0,
+      "rejected": 0
+    },
+    "candidateDraftCounts": {
+      "total": 2,
+      "selected": 2,
+      "rejected": 0
+    },
+    "reasonCodes": [
+      "source_quality_complete",
+      "verified_evidence_available",
+      "supported_candidate_draft_available"
+    ],
+    "operatorSafeSummary": "Verified policy and setup evidence are available. Two draft answers are supported, so this local report can be displayed for Sentinel review.",
+    "flags": {
+      "localOnly": true,
+      "sanitizedOnly": true,
+      "reportOnly": true,
+      "noDbRead": true,
+      "noDbWrite": true,
+      "noProviderCall": true,
+      "noAuthHandoff": true,
+      "noSentinelIngestCall": true,
+      "noStorageAccess": true,
+      "noPersistence": true,
+      "noApplyOrPromote": true,
+      "noLiveIngest": true
+    }
+  },
+  {
+    "contractVersion": "compass-sentinel-evidence-manifest-v1",
+    "evidenceStatus": "weak_or_missing_evidence",
+    "reviewStatus": "blocked",
+    "answerDisposition": "no_data_found",
+    "evidenceCounts": {
+      "verified": 0,
+      "weak": 2,
+      "rejected": 0
+    },
+    "candidateDraftCounts": {
+      "total": 2,
+      "selected": 0,
+      "rejected": 2
+    },
+    "reasonCodes": [
+      "no_verified_evidence",
+      "low_retrieval_score",
+      "no_supported_answer_candidate"
+    ],
+    "operatorSafeSummary": "Only weak evidence is available. Draft answers remain unselected, so the local Sentinel report stays blocked.",
+    "flags": {
+      "localOnly": true,
+      "sanitizedOnly": true,
+      "reportOnly": true,
+      "noDbRead": true,
+      "noDbWrite": true,
+      "noProviderCall": true,
+      "noAuthHandoff": true,
+      "noSentinelIngestCall": true,
+      "noStorageAccess": true,
+      "noPersistence": true,
+      "noApplyOrPromote": true,
+      "noLiveIngest": true
+    }
+  },
+  {
+    "contractVersion": "compass-sentinel-evidence-manifest-v1",
+    "evidenceStatus": "conflict_or_unsafe_evidence",
+    "reviewStatus": "blocked",
+    "answerDisposition": "no_data_found",
+    "evidenceCounts": {
+      "verified": 0,
+      "weak": 0,
+      "rejected": 2
+    },
+    "candidateDraftCounts": {
+      "total": 2,
+      "selected": 0,
+      "rejected": 2
+    },
+    "reasonCodes": [
+      "vendor_mismatch",
+      "placeholder_content",
+      "conflict_review_required"
+    ],
+    "operatorSafeSummary": "Conflicting or placeholder evidence was rejected. The report is blocked and remains a sanitized local summary only.",
+    "flags": {
+      "localOnly": true,
+      "sanitizedOnly": true,
+      "reportOnly": true,
+      "noDbRead": true,
+      "noDbWrite": true,
+      "noProviderCall": true,
+      "noAuthHandoff": true,
+      "noSentinelIngestCall": true,
+      "noStorageAccess": true,
+      "noPersistence": true,
+      "noApplyOrPromote": true,
+      "noLiveIngest": true
+    }
+  },
+  {
+    "contractVersion": "compass-sentinel-evidence-manifest-v1",
+    "evidenceStatus": "verified_evidence_present",
+    "reviewStatus": "review_needed",
+    "answerDisposition": "no_data_found",
+    "evidenceCounts": {
+      "verified": 2,
+      "weak": 0,
+      "rejected": 0
+    },
+    "candidateDraftCounts": {
+      "total": 2,
+      "selected": 0,
+      "rejected": 2
+    },
+    "reasonCodes": [
+      "verified_evidence_available",
+      "answer_candidate_rejected",
+      "no_supported_answer_candidate"
+    ],
+    "operatorSafeSummary": "Verified evidence exists, but no draft answer is supported. Sentinel display should show review needed without exposing evidence identity.",
+    "flags": {
+      "localOnly": true,
+      "sanitizedOnly": true,
+      "reportOnly": true,
+      "noDbRead": true,
+      "noDbWrite": true,
+      "noProviderCall": true,
+      "noAuthHandoff": true,
+      "noSentinelIngestCall": true,
+      "noStorageAccess": true,
+      "noPersistence": true,
+      "noApplyOrPromote": true,
+      "noLiveIngest": true
+    }
+  }
+]
