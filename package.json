@@ -10,6 +10,7 @@
     "lint": "next lint",
     "type-check": "tsc --noEmit",
     "check:rag-contract": "node scripts/check-rag-contract.mjs",
+    "check:compass-prelaunch-offline-contracts": "node scripts/check-compass-prelaunch-offline-contracts.mjs",
     "check:compass-evidence-contract": "node scripts/check-compass-evidence-contract.mjs",
     "check:compass-three-agent-reviewer-contract": "node scripts/check-compass-three-agent-reviewer-contract.mjs",
     "check:compass-answer-candidate-review-contract": "node scripts/check-compass-answer-candidate-review-contract.mjs",
@@ -47,6 +48,7 @@
     "smoke:compass-answer-local": "node scripts/smoke-compass-answer-local.mjs",
     "smoke:chat-ollama-local": "node scripts/smoke-chat-ollama-local.mjs",
     "gate6c:dry-run": "node scripts/gate6c-local-import-runner.mjs",
+    "verify:prelaunch-local": "npm run check:compass-prelaunch-offline-contracts",
     "verify:harness": "node scripts/check-rag-contract.mjs && npm run check:compass-evidence-contract && npm run check:compass-three-agent-reviewer-contract && npm run check:compass-answer-candidate-review-contract && npm run check:compass-sentinel-evidence-manifest && npm run check:compass-answer-route-contract && npm run check:compass-answer-provider-contract && npm run check:compass-public-provider-naming && npm run check:compass-chunking-contract && npm run check:compass-corpus-audit-contract && npm run check:compass-source-ops-contract && npm run check:compass-source-proposal-contract && npm run check:compass-source-preview-parser && npm run check:compass-web-page-extraction && npm run check:compass-source-proposal-review-decision-contract && npm run check:compass-source-proposal-queue-contract && npm run check:compass-source-proposal-worker-contract && npm run check:rag-source-quality:sample && npm run check:rag-source-quality:fixtures && node scripts/evaluate-rag-fixtures.mjs && node scripts/check-nodata-boundary-fixtures.mjs && node scripts/check-compass-evidence-qa-fixtures.mjs && npm run check:compass-qa-evidence-prompt-visible && node scripts/check-compass-chat-ui-state-contract-fixtures.mjs && npm run check:compass-dev-fixture-renderer && npm run check:compass-source-panel-rendering && node scripts/check-admin-debug-surface.mjs",
     "verify:migration": "node scripts/check-compass-schema-readiness.mjs && node scripts/check-compass-table-references.mjs && node scripts/smoke-compass-rag-contract.mjs && node scripts/check-migration-env.mjs"
   },
