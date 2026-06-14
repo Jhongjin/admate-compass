@@ -90,8 +90,21 @@ function resolveOpenRouterBaseUrl(): string {
   return (process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1').replace(/\/+$/, '');
 }
 
+function resolveOpenAIModels(): string[] {
+  const candidates = [
+    process.env.COMPASS_OPENAI_MODEL,
+    process.env.OPENAI_IDEA_MODEL,
+    'gpt-4o-mini',
+    'gpt-4.1-mini',
+  ]
+    .map((model) => model?.trim())
+    .filter((model): model is string => Boolean(model));
+
+  return Array.from(new Set(candidates));
+}
+
 function resolveOpenAIModel(): string {
-  return process.env.COMPASS_OPENAI_MODEL || process.env.OPENAI_IDEA_MODEL || 'gpt-4o-mini';
+  return resolveOpenAIModels()[0] || 'gpt-4o-mini';
 }
 
 function resolveOpenAIBaseUrl(): string {
@@ -101,6 +114,11 @@ function resolveOpenAIBaseUrl(): string {
 function resolveNumber(value: string | undefined, fallback: number): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function usesDefaultSamplingOnly(model: string): boolean {
+  const normalized = model.trim().toLowerCase();
+  return normalized.startsWith('o') || normalized.startsWith('gpt-5');
 }
 
 export function getCompassAnswerRuntimeStatus() {
@@ -279,29 +297,69 @@ async function generateOpenAIAnswer(
     throw new Error('OpenAI API key is not configured.');
   }
 
-  const model = resolveOpenAIModel();
+  let lastError: unknown;
+  for (const model of resolveOpenAIModels()) {
+    try {
+      return await requestOpenAIAnswer({
+        apiKey,
+        model,
+        message,
+        searchResults,
+      });
+    } catch (error) {
+      lastError = error;
+      console.warn('OpenAI answer generation candidate failed', {
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+      });
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error('OpenAI answer generation failed.');
+}
+
+async function requestOpenAIAnswer({
+  apiKey,
+  model,
+  message,
+  searchResults,
+}: {
+  apiKey: string;
+  model: string;
+  message: string;
+  searchResults: CompassGroundingSource[];
+}): Promise<CompassAnswerResult> {
+  const tokenBudget = Math.max(256, Math.floor(resolveNumber(process.env.COMPASS_ANSWER_MAX_TOKENS, 1200)));
+  const requestBody: Record<string, any> = {
+    model,
+    messages: [
+      { role: 'system', content: buildSystemPrompt() },
+      { role: 'user', content: buildEvidencePrompt(message, searchResults) },
+    ],
+  };
+
+  if (usesDefaultSamplingOnly(model)) {
+    requestBody.max_completion_tokens = tokenBudget;
+  } else {
+    requestBody.temperature = resolveNumber(process.env.COMPASS_ANSWER_TEMPERATURE, 0.1);
+    requestBody.top_p = resolveNumber(process.env.COMPASS_ANSWER_TOP_P, 0.85);
+    requestBody.max_tokens = tokenBudget;
+  }
+
   const response = await fetch(`${resolveOpenAIBaseUrl()}/chat/completions`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${apiKey}`,
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({
-      model,
-      messages: [
-        { role: 'system', content: buildSystemPrompt() },
-        { role: 'user', content: buildEvidencePrompt(message, searchResults) },
-      ],
-      temperature: resolveNumber(process.env.COMPASS_ANSWER_TEMPERATURE, 0.1),
-      top_p: resolveNumber(process.env.COMPASS_ANSWER_TOP_P, 0.85),
-      max_tokens: Math.max(256, Math.floor(resolveNumber(process.env.COMPASS_ANSWER_MAX_TOKENS, 1200))),
-    }),
+    body: JSON.stringify(requestBody),
     signal: AbortSignal.timeout(Math.floor(resolveNumber(process.env.COMPASS_ANSWER_TIMEOUT_MS, 45000))),
   });
 
   if (!response.ok) {
     const detail = await response.text();
-    throw new Error(`OpenAI answer generation failed: ${response.status} ${detail.slice(0, 240)}`);
+    const error = new Error(`OpenAI answer generation failed: ${response.status} ${detail.slice(0, 240)}`);
+    error.name = `OpenAIStatus${response.status}Error`;
+    throw error;
   }
 
   const data = await response.json() as OpenAIChatResponse;
