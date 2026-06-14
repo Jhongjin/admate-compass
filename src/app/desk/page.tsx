@@ -15,7 +15,6 @@ import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/s
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Send, Bot, User, Star, ThumbsUp, ThumbsDown, RotateCcw, AlertCircle, CheckCircle, History, Target, Lightbulb, BookOpen, MessageSquare, Trash2, RefreshCw, PanelLeft, PanelRight, Maximize2, Minimize2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
@@ -942,22 +941,41 @@ function ChatPageContent() {
   ] as const;
   const chatHeader = (
     <div className="rounded-none border-b border-[#D8DCCF] bg-[#FBFBF7]/95 px-4 py-2 backdrop-blur">
-      <div className="mx-auto flex max-w-7xl items-center justify-between gap-3">
-        <div className="min-w-0 flex items-center space-x-3">
-          <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-[#C6D9CB] bg-[#EDF7EF]">
+      <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-2 lg:flex-nowrap">
+        <div className="flex min-w-[12rem] items-center gap-2">
+          <div className="flex h-8 w-8 flex-none items-center justify-center rounded-lg border border-[#C6D9CB] bg-[#EDF7EF]">
             <Bot className="h-4 w-4 text-[#1F7A4D]" />
           </div>
           <div className="min-w-0">
-            <h2 className="truncate text-sm font-semibold text-[#111713]">
-              Compass 정책 확인 화면
+            <h2 className="truncate text-sm font-bold text-[#111713]">
+              근거 확인
             </h2>
-            <p className="hidden text-xs text-[#5F6C62] sm:block">
-              1차 검토부터 출처 대조, 최종 검토까지 한 화면에서 확인합니다.
+            <p className="hidden text-xs text-[#5F6C62] xl:block">
+              질문, 답변, 출처를 한 흐름으로 검토합니다.
             </p>
           </div>
         </div>
+
+        <div className="compass-review-rail order-3 grid w-full grid-cols-3 gap-1.5 text-[11px] sm:flex sm:w-auto sm:min-w-0 sm:flex-1 sm:items-center sm:gap-1.5 lg:order-none">
+          {reviewPostureItems.map(({ label, value, Icon, className, iconClassName }) => {
+            const PostureIcon = Icon;
+
+            return (
+              <div
+                key={label}
+                className={`compass-review-step flex min-w-0 items-center gap-1.5 rounded-md border px-2 py-1 ${className}`}
+              >
+                <PostureIcon className={`h-3.5 w-3.5 flex-none ${iconClassName}`} />
+                <span className="font-semibold">{label}</span>
+                <span className="ml-auto hidden min-w-0 text-right text-[10px] leading-4 opacity-80 md:inline">
+                  {value}
+                </span>
+              </div>
+            );
+          })}
+        </div>
         
-        <div className="flex items-center space-x-2">
+        <div className="ml-auto flex shrink-0 items-center gap-1.5">
           <Sheet open={historyOpen} onOpenChange={setHistoryOpen}>
             <SheetTrigger asChild>
               <Button
@@ -967,7 +985,7 @@ function ChatPageContent() {
                 className="flex h-8 items-center space-x-2 rounded-md px-2 text-[#5F6C62] transition-colors hover:bg-[#EDF7EF] hover:text-[#111713] lg:hidden"
               >
                 <History className="w-4 h-4" />
-                <span className="hidden text-xs sm:inline">히스토리</span>
+                <span className="hidden text-xs sm:inline">기록</span>
               </Button>
             </SheetTrigger>
             <SheetContent side="left" className="w-[min(88vw,22rem)] bg-white p-0">
@@ -989,15 +1007,6 @@ function ChatPageContent() {
               />
             </SheetContent>
           </Sheet>
-          <Badge variant="outline" className="rounded-md border-[#D6D8CD] bg-white px-2 py-1 text-[11px] text-[#5F6C62] sm:hidden">
-            정책 확인
-          </Badge>
-          <Badge variant="outline" className="hidden rounded-md border-[#C6D9CB] bg-[#EDF7EF] px-2 py-1 text-[11px] text-[#1F7A4D] sm:inline-flex">
-            출처 확인
-          </Badge>
-          <Badge variant="outline" className="hidden rounded-md border-[#E9D59B] bg-[#FFF8E6] px-2 py-1 text-[11px] text-[#8A6418] md:inline-flex">
-            공식 기준 대조
-          </Badge>
           <Button
             variant="ghost"
             size="sm"
@@ -1010,7 +1019,7 @@ function ChatPageContent() {
               <PanelLeft className="w-4 h-4" />
             )}
             <span className="text-xs">
-              {isRightPanelCollapsed ? "패널 펼치기" : "패널 접기"}
+              {isRightPanelCollapsed ? "근거 패널 펼치기" : "근거 패널 접기"}
             </span>
           </Button>
           
@@ -1022,28 +1031,12 @@ function ChatPageContent() {
             size="sm"
             onClick={handleNewChat}
             className="flex h-8 items-center space-x-2 rounded-md px-3 text-[#5F6C62] transition-colors hover:bg-[#EDF7EF] hover:text-[#111713]"
-            aria-label="새 대화"
+            aria-label="새 확인"
           >
             <MessageSquare className="w-4 h-4" />
-            <span className="hidden text-xs sm:inline">새 대화</span>
+            <span className="hidden text-xs sm:inline">새 확인</span>
           </Button>
         </div>
-      </div>
-      <div className="compass-review-rail mx-auto mt-2 grid max-w-7xl grid-cols-3 gap-1.5 text-[11px] sm:flex sm:items-center sm:gap-2">
-        {reviewPostureItems.map(({ label, value, Icon, className, iconClassName }) => {
-          const PostureIcon = Icon;
-
-          return (
-            <div
-              key={label}
-              className={`compass-review-step flex min-w-0 items-center gap-1.5 rounded-md border px-2 py-1 ${className}`}
-            >
-              <PostureIcon className={`h-3.5 w-3.5 flex-none ${iconClassName}`} />
-              <span className="font-semibold">{label}</span>
-              <span className="ml-auto min-w-0 text-right text-[10px] leading-4 opacity-80">{value}</span>
-            </div>
-          );
-        })}
       </div>
     </div>
   );
