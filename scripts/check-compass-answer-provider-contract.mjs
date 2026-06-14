@@ -53,12 +53,13 @@ const nonCommentEnvLines = envExample
   .filter((line) => line && !line.startsWith('#'))
 
 for (const token of [
-  "export type CompassAnswerProvider = 'openrouter' | 'ollama'",
+  "export type CompassAnswerProvider = 'openrouter' | 'ollama' | 'openai'",
   'export function getCompassAnswerRuntimeStatus',
   'OPENROUTER_API_KEY',
   'COMPASS_OPENROUTER_API_KEY',
   "process.env.COMPASS_ANSWER_PROVIDER || 'ollama'",
   "configured === 'openrouter'",
+  "configured === 'openai'",
   "configured === 'ollama'",
   'DEFAULT_OPENROUTER_MODELS',
   'resolveOpenRouterModels',

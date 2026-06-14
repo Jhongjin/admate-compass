@@ -38,9 +38,9 @@ interface Message {
   uiState?: ChatUiState;
 }
 
-const INITIAL_GREETING = "안녕하세요. Compass 정책 확인 화면입니다. 플랫폼, 정책 항목, 소재 유형을 함께 입력하면 확인 가능한 출처와 추가 확인 필요 항목을 정리해 드립니다.";
-const NO_DATA_MESSAGE = "현재 Compass 문서에서 확인 가능한 출처를 찾지 못했습니다. 더 구체적으로 입력하면 관련 문서를 다시 확인할 수 있습니다.";
-const GENERATION_LIMITED_MESSAGE = "답변 정리가 일시적으로 제한되었습니다. 확인한 출처는 아래에서 계속 확인할 수 있습니다.";
+const INITIAL_GREETING = "안녕하세요. Compass 근거 확인 화면입니다. 확인할 광고 문안이나 참고 출처를 붙여넣으면, 관련 출처와 추가 확인이 필요한 항목을 함께 정리해 드립니다.";
+const NO_DATA_MESSAGE = "현재 Compass 문서에서 확인 가능한 출처를 찾지 못했습니다. 매체, 업종, 소재 표현을 더 구체적으로 입력하면 다시 확인할 수 있습니다.";
+const GENERATION_LIMITED_MESSAGE = "답변 생성이 일시적으로 제한되었습니다. 확인한 출처는 아래에서 계속 확인할 수 있습니다.";
 const ERROR_MESSAGE = "일시적인 서비스 오류로 답변을 만들지 못했습니다. 잠시 후 다시 시도해 주세요.";
 
 const getInitialMessage = (): Message => ({
@@ -886,6 +886,26 @@ function ChatPageContent() {
     }, 100);
   };
 
+  const promptStarterChips = [
+    { label: "문안 확인", prompt: "다음 광고 문안의 근거를 확인해줘:\n" },
+    { label: "출처 추가", prompt: "다음 출처를 기준으로 문안을 대조해줘:\n" },
+    { label: "표현 다듬기", prompt: "다음 문안에서 주의할 표현과 대체 문구를 정리해줘:\n" },
+    {
+      label: "다시 확인",
+      prompt: lastSubmittedQuestion
+        ? `${lastSubmittedQuestion}\n\n위 질문을 출처 중심으로 다시 확인해줘.`
+        : "방금 검토한 내용을 출처 중심으로 다시 확인해줘.",
+    },
+  ];
+
+  const handlePromptStarterClick = (prompt: string) => {
+    setInputValue((current) => current.trim() ? `${current.trim()}\n${prompt}` : prompt);
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus();
+      handleTextareaResize();
+    });
+  };
+
   const latestAssistantMessage = [...messages].reverse().find((message) => message.type === "assistant");
   const latestUserMessage = [...messages].reverse().find((message) => message.type === "user");
   const latestSources = sanitizeSources(latestAssistantMessage?.sources || []);
@@ -906,8 +926,8 @@ function ChatPageContent() {
   const finalReviewReady = latestHasSources && !needsAdditionalReview;
   const reviewPostureItems = [
     {
-      label: "1차 검토",
-      value: lastSubmittedQuestion ? "질문 조건 정리" : "대기",
+      label: "질문 조건",
+      value: lastSubmittedQuestion ? "문안 맥락 확인" : "입력 대기",
       Icon: CheckCircle,
       className: lastSubmittedQuestion
         ? "border-[#C6D9CB] bg-[#EDF7EF] text-[#1F7A4D]"
@@ -924,8 +944,8 @@ function ChatPageContent() {
       iconClassName: latestHasSources ? "text-[#1F7A4D]" : "text-[#8B9388]",
     },
     {
-      label: "최종 검토",
-      value: finalReviewReady ? "최종 답변 정리" : needsAdditionalReview ? "추가 확인 필요 항목" : "대기",
+      label: "주의 항목",
+      value: finalReviewReady ? "답변 정리 완료" : needsAdditionalReview ? "추가 확인 필요" : "대기",
       Icon: needsAdditionalReview ? AlertCircle : Target,
       className: needsAdditionalReview
         ? "border-[#E9D59B] bg-[#FFF8E6] text-[#8A6418]"
@@ -951,7 +971,7 @@ function ChatPageContent() {
               근거 확인
             </h2>
             <p className="hidden text-xs text-[#5F6C62] xl:block">
-              질문, 답변, 출처를 한 흐름으로 검토합니다.
+              광고 문안의 주장과 출처를 함께 확인합니다.
             </p>
           </div>
         </div>
@@ -1031,10 +1051,10 @@ function ChatPageContent() {
             size="sm"
             onClick={handleNewChat}
             className="flex h-8 items-center space-x-2 rounded-md px-3 text-[#5F6C62] transition-colors hover:bg-[#EDF7EF] hover:text-[#111713]"
-            aria-label="새 확인"
+            aria-label="새 근거 확인"
           >
             <MessageSquare className="w-4 h-4" />
-            <span className="hidden text-xs sm:inline">새 확인</span>
+            <span className="hidden text-xs sm:inline">새 근거 확인</span>
           </Button>
         </div>
       </div>
@@ -1120,11 +1140,11 @@ function ChatPageContent() {
                         <Bot className="h-4 w-4 text-[#1F7A4D]" />
                       </div>
                       <div className="flex-1">
-                        <div className="mb-2 text-sm font-medium text-[#111713]">Compass가 1차 검토를 정리하고 있습니다</div>
+                        <div className="mb-2 text-sm font-medium text-[#111713]">Compass가 문안과 출처를 대조하고 있습니다</div>
                         <div className="flex flex-wrap gap-2 text-xs text-[#5F6C62]">
-                          <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1">1차 검토</span>
+                          <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1">질문 조건</span>
                           <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1">출처 대조</span>
-                          <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1">최종 검토</span>
+                          <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1">주의 항목</span>
                         </div>
                       </div>
                     </div>
@@ -1158,6 +1178,19 @@ function ChatPageContent() {
 
           <div className="border-t border-[#D8DCCF] bg-[#FBFBF7] p-2 sm:p-3">
             <div className="mx-auto w-full max-w-4xl min-w-0">
+              <div className="mb-2 flex flex-wrap gap-1.5">
+                {promptStarterChips.map((chip) => (
+                  <button
+                    key={chip.label}
+                    type="button"
+                    onClick={() => handlePromptStarterClick(chip.prompt)}
+                    disabled={isLoading}
+                    className="rounded-md border border-[#D8DCCF] bg-white px-2.5 py-1 text-xs font-medium text-[#34423A] transition-colors hover:border-[#B9C9BB] hover:bg-[#EDF7EF] disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {chip.label}
+                  </button>
+                ))}
+              </div>
               <div className="flex min-w-0 space-x-2 sm:space-x-3">
                 <div className="relative min-w-0 flex-1">
                   <Textarea
@@ -1165,7 +1198,7 @@ function ChatPageContent() {
                     value={inputValue}
                     onChange={(e) => setInputValue(e.target.value)}
                     onKeyDown={handleKeyPress}
-                    placeholder="예: Meta 금융 광고 소재 심사 기준과 필요한 고지 문구를 확인해줘"
+                    placeholder="확인할 문안이나 출처를 붙여넣으세요"
                     className="max-h-[100px] min-h-[40px] resize-none border-[#D4D8CE] bg-white pr-10 text-sm text-[#111713] placeholder-[#8B9388] focus:border-[#1F7A4D] focus:ring-[#E7F4EA] sm:max-h-[120px] sm:min-h-[44px] sm:pr-12 sm:text-base"
                     style={{ borderRadius: '8px' }}
                     disabled={isLoading}
@@ -1183,8 +1216,8 @@ function ChatPageContent() {
               </div>
               
               <div className="mt-2 flex items-center justify-between text-xs text-[#6D756C] sm:mt-3">
-                <p className="hidden sm:block">플랫폼, 정책 항목, 소재 표현을 함께 쓰면 인용 가능한 근거를 더 좁혀 볼 수 있습니다.</p>
-                <p className="sm:hidden">답변 아래 출처 확인 표시</p>
+                <p className="hidden sm:block">매체, 업종, 표현 맥락을 함께 쓰면 더 가까운 출처를 찾을 수 있습니다.</p>
+                <p className="sm:hidden">출처는 답변 아래 표시됩니다.</p>
                 {error && (
                   <div className="flex items-center space-x-1 text-[#D93025]">
                     <AlertCircle className="w-3 h-3" />
@@ -1227,8 +1260,8 @@ function ChatPageContent() {
                   <BookOpen className="h-5 w-5 text-[#1F7A4D]" />
                 </div>
                 <div>
-                  <h3 className="text-base font-semibold text-[#111713]">근거 확인 화면</h3>
-                  <p className="text-sm text-[#5F6C62]">답변에 연결된 출처, 확인한 문서, 추가 확인 필요 항목</p>
+                  <h3 className="text-base font-semibold text-[#111713]">근거 패널</h3>
+                  <p className="text-sm text-[#5F6C62]">답변에 연결된 출처와 추가 확인 항목을 대조합니다.</p>
                 </div>
               </div>
             </div>
@@ -1254,7 +1287,11 @@ function ChatPageContent() {
                   />
                 </>
               ) : (
-                <SourceStatePanel state="initial-empty" sources={[]} />
+                <SourceStatePanel
+                  state="initial-empty"
+                  sources={[]}
+                  onPromptSelect={handleQuickQuestionClick}
+                />
               )}
             </div>
             </motion.div>

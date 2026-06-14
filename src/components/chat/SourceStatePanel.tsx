@@ -41,12 +41,18 @@ export default function SourceStatePanel({
   const isNoData = state === "noData";
   const isError = state === "error";
   const isInitial = state === "initial-empty";
-  const heading = isLimited ? "답변 정리 제한" : hasSources ? "확인한 출처" : "확인한 출처 없음";
+  const heading = isLimited ? "답변 생성 제한" : hasSources ? "확인한 출처" : "확인한 출처 없음";
   const stateDescription = isLimited
-    ? "답변 문장은 제한되었지만, 확인한 출처는 계속 확인할 수 있습니다."
+    ? "출처는 찾았지만 답변 문장 생성이 제한되었습니다."
     : hasSources
       ? "질문에 연결된 출처를 확인하고 최종 판단 전 원문과 발췌 내용을 대조합니다."
       : "현재 상태에서 표시할 출처가 없습니다.";
+  const initialPromptChips = [
+    { label: "효능 표현", prompt: "Meta에서 효능 표현 문안의 주의 기준을 확인해줘" },
+    { label: "수치 주장", prompt: "광고 문안의 수치 주장에 필요한 근거와 고지 기준을 확인해줘" },
+    { label: "비교 문구", prompt: "경쟁사 또는 기존 상품과 비교하는 문구의 주의 기준을 확인해줘" },
+    { label: "이벤트 조건", prompt: "이벤트 혜택 문구에 필요한 조건 고지 기준을 확인해줘" },
+  ];
   const noDataPromptChips = [
     "플랫폼과 업종을 포함해서 다시 검토해줘",
     "소재 표현과 랜딩 조건 기준으로 찾아줘",
@@ -145,10 +151,23 @@ export default function SourceStatePanel({
         <div className="mb-5 flex h-16 w-16 items-center justify-center rounded-lg border border-[#C6D9CB] bg-[#EDF7EF]">
           <BookOpen className="h-8 w-8 text-[#1F7A4D]" />
         </div>
-        <h3 className="mb-2 text-base font-semibold text-[#111713]">정책 확인을 시작해보세요</h3>
+        <h3 className="mb-2 text-base font-semibold text-[#111713]">확인할 문안을 입력해 주세요</h3>
         <p className="max-w-sm text-sm leading-relaxed text-[#5F6C62]">
-          질문을 시작하면 확인한 출처가 여기에 표시됩니다. 플랫폼, 정책 항목, 소재 유형을 함께 입력하면 더 정확합니다.
+          광고 문구, 주장, 참고 출처를 넣으면 근거 확인을 시작합니다.
         </p>
+        <div className="mt-5 flex max-w-md flex-wrap justify-center gap-1.5">
+          {initialPromptChips.map((chip) => (
+            <button
+              key={chip.label}
+              type="button"
+              onClick={() => onPromptSelect?.(chip.prompt)}
+              disabled={!onPromptSelect}
+              className="rounded-md border border-[#D8DCCF] bg-white px-2.5 py-1.5 text-xs font-medium text-[#34423A] transition-colors hover:border-[#B9C9BB] hover:bg-[#EDF7EF] disabled:cursor-default disabled:opacity-80"
+            >
+              {chip.label}
+            </button>
+          ))}
+        </div>
       </div>
     );
   }
@@ -246,7 +265,7 @@ export default function SourceStatePanel({
           </Badge>
           {isLimited && (
             <Badge variant="outline" className="rounded-md border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] text-amber-700">
-              답변 정리 제한
+              답변 생성 제한
             </Badge>
           )}
         </CardTitle>
@@ -288,7 +307,7 @@ export default function SourceStatePanel({
       <CardContent className={compact ? "space-y-2 p-3 pt-0" : "space-y-3 p-4 pt-0"}>
         {isLimited && (
           <div className={`${compact ? "p-2.5" : "p-3"} rounded-md border border-amber-200 bg-amber-50 text-xs leading-5 text-amber-900`}>
-            답변 정리는 일시적으로 제한되었지만, 확인한 출처는 아래에서 계속 확인할 수 있습니다. 원문 대조 후 운영 판단에 사용해 주세요.
+            답변 문장 생성은 일시적으로 제한되었지만, 확인한 출처는 아래에서 계속 확인할 수 있습니다. 원문 대조 후 다시 시도해 주세요.
           </div>
         )}
 

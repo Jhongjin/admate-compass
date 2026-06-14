@@ -1,6 +1,6 @@
 import { getOllamaEndpointStatus, resolveOllamaEndpoint } from './ollamaEndpoint';
 
-export type CompassAnswerProvider = 'openrouter' | 'ollama';
+export type CompassAnswerProvider = 'openrouter' | 'ollama' | 'openai';
 export type CompassEvidenceDecision = 'verified' | 'weak' | 'rejected';
 
 export interface CompassGroundingSource {
@@ -43,6 +43,15 @@ interface OpenRouterChatResponse {
   }>;
 }
 
+interface OpenAIChatResponse {
+  model?: string;
+  choices?: Array<{
+    message?: {
+      content?: string | Array<{ type?: string; text?: string }>;
+    };
+  }>;
+}
+
 const DEFAULT_OPENROUTER_MODELS = [
   'anthropic/claude-sonnet-4.5',
   'openai/gpt-5-mini',
@@ -53,10 +62,15 @@ function hasOpenRouterKey(): boolean {
   return Boolean(process.env.OPENROUTER_API_KEY || process.env.COMPASS_OPENROUTER_API_KEY);
 }
 
+function hasOpenAIKey(): boolean {
+  return Boolean(process.env.COMPASS_OPENAI_API_KEY || process.env.OPENAI_API_KEY);
+}
+
 function resolveProvider(): CompassAnswerProvider {
   const configured = String(process.env.COMPASS_ANSWER_PROVIDER || 'ollama').trim().toLowerCase();
 
   if (configured === 'openrouter') return 'openrouter';
+  if (configured === 'openai') return 'openai';
   if (configured === 'ollama') return 'ollama';
 
   return 'ollama';
@@ -76,6 +90,14 @@ function resolveOpenRouterBaseUrl(): string {
   return (process.env.OPENROUTER_BASE_URL || 'https://openrouter.ai/api/v1').replace(/\/+$/, '');
 }
 
+function resolveOpenAIModel(): string {
+  return process.env.COMPASS_OPENAI_MODEL || process.env.OPENAI_IDEA_MODEL || 'gpt-4o-mini';
+}
+
+function resolveOpenAIBaseUrl(): string {
+  return (process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1').replace(/\/+$/, '');
+}
+
 function resolveNumber(value: string | undefined, fallback: number): number {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : fallback;
@@ -89,7 +111,12 @@ export function getCompassAnswerRuntimeStatus() {
   return {
     provider,
     openrouterConfigured: hasOpenRouterKey(),
-    modelLabel: provider === 'openrouter' ? openrouterModels.join(' -> ') : `ollama/${ollamaModel}`,
+    openaiConfigured: hasOpenAIKey(),
+    modelLabel: provider === 'openrouter'
+      ? openrouterModels.join(' -> ')
+      : provider === 'openai'
+        ? `openai/${resolveOpenAIModel()}`
+        : `ollama/${ollamaModel}${hasOpenAIKey() ? ' -> openai fallback' : ''}`,
     ollama: getOllamaEndpointStatus(),
   };
 }
@@ -104,7 +131,22 @@ export async function generateCompassAnswer(
     return generateOpenRouterAnswer(message, searchResults);
   }
 
-  return generateOllamaAnswer(message, searchResults);
+  if (provider === 'openai') {
+    return generateOpenAIAnswer(message, searchResults);
+  }
+
+  try {
+    return await generateOllamaAnswer(message, searchResults);
+  } catch (error) {
+    if (!hasOpenAIKey()) {
+      throw error;
+    }
+
+    console.warn('Ollama answer generation unavailable; using OpenAI fallback', {
+      errorName: error instanceof Error ? error.name : 'UnknownError',
+    });
+    return generateOpenAIAnswer(message, searchResults);
+  }
 }
 
 function buildSystemPrompt(): string {
@@ -225,6 +267,57 @@ async function generateOpenRouterAnswer(
     answer,
     provider: 'openrouter',
     model: data.model || models[0],
+  };
+}
+
+async function generateOpenAIAnswer(
+  message: string,
+  searchResults: CompassGroundingSource[],
+): Promise<CompassAnswerResult> {
+  const apiKey = process.env.COMPASS_OPENAI_API_KEY || process.env.OPENAI_API_KEY;
+  if (!apiKey) {
+    throw new Error('OpenAI API key is not configured.');
+  }
+
+  const model = resolveOpenAIModel();
+  const response = await fetch(`${resolveOpenAIBaseUrl()}/chat/completions`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model,
+      messages: [
+        { role: 'system', content: buildSystemPrompt() },
+        { role: 'user', content: buildEvidencePrompt(message, searchResults) },
+      ],
+      temperature: resolveNumber(process.env.COMPASS_ANSWER_TEMPERATURE, 0.1),
+      top_p: resolveNumber(process.env.COMPASS_ANSWER_TOP_P, 0.85),
+      max_tokens: Math.max(256, Math.floor(resolveNumber(process.env.COMPASS_ANSWER_MAX_TOKENS, 1200))),
+    }),
+    signal: AbortSignal.timeout(Math.floor(resolveNumber(process.env.COMPASS_ANSWER_TIMEOUT_MS, 45000))),
+  });
+
+  if (!response.ok) {
+    const detail = await response.text();
+    throw new Error(`OpenAI answer generation failed: ${response.status} ${detail.slice(0, 240)}`);
+  }
+
+  const data = await response.json() as OpenAIChatResponse;
+  const content = data.choices?.[0]?.message?.content;
+  const answer = Array.isArray(content)
+    ? content.map((part) => part.text || '').join('').trim()
+    : String(content || '').trim();
+
+  if (!answer) {
+    throw new Error('OpenAI answer generation returned an empty answer.');
+  }
+
+  return {
+    answer,
+    provider: 'openai',
+    model: `openai/${data.model || model}`,
   };
 }
 
