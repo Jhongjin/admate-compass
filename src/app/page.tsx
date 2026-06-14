@@ -6,6 +6,7 @@ import { motion } from "framer-motion";
 import { CheckCircle } from "lucide-react";
 import CompassCampaignSurvivorPanel from "./CompassCampaignSurvivorPanel";
 import { SiteSwitchDropdown } from "@/components/layouts/SiteSwitchDropdown";
+import { UserProfileDropdown } from "@/components/layouts/UserProfileDropdown";
 import { Label } from "@/components/ui/label";
 import { useAuth } from "@/hooks/useAuth";
 import { getCompassCoreProductLoginAction } from "@/lib/auth/coreStartPath";
@@ -788,12 +789,16 @@ export default function HomePage() {
           </Link>
           <div className="flex shrink-0 items-center gap-2">
             <SiteSwitchDropdown isAuthenticated={Boolean(user)} />
-            <Link
-              href="#compass-login"
-              className="inline-flex min-h-10 min-w-20 items-center justify-center rounded-[8px] bg-[#111713] px-3.5 py-2 text-[13px] font-extrabold text-white shadow-[0_10px_24px_rgba(17,23,19,0.12)] transition duration-300 [transition-timing-function:cubic-bezier(0.32,0.72,0,1)] hover:bg-[#223128] active:scale-[0.98] sm:min-w-24 sm:px-4"
-            >
-              로그인
-            </Link>
+            {user ? (
+              <UserProfileDropdown user={user} loading={loading} />
+            ) : (
+              <Link
+                href="#compass-login"
+                className="inline-flex min-h-10 min-w-20 items-center justify-center rounded-[8px] bg-[#111713] px-3.5 py-2 text-[13px] font-extrabold text-white shadow-[0_10px_24px_rgba(17,23,19,0.12)] transition duration-300 [transition-timing-function:cubic-bezier(0.32,0.72,0,1)] hover:bg-[#223128] active:scale-[0.98] sm:min-w-24 sm:px-4"
+              >
+                로그인
+              </Link>
+            )}
           </div>
         </div>
       </header>
@@ -1055,29 +1060,55 @@ export default function HomePage() {
               </>
             )}
 
-            <div className="mt-5 rounded-[10px] border border-[#D9D4C8] bg-white/72 p-4">
-              <p className="text-sm font-bold text-[#172033]">Compass 이용 권한이 필요하신가요?</p>
-              <p className="mt-2 text-xs leading-5 text-[#68707C]">
-                처음 이용하거나 권한이 없는 경우, AdMate 이용 권한을 요청해주세요.
-              </p>
-              <a
-                href={ACCESS_REQUEST_URL}
-                target="_blank"
-                rel="noreferrer"
-                className="mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-[8px] border border-[#D8DCCF] bg-white px-4 py-2.5 text-sm font-semibold text-[#344052] transition duration-300 [transition-timing-function:cubic-bezier(0.32,0.72,0,1)] hover:bg-[#F8F8F5] active:scale-[0.98]"
-              >
-                Compass 이용 권한 요청
-              </a>
+            {account ? (
+              <div className="mt-5 rounded-[10px] border border-[#D9D4C8] bg-white/72 p-4">
+                <p className="text-sm font-bold text-[#172033]">Compass 계정 연결이 완료되었습니다</p>
+                <p className="mt-2 text-xs leading-5 text-[#68707C]">
+                  상단 계정 메뉴에서 내 계정과 로그아웃을 관리하고, 필요한 경우 AdMate 홈에서 다른 제품으로 이동할 수 있습니다.
+                </p>
+                <a
+                  href="https://sentinel.admate.ai.kr/account"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-[8px] border border-[#D8DCCF] bg-white px-4 py-2.5 text-sm font-semibold text-[#344052] transition duration-300 [transition-timing-function:cubic-bezier(0.32,0.72,0,1)] hover:bg-[#F8F8F5] active:scale-[0.98]"
+                >
+                  내 AdMate 계정 보기
+                </a>
 
-              <a
-                href={ADMATE_HOME_URL}
-                target="_blank"
-                rel="noreferrer"
-                className="mt-3 inline-flex w-full items-center justify-center px-4 py-2 text-sm font-medium text-[#68707C] transition-colors hover:text-[#172033]"
-              >
-                AdMate 홈페이지로 이동
-              </a>
-            </div>
+                <a
+                  href={ADMATE_HOME_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-3 inline-flex w-full items-center justify-center px-4 py-2 text-sm font-medium text-[#68707C] transition-colors hover:text-[#172033]"
+                >
+                  AdMate 홈페이지로 이동
+                </a>
+              </div>
+            ) : (
+              <div className="mt-5 rounded-[10px] border border-[#D9D4C8] bg-white/72 p-4">
+                <p className="text-sm font-bold text-[#172033]">Compass 이용 권한이 필요하신가요?</p>
+                <p className="mt-2 text-xs leading-5 text-[#68707C]">
+                  처음 이용하거나 권한이 없는 경우, AdMate 이용 권한을 요청해주세요.
+                </p>
+                <a
+                  href={ACCESS_REQUEST_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-4 inline-flex min-h-11 w-full items-center justify-center rounded-[8px] border border-[#D8DCCF] bg-white px-4 py-2.5 text-sm font-semibold text-[#344052] transition duration-300 [transition-timing-function:cubic-bezier(0.32,0.72,0,1)] hover:bg-[#F8F8F5] active:scale-[0.98]"
+                >
+                  Compass 이용 권한 요청
+                </a>
+
+                <a
+                  href={ADMATE_HOME_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-3 inline-flex w-full items-center justify-center px-4 py-2 text-sm font-medium text-[#68707C] transition-colors hover:text-[#172033]"
+                >
+                  AdMate 홈페이지로 이동
+                </a>
+              </div>
+            )}
           </aside>
 
           <CompassCampaignSurvivorPanel />
