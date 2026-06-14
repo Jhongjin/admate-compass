@@ -55,16 +55,20 @@ export default function MainLayout({ children, chatHeader }: MainLayoutProps) {
     <div className="min-h-screen bg-[#F4F5F0] text-[#111713]">
       <CompassTopbar title="Compass 근거 확인" subtitle="정책 질문과 확인한 출처를 함께 관리합니다." />
 
-      {/* 채팅 헤더 */}
-      {chatHeader && (
-        <div className="fixed top-16 left-0 right-0 z-40">
-          {chatHeader}
-        </div>
-      )}
-
       {/* 메인 콘텐츠 */}
-      <main className="relative">
-        {children}
+      <main className={chatHeader ? "relative flex h-[100dvh] flex-col overflow-hidden pt-16" : "relative pt-16"}>
+        {chatHeader ? (
+          <>
+            <div className="relative z-40 shrink-0">
+              {chatHeader}
+            </div>
+            <div className="min-h-0 flex-1">
+              {children}
+            </div>
+          </>
+        ) : (
+          children
+        )}
       </main>
 
       {/* 인증 모달 */}

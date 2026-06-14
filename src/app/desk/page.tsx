@@ -1059,7 +1059,7 @@ function ChatPageContent() {
 
   return (
     <MainLayout chatHeader={chatHeader}>
-      <div className="mt-32 flex h-[calc(100dvh-8rem)] w-full overflow-hidden bg-[#F4F5F0]">
+      <div className="flex h-full min-h-0 w-full overflow-hidden bg-[#F4F5F0]">
         {/* 1번 패널: 대화 히스토리 */}
         {!isLeftPanelCollapsed && (
           <div className="hidden h-full w-72 border-r border-[#D8DCCF] bg-white lg:block">
