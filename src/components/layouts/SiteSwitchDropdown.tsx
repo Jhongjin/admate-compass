@@ -49,6 +49,7 @@ const sites = [
     product: "lens",
     directHref: "https://lens.admate.ai.kr",
     handoffHref: "https://sentinel.admate.ai.kr/auth/product/start?product=lens&next=/",
+    authenticatedHandoffHref: "https://sentinel.admate.ai.kr/auth/product/start?product=lens&next=%2F%3Fadmate_entry%3Dsite-switch",
     icon: ScanLine,
     active: false,
   },
@@ -58,12 +59,13 @@ const sites = [
     product: "foresight",
     directHref: "https://foresight.admate.ai.kr",
     handoffHref: "https://sentinel.admate.ai.kr/auth/product/start?product=foresight&next=/",
+    authenticatedHandoffHref: "https://sentinel.admate.ai.kr/auth/product/start?product=foresight&next=%2F%3Fadmate_entry%3Dsite-switch",
     icon: LineChart,
     active: false,
   },
 ] as const;
 
-export function SiteSwitchDropdown(_props: { isAuthenticated?: boolean }) {
+export function SiteSwitchDropdown({ isAuthenticated = false }: { isAuthenticated?: boolean }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -87,7 +89,9 @@ export function SiteSwitchDropdown(_props: { isAuthenticated?: boolean }) {
         <DropdownMenuSeparator className="mb-1 bg-[#D8DCCF]" />
         {sites.map((site) => {
           const href = "handoffHref" in site
-            ? site.handoffHref
+            ? isAuthenticated && "authenticatedHandoffHref" in site
+              ? site.authenticatedHandoffHref
+              : site.handoffHref
             : "directHref" in site && typeof site.directHref === "string"
               ? site.directHref
               : site.href;
