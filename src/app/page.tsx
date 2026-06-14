@@ -2,7 +2,6 @@
 
 import { KeyboardEvent, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
 import { CheckCircle } from "lucide-react";
 import CompassCampaignSurvivorPanel from "./CompassCampaignSurvivorPanel";
@@ -140,6 +139,23 @@ const normalizeEmailLocalPart = (value: string) =>
     .replace(/\s/g, "")
     .replace(/@nasmedia\.co\.kr$/i, "")
     .replace(/@.*$/g, "");
+
+const getDisplayableAccount = (user: NonNullable<ReturnType<typeof useAuth>["user"]>) => {
+  const metadata = user.user_metadata;
+  const displayName =
+    typeof metadata.display_name === "string"
+      ? metadata.display_name
+      : typeof metadata.full_name === "string"
+        ? metadata.full_name
+        : typeof metadata.name === "string"
+          ? metadata.name
+          : null;
+
+  return {
+    label: displayName?.trim() || user.email || user.id,
+    email: user.email,
+  };
+};
 
 function ReactiveHeadline({ children }: { children: string }) {
   const headingRef = useRef<HTMLHeadingElement | null>(null);
@@ -713,7 +729,6 @@ function CompassCampaignDodgerPanel() {
 }
 
 export default function HomePage() {
-  const router = useRouter();
   const { user, loading } = useAuth();
   const coreProductLoginAction = getCompassCoreProductLoginAction();
   const [emailLocalPart, setEmailLocalPart] = useState("");
@@ -732,14 +747,7 @@ export default function HomePage() {
     }
   }, []);
 
-  useEffect(() => {
-    if (!loading && user) {
-      const params = new URLSearchParams(window.location.search);
-      router.replace(sanitizeCompassNextPath(params.get("next")));
-    }
-  }, [loading, router, user]);
-
-  if (loading || user) {
+  if (loading) {
     return (
       <main className="grid min-h-[100dvh] place-items-center bg-[#ECEFF2] px-6 text-[#172033]">
         <div className="rounded-[8px] border border-[#D6D2C8] bg-[#FBF7EE] px-6 py-5 text-center shadow-[0_22px_60px_rgba(23,32,51,0.09)]">
@@ -748,6 +756,8 @@ export default function HomePage() {
       </main>
     );
   }
+
+  const account = user ? getDisplayableAccount(user) : null;
 
   return (
     <main className="compass-gate-copy relative min-h-[100dvh] overflow-hidden bg-[#ECEFF2] font-sans text-[#172033]">
@@ -777,7 +787,7 @@ export default function HomePage() {
             </span>
           </Link>
           <div className="flex shrink-0 items-center gap-2">
-            <SiteSwitchDropdown isAuthenticated={false} />
+            <SiteSwitchDropdown isAuthenticated={Boolean(user)} />
             <Link
               href="#compass-login"
               className="inline-flex min-h-10 min-w-20 items-center justify-center rounded-[8px] bg-[#111713] px-3.5 py-2 text-[13px] font-extrabold text-white shadow-[0_10px_24px_rgba(17,23,19,0.12)] transition duration-300 [transition-timing-function:cubic-bezier(0.32,0.72,0,1)] hover:bg-[#223128] active:scale-[0.98] sm:min-w-24 sm:px-4"
@@ -939,75 +949,111 @@ export default function HomePage() {
           className="flex h-full scroll-mt-24 flex-col lg:self-stretch"
         >
           <aside className="flex flex-col rounded-[10px] border border-[#D2CEC4] border-t-[5px] border-t-[#1F7A4D] bg-[#FBF7EE] p-5 shadow-[0_28px_80px_rgba(23,32,51,0.11)] sm:p-7">
-            <div className="mb-6">
-              <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#1F7A4D]">ADMATE COMPASS</p>
-              <h2 className="mt-2 text-2xl font-semibold leading-tight text-[#172033]">AdMate 계정으로 로그인</h2>
-              <p className="mt-3 text-sm leading-6 text-[#68707C]">
-                회사 이메일로 로그인해 Compass 작업 공간을 이용하세요.
-              </p>
-            </div>
+            {account ? (
+              <>
+                <div className="mb-6">
+                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#1F7A4D]">ADMATE COMPASS</p>
+                  <h2 className="mt-2 text-2xl font-semibold leading-tight text-[#172033]">로그인이 완료되었습니다</h2>
+                  <p className="mt-3 text-sm leading-6 text-[#68707C]">
+                    Compass 홈에서 필요한 정보를 확인한 뒤 대시보드로 이동할 수 있습니다.
+                  </p>
+                </div>
 
-            <form className="space-y-4" action={coreProductLoginAction} method="post">
-              <input type="hidden" name="product" value="compass" />
-              <input type="hidden" name="next" value={formNextPath} />
-              <div>
-                <Label htmlFor="compass-root-email" className="mb-2 block text-sm font-medium text-[#344052]">
-                  이메일
-                </Label>
-                <div className="compass-login-email-field">
-                  <input
-                    id="compass-root-email"
-                    name="email_local_part"
-                    type="text"
-                    inputMode="email"
-                    autoComplete="username"
-                    required
-                    value={emailLocalPart}
-                    onChange={(event) => setEmailLocalPart(normalizeEmailLocalPart(event.target.value))}
-                    className="min-w-0 flex-1 bg-[#FFFFFF] px-3 py-2.5 text-sm text-[#0D0D0D] outline-none disabled:cursor-not-allowed disabled:opacity-60"
-                    placeholder="name"
-                    aria-describedby="compass-root-email-domain"
-                  />
-                  <span
-                    id="compass-root-email-domain"
-                    aria-label="고정 이메일 도메인"
-                    className="shrink-0 border-l border-[#D8DCCF] bg-[#F8F8F5] px-3 py-2.5 text-sm font-normal text-[#4E5B67]"
+                <div className="rounded-[10px] border border-[#D9D4C8] bg-white/76 p-4">
+                  <div className="flex items-start gap-3">
+                    <span className="mt-0.5 grid h-9 w-9 flex-none place-items-center rounded-[8px] bg-[#E8F3EC] text-[#1F7A4D]">
+                      <CheckCircle className="h-5 w-5" aria-hidden="true" />
+                    </span>
+                    <div className="min-w-0">
+                      <p className="text-sm font-bold text-[#172033]">인증된 Compass 계정</p>
+                      <p className="mt-1 break-words text-sm leading-6 text-[#344052]">{account.label}</p>
+                      {account.email && account.email !== account.label && (
+                        <p className="mt-1 break-words text-xs leading-5 text-[#68707C]">{account.email}</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <Link
+                  href={formNextPath}
+                  className="mt-5 inline-flex min-h-12 w-full items-center justify-center rounded-[8px] bg-[#172033] px-5 py-3 text-sm font-bold text-white transition duration-300 [transition-timing-function:cubic-bezier(0.32,0.72,0,1)] hover:bg-[#273755] active:scale-[0.98]"
+                >
+                  Compass 대시보드로 이동
+                </Link>
+              </>
+            ) : (
+              <>
+                <div className="mb-6">
+                  <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#1F7A4D]">ADMATE COMPASS</p>
+                  <h2 className="mt-2 text-2xl font-semibold leading-tight text-[#172033]">AdMate 계정으로 로그인</h2>
+                  <p className="mt-3 text-sm leading-6 text-[#68707C]">
+                    회사 이메일로 로그인해 Compass 작업 공간을 이용하세요.
+                  </p>
+                </div>
+
+                <form className="space-y-4" action={coreProductLoginAction} method="post">
+                  <input type="hidden" name="product" value="compass" />
+                  <input type="hidden" name="next" value="/" />
+                  <div>
+                    <Label htmlFor="compass-root-email" className="mb-2 block text-sm font-medium text-[#344052]">
+                      이메일
+                    </Label>
+                    <div className="compass-login-email-field">
+                      <input
+                        id="compass-root-email"
+                        name="email_local_part"
+                        type="text"
+                        inputMode="email"
+                        autoComplete="username"
+                        required
+                        value={emailLocalPart}
+                        onChange={(event) => setEmailLocalPart(normalizeEmailLocalPart(event.target.value))}
+                        className="min-w-0 flex-1 bg-[#FFFFFF] px-3 py-2.5 text-sm text-[#0D0D0D] outline-none disabled:cursor-not-allowed disabled:opacity-60"
+                        placeholder="name"
+                        aria-describedby="compass-root-email-domain"
+                      />
+                      <span
+                        id="compass-root-email-domain"
+                        aria-label="고정 이메일 도메인"
+                        className="shrink-0 border-l border-[#D8DCCF] bg-[#F8F8F5] px-3 py-2.5 text-sm font-normal text-[#4E5B67]"
+                      >
+                        @nasmedia.co.kr
+                      </span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <Label htmlFor="compass-root-password" className="mb-2 block text-sm font-medium text-[#344052]">
+                      비밀번호
+                    </Label>
+                    <input
+                      id="compass-root-password"
+                      name="password"
+                      type="password"
+                      value={password}
+                      onChange={(event) => setPassword(event.target.value)}
+                      placeholder="비밀번호를 입력하세요"
+                      autoComplete="current-password"
+                      className="compass-login-password-field w-full rounded-[8px] border border-[#D8DCCF] bg-[#FFFFFF] px-3 py-2.5 text-sm text-[#0D0D0D] outline-none transition-colors placeholder:text-[#9A9A9A] focus:border-[#1F7A4D] disabled:cursor-not-allowed disabled:opacity-60"
+                      required
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    className="inline-flex min-h-12 w-full items-center justify-center rounded-[8px] bg-[#172033] px-5 py-3 text-sm font-bold text-white transition duration-300 [transition-timing-function:cubic-bezier(0.32,0.72,0,1)] hover:bg-[#273755] disabled:cursor-not-allowed disabled:opacity-60 active:scale-[0.98]"
                   >
-                    @nasmedia.co.kr
-                  </span>
-                </div>
-              </div>
+                    로그인하고 계속
+                  </button>
 
-              <div>
-                <Label htmlFor="compass-root-password" className="mb-2 block text-sm font-medium text-[#344052]">
-                  비밀번호
-                </Label>
-                <input
-                  id="compass-root-password"
-                  name="password"
-                  type="password"
-                  value={password}
-                  onChange={(event) => setPassword(event.target.value)}
-                  placeholder="비밀번호를 입력하세요"
-                  autoComplete="current-password"
-                  className="compass-login-password-field w-full rounded-[8px] border border-[#D8DCCF] bg-[#FFFFFF] px-3 py-2.5 text-sm text-[#0D0D0D] outline-none transition-colors placeholder:text-[#9A9A9A] focus:border-[#1F7A4D] disabled:cursor-not-allowed disabled:opacity-60"
-                  required
-                />
-              </div>
-
-              <button
-                type="submit"
-                className="inline-flex min-h-12 w-full items-center justify-center rounded-[8px] bg-[#172033] px-5 py-3 text-sm font-bold text-white transition duration-300 [transition-timing-function:cubic-bezier(0.32,0.72,0,1)] hover:bg-[#273755] disabled:cursor-not-allowed disabled:opacity-60 active:scale-[0.98]"
-              >
-                로그인하고 계속
-              </button>
-
-              {loginMessage && (
-                <div className="rounded-[8px] border border-[#F5C2C7] bg-[#FFF7F7] px-3 py-2 text-sm leading-6 text-[#B42318]" role="status" aria-live="polite">
-                  {loginMessage}
-                </div>
-              )}
-            </form>
+                  {loginMessage && (
+                    <div className="rounded-[8px] border border-[#F5C2C7] bg-[#FFF7F7] px-3 py-2 text-sm leading-6 text-[#B42318]" role="status" aria-live="polite">
+                      {loginMessage}
+                    </div>
+                  )}
+                </form>
+              </>
+            )}
 
             <div className="mt-5 rounded-[10px] border border-[#D9D4C8] bg-white/72 p-4">
               <p className="text-sm font-bold text-[#172033]">Compass 이용 권한이 필요하신가요?</p>
