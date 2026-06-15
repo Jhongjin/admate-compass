@@ -377,7 +377,7 @@ function buildProductStructureAnswer(sources: ReturnType<typeof buildVerifiedSou
   }));
   const usedLabels = new Set<string>();
   const lines: string[] = [
-    'Meta 광고 상품은 먼저 캠페인 목표를 고르고, 그다음 광고 소재 형식과 자동화 기능을 조합하는 방식으로 이해하면 됩니다.',
+    'Meta 광고는 고정된 상품명을 고르는 방식이라기보다, 먼저 캠페인 목표를 정하고 그에 맞는 광고 형식과 운영 기능을 조합하는 구조로 이해하면 쉽습니다.',
     '',
   ];
 
@@ -386,7 +386,7 @@ function buildProductStructureAnswer(sources: ReturnType<typeof buildVerifiedSou
   ]);
   if (objectiveSource) {
     usedLabels.add(objectiveSource.label);
-    lines.push('**1. 먼저 고르는 것: 캠페인 목표**');
+    lines.push('**1. 캠페인 목표부터 정하기**');
     lines.push('- 인지도: 브랜드나 상품을 넓게 알리고 싶을 때');
     lines.push('- 트래픽: 웹사이트, 앱, 프로필 방문을 늘리고 싶을 때');
     lines.push('- 참여: 좋아요, 댓글, 메시지, 영상 조회 같은 반응을 늘리고 싶을 때');
@@ -401,7 +401,7 @@ function buildProductStructureAnswer(sources: ReturnType<typeof buildVerifiedSou
   ]);
   if (formatSource) {
     usedLabels.add(formatSource.label);
-    lines.push('**2. 그다음 고르는 것: 광고 소재 형식**');
+    lines.push('**2. 목표에 맞는 광고 형식 선택하기**');
     lines.push('- 이미지: 한 장의 이미지로 핵심 메시지를 빠르게 전달할 때');
     lines.push('- 동영상: 사용 장면, 제품 설명, 브랜드 스토리를 보여줄 때');
     lines.push('- 슬라이드: 여러 이미지나 영상을 순서대로 보여줄 때');
@@ -415,13 +415,13 @@ function buildProductStructureAnswer(sources: ReturnType<typeof buildVerifiedSou
   ]);
   if (catalogSource) {
     usedLabels.add(catalogSource.label);
-    lines.push('**3. 판매/카탈로그 운영 기능**');
+    lines.push('**3. 판매·카탈로그 운영 기능 확인하기**');
     lines.push('- 컬렉션 광고: 커버 이미지나 영상 아래 여러 상품을 보여주고 구매 흐름으로 연결할 때');
     lines.push('- Advantage+ 카탈로그 컬렉션 광고: 카탈로그 기반 상품 노출을 자동화해 운영할 때');
     lines.push('');
   }
 
-  lines.push('**빠르게 고르면**');
+  lines.push('**4. 상황별 빠른 선택 기준**');
   lines.push('- 브랜드를 알리고 싶다면: 인지도');
   lines.push('- 방문을 늘리고 싶다면: 트래픽');
   lines.push('- 반응이나 메시지를 늘리고 싶다면: 참여');
@@ -429,7 +429,7 @@ function buildProductStructureAnswer(sources: ReturnType<typeof buildVerifiedSou
   lines.push('- 앱 설치나 앱 내 행동을 늘리고 싶다면: 앱 홍보');
   lines.push('- 구매나 전환을 만들고 싶다면: 판매');
   lines.push('');
-  lines.push('세부 소재 사양과 사용 가능 지면은 캠페인 생성 시점의 광고 관리자와 원문 가이드에서 최종 확인하는 것이 좋습니다.');
+  lines.push('정리하면, 인지도·유입·전환·판매 중 어떤 목표를 우선할지 정한 뒤 그 목표에 맞는 형식과 운영 기능을 선택하면 됩니다. 실제 사용 가능 항목은 계정 설정이나 Meta 정책에 따라 달라질 수 있습니다.');
   lines.push('');
 
   const labelList = Array.from(usedLabels);

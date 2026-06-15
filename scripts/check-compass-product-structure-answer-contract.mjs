@@ -56,11 +56,11 @@ for (const snippet of [
   'selectProductStructureResponseSources',
   'isWeakProductStructureDisplaySource',
   'compass-answer-grounded-product-structure',
-  'Meta 광고 상품은 먼저 캠페인 목표를 고르고',
-  '**1. 먼저 고르는 것: 캠페인 목표**',
-  '**2. 그다음 고르는 것: 광고 소재 형식**',
-  '**3. 판매/카탈로그 운영 기능**',
-  '**빠르게 고르면**',
+  'Meta 광고는 고정된 상품명을 고르는 방식이라기보다',
+  '**1. 캠페인 목표부터 정하기**',
+  '**2. 목표에 맞는 광고 형식 선택하기**',
+  '**3. 판매·카탈로그 운영 기능 확인하기**',
+  '**4. 상황별 빠른 선택 기준**',
   '캠페인 목표',
   'advantage+',
   '카탈로그',
@@ -110,8 +110,8 @@ if (answerHandler.includes('실무 선택 기준')) {
   fail('product structure answer should use user-facing labels instead of internal wording like 실무 선택 기준');
 }
 
-if (/- 캠페인 목표 기준|  - 인지도:/.test(answerHandler)) {
-  fail('product structure answer should avoid nested bullet formatting in rendered chat output');
+if (/- 캠페인 목표 기준|먼저 고르는 것|그다음 고르는 것|  - 인지도:/.test(answerHandler)) {
+  fail('product structure answer should avoid awkward or nested bullet formatting in rendered chat output');
 }
 
 if (process.exitCode) process.exit(process.exitCode);
