@@ -1266,8 +1266,15 @@ export async function buildCompassAnswerResponse(
       ragIntent.topics.includes('product_structure')
       && ragIntent.vendors.length === 1
       && !ragIntent.isComparative;
-    const supplementQueries = buildProductStructureSupplementQueries(ragIntent, message)
-      .filter(query => query !== message);
+    const fastPathSupplementQueries = usesProductStructureFastPath && ragIntent.vendors[0] === 'NAVER'
+      ? [
+        '네이버 쇼핑검색광고 상품등록 절차 EP DB URL 쇼핑파트너센터',
+        '네이버 쇼핑블록 PC 모바일 쇼핑 지면 광고 상품',
+      ]
+      : [];
+    const supplementQueries = usesProductStructureFastPath
+      ? fastPathSupplementQueries
+      : buildProductStructureSupplementQueries(ragIntent, message).filter(query => query !== message);
 
     const searchQueries = [message, ...supplementQueries];
     const searchResultGroups = await Promise.all(

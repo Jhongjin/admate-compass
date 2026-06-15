@@ -414,7 +414,9 @@ export class RAGSearchService {
         const [keywordCandidates, vendorCoverageCandidates, productStructureCandidates, naverPriorityCandidates] = await Promise.all([
           this.searchKeywordCandidates(query, candidateLimit, intent),
           this.searchVendorCoverageCandidates(query, candidateLimit, intent),
-          this.searchProductStructureCandidates(candidateLimit, intent),
+          intent.vendors[0] === 'NAVER'
+            ? Promise.resolve([])
+            : this.searchProductStructureCandidates(candidateLimit, intent),
           this.searchNaverProductStructurePriorityCandidates(intent)
         ]);
 
