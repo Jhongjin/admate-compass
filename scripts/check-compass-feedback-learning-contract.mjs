@@ -8,6 +8,7 @@ const files = {
   desk: path.join(root, "src/app/desk/page.tsx"),
   bubble: path.join(root, "src/components/chat/ChatBubble.tsx"),
   feedback: path.join(root, "src/app/api/feedback/route.ts"),
+  apiOwner: path.join(root, "src/lib/auth/compassApiOwner.ts"),
   contact: path.join(root, "src/app/api/contact/route.ts"),
   answerHandler: path.join(root, "src/lib/server/compassAnswerHandler.ts"),
   migration: path.join(root, "supabase/migrations/20260615000000_create_compass_feedback_learning_queue.sql"),
@@ -30,13 +31,14 @@ function read(filePath) {
 const desk = read(files.desk);
 const bubble = read(files.bubble);
 const feedback = read(files.feedback);
+const apiOwner = read(files.apiOwner);
 const contact = read(files.contact);
 const answerHandler = read(files.answerHandler);
 const migration = read(files.migration);
 const packageJson = JSON.parse(read(files.packageJson) || "{}");
 
 for (const snippet of [
-  "readCompassProductSessionFromRequest",
+  "resolveCompassApiOwner",
   "learning_feedback",
   "compass-hermes-learning-feedback",
   "directModelUpdate: false",
@@ -47,6 +49,15 @@ for (const snippet of [
   "saveLearningCandidateToStorage",
 ]) {
   if (!feedback.includes(snippet)) fail(`feedback route missing ${snippet}`);
+}
+
+for (const snippet of [
+  "readCompassProductSessionFromRequest",
+  "supabase.auth.getUser",
+  "product-session",
+  "supabase-auth",
+]) {
+  if (!apiOwner.includes(snippet)) fail(`api owner helper missing ${snippet}`);
 }
 
 for (const snippet of [

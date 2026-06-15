@@ -27,8 +27,8 @@ type StreamEvent =
     };
 
 const encoder = new TextEncoder();
-const ANSWER_DELTA_SIZE = 80;
-const ANSWER_DELTA_DELAY_MS = 8;
+const ANSWER_DELTA_SIZE = 28;
+const ANSWER_DELTA_DELAY_MS = 22;
 
 function encodeEvent(event: StreamEvent) {
   return encoder.encode(`${JSON.stringify(event)}\n`);

@@ -1,12 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createHash } from 'node:crypto';
-import { readCompassProductSessionFromRequest } from '@/lib/auth/coreHandoff';
+import { resolveCompassApiOwner, type CompassApiOwner } from '@/lib/auth/compassApiOwner';
 import { createCompassServiceClient, getCompassDbSchema } from '@/lib/supabase/compass';
 
-type ConversationOwner = {
-  ownerSubject: string;
-  source: 'product-session' | 'legacy-user-id';
-};
+type ConversationOwner = CompassApiOwner;
 
 let supabase: any = null;
 let historyBucketReady = false;
@@ -38,31 +35,6 @@ function getSupabaseClient() {
   supabase = createCompassServiceClient();
 
   return supabase;
-}
-
-function isLegacyFallbackAllowed() {
-  return process.env.COMPASS_HISTORY_ALLOW_LEGACY_USER_ID_FALLBACK === 'true' || process.env.NODE_ENV !== 'production';
-}
-
-function resolveOwner(request: NextRequest, legacyUserId?: unknown): ConversationOwner | null {
-  const productSession = readCompassProductSessionFromRequest(request);
-  const subject = productSession?.subject?.trim();
-
-  if (subject) {
-    return {
-      ownerSubject: subject,
-      source: 'product-session',
-    };
-  }
-
-  if (isLegacyFallbackAllowed() && typeof legacyUserId === 'string' && legacyUserId.trim()) {
-    return {
-      ownerSubject: legacyUserId.trim(),
-      source: 'legacy-user-id',
-    };
-  }
-
-  return null;
 }
 
 function clampPagination(value: string | null, fallback: number, min: number, max: number) {
@@ -270,7 +242,7 @@ export async function GET(request: NextRequest) {
     }
 
     const { searchParams } = new URL(request.url);
-    const owner = resolveOwner(request, searchParams.get('userId'));
+    const owner = await resolveCompassApiOwner(request, searchParams.get('userId'));
     const limit = clampPagination(searchParams.get('limit'), 50, 1, 100);
     const offset = clampPagination(searchParams.get('offset'), 0, 0, 10000);
 
@@ -338,7 +310,7 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json();
     const { userId, userMessage, aiResponse, sources, conversationId } = body;
-    const owner = resolveOwner(request, userId);
+    const owner = await resolveCompassApiOwner(request, userId);
 
     if (!owner) {
       return NextResponse.json(
@@ -391,7 +363,7 @@ export async function POST(request: NextRequest) {
     const { data, error } = await supabase
       .from('conversations')
       .insert({
-        user_id: owner.source === 'legacy-user-id' && isUuid(owner.ownerSubject) ? owner.ownerSubject : null,
+        user_id: isUuid(owner.ownerSubject) ? owner.ownerSubject : null,
         owner_subject: owner.ownerSubject,
         conversation_id: safeConversationId,
         user_message: userMessage,
@@ -464,7 +436,7 @@ export async function DELETE(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const conversationId = searchParams.get('conversationId');
-    const owner = resolveOwner(request, searchParams.get('userId'));
+    const owner = await resolveCompassApiOwner(request, searchParams.get('userId'));
 
     if (!owner) {
       return NextResponse.json(

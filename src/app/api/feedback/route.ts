@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createHash, randomUUID } from 'node:crypto';
-import { readCompassProductSessionFromRequest } from '@/lib/auth/coreHandoff';
+import { resolveCompassApiOwner, type CompassApiOwner } from '@/lib/auth/compassApiOwner';
 import { createCompassServiceClient, getCompassDbSchema } from '@/lib/supabase/compass';
 
 const HERMES_LEARNING_BUCKET = process.env.COMPASS_HERMES_LEARNING_BUCKET || 'compass-hermes-learning-feedback';
@@ -10,10 +10,7 @@ const MAX_TEXT_LENGTH = 5000;
 let supabase: any = null;
 let learningBucketReady = false;
 
-type FeedbackOwner = {
-  ownerSubject: string;
-  source: 'product-session' | 'request-user-id';
-};
+type FeedbackOwner = CompassApiOwner;
 
 type FeedbackPayload = {
   userId: string;
@@ -102,27 +99,6 @@ function sanitizeSources(value: unknown): Array<Record<string, unknown>> {
         retrievalMethod: typeof item.retrievalMethod === 'string' ? item.retrievalMethod : undefined,
       };
     });
-}
-
-function resolveOwner(request: NextRequest, userId: unknown): FeedbackOwner | null {
-  const productSession = readCompassProductSessionFromRequest(request);
-  const subject = productSession?.subject?.trim();
-
-  if (subject) {
-    return {
-      ownerSubject: subject,
-      source: 'product-session',
-    };
-  }
-
-  if (typeof userId === 'string' && userId.trim()) {
-    return {
-      ownerSubject: userId.trim(),
-      source: 'request-user-id',
-    };
-  }
-
-  return null;
 }
 
 function isMissingTableOrColumn(error: any) {
@@ -452,7 +428,7 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const payload = body as FeedbackPayload;
     const { userId, conversationId, messageId, helpful } = payload;
-    const owner = resolveOwner(request, userId);
+    const owner = await resolveCompassApiOwner(request, userId);
 
     if (!owner || !conversationId || !messageId || typeof helpful !== 'boolean') {
       return NextResponse.json(
@@ -520,7 +496,7 @@ export async function GET(request: NextRequest) {
     const userId = searchParams.get('userId');
     const conversationId = searchParams.get('conversationId');
     const messageId = searchParams.get('messageId');
-    const owner = resolveOwner(request, userId);
+    const owner = await resolveCompassApiOwner(request, userId);
 
     if (!owner) {
       return NextResponse.json(
@@ -585,7 +561,7 @@ export async function DELETE(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const userId = searchParams.get('userId');
     const messageId = searchParams.get('messageId');
-    const owner = resolveOwner(request, userId);
+    const owner = await resolveCompassApiOwner(request, userId);
 
     if (!owner || !messageId) {
       return NextResponse.json(

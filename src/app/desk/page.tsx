@@ -601,7 +601,7 @@ function ChatPageContent() {
     return { data };
   };
 
-  const appendStreamDelta = (
+  const appendStreamDelta = async (
     streamState: { streamMessageId?: string },
     delta: string
   ) => {
@@ -626,6 +626,7 @@ function ChatPageContent() {
           isStreaming: true,
         },
       ]);
+      await waitForStreamFrame();
       return;
     }
 
@@ -634,6 +635,7 @@ function ChatPageContent() {
         ? { ...message, content: `${message.content}${delta}`, isStreaming: true }
         : message
     )));
+    await waitForStreamFrame();
   };
 
   const fetchCompassAnswerStream = async (
@@ -684,7 +686,7 @@ function ChatPageContent() {
           finalPayload = event.payload;
           finalStatus = event.status || 200;
         } else if (event.type === "delta") {
-          appendStreamDelta(streamState, event.content);
+          await appendStreamDelta(streamState, event.content);
         } else if (event.type === "error") {
           throw new Error(event.message || 'Compass 스트림 처리 중 오류가 발생했습니다.');
         }
@@ -698,7 +700,7 @@ function ChatPageContent() {
         finalPayload = event.payload;
         finalStatus = event.status || 200;
       } else if (event.type === "delta") {
-        appendStreamDelta(streamState, event.content);
+        await appendStreamDelta(streamState, event.content);
       } else if (event.type === "error") {
         throw new Error(event.message || 'Compass 스트림 처리 중 오류가 발생했습니다.');
       }
@@ -1339,38 +1341,50 @@ function ChatPageContent() {
   const panelShowContactOption = !answerPending && latestAssistantMessage?.showContactOption;
   const pendingPhase: CompassAnswerPhase = activeAnswerRequest.status === "pending" ? activeAnswerRequest.phase || "submitted" : "submitted";
   const pendingVerifiedSourceCount = activeAnswerRequest.status === "pending" ? activeAnswerRequest.verifiedSourceCount : undefined;
-  const pendingPhaseCopy: Record<CompassAnswerPhase, { title: string; activeLabel: string; nextLabel: string }> = {
+  const pendingPhaseCopy: Record<CompassAnswerPhase, { title: string; detail: string; activeLabel: string; nextLabel: string; progress: number }> = {
     submitted: {
       title: "질문을 보냈습니다. Compass가 요청을 접수하는 중입니다.",
+      detail: "생각중... 질문 문맥과 매체 조건을 정리하고 있습니다.",
       activeLabel: "요청 전송",
       nextLabel: "출처 검색 준비",
+      progress: 12,
     },
     accepted: {
       title: "질문을 접수했습니다. 질문 조건을 정리하는 중입니다.",
+      detail: "생각중... 플랫폼, 정책 항목, 소재 유형을 분리하고 있습니다.",
       activeLabel: "요청 접수",
       nextLabel: "출처 검색",
+      progress: 24,
     },
     "evidence-started": {
       title: "관련 매체 정책과 문서 출처를 검색하는 중입니다.",
+      detail: "생각중... 벡터 검색과 키워드 검색을 함께 돌려 근거 후보를 찾고 있습니다.",
       activeLabel: "출처 검색",
       nextLabel: "출처 선별",
+      progress: 44,
     },
     "evidence-ready": {
       title: pendingVerifiedSourceCount !== undefined
         ? `확인 가능한 출처 ${pendingVerifiedSourceCount}개를 선별했습니다.`
         : "확인 가능한 출처를 선별했습니다.",
+      detail: "생각중... 답변에 사용할 수 있는 출처만 다시 걸러내고 있습니다.",
       activeLabel: "출처 선별",
       nextLabel: "답변 정리",
+      progress: 64,
     },
     "answer-started": {
       title: "선별된 출처를 기준으로 답변을 정리하는 중입니다.",
+      detail: "생각중... 1차 답변을 만들고 2차 검토로 근거 범위를 확인하고 있습니다.",
       activeLabel: "답변 정리",
       nextLabel: "화면 표시",
+      progress: 82,
     },
     "answer-ready": {
       title: "답변 정리가 완료되어 화면에 표시하는 중입니다.",
+      detail: "답변을 한 줄씩 표시하고 있습니다.",
       activeLabel: "답변 준비 완료",
       nextLabel: "출처 표시",
+      progress: 96,
     },
   };
   const needsAdditionalReview = latestNoDataFound || latestGenerationLimited || latestIsError;
@@ -1594,7 +1608,17 @@ function ChatPageContent() {
                         <Bot className="h-4 w-4 text-[#1F7A4D]" />
                       </div>
                       <div className="flex-1">
-                        <div className="mb-2 text-sm font-medium text-[#111713]">{pendingPhaseCopy[pendingPhase].title}</div>
+                        <div className="mb-1 flex items-center gap-2 text-sm font-medium text-[#111713]">
+                          <RefreshCw className="h-3.5 w-3.5 animate-spin text-[#1F7A4D]" />
+                          <span>{pendingPhaseCopy[pendingPhase].title}</span>
+                        </div>
+                        <p className="mb-3 text-xs leading-5 text-[#5F6C62]">{pendingPhaseCopy[pendingPhase].detail}</p>
+                        <div className="mb-3 h-1.5 overflow-hidden rounded-full bg-[#E7EADF]">
+                          <div
+                            className="h-full rounded-full bg-[#1F7A4D] transition-all duration-500"
+                            style={{ width: `${pendingPhaseCopy[pendingPhase].progress}%` }}
+                          />
+                        </div>
                         <div className="flex flex-wrap gap-2 text-xs text-[#5F6C62]">
                           <span className="rounded-md border border-[#C6D9CB] bg-white px-2 py-1 text-[#1F7A4D]">{pendingPhaseCopy[pendingPhase].activeLabel}</span>
                           <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1">{pendingPhaseCopy[pendingPhase].nextLabel}</span>

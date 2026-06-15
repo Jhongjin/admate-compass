@@ -113,8 +113,7 @@ export default function HistoryPanel({
       setConversations(merged);
     } catch (err) {
       console.error('대화 히스토리 로드 실패:', err);
-      setError(err instanceof Error ? err.message : '알 수 없는 오류가 발생했습니다.');
-      setConversations(loadCompassLocalConversations(userId).map((conv) => ({
+      const localConversations = loadCompassLocalConversations(userId).map((conv) => ({
         id: conv.conversation_id || conv.id,
         title: conv.user_message || '대화',
         createdAt: conv.created_at,
@@ -124,7 +123,9 @@ export default function HistoryPanel({
         ai_response: conv.ai_response,
         sources: conv.sources || [],
         conversation_id: conv.conversation_id || conv.id,
-      })));
+      }));
+      setConversations(localConversations);
+      setError(localConversations.length > 0 ? null : err instanceof Error ? err.message : '알 수 없는 오류가 발생했습니다.');
     } finally {
       setIsLoading(false);
     }
