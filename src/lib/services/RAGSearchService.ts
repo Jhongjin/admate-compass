@@ -125,6 +125,17 @@ const PRODUCT_STRUCTURE_KEYWORD_EXPANSIONS = [
   '이미지', '동영상', '슬라이드', '컬렉션', '릴스', '스토리', '피드'
 ];
 
+const PRODUCT_STRUCTURE_ANCHOR_TERMS = [
+  '광고 관리자 목표',
+  '캠페인 목표',
+  'Advantage+',
+  '어드밴티지',
+  '카탈로그',
+  '메타 픽셀',
+  'Meta Pixel',
+  'Conversions API',
+];
+
 function isProductStructureQueryText(text: string): boolean {
   const hasOverviewSignal = /광고\s*상품|광고상품|광고\s*종류|광고종류|상품\s*구조|광고\s*구조|캠페인\s*목표|광고\s*관리자\s*목표|objective|advantage\+|어드밴티지|카탈로그|catalog|메타\s*픽셀|meta\s*pixel|픽셀\s*(이벤트|코드|설치|전환)|전환|conversion|노출\s*위치|게재\s*위치|placements|지면/.test(text);
   if (hasOverviewSignal) return true;
@@ -380,15 +391,16 @@ export class RAGSearchService {
           ? Math.max(limit * 3, 18)
           : limit;
 
-      const [vectorCandidates, keywordCandidates, vendorCoverageCandidates] = await Promise.all([
+      const [vectorCandidates, keywordCandidates, vendorCoverageCandidates, productStructureCandidates] = await Promise.all([
         this.searchVectorCandidates(queryEmbedding, candidateLimit, intent),
         this.searchKeywordCandidates(query, candidateLimit, intent),
-        this.searchVendorCoverageCandidates(query, candidateLimit, intent)
+        this.searchVendorCoverageCandidates(query, candidateLimit, intent),
+        this.searchProductStructureCandidates(candidateLimit, intent)
       ]);
 
-      console.log(`📊 Hybrid 후보 수집 결과: vector=${vectorCandidates.length}, keyword=${keywordCandidates.length}, vendorCoverage=${vendorCoverageCandidates.length}`);
+      console.log(`📊 Hybrid 후보 수집 결과: vector=${vectorCandidates.length}, keyword=${keywordCandidates.length}, vendorCoverage=${vendorCoverageCandidates.length}, productStructure=${productStructureCandidates.length}`);
       const rankedResults = this.mergeDedupeAndRankCandidates(
-        [...vectorCandidates, ...keywordCandidates, ...vendorCoverageCandidates],
+        [...vectorCandidates, ...keywordCandidates, ...vendorCoverageCandidates, ...productStructureCandidates],
         limit,
         intent
       );
@@ -544,6 +556,96 @@ export class RAGSearchService {
     return results.flat();
   }
 
+  private async searchProductStructureCandidates(limit: number, intent: QueryIntent): Promise<SearchResult[]> {
+    if (!intent.topics.includes('product_structure')) {
+      return [];
+    }
+
+    const vendorTerms = intent.vendors.flatMap((vendor) => getCompassVendorTerms(vendor));
+    const keywords = Array.from(new Set([
+      ...vendorTerms,
+      ...PRODUCT_STRUCTURE_KEYWORD_EXPANSIONS,
+    ]));
+    const anchorLimit = Math.max(4, Math.ceil(limit / 3));
+    const probes = PRODUCT_STRUCTURE_ANCHOR_TERMS.flatMap((anchor) => ([
+      this.searchProductStructureAnchorTable('document_chunks', anchor, anchorLimit),
+      this.searchProductStructureAnchorTable('ollama_document_chunks', anchor, Math.max(2, Math.ceil(anchorLimit / 2))),
+    ]));
+
+    const results = (await Promise.all(probes)).flat();
+    return results
+      .map((result) => {
+        const candidate = this.normalizeCandidate(result.row, {
+          keywords,
+          intent,
+          retrievalMethod: 'keyword',
+          corpus: result.corpus,
+          evidenceType: 'keyword',
+        });
+
+        if (!candidate) return null;
+
+        const sourceText = this.buildCandidateSearchText(candidate.content, candidate.documentTitle, candidate.metadata);
+        if (!this.hasProductStructureSignal(sourceText) && !this.hasHighValueProductStructureSignal(sourceText)) {
+          return null;
+        }
+
+        if (intent.vendors.length > 0 && candidate.vendorMismatch && !candidate.vendorMatch) {
+          return null;
+        }
+
+        const boostedScore = Math.min(1, (candidate.hybridScore || 0) + (this.hasHighValueProductStructureSignal(sourceText) ? 0.18 : 0.08));
+        candidate.hybridScore = boostedScore;
+        candidate.score = boostedScore;
+        candidate.rankReason = Array.from(new Set([
+          ...(candidate.rankReason || []),
+          `product_structure_anchor_${result.anchor}`,
+        ]));
+        candidate.metadata = {
+          ...(candidate.metadata || {}),
+          productStructureAnchor: result.anchor,
+          rankReason: candidate.rankReason,
+          score: boostedScore,
+          hybridScore: boostedScore,
+        };
+
+        return candidate;
+      })
+      .filter((candidate: SearchResult | null): candidate is SearchResult => candidate !== null);
+  }
+
+  private async searchProductStructureAnchorTable(
+    tableName: 'ollama_document_chunks' | 'document_chunks',
+    anchor: string,
+    limit: number
+  ): Promise<Array<{ row: any; corpus: RetrievalCorpus; anchor: string }>> {
+    try {
+      const selectColumns = tableName === 'ollama_document_chunks'
+        ? 'chunk_id, document_id, content, metadata, embedding'
+        : 'id, document_id, chunk_id, content, metadata';
+
+      const { data, error } = await this.supabase
+        .from(tableName)
+        .select(selectColumns)
+        .ilike('content', `%${anchor}%`)
+        .limit(limit);
+
+      if (error) {
+        console.warn(`⚠️ ${tableName} product-structure anchor 검색 실패:`, error);
+        return [];
+      }
+
+      return (data || []).map((row: any) => ({
+        row,
+        corpus: tableName,
+        anchor,
+      }));
+    } catch (error) {
+      console.warn(`⚠️ ${tableName} product-structure anchor 검색 예외:`, error);
+      return [];
+    }
+  }
+
   private async searchVendorMetadataTable(
     tableName: 'ollama_document_chunks' | 'document_chunks',
     vendor: VendorIntent,
@@ -633,6 +735,7 @@ export class RAGSearchService {
       || result.metadata?.canonical_title
       || result.title
       || result.metadata?.source
+      || this.inferDocumentTitleFromContent(content)
       || 'Unknown';
     const documentUrl = result.metadata?.source_url || result.metadata?.document_url || result.metadata?.url;
     const chunkIndex = this.inferChunkIndex(chunkId, result.chunk_id);
@@ -826,13 +929,16 @@ export class RAGSearchService {
       .sort((a, b) => (b.hybridScore || 0) - (a.hybridScore || 0));
     const rescueCandidate = ranked.find(candidate => this.isTargetVendorRescueCandidate(candidate, intent));
     const genericRescueCandidate = ranked.find(candidate => this.isGenericTopicRescueCandidate(candidate, intent));
+    const maxPerDocument = intent.topics.includes('product_structure') ? 1 : 2;
+    const maxPerTitle = intent.topics.includes('product_structure') ? 1 : 2;
+
     const selected = ranked.filter((candidate) => {
         const docKey = candidate.documentId || candidate.id;
         const titleKey = candidate.documentTitle || docKey;
         const docCount = documentCounts.get(docKey) || 0;
         const titleCount = titleCounts.get(titleKey) || 0;
 
-        if (docCount >= 2 || titleCount >= 2) {
+        if (docCount >= maxPerDocument || titleCount >= maxPerTitle) {
           return false;
         }
 
@@ -1271,6 +1377,17 @@ export class RAGSearchService {
     const hasIntent = hasVendorIntent || hasTopicIntent;
     const genericPolicyIntent = this.isGenericPolicyIntent(intent);
 
+    if (intent.topics.includes('product_structure')) {
+      const sourceText = this.buildCandidateSearchText(candidate.content, candidate.documentTitle, candidate.metadata);
+      const normalizedContent = this.normalizeSearchText(candidate.content);
+      if (!this.hasHighValueProductStructureSignal(sourceText)) {
+        return false;
+      }
+      if (normalizedContent.length < 140) {
+        return false;
+      }
+    }
+
     if (hybridScore < 0.25) return false;
     if (
       genericPolicyIntent
@@ -1684,36 +1801,72 @@ export class RAGSearchService {
     const reasons: string[] = [];
     let adjustment = 0;
 
+    if (this.hasHighValueProductStructureSignal(text)) {
+      adjustment += 0.32;
+      reasons.push('high_value_product_structure_match');
+    }
+
     if (this.hasProductStructureSignal(text)) {
-      adjustment += 0.22;
+      adjustment += 0.06;
       reasons.push('product_structure_match');
     }
 
-    if (/캠페인 목표|광고 관리자 목표|인지도|트래픽|참여|잠재 고객|앱 홍보|판매|objective|objectives/.test(text)) {
-      adjustment += 0.14;
+    if (/캠페인 목표|광고 관리자 목표|마케팅 목표|objective|objectives/.test(text)
+      || /인지도[\s\S]{0,80}트래픽[\s\S]{0,80}참여[\s\S]{0,80}잠재 고객[\s\S]{0,80}앱 홍보[\s\S]{0,80}판매/.test(text)
+    ) {
+      adjustment += 0.22;
       reasons.push('campaign_objective_match');
     }
 
-    if (/advantage\+|어드밴티지|카탈로그|catalog|메타\s*픽셀|meta\s*pixel|픽셀\s*(이벤트|코드|설치|전환)|전환|conversion|conversions api/.test(text)) {
-      adjustment += 0.1;
+    if (/advantage\+|어드밴티지|카탈로그|catalog|메타\s*픽셀|meta\s*pixel|픽셀\s*(이벤트|코드|설치|전환)|conversions api/.test(text)) {
+      adjustment += 0.18;
       reasons.push('product_solution_match');
     }
 
     if (this.isCreativeSpecOnlyText(text)) {
-      adjustment -= 0.28;
+      adjustment -= 0.62;
       reasons.push('creative_spec_only_penalty');
+    }
+
+    if (!this.hasHighValueProductStructureSignal(text)) {
+      adjustment -= 0.75;
+      reasons.push('product_structure_no_signal_penalty');
     }
 
     return { adjustment, reasons };
   }
 
   private hasProductStructureSignal(text: string): boolean {
-    return /캠페인 목표|광고 관리자 목표|인지도|트래픽|참여|잠재 고객|앱 홍보|판매|objective|objectives|advantage\+|어드밴티지|카탈로그|catalog|메타\s*픽셀|meta\s*pixel|픽셀\s*(이벤트|코드|설치|전환)|전환|conversion|conversions api|노출 위치|게재 위치|placements|지면|컬렉션|collection|리드|lead/.test(text);
+    return /캠페인 목표|광고 관리자 목표|마케팅 목표|objective|objectives|advantage\+|어드밴티지|카탈로그|catalog|메타\s*픽셀|meta\s*pixel|픽셀\s*(이벤트|코드|설치|전환)|conversions api|노출 위치|게재 위치|placements|지면|컬렉션|collection|리드|lead/.test(text);
+  }
+
+  private hasHighValueProductStructureSignal(text: string): boolean {
+    const hasObjectiveList = /인지도[\s\S]{0,80}트래픽[\s\S]{0,80}참여[\s\S]{0,80}잠재 고객[\s\S]{0,80}앱 홍보[\s\S]{0,80}판매/.test(text);
+    return hasObjectiveList
+      || /캠페인 목표|광고 관리자 목표|마케팅 목표|objective|objectives|advantage\+|어드밴티지|어드밴티지\+|카탈로그|catalog|메타\s*픽셀|meta\s*pixel|픽셀\s*(이벤트|코드|설치|전환)|conversions api/.test(text)
+      || /노출 위치|게재 위치|placements|지면/.test(text) && /캠페인 목표|광고 관리자 목표|마케팅 목표/.test(text);
   }
 
   private isCreativeSpecOnlyText(text: string): boolean {
-    const hasSpecSignal = /광고 사양|제작 가이드|소재 제작|크기|파일 크기|최대 파일|지원 형식|비율|jpg|png|mp4|mov|1200x|1080x|1280x|텍스트 제한|최대 길이|초/.test(text);
-    return hasSpecSignal && !this.hasProductStructureSignal(text);
+    const hasSpecSignal = /광고 사양|광고 형식\/사양|제작 가이드|소재 제작|크기|파일 크기|최대 파일|지원 형식|비율|jpg|png|mp4|mov|1200x|1080x|1280x|텍스트 제한|최대 길이|초|marketplace의|facebook marketplace|facebook 검색 결과|instagram 탐색 홈|탐색 홈의|검색 결과의/.test(text);
+    return hasSpecSignal && !this.hasHighValueProductStructureSignal(text);
+  }
+
+  private inferDocumentTitleFromContent(content: string): string | undefined {
+    const text = this.normalizeSearchText(content).slice(0, 500);
+
+    if (text.includes('facebook 광고 가이드') && text.includes('meta 광고 관리자 목표 업데이트')) {
+      return 'Facebook 광고 가이드: Meta 광고 관리자 목표 업데이트';
+    }
+
+    if (text.includes('facebook 광고 가이드')) return 'Facebook 광고 가이드';
+    if (text.includes('instagram 광고 가이드')) return 'Instagram 광고 가이드';
+    if (text.includes('meta 비즈니스 지원 센터')) return 'Meta 비즈니스 지원 센터';
+    if (text.includes('google ads')) return 'Google Ads 가이드';
+    if (text.includes('네이버 통합 광고주센터')) return '네이버 통합 광고주센터';
+    if (text.includes('카카오비즈니스')) return '카카오비즈니스 가이드';
+
+    return undefined;
   }
 
   private isTermsOfServiceCandidate(candidate: SearchResult): boolean {
@@ -1955,9 +2108,9 @@ export class RAGSearchService {
       spec: ['사이즈', '크기', '파일', '형식', '스펙', '동영상', '이미지', '카루셀'],
       product_structure: [
         '광고 상품', '광고상품', '광고 종류', '광고종류', '상품 구조', '광고 구조',
-        '캠페인 목표', '광고 관리자 목표', '인지도', '트래픽', '참여', '잠재 고객', '앱 홍보', '판매',
+        '캠페인 목표', '광고 관리자 목표', '마케팅 목표',
         'objective', 'objectives', 'advantage+', '어드밴티지', '카탈로그', 'catalog', '메타 픽셀', 'meta pixel', '픽셀 이벤트', '픽셀 코드',
-        '전환', 'conversion', 'conversions api', '노출 위치', '게재 위치', 'placements', '지면',
+        'conversions api', '노출 위치', '게재 위치', 'placements', '지면',
       ],
     };
 
@@ -2127,6 +2280,11 @@ export class RAGSearchService {
       '이 pdf 파일은 서버리스 환경에서 텍스트 추출이 제한됩니다',
       'docx 파일은 서버리스 환경에서 처리할 수 없습니다',
       'pdf 처리 중 오류가 발생했습니다',
+      'self.__next_f',
+      'static/css',
+      'crossorigin',
+      'webpack',
+      'hydration',
     ].some(pattern => normalized.includes(pattern));
   }
 

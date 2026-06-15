@@ -321,6 +321,100 @@ function buildPolicyGroundedAnswer(sources: ReturnType<typeof buildVerifiedSourc
   ].join('\n');
 }
 
+function getProductStructureSourceKey(source: ReturnType<typeof buildVerifiedSources>[number]) {
+  return `${source.documentId || ''}:${source.chunkId || source.id || ''}:${source.title || ''}:${source.excerpt?.slice(0, 80) || ''}`;
+}
+
+function isWeakProductStructureDisplaySource(source: ReturnType<typeof buildVerifiedSources>[number]) {
+  const title = `${source.title || ''} ${source.originalTitle || ''}`.toLowerCase();
+  const text = getSourceText(source);
+  const hasCoreSignal = /광고 관리자 목표|캠페인 목표|마케팅 목표|인지도[\s\S]{0,80}트래픽[\s\S]{0,80}참여[\s\S]{0,80}잠재 고객[\s\S]{0,80}앱 홍보[\s\S]{0,80}판매|advantage\+ catalog|어드밴티지\+ catalog|컬렉션 광고/.test(text);
+
+  if (/세금|tax|vat|청구|결제/.test(text)) return true;
+  if (/^블로그$|blog|news|뉴스|도움말$/.test(title) && !hasCoreSignal) return true;
+  if (/self\.__next_f|static\/css|webpack|hydration/.test(text)) return true;
+
+  return false;
+}
+
+function selectProductStructureResponseSources(sources: ReturnType<typeof buildVerifiedSources>) {
+  const labelledSources = sources.map((source, index) => ({
+    ...source,
+    label: `S${index + 1}`,
+  }));
+  const selected: ReturnType<typeof buildVerifiedSources>[number][] = [];
+  const selectedKeys = new Set<string>();
+
+  const addSource = (source?: ReturnType<typeof buildVerifiedSources>[number]) => {
+    if (!source || isWeakProductStructureDisplaySource(source)) return;
+    const key = getProductStructureSourceKey(source);
+    if (selectedKeys.has(key)) return;
+    selectedKeys.add(key);
+    selected.push(source);
+  };
+
+  addSource(pickTopicSource(labelledSources, [
+    '광고 관리자 목표', '캠페인 목표', '인지도', '트래픽', '참여', '잠재 고객', '앱 홍보', '판매', '마케팅 목표',
+  ]));
+  addSource(pickTopicSource(labelledSources, [
+    'advantage+ catalog', '어드밴티지+ catalog', '카탈로그', 'catalog', '컬렉션 광고', 'collection ads',
+  ]));
+  addSource(pickTopicSource(labelledSources, [
+    '노출 위치', '게재 위치', '이미지', '동영상', '슬라이드', '컬렉션', '형식',
+  ]));
+
+  if (selected.length === 0) {
+    return sources.filter(source => !isWeakProductStructureDisplaySource(source)).slice(0, 3);
+  }
+
+  return selected.slice(0, 3);
+}
+
+function buildProductStructureAnswer(sources: ReturnType<typeof buildVerifiedSources>) {
+  const labelledSources = sources.map((source, index) => ({
+    ...source,
+    label: `S${index + 1}`,
+  }));
+  const usedLabels = new Set<string>();
+  const lines: string[] = [
+    '제공된 근거 기준으로 Meta 광고 상품은 단일 상품명 목록이라기보다, 캠페인 목표와 소재 형식, 노출 위치, 자동화·카탈로그 기능을 조합해 구성하는 구조로 확인됩니다.',
+    '',
+  ];
+
+  const objectiveSource = pickTopicSource(labelledSources, [
+    '광고 관리자 목표', '캠페인 목표', '인지도', '트래픽', '참여', '잠재 고객', '앱 홍보', '판매', '마케팅 목표',
+  ]);
+  if (objectiveSource) {
+    usedLabels.add(objectiveSource.label);
+    lines.push(`1. 캠페인 목표: 광고 관리자에는 인지도, 트래픽, 참여, 잠재 고객, 앱 홍보, 판매의 6가지 목표가 단계적으로 도입되는 것으로 확인됩니다. 목표를 먼저 정한 뒤 광고 구조를 잡는 방식입니다. [${objectiveSource.label}]`);
+  }
+
+  const formatSource = pickTopicSource(labelledSources, [
+    '이미지', '동영상', '슬라이드', '컬렉션', '형식', '노출 위치', '마케팅 목표',
+  ]);
+  if (formatSource) {
+    usedLabels.add(formatSource.label);
+    lines.push(`2. 소재 형식과 노출 조합: 근거에서는 이미지, 동영상, 슬라이드, 컬렉션 같은 형식과 노출 위치, 목표를 함께 사용해 광고를 디자인하도록 안내합니다. 따라서 "상품"을 고를 때는 목표와 노출 위치, 소재 형식을 함께 봐야 합니다. [${formatSource.label}]`);
+  }
+
+  const catalogSource = pickTopicSource(labelledSources, [
+    'advantage+', '어드밴티지', '카탈로그', 'catalog', 'collection ads', '컬렉션 광고',
+  ]);
+  if (catalogSource) {
+    usedLabels.add(catalogSource.label);
+    lines.push(`3. 자동화·커머스형 상품: Advantage+ catalog collection ads와 컬렉션 광고 근거가 확인됩니다. 카탈로그 기반 상품 노출이나 커머스형 소재를 운영할 때는 이 계열을 별도로 검토하는 것이 좋습니다. [${catalogSource.label}]`);
+  }
+
+  lines.push('');
+  lines.push('실무 선택 기준: 인지도 확산은 인지도 목표, 방문 유도는 트래픽, 반응·메시지 유도는 참여, 리드 수집은 잠재 고객, 앱 설치·이벤트는 앱 홍보, 구매 전환은 판매 목표부터 검토하는 흐름이 자연스럽습니다. 단, 실제 사용 가능 지면과 세부 사양은 광고 관리자와 원문 가이드에서 최종 확인해야 합니다.');
+  lines.push('');
+
+  const labelList = Array.from(usedLabels);
+  lines.push(`근거: ${labelList.length > 0 ? labelList.map((label) => `[${label}]`).join(', ') : sources.slice(0, 3).map((_, index) => `[S${index + 1}]`).join(', ')}`);
+
+  return lines.join('\n');
+}
+
 const VENDOR_LABELS: Record<string, string> = {
   META: 'Meta',
   GOOGLE: 'Google',
@@ -435,6 +529,7 @@ function pickTopicSource(
       index,
       hits: terms.filter(term => getSourceText(source).includes(term.toLowerCase())).length,
     }))
+    .filter(candidate => candidate.hits > 0)
     .sort((a, b) => b.hits - a.hits || a.index - b.index)[0]?.source;
 }
 
@@ -659,20 +754,29 @@ function scoreVerifiedSourceForIntent(
   if (intent.topics.includes('spec') && /사이즈|크기|파일|형식|비율|픽셀|동영상|이미지/.test(text)) score += 14;
   if (intent.topics.includes('product_structure')) {
     const structureTerms = [
-      '캠페인 목표', '광고 관리자 목표', '인지도', '트래픽', '참여', '잠재 고객', '앱 홍보', '판매',
+      '캠페인 목표', '광고 관리자 목표', '마케팅 목표',
       'objective', 'objectives', 'advantage+', '어드밴티지', '카탈로그', 'catalog', '메타 픽셀', 'meta pixel', '픽셀 이벤트', '픽셀 코드',
-      '전환', 'conversion', 'conversions api', '노출 위치', '게재 위치', 'placements', '지면',
+      'conversions api', '노출 위치', '게재 위치', 'placements', '지면',
       '컬렉션', 'collection', '리드', 'lead',
     ];
     const structureHitCount = structureTerms.filter(term => text.includes(term)).length;
     score += structureHitCount * 7;
 
-    if (/캠페인 목표|광고 관리자 목표|인지도|트래픽|참여|잠재 고객|앱 홍보|판매|objective|objectives/.test(text)) score += 30;
-    if (/advantage\+|어드밴티지|카탈로그|catalog|메타\s*픽셀|meta\s*pixel|픽셀\s*(이벤트|코드|설치|전환)|전환|conversion|conversions api/.test(text)) score += 18;
-    if (/광고 사양|제작 가이드|소재 제작|크기|파일 크기|최대 파일|지원 형식|비율|jpg|png|mp4|mov|1200x|1080x|1280x|텍스트 제한/.test(text)
-      && structureHitCount <= 1
+    const hasHighValueProductStructure = /캠페인 목표|광고 관리자 목표|마케팅 목표|objective|objectives|advantage\+|어드밴티지|카탈로그|catalog|메타\s*픽셀|meta\s*pixel|픽셀\s*(이벤트|코드|설치|전환)|conversions api/.test(text)
+      || /인지도[\s\S]{0,80}트래픽[\s\S]{0,80}참여[\s\S]{0,80}잠재 고객[\s\S]{0,80}앱 홍보[\s\S]{0,80}판매/.test(text)
+      || (/노출 위치|게재 위치|placements|지면/.test(text) && /캠페인 목표|광고 관리자 목표|마케팅 목표/.test(text));
+
+    if (hasHighValueProductStructure) {
+      score += 60;
+    }
+    if (/캠페인 목표|광고 관리자 목표|마케팅 목표|objective|objectives/.test(text)
+      || /인지도[\s\S]{0,80}트래픽[\s\S]{0,80}참여[\s\S]{0,80}잠재 고객[\s\S]{0,80}앱 홍보[\s\S]{0,80}판매/.test(text)
+    ) score += 30;
+    if (/advantage\+|어드밴티지|카탈로그|catalog|메타\s*픽셀|meta\s*pixel|픽셀\s*(이벤트|코드|설치|전환)|conversions api/.test(text)) score += 18;
+    if (/광고 사양|광고 형식\/사양|제작 가이드|소재 제작|크기|파일 크기|최대 파일|지원 형식|비율|jpg|png|mp4|mov|1200x|1080x|1280x|텍스트 제한|marketplace의|facebook marketplace|facebook 검색 결과|instagram 탐색 홈|탐색 홈의|검색 결과의/.test(text)
+      && !hasHighValueProductStructure
     ) {
-      score -= 28;
+      score -= 95;
     }
   }
   if (isNoisyExcerpt(String(source.excerpt || ''))) score -= 8;
@@ -954,6 +1058,34 @@ export async function buildCompassAnswerResponse(
           confidence,
           processingTime: Date.now() - startTime,
           model: 'compass-answer-grounded-extractive'
+        }
+      };
+    }
+
+    if (
+      ragIntent.topics.includes('product_structure')
+      && !ragIntent.isComparative
+      && ragIntent.vendors.includes('META')
+    ) {
+      const productStructureSources = selectProductStructureResponseSources(sources);
+      const groundedAnswer = buildProductStructureAnswer(productStructureSources);
+
+      emitPhase?.({ phase: 'answer-ready', message: '상품 구조 답변을 출처 기준으로 정리했습니다.' });
+      return {
+        body: {
+          response: {
+            message: groundedAnswer,
+            content: groundedAnswer,
+            sources: productStructureSources,
+            noDataFound: false,
+            schema,
+            showContactOption: false,
+            sourceDiagnostics,
+            reviewPipeline,
+          },
+          confidence,
+          processingTime: Date.now() - startTime,
+          model: 'compass-answer-grounded-product-structure'
         }
       };
     }

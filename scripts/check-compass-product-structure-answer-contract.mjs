@@ -26,16 +26,23 @@ const answerHandler = read('src/lib/server/compassAnswerHandler.ts');
 for (const snippet of [
   "'product_structure'",
   'PRODUCT_STRUCTURE_KEYWORD_EXPANSIONS',
+  'PRODUCT_STRUCTURE_ANCHOR_TERMS',
   'isProductStructureQueryText',
+  'searchProductStructureCandidates',
+  'searchProductStructureAnchorTable',
   '캠페인 목표',
   '광고 관리자 목표',
   'Advantage+',
   '카탈로그',
   'Conversions API',
+  'inferDocumentTitleFromContent',
+  'self.__next_f',
+  'high_value_product_structure_match',
   'product_structure_match',
   'campaign_objective_match',
   'product_solution_match',
   'creative_spec_only_penalty',
+  'product_structure_no_signal_penalty',
   "topic !== 'spec' && topic !== 'product_structure'",
 ]) {
   if (!rag.includes(snippet)) fail(`RAG service missing product structure contract snippet: ${snippet}`);
@@ -43,9 +50,16 @@ for (const snippet of [
 
 for (const snippet of [
   "topics.includes('product_structure')",
+  "vendors.includes('META')",
+  '!ragIntent.isComparative',
+  'buildProductStructureAnswer',
+  'selectProductStructureResponseSources',
+  'isWeakProductStructureDisplaySource',
+  'compass-answer-grounded-product-structure',
   '캠페인 목표',
   'advantage+',
   '카탈로그',
+  'score -= 95',
   "topic !== 'spec' && topic !== 'product_structure'",
 ]) {
   if (!answerHandler.includes(snippet)) fail(`answer handler missing product structure ordering/routing snippet: ${snippet}`);
@@ -69,6 +83,22 @@ if (!/recommendedSourceLimit[\s\S]*hasProductStructureIntent[\s\S]*\?\s*6/.test(
 
 if (!/needsProductStructureRetrieval[\s\S]*Math\.max\(limit,\s*intent\.vendors\.length \* 4,\s*needsProductStructureRetrieval \? 18 : 8\)/.test(rag)) {
   fail('product structure intent should expand retrieval candidate pool for vendor queries');
+}
+
+if (!/productStructureCandidates[\s\S]*mergeDedupeAndRankCandidates[\s\S]*productStructureCandidates/.test(rag)) {
+  fail('product structure anchor candidates must be merged into final ranking');
+}
+
+if (!/광고\s*사양[\s\S]*!this\.hasHighValueProductStructureSignal/.test(rag)) {
+  fail('creative spec-only documents must be penalized only when high-value product structure is absent');
+}
+
+if (!/maxPerTitle[\s\S]*product_structure[\s\S]*\?\s*1\s*:\s*2/.test(rag)) {
+  fail('product structure intent should not repeat multiple chunks from the same source title');
+}
+
+if (!/filter\(candidate => candidate\.hits > 0\)/.test(answerHandler)) {
+  fail('topic source picker must not select unrelated sources when no topic term matches');
 }
 
 if (process.exitCode) process.exit(process.exitCode);
