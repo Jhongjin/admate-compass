@@ -377,7 +377,7 @@ function buildProductStructureAnswer(sources: ReturnType<typeof buildVerifiedSou
   }));
   const usedLabels = new Set<string>();
   const lines: string[] = [
-    'Meta 광고는 고정된 상품명을 고르는 방식이라기보다, 먼저 캠페인 목표를 정하고 그에 맞는 광고 형식과 운영 기능을 조합하는 구조로 이해하면 쉽습니다.',
+    'Meta 광고는 상품명 하나를 고르는 방식이라기보다, 캠페인 목표와 광고 형식, 운영 기능을 조합해 설계하는 방식에 가깝습니다.',
     '',
   ];
 
@@ -401,7 +401,7 @@ function buildProductStructureAnswer(sources: ReturnType<typeof buildVerifiedSou
   ]);
   if (formatSource) {
     usedLabels.add(formatSource.label);
-    lines.push('**2. 목표에 맞는 광고 형식 선택하기**');
+    lines.push('**2. 목표에 맞는 광고 형식과 노출 위치 확인하기**');
     lines.push('- 이미지: 한 장의 이미지로 핵심 메시지를 빠르게 전달할 때');
     lines.push('- 동영상: 사용 장면, 제품 설명, 브랜드 스토리를 보여줄 때');
     lines.push('- 슬라이드: 여러 이미지나 영상을 순서대로 보여줄 때');
@@ -429,7 +429,7 @@ function buildProductStructureAnswer(sources: ReturnType<typeof buildVerifiedSou
   lines.push('- 앱 설치나 앱 내 행동을 늘리고 싶다면: 앱 홍보');
   lines.push('- 구매나 전환을 만들고 싶다면: 판매');
   lines.push('');
-  lines.push('정리하면, 인지도·유입·전환·판매 중 어떤 목표를 우선할지 정한 뒤 그 목표에 맞는 형식과 운영 기능을 선택하면 됩니다. 실제 사용 가능 항목은 계정 설정이나 Meta 정책에 따라 달라질 수 있습니다.');
+  lines.push('정리하면, 먼저 브랜드 인지도, 방문 유도, 참여 확대, 잠재 고객 확보, 앱 홍보, 판매 전환 중 우선 목표를 정하고 그 목표에 맞는 형식과 운영 기능을 선택하면 됩니다. 실제 사용 가능 항목은 계정 설정이나 Meta 정책에 따라 달라질 수 있습니다.');
   lines.push('');
 
   const labelList = Array.from(usedLabels);
