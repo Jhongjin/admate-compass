@@ -377,7 +377,7 @@ function buildProductStructureAnswer(sources: ReturnType<typeof buildVerifiedSou
   }));
   const usedLabels = new Set<string>();
   const lines: string[] = [
-    '제공된 근거 기준으로 Meta 광고 상품은 단일 상품명 목록이라기보다, 캠페인 목표와 소재 형식, 노출 위치, 자동화·카탈로그 기능을 조합해 구성하는 구조로 확인됩니다.',
+    'Meta 광고 상품 유형은 크게 캠페인 목표, 광고 형식, 자동화·커머스 기능 기준으로 나눠 볼 수 있습니다.',
     '',
   ];
 
@@ -386,7 +386,14 @@ function buildProductStructureAnswer(sources: ReturnType<typeof buildVerifiedSou
   ]);
   if (objectiveSource) {
     usedLabels.add(objectiveSource.label);
-    lines.push(`1. 캠페인 목표: 광고 관리자에는 인지도, 트래픽, 참여, 잠재 고객, 앱 홍보, 판매의 6가지 목표가 단계적으로 도입되는 것으로 확인됩니다. 목표를 먼저 정한 뒤 광고 구조를 잡는 방식입니다. [${objectiveSource.label}]`);
+    lines.push(`- 캠페인 목표 기준 [${objectiveSource.label}]`);
+    lines.push('  - 인지도: 브랜드나 상품을 더 많은 사람에게 알릴 때');
+    lines.push('  - 트래픽: 웹사이트, 앱, 프로필 방문을 늘릴 때');
+    lines.push('  - 참여: 좋아요, 댓글, 메시지, 영상 조회 같은 반응을 늘릴 때');
+    lines.push('  - 잠재 고객: 상담 신청, 견적 요청, 리드 수집이 필요할 때');
+    lines.push('  - 앱 홍보: 앱 설치나 앱 내 행동을 늘릴 때');
+    lines.push('  - 판매: 구매, 장바구니, 전환을 늘릴 때');
+    lines.push('');
   }
 
   const formatSource = pickTopicSource(labelledSources, [
@@ -394,7 +401,13 @@ function buildProductStructureAnswer(sources: ReturnType<typeof buildVerifiedSou
   ]);
   if (formatSource) {
     usedLabels.add(formatSource.label);
-    lines.push(`2. 소재 형식과 노출 조합: 근거에서는 이미지, 동영상, 슬라이드, 컬렉션 같은 형식과 노출 위치, 목표를 함께 사용해 광고를 디자인하도록 안내합니다. 따라서 "상품"을 고를 때는 목표와 노출 위치, 소재 형식을 함께 봐야 합니다. [${formatSource.label}]`);
+    lines.push(`- 광고 형식 기준 [${formatSource.label}]`);
+    lines.push('  - 이미지: 단일 이미지로 빠르게 메시지를 전달할 때');
+    lines.push('  - 동영상: 사용 장면이나 브랜드 스토리를 보여줄 때');
+    lines.push('  - 슬라이드: 여러 이미지나 영상을 순서대로 보여줄 때');
+    lines.push('  - 컬렉션: 여러 상품을 한 번에 보여주고 구매 흐름으로 연결할 때');
+    lines.push('  - 노출 위치: Facebook, Instagram 등 노출 지면에 따라 적합한 형식과 사양을 함께 확인해야 합니다.');
+    lines.push('');
   }
 
   const catalogSource = pickTopicSource(labelledSources, [
@@ -402,11 +415,21 @@ function buildProductStructureAnswer(sources: ReturnType<typeof buildVerifiedSou
   ]);
   if (catalogSource) {
     usedLabels.add(catalogSource.label);
-    lines.push(`3. 자동화·커머스형 상품: Advantage+ catalog collection ads와 컬렉션 광고 근거가 확인됩니다. 카탈로그 기반 상품 노출이나 커머스형 소재를 운영할 때는 이 계열을 별도로 검토하는 것이 좋습니다. [${catalogSource.label}]`);
+    lines.push(`- 자동화·커머스 기능 기준 [${catalogSource.label}]`);
+    lines.push('  - Advantage+ catalog collection ads: 카탈로그 기반 상품 노출을 자동화해 운영할 때');
+    lines.push('  - 컬렉션 광고: 커버 이미지나 영상 아래 여러 상품을 함께 보여주고 구매 흐름으로 연결할 때');
+    lines.push('');
   }
 
+  lines.push('- 어떤 목표를 선택하면 되나요?');
+  lines.push('  - 브랜드를 알리고 싶다면: 인지도');
+  lines.push('  - 방문을 늘리고 싶다면: 트래픽');
+  lines.push('  - 반응이나 메시지를 늘리고 싶다면: 참여');
+  lines.push('  - 문의나 상담 신청을 받고 싶다면: 잠재 고객');
+  lines.push('  - 앱 설치나 앱 내 행동을 늘리고 싶다면: 앱 홍보');
+  lines.push('  - 구매나 전환을 만들고 싶다면: 판매');
   lines.push('');
-  lines.push('실무 선택 기준: 인지도 확산은 인지도 목표, 방문 유도는 트래픽, 반응·메시지 유도는 참여, 리드 수집은 잠재 고객, 앱 설치·이벤트는 앱 홍보, 구매 전환은 판매 목표부터 검토하는 흐름이 자연스럽습니다. 단, 실제 사용 가능 지면과 세부 사양은 광고 관리자와 원문 가이드에서 최종 확인해야 합니다.');
+  lines.push('세부 사양과 사용 가능 지면은 캠페인 생성 시점의 광고 관리자와 원문 가이드에서 최종 확인하는 것이 좋습니다.');
   lines.push('');
 
   const labelList = Array.from(usedLabels);

@@ -56,6 +56,8 @@ for (const snippet of [
   'selectProductStructureResponseSources',
   'isWeakProductStructureDisplaySource',
   'compass-answer-grounded-product-structure',
+  'Meta 광고 상품 유형은 크게 캠페인 목표, 광고 형식, 자동화·커머스 기능 기준으로 나눠 볼 수 있습니다.',
+  '어떤 목표를 선택하면 되나요?',
   '캠페인 목표',
   'advantage+',
   '카탈로그',
@@ -99,6 +101,10 @@ if (!/maxPerTitle[\s\S]*product_structure[\s\S]*\?\s*1\s*:\s*2/.test(rag)) {
 
 if (!/filter\(candidate => candidate\.hits > 0\)/.test(answerHandler)) {
   fail('topic source picker must not select unrelated sources when no topic term matches');
+}
+
+if (answerHandler.includes('실무 선택 기준')) {
+  fail('product structure answer should use user-facing labels instead of internal wording like 실무 선택 기준');
 }
 
 if (process.exitCode) process.exit(process.exitCode);
