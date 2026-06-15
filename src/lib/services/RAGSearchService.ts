@@ -772,8 +772,8 @@ export class RAGSearchService {
     const selectedKeys = new Set(next.map(candidate => this.buildCandidateDedupeKey(candidate)));
     const requiredGroups = [
       ['사이트검색광고', '웹사이트 방문 목적'],
-      ['쇼핑검색', '쇼핑검색광고', '쇼핑몰 상품형', '상품등록', '상품 db', 'db url', '쇼핑파트너센터'],
-      ['쇼핑블록', '쇼핑 지면', 'pc 쇼핑블록', 'mo 쇼핑블록', '모바일 쇼핑'],
+      ['쇼핑검색', '쇼핑검색광고', '쇼핑몰 상품형', '상품등록', '상품 db', '상품db', 'db url', 'ep', '쇼핑파트너센터'],
+      ['쇼핑블록', '쇼핑 지면', '쇼핑지면', 'pc 쇼핑블록', 'mo 쇼핑블록', '모바일 쇼핑'],
     ];
 
     for (const terms of requiredGroups) {
@@ -2066,7 +2066,7 @@ export class RAGSearchService {
       reasons.push('campaign_objective_match');
     }
 
-    if (/advantage\+|어드밴티지|카탈로그|catalog|메타\s*픽셀|meta\s*pixel|픽셀\s*(이벤트|코드|설치|전환)|conversions api|앱\s*캠페인|쇼핑\s*광고|검색\s*캠페인|디스플레이\s*캠페인|반응형\s*디스플레이|리드\s*양식|검색광고|쇼핑검색|파워링크|브랜드검색|쇼핑블록|디지털\s*옥외광고|비즈보드|카카오모먼트|브랜드이모티콘|상품\s*가이드|상품가이드/.test(text)) {
+    if (/advantage\+|어드밴티지|카탈로그|catalog|메타\s*픽셀|meta\s*pixel|픽셀\s*(이벤트|코드|설치|전환)|conversions api|앱\s*캠페인|쇼핑\s*광고|검색\s*캠페인|디스플레이\s*캠페인|반응형\s*디스플레이|리드\s*양식|검색광고|쇼핑검색|파워링크|브랜드검색|쇼핑블록|디지털\s*옥외광고|비즈보드|카카오모먼트|브랜드이모티콘|상품\s*가이드|상품가이드|상품\s*db|db\s*url|ep|쇼핑파트너센터|pc\s*쇼핑블록|mo\s*쇼핑블록|모바일\s*쇼핑/.test(text)) {
       adjustment += 0.18;
       reasons.push('product_solution_match');
     }

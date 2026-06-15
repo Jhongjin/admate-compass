@@ -138,7 +138,7 @@ async function searchWithCompassRAG(
  * 신뢰도 계산
  */
 function getResultVendor(result: SearchResult): string {
-  return result.sourceVendor || result.metadata?.sourceVendor || result.sourceQuality?.sourceVendor || 'UNKNOWN';
+  return result.sourceVendor || result.metadata?.sourceVendor || result.metadata?.source_vendor || result.sourceQuality?.sourceVendor || 'UNKNOWN';
 }
 
 function getMissingVendorSlots(intent: QueryIntent, searchResults: SearchResult[]): VendorIntent[] {
@@ -328,7 +328,7 @@ function getProductStructureSourceKey(source: ReturnType<typeof buildVerifiedSou
 function isWeakProductStructureDisplaySource(source: ReturnType<typeof buildVerifiedSources>[number]) {
   const title = `${source.title || ''} ${source.originalTitle || ''}`.toLowerCase();
   const text = getSourceText(source);
-  const hasCoreSignal = /광고 관리자 목표|캠페인 목표|마케팅 목표|인지도[\s\S]{0,80}트래픽[\s\S]{0,80}참여[\s\S]{0,80}잠재 고객[\s\S]{0,80}앱 홍보[\s\S]{0,80}판매|advantage\+ catalog|어드밴티지\+ catalog|컬렉션 광고|앱\s*캠페인|쇼핑\s*광고|반응형\s*디스플레이|리드\s*양식|검색광고|쇼핑검색|쇼핑블록|비즈보드|상품\s*가이드|상품가이드/.test(text);
+  const hasCoreSignal = /광고 관리자 목표|캠페인 목표|마케팅 목표|인지도[\s\S]{0,80}트래픽[\s\S]{0,80}참여[\s\S]{0,80}잠재 고객[\s\S]{0,80}앱 홍보[\s\S]{0,80}판매|advantage\+ catalog|어드밴티지\+ catalog|컬렉션 광고|앱\s*캠페인|쇼핑\s*광고|반응형\s*디스플레이|리드\s*양식|검색광고|쇼핑검색|쇼핑블록|비즈보드|상품\s*가이드|상품가이드|상품\s*db|db\s*url|ep|쇼핑파트너센터|pc\s*쇼핑블록|mo\s*쇼핑블록|모바일\s*쇼핑|가격비교|디지털\s*옥외광고/.test(text);
 
   if (/세금|tax|vat|청구|결제/.test(text)) return true;
   if (/woocommerce|google\s*태그|태그\s*설정|gtag|측정\s*태그/.test(text)
@@ -520,7 +520,17 @@ const PRODUCT_STRUCTURE_SELECTION_TERMS = [
 function sourceMatchesVendor(source: ReturnType<typeof buildVerifiedSources>[number], vendor?: VendorIntent) {
   if (!vendor) return true;
   if (hasExplicitOtherVendorSignal(source, vendor)) return false;
-  return source.sourceVendor === vendor || Boolean(source.sourceVendors?.includes(vendor));
+  if (source.sourceVendor === vendor || Boolean(source.sourceVendors?.includes(vendor))) return true;
+
+  const text = getSourceText(source);
+  const vendorTerms: Record<VendorIntent, RegExp> = {
+    META: /meta|facebook|페이스북|instagram|인스타그램|릴스|reels|advantage\+|어드밴티지|메타\s*픽셀/,
+    KAKAO: /kakao|카카오|카카오톡|톡채널|비즈보드|모먼트|상품\s*가이드|상품가이드/,
+    NAVER: /naver|네이버|검색광고|쇼핑검색|파워링크|브랜드검색|쇼핑블록|쇼핑파트너센터|상품\s*db|db\s*url|가격비교|사이트검색광고/,
+    GOOGLE: /google|구글|youtube|유튜브|gdn|google ads|display|앱\s*캠페인|반응형\s*디스플레이|리드\s*양식/,
+  };
+
+  return vendorTerms[vendor].test(text);
 }
 
 function hasExplicitOtherVendorSignal(source: ReturnType<typeof buildVerifiedSources>[number], targetVendor: VendorIntent) {
@@ -794,7 +804,15 @@ function buildIntentFocusedExcerpt(
 }
 
 function getSourceText(source: ReturnType<typeof buildVerifiedSources>[number]) {
-  return `${source.title || ''} ${source.originalTitle || ''} ${source.excerpt || ''}`.toLowerCase();
+  const sourceLike = source as any;
+  return [
+    source.title,
+    source.originalTitle,
+    source.excerpt,
+    sourceLike.matchText,
+    Array.isArray(source.rankReason) ? source.rankReason.join(' ') : '',
+    Array.isArray(source.evidenceDecisionReason) ? source.evidenceDecisionReason.join(' ') : '',
+  ].filter(Boolean).join(' ').toLowerCase();
 }
 
 function pickTopicSource(
@@ -951,8 +969,33 @@ function calculateConfidence(searchResults: SearchResult[], intent?: QueryIntent
 function buildVerifiedSources(searchResults: SearchResult[], intent?: QueryIntent) {
   return searchResults.map(result => {
     const originalTitle = result.documentTitle || result.metadata?.originalTitle || result.metadata?.title || 'Meta 광고 정책 문서';
-    const sourceVendor = result.sourceVendor || result.metadata?.sourceVendor || result.sourceQuality?.sourceVendor || 'UNKNOWN';
+    const sourceVendor = result.sourceVendor || result.metadata?.sourceVendor || result.metadata?.source_vendor || result.sourceQuality?.sourceVendor || 'UNKNOWN';
+    const sourceVendors = Array.from(new Set([
+      ...(result.sourceVendors || []),
+      ...(Array.isArray(result.metadata?.sourceVendors) ? result.metadata.sourceVendors : []),
+      ...(Array.isArray(result.metadata?.source_vendors) ? result.metadata.source_vendors : []),
+      ...(sourceVendor && sourceVendor !== 'UNKNOWN' ? [sourceVendor] : []),
+    ].filter(Boolean)));
     const displayTitle = normalizeSourceTitle(originalTitle, sourceVendor, result.content);
+    const matchText = [
+      result.content,
+      result.documentTitle,
+      result.documentUrl,
+      result.metadata?.title,
+      result.metadata?.source_title,
+      result.metadata?.canonical_title,
+      result.metadata?.source,
+      result.metadata?.source_url,
+      result.metadata?.document_url,
+      result.metadata?.url,
+      result.metadata?.sourceVendor,
+      result.metadata?.source_vendor,
+      result.metadata?.productStructureAnchor,
+      Array.isArray(result.metadata?.topic_labels) ? result.metadata.topic_labels.join(' ') : result.metadata?.topic_labels,
+      Array.isArray(result.rankReason) ? result.rankReason.join(' ') : '',
+      Array.isArray(result.evidenceDecisionReason) ? result.evidenceDecisionReason.join(' ') : '',
+    ].filter(Boolean).join(' ').slice(0, 6000).toLowerCase();
+
     return {
       id: result.chunk_id,
       title: displayTitle,
@@ -975,8 +1018,9 @@ function buildVerifiedSources(searchResults: SearchResult[], intent?: QueryInten
       vendorMatch: result.vendorMatch ?? result.metadata?.vendorMatch,
       vendorMismatch: result.vendorMismatch ?? result.metadata?.vendorMismatch,
       sourceVendor,
-      sourceVendors: result.sourceVendors ?? result.metadata?.sourceVendors,
+      sourceVendors,
       topicMatch: result.topicMatch ?? result.metadata?.topicMatch,
+      matchText,
       sourceQuality: result.sourceQuality || {
         hasDocumentId: Boolean(result.documentId),
         hasTitle: Boolean(result.documentTitle || result.metadata?.title),
