@@ -1546,6 +1546,15 @@ export class RAGSearchService {
       ...(existing.sourceVendors || []),
       ...(incoming.sourceVendors || []),
     ]));
+    const evidenceDecision: EvidenceDecision = existing.evidenceDecision === 'verified' || incoming.evidenceDecision === 'verified'
+      ? 'verified'
+      : existing.evidenceDecision === 'weak' || incoming.evidenceDecision === 'weak'
+        ? 'weak'
+        : existing.evidenceDecision || incoming.evidenceDecision || 'weak';
+    const evidenceDecisionReason = Array.from(new Set([
+      ...(existing.evidenceDecisionReason || []),
+      ...(incoming.evidenceDecisionReason || []),
+    ]));
     const topicMatch = existing.topicMatch === true || incoming.topicMatch === true;
     const topicExactMatch = existing.topicExactMatch === true || incoming.topicExactMatch === true;
     const policyTitleMatch = existing.policyTitleMatch === true || incoming.policyTitleMatch === true;
@@ -1645,6 +1654,8 @@ export class RAGSearchService {
         vendorMismatch,
         sourceVendor,
         sourceVendors,
+        evidenceDecision,
+        evidenceDecisionReason,
         topicMatch,
         topicExactMatch,
         policyTitleMatch,
@@ -2431,6 +2442,9 @@ export class RAGSearchService {
         '캠페인 목표', '광고 관리자 목표', '마케팅 목표',
         'objective', 'objectives', 'advantage+', '어드밴티지', '카탈로그', 'catalog', '메타 픽셀', 'meta pixel', '픽셀 이벤트', '픽셀 코드',
         'conversions api', '노출 위치', '게재 위치', 'placements', '지면',
+        '앱 캠페인', '쇼핑 광고', '쇼핑 캠페인', 'shopping ads', 'shopping campaigns', '검색 캠페인', '디스플레이 캠페인', '반응형 디스플레이', '리드 양식',
+        '검색광고', '사이트검색광고', '쇼핑검색', '쇼핑검색광고', '쇼핑몰 상품형', '상품등록', '상품 등록', '상품db', '상품 db', 'db url', 'ep', '쇼핑파트너센터', '쇼핑블록', 'pc 쇼핑블록', 'mo 쇼핑블록', '모바일 쇼핑', '디지털 옥외광고',
+        '비즈보드', '디스플레이 광고', '카카오모먼트', '브랜드이모티콘', '상품가이드', '상품 가이드', '제작 가이드',
       ],
     };
 
