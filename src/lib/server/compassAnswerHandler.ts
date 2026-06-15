@@ -338,7 +338,7 @@ function isWeakProductStructureDisplaySource(source: ReturnType<typeof buildVeri
     && !/상품\s*db|db\s*url|쇼핑파트너센터|pc\s*쇼핑블록|mo\s*쇼핑블록|모바일\s*쇼핑|가격비교|광고\s*등록\s*기준|광고등록기준|디지털\s*옥외광고[\s\S]{0,80}불가\s*업종|쇼핑검색[\s\S]{0,80}필터/.test(text)
   ) return true;
   if (/^블로그$|blog|news|뉴스|도움말$/.test(title) && !hasCoreSignal) return true;
-  if (/self\.__next_f|static\/css|webpack|hydration/.test(text)) return true;
+  if (/self\.__next_f|static\/css|webpack|hydration/.test(text) && !hasCoreSignal) return true;
 
   return false;
 }

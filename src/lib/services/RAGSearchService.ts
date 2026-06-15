@@ -411,18 +411,25 @@ export class RAGSearchService {
           : limit;
 
       if (needsProductStructureRetrieval && intent.vendors.length === 1 && !intent.isComparative) {
-        const [keywordCandidates, vendorCoverageCandidates, productStructureCandidates] = await Promise.all([
+        const [keywordCandidates, vendorCoverageCandidates, productStructureCandidates, naverPriorityCandidates] = await Promise.all([
           this.searchKeywordCandidates(query, candidateLimit, intent),
           this.searchVendorCoverageCandidates(query, candidateLimit, intent),
-          this.searchProductStructureCandidates(candidateLimit, intent)
+          this.searchProductStructureCandidates(candidateLimit, intent),
+          this.searchNaverProductStructurePriorityCandidates(intent)
         ]);
 
-        console.log(`📊 Product structure fast 후보 수집 결과: keyword=${keywordCandidates.length}, vendorCoverage=${vendorCoverageCandidates.length}, productStructure=${productStructureCandidates.length}`);
-        const rankedResults = this.mergeDedupeAndRankCandidates(
-          [...keywordCandidates, ...vendorCoverageCandidates, ...productStructureCandidates],
+        console.log(`📊 Product structure fast 후보 수집 결과: keyword=${keywordCandidates.length}, vendorCoverage=${vendorCoverageCandidates.length}, productStructure=${productStructureCandidates.length}, naverPriority=${naverPriorityCandidates.length}`);
+        const allCandidates = [
+          ...keywordCandidates,
+          ...vendorCoverageCandidates,
+          ...productStructureCandidates,
+          ...naverPriorityCandidates
+        ];
+        const rankedResults = this.ensureNaverProductStructureCoverage(this.mergeDedupeAndRankCandidates(
+          allCandidates,
           limit,
           intent
-        );
+        ), allCandidates, intent);
 
         console.log(`✅ 상품 구조 검색 완료: ${rankedResults.length}개 결과 (fast keyword/anchor path)`);
         return rankedResults;
@@ -598,6 +605,96 @@ export class RAGSearchService {
     return results.flat();
   }
 
+  private async searchNaverProductStructurePriorityCandidates(intent: QueryIntent): Promise<SearchResult[]> {
+    if (!intent.topics.includes('product_structure') || intent.vendors[0] !== 'NAVER') {
+      return [];
+    }
+
+    const anchors = [
+      '사이트검색광고',
+      '쇼핑검색',
+      '쇼핑몰 상품형',
+      '상품등록 절차',
+      'DB URL',
+      '쇼핑파트너센터',
+      '쇼핑블록',
+      'PC 쇼핑블록',
+      '모바일 쇼핑',
+    ];
+    const keywords = Array.from(new Set([
+      ...getCompassVendorTerms('NAVER'),
+      ...PRODUCT_STRUCTURE_KEYWORD_EXPANSIONS,
+      ...anchors,
+    ]));
+
+    const results = (await Promise.all(anchors.flatMap(anchor => ([
+      this.searchProductStructureAnchorTable('document_chunks', anchor, 4, undefined),
+      this.searchProductStructureAnchorTable('ollama_document_chunks', anchor, 3, 'NAVER'),
+    ])))).flat();
+
+    return results
+      .map((result) => {
+        const candidate = this.normalizeCandidate(result.row, {
+          keywords,
+          intent,
+          retrievalMethod: 'keyword',
+          corpus: result.corpus,
+          evidenceType: 'keyword',
+        });
+
+        if (!candidate) return null;
+        if (this.hasExplicitOtherVendorSignal(candidate, 'NAVER')) return null;
+
+        const sourceText = this.buildCandidateSearchText(candidate.content, candidate.documentTitle, candidate.metadata);
+        if (!this.hasNaverProductStructureSignal(sourceText)) return null;
+
+        const boostedScore = Math.min(1, (candidate.hybridScore || 0) + 0.32);
+        candidate.hybridScore = boostedScore;
+        candidate.score = boostedScore;
+        candidate.sourceVendor = 'NAVER';
+        candidate.sourceVendors = Array.from(new Set([
+          ...(candidate.sourceVendors || []),
+          'NAVER',
+        ]));
+        candidate.vendorMatch = true;
+        candidate.vendorMismatch = false;
+        candidate.evidenceDecision = 'verified';
+        candidate.evidenceDecisionReason = Array.from(new Set([
+          ...(candidate.evidenceDecisionReason || []),
+          'naver_product_structure_priority',
+          'keyword_retrieval',
+        ]));
+        candidate.rankReason = Array.from(new Set([
+          ...(candidate.rankReason || []),
+          `naver_product_structure_priority_${result.anchor}`,
+        ]));
+        candidate.sourceQuality = {
+          ...candidate.sourceQuality,
+          hasExcerpt: true,
+          isFallback: false,
+          vendorMatch: true,
+          vendorMismatch: false,
+          sourceVendor: 'NAVER',
+          qualityScore: Math.max(candidate.sourceQuality.qualityScore || 0, 0.82),
+        };
+        candidate.metadata = {
+          ...(candidate.metadata || {}),
+          source_vendor: 'NAVER',
+          sourceVendors: candidate.sourceVendors,
+          naverProductStructurePriority: true,
+          productStructureAnchor: result.anchor,
+          evidenceDecision: candidate.evidenceDecision,
+          evidenceDecisionReason: candidate.evidenceDecisionReason,
+          rankReason: candidate.rankReason,
+          score: boostedScore,
+          hybridScore: boostedScore,
+        };
+
+        return candidate;
+      })
+      .filter((candidate: SearchResult | null): candidate is SearchResult => candidate !== null);
+  }
+
   private async searchProductStructureCandidates(limit: number, intent: QueryIntent): Promise<SearchResult[]> {
     if (!intent.topics.includes('product_structure')) {
       return [];
@@ -660,6 +757,73 @@ export class RAGSearchService {
         return candidate;
       })
       .filter((candidate: SearchResult | null): candidate is SearchResult => candidate !== null);
+  }
+
+  private ensureNaverProductStructureCoverage(
+    selected: SearchResult[],
+    candidates: SearchResult[],
+    intent: QueryIntent
+  ): SearchResult[] {
+    if (!intent.topics.includes('product_structure') || intent.vendors[0] !== 'NAVER') {
+      return selected;
+    }
+
+    const next = [...selected];
+    const selectedKeys = new Set(next.map(candidate => this.buildCandidateDedupeKey(candidate)));
+    const requiredGroups = [
+      ['사이트검색광고', '웹사이트 방문 목적'],
+      ['쇼핑검색', '쇼핑검색광고', '쇼핑몰 상품형', '상품등록', '상품 db', 'db url', '쇼핑파트너센터'],
+      ['쇼핑블록', '쇼핑 지면', 'pc 쇼핑블록', 'mo 쇼핑블록', '모바일 쇼핑'],
+    ];
+
+    for (const terms of requiredGroups) {
+      if (next.some(candidate => this.candidateContainsAny(candidate, terms))) {
+        continue;
+      }
+
+      const candidate = candidates
+        .filter(item => this.matchesVendorSlot(item, 'NAVER'))
+        .filter(item => this.candidateContainsAny(item, terms))
+        .filter(item => !selectedKeys.has(this.buildCandidateDedupeKey(item)))
+        .sort((a, b) => this.scoreVendorSlotCandidate(b, intent) - this.scoreVendorSlotCandidate(a, intent))[0];
+
+      if (!candidate) {
+        continue;
+      }
+
+      candidate.rankReason = Array.from(new Set([
+        ...(candidate.rankReason || []),
+        'naver_required_product_structure_coverage',
+      ]));
+      candidate.metadata = {
+        ...(candidate.metadata || {}),
+        coverageRole: 'naver_required_product_structure_coverage',
+        rankReason: candidate.rankReason,
+      };
+      selectedKeys.add(this.buildCandidateDedupeKey(candidate));
+      next.push(candidate);
+    }
+
+    return next
+      .sort((a, b) => this.scoreVendorSlotCandidate(b, intent) - this.scoreVendorSlotCandidate(a, intent))
+      .slice(0, Math.max(selected.length, intent.recommendedSourceLimit));
+  }
+
+  private candidateContainsAny(candidate: SearchResult, terms: string[]): boolean {
+    const text = this.normalizeSearchText(this.buildCandidateSearchText(
+      candidate.content,
+      candidate.documentTitle,
+      candidate.metadata
+    ));
+    return terms.some(term => text.includes(this.normalizeSearchText(term)));
+  }
+
+  private buildCandidateDedupeKey(candidate: SearchResult): string {
+    return [
+      candidate.documentId || candidate.metadata?.document_id || '',
+      candidate.id || candidate.metadata?.chunk_id || '',
+      candidate.documentTitle || candidate.metadata?.title || '',
+    ].join(':');
   }
 
   private async searchProductStructureAnchorTable(
@@ -1932,6 +2096,11 @@ export class RAGSearchService {
 
   private hasProductStructureSignal(text: string): boolean {
     return /캠페인 목표|광고 관리자 목표|마케팅 목표|objective|objectives|advantage\+|어드밴티지|카탈로그|catalog|메타\s*픽셀|meta\s*pixel|픽셀\s*(이벤트|코드|설치|전환)|conversions api|노출 위치|게재 위치|placements|지면|컬렉션|collection|리드|lead|앱\s*캠페인|쇼핑\s*광고|검색\s*캠페인|디스플레이\s*캠페인|반응형\s*디스플레이|리드\s*양식|검색광고|쇼핑검색|파워링크|브랜드검색|쇼핑블록|상품\s*db|db\s*url|가격비교|디지털\s*옥외광고|비즈보드|카카오모먼트|브랜드이모티콘|상품\s*가이드|상품가이드/.test(text);
+  }
+
+  private hasNaverProductStructureSignal(sourceText: string): boolean {
+    const text = this.normalizeSearchText(sourceText);
+    return /사이트검색광고|웹사이트\s*방문\s*목적|쇼핑검색|쇼핑검색광고|쇼핑몰\s*상품형|상품등록|상품\s*db|db\s*url|ep|쇼핑파트너센터|쇼핑블록|쇼핑\s*지면|pc\s*쇼핑블록|mo\s*쇼핑블록|모바일\s*쇼핑|가격비교/.test(text);
   }
 
   private hasHighValueProductStructureSignal(text: string): boolean {
