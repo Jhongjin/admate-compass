@@ -28,6 +28,8 @@ for (const snippet of [
   'PRODUCT_STRUCTURE_KEYWORD_EXPANSIONS',
   'PRODUCT_STRUCTURE_ANCHOR_TERMS',
   'isProductStructureQueryText',
+  'isSpecificProductGuidance',
+  'isProductStructureOverview',
   'searchProductStructureCandidates',
   'searchNaverProductStructurePriorityCandidates',
   'ensureNaverProductStructureCoverage',
@@ -68,9 +70,9 @@ for (const snippet of [
 
 for (const snippet of [
   "topics.includes('product_structure')",
-  'ragIntent.vendors.length === 1',
-  '!ragIntent.isComparative',
   'PRODUCT_STRUCTURE_PROFILES',
+  'isBroadProductStructureAnswerIntent',
+  'Compass policy/detail answer will use grounded LLM synthesis',
   'GOOGLE',
   'NAVER',
   'KAKAO',
@@ -114,6 +116,9 @@ for (const snippet of [
 
 for (const snippet of [
   '광고 상품/종류/구조',
+  'Do not reuse a canned overview',
+  '특정 광고 상품을 물으면 개요 템플릿을 반복하지 말고',
+  '등록, DB URL, 상품 DB, 카탈로그, 앱 등록, 추적 툴, 리드 양식, 제작 가이드, 소재 조건',
   '캠페인 목표 / 노출 위치 / 소재 형식 / 자동화·커머스·측정 기반 / 목적별 선택 기준',
   '제공된 근거에서는 소재 형식/사양 범위만 확인됩니다',
 ]) {
@@ -150,6 +155,14 @@ if (!/filter\(candidate => candidate\.hits > 0\)/.test(answerHandler)) {
 
 if (answerHandler.includes('실무 선택 기준')) {
   fail('product structure answer should use user-facing labels instead of internal wording like 실무 선택 기준');
+}
+
+if (answerHandler.includes("model: 'compass-answer-grounded-extractive'")) {
+  fail('policy/detail questions must not bypass LLM synthesis with extractive boilerplate');
+}
+
+if (!/usesProductStructureFastPath\s*=\s*isBroadProductStructureAnswerIntent\(message,\s*ragIntent\)/.test(answerHandler)) {
+  fail('product structure fast path must be limited to broad overview questions');
 }
 
 if (/- 캠페인 목표 기준|먼저 고르는 것|그다음 고르는 것|고정된 상품명|고정 상품 목록|출처는 없지만 일반적으로|모든 매체에서 동일|  - 인지도:/.test(answerHandler)) {

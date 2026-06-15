@@ -309,6 +309,16 @@ function isPolicyJudgmentAnswerIntent(intent: QueryIntent): boolean {
   ));
 }
 
+function isBroadProductStructureAnswerIntent(message: string, intent: QueryIntent): boolean {
+  if (!intent.topics.includes('product_structure')) return false;
+  if (intent.vendors.length !== 1 || intent.isComparative) return false;
+  if (intent.isSpecificProductGuidance) return false;
+  if (intent.isProductStructureOverview) return true;
+
+  const normalized = message.toLowerCase().replace(/\s+/g, ' ').trim();
+  return /광고\s*상품|광고상품|광고\s*종류|광고종류|광고\s*유형|광고유형|상품\s*구조|광고\s*구조|캠페인\s*목표|어떻게\s*(고르|선택|구분)|기준으로\s*(설명|구분|선택)/.test(normalized);
+}
+
 function buildPolicyGroundedAnswer(sources: ReturnType<typeof buildVerifiedSources>) {
   const extractiveAnswer = buildExtractiveAnswer(sources)
     .replace(/^제공된 검증 출처 기준으로 확인되는 내용은 다음과 같습니다\.\n\n/, '');
@@ -1262,10 +1272,7 @@ export async function buildCompassAnswerResponse(
       message: '질문 조건을 분석하고 관련 출처를 검색합니다.',
       queryType: ragIntent.queryType,
     });
-    const usesProductStructureFastPath =
-      ragIntent.topics.includes('product_structure')
-      && ragIntent.vendors.length === 1
-      && !ragIntent.isComparative;
+    const usesProductStructureFastPath = isBroadProductStructureAnswerIntent(message, ragIntent);
     const fastPathSupplementQueries = usesProductStructureFastPath && ragIntent.vendors[0] === 'NAVER'
       ? [
         '네이버 쇼핑검색광고 상품등록 절차 EP DB URL 쇼핑파트너센터',
@@ -1417,33 +1424,13 @@ export async function buildCompassAnswerResponse(
     }
 
     if (isPolicyJudgmentAnswerIntent(ragIntent)) {
-      const groundedAnswer = buildPolicyGroundedAnswer(sources);
-
-      emitPhase?.({ phase: 'answer-ready', message: '정책 판단 답변을 출처 기준으로 정리했습니다.' });
-      return {
-        body: {
-          response: {
-            message: groundedAnswer,
-            content: groundedAnswer,
-            sources,
-            noDataFound: false,
-            schema,
-            showContactOption: false,
-            sourceDiagnostics,
-            reviewPipeline,
-          },
-          confidence,
-          processingTime: Date.now() - startTime,
-          model: 'compass-answer-grounded-extractive'
-        }
-      };
+      console.log('Compass policy/detail answer will use grounded LLM synthesis', {
+        topics: ragIntent.topics,
+        isSpecificProductGuidance: ragIntent.isSpecificProductGuidance,
+      });
     }
 
-    if (
-      ragIntent.topics.includes('product_structure')
-      && !ragIntent.isComparative
-      && ragIntent.vendors.length === 1
-    ) {
+    if (isBroadProductStructureAnswerIntent(message, ragIntent)) {
       const productStructureSources = selectProductStructureResponseSources(sources, ragIntent);
       const groundedAnswer = buildProductStructureAnswer(productStructureSources, ragIntent);
       const usedSourceIndexes = Array.from(groundedAnswer.matchAll(/\[S(\d+)\]/g))

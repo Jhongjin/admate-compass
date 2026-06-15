@@ -26,6 +26,8 @@ export interface QueryIntent {
   outOfScopeTerms: string[];
   unavailablePolicyTarget: boolean;
   unavailablePolicyTargetReason?: 'future_impossible' | 'fictional_platform';
+  isProductStructureOverview: boolean;
+  isSpecificProductGuidance: boolean;
   isOutOfScope: boolean;
   queryType: QueryType;
   isComparative: boolean;
@@ -168,6 +170,22 @@ function isProductStructureQueryText(text: string): boolean {
   return hasVendorOrAdContext && /상품|종류|유형|구조|솔루션/.test(text);
 }
 
+function isSpecificProductGuidanceQueryText(text: string): boolean {
+  const hasSpecificSignal = /등록|절차|집행|세팅|설정|연동|제작|가이드|소재|문구|사양|스펙|조건|주의|유의|확인해야|꼭\s*확인|db\s*url|상품\s*db|상품등록|앱\s*인스톨|앱\s*설치|리드\s*양식|동영상\s*광고/.test(text);
+  if (!hasSpecificSignal) return false;
+
+  const asksOverview = /종류|유형|구조|구분|선택|고르|고르면|기준으로\s*(설명|구분|선택)|어떻게\s*(선택|고르|구분)/.test(text);
+  const asksProcedureOrGuide = /등록|절차|집행|세팅|설정|연동|제작|가이드|소재|문구|사양|스펙|조건|주의|유의|확인해야|꼭\s*확인|db\s*url|상품\s*db|상품등록|앱\s*인스톨|앱\s*설치|리드\s*양식|동영상\s*광고/.test(text);
+
+  return asksProcedureOrGuide && !asksOverview;
+}
+
+function isProductStructureOverviewQueryText(text: string): boolean {
+  if (isSpecificProductGuidanceQueryText(text)) return false;
+
+  return /광고\s*상품|광고상품|광고\s*종류|광고종류|광고\s*유형|광고유형|상품\s*구조|광고\s*구조|캠페인\s*목표|광고\s*관리자\s*목표|종류를|유형을|어떻게\s*(선택|고르|구분)|기준으로\s*(설명|구분|선택)/.test(text);
+}
+
 function stripKoreanParticle(word: string): string {
   return word.replace(/(으로|에게|에서|부터|까지|이나|거나|하고|은|는|이|가|을|를|에|의|도|만|로|과|와)$/u, '');
 }
@@ -254,6 +272,7 @@ function extractCompassKeywords(query: string): string[] {
 
   const normalized = normalizeCompassSearchText(query);
   const productStructureQuery = isProductStructureQueryText(normalized);
+  const specificProductGuidance = isSpecificProductGuidanceQueryText(normalized);
   const baseKeywords = Array.from(new Set(
     query
       .toLowerCase()
@@ -272,11 +291,27 @@ function extractCompassKeywords(query: string): string[] {
     expansions.push('주의', '제한', '금지', '반려', '심사', '검수', '정책', '운영정책', '등록기준', '광고등록기준', '가이드');
   }
 
-  if (productStructureQuery) {
+  if (/등록|db\s*url|상품\s*db|상품등록|쇼핑검색/.test(normalized)) {
+    expansions.push('상품등록', '상품 DB', '상품DB', 'DB URL', 'EP', '쇼핑파트너센터', '카테고리', '가격비교');
+  }
+
+  if (/앱\s*인스톨|앱\s*설치|앱\s*홍보|app\s*promotion|app\s*install/.test(normalized)) {
+    expansions.push('앱 홍보', '앱 캠페인', '앱 설치', '사전 등록', '앱 이벤트', 'SDK', 'MMP', '전환', '캠페인 설정');
+  }
+
+  if (/리드\s*양식|lead\s*form/.test(normalized)) {
+    expansions.push('리드 양식', '확장 소재', '잠재 고객', '양식 제출', '개인정보', '상담 신청');
+  }
+
+  if (/제작|가이드|소재|문구|사양|스펙|동영상\s*광고/.test(normalized)) {
+    expansions.push('제작 가이드', '상품 가이드', '소재 가이드', '이미지', '동영상', '비율', '문구', '랜딩', '심사');
+  }
+
+  if (productStructureQuery && !specificProductGuidance) {
     expansions.push(...PRODUCT_STRUCTURE_KEYWORD_EXPANSIONS);
   }
 
-  return Array.from(new Set([...baseKeywords, ...expansions])).slice(0, productStructureQuery ? 28 : 16);
+  return Array.from(new Set([...baseKeywords, ...expansions])).slice(0, productStructureQuery ? (specificProductGuidance ? 24 : 28) : 16);
 }
 
 export function classifyCompassRagQuery(query: string): QueryIntent {
@@ -290,6 +325,8 @@ export function classifyCompassRagQuery(query: string): QueryIntent {
   const unavailablePolicyTarget = detectUnavailablePolicyTarget(query);
   const isComparative = vendors.length >= 2 || /비교|차이|공통|각각|vs\.?|versus|동시에|나란히/.test(normalized);
   const requiresVendorCoverage = vendors.length >= 2 || (isComparative && vendors.length > 0);
+  const isSpecificProductGuidance = isSpecificProductGuidanceQueryText(normalized);
+  const isProductStructureOverview = isProductStructureOverviewQueryText(normalized);
   const queryType: QueryType = vendors.length >= 2
     ? 'multi-vendor'
     : vendors.length === 1
@@ -316,6 +353,8 @@ export function classifyCompassRagQuery(query: string): QueryIntent {
     outOfScopeTerms,
     unavailablePolicyTarget: unavailablePolicyTarget.isUnavailablePolicyTarget,
     unavailablePolicyTargetReason: unavailablePolicyTarget.reason,
+    isProductStructureOverview,
+    isSpecificProductGuidance,
     isOutOfScope: outOfScopeTerms.length > 0 && adPolicyTerms.length === 0,
     queryType,
     isComparative,
@@ -395,6 +434,8 @@ export class RAGSearchService {
         unavailablePolicyTargetReason: intent.unavailablePolicyTargetReason,
         isOutOfScope: intent.isOutOfScope,
         strictContextTerms: intent.strictContextTerms,
+        isProductStructureOverview: intent.isProductStructureOverview,
+        isSpecificProductGuidance: intent.isSpecificProductGuidance,
       });
 
       if (intent.isOutOfScope || intent.unavailablePolicyTarget) {
@@ -404,13 +445,14 @@ export class RAGSearchService {
 
       const needsVendorAwareRetrieval = intent.vendors.length > 0;
       const needsProductStructureRetrieval = intent.topics.includes('product_structure');
+      const usesProductStructureFastRetrieval = needsProductStructureRetrieval && !intent.isSpecificProductGuidance;
       const candidateLimit = needsVendorAwareRetrieval
         ? Math.max(limit, intent.vendors.length * 4, needsProductStructureRetrieval ? 18 : 8)
         : needsProductStructureRetrieval
           ? Math.max(limit * 3, 18)
           : limit;
 
-      if (needsProductStructureRetrieval && intent.vendors.length === 1 && !intent.isComparative) {
+      if (usesProductStructureFastRetrieval && intent.vendors.length === 1 && !intent.isComparative) {
         const [keywordCandidates, vendorCoverageCandidates, productStructureCandidates, naverPriorityCandidates] = await Promise.all([
           this.searchKeywordCandidates(query, candidateLimit, intent),
           this.searchVendorCoverageCandidates(query, candidateLimit, intent),
@@ -705,12 +747,19 @@ export class RAGSearchService {
     const vendorTerms = intent.vendors.flatMap((vendor) => getCompassVendorTerms(vendor));
     const keywords = Array.from(new Set([
       ...vendorTerms,
-      ...PRODUCT_STRUCTURE_KEYWORD_EXPANSIONS,
+      ...(intent.isSpecificProductGuidance ? intent.keywords : PRODUCT_STRUCTURE_KEYWORD_EXPANSIONS),
     ]));
     const anchorLimit = Math.max(4, Math.ceil(limit / 3));
     const anchorVendors: Array<VendorIntent | undefined> = intent.vendors.length > 0 ? [...intent.vendors, undefined] : [undefined];
+    const queryMatchedAnchors = PRODUCT_STRUCTURE_ANCHOR_TERMS.filter((anchor) => {
+      const normalizedAnchor = normalizeCompassSearchText(anchor);
+      return intent.keywords.some(keyword => normalizedAnchor.includes(keyword) || keyword.includes(normalizedAnchor));
+    });
+    const anchorTerms = intent.isSpecificProductGuidance && queryMatchedAnchors.length > 0
+      ? queryMatchedAnchors
+      : PRODUCT_STRUCTURE_ANCHOR_TERMS;
     const probes = anchorVendors.flatMap((vendor) => (
-      PRODUCT_STRUCTURE_ANCHOR_TERMS.flatMap((anchor) => ([
+      anchorTerms.flatMap((anchor) => ([
         this.searchProductStructureAnchorTable('document_chunks', anchor, anchorLimit, vendor),
         this.searchProductStructureAnchorTable('ollama_document_chunks', anchor, Math.max(2, Math.ceil(anchorLimit / 2)), vendor),
       ]))

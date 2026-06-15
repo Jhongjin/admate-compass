@@ -177,7 +177,8 @@ function buildSystemPrompt(): string {
     'Never change or guess an evidence block vendor. If a block says vendor: KAKAO, do not describe it as NAVER or Google.',
     'For comparison questions, separate the answer by vendor first, then summarize the practical difference.',
     'Cite the supporting evidence labels like [S1] or [S2] inside the answer.',
-    'Keep the answer concise, operational, and suitable for campaign decision support.',
+    'Do not reuse a canned overview when the user asks about a specific ad product, setup step, creative guide, registration rule, or policy check.',
+    'Keep the answer operational and specific enough for campaign decision support.',
   ].join('\n');
 }
 
@@ -190,7 +191,7 @@ function buildEvidencePrompt(message: string, searchResults: CompassGroundingSou
         || result.metadata?.type === 'fallback';
       return result.content?.trim() && decision === 'verified' && !isFallback;
     })
-    .slice(0, 6)
+    .slice(0, 9)
     .map((result, index) => {
       const label = `S${index + 1}`;
       const title = result.documentTitle || result.metadata?.title || result.metadata?.originalTitle || '광고 정책 문서';
@@ -224,6 +225,11 @@ function buildEvidencePrompt(message: string, searchResults: CompassGroundingSou
     '- "현재 제공된 문서에서는 확인되지 않습니다"라고 말한 뒤 확인되지 않은 세부 내용을 이어서 작성하지 마세요.',
     '- 사용자가 광고 상품/종류/구조를 물었고 근거에 캠페인 목표, 노출 위치, 소재 형식, Advantage+, 카탈로그, 픽셀/전환처럼 운영 구조가 확인되면 "캠페인 목표 / 노출 위치 / 소재 형식 / 자동화·커머스·측정 기반 / 목적별 선택 기준" 순서로 정리하세요. 단, 각 항목은 근거에 있는 경우에만 작성하세요.',
     '- 광고 상품/종류 질문에서 검증 근거가 소재 크기·파일 형식·비율만 확인한다면 "제공된 근거에서는 소재 형식/사양 범위만 확인됩니다"라고 먼저 밝히고, 그 범위로만 답하세요.',
+    '- 특정 광고 상품을 물으면 개요 템플릿을 반복하지 말고, "무엇인지 / 언제 쓰는지 / 운영 또는 등록 절차 / 필요한 소재와 설정 / 심사·주의사항" 중 근거로 확인되는 항목만 골라 답하세요.',
+    '- 등록, DB URL, 상품 DB, 카탈로그, 앱 등록, 추적 툴, 리드 양식, 제작 가이드, 소재 조건을 물으면 절차형 또는 체크리스트형으로 답하세요. 단순히 광고 목표 목록으로 돌려 말하지 마세요.',
+    '- 제작 가이드 질문에는 이미지·동영상 비율, 문구·랜딩·업종 제한, 선검수·승인 조건처럼 실제 제작 전에 확인할 항목을 우선 정리하세요.',
+    '- 정책 또는 주의사항 질문에는 "확인할 기준 / 왜 중요한지 / 운영 전에 확인할 자료 또는 담당자 확인 필요 범위" 순서로 정리하세요. 질문과 무관한 일반 금지 표현을 맨 앞에 반복하지 마세요.',
+    '- 근거 제목을 그대로 나열하는 추출식 답변을 피하고, 사용자가 바로 행동할 수 있는 문장으로 다시 구성하세요.',
     '- 매체/플랫폼이 다르면 혼합해서 답하지 마세요.',
     '- 비교 질문이면 먼저 매체별로 나누어 정리하고, 마지막에 실무 차이를 1~2문장으로 요약하세요.',
     '- 근거 블록의 vendor 값을 절대 다른 매체명으로 바꿔 쓰지 마세요. 예: vendor가 KAKAO인 근거를 네이버 근거처럼 설명하면 안 됩니다.',
