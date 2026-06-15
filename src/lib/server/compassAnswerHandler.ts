@@ -1201,8 +1201,13 @@ export async function buildCompassAnswerResponse(
       message: '질문 조건을 분석하고 관련 출처를 검색합니다.',
       queryType: ragIntent.queryType,
     });
-    const supplementQueries = buildProductStructureSupplementQueries(ragIntent, message)
-      .filter(query => query !== message);
+    const usesProductStructureFastPath =
+      ragIntent.topics.includes('product_structure')
+      && ragIntent.vendors.length === 1
+      && !ragIntent.isComparative;
+    const supplementQueries = usesProductStructureFastPath
+      ? []
+      : buildProductStructureSupplementQueries(ragIntent, message).filter(query => query !== message);
 
     const searchQueries = [message, ...supplementQueries];
     const searchResultGroups = await Promise.all(

@@ -65,6 +65,7 @@ for (const snippet of [
   'buildProductStructureAnswer',
   'selectProductStructureResponseSources',
   'buildProductStructureSupplementQueries',
+  'usesProductStructureFastPath',
   'mergeSearchResultsByIdentity',
   'sourceMatchesVendor',
   'isWeakProductStructureDisplaySource',
