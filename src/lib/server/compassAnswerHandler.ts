@@ -1205,8 +1205,11 @@ export async function buildCompassAnswerResponse(
       ragIntent.topics.includes('product_structure')
       && ragIntent.vendors.length === 1
       && !ragIntent.isComparative;
+    const fastPathSupplementQueries = usesProductStructureFastPath && ragIntent.vendors[0] === 'NAVER'
+      ? ['네이버 쇼핑검색광고 상품형 쇼핑블록 광고 상품']
+      : [];
     const supplementQueries = usesProductStructureFastPath
-      ? []
+      ? fastPathSupplementQueries
       : buildProductStructureSupplementQueries(ragIntent, message).filter(query => query !== message);
 
     const searchQueries = [message, ...supplementQueries];

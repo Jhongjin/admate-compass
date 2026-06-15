@@ -66,6 +66,7 @@ for (const snippet of [
   'selectProductStructureResponseSources',
   'buildProductStructureSupplementQueries',
   'usesProductStructureFastPath',
+  '네이버 쇼핑검색광고 상품형 쇼핑블록 광고 상품',
   'mergeSearchResultsByIdentity',
   'sourceMatchesVendor',
   'isWeakProductStructureDisplaySource',
