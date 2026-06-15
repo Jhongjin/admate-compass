@@ -17,6 +17,10 @@ import {
 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { ko } from "date-fns/locale";
+import {
+  deleteCompassLocalConversation,
+  loadCompassLocalConversations,
+} from "@/lib/client/compassLocalHistory";
 
 interface Conversation {
   id: string;
@@ -53,17 +57,30 @@ export default function ConversationHistory({
     setError(null);
     
     try {
-      const response = await fetch(`/api/conversations?userId=${userId}&limit=20`);
+      const response = await fetch('/api/conversations?limit=20');
       const data = await response.json();
       
       if (!response.ok) {
         throw new Error(data.error || '검토 기록을 불러오는 중 오류가 발생했습니다.');
       }
       
-      setConversations(data.conversations || []);
+      const remoteConversations = data.conversations || [];
+      const localConversations = loadCompassLocalConversations(userId);
+      const seenIds = new Set<string>();
+      const merged = [...remoteConversations, ...localConversations]
+        .filter((conversation) => {
+          const key = conversation.conversation_id || conversation.id;
+          if (seenIds.has(key)) return false;
+          seenIds.add(key);
+          return true;
+        })
+        .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+
+      setConversations(merged);
     } catch (error) {
       console.error('검토 기록 로드 오류:', error);
       setError(error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.');
+      setConversations(loadCompassLocalConversations(userId));
     } finally {
       setLoading(false);
     }
@@ -75,7 +92,7 @@ export default function ConversationHistory({
     setDeletingId(conversationId);
     
     try {
-      const response = await fetch(`/api/conversations?conversationId=${conversationId}&userId=${userId}`, {
+      const response = await fetch(`/api/conversations?conversationId=${encodeURIComponent(conversationId)}`, {
         method: 'DELETE'
       });
       
@@ -85,10 +102,13 @@ export default function ConversationHistory({
         throw new Error(data.error || '검토 기록을 삭제하는 중 오류가 발생했습니다.');
       }
       
+      deleteCompassLocalConversation(userId, conversationId);
       setConversations(prev => prev.filter(conv => conv.conversation_id !== conversationId));
       onDeleteConversation?.(conversationId);
     } catch (error) {
       console.error('검토 기록 삭제 오류:', error);
+      deleteCompassLocalConversation(userId, conversationId);
+      setConversations(prev => prev.filter(conv => conv.conversation_id !== conversationId));
       setError(error instanceof Error ? error.message : '알 수 없는 오류가 발생했습니다.');
     } finally {
       setDeletingId(null);

@@ -1,12 +1,13 @@
 "use client";
 
 import { useId, useState } from "react";
-import { ThumbsUp, ThumbsDown, Calendar, FileText, User, Download, ExternalLink, Clock, Activity, CheckCircle2, ShieldCheck, ChevronDown, ChevronUp } from "lucide-react";
+import { ThumbsUp, ThumbsDown, Calendar, FileText, User, Download, ExternalLink, Clock, Activity, CheckCircle2, ShieldCheck, ChevronDown, ChevronUp, Mail, Sparkles } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import type { CompassReviewPipeline } from "@/components/chat/chatUiStateTypes";
 
 interface Source {
   id: string;
@@ -46,13 +47,19 @@ interface ChatBubbleProps {
   feedback?: {
     helpful: boolean | null;
     count: number;
+    hermesQueued?: boolean;
+    hermesStatus?: "candidate" | "queued" | "failed";
+    persistence?: string;
   };
   onFeedback?: (helpful: boolean) => void;
+  onContact?: () => void;
   noDataFound?: boolean;
   showContactOption?: boolean;
   confidence?: number;
   processingTime?: number;
   model?: string;
+  isStreaming?: boolean;
+  reviewPipeline?: CompassReviewPipeline;
 }
 
 export default function ChatBubble({
@@ -62,11 +69,14 @@ export default function ChatBubble({
   sources = [],
   feedback,
   onFeedback,
+  onContact,
   noDataFound = false,
   showContactOption = false,
   confidence,
   processingTime,
   model,
+  isStreaming = false,
+  reviewPipeline,
 }: ChatBubbleProps) {
   const isUser = type === "user";
   const generationLimited = Boolean(model && (
@@ -210,6 +220,12 @@ export default function ChatBubble({
                         출처 연결
                       </Badge>
                     )}
+                    {reviewPipeline && (
+                      <Badge variant="outline" className="rounded-md border-[#C6D9CB] bg-[#FBFBF7] px-2 py-0.5 text-[11px] font-medium text-[#34423A]">
+                        <Sparkles className="mr-1 h-3 w-3 text-[#1F7A4D]" />
+                        {reviewPipeline.label}
+                      </Badge>
+                    )}
                     {generationLimited && hasVerifiedSources && (
                       <Badge variant="outline" className="rounded-md border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
                         답변 생성 제한
@@ -239,6 +255,12 @@ export default function ChatBubble({
                     <ReactMarkdown remarkPlugins={[remarkGfm]}>
                       {content}
                     </ReactMarkdown>
+                    {isStreaming && (
+                      <span
+                        aria-label="답변 작성 중"
+                        className="ml-0.5 inline-block h-4 w-1 animate-pulse rounded-sm bg-[#1F7A4D] align-[-2px]"
+                      />
+                    )}
                   </div>
                 </div>
                 
@@ -384,24 +406,17 @@ export default function ChatBubble({
                         </div>
                         <div className="flex-1 min-w-0">
                           <h4 className="text-sm font-semibold text-amber-950 mb-1">
-                            추가 확인이 필요한 질문입니다
+                            담당자 추가 확인이 권장됩니다
                           </h4>
                           <p className="text-xs text-amber-800 mb-3">
-                            Compass 문서 기준으로 충분한 출처를 찾지 못했습니다. 담당자에게 문의하면 더 정확한 확인을 받을 수 있습니다.
+                            Compass가 확인한 출처 범위만으로 확정하기 어려운 항목입니다. 담당자에게 질문과 AI 답변 맥락을 함께 보내 추가 확인을 요청할 수 있습니다.
                           </p>
                           <Button
-                            onClick={() => {
-                              // 직접 메일 발송
-                              if (typeof window !== 'undefined') {
-                                const event = new CustomEvent('sendContactEmail', { 
-                                  detail: { question: content } 
-                                });
-                                window.dispatchEvent(event);
-                              }
-                            }}
+                            onClick={onContact}
                             className="w-full rounded-md bg-[#111713] py-2 text-sm text-white transition-colors hover:bg-[#243028]"
                           >
-                            담당자에게 문의하기
+                            <Mail className="mr-2 h-4 w-4" />
+                            담당자 확인 메일 작성
                           </Button>
                         </div>
                       </div>
@@ -410,7 +425,7 @@ export default function ChatBubble({
                 )}
 
                 {/* Policy desk review status */}
-                {(confidenceValue !== undefined || processingTime !== undefined || model) && (
+                {(confidenceValue !== undefined || processingTime !== undefined || model || reviewPipeline) && (
                   <div className="mt-3 rounded-lg border border-[#D8DCCF] bg-white p-3 text-xs text-[#5F6C62] shadow-sm">
                     <div className="mb-2 flex flex-wrap items-center gap-2">
                       <span className="font-semibold text-[#111713]">근거 확인 상태</span>
@@ -418,6 +433,12 @@ export default function ChatBubble({
                         <span className="flex items-center gap-1 rounded-md border border-[#D8DCCF] bg-[#FBFBF7] px-2 py-1">
                           <ShieldCheck className="h-3 w-3" />
                             {generationLimited ? '답변 생성 제한' : '근거 확인 완료'}
+                        </span>
+                      )}
+                      {reviewPipeline && (
+                        <span className="flex items-center gap-1 rounded-md border border-[#C6D9CB] bg-[#EDF7EF] px-2 py-1 text-[#1F7A4D]">
+                          <Sparkles className="h-3 w-3" />
+                          {reviewPipeline.status === 'completed' ? '2단계 검토 완료' : '2단계 제한 검토'}
                         </span>
                       )}
                       {processingTime !== undefined && (
@@ -444,12 +465,33 @@ export default function ChatBubble({
                         </div>
                       </div>
                     )}
+                    {reviewPipeline && (
+                      <div className="mt-3 border-t border-[#EEF0E8] pt-3">
+                        <div className="mb-2 font-medium text-[#34423A]">{reviewPipeline.summary}</div>
+                        <div className="grid gap-1.5">
+                          {reviewPipeline.steps.slice(0, 3).map((step) => (
+                            <div key={step.label} className="flex gap-2 rounded-md border border-[#EEF0E8] bg-[#FBFBF7] px-2 py-1.5">
+                              <CheckCircle2 className={`mt-0.5 h-3.5 w-3.5 flex-none ${step.status === 'attention' ? 'text-amber-600' : step.status === 'limited' ? 'text-[#8A6418]' : 'text-[#1F7A4D]'}`} />
+                              <div>
+                                <span className="font-semibold text-[#111713]">{step.label}</span>
+                                <span className="ml-1 text-[#5F6C62]">{step.description}</span>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                        {reviewPipeline.disclosure && (
+                          <p className="mt-2 leading-5 text-[#758070]">{reviewPipeline.disclosure}</p>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
 
                 {/* Evidence review feedback */}
-                {feedback && onFeedback && (
-                  <div className="flex items-center space-x-2 mt-3">
+                {(feedback && onFeedback) || onContact ? (
+                  <div className="mt-3 flex flex-wrap items-center gap-2">
+                    {feedback && onFeedback && (
+                      <>
                     <Button
                       variant="ghost"
                       size="sm"
@@ -476,9 +518,27 @@ export default function ChatBubble({
                       <ThumbsDown className="w-3 h-3 mr-1" />
                       <span className="hidden sm:inline">출처 부족</span>
                     </Button>
+                      </>
+                    )}
+                    {onContact && !isStreaming && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={onContact}
+                        className="h-auto rounded-md border border-[#D8DCCF] bg-white p-2 text-xs text-[#5F6C62] transition-colors hover:bg-[#F7F2E6] hover:text-[#8A6418]"
+                      >
+                        <Mail className="mr-1 h-3 w-3" />
+                        담당자 확인 요청
+                      </Button>
+                    )}
+                    {feedback?.hermesQueued && (
+                      <span className="rounded-md border border-[#C6D9CB] bg-[#EDF7EF] px-2 py-1 text-[11px] font-medium text-[#1F7A4D]">
+                        Hermes 학습 후보 기록됨
+                      </span>
+                    )}
                     <span className="text-xs text-[#777777]">{timestamp}</span>
                   </div>
-                )}
+                ) : null}
               </div>
             </div>
           </div>

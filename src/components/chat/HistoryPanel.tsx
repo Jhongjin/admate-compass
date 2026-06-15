@@ -8,6 +8,10 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { formatDistanceToNow } from "date-fns";
 import { ko } from "date-fns/locale";
 import { motion, AnimatePresence } from "framer-motion";
+import {
+  deleteCompassLocalConversation,
+  loadCompassLocalConversations,
+} from "@/lib/client/compassLocalHistory";
 
 interface Conversation {
   id: string;
@@ -63,7 +67,7 @@ export default function HistoryPanel({
     setError(null);
     
     try {
-      const response = await fetch(`/api/conversations?userId=${encodeURIComponent(userId)}`);
+      const response = await fetch('/api/conversations?limit=50');
       if (!response.ok) {
         throw new Error('대화 히스토리를 불러올 수 없습니다.');
       }
@@ -83,12 +87,44 @@ export default function HistoryPanel({
         sources: conv.sources || [],
         conversation_id: conv.conversation_id || conv.id
       }));
-      
-      setConversations(formattedConversations);
+
+      const localConversations = loadCompassLocalConversations(userId).map((conv) => ({
+        id: conv.conversation_id || conv.id,
+        title: conv.user_message || '대화',
+        createdAt: conv.created_at,
+        updatedAt: conv.updated_at || conv.created_at,
+        messageCount: 1,
+        user_message: conv.user_message,
+        ai_response: conv.ai_response,
+        sources: conv.sources || [],
+        conversation_id: conv.conversation_id || conv.id,
+      }));
+
+      const seenIds = new Set<string>();
+      const merged = [...formattedConversations, ...localConversations]
+        .filter((conv) => {
+          const key = conv.conversation_id || conv.id;
+          if (seenIds.has(key)) return false;
+          seenIds.add(key);
+          return true;
+        })
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+      setConversations(merged);
     } catch (err) {
       console.error('대화 히스토리 로드 실패:', err);
       setError(err instanceof Error ? err.message : '알 수 없는 오류가 발생했습니다.');
-      setConversations([]);
+      setConversations(loadCompassLocalConversations(userId).map((conv) => ({
+        id: conv.conversation_id || conv.id,
+        title: conv.user_message || '대화',
+        createdAt: conv.created_at,
+        updatedAt: conv.updated_at || conv.created_at,
+        messageCount: 1,
+        user_message: conv.user_message,
+        ai_response: conv.ai_response,
+        sources: conv.sources || [],
+        conversation_id: conv.conversation_id || conv.id,
+      })));
     } finally {
       setIsLoading(false);
     }
@@ -102,16 +138,22 @@ export default function HistoryPanel({
     }
 
     try {
-      const response = await fetch(`/api/conversations?conversationId=${conversationId}&userId=${encodeURIComponent(userId)}`, {
+      const response = await fetch(`/api/conversations?conversationId=${encodeURIComponent(conversationId)}`, {
         method: 'DELETE'
       });
       
       if (response.ok) {
+        deleteCompassLocalConversation(userId, conversationId);
         // 삭제 성공 시 목록에서 제거
+        setConversations(prev => prev.filter(conv => conv.id !== conversationId));
+      } else {
+        deleteCompassLocalConversation(userId, conversationId);
         setConversations(prev => prev.filter(conv => conv.id !== conversationId));
       }
     } catch (err) {
       console.error('대화 삭제 실패:', err);
+      deleteCompassLocalConversation(userId, conversationId);
+      setConversations(prev => prev.filter(conv => conv.id !== conversationId));
     }
   };
 
@@ -159,16 +201,22 @@ export default function HistoryPanel({
     try {
       // 선택된 대화들을 하나씩 삭제
       const deletePromises = Array.from(selectedConversations).map(async (conversationId) => {
-        const response = await fetch(`/api/conversations?conversationId=${conversationId}&userId=${encodeURIComponent(userId)}`, {
+        const response = await fetch(`/api/conversations?conversationId=${encodeURIComponent(conversationId)}`, {
           method: 'DELETE'
         });
+        if (!response.ok) {
+          deleteCompassLocalConversation(userId, conversationId);
+        }
         return response.ok;
       });
 
       const results = await Promise.all(deletePromises);
       const successCount = results.filter(Boolean).length;
+      Array.from(selectedConversations).forEach((conversationId) => {
+        deleteCompassLocalConversation(userId, conversationId);
+      });
 
-      if (successCount > 0) {
+      if (successCount > 0 || selectedConversations.size > 0) {
         // 성공한 대화들을 목록에서 제거
         setConversations(prev => prev.filter(conv => !selectedConversations.has(conv.id)));
         setSelectedConversations(new Set());

@@ -14,16 +14,23 @@ export type EvidenceType = 'vector' | 'keyword' | 'hybrid' | 'fallback';
 export type EvidenceDecision = 'verified' | 'weak' | 'rejected';
 export type VendorIntent = 'META' | 'KAKAO' | 'NAVER' | 'GOOGLE';
 export type TopicIntent = 'review' | 'youth' | 'false_claim' | 'price' | 'event' | 'rights' | 'hate' | 'gambling' | 'spec';
+export type QueryType = 'single-vendor' | 'multi-vendor' | 'generic-policy' | 'exploratory';
 
 export interface QueryIntent {
   vendors: VendorIntent[];
   topics: TopicIntent[];
   keywords: string[];
+  strictProductTerms: string[];
+  strictContextTerms: string[];
   adPolicyTerms: string[];
   outOfScopeTerms: string[];
   unavailablePolicyTarget: boolean;
   unavailablePolicyTargetReason?: 'future_impossible' | 'fictional_platform';
   isOutOfScope: boolean;
+  queryType: QueryType;
+  isComparative: boolean;
+  requiresVendorCoverage: boolean;
+  recommendedSourceLimit: number;
 }
 
 export interface SourceQuality {
@@ -80,6 +87,173 @@ export interface ChatResponse {
   processingTime: number;
   model: string;
   isLLMGenerated?: boolean;
+}
+
+const VENDOR_TERM_SPECS: Array<[VendorIntent, string[]]> = [
+  ['META', ['meta', 'facebook', '페이스북', 'instagram', '인스타그램', '릴스', 'reels']],
+  ['KAKAO', ['kakao', '카카오', '카카오톡', '톡채널', '비즈보드', '모먼트']],
+  ['NAVER', ['naver', '네이버', '검색광고', '쇼핑검색', '파워링크', '브랜드검색']],
+  ['GOOGLE', ['google', '구글', 'youtube', '유튜브', 'gdn', 'google ads', 'display']],
+];
+
+function getCompassVendorTerms(vendor: VendorIntent): string[] {
+  return VENDOR_TERM_SPECS.find(([candidate]) => candidate === vendor)?.[1] || [];
+}
+
+const TOPIC_TERM_SPECS: Array<[TopicIntent, string[]]> = [
+  ['review', ['심사', '승인', '반려', '집행 기준', '준수사항']],
+  ['youth', ['청소년', '유해', '성인', '연령']],
+  ['false_claim', ['허위', '과장', '오인', '기만', '효능', '효과', '보장', '입증', '개선', '치료']],
+  ['price', ['가격', '할인', '할인율']],
+  ['event', ['이벤트', '경품', '참여', '당첨']],
+  ['rights', ['상표', '저작권', '초상권', '권리']],
+  ['hate', ['혐오', '차별', '비하']],
+  ['gambling', ['도박', '사행']],
+  ['spec', ['사이즈', '크기', '파일', '형식', '스펙', '동영상', '이미지', '카루셀']],
+];
+
+const AD_POLICY_TERMS = [
+  '광고', '정책', '심사', '소재', '매체', '캠페인', '타겟', '집행', '승인', '반려',
+  'meta', 'facebook', '페이스북', 'instagram', '인스타그램', 'kakao', '카카오',
+  'naver', '네이버', 'google', '구글', 'youtube', '유튜브', 'gdn'
+];
+
+const OUT_OF_SCOPE_TERMS = [
+  '날씨', '기온', '우산', '미세먼지', '김치찌개', '레시피', '요리', '맛집',
+  '주식', '코인', '환율', '연예', '영화 추천', '건강 상담', '진단', '치료'
+];
+
+function normalizeCompassSearchText(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function matchCompassTerms(text: string, terms: string[]): string[] {
+  return terms.filter(term => text.includes(term));
+}
+
+function detectCompassVendors(text: string): VendorIntent[] {
+  const vendors: VendorIntent[] = [];
+
+  for (const [vendor, terms] of VENDOR_TERM_SPECS) {
+    if (terms.some(term => text.includes(term))) {
+      vendors.push(vendor);
+    }
+  }
+
+  return vendors;
+}
+
+function detectCompassTopics(text: string): TopicIntent[] {
+  const topics: TopicIntent[] = [];
+
+  for (const [topic, terms] of TOPIC_TERM_SPECS) {
+    if (terms.some(term => text.includes(term))) {
+      topics.push(topic);
+    }
+  }
+
+  return topics;
+}
+
+function detectStrictProductTerms(text: string): string[] {
+  const terms: string[] = [];
+
+  if (text.includes('쇼핑검색')) terms.push('쇼핑검색');
+  if (text.includes('파워링크')) terms.push('파워링크');
+  if (text.includes('브랜드검색')) terms.push('브랜드검색');
+  if (text.includes('지역소상공인')) terms.push('지역소상공인');
+  if (text.includes('비즈보드')) terms.push('비즈보드');
+  if (text.includes('키워드광고') || text.includes('키워드 광고')) terms.push('키워드광고');
+
+  return terms;
+}
+
+function detectStrictContextTerms(text: string): string[] {
+  const terms: string[] = [];
+
+  if (/금융|대출|보험|투자|신용|카드|여신|저축|은행/.test(text)) {
+    terms.push('금융', '대출', '보험', '투자', '신용', '카드', 'financial', 'finance', 'credit', 'loan', 'insurance');
+  }
+
+  if (/의료|병원|의약품|건강기능식품|건기식|헬스케어|웰니스/.test(text)) {
+    terms.push('의료', '병원', '의약품', '건강기능식품', '건기식', '헬스케어', '웰니스', 'health', 'healthcare', 'wellness');
+  }
+
+  return Array.from(new Set(terms));
+}
+
+function extractCompassKeywords(query: string): string[] {
+  const stopwords = new Set([
+    '무엇인가요', '무엇', '어떤', '있는', '없는', '해주세요', '알려줘', '기준은', '기준',
+    '관련', '대한', '그리고', '또는', '가능한가요', '되나요', '경우', '알려', '줘',
+    'the', 'and', 'for', 'with', 'what', 'how'
+  ]);
+
+  const normalized = normalizeCompassSearchText(query);
+  const baseKeywords = Array.from(new Set(
+    query
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+      .split(/\s+/)
+      .map(word => word.trim())
+      .filter(word => word.length >= 2 && !stopwords.has(word))
+  ));
+  const expansions: string[] = [];
+
+  if (/효능|효과|성능|개선|보장|입증|치료/.test(normalized)) {
+    expansions.push('효능', '효과', '보장', '입증', '개선', '치료', '허위', '과장');
+  }
+
+  if (/주의|유의|제한|금지|반려|심사/.test(normalized)) {
+    expansions.push('주의', '제한', '금지', '반려', '심사', '검수', '정책', '운영정책', '등록기준', '광고등록기준', '가이드');
+  }
+
+  return Array.from(new Set([...baseKeywords, ...expansions])).slice(0, 16);
+}
+
+export function classifyCompassRagQuery(query: string): QueryIntent {
+  const normalized = normalizeCompassSearchText(query);
+  const vendors = detectCompassVendors(normalized);
+  const topics = detectCompassTopics(normalized);
+  const strictProductTerms = detectStrictProductTerms(normalized);
+  const strictContextTerms = detectStrictContextTerms(normalized);
+  const adPolicyTerms = matchCompassTerms(normalized, AD_POLICY_TERMS);
+  const outOfScopeTerms = matchCompassTerms(normalized, OUT_OF_SCOPE_TERMS);
+  const unavailablePolicyTarget = detectUnavailablePolicyTarget(query);
+  const isComparative = vendors.length >= 2 || /비교|차이|공통|각각|vs\.?|versus|동시에|나란히/.test(normalized);
+  const requiresVendorCoverage = vendors.length >= 2 || (isComparative && vendors.length > 0);
+  const queryType: QueryType = vendors.length >= 2
+    ? 'multi-vendor'
+    : vendors.length === 1
+      ? 'single-vendor'
+      : topics.length > 0 && adPolicyTerms.length > 0
+        ? 'generic-policy'
+        : 'exploratory';
+  const recommendedSourceLimit = requiresVendorCoverage
+    ? 5
+    : topics.length >= 2
+      ? 4
+      : 3;
+
+  return {
+    vendors,
+    topics,
+    keywords: extractCompassKeywords(query),
+    strictProductTerms,
+    strictContextTerms,
+    adPolicyTerms,
+    outOfScopeTerms,
+    unavailablePolicyTarget: unavailablePolicyTarget.isUnavailablePolicyTarget,
+    unavailablePolicyTargetReason: unavailablePolicyTarget.reason,
+    isOutOfScope: outOfScopeTerms.length > 0 && adPolicyTerms.length === 0,
+    queryType,
+    isComparative,
+    requiresVendorCoverage,
+    recommendedSourceLimit,
+  };
 }
 
 export class RAGSearchService {
@@ -144,11 +318,15 @@ export class RAGSearchService {
       console.log('🧭 Query intent:', {
         vendors: intent.vendors,
         topics: intent.topics,
+        queryType: intent.queryType,
+        isComparative: intent.isComparative,
+        recommendedSourceLimit: intent.recommendedSourceLimit,
         keywordCount: intent.keywords.length,
         outOfScopeTerms: intent.outOfScopeTerms,
         unavailablePolicyTarget: intent.unavailablePolicyTarget,
         unavailablePolicyTargetReason: intent.unavailablePolicyTargetReason,
         isOutOfScope: intent.isOutOfScope,
+        strictContextTerms: intent.strictContextTerms,
       });
 
       if (intent.isOutOfScope || intent.unavailablePolicyTarget) {
@@ -161,14 +339,20 @@ export class RAGSearchService {
       const queryEmbedding = queryEmbeddingResult.embedding;
       console.log(`📊 질문 임베딩 생성 완료: ${queryEmbedding.length}차원`);
 
-      const [vectorCandidates, keywordCandidates] = await Promise.all([
-        this.searchVectorCandidates(queryEmbedding, limit, intent),
-        this.searchKeywordCandidates(query, limit, intent)
+      const needsVendorAwareRetrieval = intent.vendors.length > 0;
+      const candidateLimit = needsVendorAwareRetrieval
+        ? Math.max(limit, intent.vendors.length * 4, 8)
+        : limit;
+
+      const [vectorCandidates, keywordCandidates, vendorCoverageCandidates] = await Promise.all([
+        this.searchVectorCandidates(queryEmbedding, candidateLimit, intent),
+        this.searchKeywordCandidates(query, candidateLimit, intent),
+        this.searchVendorCoverageCandidates(query, candidateLimit, intent)
       ]);
 
-      console.log(`📊 Hybrid 후보 수집 결과: vector=${vectorCandidates.length}, keyword=${keywordCandidates.length}`);
+      console.log(`📊 Hybrid 후보 수집 결과: vector=${vectorCandidates.length}, keyword=${keywordCandidates.length}, vendorCoverage=${vendorCoverageCandidates.length}`);
       const rankedResults = this.mergeDedupeAndRankCandidates(
-        [...vectorCandidates, ...keywordCandidates],
+        [...vectorCandidates, ...keywordCandidates, ...vendorCoverageCandidates],
         limit,
         intent
       );
@@ -251,6 +435,114 @@ export class RAGSearchService {
       .filter((result: SearchResult | null): result is SearchResult => result !== null);
   }
 
+  private async searchVendorCoverageCandidates(query: string, limit: number, intent: QueryIntent): Promise<SearchResult[]> {
+    if (intent.vendors.length === 0) {
+      return [];
+    }
+
+    const normalizedQuery = normalizeCompassSearchText(query);
+    const queryKeywords = intent.keywords.filter((keyword) => (
+      !intent.vendors.some((vendor) => getCompassVendorTerms(vendor).some(term => term === keyword))
+    ));
+    const topicKeywords = queryKeywords.length > 0 ? queryKeywords : intent.keywords;
+
+    const results = await Promise.all(intent.vendors.map(async (vendor) => {
+      const vendorTerms = getCompassVendorTerms(vendor);
+      const vendorKeywords = Array.from(new Set([
+        ...vendorTerms,
+        ...topicKeywords,
+        normalizedQuery.includes('효능') ? '효능' : '',
+        normalizedQuery.includes('효과') ? '효과' : '',
+        normalizedQuery.includes('보장') ? '보장' : '',
+        normalizedQuery.includes('입증') ? '입증' : '',
+        normalizedQuery.includes('심사') ? '심사' : '',
+        normalizedQuery.includes('정책') ? '정책' : '',
+      ].filter(Boolean))).slice(0, 24);
+
+      const [
+        ollamaResults,
+        documentChunkResults,
+        vendorOllamaResults,
+        vendorDocumentChunkResults,
+      ] = await Promise.all([
+        this.searchKeywordTable('ollama_document_chunks', vendorKeywords, limit),
+        this.searchKeywordTable('document_chunks', vendorKeywords, limit),
+        this.searchVendorMetadataTable('ollama_document_chunks', vendor, vendorKeywords, limit),
+        this.searchVendorMetadataTable('document_chunks', vendor, vendorKeywords, limit)
+      ]);
+
+      return [...vendorOllamaResults, ...vendorDocumentChunkResults, ...ollamaResults, ...documentChunkResults]
+        .map((result) => {
+          const candidate = this.normalizeCandidate(result.row, {
+            keywords: vendorKeywords,
+            intent,
+            retrievalMethod: 'keyword',
+            corpus: result.corpus,
+            evidenceType: 'keyword',
+          });
+
+          if (!candidate) return null;
+
+          if (this.matchesVendorSlot(candidate, vendor)) {
+            const boostedScore = Math.min(1, (candidate.hybridScore || 0) + 0.08);
+            candidate.hybridScore = boostedScore;
+            candidate.score = boostedScore;
+            candidate.rankReason = Array.from(new Set([
+              ...(candidate.rankReason || []),
+              `vendor_coverage_probe_${vendor.toLowerCase()}`,
+            ]));
+            candidate.metadata = {
+              ...(candidate.metadata || {}),
+              coverageProbeVendor: vendor,
+              rankReason: candidate.rankReason,
+              score: boostedScore,
+              hybridScore: boostedScore,
+            };
+          }
+
+          return candidate;
+        })
+        .filter((candidate: SearchResult | null): candidate is SearchResult => candidate !== null);
+    }));
+
+    return results.flat();
+  }
+
+  private async searchVendorMetadataTable(
+    tableName: 'ollama_document_chunks' | 'document_chunks',
+    vendor: VendorIntent,
+    keywords: string[],
+    limit: number
+  ): Promise<Array<{ row: any; corpus: RetrievalCorpus }>> {
+    try {
+      const selectColumns = tableName === 'ollama_document_chunks'
+        ? 'chunk_id, document_id, content, metadata, embedding'
+        : 'id, document_id, chunk_id, content, metadata';
+      const keywordConditions = keywords.map(keyword => `content.ilike.%${keyword}%`);
+
+      const { data, error } = await this.supabase
+        .from(tableName)
+        .select(selectColumns)
+        .eq('metadata->>source_vendor', vendor)
+        .or(keywordConditions.join(','))
+        .limit(limit * 8);
+
+      if (error) {
+        console.warn(`⚠️ ${tableName} ${vendor} metadata keyword 검색 실패:`, error);
+        return [];
+      }
+
+      console.log(`📊 ${tableName} ${vendor} metadata keyword 검색 결과: ${data?.length || 0}개`);
+      return (data || []).map((row: any) => ({
+        row,
+        corpus: tableName,
+      }));
+    } catch (error) {
+      console.warn(`⚠️ ${tableName} ${vendor} metadata keyword 검색 예외:`, error);
+      return [];
+    }
+  }
+
   private async searchKeywordTable(
     tableName: 'ollama_document_chunks' | 'document_chunks',
     keywords: string[],
@@ -299,7 +591,13 @@ export class RAGSearchService {
     const rawChunkId = result.id ?? result.chunk_id;
     const chunkId = String(rawChunkId || `${result.document_id || 'unknown'}_chunk_0`);
     const documentId = result.document_id || result.metadata?.document_id || this.inferDocumentId(chunkId);
-    const documentTitle = result.metadata?.title || result.title || result.metadata?.source || 'Unknown';
+    const documentTitle =
+      result.metadata?.title
+      || result.metadata?.source_title
+      || result.metadata?.canonical_title
+      || result.title
+      || result.metadata?.source
+      || 'Unknown';
     const documentUrl = result.metadata?.source_url || result.metadata?.document_url || result.metadata?.url;
     const chunkIndex = this.inferChunkIndex(chunkId, result.chunk_id);
     const warnings: string[] = [];
@@ -317,7 +615,12 @@ export class RAGSearchService {
       chunk_id: chunkId,
     });
     const lexicalOverlap = this.calculateLexicalOverlap(sourceText, options.intent.keywords);
-    const vendorAlignment = this.calculateVendorAlignment(sourceText, options.intent.vendors);
+    const vendorAlignment = this.calculateVendorAlignment(sourceText, options.intent.vendors, {
+      metadata: result.metadata,
+      title: documentTitle,
+      url: documentUrl,
+      documentId,
+    });
     const topicMatch = this.hasTopicMatch(sourceText, options.intent.topics);
     const topicExactMatch = this.hasExactTopicMatch(sourceText, options.intent.topics);
     const policyTitleMatch = this.hasPolicyGradeTitle(documentTitle, result.metadata);
@@ -507,11 +810,12 @@ export class RAGSearchService {
       ]));
       const replacementIndex = this.findWeakestGenericPolicyReplacementIndex(selected, intent);
       selected[replacementIndex] = genericRescueCandidate;
-      return selected.sort((a, b) => {
+      const rescueSelected = selected.sort((a, b) => {
         if (a.id === genericRescueCandidate.id) return -1;
         if (b.id === genericRescueCandidate.id) return 1;
         return (b.hybridScore || 0) - (a.hybridScore || 0);
       });
+      return this.applyVendorSlots(rescueSelected, ranked, limit, intent);
     }
 
     if (
@@ -524,14 +828,262 @@ export class RAGSearchService {
         'target_vendor_document_chunks_rescue',
       ]));
       selected[selected.length - 1] = rescueCandidate;
-      return selected.sort((a, b) => {
+      const rescueSelected = selected.sort((a, b) => {
         if (a.id === rescueCandidate.id) return -1;
         if (b.id === rescueCandidate.id) return 1;
         return (b.hybridScore || 0) - (a.hybridScore || 0);
       });
+      return this.applyVendorSlots(rescueSelected, ranked, limit, intent);
     }
 
-    return selected;
+    return this.applyVendorSlots(selected, ranked, limit, intent);
+  }
+
+  private applyVendorSlots(
+    selected: SearchResult[],
+    ranked: SearchResult[],
+    limit: number,
+    intent: QueryIntent
+  ): SearchResult[] {
+    if (!intent.requiresVendorCoverage || intent.vendors.length <= 1) {
+      return this.filterLowValuePolicySources(selected, intent)
+        .slice(0, limit)
+        .sort((a, b) => (b.hybridScore || 0) - (a.hybridScore || 0));
+    }
+
+    const next = [...selected];
+
+    for (const vendor of intent.vendors) {
+      const existingSlotIndexes = next
+        .map((candidate, index) => ({ candidate, index }))
+        .filter(({ candidate }) => this.matchesVendorSlot(candidate, vendor));
+      const bestCandidate = this.pickBestVendorSlotCandidate(ranked, next, vendor, intent);
+
+      if (existingSlotIndexes.length > 0) {
+        if (!bestCandidate) {
+          continue;
+        }
+
+        const weakestExisting = existingSlotIndexes
+          .sort((a, b) => (
+            this.scoreVendorSlotCandidate(a.candidate, intent) - this.scoreVendorSlotCandidate(b.candidate, intent)
+          ))[0];
+
+        if (
+          this.scoreVendorSlotCandidate(bestCandidate, intent)
+          <= this.scoreVendorSlotCandidate(weakestExisting.candidate, intent) + 0.04
+        ) {
+          continue;
+        }
+
+        bestCandidate.rankReason = Array.from(new Set([
+          ...(bestCandidate.rankReason || []),
+          `required_vendor_slot_upgrade_${vendor.toLowerCase()}`,
+        ]));
+        bestCandidate.metadata = {
+          ...(bestCandidate.metadata || {}),
+          coverageRole: `required_vendor_slot_upgrade_${vendor}`,
+        };
+        next[weakestExisting.index] = bestCandidate;
+        continue;
+      }
+
+      const candidate = bestCandidate;
+
+      if (!candidate) {
+        continue;
+      }
+
+      candidate.rankReason = Array.from(new Set([
+        ...(candidate.rankReason || []),
+        `required_vendor_slot_${vendor.toLowerCase()}`,
+      ]));
+      candidate.metadata = {
+        ...(candidate.metadata || {}),
+        coverageRole: `required_vendor_slot_${vendor}`,
+      };
+
+      if (next.length < limit) {
+        next.push(candidate);
+        continue;
+      }
+
+      const replacementIndex = this.findVendorSlotReplacementIndex(next, intent);
+      next[replacementIndex] = candidate;
+    }
+
+    const balanced = this.balanceVendorSlots(next, ranked, limit, intent);
+    const policyFiltered = this.filterLowValuePolicySources(balanced, intent);
+
+    return policyFiltered
+      .slice(0, limit)
+      .sort((a, b) => (b.hybridScore || 0) - (a.hybridScore || 0));
+  }
+
+  private filterLowValuePolicySources(selected: SearchResult[], intent: QueryIntent): SearchResult[] {
+    if (!this.hasPolicyJudgmentIntent(intent) || intent.topics.includes('spec')) {
+      return selected;
+    }
+
+    return selected.filter(candidate => {
+      if (!this.isLowValuePolicySource(candidate, intent)) return true;
+
+      const candidateVendor = candidate.sourceVendor;
+      if (candidateVendor && candidateVendor !== 'UNKNOWN' && intent.vendors.includes(candidateVendor)) {
+        const sameVendorCount = selected.filter(item => this.matchesVendorSlot(item, candidateVendor)).length;
+        return sameVendorCount <= 1;
+      }
+
+      return false;
+    });
+  }
+
+  private balanceVendorSlots(
+    selected: SearchResult[],
+    ranked: SearchResult[],
+    limit: number,
+    intent: QueryIntent
+  ): SearchResult[] {
+    if (!intent.requiresVendorCoverage || intent.vendors.length <= 1) {
+      return selected;
+    }
+
+    const next = [...selected];
+    const targetPerVendor = Math.max(1, Math.floor(limit / intent.vendors.length));
+
+    for (const vendor of intent.vendors) {
+      let vendorCount = next.filter(candidate => this.matchesVendorSlot(candidate, vendor)).length;
+
+      while (vendorCount < targetPerVendor) {
+        const candidate = this.pickBestVendorSlotCandidate(ranked, next, vendor, intent);
+        if (!candidate) break;
+
+        const overrepresentedVendor = intent.vendors.find(candidateVendor => (
+          candidateVendor !== vendor
+          && next.filter(item => this.matchesVendorSlot(item, candidateVendor)).length > targetPerVendor
+        ));
+
+        let replacementIndex = -1;
+        if (overrepresentedVendor) {
+          replacementIndex = this.findWeakestVendorIndex(next, overrepresentedVendor, intent);
+        }
+
+        if (replacementIndex < 0 && next.length < limit) {
+          candidate.rankReason = Array.from(new Set([
+            ...(candidate.rankReason || []),
+            `balanced_vendor_slot_${vendor.toLowerCase()}`,
+          ]));
+          next.push(candidate);
+          vendorCount += 1;
+          continue;
+        }
+
+        if (replacementIndex < 0) {
+          replacementIndex = this.findVendorSlotReplacementIndex(next, intent);
+        }
+
+        const current = next[replacementIndex];
+        if (
+          current
+          && this.scoreVendorSlotCandidate(candidate, intent)
+          <= this.scoreVendorSlotCandidate(current, intent) - 0.12
+        ) {
+          break;
+        }
+
+        candidate.rankReason = Array.from(new Set([
+          ...(candidate.rankReason || []),
+          `balanced_vendor_slot_${vendor.toLowerCase()}`,
+        ]));
+        next[replacementIndex] = candidate;
+        vendorCount = next.filter(item => this.matchesVendorSlot(item, vendor)).length;
+      }
+    }
+
+    return next;
+  }
+
+  private findWeakestVendorIndex(selected: SearchResult[], vendor: VendorIntent, intent: QueryIntent): number {
+    let weakestIndex = -1;
+    let weakestScore = Number.POSITIVE_INFINITY;
+
+    selected.forEach((candidate, index) => {
+      if (!this.matchesVendorSlot(candidate, vendor)) return;
+      const score = this.scoreVendorSlotCandidate(candidate, intent);
+      if (score < weakestScore) {
+        weakestScore = score;
+        weakestIndex = index;
+      }
+    });
+
+    return weakestIndex;
+  }
+
+  private matchesVendorSlot(candidate: SearchResult, vendor: VendorIntent): boolean {
+    if (candidate.sourceQuality.isFallback) return false;
+    if (!candidate.sourceQuality.hasExcerpt) return false;
+    if (candidate.sourceVendor === vendor) return true;
+    return Boolean(candidate.sourceVendors?.includes(vendor));
+  }
+
+  private pickBestVendorSlotCandidate(
+    ranked: SearchResult[],
+    selected: SearchResult[],
+    vendor: VendorIntent,
+    intent: QueryIntent
+  ): SearchResult | undefined {
+    return ranked
+      .filter(item => (
+        this.matchesVendorSlot(item, vendor)
+        && !selected.some(selectedItem => selectedItem.id === item.id)
+      ))
+      .sort((a, b) => (
+        this.scoreVendorSlotCandidate(b, intent) - this.scoreVendorSlotCandidate(a, intent)
+      ))[0];
+  }
+
+  private scoreVendorSlotCandidate(candidate: SearchResult, intent: QueryIntent): number {
+    const baseScore = candidate.hybridScore || candidate.score || candidate.similarity || 0;
+    const policyJudgmentIntent = this.hasPolicyJudgmentIntent(intent);
+    const policyEvidenceBoost = policyJudgmentIntent && candidate.topicExactMatch ? 0.22 : 0;
+    const policyTitleBoost = policyJudgmentIntent && candidate.policyTitleMatch ? 0.16 : 0;
+    const reviewPolicyTitleBoost = policyJudgmentIntent && this.isReviewPolicyCandidate(candidate) ? 0.55 : 0;
+    const verifiedBoost = candidate.evidenceDecision === 'verified' ? 0.3 : 0;
+    const weakPenalty = candidate.evidenceDecision === 'weak' ? 0.25 : 0;
+    const termsPenalty = policyJudgmentIntent && this.isTermsOfServiceCandidate(candidate) ? 0.75 : 0;
+    const creativeGuidePenalty = policyJudgmentIntent && this.isCreativeSpecCandidate(candidate) ? 1.15 : 0;
+    const supportDocPenalty = policyJudgmentIntent && this.isAdministrativeSupportCandidate(candidate) ? 0.9 : 0;
+    const eventPromoPenalty = policyJudgmentIntent && this.isEventPromoCandidate(candidate) ? 0.65 : 0;
+    const strictContextPenalty = policyJudgmentIntent && this.isStrictContextMismatchCandidate(candidate, intent) ? 1.1 : 0;
+    const unknownTitlePenalty = candidate.documentTitle === 'Unknown' ? 0.12 : 0;
+
+    return baseScore + verifiedBoost + policyEvidenceBoost + policyTitleBoost + reviewPolicyTitleBoost
+      - weakPenalty - termsPenalty - creativeGuidePenalty - supportDocPenalty - eventPromoPenalty - strictContextPenalty - unknownTitlePenalty;
+  }
+
+  private findVendorSlotReplacementIndex(selected: SearchResult[], intent: QueryIntent): number {
+    const nonRequiredVendorIndex = selected.findIndex(candidate => (
+      candidate.sourceVendor
+      && candidate.sourceVendor !== 'UNKNOWN'
+      && !intent.vendors.includes(candidate.sourceVendor)
+    ));
+
+    if (nonRequiredVendorIndex >= 0) {
+      return nonRequiredVendorIndex;
+    }
+
+    let weakestIndex = selected.length - 1;
+    let weakestScore = Number.POSITIVE_INFINITY;
+
+    selected.forEach((candidate, index) => {
+      const score = candidate.hybridScore || candidate.score || candidate.similarity || 0;
+      if (score < weakestScore) {
+        weakestScore = score;
+        weakestIndex = index;
+      }
+    });
+
+    return weakestIndex;
   }
 
   private mergeDuplicateCandidate(existing: SearchResult, incoming: SearchResult, intent: QueryIntent): SearchResult {
@@ -675,6 +1227,13 @@ export class RAGSearchService {
       return false;
     }
     if (
+      hasVendorIntent
+      && candidate.vendorMismatch
+      && !candidate.vendorMatch
+    ) {
+      return false;
+    }
+    if (
       hasTargetVendorRescueCandidate
       && this.isExplicitNonMetaIntent(intent)
       && this.isMetaOnlyOllamaMismatch(candidate, intent)
@@ -717,31 +1276,7 @@ export class RAGSearchService {
   }
 
   private detectQueryIntent(query: string): QueryIntent {
-    const normalized = this.normalizeSearchText(query);
-    const vendors = this.detectVendors(normalized);
-    const topics = this.detectTopics(normalized);
-    const adPolicyTerms = this.matchTerms(normalized, [
-      '광고', '정책', '심사', '소재', '매체', '캠페인', '타겟', '집행', '승인', '반려',
-      'meta', 'facebook', '페이스북', 'instagram', '인스타그램', 'kakao', '카카오',
-      'naver', '네이버', 'google', '구글', 'youtube', '유튜브', 'gdn'
-    ]);
-    const outOfScopeTerms = this.matchTerms(normalized, [
-      '날씨', '기온', '우산', '미세먼지', '김치찌개', '레시피', '요리', '맛집',
-      '주식', '코인', '환율', '연예', '영화 추천', '건강 상담', '진단', '치료'
-    ]);
-    const unavailablePolicyTarget = detectUnavailablePolicyTarget(query);
-    const keywords = this.extractKeywords(query);
-
-    return {
-      vendors,
-      topics,
-      keywords,
-      adPolicyTerms,
-      outOfScopeTerms,
-      unavailablePolicyTarget: unavailablePolicyTarget.isUnavailablePolicyTarget,
-      unavailablePolicyTargetReason: unavailablePolicyTarget.reason,
-      isOutOfScope: outOfScopeTerms.length > 0 && adPolicyTerms.length === 0,
-    };
+    return classifyCompassRagQuery(query);
   }
 
   private detectVendors(text: string): VendorIntent[] {
@@ -887,8 +1422,12 @@ export class RAGSearchService {
       title,
       content,
       metadata?.title,
+      metadata?.source_title,
+      metadata?.canonical_title,
       metadata?.source,
       metadata?.source_vendor,
+      Array.isArray(metadata?.topic_labels) ? metadata.topic_labels.join(' ') : metadata?.topic_labels,
+      metadata?.sample_bucket,
       metadata?.source_url,
       metadata?.document_url,
       metadata?.url,
@@ -903,12 +1442,34 @@ export class RAGSearchService {
     return Math.max(0, Math.min(1, matched.length / keywords.length));
   }
 
-  private calculateVendorAlignment(sourceText: string, vendors: VendorIntent[]): {
+  private calculateVendorAlignment(
+    sourceText: string,
+    vendors: VendorIntent[],
+    sourceIdentity?: {
+      metadata?: any;
+      title?: string;
+      url?: string;
+      documentId?: string;
+    }
+  ): {
     match: boolean;
     mismatch: boolean;
     primaryVendor: VendorIntent | 'UNKNOWN';
     sourceVendors: VendorIntent[];
   } {
+    const authoritativeVendor = this.getAuthoritativeSourceVendor(sourceIdentity);
+
+    if (authoritativeVendor && authoritativeVendor !== 'UNKNOWN') {
+      const match = vendors.length === 0 ? false : vendors.includes(authoritativeVendor);
+      const mismatch = vendors.length > 0 && !match;
+      return {
+        match,
+        mismatch,
+        primaryVendor: authoritativeVendor,
+        sourceVendors: [authoritativeVendor],
+      };
+    }
+
     const sourceVendors = this.detectVendors(sourceText);
     const primaryVendor = this.choosePrimaryVendor(sourceVendors, vendors);
     if (vendors.length === 0) {
@@ -919,6 +1480,94 @@ export class RAGSearchService {
     const mismatch = sourceVendors.length > 0 && !match;
 
     return { match, mismatch, primaryVendor, sourceVendors };
+  }
+
+  private getAuthoritativeSourceVendor(sourceIdentity?: {
+    metadata?: any;
+    title?: string;
+    url?: string;
+    documentId?: string;
+  }): VendorIntent | 'UNKNOWN' {
+    if (!sourceIdentity) return 'UNKNOWN';
+
+    const metadata = sourceIdentity.metadata || {};
+    const explicitVendor = this.normalizeVendorToken(
+      metadata.source_vendor
+      || metadata.vendor
+      || metadata.media
+      || metadata.platform
+    );
+
+    if (explicitVendor) {
+      return explicitVendor;
+    }
+
+    const identityText = this.normalizeSearchText([
+      sourceIdentity.title,
+      metadata.canonical_title,
+      metadata.source_title,
+      metadata.source,
+      metadata.sample_bucket,
+      metadata.source_url,
+      metadata.document_url,
+      metadata.url,
+      sourceIdentity.url,
+      sourceIdentity.documentId,
+    ].filter(Boolean).join(' '));
+
+    if (
+      identityText.includes('kakaobusiness')
+      || identityText.includes('카카오 광고')
+      || identityText.includes('카카오비즈니스')
+      || identityText.includes('kakao:')
+      || identityText.startsWith('kakao')
+    ) {
+      return 'KAKAO';
+    }
+
+    if (
+      identityText.includes('ads.naver.com')
+      || identityText.includes('naver:')
+      || identityText.includes('네이버 광고')
+      || identityText.includes('네이버 검색광고')
+      || identityText.startsWith('naver')
+    ) {
+      return 'NAVER';
+    }
+
+    if (
+      identityText.includes('support.google.com')
+      || identityText.includes('google ads')
+      || identityText.includes('google:')
+      || identityText.includes('youtube:')
+      || identityText.startsWith('google')
+    ) {
+      return 'GOOGLE';
+    }
+
+    if (
+      identityText.includes('meta:')
+      || identityText.includes('facebook')
+      || identityText.includes('instagram')
+      || identityText.includes('메타 광고')
+      || identityText.includes('페이스북 광고')
+      || identityText.includes('인스타그램 광고')
+      || identityText.startsWith('meta')
+    ) {
+      return 'META';
+    }
+
+    return 'UNKNOWN';
+  }
+
+  private normalizeVendorToken(value: unknown): VendorIntent | null {
+    const text = this.normalizeSearchText(String(value || ''));
+    if (!text) return null;
+    if (text === 'meta' || text === 'facebook' || text === 'instagram') return 'META';
+    if (text === 'kakao' || text === '카카오') return 'KAKAO';
+    if (text === 'naver' || text === '네이버') return 'NAVER';
+    if (text === 'google' || text === 'youtube' || text === '구글' || text === '유튜브') return 'GOOGLE';
+    return null;
   }
 
   private chooseMergedSourceVendor(existing: SearchResult, incoming: SearchResult): VendorIntent | 'UNKNOWN' {
@@ -954,6 +1603,144 @@ export class RAGSearchService {
       && intent.adPolicyTerms.length > 0
       && !intent.isOutOfScope
       && !intent.unavailablePolicyTarget
+    );
+  }
+
+  private hasPolicyJudgmentIntent(intent: QueryIntent): boolean {
+    if (intent.topics.some(topic => topic !== 'spec')) return true;
+    return intent.keywords.some(keyword => (
+      ['주의', '제한', '금지', '반려', '심사', '검수', '정책', '운영정책', '등록기준', '광고등록기준'].includes(keyword)
+    ));
+  }
+
+  private isTermsOfServiceCandidate(candidate: SearchResult): boolean {
+    const text = this.normalizeSearchText([
+      candidate.documentTitle,
+      candidate.metadata?.source_title,
+      candidate.metadata?.canonical_title,
+      candidate.metadata?.title,
+      candidate.metadata?.source,
+    ].filter(Boolean).join(' '));
+
+    return text.includes('이용약관') || text.includes('약관');
+  }
+
+  private isCreativeSpecCandidate(candidate: SearchResult): boolean {
+    const text = this.normalizeSearchText([
+      candidate.documentTitle,
+      candidate.content,
+      candidate.metadata?.source_title,
+      candidate.metadata?.canonical_title,
+      candidate.metadata?.title,
+      candidate.metadata?.source,
+    ].filter(Boolean).join(' '));
+
+    return (
+      text.includes('제작 가이드')
+      || text.includes('광고 사양')
+      || text.includes('동영상배너')
+      || text.includes('배너형')
+      || text.includes('소재 제작')
+      || text.includes('이미지 광고')
+      || text.includes('동영상 광고')
+      || text.includes('카루셀 광고')
+      || text.includes('최대 파일 크기')
+      || text.includes('지원 형식')
+      || text.includes('픽셀')
+      || text.includes('비율')
+      || text.includes('반응형 디스플레이')
+      || text.includes('권장사항 가이드')
+      || text.includes('최종 url')
+      || text.includes('광고 그룹별')
+      || text.includes('실적이 우수한')
+    );
+  }
+
+  private isAdministrativeSupportCandidate(candidate: SearchResult): boolean {
+    const text = this.normalizeSearchText([
+      candidate.documentTitle,
+      candidate.content,
+      candidate.metadata?.source_title,
+      candidate.metadata?.canonical_title,
+      candidate.metadata?.title,
+      candidate.metadata?.source,
+    ].filter(Boolean).join(' '));
+
+    return (
+      text.includes('세금')
+      || text.includes('vat')
+      || text.includes('인보이스')
+      || text.includes('invoice')
+      || text.includes('결제')
+      || text.includes('청구')
+      || text.includes('billing')
+      || text.includes('payment')
+      || text.includes('비즈니스 지원 센터')
+    );
+  }
+
+  private isLowValuePolicySource(candidate: SearchResult, intent: QueryIntent): boolean {
+    return (
+      this.isCreativeSpecCandidate(candidate)
+      || this.isAdministrativeSupportCandidate(candidate)
+      || this.isTermsOfServiceCandidate(candidate)
+      || this.isEventPromoCandidate(candidate)
+      || this.isStrictProductMismatchCandidate(candidate, intent)
+      || this.isStrictContextMismatchCandidate(candidate, intent)
+    );
+  }
+
+  private isStrictProductMismatchCandidate(candidate: SearchResult, intent: QueryIntent): boolean {
+    if (intent.strictProductTerms.length === 0) return false;
+    const text = this.buildCandidateSearchText(candidate.content, candidate.documentTitle, candidate.metadata);
+    return !intent.strictProductTerms.some(term => text.includes(term.toLowerCase()));
+  }
+
+  private isStrictContextMismatchCandidate(candidate: SearchResult, intent: QueryIntent): boolean {
+    if (intent.strictContextTerms.length === 0) return false;
+    const text = this.buildCandidateSearchText(candidate.content, candidate.documentTitle, candidate.metadata);
+    return !intent.strictContextTerms.some(term => text.includes(term.toLowerCase()));
+  }
+
+  private isReviewPolicyCandidate(candidate: SearchResult): boolean {
+    const text = this.normalizeSearchText([
+      candidate.documentTitle,
+      candidate.content,
+      candidate.metadata?.source_title,
+      candidate.metadata?.canonical_title,
+      candidate.metadata?.title,
+      candidate.metadata?.source,
+    ].filter(Boolean).join(' '));
+
+    return (
+      text.includes('광고 등록 기준')
+      || text.includes('광고등록기준')
+      || text.includes('등록 기준')
+      || text.includes('운영정책')
+      || text.includes('심사 가이드')
+      || text.includes('검수 가이드')
+      || text.includes('광고 검토')
+      || text.includes('광고소재 검수')
+    );
+  }
+
+  private isEventPromoCandidate(candidate: SearchResult): boolean {
+    const text = this.normalizeSearchText([
+      candidate.documentTitle,
+      candidate.content,
+      candidate.metadata?.source_title,
+      candidate.metadata?.canonical_title,
+      candidate.metadata?.title,
+      candidate.metadata?.source,
+    ].filter(Boolean).join(' '));
+
+    return (
+      text.includes('오늘 여기 클립')
+      || text.includes('이벤트')
+      || text.includes('npay')
+      || text.includes('혜택 지급')
+      || text.includes('프로모션')
+      || text.includes('챌린저')
     );
   }
 
@@ -1056,7 +1843,7 @@ export class RAGSearchService {
     const specs: Record<TopicIntent, string[]> = {
       review: ['심사', '승인', '반려', '집행 기준', '준수사항', '심사 가이드'],
       youth: ['청소년', '유해', '성인', '연령', '청소년 보호'],
-      false_claim: ['허위', '과장', '오인', '기만', '거짓'],
+      false_claim: ['허위', '과장', '오인', '기만', '거짓', '효능', '효과', '보장', '입증', '개선', '치료'],
       price: ['가격', '할인', '할인율', '표시', '소재'],
       event: ['이벤트', '경품', '참여', '당첨'],
       rights: ['상표', '저작권', '초상권', '권리', '침해'],

@@ -174,6 +174,8 @@ function buildSystemPrompt(): string {
     'Use only supplied evidence blocks whose decision is verified. Do not add policy facts from general memory.',
     'Weak, rejected, fallback, placeholder, or empty evidence is outside the answer boundary.',
     'If verified evidence is missing, say the provided documents do not confirm it.',
+    'Never change or guess an evidence block vendor. If a block says vendor: KAKAO, do not describe it as NAVER or Google.',
+    'For comparison questions, separate the answer by vendor first, then summarize the practical difference.',
     'Cite the supporting evidence labels like [S1] or [S2] inside the answer.',
     'Keep the answer concise, operational, and suitable for campaign decision support.',
   ].join('\n');
@@ -218,7 +220,13 @@ function buildEvidencePrompt(message: string, searchResults: CompassGroundingSou
     '답변 규칙:',
     '- 위 근거에서 확인되는 내용만 답변하세요.',
     '- 근거가 충분하지 않으면 "현재 제공된 문서에서는 확인되지 않습니다"라고 답하세요.',
+    '- 일부 근거가 확인되면 전체 부정으로 시작하지 말고, "제공된 근거 기준으로는"처럼 확인 가능한 범위를 먼저 밝히세요.',
+    '- "현재 제공된 문서에서는 확인되지 않습니다"라고 말한 뒤 확인되지 않은 세부 내용을 이어서 작성하지 마세요.',
+    '- 사용자가 광고 상품/종류를 물었지만 근거가 정책/사양 문서라면, 상품 카탈로그가 아니라 "근거에서 확인되는 광고 형식/사양"으로 범위를 좁혀 답하세요.',
     '- 매체/플랫폼이 다르면 혼합해서 답하지 마세요.',
+    '- 비교 질문이면 먼저 매체별로 나누어 정리하고, 마지막에 실무 차이를 1~2문장으로 요약하세요.',
+    '- 근거 블록의 vendor 값을 절대 다른 매체명으로 바꿔 쓰지 마세요. 예: vendor가 KAKAO인 근거를 네이버 근거처럼 설명하면 안 됩니다.',
+    '- 핵심 문장에는 가능한 한 [S1], [S2]처럼 출처 라벨을 붙이세요.',
     '- 마지막에 짧은 "근거" 줄을 포함하고 사용한 출처 라벨을 적으세요.',
   ].join('\n');
 }

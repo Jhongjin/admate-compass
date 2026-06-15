@@ -8,7 +8,7 @@ import ChatBubble from "@/components/chat/ChatBubble";
 import HistoryPanel from "@/components/chat/HistoryPanel";
 import QuickQuestions from "@/components/chat/QuickQuestions";
 import SourceStatePanel from "@/components/chat/SourceStatePanel";
-import type { ChatSource, ChatUiState } from "@/components/chat/chatUiStateTypes";
+import type { ChatSource, ChatUiState, CompassReviewPipeline } from "@/components/chat/chatUiStateTypes";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Sheet, SheetContent, SheetTrigger, SheetTitle } from "@/components/ui/sheet";
@@ -19,6 +19,7 @@ import { Separator } from "@/components/ui/separator";
 import { Send, Bot, User, Star, ThumbsUp, ThumbsDown, RotateCcw, AlertCircle, CheckCircle, History, Target, Lightbulb, BookOpen, MessageSquare, Trash2, RefreshCw, PanelLeft, PanelRight, Maximize2, Minimize2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
+import { saveCompassLocalConversation } from "@/lib/client/compassLocalHistory";
 
 interface Message {
   id: string;
@@ -29,19 +30,74 @@ interface Message {
   feedback?: {
     helpful: boolean | null;
     count: number;
+    hermesQueued?: boolean;
+    hermesStatus?: "candidate" | "queued" | "failed";
+    persistence?: string;
   };
+  conversationId?: string;
   noDataFound?: boolean;
   showContactOption?: boolean;
   confidence?: number;
   processingTime?: number;
   model?: string;
   uiState?: ChatUiState;
+  isStreaming?: boolean;
+  reviewPipeline?: CompassReviewPipeline;
 }
+
+type ActiveAnswerRequest =
+  | { status: "idle" }
+  | {
+      status: "pending";
+      requestId: string;
+      question: string;
+      startedAt: number;
+      phase?: CompassAnswerPhase;
+      sourceCount?: number;
+      verifiedSourceCount?: number;
+    };
+
+type CompassAnswerPhase =
+  | "submitted"
+  | "accepted"
+  | "evidence-started"
+  | "evidence-ready"
+  | "answer-started"
+  | "answer-ready";
+
+type CompassAnswerStreamEvent =
+  | {
+      type: "phase";
+      phase: Exclude<CompassAnswerPhase, "submitted">;
+      message?: string;
+      sourceCount?: number;
+      verifiedSourceCount?: number;
+    }
+  | {
+      type: "final";
+      status?: number;
+      payload: any;
+    }
+  | {
+      type: "delta";
+      content: string;
+    }
+  | {
+      type: "error";
+      message?: string;
+    };
+
+type CompassAnswerFetchResult = {
+  data: any;
+  streamMessageId?: string;
+};
 
 const INITIAL_GREETING = "안녕하세요. Compass 근거 확인 화면입니다. 확인할 광고 문안이나 참고 출처를 붙여넣으면, 관련 출처와 추가 확인이 필요한 항목을 함께 정리해 드립니다.";
 const NO_DATA_MESSAGE = "현재 Compass 문서에서 확인 가능한 출처를 찾지 못했습니다. 매체, 업종, 소재 표현을 더 구체적으로 입력하면 다시 확인할 수 있습니다.";
 const GENERATION_LIMITED_MESSAGE = "답변 생성이 일시적으로 제한되었습니다. 확인한 출처는 아래에서 계속 확인할 수 있습니다.";
 const ERROR_MESSAGE = "일시적인 서비스 오류로 답변을 만들지 못했습니다. 잠시 후 다시 시도해 주세요.";
+const STREAM_CHUNK_DELAY_MS = 18;
+const STREAM_CHUNK_SIZE = 18;
 
 const getInitialMessage = (): Message => ({
   id: "1",
@@ -87,6 +143,43 @@ const sanitizeSources = (sources: unknown): NonNullable<Message["sources"]> => {
     .map(({ isFallback, ...source }) => source);
 };
 
+const sanitizeReviewPipeline = (value: unknown): CompassReviewPipeline | undefined => {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return undefined;
+
+  const pipeline = value as Record<string, unknown>;
+  const steps: CompassReviewPipeline["steps"] = Array.isArray(pipeline.steps)
+    ? pipeline.steps
+      .filter((step) => step && typeof step === "object")
+      .map((step) => {
+        const item = step as Record<string, unknown>;
+        const status: CompassReviewPipeline["steps"][number]["status"] = item.status === "limited" || item.status === "attention" || item.status === "completed"
+          ? item.status
+          : "completed";
+
+        return {
+          label: String(item.label || "검토"),
+          description: String(item.description || ""),
+          status,
+        };
+      })
+      .filter((step) => step.label && step.description)
+    : [];
+
+  if (steps.length === 0) return undefined;
+
+  const status = pipeline.status === "limited" || pipeline.status === "blocked" || pipeline.status === "error" || pipeline.status === "completed"
+    ? pipeline.status
+    : "completed";
+
+  return {
+    label: String(pipeline.label || "2단계 검토"),
+    summary: String(pipeline.summary || "질문 조건과 출처 정합성을 단계적으로 확인했습니다."),
+    status,
+    steps,
+    disclosure: typeof pipeline.disclosure === "string" ? pipeline.disclosure : undefined,
+  };
+};
+
 function ChatPageContent() {
   const { user, loading } = useAuth();
   const searchParams = useSearchParams();
@@ -100,6 +193,7 @@ function ChatPageContent() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const [savedMessageIds, setSavedMessageIds] = useState<Set<string>>(new Set());
   const [isSaving, setIsSaving] = useState(false);
+  const [activeAnswerRequest, setActiveAnswerRequest] = useState<ActiveAnswerRequest>({ status: "idle" });
   const [isSendingEmail, setIsSendingEmail] = useState(false);
   const [leftPanelWidth, setLeftPanelWidth] = useState(65);
   const [isRightPanelCollapsed, setIsRightPanelCollapsed] = useState(false);
@@ -238,18 +332,7 @@ function ChatPageContent() {
       
       if (currentUser && currentMessages.length > 1) {
         try {
-          const userMessages = currentMessages.filter(msg => msg.type === 'user');
-          const aiMessages = currentMessages.filter(msg => msg.type === 'assistant');
-          
-          const conversationPairs = [];
-          for (let i = 0; i < Math.min(userMessages.length, aiMessages.length); i++) {
-            const userMsg = userMessages[i];
-            const aiMsg = aiMessages[i];
-            
-            if (!currentSavedIds.has(userMsg.id) && !currentSavedIds.has(aiMsg.id)) {
-              conversationPairs.push({ userMsg, aiMsg });
-            }
-          }
+          const conversationPairs = getUnsavedConversationPairs(currentMessages, currentSavedIds);
           
           if (conversationPairs.length === 0) {
             return;
@@ -277,7 +360,12 @@ function ChatPageContent() {
               const data = await response.json();
               if (data.success) {
                 savedCount++;
+                continue;
               }
+            }
+
+            if (saveConversationPairLocally(currentUser.id, uniqueId, userMsg, aiMsg)) {
+              savedCount++;
             }
           }
         } catch (error) {
@@ -316,7 +404,7 @@ function ChatPageContent() {
     return {
       id: (Date.now() + 1).toString(),
       type: "assistant",
-      content: generationLimited ? GENERATION_LIMITED_MESSAGE : noDataFound ? NO_DATA_MESSAGE : String(rawContent),
+      content: generationLimited ? GENERATION_LIMITED_MESSAGE : String(rawContent),
       timestamp: new Date().toLocaleTimeString('ko-KR', {
         hour: '2-digit',
         minute: '2-digit'
@@ -329,6 +417,7 @@ function ChatPageContent() {
       processingTime: typeof data?.processingTime === "number" ? data.processingTime : undefined,
       model,
       uiState,
+      reviewPipeline: sanitizeReviewPipeline(data?.response?.reviewPipeline || data?.reviewPipeline),
     };
   };
 
@@ -344,6 +433,324 @@ function ChatPageContent() {
     feedback: { helpful: null, count: 0 },
     uiState: "error",
   });
+
+  const waitForStreamFrame = () => new Promise<void>((resolve) => {
+    window.setTimeout(resolve, STREAM_CHUNK_DELAY_MS);
+  });
+
+  const revealAssistantMessage = async (assistantMessage: Message): Promise<Message> => {
+    const finalContent = assistantMessage.content;
+    const streamingMessage: Message = {
+      ...assistantMessage,
+      content: "",
+      isStreaming: true,
+    };
+
+    setMessages(prev => [...prev, streamingMessage]);
+
+    let cursor = 0;
+    while (cursor < finalContent.length) {
+      cursor = Math.min(finalContent.length, cursor + STREAM_CHUNK_SIZE);
+      const visibleContent = finalContent.slice(0, cursor);
+
+      setMessages(prev => prev.map(message => (
+        message.id === assistantMessage.id
+          ? { ...message, content: visibleContent, isStreaming: true }
+          : message
+      )));
+
+      await waitForStreamFrame();
+    }
+
+    const completedMessage = {
+      ...assistantMessage,
+      content: finalContent,
+      isStreaming: false,
+    };
+
+    setMessages(prev => prev.map(message => (
+      message.id === assistantMessage.id ? completedMessage : message
+    )));
+
+    return completedMessage;
+  };
+
+  const getUnsavedConversationPairs = (
+    conversationMessages: Message[],
+    currentSavedIds: Set<string>
+  ) => {
+    const pairs: Array<{ userMsg: Message; aiMsg: Message }> = [];
+
+    for (let index = 0; index < conversationMessages.length - 1; index++) {
+      const userMsg = conversationMessages[index];
+      const aiMsg = conversationMessages[index + 1];
+
+      if (userMsg.type !== "user" || aiMsg.type !== "assistant") continue;
+      if (aiMsg.isStreaming) continue;
+      if (currentSavedIds.has(userMsg.id) || currentSavedIds.has(aiMsg.id)) continue;
+
+      pairs.push({ userMsg, aiMsg });
+    }
+
+    return pairs;
+  };
+
+  const saveConversationPairLocally = (
+    userId: string,
+    conversationId: string,
+    userMessage: Message,
+    aiResponse: Message
+  ) => saveCompassLocalConversation(userId, {
+    conversationId,
+    userMessage: userMessage.content,
+    aiResponse: aiResponse.content,
+    sources: aiResponse.sources || [],
+  });
+
+  const saveConversationPair = async (userMessage: Message, aiResponse: Message) => {
+    if (!user) return null;
+    const uniqueId = `conv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${userMessage.id}_${aiResponse.id}`;
+
+    try {
+      const saveResponse = await fetch('/api/conversations', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          userId: user.id,
+          conversationId: uniqueId,
+          userMessage: userMessage.content,
+          aiResponse: aiResponse.content,
+          sources: aiResponse.sources || [],
+        }),
+      });
+
+      const saveData = await saveResponse.json().catch(() => null);
+
+      if (!saveResponse.ok || !saveData?.success) {
+        console.warn('대화 자동 저장 실패:', saveData?.message || saveData?.error || saveResponse.status);
+        const localSaved = saveConversationPairLocally(user.id, uniqueId, userMessage, aiResponse);
+        if (!localSaved) return null;
+      }
+
+      setSavedMessageIds((current) => {
+        const next = new Set(current);
+        next.add(userMessage.id);
+        next.add(aiResponse.id);
+        return next;
+      });
+      setConversationId(uniqueId);
+      setMessages(prev => prev.map(message => (
+        message.id === aiResponse.id ? { ...message, conversationId: uniqueId } : message
+      )));
+      setHistoryRefreshTrigger((current) => current + 1);
+      return uniqueId;
+    } catch (saveError) {
+      console.error('대화 자동 저장 오류:', saveError);
+      const localSaved = saveConversationPairLocally(user.id, uniqueId, userMessage, aiResponse);
+      if (localSaved) {
+        setSavedMessageIds((current) => {
+          const next = new Set(current);
+          next.add(userMessage.id);
+          next.add(aiResponse.id);
+          return next;
+        });
+        setConversationId(uniqueId);
+        setMessages(prev => prev.map(message => (
+          message.id === aiResponse.id ? { ...message, conversationId: uniqueId } : message
+        )));
+        setHistoryRefreshTrigger((current) => current + 1);
+      }
+      return localSaved ? uniqueId : null;
+    }
+  };
+
+  const updateAnswerPhase = (
+    phase: CompassAnswerPhase,
+    detail: { sourceCount?: number; verifiedSourceCount?: number } = {}
+  ) => {
+    setActiveAnswerRequest((current) => (
+      current.status === "pending"
+        ? { ...current, phase, ...detail }
+        : current
+    ));
+  };
+
+  const fetchCompassAnswerJson = async (message: string, conversationHistory: Message[]): Promise<CompassAnswerFetchResult> => {
+    updateAnswerPhase("accepted");
+
+    const response = await fetch('/api/compass-answer', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        message,
+        conversationHistory,
+      }),
+    });
+
+    const data = await response.json();
+
+    if (!response.ok) {
+      throw new Error(data.message || data.error || '응답을 받는 중 오류가 발생했습니다.');
+    }
+
+    updateAnswerPhase("answer-ready");
+    return { data };
+  };
+
+  const appendStreamDelta = (
+    streamState: { streamMessageId?: string },
+    delta: string
+  ) => {
+    if (!delta) return;
+    updateAnswerPhase("answer-ready");
+
+    if (!streamState.streamMessageId) {
+      const streamMessageId = `stream_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      streamState.streamMessageId = streamMessageId;
+      setMessages(prev => [
+        ...prev,
+        {
+          id: streamMessageId,
+          type: "assistant",
+          content: delta,
+          timestamp: new Date().toLocaleTimeString('ko-KR', {
+            hour: '2-digit',
+            minute: '2-digit'
+          }),
+          sources: [],
+          feedback: { helpful: null, count: 0 },
+          isStreaming: true,
+        },
+      ]);
+      return;
+    }
+
+    setMessages(prev => prev.map(message => (
+      message.id === streamState.streamMessageId
+        ? { ...message, content: `${message.content}${delta}`, isStreaming: true }
+        : message
+    )));
+  };
+
+  const fetchCompassAnswerStream = async (
+    message: string,
+    conversationHistory: Message[],
+    streamState: { streamMessageId?: string }
+  ): Promise<CompassAnswerFetchResult> => {
+    const response = await fetch('/api/compass-answer/stream', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        message,
+        conversationHistory,
+      }),
+    });
+
+    if (!response.ok || !response.body) {
+      throw new Error('Compass 스트림을 시작할 수 없습니다.');
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let finalPayload: any = null;
+    let finalStatus = 200;
+
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+
+        const event = JSON.parse(trimmed) as CompassAnswerStreamEvent;
+        if (event.type === "phase") {
+          updateAnswerPhase(event.phase, {
+            sourceCount: event.sourceCount,
+            verifiedSourceCount: event.verifiedSourceCount,
+          });
+        } else if (event.type === "final") {
+          finalPayload = event.payload;
+          finalStatus = event.status || 200;
+        } else if (event.type === "delta") {
+          appendStreamDelta(streamState, event.content);
+        } else if (event.type === "error") {
+          throw new Error(event.message || 'Compass 스트림 처리 중 오류가 발생했습니다.');
+        }
+      }
+    }
+
+    const remaining = buffer.trim();
+    if (remaining) {
+      const event = JSON.parse(remaining) as CompassAnswerStreamEvent;
+      if (event.type === "final") {
+        finalPayload = event.payload;
+        finalStatus = event.status || 200;
+      } else if (event.type === "delta") {
+        appendStreamDelta(streamState, event.content);
+      } else if (event.type === "error") {
+        throw new Error(event.message || 'Compass 스트림 처리 중 오류가 발생했습니다.');
+      }
+    }
+
+    if (!finalPayload) {
+      throw new Error('Compass 스트림 최종 응답을 받지 못했습니다.');
+    }
+
+    if (finalStatus >= 400) {
+      throw new Error(finalPayload.message || finalPayload.error || '응답을 받는 중 오류가 발생했습니다.');
+    }
+
+    return {
+      data: finalPayload,
+      streamMessageId: streamState.streamMessageId,
+    };
+  };
+
+  const fetchCompassAnswer = async (message: string, conversationHistory: Message[]): Promise<CompassAnswerFetchResult> => {
+    const streamState: { streamMessageId?: string } = {};
+
+    try {
+      return await fetchCompassAnswerStream(message, conversationHistory, streamState);
+    } catch (streamError) {
+      console.warn('Compass 스트림 응답 실패, JSON 응답으로 전환합니다:', streamError);
+      if (streamState.streamMessageId) {
+        setMessages(prev => prev.filter(message => message.id !== streamState.streamMessageId));
+      }
+      return fetchCompassAnswerJson(message, conversationHistory);
+    }
+  };
+
+  const completeAssistantResponse = async (result: CompassAnswerFetchResult): Promise<Message> => {
+    const aiResponse = buildAssistantMessageFromResponse(result.data);
+
+    if (!result.streamMessageId) {
+      return revealAssistantMessage(aiResponse);
+    }
+
+    const completedMessage: Message = {
+      ...aiResponse,
+      id: result.streamMessageId,
+      isStreaming: false,
+    };
+
+    setMessages(prev => prev.map(message => (
+      message.id === result.streamMessageId ? completedMessage : message
+    )));
+
+    return completedMessage;
+  };
 
   const handleSendMessageWithQuestion = async (question: string) => {
     if (!question.trim() || isLoading) return;
@@ -369,6 +776,13 @@ function ChatPageContent() {
     };
 
     setIsLoading(true);
+    setActiveAnswerRequest({
+      status: "pending",
+      requestId: `answer_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      question: question.trim(),
+      startedAt: Date.now(),
+      phase: "submitted",
+    });
     setError(null);
     setLastSubmittedQuestion(question.trim());
 
@@ -377,59 +791,17 @@ function ChatPageContent() {
     setMessages(currentMessages);
 
     try {
-      const response = await fetch('/api/compass-answer', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          message: question.trim(),
-          conversationHistory: messages.slice(-10), // 사용자 메시지 추가 전의 메시지들
-        }),
-      });
+      const answerResult = await fetchCompassAnswer(
+        question.trim(),
+        messages.slice(-10)
+      );
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || data.error || '응답을 받는 중 오류가 발생했습니다.');
-      }
-
-      const aiResponse = buildAssistantMessageFromResponse(data);
-
-      setMessages(prev => [...prev, aiResponse]);
+      const completedAiResponse = await completeAssistantResponse(answerResult);
+      setActiveAnswerRequest({ status: "idle" });
       
       // 대화 자동 저장
       if (user) {
-        try {
-          const uniqueId = `conv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${userMessage.id}_${aiResponse.id}`;
-          
-          const saveResponse = await fetch('/api/conversations', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              userId: user.id,
-              conversationId: uniqueId,
-              userMessage: userMessage.content,
-              aiResponse: aiResponse.content,
-              sources: aiResponse.sources || [],
-            }),
-          });
-          
-          if (saveResponse.ok) {
-            const saveData = await saveResponse.json();
-            if (saveData.success) {
-              // 저장된 메시지 ID 기록
-              savedMessageIds.add(userMessage.id);
-              savedMessageIds.add(aiResponse.id);
-              console.log('대화가 자동으로 저장되었습니다.');
-            }
-          }
-        } catch (saveError) {
-          console.error('대화 자동 저장 오류:', saveError);
-          // 저장 실패해도 사용자에게는 알리지 않음 (백그라운드 작업)
-        }
+        await saveConversationPair(userMessage, completedAiResponse);
       }
 
     } catch (error) {
@@ -445,6 +817,7 @@ function ChatPageContent() {
       });
     } finally {
       setIsLoading(false);
+      setActiveAnswerRequest({ status: "idle" });
     }
   };
 
@@ -474,6 +847,13 @@ function ChatPageContent() {
     const currentInput = inputValue.trim();
     setInputValue("");
     setIsLoading(true);
+    setActiveAnswerRequest({
+      status: "pending",
+      requestId: `answer_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+      question: currentInput,
+      startedAt: Date.now(),
+      phase: "submitted",
+    });
     setError(null);
     setLastSubmittedQuestion(currentInput);
 
@@ -482,59 +862,17 @@ function ChatPageContent() {
     setMessages(currentMessages);
 
     try {
-      const response = await fetch('/api/compass-answer', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          message: currentInput,
-          conversationHistory: messages.slice(-10), // 사용자 메시지 추가 전의 메시지들
-        }),
-      });
+      const answerResult = await fetchCompassAnswer(
+        currentInput,
+        messages.slice(-10)
+      );
 
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.message || data.error || '응답을 받는 중 오류가 발생했습니다.');
-      }
-
-      const aiResponse = buildAssistantMessageFromResponse(data);
-
-      setMessages(prev => [...prev, aiResponse]);
+      const completedAiResponse = await completeAssistantResponse(answerResult);
+      setActiveAnswerRequest({ status: "idle" });
       
       // 대화 자동 저장
       if (user) {
-        try {
-          const uniqueId = `conv_${Date.now()}_${Math.random().toString(36).substr(2, 9)}_${userMessage.id}_${aiResponse.id}`;
-          
-          const saveResponse = await fetch('/api/conversations', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-              userId: user.id,
-              conversationId: uniqueId,
-              userMessage: userMessage.content,
-              aiResponse: aiResponse.content,
-              sources: aiResponse.sources || [],
-            }),
-          });
-          
-          if (saveResponse.ok) {
-            const saveData = await saveResponse.json();
-            if (saveData.success) {
-              // 저장된 메시지 ID 기록
-              savedMessageIds.add(userMessage.id);
-              savedMessageIds.add(aiResponse.id);
-              console.log('대화가 자동으로 저장되었습니다.');
-            }
-          }
-        } catch (saveError) {
-          console.error('대화 자동 저장 오류:', saveError);
-          // 저장 실패해도 사용자에게는 알리지 않음 (백그라운드 작업)
-        }
+        await saveConversationPair(userMessage, completedAiResponse);
       }
 
     } catch (error) {
@@ -550,6 +888,7 @@ function ChatPageContent() {
       });
     } finally {
       setIsLoading(false);
+      setActiveAnswerRequest({ status: "idle" });
     }
   };
 
@@ -570,10 +909,32 @@ function ChatPageContent() {
     setTimeout(() => textareaRef.current?.focus(), 0);
   };
 
-  const handleContactRequest = async (question: string) => {
-    // 실제 질문 찾기 (마지막 사용자 메시지)
-    const lastUserMessage = messages.filter(msg => msg.type === 'user').pop();
-    const actualQuestion = lastUserMessage?.content || question;
+  const findQuestionForAssistant = (assistantMessageId?: string) => {
+    if (!assistantMessageId) {
+      return lastSubmittedQuestion || messages.filter(msg => msg.type === 'user').pop()?.content || "";
+    }
+
+    const assistantIndex = messages.findIndex(message => message.id === assistantMessageId);
+    const searchStart = assistantIndex >= 0 ? assistantIndex - 1 : messages.length - 1;
+
+    for (let index = searchStart; index >= 0; index -= 1) {
+      if (messages[index]?.type === "user") {
+        return messages[index].content;
+      }
+    }
+
+    return lastSubmittedQuestion || "";
+  };
+
+  const shouldOfferContactForMessage = (message: Message) => (
+    message.type === "assistant"
+    && message.id !== "1"
+    && !message.isStreaming
+  );
+
+  const handleContactRequest = async (question: string, assistantMessage?: Message) => {
+    const actualQuestion = question || findQuestionForAssistant(assistantMessage?.id);
+    const answerContext = assistantMessage?.content || "";
 
     setIsSendingEmail(true);
     
@@ -581,7 +942,7 @@ function ChatPageContent() {
     const sendingMessage: Message = {
       id: `sending-${Date.now()}`,
       type: "assistant",
-      content: "📧 페이스북 담당팀에 문의 메일을 발송 중입니다...",
+      content: "담당자 확인 메일 초안을 준비하고 있습니다...",
       timestamp: new Date().toLocaleTimeString('ko-KR', { 
         hour: '2-digit', 
         minute: '2-digit' 
@@ -597,7 +958,13 @@ function ChatPageContent() {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
-          question: actualQuestion
+          question: actualQuestion,
+          answer: answerContext,
+          sources: assistantMessage?.sources || [],
+          model: assistantMessage?.model,
+          confidence: assistantMessage?.confidence,
+          userEmail: user?.email,
+          userName: user?.user_metadata?.display_name || user?.user_metadata?.name || user?.email,
         }),
       });
 
@@ -615,7 +982,7 @@ function ChatPageContent() {
         const successMessage: Message = {
           id: `success-${Date.now()}`,
           type: "assistant",
-          content: "✅ 페이스북 담당팀에 문의사항이 메일로 정상 발송되었습니다.\n\n📧 **발송 정보:**\n- 수신자: fb@nasmedia.co.kr\n- 문의 내용: " + actualQuestion.substring(0, 50) + (actualQuestion.length > 50 ? "..." : "") + "\n- 발송 시간: " + new Date().toLocaleString('ko-KR') + "\n\n담당팀에서 검토 후 답변을 드릴 예정입니다.",
+          content: "담당자 확인 메일 초안을 열었습니다.\n\n- 수신자: " + (data.recipient || "Compass 담당자") + "\n- 문의 내용: " + actualQuestion.substring(0, 80) + (actualQuestion.length > 80 ? "..." : "") + "\n- 작성 시간: " + new Date().toLocaleString('ko-KR') + "\n\n메일 앱에서 내용을 확인한 뒤 발송해 주세요.",
           timestamp: new Date().toLocaleTimeString('ko-KR', { 
             hour: '2-digit', 
             minute: '2-digit' 
@@ -634,7 +1001,7 @@ function ChatPageContent() {
       const errorMessage: Message = {
         id: `error-${Date.now()}`,
         type: "assistant",
-        content: "❌ 메일 발송 중 오류가 발생했습니다.\n\n**오류 내용:**\n" + (error instanceof Error ? error.message : "알 수 없는 오류") + "\n\n잠시 후 다시 시도해주시거나, 직접 fb@nasmedia.co.kr로 문의해주세요.",
+        content: "메일 초안을 여는 중 오류가 발생했습니다.\n\n**오류 내용:**\n" + (error instanceof Error ? error.message : "알 수 없는 오류") + "\n\n잠시 후 다시 시도해주시거나, 직접 Compass 담당자에게 문의해주세요.",
         timestamp: new Date().toLocaleTimeString('ko-KR', { 
           hour: '2-digit', 
           minute: '2-digit' 
@@ -658,18 +1025,7 @@ function ChatPageContent() {
     if (user && messages.length > 1) {
       setIsSaving(true);
       try {
-        const userMessages = messages.filter(msg => msg.type === 'user');
-        const aiMessages = messages.filter(msg => msg.type === 'assistant');
-        
-        const conversationPairs = [];
-        for (let i = 0; i < Math.min(userMessages.length, aiMessages.length); i++) {
-          const userMsg = userMessages[i];
-          const aiMsg = aiMessages[i];
-          
-          if (!savedMessageIds.has(userMsg.id) && !savedMessageIds.has(aiMsg.id)) {
-            conversationPairs.push({ userMsg, aiMsg });
-          }
-        }
+        const conversationPairs = getUnsavedConversationPairs(messages, savedMessageIds);
         
         if (conversationPairs.length === 0) {
           console.log('저장할 대화가 없습니다. 새 대화를 시작합니다.');
@@ -702,7 +1058,14 @@ function ChatPageContent() {
                 savedCount++;
                 newSavedIds.add(userMsg.id);
                 newSavedIds.add(aiMsg.id);
+                continue;
               }
+            }
+
+            if (saveConversationPairLocally(user.id, uniqueId, userMsg, aiMsg)) {
+              savedCount++;
+              newSavedIds.add(userMsg.id);
+              newSavedIds.add(aiMsg.id);
             }
           }
           
@@ -830,6 +1193,13 @@ function ChatPageContent() {
       return; // 같은 피드백이면 무시
     }
 
+    if (!message) {
+      return;
+    }
+
+    const actualQuestion = findQuestionForAssistant(messageId);
+    const feedbackConversationId = message.conversationId || conversationId || `feedback_${Date.now()}_${messageId}`;
+
     // UI 즉시 업데이트
     setMessages(prev => prev.map(msg => 
       msg.id === messageId 
@@ -837,7 +1207,8 @@ function ChatPageContent() {
             ...msg, 
             feedback: { 
               helpful, 
-              count: msg.feedback?.helpful === null ? 1 : (msg.feedback?.count || 0) 
+              count: msg.feedback?.helpful === null ? 1 : (msg.feedback?.count || 0),
+              hermesStatus: "queued",
             } 
           }
         : msg
@@ -852,9 +1223,17 @@ function ChatPageContent() {
         },
         body: JSON.stringify({
           userId: user?.id || "anonymous",
-          conversationId: conversationId || `conv_${Date.now()}`,
-          messageId: messageId,
-          helpful: helpful
+          userEmail: user?.email,
+          userName: user?.user_metadata?.display_name || user?.user_metadata?.name || user?.email,
+          conversationId: feedbackConversationId,
+          messageId,
+          helpful,
+          question: actualQuestion,
+          answer: message.content,
+          sources: message.sources || [],
+          model: message.model,
+          confidence: message.confidence,
+          reviewPipeline: message.reviewPipeline,
         }),
       });
 
@@ -865,7 +1244,31 @@ function ChatPageContent() {
       const data = await response.json();
       if (!data.success) {
         console.warn('피드백 저장 실패:', data.message);
+        throw new Error(data.message || '피드백 저장에 실패했습니다.');
       }
+
+      setMessages(prev => prev.map(msg =>
+        msg.id === messageId
+          ? {
+              ...msg,
+              feedback: {
+                helpful,
+                count: msg.feedback?.count || 1,
+                hermesQueued: data.hermesLearning?.queued === true,
+                hermesStatus: data.hermesLearning?.queued === true ? "candidate" : "failed",
+                persistence: data.hermesLearning?.persistence || data.feedbackPersistence,
+              },
+            }
+          : msg
+      ));
+
+      toast({
+        title: helpful ? "피드백이 기록되었습니다" : "출처 부족 의견이 기록되었습니다",
+        description: data.hermesLearning?.queued
+          ? "Hermes 학습 후보 큐에 함께 남겼습니다."
+          : "피드백은 저장됐지만 Hermes 후보 큐 상태는 확인이 필요합니다.",
+        duration: 2400,
+      });
     } catch (error) {
       console.error('피드백 저장 오류:', error);
       // 에러 발생 시 UI 롤백
@@ -874,6 +1277,12 @@ function ChatPageContent() {
           ? { ...msg, feedback: { helpful: null, count: 0 } }
           : msg
       ));
+      toast({
+        title: "피드백 저장 실패",
+        description: "네트워크나 학습 후보 저장소 상태를 확인해 주세요.",
+        variant: "destructive",
+        duration: 3000,
+      });
     }
   };
 
@@ -908,20 +1317,62 @@ function ChatPageContent() {
 
   const latestAssistantMessage = [...messages].reverse().find((message) => message.type === "assistant");
   const latestUserMessage = [...messages].reverse().find((message) => message.type === "user");
-  const latestSources = sanitizeSources(latestAssistantMessage?.sources || []);
+  const answerTextStreaming = latestAssistantMessage?.isStreaming === true;
+  const answerPending = activeAnswerRequest.status === "pending" || answerTextStreaming;
+  const latestSources = answerPending ? [] : sanitizeSources(latestAssistantMessage?.sources || []);
   const latestHasSources = latestSources.length > 0;
-  const latestNoDataFound = latestAssistantMessage?.noDataFound === true;
+  const latestNoDataFound = !answerPending && latestAssistantMessage?.noDataFound === true;
   const latestGenerationLimited = latestAssistantMessage?.uiState === "generation-limited" || (isGenerationLimitedModel(latestAssistantMessage?.model) && latestHasSources);
-  const latestIsError = latestAssistantMessage?.uiState === "error";
-  const latestPanelState: ChatUiState = latestGenerationLimited
-    ? "generation-limited"
-    : latestNoDataFound
-      ? "noData"
-      : latestIsError
-        ? "error"
-        : latestHasSources
-          ? "source-found"
-          : "initial-empty";
+  const latestIsError = !answerPending && latestAssistantMessage?.uiState === "error";
+  const latestPanelState: ChatUiState = answerPending
+    ? "answer-pending"
+    : latestGenerationLimited
+      ? "generation-limited"
+      : latestNoDataFound
+        ? "noData"
+        : latestIsError
+          ? "error"
+          : latestHasSources
+            ? "source-found"
+            : "initial-empty";
+  const panelUserQuestion = activeAnswerRequest.status === "pending" ? activeAnswerRequest.question : latestUserMessage?.content;
+  const panelShowContactOption = !answerPending && latestAssistantMessage?.showContactOption;
+  const pendingPhase: CompassAnswerPhase = activeAnswerRequest.status === "pending" ? activeAnswerRequest.phase || "submitted" : "submitted";
+  const pendingVerifiedSourceCount = activeAnswerRequest.status === "pending" ? activeAnswerRequest.verifiedSourceCount : undefined;
+  const pendingPhaseCopy: Record<CompassAnswerPhase, { title: string; activeLabel: string; nextLabel: string }> = {
+    submitted: {
+      title: "질문을 보냈습니다. Compass가 요청을 접수하는 중입니다.",
+      activeLabel: "요청 전송",
+      nextLabel: "출처 검색 준비",
+    },
+    accepted: {
+      title: "질문을 접수했습니다. 질문 조건을 정리하는 중입니다.",
+      activeLabel: "요청 접수",
+      nextLabel: "출처 검색",
+    },
+    "evidence-started": {
+      title: "관련 매체 정책과 문서 출처를 검색하는 중입니다.",
+      activeLabel: "출처 검색",
+      nextLabel: "출처 선별",
+    },
+    "evidence-ready": {
+      title: pendingVerifiedSourceCount !== undefined
+        ? `확인 가능한 출처 ${pendingVerifiedSourceCount}개를 선별했습니다.`
+        : "확인 가능한 출처를 선별했습니다.",
+      activeLabel: "출처 선별",
+      nextLabel: "답변 정리",
+    },
+    "answer-started": {
+      title: "선별된 출처를 기준으로 답변을 정리하는 중입니다.",
+      activeLabel: "답변 정리",
+      nextLabel: "화면 표시",
+    },
+    "answer-ready": {
+      title: "답변 정리가 완료되어 화면에 표시하는 중입니다.",
+      activeLabel: "답변 준비 완료",
+      nextLabel: "출처 표시",
+    },
+  };
   const needsAdditionalReview = latestNoDataFound || latestGenerationLimited || latestIsError;
   const finalReviewReady = latestHasSources && !needsAdditionalReview;
   const reviewPostureItems = [
@@ -1123,28 +1574,31 @@ function ChatPageContent() {
                 sources={[]}
                 feedback={message.feedback}
                 onFeedback={(helpful) => handleFeedback(message.id, helpful)}
+                onContact={shouldOfferContactForMessage(message) ? () => handleContactRequest(findQuestionForAssistant(message.id), message) : undefined}
                 noDataFound={message.noDataFound}
-                showContactOption={false}
+                showContactOption={Boolean(message.showContactOption)}
                 confidence={message.confidence}
                 processingTime={message.processingTime}
                 model={message.uiState === "generation-limited" ? message.model : undefined}
+                isStreaming={message.isStreaming}
+                reviewPipeline={message.reviewPipeline}
               />
             ))}
             
-            {isLoading && (
+            {activeAnswerRequest.status === "pending" && !answerTextStreaming && (
               <div className="flex justify-start">
                 <div className="max-w-3xl">
-                  <div className="rounded-lg border border-[#D8DCCF] bg-[#FBFBF7] px-4 py-3 shadow-sm">
+                  <div className="rounded-lg border border-[#D8DCCF] bg-[#FBFBF7] px-4 py-3 shadow-sm" aria-live="polite">
                     <div className="flex items-start space-x-3">
                       <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-lg border border-[#C6D9CB] bg-[#EDF7EF]">
                         <Bot className="h-4 w-4 text-[#1F7A4D]" />
                       </div>
                       <div className="flex-1">
-                        <div className="mb-2 text-sm font-medium text-[#111713]">Compass가 문안과 출처를 대조하고 있습니다</div>
+                        <div className="mb-2 text-sm font-medium text-[#111713]">{pendingPhaseCopy[pendingPhase].title}</div>
                         <div className="flex flex-wrap gap-2 text-xs text-[#5F6C62]">
-                          <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1">질문 조건</span>
-                          <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1">출처 대조</span>
-                          <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1">주의 항목</span>
+                          <span className="rounded-md border border-[#C6D9CB] bg-white px-2 py-1 text-[#1F7A4D]">{pendingPhaseCopy[pendingPhase].activeLabel}</span>
+                          <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1">{pendingPhaseCopy[pendingPhase].nextLabel}</span>
+                          <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1">도착 후 출처 표시</span>
                         </div>
                       </div>
                     </div>
@@ -1163,10 +1617,10 @@ function ChatPageContent() {
                 </div>
                 <SourceStatePanel
                   state={latestPanelState}
-                  userQuestion={latestUserMessage?.content}
+                  userQuestion={panelUserQuestion}
                   sources={latestSources}
-                  showContactOption={latestAssistantMessage?.showContactOption}
-                  onContact={() => handleContactRequest(latestUserMessage?.content || "")}
+                  showContactOption={panelShowContactOption}
+                  onContact={() => handleContactRequest(panelUserQuestion || "")}
                   onRetry={handleRetry}
                   onPromptSelect={handleQuickQuestionClick}
                   compact
@@ -1272,10 +1726,10 @@ function ChatPageContent() {
                 <>
                   <SourceStatePanel
                     state={latestPanelState}
-                    userQuestion={latestUserMessage?.content}
+                    userQuestion={panelUserQuestion}
                     sources={latestSources}
-                    showContactOption={latestAssistantMessage?.showContactOption}
-                    onContact={() => handleContactRequest(latestUserMessage?.content || "")}
+                    showContactOption={panelShowContactOption}
+                    onContact={() => handleContactRequest(panelUserQuestion || "")}
                     onRetry={handleRetry}
                     onPromptSelect={handleQuickQuestionClick}
                   />

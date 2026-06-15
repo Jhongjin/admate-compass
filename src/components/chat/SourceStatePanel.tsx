@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, useState } from "react";
-import { AlertCircle, BookOpen, CheckCircle2, ChevronDown, ChevronUp, Download, ExternalLink, FileText, Fingerprint, Link2, Search, ShieldCheck } from "lucide-react";
+import { AlertCircle, BookOpen, CheckCircle2, ChevronDown, ChevronUp, Download, ExternalLink, FileText, Fingerprint, Link2, Loader2, Search, ShieldCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -37,12 +37,15 @@ export default function SourceStatePanel({
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const sourceListId = useId();
   const hasSources = sources.length > 0;
+  const isPending = state === "answer-pending";
   const isLimited = state === "generation-limited";
   const isNoData = state === "noData";
   const isError = state === "error";
   const isInitial = state === "initial-empty";
-  const heading = isLimited ? "답변 생성 제한" : hasSources ? "확인한 출처" : "확인한 출처 없음";
-  const stateDescription = isLimited
+  const heading = isPending ? "답변 준비 중" : isLimited ? "답변 생성 제한" : hasSources ? "확인한 출처" : "확인한 출처 없음";
+  const stateDescription = isPending
+    ? "질문을 서버에 보냈습니다. 결과가 도착하면 출처 상태가 여기에 표시됩니다."
+    : isLimited
     ? "출처는 찾았지만 답변 문장 생성이 제한되었습니다."
     : hasSources
       ? "질문에 연결된 출처를 확인하고 최종 판단 전 원문과 발췌 내용을 대조합니다."
@@ -169,6 +172,41 @@ export default function SourceStatePanel({
           ))}
         </div>
       </div>
+    );
+  }
+
+  if (isPending) {
+    return (
+      <Card className="w-full rounded-lg border-[#D6D8CD] bg-white shadow-sm" aria-live="polite">
+        <CardHeader className="p-4 pb-2">
+          <div className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-[#758070]">
+            요청 처리
+          </div>
+          <CardTitle className="flex items-center gap-2 text-sm font-semibold text-[#111713]">
+            <Loader2 className="h-4 w-4 animate-spin text-[#1F7A4D]" />
+            {heading}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3 p-4 pt-0">
+          <p className="text-sm leading-6 text-[#5F6C62]">
+            {stateDescription}
+          </p>
+          {userQuestion && (
+            <div className="rounded-md border border-[#D8DCCF] bg-[#FBFBF7] p-3 text-xs leading-5 text-[#5F6C62]">
+              <span className="font-semibold text-[#111713]">질문</span>
+              <p className="mt-1 line-clamp-3 break-words">{userQuestion}</p>
+            </div>
+          )}
+          <div className="grid gap-2 rounded-md border border-[#D8DCCF] bg-[#FBFBF7] p-3 text-xs leading-5 text-[#5F6C62]">
+            <div className="font-semibold text-[#111713]">처리 상태</div>
+            <div className="flex flex-wrap gap-1.5">
+              <span className="rounded-md border border-[#C6D9CB] bg-white px-2 py-1 text-[#1F7A4D]">질문 전송 완료</span>
+              <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1">서버 응답 대기</span>
+              <span className="rounded-md border border-[#D8DCCF] bg-white px-2 py-1">결과 도착 후 출처 표시</span>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
     );
   }
 
