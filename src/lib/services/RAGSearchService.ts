@@ -13,7 +13,7 @@ export type RetrievalCorpus = 'ollama_document_chunks' | 'document_chunks' | 'fa
 export type EvidenceType = 'vector' | 'keyword' | 'hybrid' | 'fallback';
 export type EvidenceDecision = 'verified' | 'weak' | 'rejected';
 export type VendorIntent = 'META' | 'KAKAO' | 'NAVER' | 'GOOGLE';
-export type TopicIntent = 'review' | 'youth' | 'false_claim' | 'price' | 'event' | 'rights' | 'hate' | 'gambling' | 'spec';
+export type TopicIntent = 'review' | 'youth' | 'false_claim' | 'price' | 'event' | 'rights' | 'hate' | 'gambling' | 'spec' | 'product_structure';
 export type QueryType = 'single-vendor' | 'multi-vendor' | 'generic-policy' | 'exploratory';
 
 export interface QueryIntent {
@@ -110,7 +110,32 @@ const TOPIC_TERM_SPECS: Array<[TopicIntent, string[]]> = [
   ['hate', ['혐오', '차별', '비하']],
   ['gambling', ['도박', '사행']],
   ['spec', ['사이즈', '크기', '파일', '형식', '스펙', '동영상', '이미지', '카루셀']],
+  ['product_structure', [
+    '광고 상품', '광고상품', '광고 종류', '광고종류', '상품 구조', '광고 구조',
+    '캠페인 목표', '광고 관리자 목표', 'objective', 'objectives', 'advantage+', '어드밴티지',
+    '카탈로그', 'catalog', '메타 픽셀', 'meta pixel', '픽셀 이벤트', '픽셀 코드', '전환', 'conversion', 'conversions api',
+    '노출 위치', '게재 위치', 'placements', '지면'
+  ]],
 ];
+
+const PRODUCT_STRUCTURE_KEYWORD_EXPANSIONS = [
+  '캠페인 목표', '광고 관리자 목표', '인지도', '트래픽', '참여', '잠재 고객', '앱 홍보', '판매',
+  '광고 형식', '소재 형식', '노출 위치', '게재 위치', '지면',
+  'Advantage+', '어드밴티지', '카탈로그', 'catalog', '메타 픽셀', 'meta pixel', '픽셀 이벤트', '픽셀 코드', '전환', 'conversion', 'Conversions API',
+  '이미지', '동영상', '슬라이드', '컬렉션', '릴스', '스토리', '피드'
+];
+
+function isProductStructureQueryText(text: string): boolean {
+  const hasOverviewSignal = /광고\s*상품|광고상품|광고\s*종류|광고종류|상품\s*구조|광고\s*구조|캠페인\s*목표|광고\s*관리자\s*목표|objective|advantage\+|어드밴티지|카탈로그|catalog|메타\s*픽셀|meta\s*pixel|픽셀\s*(이벤트|코드|설치|전환)|전환|conversion|노출\s*위치|게재\s*위치|placements|지면/.test(text);
+  if (hasOverviewSignal) return true;
+
+  const hasVendorOrAdContext = detectCompassVendors(text).length > 0 || AD_POLICY_TERMS.some(term => text.includes(term));
+  return hasVendorOrAdContext && /상품|종류|구조|솔루션/.test(text);
+}
+
+function stripKoreanParticle(word: string): string {
+  return word.replace(/(으로|에게|에서|부터|까지|이나|거나|하고|은|는|이|가|을|를|에|의|도|만|로|과|와)$/u, '');
+}
 
 const AD_POLICY_TERMS = [
   '광고', '정책', '심사', '소재', '매체', '캠페인', '타겟', '집행', '승인', '반려',
@@ -188,17 +213,18 @@ function detectStrictContextTerms(text: string): string[] {
 function extractCompassKeywords(query: string): string[] {
   const stopwords = new Set([
     '무엇인가요', '무엇', '어떤', '있는', '없는', '해주세요', '알려줘', '기준은', '기준',
-    '관련', '대한', '그리고', '또는', '가능한가요', '되나요', '경우', '알려', '줘',
+    '관련', '대한', '대해', '대해서', '대하여', '그리고', '또는', '가능한가요', '되나요', '경우', '알려', '줘',
     'the', 'and', 'for', 'with', 'what', 'how'
   ]);
 
   const normalized = normalizeCompassSearchText(query);
+  const productStructureQuery = isProductStructureQueryText(normalized);
   const baseKeywords = Array.from(new Set(
     query
       .toLowerCase()
       .replace(/[^\p{L}\p{N}\s]/gu, ' ')
       .split(/\s+/)
-      .map(word => word.trim())
+      .map(word => stripKoreanParticle(word.trim()))
       .filter(word => word.length >= 2 && !stopwords.has(word))
   ));
   const expansions: string[] = [];
@@ -211,7 +237,11 @@ function extractCompassKeywords(query: string): string[] {
     expansions.push('주의', '제한', '금지', '반려', '심사', '검수', '정책', '운영정책', '등록기준', '광고등록기준', '가이드');
   }
 
-  return Array.from(new Set([...baseKeywords, ...expansions])).slice(0, 16);
+  if (productStructureQuery) {
+    expansions.push(...PRODUCT_STRUCTURE_KEYWORD_EXPANSIONS);
+  }
+
+  return Array.from(new Set([...baseKeywords, ...expansions])).slice(0, productStructureQuery ? 28 : 16);
 }
 
 export function classifyCompassRagQuery(query: string): QueryIntent {
@@ -232,8 +262,11 @@ export function classifyCompassRagQuery(query: string): QueryIntent {
       : topics.length > 0 && adPolicyTerms.length > 0
         ? 'generic-policy'
         : 'exploratory';
+  const hasProductStructureIntent = topics.includes('product_structure');
   const recommendedSourceLimit = requiresVendorCoverage
     ? 5
+    : hasProductStructureIntent
+      ? 6
     : topics.length >= 2
       ? 4
       : 3;
@@ -340,9 +373,12 @@ export class RAGSearchService {
       console.log(`📊 질문 임베딩 생성 완료: ${queryEmbedding.length}차원`);
 
       const needsVendorAwareRetrieval = intent.vendors.length > 0;
+      const needsProductStructureRetrieval = intent.topics.includes('product_structure');
       const candidateLimit = needsVendorAwareRetrieval
-        ? Math.max(limit, intent.vendors.length * 4, 8)
-        : limit;
+        ? Math.max(limit, intent.vendors.length * 4, needsProductStructureRetrieval ? 18 : 8)
+        : needsProductStructureRetrieval
+          ? Math.max(limit * 3, 18)
+          : limit;
 
       const [vectorCandidates, keywordCandidates, vendorCoverageCandidates] = await Promise.all([
         this.searchVectorCandidates(queryEmbedding, candidateLimit, intent),
@@ -653,7 +689,7 @@ export class RAGSearchService {
       sourceVendor: vendorAlignment.primaryVendor,
       policyTitleMatch,
     });
-    const hybridScore = this.calculateHybridScore({
+    let hybridScore = this.calculateHybridScore({
       vectorScore,
       keywordScore,
       sourceQualityScore: sourceQuality.qualityScore || 0,
@@ -669,7 +705,12 @@ export class RAGSearchService {
       originalMetaSeed,
       hasUrl: sourceQuality.hasUrl,
     });
-    const rankReason = this.buildRankReason({
+    const productStructureAdjustment = this.calculateProductStructureScoreAdjustment(sourceText, options.intent);
+    if (productStructureAdjustment.adjustment !== 0) {
+      hybridScore = Math.max(0, Math.min(1, hybridScore + productStructureAdjustment.adjustment));
+    }
+    const rankReason = Array.from(new Set([
+      ...this.buildRankReason({
       vectorScore,
       keywordScore,
       sourceQuality,
@@ -683,7 +724,9 @@ export class RAGSearchService {
       genericPolicyIntent: this.isGenericPolicyIntent(options.intent),
       originalMetaSeed,
       hasUrl: sourceQuality.hasUrl,
-    });
+      }),
+      ...productStructureAdjustment.reasons,
+    ]));
     const evidenceDecision = this.decideEvidence({
       content,
       sourceQuality,
@@ -1120,7 +1163,7 @@ export class RAGSearchService {
         sourceVendor: incoming.sourceVendor || 'UNKNOWN',
         metadata: incoming.metadata,
       });
-    const hybridScore = this.calculateHybridScore({
+    let hybridScore = this.calculateHybridScore({
       vectorScore,
       keywordScore,
       sourceQualityScore,
@@ -1136,6 +1179,18 @@ export class RAGSearchService {
       originalMetaSeed,
       hasUrl: existing.sourceQuality.hasUrl || incoming.sourceQuality.hasUrl,
     });
+    const mergedSourceText = this.buildCandidateSearchText(
+      `${existing.content || ''} ${incoming.content || ''}`,
+      existing.documentTitle || incoming.documentTitle,
+      {
+        ...(existing.metadata || {}),
+        ...(incoming.metadata || {}),
+      }
+    );
+    const productStructureAdjustment = this.calculateProductStructureScoreAdjustment(mergedSourceText, intent);
+    if (productStructureAdjustment.adjustment !== 0) {
+      hybridScore = Math.max(0, Math.min(1, hybridScore + productStructureAdjustment.adjustment));
+    }
     const warnings = Array.from(new Set([
       ...existing.sourceQuality.warnings,
       ...incoming.sourceQuality.warnings,
@@ -1143,6 +1198,7 @@ export class RAGSearchService {
     const rankReason = Array.from(new Set([
       ...(existing.rankReason || []),
       ...(incoming.rankReason || []),
+      ...productStructureAdjustment.reasons,
       retrievalMethod === 'hybrid' ? 'matched_vector_and_keyword' : '',
     ].filter(Boolean)));
 
@@ -1315,6 +1371,12 @@ export class RAGSearchService {
       ['hate', ['혐오', '차별', '비하']],
       ['gambling', ['도박', '사행']],
       ['spec', ['사이즈', '크기', '파일', '형식', '스펙', '동영상', '이미지', '카루셀']],
+      ['product_structure', [
+        '광고 상품', '광고상품', '광고 종류', '광고종류', '상품 구조', '광고 구조',
+        '캠페인 목표', '광고 관리자 목표', 'objective', 'objectives', 'advantage+', '어드밴티지',
+        '카탈로그', 'catalog', '메타 픽셀', 'meta pixel', '픽셀 이벤트', '픽셀 코드', '전환', 'conversion', 'conversions api',
+        '노출 위치', '게재 위치', 'placements', '지면'
+      ]],
     ];
 
     for (const [topic, terms] of specs) {
@@ -1607,10 +1669,51 @@ export class RAGSearchService {
   }
 
   private hasPolicyJudgmentIntent(intent: QueryIntent): boolean {
-    if (intent.topics.some(topic => topic !== 'spec')) return true;
+    if (intent.topics.some(topic => topic !== 'spec' && topic !== 'product_structure')) return true;
     return intent.keywords.some(keyword => (
       ['주의', '제한', '금지', '반려', '심사', '검수', '정책', '운영정책', '등록기준', '광고등록기준'].includes(keyword)
     ));
+  }
+
+  private calculateProductStructureScoreAdjustment(sourceText: string, intent: QueryIntent): { adjustment: number; reasons: string[] } {
+    if (!intent.topics.includes('product_structure')) {
+      return { adjustment: 0, reasons: [] };
+    }
+
+    const text = this.normalizeSearchText(sourceText);
+    const reasons: string[] = [];
+    let adjustment = 0;
+
+    if (this.hasProductStructureSignal(text)) {
+      adjustment += 0.22;
+      reasons.push('product_structure_match');
+    }
+
+    if (/캠페인 목표|광고 관리자 목표|인지도|트래픽|참여|잠재 고객|앱 홍보|판매|objective|objectives/.test(text)) {
+      adjustment += 0.14;
+      reasons.push('campaign_objective_match');
+    }
+
+    if (/advantage\+|어드밴티지|카탈로그|catalog|메타\s*픽셀|meta\s*pixel|픽셀\s*(이벤트|코드|설치|전환)|전환|conversion|conversions api/.test(text)) {
+      adjustment += 0.1;
+      reasons.push('product_solution_match');
+    }
+
+    if (this.isCreativeSpecOnlyText(text)) {
+      adjustment -= 0.28;
+      reasons.push('creative_spec_only_penalty');
+    }
+
+    return { adjustment, reasons };
+  }
+
+  private hasProductStructureSignal(text: string): boolean {
+    return /캠페인 목표|광고 관리자 목표|인지도|트래픽|참여|잠재 고객|앱 홍보|판매|objective|objectives|advantage\+|어드밴티지|카탈로그|catalog|메타\s*픽셀|meta\s*pixel|픽셀\s*(이벤트|코드|설치|전환)|전환|conversion|conversions api|노출 위치|게재 위치|placements|지면|컬렉션|collection|리드|lead/.test(text);
+  }
+
+  private isCreativeSpecOnlyText(text: string): boolean {
+    const hasSpecSignal = /광고 사양|제작 가이드|소재 제작|크기|파일 크기|최대 파일|지원 형식|비율|jpg|png|mp4|mov|1200x|1080x|1280x|텍스트 제한|최대 길이|초/.test(text);
+    return hasSpecSignal && !this.hasProductStructureSignal(text);
   }
 
   private isTermsOfServiceCandidate(candidate: SearchResult): boolean {
@@ -1850,6 +1953,12 @@ export class RAGSearchService {
       hate: ['혐오', '차별', '비하', '증오'],
       gambling: ['도박', '사행', '사행성', '금지', '제한', '불가', '허용'],
       spec: ['사이즈', '크기', '파일', '형식', '스펙', '동영상', '이미지', '카루셀'],
+      product_structure: [
+        '광고 상품', '광고상품', '광고 종류', '광고종류', '상품 구조', '광고 구조',
+        '캠페인 목표', '광고 관리자 목표', '인지도', '트래픽', '참여', '잠재 고객', '앱 홍보', '판매',
+        'objective', 'objectives', 'advantage+', '어드밴티지', '카탈로그', 'catalog', '메타 픽셀', 'meta pixel', '픽셀 이벤트', '픽셀 코드',
+        '전환', 'conversion', 'conversions api', '노출 위치', '게재 위치', 'placements', '지면',
+      ],
     };
 
     return topics.some(topic => specs[topic].some(term => sourceText.includes(term)));

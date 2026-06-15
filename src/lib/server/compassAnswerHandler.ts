@@ -303,7 +303,7 @@ function buildExtractiveAnswer(sources: ReturnType<typeof buildVerifiedSources>)
 }
 
 function isPolicyJudgmentAnswerIntent(intent: QueryIntent): boolean {
-  if (intent.topics.some(topic => topic !== 'spec')) return true;
+  if (intent.topics.some(topic => topic !== 'spec' && topic !== 'product_structure')) return true;
   return intent.keywords.some(keyword => (
     ['주의', '제한', '금지', '반려', '심사', '검수', '정책', '운영정책', '등록기준', '광고등록기준'].includes(keyword)
   ));
@@ -657,6 +657,24 @@ function scoreVerifiedSourceForIntent(
 
   if (intent.topics.includes('review') && /심사|검수|승인|반려|등록기준|운영정책/.test(text)) score += 14;
   if (intent.topics.includes('spec') && /사이즈|크기|파일|형식|비율|픽셀|동영상|이미지/.test(text)) score += 14;
+  if (intent.topics.includes('product_structure')) {
+    const structureTerms = [
+      '캠페인 목표', '광고 관리자 목표', '인지도', '트래픽', '참여', '잠재 고객', '앱 홍보', '판매',
+      'objective', 'objectives', 'advantage+', '어드밴티지', '카탈로그', 'catalog', '메타 픽셀', 'meta pixel', '픽셀 이벤트', '픽셀 코드',
+      '전환', 'conversion', 'conversions api', '노출 위치', '게재 위치', 'placements', '지면',
+      '컬렉션', 'collection', '리드', 'lead',
+    ];
+    const structureHitCount = structureTerms.filter(term => text.includes(term)).length;
+    score += structureHitCount * 7;
+
+    if (/캠페인 목표|광고 관리자 목표|인지도|트래픽|참여|잠재 고객|앱 홍보|판매|objective|objectives/.test(text)) score += 30;
+    if (/advantage\+|어드밴티지|카탈로그|catalog|메타\s*픽셀|meta\s*pixel|픽셀\s*(이벤트|코드|설치|전환)|전환|conversion|conversions api/.test(text)) score += 18;
+    if (/광고 사양|제작 가이드|소재 제작|크기|파일 크기|최대 파일|지원 형식|비율|jpg|png|mp4|mov|1200x|1080x|1280x|텍스트 제한/.test(text)
+      && structureHitCount <= 1
+    ) {
+      score -= 28;
+    }
+  }
   if (isNoisyExcerpt(String(source.excerpt || ''))) score -= 8;
 
   return score;
