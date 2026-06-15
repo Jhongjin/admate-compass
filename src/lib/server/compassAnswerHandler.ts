@@ -377,7 +377,7 @@ function buildProductStructureAnswer(sources: ReturnType<typeof buildVerifiedSou
   }));
   const usedLabels = new Set<string>();
   const lines: string[] = [
-    'Meta 광고 상품은 먼저 “무엇을 달성할지”를 정하고, 그 목표에 맞춰 광고 형식과 자동 운영 기능을 선택하는 구조로 이해하면 됩니다.',
+    'Meta 광고 상품은 먼저 캠페인 목표를 고르고, 그다음 광고 소재 형식과 자동화 기능을 조합하는 방식으로 이해하면 됩니다.',
     '',
   ];
 
@@ -386,13 +386,13 @@ function buildProductStructureAnswer(sources: ReturnType<typeof buildVerifiedSou
   ]);
   if (objectiveSource) {
     usedLabels.add(objectiveSource.label);
-    lines.push(`**1. 광고 목적(캠페인 목표)** [${objectiveSource.label}]`);
-    lines.push('- 인지도: 브랜드나 상품을 더 많은 사람에게 알릴 때');
-    lines.push('- 트래픽: 웹사이트, 앱, 프로필 방문을 늘릴 때');
-    lines.push('- 참여: 좋아요, 댓글, 메시지, 영상 조회 같은 반응을 늘릴 때');
+    lines.push('**1. 먼저 고르는 것: 캠페인 목표**');
+    lines.push('- 인지도: 브랜드나 상품을 넓게 알리고 싶을 때');
+    lines.push('- 트래픽: 웹사이트, 앱, 프로필 방문을 늘리고 싶을 때');
+    lines.push('- 참여: 좋아요, 댓글, 메시지, 영상 조회 같은 반응을 늘리고 싶을 때');
     lines.push('- 잠재 고객: 상담 신청, 견적 요청, 리드 수집이 필요할 때');
-    lines.push('- 앱 홍보: 앱 설치나 앱 내 행동을 늘릴 때');
-    lines.push('- 판매: 구매, 장바구니, 전환을 늘릴 때');
+    lines.push('- 앱 홍보: 앱 설치나 앱 내 행동을 늘리고 싶을 때');
+    lines.push('- 판매: 구매, 장바구니, 전환을 만들고 싶을 때');
     lines.push('');
   }
 
@@ -401,12 +401,12 @@ function buildProductStructureAnswer(sources: ReturnType<typeof buildVerifiedSou
   ]);
   if (formatSource) {
     usedLabels.add(formatSource.label);
-    lines.push(`**2. 광고 소재 형식** [${formatSource.label}]`);
-    lines.push('- 이미지: 단일 이미지로 빠르게 메시지를 전달할 때');
-    lines.push('- 동영상: 사용 장면이나 브랜드 스토리를 보여줄 때');
+    lines.push('**2. 그다음 고르는 것: 광고 소재 형식**');
+    lines.push('- 이미지: 한 장의 이미지로 핵심 메시지를 빠르게 전달할 때');
+    lines.push('- 동영상: 사용 장면, 제품 설명, 브랜드 스토리를 보여줄 때');
     lines.push('- 슬라이드: 여러 이미지나 영상을 순서대로 보여줄 때');
     lines.push('- 컬렉션: 여러 상품을 한 번에 보여주고 구매 흐름으로 연결할 때');
-    lines.push('- 노출 위치: Facebook, Instagram 등 노출 지면에 따라 적합한 형식과 사양을 함께 확인해야 합니다.');
+    lines.push('- 노출 위치: Facebook, Instagram 등 지면에 따라 적합한 형식과 사양을 함께 확인해야 합니다.');
     lines.push('');
   }
 
@@ -415,18 +415,21 @@ function buildProductStructureAnswer(sources: ReturnType<typeof buildVerifiedSou
   ]);
   if (catalogSource) {
     usedLabels.add(catalogSource.label);
-    lines.push(`**3. 자동 운영/상품 카탈로그 기능** [${catalogSource.label}]`);
-    lines.push('- Advantage+ catalog collection ads: 카탈로그 기반 상품 노출을 자동화해 운영할 때');
-    lines.push('- 컬렉션 광고: 커버 이미지나 영상 아래 여러 상품을 함께 보여주고 구매 흐름으로 연결할 때');
+    lines.push('**3. 판매/카탈로그 운영 기능**');
+    lines.push('- 컬렉션 광고: 커버 이미지나 영상 아래 여러 상품을 보여주고 구매 흐름으로 연결할 때');
+    lines.push('- Advantage+ 카탈로그 컬렉션 광고: 카탈로그 기반 상품 노출을 자동화해 운영할 때');
     lines.push('');
   }
 
-  lines.push('**정리하면**');
-  lines.push('- 목표는 “무엇을 얻을지”를 정하는 기준입니다.');
-  lines.push('- 광고 형식은 “어떻게 보여줄지”를 정하는 기준입니다.');
-  lines.push('- 자동 운영/카탈로그 기능은 상품 노출과 구매 흐름을 더 효율적으로 운영할 때 검토합니다.');
+  lines.push('**빠르게 고르면**');
+  lines.push('- 브랜드를 알리고 싶다면: 인지도');
+  lines.push('- 방문을 늘리고 싶다면: 트래픽');
+  lines.push('- 반응이나 메시지를 늘리고 싶다면: 참여');
+  lines.push('- 문의나 상담 신청을 받고 싶다면: 잠재 고객');
+  lines.push('- 앱 설치나 앱 내 행동을 늘리고 싶다면: 앱 홍보');
+  lines.push('- 구매나 전환을 만들고 싶다면: 판매');
   lines.push('');
-  lines.push('세부 사양과 사용 가능 지면은 캠페인 생성 시점의 광고 관리자와 원문 가이드에서 최종 확인하는 것이 좋습니다.');
+  lines.push('세부 소재 사양과 사용 가능 지면은 캠페인 생성 시점의 광고 관리자와 원문 가이드에서 최종 확인하는 것이 좋습니다.');
   lines.push('');
 
   const labelList = Array.from(usedLabels);
