@@ -562,23 +562,31 @@ function selectProductStructureResponseSources(sources: ReturnType<typeof buildV
   const selectedKeys = new Set<string>();
 
   const addSource = (source?: ReturnType<typeof buildVerifiedSources>[number]) => {
-    if (!source || isWeakProductStructureDisplaySource(source)) return;
+    if (!source || isWeakProductStructureDisplaySource(source)) return false;
     const key = getProductStructureSourceKey(source);
-    if (selectedKeys.has(key)) return;
+    if (selectedKeys.has(key)) return false;
     selectedKeys.add(key);
     selected.push(source);
+    return true;
+  };
+
+  const addBestTopicSource = (terms: string[]) => {
+    for (const source of pickTopicSources(labelledSources, terms)) {
+      if (addSource(source)) return true;
+    }
+    return false;
   };
 
   if (profile) {
     for (const section of profile.sections) {
       for (const bullet of section.bullets) {
-        addSource(pickTopicSource(labelledSources, bullet.terms));
+        addBestTopicSource(bullet.terms);
       }
     }
   }
 
   for (const terms of PRODUCT_STRUCTURE_SELECTION_TERMS) {
-    addSource(pickTopicSource(labelledSources, terms));
+    addBestTopicSource(terms);
   }
 
   if (selected.length === 0) {
@@ -819,6 +827,13 @@ function pickTopicSource(
   sources: Array<ReturnType<typeof buildVerifiedSources>[number] & { label: string }>,
   terms: string[]
 ) {
+  return pickTopicSources(sources, terms)[0];
+}
+
+function pickTopicSources(
+  sources: Array<ReturnType<typeof buildVerifiedSources>[number] & { label: string }>,
+  terms: string[]
+) {
   return sources
     .map((source, index) => ({
       source,
@@ -826,7 +841,8 @@ function pickTopicSource(
       hits: terms.filter(term => getSourceText(source).includes(term.toLowerCase())).length,
     }))
     .filter(candidate => candidate.hits > 0)
-    .sort((a, b) => b.hits - a.hits || a.index - b.index)[0]?.source;
+    .sort((a, b) => b.hits - a.hits || a.index - b.index)
+    .map(candidate => candidate.source);
 }
 
 function buildFalseClaimComparisonAnswer(

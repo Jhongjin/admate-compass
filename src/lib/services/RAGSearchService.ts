@@ -764,25 +764,60 @@ export class RAGSearchService {
     candidates: SearchResult[],
     intent: QueryIntent
   ): SearchResult[] {
-    if (!intent.topics.includes('product_structure') || intent.vendors[0] !== 'NAVER') {
+    if (!intent.topics.includes('product_structure') || intent.vendors.length !== 1) {
+      return selected;
+    }
+
+    const vendor = intent.vendors[0];
+    const requiredGroupsByVendor: Partial<Record<VendorIntent, string[][]>> = {
+      META: [
+        ['캠페인 목표', '광고 관리자 목표', '인지도', '트래픽', '참여', '잠재 고객', '앱 홍보', '판매'],
+        ['컬렉션 광고', 'advantage+', '어드밴티지', '카탈로그', 'catalog'],
+      ],
+      GOOGLE: [
+        ['앱 캠페인', '앱 설치', '사전 등록'],
+        ['쇼핑 광고', '쇼핑 캠페인', 'shopping ads', 'shopping campaigns', 'merchant center'],
+        ['검색 캠페인', '이미지 확장', '검색 광고'],
+        ['반응형 디스플레이', '디스플레이 캠페인'],
+        ['리드 양식', 'lead form'],
+      ],
+      NAVER: [
+        ['사이트검색광고', '웹사이트 방문 목적'],
+        ['쇼핑검색', '쇼핑검색광고', '쇼핑몰 상품형', '상품등록', '상품 db', '상품db', 'db url', 'ep', '쇼핑파트너센터'],
+        ['쇼핑블록', '쇼핑 지면', '쇼핑지면', 'pc 쇼핑블록', 'mo 쇼핑블록', '모바일 쇼핑'],
+      ],
+      KAKAO: [
+        ['비즈보드', '디스플레이 광고'],
+        ['상품가이드', '상품 가이드', '업종 제한'],
+        ['제작 가이드', '이미지', '비율', '노출 지면'],
+        ['심사 가이드', '집행 기준', '등록불가 업종'],
+      ],
+    };
+    const requiredGroups = requiredGroupsByVendor[vendor];
+    const coverageReasonByVendor: Record<VendorIntent, string> = {
+      META: 'meta_required_product_structure_coverage',
+      GOOGLE: 'google_required_product_structure_coverage',
+      NAVER: 'naver_required_product_structure_coverage',
+      KAKAO: 'kakao_required_product_structure_coverage',
+    };
+
+    if (!requiredGroups?.length) {
       return selected;
     }
 
     const next = [...selected];
     const selectedKeys = new Set(next.map(candidate => this.buildCandidateDedupeKey(candidate)));
-    const requiredGroups = [
-      ['사이트검색광고', '웹사이트 방문 목적'],
-      ['쇼핑검색', '쇼핑검색광고', '쇼핑몰 상품형', '상품등록', '상품 db', '상품db', 'db url', 'ep', '쇼핑파트너센터'],
-      ['쇼핑블록', '쇼핑 지면', '쇼핑지면', 'pc 쇼핑블록', 'mo 쇼핑블록', '모바일 쇼핑'],
-    ];
+    const protectedKeys = new Set<string>();
 
     for (const terms of requiredGroups) {
-      if (next.some(candidate => this.candidateContainsAny(candidate, terms))) {
+      const existingCoverage = next.find(candidate => this.candidateContainsAny(candidate, terms));
+      if (existingCoverage) {
+        protectedKeys.add(this.buildCandidateDedupeKey(existingCoverage));
         continue;
       }
 
       const candidate = candidates
-        .filter(item => this.matchesVendorSlot(item, 'NAVER'))
+        .filter(item => this.matchesVendorSlot(item, vendor))
         .filter(item => this.candidateContainsAny(item, terms))
         .filter(item => !selectedKeys.has(this.buildCandidateDedupeKey(item)))
         .sort((a, b) => this.scoreVendorSlotCandidate(b, intent) - this.scoreVendorSlotCandidate(a, intent))[0];
@@ -793,20 +828,34 @@ export class RAGSearchService {
 
       candidate.rankReason = Array.from(new Set([
         ...(candidate.rankReason || []),
-        'naver_required_product_structure_coverage',
+        coverageReasonByVendor[vendor],
+      ].filter(Boolean)));
+      candidate.evidenceDecisionReason = Array.from(new Set([
+        ...(candidate.evidenceDecisionReason || []),
+        coverageReasonByVendor[vendor],
       ]));
       candidate.metadata = {
         ...(candidate.metadata || {}),
-        coverageRole: 'naver_required_product_structure_coverage',
+        coverageRole: coverageReasonByVendor[vendor],
         rankReason: candidate.rankReason,
+        evidenceDecisionReason: candidate.evidenceDecisionReason,
       };
-      selectedKeys.add(this.buildCandidateDedupeKey(candidate));
+      const key = this.buildCandidateDedupeKey(candidate);
+      selectedKeys.add(key);
+      protectedKeys.add(key);
       next.push(candidate);
     }
 
-    return next
+    const sorted = next
       .sort((a, b) => this.scoreVendorSlotCandidate(b, intent) - this.scoreVendorSlotCandidate(a, intent))
-      .slice(0, Math.max(selected.length, intent.recommendedSourceLimit));
+    const protectedCandidates = sorted.filter(candidate => protectedKeys.has(this.buildCandidateDedupeKey(candidate)));
+    const remainingCandidates = sorted.filter(candidate => !protectedKeys.has(this.buildCandidateDedupeKey(candidate)));
+    const outputLimit = Math.max(selected.length, intent.recommendedSourceLimit, protectedCandidates.length);
+
+    return [
+      ...protectedCandidates,
+      ...remainingCandidates,
+    ].slice(0, outputLimit);
   }
 
   private candidateContainsAny(candidate: SearchResult, terms: string[]): boolean {
