@@ -1201,18 +1201,21 @@ export async function buildCompassAnswerResponse(
       message: '질문 조건을 분석하고 관련 출처를 검색합니다.',
       queryType: ragIntent.queryType,
     });
-    let searchResults = await searchWithCompassRAG(message, ragIntent.recommendedSourceLimit);
     const supplementQueries = buildProductStructureSupplementQueries(ragIntent, message)
       .filter(query => query !== message);
 
+    const searchQueries = [message, ...supplementQueries];
+    const searchResultGroups = await Promise.all(
+      searchQueries.map(query => searchWithCompassRAG(query, Math.max(8, ragIntent.recommendedSourceLimit)))
+    );
+    const supplementResultCount = searchResultGroups.slice(1).flat().length;
+    let searchResults = searchResultGroups.flat();
+
     if (supplementQueries.length > 0) {
-      const supplementResults = (await Promise.all(
-        supplementQueries.map(query => searchWithCompassRAG(query, Math.max(8, ragIntent.recommendedSourceLimit)))
-      )).flat();
-      searchResults = mergeSearchResultsByIdentity([...searchResults, ...supplementResults]);
+      searchResults = mergeSearchResultsByIdentity(searchResults);
       console.log('Compass product-structure adaptive retrieval completed', {
         supplementQueryCount: supplementQueries.length,
-        supplementResultCount: supplementResults.length,
+        supplementResultCount,
         mergedResultCount: searchResults.length,
       });
     }
