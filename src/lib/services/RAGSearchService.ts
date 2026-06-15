@@ -402,11 +402,6 @@ export class RAGSearchService {
         return [];
       }
 
-      // 질문을 임베딩으로 변환
-      const queryEmbeddingResult = await this.embeddingService.generateEmbedding(query);
-      const queryEmbedding = queryEmbeddingResult.embedding;
-      console.log(`📊 질문 임베딩 생성 완료: ${queryEmbedding.length}차원`);
-
       const needsVendorAwareRetrieval = intent.vendors.length > 0;
       const needsProductStructureRetrieval = intent.topics.includes('product_structure');
       const candidateLimit = needsVendorAwareRetrieval
@@ -414,6 +409,29 @@ export class RAGSearchService {
         : needsProductStructureRetrieval
           ? Math.max(limit * 3, 18)
           : limit;
+
+      if (needsProductStructureRetrieval && intent.vendors.length === 1 && !intent.isComparative) {
+        const [keywordCandidates, vendorCoverageCandidates, productStructureCandidates] = await Promise.all([
+          this.searchKeywordCandidates(query, candidateLimit, intent),
+          this.searchVendorCoverageCandidates(query, candidateLimit, intent),
+          this.searchProductStructureCandidates(candidateLimit, intent)
+        ]);
+
+        console.log(`📊 Product structure fast 후보 수집 결과: keyword=${keywordCandidates.length}, vendorCoverage=${vendorCoverageCandidates.length}, productStructure=${productStructureCandidates.length}`);
+        const rankedResults = this.mergeDedupeAndRankCandidates(
+          [...keywordCandidates, ...vendorCoverageCandidates, ...productStructureCandidates],
+          limit,
+          intent
+        );
+
+        console.log(`✅ 상품 구조 검색 완료: ${rankedResults.length}개 결과 (fast keyword/anchor path)`);
+        return rankedResults;
+      }
+
+      // 질문을 임베딩으로 변환
+      const queryEmbeddingResult = await this.embeddingService.generateEmbedding(query);
+      const queryEmbedding = queryEmbeddingResult.embedding;
+      console.log(`📊 질문 임베딩 생성 완료: ${queryEmbedding.length}차원`);
 
       const [vectorCandidates, keywordCandidates, vendorCoverageCandidates, productStructureCandidates] = await Promise.all([
         this.searchVectorCandidates(queryEmbedding, candidateLimit, intent),

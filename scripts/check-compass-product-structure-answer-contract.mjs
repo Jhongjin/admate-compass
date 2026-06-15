@@ -30,6 +30,8 @@ for (const snippet of [
   'isProductStructureQueryText',
   'searchProductStructureCandidates',
   'searchProductStructureAnchorTable',
+  'Product structure fast 후보 수집 결과',
+  'fast keyword/anchor path',
   '캠페인 목표',
   '광고 유형',
   '광고 관리자 목표',
