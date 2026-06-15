@@ -108,6 +108,7 @@ function isMissingTableOrColumn(error: any) {
     || error?.message?.includes('Could not find the table')
     || error?.message?.includes('Could not find')
     || error?.message?.includes('schema cache')
+    || error?.message?.includes('The schema must be one of')
   );
 }
 

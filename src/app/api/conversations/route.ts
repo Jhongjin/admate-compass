@@ -48,7 +48,11 @@ function isUuid(value: string) {
 }
 
 function isMissingConversationTable(error: any) {
-  return error?.code === 'PGRST205' || error?.message?.includes('Could not find the table');
+  return Boolean(
+    error?.code === 'PGRST205'
+    || error?.message?.includes('Could not find the table')
+    || error?.message?.includes('The schema must be one of')
+  );
 }
 
 function isMissingOwnerSubjectColumn(error: any) {
