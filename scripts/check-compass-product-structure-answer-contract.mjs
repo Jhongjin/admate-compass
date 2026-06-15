@@ -56,8 +56,11 @@ for (const snippet of [
   'selectProductStructureResponseSources',
   'isWeakProductStructureDisplaySource',
   'compass-answer-grounded-product-structure',
-  'Meta 광고 상품 유형은 크게 캠페인 목표, 광고 형식, 자동화·커머스 기능 기준으로 나눠 볼 수 있습니다.',
-  '어떤 목표를 선택하면 되나요?',
+  'Meta 광고 상품은 먼저 “무엇을 달성할지”를 정하고',
+  '**1. 광고 목적(캠페인 목표)**',
+  '**2. 광고 소재 형식**',
+  '**3. 자동 운영/상품 카탈로그 기능**',
+  '**정리하면**',
   '캠페인 목표',
   'advantage+',
   '카탈로그',
@@ -105,6 +108,10 @@ if (!/filter\(candidate => candidate\.hits > 0\)/.test(answerHandler)) {
 
 if (answerHandler.includes('실무 선택 기준')) {
   fail('product structure answer should use user-facing labels instead of internal wording like 실무 선택 기준');
+}
+
+if (/- 캠페인 목표 기준|  - 인지도:/.test(answerHandler)) {
+  fail('product structure answer should avoid nested bullet formatting in rendered chat output');
 }
 
 if (process.exitCode) process.exit(process.exitCode);
