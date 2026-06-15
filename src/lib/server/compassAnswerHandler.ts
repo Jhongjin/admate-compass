@@ -680,6 +680,7 @@ function buildProductStructureSupplementQueries(intent: QueryIntent, originalMes
       '네이버 사이트검색광고 웹사이트 방문 목적 광고 상품',
       '네이버 쇼핑검색광고 상품등록 절차 EP DB URL 쇼핑파트너센터',
       '네이버 쇼핑블록 PC 모바일 쇼핑 지면 광고 상품',
+      '네이버 쇼핑검색광고 상품형 쇼핑블록 광고 상품',
     ],
     KAKAO: [
       '카카오 비즈보드 디스플레이 광고 지면 광고 상품',
@@ -1265,12 +1266,8 @@ export async function buildCompassAnswerResponse(
       ragIntent.topics.includes('product_structure')
       && ragIntent.vendors.length === 1
       && !ragIntent.isComparative;
-    const fastPathSupplementQueries = usesProductStructureFastPath && ragIntent.vendors[0] === 'NAVER'
-      ? ['네이버 쇼핑검색광고 상품형 쇼핑블록 광고 상품']
-      : [];
-    const supplementQueries = usesProductStructureFastPath
-      ? fastPathSupplementQueries
-      : buildProductStructureSupplementQueries(ragIntent, message).filter(query => query !== message);
+    const supplementQueries = buildProductStructureSupplementQueries(ragIntent, message)
+      .filter(query => query !== message);
 
     const searchQueries = [message, ...supplementQueries];
     const searchResultGroups = await Promise.all(
