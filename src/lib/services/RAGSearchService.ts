@@ -111,15 +111,21 @@ const TOPIC_TERM_SPECS: Array<[TopicIntent, string[]]> = [
   ['gambling', ['도박', '사행']],
   ['spec', ['사이즈', '크기', '파일', '형식', '스펙', '동영상', '이미지', '카루셀']],
   ['product_structure', [
-    '광고 상품', '광고상품', '광고 종류', '광고종류', '상품 구조', '광고 구조',
+    '광고 상품', '광고상품', '광고 종류', '광고종류', '광고 유형', '광고유형', '상품 구조', '광고 구조',
     '캠페인 목표', '광고 관리자 목표', 'objective', 'objectives', 'advantage+', '어드밴티지',
     '카탈로그', 'catalog', '메타 픽셀', 'meta pixel', '픽셀 이벤트', '픽셀 코드', '전환', 'conversion', 'conversions api',
-    '노출 위치', '게재 위치', 'placements', '지면'
+    '노출 위치', '게재 위치', 'placements', '지면',
+    '앱 캠페인', '쇼핑 광고', '검색 캠페인', '디스플레이 캠페인', '반응형 디스플레이', '리드 양식',
+    '검색광고', '쇼핑검색', '파워링크', '브랜드검색', '쇼핑블록', '디지털 옥외광고',
+    '비즈보드', '카카오모먼트', '브랜드이모티콘', '상품가이드', '상품 가이드'
   ]],
 ];
 
 const PRODUCT_STRUCTURE_KEYWORD_EXPANSIONS = [
   '캠페인 목표', '광고 관리자 목표', '인지도', '트래픽', '참여', '잠재 고객', '앱 홍보', '판매',
+  '앱 캠페인', '쇼핑 광고', '검색 캠페인', '디스플레이 캠페인', '반응형 디스플레이 광고', '리드 양식',
+  '검색광고', '쇼핑검색', '파워링크', '브랜드검색', '쇼핑블록', '디지털 옥외광고',
+  '비즈보드', '카카오모먼트', '브랜드이모티콘', '상품가이드', '상품 가이드',
   '광고 형식', '소재 형식', '노출 위치', '게재 위치', '지면',
   'Advantage+', '어드밴티지', '카탈로그', 'catalog', '메타 픽셀', 'meta pixel', '픽셀 이벤트', '픽셀 코드', '전환', 'conversion', 'Conversions API',
   '이미지', '동영상', '슬라이드', '컬렉션', '릴스', '스토리', '피드'
@@ -134,14 +140,32 @@ const PRODUCT_STRUCTURE_ANCHOR_TERMS = [
   '메타 픽셀',
   'Meta Pixel',
   'Conversions API',
+  '앱 캠페인',
+  '쇼핑 광고',
+  '반응형 디스플레이 광고',
+  '리드 양식',
+  '검색광고',
+  '쇼핑검색',
+  '쇼핑블록',
+  'PC 쇼핑블록',
+  '모바일 쇼핑',
+  '상품DB',
+  '상품 DB',
+  'DB URL',
+  'EP',
+  '가격비교',
+  '디지털 옥외광고',
+  '비즈보드',
+  '상품가이드',
+  '상품 가이드',
 ];
 
 function isProductStructureQueryText(text: string): boolean {
-  const hasOverviewSignal = /광고\s*상품|광고상품|광고\s*종류|광고종류|상품\s*구조|광고\s*구조|캠페인\s*목표|광고\s*관리자\s*목표|objective|advantage\+|어드밴티지|카탈로그|catalog|메타\s*픽셀|meta\s*pixel|픽셀\s*(이벤트|코드|설치|전환)|전환|conversion|노출\s*위치|게재\s*위치|placements|지면/.test(text);
+  const hasOverviewSignal = /광고\s*상품|광고상품|광고\s*종류|광고종류|광고\s*유형|광고유형|상품\s*구조|광고\s*구조|캠페인\s*목표|광고\s*관리자\s*목표|objective|advantage\+|어드밴티지|카탈로그|catalog|메타\s*픽셀|meta\s*pixel|픽셀\s*(이벤트|코드|설치|전환)|전환|conversion|노출\s*위치|게재\s*위치|placements|지면|앱\s*캠페인|쇼핑\s*광고|검색\s*캠페인|디스플레이\s*캠페인|반응형\s*디스플레이|리드\s*양식|검색광고|쇼핑검색|파워링크|브랜드검색|쇼핑블록|디지털\s*옥외광고|비즈보드|카카오모먼트|브랜드이모티콘|상품\s*가이드|상품가이드/.test(text);
   if (hasOverviewSignal) return true;
 
   const hasVendorOrAdContext = detectCompassVendors(text).length > 0 || AD_POLICY_TERMS.some(term => text.includes(term));
-  return hasVendorOrAdContext && /상품|종류|구조|솔루션/.test(text);
+  return hasVendorOrAdContext && /상품|종류|유형|구조|솔루션/.test(text);
 }
 
 function stripKoreanParticle(word: string): string {
@@ -567,10 +591,13 @@ export class RAGSearchService {
       ...PRODUCT_STRUCTURE_KEYWORD_EXPANSIONS,
     ]));
     const anchorLimit = Math.max(4, Math.ceil(limit / 3));
-    const probes = PRODUCT_STRUCTURE_ANCHOR_TERMS.flatMap((anchor) => ([
-      this.searchProductStructureAnchorTable('document_chunks', anchor, anchorLimit),
-      this.searchProductStructureAnchorTable('ollama_document_chunks', anchor, Math.max(2, Math.ceil(anchorLimit / 2))),
-    ]));
+    const anchorVendors: Array<VendorIntent | undefined> = intent.vendors.length > 0 ? [...intent.vendors, undefined] : [undefined];
+    const probes = anchorVendors.flatMap((vendor) => (
+      PRODUCT_STRUCTURE_ANCHOR_TERMS.flatMap((anchor) => ([
+        this.searchProductStructureAnchorTable('document_chunks', anchor, anchorLimit, vendor),
+        this.searchProductStructureAnchorTable('ollama_document_chunks', anchor, Math.max(2, Math.ceil(anchorLimit / 2)), vendor),
+      ]))
+    ));
 
     const results = (await Promise.all(probes)).flat();
     return results
@@ -584,6 +611,9 @@ export class RAGSearchService {
         });
 
         if (!candidate) return null;
+        if (intent.vendors.length === 1 && this.hasExplicitOtherVendorSignal(candidate, intent.vendors[0])) {
+          return null;
+        }
 
         const sourceText = this.buildCandidateSearchText(candidate.content, candidate.documentTitle, candidate.metadata);
         if (!this.hasProductStructureSignal(sourceText) && !this.hasHighValueProductStructureSignal(sourceText)) {
@@ -617,18 +647,24 @@ export class RAGSearchService {
   private async searchProductStructureAnchorTable(
     tableName: 'ollama_document_chunks' | 'document_chunks',
     anchor: string,
-    limit: number
+    limit: number,
+    vendor?: VendorIntent
   ): Promise<Array<{ row: any; corpus: RetrievalCorpus; anchor: string }>> {
     try {
       const selectColumns = tableName === 'ollama_document_chunks'
         ? 'chunk_id, document_id, content, metadata, embedding'
         : 'id, document_id, chunk_id, content, metadata';
 
-      const { data, error } = await this.supabase
+      let query = this.supabase
         .from(tableName)
         .select(selectColumns)
-        .ilike('content', `%${anchor}%`)
-        .limit(limit);
+        .ilike('content', `%${anchor}%`);
+
+      if (vendor) {
+        query = query.eq('metadata->>source_vendor', vendor);
+      }
+
+      const { data, error } = await query.limit(limit);
 
       if (error) {
         console.warn(`⚠️ ${tableName} product-structure anchor 검색 실패:`, error);
@@ -1171,8 +1207,35 @@ export class RAGSearchService {
   private matchesVendorSlot(candidate: SearchResult, vendor: VendorIntent): boolean {
     if (candidate.sourceQuality.isFallback) return false;
     if (!candidate.sourceQuality.hasExcerpt) return false;
+    if (this.hasExplicitOtherVendorSignal(candidate, vendor)) return false;
     if (candidate.sourceVendor === vendor) return true;
     return Boolean(candidate.sourceVendors?.includes(vendor));
+  }
+
+  private hasExplicitOtherVendorSignal(candidate: SearchResult, targetVendor: VendorIntent): boolean {
+    const primaryIdentityText = this.normalizeSearchText([
+      candidate.metadata?.originalTitle,
+      candidate.metadata?.canonical_title,
+      candidate.metadata?.source_title,
+      candidate.metadata?.source,
+      candidate.metadata?.source_url,
+      candidate.metadata?.document_url,
+      candidate.metadata?.url,
+      candidate.documentId,
+    ].filter(Boolean).join(' '));
+    const fallbackIdentityText = this.normalizeSearchText([
+      candidate.documentTitle,
+      candidate.documentId,
+    ].filter(Boolean).join(' '));
+    const text = primaryIdentityText || fallbackIdentityText;
+    if (!text) return false;
+
+    const hasTarget = getCompassVendorTerms(targetVendor).some(term => text.includes(term));
+    const otherVendors = (['META', 'KAKAO', 'NAVER', 'GOOGLE'] as VendorIntent[])
+      .filter(vendor => vendor !== targetVendor);
+    const hasOther = otherVendors.some(vendor => getCompassVendorTerms(vendor).some(term => text.includes(term)));
+
+    return hasOther && !hasTarget;
   }
 
   private pickBestVendorSlotCandidate(
@@ -1489,10 +1552,13 @@ export class RAGSearchService {
       ['gambling', ['도박', '사행']],
       ['spec', ['사이즈', '크기', '파일', '형식', '스펙', '동영상', '이미지', '카루셀']],
       ['product_structure', [
-        '광고 상품', '광고상품', '광고 종류', '광고종류', '상품 구조', '광고 구조',
+        '광고 상품', '광고상품', '광고 종류', '광고종류', '광고 유형', '광고유형', '상품 구조', '광고 구조',
         '캠페인 목표', '광고 관리자 목표', 'objective', 'objectives', 'advantage+', '어드밴티지',
         '카탈로그', 'catalog', '메타 픽셀', 'meta pixel', '픽셀 이벤트', '픽셀 코드', '전환', 'conversion', 'conversions api',
-        '노출 위치', '게재 위치', 'placements', '지면'
+        '노출 위치', '게재 위치', 'placements', '지면',
+        '앱 캠페인', '쇼핑 광고', '검색 캠페인', '디스플레이 캠페인', '반응형 디스플레이', '리드 양식',
+        '검색광고', '쇼핑검색', '파워링크', '브랜드검색', '쇼핑블록', '디지털 옥외광고',
+        '비즈보드', '카카오모먼트', '브랜드이모티콘', '상품가이드', '상품 가이드'
       ]],
     ];
 
@@ -1818,9 +1884,19 @@ export class RAGSearchService {
       reasons.push('campaign_objective_match');
     }
 
-    if (/advantage\+|어드밴티지|카탈로그|catalog|메타\s*픽셀|meta\s*pixel|픽셀\s*(이벤트|코드|설치|전환)|conversions api/.test(text)) {
+    if (/advantage\+|어드밴티지|카탈로그|catalog|메타\s*픽셀|meta\s*pixel|픽셀\s*(이벤트|코드|설치|전환)|conversions api|앱\s*캠페인|쇼핑\s*광고|검색\s*캠페인|디스플레이\s*캠페인|반응형\s*디스플레이|리드\s*양식|검색광고|쇼핑검색|파워링크|브랜드검색|쇼핑블록|디지털\s*옥외광고|비즈보드|카카오모먼트|브랜드이모티콘|상품\s*가이드|상품가이드/.test(text)) {
       adjustment += 0.18;
       reasons.push('product_solution_match');
+    }
+
+    if (/상품\s*db|db\s*url|쇼핑파트너센터|pc\s*쇼핑블록|mo\s*쇼핑블록|모바일\s*쇼핑|가격비교|광고\s*등록\s*기준|광고등록기준|디지털\s*옥외광고/.test(text)) {
+      adjustment += 0.2;
+      reasons.push('vendor_product_detail_match');
+    }
+
+    if (this.isLowValueProductStructureDirectoryText(text)) {
+      adjustment -= 0.72;
+      reasons.push('product_structure_directory_penalty');
     }
 
     if (this.isCreativeSpecOnlyText(text)) {
@@ -1837,14 +1913,20 @@ export class RAGSearchService {
   }
 
   private hasProductStructureSignal(text: string): boolean {
-    return /캠페인 목표|광고 관리자 목표|마케팅 목표|objective|objectives|advantage\+|어드밴티지|카탈로그|catalog|메타\s*픽셀|meta\s*pixel|픽셀\s*(이벤트|코드|설치|전환)|conversions api|노출 위치|게재 위치|placements|지면|컬렉션|collection|리드|lead/.test(text);
+    return /캠페인 목표|광고 관리자 목표|마케팅 목표|objective|objectives|advantage\+|어드밴티지|카탈로그|catalog|메타\s*픽셀|meta\s*pixel|픽셀\s*(이벤트|코드|설치|전환)|conversions api|노출 위치|게재 위치|placements|지면|컬렉션|collection|리드|lead|앱\s*캠페인|쇼핑\s*광고|검색\s*캠페인|디스플레이\s*캠페인|반응형\s*디스플레이|리드\s*양식|검색광고|쇼핑검색|파워링크|브랜드검색|쇼핑블록|상품\s*db|db\s*url|가격비교|디지털\s*옥외광고|비즈보드|카카오모먼트|브랜드이모티콘|상품\s*가이드|상품가이드/.test(text);
   }
 
   private hasHighValueProductStructureSignal(text: string): boolean {
     const hasObjectiveList = /인지도[\s\S]{0,80}트래픽[\s\S]{0,80}참여[\s\S]{0,80}잠재 고객[\s\S]{0,80}앱 홍보[\s\S]{0,80}판매/.test(text);
     return hasObjectiveList
-      || /캠페인 목표|광고 관리자 목표|마케팅 목표|objective|objectives|advantage\+|어드밴티지|어드밴티지\+|카탈로그|catalog|메타\s*픽셀|meta\s*pixel|픽셀\s*(이벤트|코드|설치|전환)|conversions api/.test(text)
+      || /캠페인 목표|광고 관리자 목표|마케팅 목표|objective|objectives|advantage\+|어드밴티지|어드밴티지\+|카탈로그|catalog|메타\s*픽셀|meta\s*pixel|픽셀\s*(이벤트|코드|설치|전환)|conversions api|앱\s*캠페인|쇼핑\s*광고|검색\s*캠페인|디스플레이\s*캠페인|반응형\s*디스플레이|리드\s*양식|검색광고|쇼핑검색|파워링크|브랜드검색|쇼핑블록|상품\s*db|db\s*url|가격비교|디지털\s*옥외광고|비즈보드|카카오모먼트|브랜드이모티콘|상품\s*가이드|상품가이드/.test(text)
       || /노출 위치|게재 위치|placements|지면/.test(text) && /캠페인 목표|광고 관리자 목표|마케팅 목표/.test(text);
+  }
+
+  private isLowValueProductStructureDirectoryText(text: string): boolean {
+    const hasDirectoryShell = /공지사항|성공전략|성공사례|광고운영팁|검색어 입력 창|thumbnail|sequence|badge|전체 공통/.test(text);
+    const hasSpecificProductDetail = /상품\s*db|db\s*url|쇼핑파트너센터|pc\s*쇼핑블록|mo\s*쇼핑블록|모바일\s*쇼핑|가격비교|광고\s*등록\s*기준|광고등록기준|디지털\s*옥외광고[\s\S]{0,80}불가\s*업종|쇼핑검색[\s\S]{0,80}필터/.test(text);
+    return hasDirectoryShell && !hasSpecificProductDetail;
   }
 
   private isCreativeSpecOnlyText(text: string): boolean {

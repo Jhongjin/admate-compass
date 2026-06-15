@@ -328,20 +328,226 @@ function getProductStructureSourceKey(source: ReturnType<typeof buildVerifiedSou
 function isWeakProductStructureDisplaySource(source: ReturnType<typeof buildVerifiedSources>[number]) {
   const title = `${source.title || ''} ${source.originalTitle || ''}`.toLowerCase();
   const text = getSourceText(source);
-  const hasCoreSignal = /광고 관리자 목표|캠페인 목표|마케팅 목표|인지도[\s\S]{0,80}트래픽[\s\S]{0,80}참여[\s\S]{0,80}잠재 고객[\s\S]{0,80}앱 홍보[\s\S]{0,80}판매|advantage\+ catalog|어드밴티지\+ catalog|컬렉션 광고/.test(text);
+  const hasCoreSignal = /광고 관리자 목표|캠페인 목표|마케팅 목표|인지도[\s\S]{0,80}트래픽[\s\S]{0,80}참여[\s\S]{0,80}잠재 고객[\s\S]{0,80}앱 홍보[\s\S]{0,80}판매|advantage\+ catalog|어드밴티지\+ catalog|컬렉션 광고|앱\s*캠페인|쇼핑\s*광고|반응형\s*디스플레이|리드\s*양식|검색광고|쇼핑검색|쇼핑블록|비즈보드|상품\s*가이드|상품가이드/.test(text);
 
   if (/세금|tax|vat|청구|결제/.test(text)) return true;
+  if (/woocommerce|google\s*태그|태그\s*설정|gtag|측정\s*태그/.test(text)
+    && !/앱\s*캠페인|쇼핑\s*광고|검색\s*캠페인|디스플레이\s*캠페인|반응형\s*디스플레이|리드\s*양식/.test(text)
+  ) return true;
+  if (/공지사항|성공전략|성공사례|광고운영팁|검색어 입력 창|thumbnail|sequence|badge|전체 공통/.test(text)
+    && !/상품\s*db|db\s*url|쇼핑파트너센터|pc\s*쇼핑블록|mo\s*쇼핑블록|모바일\s*쇼핑|가격비교|광고\s*등록\s*기준|광고등록기준|디지털\s*옥외광고[\s\S]{0,80}불가\s*업종|쇼핑검색[\s\S]{0,80}필터/.test(text)
+  ) return true;
   if (/^블로그$|blog|news|뉴스|도움말$/.test(title) && !hasCoreSignal) return true;
   if (/self\.__next_f|static\/css|webpack|hydration/.test(text)) return true;
 
   return false;
 }
 
-function selectProductStructureResponseSources(sources: ReturnType<typeof buildVerifiedSources>) {
+type ProductStructureBullet = {
+  text: string;
+  terms: string[];
+};
+
+type ProductStructureSection = {
+  title: string;
+  bullets: ProductStructureBullet[];
+};
+
+type ProductStructureProfile = {
+  intro: string;
+  sections: ProductStructureSection[];
+  summary: string;
+};
+
+const PRODUCT_STRUCTURE_PROFILES: Record<VendorIntent, ProductStructureProfile> = {
+  META: {
+    intro: 'Meta 광고는 상품명 하나를 고르는 방식이라기보다, 캠페인 목표와 광고 형식, 운영 기능을 조합해 설계하는 방식에 가깝습니다.',
+    sections: [
+      {
+        title: '**1. 캠페인 목표부터 정하기**',
+        bullets: [
+          { text: '인지도: 브랜드나 상품을 넓게 알리고 싶을 때', terms: ['인지도', '캠페인 목표', '광고 관리자 목표'] },
+          { text: '트래픽: 웹사이트, 앱, 프로필 방문을 늘리고 싶을 때', terms: ['트래픽', '캠페인 목표', '광고 관리자 목표'] },
+          { text: '참여: 좋아요, 댓글, 메시지, 영상 조회 같은 반응을 늘리고 싶을 때', terms: ['참여', '캠페인 목표', '광고 관리자 목표'] },
+          { text: '잠재 고객: 상담 신청, 견적 요청, 리드 수집이 필요할 때', terms: ['잠재 고객', '리드', 'lead'] },
+          { text: '앱 홍보: 앱 설치나 앱 내 행동을 늘리고 싶을 때', terms: ['앱 홍보', '앱 설치'] },
+          { text: '판매: 구매, 장바구니, 전환을 만들고 싶을 때', terms: ['판매', '전환', '장바구니'] },
+        ],
+      },
+      {
+        title: '**2. 목표에 맞는 광고 형식과 노출 위치 확인하기**',
+        bullets: [
+          { text: '이미지: 한 장의 이미지로 핵심 메시지를 빠르게 전달할 때', terms: ['이미지', '단일 이미지'] },
+          { text: '동영상: 사용 장면, 제품 설명, 브랜드 스토리를 보여줄 때', terms: ['동영상', 'video'] },
+          { text: '슬라이드(캐러셀): 여러 이미지나 영상을 순서대로 보여줄 때', terms: ['슬라이드', '카루셀', 'carousel'] },
+          { text: '컬렉션: 여러 상품을 한 번에 보여주고 구매 흐름으로 연결할 때', terms: ['컬렉션', 'collection'] },
+          { text: '노출 위치는 Facebook, Instagram 등 지면별 사양을 함께 확인해야 합니다.', terms: ['노출 위치', '게재 위치', 'facebook', 'instagram'] },
+        ],
+      },
+      {
+        title: '**3. 판매·카탈로그 운영 기능 확인하기**',
+        bullets: [
+          { text: '컬렉션 광고: 커버 이미지나 영상 아래 여러 상품을 보여주고 구매 흐름으로 연결할 때', terms: ['컬렉션 광고', 'collection ads'] },
+          { text: 'Advantage+ 카탈로그 컬렉션 광고: 카탈로그 기반 상품 노출을 자동화해 운영할 때', terms: ['advantage+', '어드밴티지', '카탈로그', 'catalog'] },
+        ],
+      },
+      {
+        title: '**4. 상황별 빠른 선택 기준**',
+        bullets: [
+          { text: '브랜드를 알리고 싶다면: 인지도', terms: ['인지도', '캠페인 목표'] },
+          { text: '방문을 늘리고 싶다면: 트래픽', terms: ['트래픽', '캠페인 목표'] },
+          { text: '반응이나 메시지를 늘리고 싶다면: 참여', terms: ['참여', '메시지'] },
+          { text: '문의나 상담 신청을 받고 싶다면: 잠재 고객', terms: ['잠재 고객', 'lead'] },
+          { text: '앱 설치나 앱 내 행동을 늘리고 싶다면: 앱 홍보', terms: ['앱 홍보', '앱 설치'] },
+          { text: '구매나 전환을 만들고 싶다면: 판매', terms: ['판매', '전환'] },
+        ],
+      },
+    ],
+    summary: '정리하면, 먼저 브랜드 인지도, 방문 유도, 참여 확대, 잠재 고객 확보, 앱 홍보, 판매 전환 중 우선 목표를 정하고 그 목표에 맞는 형식과 운영 기능을 선택하면 됩니다. 실제 사용 가능 항목은 계정 설정이나 Meta 정책에 따라 달라질 수 있습니다.',
+  },
+  GOOGLE: {
+    intro: 'Google Ads는 상품명 하나를 고르는 방식이라기보다, 캠페인 유형과 광고 애셋, 확장 소재, 측정 기능을 조합해 운영하는 구조로 보는 편이 안전합니다.',
+    sections: [
+      {
+        title: '**1. 목적에 맞는 캠페인 유형부터 확인하기**',
+        bullets: [
+          { text: '앱 캠페인: 앱 설치, 앱 내 행동, 사전 등록처럼 앱 성과를 만들 때 검토합니다.', terms: ['앱 캠페인', '사전 등록', '앱 설치'] },
+          { text: '쇼핑 광고: 상품 홍보와 쇼핑 지면 노출을 다룰 때 확인합니다.', terms: ['쇼핑 광고', 'shopping ads'] },
+          { text: '검색/디스플레이 캠페인: 검색 결과, 디스플레이 지면, 반응형 디스플레이 광고처럼 노출 방식이 다른 캠페인을 나누어 봅니다.', terms: ['검색 캠페인', '디스플레이 캠페인', '반응형 디스플레이'] },
+          { text: '리드 양식 확장 소재: 상담 신청이나 연락처 수집처럼 잠재 고객 정보를 받을 때 검토합니다.', terms: ['리드 양식', '잠재고객', 'lead'] },
+        ],
+      },
+      {
+        title: '**2. 소재와 운영 조건 확인하기**',
+        bullets: [
+          { text: '이미지, 동영상, 광고 제목, 설명 등 애셋 구성과 품질 기준을 함께 확인해야 합니다.', terms: ['이미지', '동영상', '광고 제목', '설명', '애셋'] },
+          { text: '광고 그룹별로 여러 광고를 시험하고 실적이 우수한 광고를 더 자주 게재하는 운영 방식도 고려합니다.', terms: ['광고 그룹', '실적이 우수한', '3~4개'] },
+          { text: '정책 제한, 도착 페이지, 검토 상태에 따라 게재 가능 여부가 달라질 수 있습니다.', terms: ['정책', '도착 페이지', '검토 상태', '비승인'] },
+        ],
+      },
+      {
+        title: '**3. 상황별 빠른 선택 기준**',
+        bullets: [
+          { text: '앱 설치나 사전 등록을 늘리고 싶다면: 앱 캠페인', terms: ['앱 캠페인', '사전 등록'] },
+          { text: '상품 노출이나 쇼핑몰 판매를 다룬다면: 쇼핑 광고', terms: ['쇼핑 광고'] },
+          { text: '검색 유입에 시각 요소를 더하고 싶다면: 검색 캠페인과 이미지 확장 소재', terms: ['검색 캠페인', '이미지 확장'] },
+          { text: '상담 신청이나 연락처 수집이 필요하다면: 리드 양식 확장 소재', terms: ['리드 양식'] },
+        ],
+      },
+    ],
+    summary: '정리하면, 먼저 달성하려는 목적을 정하고, 확인된 캠페인 유형과 애셋 조건을 원문 기준으로 대조하는 흐름이 안전합니다.',
+  },
+  NAVER: {
+    intro: '네이버 광고는 검색 유입, 쇼핑 상품 노출, 주요 쇼핑 지면, 업종별 노출 가능 여부를 나누어 확인하는 편이 안전합니다.',
+    sections: [
+      {
+        title: '**1. 광고 목적과 노출 지면부터 확인하기**',
+        bullets: [
+          { text: '사이트검색광고: 키워드 검색 기반으로 웹사이트 방문을 늘릴 때 확인합니다.', terms: ['사이트검색광고', '웹사이트 방문 목적', '키워드 검색', '웹사이트로 고객'] },
+          { text: '쇼핑검색광고: 쇼핑몰 상품형처럼 상품 노출과 유입을 함께 다룰 때 확인합니다.', terms: ['쇼핑검색', '쇼핑검색광고', '쇼핑몰 상품형', '상품등록', '상품DB', '상품 DB', 'DB URL', 'EP', '쇼핑파트너센터'] },
+          { text: '쇼핑블록/쇼핑 지면: 네이버 PC·모바일 쇼핑 지면에서 쇼핑몰 유입이나 브랜딩 목적을 검토할 때 확인합니다.', terms: ['쇼핑블록', '쇼핑 지면', 'PC 쇼핑블록', '모바일 쇼핑'] },
+          { text: '디지털 옥외광고: 네이버 플레이스 노출 업종과 등록 불가 업종을 함께 확인해야 합니다.', terms: ['디지털 옥외광고', '네이버 플레이스'] },
+        ],
+      },
+      {
+        title: '**2. 운영 전에 확인할 조건**',
+        bullets: [
+          { text: '업종 제한과 광고 등록 기준에 따라 노출 가능 여부가 달라질 수 있습니다.', terms: ['불가 업종', '광고 등록', '등록기준', '광고등록기준'] },
+          { text: '상품 정보는 DB URL, 카테고리 매칭, 가격비교 업데이트 같은 등록 절차와 함께 관리해야 합니다.', terms: ['DB URL', '카테고리', '가격비교', '상품등록'] },
+          { text: '일부 지면에서는 선 검수나 소재 승인 조건이 붙을 수 있습니다.', terms: ['선 검수', '검수 승인', '소재'] },
+        ],
+      },
+      {
+        title: '**3. 상황별 빠른 선택 기준**',
+        bullets: [
+          { text: '웹사이트 방문을 늘리고 싶다면: 사이트검색광고', terms: ['사이트검색광고', '웹사이트 방문 목적', '키워드 검색', '웹사이트로 고객'] },
+          { text: '쇼핑몰 상품형 유입을 강화하려면: 쇼핑검색광고', terms: ['쇼핑검색', '쇼핑검색광고', '쇼핑몰 상품형', '상품DB', '상품 DB', 'DB URL', 'EP', '쇼핑파트너센터'] },
+          { text: '쇼핑몰 유입과 브랜딩을 함께 노리려면: 쇼핑블록/주요 쇼핑 지면', terms: ['쇼핑블록', '쇼핑 지면'] },
+        ],
+      },
+    ],
+    summary: '정리하면, 먼저 우선 목적을 정하고, 확인된 검색·쇼핑 노출 조건과 등록 기준을 함께 확인하는 흐름이 안전합니다.',
+  },
+  KAKAO: {
+    intro: '카카오 광고는 카카오 서비스 지면, 소재 형식, 업종 제한, 심사 기준을 함께 확인하면서 상품과 집행 가능 범위를 정리하는 방식이 안전합니다.',
+    sections: [
+      {
+        title: '**1. 상품·지면·심사 기준부터 확인하기**',
+        bullets: [
+          { text: '비즈보드/디스플레이 광고: 카카오 주요 지면과 소재 형태를 함께 검토할 때 확인합니다.', terms: ['비즈보드', '디스플레이 광고'] },
+          { text: '상품가이드: 상품별 집행 조건과 업종 제한을 확인할 때 봅니다.', terms: ['상품가이드', '상품 가이드', '업종 제한'] },
+          { text: '제작 가이드: 이미지 비율, 텍스트 영역, 노출 지면별 리사이징처럼 소재 조건을 확인할 때 필요합니다.', terms: ['제작 가이드', '이미지', '비율', '노출 지면', '리사이징'] },
+          { text: '집행 기준 및 심사 가이드: 광고 가능 업종, 금지 행위, 소재 제한을 검토할 때 확인합니다.', terms: ['집행 기준', '심사 가이드', '광고 집행', '등록불가 업종'] },
+        ],
+      },
+      {
+        title: '**2. 운영 전에 확인할 조건**',
+        bullets: [
+          { text: '연령 제한 업종, 주류·담배·사행성 등 제한 업종은 상품별로 집행 가능 여부가 달라질 수 있습니다.', terms: ['연령 제한', '주류', '담배', '사행', '업종 제한'] },
+          { text: '카카오 서비스나 디자인을 모방하거나 오인하게 만드는 소재는 집행이 제한될 수 있습니다.', terms: ['카카오 서비스', '모방', '오인', '상표'] },
+          { text: 'AI 생성물이나 허위·과장으로 오인될 수 있는 소재는 별도 기준을 함께 확인해야 합니다.', terms: ['생성형 인공지능', 'AI 생성물', '허위', '과장'] },
+        ],
+      },
+      {
+        title: '**3. 상황별 빠른 선택 기준**',
+        bullets: [
+          { text: '카카오 주요 지면에서 브랜드 노출을 원한다면: 비즈보드/디스플레이 광고', terms: ['비즈보드', '디스플레이 광고'] },
+          { text: '업종 제한이 민감한 상품이라면: 상품가이드와 심사 가이드 선확인', terms: ['상품가이드', '심사 가이드', '업종 제한'] },
+          { text: '소재 제작 단계라면: 제작 가이드와 노출 지면별 이미지 조건 확인', terms: ['제작 가이드', '노출 지면', '이미지'] },
+        ],
+      },
+    ],
+    summary: '정리하면, 먼저 카카오 지면 노출, 상품별 집행 조건, 소재 제작 조건 중 무엇을 확인하려는지 정하고, 상품가이드와 심사 가이드를 함께 대조하는 흐름이 안전합니다.',
+  },
+};
+
+const PRODUCT_STRUCTURE_SELECTION_TERMS = [
+  [
+    '광고 관리자 목표', '캠페인 목표', '마케팅 목표', '인지도', '트래픽', '참여', '잠재 고객', '앱 홍보', '판매',
+    '앱 캠페인', '쇼핑 광고', '검색 캠페인', '디스플레이 캠페인', '검색광고', '쇼핑검색', '쇼핑블록',
+    '비즈보드', '카카오모먼트', '상품가이드', '상품 가이드',
+  ],
+  [
+    '이미지', '동영상', '슬라이드', '카루셀', '컬렉션', '형식', '노출 위치', '게재 위치', '지면',
+    '반응형 디스플레이', '이미지 확장', '제작 가이드', '소재',
+  ],
+  [
+    'advantage+', '어드밴티지', '카탈로그', 'catalog', '컬렉션 광고', 'collection ads', '메타 픽셀', 'conversions api',
+    '리드 양식', '상품DB', '상품 DB', 'DB URL', 'EP', '가격비교', '업종 제한', '심사 가이드',
+  ],
+];
+
+function sourceMatchesVendor(source: ReturnType<typeof buildVerifiedSources>[number], vendor?: VendorIntent) {
+  if (!vendor) return true;
+  if (hasExplicitOtherVendorSignal(source, vendor)) return false;
+  return source.sourceVendor === vendor || Boolean(source.sourceVendors?.includes(vendor));
+}
+
+function hasExplicitOtherVendorSignal(source: ReturnType<typeof buildVerifiedSources>[number], targetVendor: VendorIntent) {
+  const sourceLike = source as any;
+  const primaryIdentityText = `${sourceLike.originalTitle || ''} ${sourceLike.documentTitle || ''} ${sourceLike.documentUrl || ''} ${sourceLike.url || ''} ${sourceLike.documentId || ''}`.toLowerCase();
+  const text = primaryIdentityText.trim() || getSourceText(source);
+  const vendorTerms: Record<VendorIntent, RegExp> = {
+    META: /meta|facebook|페이스북|instagram|인스타그램|릴스|reels/,
+    KAKAO: /kakao|카카오|카카오톡|톡채널|비즈보드|모먼트/,
+    NAVER: /naver|네이버|검색광고|쇼핑검색|파워링크|브랜드검색/,
+    GOOGLE: /google|구글|youtube|유튜브|gdn|google ads|display/,
+  };
+  const hasTarget = vendorTerms[targetVendor].test(text);
+  const hasOther = (Object.keys(vendorTerms) as VendorIntent[])
+    .filter(vendor => vendor !== targetVendor)
+    .some(vendor => vendorTerms[vendor].test(text));
+
+  return hasOther && !hasTarget;
+}
+
+function selectProductStructureResponseSources(sources: ReturnType<typeof buildVerifiedSources>, intent?: QueryIntent) {
+  const targetVendor = intent?.vendors.length === 1 ? intent.vendors[0] : undefined;
+  const profile = targetVendor ? PRODUCT_STRUCTURE_PROFILES[targetVendor] : undefined;
   const labelledSources = sources.map((source, index) => ({
     ...source,
     label: `S${index + 1}`,
-  }));
+  })).filter(source => sourceMatchesVendor(source, targetVendor));
   const selected: ReturnType<typeof buildVerifiedSources>[number][] = [];
   const selectedKeys = new Set<string>();
 
@@ -353,83 +559,77 @@ function selectProductStructureResponseSources(sources: ReturnType<typeof buildV
     selected.push(source);
   };
 
-  addSource(pickTopicSource(labelledSources, [
-    '광고 관리자 목표', '캠페인 목표', '인지도', '트래픽', '참여', '잠재 고객', '앱 홍보', '판매', '마케팅 목표',
-  ]));
-  addSource(pickTopicSource(labelledSources, [
-    'advantage+ catalog', '어드밴티지+ catalog', '카탈로그', 'catalog', '컬렉션 광고', 'collection ads',
-  ]));
-  addSource(pickTopicSource(labelledSources, [
-    '노출 위치', '게재 위치', '이미지', '동영상', '슬라이드', '컬렉션', '형식',
-  ]));
-
-  if (selected.length === 0) {
-    return sources.filter(source => !isWeakProductStructureDisplaySource(source)).slice(0, 3);
+  if (profile) {
+    for (const section of profile.sections) {
+      for (const bullet of section.bullets) {
+        addSource(pickTopicSource(labelledSources, bullet.terms));
+      }
+    }
   }
 
-  return selected.slice(0, 3);
+  for (const terms of PRODUCT_STRUCTURE_SELECTION_TERMS) {
+    addSource(pickTopicSource(labelledSources, terms));
+  }
+
+  if (selected.length === 0) {
+    return sources
+      .filter(source => sourceMatchesVendor(source, targetVendor))
+      .filter(source => !isWeakProductStructureDisplaySource(source))
+      .slice(0, 3);
+  }
+
+  return selected.slice(0, 5);
 }
 
-function buildProductStructureAnswer(sources: ReturnType<typeof buildVerifiedSources>) {
+function buildProductStructureAnswer(sources: ReturnType<typeof buildVerifiedSources>, intent: QueryIntent) {
+  const targetVendor = intent.vendors.length === 1
+    ? intent.vendors[0]
+    : (sources.find(source => source.sourceVendor && source.sourceVendor !== 'UNKNOWN')?.sourceVendor as VendorIntent | undefined);
+  const profile = targetVendor ? PRODUCT_STRUCTURE_PROFILES[targetVendor] : undefined;
+  const vendorLabel = targetVendor ? (VENDOR_LABELS[targetVendor] || targetVendor) : '해당 매체';
   const labelledSources = sources.map((source, index) => ({
     ...source,
     label: `S${index + 1}`,
-  }));
+  })).filter(source => sourceMatchesVendor(source, targetVendor));
   const usedLabels = new Set<string>();
-  const lines: string[] = [
-    'Meta 광고는 상품명 하나를 고르는 방식이라기보다, 캠페인 목표와 광고 형식, 운영 기능을 조합해 설계하는 방식에 가깝습니다.',
-    '',
-  ];
+  const lines: string[] = [profile?.intro || `${vendorLabel} 광고 상품/유형은 현재 검증 출처에서 확인되는 범위 안에서만 정리합니다.`, ''];
+  let renderedBulletCount = 0;
 
-  const objectiveSource = pickTopicSource(labelledSources, [
-    '광고 관리자 목표', '캠페인 목표', '인지도', '트래픽', '참여', '잠재 고객', '앱 홍보', '판매', '마케팅 목표',
-  ]);
-  if (objectiveSource) {
-    usedLabels.add(objectiveSource.label);
-    lines.push('**1. 캠페인 목표부터 정하기**');
-    lines.push('- 인지도: 브랜드나 상품을 넓게 알리고 싶을 때');
-    lines.push('- 트래픽: 웹사이트, 앱, 프로필 방문을 늘리고 싶을 때');
-    lines.push('- 참여: 좋아요, 댓글, 메시지, 영상 조회 같은 반응을 늘리고 싶을 때');
-    lines.push('- 잠재 고객: 상담 신청, 견적 요청, 리드 수집이 필요할 때');
-    lines.push('- 앱 홍보: 앱 설치나 앱 내 행동을 늘리고 싶을 때');
-    lines.push('- 판매: 구매, 장바구니, 전환을 만들고 싶을 때');
+  for (const section of profile?.sections || []) {
+    const sectionLines: string[] = [];
+
+    for (const bullet of section.bullets) {
+      const source = pickTopicSource(labelledSources, bullet.terms);
+      if (!source) continue;
+      usedLabels.add(source.label);
+      sectionLines.push(`- ${bullet.text}`);
+    }
+
+    if (sectionLines.length === 0) continue;
+    lines.push(section.title);
+    lines.push(...sectionLines);
     lines.push('');
+    renderedBulletCount += sectionLines.length;
   }
 
-  const formatSource = pickTopicSource(labelledSources, [
-    '이미지', '동영상', '슬라이드', '컬렉션', '형식', '노출 위치', '마케팅 목표',
-  ]);
-  if (formatSource) {
-    usedLabels.add(formatSource.label);
-    lines.push('**2. 목표에 맞는 광고 형식과 노출 위치 확인하기**');
-    lines.push('- 이미지: 한 장의 이미지로 핵심 메시지를 빠르게 전달할 때');
-    lines.push('- 동영상: 사용 장면, 제품 설명, 브랜드 스토리를 보여줄 때');
-    lines.push('- 슬라이드: 여러 이미지나 영상을 순서대로 보여줄 때');
-    lines.push('- 컬렉션: 여러 상품을 한 번에 보여주고 구매 흐름으로 연결할 때');
-    lines.push('- 노출 위치: Facebook, Instagram 등 지면에 따라 적합한 형식과 사양을 함께 확인해야 합니다.');
+  if (renderedBulletCount === 0) {
+    lines.push('**확인된 범위**');
+    if (labelledSources.length === 0) {
+      lines.push(`- 현재 선택된 검증 출처에서는 ${vendorLabel} 광고 상품/유형 구조를 직접 확인할 수 있는 근거가 충분하지 않습니다.`);
+    } else {
+      for (const source of labelledSources.slice(0, 3)) {
+        usedLabels.add(source.label);
+        lines.push(`- ${compactEvidenceExcerpt(source.excerpt, source.title)} [${source.label}]`);
+      }
+    }
     lines.push('');
-  }
-
-  const catalogSource = pickTopicSource(labelledSources, [
-    'advantage+', '어드밴티지', '카탈로그', 'catalog', 'collection ads', '컬렉션 광고',
-  ]);
-  if (catalogSource) {
-    usedLabels.add(catalogSource.label);
-    lines.push('**3. 판매·카탈로그 운영 기능 확인하기**');
-    lines.push('- 컬렉션 광고: 커버 이미지나 영상 아래 여러 상품을 보여주고 구매 흐름으로 연결할 때');
-    lines.push('- Advantage+ 카탈로그 컬렉션 광고: 카탈로그 기반 상품 노출을 자동화해 운영할 때');
+    lines.push('**추가 확인 필요**');
+    lines.push(`- ${vendorLabel}의 전체 상품 목록, 사용 가능 지면, 계정별 노출 조건은 원문 또는 담당자 확인이 필요합니다.`);
+    lines.push('- 확인되지 않은 상품명을 다른 매체 기준으로 대응시키거나 추정하지 않는 것이 안전합니다.');
     lines.push('');
+  } else {
+    lines.push(profile?.summary || `${vendorLabel} 광고는 확인된 출처 범위 안에서 목표, 지면, 소재 형식, 운영 조건을 나누어 확인하는 흐름이 안전합니다.`);
   }
-
-  lines.push('**4. 상황별 빠른 선택 기준**');
-  lines.push('- 브랜드를 알리고 싶다면: 인지도');
-  lines.push('- 방문을 늘리고 싶다면: 트래픽');
-  lines.push('- 반응이나 메시지를 늘리고 싶다면: 참여');
-  lines.push('- 문의나 상담 신청을 받고 싶다면: 잠재 고객');
-  lines.push('- 앱 설치나 앱 내 행동을 늘리고 싶다면: 앱 홍보');
-  lines.push('- 구매나 전환을 만들고 싶다면: 판매');
-  lines.push('');
-  lines.push('정리하면, 먼저 브랜드 인지도, 방문 유도, 참여 확대, 잠재 고객 확보, 앱 홍보, 판매 전환 중 우선 목표를 정하고 그 목표에 맞는 형식과 운영 기능을 선택하면 됩니다. 실제 사용 가능 항목은 계정 설정이나 Meta 정책에 따라 달라질 수 있습니다.');
   lines.push('');
 
   const labelList = Array.from(usedLabels);
@@ -444,6 +644,61 @@ const VENDOR_LABELS: Record<string, string> = {
   KAKAO: '카카오',
   NAVER: '네이버',
 };
+
+function buildProductStructureSupplementQueries(intent: QueryIntent, originalMessage: string) {
+  if (!intent.topics.includes('product_structure') || intent.vendors.length !== 1) return [];
+
+  const vendor = intent.vendors[0];
+  const queryByVendor: Record<VendorIntent, string[]> = {
+    META: [
+      'Meta 캠페인 목표 광고 관리자 목표 광고 상품',
+      'Meta 컬렉션 광고 카탈로그 Advantage+ 노출 위치',
+    ],
+    GOOGLE: [
+      'Google Ads 앱 캠페인 광고 유형',
+      'Google Ads 검색 캠페인 반응형 디스플레이 리드 양식 쇼핑 광고',
+    ],
+    NAVER: [
+      '네이버 사이트검색광고 웹사이트 방문 목적 광고 상품',
+      '네이버 쇼핑검색광고 상품등록 절차 EP DB URL 쇼핑파트너센터',
+      '네이버 쇼핑블록 PC 모바일 쇼핑 지면 광고 상품',
+    ],
+    KAKAO: [
+      '카카오 비즈보드 디스플레이 광고 지면 광고 상품',
+      '카카오 상품가이드 카카오모먼트 브랜드이모티콘 제작 가이드 광고 상품',
+    ],
+  };
+
+  return Array.from(new Set([
+    originalMessage,
+    ...queryByVendor[vendor],
+  ].filter(Boolean)));
+}
+
+function mergeSearchResultsByIdentity(results: SearchResult[]) {
+  const byKey = new Map<string, SearchResult>();
+
+  for (const result of results) {
+    const key = [
+      result.documentId || result.metadata?.document_id || '',
+      result.chunk_id || result.metadata?.chunk_id || '',
+      result.documentTitle || '',
+    ].join(':');
+    const existing = byKey.get(key);
+    if (!existing) {
+      byKey.set(key, result);
+      continue;
+    }
+
+    const existingScore = existing.hybridScore || existing.score || existing.similarity || 0;
+    const nextScore = result.hybridScore || result.score || result.similarity || 0;
+    if (nextScore > existingScore) {
+      byKey.set(key, result);
+    }
+  }
+
+  return Array.from(byKey.values());
+}
 
 function decodeBasicHtmlEntities(text: string) {
   return text
@@ -781,11 +1036,15 @@ function scoreVerifiedSourceForIntent(
       'objective', 'objectives', 'advantage+', '어드밴티지', '카탈로그', 'catalog', '메타 픽셀', 'meta pixel', '픽셀 이벤트', '픽셀 코드',
       'conversions api', '노출 위치', '게재 위치', 'placements', '지면',
       '컬렉션', 'collection', '리드', 'lead',
+      '앱 캠페인', '쇼핑 광고', '검색 캠페인', '디스플레이 캠페인', '반응형 디스플레이', '리드 양식',
+      '검색광고', '쇼핑검색', '파워링크', '브랜드검색', '쇼핑블록', '디지털 옥외광고',
+      '비즈보드', '카카오모먼트', '브랜드이모티콘', '상품가이드', '상품 가이드',
+      '상품db', '상품 db', 'db url', 'ep', '가격비교', '업종 제한', '심사 가이드',
     ];
     const structureHitCount = structureTerms.filter(term => text.includes(term)).length;
     score += structureHitCount * 7;
 
-    const hasHighValueProductStructure = /캠페인 목표|광고 관리자 목표|마케팅 목표|objective|objectives|advantage\+|어드밴티지|카탈로그|catalog|메타\s*픽셀|meta\s*pixel|픽셀\s*(이벤트|코드|설치|전환)|conversions api/.test(text)
+    const hasHighValueProductStructure = /캠페인 목표|광고 관리자 목표|마케팅 목표|objective|objectives|advantage\+|어드밴티지|카탈로그|catalog|메타\s*픽셀|meta\s*pixel|픽셀\s*(이벤트|코드|설치|전환)|conversions api|앱\s*캠페인|쇼핑\s*광고|검색\s*캠페인|디스플레이\s*캠페인|반응형\s*디스플레이|리드\s*양식|검색광고|쇼핑검색|파워링크|브랜드검색|쇼핑블록|디지털\s*옥외광고|비즈보드|카카오모먼트|브랜드이모티콘|상품\s*가이드|상품가이드|상품\s*db|db\s*url|가격비교|업종\s*제한|심사\s*가이드/.test(text)
       || /인지도[\s\S]{0,80}트래픽[\s\S]{0,80}참여[\s\S]{0,80}잠재 고객[\s\S]{0,80}앱 홍보[\s\S]{0,80}판매/.test(text)
       || (/노출 위치|게재 위치|placements|지면/.test(text) && /캠페인 목표|광고 관리자 목표|마케팅 목표/.test(text));
 
@@ -795,7 +1054,7 @@ function scoreVerifiedSourceForIntent(
     if (/캠페인 목표|광고 관리자 목표|마케팅 목표|objective|objectives/.test(text)
       || /인지도[\s\S]{0,80}트래픽[\s\S]{0,80}참여[\s\S]{0,80}잠재 고객[\s\S]{0,80}앱 홍보[\s\S]{0,80}판매/.test(text)
     ) score += 30;
-    if (/advantage\+|어드밴티지|카탈로그|catalog|메타\s*픽셀|meta\s*pixel|픽셀\s*(이벤트|코드|설치|전환)|conversions api/.test(text)) score += 18;
+    if (/advantage\+|어드밴티지|카탈로그|catalog|메타\s*픽셀|meta\s*pixel|픽셀\s*(이벤트|코드|설치|전환)|conversions api|앱\s*캠페인|쇼핑\s*광고|검색\s*캠페인|디스플레이\s*캠페인|반응형\s*디스플레이|리드\s*양식|검색광고|쇼핑검색|파워링크|브랜드검색|쇼핑블록|디지털\s*옥외광고|비즈보드|카카오모먼트|브랜드이모티콘|상품\s*가이드|상품가이드|상품\s*db|db\s*url|가격비교|업종\s*제한|심사\s*가이드/.test(text)) score += 18;
     if (/광고 사양|광고 형식\/사양|제작 가이드|소재 제작|크기|파일 크기|최대 파일|지원 형식|비율|jpg|png|mp4|mov|1200x|1080x|1280x|텍스트 제한|marketplace의|facebook marketplace|facebook 검색 결과|instagram 탐색 홈|탐색 홈의|검색 결과의/.test(text)
       && !hasHighValueProductStructure
     ) {
@@ -843,6 +1102,12 @@ function normalizeSourceTitle(title: string, sourceVendor: string, content: stri
     || blob.includes('파워링크')
     || blob.includes('브랜드검색')
   ) {
+    if (/사이트검색광고|웹사이트 방문 목적/.test(blob)) {
+      return '네이버 광고 가이드: 사이트검색광고';
+    }
+    if (/쇼핑검색광고|쇼핑몰 상품형/.test(blob)) {
+      return '네이버 광고 가이드: 쇼핑검색광고 상품형';
+    }
     return appendOriginalTitle('네이버 광고 가이드', title);
   }
 
@@ -936,7 +1201,21 @@ export async function buildCompassAnswerResponse(
       message: '질문 조건을 분석하고 관련 출처를 검색합니다.',
       queryType: ragIntent.queryType,
     });
-    const searchResults = await searchWithCompassRAG(message, ragIntent.recommendedSourceLimit);
+    let searchResults = await searchWithCompassRAG(message, ragIntent.recommendedSourceLimit);
+    const supplementQueries = buildProductStructureSupplementQueries(ragIntent, message)
+      .filter(query => query !== message);
+
+    if (supplementQueries.length > 0) {
+      const supplementResults = (await Promise.all(
+        supplementQueries.map(query => searchWithCompassRAG(query, Math.max(8, ragIntent.recommendedSourceLimit)))
+      )).flat();
+      searchResults = mergeSearchResultsByIdentity([...searchResults, ...supplementResults]);
+      console.log('Compass product-structure adaptive retrieval completed', {
+        supplementQueryCount: supplementQueries.length,
+        supplementResultCount: supplementResults.length,
+        mergedResultCount: searchResults.length,
+      });
+    }
     console.log('Compass answer evidence selected', {
       resultCount: searchResults.length,
       queryType: ragIntent.queryType,
@@ -1088,10 +1367,17 @@ export async function buildCompassAnswerResponse(
     if (
       ragIntent.topics.includes('product_structure')
       && !ragIntent.isComparative
-      && ragIntent.vendors.includes('META')
+      && ragIntent.vendors.length === 1
     ) {
-      const productStructureSources = selectProductStructureResponseSources(sources);
-      const groundedAnswer = buildProductStructureAnswer(productStructureSources);
+      const productStructureSources = selectProductStructureResponseSources(sources, ragIntent);
+      const groundedAnswer = buildProductStructureAnswer(productStructureSources, ragIntent);
+      const usedSourceIndexes = Array.from(groundedAnswer.matchAll(/\[S(\d+)\]/g))
+        .map(match => Number(match[1]) - 1)
+        .filter(index => Number.isInteger(index) && index >= 0);
+      const usedSourceIndexSet = new Set(usedSourceIndexes);
+      const responseProductStructureSources = usedSourceIndexSet.size > 0
+        ? productStructureSources.filter((_, index) => usedSourceIndexSet.has(index))
+        : productStructureSources;
 
       emitPhase?.({ phase: 'answer-ready', message: '상품 구조 답변을 출처 기준으로 정리했습니다.' });
       return {
@@ -1099,7 +1385,7 @@ export async function buildCompassAnswerResponse(
           response: {
             message: groundedAnswer,
             content: groundedAnswer,
-            sources: productStructureSources,
+            sources: responseProductStructureSources,
             noDataFound: false,
             schema,
             showContactOption: false,
