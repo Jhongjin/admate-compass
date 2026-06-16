@@ -58,12 +58,14 @@ const VENDOR_TERMS: Record<VendorIntent, string[]> = {
 
 const OFFICIAL_HOSTS: Record<VendorIntent, string[]> = {
   META: [
+    'ko-kr.facebook.com',
     'facebook.com',
     'business.facebook.com',
     'developers.facebook.com',
     'help.instagram.com',
     'business.instagram.com',
     'metaforbusiness.com',
+    'transparency.meta.com',
   ],
   GOOGLE: [
     'support.google.com',
@@ -72,9 +74,11 @@ const OFFICIAL_HOSTS: Record<VendorIntent, string[]> = {
     'business.google.com',
   ],
   NAVER: [
+    'ads.naver.com',
     'searchad.naver.com',
     'saedu.naver.com',
     'help.naver.com',
+    'developers.naver.com',
     'business.naver.com',
     'shopping.naver.com',
   ],
