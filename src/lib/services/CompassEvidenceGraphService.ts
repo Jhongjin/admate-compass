@@ -406,23 +406,39 @@ export class CompassEvidenceGraphService {
       row.metadata?.title,
       row.metadata?.documentTitle,
     ].filter(Boolean).join(' ');
-    const text = this.normalize(`${row.claim_text} ${row.excerpt || ''} ${metadataSearchText}`);
+    const visibleText = this.normalize([
+      row.claim_text,
+      row.excerpt,
+      row.metadata?.title,
+      row.metadata?.documentTitle,
+      row.metadata?.source_title,
+    ].filter(Boolean).join(' '));
+    const text = this.normalize(`${visibleText} ${metadataSearchText}`);
+    const sourceKind = row.source_kind;
     const topicMatches = Array.isArray(row.metadata?.graphTopics)
       ? row.metadata.graphTopics
         .filter((topic: unknown) => this.preferredGraphTopics(intent).includes(String(topic)))
         .map((topic: unknown) => String(topic))
       : [];
+    const directTermMatches = terms.filter((term) => visibleText.includes(this.normalize(term)));
     const matchedTerms = Array.from(new Set([
-      ...terms.filter((term) => text.includes(this.normalize(term))),
+      ...directTermMatches,
       ...topicMatches,
     ]));
     if (matchedTerms.length === 0 && intent.vendors.length === 0) {
       return null;
     }
 
-    const sourceKind = row.source_kind;
     const resolvedCase = row.case_id ? resolvedCaseMap.get(row.case_id) : null;
     const vendor = this.normalizeVendor(row.vendor);
+    if (
+      sourceKind === 'official_doc'
+      && intent.topics.includes('product_structure')
+      && !this.isRelevantProductStructureOfficialGraph(visibleText, directTermMatches, intent)
+    ) {
+      return null;
+    }
+
     const queryIsOperational = this.isOperationalIssueQuery(terms);
     const claimTypeBoost = this.claimTypeBoost(row.claim_type, queryIsOperational, intent, sourceKind);
     const sourceKindBoost = sourceKind === 'official_doc'
@@ -493,6 +509,68 @@ export class CompassEvidenceGraphService {
       .slice(0, 24);
   }
 
+  private isRelevantProductStructureOfficialGraph(
+    visibleText: string,
+    directTermMatches: string[],
+    intent: QueryIntent
+  ): boolean {
+    const queryText = this.normalize([
+      ...intent.keywords,
+      ...intent.strictProductTerms,
+      ...intent.strictContextTerms,
+    ].join(' '));
+    const vendorTerms = new Set(intent.vendors.flatMap((vendor) => this.vendorTerms(vendor)).map((term) => this.normalize(term)));
+    const meaningfulMatches = directTermMatches
+      .map((term) => this.normalize(term))
+      .filter((term) => term.length >= 2)
+      .filter((term) => !vendorTerms.has(term))
+      .filter((term) => !['광고', 'ads', '가이드', '정책', '기준', '정보', '문서', '알려줘', '대해'].includes(term));
+    const hasProductSignal = this.hasProductStructureEvidenceSignal(visibleText);
+    const hasMeaningfulProductOverlap = meaningfulMatches.some((term) => (
+      /캠페인|목표|유형|형식|소재|노출|지면|게재|검색|디스플레이|쇼핑|앱|인스톨|설치|홍보|리드|비즈보드|상품|db|url|카탈로그|픽셀|전환|catalog|campaign|objective|format|placement|app|shopping|search|display|lead/.test(term)
+    ));
+
+    if (this.isOffAxisProductStructureEvidence(visibleText, queryText)) {
+      return false;
+    }
+
+    if (this.isLowValueProductStructureEvidence(visibleText, queryText) && !hasMeaningfulProductOverlap) {
+      return false;
+    }
+
+    return hasProductSignal || hasMeaningfulProductOverlap;
+  }
+
+  private hasProductStructureEvidenceSignal(text: string): boolean {
+    return /캠페인\s*(목표|유형)|광고\s*(형식|포맷|소재)|노출\s*(위치|지면)|게재\s*위치|검색\s*캠페인|디스플레이\s*캠페인|반응형\s*디스플레이|쇼핑\s*광고|앱\s*(캠페인|인스톨|설치|홍보|이벤트)|리드\s*양식|비즈보드|상품\s*db|db\s*url|쇼핑검색|쇼핑블록|상품가이드|상품\s*가이드|캠페인\s*목적|광고\s*관리자\s*목표|campaign|objective|ad\s*format|placement|catalog|app\s*(install|promotion)/.test(text);
+  }
+
+  private isLowValueProductStructureEvidence(text: string, queryText: string): boolean {
+    if (/세금|청구|결제/.test(text) && !/세금|청구|결제|tax|billing|payment/.test(queryText)) return true;
+    if (/woocommerce|google\s*태그|태그\s*설정|gtag|측정\s*태그/.test(text) && !/태그|측정|woocommerce|gtag/.test(queryText)) return true;
+    if (/라이브\s*관리|라이브커머스|쇼핑\s*라이브|shopping\s*live/.test(text) && !/라이브|live/.test(queryText)) return true;
+    if (/가입하기|회원\s*가입|계정\s*(생성|만들기)|비즈니스\s*계정/.test(text) && !/가입|계정|account/.test(queryText)) return true;
+    return false;
+  }
+
+  private isOffAxisProductStructureEvidence(text: string, queryText: string): boolean {
+    if (/데이터\s*분류|개인정보\s*보호/.test(text) && !/데이터|분류|개인정보|privacy|data|타겟|잠재고객|세그먼트|audience|segment/.test(queryText)) {
+      return true;
+    }
+    if (/오프라인\s*전환|향상된\s*전환|전환\s*(api|최적화|측정|추적|가져오기)|conversion\s*api|conversions?\s*api|enhanced\s*conversions|offline\s*conversion|capi/.test(text)
+      && !/전환|측정|conversion|capi|mmp|픽셀|sdk|오프라인|api/.test(queryText)
+    ) {
+      return true;
+    }
+    if (/라이브\s*관리|라이브커머스|쇼핑\s*라이브|shopping\s*live/.test(text) && !/라이브|live/.test(queryText)) {
+      return true;
+    }
+    if (/가입하기|회원\s*가입|계정\s*(생성|만들기)|비즈니스\s*계정/.test(text) && !/가입|계정|account/.test(queryText)) {
+      return true;
+    }
+    return false;
+  }
+
   private cleanTerm(term: string): string {
     return String(term || '')
       .replace(/[%,()]/g, ' ')
@@ -515,7 +593,7 @@ export class CompassEvidenceGraphService {
 
   private vendorTerms(vendor: VendorIntent): string[] {
     if (vendor === 'META') return ['meta', 'facebook', 'instagram', '페이스북', '인스타그램', '메타'];
-    if (vendor === 'KAKAO') return ['kakao', '카카오', '카카오톡', '비즈보드', '카카오모먼트', '카카오비즈니스', '상품가이드', '상품 가이드', '디스플레이'];
+    if (vendor === 'KAKAO') return ['kakao', '카카오', '카카오톡', '비즈보드', '카카오모먼트', '카카오비즈니스', '상품가이드', '상품 가이드'];
     if (vendor === 'NAVER') return ['naver', '네이버', '검색광고', '쇼핑검색'];
     return ['google', '구글', 'youtube', '유튜브', 'gdn'];
   }

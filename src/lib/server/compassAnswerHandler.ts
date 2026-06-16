@@ -440,15 +440,42 @@ function getProductStructureSourceKey(source: ReturnType<typeof buildVerifiedSou
   return `${source.documentId || ''}:${source.chunkId || source.id || ''}:${source.title || ''}:${source.excerpt?.slice(0, 80) || ''}`;
 }
 
+function getProductStructureVisibleSourceText(source: ReturnType<typeof buildVerifiedSources>[number]) {
+  return [
+    source.title,
+    source.originalTitle,
+    source.excerpt,
+  ].filter(Boolean).join(' ').toLowerCase();
+}
+
 function isGraphVerifiedSource(source: ReturnType<typeof buildVerifiedSources>[number]) {
+  const sourceLike = source as any;
+  const metadata = sourceLike.metadata || {};
   return (
     source.retrievalMethod === 'graph'
     || source.evidenceType === 'graph'
     || source.corpus === 'evidence_graph'
+    || metadata.retrievalMethod === 'graph'
+    || metadata.evidenceType === 'graph'
+    || metadata.corpus === 'evidence_graph'
+  );
+}
+
+function isOfficialGuideGraphSource(source: ReturnType<typeof buildVerifiedSources>[number]) {
+  const sourceLike = source as any;
+  const metadata = sourceLike.metadata || {};
+  return (
+    isGraphVerifiedSource(source)
+    && (
+      metadata.sourceKind === 'official_doc'
+      || metadata.source_kind === 'official_doc'
+    )
   );
 }
 
 function isWeakProductStructureDisplaySource(source: ReturnType<typeof buildVerifiedSources>[number]) {
+  if (isGraphVerifiedSource(source)) return false;
+
   const title = `${source.title || ''} ${source.originalTitle || ''}`.toLowerCase();
   const text = getSourceText(source);
   const hasCoreSignal = /광고 관리자 목표|캠페인 목표|마케팅 목표|인지도[\s\S]{0,80}트래픽[\s\S]{0,80}참여[\s\S]{0,80}잠재 고객[\s\S]{0,80}앱 홍보[\s\S]{0,80}판매|advantage\+ catalog|어드밴티지\+ catalog|컬렉션 광고|앱\s*캠페인|쇼핑\s*광고|반응형\s*디스플레이|리드\s*양식|검색광고|쇼핑검색|쇼핑블록|비즈보드|상품\s*가이드|상품가이드|상품\s*db|db\s*url|ep|쇼핑파트너센터|pc\s*쇼핑블록|mo\s*쇼핑블록|모바일\s*쇼핑|가격비교|디지털\s*옥외광고/.test(text);
@@ -464,6 +491,35 @@ function isWeakProductStructureDisplaySource(source: ReturnType<typeof buildVeri
   if (/self\.__next_f|static\/css|webpack|hydration/.test(text) && !hasCoreSignal) return true;
 
   return false;
+}
+
+function hasProductStructureGraphSourceSignal(source: ReturnType<typeof buildVerifiedSources>[number]) {
+  const text = getProductStructureVisibleSourceText(source);
+  return /캠페인\s*(목표|유형)|광고\s*(형식|포맷|소재)|노출\s*(위치|지면)|게재\s*위치|검색\s*캠페인|디스플레이\s*캠페인|반응형\s*디스플레이|쇼핑\s*광고|앱\s*(캠페인|인스톨|설치|홍보|이벤트)|리드\s*양식|비즈보드|상품\s*db|db\s*url|쇼핑검색|쇼핑블록|상품가이드|상품\s*가이드|캠페인\s*목적|광고\s*관리자\s*목표|campaign|objective|ad\s*format|placement|catalog|app\s*(install|promotion)/.test(text);
+}
+
+function isLowValueProductStructureGraphSource(source: ReturnType<typeof buildVerifiedSources>[number]) {
+  if (!isGraphVerifiedSource(source)) return false;
+  const text = getProductStructureVisibleSourceText(source);
+  if (/데이터\s*분류|개인정보\s*보호/.test(text)) return true;
+  if (/오프라인\s*전환|향상된\s*전환|전환\s*(api|최적화|측정|추적|가져오기)|conversion\s*api|conversions?\s*api|enhanced\s*conversions|offline\s*conversion|capi/.test(text)) return true;
+  if (/라이브\s*관리|라이브커머스|쇼핑\s*라이브|shopping\s*live/.test(text)) return true;
+  if (/가입하기|회원\s*가입|계정\s*(생성|만들기)|비즈니스\s*계정/.test(text)) return true;
+  return /세금|청구|결제|woocommerce|google\s*태그|태그\s*설정|gtag|측정\s*태그/.test(text)
+    && !hasProductStructureGraphSourceSignal(source);
+}
+
+function scoreProductStructureGraphSource(source: ReturnType<typeof buildVerifiedSources>[number], targetVendor?: VendorIntent) {
+  const text = getProductStructureVisibleSourceText(source);
+  let score = Number(source.hybridScore || source.score || 0);
+  if (isOfficialGuideGraphSource(source)) score += 0.65;
+  if (sourceMatchesVendor(source, targetVendor)) score += 0.3;
+  if (hasProductStructureGraphSourceSignal(source)) score += 1.05;
+  if (/캠페인\s*(목표|유형)|광고\s*(형식|포맷|소재)|노출\s*(위치|지면)|게재\s*위치|검색\s*캠페인|디스플레이\s*캠페인|반응형\s*디스플레이|쇼핑\s*광고|앱\s*(캠페인|인스톨|설치|홍보|이벤트)|리드\s*양식|비즈보드|상품\s*db|db\s*url|상품가이드|상품\s*가이드|campaign|objective|ad\s*format|placement/.test(text)) {
+    score += 0.45;
+  }
+  if (isLowValueProductStructureGraphSource(source)) score -= 1.4;
+  return score;
 }
 
 type ProductStructureBullet = {
@@ -642,6 +698,7 @@ const PRODUCT_STRUCTURE_SELECTION_TERMS = [
 
 function sourceMatchesVendor(source: ReturnType<typeof buildVerifiedSources>[number], vendor?: VendorIntent) {
   if (!vendor) return true;
+  if (explicitGraphSourceMatchesVendor(source, vendor)) return true;
   if (hasExplicitOtherVendorSignal(source, vendor)) return false;
   if (source.sourceVendor === vendor || Boolean(source.sourceVendors?.includes(vendor))) return true;
 
@@ -654,6 +711,25 @@ function sourceMatchesVendor(source: ReturnType<typeof buildVerifiedSources>[num
   };
 
   return vendorTerms[vendor].test(text);
+}
+
+function explicitGraphSourceMatchesVendor(source: ReturnType<typeof buildVerifiedSources>[number], vendor: VendorIntent) {
+  if (!isGraphVerifiedSource(source)) return false;
+  const sourceLike = source as any;
+  const metadata = sourceLike.metadata || {};
+  const metadataVendors = [
+    ...(Array.isArray(metadata.sourceVendors) ? metadata.sourceVendors : []),
+    ...(Array.isArray(metadata.source_vendors) ? metadata.source_vendors : []),
+  ];
+  const explicitVendors = Array.from(new Set([
+    sourceLike.sourceVendor,
+    ...(Array.isArray(sourceLike.sourceVendors) ? sourceLike.sourceVendors : []),
+    metadata.sourceVendor,
+    metadata.source_vendor,
+    ...metadataVendors,
+  ].filter(Boolean)));
+
+  return explicitVendors.includes(vendor);
 }
 
 function hasExplicitOtherVendorSignal(source: ReturnType<typeof buildVerifiedSources>[number], targetVendor: VendorIntent) {
@@ -713,13 +789,82 @@ function selectProductStructureResponseSources(sources: ReturnType<typeof buildV
   }
 
   if (selected.length === 0) {
-    return ensureProductStructureGraphSourceCoverage(sources
+    return capProductStructureGraphSources(ensureProductStructureGraphSourceCoverage(sources
       .filter(source => sourceMatchesVendor(source, targetVendor))
       .filter(source => !isWeakProductStructureDisplaySource(source))
-      .slice(0, 3), labelledSources, selectedKeys, targetVendor);
+      .slice(0, 3), labelledSources, selectedKeys, targetVendor), labelledSources, targetVendor, 5);
   }
 
-  return ensureProductStructureGraphSourceCoverage(selected, labelledSources, selectedKeys, targetVendor).slice(0, 5);
+  return capProductStructureGraphSources(
+    ensureProductStructureGraphSourceCoverage(selected, labelledSources, selectedKeys, targetVendor),
+    labelledSources,
+    targetVendor,
+    5
+  );
+}
+
+function capProductStructureGraphSources(
+  selected: ReturnType<typeof buildVerifiedSources>[number][],
+  labelledSources: Array<ReturnType<typeof buildVerifiedSources>[number] & { label: string }>,
+  targetVendor?: VendorIntent,
+  limit = 5
+) {
+  const head = selected.slice(0, limit);
+  const bestGraphSource = [...head, ...labelledSources]
+    .filter(source => isOfficialGuideGraphSource(source))
+    .filter(source => sourceMatchesVendor(source, targetVendor))
+    .filter(source => !isWeakProductStructureDisplaySource(source))
+    .filter(source => !isLowValueProductStructureGraphSource(source))
+    .sort((a, b) => scoreProductStructureGraphSource(b, targetVendor) - scoreProductStructureGraphSource(a, targetVendor))[0];
+
+  const bestGraphKey = bestGraphSource ? getProductStructureSourceKey(bestGraphSource) : null;
+  const next: ReturnType<typeof buildVerifiedSources>[number][] = [];
+  const selectedKeys = new Set<string>();
+
+  for (const source of head) {
+    if (isGraphVerifiedSource(source)) {
+      if (!bestGraphKey || getProductStructureSourceKey(source) !== bestGraphKey) {
+        continue;
+      }
+    }
+
+    const key = getProductStructureSourceKey(source);
+    if (selectedKeys.has(key)) continue;
+    selectedKeys.add(key);
+    next.push(source);
+  }
+
+  if (bestGraphSource && !selectedKeys.has(bestGraphKey || '')) {
+    const graphInsertIndex = next.length < limit
+      ? next.length
+      : next
+        .map((source, index) => ({ source, index }))
+        .filter(({ source }) => !isGraphVerifiedSource(source))
+        .sort((a, b) => Number(a.source.hybridScore || a.source.score || 0) - Number(b.source.hybridScore || b.source.score || 0))[0]?.index;
+
+    if (typeof graphInsertIndex === 'number') {
+      if (graphInsertIndex >= next.length) {
+        next.push(bestGraphSource);
+      } else {
+        selectedKeys.delete(getProductStructureSourceKey(next[graphInsertIndex]));
+        next[graphInsertIndex] = bestGraphSource;
+      }
+      selectedKeys.add(bestGraphKey || '');
+    }
+  }
+
+  for (const source of labelledSources) {
+    if (next.length >= limit) break;
+    if (isGraphVerifiedSource(source)) continue;
+    if (!sourceMatchesVendor(source, targetVendor)) continue;
+    if (isWeakProductStructureDisplaySource(source)) continue;
+    const key = getProductStructureSourceKey(source);
+    if (selectedKeys.has(key)) continue;
+    selectedKeys.add(key);
+    next.push(source);
+  }
+
+  return next.slice(0, limit);
 }
 
 function ensureProductStructureGraphSourceCoverage(
@@ -728,40 +873,72 @@ function ensureProductStructureGraphSourceCoverage(
   selectedKeys: Set<string>,
   targetVendor?: VendorIntent
 ) {
-  if (selected.some(source => isGraphVerifiedSource(source))) {
-    return selected;
-  }
+  const selectedOfficialGraphSource = selected.find(source => (
+    isOfficialGuideGraphSource(source)
+    && sourceMatchesVendor(source, targetVendor)
+    && !isLowValueProductStructureGraphSource(source)
+  ));
 
-  const graphSource = labelledSources
-    .filter(source => isGraphVerifiedSource(source))
+  const graphSourcePool = [...selected, ...labelledSources]
+    .filter(source => isOfficialGuideGraphSource(source))
     .filter(source => sourceMatchesVendor(source, targetVendor))
     .filter(source => !isWeakProductStructureDisplaySource(source))
-    .filter(source => !selectedKeys.has(getProductStructureSourceKey(source)))
-    .sort((a, b) => Number(b.hybridScore || b.score || 0) - Number(a.hybridScore || a.score || 0))[0];
+    .filter(source => !isLowValueProductStructureGraphSource(source));
+  const graphSource = graphSourcePool
+    .sort((a, b) => scoreProductStructureGraphSource(b, targetVendor) - scoreProductStructureGraphSource(a, targetVendor))[0];
 
   if (!graphSource) {
     return selected;
   }
 
-  const next = [...selected];
+  if (
+    selectedOfficialGraphSource
+    && scoreProductStructureGraphSource(selectedOfficialGraphSource, targetVendor)
+      >= scoreProductStructureGraphSource(graphSource, targetVendor) - 0.05
+  ) {
+    return selected;
+  }
+
+  const graphSourceKey = getProductStructureSourceKey(graphSource);
+  const graphAlreadyInFirstFive = selected
+    .slice(0, 5)
+    .some(source => getProductStructureSourceKey(source) === graphSourceKey);
+
+  if (graphAlreadyInFirstFive) {
+    return selected;
+  }
+
+  selectedKeys.add(graphSourceKey);
+
+  const next = selected.filter(source => getProductStructureSourceKey(source) !== graphSourceKey);
+  if (selectedOfficialGraphSource) {
+    const selectedOfficialGraphKey = getProductStructureSourceKey(selectedOfficialGraphSource);
+    const existingIndex = next.findIndex(source => getProductStructureSourceKey(source) === selectedOfficialGraphKey);
+    if (existingIndex >= 0) {
+      next[existingIndex] = graphSource;
+      return next;
+    }
+  }
+
   if (next.length < 5) {
-    selectedKeys.add(getProductStructureSourceKey(graphSource));
     next.push(graphSource);
     return next;
   }
 
-  const replacement = next
+  const head = next.slice(0, 5);
+  const tail = next.slice(5);
+  const replacement = head
     .map((source, index) => ({ source, index }))
     .filter(({ source }) => !isGraphVerifiedSource(source))
     .sort((a, b) => Number(a.source.hybridScore || a.source.score || 0) - Number(b.source.hybridScore || b.source.score || 0))[0];
 
   if (!replacement) {
-    return selected;
+    head[head.length - 1] = graphSource;
+    return [...head, ...tail];
   }
 
-  selectedKeys.add(getProductStructureSourceKey(graphSource));
-  next[replacement.index] = graphSource;
-  return next;
+  head[replacement.index] = graphSource;
+  return [...head, ...tail];
 }
 
 function buildProductStructureAnswer(sources: ReturnType<typeof buildVerifiedSources>, intent: QueryIntent) {
@@ -1223,7 +1400,8 @@ function buildVerifiedSources(searchResults: SearchResult[], intent?: QueryInten
       documentId: result.documentId || result.metadata?.documentId || result.metadata?.document_id,
       chunkId: result.chunk_id,
       sourceType: result.metadata?.type || 'document',
-      documentType: result.metadata?.documentType || 'policy'
+      documentType: result.metadata?.documentType || 'policy',
+      metadata: result.metadata || {}
     };
   });
 }
@@ -1384,12 +1562,30 @@ function getEvidenceDecision(result: SearchResult): string | undefined {
   return result.evidenceDecision || result.metadata?.evidenceDecision;
 }
 
+function isGraphSearchResult(result: SearchResult): boolean {
+  return (
+    result.retrievalMethod === 'graph'
+    || result.evidenceType === 'graph'
+    || result.corpus === 'evidence_graph'
+    || result.metadata?.retrievalMethod === 'graph'
+    || result.metadata?.evidenceType === 'graph'
+    || result.metadata?.corpus === 'evidence_graph'
+  );
+}
+
 function isVerifiedGrounding(result: SearchResult): boolean {
   const hasGrounding = typeof result.content === 'string' && result.content.trim().length > 0;
   const isFallback = result.retrievalMethod === 'fallback'
     || result.sourceQuality?.isFallback === true
     || result.metadata?.type === 'fallback';
   const evidenceDecision = getEvidenceDecision(result);
+  const isOfficialGuideGraphEvidence = isGraphSearchResult(result)
+    && (result.metadata?.sourceKind === 'official_doc' || result.metadata?.source_kind === 'official_doc');
+
+  if (hasGrounding && !isFallback && isOfficialGuideGraphEvidence) {
+    return true;
+  }
+
   return hasGrounding && !isFallback && evidenceDecision === 'verified';
 }
 
@@ -1464,12 +1660,6 @@ export async function buildCompassAnswerResponse(
         mergedResultCount: searchResults.length,
       });
     }
-    console.log('Compass answer evidence selected', {
-      resultCount: searchResults.length,
-      queryType: ragIntent.queryType,
-      recommendedSourceLimit: ragIntent.recommendedSourceLimit,
-      requestedVendors: ragIntent.vendors,
-    });
     const verifiedSearchResults = searchResults.filter(isVerifiedGrounding);
     const sourceDiagnostics = buildSourceDiagnostics(ragIntent, verifiedSearchResults);
     emitPhase?.({

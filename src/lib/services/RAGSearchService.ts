@@ -94,7 +94,7 @@ export interface ChatResponse {
 
 const VENDOR_TERM_SPECS: Array<[VendorIntent, string[]]> = [
   ['META', ['meta', '메타', 'facebook', '페이스북', 'instagram', '인스타그램', '릴스', 'reels']],
-  ['KAKAO', ['kakao', '카카오', '카카오톡', '톡채널', '비즈보드', '모먼트', '카카오모먼트', '카카오비즈니스', '상품가이드', '상품 가이드', '디스플레이']],
+  ['KAKAO', ['kakao', '카카오', '카카오톡', '톡채널', '비즈보드', '모먼트', '카카오모먼트', '카카오비즈니스', '상품가이드', '상품 가이드']],
   ['NAVER', ['naver', '네이버', '검색광고', '쇼핑검색', '파워링크', '브랜드검색']],
   ['GOOGLE', ['google', '구글', 'youtube', '유튜브', 'gdn', 'google ads', 'display']],
 ];
@@ -496,11 +496,20 @@ export class RAGSearchService {
           ...naverPriorityCandidates,
           ...graphCandidates
         ];
-        const rankedResults = this.ensureNaverProductStructureCoverage(this.mergeDedupeAndRankCandidates(
+        const rankedResults = this.ensureProductStructureGraphCandidateCoverage(
+          this.ensureNaverProductStructureCoverage(
+            this.mergeDedupeAndRankCandidates(
+              allCandidates,
+              limit,
+              intent
+            ),
+            allCandidates,
+            intent
+          ),
           allCandidates,
           limit,
           intent
-        ), allCandidates, intent);
+        );
 
         console.log(`✅ 상품 구조 검색 완료: ${rankedResults.length}개 결과 (fast keyword/anchor path)`);
         return rankedResults;
@@ -520,8 +529,14 @@ export class RAGSearchService {
       ]);
 
       console.log(`📊 Hybrid 후보 수집 결과: vector=${vectorCandidates.length}, keyword=${keywordCandidates.length}, vendorCoverage=${vendorCoverageCandidates.length}, productStructure=${productStructureCandidates.length}, graph=${graphCandidates.length}`);
-      const rankedResults = this.mergeDedupeAndRankCandidates(
-        [...vectorCandidates, ...keywordCandidates, ...vendorCoverageCandidates, ...productStructureCandidates, ...graphCandidates],
+      const allCandidates = [...vectorCandidates, ...keywordCandidates, ...vendorCoverageCandidates, ...productStructureCandidates, ...graphCandidates];
+      const rankedResults = this.ensureProductStructureGraphCandidateCoverage(
+        this.mergeDedupeAndRankCandidates(
+          allCandidates,
+          limit,
+          intent
+        ),
+        allCandidates,
         limit,
         intent
       );
@@ -588,6 +603,7 @@ export class RAGSearchService {
 
     const metadata = {
       ...(candidate.metadata || {}),
+      sourceKind: candidate.sourceKind,
       source_kind: candidate.sourceKind,
       graphPath: candidate.graphPath,
       evidenceGraphAssertionId: candidate.id,
@@ -598,7 +614,12 @@ export class RAGSearchService {
       matchedTerms: candidate.matchedTerms,
       documentId,
       sourceVendor,
+      source_vendor: sourceVendor,
       sourceVendors: sourceVendor === 'UNKNOWN' ? [] : [sourceVendor],
+      source_vendors: sourceVendor === 'UNKNOWN' ? [] : [sourceVendor],
+      retrievalMethod: 'graph',
+      evidenceType: 'graph',
+      corpus: 'evidence_graph',
     };
     const sourceText = this.buildCandidateSearchText(content, documentTitle, metadata);
     const lexicalOverlap = this.calculateLexicalOverlap(sourceText, intent.keywords);
@@ -664,6 +685,13 @@ export class RAGSearchService {
       topicExactMatch,
       policyTitleMatch,
     });
+    const graphEvidenceDecision = candidate.sourceKind === 'official_doc'
+      ? 'verified'
+      : evidenceDecision.decision;
+    const graphEvidenceDecisionReasons = Array.from(new Set([
+      ...evidenceDecision.reasons,
+      candidate.sourceKind === 'official_doc' ? 'official_doc_graph_evidence' : '',
+    ].filter(Boolean)));
     const rankReason = Array.from(new Set([
       'evidence_graph_sidecar',
       `source_kind_${candidate.sourceKind}`,
@@ -685,8 +713,8 @@ export class RAGSearchService {
       keywordScore,
       corpus: 'evidence_graph',
       evidenceType: 'graph',
-      evidenceDecision: evidenceDecision.decision,
-      evidenceDecisionReason: evidenceDecision.reasons,
+      evidenceDecision: graphEvidenceDecision,
+      evidenceDecisionReason: graphEvidenceDecisionReasons,
       rankReason,
       lexicalOverlap,
       vendorMatch,
@@ -706,8 +734,8 @@ export class RAGSearchService {
         retrievalMethod: 'graph',
         evidenceType: 'graph',
         corpus: 'evidence_graph',
-        evidenceDecision: evidenceDecision.decision,
-        evidenceDecisionReason: evidenceDecision.reasons,
+        evidenceDecision: graphEvidenceDecision,
+        evidenceDecisionReason: graphEvidenceDecisionReasons,
         score: hybridScore,
         hybridScore,
         keywordScore,
@@ -1602,16 +1630,20 @@ export class RAGSearchService {
     if (!intent.topics.includes('product_structure')) {
       return selected;
     }
-    if (selected.some(candidate => this.isEvidenceGraphCandidate(candidate))) {
+    if (selected.some(candidate => this.isTargetOfficialGraphCandidate(candidate, intent))) {
       return selected;
     }
 
     const graphCandidate = ranked
       .filter(candidate => this.isEvidenceGraphCandidate(candidate))
+      .filter(candidate => this.isOfficialGraphCandidate(candidate))
       .filter(candidate => !selected.some(selectedCandidate => this.isSameSearchCandidate(selectedCandidate, candidate)))
       .filter(candidate => (
         intent.vendors.length === 0
-        || intent.vendors.some(vendor => this.matchesVendorSlot(candidate, vendor))
+        || intent.vendors.some(vendor => (
+          this.matchesExplicitGraphVendor(candidate, vendor)
+          || this.matchesVendorSlot(candidate, vendor)
+        ))
       ))
       .sort((a, b) => this.scoreVendorSlotCandidate(b, intent) - this.scoreVendorSlotCandidate(a, intent))[0];
 
@@ -1647,6 +1679,179 @@ export class RAGSearchService {
     return next;
   }
 
+  private ensureProductStructureGraphCandidateCoverage(
+    selected: SearchResult[],
+    candidates: SearchResult[],
+    limit: number,
+    intent: QueryIntent
+  ): SearchResult[] {
+    if (!intent.topics.includes('product_structure')) {
+      return selected;
+    }
+
+    const selectedTargetGraphCandidate = selected.find(candidate => this.isTargetOfficialGraphCandidate(candidate, intent));
+    const officialGraphCandidates = [...selected, ...candidates]
+      .filter(candidate => this.isEvidenceGraphCandidate(candidate))
+      .filter(candidate => this.isOfficialGraphCandidate(candidate));
+    const vendorMatchedGraphCandidates = officialGraphCandidates
+      .filter(candidate => (
+        intent.vendors.length === 0
+        || intent.vendors.some(vendor => (
+          this.matchesExplicitGraphVendor(candidate, vendor)
+          || this.matchesVendorSlot(candidate, vendor)
+        ))
+      ))
+      .filter(candidate => !this.isLowValueProductStructureGraphCandidate(candidate, intent));
+    const graphCandidate = vendorMatchedGraphCandidates
+      .sort((a, b) => this.scoreProductStructureGraphCandidate(b, intent) - this.scoreProductStructureGraphCandidate(a, intent))[0];
+
+    if (!graphCandidate) {
+      return selected;
+    }
+
+    if (selected.some(candidate => this.isSameSearchCandidate(candidate, graphCandidate))) {
+      return selected;
+    }
+
+    if (
+      selectedTargetGraphCandidate
+      && this.scoreProductStructureGraphCandidate(selectedTargetGraphCandidate, intent)
+        >= this.scoreProductStructureGraphCandidate(graphCandidate, intent) - 0.05
+    ) {
+      return selected;
+    }
+
+    graphCandidate.rankReason = Array.from(new Set([
+      ...(graphCandidate.rankReason || []),
+      'official_guide_graph_rag_candidate_coverage',
+    ]));
+    graphCandidate.evidenceDecisionReason = Array.from(new Set([
+      ...(graphCandidate.evidenceDecisionReason || []),
+      'official_guide_graph_rag_candidate_coverage',
+    ]));
+    graphCandidate.metadata = {
+      ...(graphCandidate.metadata || {}),
+      coverageRole: 'official_guide_graph_rag_candidate_coverage',
+      rankReason: graphCandidate.rankReason,
+      evidenceDecisionReason: graphCandidate.evidenceDecisionReason,
+    };
+
+    const next = [...selected];
+    if (selectedTargetGraphCandidate) {
+      const existingIndex = next.findIndex(candidate => this.isSameSearchCandidate(candidate, selectedTargetGraphCandidate));
+      if (existingIndex >= 0) {
+        next[existingIndex] = graphCandidate;
+        return next
+          .slice(0, limit)
+          .sort((a, b) => this.scoreVendorSlotCandidate(b, intent) - this.scoreVendorSlotCandidate(a, intent));
+      }
+    }
+
+    if (next.length < limit) {
+      next.push(graphCandidate);
+      return next
+        .slice(0, limit)
+        .sort((a, b) => this.scoreVendorSlotCandidate(b, intent) - this.scoreVendorSlotCandidate(a, intent));
+    }
+
+    const replacement = next
+      .map((candidate, index) => ({ candidate, index }))
+      .filter(({ candidate }) => !this.isEvidenceGraphCandidate(candidate))
+      .sort((a, b) => this.scoreVendorSlotCandidate(a.candidate, intent) - this.scoreVendorSlotCandidate(b.candidate, intent))[0];
+
+    if (!replacement) {
+      return selected;
+    }
+
+    next[replacement.index] = graphCandidate;
+    return next
+      .slice(0, limit)
+      .sort((a, b) => this.scoreVendorSlotCandidate(b, intent) - this.scoreVendorSlotCandidate(a, intent));
+  }
+
+  private scoreProductStructureGraphCandidate(candidate: SearchResult, intent: QueryIntent): number {
+    const sourceText = this.normalizeSearchText(this.buildCandidateSearchText(
+      candidate.content,
+      candidate.documentTitle,
+      candidate.metadata
+    ));
+    const highValueMatch = this.hasHighValueProductStructureSignal(sourceText);
+    const productStructureMatch = this.hasProductStructureSignal(sourceText);
+    const queryTermHits = intent.keywords
+      .map(keyword => this.normalizeSearchText(keyword))
+      .filter(keyword => keyword.length >= 2 && sourceText.includes(keyword))
+      .length;
+
+    let score = this.scoreVendorSlotCandidate(candidate, intent);
+    if (highValueMatch) score += 0.85;
+    if (productStructureMatch) score += 0.35;
+    score += Math.min(0.72, queryTermHits * 0.12);
+
+    if (/캠페인\s*(목표|유형)|광고\s*(형식|포맷|소재)|노출\s*(위치|지면)|게재\s*위치|검색\s*캠페인|디스플레이\s*캠페인|반응형\s*디스플레이|쇼핑\s*광고|앱\s*(캠페인|인스톨|설치|홍보|이벤트)|리드\s*양식|비즈보드|상품\s*db|db\s*url|상품가이드|상품\s*가이드|campaign|objective|ad\s*format|placement/.test(sourceText)) {
+      score += 0.55;
+    }
+
+    const queryText = this.normalizeSearchText(intent.keywords.join(' '));
+    if (this.isOffAxisProductStructureGraphText(sourceText, queryText)) {
+      score -= 2.2;
+    } else if (/세금|청구|결제|woocommerce|google\s*태그|태그\s*설정|gtag|측정\s*태그/.test(sourceText) && !highValueMatch) {
+      score -= 1.05;
+    }
+
+    return score;
+  }
+
+  private isLowValueProductStructureGraphCandidate(candidate: SearchResult, intent: QueryIntent): boolean {
+    const sourceText = this.normalizeSearchText(this.buildCandidateSearchText(
+      candidate.content,
+      candidate.documentTitle,
+      candidate.metadata
+    ));
+    const hasRelevantStructureSignal = (
+      this.hasHighValueProductStructureSignal(sourceText)
+      || this.hasProductStructureSignal(sourceText)
+      || /캠페인\s*(목표|유형)|광고\s*(형식|포맷|소재)|노출\s*(위치|지면)|게재\s*위치|검색\s*캠페인|디스플레이\s*캠페인|반응형\s*디스플레이|쇼핑\s*광고|앱\s*(캠페인|인스톨|설치|홍보|이벤트)|리드\s*양식|비즈보드|상품\s*db|db\s*url|상품가이드|상품\s*가이드|campaign|objective|ad\s*format|placement/.test(sourceText)
+    );
+
+    const queryText = this.normalizeSearchText(intent.keywords.join(' '));
+    if (this.isOffAxisProductStructureGraphText(sourceText, queryText)) {
+      return true;
+    }
+
+    if (hasRelevantStructureSignal) return false;
+    if (/데이터\s*분류|개인정보\s*보호|세금|청구|결제|woocommerce|google\s*태그|태그\s*설정|gtag|측정\s*태그/.test(sourceText)
+      && !/데이터|개인정보|privacy|data|태그|측정|결제|청구|세금/.test(queryText)
+    ) {
+      return true;
+    }
+
+    return false;
+  }
+
+  private isOffAxisProductStructureGraphText(sourceText: string, queryText: string): boolean {
+    if (/데이터\s*분류|개인정보\s*보호/.test(sourceText) && !/데이터|분류|개인정보|privacy|data|타겟|잠재고객|세그먼트|audience|segment/.test(queryText)) {
+      return true;
+    }
+    if (/세금|청구|결제/.test(sourceText) && !/세금|청구|결제|tax|billing|payment/.test(queryText)) {
+      return true;
+    }
+    if (/woocommerce|google\s*태그|태그\s*설정|gtag|측정\s*태그/.test(sourceText) && !/태그|측정|woocommerce|gtag/.test(queryText)) {
+      return true;
+    }
+    if (/라이브\s*관리|라이브커머스|쇼핑\s*라이브|shopping\s*live/.test(sourceText) && !/라이브|live/.test(queryText)) {
+      return true;
+    }
+    if (/가입하기|회원\s*가입|계정\s*(생성|만들기)|비즈니스\s*계정/.test(sourceText) && !/가입|계정|account/.test(queryText)) {
+      return true;
+    }
+    if (/오프라인\s*전환|향상된\s*전환|전환\s*(api|최적화|측정|추적|가져오기)|conversion\s*api|conversions?\s*api|enhanced\s*conversions|offline\s*conversion|capi/.test(sourceText)
+      && !/전환|측정|conversion|capi|mmp|픽셀|sdk|오프라인|api/.test(queryText)
+    ) {
+      return true;
+    }
+    return false;
+  }
+
   private isSameSearchCandidate(a: SearchResult, b: SearchResult): boolean {
     const aChunkId = a.metadata?.chunk_id || a.metadata?.chunkId;
     const bChunkId = b.metadata?.chunk_id || b.metadata?.chunkId;
@@ -1665,6 +1870,45 @@ export class RAGSearchService {
       || candidate.metadata?.evidenceType === 'graph'
       || candidate.metadata?.corpus === 'evidence_graph'
     );
+  }
+
+  private isOfficialGraphCandidate(candidate: SearchResult): boolean {
+    return (
+      this.isEvidenceGraphCandidate(candidate)
+      && (
+        candidate.metadata?.source_kind === 'official_doc'
+        || candidate.metadata?.sourceKind === 'official_doc'
+      )
+    );
+  }
+
+  private isTargetOfficialGraphCandidate(candidate: SearchResult, intent: QueryIntent): boolean {
+    if (!this.isOfficialGraphCandidate(candidate)) return false;
+    return (
+      intent.vendors.length === 0
+      || intent.vendors.some(vendor => (
+        this.matchesExplicitGraphVendor(candidate, vendor)
+        || this.matchesVendorSlot(candidate, vendor)
+      ))
+    );
+  }
+
+  private matchesExplicitGraphVendor(candidate: SearchResult, vendor: VendorIntent): boolean {
+    if (!this.isEvidenceGraphCandidate(candidate)) return false;
+    const metadata = candidate.metadata || {};
+    const metadataVendors = [
+      ...(Array.isArray(metadata.sourceVendors) ? metadata.sourceVendors : []),
+      ...(Array.isArray(metadata.source_vendors) ? metadata.source_vendors : []),
+    ];
+    const explicitVendors = Array.from(new Set([
+      candidate.sourceVendor,
+      ...(candidate.sourceVendors || []),
+      metadata.sourceVendor,
+      metadata.source_vendor,
+      ...metadataVendors,
+    ].filter(Boolean)));
+
+    return explicitVendors.includes(vendor);
   }
 
   private filterLowValuePolicySources(selected: SearchResult[], intent: QueryIntent): SearchResult[] {
@@ -1769,6 +2013,7 @@ export class RAGSearchService {
   private matchesVendorSlot(candidate: SearchResult, vendor: VendorIntent): boolean {
     if (candidate.sourceQuality.isFallback) return false;
     if (!candidate.sourceQuality.hasExcerpt) return false;
+    if (this.matchesExplicitGraphVendor(candidate, vendor)) return true;
     if (this.hasExplicitOtherVendorSignal(candidate, vendor)) return false;
     if (candidate.sourceVendor === vendor) return true;
     return Boolean(candidate.sourceVendors?.includes(vendor));
@@ -1838,9 +2083,32 @@ export class RAGSearchService {
     const eventPromoPenalty = policyJudgmentIntent && this.isEventPromoCandidate(candidate) ? 0.65 : 0;
     const strictContextPenalty = policyJudgmentIntent && this.isStrictContextMismatchCandidate(candidate, intent) ? 1.1 : 0;
     const unknownTitlePenalty = candidate.documentTitle === 'Unknown' ? 0.12 : 0;
+    const productStructureGraphPenalty = (
+      intent.topics.includes('product_structure')
+      && this.isEvidenceGraphCandidate(candidate)
+      && this.isOfficialGraphCandidate(candidate)
+    )
+      ? this.productStructureGraphRelevancePenalty(candidate, intent)
+      : 0;
 
     return baseScore + graphBoost + verifiedBoost + policyEvidenceBoost + policyTitleBoost + reviewPolicyTitleBoost
-      - weakPenalty - termsPenalty - creativeGuidePenalty - supportDocPenalty - eventPromoPenalty - strictContextPenalty - unknownTitlePenalty;
+      - weakPenalty - termsPenalty - creativeGuidePenalty - supportDocPenalty - eventPromoPenalty - strictContextPenalty - unknownTitlePenalty - productStructureGraphPenalty;
+  }
+
+  private productStructureGraphRelevancePenalty(candidate: SearchResult, intent: QueryIntent): number {
+    const sourceText = this.normalizeSearchText(this.buildCandidateSearchText(
+      candidate.content,
+      candidate.documentTitle,
+      candidate.metadata
+    ));
+    const queryText = this.normalizeSearchText(intent.keywords.join(' '));
+    if (this.isOffAxisProductStructureGraphText(sourceText, queryText)) {
+      return 1.65;
+    }
+    if (!this.hasHighValueProductStructureSignal(sourceText) && !this.hasProductStructureSignal(sourceText)) {
+      return 0.65;
+    }
+    return 0;
   }
 
   private findVendorSlotReplacementIndex(selected: SearchResult[], intent: QueryIntent): number {
@@ -2048,10 +2316,24 @@ export class RAGSearchService {
     if (intent.topics.includes('product_structure')) {
       const sourceText = this.buildCandidateSearchText(candidate.content, candidate.documentTitle, candidate.metadata);
       const normalizedContent = this.normalizeSearchText(candidate.content);
-      if (!this.hasHighValueProductStructureSignal(sourceText)) {
+      const isGraphEvidence = this.isEvidenceGraphCandidate(candidate);
+      const graphMatchesVendor = (
+        intent.vendors.length === 0
+        || intent.vendors.some(vendor => (
+          this.matchesExplicitGraphVendor(candidate, vendor)
+          || this.matchesVendorSlot(candidate, vendor)
+        ))
+      );
+      const graphHasProductSignal = (
+        isGraphEvidence
+        && graphMatchesVendor
+        && this.hasProductStructureSignal(sourceText)
+      );
+
+      if (!graphHasProductSignal && !this.hasHighValueProductStructureSignal(sourceText)) {
         return false;
       }
-      if (normalizedContent.length < 140) {
+      if (!graphHasProductSignal && normalizedContent.length < 140) {
         return false;
       }
     }
