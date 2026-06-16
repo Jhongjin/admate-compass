@@ -117,7 +117,9 @@ const TOPIC_TERM_SPECS: Array<[TopicIntent, string[]]> = [
     '캠페인 목표', '광고 관리자 목표', 'objective', 'objectives', 'advantage+', '어드밴티지',
     '카탈로그', 'catalog', '메타 픽셀', 'meta pixel', '픽셀 이벤트', '픽셀 코드', '전환', 'conversion', 'conversions api',
     '노출 위치', '게재 위치', 'placements', '지면',
-    '앱 캠페인', '쇼핑 광고', '검색 캠페인', '디스플레이 캠페인', '반응형 디스플레이', '리드 양식',
+    '앱 캠페인', '앱 인스톨', '앱 설치', '앱 홍보', 'app install', 'app promotion',
+    '쇼핑 광고', '검색 캠페인', '디스플레이 캠페인', '반응형 디스플레이', '리드 양식',
+    '동영상 광고', '동영상 조회', 'video ads',
     '검색광고', '쇼핑검색', '파워링크', '브랜드검색', '쇼핑블록', '디지털 옥외광고',
     '비즈보드', '카카오모먼트', '브랜드이모티콘', '상품가이드', '상품 가이드'
   ]],
@@ -126,6 +128,8 @@ const TOPIC_TERM_SPECS: Array<[TopicIntent, string[]]> = [
 const PRODUCT_STRUCTURE_KEYWORD_EXPANSIONS = [
   '캠페인 목표', '광고 관리자 목표', '인지도', '트래픽', '참여', '잠재 고객', '앱 홍보', '판매',
   '앱 캠페인', '쇼핑 광고', '검색 캠페인', '디스플레이 캠페인', '반응형 디스플레이 광고', '리드 양식',
+  '앱 인스톨', '앱 설치', '앱 홍보', 'App Install', 'App Promotion', 'MMP', 'SDK', '앱 이벤트',
+  '동영상 광고', '동영상 조회', '동영상 소재', 'Video Ads',
   '검색광고', '쇼핑검색', '파워링크', '브랜드검색', '쇼핑블록', '디지털 옥외광고',
   '비즈보드', '카카오모먼트', '브랜드이모티콘', '상품가이드', '상품 가이드',
   '광고 형식', '소재 형식', '노출 위치', '게재 위치', '지면',
@@ -143,9 +147,21 @@ const PRODUCT_STRUCTURE_ANCHOR_TERMS = [
   'Meta Pixel',
   'Conversions API',
   '앱 캠페인',
+  '앱 인스톨',
+  '앱 설치',
+  '앱 홍보',
+  'App Install',
+  'App Promotion',
+  'MMP',
+  'SDK',
+  '앱 이벤트',
   '쇼핑 광고',
   '반응형 디스플레이 광고',
   '리드 양식',
+  '동영상 광고',
+  '동영상 조회',
+  '동영상 소재',
+  'Video Ads',
   '검색광고',
   '쇼핑검색',
   '쇼핑블록',
@@ -163,7 +179,7 @@ const PRODUCT_STRUCTURE_ANCHOR_TERMS = [
 ];
 
 function isProductStructureQueryText(text: string): boolean {
-  const hasOverviewSignal = /광고\s*상품|광고상품|광고\s*종류|광고종류|광고\s*유형|광고유형|상품\s*구조|광고\s*구조|캠페인\s*목표|광고\s*관리자\s*목표|objective|advantage\+|어드밴티지|카탈로그|catalog|메타\s*픽셀|meta\s*pixel|픽셀\s*(이벤트|코드|설치|전환)|전환|conversion|노출\s*위치|게재\s*위치|placements|지면|앱\s*캠페인|쇼핑\s*광고|검색\s*캠페인|디스플레이\s*캠페인|반응형\s*디스플레이|리드\s*양식|검색광고|쇼핑검색|파워링크|브랜드검색|쇼핑블록|디지털\s*옥외광고|비즈보드|카카오모먼트|브랜드이모티콘|상품\s*가이드|상품가이드/.test(text);
+  const hasOverviewSignal = /광고\s*상품|광고상품|광고\s*종류|광고종류|광고\s*유형|광고유형|상품\s*구조|광고\s*구조|캠페인\s*목표|광고\s*관리자\s*목표|objective|advantage\+|어드밴티지|카탈로그|catalog|메타\s*픽셀|meta\s*pixel|픽셀\s*(이벤트|코드|설치|전환)|전환|conversion|노출\s*위치|게재\s*위치|placements|지면|앱\s*캠페인|앱\s*인스톨|앱\s*설치|앱\s*홍보|app\s*install|app\s*promotion|쇼핑\s*광고|검색\s*캠페인|디스플레이\s*캠페인|반응형\s*디스플레이|리드\s*양식|동영상\s*광고|동영상\s*조회|검색광고|쇼핑검색|파워링크|브랜드검색|쇼핑블록|디지털\s*옥외광고|비즈보드|카카오모먼트|브랜드이모티콘|상품\s*가이드|상품가이드/.test(text);
   if (hasOverviewSignal) return true;
 
   const hasVendorOrAdContext = detectCompassVendors(text).length > 0 || AD_POLICY_TERMS.some(term => text.includes(term));
@@ -317,7 +333,7 @@ function extractCompassKeywords(query: string): string[] {
 export function classifyCompassRagQuery(query: string): QueryIntent {
   const normalized = normalizeCompassSearchText(query);
   const vendors = detectCompassVendors(normalized);
-  const topics = detectCompassTopics(normalized);
+  const detectedTopics = detectCompassTopics(normalized);
   const strictProductTerms = detectStrictProductTerms(normalized);
   const strictContextTerms = detectStrictContextTerms(normalized);
   const adPolicyTerms = matchCompassTerms(normalized, AD_POLICY_TERMS);
@@ -327,6 +343,9 @@ export function classifyCompassRagQuery(query: string): QueryIntent {
   const requiresVendorCoverage = vendors.length >= 2 || (isComparative && vendors.length > 0);
   const isSpecificProductGuidance = isSpecificProductGuidanceQueryText(normalized);
   const isProductStructureOverview = isProductStructureOverviewQueryText(normalized);
+  const topics = (isSpecificProductGuidance || isProductStructureOverview) && !detectedTopics.includes('product_structure')
+    ? [...detectedTopics, 'product_structure' as TopicIntent]
+    : detectedTopics;
   const queryType: QueryType = vendors.length >= 2
     ? 'multi-vendor'
     : vendors.length === 1

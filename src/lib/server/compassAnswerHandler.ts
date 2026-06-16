@@ -267,16 +267,13 @@ function normalizeGeneratedAnswer(answer: string, sources: ReturnType<typeof bui
     return buildExtractiveAnswer(sources);
   }
 
-  if (sources.length > 0) {
-    normalized = normalized.replace(/현재 제공된 문서에서는 확인되지 않습니다[.\s]*/g, '');
-  }
-
   const meaningfulText = normalized
     .replace(/\[출처:\s*S\d+(?:,\s*S\d+)*\]/g, '')
     .replace(/근거:\s*\[?S\d+\]?(?:,\s*\[?S\d+\]?)*\.?/g, '')
     .trim();
+  const explicitInsufficientEvidence = /현재\s*제공된\s*문서에서는\s*확인되지\s*않습니다|제공된\s*(근거|문서).*확인되지\s*않습니다|충분히\s*확인되지\s*않습니다/.test(normalized);
 
-  if (sources.length > 0 && meaningfulText.length < 80) {
+  if (sources.length > 0 && meaningfulText.length < 80 && !explicitInsufficientEvidence) {
     return buildExtractiveAnswer(sources);
   }
 
