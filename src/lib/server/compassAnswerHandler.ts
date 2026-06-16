@@ -733,9 +733,10 @@ function buildProductStructureAnswer(sources: ReturnType<typeof buildVerifiedSou
 
     for (const bullet of section.bullets) {
       const source = pickTopicSource(labelledSources, bullet.terms);
-      if (!source) continue;
-      usedLabels.add(source.label);
-      sectionLines.push(`- ${bullet.text}`);
+      if (source) {
+        usedLabels.add(source.label);
+      }
+      sectionLines.push(`- ${bullet.text}${source ? ` [${source.label}]` : ''}`);
     }
 
     if (sectionLines.length === 0) continue;
