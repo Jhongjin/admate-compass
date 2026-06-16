@@ -93,7 +93,7 @@ export interface ChatResponse {
 }
 
 const VENDOR_TERM_SPECS: Array<[VendorIntent, string[]]> = [
-  ['META', ['meta', 'facebook', '페이스북', 'instagram', '인스타그램', '릴스', 'reels']],
+  ['META', ['meta', '메타', 'facebook', '페이스북', 'instagram', '인스타그램', '릴스', 'reels']],
   ['KAKAO', ['kakao', '카카오', '카카오톡', '톡채널', '비즈보드', '모먼트']],
   ['NAVER', ['naver', '네이버', '검색광고', '쇼핑검색', '파워링크', '브랜드검색']],
   ['GOOGLE', ['google', '구글', 'youtube', '유튜브', 'gdn', 'google ads', 'display']],
@@ -209,7 +209,7 @@ function stripKoreanParticle(word: string): string {
 
 const AD_POLICY_TERMS = [
   '광고', '정책', '심사', '소재', '매체', '캠페인', '타겟', '집행', '승인', '반려',
-  'meta', 'facebook', '페이스북', 'instagram', '인스타그램', 'kakao', '카카오',
+  'meta', '메타', 'facebook', '페이스북', 'instagram', '인스타그램', 'kakao', '카카오',
   'naver', '네이버', 'google', '구글', 'youtube', '유튜브', 'gdn'
 ];
 
@@ -1739,6 +1739,14 @@ export class RAGSearchService {
 
   private scoreVendorSlotCandidate(candidate: SearchResult, intent: QueryIntent): number {
     const baseScore = candidate.hybridScore || candidate.score || candidate.similarity || 0;
+    const graphBoost = (
+      candidate.retrievalMethod === 'graph'
+      || candidate.evidenceType === 'graph'
+      || candidate.corpus === 'evidence_graph'
+      || candidate.metadata?.retrievalMethod === 'graph'
+      || candidate.metadata?.evidenceType === 'graph'
+      || candidate.metadata?.corpus === 'evidence_graph'
+    ) ? 0.2 : 0;
     const policyJudgmentIntent = this.hasPolicyJudgmentIntent(intent);
     const policyEvidenceBoost = policyJudgmentIntent && candidate.topicExactMatch ? 0.22 : 0;
     const policyTitleBoost = policyJudgmentIntent && candidate.policyTitleMatch ? 0.16 : 0;
@@ -1752,7 +1760,7 @@ export class RAGSearchService {
     const strictContextPenalty = policyJudgmentIntent && this.isStrictContextMismatchCandidate(candidate, intent) ? 1.1 : 0;
     const unknownTitlePenalty = candidate.documentTitle === 'Unknown' ? 0.12 : 0;
 
-    return baseScore + verifiedBoost + policyEvidenceBoost + policyTitleBoost + reviewPolicyTitleBoost
+    return baseScore + graphBoost + verifiedBoost + policyEvidenceBoost + policyTitleBoost + reviewPolicyTitleBoost
       - weakPenalty - termsPenalty - creativeGuidePenalty - supportDocPenalty - eventPromoPenalty - strictContextPenalty - unknownTitlePenalty;
   }
 
@@ -1808,9 +1816,23 @@ export class RAGSearchService {
     const topicMatch = existing.topicMatch === true || incoming.topicMatch === true;
     const topicExactMatch = existing.topicExactMatch === true || incoming.topicExactMatch === true;
     const policyTitleMatch = existing.policyTitleMatch === true || incoming.policyTitleMatch === true;
-    const retrievalMethod: RetrievalMethod = vectorScore > 0 && keywordScore > 0 ? 'hybrid' : existing.retrievalMethod;
-    const evidenceType: EvidenceType = retrievalMethod === 'hybrid' ? 'hybrid' : existing.evidenceType || incoming.evidenceType || retrievalMethod;
-    const corpus = existing.corpus || incoming.corpus || 'ollama_document_chunks';
+    const existingIsGraph = existing.retrievalMethod === 'graph' || existing.evidenceType === 'graph' || existing.corpus === 'evidence_graph' || existing.metadata?.retrievalMethod === 'graph' || existing.metadata?.evidenceType === 'graph' || existing.metadata?.corpus === 'evidence_graph';
+    const incomingIsGraph = incoming.retrievalMethod === 'graph' || incoming.evidenceType === 'graph' || incoming.corpus === 'evidence_graph' || incoming.metadata?.retrievalMethod === 'graph' || incoming.metadata?.evidenceType === 'graph' || incoming.metadata?.corpus === 'evidence_graph';
+    const hasGraphEvidence = existingIsGraph || incomingIsGraph;
+    const retrievalMethods = Array.from(new Set([
+      existing.retrievalMethod,
+      incoming.retrievalMethod,
+      ...(Array.isArray(existing.metadata?.retrievalMethods) ? existing.metadata.retrievalMethods : []),
+      ...(Array.isArray(incoming.metadata?.retrievalMethods) ? incoming.metadata.retrievalMethods : []),
+    ].filter(Boolean)));
+    const graphCarrier = existingIsGraph ? existing : incomingIsGraph ? incoming : undefined;
+    const retrievalMethod: RetrievalMethod = hasGraphEvidence
+      ? 'graph'
+      : vectorScore > 0 && keywordScore > 0 ? 'hybrid' : existing.retrievalMethod;
+    const evidenceType: EvidenceType = hasGraphEvidence
+      ? 'graph'
+      : retrievalMethod === 'hybrid' ? 'hybrid' : existing.evidenceType || incoming.evidenceType || retrievalMethod;
+    const corpus: RetrievalCorpus = hasGraphEvidence ? 'evidence_graph' : existing.corpus || incoming.corpus || 'ollama_document_chunks';
     const originalMetaSeed =
       this.isOriginalMetaSeedCandidate({
         chunkId: existing.id,
@@ -1860,6 +1882,7 @@ export class RAGSearchService {
       ...(existing.rankReason || []),
       ...(incoming.rankReason || []),
       ...productStructureAdjustment.reasons,
+      hasGraphEvidence ? 'merged_with_evidence_graph' : '',
       retrievalMethod === 'hybrid' ? 'matched_vector_and_keyword' : '',
     ].filter(Boolean)));
 
@@ -1879,12 +1902,17 @@ export class RAGSearchService {
       topicMatch,
       topicExactMatch,
       policyTitleMatch,
-      documentUrl: existing.documentUrl || incoming.documentUrl,
+      documentId: graphCarrier?.documentId || existing.documentId || incoming.documentId,
+      documentTitle: graphCarrier?.documentTitle || existing.documentTitle || incoming.documentTitle,
+      documentUrl: graphCarrier?.documentUrl || existing.documentUrl || incoming.documentUrl,
+      corpus,
       sourceQuality: {
         ...existing.sourceQuality,
+        ...(graphCarrier?.sourceQuality || {}),
         hasUrl: existing.sourceQuality.hasUrl || incoming.sourceQuality.hasUrl,
         qualityScore: sourceQualityScore,
         warnings,
+        corpus,
         lexicalOverlap,
         vendorMatch,
         vendorMismatch,
@@ -1893,8 +1921,12 @@ export class RAGSearchService {
       },
       metadata: {
         ...(existing.metadata || {}),
+        ...(incoming.metadata || {}),
         retrievalMethod,
+        retrievalMethods,
         evidenceType,
+        corpus,
+        graphMerged: hasGraphEvidence,
         score: hybridScore,
         hybridScore,
         vectorScore,
@@ -2012,7 +2044,7 @@ export class RAGSearchService {
   private detectVendors(text: string): VendorIntent[] {
     const vendors: VendorIntent[] = [];
     const specs: Array<[VendorIntent, string[]]> = [
-      ['META', ['meta', 'facebook', '페이스북', 'instagram', '인스타그램', '릴스', 'reels']],
+      ['META', ['meta', '메타', 'facebook', '페이스북', 'instagram', '인스타그램', '릴스', 'reels']],
       ['KAKAO', ['kakao', '카카오', '카카오톡', '톡채널', '비즈보드', '모먼트']],
       ['NAVER', ['naver', '네이버', '검색광고', '쇼핑검색', '파워링크', '브랜드검색']],
       ['GOOGLE', ['google', '구글', 'youtube', '유튜브', 'gdn', 'google ads', 'display']],
@@ -2418,7 +2450,7 @@ export class RAGSearchService {
   private hasHighValueProductStructureSignal(text: string): boolean {
     const hasObjectiveList = /인지도[\s\S]{0,80}트래픽[\s\S]{0,80}참여[\s\S]{0,80}잠재 고객[\s\S]{0,80}앱 홍보[\s\S]{0,80}판매/.test(text);
     return hasObjectiveList
-      || /캠페인 목표|광고 관리자 목표|마케팅 목표|objective|objectives|advantage\+|어드밴티지|어드밴티지\+|카탈로그|catalog|메타\s*픽셀|meta\s*pixel|픽셀\s*(이벤트|코드|설치|전환)|conversions api|앱\s*캠페인|쇼핑\s*광고|검색\s*캠페인|디스플레이\s*캠페인|반응형\s*디스플레이|리드\s*양식|검색광고|쇼핑검색|파워링크|브랜드검색|쇼핑블록|상품\s*db|db\s*url|가격비교|디지털\s*옥외광고|비즈보드|카카오모먼트|브랜드이모티콘|상품\s*가이드|상품가이드/.test(text)
+      || /캠페인 목표|광고 관리자 목표|마케팅 목표|objective|objectives|advantage\+|어드밴티지|어드밴티지\+|카탈로그|catalog|메타\s*픽셀|meta\s*pixel|픽셀\s*(이벤트|코드|설치|전환)|conversions api|앱\s*(캠페인|인스톨|설치|홍보|이벤트)|app\s*(install|promotion)|sdk|mmp|사전\s*등록|쇼핑\s*광고|검색\s*캠페인|디스플레이\s*캠페인|반응형\s*디스플레이|리드\s*양식|검색광고|쇼핑검색|파워링크|브랜드검색|쇼핑블록|상품\s*db|db\s*url|가격비교|디지털\s*옥외광고|비즈보드|카카오모먼트|브랜드이모티콘|상품\s*가이드|상품가이드/.test(text)
       || /노출 위치|게재 위치|placements|지면/.test(text) && /캠페인 목표|광고 관리자 목표|마케팅 목표/.test(text);
   }
 
@@ -2661,7 +2693,7 @@ export class RAGSearchService {
   private hasVendorProductTerm(candidate: SearchResult, vendor: VendorIntent): boolean {
     const text = this.buildCandidateSearchText(candidate.content, candidate.documentTitle, candidate.metadata);
     const terms: Record<VendorIntent, string[]> = {
-      META: ['meta', 'facebook', '페이스북', 'instagram', '인스타그램', '릴스', 'reels'],
+      META: ['meta', '메타', 'facebook', '페이스북', 'instagram', '인스타그램', '릴스', 'reels'],
       KAKAO: ['kakao', '카카오', '카카오톡', '톡채널', '비즈보드', '모먼트'],
       NAVER: ['naver', '네이버', '검색광고', '쇼핑검색', '파워링크', '브랜드검색'],
       GOOGLE: ['google', '구글', 'youtube', '유튜브', 'gdn', 'google ads', 'display'],
@@ -2692,7 +2724,8 @@ export class RAGSearchService {
         '캠페인 목표', '광고 관리자 목표', '마케팅 목표',
         'objective', 'objectives', 'advantage+', '어드밴티지', '카탈로그', 'catalog', '메타 픽셀', 'meta pixel', '픽셀 이벤트', '픽셀 코드',
         'conversions api', '노출 위치', '게재 위치', 'placements', '지면',
-        '앱 캠페인', '쇼핑 광고', '쇼핑 캠페인', 'shopping ads', 'shopping campaigns', '검색 캠페인', '디스플레이 캠페인', '반응형 디스플레이', '리드 양식',
+        '앱 캠페인', '앱 인스톨', '앱 설치', '앱 홍보', '앱 이벤트', 'app install', 'app promotion', 'sdk', 'mmp', '사전 등록',
+        '쇼핑 광고', '쇼핑 캠페인', 'shopping ads', 'shopping campaigns', '검색 캠페인', '디스플레이 캠페인', '반응형 디스플레이', '리드 양식',
         '검색광고', '사이트검색광고', '쇼핑검색', '쇼핑검색광고', '쇼핑몰 상품형', '상품등록', '상품 등록', '상품db', '상품 db', 'db url', 'ep', '쇼핑파트너센터', '쇼핑블록', 'pc 쇼핑블록', 'mo 쇼핑블록', '모바일 쇼핑', '디지털 옥외광고',
         '비즈보드', '디스플레이 광고', '카카오모먼트', '브랜드이모티콘', '상품가이드', '상품 가이드', '제작 가이드',
       ],
@@ -2894,6 +2927,7 @@ export class RAGSearchService {
       + input.lexicalOverlap * 0.16
       + input.sourceQualityScore * 0.14;
     const methodBoost = input.retrievalMethod === 'hybrid' ? 0.08 : 0;
+    const graphBoost = input.retrievalMethod === 'graph' || input.corpus === 'evidence_graph' ? 0.12 : 0;
     const documentChunkBoost = input.corpus === 'document_chunks'
       && input.keywordScore >= 0.35
       && input.lexicalOverlap >= 0.18
@@ -2927,6 +2961,7 @@ export class RAGSearchService {
     return Math.max(0, Math.min(1,
       baseScore
       + methodBoost
+      + graphBoost
       + documentChunkBoost
       + vendorBoost
       + topicBoost
