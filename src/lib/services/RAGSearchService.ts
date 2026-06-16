@@ -1514,7 +1514,12 @@ export class RAGSearchService {
     intent: QueryIntent
   ): SearchResult[] {
     if (!intent.requiresVendorCoverage || intent.vendors.length <= 1) {
-      return this.filterLowValuePolicySources(selected, intent)
+      return this.ensureGraphEvidenceCoverage(
+        this.filterLowValuePolicySources(selected, intent),
+        ranked,
+        limit,
+        intent
+      )
         .slice(0, limit)
         .sort((a, b) => (b.hybridScore || 0) - (a.hybridScore || 0));
     }
@@ -1583,9 +1588,83 @@ export class RAGSearchService {
     const balanced = this.balanceVendorSlots(next, ranked, limit, intent);
     const policyFiltered = this.filterLowValuePolicySources(balanced, intent);
 
-    return policyFiltered
+    return this.ensureGraphEvidenceCoverage(policyFiltered, ranked, limit, intent)
       .slice(0, limit)
       .sort((a, b) => (b.hybridScore || 0) - (a.hybridScore || 0));
+  }
+
+  private ensureGraphEvidenceCoverage(
+    selected: SearchResult[],
+    ranked: SearchResult[],
+    limit: number,
+    intent: QueryIntent
+  ): SearchResult[] {
+    if (!intent.topics.includes('product_structure')) {
+      return selected;
+    }
+    if (selected.some(candidate => this.isEvidenceGraphCandidate(candidate))) {
+      return selected;
+    }
+
+    const graphCandidate = ranked
+      .filter(candidate => this.isEvidenceGraphCandidate(candidate))
+      .filter(candidate => !selected.some(selectedCandidate => this.isSameSearchCandidate(selectedCandidate, candidate)))
+      .filter(candidate => (
+        intent.vendors.length === 0
+        || intent.vendors.some(vendor => this.matchesVendorSlot(candidate, vendor))
+      ))
+      .sort((a, b) => this.scoreVendorSlotCandidate(b, intent) - this.scoreVendorSlotCandidate(a, intent))[0];
+
+    if (!graphCandidate) {
+      return selected;
+    }
+
+    graphCandidate.rankReason = Array.from(new Set([
+      ...(graphCandidate.rankReason || []),
+      'official_guide_graph_rag_coverage',
+    ]));
+    graphCandidate.metadata = {
+      ...(graphCandidate.metadata || {}),
+      coverageRole: 'official_guide_graph_rag_coverage',
+    };
+
+    const next = [...selected];
+    if (next.length < limit) {
+      next.push(graphCandidate);
+      return next;
+    }
+
+    const replacement = next
+      .map((candidate, index) => ({ candidate, index }))
+      .filter(({ candidate }) => !this.isEvidenceGraphCandidate(candidate))
+      .sort((a, b) => this.scoreVendorSlotCandidate(a.candidate, intent) - this.scoreVendorSlotCandidate(b.candidate, intent))[0];
+
+    if (!replacement) {
+      return selected;
+    }
+
+    next[replacement.index] = graphCandidate;
+    return next;
+  }
+
+  private isSameSearchCandidate(a: SearchResult, b: SearchResult): boolean {
+    const aChunkId = a.metadata?.chunk_id || a.metadata?.chunkId;
+    const bChunkId = b.metadata?.chunk_id || b.metadata?.chunkId;
+    if (a.id && b.id && a.id === b.id) return true;
+    if (aChunkId && bChunkId && aChunkId === bChunkId) return true;
+    if (a.documentId && b.documentId && a.documentId === b.documentId && a.chunkIndex === b.chunkIndex) return true;
+    return false;
+  }
+
+  private isEvidenceGraphCandidate(candidate: SearchResult): boolean {
+    return (
+      candidate.retrievalMethod === 'graph'
+      || candidate.evidenceType === 'graph'
+      || candidate.corpus === 'evidence_graph'
+      || candidate.metadata?.retrievalMethod === 'graph'
+      || candidate.metadata?.evidenceType === 'graph'
+      || candidate.metadata?.corpus === 'evidence_graph'
+    );
   }
 
   private filterLowValuePolicySources(selected: SearchResult[], intent: QueryIntent): SearchResult[] {

@@ -440,6 +440,14 @@ function getProductStructureSourceKey(source: ReturnType<typeof buildVerifiedSou
   return `${source.documentId || ''}:${source.chunkId || source.id || ''}:${source.title || ''}:${source.excerpt?.slice(0, 80) || ''}`;
 }
 
+function isGraphVerifiedSource(source: ReturnType<typeof buildVerifiedSources>[number]) {
+  return (
+    source.retrievalMethod === 'graph'
+    || source.evidenceType === 'graph'
+    || source.corpus === 'evidence_graph'
+  );
+}
+
 function isWeakProductStructureDisplaySource(source: ReturnType<typeof buildVerifiedSources>[number]) {
   const title = `${source.title || ''} ${source.originalTitle || ''}`.toLowerCase();
   const text = getSourceText(source);
@@ -705,13 +713,55 @@ function selectProductStructureResponseSources(sources: ReturnType<typeof buildV
   }
 
   if (selected.length === 0) {
-    return sources
+    return ensureProductStructureGraphSourceCoverage(sources
       .filter(source => sourceMatchesVendor(source, targetVendor))
       .filter(source => !isWeakProductStructureDisplaySource(source))
-      .slice(0, 3);
+      .slice(0, 3), labelledSources, selectedKeys, targetVendor);
   }
 
-  return selected.slice(0, 5);
+  return ensureProductStructureGraphSourceCoverage(selected, labelledSources, selectedKeys, targetVendor).slice(0, 5);
+}
+
+function ensureProductStructureGraphSourceCoverage(
+  selected: ReturnType<typeof buildVerifiedSources>[number][],
+  labelledSources: Array<ReturnType<typeof buildVerifiedSources>[number] & { label: string }>,
+  selectedKeys: Set<string>,
+  targetVendor?: VendorIntent
+) {
+  if (selected.some(source => isGraphVerifiedSource(source))) {
+    return selected;
+  }
+
+  const graphSource = labelledSources
+    .filter(source => isGraphVerifiedSource(source))
+    .filter(source => sourceMatchesVendor(source, targetVendor))
+    .filter(source => !isWeakProductStructureDisplaySource(source))
+    .filter(source => !selectedKeys.has(getProductStructureSourceKey(source)))
+    .sort((a, b) => Number(b.hybridScore || b.score || 0) - Number(a.hybridScore || a.score || 0))[0];
+
+  if (!graphSource) {
+    return selected;
+  }
+
+  const next = [...selected];
+  if (next.length < 5) {
+    selectedKeys.add(getProductStructureSourceKey(graphSource));
+    next.push(graphSource);
+    return next;
+  }
+
+  const replacement = next
+    .map((source, index) => ({ source, index }))
+    .filter(({ source }) => !isGraphVerifiedSource(source))
+    .sort((a, b) => Number(a.source.hybridScore || a.source.score || 0) - Number(b.source.hybridScore || b.source.score || 0))[0];
+
+  if (!replacement) {
+    return selected;
+  }
+
+  selectedKeys.add(getProductStructureSourceKey(graphSource));
+  next[replacement.index] = graphSource;
+  return next;
 }
 
 function buildProductStructureAnswer(sources: ReturnType<typeof buildVerifiedSources>, intent: QueryIntent) {
@@ -958,7 +1008,11 @@ function pickTopicSources(
       hits: terms.filter(term => getSourceText(source).includes(term.toLowerCase())).length,
     }))
     .filter(candidate => candidate.hits > 0)
-    .sort((a, b) => b.hits - a.hits || a.index - b.index)
+    .sort((a, b) => (
+      b.hits - a.hits
+      || Number(isGraphVerifiedSource(b.source)) - Number(isGraphVerifiedSource(a.source))
+      || a.index - b.index
+    ))
     .map(candidate => candidate.source);
 }
 
@@ -1125,6 +1179,10 @@ function buildVerifiedSources(searchResults: SearchResult[], intent?: QueryInten
       result.metadata?.source_vendor,
       result.metadata?.productStructureAnchor,
       Array.isArray(result.metadata?.topic_labels) ? result.metadata.topic_labels.join(' ') : result.metadata?.topic_labels,
+      Array.isArray(result.metadata?.graphTopics) ? result.metadata.graphTopics.join(' ') : result.metadata?.graphTopics,
+      result.metadata?.graphPath,
+      result.metadata?.claimType,
+      result.metadata?.sourceKind,
       Array.isArray(result.rankReason) ? result.rankReason.join(' ') : '',
       Array.isArray(result.evidenceDecisionReason) ? result.evidenceDecisionReason.join(' ') : '',
     ].filter(Boolean).join(' ').slice(0, 6000).toLowerCase();
@@ -1185,7 +1243,7 @@ function scoreVerifiedSourceForIntent(
   }
   if (source.vendorMismatch) score -= 35;
   if (source.evidenceDecision === 'verified') score += 20;
-  if (source.retrievalMethod === 'graph' || source.evidenceType === 'graph' || source.corpus === 'evidence_graph') score += 18;
+  if (isGraphVerifiedSource(source)) score += intent.topics.includes('product_structure') ? 55 : 18;
   if (source.retrievalMethod === 'hybrid') score += 8;
   if (source.retrievalMethod === 'keyword') score += 6;
   if (source.url) score += 4;
@@ -1544,9 +1602,12 @@ export async function buildCompassAnswerResponse(
       const usedSourceIndexes = Array.from(groundedAnswer.matchAll(/\[S(\d+)\]/g))
         .map(match => Number(match[1]) - 1)
         .filter(index => Number.isInteger(index) && index >= 0);
-      const usedSourceIndexSet = new Set(usedSourceIndexes);
-      const responseProductStructureSources = usedSourceIndexSet.size > 0
-        ? productStructureSources.filter((_, index) => usedSourceIndexSet.has(index))
+      const graphSourceIndexes = productStructureSources
+        .map((source, index) => isGraphVerifiedSource(source) ? index : -1)
+        .filter(index => index >= 0);
+      const responseSourceIndexSet = new Set([...usedSourceIndexes, ...graphSourceIndexes]);
+      const responseProductStructureSources = responseSourceIndexSet.size > 0
+        ? productStructureSources.filter((_, index) => responseSourceIndexSet.has(index))
         : productStructureSources;
 
       emitPhase?.({ phase: 'answer-ready', message: '상품 구조 답변을 출처 기준으로 정리했습니다.' });
