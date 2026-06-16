@@ -114,7 +114,16 @@ export function isCompassOfficialGuideGraphIndexingEnabled(): boolean {
     ?? process.env.COMPASS_EVIDENCE_GRAPH_ENABLED
     ?? '';
 
-  return ENABLED_VALUES.has(String(raw).trim().toLowerCase());
+  return ENABLED_VALUES.has(normalizeGraphFlagValue(raw));
+}
+
+function normalizeGraphFlagValue(raw: unknown): string {
+  return String(raw ?? '')
+    .replace(/\\r|\\n|\r|\n/g, '')
+    .trim()
+    .replace(/^['"]+|['"]+$/g, '')
+    .trim()
+    .toLowerCase();
 }
 
 export class CompassOfficialGuideGraphIndexer {

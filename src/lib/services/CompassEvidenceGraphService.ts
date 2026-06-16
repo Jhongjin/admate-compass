@@ -74,7 +74,16 @@ const OPERATIONAL_ISSUE_TERMS = [
 ];
 
 export function isCompassEvidenceGraphEnabled(): boolean {
-  return GRAPH_ENABLED_VALUES.has(String(process.env.COMPASS_EVIDENCE_GRAPH_ENABLED || '').trim().toLowerCase());
+  return GRAPH_ENABLED_VALUES.has(normalizeGraphFlagValue(process.env.COMPASS_EVIDENCE_GRAPH_ENABLED));
+}
+
+function normalizeGraphFlagValue(raw: unknown): string {
+  return String(raw ?? '')
+    .replace(/\\r|\\n|\r|\n/g, '')
+    .trim()
+    .replace(/^['"]+|['"]+$/g, '')
+    .trim()
+    .toLowerCase();
 }
 
 export class CompassEvidenceGraphService {
