@@ -281,6 +281,113 @@ function normalizeGeneratedAnswer(answer: string, sources: ReturnType<typeof bui
   return normalized.trim() || buildExtractiveAnswer(sources);
 }
 
+function buildNaverShoppingDataOperationalAnswer(
+  message: string,
+  sources: ReturnType<typeof buildVerifiedSources>,
+) {
+  const normalizedQuestion = message.toLowerCase().replace(/\s+/g, ' ');
+  const isNaverShoppingDataQuestion = /네이버|naver/.test(normalizedQuestion)
+    && /쇼핑검색|쇼핑\s*검색|쇼핑몰\s*상품형|쇼핑\s*광고/.test(normalizedQuestion)
+    && /db\s*url|상품\s*db|상품db|상품\s*등록|상품등록|ep|연동|등록|상품\s*정보/.test(normalizedQuestion);
+
+  if (!isNaverShoppingDataQuestion) return null;
+
+  const sourceText = (source: ReturnType<typeof buildVerifiedSources>[number]) => [
+    source.title,
+    source.originalTitle,
+    source.excerpt,
+    source.matchText,
+  ].filter(Boolean).join(' ').toLowerCase();
+
+  const sourceExcerptText = (source: ReturnType<typeof buildVerifiedSources>[number]) => [
+    source.title,
+    source.originalTitle,
+    source.excerpt,
+  ].filter(Boolean).join(' ').toLowerCase();
+
+  const findSourceIndex = (pattern: RegExp) => sources.findIndex(source => (
+    sourceMatchesVendor(source, 'NAVER') && pattern.test(sourceText(source))
+  ));
+  const label = (index: number) => `[S${index + 1}]`;
+  const used = new Set<number>();
+  const addUsed = (index: number) => {
+    if (index >= 0) used.add(index);
+  };
+
+  const epIndex = findSourceIndex(/ep|상품\s*가격|가격대|배송비|쿠폰|할인|대표이미지|색상\s*필터|혜택\s*필터/);
+  const partnerIndex = findSourceIndex(/쇼핑파트너|쇼핑몰.*연동|네이버\s*쇼핑에\s*등록|전환\s*추적|고객센터/);
+  const standardIndex = findSourceIndex(/광고등록기준|통신판매업|인[\-/]?허가|신고|모조품|상표권|등록\s*기준/);
+
+  if (epIndex < 0 && partnerIndex < 0) return null;
+
+  const sections: string[] = [
+    '네이버 쇼핑검색광고의 상품등록/DB URL 점검은 “DB URL 하나만 입력하면 되는지”보다, EP와 쇼핑몰 상품 데이터가 노출 조건에 맞게 들어가 있는지 확인하는 흐름으로 보는 편이 안전합니다.',
+    '',
+  ];
+
+  if (epIndex >= 0) {
+    const epSource = sources[epIndex];
+    const text = sourceText(epSource);
+    addUsed(epIndex);
+    sections.push('1. **EP 상품 데이터부터 확인하기**');
+    sections.push('');
+    if (/상품\s*가격|가격대/.test(text)) {
+      sections.push(`- 가격대 필터는 EP에 등록된 상품 가격 기준으로 노출될 수 있으므로, 상품 가격이 정확히 등록되어 있는지 확인해야 합니다 ${label(epIndex)}.`);
+    }
+    if (/배송비|쿠폰|할인|혜택/.test(text)) {
+      sections.push(`- 무료배송, 카드할인 같은 혜택 필터는 EP에 등록한 배송비, 쿠폰, 할인 정보 기준으로 노출될 수 있으므로 혜택 정보도 함께 점검해야 합니다 ${label(epIndex)}.`);
+    }
+    if (/대표이미지|색상\s*필터|색상/.test(text)) {
+      sections.push(`- 색상 필터는 상품 대표이미지를 기반으로 자동 추출될 수 있으므로, 상품 색상이 명확하게 보이는 대표이미지를 등록하는 것이 좋습니다 ${label(epIndex)}.`);
+    }
+    sections.push('');
+  }
+
+  if (partnerIndex >= 0) {
+    const partnerSource = sources[partnerIndex];
+    const text = sourceText(partnerSource);
+    addUsed(partnerIndex);
+    sections.push('2. **쇼핑몰 연동과 등록 경로 확인하기**');
+    sections.push('');
+    if (/쇼핑몰.*연동|네이버\s*쇼핑에\s*등록|전환\s*추적/.test(text)) {
+      sections.push(`- 쇼핑 집행에는 네이버 쇼핑에 등록된 쇼핑몰과의 연동, 쇼핑몰 전환 추적 설치가 필요한 경우가 있으므로 사전에 연동 상태를 확인해야 합니다 ${label(partnerIndex)}.`);
+    }
+    if (/쇼핑파트너|고객센터/.test(text)) {
+      sections.push(`- 구매나 세부 운영 문의는 네이버 쇼핑파트너 고객센터 경로에서 확인하는 것이 안전합니다 ${label(partnerIndex)}.`);
+    }
+    sections.push('');
+  }
+
+  if (standardIndex >= 0) {
+    addUsed(standardIndex);
+    sections.push('3. **광고 등록 기준도 함께 확인하기**');
+    sections.push('');
+    sections.push(`- 상품 데이터가 맞더라도 업종별 인허가, 신고, 모조품, 상표권 침해 같은 등록 기준에 걸리면 광고가 제한될 수 있으므로 상품 등록 전 광고등록기준을 함께 확인해야 합니다 ${label(standardIndex)}.`);
+    sections.push('');
+  }
+
+  const hasExactDbUrlEvidence = sources.some(source => (
+    sourceMatchesVendor(source, 'NAVER')
+    && /db\s*url/i.test(sourceExcerptText(source))
+    && /입력|형식|필드|url/.test(sourceExcerptText(source))
+  ));
+
+  if (/db\s*url/.test(normalizedQuestion) && !hasExactDbUrlEvidence) {
+    sections.push('4. **현재 근거에서 확인되지 않는 항목**');
+    sections.push('');
+    sections.push('- 제공된 근거에서는 DB URL의 정확한 입력 형식, 필드명, 제출 화면까지는 확인되지 않습니다. 이 부분은 쇼핑파트너센터 또는 담당자에게 추가 확인하는 것이 좋습니다.');
+    sections.push('');
+  }
+
+  const evidenceLabels = Array.from(used)
+    .sort((a, b) => a - b)
+    .map(index => label(index));
+
+  sections.push(`근거: ${evidenceLabels.join(', ')}`);
+
+  return sections.join('\n');
+}
+
 function buildExtractiveAnswer(sources: ReturnType<typeof buildVerifiedSources>) {
   const lines = sources.slice(0, 5).map((source, index) => {
     const excerpt = String(source.excerpt || '')
@@ -1497,7 +1604,8 @@ export async function buildCompassAnswerResponse(
     // 처리 시간 계산
     const processingTime = Date.now() - startTime;
     console.log('Compass answer runtime request completed', { processingTime });
-    const normalizedAnswer = normalizeGeneratedAnswer(answerResult.answer, sources);
+    const operationalAnswer = buildNaverShoppingDataOperationalAnswer(message, sources);
+    const normalizedAnswer = normalizeGeneratedAnswer(operationalAnswer || answerResult.answer, sources);
     const responseAnswer = coverageNotice ? `${coverageNotice}\n\n${normalizedAnswer}` : normalizedAnswer;
     
     emitPhase?.({ phase: 'answer-ready', message: '답변 정리가 완료되었습니다.' });
