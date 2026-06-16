@@ -16,6 +16,8 @@ export interface CompassGroundingSource {
   evidenceDecisionReason?: string[];
   rankReason?: string[];
   retrievalMethod?: string;
+  sourceKind?: string;
+  graphPath?: string;
   documentId?: string;
   documentTitle?: string;
   documentUrl?: string;
@@ -175,6 +177,8 @@ function buildSystemPrompt(): string {
     'Weak, rejected, fallback, placeholder, or empty evidence is outside the answer boundary.',
     'If verified evidence is missing, say the provided documents do not confirm it.',
     'Never change or guess an evidence block vendor. If a block says vendor: KAKAO, do not describe it as NAVER or Google.',
+    'Treat official_doc evidence as official policy/guide evidence. Treat resolved_case evidence only as an approved operational case, not as a universal policy.',
+    'If official_doc and resolved_case evidence conflict, the official_doc evidence wins and the resolved case must be framed as a past handling example.',
     'For comparison questions, separate the answer by vendor first, then summarize the practical difference.',
     'Cite the supporting evidence labels like [S1] or [S2] inside the answer.',
     'Do not reuse a canned overview when the user asks about a specific ad product, setup step, creative guide, registration rule, or policy check.',
@@ -198,11 +202,17 @@ function buildEvidencePrompt(message: string, searchResults: CompassGroundingSou
       const vendor = result.sourceVendor || result.metadata?.sourceVendor || 'UNKNOWN';
       const decision = result.evidenceDecision || result.metadata?.evidenceDecision || 'weak';
       const reasons = result.evidenceDecisionReason || result.metadata?.evidenceDecisionReason || [];
+      const sourceKind = result.sourceKind || result.metadata?.source_kind || 'official_doc';
+      const graphPath = result.graphPath || result.metadata?.graphPath || result.metadata?.graph_path || 'none';
+      const claimType = result.metadata?.claimType || result.metadata?.claim_type || 'unknown';
       const excerpt = result.content.replace(/\s+/g, ' ').trim().slice(0, 900);
       return [
         `[${label}]`,
         `title: ${title}`,
         `vendor: ${vendor}`,
+        `sourceKind: ${sourceKind}`,
+        `claimType: ${claimType}`,
+        `graphPath: ${graphPath}`,
         `decision: ${decision}`,
         `decisionReasons: ${reasons.join(', ') || 'none'}`,
         `retrievalMethod: ${result.retrievalMethod || result.metadata?.retrievalMethod || 'unknown'}`,
@@ -223,6 +233,10 @@ function buildEvidencePrompt(message: string, searchResults: CompassGroundingSou
     '- 근거가 충분하지 않으면 "현재 제공된 문서에서는 확인되지 않습니다"라고 답하세요.',
     '- 일부 근거가 확인되면 전체 부정으로 시작하지 말고, "제공된 근거 기준으로는"처럼 확인 가능한 범위를 먼저 밝히세요.',
     '- "현재 제공된 문서에서는 확인되지 않습니다"라고 말한 뒤 확인되지 않은 세부 내용을 이어서 작성하지 마세요.',
+    '- sourceKind가 official_doc인 근거는 공식 광고 가이드/정책 기준으로 답하세요.',
+    '- sourceKind가 resolved_case인 근거는 "실무 처리 사례 기준으로는" 또는 "과거 유사 이슈에서는"처럼 표현하세요. 공식 정책처럼 단정하지 마세요.',
+    '- official_doc과 resolved_case가 함께 있으면 "공식 기준"을 먼저 쓰고, 그 다음 "실무 처리 사례"를 별도 문단으로 분리하세요.',
+    '- 오류, 연동, 반려, 세팅, SDK, MMP, tracking_specs, 카탈로그, 픽셀, 노출, 소진처럼 실제 집행 이슈를 물으면 "확인 순서 / 가능한 원인 / 조치 방법 / 추가 확인 필요 항목" 순서로 정리하세요.',
     '- 사용자가 광고 상품/종류/구조를 물었고 근거에 캠페인 목표, 노출 위치, 소재 형식, Advantage+, 카탈로그, 픽셀/전환처럼 운영 구조가 확인되면 "캠페인 목표 / 노출 위치 / 소재 형식 / 자동화·커머스·측정 기반 / 목적별 선택 기준" 순서로 정리하세요. 단, 각 항목은 근거에 있는 경우에만 작성하세요.',
     '- 광고 상품/종류 질문에서 검증 근거가 소재 크기·파일 형식·비율만 확인한다면 "제공된 근거에서는 소재 형식/사양 범위만 확인됩니다"라고 먼저 밝히고, 그 범위로만 답하세요.',
     '- 특정 광고 상품을 물으면 개요 템플릿을 반복하지 말고, "무엇인지 / 언제 쓰는지 / 운영 또는 등록 절차 / 필요한 소재와 설정 / 심사·주의사항" 중 근거로 확인되는 항목만 골라 답하세요.',

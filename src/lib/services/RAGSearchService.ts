@@ -4,13 +4,14 @@
  */
 
 import { createCompassServiceClient } from '@/lib/supabase/compass';
+import { CompassEvidenceGraphService, type EvidenceGraphCandidate } from './CompassEvidenceGraphService';
 import { SimpleEmbeddingService } from './SimpleEmbeddingService';
 import { generateResponse } from './ollama';
 import { detectUnavailablePolicyTarget } from './ragNoDataIntentBoundary.mjs';
 
-export type RetrievalMethod = 'vector' | 'keyword' | 'hybrid' | 'fallback';
-export type RetrievalCorpus = 'ollama_document_chunks' | 'document_chunks' | 'fallback';
-export type EvidenceType = 'vector' | 'keyword' | 'hybrid' | 'fallback';
+export type RetrievalMethod = 'vector' | 'keyword' | 'hybrid' | 'graph' | 'fallback';
+export type RetrievalCorpus = 'ollama_document_chunks' | 'document_chunks' | 'evidence_graph' | 'fallback';
+export type EvidenceType = 'vector' | 'keyword' | 'hybrid' | 'graph' | 'fallback';
 export type EvidenceDecision = 'verified' | 'weak' | 'rejected';
 export type VendorIntent = 'META' | 'KAKAO' | 'NAVER' | 'GOOGLE';
 export type TopicIntent = 'review' | 'youth' | 'false_claim' | 'price' | 'event' | 'rights' | 'hate' | 'gambling' | 'spec' | 'product_structure';
@@ -387,6 +388,7 @@ export function classifyCompassRagQuery(query: string): QueryIntent {
 export class RAGSearchService {
   private supabase;
   private embeddingService: SimpleEmbeddingService;
+  private evidenceGraphService?: CompassEvidenceGraphService;
 
   constructor() {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -406,6 +408,7 @@ export class RAGSearchService {
       if (process.env.NODE_ENV === 'production') {
         this.supabase = createCompassServiceClient();
         this.embeddingService = new SimpleEmbeddingService();
+        this.evidenceGraphService = new CompassEvidenceGraphService(this.supabase);
         console.log('✅ RAGSearchService 초기화 완료 (Fallback 모드)');
         return;
       }
@@ -418,6 +421,7 @@ export class RAGSearchService {
 
       // SimpleEmbeddingService 사용
       this.embeddingService = new SimpleEmbeddingService();
+      this.evidenceGraphService = new CompassEvidenceGraphService(this.supabase);
       console.log('✅ RAGSearchService 초기화 완료 (SimpleEmbeddingService)');
     } catch (error) {
       console.error('❌ RAGSearchService 초기화 실패:', error);
@@ -474,21 +478,23 @@ export class RAGSearchService {
           : limit;
 
       if (usesProductStructureFastRetrieval && intent.vendors.length === 1 && !intent.isComparative) {
-        const [keywordCandidates, vendorCoverageCandidates, productStructureCandidates, naverPriorityCandidates] = await Promise.all([
+        const [keywordCandidates, vendorCoverageCandidates, productStructureCandidates, naverPriorityCandidates, graphCandidates] = await Promise.all([
           this.searchKeywordCandidates(query, candidateLimit, intent),
           this.searchVendorCoverageCandidates(query, candidateLimit, intent),
           intent.vendors[0] === 'NAVER'
             ? Promise.resolve([])
             : this.searchProductStructureCandidates(candidateLimit, intent),
-          this.searchNaverProductStructurePriorityCandidates(intent)
+          this.searchNaverProductStructurePriorityCandidates(intent),
+          this.searchEvidenceGraphCandidates(query, candidateLimit, intent)
         ]);
 
-        console.log(`📊 Product structure fast 후보 수집 결과: keyword=${keywordCandidates.length}, vendorCoverage=${vendorCoverageCandidates.length}, productStructure=${productStructureCandidates.length}, naverPriority=${naverPriorityCandidates.length}`);
+        console.log(`📊 Product structure fast 후보 수집 결과: keyword=${keywordCandidates.length}, vendorCoverage=${vendorCoverageCandidates.length}, productStructure=${productStructureCandidates.length}, naverPriority=${naverPriorityCandidates.length}, graph=${graphCandidates.length}`);
         const allCandidates = [
           ...keywordCandidates,
           ...vendorCoverageCandidates,
           ...productStructureCandidates,
-          ...naverPriorityCandidates
+          ...naverPriorityCandidates,
+          ...graphCandidates
         ];
         const rankedResults = this.ensureNaverProductStructureCoverage(this.mergeDedupeAndRankCandidates(
           allCandidates,
@@ -505,16 +511,17 @@ export class RAGSearchService {
       const queryEmbedding = queryEmbeddingResult.embedding;
       console.log(`📊 질문 임베딩 생성 완료: ${queryEmbedding.length}차원`);
 
-      const [vectorCandidates, keywordCandidates, vendorCoverageCandidates, productStructureCandidates] = await Promise.all([
+      const [vectorCandidates, keywordCandidates, vendorCoverageCandidates, productStructureCandidates, graphCandidates] = await Promise.all([
         this.searchVectorCandidates(queryEmbedding, candidateLimit, intent),
         this.searchKeywordCandidates(query, candidateLimit, intent),
         this.searchVendorCoverageCandidates(query, candidateLimit, intent),
-        this.searchProductStructureCandidates(candidateLimit, intent)
+        this.searchProductStructureCandidates(candidateLimit, intent),
+        this.searchEvidenceGraphCandidates(query, candidateLimit, intent)
       ]);
 
-      console.log(`📊 Hybrid 후보 수집 결과: vector=${vectorCandidates.length}, keyword=${keywordCandidates.length}, vendorCoverage=${vendorCoverageCandidates.length}, productStructure=${productStructureCandidates.length}`);
+      console.log(`📊 Hybrid 후보 수집 결과: vector=${vectorCandidates.length}, keyword=${keywordCandidates.length}, vendorCoverage=${vendorCoverageCandidates.length}, productStructure=${productStructureCandidates.length}, graph=${graphCandidates.length}`);
       const rankedResults = this.mergeDedupeAndRankCandidates(
-        [...vectorCandidates, ...keywordCandidates, ...vendorCoverageCandidates, ...productStructureCandidates],
+        [...vectorCandidates, ...keywordCandidates, ...vendorCoverageCandidates, ...productStructureCandidates, ...graphCandidates],
         limit,
         intent
       );
@@ -541,6 +548,179 @@ export class RAGSearchService {
       // 오류 발생 시에도 fallback 데이터 반환
       return this.getFallbackSearchResults(query, limit);
     }
+  }
+
+  private async searchEvidenceGraphCandidates(query: string, limit: number, intent: QueryIntent): Promise<SearchResult[]> {
+    if (!this.evidenceGraphService) {
+      return [];
+    }
+
+    const graphCandidates = await this.evidenceGraphService.searchCandidates(query, intent, limit);
+    return graphCandidates
+      .map((candidate) => this.normalizeEvidenceGraphCandidate(candidate, intent))
+      .filter((candidate): candidate is SearchResult => Boolean(candidate));
+  }
+
+  private normalizeEvidenceGraphCandidate(candidate: EvidenceGraphCandidate, intent: QueryIntent): SearchResult | null {
+    const content = [candidate.claimText, candidate.excerpt]
+      .filter((value) => Boolean(value && String(value).trim()))
+      .join('\n\n')
+      .trim();
+    if (!content) {
+      return null;
+    }
+
+    const documentTitle = candidate.title || (candidate.sourceKind === 'resolved_case'
+      ? 'Compass 실무 해결 사례'
+      : 'Compass 공식 가이드 근거');
+    const documentId = candidate.sourceDocumentId
+      || candidate.sourceChunkId
+      || candidate.caseId
+      || `graph_assertion:${candidate.id}`;
+    const documentUrl = candidate.sourceUrl || undefined;
+    const sourceVendor = candidate.vendor || 'UNKNOWN';
+    const vendorMatch = sourceVendor !== 'UNKNOWN' && intent.vendors.includes(sourceVendor);
+    const vendorMismatch = intent.vendors.length > 0 && sourceVendor !== 'UNKNOWN' && !vendorMatch;
+
+    if (vendorMismatch) {
+      return null;
+    }
+
+    const metadata = {
+      ...(candidate.metadata || {}),
+      source_kind: candidate.sourceKind,
+      graphPath: candidate.graphPath,
+      evidenceGraphAssertionId: candidate.id,
+      source_document_id: candidate.sourceDocumentId,
+      source_chunk_id: candidate.sourceChunkId,
+      case_id: candidate.caseId,
+      claimType: candidate.claimType,
+      matchedTerms: candidate.matchedTerms,
+      documentId,
+      sourceVendor,
+      sourceVendors: sourceVendor === 'UNKNOWN' ? [] : [sourceVendor],
+    };
+    const sourceText = this.buildCandidateSearchText(content, documentTitle, metadata);
+    const lexicalOverlap = this.calculateLexicalOverlap(sourceText, intent.keywords);
+    const topicMatch = this.hasTopicMatch(sourceText, intent.topics) || candidate.matchedTerms.length > 0;
+    const topicExactMatch = this.hasExactTopicMatch(sourceText, intent.topics) || candidate.score >= 0.72;
+    const policyTitleMatch = candidate.sourceKind === 'official_doc'
+      || this.hasPolicyGradeTitle(documentTitle, metadata);
+    const keywordScore = Math.max(
+      candidate.score,
+      this.calculateKeywordScore(
+        content,
+        documentTitle,
+        [...intent.keywords, ...candidate.matchedTerms],
+        lexicalOverlap,
+        topicMatch,
+        topicExactMatch,
+        policyTitleMatch
+      )
+    );
+    const sourceQuality = this.buildSourceQuality({
+      documentId,
+      documentTitle,
+      documentUrl,
+      content,
+      metadata,
+      corpus: 'evidence_graph',
+      warnings: [],
+      lexicalOverlap,
+      vendorMatch,
+      vendorMismatch,
+      sourceVendor,
+      policyTitleMatch,
+    });
+    const vectorScore = 0;
+    let hybridScore = this.calculateHybridScore({
+      vectorScore,
+      keywordScore,
+      sourceQualityScore: Math.max(sourceQuality.qualityScore || 0, candidate.confidence),
+      retrievalMethod: 'graph',
+      corpus: 'evidence_graph',
+      lexicalOverlap,
+      vendorMatch,
+      vendorMismatch,
+      topicMatch,
+      topicExactMatch,
+      policyTitleMatch,
+      genericPolicyIntent: this.isGenericPolicyIntent(intent),
+      originalMetaSeed: false,
+      hasUrl: sourceQuality.hasUrl,
+    });
+    hybridScore = Math.max(hybridScore, Math.min(1, candidate.score + (candidate.sourceKind === 'resolved_case' ? 0.08 : 0.04)));
+    const evidenceDecision = this.decideEvidence({
+      content,
+      sourceQuality,
+      retrievalMethod: 'graph',
+      corpus: 'evidence_graph',
+      hybridScore,
+      vectorScore,
+      keywordScore,
+      lexicalOverlap,
+      vendorMatch,
+      vendorMismatch,
+      topicExactMatch,
+      policyTitleMatch,
+    });
+    const rankReason = Array.from(new Set([
+      'evidence_graph_sidecar',
+      `source_kind_${candidate.sourceKind}`,
+      `claim_type_${candidate.claimType}`,
+      candidate.sourceKind === 'resolved_case' ? 'approved_operational_case' : 'official_doc_assertion',
+      vendorMatch ? 'vendor_match' : '',
+      topicMatch ? 'topic_match' : '',
+      topicExactMatch ? 'topic_exact_match' : '',
+      lexicalOverlap > 0 ? 'lexical_overlap' : '',
+    ].filter(Boolean)));
+
+    return {
+      id: `graph_assertion:${candidate.id}`,
+      content,
+      similarity: hybridScore,
+      score: hybridScore,
+      hybridScore,
+      vectorScore,
+      keywordScore,
+      corpus: 'evidence_graph',
+      evidenceType: 'graph',
+      evidenceDecision: evidenceDecision.decision,
+      evidenceDecisionReason: evidenceDecision.reasons,
+      rankReason,
+      lexicalOverlap,
+      vendorMatch,
+      vendorMismatch,
+      sourceVendor,
+      sourceVendors: sourceVendor === 'UNKNOWN' ? [] : [sourceVendor],
+      topicMatch,
+      topicExactMatch,
+      policyTitleMatch,
+      retrievalMethod: 'graph',
+      documentId,
+      documentTitle,
+      documentUrl,
+      chunkIndex: 0,
+      metadata: {
+        ...metadata,
+        retrievalMethod: 'graph',
+        evidenceType: 'graph',
+        corpus: 'evidence_graph',
+        evidenceDecision: evidenceDecision.decision,
+        evidenceDecisionReason: evidenceDecision.reasons,
+        score: hybridScore,
+        hybridScore,
+        keywordScore,
+        lexicalOverlap,
+        vendorMatch,
+        vendorMismatch,
+        topicMatch,
+        topicExactMatch,
+        policyTitleMatch,
+        sourceQualityWarnings: sourceQuality.warnings,
+      },
+      sourceQuality,
+    };
   }
 
   private async searchVectorCandidates(queryEmbedding: number[], limit: number, intent: QueryIntent): Promise<SearchResult[]> {

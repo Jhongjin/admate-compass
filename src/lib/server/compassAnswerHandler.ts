@@ -48,7 +48,7 @@ interface SearchResult {
   sourceVendor?: string;
   sourceVendors?: string[];
   topicMatch?: boolean;
-  retrievalMethod?: 'vector' | 'keyword' | 'hybrid' | 'fallback';
+  retrievalMethod?: 'vector' | 'keyword' | 'hybrid' | 'graph' | 'fallback';
   documentId?: string;
   documentTitle?: string;
   documentUrl?: string;
