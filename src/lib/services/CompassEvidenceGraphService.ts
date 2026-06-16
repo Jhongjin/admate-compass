@@ -183,7 +183,13 @@ export class CompassEvidenceGraphService {
     intent: QueryIntent,
     resolvedCaseMap: Map<string, ResolvedCaseRow>,
   ): EvidenceGraphCandidate | null {
-    const text = this.normalize(`${row.claim_text} ${row.excerpt || ''}`);
+    const metadataSearchText = [
+      row.metadata?.graphPath,
+      Array.isArray(row.metadata?.graphTopics) ? row.metadata.graphTopics.join(' ') : '',
+      row.metadata?.title,
+      row.metadata?.documentTitle,
+    ].filter(Boolean).join(' ');
+    const text = this.normalize(`${row.claim_text} ${row.excerpt || ''} ${metadataSearchText}`);
     const matchedTerms = terms.filter((term) => text.includes(this.normalize(term)));
     if (matchedTerms.length === 0 && intent.vendors.length === 0) {
       return null;
@@ -193,9 +199,9 @@ export class CompassEvidenceGraphService {
     const resolvedCase = row.case_id ? resolvedCaseMap.get(row.case_id) : null;
     const vendor = this.normalizeVendor(row.vendor);
     const queryIsOperational = this.isOperationalIssueQuery(terms);
-    const claimTypeBoost = this.claimTypeBoost(row.claim_type, queryIsOperational);
+    const claimTypeBoost = this.claimTypeBoost(row.claim_type, queryIsOperational, intent, sourceKind);
     const sourceKindBoost = sourceKind === 'official_doc'
-      ? 0.18
+      ? (intent.topics.includes('product_structure') ? 0.24 : 0.18)
       : queryIsOperational
         ? 0.22
         : 0.04;
@@ -216,9 +222,9 @@ export class CompassEvidenceGraphService {
       || row.metadata?.source_title
       || (sourceKind === 'resolved_case' ? 'Compass 실무 해결 사례' : 'Compass 공식 가이드 근거');
 
-    const graphPath = sourceKind === 'resolved_case'
+    const graphPath = row.metadata?.graphPath || (sourceKind === 'resolved_case'
       ? `${vendor || 'UNKNOWN'} > resolved_case > ${row.claim_type}`
-      : `${vendor || 'UNKNOWN'} > official_doc > ${row.claim_type}`;
+      : `${vendor || 'UNKNOWN'} > official_doc > ${row.claim_type}`);
 
     return {
       id: row.id,
@@ -294,8 +300,21 @@ export class CompassEvidenceGraphService {
     return OPERATIONAL_ISSUE_TERMS.some((term) => joined.includes(this.normalize(term)));
   }
 
-  private claimTypeBoost(claimType: string, queryIsOperational: boolean): number {
+  private claimTypeBoost(
+    claimType: string,
+    queryIsOperational: boolean,
+    intent: QueryIntent,
+    sourceKind: EvidenceGraphSourceKind,
+  ): number {
     if (queryIsOperational && ['resolved_issue', 'risk', 'setup_step', 'procedure'].includes(claimType)) {
+      return 0.14;
+    }
+
+    if (sourceKind === 'official_doc' && intent.isSpecificProductGuidance && ['procedure', 'setup_step', 'asset_spec', 'requirement', 'limit'].includes(claimType)) {
+      return 0.18;
+    }
+
+    if (sourceKind === 'official_doc' && intent.topics.includes('product_structure') && ['definition', 'procedure', 'setup_step', 'asset_spec', 'requirement', 'limit', 'allowance'].includes(claimType)) {
       return 0.14;
     }
 

@@ -14,7 +14,10 @@ function assertIncludes(content, needle, label) {
 }
 
 const migration = read('supabase/migrations/20260616000000_create_compass_evidence_graph.sql');
+const officialDocMigration = read('supabase/migrations/20260616001000_add_official_doc_graph_indexing_support.sql');
 const graphService = read('src/lib/services/CompassEvidenceGraphService.ts');
+const officialGuideIndexer = read('src/lib/services/CompassOfficialGuideGraphIndexer.ts');
+const documentIndexer = read('src/lib/services/DocumentIndexingService.ts');
 const ragService = read('src/lib/services/RAGSearchService.ts');
 const llmService = read('src/lib/services/CompassAnswerLlmService.ts');
 const plan = read('docs/rag/compass-evidence-graph-mvp-plan.md');
@@ -46,8 +49,39 @@ for (const serviceSignal of [
   'official_doc',
   'searchCandidates',
   'OPERATIONAL_ISSUE_TERMS',
+  'graphTopics',
 ]) {
   assertIncludes(graphService, serviceSignal, 'evidence graph service contract');
+}
+
+for (const officialDocSignal of [
+  'COMPASS_OFFICIAL_GUIDE_GRAPH_INDEXING_ENABLED',
+  'indexOfficialGuideAssertions',
+  "source_kind: 'official_doc'",
+  "evidence_decision: 'verified'",
+  "review_status: 'approved'",
+  'claim_type',
+  'officialGuideGraphIndexer',
+]) {
+  assertIncludes(officialGuideIndexer, officialDocSignal, 'official guide graph indexer contract');
+}
+
+for (const documentIndexerSignal of [
+  'compassOfficialGuideGraphIndexer',
+  'indexOfficialGuideGraphAssertions',
+  "sourceType: 'url'",
+  "sourceType: 'file'",
+]) {
+  assertIncludes(documentIndexer, documentIndexerSignal, 'document indexing official guide graph hook');
+}
+
+for (const officialDocMigrationSignal of [
+  'evidence_assertions_official_doc_active_idx',
+  'evidence_assertions_official_doc_vendor_claim_idx',
+  'evidence_assertions_metadata_graph_topics_idx',
+  'stale_official_doc_assertions',
+]) {
+  assertIncludes(officialDocMigration, officialDocMigrationSignal, 'official doc graph indexing migration');
 }
 
 for (const ragSignal of [

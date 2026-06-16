@@ -2,6 +2,7 @@ import { documentProcessingService, ProcessedDocument } from './DocumentProcessi
 import { textChunkingService, ChunkedDocument } from './TextChunkingService';
 import { embeddingService, EmbeddingResult } from './EmbeddingService';
 import { vectorStorageService, DocumentRecord } from './VectorStorageService';
+import { compassOfficialGuideGraphIndexer } from './CompassOfficialGuideGraphIndexer';
 
 export interface IndexingResult {
   documentId: string;
@@ -513,6 +514,19 @@ export class DocumentIndexingService {
       // 7. 벡터 저장
       await vectorStorageService.saveChunks(documentId, chunkedDoc.chunks, embeddings);
 
+      await this.indexOfficialGuideGraphAssertions({
+        documentId,
+        title: processedDoc.metadata.title || file.name,
+        url: processedDoc.metadata.source,
+        chunks: chunkedDoc.chunks,
+        metadata: {
+          fileName: file.name,
+          fileType: file.type,
+          sourceTitle: processedDoc.metadata.title,
+        },
+        sourceType: 'file',
+      });
+
       // 8. 성공 로그 저장
       await vectorStorageService.saveProcessingLog(
         documentId,
@@ -664,6 +678,19 @@ export class DocumentIndexingService {
       await vectorStorageService.saveChunks(documentId, chunkedDoc.chunks, embeddings);
       console.log(`✅ 벡터 저장 완료: ${documentId}`);
 
+      await this.indexOfficialGuideGraphAssertions({
+        documentId,
+        title: koreanTitle,
+        url,
+        chunks: chunkedDoc.chunks,
+        metadata: {
+          ...(metadata || {}),
+          originalTitle: title,
+          sourceTitle: koreanTitle,
+        },
+        sourceType: 'url',
+      });
+
       // 6. URL 정보를 메타데이터에 저장 (VectorStorageService에 saveDocumentMetadata 메서드가 없으므로 제거)
       // await vectorStorageService.saveDocumentMetadata(documentId, {
       //   url: url,
@@ -800,6 +827,17 @@ export class DocumentIndexingService {
 
       // 8. 벡터 저장
       await vectorStorageService.saveChunks(documentId, chunkedDoc.chunks, embeddings);
+
+      await this.indexOfficialGuideGraphAssertions({
+        documentId,
+        title: koreanTitle,
+        url,
+        chunks: chunkedDoc.chunks,
+        metadata: {
+          sourceTitle: koreanTitle,
+        },
+        sourceType: 'url',
+      });
 
       // 9. URL 정보를 메타데이터에 저장 (VectorStorageService에 saveDocumentMetadata 메서드가 없으므로 제거)
       // await vectorStorageService.saveDocumentMetadata(documentId, {
@@ -944,6 +982,26 @@ export class DocumentIndexingService {
     } catch (error) {
       console.error('문서 검색 실패:', error);
       throw new Error(`문서 검색 실패: ${error}`);
+    }
+  }
+
+  private async indexOfficialGuideGraphAssertions(input: {
+    documentId: string;
+    title: string;
+    url?: string | null;
+    chunks: ChunkedDocument['chunks'];
+    metadata?: Record<string, any> | null;
+    sourceType: 'url' | 'file';
+  }): Promise<void> {
+    try {
+      const result = await compassOfficialGuideGraphIndexer.indexOfficialGuideAssertions(input);
+      if (result.status === 'completed') {
+        console.log(`공식 가이드 Graph RAG 근거 색인 완료: ${result.inserted}개`);
+      } else if (result.status === 'skipped' && result.reason !== 'disabled') {
+        console.log(`공식 가이드 Graph RAG 근거 색인 생략: ${result.reason}`);
+      }
+    } catch (error) {
+      console.warn('공식 가이드 Graph RAG 근거 색인 실패, 문서 인덱싱은 계속합니다:', error);
     }
   }
 

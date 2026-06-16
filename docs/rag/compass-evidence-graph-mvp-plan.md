@@ -7,7 +7,15 @@ Compass should answer two different classes of questions without mixing their au
 1. Official media guide questions: what Meta, Google, Naver, Kakao, and other media officially allow, require, limit, or prohibit.
 2. Operational issue questions: what actually happened during campaign setup, review, tracking, catalog, SDK/MMP, exposure, spending, or rejection incidents, and how the team resolved them.
 
-The existing vector/keyword RAG is strong for source-grounded retrieval, but operational issue knowledge needs stronger structure than loose chunks. The MVP therefore adds a graph sidecar instead of replacing vector RAG.
+The existing vector/keyword RAG is strong for source-grounded retrieval, but both official guide questions and operational issue knowledge need stronger structure than loose chunks. The MVP therefore adds a graph sidecar instead of replacing vector RAG.
+
+For official guide answers, the graph layer is not a future-only case repository. It complements the existing vector stores:
+
+- `document_chunks`: exact official source text and keyword retrieval.
+- `ollama_document_chunks`: semantic/vector retrieval over official source text.
+- `compass.evidence_assertions`: official guide graph assertions that label source chunks by vendor, claim type, and guide topic.
+
+The answer should still quote and stay inside the retrieved official source range, but graph assertions help Compass know whether a chunk is about campaign objective, ad format, placement, setup procedure, review policy, commerce/measurement, or asset specs.
 
 ## Runtime Shape
 
@@ -45,9 +53,24 @@ Official documents always win if they conflict with resolved cases. Resolved cas
 ## Retrieval Rules
 
 - Graph retrieval is off by default and activates only with `COMPASS_EVIDENCE_GRAPH_ENABLED=true`.
+- Official guide graph indexing activates with `COMPASS_OFFICIAL_GUIDE_GRAPH_INDEXING_ENABLED=true`; if unset, it follows `COMPASS_EVIDENCE_GRAPH_ENABLED`.
 - Official guide assertions are eligible when `evidence_decision='verified'` and `review_status='approved'`.
 - Resolved case assertions are eligible only when the linked case has `approved_for_retrieval=true` and `resolution_status='resolved'`.
 - The answer layer receives `sourceKind`, `claimType`, and `graphPath`, so it can separate official guidance from operational precedent.
+
+## Official Guide Graph Indexing
+
+Official source crawling and file indexing can write graph assertions after vector chunks are saved. The indexing hook is intentionally outside `VectorStorageService` so dummy chunks, placeholders, and non-official uploads do not become authoritative graph facts.
+
+Each approved official guide assertion keeps:
+
+- `source_kind='official_doc'`
+- `source_document_id` and `source_chunk_id`
+- `claim_type` such as `definition`, `requirement`, `prohibition`, `allowance`, `limit`, `procedure`, `asset_spec`, or `setup_step`
+- `vendor`, `source_url`, and a compact `claim_text`
+- `metadata.graphTopics` and `metadata.graphPath`
+
+Re-indexing the same official document marks previous assertions as `stale` before inserting fresh assertions, so retrieval does not mix old and new guide structure.
 
 ## Operational Issue Answer Contract
 
