@@ -73,6 +73,8 @@ const OPERATIONAL_ISSUE_TERMS = [
   '문의',
 ];
 
+const EVIDENCE_ASSERTION_SELECT = 'id,claim_text,claim_type,source_kind,source_document_id,source_chunk_id,case_id,excerpt,source_url,vendor,evidence_decision,confidence,review_status,valid_to,metadata,created_at';
+
 export function isCompassEvidenceGraphEnabled(): boolean {
   return GRAPH_ENABLED_VALUES.has(normalizeGraphFlagValue(process.env.COMPASS_EVIDENCE_GRAPH_ENABLED));
 }
@@ -100,28 +102,7 @@ export class CompassEvidenceGraphService {
     }
 
     try {
-      const orFilter = terms
-        .flatMap((term) => [
-          `claim_text.ilike.%${term}%`,
-          `excerpt.ilike.%${term}%`,
-        ])
-        .join(',');
-
-      let request = this.supabase
-        .from('evidence_assertions')
-        .select('id,claim_text,claim_type,source_kind,source_document_id,source_chunk_id,case_id,excerpt,source_url,vendor,evidence_decision,confidence,review_status,valid_to,metadata,created_at')
-        .eq('evidence_decision', 'verified')
-        .eq('review_status', 'approved')
-        .or(orFilter)
-        .limit(Math.max(limit * 5, 20));
-
-      const { data, error } = await request;
-      if (error) {
-        console.warn('Compass evidence graph search skipped:', error.message);
-        return [];
-      }
-
-      const rows = (data || []) as EvidenceGraphRawAssertion[];
+      const rows = await this.fetchCandidateRows(query, terms, intent, limit);
       const resolvedCaseMap = await this.loadApprovedResolvedCases(rows);
       const candidates = rows
         .filter((row) => this.isUsableAssertion(row, resolvedCaseMap))
@@ -145,6 +126,233 @@ export class CompassEvidenceGraphService {
       console.warn('Compass evidence graph search failed:', error);
       return [];
     }
+  }
+
+  private async fetchCandidateRows(
+    query: string,
+    terms: string[],
+    intent: QueryIntent,
+    limit: number,
+  ): Promise<EvidenceGraphRawAssertion[]> {
+    const structuredRows = await this.fetchStructuredRows(intent, limit);
+
+    if (structuredRows.length > 0) {
+      return structuredRows;
+    }
+
+    return this.fetchTextRows(query, terms, limit);
+  }
+
+  private async fetchStructuredRows(intent: QueryIntent, limit: number): Promise<EvidenceGraphRawAssertion[]> {
+    if (intent.vendors.length === 0) {
+      return [];
+    }
+
+    const vendors = intent.vendors;
+    const sourceKinds = this.preferredSourceKinds(intent);
+    const topics = this.preferredGraphTopics(intent).slice(0, 5);
+    const claimTypes = this.preferredClaimTypes(intent).slice(0, 8);
+    const perQueryLimit = Math.max(limit * 10, 40);
+    const requests: Promise<{ data: EvidenceGraphRawAssertion[] | null; error: any }>[] = [];
+
+    for (const vendor of vendors) {
+      for (const sourceKind of sourceKinds) {
+        for (const topic of topics) {
+          requests.push(
+            this.baseAssertionQuery()
+              .eq('vendor', vendor)
+              .eq('source_kind', sourceKind)
+              .contains('metadata', { graphTopics: [topic] })
+              .limit(perQueryLimit)
+          );
+        }
+
+        if (claimTypes.length > 0) {
+          requests.push(
+            this.baseAssertionQuery()
+              .eq('vendor', vendor)
+              .eq('source_kind', sourceKind)
+              .in('claim_type', claimTypes)
+              .limit(perQueryLimit)
+          );
+        }
+
+        requests.push(
+          this.baseAssertionQuery()
+            .eq('vendor', vendor)
+            .eq('source_kind', sourceKind)
+            .limit(Math.max(limit * 4, 16))
+        );
+      }
+    }
+
+    const results = await Promise.all(requests);
+    const rows: EvidenceGraphRawAssertion[] = [];
+
+    for (const result of results) {
+      if (result.error) {
+        console.warn('Compass evidence graph structured search branch skipped:', result.error.message);
+        continue;
+      }
+      rows.push(...((result.data || []) as EvidenceGraphRawAssertion[]));
+    }
+
+    return this.dedupeRows(rows).slice(0, Math.max(limit * 24, 120));
+  }
+
+  private async fetchTextRows(
+    query: string,
+    terms: string[],
+    limit: number,
+  ): Promise<EvidenceGraphRawAssertion[]> {
+    const focusedTerms = terms
+      .filter((term) => !this.isWeakSearchTerm(term))
+      .slice(0, 8);
+
+    if (focusedTerms.length === 0) {
+      return [];
+    }
+
+    const orFilter = focusedTerms
+      .flatMap((term) => [
+        `claim_text.ilike.%${term}%`,
+        `excerpt.ilike.%${term}%`,
+      ])
+      .join(',');
+
+    const { data, error } = await this.baseAssertionQuery()
+      .or(orFilter)
+      .limit(Math.max(limit * 5, 20));
+
+    if (error) {
+      console.warn('Compass evidence graph text search skipped:', error.message, {
+        queryPreview: query.slice(0, 80),
+        focusedTerms,
+      });
+      return [];
+    }
+
+    return (data || []) as EvidenceGraphRawAssertion[];
+  }
+
+  private baseAssertionQuery() {
+    return this.supabase
+      .from('evidence_assertions')
+      .select(EVIDENCE_ASSERTION_SELECT)
+      .eq('evidence_decision', 'verified')
+      .eq('review_status', 'approved');
+  }
+
+  private preferredSourceKinds(intent: QueryIntent): EvidenceGraphSourceKind[] {
+    const terms = [
+      ...intent.keywords,
+      ...intent.strictProductTerms,
+      ...intent.strictContextTerms,
+      ...intent.adPolicyTerms,
+    ];
+
+    return this.isOperationalIssueQuery(terms)
+      ? ['resolved_case', 'official_doc']
+      : ['official_doc'];
+  }
+
+  private preferredGraphTopics(intent: QueryIntent): string[] {
+    const topics: string[] = [];
+    const add = (...values: string[]) => {
+      for (const value of values) {
+        if (!topics.includes(value)) topics.push(value);
+      }
+    };
+
+    if (intent.topics.includes('product_structure') || intent.isProductStructureOverview) {
+      add('campaign_objective', 'ad_format', 'placement', 'commerce_measurement', 'procedure', 'asset_spec');
+    }
+
+    if (intent.isSpecificProductGuidance) {
+      add('procedure', 'asset_spec', 'ad_format', 'placement', 'commerce_measurement');
+    }
+
+    if (intent.topics.includes('spec')) {
+      add('asset_spec', 'ad_format', 'placement');
+    }
+
+    if (intent.topics.includes('review') || intent.adPolicyTerms.length > 0) {
+      add('review_policy', 'asset_spec', 'procedure', 'official_guide');
+    }
+
+    const commerceContext = [
+      ...intent.strictProductTerms,
+      ...intent.strictContextTerms,
+      ...intent.keywords,
+    ].join(' ').toLowerCase();
+    if (/catalog|카탈로그|pixel|픽셀|sdk|mmp|db\s*url|상품\s*db|전환|conversion|앱|app|install|인스톨/.test(commerceContext)) {
+      add('commerce_measurement', 'procedure', 'campaign_objective');
+    }
+
+    add(...intent.topics.map((topic) => {
+      if (topic === 'product_structure') return 'campaign_objective';
+      if (topic === 'review') return 'review_policy';
+      if (topic === 'spec') return 'asset_spec';
+      return topic;
+    }));
+
+    if (topics.length === 0) {
+      add('official_guide', 'procedure', 'review_policy');
+    }
+
+    return topics;
+  }
+
+  private preferredClaimTypes(intent: QueryIntent): string[] {
+    const claimTypes: string[] = [];
+    const add = (...values: string[]) => {
+      for (const value of values) {
+        if (!claimTypes.includes(value)) claimTypes.push(value);
+      }
+    };
+
+    if (intent.topics.includes('product_structure') || intent.isProductStructureOverview) {
+      add('definition', 'procedure', 'setup_step', 'asset_spec', 'requirement', 'allowance', 'limit');
+    }
+
+    if (intent.isSpecificProductGuidance) {
+      add('procedure', 'setup_step', 'asset_spec', 'requirement', 'limit', 'definition');
+    }
+
+    if (intent.topics.includes('review') || intent.adPolicyTerms.length > 0) {
+      add('prohibition', 'requirement', 'limit', 'allowance', 'procedure', 'setup_step');
+    }
+
+    if (intent.topics.includes('spec')) {
+      add('asset_spec', 'limit', 'requirement', 'procedure');
+    }
+
+    if (claimTypes.length === 0) {
+      add('definition', 'procedure', 'requirement', 'setup_step');
+    }
+
+    return claimTypes;
+  }
+
+  private isWeakSearchTerm(term: string): boolean {
+    const normalized = this.normalize(term);
+    return normalized.length < 2
+      || ['광고', '상품', '가이드', '알려줘', '대해', '대한', '위한', '기준', '확인', '설명', '어떻게'].includes(normalized);
+  }
+
+  private dedupeRows(rows: EvidenceGraphRawAssertion[]): EvidenceGraphRawAssertion[] {
+    const seen = new Set<string>();
+    const deduped: EvidenceGraphRawAssertion[] = [];
+
+    for (const row of rows) {
+      if (!row.id || seen.has(row.id)) {
+        continue;
+      }
+      seen.add(row.id);
+      deduped.push(row);
+    }
+
+    return deduped;
   }
 
   private async loadApprovedResolvedCases(rows: EvidenceGraphRawAssertion[]): Promise<Map<string, ResolvedCaseRow>> {
@@ -199,7 +407,15 @@ export class CompassEvidenceGraphService {
       row.metadata?.documentTitle,
     ].filter(Boolean).join(' ');
     const text = this.normalize(`${row.claim_text} ${row.excerpt || ''} ${metadataSearchText}`);
-    const matchedTerms = terms.filter((term) => text.includes(this.normalize(term)));
+    const topicMatches = Array.isArray(row.metadata?.graphTopics)
+      ? row.metadata.graphTopics
+        .filter((topic: unknown) => this.preferredGraphTopics(intent).includes(String(topic)))
+        .map((topic: unknown) => String(topic))
+      : [];
+    const matchedTerms = Array.from(new Set([
+      ...terms.filter((term) => text.includes(this.normalize(term))),
+      ...topicMatches,
+    ]));
     if (matchedTerms.length === 0 && intent.vendors.length === 0) {
       return null;
     }
@@ -290,7 +506,7 @@ export class CompassEvidenceGraphService {
 
   private normalizeVendor(value: unknown): VendorIntent | 'UNKNOWN' {
     const text = this.normalize(String(value || ''));
-    if (['meta', 'facebook', 'instagram', '페이스북', '인스타그램'].includes(text)) return 'META';
+    if (['meta', 'facebook', 'instagram', '페이스북', '인스타그램', '메타'].includes(text)) return 'META';
     if (['kakao', '카카오', '카카오톡'].includes(text)) return 'KAKAO';
     if (['naver', '네이버'].includes(text)) return 'NAVER';
     if (['google', 'youtube', '구글', '유튜브'].includes(text)) return 'GOOGLE';
