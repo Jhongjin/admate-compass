@@ -340,9 +340,11 @@ export function classifyCompassRagQuery(query: string): QueryIntent {
   const outOfScopeTerms = matchCompassTerms(normalized, OUT_OF_SCOPE_TERMS);
   const unavailablePolicyTarget = detectUnavailablePolicyTarget(query);
   const isComparative = vendors.length >= 2 || /비교|차이|공통|각각|vs\.?|versus|동시에|나란히/.test(normalized);
-  const requiresVendorCoverage = vendors.length >= 2 || (isComparative && vendors.length > 0);
   const isSpecificProductGuidance = isSpecificProductGuidanceQueryText(normalized);
   const isProductStructureOverview = isProductStructureOverviewQueryText(normalized);
+  const requiresVendorCoverage = vendors.length >= 2
+    || (isComparative && vendors.length > 0)
+    || (vendors.length === 1 && isSpecificProductGuidance);
   const topics = (isSpecificProductGuidance || isProductStructureOverview) && !detectedTopics.includes('product_structure')
     ? [...detectedTopics, 'product_structure' as TopicIntent]
     : detectedTopics;

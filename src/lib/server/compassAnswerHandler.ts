@@ -174,9 +174,10 @@ function buildCoverageNotice(diagnostics: ReturnType<typeof buildSourceDiagnosti
 function buildCoverageLimitedAnswer(diagnostics: ReturnType<typeof buildSourceDiagnostics>) {
   const missing = diagnostics.missingVendorSlots.join(', ');
   const covered = diagnostics.coveredVendors.length > 0 ? diagnostics.coveredVendors.join(', ') : '일부 출처';
+  const answerScope = diagnostics.isComparative ? '비교 답변' : '답변';
 
   return [
-    `요청하신 비교 답변은 현재 검증 출처가 부족해 확정해서 답변할 수 없습니다.`,
+    `요청하신 ${answerScope}은 현재 검증 출처가 부족해 확정해서 답변할 수 없습니다.`,
     '',
     `확인된 범위: ${covered}`,
     `부족한 범위: ${missing}`,
