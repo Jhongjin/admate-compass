@@ -507,7 +507,7 @@ export class CompassEvidenceGraphService {
   private normalizeVendor(value: unknown): VendorIntent | 'UNKNOWN' {
     const text = this.normalize(String(value || ''));
     if (['meta', 'facebook', 'instagram', '페이스북', '인스타그램', '메타'].includes(text)) return 'META';
-    if (['kakao', '카카오', '카카오톡'].includes(text)) return 'KAKAO';
+    if (['kakao', '카카오', '카카오톡', '카카오모먼트', '카카오비즈니스', '비즈보드', '상품가이드', '상품 가이드'].includes(text)) return 'KAKAO';
     if (['naver', '네이버'].includes(text)) return 'NAVER';
     if (['google', 'youtube', '구글', '유튜브'].includes(text)) return 'GOOGLE';
     return 'UNKNOWN';
@@ -515,7 +515,7 @@ export class CompassEvidenceGraphService {
 
   private vendorTerms(vendor: VendorIntent): string[] {
     if (vendor === 'META') return ['meta', 'facebook', 'instagram', '페이스북', '인스타그램', '메타'];
-    if (vendor === 'KAKAO') return ['kakao', '카카오', '카카오톡', '비즈보드'];
+    if (vendor === 'KAKAO') return ['kakao', '카카오', '카카오톡', '비즈보드', '카카오모먼트', '카카오비즈니스', '상품가이드', '상품 가이드', '디스플레이'];
     if (vendor === 'NAVER') return ['naver', '네이버', '검색광고', '쇼핑검색'];
     return ['google', '구글', 'youtube', '유튜브', 'gdn'];
   }

@@ -94,7 +94,7 @@ export interface ChatResponse {
 
 const VENDOR_TERM_SPECS: Array<[VendorIntent, string[]]> = [
   ['META', ['meta', '메타', 'facebook', '페이스북', 'instagram', '인스타그램', '릴스', 'reels']],
-  ['KAKAO', ['kakao', '카카오', '카카오톡', '톡채널', '비즈보드', '모먼트']],
+  ['KAKAO', ['kakao', '카카오', '카카오톡', '톡채널', '비즈보드', '모먼트', '카카오모먼트', '카카오비즈니스', '상품가이드', '상품 가이드', '디스플레이']],
   ['NAVER', ['naver', '네이버', '검색광고', '쇼핑검색', '파워링크', '브랜드검색']],
   ['GOOGLE', ['google', '구글', 'youtube', '유튜브', 'gdn', 'google ads', 'display']],
 ];
@@ -2276,7 +2276,19 @@ export class RAGSearchService {
       metadata?.canonical_title,
       metadata?.source,
       metadata?.source_vendor,
+      metadata?.sourceVendor,
+      metadata?.sourceKind,
+      metadata?.source_kind,
+      metadata?.retrievalMethod,
+      metadata?.evidenceType,
+      metadata?.corpus,
+      metadata?.claimType,
+      metadata?.graphPath,
+      metadata?.productStructureAnchor,
       Array.isArray(metadata?.topic_labels) ? metadata.topic_labels.join(' ') : metadata?.topic_labels,
+      Array.isArray(metadata?.graphTopics) ? metadata.graphTopics.join(' ') : metadata?.graphTopics,
+      Array.isArray(metadata?.sourceVendors) ? metadata.sourceVendors.join(' ') : metadata?.sourceVendors,
+      Array.isArray(metadata?.source_vendors) ? metadata.source_vendors.join(' ') : metadata?.source_vendors,
       metadata?.sample_bucket,
       metadata?.source_url,
       metadata?.document_url,
@@ -2414,7 +2426,14 @@ export class RAGSearchService {
     const text = this.normalizeSearchText(String(value || ''));
     if (!text) return null;
     if (text === 'meta' || text === 'facebook' || text === 'instagram') return 'META';
-    if (text === 'kakao' || text === '카카오') return 'KAKAO';
+    if (
+      text === 'kakao'
+      || text === '카카오'
+      || text === '카카오톡'
+      || text === '카카오모먼트'
+      || text === '카카오비즈니스'
+      || text === '비즈보드'
+    ) return 'KAKAO';
     if (text === 'naver' || text === '네이버') return 'NAVER';
     if (text === 'google' || text === 'youtube' || text === '구글' || text === '유튜브') return 'GOOGLE';
     return null;
@@ -2489,7 +2508,7 @@ export class RAGSearchService {
       reasons.push('campaign_objective_match');
     }
 
-    if (/advantage\+|어드밴티지|카탈로그|catalog|메타\s*픽셀|meta\s*pixel|픽셀\s*(이벤트|코드|설치|전환)|conversions api|앱\s*캠페인|쇼핑\s*광고|검색\s*캠페인|디스플레이\s*캠페인|반응형\s*디스플레이|리드\s*양식|검색광고|쇼핑검색|파워링크|브랜드검색|쇼핑블록|디지털\s*옥외광고|비즈보드|카카오모먼트|브랜드이모티콘|상품\s*가이드|상품가이드|상품\s*db|db\s*url|ep|쇼핑파트너센터|pc\s*쇼핑블록|mo\s*쇼핑블록|모바일\s*쇼핑/.test(text)) {
+    if (/advantage\+|어드밴티지|카탈로그|catalog|메타\s*픽셀|meta\s*pixel|픽셀\s*(이벤트|코드|설치|전환)|conversions api|앱\s*캠페인|쇼핑\s*광고|검색\s*캠페인|디스플레이\s*캠페인|반응형\s*디스플레이|리드\s*양식|검색광고|쇼핑검색|파워링크|브랜드검색|쇼핑블록|디지털\s*옥외광고|비즈보드|카카오모먼트|카카오비즈니스|브랜드이모티콘|상품\s*가이드|상품가이드|상품\s*db|db\s*url|ep|쇼핑파트너센터|pc\s*쇼핑블록|mo\s*쇼핑블록|모바일\s*쇼핑|전환\s*최적화|conversion api|픽셀\s*&?\s*sdk|비즈니스폼|campaign_objective|ad_format|placement|commerce_measurement|asset_spec/.test(text)) {
       adjustment += 0.18;
       reasons.push('product_solution_match');
     }
@@ -2518,7 +2537,7 @@ export class RAGSearchService {
   }
 
   private hasProductStructureSignal(text: string): boolean {
-    return /캠페인 목표|광고 관리자 목표|마케팅 목표|objective|objectives|advantage\+|어드밴티지|카탈로그|catalog|메타\s*픽셀|meta\s*pixel|픽셀\s*(이벤트|코드|설치|전환)|conversions api|노출 위치|게재 위치|placements|지면|컬렉션|collection|리드|lead|앱\s*캠페인|쇼핑\s*광고|검색\s*캠페인|디스플레이\s*캠페인|반응형\s*디스플레이|리드\s*양식|검색광고|쇼핑검색|파워링크|브랜드검색|쇼핑블록|상품\s*db|db\s*url|가격비교|디지털\s*옥외광고|비즈보드|카카오모먼트|브랜드이모티콘|상품\s*가이드|상품가이드/.test(text);
+    return /캠페인 목표|광고 관리자 목표|마케팅 목표|objective|objectives|advantage\+|어드밴티지|카탈로그|catalog|메타\s*픽셀|meta\s*pixel|픽셀\s*(이벤트|코드|설치|전환)|conversions api|노출 위치|게재 위치|placements|지면|컬렉션|collection|리드|lead|앱\s*캠페인|쇼핑\s*광고|검색\s*캠페인|디스플레이\s*캠페인|반응형\s*디스플레이|리드\s*양식|검색광고|쇼핑검색|파워링크|브랜드검색|쇼핑블록|상품\s*db|db\s*url|가격비교|디지털\s*옥외광고|비즈보드|카카오모먼트|카카오비즈니스|브랜드이모티콘|상품\s*가이드|상품가이드|전환\s*최적화|conversion api|픽셀\s*&?\s*sdk|비즈니스폼|campaign_objective|ad_format|placement|commerce_measurement|asset_spec/.test(text);
   }
 
   private hasNaverProductStructureSignal(sourceText: string): boolean {
@@ -2529,7 +2548,7 @@ export class RAGSearchService {
   private hasHighValueProductStructureSignal(text: string): boolean {
     const hasObjectiveList = /인지도[\s\S]{0,80}트래픽[\s\S]{0,80}참여[\s\S]{0,80}잠재 고객[\s\S]{0,80}앱 홍보[\s\S]{0,80}판매/.test(text);
     return hasObjectiveList
-      || /캠페인 목표|광고 관리자 목표|마케팅 목표|objective|objectives|advantage\+|어드밴티지|어드밴티지\+|카탈로그|catalog|메타\s*픽셀|meta\s*pixel|픽셀\s*(이벤트|코드|설치|전환)|conversions api|앱\s*(캠페인|인스톨|설치|홍보|이벤트)|app\s*(install|promotion)|sdk|mmp|사전\s*등록|쇼핑\s*광고|검색\s*캠페인|디스플레이\s*캠페인|반응형\s*디스플레이|리드\s*양식|검색광고|쇼핑검색|파워링크|브랜드검색|쇼핑블록|상품\s*db|db\s*url|가격비교|디지털\s*옥외광고|비즈보드|카카오모먼트|브랜드이모티콘|상품\s*가이드|상품가이드/.test(text)
+      || /캠페인 목표|광고 관리자 목표|마케팅 목표|objective|objectives|advantage\+|어드밴티지|어드밴티지\+|카탈로그|catalog|메타\s*픽셀|meta\s*pixel|픽셀\s*(이벤트|코드|설치|전환)|conversions api|앱\s*(캠페인|인스톨|설치|홍보|이벤트)|app\s*(install|promotion)|sdk|mmp|사전\s*등록|쇼핑\s*광고|검색\s*캠페인|디스플레이\s*캠페인|반응형\s*디스플레이|리드\s*양식|검색광고|쇼핑검색|파워링크|브랜드검색|쇼핑블록|상품\s*db|db\s*url|가격비교|디지털\s*옥외광고|비즈보드|카카오모먼트|카카오비즈니스|브랜드이모티콘|상품\s*가이드|상품가이드|전환\s*최적화|conversion api|픽셀\s*&?\s*sdk|비즈니스폼|campaign_objective|ad_format|placement|commerce_measurement|asset_spec/.test(text)
       || /노출 위치|게재 위치|placements|지면/.test(text) && /캠페인 목표|광고 관리자 목표|마케팅 목표/.test(text);
   }
 
