@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createCompassServiceClient } from '@/lib/supabase/compass';
+import { guardCompassProductAdminSessionRoute } from '@/lib/adminProductSessionGuard';
 
 // 환경 변수 확인 및 조건부 클라이언트 생성
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -13,6 +14,9 @@ if (supabaseUrl && supabaseKey) {
 
 // 문서 다운로드
 export async function GET(request: NextRequest) {
+  const sessionGuard = guardCompassProductAdminSessionRoute(request);
+  if (sessionGuard) return sessionGuard;
+
   try {
     // Supabase 클라이언트 확인
     if (!supabase) {
@@ -300,232 +304,16 @@ async function handlePreview(documentId: string) {
 
 // 문서 재인덱싱 처리
 async function handleReindex(documentId: string) {
-  try {
-    console.log(`🔄 재인덱싱 시작: ${documentId}`);
-
-    // 문서 정보 조회
-    const { data: document, error: docError } = await supabase
-      .from('documents')
-      .select('*')
-      .eq('id', documentId)
-      .single();
-
-    if (docError || !document) {
-      console.error('❌ 문서 조회 실패:', docError);
-      return NextResponse.json(
-        { error: '문서를 찾을 수 없습니다.' },
-        { status: 404 }
-      );
-    }
-
-    console.log(`📄 재인덱싱 대상: ${document.title} (${document.type})`);
-
-    // 기존 청크 삭제
-    console.log(`🗑️ 기존 청크 삭제 중...`);
-    const { error: deleteError } = await supabase
-      .from('document_chunks')
-      .delete()
-      .eq('document_id', documentId);
-
-    if (deleteError) {
-      console.warn('기존 청크 삭제 실패:', deleteError);
-    }
-
-    // 문서 상태를 processing으로 변경
-    console.log(`🔄 상태를 processing으로 변경 중...`);
-    const { error: updateError } = await supabase
-      .from('documents')
-      .update({
-        status: 'processing',
-        chunk_count: 0,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', documentId);
-
-    if (updateError) {
-      console.error('❌ 상태 업데이트 실패:', updateError);
-      return NextResponse.json(
-        { error: '문서 상태 업데이트에 실패했습니다.' },
-        { status: 500 }
-      );
-    }
-
-    // URL 문서인 경우 실제 재인덱싱 수행
-    if (document.type === 'url' && document.url) {
-      console.log(`🌐 URL 재인덱싱 시작: ${document.url}`);
-
-      try {
-        // 서버리스 환경에서는 기본적인 URL 정보만 업데이트
-        console.log(`📄 서버리스 환경에서 URL 처리: ${document.url}`);
-
-        // 문서 상태를 completed로 업데이트
-        const { error: finalUpdateError } = await supabase
-          .from('documents')
-          .update({
-            status: 'completed',
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', documentId);
-
-        if (finalUpdateError) {
-          console.error('❌ 최종 상태 업데이트 실패:', finalUpdateError);
-        } else {
-          console.log(`✅ 문서 상태를 completed로 업데이트 완료`);
-        }
-
-        console.log(`✅ 재인덱싱 완료`);
-
-        return NextResponse.json({
-          success: true,
-          message: 'URL 문서 상태가 업데이트되었습니다. (서버리스 환경에서는 실제 크롤링이 제한됩니다)',
-          data: {
-            documentId,
-            status: 'completed'
-          }
-        });
-
-      } catch (crawlError) {
-        console.error('❌ 크롤링/인덱싱 오류:', crawlError);
-
-        // 실패 시 상태를 failed로 변경
-        await supabase
-          .from('documents')
-          .update({
-            status: 'failed',
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', documentId);
-
-        return NextResponse.json(
-          { error: `재인덱싱 실패: ${crawlError instanceof Error ? crawlError.message : String(crawlError)}` },
-          { status: 500 }
-        );
-      }
-    } else {
-      // 파일 문서인 경우 실제 재인덱싱 수행
-      console.log(`📁 파일 문서 재인덱싱 시작: ${document.title}`);
-
-      try {
-        // 메타데이터에서 원본 파일 정보 조회
-        const { data: metadata, error: metaError } = await supabase
-          .from('document_metadata')
-          .select('*')
-          .eq('id', documentId)
-          .single();
-
-        if (metaError || !metadata) {
-          console.error('❌ 메타데이터 조회 실패:', metaError);
-          return NextResponse.json(
-            { error: '문서 메타데이터를 찾을 수 없습니다.' },
-            { status: 404 }
-          );
-        }
-
-        console.log(`📄 메타데이터 조회 완료: ${metadata.type}`);
-
-        // 원본 파일 데이터가 있는 경우 재인덱싱
-        if (metadata.file_data) {
-          console.log(`🔄 파일 데이터로 재인덱싱 시작...`);
-
-          // DocumentIndexingService를 사용하여 재인덱싱
-          const { documentIndexingService } = await import('@/lib/services/DocumentIndexingService');
-
-          // Base64 데이터를 Blob으로 변환
-          const base64Data = metadata.file_data.split(',')[1]; // data:application/pdf;base64, 부분 제거
-          const binaryData = Buffer.from(base64Data, 'base64');
-          const blob = new Blob([binaryData], { type: metadata.mime_type || 'application/octet-stream' });
-
-          // File 객체 생성
-          const file = new File([blob], document.title, {
-            type: metadata.mime_type || 'application/octet-stream'
-          });
-
-          // 재인덱싱 수행
-          const result = await documentIndexingService.indexFile(file, {}, documentId);
-
-          if (result.status === 'failed') {
-            throw new Error(result.error || '파일 재인덱싱에 실패했습니다.');
-          }
-
-          console.log(`✅ 파일 재인덱싱 완료: ${result.chunksProcessed}개 청크`);
-
-          // 문서 상태를 completed로 업데이트
-          const { error: finalUpdateError } = await supabase
-            .from('documents')
-            .update({
-              status: 'completed',
-              chunk_count: result.chunksProcessed,
-              updated_at: new Date().toISOString()
-            })
-            .eq('id', documentId);
-
-          if (finalUpdateError) {
-            console.error('❌ 최종 상태 업데이트 실패:', finalUpdateError);
-          } else {
-            console.log(`✅ 문서 상태를 completed로 업데이트 완료`);
-          }
-
-          return NextResponse.json({
-            success: true,
-            message: '파일 재인덱싱이 완료되었습니다.',
-            data: {
-              documentId,
-              status: 'completed',
-              chunksProcessed: result.chunksProcessed,
-              embeddingsGenerated: result.embeddingsGenerated
-            }
-          });
-
-        } else {
-          // 원본 파일 데이터가 없는 경우 상태만 변경
-          console.log(`⚠️ 원본 파일 데이터가 없음: 상태만 변경`);
-
-          const { error: finalUpdateError } = await supabase
-            .from('documents')
-            .update({
-              status: 'completed',
-              updated_at: new Date().toISOString()
-            })
-            .eq('id', documentId);
-
-          if (finalUpdateError) {
-            console.error('❌ 상태 업데이트 실패:', finalUpdateError);
-          }
-
-          return NextResponse.json({
-            success: true,
-            message: '재인덱싱이 완료되었습니다. (원본 파일 데이터 없음)',
-            data: {
-              documentId,
-              status: 'completed'
-            }
-          });
-        }
-
-      } catch (fileError) {
-        console.error('❌ 파일 재인덱싱 오류:', fileError);
-
-        // 실패 시 상태를 failed로 변경
-        await supabase
-          .from('documents')
-          .update({
-            status: 'failed',
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', documentId);
-
-        return NextResponse.json(
-          { error: `파일 재인덱싱 실패: ${fileError instanceof Error ? fileError.message : String(fileError)}` },
-          { status: 500 }
-        );
-      }
-    }
-
-  } catch (error) {
-    console.error('재인덱싱 오류:', error);
-    return NextResponse.json(
-      { error: '재인덱싱 중 오류가 발생했습니다.' },
-      { status: 500 }
-    );
-  }
+  return NextResponse.json(
+    {
+      success: false,
+      code: 'DOCUMENT_ACTIONS_REINDEX_FAIL_CLOSED',
+      error: '안전한 재인덱싱 경로가 아직 연결되지 않았습니다.',
+      message: '기존 청크를 삭제하거나 상태만 완료 처리하지 않습니다. Source Ops 승인 경로, 실제 추출 파이프라인, 또는 공식 가이드 그래프 백필 경로를 사용하세요.',
+      data: {
+        documentId,
+      },
+    },
+    { status: 409 },
+  );
 }

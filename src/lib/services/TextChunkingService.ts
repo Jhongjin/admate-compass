@@ -28,6 +28,9 @@ export interface DocumentChunk {
     signalScore?: number;
     sourceTitle?: string;
     sourceUrl?: string;
+    sourceChunkId?: string;
+    sourceRowId?: string | number | null;
+    sourceCorpus?: string;
     pageNumber?: number;
     chunkType?: 'text' | 'table' | 'image' | 'title';
   };

@@ -209,11 +209,12 @@ export class CompassOfficialGuideGraphIndexer {
         const graphPath = this.buildGraphPath(vendor, claimType, graphTopics);
         const chunkIndex = chunk.metadata?.chunkIndex ?? 0;
         const sourceUrl = input.url || chunk.metadata?.sourceUrl || null;
+        const sourceChunkId = this.resolveSourceChunkId(input.documentId, chunk, chunkIndex);
 
         return {
           source_kind: 'official_doc',
           source_document_id: input.documentId,
-          source_chunk_id: `${input.documentId}_chunk_${chunkIndex}`,
+          source_chunk_id: sourceChunkId,
           claim_text: this.buildClaimText(input.title, chunk.content, claimType, graphTopics),
           claim_type: claimType,
           excerpt: this.trimText(chunk.content, 1100),
@@ -236,6 +237,9 @@ export class CompassOfficialGuideGraphIndexer {
             graphPath,
             graphTopics,
             chunkIndex,
+            sourceChunkId,
+            sourceRowId: chunk.metadata?.sourceRowId ?? null,
+            sourceCorpus: chunk.metadata?.sourceCorpus ?? null,
             chunkSignalScore: chunk.metadata?.signalScore ?? null,
             chunkingStrategy: chunk.metadata?.chunkingStrategy ?? null,
             officialGuideGraphIndexer: GRAPH_INDEXER_VERSION,
@@ -243,6 +247,16 @@ export class CompassOfficialGuideGraphIndexer {
           },
         };
       });
+  }
+
+  private resolveSourceChunkId(documentId: string, chunk: DocumentChunk, chunkIndex: number): string {
+    const metadata = chunk.metadata as Record<string, any>;
+    const explicitChunkId = metadata.sourceChunkId
+      ?? metadata.source_chunk_id
+      ?? metadata.chunkId
+      ?? metadata.chunk_id;
+
+    return String(explicitChunkId || `${documentId}_chunk_${chunkIndex}`);
   }
 
   private isIndexableChunk(chunk: DocumentChunk): boolean {

@@ -17,6 +17,7 @@ const migration = read('supabase/migrations/20260616000000_create_compass_eviden
 const officialDocMigration = read('supabase/migrations/20260616001000_add_official_doc_graph_indexing_support.sql');
 const graphService = read('src/lib/services/CompassEvidenceGraphService.ts');
 const officialGuideIndexer = read('src/lib/services/CompassOfficialGuideGraphIndexer.ts');
+const officialGuideGraphBackfillRoute = read('src/app/api/admin/source-ops/backfill-official-graph/route.ts');
 const documentIndexer = read('src/lib/services/DocumentIndexingService.ts');
 const ragService = read('src/lib/services/RAGSearchService.ts');
 const llmService = read('src/lib/services/CompassAnswerLlmService.ts');
@@ -61,9 +62,33 @@ for (const officialDocSignal of [
   "evidence_decision: 'verified'",
   "review_status: 'approved'",
   'claim_type',
+  'sourceChunkId',
+  'sourceCorpus',
   'officialGuideGraphIndexer',
 ]) {
   assertIncludes(officialGuideIndexer, officialDocSignal, 'official guide graph indexer contract');
+}
+
+for (const backfillSignal of [
+  'guardCompassProductAdminSessionRoute',
+  'document_chunks',
+  'ollama_document_chunks',
+  'dryRun',
+  'index-official-graph',
+  'compassOfficialGuideGraphIndexer',
+]) {
+  assertIncludes(officialGuideGraphBackfillRoute, backfillSignal, 'official guide graph backfill route contract');
+}
+
+for (const forbiddenBackfillSignal of [
+  'dummyChunks',
+  'embedding: null',
+  ".from('document_chunks')\n      .delete()",
+  ".from('document_chunks')\r\n      .delete()",
+]) {
+  if (officialGuideGraphBackfillRoute.includes(forbiddenBackfillSignal)) {
+    throw new Error(`official guide graph backfill route must not contain ${forbiddenBackfillSignal}`);
+  }
 }
 
 for (const documentIndexerSignal of [
@@ -111,6 +136,9 @@ for (const planSignal of [
   'Evidence Graph search',
   'promote_learning_feedback_to_resolved_case',
   'Open-Beta Governance',
+  'Official Guide Backfill',
+  'backfill-official-graph',
+  'metadata.sourceChunkId',
 ]) {
   assertIncludes(plan, planSignal, 'evidence graph plan');
 }

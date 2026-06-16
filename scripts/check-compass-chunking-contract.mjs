@@ -25,6 +25,10 @@ const chunkingService = read("src/lib/services/TextChunkingService.ts");
 const vectorStorageService = read("src/lib/services/VectorStorageService.ts");
 const indexingService = read("src/lib/services/DocumentIndexingService.ts");
 const documentProcessingService = read("src/lib/services/DocumentProcessingService.ts");
+const uploadReindexRoute = read("src/app/api/admin/upload/[documentId]/reindex/route.ts");
+const directProcessRoute = read("src/app/api/admin/direct-process/route.ts");
+const simpleIndexRoute = read("src/app/api/admin/simple-index/route.ts");
+const documentActionsRoute = read("src/app/api/admin/document-actions/route.ts");
 const extractionPlan = read("docs/tasks/2026-05-17_compass_web_page_extraction_service_contract_plan_v1.md");
 const offsetFixtureText = read("docs/rag/compass-chunking-offset-fixtures.json");
 
@@ -294,6 +298,37 @@ if (!processUrlBlock || !processUrlBlock[0].includes("throw new Error")) {
 
 if (processUrlBlock?.[0].includes("return {")) {
   fail("DocumentProcessingService.processUrl must not return indexable URL placeholder content");
+}
+
+const failClosedAdminReindexRoutes = [
+  ["upload reindex route", uploadReindexRoute, "REINDEX_FAIL_CLOSED"],
+  ["direct-process route", directProcessRoute, "DIRECT_DUMMY_INDEXING_DISABLED"],
+  ["simple-index route", simpleIndexRoute, "SIMPLE_DUMMY_INDEXING_DISABLED"],
+  ["document-actions reindex handler", documentActionsRoute, "DOCUMENT_ACTIONS_REINDEX_FAIL_CLOSED"],
+];
+
+for (const [label, routeText, failClosedCode] of failClosedAdminReindexRoutes) {
+  if (!routeText.includes(failClosedCode)) {
+    fail(`${label} must fail closed with ${failClosedCode}`);
+  }
+  if (!routeText.includes("guardCompassProductAdminSessionRoute")) {
+    fail(`${label} must use product admin session guard`);
+  }
+}
+
+for (const [label, routeText] of failClosedAdminReindexRoutes) {
+  for (const forbidden of [
+    "dummyChunks",
+    "embedding: null",
+    ".from('document_chunks')\n      .delete()",
+    ".from('document_chunks')\r\n      .delete()",
+    ".from('document_chunks')\n          .insert",
+    ".from('document_chunks')\r\n          .insert",
+  ]) {
+    if (routeText.includes(forbidden)) {
+      fail(`${label} must not retain unsafe dummy/null/delete indexing behavior: ${forbidden}`);
+    }
+  }
 }
 
 for (const token of [

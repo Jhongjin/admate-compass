@@ -72,6 +72,41 @@ Each approved official guide assertion keeps:
 
 Re-indexing the same official document marks previous assertions as `stale` before inserting fresh assertions, so retrieval does not mix old and new guide structure.
 
+## Official Guide Backfill
+
+Existing official guide chunks should be backfilled into the graph layer before open beta. This backfill must not crawl new pages, delete chunks, or create placeholder chunks. It reads only the current source corpus and writes derived `official_doc` assertions.
+
+Admin route:
+
+```text
+POST /api/admin/source-ops/backfill-official-graph
+```
+
+Safe dry-run first:
+
+```json
+{
+  "dryRun": true,
+  "source": "document_chunks",
+  "vendor": "META",
+  "limit": 10
+}
+```
+
+Small commit batch:
+
+```json
+{
+  "dryRun": false,
+  "confirm": "index-official-graph",
+  "source": "document_chunks",
+  "vendor": "META",
+  "limit": 10
+}
+```
+
+Use `source: "both"` only when a document is missing from `document_chunks` and the `ollama_document_chunks` copy must be checked as a fallback. The generated assertions preserve source chunk identifiers in `metadata.sourceChunkId`, `metadata.sourceRowId`, and `metadata.sourceCorpus` so vector RAG and graph RAG continue to point back to the same source material.
+
 ## Operational Issue Answer Contract
 
 For questions about errors, rejected delivery, campaign setup, catalog linkage, SDK/MMP, tracking specs, app events, pixel, exposure, budget burn, or targeting, answers should use:
