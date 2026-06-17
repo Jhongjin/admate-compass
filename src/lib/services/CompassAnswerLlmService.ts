@@ -22,6 +22,9 @@ export interface CompassGroundingSource {
   documentTitle?: string;
   documentUrl?: string;
   sourceVendor?: string;
+  answerMode?: string;
+  questionIntent?: string;
+  answerEvidenceRole?: string;
   sourceQuality?: {
     isFallback?: boolean;
     qualityScore?: number;
@@ -187,6 +190,12 @@ function buildSystemPrompt(): string {
 }
 
 function buildEvidencePrompt(message: string, searchResults: CompassGroundingSource[]): string {
+  const answerModeHint = searchResults.find(result => result.answerMode || result.metadata?.answerMode)?.answerMode
+    || searchResults.find(result => result.metadata?.answerMode)?.metadata?.answerMode
+    || 'auto';
+  const questionIntentHint = searchResults.find(result => result.questionIntent || result.metadata?.questionIntent)?.questionIntent
+    || searchResults.find(result => result.metadata?.questionIntent)?.metadata?.questionIntent
+    || 'auto';
   const evidence = searchResults
     .filter((result) => {
       const decision = result.evidenceDecision || result.metadata?.evidenceDecision;
@@ -203,6 +212,10 @@ function buildEvidencePrompt(message: string, searchResults: CompassGroundingSou
       const decision = result.evidenceDecision || result.metadata?.evidenceDecision || 'weak';
       const reasons = result.evidenceDecisionReason || result.metadata?.evidenceDecisionReason || [];
       const sourceKind = result.sourceKind || result.metadata?.source_kind || 'official_doc';
+      const answerEvidenceRole = result.answerEvidenceRole
+        || result.metadata?.answerEvidenceRole
+        || result.metadata?.answer_evidence_role
+        || 'general';
       const graphPath = result.graphPath || result.metadata?.graphPath || result.metadata?.graph_path || 'none';
       const claimType = result.metadata?.claimType || result.metadata?.claim_type || 'unknown';
       const excerpt = result.content.replace(/\s+/g, ' ').trim().slice(0, 900);
@@ -211,6 +224,7 @@ function buildEvidencePrompt(message: string, searchResults: CompassGroundingSou
         `title: ${title}`,
         `vendor: ${vendor}`,
         `sourceKind: ${sourceKind}`,
+        `answerEvidenceRole: ${answerEvidenceRole}`,
         `claimType: ${claimType}`,
         `graphPath: ${graphPath}`,
         `decision: ${decision}`,
@@ -224,20 +238,38 @@ function buildEvidencePrompt(message: string, searchResults: CompassGroundingSou
 
   return [
     `사용자 질문: ${message}`,
+    `답변 모드 힌트: ${answerModeHint}`,
+    `질문 처리 힌트: ${questionIntentHint}`,
     '',
     '검증된 근거:',
     evidence || '(제공된 검증 근거 없음)',
     '',
     '답변 규칙:',
     '- 위 근거에서 확인되는 내용만 답변하세요.',
-    '- 근거가 충분하지 않으면 "현재 제공된 문서에서는 확인되지 않습니다"라고 답하세요.',
-    '- 일부 근거가 확인되면 전체 부정으로 시작하지 말고, "제공된 근거 기준으로는"처럼 확인 가능한 범위를 먼저 밝히세요.',
+    '- 검증 근거가 하나도 없을 때만 "현재 제공된 문서에서는 확인되지 않습니다"라고 답하세요.',
+    '- 검증 근거가 일부라도 있으면 전체 부정으로 시작하지 말고, "제공된 근거 기준으로는"처럼 확인 가능한 범위를 먼저 밝히세요.',
     '- "현재 제공된 문서에서는 확인되지 않습니다"라고 말한 뒤 확인되지 않은 세부 내용을 이어서 작성하지 마세요.',
     '- sourceKind가 official_doc인 근거는 공식 광고 가이드/정책 기준으로 답하세요.',
     '- sourceKind가 resolved_case인 근거는 "실무 처리 사례 기준으로는" 또는 "과거 유사 이슈에서는"처럼 표현하세요. 공식 정책처럼 단정하지 마세요.',
     '- official_doc과 resolved_case가 함께 있으면 "공식 기준"을 먼저 쓰고, 그 다음 "실무 처리 사례"를 별도 문단으로 분리하세요.',
+    '- answerEvidenceRole이 mode_detail 또는 db_detail인 근거를 답변의 1차 근거로 사용하세요. 해당 근거에 있는 절차, 조건, 소재 사양, 지면 정보를 먼저 정리해야 합니다.',
+    '- answerEvidenceRole이 official_graph인 근거는 공식 문서/상품 관계를 보강하는 용도입니다. mode_detail 또는 db_detail 근거가 있으면 official_graph만으로 넓은 상품 개요를 만들지 마세요.',
+    '- answerEvidenceRole이 product_context인 근거는 배경 범위 보강용입니다. product_context만으로 특정 상품 질문을 전체 상품 구조나 캠페인 목표 목록으로 바꾸지 마세요.',
     '- 오류, 연동, 반려, 세팅, SDK, MMP, tracking_specs, 카탈로그, 픽셀, 노출, 소진처럼 실제 집행 이슈를 물으면 "확인 순서 / 가능한 원인 / 조치 방법 / 추가 확인 필요 항목" 순서로 정리하세요.',
-    '- 사용자가 광고 상품/종류/구조를 물었고 근거에 캠페인 목표, 노출 위치, 소재 형식, Advantage+, 카탈로그, 픽셀/전환처럼 운영 구조가 확인되면 "캠페인 목표 / 노출 위치 / 소재 형식 / 자동화·커머스·측정 기반 / 목적별 선택 기준" 순서로 정리하세요. 단, 각 항목은 근거에 있는 경우에만 작성하세요.',
+    '- 답변 모드 힌트가 auto가 아니면 그 모드를 우선 적용하세요. 질문 처리 힌트를 무시하고 넓은 상품 개요로 되돌아가지 마세요.',
+    '- 내부적으로 answer_mode를 하나만 선택하세요: product_overview, product_selection, product_detail, execution_guide, setup_procedure, creative_guide, policy_screening, operational_issue. answer_mode 이름은 출력하지 말고, 선택한 모드에 맞는 골격만 사용하세요.',
+    '- execution_guide는 특정 상품의 집행 절차와 소재 조건을 함께 묻는 질문입니다. 이때는 준비 순서, 필수 설정/연동, 소재 조건, 확인해야 할 제한사항을 나눠 답하세요.',
+    '- product_detail, execution_guide, setup_procedure, policy_screening, operational_issue 질문에는 product_overview 구조를 반복하지 마세요. 특히 캠페인 목표 목록을 기본 답변으로 되풀이하지 마세요.',
+    '- 특정 상품 질문의 첫 문장은 반드시 사용자가 물은 상품명/지면/절차를 직접 언급해야 합니다. 예: "네이버 DA는...", "Meta 앱 인스톨 광고는...", "Google 리드 양식은..."처럼 시작하세요.',
+    '- 특정 상품 질문에서 근거가 부족하면 다른 상품군의 일반 개요로 대체하지 마세요. 확인된 근거와 부족한 범위를 분리하고, 관련 없는 캠페인 목표/상품군 목록은 쓰지 마세요.',
+    '- product_detail은 "무엇인지 / 어디에 노출되는지 / 언제 쓰는지 / 운영 전 확인할 조건" 순서로 답하세요. 소재 규격이나 정책만 근거에 있으면 그 한계를 명시하세요.',
+    '- setup_procedure는 "준비 항목 / 설정 또는 연동 순서 / 담당자나 원문 확인이 필요한 범위" 순서로 답하세요. 앱·카탈로그·DB URL·EP·MMP·SDK 질문은 이 규칙을 우선 적용하세요.',
+    '- creative_guide는 "필수 소재 요소 / 규격·비율·파일 조건 / 문구·랜딩·심사 주의사항" 순서로 답하세요. 상품 선택 기준을 반복하지 마세요.',
+    '- policy_screening은 "심사 전 확인 기준 / 제한 또는 반려 가능 사유 / 추가 확인 자료" 순서로 답하세요. 질문과 무관한 일반 금지 조항을 길게 나열하지 마세요.',
+    '- 사용자가 광고 상품/종류/구조를 물으면 질문 의도를 먼저 구분하세요: 전체 상품 개요, 목적별 선택 기준, 특정 상품 상세, 정책 심사 체크, 실무 이슈 해결. 서로 다른 모드를 하나의 고정 템플릿으로 합치지 마세요.',
+    '- 전체 상품 개요 질문에는 근거에서 확인되는 상품군, 지면, 캠페인 유형을 먼저 나누고 각 항목이 언제 쓰이는지 짧게 설명하세요. 근거에 없는 상품군은 추정하지 마세요.',
+    '- 목적별 선택 질문에는 "우선 목표를 정하고 / 그 목표에 맞는 상품군과 지면을 고르고 / 운영 전 조건을 확인한다"는 순서로 정리하세요.',
+    '- 사용자가 "DA도 있지 않아?", "동영상 광고 상품", "앱 인스톨", "DB URL"처럼 특정 상품이나 누락된 상품군을 물으면 전체 상품 구조를 반복하지 말고 그 항목에 직접 답하세요. 첫 문장부터 질문한 항목을 다루세요.',
     '- 광고 상품/종류 질문에서 검증 근거가 소재 크기·파일 형식·비율만 확인한다면 "제공된 근거에서는 소재 형식/사양 범위만 확인됩니다"라고 먼저 밝히고, 그 범위로만 답하세요.',
     '- 특정 광고 상품을 물으면 개요 템플릿을 반복하지 말고, "무엇인지 / 언제 쓰는지 / 운영 또는 등록 절차 / 필요한 소재와 설정 / 심사·주의사항" 중 근거로 확인되는 항목만 골라 답하세요.',
     '- 등록, DB URL, 상품 DB, 카탈로그, 앱 등록, 추적 툴, 리드 양식, 제작 가이드, 소재 조건을 물으면 절차형 또는 체크리스트형으로 답하세요. 단순히 광고 목표 목록으로 돌려 말하지 마세요.',

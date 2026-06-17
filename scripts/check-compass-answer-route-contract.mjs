@@ -69,13 +69,16 @@ for (const requiredText of [
   "evidenceDecision === 'verified'",
   "model: 'compass-answer-no-data'",
   "model: 'compass-answer-connection-failed'",
-  "model: 'compass-answer'",
+  'function buildCompassAnswerModel',
+  'model: buildCompassAnswerModel(ragIntent, isBroadProductStructureLlmIntent)',
+  "'compass-answer-grounded-product-structure-llm'",
+  "'compass-answer'",
 ]) {
   if (!answerHandlerText.includes(requiredText)) fail(`neutral answer handler missing ${requiredText}`)
 }
 
 const verifiedFilterIndex = answerHandlerText.indexOf('const verifiedSearchResults = searchResults.filter(isVerifiedGrounding)')
-const generationIndex = answerHandlerText.indexOf('answerResult = await generateCompassAnswer(message, verifiedSearchResults)')
+const generationIndex = answerHandlerText.indexOf('answerResult = await generateCompassAnswer(')
 const noDataIndex = answerHandlerText.indexOf('if (verifiedSearchResults.length === 0)')
 if (verifiedFilterIndex === -1 || noDataIndex === -1 || generationIndex === -1 || !(verifiedFilterIndex < noDataIndex && noDataIndex < generationIndex)) {
   fail('neutral answer handler must route weak-only evidence to noData before answer generation')

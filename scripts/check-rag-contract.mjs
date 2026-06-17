@@ -37,7 +37,22 @@ if (fs.existsSync(chatbotPath)) {
   for (const field of ['sources', 'confidence', 'processingTime', 'model', 'isLLMGenerated']) {
     if (!text.includes(field)) fail(`chatbot response contract missing ${field}`)
   }
-  if (!text.includes('enrichSearchResults')) fail('chatbot route missing source enrichment step')
+  const delegatesToCanonicalAnswerEngine =
+    text.includes('buildCompassAnswerResponse') &&
+    text.includes("canonicalEndpoint: '/api/compass-answer'") &&
+    text.includes('delegatedToCanonicalAnswerEngine')
+
+  if (!delegatesToCanonicalAnswerEngine && !text.includes('enrichSearchResults')) {
+    fail('chatbot route missing source enrichment step')
+  }
+
+  if (delegatesToCanonicalAnswerEngine) {
+    for (const forbidden of ['generateChatResponse', 'generateResponse', 'checkOllamaHealth', 'getRAGSearchService']) {
+      if (text.includes(forbidden)) {
+        fail(`chatbot route must not bypass canonical Compass answer engine: ${forbidden}`)
+      }
+    }
+  }
 }
 
 const searchPath = path.join(root, 'src/app/api/search/route.ts')

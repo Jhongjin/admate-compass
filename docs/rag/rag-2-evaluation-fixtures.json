@@ -732,6 +732,372 @@
     ]
   },
   {
+    "id": "meta-app-install-execution-guide",
+    "question": "메타 앱 인스톨 광고를 진행하기 위한 소재나 절차에 대해 알려줘",
+    "expectedVendor": "META",
+    "expectedSourceTitle": [
+      "Meta",
+      "Facebook",
+      "앱",
+      "App"
+    ],
+    "mustContain": [
+      "앱",
+      "소재"
+    ],
+    "mustNotContain": [
+      "캠페인 목표부터",
+      "상품명 하나를 고르는 방식",
+      "전체 상품 개요",
+      "상황별 빠른 선택 기준",
+      "검색 유입",
+      "쇼핑 상품 노출"
+    ],
+    "minSources": 1,
+    "minConfidence": 45,
+    "expectNoDataFound": false,
+    "requireRetrievalMethods": [
+      "keyword",
+      "hybrid"
+    ],
+    "requireSourceQuality": true,
+    "maxDuplicateTitles": 2,
+    "minDistinctTitles": 1,
+    "category": "vendor-specific",
+    "sourceMustContain": [
+      "앱"
+    ],
+    "sourceMustNotContain": [
+      "네이버 쇼핑"
+    ],
+    "generationMustContain": [
+      "앱",
+      "소재"
+    ],
+    "generationMustNotContain": [
+      "캠페인 목표부터",
+      "상품명 하나를 고르는 방식",
+      "전체 상품 개요",
+      "상황별 빠른 선택 기준",
+      "검색 유입",
+      "쇼핑 상품 노출"
+    ]
+  },
+  {
+    "id": "meta-catalog-setup-guide",
+    "question": "메타 카탈로그 광고를 집행하려면 연동이나 상품 데이터에서 무엇을 확인해야 해?",
+    "expectedVendor": "META",
+    "expectedSourceTitle": [
+      "Meta",
+      "Facebook",
+      "카탈로그",
+      "Catalog"
+    ],
+    "mustContain": [
+      "카탈로그",
+      "상품"
+    ],
+    "mustNotContain": [
+      "캠페인 목표부터",
+      "상품명 하나를 고르는 방식",
+      "전체 상품 개요",
+      "상황별 빠른 선택 기준",
+      "검색 유입",
+      "쇼핑 상품 노출"
+    ],
+    "minSources": 1,
+    "minConfidence": 45,
+    "expectNoDataFound": false,
+    "requireRetrievalMethods": [
+      "keyword",
+      "hybrid"
+    ],
+    "requireSourceQuality": true,
+    "maxDuplicateTitles": 2,
+    "minDistinctTitles": 1,
+    "category": "vendor-specific",
+    "sourceMustContain": [
+      "카탈로그"
+    ],
+    "sourceMustNotContain": [
+      "네이버 쇼핑"
+    ],
+    "generationMustContain": [
+      "카탈로그",
+      "상품"
+    ],
+    "generationMustNotContain": [
+      "캠페인 목표부터",
+      "상품명 하나를 고르는 방식",
+      "전체 상품 개요",
+      "상황별 빠른 선택 기준",
+      "검색 유입",
+      "쇼핑 상품 노출"
+    ]
+  },
+  {
+    "id": "naver-video-ad-product-detail",
+    "question": "네이버 동영상 광고 상품 상세는 어떻게 봐야 해?",
+    "expectedVendor": "NAVER",
+    "expectedSourceTitle": [
+      "네이버",
+      "동영상",
+      "광고"
+    ],
+    "mustContain": [
+      "동영상",
+      "광고"
+    ],
+    "mustNotContain": [
+      "캠페인 목표부터",
+      "상품명 하나를 고르는 방식",
+      "전체 상품 개요",
+      "상황별 빠른 선택 기준",
+      "검색 유입",
+      "쇼핑 상품 노출",
+      "쇼핑검색광고",
+      "사이트검색광고"
+    ],
+    "minSources": 1,
+    "minConfidence": 40,
+    "expectNoDataFound": false,
+    "requireRetrievalMethods": [
+      "keyword",
+      "hybrid"
+    ],
+    "requireSourceQuality": true,
+    "maxDuplicateTitles": 2,
+    "minDistinctTitles": 1,
+    "category": "vendor-specific",
+    "sourceMustContain": [
+      "동영상"
+    ],
+    "sourceMustNotContain": [
+      "Meta",
+      "쇼핑검색광고"
+    ],
+    "generationMustContain": [
+      "동영상",
+      "광고"
+    ],
+    "generationMustNotContain": [
+      "캠페인 목표부터",
+      "상품명 하나를 고르는 방식",
+      "전체 상품 개요",
+      "상황별 빠른 선택 기준",
+      "검색 유입",
+      "쇼핑 상품 노출",
+      "쇼핑검색광고",
+      "사이트검색광고"
+    ]
+  },
+  {
+    "id": "naver-da-product-detail",
+    "question": "네이버 광고 상품 중 DA상품들도 있지 않아?",
+    "expectedVendor": "NAVER",
+    "expectedSourceTitle": [
+      "네이버",
+      "DA",
+      "디스플레이"
+    ],
+    "mustContain": [
+      "DA",
+      "디스플레이"
+    ],
+    "mustNotContain": [
+      "캠페인 목표부터",
+      "상품명 하나를 고르는 방식",
+      "전체 상품 개요",
+      "상황별 빠른 선택 기준",
+      "검색 유입",
+      "쇼핑 상품 노출",
+      "쇼핑검색광고",
+      "사이트검색광고만"
+    ],
+    "minSources": 1,
+    "minConfidence": 40,
+    "expectNoDataFound": false,
+    "requireRetrievalMethods": [
+      "keyword",
+      "hybrid"
+    ],
+    "requireSourceQuality": true,
+    "maxDuplicateTitles": 2,
+    "minDistinctTitles": 1,
+    "category": "vendor-specific",
+    "sourceMustContain": [
+      "DA"
+    ],
+    "sourceMustNotContain": [
+      "Meta"
+    ],
+    "generationMustContain": [
+      "DA",
+      "디스플레이"
+    ],
+    "generationMustNotContain": [
+      "캠페인 목표부터",
+      "상품명 하나를 고르는 방식",
+      "전체 상품 개요",
+      "상황별 빠른 선택 기준",
+      "검색 유입",
+      "쇼핑 상품 노출",
+      "쇼핑검색광고",
+      "사이트검색광고만"
+    ]
+  },
+  {
+    "id": "naver-shopping-db-url-setup",
+    "question": "네이버 쇼핑검색광고를 집행하려면 상품 등록이나 DB URL 관련해서 무엇을 확인해야 해?",
+    "expectedVendor": "NAVER",
+    "expectedSourceTitle": [
+      "네이버",
+      "쇼핑",
+      "DB URL",
+      "상품"
+    ],
+    "mustContain": [
+      "상품",
+      "DB URL"
+    ],
+    "mustNotContain": [
+      "캠페인 목표부터",
+      "상품명 하나를 고르는 방식",
+      "전체 상품 개요",
+      "상황별 빠른 선택 기준"
+    ],
+    "minSources": 1,
+    "minConfidence": 40,
+    "expectNoDataFound": false,
+    "requireRetrievalMethods": [
+      "keyword",
+      "hybrid"
+    ],
+    "requireSourceQuality": true,
+    "maxDuplicateTitles": 2,
+    "minDistinctTitles": 1,
+    "category": "vendor-specific",
+    "sourceMustContain": [
+      "상품"
+    ],
+    "sourceMustNotContain": [
+      "Facebook"
+    ],
+    "generationMustContain": [
+      "상품",
+      "DB"
+    ],
+    "generationMustNotContain": [
+      "캠페인 목표부터",
+      "상품명 하나를 고르는 방식",
+      "전체 상품 개요",
+      "상황별 빠른 선택 기준"
+    ]
+  },
+  {
+    "id": "google-lead-form-policy",
+    "question": "Google 리드 양식 광고를 사용할 때 주의해야 할 정책이나 소재 조건을 알려줘",
+    "expectedVendor": "GOOGLE",
+    "expectedSourceTitle": [
+      "Google",
+      "리드",
+      "Lead"
+    ],
+    "mustContain": [
+      "리드",
+      "양식"
+    ],
+    "mustNotContain": [
+      "캠페인 목표부터",
+      "상품명 하나를 고르는 방식",
+      "전체 상품 개요",
+      "상황별 빠른 선택 기준",
+      "카카오"
+    ],
+    "minSources": 1,
+    "minConfidence": 40,
+    "expectNoDataFound": false,
+    "requireRetrievalMethods": [
+      "keyword",
+      "hybrid"
+    ],
+    "requireSourceQuality": true,
+    "maxDuplicateTitles": 2,
+    "minDistinctTitles": 1,
+    "category": "vendor-specific",
+    "sourceMustContain": [
+      "리드"
+    ],
+    "sourceMustNotContain": [
+      "카카오"
+    ],
+    "generationMustContain": [
+      "리드",
+      "양식"
+    ],
+    "generationMustNotContain": [
+      "캠페인 목표부터",
+      "상품명 하나를 고르는 방식",
+      "전체 상품 개요",
+      "상황별 빠른 선택 기준",
+      "검색 유입",
+      "쇼핑 상품 노출"
+    ]
+  },
+  {
+    "id": "kakao-bizboard-display-product-detail",
+    "question": "카카오 광고 상품은 비즈보드와 디스플레이 광고 기준으로 어떻게 구분하면 돼?",
+    "expectedVendor": "KAKAO",
+    "expectedSourceTitle": [
+      "카카오",
+      "비즈보드",
+      "디스플레이"
+    ],
+    "mustContain": [
+      "비즈보드",
+      "디스플레이"
+    ],
+    "mustNotContain": [
+      "캠페인 목표부터",
+      "상품명 하나를 고르는 방식",
+      "전체 상품 개요",
+      "상황별 빠른 선택 기준",
+      "검색 유입",
+      "쇼핑 상품 노출",
+      "Meta"
+    ],
+    "minSources": 1,
+    "minConfidence": 40,
+    "expectNoDataFound": false,
+    "requireRetrievalMethods": [
+      "keyword",
+      "hybrid"
+    ],
+    "requireSourceQuality": true,
+    "maxDuplicateTitles": 2,
+    "minDistinctTitles": 1,
+    "category": "vendor-specific",
+    "sourceMustContain": [
+      "비즈보드"
+    ],
+    "sourceMustNotContain": [
+      "Meta"
+    ],
+    "generationMustContain": [
+      "비즈보드",
+      "디스플레이"
+    ],
+    "generationMustNotContain": [
+      "캠페인 목표부터",
+      "상품명 하나를 고르는 방식",
+      "전체 상품 개요",
+      "상황별 빠른 선택 기준",
+      "검색 유입",
+      "쇼핑 상품 노출",
+      "카카오 서비스 지면, 소재 형식, 업종 제한"
+    ]
+  },
+  {
     "id": "out-of-scope-weather",
     "question": "내일 서울 날씨 알려줘",
     "expectedVendor": "NONE",

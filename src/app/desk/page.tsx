@@ -1391,7 +1391,7 @@ function ChatPageContent() {
   const finalReviewReady = latestHasSources && !needsAdditionalReview;
   const reviewPostureItems = [
     {
-      label: "질문 조건",
+      label: "1차 검토",
       value: lastSubmittedQuestion ? "문안 맥락 확인" : "입력 대기",
       Icon: CheckCircle,
       className: lastSubmittedQuestion
@@ -1409,7 +1409,7 @@ function ChatPageContent() {
       iconClassName: latestHasSources ? "text-[#1F7A4D]" : "text-[#8B9388]",
     },
     {
-      label: "주의 항목",
+      label: "최종 검토",
       value: finalReviewReady ? "답변 정리 완료" : needsAdditionalReview ? "추가 확인 필요" : "대기",
       Icon: needsAdditionalReview ? AlertCircle : Target,
       className: needsAdditionalReview
