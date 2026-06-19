@@ -2,23 +2,24 @@
 
 Date: 2026-05-17
 Repo: admate-compass
-Status: provider activation contract, canary-safe default pinned
+Status: provider activation contract, open-beta auto provider selection
 
 ## Scope
 
-This record documents the current Compass answer-model provider boundary before
-any OpenRouter production activation.
+This record documents the current Compass answer-model provider boundary for
+open-beta operation.
 
-No real OpenRouter key is registered, tested, printed, or validated in this
-slice.
+No real OpenRouter key is registered in this repository artifact. Secret values
+are never tested, printed, or validated in this record.
 
 ## Current Runtime
 
-- `/api/chat-ollama` remains the canonical Compass answer route.
-- `/api/chatbot` remains legacy and points callers toward `/api/chat-ollama`.
+- `/api/compass-answer` is the canonical Compass answer route.
+- `/api/chat-ollama` remains a legacy compatibility route.
+- `/api/chatbot` remains legacy and points callers toward `/api/compass-answer`.
 - `CompassAnswerLlmService` owns answer-model selection.
 - The OpenRouter adapter already exists and is server-side only.
-- Local/Vultr Ollama remains available as the current fallback and development
+- Local/Vultr Ollama remains available as the last fallback and development
   isolation path.
 
 ## Provider Selection Today
@@ -26,24 +27,28 @@ slice.
 Current behavior:
 
 ```text
-COMPASS_ANSWER_PROVIDER=ollama      -> Ollama
-COMPASS_ANSWER_PROVIDER=openrouter  -> OpenRouter
-COMPASS_ANSWER_PROVIDER=auto/empty  -> Ollama (canary protected default)
+COMPASS_ANSWER_PROVIDER=openrouter  -> OpenRouter, then OpenAI fallback when configured
+COMPASS_ANSWER_PROVIDER=openai      -> OpenAI, then OpenRouter fallback when configured
+COMPASS_ANSWER_PROVIDER=ollama      -> Ollama, then OpenRouter/OpenAI fallback when configured
+COMPASS_ANSWER_PROVIDER=auto/empty  -> OpenRouter when a server key exists, else OpenAI, else Ollama
 ```
 
 Important risk:
 
-A server-side key alone must not switch Compass to OpenRouter before canary.
-OpenRouter activation requires explicit provider selection. Until the OpenRouter
-canary is approved, keep:
+A server-side key must remain server-only and must never be exposed through
+`NEXT_PUBLIC_*` variables, logs, or client responses. For open-beta stability,
+an empty provider value is allowed to use the strongest configured server-side
+provider before falling back to Ollama.
+Empty/auto provider selection is therefore an intentional open-beta runtime
+path, not a client-visible setting.
 
 ```text
-COMPASS_ANSWER_PROVIDER=ollama
+COMPASS_ANSWER_PROVIDER=
 ```
 
-## Future OpenRouter Activation
+## Explicit OpenRouter Pinning
 
-When approved, OpenRouter should be activated explicitly with:
+When an environment must be pinned to OpenRouter, use:
 
 ```text
 COMPASS_ANSWER_PROVIDER=openrouter
@@ -55,21 +60,20 @@ Recommended model list should remain configuration-driven. Do not hardcode the
 final paid production list until cost, latency, source precision, and provider
 availability are reviewed.
 
-## OpenRouter Canary Gate
+## OpenRouter Operation Gate
 
-OpenRouter must be activated by an explicit canary gate, not by accidental key
-presence or `auto` mode behavior.
+OpenRouter can be selected by explicit provider configuration or by empty/auto
+provider selection when the server-side key exists.
 
-Before canary:
+For all environments:
 
-- keep `COMPASS_ANSWER_PROVIDER=ollama`
 - keep OpenRouter credentials server-only
 - do not add `NEXT_PUBLIC_OPENROUTER_*`
 - do not print, echo, or inspect secret values
 - keep the model fallback list environment-configured
 - run local contract checks before any deployment change
 
-Canary activation should happen first in a controlled non-production target:
+Explicit OpenRouter pinning:
 
 ```text
 COMPASS_ANSWER_PROVIDER=openrouter
@@ -84,7 +88,7 @@ Canary success criteria:
 - rejected, fallback, placeholder, and weak-only evidence do not become final answer content
 - latency, cost, model, and source precision are reviewed before production rollout
 
-Rollback:
+Rollback to local/provider-isolated generation:
 
 ```text
 COMPASS_ANSWER_PROVIDER=ollama
@@ -108,7 +112,7 @@ be printed.
 
 This boundary does not:
 
-- change `/api/chat-ollama` behavior
+- remove `/api/chat-ollama` compatibility behavior
 - change `/api/chatbot` behavior
 - register real OpenRouter secrets
 - call OpenRouter

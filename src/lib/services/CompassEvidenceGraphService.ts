@@ -137,6 +137,14 @@ export class CompassEvidenceGraphService {
     const structuredRows = await this.fetchStructuredRows(intent, limit);
 
     if (structuredRows.length > 0) {
+      if (intent.isSpecificProductGuidance || intent.topics.includes('product_structure')) {
+        const textRows = await this.fetchTextRows(query, terms, limit);
+        const mergedRows = intent.isSpecificProductGuidance
+          ? [...textRows, ...structuredRows]
+          : [...structuredRows, ...textRows];
+        return this.dedupeRows(mergedRows).slice(0, Math.max(limit * 28, 140));
+      }
+
       return structuredRows;
     }
 
@@ -420,7 +428,7 @@ export class CompassEvidenceGraphService {
         .filter((topic: unknown) => this.preferredGraphTopics(intent).includes(String(topic)))
         .map((topic: unknown) => String(topic))
       : [];
-    const directTermMatches = terms.filter((term) => visibleText.includes(this.normalize(term)));
+    const directTermMatches = terms.filter((term) => this.textContainsTerm(visibleText, term));
     const matchedTerms = Array.from(new Set([
       ...directTermMatches,
       ...topicMatches,
@@ -434,7 +442,7 @@ export class CompassEvidenceGraphService {
     if (
       sourceKind === 'official_doc'
       && intent.topics.includes('product_structure')
-      && !this.isRelevantProductStructureOfficialGraph(visibleText, directTermMatches, intent)
+      && !this.isRelevantProductStructureOfficialGraph(visibleText, directTermMatches, topicMatches, intent)
     ) {
       return null;
     }
@@ -503,15 +511,22 @@ export class CompassEvidenceGraphService {
       ...intent.vendors.flatMap((vendor) => this.vendorTerms(vendor)),
     ];
 
-    return Array.from(new Set(rawTerms
+    const cleanedTerms = rawTerms
       .map((term) => this.cleanTerm(term))
-      .filter((term) => term.length >= 2)))
-      .slice(0, 24);
+      .filter((term) => term.length >= 2);
+    const compactTerms = cleanedTerms
+      .map((term) => term.replace(/\s+/g, ''))
+      .filter((term) => term.length >= 2);
+
+    return Array.from(new Set([...cleanedTerms, ...compactTerms]))
+      .filter((term) => !this.isWeakSearchTerm(term))
+      .slice(0, 32);
   }
 
   private isRelevantProductStructureOfficialGraph(
     visibleText: string,
     directTermMatches: string[],
+    topicMatches: string[],
     intent: QueryIntent
   ): boolean {
     const queryText = this.normalize([
@@ -526,19 +541,27 @@ export class CompassEvidenceGraphService {
       .filter((term) => !vendorTerms.has(term))
       .filter((term) => !['광고', 'ads', '가이드', '정책', '기준', '정보', '문서', '알려줘', '대해'].includes(term));
     const hasProductSignal = this.hasProductStructureEvidenceSignal(visibleText);
+    const hasGraphTopicMatch = topicMatches.some((topic) => /product_structure|campaign_objective|ad_format|placement|asset_spec|commerce_measurement|app_install|lead_generation|catalog|shopping/i.test(topic));
     const hasMeaningfulProductOverlap = meaningfulMatches.some((term) => (
       /캠페인|목표|유형|형식|소재|노출|지면|게재|검색|디스플레이|쇼핑|앱|인스톨|설치|홍보|리드|비즈보드|상품|db|url|카탈로그|픽셀|전환|catalog|campaign|objective|format|placement|app|shopping|search|display|lead/.test(term)
+    ));
+    const hasSpecificDetailOverlap = intent.isSpecificProductGuidance && meaningfulMatches.some((term) => (
+      /등록|절차|집행|세팅|설정|연동|제작|소재|사양|스펙|조건|주의|유의|심사|검수|오류|에러|sdk|mmp|db|url|상품|카탈로그|픽셀|전환|리드|양식|동영상|비즈보드|지면|노출|검색|쇼핑|앱|install|app|catalog|lead|video|shopping/.test(term)
     ));
 
     if (this.isOffAxisProductStructureEvidence(visibleText, queryText)) {
       return false;
     }
 
-    if (this.isLowValueProductStructureEvidence(visibleText, queryText) && !hasMeaningfulProductOverlap) {
+    if (this.isLowValueProductStructureEvidence(visibleText, queryText) && !hasMeaningfulProductOverlap && !hasSpecificDetailOverlap) {
       return false;
     }
 
-    return hasProductSignal || hasMeaningfulProductOverlap;
+    if (intent.isSpecificProductGuidance) {
+      return hasSpecificDetailOverlap || (hasMeaningfulProductOverlap && hasProductSignal);
+    }
+
+    return hasProductSignal || (hasGraphTopicMatch && hasMeaningfulProductOverlap) || hasMeaningfulProductOverlap;
   }
 
   private hasProductStructureEvidenceSignal(text: string): boolean {
@@ -580,6 +603,16 @@ export class CompassEvidenceGraphService {
 
   private normalize(text: string): string {
     return String(text || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  }
+
+  private textContainsTerm(normalizedText: string, term: string): boolean {
+    const normalizedTerm = this.normalize(term);
+    if (!normalizedText || !normalizedTerm) return false;
+    if (normalizedText.includes(normalizedTerm)) return true;
+
+    const compactText = normalizedText.replace(/\s+/g, '');
+    const compactTerm = normalizedTerm.replace(/\s+/g, '');
+    return compactTerm.length >= 2 && compactText.includes(compactTerm);
   }
 
   private normalizeVendor(value: unknown): VendorIntent | 'UNKNOWN' {

@@ -116,11 +116,19 @@ for (const snippet of [
   '네이버 쇼핑검색광고 상품형 쇼핑블록 광고 상품',
   '네이버 디스플레이 광고 DA 홈피드 배너 광고 상품',
   '네이버 성과형 디스플레이 광고 DA 광고 상품',
-  'App Install App Promotion SDK MMP 앱 이벤트',
+  '앱 인스톨 App Install 앱 홍보 앱 이벤트',
   'mergeSearchResultsByIdentity',
   'sourceMatchesVendor',
   'isWeakProductStructureDisplaySource',
   'buildBroadProductStructureQueryTerms',
+  'buildRequestedProductFocus',
+  'sourceMatchesRequestedProductFocus',
+  'scoreRequestedProductFocus',
+  'ensureProductStructureRequestedFocusCoverage',
+  'selectProductStructureResponseSources(sources: ReturnType<typeof buildVerifiedSources>, intent?: QueryIntent, message = \'\')',
+  'buildBroadProductStructureQueryTerms(intent?: QueryIntent, message = \'\')',
+  'buildRequestedProductStructureCoverageTerms(intent?: QueryIntent, message = \'\')',
+  'const productStructureSources = selectProductStructureResponseSources(sources, ragIntent, message)',
   'scoreBroadProductStructureSource',
   'matchText',
   'metadata?.source_vendor',
@@ -183,6 +191,7 @@ for (const snippet of [
   'hasSpecificProductTermMatch',
   'getSpecificProductMatchedTerms',
   'hasSpecificProductDetailSignalNearTerm',
+  'hasSpecificProductDetailSignalNearAnyTerm',
   'isBroadSpecificProductCatalogHit(sourceText, intent)',
   'matchedTerms.some(term => this.hasSpecificProductDetailSignalNearTerm(text, term))',
   'shortAsciiTermPattern',
@@ -191,6 +200,7 @@ for (const snippet of [
   'specificProductAnchorMatch',
   'strict_product_term_match',
   'strict_product_term_missing_penalty',
+  'specific_product_near_detail_match',
   'broad_product_structure_penalty',
   'strictProductAlignmentBoost',
   'strictProductAlignmentPenalty',
@@ -294,6 +304,229 @@ if (!/intent\.isSpecificProductGuidance[\s\S]*!usesNaverShoppingDataIntent[\s\S]
   fail('specific product questions must bypass broad required product coverage except NAVER shopping DB setup intents, even when strictProductTerms missed the product');
 }
 
+function extractBlock(label, source, startNeedle, endNeedle) {
+  const startIndex = source.indexOf(startNeedle);
+  if (startIndex < 0) {
+    fail(`${label} block start not found: ${startNeedle}`);
+    return '';
+  }
+  const endIndex = source.indexOf(endNeedle, startIndex + startNeedle.length);
+  if (endIndex < 0) {
+    fail(`${label} block end not found: ${endNeedle}`);
+    return source.slice(startIndex);
+  }
+  return source.slice(startIndex, endIndex);
+}
+
+const ragSpecificAnchorBlock = extractBlock(
+  'RAG specific product anchors',
+  rag,
+  'private buildSpecificProductAnchorTerms',
+  'private hasSpecificProductTermOnlyMatch',
+);
+const answerStrictAnchorBlock = extractBlock(
+  'answer routing strict product anchors',
+  answerHandler,
+  'function buildStrictProductEvidenceTerms',
+  'function buildPrimarySpecificProductEvidenceTerms',
+);
+const answerPrimaryAnchorBlock = extractBlock(
+  'answer routing primary product anchors',
+  answerHandler,
+  'function buildPrimarySpecificProductEvidenceTerms',
+  'function sourceMatchesStrictProductIntent',
+);
+const answerSupplementBlock = extractBlock(
+  'answer routing product supplement queries',
+  answerHandler,
+  'function buildProductStructureSupplementQueries',
+  'function mergeSearchResultsByIdentity',
+);
+const productStructureGraphCoverageBlock = extractBlock(
+  'RAG product structure graph coverage',
+  rag,
+  'private ensureProductStructureGraphCandidateCoverage',
+  'private isLowValueProductStructureGraphCandidate',
+);
+const requestedProductFocusMatchBlock = extractBlock(
+  'requested product focus match',
+  answerHandler,
+  'function sourceMatchesRequestedProductFocus',
+  'function scoreRequestedProductFocus',
+);
+const requestedProductFocusScoreBlock = extractBlock(
+  'requested product focus score',
+  answerHandler,
+  'function scoreRequestedProductFocus',
+  'function buildRequestedProductStructureCoverageTerms',
+);
+const strictProductVisibleEvidenceTextBlock = extractBlock(
+  'strict product visible evidence text',
+  answerHandler,
+  'function getStrictProductVisibleEvidenceText',
+  'function getSpecificProductEvidenceText',
+);
+const specificProductEvidenceTextBlock = extractBlock(
+  'specific product evidence text',
+  answerHandler,
+  'function getSpecificProductEvidenceText',
+  'function isGraphVerifiedSource',
+);
+const naverShoppingDataEvidenceBlock = extractBlock(
+  'NAVER shopping data evidence',
+  answerHandler,
+  'function sourceHasNaverShoppingDataEvidence',
+  'function sourceHasStrongNaverShoppingDataEvidence',
+);
+const naverStrongShoppingDataEvidenceBlock = extractBlock(
+  'NAVER strong shopping data evidence',
+  answerHandler,
+  'function sourceHasStrongNaverShoppingDataEvidence',
+  'function scoreNaverShoppingDataEvidence',
+);
+const naverShoppingDataScoreBlock = extractBlock(
+  'NAVER shopping data score',
+  answerHandler,
+  'function scoreNaverShoppingDataEvidence',
+  'function buildStrictProductEvidenceTerms',
+);
+const groundingSourceContentBlock = extractBlock(
+  'answer grounding source content',
+  answerHandler,
+  'function buildGroundingSourceContent',
+  'function buildAnswerGroundingSources',
+);
+const answerGroundingSourcesBlock = extractBlock(
+  'answer grounding sources',
+  answerHandler,
+  'function buildAnswerGroundingSources',
+  'function normalizeSourceTitle',
+);
+const searchResultRescueTextBlock = extractBlock(
+  'search result rescue text',
+  answerHandler,
+  'function buildSearchResultActualEvidenceText',
+  'function searchResultHasBroadProductSignal',
+);
+
+for (const [label, block] of [
+  ['requested product focus match', requestedProductFocusMatchBlock],
+  ['requested product focus score', requestedProductFocusScoreBlock],
+]) {
+  if (!block.includes('getSpecificProductEvidenceText(source)')) {
+    fail(`${label} must match only against actual evidence text`);
+  }
+
+  if (block.includes('getProductStructureCoverageText(source)')) {
+    fail(`${label} must not use product-structure metadata/rank reasons as evidence text`);
+  }
+}
+
+if (strictProductVisibleEvidenceTextBlock.includes('getSourceText(source)')) {
+  fail('strict product visible evidence text must not fall back to metadata/rank-expanded source text');
+}
+
+for (const forbiddenEvidenceText of [
+  'getSourceText(source)',
+  'matchText',
+  'rankReason',
+  'evidenceDecisionReason',
+  'metadata.',
+  'getProductStructureVisibleSourceText',
+]) {
+  if (specificProductEvidenceTextBlock.includes(forbiddenEvidenceText)) {
+    fail(`specific product evidence text must use only visible source fields, not ${forbiddenEvidenceText}`);
+  }
+}
+
+for (const [label, block] of [
+  ['NAVER shopping data evidence', naverShoppingDataEvidenceBlock],
+  ['NAVER strong shopping data evidence', naverStrongShoppingDataEvidenceBlock],
+  ['NAVER shopping data score', naverShoppingDataScoreBlock],
+]) {
+  if (!block.includes('getSpecificProductEvidenceText(source)')) {
+    fail(`${label} must score only actual evidence text`);
+  }
+
+  for (const forbiddenText of [
+    'getSourceText(source)',
+    'getProductStructureVisibleSourceText(source)',
+    'metadata.rankReason',
+    'metadata.evidenceDecisionReason',
+    'metadata.coverageRole',
+    'metadata.retrievalMethod',
+  ]) {
+    if (block.includes(forbiddenText)) {
+      fail(`${label} must not use metadata/rank-expanded evidence: ${forbiddenText}`);
+    }
+  }
+}
+
+if (searchResultRescueTextBlock.includes('buildDiagnosticSourceText(result)')) {
+  fail('product structure rescue must not use diagnostic text as answerable evidence');
+}
+
+if (!searchResultRescueTextBlock.includes('function searchResultTextForRescue(result: SearchResult): string')) {
+  fail('product structure rescue must keep a dedicated actual-evidence text helper');
+}
+
+if (groundingSourceContentBlock.includes('wantsDetailContent && matchText')) {
+  fail('detail grounding must not expand with metadata-rich matchText');
+}
+
+if (!groundingSourceContentBlock.includes('wantsProductStructureContent && matchText.length')) {
+  fail('matchText expansion must be limited to broad product structure overview/selection content');
+}
+
+if (groundingSourceContentBlock.includes('const fallbackContent = excerpt || matchText')) {
+  fail('detail grounding fallback must not use metadata-rich matchText when excerpt is empty');
+}
+
+if (answerGroundingSourcesBlock.includes("source.evidenceDecision === 'rejected' ? source.evidenceDecision : 'verified'")) {
+  fail('grounding sources must not coerce weak/rescued sources into verified evidence');
+}
+
+if (!answerGroundingSourcesBlock.includes("const groundingDecision = source.evidenceDecision || 'weak'")) {
+  fail('grounding sources must preserve evidenceDecision and default missing values to weak');
+}
+
+if (/if\s*\(\s*intent\.isSpecificProductGuidance\s*\)\s*\{\s*return selected;\s*\}/.test(productStructureGraphCoverageBlock)) {
+  fail('specific product questions should allow official-guide GraphRAG complement instead of bypassing graph coverage entirely');
+}
+
+for (const snippet of [
+  'isLowValueProductStructureGraphCandidate',
+  'official_guide_graph_rag_candidate_coverage',
+]) {
+  if (!productStructureGraphCoverageBlock.includes(snippet)) {
+    fail(`product structure GraphRAG coverage must keep only useful official guide complements: ${snippet}`);
+  }
+}
+
+for (const [label, text] of [
+  ['RAG specific product anchors', ragSpecificAnchorBlock],
+  ['answer routing strict product anchors', answerStrictAnchorBlock],
+  ['answer routing primary product anchors', answerPrimaryAnchorBlock],
+]) {
+  for (const forbiddenAnchor of [
+    "'디스플레이 캠페인'",
+    "'반응형 디스플레이'",
+  ]) {
+    if (text.includes(forbiddenAnchor)) {
+      fail(`${label} must not use broad display-campaign siblings as strict DA anchors: ${forbiddenAnchor}`);
+    }
+  }
+}
+
+for (const forbiddenSupplement of [
+  '앱 인스톨 앱 홍보 광고 가이드',
+  'App Install App Promotion SDK MMP 앱 이벤트',
+]) {
+  if (answerSupplementBlock.includes(forbiddenSupplement)) {
+    fail(`specific product supplement queries must not inject broad app-install guidance terms unconditionally: ${forbiddenSupplement}`);
+  }
+}
+
 if (!/strictSpecificProductIntent[\s\S]*!strictSpecificProductMatch[\s\S]*!allowedSpecificProductProcedureEvidence[\s\S]*return false/.test(rag)) {
   fail('specific product evidence gate must reject broad candidates that do not match requested product terms');
 }
@@ -306,8 +539,15 @@ if (!/const primaryTerms = buildPrimarySpecificProductEvidenceTerms\(intent\)[\s
   fail('specific product answer routing must reject broad catalog-only sources even when they mention the product term');
 }
 
-if (!/const rawAnswerSources = mode === 'product_detail'[\s\S]*: modeMatchedSources[\s\S]*shouldLimit: strictProductSources\.length === 0 \|\| \(mode !== 'product_detail' && answerSources\.length === 0\)/.test(answerHandler)) {
-  fail('specific product mode questions must not fall back to broad product sources when mode evidence is absent');
+if (!/const rawAnswerSources = mode === 'product_detail'[\s\S]*: \(modeMatchedSources\.length > 0 \? modeMatchedSources : relaxedModeSources\)[\s\S]*const answerSources = selectedAnswerSources\.length > 0[\s\S]*: \(rankedAnswerSources\.length > 0 \? rankedAnswerSources : strictProductSources\)\.slice\(0, 6\)[\s\S]*const missingRequestedFocus = Boolean\(requestedFocus\?\.isSpecificFamilyQuestion && focusMatchedSources\.length === 0\)[\s\S]*strictProductSources: returnedStrictProductSources[\s\S]*shouldLimit: returnedStrictProductSources\.length === 0/.test(answerHandler)) {
+  fail('specific product mode questions must carry relaxed/strict evidence into LLM synthesis before limiting the answer');
+}
+
+if (!/if \(selected\.length === 0 && mode !== 'product_detail'\)/.test(answerHandler)
+  || !/const productContextLimit = mode === 'product_detail'[\s\S]*\? 0/.test(answerHandler)
+  || !/const titleHasPrimaryTerm = primaryTerms\.some/.test(answerHandler)
+) {
+  fail('product_detail routing must require title or nearby detail evidence and must not use context fallback fillers');
 }
 
 const ragSpecificDetailBlock = rag.split('private hasSpecificProductDetailSignal(sourceText: string): boolean')[1]?.split('private isBroadSpecificProductCatalogHit')[0] || '';
@@ -368,6 +608,13 @@ for (const snippet of [
   'score += 160',
   'score -= 95',
   'score -= 130',
+  'buildGroundingSourceContent',
+  'wantsProductStructureContent && matchText.length',
+  'source.matchText',
+  'answerLooksLikeExtractiveSourceDump',
+  'answerHasSpecificOperationalDepth',
+  'extractive_source_dump',
+  'insufficient_specific_depth',
   '디스플레이 광고',
   '홈피드',
   '배너 광고',
@@ -385,6 +632,7 @@ for (const snippet of [
   'operational_issue',
   '전체 상품 구조를 반복하지 말고 그 항목에 직접 답하세요. 첫 문장부터 질문한 항목을 다루세요.',
   '특정 광고 상품을 물으면 개요 템플릿을 반복하지 말고',
+  '섹션 제목은 답변 모드와 사용자가 물은 상품/절차를 반영해 새로 붙이세요.',
   '검증 근거가 하나도 없을 때만 "현재 제공된 문서에서는 확인되지 않습니다"라고 답하세요.',
 ]) {
   if (!answerService.includes(snippet)) fail(`answer prompt missing intent-mode snippet: ${snippet}`);
@@ -408,6 +656,10 @@ if (!/function buildAnswerGroundingSources[\s\S]*answerMode: options\.answerMode
 
 if (!/answerResult = await generateCompassAnswer\([\s\S]*buildAnswerGroundingSources\([\s\S]*buildCompassGroundingOptions\(message,\s*ragIntent,\s*specificProductScope,\s*isBroadProductStructureLlmIntent\)/.test(answerHandler)) {
   fail('answer generation must receive answerMode/questionIntent grounding options from the handler');
+}
+
+if (!answerHandler.includes('buildCompassAnswerModel(message, ragIntent, isBroadProductStructureLlmIntent)')) {
+  fail('answer metadata must classify specific product questions with the original message, not only parsed intent flags');
 }
 
 if (answerService.includes('상품 카탈로그가 아니라 "근거에서 확인되는 광고 형식/사양"으로 범위를 좁혀 답하세요')) {

@@ -57,13 +57,15 @@ for (const token of [
   'export function getCompassAnswerRuntimeStatus',
   'OPENROUTER_API_KEY',
   'COMPASS_OPENROUTER_API_KEY',
-  "process.env.COMPASS_ANSWER_PROVIDER || 'ollama'",
+  "process.env.COMPASS_ANSWER_PROVIDER || ''",
   "configured === 'openrouter'",
   "configured === 'openai'",
   "configured === 'ollama'",
   'DEFAULT_OPENROUTER_MODELS',
   'resolveOpenRouterModels',
   'resolveOpenRouterBaseUrl',
+  'resolveOllamaAnswerTimeoutMs',
+  'COMPASS_OLLAMA_ANSWER_TIMEOUT_MS',
   '/chat/completions',
   "data_collection: 'deny'",
   'allow_fallbacks: true',
@@ -108,8 +110,8 @@ for (const forbidden of [
 }
 
 for (const token of [
-  'COMPASS_ANSWER_PROVIDER=ollama',
-  'Do not use COMPASS_ANSWER_PROVIDER=auto as a deployment default before canary',
+  'COMPASS_ANSWER_PROVIDER=',
+  'Leave empty for production auto selection',
   'COMPASS_ANSWER_MODELS=<OPENROUTER_MODEL_FALLBACKS_COMMA_SEPARATED>',
   'OPENROUTER_API_KEY=<SERVER_ONLY_OPENROUTER_API_KEY>',
   'OPENROUTER_BASE_URL=https://openrouter.ai/api/v1',
@@ -118,7 +120,7 @@ for (const token of [
 }
 
 if (nonCommentEnvLines.some((line) => /^COMPASS_ANSWER_PROVIDER\s*=\s*auto\b/i.test(line))) {
-  fail('.env.example must not default COMPASS_ANSWER_PROVIDER to auto before OpenRouter canary')
+  fail('.env.example must not use the literal auto value; leave it empty for auto selection')
 }
 
 for (const forbidden of [
@@ -139,12 +141,11 @@ for (const forbidden of [
 
 for (const token of [
   'OpenRouter adapter already exists',
-  'canary-safe default pinned',
-  'A server-side key alone must not switch Compass to OpenRouter before canary',
-  'COMPASS_ANSWER_PROVIDER=auto/empty  -> Ollama',
+  'open-beta auto provider selection',
+  'COMPASS_ANSWER_PROVIDER=auto/empty  -> OpenRouter when a server key exists, else OpenAI, else Ollama',
   'No real OpenRouter key is registered',
-  'OpenRouter Canary Gate',
-  'activated by an explicit canary gate',
+  'OpenRouter Operation Gate',
+  'Empty/auto provider selection',
   'COMPASS_ANSWER_PROVIDER=ollama',
   'COMPASS_ANSWER_PROVIDER=openrouter',
   'server-only',
@@ -154,8 +155,8 @@ for (const token of [
 
 for (const token of [
   'readiness contract',
-  'The runtime default is canary-safe',
-  'COMPASS_ANSWER_PROVIDER=auto/empty  -> Ollama',
+  'open-beta answer',
+  'COMPASS_ANSWER_PROVIDER=auto/empty  -> OpenRouter when configured, else OpenAI, else Ollama',
   'server-side secret',
   'COMPASS_ANSWER_PROVIDER=ollama',
   'COMPASS_ANSWER_PROVIDER=openrouter',
@@ -204,17 +205,27 @@ if (packageJson.scripts?.['check:compass-answer-provider-contract'] !== 'node sc
   fail('package script check:compass-answer-provider-contract is missing or changed')
 }
 
-if (service.includes("hasOpenRouterKey() ? 'openrouter' : 'ollama'")) {
-  fail('Compass answer provider must not auto-switch to OpenRouter from key presence before canary')
+if (!service.includes("if (hasOpenRouterKey()) return 'openrouter';")) {
+  fail('Compass answer provider must auto-select OpenRouter when a server-side key is configured')
+}
+
+if (!/AbortSignal\.timeout\(resolveOllamaAnswerTimeoutMs\(\)\)/.test(service)) {
+  fail('Ollama answer generation must fail fast so fallback can run before the Vercel function timeout')
+}
+
+const endpointResolver = read('src/lib/services/ollamaEndpoint.ts')
+if (!(endpointResolver.indexOf('process.env.OLLAMA_BASE_URL') >= 0 && endpointResolver.indexOf('process.env.VULTR_OLLAMA_URL') >= 0)) {
+  fail('Ollama endpoint resolver must support both OLLAMA_BASE_URL and VULTR_OLLAMA_URL')
+} else if (endpointResolver.indexOf('process.env.OLLAMA_BASE_URL') > endpointResolver.indexOf('process.env.VULTR_OLLAMA_URL')) {
+  fail('OLLAMA_BASE_URL must take precedence over VULTR_OLLAMA_URL to avoid stale provider-specific fallback URLs')
 }
 
 for (const forbiddenDefault of [
   "process.env.COMPASS_ANSWER_PROVIDER || 'openrouter'",
-  'hasOpenRouterKey() &&',
   "hasOpenRouterKey() ? 'openrouter'",
 ]) {
   if (service.includes(forbiddenDefault)) {
-    fail(`Compass answer provider must not default or auto-switch to OpenRouter: ${forbiddenDefault}`)
+    fail(`Compass answer provider must use explicit ordered branching, not terse default switching: ${forbiddenDefault}`)
   }
 }
 

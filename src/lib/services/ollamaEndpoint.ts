@@ -1,6 +1,6 @@
 export type OllamaEndpointSource =
-  | 'VULTR_OLLAMA_URL'
   | 'OLLAMA_BASE_URL'
+  | 'VULTR_OLLAMA_URL'
   | 'development-default'
   | 'none';
 
@@ -16,22 +16,22 @@ function normalizeBaseUrl(value: string) {
 }
 
 export function resolveOllamaEndpoint(): OllamaEndpointResolution {
-  const vultrUrl = process.env.VULTR_OLLAMA_URL?.trim();
-  if (vultrUrl) {
-    return {
-      baseUrl: normalizeBaseUrl(vultrUrl),
-      configured: true,
-      source: 'VULTR_OLLAMA_URL',
-      isDevelopmentFallback: false,
-    };
-  }
-
   const baseUrl = process.env.OLLAMA_BASE_URL?.trim();
   if (baseUrl) {
     return {
       baseUrl: normalizeBaseUrl(baseUrl),
       configured: true,
       source: 'OLLAMA_BASE_URL',
+      isDevelopmentFallback: false,
+    };
+  }
+
+  const vultrUrl = process.env.VULTR_OLLAMA_URL?.trim();
+  if (vultrUrl) {
+    return {
+      baseUrl: normalizeBaseUrl(vultrUrl),
+      configured: true,
+      source: 'VULTR_OLLAMA_URL',
       isDevelopmentFallback: false,
     };
   }

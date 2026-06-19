@@ -27,6 +27,10 @@ const includedContracts = [
     command: 'node scripts/check-compass-answer-route-contract.mjs',
   },
   {
+    script: 'check:compass-product-structure-answer-contract',
+    command: 'node scripts/check-compass-product-structure-answer-contract.mjs',
+  },
+  {
     script: 'check:compass-evidence-graph-contract',
     command: 'node scripts/check-compass-evidence-graph-contract.mjs',
   },

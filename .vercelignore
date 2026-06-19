@@ -3,3 +3,11 @@ railway-backend/
 requirements.txt
 Dockerfile
 railway.json
+.env
+.env.*
+*.log
+*.tsbuildinfo
+.codex-*
+.tmp-*
+.next/
+node_modules/

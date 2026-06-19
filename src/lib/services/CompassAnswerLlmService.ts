@@ -72,13 +72,21 @@ function hasOpenAIKey(): boolean {
 }
 
 function resolveProvider(): CompassAnswerProvider {
-  const configured = String(process.env.COMPASS_ANSWER_PROVIDER || 'ollama').trim().toLowerCase();
+  const configured = String(process.env.COMPASS_ANSWER_PROVIDER || '').trim().toLowerCase();
 
   if (configured === 'openrouter') return 'openrouter';
   if (configured === 'openai') return 'openai';
   if (configured === 'ollama') return 'ollama';
 
+  if (hasOpenRouterKey()) return 'openrouter';
+  if (hasOpenAIKey()) return 'openai';
+
   return 'ollama';
+}
+
+function shouldUseOllamaAnswerGeneration(): boolean {
+  const configured = String(process.env.COMPASS_ANSWER_PROVIDER || '').trim().toLowerCase();
+  return configured === 'ollama' || process.env.COMPASS_ENABLE_OLLAMA_ANSWER_GENERATION === 'true';
 }
 
 function resolveOpenRouterModels(): string[] {
@@ -98,9 +106,9 @@ function resolveOpenRouterBaseUrl(): string {
 function resolveOpenAIModels(): string[] {
   const candidates = [
     process.env.COMPASS_OPENAI_MODEL,
-    process.env.OPENAI_IDEA_MODEL,
     'gpt-4o-mini',
     'gpt-4.1-mini',
+    process.env.OPENAI_IDEA_MODEL,
   ]
     .map((model) => model?.trim())
     .filter((model): model is string => Boolean(model));
@@ -121,6 +129,20 @@ function resolveNumber(value: string | undefined, fallback: number): number {
   return Number.isFinite(parsed) ? parsed : fallback;
 }
 
+function resolveOllamaAnswerTimeoutMs(): number {
+  const configured = process.env.COMPASS_OLLAMA_ANSWER_TIMEOUT_MS
+    || process.env.COMPASS_ANSWER_TIMEOUT_MS;
+  const parsed = Math.floor(resolveNumber(configured, 12000));
+  return Math.min(Math.max(parsed, 5000), 20000);
+}
+
+function resolveRemoteAnswerTimeoutMs(): number {
+  const configured = process.env.COMPASS_REMOTE_ANSWER_TIMEOUT_MS
+    || process.env.COMPASS_ANSWER_TIMEOUT_MS;
+  const parsed = Math.floor(resolveNumber(configured, 30000));
+  return Math.min(Math.max(parsed, 10000), 45000);
+}
+
 function usesDefaultSamplingOnly(model: string): boolean {
   const normalized = model.trim().toLowerCase();
   return normalized.startsWith('o') || normalized.startsWith('gpt-5');
@@ -136,10 +158,10 @@ export function getCompassAnswerRuntimeStatus() {
     openrouterConfigured: hasOpenRouterKey(),
     openaiConfigured: hasOpenAIKey(),
     modelLabel: provider === 'openrouter'
-      ? openrouterModels.join(' -> ')
+      ? `${openrouterModels.join(' -> ')}${hasOpenAIKey() ? ' -> openai fallback' : ''}`
       : provider === 'openai'
-        ? `openai/${resolveOpenAIModel()}`
-        : `ollama/${ollamaModel}${hasOpenAIKey() ? ' -> openai fallback' : ''}`,
+        ? `openai/${resolveOpenAIModel()}${hasOpenRouterKey() ? ' -> openrouter fallback' : ''}`
+        : `ollama/${ollamaModel}${hasOpenRouterKey() ? ' -> openrouter fallback' : hasOpenAIKey() ? ' -> openai fallback' : ''}`,
     ollama: getOllamaEndpointStatus(),
   };
 }
@@ -151,16 +173,49 @@ export async function generateCompassAnswer(
   const provider = resolveProvider();
 
   if (provider === 'openrouter') {
-    return generateOpenRouterAnswer(message, searchResults);
+    try {
+      return await generateOpenRouterAnswer(message, searchResults);
+    } catch (error) {
+      if (!hasOpenAIKey()) {
+        throw error;
+      }
+
+      console.warn('OpenRouter answer generation unavailable; using OpenAI fallback', {
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+      });
+      return generateOpenAIAnswer(message, searchResults);
+    }
   }
 
   if (provider === 'openai') {
-    return generateOpenAIAnswer(message, searchResults);
+    try {
+      return await generateOpenAIAnswer(message, searchResults);
+    } catch (error) {
+      if (!hasOpenRouterKey()) {
+        throw error;
+      }
+
+      console.warn('OpenAI answer generation unavailable; using OpenRouter fallback', {
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+      });
+      return generateOpenRouterAnswer(message, searchResults);
+    }
+  }
+
+  if (!shouldUseOllamaAnswerGeneration()) {
+    throw new Error('Ollama answer generation is disabled unless COMPASS_ANSWER_PROVIDER=ollama or COMPASS_ENABLE_OLLAMA_ANSWER_GENERATION=true is set.');
   }
 
   try {
     return await generateOllamaAnswer(message, searchResults);
   } catch (error) {
+    if (hasOpenRouterKey()) {
+      console.warn('Ollama answer generation unavailable; using OpenRouter fallback', {
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+      });
+      return generateOpenRouterAnswer(message, searchResults);
+    }
+
     if (!hasOpenAIKey()) {
       throw error;
     }
@@ -260,6 +315,7 @@ function buildEvidencePrompt(message: string, searchResults: CompassGroundingSou
     '- 내부적으로 answer_mode를 하나만 선택하세요: product_overview, product_selection, product_detail, execution_guide, setup_procedure, creative_guide, policy_screening, operational_issue. answer_mode 이름은 출력하지 말고, 선택한 모드에 맞는 골격만 사용하세요.',
     '- execution_guide는 특정 상품의 집행 절차와 소재 조건을 함께 묻는 질문입니다. 이때는 준비 순서, 필수 설정/연동, 소재 조건, 확인해야 할 제한사항을 나눠 답하세요.',
     '- product_detail, execution_guide, setup_procedure, policy_screening, operational_issue 질문에는 product_overview 구조를 반복하지 마세요. 특히 캠페인 목표 목록을 기본 답변으로 되풀이하지 마세요.',
+    '- 섹션 제목은 답변 모드와 사용자가 물은 상품/절차를 반영해 새로 붙이세요. 특정 상품 질문에서 "광고 목적과 노출 지면", "운영 전 확인", "상황별 빠른 선택 기준" 같은 넓은 개요 제목을 반복하지 마세요.',
     '- 특정 상품 질문의 첫 문장은 반드시 사용자가 물은 상품명/지면/절차를 직접 언급해야 합니다. 예: "네이버 DA는...", "Meta 앱 인스톨 광고는...", "Google 리드 양식은..."처럼 시작하세요.',
     '- 특정 상품 질문에서 근거가 부족하면 다른 상품군의 일반 개요로 대체하지 마세요. 확인된 근거와 부족한 범위를 분리하고, 관련 없는 캠페인 목표/상품군 목록은 쓰지 마세요.',
     '- product_detail은 "무엇인지 / 어디에 노출되는지 / 언제 쓰는지 / 운영 전 확인할 조건" 순서로 답하세요. 소재 규격이나 정책만 근거에 있으면 그 한계를 명시하세요.',
@@ -282,6 +338,64 @@ function buildEvidencePrompt(message: string, searchResults: CompassGroundingSou
     '- 근거 블록의 vendor 값을 절대 다른 매체명으로 바꿔 쓰지 마세요. 예: vendor가 KAKAO인 근거를 네이버 근거처럼 설명하면 안 됩니다.',
     '- 핵심 문장에는 가능한 한 [S1], [S2]처럼 출처 라벨을 붙이세요.',
     '- 마지막에 짧은 "근거" 줄을 포함하고 사용한 출처 라벨을 적으세요.',
+  ].join('\n');
+}
+
+function buildCompactOllamaSystemPrompt(): string {
+  return [
+    'You are AdMate Compass. Answer in Korean.',
+    'Use only supplied verified evidence. Do not use outside knowledge.',
+    'Do not repeat a broad product overview when the user asks about a specific product, setup, creative, DB URL, or policy check.',
+    'Start with the exact product, platform, or procedure asked by the user.',
+    'Use section headings that name the requested product or procedure. Do not reuse broad overview headings for specific questions.',
+    'Give practical bullets with [S1], [S2] evidence labels. If evidence is narrow, say the confirmed scope clearly.',
+  ].join('\n');
+}
+
+function buildCompactOllamaEvidencePrompt(message: string, searchResults: CompassGroundingSource[]): string {
+  const answerModeHint = searchResults.find(result => result.answerMode || result.metadata?.answerMode)?.answerMode
+    || searchResults.find(result => result.metadata?.answerMode)?.metadata?.answerMode
+    || 'auto';
+  const questionIntentHint = searchResults.find(result => result.questionIntent || result.metadata?.questionIntent)?.questionIntent
+    || searchResults.find(result => result.metadata?.questionIntent)?.metadata?.questionIntent
+    || 'auto';
+  const evidence = searchResults
+    .filter((result) => {
+      const decision = result.evidenceDecision || result.metadata?.evidenceDecision;
+      const isFallback = result.retrievalMethod === 'fallback'
+        || result.sourceQuality?.isFallback === true
+        || result.metadata?.type === 'fallback';
+      return result.content?.trim() && decision === 'verified' && !isFallback;
+    })
+    .slice(0, 6)
+    .map((result, index) => {
+      const label = `S${index + 1}`;
+      const title = result.documentTitle || result.metadata?.title || result.metadata?.originalTitle || '광고 정책 문서';
+      const vendor = result.sourceVendor || result.metadata?.sourceVendor || result.metadata?.source_vendor || 'UNKNOWN';
+      const role = result.answerEvidenceRole
+        || result.metadata?.answerEvidenceRole
+        || result.metadata?.answer_evidence_role
+        || 'general';
+      const excerpt = result.content.replace(/\s+/g, ' ').trim().slice(0, 650);
+      return `[${label}] title: ${title}\nvendor: ${vendor}\nrole: ${role}\nexcerpt: ${excerpt}`;
+    })
+    .join('\n\n');
+
+  return [
+    `사용자 질문: ${message}`,
+    `답변 모드: ${answerModeHint}`,
+    `질문 의도: ${questionIntentHint}`,
+    '',
+    '검증 근거:',
+    evidence || '(검증 근거 없음)',
+    '',
+    '출력 규칙:',
+    '- 첫 문장은 질문한 상품/절차를 직접 언급하세요.',
+    '- 전체 상품 개요, 목적별 선택, 특정 상품 상세, 세팅 절차, 소재 제작 조건, 정책 심사 기준을 구분하세요.',
+    '- 질문이 특정 상품/절차라면 캠페인 목표 목록으로 되돌아가지 마세요.',
+    '- 근거에 있는 항목만 답하고, 부족한 범위는 별도로 말하세요.',
+    '- 3~5개 섹션 또는 짧은 불릿으로 답하세요.',
+    '- 마지막 줄에 "근거: [S1], [S2]"를 포함하세요.',
   ].join('\n');
 }
 
@@ -325,7 +439,7 @@ async function generateOpenRouterAnswer(
       'X-Title': process.env.OPENROUTER_APP_TITLE || 'AdMate Compass',
     },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(Math.floor(resolveNumber(process.env.COMPASS_ANSWER_TIMEOUT_MS, 45000))),
+    signal: AbortSignal.timeout(resolveRemoteAnswerTimeoutMs()),
   });
 
   if (!response.ok) {
@@ -371,6 +485,7 @@ async function generateOpenAIAnswer(
     } catch (error) {
       lastError = error;
       console.warn('OpenAI answer generation candidate failed', {
+        model,
         errorName: error instanceof Error ? error.name : 'UnknownError',
       });
     }
@@ -414,7 +529,7 @@ async function requestOpenAIAnswer({
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(requestBody),
-    signal: AbortSignal.timeout(Math.floor(resolveNumber(process.env.COMPASS_ANSWER_TIMEOUT_MS, 45000))),
+    signal: AbortSignal.timeout(resolveRemoteAnswerTimeoutMs()),
   });
 
   if (!response.ok) {
@@ -460,15 +575,15 @@ async function generateOllamaAnswer(
     },
     body: JSON.stringify({
       model,
-      prompt: `${buildSystemPrompt()}\n\n${buildEvidencePrompt(message, searchResults)}`,
+      prompt: `${buildCompactOllamaSystemPrompt()}\n\n${buildCompactOllamaEvidencePrompt(message, searchResults)}`,
       stream: false,
       options: {
         temperature: 0.1,
         top_p: 0.85,
-        num_predict: 1000,
+        num_predict: Math.min(Math.max(Math.floor(resolveNumber(process.env.COMPASS_OLLAMA_ANSWER_MAX_TOKENS, 700)), 320), 900),
       },
     }),
-    signal: AbortSignal.timeout(Math.floor(resolveNumber(process.env.COMPASS_ANSWER_TIMEOUT_MS, 60000))),
+    signal: AbortSignal.timeout(resolveOllamaAnswerTimeoutMs()),
   });
 
   if (!response.ok) {

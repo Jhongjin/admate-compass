@@ -70,7 +70,7 @@ for (const requiredText of [
   "model: 'compass-answer-no-data'",
   "model: 'compass-answer-connection-failed'",
   'function buildCompassAnswerModel',
-  'model: buildCompassAnswerModel(ragIntent, isBroadProductStructureLlmIntent)',
+  'buildCompassAnswerModel(message, ragIntent, isBroadProductStructureLlmIntent)',
   "'compass-answer-grounded-product-structure-llm'",
   "'compass-answer'",
 ]) {

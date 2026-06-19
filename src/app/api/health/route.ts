@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createCompassServiceClient } from '@/lib/supabase/compass';
+import { getCompassAnswerRuntimeStatus } from '@/lib/services/CompassAnswerLlmService';
 import { resolveOllamaEndpoint } from '@/lib/services/ollamaEndpoint';
 
 export async function GET(request: NextRequest) {
@@ -15,6 +16,21 @@ export async function GET(request: NextRequest) {
 
     // Answer runtime status. Public JSON stays provider-neutral.
     try {
+      const runtime = getCompassAnswerRuntimeStatus();
+      const usesManagedGateway = runtime.provider === 'openrouter' || runtime.provider === 'openai';
+      if (usesManagedGateway) {
+        const configured = runtime.provider === 'openrouter'
+          ? runtime.openrouterConfigured
+          : runtime.openaiConfigured;
+        health.services.answerRuntime = {
+          status: configured ? 'healthy' : 'unhealthy',
+          configured,
+          managed: true,
+          reachable: configured
+        };
+        throw new Error('answer_runtime_health_recorded');
+      }
+
       const endpoint = resolveOllamaEndpoint();
       if (!endpoint.baseUrl) {
         health.services.answerRuntime = {

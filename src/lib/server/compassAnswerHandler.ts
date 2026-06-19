@@ -78,6 +78,49 @@ interface ChatResponse {
   model: string;
 }
 
+let compassRagSearchService: RAGSearchService | null = null;
+
+function getCompassRagSearchService(): RAGSearchService {
+  if (!compassRagSearchService) {
+    compassRagSearchService = new RAGSearchService();
+  }
+  return compassRagSearchService;
+}
+
+function resolveCompassRetrievalTimeoutMs(): number {
+  const configured = process.env.COMPASS_RETRIEVAL_TIMEOUT_MS
+    || process.env.COMPASS_EVIDENCE_RETRIEVAL_TIMEOUT_MS;
+  const parsed = Math.floor(Number(configured));
+  const timeoutMs = Number.isFinite(parsed) ? parsed : 22000;
+  return Math.min(Math.max(timeoutMs, 8000), 35000);
+}
+
+async function withCompassTimeout<T>(
+  promise: Promise<T>,
+  timeoutMs: number,
+  fallback: T,
+  warningLabel: string,
+  metadata: Record<string, unknown> = {},
+): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+
+  try {
+    return await Promise.race([
+      promise.finally(() => {
+        if (timeoutId) clearTimeout(timeoutId);
+      }),
+      new Promise<T>((resolve) => {
+        timeoutId = setTimeout(() => {
+          console.warn(warningLabel, { ...metadata, timeoutMs });
+          resolve(fallback);
+        }, timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
+
 /**
  * Compass RAG 검색
  */
@@ -86,18 +129,29 @@ async function searchWithCompassRAG(
   limit: number = 5
 ): Promise<SearchResult[]> {
   try {
-    console.log('Compass evidence retrieval started', { queryLength: query.length });
+    const startedAt = Date.now();
+    const timeoutMs = resolveCompassRetrievalTimeoutMs();
+    console.log('Compass evidence retrieval started', { queryLength: query.length, limit });
     
     if (!hasCompassEvidenceStore()) {
       console.warn('Compass evidence store is unavailable');
       return [];
     }
 
-    // RAGSearchService 사용
-    const ragService = new RAGSearchService();
-    const searchResults = await ragService.searchSimilarChunks(query, limit);
+    const ragService = getCompassRagSearchService();
+    const searchResults = await withCompassTimeout(
+      ragService.searchSimilarChunks(query, limit),
+      timeoutMs,
+      [] as Awaited<ReturnType<RAGSearchService['searchSimilarChunks']>>,
+      'Compass evidence retrieval timed out',
+      { queryLength: query.length, limit },
+    );
     
-    console.log('Compass evidence retrieval completed', { resultCount: searchResults.length });
+    console.log('Compass evidence retrieval completed', {
+      resultCount: searchResults.length,
+      durationMs: Date.now() - startedAt,
+      limit,
+    });
     
     return searchResults.map(result => ({
       chunk_id: result.id,
@@ -141,17 +195,101 @@ function getResultVendor(result: SearchResult): string {
   return result.sourceVendor || result.metadata?.sourceVendor || result.metadata?.source_vendor || result.sourceQuality?.sourceVendor || 'UNKNOWN';
 }
 
+const DIAGNOSTIC_VENDOR_PATTERNS: Record<VendorIntent, RegExp> = {
+  META: /meta|facebook|페이스북|instagram|인스타그램|릴스|reels|advantage\+|어드밴티지|메타\s*픽셀|fb[_\s-]?ads/i,
+  KAKAO: /kakao|카카오|카카오톡|톡채널|비즈보드|모먼트|카카오모먼트|상품\s*가이드|상품가이드/i,
+  NAVER: /naver|네이버|검색광고|쇼핑검색|파워링크|브랜드검색|쇼핑블록|쇼핑파트너센터|상품\s*db|db\s*url|가격비교|사이트검색광고|네이버\s*da|네이버da|홈피드|스마트채널|타임보드|롤링보드|성과형\s*디스플레이|디지털\s*옥외광고/i,
+  GOOGLE: /google|구글|youtube|유튜브|gdn|google ads|구글\s*애즈|구글\s*광고|pmax|performance\s*max/i,
+};
+
+function isVendorIntentValue(value: unknown): value is VendorIntent {
+  return value === 'META' || value === 'KAKAO' || value === 'NAVER' || value === 'GOOGLE';
+}
+
+function toDiagnosticText(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) return value.map(toDiagnosticText).filter(Boolean).join(' ');
+  if (value && typeof value === 'object') {
+    try {
+      return JSON.stringify(value);
+    } catch {
+      return '';
+    }
+  }
+  return '';
+}
+
+function buildDiagnosticSourceText(result: SearchResult): string {
+  const metadata = result.metadata || {};
+  return [
+    result.sourceVendor,
+    result.sourceVendors,
+    result.documentTitle,
+    result.documentUrl,
+    result.documentId,
+    result.content,
+    result.sourceQuality?.sourceVendor,
+    result.sourceQuality?.warnings,
+    result.rankReason,
+    result.evidenceDecisionReason,
+    metadata.sourceVendor,
+    metadata.source_vendor,
+    metadata.sourceVendors,
+    metadata.source_vendors,
+    metadata.title,
+    metadata.originalTitle,
+    metadata.source_title,
+    metadata.canonical_title,
+    metadata.source,
+    metadata.source_url,
+    metadata.document_url,
+    metadata.url,
+    metadata.documentId,
+    metadata.document_id,
+    metadata.productStructureAnchor,
+    metadata.graphPath,
+    metadata.sourceKind,
+    metadata.source_kind,
+    metadata.claimType,
+    metadata.claim_type,
+    metadata.answerEvidenceRole,
+    metadata.answer_evidence_role,
+    metadata.topic_labels,
+    metadata.graphTopics,
+  ].map(toDiagnosticText).filter(Boolean).join(' ').slice(0, 12000);
+}
+
+function getDiagnosticResultVendors(result: SearchResult): VendorIntent[] {
+  const metadata = result.metadata || {};
+  const explicitCandidates = [
+    result.sourceVendor,
+    result.sourceQuality?.sourceVendor,
+    metadata.sourceVendor,
+    metadata.source_vendor,
+    ...(Array.isArray(result.sourceVendors) ? result.sourceVendors : []),
+    ...(Array.isArray(metadata.sourceVendors) ? metadata.sourceVendors : []),
+    ...(Array.isArray(metadata.source_vendors) ? metadata.source_vendors : []),
+  ];
+  const vendors = new Set<VendorIntent>(explicitCandidates.filter(isVendorIntentValue));
+  const diagnosticText = buildDiagnosticSourceText(result);
+
+  (Object.keys(DIAGNOSTIC_VENDOR_PATTERNS) as VendorIntent[]).forEach((vendor) => {
+    if (DIAGNOSTIC_VENDOR_PATTERNS[vendor].test(diagnosticText)) {
+      vendors.add(vendor);
+    }
+  });
+
+  return Array.from(vendors);
+}
+
 function getMissingVendorSlots(intent: QueryIntent, searchResults: SearchResult[]): VendorIntent[] {
   if (!intent.requiresVendorCoverage) return [];
 
-  return intent.vendors.filter((vendor) => !searchResults.some((result) => {
-    const sourceVendors = result.sourceVendors || result.metadata?.sourceVendors || [];
-    return getResultVendor(result) === vendor || sourceVendors.includes(vendor);
-  }));
+  return intent.vendors.filter((vendor) => !searchResults.some((result) => getDiagnosticResultVendors(result).includes(vendor)));
 }
 
 function buildSourceDiagnostics(intent: QueryIntent, searchResults: SearchResult[]) {
-  const vendors = Array.from(new Set(searchResults.map(getResultVendor).filter((vendor) => vendor !== 'UNKNOWN')));
+  const vendors = Array.from(new Set(searchResults.flatMap(getDiagnosticResultVendors)));
   const missingVendorSlots = getMissingVendorSlots(intent, searchResults);
 
   return {
@@ -281,6 +419,12 @@ function normalizeGeneratedAnswer(answer: string, sources: ReturnType<typeof bui
   }
 
   if (sources.length > 0 && meaningfulText.length < 80 && !explicitInsufficientEvidence) {
+    const hasCitation = /\[S\d+\]/.test(normalized);
+    const hasOperationalSentence = /입니다|합니다|됩니다|하세요|확인|선택|등록|설정|연동|집행|제작|검토|주의|필요/.test(meaningfulText);
+    if (meaningfulText.length >= 35 && (hasCitation || hasOperationalSentence)) {
+      return normalized.trim();
+    }
+
     return buildExtractiveAnswer(sources);
   }
 
@@ -474,16 +618,54 @@ function hasNamedSpecificProductQuestion(message: string): boolean {
 
 function isProductSelectionQuestion(message: string): boolean {
   const normalized = normalizeProductIntentText(message);
-  return /어떻게\s*(고르|선택|구분)|기준으로\s*(설명|구분|선택)|선택\s*기준|고르는\s*기준|골라야|고르면|추천|목적별|목표별|상황별|어떤\s*(상품|유형|캠페인)|무엇을\s*(선택|고르)|뭘\s*(선택|고르)|목표\s*기준/.test(normalized);
+  return /어떻게\s*(고르|선택|구분)|기준으로\s*(설명|구분|선택|정리)|선택\s*기준|고르는\s*기준|골라야|고르면|추천|목적별|목표별|상황별|어떤\s*(상품|유형|캠페인)|무엇을\s*(선택|고르)|뭘\s*(선택|고르)|목표\s*기준|광고\s*상품\s*(종류|유형|목록|구조|군)|광고상품\s*(종류|유형|목록|구조|군)|상품\s*(종류|유형|목록|구조|군)|광고\s*(종류|유형)/.test(normalized);
+}
+
+function isWholeProductCatalogQuestionText(normalized: string): boolean {
+  return /전체\s*(광고\s*)?(상품|목록|종류|유형|구조|군)|광고\s*상품\s*(전체|목록|종류|유형|구조|군)|광고상품\s*(전체|목록|종류|유형|구조|군)|상품\s*(전체|목록|종류|유형|구조|군)/.test(normalized);
+}
+
+function isExplicitWholeProductCatalogQuestion(message: string): boolean {
+  const normalized = normalizeProductIntentText(message);
+  return isWholeProductCatalogQuestionText(normalized);
+}
+
+function hasSpecificProductActionOrPolicySignalQuestion(message: string): boolean {
+  const normalized = normalizeProductIntentText(message);
+  return /등록|절차|집행|진행|세팅|설정|연동|제작|가이드|소재|문구|카피|사양|스펙|규격|비율|사이즈|조건|주의|유의|확인해야|꼭\s*확인|db\s*url|상품\s*db|상품등록|상품\s*등록|mmp|sdk|추적|트래킹|오류|에러|반려|승인|심사|검수|정책|랜딩|권한|계정/.test(normalized);
+}
+
+function isProductCatalogOverviewQuestion(message: string): boolean {
+  const normalized = normalizeProductIntentText(message);
+  const asksWholeCatalog = isWholeProductCatalogQuestionText(normalized);
+
+  if (hasNamedSpecificProductQuestion(message) && !asksWholeCatalog) {
+    return false;
+  }
+
+  if (!asksWholeCatalog && hasSpecificProductActionOrPolicySignalQuestion(message)) {
+    return false;
+  }
+
+  if (isProductSelectionQuestion(message)) return true;
+
+  if (isExplicitWholeProductCatalogQuestion(message)) return true;
+
+  return (
+    /광고\s*상품.*(알려|설명|정리|구분)/.test(normalized)
+  );
 }
 
 function isBroadProductStructureAnswerIntent(message: string, intent: QueryIntent): boolean {
   if (!intent.topics.includes('product_structure')) return false;
   if (intent.vendors.length !== 1 || intent.isComparative) return false;
-  if (intent.isSpecificProductGuidance) return false;
-  if (hasNamedSpecificProductQuestion(message) && !isProductSelectionQuestion(message)) return false;
+  if (intent.isSpecificProductGuidance && !isExplicitWholeProductCatalogQuestion(message)) return false;
+  if (hasNamedSpecificProductQuestion(message) && !isExplicitWholeProductCatalogQuestion(message)) return false;
 
-  return intent.isProductStructureOverview;
+  const explicitCatalogOverview = isProductCatalogOverviewQuestion(message);
+  if (explicitCatalogOverview) return true;
+
+  return intent.isProductStructureOverview && !hasNamedSpecificProductQuestion(message);
 }
 
 function buildPolicyGroundedAnswer(sources: ReturnType<typeof buildVerifiedSources>) {
@@ -498,16 +680,1630 @@ function buildPolicyGroundedAnswer(sources: ReturnType<typeof buildVerifiedSourc
   ].join('\n');
 }
 
+function getFallbackSourceText(source: ReturnType<typeof buildVerifiedSources>[number]) {
+  const sourceLike = source as any;
+  const metadata = sourceLike.metadata || {};
+  return normalizeEvidenceText([
+    source.title,
+    source.originalTitle,
+    source.excerpt,
+    source.matchText,
+    metadata.title,
+    metadata.originalTitle,
+    metadata.documentTitle,
+    metadata.document_title,
+    metadata.source_title,
+    metadata.canonical_title,
+    metadata.productStructureAnchor,
+    metadata.graphPath,
+    metadata.topic_labels,
+    metadata.graphTopics,
+    Array.isArray(source.rankReason) ? source.rankReason.join(' ') : source.rankReason,
+    Array.isArray(source.evidenceDecisionReason) ? source.evidenceDecisionReason.join(' ') : source.evidenceDecisionReason,
+  ].filter(Boolean).join(' '));
+}
+
+function findFallbackSourceIndex(
+  sources: ReturnType<typeof buildVerifiedSources>,
+  vendor: VendorIntent | undefined,
+  pattern: RegExp,
+) {
+  const matches = sources
+    .map((source, index) => ({ source, index }))
+    .filter(({ source }) => {
+      const searchableText = normalizeEvidenceText(`${source.title || ''} ${source.originalTitle || ''} ${getFallbackSourceText(source)}`);
+      return sourceMatchesVendor(source, vendor)
+        && (!vendor || !sourceHasCrossVendorUrl(source, [vendor]))
+        && !sourceHasExtractionNoise(source)
+        && pattern.test(searchableText);
+    });
+  const titleMatch = matches.find(({ source }) => (
+    pattern.test(normalizeEvidenceText(`${source.title || ''} ${source.originalTitle || ''}`))
+  ));
+  return titleMatch?.index ?? matches[0]?.index ?? -1;
+}
+
+function formatFallbackEvidenceLabels(used: Set<number>) {
+  return Array.from(used)
+    .sort((a, b) => a - b)
+    .map(index => `[S${index + 1}]`)
+    .join(', ');
+}
+
+function addFallbackLine(
+  lines: string[],
+  used: Set<number>,
+  sources: ReturnType<typeof buildVerifiedSources>,
+  vendor: VendorIntent | undefined,
+  pattern: RegExp,
+  line: (label: string) => string,
+) {
+  const index = findFallbackSourceIndex(sources, vendor, pattern);
+  if (index < 0) return false;
+  used.add(index);
+  lines.push(line(`[S${index + 1}]`));
+  return true;
+}
+
+function buildNaverShoppingDataStructuredFallbackAnswer(
+  sources: ReturnType<typeof buildVerifiedSources>,
+  intent: QueryIntent,
+  originalMessage?: string,
+) {
+  if (!isNaverShoppingDataIntent(intent)) return null;
+  const queryText = normalizeProductIntentText(originalMessage || '');
+  const asksDataSetup = /db\s*url|dburl|상품\s*db|상품db|ep|상품\s*등록|등록\s*요청|등록요청|상품정보\s*수신|상품관리|쇼핑파트너센터|카테고리\s*(자동)?매칭|입점\s*심사|피드|feed/.test(queryText);
+  if (originalMessage && !asksDataSetup) return null;
+
+  const used = new Set<number>();
+  const candidateIndexes = sources
+    .map((source, index) => ({ source, index }))
+    .filter(({ source }) => sourceMatchesVendor(source, 'NAVER') && sourceHasNaverShoppingDataEvidence(source))
+    .sort((a, b) => scoreNaverShoppingDataEvidence(b.source) - scoreNaverShoppingDataEvidence(a.source))
+    .map(candidate => candidate.index);
+  const bestIndex = candidateIndexes[0] ?? -1;
+
+  const cite = (index: number) => {
+    used.add(index);
+    return `[S${index + 1}]`;
+  };
+  const findProcedureSourceIndex = (pattern: RegExp, allowBestFallback = false) => {
+    const indexedMatches = sources
+      .map((source, index) => ({ source, index }))
+      .filter(({ source }) => {
+        if (!sourceMatchesVendor(source, 'NAVER')) return false;
+        const searchableText = getFallbackSourceText(source);
+        return sourceHasNaverShoppingDataEvidence(source) && pattern.test(searchableText);
+      })
+      .sort((a, b) => scoreNaverShoppingDataEvidence(b.source) - scoreNaverShoppingDataEvidence(a.source));
+    if (indexedMatches.length > 0) return indexedMatches[0].index;
+    return allowBestFallback ? bestIndex : -1;
+  };
+  const addProcedureLine = (
+    lines: string[],
+    pattern: RegExp,
+    line: (label: string) => string,
+    allowBestFallback = false,
+  ) => {
+    const index = findProcedureSourceIndex(pattern, allowBestFallback);
+    if (index < 0) return false;
+    lines.push(line(cite(index)));
+    return true;
+  };
+
+  const sections = [
+    '네이버 쇼핑검색광고에서 상품 등록이나 DB URL을 확인할 때는 광고 생성 화면보다 먼저 “쇼핑몰 상품 데이터가 네이버 쪽으로 정상 수신되고, 노출 가능한 상태가 되었는지”를 확인하는 흐름이 중요합니다.',
+    '',
+    '1. **상품 DB URL/EP 등록 절차 확인**',
+    '',
+  ];
+
+  const addedRegistration = addProcedureLine(
+    sections,
+    /상품정보\s*수신\s*현황|등록\s*요청|등록요청|상품관리|ep\s*\(=\s*db\s*url\)|상품\s*db\s*url|상품db\s*url|db\s*url|dburl/,
+    label => `- 쇼핑파트너센터의 **상품관리 > 상품정보 수신 현황**에서 ‘등록요청’을 눌러 상품 DB URL 또는 EP를 입력하는 절차를 먼저 확인하세요 ${label}.`,
+  );
+  addProcedureLine(
+    sections,
+    /영업일\s*기준\s*1\s*[-~]?\s*2일|통상\s*1\s*[-~]?\s*2일|입점\s*심사|심사/,
+    label => `- DB URL/EP 등록 후에는 통상 영업일 기준 1~2일 수준의 심사가 걸릴 수 있으니, 바로 노출된다고 전제하지 않는 것이 안전합니다 ${label}.`,
+  );
+  addProcedureLine(
+    sections,
+    /상품\s*현황\s*및\s*관리|미서비스\s*상품|대분류\s*검색|상품\s*리스트|상품리스트/,
+    label => `- 심사나 업데이트가 끝난 뒤에는 **상품현황 및 관리 > 미서비스 상품**에서 대분류 검색으로 상품 리스트가 들어왔는지 확인하세요 ${label}.`,
+  );
+  addProcedureLine(
+    sections,
+    /카테고리\s*(자동)?매칭|네이버\s*가격비교\s*카테고리|상품명.*카테고리|매칭\s*수정/,
+    label => `- 카테고리는 상품명 기준으로 자동매칭될 수 있으므로, 맞지 않으면 상품별 카테고리 매칭을 수정해야 합니다 ${label}.`,
+  );
+  addProcedureLine(
+    sections,
+    /서비스\s*가능\s*상태|가격비교\s*노출|쇼핑검색광고\s*상품등록\s*가능|상품등록\s*가능/,
+    label => `- 최종적으로 서비스 가능 상태, 네이버 가격비교 노출, 쇼핑검색광고 상품등록 가능 여부까지 확인해야 합니다 ${label}.`,
+  );
+
+  const dataQualityLines: string[] = [];
+  const addedDataQuality = addProcedureLine(
+    dataQualityLines,
+    /상품\s*가격|가격대|배송비|쿠폰|할인|대표이미지|색상\s*필터|혜택\s*필터|데이터\s*피드|feed/,
+    label => `- 가격, 배송비, 쿠폰/할인, 대표이미지처럼 EP에 들어가는 상품 데이터는 필터나 노출 조건에 영향을 줄 수 있으므로 최신 상태로 관리해야 합니다 ${label}.`,
+  );
+  if (addedDataQuality) {
+    sections.push('');
+    sections.push('2. **상품 데이터 품질 확인**');
+    sections.push('');
+    sections.push(...dataQualityLines);
+  }
+
+  const operationLines: string[] = [];
+  addProcedureLine(
+    operationLines,
+    /cpc|cps|쇼핑파트너센터|네이버\s*쇼핑에\s*등록|쇼핑몰.*연동|전환\s*추적/,
+    label => `- CPC/CPS 입점 방식, 쇼핑몰 연동, 전환 추적처럼 계정이나 쇼핑몰 상태에 따라 달라지는 항목은 광고 집행 전 별도로 확인하는 것이 좋습니다 ${label}.`,
+  );
+  if (operationLines.length > 0) {
+    sections.push('');
+    sections.push(`${addedDataQuality ? '3' : '2'}. **운영 전에 남겨둘 확인 사항**`);
+    sections.push('');
+    sections.push(...operationLines);
+  }
+
+  if (!addedRegistration && !addedDataQuality && used.size === 0) return null;
+
+  if (used.size === 0) {
+    return null;
+  }
+
+  sections.push('');
+  sections.push('정리하면, DB URL 자체만 확인하는 것이 아니라 **상품 데이터 등록 요청 → 심사/수신 상태 → 카테고리 매칭 → 서비스 가능 상태** 순서로 확인해야 쇼핑검색광고 집행 가능 여부를 판단하기 쉽습니다.');
+  sections.push('');
+  sections.push(`근거: ${formatFallbackEvidenceLabels(used)}`);
+
+  return sections.join('\n');
+}
+
+function buildNaverShoppingSearchCreativeGuideStructuredFallbackAnswer(
+  sources: ReturnType<typeof buildVerifiedSources>,
+  intent: QueryIntent,
+  originalMessage: string,
+) {
+  if (!intent.vendors.includes('NAVER')) return null;
+
+  const queryText = normalizeProductIntentText(originalMessage);
+  const asksShoppingSearch = /쇼핑검색|쇼핑\s*검색|쇼핑몰\s*상품형|쇼핑\s*광고/.test(queryText);
+  const asksCreativeGuide = /제작|소재|가이드|사양|스펙|규격|이미지|문구|카피|랜딩|심사|검수|등록\s*기준/.test(queryText);
+  if (!asksShoppingSearch || !asksCreativeGuide) return null;
+
+  const used = new Set<number>();
+  const sections = [
+    '네이버 쇼핑검색광고 제작 가이드는 “쇼핑 지면에 노출될 상품 정보가 준비되어 있는지”와 “소재·랜딩·심사 조건이 맞는지”를 나누어 확인하는 편이 좋습니다.',
+    '',
+    '1. **쇼핑검색광고 노출 구조 확인**',
+    '',
+  ];
+
+  addFallbackLine(
+    sections,
+    used,
+    sources,
+    'NAVER',
+    /쇼핑검색광고|쇼핑\s*검색|쇼핑몰\s*상품형|상품\s*노출|쇼핑\s*지면|네이버\s*쇼핑/,
+    label => `- 쇼핑검색광고는 쇼핑몰 상품형처럼 상품 정보가 검색·쇼핑 지면에 노출되는 구조로 먼저 이해하면 됩니다 ${label}.`,
+  );
+  addFallbackLine(
+    sections,
+    used,
+    sources,
+    'NAVER',
+    /상품명|상품\s*정보|대표이미지|이미지|가격|배송비|카테고리|상품\s*상세|랜딩|url|쇼핑몰/,
+    label => `- 제작 전에는 상품명, 대표이미지, 가격·배송비, 카테고리, 랜딩 URL처럼 실제 노출에 쓰이는 상품 정보를 함께 점검해야 합니다 ${label}.`,
+  );
+
+  const creativeLines: string[] = [];
+  addFallbackLine(
+    creativeLines,
+    used,
+    sources,
+    'NAVER',
+    /소재\s*(제작|사양|가이드|조건)|이미지\s*(비율|사이즈|크기)|문구|카피|텍스트|품질|광고등록기준|등록\s*기준/,
+    label => `- 이미지 품질, 문구, 텍스트, 광고등록기준처럼 소재 제작과 심사에 연결되는 항목은 별도로 대조해야 합니다 ${label}.`,
+  );
+  addFallbackLine(
+    creativeLines,
+    used,
+    sources,
+    'NAVER',
+    /심사|검수|승인|선\s*검수|업종\s*제한|등록\s*불가|제한\s*업종|소재\s*승인/,
+    label => `- 업종 제한, 선검수, 소재 승인 조건은 상품 노출 가능 여부와 별개로 심사 기준에서 확인해야 합니다 ${label}.`,
+  );
+
+  if (creativeLines.length > 0) {
+    sections.push('');
+    sections.push('2. **제작·심사 전에 확인할 조건**');
+    sections.push('');
+    sections.push(...creativeLines);
+  }
+
+  if (used.size === 0) return null;
+
+  sections.push('');
+  sections.push('정리하면, 쇼핑검색광고 제작 단계에서는 상품 정보, 대표이미지·문구, 랜딩, 업종/심사 기준을 함께 확인하는 흐름이 안전합니다.');
+  sections.push('');
+  sections.push(`근거: ${formatFallbackEvidenceLabels(used)}`);
+
+  return sections.join('\n');
+}
+
+function buildNaverProductOverviewStructuredFallbackAnswer(
+  sources: ReturnType<typeof buildVerifiedSources>,
+  intent: QueryIntent,
+  isBroadProductStructureLlmIntent: boolean,
+  originalMessage?: string,
+) {
+  if (!intent.vendors.includes('NAVER')) return null;
+  const queryText = normalizeProductIntentText(originalMessage || '');
+  const asksNaverProductOverview = isBroadProductStructureLlmIntent
+    || isProductCatalogOverviewQuestion(originalMessage || '');
+  if (!isBroadProductStructureLlmIntent && !asksNaverProductOverview) return null;
+  const explicitlyAsksShoppingBlock = /쇼핑\s*블록|쇼핑블록|주요\s*쇼핑\s*지면/.test(queryText);
+
+  const used = new Set<number>();
+  const sections = [
+    '네이버 광고 상품은 확보된 공식 가이드 근거 기준으로 검색 유입, 쇼핑 상품 노출, 쇼핑 지면 노출, 업종별 노출 가능 여부를 나누어 확인하는 편이 안전합니다.',
+    '',
+    '1. **대표 상품군과 노출 지면 구분**',
+    '',
+  ];
+
+  addFallbackLine(
+    sections,
+    used,
+    sources,
+    'NAVER',
+    /사이트검색광고|키워드\s*검색|검색\s*유입|파워링크|웹사이트\s*방문/,
+    label => `- 사이트검색광고는 키워드 검색 기반으로 웹사이트 방문을 늘릴 때 확인하는 상품군입니다 ${label}.`,
+  );
+  addFallbackLine(
+    sections,
+    used,
+    sources,
+    'NAVER',
+    /쇼핑검색광고|쇼핑\s*검색|쇼핑몰\s*상품형|상품\s*노출|상품형/,
+    label => `- 쇼핑검색광고는 쇼핑몰 상품형처럼 상품 노출과 구매 유입을 함께 다룰 때 확인합니다 ${label}.`,
+  );
+  const addedShoppingBlock = addFallbackLine(
+    sections,
+    used,
+    sources,
+    'NAVER',
+    /쇼핑블록|주요\s*쇼핑\s*지면|쇼핑\s*지면|브랜딩\s*목적/,
+    label => `- 쇼핑블록이나 주요 쇼핑 지면은 쇼핑몰 유입과 브랜딩 목적을 함께 검토할 때 확인할 수 있습니다 ${label}.`,
+  );
+  if (!addedShoppingBlock && explicitlyAsksShoppingBlock) {
+    sections.push('- 쇼핑블록은 이번에 확인된 출처 안에서는 세부 상품 설명이나 운영 기준이 충분히 잡히지 않았습니다. 이 항목은 출처 추가 또는 담당자 확인 대상으로 남겨두는 것이 안전합니다.');
+  }
+  addFallbackLine(
+    sections,
+    used,
+    sources,
+    'NAVER',
+    /디지털\s*옥외광고|네이버\s*플레이스|업종\s*제한|등록\s*불가\s*업종/,
+    label => `- 디지털 옥외광고나 일부 노출 지면은 업종 제한과 등록 가능 여부를 별도로 확인해야 합니다 ${label}.`,
+  );
+
+  if (used.size === 0) return null;
+
+  sections.push('');
+  sections.push('2. **등록·소재 조건 확인**');
+  sections.push('');
+  addFallbackLine(
+    sections,
+    used,
+    sources,
+    'NAVER',
+    /상품\s*db|db\s*url|상품정보\s*수신\s*현황|쇼핑파트너센터|카테고리\s*(자동)?매칭|입점\s*심사/,
+    label => `- 쇼핑 상품을 다루는 경우 상품 DB URL, 쇼핑파트너센터 등록 상태, 카테고리 매칭 상태를 함께 확인해야 합니다 ${label}.`,
+  );
+  addFallbackLine(
+    sections,
+    used,
+    sources,
+    'NAVER',
+    /업종\s*제한|광고등록기준|등록\s*기준|심사|선\s*검수|소재\s*승인/,
+    label => `- 업종 제한, 선 검수, 소재 승인 조건은 상품이나 지면별로 달라질 수 있으므로 광고등록기준과 함께 대조해야 합니다 ${label}.`,
+  );
+
+  sections.push('');
+  sections.push('정리하면, 우선 유입 목적을 정하고 검색/쇼핑 노출 조건과 등록 기준을 함께 확인하는 흐름이 안전합니다.');
+  sections.push('');
+  sections.push(`근거: ${formatFallbackEvidenceLabels(used)}`);
+
+  return sections.join('\n');
+}
+
+function buildNaverDisplayAdStructuredFallbackAnswer(
+  sources: ReturnType<typeof buildVerifiedSources>,
+  intent: QueryIntent,
+  originalMessage: string,
+) {
+  if (!isNaverDisplayAdQuestion(originalMessage, intent)) return null;
+
+  const used = new Set<number>();
+  const sections = [
+    '네이버 DA는 검색 키워드형 상품 하나로 보기보다, 디스플레이 노출 지면과 구매/예약 방식, 소재 조건을 나누어 확인하는 편이 좋습니다.',
+    '',
+    '1. **확인되는 DA 계열과 지면**',
+    '',
+  ];
+
+  addFallbackLine(
+    sections,
+    used,
+    sources,
+    'NAVER',
+    /보장형\s*디스플레이|보장형\s*da|스마트채널|타임보드|롤링보드|브랜드\s*보드|메인\s*보드|스페셜\s*da|배너/,
+    label => `- 보장형 디스플레이 계열은 정해진 지면이나 노출 구좌를 구매·예약하는 상품군으로 확인됩니다 ${label}.`,
+  );
+  addFallbackLine(
+    sections,
+    used,
+    sources,
+    'NAVER',
+    /성과형\s*디스플레이|성과형\s*da|gfa|디스플레이\s*광고|홈피드|배너|브랜딩|전환|타겟팅/,
+    label => `- 성과형 디스플레이 계열은 홈피드, 배너 등 지면과 타겟팅/전환 목적을 함께 검토해야 합니다 ${label}.`,
+  );
+  addFallbackLine(
+    sections,
+    used,
+    sources,
+    'NAVER',
+    /숏폼\s*아웃스트림|아웃스트림|동영상\s*조회|네이버\s*클립|동영상\s*광고|비디오\s*광고/,
+    label => `- 동영상형 DA 성격의 상품은 숏폼 아웃스트림, 동영상 조회, 네이버 클립 같은 노출 지면과 소재 길이를 함께 확인해야 합니다 ${label}.`,
+  );
+
+  const conditionLines: string[] = [];
+  addFallbackLine(
+    conditionLines,
+    used,
+    sources,
+    'NAVER',
+    /소재\s*(제작|사양|가이드|조건)|이미지\s*비율|동영상\s*비율|사이즈|해상도|파일|용량|텍스트|랜딩/,
+    label => `- 실제 집행 전에는 선택한 지면별 이미지/동영상 비율, 파일 용량, 랜딩 조건 같은 소재 사양을 따로 대조해야 합니다 ${label}.`,
+  );
+  addFallbackLine(
+    conditionLines,
+    used,
+    sources,
+    'NAVER',
+    /광고등록기준|심사|검수|업종\s*제한|등록\s*불가|제한\s*업종|의료|금융|주류|도박|성인/,
+    label => `- 업종 제한이나 선검수 조건은 DA 상품 선택과 별개로 광고등록기준에서 확인해야 합니다 ${label}.`,
+  );
+
+  if (conditionLines.length > 0) {
+    sections.push('');
+    sections.push('2. **집행 전 같이 확인할 조건**');
+    sections.push('');
+    sections.push(...conditionLines);
+  }
+
+  if (used.size === 0) return null;
+
+  sections.push('');
+  sections.push('정리하면, 네이버 DA는 “검색광고냐 아니냐”보다 보장형/성과형, 노출 지면, 소재 사양, 심사 조건을 함께 묶어서 봐야 합니다.');
+  sections.push('');
+  sections.push(`근거: ${formatFallbackEvidenceLabels(used)}`);
+
+  return sections.join('\n');
+}
+
+function buildNaverVideoStructuredFallbackAnswer(
+  sources: ReturnType<typeof buildVerifiedSources>,
+  intent: QueryIntent,
+  originalMessage: string,
+) {
+  if (!intent.vendors.includes('NAVER')) return null;
+  const queryText = normalizeProductIntentText(originalMessage);
+  if (!/동영상|비디오|video|숏폼|아웃스트림|인스트림|클립|조회/.test(queryText)) return null;
+
+  const used = new Set<number>();
+  const sections = [
+    '네이버 동영상 광고는 노출 지면과 재생 방식에 따라 소재 조건이 달라질 수 있으므로, 먼저 어떤 지면에서 어떤 영상 상품을 쓰는지부터 나누어 확인하는 편이 안전합니다.',
+    '',
+    '1. **동영상 노출 지면과 상품 성격**',
+    '',
+  ];
+
+  addFallbackLine(
+    sections,
+    used,
+    sources,
+    'NAVER',
+    /동영상\s*조회|동영상\s*광고|비디오\s*광고|네이버\s*클립|숏폼\s*아웃스트림|아웃스트림|인스트림/,
+    label => `- 동영상 조회, 숏폼 아웃스트림, 인스트림/아웃스트림처럼 영상 노출 방식별로 확인해야 하는 상품군이 나뉩니다 ${label}.`,
+  );
+  addFallbackLine(
+    sections,
+    used,
+    sources,
+    'NAVER',
+    /게재\s*위치|노출\s*지면|지면별|노출되는\s*지면|네이버\s*tv|클립|피드|서비스\s*지면/,
+    label => `- 같은 동영상 소재라도 게재 위치와 서비스 지면에 따라 노출 조건이 달라질 수 있습니다 ${label}.`,
+  );
+
+  const specLines: string[] = [];
+  addFallbackLine(
+    specLines,
+    used,
+    sources,
+    'NAVER',
+    /영상\s*비율|동영상\s*비율|16:9|9:16|21:9|영상\s*길이|최대\s*\d+\s*(초|분)|용량|mb|해상도|480p|파일|mp4|mov/,
+    label => `- 제작 단계에서는 영상 비율, 길이, 용량, 해상도, 파일 형식 같은 소재 사양을 지면별로 확인해야 합니다 ${label}.`,
+  );
+  addFallbackLine(
+    specLines,
+    used,
+    sources,
+    'NAVER',
+    /저화질|tv\s*cf|품질|썸네일|텍스트|타이틀|랜딩|심사|검수|승인/,
+    label => `- 영상 품질, 썸네일/문구, 랜딩, 심사 조건도 실제 집행 전 확인 대상입니다 ${label}.`,
+  );
+
+  if (specLines.length > 0) {
+    sections.push('');
+    sections.push('2. **제작 전에 확인할 소재 조건**');
+    sections.push('');
+    sections.push(...specLines);
+  }
+
+  if (used.size === 0) return null;
+
+  sections.push('');
+  sections.push('정리하면, 네이버 동영상 광고는 상품명만 보는 것보다 노출 지면, 재생 방식, 영상 비율·길이·용량 같은 제작 조건을 함께 확인해야 합니다.');
+  sections.push('');
+  sections.push(`근거: ${formatFallbackEvidenceLabels(used)}`);
+
+  return sections.join('\n');
+}
+
+function buildMetaAppInstallStructuredFallbackAnswer(
+  sources: ReturnType<typeof buildVerifiedSources>,
+  intent: QueryIntent,
+  originalMessage: string,
+) {
+  if (!intent.vendors.includes('META')) return null;
+  const queryText = normalizeProductIntentText(originalMessage);
+  if (!/앱\s*(인스톨|설치|홍보|캠페인|사전\s*등록|이벤트)|app\s*(install|promotion)|sdk|mmp|트래킹|추적/.test(queryText)) {
+    return null;
+  }
+
+  const used = new Set<number>();
+  const sections = [
+    'Meta 앱 인스톨 광고는 “앱 설치를 늘릴 캠페인인지”와 “앱 이벤트를 측정할 준비가 되어 있는지”를 먼저 나누어 확인하는 편이 안전합니다.',
+    '',
+    '1. **집행 전에 연결할 항목**',
+    '',
+  ];
+
+  addFallbackLine(
+    sections,
+    used,
+    sources,
+    'META',
+    /앱\s*(홍보|설치|인스톨)|app\s*(promotion|install)|앱\s*광고|모바일\s*앱/,
+    label => `- 앱 설치나 앱 내 행동을 늘리려면 앱 홍보/App Promotion 계열 목표와 캠페인 설정을 먼저 확인해야 합니다 ${label}.`,
+  );
+  addFallbackLine(
+    sections,
+    used,
+    sources,
+    'META',
+    /앱\s*등록|app\s*id|app\s*secret|비즈니스\s*설정|광고\s*계정|권한|스토어|store/,
+    label => `- 앱 등록, App ID/App Secret, 광고 계정 권한, 앱스토어/플레이스토어 연결 상태를 함께 점검해야 합니다 ${label}.`,
+  );
+  addFallbackLine(
+    sections,
+    used,
+    sources,
+    'META',
+    /sdk|mmp|모바일\s*측정\s*파트너|앱\s*이벤트|이벤트\s*추적|포스트백|postback|skadnetwork|skan|트래킹|추적/,
+    label => `- SDK, MMP, 앱 이벤트, 포스트백처럼 설치와 인앱 행동을 측정하는 연결 항목은 집행 전에 확인해야 합니다 ${label}.`,
+  );
+
+  const creativeLines: string[] = [];
+  addFallbackLine(
+    creativeLines,
+    used,
+    sources,
+    'META',
+    /소재|광고\s*콘텐츠|이미지|동영상|카피|문구|cta|랜딩|스토어|심사|검토|정책/,
+    label => `- 소재와 문구는 앱 스토어 랜딩, CTA, 광고 콘텐츠 정책과 함께 검토하는 것이 좋습니다 ${label}.`,
+  );
+  addFallbackLine(
+    creativeLines,
+    used,
+    sources,
+    'META',
+    /앱\s*설치\s*대신\s*링크\s*클릭|링크\s*클릭|최적화|앱\s*이벤트\s*데이터|측정/,
+    label => `- 앱 이벤트나 SDK 연결이 충분하지 않으면 설치가 아니라 링크 클릭 중심으로 최적화될 수 있으므로 측정 설정을 먼저 확인해야 합니다 ${label}.`,
+  );
+  if (creativeLines.length === 0 && /소재|문구|카피|이미지|동영상|랜딩|cta|스토어/.test(queryText)) {
+    addFallbackLine(
+      creativeLines,
+      used,
+      sources,
+      'META',
+      /앱\s*(홍보|설치|인스톨)|app\s*(promotion|install)|광고|캠페인|정책|스토어|store/,
+      label => `- 소재·문구·랜딩은 앱 홍보 캠페인 설정과 별도로, 실제 게재 전 광고 콘텐츠 정책과 앱스토어 이동 경로를 함께 확인하는 것이 좋습니다 ${label}.`,
+    );
+  }
+
+  if (creativeLines.length > 0) {
+    sections.push('');
+    sections.push('2. **소재·최적화에서 주의할 점**');
+    sections.push('');
+    sections.push(...creativeLines);
+  }
+
+  if (used.size === 0) return null;
+
+  sections.push('');
+  sections.push('정리하면, 앱 홍보 목표를 고른 뒤 앱 등록/권한, SDK 또는 MMP 이벤트 측정, 스토어 랜딩과 소재 정책을 함께 확인하는 흐름이 안전합니다.');
+  sections.push('');
+  sections.push(`근거: ${formatFallbackEvidenceLabels(used)}`);
+
+  return sections.join('\n');
+}
+
+function buildMetaProductOverviewStructuredFallbackAnswer(
+  sources: ReturnType<typeof buildVerifiedSources>,
+  intent: QueryIntent,
+  isBroadProductStructureLlmIntent: boolean,
+  originalMessage: string,
+) {
+  if (!intent.vendors.includes('META')) return null;
+
+  const asksMetaProductOverview = isBroadProductStructureLlmIntent
+    || isProductCatalogOverviewQuestion(originalMessage);
+  if (!asksMetaProductOverview) return null;
+
+  const used = new Set<number>();
+  const sections = [
+    'Meta 광고는 캠페인 목표를 먼저 정하고, 그 목표에 맞는 노출 형식과 운영 기능을 조합해 설계하는 구조로 보는 것이 좋습니다.',
+    '',
+    '1. **캠페인 목표부터 정하기**',
+    '',
+  ];
+
+  addFallbackLine(
+    sections,
+    used,
+    sources,
+    'META',
+    /인지도[\s\S]{0,120}트래픽[\s\S]{0,120}참여[\s\S]{0,120}잠재\s*고객[\s\S]{0,120}앱\s*홍보[\s\S]{0,120}판매|캠페인\s*목표|광고\s*관리자\s*목표|objective/i,
+    label => `- Meta 광고 관리자에서는 인지도, 트래픽, 참여, 잠재 고객, 앱 홍보, 판매처럼 목적별 캠페인 목표를 먼저 고릅니다 ${label}.`,
+  );
+
+  const formatLines: string[] = [];
+  addFallbackLine(
+    formatLines,
+    used,
+    sources,
+    'META',
+    /이미지[\s\S]{0,80}동영상[\s\S]{0,80}슬라이드|카루셀|carousel|collection|컬렉션|광고\s*형식|ad\s*format/i,
+    label => `- 광고 형식은 이미지, 동영상, 슬라이드/카루셀, 컬렉션처럼 메시지를 보여주는 방식에 따라 나누어 확인합니다 ${label}.`,
+  );
+  addFallbackLine(
+    formatLines,
+    used,
+    sources,
+    'META',
+    /facebook|instagram|messenger|audience\s*network|페이스북|인스타그램|게재\s*위치|노출\s*위치|placement/i,
+    label => `- Facebook, Instagram 등 노출 위치에 따라 사용할 수 있는 형식과 세부 사양이 달라질 수 있습니다 ${label}.`,
+  );
+  if (formatLines.length > 0) {
+    sections.push('', '2. **목표에 맞는 광고 형식과 노출 위치 확인하기**', '', ...formatLines);
+  }
+
+  const operationLines: string[] = [];
+  addFallbackLine(
+    operationLines,
+    used,
+    sources,
+    'META',
+    /앱\s*(홍보|설치|인스톨|캠페인)|app\s*(promotion|install)|앱\s*광고/i,
+    label => `- 앱 설치나 앱 내 행동을 늘리는 목적이면 앱 홍보/App Promotion 계열 목표와 앱 광고 조건을 확인합니다 ${label}.`,
+  );
+  addFallbackLine(
+    operationLines,
+    used,
+    sources,
+    'META',
+    /카탈로그|catalog|컬렉션|collection|advantage\+|어드밴티지/i,
+    label => `- 상품 카탈로그나 여러 상품을 묶어 보여주는 운영이라면 카탈로그, 컬렉션, Advantage+ 관련 조건을 별도로 확인합니다 ${label}.`,
+  );
+  addFallbackLine(
+    operationLines,
+    used,
+    sources,
+    'META',
+    /리드\s*양식|잠재\s*고객|lead\s*form|lead\s*generation|비즈니스\s*폼/i,
+    label => `- 상담 신청이나 연락처 수집이 목적이면 잠재 고객/리드 양식 계열 조건을 확인합니다 ${label}.`,
+  );
+  if (operationLines.length > 0) {
+    sections.push('', `${formatLines.length > 0 ? '3' : '2'}. **운영 기능이 필요한지 확인하기**`, '', ...operationLines);
+  }
+
+  if (used.size === 0) return null;
+
+  sections.push('');
+  sections.push('정리하면, 먼저 캠페인 목표를 정하고, 그 목표에 맞는 광고 형식과 노출 위치를 고른 뒤 앱·카탈로그·리드 같은 운영 기능이 필요한지 확인하면 됩니다.');
+  sections.push('');
+  sections.push(`근거: ${formatFallbackEvidenceLabels(used)}`);
+
+  return sections.join('\n');
+}
+
+function buildKakaoProductStructuredFallbackAnswer(
+  sources: ReturnType<typeof buildVerifiedSources>,
+  intent: QueryIntent,
+) {
+  if (!intent.vendors.includes('KAKAO')) return null;
+
+  const combinedText = sources.map(getFallbackSourceText).join(' ');
+  const queryText = normalizeEvidenceText([
+    ...intent.keywords,
+    ...intent.strictProductTerms,
+    ...intent.strictContextTerms,
+  ].join(' '));
+  const asksBizboardOrDisplay = /비즈보드|카카오\s*비즈보드|카카오비즈보드|톡보드|biz\s*board|talkboard|디스플레이|display|상품\s*가이드|상품가이드|제작\s*가이드|제작가이드|소재|지면|노출/.test(`${combinedText} ${queryText}`);
+  if (!asksBizboardOrDisplay) return null;
+
+  const used = new Set<number>();
+  const productLines: string[] = [];
+  const creativeLines: string[] = [];
+  const auditLines: string[] = [];
+  const sections = [
+    '카카오 광고는 상품명만 고르는 방식보다, 노출 지면과 제작·심사 기준을 함께 확인하는 방식으로 보는 것이 안전합니다.',
+  ];
+
+  addFallbackLine(
+    productLines,
+    used,
+    sources,
+    'KAKAO',
+    /비즈보드|카카오\s*비즈보드|카카오비즈보드|톡보드|talkboard|카카오\s*주요\s*지면|카카오모먼트|상품가이드|상품\s*가이드/,
+    label => `- 비즈보드/톡보드 계열은 카카오 주요 지면 노출 상품으로, 상품가이드에서 노출 지면과 진행 조건을 먼저 확인합니다 ${label}.`,
+  );
+  addFallbackLine(
+    productLines,
+    used,
+    sources,
+    'KAKAO',
+    /디스플레이\s*광고|디스플레이광고|displayad|display\s*ad|노출\s*지면|지면/,
+    label => `- 디스플레이 광고는 노출 지면과 소재 형식이 함께 달라질 수 있으므로 지면별 조건을 분리해서 확인합니다 ${label}.`,
+  );
+
+  addFallbackLine(
+    creativeLines,
+    used,
+    sources,
+    'KAKAO',
+    /제작\s*가이드|제작가이드|홍보이미지|행동유도버튼|닫힘버튼|메인\s*카피|서브\s*카피|이미지\s*세부\s*가이드|외곽\s*테두리|리사이징|비율|사이즈|타이틀|소재\s*조건/,
+    label => `- 소재 제작 단계에서는 홍보이미지, 버튼/문구 영역, 이미지 비율·리사이징 같은 제작 조건을 확인해야 합니다 ${label}.`,
+  );
+
+  addFallbackLine(
+    auditLines,
+    used,
+    sources,
+    'KAKAO',
+    /심사\s*가이드|집행\s*기준|광고\s*가능\s*업종|등록\s*불가|금지\s*행위|소재\s*제한|업종\s*제한|연령\s*제한|주류|담배|사행성|카카오\s*서비스|디자인\s*모방|오인|ai\s*생성물|허위|과장/,
+    label => `- 업종 제한, 금지 행위, 카카오 서비스 오인, 허위·과장 가능성은 상품 선택과 별개로 심사 기준에서 확인해야 합니다 ${label}.`,
+  );
+
+  if (used.size === 0) return null;
+
+  let sectionNumber = 1;
+  if (productLines.length > 0) {
+    sections.push('', `${sectionNumber}. **상품/지면 먼저 구분하기**`, '', ...productLines);
+    sectionNumber += 1;
+  }
+  if (creativeLines.length > 0) {
+    sections.push('', `${sectionNumber}. **소재 제작 기준 확인하기**`, '', ...creativeLines);
+    sectionNumber += 1;
+  }
+  if (auditLines.length > 0) {
+    sections.push('', `${sectionNumber}. **심사·업종 제한 같이 보기**`, '', ...auditLines);
+  }
+
+  sections.push('');
+  sections.push('정리하면, 먼저 비즈보드/디스플레이처럼 노출 지면을 정하고, 그 지면의 제작가이드와 심사가이드를 함께 대조하는 흐름이 안전합니다.');
+  sections.push('');
+  sections.push(`근거: ${formatFallbackEvidenceLabels(used)}`);
+
+  return sections.join('\n');
+}
+
+function buildGoogleLeadStructuredFallbackAnswer(
+  sources: ReturnType<typeof buildVerifiedSources>,
+  intent: QueryIntent,
+  originalMessage?: string,
+) {
+  if (!intent.vendors.includes('GOOGLE')) return null;
+
+  const queryText = normalizeEvidenceText(
+    originalMessage
+      ? originalMessage
+      : [
+          ...intent.keywords,
+          ...intent.strictProductTerms,
+        ].join(' ')
+  );
+  if (!/리드\s*양식|잠재\s*고객|lead\s*form|lead\s*generation/.test(queryText)) return null;
+
+  const used = new Set<number>();
+  const sections = [
+    'Google Ads 리드 양식은 잠재고객 정보를 받는 기능이므로, 캠페인 추가 가능 여부와 개인정보 관련 문구를 함께 확인하는 편이 안전합니다.',
+    '',
+    '1. **사용 가능한 캠페인과 적용 범위 확인**',
+    '',
+  ];
+
+  addFallbackLine(
+    sections,
+    used,
+    sources,
+    'GOOGLE',
+    /리드\s*양식|lead\s*form|검색|동영상|실적\s*최대화|performance\s*max|디스플레이|캠페인에\s*추가/,
+    label => `- 리드 양식은 검색, 동영상, 실적 최대화, 디스플레이 등 캠페인에 추가 가능 여부를 먼저 확인해야 합니다 ${label}.`,
+  );
+  addFallbackLine(
+    sections,
+    used,
+    sources,
+    'GOOGLE',
+    /동영상\s*캠페인.*리드\s*양식|베타|google\s*담당자|문의/,
+    label => `- 동영상 캠페인의 리드 양식처럼 베타 또는 담당자 확인이 필요한 항목은 계정별 사용 가능 여부를 별도로 확인해야 합니다 ${label}.`,
+  );
+
+  sections.push('');
+  sections.push('2. **주의해야 할 정책·소재 조건**');
+  sections.push('');
+  addFallbackLine(
+    sections,
+    used,
+    sources,
+    'GOOGLE',
+    /개인정보|동의|고지|양식\s*제출|개인\s*정보|정책|검토|승인|심사/,
+    label => `- 리드 수집은 개인정보 고지, 동의, 양식 제출 조건과 연결되므로 정책 문구를 원문 기준으로 확인해야 합니다 ${label}.`,
+  );
+
+  if (used.size === 0) return null;
+
+  sections.push('');
+  sections.push('정리하면, 리드 양식은 “소재 사양”만 볼 것이 아니라 캠페인 적용 가능 여부, 계정별 사용 가능 여부, 개인정보 수집 조건을 함께 확인해야 합니다.');
+  sections.push('');
+  sections.push(`근거: ${formatFallbackEvidenceLabels(used)}`);
+
+  return sections.join('\n');
+}
+
+function buildGoogleProductOverviewStructuredFallbackAnswer(
+  sources: ReturnType<typeof buildVerifiedSources>,
+  intent: QueryIntent,
+  isBroadProductStructureLlmIntent: boolean,
+  originalMessage: string,
+) {
+  if (!intent.vendors.includes('GOOGLE')) return null;
+
+  const asksGoogleProductOverview = isBroadProductStructureLlmIntent
+    || isProductCatalogOverviewQuestion(originalMessage);
+  if (!asksGoogleProductOverview) return null;
+
+  const used = new Set<number>();
+  const sections = [
+    'Google Ads는 상품명을 하나만 고르는 구조라기보다, 캠페인 유형과 애셋, 확장 소재, 측정 설정을 조합해 운영하는 구조로 보는 편이 좋습니다.',
+    '',
+    '1. **목적에 맞는 캠페인 유형 확인하기**',
+    '',
+  ];
+
+  addFallbackLine(
+    sections,
+    used,
+    sources,
+    'GOOGLE',
+    /검색\s*캠페인|검색\s*광고|search\s*campaign|search\s*ads/i,
+    label => `- 검색 캠페인은 검색 결과에서 수요가 있는 사용자에게 노출할 때 확인합니다 ${label}.`,
+  );
+  addFallbackLine(
+    sections,
+    used,
+    sources,
+    'GOOGLE',
+    /디스플레이\s*캠페인|반응형\s*디스플레이|display\s*campaign|gdn/i,
+    label => `- 디스플레이 캠페인은 배너·반응형 디스플레이처럼 지면 노출을 다룰 때 확인합니다 ${label}.`,
+  );
+  addFallbackLine(
+    sections,
+    used,
+    sources,
+    'GOOGLE',
+    /쇼핑\s*(광고|캠페인)|shopping\s*(ads?|campaign)/i,
+    label => `- 쇼핑 광고는 상품 피드와 쇼핑 지면 노출을 함께 다룰 때 확인합니다 ${label}.`,
+  );
+  addFallbackLine(
+    sections,
+    used,
+    sources,
+    'GOOGLE',
+    /앱\s*(캠페인|설치|홍보)|app\s*(campaign|install|promotion)/i,
+    label => `- 앱 캠페인은 앱 설치나 앱 내 행동을 유도할 때 확인합니다 ${label}.`,
+  );
+
+  const assetLines: string[] = [];
+  addFallbackLine(
+    assetLines,
+    used,
+    sources,
+    'GOOGLE',
+    /리드\s*양식|lead\s*form|확장\s*소재|asset/i,
+    label => `- 리드 양식이나 확장 소재는 상담 신청·연락처 수집처럼 추가 정보를 받을 때 별도로 확인합니다 ${label}.`,
+  );
+  addFallbackLine(
+    assetLines,
+    used,
+    sources,
+    'GOOGLE',
+    /이미지\s*확장|이미지\s*소재|동영상|youtube|유튜브|video/i,
+    label => `- 이미지·동영상 소재는 노출 지면과 캠페인 유형에 맞는 애셋 조건을 함께 확인합니다 ${label}.`,
+  );
+  if (assetLines.length > 0) {
+    sections.push('', '2. **애셋과 확장 소재 확인하기**', '', ...assetLines);
+  }
+
+  if (used.size === 0) return null;
+
+  sections.push('');
+  sections.push('정리하면, 먼저 검색·디스플레이·쇼핑·앱 중 목적에 맞는 캠페인 유형을 정하고, 필요한 애셋과 확장 소재 조건을 원문 기준으로 대조하면 됩니다.');
+  sections.push('');
+  sections.push(`근거: ${formatFallbackEvidenceLabels(used)}`);
+
+  return sections.join('\n');
+}
+
+function buildStructuredLlmFailureFallbackAnswer(
+  sources: ReturnType<typeof buildVerifiedSources>,
+  intent: QueryIntent,
+  isBroadProductStructureLlmIntent: boolean,
+  originalMessage: string,
+) {
+  const canUseBroadOverviewFallback = isBroadProductStructureLlmIntent
+    || isProductCatalogOverviewQuestion(originalMessage);
+
+  return (
+    buildMetaAppInstallStructuredFallbackAnswer(sources, intent, originalMessage)
+    || buildNaverShoppingSearchCreativeGuideStructuredFallbackAnswer(sources, intent, originalMessage)
+    || buildNaverShoppingDataStructuredFallbackAnswer(sources, intent, originalMessage)
+    || buildNaverDisplayAdStructuredFallbackAnswer(sources, intent, originalMessage)
+    || buildNaverVideoStructuredFallbackAnswer(sources, intent, originalMessage)
+    || buildKakaoProductStructuredFallbackAnswer(sources, intent)
+    || buildGoogleLeadStructuredFallbackAnswer(sources, intent, originalMessage)
+    || (canUseBroadOverviewFallback
+      ? buildMetaProductOverviewStructuredFallbackAnswer(sources, intent, isBroadProductStructureLlmIntent, originalMessage)
+      : null)
+    || (canUseBroadOverviewFallback
+      ? buildNaverProductOverviewStructuredFallbackAnswer(sources, intent, isBroadProductStructureLlmIntent, originalMessage)
+      : null)
+    || (canUseBroadOverviewFallback
+      ? buildGoogleProductOverviewStructuredFallbackAnswer(sources, intent, isBroadProductStructureLlmIntent, originalMessage)
+      : null)
+  );
+}
+
+function buildFallbackFocusTerms(message: string, intent: QueryIntent) {
+  const terms = new Set<string>();
+  [
+    ...intent.strictContextTerms,
+    ...intent.strictProductTerms,
+    ...intent.adPolicyTerms,
+    ...intent.keywords,
+    ...message.split(/[\s,./!?()[\]{}'"“”‘’]+/),
+  ]
+    .map(term => String(term || '').trim())
+    .filter(term => term.length >= 2 && !/^(광고|상품|유형|종류|알려줘|알려|설명|정리|기준|가이드|문의|확인|네이버|naver|meta|메타|google|구글|kakao|카카오)$/i.test(term))
+    .forEach(term => terms.add(term));
+
+  return Array.from(terms).slice(0, 18);
+}
+
+function stripFallbackBoilerplate(text: string) {
+  return cleanEvidenceExcerpt(text)
+    .replace(/https?:\/\/\S+/gi, ' ')
+    .replace(/\b(?:STEP|Step|step)\s*\d+\.?/g, ' ')
+    .replace(/이전\s*화면|화면\s*공유하기|공유하기|저장하기|목록보기|닫기|접기|펼치기/gi, ' ')
+    .replace(/상품소식\s*\d*\s*분?/g, ' ')
+    .replace(/이전\s*다음|전체\s*보기|자세히\s*보기|바로가기|카테고리\s*도움말|주소\s*복사|출력하기|검색어\s*입력\s*창|탭메뉴\s*열기|메뉴\s*열기/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function insertFallbackSemanticBreaks(text: string) {
+  return text
+    .replace(/(가능합니다|됩니다|있습니다|합니다|하세요|입니다|아닙니다|수\s*있습니다|확인하세요|선택하세요)(?=[가-힣A-Za-z0-9])/g, '$1\n')
+    .replace(/(TIP|알아두세요|상세보기|더\s*알아보기|자주\s*묻는\s*질문|광고\s*시작하기|교육\s*영상\s*보기)(?=[가-힣A-Za-z0-9])/g, '\n$1\n')
+    .replace(/(?<!^)(?=(사이트검색광고|쇼핑검색광고|쇼핑블록|비즈보드|톡보드|디스플레이\s*광고|성과형\s*디스플레이|브랜드검색|콘텐츠검색|플레이스광고|앱\s*광고|컬렉션\s*광고|카루셀\s*광고|동영상\s*광고|이미지\s*광고)\b)/g, '\n')
+    .replace(/(?=(노출지면|과금방식|소재\s*사양|제작\s*가이드|상품\s*등록|등록요청|상품정보\s*수신\s*현황|카테고리\s*자동매칭|캠페인\s*목표|광고\s*목표|광고\s*관리자)\b)/g, '\n')
+    .replace(/\n{2,}/g, '\n');
+}
+
+function splitFallbackEvidenceSentences(text: string) {
+  const cleaned = insertFallbackSemanticBreaks(stripFallbackBoilerplate(text));
+  if (!cleaned) return [];
+
+  return cleaned
+    .replace(/(다\.|니다\.|요\.|함\.|됨\.|[.!?。])\s*/g, '$1\n')
+    .split(/\n|[•●▪■▶◆]+|\s+-\s+/)
+    .map(sentence => sentence.replace(/^[\s\d.)]+/, '').trim())
+    .filter(sentence => sentence.length >= 18)
+    .map(sentence => (sentence.length > 180 ? `${sentence.slice(0, 180).trim()}...` : sentence));
+}
+
+function extractFallbackSourceTags(text: string) {
+  const tags = Array.from(new Set(
+    Array.from(String(text || '').matchAll(/#\s*([가-힣A-Za-z0-9+_.-]{2,30})/g))
+      .map(match => match[1]?.trim())
+      .filter(Boolean) as string[],
+  ));
+
+  return tags.slice(0, 8);
+}
+
+function isMostlyEnglishFallbackFragment(sentence: string) {
+  const koreanCount = (sentence.match(/[가-힣]/g) || []).length;
+  const englishCount = (sentence.match(/[A-Za-z]/g) || []).length;
+  return englishCount >= 35 && koreanCount < 12;
+}
+
+function isFallbackNavigationOrChromeNoise(sentence: string) {
+  return (
+    /https?:\/\/|카테고리\s*도움말|주소\s*복사|출력하기|검색어\s*입력\s*창|이전\s*화면|화면\s*공유|목록보기|저장하기|전체\s*보기|자세히\s*보기|바로가기|탭메뉴\s*열기|메뉴\s*열기/i.test(sentence)
+    || /\b(?:STEP|Step|step)\s*\d+/.test(sentence)
+    || /네이버\s*광고\s*가이드\s*:/i.test(sentence)
+    || /도움말\s*홈|광고시스템|고객센터|copyright/i.test(sentence)
+    || /^(해당 출처에서 확인한 관련 정책입니다|원문 세부 기준은 출처를 함께 확인하세요)/.test(sentence)
+    || /조회\s*\d+\s*최종\s*수정일|최종\s*수정일\s*\d{4}/.test(sentence)
+    || /ADVoost[\s\S]{0,80}쇼핑인지도|웹사이트\s*전환앱\s*전환|쇼핑\s*소식동영상\s*조회/.test(sentence)
+    || (sentence.length > 140 && /탭|메뉴|열기|닫기|전체|도움말/.test(sentence))
+  );
+}
+
+function isNaverDisplayAdQuestion(message: string, intent: QueryIntent) {
+  const normalized = normalizeProductIntentText(message);
+  return intent.vendors.includes('NAVER') && /(^|[\s/])da($|[\s/]|도|상품|광고)|네이버\s*da|네이버da|디스플레이\s*광고|성과형\s*디스플레이|보장형\s*da|스마트채널|타임보드|롤링보드|홈피드|배너/.test(normalized);
+}
+
+function isFallbackOffTopicForMessage(sentence: string, message: string, intent: QueryIntent) {
+  const normalizedSentence = normalizeProductIntentText(sentence);
+  const normalizedMessage = normalizeProductIntentText(message);
+  const asksTrackingOrPrivacy = /전환|추적|픽셀|sdk|mmp|이벤트|개인정보|동의|태그|측정|tracking|conversion|privacy|쿠키|행태/.test(normalizedMessage);
+  if (!asksTrackingOrPrivacy && /전환\s*추적|개인정보|행태\s*정보|쿠키|동의|tracking|conversion|privacy|google\s*태그|woocommerce|wordpress|connect\s*\(/i.test(normalizedSentence)) {
+    return true;
+  }
+
+  if (isNaverDisplayAdQuestion(message, intent)) {
+    const hasDisplayDetail = /da|디스플레이|성과형|보장형|스마트채널|타임보드|롤링보드|홈피드|배너|지면|노출|소재|사이즈|과금|구매|예약|보장|집행|등록|심사/.test(normalizedSentence);
+    if (!hasDisplayDetail) return true;
+    if (!asksTrackingOrPrivacy && /전환\s*추적|개인정보|행태\s*정보|쿠키|동의/.test(normalizedSentence)) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function compactFallbackFactAroundFocus(sentence: string, focusTerms: string[]) {
+  const compact = sentence.replace(/\s+/g, ' ').trim();
+  if (compact.length <= 170) return compact;
+
+  const normalized = normalizeProductIntentText(compact);
+  const normalizedTerms = focusTerms.map(term => normalizeProductIntentText(term)).filter(term => term.length >= 2);
+  const hit = normalizedTerms.find(term => normalized.includes(term));
+  if (!hit) return `${compact.slice(0, 170).trim()}...`;
+
+  const rawIndex = compact.toLowerCase().indexOf(hit.toLowerCase());
+  const index = rawIndex >= 0 ? rawIndex : Math.max(0, Math.floor(compact.length / 2) - 45);
+  const start = Math.max(0, index - 55);
+  const end = Math.min(compact.length, index + 115);
+  const prefix = start > 0 ? '...' : '';
+  const suffix = end < compact.length ? '...' : '';
+  return `${prefix}${compact.slice(start, end).trim()}${suffix}`;
+}
+
+type SourceGuidedFallbackSectionKey =
+  | 'overview'
+  | 'setup'
+  | 'creative'
+  | 'policy'
+  | 'issue'
+  | 'uncategorized';
+
+type SourceGuidedFallbackFact = {
+  text: string;
+  citation: string;
+  normalized: string;
+  section: SourceGuidedFallbackSectionKey;
+  score: number;
+  sourceIndex: number;
+};
+
+function getSourceGuidedFallbackProfile(
+  message: string,
+  intent: QueryIntent,
+  scope: ReturnType<typeof buildSpecificProductAnswerScope>,
+  isBroadProductStructureLlmIntent: boolean,
+) {
+  const vendorLabel = intent.vendors.map(vendor => VENDOR_LABELS[vendor] || vendor).join(', ') || '해당 매체';
+  const productLabel = intent.isSpecificProductGuidance || hasNamedSpecificProductQuestion(message)
+    ? getSpecificProductLabel(intent)
+    : '광고 상품';
+  const mode = scope.mode;
+  const asksSpecificProduct = intent.isSpecificProductGuidance || hasNamedSpecificProductQuestion(message);
+  const normalizedMessage = normalizeProductIntentText(message);
+  const asksChoice = /고르|선택|구분|종류|유형|상품|목표|기준/.test(normalizedMessage);
+
+  if (mode === 'db_setup') {
+    return {
+      intro: `${vendorLabel} ${productLabel}는 상품 정보 등록과 DB/EP 연동 상태를 먼저 확인하는 질문으로 정리하는 것이 맞습니다.`,
+      sections: [
+        ['setup', '등록·연동 절차'] as const,
+        ['policy', '운영 전 확인할 조건'] as const,
+        ['issue', '막히는 지점'] as const,
+        ['uncategorized', '추가로 확인된 근거'] as const,
+      ],
+      closing: '정리하면, 상품 DB URL 또는 EP가 실제로 수신되는지, 상품 정보가 매체 기준에 맞게 매칭되는지, 심사나 승인 조건이 별도로 필요한지 순서대로 확인하세요.',
+    };
+  }
+
+  if (mode === 'setup_procedure' || mode === 'execution_guide') {
+    return {
+      intro: `${vendorLabel} ${productLabel}는 집행 전에 설정, 연동, 소재 조건을 나눠 확인하는 편이 안전합니다.`,
+      sections: [
+        ['setup', '준비·설정 절차'] as const,
+        ['creative', '소재·랜딩 조건'] as const,
+        ['policy', '심사 전 확인 기준'] as const,
+        ['issue', '오류·반려 시 확인'] as const,
+        ['uncategorized', '추가로 확인된 근거'] as const,
+      ],
+      closing: '정리하면, 먼저 계정과 연동 상태를 확인하고, 그다음 소재·랜딩·심사 조건을 원문 기준으로 대조하는 흐름이 좋습니다.',
+    };
+  }
+
+  if (mode === 'creative_guide') {
+    return {
+      intro: `${vendorLabel} ${productLabel} 소재는 지면별 규격과 심사 조건을 분리해서 확인해야 합니다.`,
+      sections: [
+        ['creative', '소재 제작 기준'] as const,
+        ['overview', '적용 지면·상품'] as const,
+        ['policy', '심사 전 주의사항'] as const,
+        ['uncategorized', '추가로 확인된 근거'] as const,
+      ],
+      closing: '정리하면, 제작 전에는 노출 지면, 이미지·영상 규격, 문구와 랜딩 조건을 같은 출처 기준으로 함께 확인하세요.',
+    };
+  }
+
+  if (mode === 'policy_screening') {
+    return {
+      intro: `${vendorLabel} ${productLabel} 정책 질문은 심사 기준과 제한 조건을 먼저 분리해서 보는 것이 안전합니다.`,
+      sections: [
+        ['policy', '심사 전 확인할 정책'] as const,
+        ['creative', '소재·표현 주의사항'] as const,
+        ['setup', '운영 전 준비 조건'] as const,
+        ['uncategorized', '추가로 확인된 근거'] as const,
+      ],
+      closing: '정리하면, 근거에서 직접 확인되는 제한 조건만 반영하고, 업종·계정·랜딩 예외는 원문 또는 담당자 확인으로 남겨두는 것이 안전합니다.',
+    };
+  }
+
+  if (mode === 'operational_issue') {
+    return {
+      intro: `${vendorLabel} ${productLabel} 이슈는 오류 문구, 계정·연동 상태, 매체 심사 기준을 같이 대조해야 합니다.`,
+      sections: [
+        ['issue', '확인된 이슈 단서'] as const,
+        ['setup', '점검 순서'] as const,
+        ['policy', '정책·심사 확인'] as const,
+        ['uncategorized', '추가로 확인된 근거'] as const,
+      ],
+      closing: '정리하면, 오류 메시지와 캠페인 설정값을 먼저 맞춰 보고, 같은 조건에서 재현되는지 확인한 뒤 매체 담당자 확인으로 넘기는 흐름이 좋습니다.',
+    };
+  }
+
+  const intro = asksSpecificProduct
+    ? `${vendorLabel} ${productLabel}는 공식 근거에서 확인되는 상품 특징과 운영 조건을 나눠 정리할 수 있습니다.`
+    : (isBroadProductStructureLlmIntent || asksChoice
+      ? `${vendorLabel} 광고 상품은 먼저 목적과 노출 지면을 정하고, 그에 맞는 상품·소재 조건을 확인하는 구조로 보는 것이 좋습니다.`
+      : `${vendorLabel} 광고 관련 근거에서 확인되는 내용을 질문 범위에 맞춰 정리합니다.`);
+
+  return {
+    intro,
+    sections: [
+      ['overview', '상품·지면 구조'] as const,
+      ['setup', '운영 전 확인할 조건'] as const,
+      ['creative', '소재·노출 조건'] as const,
+      ['policy', '심사·제한 기준'] as const,
+      ['uncategorized', '추가로 확인된 근거'] as const,
+    ],
+    closing: asksChoice
+      ? '정리하면, 먼저 달성하려는 목적을 정하고, 확인된 상품·지면·소재 조건을 원문 기준으로 대조한 뒤 집행 여부를 판단하는 흐름이 안전합니다.'
+      : '정리하면, 확인된 근거 안에서 상품·지면·소재·심사 조건을 나눠 보고, 출처에 없는 세부 설정값은 별도 확인 대상으로 남겨두면 됩니다.',
+  };
+}
+
+function classifySourceGuidedFallbackSection(
+  sentence: string,
+  source: ReturnType<typeof buildVerifiedSources>[number],
+  message: string,
+  intent: QueryIntent,
+  scope: ReturnType<typeof buildSpecificProductAnswerScope>,
+): Pick<SourceGuidedFallbackFact, 'section' | 'score'> {
+  const text = normalizeProductIntentText([
+    sentence,
+    source.title,
+    source.originalTitle,
+  ].filter(Boolean).join(' '));
+  const normalizedMessage = normalizeProductIntentText(message);
+  let section: SourceGuidedFallbackSectionKey = 'uncategorized';
+  let score = 0;
+
+  const setupHit = /등록|절차|방법|세팅|설정|연동|sdk|mmp|트래킹|추적|이벤트|계정|권한|픽셀|카탈로그|db\s*url|dburl|상품\s*db|상품db|ep|피드|feed|쇼핑파트너센터|상품정보|수신|connect|app\s*id|app\s*secret/i.test(text);
+  const creativeHit = /소재|제작|이미지|동영상|배너|문구|카피|사양|스펙|규격|비율|사이즈|파일|해상도|썸네일|텍스트|랜딩|url|cta|길이|초/.test(text);
+  const policyHit = /정책|심사|검수|검토|주의|유의|제한|금지|승인|반려|가능\s*여부|업종|개인정보|차별|허위|과장|청소년|성인|주류|담배|사행|금융/.test(text);
+  const issueHit = /오류|에러|문제|해결|원인|조치|불일치|미승인|거절|실패|막힘|tracking_specs|수정|재심사/.test(text);
+  const overviewHit = /상품|지면|노출|목표|캠페인|검색|쇼핑|비즈보드|디스플레이|톡보드|스마트채널|타임보드|홈피드|리드|앱\s*홍보|앱\s*인스톨|인지도|트래픽|참여|판매|컬렉션|카루셀/.test(text);
+
+  if (issueHit) {
+    section = 'issue';
+    score += 8;
+  } else if ((scope.mode === 'policy_screening' && policyHit) || (policyHit && normalizedMessage.match(/정책|심사|주의|제한|금지|승인|꼭\s*확인/))) {
+    section = 'policy';
+    score += 8;
+  } else if ((scope.mode === 'creative_guide' && creativeHit) || creativeHit) {
+    section = 'creative';
+    score += scope.mode === 'creative_guide' ? 8 : 5;
+  } else if ((scope.mode === 'setup_procedure' || scope.mode === 'execution_guide' || scope.mode === 'db_setup') && setupHit) {
+    section = 'setup';
+    score += 8;
+  } else if (setupHit) {
+    section = 'setup';
+    score += 5;
+  } else if (overviewHit || intent.topics.includes('product_structure')) {
+    section = 'overview';
+    score += 4;
+  }
+
+  if (scope.mode === 'db_setup' && /db\s*url|dburl|상품\s*db|상품db|ep|피드|feed|상품정보|수신|등록/.test(text)) score += 8;
+  if (scope.mode === 'operational_issue' && issueHit) score += 8;
+  if (source.retrievalMethod === 'graph' || source.evidenceType === 'graph' || source.corpus === 'evidence_graph') score += 4;
+  if (source.evidenceDecision === 'verified') score += 2;
+
+  return { section, score };
+}
+
+function getFallbackProductLabelFromSource(source: ReturnType<typeof buildVerifiedSources>[number]) {
+  const sourceText = `${source.title || ''} ${source.originalTitle || ''}`;
+  const knownProductMatch = sourceText.match(/(사이트검색광고|쇼핑검색광고\s*상품형|쇼핑검색광고|쇼핑블록|비즈보드|톡보드|성과형\s*디스플레이|디스플레이\s*광고|스마트채널|타임보드|롤링보드|홈피드|리드\s*양식|앱\s*광고|앱\s*홍보|앱\s*인스톨|컬렉션\s*광고|카탈로그\s*컬렉션\s*광고|카루셀\s*광고|동영상\s*광고|이미지\s*광고|검색\s*캠페인|쇼핑\s*광고|앱\s*캠페인)/i);
+  return knownProductMatch?.[1]?.replace(/\s+/g, ' ').trim() || '';
+}
+
+function formatSourceGuidedFallbackFactText(
+  fact: string,
+  source: ReturnType<typeof buildVerifiedSources>[number],
+  section: SourceGuidedFallbackSectionKey,
+) {
+  const productLabel = getFallbackProductLabelFromSource(source);
+  const cleanedFact = fact
+    .replace(/^TIP\.?\s*/i, '')
+    .replace(/^(더\s*알아보기|상세보기|알아두세요)\s*/i, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!productLabel || section === 'policy' || section === 'issue') {
+    return cleanedFact;
+  }
+
+  const normalizedFact = normalizeProductIntentText(cleanedFact);
+  const normalizedLabel = normalizeProductIntentText(productLabel);
+  if (normalizedFact.startsWith(normalizedLabel)) return cleanedFact;
+
+  return `${productLabel}: ${cleanedFact}`;
+}
+
+function rewriteKnownSourceGuidedFallbackFact(
+  fact: string,
+  source: ReturnType<typeof buildVerifiedSources>[number],
+) {
+  const text = normalizeEvidenceText([
+    source.title,
+    source.originalTitle,
+    source.excerpt,
+    source.matchText,
+    fact,
+  ].filter(Boolean).join(' '));
+  const sourceTitle = normalizeEvidenceText(`${source.title || ''} ${source.originalTitle || ''}`);
+
+  if (/meta|facebook|instagram|페이스북|인스타그램/.test(text)) {
+    if (/인지도[\s\S]{0,80}트래픽[\s\S]{0,80}참여[\s\S]{0,80}잠재\s*고객[\s\S]{0,80}앱\s*홍보[\s\S]{0,80}판매/.test(text)) {
+      return 'Meta 광고 관리자: 캠페인 목표는 인지도, 트래픽, 참여, 잠재 고객, 앱 홍보, 판매 6가지로 확인됩니다.';
+    }
+    if (/앱\s*홍보\s*목표|다운로드할\s*가능성이\s*가장\s*높은\s*사람|새로운\s*사용자\s*찾기/.test(text)) {
+      return '앱 홍보 목표: 앱 스토어에서 앱을 다운로드할 가능성이 높은 사람을 대상으로 광고할 때 선택합니다.';
+    }
+    if (/어드밴티지\+?\s*앱\s*캠페인|advantage\+?\s*app/i.test(text)) {
+      return '앱 캠페인: Meta 광고 관리자에서 Meta 어드밴티지+ 앱 캠페인을 만들 수 있습니다.';
+    }
+    if (/앱\s*광고[\s\S]{0,120}facebook[\s\S]{0,80}messenger[\s\S]{0,80}instagram[\s\S]{0,80}audience\s*network/i.test(text)) {
+      return '앱 광고: Facebook, Messenger, Instagram, Audience Network에서 앱을 홍보할 수 있습니다.';
+    }
+    if (/컬렉션\s*형식[\s\S]{0,80}2026년\s*3월|2026년\s*3월[\s\S]{0,80}컬렉션\s*형식/.test(text)) {
+      return '컬렉션 광고: 2026년 3월부터 광고 설정에 컬렉션 형식이 더 이상 표시되지 않는다고 안내되어 있습니다.';
+    }
+    if (/이미지[\s\S]{0,30}동영상[\s\S]{0,30}슬라이드[\s\S]{0,30}컬렉션/.test(text)) {
+      return '광고 형식: 공식 가이드에서는 이미지, 동영상, 슬라이드, 컬렉션 형식을 함께 확인할 수 있습니다.';
+    }
+  }
+
+  if (/naver|네이버/.test(text)) {
+    if (/쇼핑검색광고\s*상품형/.test(sourceTitle) && /가격비교\s*카테고리|상품등록|상품\s*등록|서비스\s*가능\s*상태/.test(text)) {
+      return '쇼핑검색광고 상품형: 상품을 네이버 가격비교 카테고리에 맞추고, 서비스 가능 상태가 되면 가격비교 노출과 쇼핑검색광고 상품등록이 가능합니다.';
+    }
+    if (/사이트검색광고/.test(sourceTitle) && /파워링크|키워드\s*검색|cpc|클릭당\s*과금|통합검색/.test(text)) {
+      return '사이트검색광고: 키워드 검색 시 PC·모바일 통합검색과 네이버 서비스 영역 등에 노출되는 파워링크 유형의 검색광고입니다.';
+    }
+    if (/사이트검색광고/.test(sourceTitle) && /내\s*웹사이트|웹사이트\s*방문|검색\s*상단|검색\s*이용자|트래픽/.test(text)) {
+      return '사이트검색광고: 키워드 검색 이용자를 웹사이트 방문으로 유도하는 데 쓰는 검색광고입니다.';
+    }
+    if (/사이트검색광고/.test(sourceTitle) && /반응형\s*소재|제목\s*1개|최대\s*15개의\s*제목|최대\s*3개의\s*제목/.test(text)) {
+      return '사이트검색광고 소재: 반응형 소재는 여러 제목·설명을 조합해 PC·모바일 환경에 맞는 소재를 자동 노출하는 방식입니다.';
+    }
+    if (/쇼핑블록|쇼핑\s*블록/.test(text)) {
+      return '쇼핑블록/쇼핑 지면: 네이버 PC·모바일 쇼핑 지면에서 쇼핑몰 유입이나 브랜딩 목적을 검토할 때 확인하는 영역입니다.';
+    }
+    if (/디지털\s*옥외광고|플레이스\s*노출\s*업종|등록\s*불가\s*업종/.test(text)) {
+      return '디지털 옥외광고: 네이버 플레이스 노출 업종과 등록 불가 업종을 함께 확인해야 합니다.';
+    }
+  }
+
+  if (/google|구글|youtube|유튜브/.test(text)) {
+    if (/리드\s*양식|lead\s*form/i.test(text)) {
+      return '리드 양식 확장 소재: 상담 신청이나 연락처 수집처럼 잠재 고객 정보를 받을 때 사용하는 확장 소재입니다.';
+    }
+    if (/검색\s*캠페인|디스플레이\s*캠페인|쇼핑\s*광고|앱\s*캠페인/.test(text)) {
+      return 'Google Ads: 검색, 디스플레이, 쇼핑, 앱 캠페인은 캠페인 목적과 노출 지면에 따라 구분해서 확인해야 합니다.';
+    }
+    if (/이미지\s*확장|이미지\s*소재/.test(text)) {
+      return '이미지 확장 소재: 검색 광고에 시각 요소를 더해 노출할 때 사용하는 소재 조건을 확인해야 합니다.';
+    }
+    if (/woocommerce|wordpress|google\s*태그|connect/i.test(text)) {
+      return 'Google 연동: WordPress/WooCommerce 연동은 계정 연결, 카탈로그 선택, Google 태그 설정 순서로 확인합니다.';
+    }
+  }
+
+  if (/kakao|카카오/.test(text)) {
+    if (/비즈보드|톡보드/.test(text)) {
+      return '비즈보드/톡보드: 카카오 주요 서비스 지면에서 브랜드 노출을 검토할 때 확인하는 대표 상품입니다.';
+    }
+    if (/디스플레이\s*광고|카카오\s*서비스\s*지면|소재\s*형태/.test(text)) {
+      return '디스플레이 광고: 카카오 서비스 지면과 소재 형태, 업종 제한, 심사 기준을 함께 확인해야 합니다.';
+    }
+    if (/제작\s*가이드|이미지\s*비율|텍스트\s*영역|리사이징/.test(text)) {
+      return '제작 가이드: 이미지 비율, 텍스트 영역, 노출 지면별 리사이징 조건을 소재 제작 전에 확인해야 합니다.';
+    }
+    if (/상품\s*가이드|업종\s*제한|연령\s*제한|주류|담배|사행/.test(text)) {
+      return '상품가이드: 상품별 집행 조건과 업종 제한을 먼저 확인해야 합니다.';
+    }
+  }
+
+  return null;
+}
+
+function shouldUseKnownSourceGuidedRewrite(fact: string) {
+  const normalized = normalizeProductIntentText(fact);
+  const isDenseNavigationText = /더\s*알아보기|자세히\s*보기|광고\s*시작하기|도움말|탭메뉴|메뉴\s*열기|전체\s*보기/.test(normalized);
+  const isPackedCatalogSnippet = /(정보\s*)?이미지\s*동영상\s*슬라이드\s*컬렉션|(사이트검색|쇼핑검색|콘텐츠검색|브랜드검색).*(사이트검색|쇼핑검색|콘텐츠검색|브랜드검색)/.test(normalized);
+
+  return fallbackFactLooksMergedNoise(fact)
+    || fallbackFactLooksIncomplete(fact)
+    || (fact.length > 180 && (isDenseNavigationText || isPackedCatalogSnippet));
+}
+
+function fallbackFactLooksMergedNoise(fact: string) {
+  const normalized = normalizeProductIntentText(fact);
+  const packedProductList = /(사이트검색쇼핑검색콘텐츠검색브랜드검색|웹사이트\s*전환앱\s*전환|정보\s*이미지\s*동영상\s*슬라이드\s*컬렉션\s*정보)/.test(normalized);
+  const denseUiCopy = fact.length > 150 && /(탭메뉴|광고\s*시작하기|자주|교육\s*영상|더\s*알아보기|상세보기)/.test(fact);
+  return packedProductList || denseUiCopy;
+}
+
+function fallbackFactLooksIncomplete(fact: string) {
+  const trimmed = fact.trim();
+  if (trimmed.length < 20) return true;
+  if (/[가-힣A-Za-z0-9]$/.test(trimmed) && !/[.!?。다요함됨음임니다습니다]$/.test(trimmed)) {
+    return true;
+  }
+  return /(상$|통$|쇼$|광고를 상$|사용자가\s*$|선택합니다\.\s*그런\s*$|다음과\s*같은\s*$)/.test(trimmed);
+}
+
+function fallbackFactLooksSimilar(
+  left: SourceGuidedFallbackFact,
+  right: SourceGuidedFallbackFact,
+) {
+  if (left.normalized === right.normalized) return true;
+  const shorter = left.normalized.length <= right.normalized.length ? left.normalized : right.normalized;
+  const longer = left.normalized.length > right.normalized.length ? left.normalized : right.normalized;
+  if (shorter.length >= 45 && longer.includes(shorter)) return true;
+
+  const leftTokens = new Set(left.normalized.split(/\s+/).filter(token => token.length >= 2));
+  const rightTokens = new Set(right.normalized.split(/\s+/).filter(token => token.length >= 2));
+  if (leftTokens.size === 0 || rightTokens.size === 0) return false;
+
+  let overlap = 0;
+  leftTokens.forEach((token) => {
+    if (rightTokens.has(token)) overlap += 1;
+  });
+  const ratio = overlap / Math.min(leftTokens.size, rightTokens.size);
+  return ratio >= 0.82 && Math.min(left.normalized.length, right.normalized.length) >= 60;
+}
+
+function pickSourceGuidedFallbackFacts(
+  source: ReturnType<typeof buildVerifiedSources>[number],
+  sourceIndex: number,
+  message: string,
+  intent: QueryIntent,
+  focusTerms: string[],
+  scope: ReturnType<typeof buildSpecificProductAnswerScope>,
+) {
+  const rawText = [source.excerpt, source.matchText].filter(Boolean).join(' ');
+  const sourceText = rawText.trim() || [source.title, source.originalTitle].filter(Boolean).join(' ');
+  const normalizedFocusTerms = focusTerms.map(term => normalizeProductIntentText(term)).filter(Boolean);
+  const requiresSpecificFocus = intent.isSpecificProductGuidance || hasNamedSpecificProductQuestion(message);
+  const sentences = splitFallbackEvidenceSentences(sourceText)
+    .filter(sentence => !isFallbackNavigationOrChromeNoise(sentence))
+    .filter(sentence => !isMostlyEnglishFallbackFragment(sentence))
+    .filter(sentence => !isFallbackOffTopicForMessage(sentence, message, intent));
+  const picked = sentences.filter((sentence) => {
+    const normalizedSentence = normalizeProductIntentText(sentence);
+    return normalizedFocusTerms.some(term => term.length >= 2 && normalizedSentence.includes(term))
+      || (!requiresSpecificFocus && /상품|광고|지면|노출|소재|설정|등록|연동|심사|승인|오류|해결|캠페인|양식|동영상|쇼핑|비즈보드|카탈로그|db\s*url|ep|sdk|mmp/i.test(normalizedSentence));
+  });
+  const facts = (picked.length > 0 ? picked : (requiresSpecificFocus ? [] : sentences)).slice(0, requiresSpecificFocus ? 2 : 3);
+  const seen = new Set<string>();
+  const lines: SourceGuidedFallbackFact[] = facts
+    .map((fact): SourceGuidedFallbackFact | null => {
+      const rewrittenFact = shouldUseKnownSourceGuidedRewrite(fact)
+        ? rewriteKnownSourceGuidedFallbackFact(fact, source)
+        : null;
+      const compactFact = rewrittenFact || compactFallbackFactAroundFocus(fact, focusTerms);
+      const classification = classifySourceGuidedFallbackSection(compactFact, source, message, intent, scope);
+      const formattedFact = formatSourceGuidedFallbackFactText(compactFact, source, classification.section);
+      if (!rewrittenFact && fallbackFactLooksMergedNoise(formattedFact)) return null;
+      if (!rewrittenFact && fallbackFactLooksIncomplete(formattedFact)) return null;
+      const normalizedFact = normalizeProductIntentText(formattedFact);
+      const focusHitCount = normalizedFocusTerms.filter(term => term.length >= 2 && normalizedFact.includes(term)).length;
+      return {
+        text: formattedFact,
+        citation: `[S${sourceIndex + 1}]`,
+        normalized: normalizedFact,
+        section: classification.section,
+        score: classification.score + focusHitCount * 3,
+        sourceIndex,
+      };
+    })
+    .filter((fact): fact is SourceGuidedFallbackFact => Boolean(fact))
+    .filter((fact) => {
+      const normalized = fact.normalized;
+      if (!normalized || seen.has(normalized)) return false;
+      seen.add(normalized);
+      return true;
+    });
+  return lines.slice(0, 3);
+}
+
+function buildSourceGuidedLlmFailureFallbackAnswer(
+  message: string,
+  sources: ReturnType<typeof buildVerifiedSources>,
+  intent: QueryIntent,
+  scope: ReturnType<typeof buildSpecificProductAnswerScope>,
+  isBroadProductStructureLlmIntent: boolean,
+) {
+  const usableSources = sources.filter(source => String(source.excerpt || source.matchText || source.title || '').trim()).slice(0, 6);
+  if (usableSources.length === 0) return null;
+
+  const focusTerms = buildFallbackFocusTerms(message, intent);
+  const profile = getSourceGuidedFallbackProfile(message, intent, scope, isBroadProductStructureLlmIntent);
+  const factItems = usableSources
+    .flatMap((source, index) => pickSourceGuidedFallbackFacts(source, index, message, intent, focusTerms, scope))
+    .sort((a, b) => b.score - a.score);
+  if (factItems.length === 0) return null;
+
+  const globalSeen = new Set<string>();
+  const uniqueFacts = factItems.filter((fact) => {
+    if (!fact.normalized || globalSeen.has(fact.normalized)) return false;
+    if (Array.from(globalSeen).some(normalized => fallbackFactLooksSimilar(
+      fact,
+      { ...fact, normalized } as SourceGuidedFallbackFact,
+    ))) {
+      return false;
+    }
+    globalSeen.add(fact.normalized);
+    return true;
+  });
+  if (uniqueFacts.length === 0) return null;
+
+  const usedCitations = new Set<string>();
+  const answerLines: string[] = [profile.intro, ''];
+  let includedCount = 0;
+
+  profile.sections.forEach(([sectionKey, label]) => {
+    const sectionFacts = uniqueFacts
+      .filter(fact => fact.section === sectionKey)
+      .slice(0, sectionKey === 'uncategorized' ? 2 : 4);
+    if (sectionFacts.length === 0) return;
+
+    answerLines.push(`**${label}**`);
+    sectionFacts.forEach((fact) => {
+      answerLines.push(`- ${fact.text} ${fact.citation}`);
+      usedCitations.add(fact.citation);
+      includedCount += 1;
+    });
+    answerLines.push('');
+  });
+
+  if (includedCount < Math.min(3, uniqueFacts.length)) {
+    const remainingFacts = uniqueFacts
+      .filter(fact => !answerLines.some(line => line.includes(fact.text)))
+      .slice(0, 4 - includedCount);
+    if (remainingFacts.length > 0) {
+      answerLines.push('**추가로 확인된 근거**');
+      remainingFacts.forEach((fact) => {
+        answerLines.push(`- ${fact.text} ${fact.citation}`);
+        usedCitations.add(fact.citation);
+        includedCount += 1;
+      });
+      answerLines.push('');
+    }
+  }
+
+  if (includedCount === 0) return null;
+
+  answerLines.push(profile.closing);
+  answerLines.push('');
+  const citations = Array.from(usedCitations).sort((a, b) => Number(a.match(/\d+/)?.[0] || 0) - Number(b.match(/\d+/)?.[0] || 0));
+  answerLines.push(`근거: ${citations.join(', ') || usableSources.map((_, index) => `[S${index + 1}]`).join(', ')}`);
+
+  return answerLines.join('\n');
+}
+
+function buildLlmFailureGroundedFallbackAnswer(
+  message: string,
+  sources: ReturnType<typeof buildVerifiedSources>,
+  intent: QueryIntent,
+  scope: ReturnType<typeof buildSpecificProductAnswerScope>,
+  isBroadProductStructureLlmIntent: boolean,
+) {
+  const allUsableSources = sources.filter(source => String(source.excerpt || source.matchText || '').trim());
+  const structuredSources = allUsableSources.slice(0, 10);
+  const usableSources = allUsableSources.slice(0, 8);
+  if (usableSources.length === 0) return null;
+  const prefersSourceGuidedFallback = intent.isSpecificProductGuidance
+    || hasNamedSpecificProductQuestion(message)
+    || !isBroadProductStructureLlmIntent;
+
+  if (prefersSourceGuidedFallback) {
+    const structuredSpecificFallbackAnswer = buildStructuredSpecificProductScopeLimitedAnswer(
+      structuredSources,
+      intent,
+      message,
+    );
+    if (structuredSpecificFallbackAnswer) return structuredSpecificFallbackAnswer;
+
+    const sourceGuidedFallbackAnswer = buildSourceGuidedLlmFailureFallbackAnswer(
+      message,
+      usableSources,
+      intent,
+      scope,
+      isBroadProductStructureLlmIntent,
+    );
+    if (sourceGuidedFallbackAnswer) return sourceGuidedFallbackAnswer;
+  }
+
+  if (!prefersSourceGuidedFallback) {
+    const sourceGuidedFallbackAnswer = buildSourceGuidedLlmFailureFallbackAnswer(
+      message,
+      usableSources,
+      intent,
+      scope,
+      isBroadProductStructureLlmIntent,
+    );
+    if (sourceGuidedFallbackAnswer) return sourceGuidedFallbackAnswer;
+  }
+
+  const structuredFallbackAnswer = buildStructuredLlmFailureFallbackAnswer(
+    structuredSources,
+    intent,
+    isBroadProductStructureLlmIntent,
+    message,
+  );
+  if (structuredFallbackAnswer) return structuredFallbackAnswer;
+
+  const vendorLabel = intent.vendors.map(vendor => VENDOR_LABELS[vendor] || vendor).join(', ') || '해당 매체';
+  const modeLabel = isBroadProductStructureLlmIntent
+    ? '광고 상품 구조'
+    : (intent.isSpecificProductGuidance ? getSpecificProductModeLabel(scope.mode) : '정책 근거');
+  const evidenceLines = usableSources.map((source, index) => {
+    const title = source.title || source.originalTitle || `확인 출처 ${index + 1}`;
+    const excerpt = buildIntentFocusedExcerpt(source.excerpt || source.matchText || '', title, intent);
+    return `- ${title}: ${excerpt} [S${index + 1}]`;
+  });
+  const answerScopeLine = isBroadProductStructureLlmIntent
+    ? `${vendorLabel} 광고 상품을 전체 목록처럼 단정하기보다, 현재 확보된 공식 근거에서 확인되는 상품·목표·지면 단위로 정리합니다.`
+    : `${vendorLabel} ${modeLabel}에 대해 현재 확보된 공식 근거에서 직접 확인되는 내용만 정리합니다.`;
+  const limitationLine = intent.isSpecificProductGuidance
+    ? '출처에 직접 나오지 않는 세부 설정값, 계정별 사용 가능 여부, 실제 심사 판단은 원문 또는 담당자 확인이 필요합니다.'
+    : '출처에 없는 상품명이나 운영 조건은 임의로 보강하지 않았습니다.';
+
+  return [
+    answerScopeLine,
+    '',
+    '**확인된 내용**',
+    ...evidenceLines,
+    '',
+    '**확인 시 주의할 점**',
+    `- ${limitationLine}`,
+    '',
+    `근거: ${usableSources.map((_, index) => `[S${index + 1}]`).join(', ')}`,
+  ].join('\n');
+}
+
 function getProductStructureSourceKey(source: ReturnType<typeof buildVerifiedSources>[number]) {
   return `${source.documentId || ''}:${source.chunkId || source.id || ''}:${source.title || ''}:${source.excerpt?.slice(0, 80) || ''}`;
 }
 
 function getProductStructureVisibleSourceText(source: ReturnType<typeof buildVerifiedSources>[number]) {
+  const sourceLike = source as any;
+  const metadata = sourceLike.metadata || {};
   return [
     source.title,
     source.originalTitle,
     source.excerpt,
+    source.matchText,
+    metadata.title,
+    metadata.originalTitle,
+    metadata.source_title,
+    metadata.canonical_title,
+    metadata.productStructureAnchor,
+    metadata.graphPath,
+    metadata.claimType,
+    metadata.sourceKind,
+    metadata.answerEvidenceRole,
+    metadata.answer_evidence_role,
+    Array.isArray(metadata.topic_labels) ? metadata.topic_labels.join(' ') : metadata.topic_labels,
+    Array.isArray(metadata.graphTopics) ? metadata.graphTopics.join(' ') : metadata.graphTopics,
+    Array.isArray(source.rankReason) ? source.rankReason.join(' ') : '',
+    Array.isArray(source.evidenceDecisionReason) ? source.evidenceDecisionReason.join(' ') : '',
   ].filter(Boolean).join(' ').toLowerCase();
+}
+
+function getStrictProductVisibleEvidenceText(source: ReturnType<typeof buildVerifiedSources>[number]) {
+  return normalizeEvidenceText([
+    source.title,
+    source.originalTitle,
+    source.excerpt,
+  ].filter(Boolean).join(' '));
+}
+
+function getSpecificProductEvidenceText(source: ReturnType<typeof buildVerifiedSources>[number]) {
+  return getStrictProductVisibleEvidenceText(source);
 }
 
 function isGraphVerifiedSource(source: ReturnType<typeof buildVerifiedSources>[number]) {
@@ -606,30 +2402,39 @@ function isNaverShoppingDataIntent(intent: QueryIntent) {
   const compactQueryText = queryText.replace(/\s+/g, '');
 
   const hasShoppingSignal = /쇼핑검색|쇼핑\s*검색|쇼핑몰\s*상품형|쇼핑\s*광고|네이버/.test(queryText);
-  const hasDataSignal = /db\s*url|상품\s*db|상품db|상품\s*등록|상품등록|ep|쇼핑파트너센터|상품정보\s*수신\s*현황|등록요청|카테고리\s*매칭|카테고리\s*자동매칭|입점\s*심사|가격비교|상품관리/.test(queryText)
+  const hasDataSignal = /db\s*url|상품\s*db|상품db|상품\s*등록|상품등록|ep|쇼핑파트너센터|상품정보\s*수신\s*현황|등록요청|카테고리\s*매칭|카테고리\s*자동매칭|입점\s*심사|가격비교\s*(입점|연동|등록)|상품관리/.test(queryText)
     || /dburl|상품db/.test(compactQueryText);
 
   return hasShoppingSignal && hasDataSignal;
 }
 
+function isGenericStandaloneProductEvidenceTerm(term: string) {
+  const normalizedTerm = normalizeEvidenceText(term);
+  const compactTerm = normalizedTerm.replace(/\s+/g, '');
+  return /^(광고|광고상품|상품|종류|유형|목록|구조|상세|설명|가이드|기준|정보|알려줘|알려|정리|구분|매체|플랫폼|네이버|naver|meta|메타|google|구글|kakao|카카오)$/.test(compactTerm);
+}
+
 function sourceHasNaverShoppingDataEvidence(source: ReturnType<typeof buildVerifiedSources>[number]) {
-  const sourceLike = source as any;
-  const metadata = sourceLike.metadata || {};
-  const text = normalizeEvidenceText([
-    getSourceText(source),
-    metadata.rankReason,
-    metadata.evidenceDecisionReason,
-    metadata.coverageRole,
-    metadata.retrievalMethod,
-  ].filter(Boolean).join(' '));
+  const text = getSpecificProductEvidenceText(source);
 
   return /naver_shopping_data|ep\s*\(=\s*db\s*url\)|db\s*url|dburl|상품\s*db|상품db|상품\s*db\s*url|상품db\s*url|상품정보\s*수신\s*현황|등록\s*요청|등록요청|상품관리|쇼핑파트너센터|카테고리\s*(자동)?매칭|입점\s*심사|영업일\s*기준\s*1\s*[-~]?\s*2일|cpc|cps|상품\s*등록|상품등록|데이터\s*피드|feed/.test(text);
 }
 
+function sourceHasStrongNaverShoppingDataEvidence(source: ReturnType<typeof buildVerifiedSources>[number]) {
+  const text = getSpecificProductEvidenceText(source);
+  const hasNaverShoppingContext = /네이버|naver|쇼핑검색|쇼핑\s*검색|쇼핑몰\s*상품형|쇼핑파트너센터|shopping/.test(text);
+  const hasDirectDataProcedure = /ep\s*\(=\s*db\s*url\)|db\s*url|dburl|상품\s*db|상품db|상품\s*db\s*url|상품db\s*url|상품정보\s*수신\s*현황|등록\s*요청|등록요청|상품관리|카테고리\s*(자동)?매칭|입점\s*심사|영업일\s*기준\s*1\s*[-~]?\s*2일|데이터\s*피드|feed/.test(text);
+  const hasOnlyGeneralShoppingSignal = /쇼핑블록|주요\s*쇼핑\s*지면|사이트검색광고|디지털\s*옥외광고|필터|혜택|색상|가격대/.test(text)
+    && !hasDirectDataProcedure;
+
+  return hasNaverShoppingContext && hasDirectDataProcedure && !hasOnlyGeneralShoppingSignal;
+}
+
 function scoreNaverShoppingDataEvidence(source: ReturnType<typeof buildVerifiedSources>[number]) {
-  const text = normalizeEvidenceText(getSourceText(source));
+  const text = getSpecificProductEvidenceText(source);
   let score = Number(source.hybridScore || source.score || 0);
 
+  if (sourceHasStrongNaverShoppingDataEvidence(source)) score += 24;
   if (/상품정보\s*수신\s*현황|등록\s*요청|등록요청|상품관리/.test(text)) score += 14;
   if (/ep\s*\(=\s*db\s*url\)|상품\s*db\s*url|상품db\s*url|db\s*url|dburl/.test(text)) score += 12;
   if (/카테고리\s*자동매칭|카테고리\s*매칭|입점\s*심사|영업일\s*기준\s*1\s*[-~]?\s*2일/.test(text)) score += 11;
@@ -647,21 +2452,24 @@ function buildStrictProductEvidenceTerms(intent: QueryIntent) {
   ].join(' '));
   const compactQueryText = queryText.replace(/\s+/g, '');
   const usesNaverShoppingDataIntent = isNaverShoppingDataIntent(intent);
-  const terms: string[] = [
-    ...intent.strictProductTerms,
-  ];
+  const terms: string[] = intent.strictProductTerms.filter(term => !isGenericStandaloneProductEvidenceTerm(term));
   const add = (...items: string[]) => terms.push(...items);
 
   if (/(^|[\s/])da($|[\s/]|도|상품|광고)|디스플레이\s*광고|성과형\s*디스플레이|홈피드\s*da|홈피드|배너\s*광고/.test(queryText)) {
-    add('DA', 'DA 상품', 'DA상품', '네이버DA', '네이버 DA', '네이버DA상품', '보장형 DA', '스마트채널', '타임보드', '롤링보드', '디스플레이 광고', '디스플레이광고', '성과형 디스플레이', '성과형디스플레이', '홈피드DA', '홈피드', '배너 광고', '배너광고', '디스플레이 캠페인', '반응형 디스플레이');
+    add('DA', 'DA 상품', 'DA상품', '네이버DA', '네이버 DA', '네이버DA상품', '보장형 DA', '스마트채널', '타임보드', '롤링보드', '디스플레이 광고', '디스플레이광고', '성과형 디스플레이', '성과형디스플레이', '홈피드DA', '홈피드', '배너 광고', '배너광고');
   }
 
-  if (/동영상\s*광고|비디오\s*광고|video\s*ads|youtube\s*shorts|shorts\s*광고|video\s*action\s*campaign|\bvac\b/.test(queryText)) {
-    add('동영상 광고', '동영상광고', '비디오 광고', '비디오광고', '동영상 조회', '동영상 소재', 'Video Ads', 'YouTube', '유튜브', 'YouTube Shorts', 'Shorts', 'Shorts 광고', 'Video action campaign', 'VAC');
+  if (/동영상\s*광고|비디오\s*광고|video\s*ads|youtube\s*shorts|shorts\s*광고|쇼츠|숏폼|아웃스트림|video\s*action\s*campaign|\bvac\b/.test(queryText)) {
+    add('동영상 광고', '동영상광고', '비디오 광고', '비디오광고', '동영상 조회', '동영상 소재', '숏폼 광고', '숏폼', '아웃스트림', 'Video Ads');
+    if (/youtube|유튜브/.test(queryText)) add('YouTube', '유튜브');
+    if (/youtube\s*shorts|shorts\s*광고|쇼츠/.test(queryText)) add('YouTube Shorts', 'Shorts', 'Shorts 광고', '쇼츠');
+    if (/video\s*action\s*campaign|\bvac\b/.test(queryText)) add('Video action campaign', 'VAC');
   }
 
   if (/앱\s*(인스톨|설치|홍보|캠페인|이벤트|사전\s*등록)|app\s*(install|promotion)|mmp|sdk|사전\s*등록/.test(queryText)) {
-    add('앱 인스톨', '앱인스톨', '앱 설치', '앱설치', '앱 홍보', '앱홍보', '앱 캠페인', '앱 이벤트', 'App Install', 'App Promotion', 'MMP', 'SDK', '사전 등록', '앱 사전등록', '앱 등록');
+    add('앱 인스톨', '앱인스톨', '앱 설치', '앱설치', '앱 홍보', '앱홍보', '앱 캠페인', '앱 이벤트', 'App Install', 'App Promotion', '사전 등록', '앱 사전등록', '앱 등록');
+    if (/mmp/.test(queryText)) add('MMP');
+    if (/sdk/.test(queryText)) add('SDK');
   }
 
   if (/db\s*url|상품\s*db|상품등록|ep|쇼핑파트너센터|가격비교/.test(queryText) || /상품db|dburl/.test(compactQueryText)) {
@@ -674,8 +2482,8 @@ function buildStrictProductEvidenceTerms(intent: QueryIntent) {
     );
   }
 
-  if (/리드\s*양식|lead\s*form|lead\s*generation|lead\s*ads?|잠재\s*고객|잠재고객\s*광고|비즈니스\s*폼|비즈니스폼|양식\s*제출/.test(queryText)) {
-    add('리드 양식', '리드양식', 'lead form', 'Lead Form', 'Lead Ads', 'Lead Generation', '잠재 고객', '잠재고객', '잠재고객 광고', '비즈니스 폼', '비즈니스폼', '양식 제출');
+  if (/리드\s*양식|lead\s*form|lead\s*generation|lead\s*ads?|잠재\s*고객\s*(양식|광고|확장|소재)|잠재고객\s*(양식|광고|확장|소재)|비즈니스\s*폼|비즈니스폼|양식\s*제출/.test(queryText)) {
+    add('리드 양식', '리드양식', 'lead form', 'Lead Form', 'Lead Ads', 'Lead Generation', '잠재고객 광고', '잠재 고객 광고', '잠재고객 양식', '잠재 고객 양식', '비즈니스 폼', '비즈니스폼', '양식 제출');
   }
 
   if (/카탈로그|catalog|advantage\+|어드밴티지|컬렉션|performance\s*max|\bpmax\b|demand\s*gen/.test(queryText)) {
@@ -686,7 +2494,7 @@ function buildStrictProductEvidenceTerms(intent: QueryIntent) {
     add('쇼핑검색', '쇼핑검색광고', '사이트검색광고', '파워링크', '브랜드검색', '쇼핑블록', '비즈보드', '상품가이드', '상품 가이드');
   }
 
-  return Array.from(new Set(terms.map(term => term.trim()).filter(term => term.length >= 2)));
+  return Array.from(new Set(terms.map(term => term.trim()).filter(term => term.length >= 2 && !isGenericStandaloneProductEvidenceTerm(term))));
 }
 
 function buildPrimarySpecificProductEvidenceTerms(intent: QueryIntent) {
@@ -695,23 +2503,62 @@ function buildPrimarySpecificProductEvidenceTerms(intent: QueryIntent) {
     ...intent.strictProductTerms,
   ].join(' '));
   const compactQueryText = queryText.replace(/\s+/g, '');
-  const terms: string[] = [...intent.strictProductTerms];
+  const terms: string[] = intent.strictProductTerms.filter(term => !isGenericStandaloneProductEvidenceTerm(term));
   const add = (...items: string[]) => terms.push(...items);
 
-    if (/(^|[\s/])da($|[\s/]|도|상품|광고)|네이버\s*da|네이버da|da\s*상품|da상품|보장형\s*da|스마트채널|타임보드|롤링보드|디스플레이\s*광고|성과형\s*디스플레이|홈피드\s*da|홈피드|배너\s*광고/.test(queryText)) {
-      add('DA', 'DA 상품', 'DA상품', '네이버 DA', '네이버DA', '네이버DA상품', '보장형 DA', '스마트채널', '타임보드', '롤링보드', '디스플레이 광고', '디스플레이광고', '성과형 디스플레이', '성과형디스플레이', '홈피드DA', '홈피드 DA', '홈피드', '배너 광고', '배너광고', '디스플레이 캠페인', '반응형 디스플레이');
-    }
-
-    if (/동영상\s*광고|비디오\s*광고|video\s*ads|youtube\s*shorts|shorts\s*광고|video\s*action\s*campaign|\bvac\b/.test(queryText)) {
-      add('동영상 광고', '동영상광고', '비디오 광고', '비디오광고', '동영상 조회', '동영상 소재', 'Video Ads', 'YouTube', '유튜브', 'YouTube Shorts', 'Shorts', 'Shorts 광고', 'Video action campaign', 'VAC');
-    }
-
-  if (/앱\s*(인스톨|설치|홍보|캠페인|이벤트|사전\s*등록)|app\s*(install|promotion)|mmp|sdk|사전\s*등록/.test(queryText)) {
-    add('앱 인스톨', '앱인스톨', '앱 설치', '앱설치', '앱 홍보', '앱홍보', '앱 캠페인', 'App Install', 'App Promotion', 'MMP', 'SDK', '사전 등록', '앱 등록');
+  if (/(^|[\s/])da($|[\s/]|도|상품|광고)|네이버\s*da|네이버da|da\s*상품|da상품|보장형\s*da|스마트채널|타임보드|롤링보드|디스플레이\s*광고|성과형\s*디스플레이|홈피드\s*da|홈피드|배너\s*광고/.test(queryText)) {
+    add('DA', 'DA 상품', 'DA상품', '네이버 DA', '네이버DA', '네이버DA상품', '보장형 DA', '스마트채널', '타임보드', '롤링보드', '디스플레이 광고', '디스플레이광고', '성과형 디스플레이', '성과형디스플레이', '홈피드DA', '홈피드 DA', '홈피드', '배너 광고', '배너광고');
   }
 
-  if (/리드\s*양식|lead\s*form|lead\s*generation|lead\s*ads?|잠재\s*고객|잠재고객\s*광고|비즈니스\s*폼|비즈니스폼|양식\s*제출/.test(queryText)) {
-    add('리드 양식', '리드양식', 'Lead Form', 'Lead Ads', 'Lead Generation', '잠재 고객', '잠재고객', '비즈니스 폼', '비즈니스폼', '양식 제출');
+  if (/동영상\s*광고|비디오\s*광고|video\s*ads|youtube\s*shorts|shorts\s*광고|쇼츠|숏폼|아웃스트림|video\s*action\s*campaign|\bvac\b/.test(queryText)) {
+    add('동영상 광고', '동영상광고', '비디오 광고', '비디오광고', '동영상 조회', '동영상 소재', '숏폼 광고', '숏폼', '아웃스트림', 'Video Ads');
+    if (/youtube|유튜브/.test(queryText)) add('YouTube', '유튜브');
+    if (/youtube\s*shorts|shorts\s*광고|쇼츠/.test(queryText)) add('YouTube Shorts', 'Shorts', 'Shorts 광고', '쇼츠');
+    if (/video\s*action\s*campaign|\bvac\b/.test(queryText)) add('Video action campaign', 'VAC');
+  }
+
+  if (/앱\s*(인스톨|설치|홍보|캠페인|이벤트|사전\s*등록)|app\s*(install|promotion)|mmp|sdk|사전\s*등록/.test(queryText)) {
+    add(
+      '앱 인스톨',
+      '앱인스톨',
+      '앱 설치',
+      '앱설치',
+      '앱 홍보',
+      '앱홍보',
+      '앱 캠페인',
+      '앱 이벤트',
+      '앱 이벤트 최적화',
+      'App Install',
+      'App Promotion',
+      'Mobile App',
+      '사전 등록',
+      '앱 사전등록',
+      '앱 등록',
+      'Meta SDK',
+      'Facebook SDK',
+      'SDK',
+      'MMP',
+      '모바일 측정 파트너',
+      'Mobile Measurement Partner',
+      'App ID',
+      'App Secret',
+      '앱 ID',
+      '앱 시크릿',
+      '포스트백',
+      'postback',
+      'tracking_specs',
+      '트래킹',
+      '추적',
+      '인앱 이벤트',
+      'SKAdNetwork',
+      'SKAN',
+      '캠페인 설정',
+      '이벤트 설정'
+    );
+  }
+
+  if (/리드\s*양식|lead\s*form|lead\s*generation|lead\s*ads?|잠재\s*고객\s*(양식|광고|확장|소재)|잠재고객\s*(양식|광고|확장|소재)|비즈니스\s*폼|비즈니스폼|양식\s*제출/.test(queryText)) {
+    add('리드 양식', '리드양식', 'Lead Form', 'Lead Ads', 'Lead Generation', '잠재고객 광고', '잠재 고객 광고', '잠재고객 양식', '잠재 고객 양식', '비즈니스 폼', '비즈니스폼', '양식 제출');
   }
 
   if (/db\s*url|상품\s*db|상품등록|ep|쇼핑파트너센터|가격비교/.test(queryText) || /상품db|dburl/.test(compactQueryText)) {
@@ -730,14 +2577,66 @@ function buildPrimarySpecificProductEvidenceTerms(intent: QueryIntent) {
   if (/사이트검색/.test(queryText)) add('사이트검색', '사이트검색광고');
   if (/쇼핑블록/.test(queryText)) add('쇼핑블록', '쇼핑 지면');
 
-  return Array.from(new Set(terms.map(term => term.trim()).filter(term => term.length >= 2)));
+  return Array.from(new Set(terms.map(term => term.trim()).filter(term => term.length >= 2 && !isGenericStandaloneProductEvidenceTerm(term))));
+}
+
+function buildSpecificProductFamilyMatchers(intent: QueryIntent): RegExp[] {
+  const queryText = normalizeEvidenceText([
+    ...intent.keywords,
+    ...intent.strictProductTerms,
+  ].join(' '));
+  const compactQueryText = queryText.replace(/\s+/g, '');
+  const matchers: RegExp[] = [];
+
+  if (/(^|[\s/])da($|[\s/]|도|상품|광고)|네이버\s*da|네이버da|da\s*상품|da상품|보장형\s*da|스마트채널|타임보드|롤링보드|디스플레이\s*광고|성과형\s*디스플레이|홈피드\s*da|홈피드|배너\s*광고/.test(queryText)) {
+    matchers.push(/(^|[\s/])da($|[\s/]|도|상품|광고)|네이버\s*da|네이버da|da\s*상품|da상품|보장형\s*da|스마트채널|타임보드|롤링보드|디스플레이\s*광고|성과형\s*디스플레이|홈피드\s*da|홈피드|배너\s*광고/);
+  }
+
+  if (/동영상\s*광고|비디오\s*광고|video\s*ads|youtube\s*shorts|shorts\s*광고|쇼츠|숏폼|아웃스트림|video\s*action\s*campaign|\bvac\b/.test(queryText)) {
+    matchers.push(/동영상\s*광고|동영상광고|비디오\s*광고|비디오광고|video\s*ads?|동영상\s*조회|동영상\s*소재|youtube|유튜브|shorts|쇼츠|숏폼|아웃스트림|reels|릴스|video\s*action\s*campaign|\bvac\b/);
+  }
+
+  if (/앱\s*(인스톨|설치|홍보|캠페인|이벤트|사전\s*등록)|app\s*(install|promotion)|mmp|sdk|사전\s*등록/.test(queryText)) {
+    matchers.push(/앱\s*(인스톨|설치|홍보|캠페인|이벤트|사전\s*등록|등록)|app\s*(install|promotion)|mobile\s*app|sdk|mmp|모바일\s*측정\s*파트너|트래킹|추적|인앱\s*이벤트|포스트백|postback|skadnetwork|skan/);
+  }
+
+  if (/db\s*url|상품\s*db|상품등록|상품\s*등록|ep|쇼핑파트너센터|가격비교/.test(queryText) || /상품db|dburl/.test(compactQueryText)) {
+    matchers.push(/db\s*url|dburl|상품\s*db|상품db|ep\s*(\(|=|$)|상품등록|상품\s*등록|쇼핑파트너센터|상품정보\s*수신|등록요청|상품관리|카테고리\s*(자동)?매칭|입점\s*심사|가격비교|데이터\s*피드|feed/);
+  }
+
+  if (/리드\s*양식|lead\s*form|lead\s*generation|lead\s*ads?|잠재\s*고객\s*(양식|광고|확장|소재)|잠재고객\s*(양식|광고|확장|소재)|비즈니스\s*폼|비즈니스폼|양식\s*제출/.test(queryText)) {
+    matchers.push(/리드\s*양식|리드양식|lead\s*form|lead\s*generation|lead\s*ads?|잠재\s*고객\s*(양식|광고|확장|소재)|잠재고객\s*(양식|광고|확장|소재)|비즈니스\s*폼|비즈니스폼|양식\s*제출/);
+  }
+
+  if (/카탈로그|catalog|advantage\+|어드밴티지|컬렉션|performance\s*max|\bpmax\b|demand\s*gen/.test(queryText)) {
+    matchers.push(/카탈로그|catalog|advantage\+|어드밴티지|컬렉션|collection|performance\s*max|\bpmax\b|demand\s*gen/);
+  }
+
+  if (/쇼핑검색/.test(queryText)) matchers.push(/쇼핑검색|쇼핑\s*검색|쇼핑몰\s*상품형/);
+  if (/사이트검색/.test(queryText)) matchers.push(/사이트검색|사이트\s*검색/);
+  if (/쇼핑블록/.test(queryText)) matchers.push(/쇼핑블록|쇼핑\s*지면/);
+  if (/비즈보드/.test(queryText)) matchers.push(/비즈보드|카카오\s*비즈보드/);
+
+  return matchers;
+}
+
+function sourceMatchesSpecificProductFamily(
+  source: ReturnType<typeof buildVerifiedSources>[number],
+  intent: QueryIntent,
+) {
+  const familyMatchers = buildSpecificProductFamilyMatchers(intent);
+  if (familyMatchers.length === 0) return true;
+
+  const evidenceText = getSpecificProductEvidenceText(source);
+  return familyMatchers.some(pattern => pattern.test(evidenceText));
 }
 
 function sourceMatchesStrictProductIntent(
   source: ReturnType<typeof buildVerifiedSources>[number],
   intent: QueryIntent
 ) {
-  const text = `${source.title || ''} ${source.originalTitle || ''} ${source.excerpt || ''} ${source.matchText || ''}`;
+  const text = getSpecificProductEvidenceText(source);
+  if (!sourceMatchesSpecificProductFamily(source, intent)) return false;
   const primaryTerms = buildPrimarySpecificProductEvidenceTerms(intent);
   const primaryMatches = primaryTerms.filter(term => textContainsEvidenceTerm(text, term));
   if (primaryTerms.length > 0 && primaryMatches.length === 0) return false;
@@ -751,13 +2650,78 @@ function sourceMatchesStrictProductIntent(
   return !sourceTextLooksLikeBroadProductCatalogOnly(text, matchedTerms);
 }
 
+function sourceMatchesRelaxedSpecificProductIntent(
+  source: ReturnType<typeof buildVerifiedSources>[number],
+  intent: QueryIntent,
+  mode: SpecificProductAnswerMode,
+) {
+  const targetVendor = intent.vendors.length === 1 ? intent.vendors[0] : undefined;
+  if (!sourceMatchesVendor(source, targetVendor)) return false;
+  if (sourceHasCrossVendorUrl(source, intent.vendors)) return false;
+
+  const text = getSpecificProductEvidenceText(source);
+  if (!sourceMatchesSpecificProductFamily(source, intent)) return false;
+  if (sourceIsBroadProductStructureOnly(source, intent)) return false;
+  if (!sourceTextHasSpecificProductDetailSignal(text) && mode !== 'product_detail') return false;
+
+  const strictTerms = buildStrictProductEvidenceTerms(intent);
+  const primaryTerms = buildPrimarySpecificProductEvidenceTerms(intent);
+  const modeTerms = buildRequestedProductModeTerms(mode);
+  const hasStrictTerm = strictTerms.some(term => textContainsEvidenceTerm(text, term));
+  const hasPrimaryTerm = primaryTerms.some(term => textContainsEvidenceTerm(text, term));
+  const hasModeTerm = modeTerms.some(term => textContainsEvidenceTerm(text, term));
+  const titleText = `${source.title || ''} ${source.originalTitle || ''}`;
+  const titleHasPrimaryTerm = primaryTerms.some(term => textContainsEvidenceTerm(titleText, term));
+  const hasPrimaryTermDetail = primaryTerms.some(term => sourceTextHasSpecificProductDetailSignalNearTerm(text, term));
+  const hasGenericLegalIdentity = sourceIdentityLooksLikeGenericLegalOrAccountDoc(source);
+
+  if (
+    mode === 'product_detail'
+    && primaryTerms.length > 0
+    && !hasPrimaryTermDetail
+    && !(titleHasPrimaryTerm && sourceTextHasSpecificProductDetailSignal(text) && !hasGenericLegalIdentity)
+  ) {
+    return false;
+  }
+
+  if (hasPrimaryTerm || hasStrictTerm) return true;
+  if (primaryTerms.length > 0 || strictTerms.length > 0) return false;
+  if (mode !== 'product_detail' && hasModeTerm && sourceTextHasSpecificProductDetailSignal(text)) return true;
+
+  return false;
+}
+
+function sourceMatchesProductFamilyFallbackCandidate(
+  source: ReturnType<typeof buildVerifiedSources>[number],
+  intent: QueryIntent,
+  mode: SpecificProductAnswerMode,
+) {
+  const targetVendor = intent.vendors.length === 1 ? intent.vendors[0] : undefined;
+  if (!sourceMatchesVendor(source, targetVendor)) return false;
+  if (sourceHasCrossVendorUrl(source, intent.vendors)) return false;
+  if (!sourceMatchesSpecificProductFamily(source, intent)) return false;
+  if (sourceIsBroadProductStructureOnly(source, intent)) return false;
+  if (isLowValueSpecificProductSource(source, intent, mode)) return false;
+
+  const text = getSpecificProductEvidenceText(source);
+  const primaryTerms = buildPrimarySpecificProductEvidenceTerms(intent);
+  const strictTerms = buildStrictProductEvidenceTerms(intent);
+  const hasProductTerm = [...primaryTerms, ...strictTerms].some(term => textContainsEvidenceTerm(text, term));
+
+  return (
+    hasProductTerm
+    || sourceTextHasSpecificProductDetailSignal(text)
+    || isOfficialGuideGraphSource(source)
+  );
+}
+
 function sourceIsBroadProductStructureOnly(
   source: ReturnType<typeof buildVerifiedSources>[number],
   intent: QueryIntent
 ) {
   if (!intent.isSpecificProductGuidance) return false;
 
-  const text = normalizeEvidenceText(`${source.title || ''} ${source.originalTitle || ''} ${source.excerpt || ''} ${source.matchText || ''}`);
+  const text = getSpecificProductEvidenceText(source);
   if (sourceMatchesStrictProductIntent(source, intent)) return false;
   return (
     /캠페인 목표|광고 관리자 목표|마케팅 목표|objective|objectives/.test(text)
@@ -782,6 +2746,8 @@ function inferSpecificProductAnswerMode(message: string): SpecificProductAnswerM
     /제작|소재|문구|카피|사양|스펙|규격|비율|사이즈|크기|파일|이미지|배너|썸네일|텍스트|해상도|길이|자막|cta/.test(normalized)
     || (/동영상/.test(normalized) && /제작|소재|사양|스펙|규격|비율|사이즈|길이|해상도|파일|썸네일|자막|초/.test(normalized))
   );
+  const hasSetupSignal = /집행|진행|가이드|절차|방법|세팅|설정|연동|sdk|mmp|추적|트래킹|이벤트|앱\s*등록|캠페인\s*설정|계정|권한|픽셀|카탈로그\s*연동|카탈로그\s*설정/.test(normalized);
+  const hasPolicySignal = /정책|심사|검수|검토|주의|유의|제한|금지|가능\s*여부|승인|등록\s*기준|광고\s*등록\s*기준|확인해야|꼭\s*확인/.test(normalized);
 
   if (/오류|에러|문제|해결|원인|조치|반려|실패|tracking_specs|불일치|미승인|승인\s*거절/.test(normalized)) {
     return 'operational_issue';
@@ -791,18 +2757,22 @@ function inferSpecificProductAnswerMode(message: string): SpecificProductAnswerM
     return 'db_setup';
   }
 
-  if (/정책|심사|검수|검토|주의|유의|제한|금지|가능\s*여부|승인|등록\s*기준|광고\s*등록\s*기준|확인해야|꼭\s*확인/.test(normalized)) {
-    return 'policy_screening';
-  }
-
-  const hasSetupSignal = /집행|가이드|절차|방법|세팅|설정|연동|sdk|mmp|추적|트래킹|이벤트|앱\s*등록|캠페인\s*설정|계정|권한|픽셀|카탈로그\s*연동|카탈로그\s*설정/.test(normalized);
-
   if (hasSetupSignal && hasCreativeExplicitSignal) {
     return 'execution_guide';
   }
 
+  if (hasSetupSignal && hasPolicySignal) {
+    return /집행|진행|가이드|절차|방법|세팅|설정|연동|sdk|mmp|트래킹|추적|이벤트/.test(normalized)
+      ? 'execution_guide'
+      : 'policy_screening';
+  }
+
   if (hasSetupSignal && !hasCreativeExplicitSignal) {
     return 'setup_procedure';
+  }
+
+  if (hasPolicySignal) {
+    return 'policy_screening';
   }
 
   if (hasCreativeExplicitSignal) {
@@ -883,19 +2853,29 @@ function sourceMatchesRequestedProductMode(
   source: ReturnType<typeof buildVerifiedSources>[number],
   intent: QueryIntent,
   mode: SpecificProductAnswerMode,
+  allowRelaxed = false,
 ) {
-  if (!sourceMatchesStrictProductIntent(source, intent)) return false;
+  if (!sourceMatchesSpecificProductFamily(source, intent)) return false;
+
+  const strictMatch = sourceMatchesStrictProductIntent(source, intent);
+  if (!strictMatch) {
+    if (!allowRelaxed || !sourceMatchesRelaxedSpecificProductIntent(source, intent, mode)) return false;
+  }
 
   if (mode === 'db_setup' && isNaverShoppingDataIntent(intent) && sourceHasNaverShoppingDataEvidence(source)) {
     return true;
   }
 
-  const text = `${source.title || ''} ${source.originalTitle || ''} ${source.excerpt || ''} ${source.matchText || ''}`;
+  const text = getSpecificProductEvidenceText(source);
   const primaryTerms = buildPrimarySpecificProductEvidenceTerms(intent);
   if (mode === 'product_detail') {
     if (primaryTerms.length === 0) return true;
+    const titleText = `${source.title || ''} ${source.originalTitle || ''}`;
+    const titleHasPrimaryTerm = primaryTerms.some(term => textContainsEvidenceTerm(titleText, term));
+    const sourceHasDetailSignal = sourceTextHasSpecificProductDetailSignal(text);
+
     return primaryTerms.some(term => sourceTextHasSpecificProductDetailSignalNearTerm(text, term))
-      || /상품\s*가이드|상품가이드|제작\s*가이드|제작가이드|운영\s*가이드|운영가이드|광고\s*상품|광고상품|상품\s*소개|상품소개|지면|노출|형식|사양/.test(normalizeEvidenceText(text));
+      || (titleHasPrimaryTerm && sourceHasDetailSignal);
   }
 
   const modeTerms = buildRequestedProductModeTerms(mode);
@@ -952,6 +2932,33 @@ function sourceHasStrongVendorIdentity(
   });
 }
 
+function sourceIdentityLooksLikeGenericLegalOrAccountDoc(source: ReturnType<typeof buildVerifiedSources>[number]) {
+  const identityText = normalizeEvidenceText(getSourceIdentityText(source));
+  if (!identityText) return false;
+
+  const genericLegalOrAccountSignal = /이용약관|약관|운영\s*정책|서비스\s*이용|회원\s*가입|회원가입|계정\s*(생성|만들기|관리)|책임자|세금\s*계산서|세금계산서|청구|결제|권한\s*관리|비즈니스\s*계정|클린센터|개인정보\s*처리방침/.test(identityText);
+  const productSpecificGuideSignal = /상품\s*가이드|상품가이드|상품\s*소개|상품소개|제작\s*가이드|제작가이드|광고\s*상품|광고상품|사이트검색광고|쇼핑검색광고|쇼핑블록|비즈보드|카탈로그|컬렉션|리드\s*양식|앱\s*(인스톨|설치|홍보)|동영상\s*광고|디스플레이\s*광고|성과형\s*디스플레이|홈피드|스마트채널|타임보드|롤링보드/.test(identityText);
+
+  return genericLegalOrAccountSignal && !productSpecificGuideSignal;
+}
+
+function sourceHasSpecificProductNamedDetail(
+  source: ReturnType<typeof buildVerifiedSources>[number],
+  intent: QueryIntent,
+) {
+  const text = getSpecificProductEvidenceText(source);
+  const primaryTerms = buildPrimarySpecificProductEvidenceTerms(intent);
+  const strictTerms = buildStrictProductEvidenceTerms(intent);
+  const terms = primaryTerms.length > 0 ? primaryTerms : strictTerms;
+  if (terms.length === 0) return sourceTextHasSpecificProductDetailSignal(text);
+
+  const titleText = `${source.title || ''} ${source.originalTitle || ''}`;
+  const titleHasTerm = terms.some(term => textContainsEvidenceTerm(titleText, term));
+  const nearDetail = terms.some(term => sourceTextHasSpecificProductDetailSignalNearTerm(text, term));
+
+  return nearDetail || (titleHasTerm && sourceTextHasSpecificProductDetailSignal(text));
+}
+
 function sourceHasCrossVendorUrl(
   source: ReturnType<typeof buildVerifiedSources>[number],
   vendors: VendorIntent[],
@@ -1003,6 +3010,10 @@ function isLowValueSpecificProductSource(
   intent: QueryIntent,
   mode: SpecificProductAnswerMode,
 ) {
+  const queryText = normalizeEvidenceText([
+    ...intent.keywords,
+    ...intent.strictProductTerms,
+  ].join(' '));
   const text = normalizeEvidenceText([
     source.title,
     source.originalTitle,
@@ -1012,12 +3023,50 @@ function isLowValueSpecificProductSource(
 
   if (sourceHasExtractionNoise(source)) return true;
   if (sourceHasCrossVendorUrl(source, intent.vendors)) return true;
+  if (intent.vendors.length === 1 && hasExplicitOtherVendorSignal(source, intent.vendors[0])) return true;
   if (sourceIsBroadProductStructureOnly(source, intent)) return true;
+
+  const sensitivePolicyDoc = /암호화폐|crypto|사회\s*문제|정치|선거|주택|고용|신용|제한된\s*상품|금지된\s*상품|민감한\s*카테고리/.test(text);
+  const queryAsksSensitivePolicy = /암호화폐|crypto|사회\s*문제|정치|선거|주택|고용|신용|제한된\s*상품|금지된\s*상품|민감한\s*카테고리|금융|대출|보험|부동산/.test(queryText);
+  const queryAsksAppInstall = /앱\s*(인스톨|설치|홍보|캠페인|이벤트|사전\s*등록)|app\s*(install|promotion)|mmp|sdk|사전\s*등록/.test(queryText);
+  const sourceHasAppInstallEvidence = /앱\s*(인스톨|설치|홍보|캠페인|이벤트|사전\s*등록)|app\s*(install|promotion)|mobile\s*app|sdk|mmp|모바일\s*측정\s*파트너|app\s*id|app\s*secret/.test(text);
+  const hasNamedDetail = sourceHasSpecificProductNamedDetail(source, intent);
+  if (
+    intent.isSpecificProductGuidance
+    && sensitivePolicyDoc
+    && !queryAsksSensitivePolicy
+    && !sourceHasAppInstallEvidence
+    && !hasNamedDetail
+  ) {
+    return true;
+  }
+  if (queryAsksAppInstall && sensitivePolicyDoc && !sourceHasAppInstallEvidence) {
+    return true;
+  }
+
+  const broadLegalOrAccountDoc = /이용\s*약관|이용약관|약관|운영\s*정책|운영정책|서비스\s*이용|회원\s*가입|회원가입|계정\s*(생성|만들기|관리)|책임자|세금\s*계산서|세금계산서|청구|결제|권한\s*관리|비즈니스\s*계정|클린센터|개인정보\s*처리방침|광고\s*게재\s*제한/.test(text);
+  const genericLegalIdentity = sourceIdentityLooksLikeGenericLegalOrAccountDoc(source);
+  if (
+    intent.isSpecificProductGuidance
+    && mode === 'product_detail'
+    && (broadLegalOrAccountDoc || genericLegalIdentity)
+  ) {
+    return true;
+  }
+
+  if (
+    intent.isSpecificProductGuidance
+    && broadLegalOrAccountDoc
+    && !sourceMatchesRequestedProductMode(source, intent, mode, true)
+    && !sourceTextHasSpecificProductDetailSignal(text)
+  ) {
+    return true;
+  }
 
   if (
     intent.vendors.length > 0
     && !sourceHasStrongVendorIdentity(source, intent.vendors)
-    && !sourceMatchesStrictProductIntent(source, intent)
+    && !hasNamedDetail
   ) {
     return true;
   }
@@ -1062,12 +3111,12 @@ function scoreSpecificProductAnswerSource(
   score += nearDetailHitCount * 22;
 
   if (mode !== 'product_detail') {
-    if (sourceMatchesRequestedProductMode(source, intent, mode)) {
+    if (sourceMatchesRequestedProductMode(source, intent, mode, true)) {
       score += 32;
     } else {
       score -= 35;
     }
-  } else if (sourceMatchesRequestedProductMode(source, intent, mode)) {
+  } else if (sourceMatchesRequestedProductMode(source, intent, mode, true)) {
     score += 18;
   }
 
@@ -1168,7 +3217,18 @@ function selectSpecificProductAnswerSources(
   mode: SpecificProductAnswerMode,
 ) {
   if (mode === 'db_setup' && isNaverShoppingDataIntent(intent)) {
-    return rankedAnswerSources.map(source => (
+    const strongNaverShoppingDataAnswerSources = rankedAnswerSources.filter(source => sourceHasStrongNaverShoppingDataEvidence(source));
+    const naverShoppingDataAnswerSources = strongNaverShoppingDataAnswerSources.length > 0
+      ? strongNaverShoppingDataAnswerSources
+      : rankedAnswerSources.filter(source => sourceHasNaverShoppingDataEvidence(source));
+    const dataFocusedSources = naverShoppingDataAnswerSources.length > 0
+      ? naverShoppingDataAnswerSources
+      : rankedAnswerSources.filter(source => (
+        sourceMatchesStrictProductIntent(source, intent)
+        || sourceMatchesRelaxedSpecificProductIntent(source, intent, mode)
+      ));
+
+    return dataFocusedSources.slice(0, 4).map(source => (
       sourceHasNaverShoppingDataEvidence(source)
         ? withSpecificProductEvidenceRole(source, 'db_detail')
         : withSpecificProductEvidenceRole(source, 'product_context')
@@ -1177,25 +3237,45 @@ function selectSpecificProductAnswerSources(
 
   const selected: ReturnType<typeof buildVerifiedSources> = [];
   const seen = new Set<string>();
-  const modeSources = mode === 'product_detail'
-    ? strictProductSources.filter(source => sourceMatchesRequestedProductMode(source, intent, mode))
+  const targetVendor = intent.vendors.length === 1 ? intent.vendors[0] : undefined;
+  const vendorScopedStrictProductSources = targetVendor
+    ? strictProductSources.filter(source => sourceMatchesVendor(source, targetVendor))
+    : strictProductSources;
+  const vendorScopedModeMatchedSources = targetVendor
+    ? modeMatchedSources.filter(source => sourceMatchesVendor(source, targetVendor))
     : modeMatchedSources;
+  const vendorScopedRankedAnswerSources = targetVendor
+    ? rankedAnswerSources.filter(source => sourceMatchesVendor(source, targetVendor))
+    : rankedAnswerSources;
+  const modeSources = mode === 'product_detail'
+    ? vendorScopedStrictProductSources.filter(source => sourceMatchesRequestedProductMode(source, intent, mode, true))
+    : vendorScopedModeMatchedSources;
   const modeDetailSources = modeSources.filter(source => !isGraphVerifiedSource(source));
-  const officialGraphSources = strictProductSources.filter(source => (
+  const officialGraphSources = vendorScopedStrictProductSources.filter(source => (
     isOfficialGuideGraphSource(source)
-    && sourceMatchesStrictProductIntent(source, intent)
+    && (
+      sourceMatchesStrictProductIntent(source, intent)
+      || sourceMatchesRelaxedSpecificProductIntent(source, intent, mode)
+    )
+    && (mode !== 'product_detail' || sourceMatchesRequestedProductMode(source, intent, mode, true))
   ));
-  const productContextSources = rankedAnswerSources.filter(source => (
+  const productContextSources = vendorScopedRankedAnswerSources.filter(source => (
     !isGraphVerifiedSource(source)
+    && (
+      sourceMatchesStrictProductIntent(source, intent)
+      || sourceMatchesRelaxedSpecificProductIntent(source, intent, mode)
+    )
     && !sourceIsBroadProductStructureOnly(source, intent)
   ));
-  const productContextLimit = modeDetailSources.length > 0 || modeSources.length > 0 ? 1 : 3;
+  const productContextLimit = mode === 'product_detail'
+    ? 0
+    : (modeDetailSources.length > 0 || modeSources.length > 0 || officialGraphSources.length > 0 ? 1 : 2);
 
   modeDetailSources.slice(0, 3).forEach(source => {
     pushUniqueSpecificProductSource(selected, seen, source, 'mode_detail');
   });
 
-  officialGraphSources.slice(0, 1).forEach(source => {
+  officialGraphSources.slice(0, 2).forEach(source => {
     pushUniqueSpecificProductSource(selected, seen, source, 'official_graph');
   });
 
@@ -1212,17 +3292,23 @@ function selectSpecificProductAnswerSources(
     pushUniqueSpecificProductSource(selected, seen, source, 'product_context');
   });
 
-  rankedAnswerSources
-    .filter(source => !sourceIsBroadProductStructureOnly(source, intent))
-    .slice(0, 6)
-    .forEach(source => {
-      pushUniqueSpecificProductSource(
-        selected,
-        seen,
-        source,
-        isGraphVerifiedSource(source) ? 'official_graph' : 'product_context',
-      );
-    });
+  if (selected.length === 0 && mode !== 'product_detail') {
+    vendorScopedRankedAnswerSources
+      .filter(source => (
+        sourceMatchesStrictProductIntent(source, intent)
+        || sourceMatchesRelaxedSpecificProductIntent(source, intent, mode)
+      ))
+      .filter(source => !sourceIsBroadProductStructureOnly(source, intent))
+      .slice(0, 3)
+      .forEach(source => {
+        pushUniqueSpecificProductSource(
+          selected,
+          seen,
+          source,
+          isGraphVerifiedSource(source) ? 'official_graph' : 'product_context',
+        );
+      });
+  }
 
   return selected.slice(0, 6);
 }
@@ -1239,38 +3325,78 @@ function buildSpecificProductAnswerScope(
   intent: QueryIntent,
   message: string,
 ) {
+  const mode = inferSpecificProductAnswerMode(message);
+  const namedSpecificProductQuestion = hasNamedSpecificProductQuestion(message);
+  const explicitWholeCatalogQuestion = isExplicitWholeProductCatalogQuestion(message);
+  const hasSpecificActionSignal = hasSpecificProductActionOrPolicySignalQuestion(message);
+  const shouldUseSpecificProductScope = (
+    intent.isSpecificProductGuidance
+    || namedSpecificProductQuestion
+    || hasSpecificActionSignal
+  ) && !explicitWholeCatalogQuestion;
   const isSpecificProductScope = (
     intent.topics.includes('product_structure')
-    && intent.isSpecificProductGuidance
+    && shouldUseSpecificProductScope
   );
 
   if (!isSpecificProductScope) {
     return {
-      mode: inferSpecificProductAnswerMode(message),
+      mode,
       strictProductSources: sources,
       answerSources: sources,
       shouldLimit: false,
     };
   }
 
-  const mode = inferSpecificProductAnswerMode(message);
+  const requestedFocus = buildRequestedProductFocus(message, intent);
+  const focusMatchedSources = requestedFocus?.isSpecificFamilyQuestion
+    ? refineSpecificProductAnswerSources(
+      sources.filter(source => sourceMatchesRequestedProductFocus(source, requestedFocus)),
+      intent,
+      mode,
+    )
+    : [];
   const naverShoppingDataSources = mode === 'db_setup' && isNaverShoppingDataIntent(intent)
     ? sources.filter(source => sourceMatchesVendor(source, 'NAVER') && sourceHasNaverShoppingDataEvidence(source))
     : [];
-  const strictProductSources = refineSpecificProductAnswerSources(
+  const strictMatchedSources = refineSpecificProductAnswerSources(
     [
       ...naverShoppingDataSources,
+      ...focusMatchedSources,
       ...sources.filter(source => sourceMatchesStrictProductIntent(source, intent)),
     ],
     intent,
     mode,
   );
+  const relaxedMatchedSources = strictMatchedSources.length > 0
+    ? []
+    : refineSpecificProductAnswerSources(
+      sources.filter(source => sourceMatchesRelaxedSpecificProductIntent(source, intent, mode)),
+      intent,
+      mode,
+    );
+  const familyFallbackSources = strictMatchedSources.length === 0 && relaxedMatchedSources.length === 0
+    ? refineSpecificProductAnswerSources(
+      sources.filter(source => sourceMatchesProductFamilyFallbackCandidate(source, intent, mode)),
+      intent,
+      mode,
+    )
+    : [];
+  const strictProductSources = strictMatchedSources.length > 0
+    ? strictMatchedSources
+    : (relaxedMatchedSources.length > 0 ? relaxedMatchedSources : familyFallbackSources);
   const modeMatchedSources = mode === 'product_detail'
     ? strictProductSources
-    : strictProductSources.filter(source => sourceMatchesRequestedProductMode(source, intent, mode));
+    : strictProductSources.filter(source => sourceMatchesRequestedProductMode(source, intent, mode, true));
+  const relaxedModeSources = modeMatchedSources.length > 0
+    ? modeMatchedSources
+    : strictProductSources.filter(source => (
+      mode === 'product_detail'
+      || sourceMatchesRelaxedSpecificProductIntent(source, intent, mode)
+    ));
   const rawAnswerSources = mode === 'product_detail'
     ? strictProductSources
-    : modeMatchedSources;
+    : (modeMatchedSources.length > 0 ? modeMatchedSources : relaxedModeSources);
   const rankedAnswerSources = refineSpecificProductAnswerSources(
     mode === 'db_setup' && naverShoppingDataSources.length > 0
       ? [...naverShoppingDataSources, ...rawAnswerSources]
@@ -1278,20 +3404,50 @@ function buildSpecificProductAnswerScope(
     intent,
     mode,
   );
-  const answerSources = selectSpecificProductAnswerSources(
+  const selectedAnswerSources = selectSpecificProductAnswerSources(
     strictProductSources,
     modeMatchedSources,
     rankedAnswerSources,
     intent,
     mode,
   );
+  const answerSources = selectedAnswerSources.length > 0
+    ? selectedAnswerSources
+    : (rankedAnswerSources.length > 0 ? rankedAnswerSources : strictProductSources).slice(0, 6);
+  const missingRequestedFocus = Boolean(requestedFocus?.isSpecificFamilyQuestion && focusMatchedSources.length === 0);
+  if (missingRequestedFocus && strictProductSources.length > 0) {
+    for (const source of strictProductSources) {
+      source.metadata = {
+        ...(source.metadata || {}),
+        requestedFocusFallback: true,
+      };
+    }
+  }
+  const returnedStrictProductSources = strictProductSources;
+  const returnedAnswerSources = answerSources;
 
   return {
     mode,
-    strictProductSources,
-    answerSources,
-    shouldLimit: strictProductSources.length === 0 || (mode !== 'product_detail' && answerSources.length === 0),
+    strictProductSources: returnedStrictProductSources,
+    answerSources: returnedAnswerSources,
+    shouldLimit: returnedStrictProductSources.length === 0,
   };
+}
+
+function buildStructuredSpecificProductScopeLimitedAnswer(
+  sources: ReturnType<typeof buildVerifiedSources>,
+  intent: QueryIntent,
+  message: string,
+) {
+  return (
+    buildMetaAppInstallStructuredFallbackAnswer(sources, intent, message)
+    || buildNaverShoppingSearchCreativeGuideStructuredFallbackAnswer(sources, intent, message)
+    || buildNaverShoppingDataStructuredFallbackAnswer(sources, intent, message)
+    || buildNaverDisplayAdStructuredFallbackAnswer(sources, intent, message)
+    || buildNaverVideoStructuredFallbackAnswer(sources, intent, message)
+    || buildKakaoProductStructuredFallbackAnswer(sources, intent)
+    || buildGoogleLeadStructuredFallbackAnswer(sources, intent, message)
+  );
 }
 
 function buildSpecificProductScopeLimitedAnswer(
@@ -1303,12 +3459,32 @@ function buildSpecificProductScopeLimitedAnswer(
   const productLabel = getSpecificProductLabel(intent);
   const modeLabel = getSpecificProductModeLabel(scope.mode);
   const lines: string[] = [];
+  const structuredCandidateSources = scope.answerSources.length > 0
+    ? scope.answerSources
+    : scope.strictProductSources;
 
   if (scope.strictProductSources.length === 0) {
     lines.push(`${vendorLabel} ${productLabel}에 대해 질문하셨지만, 현재 검증 출처에서는 이 상품명을 직접 확인할 수 있는 공식 근거가 부족합니다.`);
     lines.push('');
     lines.push('다른 광고 상품이나 지면 기준과 섞어 답하면 잘못된 운영 판단으로 이어질 수 있어, 현재는 답변을 제한합니다.');
   } else {
+    const structuredAnswer = buildStructuredSpecificProductScopeLimitedAnswer(structuredCandidateSources, intent, message);
+    if (structuredAnswer) return structuredAnswer;
+
+    const sourceGuidedAnswer = buildSourceGuidedLlmFailureFallbackAnswer(
+      message,
+      scope.answerSources.length > 0 ? scope.answerSources : scope.strictProductSources,
+      intent,
+      scope,
+      false,
+    );
+    if (sourceGuidedAnswer) return sourceGuidedAnswer;
+
+    const evidenceBackedAnswer = shouldUseDeterministicProductAnswerOnLlmFailure()
+      ? buildDeterministicSpecificProductAnswer(message, intent, scope)
+      : null;
+    if (evidenceBackedAnswer) return evidenceBackedAnswer.answer;
+
     lines.push(`${vendorLabel} ${productLabel} 관련 근거는 일부 확인되지만, 질문하신 ${modeLabel}까지 직접 설명하는 근거는 부족합니다.`);
     lines.push('');
     lines.push('**확인된 범위**');
@@ -1325,6 +3501,790 @@ function buildSpecificProductScopeLimitedAnswer(
   lines.push('필요하면 상품명, 지면, 계정/캠페인 설정 화면, 확인하려는 절차를 더 구체적으로 넣어 다시 대조해 주세요.');
 
   return lines.join('\n');
+}
+
+type DeterministicProductAnswer = {
+  answer: string;
+  sources: ReturnType<typeof buildVerifiedSources>;
+  model: string;
+  showContactOption?: boolean;
+  confidenceCap?: number;
+  reviewStatus?: CompassReviewPipelineStatus;
+};
+
+type ProductAnswerFamily =
+  | 'meta_overview'
+  | 'meta_app_install'
+  | 'meta_lead'
+  | 'meta_catalog'
+  | 'google_overview'
+  | 'google_lead'
+  | 'google_app'
+  | 'naver_overview'
+  | 'naver_da'
+  | 'naver_video'
+  | 'naver_shopping'
+  | 'kakao_overview'
+  | 'kakao_bizboard'
+  | 'kakao_creative'
+  | 'unknown';
+
+type EvidenceBackedBullet = {
+  text: string;
+  terms: string[];
+};
+
+type EvidenceBackedSection = {
+  heading: string;
+  bullets: EvidenceBackedBullet[];
+};
+
+type EvidenceBackedAnswerProfile = {
+  family: ProductAnswerFamily;
+  intro: string;
+  sections: EvidenceBackedSection[];
+  summary: string;
+  model: string;
+  minBullets?: number;
+};
+
+function detectProductAnswerFamily(message: string, intent: QueryIntent): ProductAnswerFamily {
+  const normalized = normalizeProductIntentText(message);
+  const compact = normalized.replace(/\s+/g, '');
+  const vendor = intent.vendors.length === 1 ? intent.vendors[0] : undefined;
+
+  if (vendor === 'META') {
+    if (/앱\s*(인스톨|설치|홍보|캠페인|사전\s*등록)|app\s*(install|promotion)/.test(normalized)) return 'meta_app_install';
+    if (/리드\s*양식|잠재\s*고객|잠재고객|lead\s*(form|ads?|generation)|비즈니스\s*폼|비즈니스폼/.test(normalized)) return 'meta_lead';
+    if (/카탈로그|catalog|컬렉션|collection|advantage\+|어드밴티지/.test(normalized)) return 'meta_catalog';
+    return 'meta_overview';
+  }
+
+  if (vendor === 'GOOGLE') {
+    if (/리드\s*양식|잠재\s*고객|lead\s*(form|ads?|generation)|양식\s*확장|lead\s*asset/.test(normalized)) return 'google_lead';
+    if (/앱\s*(캠페인|설치|인스톨|홍보|사전\s*등록)|app\s*(campaign|install|promotion)|사전\s*등록/.test(normalized)) return 'google_app';
+    return 'google_overview';
+  }
+
+  if (vendor === 'NAVER') {
+    if (/동영상\s*광고|비디오\s*광고|동영상\s*소재|동영상\s*조회|숏폼|쇼츠|아웃스트림/.test(normalized)) return 'naver_video';
+    if (/(^|[\s/])da($|[\s/]|도|상품|광고)|네이버\s*da|네이버da|da\s*상품|da상품|디스플레이\s*광고|성과형\s*디스플레이|홈피드|스마트채널|타임보드|롤링보드|배너\s*광고/.test(normalized)) return 'naver_da';
+    if (/쇼핑검색|쇼핑\s*검색|쇼핑몰\s*상품형|쇼핑블록|상품\s*db|상품db|db\s*url|dburl|ep|상품등록|상품\s*등록|가격비교|쇼핑파트너센터/.test(normalized) || /상품db|dburl/.test(compact)) return 'naver_shopping';
+    return 'naver_overview';
+  }
+
+  if (vendor === 'KAKAO') {
+    if (/비즈보드|bizboard/.test(normalized)) return 'kakao_bizboard';
+    if (/제작|소재|가이드|이미지|비율|텍스트|심사|검수|제한/.test(normalized)) return 'kakao_creative';
+    return 'kakao_overview';
+  }
+
+  return 'unknown';
+}
+
+function sourceHasEvidenceTerm(
+  source: ReturnType<typeof buildVerifiedSources>[number],
+  terms: string[],
+) {
+  const sourceText = getSourceText(source);
+  return terms.some(term => textContainsEvidenceTerm(sourceText, term));
+}
+
+function buildEvidenceBackedAnswer(
+  profile: EvidenceBackedAnswerProfile,
+  sources: ReturnType<typeof buildVerifiedSources>,
+): DeterministicProductAnswer | null {
+  const usedSourceIndexes = new Set<number>();
+  const lines: string[] = [profile.intro, ''];
+  let supportedBulletCount = 0;
+
+  profile.sections.forEach((section) => {
+    const sectionLines: string[] = [];
+
+    section.bullets.forEach((bullet) => {
+      const sourceIndex = sources.findIndex(source => sourceHasEvidenceTerm(source, bullet.terms));
+      if (sourceIndex < 0) return;
+
+      supportedBulletCount += 1;
+      usedSourceIndexes.add(sourceIndex);
+      sectionLines.push(`- ${bullet.text} [S${sourceIndex + 1}]`);
+    });
+
+    if (sectionLines.length === 0) return;
+
+    lines.push(`**${section.heading}**`);
+    lines.push(...sectionLines);
+    lines.push('');
+  });
+
+  if (supportedBulletCount < (profile.minBullets || 2) || usedSourceIndexes.size === 0) {
+    return null;
+  }
+
+  lines.push(profile.summary);
+  lines.push('');
+  lines.push(`근거: ${Array.from(usedSourceIndexes).sort((a, b) => a - b).map(index => `[S${index + 1}]`).join(', ')}`);
+
+  return {
+    answer: lines.join('\n'),
+    sources,
+    model: profile.model,
+  };
+}
+
+function buildDeterministicScopeNoticeAnswer(
+  productLabel: string,
+  sources: ReturnType<typeof buildVerifiedSources>,
+  model: string,
+): DeterministicProductAnswer {
+  const visibleSources = sources.slice(0, 3);
+  const lines: string[] = [
+    `${productLabel}에 대해 질문하셨지만, 현재 선별된 공식 출처만으로는 상품 상세나 집행 절차를 충분히 단정하기 어렵습니다.`,
+    '',
+    '**확인된 근거 범위**',
+  ];
+
+  visibleSources.forEach((source, index) => {
+    lines.push(`- ${compactEvidenceExcerpt(source.excerpt, source.title)} [S${index + 1}]`);
+  });
+
+  lines.push('');
+  lines.push('**추가 확인이 필요한 항목**');
+  lines.push('- 정확한 상품명 또는 노출 지면');
+  lines.push('- 소재 규격, 집행 가능 업종, 승인/검수 조건');
+  lines.push('- 실제 계정에서 노출되는 등록 경로와 운영 설정');
+  lines.push('');
+  lines.push('다른 상품의 기준을 섞어 답하면 잘못된 운영 판단으로 이어질 수 있어, 현재는 답변 범위를 제한합니다.');
+  if (visibleSources.length > 0) {
+    lines.push('');
+    lines.push(`근거: ${visibleSources.map((_, index) => `[S${index + 1}]`).join(', ')}`);
+  }
+
+  return {
+    answer: lines.join('\n'),
+    sources: visibleSources,
+    model,
+    showContactOption: true,
+    confidenceCap: 62,
+    reviewStatus: 'limited',
+  };
+}
+
+function getSpecificProductAnswerProfile(
+  family: ProductAnswerFamily,
+  _mode: SpecificProductAnswerMode,
+): EvidenceBackedAnswerProfile | null {
+  switch (family) {
+    case 'meta_app_install':
+      return {
+        family,
+        intro: 'Meta 앱 인스톨 광고는 앱 홍보 목적과 앱 이벤트 추적, 소재·랜딩 조건을 함께 확인해야 합니다.',
+        sections: [
+          {
+            heading: '집행 전 확인할 설정',
+            bullets: [
+              { text: '앱 설치나 앱 내 행동을 늘리려면 앱 홍보/App Promotion 계열 목표를 먼저 확인합니다.', terms: ['앱 홍보', '앱 설치', '앱 인스톨', 'App Promotion', 'App Install'] },
+              { text: 'SDK, MMP, 앱 이벤트, 픽셀처럼 전환 추적에 필요한 연결 항목은 별도로 점검해야 합니다.', terms: ['SDK', 'MMP', '앱 이벤트', '트래킹', '추적', '픽셀'] },
+              { text: '앱 등록, 계정 권한, 캠페인 설정은 실제 광고 관리자 또는 비즈니스 설정에서 확인해야 합니다.', terms: ['앱 등록', '계정', '권한', '캠페인 설정', 'Ads Manager'] },
+            ],
+          },
+          {
+            heading: '소재와 심사',
+            bullets: [
+              { text: '소재와 문구는 Meta 광고 콘텐츠 가이드라인과 랜딩/스토어 연결 상태를 함께 봐야 합니다.', terms: ['소재', '광고 콘텐츠 가이드라인', '랜딩', '스토어', '심사'] },
+            ],
+          },
+        ],
+        summary: '정리하면, 앱 홍보 목표를 고른 뒤 앱 이벤트 추적과 계정 연결 상태, 소재·랜딩 조건을 함께 대조하는 흐름이 안전합니다.',
+        model: 'compass-answer-deterministic-meta-app-install',
+      };
+
+    case 'meta_lead':
+      return {
+        family,
+        intro: 'Meta 리드 양식 광고는 잠재 고객 정보를 수집하는 목적이므로 양식 구성과 개인정보 고지 조건을 함께 확인해야 합니다.',
+        sections: [
+          {
+            heading: '상품/목적',
+            bullets: [
+              { text: '리드 양식 또는 잠재 고객 목적은 상담 신청, 견적 요청, 고객 정보 수집에 맞춰 검토합니다.', terms: ['리드 양식', '잠재 고객', 'Lead Form', 'Lead Ads', 'Lead Generation'] },
+              { text: '양식 제출과 개인정보 수집 항목은 고지, 동의, 이용 목적을 함께 확인해야 합니다.', terms: ['양식 제출', '개인정보', '고지', '동의'] },
+            ],
+          },
+          {
+            heading: '운영 전 확인',
+            bullets: [
+              { text: '소재와 랜딩/후속 안내 문구가 이용자를 오인하게 만들지 않는지 정책 기준과 함께 봅니다.', terms: ['소재', '랜딩', '오인', '정책', '심사'] },
+            ],
+          },
+        ],
+        summary: '정리하면, 리드 수집 목적과 양식의 개인정보 처리 조건을 먼저 확인한 뒤 소재 심사 기준을 함께 대조해야 합니다.',
+        model: 'compass-answer-deterministic-meta-lead',
+      };
+
+    case 'meta_catalog':
+      return {
+        family,
+        intro: 'Meta 카탈로그/컬렉션 계열 광고는 상품 카탈로그와 구매 흐름을 연결해 운영하는 상품군입니다.',
+        sections: [
+          {
+            heading: '상품 구조',
+            bullets: [
+              { text: '카탈로그 또는 Catalog 기반 상품은 상품 정보를 연결해 노출하는 구조로 봅니다.', terms: ['카탈로그', 'Catalog'] },
+              { text: '컬렉션 광고는 여러 상품을 한 화면에서 보여주고 구매 흐름으로 연결할 때 검토합니다.', terms: ['컬렉션', 'Collection', '컬렉션 광고'] },
+              { text: 'Advantage+ 또는 자동화 기능은 상품 노출과 최적화 조건을 함께 확인해야 합니다.', terms: ['Advantage+', '어드밴티지'] },
+            ],
+          },
+        ],
+        summary: '정리하면, 카탈로그 연결 상태와 컬렉션/자동화 운영 조건을 함께 확인하는 것이 핵심입니다.',
+        model: 'compass-answer-deterministic-meta-catalog',
+      };
+
+    case 'google_lead':
+      return {
+        family,
+        intro: 'Google Ads 리드 양식은 검색, 디스플레이, 동영상 등 캠페인에서 잠재 고객 정보를 받을 때 검토하는 확장/애셋 계열 기능입니다.',
+        sections: [
+          {
+            heading: '사용 목적',
+            bullets: [
+              { text: '리드 양식은 상담 신청, 연락처 수집, 견적 요청처럼 잠재 고객 정보를 받을 때 확인합니다.', terms: ['리드 양식', 'Lead Form', '잠재 고객', '상담 신청', '연락처'] },
+              { text: '검색, 동영상, 실적 최대화, 디스플레이 캠페인에 추가할 수 있는지 캠페인 유형을 먼저 대조합니다.', terms: ['검색', '동영상', '실적 최대화', '디스플레이', '캠페인'] },
+            ],
+          },
+          {
+            heading: '주의 조건',
+            bullets: [
+              { text: '양식 제출 과정에서는 개인정보 수집, 고지, 동의 조건을 함께 확인해야 합니다.', terms: ['개인정보', '고지', '동의', '양식 제출'] },
+            ],
+          },
+        ],
+        summary: '정리하면, 캠페인 유형에 리드 양식을 붙일 수 있는지와 개인정보 수집 조건을 함께 확인하는 흐름이 안전합니다.',
+        model: 'compass-answer-deterministic-google-lead',
+      };
+
+    case 'google_app':
+      return {
+        family,
+        intro: 'Google 앱 캠페인은 앱 설치나 앱 내 행동을 늘리는 목적에 맞춰 캠페인 유형과 앱 연결 상태를 먼저 확인합니다.',
+        sections: [
+          {
+            heading: '집행 전 확인',
+            bullets: [
+              { text: '앱 캠페인, 앱 설치, 사전 등록처럼 앱 성과를 만들려는 캠페인 유형을 먼저 구분합니다.', terms: ['앱 캠페인', '앱 설치', '사전 등록', 'App campaign', 'App Install'] },
+              { text: '앱 이벤트, 측정, 추적 설정은 실제 계정과 앱 연결 상태를 기준으로 확인해야 합니다.', terms: ['앱 이벤트', '측정', '추적', '계정', '연결'] },
+            ],
+          },
+        ],
+        summary: '정리하면, 앱 캠페인 유형과 앱 연결·측정 상태를 함께 대조한 뒤 소재와 정책 조건을 확인해야 합니다.',
+        model: 'compass-answer-deterministic-google-app',
+      };
+
+    case 'naver_da':
+      return {
+        family,
+        intro: '네이버 DA/디스플레이 계열 상품은 노출 지면과 보장형/성과형 운영 조건을 함께 봐야 합니다.',
+        sections: [
+          {
+            heading: '확인할 상품/지면',
+            bullets: [
+              { text: 'DA 또는 디스플레이 광고는 검색형 상품과 별도로 지면, 소재, 과금 조건을 확인합니다.', terms: ['DA', '디스플레이 광고', '성과형 디스플레이', '배너 광고'] },
+              { text: '홈피드, 스마트채널, 타임보드, 롤링보드처럼 지면명이 확인되면 해당 지면별 조건을 따로 대조합니다.', terms: ['홈피드', '스마트채널', '타임보드', '롤링보드'] },
+            ],
+          },
+          {
+            heading: '운영 전 확인',
+            bullets: [
+              { text: '소재 규격, 업종 제한, 심사 조건은 지면별로 달라질 수 있어 원문 기준으로 확인해야 합니다.', terms: ['소재', '규격', '업종 제한', '심사', '등록 기준'] },
+            ],
+          },
+        ],
+        summary: '정리하면, 네이버 DA는 상품명보다 지면과 소재·심사 조건을 먼저 좁혀 확인하는 것이 안전합니다.',
+        model: 'compass-answer-deterministic-naver-da',
+      };
+
+    case 'naver_video':
+      return {
+        family,
+        intro: '네이버 동영상 광고는 현재 확보된 공식 근거에서 동영상 소재, 노출 지면, 심사 조건이 직접 확인되는 범위로만 봐야 합니다.',
+        sections: [
+          {
+            heading: '동영상 관련 확인 항목',
+            bullets: [
+              { text: '동영상 광고나 동영상 소재가 언급되는 상품/지면부터 먼저 확인합니다.', terms: ['동영상 광고', '동영상광고', '동영상 소재', '비디오 광고', '동영상 조회'] },
+              { text: '숏폼, 아웃스트림, 쇼츠처럼 별도 지면명이 확인되면 해당 지면별 소재 조건을 따로 봅니다.', terms: ['숏폼', '아웃스트림', '쇼츠', 'Shorts'] },
+              { text: '영상 길이, 비율, 파일 형식, 심사 조건은 제작 가이드 또는 지면별 기준과 함께 확인해야 합니다.', terms: ['길이', '비율', '파일', '형식', '심사', '제작 가이드'] },
+            ],
+          },
+        ],
+        summary: '정리하면, 네이버 동영상 상품은 상품명 하나로 단정하지 말고 동영상이 노출되는 지면과 소재 조건을 함께 좁혀 확인해야 합니다.',
+        model: 'compass-answer-deterministic-naver-video',
+      };
+
+    case 'naver_shopping':
+      return {
+        family,
+        intro: '네이버 쇼핑검색/쇼핑 지면은 상품 노출 목적과 상품 DB·등록 조건을 함께 확인해야 합니다.',
+        sections: [
+          {
+            heading: '상품/지면',
+            bullets: [
+              { text: '사이트검색광고는 키워드 검색 기반으로 웹사이트 방문을 늘릴 때 검토합니다.', terms: ['사이트검색광고', '웹사이트 방문'] },
+              { text: '쇼핑검색광고는 쇼핑몰 상품형처럼 상품 노출과 유입을 함께 다룰 때 확인합니다.', terms: ['쇼핑검색광고', '쇼핑검색', '쇼핑몰 상품형'] },
+              { text: '쇼핑블록이나 주요 쇼핑 지면은 PC·모바일 쇼핑 지면의 노출 목적을 따로 확인합니다.', terms: ['쇼핑블록', '쇼핑 지면', 'PC 쇼핑블록', '모바일 쇼핑'] },
+            ],
+          },
+          {
+            heading: '운영 전 확인',
+            bullets: [
+              { text: '상품 DB URL, EP, 상품정보 수신, 카테고리 매칭 같은 등록 조건을 함께 확인해야 합니다.', terms: ['상품 DB', '상품DB', 'DB URL', 'EP', '상품정보 수신', '카테고리 매칭'] },
+            ],
+          },
+        ],
+        summary: '정리하면, 목적에 맞는 검색·쇼핑 지면을 고른 뒤 상품 DB와 등록 기준을 함께 대조하는 흐름이 안전합니다.',
+        model: 'compass-answer-naver-shopping-data-operational',
+      };
+
+    case 'kakao_bizboard':
+      return {
+        family,
+        intro: '카카오 비즈보드는 카카오 주요 지면 노출 목적과 소재·심사 기준을 함께 확인해야 하는 디스플레이 계열 상품입니다.',
+        sections: [
+          {
+            heading: '상품/지면',
+            bullets: [
+              { text: '비즈보드 또는 디스플레이 광고는 카카오 주요 지면에서 브랜드 노출을 검토할 때 확인합니다.', terms: ['비즈보드', '디스플레이 광고', '카카오모먼트'] },
+              { text: '상품가이드는 상품별 집행 조건과 업종 제한을 확인할 때 봅니다.', terms: ['상품가이드', '상품 가이드', '업종 제한'] },
+            ],
+          },
+          {
+            heading: '소재/심사',
+            bullets: [
+              { text: '제작 가이드와 심사 가이드에서 이미지 비율, 텍스트 영역, 제한 업종을 함께 확인해야 합니다.', terms: ['제작 가이드', '심사 가이드', '이미지', '비율', '텍스트'] },
+            ],
+          },
+        ],
+        summary: '정리하면, 비즈보드는 지면 노출 목적과 제작·심사 기준을 함께 대조해야 합니다.',
+        model: 'compass-answer-deterministic-kakao-bizboard',
+      };
+
+    case 'kakao_creative':
+      return {
+        family,
+        intro: '카카오 광고 소재는 상품가이드, 제작가이드, 심사가이드를 함께 보며 지면별 제작 조건을 확인해야 합니다.',
+        sections: [
+          {
+            heading: '제작 전 확인',
+            bullets: [
+              { text: '상품가이드에서 상품별 집행 조건과 노출 지면을 먼저 확인합니다.', terms: ['상품가이드', '상품 가이드', '노출 지면'] },
+              { text: '제작가이드에서 이미지 비율, 텍스트 영역, 소재 크기 같은 제작 조건을 확인합니다.', terms: ['제작가이드', '제작 가이드', '이미지', '비율', '텍스트', '소재'] },
+              { text: '심사가이드에서 금지 행위, 업종 제한, 소재 제한을 함께 대조합니다.', terms: ['심사가이드', '심사 가이드', '금지', '업종 제한', '제한'] },
+            ],
+          },
+        ],
+        summary: '정리하면, 카카오 소재는 상품별 지면과 제작·심사 기준을 나눠 확인하는 것이 안전합니다.',
+        model: 'compass-answer-deterministic-kakao-creative',
+      };
+
+    default:
+      return null;
+  }
+}
+
+function getBroadProductAnswerProfile(family: ProductAnswerFamily): EvidenceBackedAnswerProfile | null {
+  switch (family) {
+    case 'meta_overview':
+      return {
+        family,
+        intro: 'Meta 광고 상품은 하나의 상품명만 선택하는 방식보다 캠페인 목표, 광고 형식, 노출 위치, 자동화 기능을 조합해 설계하는 구조로 이해하면 됩니다.',
+        sections: [
+          {
+            heading: '먼저 정할 것',
+            bullets: [
+              { text: '캠페인 목표는 인지도, 트래픽, 참여, 잠재 고객, 앱 홍보, 판매처럼 달성하려는 결과를 기준으로 고릅니다.', terms: ['캠페인 목표', '인지도', '트래픽', '참여', '잠재 고객', '앱 홍보', '판매'] },
+              { text: '광고 형식은 이미지, 동영상, 슬라이드/캐러셀, 컬렉션처럼 메시지를 보여주는 방식입니다.', terms: ['이미지', '동영상', '슬라이드', '캐러셀', '카루셀', '컬렉션'] },
+              { text: '노출 위치는 Facebook, Instagram 등 지면별 사양과 함께 확인해야 합니다.', terms: ['노출 위치', '게재 위치', 'Facebook', 'Instagram'] },
+            ],
+          },
+          {
+            heading: '추가로 확인할 기능',
+            bullets: [
+              { text: '카탈로그, 컬렉션, Advantage+ 같은 자동화·커머스 기능은 상품 데이터와 구매 흐름을 함께 봅니다.', terms: ['카탈로그', 'Catalog', '컬렉션', 'Advantage+', '어드밴티지'] },
+            ],
+          },
+        ],
+        summary: '정리하면, Meta는 목표를 먼저 정하고 그 목표에 맞는 형식, 지면, 자동화 기능을 조합하는 방식으로 검토하면 됩니다.',
+        model: 'compass-answer-deterministic-meta-overview',
+      };
+
+    case 'google_overview':
+      return {
+        family,
+        intro: 'Google Ads는 캠페인 유형, 광고 애셋, 확장 소재, 측정 조건을 조합해 운영하는 구조로 보는 편이 안전합니다.',
+        sections: [
+          {
+            heading: '캠페인 유형',
+            bullets: [
+              { text: '검색 캠페인은 검색 결과에서 수요를 포착할 때 확인합니다.', terms: ['검색 캠페인', '검색 광고'] },
+              { text: '디스플레이 캠페인과 반응형 디스플레이 광고는 이미지·텍스트 조합으로 지면 노출을 다룰 때 확인합니다.', terms: ['디스플레이 캠페인', '반응형 디스플레이'] },
+              { text: '쇼핑 광고는 상품 노출과 Merchant Center/상품 데이터 조건을 함께 봅니다.', terms: ['쇼핑 광고', '쇼핑 캠페인', 'Merchant Center'] },
+              { text: '앱 캠페인과 리드 양식은 앱 성과 또는 잠재 고객 정보 수집 목적일 때 따로 확인합니다.', terms: ['앱 캠페인', '앱 설치', '리드 양식', 'Lead Form'] },
+            ],
+          },
+        ],
+        summary: '정리하면, Google Ads는 목적에 맞는 캠페인 유형을 먼저 고르고, 애셋·확장 소재·측정 조건을 함께 대조해야 합니다.',
+        model: 'compass-answer-deterministic-google-overview',
+      };
+
+    case 'naver_overview':
+      return {
+        family,
+        intro: '네이버 광고 상품은 검색 유입, 쇼핑 상품 노출, 주요 쇼핑/디스플레이 지면, 상품 DB 조건을 나눠 확인하는 편이 안전합니다.',
+        sections: [
+          {
+            heading: '대표 상품군',
+            bullets: [
+              { text: '사이트검색광고는 키워드 검색 기반으로 웹사이트 방문을 늘릴 때 확인합니다.', terms: ['사이트검색광고', '웹사이트 방문'] },
+              { text: '쇼핑검색광고는 쇼핑몰 상품형처럼 상품 노출과 유입을 함께 다룰 때 확인합니다.', terms: ['쇼핑검색광고', '쇼핑검색', '쇼핑몰 상품형'] },
+              { text: '쇼핑블록이나 주요 쇼핑 지면은 쇼핑몰 유입 또는 브랜딩 목적을 검토할 때 확인합니다.', terms: ['쇼핑블록', '쇼핑 지면', 'PC 쇼핑블록', '모바일 쇼핑'] },
+              { text: '상품 DB URL, EP, 상품정보 수신 같은 조건은 쇼핑 상품 운영 전 함께 확인합니다.', terms: ['상품 DB', '상품DB', 'DB URL', 'EP', '상품정보 수신'] },
+            ],
+          },
+        ],
+        summary: '정리하면, 네이버는 검색형 상품과 쇼핑형 상품, 쇼핑 지면, 상품 DB 조건을 분리해서 검토해야 합니다.',
+        model: 'compass-answer-deterministic-naver-overview',
+      };
+
+    case 'kakao_overview':
+      return {
+        family,
+        intro: '카카오 광고 상품은 카카오 주요 지면, 소재 형식, 업종 제한, 심사 기준을 함께 확인하면서 상품과 집행 가능 범위를 정리하는 방식이 안전합니다.',
+        sections: [
+          {
+            heading: '상품/지면',
+            bullets: [
+              { text: '비즈보드와 디스플레이 광고는 카카오 주요 지면에서 브랜드 노출을 검토할 때 확인합니다.', terms: ['비즈보드', '디스플레이 광고', '카카오모먼트'] },
+              { text: '상품가이드는 상품별 집행 조건과 업종 제한을 확인할 때 봅니다.', terms: ['상품가이드', '상품 가이드', '업종 제한'] },
+              { text: '제작가이드와 심사가이드는 이미지 비율, 텍스트 영역, 제한 업종처럼 소재 조건을 대조할 때 필요합니다.', terms: ['제작가이드', '제작 가이드', '심사가이드', '심사 가이드', '이미지', '비율'] },
+            ],
+          },
+        ],
+        summary: '정리하면, 카카오는 상품 지면과 제작·심사 기준을 함께 확인해야 실제 집행 가능 여부를 판단할 수 있습니다.',
+        model: 'compass-answer-deterministic-kakao-overview',
+      };
+
+    default:
+      return null;
+  }
+}
+
+function shouldUseDeterministicProductAnswerBeforeLlm() {
+  // 고정 상품 답변은 운영 QA용 가드레일이다. 기본 흐름에서는 반드시
+  // retrieval 근거를 LLM이 합성하게 두어 질문별 답변이 같은 템플릿으로
+  // 수렴하지 않도록 한다.
+  if (process.env.COMPASS_ALLOW_PRE_LLM_DETERMINISTIC_PRODUCT_ANSWERS !== 'true') {
+    return false;
+  }
+
+  return process.env.COMPASS_DETERMINISTIC_PRODUCT_ANSWER_MODE === 'pre_llm'
+    || process.env.COMPASS_ENABLE_DETERMINISTIC_PRODUCT_ANSWERS === 'true';
+}
+
+function shouldUseDeterministicProductAnswerOnLlmFailure() {
+  // LLM 연결 실패 시에도 기본값은 실제 출처 요약 폴백이다.
+  // 고정 상품 프로필은 QA/회귀 테스트용으로 명시적으로 켠 경우에만 사용한다.
+  return process.env.COMPASS_ENABLE_DETERMINISTIC_PRODUCT_FALLBACK_ON_LLM_FAILURE === 'true';
+}
+
+function buildDeterministicSpecificProductAnswer(
+  message: string,
+  intent: QueryIntent,
+  scope: ReturnType<typeof buildSpecificProductAnswerScope>,
+): DeterministicProductAnswer | null {
+  if (
+    !intent.topics.includes('product_structure')
+    || (!intent.isSpecificProductGuidance && !hasNamedSpecificProductQuestion(message))
+  ) {
+    return null;
+  }
+
+  const family = detectProductAnswerFamily(message, intent);
+  const sources = scope.answerSources.length > 0 ? scope.answerSources : scope.strictProductSources;
+  if (sources.length === 0) return null;
+
+  const profile = getSpecificProductAnswerProfile(family, scope.mode);
+  if (!profile) return null;
+
+  const answer = buildEvidenceBackedAnswer(profile, sources);
+  if (answer) return answer;
+
+  const vendorLabel = intent.vendors.map(vendor => VENDOR_LABELS[vendor] || vendor).join(', ') || '해당 매체';
+  const productLabel = `${vendorLabel} ${getSpecificProductLabel(intent)}`;
+  return buildDeterministicScopeNoticeAnswer(productLabel, sources, `${profile.model}-scope-limited`);
+}
+
+function buildDeterministicBroadProductAnswer(
+  message: string,
+  intent: QueryIntent,
+  sources: ReturnType<typeof buildVerifiedSources>,
+): DeterministicProductAnswer | null {
+  if (!isBroadProductStructureAnswerIntent(message, intent) || sources.length === 0) {
+    return null;
+  }
+
+  const family = detectProductAnswerFamily(message, intent);
+  const profile = getBroadProductAnswerProfile(family)
+    || getSpecificProductAnswerProfile(family, 'product_detail');
+  if (!profile) return null;
+
+  return buildEvidenceBackedAnswer(profile, sources);
+}
+
+function getDeterministicProductConfidence(
+  baseConfidence: number,
+  answer: DeterministicProductAnswer,
+) {
+  return answer.confidenceCap ? Math.min(baseConfidence, answer.confidenceCap) : baseConfidence;
+}
+
+function buildDeterministicProductReviewPipeline(
+  answer: DeterministicProductAnswer,
+  sourceCount: number,
+) {
+  const showContactOption = Boolean(answer.showContactOption);
+  return buildReviewPipeline({
+    status: answer.reviewStatus || 'completed',
+    sourceCount,
+    verifiedSourceCount: answer.sources.length,
+    contactRecommended: showContactOption,
+  });
+}
+
+type SpecificProductGeneratedAnswerRepair = {
+  answer: string;
+  sources: ReturnType<typeof buildVerifiedSources>;
+  model: string;
+  reason:
+    | 'missing_requested_product_family'
+    | 'generic_product_structure'
+    | 'extractive_source_dump'
+    | 'insufficient_specific_depth';
+  showContactOption?: boolean;
+  confidenceCap?: number;
+  reviewStatus?: CompassReviewPipelineStatus;
+};
+
+function getExpectedProductAnswerFamilyPattern(family: ProductAnswerFamily): RegExp | null {
+  switch (family) {
+    case 'meta_app_install':
+      return /앱\s*(인스톨|설치|홍보|캠페인|사전\s*등록|이벤트)|app\s*(install|promotion)|sdk|mmp|모바일\s*측정|앱\s*등록|앱\s*이벤트/i;
+    case 'meta_lead':
+      return /리드\s*양식|잠재\s*고객|잠재고객|lead\s*(form|ads?|generation)|비즈니스\s*폼|양식\s*제출/i;
+    case 'meta_catalog':
+      return /카탈로그|catalog|컬렉션|collection|advantage\+|어드밴티지/i;
+    case 'google_lead':
+      return /리드\s*양식|lead\s*form|잠재\s*고객|양식\s*확장|양식\s*제출/i;
+    case 'google_app':
+      return /앱\s*(캠페인|설치|인스톨|홍보|사전\s*등록|이벤트)|app\s*(campaign|install|promotion)|firebase|sdk|측정|추적/i;
+    case 'naver_da':
+      return /(^|[\s/])da($|[\s/]|도|상품|광고)|네이버\s*da|디스플레이|성과형\s*디스플레이|홈피드|스마트채널|타임보드|롤링보드|배너/i;
+    case 'naver_video':
+      return /동영상|비디오|숏폼|쇼츠|shorts|아웃스트림|영상\s*(길이|비율|소재)/i;
+    case 'naver_shopping':
+      return /쇼핑검색|쇼핑블록|쇼핑\s*지면|상품\s*db|상품db|db\s*url|dburl|\bep\b|쇼핑파트너센터|상품등록|상품\s*등록|가격비교/i;
+    case 'kakao_bizboard':
+      return /비즈보드|bizboard|디스플레이|카카오\s*주요\s*지면|카카오모먼트/i;
+    case 'kakao_creative':
+      return /제작\s*가이드|제작가이드|심사\s*가이드|심사가이드|상품\s*가이드|상품가이드|소재|이미지|비율|텍스트|업종\s*제한/i;
+    default:
+      return null;
+  }
+}
+
+function isSpecificProductAnswerGateTarget(
+  message: string,
+  intent: QueryIntent,
+  isBroadProductStructureLlmIntent: boolean,
+) {
+  return (
+    !isBroadProductStructureLlmIntent
+    && intent.topics.includes('product_structure')
+    && (intent.isSpecificProductGuidance || hasNamedSpecificProductQuestion(message))
+  );
+}
+
+function answerMentionsRequestedProductFamily(
+  answer: string,
+  message: string,
+  intent: QueryIntent,
+) {
+  const family = detectProductAnswerFamily(message, intent);
+  const pattern = getExpectedProductAnswerFamilyPattern(family);
+  if (!pattern) return true;
+  return pattern.test(answer);
+}
+
+function answerLooksLikeGenericProductStructure(answer: string) {
+  const normalized = normalizeProductIntentText(answer);
+  const genericSignals = [
+    /상품명\s*하나를\s*고르는\s*방식/,
+    /캠페인\s*목표부터\s*정하기/,
+    /목표에\s*맞는\s*광고\s*형식/,
+    /광고\s*목적과\s*노출\s*지면부터\s*확인/,
+    /운영\s*전에\s*확인할\s*조건/,
+    /상황별\s*빠른\s*선택\s*기준/,
+    /검색\s*유입,\s*쇼핑\s*상품\s*노출,\s*주요\s*쇼핑\s*지면/,
+    /대표\s*상품군/,
+  ];
+
+  return genericSignals.some(pattern => pattern.test(normalized));
+}
+
+function answerLooksLikeExtractiveSourceDump(answer: string) {
+  const normalized = normalizeProductIntentText(answer);
+  const dumpSignals = [
+    /제공된\s*(검증\s*)?출처\s*기준으로만\s*정리/,
+    /제공된\s*근거\s*기준으로는.*정보가\s*확인/,
+    /출처에\s*명시되지\s*않은.*추가\s*확인/,
+    /(meta|google|naver|kakao|메타|구글|네이버|카카오)\s*(광고\s*)?(가이드|규정|정책)\s*:/,
+    /작동\s*방식\s*[a-z가-힣\s]*\[\s*s\d+\s*\]/i,
+    /현재\s*제공된\s*문서에서는\s*확인되지\s*않습니다/,
+  ];
+
+  return dumpSignals.filter(pattern => pattern.test(normalized)).length >= 2;
+}
+
+function getSpecificProductDepthPattern(family: ProductAnswerFamily): RegExp | null {
+  switch (family) {
+    case 'meta_app_install':
+      return /sdk|mmp|앱\s*이벤트|앱\s*등록|app\s*id|app\s*secret|포스트백|추적|트래킹|캠페인\s*설정|스토어|비즈니스\s*설정/i;
+    case 'meta_lead':
+      return /리드\s*양식|잠재\s*고객|양식\s*제출|개인정보|고지|동의|비즈니스\s*폼|문의|상담/i;
+    case 'meta_catalog':
+      return /카탈로그|catalog|컬렉션|collection|advantage\+|상품\s*데이터|상품\s*세트|구매\s*흐름|커머스/i;
+    case 'google_lead':
+      return /리드\s*양식|lead\s*form|양식\s*확장|잠재\s*고객|연락처|고지|동의|캠페인/i;
+    case 'google_app':
+      return /앱\s*(캠페인|설치|인스톨|사전\s*등록|이벤트)|firebase|sdk|측정|추적|연결|스토어/i;
+    case 'naver_da':
+      return /da|디스플레이|성과형\s*디스플레이|홈피드|스마트채널|타임보드|롤링보드|배너|지면/i;
+    case 'naver_video':
+      return /동영상|비디오|숏폼|쇼츠|아웃스트림|길이|비율|파일|형식|소재|심사|노출/i;
+    case 'naver_shopping':
+      return /쇼핑검색|쇼핑블록|상품\s*db|상품db|db\s*url|dburl|\bep\b|쇼핑파트너센터|상품\s*등록|카테고리|가격비교|입점/i;
+    case 'kakao_bizboard':
+      return /비즈보드|bizboard|디스플레이|카카오모먼트|상품가이드|제작\s*가이드|심사\s*가이드|지면|톡채널/i;
+    case 'kakao_creative':
+      return /제작\s*가이드|심사\s*가이드|상품\s*가이드|소재|이미지|비율|텍스트|업종\s*제한|리사이징|홍보이미지|홍보동영상/i;
+    default:
+      return null;
+  }
+}
+
+function answerHasSpecificOperationalDepth(
+  answer: string,
+  message: string,
+  intent: QueryIntent,
+) {
+  const family = detectProductAnswerFamily(message, intent);
+  const depthPattern = getSpecificProductDepthPattern(family);
+  if (!depthPattern) return true;
+  return depthPattern.test(answer);
+}
+
+function getSpecificProductGeneratedAnswerRepairReason(
+  mentionsRequestedFamily: boolean,
+  genericProductStructure: boolean,
+  extractiveSourceDump: boolean,
+  hasSpecificDepth: boolean,
+): SpecificProductGeneratedAnswerRepair['reason'] {
+  if (!mentionsRequestedFamily) return 'missing_requested_product_family';
+  if (extractiveSourceDump) return 'extractive_source_dump';
+  if (!hasSpecificDepth) return 'insufficient_specific_depth';
+  return genericProductStructure ? 'generic_product_structure' : 'insufficient_specific_depth';
+}
+
+function buildSpecificProductGeneratedAnswerRepair(
+  message: string,
+  intent: QueryIntent,
+  scope: ReturnType<typeof buildSpecificProductAnswerScope>,
+  isBroadProductStructureLlmIntent: boolean,
+  rawGeneratedAnswer: string,
+  operationalAnswer: string | null,
+): SpecificProductGeneratedAnswerRepair | null {
+  if (!isSpecificProductAnswerGateTarget(message, intent, isBroadProductStructureLlmIntent)) {
+    return null;
+  }
+
+  const mentionsRequestedFamily = answerMentionsRequestedProductFamily(rawGeneratedAnswer, message, intent);
+  const genericProductStructure = answerLooksLikeGenericProductStructure(rawGeneratedAnswer);
+  const extractiveSourceDump = answerLooksLikeExtractiveSourceDump(rawGeneratedAnswer);
+  const hasSpecificDepth = answerHasSpecificOperationalDepth(rawGeneratedAnswer, message, intent);
+  if (rawGeneratedAnswer && mentionsRequestedFamily && hasSpecificDepth && !genericProductStructure && !extractiveSourceDump) {
+    return null;
+  }
+  const repairReason = getSpecificProductGeneratedAnswerRepairReason(
+    mentionsRequestedFamily,
+    genericProductStructure,
+    extractiveSourceDump,
+    hasSpecificDepth,
+  );
+
+  if (operationalAnswer) {
+    return {
+      answer: operationalAnswer,
+      sources: scope.answerSources.length > 0 ? scope.answerSources : scope.strictProductSources,
+      model: 'compass-answer-specific-product-operational-repair',
+      reason: repairReason,
+    };
+  }
+
+  const structuredFallback = buildStructuredSpecificProductScopeLimitedAnswer(
+    scope.answerSources.length > 0 ? scope.answerSources : scope.strictProductSources,
+    intent,
+    message,
+  );
+  if (structuredFallback) {
+    return {
+      answer: structuredFallback,
+      sources: scope.answerSources.length > 0 ? scope.answerSources : scope.strictProductSources,
+      model: 'compass-answer-specific-product-structured-repair',
+      reason: repairReason,
+    };
+  }
+
+  const sourceGuidedFallback = buildSourceGuidedLlmFailureFallbackAnswer(
+    message,
+    scope.answerSources.length > 0 ? scope.answerSources : scope.strictProductSources,
+    intent,
+    scope,
+    isBroadProductStructureLlmIntent,
+  );
+  if (sourceGuidedFallback) {
+    return {
+      answer: sourceGuidedFallback,
+      sources: scope.answerSources.length > 0 ? scope.answerSources : scope.strictProductSources,
+      model: 'compass-answer-specific-product-source-guided-repair',
+      reason: repairReason,
+    };
+  }
+
+  const evidenceBackedAnswer = shouldUseDeterministicProductAnswerOnLlmFailure()
+    ? buildDeterministicSpecificProductAnswer(message, intent, scope)
+    : null;
+  if (evidenceBackedAnswer) {
+    return {
+      answer: evidenceBackedAnswer.answer,
+      sources: evidenceBackedAnswer.sources,
+      model: `${evidenceBackedAnswer.model}-post-llm-repair`,
+      reason: repairReason,
+      showContactOption: evidenceBackedAnswer.showContactOption,
+      confidenceCap: evidenceBackedAnswer.confidenceCap,
+      reviewStatus: evidenceBackedAnswer.reviewStatus,
+    };
+  }
+
+  return null;
 }
 
 function isOfficialGuideGraphSource(source: ReturnType<typeof buildVerifiedSources>[number]) {
@@ -1350,23 +4310,40 @@ function isWeakProductStructureDisplaySource(source: ReturnType<typeof buildVeri
   if (/woocommerce|google\s*태그|태그\s*설정|gtag|측정\s*태그/.test(text)
     && !/앱\s*캠페인|쇼핑\s*광고|검색\s*캠페인|디스플레이\s*캠페인|반응형\s*디스플레이|리드\s*양식/.test(text)
   ) return true;
+  if (/암호화폐|사회\s*문제|정치|선거|주택|고용|신용|제한된\s*상품|금지된\s*상품|민감한\s*카테고리/.test(text)
+    && !/캠페인\s*(목표|유형|목적)|광고\s*(상품|종류|유형|구조)|상품\s*구조|광고\s*관리자\s*목표|마케팅\s*목표/.test(text)
+  ) return true;
   if (/공지사항|성공전략|성공사례|광고운영팁|검색어 입력 창|thumbnail|sequence|badge|전체 공통/.test(text)
     && !/상품\s*db|db\s*url|쇼핑파트너센터|pc\s*쇼핑블록|mo\s*쇼핑블록|모바일\s*쇼핑|가격비교|광고\s*등록\s*기준|광고등록기준|디지털\s*옥외광고[\s\S]{0,80}불가\s*업종|쇼핑검색[\s\S]{0,80}필터/.test(text)
   ) return true;
   if (/^블로그$|blog|news|뉴스|도움말$/.test(title) && !hasCoreSignal) return true;
   if (/self\.__next_f|static\/css|webpack|hydration/.test(text) && !hasCoreSignal) return true;
-
   return false;
+}
+
+function sourceLooksLikeGranularCreativeSpecOnly(source: ReturnType<typeof buildVerifiedSources>[number]) {
+  const titleText = normalizeEvidenceText(`${source.title || ''} ${source.originalTitle || ''}`);
+  const text = normalizeEvidenceText(getProductStructureVisibleSourceText(source) || getSourceText(source));
+  const hasGranularSpecSignal = /광고\s*사양|이미지\s*광고\s*사양|동영상\s*광고\s*사양|슬라이드\s*광고\s*사양|스토리\s*광고\s*사양|릴스\s*광고\s*사양|소재\s*(사양|규격)|기술\s*요구\s*사항|디자인\s*추천\s*사항|텍스트\s*추천\s*사항|파일\s*(크기|형식)|지원\s*형식|화면\s*비율|이미지\s*비율|동영상\s*비율|종횡비|최소\s*(너비|높이)|최대\s*파일|해상도/.test(text);
+  if (!hasGranularSpecSignal) return false;
+
+  const titleLooksLikeSinglePlacementSpec = /광고\s*사양|이미지\s*광고\s*사양|동영상\s*광고\s*사양|슬라이드\s*광고\s*사양|스토리\s*광고\s*사양|릴스\s*광고\s*사양/.test(titleText);
+  const hasTrueOverviewSignal = /광고\s*(상품|종류|유형|구조)|상품\s*구조|캠페인\s*(목표|유형|목적)|광고\s*관리자\s*목표|마케팅\s*목표|목적별|인지도[\s\S]{0,80}트래픽[\s\S]{0,80}참여[\s\S]{0,80}잠재\s*고객[\s\S]{0,80}앱\s*홍보[\s\S]{0,80}판매|검색광고[\s\S]{0,120}쇼핑검색|사이트검색광고[\s\S]{0,120}쇼핑검색광고|비즈보드[\s\S]{0,120}디스플레이|상품\s*가이드|상품가이드|상품\s*db|db\s*url/.test(text);
+  if (titleLooksLikeSinglePlacementSpec && !hasTrueOverviewSignal) return true;
+
+  const hasStrongOverviewSignal = hasTrueOverviewSignal || /advantage\+|어드밴티지|카탈로그|catalog/.test(text);
+  return !hasStrongOverviewSignal;
 }
 
 function hasProductStructureGraphSourceSignal(source: ReturnType<typeof buildVerifiedSources>[number]) {
   const text = getProductStructureVisibleSourceText(source);
-  return /캠페인\s*(목표|유형)|광고\s*(형식|포맷|소재)|노출\s*(위치|지면)|게재\s*위치|검색\s*캠페인|디스플레이\s*캠페인|반응형\s*디스플레이|쇼핑\s*광고|앱\s*(캠페인|인스톨|설치|홍보|이벤트)|리드\s*양식|비즈보드|상품\s*db|db\s*url|쇼핑검색|쇼핑블록|상품가이드|상품\s*가이드|캠페인\s*목적|광고\s*관리자\s*목표|campaign|objective|ad\s*format|placement|catalog|app\s*(install|promotion)/.test(text);
+  return /캠페인\s*(목표|유형|목적)|광고\s*(상품|종류|유형|구조)|상품\s*구조|광고\s*관리자\s*목표|마케팅\s*목표|검색\s*캠페인|디스플레이\s*캠페인|반응형\s*디스플레이|쇼핑\s*광고|앱\s*(캠페인|인스톨|설치|홍보|이벤트)|리드\s*양식|비즈보드|상품\s*db|db\s*url|쇼핑검색|쇼핑블록|사이트검색광고|쇼핑검색광고|브랜드검색|파워링크|상품가이드|상품\s*가이드|campaign\s*objective|objectives?|catalog|app\s*(install|promotion)/.test(text);
 }
 
 function isLowValueProductStructureGraphSource(source: ReturnType<typeof buildVerifiedSources>[number]) {
   if (!isGraphVerifiedSource(source)) return false;
   const text = getProductStructureVisibleSourceText(source);
+  if (sourceLooksLikeGranularCreativeSpecOnly(source) && /광고\s*사양|기술\s*요구\s*사항|파일\s*(크기|형식)|화면\s*비율/.test(text)) return true;
   if (/데이터\s*분류|개인정보\s*보호/.test(text)) return true;
   if (/오프라인\s*전환|향상된\s*전환|전환\s*(api|최적화|측정|추적|가져오기)|conversion\s*api|conversions?\s*api|enhanced\s*conversions|offline\s*conversion|capi/.test(text)) return true;
   if (/라이브\s*관리|라이브커머스|쇼핑\s*라이브|shopping\s*live/.test(text)) return true;
@@ -1381,7 +4358,7 @@ function scoreProductStructureGraphSource(source: ReturnType<typeof buildVerifie
   if (isOfficialGuideGraphSource(source)) score += 0.65;
   if (sourceMatchesVendor(source, targetVendor)) score += 0.3;
   if (hasProductStructureGraphSourceSignal(source)) score += 1.05;
-  if (/캠페인\s*(목표|유형)|광고\s*(형식|포맷|소재)|노출\s*(위치|지면)|게재\s*위치|검색\s*캠페인|디스플레이\s*캠페인|반응형\s*디스플레이|쇼핑\s*광고|앱\s*(캠페인|인스톨|설치|홍보|이벤트)|리드\s*양식|비즈보드|상품\s*db|db\s*url|상품가이드|상품\s*가이드|campaign|objective|ad\s*format|placement/.test(text)) {
+  if (/캠페인\s*(목표|유형|목적)|광고\s*(상품|종류|유형|구조)|상품\s*구조|광고\s*관리자\s*목표|마케팅\s*목표|검색\s*캠페인|디스플레이\s*캠페인|반응형\s*디스플레이|쇼핑\s*광고|앱\s*(캠페인|인스톨|설치|홍보|이벤트)|리드\s*양식|비즈보드|상품\s*db|db\s*url|상품가이드|상품\s*가이드|campaign\s*objective|objectives?|catalog/.test(text)) {
     score += 0.45;
   }
   if (isLowValueProductStructureGraphSource(source)) score -= 1.4;
@@ -1406,14 +4383,14 @@ const PRODUCT_STRUCTURE_SELECTION_TERMS = [
 
 function sourceMatchesVendor(source: ReturnType<typeof buildVerifiedSources>[number], vendor?: VendorIntent) {
   if (!vendor) return true;
-  if (explicitGraphSourceMatchesVendor(source, vendor)) return true;
   if (hasExplicitOtherVendorSignal(source, vendor)) return false;
+  if (explicitGraphSourceMatchesVendor(source, vendor)) return true;
   if (source.sourceVendor === vendor || Boolean(source.sourceVendors?.includes(vendor))) return true;
 
   const text = getSourceText(source);
   const vendorTerms: Record<VendorIntent, RegExp> = {
     META: /meta|facebook|페이스북|instagram|인스타그램|릴스|reels|advantage\+|어드밴티지|메타\s*픽셀/,
-    KAKAO: /kakao|카카오|카카오톡|톡채널|비즈보드|모먼트|상품\s*가이드|상품가이드/,
+    KAKAO: /kakao|카카오|카카오톡|톡채널|비즈보드|모먼트|카카오\s*디스플레이|카카오모먼트/,
     NAVER: /naver|네이버|검색광고|쇼핑검색|파워링크|브랜드검색|쇼핑블록|쇼핑파트너센터|상품\s*db|db\s*url|가격비교|사이트검색광고|네이버\s*da|네이버da|홈피드\s*da|홈피드|스마트채널|타임보드|롤링보드|성과형\s*디스플레이|디지털\s*옥외광고/,
     GOOGLE: /google|구글|youtube|유튜브|gdn|google ads|구글\s*애즈|구글\s*광고/,
   };
@@ -1442,7 +4419,25 @@ function explicitGraphSourceMatchesVendor(source: ReturnType<typeof buildVerifie
 
 function hasExplicitOtherVendorSignal(source: ReturnType<typeof buildVerifiedSources>[number], targetVendor: VendorIntent) {
   const sourceLike = source as any;
-  const primaryIdentityText = `${sourceLike.originalTitle || ''} ${sourceLike.documentTitle || ''} ${sourceLike.documentUrl || ''} ${sourceLike.url || ''} ${sourceLike.documentId || ''}`.toLowerCase();
+  const metadata = sourceLike.metadata || {};
+  const primaryIdentityText = [
+    source.title,
+    source.originalTitle,
+    sourceLike.documentTitle,
+    sourceLike.originalTitle,
+    source.url,
+    sourceLike.documentUrl,
+    sourceLike.url,
+    sourceLike.documentId,
+    metadata.title,
+    metadata.document_title,
+    metadata.source_title,
+    metadata.canonical_title,
+    metadata.source,
+    metadata.source_url,
+    metadata.document_url,
+    metadata.url,
+  ].filter(Boolean).join(' ').toLowerCase();
   const text = primaryIdentityText.trim() || getSourceText(source);
   const vendorTerms: Record<VendorIntent, RegExp> = {
     META: /meta|facebook|페이스북|instagram|인스타그램|릴스|reels/,
@@ -1458,7 +4453,7 @@ function hasExplicitOtherVendorSignal(source: ReturnType<typeof buildVerifiedSou
   return hasOther && !hasTarget;
 }
 
-function buildBroadProductStructureQueryTerms(intent?: QueryIntent) {
+function buildBroadProductStructureQueryTerms(intent?: QueryIntent, message = '') {
   const terms = new Set<string>();
   const add = (...items: Array<string | undefined>) => {
     for (const item of items) {
@@ -1469,16 +4464,21 @@ function buildBroadProductStructureQueryTerms(intent?: QueryIntent) {
 
   add(...(intent?.keywords || []), ...(intent?.strictProductTerms || []));
 
+  const focus = intent ? buildRequestedProductFocus(message, intent) : null;
+  if (focus) {
+    add(focus.label, ...focus.aliases, ...focus.queryTerms);
+  }
+
   for (const vendor of intent?.vendors || []) {
     switch (vendor) {
       case 'META':
-        add('Meta', 'Facebook', 'Instagram', '캠페인 목표', '광고 형식', '노출 위치', 'Advantage+', '카탈로그', '앱 홍보', '리드 양식');
+        add('Meta', 'Facebook', 'Instagram', '캠페인 목표', '광고 관리자 목표', '마케팅 목표', 'Advantage+', '카탈로그', '컬렉션 광고', '앱 홍보', '리드 양식');
         break;
       case 'GOOGLE':
         add('Google Ads', '검색 캠페인', '디스플레이 캠페인', '쇼핑 광고', '앱 캠페인', '리드 양식', '확장 소재');
         break;
       case 'NAVER':
-        add('네이버', '사이트검색광고', '쇼핑검색광고', '쇼핑블록', '브랜드검색', '파워링크', '상품 DB', 'DB URL');
+        add('네이버', '사이트검색광고', '쇼핑검색광고', '쇼핑블록', '브랜드검색', '파워링크', '상품 DB', 'DB URL', 'DA 상품', '디스플레이 광고', '동영상 광고');
         break;
       case 'KAKAO':
         add('카카오', '비즈보드', '디스플레이 광고', '카카오모먼트', '상품가이드', '제작 가이드', '심사 가이드');
@@ -1490,15 +4490,377 @@ function buildBroadProductStructureQueryTerms(intent?: QueryIntent) {
 
   add(
     '광고 상품', '광고 종류', '광고 유형', '상품 구조', '캠페인 유형',
-    '캠페인 목표', '광고 형식', '노출 지면', '노출 위치', '운영 조건',
+    '캠페인 목표', '광고 관리자 목표', '마케팅 목표',
   );
 
   return Array.from(terms);
 }
 
+type ProductStructureCoverageTerm = {
+  label: string;
+  pattern: RegExp;
+  aliases: string[];
+};
+
+type RequestedProductFocus = ProductStructureCoverageTerm & {
+  family: ProductAnswerFamily;
+  isSpecificFamilyQuestion: boolean;
+  queryTerms: string[];
+};
+
+function isSpecificRequestedProductFamily(family: ProductAnswerFamily) {
+  return ![
+    'unknown',
+    'meta_overview',
+    'google_overview',
+    'naver_overview',
+    'kakao_overview',
+  ].includes(family);
+}
+
+function getRequestedProductFocusConfig(family: ProductAnswerFamily): Omit<RequestedProductFocus, 'family' | 'isSpecificFamilyQuestion'> | null {
+  switch (family) {
+    case 'meta_app_install':
+      return {
+        label: 'Meta 앱 인스톨/앱 홍보',
+        pattern: /앱\s*(인스톨|설치|홍보|캠페인|사전\s*등록|이벤트|등록)|app\s*(install|promotion|campaign)|sdk|mmp|추적|트래킹|tracking/i,
+        aliases: ['앱 인스톨', '앱 설치', '앱 홍보', '앱 캠페인', 'App Install', 'App Promotion', 'SDK', 'MMP', '트래킹'],
+        queryTerms: ['앱 인스톨', '앱 홍보', '앱 캠페인', 'App Install', 'App Promotion', 'SDK', 'MMP', '트래킹', '앱 등록'],
+      };
+    case 'meta_lead':
+      return {
+        label: 'Meta 리드 양식',
+        pattern: /리드\s*양식|잠재\s*고객|lead\s*(form|ads?|generation)|비즈니스\s*폼|비즈니스폼/i,
+        aliases: ['리드 양식', '잠재 고객', 'Lead Form', 'Lead Ads', '비즈니스 폼'],
+        queryTerms: ['리드 양식', '잠재 고객', 'Lead Form', 'Lead Ads', '비즈니스 폼'],
+      };
+    case 'meta_catalog':
+      return {
+        label: 'Meta 카탈로그/컬렉션',
+        pattern: /카탈로그|catalog|컬렉션|collection|advantage\+|어드밴티지/i,
+        aliases: ['카탈로그', '컬렉션 광고', 'Catalog', 'Collection', 'Advantage+', '어드밴티지'],
+        queryTerms: ['카탈로그', '컬렉션 광고', 'Catalog', 'Collection', 'Advantage+', '어드밴티지'],
+      };
+    case 'google_lead':
+      return {
+        label: 'Google 리드 양식',
+        pattern: /리드\s*양식|잠재\s*고객|lead\s*(form|ads?|generation)|양식\s*확장|lead\s*asset/i,
+        aliases: ['리드 양식', '잠재 고객', 'Lead Form', 'Lead Asset', '양식 확장'],
+        queryTerms: ['리드 양식', 'Lead Form', 'Lead Asset', '잠재 고객', '양식 확장'],
+      };
+    case 'google_app':
+      return {
+        label: 'Google 앱 캠페인',
+        pattern: /앱\s*(캠페인|설치|인스톨|홍보|사전\s*등록)|app\s*(campaign|install|promotion)|사전\s*등록/i,
+        aliases: ['앱 캠페인', '앱 설치', '앱 인스톨', 'App Campaign', 'App Install', '사전 등록'],
+        queryTerms: ['앱 캠페인', '앱 설치', 'App Campaign', 'App Install', '사전 등록'],
+      };
+    case 'naver_da':
+      return {
+        label: '네이버 DA/디스플레이 광고',
+        pattern: /(^|[\s/])da($|[\s/]|도|상품|광고)|네이버\s*da|네이버da|da\s*상품|da상품|디스플레이\s*광고|성과형\s*디스플레이|홈피드|스마트채널|타임보드|롤링보드|배너\s*광고/i,
+        aliases: ['네이버 DA', 'DA 상품', '디스플레이 광고', '성과형 디스플레이', '홈피드', '스마트채널', '타임보드', '롤링보드', '배너 광고'],
+        queryTerms: ['네이버 DA', 'DA 상품', '디스플레이 광고', '성과형 디스플레이', '홈피드', '스마트채널', '타임보드', '롤링보드', '배너 광고'],
+      };
+    case 'naver_video':
+      return {
+        label: '네이버 동영상 광고',
+        pattern: /동영상\s*광고|비디오\s*광고|동영상\s*소재|동영상\s*조회|숏폼|쇼츠|아웃스트림|video/i,
+        aliases: ['동영상 광고', '비디오 광고', '동영상 소재', '동영상 조회', '숏폼', '아웃스트림'],
+        queryTerms: ['동영상 광고', '비디오 광고', '동영상 소재', '동영상 조회', '숏폼', '아웃스트림'],
+      };
+    case 'naver_shopping':
+      return {
+        label: '네이버 쇼핑검색/상품 DB',
+        pattern: /쇼핑검색광고|쇼핑검색|쇼핑몰\s*상품형|쇼핑블록|상품\s*db|상품db|db\s*url|dburl|ep|상품등록|상품\s*등록|가격비교|쇼핑파트너센터/i,
+        aliases: ['쇼핑검색광고', '쇼핑검색', '쇼핑몰 상품형', '쇼핑블록', '상품 DB', 'DB URL', 'EP', '상품등록', '가격비교', '쇼핑파트너센터'],
+        queryTerms: ['쇼핑검색광고', '쇼핑검색', '쇼핑몰 상품형', '쇼핑블록', '상품 DB', 'DB URL', 'EP', '상품등록', '가격비교', '쇼핑파트너센터'],
+      };
+    case 'kakao_bizboard':
+      return {
+        label: '카카오 비즈보드/디스플레이',
+        pattern: /비즈보드|bizboard|톡보드|디스플레이\s*광고|카카오모먼트|display/i,
+        aliases: ['비즈보드', '톡보드', 'Bizboard', '디스플레이 광고', '카카오모먼트'],
+        queryTerms: ['비즈보드', '톡보드', 'Bizboard', '디스플레이 광고', '카카오모먼트'],
+      };
+    case 'kakao_creative':
+      return {
+        label: '카카오 상품/제작 가이드',
+        pattern: /상품\s*가이드|상품가이드|제작\s*가이드|제작가이드|소재\s*가이드|소재|이미지\s*비율|텍스트\s*영역|심사|검수/i,
+        aliases: ['상품가이드', '제작 가이드', '소재 가이드', '이미지 비율', '텍스트 영역', '심사', '검수'],
+        queryTerms: ['상품가이드', '제작 가이드', '소재 가이드', '이미지 비율', '텍스트 영역', '심사', '검수'],
+      };
+    default:
+      return null;
+  }
+}
+
+function buildRequestedProductFocus(message: string, intent?: QueryIntent): RequestedProductFocus | null {
+  if (!intent || intent.vendors.length !== 1 || !intent.topics.includes('product_structure')) return null;
+
+  const family = detectProductAnswerFamily(message, intent);
+  const config = getRequestedProductFocusConfig(family);
+  if (!config) return null;
+
+  const normalizedQuestion = normalizeProductIntentText([
+    message,
+    ...(intent.keywords || []),
+    ...(intent.strictProductTerms || []),
+    ...(intent.strictContextTerms || []),
+  ].join(' '));
+  const compactQuestion = normalizedQuestion.replace(/\s+/g, '');
+  const hasFocusSignal = config.pattern.test(normalizedQuestion)
+    || config.pattern.test(compactQuestion)
+    || config.aliases.some(alias => textContainsEvidenceTerm(normalizedQuestion, alias));
+
+  return {
+    ...config,
+    family,
+    isSpecificFamilyQuestion: isSpecificRequestedProductFamily(family)
+      && !isExplicitWholeProductCatalogQuestion(message)
+      && (
+        intent.isSpecificProductGuidance
+        || hasNamedSpecificProductQuestion(message)
+        || hasSpecificProductActionOrPolicySignalQuestion(message)
+        || hasFocusSignal
+      ),
+  };
+}
+
+function sourceMatchesRequestedProductFocus(
+  source: ReturnType<typeof buildVerifiedSources>[number],
+  focus: RequestedProductFocus | null,
+) {
+  if (!focus) return true;
+  const text = getSpecificProductEvidenceText(source);
+  const compactText = text.replace(/\s+/g, '');
+  return focus.pattern.test(text)
+    || focus.pattern.test(compactText)
+    || focus.aliases.some(alias => textContainsEvidenceTerm(text, alias));
+}
+
+function scoreRequestedProductFocus(
+  source: ReturnType<typeof buildVerifiedSources>[number],
+  focus: RequestedProductFocus | null,
+) {
+  if (!focus) return 0;
+
+  const text = getSpecificProductEvidenceText(source);
+  const compactText = text.replace(/\s+/g, '');
+  let score = 0;
+
+  if (focus.pattern.test(text) || focus.pattern.test(compactText)) score += 1.45;
+
+  const aliasHits = focus.aliases.filter(alias => textContainsEvidenceTerm(text, alias)).length;
+  score += Math.min(2.2, aliasHits * 0.42);
+
+  const queryHits = focus.queryTerms.filter(term => textContainsEvidenceTerm(text, term)).length;
+  score += Math.min(1.8, queryHits * 0.32);
+
+  if (focus.isSpecificFamilyQuestion && score === 0) score -= 3.4;
+  return score;
+}
+
+function buildRequestedProductStructureCoverageTerms(intent?: QueryIntent, message = ''): ProductStructureCoverageTerm[] {
+  if (!intent) return [];
+
+  const queryText = normalizeProductIntentText([
+    message,
+    ...(intent.keywords || []),
+    ...(intent.strictProductTerms || []),
+    ...(intent.strictContextTerms || []),
+  ].join(' '));
+  const compactQueryText = queryText.replace(/\s+/g, '');
+  const vendors = new Set(intent.vendors || []);
+  const candidates: ProductStructureCoverageTerm[] = [];
+  const add = (vendor: VendorIntent, label: string, pattern: RegExp, aliases: string[]) => {
+    if (vendors.size > 0 && !vendors.has(vendor)) return;
+    if (pattern.test(queryText) || pattern.test(compactQueryText)) {
+      candidates.push({ label, pattern, aliases });
+    }
+  };
+
+  add('META', '캠페인 목표', /캠페인\s*목표|광고\s*관리자\s*목표|마케팅\s*목표|인지도|트래픽|참여|잠재\s*고객|판매|objective/i, ['캠페인 목표', '광고 관리자 목표', '인지도', '트래픽', '참여', '잠재 고객', '판매']);
+  add('META', '앱 홍보/앱 인스톨', /앱\s*(홍보|인스톨|설치|캠페인|이벤트)|앱인스톨|앱설치|app\s*(install|promotion|campaign)/i, ['앱 홍보', '앱 인스톨', '앱 캠페인', 'app install', 'app promotion']);
+  add('META', '카탈로그/컬렉션', /카탈로그|catalog|컬렉션|collection|advantage\+|어드밴티지/i, ['카탈로그', '컬렉션 광고', 'Advantage+', '어드밴티지']);
+  add('META', '리드 양식', /리드\s*양식|잠재\s*고객|lead\s*form|lead\s*generation|비즈니스\s*폼/i, ['리드 양식', '잠재 고객', 'lead form']);
+  add('META', '광고 소재 형식', /이미지|동영상|비디오|카루셀|슬라이드|소재\s*형식|광고\s*형식/i, ['이미지 광고', '동영상 광고', '카루셀 광고', '광고 형식']);
+
+  add('NAVER', '사이트검색광고', /사이트검색광고|사이트검색|파워링크/i, ['사이트검색광고', '사이트검색', '파워링크']);
+  add('NAVER', '쇼핑검색광고', /쇼핑검색광고|쇼핑검색|쇼핑몰\s*상품형|상품형/i, ['쇼핑검색광고', '쇼핑검색', '쇼핑몰 상품형']);
+  add('NAVER', '쇼핑블록/쇼핑 지면', /쇼핑블록|쇼핑\s*블록|주요\s*쇼핑\s*지면|pc\s*쇼핑블록|mo\s*쇼핑블록/i, ['쇼핑블록', '쇼핑 지면', 'PC 쇼핑블록', 'MO 쇼핑블록']);
+  add('NAVER', '브랜드검색', /브랜드검색/i, ['브랜드검색']);
+  add('NAVER', '네이버 DA', /(^|[\s/])da($|[\s/]|도|상품|광고)|네이버\s*da|네이버da|성과형\s*디스플레이|홈피드|스마트채널|타임보드|롤링보드|배너\s*광고/i, ['네이버 DA', '성과형 디스플레이', '홈피드', '스마트채널', '타임보드']);
+  add('NAVER', '동영상 광고', /동영상\s*광고|비디오\s*광고|동영상\s*소재|동영상\s*조회|숏폼|쇼츠|아웃스트림|video/i, ['동영상 광고', '비디오 광고', '동영상 소재', '동영상 조회', '숏폼', '아웃스트림']);
+  add('NAVER', '상품 DB/DB URL', /상품\s*db|상품db|db\s*url|dburl|ep|쇼핑파트너센터|상품정보\s*수신|상품\s*등록|상품등록/i, ['상품 DB', 'DB URL', 'EP', '쇼핑파트너센터', '상품정보 수신', '상품등록']);
+
+  add('GOOGLE', '검색 캠페인', /검색\s*캠페인|검색\s*광고|search\s*campaign/i, ['검색 캠페인', '검색 광고']);
+  add('GOOGLE', '디스플레이 캠페인', /디스플레이\s*캠페인|반응형\s*디스플레이|display\s*campaign|gdn/i, ['디스플레이 캠페인', '반응형 디스플레이', 'GDN']);
+  add('GOOGLE', '쇼핑 광고', /쇼핑\s*광고|쇼핑\s*캠페인|shopping\s*(ads|campaigns?)/i, ['쇼핑 광고', '쇼핑 캠페인']);
+  add('GOOGLE', '앱 캠페인', /앱\s*캠페인|앱\s*설치|앱\s*홍보|app\s*campaign|app\s*install/i, ['앱 캠페인', '앱 설치', 'app campaign']);
+  add('GOOGLE', '리드 양식', /리드\s*양식|lead\s*form/i, ['리드 양식', 'lead form']);
+  add('GOOGLE', '이미지 확장 소재', /이미지\s*확장|이미지\s*소재|확장\s*소재/i, ['이미지 확장', '이미지 소재', '확장 소재']);
+
+  add('KAKAO', '비즈보드/톡보드', /비즈보드|톡보드|biz\s*board|talkboard/i, ['비즈보드', '톡보드']);
+  add('KAKAO', '디스플레이 광고', /디스플레이\s*광고|카카오모먼트|display/i, ['디스플레이 광고', '카카오모먼트']);
+  add('KAKAO', '상품가이드', /상품\s*가이드|상품가이드/i, ['상품가이드', '상품 가이드']);
+  add('KAKAO', '제작 가이드', /제작\s*가이드|제작가이드|소재\s*가이드|소재|이미지\s*비율|텍스트\s*영역/i, ['제작 가이드', '소재 가이드', '이미지 비율', '텍스트 영역']);
+
+  const seen = new Set<string>();
+  return candidates.filter((term) => {
+    if (seen.has(term.label)) return false;
+    seen.add(term.label);
+    return true;
+  }).slice(0, 6);
+}
+
+function getProductStructureCoverageText(source: ReturnType<typeof buildVerifiedSources>[number]) {
+  return normalizeEvidenceText([
+    getProductStructureVisibleSourceText(source),
+    getSourceText(source),
+  ].join(' '));
+}
+
+function sourceCoversRequestedProductStructureTerm(
+  source: ReturnType<typeof buildVerifiedSources>[number],
+  term: ProductStructureCoverageTerm,
+) {
+  const text = getProductStructureCoverageText(source);
+  const compactText = text.replace(/\s+/g, '');
+  return term.pattern.test(text)
+    || term.pattern.test(compactText)
+    || term.aliases.some(alias => textContainsEvidenceTerm(text, alias));
+}
+
+function ensureProductStructureRequestedTermCoverage(
+  selected: ReturnType<typeof buildVerifiedSources>[number][],
+  labelledSources: Array<ReturnType<typeof buildVerifiedSources>[number] & { label: string }>,
+  requestedTerms: ProductStructureCoverageTerm[],
+  targetVendor: VendorIntent | undefined,
+  limit: number,
+) {
+  if (requestedTerms.length === 0) return selected;
+
+  const next = [...selected];
+  const selectedKeys = new Set(next.map(source => getProductStructureSourceKey(source)));
+
+  for (const term of requestedTerms) {
+    if (next.some(source => sourceCoversRequestedProductStructureTerm(source, term))) continue;
+
+    const best = labelledSources
+      .map((source, index) => ({ source, index }))
+      .filter(({ source }) => !selectedKeys.has(getProductStructureSourceKey(source)))
+      .filter(({ source }) => isUsableBroadProductStructureSource(source, targetVendor))
+      .filter(({ source }) => sourceCoversRequestedProductStructureTerm(source, term))
+      .sort((a, b) => (
+        scoreBroadProductStructureSource(b.source, targetVendor, term.aliases, b.index)
+        - scoreBroadProductStructureSource(a.source, targetVendor, term.aliases, a.index)
+      ))[0]?.source;
+
+    if (!best) continue;
+
+    const bestKey = getProductStructureSourceKey(best);
+    if (next.length < limit) {
+      next.push(best);
+      selectedKeys.add(bestKey);
+      continue;
+    }
+
+    const replacement = next
+      .map((source, index) => ({ source, index }))
+      .filter(({ source }) => !isGraphVerifiedSource(source))
+      .filter(({ source }) => !requestedTerms.some(requestedTerm => sourceCoversRequestedProductStructureTerm(source, requestedTerm)))
+      .sort((a, b) => (
+        scoreBroadProductStructureSource(a.source, targetVendor, [], a.index)
+        - scoreBroadProductStructureSource(b.source, targetVendor, [], b.index)
+      ))[0];
+
+    if (!replacement) continue;
+
+    selectedKeys.delete(getProductStructureSourceKey(replacement.source));
+    next[replacement.index] = best;
+    selectedKeys.add(bestKey);
+  }
+
+  return next;
+}
+
+function ensureProductStructureRequestedFocusCoverage(
+  selected: ReturnType<typeof buildVerifiedSources>[number][],
+  labelledSources: Array<ReturnType<typeof buildVerifiedSources>[number] & { label: string }>,
+  focus: RequestedProductFocus | null,
+  targetVendor: VendorIntent | undefined,
+  limit: number,
+) {
+  if (!focus?.isSpecificFamilyQuestion) return selected;
+  if (selected.some(source => sourceMatchesRequestedProductFocus(source, focus))) return selected;
+
+  const selectedKeys = new Set(selected.map(source => getProductStructureSourceKey(source)));
+  const bestFocusSource = labelledSources
+    .map((source, index) => ({ source, index }))
+    .filter(({ source }) => !selectedKeys.has(getProductStructureSourceKey(source)))
+    .filter(({ source }) => isUsableBroadProductStructureSource(source, targetVendor))
+    .filter(({ source }) => sourceMatchesRequestedProductFocus(source, focus))
+    .sort((a, b) => (
+      scoreBroadProductStructureSource(b.source, targetVendor, focus.queryTerms, b.index)
+      + scoreRequestedProductFocus(b.source, focus)
+      - scoreBroadProductStructureSource(a.source, targetVendor, focus.queryTerms, a.index)
+      - scoreRequestedProductFocus(a.source, focus)
+    ))[0]?.source;
+
+  if (!bestFocusSource) return [];
+
+  if (selected.length < limit) {
+    return [...selected, bestFocusSource];
+  }
+
+  const replacement = selected
+    .map((source, index) => ({ source, index }))
+    .filter(({ source }) => !isGraphVerifiedSource(source))
+    .sort((a, b) => (
+      scoreRequestedProductFocus(a.source, focus)
+      - scoreRequestedProductFocus(b.source, focus)
+      || scoreBroadProductStructureSource(a.source, targetVendor, [], a.index)
+      - scoreBroadProductStructureSource(b.source, targetVendor, [], b.index)
+    ))[0];
+
+  if (!replacement) return [bestFocusSource, ...selected.slice(0, Math.max(0, limit - 1))];
+
+  const next = [...selected];
+  next[replacement.index] = bestFocusSource;
+  return next;
+}
+
 function hasBroadProductStructureAnswerSignal(source: ReturnType<typeof buildVerifiedSources>[number]) {
-  const text = getSourceText(source);
-  return /캠페인\s*(목표|유형)|광고\s*(상품|종류|유형|형식|포맷)|노출\s*(위치|지면)|게재\s*위치|검색\s*캠페인|디스플레이\s*캠페인|쇼핑\s*광고|앱\s*(캠페인|인스톨|설치|홍보|이벤트)|리드\s*양식|검색광고|쇼핑검색|파워링크|브랜드검색|쇼핑블록|상품\s*db|db\s*url|비즈보드|카카오모먼트|상품\s*가이드|advantage\+|어드밴티지|카탈로그|catalog|collection|placement|campaign_objective|ad_format/.test(text);
+  const text = normalizeEvidenceText([
+    getProductStructureVisibleSourceText(source),
+    getSourceText(source),
+  ].join(' '));
+  const hasObjectiveMatrix = /인지도[\s\S]{0,140}트래픽[\s\S]{0,140}참여[\s\S]{0,140}잠재\s*고객[\s\S]{0,140}앱\s*홍보[\s\S]{0,140}판매/.test(text);
+  const hasProductTaxonomy = /캠페인\s*(목표|유형|목적)|광고\s*(상품|종류|유형|구조)|상품\s*구조|광고\s*관리자\s*목표|마케팅\s*목표|목적별|목표별|campaign\s*objective|objectives?/.test(text);
+  const hasMetaProductSignal = /advantage\+|어드밴티지|카탈로그|catalog|컬렉션\s*광고|collection\s*ads?|앱\s*(캠페인|인스톨|설치|홍보|이벤트)|app\s*(install|promotion)|리드\s*양식|비즈니스\s*폼/.test(text);
+  const hasGoogleProductSignal = /검색\s*캠페인|디스플레이\s*캠페인|반응형\s*디스플레이|쇼핑\s*광고|앱\s*캠페인|performance\s*max|pmax|demand\s*gen|리드\s*양식/.test(text);
+  const hasNaverProductSignal = /사이트검색광고|쇼핑검색광고|검색광고|쇼핑검색|파워링크|브랜드검색|쇼핑블록|주요\s*쇼핑\s*지면|디지털\s*옥외광고|네이버\s*da|성과형\s*디스플레이|홈피드|스마트채널|타임보드|롤링보드|상품\s*db|db\s*url|ep\s*\(=\s*db\s*url\)|쇼핑파트너센터|상품정보\s*수신\s*현황|상품관리/.test(text);
+  const hasKakaoProductSignal = /비즈보드|카카오모먼트|카카오\s*디스플레이|브랜드\s*이모티콘|상품\s*가이드|상품가이드/.test(text);
+  return hasObjectiveMatrix
+    || hasProductTaxonomy
+    || hasMetaProductSignal
+    || hasGoogleProductSignal
+    || hasNaverProductSignal
+    || hasKakaoProductSignal;
+}
+
+function isUsableBroadProductStructureSource(
+  source: ReturnType<typeof buildVerifiedSources>[number],
+  targetVendor?: VendorIntent,
+) {
+  if (!sourceMatchesVendor(source, targetVendor)) return false;
+  if (targetVendor && hasExplicitOtherVendorSignal(source, targetVendor)) return false;
+  if (isWeakProductStructureDisplaySource(source)) return false;
+  if (sourceLooksLikeGranularCreativeSpecOnly(source)) return false;
+  if (isLowValueProductStructureGraphSource(source)) return false;
+  if (hasBroadProductStructureAnswerSignal(source)) return true;
+  return isOfficialGuideGraphSource(source) && hasProductStructureGraphSourceSignal(source);
 }
 
 function scoreBroadProductStructureSource(
@@ -1507,10 +4869,12 @@ function scoreBroadProductStructureSource(
   queryTerms: string[],
   index: number,
 ) {
-  if (isWeakProductStructureDisplaySource(source)) return Number.NEGATIVE_INFINITY;
-  if (targetVendor && hasExplicitOtherVendorSignal(source, targetVendor)) return Number.NEGATIVE_INFINITY;
+  if (!isUsableBroadProductStructureSource(source, targetVendor)) return Number.NEGATIVE_INFINITY;
 
-  const text = getSourceText(source);
+  const text = normalizeEvidenceText([
+    getProductStructureVisibleSourceText(source),
+    getSourceText(source),
+  ].join(' '));
   let score = Number(source.hybridScore || source.score || source.similarity || 0);
   score += Math.max(0, 0.45 - index * 0.025);
 
@@ -1527,43 +4891,166 @@ function scoreBroadProductStructureSource(
     && !/광고\s*(상품|종류|유형)|캠페인\s*(목표|유형)|노출\s*(위치|지면)|게재\s*위치|상품\s*db|db\s*url/.test(text)) {
     score -= 0.6;
   }
+  if (sourceLooksLikeGranularCreativeSpecOnly(source)) score -= 4.2;
 
   return score;
 }
 
-function selectProductStructureResponseSources(sources: ReturnType<typeof buildVerifiedSources>, intent?: QueryIntent) {
+function selectProductStructureResponseSources(sources: ReturnType<typeof buildVerifiedSources>, intent?: QueryIntent, message = '') {
   const targetVendor = intent?.vendors.length === 1 ? intent.vendors[0] : undefined;
-  const queryTerms = buildBroadProductStructureQueryTerms(intent);
+  const requestedFocus = intent ? buildRequestedProductFocus(message, intent) : null;
+  const queryTerms = buildBroadProductStructureQueryTerms(intent, message);
+  const requestedCoverageTerms = buildRequestedProductStructureCoverageTerms(intent, message);
+  const sourceLimit = Math.min(7, Math.max(5, requestedCoverageTerms.length + 2));
   const labelledSources = sources.map((source, index) => ({
     ...source,
     label: `S${index + 1}`,
-  })).filter(source => sourceMatchesVendor(source, targetVendor));
-  const selected = labelledSources
+  }))
+    .filter(source => sourceMatchesVendor(source, targetVendor))
+    .filter(source => !targetVendor || !sourceHasCrossVendorUrl(source, [targetVendor]))
+    .filter(source => !sourceHasExtractionNoise(source));
+  const usableLabelledSources = labelledSources
+    .filter(source => isUsableBroadProductStructureSource(source, targetVendor));
+  const selected = usableLabelledSources
     .map((source, index) => ({
       source,
-      score: scoreBroadProductStructureSource(source, targetVendor, queryTerms, index),
+      score: scoreBroadProductStructureSource(source, targetVendor, queryTerms, index)
+        + scoreRequestedProductFocus(source, requestedFocus),
       index,
     }))
     .filter(item => Number.isFinite(item.score))
     .sort((a, b) => b.score - a.score || a.index - b.index)
     .map(item => item.source)
-    .slice(0, 5);
-  const selectedKeys = new Set<string>();
-  selected.forEach(source => selectedKeys.add(getProductStructureSourceKey(source)));
+    .reduce((selected, source) => {
+      if (selected.length >= sourceLimit) return selected;
+      const sourceGroup = getBroadProductStructureEvidenceGroup(source, targetVendor);
+      const groupCount = selected.filter(item => (
+        getBroadProductStructureEvidenceGroup(item, targetVendor) === sourceGroup
+      )).length;
+      const perGroupLimit = sourceGroup === 'official_graph' ? 1 : 2;
+      if (groupCount >= perGroupLimit) return selected;
+      selected.push(source);
+      return selected;
+    }, [] as ReturnType<typeof buildVerifiedSources>)
+    .slice(0, sourceLimit);
 
   if (selected.length === 0) {
-    return capProductStructureGraphSources(ensureProductStructureGraphSourceCoverage(sources
-      .filter(source => sourceMatchesVendor(source, targetVendor))
-      .filter(source => !isWeakProductStructureDisplaySource(source))
-      .slice(0, 3), labelledSources, selectedKeys, targetVendor), labelledSources, targetVendor, 5);
+    const recoverableBroadSources = labelledSources
+      .map((source, index) => {
+        const text = normalizeEvidenceText([
+          getProductStructureVisibleSourceText(source),
+          getSourceText(source),
+        ].join(' '));
+        const queryHits = queryTerms.filter(term => textContainsEvidenceTerm(text, term)).length;
+        const coverageHits = requestedCoverageTerms.filter(term => sourceCoversRequestedProductStructureTerm(source, term)).length;
+        const focusHit = sourceMatchesRequestedProductFocus(source, requestedFocus);
+        const hasAnswerSignal = hasBroadProductStructureAnswerSignal(source);
+        const isRecoverable = (
+          hasAnswerSignal
+          || queryHits > 0
+          || coverageHits > 0
+          || (requestedFocus?.isSpecificFamilyQuestion && focusHit)
+          || (isOfficialGuideGraphSource(source) && hasProductStructureGraphSourceSignal(source))
+        );
+        if (!isRecoverable) return null;
+        if (isWeakProductStructureDisplaySource(source) && coverageHits === 0 && !hasAnswerSignal) return null;
+        if (isLowValueProductStructureGraphSource(source) && coverageHits === 0 && !queryHits) return null;
+        if (requestedFocus?.isSpecificFamilyQuestion && !focusHit) return null;
+
+        const score = Number(source.hybridScore || source.score || source.similarity || 0)
+          + (hasAnswerSignal ? 1.2 : 0)
+          + queryHits * 0.35
+          + coverageHits * 0.6
+          + scoreRequestedProductFocus(source, requestedFocus)
+          + (isOfficialGuideGraphSource(source) ? 0.45 : 0)
+          + Math.max(0, 0.25 - index * 0.01);
+        return { source, score, index };
+      })
+      .filter((item): item is { source: ReturnType<typeof buildVerifiedSources>[number] & { label: string }; score: number; index: number } => item !== null)
+      .sort((a, b) => b.score - a.score || a.index - b.index)
+      .map(item => item.source)
+      .slice(0, sourceLimit);
+
+    if (recoverableBroadSources.length > 0) {
+      return recoverableBroadSources;
+    }
+
+    return [];
   }
 
-  return capProductStructureGraphSources(
-    ensureProductStructureGraphSourceCoverage(selected, labelledSources, selectedKeys, targetVendor),
-    labelledSources,
+  const selectedWithRequestedFocusCoverage = ensureProductStructureRequestedFocusCoverage(
+    selected,
+    usableLabelledSources,
+    requestedFocus,
     targetVendor,
-    5
+    sourceLimit
   );
+  const selectedWithRequestedCoverage = ensureProductStructureRequestedTermCoverage(
+    selectedWithRequestedFocusCoverage,
+    usableLabelledSources,
+    requestedCoverageTerms,
+    targetVendor,
+    sourceLimit
+  );
+  const selectedKeys = new Set<string>();
+  selectedWithRequestedCoverage.forEach(source => selectedKeys.add(getProductStructureSourceKey(source)));
+
+  return capProductStructureGraphSources(
+    ensureProductStructureGraphSourceCoverage(selectedWithRequestedCoverage, usableLabelledSources, selectedKeys, targetVendor),
+    usableLabelledSources,
+    targetVendor,
+    sourceLimit
+  );
+}
+
+function getBroadProductStructureEvidenceGroup(
+  source: ReturnType<typeof buildVerifiedSources>[number],
+  targetVendor?: VendorIntent,
+) {
+  if (isOfficialGuideGraphSource(source)) return 'official_graph';
+
+  const text = normalizeEvidenceText([
+    getProductStructureVisibleSourceText(source),
+    getSourceText(source),
+  ].join(' '));
+
+  if (/캠페인\s*(목표|유형|목적)|광고\s*관리자\s*목표|마케팅\s*목표|인지도|트래픽|참여|잠재\s*고객|앱\s*홍보|판매|objective|objectives?/.test(text)) {
+    return 'campaign_objective';
+  }
+
+  if (/카탈로그|catalog|advantage\+|어드밴티지|컬렉션\s*광고|상품\s*db|상품db|db\s*url|dburl|\bep\b|쇼핑파트너센터|상품정보\s*수신|상품\s*등록|상품등록|상품관리|가격비교|커머스|commerce/.test(text)) {
+    return 'commerce_catalog';
+  }
+
+  if (/앱\s*(인스톨|설치|홍보|캠페인|이벤트|사전\s*등록)|app\s*(install|promotion|campaign)|sdk|mmp|추적|트래킹|리드\s*양식|잠재\s*고객|비즈니스\s*폼|lead/.test(text)) {
+    return 'app_lead';
+  }
+
+  if (/이미지|동영상|비디오|슬라이드|카루셀|컬렉션|소재|형식|포맷|사양|규격|비율|사이즈|크기|파일|노출\s*(위치|지면)|게재\s*위치|지면|placement/.test(text)) {
+    return 'format_placement';
+  }
+
+  if (/검색광고|사이트검색광고|쇼핑검색광고|쇼핑검색|쇼핑블록|파워링크|브랜드검색|검색\s*캠페인|디스플레이\s*캠페인|반응형\s*디스플레이|쇼핑\s*광고/.test(text)) {
+    return 'search_display_shopping';
+  }
+
+  if (/정책|심사|검수|검토|제한|금지|승인|등록\s*기준|광고\s*등록\s*기준|반려|업종\s*제한|가능\s*여부/.test(text)) {
+    return 'policy_screening';
+  }
+
+  return targetVendor ? `general_${targetVendor.toLowerCase()}` : 'general';
+}
+
+function buildBroadProductStructureScopeLimitedAnswer(message: string, intent: QueryIntent) {
+  const vendorLabel = intent.vendors.map(vendor => VENDOR_LABELS[vendor] || vendor).join(', ') || '해당 매체';
+  const requestedScope = isProductSelectionQuestion(message) ? '광고 상품 선택 기준' : '광고 상품/유형 구조';
+  return [
+    `${vendorLabel} ${requestedScope}에 대해 질문하셨지만, 현재 선별된 공식 근거 안에서는 이 범위를 직접 설명할 수 있는 출처가 부족합니다.`,
+    '',
+    '노출 위치나 개별 소재 사양만 있는 출처로 전체 광고 상품 구조를 정리하면 잘못된 운영 판단으로 이어질 수 있어 답변을 제한합니다.',
+    '',
+    '상품명, 캠페인 목적, 지면명, 등록 절차처럼 확인하려는 범위를 더 구체적으로 넣어 다시 질문해 주세요. 필요한 경우 담당자 확인 요청으로 공식 가이드 보강을 남길 수 있습니다.',
+  ].join('\n');
 }
 
 function capProductStructureGraphSources(
@@ -1575,9 +5062,7 @@ function capProductStructureGraphSources(
   const head = selected.slice(0, limit);
   const bestGraphSource = [...head, ...labelledSources]
     .filter(source => isOfficialGuideGraphSource(source))
-    .filter(source => sourceMatchesVendor(source, targetVendor))
-    .filter(source => !isWeakProductStructureDisplaySource(source))
-    .filter(source => !isLowValueProductStructureGraphSource(source))
+    .filter(source => isUsableBroadProductStructureSource(source, targetVendor))
     .sort((a, b) => scoreProductStructureGraphSource(b, targetVendor) - scoreProductStructureGraphSource(a, targetVendor))[0];
 
   const bestGraphKey = bestGraphSource ? getProductStructureSourceKey(bestGraphSource) : null;
@@ -1585,6 +5070,7 @@ function capProductStructureGraphSources(
   const selectedKeys = new Set<string>();
 
   for (const source of head) {
+    if (!isUsableBroadProductStructureSource(source, targetVendor)) continue;
     if (isGraphVerifiedSource(source)) {
       if (!bestGraphKey || getProductStructureSourceKey(source) !== bestGraphKey) {
         continue;
@@ -1619,8 +5105,7 @@ function capProductStructureGraphSources(
   for (const source of labelledSources) {
     if (next.length >= limit) break;
     if (isGraphVerifiedSource(source)) continue;
-    if (!sourceMatchesVendor(source, targetVendor)) continue;
-    if (isWeakProductStructureDisplaySource(source)) continue;
+    if (!isUsableBroadProductStructureSource(source, targetVendor)) continue;
     const key = getProductStructureSourceKey(source);
     if (selectedKeys.has(key)) continue;
     selectedKeys.add(key);
@@ -1638,15 +5123,12 @@ function ensureProductStructureGraphSourceCoverage(
 ) {
   const selectedOfficialGraphSource = selected.find(source => (
     isOfficialGuideGraphSource(source)
-    && sourceMatchesVendor(source, targetVendor)
-    && !isLowValueProductStructureGraphSource(source)
+    && isUsableBroadProductStructureSource(source, targetVendor)
   ));
 
   const graphSourcePool = [...selected, ...labelledSources]
     .filter(source => isOfficialGuideGraphSource(source))
-    .filter(source => sourceMatchesVendor(source, targetVendor))
-    .filter(source => !isWeakProductStructureDisplaySource(source))
-    .filter(source => !isLowValueProductStructureGraphSource(source));
+    .filter(source => isUsableBroadProductStructureSource(source, targetVendor));
   const graphSource = graphSourcePool
     .sort((a, b) => scoreProductStructureGraphSource(b, targetVendor) - scoreProductStructureGraphSource(a, targetVendor))[0];
 
@@ -1719,25 +5201,68 @@ function buildProductStructureSupplementQueries(intent: QueryIntent, originalMes
   const targetedQueries: string[] = [];
 
   if (intent.isSpecificProductGuidance || hasNamedSpecificProductQuestion(originalMessage)) {
-    if (/(^|[\s/])da($|[\s/]|도|상품|광고)|디스플레이\s*광고|성과형\s*디스플레이|홈피드\s*da|홈피드|배너\s*광고/.test(normalized)) {
+    const asksNaverDa = vendor === 'NAVER' && /(^|[\s/])da($|[\s/]|도|상품|광고)|디스플레이\s*광고|성과형\s*디스플레이|홈피드\s*da|홈피드|배너\s*광고/.test(normalized);
+    const asksKakaoDisplay = vendor === 'KAKAO' && /비즈보드|디스플레이\s*광고|카카오모먼트|톡채널|브랜드이모티콘|상품\s*가이드|상품가이드/.test(normalized);
+    const asksNaverShoppingBlock = vendor === 'NAVER' && /쇼핑\s*블록|쇼핑블록|주요\s*쇼핑\s*지면|pc\s*쇼핑블록|mo\s*쇼핑블록|모바일\s*쇼핑/.test(normalized);
+    const asksNaverProductOverview = vendor === 'NAVER'
+      && isProductCatalogOverviewQuestion(originalMessage)
+      && /광고\s*(상품|종류|유형)|상품\s*(종류|유형)/.test(normalized);
+    const asksNaverShoppingCreativeGuide = vendor === 'NAVER'
+      && /쇼핑검색|쇼핑\s*검색|쇼핑몰\s*상품형|쇼핑\s*광고/.test(normalized)
+      && /제작|가이드|소재|이미지|문구|카피|랜딩|심사|검수|사양|스펙|규격|비율|대표이미지|상품명/.test(normalized);
+    const asksExplicitNaverShoppingData = vendor === 'NAVER'
+      && (
+        isNaverShoppingDataIntent(intent)
+        || /db\s*url|상품\s*db|상품등록|상품\s*등록|ep|쇼핑파트너센터|상품정보\s*수신\s*현황|등록요청|상품관리|카테고리\s*자동매칭|가격비교\s*(입점|연동|등록)/.test(normalized)
+      );
+
+    if (asksNaverDa) {
       targetedQueries.push(
-        `${VENDOR_LABELS[vendor] || vendor} DA 디스플레이 광고 상품`,
-        `${VENDOR_LABELS[vendor] || vendor} 성과형 디스플레이 홈피드DA 배너 광고 상품`
+        `${VENDOR_LABELS[vendor] || vendor} DA 홈피드DA 스마트채널 타임보드 보장형 DA`,
+        `${VENDOR_LABELS[vendor] || vendor} 성과형 디스플레이 홈피드DA 배너 광고`
       );
     }
-    if (/동영상\s*광고|비디오\s*광고/.test(normalized)) {
+    if (asksKakaoDisplay) {
       targetedQueries.push(
-        `${VENDOR_LABELS[vendor] || vendor} 동영상 광고 상품`,
+        '카카오 비즈보드 디스플레이 광고 지면 광고 상품',
+        '카카오 디스플레이 광고 카카오모먼트 상품가이드 지면 소재 조건',
+        '카카오 상품가이드 제작가이드 심사가이드 소재 제작 조건'
+      );
+    }
+    if (asksNaverShoppingBlock) {
+      targetedQueries.push(
+        '네이버 쇼핑블록 주요 쇼핑 지면 PC 쇼핑블록 MO 쇼핑블록 광고 상품',
+        '네이버 쇼핑블록 쇼핑 지면 상품 가이드 소재 조건'
+      );
+    }
+    if (asksNaverProductOverview) {
+      targetedQueries.push(
+        '네이버 광고 상품 사이트검색광고 쇼핑검색광고 쇼핑블록 파워링크 브랜드검색',
+        '네이버 검색 광고 쇼핑 지면 광고 상품 종류'
+      );
+    }
+    if (vendor === 'NAVER' && /동영상\s*광고|비디오\s*광고/.test(normalized)) {
+      targetedQueries.push(
+        `${VENDOR_LABELS[vendor] || vendor} 동영상 광고 소재 사양`,
         `${VENDOR_LABELS[vendor] || vendor} 동영상 소재 비디오 광고 지면`
       );
     }
-    if (/앱\s*인스톨|앱\s*설치|앱\s*홍보|app\s*install|app\s*promotion/.test(normalized)) {
+    const supportsAppInstallSupplement = vendor === 'META' || vendor === 'GOOGLE';
+    if (supportsAppInstallSupplement && /앱\s*인스톨|앱\s*설치|앱\s*홍보|app\s*install|app\s*promotion/.test(normalized)) {
       targetedQueries.push(
-        `${VENDOR_LABELS[vendor] || vendor} 앱 인스톨 앱 홍보 광고 가이드`,
-        `${VENDOR_LABELS[vendor] || vendor} App Install App Promotion SDK MMP 앱 이벤트`
+        `${VENDOR_LABELS[vendor] || vendor} 앱 인스톨 App Install 앱 홍보 앱 이벤트`
+      );
+      if (/sdk|mmp|연동|추적|트래킹/.test(normalized)) {
+        targetedQueries.push(`${VENDOR_LABELS[vendor] || vendor} App Install SDK MMP 앱 이벤트 추적`);
+      }
+    }
+    if (asksNaverShoppingCreativeGuide && !asksExplicitNaverShoppingData) {
+      targetedQueries.push(
+        '네이버 쇼핑검색광고 제작 가이드 소재 이미지 랜딩 심사',
+        '네이버 쇼핑검색광고 상품명 대표이미지 가격 배송비 카테고리 랜딩'
       );
     }
-    if (/db\s*url|상품\s*db|상품등록|ep|쇼핑검색/.test(normalized)) {
+    if (asksExplicitNaverShoppingData) {
       targetedQueries.push(
         `${VENDOR_LABELS[vendor] || vendor} 쇼핑검색광고 상품등록 EP DB URL`,
         `${VENDOR_LABELS[vendor] || vendor} 상품 DB 쇼핑파트너센터 상품 데이터`
@@ -1850,6 +5375,12 @@ function cleanEvidenceExcerpt(excerpt: string, fallbackTitle?: string) {
     .replace(/_[a-z0-9]{3,}/gi, ' ')
     .replace(/\{[^{}]*(?:creative_detail|help-center-nav|folder\d+)[^{}]*\}/gi, ' ')
     .replace(/\/business\/help\/\d+/gi, ' ')
+    .replace(/이전\s*화면\s*공유하기\s*저장하기/gi, ' ')
+    .replace(/화면\s*공유하기|공유하기|저장하기|목록보기|닫기|접기|펼치기/gi, ' ')
+    .replace(/상품소식\s*\d*\s*분?/g, ' ')
+    .replace(/이전\s*다음|전체\s*보기|자세히\s*보기|바로가기/g, ' ')
+    .replace(/([가-힣A-Za-z0-9])#/g, '$1 #')
+    .replace(/#\s+/g, '#')
     .replace(/\s+/g, ' ')
     .replace(/\.\.\.$/, '')
     .trim();
@@ -2087,8 +5618,11 @@ function calculateConfidence(searchResults: SearchResult[], intent?: QueryIntent
 
 function buildVerifiedSources(searchResults: SearchResult[], intent?: QueryIntent) {
   return searchResults.map(result => {
-    const originalTitle = result.documentTitle || result.metadata?.originalTitle || result.metadata?.title || 'Meta 광고 정책 문서';
     const sourceVendor = result.sourceVendor || result.metadata?.sourceVendor || result.metadata?.source_vendor || result.sourceQuality?.sourceVendor || 'UNKNOWN';
+    const fallbackTitleVendor = sourceVendor && sourceVendor !== 'UNKNOWN'
+      ? VENDOR_LABELS[sourceVendor as VendorIntent] || String(sourceVendor)
+      : '광고';
+    const originalTitle = result.documentTitle || result.metadata?.originalTitle || result.metadata?.title || `${fallbackTitleVendor} 가이드 문서`;
     const sourceVendors = Array.from(new Set([
       ...(result.sourceVendors || []),
       ...(Array.isArray(result.metadata?.sourceVendors) ? result.metadata.sourceVendors : []),
@@ -2289,14 +5823,11 @@ function buildCompassGroundingOptions(
 ): CompassGroundingOptions {
   const targetVendor = intent.vendors.length === 1 ? intent.vendors[0] : undefined;
   const vendorLabel = targetVendor ? (VENDOR_LABELS[targetVendor] || targetVendor) : '해당 매체';
-
-  if (intent.topics.includes('product_structure') && intent.isSpecificProductGuidance) {
-    return {
-      answerMode: toCompassLlmAnswerMode(specificProductScope.mode),
-      questionIntent: `${vendorLabel} 특정 광고 상품의 ${getSpecificProductModeLabel(specificProductScope.mode)}에 직접 답변`,
-      targetVendor,
-    };
-  }
+  const isSpecificProductQuestion = (
+    intent.topics.includes('product_structure')
+    && (intent.isSpecificProductGuidance || hasNamedSpecificProductQuestion(message))
+    && !isBroadProductStructureLlmIntent
+  );
 
   if (isBroadProductStructureLlmIntent) {
     return {
@@ -2304,6 +5835,14 @@ function buildCompassGroundingOptions(
       questionIntent: isProductSelectionQuestion(message)
         ? `${vendorLabel} 광고 상품을 목적별 선택 기준으로 설명`
         : `${vendorLabel} 광고 상품/유형을 근거 기반으로 개요 설명`,
+      targetVendor,
+    };
+  }
+
+  if (isSpecificProductQuestion) {
+    return {
+      answerMode: toCompassLlmAnswerMode(specificProductScope.mode),
+      questionIntent: `${vendorLabel} 특정 광고 상품의 ${getSpecificProductModeLabel(specificProductScope.mode)}에 직접 답변`,
       targetVendor,
     };
   }
@@ -2322,7 +5861,20 @@ function buildCompassGroundingOptions(
   };
 }
 
+function getCompassDiagnosticAnswerMode(
+  message: string,
+  specificProductScope: ReturnType<typeof buildSpecificProductAnswerScope>,
+  isBroadProductStructureLlmIntent: boolean,
+) {
+  if (isBroadProductStructureLlmIntent) {
+    return isProductSelectionQuestion(message) ? 'product_selection' : 'product_overview';
+  }
+
+  return specificProductScope.mode;
+}
+
 function buildCompassAnswerModel(
+  message: string,
   intent: QueryIntent,
   isBroadProductStructureLlmIntent: boolean,
 ): string {
@@ -2330,7 +5882,11 @@ function buildCompassAnswerModel(
     return 'compass-answer-grounded-product-structure-llm';
   }
 
-  if (intent.topics.includes('product_structure') && intent.isSpecificProductGuidance) {
+  if (
+    intent.topics.includes('product_structure')
+    && (intent.isSpecificProductGuidance || hasNamedSpecificProductQuestion(message))
+    && !isBroadProductStructureLlmIntent
+  ) {
     return 'compass-answer-grounded-specific-product-llm';
   }
 
@@ -2338,27 +5894,65 @@ function buildCompassAnswerModel(
   return neutralAnswer.model;
 }
 
+function buildGroundingSourceContent(
+  source: ReturnType<typeof buildVerifiedSources>[number],
+  options: CompassGroundingOptions,
+) {
+  const excerpt = String(source.excerpt || '').trim();
+  const matchText = String(source.matchText || '').trim();
+  const answerMode = String(options.answerMode || 'auto');
+  const evidenceRole = String(
+    source.metadata?.answerEvidenceRole
+    || source.metadata?.answer_evidence_role
+    || '',
+  );
+  const coverageRole = String(source.metadata?.coverageRole || source.metadata?.coverage_role || '');
+  const wantsProductStructureContent = (
+    (answerMode === 'product_overview' || answerMode === 'product_selection')
+    && matchText.length > excerpt.length + 120
+    && (
+      evidenceRole === 'official_graph'
+      || evidenceRole === 'product_context'
+      || coverageRole.includes('product_structure')
+      || hasProductStructureGraphSourceSignal(source)
+      || hasBroadProductStructureAnswerSignal(source)
+    )
+  );
+  if (wantsProductStructureContent && matchText.length > excerpt.length + 120) {
+    const merged = excerpt && !matchText.includes(excerpt)
+      ? `${excerpt}\n\n${matchText}`
+      : matchText;
+    return merged.length > 5200 ? `${merged.slice(0, 5200)}...` : merged;
+  }
+
+  const fallbackContent = excerpt || (wantsProductStructureContent ? matchText : '');
+  return fallbackContent.length > 5200 ? `${fallbackContent.slice(0, 5200)}...` : fallbackContent;
+}
+
 function buildAnswerGroundingSources(
   sources: ReturnType<typeof buildVerifiedSources>,
   options: CompassGroundingOptions = {},
 ): CompassGroundingSource[] {
-  return sources.map(source => ({
-    chunk_id: source.chunkId || source.id,
-    id: source.id,
-    content: source.excerpt || source.matchText || '',
-    similarity: source.similarity,
-    score: source.score,
-    hybridScore: source.hybridScore,
-    corpus: source.corpus,
-    evidenceType: source.evidenceType,
-    evidenceDecision: source.evidenceDecision,
-    evidenceDecisionReason: source.evidenceDecisionReason,
-    rankReason: source.rankReason,
-    retrievalMethod: source.retrievalMethod,
-    sourceKind: source.metadata?.sourceKind || source.metadata?.source_kind || 'official_doc',
-    graphPath: source.metadata?.graphPath || source.metadata?.graph_path,
-    documentId: source.documentId,
-    documentTitle: source.originalTitle || source.title,
+  return sources.map(source => {
+    const groundingDecision = source.evidenceDecision || 'weak';
+
+    return {
+      chunk_id: source.chunkId || source.id,
+      id: source.id,
+      content: buildGroundingSourceContent(source, options),
+      similarity: source.similarity,
+      score: source.score,
+      hybridScore: source.hybridScore,
+      corpus: source.corpus,
+      evidenceType: source.evidenceType,
+      evidenceDecision: groundingDecision,
+      evidenceDecisionReason: source.evidenceDecisionReason,
+      rankReason: source.rankReason,
+      retrievalMethod: source.retrievalMethod,
+      sourceKind: source.metadata?.sourceKind || source.metadata?.source_kind || 'official_doc',
+      graphPath: source.metadata?.graphPath || source.metadata?.graph_path,
+      documentId: source.documentId,
+      documentTitle: source.originalTitle || source.title,
       documentUrl: source.url,
       sourceVendor: source.sourceVendor,
       answerMode: options.answerMode,
@@ -2368,10 +5962,10 @@ function buildAnswerGroundingSources(
       metadata: {
         ...source.metadata,
         title: source.title,
-        originalTitle: source.originalTitle,
+      originalTitle: source.originalTitle,
       sourceVendor: source.sourceVendor,
       source_vendor: source.sourceVendor,
-      evidenceDecision: source.evidenceDecision,
+      evidenceDecision: groundingDecision,
       evidenceDecisionReason: source.evidenceDecisionReason,
       retrievalMethod: source.retrievalMethod,
       source_kind: source.metadata?.source_kind || source.metadata?.sourceKind || 'official_doc',
@@ -2380,7 +5974,8 @@ function buildAnswerGroundingSources(
       questionIntent: options.questionIntent,
       targetVendor: options.targetVendor,
     },
-  }));
+    };
+  });
 }
 
 function normalizeSourceTitle(title: string, sourceVendor: string, content: string): string {
@@ -2450,6 +6045,15 @@ function getEvidenceDecision(result: SearchResult): string | undefined {
   return result.evidenceDecision || result.metadata?.evidenceDecision;
 }
 
+function getResultIdentityKey(result: SearchResult): string {
+  return [
+    result.documentId || result.metadata?.documentId || result.metadata?.document_id || '',
+    result.chunk_id || result.metadata?.chunk_id || '',
+    result.documentTitle || result.metadata?.originalTitle || result.metadata?.title || '',
+    String(result.content || '').slice(0, 120),
+  ].join(':');
+}
+
 function isGraphSearchResult(result: SearchResult): boolean {
   return (
     result.retrievalMethod === 'graph'
@@ -2467,14 +6071,199 @@ function isVerifiedGrounding(result: SearchResult): boolean {
     || result.sourceQuality?.isFallback === true
     || result.metadata?.type === 'fallback';
   const evidenceDecision = getEvidenceDecision(result);
+  const metadata = result.metadata || {};
+  const sourceQuality = (result.sourceQuality || {}) as any;
+  const warningValues = [
+    ...(Array.isArray(sourceQuality.warnings) ? sourceQuality.warnings : []),
+    ...(Array.isArray(metadata.sourceQualityWarnings) ? metadata.sourceQualityWarnings : []),
+    ...(Array.isArray(metadata.evidenceDecisionReason) ? metadata.evidenceDecisionReason : []),
+    ...(Array.isArray(result.evidenceDecisionReason) ? result.evidenceDecisionReason : []),
+  ].map(String);
+  const hasBlockingWarning = evidenceDecision === 'rejected'
+    || warningValues.some((warning) => (
+      warning === 'placeholder_content'
+      || warning === 'fallback_evidence'
+      || warning === 'missing_excerpt'
+    ));
   const isOfficialGuideGraphEvidence = isGraphSearchResult(result)
     && (result.metadata?.sourceKind === 'official_doc' || result.metadata?.source_kind === 'official_doc');
 
-  if (hasGrounding && !isFallback && isOfficialGuideGraphEvidence) {
+  if (!hasGrounding || isFallback || hasBlockingWarning) {
+    return false;
+  }
+
+  if (isOfficialGuideGraphEvidence) {
     return true;
   }
 
-  return hasGrounding && !isFallback && evidenceDecision === 'verified';
+  if (evidenceDecision === 'verified') {
+    return true;
+  }
+
+  const resultLike = result as any;
+  const hasUsableSourceShape = Boolean(
+    result.documentTitle
+    || metadata.title
+    || metadata.originalTitle
+    || metadata.source_title
+  ) && Boolean(
+    result.documentId
+    || result.documentUrl
+    || metadata.documentId
+    || metadata.document_id
+    || metadata.source_url
+    || metadata.document_url
+    || metadata.url
+  );
+  const hasVendorIdentity = getDiagnosticResultVendors(result).length > 0;
+  const rescueReasons = [
+    ...(Array.isArray(result.rankReason) ? result.rankReason : []),
+    ...(Array.isArray(metadata.rankReason) ? metadata.rankReason : []),
+    ...(Array.isArray(result.evidenceDecisionReason) ? result.evidenceDecisionReason : []),
+    ...(Array.isArray(metadata.evidenceDecisionReason) ? metadata.evidenceDecisionReason : []),
+  ].map(String);
+  const hasRagRescueSignal = rescueReasons.some((reason) => (
+    /rescue|coverage|official_guide|target_vendor|graph|product_structure|generic_topic/i.test(reason)
+  ));
+  const keywordScore = Number(result.keywordScore ?? resultLike.metadata?.keywordScore ?? 0);
+  const lexicalOverlap = Number(result.lexicalOverlap ?? resultLike.metadata?.lexicalOverlap ?? 0);
+  const qualityScore = Number(result.sourceQuality?.qualityScore ?? 0);
+  const hasScoreSignal = keywordScore >= 0.42 || lexicalOverlap >= 0.16 || qualityScore >= 0.5;
+
+  return hasUsableSourceShape && hasVendorIdentity && (hasRagRescueSignal || hasScoreSignal);
+}
+
+function searchResultHasBlockingGroundingWarning(result: SearchResult): boolean {
+  const metadata = result.metadata || {};
+  const sourceQuality = (result.sourceQuality || {}) as any;
+  const evidenceDecision = getEvidenceDecision(result);
+  const warningValues = [
+    ...(Array.isArray(sourceQuality.warnings) ? sourceQuality.warnings : []),
+    ...(Array.isArray(metadata.sourceQualityWarnings) ? metadata.sourceQualityWarnings : []),
+    ...(Array.isArray(metadata.evidenceDecisionReason) ? metadata.evidenceDecisionReason : []),
+    ...(Array.isArray(result.evidenceDecisionReason) ? result.evidenceDecisionReason : []),
+  ].map(String);
+
+  return evidenceDecision === 'rejected'
+    || warningValues.some((warning) => (
+      warning === 'placeholder_content'
+      || warning === 'fallback_evidence'
+      || warning === 'missing_excerpt'
+    ));
+}
+
+function searchResultMatchesTargetVendor(result: SearchResult, intent: QueryIntent): boolean {
+  if (intent.vendors.length !== 1) return true;
+  const targetVendor = intent.vendors[0];
+  const resultVendors = getDiagnosticResultVendors(result);
+  if (resultVendors.includes(targetVendor)) return true;
+  if (result.vendorMismatch || result.metadata?.vendorMismatch || result.sourceQuality?.vendorMismatch) return false;
+
+  const text = buildDiagnosticSourceText(result);
+  if (!DIAGNOSTIC_VENDOR_PATTERNS[targetVendor].test(text)) return false;
+  return !(Object.keys(DIAGNOSTIC_VENDOR_PATTERNS) as VendorIntent[])
+    .filter(vendor => vendor !== targetVendor)
+    .some(vendor => DIAGNOSTIC_VENDOR_PATTERNS[vendor].test(text));
+}
+
+function buildSearchResultActualEvidenceText(result: SearchResult): string {
+  const metadata = result.metadata || {};
+  return normalizeEvidenceText([
+    result.content,
+    result.documentTitle,
+    metadata.title,
+    metadata.originalTitle,
+    metadata.source_title,
+    metadata.canonical_title,
+  ].map(toDiagnosticText).filter(Boolean).join(' '));
+}
+
+function searchResultTextForRescue(result: SearchResult): string {
+  return buildSearchResultActualEvidenceText(result);
+}
+
+function searchResultHasBroadProductSignal(result: SearchResult): boolean {
+  const text = searchResultTextForRescue(result);
+  return /캠페인\s*(목표|유형)|광고\s*(상품|종류|유형|형식|포맷)|노출\s*(위치|지면)|게재\s*위치|검색\s*캠페인|디스플레이\s*캠페인|쇼핑\s*광고|앱\s*(캠페인|인스톨|설치|홍보|이벤트)|리드\s*양식|검색광고|쇼핑검색|파워링크|브랜드검색|쇼핑블록|상품\s*db|db\s*url|비즈보드|카카오모먼트|상품\s*가이드|advantage\+|어드밴티지|카탈로그|catalog|collection|placement|campaign_objective|ad_format/.test(text)
+    || /인지도[\s\S]{0,80}트래픽[\s\S]{0,80}참여[\s\S]{0,80}잠재 고객[\s\S]{0,80}앱 홍보[\s\S]{0,80}판매/.test(text);
+}
+
+function isProductStructureRescueGrounding(
+  result: SearchResult,
+  intent: QueryIntent,
+  message: string,
+): boolean {
+  if (!intent.topics.includes('product_structure')) return false;
+  if (!result.content?.trim()) return false;
+  if (result.retrievalMethod === 'fallback' || result.sourceQuality?.isFallback === true || result.metadata?.type === 'fallback') return false;
+  if (searchResultHasBlockingGroundingWarning(result)) return false;
+  if (!searchResultMatchesTargetVendor(result, intent)) return false;
+
+  const text = searchResultTextForRescue(result);
+  if (intent.isSpecificProductGuidance) {
+    const mode = inferSpecificProductAnswerMode(message);
+    const productTerms = Array.from(new Set([
+      ...buildPrimarySpecificProductEvidenceTerms(intent),
+      ...buildStrictProductEvidenceTerms(intent),
+    ]));
+    const modeTerms = buildRequestedProductModeTerms(mode);
+    const hasProductTerm = productTerms.some(term => textContainsEvidenceTerm(text, term));
+    const hasModeTerm = modeTerms.some(term => textContainsEvidenceTerm(text, term));
+    const hasDetailSignal = sourceTextHasSpecificProductDetailSignal(text);
+
+    return hasProductTerm && (
+      mode === 'product_detail'
+      || hasDetailSignal
+      || hasModeTerm
+    );
+  }
+
+  return searchResultHasBroadProductSignal(result);
+}
+
+function promoteProductStructureRescueGrounding(result: SearchResult): SearchResult {
+  const evidenceDecisionReason = Array.from(new Set([
+    ...(Array.isArray(result.evidenceDecisionReason) ? result.evidenceDecisionReason : []),
+    ...(Array.isArray(result.metadata?.evidenceDecisionReason) ? result.metadata.evidenceDecisionReason : []),
+    'product_structure_rescue_actual_evidence_verified',
+  ]));
+  const rankReason = Array.from(new Set([
+    ...(Array.isArray(result.rankReason) ? result.rankReason : []),
+    ...(Array.isArray(result.metadata?.rankReason) ? result.metadata.rankReason : []),
+    'product_structure_rescue_promoted',
+  ]));
+
+  return {
+    ...result,
+    evidenceDecision: 'verified',
+    evidenceDecisionReason,
+    rankReason,
+    metadata: {
+      ...(result.metadata || {}),
+      evidenceDecision: 'verified',
+      evidenceDecisionReason,
+      rankReason,
+      answerEvidenceRole: result.metadata?.answerEvidenceRole
+        || result.metadata?.answer_evidence_role
+        || 'product_context',
+    },
+  };
+}
+
+function buildFilteredEvidenceDebugSample(result: SearchResult) {
+  return {
+    title: result.documentTitle || result.metadata?.title || result.metadata?.originalTitle || 'Unknown',
+    vendor: getResultVendor(result),
+    decision: getEvidenceDecision(result) || 'weak',
+    retrievalMethod: result.retrievalMethod || result.metadata?.retrievalMethod || 'unknown',
+    reasons: [
+      ...(Array.isArray(result.rankReason) ? result.rankReason : []),
+      ...(Array.isArray(result.evidenceDecisionReason) ? result.evidenceDecisionReason : []),
+      ...(Array.isArray(result.metadata?.rankReason) ? result.metadata.rankReason : []),
+      ...(Array.isArray(result.metadata?.evidenceDecisionReason) ? result.metadata.evidenceDecisionReason : []),
+    ].slice(0, 4),
+    excerpt: String(result.content || '').replace(/\s+/g, ' ').trim().slice(0, 120),
+  };
 }
 
 
@@ -2523,19 +6312,58 @@ export async function buildCompassAnswerResponse(
       queryType: ragIntent.queryType,
     });
     const usesProductStructureFastPath = isBroadProductStructureAnswerIntent(message, ragIntent);
-    const fastPathSupplementQueries = usesProductStructureFastPath && ragIntent.vendors[0] === 'NAVER'
-      ? [
-        '네이버 쇼핑검색광고 상품등록 절차 EP DB URL 쇼핑파트너센터',
-        '네이버 쇼핑블록 PC 모바일 쇼핑 지면 광고 상품',
-      ]
+    const usesSpecificProductSupplementPath = (
+      !usesProductStructureFastPath
+      && ragIntent.topics.includes('product_structure')
+      && (ragIntent.isSpecificProductGuidance || hasNamedSpecificProductQuestion(message))
+    );
+    const fastPathSupplementQueries = usesProductStructureFastPath
+      ? (() => {
+        switch (ragIntent.vendors[0]) {
+          case 'META':
+            return [
+              'Meta 광고 관리자 캠페인 목표 인지도 트래픽 참여 잠재 고객 앱 홍보 판매',
+              'Meta 광고 상품 구조 컬렉션 광고 Advantage+ 카탈로그 리드 양식 앱 홍보',
+              'Meta Advantage+ 카탈로그 컬렉션 광고 앱 홍보 앱 인스톨 리드 양식',
+            ];
+          case 'GOOGLE':
+            return [
+              'Google Ads 광고 유형 검색 캠페인 디스플레이 쇼핑 앱 캠페인',
+              'Google Ads 리드 양식 확장 소재 앱 캠페인 쇼핑 광고',
+              'Google Ads 반응형 디스플레이 동영상 YouTube 소재 가이드',
+            ];
+          case 'KAKAO':
+            return [
+              '카카오 광고 상품 비즈보드 디스플레이 광고 카카오모먼트',
+              '카카오 상품가이드 제작가이드 심사가이드 소재 제작 조건',
+              '카카오 비즈보드 톡채널 카카오톡 지면 광고 상품',
+            ];
+          case 'NAVER':
+            return [
+              '네이버 광고 상품 사이트검색 파워링크 브랜드검색 검색광고',
+              '네이버 DA 성과형 디스플레이 홈피드 스마트채널 타임보드 롤링보드',
+              '네이버 쇼핑검색광고 쇼핑블록 상품 DB URL EP 쇼핑파트너센터',
+              '네이버 동영상 광고 소재 지면 상품 가이드',
+            ];
+          default:
+            return [];
+        }
+      })()
       : [];
     const supplementQueries = usesProductStructureFastPath
-      ? fastPathSupplementQueries
+      ? (fastPathSupplementQueries.length > 0
+        ? fastPathSupplementQueries
+        : buildProductStructureSupplementQueries(ragIntent, message).filter(query => query !== message))
       : buildProductStructureSupplementQueries(ragIntent, message).filter(query => query !== message);
 
-    const searchQueries = [message, ...supplementQueries];
+    const supplementQueryLimit = usesProductStructureFastPath
+      ? (ragIntent.vendors[0] === 'NAVER' ? 3 : 2)
+      : usesSpecificProductSupplementPath
+        ? 2
+      : 2;
+    const searchQueries = [message, ...supplementQueries.slice(0, supplementQueryLimit)];
     const searchResultGroups = await Promise.all(
-      searchQueries.map(query => searchWithCompassRAG(query, Math.max(8, ragIntent.recommendedSourceLimit)))
+      searchQueries.map(query => searchWithCompassRAG(query, Math.max(8, ragIntent.recommendedSourceLimit))),
     );
     const supplementResultCount = searchResultGroups.slice(1).flat().length;
     let searchResults = searchResultGroups.flat();
@@ -2549,6 +6377,14 @@ export async function buildCompassAnswerResponse(
       });
     }
     const verifiedSearchResults = searchResults.filter(isVerifiedGrounding);
+    const verifiedResultKeys = new Set(verifiedSearchResults.map(result => getResultIdentityKey(result)));
+    const productStructureRescueResults = searchResults.filter(result => (
+      !verifiedResultKeys.has(getResultIdentityKey(result))
+      && isProductStructureRescueGrounding(result, ragIntent, message)
+    )).map(promoteProductStructureRescueGrounding);
+    if (productStructureRescueResults.length > 0) {
+      verifiedSearchResults.push(...productStructureRescueResults);
+    }
     const sourceDiagnostics = buildSourceDiagnostics(ragIntent, verifiedSearchResults);
     emitPhase?.({
       phase: 'evidence-ready',
@@ -2558,7 +6394,14 @@ export async function buildCompassAnswerResponse(
       verifiedSourceCount: verifiedSearchResults.length,
     });
     if (verifiedSearchResults.length !== searchResults.length) {
-      console.warn('Compass answer evidence filtered', { filteredCount: searchResults.length - verifiedSearchResults.length });
+      const verifiedSet = new Set(verifiedSearchResults);
+      console.warn('Compass answer evidence filtered', {
+        filteredCount: searchResults.length - verifiedSearchResults.length,
+        droppedSamples: searchResults
+          .filter(result => !verifiedSet.has(result))
+          .slice(0, 3)
+          .map(buildFilteredEvidenceDebugSample),
+      });
     }
 
     // 2. 검색 결과가 없으면 관련 내용 없음 응답
@@ -2677,6 +6520,11 @@ export async function buildCompassAnswerResponse(
     const specificProductScope = buildSpecificProductAnswerScope(sources, ragIntent, message);
     let answerSources = specificProductScope.answerSources;
     const isBroadProductStructureLlmIntent = isBroadProductStructureAnswerIntent(message, ragIntent);
+    const diagnosticAnswerMode = getCompassDiagnosticAnswerMode(
+      message,
+      specificProductScope,
+      isBroadProductStructureLlmIntent,
+    );
 
     if (specificProductScope.shouldLimit) {
       console.warn('Compass answer generation limited by strict product answer scope', {
@@ -2701,7 +6549,7 @@ export async function buildCompassAnswerResponse(
               ...sourceDiagnostics,
               strictProductSourceCount: specificProductScope.strictProductSources.length,
               answerSourceCount: specificProductScope.answerSources.length,
-              answerMode: specificProductScope.mode,
+              answerMode: diagnosticAnswerMode,
             },
             reviewPipeline: buildReviewPipeline({
               status: 'limited',
@@ -2717,32 +6565,47 @@ export async function buildCompassAnswerResponse(
       };
     }
 
-    const naverShoppingDataOperationalAnswer = buildNaverShoppingDataOperationalAnswer(message, answerSources);
-
-    if (naverShoppingDataOperationalAnswer) {
-      emitPhase?.({ phase: 'answer-ready', message: '네이버 상품 DB 근거를 기준으로 절차 답변을 정리했습니다.' });
-      return {
-        body: {
-          response: {
-            message: naverShoppingDataOperationalAnswer,
-            content: naverShoppingDataOperationalAnswer,
-            sources: answerSources,
-            noDataFound: false,
-            schema,
-            showContactOption: false,
-            sourceDiagnostics: {
-              ...sourceDiagnostics,
-              strictProductSourceCount: specificProductScope.strictProductSources.length,
-              answerSourceCount: answerSources.length,
-              answerMode: specificProductScope.mode,
+    if (shouldUseDeterministicProductAnswerBeforeLlm()) {
+      const deterministicSpecificProductAnswer = buildDeterministicSpecificProductAnswer(
+        message,
+        ragIntent,
+        specificProductScope,
+      );
+      if (deterministicSpecificProductAnswer) {
+        const showContactOption = Boolean(deterministicSpecificProductAnswer.showContactOption);
+        emitPhase?.({
+          phase: 'answer-ready',
+          message: showContactOption
+            ? '공식 출처 범위가 부족해 제한 답변을 준비했습니다.'
+            : '상품별 공식 근거 답변을 정리했습니다.',
+        });
+        return {
+          body: {
+            response: {
+              message: deterministicSpecificProductAnswer.answer,
+              content: deterministicSpecificProductAnswer.answer,
+              sources: deterministicSpecificProductAnswer.sources,
+              noDataFound: deterministicSpecificProductAnswer.sources.length === 0,
+              schema,
+              showContactOption,
+              sourceDiagnostics: {
+                ...sourceDiagnostics,
+                strictProductSourceCount: specificProductScope.strictProductSources.length,
+                answerSourceCount: deterministicSpecificProductAnswer.sources.length,
+                answerMode: diagnosticAnswerMode,
+                deterministicAnswerFamily: detectProductAnswerFamily(message, ragIntent),
+              },
+              reviewPipeline: buildDeterministicProductReviewPipeline(
+                deterministicSpecificProductAnswer,
+                searchResults.length,
+              ),
             },
-            reviewPipeline,
-          },
-          confidence,
-          processingTime: Date.now() - startTime,
-          model: 'compass-answer-naver-shopping-data-operational'
-        }
-      };
+            confidence: getDeterministicProductConfidence(confidence, deterministicSpecificProductAnswer),
+            processingTime: Date.now() - startTime,
+            model: deterministicSpecificProductAnswer.model
+          }
+        };
+      }
     }
 
     if (ragIntent.topics.includes('product_structure') && ragIntent.isSpecificProductGuidance) {
@@ -2750,15 +6613,78 @@ export async function buildCompassAnswerResponse(
         sourceCount: answerSources.length,
         strictProductTerms: ragIntent.strictProductTerms,
         vendor: ragIntent.vendors[0] || 'UNKNOWN',
-        answerMode: specificProductScope.mode,
+        answerMode: diagnosticAnswerMode,
       });
       emitPhase?.({ phase: 'answer-started', message: '특정 상품 근거를 바탕으로 답변을 작성합니다.' });
     }
 
     if (isBroadProductStructureLlmIntent) {
-      const productStructureSources = selectProductStructureResponseSources(sources, ragIntent);
-      if (productStructureSources.length > 0) {
-        answerSources = productStructureSources;
+      const productStructureSources = selectProductStructureResponseSources(sources, ragIntent, message);
+      answerSources = productStructureSources;
+      if (productStructureSources.length === 0) {
+        const scopeLimitedAnswer = buildBroadProductStructureScopeLimitedAnswer(message, ragIntent);
+        emitPhase?.({ phase: 'answer-ready', message: '광고 상품 구조를 직접 설명할 공식 근거가 부족해 제한 답변을 준비했습니다.' });
+        return {
+          body: {
+            response: {
+              message: scopeLimitedAnswer,
+              content: scopeLimitedAnswer,
+              sources: [],
+              noDataFound: true,
+              schema,
+              showContactOption: true,
+              sourceDiagnostics: {
+                ...sourceDiagnostics,
+                answerSourceCount: 0,
+                answerMode: diagnosticAnswerMode,
+              },
+              reviewPipeline: buildReviewPipeline({
+                status: 'limited',
+                sourceCount: searchResults.length,
+                verifiedSourceCount: 0,
+                contactRecommended: true,
+              }),
+            },
+            confidence: 0,
+            processingTime: Date.now() - startTime,
+            model: 'compass-answer-product-structure-scope-limited'
+          }
+        };
+      }
+      if (shouldUseDeterministicProductAnswerBeforeLlm()) {
+        const deterministicBroadProductAnswer = buildDeterministicBroadProductAnswer(
+          message,
+          ragIntent,
+          answerSources,
+        );
+        if (deterministicBroadProductAnswer) {
+          emitPhase?.({ phase: 'answer-ready', message: '상품 구조 근거를 기준으로 답변을 정리했습니다.' });
+          return {
+            body: {
+              response: {
+                message: deterministicBroadProductAnswer.answer,
+                content: deterministicBroadProductAnswer.answer,
+                sources: deterministicBroadProductAnswer.sources,
+                noDataFound: false,
+                schema,
+                showContactOption: Boolean(deterministicBroadProductAnswer.showContactOption),
+                sourceDiagnostics: {
+                  ...sourceDiagnostics,
+                  answerSourceCount: deterministicBroadProductAnswer.sources.length,
+                  answerMode: diagnosticAnswerMode,
+                  deterministicAnswerFamily: detectProductAnswerFamily(message, ragIntent),
+                },
+                reviewPipeline: buildDeterministicProductReviewPipeline(
+                  deterministicBroadProductAnswer,
+                  searchResults.length,
+                ),
+              },
+              confidence: getDeterministicProductConfidence(confidence, deterministicBroadProductAnswer),
+              processingTime: Date.now() - startTime,
+              model: deterministicBroadProductAnswer.model
+            }
+          };
+        }
       }
       console.log('Compass product structure broad answer will use grounded LLM synthesis', {
         sourceCount: answerSources.length,
@@ -2779,9 +6705,153 @@ export async function buildCompassAnswerResponse(
     } catch (error) {
       console.error('Compass answer generation failed', {
         errorName: error instanceof Error ? error.name : 'UnknownError',
+        failureCategory: 'answer_generation_unavailable',
+        sourceCount: answerSources.length,
+        answerMode: diagnosticAnswerMode,
+        isSpecificProductGuidance: ragIntent.isSpecificProductGuidance,
       });
-      
+
+      const evidenceBackedProductFallback = shouldUseDeterministicProductAnswerOnLlmFailure()
+        ? (
+          buildDeterministicSpecificProductAnswer(
+            message,
+            ragIntent,
+            specificProductScope,
+          ) || (isBroadProductStructureLlmIntent
+            ? buildDeterministicBroadProductAnswer(message, ragIntent, answerSources)
+            : null)
+        )
+        : null;
+
+      if (evidenceBackedProductFallback) {
+        const showContactOption = Boolean(evidenceBackedProductFallback.showContactOption);
+        emitPhase?.({
+          phase: 'answer-ready',
+          message: showContactOption
+            ? '모델 연결이 제한되어 출처 범위 안에서 제한 답변을 준비했습니다.'
+            : '모델 연결이 제한되어 선별 근거 기준 답변을 준비했습니다.',
+        });
+        return {
+          body: {
+            response: {
+              message: evidenceBackedProductFallback.answer,
+              content: evidenceBackedProductFallback.answer,
+              sources: evidenceBackedProductFallback.sources,
+              noDataFound: evidenceBackedProductFallback.sources.length === 0,
+              schema,
+              showContactOption,
+              sourceDiagnostics: {
+                ...sourceDiagnostics,
+                strictProductSourceCount: specificProductScope.strictProductSources.length,
+                answerSourceCount: evidenceBackedProductFallback.sources.length,
+                answerMode: diagnosticAnswerMode,
+                fallbackReason: 'llm_generation_failed',
+                deterministicAnswerFamily: detectProductAnswerFamily(message, ragIntent),
+                evidenceBackedFallback: true,
+              },
+              reviewPipeline: buildDeterministicProductReviewPipeline(
+                evidenceBackedProductFallback,
+                searchResults.length,
+              ),
+            },
+            confidence: getDeterministicProductConfidence(
+              Math.min(confidence, 68),
+              evidenceBackedProductFallback,
+            ),
+            processingTime: Date.now() - startTime,
+            model: `${evidenceBackedProductFallback.model}-llm-fallback`
+          }
+        };
+      }
+
       // 답변 LLM 실패와 retrieval 실패를 분리하기 위해 검증된 sources는 보존한다.
+      const groundedFallbackAnswer = buildLlmFailureGroundedFallbackAnswer(
+        message,
+        answerSources,
+        ragIntent,
+        specificProductScope,
+        isBroadProductStructureLlmIntent,
+      );
+
+      if (groundedFallbackAnswer) {
+        emitPhase?.({ phase: 'answer-ready', message: '모델 연결이 제한되어 근거 요약을 준비했습니다.' });
+        return {
+          body: {
+            response: {
+              message: groundedFallbackAnswer,
+              content: groundedFallbackAnswer,
+              sources: answerSources,
+              noDataFound: false,
+              schema,
+              showContactOption: true,
+              sourceDiagnostics: {
+                ...sourceDiagnostics,
+                strictProductSourceCount: specificProductScope.strictProductSources.length,
+                answerSourceCount: answerSources.length,
+                answerMode: diagnosticAnswerMode,
+                fallbackReason: 'llm_generation_failed',
+              },
+              reviewPipeline: buildReviewPipeline({
+                status: 'limited',
+                sourceCount: searchResults.length,
+                verifiedSourceCount: answerSources.length,
+                contactRecommended: true,
+              }),
+            },
+            confidence: Math.min(confidence, 60),
+            processingTime: Date.now() - startTime,
+            model: 'compass-answer-grounded-llm-fallback'
+          }
+        };
+      }
+
+      if (process.env.COMPASS_ENABLE_DETERMINISTIC_PRODUCT_FALLBACK_ON_LLM_FAILURE === 'true') {
+        const deterministicFallback = buildDeterministicSpecificProductAnswer(
+          message,
+          ragIntent,
+          specificProductScope,
+        ) || (isBroadProductStructureLlmIntent
+          ? buildDeterministicBroadProductAnswer(message, ragIntent, answerSources)
+          : null);
+
+        if (deterministicFallback) {
+          const showContactOption = Boolean(deterministicFallback.showContactOption);
+          emitPhase?.({
+            phase: 'answer-ready',
+            message: showContactOption
+              ? '모델 연결이 제한되어 공식 출처 범위 안에서 최소 답변을 준비했습니다.'
+              : '모델 연결이 제한되어 준비된 근거 요약을 제공했습니다.',
+          });
+          return {
+            body: {
+              response: {
+                message: deterministicFallback.answer,
+                content: deterministicFallback.answer,
+                sources: deterministicFallback.sources,
+                noDataFound: deterministicFallback.sources.length === 0,
+                schema,
+                showContactOption,
+                sourceDiagnostics: {
+                  ...sourceDiagnostics,
+                  strictProductSourceCount: specificProductScope.strictProductSources.length,
+                  answerSourceCount: deterministicFallback.sources.length,
+                  answerMode: diagnosticAnswerMode,
+                  deterministicAnswerFamily: detectProductAnswerFamily(message, ragIntent),
+                  fallbackReason: 'llm_generation_failed',
+                },
+                reviewPipeline: buildDeterministicProductReviewPipeline(
+                  deterministicFallback,
+                  searchResults.length,
+                ),
+              },
+              confidence: getDeterministicProductConfidence(confidence, deterministicFallback),
+              processingTime: Date.now() - startTime,
+              model: `${deterministicFallback.model}-llm-fallback`
+            }
+          };
+        }
+      }
+
       emitPhase?.({ phase: 'answer-ready', message: '출처는 확보했지만 생성 답변은 제한되었습니다.' });
       return {
         body: {
@@ -2812,7 +6882,20 @@ export async function buildCompassAnswerResponse(
     const processingTime = Date.now() - startTime;
     console.log('Compass answer runtime request completed', { processingTime });
     const operationalAnswer = buildNaverShoppingDataOperationalAnswer(message, answerSources);
-    const normalizedAnswer = normalizeGeneratedAnswer(operationalAnswer || answerResult.answer, answerSources);
+    const rawGeneratedAnswer = String(answerResult.answer || '').trim();
+    const answerRepair = buildSpecificProductGeneratedAnswerRepair(
+      message,
+      ragIntent,
+      specificProductScope,
+      isBroadProductStructureLlmIntent,
+      rawGeneratedAnswer,
+      operationalAnswer,
+    );
+    const finalAnswerSources = answerRepair?.sources || answerSources;
+    const normalizedAnswer = normalizeGeneratedAnswer(
+      answerRepair?.answer || rawGeneratedAnswer || operationalAnswer || '',
+      finalAnswerSources,
+    );
     const responseAnswer = coverageNotice ? `${coverageNotice}\n\n${normalizedAnswer}` : normalizedAnswer;
     
     emitPhase?.({ phase: 'answer-ready', message: '답변 정리가 완료되었습니다.' });
@@ -2821,20 +6904,28 @@ export async function buildCompassAnswerResponse(
         response: {
           message: responseAnswer,
           content: responseAnswer,
-          sources: answerSources,
+          sources: finalAnswerSources,
           noDataFound: false,
           schema,
-          showContactOption: false,
+          showContactOption: Boolean(answerRepair?.showContactOption),
           sourceDiagnostics: {
             ...sourceDiagnostics,
-            answerSourceCount: answerSources.length,
-            answerMode: specificProductScope.mode,
+            answerSourceCount: finalAnswerSources.length,
+            answerMode: diagnosticAnswerMode,
+            answerRepairReason: answerRepair?.reason,
           },
-          reviewPipeline,
+          reviewPipeline: answerRepair
+            ? buildReviewPipeline({
+              status: answerRepair.reviewStatus || 'completed',
+              sourceCount: searchResults.length,
+              verifiedSourceCount: finalAnswerSources.length,
+              contactRecommended: Boolean(answerRepair.showContactOption),
+            })
+            : reviewPipeline,
         },
-        confidence,
+        confidence: answerRepair?.confidenceCap ? Math.min(confidence, answerRepair.confidenceCap) : confidence,
         processingTime,
-        model: buildCompassAnswerModel(ragIntent, isBroadProductStructureLlmIntent)
+        model: answerRepair?.model || buildCompassAnswerModel(message, ragIntent, isBroadProductStructureLlmIntent)
       }
     };
 
