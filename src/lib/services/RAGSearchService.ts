@@ -535,8 +535,8 @@ export class RAGSearchService {
 
   private getRetrievalChannelTimeoutMs(): number {
     const parsed = Math.floor(Number(process.env.COMPASS_RETRIEVAL_CHANNEL_TIMEOUT_MS));
-    const timeoutMs = Number.isFinite(parsed) && parsed > 0 ? parsed : 11000;
-    return Math.min(Math.max(timeoutMs, 5000), 18000);
+    const timeoutMs = Number.isFinite(parsed) && parsed > 0 ? parsed : 28000;
+    return Math.min(Math.max(timeoutMs, 8000), 30000);
   }
 
   private async withRetrievalChannelTimeout<T>(

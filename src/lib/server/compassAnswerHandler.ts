@@ -23,6 +23,11 @@ type CompassAnswerHandlerResult = {
   status?: number;
 };
 
+type CompassRetrievalResult = {
+  results: SearchResult[];
+  timedOut: boolean;
+};
+
 type CompassReviewPipelineStatus = 'completed' | 'limited' | 'blocked' | 'error';
 
 function hasCompassEvidenceStore() {
@@ -91,8 +96,8 @@ function resolveCompassRetrievalTimeoutMs(): number {
   const configured = process.env.COMPASS_RETRIEVAL_TIMEOUT_MS
     || process.env.COMPASS_EVIDENCE_RETRIEVAL_TIMEOUT_MS;
   const parsed = Math.floor(Number(configured));
-  const timeoutMs = Number.isFinite(parsed) ? parsed : 22000;
-  return Math.min(Math.max(timeoutMs, 8000), 35000);
+  const timeoutMs = Number.isFinite(parsed) ? parsed : 30000;
+  return Math.min(Math.max(timeoutMs, 12000), 45000);
 }
 
 async function withCompassTimeout<T>(
@@ -101,18 +106,20 @@ async function withCompassTimeout<T>(
   fallback: T,
   warningLabel: string,
   metadata: Record<string, unknown> = {},
-): Promise<T> {
+): Promise<{ value: T; timedOut: boolean }> {
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
 
   try {
     return await Promise.race([
-      promise.finally(() => {
-        if (timeoutId) clearTimeout(timeoutId);
-      }),
-      new Promise<T>((resolve) => {
+      promise
+        .then((value) => ({ value, timedOut: false }))
+        .finally(() => {
+          if (timeoutId) clearTimeout(timeoutId);
+        }),
+      new Promise<{ value: T; timedOut: boolean }>((resolve) => {
         timeoutId = setTimeout(() => {
           console.warn(warningLabel, { ...metadata, timeoutMs });
-          resolve(fallback);
+          resolve({ value: fallback, timedOut: true });
         }, timeoutMs);
       }),
     ]);
@@ -127,7 +134,7 @@ async function withCompassTimeout<T>(
 async function searchWithCompassRAG(
   query: string,
   limit: number = 5
-): Promise<SearchResult[]> {
+): Promise<CompassRetrievalResult> {
   try {
     const startedAt = Date.now();
     const timeoutMs = resolveCompassRetrievalTimeoutMs();
@@ -135,56 +142,61 @@ async function searchWithCompassRAG(
     
     if (!hasCompassEvidenceStore()) {
       console.warn('Compass evidence store is unavailable');
-      return [];
+      return { results: [], timedOut: false };
     }
 
     const ragService = getCompassRagSearchService();
-    const searchResults = await withCompassTimeout(
+    const retrievalResult = await withCompassTimeout(
       ragService.searchSimilarChunks(query, limit),
       timeoutMs,
       [] as Awaited<ReturnType<RAGSearchService['searchSimilarChunks']>>,
       'Compass evidence retrieval timed out',
       { queryLength: query.length, limit },
     );
+    const searchResults = retrievalResult.value;
     
     console.log('Compass evidence retrieval completed', {
       resultCount: searchResults.length,
       durationMs: Date.now() - startedAt,
       limit,
+      timedOut: retrievalResult.timedOut,
     });
     
-    return searchResults.map(result => ({
-      chunk_id: result.id,
-      content: result.content,
-      similarity: result.similarity,
-      score: result.score,
-      hybridScore: result.hybridScore,
-      vectorScore: result.vectorScore,
-      keywordScore: result.keywordScore,
-      corpus: result.corpus,
-      evidenceType: result.evidenceType,
-      evidenceDecision: result.evidenceDecision,
-      evidenceDecisionReason: result.evidenceDecisionReason,
-      rankReason: result.rankReason,
-      lexicalOverlap: result.lexicalOverlap,
-      vendorMatch: result.vendorMatch,
-      vendorMismatch: result.vendorMismatch,
-      sourceVendor: result.sourceVendor,
-      sourceVendors: result.sourceVendors,
-      topicMatch: result.topicMatch,
-      retrievalMethod: result.retrievalMethod,
-      documentId: result.documentId,
-      documentTitle: result.documentTitle,
-      documentUrl: result.documentUrl,
-      sourceQuality: result.sourceQuality,
-      metadata: result.metadata
-    }));
+    return {
+      results: searchResults.map(result => ({
+        chunk_id: result.id,
+        content: result.content,
+        similarity: result.similarity,
+        score: result.score,
+        hybridScore: result.hybridScore,
+        vectorScore: result.vectorScore,
+        keywordScore: result.keywordScore,
+        corpus: result.corpus,
+        evidenceType: result.evidenceType,
+        evidenceDecision: result.evidenceDecision,
+        evidenceDecisionReason: result.evidenceDecisionReason,
+        rankReason: result.rankReason,
+        lexicalOverlap: result.lexicalOverlap,
+        vendorMatch: result.vendorMatch,
+        vendorMismatch: result.vendorMismatch,
+        sourceVendor: result.sourceVendor,
+        sourceVendors: result.sourceVendors,
+        topicMatch: result.topicMatch,
+        retrievalMethod: result.retrievalMethod,
+        documentId: result.documentId,
+        documentTitle: result.documentTitle,
+        documentUrl: result.documentUrl,
+        sourceQuality: result.sourceQuality,
+        metadata: result.metadata
+      })),
+      timedOut: retrievalResult.timedOut,
+    };
     
   } catch (error) {
     console.error('Compass evidence retrieval failed', {
       errorName: error instanceof Error ? error.name : 'UnknownError',
     });
-    return [];
+    return { results: [], timedOut: false };
   }
 }
 
@@ -6365,8 +6377,9 @@ export async function buildCompassAnswerResponse(
     const searchResultGroups = await Promise.all(
       searchQueries.map(query => searchWithCompassRAG(query, Math.max(8, ragIntent.recommendedSourceLimit))),
     );
-    const supplementResultCount = searchResultGroups.slice(1).flat().length;
-    let searchResults = searchResultGroups.flat();
+    const retrievalTimedOut = searchResultGroups.some(group => group.timedOut);
+    const supplementResultCount = searchResultGroups.slice(1).flatMap(group => group.results).length;
+    let searchResults = searchResultGroups.flatMap(group => group.results);
 
     if (supplementQueries.length > 0) {
       searchResults = mergeSearchResultsByIdentity(searchResults);
@@ -6385,7 +6398,10 @@ export async function buildCompassAnswerResponse(
     if (productStructureRescueResults.length > 0) {
       verifiedSearchResults.push(...productStructureRescueResults);
     }
-    const sourceDiagnostics = buildSourceDiagnostics(ragIntent, verifiedSearchResults);
+    const sourceDiagnostics = {
+      ...buildSourceDiagnostics(ragIntent, verifiedSearchResults),
+      retrievalTimedOut,
+    };
     emitPhase?.({
       phase: 'evidence-ready',
       message: '확인 가능한 출처를 선별했습니다.',
@@ -6405,6 +6421,34 @@ export async function buildCompassAnswerResponse(
     }
 
     // 2. 검색 결과가 없으면 관련 내용 없음 응답
+    if (verifiedSearchResults.length === 0 && retrievalTimedOut) {
+      console.warn('Compass answer request completed with retrieval timeout and no grounded evidence');
+      const limitedAnswer = '관련 출처 검색이 시간 제한에 걸려 답변을 확정할 수 없습니다. 현재 결과만으로 “자료 없음”으로 판단하지 않고, 잠시 후 다시 시도하거나 담당자 확인을 권장합니다.';
+      emitPhase?.({ phase: 'answer-ready', message: '출처 검색이 제한되어 제한 응답을 준비했습니다.' });
+      return {
+        body: {
+          response: {
+            message: limitedAnswer,
+            content: limitedAnswer,
+            sources: [],
+            noDataFound: false,
+            schema: getCompassDbSchema(),
+            showContactOption: true,
+            sourceDiagnostics,
+            reviewPipeline: buildReviewPipeline({
+              status: 'limited',
+              sourceCount: searchResults.length,
+              verifiedSourceCount: 0,
+              contactRecommended: true,
+            }),
+          },
+          confidence: 0,
+          processingTime: Date.now() - startTime,
+          model: 'compass-answer-retrieval-limited'
+        }
+      };
+    }
+
     if (verifiedSearchResults.length === 0) {
       console.log('Compass answer request completed without grounded evidence');
       const noDataAnswer = buildNoDataAnswer(ragIntent);

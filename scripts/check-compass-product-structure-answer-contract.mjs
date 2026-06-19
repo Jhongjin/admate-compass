@@ -678,6 +678,42 @@ if (!/needsProductStructureRetrieval[\s\S]*Math\.max\(limit,\s*intent\.vendors\.
   fail('product structure intent should expand retrieval candidate pool for vendor queries');
 }
 
+if (!/const timeoutMs = Number\.isFinite\(parsed\) && parsed > 0 \? parsed : 28000/.test(rag)) {
+  fail('RAG retrieval channels need a 28s default budget so slower production Supabase keyword paths do not collapse to empty no-data results');
+}
+
+if (!/return Math\.min\(Math\.max\(timeoutMs, 8000\), 30000\)/.test(rag)) {
+  fail('RAG retrieval channel timeout must allow 8s-30s range for production latency variance');
+}
+
+if (!/const timeoutMs = Number\.isFinite\(parsed\) \? parsed : 30000/.test(answerHandler)) {
+  fail('Compass answer retrieval needs a 30s default budget before no-data fallback');
+}
+
+if (!/return Math\.min\(Math\.max\(timeoutMs, 12000\), 45000\)/.test(answerHandler)) {
+  fail('Compass answer retrieval timeout must allow 12s-45s range inside the 60s Vercel function budget');
+}
+
+if (!/type CompassRetrievalResult = \{[\s\S]*results: SearchResult\[\];[\s\S]*timedOut: boolean;[\s\S]*\}/.test(answerHandler)) {
+  fail('Compass answer retrieval must carry timeout metadata alongside search results');
+}
+
+if (!/const retrievalTimedOut = searchResultGroups\.some\(group => group\.timedOut\)/.test(answerHandler)) {
+  fail('Compass answer handler must preserve whether any retrieval query timed out');
+}
+
+if (!/verifiedSearchResults\.length === 0 && retrievalTimedOut/.test(answerHandler)) {
+  fail('Compass answer handler must separate retrieval timeouts from authoritative no-data');
+}
+
+if (!/model: 'compass-answer-retrieval-limited'/.test(answerHandler)) {
+  fail('Compass answer handler must return a dedicated retrieval-limited model for timed-out empty evidence');
+}
+
+if (!/noDataFound: false,[\s\S]*model: 'compass-answer-retrieval-limited'/.test(answerHandler)) {
+  fail('retrieval-limited responses must not be classified as noDataFound');
+}
+
 if (!/productStructureCandidates[\s\S]*mergeDedupeAndRankCandidates[\s\S]*productStructureCandidates/.test(rag)) {
   fail('product structure anchor candidates must be merged into final ranking');
 }
