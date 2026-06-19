@@ -74,7 +74,10 @@ for (const backfillSignal of [
   'document_chunks',
   'ollama_document_chunks',
   'dryRun',
+  'const dryRun = body.dryRun !== false',
   'index-official-graph',
+  'OFFICIAL_GRAPH_BACKFILL_CONFIRMATION_REQUIRED',
+  'OFFICIAL_GRAPH_BACKFILL_FAILED',
   'compassOfficialGuideGraphIndexer',
 ]) {
   assertIncludes(officialGuideGraphBackfillRoute, backfillSignal, 'official guide graph backfill route contract');
@@ -85,6 +88,8 @@ for (const forbiddenBackfillSignal of [
   'embedding: null',
   ".from('document_chunks')\n      .delete()",
   ".from('document_chunks')\r\n      .delete()",
+  'details: error instanceof Error',
+  'String(error)',
 ]) {
   if (officialGuideGraphBackfillRoute.includes(forbiddenBackfillSignal)) {
     throw new Error(`official guide graph backfill route must not contain ${forbiddenBackfillSignal}`);

@@ -2,6 +2,7 @@
 
 import fs from 'node:fs'
 import path from 'node:path'
+import { execFileSync } from 'node:child_process'
 
 const root = process.cwd()
 
@@ -36,6 +37,23 @@ function walkFiles(relativeDir) {
   return files
 }
 
+function isGitTracked(relativePath) {
+  try {
+    const output = execFileSync('git', ['ls-files', '--', relativePath], {
+      cwd: root,
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    })
+
+    return output
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .includes(relativePath)
+  } catch {
+    return false
+  }
+}
+
 const service = read('src/lib/services/CompassAnswerLlmService.ts')
 const canonicalRoute = read('src/app/api/compass-answer/route.ts')
 const legacyCompatibilityRoute = read('src/app/api/chat-ollama/route.ts')
@@ -46,6 +64,7 @@ const providerDoc = read('docs/tasks/2026-05-17_compass_answer_llm_provider_boun
 const decisionDoc = read('docs/tasks/2026-05-17_compass_reliability_3agent_openrouter_graphrag_plan_v3.md')
 const canaryDoc = read('docs/tasks/2026-05-17_compass_openrouter_canary_readiness_checklist_v1.md')
 const packageJson = JSON.parse(read('package.json') || '{}')
+const vercelJson = JSON.parse(read('vercel.json') || '{}')
 
 const nonCommentEnvLines = envExample
   .split(/\r?\n/)
@@ -130,13 +149,26 @@ for (const forbidden of [
   for (const relativePath of [
     ...walkFiles('src'),
     '.env.example',
-    'env.example',
   ]) {
     const text = read(relativePath)
     if (text.includes(forbidden)) {
       fail(`${relativePath} must not expose server-only OpenRouter config via ${forbidden}`)
     }
   }
+}
+
+for (const forbiddenTrackedEnvFile of [
+  '.env.render',
+  '.env.vercel',
+  'env.example',
+]) {
+  if (isGitTracked(forbiddenTrackedEnvFile) && fs.existsSync(path.join(root, forbiddenTrackedEnvFile))) {
+    fail(`${forbiddenTrackedEnvFile} must not be tracked; keep real runtime values in Vercel env and use .env.example for placeholders`)
+  }
+}
+
+if (Object.prototype.hasOwnProperty.call(vercelJson, 'env')) {
+  fail('vercel.json must not embed runtime environment values; manage them through Vercel env')
 }
 
 for (const token of [

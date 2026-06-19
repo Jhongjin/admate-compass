@@ -118,12 +118,14 @@ export async function POST(request: NextRequest) {
         : '공식 가이드 그래프 근거 백필이 완료되었습니다.',
     });
   } catch (error) {
-    console.error('Official guide graph backfill failed:', error);
+    console.error('Official guide graph backfill failed:', {
+      errorName: error instanceof Error ? error.name : 'UnknownError',
+    });
     return NextResponse.json(
       {
         success: false,
+        code: 'OFFICIAL_GRAPH_BACKFILL_FAILED',
         error: '공식 가이드 그래프 백필에 실패했습니다.',
-        details: error instanceof Error ? error.message : String(error),
       },
       { status: 500 },
     );
