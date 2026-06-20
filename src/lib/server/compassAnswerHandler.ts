@@ -8327,6 +8327,52 @@ export async function buildCompassAnswerResponse(
     const responseAnswer = coverageNotice ? `${coverageNotice}\n\n${normalizedAnswer}` : normalizedAnswer;
 
     if (answerStatesNoVerifiedData(responseAnswer)) {
+      const noDataRepairSources = finalAnswerSources.length > 0 ? finalAnswerSources : answerSources;
+      const noDataRepairAnswer = buildLlmFailureGroundedFallbackAnswer(
+        message,
+        noDataRepairSources,
+        ragIntent,
+        specificProductScope,
+        isBroadProductStructureLlmIntent,
+      );
+      if (noDataRepairAnswer && noDataRepairSources.length > 0) {
+        console.warn('Compass answer generation produced no-data text; preserving verified sources with grounded fallback', {
+          sourceCount: noDataRepairSources.length,
+          answerMode: diagnosticAnswerMode,
+        });
+        emitPhase?.({ phase: 'answer-ready', message: '확보된 근거를 기준으로 답변을 복구했습니다.' });
+        return {
+          body: {
+            response: {
+              message: noDataRepairAnswer,
+              content: noDataRepairAnswer,
+              sources: noDataRepairSources,
+              noDataFound: false,
+              schema,
+              showContactOption: true,
+              sourceDiagnostics: {
+                ...sourceDiagnostics,
+                answerSourceCount: noDataRepairSources.length,
+                answerMode: diagnosticAnswerMode,
+                answerGenerationDurationMs,
+                fallbackReason: 'generated_no_data_repaired',
+                answerRepairReason: answerRepair?.reason,
+                broadAnswerRepairReason: broadAnswerRepair?.reason,
+              },
+              reviewPipeline: buildReviewPipeline({
+                status: 'limited',
+                sourceCount: searchResults.length,
+                verifiedSourceCount: noDataRepairSources.length,
+                contactRecommended: true,
+                retrievalChannelLimited: sourceDiagnostics.retrievalChannelTimedOut === true,
+              }),
+            },
+            confidence: Math.min(finalConfidenceCap ? Math.min(confidence, finalConfidenceCap) : confidence, 62),
+            processingTime,
+            model: 'compass-answer-grounded-no-data-repair'
+          }
+        };
+      }
       console.warn('Compass answer generation produced no-data text; forcing noDataFound response state');
       return buildAuthoritativeNoDataResponse(ragIntent, startTime, emitPhase);
     }

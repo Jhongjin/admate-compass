@@ -1372,6 +1372,7 @@ export class RAGSearchService {
       }
 
       const usesGenericRightsPolicyPriority = this.isGenericRightsPolicyPriorityIntent(intent);
+      const usesGenericGamblingPolicyPriority = this.isGenericGamblingPolicyPriorityIntent(intent);
       const usesKakaoServiceProtectionPriority = this.isKakaoServiceProtectionPolicyIntent(intent);
 
       // 질문을 임베딩으로 변환
@@ -1383,6 +1384,7 @@ export class RAGSearchService {
         vectorCandidates,
         keywordCandidates,
         genericRightsPolicyCandidates,
+        genericGamblingPolicyCandidates,
         kakaoServiceProtectionCandidates,
         vendorCoverageCandidates,
         productStructureCandidates,
@@ -1398,6 +1400,9 @@ export class RAGSearchService {
           : this.withRetrievalChannelTimeout(this.searchKeywordCandidates(query, candidateLimit, intent), 'hybrid_keyword', [], timedOutChannels, channelTimings),
         usesGenericRightsPolicyPriority
           ? this.withRetrievalChannelTimeout(this.searchGenericRightsPolicyPriorityCandidates(intent), 'hybrid_generic_rights_policy_priority', [], timedOutChannels, channelTimings)
+          : Promise.resolve([]),
+        usesGenericGamblingPolicyPriority
+          ? this.withRetrievalChannelTimeout(this.searchGenericGamblingPolicyPriorityCandidates(intent), 'hybrid_generic_gambling_policy_priority', [], timedOutChannels, channelTimings)
           : Promise.resolve([]),
         usesKakaoServiceProtectionPriority
           ? this.withRetrievalChannelTimeout(this.searchKakaoServiceProtectionPolicyCandidates(intent), 'hybrid_kakao_service_protection_priority', [], timedOutChannels, channelTimings)
@@ -1427,11 +1432,12 @@ export class RAGSearchService {
           : this.withRetrievalChannelTimeout(this.searchEvidenceGraphCandidates(query, candidateLimit, intent), 'hybrid_graph', [], timedOutChannels, channelTimings)
       ]);
 
-      console.log(`📊 Hybrid 후보 수집 결과: vector=${vectorCandidates.length}, keyword=${keywordCandidates.length}, genericRightsPolicy=${genericRightsPolicyCandidates.length}, kakaoServiceProtection=${kakaoServiceProtectionCandidates.length}, vendorCoverage=${vendorCoverageCandidates.length}, productStructure=${productStructureCandidates.length}, naverPriority=${naverPriorityCandidates.length}, metaOverviewPriority=${metaProductOverviewPriorityCandidates.length}, metaAppInstallPriority=${metaAppInstallPriorityCandidates.length}, kakaoProductPriority=${kakaoProductPriorityCandidates.length}, graph=${graphCandidates.length}`);
+      console.log(`📊 Hybrid 후보 수집 결과: vector=${vectorCandidates.length}, keyword=${keywordCandidates.length}, genericRightsPolicy=${genericRightsPolicyCandidates.length}, genericGamblingPolicy=${genericGamblingPolicyCandidates.length}, kakaoServiceProtection=${kakaoServiceProtectionCandidates.length}, vendorCoverage=${vendorCoverageCandidates.length}, productStructure=${productStructureCandidates.length}, naverPriority=${naverPriorityCandidates.length}, metaOverviewPriority=${metaProductOverviewPriorityCandidates.length}, metaAppInstallPriority=${metaAppInstallPriorityCandidates.length}, kakaoProductPriority=${kakaoProductPriorityCandidates.length}, graph=${graphCandidates.length}`);
       const allCandidates = [
         ...vectorCandidates,
         ...keywordCandidates,
         ...genericRightsPolicyCandidates,
+        ...genericGamblingPolicyCandidates,
         ...kakaoServiceProtectionCandidates,
         ...vendorCoverageCandidates,
         ...productStructureCandidates,
@@ -1870,6 +1876,121 @@ export class RAGSearchService {
           retrievalMethod: 'hybrid',
           evidenceType: 'hybrid',
           genericRightsPolicyPriority: true,
+          evidenceDecision: candidate.evidenceDecision,
+          evidenceDecisionReason: candidate.evidenceDecisionReason,
+          rankReason: candidate.rankReason,
+          topicMatch: true,
+          topicExactMatch: true,
+          policyTitleMatch: true,
+          score: boostedScore,
+          hybridScore: boostedScore,
+        };
+
+        return candidate;
+      })
+      .filter((result: SearchResult | null): result is SearchResult => result !== null);
+  }
+
+  private async searchGenericGamblingPolicyPriorityCandidates(intent: QueryIntent): Promise<SearchResult[]> {
+    if (!this.isGenericGamblingPolicyPriorityIntent(intent)) {
+      return [];
+    }
+
+    const anchors = [
+      '도박',
+      '사행성',
+      '사행 행위',
+      '사행행위',
+      '온라인 도박',
+      '카지노',
+      '베팅',
+      '경마',
+      '경륜',
+      '경정',
+      '사행성을 조장',
+      '광고 집행 불가',
+      '광고 게재제한',
+      '등록불가 업종',
+      '온라인 도박 및 게임 광고 정책',
+    ];
+    const keywords = Array.from(new Set([
+      ...intent.keywords,
+      ...intent.adPolicyTerms,
+      ...anchors,
+    ]));
+    const [documentChunkResults, ollamaResults] = await Promise.all([
+      this.searchKeywordTable('document_chunks', anchors, 18, intent, undefined, { rawKeywordsOnly: true }),
+      this.searchKeywordTable('ollama_document_chunks', anchors, 18, intent, undefined, { rawKeywordsOnly: true }),
+    ]);
+
+    return [...documentChunkResults, ...ollamaResults]
+      .map((result) => {
+        const candidate = this.normalizeCandidate(result.row, {
+          keywords,
+          intent,
+          retrievalMethod: 'hybrid',
+          corpus: result.corpus,
+          evidenceType: 'hybrid',
+        });
+
+        if (!candidate) return null;
+
+        const sourceText = this.buildCandidateEvidenceText(candidate.content, candidate.documentTitle, candidate.metadata);
+        if (!this.hasGenericGamblingPolicyPrioritySignal(sourceText)) return null;
+
+        const titleText = this.normalizeSearchText(candidate.documentTitle || '');
+        const policyTitleSignal = candidate.policyTitleMatch
+          || /집행\s*기준|준수사항|업종별\s*가이드|심사\s*가이드|운영\s*정책|운영정책|광고\s*정책|정책|게재\s*제한|등록\s*불가|제한\s*업종|온라인\s*도박/.test(sourceText);
+        if (!policyTitleSignal) return null;
+        if (/마스트헤드|상품\s*소개|상품소개|캠페인\s*목표|도움말|faq|목록|검색결과/.test(titleText) && !/정책|집행|준수사항|게재\s*제한|등록\s*불가|온라인\s*도박/.test(sourceText)) {
+          return null;
+        }
+
+        const hasDirectGamblingSignal = /도박|온라인\s*도박|카지노|베팅|배팅|경마|경륜|경정|복권|포커|빙고/.test(sourceText);
+        const hasSpeculativeSignal = /사행|사행성|사행\s*행위|사행행위|확률형|랜덤박스/.test(sourceText);
+        const hasRestrictionSignal = /불가|제한|금지|게재\s*제한|집행\s*불가|광고\s*집행\s*불가|광고\s*불가|등록\s*불가|승인|인증/.test(sourceText);
+        const exactSignalCount = [hasDirectGamblingSignal, hasSpeculativeSignal, hasRestrictionSignal]
+          .filter(Boolean).length;
+        const boostedScore = Math.max(
+          hasDirectGamblingSignal && hasSpeculativeSignal ? 0.99 : 0.94,
+          Math.min(1, (candidate.hybridScore || 0) + 0.44 + exactSignalCount * 0.05),
+        );
+
+        candidate.hybridScore = boostedScore;
+        candidate.score = boostedScore;
+        candidate.topicMatch = true;
+        candidate.topicExactMatch = true;
+        candidate.policyTitleMatch = true;
+        candidate.retrievalMethod = 'hybrid';
+        candidate.evidenceType = 'hybrid';
+        candidate.evidenceDecision = 'verified';
+        candidate.evidenceDecisionReason = Array.from(new Set([
+          ...(candidate.evidenceDecisionReason || []),
+          'generic_gambling_policy_priority',
+          ...(hasDirectGamblingSignal ? ['gambling_direct_signal'] : []),
+          ...(hasSpeculativeSignal ? ['gambling_speculative_signal'] : []),
+          ...(hasRestrictionSignal ? ['gambling_restriction_signal'] : []),
+          'hybrid_retrieval',
+        ]));
+        candidate.rankReason = Array.from(new Set([
+          ...(candidate.rankReason || []),
+          'generic_gambling_policy_priority',
+          ...(hasDirectGamblingSignal ? ['gambling_direct_match'] : []),
+          ...(hasSpeculativeSignal ? ['gambling_speculative_match'] : []),
+          ...(hasRestrictionSignal ? ['gambling_restriction_match'] : []),
+        ]));
+        candidate.sourceQuality = {
+          ...candidate.sourceQuality,
+          hasExcerpt: true,
+          isFallback: false,
+          policyTitleMatch: true,
+          qualityScore: Math.max(candidate.sourceQuality.qualityScore || 0, hasDirectGamblingSignal && hasSpeculativeSignal ? 0.96 : 0.88),
+        };
+        candidate.metadata = {
+          ...(candidate.metadata || {}),
+          retrievalMethod: 'hybrid',
+          evidenceType: 'hybrid',
+          genericGamblingPolicyPriority: true,
           evidenceDecision: candidate.evidenceDecision,
           evidenceDecisionReason: candidate.evidenceDecisionReason,
           rankReason: candidate.rankReason,
@@ -6298,11 +6419,23 @@ export class RAGSearchService {
     return this.isGenericPolicyIntent(intent) && intent.topics.includes('rights');
   }
 
+  private isGenericGamblingPolicyPriorityIntent(intent: QueryIntent): boolean {
+    return this.isGenericPolicyIntent(intent) && intent.topics.includes('gambling');
+  }
+
   private hasGenericRightsPolicyPrioritySignal(sourceText: string): boolean {
     const text = this.normalizeSearchText(sourceText);
     const hasRightsTopic = /상표|상표권|서비스표권|표장|초상권|성명권|인격권|저작권|저작물|권리\s*보호|권리보호|권리\s*침해|권리침해|타인의\s*권리|타인\s*권리|무단|허가|동의|침해/.test(text);
     const hasAdPolicyContext = /광고|소재|문안|문구|심사|집행|등록\s*기준|등록기준|운영\s*정책|운영정책|광고\s*정책|정책|가이드|윤리/.test(text);
     return hasRightsTopic && hasAdPolicyContext;
+  }
+
+  private hasGenericGamblingPolicyPrioritySignal(sourceText: string): boolean {
+    const text = this.normalizeSearchText(sourceText);
+    const hasGamblingTopic = /도박|온라인\s*도박|사행|사행성|사행\s*행위|사행행위|카지노|베팅|배팅|경마|경륜|경정|복권|포커|빙고|확률형|랜덤박스/.test(text);
+    const hasAdPolicyContext = /광고|소재|심사|집행|게재|등록\s*기준|등록기준|운영\s*정책|운영정책|광고\s*정책|정책|가이드|준수사항|업종/.test(text);
+    const hasRestrictionContext = /불가|제한|금지|승인|인증|청소년|유해|등록\s*불가|게재\s*제한|집행\s*불가|광고\s*집행\s*불가/.test(text);
+    return hasGamblingTopic && hasAdPolicyContext && hasRestrictionContext;
   }
 
   private hasPolicyJudgmentIntent(intent: QueryIntent): boolean {
