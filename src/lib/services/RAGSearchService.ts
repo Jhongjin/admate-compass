@@ -129,6 +129,7 @@ const COMPASS_SUPABASE_ROWS_CACHE_TTL_MS = Math.min(
   Math.max(Number(process.env.COMPASS_SUPABASE_ROWS_CACHE_TTL_MS || 900000), 30000),
   900000,
 );
+const COMPASS_SUPABASE_ROWS_CACHE_KEY_VERSION = 'v2-product-retrieval-paths';
 const compassSupabaseRowsCache = new Map<string, CompassSupabaseRowsCacheEntry>();
 
 export function getCompassSupabaseRowsCacheStatus() {
@@ -840,7 +841,7 @@ export class RAGSearchService {
     const normalizedParams = Object.fromEntries(
       Object.entries(params).map(([key, value]) => [key, normalizeValue(value)])
     );
-    return JSON.stringify({ kind, ...normalizedParams });
+    return JSON.stringify({ version: COMPASS_SUPABASE_ROWS_CACHE_KEY_VERSION, kind, ...normalizedParams });
   }
 
   private readSupabaseRowsCache(cacheKey: string): any[] | null {

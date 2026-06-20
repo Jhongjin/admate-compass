@@ -597,8 +597,12 @@ if (!/sourceIdentityLooksLikeGenericLegalOrAccountDoc[\s\S]*청구\|결제\|지�
   fail('answer source routing must demote payment/account support documents such as 지불 for product-structure answers');
 }
 
-if (!/COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v13-meta-ads-guide-title-normalization'[\s\S]*`compass-answer:\$\{COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION\}:\$\{message\}`/.test(answerHandler)) {
+if (!/COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v14-product-retrieval-paths'[\s\S]*`compass-answer:\$\{COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION\}:\$\{message\}`/.test(answerHandler)) {
   fail('answer response cache key must be versioned so stale durable cached answers are bypassed after source-quality fixes');
+}
+
+if (!/COMPASS_SUPABASE_ROWS_CACHE_KEY_VERSION = 'v2-product-retrieval-paths'[\s\S]*JSON\.stringify\(\{ version: COMPASS_SUPABASE_ROWS_CACHE_KEY_VERSION, kind, \.\.\.normalizedParams \}\)/.test(rag)) {
+  fail('durable retrieval row cache key must be versioned so stale product retrieval rows are bypassed after routing fixes');
 }
 
 if (!answerHandler.includes('process.env.COMPASS_ANSWER_RESPONSE_CACHE_TTL_MS || 900000')

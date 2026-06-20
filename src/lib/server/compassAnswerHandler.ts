@@ -114,7 +114,7 @@ const COMPASS_ANSWER_RESPONSE_CACHE_TTL_MS = Math.min(
   900000,
 );
 const COMPASS_ANSWER_RESPONSE_CACHE_MAX_ENTRIES = 64;
-const COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v13-meta-ads-guide-title-normalization';
+const COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v14-product-retrieval-paths';
 const compassAnswerResponseCache = new Map<string, CompassAnswerResponseCacheEntry>();
 const compassAnswerRuntimeMetrics = {
   startedAt: Date.now(),
@@ -268,6 +268,18 @@ async function resolveCompassAnswerRequestCacheKey(request: NextRequest): Promis
   } catch {
     return null;
   }
+}
+
+function shouldBypassCompassAnswerRuntimeCache(request: NextRequest): boolean {
+  const bypassHeader = request.headers.get('x-compass-answer-cache-bypass')
+    || request.headers.get('x-rag-eval-cache-bypass')
+    || '';
+  if (/^(1|true|yes)$/i.test(bypassHeader.trim())) return true;
+
+  const cacheControl = request.headers.get('cache-control') || '';
+  if (/\bno-cache\b|\bno-store\b/i.test(cacheControl)) return true;
+
+  return request.nextUrl.searchParams.get('cache') === 'bypass';
 }
 
 function cloneCompassAnswerBody(body: Record<string, unknown>): Record<string, unknown> {
@@ -8418,6 +8430,16 @@ export async function buildCompassAnswerResponseWithRuntimeCache(
   emitPhase?: CompassAnswerPhaseEmitter,
 ): Promise<{ result: CompassAnswerHandlerResult; cacheStatus: CompassAnswerCacheStatus }> {
   const requestStartedAt = Date.now();
+  if (shouldBypassCompassAnswerRuntimeCache(request)) {
+    compassAnswerRuntimeMetrics.bypassedRequestCount += 1;
+    const result = await buildCompassAnswerResponse(request, emitPhase);
+    recordCompassAnswerRuntimeResult(result, 'BYPASS');
+    await recordCompassAnswerDurableRuntimeEvent(
+      buildCompassAnswerDurableRuntimeEvent(result, 'BYPASS', null),
+    );
+    return { result, cacheStatus: 'BYPASS' };
+  }
+
   const cacheKey = await resolveCompassAnswerRequestCacheKey(request);
   if (!cacheKey) {
     compassAnswerRuntimeMetrics.bypassedRequestCount += 1;

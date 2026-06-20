@@ -508,6 +508,8 @@ async function callCompassAnswerEndpoint(fixture) {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
+      "Cache-Control": "no-store",
+      "x-compass-answer-cache-bypass": "1",
     },
     body: JSON.stringify({
       message: fixture.question,
