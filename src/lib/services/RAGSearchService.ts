@@ -1198,6 +1198,11 @@ export class RAGSearchService {
         && intent.vendors.length === 1
         && intent.vendors[0] === 'META'
         && this.isMetaAppInstallIntent(intent);
+      const usesMetaCatalogPriority =
+        needsProductStructureRetrieval
+        && intent.vendors.length === 1
+        && intent.vendors[0] === 'META'
+        && this.isMetaCatalogIntent(intent);
       const usesMetaCreativeSpecPriority =
         needsProductStructureRetrieval
         && intent.vendors.length === 1
@@ -1213,6 +1218,7 @@ export class RAGSearchService {
         && intent.vendors.length === 1
         && intent.vendors[0] === 'META'
         && !usesMetaAppInstallPriority
+        && !usesMetaCatalogPriority
         && intent.isProductStructureOverview
         && !intent.isSpecificProductGuidance;
       const usesKakaoProductPriority =
@@ -1233,6 +1239,7 @@ export class RAGSearchService {
       const usesPrioritySpecificProductRetrieval =
         usesNaverProductStructurePriority
         || usesMetaAppInstallPriority
+        || usesMetaCatalogPriority
         || usesMetaCreativeSpecPriority
         || usesKakaoProductPriority
         || usesGoogleLeadFormPriority;
@@ -1251,6 +1258,7 @@ export class RAGSearchService {
           || intent.vendors[0] === 'GOOGLE'
           || usesMetaProductOverviewPriority
           || usesMetaAppInstallPriority
+          || usesMetaCatalogPriority
           || usesKakaoProductPriority
         )
       );
@@ -1263,6 +1271,7 @@ export class RAGSearchService {
           naverPriorityCandidates,
           metaProductOverviewPriorityCandidates,
           metaAppInstallPriorityCandidates,
+          metaCatalogPriorityCandidates,
           kakaoProductPriorityCandidates,
           graphCandidates
         ] = await Promise.all([
@@ -1280,6 +1289,9 @@ export class RAGSearchService {
           usesMetaAppInstallPriority
             ? this.withRetrievalChannelTimeout(this.searchMetaAppInstallPriorityCandidates(intent), 'product_fast_meta_app_priority', [], timedOutChannels, channelTimings)
             : Promise.resolve([]),
+          usesMetaCatalogPriority
+            ? this.withRetrievalChannelTimeout(this.searchMetaCatalogPriorityCandidates(intent), 'product_fast_meta_catalog_priority', [], timedOutChannels, channelTimings)
+            : Promise.resolve([]),
           Promise.resolve([]),
           skipsGraphForGoogleProductOverview
             ? Promise.resolve([])
@@ -1288,7 +1300,7 @@ export class RAGSearchService {
               : this.withRetrievalChannelTimeout(this.searchEvidenceGraphCandidates(query, candidateLimit, intent), 'product_fast_graph', [], timedOutChannels, channelTimings)
         ]);
 
-        console.log(`📊 Product structure fast 후보 수집 결과: keyword=${keywordCandidates.length}, vendorCoverage=${vendorCoverageCandidates.length}, productStructure=${productStructureCandidates.length}, naverPriority=${naverPriorityCandidates.length}, metaOverviewPriority=${metaProductOverviewPriorityCandidates.length}, metaAppInstallPriority=${metaAppInstallPriorityCandidates.length}, kakaoProductPriority=${kakaoProductPriorityCandidates.length}, graph=${graphCandidates.length}`);
+        console.log(`📊 Product structure fast 후보 수집 결과: keyword=${keywordCandidates.length}, vendorCoverage=${vendorCoverageCandidates.length}, productStructure=${productStructureCandidates.length}, naverPriority=${naverPriorityCandidates.length}, metaOverviewPriority=${metaProductOverviewPriorityCandidates.length}, metaAppInstallPriority=${metaAppInstallPriorityCandidates.length}, metaCatalogPriority=${metaCatalogPriorityCandidates.length}, kakaoProductPriority=${kakaoProductPriorityCandidates.length}, graph=${graphCandidates.length}`);
         const allCandidates = [
           ...keywordCandidates,
           ...vendorCoverageCandidates,
@@ -1296,6 +1308,7 @@ export class RAGSearchService {
           ...naverPriorityCandidates,
           ...metaProductOverviewPriorityCandidates,
           ...metaAppInstallPriorityCandidates,
+          ...metaCatalogPriorityCandidates,
           ...kakaoProductPriorityCandidates,
           ...graphCandidates
         ];
@@ -1371,6 +1384,28 @@ export class RAGSearchService {
             intent,
           );
           console.log(`✅ META app install specific product 검색 완료: ${rankedResults.length}개 결과 (specific meta app install priority direct path)`);
+          if (rankedResults.length > 0) {
+            return this.withRetrievalTimeoutMetadata(rankedResults, timedOutChannels, channelTimings);
+          }
+        }
+      }
+
+      if (usesMetaCatalogPriority && usesSpecificProductRetrieval) {
+        const metaCatalogPriorityCandidates = await this.withRetrievalChannelTimeout(
+          this.searchMetaCatalogPriorityCandidates(intent),
+          'specific_meta_catalog_priority_direct',
+          [],
+          timedOutChannels,
+          channelTimings,
+        );
+
+        if (metaCatalogPriorityCandidates.length > 0) {
+          const rankedResults = this.mergeDedupeAndRankCandidates(
+            metaCatalogPriorityCandidates,
+            limit,
+            intent,
+          );
+          console.log(`✅ META catalog specific product 검색 완료: ${rankedResults.length}개 결과 (specific meta catalog priority direct path)`);
           if (rankedResults.length > 0) {
             return this.withRetrievalTimeoutMetadata(rankedResults, timedOutChannels, channelTimings);
           }
@@ -1508,6 +1543,7 @@ export class RAGSearchService {
         naverPriorityCandidates,
         metaProductOverviewPriorityCandidates,
         metaAppInstallPriorityCandidates,
+        metaCatalogPriorityCandidates,
         googleLeadFormPriorityCandidates,
         kakaoProductPriorityCandidates,
         graphCandidates
@@ -1542,6 +1578,9 @@ export class RAGSearchService {
         usesMetaAppInstallPriority
           ? this.withRetrievalChannelTimeout(this.searchMetaAppInstallPriorityCandidates(intent), 'hybrid_meta_app_priority', [], timedOutChannels, channelTimings)
           : Promise.resolve([]),
+        usesMetaCatalogPriority
+          ? this.withRetrievalChannelTimeout(this.searchMetaCatalogPriorityCandidates(intent), 'hybrid_meta_catalog_priority', [], timedOutChannels, channelTimings)
+          : Promise.resolve([]),
         usesGoogleLeadFormPriority
           ? this.withRetrievalChannelTimeout(this.searchGoogleLeadFormPriorityCandidates(intent), 'hybrid_google_lead_form_priority', [], timedOutChannels, channelTimings)
           : Promise.resolve([]),
@@ -1553,7 +1592,7 @@ export class RAGSearchService {
           : this.withRetrievalChannelTimeout(this.searchEvidenceGraphCandidates(query, candidateLimit, intent), 'hybrid_graph', [], timedOutChannels, channelTimings)
       ]);
 
-      console.log(`📊 Hybrid 후보 수집 결과: vector=${vectorCandidates.length}, keyword=${keywordCandidates.length}, genericRightsPolicy=${genericRightsPolicyCandidates.length}, genericGamblingPolicy=${genericGamblingPolicyCandidates.length}, kakaoServiceProtection=${kakaoServiceProtectionCandidates.length}, vendorCoverage=${vendorCoverageCandidates.length}, productStructure=${productStructureCandidates.length}, naverPriority=${naverPriorityCandidates.length}, metaOverviewPriority=${metaProductOverviewPriorityCandidates.length}, metaAppInstallPriority=${metaAppInstallPriorityCandidates.length}, googleLeadFormPriority=${googleLeadFormPriorityCandidates.length}, kakaoProductPriority=${kakaoProductPriorityCandidates.length}, graph=${graphCandidates.length}`);
+      console.log(`📊 Hybrid 후보 수집 결과: vector=${vectorCandidates.length}, keyword=${keywordCandidates.length}, genericRightsPolicy=${genericRightsPolicyCandidates.length}, genericGamblingPolicy=${genericGamblingPolicyCandidates.length}, kakaoServiceProtection=${kakaoServiceProtectionCandidates.length}, vendorCoverage=${vendorCoverageCandidates.length}, productStructure=${productStructureCandidates.length}, naverPriority=${naverPriorityCandidates.length}, metaOverviewPriority=${metaProductOverviewPriorityCandidates.length}, metaAppInstallPriority=${metaAppInstallPriorityCandidates.length}, metaCatalogPriority=${metaCatalogPriorityCandidates.length}, googleLeadFormPriority=${googleLeadFormPriorityCandidates.length}, kakaoProductPriority=${kakaoProductPriorityCandidates.length}, graph=${graphCandidates.length}`);
       const allCandidates = [
         ...vectorCandidates,
         ...keywordCandidates,
@@ -1565,6 +1604,7 @@ export class RAGSearchService {
         ...naverPriorityCandidates,
         ...metaProductOverviewPriorityCandidates,
         ...metaAppInstallPriorityCandidates,
+        ...metaCatalogPriorityCandidates,
         ...googleLeadFormPriorityCandidates,
         ...kakaoProductPriorityCandidates,
         ...graphCandidates
@@ -2811,6 +2851,139 @@ export class RAGSearchService {
           source_vendor: 'META',
           sourceVendors: candidate.sourceVendors,
           metaAppInstallPriority: true,
+          productStructureAnchor: result.anchor,
+          evidenceDecision: candidate.evidenceDecision,
+          evidenceDecisionReason: candidate.evidenceDecisionReason,
+          rankReason: candidate.rankReason,
+          score: boostedScore,
+          hybridScore: boostedScore,
+        };
+
+        return candidate;
+      })
+      .filter((candidate: SearchResult | null): candidate is SearchResult => candidate !== null);
+  }
+
+  private async searchMetaCatalogPriorityCandidates(intent: QueryIntent): Promise<SearchResult[]> {
+    if (!this.isMetaCatalogIntent(intent)) {
+      return [];
+    }
+
+    const anchors = [
+      '카탈로그',
+      'Catalog',
+      '상품 카탈로그',
+      'Product catalog',
+      '컬렉션 광고',
+      'Collection ads',
+      'collection ads',
+      'Advantage+ catalog',
+      'Advantage+ Catalog',
+      '어드밴티지 카탈로그',
+      '상품 데이터',
+      '상품 세트',
+      'Shop',
+      'Shops',
+    ];
+    const keywords = Array.from(new Set([
+      ...getCompassVendorTerms('META'),
+      ...PRODUCT_STRUCTURE_KEYWORD_EXPANSIONS,
+      ...anchors,
+    ]));
+
+    const priorityAnchors = anchors.slice(0, 12);
+    const keywordSearchOptions = { rawKeywordsOnly: true };
+    const [
+      documentKeywordResults,
+      ollamaKeywordResults,
+      vendorMetadataResults,
+    ] = await Promise.all([
+      this.searchKeywordTable('document_chunks', priorityAnchors, 18, intent, undefined, keywordSearchOptions),
+      this.searchKeywordTable('ollama_document_chunks', priorityAnchors, 10, intent, undefined, keywordSearchOptions),
+      this.searchVendorMetadataTable('ollama_document_chunks', 'META', priorityAnchors, 8, intent),
+    ]);
+    const results: Array<{ row: any; corpus: RetrievalCorpus; anchor: string }> = [
+      ...documentKeywordResults.map(result => ({
+        ...result,
+        anchor: 'meta_catalog_priority_keyword',
+      })),
+      ...ollamaKeywordResults.map(result => ({
+        ...result,
+        anchor: 'meta_catalog_priority_keyword',
+      })),
+      ...vendorMetadataResults.map(result => ({
+        ...result,
+        anchor: 'meta_catalog_vendor_metadata',
+      })),
+    ];
+
+    return results
+      .map((result) => {
+        const candidate = this.normalizeCandidate(result.row, {
+          keywords,
+          intent,
+          retrievalMethod: 'keyword',
+          corpus: result.corpus,
+          evidenceType: 'keyword',
+        });
+
+        if (!candidate) return null;
+        if (this.hasExplicitOtherVendorSignal(candidate, 'META')) return null;
+
+        const sourceText = this.buildCandidateEvidenceText(candidate.content, candidate.documentTitle, candidate.metadata);
+        const normalizedSourceText = this.normalizeSearchText(sourceText);
+        if (
+          !this.matchesVendorSlot(candidate, 'META')
+          && !/meta|facebook|instagram|페이스북|인스타그램|business\/help|business\/ads-guide/.test(normalizedSourceText)
+        ) {
+          return null;
+        }
+        if (this.isMetaBroadProductNewsNoiseText(sourceText)) return null;
+        if (!this.hasMetaCatalogSignal(sourceText)) return null;
+
+        const hasCatalogSetupSignal = /연동|연결|설정|세팅|상품\s*데이터|product\s*data|feed|피드|데이터\s*소스|commerce|커머스|shop|shops/i.test(sourceText);
+        const hasCollectionSignal = /컬렉션|collection|collection\s*ads?|instant\s*experience|인스턴트\s*경험|advantage\+|어드밴티지/i.test(sourceText);
+        const boostedScore = Math.max(
+          hasCatalogSetupSignal ? 0.99 : hasCollectionSignal ? 0.96 : 0.9,
+          Math.min(1, (candidate.hybridScore || 0) + (hasCatalogSetupSignal ? 0.5 : hasCollectionSignal ? 0.36 : 0.2)),
+        );
+        candidate.hybridScore = boostedScore;
+        candidate.score = boostedScore;
+        candidate.sourceVendor = 'META';
+        candidate.sourceVendors = Array.from(new Set([
+          ...(candidate.sourceVendors || []),
+          'META',
+        ]));
+        candidate.vendorMatch = true;
+        candidate.vendorMismatch = false;
+        candidate.evidenceDecision = 'verified';
+        candidate.evidenceDecisionReason = Array.from(new Set([
+          ...(candidate.evidenceDecisionReason || []),
+          'meta_catalog_priority',
+          ...(hasCatalogSetupSignal ? ['meta_catalog_setup_signal'] : []),
+          ...(hasCollectionSignal ? ['meta_catalog_collection_signal'] : []),
+          'keyword_retrieval',
+        ]));
+        candidate.rankReason = Array.from(new Set([
+          ...(candidate.rankReason || []),
+          `meta_catalog_priority_${result.anchor}`,
+          ...(hasCatalogSetupSignal ? ['meta_catalog_setup_priority'] : []),
+          ...(hasCollectionSignal ? ['meta_catalog_collection_priority'] : []),
+        ]));
+        candidate.sourceQuality = {
+          ...candidate.sourceQuality,
+          hasExcerpt: true,
+          isFallback: false,
+          vendorMatch: true,
+          vendorMismatch: false,
+          sourceVendor: 'META',
+          qualityScore: Math.max(candidate.sourceQuality.qualityScore || 0, hasCatalogSetupSignal ? 0.98 : hasCollectionSignal ? 0.92 : 0.84),
+        };
+        candidate.metadata = {
+          ...(candidate.metadata || {}),
+          source_vendor: 'META',
+          sourceVendors: candidate.sourceVendors,
+          metaCatalogPriority: true,
           productStructureAnchor: result.anchor,
           evidenceDecision: candidate.evidenceDecision,
           evidenceDecisionReason: candidate.evidenceDecisionReason,
@@ -6969,6 +7142,26 @@ export class RAGSearchService {
   private hasMetaAppInstallSignal(sourceText: string): boolean {
     const text = this.normalizeSearchText(sourceText);
     return /앱\s*(인스톨|설치|홍보|캠페인|이벤트|사전\s*등록|등록)|앱인스톨|앱설치|앱홍보|app\s*(install|promotion)|mobile\s*app|sdk|mmp|모바일\s*(앱|측정)|app\s*id|app\s*secret|앱\s*id|앱\s*시크릿|포스트백|postback|skadnetwork|skan/i.test(text);
+  }
+
+  private isMetaCatalogIntent(intent: QueryIntent): boolean {
+    if (!intent.topics.includes('product_structure') || intent.vendors[0] !== 'META') return false;
+    if (this.isMetaAppInstallIntent(intent)) return false;
+    const text = this.normalizeSearchText([
+      ...intent.keywords,
+      ...intent.strictProductTerms,
+      ...intent.strictContextTerms,
+      ...intent.adPolicyTerms,
+    ].filter(Boolean).join(' '));
+    return /카탈로그|catalog|컬렉션|collection|advantage\+|어드밴티지/.test(text)
+      && /광고|집행|운영|연동|연결|설정|상품|데이터|피드|feed|shop|shops|판매|구매|commerce|커머스/.test(text);
+  }
+
+  private hasMetaCatalogSignal(sourceText: string): boolean {
+    const text = this.normalizeSearchText(sourceText);
+    const hasCatalogIdentity = /카탈로그|catalog|컬렉션|collection|collection\s*ads?|advantage\+|어드밴티지/.test(text);
+    const hasCommerceOrSetupSignal = /상품|product|데이터|data|feed|피드|연동|연결|설정|commerce|커머스|shop|shops|판매|구매|instant\s*experience|인스턴트\s*경험|광고/.test(text);
+    return hasCatalogIdentity && hasCommerceOrSetupSignal;
   }
 
   private isGoogleLeadFormIntent(intent: QueryIntent): boolean {

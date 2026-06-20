@@ -4097,6 +4097,7 @@ type FastNaverVideoProductAnswerFallback = 'naver_video_product_structured';
 
 type FastStructuredSpecificProductAnswerFallback =
   | 'meta_app_install_structured'
+  | 'meta_catalog_structured'
   | 'naver_shopping_search_creative_structured'
   | 'naver_shopping_data_operational'
   | 'naver_shopping_data_structured'
@@ -4954,6 +4955,55 @@ function buildFastNaverVideoProductAnswer(
   };
 }
 
+function buildMetaCatalogStructuredFallbackAnswer(
+  sources: ReturnType<typeof buildVerifiedSources>,
+  intent: QueryIntent,
+  message: string,
+) {
+  if (!intent.vendors.includes('META')) return null;
+  if (detectProductAnswerFamily(message, intent) !== 'meta_catalog') return null;
+
+  const used = new Set<number>();
+  const sections = [
+    'Meta 카탈로그/컬렉션 계열 광고는 상품 카탈로그와 구매 흐름을 연결해 운영하는 상품군입니다.',
+    '',
+    '**집행 전 확인**',
+  ];
+
+  addFallbackLine(
+    sections,
+    used,
+    sources,
+    'META',
+    /카탈로그|catalog|상품\s*(데이터|정보|이미지)|product\s*(data|image)|feed|피드/i,
+    label => `- 카탈로그 또는 Catalog 기반 상품은 상품 데이터가 광고에 연결되는 구조인지 먼저 확인합니다 ${label}.`,
+  );
+  addFallbackLine(
+    sections,
+    used,
+    sources,
+    'META',
+    /컬렉션|collection|collection\s*ads?|instant\s*experience|인스턴트\s*경험/i,
+    label => `- 컬렉션 광고는 커버 이미지/동영상과 카탈로그 상품 이미지를 함께 보여주고 구매 흐름으로 연결하는지 봅니다 ${label}.`,
+  );
+  addFallbackLine(
+    sections,
+    used,
+    sources,
+    'META',
+    /advantage\+|어드밴티지|자동화|최적화/i,
+    label => `- Advantage+ 또는 자동화 문맥이 함께 잡히면 상품 노출과 최적화 조건을 별도로 대조합니다 ${label}.`,
+  );
+
+  if (used.size === 0) return null;
+
+  sections.push('');
+  sections.push('정리하면, 카탈로그 연결 상태와 컬렉션/자동화 운영 조건을 같은 공식 출처 기준으로 확인하는 것이 핵심입니다.');
+  sections.push('');
+  sections.push(`근거: ${formatFallbackEvidenceLabels(used)}`);
+  return sections.join('\n');
+}
+
 function buildFastStructuredSpecificProductAnswer(
   message: string,
   intent: QueryIntent,
@@ -4993,6 +5043,13 @@ function buildFastStructuredSpecificProductAnswer(
       fastAnswerFallback: 'meta_app_install_structured',
       confidenceCap: 78,
       build: () => buildMetaAppInstallStructuredFallbackAnswer(answerSources, intent, message),
+    },
+    {
+      vendor: 'META',
+      model: 'compass-answer-fast-meta-catalog-structured',
+      fastAnswerFallback: 'meta_catalog_structured',
+      confidenceCap: 78,
+      build: () => buildMetaCatalogStructuredFallbackAnswer(answerSources, intent, message),
     },
     {
       vendor: 'NAVER',
@@ -6492,6 +6549,13 @@ function isMetaAppInstallSpecificProductQuestion(message: string) {
   );
 }
 
+function isMetaCatalogSpecificProductQuestion(message: string) {
+  const normalized = normalizeProductIntentText(message);
+  return /카탈로그|catalog|컬렉션|collection|advantage\+|어드밴티지/.test(normalized)
+    && /광고|집행|운영|연동|연결|설정|상품|데이터|피드|feed|shop|shops|판매|구매|commerce|커머스/.test(normalized)
+    && !isProductCatalogOverviewQuestion(message);
+}
+
 function isGoogleLeadFormSpecificProductQuestion(message: string) {
   return /리드\s*양식|리드양식|잠재\s*고객\s*(양식|광고)|잠재고객\s*(양식|광고)|비즈니스\s*폼|비즈니스폼|lead\s*(form|generation|gen|ads?)/.test(
     normalizeProductIntentText(message),
@@ -6503,6 +6567,7 @@ function getSpecificProductSupplementLimit(vendor?: VendorIntent, message = '') 
   if (vendor === 'NAVER' && isNaverDisplaySpecificProductQuestion(message)) return 0;
   if (vendor === 'NAVER' && isNaverShoppingCreativeSpecificProductQuestion(message)) return 0;
   if (vendor === 'META' && isMetaAppInstallSpecificProductQuestion(message)) return 0;
+  if (vendor === 'META' && isMetaCatalogSpecificProductQuestion(message)) return 0;
   if (vendor === 'GOOGLE' && isGoogleLeadFormSpecificProductQuestion(message)) return 0;
   return vendor === 'KAKAO' ? 1 : 2;
 }

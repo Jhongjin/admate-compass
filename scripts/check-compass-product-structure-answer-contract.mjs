@@ -1082,7 +1082,7 @@ if (!/private isKakaoBizboardDisplayComparisonIntent\([\s\S]*intent\.isComparati
   fail('KAKAO internal comparison soft-budget routing must stay scoped to Bizboard vs display comparison questions');
 }
 
-if (!/metaAppInstallPriorityCandidates,\s*\n\s*kakaoProductPriorityCandidates,\s*\n\s*graphCandidates[\s\S]*usesMetaAppInstallPriority[\s\S]*searchMetaAppInstallPriorityCandidates[\s\S]*skipsGraphForGoogleProductOverview[\s\S]*product_fast_graph/.test(rag)) {
+if (!/metaAppInstallPriorityCandidates,[\s\S]*graphCandidates[\s\S]*usesMetaAppInstallPriority[\s\S]*searchMetaAppInstallPriorityCandidates[\s\S]*skipsGraphForGoogleProductOverview[\s\S]*product_fast_graph/.test(rag)) {
   fail('Meta app-install product priority must keep its exact priority path while allowing official graph evidence');
 }
 
@@ -1168,6 +1168,21 @@ if (!/function isNaverShoppingCreativeSpecificProductQuestion[\s\S]*쇼핑검색
 
 if (!answerHandler.includes("'Meta 비즈니스 지원 센터: 카탈로그/컬렉션 광고'")) {
   fail('Meta catalog/collection sources must expose the Korean catalog term for source verification');
+}
+
+if (!/const usesMetaCatalogPriority =[\s\S]*isMetaCatalogIntent\(intent\)/.test(rag)
+  || !/specific_meta_catalog_priority_direct/.test(rag)
+  || !/private async searchMetaCatalogPriorityCandidates[\s\S]*hasMetaCatalogSignal\(sourceText\)/.test(rag)) {
+  fail('Meta catalog product questions must use narrow direct priority retrieval before hybrid anchor fan-out');
+}
+
+if (!/function isMetaCatalogSpecificProductQuestion[\s\S]*카탈로그[\s\S]*getSpecificProductSupplementLimit[\s\S]*isMetaCatalogSpecificProductQuestion\(message\)/.test(answerHandler)) {
+  fail('Meta catalog structured answers must not launch slow supplement fan-out');
+}
+
+if (!/meta_catalog_structured/.test(answerHandler)
+  || !/function buildMetaCatalogStructuredFallbackAnswer[\s\S]*addFallbackLine[\s\S]*카탈로그[\s\S]*컬렉션/.test(answerHandler)) {
+  fail('Meta catalog product questions must have a fast structured answer path');
 }
 
 if (!/filter\(candidate => candidate\.hits > 0\)/.test(answerHandler)) {
