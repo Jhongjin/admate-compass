@@ -634,10 +634,10 @@ export class RAGSearchService {
     return Math.min(Math.max(timeoutMs, 8000), 30000);
   }
 
-  private getKakaoProductPrioritySoftBudgetMs(): number {
-    const parsed = Math.floor(Number(process.env.COMPASS_KAKAO_PRODUCT_PRIORITY_SOFT_BUDGET_MS || 900));
-    const budgetMs = Number.isFinite(parsed) && parsed > 0 ? parsed : 900;
-    return Math.min(Math.max(budgetMs, 400), 3000);
+  private getKakaoProductGraphSoftBudgetMs(): number {
+    const parsed = Math.floor(Number(process.env.COMPASS_KAKAO_PRODUCT_GRAPH_SOFT_BUDGET_MS || 1100));
+    const budgetMs = Number.isFinite(parsed) && parsed > 0 ? parsed : 1100;
+    return Math.min(Math.max(budgetMs, 500), 4000);
   }
 
   private async withRetrievalChannelTimeout<T>(
@@ -1153,12 +1153,12 @@ export class RAGSearchService {
           usesMetaAppInstallPriority
             ? this.withRetrievalChannelTimeout(this.searchMetaAppInstallPriorityCandidates(intent), 'product_fast_meta_app_priority', [], timedOutChannels, channelTimings)
             : Promise.resolve([]),
-          usesKakaoProductPriority
-            ? this.withRetrievalChannelSoftBudget(this.searchKakaoProductStructurePriorityCandidates(intent), 'product_fast_kakao_priority', [], this.getKakaoProductPrioritySoftBudgetMs(), channelTimings)
-            : Promise.resolve([]),
+          Promise.resolve([]),
           skipsGraphForGoogleProductOverview
             ? Promise.resolve([])
-            : this.withRetrievalChannelTimeout(this.searchEvidenceGraphCandidates(query, candidateLimit, intent), 'product_fast_graph', [], timedOutChannels, channelTimings)
+            : usesKakaoProductPriority
+              ? this.withRetrievalChannelSoftBudget(this.searchEvidenceGraphCandidates(query, candidateLimit, intent), 'product_fast_graph', [], this.getKakaoProductGraphSoftBudgetMs(), channelTimings)
+              : this.withRetrievalChannelTimeout(this.searchEvidenceGraphCandidates(query, candidateLimit, intent), 'product_fast_graph', [], timedOutChannels, channelTimings)
         ]);
 
         console.log(`📊 Product structure fast 후보 수집 결과: keyword=${keywordCandidates.length}, vendorCoverage=${vendorCoverageCandidates.length}, productStructure=${productStructureCandidates.length}, naverPriority=${naverPriorityCandidates.length}, metaOverviewPriority=${metaProductOverviewPriorityCandidates.length}, metaAppInstallPriority=${metaAppInstallPriorityCandidates.length}, kakaoProductPriority=${kakaoProductPriorityCandidates.length}, graph=${graphCandidates.length}`);
