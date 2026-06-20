@@ -587,6 +587,55 @@ export class RAGSearchService {
     }
   }
 
+  private selectSupabaseKeywordSearchTerms(
+    keywords: string[],
+    intent?: QueryIntent,
+    vendor?: VendorIntent,
+  ): string[] {
+    const cleanedKeywords = keywords
+      .map(keyword => keyword.trim())
+      .filter(keyword => keyword.length >= 2);
+    const vendorTerms = vendor ? getCompassVendorTerms(vendor) : [];
+    const priorityTerms = intent
+      ? [
+        ...intent.strictProductTerms,
+        ...intent.strictContextTerms,
+        ...intent.adPolicyTerms,
+      ]
+      : [];
+    const maxTerms = intent?.topics.includes('product_structure')
+      ? (intent.isSpecificProductGuidance ? 14 : 16)
+      : intent?.vendors.length
+        ? 14
+        : 12;
+
+    return Array.from(new Set([
+      ...vendorTerms,
+      ...priorityTerms,
+      ...cleanedKeywords,
+    ])).slice(0, maxTerms);
+  }
+
+  private getKeywordTableFetchLimit(limit: number, intent?: QueryIntent): number {
+    const productStructureIntent = intent?.topics.includes('product_structure') === true;
+    const multiplier = productStructureIntent ? 8 : 10;
+    const floor = productStructureIntent ? 48 : 40;
+    const ceiling = productStructureIntent ? 160 : 120;
+    return Math.min(Math.max(limit * multiplier, floor), ceiling);
+  }
+
+  private getVendorMetadataFetchLimit(limit: number, intent?: QueryIntent): number {
+    const productStructureIntent = intent?.topics.includes('product_structure') === true;
+    const multiplier = productStructureIntent ? 8 : 10;
+    const floor = productStructureIntent ? 48 : 40;
+    const ceiling = productStructureIntent ? 120 : 96;
+    return Math.min(Math.max(limit * multiplier, floor), ceiling);
+  }
+
+  private getProductStructureAnchorFetchLimit(limit: number): number {
+    return Math.min(Math.max(limit * 8, 32), 72);
+  }
+
   constructor() {
     const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
     const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -709,6 +758,15 @@ export class RAGSearchService {
         : needsProductStructureRetrieval
           ? Math.max(limit * 3, 18)
           : limit;
+      const usesVendorProductStructurePriority = (
+        usesProductStructureFastRetrieval
+        && intent.vendors.length === 1
+        && (
+          intent.vendors[0] === 'NAVER'
+          || usesMetaProductOverviewPriority
+          || usesKakaoProductPriority
+        )
+      );
 
       if (usesProductStructureFastRetrieval && intent.vendors.length === 1 && !intent.isComparative) {
         const [
@@ -723,7 +781,9 @@ export class RAGSearchService {
         ] = await Promise.all([
           this.withRetrievalChannelTimeout(this.searchKeywordCandidates(query, candidateLimit, intent), 'product_fast_keyword', [], timedOutChannels),
           this.withRetrievalChannelTimeout(this.searchVendorCoverageCandidates(query, candidateLimit, intent), 'product_fast_vendor_coverage', [], timedOutChannels),
-          this.withRetrievalChannelTimeout(this.searchProductStructureCandidates(candidateLimit, intent), 'product_fast_structure_anchor', [], timedOutChannels),
+          usesVendorProductStructurePriority
+            ? Promise.resolve([])
+            : this.withRetrievalChannelTimeout(this.searchProductStructureCandidates(candidateLimit, intent), 'product_fast_structure_anchor', [], timedOutChannels),
           this.withRetrievalChannelTimeout(this.searchNaverProductStructurePriorityCandidates(intent), 'product_fast_naver_priority', [], timedOutChannels),
           usesMetaProductOverviewPriority
             ? this.withRetrievalChannelTimeout(this.searchMetaProductOverviewPriorityCandidates(intent), 'product_fast_meta_overview_priority', [], timedOutChannels)
@@ -2923,7 +2983,7 @@ export class RAGSearchService {
         query = query.eq('metadata->>source_vendor', vendor);
       }
 
-      const fetchLimit = Math.max(limit * 18, 64);
+      const fetchLimit = this.getProductStructureAnchorFetchLimit(limit);
       const { data, error } = await query.limit(fetchLimit);
 
       if (error) {
@@ -2965,14 +3025,16 @@ export class RAGSearchService {
       const selectColumns = tableName === 'ollama_document_chunks'
         ? 'chunk_id, document_id, content, metadata, embedding'
         : 'id, document_id, chunk_id, content, metadata';
-      const keywordConditions = keywords.map(keyword => `content.ilike.%${keyword}%`);
+      const searchTerms = this.selectSupabaseKeywordSearchTerms(keywords, intent, vendor);
+      if (searchTerms.length === 0) return [];
+      const keywordConditions = searchTerms.map(keyword => `content.ilike.%${keyword}%`);
 
       const { data, error } = await this.supabase
         .from(tableName)
         .select(selectColumns)
         .eq('metadata->>source_vendor', vendor)
         .or(keywordConditions.join(','))
-        .limit(Math.max(limit * 24, 96));
+        .limit(this.getVendorMetadataFetchLimit(limit, intent));
 
       if (error) {
       console.warn('Vendor metadata keyword search failed', {
@@ -3014,13 +3076,15 @@ export class RAGSearchService {
       const selectColumns = tableName === 'ollama_document_chunks'
         ? 'chunk_id, document_id, content, metadata, embedding'
         : 'id, document_id, chunk_id, content, metadata';
-      const keywordConditions = keywords.map(keyword => `content.ilike.%${keyword}%`);
+      const searchTerms = this.selectSupabaseKeywordSearchTerms(keywords, intent, vendor);
+      if (searchTerms.length === 0) return [];
+      const keywordConditions = searchTerms.map(keyword => `content.ilike.%${keyword}%`);
 
       const { data, error } = await this.supabase
         .from(tableName)
         .select(selectColumns)
         .or(keywordConditions.join(','))
-        .limit(Math.max(limit * 24, 96));
+        .limit(this.getKeywordTableFetchLimit(limit, intent));
 
       if (error) {
       console.warn('Keyword table search failed', {

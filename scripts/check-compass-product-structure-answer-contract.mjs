@@ -47,6 +47,11 @@ for (const snippet of [
   '__compassRetrievalTimedOut',
   'timedOutChannels?.push(label)',
   'withRetrievalTimeoutMetadata',
+  'selectSupabaseKeywordSearchTerms',
+  'getKeywordTableFetchLimit',
+  'getVendorMetadataFetchLimit',
+  'getProductStructureAnchorFetchLimit',
+  'usesVendorProductStructurePriority',
   'mergeDuplicateCandidate',
   'evidenceDecisionReason',
   'Product structure fast 후보 수집 결과',
@@ -735,6 +740,22 @@ if (!/noDataFound: false,[\s\S]*model: 'compass-answer-retrieval-limited'/.test(
 
 if (!/productStructureCandidates[\s\S]*mergeDedupeAndRankCandidates[\s\S]*productStructureCandidates/.test(rag)) {
   fail('product structure anchor candidates must be merged into final ranking');
+}
+
+if (!/usesVendorProductStructurePriority[\s\S]*Promise\.resolve\(\[\]\)[\s\S]*searchProductStructureCandidates/.test(rag)) {
+  fail('single-vendor broad product fast path must skip generic product-structure anchor fan-out when a vendor priority path exists');
+}
+
+if (!/selectSupabaseKeywordSearchTerms[\s\S]*maxTerms[\s\S]*16/.test(rag)) {
+  fail('Supabase keyword search must cap product-structure OR terms to avoid broad fan-out latency');
+}
+
+if (!/getKeywordTableFetchLimit[\s\S]*Math\.min\(Math\.max\(limit \* multiplier, floor\), ceiling\)/.test(rag)) {
+  fail('keyword table search must use bounded fetch limits instead of unbounded broad-product row fan-out');
+}
+
+if (!/getProductStructureAnchorFetchLimit[\s\S]*Math\.min\(Math\.max\(limit \* 8, 32\), 72\)/.test(rag)) {
+  fail('product-structure anchor search must keep per-anchor Supabase fetches bounded');
 }
 
 if (!/광고\s*사양[\s\S]*!this\.hasHighValueProductStructureSignal/.test(rag)) {
