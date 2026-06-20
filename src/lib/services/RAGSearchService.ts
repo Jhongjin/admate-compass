@@ -2753,12 +2753,18 @@ export class RAGSearchService {
 
     const usesSpecificKakaoOllamaFastPath = intent.isSpecificProductGuidance;
     if (usesSpecificKakaoOllamaFastPath) {
+      const exactFastAnchorResults = await Promise.all([
+        '비즈보드',
+        '카카오 비즈보드',
+        '디스플레이 광고',
+      ].map(anchor => this.searchProductStructureAnchorTable('document_chunks', anchor, 8, undefined, intent)));
       const [documentFastResults, ollamaResults] = await Promise.all([
         this.searchKeywordTable('document_chunks', specificKakaoFastPathAnchors, 12, intent),
         this.searchKeywordTable('ollama_document_chunks', specificKakaoFastPathAnchors, 8, intent, 'KAKAO'),
       ]);
       const fastCandidates = this.normalizeKakaoProductStructurePriorityResults(
         [
+          ...exactFastAnchorResults.flat(),
           ...documentFastResults.map(result => ({ ...result, anchor: 'kakao_product_priority_keyword' })),
           ...ollamaResults.map(result => ({ ...result, anchor: 'kakao_product_priority_keyword' })),
         ],
