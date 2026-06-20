@@ -57,6 +57,13 @@ interface OpenAIChatResponse {
   }>;
 }
 
+interface EvidencePromptProfile {
+  maxEvidenceBlocks: number;
+  excerptChars: number;
+  useCompactRemotePrompt: boolean;
+  defaultMaxTokens: number;
+}
+
 const DEFAULT_OPENROUTER_MODELS = [
   'anthropic/claude-sonnet-4.5',
   'openai/gpt-5-mini',
@@ -146,6 +153,68 @@ function resolveRemoteAnswerTimeoutMs(): number {
 function usesDefaultSamplingOnly(model: string): boolean {
   const normalized = model.trim().toLowerCase();
   return normalized.startsWith('o') || normalized.startsWith('gpt-5');
+}
+
+function resolveAnswerModeHint(searchResults: CompassGroundingSource[]): string {
+  return searchResults.find(result => result.answerMode || result.metadata?.answerMode)?.answerMode
+    || searchResults.find(result => result.metadata?.answerMode)?.metadata?.answerMode
+    || 'auto';
+}
+
+function resolveQuestionIntentHint(searchResults: CompassGroundingSource[]): string {
+  return searchResults.find(result => result.questionIntent || result.metadata?.questionIntent)?.questionIntent
+    || searchResults.find(result => result.metadata?.questionIntent)?.metadata?.questionIntent
+    || 'auto';
+}
+
+function resolveEvidencePromptProfile(searchResults: CompassGroundingSource[]): EvidencePromptProfile {
+  const answerModeHint = resolveAnswerModeHint(searchResults);
+
+  if (answerModeHint === 'product_overview' || answerModeHint === 'product_selection') {
+    return {
+      maxEvidenceBlocks: 6,
+      excerptChars: 640,
+      useCompactRemotePrompt: true,
+      defaultMaxTokens: 850,
+    };
+  }
+
+  if ([
+    'product_detail',
+    'execution_guide',
+    'setup_procedure',
+    'creative_guide',
+    'policy_screening',
+    'operational_issue',
+  ].includes(answerModeHint)) {
+    return {
+      maxEvidenceBlocks: 7,
+      excerptChars: 760,
+      useCompactRemotePrompt: false,
+      defaultMaxTokens: 950,
+    };
+  }
+
+  return {
+    maxEvidenceBlocks: 8,
+    excerptChars: 820,
+    useCompactRemotePrompt: false,
+    defaultMaxTokens: 1000,
+  };
+}
+
+function resolveRemoteAnswerTokenBudget(searchResults: CompassGroundingSource[]): number {
+  const configured = process.env.COMPASS_ANSWER_MAX_TOKENS;
+  if (configured?.trim()) {
+    return Math.max(256, Math.floor(resolveNumber(configured, 1200)));
+  }
+
+  return resolveEvidencePromptProfile(searchResults).defaultMaxTokens;
+}
+
+function compactEvidenceText(content: string, maxLength: number): string {
+  const normalized = content.replace(/\s+/g, ' ').trim();
+  return normalized.length > maxLength ? normalized.slice(0, maxLength).trim() : normalized;
 }
 
 export function getCompassAnswerRuntimeStatus() {
@@ -245,12 +314,14 @@ function buildSystemPrompt(): string {
 }
 
 function buildEvidencePrompt(message: string, searchResults: CompassGroundingSource[]): string {
-  const answerModeHint = searchResults.find(result => result.answerMode || result.metadata?.answerMode)?.answerMode
-    || searchResults.find(result => result.metadata?.answerMode)?.metadata?.answerMode
-    || 'auto';
-  const questionIntentHint = searchResults.find(result => result.questionIntent || result.metadata?.questionIntent)?.questionIntent
-    || searchResults.find(result => result.metadata?.questionIntent)?.metadata?.questionIntent
-    || 'auto';
+  const answerModeHint = resolveAnswerModeHint(searchResults);
+  const questionIntentHint = resolveQuestionIntentHint(searchResults);
+  const profile = resolveEvidencePromptProfile(searchResults);
+
+  if (profile.useCompactRemotePrompt) {
+    return buildCompactRemoteEvidencePrompt(message, searchResults, profile, answerModeHint, questionIntentHint);
+  }
+
   const evidence = searchResults
     .filter((result) => {
       const decision = result.evidenceDecision || result.metadata?.evidenceDecision;
@@ -259,7 +330,7 @@ function buildEvidencePrompt(message: string, searchResults: CompassGroundingSou
         || result.metadata?.type === 'fallback';
       return result.content?.trim() && decision === 'verified' && !isFallback;
     })
-    .slice(0, 9)
+    .slice(0, profile.maxEvidenceBlocks)
     .map((result, index) => {
       const label = `S${index + 1}`;
       const title = result.documentTitle || result.metadata?.title || result.metadata?.originalTitle || '광고 정책 문서';
@@ -273,7 +344,7 @@ function buildEvidencePrompt(message: string, searchResults: CompassGroundingSou
         || 'general';
       const graphPath = result.graphPath || result.metadata?.graphPath || result.metadata?.graph_path || 'none';
       const claimType = result.metadata?.claimType || result.metadata?.claim_type || 'unknown';
-      const excerpt = result.content.replace(/\s+/g, ' ').trim().slice(0, 900);
+      const excerpt = compactEvidenceText(result.content, profile.excerptChars);
       return [
         `[${label}]`,
         `title: ${title}`,
@@ -337,6 +408,67 @@ function buildEvidencePrompt(message: string, searchResults: CompassGroundingSou
     '- 비교 질문이면 먼저 매체별로 나누어 정리하고, 마지막에 실무 차이를 1~2문장으로 요약하세요.',
     '- 근거 블록의 vendor 값을 절대 다른 매체명으로 바꿔 쓰지 마세요. 예: vendor가 KAKAO인 근거를 네이버 근거처럼 설명하면 안 됩니다.',
     '- 핵심 문장에는 가능한 한 [S1], [S2]처럼 출처 라벨을 붙이세요.',
+    '- 마지막에 짧은 "근거" 줄을 포함하고 사용한 출처 라벨을 적으세요.',
+  ].join('\n');
+}
+
+function buildCompactRemoteEvidencePrompt(
+  message: string,
+  searchResults: CompassGroundingSource[],
+  profile: EvidencePromptProfile,
+  answerModeHint: string,
+  questionIntentHint: string,
+): string {
+  const evidence = searchResults
+    .filter((result) => {
+      const decision = result.evidenceDecision || result.metadata?.evidenceDecision;
+      const isFallback = result.retrievalMethod === 'fallback'
+        || result.sourceQuality?.isFallback === true
+        || result.metadata?.type === 'fallback';
+      return result.content?.trim() && decision === 'verified' && !isFallback;
+    })
+    .slice(0, profile.maxEvidenceBlocks)
+    .map((result, index) => {
+      const label = `S${index + 1}`;
+      const title = result.documentTitle || result.metadata?.title || result.metadata?.originalTitle || '광고 정책 문서';
+      const vendor = result.sourceVendor || result.metadata?.sourceVendor || result.metadata?.source_vendor || 'UNKNOWN';
+      const sourceKind = result.sourceKind || result.metadata?.source_kind || 'official_doc';
+      const role = result.answerEvidenceRole
+        || result.metadata?.answerEvidenceRole
+        || result.metadata?.answer_evidence_role
+        || 'general';
+      const claimType = result.metadata?.claimType || result.metadata?.claim_type || 'unknown';
+      const retrievalMethod = result.retrievalMethod || result.metadata?.retrievalMethod || 'unknown';
+      const excerpt = compactEvidenceText(result.content, profile.excerptChars);
+      return [
+        `[${label}]`,
+        `title: ${title}`,
+        `vendor: ${vendor}`,
+        `sourceKind: ${sourceKind}`,
+        `role: ${role}`,
+        `claimType: ${claimType}`,
+        `retrievalMethod: ${retrievalMethod}`,
+        `excerpt: ${excerpt}`,
+      ].join('\n');
+    })
+    .join('\n\n');
+
+  return [
+    `사용자 질문: ${message}`,
+    `답변 모드 힌트: ${answerModeHint}`,
+    `질문 처리 힌트: ${questionIntentHint}`,
+    '',
+    '검증된 근거:',
+    evidence || '(제공된 검증 근거 없음)',
+    '',
+    '답변 규칙:',
+    '- 위 근거에서 확인되는 내용만 답변하세요. 근거가 부족한 범위는 분리해서 말하세요.',
+    '- 매체/플랫폼을 섞지 말고, 근거 블록의 vendor 값을 다른 매체명으로 바꿔 쓰지 마세요.',
+    '- sourceKind가 official_doc이면 공식 가이드/정책 기준으로, resolved_case이면 실무 처리 사례로만 표현하세요.',
+    '- product_overview는 근거에서 확인되는 상품군, 지면, 캠페인 유형을 짧게 나누어 설명하세요.',
+    '- product_selection은 목표를 정하고, 맞는 상품군/지면을 고르고, 운영 전 조건을 확인하는 순서로 정리하세요.',
+    '- 특정 상품/절차가 질문에 들어 있으면 첫 문장부터 그 상품명/절차를 직접 언급하고 넓은 개요로 돌리지 마세요.',
+    '- 핵심 문장에는 [S1], [S2]처럼 출처 라벨을 붙이세요.',
     '- 마지막에 짧은 "근거" 줄을 포함하고 사용한 출처 라벨을 적으세요.',
   ].join('\n');
 }
@@ -409,6 +541,7 @@ async function generateOpenRouterAnswer(
   }
 
   const models = resolveOpenRouterModels();
+  const tokenBudget = resolveRemoteAnswerTokenBudget(searchResults);
   const body: Record<string, any> = {
     messages: [
       { role: 'system', content: buildSystemPrompt() },
@@ -416,7 +549,7 @@ async function generateOpenRouterAnswer(
     ],
     temperature: resolveNumber(process.env.COMPASS_ANSWER_TEMPERATURE, 0.1),
     top_p: resolveNumber(process.env.COMPASS_ANSWER_TOP_P, 0.85),
-    max_tokens: Math.max(256, Math.floor(resolveNumber(process.env.COMPASS_ANSWER_MAX_TOKENS, 1200))),
+    max_tokens: tokenBudget,
     provider: {
       allow_fallbacks: true,
       require_parameters: true,
@@ -505,7 +638,7 @@ async function requestOpenAIAnswer({
   message: string;
   searchResults: CompassGroundingSource[];
 }): Promise<CompassAnswerResult> {
-  const tokenBudget = Math.max(256, Math.floor(resolveNumber(process.env.COMPASS_ANSWER_MAX_TOKENS, 1200)));
+  const tokenBudget = resolveRemoteAnswerTokenBudget(searchResults);
   const requestBody: Record<string, any> = {
     model,
     messages: [

@@ -245,6 +245,20 @@ if (!/AbortSignal\.timeout\(resolveOllamaAnswerTimeoutMs\(\)\)/.test(service)) {
   fail('Ollama answer generation must fail fast so fallback can run before the Vercel function timeout')
 }
 
+for (const latencySignal of [
+  'resolveEvidencePromptProfile',
+  'buildCompactRemoteEvidencePrompt',
+  'resolveRemoteAnswerTokenBudget(searchResults)',
+  "answerModeHint === 'product_overview' || answerModeHint === 'product_selection'",
+  'defaultMaxTokens: 850',
+  'maxEvidenceBlocks: 6',
+  'excerptChars: 640',
+]) {
+  if (!service.includes(latencySignal)) {
+    fail(`Compass answer generation latency contract missing ${latencySignal}`)
+  }
+}
+
 const endpointResolver = read('src/lib/services/ollamaEndpoint.ts')
 if (!(endpointResolver.indexOf('process.env.OLLAMA_BASE_URL') >= 0 && endpointResolver.indexOf('process.env.VULTR_OLLAMA_URL') >= 0)) {
   fail('Ollama endpoint resolver must support both OLLAMA_BASE_URL and VULTR_OLLAMA_URL')
