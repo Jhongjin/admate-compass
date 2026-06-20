@@ -1371,6 +1371,8 @@ export class RAGSearchService {
       }
       }
 
+      const usesGenericRightsPolicyPriority = this.isGenericRightsPolicyPriorityIntent(intent);
+
       // 질문을 임베딩으로 변환
       const queryEmbeddingResult = await this.embeddingService.generateEmbedding(query);
       const queryEmbedding = queryEmbeddingResult.embedding;
@@ -1379,6 +1381,7 @@ export class RAGSearchService {
       const [
         vectorCandidates,
         keywordCandidates,
+        genericRightsPolicyCandidates,
         vendorCoverageCandidates,
         productStructureCandidates,
         naverPriorityCandidates,
@@ -1391,6 +1394,9 @@ export class RAGSearchService {
         usesKakaoProductPriority
           ? Promise.resolve([])
           : this.withRetrievalChannelTimeout(this.searchKeywordCandidates(query, candidateLimit, intent), 'hybrid_keyword', [], timedOutChannels, channelTimings),
+        usesGenericRightsPolicyPriority
+          ? this.withRetrievalChannelTimeout(this.searchGenericRightsPolicyPriorityCandidates(intent), 'hybrid_generic_rights_policy_priority', [], timedOutChannels, channelTimings)
+          : Promise.resolve([]),
         usesKakaoProductPriority
           ? Promise.resolve([])
           : usesSpecificProductRetrieval
@@ -1416,10 +1422,11 @@ export class RAGSearchService {
           : this.withRetrievalChannelTimeout(this.searchEvidenceGraphCandidates(query, candidateLimit, intent), 'hybrid_graph', [], timedOutChannels, channelTimings)
       ]);
 
-      console.log(`📊 Hybrid 후보 수집 결과: vector=${vectorCandidates.length}, keyword=${keywordCandidates.length}, vendorCoverage=${vendorCoverageCandidates.length}, productStructure=${productStructureCandidates.length}, naverPriority=${naverPriorityCandidates.length}, metaOverviewPriority=${metaProductOverviewPriorityCandidates.length}, metaAppInstallPriority=${metaAppInstallPriorityCandidates.length}, kakaoProductPriority=${kakaoProductPriorityCandidates.length}, graph=${graphCandidates.length}`);
+      console.log(`📊 Hybrid 후보 수집 결과: vector=${vectorCandidates.length}, keyword=${keywordCandidates.length}, genericRightsPolicy=${genericRightsPolicyCandidates.length}, vendorCoverage=${vendorCoverageCandidates.length}, productStructure=${productStructureCandidates.length}, naverPriority=${naverPriorityCandidates.length}, metaOverviewPriority=${metaProductOverviewPriorityCandidates.length}, metaAppInstallPriority=${metaAppInstallPriorityCandidates.length}, kakaoProductPriority=${kakaoProductPriorityCandidates.length}, graph=${graphCandidates.length}`);
       const allCandidates = [
         ...vectorCandidates,
         ...keywordCandidates,
+        ...genericRightsPolicyCandidates,
         ...vendorCoverageCandidates,
         ...productStructureCandidates,
         ...naverPriorityCandidates,
@@ -1751,6 +1758,124 @@ export class RAGSearchService {
         corpus: result.corpus,
         evidenceType: 'keyword',
       }))
+      .filter((result: SearchResult | null): result is SearchResult => result !== null);
+  }
+
+  private async searchGenericRightsPolicyPriorityCandidates(intent: QueryIntent): Promise<SearchResult[]> {
+    if (!this.isGenericRightsPolicyPriorityIntent(intent)) {
+      return [];
+    }
+
+    const anchors = [
+      '상표',
+      '상표권',
+      '서비스표권',
+      '초상권',
+      '저작권',
+      '권리보호',
+      '권리 보호',
+      '권리 침해',
+      '권리침해',
+      '타인의 권리',
+      '타인 권리',
+      '무단 사용',
+      '허가 없이',
+      '동의 없이',
+      '광고문안과 권리보호',
+    ];
+    const keywords = Array.from(new Set([
+      ...intent.keywords,
+      ...intent.adPolicyTerms,
+      ...anchors,
+    ]));
+    const [documentChunkResults, ollamaResults] = await Promise.all([
+      this.searchKeywordTable('document_chunks', anchors, 18, intent, undefined, { rawKeywordsOnly: true }),
+      this.searchKeywordTable('ollama_document_chunks', anchors, 12, intent, undefined, { rawKeywordsOnly: true }),
+    ]);
+
+    return [...documentChunkResults, ...ollamaResults]
+      .map((result) => {
+        const candidate = this.normalizeCandidate(result.row, {
+          keywords,
+          intent,
+          retrievalMethod: 'hybrid',
+          corpus: result.corpus,
+          evidenceType: 'hybrid',
+        });
+
+        if (!candidate) return null;
+
+        const sourceText = this.buildCandidateEvidenceText(candidate.content, candidate.documentTitle, candidate.metadata);
+        if (!this.hasGenericRightsPolicyPrioritySignal(sourceText)) return null;
+
+        const titleText = this.normalizeSearchText(candidate.documentTitle || '');
+        const policyTitleSignal = candidate.policyTitleMatch
+          || /집행\s*기준|광고\s*등록\s*기준|광고등록기준|운영\s*정책|운영정책|광고\s*정책|정책|심사|가이드|윤리|권리\s*보호|권리보호|상표\s*사용/.test(sourceText);
+        if (!policyTitleSignal) return null;
+        if (/공지사항|자주\s*묻는\s*질문|faq|목록|전체보기|검색결과/.test(titleText) && !/정책|집행|등록기준|권리\s*보호|권리보호|상표\s*사용/.test(sourceText)) {
+          return null;
+        }
+        if (this.isTermsOfServiceCandidate(candidate) && !/광고문안|권리\s*보호|권리보호|상표권|서비스표권|초상권|저작권|타인의\s*권리|타인\s*권리|광고\s*소재/.test(sourceText)) {
+          return null;
+        }
+
+        const hasTrademarkSignal = /상표|상표권|서비스표권|표장/.test(sourceText);
+        const hasPortraitSignal = /초상권|성명권|인격권/.test(sourceText);
+        const hasCopyrightSignal = /저작권|저작물|콘텐츠\s*권리/.test(sourceText);
+        const hasRightsSignal = /권리\s*보호|권리보호|권리\s*침해|권리침해|타인의\s*권리|타인\s*권리|무단|허가|동의|침해/.test(sourceText);
+        const exactSignalCount = [hasTrademarkSignal, hasPortraitSignal, hasCopyrightSignal, hasRightsSignal]
+          .filter(Boolean).length;
+        const boostedScore = Math.max(
+          hasTrademarkSignal && hasPortraitSignal ? 0.99 : hasTrademarkSignal && hasRightsSignal ? 0.96 : 0.9,
+          Math.min(1, (candidate.hybridScore || 0) + 0.42 + exactSignalCount * 0.04),
+        );
+
+        candidate.hybridScore = boostedScore;
+        candidate.score = boostedScore;
+        candidate.topicMatch = true;
+        candidate.topicExactMatch = true;
+        candidate.policyTitleMatch = true;
+        candidate.retrievalMethod = 'hybrid';
+        candidate.evidenceType = 'hybrid';
+        candidate.evidenceDecision = 'verified';
+        candidate.evidenceDecisionReason = Array.from(new Set([
+          ...(candidate.evidenceDecisionReason || []),
+          'generic_rights_policy_priority',
+          'rights_policy_signal',
+          'hybrid_retrieval',
+        ]));
+        candidate.rankReason = Array.from(new Set([
+          ...(candidate.rankReason || []),
+          'generic_rights_policy_priority',
+          ...(hasTrademarkSignal ? ['rights_trademark_signal'] : []),
+          ...(hasPortraitSignal ? ['rights_portrait_signal'] : []),
+          ...(hasCopyrightSignal ? ['rights_copyright_signal'] : []),
+          ...(hasRightsSignal ? ['rights_infringement_signal'] : []),
+        ]));
+        candidate.sourceQuality = {
+          ...candidate.sourceQuality,
+          hasExcerpt: true,
+          isFallback: false,
+          policyTitleMatch: true,
+          qualityScore: Math.max(candidate.sourceQuality.qualityScore || 0, hasTrademarkSignal && hasPortraitSignal ? 0.96 : 0.88),
+        };
+        candidate.metadata = {
+          ...(candidate.metadata || {}),
+          retrievalMethod: 'hybrid',
+          evidenceType: 'hybrid',
+          genericRightsPolicyPriority: true,
+          evidenceDecision: candidate.evidenceDecision,
+          evidenceDecisionReason: candidate.evidenceDecisionReason,
+          rankReason: candidate.rankReason,
+          topicMatch: true,
+          topicExactMatch: true,
+          policyTitleMatch: true,
+          score: boostedScore,
+          hybridScore: boostedScore,
+        };
+
+        return candidate;
+      })
       .filter((result: SearchResult | null): result is SearchResult => result !== null);
   }
 
@@ -2335,9 +2460,9 @@ export class RAGSearchService {
         const candidate = this.normalizeCandidate(result.row, {
           keywords,
           intent,
-          retrievalMethod: 'keyword',
+          retrievalMethod: 'hybrid',
           corpus: result.corpus,
-          evidenceType: 'keyword',
+          evidenceType: 'hybrid',
         });
 
         if (!candidate) return null;
@@ -2365,6 +2490,8 @@ export class RAGSearchService {
         );
         candidate.hybridScore = boostedScore;
         candidate.score = boostedScore;
+        candidate.retrievalMethod = 'hybrid';
+        candidate.evidenceType = 'hybrid';
         candidate.sourceVendor = 'META';
         candidate.sourceVendors = Array.from(new Set([
           ...(candidate.sourceVendors || []),
@@ -2377,7 +2504,7 @@ export class RAGSearchService {
           ...(candidate.evidenceDecisionReason || []),
           'meta_creative_spec_priority',
           ...(creativeSpecScore > 0 ? ['meta_creative_spec_signal'] : []),
-          'keyword_retrieval',
+          'hybrid_retrieval',
         ]));
         candidate.rankReason = Array.from(new Set([
           ...(candidate.rankReason || []),
@@ -2395,6 +2522,8 @@ export class RAGSearchService {
         };
         candidate.metadata = {
           ...(candidate.metadata || {}),
+          retrievalMethod: 'hybrid',
+          evidenceType: 'hybrid',
           source_vendor: 'META',
           sourceVendors: candidate.sourceVendors,
           metaCreativeSpecPriority: true,
@@ -2624,13 +2753,21 @@ export class RAGSearchService {
 
     const usesSpecificKakaoOllamaFastPath = intent.isSpecificProductGuidance;
     if (usesSpecificKakaoOllamaFastPath) {
-      const ollamaResults = await this.searchKeywordTable('ollama_document_chunks', specificKakaoFastPathAnchors, 8, intent, 'KAKAO');
+      const [documentFastResults, ollamaResults] = await Promise.all([
+        this.searchKeywordTable('document_chunks', specificKakaoFastPathAnchors, 12, intent),
+        this.searchKeywordTable('ollama_document_chunks', specificKakaoFastPathAnchors, 8, intent, 'KAKAO'),
+      ]);
       const fastCandidates = this.normalizeKakaoProductStructurePriorityResults(
-        ollamaResults.map(result => ({ ...result, anchor: 'kakao_product_priority_keyword' })),
+        [
+          ...documentFastResults.map(result => ({ ...result, anchor: 'kakao_product_priority_keyword' })),
+          ...ollamaResults.map(result => ({ ...result, anchor: 'kakao_product_priority_keyword' })),
+        ],
         keywords,
         intent,
       );
-      if (fastCandidates.length > 0) {
+      if (fastCandidates.some(candidate => this.hasKakaoBizboardDisplayExactSignal(
+        this.buildCandidateEvidenceText(candidate.content, candidate.documentTitle, candidate.metadata),
+      ))) {
         return fastCandidates;
       }
     }
@@ -2675,12 +2812,13 @@ export class RAGSearchService {
         if (!this.hasKakaoBizboardDisplaySignal(sourceText)) return null;
         if (this.isKakaoMeasurementOnlySource(sourceText, intent)) return null;
 
+        const hasExactProductSignal = this.hasKakaoBizboardDisplayExactSignal(sourceText);
         const hasProductGuideUrl = /kakaobusiness\.gitbook\.io\/main\/ad\/moment\/(performance|guarantee)\/(talkboard|displayad|catalog|cpt|cpt-mo|cpt-pc)|\/content-guide/.test(sourceText);
         const hasCreativeGuideSignal = /홍보이미지|행동유도버튼|닫힘버튼|메인\s*카피|서브\s*카피|2:1\s*비율|1:1\s*비율|이미지\s*세부\s*가이드|외곽\s*테두리|리사이징|타이틀|소재|제작\s*가이드|노출\s*지면/.test(sourceText);
         const hasAuditSignal = /심사\s*가이드|집행\s*기준|업종별\s*가이드|광고\s*가능\s*업종|등록\s*불가|금지\s*행위|소재\s*제한/.test(sourceText);
         const boostedScore = Math.max(
-          hasProductGuideUrl || hasCreativeGuideSignal ? 0.95 : hasAuditSignal ? 0.9 : 0.84,
-          Math.min(1, (candidate.hybridScore || 0) + (hasProductGuideUrl || hasCreativeGuideSignal ? 0.48 : hasAuditSignal ? 0.34 : 0.2))
+          hasExactProductSignal ? 0.99 : hasProductGuideUrl || hasCreativeGuideSignal ? 0.95 : hasAuditSignal ? 0.9 : 0.84,
+          Math.min(1, (candidate.hybridScore || 0) + (hasExactProductSignal ? 0.62 : hasProductGuideUrl || hasCreativeGuideSignal ? 0.48 : hasAuditSignal ? 0.34 : 0.2))
         );
         candidate.hybridScore = boostedScore;
         candidate.score = boostedScore;
@@ -2695,6 +2833,7 @@ export class RAGSearchService {
         candidate.evidenceDecisionReason = Array.from(new Set([
           ...(candidate.evidenceDecisionReason || []),
           'kakao_product_structure_priority',
+          ...(hasExactProductSignal ? ['kakao_bizboard_display_exact_signal'] : []),
           ...(hasCreativeGuideSignal ? ['kakao_creative_guide_signal'] : []),
           ...(hasAuditSignal ? ['kakao_audit_guide_signal'] : []),
           'keyword_retrieval',
@@ -2702,6 +2841,7 @@ export class RAGSearchService {
         candidate.rankReason = Array.from(new Set([
           ...(candidate.rankReason || []),
           `kakao_product_structure_priority_${result.anchor}`,
+          ...(hasExactProductSignal ? ['kakao_bizboard_display_exact_match'] : []),
           ...(hasProductGuideUrl ? ['kakao_official_product_guide_url'] : []),
           ...(hasCreativeGuideSignal ? ['kakao_creative_guide_priority'] : []),
           ...(hasAuditSignal ? ['kakao_audit_guide_priority'] : []),
@@ -2713,7 +2853,7 @@ export class RAGSearchService {
           vendorMatch: true,
           vendorMismatch: false,
           sourceVendor: 'KAKAO',
-          qualityScore: Math.max(candidate.sourceQuality.qualityScore || 0, hasProductGuideUrl || hasCreativeGuideSignal ? 0.94 : hasAuditSignal ? 0.88 : 0.8),
+          qualityScore: Math.max(candidate.sourceQuality.qualityScore || 0, hasExactProductSignal ? 0.97 : hasProductGuideUrl || hasCreativeGuideSignal ? 0.94 : hasAuditSignal ? 0.88 : 0.8),
         };
         candidate.metadata = {
           ...(candidate.metadata || {}),
@@ -3470,6 +3610,12 @@ export class RAGSearchService {
     const text = this.normalizeSearchText(sourceText);
     return /kakaobusiness\.gitbook\.io\/main\/ad\/moment\/(performance|guarantee)\/(talkboard|displayad|catalog|cpt|cpt-mo|cpt-pc)|\/content-guide/.test(text)
       || /비즈보드|카카오\s*비즈보드|카카오비즈보드|톡보드|talkboard|디스플레이\s*광고|디스플레이광고|displayad|카카오모먼트|상품\s*가이드|상품가이드|제작\s*가이드|제작가이드|홍보이미지|행동유도버튼|닫힘버튼|메인\s*카피|서브\s*카피|2:1\s*비율|1:1\s*비율|이미지\s*세부\s*가이드|외곽\s*테두리|리사이징|노출\s*지면|심사\s*가이드|집행\s*기준|업종별\s*가이드|등록\s*불가/.test(text);
+  }
+
+  private hasKakaoBizboardDisplayExactSignal(sourceText: string): boolean {
+    const text = this.normalizeSearchText(sourceText);
+    return /kakaobusiness\.gitbook\.io\/main\/ad\/moment\/(performance|guarantee)\/(talkboard|displayad)|\/content-guide/.test(text)
+      || /비즈보드|카카오\s*비즈보드|카카오비즈보드|톡보드|talkboard|디스플레이\s*광고|디스플레이광고|displayad|카카오모먼트/.test(text);
   }
 
   private isKakaoMeasurementOnlySource(sourceText: string, intent: QueryIntent): boolean {
@@ -5988,6 +6134,17 @@ export class RAGSearchService {
       && !intent.isOutOfScope
       && !intent.unavailablePolicyTarget
     );
+  }
+
+  private isGenericRightsPolicyPriorityIntent(intent: QueryIntent): boolean {
+    return this.isGenericPolicyIntent(intent) && intent.topics.includes('rights');
+  }
+
+  private hasGenericRightsPolicyPrioritySignal(sourceText: string): boolean {
+    const text = this.normalizeSearchText(sourceText);
+    const hasRightsTopic = /상표|상표권|서비스표권|표장|초상권|성명권|인격권|저작권|저작물|권리\s*보호|권리보호|권리\s*침해|권리침해|타인의\s*권리|타인\s*권리|무단|허가|동의|침해/.test(text);
+    const hasAdPolicyContext = /광고|소재|문안|문구|심사|집행|등록\s*기준|등록기준|운영\s*정책|운영정책|광고\s*정책|정책|가이드|윤리/.test(text);
+    return hasRightsTopic && hasAdPolicyContext;
   }
 
   private hasPolicyJudgmentIntent(intent: QueryIntent): boolean {
