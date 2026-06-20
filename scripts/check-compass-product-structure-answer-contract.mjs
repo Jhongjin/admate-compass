@@ -577,7 +577,7 @@ if (!/sourceIdentityLooksLikeGenericLegalOrAccountDoc[\s\S]*청구\|결제\|지�
   fail('answer source routing must demote payment/account support documents such as 지불 for product-structure answers');
 }
 
-if (!/COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v12-meta-ads-guide-objective-allow'[\s\S]*`compass-answer:\$\{COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION\}:\$\{message\}`/.test(answerHandler)) {
+if (!/COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v13-meta-ads-guide-title-normalization'[\s\S]*`compass-answer:\$\{COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION\}:\$\{message\}`/.test(answerHandler)) {
   fail('answer response cache key must be versioned so stale durable cached answers are bypassed after source-quality fixes');
 }
 
@@ -606,6 +606,10 @@ if (!answerHandler.includes('sourceHasRecoverableMetaAdsGuideObjectiveGraphEvide
   || !/findFallbackSourceIndex[\s\S]*!sourceHasBlockingExtractionNoise\(source\)[\s\S]*selectProductStructureResponseSources[\s\S]*!sourceHasBlockingExtractionNoise\(source\)/.test(answerHandler)
 ) {
   fail('Meta Ads Guide objective graph evidence must survive HTML extraction-noise filtering for broad product answers');
+}
+
+if (!/function normalizeMetaAdsGuideSourceTitle[\s\S]*app-installs[\s\S]*앱 홍보[\s\S]*audience-network-native[\s\S]*Audience Network 네이티브/.test(answerHandler)) {
+  fail('Meta Ads Guide graph source titles should be normalized into user-facing objective and placement labels');
 }
 
 if (!/graphSourceLooksLikeBroadBusinessNewsTitle[\s\S]*크리에이티브\\s\*다각화[\s\S]*creative\\s\*diversification/.test(answerHandler)

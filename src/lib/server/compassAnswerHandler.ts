@@ -114,7 +114,7 @@ const COMPASS_ANSWER_RESPONSE_CACHE_TTL_MS = Math.min(
   900000,
 );
 const COMPASS_ANSWER_RESPONSE_CACHE_MAX_ENTRIES = 64;
-const COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v12-meta-ads-guide-objective-allow';
+const COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v13-meta-ads-guide-title-normalization';
 const compassAnswerResponseCache = new Map<string, CompassAnswerResponseCacheEntry>();
 const compassAnswerRuntimeMetrics = {
   startedAt: Date.now(),
@@ -6989,6 +6989,8 @@ function normalizeSourceTitle(title: string, sourceVendor: string, content: stri
     || blob.includes('페이스북')
   ) {
     const titleLooksLikeUrl = /^https?:\/\//i.test(String(title || '').trim());
+    const metaAdsGuideTitle = normalizeMetaAdsGuideSourceTitle(title, content);
+    if (metaAdsGuideTitle) return metaAdsGuideTitle;
     if (/collection\s*ads?|컬렉션\s*광고/.test(blob)) {
       return 'Meta 비즈니스 지원 센터: 컬렉션 광고';
     }
@@ -7013,6 +7015,45 @@ function appendOriginalTitle(normalizedTitle: string, originalTitle: string): st
     return normalizedTitle;
   }
   return `${normalizedTitle}: ${originalTitle}`;
+}
+
+function normalizeMetaAdsGuideSourceTitle(title: string, content: string): string | null {
+  const text = `${title || ''} ${content || ''}`;
+  if (!/meta\s*ads\s*guide|\/business\/ads-guide/i.test(text)) return null;
+
+  const pathMatch = text.match(/Meta\s*Ads\s*Guide:\s*([a-z-]+)\s*>\s*([a-z0-9-]+)\s*>\s*([a-z0-9-]+)/i)
+    || text.match(/\/business\/ads-guide\/update\/([a-z-]+)\/([a-z0-9-]+)\/([a-z0-9-]+)/i);
+  const format = pathMatch?.[1] || '';
+  const placement = pathMatch?.[2] || '';
+  const objective = pathMatch?.[3] || '';
+
+  const formatLabel: Record<string, string> = {
+    image: '이미지',
+    video: '동영상',
+    carousel: '카루셀',
+    collection: '컬렉션',
+  };
+  const objectiveLabel: Record<string, string> = {
+    'app-installs': '앱 홍보',
+    'outcome-sales': '판매',
+    'outcome-leads': '잠재 고객',
+    'outcome-engagement': '참여',
+    'outcome-awareness': '인지도',
+    traffic: '트래픽',
+  };
+  const placementLabel: Record<string, string> = {
+    'audience-network-native': 'Audience Network 네이티브',
+    'audience-network-rewarded-video': 'Audience Network 보상형 동영상',
+    'instagram-profile-feed': 'Instagram 프로필 피드',
+    'instagram-stream': 'Instagram 피드',
+    'facebook-feed': 'Facebook 피드',
+    'messenger-story': 'Messenger 스토리',
+  };
+
+  const objectivePart = objectiveLabel[objective] ? `${objectiveLabel[objective]} 목표` : '캠페인 목표';
+  const placementPart = placementLabel[placement] || '게재 위치';
+  const formatPart = formatLabel[format] ? `${formatLabel[format]} 광고` : '광고';
+  return `Meta Ads Guide: ${objectivePart} / ${placementPart} ${formatPart}`;
 }
 
 function getEvidenceDecision(result: SearchResult): string | undefined {
