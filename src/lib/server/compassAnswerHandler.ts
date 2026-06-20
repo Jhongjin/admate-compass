@@ -3799,7 +3799,7 @@ function answerHasMetaOverviewCommerceCoverageGap(answer: string, family: Produc
   const normalizedAnswer = normalizeEvidenceText(answer);
   const commerceHeavy = /shop|shops|커머스|컬렉션|카탈로그|catalog/.test(normalizedAnswer);
   const hasBroaderStructure = /캠페인\s*(목표|목적)|광고\s*관리자\s*목표|마케팅\s*목표|노출\s*위치|게재\s*위치|advantage\+|어드밴티지/.test(normalizedAnswer);
-  const statesLimitedScope = /제공된\s*근거|확인된\s*근거|근거\s*기준|추가\s*공식\s*근거|대조해야/.test(normalizedAnswer);
+  const statesLimitedScope = /추가\s*공식\s*근거|근거가\s*잡힌\s*경우|대조해야|확인된\s*형식|확인된\s*상품\s*구조|확인된\s*범위/.test(normalizedAnswer);
 
   return commerceHeavy && !hasBroaderStructure && !statesLimitedScope;
 }
@@ -4104,8 +4104,8 @@ function getBroadProductAnswerProfile(family: ProductAnswerFamily): EvidenceBack
           {
             heading: '먼저 정할 것',
             bullets: [
-              { text: '캠페인 목표는 인지도, 트래픽, 참여, 잠재 고객, 앱 홍보, 판매처럼 달성하려는 결과를 기준으로 고릅니다.', terms: ['캠페인 목표', '인지도', '트래픽', '참여', '잠재 고객', '앱 홍보', '판매'] },
-              { text: '광고 형식은 이미지, 동영상, 슬라이드/캐러셀, 컬렉션처럼 메시지를 보여주는 방식입니다.', terms: ['이미지', '동영상', '슬라이드', '캐러셀', '카루셀', '컬렉션'] },
+              { text: '캠페인 목표는 인지도, 트래픽, 참여, 잠재 고객, 앱 홍보처럼 달성하려는 결과를 기준으로 고릅니다.', terms: ['캠페인 목표', '광고 관리자 목표', '마케팅 목표', '인지도', '트래픽', '참여', '잠재 고객', '앱 홍보'] },
+              { text: '광고 형식은 컬렉션이나 슬라이드/캐러셀처럼 제품과 여러 이미지를 보여주는 방식이 확인됩니다.', terms: ['슬라이드 광고', '컬렉션 광고', '캐러셀', '카루셀', '컬렉션'] },
               { text: '노출 위치는 Facebook, Instagram 등 지면별 사양과 함께 확인해야 합니다.', terms: ['노출 위치', '게재 위치', 'Facebook', 'Instagram'] },
               { text: 'Shops나 Shop 광고는 Facebook·Instagram의 커머스 흐름과 상품 노출을 함께 볼 때 확인합니다.', terms: ['Shop', 'Shops', 'Shop 광고', 'Facebook 및 Instagram에서 Shop'] },
             ],
