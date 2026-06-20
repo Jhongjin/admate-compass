@@ -2336,6 +2336,51 @@ function getProductStructureSourceKey(source: ReturnType<typeof buildVerifiedSou
   return `${source.documentId || ''}:${source.chunkId || source.id || ''}:${source.title || ''}:${source.excerpt?.slice(0, 80) || ''}`;
 }
 
+function normalizeProductStructureSourceTitleKey(title: string) {
+  return normalizeEvidenceText(String(title || '')
+    .replace(/상품소식\s*\d*\s*분?/gi, ' ')
+    .replace(/#\S+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim());
+}
+
+function normalizeProductStructureSourceUrlKey(url: string) {
+  const rawUrl = String(url || '').trim();
+  if (!rawUrl) return '';
+
+  try {
+    const parsed = new URL(rawUrl);
+    parsed.hash = '';
+    parsed.search = '';
+    return `${parsed.hostname.toLowerCase()}${parsed.pathname.replace(/\/+$/, '')}`;
+  } catch {
+    return normalizeEvidenceText(rawUrl.replace(/[?#].*$/, '').replace(/\/+$/, ''));
+  }
+}
+
+function getProductStructurePublicSourceKey(source: ReturnType<typeof buildVerifiedSources>[number]) {
+  const sourceLike = source as any;
+  const metadata = sourceLike.metadata || {};
+  const urlKey = normalizeProductStructureSourceUrlKey([
+    source.url,
+    sourceLike.documentUrl,
+    metadata.url,
+    metadata.source_url,
+    metadata.document_url,
+    metadata.canonical_url,
+  ].find(Boolean) || '');
+  if (urlKey) return `url:${urlKey}`;
+
+  const titleKey = normalizeProductStructureSourceTitleKey([
+    source.title,
+    source.originalTitle,
+    metadata.title,
+    metadata.source_title,
+    metadata.canonical_title,
+  ].find(Boolean) || '');
+  return titleKey ? `title:${titleKey}` : '';
+}
+
 function getProductStructureVisibleSourceText(source: ReturnType<typeof buildVerifiedSources>[number]) {
   const sourceLike = source as any;
   const metadata = sourceLike.metadata || {};
@@ -4843,6 +4888,7 @@ function ensureProductStructureRequestedTermCoverage(
 
   const next = [...selected];
   const selectedKeys = new Set(next.map(source => getProductStructureSourceKey(source)));
+  const selectedPublicKeys = new Set(next.map(getProductStructurePublicSourceKey).filter(Boolean));
 
   for (const term of requestedTerms) {
     if (next.some(source => sourceCoversRequestedProductStructureTerm(source, term))) continue;
@@ -4850,6 +4896,10 @@ function ensureProductStructureRequestedTermCoverage(
     const best = labelledSources
       .map((source, index) => ({ source, index }))
       .filter(({ source }) => !selectedKeys.has(getProductStructureSourceKey(source)))
+      .filter(({ source }) => {
+        const publicKey = getProductStructurePublicSourceKey(source);
+        return !publicKey || !selectedPublicKeys.has(publicKey);
+      })
       .filter(({ source }) => isUsableBroadProductStructureSource(source, targetVendor))
       .filter(({ source }) => sourceCoversRequestedProductStructureTerm(source, term))
       .sort((a, b) => (
@@ -4860,9 +4910,11 @@ function ensureProductStructureRequestedTermCoverage(
     if (!best) continue;
 
     const bestKey = getProductStructureSourceKey(best);
+    const bestPublicKey = getProductStructurePublicSourceKey(best);
     if (next.length < limit) {
       next.push(best);
       selectedKeys.add(bestKey);
+      if (bestPublicKey) selectedPublicKeys.add(bestPublicKey);
       continue;
     }
 
@@ -4878,8 +4930,11 @@ function ensureProductStructureRequestedTermCoverage(
     if (!replacement) continue;
 
     selectedKeys.delete(getProductStructureSourceKey(replacement.source));
+    const replacementPublicKey = getProductStructurePublicSourceKey(replacement.source);
+    if (replacementPublicKey) selectedPublicKeys.delete(replacementPublicKey);
     next[replacement.index] = best;
     selectedKeys.add(bestKey);
+    if (bestPublicKey) selectedPublicKeys.add(bestPublicKey);
   }
 
   return next;
@@ -4896,9 +4951,14 @@ function ensureProductStructureRequestedFocusCoverage(
   if (selected.some(source => sourceMatchesRequestedProductFocus(source, focus))) return selected;
 
   const selectedKeys = new Set(selected.map(source => getProductStructureSourceKey(source)));
+  const selectedPublicKeys = new Set(selected.map(getProductStructurePublicSourceKey).filter(Boolean));
   const bestFocusSource = labelledSources
     .map((source, index) => ({ source, index }))
     .filter(({ source }) => !selectedKeys.has(getProductStructureSourceKey(source)))
+    .filter(({ source }) => {
+      const publicKey = getProductStructurePublicSourceKey(source);
+      return !publicKey || !selectedPublicKeys.has(publicKey);
+    })
     .filter(({ source }) => isUsableBroadProductStructureSource(source, targetVendor))
     .filter(({ source }) => sourceMatchesRequestedProductFocus(source, focus))
     .sort((a, b) => (
@@ -4956,6 +5016,7 @@ function isUsableBroadProductStructureSource(
 ) {
   if (!sourceMatchesVendor(source, targetVendor)) return false;
   if (targetVendor && hasExplicitOtherVendorSignal(source, targetVendor)) return false;
+  if (sourceIdentityLooksLikeGenericLegalOrAccountDoc(source)) return false;
   if (isWeakProductStructureDisplaySource(source)) return false;
   if (sourceLooksLikeGranularCreativeSpecOnly(source)) return false;
   if (isLowValueProductStructureGraphSource(source)) return false;
@@ -5029,10 +5090,13 @@ function selectProductStructureResponseSources(sources: ReturnType<typeof buildV
       )).length;
       const perGroupLimit = sourceGroup === 'official_graph' ? 3 : 2;
       if (groupCount >= perGroupLimit) return selected;
+      const publicKey = getProductStructurePublicSourceKey(source);
+      if (publicKey && selected.some(item => getProductStructurePublicSourceKey(item) === publicKey)) {
+        return selected;
+      }
       const titleKey = normalizeEvidenceText(source.title || source.originalTitle || '');
       if (
         titleKey
-        && !isOfficialGuideGraphSource(source)
         && selected.some(item => normalizeEvidenceText(item.title || item.originalTitle || '') === titleKey)
       ) {
         return selected;
@@ -5176,7 +5240,9 @@ function capProductStructureGraphSources(
     .reduce((items, source) => {
       if (items.length >= maxGraphSources) return items;
       const key = getProductStructureSourceKey(source);
+      const publicKey = getProductStructurePublicSourceKey(source);
       if (items.some(item => getProductStructureSourceKey(item) === key)) return items;
+      if (publicKey && items.some(item => getProductStructurePublicSourceKey(item) === publicKey)) return items;
       items.push(source);
       return items;
     }, [] as ReturnType<typeof buildVerifiedSources>);
@@ -5184,6 +5250,7 @@ function capProductStructureGraphSources(
   const bestGraphKeys = new Set(bestGraphSources.map(getProductStructureSourceKey));
   const next: ReturnType<typeof buildVerifiedSources>[number][] = [];
   const selectedKeys = new Set<string>();
+  const selectedPublicKeys = new Set<string>();
   const selectedTitleKeys = new Set<string>();
 
   for (const source of head) {
@@ -5196,9 +5263,12 @@ function capProductStructureGraphSources(
 
     const key = getProductStructureSourceKey(source);
     if (selectedKeys.has(key)) continue;
+    const publicKey = getProductStructurePublicSourceKey(source);
+    if (publicKey && selectedPublicKeys.has(publicKey)) continue;
     const titleKey = normalizeEvidenceText(source.title || source.originalTitle || '');
-    if (titleKey && !isGraphVerifiedSource(source) && selectedTitleKeys.has(titleKey)) continue;
+    if (titleKey && selectedTitleKeys.has(titleKey)) continue;
     selectedKeys.add(key);
+    if (publicKey) selectedPublicKeys.add(publicKey);
     if (titleKey) selectedTitleKeys.add(titleKey);
     next.push(source);
   }
@@ -5206,6 +5276,8 @@ function capProductStructureGraphSources(
   for (const bestGraphSource of bestGraphSources) {
     const bestGraphKey = getProductStructureSourceKey(bestGraphSource);
     if (selectedKeys.has(bestGraphKey)) continue;
+    const bestGraphPublicKey = getProductStructurePublicSourceKey(bestGraphSource);
+    if (bestGraphPublicKey && selectedPublicKeys.has(bestGraphPublicKey)) continue;
     const graphInsertIndex = next.length < limit
       ? next.length
       : next
@@ -5217,11 +5289,15 @@ function capProductStructureGraphSources(
       if (graphInsertIndex >= next.length) {
         next.push(bestGraphSource);
       } else {
-        selectedKeys.delete(getProductStructureSourceKey(next[graphInsertIndex]));
-        selectedTitleKeys.delete(normalizeEvidenceText(next[graphInsertIndex].title || next[graphInsertIndex].originalTitle || ''));
+        const replacedSource = next[graphInsertIndex];
+        selectedKeys.delete(getProductStructureSourceKey(replacedSource));
+        const replacedPublicKey = getProductStructurePublicSourceKey(replacedSource);
+        if (replacedPublicKey) selectedPublicKeys.delete(replacedPublicKey);
+        selectedTitleKeys.delete(normalizeEvidenceText(replacedSource.title || replacedSource.originalTitle || ''));
         next[graphInsertIndex] = bestGraphSource;
       }
       selectedKeys.add(bestGraphKey);
+      if (bestGraphPublicKey) selectedPublicKeys.add(bestGraphPublicKey);
       const titleKey = normalizeEvidenceText(bestGraphSource.title || bestGraphSource.originalTitle || '');
       if (titleKey) selectedTitleKeys.add(titleKey);
     }
@@ -5233,9 +5309,12 @@ function capProductStructureGraphSources(
     if (!isUsableBroadProductStructureSource(source, targetVendor)) continue;
     const key = getProductStructureSourceKey(source);
     if (selectedKeys.has(key)) continue;
+    const publicKey = getProductStructurePublicSourceKey(source);
+    if (publicKey && selectedPublicKeys.has(publicKey)) continue;
     const titleKey = normalizeEvidenceText(source.title || source.originalTitle || '');
     if (titleKey && selectedTitleKeys.has(titleKey)) continue;
     selectedKeys.add(key);
+    if (publicKey) selectedPublicKeys.add(publicKey);
     if (titleKey) selectedTitleKeys.add(titleKey);
     next.push(source);
   }
@@ -6154,6 +6233,18 @@ function normalizeSourceTitle(title: string, sourceVendor: string, content: stri
     }
     if (/쇼핑검색광고|쇼핑몰 상품형/.test(blob)) {
       return '네이버 광고 가이드: 쇼핑검색광고 상품형';
+    }
+    if (/pc\s*헤드라인\s*da|헤드라인da/.test(blob)) {
+      return '네이버 광고 가이드: PC 헤드라인DA';
+    }
+    if (/쇼핑블록|쇼핑\s*지면/.test(blob)) {
+      return '네이버 광고 가이드: 쇼핑블록/쇼핑 지면';
+    }
+    if (/성과형\s*디스플레이|홈피드|스마트채널|타임보드|롤링보드/.test(blob)) {
+      return '네이버 광고 가이드: 성과형 디스플레이 광고';
+    }
+    if (/타겟팅\s*전략|타겟팅/.test(blob)) {
+      return '네이버 광고 가이드: 타겟팅 전략';
     }
     return appendOriginalTitle('네이버 광고 가이드', title);
   }
