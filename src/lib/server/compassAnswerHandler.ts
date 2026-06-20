@@ -3763,6 +3763,65 @@ function buildEvidenceBackedAnswer(
   };
 }
 
+function countEvidenceBackedSupportedBullets(
+  profile: EvidenceBackedAnswerProfile,
+  sources: ReturnType<typeof buildVerifiedSources>,
+) {
+  return profile.sections.reduce((count, section) => (
+    count + section.bullets.filter(bullet => sources.some(source => sourceHasEvidenceTerm(source, bullet.terms))).length
+  ), 0);
+}
+
+function countEvidenceBackedAnswerHits(
+  profile: EvidenceBackedAnswerProfile,
+  answer: string,
+) {
+  const normalizedAnswer = normalizeEvidenceText(answer);
+  return profile.sections.reduce((count, section) => (
+    count + section.bullets.filter((bullet) => (
+      bullet.terms.some(term => textContainsEvidenceTerm(normalizedAnswer, term))
+    )).length
+  ), 0);
+}
+
+function answerHasKakaoSpecificScopeRisk(answer: string, message: string, intent: QueryIntent) {
+  if (!intent.vendors.includes('KAKAO')) return false;
+  const family = detectProductAnswerFamily(message, intent);
+  if (family !== 'kakao_bizboard' && family !== 'kakao_overview') return false;
+
+  const normalizedAnswer = normalizeEvidenceText(answer);
+  return /랜덤|확률형|사이버몰|전자상거래|통신판매|업종별\s*가이드|사행|주류|담배/.test(normalizedAnswer);
+}
+
+function buildBroadProductGeneratedAnswerRepair(
+  message: string,
+  intent: QueryIntent,
+  sources: ReturnType<typeof buildVerifiedSources>,
+  isBroadProductStructureLlmIntent: boolean,
+  rawGeneratedAnswer: string,
+): (DeterministicProductAnswer & { reason: 'broad_product_quality_gap' }) | null {
+  if (!isBroadProductStructureLlmIntent) return null;
+
+  const family = detectProductAnswerFamily(message, intent);
+  const profile = getBroadProductAnswerProfile(family);
+  if (!profile) return null;
+
+  const deterministicAnswer = buildEvidenceBackedAnswer(profile, sources);
+  if (!deterministicAnswer) return null;
+
+  const supportedBulletCount = countEvidenceBackedSupportedBullets(profile, sources);
+  const answerHitCount = countEvidenceBackedAnswerHits(profile, rawGeneratedAnswer);
+  const hasMeaningfulGap = supportedBulletCount >= 3 && answerHitCount <= Math.max(1, supportedBulletCount - 2);
+
+  if (!hasMeaningfulGap) return null;
+
+  return {
+    ...deterministicAnswer,
+    model: `${deterministicAnswer.model}-quality-repair`,
+    reason: 'broad_product_quality_gap',
+  };
+}
+
 function buildDeterministicScopeNoticeAnswer(
   productLabel: string,
   sources: ReturnType<typeof buildVerifiedSources>,
@@ -3985,7 +4044,7 @@ function getSpecificProductAnswerProfile(
             heading: '상품/지면',
             bullets: [
               { text: '비즈보드 또는 디스플레이 광고는 카카오 주요 지면에서 브랜드 노출을 검토할 때 확인합니다.', terms: ['비즈보드', '디스플레이 광고', '카카오모먼트'] },
-              { text: '상품가이드는 상품별 집행 조건과 업종 제한을 확인할 때 봅니다.', terms: ['상품가이드', '상품 가이드', '업종 제한'] },
+              { text: '상품가이드는 상품별 집행 조건을 확인하되, 업종 제한은 일반 상품 기능이 아니라 별도 심사 체크로 분리합니다.', terms: ['상품가이드', '상품 가이드', '업종 제한'] },
             ],
           },
           {
@@ -4035,6 +4094,7 @@ function getBroadProductAnswerProfile(family: ProductAnswerFamily): EvidenceBack
               { text: '캠페인 목표는 인지도, 트래픽, 참여, 잠재 고객, 앱 홍보, 판매처럼 달성하려는 결과를 기준으로 고릅니다.', terms: ['캠페인 목표', '인지도', '트래픽', '참여', '잠재 고객', '앱 홍보', '판매'] },
               { text: '광고 형식은 이미지, 동영상, 슬라이드/캐러셀, 컬렉션처럼 메시지를 보여주는 방식입니다.', terms: ['이미지', '동영상', '슬라이드', '캐러셀', '카루셀', '컬렉션'] },
               { text: '노출 위치는 Facebook, Instagram 등 지면별 사양과 함께 확인해야 합니다.', terms: ['노출 위치', '게재 위치', 'Facebook', 'Instagram'] },
+              { text: 'Shops나 Shop 광고는 Facebook·Instagram의 커머스 흐름과 상품 노출을 함께 볼 때 확인합니다.', terms: ['Shop', 'Shops', 'Shop 광고', 'Facebook 및 Instagram에서 Shop'] },
             ],
           },
           {
@@ -4060,6 +4120,7 @@ function getBroadProductAnswerProfile(family: ProductAnswerFamily): EvidenceBack
               { text: '디스플레이 캠페인과 반응형 디스플레이 광고는 이미지·텍스트 조합으로 지면 노출을 다룰 때 확인합니다.', terms: ['디스플레이 캠페인', '반응형 디스플레이'] },
               { text: '쇼핑 광고는 상품 노출과 Merchant Center/상품 데이터 조건을 함께 봅니다.', terms: ['쇼핑 광고', '쇼핑 캠페인', 'Merchant Center'] },
               { text: '앱 캠페인과 리드 양식은 앱 성과 또는 잠재 고객 정보 수집 목적일 때 따로 확인합니다.', terms: ['앱 캠페인', '앱 설치', '리드 양식', 'Lead Form'] },
+              { text: '실적 최대화와 검색 캠페인 문구 가이드는 자동화 캠페인과 검색 광고 소재 문구를 점검할 때 별도로 확인합니다.', terms: ['실적 최대화', 'Performance Max', 'PMax', '검색 캠페인', '광고 문구'] },
             ],
           },
         ],
@@ -4078,6 +4139,7 @@ function getBroadProductAnswerProfile(family: ProductAnswerFamily): EvidenceBack
               { text: '사이트검색광고는 키워드 검색 기반으로 웹사이트 방문을 늘릴 때 확인합니다.', terms: ['사이트검색광고', '웹사이트 방문'] },
               { text: '쇼핑검색광고는 쇼핑몰 상품형처럼 상품 노출과 유입을 함께 다룰 때 확인합니다.', terms: ['쇼핑검색광고', '쇼핑검색', '쇼핑몰 상품형'] },
               { text: '쇼핑블록이나 주요 쇼핑 지면은 쇼핑몰 유입 또는 브랜딩 목적을 검토할 때 확인합니다.', terms: ['쇼핑블록', '쇼핑 지면', 'PC 쇼핑블록', '모바일 쇼핑'] },
+              { text: '성과형 디스플레이/DA 지면은 검색형 상품과 분리해 홈피드, 스마트채널, 타임보드 같은 지면 조건을 확인합니다.', terms: ['성과형 디스플레이', '네이버 DA', '홈피드', '스마트채널', '타임보드', '롤링보드'] },
               { text: '상품 DB URL, EP, 상품정보 수신 같은 조건은 쇼핑 상품 운영 전 함께 확인합니다.', terms: ['상품 DB', '상품DB', 'DB URL', 'EP', '상품정보 수신'] },
             ],
           },
@@ -4095,7 +4157,7 @@ function getBroadProductAnswerProfile(family: ProductAnswerFamily): EvidenceBack
             heading: '상품/지면',
             bullets: [
               { text: '비즈보드와 디스플레이 광고는 카카오 주요 지면에서 브랜드 노출을 검토할 때 확인합니다.', terms: ['비즈보드', '디스플레이 광고', '카카오모먼트'] },
-              { text: '상품가이드는 상품별 집행 조건과 업종 제한을 확인할 때 봅니다.', terms: ['상품가이드', '상품 가이드', '업종 제한'] },
+              { text: '상품가이드는 상품별 집행 조건을 확인하되, 업종 제한은 별도 심사 체크 항목으로 분리해서 봅니다.', terms: ['상품가이드', '상품 가이드', '업종 제한'] },
               { text: '제작가이드와 심사가이드는 이미지 비율, 텍스트 영역, 제한 업종처럼 소재 조건을 대조할 때 필요합니다.', terms: ['제작가이드', '제작 가이드', '심사가이드', '심사 가이드', '이미지', '비율'] },
             ],
           },
@@ -4199,7 +4261,8 @@ type SpecificProductGeneratedAnswerRepair = {
     | 'missing_requested_product_family'
     | 'generic_product_structure'
     | 'extractive_source_dump'
-    | 'insufficient_specific_depth';
+    | 'insufficient_specific_depth'
+    | 'kakao_scope_risk';
   showContactOption?: boolean;
   confidenceCap?: number;
   reviewStatus?: CompassReviewPipelineStatus;
@@ -4351,15 +4414,31 @@ function buildSpecificProductGeneratedAnswerRepair(
   const genericProductStructure = answerLooksLikeGenericProductStructure(rawGeneratedAnswer);
   const extractiveSourceDump = answerLooksLikeExtractiveSourceDump(rawGeneratedAnswer);
   const hasSpecificDepth = answerHasSpecificOperationalDepth(rawGeneratedAnswer, message, intent);
-  if (rawGeneratedAnswer && mentionsRequestedFamily && hasSpecificDepth && !genericProductStructure && !extractiveSourceDump) {
+  const kakaoScopeRisk = answerHasKakaoSpecificScopeRisk(rawGeneratedAnswer, message, intent);
+  if (rawGeneratedAnswer && mentionsRequestedFamily && hasSpecificDepth && !genericProductStructure && !extractiveSourceDump && !kakaoScopeRisk) {
     return null;
   }
-  const repairReason = getSpecificProductGeneratedAnswerRepairReason(
+  const repairReason = kakaoScopeRisk ? 'kakao_scope_risk' : getSpecificProductGeneratedAnswerRepairReason(
     mentionsRequestedFamily,
     genericProductStructure,
     extractiveSourceDump,
     hasSpecificDepth,
   );
+
+  if (kakaoScopeRisk) {
+    const evidenceBackedAnswer = buildDeterministicSpecificProductAnswer(message, intent, scope);
+    if (evidenceBackedAnswer) {
+      return {
+        answer: evidenceBackedAnswer.answer,
+        sources: evidenceBackedAnswer.sources,
+        model: `${evidenceBackedAnswer.model}-scope-risk-repair`,
+        reason: repairReason,
+        showContactOption: evidenceBackedAnswer.showContactOption,
+        confidenceCap: evidenceBackedAnswer.confidenceCap,
+        reviewStatus: evidenceBackedAnswer.reviewStatus,
+      };
+    }
+  }
 
   if (operationalAnswer) {
     return {
@@ -7205,9 +7284,16 @@ export async function buildCompassAnswerResponse(
       rawGeneratedAnswer,
       operationalAnswer,
     );
-    const finalAnswerSources = dedupePublicProductSources(answerRepair?.sources || answerSources);
+    const broadAnswerRepair = buildBroadProductGeneratedAnswerRepair(
+      message,
+      ragIntent,
+      answerSources,
+      isBroadProductStructureLlmIntent,
+      rawGeneratedAnswer,
+    );
+    const finalAnswerSources = dedupePublicProductSources(answerRepair?.sources || broadAnswerRepair?.sources || answerSources);
     const normalizedAnswer = normalizeGeneratedAnswer(
-      answerRepair?.answer || rawGeneratedAnswer || operationalAnswer || '',
+      answerRepair?.answer || broadAnswerRepair?.answer || rawGeneratedAnswer || operationalAnswer || '',
       finalAnswerSources,
     );
     const responseAnswer = coverageNotice ? `${coverageNotice}\n\n${normalizedAnswer}` : normalizedAnswer;
@@ -7232,6 +7318,7 @@ export async function buildCompassAnswerResponse(
             answerSourceCount: finalAnswerSources.length,
             answerMode: diagnosticAnswerMode,
             answerRepairReason: answerRepair?.reason,
+            broadAnswerRepairReason: broadAnswerRepair?.reason,
           },
           reviewPipeline: answerRepair
             ? buildReviewPipeline({
@@ -7240,11 +7327,18 @@ export async function buildCompassAnswerResponse(
               verifiedSourceCount: finalAnswerSources.length,
               contactRecommended: Boolean(answerRepair.showContactOption),
             })
+            : broadAnswerRepair
+              ? buildReviewPipeline({
+                status: 'completed',
+                sourceCount: searchResults.length,
+                verifiedSourceCount: finalAnswerSources.length,
+                contactRecommended: false,
+              })
             : reviewPipeline,
         },
         confidence: answerRepair?.confidenceCap ? Math.min(confidence, answerRepair.confidenceCap) : confidence,
         processingTime,
-        model: answerRepair?.model || buildCompassAnswerModel(message, ragIntent, isBroadProductStructureLlmIntent)
+        model: answerRepair?.model || broadAnswerRepair?.model || buildCompassAnswerModel(message, ragIntent, isBroadProductStructureLlmIntent)
       }
     };
 

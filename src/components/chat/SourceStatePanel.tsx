@@ -34,6 +34,7 @@ export default function SourceStatePanel({
   onPromptSelect,
 }: SourceStatePanelProps) {
   const [cardsVisible, setCardsVisible] = useState(true);
+  const [allSourceCardsVisible, setAllSourceCardsVisible] = useState(false);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const sourceListId = useId();
   const hasSources = sources.length > 0;
@@ -121,6 +122,10 @@ export default function SourceStatePanel({
         .filter((label) => label !== "매체 미확인")
     ).size,
   };
+  const initialVisibleSourceLimit = compact ? 3 : 6;
+  const visibleSources = allSourceCardsVisible ? sources : sources.slice(0, initialVisibleSourceLimit);
+  const hiddenSourceCount = Math.max(0, sources.length - visibleSources.length);
+  const hasHiddenSourceCards = sources.length > initialVisibleSourceLimit;
 
   const handleSourceOpen = async (source: ChatSource) => {
     if (!source.url || sourceOpenMode === "noop") return;
@@ -378,97 +383,122 @@ export default function SourceStatePanel({
         </Button>
 
         {cardsVisible && (
-          <div id={sourceListId} role="list" aria-label="확인한 출처 목록" className="space-y-3">
-            {sources.slice(0, compact ? 3 : 6).map((source, index) => {
-              const isExpanded = expandedIds.has(source.id);
-              const title = source.title?.replace(/_chunk_\d+/g, `_page_${index + 1}`) || `출처 문서 ${index + 1}`;
-              const sourceExcerptId = getSourceExcerptId(source, index);
+          <>
+            <div id={sourceListId} role="list" aria-label="확인한 출처 목록" className="space-y-3">
+              {visibleSources.map((source, index) => {
+                const isExpanded = expandedIds.has(source.id);
+                const title = source.title?.replace(/_chunk_\d+/g, `_page_${index + 1}`) || `출처 문서 ${index + 1}`;
+                const sourceExcerptId = getSourceExcerptId(source, index);
 
-              return (
-                <div key={`${source.id}-${index}`} role="listitem" className={`${compact ? "p-2.5" : "p-3"} rounded-lg border border-[#D8DCCF] bg-[#FBFBF7] transition-colors hover:border-[#B9C9BB]`}>
-                  <div className={`flex items-start ${compact ? "gap-2" : "gap-3"}`}>
-                    <div className={`${compact ? "h-6 w-6" : "h-7 w-7"} flex flex-none items-center justify-center rounded-md border border-[#C6D9CB] bg-[#EDF7EF] text-xs font-semibold text-[#1F7A4D]`}>
-                      {index + 1}
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <div className={`${compact ? "mb-0.5" : "mb-1"} text-[11px] font-semibold uppercase tracking-[0.12em] text-[#758070]`}>
-                        확인한 출처 {index + 1}
+                return (
+                  <div key={`${source.id}-${index}`} role="listitem" className={`${compact ? "p-2.5" : "p-3"} rounded-lg border border-[#D8DCCF] bg-[#FBFBF7] transition-colors hover:border-[#B9C9BB]`}>
+                    <div className={`flex items-start ${compact ? "gap-2" : "gap-3"}`}>
+                      <div className={`${compact ? "h-6 w-6" : "h-7 w-7"} flex flex-none items-center justify-center rounded-md border border-[#C6D9CB] bg-[#EDF7EF] text-xs font-semibold text-[#1F7A4D]`}>
+                        {index + 1}
                       </div>
-                      <div className="flex items-start justify-between gap-2">
-                        <h4 className="line-clamp-2 break-words text-sm font-semibold leading-5 text-[#111713]">
-                          {title}
-                        </h4>
-                        <div className="flex flex-none items-center gap-1">
-                          {source.url && (
+                      <div className="min-w-0 flex-1">
+                        <div className={`${compact ? "mb-0.5" : "mb-1"} text-[11px] font-semibold uppercase tracking-[0.12em] text-[#758070]`}>
+                          확인한 출처 {index + 1}
+                        </div>
+                        <div className="flex items-start justify-between gap-2">
+                          <h4 className="line-clamp-2 break-words text-sm font-semibold leading-5 text-[#111713]">
+                            {title}
+                          </h4>
+                          <div className="flex flex-none items-center gap-1">
+                            {source.url && (
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="sm"
+                                className="h-8 w-8 rounded-md p-0 text-[#5F6C62] hover:bg-[#EDF7EF] hover:text-[#1F7A4D]"
+                                onClick={() => handleSourceOpen(source)}
+                                title={source.sourceType === "file" ? "파일 다운로드" : "열기"}
+                                aria-label={source.sourceType === "file" ? "파일 다운로드" : "출처 문서 열기"}
+                              >
+                                {source.sourceType === "file" ? <Download className="h-4 w-4" aria-hidden="true" /> : <ExternalLink className="h-4 w-4" aria-hidden="true" />}
+                              </Button>
+                            )}
                             <Button
                               type="button"
                               variant="ghost"
                               size="sm"
-                              className="h-8 w-8 rounded-md p-0 text-[#5F6C62] hover:bg-[#EDF7EF] hover:text-[#1F7A4D]"
-                              onClick={() => handleSourceOpen(source)}
-                              title={source.sourceType === "file" ? "파일 다운로드" : "열기"}
-                              aria-label={source.sourceType === "file" ? "파일 다운로드" : "출처 문서 열기"}
+                              className="h-8 w-8 rounded-md p-0 text-[#5F6C62] hover:bg-[#F0F2EA] hover:text-[#111713]"
+                              onClick={() => toggleExpanded(source.id)}
+                              title={isExpanded ? "접기" : "펼치기"}
+                              aria-label={isExpanded ? "출처 문서 접기" : "출처 문서 펼치기"}
+                              aria-expanded={isExpanded}
+                              aria-controls={sourceExcerptId}
                             >
-                              {source.sourceType === "file" ? <Download className="h-4 w-4" aria-hidden="true" /> : <ExternalLink className="h-4 w-4" aria-hidden="true" />}
+                              {isExpanded ? <ChevronUp className="h-4 w-4" aria-hidden="true" /> : <ChevronDown className="h-4 w-4" aria-hidden="true" />}
                             </Button>
-                          )}
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="sm"
-                            className="h-8 w-8 rounded-md p-0 text-[#5F6C62] hover:bg-[#F0F2EA] hover:text-[#111713]"
-                            onClick={() => toggleExpanded(source.id)}
-                            title={isExpanded ? "접기" : "펼치기"}
-                            aria-label={isExpanded ? "출처 문서 접기" : "출처 문서 펼치기"}
-                            aria-expanded={isExpanded}
-                            aria-controls={sourceExcerptId}
-                          >
-                            {isExpanded ? <ChevronUp className="h-4 w-4" aria-hidden="true" /> : <ChevronDown className="h-4 w-4" aria-hidden="true" />}
-                          </Button>
+                          </div>
                         </div>
-                      </div>
 
-                      <div className="mt-2 flex flex-wrap gap-1.5">
-                        <Badge variant="outline" className="rounded-md border-[#D8DCCF] bg-white px-2 py-0.5 text-[11px] text-[#34423A]">
-                          <Fingerprint className="mr-1 h-3 w-3 text-[#758070]" />
-                          {getSourceVendorLabel(source)}
-                        </Badge>
-                        <Badge variant="outline" className="rounded-md border-[#C6D9CB] bg-[#EDF7EF] px-2 py-0.5 text-[11px] text-[#1F7A4D]">
-                          <CheckCircle2 className="mr-1 h-3 w-3" />
-                          {getSourceKindLabel(source)}
-                        </Badge>
-                        <Badge variant="outline" className="rounded-md border-[#D8DCCF] bg-white px-2 py-0.5 text-[11px] text-[#5F6C62]">
-                          <Link2 className="mr-1 h-3 w-3" />
-                          {getSourceAccessLabel(source)}
-                        </Badge>
-                        <Badge variant="outline" className="rounded-md border-[#E9D59B] bg-[#FFF8E6] px-2 py-0.5 text-[11px] text-[#8A6418]">
-                          {getSourceDeskLabel(source)}
-                        </Badge>
-                        <Badge variant="outline" className="rounded-md border-[#D8DCCF] bg-white px-2 py-0.5 text-[11px] text-[#5F6C62]">
-                          {getSourceIntegrityLabel(source)}
-                        </Badge>
-                      </div>
-
-                      <p id={sourceExcerptId} className={`${isExpanded ? "" : compact ? "line-clamp-2" : "line-clamp-3"} mt-2 break-words text-xs leading-5 text-[#5F6C62]`}>
-                        {source.excerpt || "표시할 원문 일부가 없습니다."}
-                      </p>
-
-                      {isExpanded && (
-                        <div className="mt-3 flex flex-wrap gap-1.5 border-t border-[#D8DCCF] pt-3">
+                        <div className="mt-2 flex flex-wrap gap-1.5">
+                          <Badge variant="outline" className="rounded-md border-[#D8DCCF] bg-white px-2 py-0.5 text-[11px] text-[#34423A]">
+                            <Fingerprint className="mr-1 h-3 w-3 text-[#758070]" />
+                            {getSourceVendorLabel(source)}
+                          </Badge>
                           <Badge variant="outline" className="rounded-md border-[#C6D9CB] bg-[#EDF7EF] px-2 py-0.5 text-[11px] text-[#1F7A4D]">
-                            확인한 출처
+                            <CheckCircle2 className="mr-1 h-3 w-3" />
+                            {getSourceKindLabel(source)}
                           </Badge>
                           <Badge variant="outline" className="rounded-md border-[#D8DCCF] bg-white px-2 py-0.5 text-[11px] text-[#5F6C62]">
-                            Compass 문서
+                            <Link2 className="mr-1 h-3 w-3" />
+                            {getSourceAccessLabel(source)}
+                          </Badge>
+                          <Badge variant="outline" className="rounded-md border-[#E9D59B] bg-[#FFF8E6] px-2 py-0.5 text-[11px] text-[#8A6418]">
+                            {getSourceDeskLabel(source)}
+                          </Badge>
+                          <Badge variant="outline" className="rounded-md border-[#D8DCCF] bg-white px-2 py-0.5 text-[11px] text-[#5F6C62]">
+                            {getSourceIntegrityLabel(source)}
                           </Badge>
                         </div>
-                      )}
+
+                        <p id={sourceExcerptId} className={`${isExpanded ? "" : compact ? "line-clamp-2" : "line-clamp-3"} mt-2 break-words text-xs leading-5 text-[#5F6C62]`}>
+                          {source.excerpt || "표시할 원문 일부가 없습니다."}
+                        </p>
+
+                        {isExpanded && (
+                          <div className="mt-3 flex flex-wrap gap-1.5 border-t border-[#D8DCCF] pt-3">
+                            <Badge variant="outline" className="rounded-md border-[#C6D9CB] bg-[#EDF7EF] px-2 py-0.5 text-[11px] text-[#1F7A4D]">
+                              확인한 출처
+                            </Badge>
+                            <Badge variant="outline" className="rounded-md border-[#D8DCCF] bg-white px-2 py-0.5 text-[11px] text-[#5F6C62]">
+                              Compass 문서
+                            </Badge>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
-                </div>
-              );
-            })}
-          </div>
+                );
+              })}
+            </div>
+            {hasHiddenSourceCards && (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setAllSourceCardsVisible((visible) => !visible)}
+                aria-expanded={allSourceCardsVisible}
+                aria-controls={sourceListId}
+                className="h-9 w-full justify-center rounded-lg border border-[#D8DCCF] bg-white px-3 text-xs font-medium text-[#34423A] shadow-sm transition-colors hover:bg-[#F0F2EA] hover:text-[#111713]"
+              >
+                {allSourceCardsVisible ? (
+                  <>
+                    <ChevronUp className="mr-2 h-3.5 w-3.5" />
+                    기본 {initialVisibleSourceLimit}개만 보기
+                  </>
+                ) : (
+                  <>
+                    <ChevronDown className="mr-2 h-3.5 w-3.5" />
+                    +{hiddenSourceCount}개 더 보기
+                  </>
+                )}
+              </Button>
+            )}
+          </>
         )}
       </CardContent>
     </Card>
