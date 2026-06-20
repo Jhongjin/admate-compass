@@ -79,6 +79,18 @@ for (const serviceSignal of [
   assertIncludes(graphService, serviceSignal, 'evidence graph service contract');
 }
 
+if (!/shouldUseStructuredRowsOnlyForFocusedProductOverview[\s\S]*intent\.vendors\[0\] !== 'META'/.test(graphService)) {
+  fail('Meta focused product graph retrieval must merge vendor-scoped text rows so objective/app-install assertions can outrank stale structured rows');
+}
+
+if (!/rawTerms\.push\([\s\S]*'app install'[\s\S]*'app-installs'[\s\S]*'mobile app'/.test(graphService)) {
+  fail('Meta app-install product graph retrieval must include app-install URL/title terms in graph text search');
+}
+
+if (!/const vendorScopedQuery = intent\.vendors\.length > 0[\s\S]*baseQuery\.in\('vendor', intent\.vendors\)[\s\S]*await vendorScopedQuery[\s\S]*\.or\(orFilter\)/.test(graphService)) {
+  fail('evidence graph text search must stay vendor-scoped when a vendor is explicit');
+}
+
 for (const officialDocSignal of [
   'COMPASS_OFFICIAL_GUIDE_GRAPH_INDEXING_ENABLED',
   'indexOfficialGuideAssertions',

@@ -494,7 +494,12 @@ export class CompassEvidenceGraphService {
       ])
       .join(',');
 
-    const { data, error } = await this.baseAssertionQuery()
+    const baseQuery = this.baseAssertionQuery();
+    const vendorScopedQuery = intent.vendors.length > 0
+      ? baseQuery.in('vendor', intent.vendors)
+      : baseQuery;
+
+    const { data, error } = await vendorScopedQuery
       .or(orFilter)
       .limit(this.resolveTextGraphRowLimit(intent, limit));
 
@@ -522,6 +527,7 @@ export class CompassEvidenceGraphService {
       this.isFocusedProductGraphIntent(intent)
       && intent.isProductStructureOverview
       && !intent.isSpecificProductGuidance
+      && intent.vendors[0] !== 'META'
     );
   }
 
@@ -886,6 +892,9 @@ export class CompassEvidenceGraphService {
         'catalog',
         'lead',
         'app promotion',
+        'app install',
+        'app-installs',
+        'mobile app',
       );
     }
 
