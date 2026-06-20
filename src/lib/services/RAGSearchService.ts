@@ -1152,6 +1152,7 @@ export class RAGSearchService {
           intent.vendors[0] === 'NAVER'
           || intent.vendors[0] === 'GOOGLE'
           || usesMetaProductOverviewPriority
+          || usesMetaAppInstallPriority
           || usesKakaoProductPriority
         )
       );
@@ -5644,7 +5645,6 @@ export class RAGSearchService {
   private isMetaAppInstallIntent(intent: QueryIntent): boolean {
     if (!intent.topics.includes('product_structure') || intent.vendors[0] !== 'META') return false;
     const text = this.normalizeSearchText([
-      ...intent.keywords,
       ...intent.strictProductTerms,
       ...intent.strictContextTerms,
       ...intent.adPolicyTerms,

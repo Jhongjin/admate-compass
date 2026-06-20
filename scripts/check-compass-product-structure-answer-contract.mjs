@@ -577,7 +577,7 @@ if (!/sourceIdentityLooksLikeGenericLegalOrAccountDoc[\s\S]*청구\|결제\|지�
   fail('answer source routing must demote payment/account support documents such as 지불 for product-structure answers');
 }
 
-if (!/COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v7-meta-app-install-priority'[\s\S]*`compass-answer:\$\{COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION\}:\$\{message\}`/.test(answerHandler)) {
+if (!/COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v8-meta-app-install-intent-fix'[\s\S]*`compass-answer:\$\{COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION\}:\$\{message\}`/.test(answerHandler)) {
   fail('answer response cache key must be versioned so stale durable cached answers are bypassed after source-quality fixes');
 }
 
@@ -621,6 +621,9 @@ const metaAppInstallIntentBlock = extractBlock(
 );
 if (metaAppInstallIntentBlock.includes('intent.isProductStructureOverview && !intent.isSpecificProductGuidance')) {
   fail('Meta app install intent must include app-install product overview questions so the priority path can run');
+}
+if (metaAppInstallIntentBlock.includes('...intent.keywords')) {
+  fail('Meta app install intent must not inspect expanded keywords because they make every Meta product overview look app-install focused');
 }
 
 if (!/calculateProductStructureGraphTitleAdjustment[\s\S]*hasMetaBusinessNewsUrl[\s\S]*meta_product_structure_news_url_penalty[\s\S]*isLowValueProductStructureGraphCandidate[\s\S]*intent\.vendors\[0\] === 'META'[\s\S]*isMetaBroadProductNewsNoiseText\(sourceText\)/.test(rag)) {
@@ -972,6 +975,10 @@ if (/for \(const anchor of anchors\)/.test(metaAppInstallPriorityBlock)) {
 
 if (!/const usesMetaProductOverviewPriority[\s\S]*!usesMetaAppInstallPriority[\s\S]*const usesKakaoProductPriority/.test(rag)) {
   fail('Meta app-install product questions must skip duplicate Meta overview priority retrieval');
+}
+
+if (!/usesVendorProductStructurePriority[\s\S]*usesMetaProductOverviewPriority[\s\S]*usesMetaAppInstallPriority[\s\S]*usesKakaoProductPriority/.test(rag)) {
+  fail('Meta app-install priority retrieval must skip generic product-structure anchor fan-out');
 }
 
 if (!/skipsGraphForGoogleProductOverview\s*\n\s*\|\| usesMetaAppInstallPriority[\s\S]*Promise\.resolve\(\[\]\)[\s\S]*product_fast_graph/.test(rag)) {
