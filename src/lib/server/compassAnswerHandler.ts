@@ -3793,6 +3793,17 @@ function answerHasKakaoSpecificScopeRisk(answer: string, message: string, intent
   return /랜덤|확률형|사이버몰|전자상거래|통신판매|업종별\s*가이드|사행|주류|담배/.test(normalizedAnswer);
 }
 
+function answerHasMetaOverviewCommerceCoverageGap(answer: string, family: ProductAnswerFamily) {
+  if (family !== 'meta_overview') return false;
+
+  const normalizedAnswer = normalizeEvidenceText(answer);
+  const commerceHeavy = /shop|shops|커머스|컬렉션|카탈로그|catalog/.test(normalizedAnswer);
+  const hasBroaderStructure = /캠페인\s*(목표|목적)|광고\s*관리자\s*목표|마케팅\s*목표|노출\s*위치|게재\s*위치|advantage\+|어드밴티지/.test(normalizedAnswer);
+  const statesLimitedScope = /제공된\s*근거|확인된\s*근거|근거\s*기준|추가\s*공식\s*근거|대조해야/.test(normalizedAnswer);
+
+  return commerceHeavy && !hasBroaderStructure && !statesLimitedScope;
+}
+
 function buildBroadProductGeneratedAnswerRepair(
   message: string,
   intent: QueryIntent,
@@ -3812,8 +3823,10 @@ function buildBroadProductGeneratedAnswerRepair(
   const supportedBulletCount = countEvidenceBackedSupportedBullets(profile, sources);
   const answerHitCount = countEvidenceBackedAnswerHits(profile, rawGeneratedAnswer);
   const hasMeaningfulGap = supportedBulletCount >= 3 && answerHitCount <= Math.max(1, supportedBulletCount - 2);
+  const hasMetaOverviewCommerceCoverageGap = supportedBulletCount >= 2
+    && answerHasMetaOverviewCommerceCoverageGap(rawGeneratedAnswer, family);
 
-  if (!hasMeaningfulGap) return null;
+  if (!hasMeaningfulGap && !hasMetaOverviewCommerceCoverageGap) return null;
 
   return {
     ...deterministicAnswer,
@@ -4086,7 +4099,7 @@ function getBroadProductAnswerProfile(family: ProductAnswerFamily): EvidenceBack
     case 'meta_overview':
       return {
         family,
-        intro: 'Meta 광고 상품은 하나의 상품명만 선택하는 방식보다 캠페인 목표, 광고 형식, 노출 위치, 자동화 기능을 조합해 설계하는 구조로 이해하면 됩니다.',
+        intro: '제공된 Meta 근거 기준으로는 광고 형식, Shop/카탈로그형 커머스 흐름, Facebook·Instagram 노출 흐름을 중심으로 확인됩니다. 캠페인 목표나 자동화 기능은 해당 근거가 잡힌 경우에만 함께 대조해야 합니다.',
         sections: [
           {
             heading: '먼저 정할 것',
@@ -4104,7 +4117,7 @@ function getBroadProductAnswerProfile(family: ProductAnswerFamily): EvidenceBack
             ],
           },
         ],
-        summary: '정리하면, Meta는 목표를 먼저 정하고 그 목표에 맞는 형식, 지면, 자동화 기능을 조합하는 방식으로 검토하면 됩니다.',
+        summary: '정리하면, 이번 근거에서는 확인된 형식과 커머스 지면을 먼저 설명하고, 목표·자동화 같은 넓은 체계는 추가 공식 근거와 대조해야 합니다.',
         model: 'compass-answer-deterministic-meta-overview',
       };
 

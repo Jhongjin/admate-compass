@@ -120,6 +120,30 @@
     }
   },
   {
+    "id": "future-near-term-fictional-known-vendor-product",
+    "question": "네이버 2027년 신규 홀로그램 광고 상품 패키지에 대해 알려줘",
+    "caseType": "future-fictional-known-vendor-product",
+    "expected": {
+      "noDataFound": true,
+      "minSources": 0,
+      "maxSources": 0,
+      "sourcesRetained": false,
+      "allowGenerationLimited": false,
+      "generationLimitedPreservesSources": false,
+      "sourcePolicy": "hide_generic_sources",
+      "copyClass": "unavailable_future_product",
+      "copyExpectation": {
+        "sample": "Compass 문서 기준으로 해당 시점이나 대상의 광고 정책 근거를 찾지 못했습니다. 실제 운영 중인 플랫폼명과 확인하려는 정책 또는 상품 범위를 다시 입력해 주세요.",
+        "requiredFragments": ["Compass 문서", "근거를 찾지 못했습니다", "실제 운영 중인 플랫폼명"],
+        "forbiddenFragments": ["retrievalMethod", "sourceQuality", "ollama_document_chunks", "embedding", "hybrid score", "RAGSearchService"]
+      }
+    },
+    "currentProductionBaseline": {
+      "status": "expected-pass",
+      "basis": "Near-future launch wording plus an unsupported hologram product family must not fall back to generic current Naver product sources."
+    }
+  },
+  {
     "id": "fictional-platform-moontok",
     "question": "MoonTok Ads에서 순간이동 장치 광고 심사 기준을 알려줘",
     "caseType": "fictional-platform",

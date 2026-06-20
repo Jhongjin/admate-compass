@@ -50,8 +50,10 @@ const impossibleDomainTerms = [
   '달 거주',
   '테라포밍',
   '초공간',
+  '홀로그램',
   'mars colony',
   'oxygen farm',
+  'hologram',
 ];
 
 const productStructureTerms = [
@@ -68,6 +70,13 @@ const futureLaunchTerms = [
   '출시될',
   '출시 예정',
   '출시예정',
+  '신규',
+  '신규 출시',
+  '신규출시',
+  '신규 상품',
+  '신규상품',
+  '신규 패키지',
+  '신규패키지',
   '공개될',
   '도입될',
   '예정인',
@@ -174,7 +183,7 @@ export function detectUnavailablePolicyTarget(query, options = {}) {
     && (text.includes('거주용') || text.includes('산소 농장') || text.includes('우주'));
 
   const speculativeFutureKnownVendorProduct = hasKnownVendor(text)
-    && years.some((year) => year > currentYear + 1)
+    && years.some((year) => year > currentYear)
     && matchedProductStructureTerms.length > 0
     && (matchedFutureLaunchTerms.length > 0 || matchedImpossibleDomainTerms.length > 0);
 

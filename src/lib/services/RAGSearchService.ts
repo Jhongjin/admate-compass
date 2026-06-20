@@ -1540,12 +1540,16 @@ export class RAGSearchService {
         if (this.hasExplicitOtherVendorSignal(candidate, 'META')) return null;
 
         const sourceText = this.buildCandidateEvidenceText(candidate.content, candidate.documentTitle, candidate.metadata);
+        const normalizedSourceText = this.normalizeSearchText(sourceText);
         if (!this.hasMetaProductOverviewSignal(sourceText)) return null;
-        if (this.isCreativeSpecOnlyText(this.normalizeSearchText(sourceText))) return null;
+        if (this.isCreativeSpecOnlyText(normalizedSourceText)) return null;
 
-        const hasObjectiveSignal = /캠페인\s*목표|광고\s*관리자\s*목표|마케팅\s*목표|인지도|트래픽|참여|잠재\s*고객|앱\s*홍보|판매|objective|objectives/i.test(sourceText);
+        const hasObjectiveSignal = /캠페인\s*(목표|목적)|광고\s*관리자\s*목표|마케팅\s*목표|목표[\s\S]{0,120}(인지도|트래픽|참여|잠재\s*고객|앱\s*홍보|판매)|인지도[\s\S]{0,120}트래픽[\s\S]{0,120}참여[\s\S]{0,120}잠재\s*고객[\s\S]{0,120}앱\s*홍보[\s\S]{0,120}판매|objective|objectives/i.test(sourceText);
         const hasCommerceSignal = /advantage\+|어드밴티지|카탈로그|catalog|meta\s*pixel|메타\s*픽셀|픽셀\s*(이벤트|코드|설치|전환)|conversions?\s*api/i.test(sourceText);
         const hasFormatPlacementSignal = /노출\s*위치|게재\s*위치|placements|지면|이미지\s*광고|동영상\s*광고|슬라이드\s*광고|컬렉션\s*광고|릴스|스토리|피드|lead\s*ads|잠재고객\s*광고/i.test(sourceText);
+        if (this.isMetaOverviewPolicyNoiseText(normalizedSourceText) && !hasObjectiveSignal && !hasCommerceSignal && !hasFormatPlacementSignal) {
+          return null;
+        }
         const boostedScore = Math.max(
           hasObjectiveSignal ? 0.96 : hasCommerceSignal || hasFormatPlacementSignal ? 0.9 : 0.84,
           Math.min(1, (candidate.hybridScore || 0) + (hasObjectiveSignal ? 0.5 : hasCommerceSignal || hasFormatPlacementSignal ? 0.34 : 0.2))
@@ -4818,8 +4822,12 @@ export class RAGSearchService {
   private hasMetaProductOverviewSignal(sourceText: string): boolean {
     const text = this.normalizeSearchText(sourceText);
     const hasMetaIdentity = /meta|메타|facebook|페이스북|instagram|인스타그램|릴스|reels/.test(text);
-    const hasProductSignal = /캠페인\s*목표|광고\s*관리자\s*목표|마케팅\s*목표|인지도|트래픽|참여|잠재\s*고객|앱\s*홍보|판매|objective|objectives|advantage\+|어드밴티지|카탈로그|catalog|meta\s*pixel|메타\s*픽셀|픽셀\s*(이벤트|코드|설치|전환)|conversions?\s*api|노출\s*위치|게재\s*위치|placements|지면|이미지\s*광고|동영상\s*광고|슬라이드\s*광고|컬렉션\s*광고|릴스|스토리|피드|lead\s*ads|잠재고객\s*광고/i.test(text);
+    const hasProductSignal = /캠페인\s*(목표|목적)|광고\s*관리자\s*목표|마케팅\s*목표|목표[\s\S]{0,120}(인지도|트래픽|참여|잠재\s*고객|앱\s*홍보|판매)|인지도[\s\S]{0,120}트래픽[\s\S]{0,120}참여[\s\S]{0,120}잠재\s*고객[\s\S]{0,120}앱\s*홍보[\s\S]{0,120}판매|objective|objectives|advantage\+|어드밴티지|카탈로그|catalog|meta\s*pixel|메타\s*픽셀|픽셀\s*(이벤트|코드|설치|전환)|conversions?\s*api|노출\s*위치|게재\s*위치|placements|지면|이미지\s*광고|동영상\s*광고|슬라이드\s*광고|컬렉션\s*광고|릴스|스토리|피드|lead\s*ads|잠재고객\s*광고/i.test(text);
     return hasMetaIdentity && hasProductSignal;
+  }
+
+  private isMetaOverviewPolicyNoiseText(text: string): boolean {
+    return /체중\s*감량|성전환|주름|신체\s*측정|허용되지\s*않는\s*예시|정책에\s*맞지\s*않|제한된\s*상품|금지된\s*상품|광고\s*게재\s*제한/.test(text);
   }
 
   private hasNaverShoppingDataSignal(sourceText: string): boolean {
