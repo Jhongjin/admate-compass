@@ -953,8 +953,22 @@ export class RAGSearchService {
         ? 14
         : 12;
 
+    const specificPriorityTermLimit = intent && (
+      this.isMetaAppInstallIntent(intent)
+      || this.isGoogleLeadFormIntent(intent)
+    )
+      ? 10
+      : maxTerms;
+
     if (options.rawKeywordsOnly) {
-      return Array.from(new Set(cleanedKeywords)).slice(0, maxTerms);
+      return Array.from(new Set(cleanedKeywords)).slice(0, specificPriorityTermLimit);
+    }
+
+    if (intent && (this.isMetaAppInstallIntent(intent) || this.isGoogleLeadFormIntent(intent))) {
+      return Array.from(new Set([
+        ...priorityTerms,
+        ...cleanedKeywords,
+      ])).slice(0, specificPriorityTermLimit);
     }
 
     if (
@@ -990,6 +1004,13 @@ export class RAGSearchService {
   }
 
   private getKeywordTableFetchLimit(limit: number, intent?: QueryIntent): number {
+    if (intent && this.isMetaAppInstallIntent(intent)) {
+      return Math.min(Math.max(limit * 2, 16), 40);
+    }
+    if (intent && this.isGoogleLeadFormIntent(intent)) {
+      return Math.min(Math.max(limit * 2, 12), 32);
+    }
+
     if (
       intent
       && this.isBroadProductStructureRetrievalIntent(intent)
@@ -1013,6 +1034,13 @@ export class RAGSearchService {
   }
 
   private getVendorMetadataFetchLimit(limit: number, intent?: QueryIntent): number {
+    if (intent && this.isMetaAppInstallIntent(intent)) {
+      return Math.min(Math.max(limit * 2, 12), 28);
+    }
+    if (intent && this.isGoogleLeadFormIntent(intent)) {
+      return Math.min(Math.max(limit * 2, 10), 20);
+    }
+
     if (this.isBroadProductStructureRetrievalIntent(intent)) {
       return Math.min(Math.max(limit * 2, 16), 36);
     }
@@ -1028,6 +1056,10 @@ export class RAGSearchService {
   }
 
   private getProductStructureAnchorFetchLimit(limit: number, intent?: QueryIntent): number {
+    if (intent && this.isMetaAppInstallIntent(intent)) {
+      return Math.min(Math.max(limit * 2, 12), 24);
+    }
+
     if (this.isBroadProductStructureRetrievalIntent(intent)) {
       return Math.min(Math.max(limit * 3, 18), 36);
     }
