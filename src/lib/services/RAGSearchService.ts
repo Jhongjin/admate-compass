@@ -2656,7 +2656,7 @@ export class RAGSearchService {
       ...anchors,
     ]));
 
-    const priorityAnchors = anchors.slice(0, 14);
+    const priorityAnchors = anchors.slice(0, 12);
     const keywordSearchOptions = { rawKeywordsOnly: true };
     const [
       documentKeywordResults,
@@ -2664,11 +2664,11 @@ export class RAGSearchService {
       vendorMetadataResults,
       setupAnchorResultGroups,
     ] = await Promise.all([
-      this.searchKeywordTable('document_chunks', priorityAnchors, 40, intent, undefined, keywordSearchOptions),
-      this.searchKeywordTable('ollama_document_chunks', priorityAnchors, 10, intent, undefined, keywordSearchOptions),
-      this.searchVendorMetadataTable('ollama_document_chunks', 'META', priorityAnchors, 8, intent),
+      this.searchKeywordTable('document_chunks', priorityAnchors, 24, intent, undefined, keywordSearchOptions),
+      this.searchKeywordTable('ollama_document_chunks', priorityAnchors, 8, intent, undefined, keywordSearchOptions),
+      this.searchVendorMetadataTable('ollama_document_chunks', 'META', priorityAnchors, 6, intent),
       Promise.all(['MMP', '모바일 측정 파트너', 'Facebook SDK', '앱 이벤트'].map(anchor => (
-        this.searchProductStructureAnchorTable('document_chunks', anchor, 8, undefined, intent)
+        this.searchProductStructureAnchorTable('document_chunks', anchor, 6, undefined, intent)
       ))),
     ]);
     const setupAnchorResults = setupAnchorResultGroups.flat();
@@ -3234,8 +3234,8 @@ export class RAGSearchService {
     };
     if (usesSpecificKakaoOllamaFastPath) {
       const [documentFastResults, ollamaResults] = await Promise.all([
-        this.searchKeywordTable('document_chunks', specificKakaoFastPathAnchors, 12, intent),
-        this.searchKeywordTable('ollama_document_chunks', specificKakaoFastPathAnchors, 8, intent, 'KAKAO'),
+        this.searchKeywordTable('document_chunks', specificKakaoFastPathAnchors, 8, intent),
+        this.searchKeywordTable('ollama_document_chunks', specificKakaoFastPathAnchors, 5, intent, 'KAKAO'),
       ]);
       const keywordFastCandidates = this.normalizeKakaoProductStructurePriorityResults(
         [
@@ -3253,7 +3253,7 @@ export class RAGSearchService {
         '비즈보드',
         '카카오 비즈보드',
         '디스플레이 광고',
-      ].map(anchor => this.searchProductStructureAnchorTable('document_chunks', anchor, 8, undefined, intent)));
+      ].map(anchor => this.searchProductStructureAnchorTable('document_chunks', anchor, 5, undefined, intent)));
       const anchorFastCandidates = this.normalizeKakaoProductStructurePriorityResults(
         [
           ...exactFastAnchorResults.flat(),

@@ -1044,7 +1044,7 @@ const metaAppInstallPriorityBlock = extractBlock(
   'private async searchMetaAppInstallPriorityCandidates',
   'private async searchMetaProductOverviewPriorityCandidates',
 );
-if (!/const priorityAnchors = anchors\.slice\(0, 14\)[\s\S]*searchKeywordTable\('document_chunks', priorityAnchors, 40[\s\S]*searchKeywordTable\('ollama_document_chunks', priorityAnchors[\s\S]*searchVendorMetadataTable\('ollama_document_chunks', 'META', priorityAnchors[\s\S]*Promise\.all\(\['MMP', '모바일 측정 파트너', 'Facebook SDK', '앱 이벤트'\]\.map\(anchor =>/.test(metaAppInstallPriorityBlock)) {
+if (!/const priorityAnchors = anchors\.slice\(0, 12\)[\s\S]*searchKeywordTable\('document_chunks', priorityAnchors, 24[\s\S]*searchKeywordTable\('ollama_document_chunks', priorityAnchors, 8[\s\S]*searchVendorMetadataTable\('ollama_document_chunks', 'META', priorityAnchors, 6[\s\S]*Promise\.all\(\['MMP', '모바일 측정 파트너', 'Facebook SDK', '앱 이벤트'\]\.map\(anchor =>[\s\S]*searchProductStructureAnchorTable\('document_chunks', anchor, 6/.test(metaAppInstallPriorityBlock)) {
   fail('Meta app-install priority retrieval must use bounded batch keyword/metadata queries plus bounded parallel setup anchors instead of sequential per-anchor Supabase fan-out');
 }
 
@@ -1108,7 +1108,7 @@ const kakaoSpecificFastPathBlock = extractBlock(
   'const specificKakaoFastPathAnchors = [',
   'const [\n      documentChunkResults,',
 );
-if (!/specificKakaoFastPathAnchors[\s\S]*'비즈보드'[\s\S]*'카카오 비즈보드'[\s\S]*'디스플레이 광고'[\s\S]*usesSpecificKakaoOllamaFastPath[\s\S]*const requiresKakaoBizboardEvidence = this\.requiresKakaoBizboardEvidence\(intent\)[\s\S]*const hasRequiredKakaoFastPathEvidence = \(candidate: SearchResult\): boolean =>[\s\S]*this\.hasKakaoBizboardDisplayExactSignal\(evidenceText\)[\s\S]*!requiresKakaoBizboardEvidence \|\| this\.hasKakaoBizboardProductSignal\(evidenceText\)[\s\S]*Promise\.all\(\[[\s\S]*searchKeywordTable\('document_chunks', specificKakaoFastPathAnchors, 12, intent\)[\s\S]*searchKeywordTable\('ollama_document_chunks', specificKakaoFastPathAnchors, 8, intent, 'KAKAO'\)[\s\S]*keywordFastCandidates\.some\(hasRequiredKakaoFastPathEvidence\)[\s\S]*return keywordFastCandidates[\s\S]*exactFastAnchorResults[\s\S]*searchProductStructureAnchorTable\('document_chunks', anchor, 8, undefined, intent\)[\s\S]*anchorFastCandidates\.some\(hasRequiredKakaoFastPathEvidence\)/.test(kakaoSpecificFastPathBlock)) {
+if (!/specificKakaoFastPathAnchors[\s\S]*'비즈보드'[\s\S]*'카카오 비즈보드'[\s\S]*'디스플레이 광고'[\s\S]*usesSpecificKakaoOllamaFastPath[\s\S]*const requiresKakaoBizboardEvidence = this\.requiresKakaoBizboardEvidence\(intent\)[\s\S]*const hasRequiredKakaoFastPathEvidence = \(candidate: SearchResult\): boolean =>[\s\S]*this\.hasKakaoBizboardDisplayExactSignal\(evidenceText\)[\s\S]*!requiresKakaoBizboardEvidence \|\| this\.hasKakaoBizboardProductSignal\(evidenceText\)[\s\S]*Promise\.all\(\[[\s\S]*searchKeywordTable\('document_chunks', specificKakaoFastPathAnchors, 8, intent\)[\s\S]*searchKeywordTable\('ollama_document_chunks', specificKakaoFastPathAnchors, 5, intent, 'KAKAO'\)[\s\S]*keywordFastCandidates\.some\(hasRequiredKakaoFastPathEvidence\)[\s\S]*return keywordFastCandidates[\s\S]*exactFastAnchorResults[\s\S]*searchProductStructureAnchorTable\('document_chunks', anchor, 5, undefined, intent\)[\s\S]*anchorFastCandidates\.some\(hasRequiredKakaoFastPathEvidence\)/.test(kakaoSpecificFastPathBlock)) {
   fail('KAKAO specific product retrieval must try narrow keyword paths first, but Bizboard questions must require actual Bizboard evidence before returning');
 }
 
