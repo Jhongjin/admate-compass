@@ -1093,7 +1093,7 @@ if (!/googleLeadFormPriorityCandidates,\s*\n\s*kakaoProductPriorityCandidates,\s
   fail('Google lead-form hybrid fallback must keep the bounded priority candidates and avoid product-structure anchor fan-out');
 }
 
-if (!/const usesFastPolicySourcePriority = this\.isFastPolicySourceGuidedPriorityIntent\(intent\)[\s\S]*if \(usesFastPolicySourcePriority && !usesPrioritySpecificProductRetrieval\)[\s\S]*fast_policy_kakao_service_protection_direct[\s\S]*fast_policy_keyword_direct[\s\S]*selectFastPolicySourceGuidedPriorityCandidates\(fastPolicyCandidates, intent\)[\s\S]*return this\.withRetrievalTimeoutMetadata\(rankedResults, timedOutChannels, channelTimings\);[\s\S]*const queryEmbeddingResult = await this\.embeddingService\.generateEmbedding\(query\)/.test(rag)) {
+if (!/const usesFastPolicySourcePriority = this\.isFastPolicySourceGuidedPriorityIntent\(intent\)[\s\S]*if \(usesFastPolicySourcePriority && !usesPrioritySpecificProductRetrieval\)[\s\S]*fast_policy_keyword_direct[\s\S]*selectFastPolicySourceGuidedPriorityCandidates\(fastPolicyCandidates, intent\)[\s\S]*return this\.withRetrievalTimeoutMetadata\(rankedResults, timedOutChannels, channelTimings\);[\s\S]*focusedPolicyCandidates\.length > 0[\s\S]*Fast policy source priority candidates were rescued[\s\S]*return this\.withRetrievalTimeoutMetadata\(rescueResults, timedOutChannels, channelTimings\);[\s\S]*const queryEmbeddingResult = await this\.embeddingService\.generateEmbedding\(query\)/.test(rag)) {
   fail('fast policy source-guided retrieval must try bounded keyword/service priority before vector/graph fan-out');
 }
 

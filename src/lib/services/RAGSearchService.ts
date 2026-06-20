@@ -1438,12 +1438,8 @@ export class RAGSearchService {
 
       if (usesFastPolicySourcePriority && !usesPrioritySpecificProductRetrieval) {
         const fastPolicyCandidates = await this.withRetrievalChannelTimeout(
-          usesKakaoServiceProtectionPriority
-            ? this.searchKakaoServiceProtectionPolicyCandidates(intent)
-            : this.searchKeywordCandidates(query, Math.max(limit * 2, 12), intent),
-          usesKakaoServiceProtectionPriority
-            ? 'fast_policy_kakao_service_protection_direct'
-            : 'fast_policy_keyword_direct',
+          this.searchKeywordCandidates(query, Math.max(limit * 2, 12), intent),
+          'fast_policy_keyword_direct',
           [],
           timedOutChannels,
           channelTimings,
@@ -1458,6 +1454,14 @@ export class RAGSearchService {
         if (rankedResults.length > 0) {
           console.log(`✅ Fast policy source 검색 완료: ${rankedResults.length}개 결과 (policy priority direct path)`);
           return this.withRetrievalTimeoutMetadata(rankedResults, timedOutChannels, channelTimings);
+        }
+        if (focusedPolicyCandidates.length > 0) {
+          const rescueResults = focusedPolicyCandidates.slice(0, limit);
+          console.warn('Fast policy source priority candidates were rescued after strict ranking filtered all candidates', {
+            priorityCandidateCount: fastPolicyCandidates.length,
+            rescueCount: rescueResults.length,
+          });
+          return this.withRetrievalTimeoutMetadata(rescueResults, timedOutChannels, channelTimings);
         }
       }
 
