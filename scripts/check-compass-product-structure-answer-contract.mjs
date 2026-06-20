@@ -852,6 +852,10 @@ if (!/prioritySearchAnchors[\s\S]*searchKeywordTable\('document_chunks', priorit
   fail('KAKAO product priority retrieval must use bounded batch keyword/metadata queries instead of sequential per-anchor Supabase fan-out');
 }
 
+if (!/getKakaoProductPrioritySoftBudgetMs[\s\S]*COMPASS_KAKAO_PRODUCT_PRIORITY_SOFT_BUDGET_MS[\s\S]*withRetrievalChannelSoftBudget[\s\S]*deferred[\s\S]*usesKakaoProductPriority[\s\S]*product_fast_kakao_priority[\s\S]*getKakaoProductPrioritySoftBudgetMs\(\)/.test(rag)) {
+  fail('KAKAO product fast priority retrieval must use a non-blocking soft budget');
+}
+
 if (!/specificKakaoFastPathAnchors[\s\S]*'비즈보드'[\s\S]*'카카오 비즈보드'[\s\S]*'디스플레이 광고'[\s\S]*usesSpecificKakaoOllamaFastPath[\s\S]*searchKeywordTable\('ollama_document_chunks', specificKakaoFastPathAnchors, 8, intent, 'KAKAO'\)[\s\S]*fastCandidates\.length > 0[\s\S]*return fastCandidates/.test(rag)) {
   fail('KAKAO specific product retrieval must try a narrow KAKAO-scoped ollama keyword path before broader document/vendor metadata fan-out');
 }

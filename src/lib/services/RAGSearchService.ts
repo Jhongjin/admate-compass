@@ -100,6 +100,7 @@ export type RetrievalChannelTiming = {
   resultCount: number;
   timedOut: boolean;
   failed?: boolean;
+  deferred?: boolean;
 };
 
 type SearchResultsWithRetrievalMetadata = SearchResult[] & {
@@ -633,6 +634,12 @@ export class RAGSearchService {
     return Math.min(Math.max(timeoutMs, 8000), 30000);
   }
 
+  private getKakaoProductPrioritySoftBudgetMs(): number {
+    const parsed = Math.floor(Number(process.env.COMPASS_KAKAO_PRODUCT_PRIORITY_SOFT_BUDGET_MS || 900));
+    const budgetMs = Number.isFinite(parsed) && parsed > 0 ? parsed : 900;
+    return Math.min(Math.max(budgetMs, 400), 3000);
+  }
+
   private async withRetrievalChannelTimeout<T>(
     promise: Promise<T>,
     label: string,
@@ -682,6 +689,64 @@ export class RAGSearchService {
             recordTiming(fallback, true);
             resolve(fallback);
           }, timeoutMs);
+        }),
+      ]);
+    } finally {
+      if (timeoutId) clearTimeout(timeoutId);
+    }
+  }
+
+  private async withRetrievalChannelSoftBudget<T>(
+    promise: Promise<T>,
+    label: string,
+    fallback: T,
+    budgetMs: number,
+    channelTimings?: RetrievalChannelTiming[],
+  ): Promise<T> {
+    let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    const startedAt = Date.now();
+    let settled = false;
+
+    const countResults = (value: T): number => Array.isArray(value) ? value.length : 0;
+    const recordTiming = (value: T, failed = false, deferred = false) => {
+      channelTimings?.push({
+        label,
+        durationMs: Date.now() - startedAt,
+        resultCount: countResults(value),
+        timedOut: false,
+        ...(failed ? { failed: true } : {}),
+        ...(deferred ? { deferred: true } : {}),
+      });
+    };
+
+    try {
+      return await Promise.race([
+        promise.then(
+          (value) => {
+            if (!settled) {
+              settled = true;
+              recordTiming(value);
+            }
+            return value;
+          },
+          (error) => {
+            if (!settled) {
+              settled = true;
+              recordTiming(fallback, true);
+            }
+            console.warn('Compass retrieval channel failed within soft budget', {
+              label,
+              errorName: error instanceof Error ? error.name : 'UnknownError',
+            });
+            return fallback;
+          },
+        ),
+        new Promise<T>((resolve) => {
+          timeoutId = setTimeout(() => {
+            settled = true;
+            recordTiming(fallback, false, true);
+            resolve(fallback);
+          }, budgetMs);
         }),
       ]);
     } finally {
@@ -1089,7 +1154,7 @@ export class RAGSearchService {
             ? this.withRetrievalChannelTimeout(this.searchMetaAppInstallPriorityCandidates(intent), 'product_fast_meta_app_priority', [], timedOutChannels, channelTimings)
             : Promise.resolve([]),
           usesKakaoProductPriority
-            ? this.withRetrievalChannelTimeout(this.searchKakaoProductStructurePriorityCandidates(intent), 'product_fast_kakao_priority', [], timedOutChannels, channelTimings)
+            ? this.withRetrievalChannelSoftBudget(this.searchKakaoProductStructurePriorityCandidates(intent), 'product_fast_kakao_priority', [], this.getKakaoProductPrioritySoftBudgetMs(), channelTimings)
             : Promise.resolve([]),
           skipsGraphForGoogleProductOverview
             ? Promise.resolve([])
