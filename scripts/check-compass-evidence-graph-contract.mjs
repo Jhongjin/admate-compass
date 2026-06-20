@@ -57,6 +57,8 @@ for (const serviceSignal of [
   'isFocusedProductGraphIntent',
   'fetchFocusedProductStructuredRowsFromRpc',
   'FOCUSED_PRODUCT_GRAPH_RPC_CACHE_TTL_MS',
+  'getFocusedProductGraphRpcCacheStatus',
+  'focusedProductGraphRpcCacheStats',
   'focusedProductGraphRpcCache',
   'awaitFocusedProductGraphRpcInflight',
   'shouldUseStructuredRowsOnlyForFocusedProductOverview',

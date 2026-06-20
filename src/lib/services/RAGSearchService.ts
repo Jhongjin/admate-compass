@@ -109,12 +109,45 @@ type CompassSupabaseRowsCacheEntry = {
   promise?: Promise<any[] | null>;
 };
 
+const compassSupabaseRowsCacheStats = {
+  hitCount: 0,
+  missCount: 0,
+  inflightHitCount: 0,
+  writeCount: 0,
+};
 const COMPASS_SUPABASE_ROWS_CACHE_MAX_ENTRIES = 256;
 const COMPASS_SUPABASE_ROWS_CACHE_TTL_MS = Math.min(
   Math.max(Number(process.env.COMPASS_SUPABASE_ROWS_CACHE_TTL_MS || 300000), 30000),
   900000,
 );
 const compassSupabaseRowsCache = new Map<string, CompassSupabaseRowsCacheEntry>();
+
+export function getCompassSupabaseRowsCacheStatus() {
+  const now = Date.now();
+  let activeEntries = 0;
+  let inflightEntries = 0;
+  for (const entry of compassSupabaseRowsCache.values()) {
+    if (entry.expiresAt <= now) continue;
+    activeEntries += 1;
+    if (entry.promise) inflightEntries += 1;
+  }
+  const lookupCount = compassSupabaseRowsCacheStats.hitCount + compassSupabaseRowsCacheStats.missCount;
+  return {
+    enabled: true,
+    scope: 'memory',
+    ttlMs: COMPASS_SUPABASE_ROWS_CACHE_TTL_MS,
+    maxEntries: COMPASS_SUPABASE_ROWS_CACHE_MAX_ENTRIES,
+    entries: activeEntries,
+    inflightEntries,
+    hitCount: compassSupabaseRowsCacheStats.hitCount,
+    missCount: compassSupabaseRowsCacheStats.missCount,
+    inflightHitCount: compassSupabaseRowsCacheStats.inflightHitCount,
+    writeCount: compassSupabaseRowsCacheStats.writeCount,
+    hitRatio: lookupCount > 0
+      ? Number((compassSupabaseRowsCacheStats.hitCount / lookupCount).toFixed(4))
+      : null,
+  };
+}
 
 export function getCompassRetrievalChannelTimeoutMetadata(
   results: SearchResult[],
@@ -658,6 +691,7 @@ export class RAGSearchService {
       return inflightRows;
     }
 
+    compassSupabaseRowsCacheStats.missCount += 1;
     const promise = loader();
     this.writeSupabaseRowsCacheInflight(cacheKey, promise);
     let rows: any[] | null;
@@ -705,6 +739,7 @@ export class RAGSearchService {
       return null;
     }
 
+    compassSupabaseRowsCacheStats.hitCount += 1;
     return this.cloneSupabaseRows(entry.rows);
   }
 
@@ -721,6 +756,9 @@ export class RAGSearchService {
 
     try {
       const rows = await entry.promise;
+      if (rows !== null) {
+        compassSupabaseRowsCacheStats.inflightHitCount += 1;
+      }
       return rows === null ? null : this.cloneSupabaseRows(rows);
     } catch (error) {
       compassSupabaseRowsCache.delete(cacheKey);
@@ -745,6 +783,7 @@ export class RAGSearchService {
       expiresAt: Date.now() + COMPASS_SUPABASE_ROWS_CACHE_TTL_MS,
       rows: this.cloneSupabaseRows(rows),
     });
+    compassSupabaseRowsCacheStats.writeCount += 1;
   }
 
   private pruneSupabaseRowsCache() {

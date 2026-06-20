@@ -52,6 +52,7 @@ for (const snippet of [
   'withRetrievalTimeoutMetadata',
   'selectSupabaseKeywordSearchTerms',
   'COMPASS_SUPABASE_ROWS_CACHE_TTL_MS',
+  'getCompassSupabaseRowsCacheStatus',
   'loadCachedSupabaseRows',
   'compassSupabaseRowsCache',
   'getKeywordTableFetchLimit',

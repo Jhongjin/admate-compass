@@ -94,7 +94,40 @@ const FOCUSED_PRODUCT_GRAPH_RPC_CACHE_TTL_MS = Math.min(
   Math.max(Number(process.env.COMPASS_FOCUSED_PRODUCT_GRAPH_RPC_CACHE_TTL_MS || 300000), 30000),
   900000
 );
+const focusedProductGraphRpcCacheStats = {
+  hitCount: 0,
+  missCount: 0,
+  inflightHitCount: 0,
+  writeCount: 0,
+};
 const focusedProductGraphRpcCache = new Map<string, FocusedProductGraphRpcCacheEntry>();
+
+export function getFocusedProductGraphRpcCacheStatus() {
+  const now = Date.now();
+  let activeEntries = 0;
+  let inflightEntries = 0;
+  for (const entry of focusedProductGraphRpcCache.values()) {
+    if (entry.expiresAt <= now) continue;
+    activeEntries += 1;
+    if (entry.promise) inflightEntries += 1;
+  }
+  const lookupCount = focusedProductGraphRpcCacheStats.hitCount + focusedProductGraphRpcCacheStats.missCount;
+  return {
+    enabled: isFocusedProductGraphRpcEnabled(),
+    scope: 'memory',
+    ttlMs: FOCUSED_PRODUCT_GRAPH_RPC_CACHE_TTL_MS,
+    maxEntries: FOCUSED_PRODUCT_GRAPH_RPC_CACHE_MAX_ENTRIES,
+    entries: activeEntries,
+    inflightEntries,
+    hitCount: focusedProductGraphRpcCacheStats.hitCount,
+    missCount: focusedProductGraphRpcCacheStats.missCount,
+    inflightHitCount: focusedProductGraphRpcCacheStats.inflightHitCount,
+    writeCount: focusedProductGraphRpcCacheStats.writeCount,
+    hitRatio: lookupCount > 0
+      ? Number((focusedProductGraphRpcCacheStats.hitCount / lookupCount).toFixed(4))
+      : null,
+  };
+}
 
 export function isCompassEvidenceGraphEnabled(): boolean {
   return GRAPH_ENABLED_VALUES.has(normalizeGraphFlagValue(process.env.COMPASS_EVIDENCE_GRAPH_ENABLED));
@@ -266,6 +299,7 @@ export class CompassEvidenceGraphService {
       return inflightRows;
     }
 
+    focusedProductGraphRpcCacheStats.missCount += 1;
     const rpcPromise = this.loadFocusedProductStructuredRowsFromRpc(rpcParams);
     this.writeFocusedProductGraphRpcInflight(cacheKey, rpcPromise);
     let rows: EvidenceGraphRawAssertion[] | null;
@@ -330,6 +364,7 @@ export class CompassEvidenceGraphService {
       return null;
     }
 
+    focusedProductGraphRpcCacheStats.hitCount += 1;
     return this.cloneGraphRows(entry.rows);
   }
 
@@ -346,6 +381,9 @@ export class CompassEvidenceGraphService {
 
     try {
       const rows = await entry.promise;
+      if (rows !== null) {
+        focusedProductGraphRpcCacheStats.inflightHitCount += 1;
+      }
       return rows === null ? null : this.cloneGraphRows(rows);
     } catch (error) {
       focusedProductGraphRpcCache.delete(cacheKey);
@@ -373,6 +411,7 @@ export class CompassEvidenceGraphService {
       expiresAt: Date.now() + FOCUSED_PRODUCT_GRAPH_RPC_CACHE_TTL_MS,
       rows: this.cloneGraphRows(rows),
     });
+    focusedProductGraphRpcCacheStats.writeCount += 1;
   }
 
   private pruneFocusedProductGraphRpcCache() {

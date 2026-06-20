@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createCompassServiceClient } from '@/lib/supabase/compass';
 import { getCompassAnswerRuntimeStatus } from '@/lib/services/CompassAnswerLlmService';
+import { getFocusedProductGraphRpcCacheStatus } from '@/lib/services/CompassEvidenceGraphService';
 import { resolveOllamaEndpoint } from '@/lib/services/ollamaEndpoint';
+import { getCompassSupabaseRowsCacheStatus } from '@/lib/services/RAGSearchService';
 import { getCompassAnswerRuntimeMetrics } from '@/lib/server/compassAnswerHandler';
 import { readCompassAnswerDurableMetricsSnapshot } from '@/lib/server/compassAnswerRuntimeStore';
 
@@ -104,6 +106,10 @@ export async function GET(request: NextRequest) {
           : answerMetrics.durations.answerGenerationSampleCount,
         local: answerMetrics,
         durable: durableMetrics,
+        localRetrievalCaches: {
+          focusedProductGraphRpc: getFocusedProductGraphRpcCacheStatus(),
+          supabaseRows: getCompassSupabaseRowsCacheStatus(),
+        },
       };
     } catch {
       health.services.compassAnswer = {
