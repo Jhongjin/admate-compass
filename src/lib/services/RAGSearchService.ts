@@ -1759,26 +1759,34 @@ export class RAGSearchService {
     ]));
 
     const results: Array<{ row: any; corpus: RetrievalCorpus; anchor: string }> = [];
-    for (const anchor of anchors) {
-      const [documentChunkResults, ollamaResults] = await Promise.all([
-        this.searchProductStructureAnchorTable('document_chunks', anchor, 4, undefined, intent),
-        this.searchProductStructureAnchorTable('ollama_document_chunks', anchor, 4, 'KAKAO', intent),
-      ]);
-      results.push(...documentChunkResults, ...ollamaResults);
-      if (results.length >= 56) break;
-    }
-
-    const vendorMetadataResults = await this.searchVendorMetadataTable(
-      'ollama_document_chunks',
-      'KAKAO',
-      anchors,
-      12,
-      intent,
+    const prioritySearchAnchors = [
+      '비즈보드',
+      '카카오 비즈보드',
+      '디스플레이 광고',
+      '카카오모먼트',
+      '상품가이드',
+      '상품 가이드',
+      '제작 가이드',
+      '노출 지면',
+      '심사 가이드',
+      '집행 기준',
+      '업종별 가이드',
+      '등록불가 업종',
+    ];
+    const [
+      documentChunkResults,
+      ollamaResults,
+      vendorMetadataResults,
+    ] = await Promise.all([
+      this.searchKeywordTable('document_chunks', prioritySearchAnchors, 18, intent),
+      this.searchKeywordTable('ollama_document_chunks', prioritySearchAnchors, 18, intent, 'KAKAO'),
+      this.searchVendorMetadataTable('ollama_document_chunks', 'KAKAO', prioritySearchAnchors, 10, intent),
+    ]);
+    results.push(
+      ...documentChunkResults.map(result => ({ ...result, anchor: 'kakao_product_priority_keyword' })),
+      ...ollamaResults.map(result => ({ ...result, anchor: 'kakao_product_priority_keyword' })),
+      ...vendorMetadataResults.map(result => ({ ...result, anchor: 'kakao_vendor_metadata' })),
     );
-    results.push(...vendorMetadataResults.map(result => ({
-      ...result,
-      anchor: 'kakao_vendor_metadata',
-    })));
 
     return results
       .map((result) => {

@@ -52,6 +52,7 @@ for (const snippet of [
   'getVendorMetadataFetchLimit',
   'getProductStructureAnchorFetchLimit',
   'usesVendorProductStructurePriority',
+  'kakao_product_priority_keyword',
   'mergeDuplicateCandidate',
   'evidenceDecisionReason',
   'Product structure fast 후보 수집 결과',
@@ -756,6 +757,10 @@ if (!/getKeywordTableFetchLimit[\s\S]*Math\.min\(Math\.max\(limit \* multiplier,
 
 if (!/getProductStructureAnchorFetchLimit[\s\S]*Math\.min\(Math\.max\(limit \* 8, 32\), 72\)/.test(rag)) {
   fail('product-structure anchor search must keep per-anchor Supabase fetches bounded');
+}
+
+if (!/prioritySearchAnchors[\s\S]*searchKeywordTable\('document_chunks', prioritySearchAnchors[\s\S]*searchVendorMetadataTable\('ollama_document_chunks', 'KAKAO', prioritySearchAnchors/.test(rag)) {
+  fail('KAKAO product priority retrieval must use bounded batch keyword/metadata queries instead of sequential per-anchor Supabase fan-out');
 }
 
 if (!/광고\s*사양[\s\S]*!this\.hasHighValueProductStructureSignal/.test(rag)) {
