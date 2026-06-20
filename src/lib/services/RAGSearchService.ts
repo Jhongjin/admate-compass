@@ -1230,7 +1230,12 @@ export class RAGSearchService {
             intent,
           );
           console.log(`✅ KAKAO specific product 검색 완료: ${rankedResults.length}개 결과 (specific kakao priority direct path)`);
-          return this.withRetrievalTimeoutMetadata(rankedResults, timedOutChannels, channelTimings);
+          if (rankedResults.length > 0) {
+            return this.withRetrievalTimeoutMetadata(rankedResults, timedOutChannels, channelTimings);
+          }
+          console.warn('KAKAO specific product priority candidates were all filtered; continuing to hybrid retrieval', {
+            priorityCandidateCount: kakaoProductPriorityCandidates.length,
+          });
         }
       }
 
@@ -4931,6 +4936,7 @@ export class RAGSearchService {
         && !graphHasProductSignal
         && !graphSpecificProductDetailSignal
         && !strictSpecificProductGroundingMatch
+        && !allowedKakaoProductGuideEvidence
         && !this.hasHighValueProductStructureSignal(sourceText)
       ) {
         return false;
@@ -4940,6 +4946,7 @@ export class RAGSearchService {
         && !graphHasProductSignal
         && !graphSpecificProductDetailSignal
         && !strictSpecificProductGroundingMatch
+        && !allowedKakaoProductGuideEvidence
         && normalizedContent.length < 140
       ) {
         return false;
