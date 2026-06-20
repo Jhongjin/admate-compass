@@ -1005,7 +1005,7 @@ export class RAGSearchService {
 
   private getKeywordTableFetchLimit(limit: number, intent?: QueryIntent): number {
     if (intent && this.isMetaAppInstallIntent(intent)) {
-      return Math.min(Math.max(limit, 8), 24);
+      return Math.min(Math.max(limit, 12), 28);
     }
     if (intent && this.isGoogleLeadFormIntent(intent)) {
       return Math.min(Math.max(limit * 2, 12), 32);
@@ -1042,7 +1042,7 @@ export class RAGSearchService {
 
   private getVendorMetadataFetchLimit(limit: number, intent?: QueryIntent): number {
     if (intent && this.isMetaAppInstallIntent(intent)) {
-      return Math.min(Math.max(limit, 4), 12);
+      return Math.min(Math.max(limit, 8), 18);
     }
     if (intent && this.isGoogleLeadFormIntent(intent)) {
       return Math.min(Math.max(limit * 2, 10), 20);
@@ -1071,7 +1071,7 @@ export class RAGSearchService {
 
   private getProductStructureAnchorFetchLimit(limit: number, intent?: QueryIntent): number {
     if (intent && this.isMetaAppInstallIntent(intent)) {
-      return Math.min(Math.max(limit, 4), 12);
+      return Math.min(Math.max(limit, 8), 16);
     }
 
     if (
@@ -2678,8 +2678,7 @@ export class RAGSearchService {
       ...anchors,
     ]));
 
-    const priorityAnchors = ['앱 이벤트', '모바일 측정 파트너', 'MMP', '앱 설치'];
-    const setupAnchors = ['앱 이벤트'];
+    const priorityAnchors = anchors.slice(0, 12);
     const keywordSearchOptions = { rawKeywordsOnly: true };
     const [
       documentKeywordResults,
@@ -2687,11 +2686,11 @@ export class RAGSearchService {
       vendorMetadataResults,
       setupAnchorResultGroups,
     ] = await Promise.all([
-      this.searchKeywordTable('document_chunks', priorityAnchors, 8, intent, undefined, keywordSearchOptions),
-      this.searchKeywordTable('ollama_document_chunks', priorityAnchors, 4, intent, undefined, keywordSearchOptions),
-      this.searchVendorMetadataTable('ollama_document_chunks', 'META', priorityAnchors, 4, intent),
-      Promise.all(setupAnchors.map(anchor => (
-        this.searchProductStructureAnchorTable('document_chunks', anchor, 4, undefined, intent)
+      this.searchKeywordTable('document_chunks', priorityAnchors, 24, intent, undefined, keywordSearchOptions),
+      this.searchKeywordTable('ollama_document_chunks', priorityAnchors, 8, intent, undefined, keywordSearchOptions),
+      this.searchVendorMetadataTable('ollama_document_chunks', 'META', priorityAnchors, 6, intent),
+      Promise.all(['MMP', '모바일 측정 파트너', 'Facebook SDK', '앱 이벤트'].map(anchor => (
+        this.searchProductStructureAnchorTable('document_chunks', anchor, 6, undefined, intent)
       ))),
     ]);
     const setupAnchorResults = setupAnchorResultGroups.flat();

@@ -16,7 +16,7 @@ function read(relativePath) {
     fail(`missing ${relativePath}`);
     return '';
   }
-  return fs.readFileSync(fullPath, 'utf8');
+  return fs.readFileSync(fullPath, 'utf8').replace(/\r\n/g, '\n');
 }
 
 const rag = read('src/lib/services/RAGSearchService.ts');
@@ -1044,13 +1044,13 @@ const metaAppInstallPriorityBlock = extractBlock(
   'private async searchMetaAppInstallPriorityCandidates',
   'private async searchMetaProductOverviewPriorityCandidates',
 );
-if (!/const priorityAnchors = \['앱 이벤트', '모바일 측정 파트너', 'MMP', '앱 설치'\][\s\S]*const setupAnchors = \['앱 이벤트'\][\s\S]*searchKeywordTable\('document_chunks', priorityAnchors, 8[\s\S]*searchKeywordTable\('ollama_document_chunks', priorityAnchors, 4[\s\S]*searchVendorMetadataTable\('ollama_document_chunks', 'META', priorityAnchors, 4[\s\S]*Promise\.all\(setupAnchors\.map\(anchor =>[\s\S]*searchProductStructureAnchorTable\('document_chunks', anchor, 4/.test(metaAppInstallPriorityBlock)) {
+if (!/const priorityAnchors = anchors\.slice\(0, 12\)[\s\S]*searchKeywordTable\('document_chunks', priorityAnchors, 24[\s\S]*searchKeywordTable\('ollama_document_chunks', priorityAnchors, 8[\s\S]*searchVendorMetadataTable\('ollama_document_chunks', 'META', priorityAnchors, 6[\s\S]*Promise\.all\(\['MMP', '모바일 측정 파트너', 'Facebook SDK', '앱 이벤트'\]\.map\(anchor =>[\s\S]*searchProductStructureAnchorTable\('document_chunks', anchor, 6/.test(metaAppInstallPriorityBlock)) {
   fail('Meta app-install priority retrieval must use bounded batch keyword/metadata queries plus bounded parallel setup anchors instead of sequential per-anchor Supabase fan-out');
 }
 
-if (!/private getKeywordTableFetchLimit[\s\S]*isMetaAppInstallIntent\(intent\)[\s\S]*Math\.min\(Math\.max\(limit, 8\), 24\)[\s\S]*intent\.isSpecificProductGuidance[\s\S]*isKakaoBizboardDisplayProductIntent\(intent\)[\s\S]*Math\.min\(Math\.max\(limit \+ 4, 8\), 16\)/.test(rag)
-  || !/private getVendorMetadataFetchLimit[\s\S]*isMetaAppInstallIntent\(intent\)[\s\S]*Math\.min\(Math\.max\(limit, 4\), 12\)[\s\S]*intent\.isSpecificProductGuidance[\s\S]*isKakaoBizboardDisplayProductIntent\(intent\)[\s\S]*Math\.min\(Math\.max\(limit \+ 4, 8\), 18\)/.test(rag)
-  || !/private getProductStructureAnchorFetchLimit[\s\S]*isMetaAppInstallIntent\(intent\)[\s\S]*Math\.min\(Math\.max\(limit, 4\), 12\)[\s\S]*intent\.isSpecificProductGuidance[\s\S]*isKakaoBizboardDisplayProductIntent\(intent\)[\s\S]*Math\.min\(Math\.max\(limit \+ 3, 8\), 16\)/.test(rag)) {
+if (!/private getKeywordTableFetchLimit[\s\S]*isMetaAppInstallIntent\(intent\)[\s\S]*Math\.min\(Math\.max\(limit, 12\), 28\)[\s\S]*intent\.isSpecificProductGuidance[\s\S]*isKakaoBizboardDisplayProductIntent\(intent\)[\s\S]*Math\.min\(Math\.max\(limit \+ 4, 8\), 16\)/.test(rag)
+  || !/private getVendorMetadataFetchLimit[\s\S]*isMetaAppInstallIntent\(intent\)[\s\S]*Math\.min\(Math\.max\(limit, 8\), 18\)[\s\S]*intent\.isSpecificProductGuidance[\s\S]*isKakaoBizboardDisplayProductIntent\(intent\)[\s\S]*Math\.min\(Math\.max\(limit \+ 4, 8\), 18\)/.test(rag)
+  || !/private getProductStructureAnchorFetchLimit[\s\S]*isMetaAppInstallIntent\(intent\)[\s\S]*Math\.min\(Math\.max\(limit, 8\), 16\)[\s\S]*intent\.isSpecificProductGuidance[\s\S]*isKakaoBizboardDisplayProductIntent\(intent\)[\s\S]*Math\.min\(Math\.max\(limit \+ 3, 8\), 16\)/.test(rag)) {
   fail('Meta app-install and KAKAO specific product direct paths must not inflate small direct-path limits back into broad batch fetches');
 }
 
