@@ -1372,6 +1372,7 @@ export class RAGSearchService {
       }
 
       const usesGenericRightsPolicyPriority = this.isGenericRightsPolicyPriorityIntent(intent);
+      const usesKakaoServiceProtectionPriority = this.isKakaoServiceProtectionPolicyIntent(intent);
 
       // 질문을 임베딩으로 변환
       const queryEmbeddingResult = await this.embeddingService.generateEmbedding(query);
@@ -1382,6 +1383,7 @@ export class RAGSearchService {
         vectorCandidates,
         keywordCandidates,
         genericRightsPolicyCandidates,
+        kakaoServiceProtectionCandidates,
         vendorCoverageCandidates,
         productStructureCandidates,
         naverPriorityCandidates,
@@ -1396,6 +1398,9 @@ export class RAGSearchService {
           : this.withRetrievalChannelTimeout(this.searchKeywordCandidates(query, candidateLimit, intent), 'hybrid_keyword', [], timedOutChannels, channelTimings),
         usesGenericRightsPolicyPriority
           ? this.withRetrievalChannelTimeout(this.searchGenericRightsPolicyPriorityCandidates(intent), 'hybrid_generic_rights_policy_priority', [], timedOutChannels, channelTimings)
+          : Promise.resolve([]),
+        usesKakaoServiceProtectionPriority
+          ? this.withRetrievalChannelTimeout(this.searchKakaoServiceProtectionPolicyCandidates(intent), 'hybrid_kakao_service_protection_priority', [], timedOutChannels, channelTimings)
           : Promise.resolve([]),
         usesKakaoProductPriority
           ? Promise.resolve([])
@@ -1422,11 +1427,12 @@ export class RAGSearchService {
           : this.withRetrievalChannelTimeout(this.searchEvidenceGraphCandidates(query, candidateLimit, intent), 'hybrid_graph', [], timedOutChannels, channelTimings)
       ]);
 
-      console.log(`📊 Hybrid 후보 수집 결과: vector=${vectorCandidates.length}, keyword=${keywordCandidates.length}, genericRightsPolicy=${genericRightsPolicyCandidates.length}, vendorCoverage=${vendorCoverageCandidates.length}, productStructure=${productStructureCandidates.length}, naverPriority=${naverPriorityCandidates.length}, metaOverviewPriority=${metaProductOverviewPriorityCandidates.length}, metaAppInstallPriority=${metaAppInstallPriorityCandidates.length}, kakaoProductPriority=${kakaoProductPriorityCandidates.length}, graph=${graphCandidates.length}`);
+      console.log(`📊 Hybrid 후보 수집 결과: vector=${vectorCandidates.length}, keyword=${keywordCandidates.length}, genericRightsPolicy=${genericRightsPolicyCandidates.length}, kakaoServiceProtection=${kakaoServiceProtectionCandidates.length}, vendorCoverage=${vendorCoverageCandidates.length}, productStructure=${productStructureCandidates.length}, naverPriority=${naverPriorityCandidates.length}, metaOverviewPriority=${metaProductOverviewPriorityCandidates.length}, metaAppInstallPriority=${metaAppInstallPriorityCandidates.length}, kakaoProductPriority=${kakaoProductPriorityCandidates.length}, graph=${graphCandidates.length}`);
       const allCandidates = [
         ...vectorCandidates,
         ...keywordCandidates,
         ...genericRightsPolicyCandidates,
+        ...kakaoServiceProtectionCandidates,
         ...vendorCoverageCandidates,
         ...productStructureCandidates,
         ...naverPriorityCandidates,
@@ -1864,6 +1870,130 @@ export class RAGSearchService {
           retrievalMethod: 'hybrid',
           evidenceType: 'hybrid',
           genericRightsPolicyPriority: true,
+          evidenceDecision: candidate.evidenceDecision,
+          evidenceDecisionReason: candidate.evidenceDecisionReason,
+          rankReason: candidate.rankReason,
+          topicMatch: true,
+          topicExactMatch: true,
+          policyTitleMatch: true,
+          score: boostedScore,
+          hybridScore: boostedScore,
+        };
+
+        return candidate;
+      })
+      .filter((result: SearchResult | null): result is SearchResult => result !== null);
+  }
+
+  private async searchKakaoServiceProtectionPolicyCandidates(intent: QueryIntent): Promise<SearchResult[]> {
+    if (!this.isKakaoServiceProtectionPolicyIntent(intent)) {
+      return [];
+    }
+
+    const anchors = [
+      '카카오 서비스 보호',
+      '카카오 서비스 로고',
+      '카카오 서비스 및 디자인',
+      '카카오의 로고',
+      '카카오 로고',
+      '카카오 디자인',
+      '서비스명',
+      '저작물',
+      '상표',
+      '모방',
+      '침해',
+      '무단 사용',
+      '집행기준',
+      '준수사항',
+    ];
+    const keywords = Array.from(new Set([
+      ...getCompassVendorTerms('KAKAO'),
+      ...intent.keywords,
+      ...intent.adPolicyTerms,
+      ...intent.strictContextTerms,
+      ...anchors,
+    ]));
+    const [documentChunkResults, ollamaResults, vendorMetadataResults] = await Promise.all([
+      this.searchKeywordTable('document_chunks', anchors, 18, intent, undefined, { rawKeywordsOnly: true }),
+      this.searchKeywordTable('ollama_document_chunks', anchors, 14, intent, 'KAKAO', { rawKeywordsOnly: true }),
+      this.searchVendorMetadataTable('ollama_document_chunks', 'KAKAO', anchors, 8, intent),
+    ]);
+
+    return [
+      ...documentChunkResults.map(result => ({ ...result, anchor: 'kakao_service_protection_document' })),
+      ...ollamaResults.map(result => ({ ...result, anchor: 'kakao_service_protection_ollama' })),
+      ...vendorMetadataResults.map(result => ({ ...result, anchor: 'kakao_service_protection_vendor_metadata' })),
+    ]
+      .map((result) => {
+        const candidate = this.normalizeCandidate(result.row, {
+          keywords,
+          intent,
+          retrievalMethod: 'hybrid',
+          corpus: result.corpus,
+          evidenceType: 'hybrid',
+        });
+
+        if (!candidate) return null;
+        if (this.hasExplicitOtherVendorSignal(candidate, 'KAKAO')) return null;
+
+        const sourceText = this.buildCandidateEvidenceText(candidate.content, candidate.documentTitle, candidate.metadata);
+        if (!this.hasKakaoServiceProtectionPolicySignal(sourceText)) return null;
+
+        const hasExactServiceProtectionSignal = /카카오\s*서비스\s*보호|카카오\s*서비스(?:의)?\s*(?:로고|디자인|이미지)|카카오의\s*로고|카카오\s*로고/.test(sourceText);
+        const hasImitationSignal = /모방|침해|무단|사용\s*불가|발송\s*불가|집행\s*불가|광고\s*집행\s*불가/.test(sourceText);
+        const hasRightsAssetSignal = /로고|디자인|서비스명|상표|저작물|이미지/.test(sourceText);
+        const boostedScore = Math.max(
+          hasExactServiceProtectionSignal ? 0.99 : 0.94,
+          Math.min(1, (candidate.hybridScore || 0) + 0.46 + (hasImitationSignal ? 0.06 : 0) + (hasRightsAssetSignal ? 0.04 : 0)),
+        );
+
+        candidate.hybridScore = boostedScore;
+        candidate.score = boostedScore;
+        candidate.sourceVendor = 'KAKAO';
+        candidate.sourceVendors = Array.from(new Set([
+          ...(candidate.sourceVendors || []),
+          'KAKAO',
+        ]));
+        candidate.vendorMatch = true;
+        candidate.vendorMismatch = false;
+        candidate.topicMatch = true;
+        candidate.topicExactMatch = true;
+        candidate.policyTitleMatch = true;
+        candidate.retrievalMethod = 'hybrid';
+        candidate.evidenceType = 'hybrid';
+        candidate.evidenceDecision = 'verified';
+        candidate.evidenceDecisionReason = Array.from(new Set([
+          ...(candidate.evidenceDecisionReason || []),
+          'kakao_service_protection_priority',
+          ...(hasExactServiceProtectionSignal ? ['kakao_service_protection_exact_signal'] : []),
+          ...(hasImitationSignal ? ['kakao_service_imitation_restriction_signal'] : []),
+          'hybrid_retrieval',
+        ]));
+        candidate.rankReason = Array.from(new Set([
+          ...(candidate.rankReason || []),
+          `kakao_service_protection_priority_${result.anchor}`,
+          ...(hasExactServiceProtectionSignal ? ['kakao_service_protection_exact_match'] : []),
+          ...(hasRightsAssetSignal ? ['kakao_service_asset_rights_match'] : []),
+          ...(hasImitationSignal ? ['kakao_service_imitation_restriction_match'] : []),
+        ]));
+        candidate.sourceQuality = {
+          ...candidate.sourceQuality,
+          hasExcerpt: true,
+          isFallback: false,
+          vendorMatch: true,
+          vendorMismatch: false,
+          sourceVendor: 'KAKAO',
+          policyTitleMatch: true,
+          qualityScore: Math.max(candidate.sourceQuality.qualityScore || 0, hasExactServiceProtectionSignal ? 0.98 : 0.9),
+        };
+        candidate.metadata = {
+          ...(candidate.metadata || {}),
+          source_vendor: 'KAKAO',
+          sourceVendors: candidate.sourceVendors,
+          retrievalMethod: 'hybrid',
+          evidenceType: 'hybrid',
+          kakaoServiceProtectionPriority: true,
+          policyAnchor: result.anchor,
           evidenceDecision: candidate.evidenceDecision,
           evidenceDecisionReason: candidate.evidenceDecisionReason,
           rankReason: candidate.rankReason,
@@ -3622,6 +3752,28 @@ export class RAGSearchService {
     const text = this.normalizeSearchText(sourceText);
     return /kakaobusiness\.gitbook\.io\/main\/ad\/moment\/(performance|guarantee)\/(talkboard|displayad)|\/content-guide/.test(text)
       || /비즈보드|카카오\s*비즈보드|카카오비즈보드|톡보드|talkboard|디스플레이\s*광고|디스플레이광고|displayad|카카오모먼트/.test(text);
+  }
+
+  private isKakaoServiceProtectionPolicyIntent(intent: QueryIntent): boolean {
+    if (!intent.vendors.includes('KAKAO')) return false;
+    if (intent.isSpecificProductGuidance) return false;
+    const queryText = this.normalizeSearchText([
+      ...intent.keywords,
+      ...intent.adPolicyTerms,
+      ...intent.strictContextTerms,
+    ].join(' '));
+    const hasServiceProtectionAsset = /로고|디자인|서비스명|상표|저작물|이미지|브랜드|명칭/.test(queryText);
+    const hasServiceProtectionAction = /서비스|보호|모방|침해|무단|사용|사용해도|가능|불가|금지/.test(queryText);
+    return hasServiceProtectionAsset && hasServiceProtectionAction;
+  }
+
+  private hasKakaoServiceProtectionPolicySignal(sourceText: string): boolean {
+    const text = this.normalizeSearchText(sourceText);
+    const hasKakaoContext = /카카오|kakao|kakaobusiness\.gitbook\.io/.test(text);
+    const hasServiceProtectionContext = /카카오\s*서비스\s*보호|카카오\s*서비스|카카오의\s*(?:로고|상표|서비스명|저작물)|서비스명|서비스\s*및\s*디자인/.test(text);
+    const hasAssetSignal = /로고|디자인|서비스명|상표|저작물|이미지|브랜드/.test(text);
+    const hasRestrictionSignal = /모방|침해|무단|사용\s*불가|발송\s*불가|집행\s*불가|광고\s*집행\s*불가|금지/.test(text);
+    return hasKakaoContext && hasServiceProtectionContext && hasAssetSignal && hasRestrictionSignal;
   }
 
   private isKakaoMeasurementOnlySource(sourceText: string, intent: QueryIntent): boolean {
