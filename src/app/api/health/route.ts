@@ -3,6 +3,7 @@ import { createCompassServiceClient } from '@/lib/supabase/compass';
 import { getCompassAnswerRuntimeStatus } from '@/lib/services/CompassAnswerLlmService';
 import { resolveOllamaEndpoint } from '@/lib/services/ollamaEndpoint';
 import { getCompassAnswerRuntimeMetrics } from '@/lib/server/compassAnswerHandler';
+import { readCompassAnswerDurableMetricsSnapshot } from '@/lib/server/compassAnswerRuntimeStore';
 
 export async function GET(request: NextRequest) {
   const startTime = Date.now();
@@ -77,15 +78,32 @@ export async function GET(request: NextRequest) {
 
     try {
       const answerMetrics = getCompassAnswerRuntimeMetrics();
+      const durableMetrics = await readCompassAnswerDurableMetricsSnapshot();
       health.services.compassAnswer = {
         status: 'healthy',
-        completedRequestCount: answerMetrics.completedRequestCount,
-        cacheHitRatio: answerMetrics.cache.hitRatio,
-        cacheEntries: answerMetrics.cache.entries,
-        avgRetrievalDurationMs: answerMetrics.durations.avgRetrievalDurationMs,
-        avgAnswerGenerationDurationMs: answerMetrics.durations.avgAnswerGenerationDurationMs,
-        retrievalSampleCount: answerMetrics.durations.retrievalSampleCount,
-        answerGenerationSampleCount: answerMetrics.durations.answerGenerationSampleCount,
+        completedRequestCount: durableMetrics.status === 'ready'
+          ? durableMetrics.completedRequestCount
+          : answerMetrics.completedRequestCount,
+        cacheHitRatio: durableMetrics.status === 'ready'
+          ? durableMetrics.cacheHitRatio
+          : answerMetrics.cache.hitRatio,
+        cacheEntries: durableMetrics.status === 'ready'
+          ? durableMetrics.cacheEntryCount
+          : answerMetrics.cache.entries,
+        avgRetrievalDurationMs: durableMetrics.status === 'ready'
+          ? durableMetrics.avgRetrievalDurationMs
+          : answerMetrics.durations.avgRetrievalDurationMs,
+        avgAnswerGenerationDurationMs: durableMetrics.status === 'ready'
+          ? durableMetrics.avgAnswerGenerationDurationMs
+          : answerMetrics.durations.avgAnswerGenerationDurationMs,
+        retrievalSampleCount: durableMetrics.status === 'ready'
+          ? durableMetrics.retrievalSampleCount
+          : answerMetrics.durations.retrievalSampleCount,
+        answerGenerationSampleCount: durableMetrics.status === 'ready'
+          ? durableMetrics.answerGenerationSampleCount
+          : answerMetrics.durations.answerGenerationSampleCount,
+        local: answerMetrics,
+        durable: durableMetrics,
       };
     } catch {
       health.services.compassAnswer = {

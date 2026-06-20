@@ -10,6 +10,13 @@ import {
   type VendorIntent,
 } from '@/lib/services/RAGSearchService';
 import { generateCompassAnswer, type CompassGroundingSource } from '@/lib/services/CompassAnswerLlmService';
+import {
+  getCompassAnswerDurableStoreStatus,
+  readCompassAnswerDurableCache,
+  recordCompassAnswerDurableRuntimeEvent,
+  writeCompassAnswerDurableCache,
+  type CompassAnswerDurableRuntimeEvent,
+} from './compassAnswerRuntimeStore';
 
 export type CompassAnswerPhase =
   | 'accepted'
@@ -213,6 +220,7 @@ export function getCompassAnswerRuntimeMetrics() {
         : null,
       lastStatus: compassAnswerRuntimeMetrics.lastCacheStatus,
     },
+    durableStore: getCompassAnswerDurableStoreStatus(),
     durations: {
       avgProcessingTimeMs: resolveAverage(
         compassAnswerRuntimeMetrics.processingTimeTotalMs,
@@ -277,14 +285,15 @@ function getCachedCompassAnswerResponse(cacheKey: string): Record<string, unknow
   return cloneCompassAnswerBody(entry.body);
 }
 
-function rememberCompassAnswerResponse(cacheKey: string, result: CompassAnswerHandlerResult): void {
-  if ((result.status || 200) >= 400) return;
+function rememberCompassAnswerResponse(cacheKey: string, result: CompassAnswerHandlerResult): Date | null {
+  if ((result.status || 200) >= 400) return null;
   const response = (result.body as any).response;
-  if (response?.error === true) return;
+  if (response?.error === true) return null;
+  const expiresAt = new Date(Date.now() + COMPASS_ANSWER_RESPONSE_CACHE_TTL_MS);
 
   compassAnswerResponseCache.set(cacheKey, {
     body: cloneCompassAnswerBody(result.body),
-    expiresAt: Date.now() + COMPASS_ANSWER_RESPONSE_CACHE_TTL_MS,
+    expiresAt: expiresAt.getTime(),
   });
 
   while (compassAnswerResponseCache.size > COMPASS_ANSWER_RESPONSE_CACHE_MAX_ENTRIES) {
@@ -292,9 +301,15 @@ function rememberCompassAnswerResponse(cacheKey: string, result: CompassAnswerHa
     if (!oldestKey) break;
     compassAnswerResponseCache.delete(oldestKey);
   }
+
+  return expiresAt;
 }
 
-function markCompassAnswerCacheHit(body: Record<string, unknown>, processingTime: number): Record<string, unknown> {
+function markCompassAnswerCacheHit(
+  body: Record<string, unknown>,
+  processingTime: number,
+  scope: 'memory' | 'durable' = 'memory',
+): Record<string, unknown> {
   const response = (body as any).response;
   if (response && typeof response === 'object') {
     response.sourceDiagnostics = {
@@ -302,6 +317,7 @@ function markCompassAnswerCacheHit(body: Record<string, unknown>, processingTime
         ? response.sourceDiagnostics
         : {}),
       responseCacheHit: true,
+      responseCacheScope: scope,
     };
   }
   return {
@@ -318,9 +334,55 @@ function markCompassAnswerCacheMiss(body: Record<string, unknown>): Record<strin
         ? response.sourceDiagnostics
         : {}),
       responseCacheHit: false,
+      responseCacheScope: 'none',
     };
   }
   return body;
+}
+
+function countCompassGraphLikeSources(sources: unknown): number | null {
+  if (!Array.isArray(sources)) return null;
+  return sources.filter((source: any) => (
+    source?.retrievalMethod === 'graph'
+    || source?.metadata?.retrievalMethod === 'graph'
+    || source?.metadata?.answerEvidenceRole === 'official_graph'
+    || (source?.metadata?.source_kind === 'official_doc' && source?.metadata?.graphPath)
+  )).length;
+}
+
+function buildCompassAnswerDurableRuntimeEvent(
+  result: CompassAnswerHandlerResult,
+  cacheStatus: CompassAnswerCacheStatus,
+  cacheKey: string | null,
+): CompassAnswerDurableRuntimeEvent {
+  const body = result.body as any;
+  const response = body.response && typeof body.response === 'object' ? body.response : {};
+  const sourceDiagnostics = readCompassAnswerSourceDiagnostics(result.body);
+  const sources = Array.isArray(response.sources) ? response.sources : [];
+  const status = result.status || 200;
+
+  return {
+    cacheStatus,
+    cacheKey,
+    processingTimeMs: toFiniteNumber(body.processingTime),
+    retrievalDurationMs: toFiniteNumber(sourceDiagnostics.retrievalDurationMs),
+    answerGenerationDurationMs: toFiniteNumber(sourceDiagnostics.answerGenerationDurationMs),
+    retrievalTimedOut: sourceDiagnostics.retrievalTimedOut === true,
+    retrievalChannelTimedOut: sourceDiagnostics.retrievalChannelTimedOut === true,
+    noDataFound: response.noDataFound === true,
+    errorResponse: status >= 400 || response.error === true,
+    model: typeof body.model === 'string' ? body.model : null,
+    sourceCount: sources.length,
+    graphLikeSourceCount: countCompassGraphLikeSources(sources),
+    slowestChannel: sourceDiagnostics.retrievalSlowestChannel && typeof sourceDiagnostics.retrievalSlowestChannel === 'object'
+      ? sourceDiagnostics.retrievalSlowestChannel
+      : null,
+    metadata: {
+      status,
+      answerMode: sourceDiagnostics.answerMode,
+      deterministicAnswerFamily: sourceDiagnostics.deterministicAnswerFamily,
+    },
+  };
 }
 
 function getCompassRagSearchService(): RAGSearchService {
@@ -4525,6 +4587,16 @@ function shouldUseDeterministicProductAnswerBeforeLlm() {
     || process.env.COMPASS_ENABLE_DETERMINISTIC_PRODUCT_ANSWERS === 'true';
 }
 
+function shouldUseFastBroadProductDeterministicAnswer(intent: QueryIntent) {
+  if (process.env.COMPASS_DISABLE_FAST_BROAD_PRODUCT_ANSWERS === 'true') return false;
+  if (!intent.isProductStructureOverview || intent.isSpecificProductGuidance) return false;
+  if (intent.vendors.length !== 1 || intent.isComparative) return false;
+
+  return intent.vendors[0] === 'META'
+    || intent.vendors[0] === 'NAVER'
+    || intent.vendors[0] === 'GOOGLE';
+}
+
 function shouldUseDeterministicProductAnswerOnLlmFailure() {
   // LLM 연결 실패 시에도 기본값은 실제 출처 요약 폴백이다.
   // 고정 상품 프로필은 QA/회귀 테스트용으로 명시적으로 켠 경우에만 사용한다.
@@ -5853,7 +5925,14 @@ function getProductStructureFastPathSupplementLimit(vendor?: VendorIntent) {
   }
 }
 
-function getSpecificProductSupplementLimit(vendor?: VendorIntent) {
+function isKakaoDisplaySpecificProductQuestion(message: string) {
+  return /비즈보드|디스플레이\s*광고|카카오모먼트|톡채널|브랜드이모티콘|상품\s*가이드|상품가이드/.test(
+    normalizeProductIntentText(message),
+  );
+}
+
+function getSpecificProductSupplementLimit(vendor?: VendorIntent, message = '') {
+  if (vendor === 'KAKAO' && isKakaoDisplaySpecificProductQuestion(message)) return 0;
   return vendor === 'KAKAO' ? 1 : 2;
 }
 
@@ -7081,7 +7160,7 @@ export async function buildCompassAnswerResponse(
     const supplementQueryLimit = usesProductStructureFastPath
       ? getProductStructureFastPathSupplementLimit(ragIntent.vendors[0])
       : usesSpecificProductSupplementPath
-        ? getSpecificProductSupplementLimit(ragIntent.vendors[0])
+        ? getSpecificProductSupplementLimit(ragIntent.vendors[0], message)
       : 2;
     const selectedSupplementQueries = supplementQueries.slice(0, supplementQueryLimit);
     const searchQueries = [message, ...selectedSupplementQueries];
@@ -7461,7 +7540,11 @@ export async function buildCompassAnswerResponse(
           }
         };
       }
-      if (shouldUseDeterministicProductAnswerBeforeLlm()) {
+      if (
+        shouldUseDeterministicProductAnswerBeforeLlm()
+        || shouldUseFastBroadProductDeterministicAnswer(ragIntent)
+      ) {
+        const shouldUseFastBroadAnswer = shouldUseFastBroadProductDeterministicAnswer(ragIntent);
         const deterministicBroadProductAnswer = buildDeterministicBroadProductAnswer(
           message,
           ragIntent,
@@ -7482,6 +7565,7 @@ export async function buildCompassAnswerResponse(
                   ...sourceDiagnostics,
                   answerSourceCount: deterministicBroadProductAnswer.sources.length,
                   answerMode: diagnosticAnswerMode,
+                  answerGenerationDurationMs: 0,
                   deterministicAnswerFamily: detectProductAnswerFamily(message, ragIntent),
                 },
                 reviewPipeline: buildDeterministicProductReviewPipeline(
@@ -7494,6 +7578,49 @@ export async function buildCompassAnswerResponse(
               model: deterministicBroadProductAnswer.model
             }
           };
+        }
+
+        if (shouldUseFastBroadAnswer) {
+          const sourceGuidedBroadProductAnswer = buildLlmFailureGroundedFallbackAnswer(
+            message,
+            answerSources,
+            ragIntent,
+            specificProductScope,
+            true,
+          );
+          if (sourceGuidedBroadProductAnswer) {
+            emitPhase?.({ phase: 'answer-ready', message: '상품 구조 근거를 기준으로 답변을 정리했습니다.' });
+            return {
+              body: {
+                response: {
+                  message: sourceGuidedBroadProductAnswer,
+                  content: sourceGuidedBroadProductAnswer,
+                  sources: answerSources,
+                  noDataFound: false,
+                  schema,
+                  showContactOption: true,
+                  sourceDiagnostics: {
+                    ...sourceDiagnostics,
+                    answerSourceCount: answerSources.length,
+                    answerMode: diagnosticAnswerMode,
+                    answerGenerationDurationMs: 0,
+                    deterministicAnswerFamily: detectProductAnswerFamily(message, ragIntent),
+                    fastAnswerFallback: 'source_guided_broad_product',
+                  },
+                  reviewPipeline: buildReviewPipeline({
+                    status: 'completed',
+                    sourceCount: searchResults.length,
+                    verifiedSourceCount: answerSources.length,
+                    contactRecommended: true,
+                    retrievalChannelLimited: sourceDiagnostics.retrievalChannelTimedOut === true,
+                  }),
+                },
+                confidence: Math.min(confidence, 78),
+                processingTime: Date.now() - startTime,
+                model: 'compass-answer-fast-broad-product-source-guided'
+              }
+            };
+          }
         }
       }
       console.log('Compass product structure broad answer will use grounded LLM synthesis', {
@@ -7843,6 +7970,9 @@ export async function buildCompassAnswerResponseWithRuntimeCache(
     compassAnswerRuntimeMetrics.bypassedRequestCount += 1;
     const result = await buildCompassAnswerResponse(request, emitPhase);
     recordCompassAnswerRuntimeResult(result, 'BYPASS');
+    await recordCompassAnswerDurableRuntimeEvent(
+      buildCompassAnswerDurableRuntimeEvent(result, 'BYPASS', null),
+    );
     return { result, cacheStatus: 'BYPASS' };
   }
 
@@ -7851,18 +7981,53 @@ export async function buildCompassAnswerResponseWithRuntimeCache(
   if (cachedBody) {
     compassAnswerRuntimeMetrics.cacheHitCount += 1;
     const result = {
-      body: markCompassAnswerCacheHit(cachedBody, Date.now() - requestStartedAt),
+      body: markCompassAnswerCacheHit(cachedBody, Date.now() - requestStartedAt, 'memory'),
       status: 200,
     };
     recordCompassAnswerRuntimeResult(result, 'HIT');
+    await recordCompassAnswerDurableRuntimeEvent(
+      buildCompassAnswerDurableRuntimeEvent(result, 'HIT', cacheKey),
+    );
+    return { result, cacheStatus: 'HIT' };
+  }
+
+  const durableCachedEntry = await readCompassAnswerDurableCache(cacheKey);
+  if (durableCachedEntry) {
+    compassAnswerRuntimeMetrics.cacheHitCount += 1;
+    const cachedResult = {
+      body: cloneCompassAnswerBody(durableCachedEntry.body),
+      status: durableCachedEntry.status,
+    };
+    rememberCompassAnswerResponse(cacheKey, cachedResult);
+    const result = {
+      body: markCompassAnswerCacheHit(cachedResult.body, Date.now() - requestStartedAt, 'durable'),
+      status: durableCachedEntry.status,
+    };
+    recordCompassAnswerRuntimeResult(result, 'HIT');
+    await recordCompassAnswerDurableRuntimeEvent(
+      buildCompassAnswerDurableRuntimeEvent(result, 'HIT', cacheKey),
+    );
     return { result, cacheStatus: 'HIT' };
   }
 
   compassAnswerRuntimeMetrics.cacheMissCount += 1;
   const result = await buildCompassAnswerResponse(request, emitPhase);
   markCompassAnswerCacheMiss(result.body);
-  rememberCompassAnswerResponse(cacheKey, result);
+  const expiresAt = rememberCompassAnswerResponse(cacheKey, result);
   recordCompassAnswerRuntimeResult(result, 'MISS');
+  await Promise.all([
+    expiresAt
+      ? writeCompassAnswerDurableCache({
+        cacheKey,
+        body: result.body,
+        status: result.status || 200,
+        expiresAt,
+      })
+      : Promise.resolve(false),
+    recordCompassAnswerDurableRuntimeEvent(
+      buildCompassAnswerDurableRuntimeEvent(result, 'MISS', cacheKey),
+    ),
+  ]);
   return { result, cacheStatus: 'MISS' };
 }
 

@@ -676,6 +676,9 @@ export class RAGSearchService {
     if (this.isBroadProductStructureRetrievalIntent(intent)) {
       return Math.min(Math.max(limit * 2, 16), 36);
     }
+    if (intent && this.isKakaoBizboardDisplayProductIntent(intent)) {
+      return Math.min(Math.max(limit * 3, 24), 48);
+    }
 
     const productStructureIntent = intent?.topics.includes('product_structure') === true;
     const multiplier = productStructureIntent ? 8 : 10;
@@ -687,6 +690,9 @@ export class RAGSearchService {
   private getVendorMetadataFetchLimit(limit: number, intent?: QueryIntent): number {
     if (this.isBroadProductStructureRetrievalIntent(intent)) {
       return Math.min(Math.max(limit * 2, 16), 36);
+    }
+    if (intent && this.isKakaoBizboardDisplayProductIntent(intent)) {
+      return Math.min(Math.max(limit * 3, 18), 36);
     }
 
     const productStructureIntent = intent?.topics.includes('product_structure') === true;
@@ -916,8 +922,12 @@ export class RAGSearchService {
         graphCandidates
       ] = await Promise.all([
         this.withRetrievalChannelTimeout(this.searchVectorCandidates(queryEmbedding, candidateLimit, intent), 'hybrid_vector', [], timedOutChannels, channelTimings),
-        this.withRetrievalChannelTimeout(this.searchKeywordCandidates(query, candidateLimit, intent), 'hybrid_keyword', [], timedOutChannels, channelTimings),
-        usesSpecificProductRetrieval
+        usesKakaoProductPriority
+          ? Promise.resolve([])
+          : this.withRetrievalChannelTimeout(this.searchKeywordCandidates(query, candidateLimit, intent), 'hybrid_keyword', [], timedOutChannels, channelTimings),
+        usesKakaoProductPriority
+          ? Promise.resolve([])
+          : usesSpecificProductRetrieval
           ? this.withRetrievalChannelTimeout(this.searchVendorCoverageCandidates(query, Math.max(limit, 8), intent), 'hybrid_vendor_coverage_specific', [], timedOutChannels, channelTimings)
           : this.withRetrievalChannelTimeout(this.searchVendorCoverageCandidates(query, candidateLimit, intent), 'hybrid_vendor_coverage', [], timedOutChannels, channelTimings),
         usesPrioritySpecificProductRetrieval
@@ -1846,22 +1856,19 @@ export class RAGSearchService {
       '디스플레이 광고',
       '카카오모먼트',
       '상품가이드',
-      '상품 가이드',
       '제작 가이드',
       '노출 지면',
       '심사 가이드',
       '집행 기준',
-      '업종별 가이드',
-      '등록불가 업종',
     ];
     const [
       documentChunkResults,
       ollamaResults,
       vendorMetadataResults,
     ] = await Promise.all([
-      this.searchKeywordTable('document_chunks', prioritySearchAnchors, 18, intent),
-      this.searchKeywordTable('ollama_document_chunks', prioritySearchAnchors, 18, intent, 'KAKAO'),
-      this.searchVendorMetadataTable('ollama_document_chunks', 'KAKAO', prioritySearchAnchors, 10, intent),
+      this.searchKeywordTable('document_chunks', prioritySearchAnchors, 12, intent),
+      this.searchKeywordTable('ollama_document_chunks', prioritySearchAnchors, 12, intent, 'KAKAO'),
+      this.searchVendorMetadataTable('ollama_document_chunks', 'KAKAO', prioritySearchAnchors, 6, intent),
     ]);
     results.push(
       ...documentChunkResults.map(result => ({ ...result, anchor: 'kakao_product_priority_keyword' })),

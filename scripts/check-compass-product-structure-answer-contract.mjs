@@ -869,15 +869,15 @@ if (!/function getProductStructureFastPathSupplementLimit\(vendor\?: VendorInten
   fail('product structure fast path supplement fan-out must stay bounded by vendor, with Meta/Naver/Google using graph/main retrieval only');
 }
 
-if (!/function getSpecificProductSupplementLimit\(vendor\?: VendorIntent\)[\s\S]*return vendor === 'KAKAO' \? 1 : 2;/.test(answerHandler)) {
-  fail('specific product supplement fan-out must stay bounded for Kakao product-detail questions');
+if (!/function getSpecificProductSupplementLimit\(vendor\?: VendorIntent,\s*message = ''\)[\s\S]*vendor === 'KAKAO' && isKakaoDisplaySpecificProductQuestion\(message\)[\s\S]*return 0;[\s\S]*return vendor === 'KAKAO' \? 1 : 2;/.test(answerHandler)) {
+  fail('specific product supplement fan-out must stay bounded for Kakao product-detail questions and skip duplicate Kakao display supplements');
 }
 
 if (!/const supplementQueryLimit = usesProductStructureFastPath\s*\?\s*getProductStructureFastPathSupplementLimit\(ragIntent\.vendors\[0\]\)/.test(answerHandler)) {
   fail('product structure fast path must use the bounded supplement limit helper');
 }
 
-if (!/usesSpecificProductSupplementPath\s*\?\s*getSpecificProductSupplementLimit\(ragIntent\.vendors\[0\]\)/.test(answerHandler)) {
+if (!/usesSpecificProductSupplementPath\s*\?\s*getSpecificProductSupplementLimit\(ragIntent\.vendors\[0\],\s*message\)/.test(answerHandler)) {
   fail('specific product supplement path must use the bounded supplement limit helper');
 }
 
