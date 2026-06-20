@@ -5049,6 +5049,7 @@ export class RAGSearchService {
 
   private isMetaAppInstallIntent(intent: QueryIntent): boolean {
     if (!intent.topics.includes('product_structure') || intent.vendors[0] !== 'META') return false;
+    if (intent.isProductStructureOverview && !intent.isSpecificProductGuidance) return false;
     const text = this.normalizeSearchText([
       ...intent.keywords,
       ...intent.strictProductTerms,
