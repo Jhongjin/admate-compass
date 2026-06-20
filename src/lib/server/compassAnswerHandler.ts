@@ -4867,7 +4867,7 @@ function buildFastPolicySourceGuidedAnswer(
   fastAnswerFallback: FastPolicySourceGuidedAnswerFallback;
 }) | null {
   if (process.env.COMPASS_DISABLE_FAST_POLICY_SOURCE_GUIDED_ANSWERS === 'true') return null;
-  if (isBroadProductStructureLlmIntent || intent.topics.includes('product_structure') || intent.isComparative) return null;
+  if (isBroadProductStructureLlmIntent || intent.isComparative) return null;
   if (intent.isOutOfScope || intent.unavailablePolicyTarget) return null;
 
   const family = detectFastPolicySourceGuidedAnswerFamily(message, intent);

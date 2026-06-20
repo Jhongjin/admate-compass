@@ -1228,7 +1228,7 @@ if (!/const fastStructuredSpecificProductAnswer = buildFastStructuredSpecificPro
   fail('structured specific product fast answer must run before grounded LLM synthesis and expose zero answer-generation diagnostics');
 }
 
-if (!/function buildFastPolicySourceGuidedAnswer\([\s\S]*COMPASS_DISABLE_FAST_POLICY_SOURCE_GUIDED_ANSWERS[\s\S]*isBroadProductStructureLlmIntent \|\| intent\.topics\.includes\('product_structure'\) \|\| intent\.isComparative[\s\S]*detectFastPolicySourceGuidedAnswerFamily\(message, intent\)[\s\S]*getFallbackSourceText\(source\)[\s\S]*if \(!pattern\.test\(sourceText\)\) return false;[\s\S]*sourceHasBlockingExtractionNoise\(source\)[\s\S]*buildFastPolicyAnswerText\(family, candidateSources\)/.test(answerHandler)) {
+if (!/function buildFastPolicySourceGuidedAnswer\([\s\S]*COMPASS_DISABLE_FAST_POLICY_SOURCE_GUIDED_ANSWERS[\s\S]*isBroadProductStructureLlmIntent \|\| intent\.isComparative[\s\S]*detectFastPolicySourceGuidedAnswerFamily\(message, intent\)[\s\S]*getFallbackSourceText\(source\)[\s\S]*if \(!pattern\.test\(sourceText\)\) return false;[\s\S]*sourceHasBlockingExtractionNoise\(source\)[\s\S]*buildFastPolicyAnswerText\(family, candidateSources\)/.test(answerHandler)) {
   fail('fast policy source-guided answers must stay narrowly gated and require matching verified source evidence');
 }
 
