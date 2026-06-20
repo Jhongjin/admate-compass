@@ -577,7 +577,7 @@ if (!/sourceIdentityLooksLikeGenericLegalOrAccountDoc[\s\S]*청구\|결제\|지�
   fail('answer source routing must demote payment/account support documents such as 지불 for product-structure answers');
 }
 
-if (!/COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v10-meta-graph-text-merge'[\s\S]*`compass-answer:\$\{COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION\}:\$\{message\}`/.test(answerHandler)) {
+if (!/COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v11-meta-graph-news-priority'[\s\S]*`compass-answer:\$\{COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION\}:\$\{message\}`/.test(answerHandler)) {
   fail('answer response cache key must be versioned so stale durable cached answers are bypassed after source-quality fixes');
 }
 
@@ -589,7 +589,7 @@ if (!/sourceLooksLikeProductStructureSupportNoise[\s\S]*getSourceIdentityText\(s
   fail('broad product source selection must reject tax/coupon/support-noise documents before answer source selection');
 }
 
-if (!/sourceLooksLikeMetaBroadProductNewsNoise[\s\S]*facebook\\\.com\\\/business\\\/news[\s\S]*성과\\s\*증대[\s\S]*크리에이티브\\s\*다각화[\s\S]*creative\\s\*diversification[\s\S]*hasBroadOverviewStructure[\s\S]*isUsableBroadProductStructureSource[\s\S]*targetVendor === 'META' && sourceLooksLikeMetaBroadProductNewsNoise\(source\)/.test(answerHandler)) {
+if (!/sourceLooksLikeMetaBroadProductNewsNoise[\s\S]*facebook\\\.com\\\/business\\\/news[\s\S]*성과\\s\*증대[\s\S]*크리에이티브\\s\*다각화[\s\S]*creative\\s\*diversification[\s\S]*manus[\s\S]*cyber\\s\*5[\s\S]*creator\\s\*method[\s\S]*hasBroadOverviewStructure[\s\S]*isUsableBroadProductStructureSource[\s\S]*targetVendor === 'META' && sourceLooksLikeMetaBroadProductNewsNoise\(source\)/.test(answerHandler)) {
   fail('Meta broad product source selection must reject business/news success-story sources before answer source selection');
 }
 
@@ -613,7 +613,7 @@ if (!/selected\.length === 0[\s\S]*recoverableBroadSources[\s\S]*targetVendor ==
   fail('Meta broad product recoverable fallback must not reintroduce business/news success-story sources');
 }
 
-if (!/isMetaBroadProductNewsNoiseText[\s\S]*facebook\\\.com\\\/business\\\/news[\s\S]*성과\\s\*증대[\s\S]*크리에이티브\\s\*다각화[\s\S]*creative\\s\*diversification[\s\S]*hasMetaObjectiveProductStructureSignal/.test(rag)
+if (!/isMetaBroadProductNewsNoiseText[\s\S]*facebook\\\.com\\\/business\\\/news[\s\S]*성과\\s\*증대[\s\S]*크리에이티브\\s\*다각화[\s\S]*creative\\s\*diversification[\s\S]*manus[\s\S]*cyber\\s\*5[\s\S]*creator\\s\*method[\s\S]*hasMetaObjectiveProductStructureSignal/.test(rag)
   || !/searchMetaProductOverviewPriorityCandidates[\s\S]*isMetaBroadProductNewsNoiseText\(sourceText\)[\s\S]*return null[\s\S]*queryWantsFormatPlacement[\s\S]*hasFormatPlacementSignal && !hasObjectiveSignal && !hasCommerceSignal && !queryWantsFormatPlacement[\s\S]*return null/.test(rag)
 ) {
   fail('Meta overview priority retrieval must reject business/news and format-only sources before boosting them');
@@ -634,6 +634,12 @@ if (metaAppInstallIntentBlock.includes('...intent.keywords')) {
 
 if (!/calculateProductStructureGraphTitleAdjustment[\s\S]*hasMetaBusinessNewsUrl[\s\S]*meta_product_structure_news_url_penalty[\s\S]*isLowValueProductStructureGraphCandidate[\s\S]*intent\.vendors\[0\] === 'META'[\s\S]*isMetaBroadProductNewsNoiseText\(sourceText\)/.test(rag)) {
   fail('Meta product-structure GraphRAG selection must penalize and reject weak business/news graph sources');
+}
+
+if (!/mergeDedupeAndRankCandidates[\s\S]*isEvidenceGraphCandidate\(candidate\)[\s\S]*isOfficialGraphCandidate\(candidate\)[\s\S]*isLowValueProductStructureGraphCandidate\(candidate, intent\)[\s\S]*continue/.test(rag)
+  || !/ensureGraphEvidenceCoverage[\s\S]*isOfficialGraphCandidate\(candidate\)[\s\S]*!this\.isLowValueProductStructureGraphCandidate\(candidate, intent\)/.test(rag)
+) {
+  fail('product-structure ranking must drop low-value official graph candidates before merge and coverage rescue');
 }
 
 if (!/isLowValueProductStructureGraphCandidate[\s\S]*isMetaAppInstallIntent\(intent\)[\s\S]*facebook\\\.com\\\/business\\\/news\|\\\/business\\\/news\|business\\\/news[\s\S]*return true/.test(rag)) {
@@ -987,8 +993,8 @@ if (!/usesVendorProductStructurePriority[\s\S]*usesMetaProductOverviewPriority[\
   fail('Meta app-install priority retrieval must skip generic product-structure anchor fan-out');
 }
 
-if (!/skipsGraphForGoogleProductOverview\s*\n\s*\|\| usesMetaAppInstallPriority[\s\S]*Promise\.resolve\(\[\]\)[\s\S]*product_fast_graph/.test(rag)) {
-  fail('Meta app-install product fast path must skip noisy graph retrieval once app-install priority is enabled');
+if (/skipsGraphForGoogleProductOverview\s*\n\s*\|\| usesMetaAppInstallPriority[\s\S]*Promise\.resolve\(\[\]\)[\s\S]*product_fast_graph/.test(rag)) {
+  fail('Meta app-install product fast path must not skip official graph retrieval because app-install ads-guide assertions can ground the answer');
 }
 
 if (!/getKakaoProductGraphSoftBudgetMs[\s\S]*COMPASS_KAKAO_PRODUCT_GRAPH_SOFT_BUDGET_MS[\s\S]*skipsGraphForGoogleProductOverview[\s\S]*usesKakaoProductPriority[\s\S]*product_fast_graph[\s\S]*getKakaoProductGraphSoftBudgetMs\(\)/.test(rag)) {
@@ -1003,8 +1009,8 @@ if (!/private isKakaoBizboardDisplayComparisonIntent\([\s\S]*intent\.isComparati
   fail('KAKAO internal comparison soft-budget routing must stay scoped to Bizboard vs display comparison questions');
 }
 
-if (!/metaAppInstallPriorityCandidates,\s*\n\s*kakaoProductPriorityCandidates,\s*\n\s*graphCandidates[\s\S]*usesMetaAppInstallPriority[\s\S]*Promise\.resolve\(\[\]\),[\s\S]*skipsGraphForGoogleProductOverview/.test(rag)) {
-  fail('KAKAO product fast path must not block on KAKAO priority retrieval');
+if (!/metaAppInstallPriorityCandidates,\s*\n\s*kakaoProductPriorityCandidates,\s*\n\s*graphCandidates[\s\S]*usesMetaAppInstallPriority[\s\S]*searchMetaAppInstallPriorityCandidates[\s\S]*skipsGraphForGoogleProductOverview[\s\S]*product_fast_graph/.test(rag)) {
+  fail('Meta app-install product priority must keep its exact priority path while allowing official graph evidence');
 }
 
 if (!/specificKakaoFastPathAnchors[\s\S]*'비즈보드'[\s\S]*'카카오 비즈보드'[\s\S]*'디스플레이 광고'[\s\S]*usesSpecificKakaoOllamaFastPath[\s\S]*searchKeywordTable\('ollama_document_chunks', specificKakaoFastPathAnchors, 8, intent, 'KAKAO'\)[\s\S]*fastCandidates\.length > 0[\s\S]*return fastCandidates/.test(rag)) {

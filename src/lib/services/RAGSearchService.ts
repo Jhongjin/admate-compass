@@ -1184,7 +1184,6 @@ export class RAGSearchService {
             : Promise.resolve([]),
           Promise.resolve([]),
           skipsGraphForGoogleProductOverview
-            || usesMetaAppInstallPriority
             ? Promise.resolve([])
             : usesKakaoProductPriority
               ? this.withRetrievalChannelSoftBudget(this.searchEvidenceGraphCandidates(query, candidateLimit, intent), 'product_fast_graph', [], this.getKakaoProductGraphSoftBudgetMs(), channelTimings)
@@ -3928,6 +3927,15 @@ export class RAGSearchService {
     const hasGenericTopicRescueCandidate = candidates.some(candidate => this.isGenericTopicRescueCandidate(candidate, intent));
 
     for (const candidate of candidates) {
+      if (
+        intent.topics.includes('product_structure')
+        && this.isEvidenceGraphCandidate(candidate)
+        && this.isOfficialGraphCandidate(candidate)
+        && this.isLowValueProductStructureGraphCandidate(candidate, intent)
+      ) {
+        continue;
+      }
+
       if (!this.isVerifiedEvidence(candidate, intent, hasTargetVendorRescueCandidate, hasGenericTopicRescueCandidate)) {
         continue;
       }
@@ -4138,6 +4146,7 @@ export class RAGSearchService {
     const graphCandidate = ranked
       .filter(candidate => this.isEvidenceGraphCandidate(candidate))
       .filter(candidate => this.isOfficialGraphCandidate(candidate))
+      .filter(candidate => !this.isLowValueProductStructureGraphCandidate(candidate, intent))
       .filter(candidate => {
         if (!specificProductIntent) return true;
 
@@ -5673,11 +5682,11 @@ export class RAGSearchService {
     const text = this.normalizeSearchText(sourceText);
     const hasMetaIdentity = /meta|메타|facebook|페이스북|instagram|인스타그램|릴스|reels/.test(text);
     const isMetaNewsSource = /facebook\.com\/business\/news|\/business\/news|business\/news/.test(text)
-      || /도입\s*1주년|전\s*세계의\s*모든\s*사용자|성과\s*증대|게이밍\s*광고주|광고주의\s*성과|heroes\s*&?\s*dragons|사용자\s*확보\s*투자|크리에이티브\s*다각화|creative\s*diversification|demystifying[-\s]*creative[-\s]*diversification/i.test(text);
+      || /도입\s*1주년|전\s*세계의\s*모든\s*사용자|성과\s*증대|게이밍\s*광고주|광고주의\s*성과|heroes\s*&?\s*dragons|사용자\s*확보\s*투자|크리에이티브\s*다각화|creative\s*diversification|demystifying[-\s]*creative[-\s]*diversification|manus|ai\s*혁신|혁신\s*가속화|cyber\s*5|사이버\s*5|creator\s*method|크리에이터|성공\s*전략|threads\s*광고|app\s*value\s*optimization/i.test(text);
     if (!hasMetaIdentity || !isMetaNewsSource) return false;
 
     return !this.hasMetaObjectiveProductStructureSignal(text)
-      || /도입\s*1주년|전\s*세계의\s*모든\s*사용자|성과\s*증대|게이밍\s*광고주|광고주의\s*성과|heroes\s*&?\s*dragons|사용자\s*확보\s*투자|크리에이티브\s*다각화|creative\s*diversification|demystifying[-\s]*creative[-\s]*diversification/i.test(text);
+      || /도입\s*1주년|전\s*세계의\s*모든\s*사용자|성과\s*증대|게이밍\s*광고주|광고주의\s*성과|heroes\s*&?\s*dragons|사용자\s*확보\s*투자|크리에이티브\s*다각화|creative\s*diversification|demystifying[-\s]*creative[-\s]*diversification|manus|ai\s*혁신|혁신\s*가속화|cyber\s*5|사이버\s*5|creator\s*method|크리에이터|성공\s*전략|threads\s*광고|app\s*value\s*optimization/i.test(text);
   }
 
   private isMetaOverviewPolicyNoiseText(text: string): boolean {

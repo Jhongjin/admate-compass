@@ -87,8 +87,24 @@ if (!/rawTerms\.push\([\s\S]*'app install'[\s\S]*'app-installs'[\s\S]*'mobile ap
   fail('Meta app-install product graph retrieval must include app-install URL/title terms in graph text search');
 }
 
+if (!/const appContext = this\.normalize[\s\S]*rawTerms\.unshift\('app-installs', 'app install', 'app promotion', '앱 홍보', '앱 설치'\)/.test(graphService)) {
+  fail('Meta app-install graph search terms must be prioritized before the focused text term slice');
+}
+
 if (!/const vendorScopedQuery = intent\.vendors\.length > 0[\s\S]*baseQuery\.in\('vendor', intent\.vendors\)[\s\S]*await vendorScopedQuery[\s\S]*\.or\(orFilter\)/.test(graphService)) {
   fail('evidence graph text search must stay vendor-scoped when a vendor is explicit');
+}
+
+if (!/sourceKind === 'official_doc'[\s\S]*vendor === 'META'[\s\S]*intent\.isProductStructureOverview[\s\S]*isMetaBusinessNewsProductStructureNoise\(text, row\.source_url\)/.test(graphService)
+  || !/isMetaBusinessNewsProductStructureNoise[\s\S]*facebook\\\.com\\\/business\\\/news[\s\S]*manus[\s\S]*cyber\\s\*5[\s\S]*creator\\s\*method/.test(graphService)
+) {
+  fail('Meta product graph service must drop business/news rows before candidate limiting');
+}
+
+if (!/scoreCandidateForIntent[\s\S]*business\\\/ads-guide[\s\S]*app-installs[\s\S]*outcome-\(\?:sales\|traffic\|leads\|engagement\|awareness\)[\s\S]*홍보할\\s\*수\\s\*없는[\s\S]*픽셀\|pixel/.test(graphService)
+  || !/sort\(\(a, b\) => \([\s\S]*scoreCandidateForIntent\(b, intent\)[\s\S]*scoreCandidateForIntent\(a, intent\)/.test(graphService)
+) {
+  fail('evidence graph service must rank ads-guide/app-install product rows ahead of support and pixel setup noise');
 }
 
 for (const officialDocSignal of [

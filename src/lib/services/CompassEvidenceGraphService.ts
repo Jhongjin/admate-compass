@@ -178,7 +178,11 @@ export class CompassEvidenceGraphService {
         .filter((row) => this.isUsableAssertion(row, resolvedCaseMap))
         .map((row) => this.toCandidate(row, terms, intent, resolvedCaseMap))
         .filter((candidate): candidate is EvidenceGraphCandidate => Boolean(candidate))
-        .sort((a, b) => b.score - a.score)
+        .sort((a, b) => (
+          this.scoreCandidateForIntent(b, intent)
+          - this.scoreCandidateForIntent(a, intent)
+          || b.score - a.score
+        ))
         .slice(0, limit);
 
       if (candidates.length > 0) {
@@ -805,6 +809,15 @@ export class CompassEvidenceGraphService {
     const vendor = this.normalizeVendor(row.vendor);
     if (
       sourceKind === 'official_doc'
+      && vendor === 'META'
+      && intent.isProductStructureOverview
+      && this.isMetaBusinessNewsProductStructureNoise(text, row.source_url)
+    ) {
+      return null;
+    }
+
+    if (
+      sourceKind === 'official_doc'
       && intent.topics.includes('product_structure')
       && !this.isRelevantProductStructureOfficialGraph(visibleText, directTermMatches, topicMatches, intent)
     ) {
@@ -897,6 +910,15 @@ export class CompassEvidenceGraphService {
         'mobile app',
       );
     }
+    const appContext = this.normalize([
+      query,
+      ...intent.keywords,
+      ...intent.strictProductTerms,
+      ...intent.strictContextTerms,
+    ].join(' '));
+    if (/앱|app|install|인스톨|설치|홍보/.test(appContext)) {
+      rawTerms.unshift('app-installs', 'app install', 'app promotion', '앱 홍보', '앱 설치');
+    }
 
     const cleanedTerms = rawTerms
       .map((term) => this.cleanTerm(term))
@@ -965,6 +987,52 @@ export class CompassEvidenceGraphService {
     if (/라이브\s*관리|라이브커머스|쇼핑\s*라이브|shopping\s*live/.test(text) && !/라이브|live/.test(queryText)) return true;
     if (/가입하기|회원\s*가입|계정\s*(생성|만들기)|비즈니스\s*계정/.test(text) && !/가입|계정|account/.test(queryText)) return true;
     return false;
+  }
+
+  private scoreCandidateForIntent(candidate: EvidenceGraphCandidate, intent: QueryIntent): number {
+    let score = candidate.score;
+    if (!intent.isProductStructureOverview || candidate.sourceKind !== 'official_doc') {
+      return score;
+    }
+
+    const text = this.normalize([
+      candidate.title,
+      candidate.claimText,
+      candidate.excerpt,
+      candidate.sourceUrl,
+      candidate.graphPath,
+      Array.isArray(candidate.metadata?.graphTopics) ? candidate.metadata.graphTopics.join(' ') : '',
+    ].filter(Boolean).join(' '));
+    const queryText = this.normalize([
+      ...intent.keywords,
+      ...intent.strictProductTerms,
+      ...intent.strictContextTerms,
+    ].join(' '));
+    const wantsAppInstall = /앱|app|install|인스톨|설치|홍보/.test(queryText);
+
+    if (/\/business\/ads-guide|ads-guide/.test(text)) score += 0.28;
+    if (/인지도[\s\S]{0,140}트래픽[\s\S]{0,140}참여[\s\S]{0,140}잠재\s*고객[\s\S]{0,140}앱\s*홍보[\s\S]{0,140}판매/.test(text)) {
+      score += 0.42;
+    }
+    if (wantsAppInstall && /app-installs|앱\s*홍보|앱\s*(설치|인스톨)|app\s*(install|promotion)|mobile\s*app/.test(text)) {
+      score += 0.55;
+    }
+    if (wantsAppInstall && /app-installs/.test(text)) score += 0.7;
+    if (wantsAppInstall && /outcome-(?:sales|traffic|leads|engagement|awareness)/.test(text) && !/app-installs/.test(text)) {
+      score -= 0.45;
+    }
+    if (/홍보할\s*수\s*없는|promotable|boost\s*unavailable/.test(text)) score -= 0.55;
+    if (wantsAppInstall && /픽셀|pixel|전환\s*api|conversions?\s*api/.test(text) && !/app-installs|앱\s*홍보|app\s*(install|promotion)/.test(text)) {
+      score -= 0.35;
+    }
+
+    return score;
+  }
+
+  private isMetaBusinessNewsProductStructureNoise(text: string, sourceUrl?: string | null): boolean {
+    const haystack = this.normalize(`${text} ${sourceUrl || ''}`);
+    return /facebook\.com\/business\/news|\/business\/news|business\/news/.test(haystack)
+      || /도입\s*1주년|전\s*세계의\s*모든\s*사용자|성과\s*증대|게이밍\s*광고주|광고주의\s*성과|heroes\s*&?\s*dragons|사용자\s*확보\s*투자|크리에이티브\s*다각화|creative\s*diversification|demystifying[-\s]*creative[-\s]*diversification|manus|ai\s*혁신|혁신\s*가속화|cyber\s*5|사이버\s*5|creator\s*method|크리에이터|성공\s*전략|threads\s*광고|app\s*value\s*optimization/i.test(haystack);
   }
 
   private isOffAxisProductStructureEvidence(text: string, queryText: string): boolean {
