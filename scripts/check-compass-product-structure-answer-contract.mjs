@@ -713,12 +713,16 @@ if (!/const retrievalTimedOut = searchResultGroups\.some\(group => group\.timedO
   fail('Compass answer handler must preserve whether any retrieval query timed out');
 }
 
-if (!/const channelTimeoutMetadata = getCompassRetrievalChannelTimeoutMetadata\(searchResults\)[\s\S]*const timedOut = retrievalResult\.timedOut \|\| channelTimeoutMetadata\.timedOut/.test(answerHandler)) {
-  fail('Compass answer handler must propagate per-channel retrieval timeouts into retrievalTimedOut');
+if (!/const channelTimeoutMetadata = getCompassRetrievalChannelTimeoutMetadata\(searchResults\)[\s\S]*channelTimedOut: channelTimeoutMetadata\.timedOut/.test(answerHandler)) {
+  fail('Compass answer handler must preserve per-channel retrieval timeout metadata');
 }
 
-if (!/verifiedSearchResults\.length === 0 && retrievalTimedOut/.test(answerHandler)) {
-  fail('Compass answer handler must separate retrieval timeouts from authoritative no-data');
+if (!/const retrievalLimited = retrievalTimedOut \|\| retrievalChannelTimedOut/.test(answerHandler)) {
+  fail('Compass answer handler must combine outer and per-channel retrieval timeouts for no-evidence limiting');
+}
+
+if (!/verifiedSearchResults\.length === 0 && retrievalLimited/.test(answerHandler)) {
+  fail('Compass answer handler must separate retrieval-limited empty evidence from authoritative no-data');
 }
 
 if (!/model: 'compass-answer-retrieval-limited'/.test(answerHandler)) {

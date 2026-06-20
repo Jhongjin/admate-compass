@@ -33,6 +33,7 @@ type CompassAnswerHandlerResult = {
 type CompassRetrievalResult = {
   results: SearchResult[];
   timedOut: boolean;
+  channelTimedOut: boolean;
 };
 
 type CompassReviewPipelineStatus = 'completed' | 'limited' | 'blocked' | 'error';
@@ -149,7 +150,7 @@ async function searchWithCompassRAG(
     
     if (!hasCompassEvidenceStore()) {
       console.warn('Compass evidence store is unavailable');
-      return { results: [], timedOut: false };
+      return { results: [], timedOut: false, channelTimedOut: false };
     }
 
     const ragService = getCompassRagSearchService();
@@ -162,13 +163,12 @@ async function searchWithCompassRAG(
     );
     const searchResults = retrievalResult.value;
     const channelTimeoutMetadata = getCompassRetrievalChannelTimeoutMetadata(searchResults);
-    const timedOut = retrievalResult.timedOut || channelTimeoutMetadata.timedOut;
     
     console.log('Compass evidence retrieval completed', {
       resultCount: searchResults.length,
       durationMs: Date.now() - startedAt,
       limit,
-      timedOut,
+      timedOut: retrievalResult.timedOut,
       channelTimedOut: channelTimeoutMetadata.timedOut,
       timedOutChannelCount: channelTimeoutMetadata.channels.length,
     });
@@ -200,14 +200,15 @@ async function searchWithCompassRAG(
         sourceQuality: result.sourceQuality,
         metadata: result.metadata
       })),
-      timedOut,
+      timedOut: retrievalResult.timedOut,
+      channelTimedOut: channelTimeoutMetadata.timedOut,
     };
     
   } catch (error) {
     console.error('Compass evidence retrieval failed', {
       errorName: error instanceof Error ? error.name : 'UnknownError',
     });
-    return { results: [], timedOut: false };
+    return { results: [], timedOut: false, channelTimedOut: false };
   }
 }
 
@@ -6752,6 +6753,8 @@ export async function buildCompassAnswerResponse(
       searchQueries.map(query => searchWithCompassRAG(query, Math.max(8, ragIntent.recommendedSourceLimit))),
     );
     const retrievalTimedOut = searchResultGroups.some(group => group.timedOut);
+    const retrievalChannelTimedOut = searchResultGroups.some(group => group.channelTimedOut);
+    const retrievalLimited = retrievalTimedOut || retrievalChannelTimedOut;
     const supplementResultCount = searchResultGroups.slice(1).flatMap(group => group.results).length;
     let searchResults = searchResultGroups.flatMap(group => group.results);
 
@@ -6775,6 +6778,7 @@ export async function buildCompassAnswerResponse(
     const sourceDiagnostics = {
       ...buildSourceDiagnostics(ragIntent, verifiedSearchResults),
       retrievalTimedOut,
+      retrievalChannelTimedOut,
     };
     emitPhase?.({
       phase: 'evidence-ready',
@@ -6795,7 +6799,7 @@ export async function buildCompassAnswerResponse(
     }
 
     // 2. 검색 결과가 없으면 관련 내용 없음 응답
-    if (verifiedSearchResults.length === 0 && retrievalTimedOut) {
+    if (verifiedSearchResults.length === 0 && retrievalLimited) {
       console.warn('Compass answer request completed with retrieval timeout and no grounded evidence');
       const limitedAnswer = '관련 출처 검색이 시간 제한에 걸려 답변을 확정할 수 없습니다. 현재 결과만으로 “자료 없음”으로 판단하지 않고, 잠시 후 다시 시도하거나 담당자 확인을 권장합니다.';
       emitPhase?.({ phase: 'answer-ready', message: '출처 검색이 제한되어 제한 응답을 준비했습니다.' });
