@@ -832,6 +832,7 @@ export class RAGSearchService {
         && intent.vendors.length === 1
         && (
           intent.vendors[0] === 'NAVER'
+          || intent.vendors[0] === 'GOOGLE'
           || usesMetaProductOverviewPriority
           || usesKakaoProductPriority
         )
