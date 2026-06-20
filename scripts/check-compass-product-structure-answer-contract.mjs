@@ -118,6 +118,7 @@ for (const snippet of [
   'answerHasMetaOverviewCommerceCoverageGap',
   'answerHasKakaoSpecificScopeRisk',
   'kakao_scope_risk',
+  'const sourceText = getStrictProductVisibleEvidenceText(source)',
   'da($|[\\s/]|도|상품|광고)',
   '네이버 쇼핑검색광고 상품형 쇼핑블록 광고 상품',
   '네이버 디스플레이 광고 DA 홈피드 배너 광고 상품',

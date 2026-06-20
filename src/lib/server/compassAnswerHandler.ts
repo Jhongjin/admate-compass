@@ -3717,7 +3717,7 @@ function sourceHasEvidenceTerm(
   source: ReturnType<typeof buildVerifiedSources>[number],
   terms: string[],
 ) {
-  const sourceText = getSourceText(source);
+  const sourceText = getStrictProductVisibleEvidenceText(source);
   return terms.some(term => textContainsEvidenceTerm(sourceText, term));
 }
 
@@ -4113,7 +4113,8 @@ function getBroadProductAnswerProfile(family: ProductAnswerFamily): EvidenceBack
           {
             heading: '추가로 확인할 기능',
             bullets: [
-              { text: '카탈로그, 컬렉션, Advantage+ 같은 자동화·커머스 기능은 상품 데이터와 구매 흐름을 함께 봅니다.', terms: ['카탈로그', 'Catalog', '컬렉션', 'Advantage+', '어드밴티지'] },
+              { text: '카탈로그와 컬렉션은 상품 데이터와 구매 흐름을 함께 봅니다.', terms: ['카탈로그', 'Catalog', '컬렉션'] },
+              { text: 'Advantage+ 같은 자동화 기능은 해당 공식 근거가 확인될 때 별도로 대조합니다.', terms: ['Advantage+', '어드밴티지'] },
             ],
           },
         ],
