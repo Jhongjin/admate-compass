@@ -142,6 +142,10 @@ export class CompassEvidenceGraphService {
     const structuredRows = await this.fetchStructuredRows(intent, limit);
 
     if (structuredRows.length > 0) {
+      if (this.shouldUseStructuredRowsOnlyForFocusedProductOverview(intent)) {
+        return structuredRows;
+      }
+
       if (intent.isSpecificProductGuidance || intent.topics.includes('product_structure')) {
         const textRows = await this.fetchTextRows(query, terms, intent, limit);
         const mergedRows = intent.isSpecificProductGuidance
@@ -286,6 +290,14 @@ export class CompassEvidenceGraphService {
       intent.vendors.length === 1
       && !intent.isComparative
       && (intent.topics.includes('product_structure') || intent.isProductStructureOverview)
+    );
+  }
+
+  private shouldUseStructuredRowsOnlyForFocusedProductOverview(intent: QueryIntent): boolean {
+    return (
+      this.isFocusedProductGraphIntent(intent)
+      && intent.isProductStructureOverview
+      && !intent.isSpecificProductGuidance
     );
   }
 
