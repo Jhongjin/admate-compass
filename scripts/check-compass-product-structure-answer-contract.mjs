@@ -108,6 +108,7 @@ for (const snippet of [
   'selectProductStructureResponseSources',
   'pickTopicSources',
   'buildProductStructureSupplementQueries',
+  'getProductStructureFastPathSupplementLimit',
   'usesProductStructureFastPath',
   'intent.isSpecificProductGuidance || hasNamedSpecificProductQuestion(originalMessage)',
   'return intent.isProductStructureOverview',
@@ -809,6 +810,14 @@ if (/generateChatResponse|generateResponse|checkOllamaHealth|getRAGSearchService
 
 if (!/usesProductStructureFastPath\s*=\s*isBroadProductStructureAnswerIntent\(message,\s*ragIntent\)/.test(answerHandler)) {
   fail('product structure fast path must be limited to broad overview questions');
+}
+
+if (!/function getProductStructureFastPathSupplementLimit\(vendor\?: VendorIntent\)[\s\S]*case 'GOOGLE':[\s\S]*case 'NAVER':[\s\S]*return 2;[\s\S]*case 'META':[\s\S]*case 'KAKAO':[\s\S]*return 1;/.test(answerHandler)) {
+  fail('product structure fast path supplement fan-out must stay bounded by vendor');
+}
+
+if (!/const supplementQueryLimit = usesProductStructureFastPath\s*\?\s*getProductStructureFastPathSupplementLimit\(ragIntent\.vendors\[0\]\)/.test(answerHandler)) {
+  fail('product structure fast path must use the bounded supplement limit helper');
 }
 
 if (/- 캠페인 목표 기준|먼저 고르는 것|그다음 고르는 것|고정된 상품명|고정 상품 목록|출처는 없지만 일반적으로|모든 매체에서 동일|  - 인지도:/.test(answerHandler)) {

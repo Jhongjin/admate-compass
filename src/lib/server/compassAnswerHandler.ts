@@ -5563,6 +5563,19 @@ const VENDOR_LABELS: Record<string, string> = {
   NAVER: '네이버',
 };
 
+function getProductStructureFastPathSupplementLimit(vendor?: VendorIntent) {
+  switch (vendor) {
+    case 'GOOGLE':
+    case 'NAVER':
+      return 2;
+    case 'META':
+    case 'KAKAO':
+      return 1;
+    default:
+      return 1;
+  }
+}
+
 function buildProductStructureSupplementQueries(intent: QueryIntent, originalMessage: string) {
   if (!intent.topics.includes('product_structure') || intent.vendors.length !== 1) return [];
 
@@ -6784,7 +6797,7 @@ export async function buildCompassAnswerResponse(
       : buildProductStructureSupplementQueries(ragIntent, message).filter(query => query !== message);
 
     const supplementQueryLimit = usesProductStructureFastPath
-      ? (ragIntent.vendors[0] === 'NAVER' || ragIntent.vendors[0] === 'GOOGLE' ? 4 : 3)
+      ? getProductStructureFastPathSupplementLimit(ragIntent.vendors[0])
       : usesSpecificProductSupplementPath
         ? 2
       : 2;
