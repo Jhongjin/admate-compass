@@ -103,6 +103,19 @@ type SearchResultsWithRetrievalMetadata = SearchResult[] & {
   __compassRetrievalChannelTimings?: RetrievalChannelTiming[];
 };
 
+type CompassSupabaseRowsCacheEntry = {
+  expiresAt: number;
+  rows?: any[];
+  promise?: Promise<any[] | null>;
+};
+
+const COMPASS_SUPABASE_ROWS_CACHE_MAX_ENTRIES = 256;
+const COMPASS_SUPABASE_ROWS_CACHE_TTL_MS = Math.min(
+  Math.max(Number(process.env.COMPASS_SUPABASE_ROWS_CACHE_TTL_MS || 300000), 30000),
+  900000,
+);
+const compassSupabaseRowsCache = new Map<string, CompassSupabaseRowsCacheEntry>();
+
 export function getCompassRetrievalChannelTimeoutMetadata(
   results: SearchResult[],
 ): RetrievalChannelTimeoutMetadata {
@@ -629,6 +642,133 @@ export class RAGSearchService {
     } finally {
       if (timeoutId) clearTimeout(timeoutId);
     }
+  }
+
+  private async loadCachedSupabaseRows(
+    cacheKey: string,
+    loader: () => Promise<any[] | null>,
+  ): Promise<any[] | null> {
+    const cachedRows = this.readSupabaseRowsCache(cacheKey);
+    if (cachedRows) {
+      return cachedRows;
+    }
+
+    const inflightRows = await this.awaitSupabaseRowsCacheInflight(cacheKey);
+    if (inflightRows) {
+      return inflightRows;
+    }
+
+    const promise = loader();
+    this.writeSupabaseRowsCacheInflight(cacheKey, promise);
+    let rows: any[] | null;
+    try {
+      rows = await promise;
+    } catch (error) {
+      compassSupabaseRowsCache.delete(cacheKey);
+      throw error;
+    }
+
+    if (rows === null) {
+      compassSupabaseRowsCache.delete(cacheKey);
+      return null;
+    }
+
+    this.writeSupabaseRowsCacheRows(cacheKey, rows);
+    return this.cloneSupabaseRows(rows);
+  }
+
+  private buildSupabaseRowsCacheKey(kind: string, params: Record<string, unknown>): string {
+    const normalizeValue = (value: unknown): unknown => {
+      if (Array.isArray(value)) {
+        return value
+          .map(item => String(item || '').trim())
+          .filter(Boolean)
+          .sort();
+      }
+      if (typeof value === 'string') return value.trim();
+      return value;
+    };
+    const normalizedParams = Object.fromEntries(
+      Object.entries(params).map(([key, value]) => [key, normalizeValue(value)])
+    );
+    return JSON.stringify({ kind, ...normalizedParams });
+  }
+
+  private readSupabaseRowsCache(cacheKey: string): any[] | null {
+    const entry = compassSupabaseRowsCache.get(cacheKey);
+    if (!entry?.rows) {
+      return null;
+    }
+
+    if (entry.expiresAt <= Date.now()) {
+      compassSupabaseRowsCache.delete(cacheKey);
+      return null;
+    }
+
+    return this.cloneSupabaseRows(entry.rows);
+  }
+
+  private async awaitSupabaseRowsCacheInflight(cacheKey: string): Promise<any[] | null> {
+    const entry = compassSupabaseRowsCache.get(cacheKey);
+    if (!entry?.promise) {
+      return null;
+    }
+
+    if (entry.expiresAt <= Date.now()) {
+      compassSupabaseRowsCache.delete(cacheKey);
+      return null;
+    }
+
+    try {
+      const rows = await entry.promise;
+      return rows === null ? null : this.cloneSupabaseRows(rows);
+    } catch (error) {
+      compassSupabaseRowsCache.delete(cacheKey);
+      throw error;
+    }
+  }
+
+  private writeSupabaseRowsCacheInflight(
+    cacheKey: string,
+    promise: Promise<any[] | null>,
+  ) {
+    this.pruneSupabaseRowsCache();
+    compassSupabaseRowsCache.set(cacheKey, {
+      expiresAt: Date.now() + COMPASS_SUPABASE_ROWS_CACHE_TTL_MS,
+      promise,
+    });
+  }
+
+  private writeSupabaseRowsCacheRows(cacheKey: string, rows: any[]) {
+    this.pruneSupabaseRowsCache();
+    compassSupabaseRowsCache.set(cacheKey, {
+      expiresAt: Date.now() + COMPASS_SUPABASE_ROWS_CACHE_TTL_MS,
+      rows: this.cloneSupabaseRows(rows),
+    });
+  }
+
+  private pruneSupabaseRowsCache() {
+    const now = Date.now();
+    for (const [cacheKey, entry] of compassSupabaseRowsCache) {
+      if (entry.expiresAt <= now) {
+        compassSupabaseRowsCache.delete(cacheKey);
+      }
+    }
+
+    while (compassSupabaseRowsCache.size >= COMPASS_SUPABASE_ROWS_CACHE_MAX_ENTRIES) {
+      const oldestKey = compassSupabaseRowsCache.keys().next().value;
+      if (!oldestKey) break;
+      compassSupabaseRowsCache.delete(oldestKey);
+    }
+  }
+
+  private cloneSupabaseRows(rows: any[]): any[] {
+    return rows.map(row => ({
+      ...row,
+      metadata: row?.metadata && typeof row.metadata === 'object'
+        ? { ...row.metadata }
+        : row?.metadata,
+    }));
   }
 
   private selectSupabaseKeywordSearchTerms(
@@ -3137,28 +3277,39 @@ export class RAGSearchService {
       const selectColumns = tableName === 'ollama_document_chunks'
         ? 'chunk_id, document_id, content, metadata'
         : 'id, document_id, chunk_id, content, metadata';
-
-      let query = this.supabase
-        .from(tableName)
-        .select(selectColumns)
-        .ilike('content', `%${anchor}%`);
-
-      if (vendor) {
-        query = query.eq('metadata->>source_vendor', vendor);
-      }
-
       const fetchLimit = this.getProductStructureAnchorFetchLimit(limit, intent);
-      const { data, error } = await query.limit(fetchLimit);
-
-      if (error) {
-      console.warn('Product-structure anchor search failed', {
+      const cacheKey = this.buildSupabaseRowsCacheKey('product_structure_anchor', {
         tableName,
-        errorName: error instanceof Error ? error.name : 'UnknownError',
+        anchor,
+        vendor,
+        fetchLimit,
       });
-        return [];
-      }
 
-      const rows = (data || []).map((row: any) => ({
+      const data = await this.loadCachedSupabaseRows(cacheKey, async () => {
+        let query = this.supabase
+          .from(tableName)
+          .select(selectColumns)
+          .ilike('content', `%${anchor}%`);
+
+        if (vendor) {
+          query = query.eq('metadata->>source_vendor', vendor);
+        }
+
+        const { data, error } = await query.limit(fetchLimit);
+
+        if (error) {
+          console.warn('Product-structure anchor search failed', {
+            tableName,
+            errorName: error instanceof Error ? error.name : 'UnknownError',
+          });
+          return null;
+        }
+
+        return data || [];
+      });
+      if (data === null) return [];
+
+      const rows = data.map((row: any) => ({
         row,
         corpus: tableName,
         anchor,
@@ -3192,25 +3343,37 @@ export class RAGSearchService {
       const searchTerms = this.selectSupabaseKeywordSearchTerms(keywords, intent, vendor);
       if (searchTerms.length === 0) return [];
       const keywordConditions = searchTerms.map(keyword => `content.ilike.%${keyword}%`);
-
-      const { data, error } = await this.supabase
-        .from(tableName)
-        .select(selectColumns)
-        .eq('metadata->>source_vendor', vendor)
-        .or(keywordConditions.join(','))
-        .limit(this.getVendorMetadataFetchLimit(limit, intent));
-
-      if (error) {
-      console.warn('Vendor metadata keyword search failed', {
+      const fetchLimit = this.getVendorMetadataFetchLimit(limit, intent);
+      const cacheKey = this.buildSupabaseRowsCacheKey('vendor_metadata_keyword', {
         tableName,
         vendor,
-        errorName: error instanceof Error ? error.name : 'UnknownError',
+        searchTerms,
+        fetchLimit,
       });
-        return [];
-      }
 
-      console.log(`📊 ${tableName} ${vendor} metadata keyword 검색 결과: ${data?.length || 0}개`);
-      const rows = (data || []).map((row: any) => ({
+      const data = await this.loadCachedSupabaseRows(cacheKey, async () => {
+        const { data, error } = await this.supabase
+          .from(tableName)
+          .select(selectColumns)
+          .eq('metadata->>source_vendor', vendor)
+          .or(keywordConditions.join(','))
+          .limit(fetchLimit);
+
+        if (error) {
+          console.warn('Vendor metadata keyword search failed', {
+            tableName,
+            vendor,
+            errorName: error instanceof Error ? error.name : 'UnknownError',
+          });
+          return null;
+        }
+
+        console.log(`📊 ${tableName} ${vendor} metadata keyword 검색 결과: ${data?.length || 0}개`);
+        return data || [];
+      });
+      if (data === null) return [];
+
+      const rows = data.map((row: any) => ({
         row,
         corpus: tableName,
       }));
@@ -3243,26 +3406,38 @@ export class RAGSearchService {
       const searchTerms = this.selectSupabaseKeywordSearchTerms(keywords, intent, vendor);
       if (searchTerms.length === 0) return [];
       const keywordConditions = searchTerms.map(keyword => `content.ilike.%${keyword}%`);
-
-      let request = this.supabase
-        .from(tableName)
-        .select(selectColumns)
-        .or(keywordConditions.join(','));
-      if (vendor) {
-        request = request.eq('metadata->>source_vendor', vendor);
-      }
-      const { data, error } = await request.limit(this.getKeywordTableFetchLimit(limit, intent));
-
-      if (error) {
-      console.warn('Keyword table search failed', {
+      const fetchLimit = this.getKeywordTableFetchLimit(limit, intent);
+      const cacheKey = this.buildSupabaseRowsCacheKey('keyword_table', {
         tableName,
-        errorName: error instanceof Error ? error.name : 'UnknownError',
+        vendor,
+        searchTerms,
+        fetchLimit,
       });
-        return [];
-      }
 
-      console.log(`📊 ${tableName} keyword 검색 결과: ${data?.length || 0}개`);
-      const rows = (data || []).map((row: any) => ({
+      const data = await this.loadCachedSupabaseRows(cacheKey, async () => {
+        let request = this.supabase
+          .from(tableName)
+          .select(selectColumns)
+          .or(keywordConditions.join(','));
+        if (vendor) {
+          request = request.eq('metadata->>source_vendor', vendor);
+        }
+        const { data, error } = await request.limit(fetchLimit);
+
+        if (error) {
+          console.warn('Keyword table search failed', {
+            tableName,
+            errorName: error instanceof Error ? error.name : 'UnknownError',
+          });
+          return null;
+        }
+
+        console.log(`📊 ${tableName} keyword 검색 결과: ${data?.length || 0}개`);
+        return data || [];
+      });
+      if (data === null) return [];
+
+      const rows = data.map((row: any) => ({
         row,
         corpus: tableName,
       }));
