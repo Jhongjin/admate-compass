@@ -114,7 +114,7 @@ const COMPASS_ANSWER_RESPONSE_CACHE_TTL_MS = Math.min(
   900000,
 );
 const COMPASS_ANSWER_RESPONSE_CACHE_MAX_ENTRIES = 64;
-const COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v3-meta-news-source-filter';
+const COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v4-kakao-structured-fast-path';
 const compassAnswerResponseCache = new Map<string, CompassAnswerResponseCacheEntry>();
 const compassAnswerRuntimeMetrics = {
   startedAt: Date.now(),
@@ -4013,6 +4013,11 @@ type DeterministicProductAnswer = {
   reviewStatus?: CompassReviewPipelineStatus;
 };
 
+type FastKakaoProductAnswerFallback =
+  | 'kakao_specific_product_source_guided'
+  | 'kakao_product_structured'
+  | 'kakao_product_scope_rescue';
+
 type ProductAnswerFamily =
   | 'meta_overview'
   | 'meta_app_install'
@@ -4609,11 +4614,50 @@ function shouldUseFastBroadProductDeterministicAnswer(intent: QueryIntent) {
     || intent.vendors[0] === 'GOOGLE';
 }
 
+function buildFastKakaoProductStructuredAnswer(
+  message: string,
+  intent: QueryIntent,
+  sources: ReturnType<typeof buildVerifiedSources>,
+  model: string,
+  fastAnswerFallback: Exclude<FastKakaoProductAnswerFallback, 'kakao_specific_product_source_guided'>,
+): (DeterministicProductAnswer & { fastAnswerFallback: FastKakaoProductAnswerFallback }) | null {
+  if (process.env.COMPASS_DISABLE_FAST_KAKAO_STRUCTURED_PRODUCT_ANSWERS === 'true') return null;
+  if (!intent.topics.includes('product_structure')) return null;
+  if (intent.vendors.length !== 1 || intent.vendors[0] !== 'KAKAO') return null;
+
+  const family = detectProductAnswerFamily(message, intent);
+  if (family !== 'kakao_overview' && family !== 'kakao_bizboard' && family !== 'kakao_creative') return null;
+
+  const candidateSources = dedupePublicProductSources(
+    sources.filter(source => (
+      sourceMatchesVendor(source, 'KAKAO')
+      && !sourceHasCrossVendorUrl(source, ['KAKAO'])
+      && !sourceHasExtractionNoise(source)
+      && String(source.excerpt || source.matchText || source.title || '').trim()
+    )),
+    6,
+  );
+  if (candidateSources.length === 0) return null;
+
+  const structuredAnswer = buildKakaoProductStructuredFallbackAnswer(candidateSources, intent);
+  if (!structuredAnswer) return null;
+
+  return {
+    answer: structuredAnswer,
+    sources: candidateSources,
+    model,
+    showContactOption: true,
+    confidenceCap: 76,
+    reviewStatus: 'completed',
+    fastAnswerFallback,
+  };
+}
+
 function buildFastKakaoSpecificProductAnswer(
   message: string,
   intent: QueryIntent,
   scope: ReturnType<typeof buildSpecificProductAnswerScope>,
-): (DeterministicProductAnswer & { fastAnswerFallback: 'kakao_specific_product_source_guided' }) | null {
+): (DeterministicProductAnswer & { fastAnswerFallback: FastKakaoProductAnswerFallback }) | null {
   if (process.env.COMPASS_DISABLE_FAST_KAKAO_SPECIFIC_PRODUCT_ANSWERS === 'true') return null;
   if (!intent.topics.includes('product_structure')) return null;
   if (intent.vendors.length !== 1 || intent.vendors[0] !== 'KAKAO' || intent.isComparative) return null;
@@ -7536,6 +7580,48 @@ export async function buildCompassAnswerResponse(
         answerSourceCount: specificProductScope.answerSources.length,
       });
 
+      const fastKakaoScopeRescueAnswer = buildFastKakaoProductStructuredAnswer(
+        message,
+        ragIntent,
+        sources,
+        'compass-answer-fast-kakao-product-structured-scope-rescue',
+        'kakao_product_scope_rescue',
+      );
+      if (fastKakaoScopeRescueAnswer) {
+        emitPhase?.({ phase: 'answer-ready', message: '카카오 공식 근거를 기준으로 제한 범위 답변을 보강했습니다.' });
+        return {
+          body: {
+            response: {
+              message: fastKakaoScopeRescueAnswer.answer,
+              content: fastKakaoScopeRescueAnswer.answer,
+              sources: fastKakaoScopeRescueAnswer.sources,
+              noDataFound: false,
+              schema,
+              showContactOption: true,
+              sourceDiagnostics: {
+                ...sourceDiagnostics,
+                strictProductSourceCount: specificProductScope.strictProductSources.length,
+                answerSourceCount: fastKakaoScopeRescueAnswer.sources.length,
+                answerMode: diagnosticAnswerMode,
+                answerGenerationDurationMs: 0,
+                deterministicAnswerFamily: detectProductAnswerFamily(message, ragIntent),
+                fastAnswerFallback: fastKakaoScopeRescueAnswer.fastAnswerFallback,
+              },
+              reviewPipeline: buildReviewPipeline({
+                status: fastKakaoScopeRescueAnswer.reviewStatus || 'completed',
+                sourceCount: searchResults.length,
+                verifiedSourceCount: fastKakaoScopeRescueAnswer.sources.length,
+                contactRecommended: true,
+                retrievalChannelLimited: sourceDiagnostics.retrievalChannelTimedOut === true,
+              }),
+            },
+            confidence: getDeterministicProductConfidence(confidence || 64, fastKakaoScopeRescueAnswer),
+            processingTime: Date.now() - startTime,
+            model: fastKakaoScopeRescueAnswer.model
+          }
+        };
+      }
+
       const scopeLimitedAnswer = buildSpecificProductScopeLimitedAnswer(message, ragIntent, specificProductScope);
       emitPhase?.({ phase: 'answer-ready', message: '질문한 상품 범위에 맞는 출처가 부족해 제한 답변을 준비했습니다.' });
       return {
@@ -7654,6 +7740,50 @@ export async function buildCompassAnswerResponse(
       };
     }
 
+    if (!isBroadProductStructureCatalogIntent && ragIntent.vendors.length === 1 && ragIntent.vendors[0] === 'KAKAO') {
+      const fastKakaoStructuredProductAnswer = buildFastKakaoProductStructuredAnswer(
+        message,
+        ragIntent,
+        answerSources.length > 0 ? answerSources : sources,
+        'compass-answer-fast-kakao-product-structured',
+        'kakao_product_structured',
+      );
+      if (fastKakaoStructuredProductAnswer) {
+        emitPhase?.({ phase: 'answer-ready', message: '카카오 상품 근거를 기준으로 답변을 정리했습니다.' });
+        return {
+          body: {
+            response: {
+              message: fastKakaoStructuredProductAnswer.answer,
+              content: fastKakaoStructuredProductAnswer.answer,
+              sources: fastKakaoStructuredProductAnswer.sources,
+              noDataFound: false,
+              schema,
+              showContactOption: true,
+              sourceDiagnostics: {
+                ...sourceDiagnostics,
+                strictProductSourceCount: specificProductScope.strictProductSources.length,
+                answerSourceCount: fastKakaoStructuredProductAnswer.sources.length,
+                answerMode: diagnosticAnswerMode,
+                answerGenerationDurationMs: 0,
+                deterministicAnswerFamily: detectProductAnswerFamily(message, ragIntent),
+                fastAnswerFallback: fastKakaoStructuredProductAnswer.fastAnswerFallback,
+              },
+              reviewPipeline: buildReviewPipeline({
+                status: fastKakaoStructuredProductAnswer.reviewStatus || 'completed',
+                sourceCount: searchResults.length,
+                verifiedSourceCount: fastKakaoStructuredProductAnswer.sources.length,
+                contactRecommended: true,
+                retrievalChannelLimited: sourceDiagnostics.retrievalChannelTimedOut === true,
+              }),
+            },
+            confidence: getDeterministicProductConfidence(confidence, fastKakaoStructuredProductAnswer),
+            processingTime: Date.now() - startTime,
+            model: fastKakaoStructuredProductAnswer.model
+          }
+        };
+      }
+    }
+
     if (ragIntent.topics.includes('product_structure') && ragIntent.isSpecificProductGuidance) {
       console.log('Compass specific product answer will use grounded LLM synthesis', {
         sourceCount: answerSources.length,
@@ -7695,6 +7825,46 @@ export async function buildCompassAnswerResponse(
             confidence: 0,
             processingTime: Date.now() - startTime,
             model: 'compass-answer-product-structure-scope-limited'
+          }
+        };
+      }
+      const fastKakaoBroadProductAnswer = buildFastKakaoProductStructuredAnswer(
+        message,
+        ragIntent,
+        productStructureSources,
+        'compass-answer-fast-kakao-product-structured',
+        'kakao_product_structured',
+      );
+      if (fastKakaoBroadProductAnswer) {
+        emitPhase?.({ phase: 'answer-ready', message: '카카오 상품 구조 근거를 기준으로 답변을 정리했습니다.' });
+        return {
+          body: {
+            response: {
+              message: fastKakaoBroadProductAnswer.answer,
+              content: fastKakaoBroadProductAnswer.answer,
+              sources: fastKakaoBroadProductAnswer.sources,
+              noDataFound: false,
+              schema,
+              showContactOption: true,
+              sourceDiagnostics: {
+                ...sourceDiagnostics,
+                answerSourceCount: fastKakaoBroadProductAnswer.sources.length,
+                answerMode: diagnosticAnswerMode,
+                answerGenerationDurationMs: 0,
+                deterministicAnswerFamily: detectProductAnswerFamily(message, ragIntent),
+                fastAnswerFallback: fastKakaoBroadProductAnswer.fastAnswerFallback,
+              },
+              reviewPipeline: buildReviewPipeline({
+                status: fastKakaoBroadProductAnswer.reviewStatus || 'completed',
+                sourceCount: searchResults.length,
+                verifiedSourceCount: fastKakaoBroadProductAnswer.sources.length,
+                contactRecommended: true,
+                retrievalChannelLimited: sourceDiagnostics.retrievalChannelTimedOut === true,
+              }),
+            },
+            confidence: getDeterministicProductConfidence(confidence, fastKakaoBroadProductAnswer),
+            processingTime: Date.now() - startTime,
+            model: fastKakaoBroadProductAnswer.model
           }
         };
       }

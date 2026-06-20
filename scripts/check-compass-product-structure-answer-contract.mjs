@@ -130,9 +130,14 @@ for (const snippet of [
   'return intent.isProductStructureOverview',
   'buildSpecificProductAnswerScope',
   'buildFastKakaoSpecificProductAnswer',
+  'buildFastKakaoProductStructuredAnswer',
   'COMPASS_DISABLE_FAST_KAKAO_SPECIFIC_PRODUCT_ANSWERS',
+  'COMPASS_DISABLE_FAST_KAKAO_STRUCTURED_PRODUCT_ANSWERS',
   "fastAnswerFallback: 'kakao_specific_product_source_guided'",
+  "'kakao_product_structured'",
+  "'kakao_product_scope_rescue'",
   'compass-answer-fast-kakao-specific-product-source-guided',
+  'compass-answer-fast-kakao-product-structured',
   'sourceMatchesRequestedProductMode',
   'buildSpecificProductScopeLimitedAnswer',
   "model: 'compass-answer-naver-shopping-data-operational'",
@@ -565,7 +570,7 @@ if (!/sourceIdentityLooksLikeGenericLegalOrAccountDoc[\s\S]*청구\|결제\|지�
   fail('answer source routing must demote payment/account support documents such as 지불 for product-structure answers');
 }
 
-if (!/COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v3-meta-news-source-filter'[\s\S]*`compass-answer:\$\{COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION\}:\$\{message\}`/.test(answerHandler)) {
+if (!/COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v4-kakao-structured-fast-path'[\s\S]*`compass-answer:\$\{COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION\}:\$\{message\}`/.test(answerHandler)) {
   fail('answer response cache key must be versioned so stale durable cached answers are bypassed after source-quality fixes');
 }
 
@@ -1016,6 +1021,22 @@ if (!/function buildFastKakaoSpecificProductAnswer\([\s\S]*COMPASS_DISABLE_FAST_
 
 if (!/const fastKakaoSpecificProductAnswer = buildFastKakaoSpecificProductAnswer\([\s\S]*answerGenerationDurationMs: 0,[\s\S]*fastAnswerFallback: fastKakaoSpecificProductAnswer\.fastAnswerFallback/.test(answerHandler)) {
   fail('Kakao specific product fast answer must expose zero answer-generation duration and fast-answer diagnostics');
+}
+
+if (!/function buildFastKakaoProductStructuredAnswer\([\s\S]*COMPASS_DISABLE_FAST_KAKAO_STRUCTURED_PRODUCT_ANSWERS[\s\S]*intent\.vendors\.length !== 1 \|\| intent\.vendors\[0\] !== 'KAKAO'[\s\S]*buildKakaoProductStructuredFallbackAnswer\(candidateSources, intent\)[\s\S]*fastAnswerFallback/.test(answerHandler)) {
+  fail('Kakao structured product fast answer must stay gated to single-vendor Kakao evidence and reuse the official-source structured fallback before LLM');
+}
+
+if (!/const fastKakaoScopeRescueAnswer = buildFastKakaoProductStructuredAnswer\([\s\S]*compass-answer-fast-kakao-product-structured-scope-rescue[\s\S]*answerGenerationDurationMs: 0,[\s\S]*fastAnswerFallback: fastKakaoScopeRescueAnswer\.fastAnswerFallback[\s\S]*const scopeLimitedAnswer/.test(answerHandler)) {
+  fail('Kakao scope-limited product answers must try structured official-source rescue before returning no-data');
+}
+
+if (!/const fastKakaoStructuredProductAnswer = buildFastKakaoProductStructuredAnswer\([\s\S]*answerSources\.length > 0 \? answerSources : sources[\s\S]*compass-answer-fast-kakao-product-structured[\s\S]*answerGenerationDurationMs: 0,[\s\S]*fastAnswerFallback: fastKakaoStructuredProductAnswer\.fastAnswerFallback[\s\S]*Compass specific product answer will use grounded LLM synthesis/.test(answerHandler)) {
+  fail('Kakao single-vendor specific/comparison product answers must try structured fast answers before grounded LLM synthesis');
+}
+
+if (!/const fastKakaoBroadProductAnswer = buildFastKakaoProductStructuredAnswer\([\s\S]*productStructureSources[\s\S]*compass-answer-fast-kakao-product-structured[\s\S]*answerGenerationDurationMs: 0,[\s\S]*fastAnswerFallback: fastKakaoBroadProductAnswer\.fastAnswerFallback[\s\S]*Compass product structure broad answer will use grounded LLM synthesis/.test(answerHandler)) {
+  fail('Kakao broad product structure answers must try structured fast answers before grounded LLM synthesis');
 }
 
 if (/- 캠페인 목표 기준|먼저 고르는 것|그다음 고르는 것|고정된 상품명|고정 상품 목록|출처는 없지만 일반적으로|모든 매체에서 동일|  - 인지도:/.test(answerHandler)) {
