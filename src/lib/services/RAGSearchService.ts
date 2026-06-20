@@ -1229,14 +1229,26 @@ export class RAGSearchService {
             limit,
             intent,
           );
-          console.log(`✅ KAKAO specific product 검색 완료: ${rankedResults.length}개 결과 (specific kakao priority direct path)`);
-          if (rankedResults.length > 0) {
-            return this.withRetrievalTimeoutMetadata(rankedResults, timedOutChannels, channelTimings);
-          }
-          console.warn('KAKAO specific product priority candidates were all filtered; continuing to hybrid retrieval', {
-            priorityCandidateCount: kakaoProductPriorityCandidates.length,
-          });
+        console.log(`✅ KAKAO specific product 검색 완료: ${rankedResults.length}개 결과 (specific kakao priority direct path)`);
+        if (rankedResults.length > 0) {
+          return this.withRetrievalTimeoutMetadata(rankedResults, timedOutChannels, channelTimings);
         }
+        const rescueResults = this.selectKakaoProductPriorityRescueCandidates(
+          kakaoProductPriorityCandidates,
+          limit,
+          intent,
+        );
+        if (rescueResults.length > 0) {
+          console.warn('KAKAO specific product priority candidates were rescued after strict ranking filtered all candidates', {
+            priorityCandidateCount: kakaoProductPriorityCandidates.length,
+            rescueCount: rescueResults.length,
+          });
+          return this.withRetrievalTimeoutMetadata(rescueResults, timedOutChannels, channelTimings);
+        }
+        console.warn('KAKAO specific product priority candidates were all filtered; continuing to hybrid retrieval', {
+          priorityCandidateCount: kakaoProductPriorityCandidates.length,
+        });
+      }
       }
 
       // 질문을 임베딩으로 변환
@@ -1899,6 +1911,62 @@ export class RAGSearchService {
         return candidate;
       })
       .filter((candidate: SearchResult | null): candidate is SearchResult => candidate !== null);
+  }
+
+  private selectKakaoProductPriorityRescueCandidates(
+    candidates: SearchResult[],
+    limit: number,
+    intent: QueryIntent,
+  ): SearchResult[] {
+    if (!this.isKakaoBizboardDisplayProductIntent(intent)) return [];
+
+    const queryText = this.normalizeSearchText([
+      ...intent.keywords,
+      ...intent.strictProductTerms,
+      ...intent.strictContextTerms,
+    ].join(' '));
+    const asksCreativeGuide = /제작|소재|가이드|이미지|비율|문구|카피|사이즈|리사이징|지면|노출/.test(queryText);
+    const asksAuditGuide = /집행|심사|기준|준수|업종|제한|등록\s*불가|금지|검수/.test(queryText);
+    const seen = new Set<string>();
+
+    return candidates
+      .filter((candidate) => {
+        if (!this.matchesVendorSlot(candidate, 'KAKAO')) return false;
+        if (this.hasExplicitOtherVendorSignal(candidate, 'KAKAO')) return false;
+
+        const sourceText = this.buildCandidateEvidenceText(
+          candidate.content,
+          candidate.documentTitle,
+          candidate.metadata,
+        );
+        if (!this.hasKakaoBizboardDisplaySignal(sourceText)) return false;
+        if (this.isKakaoMeasurementOnlySource(sourceText, intent)) return false;
+
+        const hasCreativeGuideSignal = /제작\s*가이드|제작가이드|소재|홍보이미지|행동유도버튼|닫힘버튼|메인\s*카피|서브\s*카피|이미지\s*세부\s*가이드|외곽\s*테두리|리사이징|비율|사이즈|노출\s*지면|지면/.test(sourceText);
+        const hasAuditGuideSignal = /심사\s*가이드|집행\s*기준|준수사항|업종별\s*가이드|광고\s*가능\s*업종|등록\s*불가|금지\s*행위|소재\s*제한|업종\s*제한/.test(sourceText);
+        const hasProductGuideSignal = /비즈보드|카카오\s*비즈보드|카카오비즈보드|톡보드|talkboard|디스플레이\s*광고|디스플레이광고|카카오모먼트|상품가이드|상품\s*가이드/.test(sourceText);
+
+        if (asksCreativeGuide && hasCreativeGuideSignal) return true;
+        if (asksAuditGuide && hasAuditGuideSignal) return true;
+        return hasProductGuideSignal && (hasCreativeGuideSignal || hasAuditGuideSignal);
+      })
+      .sort((a, b) => (b.hybridScore || 0) - (a.hybridScore || 0))
+      .filter((candidate) => {
+        const key = this.getDedupeKeys(candidate)[0] || candidate.id;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        candidate.rankReason = Array.from(new Set([
+          ...(candidate.rankReason || []),
+          'kakao_priority_guide_rescue',
+        ]));
+        candidate.metadata = {
+          ...(candidate.metadata || {}),
+          kakaoPriorityGuideRescue: true,
+          rankReason: candidate.rankReason,
+        };
+        return true;
+      })
+      .slice(0, limit);
   }
 
   private async searchMetaAppInstallPriorityCandidates(intent: QueryIntent): Promise<SearchResult[]> {

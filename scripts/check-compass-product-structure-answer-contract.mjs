@@ -65,6 +65,8 @@ for (const snippet of [
   'usesVendorProductStructurePriority',
   'kakao_product_priority_keyword',
   'specific_kakao_priority_direct',
+  'selectKakaoProductPriorityRescueCandidates',
+  'kakao_priority_guide_rescue',
   'skipsGraphForGoogleProductOverview',
   'specific kakao priority direct path',
   'naver_product_structure_priority_keyword',
@@ -570,7 +572,7 @@ if (!/sourceIdentityLooksLikeGenericLegalOrAccountDoc[\s\S]*청구\|결제\|지�
   fail('answer source routing must demote payment/account support documents such as 지불 for product-structure answers');
 }
 
-if (!/COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v5-kakao-priority-guide-rescue'[\s\S]*`compass-answer:\$\{COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION\}:\$\{message\}`/.test(answerHandler)) {
+if (!/COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v6-kakao-priority-guide-rescue'[\s\S]*`compass-answer:\$\{COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION\}:\$\{message\}`/.test(answerHandler)) {
   fail('answer response cache key must be versioned so stale durable cached answers are bypassed after source-quality fixes');
 }
 
@@ -947,12 +949,16 @@ if (!/specificKakaoFastPathAnchors[\s\S]*'비즈보드'[\s\S]*'카카오 비즈�
   fail('KAKAO specific product retrieval must try a narrow KAKAO-scoped ollama keyword path before broader document/vendor metadata fan-out');
 }
 
-if (!/if \(usesKakaoProductPriority && usesSpecificProductRetrieval\)[\s\S]*specific_kakao_priority_direct[\s\S]*if \(rankedResults\.length > 0\)[\s\S]*return this\.withRetrievalTimeoutMetadata\(rankedResults, timedOutChannels, channelTimings\);[\s\S]*continuing to hybrid retrieval[\s\S]*const queryEmbeddingResult = await this\.embeddingService\.generateEmbedding\(query\)/.test(rag)) {
+if (!/if \(usesKakaoProductPriority && usesSpecificProductRetrieval\)[\s\S]*specific_kakao_priority_direct[\s\S]*if \(rankedResults\.length > 0\)[\s\S]*return this\.withRetrievalTimeoutMetadata\(rankedResults, timedOutChannels, channelTimings\);[\s\S]*selectKakaoProductPriorityRescueCandidates[\s\S]*KAKAO specific product priority candidates were rescued[\s\S]*continuing to hybrid retrieval[\s\S]*const queryEmbeddingResult = await this\.embeddingService\.generateEmbedding\(query\)/.test(rag)) {
   fail('KAKAO specific product retrieval must try the bounded priority direct path before embedding/vector/graph fan-out, but continue when priority candidates rank to zero');
 }
 
 if (!/allowedKakaoProductGuideEvidence[\s\S]*!allowedKakaoProductGuideEvidence[\s\S]*!this\.hasHighValueProductStructureSignal\(sourceText\)[\s\S]*!allowedKakaoProductGuideEvidence[\s\S]*normalizedContent\.length < 140/.test(rag)) {
   fail('KAKAO creative/audit guide evidence allowed by the specific product gate must not be dropped by later product-structure filters');
+}
+
+if (!/private selectKakaoProductPriorityRescueCandidates\([\s\S]*this\.isKakaoBizboardDisplayProductIntent\(intent\)[\s\S]*asksCreativeGuide[\s\S]*asksAuditGuide[\s\S]*hasCreativeGuideSignal[\s\S]*hasAuditGuideSignal[\s\S]*kakao_priority_guide_rescue/.test(rag)) {
+  fail('KAKAO priority guide rescue must stay limited to Kakao creative/audit/product guide signals');
 }
 
 if (!/광고\s*사양[\s\S]*!this\.hasHighValueProductStructureSignal/.test(rag)) {
