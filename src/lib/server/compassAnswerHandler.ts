@@ -114,6 +114,7 @@ const COMPASS_ANSWER_RESPONSE_CACHE_TTL_MS = Math.min(
   900000,
 );
 const COMPASS_ANSWER_RESPONSE_CACHE_MAX_ENTRIES = 64;
+const COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v2-product-source-filter';
 const compassAnswerResponseCache = new Map<string, CompassAnswerResponseCacheEntry>();
 const compassAnswerRuntimeMetrics = {
   startedAt: Date.now(),
@@ -258,7 +259,7 @@ function resolveCompassAnswerCacheKey(body: any): string | null {
   const history = Array.isArray(body?.conversationHistory) ? body.conversationHistory : [];
   if (history.length > 0) return null;
 
-  return `compass-answer:v1:${message}`;
+  return `compass-answer:${COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION}:${message}`;
 }
 
 async function resolveCompassAnswerRequestCacheKey(request: NextRequest): Promise<string | null> {

@@ -565,6 +565,14 @@ if (!/sourceIdentityLooksLikeGenericLegalOrAccountDoc[\s\S]*청구\|결제\|지�
   fail('answer source routing must demote payment/account support documents such as 지불 for product-structure answers');
 }
 
+if (!/COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v2-product-source-filter'[\s\S]*`compass-answer:\$\{COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION\}:\$\{message\}`/.test(answerHandler)) {
+  fail('answer response cache key must be versioned so stale durable cached answers are bypassed after source-quality fixes');
+}
+
+if (answerHandler.includes('compass-answer:v1:${message}')) {
+  fail('answer response cache key must not reuse the old v1 prefix after product source filtering changes');
+}
+
 if (!/sourceLooksLikeProductStructureSupportNoise[\s\S]*getSourceIdentityText\(source\)[\s\S]*세금\|tax\|vat\|청구\|결제\|지불[\s\S]*비즈쿠폰\|쿠폰[\s\S]*광고할\\s\*수\\s\*없는\\s\*경우[\s\S]*isUsableBroadProductStructureSource[\s\S]*sourceLooksLikeProductStructureSupportNoise\(source\)/.test(answerHandler)) {
   fail('broad product source selection must reject tax/coupon/support-noise documents before answer source selection');
 }
