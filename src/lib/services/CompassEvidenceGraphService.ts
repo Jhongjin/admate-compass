@@ -96,7 +96,7 @@ const EVIDENCE_ASSERTION_SELECT = 'id,claim_text,claim_type,source_kind,source_d
 const ENABLED_FLAG_VALUES = new Set(['1', 'true', 'yes', 'on', 'enabled']);
 const FOCUSED_PRODUCT_GRAPH_RPC_CACHE_MAX_ENTRIES = 64;
 const FOCUSED_PRODUCT_GRAPH_RPC_CACHE_TTL_MS = Math.min(
-  Math.max(Number(process.env.COMPASS_FOCUSED_PRODUCT_GRAPH_RPC_CACHE_TTL_MS || 300000), 30000),
+  Math.max(Number(process.env.COMPASS_FOCUSED_PRODUCT_GRAPH_RPC_CACHE_TTL_MS || 900000), 30000),
   900000
 );
 const focusedProductGraphRpcCacheStats = {

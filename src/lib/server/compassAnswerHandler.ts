@@ -110,7 +110,7 @@ interface ChatResponse {
 
 let compassRagSearchService: RAGSearchService | null = null;
 const COMPASS_ANSWER_RESPONSE_CACHE_TTL_MS = Math.min(
-  Math.max(Number(process.env.COMPASS_ANSWER_RESPONSE_CACHE_TTL_MS || 300000), 30000),
+  Math.max(Number(process.env.COMPASS_ANSWER_RESPONSE_CACHE_TTL_MS || 900000), 30000),
   900000,
 );
 const COMPASS_ANSWER_RESPONSE_CACHE_MAX_ENTRIES = 64;

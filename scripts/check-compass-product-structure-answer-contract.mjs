@@ -581,6 +581,12 @@ if (!/COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v12-meta-ads-guide-objective-
   fail('answer response cache key must be versioned so stale durable cached answers are bypassed after source-quality fixes');
 }
 
+if (!answerHandler.includes('process.env.COMPASS_ANSWER_RESPONSE_CACHE_TTL_MS || 900000')
+  || !rag.includes('process.env.COMPASS_SUPABASE_ROWS_CACHE_TTL_MS || 900000')
+) {
+  fail('answer and Supabase row caches should default to the durable/shared 15 minute TTL window');
+}
+
 if (answerHandler.includes('compass-answer:v1:${message}')) {
   fail('answer response cache key must not reuse the old v1 prefix after product source filtering changes');
 }

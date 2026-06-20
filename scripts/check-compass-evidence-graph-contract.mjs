@@ -79,6 +79,10 @@ for (const serviceSignal of [
   assertIncludes(graphService, serviceSignal, 'evidence graph service contract');
 }
 
+if (!graphService.includes('process.env.COMPASS_FOCUSED_PRODUCT_GRAPH_RPC_CACHE_TTL_MS || 900000')) {
+  fail('focused product graph RPC cache should default to the durable/shared 15 minute TTL window');
+}
+
 if (!/shouldUseStructuredRowsOnlyForFocusedProductOverview[\s\S]*intent\.vendors\[0\] !== 'META'/.test(graphService)) {
   fail('Meta focused product graph retrieval must merge vendor-scoped text rows so objective/app-install assertions can outrank stale structured rows');
 }

@@ -126,7 +126,7 @@ const compassSupabaseRowsCacheStats = {
 };
 const COMPASS_SUPABASE_ROWS_CACHE_MAX_ENTRIES = 256;
 const COMPASS_SUPABASE_ROWS_CACHE_TTL_MS = Math.min(
-  Math.max(Number(process.env.COMPASS_SUPABASE_ROWS_CACHE_TTL_MS || 300000), 30000),
+  Math.max(Number(process.env.COMPASS_SUPABASE_ROWS_CACHE_TTL_MS || 900000), 30000),
   900000,
 );
 const compassSupabaseRowsCache = new Map<string, CompassSupabaseRowsCacheEntry>();
