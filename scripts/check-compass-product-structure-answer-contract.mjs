@@ -577,7 +577,7 @@ if (!/sourceIdentityLooksLikeGenericLegalOrAccountDoc[\s\S]*청구\|결제\|지�
   fail('answer source routing must demote payment/account support documents such as 지불 for product-structure answers');
 }
 
-if (!/COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v11-meta-graph-news-priority'[\s\S]*`compass-answer:\$\{COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION\}:\$\{message\}`/.test(answerHandler)) {
+if (!/COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v12-meta-ads-guide-objective-allow'[\s\S]*`compass-answer:\$\{COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION\}:\$\{message\}`/.test(answerHandler)) {
   fail('answer response cache key must be versioned so stale durable cached answers are bypassed after source-quality fixes');
 }
 
@@ -591,6 +591,15 @@ if (!/sourceLooksLikeProductStructureSupportNoise[\s\S]*getSourceIdentityText\(s
 
 if (!/sourceLooksLikeMetaBroadProductNewsNoise[\s\S]*facebook\\\.com\\\/business\\\/news[\s\S]*성과\\s\*증대[\s\S]*크리에이티브\\s\*다각화[\s\S]*creative\\s\*diversification[\s\S]*manus[\s\S]*cyber\\s\*5[\s\S]*creator\\s\*method[\s\S]*hasBroadOverviewStructure[\s\S]*isUsableBroadProductStructureSource[\s\S]*targetVendor === 'META' && sourceLooksLikeMetaBroadProductNewsNoise\(source\)/.test(answerHandler)) {
   fail('Meta broad product source selection must reject business/news success-story sources before answer source selection');
+}
+
+if (!answerHandler.includes('sourceHasRecoverableMetaAdsGuideObjectiveGraphEvidence')
+  || !answerHandler.includes('facebook\\.com\\/business\\/ads-guide')
+  || !answerHandler.includes('campaign[_\\s-]*objective')
+  || !answerHandler.includes('sourceHasBlockingExtractionNoise')
+  || !/findFallbackSourceIndex[\s\S]*!sourceHasBlockingExtractionNoise\(source\)[\s\S]*selectProductStructureResponseSources[\s\S]*!sourceHasBlockingExtractionNoise\(source\)/.test(answerHandler)
+) {
+  fail('Meta Ads Guide objective graph evidence must survive HTML extraction-noise filtering for broad product answers');
 }
 
 if (!/graphSourceLooksLikeBroadBusinessNewsTitle[\s\S]*크리에이티브\\s\*다각화[\s\S]*creative\\s\*diversification/.test(answerHandler)

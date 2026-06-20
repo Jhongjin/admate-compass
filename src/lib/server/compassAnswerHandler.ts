@@ -114,7 +114,7 @@ const COMPASS_ANSWER_RESPONSE_CACHE_TTL_MS = Math.min(
   900000,
 );
 const COMPASS_ANSWER_RESPONSE_CACHE_MAX_ENTRIES = 64;
-const COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v11-meta-graph-news-priority';
+const COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v12-meta-ads-guide-objective-allow';
 const compassAnswerResponseCache = new Map<string, CompassAnswerResponseCacheEntry>();
 const compassAnswerRuntimeMetrics = {
   startedAt: Date.now(),
@@ -1122,7 +1122,7 @@ function findFallbackSourceIndex(
       const searchableText = normalizeEvidenceText(`${source.title || ''} ${source.originalTitle || ''} ${getFallbackSourceText(source)}`);
       return sourceMatchesVendor(source, vendor)
         && (!vendor || !sourceHasCrossVendorUrl(source, [vendor]))
-        && !sourceHasExtractionNoise(source)
+        && !sourceHasBlockingExtractionNoise(source)
         && pattern.test(searchableText);
     });
   const titleMatch = matches.find(({ source }) => (
@@ -1689,7 +1689,7 @@ function buildMetaProductOverviewStructuredFallbackAnswer(
     used,
     sources,
     'META',
-    /인지도[\s\S]{0,120}트래픽[\s\S]{0,120}참여[\s\S]{0,120}잠재\s*고객[\s\S]{0,120}앱\s*홍보[\s\S]{0,120}판매|캠페인\s*목표|광고\s*관리자\s*목표|objective/i,
+    /인지도[\s\S]{0,120}트래픽[\s\S]{0,120}참여[\s\S]{0,120}잠재\s*고객[\s\S]{0,120}앱\s*홍보[\s\S]{0,120}판매|캠페인\s*목표|광고\s*관리자\s*목표|campaign[_\s-]*objective|objective/i,
     label => `- Meta 광고 관리자에서는 인지도, 트래픽, 참여, 잠재 고객, 앱 홍보, 판매처럼 목적별 캠페인 목표를 먼저 고릅니다 ${label}.`,
   );
 
@@ -2626,6 +2626,14 @@ function buildLlmFailureGroundedFallbackAnswer(
   }
 
   if (!prefersSourceGuidedFallback) {
+    const structuredFallbackAnswer = buildStructuredLlmFailureFallbackAnswer(
+      structuredSources,
+      intent,
+      isBroadProductStructureLlmIntent,
+      message,
+    );
+    if (structuredFallbackAnswer) return structuredFallbackAnswer;
+
     const sourceGuidedFallbackAnswer = buildSourceGuidedLlmFailureFallbackAnswer(
       message,
       usableSources,
@@ -3456,6 +3464,28 @@ function sourceHasExtractionNoise(source: ReturnType<typeof buildVerifiedSources
   const jsonShapeCount = (text.match(/[{}"]/g) || []).length;
 
   return (noiseHit && jsonShapeCount >= 4) || isNavigationOrMenuExcerpt(text, { requireLowEvidenceSignal: true });
+}
+
+function sourceHasRecoverableMetaAdsGuideObjectiveGraphEvidence(source: ReturnType<typeof buildVerifiedSources>[number]) {
+  if (!sourceMatchesVendor(source, 'META')) return false;
+  if (!isOfficialGuideGraphSource(source)) return false;
+  if (sourceLooksLikeMetaBroadProductNewsNoise(source)) return false;
+
+  const identityText = normalizeEvidenceText(getSourceIdentityText(source));
+  const text = normalizeEvidenceText([
+    identityText,
+    getProductStructureVisibleSourceText(source),
+    getSourceText(source),
+  ].join(' '));
+  const isMetaAdsGuideSource = /facebook\.com\/business\/ads-guide|\/business\/ads-guide|ads\s*guide/.test(identityText);
+  const hasObjectiveGraphSignal = /campaign[_\s-]*objective|캠페인\s*(목표|목적|유형)|광고\s*관리자\s*목표|인지도[\s\S]{0,140}트래픽[\s\S]{0,140}참여[\s\S]{0,140}잠재\s*고객[\s\S]{0,140}앱\s*홍보[\s\S]{0,140}판매/.test(text);
+
+  return isMetaAdsGuideSource && hasObjectiveGraphSignal;
+}
+
+function sourceHasBlockingExtractionNoise(source: ReturnType<typeof buildVerifiedSources>[number]) {
+  return sourceHasExtractionNoise(source)
+    && !sourceHasRecoverableMetaAdsGuideObjectiveGraphEvidence(source);
 }
 
 function isLowValueSpecificProductSource(
@@ -5056,7 +5086,7 @@ function sourceLooksLikeGranularCreativeSpecOnly(source: ReturnType<typeof build
 
 function hasProductStructureGraphSourceSignal(source: ReturnType<typeof buildVerifiedSources>[number]) {
   const text = getProductStructureVisibleSourceText(source);
-  return /캠페인\s*(목표|유형|목적)|광고\s*(상품|종류|유형|구조)|상품\s*구조|광고\s*관리자\s*목표|마케팅\s*목표|검색\s*캠페인|디스플레이\s*캠페인|반응형\s*디스플레이|쇼핑\s*광고|앱\s*(캠페인|인스톨|설치|홍보|이벤트)|리드\s*양식|비즈보드|상품\s*db|db\s*url|쇼핑검색|쇼핑블록|사이트검색광고|쇼핑검색광고|브랜드검색|파워링크|상품가이드|상품\s*가이드|campaign\s*objective|objectives?|catalog|app\s*(install|promotion)/.test(text);
+  return /캠페인\s*(목표|유형|목적)|광고\s*(상품|종류|유형|구조)|상품\s*구조|광고\s*관리자\s*목표|마케팅\s*목표|검색\s*캠페인|디스플레이\s*캠페인|반응형\s*디스플레이|쇼핑\s*광고|앱\s*(캠페인|인스톨|설치|홍보|이벤트)|리드\s*양식|비즈보드|상품\s*db|db\s*url|쇼핑검색|쇼핑블록|사이트검색광고|쇼핑검색광고|브랜드검색|파워링크|상품가이드|상품\s*가이드|campaign[_\s-]*objective|objectives?|catalog|app\s*(install|promotion)/.test(text);
 }
 
 function isLowValueProductStructureGraphSource(source: ReturnType<typeof buildVerifiedSources>[number]) {
@@ -5618,7 +5648,7 @@ function hasBroadProductStructureAnswerSignal(source: ReturnType<typeof buildVer
     getSourceText(source),
   ].join(' '));
   const hasObjectiveMatrix = /인지도[\s\S]{0,140}트래픽[\s\S]{0,140}참여[\s\S]{0,140}잠재\s*고객[\s\S]{0,140}앱\s*홍보[\s\S]{0,140}판매/.test(text);
-  const hasProductTaxonomy = /캠페인\s*(목표|유형|목적)|광고\s*(상품|종류|유형|구조)|상품\s*구조|광고\s*관리자\s*목표|마케팅\s*목표|목적별|목표별|campaign\s*objective|objectives?/.test(text);
+  const hasProductTaxonomy = /캠페인\s*(목표|유형|목적)|광고\s*(상품|종류|유형|구조)|상품\s*구조|광고\s*관리자\s*목표|마케팅\s*목표|목적별|목표별|campaign[_\s-]*objective|objectives?/.test(text);
   const hasMetaProductSignal = /advantage\+|어드밴티지|카탈로그|catalog|컬렉션\s*광고|collection\s*ads?|앱\s*(캠페인|인스톨|설치|홍보|이벤트)|app\s*(install|promotion)|리드\s*양식|비즈니스\s*폼/.test(text);
   const hasGoogleProductSignal = /검색\s*캠페인|디스플레이\s*캠페인|반응형\s*디스플레이|쇼핑\s*광고|앱\s*캠페인|performance\s*max|pmax|demand\s*gen|리드\s*양식/.test(text);
   const hasNaverProductSignal = /사이트검색광고|쇼핑검색광고|검색광고|쇼핑검색|파워링크|브랜드검색|쇼핑블록|주요\s*쇼핑\s*지면|디지털\s*옥외광고|네이버\s*da|성과형\s*디스플레이|홈피드|스마트채널|타임보드|롤링보드|상품\s*db|db\s*url|ep\s*\(=\s*db\s*url\)|쇼핑파트너센터|상품정보\s*수신\s*현황|상품관리/.test(text);
@@ -5725,7 +5755,7 @@ function selectProductStructureResponseSources(sources: ReturnType<typeof buildV
     .filter(source => sourceMatchesVendor(source, targetVendor))
     .filter(source => !targetVendor || !sourceHasCrossVendorUrl(source, [targetVendor]))
     .filter(source => !(targetVendor === 'META' && graphSourceLooksLikeBroadBusinessNewsTitle(source) && !graphSourceHasAdProductTitle(source)))
-    .filter(source => !sourceHasExtractionNoise(source));
+    .filter(source => !sourceHasBlockingExtractionNoise(source));
   const usableLabelledSources = labelledSources
     .filter(source => isUsableBroadProductStructureSource(source, targetVendor));
   const selected = usableLabelledSources
