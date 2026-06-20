@@ -5568,6 +5568,7 @@ function getProductStructureFastPathSupplementLimit(vendor?: VendorIntent) {
     case 'NAVER':
       return 2;
     case 'GOOGLE':
+      return 0;
     case 'META':
     case 'KAKAO':
       return 1;
@@ -6750,6 +6751,7 @@ export async function buildCompassAnswerResponse(
       message: '질문 조건을 분석하고 관련 출처를 검색합니다.',
       queryType: ragIntent.queryType,
     });
+    const retrievalStartedAt = Date.now();
     const usesProductStructureFastPath = isBroadProductStructureAnswerIntent(message, ragIntent);
     const usesSpecificProductSupplementPath = (
       !usesProductStructureFastPath
@@ -6801,24 +6803,37 @@ export async function buildCompassAnswerResponse(
       : usesSpecificProductSupplementPath
         ? 2
       : 2;
-    const searchQueries = [message, ...supplementQueries.slice(0, supplementQueryLimit)];
+    const selectedSupplementQueries = supplementQueries.slice(0, supplementQueryLimit);
+    const searchQueries = [message, ...selectedSupplementQueries];
     const searchResultGroups = await Promise.all(
       searchQueries.map(query => searchWithCompassRAG(query, Math.max(8, ragIntent.recommendedSourceLimit))),
     );
+    const retrievalDurationMs = Date.now() - retrievalStartedAt;
     const retrievalTimedOut = searchResultGroups.some(group => group.timedOut);
     const retrievalChannelTimedOut = searchResultGroups.some(group => group.channelTimedOut);
     const retrievalLimited = retrievalTimedOut || retrievalChannelTimedOut;
     const supplementResultCount = searchResultGroups.slice(1).flatMap(group => group.results).length;
+    const rawSearchResultCount = searchResultGroups.flatMap(group => group.results).length;
     let searchResults = searchResultGroups.flatMap(group => group.results);
 
     if (supplementQueries.length > 0) {
       searchResults = mergeSearchResultsByIdentity(searchResults);
       console.log('Compass product-structure adaptive retrieval completed', {
-        supplementQueryCount: supplementQueries.length,
+        availableSupplementQueryCount: supplementQueries.length,
+        selectedSupplementQueryCount: selectedSupplementQueries.length,
+        supplementQueryLimit,
         supplementResultCount,
         mergedResultCount: searchResults.length,
+        retrievalDurationMs,
       });
     }
+    console.log('Compass answer retrieval completed', {
+      retrievalDurationMs,
+      searchQueryCount: searchQueries.length,
+      selectedSupplementQueryCount: selectedSupplementQueries.length,
+      rawResultCount: rawSearchResultCount,
+      mergedResultCount: searchResults.length,
+    });
     const verifiedSearchResults = searchResults.filter(isVerifiedGrounding);
     const verifiedResultKeys = new Set(verifiedSearchResults.map(result => getResultIdentityKey(result)));
     const productStructureRescueResults = searchResults.filter(result => (
@@ -6832,6 +6847,10 @@ export async function buildCompassAnswerResponse(
       ...buildSourceDiagnostics(ragIntent, verifiedSearchResults),
       retrievalTimedOut,
       retrievalChannelTimedOut,
+      retrievalDurationMs,
+      searchQueryCount: searchQueries.length,
+      selectedSupplementQueryCount: selectedSupplementQueries.length,
+      supplementResultCount,
     };
     emitPhase?.({
       phase: 'evidence-ready',
@@ -7171,6 +7190,8 @@ export async function buildCompassAnswerResponse(
     }
 
     let answerResult;
+    const answerGenerationStartedAt = Date.now();
+    let answerGenerationDurationMs = 0;
     try {
       answerResult = await generateCompassAnswer(
         message,
@@ -7179,13 +7200,16 @@ export async function buildCompassAnswerResponse(
           buildCompassGroundingOptions(message, ragIntent, specificProductScope, isBroadProductStructureLlmIntent),
         ),
       );
+      answerGenerationDurationMs = Date.now() - answerGenerationStartedAt;
     } catch (error) {
+      answerGenerationDurationMs = Date.now() - answerGenerationStartedAt;
       console.error('Compass answer generation failed', {
         errorName: error instanceof Error ? error.name : 'UnknownError',
         failureCategory: 'answer_generation_unavailable',
         sourceCount: answerSources.length,
         answerMode: diagnosticAnswerMode,
         isSpecificProductGuidance: ragIntent.isSpecificProductGuidance,
+        answerGenerationDurationMs,
       });
 
       const evidenceBackedProductFallback = shouldUseDeterministicProductAnswerOnLlmFailure()
@@ -7222,6 +7246,7 @@ export async function buildCompassAnswerResponse(
                 strictProductSourceCount: specificProductScope.strictProductSources.length,
                 answerSourceCount: evidenceBackedProductFallback.sources.length,
                 answerMode: diagnosticAnswerMode,
+                answerGenerationDurationMs,
                 fallbackReason: 'llm_generation_failed',
                 deterministicAnswerFamily: detectProductAnswerFamily(message, ragIntent),
                 evidenceBackedFallback: true,
@@ -7266,6 +7291,7 @@ export async function buildCompassAnswerResponse(
                 strictProductSourceCount: specificProductScope.strictProductSources.length,
                 answerSourceCount: answerSources.length,
                 answerMode: diagnosticAnswerMode,
+                answerGenerationDurationMs,
                 fallbackReason: 'llm_generation_failed',
               },
               reviewPipeline: buildReviewPipeline({
@@ -7313,6 +7339,7 @@ export async function buildCompassAnswerResponse(
                   strictProductSourceCount: specificProductScope.strictProductSources.length,
                   answerSourceCount: deterministicFallback.sources.length,
                   answerMode: diagnosticAnswerMode,
+                  answerGenerationDurationMs,
                   deterministicAnswerFamily: detectProductAnswerFamily(message, ragIntent),
                   fallbackReason: 'llm_generation_failed',
                 },
@@ -7339,7 +7366,13 @@ export async function buildCompassAnswerResponse(
             noDataFound: false,
             schema,
             showContactOption: true,
-            sourceDiagnostics,
+            sourceDiagnostics: {
+              ...sourceDiagnostics,
+              answerSourceCount: answerSources.length,
+              answerMode: diagnosticAnswerMode,
+              answerGenerationDurationMs,
+              fallbackReason: 'llm_generation_failed',
+            },
             reviewPipeline: buildReviewPipeline({
               status: 'limited',
               sourceCount: searchResults.length,
@@ -7357,7 +7390,11 @@ export async function buildCompassAnswerResponse(
 
     // 처리 시간 계산
     const processingTime = Date.now() - startTime;
-    console.log('Compass answer runtime request completed', { processingTime });
+    console.log('Compass answer runtime request completed', {
+      processingTime,
+      retrievalDurationMs,
+      answerGenerationDurationMs,
+    });
     const operationalAnswer = buildNaverShoppingDataOperationalAnswer(message, answerSources);
     const rawGeneratedAnswer = String(answerResult.answer || '').trim();
     const answerRepair = buildSpecificProductGeneratedAnswerRepair(
@@ -7402,6 +7439,7 @@ export async function buildCompassAnswerResponse(
             ...sourceDiagnostics,
             answerSourceCount: finalAnswerSources.length,
             answerMode: diagnosticAnswerMode,
+            answerGenerationDurationMs,
             answerRepairReason: answerRepair?.reason,
             broadAnswerRepairReason: broadAnswerRepair?.reason,
           },
