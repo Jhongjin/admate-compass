@@ -48,6 +48,20 @@ interface ResolvedCaseRow {
   approved_for_retrieval?: boolean | null;
 }
 
+type FocusedProductGraphRpcParams = {
+  vendors: string[];
+  sourceKinds: EvidenceGraphSourceKind[];
+  graphTopics: string[];
+  claimTypes: string[];
+  rowLimit: number;
+};
+
+type FocusedProductGraphRpcCacheEntry = {
+  expiresAt: number;
+  rows?: EvidenceGraphRawAssertion[];
+  promise?: Promise<EvidenceGraphRawAssertion[] | null>;
+};
+
 const GRAPH_ENABLED_VALUES = new Set(['1', 'true', 'yes', 'on']);
 
 const OPERATIONAL_ISSUE_TERMS = [
@@ -75,6 +89,12 @@ const OPERATIONAL_ISSUE_TERMS = [
 
 const EVIDENCE_ASSERTION_SELECT = 'id,claim_text,claim_type,source_kind,source_document_id,source_chunk_id,case_id,excerpt,source_url,vendor,evidence_decision,confidence,review_status,valid_to,metadata,created_at';
 const ENABLED_FLAG_VALUES = new Set(['1', 'true', 'yes', 'on', 'enabled']);
+const FOCUSED_PRODUCT_GRAPH_RPC_CACHE_MAX_ENTRIES = 64;
+const FOCUSED_PRODUCT_GRAPH_RPC_CACHE_TTL_MS = Math.min(
+  Math.max(Number(process.env.COMPASS_FOCUSED_PRODUCT_GRAPH_RPC_CACHE_TTL_MS || 300000), 30000),
+  900000
+);
+const focusedProductGraphRpcCache = new Map<string, FocusedProductGraphRpcCacheEntry>();
 
 export function isCompassEvidenceGraphEnabled(): boolean {
   return GRAPH_ENABLED_VALUES.has(normalizeGraphFlagValue(process.env.COMPASS_EVIDENCE_GRAPH_ENABLED));
@@ -228,12 +248,52 @@ export class CompassEvidenceGraphService {
     intent: QueryIntent,
     limit: number,
   ): Promise<EvidenceGraphRawAssertion[] | null> {
+    const rpcParams: FocusedProductGraphRpcParams = {
+      vendors: intent.vendors,
+      sourceKinds: this.preferredSourceKinds(intent),
+      graphTopics: this.preferredGraphTopics(intent).slice(0, 5),
+      claimTypes: this.preferredClaimTypes(intent).slice(0, 8),
+      rowLimit: this.resolveFocusedProductGraphRpcRowLimit(limit),
+    };
+    const cacheKey = this.buildFocusedProductGraphRpcCacheKey(rpcParams);
+    const cachedRows = this.readFocusedProductGraphRpcCache(cacheKey);
+    if (cachedRows) {
+      return cachedRows;
+    }
+
+    const inflightRows = await this.awaitFocusedProductGraphRpcInflight(cacheKey);
+    if (inflightRows) {
+      return inflightRows;
+    }
+
+    const rpcPromise = this.loadFocusedProductStructuredRowsFromRpc(rpcParams);
+    this.writeFocusedProductGraphRpcInflight(cacheKey, rpcPromise);
+    let rows: EvidenceGraphRawAssertion[] | null;
+    try {
+      rows = await rpcPromise;
+    } catch (error) {
+      focusedProductGraphRpcCache.delete(cacheKey);
+      throw error;
+    }
+
+    if (rows === null) {
+      focusedProductGraphRpcCache.delete(cacheKey);
+      return null;
+    }
+
+    this.writeFocusedProductGraphRpcRows(cacheKey, rows);
+    return this.cloneGraphRows(rows);
+  }
+
+  private async loadFocusedProductStructuredRowsFromRpc(
+    rpcParams: FocusedProductGraphRpcParams,
+  ): Promise<EvidenceGraphRawAssertion[] | null> {
     const { data, error } = await this.supabase.rpc('search_focused_product_graph_assertions', {
-      p_vendors: intent.vendors,
-      p_source_kinds: this.preferredSourceKinds(intent),
-      p_graph_topics: this.preferredGraphTopics(intent).slice(0, 5),
-      p_claim_types: this.preferredClaimTypes(intent).slice(0, 8),
-      p_limit: this.resolveFocusedProductGraphRpcRowLimit(limit),
+      p_vendors: rpcParams.vendors,
+      p_source_kinds: rpcParams.sourceKinds,
+      p_graph_topics: rpcParams.graphTopics,
+      p_claim_types: rpcParams.claimTypes,
+      p_limit: rpcParams.rowLimit,
     });
 
     if (error) {
@@ -245,8 +305,96 @@ export class CompassEvidenceGraphService {
       return [];
     }
 
-    return this.dedupeRows(data as EvidenceGraphRawAssertion[])
-      .slice(0, this.resolveStructuredGraphRowLimit(intent, limit));
+    return this.dedupeRows(data as EvidenceGraphRawAssertion[]);
+  }
+
+  private buildFocusedProductGraphRpcCacheKey(rpcParams: FocusedProductGraphRpcParams): string {
+    const normalizeValues = (values: string[]) => Array.from(new Set(values.map(value => String(value || '').trim()).filter(Boolean))).sort();
+    return JSON.stringify({
+      vendors: normalizeValues(rpcParams.vendors),
+      sourceKinds: normalizeValues(rpcParams.sourceKinds),
+      graphTopics: normalizeValues(rpcParams.graphTopics),
+      claimTypes: normalizeValues(rpcParams.claimTypes),
+      rowLimit: rpcParams.rowLimit,
+    });
+  }
+
+  private readFocusedProductGraphRpcCache(cacheKey: string): EvidenceGraphRawAssertion[] | null {
+    const entry = focusedProductGraphRpcCache.get(cacheKey);
+    if (!entry?.rows) {
+      return null;
+    }
+
+    if (entry.expiresAt <= Date.now()) {
+      focusedProductGraphRpcCache.delete(cacheKey);
+      return null;
+    }
+
+    return this.cloneGraphRows(entry.rows);
+  }
+
+  private async awaitFocusedProductGraphRpcInflight(cacheKey: string): Promise<EvidenceGraphRawAssertion[] | null> {
+    const entry = focusedProductGraphRpcCache.get(cacheKey);
+    if (!entry?.promise) {
+      return null;
+    }
+
+    if (entry.expiresAt <= Date.now()) {
+      focusedProductGraphRpcCache.delete(cacheKey);
+      return null;
+    }
+
+    try {
+      const rows = await entry.promise;
+      return rows === null ? null : this.cloneGraphRows(rows);
+    } catch (error) {
+      focusedProductGraphRpcCache.delete(cacheKey);
+      throw error;
+    }
+  }
+
+  private writeFocusedProductGraphRpcInflight(
+    cacheKey: string,
+    promise: Promise<EvidenceGraphRawAssertion[] | null>,
+  ) {
+    this.pruneFocusedProductGraphRpcCache();
+    focusedProductGraphRpcCache.set(cacheKey, {
+      expiresAt: Date.now() + FOCUSED_PRODUCT_GRAPH_RPC_CACHE_TTL_MS,
+      promise,
+    });
+  }
+
+  private writeFocusedProductGraphRpcRows(
+    cacheKey: string,
+    rows: EvidenceGraphRawAssertion[],
+  ) {
+    this.pruneFocusedProductGraphRpcCache();
+    focusedProductGraphRpcCache.set(cacheKey, {
+      expiresAt: Date.now() + FOCUSED_PRODUCT_GRAPH_RPC_CACHE_TTL_MS,
+      rows: this.cloneGraphRows(rows),
+    });
+  }
+
+  private pruneFocusedProductGraphRpcCache() {
+    const now = Date.now();
+    for (const [cacheKey, entry] of focusedProductGraphRpcCache) {
+      if (entry.expiresAt <= now) {
+        focusedProductGraphRpcCache.delete(cacheKey);
+      }
+    }
+
+    while (focusedProductGraphRpcCache.size >= FOCUSED_PRODUCT_GRAPH_RPC_CACHE_MAX_ENTRIES) {
+      const oldestKey = focusedProductGraphRpcCache.keys().next().value;
+      if (!oldestKey) break;
+      focusedProductGraphRpcCache.delete(oldestKey);
+    }
+  }
+
+  private cloneGraphRows(rows: EvidenceGraphRawAssertion[]): EvidenceGraphRawAssertion[] {
+    return rows.map(row => ({
+      ...row,
+      metadata: row.metadata ? { ...row.metadata } : row.metadata,
+    }));
   }
 
   private async fetchTextRows(
