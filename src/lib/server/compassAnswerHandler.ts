@@ -30,6 +30,11 @@ type CompassAnswerHandlerResult = {
   status?: number;
 };
 
+type CompassAnswerResponseCacheEntry = {
+  body: Record<string, unknown>;
+  expiresAt: number;
+};
+
 type CompassRetrievalResult = {
   results: SearchResult[];
   timedOut: boolean;
@@ -92,6 +97,86 @@ interface ChatResponse {
 }
 
 let compassRagSearchService: RAGSearchService | null = null;
+const COMPASS_ANSWER_RESPONSE_CACHE_TTL_MS = Math.min(
+  Math.max(Number(process.env.COMPASS_ANSWER_RESPONSE_CACHE_TTL_MS || 300000), 30000),
+  900000,
+);
+const COMPASS_ANSWER_RESPONSE_CACHE_MAX_ENTRIES = 64;
+const compassAnswerResponseCache = new Map<string, CompassAnswerResponseCacheEntry>();
+
+function normalizeCompassAnswerCacheMessage(message: unknown): string {
+  return String(message || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+function resolveCompassAnswerCacheKey(body: any): string | null {
+  const message = normalizeCompassAnswerCacheMessage(body?.message);
+  if (!message || message.length > 500) return null;
+
+  const history = Array.isArray(body?.conversationHistory) ? body.conversationHistory : [];
+  if (history.length > 0) return null;
+
+  return `compass-answer:v1:${message}`;
+}
+
+async function resolveCompassAnswerRequestCacheKey(request: NextRequest): Promise<string | null> {
+  try {
+    return resolveCompassAnswerCacheKey(await request.clone().json());
+  } catch {
+    return null;
+  }
+}
+
+function cloneCompassAnswerBody(body: Record<string, unknown>): Record<string, unknown> {
+  return typeof structuredClone === 'function'
+    ? structuredClone(body)
+    : JSON.parse(JSON.stringify(body));
+}
+
+function getCachedCompassAnswerResponse(cacheKey: string): Record<string, unknown> | null {
+  const entry = compassAnswerResponseCache.get(cacheKey);
+  if (!entry) return null;
+  if (entry.expiresAt <= Date.now()) {
+    compassAnswerResponseCache.delete(cacheKey);
+    return null;
+  }
+  return cloneCompassAnswerBody(entry.body);
+}
+
+function rememberCompassAnswerResponse(cacheKey: string, result: CompassAnswerHandlerResult): void {
+  if ((result.status || 200) >= 400) return;
+  const response = (result.body as any).response;
+  if (response?.error === true) return;
+
+  compassAnswerResponseCache.set(cacheKey, {
+    body: cloneCompassAnswerBody(result.body),
+    expiresAt: Date.now() + COMPASS_ANSWER_RESPONSE_CACHE_TTL_MS,
+  });
+
+  while (compassAnswerResponseCache.size > COMPASS_ANSWER_RESPONSE_CACHE_MAX_ENTRIES) {
+    const oldestKey = compassAnswerResponseCache.keys().next().value;
+    if (!oldestKey) break;
+    compassAnswerResponseCache.delete(oldestKey);
+  }
+}
+
+function markCompassAnswerCacheHit(body: Record<string, unknown>, processingTime: number): Record<string, unknown> {
+  const response = (body as any).response;
+  if (response && typeof response === 'object') {
+    response.sourceDiagnostics = {
+      ...(response.sourceDiagnostics && typeof response.sourceDiagnostics === 'object'
+        ? response.sourceDiagnostics
+        : {}),
+      responseCacheHit: true,
+    };
+  }
+  return {
+    ...body,
+    processingTime,
+  };
+}
 
 function getCompassRagSearchService(): RAGSearchService {
   if (!compassRagSearchService) {
@@ -7527,6 +7612,28 @@ export async function buildCompassAnswerResponse(
  * Compass answer API handler.
  */
 export async function POST(request: NextRequest) {
+  const requestStartedAt = Date.now();
+  const cacheKey = await resolveCompassAnswerRequestCacheKey(request);
+  if (cacheKey) {
+    const cachedBody = getCachedCompassAnswerResponse(cacheKey);
+    if (cachedBody) {
+      return NextResponse.json(
+        markCompassAnswerCacheHit(cachedBody, Date.now() - requestStartedAt),
+        {
+          status: 200,
+          headers: { 'x-compass-answer-cache': 'HIT' },
+        },
+      );
+    }
+  }
+
   const result = await buildCompassAnswerResponse(request);
-  return NextResponse.json(result.body, { status: result.status || 200 });
+  if (cacheKey) {
+    rememberCompassAnswerResponse(cacheKey, result);
+  }
+
+  return NextResponse.json(result.body, {
+    status: result.status || 200,
+    headers: cacheKey ? { 'x-compass-answer-cache': 'MISS' } : undefined,
+  });
 }

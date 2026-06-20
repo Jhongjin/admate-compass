@@ -80,6 +80,10 @@ for (const requiredText of [
   'sources: []',
   "'compass-answer-grounded-product-structure-llm'",
   "'compass-answer'",
+  'resolveCompassAnswerRequestCacheKey',
+  'conversationHistory',
+  'responseCacheHit: true',
+  "'x-compass-answer-cache': 'HIT'",
 ]) {
   if (!answerHandlerText.includes(requiredText)) fail(`neutral answer handler missing ${requiredText}`)
 }
