@@ -824,6 +824,10 @@ if (!/prioritySearchAnchors[\s\S]*searchKeywordTable\('document_chunks', priorit
   fail('KAKAO product priority retrieval must use bounded batch keyword/metadata queries instead of sequential per-anchor Supabase fan-out');
 }
 
+if (!/usesSpecificKakaoOllamaFastPath[\s\S]*searchKeywordTable\('ollama_document_chunks', prioritySearchAnchors, 10, intent, 'KAKAO'\)[\s\S]*fastCandidates\.length > 0[\s\S]*return fastCandidates/.test(rag)) {
+  fail('KAKAO specific product retrieval must try KAKAO-scoped ollama keyword results before broader document/vendor metadata fan-out');
+}
+
 if (!/if \(usesKakaoProductPriority && usesSpecificProductRetrieval\)[\s\S]*specific_kakao_priority_direct[\s\S]*return this\.withRetrievalTimeoutMetadata\(rankedResults, timedOutChannels, channelTimings\);[\s\S]*const queryEmbeddingResult = await this\.embeddingService\.generateEmbedding\(query\)/.test(rag)) {
   fail('KAKAO specific product retrieval must try the bounded priority direct path before embedding/vector/graph fan-out');
 }

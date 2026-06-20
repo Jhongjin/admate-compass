@@ -1889,6 +1889,20 @@ export class RAGSearchService {
       '심사 가이드',
       '집행 기준',
     ];
+
+    const usesSpecificKakaoOllamaFastPath = intent.isSpecificProductGuidance;
+    if (usesSpecificKakaoOllamaFastPath) {
+      const ollamaResults = await this.searchKeywordTable('ollama_document_chunks', prioritySearchAnchors, 10, intent, 'KAKAO');
+      const fastCandidates = this.normalizeKakaoProductStructurePriorityResults(
+        ollamaResults.map(result => ({ ...result, anchor: 'kakao_product_priority_keyword' })),
+        keywords,
+        intent,
+      );
+      if (fastCandidates.length > 0) {
+        return fastCandidates;
+      }
+    }
+
     const [
       documentChunkResults,
       ollamaResults,
@@ -1904,6 +1918,14 @@ export class RAGSearchService {
       ...vendorMetadataResults.map(result => ({ ...result, anchor: 'kakao_vendor_metadata' })),
     );
 
+    return this.normalizeKakaoProductStructurePriorityResults(results, keywords, intent);
+  }
+
+  private normalizeKakaoProductStructurePriorityResults(
+    results: Array<{ row: any; corpus: RetrievalCorpus; anchor: string }>,
+    keywords: string[],
+    intent: QueryIntent
+  ): SearchResult[] {
     return results
       .map((result) => {
         const candidate = this.normalizeCandidate(result.row, {
