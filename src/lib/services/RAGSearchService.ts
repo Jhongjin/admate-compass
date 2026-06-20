@@ -905,6 +905,26 @@ export class RAGSearchService {
         return this.withRetrievalTimeoutMetadata(rankedResults, timedOutChannels, channelTimings);
       }
 
+      if (usesKakaoProductPriority && usesSpecificProductRetrieval) {
+        const kakaoProductPriorityCandidates = await this.withRetrievalChannelTimeout(
+          this.searchKakaoProductStructurePriorityCandidates(intent),
+          'specific_kakao_priority_direct',
+          [],
+          timedOutChannels,
+          channelTimings,
+        );
+
+        if (kakaoProductPriorityCandidates.length > 0) {
+          const rankedResults = this.mergeDedupeAndRankCandidates(
+            kakaoProductPriorityCandidates,
+            limit,
+            intent,
+          );
+          console.log(`✅ KAKAO specific product 검색 완료: ${rankedResults.length}개 결과 (specific kakao priority direct path)`);
+          return this.withRetrievalTimeoutMetadata(rankedResults, timedOutChannels, channelTimings);
+        }
+      }
+
       // 질문을 임베딩으로 변환
       const queryEmbeddingResult = await this.embeddingService.generateEmbedding(query);
       const queryEmbedding = queryEmbeddingResult.embedding;

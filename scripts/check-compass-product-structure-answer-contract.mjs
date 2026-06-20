@@ -56,6 +56,8 @@ for (const snippet of [
   'getProductStructureAnchorFetchLimit',
   'usesVendorProductStructurePriority',
   'kakao_product_priority_keyword',
+  'specific_kakao_priority_direct',
+  'specific kakao priority direct path',
   'naver_product_structure_priority_keyword',
   'meta_product_overview_keyword',
   'mergeDuplicateCandidate',
@@ -819,6 +821,10 @@ if (!/intent\.requiresVendorCoverage[\s\S]*searchVendorCoverageCandidates\(query
 
 if (!/prioritySearchAnchors[\s\S]*searchKeywordTable\('document_chunks', prioritySearchAnchors[\s\S]*searchVendorMetadataTable\('ollama_document_chunks', 'KAKAO', prioritySearchAnchors/.test(rag)) {
   fail('KAKAO product priority retrieval must use bounded batch keyword/metadata queries instead of sequential per-anchor Supabase fan-out');
+}
+
+if (!/if \(usesKakaoProductPriority && usesSpecificProductRetrieval\)[\s\S]*specific_kakao_priority_direct[\s\S]*return this\.withRetrievalTimeoutMetadata\(rankedResults, timedOutChannels, channelTimings\);[\s\S]*const queryEmbeddingResult = await this\.embeddingService\.generateEmbedding\(query\)/.test(rag)) {
+  fail('KAKAO specific product retrieval must try the bounded priority direct path before embedding/vector/graph fan-out');
 }
 
 if (!/광고\s*사양[\s\S]*!this\.hasHighValueProductStructureSignal/.test(rag)) {
