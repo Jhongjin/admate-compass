@@ -4880,7 +4880,6 @@ function buildFastPolicySourceGuidedAnswer(
   const candidateSources = dedupePublicProductSources(
     sources.filter(source => {
       if (source.evidenceDecision === 'rejected') return false;
-      if (sourceHasBlockingExtractionNoise(source)) return false;
       if (requiredVendor && (!sourceMatchesVendor(source, requiredVendor) || sourceHasCrossVendorUrl(source, [requiredVendor]))) {
         return false;
       }
@@ -4891,7 +4890,11 @@ function buildFastPolicySourceGuidedAnswer(
         source.matchText,
         getFallbackSourceText(source),
       ].filter(Boolean).join(' '));
-      return pattern.test(sourceText);
+      if (!pattern.test(sourceText)) return false;
+      if (sourceHasBlockingExtractionNoise(source) && !/광고|가이드|정책|심사|운영|상품|소재/.test(sourceText)) {
+        return false;
+      }
+      return true;
     }),
     6,
   );
