@@ -114,7 +114,7 @@ const COMPASS_ANSWER_RESPONSE_CACHE_TTL_MS = Math.min(
   900000,
 );
 const COMPASS_ANSWER_RESPONSE_CACHE_MAX_ENTRIES = 64;
-const COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v6-kakao-priority-guide-rescue';
+const COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v7-meta-app-install-priority';
 const compassAnswerResponseCache = new Map<string, CompassAnswerResponseCacheEntry>();
 const compassAnswerRuntimeMetrics = {
   startedAt: Date.now(),
