@@ -2806,7 +2806,7 @@ function textContainsEvidenceTerm(text: string, term: string) {
 
 function sourceTextHasSpecificProductDetailSignal(text: string): boolean {
   const normalizedText = normalizeEvidenceText(text);
-  return /집행|절차|세팅|설정|연동|앱\s*등록|상품\s*등록|계정|권한|승인|요청|공유|테스트|검증|제작|소재|문구|카피|사양|스펙|규격|비율|사이즈|크기|파일|해상도|길이|정책|심사|검수|검토|주의|유의|제한|금지|반려|오류|에러|문제|해결|원인|조치|sdk|mmp|추적|트래킹|이벤트|픽셀|db\s*url|상품\s*db|상품db|ep|쇼핑파트너센터|상품정보\s*수신|등록요청|상품관리|카테고리|가격비교|데이터\s*피드|feed|양식\s*제출|개인정보|고지|동의/.test(normalizedText);
+  return /집행|절차|세팅|설정|연동|앱\s*등록|상품\s*등록|계정|권한|승인|요청|공유|테스트|검증|제작|소재|문구|카피|사양|스펙|규격|비율|사이즈|크기|파일|해상도|길이|정책|심사|검수|검토|주의|유의|제한|금지|반려|오류|에러|문제|해결|원인|조치|sdk|mmp|추적|트래킹|이벤트|픽셀|db\s*url|상품\s*db|상품db|ep|쇼핑파트너센터|상품정보\s*수신|등록요청|상품관리|카테고리|가격비교|데이터\s*피드|feed|양식\s*제출|개인정보|고지|동의|상품\s*(소개|안내)|광고\s*(상품|유형|종류)|지면|노출|게재|위치|운영|목적|브랜딩|유입|전환|조회|시청|클릭|구매|예약|입찰|과금|보장형|홈피드|스마트채널|타임보드|롤링보드|헤드라인\s*da|배너/.test(normalizedText);
 }
 
 function sourceTextHasSpecificProductDetailSignalNearTerm(text: string, term: string): boolean {
@@ -2814,7 +2814,7 @@ function sourceTextHasSpecificProductDetailSignalNearTerm(text: string, term: st
   const normalizedTerm = normalizeEvidenceText(term);
   if (!normalizedText || !normalizedTerm || normalizedTerm.length < 2) return false;
 
-  const detailPattern = /집행|절차|세팅|설정|연동|앱\s*등록|상품\s*등록|계정|권한|승인|요청|공유|테스트|검증|제작|소재|문구|카피|사양|스펙|규격|비율|사이즈|크기|파일|해상도|길이|정책|심사|검수|검토|주의|유의|제한|금지|반려|오류|에러|문제|해결|원인|조치|sdk|mmp|추적|트래킹|이벤트|픽셀|db\s*url|상품\s*db|상품db|ep|쇼핑파트너센터|상품정보\s*수신|등록요청|상품관리|카테고리|가격비교|데이터\s*피드|feed|양식\s*제출|개인정보|고지|동의/;
+  const detailPattern = /집행|절차|세팅|설정|연동|앱\s*등록|상품\s*등록|계정|권한|승인|요청|공유|테스트|검증|제작|소재|문구|카피|사양|스펙|규격|비율|사이즈|크기|파일|해상도|길이|정책|심사|검수|검토|주의|유의|제한|금지|반려|오류|에러|문제|해결|원인|조치|sdk|mmp|추적|트래킹|이벤트|픽셀|db\s*url|상품\s*db|상품db|ep|쇼핑파트너센터|상품정보\s*수신|등록요청|상품관리|카테고리|가격비교|데이터\s*피드|feed|양식\s*제출|개인정보|고지|동의|상품\s*(소개|안내)|광고\s*(상품|유형|종류)|지면|노출|게재|위치|운영|목적|브랜딩|유입|전환|조회|시청|클릭|구매|예약|입찰|과금|보장형|홈피드|스마트채널|타임보드|롤링보드|헤드라인\s*da|배너/;
   let startIndex = 0;
   while (startIndex < normalizedText.length) {
     const index = normalizedText.indexOf(normalizedTerm, startIndex);
@@ -3483,9 +3483,26 @@ function sourceHasRecoverableMetaAdsGuideObjectiveGraphEvidence(source: ReturnTy
   return isMetaAdsGuideSource && hasObjectiveGraphSignal;
 }
 
+function sourceHasRecoverableMetaAdsGuideCreativeSpecEvidence(source: ReturnType<typeof buildVerifiedSources>[number]) {
+  if (!sourceMatchesVendor(source, 'META')) return false;
+  if (sourceLooksLikeMetaBroadProductNewsNoise(source)) return false;
+
+  const identityText = normalizeEvidenceText(getSourceIdentityText(source));
+  const text = normalizeEvidenceText([
+    identityText,
+    getProductStructureVisibleSourceText(source),
+    getSourceText(source),
+  ].join(' '));
+  const isMetaAdsGuideSource = /facebook\.com\/business\/ads-guide|\/business\/ads-guide|ads\s*guide|facebook\s*광고\s*가이드|meta\s*ads\s*guide/.test(text);
+  const hasCreativeSpecSignal = /광고\s*사양|슬라이드\s*광고\s*사양|이미지\s*광고\s*사양|동영상\s*광고\s*사양|디자인\s*추천\s*사항|기술\s*요구\s*사항|해상도\s*:\s*1080|1080x1080|1080\s*x\s*1080|1080픽셀|슬라이드\s*수|2\s*~\s*10|2~10|최대\s*(이미지|동영상|파일)|파일\s*(크기|형식)|지원\s*형식/.test(text);
+
+  return isMetaAdsGuideSource && hasCreativeSpecSignal;
+}
+
 function sourceHasBlockingExtractionNoise(source: ReturnType<typeof buildVerifiedSources>[number]) {
   return sourceHasExtractionNoise(source)
-    && !sourceHasRecoverableMetaAdsGuideObjectiveGraphEvidence(source);
+    && !sourceHasRecoverableMetaAdsGuideObjectiveGraphEvidence(source)
+    && !sourceHasRecoverableMetaAdsGuideCreativeSpecEvidence(source);
 }
 
 function isLowValueSpecificProductSource(
@@ -3504,7 +3521,7 @@ function isLowValueSpecificProductSource(
     source.matchText,
   ].filter(Boolean).join(' '));
 
-  if (sourceHasExtractionNoise(source)) return true;
+  if (sourceHasBlockingExtractionNoise(source)) return true;
   if (sourceHasCrossVendorUrl(source, intent.vendors)) return true;
   if (intent.vendors.length === 1 && hasExplicitOtherVendorSignal(source, intent.vendors[0])) return true;
   if (sourceIsBroadProductStructureOnly(source, intent)) return true;
@@ -3583,6 +3600,7 @@ function scoreSpecificProductAnswerSource(
   if (source.retrievalMethod === 'vector' || source.retrievalMethod === 'hybrid') score += 8;
   if (source.retrievalMethod === 'keyword') score += 4;
   if (isGraphVerifiedSource(source)) score += 10;
+  if (mode === 'creative_guide' && sourceHasRecoverableMetaAdsGuideCreativeSpecEvidence(source)) score += 42;
 
   const titleText = normalizeEvidenceText(`${source.title || ''} ${source.originalTitle || ''}`);
   const primaryHitCount = primaryTerms.filter(term => textContainsEvidenceTerm(text, term)).length;
@@ -3605,6 +3623,9 @@ function scoreSpecificProductAnswerSource(
 
   if (/상품\s*가이드|상품가이드|제작\s*가이드|제작가이드|운영\s*가이드|운영가이드|광고\s*상품|광고상품|상품\s*소개|상품소개/.test(normalizedText)) {
     score += 10;
+  }
+  if (mode === 'creative_guide' && /1080x|1080\s*x|1080픽셀|해상도|슬라이드\s*수|2\s*~\s*10|2~10|최대\s*(이미지|동영상|파일)|파일\s*(크기|형식)|지원\s*형식/.test(normalizedText)) {
+    score += 30;
   }
 
   if (sourceTextLooksLikeBroadProductCatalogOnly(text, primaryTerms)) score -= 80;
@@ -6107,8 +6128,22 @@ function isKakaoDisplaySpecificProductQuestion(message: string) {
   );
 }
 
+function isNaverDisplaySpecificProductQuestion(message: string) {
+  return /(^|[\s/])da($|[\s/]|도|상품|광고)|네이버\s*da|네이버da|da\s*상품|da상품|보장형\s*da|pc\s*헤드라인\s*da|성과형\s*디스플레이|디스플레이\s*광고|홈피드\s*da|홈피드|스마트채널|타임보드|롤링보드|배너\s*광고/.test(
+    normalizeProductIntentText(message),
+  );
+}
+
+function isMetaAppInstallSpecificProductQuestion(message: string) {
+  return /앱\s*(인스톨|설치|홍보|캠페인|이벤트|사전\s*등록)|앱인스톨|앱설치|앱홍보|app\s*(install|promotion)|mobile\s*app|sdk|mmp|모바일\s*측정\s*파트너|포스트백|postback/.test(
+    normalizeProductIntentText(message),
+  );
+}
+
 function getSpecificProductSupplementLimit(vendor?: VendorIntent, message = '') {
   if (vendor === 'KAKAO' && isKakaoDisplaySpecificProductQuestion(message)) return 0;
+  if (vendor === 'NAVER' && isNaverDisplaySpecificProductQuestion(message)) return 0;
+  if (vendor === 'META' && isMetaAppInstallSpecificProductQuestion(message)) return 0;
   return vendor === 'KAKAO' ? 1 : 2;
 }
 
@@ -6348,6 +6383,19 @@ function buildIntentFocusedExcerpt(
   if (!intent) return compact.length > 260 ? `${compact.slice(0, 260)}...` : compact;
 
   const lower = compact.toLowerCase();
+  const asksSpec = intent.topics.includes('spec')
+    || [...intent.keywords, ...intent.strictProductTerms].some(term => /소재|스펙|사양|규격|비율|사이즈|크기|카루셀|캐러셀|carousel|슬라이드/.test(term));
+  if (asksSpec) {
+    const specMatch = lower.match(/1080x|1080\s*x|1080픽셀|해상도|슬라이드\s*수|2\s*~\s*10|2~10|최대\s*(이미지|동영상|파일)|파일\s*(크기|형식)|지원\s*형식/);
+    if (specMatch?.index !== undefined && specMatch.index > 70) {
+      const start = Math.max(0, specMatch.index - 150);
+      const end = Math.min(compact.length, specMatch.index + 270);
+      const prefix = start > 0 ? '...' : '';
+      const suffix = end < compact.length ? '...' : '';
+      return `${prefix}${compact.slice(start, end).trim()}${suffix}`;
+    }
+  }
+
   const focusTermGroups = [
     intent.strictContextTerms,
     intent.strictProductTerms,
@@ -7140,12 +7188,15 @@ function isVerifiedGrounding(result: SearchResult): boolean {
   const hasRagRescueSignal = rescueReasons.some((reason) => (
     /rescue|coverage|official_guide|target_vendor|graph|product_structure|generic_topic/i.test(reason)
   ));
+  const hasGenericPolicySourceIdentity = Boolean(metadata.genericPolicyIntent)
+    || rescueReasons.some(reason => /generic_policy|generic_topic/i.test(reason))
+    || (resultLike.topicExactMatch === true && resultLike.policyTitleMatch === true);
   const keywordScore = Number(result.keywordScore ?? resultLike.metadata?.keywordScore ?? 0);
   const lexicalOverlap = Number(result.lexicalOverlap ?? resultLike.metadata?.lexicalOverlap ?? 0);
   const qualityScore = Number(result.sourceQuality?.qualityScore ?? 0);
   const hasScoreSignal = keywordScore >= 0.42 || lexicalOverlap >= 0.16 || qualityScore >= 0.5;
 
-  return hasUsableSourceShape && hasVendorIdentity && (hasRagRescueSignal || hasScoreSignal);
+  return hasUsableSourceShape && (hasVendorIdentity || hasGenericPolicySourceIdentity) && (hasRagRescueSignal || hasScoreSignal);
 }
 
 function searchResultHasBlockingGroundingWarning(result: SearchResult): boolean {

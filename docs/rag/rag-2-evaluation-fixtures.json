@@ -439,7 +439,8 @@
     "requireRetrievalMethods": [
       "vector",
       "hybrid",
-      "keyword"
+      "keyword",
+      "graph"
     ],
     "requireSourceQuality": true,
     "maxDuplicateTitles": 2,
@@ -478,7 +479,8 @@
     "requireRetrievalMethods": [
       "vector",
       "keyword",
-      "hybrid"
+      "hybrid",
+      "graph"
     ],
     "requireSourceQuality": true,
     "maxDuplicateTitles": 2,
@@ -594,7 +596,8 @@
     "expectNoDataFound": false,
     "requireRetrievalMethods": [
       "keyword",
-      "hybrid"
+      "hybrid",
+      "graph"
     ],
     "requireSourceQuality": true,
     "maxDuplicateTitles": 2,

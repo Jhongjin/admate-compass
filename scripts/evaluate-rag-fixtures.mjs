@@ -25,7 +25,7 @@ const endpoint =
   "http://127.0.0.1:3000/api/compass-answer";
 const limit = Number(limitArg?.split("=")[1] || process.env.RAG_EVAL_LIMIT || 0);
 
-const allowedRetrievalMethods = new Set(["vector", "keyword", "hybrid", "fallback"]);
+const allowedRetrievalMethods = new Set(["vector", "keyword", "hybrid", "graph", "fallback"]);
 const allowedEvidenceDecisions = new Set(["verified", "weak", "rejected"]);
 const allowedVendors = new Set(["ANY", "NONE", "KAKAO", "META", "NAVER", "GOOGLE"]);
 const allowedCategories = new Set(["vendor-specific", "generic-policy", "out-of-scope"]);

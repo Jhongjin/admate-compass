@@ -23,6 +23,7 @@ const rag = read('src/lib/services/RAGSearchService.ts');
 const answerService = read('src/lib/services/CompassAnswerLlmService.ts');
 const answerHandler = read('src/lib/server/compassAnswerHandler.ts');
 const chatbotRoute = read('src/app/api/chatbot/route.ts');
+const ragFixtureEvaluator = read('scripts/evaluate-rag-fixtures.mjs');
 
 for (const snippet of [
   "'product_structure'",
@@ -67,6 +68,17 @@ for (const snippet of [
   'specific_kakao_priority_direct',
   'selectKakaoProductPriorityRescueCandidates',
   'kakao_priority_guide_rescue',
+  'specific_naver_priority_direct',
+  'selectNaverProductPriorityRescueCandidates',
+  'naver_product_structure_priority_rescue',
+  'specific_meta_app_install_priority_direct',
+  'meta_app_install_setup_anchor',
+  'meta_app_install_measurement_setup_priority',
+  'specific_meta_creative_spec_priority_direct',
+  'searchMetaCreativeSpecPriorityCandidates',
+  'meta_creative_spec_priority',
+  'isMetaCreativeSpecIntent',
+  'rawKeywordsOnly',
   'isKakaoBizboardDisplayComparisonIntent',
   'usesKakaoInternalProductComparison',
   'skipsGraphForGoogleProductOverview',
@@ -107,10 +119,18 @@ for (const snippet of [
   'campaign_objective_match',
   'product_solution_match',
   'creative_spec_only_penalty',
+  'isOfficialGraphCreativeSpecCandidateForIntent',
+  'asset_spec',
+  'ad_format',
+  'placement',
   'product_structure_no_signal_penalty',
   "topic !== 'spec' && topic !== 'product_structure'",
 ]) {
   if (!rag.includes(snippet)) fail(`RAG service missing product structure contract snippet: ${snippet}`);
+}
+
+if (!/allowedRetrievalMethods[\s\S]*"graph"/.test(ragFixtureEvaluator)) {
+  fail('RAG fixture evaluator must allow GraphRAG retrieval methods for official graph-backed product/spec fixtures');
 }
 
 for (const snippet of [
@@ -996,8 +1016,8 @@ const metaAppInstallPriorityBlock = extractBlock(
   'private async searchMetaAppInstallPriorityCandidates',
   'private async searchMetaProductOverviewPriorityCandidates',
 );
-if (!/const priorityAnchors = anchors\.slice\(0, 12\)[\s\S]*searchKeywordTable\('document_chunks', priorityAnchors[\s\S]*searchKeywordTable\('ollama_document_chunks', priorityAnchors[\s\S]*searchVendorMetadataTable\('ollama_document_chunks', 'META', priorityAnchors/.test(metaAppInstallPriorityBlock)) {
-  fail('Meta app-install priority retrieval must use bounded batch keyword/metadata queries instead of sequential per-anchor Supabase fan-out');
+if (!/const priorityAnchors = anchors\.slice\(0, 14\)[\s\S]*searchKeywordTable\('document_chunks', priorityAnchors, 40[\s\S]*searchKeywordTable\('ollama_document_chunks', priorityAnchors[\s\S]*searchVendorMetadataTable\('ollama_document_chunks', 'META', priorityAnchors[\s\S]*Promise\.all\(\['MMP', '모바일 측정 파트너', 'Facebook SDK', '앱 이벤트'\]\.map\(anchor =>/.test(metaAppInstallPriorityBlock)) {
+  fail('Meta app-install priority retrieval must use bounded batch keyword/metadata queries plus bounded parallel setup anchors instead of sequential per-anchor Supabase fan-out');
 }
 
 if (/for \(const anchor of anchors\)/.test(metaAppInstallPriorityBlock)) {
@@ -1100,8 +1120,8 @@ if (!/function getProductStructureFastPathSupplementLimit\(vendor\?: VendorInten
   fail('product structure fast path supplement fan-out must stay bounded by vendor, with Meta/Naver/Google using graph/main retrieval only');
 }
 
-if (!/function getSpecificProductSupplementLimit\(vendor\?: VendorIntent,\s*message = ''\)[\s\S]*vendor === 'KAKAO' && isKakaoDisplaySpecificProductQuestion\(message\)[\s\S]*return 0;[\s\S]*return vendor === 'KAKAO' \? 1 : 2;/.test(answerHandler)) {
-  fail('specific product supplement fan-out must stay bounded for Kakao product-detail questions and skip duplicate Kakao display supplements');
+if (!/function getSpecificProductSupplementLimit\(vendor\?: VendorIntent,\s*message = ''\)[\s\S]*vendor === 'KAKAO' && isKakaoDisplaySpecificProductQuestion\(message\)[\s\S]*return 0;[\s\S]*vendor === 'NAVER' && isNaverDisplaySpecificProductQuestion\(message\)[\s\S]*return 0;[\s\S]*vendor === 'META' && isMetaAppInstallSpecificProductQuestion\(message\)[\s\S]*return 0;[\s\S]*return vendor === 'KAKAO' \? 1 : 2;/.test(answerHandler)) {
+  fail('specific product supplement fan-out must skip duplicate direct-path supplements for Kakao display, Naver DA, and Meta app-install product questions');
 }
 
 if (!/const supplementQueryLimit = usesProductStructureFastPath\s*\?\s*getProductStructureFastPathSupplementLimit\(ragIntent\.vendors\[0\]\)/.test(answerHandler)) {
