@@ -83,6 +83,28 @@ export interface SearchResult {
   sourceQuality: SourceQuality;
 }
 
+export type RetrievalChannelTimeoutMetadata = {
+  timedOut: boolean;
+  channels: string[];
+};
+
+type SearchResultsWithRetrievalMetadata = SearchResult[] & {
+  __compassRetrievalTimedOut?: boolean;
+  __compassTimedOutChannels?: string[];
+};
+
+export function getCompassRetrievalChannelTimeoutMetadata(
+  results: SearchResult[],
+): RetrievalChannelTimeoutMetadata {
+  const metadata = results as SearchResultsWithRetrievalMetadata;
+  return {
+    timedOut: metadata.__compassRetrievalTimedOut === true,
+    channels: Array.isArray(metadata.__compassTimedOutChannels)
+      ? metadata.__compassTimedOutChannels
+      : [],
+  };
+}
+
 export interface ChatResponse {
   answer: string;
   sources: SearchResult[];
@@ -543,7 +565,8 @@ export class RAGSearchService {
   private async withRetrievalChannelTimeout<T>(
     promise: Promise<T>,
     label: string,
-    fallback: T
+    fallback: T,
+    timedOutChannels?: string[],
   ): Promise<T> {
     const timeoutMs = this.getRetrievalChannelTimeoutMs();
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
@@ -554,6 +577,7 @@ export class RAGSearchService {
         new Promise<T>((resolve) => {
           timeoutId = setTimeout(() => {
             console.warn('Compass retrieval channel timed out', { label, timeoutMs });
+            timedOutChannels?.push(label);
             resolve(fallback);
           }, timeoutMs);
         }),
@@ -597,7 +621,9 @@ export class RAGSearchService {
       this.evidenceGraphService = new CompassEvidenceGraphService(this.supabase);
       console.log('✅ RAGSearchService 초기화 완료 (SimpleEmbeddingService)');
     } catch (error) {
-      console.error('❌ RAGSearchService 초기화 실패:', error);
+      console.error('RAGSearchService initialization failed', {
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+      });
       throw new Error(`RAGSearchService 초기화 실패: ${error}`);
     }
   }
@@ -611,7 +637,7 @@ export class RAGSearchService {
     similarityThreshold: number = 0.1  // 임계값을 낮춰서 더 많은 결과 검색
   ): Promise<SearchResult[]> {
     try {
-      console.log(`🔍 RAG 검색 시작: "${query}"`);
+      console.log('RAG search started', { queryLength: query.length, limit });
 
       // Fallback 모드인 경우 샘플 데이터 반환
       if (!this.supabase) {
@@ -619,6 +645,7 @@ export class RAGSearchService {
         return this.getFallbackSearchResults(query, limit);
       }
 
+      const timedOutChannels: string[] = [];
       const intent = this.detectQueryIntent(query);
       console.log('🧭 Query intent:', {
         vendors: intent.vendors,
@@ -694,20 +721,20 @@ export class RAGSearchService {
           kakaoProductPriorityCandidates,
           graphCandidates
         ] = await Promise.all([
-          this.withRetrievalChannelTimeout(this.searchKeywordCandidates(query, candidateLimit, intent), 'product_fast_keyword', []),
-          this.withRetrievalChannelTimeout(this.searchVendorCoverageCandidates(query, candidateLimit, intent), 'product_fast_vendor_coverage', []),
-          this.withRetrievalChannelTimeout(this.searchProductStructureCandidates(candidateLimit, intent), 'product_fast_structure_anchor', []),
-          this.withRetrievalChannelTimeout(this.searchNaverProductStructurePriorityCandidates(intent), 'product_fast_naver_priority', []),
+          this.withRetrievalChannelTimeout(this.searchKeywordCandidates(query, candidateLimit, intent), 'product_fast_keyword', [], timedOutChannels),
+          this.withRetrievalChannelTimeout(this.searchVendorCoverageCandidates(query, candidateLimit, intent), 'product_fast_vendor_coverage', [], timedOutChannels),
+          this.withRetrievalChannelTimeout(this.searchProductStructureCandidates(candidateLimit, intent), 'product_fast_structure_anchor', [], timedOutChannels),
+          this.withRetrievalChannelTimeout(this.searchNaverProductStructurePriorityCandidates(intent), 'product_fast_naver_priority', [], timedOutChannels),
           usesMetaProductOverviewPriority
-            ? this.withRetrievalChannelTimeout(this.searchMetaProductOverviewPriorityCandidates(intent), 'product_fast_meta_overview_priority', [])
+            ? this.withRetrievalChannelTimeout(this.searchMetaProductOverviewPriorityCandidates(intent), 'product_fast_meta_overview_priority', [], timedOutChannels)
             : Promise.resolve([]),
           usesMetaAppInstallPriority
-            ? this.withRetrievalChannelTimeout(this.searchMetaAppInstallPriorityCandidates(intent), 'product_fast_meta_app_priority', [])
+            ? this.withRetrievalChannelTimeout(this.searchMetaAppInstallPriorityCandidates(intent), 'product_fast_meta_app_priority', [], timedOutChannels)
             : Promise.resolve([]),
           usesKakaoProductPriority
-            ? this.withRetrievalChannelTimeout(this.searchKakaoProductStructurePriorityCandidates(intent), 'product_fast_kakao_priority', [])
+            ? this.withRetrievalChannelTimeout(this.searchKakaoProductStructurePriorityCandidates(intent), 'product_fast_kakao_priority', [], timedOutChannels)
             : Promise.resolve([]),
-          this.withRetrievalChannelTimeout(this.searchEvidenceGraphCandidates(query, candidateLimit, intent), 'product_fast_graph', [])
+          this.withRetrievalChannelTimeout(this.searchEvidenceGraphCandidates(query, candidateLimit, intent), 'product_fast_graph', [], timedOutChannels)
         ]);
 
         console.log(`📊 Product structure fast 후보 수집 결과: keyword=${keywordCandidates.length}, vendorCoverage=${vendorCoverageCandidates.length}, productStructure=${productStructureCandidates.length}, naverPriority=${naverPriorityCandidates.length}, metaOverviewPriority=${metaProductOverviewPriorityCandidates.length}, metaAppInstallPriority=${metaAppInstallPriorityCandidates.length}, kakaoProductPriority=${kakaoProductPriorityCandidates.length}, graph=${graphCandidates.length}`);
@@ -737,7 +764,7 @@ export class RAGSearchService {
         );
 
         console.log(`✅ 상품 구조 검색 완료: ${rankedResults.length}개 결과 (fast keyword/anchor path)`);
-        return rankedResults;
+        return this.withRetrievalTimeoutMetadata(rankedResults, timedOutChannels);
       }
 
       // 질문을 임베딩으로 변환
@@ -756,27 +783,27 @@ export class RAGSearchService {
         kakaoProductPriorityCandidates,
         graphCandidates
       ] = await Promise.all([
-        this.withRetrievalChannelTimeout(this.searchVectorCandidates(queryEmbedding, candidateLimit, intent), 'hybrid_vector', []),
-        this.withRetrievalChannelTimeout(this.searchKeywordCandidates(query, candidateLimit, intent), 'hybrid_keyword', []),
+        this.withRetrievalChannelTimeout(this.searchVectorCandidates(queryEmbedding, candidateLimit, intent), 'hybrid_vector', [], timedOutChannels),
+        this.withRetrievalChannelTimeout(this.searchKeywordCandidates(query, candidateLimit, intent), 'hybrid_keyword', [], timedOutChannels),
         usesSpecificProductRetrieval
-          ? this.withRetrievalChannelTimeout(this.searchVendorCoverageCandidates(query, Math.max(limit, 8), intent), 'hybrid_vendor_coverage_specific', [])
-          : this.withRetrievalChannelTimeout(this.searchVendorCoverageCandidates(query, candidateLimit, intent), 'hybrid_vendor_coverage', []),
+          ? this.withRetrievalChannelTimeout(this.searchVendorCoverageCandidates(query, Math.max(limit, 8), intent), 'hybrid_vendor_coverage_specific', [], timedOutChannels)
+          : this.withRetrievalChannelTimeout(this.searchVendorCoverageCandidates(query, candidateLimit, intent), 'hybrid_vendor_coverage', [], timedOutChannels),
         usesPrioritySpecificProductRetrieval
           ? Promise.resolve([])
-          : this.withRetrievalChannelTimeout(this.searchProductStructureCandidates(candidateLimit, intent), 'hybrid_product_structure_anchor', []),
+          : this.withRetrievalChannelTimeout(this.searchProductStructureCandidates(candidateLimit, intent), 'hybrid_product_structure_anchor', [], timedOutChannels),
         usesNaverShoppingDataPriority
-          ? this.withRetrievalChannelTimeout(this.searchNaverProductStructurePriorityCandidates(intent), 'hybrid_naver_priority', [])
+          ? this.withRetrievalChannelTimeout(this.searchNaverProductStructurePriorityCandidates(intent), 'hybrid_naver_priority', [], timedOutChannels)
           : Promise.resolve([]),
         usesMetaProductOverviewPriority
-          ? this.withRetrievalChannelTimeout(this.searchMetaProductOverviewPriorityCandidates(intent), 'hybrid_meta_overview_priority', [])
+          ? this.withRetrievalChannelTimeout(this.searchMetaProductOverviewPriorityCandidates(intent), 'hybrid_meta_overview_priority', [], timedOutChannels)
           : Promise.resolve([]),
         usesMetaAppInstallPriority
-          ? this.withRetrievalChannelTimeout(this.searchMetaAppInstallPriorityCandidates(intent), 'hybrid_meta_app_priority', [])
+          ? this.withRetrievalChannelTimeout(this.searchMetaAppInstallPriorityCandidates(intent), 'hybrid_meta_app_priority', [], timedOutChannels)
           : Promise.resolve([]),
         usesKakaoProductPriority
-          ? this.withRetrievalChannelTimeout(this.searchKakaoProductStructurePriorityCandidates(intent), 'hybrid_kakao_priority', [])
+          ? this.withRetrievalChannelTimeout(this.searchKakaoProductStructurePriorityCandidates(intent), 'hybrid_kakao_priority', [], timedOutChannels)
           : Promise.resolve([]),
-        this.withRetrievalChannelTimeout(this.searchEvidenceGraphCandidates(query, candidateLimit, intent), 'hybrid_graph', [])
+        this.withRetrievalChannelTimeout(this.searchEvidenceGraphCandidates(query, candidateLimit, intent), 'hybrid_graph', [], timedOutChannels)
       ]);
 
       console.log(`📊 Hybrid 후보 수집 결과: vector=${vectorCandidates.length}, keyword=${keywordCandidates.length}, vendorCoverage=${vendorCoverageCandidates.length}, productStructure=${productStructureCandidates.length}, naverPriority=${naverPriorityCandidates.length}, metaOverviewPriority=${metaProductOverviewPriorityCandidates.length}, metaAppInstallPriority=${metaAppInstallPriorityCandidates.length}, kakaoProductPriority=${kakaoProductPriorityCandidates.length}, graph=${graphCandidates.length}`);
@@ -821,13 +848,33 @@ export class RAGSearchService {
       }
 
       console.log(`✅ 검색 완료: ${rankedResults.length}개 결과 (임계값: ${similarityThreshold})`);
-      return rankedResults;
+      return this.withRetrievalTimeoutMetadata(rankedResults, timedOutChannels);
 
     } catch (error) {
-      console.error('❌ RAG 검색 실패:', error);
+      console.error('RAG search failed', {
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+      });
       // 오류 발생 시에도 fallback 데이터 반환
       return this.getFallbackSearchResults(query, limit);
     }
+  }
+
+  private withRetrievalTimeoutMetadata(
+    results: SearchResult[],
+    timedOutChannels: string[],
+  ): SearchResult[] {
+    const channels = Array.from(new Set(timedOutChannels));
+    if (channels.length === 0) return results;
+
+    Object.defineProperty(results, '__compassRetrievalTimedOut', {
+      value: true,
+      enumerable: false,
+    });
+    Object.defineProperty(results, '__compassTimedOutChannels', {
+      value: channels,
+      enumerable: false,
+    });
+    return results;
   }
 
   private async searchEvidenceGraphCandidates(query: string, limit: number, intent: QueryIntent): Promise<SearchResult[]> {
@@ -1026,7 +1073,9 @@ export class RAGSearchService {
       });
 
       if (error) {
-        console.warn('⚠️ RPC 함수 오류. keyword 채널은 계속 실행됩니다:', error);
+      console.warn('Vector RPC failed; keyword channel will continue', {
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+      });
         return [];
       }
 
@@ -1041,7 +1090,9 @@ export class RAGSearchService {
         }))
         .filter((result: SearchResult | null): result is SearchResult => result !== null);
     } catch (error) {
-      console.warn('⚠️ 벡터 검색 실패. keyword 채널은 계속 실행됩니다:', error);
+      console.warn('Vector retrieval failed; keyword channel will continue', {
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+      });
       return [];
     }
   }
@@ -2867,7 +2918,10 @@ export class RAGSearchService {
       const { data, error } = await query.limit(fetchLimit);
 
       if (error) {
-        console.warn(`⚠️ ${tableName} product-structure anchor 검색 실패:`, error);
+      console.warn('Product-structure anchor search failed', {
+        tableName,
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+      });
         return [];
       }
 
@@ -2883,7 +2937,10 @@ export class RAGSearchService {
         anchor,
       });
     } catch (error) {
-      console.warn(`⚠️ ${tableName} product-structure anchor 검색 예외:`, error);
+      console.warn('Product-structure anchor search threw', {
+        tableName,
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+      });
       return [];
     }
   }
@@ -2909,7 +2966,11 @@ export class RAGSearchService {
         .limit(Math.max(limit * 24, 96));
 
       if (error) {
-        console.warn(`⚠️ ${tableName} ${vendor} metadata keyword 검색 실패:`, error);
+      console.warn('Vendor metadata keyword search failed', {
+        tableName,
+        vendor,
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+      });
         return [];
       }
 
@@ -2924,7 +2985,11 @@ export class RAGSearchService {
         vendor,
       });
     } catch (error) {
-      console.warn(`⚠️ ${tableName} ${vendor} metadata keyword 검색 예외:`, error);
+      console.warn('Vendor metadata keyword search threw', {
+        tableName,
+        vendor,
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+      });
       return [];
     }
   }
@@ -2949,7 +3014,10 @@ export class RAGSearchService {
         .limit(Math.max(limit * 24, 96));
 
       if (error) {
-        console.warn(`⚠️ ${tableName} keyword 검색 실패:`, error);
+      console.warn('Keyword table search failed', {
+        tableName,
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+      });
         return [];
       }
 
@@ -2964,7 +3032,10 @@ export class RAGSearchService {
         vendor,
       });
     } catch (error) {
-      console.warn(`⚠️ ${tableName} keyword 검색 예외:`, error);
+      console.warn('Keyword table search threw', {
+        tableName,
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+      });
       return [];
     }
   }
@@ -4429,7 +4500,9 @@ export class RAGSearchService {
         return embedding as number[];
       }
     } catch (error) {
-      console.warn(`임베딩 파싱 실패: ${error}`);
+      console.warn('Embedding parse failed', {
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+      });
     }
 
     return null;
@@ -5893,7 +5966,9 @@ ${content}
       };
 
     } catch (error) {
-      console.error('RAG 응답 생성 실패:', error);
+      console.error('RAG response generation failed', {
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+      });
 
       // Supabase 연결 오류인 경우 특별한 메시지 제공
       if (error instanceof Error && error.message.includes('Supabase')) {
@@ -5968,7 +6043,9 @@ ${content}
       };
 
     } catch (error) {
-      console.error('검색 통계 조회 실패:', error);
+      console.error('RAG search stats lookup failed', {
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+      });
       return {
         totalChunks: 0,
         totalDocuments: 0,
@@ -5986,7 +6063,9 @@ export function getRAGSearchService(): RAGSearchService {
     try {
       ragSearchServiceInstance = new RAGSearchService();
     } catch (error) {
-      console.error('RAGSearchService 초기화 실패:', error);
+    console.error('RAGSearchService initialization failed', {
+      errorName: error instanceof Error ? error.name : 'UnknownError',
+    });
       throw error;
     }
   }

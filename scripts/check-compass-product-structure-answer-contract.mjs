@@ -43,6 +43,10 @@ for (const snippet of [
   'meta_required_product_structure_coverage',
   'searchProductStructureAnchorTable',
   'isMetaOverviewPolicyNoiseText',
+  'getCompassRetrievalChannelTimeoutMetadata',
+  '__compassRetrievalTimedOut',
+  'timedOutChannels?.push(label)',
+  'withRetrievalTimeoutMetadata',
   'mergeDuplicateCandidate',
   'evidenceDecisionReason',
   'Product structure fast 후보 수집 결과',
@@ -707,6 +711,10 @@ if (!/type CompassRetrievalResult = \{[\s\S]*results: SearchResult\[\];[\s\S]*ti
 
 if (!/const retrievalTimedOut = searchResultGroups\.some\(group => group\.timedOut\)/.test(answerHandler)) {
   fail('Compass answer handler must preserve whether any retrieval query timed out');
+}
+
+if (!/const channelTimeoutMetadata = getCompassRetrievalChannelTimeoutMetadata\(searchResults\)[\s\S]*const timedOut = retrievalResult\.timedOut \|\| channelTimeoutMetadata\.timedOut/.test(answerHandler)) {
+  fail('Compass answer handler must propagate per-channel retrieval timeouts into retrievalTimedOut');
 }
 
 if (!/verifiedSearchResults\.length === 0 && retrievalTimedOut/.test(answerHandler)) {

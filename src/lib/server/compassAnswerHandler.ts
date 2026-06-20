@@ -1,6 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getCompassDbSchema } from '@/lib/supabase/compass';
-import { classifyCompassRagQuery, RAGSearchService, type EvidenceDecision, type QueryIntent, type VendorIntent } from '@/lib/services/RAGSearchService';
+import {
+  classifyCompassRagQuery,
+  getCompassRetrievalChannelTimeoutMetadata,
+  RAGSearchService,
+  type EvidenceDecision,
+  type QueryIntent,
+  type VendorIntent,
+} from '@/lib/services/RAGSearchService';
 import { generateCompassAnswer, type CompassGroundingSource } from '@/lib/services/CompassAnswerLlmService';
 
 export type CompassAnswerPhase =
@@ -154,12 +161,16 @@ async function searchWithCompassRAG(
       { queryLength: query.length, limit },
     );
     const searchResults = retrievalResult.value;
+    const channelTimeoutMetadata = getCompassRetrievalChannelTimeoutMetadata(searchResults);
+    const timedOut = retrievalResult.timedOut || channelTimeoutMetadata.timedOut;
     
     console.log('Compass evidence retrieval completed', {
       resultCount: searchResults.length,
       durationMs: Date.now() - startedAt,
       limit,
-      timedOut: retrievalResult.timedOut,
+      timedOut,
+      channelTimedOut: channelTimeoutMetadata.timedOut,
+      timedOutChannelCount: channelTimeoutMetadata.channels.length,
     });
     
     return {
@@ -189,7 +200,7 @@ async function searchWithCompassRAG(
         sourceQuality: result.sourceQuality,
         metadata: result.metadata
       })),
-      timedOut: retrievalResult.timedOut,
+      timedOut,
     };
     
   } catch (error) {
