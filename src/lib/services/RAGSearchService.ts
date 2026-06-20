@@ -933,6 +933,21 @@ export class RAGSearchService {
         ? 14
         : 12;
 
+    if (
+      intent
+      && this.isBroadProductStructureRetrievalIntent(intent)
+      && this.isKakaoBizboardDisplayProductIntent(intent)
+    ) {
+      return Array.from(new Set([
+        '비즈보드',
+        '카카오 비즈보드',
+        '디스플레이 광고',
+        '카카오모먼트',
+        '상품가이드',
+        ...cleanedKeywords.filter(keyword => /카카오|비즈보드|디스플레이|상품|구조/.test(keyword)),
+      ])).slice(0, 6);
+    }
+
     return Array.from(new Set([
       ...vendorTerms,
       ...priorityTerms,
@@ -951,6 +966,14 @@ export class RAGSearchService {
   }
 
   private getKeywordTableFetchLimit(limit: number, intent?: QueryIntent): number {
+    if (
+      intent
+      && this.isBroadProductStructureRetrievalIntent(intent)
+      && this.isKakaoBizboardDisplayProductIntent(intent)
+    ) {
+      return Math.min(Math.max(limit, 12), 20);
+    }
+
     if (this.isBroadProductStructureRetrievalIntent(intent)) {
       return Math.min(Math.max(limit * 2, 16), 36);
     }
@@ -4274,8 +4297,8 @@ export class RAGSearchService {
     }
 
     if (hasRelevantStructureSignal) return false;
-    if (/데이터\s*분류|개인정보\s*보호|세금|청구|결제|woocommerce|google\s*태그|태그\s*설정|gtag|측정\s*태그/.test(sourceText)
-      && !/데이터|개인정보|privacy|data|태그|측정|결제|청구|세금/.test(queryText)
+    if (/데이터\s*분류|개인정보\s*보호|세금|청구|결제|지불|woocommerce|google\s*태그|태그\s*설정|gtag|측정\s*태그/.test(sourceText)
+      && !/데이터|개인정보|privacy|data|태그|측정|결제|지불|청구|세금/.test(queryText)
     ) {
       return true;
     }
@@ -4287,7 +4310,7 @@ export class RAGSearchService {
     if (/데이터\s*분류|개인정보\s*보호/.test(sourceText) && !/데이터|분류|개인정보|privacy|data|타겟|잠재고객|세그먼트|audience|segment/.test(queryText)) {
       return true;
     }
-    if (/세금|청구|결제/.test(sourceText) && !/세금|청구|결제|tax|billing|payment/.test(queryText)) {
+    if (/세금|청구|결제|지불/.test(sourceText) && !/세금|청구|결제|지불|tax|billing|payment/.test(queryText)) {
       return true;
     }
     if (/woocommerce|google\s*태그|태그\s*설정|gtag|측정\s*태그/.test(sourceText) && !/태그|측정|woocommerce|gtag/.test(queryText)) {
@@ -5653,6 +5676,7 @@ export class RAGSearchService {
       || text.includes('인보이스')
       || text.includes('invoice')
       || text.includes('결제')
+      || text.includes('지불')
       || text.includes('청구')
       || text.includes('billing')
       || text.includes('payment')

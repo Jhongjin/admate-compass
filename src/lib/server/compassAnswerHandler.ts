@@ -3388,7 +3388,7 @@ function sourceIdentityLooksLikeGenericLegalOrAccountDoc(source: ReturnType<type
   const identityText = normalizeEvidenceText(getSourceIdentityText(source));
   if (!identityText) return false;
 
-  const genericLegalOrAccountSignal = /이용약관|약관|운영\s*정책|서비스\s*이용|회원\s*가입|회원가입|계정\s*(생성|만들기|관리)|책임자|세금\s*계산서|세금계산서|청구|결제|권한\s*관리|비즈니스\s*계정|클린센터|개인정보\s*처리방침/.test(identityText);
+  const genericLegalOrAccountSignal = /이용약관|약관|운영\s*정책|서비스\s*이용|회원\s*가입|회원가입|계정\s*(생성|만들기|관리)|책임자|세금\s*계산서|세금계산서|청구|결제|지불|billing|payment|invoice|권한\s*관리|비즈니스\s*계정|클린센터|개인정보\s*처리방침/.test(identityText);
   const productSpecificGuideSignal = /상품\s*가이드|상품가이드|상품\s*소개|상품소개|제작\s*가이드|제작가이드|광고\s*상품|광고상품|사이트검색광고|쇼핑검색광고|쇼핑블록|비즈보드|카탈로그|컬렉션|리드\s*양식|앱\s*(인스톨|설치|홍보)|동영상\s*광고|디스플레이\s*광고|성과형\s*디스플레이|홈피드|스마트채널|타임보드|롤링보드/.test(identityText);
 
   return genericLegalOrAccountSignal && !productSpecificGuideSignal;
@@ -3496,7 +3496,7 @@ function isLowValueSpecificProductSource(
     return true;
   }
 
-  const broadLegalOrAccountDoc = /이용\s*약관|이용약관|약관|운영\s*정책|운영정책|서비스\s*이용|회원\s*가입|회원가입|계정\s*(생성|만들기|관리)|책임자|세금\s*계산서|세금계산서|청구|결제|권한\s*관리|비즈니스\s*계정|클린센터|개인정보\s*처리방침|광고\s*게재\s*제한/.test(text);
+  const broadLegalOrAccountDoc = /이용\s*약관|이용약관|약관|운영\s*정책|운영정책|서비스\s*이용|회원\s*가입|회원가입|계정\s*(생성|만들기|관리)|책임자|세금\s*계산서|세금계산서|청구|결제|지불|billing|payment|invoice|권한\s*관리|비즈니스\s*계정|클린센터|개인정보\s*처리방침|광고\s*게재\s*제한/.test(text);
   const genericLegalIdentity = sourceIdentityLooksLikeGenericLegalOrAccountDoc(source);
   if (
     intent.isSpecificProductGuidance
@@ -4132,10 +4132,19 @@ function buildEvidenceBackedAnswer(
   lines.push(profile.summary);
   lines.push('');
   lines.push(`근거: ${Array.from(usedSourceIndexes).sort((a, b) => a - b).map(index => `[S${index + 1}]`).join(', ')}`);
+  const citedSourceIndexes = Array.from(usedSourceIndexes).sort((a, b) => a - b);
+  const citedSourceLabels = new Map(citedSourceIndexes.map((sourceIndex, citationIndex) => [
+    sourceIndex + 1,
+    citationIndex + 1,
+  ]));
+  const answer = lines.join('\n').replace(/\[S(\d+)\]/g, (label, sourceNumber) => {
+    const remappedLabel = citedSourceLabels.get(Number(sourceNumber));
+    return remappedLabel ? `[S${remappedLabel}]` : label;
+  });
 
   return {
-    answer: lines.join('\n'),
-    sources,
+    answer,
+    sources: citedSourceIndexes.map(index => sources[index]),
     model: profile.model,
     showContactOption: profile.showContactOption,
     confidenceCap: profile.confidenceCap,
@@ -4971,7 +4980,7 @@ function isWeakProductStructureDisplaySource(source: ReturnType<typeof buildVeri
   const text = getSourceText(source);
   const hasCoreSignal = /광고 관리자 목표|캠페인 목표|마케팅 목표|인지도[\s\S]{0,80}트래픽[\s\S]{0,80}참여[\s\S]{0,80}잠재 고객[\s\S]{0,80}앱 홍보[\s\S]{0,80}판매|advantage\+ catalog|어드밴티지\+ catalog|컬렉션 광고|앱\s*캠페인|쇼핑\s*광고|반응형\s*디스플레이|리드\s*양식|검색광고|쇼핑검색|쇼핑블록|비즈보드|상품\s*가이드|상품가이드|상품\s*db|db\s*url|ep|쇼핑파트너센터|pc\s*쇼핑블록|mo\s*쇼핑블록|모바일\s*쇼핑|가격비교|디지털\s*옥외광고/.test(text);
 
-  if (/세금|tax|vat|청구|결제/.test(text)) return true;
+  if (/세금|tax|vat|청구|결제|지불|billing|payment|invoice/.test(text)) return true;
   if (/woocommerce|google\s*태그|태그\s*설정|gtag|측정\s*태그/.test(text)
     && !/앱\s*캠페인|쇼핑\s*광고|검색\s*캠페인|디스플레이\s*캠페인|반응형\s*디스플레이|리드\s*양식/.test(text)
   ) return true;
@@ -5014,7 +5023,7 @@ function isLowValueProductStructureGraphSource(source: ReturnType<typeof buildVe
   if (/오프라인\s*전환|향상된\s*전환|전환\s*(api|최적화|측정|추적|가져오기)|conversion\s*api|conversions?\s*api|enhanced\s*conversions|offline\s*conversion|capi/.test(text)) return true;
   if (/라이브\s*관리|라이브커머스|쇼핑\s*라이브|shopping\s*live/.test(text)) return true;
   if (/가입하기|회원\s*가입|계정\s*(생성|만들기)|비즈니스\s*계정/.test(text)) return true;
-  return /세금|청구|결제|woocommerce|google\s*태그|태그\s*설정|gtag|측정\s*태그/.test(text)
+  return /세금|청구|결제|지불|billing|payment|invoice|woocommerce|google\s*태그|태그\s*설정|gtag|측정\s*태그/.test(text)
     && !hasProductStructureGraphSourceSignal(source);
 }
 
@@ -5039,6 +5048,7 @@ function scoreProductStructureGraphSource(source: ReturnType<typeof buildVerifie
   if (/캠페인\s*(목표|유형|목적)|광고\s*(상품|종류|유형|구조)|상품\s*구조|광고\s*관리자\s*목표|마케팅\s*목표|검색\s*캠페인|디스플레이\s*캠페인|반응형\s*디스플레이|쇼핑\s*광고|앱\s*(캠페인|인스톨|설치|홍보|이벤트)|리드\s*양식|비즈보드|상품\s*db|db\s*url|상품가이드|상품\s*가이드|campaign\s*objective|objectives?|catalog/.test(text)) {
     score += 0.45;
   }
+  if (/세금|tax|vat|청구|결제|지불|billing|payment|invoice/.test(text)) score -= 1.8;
   if (isLowValueProductStructureGraphSource(source)) score -= 1.4;
   return score;
 }
@@ -5614,6 +5624,7 @@ function scoreBroadProductStructureSource(
   const queryHits = queryTerms.filter(term => textContainsEvidenceTerm(text, term)).length;
   score += Math.min(2.8, queryHits * 0.3);
 
+  if (/세금|tax|vat|청구|결제|지불|billing|payment|invoice/.test(text)) score -= 2.4;
   if (/소재\s*(사양|제작|규격)|파일\s*크기|지원\s*형식|텍스트\s*제한|이미지\s*비율|동영상\s*비율/.test(text)
     && !/광고\s*(상품|종류|유형)|캠페인\s*(목표|유형)|노출\s*(위치|지면)|게재\s*위치|상품\s*db|db\s*url/.test(text)) {
     score -= 0.6;
@@ -6598,6 +6609,15 @@ function scoreVerifiedSourceForIntent(
     if (allowBroadProductStructureBoost
       && /advantage\+|어드밴티지|카탈로그|catalog|메타\s*픽셀|meta\s*pixel|픽셀\s*(이벤트|코드|설치|전환)|conversions api|앱\s*(캠페인|인스톨|설치|홍보|이벤트)|app\s*(install|promotion)|sdk|mmp|사전\s*등록|쇼핑\s*광고|검색\s*캠페인|디스플레이\s*캠페인|반응형\s*디스플레이|리드\s*양식|검색광고|쇼핑검색|파워링크|브랜드검색|쇼핑블록|디지털\s*옥외광고|da($|[\s/]|도|상품|광고)|성과형\s*디스플레이|홈피드\s*da|홈피드|배너\s*광고|비즈보드|카카오모먼트|브랜드이모티콘|상품\s*가이드|상품가이드|상품\s*db|db\s*url|가격비교|업종\s*제한|심사\s*가이드/.test(text)
     ) score += 18;
+    const productStructureQueryText = [
+      ...intent.keywords,
+      ...intent.strictProductTerms,
+    ].join(' ').toLowerCase();
+    const hasAdministrativeSupportSignal = /세금|tax|vat|청구|결제|지불|billing|payment|invoice/.test(text);
+    const queryAsksAdministrativeSupport = /세금|tax|vat|청구|결제|지불|billing|payment|invoice/.test(productStructureQueryText);
+    if (hasAdministrativeSupportSignal && !queryAsksAdministrativeSupport) {
+      score -= strictProductIntent ? 140 : 95;
+    }
     if (/광고 사양|광고 형식\/사양|제작 가이드|소재 제작|크기|파일 크기|최대 파일|지원 형식|비율|jpg|png|mp4|mov|1200x|1080x|1280x|텍스트 제한|marketplace의|facebook marketplace|facebook 검색 결과|instagram 탐색 홈|탐색 홈의|검색 결과의/.test(text)
       && !hasHighValueProductStructure
     ) {

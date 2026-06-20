@@ -553,6 +553,28 @@ for (const snippet of [
   }
 }
 
+if (!/isAdministrativeSupportCandidate[\s\S]*text\.includes\('지불'\)[\s\S]*text\.includes\('billing'\)/.test(rag)) {
+  fail('administrative support filtering must catch Korean payment wording such as 지불');
+}
+
+if (!/isLowValueProductStructureGraphCandidate[\s\S]*세금\|청구\|결제\|지불[\s\S]*isOffAxisProductStructureGraphText[\s\S]*세금\|청구\|결제\|지불/.test(rag)) {
+  fail('product structure graph filtering must catch Korean payment wording such as 지불');
+}
+
+if (!/sourceIdentityLooksLikeGenericLegalOrAccountDoc[\s\S]*청구\|결제\|지불[\s\S]*isLowValueSpecificProductSource[\s\S]*청구\|결제\|지불[\s\S]*scoreVerifiedSourceForIntent[\s\S]*hasAdministrativeSupportSignal[\s\S]*청구\|결제\|지불/.test(answerHandler)) {
+  fail('answer source routing must demote payment/account support documents such as 지불 for product-structure answers');
+}
+
+if (!/function buildEvidenceBackedAnswer[\s\S]*const citedSourceIndexes = Array\.from\(usedSourceIndexes\)[\s\S]*citedSourceLabels[\s\S]*sources: citedSourceIndexes\.map\(index => sources\[index\]\)/.test(answerHandler)) {
+  fail('deterministic product answers must return only the sources cited in the rendered answer');
+}
+
+if (!/scoreProductStructureGraphSource[\s\S]*청구\|결제\|지불[\s\S]*score -= 1\.8/.test(answerHandler)
+  || !/scoreBroadProductStructureSource[\s\S]*청구\|결제\|지불[\s\S]*score -= 2\.4/.test(answerHandler)
+) {
+  fail('product-structure answer source scoring must penalize payment/account support sources such as 지불');
+}
+
 for (const [label, text] of [
   ['RAG specific product anchors', ragSpecificAnchorBlock],
   ['answer routing strict product anchors', answerStrictAnchorBlock],
@@ -804,8 +826,16 @@ if (!/selectSupabaseKeywordSearchTerms[\s\S]*isBroadProductStructureRetrievalInt
   fail('broad product fast path must use a tighter keyword term cap');
 }
 
+if (!/selectSupabaseKeywordSearchTerms[\s\S]*isKakaoBizboardDisplayProductIntent\(intent\)[\s\S]*'비즈보드'[\s\S]*'카카오 비즈보드'[\s\S]*'디스플레이 광고'[\s\S]*\.slice\(0, 6\)/.test(rag)) {
+  fail('KAKAO broad product keyword retrieval must use a narrow Bizboard term set');
+}
+
 if (!/getKeywordTableFetchLimit[\s\S]*Math\.min\(Math\.max\(limit \* multiplier, floor\), ceiling\)/.test(rag)) {
   fail('keyword table search must use bounded fetch limits instead of unbounded broad-product row fan-out');
+}
+
+if (!/getKeywordTableFetchLimit[\s\S]*isKakaoBizboardDisplayProductIntent\(intent\)[\s\S]*Math\.min\(Math\.max\(limit, 12\), 20\)[\s\S]*isBroadProductStructureRetrievalIntent/.test(rag)) {
+  fail('KAKAO broad product keyword retrieval must use a smaller fetch limit before generic broad product limits');
 }
 
 if (!/isBroadProductStructureRetrievalIntent[\s\S]*intent\.isProductStructureOverview[\s\S]*getKeywordTableFetchLimit[\s\S]*Math\.min\(Math\.max\(limit \* 2, 16\), 36\)/.test(rag)) {
