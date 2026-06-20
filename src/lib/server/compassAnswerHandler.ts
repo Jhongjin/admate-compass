@@ -5566,7 +5566,7 @@ const VENDOR_LABELS: Record<string, string> = {
 function getProductStructureFastPathSupplementLimit(vendor?: VendorIntent) {
   switch (vendor) {
     case 'NAVER':
-      return 2;
+      return 1;
     case 'GOOGLE':
       return 0;
     case 'META':
@@ -5575,6 +5575,10 @@ function getProductStructureFastPathSupplementLimit(vendor?: VendorIntent) {
     default:
       return 1;
   }
+}
+
+function getSpecificProductSupplementLimit(vendor?: VendorIntent) {
+  return vendor === 'KAKAO' ? 1 : 2;
 }
 
 function buildProductStructureSupplementQueries(intent: QueryIntent, originalMessage: string) {
@@ -6801,7 +6805,7 @@ export async function buildCompassAnswerResponse(
     const supplementQueryLimit = usesProductStructureFastPath
       ? getProductStructureFastPathSupplementLimit(ragIntent.vendors[0])
       : usesSpecificProductSupplementPath
-        ? 2
+        ? getSpecificProductSupplementLimit(ragIntent.vendors[0])
       : 2;
     const selectedSupplementQueries = supplementQueries.slice(0, supplementQueryLimit);
     const searchQueries = [message, ...selectedSupplementQueries];

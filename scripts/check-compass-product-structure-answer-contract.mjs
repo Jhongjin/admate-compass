@@ -844,12 +844,20 @@ if (!/usesProductStructureFastPath\s*=\s*isBroadProductStructureAnswerIntent\(me
   fail('product structure fast path must be limited to broad overview questions');
 }
 
-if (!/function getProductStructureFastPathSupplementLimit\(vendor\?: VendorIntent\)[\s\S]*case 'NAVER':[\s\S]*return 2;[\s\S]*case 'GOOGLE':[\s\S]*return 0;[\s\S]*case 'META':[\s\S]*case 'KAKAO':[\s\S]*return 1;/.test(answerHandler)) {
+if (!/function getProductStructureFastPathSupplementLimit\(vendor\?: VendorIntent\)[\s\S]*case 'NAVER':[\s\S]*return 1;[\s\S]*case 'GOOGLE':[\s\S]*return 0;[\s\S]*case 'META':[\s\S]*case 'KAKAO':[\s\S]*return 1;/.test(answerHandler)) {
   fail('product structure fast path supplement fan-out must stay bounded by vendor, with Google using graph/main retrieval only');
+}
+
+if (!/function getSpecificProductSupplementLimit\(vendor\?: VendorIntent\)[\s\S]*return vendor === 'KAKAO' \? 1 : 2;/.test(answerHandler)) {
+  fail('specific product supplement fan-out must stay bounded for Kakao product-detail questions');
 }
 
 if (!/const supplementQueryLimit = usesProductStructureFastPath\s*\?\s*getProductStructureFastPathSupplementLimit\(ragIntent\.vendors\[0\]\)/.test(answerHandler)) {
   fail('product structure fast path must use the bounded supplement limit helper');
+}
+
+if (!/usesSpecificProductSupplementPath\s*\?\s*getSpecificProductSupplementLimit\(ragIntent\.vendors\[0\]\)/.test(answerHandler)) {
+  fail('specific product supplement path must use the bounded supplement limit helper');
 }
 
 if (/- 캠페인 목표 기준|먼저 고르는 것|그다음 고르는 것|고정된 상품명|고정 상품 목록|출처는 없지만 일반적으로|모든 매체에서 동일|  - 인지도:/.test(answerHandler)) {
