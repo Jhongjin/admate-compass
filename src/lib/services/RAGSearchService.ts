@@ -1123,6 +1123,10 @@ export class RAGSearchService {
         && intent.vendors.length === 1
         && intent.vendors[0] === 'KAKAO'
         && this.isKakaoBizboardDisplayProductIntent(intent);
+      const usesKakaoInternalProductComparison =
+        usesKakaoProductPriority
+        && intent.isComparative
+        && this.isKakaoBizboardDisplayComparisonIntent(intent);
       const skipsGraphForGoogleProductOverview =
         needsProductStructureRetrieval
         && intent.vendors.length === 1
@@ -1291,7 +1295,9 @@ export class RAGSearchService {
         usesKakaoProductPriority
           ? this.withRetrievalChannelTimeout(this.searchKakaoProductStructurePriorityCandidates(intent), 'hybrid_kakao_priority', [], timedOutChannels, channelTimings)
           : Promise.resolve([]),
-        this.withRetrievalChannelTimeout(this.searchEvidenceGraphCandidates(query, candidateLimit, intent), 'hybrid_graph', [], timedOutChannels, channelTimings)
+        usesKakaoInternalProductComparison
+          ? this.withRetrievalChannelSoftBudget(this.searchEvidenceGraphCandidates(query, candidateLimit, intent), 'hybrid_graph', [], this.getKakaoProductGraphSoftBudgetMs(), channelTimings)
+          : this.withRetrievalChannelTimeout(this.searchEvidenceGraphCandidates(query, candidateLimit, intent), 'hybrid_graph', [], timedOutChannels, channelTimings)
       ]);
 
       console.log(`📊 Hybrid 후보 수집 결과: vector=${vectorCandidates.length}, keyword=${keywordCandidates.length}, vendorCoverage=${vendorCoverageCandidates.length}, productStructure=${productStructureCandidates.length}, naverPriority=${naverPriorityCandidates.length}, metaOverviewPriority=${metaProductOverviewPriorityCandidates.length}, metaAppInstallPriority=${metaAppInstallPriorityCandidates.length}, kakaoProductPriority=${kakaoProductPriorityCandidates.length}, graph=${graphCandidates.length}`);
@@ -3105,6 +3111,18 @@ export class RAGSearchService {
       ...intent.strictContextTerms,
     ].join(' '));
     return /비즈보드|카카오\s*비즈보드|카카오비즈보드|톡보드|talkboard|디스플레이\s*광고|디스플레이광고|displayad|카카오모먼트|상품\s*가이드|상품가이드|제작\s*가이드|제작가이드|소재|지면|노출|광고\s*상품|상품\s*(종류|유형|구분)/.test(queryText);
+  }
+
+  private isKakaoBizboardDisplayComparisonIntent(intent: QueryIntent): boolean {
+    if (!intent.isComparative || intent.vendors.length !== 1 || intent.vendors[0] !== 'KAKAO') return false;
+    const queryText = this.normalizeSearchText([
+      ...intent.keywords,
+      ...intent.strictProductTerms,
+      ...intent.strictContextTerms,
+    ].join(' '));
+    const mentionsBizboard = /비즈보드|카카오\s*비즈보드|카카오비즈보드|톡보드|talkboard/.test(queryText);
+    const mentionsDisplay = /디스플레이\s*광고|디스플레이광고|displayad|display\s*ad|카카오모먼트/.test(queryText);
+    return mentionsBizboard && mentionsDisplay;
   }
 
   private hasKakaoBizboardDisplaySignal(sourceText: string): boolean {

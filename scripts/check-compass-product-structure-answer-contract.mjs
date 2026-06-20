@@ -67,6 +67,8 @@ for (const snippet of [
   'specific_kakao_priority_direct',
   'selectKakaoProductPriorityRescueCandidates',
   'kakao_priority_guide_rescue',
+  'isKakaoBizboardDisplayComparisonIntent',
+  'usesKakaoInternalProductComparison',
   'skipsGraphForGoogleProductOverview',
   'specific kakao priority direct path',
   'naver_product_structure_priority_keyword',
@@ -939,6 +941,14 @@ if (!/prioritySearchAnchors[\s\S]*searchKeywordTable\('document_chunks', priorit
 
 if (!/getKakaoProductGraphSoftBudgetMs[\s\S]*COMPASS_KAKAO_PRODUCT_GRAPH_SOFT_BUDGET_MS[\s\S]*skipsGraphForGoogleProductOverview[\s\S]*usesKakaoProductPriority[\s\S]*product_fast_graph[\s\S]*getKakaoProductGraphSoftBudgetMs\(\)/.test(rag)) {
   fail('KAKAO product fast graph retrieval must use a non-blocking soft budget');
+}
+
+if (!/usesKakaoInternalProductComparison[\s\S]*isKakaoBizboardDisplayComparisonIntent\(intent\)[\s\S]*withRetrievalChannelSoftBudget[\s\S]*hybrid_graph[\s\S]*getKakaoProductGraphSoftBudgetMs\(\)/.test(rag)) {
+  fail('KAKAO internal Bizboard/display comparison retrieval must not block on hybrid graph completion');
+}
+
+if (!/private isKakaoBizboardDisplayComparisonIntent\([\s\S]*intent\.isComparative[\s\S]*intent\.vendors\.length !== 1[\s\S]*mentionsBizboard[\s\S]*mentionsDisplay[\s\S]*return mentionsBizboard && mentionsDisplay/.test(rag)) {
+  fail('KAKAO internal comparison soft-budget routing must stay scoped to Bizboard vs display comparison questions');
 }
 
 if (!/metaAppInstallPriorityCandidates,\s*\n\s*kakaoProductPriorityCandidates,\s*\n\s*graphCandidates[\s\S]*usesMetaAppInstallPriority[\s\S]*Promise\.resolve\(\[\]\),[\s\S]*skipsGraphForGoogleProductOverview/.test(rag)) {
