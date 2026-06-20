@@ -74,9 +74,14 @@ const OPERATIONAL_ISSUE_TERMS = [
 ];
 
 const EVIDENCE_ASSERTION_SELECT = 'id,claim_text,claim_type,source_kind,source_document_id,source_chunk_id,case_id,excerpt,source_url,vendor,evidence_decision,confidence,review_status,valid_to,metadata,created_at';
+const ENABLED_FLAG_VALUES = new Set(['1', 'true', 'yes', 'on', 'enabled']);
 
 export function isCompassEvidenceGraphEnabled(): boolean {
   return GRAPH_ENABLED_VALUES.has(normalizeGraphFlagValue(process.env.COMPASS_EVIDENCE_GRAPH_ENABLED));
+}
+
+function isFocusedProductGraphRpcEnabled(): boolean {
+  return ENABLED_FLAG_VALUES.has(normalizeGraphFlagValue(process.env.COMPASS_EVIDENCE_GRAPH_FOCUSED_RPC_ENABLED));
 }
 
 function normalizeGraphFlagValue(raw: unknown): string {
@@ -156,6 +161,13 @@ export class CompassEvidenceGraphService {
       return [];
     }
 
+    if (this.isFocusedProductGraphIntent(intent) && isFocusedProductGraphRpcEnabled()) {
+      const rpcRows = await this.fetchFocusedProductStructuredRowsFromRpc(intent, limit);
+      if (rpcRows !== null && rpcRows.length > 0) {
+        return rpcRows;
+      }
+    }
+
     const vendors = intent.vendors;
     const sourceKinds = this.preferredSourceKinds(intent);
     const topics = this.preferredGraphTopics(intent).slice(0, 5);
@@ -206,6 +218,31 @@ export class CompassEvidenceGraphService {
     }
 
     return this.dedupeRows(rows).slice(0, this.resolveStructuredGraphRowLimit(intent, limit));
+  }
+
+  private async fetchFocusedProductStructuredRowsFromRpc(
+    intent: QueryIntent,
+    limit: number,
+  ): Promise<EvidenceGraphRawAssertion[] | null> {
+    const { data, error } = await this.supabase.rpc('search_focused_product_graph_assertions', {
+      p_vendors: intent.vendors,
+      p_source_kinds: this.preferredSourceKinds(intent),
+      p_graph_topics: this.preferredGraphTopics(intent).slice(0, 5),
+      p_claim_types: this.preferredClaimTypes(intent).slice(0, 8),
+      p_limit: this.resolveStructuredGraphRowLimit(intent, limit),
+    });
+
+    if (error) {
+      console.warn('Compass evidence graph focused product RPC skipped:', error.message);
+      return null;
+    }
+
+    if (!Array.isArray(data)) {
+      return [];
+    }
+
+    return this.dedupeRows(data as EvidenceGraphRawAssertion[])
+      .slice(0, this.resolveStructuredGraphRowLimit(intent, limit));
   }
 
   private async fetchTextRows(

@@ -15,6 +15,7 @@ function assertIncludes(content, needle, label) {
 
 const migration = read('supabase/migrations/20260616000000_create_compass_evidence_graph.sql');
 const officialDocMigration = read('supabase/migrations/20260616001000_add_official_doc_graph_indexing_support.sql');
+const focusedProductGraphRpcMigration = read('supabase/migrations/20260620000003_add_focused_product_graph_rpc.sql');
 const graphService = read('src/lib/services/CompassEvidenceGraphService.ts');
 const officialGuideIndexer = read('src/lib/services/CompassOfficialGuideGraphIndexer.ts');
 const officialGuideGraphBackfillRoute = read('src/app/api/admin/source-ops/backfill-official-graph/route.ts');
@@ -51,7 +52,10 @@ for (const serviceSignal of [
   'searchCandidates',
   'OPERATIONAL_ISSUE_TERMS',
   'graphTopics',
+  'COMPASS_EVIDENCE_GRAPH_FOCUSED_RPC_ENABLED',
+  'isFocusedProductGraphRpcEnabled',
   'isFocusedProductGraphIntent',
+  'fetchFocusedProductStructuredRowsFromRpc',
   'resolveStructuredGraphPerQueryLimit',
   'resolveTextGraphRowLimit',
 ]) {
@@ -115,6 +119,14 @@ for (const officialDocMigrationSignal of [
   'stale_official_doc_assertions',
 ]) {
   assertIncludes(officialDocMigration, officialDocMigrationSignal, 'official doc graph indexing migration');
+}
+
+for (const focusedProductGraphRpcSignal of [
+  'search_focused_product_graph_assertions',
+  'evidence_assertions_verified_vendor_source_created_idx',
+  "GRANT EXECUTE ON FUNCTION compass.search_focused_product_graph_assertions",
+]) {
+  assertIncludes(focusedProductGraphRpcMigration, focusedProductGraphRpcSignal, 'focused product graph rpc migration');
 }
 
 for (const ragSignal of [
