@@ -565,6 +565,18 @@ if (!/sourceIdentityLooksLikeGenericLegalOrAccountDoc[\s\S]*청구\|결제\|지�
   fail('answer source routing must demote payment/account support documents such as 지불 for product-structure answers');
 }
 
+if (!/sourceLooksLikeProductStructureSupportNoise[\s\S]*getSourceIdentityText\(source\)[\s\S]*세금\|tax\|vat\|청구\|결제\|지불[\s\S]*비즈쿠폰\|쿠폰[\s\S]*광고할\\s\*수\\s\*없는\\s\*경우[\s\S]*isUsableBroadProductStructureSource[\s\S]*sourceLooksLikeProductStructureSupportNoise\(source\)/.test(answerHandler)) {
+  fail('broad product source selection must reject tax/coupon/support-noise documents before answer source selection');
+}
+
+if (!/const sourceGuidedBroadProductSources = answerSources\.filter[\s\S]*sourceLooksLikeProductStructureSupportNoise\(source\)[\s\S]*buildLlmFailureGroundedFallbackAnswer\([\s\S]*sourceGuidedBroadProductSources[\s\S]*sources: sourceGuidedBroadProductSources[\s\S]*answerSourceCount: sourceGuidedBroadProductSources\.length/.test(answerHandler)) {
+  fail('fast broad product source-guided fallback must use support-noise-filtered sources');
+}
+
+if (!/const productStructureSources = selectProductStructureResponseSources\(sources, ragIntent, message\)[\s\S]*\.filter\(source => !sourceLooksLikeProductStructureSupportNoise\(source\)\)[\s\S]*if \(productStructureSources\.length === 0\)/.test(answerHandler)) {
+  fail('broad product answer routing must remove support-noise sources before deciding whether evidence is sufficient');
+}
+
 if (!/function buildEvidenceBackedAnswer[\s\S]*const citedSourceIndexes = Array\.from\(usedSourceIndexes\)[\s\S]*citedSourceLabels[\s\S]*sources: citedSourceIndexes\.map\(index => sources\[index\]\)/.test(answerHandler)) {
   fail('deterministic product answers must return only the sources cited in the rendered answer');
 }

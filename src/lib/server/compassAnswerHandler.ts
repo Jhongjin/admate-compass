@@ -5586,6 +5586,18 @@ function hasBroadProductStructureAnswerSignal(source: ReturnType<typeof buildVer
     || hasKakaoProductSignal;
 }
 
+function sourceLooksLikeProductStructureSupportNoise(source: ReturnType<typeof buildVerifiedSources>[number]) {
+  const text = normalizeEvidenceText([
+    getSourceIdentityText(source),
+    getProductStructureVisibleSourceText(source),
+    getSourceText(source),
+  ].join(' '));
+  const hasSupportSignal = /세금|tax|vat|청구|결제|지불|billing|payment|invoice|비즈쿠폰|쿠폰|광고할\s*수\s*없는\s*경우|광고\s*게재\s*제한/.test(text);
+  if (!hasSupportSignal) return false;
+
+  return !/상품\s*db|상품db|db\s*url|dburl|ep\s*\(=\s*db\s*url\)|쇼핑파트너센터|상품정보\s*수신|상품관리|가격비교|상품\s*등록|상품등록/.test(text);
+}
+
 function isUsableBroadProductStructureSource(
   source: ReturnType<typeof buildVerifiedSources>[number],
   targetVendor?: VendorIntent,
@@ -5593,6 +5605,7 @@ function isUsableBroadProductStructureSource(
   if (!sourceMatchesVendor(source, targetVendor)) return false;
   if (targetVendor && hasExplicitOtherVendorSignal(source, targetVendor)) return false;
   if (sourceIdentityLooksLikeGenericLegalOrAccountDoc(source)) return false;
+  if (sourceLooksLikeProductStructureSupportNoise(source)) return false;
   if (isWeakProductStructureDisplaySource(source)) return false;
   if (sourceLooksLikeGranularCreativeSpecOnly(source)) return false;
   if (isLowValueProductStructureGraphSource(source)) return false;
@@ -7629,7 +7642,8 @@ export async function buildCompassAnswerResponse(
     }
 
     if (isBroadProductStructureCatalogIntent) {
-      const productStructureSources = selectProductStructureResponseSources(sources, ragIntent, message);
+      const productStructureSources = selectProductStructureResponseSources(sources, ragIntent, message)
+        .filter(source => !sourceLooksLikeProductStructureSupportNoise(source));
       answerSources = productStructureSources;
       if (productStructureSources.length === 0) {
         const scopeLimitedAnswer = buildBroadProductStructureScopeLimitedAnswer(message, ragIntent);
@@ -7702,9 +7716,12 @@ export async function buildCompassAnswerResponse(
         }
 
         if (shouldUseFastBroadAnswer) {
+          const sourceGuidedBroadProductSources = answerSources.filter(source => (
+            !sourceLooksLikeProductStructureSupportNoise(source)
+          ));
           const sourceGuidedBroadProductAnswer = buildLlmFailureGroundedFallbackAnswer(
             message,
-            answerSources,
+            sourceGuidedBroadProductSources,
             ragIntent,
             specificProductScope,
             true,
@@ -7716,13 +7733,13 @@ export async function buildCompassAnswerResponse(
                 response: {
                   message: sourceGuidedBroadProductAnswer,
                   content: sourceGuidedBroadProductAnswer,
-                  sources: answerSources,
+                  sources: sourceGuidedBroadProductSources,
                   noDataFound: false,
                   schema,
                   showContactOption: true,
                   sourceDiagnostics: {
                     ...sourceDiagnostics,
-                    answerSourceCount: answerSources.length,
+                    answerSourceCount: sourceGuidedBroadProductSources.length,
                     answerMode: diagnosticAnswerMode,
                     answerGenerationDurationMs: 0,
                     deterministicAnswerFamily: detectProductAnswerFamily(message, ragIntent),
