@@ -3260,6 +3260,25 @@ function dedupeSpecificProductSources(sources: ReturnType<typeof buildVerifiedSo
   return deduped;
 }
 
+function dedupePublicProductSources(
+  sources: ReturnType<typeof buildVerifiedSources>,
+  limit = sources.length,
+) {
+  const seen = new Set<string>();
+  const deduped: ReturnType<typeof buildVerifiedSources> = [];
+
+  for (const source of sources) {
+    if (deduped.length >= limit) break;
+    const publicKey = getProductStructurePublicSourceKey(source);
+    const key = publicKey || getProductStructureSourceKey(source);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(source);
+  }
+
+  return deduped;
+}
+
 function refineSpecificProductAnswerSources(
   sources: ReturnType<typeof buildVerifiedSources>,
   intent: QueryIntent,
@@ -3310,11 +3329,11 @@ function pushUniqueSpecificProductSource(
   role: SpecificProductEvidenceRole,
 ) {
   const key = [
-    source.id,
-    source.chunkId,
-    source.documentId,
+    getProductStructurePublicSourceKey(source)
+      || source.id
+      || source.chunkId
+      || source.documentId,
     normalizeEvidenceText(String(source.title || source.originalTitle || '')),
-    normalizeEvidenceText(String(source.excerpt || source.matchText || '')).slice(0, 180),
   ].filter(Boolean).join(':');
   if (seen.has(key)) return;
   seen.add(key);
@@ -3422,7 +3441,7 @@ function selectSpecificProductAnswerSources(
       });
   }
 
-  return selected.slice(0, 6);
+  return dedupePublicProductSources(selected, 6);
 }
 
 function getSpecificProductLabel(intent: QueryIntent) {
@@ -3535,8 +3554,8 @@ function buildSpecificProductAnswerScope(
       };
     }
   }
-  const returnedStrictProductSources = strictProductSources;
-  const returnedAnswerSources = answerSources;
+  const returnedStrictProductSources = dedupePublicProductSources(strictProductSources);
+  const returnedAnswerSources = dedupePublicProductSources(answerSources, 6);
 
   return {
     mode,
@@ -6267,6 +6286,19 @@ function normalizeSourceTitle(title: string, sourceVendor: string, content: stri
     || blob.includes('facebook')
     || blob.includes('페이스북')
   ) {
+    const titleLooksLikeUrl = /^https?:\/\//i.test(String(title || '').trim());
+    if (/collection\s*ads?|컬렉션\s*광고/.test(blob)) {
+      return 'Meta 비즈니스 지원 센터: 컬렉션 광고';
+    }
+    if (/slideshow|슬라이드쇼|슬라이드\s*광고/.test(blob)) {
+      return 'Meta 비즈니스 지원 센터: 슬라이드쇼 광고';
+    }
+    if (/collaborative\s*ads?|협력\s*광고/.test(blob)) {
+      return 'Meta 비즈니스 지원 센터: 협력 광고';
+    }
+    if (titleLooksLikeUrl) {
+      return 'Meta 비즈니스 지원 센터: 광고 상품 가이드';
+    }
     return title && title !== 'Unknown' ? title : 'Meta 광고 정책';
   }
 
@@ -7173,7 +7205,7 @@ export async function buildCompassAnswerResponse(
       rawGeneratedAnswer,
       operationalAnswer,
     );
-    const finalAnswerSources = answerRepair?.sources || answerSources;
+    const finalAnswerSources = dedupePublicProductSources(answerRepair?.sources || answerSources);
     const normalizedAnswer = normalizeGeneratedAnswer(
       answerRepair?.answer || rawGeneratedAnswer || operationalAnswer || '',
       finalAnswerSources,

@@ -75,6 +75,7 @@ for (const requiredText of [
   'ragIntent.isOutOfScope || ragIntent.unavailablePolicyTarget',
   'answerStatesNoVerifiedData(responseAnswer)',
   'getProductStructurePublicSourceKey',
+  'dedupePublicProductSources',
   'sourceIdentityLooksLikeGenericLegalOrAccountDoc(source)',
   'sources: []',
   "'compass-answer-grounded-product-structure-llm'",
