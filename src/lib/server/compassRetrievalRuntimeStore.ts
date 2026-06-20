@@ -25,6 +25,7 @@ export type CompassRetrievalDurableCacheMetricsSnapshot = {
 type CompassRetrievalDurableStoreArea =
   | 'cache_read'
   | 'cache_write'
+  | 'hit_write'
   | 'metrics_read'
   | 'maintenance';
 
@@ -52,6 +53,11 @@ const DURABLE_RETRIEVAL_TIMEOUTS_MS: Record<CompassRetrievalDurableStoreArea, nu
     'COMPASS_DURABLE_RETRIEVAL_CACHE_WRITE_TIMEOUT_MS',
     1200,
     4000,
+  ),
+  hit_write: resolveDurableRetrievalTimeoutMs(
+    'COMPASS_DURABLE_RETRIEVAL_CACHE_HIT_WRITE_TIMEOUT_MS',
+    700,
+    2500,
   ),
   metrics_read: resolveDurableRetrievalTimeoutMs(
     'COMPASS_DURABLE_RETRIEVAL_CACHE_METRICS_READ_TIMEOUT_MS',
@@ -160,6 +166,26 @@ function normalizePayload<TPayload>(value: unknown): TPayload | null {
   return value as TPayload;
 }
 
+async function recordCompassRetrievalDurableCacheHit(
+  namespace: CompassRetrievalCacheNamespace,
+  cacheKey: string,
+) {
+  if (!shouldUseDurableRetrievalCache('hit_write')) return;
+
+  const supabase = createCompassServiceClient();
+  const response = await withDurableRetrievalTimeout(
+    supabase.rpc('touch_retrieval_response_cache_hit', {
+      p_cache_namespace: namespace,
+      p_cache_key: cacheKey,
+    }),
+    'hit_write',
+  );
+
+  if (response?.error) {
+    markDurableRetrievalStoreUnavailable(response.error, 'hit_write');
+  }
+}
+
 export function getCompassRetrievalDurableCacheStatus() {
   const suppressedAreas = getDurableRetrievalSuppressedAreas();
   const unavailableUntil = suppressedAreas.reduce<string | null>((latest, entry) => (
@@ -210,6 +236,8 @@ export async function readCompassRetrievalDurableCache<TPayload>(
   const row = response.data as Record<string, unknown> | null;
   const payload = normalizePayload<TPayload>(row?.payload);
   if (!row || payload === null) return null;
+
+  void recordCompassRetrievalDurableCacheHit(namespace, cacheKey);
 
   return {
     payload,

@@ -171,6 +171,7 @@ for (const requiredText of [
   'readCompassRetrievalDurableCacheMetricsSnapshot',
   'runCompassRetrievalDurableCacheMaintenance',
   'retrieval_response_cache',
+  'touch_retrieval_response_cache_hit',
   'get_retrieval_response_cache_metrics',
 ]) {
   if (!retrievalRuntimeStoreText.includes(requiredText)) {
