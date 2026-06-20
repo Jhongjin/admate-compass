@@ -138,17 +138,17 @@ export class CompassEvidenceGraphService {
 
     if (structuredRows.length > 0) {
       if (intent.isSpecificProductGuidance || intent.topics.includes('product_structure')) {
-        const textRows = await this.fetchTextRows(query, terms, limit);
+        const textRows = await this.fetchTextRows(query, terms, intent, limit);
         const mergedRows = intent.isSpecificProductGuidance
           ? [...textRows, ...structuredRows]
           : [...structuredRows, ...textRows];
-        return this.dedupeRows(mergedRows).slice(0, Math.max(limit * 28, 140));
+        return this.dedupeRows(mergedRows).slice(0, this.resolveMergedGraphRowLimit(intent, limit));
       }
 
       return structuredRows;
     }
 
-    return this.fetchTextRows(query, terms, limit);
+    return this.fetchTextRows(query, terms, intent, limit);
   }
 
   private async fetchStructuredRows(intent: QueryIntent, limit: number): Promise<EvidenceGraphRawAssertion[]> {
@@ -160,7 +160,7 @@ export class CompassEvidenceGraphService {
     const sourceKinds = this.preferredSourceKinds(intent);
     const topics = this.preferredGraphTopics(intent).slice(0, 5);
     const claimTypes = this.preferredClaimTypes(intent).slice(0, 8);
-    const perQueryLimit = Math.max(limit * 10, 40);
+    const perQueryLimit = this.resolveStructuredGraphPerQueryLimit(intent, limit);
     const requests: Promise<{ data: EvidenceGraphRawAssertion[] | null; error: any }>[] = [];
 
     for (const vendor of vendors) {
@@ -205,12 +205,13 @@ export class CompassEvidenceGraphService {
       rows.push(...((result.data || []) as EvidenceGraphRawAssertion[]));
     }
 
-    return this.dedupeRows(rows).slice(0, Math.max(limit * 24, 120));
+    return this.dedupeRows(rows).slice(0, this.resolveStructuredGraphRowLimit(intent, limit));
   }
 
   private async fetchTextRows(
     query: string,
     terms: string[],
+    intent: QueryIntent,
     limit: number,
   ): Promise<EvidenceGraphRawAssertion[]> {
     const focusedTerms = terms
@@ -230,7 +231,7 @@ export class CompassEvidenceGraphService {
 
     const { data, error } = await this.baseAssertionQuery()
       .or(orFilter)
-      .limit(Math.max(limit * 5, 20));
+      .limit(this.resolveTextGraphRowLimit(intent, limit));
 
     if (error) {
       console.warn('Compass evidence graph text search skipped:', error.message, {
@@ -241,6 +242,46 @@ export class CompassEvidenceGraphService {
     }
 
     return (data || []) as EvidenceGraphRawAssertion[];
+  }
+
+  private isFocusedProductGraphIntent(intent: QueryIntent): boolean {
+    return (
+      intent.vendors.length === 1
+      && !intent.isComparative
+      && (intent.topics.includes('product_structure') || intent.isProductStructureOverview)
+    );
+  }
+
+  private resolveStructuredGraphPerQueryLimit(intent: QueryIntent, limit: number): number {
+    if (this.isFocusedProductGraphIntent(intent)) {
+      return Math.min(Math.max(limit * 4, 24), 64);
+    }
+
+    return Math.max(limit * 10, 40);
+  }
+
+  private resolveStructuredGraphRowLimit(intent: QueryIntent, limit: number): number {
+    if (this.isFocusedProductGraphIntent(intent)) {
+      return Math.min(Math.max(limit * 8, 48), 96);
+    }
+
+    return Math.max(limit * 24, 120);
+  }
+
+  private resolveMergedGraphRowLimit(intent: QueryIntent, limit: number): number {
+    if (this.isFocusedProductGraphIntent(intent)) {
+      return Math.min(Math.max(limit * 10, 56), 120);
+    }
+
+    return Math.max(limit * 28, 140);
+  }
+
+  private resolveTextGraphRowLimit(intent: QueryIntent, limit: number): number {
+    if (this.isFocusedProductGraphIntent(intent)) {
+      return Math.min(Math.max(limit * 3, 24), 48);
+    }
+
+    return Math.max(limit * 5, 20);
   }
 
   private baseAssertionQuery() {

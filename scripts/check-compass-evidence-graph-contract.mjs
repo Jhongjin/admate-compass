@@ -51,6 +51,9 @@ for (const serviceSignal of [
   'searchCandidates',
   'OPERATIONAL_ISSUE_TERMS',
   'graphTopics',
+  'isFocusedProductGraphIntent',
+  'resolveStructuredGraphPerQueryLimit',
+  'resolveTextGraphRowLimit',
 ]) {
   assertIncludes(graphService, serviceSignal, 'evidence graph service contract');
 }
