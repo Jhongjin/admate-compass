@@ -4081,6 +4081,8 @@ type FastKakaoProductAnswerFallback =
   | 'kakao_product_structured'
   | 'kakao_product_scope_rescue';
 
+type FastNaverVideoProductAnswerFallback = 'naver_video_product_structured';
+
 type ProductAnswerFamily =
   | 'meta_overview'
   | 'meta_app_install'
@@ -4713,6 +4715,48 @@ function buildFastKakaoProductStructuredAnswer(
     confidenceCap: 76,
     reviewStatus: 'completed',
     fastAnswerFallback,
+  };
+}
+
+function buildFastNaverVideoProductAnswer(
+  message: string,
+  intent: QueryIntent,
+  scope: ReturnType<typeof buildSpecificProductAnswerScope>,
+  fallbackSources: ReturnType<typeof buildVerifiedSources>,
+): (DeterministicProductAnswer & { fastAnswerFallback: FastNaverVideoProductAnswerFallback }) | null {
+  if (process.env.COMPASS_DISABLE_FAST_NAVER_VIDEO_PRODUCT_ANSWERS === 'true') return null;
+  if (!intent.topics.includes('product_structure')) return null;
+  if (intent.vendors.length !== 1 || intent.vendors[0] !== 'NAVER' || intent.isComparative) return null;
+  if (!intent.isSpecificProductGuidance && !hasNamedSpecificProductQuestion(message)) return null;
+
+  const queryText = normalizeProductIntentText(message);
+  if (!/동영상|비디오|video|숏폼|아웃스트림|인스트림|클립|조회/.test(queryText)) return null;
+
+  const scopedSources = scope.answerSources.length > 0 ? scope.answerSources : scope.strictProductSources;
+  const candidateSources = scopedSources.length > 0 ? scopedSources : fallbackSources;
+  const naverSources = candidateSources.filter(source => (
+    sourceMatchesVendor(source, 'NAVER')
+    && !sourceHasCrossVendorUrl(source, ['NAVER'])
+    && !sourceHasExtractionNoise(source)
+    && String(source.excerpt || source.matchText || source.title || '').trim()
+  ));
+  const answerSources = dedupePublicProductSources(
+    naverSources.length > 0 ? naverSources : candidateSources,
+    6,
+  );
+  if (answerSources.length === 0) return null;
+
+  const structuredAnswer = buildNaverVideoStructuredFallbackAnswer(answerSources, intent, message);
+  if (!structuredAnswer) return null;
+
+  return {
+    answer: structuredAnswer,
+    sources: answerSources,
+    model: 'compass-answer-fast-naver-video-product-structured',
+    showContactOption: true,
+    confidenceCap: 78,
+    reviewStatus: 'completed',
+    fastAnswerFallback: 'naver_video_product_structured',
   };
 }
 
@@ -7916,6 +7960,48 @@ export async function buildCompassAnswerResponse(
           }
         };
       }
+    }
+
+    const fastNaverVideoProductAnswer = buildFastNaverVideoProductAnswer(
+      message,
+      ragIntent,
+      specificProductScope,
+      answerSources.length > 0 ? answerSources : sources,
+    );
+    if (fastNaverVideoProductAnswer) {
+      const showContactOption = Boolean(fastNaverVideoProductAnswer.showContactOption);
+      emitPhase?.({ phase: 'answer-ready', message: '네이버 동영상 상품 근거를 기준으로 답변을 정리했습니다.' });
+      return {
+        body: {
+          response: {
+            message: fastNaverVideoProductAnswer.answer,
+            content: fastNaverVideoProductAnswer.answer,
+            sources: fastNaverVideoProductAnswer.sources,
+            noDataFound: false,
+            schema,
+            showContactOption,
+            sourceDiagnostics: {
+              ...sourceDiagnostics,
+              strictProductSourceCount: specificProductScope.strictProductSources.length,
+              answerSourceCount: fastNaverVideoProductAnswer.sources.length,
+              answerMode: diagnosticAnswerMode,
+              answerGenerationDurationMs: 0,
+              deterministicAnswerFamily: detectProductAnswerFamily(message, ragIntent),
+              fastAnswerFallback: fastNaverVideoProductAnswer.fastAnswerFallback,
+            },
+            reviewPipeline: buildReviewPipeline({
+              status: fastNaverVideoProductAnswer.reviewStatus || 'completed',
+              sourceCount: searchResults.length,
+              verifiedSourceCount: fastNaverVideoProductAnswer.sources.length,
+              contactRecommended: showContactOption,
+              retrievalChannelLimited: sourceDiagnostics.retrievalChannelTimedOut === true,
+            }),
+          },
+          confidence: getDeterministicProductConfidence(confidence, fastNaverVideoProductAnswer),
+          processingTime: Date.now() - startTime,
+          model: fastNaverVideoProductAnswer.model
+        }
+      };
     }
 
     if (ragIntent.topics.includes('product_structure') && ragIntent.isSpecificProductGuidance) {
