@@ -752,15 +752,19 @@ if (!/selectSupabaseKeywordSearchTerms[\s\S]*maxTerms[\s\S]*16/.test(rag)) {
   fail('Supabase keyword search must cap product-structure OR terms to avoid broad fan-out latency');
 }
 
+if (!/selectSupabaseKeywordSearchTerms[\s\S]*isBroadProductStructureRetrievalIntent\(intent\)[\s\S]*\?\s*10/.test(rag)) {
+  fail('broad product fast path must use a tighter keyword term cap');
+}
+
 if (!/getKeywordTableFetchLimit[\s\S]*Math\.min\(Math\.max\(limit \* multiplier, floor\), ceiling\)/.test(rag)) {
   fail('keyword table search must use bounded fetch limits instead of unbounded broad-product row fan-out');
 }
 
-if (!/isBroadProductStructureRetrievalIntent[\s\S]*intent\.isProductStructureOverview[\s\S]*getKeywordTableFetchLimit[\s\S]*Math\.min\(Math\.max\(limit \* 3, 24\), 64\)/.test(rag)) {
+if (!/isBroadProductStructureRetrievalIntent[\s\S]*intent\.isProductStructureOverview[\s\S]*getKeywordTableFetchLimit[\s\S]*Math\.min\(Math\.max\(limit \* 2, 16\), 36\)/.test(rag)) {
   fail('broad product fast path keyword table search must use a tighter fetch limit');
 }
 
-if (!/isBroadProductStructureRetrievalIntent[\s\S]*getVendorMetadataFetchLimit[\s\S]*Math\.min\(Math\.max\(limit \* 3, 24\), 64\)/.test(rag)) {
+if (!/isBroadProductStructureRetrievalIntent[\s\S]*getVendorMetadataFetchLimit[\s\S]*Math\.min\(Math\.max\(limit \* 2, 16\), 36\)/.test(rag)) {
   fail('broad product fast path vendor metadata search must use a tighter fetch limit');
 }
 
@@ -768,7 +772,7 @@ if (!/getProductStructureAnchorFetchLimit[\s\S]*Math\.min\(Math\.max\(limit \* 8
   fail('product-structure anchor search must keep per-anchor Supabase fetches bounded');
 }
 
-if (!/getProductStructureAnchorFetchLimit[\s\S]*Math\.min\(Math\.max\(limit \* 4, 24\), 48\)/.test(rag)) {
+if (!/getProductStructureAnchorFetchLimit[\s\S]*Math\.min\(Math\.max\(limit \* 3, 18\), 36\)/.test(rag)) {
   fail('broad product fast path anchor search must keep Supabase fetches small');
 }
 

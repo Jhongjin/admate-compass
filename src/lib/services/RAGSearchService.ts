@@ -603,7 +603,9 @@ export class RAGSearchService {
         ...intent.adPolicyTerms,
       ]
       : [];
-    const maxTerms = intent?.topics.includes('product_structure')
+    const maxTerms = this.isBroadProductStructureRetrievalIntent(intent)
+      ? 10
+      : intent?.topics.includes('product_structure')
       ? (intent.isSpecificProductGuidance ? 14 : 16)
       : intent?.vendors.length
         ? 14
@@ -628,7 +630,7 @@ export class RAGSearchService {
 
   private getKeywordTableFetchLimit(limit: number, intent?: QueryIntent): number {
     if (this.isBroadProductStructureRetrievalIntent(intent)) {
-      return Math.min(Math.max(limit * 3, 24), 64);
+      return Math.min(Math.max(limit * 2, 16), 36);
     }
 
     const productStructureIntent = intent?.topics.includes('product_structure') === true;
@@ -640,7 +642,7 @@ export class RAGSearchService {
 
   private getVendorMetadataFetchLimit(limit: number, intent?: QueryIntent): number {
     if (this.isBroadProductStructureRetrievalIntent(intent)) {
-      return Math.min(Math.max(limit * 3, 24), 64);
+      return Math.min(Math.max(limit * 2, 16), 36);
     }
 
     const productStructureIntent = intent?.topics.includes('product_structure') === true;
@@ -652,7 +654,7 @@ export class RAGSearchService {
 
   private getProductStructureAnchorFetchLimit(limit: number, intent?: QueryIntent): number {
     if (this.isBroadProductStructureRetrievalIntent(intent)) {
-      return Math.min(Math.max(limit * 4, 24), 48);
+      return Math.min(Math.max(limit * 3, 18), 36);
     }
 
     return Math.min(Math.max(limit * 8, 32), 72);
