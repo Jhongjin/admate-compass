@@ -6299,10 +6299,17 @@ function isMetaAppInstallSpecificProductQuestion(message: string) {
   );
 }
 
+function isGoogleLeadFormSpecificProductQuestion(message: string) {
+  return /리드\s*양식|리드양식|잠재\s*고객\s*(양식|광고)|잠재고객\s*(양식|광고)|비즈니스\s*폼|비즈니스폼|lead\s*(form|generation|gen|ads?)/.test(
+    normalizeProductIntentText(message),
+  );
+}
+
 function getSpecificProductSupplementLimit(vendor?: VendorIntent, message = '') {
   if (vendor === 'KAKAO' && isKakaoDisplaySpecificProductQuestion(message)) return 0;
   if (vendor === 'NAVER' && isNaverDisplaySpecificProductQuestion(message)) return 0;
   if (vendor === 'META' && isMetaAppInstallSpecificProductQuestion(message)) return 0;
+  if (vendor === 'GOOGLE' && isGoogleLeadFormSpecificProductQuestion(message)) return 0;
   return vendor === 'KAKAO' ? 1 : 2;
 }
 

@@ -1158,8 +1158,9 @@ if (!/function getProductStructureFastPathSupplementLimit\(vendor\?: VendorInten
   fail('product structure fast path supplement fan-out must stay bounded by vendor, with Meta/Naver/Google using graph/main retrieval only');
 }
 
-if (!/function getSpecificProductSupplementLimit\(vendor\?: VendorIntent,\s*message = ''\)[\s\S]*vendor === 'KAKAO' && isKakaoDisplaySpecificProductQuestion\(message\)[\s\S]*return 0;[\s\S]*vendor === 'NAVER' && isNaverDisplaySpecificProductQuestion\(message\)[\s\S]*return 0;[\s\S]*vendor === 'META' && isMetaAppInstallSpecificProductQuestion\(message\)[\s\S]*return 0;[\s\S]*return vendor === 'KAKAO' \? 1 : 2;/.test(answerHandler)) {
-  fail('specific product supplement fan-out must skip duplicate direct-path supplements for Kakao display, Naver DA, and Meta app-install product questions');
+if (!/function isGoogleLeadFormSpecificProductQuestion\(message: string\)[\s\S]*lead\\s\*\(form\|generation\|gen\|ads\?\)/.test(answerHandler)
+  || !/function getSpecificProductSupplementLimit\(vendor\?: VendorIntent,\s*message = ''\)[\s\S]*vendor === 'KAKAO' && isKakaoDisplaySpecificProductQuestion\(message\)[\s\S]*return 0;[\s\S]*vendor === 'NAVER' && isNaverDisplaySpecificProductQuestion\(message\)[\s\S]*return 0;[\s\S]*vendor === 'META' && isMetaAppInstallSpecificProductQuestion\(message\)[\s\S]*return 0;[\s\S]*vendor === 'GOOGLE' && isGoogleLeadFormSpecificProductQuestion\(message\)[\s\S]*return 0;[\s\S]*return vendor === 'KAKAO' \? 1 : 2;/.test(answerHandler)) {
+  fail('specific product supplement fan-out must skip duplicate direct-path supplements for Kakao display, Naver DA, Meta app-install, and Google lead-form product questions');
 }
 
 if (!/const supplementQueryLimit = usesProductStructureFastPath\s*\?\s*getProductStructureFastPathSupplementLimit\(ragIntent\.vendors\[0\]\)/.test(answerHandler)) {
