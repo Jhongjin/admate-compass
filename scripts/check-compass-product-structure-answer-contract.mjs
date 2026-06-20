@@ -1090,8 +1090,23 @@ const kakaoSpecificFastPathBlock = extractBlock(
   'const specificKakaoFastPathAnchors = [',
   'const [\n      documentChunkResults,',
 );
-if (!/specificKakaoFastPathAnchors[\s\S]*'비즈보드'[\s\S]*'카카오 비즈보드'[\s\S]*'디스플레이 광고'[\s\S]*usesSpecificKakaoOllamaFastPath[\s\S]*Promise\.all\(\[[\s\S]*searchKeywordTable\('document_chunks', specificKakaoFastPathAnchors, 12, intent\)[\s\S]*searchKeywordTable\('ollama_document_chunks', specificKakaoFastPathAnchors, 8, intent, 'KAKAO'\)[\s\S]*keywordFastCandidates\.some\(candidate => this\.hasKakaoBizboardDisplayExactSignal[\s\S]*return keywordFastCandidates[\s\S]*exactFastAnchorResults[\s\S]*searchProductStructureAnchorTable\('document_chunks', anchor, 8, undefined, intent\)[\s\S]*anchorFastCandidates\.some\(candidate => this\.hasKakaoBizboardDisplayExactSignal/.test(kakaoSpecificFastPathBlock)) {
-  fail('KAKAO specific product retrieval must try narrow keyword paths first, returning before anchor-table rescue when exact Bizboard/display evidence is present');
+if (!/specificKakaoFastPathAnchors[\s\S]*'비즈보드'[\s\S]*'카카오 비즈보드'[\s\S]*'디스플레이 광고'[\s\S]*usesSpecificKakaoOllamaFastPath[\s\S]*const requiresKakaoBizboardEvidence = this\.requiresKakaoBizboardEvidence\(intent\)[\s\S]*const hasRequiredKakaoFastPathEvidence = \(candidate: SearchResult\): boolean =>[\s\S]*this\.hasKakaoBizboardDisplayExactSignal\(evidenceText\)[\s\S]*!requiresKakaoBizboardEvidence \|\| this\.hasKakaoBizboardProductSignal\(evidenceText\)[\s\S]*Promise\.all\(\[[\s\S]*searchKeywordTable\('document_chunks', specificKakaoFastPathAnchors, 12, intent\)[\s\S]*searchKeywordTable\('ollama_document_chunks', specificKakaoFastPathAnchors, 8, intent, 'KAKAO'\)[\s\S]*keywordFastCandidates\.some\(hasRequiredKakaoFastPathEvidence\)[\s\S]*return keywordFastCandidates[\s\S]*exactFastAnchorResults[\s\S]*searchProductStructureAnchorTable\('document_chunks', anchor, 8, undefined, intent\)[\s\S]*anchorFastCandidates\.some\(hasRequiredKakaoFastPathEvidence\)/.test(kakaoSpecificFastPathBlock)) {
+  fail('KAKAO specific product retrieval must try narrow keyword paths first, but Bizboard questions must require actual Bizboard evidence before returning');
+}
+
+const kakaoExactSignalBlock = extractBlock(
+  'KAKAO exact Bizboard/display signal',
+  rag,
+  'private hasKakaoBizboardDisplayExactSignal',
+  'private isKakaoServiceProtectionPolicyIntent',
+);
+if (/\/content-guide/.test(kakaoExactSignalBlock) || /카카오모먼트/.test(kakaoExactSignalBlock)) {
+  fail('KAKAO exact Bizboard/display signal must not treat generic content-guide URLs or bare 카카오모먼트 as exact product evidence');
+}
+
+if (!/private requiresKakaoBizboardEvidence\([\s\S]*비즈보드[\s\S]*톡보드[\s\S]*talkboard/.test(rag)
+  || !/private hasKakaoBizboardProductSignal\([\s\S]*\/talkboard\(\?:\\\/\|\$\)[\s\S]*비즈보드[\s\S]*talkboard/.test(rag)) {
+  fail('KAKAO Bizboard fast path must keep explicit query and source evidence helpers');
 }
 
 if (!/if \(usesKakaoProductPriority && usesSpecificProductRetrieval\)[\s\S]*specific_kakao_priority_direct[\s\S]*if \(rankedResults\.length > 0\)[\s\S]*return this\.withRetrievalTimeoutMetadata\(rankedResults, timedOutChannels, channelTimings\);[\s\S]*selectKakaoProductPriorityRescueCandidates[\s\S]*KAKAO specific product priority candidates were rescued[\s\S]*continuing to hybrid retrieval[\s\S]*const queryEmbeddingResult = await this\.embeddingService\.generateEmbedding\(query\)/.test(rag)) {

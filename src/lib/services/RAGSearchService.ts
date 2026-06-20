@@ -3196,6 +3196,12 @@ export class RAGSearchService {
     ];
 
     const usesSpecificKakaoOllamaFastPath = intent.isSpecificProductGuidance;
+    const requiresKakaoBizboardEvidence = this.requiresKakaoBizboardEvidence(intent);
+    const hasRequiredKakaoFastPathEvidence = (candidate: SearchResult): boolean => {
+      const evidenceText = this.buildCandidateEvidenceText(candidate.content, candidate.documentTitle, candidate.metadata);
+      return this.hasKakaoBizboardDisplayExactSignal(evidenceText)
+        && (!requiresKakaoBizboardEvidence || this.hasKakaoBizboardProductSignal(evidenceText));
+    };
     if (usesSpecificKakaoOllamaFastPath) {
       const [documentFastResults, ollamaResults] = await Promise.all([
         this.searchKeywordTable('document_chunks', specificKakaoFastPathAnchors, 12, intent),
@@ -3209,9 +3215,7 @@ export class RAGSearchService {
         keywords,
         intent,
       );
-      if (keywordFastCandidates.some(candidate => this.hasKakaoBizboardDisplayExactSignal(
-        this.buildCandidateEvidenceText(candidate.content, candidate.documentTitle, candidate.metadata),
-      ))) {
+      if (keywordFastCandidates.some(hasRequiredKakaoFastPathEvidence)) {
         return keywordFastCandidates;
       }
 
@@ -3229,9 +3233,7 @@ export class RAGSearchService {
         keywords,
         intent,
       );
-      if (anchorFastCandidates.some(candidate => this.hasKakaoBizboardDisplayExactSignal(
-        this.buildCandidateEvidenceText(candidate.content, candidate.documentTitle, candidate.metadata),
-      ))) {
+      if (anchorFastCandidates.some(hasRequiredKakaoFastPathEvidence)) {
         return anchorFastCandidates;
       }
     }
@@ -3276,8 +3278,9 @@ export class RAGSearchService {
         if (!this.hasKakaoBizboardDisplaySignal(sourceText)) return null;
         if (this.isKakaoMeasurementOnlySource(sourceText, intent)) return null;
 
+        const normalizedSourceText = this.normalizeSearchText(sourceText);
         const hasExactProductSignal = this.hasKakaoBizboardDisplayExactSignal(sourceText);
-        const hasProductGuideUrl = /kakaobusiness\.gitbook\.io\/main\/ad\/moment\/(performance|guarantee)\/(talkboard|displayad|catalog|cpt|cpt-mo|cpt-pc)|\/content-guide/.test(sourceText);
+        const hasProductGuideUrl = /kakaobusiness\.gitbook\.io\/main\/ad\/moment\/(performance|guarantee)\/(talkboard|displayad|catalog|cpt|cpt-mo|cpt-pc)(?:\/|$)/.test(normalizedSourceText);
         const hasCreativeGuideSignal = /홍보이미지|행동유도버튼|닫힘버튼|메인\s*카피|서브\s*카피|2:1\s*비율|1:1\s*비율|이미지\s*세부\s*가이드|외곽\s*테두리|리사이징|타이틀|소재|제작\s*가이드|노출\s*지면/.test(sourceText);
         const hasAuditSignal = /심사\s*가이드|집행\s*기준|업종별\s*가이드|광고\s*가능\s*업종|등록\s*불가|금지\s*행위|소재\s*제한/.test(sourceText);
         const boostedScore = Math.max(
@@ -4070,6 +4073,22 @@ export class RAGSearchService {
     return mentionsBizboard && mentionsDisplay;
   }
 
+  private requiresKakaoBizboardEvidence(intent: QueryIntent): boolean {
+    if (!intent.vendors.includes('KAKAO')) return false;
+    const queryText = this.normalizeSearchText([
+      ...intent.keywords,
+      ...intent.strictProductTerms,
+      ...intent.strictContextTerms,
+    ].join(' '));
+    return /비즈보드|카카오\s*비즈보드|카카오비즈보드|톡보드|talkboard/.test(queryText);
+  }
+
+  private hasKakaoBizboardProductSignal(sourceText: string): boolean {
+    const text = this.normalizeSearchText(sourceText);
+    return /kakaobusiness\.gitbook\.io\/main\/ad\/moment\/(performance|guarantee)\/talkboard(?:\/|$)/.test(text)
+      || /비즈보드|카카오\s*비즈보드|카카오비즈보드|톡보드|talkboard/.test(text);
+  }
+
   private hasKakaoBizboardDisplaySignal(sourceText: string): boolean {
     const text = this.normalizeSearchText(sourceText);
     return /kakaobusiness\.gitbook\.io\/main\/ad\/moment\/(performance|guarantee)\/(talkboard|displayad|catalog|cpt|cpt-mo|cpt-pc)|\/content-guide/.test(text)
@@ -4078,8 +4097,8 @@ export class RAGSearchService {
 
   private hasKakaoBizboardDisplayExactSignal(sourceText: string): boolean {
     const text = this.normalizeSearchText(sourceText);
-    return /kakaobusiness\.gitbook\.io\/main\/ad\/moment\/(performance|guarantee)\/(talkboard|displayad)|\/content-guide/.test(text)
-      || /비즈보드|카카오\s*비즈보드|카카오비즈보드|톡보드|talkboard|디스플레이\s*광고|디스플레이광고|displayad|카카오모먼트/.test(text);
+    return /kakaobusiness\.gitbook\.io\/main\/ad\/moment\/(performance|guarantee)\/(talkboard|displayad)(?:\/|$)/.test(text)
+      || /비즈보드|카카오\s*비즈보드|카카오비즈보드|톡보드|talkboard|디스플레이\s*광고|디스플레이광고|displayad/.test(text);
   }
 
   private isKakaoServiceProtectionPolicyIntent(intent: QueryIntent): boolean {
