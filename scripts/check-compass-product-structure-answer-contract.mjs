@@ -73,6 +73,9 @@ for (const snippet of [
   'specific kakao priority direct path',
   'naver_product_structure_priority_keyword',
   'meta_product_overview_keyword',
+  'meta_app_install_priority_keyword',
+  'meta_app_install_vendor_metadata',
+  'usesMetaAppInstallPriority',
   'mergeDuplicateCandidate',
   'evidenceDecisionReason',
   'Product structure fast 후보 수집 결과',
@@ -610,8 +613,22 @@ if (!/isMetaBroadProductNewsNoiseText[\s\S]*facebook\\\.com\\\/business\\\/news[
   fail('Meta overview priority retrieval must reject business/news and format-only sources before boosting them');
 }
 
+const metaAppInstallIntentBlock = extractBlock(
+  'Meta app install intent',
+  rag,
+  'private isMetaAppInstallIntent',
+  'private hasMetaAppInstallSignal',
+);
+if (metaAppInstallIntentBlock.includes('intent.isProductStructureOverview && !intent.isSpecificProductGuidance')) {
+  fail('Meta app install intent must include app-install product overview questions so the priority path can run');
+}
+
 if (!/calculateProductStructureGraphTitleAdjustment[\s\S]*hasMetaBusinessNewsUrl[\s\S]*meta_product_structure_news_url_penalty[\s\S]*isLowValueProductStructureGraphCandidate[\s\S]*intent\.vendors\[0\] === 'META'[\s\S]*isMetaBroadProductNewsNoiseText\(sourceText\)/.test(rag)) {
   fail('Meta product-structure GraphRAG selection must penalize and reject weak business/news graph sources');
+}
+
+if (!/isLowValueProductStructureGraphCandidate[\s\S]*isMetaAppInstallIntent\(intent\)[\s\S]*facebook\\\.com\\\/business\\\/news\|\\\/business\\\/news\|business\\\/news[\s\S]*return true/.test(rag)) {
+  fail('Meta app-install product questions must reject Meta business/news graph sources before coverage promotion');
 }
 
 if (!/const sourceGuidedBroadProductSources = answerSources\.filter[\s\S]*sourceLooksLikeProductStructureSupportNoise\(source\)[\s\S]*buildLlmFailureGroundedFallbackAnswer\([\s\S]*sourceGuidedBroadProductSources[\s\S]*sources: sourceGuidedBroadProductSources[\s\S]*answerSourceCount: sourceGuidedBroadProductSources\.length/.test(answerHandler)) {
@@ -937,6 +954,28 @@ if (!/intent\.requiresVendorCoverage[\s\S]*searchVendorCoverageCandidates\(query
 
 if (!/prioritySearchAnchors[\s\S]*searchKeywordTable\('document_chunks', prioritySearchAnchors[\s\S]*searchVendorMetadataTable\('ollama_document_chunks', 'KAKAO', prioritySearchAnchors/.test(rag)) {
   fail('KAKAO product priority retrieval must use bounded batch keyword/metadata queries instead of sequential per-anchor Supabase fan-out');
+}
+
+const metaAppInstallPriorityBlock = extractBlock(
+  'Meta app install priority retrieval',
+  rag,
+  'private async searchMetaAppInstallPriorityCandidates',
+  'private async searchMetaProductOverviewPriorityCandidates',
+);
+if (!/const priorityAnchors = anchors\.slice\(0, 12\)[\s\S]*searchKeywordTable\('document_chunks', priorityAnchors[\s\S]*searchKeywordTable\('ollama_document_chunks', priorityAnchors[\s\S]*searchVendorMetadataTable\('ollama_document_chunks', 'META', priorityAnchors/.test(metaAppInstallPriorityBlock)) {
+  fail('Meta app-install priority retrieval must use bounded batch keyword/metadata queries instead of sequential per-anchor Supabase fan-out');
+}
+
+if (/for \(const anchor of anchors\)/.test(metaAppInstallPriorityBlock)) {
+  fail('Meta app-install priority retrieval must not use sequential per-anchor Supabase fan-out');
+}
+
+if (!/const usesMetaProductOverviewPriority[\s\S]*!usesMetaAppInstallPriority[\s\S]*const usesKakaoProductPriority/.test(rag)) {
+  fail('Meta app-install product questions must skip duplicate Meta overview priority retrieval');
+}
+
+if (!/skipsGraphForGoogleProductOverview\s*\n\s*\|\| usesMetaAppInstallPriority[\s\S]*Promise\.resolve\(\[\]\)[\s\S]*product_fast_graph/.test(rag)) {
+  fail('Meta app-install product fast path must skip noisy graph retrieval once app-install priority is enabled');
 }
 
 if (!/getKakaoProductGraphSoftBudgetMs[\s\S]*COMPASS_KAKAO_PRODUCT_GRAPH_SOFT_BUDGET_MS[\s\S]*skipsGraphForGoogleProductOverview[\s\S]*usesKakaoProductPriority[\s\S]*product_fast_graph[\s\S]*getKakaoProductGraphSoftBudgetMs\(\)/.test(rag)) {

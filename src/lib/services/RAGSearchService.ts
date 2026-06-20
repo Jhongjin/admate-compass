@@ -1116,6 +1116,7 @@ export class RAGSearchService {
         needsProductStructureRetrieval
         && intent.vendors.length === 1
         && intent.vendors[0] === 'META'
+        && !usesMetaAppInstallPriority
         && intent.isProductStructureOverview
         && !intent.isSpecificProductGuidance;
       const usesKakaoProductPriority =
@@ -1182,6 +1183,7 @@ export class RAGSearchService {
             : Promise.resolve([]),
           Promise.resolve([]),
           skipsGraphForGoogleProductOverview
+            || usesMetaAppInstallPriority
             ? Promise.resolve([])
             : usesKakaoProductPriority
               ? this.withRetrievalChannelSoftBudget(this.searchEvidenceGraphCandidates(query, candidateLimit, intent), 'product_fast_graph', [], this.getKakaoProductGraphSoftBudgetMs(), channelTimings)
@@ -2003,15 +2005,30 @@ export class RAGSearchService {
       ...anchors,
     ]));
 
-    const results: Array<{ row: any; corpus: RetrievalCorpus; anchor: string }> = [];
-    for (const anchor of anchors) {
-      const [documentChunkResults, ollamaResults] = await Promise.all([
-        this.searchProductStructureAnchorTable('document_chunks', anchor, 4, undefined, intent),
-        this.searchProductStructureAnchorTable('ollama_document_chunks', anchor, 3, 'META', intent),
-      ]);
-      results.push(...documentChunkResults, ...ollamaResults);
-      if (results.length >= 32) break;
-    }
+    const priorityAnchors = anchors.slice(0, 12);
+    const [
+      documentKeywordResults,
+      ollamaKeywordResults,
+      vendorMetadataResults,
+    ] = await Promise.all([
+      this.searchKeywordTable('document_chunks', priorityAnchors, 12, intent, 'META'),
+      this.searchKeywordTable('ollama_document_chunks', priorityAnchors, 10, intent, 'META'),
+      this.searchVendorMetadataTable('ollama_document_chunks', 'META', priorityAnchors, 8, intent),
+    ]);
+    const results: Array<{ row: any; corpus: RetrievalCorpus; anchor: string }> = [
+      ...documentKeywordResults.map(result => ({
+        ...result,
+        anchor: 'meta_app_install_priority_keyword',
+      })),
+      ...ollamaKeywordResults.map(result => ({
+        ...result,
+        anchor: 'meta_app_install_priority_keyword',
+      })),
+      ...vendorMetadataResults.map(result => ({
+        ...result,
+        anchor: 'meta_app_install_vendor_metadata',
+      })),
+    ];
 
     return results
       .map((result) => {
@@ -4400,7 +4417,13 @@ export class RAGSearchService {
       && intent.vendors[0] === 'META'
       && intent.isProductStructureOverview
       && !intent.isSpecificProductGuidance
-      && this.isMetaBroadProductNewsNoiseText(sourceText)
+      && (
+        this.isMetaBroadProductNewsNoiseText(sourceText)
+        || (
+          this.isMetaAppInstallIntent(intent)
+          && /facebook\.com\/business\/news|\/business\/news|business\/news/.test(sourceText)
+        )
+      )
     ) {
       return true;
     }
@@ -5620,7 +5643,6 @@ export class RAGSearchService {
 
   private isMetaAppInstallIntent(intent: QueryIntent): boolean {
     if (!intent.topics.includes('product_structure') || intent.vendors[0] !== 'META') return false;
-    if (intent.isProductStructureOverview && !intent.isSpecificProductGuidance) return false;
     const text = this.normalizeSearchText([
       ...intent.keywords,
       ...intent.strictProductTerms,
