@@ -812,7 +812,7 @@ if (!/usesProductStructureFastPath\s*=\s*isBroadProductStructureAnswerIntent\(me
   fail('product structure fast path must be limited to broad overview questions');
 }
 
-if (!/function getProductStructureFastPathSupplementLimit\(vendor\?: VendorIntent\)[\s\S]*case 'GOOGLE':[\s\S]*case 'NAVER':[\s\S]*return 2;[\s\S]*case 'META':[\s\S]*case 'KAKAO':[\s\S]*return 1;/.test(answerHandler)) {
+if (!/function getProductStructureFastPathSupplementLimit\(vendor\?: VendorIntent\)[\s\S]*case 'NAVER':[\s\S]*return 2;[\s\S]*case 'GOOGLE':[\s\S]*case 'META':[\s\S]*case 'KAKAO':[\s\S]*return 1;/.test(answerHandler)) {
   fail('product structure fast path supplement fan-out must stay bounded by vendor');
 }
 

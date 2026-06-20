@@ -5565,9 +5565,9 @@ const VENDOR_LABELS: Record<string, string> = {
 
 function getProductStructureFastPathSupplementLimit(vendor?: VendorIntent) {
   switch (vendor) {
-    case 'GOOGLE':
     case 'NAVER':
       return 2;
+    case 'GOOGLE':
     case 'META':
     case 'KAKAO':
       return 1;
