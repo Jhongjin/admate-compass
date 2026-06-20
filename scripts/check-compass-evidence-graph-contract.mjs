@@ -56,6 +56,7 @@ for (const serviceSignal of [
   'isFocusedProductGraphRpcEnabled',
   'isFocusedProductGraphIntent',
   'fetchFocusedProductStructuredRowsFromRpc',
+  'resolveFocusedProductGraphRpcRowLimit',
   'resolveStructuredGraphPerQueryLimit',
   'resolveTextGraphRowLimit',
 ]) {

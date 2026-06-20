@@ -229,7 +229,7 @@ export class CompassEvidenceGraphService {
       p_source_kinds: this.preferredSourceKinds(intent),
       p_graph_topics: this.preferredGraphTopics(intent).slice(0, 5),
       p_claim_types: this.preferredClaimTypes(intent).slice(0, 8),
-      p_limit: this.resolveStructuredGraphRowLimit(intent, limit),
+      p_limit: this.resolveFocusedProductGraphRpcRowLimit(limit),
     });
 
     if (error) {
@@ -303,6 +303,10 @@ export class CompassEvidenceGraphService {
     }
 
     return Math.max(limit * 24, 120);
+  }
+
+  private resolveFocusedProductGraphRpcRowLimit(limit: number): number {
+    return Math.min(Math.max(limit * 3, 36), 72);
   }
 
   private resolveMergedGraphRowLimit(intent: QueryIntent, limit: number): number {
