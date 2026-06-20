@@ -159,16 +159,23 @@ for (const snippet of [
   'buildFastKakaoSpecificProductAnswer',
   'buildFastKakaoProductStructuredAnswer',
   'buildFastNaverVideoProductAnswer',
+  'buildFastStructuredSpecificProductAnswer',
   'COMPASS_DISABLE_FAST_KAKAO_SPECIFIC_PRODUCT_ANSWERS',
   'COMPASS_DISABLE_FAST_KAKAO_STRUCTURED_PRODUCT_ANSWERS',
   'COMPASS_DISABLE_FAST_NAVER_VIDEO_PRODUCT_ANSWERS',
+  'COMPASS_DISABLE_FAST_STRUCTURED_SPECIFIC_PRODUCT_ANSWERS',
   "fastAnswerFallback: 'kakao_specific_product_source_guided'",
   "'kakao_product_structured'",
   "'kakao_product_scope_rescue'",
   "'naver_video_product_structured'",
+  "'meta_app_install_structured'",
+  "'naver_shopping_data_operational'",
+  "'google_lead_structured'",
   'compass-answer-fast-kakao-specific-product-source-guided',
   'compass-answer-fast-kakao-product-structured',
   "'compass-answer-fast-naver-video-product-structured'",
+  "'compass-answer-fast-naver-shopping-data-operational'",
+  "'compass-answer-fast-google-lead-structured'",
   'sourceMatchesRequestedProductMode',
   'buildSpecificProductScopeLimitedAnswer',
   "model: 'compass-answer-naver-shopping-data-operational'",
@@ -1172,6 +1179,14 @@ if (!/function buildFastNaverVideoProductAnswer\([\s\S]*COMPASS_DISABLE_FAST_NAV
 
 if (!/const fastNaverVideoProductAnswer = buildFastNaverVideoProductAnswer\([\s\S]*answerSources\.length > 0 \? answerSources : sources[\s\S]*answerGenerationDurationMs: 0,[\s\S]*fastAnswerFallback: fastNaverVideoProductAnswer\.fastAnswerFallback[\s\S]*Compass specific product answer will use grounded LLM synthesis/.test(answerHandler)) {
   fail('Naver video product fast answer must run before grounded LLM synthesis and expose zero answer-generation diagnostics');
+}
+
+if (!/function buildFastStructuredSpecificProductAnswer\([\s\S]*COMPASS_DISABLE_FAST_STRUCTURED_SPECIFIC_PRODUCT_ANSWERS[\s\S]*intent\.vendors\.length !== 1 \|\| intent\.isComparative[\s\S]*buildNaverShoppingDataOperationalAnswer\(message, answerSources\)[\s\S]*buildGoogleLeadStructuredFallbackAnswer\(answerSources, intent, message\)[\s\S]*fastAnswerFallback: builder\.fastAnswerFallback/.test(answerHandler)) {
+  fail('structured specific product fast answer must stay single-vendor gated and reuse existing official-source structured builders');
+}
+
+if (!/const fastStructuredSpecificProductAnswer = buildFastStructuredSpecificProductAnswer\([\s\S]*answerSources\.length > 0 \? answerSources : sources[\s\S]*answerGenerationDurationMs: 0,[\s\S]*fastAnswerFallback: fastStructuredSpecificProductAnswer\.fastAnswerFallback[\s\S]*Compass specific product answer will use grounded LLM synthesis/.test(answerHandler)) {
+  fail('structured specific product fast answer must run before grounded LLM synthesis and expose zero answer-generation diagnostics');
 }
 
 if (!/const fastKakaoBroadProductAnswer = buildFastKakaoProductStructuredAnswer\([\s\S]*productStructureSources[\s\S]*compass-answer-fast-kakao-product-structured[\s\S]*answerGenerationDurationMs: 0,[\s\S]*fastAnswerFallback: fastKakaoBroadProductAnswer\.fastAnswerFallback[\s\S]*Compass product structure broad answer will use grounded LLM synthesis/.test(answerHandler)) {

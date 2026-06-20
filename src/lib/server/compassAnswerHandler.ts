@@ -4083,6 +4083,14 @@ type FastKakaoProductAnswerFallback =
 
 type FastNaverVideoProductAnswerFallback = 'naver_video_product_structured';
 
+type FastStructuredSpecificProductAnswerFallback =
+  | 'meta_app_install_structured'
+  | 'naver_shopping_search_creative_structured'
+  | 'naver_shopping_data_operational'
+  | 'naver_shopping_data_structured'
+  | 'naver_display_ad_structured'
+  | 'google_lead_structured';
+
 type ProductAnswerFamily =
   | 'meta_overview'
   | 'meta_app_install'
@@ -4758,6 +4766,101 @@ function buildFastNaverVideoProductAnswer(
     reviewStatus: 'completed',
     fastAnswerFallback: 'naver_video_product_structured',
   };
+}
+
+function buildFastStructuredSpecificProductAnswer(
+  message: string,
+  intent: QueryIntent,
+  scope: ReturnType<typeof buildSpecificProductAnswerScope>,
+  fallbackSources: ReturnType<typeof buildVerifiedSources>,
+): (DeterministicProductAnswer & { fastAnswerFallback: FastStructuredSpecificProductAnswerFallback }) | null {
+  if (process.env.COMPASS_DISABLE_FAST_STRUCTURED_SPECIFIC_PRODUCT_ANSWERS === 'true') return null;
+  if (!intent.topics.includes('product_structure')) return null;
+  if (intent.vendors.length !== 1 || intent.isComparative) return null;
+  if (!intent.isSpecificProductGuidance && !hasNamedSpecificProductQuestion(message)) return null;
+
+  const vendor = intent.vendors[0];
+  const scopedSources = scope.answerSources.length > 0 ? scope.answerSources : scope.strictProductSources;
+  const candidateSources = scopedSources.length > 0 ? scopedSources : fallbackSources;
+  const vendorSources = candidateSources.filter(source => (
+    sourceMatchesVendor(source, vendor)
+    && !sourceHasCrossVendorUrl(source, [vendor])
+    && !sourceHasExtractionNoise(source)
+    && String(source.excerpt || source.matchText || source.title || '').trim()
+  ));
+  const answerSources = dedupePublicProductSources(
+    vendorSources.length > 0 ? vendorSources : candidateSources,
+    6,
+  );
+  if (answerSources.length === 0) return null;
+
+  const builders: Array<{
+    vendor: VendorIntent;
+    model: string;
+    fastAnswerFallback: FastStructuredSpecificProductAnswerFallback;
+    confidenceCap: number;
+    build: () => string | null;
+  }> = [
+    {
+      vendor: 'META',
+      model: 'compass-answer-fast-meta-app-install-structured',
+      fastAnswerFallback: 'meta_app_install_structured',
+      confidenceCap: 78,
+      build: () => buildMetaAppInstallStructuredFallbackAnswer(answerSources, intent, message),
+    },
+    {
+      vendor: 'NAVER',
+      model: 'compass-answer-fast-naver-shopping-search-creative-structured',
+      fastAnswerFallback: 'naver_shopping_search_creative_structured',
+      confidenceCap: 78,
+      build: () => buildNaverShoppingSearchCreativeGuideStructuredFallbackAnswer(answerSources, intent, message),
+    },
+    {
+      vendor: 'NAVER',
+      model: 'compass-answer-fast-naver-shopping-data-operational',
+      fastAnswerFallback: 'naver_shopping_data_operational',
+      confidenceCap: 80,
+      build: () => buildNaverShoppingDataOperationalAnswer(message, answerSources),
+    },
+    {
+      vendor: 'NAVER',
+      model: 'compass-answer-fast-naver-shopping-data-structured',
+      fastAnswerFallback: 'naver_shopping_data_structured',
+      confidenceCap: 78,
+      build: () => buildNaverShoppingDataStructuredFallbackAnswer(answerSources, intent, message),
+    },
+    {
+      vendor: 'NAVER',
+      model: 'compass-answer-fast-naver-display-ad-structured',
+      fastAnswerFallback: 'naver_display_ad_structured',
+      confidenceCap: 78,
+      build: () => buildNaverDisplayAdStructuredFallbackAnswer(answerSources, intent, message),
+    },
+    {
+      vendor: 'GOOGLE',
+      model: 'compass-answer-fast-google-lead-structured',
+      fastAnswerFallback: 'google_lead_structured',
+      confidenceCap: 78,
+      build: () => buildGoogleLeadStructuredFallbackAnswer(answerSources, intent, message),
+    },
+  ];
+
+  for (const builder of builders) {
+    if (builder.vendor !== vendor) continue;
+    const structuredAnswer = builder.build();
+    if (!structuredAnswer) continue;
+    return {
+      answer: structuredAnswer,
+      sources: answerSources,
+      model: builder.model,
+      showContactOption: true,
+      confidenceCap: builder.confidenceCap,
+      reviewStatus: 'completed',
+      fastAnswerFallback: builder.fastAnswerFallback,
+    };
+  }
+
+  return null;
 }
 
 function buildFastKakaoSpecificProductAnswer(
@@ -8000,6 +8103,48 @@ export async function buildCompassAnswerResponse(
           confidence: getDeterministicProductConfidence(confidence, fastNaverVideoProductAnswer),
           processingTime: Date.now() - startTime,
           model: fastNaverVideoProductAnswer.model
+        }
+      };
+    }
+
+    const fastStructuredSpecificProductAnswer = buildFastStructuredSpecificProductAnswer(
+      message,
+      ragIntent,
+      specificProductScope,
+      answerSources.length > 0 ? answerSources : sources,
+    );
+    if (fastStructuredSpecificProductAnswer) {
+      const showContactOption = Boolean(fastStructuredSpecificProductAnswer.showContactOption);
+      emitPhase?.({ phase: 'answer-ready', message: '공식 상품 근거를 기준으로 답변을 정리했습니다.' });
+      return {
+        body: {
+          response: {
+            message: fastStructuredSpecificProductAnswer.answer,
+            content: fastStructuredSpecificProductAnswer.answer,
+            sources: fastStructuredSpecificProductAnswer.sources,
+            noDataFound: false,
+            schema,
+            showContactOption,
+            sourceDiagnostics: {
+              ...sourceDiagnostics,
+              strictProductSourceCount: specificProductScope.strictProductSources.length,
+              answerSourceCount: fastStructuredSpecificProductAnswer.sources.length,
+              answerMode: diagnosticAnswerMode,
+              answerGenerationDurationMs: 0,
+              deterministicAnswerFamily: detectProductAnswerFamily(message, ragIntent),
+              fastAnswerFallback: fastStructuredSpecificProductAnswer.fastAnswerFallback,
+            },
+            reviewPipeline: buildReviewPipeline({
+              status: fastStructuredSpecificProductAnswer.reviewStatus || 'completed',
+              sourceCount: searchResults.length,
+              verifiedSourceCount: fastStructuredSpecificProductAnswer.sources.length,
+              contactRecommended: showContactOption,
+              retrievalChannelLimited: sourceDiagnostics.retrievalChannelTimedOut === true,
+            }),
+          },
+          confidence: getDeterministicProductConfidence(confidence, fastStructuredSpecificProductAnswer),
+          processingTime: Date.now() - startTime,
+          model: fastStructuredSpecificProductAnswer.model
         }
       };
     }
