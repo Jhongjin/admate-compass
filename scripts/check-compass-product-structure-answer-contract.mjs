@@ -1048,6 +1048,12 @@ if (!/const priorityAnchors = anchors\.slice\(0, 12\)[\s\S]*searchKeywordTable\(
   fail('Meta app-install priority retrieval must use bounded batch keyword/metadata queries plus bounded parallel setup anchors instead of sequential per-anchor Supabase fan-out');
 }
 
+if (!/private getKeywordTableFetchLimit[\s\S]*isMetaAppInstallIntent\(intent\)[\s\S]*Math\.min\(Math\.max\(limit, 12\), 28\)[\s\S]*intent\.isSpecificProductGuidance[\s\S]*isKakaoBizboardDisplayProductIntent\(intent\)[\s\S]*Math\.min\(Math\.max\(limit \+ 4, 8\), 16\)/.test(rag)
+  || !/private getVendorMetadataFetchLimit[\s\S]*isMetaAppInstallIntent\(intent\)[\s\S]*Math\.min\(Math\.max\(limit, 8\), 18\)[\s\S]*intent\.isSpecificProductGuidance[\s\S]*isKakaoBizboardDisplayProductIntent\(intent\)[\s\S]*Math\.min\(Math\.max\(limit \+ 4, 8\), 18\)/.test(rag)
+  || !/private getProductStructureAnchorFetchLimit[\s\S]*isMetaAppInstallIntent\(intent\)[\s\S]*Math\.min\(Math\.max\(limit, 8\), 16\)[\s\S]*intent\.isSpecificProductGuidance[\s\S]*isKakaoBizboardDisplayProductIntent\(intent\)[\s\S]*Math\.min\(Math\.max\(limit \+ 3, 8\), 16\)/.test(rag)) {
+  fail('Meta app-install and KAKAO specific product direct paths must not inflate small direct-path limits back into broad batch fetches');
+}
+
 if (/for \(const anchor of anchors\)/.test(metaAppInstallPriorityBlock)) {
   fail('Meta app-install priority retrieval must not use sequential per-anchor Supabase fan-out');
 }

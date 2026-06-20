@@ -1005,10 +1005,17 @@ export class RAGSearchService {
 
   private getKeywordTableFetchLimit(limit: number, intent?: QueryIntent): number {
     if (intent && this.isMetaAppInstallIntent(intent)) {
-      return Math.min(Math.max(limit * 2, 16), 40);
+      return Math.min(Math.max(limit, 12), 28);
     }
     if (intent && this.isGoogleLeadFormIntent(intent)) {
       return Math.min(Math.max(limit * 2, 12), 32);
+    }
+    if (
+      intent
+      && intent.isSpecificProductGuidance
+      && this.isKakaoBizboardDisplayProductIntent(intent)
+    ) {
+      return Math.min(Math.max(limit + 4, 8), 16);
     }
 
     if (
@@ -1035,10 +1042,17 @@ export class RAGSearchService {
 
   private getVendorMetadataFetchLimit(limit: number, intent?: QueryIntent): number {
     if (intent && this.isMetaAppInstallIntent(intent)) {
-      return Math.min(Math.max(limit * 2, 12), 28);
+      return Math.min(Math.max(limit, 8), 18);
     }
     if (intent && this.isGoogleLeadFormIntent(intent)) {
       return Math.min(Math.max(limit * 2, 10), 20);
+    }
+    if (
+      intent
+      && intent.isSpecificProductGuidance
+      && this.isKakaoBizboardDisplayProductIntent(intent)
+    ) {
+      return Math.min(Math.max(limit + 4, 8), 18);
     }
 
     if (this.isBroadProductStructureRetrievalIntent(intent)) {
@@ -1057,7 +1071,15 @@ export class RAGSearchService {
 
   private getProductStructureAnchorFetchLimit(limit: number, intent?: QueryIntent): number {
     if (intent && this.isMetaAppInstallIntent(intent)) {
-      return Math.min(Math.max(limit * 2, 12), 24);
+      return Math.min(Math.max(limit, 8), 16);
+    }
+
+    if (
+      intent
+      && intent.isSpecificProductGuidance
+      && this.isKakaoBizboardDisplayProductIntent(intent)
+    ) {
+      return Math.min(Math.max(limit + 3, 8), 16);
     }
 
     if (this.isBroadProductStructureRetrievalIntent(intent)) {
