@@ -616,7 +616,21 @@ export class RAGSearchService {
     ])).slice(0, maxTerms);
   }
 
+  private isBroadProductStructureRetrievalIntent(intent?: QueryIntent): boolean {
+    return Boolean(
+      intent?.topics.includes('product_structure')
+      && intent.isProductStructureOverview
+      && !intent.isSpecificProductGuidance
+      && intent.vendors.length === 1
+      && !intent.isComparative
+    );
+  }
+
   private getKeywordTableFetchLimit(limit: number, intent?: QueryIntent): number {
+    if (this.isBroadProductStructureRetrievalIntent(intent)) {
+      return Math.min(Math.max(limit * 3, 24), 64);
+    }
+
     const productStructureIntent = intent?.topics.includes('product_structure') === true;
     const multiplier = productStructureIntent ? 8 : 10;
     const floor = productStructureIntent ? 48 : 40;
@@ -625,6 +639,10 @@ export class RAGSearchService {
   }
 
   private getVendorMetadataFetchLimit(limit: number, intent?: QueryIntent): number {
+    if (this.isBroadProductStructureRetrievalIntent(intent)) {
+      return Math.min(Math.max(limit * 3, 24), 64);
+    }
+
     const productStructureIntent = intent?.topics.includes('product_structure') === true;
     const multiplier = productStructureIntent ? 8 : 10;
     const floor = productStructureIntent ? 48 : 40;
@@ -632,7 +650,11 @@ export class RAGSearchService {
     return Math.min(Math.max(limit * multiplier, floor), ceiling);
   }
 
-  private getProductStructureAnchorFetchLimit(limit: number): number {
+  private getProductStructureAnchorFetchLimit(limit: number, intent?: QueryIntent): number {
+    if (this.isBroadProductStructureRetrievalIntent(intent)) {
+      return Math.min(Math.max(limit * 4, 24), 48);
+    }
+
     return Math.min(Math.max(limit * 8, 32), 72);
   }
 
@@ -780,7 +802,9 @@ export class RAGSearchService {
           graphCandidates
         ] = await Promise.all([
           this.withRetrievalChannelTimeout(this.searchKeywordCandidates(query, candidateLimit, intent), 'product_fast_keyword', [], timedOutChannels),
-          this.withRetrievalChannelTimeout(this.searchVendorCoverageCandidates(query, candidateLimit, intent), 'product_fast_vendor_coverage', [], timedOutChannels),
+          intent.requiresVendorCoverage
+            ? this.withRetrievalChannelTimeout(this.searchVendorCoverageCandidates(query, candidateLimit, intent), 'product_fast_vendor_coverage', [], timedOutChannels)
+            : Promise.resolve([]),
           usesVendorProductStructurePriority
             ? Promise.resolve([])
             : this.withRetrievalChannelTimeout(this.searchProductStructureCandidates(candidateLimit, intent), 'product_fast_structure_anchor', [], timedOutChannels),
@@ -2991,7 +3015,7 @@ export class RAGSearchService {
         query = query.eq('metadata->>source_vendor', vendor);
       }
 
-      const fetchLimit = this.getProductStructureAnchorFetchLimit(limit);
+      const fetchLimit = this.getProductStructureAnchorFetchLimit(limit, intent);
       const { data, error } = await query.limit(fetchLimit);
 
       if (error) {

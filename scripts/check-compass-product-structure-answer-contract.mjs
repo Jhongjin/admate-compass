@@ -756,8 +756,24 @@ if (!/getKeywordTableFetchLimit[\s\S]*Math\.min\(Math\.max\(limit \* multiplier,
   fail('keyword table search must use bounded fetch limits instead of unbounded broad-product row fan-out');
 }
 
+if (!/isBroadProductStructureRetrievalIntent[\s\S]*intent\.isProductStructureOverview[\s\S]*getKeywordTableFetchLimit[\s\S]*Math\.min\(Math\.max\(limit \* 3, 24\), 64\)/.test(rag)) {
+  fail('broad product fast path keyword table search must use a tighter fetch limit');
+}
+
+if (!/isBroadProductStructureRetrievalIntent[\s\S]*getVendorMetadataFetchLimit[\s\S]*Math\.min\(Math\.max\(limit \* 3, 24\), 64\)/.test(rag)) {
+  fail('broad product fast path vendor metadata search must use a tighter fetch limit');
+}
+
 if (!/getProductStructureAnchorFetchLimit[\s\S]*Math\.min\(Math\.max\(limit \* 8, 32\), 72\)/.test(rag)) {
   fail('product-structure anchor search must keep per-anchor Supabase fetches bounded');
+}
+
+if (!/getProductStructureAnchorFetchLimit[\s\S]*Math\.min\(Math\.max\(limit \* 4, 24\), 48\)/.test(rag)) {
+  fail('broad product fast path anchor search must keep Supabase fetches small');
+}
+
+if (!/intent\.requiresVendorCoverage[\s\S]*searchVendorCoverageCandidates\(query, candidateLimit, intent\)[\s\S]*Promise\.resolve\(\[\]\)/.test(rag)) {
+  fail('single-vendor broad product fast path must skip vendor-coverage fan-out when vendor coverage is not required');
 }
 
 if (!/prioritySearchAnchors[\s\S]*searchKeywordTable\('document_chunks', prioritySearchAnchors[\s\S]*searchVendorMetadataTable\('ollama_document_chunks', 'KAKAO', prioritySearchAnchors/.test(rag)) {
