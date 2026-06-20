@@ -68,6 +68,9 @@ for (const snippet of [
   'specific_kakao_priority_direct',
   'selectKakaoProductPriorityRescueCandidates',
   'kakao_priority_guide_rescue',
+  'isFastPolicySourceGuidedPriorityIntent',
+  'selectFastPolicySourceGuidedPriorityCandidates',
+  'fast_policy_keyword_direct',
   'specific_naver_priority_direct',
   'selectNaverProductPriorityRescueCandidates',
   'naver_product_structure_priority_rescue',
@@ -1088,6 +1091,15 @@ if (!/googleLeadFormPriorityCandidates,\s*\n\s*kakaoProductPriorityCandidates,\s
   || !/googleLeadFormPriority=\$\{googleLeadFormPriorityCandidates\.length\}/.test(rag)
   || !/\.\.\.googleLeadFormPriorityCandidates/.test(rag)) {
   fail('Google lead-form hybrid fallback must keep the bounded priority candidates and avoid product-structure anchor fan-out');
+}
+
+if (!/const usesFastPolicySourcePriority = this\.isFastPolicySourceGuidedPriorityIntent\(intent\)[\s\S]*if \(usesFastPolicySourcePriority && !usesPrioritySpecificProductRetrieval\)[\s\S]*fast_policy_kakao_service_protection_direct[\s\S]*fast_policy_keyword_direct[\s\S]*selectFastPolicySourceGuidedPriorityCandidates\(fastPolicyCandidates, intent\)[\s\S]*return this\.withRetrievalTimeoutMetadata\(rankedResults, timedOutChannels, channelTimings\);[\s\S]*const queryEmbeddingResult = await this\.embeddingService\.generateEmbedding\(query\)/.test(rag)) {
+  fail('fast policy source-guided retrieval must try bounded keyword/service priority before vector/graph fan-out');
+}
+
+if (!/private getFastPolicySourceGuidedPriorityPattern\([\s\S]*isKakaoServiceProtectionPolicyIntent\(intent\)[\s\S]*오인[\s\S]*기만[\s\S]*가격[\s\S]*할인[\s\S]*이벤트[\s\S]*경품[\s\S]*private isFastPolicySourceGuidedPriorityIntent/.test(rag)
+  || !/private selectFastPolicySourceGuidedPriorityCandidates\([\s\S]*fast_policy_source_priority[\s\S]*fast_policy_source_priority_match/.test(rag)) {
+  fail('fast policy source-guided retrieval must keep query-family and source-evidence filters');
 }
 
 const kakaoSpecificFastPathBlock = extractBlock(

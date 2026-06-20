@@ -1434,6 +1434,32 @@ export class RAGSearchService {
       const usesGenericRightsPolicyPriority = this.isGenericRightsPolicyPriorityIntent(intent);
       const usesGenericGamblingPolicyPriority = this.isGenericGamblingPolicyPriorityIntent(intent);
       const usesKakaoServiceProtectionPriority = this.isKakaoServiceProtectionPolicyIntent(intent);
+      const usesFastPolicySourcePriority = this.isFastPolicySourceGuidedPriorityIntent(intent);
+
+      if (usesFastPolicySourcePriority && !usesPrioritySpecificProductRetrieval) {
+        const fastPolicyCandidates = await this.withRetrievalChannelTimeout(
+          usesKakaoServiceProtectionPriority
+            ? this.searchKakaoServiceProtectionPolicyCandidates(intent)
+            : this.searchKeywordCandidates(query, Math.max(limit * 2, 12), intent),
+          usesKakaoServiceProtectionPriority
+            ? 'fast_policy_kakao_service_protection_direct'
+            : 'fast_policy_keyword_direct',
+          [],
+          timedOutChannels,
+          channelTimings,
+        );
+
+        const focusedPolicyCandidates = this.selectFastPolicySourceGuidedPriorityCandidates(fastPolicyCandidates, intent);
+        const rankedResults = this.mergeDedupeAndRankCandidates(
+          focusedPolicyCandidates.length > 0 ? focusedPolicyCandidates : fastPolicyCandidates,
+          limit,
+          intent,
+        );
+        if (rankedResults.length > 0) {
+          console.log(`✅ Fast policy source 검색 완료: ${rankedResults.length}개 결과 (policy priority direct path)`);
+          return this.withRetrievalTimeoutMetadata(rankedResults, timedOutChannels, channelTimings);
+        }
+      }
 
       // 질문을 임베딩으로 변환
       const queryEmbeddingResult = await this.embeddingService.generateEmbedding(query);
@@ -3886,6 +3912,78 @@ export class RAGSearchService {
     if (familyMatchers.length === 0) return true;
     const normalizedSourceText = this.normalizeSearchText(sourceText);
     return familyMatchers.some(pattern => pattern.test(normalizedSourceText));
+  }
+
+  private getFastPolicySourceGuidedPriorityPattern(intent: QueryIntent): RegExp | null {
+    if (intent.isComparative || intent.isOutOfScope || intent.unavailablePolicyTarget) return null;
+    const queryText = this.normalizeSearchText([
+      ...intent.keywords,
+      ...intent.topics,
+      ...intent.adPolicyTerms,
+      ...intent.strictContextTerms,
+    ].join(' '));
+
+    if (this.isKakaoServiceProtectionPolicyIntent(intent)) {
+      return /카카오|로고|디자인|서비스명|서비스|상표|저작물|모방|침해|무단|사용\s*불가|집행\s*불가/i;
+    }
+    if (/오인|기만|속이|혼란|허위|과장|오해/.test(queryText)) {
+      return /오인|기만|속이|속임|혼란|허위|과장|오해|mislead|decept/i;
+    }
+    if (/가격|할인|할인율|혜택|쿠폰|정가|판매가/.test(queryText)) {
+      return /가격|할인|할인율|혜택|쿠폰|정가|판매가|무료배송|카드할인|price|discount/i;
+    }
+    if (/이벤트|경품|참여|프로모션|추첨/.test(queryText)) {
+      return /이벤트|경품|참여|프로모션|추첨|당첨|기간|조건/i;
+    }
+
+    return null;
+  }
+
+  private isFastPolicySourceGuidedPriorityIntent(intent: QueryIntent): boolean {
+    return this.getFastPolicySourceGuidedPriorityPattern(intent) !== null;
+  }
+
+  private selectFastPolicySourceGuidedPriorityCandidates(
+    candidates: SearchResult[],
+    intent: QueryIntent,
+  ): SearchResult[] {
+    const pattern = this.getFastPolicySourceGuidedPriorityPattern(intent);
+    if (!pattern) return [];
+
+    return candidates
+      .map((candidate): SearchResult | null => {
+        const sourceText = this.buildCandidateEvidenceText(candidate.content, candidate.documentTitle, candidate.metadata);
+        if (!pattern.test(sourceText)) return null;
+
+        const boostedScore = Math.max(
+          candidate.hybridScore || candidate.score || 0,
+          Math.min(1, (candidate.hybridScore || candidate.score || 0) + 0.24),
+        );
+        candidate.hybridScore = boostedScore;
+        candidate.score = boostedScore;
+        candidate.evidenceDecision = 'verified';
+        candidate.evidenceDecisionReason = Array.from(new Set([
+          ...(candidate.evidenceDecisionReason || []),
+          'fast_policy_source_priority',
+          'keyword_retrieval',
+        ]));
+        candidate.rankReason = Array.from(new Set([
+          ...(candidate.rankReason || []),
+          'fast_policy_source_priority_match',
+        ]));
+        candidate.metadata = {
+          ...(candidate.metadata || {}),
+          fastPolicySourcePriority: true,
+          evidenceDecision: candidate.evidenceDecision,
+          evidenceDecisionReason: candidate.evidenceDecisionReason,
+          rankReason: candidate.rankReason,
+          score: boostedScore,
+          hybridScore: boostedScore,
+        };
+
+        return candidate;
+      })
+      .filter((candidate: SearchResult | null): candidate is SearchResult => candidate !== null);
   }
 
   private buildSpecificProductAnchorTerms(intent: QueryIntent): string[] {
