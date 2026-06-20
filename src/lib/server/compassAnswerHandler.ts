@@ -3689,6 +3689,10 @@ type EvidenceBackedAnswerProfile = {
   summary: string;
   model: string;
   minBullets?: number;
+  coverageNotice?: string;
+  showContactOption?: boolean;
+  confidenceCap?: number;
+  reviewStatus?: CompassReviewPipelineStatus;
 };
 
 function detectProductAnswerFamily(message: string, intent: QueryIntent): ProductAnswerFamily {
@@ -3764,6 +3768,10 @@ function buildEvidenceBackedAnswer(
     return null;
   }
 
+  if (profile.coverageNotice) {
+    lines.push(profile.coverageNotice);
+    lines.push('');
+  }
   lines.push(profile.summary);
   lines.push('');
   lines.push(`근거: ${Array.from(usedSourceIndexes).sort((a, b) => a - b).map(index => `[S${index + 1}]`).join(', ')}`);
@@ -3772,6 +3780,9 @@ function buildEvidenceBackedAnswer(
     answer: lines.join('\n'),
     sources,
     model: profile.model,
+    showContactOption: profile.showContactOption,
+    confidenceCap: profile.confidenceCap,
+    reviewStatus: profile.reviewStatus,
   };
 }
 
@@ -4132,6 +4143,11 @@ function getBroadProductAnswerProfile(family: ProductAnswerFamily): EvidenceBack
         ],
         summary: '정리하면, 이번 근거에서는 확인된 형식과 커머스 지면을 먼저 설명하고, 목표·자동화 같은 넓은 체계는 추가 공식 근거와 대조해야 합니다.',
         model: 'compass-answer-deterministic-meta-overview',
+        minBullets: 3,
+        coverageNotice: '범위 제한: 현재 선별 출처가 Meta 목표·리드·앱·측정 축을 모두 직접 뒷받침하지 않으면, 전체 상품 목록이 아니라 확인된 상품 구조만 답변합니다.',
+        showContactOption: true,
+        confidenceCap: 78,
+        reviewStatus: 'limited',
       };
 
     case 'google_overview':
@@ -4147,11 +4163,15 @@ function getBroadProductAnswerProfile(family: ProductAnswerFamily): EvidenceBack
               { text: '쇼핑 광고는 상품 노출과 Merchant Center/상품 데이터 조건을 함께 봅니다.', terms: ['쇼핑 광고', '쇼핑 캠페인', 'Merchant Center'] },
               { text: '앱 캠페인과 리드 양식은 앱 성과 또는 잠재 고객 정보 수집 목적일 때 따로 확인합니다.', terms: ['앱 캠페인', '앱 설치', '리드 양식', 'Lead Form'] },
               { text: '실적 최대화와 검색 캠페인 문구 가이드는 자동화 캠페인과 검색 광고 소재 문구를 점검할 때 별도로 확인합니다.', terms: ['실적 최대화', 'Performance Max', 'PMax', '검색 캠페인', '광고 문구'] },
+              { text: '동영상/YouTube와 Demand Gen 계열은 해당 캠페인 유형 근거가 잡힌 경우 별도 상품군으로 분리합니다.', terms: ['YouTube', '유튜브', '동영상', 'Video', 'Demand Gen', '디맨드젠'] },
             ],
           },
         ],
         summary: '정리하면, Google Ads는 목적에 맞는 캠페인 유형을 먼저 고르고, 애셋·확장 소재·측정 조건을 함께 대조해야 합니다.',
         model: 'compass-answer-deterministic-google-overview',
+        minBullets: 4,
+        coverageNotice: '범위 제한: PMax, Demand Gen, YouTube/동영상처럼 핵심 캠페인 축의 직접 근거가 없으면 해당 축은 확정 목록이 아니라 추가 확인 항목으로 남깁니다.',
+        confidenceCap: 86,
       };
 
     case 'naver_overview':
@@ -4163,15 +4183,18 @@ function getBroadProductAnswerProfile(family: ProductAnswerFamily): EvidenceBack
             heading: '대표 상품군',
             bullets: [
               { text: '사이트검색광고는 키워드 검색 기반으로 웹사이트 방문을 늘릴 때 확인합니다.', terms: ['사이트검색광고', '웹사이트 방문'] },
+              { text: '파워링크와 브랜드검색은 검색 노출 목적과 브랜드 홍보 목적을 나눠 확인합니다.', terms: ['파워링크', '브랜드검색', '브랜드 검색'] },
               { text: '쇼핑검색광고는 쇼핑몰 상품형처럼 상품 노출과 유입을 함께 다룰 때 확인합니다.', terms: ['쇼핑검색광고', '쇼핑검색', '쇼핑몰 상품형'] },
               { text: '쇼핑블록이나 주요 쇼핑 지면은 쇼핑몰 유입 또는 브랜딩 목적을 검토할 때 확인합니다.', terms: ['쇼핑블록', '쇼핑 지면', 'PC 쇼핑블록', '모바일 쇼핑'] },
-              { text: '성과형 디스플레이/DA 지면은 검색형 상품과 분리해 홈피드, 스마트채널, 타임보드 같은 지면 조건을 확인합니다.', terms: ['성과형 디스플레이', '네이버 DA', '홈피드', '스마트채널', '타임보드', '롤링보드'] },
+              { text: '성과형/보장형 디스플레이와 DA 지면은 검색형 상품과 분리해 홈피드, 스마트채널, 타임보드, 롤링보드, 헤드라인DA 같은 지면 조건을 확인합니다.', terms: ['성과형 디스플레이', '보장형', '네이버 DA', '헤드라인DA', '홈피드', '스마트채널', '타임보드', '롤링보드'] },
               { text: '상품 DB URL, EP, 상품정보 수신 같은 조건은 쇼핑 상품 운영 전 함께 확인합니다.', terms: ['상품 DB', '상품DB', 'DB URL', 'EP', '상품정보 수신'] },
             ],
           },
         ],
         summary: '정리하면, 네이버는 검색형 상품과 쇼핑형 상품, 쇼핑 지면, 상품 DB 조건을 분리해서 검토해야 합니다.',
         model: 'compass-answer-deterministic-naver-overview',
+        minBullets: 5,
+        confidenceCap: 88,
       };
 
     case 'kakao_overview':
@@ -6716,6 +6739,7 @@ export async function buildCompassAnswerResponse(
           case 'GOOGLE':
             return [
               'Google Ads 광고 유형 검색 캠페인 디스플레이 쇼핑 앱 캠페인',
+              'Google Ads 실적 최대화 Performance Max PMax Demand Gen YouTube 동영상 캠페인',
               'Google Ads 리드 양식 확장 소재 앱 캠페인 쇼핑 광고',
               'Google Ads 반응형 디스플레이 동영상 YouTube 소재 가이드',
             ];
@@ -6744,7 +6768,7 @@ export async function buildCompassAnswerResponse(
       : buildProductStructureSupplementQueries(ragIntent, message).filter(query => query !== message);
 
     const supplementQueryLimit = usesProductStructureFastPath
-      ? (ragIntent.vendors[0] === 'NAVER' ? 4 : 3)
+      ? (ragIntent.vendors[0] === 'NAVER' || ragIntent.vendors[0] === 'GOOGLE' ? 4 : 3)
       : usesSpecificProductSupplementPath
         ? 2
       : 2;
@@ -7321,6 +7345,7 @@ export async function buildCompassAnswerResponse(
       rawGeneratedAnswer,
     );
     const finalAnswerSources = dedupePublicProductSources(answerRepair?.sources || broadAnswerRepair?.sources || answerSources);
+    const finalConfidenceCap = answerRepair?.confidenceCap ?? broadAnswerRepair?.confidenceCap;
     const normalizedAnswer = normalizeGeneratedAnswer(
       answerRepair?.answer || broadAnswerRepair?.answer || rawGeneratedAnswer || operationalAnswer || '',
       finalAnswerSources,
@@ -7341,7 +7366,7 @@ export async function buildCompassAnswerResponse(
           sources: finalAnswerSources,
           noDataFound: false,
           schema,
-          showContactOption: Boolean(answerRepair?.showContactOption),
+          showContactOption: Boolean(answerRepair?.showContactOption || broadAnswerRepair?.showContactOption),
           sourceDiagnostics: {
             ...sourceDiagnostics,
             answerSourceCount: finalAnswerSources.length,
@@ -7358,14 +7383,14 @@ export async function buildCompassAnswerResponse(
             })
             : broadAnswerRepair
               ? buildReviewPipeline({
-                status: 'completed',
+                status: broadAnswerRepair.reviewStatus || 'completed',
                 sourceCount: searchResults.length,
                 verifiedSourceCount: finalAnswerSources.length,
-                contactRecommended: false,
+                contactRecommended: Boolean(broadAnswerRepair.showContactOption),
               })
             : reviewPipeline,
         },
-        confidence: answerRepair?.confidenceCap ? Math.min(confidence, answerRepair.confidenceCap) : confidence,
+        confidence: finalConfidenceCap ? Math.min(confidence, finalConfidenceCap) : confidence,
         processingTime,
         model: answerRepair?.model || broadAnswerRepair?.model || buildCompassAnswerModel(message, ragIntent, isBroadProductStructureLlmIntent)
       }

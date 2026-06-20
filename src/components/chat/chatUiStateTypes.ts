@@ -1,4 +1,4 @@
-export type ChatUiState = "initial-empty" | "answer-pending" | "source-found" | "noData" | "generation-limited" | "error";
+export type ChatUiState = "initial-empty" | "answer-pending" | "source-found" | "noData" | "generation-limited" | "retrieval-limited" | "error";
 
 export interface ChatSource {
   id: string;
@@ -7,6 +7,8 @@ export interface ChatSource {
   updatedAt?: string;
   excerpt: string;
   sourceType?: "file" | "url" | "document" | string;
+  sourceVendor?: string;
+  sourceVendors?: string[];
 }
 
 export type CompassReviewPipelineStep = {

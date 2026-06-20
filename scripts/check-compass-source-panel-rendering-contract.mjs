@@ -14,12 +14,14 @@ const requiredPanelSnippets = [
   "const ERROR_MESSAGE",
   "일시적인 서비스 오류로 답변을 만들지 못했습니다",
   "state === \"generation-limited\"",
+  "state === \"retrieval-limited\"",
   "state === \"answer-pending\"",
   "state === \"noData\"",
   "state === \"error\"",
   "state === \"initial-empty\"",
-  "const heading = isPending ? \"답변 준비 중\" : isLimited ? \"답변 생성 제한\" : hasSources ? \"확인한 출처\" : \"확인한 출처 없음\"",
+  "const heading = isPending ? \"답변 준비 중\" : isRetrievalLimited ? \"출처 검색 제한\" : isLimited ? \"답변 생성 제한\" : hasSources ? \"확인한 출처\" : \"확인한 출처 없음\"",
   "결과가 도착하면 출처 상태가 여기에 표시됩니다",
+  "출처 검색이 제한되어 현재 결과만으로 자료 없음 판정을 내리지 않았습니다",
   "출처는 찾았지만 답변 문장 생성이 제한되었습니다",
   "확인한 출처 {sources.length}개 보기",
   "const initialVisibleSourceLimit = compact ? 3 : 6",
@@ -80,6 +82,7 @@ const requiredFixtureStates = new Set([
   "source-found",
   "noData",
   "generation-limited",
+  "retrieval-limited",
   "error",
 ]);
 
@@ -152,6 +155,7 @@ function assertFixturePairing(payload) {
   let promptLinkedCases = 0;
   let noDataCases = 0;
   let generationLimitedCases = 0;
+  let retrievalLimitedCases = 0;
   let errorCases = 0;
 
   for (const [index, fixture] of payload.fixtures.entries()) {
@@ -202,6 +206,14 @@ function assertFixturePairing(payload) {
       if (panel.limitationBannerVisible !== true) fail(`${label}.generation-limited must assert limitation banner`);
     }
 
+    if (fixture.state === "retrieval-limited") {
+      retrievalLimitedCases += 1;
+      if (hasSources) fail(`${label}.retrieval-limited must not include source cards`);
+      if (fixture.message?.noDataFound !== false) fail(`${label}.retrieval-limited message.noDataFound must be false`);
+      if (panel.cardsVisible !== false) fail(`${label}.retrieval-limited must assert cardsVisible=false`);
+      if (!includesText(fixture.message?.content, "시간 제한")) fail(`${label}.retrieval-limited must explain search time limit`);
+    }
+
     if (fixture.state === "error") {
       errorCases += 1;
       if (hasSources) fail(`${label}.error must not include sources`);
@@ -215,6 +227,7 @@ function assertFixturePairing(payload) {
   if (mobileCompactCases < 4) fail("expected at least four mobile compact source panel fixtures");
   if (noDataCases < 2) fail("expected desktop and mobile noData source panel fixtures");
   if (generationLimitedCases < 2) fail("expected desktop and mobile generation-limited fixtures");
+  if (retrievalLimitedCases < 2) fail("expected desktop and mobile retrieval-limited fixtures");
   if (errorCases < 2) fail("expected desktop and mobile error fixtures");
 
   return {
@@ -223,6 +236,7 @@ function assertFixturePairing(payload) {
     promptLinkedCases,
     noDataCases,
     generationLimitedCases,
+    retrievalLimitedCases,
     errorCases,
   };
 }

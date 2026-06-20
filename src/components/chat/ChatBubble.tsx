@@ -60,6 +60,7 @@ interface ChatBubbleProps {
   model?: string;
   isStreaming?: boolean;
   reviewPipeline?: CompassReviewPipeline;
+  retrievalChannelTimedOut?: boolean;
 }
 
 export default function ChatBubble({
@@ -77,12 +78,14 @@ export default function ChatBubble({
   model,
   isStreaming = false,
   reviewPipeline,
+  retrievalChannelTimedOut = false,
 }: ChatBubbleProps) {
   const isUser = type === "user";
   const generationLimited = Boolean(model && (
     model === 'compass-answer-connection-failed'
     || model.endsWith('-connection-failed')
   ));
+  const retrievalLimited = model === 'compass-answer-retrieval-limited';
   const hasVerifiedSources = sources.length > 0 && !noDataFound;
   const [showSources, setShowSources] = useState(generationLimited && hasVerifiedSources);
   const sourcePanelId = useId();
@@ -231,6 +234,16 @@ export default function ChatBubble({
                         답변 생성 제한
                       </Badge>
                     )}
+                    {retrievalLimited && (
+                      <Badge variant="outline" className="rounded-md border-[#E9D59B] bg-[#FFF8E6] px-2 py-0.5 text-[11px] font-medium text-[#8A6418]">
+                        출처 검색 제한
+                      </Badge>
+                    )}
+                    {retrievalChannelTimedOut && hasVerifiedSources && (
+                      <Badge variant="outline" className="rounded-md border-[#E9D59B] bg-[#FFF8E6] px-2 py-0.5 text-[11px] font-medium text-[#8A6418]">
+                        일부 검색 제한
+                      </Badge>
+                    )}
                     {noDataFound && (
                       <Badge variant="outline" className="rounded-md border-[#E9D59B] bg-[#FFF8E6] px-2 py-0.5 text-[11px] font-medium text-[#8A6418]">
                         출처 없음
@@ -241,6 +254,19 @@ export default function ChatBubble({
                   {generationLimited && hasVerifiedSources && (
                     <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-relaxed text-amber-900">
                       답변 문장 생성은 일시적으로 제한되었지만, 확인된 출처는 유지됩니다. 근거 패널에서 원문과 발췌 내용을 먼저 대조해 주세요.
+                    </div>
+                  )}
+
+                  {retrievalLimited && (
+                    <div className="mb-3 rounded-md border border-[#E9D59B] bg-[#FFF8E6] px-3 py-2 text-xs leading-relaxed text-[#6B5316]">
+                      <span className="font-semibold text-[#111713]">출처 검색이 제한되었습니다.</span>{" "}
+                      현재 결과만으로 출처 없음으로 확정하지 않고, 다시 검색하거나 담당자 확인을 권장합니다.
+                    </div>
+                  )}
+
+                  {retrievalChannelTimedOut && hasVerifiedSources && (
+                    <div className="mb-3 rounded-md border border-[#E9D59B] bg-[#FFF8E6] px-3 py-2 text-xs leading-relaxed text-[#6B5316]">
+                      일부 검색 경로가 제한되었지만, 검증 출처 {sources.length}개 기준으로 답변했습니다.
                     </div>
                   )}
 
@@ -432,7 +458,7 @@ export default function ChatBubble({
                       {model && (
                         <span className="flex items-center gap-1 rounded-md border border-[#D8DCCF] bg-[#FBFBF7] px-2 py-1">
                           <ShieldCheck className="h-3 w-3" />
-                            {generationLimited ? '답변 생성 제한' : '근거 확인 완료'}
+                            {retrievalLimited ? '출처 검색 제한' : generationLimited ? '답변 생성 제한' : '근거 확인 완료'}
                         </span>
                       )}
                       {reviewPipeline && (

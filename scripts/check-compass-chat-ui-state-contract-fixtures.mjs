@@ -12,6 +12,7 @@ const allowedStates = new Set([
   "source-found",
   "noData",
   "generation-limited",
+  "retrieval-limited",
   "error",
 ]);
 
@@ -20,6 +21,7 @@ const requiredStates = new Set([
   "source-found",
   "noData",
   "generation-limited",
+  "retrieval-limited",
   "error",
 ]);
 
@@ -368,6 +370,18 @@ function validateStateContract(fixture, label) {
     }
   }
 
+  if (fixture.state === "retrieval-limited") {
+    if (sourceCount !== 0) fail(`${label}.retrieval-limited must not include sources`);
+    if (fixture.message.noDataFound !== false) fail(`${label}.retrieval-limited message.noDataFound must be false`);
+    if (fixture.panelExpectation.cardsVisible !== false) fail(`${label}.retrieval-limited must not show source cards`);
+    if (!includesText(expectedVisible, "출처 검색 제한")) {
+      fail(`${label}.retrieval-limited must include retrieval-limited panel heading`);
+    }
+    if (!includesText(expectedVisible, "자료 없음으로 판단하지 않고")) {
+      fail(`${label}.retrieval-limited must distinguish limited retrieval from authoritative noData`);
+    }
+  }
+
   if (fixture.state === "error") {
     if (sourceCount !== 0) fail(`${label}.error must not include sources`);
     if (fixture.panelExpectation.cardsVisible !== false) fail(`${label}.error must not show source cards`);
@@ -519,7 +533,7 @@ for (const state of requiredStates) {
   if (!stateCounts.has(state)) fail(`missing required state: ${state}`);
 }
 
-for (const state of ["source-found", "noData", "generation-limited", "error"]) {
+for (const state of ["source-found", "noData", "generation-limited", "retrieval-limited", "error"]) {
   if (!mobileStateCounts.has(state)) fail(`missing mobile fixture for state: ${state}`);
 }
 

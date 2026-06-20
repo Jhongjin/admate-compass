@@ -43,6 +43,7 @@ interface Message {
   uiState?: ChatUiState;
   isStreaming?: boolean;
   reviewPipeline?: CompassReviewPipeline;
+  retrievalChannelTimedOut?: boolean;
 }
 
 type ActiveAnswerRequest =
@@ -136,6 +137,8 @@ const sanitizeSources = (sources: unknown): NonNullable<Message["sources"]> => {
         updatedAt: typeof item.updatedAt === "string" ? item.updatedAt : new Date().toISOString(),
         excerpt: String(item.excerpt || item.content || ""),
         sourceType: typeof item.sourceType === "string" ? item.sourceType : undefined,
+        sourceVendor: typeof item.sourceVendor === "string" ? item.sourceVendor : undefined,
+        sourceVendors: Array.isArray(item.sourceVendors) ? item.sourceVendors.filter((vendor): vendor is string => typeof vendor === "string") : undefined,
         isFallback: sourceQuality?.isFallback === true,
       };
     })
@@ -393,13 +396,32 @@ function ChatPageContent() {
     ));
   };
 
+  const isRetrievalLimitedModel = (model?: string) => model === "compass-answer-retrieval-limited";
+
   const buildAssistantMessageFromResponse = (data: any): Message => {
     const safeSources = sanitizeSources(data?.response?.sources);
     const model = typeof data?.model === "string" ? data.model : undefined;
     const noDataFound = data?.response?.noDataFound === true && safeSources.length === 0;
     const generationLimited = isGenerationLimitedModel(model) && safeSources.length > 0;
+    const retrievalLimited = isRetrievalLimitedModel(model) && safeSources.length === 0 && !noDataFound;
+    const retrievalChannelTimedOut = data?.response?.sourceDiagnostics?.retrievalChannelTimedOut === true;
     const rawContent = data?.response?.message || data?.response?.content || "답변을 생성할 수 없습니다.";
-    const uiState: ChatUiState | undefined = generationLimited ? "generation-limited" : noDataFound ? "noData" : undefined;
+    const uiState: ChatUiState | undefined = retrievalLimited ? "retrieval-limited" : generationLimited ? "generation-limited" : noDataFound ? "noData" : undefined;
+    const reviewPipeline = sanitizeReviewPipeline(data?.response?.reviewPipeline || data?.reviewPipeline);
+    if (retrievalChannelTimedOut && safeSources.length > 0 && reviewPipeline) {
+      reviewPipeline.steps = [
+        ...reviewPipeline.steps,
+        {
+          label: "검색 범위 점검",
+          description: `일부 검색 경로가 제한되어 검증 출처 ${safeSources.length}개 기준으로 답변했습니다.`,
+          status: "attention" as const,
+        },
+      ].slice(0, 4);
+      if (reviewPipeline.status === "completed") {
+        reviewPipeline.status = "limited";
+      }
+      reviewPipeline.summary = "질문 조건과 출처 정합성을 확인했으며, 일부 검색 경로 제한 여부도 함께 점검했습니다.";
+    }
 
     return {
       id: (Date.now() + 1).toString(),
@@ -417,7 +439,8 @@ function ChatPageContent() {
       processingTime: typeof data?.processingTime === "number" ? data.processingTime : undefined,
       model,
       uiState,
-      reviewPipeline: sanitizeReviewPipeline(data?.response?.reviewPipeline || data?.reviewPipeline),
+      reviewPipeline,
+      retrievalChannelTimedOut,
     };
   };
 
@@ -1325,9 +1348,12 @@ function ChatPageContent() {
   const latestHasSources = latestSources.length > 0;
   const latestNoDataFound = !answerPending && latestAssistantMessage?.noDataFound === true;
   const latestGenerationLimited = latestAssistantMessage?.uiState === "generation-limited" || (isGenerationLimitedModel(latestAssistantMessage?.model) && latestHasSources);
+  const latestRetrievalLimited = !answerPending && (latestAssistantMessage?.uiState === "retrieval-limited" || isRetrievalLimitedModel(latestAssistantMessage?.model));
   const latestIsError = !answerPending && latestAssistantMessage?.uiState === "error";
   const latestPanelState: ChatUiState = answerPending
     ? "answer-pending"
+    : latestRetrievalLimited
+      ? "retrieval-limited"
     : latestGenerationLimited
       ? "generation-limited"
       : latestNoDataFound
@@ -1387,7 +1413,7 @@ function ChatPageContent() {
       progress: 96,
     },
   };
-  const needsAdditionalReview = latestNoDataFound || latestGenerationLimited || latestIsError;
+  const needsAdditionalReview = latestNoDataFound || latestGenerationLimited || latestRetrievalLimited || latestIsError;
   const finalReviewReady = latestHasSources && !needsAdditionalReview;
   const reviewPostureItems = [
     {
@@ -1593,9 +1619,10 @@ function ChatPageContent() {
                 showContactOption={Boolean(message.showContactOption)}
                 confidence={message.confidence}
                 processingTime={message.processingTime}
-                model={message.uiState === "generation-limited" ? message.model : undefined}
+                model={message.uiState === "generation-limited" || message.uiState === "retrieval-limited" ? message.model : undefined}
                 isStreaming={message.isStreaming}
                 reviewPipeline={message.reviewPipeline}
+                retrievalChannelTimedOut={message.retrievalChannelTimedOut}
               />
             ))}
             
@@ -1644,6 +1671,7 @@ function ChatPageContent() {
                   userQuestion={panelUserQuestion}
                   sources={latestSources}
                   showContactOption={panelShowContactOption}
+                  partialRetrievalLimited={latestAssistantMessage?.retrievalChannelTimedOut === true && latestHasSources}
                   onContact={() => handleContactRequest(panelUserQuestion || "")}
                   onRetry={handleRetry}
                   onPromptSelect={handleQuickQuestionClick}
@@ -1753,6 +1781,7 @@ function ChatPageContent() {
                     userQuestion={panelUserQuestion}
                     sources={latestSources}
                     showContactOption={panelShowContactOption}
+                    partialRetrievalLimited={latestAssistantMessage?.retrievalChannelTimedOut === true && latestHasSources}
                     onContact={() => handleContactRequest(panelUserQuestion || "")}
                     onRetry={handleRetry}
                     onPromptSelect={handleQuickQuestionClick}

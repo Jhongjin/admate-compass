@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import type { ChatSource, ChatUiState } from "@/components/chat/chatUiStateTypes";
 
 const NO_DATA_MESSAGE = "현재 Compass 문서에서 확인 가능한 출처를 찾지 못했습니다. 플랫폼명, 정책 항목, 소재 유형을 더 구체적으로 입력해 주세요.";
+const RETRIEVAL_LIMITED_MESSAGE = "관련 출처 검색이 시간 제한에 걸려 답변을 확정할 수 없습니다. 현재 결과만으로 자료 없음으로 판단하지 않고 다시 확인을 권장합니다.";
 const ERROR_MESSAGE = "일시적인 서비스 오류로 답변을 만들지 못했습니다. 잠시 후 다시 시도해 주세요.";
 
 interface SourceStatePanelProps {
@@ -16,6 +17,7 @@ interface SourceStatePanelProps {
   compact?: boolean;
   userQuestion?: string;
   showContactOption?: boolean;
+  partialRetrievalLimited?: boolean;
   sourceOpenMode?: "active" | "noop";
   onContact?: () => void;
   onRetry?: () => void;
@@ -28,6 +30,7 @@ export default function SourceStatePanel({
   compact = false,
   userQuestion,
   showContactOption = false,
+  partialRetrievalLimited = false,
   sourceOpenMode = "active",
   onContact,
   onRetry,
@@ -40,12 +43,15 @@ export default function SourceStatePanel({
   const hasSources = sources.length > 0;
   const isPending = state === "answer-pending";
   const isLimited = state === "generation-limited";
+  const isRetrievalLimited = state === "retrieval-limited";
   const isNoData = state === "noData";
   const isError = state === "error";
   const isInitial = state === "initial-empty";
-  const heading = isPending ? "답변 준비 중" : isLimited ? "답변 생성 제한" : hasSources ? "확인한 출처" : "확인한 출처 없음";
+  const heading = isPending ? "답변 준비 중" : isRetrievalLimited ? "출처 검색 제한" : isLimited ? "답변 생성 제한" : hasSources ? "확인한 출처" : "확인한 출처 없음";
   const stateDescription = isPending
     ? "질문을 서버에 보냈습니다. 결과가 도착하면 출처 상태가 여기에 표시됩니다."
+    : isRetrievalLimited
+    ? "출처 검색이 제한되어 현재 결과만으로 자료 없음 판정을 내리지 않았습니다."
     : isLimited
     ? "출처는 찾았지만 답변 문장 생성이 제한되었습니다."
     : hasSources
@@ -97,11 +103,22 @@ export default function SourceStatePanel({
   };
 
   const getSourceVendorLabel = (source: ChatSource) => {
+    const vendorSignals = [
+      source.sourceVendor,
+      ...(Array.isArray(source.sourceVendors) ? source.sourceVendors : []),
+    ].filter(Boolean).join(" ").toLowerCase();
+    if (vendorSignals.includes("meta")) return "Meta";
+    if (vendorSignals.includes("google")) return "Google";
+    if (vendorSignals.includes("naver")) return "Naver";
+    if (vendorSignals.includes("kakao")) return "Kakao";
+
     const text = `${source.title || ""} ${source.url || ""}`.toLowerCase();
     if (text.includes("meta") || text.includes("facebook") || text.includes("instagram")) return "Meta";
     if (text.includes("google") || text.includes("youtube")) return "Google";
-    if (text.includes("naver")) return "Naver";
-    if (text.includes("kakao")) return "Kakao";
+    if (text.includes("naver") || text.includes("네이버")) return "Naver";
+    if (text.includes("kakao") || text.includes("카카오")) return "Kakao";
+    if (text.includes("메타") || text.includes("페이스북") || text.includes("인스타그램")) return "Meta";
+    if (text.includes("구글") || text.includes("유튜브")) return "Google";
     return "매체 미확인";
   };
 
@@ -215,7 +232,7 @@ export default function SourceStatePanel({
     );
   }
 
-  if (isNoData || isError) {
+  if (isRetrievalLimited || isNoData || isError) {
     return (
       <Card className="w-full rounded-lg border-[#D6D8CD] bg-white shadow-sm">
         <CardHeader className="p-4 pb-2">
@@ -229,8 +246,13 @@ export default function SourceStatePanel({
         </CardHeader>
         <CardContent className="space-y-3 p-4 pt-0">
           <p className="text-sm leading-6 text-[#5F6C62]">
-            {isError ? ERROR_MESSAGE : NO_DATA_MESSAGE}
+            {isError ? ERROR_MESSAGE : isRetrievalLimited ? RETRIEVAL_LIMITED_MESSAGE : NO_DATA_MESSAGE}
           </p>
+          {isRetrievalLimited && (
+            <div className="rounded-md border border-[#E9D59B] bg-[#FFF8E6] p-3 text-xs leading-5 text-[#6B5316]">
+              Compass가 검색 제한 상태를 출처 없음으로 확정하지 않았습니다. 같은 질문을 다시 시도하거나 담당자 확인으로 이어갈 수 있습니다.
+            </div>
+          )}
           {isNoData && (
             <div className="rounded-md border border-[#D8DCCF] bg-[#FBFBF7] p-3 text-xs leading-5 text-[#5F6C62]">
               플랫폼명, 정책 항목, 소재 유형을 함께 입력하면 더 좁은 범위로 확인할 수 있습니다.
@@ -266,7 +288,7 @@ export default function SourceStatePanel({
             </div>
           )}
           <div className="flex flex-wrap gap-2">
-            {isError && (
+            {(isError || isRetrievalLimited) && (
               <Button
                 type="button"
                 variant="outline"
@@ -274,10 +296,10 @@ export default function SourceStatePanel({
                 onClick={onRetry}
                 className="h-9 rounded-md border-[#C6D9CB] bg-[#EDF7EF] px-3 text-xs text-[#1F7A4D] hover:bg-[#E3F1E7]"
               >
-                다시 시도
+                {isRetrievalLimited ? "다시 검색" : "다시 시도"}
               </Button>
             )}
-            {isNoData && showContactOption && (
+            {(isNoData || isRetrievalLimited) && showContactOption && (
               <Button
                 type="button"
                 variant="outline"
@@ -309,6 +331,11 @@ export default function SourceStatePanel({
           {isLimited && (
             <Badge variant="outline" className="rounded-md border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] text-amber-700">
               답변 생성 제한
+            </Badge>
+          )}
+          {partialRetrievalLimited && hasSources && (
+            <Badge variant="outline" className="rounded-md border-[#E9D59B] bg-[#FFF8E6] px-2 py-0.5 text-[11px] text-[#8A6418]">
+              일부 검색 제한
             </Badge>
           )}
         </CardTitle>
@@ -351,6 +378,12 @@ export default function SourceStatePanel({
         {isLimited && (
           <div className={`${compact ? "p-2.5" : "p-3"} rounded-md border border-amber-200 bg-amber-50 text-xs leading-5 text-amber-900`}>
             답변 문장 생성은 일시적으로 제한되었지만, 확인한 출처는 아래에서 계속 확인할 수 있습니다. 원문 대조 후 다시 시도해 주세요.
+          </div>
+        )}
+
+        {partialRetrievalLimited && hasSources && (
+          <div className={`${compact ? "p-2.5" : "p-3"} rounded-md border border-[#E9D59B] bg-[#FFF8E6] text-xs leading-5 text-[#6B5316]`}>
+            일부 검색 경로가 제한되었지만, 검증 출처 {sources.length}개 기준으로 답변을 정리했습니다.
           </div>
         )}
 

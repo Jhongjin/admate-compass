@@ -1,7 +1,7 @@
 {
   "contract": {
     "name": "compass-chat-ui-state-contract",
-    "version": "2/3",
+    "version": "2/4",
     "syntheticOnly": true,
     "routeSurface": "desk",
     "productionApiCalled": false,
@@ -103,7 +103,7 @@
       "expectedControls": [
         {
           "id": "source-toggle",
-        "label": "확인한 출처 보기",
+          "label": "확인한 출처 보기",
           "available": false
         }
       ],
@@ -130,7 +130,11 @@
       "message": {
         "role": "assistant",
         "content": "Compass 답변: 확인한 출처를 기준으로 광고 문구와 랜딩 페이지의 표현 일관성을 확인해야 합니다.",
-        "sources": ["source-meta-landing", "source-google-claim", "source-naver-review"],
+        "sources": [
+          "source-meta-landing",
+          "source-google-claim",
+          "source-naver-review"
+        ],
         "noDataFound": false
       },
       "sources": [
@@ -198,7 +202,7 @@
       "expectedControls": [
         {
           "id": "source-toggle",
-        "label": "확인한 출처 3개 보기",
+          "label": "확인한 출처 3개 보기",
           "available": true
         },
         {
@@ -237,7 +241,9 @@
       "message": {
         "role": "assistant",
         "content": "Compass 답변: 긴 한국어 정책 제목과 발췌도 출처 카드에서 읽을 수 있어야 합니다.",
-        "sources": ["source-long-korean-title"],
+        "sources": [
+          "source-long-korean-title"
+        ],
         "noDataFound": false
       },
       "sources": [
@@ -293,7 +299,7 @@
       "expectedControls": [
         {
           "id": "source-toggle",
-        "label": "확인한 출처 1개 보기",
+          "label": "확인한 출처 1개 보기",
           "available": true
         },
         {
@@ -377,7 +383,7 @@
       "expectedControls": [
         {
           "id": "source-toggle",
-        "label": "확인한 출처 보기",
+          "label": "확인한 출처 보기",
           "available": false
         },
         {
@@ -396,6 +402,97 @@
       "notes": "NoData state is distinct from source-found and does not imply approval."
     },
     {
+      "id": "chat-ui-retrieval-limited-empty-source-panel",
+      "synthetic": true,
+      "routeSurface": "desk",
+      "viewportClass": "desktop-lg",
+      "state": "retrieval-limited",
+      "promptExpectation": {
+        "userPrompt": "네이버 광고 상품 종류를 공식 출처 기준으로 다시 확인해줘",
+        "promptVisible": true,
+        "resultLinkedToPrompt": true
+      },
+      "message": {
+        "role": "assistant",
+        "content": "관련 출처 검색이 시간 제한에 걸려 답변을 확정할 수 없습니다. 현재 결과만으로 자료 없음으로 판단하지 않고 다시 확인을 권장합니다.",
+        "sources": [],
+        "noDataFound": false,
+        "modelLabel": "retrieval-limited"
+      },
+      "sources": [],
+      "expectedVisibleText": [
+        "관련 출처 검색이 시간 제한에 걸려 답변을 확정할 수 없습니다",
+        "자료 없음으로 판단하지 않고",
+        "출처 검색 제한",
+        "다시 검색",
+        "담당자 문의"
+      ],
+      "expectedHiddenText": [
+        "근거 문서 1개 보기",
+        "확인 가능한 출처가 없습니다",
+        "authoritative noData",
+        "accepted",
+        "allowed",
+        "safe",
+        "no issue",
+        "schema=compass",
+        "sourcesCount",
+        "retrievalMethod",
+        "sourceQuality",
+        "hybridScore",
+        "vectorScore",
+        "keywordScore",
+        "ollama_document_chunks",
+        "RAGSearchService",
+        "raw source",
+        "raw provider",
+        "raw payload",
+        "provider payload",
+        "stack trace",
+        "/api/chat-ollama",
+        "token",
+        "cookie",
+        "credential",
+        "secret",
+        "signedUrl",
+        "apiKey",
+        "privateKey",
+        "authorization",
+        "bearer",
+        "password",
+        ".env",
+        "SUPABASE",
+        "GEMINI",
+        "ANTHROPIC",
+        "OPENAI"
+      ],
+      "expectedControls": [
+        {
+          "id": "source-toggle",
+          "label": "확인한 출처 보기",
+          "available": false
+        },
+        {
+          "id": "retry-search",
+          "label": "다시 검색",
+          "available": true
+        },
+        {
+          "id": "contact-support",
+          "label": "문의",
+          "available": true
+        }
+      ],
+      "panelExpectation": {
+        "surface": "right-panel",
+        "heading": "출처 검색 제한",
+        "sourceCount": 0,
+        "cardsVisible": false,
+        "retrievalLimitedGuidanceVisible": true
+      },
+      "notes": "Retrieval-limited state is distinct from authoritative noData and does not render the initial empty panel."
+    },
+    {
       "id": "chat-ui-generation-limited-sources-preserved",
       "synthetic": true,
       "routeSurface": "desk",
@@ -409,7 +506,10 @@
       "message": {
         "role": "assistant",
         "content": "답변 정리가 일시적으로 제한되었습니다. 확인한 출처는 아래에서 계속 확인할 수 있습니다.",
-        "sources": ["source-limited-meta", "source-limited-kakao"],
+        "sources": [
+          "source-limited-meta",
+          "source-limited-kakao"
+        ],
         "noDataFound": false,
         "modelLabel": "generation-limited"
       },
@@ -475,7 +575,7 @@
       "expectedControls": [
         {
           "id": "source-toggle",
-        "label": "확인한 출처 2개 보기",
+          "label": "확인한 출처 2개 보기",
           "available": true
         },
         {
@@ -555,7 +655,7 @@
       "expectedControls": [
         {
           "id": "source-toggle",
-        "label": "확인한 출처 보기",
+          "label": "확인한 출처 보기",
           "available": false
         },
         {
@@ -593,7 +693,9 @@
       "message": {
         "role": "assistant",
         "content": "Compass 답변: 모바일에서도 확인한 출처가 답변 아래 compact panel로 표시됩니다.",
-        "sources": ["source-mobile-meta"],
+        "sources": [
+          "source-mobile-meta"
+        ],
         "noDataFound": false
       },
       "sources": [
@@ -650,7 +752,7 @@
       "expectedControls": [
         {
           "id": "source-toggle",
-        "label": "확인한 출처 1개 보기",
+          "label": "확인한 출처 1개 보기",
           "available": true
         },
         {
@@ -739,7 +841,7 @@
       "expectedControls": [
         {
           "id": "source-toggle",
-        "label": "확인한 출처 보기",
+          "label": "확인한 출처 보기",
           "available": false
         }
       ],
@@ -756,6 +858,101 @@
       "notes": "Mobile noData keeps guidance reachable without source-card shells."
     },
     {
+      "id": "chat-ui-mobile-retrieval-limited-compact-panel",
+      "synthetic": true,
+      "routeSurface": "desk",
+      "viewportClass": "mobile",
+      "state": "retrieval-limited",
+      "promptExpectation": {
+        "userPrompt": "네이버 광고 상품 종류를 공식 출처 기준으로 다시 확인해줘",
+        "promptVisible": true,
+        "resultLinkedToPrompt": true
+      },
+      "message": {
+        "role": "assistant",
+        "content": "관련 출처 검색이 시간 제한에 걸려 답변을 확정할 수 없습니다. 현재 결과만으로 자료 없음으로 판단하지 않고 다시 확인을 권장합니다.",
+        "sources": [],
+        "noDataFound": false,
+        "modelLabel": "retrieval-limited"
+      },
+      "sources": [],
+      "expectedVisibleText": [
+        "관련 출처 검색이 시간 제한에 걸려 답변을 확정할 수 없습니다",
+        "자료 없음으로 판단하지 않고",
+        "출처 검색 제한",
+        "다시 검색",
+        "담당자 문의"
+      ],
+      "expectedHiddenText": [
+        "근거 문서 1개 보기",
+        "확인 가능한 출처가 없습니다",
+        "authoritative noData",
+        "accepted",
+        "allowed",
+        "safe",
+        "no issue",
+        "schema=compass",
+        "sourcesCount",
+        "retrievalMethod",
+        "sourceQuality",
+        "hybridScore",
+        "vectorScore",
+        "keywordScore",
+        "ollama_document_chunks",
+        "RAGSearchService",
+        "raw source",
+        "raw provider",
+        "raw payload",
+        "provider payload",
+        "stack trace",
+        "/api/chat-ollama",
+        "token",
+        "cookie",
+        "credential",
+        "secret",
+        "signedUrl",
+        "apiKey",
+        "privateKey",
+        "authorization",
+        "bearer",
+        "password",
+        ".env",
+        "SUPABASE",
+        "GEMINI",
+        "ANTHROPIC",
+        "OPENAI"
+      ],
+      "expectedControls": [
+        {
+          "id": "source-toggle",
+          "label": "확인한 출처 보기",
+          "available": false
+        },
+        {
+          "id": "retry-search",
+          "label": "다시 검색",
+          "available": true
+        },
+        {
+          "id": "contact-support",
+          "label": "문의",
+          "available": true
+        }
+      ],
+      "panelExpectation": {
+        "surface": "compact-panel",
+        "heading": "출처 검색 제한",
+        "sourceCount": 0,
+        "cardsVisible": false,
+        "retrievalLimitedGuidanceVisible": true,
+        "compactPanelRendered": true,
+        "insideChatScrollArea": true,
+        "inputBarNotCovered": true,
+        "desktopRightPanelRendered": false
+      },
+      "notes": "Mobile retrieval-limited state keeps retry and contact actions visible without source-card shells."
+    },
+    {
       "id": "chat-ui-mobile-generation-limited-compact-panel",
       "synthetic": true,
       "routeSurface": "desk",
@@ -769,7 +966,9 @@
       "message": {
         "role": "assistant",
         "content": "답변 정리가 일시적으로 제한되었습니다. 확인한 출처는 아래에서 계속 확인할 수 있습니다.",
-        "sources": ["source-small-mobile-limited"],
+        "sources": [
+          "source-small-mobile-limited"
+        ],
         "noDataFound": false,
         "modelLabel": "generation-limited"
       },
@@ -827,7 +1026,7 @@
       "expectedControls": [
         {
           "id": "source-toggle",
-        "label": "확인한 출처 1개 보기",
+          "label": "확인한 출처 1개 보기",
           "available": true
         },
         {
@@ -913,7 +1112,7 @@
       "expectedControls": [
         {
           "id": "source-toggle",
-        "label": "확인한 출처 보기",
+          "label": "확인한 출처 보기",
           "available": false
         },
         {
