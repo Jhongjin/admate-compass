@@ -764,6 +764,14 @@ if (!/isBroadProductStructureRetrievalIntent[\s\S]*intent\.isProductStructureOve
   fail('broad product fast path keyword table search must use a tighter fetch limit');
 }
 
+if (!/const keywordVendor = this\.isBroadProductStructureRetrievalIntent\(intent\)[\s\S]*this\.searchKeywordTable\('ollama_document_chunks', keywords, limit, intent, keywordVendor\)[\s\S]*this\.searchKeywordTable\('document_chunks', keywords, limit, intent, keywordVendor\)/.test(rag)) {
+  fail('broad product fast path keyword search must be scoped to the requested vendor');
+}
+
+if (!/if \(vendor\) \{[\s\S]*request = request\.eq\('metadata->>source_vendor', vendor\);[\s\S]*\}/.test(rag)) {
+  fail('keyword table search must apply vendor metadata filtering when a vendor is supplied');
+}
+
 if (!/isBroadProductStructureRetrievalIntent[\s\S]*getVendorMetadataFetchLimit[\s\S]*Math\.min\(Math\.max\(limit \* 2, 16\), 36\)/.test(rag)) {
   fail('broad product fast path vendor metadata search must use a tighter fetch limit');
 }
@@ -774,6 +782,10 @@ if (!/getProductStructureAnchorFetchLimit[\s\S]*Math\.min\(Math\.max\(limit \* 8
 
 if (!/getProductStructureAnchorFetchLimit[\s\S]*Math\.min\(Math\.max\(limit \* 3, 18\), 36\)/.test(rag)) {
   fail('broad product fast path anchor search must keep Supabase fetches small');
+}
+
+if (!/usesBroadProductStructureRetrieval[\s\S]*anchorVendors[\s\S]*\? \[intent\.vendors\[0\]\][\s\S]*anchorTerms[\s\S]*usesBroadProductStructureRetrieval \? 6 : 14/.test(rag)) {
+  fail('broad product fast path anchor search must stay vendor-scoped with fewer generic anchors');
 }
 
 if (!/intent\.requiresVendorCoverage[\s\S]*searchVendorCoverageCandidates\(query, candidateLimit, intent\)[\s\S]*Promise\.resolve\(\[\]\)/.test(rag)) {

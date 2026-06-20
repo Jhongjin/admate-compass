@@ -1191,9 +1191,12 @@ export class RAGSearchService {
       return [];
     }
 
+    const keywordVendor = this.isBroadProductStructureRetrievalIntent(intent) && intent.vendors.length === 1
+      ? intent.vendors[0]
+      : undefined;
     const [ollamaResults, documentChunkResults] = await Promise.all([
-      this.searchKeywordTable('ollama_document_chunks', keywords, limit, intent),
-      this.searchKeywordTable('document_chunks', keywords, limit, intent)
+      this.searchKeywordTable('ollama_document_chunks', keywords, limit, intent, keywordVendor),
+      this.searchKeywordTable('document_chunks', keywords, limit, intent, keywordVendor)
     ]);
 
     return [...ollamaResults, ...documentChunkResults]
@@ -1908,8 +1911,15 @@ export class RAGSearchService {
       ...vendorTerms,
       ...specificDetailTerms,
     ]));
-    const anchorLimit = Math.max(3, Math.ceil(limit / 4));
-    const anchorVendors: Array<VendorIntent | undefined> = intent.vendors.length > 0 ? [intent.vendors[0], undefined] : [undefined];
+    const usesBroadProductStructureRetrieval = this.isBroadProductStructureRetrievalIntent(intent);
+    const anchorLimit = usesBroadProductStructureRetrieval
+      ? Math.max(2, Math.ceil(limit / 6))
+      : Math.max(3, Math.ceil(limit / 4));
+    const anchorVendors: Array<VendorIntent | undefined> = intent.vendors.length > 0
+      ? usesBroadProductStructureRetrieval
+        ? [intent.vendors[0]]
+        : [intent.vendors[0], undefined]
+      : [undefined];
     const queryMatchedAnchors = PRODUCT_STRUCTURE_ANCHOR_TERMS.filter((anchor) => {
       if (intent.isSpecificProductGuidance) return false;
       const normalizedAnchor = normalizeCompassSearchText(anchor);
@@ -1930,7 +1940,7 @@ export class RAGSearchService {
     const uncappedAnchorTerms = intent.isSpecificProductGuidance
       ? Array.from(new Set([...explicitSpecificAnchors, ...specificAnchorTerms]))
       : Array.from(new Set([...PRODUCT_STRUCTURE_ANCHOR_TERMS, ...queryMatchedAnchors]));
-    const anchorTerms = uncappedAnchorTerms.slice(0, intent.isSpecificProductGuidance ? 8 : 14);
+    const anchorTerms = uncappedAnchorTerms.slice(0, intent.isSpecificProductGuidance ? 8 : usesBroadProductStructureRetrieval ? 6 : 14);
 
     if (intent.isSpecificProductGuidance && anchorTerms.length === 0) {
       return [];
@@ -1944,9 +1954,9 @@ export class RAGSearchService {
           this.searchProductStructureAnchorTable('ollama_document_chunks', anchor, Math.max(2, Math.ceil(anchorLimit / 2)), vendor, intent),
         ]);
         results.push(...documentChunkResults, ...ollamaResults);
-        if (results.length >= 64) break;
+        if (results.length >= (usesBroadProductStructureRetrieval ? 32 : 64)) break;
       }
-      if (results.length >= 64) break;
+      if (results.length >= (usesBroadProductStructureRetrieval ? 32 : 64)) break;
     }
     return results
       .map((result) => {
@@ -3114,11 +3124,14 @@ export class RAGSearchService {
       if (searchTerms.length === 0) return [];
       const keywordConditions = searchTerms.map(keyword => `content.ilike.%${keyword}%`);
 
-      const { data, error } = await this.supabase
+      let request = this.supabase
         .from(tableName)
         .select(selectColumns)
-        .or(keywordConditions.join(','))
-        .limit(this.getKeywordTableFetchLimit(limit, intent));
+        .or(keywordConditions.join(','));
+      if (vendor) {
+        request = request.eq('metadata->>source_vendor', vendor);
+      }
+      const { data, error } = await request.limit(this.getKeywordTableFetchLimit(limit, intent));
 
       if (error) {
       console.warn('Keyword table search failed', {
