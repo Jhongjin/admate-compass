@@ -408,7 +408,8 @@ function ChatPageContent() {
     const rawContent = data?.response?.message || data?.response?.content || "답변을 생성할 수 없습니다.";
     const uiState: ChatUiState | undefined = retrievalLimited ? "retrieval-limited" : generationLimited ? "generation-limited" : noDataFound ? "noData" : undefined;
     const reviewPipeline = sanitizeReviewPipeline(data?.response?.reviewPipeline || data?.reviewPipeline);
-    if (retrievalChannelTimedOut && safeSources.length > 0 && reviewPipeline) {
+    const hasRetrievalRangeStep = reviewPipeline?.steps.some((step) => step.label === "검색 범위 점검") === true;
+    if (retrievalChannelTimedOut && safeSources.length > 0 && reviewPipeline && !hasRetrievalRangeStep) {
       reviewPipeline.steps = [
         ...reviewPipeline.steps,
         {

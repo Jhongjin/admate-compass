@@ -358,41 +358,57 @@ function buildReviewPipeline({
   sourceCount,
   verifiedSourceCount,
   contactRecommended,
+  retrievalChannelLimited = false,
 }: {
   status: CompassReviewPipelineStatus;
   sourceCount: number;
   verifiedSourceCount: number;
   contactRecommended: boolean;
+  retrievalChannelLimited?: boolean;
 }) {
-  const isCompleted = status === 'completed';
+  const effectiveStatus: CompassReviewPipelineStatus = status === 'completed' && retrievalChannelLimited && verifiedSourceCount > 0
+    ? 'limited'
+    : status;
+  const isCompleted = effectiveStatus === 'completed';
   const label = isCompleted ? 'AI 2단계 검토 완료' : 'AI 2단계 제한 검토';
-  const summary = isCompleted
+  const summary = retrievalChannelLimited && verifiedSourceCount > 0
+    ? '질문 조건과 출처 정합성을 확인했으며, 일부 검색 경로 제한 여부도 함께 점검했습니다.'
+    : isCompleted
     ? '1차로 질문 조건과 후보 출처를 정리하고, 2차로 검증 출처와 답변 범위를 대조했습니다.'
     : '1차로 후보 출처를 찾고, 2차로 답변 가능 범위를 점검한 결과 추가 확인이 필요한 상태입니다.';
+  const steps = [
+    {
+      label: '1차 AI 검토',
+      description: `질문 의도와 매체 조건을 분석하고 후보 출처 ${sourceCount}개를 검색했습니다.`,
+      status: sourceCount > 0 ? 'completed' as const : 'attention' as const,
+    },
+    {
+      label: '2차 정합성 검토',
+      description: `실제 답변에 사용할 수 있는 검증 출처 ${verifiedSourceCount}개만 선별했습니다.`,
+      status: verifiedSourceCount > 0 ? 'completed' as const : 'limited' as const,
+    },
+    {
+      label: '답변 정리',
+      description: contactRecommended
+        ? '검증 출처가 부족하거나 범위가 제한되어 담당자 추가 확인을 권장합니다.'
+        : '확인된 출처 범위 안에서만 답변을 정리했습니다.',
+      status: contactRecommended ? 'attention' as const : 'completed' as const,
+    },
+  ];
+
+  if (retrievalChannelLimited && verifiedSourceCount > 0) {
+    steps.push({
+      label: '검색 범위 점검',
+      description: `일부 검색 경로가 제한되어 검증 출처 ${verifiedSourceCount}개 기준으로 답변했습니다.`,
+      status: 'attention',
+    });
+  }
 
   return {
     label,
     summary,
-    status,
-    steps: [
-      {
-        label: '1차 AI 검토',
-        description: `질문 의도와 매체 조건을 분석하고 후보 출처 ${sourceCount}개를 검색했습니다.`,
-        status: sourceCount > 0 ? 'completed' : 'attention',
-      },
-      {
-        label: '2차 정합성 검토',
-        description: `실제 답변에 사용할 수 있는 검증 출처 ${verifiedSourceCount}개만 선별했습니다.`,
-        status: verifiedSourceCount > 0 ? 'completed' : 'limited',
-      },
-      {
-        label: '답변 정리',
-        description: contactRecommended
-          ? '검증 출처가 부족하거나 범위가 제한되어 담당자 추가 확인을 권장합니다.'
-          : '확인된 출처 범위 안에서만 답변을 정리했습니다.',
-        status: contactRecommended ? 'attention' : 'completed',
-      },
-    ],
+    status: effectiveStatus,
+    steps,
     disclosure: 'Compass 답변은 확인된 출처 범위 안에서만 제공되며, 최종 운영 판단 전 원문 대조를 권장합니다.',
   };
 }
@@ -6891,6 +6907,7 @@ export async function buildCompassAnswerResponse(
       sourceCount: searchResults.length,
       verifiedSourceCount: verifiedSearchResults.length,
       contactRecommended: false,
+      retrievalChannelLimited: sourceDiagnostics.retrievalChannelTimedOut === true,
     });
     emitPhase?.({
       phase: 'answer-started',
@@ -6924,6 +6941,7 @@ export async function buildCompassAnswerResponse(
               sourceCount: searchResults.length,
               verifiedSourceCount: verifiedSearchResults.length,
               contactRecommended: true,
+              retrievalChannelLimited: sourceDiagnostics.retrievalChannelTimedOut === true,
             }),
           },
           confidence,
@@ -7374,12 +7392,13 @@ export async function buildCompassAnswerResponse(
             answerRepairReason: answerRepair?.reason,
             broadAnswerRepairReason: broadAnswerRepair?.reason,
           },
-          reviewPipeline: answerRepair
+            reviewPipeline: answerRepair
             ? buildReviewPipeline({
               status: answerRepair.reviewStatus || 'completed',
               sourceCount: searchResults.length,
               verifiedSourceCount: finalAnswerSources.length,
               contactRecommended: Boolean(answerRepair.showContactOption),
+              retrievalChannelLimited: sourceDiagnostics.retrievalChannelTimedOut === true,
             })
             : broadAnswerRepair
               ? buildReviewPipeline({
@@ -7387,6 +7406,7 @@ export async function buildCompassAnswerResponse(
                 sourceCount: searchResults.length,
                 verifiedSourceCount: finalAnswerSources.length,
                 contactRecommended: Boolean(broadAnswerRepair.showContactOption),
+                retrievalChannelLimited: sourceDiagnostics.retrievalChannelTimedOut === true,
               })
             : reviewPipeline,
         },

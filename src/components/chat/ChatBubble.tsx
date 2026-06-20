@@ -495,7 +495,7 @@ export default function ChatBubble({
                       <div className="mt-3 border-t border-[#EEF0E8] pt-3">
                         <div className="mb-2 font-medium text-[#34423A]">{reviewPipeline.summary}</div>
                         <div className="grid gap-1.5">
-                          {reviewPipeline.steps.slice(0, 3).map((step) => (
+                          {reviewPipeline.steps.slice(0, 4).map((step) => (
                             <div key={step.label} className="flex gap-2 rounded-md border border-[#EEF0E8] bg-[#FBFBF7] px-2 py-1.5">
                               <CheckCircle2 className={`mt-0.5 h-3.5 w-3.5 flex-none ${step.status === 'attention' ? 'text-amber-600' : step.status === 'limited' ? 'text-[#8A6418]' : 'text-[#1F7A4D]'}`} />
                               <div>
