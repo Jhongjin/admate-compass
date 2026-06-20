@@ -49,18 +49,53 @@ export type CompassAnswerDurableMetricsSnapshot = {
   reason?: string;
 };
 
-const DURABLE_STORE_TIMEOUT_MS = Math.min(
-  Math.max(Number(process.env.COMPASS_DURABLE_ANSWER_STORE_TIMEOUT_MS || 700), 200),
-  2500,
-);
+type CompassAnswerDurableStoreArea = 'cache_read' | 'cache_write' | 'metrics_write' | 'metrics_read';
+
+function resolveDurableStoreTimeoutMs(
+  envName: string,
+  fallbackMs: number,
+  maxMs: number,
+) {
+  const parsed = Number(
+    process.env[envName]
+    || process.env.COMPASS_DURABLE_ANSWER_STORE_TIMEOUT_MS
+    || fallbackMs,
+  );
+  const timeoutMs = Number.isFinite(parsed) ? parsed : fallbackMs;
+  return Math.min(Math.max(Math.floor(timeoutMs), 500), maxMs);
+}
+
+const DURABLE_STORE_TIMEOUTS_MS: Record<CompassAnswerDurableStoreArea, number> = {
+  cache_read: resolveDurableStoreTimeoutMs(
+    'COMPASS_DURABLE_ANSWER_STORE_CACHE_READ_TIMEOUT_MS',
+    1500,
+    5000,
+  ),
+  cache_write: resolveDurableStoreTimeoutMs(
+    'COMPASS_DURABLE_ANSWER_STORE_CACHE_WRITE_TIMEOUT_MS',
+    2000,
+    7000,
+  ),
+  metrics_write: resolveDurableStoreTimeoutMs(
+    'COMPASS_DURABLE_ANSWER_STORE_METRICS_WRITE_TIMEOUT_MS',
+    2000,
+    7000,
+  ),
+  metrics_read: resolveDurableStoreTimeoutMs(
+    'COMPASS_DURABLE_ANSWER_STORE_METRICS_READ_TIMEOUT_MS',
+    2000,
+    7000,
+  ),
+};
+const DURABLE_STORE_TIMEOUT_MS = Math.max(...Object.values(DURABLE_STORE_TIMEOUTS_MS));
 const DURABLE_STORE_SUPPRESSION_MS = Math.min(
   Math.max(Number(process.env.COMPASS_DURABLE_ANSWER_STORE_SUPPRESSION_MS || 60000), 5000),
   300000,
 );
 
-let durableStoreUnavailableUntil = 0;
+const durableStoreUnavailableUntilByArea: Partial<Record<CompassAnswerDurableStoreArea, number>> = {};
 let durableStoreLastError: {
-  area: string;
+  area: CompassAnswerDurableStoreArea;
   at: string;
   name: string;
   code?: string;
@@ -79,11 +114,23 @@ function isDurableMetricsEnabled() {
   return process.env.COMPASS_DURABLE_ANSWER_METRICS_ENABLED !== 'false';
 }
 
-function isDurableStoreSuppressed() {
-  return durableStoreUnavailableUntil > Date.now();
+function isDurableStoreSuppressed(area: CompassAnswerDurableStoreArea) {
+  return (durableStoreUnavailableUntilByArea[area] || 0) > Date.now();
 }
 
-function toErrorMetadata(error: unknown, area: string) {
+function getDurableStoreSuppressedAreas() {
+  const now = Date.now();
+  return Object.entries(durableStoreUnavailableUntilByArea)
+    .filter((entry): entry is [CompassAnswerDurableStoreArea, number] => (
+      Number(entry[1]) > now
+    ))
+    .map(([area, unavailableUntil]) => ({
+      area,
+      unavailableUntil: new Date(unavailableUntil).toISOString(),
+    }));
+}
+
+function toErrorMetadata(error: unknown, area: CompassAnswerDurableStoreArea) {
   const candidate = error as { name?: unknown; code?: unknown; message?: unknown };
   return {
     area,
@@ -94,29 +141,31 @@ function toErrorMetadata(error: unknown, area: string) {
   };
 }
 
-function markDurableStoreUnavailable(error: unknown, area: string) {
-  durableStoreUnavailableUntil = Date.now() + DURABLE_STORE_SUPPRESSION_MS;
+function markDurableStoreUnavailable(error: unknown, area: CompassAnswerDurableStoreArea) {
+  durableStoreUnavailableUntilByArea[area] = Date.now() + DURABLE_STORE_SUPPRESSION_MS;
   durableStoreLastError = toErrorMetadata(error, area);
   console.warn('Compass durable answer store temporarily unavailable', {
     area: durableStoreLastError.area,
     name: durableStoreLastError.name,
     code: durableStoreLastError.code,
+    timeoutMs: DURABLE_STORE_TIMEOUTS_MS[area],
     suppressedMs: DURABLE_STORE_SUPPRESSION_MS,
   });
 }
 
 async function withDurableStoreTimeout<T>(
   operation: PromiseLike<T>,
-  area: string,
+  area: CompassAnswerDurableStoreArea,
 ): Promise<T | null> {
   let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  const timeoutMs = DURABLE_STORE_TIMEOUTS_MS[area];
   try {
     const timeout = new Promise<null>((resolve) => {
-      timeoutId = setTimeout(() => resolve(null), DURABLE_STORE_TIMEOUT_MS);
+      timeoutId = setTimeout(() => resolve(null), timeoutMs);
     });
     const result = await Promise.race([Promise.resolve(operation), timeout]);
     if (result === null) {
-      markDurableStoreUnavailable(new Error('durable store operation timed out'), area);
+      markDurableStoreUnavailable(new Error(`durable store operation timed out after ${timeoutMs}ms`), area);
     }
     return result;
   } catch (error) {
@@ -127,9 +176,12 @@ async function withDurableStoreTimeout<T>(
   }
 }
 
-function shouldUseDurableStore(feature: 'cache' | 'metrics') {
+function shouldUseDurableStore(
+  feature: 'cache' | 'metrics',
+  area: CompassAnswerDurableStoreArea,
+) {
   if (!hasCompassDurableStoreConfig()) return false;
-  if (isDurableStoreSuppressed()) return false;
+  if (isDurableStoreSuppressed(area)) return false;
   return feature === 'cache' ? isDurableCacheEnabled() : isDurableMetricsEnabled();
 }
 
@@ -144,17 +196,24 @@ function normalizeCacheStatus(value: unknown): number {
 }
 
 export function getCompassAnswerDurableStoreStatus() {
-  const unavailableUntil = durableStoreUnavailableUntil > Date.now()
-    ? new Date(durableStoreUnavailableUntil).toISOString()
-    : null;
+  const suppressedAreas = getDurableStoreSuppressedAreas();
+  const unavailableUntil = suppressedAreas.reduce<string | null>((latest, entry) => (
+    latest && latest > entry.unavailableUntil ? latest : entry.unavailableUntil
+  ), null);
+  const configured = hasCompassDurableStoreConfig();
 
   return {
-    configured: hasCompassDurableStoreConfig(),
+    configured,
     cacheEnabled: isDurableCacheEnabled(),
     metricsEnabled: isDurableMetricsEnabled(),
-    available: hasCompassDurableStoreConfig() && !isDurableStoreSuppressed(),
+    available: configured && suppressedAreas.length === 0,
+    partiallyAvailable: configured
+      && suppressedAreas.length > 0
+      && suppressedAreas.length < Object.keys(DURABLE_STORE_TIMEOUTS_MS).length,
     timeoutMs: DURABLE_STORE_TIMEOUT_MS,
+    timeoutsMs: DURABLE_STORE_TIMEOUTS_MS,
     unavailableUntil,
+    suppressedAreas,
     lastError: durableStoreLastError,
   };
 }
@@ -162,7 +221,7 @@ export function getCompassAnswerDurableStoreStatus() {
 export async function readCompassAnswerDurableCache(
   cacheKey: string,
 ): Promise<CompassAnswerDurableCacheEntry | null> {
-  if (!shouldUseDurableStore('cache')) return null;
+  if (!shouldUseDurableStore('cache', 'cache_read')) return null;
 
   const supabase = createCompassServiceClient();
   const response = await withDurableStoreTimeout(
@@ -205,7 +264,7 @@ export async function writeCompassAnswerDurableCache({
   status: number;
   expiresAt: Date;
 }): Promise<boolean> {
-  if (!shouldUseDurableStore('cache')) return false;
+  if (!shouldUseDurableStore('cache', 'cache_write')) return false;
 
   const supabase = createCompassServiceClient();
   const response = await withDurableStoreTimeout(
@@ -235,7 +294,7 @@ export async function writeCompassAnswerDurableCache({
 export async function recordCompassAnswerDurableRuntimeEvent(
   event: CompassAnswerDurableRuntimeEvent,
 ): Promise<boolean> {
-  if (!shouldUseDurableStore('metrics')) return false;
+  if (!shouldUseDurableStore('metrics', 'metrics_write')) return false;
 
   const supabase = createCompassServiceClient();
   const response = await withDurableStoreTimeout(
@@ -278,7 +337,7 @@ export async function readCompassAnswerDurableMetricsSnapshot(
   if (!hasCompassDurableStoreConfig()) {
     return { status: 'unavailable', reason: 'Supabase service environment is not configured.' };
   }
-  if (isDurableStoreSuppressed()) {
+  if (isDurableStoreSuppressed('metrics_read')) {
     return {
       status: 'unavailable',
       reason: 'Durable store is temporarily suppressed after a recent failure.',
