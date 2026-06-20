@@ -2113,10 +2113,17 @@ export class RAGSearchService {
       '심사 가이드',
       '집행 기준',
     ];
+    const specificKakaoFastPathAnchors = [
+      '비즈보드',
+      '카카오 비즈보드',
+      '디스플레이 광고',
+      '카카오모먼트',
+      '상품가이드',
+    ];
 
     const usesSpecificKakaoOllamaFastPath = intent.isSpecificProductGuidance;
     if (usesSpecificKakaoOllamaFastPath) {
-      const ollamaResults = await this.searchKeywordTable('ollama_document_chunks', prioritySearchAnchors, 10, intent, 'KAKAO');
+      const ollamaResults = await this.searchKeywordTable('ollama_document_chunks', specificKakaoFastPathAnchors, 8, intent, 'KAKAO');
       const fastCandidates = this.normalizeKakaoProductStructurePriorityResults(
         ollamaResults.map(result => ({ ...result, anchor: 'kakao_product_priority_keyword' })),
         keywords,

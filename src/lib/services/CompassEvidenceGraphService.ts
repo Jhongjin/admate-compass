@@ -207,7 +207,10 @@ export class CompassEvidenceGraphService {
     const structuredRows = await this.fetchStructuredRows(intent, limit);
 
     if (structuredRows.length > 0) {
-      if (this.shouldUseStructuredRowsOnlyForFocusedProductOverview(intent)) {
+      if (
+        this.shouldUseStructuredRowsOnlyForFocusedProductOverview(intent)
+        || this.shouldUseStructuredRowsOnlyForKakaoSpecificProduct(intent, structuredRows, limit)
+      ) {
         return structuredRows;
       }
 
@@ -298,7 +301,7 @@ export class CompassEvidenceGraphService {
       sourceKinds: this.preferredSourceKinds(intent),
       graphTopics: this.preferredGraphTopics(intent).slice(0, 5),
       claimTypes: this.preferredClaimTypes(intent).slice(0, 8),
-      rowLimit: this.resolveFocusedProductGraphRpcRowLimit(limit),
+      rowLimit: this.resolveFocusedProductGraphRpcRowLimit(limit, intent),
     };
     const cacheKey = this.buildFocusedProductGraphRpcCacheKey(rpcParams);
     const cachedRows = this.readFocusedProductGraphRpcCache(cacheKey);
@@ -522,6 +525,35 @@ export class CompassEvidenceGraphService {
     );
   }
 
+  private shouldUseStructuredRowsOnlyForKakaoSpecificProduct(
+    intent: QueryIntent,
+    structuredRows: EvidenceGraphRawAssertion[],
+    limit: number,
+  ): boolean {
+    if (
+      !this.isFocusedProductGraphIntent(intent)
+      || intent.vendors[0] !== 'KAKAO'
+      || !intent.isSpecificProductGuidance
+      || !intent.topics.includes('product_structure')
+      || intent.topics.includes('spec')
+      || intent.topics.includes('review')
+      || intent.adPolicyTerms.length > 0
+    ) {
+      return false;
+    }
+
+    const terms = [
+      ...intent.keywords,
+      ...intent.strictProductTerms,
+      ...intent.strictContextTerms,
+    ];
+    if (this.isOperationalIssueQuery(terms)) {
+      return false;
+    }
+
+    return structuredRows.length >= Math.min(Math.max(limit, 8), 16);
+  }
+
   private resolveStructuredGraphPerQueryLimit(intent: QueryIntent, limit: number): number {
     if (this.isFocusedProductGraphIntent(intent)) {
       return Math.min(Math.max(limit * 4, 24), 64);
@@ -538,7 +570,18 @@ export class CompassEvidenceGraphService {
     return Math.max(limit * 24, 120);
   }
 
-  private resolveFocusedProductGraphRpcRowLimit(limit: number): number {
+  private resolveFocusedProductGraphRpcRowLimit(limit: number, intent?: QueryIntent): number {
+    if (
+      intent?.vendors.length === 1
+      && intent.vendors[0] === 'KAKAO'
+      && intent.isSpecificProductGuidance
+      && intent.topics.includes('product_structure')
+      && !intent.topics.includes('spec')
+      && !intent.topics.includes('review')
+    ) {
+      return Math.min(Math.max(limit, 24), 32);
+    }
+
     return Math.min(Math.max(limit * 3, 36), 54);
   }
 

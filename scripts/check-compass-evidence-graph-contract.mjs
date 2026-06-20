@@ -13,6 +13,10 @@ function assertIncludes(content, needle, label) {
   }
 }
 
+function fail(message) {
+  throw new Error(message);
+}
+
 const migration = read('supabase/migrations/20260616000000_create_compass_evidence_graph.sql');
 const officialDocMigration = read('supabase/migrations/20260616001000_add_official_doc_graph_indexing_support.sql');
 const focusedProductGraphRpcMigration = read('supabase/migrations/20260620000003_add_focused_product_graph_rpc.sql');
@@ -67,6 +71,7 @@ for (const serviceSignal of [
   'durableHitCount',
   'awaitFocusedProductGraphRpcInflight',
   'shouldUseStructuredRowsOnlyForFocusedProductOverview',
+  'shouldUseStructuredRowsOnlyForKakaoSpecificProduct',
   'resolveFocusedProductGraphRpcRowLimit',
   'resolveStructuredGraphPerQueryLimit',
   'resolveTextGraphRowLimit',
@@ -162,8 +167,12 @@ for (const ragSignal of [
   assertIncludes(ragService, ragSignal, 'RAG graph sidecar integration');
 }
 
-if (!/resolveFocusedProductGraphRpcRowLimit[\s\S]*Math\.min\(Math\.max\(limit \* 3, 36\), 54\)/.test(graphService)) {
-  fail('focused product graph RPC must keep row fan-out tightly bounded');
+if (!/resolveFocusedProductGraphRpcRowLimit\(limit: number, intent\?: QueryIntent\)[\s\S]*intent\.vendors\[0\] === 'KAKAO'[\s\S]*intent\.isSpecificProductGuidance[\s\S]*Math\.min\(Math\.max\(limit, 24\), 32\)[\s\S]*Math\.min\(Math\.max\(limit \* 3, 36\), 54\)/.test(graphService)) {
+  fail('focused product graph RPC must keep row fan-out tightly bounded, with narrower KAKAO specific product rows');
+}
+
+if (!/shouldUseStructuredRowsOnlyForKakaoSpecificProduct[\s\S]*intent\.vendors\[0\] !== 'KAKAO'[\s\S]*intent\.isSpecificProductGuidance[\s\S]*intent\.topics\.includes\('product_structure'\)[\s\S]*isOperationalIssueQuery[\s\S]*structuredRows\.length >= Math\.min\(Math\.max\(limit, 8\), 16\)/.test(graphService)) {
+  fail('KAKAO focused product graph must skip text graph scan only for safe structured product queries');
 }
 
 for (const promptSignal of [

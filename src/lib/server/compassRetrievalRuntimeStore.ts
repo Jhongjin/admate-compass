@@ -56,8 +56,8 @@ const DURABLE_RETRIEVAL_TIMEOUTS_MS: Record<CompassRetrievalDurableStoreArea, nu
   ),
   hit_write: resolveDurableRetrievalTimeoutMs(
     'COMPASS_DURABLE_RETRIEVAL_CACHE_HIT_WRITE_TIMEOUT_MS',
-    700,
-    2500,
+    1500,
+    4000,
   ),
   metrics_read: resolveDurableRetrievalTimeoutMs(
     'COMPASS_DURABLE_RETRIEVAL_CACHE_METRICS_READ_TIMEOUT_MS',
