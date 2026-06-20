@@ -46,10 +46,50 @@ export type CompassAnswerDurableMetricsSnapshot = {
   lastEventAt?: string | null;
   lastSlowestChannel?: Record<string, unknown> | null;
   cacheEntryCount?: number;
+  modelBreakdown?: CompassAnswerDurableMetricsBreakdownItem[];
+  slowestChannelBreakdown?: CompassAnswerDurableChannelBreakdownItem[];
+  fastAnswerFallbackBreakdown?: CompassAnswerDurableCountBreakdownItem[];
   reason?: string;
 };
 
-type CompassAnswerDurableStoreArea = 'cache_read' | 'cache_write' | 'metrics_write' | 'metrics_read';
+export type CompassAnswerDurableMetricsBreakdownItem = {
+  key: string;
+  count: number;
+  hitCount: number;
+  missCount: number;
+  bypassCount: number;
+  avgProcessingTimeMs: number | null;
+  avgRetrievalDurationMs: number | null;
+  avgAnswerGenerationDurationMs: number | null;
+};
+
+export type CompassAnswerDurableChannelBreakdownItem = {
+  label: string;
+  count: number;
+  timedOutCount: number;
+  failedCount: number;
+  avgDurationMs: number | null;
+};
+
+export type CompassAnswerDurableCountBreakdownItem = {
+  key: string;
+  count: number;
+};
+
+export type CompassAnswerDurableMaintenanceResult = {
+  status: 'ready' | 'disabled' | 'unavailable';
+  cacheDeletedCount?: number;
+  eventDeletedCount?: number;
+  eventRetentionHours?: number;
+  reason?: string;
+};
+
+type CompassAnswerDurableStoreArea =
+  | 'cache_read'
+  | 'cache_write'
+  | 'metrics_write'
+  | 'metrics_read'
+  | 'maintenance';
 
 function resolveDurableStoreTimeoutMs(
   envName: string,
@@ -86,11 +126,20 @@ const DURABLE_STORE_TIMEOUTS_MS: Record<CompassAnswerDurableStoreArea, number> =
     2000,
     7000,
   ),
+  maintenance: resolveDurableStoreTimeoutMs(
+    'COMPASS_DURABLE_ANSWER_STORE_MAINTENANCE_TIMEOUT_MS',
+    3000,
+    10000,
+  ),
 };
 const DURABLE_STORE_TIMEOUT_MS = Math.max(...Object.values(DURABLE_STORE_TIMEOUTS_MS));
 const DURABLE_STORE_SUPPRESSION_MS = Math.min(
   Math.max(Number(process.env.COMPASS_DURABLE_ANSWER_STORE_SUPPRESSION_MS || 60000), 5000),
   300000,
+);
+const DURABLE_METRICS_BREAKDOWN_TIMEOUT_MS = Math.min(
+  Math.max(Number(process.env.COMPASS_DURABLE_ANSWER_METRICS_BREAKDOWN_TIMEOUT_MS || 900), 200),
+  2500,
 );
 
 const durableStoreUnavailableUntilByArea: Partial<Record<CompassAnswerDurableStoreArea, number>> = {};
@@ -176,6 +225,22 @@ async function withDurableStoreTimeout<T>(
   }
 }
 
+async function withOptionalDurableStoreTimeout<T>(
+  operation: PromiseLike<T>,
+): Promise<T | null> {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const timeout = new Promise<null>((resolve) => {
+      timeoutId = setTimeout(() => resolve(null), DURABLE_METRICS_BREAKDOWN_TIMEOUT_MS);
+    });
+    return await Promise.race([Promise.resolve(operation), timeout]);
+  } catch {
+    return null;
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId);
+  }
+}
+
 function shouldUseDurableStore(
   feature: 'cache' | 'metrics',
   area: CompassAnswerDurableStoreArea,
@@ -193,6 +258,21 @@ function normalizeCachedBody(value: unknown): Record<string, unknown> | null {
 function normalizeCacheStatus(value: unknown): number {
   const status = Number(value);
   return Number.isFinite(status) && status >= 100 && status < 600 ? Math.floor(status) : 200;
+}
+
+function normalizeOptionalMetricNumber(value: unknown): number | null {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function resolveOptionalMetricAverage(total: number, count: number): number | null {
+  return count > 0 ? Math.round(total / count) : null;
+}
+
+function resolveMaintenanceRetentionHours() {
+  const configured = Number(process.env.COMPASS_DURABLE_ANSWER_METRICS_RETENTION_HOURS || 336);
+  const retentionHours = Number.isFinite(configured) ? Math.floor(configured) : 336;
+  return Math.min(Math.max(retentionHours, 24), 2160);
 }
 
 export function getCompassAnswerDurableStoreStatus() {
@@ -365,5 +445,264 @@ export async function readCompassAnswerDurableMetricsSnapshot(
     return { status: 'unavailable', reason: 'Durable metrics function returned an empty payload.' };
   }
 
-  return data as CompassAnswerDurableMetricsSnapshot;
+  const snapshot = data as CompassAnswerDurableMetricsSnapshot;
+  const breakdown = await readCompassAnswerDurableMetricsBreakdown(since);
+  return {
+    ...snapshot,
+    ...breakdown,
+  };
+}
+
+async function readCompassAnswerDurableMetricsBreakdown(
+  since: string,
+): Promise<Pick<
+  CompassAnswerDurableMetricsSnapshot,
+  'modelBreakdown' | 'slowestChannelBreakdown' | 'fastAnswerFallbackBreakdown'
+>> {
+  if (process.env.COMPASS_DURABLE_ANSWER_METRICS_BREAKDOWN_ENABLED === 'false') {
+    return {};
+  }
+  if (isDurableStoreSuppressed('metrics_read')) return {};
+
+  const limit = Math.min(
+    Math.max(Number(process.env.COMPASS_DURABLE_ANSWER_METRICS_BREAKDOWN_LIMIT || 200), 25),
+    500,
+  );
+  const supabase = createCompassServiceClient();
+  const response = await withOptionalDurableStoreTimeout(
+    supabase
+      .from('answer_runtime_events')
+      .select('cache_status,processing_time_ms,retrieval_duration_ms,answer_generation_duration_ms,model,slowest_channel,metadata')
+      .gte('created_at', since)
+      .order('created_at', { ascending: false })
+      .limit(limit),
+  );
+
+  if (!response || response.error || !Array.isArray(response.data)) return {};
+  return summarizeCompassAnswerDurableMetricsBreakdown(response.data as Record<string, unknown>[]);
+}
+
+function summarizeCompassAnswerDurableMetricsBreakdown(
+  rows: Record<string, unknown>[],
+): Pick<
+  CompassAnswerDurableMetricsSnapshot,
+  'modelBreakdown' | 'slowestChannelBreakdown' | 'fastAnswerFallbackBreakdown'
+> {
+  const modelStats = new Map<string, {
+    count: number;
+    hitCount: number;
+    missCount: number;
+    bypassCount: number;
+    processingTotal: number;
+    processingCount: number;
+    retrievalTotal: number;
+    retrievalCount: number;
+    answerGenerationTotal: number;
+    answerGenerationCount: number;
+  }>();
+  const channelStats = new Map<string, {
+    count: number;
+    timedOutCount: number;
+    failedCount: number;
+    durationTotal: number;
+    durationCount: number;
+  }>();
+  const fastAnswerFallbackCounts = new Map<string, number>();
+
+  rows.forEach((row) => {
+    const cacheStatus = String(row.cache_status || '');
+    const model = String(row.model || 'unknown');
+    const modelEntry = modelStats.get(model) || {
+      count: 0,
+      hitCount: 0,
+      missCount: 0,
+      bypassCount: 0,
+      processingTotal: 0,
+      processingCount: 0,
+      retrievalTotal: 0,
+      retrievalCount: 0,
+      answerGenerationTotal: 0,
+      answerGenerationCount: 0,
+    };
+    modelEntry.count += 1;
+    if (cacheStatus === 'HIT') modelEntry.hitCount += 1;
+    if (cacheStatus === 'MISS') modelEntry.missCount += 1;
+    if (cacheStatus === 'BYPASS') modelEntry.bypassCount += 1;
+
+    const processingTimeMs = normalizeOptionalMetricNumber(row.processing_time_ms);
+    const retrievalDurationMs = normalizeOptionalMetricNumber(row.retrieval_duration_ms);
+    const answerGenerationDurationMs = normalizeOptionalMetricNumber(row.answer_generation_duration_ms);
+    if (processingTimeMs !== null) {
+      modelEntry.processingTotal += processingTimeMs;
+      modelEntry.processingCount += 1;
+    }
+    if (retrievalDurationMs !== null && cacheStatus !== 'HIT') {
+      modelEntry.retrievalTotal += retrievalDurationMs;
+      modelEntry.retrievalCount += 1;
+    }
+    if (answerGenerationDurationMs !== null && cacheStatus !== 'HIT') {
+      modelEntry.answerGenerationTotal += answerGenerationDurationMs;
+      modelEntry.answerGenerationCount += 1;
+    }
+    modelStats.set(model, modelEntry);
+
+    const slowestChannel = row.slowest_channel && typeof row.slowest_channel === 'object'
+      ? row.slowest_channel as Record<string, unknown>
+      : null;
+    const label = String(slowestChannel?.label || '');
+    if (label) {
+      const channelEntry = channelStats.get(label) || {
+        count: 0,
+        timedOutCount: 0,
+        failedCount: 0,
+        durationTotal: 0,
+        durationCount: 0,
+      };
+      channelEntry.count += 1;
+      if (slowestChannel?.timedOut === true) channelEntry.timedOutCount += 1;
+      if (slowestChannel?.failed === true) channelEntry.failedCount += 1;
+      const durationMs = normalizeOptionalMetricNumber(slowestChannel?.durationMs);
+      if (durationMs !== null) {
+        channelEntry.durationTotal += durationMs;
+        channelEntry.durationCount += 1;
+      }
+      channelStats.set(label, channelEntry);
+    }
+
+    const metadata = row.metadata && typeof row.metadata === 'object'
+      ? row.metadata as Record<string, unknown>
+      : {};
+    const fastAnswerFallback = String(metadata.fastAnswerFallback || '');
+    if (fastAnswerFallback) {
+      fastAnswerFallbackCounts.set(
+        fastAnswerFallback,
+        (fastAnswerFallbackCounts.get(fastAnswerFallback) || 0) + 1,
+      );
+    }
+  });
+
+  return {
+    modelBreakdown: Array.from(modelStats.entries())
+      .map(([key, entry]) => ({
+        key,
+        count: entry.count,
+        hitCount: entry.hitCount,
+        missCount: entry.missCount,
+        bypassCount: entry.bypassCount,
+        avgProcessingTimeMs: resolveOptionalMetricAverage(entry.processingTotal, entry.processingCount),
+        avgRetrievalDurationMs: resolveOptionalMetricAverage(entry.retrievalTotal, entry.retrievalCount),
+        avgAnswerGenerationDurationMs: resolveOptionalMetricAverage(
+          entry.answerGenerationTotal,
+          entry.answerGenerationCount,
+        ),
+      }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 8),
+    slowestChannelBreakdown: Array.from(channelStats.entries())
+      .map(([label, entry]) => ({
+        label,
+        count: entry.count,
+        timedOutCount: entry.timedOutCount,
+        failedCount: entry.failedCount,
+        avgDurationMs: resolveOptionalMetricAverage(entry.durationTotal, entry.durationCount),
+      }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 8),
+    fastAnswerFallbackBreakdown: Array.from(fastAnswerFallbackCounts.entries())
+      .map(([key, count]) => ({ key, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 8),
+  };
+}
+
+export async function runCompassAnswerDurableMaintenance(): Promise<CompassAnswerDurableMaintenanceResult> {
+  if (!isDurableCacheEnabled() && !isDurableMetricsEnabled()) {
+    return {
+      status: 'disabled',
+      reason: 'Durable cache and metrics are disabled.',
+    };
+  }
+  if (!hasCompassDurableStoreConfig()) {
+    return {
+      status: 'unavailable',
+      reason: 'Supabase service environment is not configured.',
+    };
+  }
+  if (isDurableStoreSuppressed('maintenance')) {
+    return {
+      status: 'unavailable',
+      reason: 'Durable store maintenance is temporarily suppressed after a recent failure.',
+    };
+  }
+
+  const supabase = createCompassServiceClient();
+  let cacheDeletedCount = 0;
+  let eventDeletedCount = 0;
+
+  if (isDurableCacheEnabled()) {
+    const cachePruneResponse = await withDurableStoreTimeout(
+      supabase.rpc('prune_expired_answer_response_cache'),
+      'maintenance',
+    );
+
+    if (!cachePruneResponse) {
+      return {
+        status: 'unavailable',
+        reason: 'Durable cache prune timed out.',
+      };
+    }
+    if (cachePruneResponse.error) {
+      markDurableStoreUnavailable(cachePruneResponse.error, 'maintenance');
+      return {
+        status: 'unavailable',
+        reason: 'Durable cache prune failed.',
+      };
+    }
+
+    cacheDeletedCount = Number(cachePruneResponse.data || 0);
+  }
+
+  if (isDurableMetricsEnabled()) {
+    const retentionHours = resolveMaintenanceRetentionHours();
+    const cutoff = new Date(Date.now() - retentionHours * 60 * 60 * 1000).toISOString();
+    const eventPruneResponse = await withDurableStoreTimeout(
+      supabase
+        .from('answer_runtime_events')
+        .delete({ count: 'exact' })
+        .lt('created_at', cutoff),
+      'maintenance',
+    );
+
+    if (!eventPruneResponse) {
+      return {
+        status: 'unavailable',
+        cacheDeletedCount,
+        eventRetentionHours: retentionHours,
+        reason: 'Durable metrics prune timed out.',
+      };
+    }
+    if (eventPruneResponse.error) {
+      markDurableStoreUnavailable(eventPruneResponse.error, 'maintenance');
+      return {
+        status: 'unavailable',
+        cacheDeletedCount,
+        eventRetentionHours: retentionHours,
+        reason: 'Durable metrics prune failed.',
+      };
+    }
+
+    eventDeletedCount = Number(eventPruneResponse.count || 0);
+    return {
+      status: 'ready',
+      cacheDeletedCount,
+      eventDeletedCount,
+      eventRetentionHours: retentionHours,
+    };
+  }
+
+  return {
+    status: 'ready',
+    cacheDeletedCount,
+    eventDeletedCount,
+  };
 }

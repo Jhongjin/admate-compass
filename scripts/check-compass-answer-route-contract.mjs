@@ -8,16 +8,19 @@ const legacyChatAliasPagePath = path.join(root, 'src/app/chat/page.tsx')
 const publicAnswerRoutePath = path.join(root, 'src/app/api/compass-answer/route.ts')
 const legacyAnswerRoutePath = path.join(root, 'src/app/api/chat-ollama/route.ts')
 const answerHandlerPath = path.join(root, 'src/lib/server/compassAnswerHandler.ts')
+const answerRuntimeStorePath = path.join(root, 'src/lib/server/compassAnswerRuntimeStore.ts')
+const answerRuntimeMaintenanceRoutePath = path.join(root, 'src/app/api/internal/compass-answer-runtime/maintenance/route.ts')
 const legacyRoutePath = path.join(root, 'src/app/api/chatbot/route.ts')
 const decisionDocPath = path.join(root, 'docs/tasks/2026-05-17_compass_reliability_3agent_openrouter_graphrag_plan_v3.md')
 const packagePath = path.join(root, 'package.json')
+const vercelPath = path.join(root, 'vercel.json')
 
 function fail(message) {
   console.error(`[check-compass-answer-route-contract] ${message}`)
   process.exitCode = 1
 }
 
-for (const filePath of [chatPagePath, legacyChatPagePath, legacyChatAliasPagePath, publicAnswerRoutePath, legacyAnswerRoutePath, answerHandlerPath, legacyRoutePath, decisionDocPath, packagePath]) {
+for (const filePath of [chatPagePath, legacyChatPagePath, legacyChatAliasPagePath, publicAnswerRoutePath, legacyAnswerRoutePath, answerHandlerPath, answerRuntimeStorePath, answerRuntimeMaintenanceRoutePath, legacyRoutePath, decisionDocPath, packagePath, vercelPath]) {
   if (!fs.existsSync(filePath)) fail(`missing required file: ${path.relative(root, filePath)}`)
 }
 
@@ -29,9 +32,12 @@ const legacyChatAliasPageText = fs.readFileSync(legacyChatAliasPagePath, 'utf8')
 const publicAnswerRouteText = fs.readFileSync(publicAnswerRoutePath, 'utf8')
 const legacyAnswerRouteText = fs.readFileSync(legacyAnswerRoutePath, 'utf8')
 const answerHandlerText = fs.readFileSync(answerHandlerPath, 'utf8')
+const answerRuntimeStoreText = fs.readFileSync(answerRuntimeStorePath, 'utf8')
+const answerRuntimeMaintenanceRouteText = fs.readFileSync(answerRuntimeMaintenanceRoutePath, 'utf8')
 const legacyRouteText = fs.readFileSync(legacyRoutePath, 'utf8')
 const decisionDocText = fs.readFileSync(decisionDocPath, 'utf8')
 const packageJson = JSON.parse(fs.readFileSync(packagePath, 'utf8'))
+const vercelJson = JSON.parse(fs.readFileSync(vercelPath, 'utf8'))
 
 for (const requiredText of [
   "fetch('/api/compass-answer'",
@@ -88,6 +94,8 @@ for (const requiredText of [
   'conversationHistory',
   'responseCacheHit: true',
   'responseCacheHit: false',
+  'fastAnswerFallback: sourceDiagnostics.fastAnswerFallback',
+  'responseCacheScope: sourceDiagnostics.responseCacheScope',
   "'x-compass-answer-cache': 'HIT'",
 ]) {
   if (!answerHandlerText.includes(requiredText)) fail(`neutral answer handler missing ${requiredText}`)
@@ -135,6 +143,47 @@ for (const forbiddenText of [
   if (answerHandlerText.includes(forbiddenText)) {
     fail(`neutral answer handler must not use legacy Ollama-only behavior: ${forbiddenText}`)
   }
+}
+
+for (const requiredText of [
+  'runCompassAnswerDurableMaintenance',
+  'prune_expired_answer_response_cache',
+  "from('answer_runtime_events')",
+  "delete({ count: 'exact' })",
+  'COMPASS_DURABLE_ANSWER_METRICS_RETENTION_HOURS',
+  'modelBreakdown',
+  'slowestChannelBreakdown',
+  'fastAnswerFallbackBreakdown',
+  'COMPASS_DURABLE_ANSWER_METRICS_BREAKDOWN_ENABLED',
+  'summarizeCompassAnswerDurableMetricsBreakdown',
+  "'maintenance'",
+]) {
+  if (!answerRuntimeStoreText.includes(requiredText)) {
+    fail(`answer runtime store missing durable maintenance token ${requiredText}`)
+  }
+}
+
+for (const requiredText of [
+  'runCompassAnswerDurableMaintenance',
+  'COMPASS_ANSWER_RUNTIME_MAINTENANCE_KEY',
+  'CRON_SECRET',
+  'timingSafeEqual',
+  'cache-control',
+]) {
+  if (!answerRuntimeMaintenanceRouteText.includes(requiredText)) {
+    fail(`answer runtime maintenance route missing ${requiredText}`)
+  }
+}
+
+if (vercelJson.functions?.['src/app/api/internal/compass-answer-runtime/maintenance/route.ts']?.maxDuration !== 30) {
+  fail('vercel.json must set answer runtime maintenance route maxDuration to 30')
+}
+
+if (!Array.isArray(vercelJson.crons) || !vercelJson.crons.some((cron) => (
+  cron?.path === '/api/internal/compass-answer-runtime/maintenance'
+  && cron?.schedule === '17 * * * *'
+))) {
+  fail('vercel.json must schedule hourly Compass answer runtime maintenance')
 }
 
 for (const requiredText of [

@@ -4,8 +4,17 @@
     "src/app/api/compass-answer/route.ts": {
       "maxDuration": 60
     },
+    "src/app/api/internal/compass-answer-runtime/maintenance/route.ts": {
+      "maxDuration": 30
+    },
     "src/app/api/chat-ollama/route.ts": {
       "maxDuration": 60
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/internal/compass-answer-runtime/maintenance",
+      "schedule": "17 * * * *"
+    }
+  ]
 }

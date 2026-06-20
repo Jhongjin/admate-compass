@@ -381,6 +381,8 @@ function buildCompassAnswerDurableRuntimeEvent(
       status,
       answerMode: sourceDiagnostics.answerMode,
       deterministicAnswerFamily: sourceDiagnostics.deterministicAnswerFamily,
+      fastAnswerFallback: sourceDiagnostics.fastAnswerFallback,
+      responseCacheScope: sourceDiagnostics.responseCacheScope,
     },
   };
 }
@@ -4597,6 +4599,45 @@ function shouldUseFastBroadProductDeterministicAnswer(intent: QueryIntent) {
     || intent.vendors[0] === 'GOOGLE';
 }
 
+function buildFastKakaoSpecificProductAnswer(
+  message: string,
+  intent: QueryIntent,
+  scope: ReturnType<typeof buildSpecificProductAnswerScope>,
+): (DeterministicProductAnswer & { fastAnswerFallback: 'kakao_specific_product_source_guided' }) | null {
+  if (process.env.COMPASS_DISABLE_FAST_KAKAO_SPECIFIC_PRODUCT_ANSWERS === 'true') return null;
+  if (!intent.topics.includes('product_structure')) return null;
+  if (intent.vendors.length !== 1 || intent.vendors[0] !== 'KAKAO' || intent.isComparative) return null;
+  if (!intent.isSpecificProductGuidance && !hasNamedSpecificProductQuestion(message)) return null;
+
+  const family = detectProductAnswerFamily(message, intent);
+  if (family !== 'kakao_bizboard' && family !== 'kakao_creative') return null;
+
+  const candidateSources = scope.answerSources.length > 0 ? scope.answerSources : scope.strictProductSources;
+  if (candidateSources.length === 0) return null;
+
+  const deterministicAnswer = buildDeterministicSpecificProductAnswer(message, intent, scope);
+  if (deterministicAnswer) {
+    return {
+      ...deterministicAnswer,
+      model: `${deterministicAnswer.model}-fast-source-guided`,
+      fastAnswerFallback: 'kakao_specific_product_source_guided',
+    };
+  }
+
+  const structuredAnswer = buildStructuredSpecificProductScopeLimitedAnswer(candidateSources, intent, message);
+  if (!structuredAnswer) return null;
+
+  return {
+    answer: structuredAnswer,
+    sources: candidateSources.slice(0, 6),
+    model: 'compass-answer-fast-kakao-specific-product-source-guided',
+    showContactOption: true,
+    confidenceCap: 76,
+    reviewStatus: 'completed',
+    fastAnswerFallback: 'kakao_specific_product_source_guided',
+  };
+}
+
 function shouldUseDeterministicProductAnswerOnLlmFailure() {
   // LLM 연결 실패 시에도 기본값은 실제 출처 요약 폴백이다.
   // 고정 상품 프로필은 QA/회귀 테스트용으로 명시적으로 켠 경우에만 사용한다.
@@ -7495,6 +7536,50 @@ export async function buildCompassAnswerResponse(
           }
         };
       }
+    }
+
+    const fastKakaoSpecificProductAnswer = buildFastKakaoSpecificProductAnswer(
+      message,
+      ragIntent,
+      specificProductScope,
+    );
+    if (fastKakaoSpecificProductAnswer) {
+      const showContactOption = Boolean(fastKakaoSpecificProductAnswer.showContactOption);
+      emitPhase?.({
+        phase: 'answer-ready',
+        message: '카카오 상품 근거를 기준으로 답변을 정리했습니다.',
+      });
+      return {
+        body: {
+          response: {
+            message: fastKakaoSpecificProductAnswer.answer,
+            content: fastKakaoSpecificProductAnswer.answer,
+            sources: fastKakaoSpecificProductAnswer.sources,
+            noDataFound: false,
+            schema,
+            showContactOption,
+            sourceDiagnostics: {
+              ...sourceDiagnostics,
+              strictProductSourceCount: specificProductScope.strictProductSources.length,
+              answerSourceCount: fastKakaoSpecificProductAnswer.sources.length,
+              answerMode: diagnosticAnswerMode,
+              answerGenerationDurationMs: 0,
+              deterministicAnswerFamily: detectProductAnswerFamily(message, ragIntent),
+              fastAnswerFallback: fastKakaoSpecificProductAnswer.fastAnswerFallback,
+            },
+            reviewPipeline: buildReviewPipeline({
+              status: fastKakaoSpecificProductAnswer.reviewStatus || 'completed',
+              sourceCount: searchResults.length,
+              verifiedSourceCount: fastKakaoSpecificProductAnswer.sources.length,
+              contactRecommended: showContactOption,
+              retrievalChannelLimited: sourceDiagnostics.retrievalChannelTimedOut === true,
+            }),
+          },
+          confidence: getDeterministicProductConfidence(confidence, fastKakaoSpecificProductAnswer),
+          processingTime: Date.now() - startTime,
+          model: fastKakaoSpecificProductAnswer.model
+        }
+      };
     }
 
     if (ragIntent.topics.includes('product_structure') && ragIntent.isSpecificProductGuidance) {

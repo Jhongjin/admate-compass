@@ -118,6 +118,10 @@ for (const snippet of [
   'intent.isSpecificProductGuidance || hasNamedSpecificProductQuestion(originalMessage)',
   'return intent.isProductStructureOverview',
   'buildSpecificProductAnswerScope',
+  'buildFastKakaoSpecificProductAnswer',
+  'COMPASS_DISABLE_FAST_KAKAO_SPECIFIC_PRODUCT_ANSWERS',
+  "fastAnswerFallback: 'kakao_specific_product_source_guided'",
+  'compass-answer-fast-kakao-specific-product-source-guided',
   'sourceMatchesRequestedProductMode',
   'buildSpecificProductScopeLimitedAnswer',
   "model: 'compass-answer-naver-shopping-data-operational'",
@@ -879,6 +883,14 @@ if (!/const supplementQueryLimit = usesProductStructureFastPath\s*\?\s*getProduc
 
 if (!/usesSpecificProductSupplementPath\s*\?\s*getSpecificProductSupplementLimit\(ragIntent\.vendors\[0\],\s*message\)/.test(answerHandler)) {
   fail('specific product supplement path must use the bounded supplement limit helper');
+}
+
+if (!/function buildFastKakaoSpecificProductAnswer\([\s\S]*COMPASS_DISABLE_FAST_KAKAO_SPECIFIC_PRODUCT_ANSWERS[\s\S]*intent\.vendors\.length !== 1 \|\| intent\.vendors\[0\] !== 'KAKAO' \|\| intent\.isComparative[\s\S]*family !== 'kakao_bizboard' && family !== 'kakao_creative'[\s\S]*buildDeterministicSpecificProductAnswer[\s\S]*buildStructuredSpecificProductScopeLimitedAnswer/.test(answerHandler)) {
+  fail('Kakao specific product fast answer must stay gated to single-vendor Kakao bizboard/creative questions with source-guided evidence');
+}
+
+if (!/const fastKakaoSpecificProductAnswer = buildFastKakaoSpecificProductAnswer\([\s\S]*answerGenerationDurationMs: 0,[\s\S]*fastAnswerFallback: fastKakaoSpecificProductAnswer\.fastAnswerFallback/.test(answerHandler)) {
+  fail('Kakao specific product fast answer must expose zero answer-generation duration and fast-answer diagnostics');
 }
 
 if (/- 캠페인 목표 기준|먼저 고르는 것|그다음 고르는 것|고정된 상품명|고정 상품 목록|출처는 없지만 일반적으로|모든 매체에서 동일|  - 인지도:/.test(answerHandler)) {
