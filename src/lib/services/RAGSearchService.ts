@@ -4351,7 +4351,7 @@ export class RAGSearchService {
     const hasAdProductTitle = /광고\s*(관리자|상품|종류|유형|구조|목표|목적|가이드|사양)|캠페인\s*(목표|유형|목적)|campaign\s*objective|objectives?|instagram\s*광고\s*(가이드|관리자|상품|사양)|threads\s*광고\s*(가이드|관리자|상품|사양)|앱\s*(광고|캠페인|홍보)|게재\s*위치|노출\s*위치|advantage\+|어드밴티지|카탈로그|catalog|컬렉션\s*광고|리드\s*양식|lead\s*ads?|상품\s*가이드|상품가이드/.test(titleText);
     const hasOfficialGuideUrl = /\/business\/help|\/business\/ads-guide|\/business\/learn|adsmanager|support\.google|ads\.google|searchad\.naver|kakaobusiness\.gitbook/.test(urlText);
     const hasProductContentSignal = this.hasHighValueProductStructureSignal(contentText) || this.hasProductStructureSignal(contentText);
-    const hasBroadNewsTitle = /뉴스|합류|혁신|spotlight|creator\s*method|cyber\s*5|성공\s*전략|트렌드|협업|크리에이터|manus|성과\s*증대|도입\s*1주년|게이밍\s*광고주/.test(titleText);
+    const hasBroadNewsTitle = /뉴스|합류|혁신|spotlight|creator\s*method|cyber\s*5|성공\s*전략|트렌드|협업|크리에이터|크리에이티브\s*다각화|creative\s*diversification|demystifying[-\s]*creative[-\s]*diversification|manus|성과\s*증대|도입\s*1주년|게이밍\s*광고주/.test(titleText);
     const hasMetaBusinessNewsUrl = intent.vendors.includes('META')
       && /facebook\.com\/business\/news|\/business\/news|business\/news/.test(urlText);
 
@@ -5673,11 +5673,11 @@ export class RAGSearchService {
     const text = this.normalizeSearchText(sourceText);
     const hasMetaIdentity = /meta|메타|facebook|페이스북|instagram|인스타그램|릴스|reels/.test(text);
     const isMetaNewsSource = /facebook\.com\/business\/news|\/business\/news|business\/news/.test(text)
-      || /도입\s*1주년|전\s*세계의\s*모든\s*사용자|성과\s*증대|게이밍\s*광고주|광고주의\s*성과|heroes\s*&?\s*dragons|사용자\s*확보\s*투자/i.test(text);
+      || /도입\s*1주년|전\s*세계의\s*모든\s*사용자|성과\s*증대|게이밍\s*광고주|광고주의\s*성과|heroes\s*&?\s*dragons|사용자\s*확보\s*투자|크리에이티브\s*다각화|creative\s*diversification|demystifying[-\s]*creative[-\s]*diversification/i.test(text);
     if (!hasMetaIdentity || !isMetaNewsSource) return false;
 
     return !this.hasMetaObjectiveProductStructureSignal(text)
-      || /도입\s*1주년|전\s*세계의\s*모든\s*사용자|성과\s*증대|게이밍\s*광고주|광고주의\s*성과|heroes\s*&?\s*dragons|사용자\s*확보\s*투자/i.test(text);
+      || /도입\s*1주년|전\s*세계의\s*모든\s*사용자|성과\s*증대|게이밍\s*광고주|광고주의\s*성과|heroes\s*&?\s*dragons|사용자\s*확보\s*투자|크리에이티브\s*다각화|creative\s*diversification|demystifying[-\s]*creative[-\s]*diversification/i.test(text);
   }
 
   private isMetaOverviewPolicyNoiseText(text: string): boolean {

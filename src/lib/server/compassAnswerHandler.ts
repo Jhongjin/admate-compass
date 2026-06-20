@@ -114,7 +114,7 @@ const COMPASS_ANSWER_RESPONSE_CACHE_TTL_MS = Math.min(
   900000,
 );
 const COMPASS_ANSWER_RESPONSE_CACHE_MAX_ENTRIES = 64;
-const COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v8-meta-app-install-intent-fix';
+const COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v9-meta-news-source-filter';
 const compassAnswerResponseCache = new Map<string, CompassAnswerResponseCacheEntry>();
 const compassAnswerRuntimeMetrics = {
   startedAt: Date.now(),
@@ -5079,7 +5079,7 @@ function graphSourceHasAdProductTitle(source: ReturnType<typeof buildVerifiedSou
 
 function graphSourceLooksLikeBroadBusinessNewsTitle(source: ReturnType<typeof buildVerifiedSources>[number]) {
   const title = normalizeEvidenceText(source.title || '');
-  return /뉴스|합류|혁신|spotlight|creator\s*method|cyber\s*5|성공\s*전략|트렌드|협업|크리에이터|manus|성과\s*증대|도입\s*1주년|게이밍\s*광고주/.test(title);
+  return /뉴스|합류|혁신|spotlight|creator\s*method|cyber\s*5|성공\s*전략|트렌드|협업|크리에이터|크리에이티브\s*다각화|creative\s*diversification|demystifying[-\s]*creative[-\s]*diversification|manus|성과\s*증대|도입\s*1주년|게이밍\s*광고주/.test(title);
 }
 
 function scoreProductStructureGraphSource(source: ReturnType<typeof buildVerifiedSources>[number], targetVendor?: VendorIntent) {
@@ -5653,11 +5653,11 @@ function sourceLooksLikeMetaBroadProductNewsNoise(source: ReturnType<typeof buil
     getSourceText(source),
   ].join(' '));
   const isMetaNewsSource = /facebook\.com\/business\/news|\/business\/news|business\/news/.test(identityText)
-    || /도입\s*1주년|전\s*세계의\s*모든\s*사용자|성과\s*증대|게이밍\s*광고주|광고주의\s*성과|heroes\s*&?\s*dragons/i.test(text);
+    || /도입\s*1주년|전\s*세계의\s*모든\s*사용자|성과\s*증대|게이밍\s*광고주|광고주의\s*성과|heroes\s*&?\s*dragons|크리에이티브\s*다각화|creative\s*diversification|demystifying[-\s]*creative[-\s]*diversification/i.test(text);
   if (!isMetaNewsSource) return false;
 
   const hasBroadOverviewStructure = /광고\s*관리자\s*목표|캠페인\s*(목표|목적|유형)|마케팅\s*목표|목표[\s\S]{0,120}(인지도|트래픽|참여|잠재\s*고객|앱\s*홍보|판매)|인지도[\s\S]{0,120}트래픽[\s\S]{0,120}참여[\s\S]{0,120}잠재\s*고객[\s\S]{0,120}앱\s*홍보[\s\S]{0,120}판매|광고\s*(상품|종류|유형|구조)|상품\s*구조|목적별|목표별|objective|objectives/i.test(text);
-  const looksLikeSingleNewsStory = /도입\s*1주년|전\s*세계의\s*모든\s*사용자|성과\s*증대|게이밍\s*광고주|광고주의\s*성과|heroes\s*&?\s*dragons|사용자\s*확보\s*투자/i.test(text);
+  const looksLikeSingleNewsStory = /도입\s*1주년|전\s*세계의\s*모든\s*사용자|성과\s*증대|게이밍\s*광고주|광고주의\s*성과|heroes\s*&?\s*dragons|사용자\s*확보\s*투자|크리에이티브\s*다각화|creative\s*diversification|demystifying[-\s]*creative[-\s]*diversification/i.test(text);
 
   return looksLikeSingleNewsStory || !hasBroadOverviewStructure;
 }
