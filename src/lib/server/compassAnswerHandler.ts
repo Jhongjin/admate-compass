@@ -8342,7 +8342,7 @@ export async function buildCompassAnswerResponse(
     const fastPolicySourceGuidedAnswer = buildFastPolicySourceGuidedAnswer(
       message,
       ragIntent,
-      answerSources.length > 0 ? answerSources : sources,
+      sources,
       isBroadProductStructureLlmIntent,
     );
     if (fastPolicySourceGuidedAnswer) {

@@ -1232,7 +1232,7 @@ if (!/function buildFastPolicySourceGuidedAnswer\([\s\S]*COMPASS_DISABLE_FAST_PO
   fail('fast policy source-guided answers must stay narrowly gated and require matching verified source evidence');
 }
 
-if (!/const fastPolicySourceGuidedAnswer = buildFastPolicySourceGuidedAnswer\([\s\S]*answerSources\.length > 0 \? answerSources : sources[\s\S]*answerGenerationDurationMs: 0,[\s\S]*policyAnswerFamily: fastPolicySourceGuidedAnswer\.policyAnswerFamily[\s\S]*fastAnswerFallback: fastPolicySourceGuidedAnswer\.fastAnswerFallback[\s\S]*Compass specific product answer will use grounded LLM synthesis/.test(answerHandler)) {
+if (!/const fastPolicySourceGuidedAnswer = buildFastPolicySourceGuidedAnswer\([\s\S]*message,[\s\S]*ragIntent,[\s\S]*sources,[\s\S]*answerGenerationDurationMs: 0,[\s\S]*policyAnswerFamily: fastPolicySourceGuidedAnswer\.policyAnswerFamily[\s\S]*fastAnswerFallback: fastPolicySourceGuidedAnswer\.fastAnswerFallback[\s\S]*Compass specific product answer will use grounded LLM synthesis/.test(answerHandler)) {
   fail('fast policy source-guided answers must run before grounded LLM synthesis and expose zero answer-generation diagnostics');
 }
 
