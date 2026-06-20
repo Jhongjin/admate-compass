@@ -822,6 +822,12 @@ export class RAGSearchService {
         && intent.vendors.length === 1
         && intent.vendors[0] === 'KAKAO'
         && this.isKakaoBizboardDisplayProductIntent(intent);
+      const skipsGraphForGoogleProductOverview =
+        needsProductStructureRetrieval
+        && intent.vendors.length === 1
+        && intent.vendors[0] === 'GOOGLE'
+        && intent.isProductStructureOverview
+        && !intent.isSpecificProductGuidance;
       const usesPrioritySpecificProductRetrieval =
         usesNaverShoppingDataPriority
         || usesMetaAppInstallPriority
@@ -872,7 +878,9 @@ export class RAGSearchService {
           usesKakaoProductPriority
             ? this.withRetrievalChannelTimeout(this.searchKakaoProductStructurePriorityCandidates(intent), 'product_fast_kakao_priority', [], timedOutChannels, channelTimings)
             : Promise.resolve([]),
-          this.withRetrievalChannelTimeout(this.searchEvidenceGraphCandidates(query, candidateLimit, intent), 'product_fast_graph', [], timedOutChannels, channelTimings)
+          skipsGraphForGoogleProductOverview
+            ? Promise.resolve([])
+            : this.withRetrievalChannelTimeout(this.searchEvidenceGraphCandidates(query, candidateLimit, intent), 'product_fast_graph', [], timedOutChannels, channelTimings)
         ]);
 
         console.log(`📊 Product structure fast 후보 수집 결과: keyword=${keywordCandidates.length}, vendorCoverage=${vendorCoverageCandidates.length}, productStructure=${productStructureCandidates.length}, naverPriority=${naverPriorityCandidates.length}, metaOverviewPriority=${metaProductOverviewPriorityCandidates.length}, metaAppInstallPriority=${metaAppInstallPriorityCandidates.length}, kakaoProductPriority=${kakaoProductPriorityCandidates.length}, graph=${graphCandidates.length}`);

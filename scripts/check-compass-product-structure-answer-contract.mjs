@@ -57,6 +57,7 @@ for (const snippet of [
   'usesVendorProductStructurePriority',
   'kakao_product_priority_keyword',
   'specific_kakao_priority_direct',
+  'skipsGraphForGoogleProductOverview',
   'specific kakao priority direct path',
   'naver_product_structure_priority_keyword',
   'meta_product_overview_keyword',
