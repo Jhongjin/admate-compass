@@ -77,6 +77,10 @@ for (const snippet of [
   'specific_meta_creative_spec_priority_direct',
   'searchMetaCreativeSpecPriorityCandidates',
   'meta_creative_spec_priority',
+  'specific_google_lead_form_priority_direct',
+  'searchGoogleLeadFormPriorityCandidates',
+  'google_lead_form_priority',
+  'usesGoogleLeadFormPriority',
   'isMetaCreativeSpecIntent',
   'rawKeywordsOnly',
   'isKakaoBizboardDisplayComparisonIntent',
@@ -1067,14 +1071,27 @@ if (!/metaAppInstallPriorityCandidates,\s*\n\s*kakaoProductPriorityCandidates,\s
   fail('Meta app-install product priority must keep its exact priority path while allowing official graph evidence');
 }
 
+if (!/const usesGoogleLeadFormPriority =[\s\S]*this\.isGoogleLeadFormIntent\(intent\)/.test(rag)
+  || !/usesPrioritySpecificProductRetrieval =[\s\S]*usesGoogleLeadFormPriority/.test(rag)
+  || !/if \(usesGoogleLeadFormPriority && usesSpecificProductRetrieval\) \{[\s\S]*this\.searchGoogleLeadFormPriorityCandidates\(intent\)[\s\S]*'specific_google_lead_form_priority_direct'[\s\S]*return this\.withRetrievalTimeoutMetadata\(rankedResults, timedOutChannels, channelTimings\);[\s\S]*\n\s*\}\n\s*\}\n\s*\n\s*if \(usesKakaoProductPriority && usesSpecificProductRetrieval\)/.test(rag)) {
+  fail('Google lead-form specific product retrieval must use a bounded priority direct path before embedding/vector/graph fan-out');
+}
+
+if (!/googleLeadFormPriorityCandidates,\s*\n\s*kakaoProductPriorityCandidates,\s*\n\s*graphCandidates/.test(rag)
+  || !/usesGoogleLeadFormPriority\s*\?\s*this\.withRetrievalChannelTimeout\(this\.searchGoogleLeadFormPriorityCandidates\(intent\), 'hybrid_google_lead_form_priority'/.test(rag)
+  || !/googleLeadFormPriority=\$\{googleLeadFormPriorityCandidates\.length\}/.test(rag)
+  || !/\.\.\.googleLeadFormPriorityCandidates/.test(rag)) {
+  fail('Google lead-form hybrid fallback must keep the bounded priority candidates and avoid product-structure anchor fan-out');
+}
+
 const kakaoSpecificFastPathBlock = extractBlock(
   'KAKAO specific product fast path',
   rag,
   'const specificKakaoFastPathAnchors = [',
   'const [\n      documentChunkResults,',
 );
-if (!/specificKakaoFastPathAnchors[\s\S]*'비즈보드'[\s\S]*'카카오 비즈보드'[\s\S]*'디스플레이 광고'[\s\S]*usesSpecificKakaoOllamaFastPath[\s\S]*Promise\.all\(\[[\s\S]*searchKeywordTable\('document_chunks', specificKakaoFastPathAnchors, 12, intent\)[\s\S]*searchKeywordTable\('ollama_document_chunks', specificKakaoFastPathAnchors, 8, intent, 'KAKAO'\)[\s\S]*fastCandidates\.some\(candidate => this\.hasKakaoBizboardDisplayExactSignal[\s\S]*return fastCandidates/.test(kakaoSpecificFastPathBlock)) {
-  fail('KAKAO specific product retrieval must try narrow document plus KAKAO-scoped ollama keyword paths, then return early only when exact Bizboard/display evidence is present');
+if (!/specificKakaoFastPathAnchors[\s\S]*'비즈보드'[\s\S]*'카카오 비즈보드'[\s\S]*'디스플레이 광고'[\s\S]*usesSpecificKakaoOllamaFastPath[\s\S]*Promise\.all\(\[[\s\S]*searchKeywordTable\('document_chunks', specificKakaoFastPathAnchors, 12, intent\)[\s\S]*searchKeywordTable\('ollama_document_chunks', specificKakaoFastPathAnchors, 8, intent, 'KAKAO'\)[\s\S]*keywordFastCandidates\.some\(candidate => this\.hasKakaoBizboardDisplayExactSignal[\s\S]*return keywordFastCandidates[\s\S]*exactFastAnchorResults[\s\S]*searchProductStructureAnchorTable\('document_chunks', anchor, 8, undefined, intent\)[\s\S]*anchorFastCandidates\.some\(candidate => this\.hasKakaoBizboardDisplayExactSignal/.test(kakaoSpecificFastPathBlock)) {
+  fail('KAKAO specific product retrieval must try narrow keyword paths first, returning before anchor-table rescue when exact Bizboard/display evidence is present');
 }
 
 if (!/if \(usesKakaoProductPriority && usesSpecificProductRetrieval\)[\s\S]*specific_kakao_priority_direct[\s\S]*if \(rankedResults\.length > 0\)[\s\S]*return this\.withRetrievalTimeoutMetadata\(rankedResults, timedOutChannels, channelTimings\);[\s\S]*selectKakaoProductPriorityRescueCandidates[\s\S]*KAKAO specific product priority candidates were rescued[\s\S]*continuing to hybrid retrieval[\s\S]*const queryEmbeddingResult = await this\.embeddingService\.generateEmbedding\(query\)/.test(rag)) {

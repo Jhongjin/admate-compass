@@ -1144,6 +1144,11 @@ export class RAGSearchService {
         && intent.vendors.length === 1
         && intent.vendors[0] === 'META'
         && this.isMetaCreativeSpecIntent(intent);
+      const usesGoogleLeadFormPriority =
+        needsProductStructureRetrieval
+        && intent.vendors.length === 1
+        && intent.vendors[0] === 'GOOGLE'
+        && this.isGoogleLeadFormIntent(intent);
       const usesMetaProductOverviewPriority =
         needsProductStructureRetrieval
         && intent.vendors.length === 1
@@ -1170,7 +1175,8 @@ export class RAGSearchService {
         usesNaverProductStructurePriority
         || usesMetaAppInstallPriority
         || usesMetaCreativeSpecPriority
-        || usesKakaoProductPriority;
+        || usesKakaoProductPriority
+        || usesGoogleLeadFormPriority;
       const candidateLimit = usesSpecificProductRetrieval
         ? Math.max(limit * 2, 16)
         : needsVendorAwareRetrieval
@@ -1334,6 +1340,28 @@ export class RAGSearchService {
         }
       }
 
+      if (usesGoogleLeadFormPriority && usesSpecificProductRetrieval) {
+        const googleLeadFormPriorityCandidates = await this.withRetrievalChannelTimeout(
+          this.searchGoogleLeadFormPriorityCandidates(intent),
+          'specific_google_lead_form_priority_direct',
+          [],
+          timedOutChannels,
+          channelTimings,
+        );
+
+        if (googleLeadFormPriorityCandidates.length > 0) {
+          const rankedResults = this.mergeDedupeAndRankCandidates(
+            googleLeadFormPriorityCandidates,
+            limit,
+            intent,
+          );
+          console.log(`✅ GOOGLE lead form specific product 검색 완료: ${rankedResults.length}개 결과 (specific google lead form priority direct path)`);
+          if (rankedResults.length > 0) {
+            return this.withRetrievalTimeoutMetadata(rankedResults, timedOutChannels, channelTimings);
+          }
+        }
+      }
+
       if (usesKakaoProductPriority && usesSpecificProductRetrieval) {
         const kakaoProductPriorityCandidates = await this.withRetrievalChannelTimeout(
           this.searchKakaoProductStructurePriorityCandidates(intent),
@@ -1391,6 +1419,7 @@ export class RAGSearchService {
         naverPriorityCandidates,
         metaProductOverviewPriorityCandidates,
         metaAppInstallPriorityCandidates,
+        googleLeadFormPriorityCandidates,
         kakaoProductPriorityCandidates,
         graphCandidates
       ] = await Promise.all([
@@ -1424,6 +1453,9 @@ export class RAGSearchService {
         usesMetaAppInstallPriority
           ? this.withRetrievalChannelTimeout(this.searchMetaAppInstallPriorityCandidates(intent), 'hybrid_meta_app_priority', [], timedOutChannels, channelTimings)
           : Promise.resolve([]),
+        usesGoogleLeadFormPriority
+          ? this.withRetrievalChannelTimeout(this.searchGoogleLeadFormPriorityCandidates(intent), 'hybrid_google_lead_form_priority', [], timedOutChannels, channelTimings)
+          : Promise.resolve([]),
         usesKakaoProductPriority
           ? this.withRetrievalChannelTimeout(this.searchKakaoProductStructurePriorityCandidates(intent), 'hybrid_kakao_priority', [], timedOutChannels, channelTimings)
           : Promise.resolve([]),
@@ -1432,7 +1464,7 @@ export class RAGSearchService {
           : this.withRetrievalChannelTimeout(this.searchEvidenceGraphCandidates(query, candidateLimit, intent), 'hybrid_graph', [], timedOutChannels, channelTimings)
       ]);
 
-      console.log(`📊 Hybrid 후보 수집 결과: vector=${vectorCandidates.length}, keyword=${keywordCandidates.length}, genericRightsPolicy=${genericRightsPolicyCandidates.length}, genericGamblingPolicy=${genericGamblingPolicyCandidates.length}, kakaoServiceProtection=${kakaoServiceProtectionCandidates.length}, vendorCoverage=${vendorCoverageCandidates.length}, productStructure=${productStructureCandidates.length}, naverPriority=${naverPriorityCandidates.length}, metaOverviewPriority=${metaProductOverviewPriorityCandidates.length}, metaAppInstallPriority=${metaAppInstallPriorityCandidates.length}, kakaoProductPriority=${kakaoProductPriorityCandidates.length}, graph=${graphCandidates.length}`);
+      console.log(`📊 Hybrid 후보 수집 결과: vector=${vectorCandidates.length}, keyword=${keywordCandidates.length}, genericRightsPolicy=${genericRightsPolicyCandidates.length}, genericGamblingPolicy=${genericGamblingPolicyCandidates.length}, kakaoServiceProtection=${kakaoServiceProtectionCandidates.length}, vendorCoverage=${vendorCoverageCandidates.length}, productStructure=${productStructureCandidates.length}, naverPriority=${naverPriorityCandidates.length}, metaOverviewPriority=${metaProductOverviewPriorityCandidates.length}, metaAppInstallPriority=${metaAppInstallPriorityCandidates.length}, googleLeadFormPriority=${googleLeadFormPriorityCandidates.length}, kakaoProductPriority=${kakaoProductPriorityCandidates.length}, graph=${graphCandidates.length}`);
       const allCandidates = [
         ...vectorCandidates,
         ...keywordCandidates,
@@ -1444,6 +1476,7 @@ export class RAGSearchService {
         ...naverPriorityCandidates,
         ...metaProductOverviewPriorityCandidates,
         ...metaAppInstallPriorityCandidates,
+        ...googleLeadFormPriorityCandidates,
         ...kakaoProductPriorityCandidates,
         ...graphCandidates
       ];
@@ -2791,6 +2824,134 @@ export class RAGSearchService {
       .filter((candidate: SearchResult | null): candidate is SearchResult => candidate !== null);
   }
 
+  private async searchGoogleLeadFormPriorityCandidates(intent: QueryIntent): Promise<SearchResult[]> {
+    if (!this.isGoogleLeadFormIntent(intent)) {
+      return [];
+    }
+
+    const anchors = [
+      '리드 양식',
+      '리드양식',
+      '잠재 고객',
+      '잠재고객',
+      '양식 제출',
+      'Lead Form',
+      'lead form',
+      'Lead Generation',
+      'lead generation',
+      '비즈니스 폼',
+      '개인정보',
+      '동의',
+    ];
+    const keywords = Array.from(new Set([
+      ...getCompassVendorTerms('GOOGLE'),
+      ...PRODUCT_STRUCTURE_KEYWORD_EXPANSIONS,
+      ...anchors,
+    ]));
+    const keywordSearchOptions = { rawKeywordsOnly: true };
+    const [
+      documentKeywordResults,
+      ollamaKeywordResults,
+      vendorMetadataResults,
+    ] = await Promise.all([
+      this.searchKeywordTable('document_chunks', anchors, 12, intent, undefined, keywordSearchOptions),
+      this.searchKeywordTable('ollama_document_chunks', anchors, 8, intent, 'GOOGLE'),
+      this.searchVendorMetadataTable('ollama_document_chunks', 'GOOGLE', anchors, 6, intent),
+    ]);
+    const results: Array<{ row: any; corpus: RetrievalCorpus; anchor: string }> = [
+      ...documentKeywordResults.map(result => ({
+        ...result,
+        anchor: 'google_lead_form_priority_keyword',
+      })),
+      ...ollamaKeywordResults.map(result => ({
+        ...result,
+        anchor: 'google_lead_form_priority_keyword',
+      })),
+      ...vendorMetadataResults.map(result => ({
+        ...result,
+        anchor: 'google_lead_form_vendor_metadata',
+      })),
+    ];
+
+    return results
+      .map((result) => {
+        const candidate = this.normalizeCandidate(result.row, {
+          keywords,
+          intent,
+          retrievalMethod: 'keyword',
+          corpus: result.corpus,
+          evidenceType: 'keyword',
+        });
+
+        if (!candidate) return null;
+        if (this.hasExplicitOtherVendorSignal(candidate, 'GOOGLE')) return null;
+
+        const sourceText = this.buildCandidateEvidenceText(candidate.content, candidate.documentTitle, candidate.metadata);
+        const normalizedSourceText = this.normalizeSearchText(sourceText);
+        if (
+          !this.matchesVendorSlot(candidate, 'GOOGLE')
+          && !/google|google\s*ads|ads\.google|support\.google|구글/.test(normalizedSourceText)
+        ) {
+          return null;
+        }
+        if (!this.hasGoogleLeadFormSignal(sourceText)) return null;
+
+        const hasPolicySignal = /개인정보|동의|고지|정책|검토|승인|심사|privacy|consent|policy|review/i.test(sourceText);
+        const hasCampaignSignal = /검색|동영상|디스플레이|실적\s*최대화|performance\s*max|캠페인|campaign|lead\s*form|리드\s*양식/i.test(sourceText);
+        const boostedScore = Math.max(
+          hasPolicySignal ? 0.98 : hasCampaignSignal ? 0.94 : 0.86,
+          Math.min(1, (candidate.hybridScore || 0) + (hasPolicySignal ? 0.45 : hasCampaignSignal ? 0.32 : 0.16)),
+        );
+        candidate.hybridScore = boostedScore;
+        candidate.score = boostedScore;
+        candidate.sourceVendor = 'GOOGLE';
+        candidate.sourceVendors = Array.from(new Set([
+          ...(candidate.sourceVendors || []),
+          'GOOGLE',
+        ]));
+        candidate.vendorMatch = true;
+        candidate.vendorMismatch = false;
+        candidate.evidenceDecision = 'verified';
+        candidate.evidenceDecisionReason = Array.from(new Set([
+          ...(candidate.evidenceDecisionReason || []),
+          'google_lead_form_priority',
+          ...(hasPolicySignal ? ['google_lead_form_policy_signal'] : []),
+          ...(hasCampaignSignal ? ['google_lead_form_campaign_signal'] : []),
+          'keyword_retrieval',
+        ]));
+        candidate.rankReason = Array.from(new Set([
+          ...(candidate.rankReason || []),
+          `google_lead_form_priority_${result.anchor}`,
+          ...(hasPolicySignal ? ['google_lead_form_policy_priority'] : []),
+          ...(hasCampaignSignal ? ['google_lead_form_campaign_priority'] : []),
+        ]));
+        candidate.sourceQuality = {
+          ...candidate.sourceQuality,
+          hasExcerpt: true,
+          isFallback: false,
+          vendorMatch: true,
+          vendorMismatch: false,
+          sourceVendor: 'GOOGLE',
+          qualityScore: Math.max(candidate.sourceQuality.qualityScore || 0, hasPolicySignal ? 0.98 : hasCampaignSignal ? 0.9 : 0.8),
+        };
+        candidate.metadata = {
+          ...(candidate.metadata || {}),
+          source_vendor: 'GOOGLE',
+          sourceVendors: candidate.sourceVendors,
+          googleLeadFormPriority: true,
+          productStructureAnchor: result.anchor,
+          evidenceDecision: candidate.evidenceDecision,
+          evidenceDecisionReason: candidate.evidenceDecisionReason,
+          rankReason: candidate.rankReason,
+          score: boostedScore,
+          hybridScore: boostedScore,
+        };
+
+        return candidate;
+      })
+      .filter((candidate: SearchResult | null): candidate is SearchResult => candidate !== null);
+  }
+
   private async searchMetaProductOverviewPriorityCandidates(intent: QueryIntent): Promise<SearchResult[]> {
     if (
       !intent.topics.includes('product_structure')
@@ -3004,16 +3165,30 @@ export class RAGSearchService {
 
     const usesSpecificKakaoOllamaFastPath = intent.isSpecificProductGuidance;
     if (usesSpecificKakaoOllamaFastPath) {
+      const [documentFastResults, ollamaResults] = await Promise.all([
+        this.searchKeywordTable('document_chunks', specificKakaoFastPathAnchors, 12, intent),
+        this.searchKeywordTable('ollama_document_chunks', specificKakaoFastPathAnchors, 8, intent, 'KAKAO'),
+      ]);
+      const keywordFastCandidates = this.normalizeKakaoProductStructurePriorityResults(
+        [
+          ...documentFastResults.map(result => ({ ...result, anchor: 'kakao_product_priority_keyword' })),
+          ...ollamaResults.map(result => ({ ...result, anchor: 'kakao_product_priority_keyword' })),
+        ],
+        keywords,
+        intent,
+      );
+      if (keywordFastCandidates.some(candidate => this.hasKakaoBizboardDisplayExactSignal(
+        this.buildCandidateEvidenceText(candidate.content, candidate.documentTitle, candidate.metadata),
+      ))) {
+        return keywordFastCandidates;
+      }
+
       const exactFastAnchorResults = await Promise.all([
         '비즈보드',
         '카카오 비즈보드',
         '디스플레이 광고',
       ].map(anchor => this.searchProductStructureAnchorTable('document_chunks', anchor, 8, undefined, intent)));
-      const [documentFastResults, ollamaResults] = await Promise.all([
-        this.searchKeywordTable('document_chunks', specificKakaoFastPathAnchors, 12, intent),
-        this.searchKeywordTable('ollama_document_chunks', specificKakaoFastPathAnchors, 8, intent, 'KAKAO'),
-      ]);
-      const fastCandidates = this.normalizeKakaoProductStructurePriorityResults(
+      const anchorFastCandidates = this.normalizeKakaoProductStructurePriorityResults(
         [
           ...exactFastAnchorResults.flat(),
           ...documentFastResults.map(result => ({ ...result, anchor: 'kakao_product_priority_keyword' })),
@@ -3022,10 +3197,10 @@ export class RAGSearchService {
         keywords,
         intent,
       );
-      if (fastCandidates.some(candidate => this.hasKakaoBizboardDisplayExactSignal(
+      if (anchorFastCandidates.some(candidate => this.hasKakaoBizboardDisplayExactSignal(
         this.buildCandidateEvidenceText(candidate.content, candidate.documentTitle, candidate.metadata),
       ))) {
-        return fastCandidates;
+        return anchorFastCandidates;
       }
     }
 
@@ -6569,6 +6744,22 @@ export class RAGSearchService {
   private hasMetaAppInstallSignal(sourceText: string): boolean {
     const text = this.normalizeSearchText(sourceText);
     return /앱\s*(인스톨|설치|홍보|캠페인|이벤트|사전\s*등록|등록)|앱인스톨|앱설치|앱홍보|app\s*(install|promotion)|mobile\s*app|sdk|mmp|모바일\s*(앱|측정)|app\s*id|app\s*secret|앱\s*id|앱\s*시크릿|포스트백|postback|skadnetwork|skan/i.test(text);
+  }
+
+  private isGoogleLeadFormIntent(intent: QueryIntent): boolean {
+    if (!intent.topics.includes('product_structure') || intent.vendors[0] !== 'GOOGLE') return false;
+    const text = this.normalizeSearchText([
+      ...intent.keywords,
+      ...intent.strictProductTerms,
+      ...intent.strictContextTerms,
+      ...intent.adPolicyTerms,
+    ].filter(Boolean).join(' '));
+    return /리드\s*양식|리드양식|잠재\s*고객\s*(양식|광고)|잠재고객\s*(양식|광고)|비즈니스\s*폼|비즈니스폼|lead\s*(form|generation|gen|ads?)/i.test(text);
+  }
+
+  private hasGoogleLeadFormSignal(sourceText: string): boolean {
+    const text = this.normalizeSearchText(sourceText);
+    return /리드\s*양식|리드양식|잠재\s*고객\s*(양식|광고)|잠재고객\s*(양식|광고)|비즈니스\s*폼|비즈니스폼|lead\s*(form|generation|gen|ads?)|양식\s*제출|개인정보|동의|privacy|consent/i.test(text);
   }
 
   private isMetaCreativeSpecIntent(intent: QueryIntent): boolean {
