@@ -71,6 +71,10 @@ for (const requiredText of [
   "model: 'compass-answer-connection-failed'",
   'function buildCompassAnswerModel',
   'buildCompassAnswerModel(message, ragIntent, isBroadProductStructureLlmIntent)',
+  'buildAuthoritativeNoDataResponse',
+  'ragIntent.isOutOfScope || ragIntent.unavailablePolicyTarget',
+  'answerStatesNoVerifiedData(responseAnswer)',
+  'sources: []',
   "'compass-answer-grounded-product-structure-llm'",
   "'compass-answer'",
 ]) {
@@ -80,8 +84,31 @@ for (const requiredText of [
 const verifiedFilterIndex = answerHandlerText.indexOf('const verifiedSearchResults = searchResults.filter(isVerifiedGrounding)')
 const generationIndex = answerHandlerText.indexOf('answerResult = await generateCompassAnswer(')
 const noDataIndex = answerHandlerText.indexOf('if (verifiedSearchResults.length === 0)')
+const authoritativeBoundaryIndex = answerHandlerText.indexOf('if (ragIntent.isOutOfScope || ragIntent.unavailablePolicyTarget)')
+const finalNoAnswerGuardIndex = answerHandlerText.indexOf('if (answerStatesNoVerifiedData(responseAnswer))')
+const finalGroundedNoDataFalseIndex = answerHandlerText.indexOf('noDataFound: false', finalNoAnswerGuardIndex)
 if (verifiedFilterIndex === -1 || noDataIndex === -1 || generationIndex === -1 || !(verifiedFilterIndex < noDataIndex && noDataIndex < generationIndex)) {
   fail('neutral answer handler must route weak-only evidence to noData before answer generation')
+}
+
+if (authoritativeBoundaryIndex === -1 || !(authoritativeBoundaryIndex < verifiedFilterIndex)) {
+  fail('neutral answer handler must apply out-of-scope/unavailable intent boundary before retrieval and source attachment')
+}
+
+if (finalNoAnswerGuardIndex === -1 || finalGroundedNoDataFalseIndex === -1 || !(finalNoAnswerGuardIndex < finalGroundedNoDataFalseIndex)) {
+  fail('neutral answer handler must force generated no-answer text to noData before final grounded noDataFound=false response')
+}
+
+const authoritativeNoDataBlock = answerHandlerText.split('function buildAuthoritativeNoDataResponse')[1]?.split('function answerStatesNoVerifiedData')[0] || ''
+for (const requiredText of [
+  'sources: []',
+  'noDataFound: true',
+  'confidence: 0',
+  "model: 'compass-answer-no-data'",
+]) {
+  if (!authoritativeNoDataBlock.includes(requiredText)) {
+    fail(`authoritative no-data response missing ${requiredText}`)
+  }
 }
 
 if (answerHandlerText.includes("decision !== 'rejected'") || answerHandlerText.includes('!isRejected')) {

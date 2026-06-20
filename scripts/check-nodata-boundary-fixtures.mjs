@@ -11,9 +11,11 @@ const requiredCaseTypes = new Set([
   "clearly-valid-policy",
   "generic-valid-policy",
   "future-impossible-policy",
+  "future-fictional-known-vendor-product",
   "fictional-product-real-platform",
   "fictional-platform",
   "korean-longform-ambiguous-policy",
+  "out-of-scope-lunch-menu",
 ]);
 
 const allowedBaselineStatuses = new Set([
@@ -207,6 +209,7 @@ function validateIntentBoundary(fixture) {
   const label = `${fixture.id}.intentBoundary`;
   const unavailableCaseTypes = new Map([
     ["future-impossible-policy", "future_impossible"],
+    ["future-fictional-known-vendor-product", "future_impossible"],
     ["fictional-platform", "fictional_platform"],
   ]);
 

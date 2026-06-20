@@ -312,6 +312,10 @@ function buildSourceDiagnostics(intent: QueryIntent, searchResults: SearchResult
     missingVendorSlots,
     sourceCount: searchResults.length,
     recommendedSourceLimit: intent.recommendedSourceLimit,
+    isOutOfScope: intent.isOutOfScope,
+    outOfScopeTerms: intent.outOfScopeTerms,
+    unavailablePolicyTarget: intent.unavailablePolicyTarget,
+    unavailablePolicyTargetReason: intent.unavailablePolicyTargetReason,
   };
 }
 
@@ -382,6 +386,18 @@ function buildReviewPipeline({
 }
 
 function buildNoDataAnswer(intent: QueryIntent) {
+  if (intent.isOutOfScope) {
+    return 'Compass 문서 기준으로 관련 광고 정책 근거를 찾지 못했습니다. 광고 플랫폼 정책, 심사 기준, 소재/캠페인 운영 조건에 대한 질문을 입력해 주세요.';
+  }
+
+  if (intent.unavailablePolicyTarget) {
+    if (intent.unavailablePolicyTargetReason === 'fictional_platform') {
+      return 'Compass 문서에서 해당 플랫폼의 정책 근거를 찾지 못했습니다. Meta, Google, Naver, Kakao처럼 실제 플랫폼명을 입력해 주세요.';
+    }
+
+    return 'Compass 문서 기준으로 해당 시점이나 대상의 광고 정책 근거를 찾지 못했습니다. 실제 운영 중인 플랫폼명과 확인하려는 정책 또는 상품 범위를 다시 입력해 주세요.';
+  }
+
   if (intent.strictProductTerms.length > 0 && intent.vendors.length > 0) {
     const vendorLabels = intent.vendors.map(vendor => VENDOR_LABELS[vendor] || vendor).join(', ');
     return `${vendorLabels} ${intent.strictProductTerms.join(', ')} 기준을 직접 확인할 수 있는 출처를 현재 문서에서 찾지 못했습니다. 다른 지면 기준과 섞어 단정하지 않기 위해 답변을 제한했습니다.`;
@@ -394,6 +410,45 @@ function buildNoDataAnswer(intent: QueryIntent) {
   }
 
   return '죄송합니다. 현재 제공된 문서에서 관련 정보를 찾을 수 없습니다. 더 구체적인 질문을 해주시거나 다른 키워드로 시도해보세요.';
+}
+
+function buildAuthoritativeNoDataResponse(
+  intent: QueryIntent,
+  startTime: number,
+  emitPhase?: CompassAnswerPhaseEmitter,
+): CompassAnswerHandlerResult {
+  const answer = buildNoDataAnswer(intent);
+  const sourceDiagnostics = buildSourceDiagnostics(intent, []);
+  emitPhase?.({ phase: 'answer-ready', message: 'Compass 범위에서 확인 가능한 근거가 없어 제한 응답을 준비했습니다.' });
+
+  return {
+    body: {
+      response: {
+        message: answer,
+        content: answer,
+        sources: [],
+        noDataFound: true,
+        schema: getCompassDbSchema(),
+        showContactOption: true,
+        sourceDiagnostics,
+        reviewPipeline: buildReviewPipeline({
+          status: 'blocked',
+          sourceCount: 0,
+          verifiedSourceCount: 0,
+          contactRecommended: true,
+        }),
+      },
+      confidence: 0,
+      processingTime: Date.now() - startTime,
+      model: 'compass-answer-no-data',
+    },
+  };
+}
+
+function answerStatesNoVerifiedData(answer: string): boolean {
+  return /현재\s*제공된\s*문서에서는\s*(?:[^.。!?]{0,80})?(?:확인되지\s*않습니다|찾을\s*수\s*없습니다)|Compass\s*문서\s*기준으로\s*(?:[^.。!?]{0,80})?근거를\s*찾지\s*못했습니다|정책\s*근거를\s*찾지\s*못했습니다/.test(
+    String(answer || '').replace(/\s+/g, ' ').trim(),
+  );
 }
 
 function normalizeGeneratedAnswer(answer: string, sources: ReturnType<typeof buildVerifiedSources>) {
@@ -3014,7 +3069,7 @@ function sourceHasExtractionNoise(source: ReturnType<typeof buildVerifiedSources
   const noiseHit = /thumbnailTitle|thumbnailImagePath|displayOrder|insightSequence|sourceType|brandName|readTime|bookmarked|__next_f|webpack|hydration|\\u003cbr|&quot;|&#x27;/.test(text);
   const jsonShapeCount = (text.match(/[{}"]/g) || []).length;
 
-  return noiseHit && jsonShapeCount >= 4;
+  return (noiseHit && jsonShapeCount >= 4) || isNavigationOrMenuExcerpt(text, { requireLowEvidenceSignal: true });
 }
 
 function isLowValueSpecificProductSource(
@@ -4685,10 +4740,14 @@ function buildRequestedProductStructureCoverageTerms(intent?: QueryIntent, messa
   const compactQueryText = queryText.replace(/\s+/g, '');
   const vendors = new Set(intent.vendors || []);
   const candidates: ProductStructureCoverageTerm[] = [];
+  const pushCoverage = (vendor: VendorIntent, label: string, pattern: RegExp, aliases: string[]) => {
+    if (vendors.size > 0 && !vendors.has(vendor)) return;
+    candidates.push({ label, pattern, aliases });
+  };
   const add = (vendor: VendorIntent, label: string, pattern: RegExp, aliases: string[]) => {
     if (vendors.size > 0 && !vendors.has(vendor)) return;
     if (pattern.test(queryText) || pattern.test(compactQueryText)) {
-      candidates.push({ label, pattern, aliases });
+      pushCoverage(vendor, label, pattern, aliases);
     }
   };
 
@@ -4717,6 +4776,35 @@ function buildRequestedProductStructureCoverageTerms(intent?: QueryIntent, messa
   add('KAKAO', '디스플레이 광고', /디스플레이\s*광고|카카오모먼트|display/i, ['디스플레이 광고', '카카오모먼트']);
   add('KAKAO', '상품가이드', /상품\s*가이드|상품가이드/i, ['상품가이드', '상품 가이드']);
   add('KAKAO', '제작 가이드', /제작\s*가이드|제작가이드|소재\s*가이드|소재|이미지\s*비율|텍스트\s*영역/i, ['제작 가이드', '소재 가이드', '이미지 비율', '텍스트 영역']);
+
+  if (intent.isProductStructureOverview && !intent.isSpecificProductGuidance) {
+    if (vendors.has('META')) {
+      pushCoverage('META', '캠페인 목표', /캠페인\s*목표|광고\s*관리자\s*목표|마케팅\s*목표|인지도|트래픽|참여|잠재\s*고객|판매|objective/i, ['캠페인 목표', '광고 관리자 목표', '인지도', '트래픽', '참여', '잠재 고객', '판매']);
+      pushCoverage('META', '광고 형식/노출 위치', /이미지|동영상|비디오|카루셀|슬라이드|릴스|스토리|피드|노출\s*(위치|지면)|게재\s*위치|placement/i, ['이미지 광고', '동영상 광고', '카루셀 광고', '릴스', '스토리', '피드', '노출 위치']);
+      pushCoverage('META', '앱/리드 목적', /앱\s*(홍보|인스톨|설치|캠페인|이벤트)|app\s*(install|promotion|campaign)|리드\s*양식|잠재\s*고객|lead\s*form|lead\s*generation/i, ['앱 홍보', '앱 인스톨', '앱 캠페인', '리드 양식', '잠재 고객']);
+      pushCoverage('META', '카탈로그/자동화/측정', /카탈로그|catalog|컬렉션|collection|advantage\+|어드밴티지|픽셀|pixel|conversions?\s*api/i, ['카탈로그', '컬렉션 광고', 'Advantage+', '어드밴티지', '픽셀', 'Conversions API']);
+    }
+    if (vendors.has('GOOGLE')) {
+      pushCoverage('GOOGLE', '검색 캠페인', /검색\s*캠페인|검색\s*광고|search\s*campaign/i, ['검색 캠페인', '검색 광고']);
+      pushCoverage('GOOGLE', '디스플레이 캠페인', /디스플레이\s*캠페인|반응형\s*디스플레이|display\s*campaign|gdn/i, ['디스플레이 캠페인', '반응형 디스플레이', 'GDN']);
+      pushCoverage('GOOGLE', '쇼핑 광고', /쇼핑\s*광고|쇼핑\s*캠페인|shopping\s*(ads|campaigns?)/i, ['쇼핑 광고', '쇼핑 캠페인']);
+      pushCoverage('GOOGLE', '앱 캠페인', /앱\s*캠페인|앱\s*설치|앱\s*홍보|app\s*campaign|app\s*install/i, ['앱 캠페인', '앱 설치', 'app campaign']);
+      pushCoverage('GOOGLE', '리드 양식', /리드\s*양식|lead\s*form/i, ['리드 양식', 'lead form']);
+    }
+    if (vendors.has('NAVER')) {
+      pushCoverage('NAVER', '사이트검색광고', /사이트검색광고|사이트검색|파워링크/i, ['사이트검색광고', '사이트검색', '파워링크']);
+      pushCoverage('NAVER', '쇼핑검색광고', /쇼핑검색광고|쇼핑검색|쇼핑몰\s*상품형|상품형/i, ['쇼핑검색광고', '쇼핑검색', '쇼핑몰 상품형']);
+      pushCoverage('NAVER', '네이버 DA', /(^|[\s/])da($|[\s/]|도|상품|광고)|네이버\s*da|네이버da|성과형\s*디스플레이|홈피드|스마트채널|타임보드|롤링보드|배너\s*광고/i, ['네이버 DA', '성과형 디스플레이', '홈피드', '스마트채널', '타임보드']);
+      pushCoverage('NAVER', '쇼핑블록/쇼핑 지면', /쇼핑블록|쇼핑\s*블록|주요\s*쇼핑\s*지면|pc\s*쇼핑블록|mo\s*쇼핑블록/i, ['쇼핑블록', '쇼핑 지면', 'PC 쇼핑블록', 'MO 쇼핑블록']);
+      pushCoverage('NAVER', '동영상 광고', /동영상\s*광고|비디오\s*광고|동영상\s*소재|동영상\s*조회|숏폼|쇼츠|아웃스트림|video/i, ['동영상 광고', '비디오 광고', '동영상 소재', '동영상 조회', '숏폼', '아웃스트림']);
+    }
+    if (vendors.has('KAKAO')) {
+      pushCoverage('KAKAO', '비즈보드/톡보드', /비즈보드|톡보드|biz\s*board|talkboard/i, ['비즈보드', '톡보드']);
+      pushCoverage('KAKAO', '디스플레이 광고', /디스플레이\s*광고|카카오모먼트|display/i, ['디스플레이 광고', '카카오모먼트']);
+      pushCoverage('KAKAO', '상품가이드', /상품\s*가이드|상품가이드/i, ['상품가이드', '상품 가이드']);
+      pushCoverage('KAKAO', '제작/심사 가이드', /제작\s*가이드|제작가이드|소재\s*가이드|소재|심사|검수/i, ['제작 가이드', '소재 가이드', '심사 가이드', '검수']);
+    }
+  }
 
   const seen = new Set<string>();
   return candidates.filter((term) => {
@@ -4939,8 +5027,16 @@ function selectProductStructureResponseSources(sources: ReturnType<typeof buildV
       const groupCount = selected.filter(item => (
         getBroadProductStructureEvidenceGroup(item, targetVendor) === sourceGroup
       )).length;
-      const perGroupLimit = sourceGroup === 'official_graph' ? 1 : 2;
+      const perGroupLimit = sourceGroup === 'official_graph' ? 3 : 2;
       if (groupCount >= perGroupLimit) return selected;
+      const titleKey = normalizeEvidenceText(source.title || source.originalTitle || '');
+      if (
+        titleKey
+        && !isOfficialGuideGraphSource(source)
+        && selected.some(item => normalizeEvidenceText(item.title || item.originalTitle || '') === titleKey)
+      ) {
+        return selected;
+      }
       selected.push(source);
       return selected;
     }, [] as ReturnType<typeof buildVerifiedSources>)
@@ -5072,30 +5168,44 @@ function capProductStructureGraphSources(
   limit = 5
 ) {
   const head = selected.slice(0, limit);
-  const bestGraphSource = [...head, ...labelledSources]
+  const maxGraphSources = Math.min(3, Math.max(1, limit - 2));
+  const bestGraphSources = [...head, ...labelledSources]
     .filter(source => isOfficialGuideGraphSource(source))
     .filter(source => isUsableBroadProductStructureSource(source, targetVendor))
-    .sort((a, b) => scoreProductStructureGraphSource(b, targetVendor) - scoreProductStructureGraphSource(a, targetVendor))[0];
+    .sort((a, b) => scoreProductStructureGraphSource(b, targetVendor) - scoreProductStructureGraphSource(a, targetVendor))
+    .reduce((items, source) => {
+      if (items.length >= maxGraphSources) return items;
+      const key = getProductStructureSourceKey(source);
+      if (items.some(item => getProductStructureSourceKey(item) === key)) return items;
+      items.push(source);
+      return items;
+    }, [] as ReturnType<typeof buildVerifiedSources>);
 
-  const bestGraphKey = bestGraphSource ? getProductStructureSourceKey(bestGraphSource) : null;
+  const bestGraphKeys = new Set(bestGraphSources.map(getProductStructureSourceKey));
   const next: ReturnType<typeof buildVerifiedSources>[number][] = [];
   const selectedKeys = new Set<string>();
+  const selectedTitleKeys = new Set<string>();
 
   for (const source of head) {
     if (!isUsableBroadProductStructureSource(source, targetVendor)) continue;
     if (isGraphVerifiedSource(source)) {
-      if (!bestGraphKey || getProductStructureSourceKey(source) !== bestGraphKey) {
+      if (!bestGraphKeys.has(getProductStructureSourceKey(source))) {
         continue;
       }
     }
 
     const key = getProductStructureSourceKey(source);
     if (selectedKeys.has(key)) continue;
+    const titleKey = normalizeEvidenceText(source.title || source.originalTitle || '');
+    if (titleKey && !isGraphVerifiedSource(source) && selectedTitleKeys.has(titleKey)) continue;
     selectedKeys.add(key);
+    if (titleKey) selectedTitleKeys.add(titleKey);
     next.push(source);
   }
 
-  if (bestGraphSource && !selectedKeys.has(bestGraphKey || '')) {
+  for (const bestGraphSource of bestGraphSources) {
+    const bestGraphKey = getProductStructureSourceKey(bestGraphSource);
+    if (selectedKeys.has(bestGraphKey)) continue;
     const graphInsertIndex = next.length < limit
       ? next.length
       : next
@@ -5108,9 +5218,12 @@ function capProductStructureGraphSources(
         next.push(bestGraphSource);
       } else {
         selectedKeys.delete(getProductStructureSourceKey(next[graphInsertIndex]));
+        selectedTitleKeys.delete(normalizeEvidenceText(next[graphInsertIndex].title || next[graphInsertIndex].originalTitle || ''));
         next[graphInsertIndex] = bestGraphSource;
       }
-      selectedKeys.add(bestGraphKey || '');
+      selectedKeys.add(bestGraphKey);
+      const titleKey = normalizeEvidenceText(bestGraphSource.title || bestGraphSource.originalTitle || '');
+      if (titleKey) selectedTitleKeys.add(titleKey);
     }
   }
 
@@ -5120,7 +5233,10 @@ function capProductStructureGraphSources(
     if (!isUsableBroadProductStructureSource(source, targetVendor)) continue;
     const key = getProductStructureSourceKey(source);
     if (selectedKeys.has(key)) continue;
+    const titleKey = normalizeEvidenceText(source.title || source.originalTitle || '');
+    if (titleKey && selectedTitleKeys.has(titleKey)) continue;
     selectedKeys.add(key);
+    if (titleKey) selectedTitleKeys.add(titleKey);
     next.push(source);
   }
 
@@ -5375,7 +5491,28 @@ function isNoisyExcerpt(text: string) {
     || normalized.includes('style=')
     || normalized.includes('href=')
     || /_[a-z0-9]{3,}/i.test(normalized)
+    || isNavigationOrMenuExcerpt(normalized)
   );
+}
+
+function isNavigationOrMenuExcerpt(text: string, options: { requireLowEvidenceSignal?: boolean } = {}) {
+  const normalized = String(text || '').toLowerCase().replace(/\s+/g, ' ');
+  const navTerms = [
+    '로그인', '회원가입', '메뉴', '검색어 입력', '검색어 입력 창', '고객센터',
+    '전체보기', '전체 보기', '목록보기', '이전', '다음', '바로가기',
+    '공지사항', '문의하기', '전화상담', '원격지원', '카테고리', '도움말',
+  ];
+  const navHitCount = navTerms.filter(term => normalized.includes(term)).length;
+  if (navHitCount < 5) return false;
+  if (!options.requireLowEvidenceSignal) return true;
+
+  const evidenceSignals = [
+    '광고 상품', '캠페인', '노출', '과금', '심사', '등록 기준', '상품 db',
+    'db url', '비즈보드', '쇼핑검색광고', '사이트검색광고', '디스플레이 광고',
+    '앱 캠페인', '리드 양식', '카탈로그', 'advantage+', 'objective',
+  ];
+  const evidenceHitCount = evidenceSignals.filter(term => normalized.includes(term)).length;
+  return evidenceHitCount <= 1;
 }
 
 function cleanEvidenceExcerpt(excerpt: string, fallbackTitle?: string) {
@@ -6317,6 +6454,16 @@ export async function buildCompassAnswerResponse(
     emitPhase?.({ phase: 'accepted', message: '질문을 접수했습니다.' });
     const ragIntent = classifyCompassRagQuery(message);
 
+    if (ragIntent.isOutOfScope || ragIntent.unavailablePolicyTarget) {
+      console.log('Compass answer request blocked by authoritative no-data intent boundary', {
+        isOutOfScope: ragIntent.isOutOfScope,
+        outOfScopeTerms: ragIntent.outOfScopeTerms,
+        unavailablePolicyTarget: ragIntent.unavailablePolicyTarget,
+        unavailablePolicyTargetReason: ragIntent.unavailablePolicyTargetReason,
+      });
+      return buildAuthoritativeNoDataResponse(ragIntent, startTime, emitPhase);
+    }
+
     // 1. Compass RAG 검색
     emitPhase?.({
       phase: 'evidence-started',
@@ -6369,7 +6516,7 @@ export async function buildCompassAnswerResponse(
       : buildProductStructureSupplementQueries(ragIntent, message).filter(query => query !== message);
 
     const supplementQueryLimit = usesProductStructureFastPath
-      ? (ragIntent.vendors[0] === 'NAVER' ? 3 : 2)
+      ? (ragIntent.vendors[0] === 'NAVER' ? 4 : 3)
       : usesSpecificProductSupplementPath
         ? 2
       : 2;
@@ -6941,6 +7088,11 @@ export async function buildCompassAnswerResponse(
       finalAnswerSources,
     );
     const responseAnswer = coverageNotice ? `${coverageNotice}\n\n${normalizedAnswer}` : normalizedAnswer;
+
+    if (answerStatesNoVerifiedData(responseAnswer)) {
+      console.warn('Compass answer generation produced no-data text; forcing noDataFound response state');
+      return buildAuthoritativeNoDataResponse(ragIntent, startTime, emitPhase);
+    }
     
     emitPhase?.({ phase: 'answer-ready', message: '답변 정리가 완료되었습니다.' });
     return {

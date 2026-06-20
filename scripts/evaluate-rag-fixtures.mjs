@@ -294,6 +294,14 @@ function collectResponseFailures(fixture, payload) {
     sourceFailures.push(`expected at least ${fixture.minSources} source(s), received ${sources.length}`);
   }
 
+  if (Number.isInteger(fixture.maxSources) && sources.length > fixture.maxSources) {
+    sourceFailures.push(`expected at most ${fixture.maxSources} source(s), received ${sources.length}`);
+  }
+
+  if (fixture.expectNoDataFound === true && sources.length > 0) {
+    sourceFailures.push(`noDataFound response must not retain sources, received ${sources.length}`);
+  }
+
   const confidence = Number(payload.confidence);
   if (!Number.isFinite(confidence) || confidence < fixture.minConfidence) {
     sourceFailures.push(`confidence ${payload.confidence} below minimum ${fixture.minConfidence}`);

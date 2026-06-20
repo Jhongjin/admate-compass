@@ -49,8 +49,31 @@ const impossibleDomainTerms = [
   '외계',
   '달 거주',
   '테라포밍',
+  '초공간',
   'mars colony',
   'oxygen farm',
+];
+
+const productStructureTerms = [
+  '광고 상품',
+  '광고상품',
+  '상품',
+  '종류',
+  '유형',
+  '구조',
+  '캠페인',
+];
+
+const futureLaunchTerms = [
+  '출시될',
+  '출시 예정',
+  '출시예정',
+  '공개될',
+  '도입될',
+  '예정인',
+  '미래',
+  'future',
+  'upcoming',
 ];
 
 /**
@@ -137,24 +160,30 @@ export function detectUnavailablePolicyTarget(query, options = {}) {
 
   const matchedPolicyStandardTerms = matchTerms(text, policyStandardTerms);
   const asksForPolicyStandard = matchedPolicyStandardTerms.length > 0;
-  if (!asksForPolicyStandard) {
-    return {
-      isUnavailablePolicyTarget: false,
-      matchedTerms: matchedAdPolicyTerms,
-      farFutureYears: [],
-    };
-  }
 
   const currentYear = Number.isFinite(options.currentYear)
     ? Number(options.currentYear)
     : new Date().getFullYear();
   const farFutureThreshold = Math.max(2100, currentYear + 50);
-  const farFutureYears = extractYears(text).filter((year) => year >= farFutureThreshold);
+  const years = extractYears(text);
+  const farFutureYears = years.filter((year) => year >= farFutureThreshold);
   const matchedImpossibleDomainTerms = matchTerms(text, impossibleDomainTerms);
+  const matchedProductStructureTerms = matchTerms(text, productStructureTerms);
+  const matchedFutureLaunchTerms = matchTerms(text, futureLaunchTerms);
   const marsWithImpossibleContext = text.includes('화성')
     && (text.includes('거주용') || text.includes('산소 농장') || text.includes('우주'));
 
-  if (farFutureYears.length > 0 || matchedImpossibleDomainTerms.length > 0 || marsWithImpossibleContext) {
+  const speculativeFutureKnownVendorProduct = hasKnownVendor(text)
+    && years.some((year) => year > currentYear + 1)
+    && matchedProductStructureTerms.length > 0
+    && (matchedFutureLaunchTerms.length > 0 || matchedImpossibleDomainTerms.length > 0);
+
+  if (
+    farFutureYears.length > 0
+    || matchedImpossibleDomainTerms.length > 0
+    || marsWithImpossibleContext
+    || speculativeFutureKnownVendorProduct
+  ) {
     return {
       isUnavailablePolicyTarget: true,
       reason: 'future_impossible',
@@ -162,8 +191,18 @@ export function detectUnavailablePolicyTarget(query, options = {}) {
         ...matchedAdPolicyTerms,
         ...matchedPolicyStandardTerms,
         ...matchedImpossibleDomainTerms,
+        ...matchedProductStructureTerms,
+        ...matchedFutureLaunchTerms,
       ],
-      farFutureYears,
+      farFutureYears: farFutureYears.length > 0 ? farFutureYears : years.filter((year) => year > currentYear + 1),
+    };
+  }
+
+  if (!asksForPolicyStandard) {
+    return {
+      isUnavailablePolicyTarget: false,
+      matchedTerms: matchedAdPolicyTerms,
+      farFutureYears: [],
     };
   }
 

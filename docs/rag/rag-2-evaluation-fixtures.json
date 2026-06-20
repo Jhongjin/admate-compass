@@ -1108,6 +1108,7 @@
       "카카오 광고"
     ],
     "minSources": 0,
+    "maxSources": 0,
     "minConfidence": 0,
     "expectNoDataFound": true,
     "requireRetrievalMethods": [],
@@ -1137,6 +1138,7 @@
       "Meta 광고"
     ],
     "minSources": 0,
+    "maxSources": 0,
     "minConfidence": 0,
     "expectNoDataFound": true,
     "requireRetrievalMethods": [],
@@ -1153,6 +1155,75 @@
     "generationMustNotContain": [
       "광고 심사",
       "Meta 광고"
+    ]
+  },
+  {
+    "id": "out-of-scope-lunch-recommendation",
+    "question": "오늘 점심 메뉴 추천해줘",
+    "expectedVendor": "NONE",
+    "expectedSourceTitle": [],
+    "mustContain": [],
+    "mustNotContain": [
+      "Google Ads",
+      "전환",
+      "캠페인"
+    ],
+    "minSources": 0,
+    "maxSources": 0,
+    "minConfidence": 0,
+    "expectNoDataFound": true,
+    "requireRetrievalMethods": [],
+    "requireSourceQuality": false,
+    "maxDuplicateTitles": 0,
+    "minDistinctTitles": 0,
+    "category": "out-of-scope",
+    "sourceMustContain": [],
+    "sourceMustNotContain": [
+      "Google Ads",
+      "전환",
+      "캠페인"
+    ],
+    "generationMustContain": [],
+    "generationMustNotContain": [
+      "Google Ads",
+      "전환",
+      "캠페인"
+    ]
+  },
+  {
+    "id": "future-fictional-naver-ad-product-2035",
+    "question": "2035년에 출시될 네이버 초공간 광고 상품에 대해 알려줘",
+    "expectedVendor": "NONE",
+    "expectedSourceTitle": [],
+    "mustContain": [],
+    "mustNotContain": [
+      "쇼핑검색",
+      "파워링크",
+      "브랜드검색",
+      "네이버 광고 상품"
+    ],
+    "minSources": 0,
+    "maxSources": 0,
+    "minConfidence": 0,
+    "expectNoDataFound": true,
+    "requireRetrievalMethods": [],
+    "requireSourceQuality": false,
+    "maxDuplicateTitles": 0,
+    "minDistinctTitles": 0,
+    "category": "out-of-scope",
+    "sourceMustContain": [],
+    "sourceMustNotContain": [
+      "쇼핑검색",
+      "파워링크",
+      "브랜드검색",
+      "네이버 광고 상품"
+    ],
+    "generationMustContain": [],
+    "generationMustNotContain": [
+      "쇼핑검색",
+      "파워링크",
+      "브랜드검색",
+      "네이버 광고 상품"
     ]
   }
 ]
