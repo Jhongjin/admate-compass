@@ -4081,6 +4081,18 @@ type FastKakaoProductAnswerFallback =
   | 'kakao_product_structured'
   | 'kakao_product_scope_rescue';
 
+type FastPolicySourceGuidedAnswerFamily =
+  | 'price_discount'
+  | 'user_deception'
+  | 'event_material'
+  | 'kakao_service_protection';
+
+type FastPolicySourceGuidedAnswerFallback =
+  | 'policy_source_guided_price_discount'
+  | 'policy_source_guided_user_deception'
+  | 'policy_source_guided_event_material'
+  | 'policy_source_guided_kakao_service_protection';
+
 type FastNaverVideoProductAnswerFallback = 'naver_video_product_structured';
 
 type FastStructuredSpecificProductAnswerFallback =
@@ -4723,6 +4735,177 @@ function buildFastKakaoProductStructuredAnswer(
     confidenceCap: 76,
     reviewStatus: 'completed',
     fastAnswerFallback,
+  };
+}
+
+function detectFastPolicySourceGuidedAnswerFamily(
+  message: string,
+  intent: QueryIntent,
+): FastPolicySourceGuidedAnswerFamily | null {
+  const queryText = normalizeEvidenceText([
+    message,
+    ...intent.keywords,
+    ...intent.topics,
+    ...intent.adPolicyTerms,
+    ...intent.strictContextTerms,
+  ].join(' '));
+
+  if (
+    intent.vendors.length === 1
+    && intent.vendors[0] === 'KAKAO'
+    && /카카오/.test(queryText)
+    && /로고|디자인|서비스명|서비스|상표|저작물|모방|무단|사용/.test(queryText)
+  ) {
+    return 'kakao_service_protection';
+  }
+
+  if (/오인|기만|속이|혼란|허위|과장|오해/.test(queryText)) return 'user_deception';
+  if (/가격|할인|할인율|혜택|쿠폰|정가|판매가/.test(queryText)) return 'price_discount';
+  if (/이벤트|경품|참여|프로모션|추첨/.test(queryText)) return 'event_material';
+
+  return null;
+}
+
+function getFastPolicySourcePattern(family: FastPolicySourceGuidedAnswerFamily): RegExp {
+  switch (family) {
+    case 'price_discount':
+      return /가격|할인|할인율|혜택|쿠폰|정가|판매가|무료배송|카드할인|price|discount/i;
+    case 'user_deception':
+      return /오인|기만|속이|속임|혼란|허위|과장|오해|mislead|decept/i;
+    case 'event_material':
+      return /이벤트|경품|참여|프로모션|추첨|당첨|기간|조건/i;
+    case 'kakao_service_protection':
+      return /카카오|로고|디자인|서비스명|서비스|상표|저작물|모방|침해|무단|사용\s*불가|집행\s*불가/i;
+  }
+}
+
+function getFastPolicyAnswerFallback(
+  family: FastPolicySourceGuidedAnswerFamily,
+): FastPolicySourceGuidedAnswerFallback {
+  switch (family) {
+    case 'price_discount':
+      return 'policy_source_guided_price_discount';
+    case 'user_deception':
+      return 'policy_source_guided_user_deception';
+    case 'event_material':
+      return 'policy_source_guided_event_material';
+    case 'kakao_service_protection':
+      return 'policy_source_guided_kakao_service_protection';
+  }
+}
+
+function buildFastPolicyAnswerText(
+  family: FastPolicySourceGuidedAnswerFamily,
+  sources: ReturnType<typeof buildVerifiedSources>,
+) {
+  const cite = (index: number) => `[S${Math.min(index, Math.max(0, sources.length - 1)) + 1}]`;
+  const citations = sources.map((_, index) => `[S${index + 1}]`).join(', ');
+
+  switch (family) {
+    case 'price_discount':
+      return [
+        '검증된 정책/가이드 근거 기준으로만 보면, 가격이나 할인율 표시는 실제 조건과 소비자 오인 가능성을 함께 확인해야 합니다.',
+        '',
+        '**판단 기준**',
+        `- 가격, 할인율, 쿠폰·혜택처럼 금액이나 혜택을 나타내는 표현은 실제 등록 정보나 판매 조건과 맞아야 합니다 ${cite(0)}.`,
+        `- 할인 조건이 특정 기간, 대상, 결제수단, 재고 등에 제한된다면 소재나 랜딩에서 그 조건을 확인할 수 있어야 합니다 ${cite(0)}.`,
+        '',
+        '**실무 확인**',
+        `- 출처에 직접 없는 예외나 자동 승인 가능성은 보강하지 말고, 원문 정책과 실제 소재 맥락으로 최종 확인하세요 ${cite(1)}.`,
+        '',
+        `근거: ${citations}`,
+      ].join('\n');
+    case 'user_deception':
+      return [
+        '검증된 정책 근거 기준으로만 보면, 이용자를 오인하게 하거나 기만할 수 있는 표현은 집행 가능 여부를 보수적으로 봐야 합니다.',
+        '',
+        '**판단 기준**',
+        `- 상품·서비스의 효과, 조건, 주체를 사실과 다르게 이해하게 하는 오인·기만 표현은 제한 또는 반려 가능성이 있습니다 ${cite(0)}.`,
+        `- 중요한 조건을 숨기거나 과장된 문구로 클릭을 유도하는 경우에는 소재와 랜딩의 실제 내용까지 함께 확인해야 합니다 ${cite(0)}.`,
+        '',
+        '**실무 확인**',
+        `- 표현 자체뿐 아니라 사용자가 도착하는 페이지에서 같은 조건이 명확히 확인되는지도 원문 정책 기준으로 점검하세요 ${cite(1)}.`,
+        '',
+        `근거: ${citations}`,
+      ].join('\n');
+    case 'event_material':
+      return [
+        '검증된 정책/가이드 근거 기준으로만 보면, 이벤트 광고 소재는 참여 조건과 경품 정보를 사용자가 오해하지 않게 확인해야 합니다.',
+        '',
+        '**필수 확인**',
+        `- 이벤트, 경품, 참여 조건은 실제 제공 조건과 일치해야 하며 기간·대상·방법이 제한될 경우 그 범위를 명확히 확인해야 합니다 ${cite(0)}.`,
+        `- 경품이나 혜택을 강조할수록 지급 기준, 참여 방법, 제외 조건이 소재 또는 랜딩에서 확인되는지 함께 봐야 합니다 ${cite(1)}.`,
+        '',
+        '**실무 확인**',
+        `- 출처에 없는 세부 운영 방식은 임의로 보강하지 말고 원문 정책과 실제 이벤트 페이지 기준으로 검토하세요 ${cite(0)}.`,
+        '',
+        `근거: ${citations}`,
+      ].join('\n');
+    case 'kakao_service_protection':
+      return [
+        '검증된 카카오 정책 근거 기준으로만 보면, 카카오 로고나 서비스명·디자인 사용은 카카오 서비스 오인 가능성을 먼저 확인해야 합니다.',
+        '',
+        '**판단 기준**',
+        `- 카카오 로고, 서비스명, 디자인을 광고에 사용할 때는 공식 카카오 서비스처럼 보이거나 제휴·보증으로 오인될 가능성을 점검해야 합니다 ${cite(0)}.`,
+        `- 카카오의 상표·저작물·서비스 이미지를 무단 사용하거나 디자인을 모방하는 표현은 제한 또는 집행 불가 사유가 될 수 있습니다 ${cite(1)}.`,
+        '',
+        '**실무 확인**',
+        `- 사용 권한, 표기 방식, 랜딩 내 설명이 원문 정책과 맞는지 확인한 뒤 소재 심사를 진행하는 쪽이 안전합니다 ${cite(0)}.`,
+        '',
+        `근거: ${citations}`,
+      ].join('\n');
+  }
+}
+
+function buildFastPolicySourceGuidedAnswer(
+  message: string,
+  intent: QueryIntent,
+  sources: ReturnType<typeof buildVerifiedSources>,
+  isBroadProductStructureLlmIntent: boolean,
+): (DeterministicProductAnswer & {
+  policyAnswerFamily: FastPolicySourceGuidedAnswerFamily;
+  fastAnswerFallback: FastPolicySourceGuidedAnswerFallback;
+}) | null {
+  if (process.env.COMPASS_DISABLE_FAST_POLICY_SOURCE_GUIDED_ANSWERS === 'true') return null;
+  if (isBroadProductStructureLlmIntent || intent.topics.includes('product_structure') || intent.isComparative) return null;
+  if (intent.isOutOfScope || intent.unavailablePolicyTarget) return null;
+
+  const family = detectFastPolicySourceGuidedAnswerFamily(message, intent);
+  if (!family) return null;
+
+  const pattern = getFastPolicySourcePattern(family);
+  const requiredVendor = family === 'kakao_service_protection'
+    ? 'KAKAO'
+    : (intent.vendors.length === 1 ? intent.vendors[0] : undefined);
+  const candidateSources = dedupePublicProductSources(
+    sources.filter(source => {
+      if (source.evidenceDecision === 'rejected') return false;
+      if (sourceHasBlockingExtractionNoise(source)) return false;
+      if (requiredVendor && (!sourceMatchesVendor(source, requiredVendor) || sourceHasCrossVendorUrl(source, [requiredVendor]))) {
+        return false;
+      }
+      const sourceText = normalizeEvidenceText([
+        source.title,
+        source.originalTitle,
+        source.excerpt,
+        source.matchText,
+        getFallbackSourceText(source),
+      ].filter(Boolean).join(' '));
+      return pattern.test(sourceText);
+    }),
+    6,
+  );
+  if (candidateSources.length === 0) return null;
+
+  return {
+    answer: buildFastPolicyAnswerText(family, candidateSources),
+    sources: candidateSources,
+    model: `compass-answer-fast-policy-source-guided-${family.replace(/_/g, '-')}`,
+    showContactOption: true,
+    confidenceCap: family === 'kakao_service_protection' ? 80 : 76,
+    reviewStatus: 'completed',
+    policyAnswerFamily: family,
+    fastAnswerFallback: getFastPolicyAnswerFallback(family),
   };
 }
 
@@ -8152,6 +8335,48 @@ export async function buildCompassAnswerResponse(
           confidence: getDeterministicProductConfidence(confidence, fastStructuredSpecificProductAnswer),
           processingTime: Date.now() - startTime,
           model: fastStructuredSpecificProductAnswer.model
+        }
+      };
+    }
+
+    const fastPolicySourceGuidedAnswer = buildFastPolicySourceGuidedAnswer(
+      message,
+      ragIntent,
+      answerSources.length > 0 ? answerSources : sources,
+      isBroadProductStructureLlmIntent,
+    );
+    if (fastPolicySourceGuidedAnswer) {
+      const showContactOption = Boolean(fastPolicySourceGuidedAnswer.showContactOption);
+      emitPhase?.({ phase: 'answer-ready', message: '검증된 정책 근거를 기준으로 답변을 정리했습니다.' });
+      return {
+        body: {
+          response: {
+            message: fastPolicySourceGuidedAnswer.answer,
+            content: fastPolicySourceGuidedAnswer.answer,
+            sources: fastPolicySourceGuidedAnswer.sources,
+            noDataFound: false,
+            schema,
+            showContactOption,
+            sourceDiagnostics: {
+              ...sourceDiagnostics,
+              strictProductSourceCount: specificProductScope.strictProductSources.length,
+              answerSourceCount: fastPolicySourceGuidedAnswer.sources.length,
+              answerMode: diagnosticAnswerMode,
+              answerGenerationDurationMs: 0,
+              policyAnswerFamily: fastPolicySourceGuidedAnswer.policyAnswerFamily,
+              fastAnswerFallback: fastPolicySourceGuidedAnswer.fastAnswerFallback,
+            },
+            reviewPipeline: buildReviewPipeline({
+              status: fastPolicySourceGuidedAnswer.reviewStatus || 'completed',
+              sourceCount: searchResults.length,
+              verifiedSourceCount: fastPolicySourceGuidedAnswer.sources.length,
+              contactRecommended: showContactOption,
+              retrievalChannelLimited: sourceDiagnostics.retrievalChannelTimedOut === true,
+            }),
+          },
+          confidence: getDeterministicProductConfidence(confidence, fastPolicySourceGuidedAnswer),
+          processingTime: Date.now() - startTime,
+          model: fastPolicySourceGuidedAnswer.model
         }
       };
     }

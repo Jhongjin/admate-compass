@@ -162,13 +162,19 @@ for (const snippet of [
   'buildSpecificProductAnswerScope',
   'buildFastKakaoSpecificProductAnswer',
   'buildFastKakaoProductStructuredAnswer',
+  'buildFastPolicySourceGuidedAnswer',
   'buildFastNaverVideoProductAnswer',
   'buildFastStructuredSpecificProductAnswer',
   'COMPASS_DISABLE_FAST_KAKAO_SPECIFIC_PRODUCT_ANSWERS',
   'COMPASS_DISABLE_FAST_KAKAO_STRUCTURED_PRODUCT_ANSWERS',
+  'COMPASS_DISABLE_FAST_POLICY_SOURCE_GUIDED_ANSWERS',
   'COMPASS_DISABLE_FAST_NAVER_VIDEO_PRODUCT_ANSWERS',
   'COMPASS_DISABLE_FAST_STRUCTURED_SPECIFIC_PRODUCT_ANSWERS',
   "fastAnswerFallback: 'kakao_specific_product_source_guided'",
+  "'policy_source_guided_price_discount'",
+  "'policy_source_guided_user_deception'",
+  "'policy_source_guided_event_material'",
+  "'policy_source_guided_kakao_service_protection'",
   "'kakao_product_structured'",
   "'kakao_product_scope_rescue'",
   "'naver_video_product_structured'",
@@ -1220,6 +1226,14 @@ if (!/function buildFastStructuredSpecificProductAnswer\([\s\S]*COMPASS_DISABLE_
 
 if (!/const fastStructuredSpecificProductAnswer = buildFastStructuredSpecificProductAnswer\([\s\S]*answerSources\.length > 0 \? answerSources : sources[\s\S]*answerGenerationDurationMs: 0,[\s\S]*fastAnswerFallback: fastStructuredSpecificProductAnswer\.fastAnswerFallback[\s\S]*Compass specific product answer will use grounded LLM synthesis/.test(answerHandler)) {
   fail('structured specific product fast answer must run before grounded LLM synthesis and expose zero answer-generation diagnostics');
+}
+
+if (!/function buildFastPolicySourceGuidedAnswer\([\s\S]*COMPASS_DISABLE_FAST_POLICY_SOURCE_GUIDED_ANSWERS[\s\S]*isBroadProductStructureLlmIntent \|\| intent\.topics\.includes\('product_structure'\) \|\| intent\.isComparative[\s\S]*detectFastPolicySourceGuidedAnswerFamily\(message, intent\)[\s\S]*sourceHasBlockingExtractionNoise\(source\)[\s\S]*getFallbackSourceText\(source\)[\s\S]*buildFastPolicyAnswerText\(family, candidateSources\)/.test(answerHandler)) {
+  fail('fast policy source-guided answers must stay narrowly gated and require matching verified source evidence');
+}
+
+if (!/const fastPolicySourceGuidedAnswer = buildFastPolicySourceGuidedAnswer\([\s\S]*answerSources\.length > 0 \? answerSources : sources[\s\S]*answerGenerationDurationMs: 0,[\s\S]*policyAnswerFamily: fastPolicySourceGuidedAnswer\.policyAnswerFamily[\s\S]*fastAnswerFallback: fastPolicySourceGuidedAnswer\.fastAnswerFallback[\s\S]*Compass specific product answer will use grounded LLM synthesis/.test(answerHandler)) {
+  fail('fast policy source-guided answers must run before grounded LLM synthesis and expose zero answer-generation diagnostics');
 }
 
 if (!/const fastKakaoBroadProductAnswer = buildFastKakaoProductStructuredAnswer\([\s\S]*productStructureSources[\s\S]*compass-answer-fast-kakao-product-structured[\s\S]*answerGenerationDurationMs: 0,[\s\S]*fastAnswerFallback: fastKakaoBroadProductAnswer\.fastAnswerFallback[\s\S]*Compass product structure broad answer will use grounded LLM synthesis/.test(answerHandler)) {
