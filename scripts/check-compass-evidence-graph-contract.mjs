@@ -141,6 +141,10 @@ for (const ragSignal of [
   assertIncludes(ragService, ragSignal, 'RAG graph sidecar integration');
 }
 
+if (!/resolveFocusedProductGraphRpcRowLimit[\s\S]*Math\.min\(Math\.max\(limit \* 3, 36\), 54\)/.test(graphService)) {
+  fail('focused product graph RPC must keep row fan-out tightly bounded');
+}
+
 for (const promptSignal of [
   'sourceKind',
   'resolved_case',

@@ -330,6 +330,18 @@ if (!productStructureSelectorBody.includes('scoreBroadProductStructureSource')) 
   fail('broad product structure source selection must score sources from query and graph signals');
 }
 
+if (!/graphSourceLooksLikeBroadBusinessNewsTitle[\s\S]*graphSourceHasAdProductTitle[\s\S]*scoreProductStructureGraphSource/.test(answerHandler)) {
+  fail('broad product graph source selection must demote business/news graph titles unless they clearly name an ad product');
+}
+
+if (!/targetVendor === 'META' && graphSourceLooksLikeBroadBusinessNewsTitle\(source\) && !graphSourceHasAdProductTitle\(source\)/.test(productStructureSelectorBody)) {
+  fail('Meta broad product source pool must remove broad business/news titles before source selection');
+}
+
+if (!/isBroadProductStructureCatalogIntent[\s\S]*isProductCatalogOverviewQuestion\(message\)[\s\S]*shouldUseDeterministicProductAnswerBeforeLlm\(\) && !isBroadProductStructureCatalogIntent[\s\S]*buildDeterministicSpecificProductAnswer/.test(answerHandler)) {
+  fail('broad product questions must bypass the early specific-product deterministic path and use broad source selection');
+}
+
 if (!/intent\.isSpecificProductGuidance[\s\S]*!usesNaverShoppingDataIntent[\s\S]*return selected/.test(rag)) {
   fail('specific product questions must bypass broad required product coverage except NAVER shopping DB setup intents, even when strictProductTerms missed the product');
 }
@@ -814,6 +826,10 @@ if (!/getProductStructureAnchorFetchLimit[\s\S]*Math\.min\(Math\.max\(limit \* 3
 
 if (/search(?:ProductStructureAnchorTable|VendorMetadataTable|KeywordTable)[\s\S]{0,900}content, metadata, embedding/.test(rag)) {
   fail('keyword/anchor product retrieval must not fetch embedding payloads when query embeddings are not used');
+}
+
+if (!/calculateProductStructureGraphTitleAdjustment[\s\S]*product_structure_graph_ad_product_title[\s\S]*product_structure_graph_news_title_penalty/.test(rag)) {
+  fail('product overview graph ranking must prefer ad product guide titles over broad business/news articles');
 }
 
 if (!/usesBroadProductStructureRetrieval[\s\S]*anchorVendors[\s\S]*\? \[intent\.vendors\[0\]\][\s\S]*anchorTerms[\s\S]*usesBroadProductStructureRetrieval \? 6 : 14/.test(rag)) {

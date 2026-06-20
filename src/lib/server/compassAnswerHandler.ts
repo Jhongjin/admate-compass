@@ -4676,7 +4676,7 @@ function buildDeterministicBroadProductAnswer(
   intent: QueryIntent,
   sources: ReturnType<typeof buildVerifiedSources>,
 ): DeterministicProductAnswer | null {
-  if (!isBroadProductStructureAnswerIntent(message, intent) || sources.length === 0) {
+  if (!(isBroadProductStructureAnswerIntent(message, intent) || isProductCatalogOverviewQuestion(message)) || sources.length === 0) {
     return null;
   }
 
@@ -5008,6 +5008,7 @@ function hasProductStructureGraphSourceSignal(source: ReturnType<typeof buildVer
 function isLowValueProductStructureGraphSource(source: ReturnType<typeof buildVerifiedSources>[number]) {
   if (!isGraphVerifiedSource(source)) return false;
   const text = getProductStructureVisibleSourceText(source);
+  if (graphSourceLooksLikeBroadBusinessNewsTitle(source) && !graphSourceHasAdProductTitle(source)) return true;
   if (sourceLooksLikeGranularCreativeSpecOnly(source) && /광고\s*사양|기술\s*요구\s*사항|파일\s*(크기|형식)|화면\s*비율/.test(text)) return true;
   if (/데이터\s*분류|개인정보\s*보호/.test(text)) return true;
   if (/오프라인\s*전환|향상된\s*전환|전환\s*(api|최적화|측정|추적|가져오기)|conversion\s*api|conversions?\s*api|enhanced\s*conversions|offline\s*conversion|capi/.test(text)) return true;
@@ -5017,12 +5018,24 @@ function isLowValueProductStructureGraphSource(source: ReturnType<typeof buildVe
     && !hasProductStructureGraphSourceSignal(source);
 }
 
+function graphSourceHasAdProductTitle(source: ReturnType<typeof buildVerifiedSources>[number]) {
+  const title = normalizeEvidenceText(source.title || '');
+  return /광고|ads?|ad\s|campaign|캠페인|instagram\s*광고|threads\s*광고|앱\s*광고|게재\s*위치|노출\s*위치|광고\s*관리자|상품\s*가이드|상품가이드|audience\s*network|messenger/.test(title);
+}
+
+function graphSourceLooksLikeBroadBusinessNewsTitle(source: ReturnType<typeof buildVerifiedSources>[number]) {
+  const title = normalizeEvidenceText(source.title || '');
+  return /뉴스|합류|혁신|spotlight|creator\s*method|cyber\s*5|성공\s*전략|트렌드|협업|크리에이터|manus/.test(title);
+}
+
 function scoreProductStructureGraphSource(source: ReturnType<typeof buildVerifiedSources>[number], targetVendor?: VendorIntent) {
   const text = getProductStructureVisibleSourceText(source);
   let score = Number(source.hybridScore || source.score || 0);
   if (isOfficialGuideGraphSource(source)) score += 0.65;
   if (sourceMatchesVendor(source, targetVendor)) score += 0.3;
   if (hasProductStructureGraphSourceSignal(source)) score += 1.05;
+  if (graphSourceHasAdProductTitle(source)) score += 0.55;
+  if (graphSourceLooksLikeBroadBusinessNewsTitle(source) && !graphSourceHasAdProductTitle(source)) score -= 2.2;
   if (/캠페인\s*(목표|유형|목적)|광고\s*(상품|종류|유형|구조)|상품\s*구조|광고\s*관리자\s*목표|마케팅\s*목표|검색\s*캠페인|디스플레이\s*캠페인|반응형\s*디스플레이|쇼핑\s*광고|앱\s*(캠페인|인스톨|설치|홍보|이벤트)|리드\s*양식|비즈보드|상품\s*db|db\s*url|상품가이드|상품\s*가이드|campaign\s*objective|objectives?|catalog/.test(text)) {
     score += 0.45;
   }
@@ -5622,6 +5635,7 @@ function selectProductStructureResponseSources(sources: ReturnType<typeof buildV
   }))
     .filter(source => sourceMatchesVendor(source, targetVendor))
     .filter(source => !targetVendor || !sourceHasCrossVendorUrl(source, [targetVendor]))
+    .filter(source => !(targetVendor === 'META' && graphSourceLooksLikeBroadBusinessNewsTitle(source) && !graphSourceHasAdProductTitle(source)))
     .filter(source => !sourceHasExtractionNoise(source));
   const usableLabelledSources = labelledSources
     .filter(source => isUsableBroadProductStructureSource(source, targetVendor));
@@ -7450,6 +7464,8 @@ export async function buildCompassAnswerResponse(
     const specificProductScope = buildSpecificProductAnswerScope(sources, ragIntent, message);
     let answerSources = specificProductScope.answerSources;
     const isBroadProductStructureLlmIntent = isBroadProductStructureAnswerIntent(message, ragIntent);
+    const isBroadProductStructureCatalogIntent = isBroadProductStructureLlmIntent
+      || isProductCatalogOverviewQuestion(message);
     const diagnosticAnswerMode = getCompassDiagnosticAnswerMode(
       message,
       specificProductScope,
@@ -7495,7 +7511,7 @@ export async function buildCompassAnswerResponse(
       };
     }
 
-    if (shouldUseDeterministicProductAnswerBeforeLlm()) {
+    if (shouldUseDeterministicProductAnswerBeforeLlm() && !isBroadProductStructureCatalogIntent) {
       const deterministicSpecificProductAnswer = buildDeterministicSpecificProductAnswer(
         message,
         ragIntent,
@@ -7592,7 +7608,7 @@ export async function buildCompassAnswerResponse(
       emitPhase?.({ phase: 'answer-started', message: '특정 상품 근거를 바탕으로 답변을 작성합니다.' });
     }
 
-    if (isBroadProductStructureLlmIntent) {
+    if (isBroadProductStructureCatalogIntent) {
       const productStructureSources = selectProductStructureResponseSources(sources, ragIntent, message);
       answerSources = productStructureSources;
       if (productStructureSources.length === 0) {

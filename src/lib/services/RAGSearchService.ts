@@ -1162,6 +1162,15 @@ export class RAGSearchService {
       hasUrl: sourceQuality.hasUrl,
     });
     hybridScore = Math.max(hybridScore, Math.min(1, candidate.score + (candidate.sourceKind === 'resolved_case' ? 0.08 : 0.04)));
+    const graphTitleAdjustment = this.calculateProductStructureGraphTitleAdjustment(
+      documentTitle,
+      documentUrl,
+      content,
+      intent
+    );
+    if (graphTitleAdjustment.adjustment !== 0) {
+      hybridScore = Math.max(0, Math.min(1, hybridScore + graphTitleAdjustment.adjustment));
+    }
     const evidenceDecision = this.decideEvidence({
       content,
       sourceQuality,
@@ -1188,6 +1197,7 @@ export class RAGSearchService {
       `source_kind_${candidate.sourceKind}`,
       `claim_type_${candidate.claimType}`,
       candidate.sourceKind === 'resolved_case' ? 'approved_operational_case' : 'official_doc_assertion',
+      ...graphTitleAdjustment.reasons,
       vendorMatch ? 'vendor_match' : '',
       topicMatch ? 'topic_match' : '',
       topicExactMatch ? 'topic_exact_match' : '',
@@ -1229,6 +1239,7 @@ export class RAGSearchService {
         evidenceDecisionReason: graphEvidenceDecisionReasons,
         score: hybridScore,
         hybridScore,
+        productStructureGraphTitleAdjustment: graphTitleAdjustment.adjustment,
         keywordScore,
         lexicalOverlap,
         vendorMatch,
@@ -3844,6 +3855,12 @@ export class RAGSearchService {
     if (highValueMatch) score += specificProductIntent && !specificProductMatch ? 0.1 : 0.85;
     if (productStructureMatch) score += specificProductIntent && !specificProductMatch ? 0.05 : 0.35;
     score += Math.min(0.72, queryTermHits * 0.12);
+    score += this.calculateProductStructureGraphTitleAdjustment(
+      candidate.documentTitle,
+      candidate.documentUrl,
+      candidate.content,
+      intent
+    ).adjustment * 3;
 
     if (/캠페인\s*(목표|유형)|검색\s*캠페인|디스플레이\s*캠페인|반응형\s*디스플레이|쇼핑\s*광고|앱\s*(캠페인|인스톨|설치|홍보|이벤트)|리드\s*양식|비즈보드|상품\s*db|db\s*url|상품가이드|상품\s*가이드|campaign\s*objective|objective/.test(sourceText)) {
       score += specificProductIntent && !specificProductMatch ? 0.08 : 0.55;
@@ -3857,6 +3874,44 @@ export class RAGSearchService {
     }
 
     return score;
+  }
+
+  private calculateProductStructureGraphTitleAdjustment(
+    documentTitle: string | undefined,
+    documentUrl: string | undefined,
+    content: string,
+    intent: QueryIntent
+  ): { adjustment: number; reasons: string[] } {
+    if (!intent.topics.includes('product_structure') || !intent.isProductStructureOverview) {
+      return { adjustment: 0, reasons: [] };
+    }
+
+    const titleText = this.normalizeSearchText(documentTitle || '');
+    const urlText = this.normalizeSearchText(documentUrl || '');
+    const contentText = this.normalizeSearchText(content);
+    const reasons: string[] = [];
+    let adjustment = 0;
+    const hasAdProductTitle = /광고|ads?|ad\s|campaign|캠페인|instagram\s*광고|threads\s*광고|앱\s*광고|게재\s*위치|노출\s*위치|광고\s*관리자|상품\s*가이드|상품가이드/.test(titleText);
+    const hasOfficialGuideUrl = /\/business\/help|\/business\/ads-guide|\/business\/learn|adsmanager|support\.google|ads\.google|searchad\.naver|kakaobusiness\.gitbook/.test(urlText);
+    const hasProductContentSignal = this.hasHighValueProductStructureSignal(contentText) || this.hasProductStructureSignal(contentText);
+    const hasBroadNewsTitle = /뉴스|합류|혁신|spotlight|creator\s*method|cyber\s*5|성공\s*전략|트렌드|협업|크리에이터|manus/.test(titleText);
+
+    if (hasAdProductTitle) {
+      adjustment += 0.12;
+      reasons.push('product_structure_graph_ad_product_title');
+    }
+
+    if (hasOfficialGuideUrl && (hasAdProductTitle || hasProductContentSignal)) {
+      adjustment += 0.06;
+      reasons.push('product_structure_graph_official_guide_url');
+    }
+
+    if (hasBroadNewsTitle && !hasAdProductTitle) {
+      adjustment -= 0.28;
+      reasons.push('product_structure_graph_news_title_penalty');
+    }
+
+    return { adjustment, reasons };
   }
 
   private isLowValueProductStructureGraphCandidate(candidate: SearchResult, intent: QueryIntent): boolean {

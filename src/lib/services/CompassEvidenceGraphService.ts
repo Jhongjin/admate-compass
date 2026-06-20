@@ -318,7 +318,7 @@ export class CompassEvidenceGraphService {
   }
 
   private resolveFocusedProductGraphRpcRowLimit(limit: number): number {
-    return Math.min(Math.max(limit * 3, 36), 72);
+    return Math.min(Math.max(limit * 3, 36), 54);
   }
 
   private resolveMergedGraphRowLimit(intent: QueryIntent, limit: number): number {
