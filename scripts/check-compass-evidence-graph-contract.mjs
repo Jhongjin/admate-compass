@@ -16,6 +16,7 @@ function assertIncludes(content, needle, label) {
 const migration = read('supabase/migrations/20260616000000_create_compass_evidence_graph.sql');
 const officialDocMigration = read('supabase/migrations/20260616001000_add_official_doc_graph_indexing_support.sql');
 const focusedProductGraphRpcMigration = read('supabase/migrations/20260620000003_add_focused_product_graph_rpc.sql');
+const retrievalResponseCacheMigration = read('supabase/migrations/20260620000004_create_compass_retrieval_response_cache.sql');
 const graphService = read('src/lib/services/CompassEvidenceGraphService.ts');
 const officialGuideIndexer = read('src/lib/services/CompassOfficialGuideGraphIndexer.ts');
 const officialGuideGraphBackfillRoute = read('src/app/api/admin/source-ops/backfill-official-graph/route.ts');
@@ -60,6 +61,10 @@ for (const serviceSignal of [
   'getFocusedProductGraphRpcCacheStatus',
   'focusedProductGraphRpcCacheStats',
   'focusedProductGraphRpcCache',
+  'readCompassRetrievalDurableCache',
+  'writeCompassRetrievalDurableCache',
+  "'focused_product_graph_rpc'",
+  'durableHitCount',
   'awaitFocusedProductGraphRpcInflight',
   'shouldUseStructuredRowsOnlyForFocusedProductOverview',
   'resolveFocusedProductGraphRpcRowLimit',
@@ -134,6 +139,17 @@ for (const focusedProductGraphRpcSignal of [
   "GRANT EXECUTE ON FUNCTION compass.search_focused_product_graph_assertions",
 ]) {
   assertIncludes(focusedProductGraphRpcMigration, focusedProductGraphRpcSignal, 'focused product graph rpc migration');
+}
+
+for (const retrievalCacheSignal of [
+  'compass.retrieval_response_cache',
+  'cache_namespace text NOT NULL',
+  'touch_retrieval_response_cache_hit',
+  'prune_expired_retrieval_response_cache',
+  'get_retrieval_response_cache_metrics',
+  'Service role can manage retrieval response cache',
+]) {
+  assertIncludes(retrievalResponseCacheMigration, retrievalCacheSignal, 'retrieval response cache migration');
 }
 
 for (const ragSignal of [

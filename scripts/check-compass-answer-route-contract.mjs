@@ -9,6 +9,7 @@ const publicAnswerRoutePath = path.join(root, 'src/app/api/compass-answer/route.
 const legacyAnswerRoutePath = path.join(root, 'src/app/api/chat-ollama/route.ts')
 const answerHandlerPath = path.join(root, 'src/lib/server/compassAnswerHandler.ts')
 const answerRuntimeStorePath = path.join(root, 'src/lib/server/compassAnswerRuntimeStore.ts')
+const retrievalRuntimeStorePath = path.join(root, 'src/lib/server/compassRetrievalRuntimeStore.ts')
 const answerRuntimeMaintenanceRoutePath = path.join(root, 'src/app/api/internal/compass-answer-runtime/maintenance/route.ts')
 const legacyRoutePath = path.join(root, 'src/app/api/chatbot/route.ts')
 const decisionDocPath = path.join(root, 'docs/tasks/2026-05-17_compass_reliability_3agent_openrouter_graphrag_plan_v3.md')
@@ -20,7 +21,7 @@ function fail(message) {
   process.exitCode = 1
 }
 
-for (const filePath of [chatPagePath, legacyChatPagePath, legacyChatAliasPagePath, publicAnswerRoutePath, legacyAnswerRoutePath, answerHandlerPath, answerRuntimeStorePath, answerRuntimeMaintenanceRoutePath, legacyRoutePath, decisionDocPath, packagePath, vercelPath]) {
+for (const filePath of [chatPagePath, legacyChatPagePath, legacyChatAliasPagePath, publicAnswerRoutePath, legacyAnswerRoutePath, answerHandlerPath, answerRuntimeStorePath, retrievalRuntimeStorePath, answerRuntimeMaintenanceRoutePath, legacyRoutePath, decisionDocPath, packagePath, vercelPath]) {
   if (!fs.existsSync(filePath)) fail(`missing required file: ${path.relative(root, filePath)}`)
 }
 
@@ -33,6 +34,7 @@ const publicAnswerRouteText = fs.readFileSync(publicAnswerRoutePath, 'utf8')
 const legacyAnswerRouteText = fs.readFileSync(legacyAnswerRoutePath, 'utf8')
 const answerHandlerText = fs.readFileSync(answerHandlerPath, 'utf8')
 const answerRuntimeStoreText = fs.readFileSync(answerRuntimeStorePath, 'utf8')
+const retrievalRuntimeStoreText = fs.readFileSync(retrievalRuntimeStorePath, 'utf8')
 const answerRuntimeMaintenanceRouteText = fs.readFileSync(answerRuntimeMaintenanceRoutePath, 'utf8')
 const legacyRouteText = fs.readFileSync(legacyRoutePath, 'utf8')
 const decisionDocText = fs.readFileSync(decisionDocPath, 'utf8')
@@ -164,7 +166,22 @@ for (const requiredText of [
 }
 
 for (const requiredText of [
+  'readCompassRetrievalDurableCache',
+  'writeCompassRetrievalDurableCache',
+  'readCompassRetrievalDurableCacheMetricsSnapshot',
+  'runCompassRetrievalDurableCacheMaintenance',
+  'retrieval_response_cache',
+  'get_retrieval_response_cache_metrics',
+]) {
+  if (!retrievalRuntimeStoreText.includes(requiredText)) {
+    fail(`retrieval runtime store missing durable cache token ${requiredText}`)
+  }
+}
+
+for (const requiredText of [
   'runCompassAnswerDurableMaintenance',
+  'runCompassRetrievalDurableCacheMaintenance',
+  'retrievalCache',
   'COMPASS_ANSWER_RUNTIME_MAINTENANCE_KEY',
   'CRON_SECRET',
   'timingSafeEqual',

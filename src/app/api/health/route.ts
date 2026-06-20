@@ -6,6 +6,7 @@ import { resolveOllamaEndpoint } from '@/lib/services/ollamaEndpoint';
 import { getCompassSupabaseRowsCacheStatus } from '@/lib/services/RAGSearchService';
 import { getCompassAnswerRuntimeMetrics } from '@/lib/server/compassAnswerHandler';
 import { readCompassAnswerDurableMetricsSnapshot } from '@/lib/server/compassAnswerRuntimeStore';
+import { readCompassRetrievalDurableCacheMetricsSnapshot } from '@/lib/server/compassRetrievalRuntimeStore';
 
 export async function GET(request: NextRequest) {
   const startTime = Date.now();
@@ -81,6 +82,7 @@ export async function GET(request: NextRequest) {
     try {
       const answerMetrics = getCompassAnswerRuntimeMetrics();
       const durableMetrics = await readCompassAnswerDurableMetricsSnapshot();
+      const durableRetrievalCache = await readCompassRetrievalDurableCacheMetricsSnapshot();
       health.services.compassAnswer = {
         status: 'healthy',
         completedRequestCount: durableMetrics.status === 'ready'
@@ -110,6 +112,7 @@ export async function GET(request: NextRequest) {
           focusedProductGraphRpc: getFocusedProductGraphRpcCacheStatus(),
           supabaseRows: getCompassSupabaseRowsCacheStatus(),
         },
+        durableRetrievalCache,
       };
     } catch {
       health.services.compassAnswer = {

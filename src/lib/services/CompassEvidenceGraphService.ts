@@ -1,3 +1,8 @@
+import {
+  getCompassRetrievalDurableCacheStatus,
+  readCompassRetrievalDurableCache,
+  writeCompassRetrievalDurableCache,
+} from '@/lib/server/compassRetrievalRuntimeStore';
 import type { QueryIntent, VendorIntent } from './RAGSearchService';
 
 export type EvidenceGraphSourceKind = 'official_doc' | 'resolved_case';
@@ -99,6 +104,9 @@ const focusedProductGraphRpcCacheStats = {
   missCount: 0,
   inflightHitCount: 0,
   writeCount: 0,
+  durableHitCount: 0,
+  durableMissCount: 0,
+  durableWriteCount: 0,
 };
 const focusedProductGraphRpcCache = new Map<string, FocusedProductGraphRpcCacheEntry>();
 
@@ -114,7 +122,7 @@ export function getFocusedProductGraphRpcCacheStatus() {
   const lookupCount = focusedProductGraphRpcCacheStats.hitCount + focusedProductGraphRpcCacheStats.missCount;
   return {
     enabled: isFocusedProductGraphRpcEnabled(),
-    scope: 'memory',
+    scope: 'memory+durable',
     ttlMs: FOCUSED_PRODUCT_GRAPH_RPC_CACHE_TTL_MS,
     maxEntries: FOCUSED_PRODUCT_GRAPH_RPC_CACHE_MAX_ENTRIES,
     entries: activeEntries,
@@ -123,9 +131,13 @@ export function getFocusedProductGraphRpcCacheStatus() {
     missCount: focusedProductGraphRpcCacheStats.missCount,
     inflightHitCount: focusedProductGraphRpcCacheStats.inflightHitCount,
     writeCount: focusedProductGraphRpcCacheStats.writeCount,
+    durableHitCount: focusedProductGraphRpcCacheStats.durableHitCount,
+    durableMissCount: focusedProductGraphRpcCacheStats.durableMissCount,
+    durableWriteCount: focusedProductGraphRpcCacheStats.durableWriteCount,
     hitRatio: lookupCount > 0
       ? Number((focusedProductGraphRpcCacheStats.hitCount / lookupCount).toFixed(4))
       : null,
+    durable: getCompassRetrievalDurableCacheStatus(),
   };
 }
 
@@ -299,6 +311,14 @@ export class CompassEvidenceGraphService {
       return inflightRows;
     }
 
+    const durableRows = await readCompassRetrievalDurableCache<EvidenceGraphRawAssertion[]>('focused_product_graph_rpc', cacheKey);
+    if (Array.isArray(durableRows?.payload)) {
+      focusedProductGraphRpcCacheStats.durableHitCount += 1;
+      this.writeFocusedProductGraphRpcRows(cacheKey, durableRows.payload);
+      return this.cloneGraphRows(durableRows.payload);
+    }
+    focusedProductGraphRpcCacheStats.durableMissCount += 1;
+
     focusedProductGraphRpcCacheStats.missCount += 1;
     const rpcPromise = this.loadFocusedProductStructuredRowsFromRpc(rpcParams);
     this.writeFocusedProductGraphRpcInflight(cacheKey, rpcPromise);
@@ -315,7 +335,19 @@ export class CompassEvidenceGraphService {
       return null;
     }
 
-    this.writeFocusedProductGraphRpcRows(cacheKey, rows);
+    const expiresAt = this.writeFocusedProductGraphRpcRows(cacheKey, rows);
+    const durableWritten = await writeCompassRetrievalDurableCache({
+      namespace: 'focused_product_graph_rpc',
+      cacheKey,
+      payload: this.cloneGraphRows(rows),
+      expiresAt,
+      metadata: {
+        rowCount: rows.length,
+      },
+    });
+    if (durableWritten) {
+      focusedProductGraphRpcCacheStats.durableWriteCount += 1;
+    }
     return this.cloneGraphRows(rows);
   }
 
@@ -407,11 +439,13 @@ export class CompassEvidenceGraphService {
     rows: EvidenceGraphRawAssertion[],
   ) {
     this.pruneFocusedProductGraphRpcCache();
+    const expiresAt = new Date(Date.now() + FOCUSED_PRODUCT_GRAPH_RPC_CACHE_TTL_MS);
     focusedProductGraphRpcCache.set(cacheKey, {
-      expiresAt: Date.now() + FOCUSED_PRODUCT_GRAPH_RPC_CACHE_TTL_MS,
+      expiresAt: expiresAt.getTime(),
       rows: this.cloneGraphRows(rows),
     });
     focusedProductGraphRpcCacheStats.writeCount += 1;
+    return expiresAt;
   }
 
   private pruneFocusedProductGraphRpcCache() {

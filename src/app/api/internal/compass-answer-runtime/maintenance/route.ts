@@ -1,6 +1,7 @@
 import { timingSafeEqual } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { runCompassAnswerDurableMaintenance } from '@/lib/server/compassAnswerRuntimeStore';
+import { runCompassRetrievalDurableCacheMaintenance } from '@/lib/server/compassRetrievalRuntimeStore';
 
 export const dynamic = 'force-dynamic';
 
@@ -46,13 +47,19 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  const result = await runCompassAnswerDurableMaintenance();
-  const status = result.status === 'unavailable' ? 503 : 200;
+  const [answerRuntime, retrievalCache] = await Promise.all([
+    runCompassAnswerDurableMaintenance(),
+    runCompassRetrievalDurableCacheMaintenance(),
+  ]);
+  const status = answerRuntime.status === 'unavailable' && retrievalCache.status === 'unavailable' ? 503 : 200;
 
   return noStoreJson(
     {
-      success: result.status !== 'unavailable',
-      data: result,
+      success: status < 500,
+      data: {
+        answerRuntime,
+        retrievalCache,
+      },
     },
     status,
   );

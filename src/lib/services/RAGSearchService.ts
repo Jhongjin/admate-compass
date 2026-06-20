@@ -4,6 +4,11 @@
  */
 
 import { createCompassServiceClient } from '@/lib/supabase/compass';
+import {
+  getCompassRetrievalDurableCacheStatus,
+  readCompassRetrievalDurableCache,
+  writeCompassRetrievalDurableCache,
+} from '@/lib/server/compassRetrievalRuntimeStore';
 import { CompassEvidenceGraphService, type EvidenceGraphCandidate } from './CompassEvidenceGraphService';
 import { SimpleEmbeddingService } from './SimpleEmbeddingService';
 import { generateResponse } from './ollama';
@@ -114,6 +119,9 @@ const compassSupabaseRowsCacheStats = {
   missCount: 0,
   inflightHitCount: 0,
   writeCount: 0,
+  durableHitCount: 0,
+  durableMissCount: 0,
+  durableWriteCount: 0,
 };
 const COMPASS_SUPABASE_ROWS_CACHE_MAX_ENTRIES = 256;
 const COMPASS_SUPABASE_ROWS_CACHE_TTL_MS = Math.min(
@@ -134,7 +142,7 @@ export function getCompassSupabaseRowsCacheStatus() {
   const lookupCount = compassSupabaseRowsCacheStats.hitCount + compassSupabaseRowsCacheStats.missCount;
   return {
     enabled: true,
-    scope: 'memory',
+    scope: 'memory+durable',
     ttlMs: COMPASS_SUPABASE_ROWS_CACHE_TTL_MS,
     maxEntries: COMPASS_SUPABASE_ROWS_CACHE_MAX_ENTRIES,
     entries: activeEntries,
@@ -143,9 +151,13 @@ export function getCompassSupabaseRowsCacheStatus() {
     missCount: compassSupabaseRowsCacheStats.missCount,
     inflightHitCount: compassSupabaseRowsCacheStats.inflightHitCount,
     writeCount: compassSupabaseRowsCacheStats.writeCount,
+    durableHitCount: compassSupabaseRowsCacheStats.durableHitCount,
+    durableMissCount: compassSupabaseRowsCacheStats.durableMissCount,
+    durableWriteCount: compassSupabaseRowsCacheStats.durableWriteCount,
     hitRatio: lookupCount > 0
       ? Number((compassSupabaseRowsCacheStats.hitCount / lookupCount).toFixed(4))
       : null,
+    durable: getCompassRetrievalDurableCacheStatus(),
   };
 }
 
@@ -691,6 +703,14 @@ export class RAGSearchService {
       return inflightRows;
     }
 
+    const durableRows = await readCompassRetrievalDurableCache<any[]>('supabase_rows', cacheKey);
+    if (Array.isArray(durableRows?.payload)) {
+      compassSupabaseRowsCacheStats.durableHitCount += 1;
+      this.writeSupabaseRowsCacheRows(cacheKey, durableRows.payload);
+      return this.cloneSupabaseRows(durableRows.payload);
+    }
+    compassSupabaseRowsCacheStats.durableMissCount += 1;
+
     compassSupabaseRowsCacheStats.missCount += 1;
     const promise = loader();
     this.writeSupabaseRowsCacheInflight(cacheKey, promise);
@@ -707,7 +727,19 @@ export class RAGSearchService {
       return null;
     }
 
-    this.writeSupabaseRowsCacheRows(cacheKey, rows);
+    const expiresAt = this.writeSupabaseRowsCacheRows(cacheKey, rows);
+    const durableWritten = await writeCompassRetrievalDurableCache({
+      namespace: 'supabase_rows',
+      cacheKey,
+      payload: this.cloneSupabaseRows(rows),
+      expiresAt,
+      metadata: {
+        rowCount: rows.length,
+      },
+    });
+    if (durableWritten) {
+      compassSupabaseRowsCacheStats.durableWriteCount += 1;
+    }
     return this.cloneSupabaseRows(rows);
   }
 
@@ -779,11 +811,13 @@ export class RAGSearchService {
 
   private writeSupabaseRowsCacheRows(cacheKey: string, rows: any[]) {
     this.pruneSupabaseRowsCache();
+    const expiresAt = new Date(Date.now() + COMPASS_SUPABASE_ROWS_CACHE_TTL_MS);
     compassSupabaseRowsCache.set(cacheKey, {
-      expiresAt: Date.now() + COMPASS_SUPABASE_ROWS_CACHE_TTL_MS,
+      expiresAt: expiresAt.getTime(),
       rows: this.cloneSupabaseRows(rows),
     });
     compassSupabaseRowsCacheStats.writeCount += 1;
+    return expiresAt;
   }
 
   private pruneSupabaseRowsCache() {
