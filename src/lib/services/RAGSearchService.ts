@@ -86,11 +86,21 @@ export interface SearchResult {
 export type RetrievalChannelTimeoutMetadata = {
   timedOut: boolean;
   channels: string[];
+  timings: RetrievalChannelTiming[];
+};
+
+export type RetrievalChannelTiming = {
+  label: string;
+  durationMs: number;
+  resultCount: number;
+  timedOut: boolean;
+  failed?: boolean;
 };
 
 type SearchResultsWithRetrievalMetadata = SearchResult[] & {
   __compassRetrievalTimedOut?: boolean;
   __compassTimedOutChannels?: string[];
+  __compassRetrievalChannelTimings?: RetrievalChannelTiming[];
 };
 
 export function getCompassRetrievalChannelTimeoutMetadata(
@@ -101,6 +111,9 @@ export function getCompassRetrievalChannelTimeoutMetadata(
     timedOut: metadata.__compassRetrievalTimedOut === true,
     channels: Array.isArray(metadata.__compassTimedOutChannels)
       ? metadata.__compassTimedOutChannels
+      : [],
+    timings: Array.isArray(metadata.__compassRetrievalChannelTimings)
+      ? metadata.__compassRetrievalChannelTimings
       : [],
   };
 }
@@ -567,17 +580,48 @@ export class RAGSearchService {
     label: string,
     fallback: T,
     timedOutChannels?: string[],
+    channelTimings?: RetrievalChannelTiming[],
   ): Promise<T> {
     const timeoutMs = this.getRetrievalChannelTimeoutMs();
     let timeoutId: ReturnType<typeof setTimeout> | undefined;
+    const startedAt = Date.now();
+    let settled = false;
+
+    const countResults = (value: T): number => Array.isArray(value) ? value.length : 0;
+    const recordTiming = (value: T, timedOut: boolean, failed = false) => {
+      channelTimings?.push({
+        label,
+        durationMs: Date.now() - startedAt,
+        resultCount: countResults(value),
+        timedOut,
+        ...(failed ? { failed: true } : {}),
+      });
+    };
 
     try {
       return await Promise.race([
-        promise,
+        promise.then(
+          (value) => {
+            if (!settled) {
+              settled = true;
+              recordTiming(value, false);
+            }
+            return value;
+          },
+          (error) => {
+            if (!settled) {
+              settled = true;
+              recordTiming(fallback, false, true);
+            }
+            throw error;
+          },
+        ),
         new Promise<T>((resolve) => {
           timeoutId = setTimeout(() => {
+            settled = true;
             console.warn('Compass retrieval channel timed out', { label, timeoutMs });
             timedOutChannels?.push(label);
+            recordTiming(fallback, true);
             resolve(fallback);
           }, timeoutMs);
         }),
@@ -719,6 +763,7 @@ export class RAGSearchService {
       }
 
       const timedOutChannels: string[] = [];
+      const channelTimings: RetrievalChannelTiming[] = [];
       const intent = this.detectQueryIntent(query);
       console.log('🧭 Query intent:', {
         vendors: intent.vendors,
@@ -803,24 +848,24 @@ export class RAGSearchService {
           kakaoProductPriorityCandidates,
           graphCandidates
         ] = await Promise.all([
-          this.withRetrievalChannelTimeout(this.searchKeywordCandidates(query, candidateLimit, intent), 'product_fast_keyword', [], timedOutChannels),
+          this.withRetrievalChannelTimeout(this.searchKeywordCandidates(query, candidateLimit, intent), 'product_fast_keyword', [], timedOutChannels, channelTimings),
           intent.requiresVendorCoverage
-            ? this.withRetrievalChannelTimeout(this.searchVendorCoverageCandidates(query, candidateLimit, intent), 'product_fast_vendor_coverage', [], timedOutChannels)
+            ? this.withRetrievalChannelTimeout(this.searchVendorCoverageCandidates(query, candidateLimit, intent), 'product_fast_vendor_coverage', [], timedOutChannels, channelTimings)
             : Promise.resolve([]),
           usesVendorProductStructurePriority
             ? Promise.resolve([])
-            : this.withRetrievalChannelTimeout(this.searchProductStructureCandidates(candidateLimit, intent), 'product_fast_structure_anchor', [], timedOutChannels),
-          this.withRetrievalChannelTimeout(this.searchNaverProductStructurePriorityCandidates(intent), 'product_fast_naver_priority', [], timedOutChannels),
+            : this.withRetrievalChannelTimeout(this.searchProductStructureCandidates(candidateLimit, intent), 'product_fast_structure_anchor', [], timedOutChannels, channelTimings),
+          this.withRetrievalChannelTimeout(this.searchNaverProductStructurePriorityCandidates(intent), 'product_fast_naver_priority', [], timedOutChannels, channelTimings),
           usesMetaProductOverviewPriority
-            ? this.withRetrievalChannelTimeout(this.searchMetaProductOverviewPriorityCandidates(intent), 'product_fast_meta_overview_priority', [], timedOutChannels)
+            ? this.withRetrievalChannelTimeout(this.searchMetaProductOverviewPriorityCandidates(intent), 'product_fast_meta_overview_priority', [], timedOutChannels, channelTimings)
             : Promise.resolve([]),
           usesMetaAppInstallPriority
-            ? this.withRetrievalChannelTimeout(this.searchMetaAppInstallPriorityCandidates(intent), 'product_fast_meta_app_priority', [], timedOutChannels)
+            ? this.withRetrievalChannelTimeout(this.searchMetaAppInstallPriorityCandidates(intent), 'product_fast_meta_app_priority', [], timedOutChannels, channelTimings)
             : Promise.resolve([]),
           usesKakaoProductPriority
-            ? this.withRetrievalChannelTimeout(this.searchKakaoProductStructurePriorityCandidates(intent), 'product_fast_kakao_priority', [], timedOutChannels)
+            ? this.withRetrievalChannelTimeout(this.searchKakaoProductStructurePriorityCandidates(intent), 'product_fast_kakao_priority', [], timedOutChannels, channelTimings)
             : Promise.resolve([]),
-          this.withRetrievalChannelTimeout(this.searchEvidenceGraphCandidates(query, candidateLimit, intent), 'product_fast_graph', [], timedOutChannels)
+          this.withRetrievalChannelTimeout(this.searchEvidenceGraphCandidates(query, candidateLimit, intent), 'product_fast_graph', [], timedOutChannels, channelTimings)
         ]);
 
         console.log(`📊 Product structure fast 후보 수집 결과: keyword=${keywordCandidates.length}, vendorCoverage=${vendorCoverageCandidates.length}, productStructure=${productStructureCandidates.length}, naverPriority=${naverPriorityCandidates.length}, metaOverviewPriority=${metaProductOverviewPriorityCandidates.length}, metaAppInstallPriority=${metaAppInstallPriorityCandidates.length}, kakaoProductPriority=${kakaoProductPriorityCandidates.length}, graph=${graphCandidates.length}`);
@@ -850,7 +895,7 @@ export class RAGSearchService {
         );
 
         console.log(`✅ 상품 구조 검색 완료: ${rankedResults.length}개 결과 (fast keyword/anchor path)`);
-        return this.withRetrievalTimeoutMetadata(rankedResults, timedOutChannels);
+        return this.withRetrievalTimeoutMetadata(rankedResults, timedOutChannels, channelTimings);
       }
 
       // 질문을 임베딩으로 변환
@@ -869,27 +914,27 @@ export class RAGSearchService {
         kakaoProductPriorityCandidates,
         graphCandidates
       ] = await Promise.all([
-        this.withRetrievalChannelTimeout(this.searchVectorCandidates(queryEmbedding, candidateLimit, intent), 'hybrid_vector', [], timedOutChannels),
-        this.withRetrievalChannelTimeout(this.searchKeywordCandidates(query, candidateLimit, intent), 'hybrid_keyword', [], timedOutChannels),
+        this.withRetrievalChannelTimeout(this.searchVectorCandidates(queryEmbedding, candidateLimit, intent), 'hybrid_vector', [], timedOutChannels, channelTimings),
+        this.withRetrievalChannelTimeout(this.searchKeywordCandidates(query, candidateLimit, intent), 'hybrid_keyword', [], timedOutChannels, channelTimings),
         usesSpecificProductRetrieval
-          ? this.withRetrievalChannelTimeout(this.searchVendorCoverageCandidates(query, Math.max(limit, 8), intent), 'hybrid_vendor_coverage_specific', [], timedOutChannels)
-          : this.withRetrievalChannelTimeout(this.searchVendorCoverageCandidates(query, candidateLimit, intent), 'hybrid_vendor_coverage', [], timedOutChannels),
+          ? this.withRetrievalChannelTimeout(this.searchVendorCoverageCandidates(query, Math.max(limit, 8), intent), 'hybrid_vendor_coverage_specific', [], timedOutChannels, channelTimings)
+          : this.withRetrievalChannelTimeout(this.searchVendorCoverageCandidates(query, candidateLimit, intent), 'hybrid_vendor_coverage', [], timedOutChannels, channelTimings),
         usesPrioritySpecificProductRetrieval
           ? Promise.resolve([])
-          : this.withRetrievalChannelTimeout(this.searchProductStructureCandidates(candidateLimit, intent), 'hybrid_product_structure_anchor', [], timedOutChannels),
+          : this.withRetrievalChannelTimeout(this.searchProductStructureCandidates(candidateLimit, intent), 'hybrid_product_structure_anchor', [], timedOutChannels, channelTimings),
         usesNaverShoppingDataPriority
-          ? this.withRetrievalChannelTimeout(this.searchNaverProductStructurePriorityCandidates(intent), 'hybrid_naver_priority', [], timedOutChannels)
+          ? this.withRetrievalChannelTimeout(this.searchNaverProductStructurePriorityCandidates(intent), 'hybrid_naver_priority', [], timedOutChannels, channelTimings)
           : Promise.resolve([]),
         usesMetaProductOverviewPriority
-          ? this.withRetrievalChannelTimeout(this.searchMetaProductOverviewPriorityCandidates(intent), 'hybrid_meta_overview_priority', [], timedOutChannels)
+          ? this.withRetrievalChannelTimeout(this.searchMetaProductOverviewPriorityCandidates(intent), 'hybrid_meta_overview_priority', [], timedOutChannels, channelTimings)
           : Promise.resolve([]),
         usesMetaAppInstallPriority
-          ? this.withRetrievalChannelTimeout(this.searchMetaAppInstallPriorityCandidates(intent), 'hybrid_meta_app_priority', [], timedOutChannels)
+          ? this.withRetrievalChannelTimeout(this.searchMetaAppInstallPriorityCandidates(intent), 'hybrid_meta_app_priority', [], timedOutChannels, channelTimings)
           : Promise.resolve([]),
         usesKakaoProductPriority
-          ? this.withRetrievalChannelTimeout(this.searchKakaoProductStructurePriorityCandidates(intent), 'hybrid_kakao_priority', [], timedOutChannels)
+          ? this.withRetrievalChannelTimeout(this.searchKakaoProductStructurePriorityCandidates(intent), 'hybrid_kakao_priority', [], timedOutChannels, channelTimings)
           : Promise.resolve([]),
-        this.withRetrievalChannelTimeout(this.searchEvidenceGraphCandidates(query, candidateLimit, intent), 'hybrid_graph', [], timedOutChannels)
+        this.withRetrievalChannelTimeout(this.searchEvidenceGraphCandidates(query, candidateLimit, intent), 'hybrid_graph', [], timedOutChannels, channelTimings)
       ]);
 
       console.log(`📊 Hybrid 후보 수집 결과: vector=${vectorCandidates.length}, keyword=${keywordCandidates.length}, vendorCoverage=${vendorCoverageCandidates.length}, productStructure=${productStructureCandidates.length}, naverPriority=${naverPriorityCandidates.length}, metaOverviewPriority=${metaProductOverviewPriorityCandidates.length}, metaAppInstallPriority=${metaAppInstallPriorityCandidates.length}, kakaoProductPriority=${kakaoProductPriorityCandidates.length}, graph=${graphCandidates.length}`);
@@ -934,7 +979,7 @@ export class RAGSearchService {
       }
 
       console.log(`✅ 검색 완료: ${rankedResults.length}개 결과 (임계값: ${similarityThreshold})`);
-      return this.withRetrievalTimeoutMetadata(rankedResults, timedOutChannels);
+      return this.withRetrievalTimeoutMetadata(rankedResults, timedOutChannels, channelTimings);
 
     } catch (error) {
       console.error('RAG search failed', {
@@ -948,18 +993,27 @@ export class RAGSearchService {
   private withRetrievalTimeoutMetadata(
     results: SearchResult[],
     timedOutChannels: string[],
+    channelTimings: RetrievalChannelTiming[] = [],
   ): SearchResult[] {
     const channels = Array.from(new Set(timedOutChannels));
-    if (channels.length === 0) return results;
+    if (channels.length === 0 && channelTimings.length === 0) return results;
 
-    Object.defineProperty(results, '__compassRetrievalTimedOut', {
-      value: true,
-      enumerable: false,
-    });
-    Object.defineProperty(results, '__compassTimedOutChannels', {
-      value: channels,
-      enumerable: false,
-    });
+    if (channels.length > 0) {
+      Object.defineProperty(results, '__compassRetrievalTimedOut', {
+        value: true,
+        enumerable: false,
+      });
+      Object.defineProperty(results, '__compassTimedOutChannels', {
+        value: channels,
+        enumerable: false,
+      });
+    }
+    if (channelTimings.length > 0) {
+      Object.defineProperty(results, '__compassRetrievalChannelTimings', {
+        value: channelTimings,
+        enumerable: false,
+      });
+    }
     return results;
   }
 
@@ -1389,7 +1443,7 @@ export class RAGSearchService {
     ];
     const priorityAnchors = usesShoppingDataIntent
       ? Array.from(new Set(shoppingDataAnchors))
-      : anchors.slice(0, intent.isSpecificProductGuidance ? 18 : 22);
+      : anchors.slice(0, intent.isSpecificProductGuidance ? 12 : 8);
     const results: Array<{ row: any; corpus: RetrievalCorpus; anchor: string }> = [];
     if (usesShoppingDataIntent) {
       const [documentKeywordResults, ollamaKeywordResults, ollamaMetadataResults] = await Promise.all([
@@ -1403,14 +1457,16 @@ export class RAGSearchService {
         ...ollamaMetadataResults.map((result) => ({ ...result, anchor: 'naver_shopping_data_metadata' })),
       );
     } else {
-      for (const anchor of priorityAnchors) {
-        const [documentChunkResults, ollamaResults] = await Promise.all([
-          this.searchProductStructureAnchorTable('document_chunks', anchor, 4, undefined, intent),
-          this.searchProductStructureAnchorTable('ollama_document_chunks', anchor, 3, 'NAVER', intent),
-        ]);
-        results.push(...documentChunkResults, ...ollamaResults);
-        if (results.length >= 48) break;
-      }
+      const [documentKeywordResults, ollamaKeywordResults, ollamaMetadataResults] = await Promise.all([
+        this.searchKeywordTable('document_chunks', priorityAnchors, 14, intent, 'NAVER'),
+        this.searchKeywordTable('ollama_document_chunks', priorityAnchors, 12, intent, 'NAVER'),
+        this.searchVendorMetadataTable('ollama_document_chunks', 'NAVER', priorityAnchors, 8, intent),
+      ]);
+      results.push(
+        ...documentKeywordResults.map((result) => ({ ...result, anchor: 'naver_product_structure_priority_keyword' })),
+        ...ollamaKeywordResults.map((result) => ({ ...result, anchor: 'naver_product_structure_priority_keyword' })),
+        ...ollamaMetadataResults.map((result) => ({ ...result, anchor: 'naver_product_structure_priority_metadata' })),
+      );
     }
 
     return results
@@ -1611,10 +1667,6 @@ export class RAGSearchService {
       '캠페인 목표',
       '광고 관리자 목표',
       '마케팅 목표',
-      '인지도',
-      '트래픽',
-      '참여',
-      '잠재 고객',
       '앱 홍보',
       '판매',
       'Advantage+',
@@ -1623,18 +1675,11 @@ export class RAGSearchService {
       'catalog',
       'Meta Pixel',
       '메타 픽셀',
-      '픽셀 이벤트',
       'Conversions API',
       '노출 위치',
       '게재 위치',
       'placements',
-      '이미지 광고',
-      '동영상 광고',
-      '슬라이드 광고',
       '컬렉션 광고',
-      '릴스',
-      '스토리',
-      '피드',
       'Lead Ads',
       '잠재고객 광고',
     ];
@@ -1645,26 +1690,32 @@ export class RAGSearchService {
     ]));
 
     const results: Array<{ row: any; corpus: RetrievalCorpus; anchor: string }> = [];
-    for (const anchor of anchors) {
-      const [documentChunkResults, ollamaResults] = await Promise.all([
-        this.searchProductStructureAnchorTable('document_chunks', anchor, 4, undefined, intent),
-        this.searchProductStructureAnchorTable('ollama_document_chunks', anchor, 4, 'META', intent),
-      ]);
-      results.push(...documentChunkResults, ...ollamaResults);
-      if (results.length >= 56) break;
-    }
-
-    const vendorMetadataResults = await this.searchVendorMetadataTable(
-      'ollama_document_chunks',
-      'META',
-      anchors,
-      12,
-      intent,
+    const priorityAnchors = anchors.slice(0, 14);
+    const [documentKeywordResults, ollamaKeywordResults, vendorMetadataResults] = await Promise.all([
+      this.searchKeywordTable('document_chunks', priorityAnchors, 14, intent, 'META'),
+      this.searchKeywordTable('ollama_document_chunks', priorityAnchors, 14, intent, 'META'),
+      this.searchVendorMetadataTable(
+        'ollama_document_chunks',
+        'META',
+        priorityAnchors,
+        8,
+        intent,
+      ),
+    ]);
+    results.push(
+      ...documentKeywordResults.map(result => ({
+        ...result,
+        anchor: 'meta_product_overview_keyword',
+      })),
+      ...ollamaKeywordResults.map(result => ({
+        ...result,
+        anchor: 'meta_product_overview_keyword',
+      })),
+      ...vendorMetadataResults.map(result => ({
+        ...result,
+        anchor: 'meta_vendor_metadata',
+      })),
     );
-    results.push(...vendorMetadataResults.map(result => ({
-      ...result,
-      anchor: 'meta_vendor_metadata',
-    })));
 
     return results
       .map((result) => {

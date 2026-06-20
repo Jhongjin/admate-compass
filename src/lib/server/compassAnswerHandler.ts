@@ -6,6 +6,7 @@ import {
   RAGSearchService,
   type EvidenceDecision,
   type QueryIntent,
+  type RetrievalChannelTiming,
   type VendorIntent,
 } from '@/lib/services/RAGSearchService';
 import { generateCompassAnswer, type CompassGroundingSource } from '@/lib/services/CompassAnswerLlmService';
@@ -35,10 +36,14 @@ type CompassAnswerResponseCacheEntry = {
   expiresAt: number;
 };
 
+export type CompassAnswerCacheStatus = 'HIT' | 'MISS' | 'BYPASS';
+
 type CompassRetrievalResult = {
   results: SearchResult[];
   timedOut: boolean;
   channelTimedOut: boolean;
+  channelTimings: RetrievalChannelTiming[];
+  durationMs: number;
 };
 
 type CompassReviewPipelineStatus = 'completed' | 'limited' | 'blocked' | 'error';
@@ -103,6 +108,133 @@ const COMPASS_ANSWER_RESPONSE_CACHE_TTL_MS = Math.min(
 );
 const COMPASS_ANSWER_RESPONSE_CACHE_MAX_ENTRIES = 64;
 const compassAnswerResponseCache = new Map<string, CompassAnswerResponseCacheEntry>();
+const compassAnswerRuntimeMetrics = {
+  startedAt: Date.now(),
+  updatedAt: Date.now(),
+  cacheableRequestCount: 0,
+  cacheHitCount: 0,
+  cacheMissCount: 0,
+  bypassedRequestCount: 0,
+  completedRequestCount: 0,
+  errorResponseCount: 0,
+  noDataResponseCount: 0,
+  retrievalLimitedResponseCount: 0,
+  processingTimeTotalMs: 0,
+  processingTimeSampleCount: 0,
+  retrievalDurationTotalMs: 0,
+  retrievalDurationSampleCount: 0,
+  answerGenerationDurationTotalMs: 0,
+  answerGenerationDurationSampleCount: 0,
+  lastProcessingTimeMs: null as number | null,
+  lastRetrievalDurationMs: null as number | null,
+  lastAnswerGenerationDurationMs: null as number | null,
+  lastCacheStatus: 'BYPASS' as CompassAnswerCacheStatus,
+  lastSlowestChannel: null as Record<string, unknown> | null,
+};
+
+function toFiniteNumber(value: unknown): number | null {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? numeric : null;
+}
+
+function resolveAverage(total: number, count: number): number | null {
+  return count > 0 ? Math.round(total / count) : null;
+}
+
+function readCompassAnswerSourceDiagnostics(body: Record<string, unknown>): Record<string, any> {
+  const response = (body as any).response;
+  const diagnostics = response?.sourceDiagnostics;
+  return diagnostics && typeof diagnostics === 'object' ? diagnostics : {};
+}
+
+function recordCompassAnswerRuntimeResult(
+  result: CompassAnswerHandlerResult,
+  cacheStatus: CompassAnswerCacheStatus,
+): void {
+  const body = result.body;
+  const response = (body as any).response;
+  const sourceDiagnostics = readCompassAnswerSourceDiagnostics(body);
+  const processingTimeMs = toFiniteNumber((body as any).processingTime);
+  const retrievalDurationMs = toFiniteNumber(sourceDiagnostics.retrievalDurationMs);
+  const answerGenerationDurationMs = toFiniteNumber(sourceDiagnostics.answerGenerationDurationMs);
+
+  compassAnswerRuntimeMetrics.updatedAt = Date.now();
+  compassAnswerRuntimeMetrics.completedRequestCount += 1;
+  compassAnswerRuntimeMetrics.lastCacheStatus = cacheStatus;
+  if ((result.status || 200) >= 400 || response?.error === true) {
+    compassAnswerRuntimeMetrics.errorResponseCount += 1;
+  }
+  if (response?.noDataFound === true) {
+    compassAnswerRuntimeMetrics.noDataResponseCount += 1;
+  }
+  if (sourceDiagnostics.retrievalTimedOut === true || sourceDiagnostics.retrievalChannelTimedOut === true) {
+    compassAnswerRuntimeMetrics.retrievalLimitedResponseCount += 1;
+  }
+  if (processingTimeMs !== null) {
+    compassAnswerRuntimeMetrics.processingTimeTotalMs += processingTimeMs;
+    compassAnswerRuntimeMetrics.processingTimeSampleCount += 1;
+    compassAnswerRuntimeMetrics.lastProcessingTimeMs = processingTimeMs;
+  }
+  if (retrievalDurationMs !== null && cacheStatus !== 'HIT') {
+    compassAnswerRuntimeMetrics.retrievalDurationTotalMs += retrievalDurationMs;
+    compassAnswerRuntimeMetrics.retrievalDurationSampleCount += 1;
+    compassAnswerRuntimeMetrics.lastRetrievalDurationMs = retrievalDurationMs;
+  }
+  if (answerGenerationDurationMs !== null && cacheStatus !== 'HIT') {
+    compassAnswerRuntimeMetrics.answerGenerationDurationTotalMs += answerGenerationDurationMs;
+    compassAnswerRuntimeMetrics.answerGenerationDurationSampleCount += 1;
+    compassAnswerRuntimeMetrics.lastAnswerGenerationDurationMs = answerGenerationDurationMs;
+  }
+  if (sourceDiagnostics.retrievalSlowestChannel && typeof sourceDiagnostics.retrievalSlowestChannel === 'object') {
+    compassAnswerRuntimeMetrics.lastSlowestChannel = sourceDiagnostics.retrievalSlowestChannel;
+  }
+}
+
+export function getCompassAnswerRuntimeMetrics() {
+  const cacheableRequests = compassAnswerRuntimeMetrics.cacheableRequestCount;
+  return {
+    startedAt: new Date(compassAnswerRuntimeMetrics.startedAt).toISOString(),
+    updatedAt: new Date(compassAnswerRuntimeMetrics.updatedAt).toISOString(),
+    uptimeMs: Date.now() - compassAnswerRuntimeMetrics.startedAt,
+    completedRequestCount: compassAnswerRuntimeMetrics.completedRequestCount,
+    errorResponseCount: compassAnswerRuntimeMetrics.errorResponseCount,
+    noDataResponseCount: compassAnswerRuntimeMetrics.noDataResponseCount,
+    retrievalLimitedResponseCount: compassAnswerRuntimeMetrics.retrievalLimitedResponseCount,
+    cache: {
+      entries: compassAnswerResponseCache.size,
+      maxEntries: COMPASS_ANSWER_RESPONSE_CACHE_MAX_ENTRIES,
+      ttlMs: COMPASS_ANSWER_RESPONSE_CACHE_TTL_MS,
+      cacheableRequestCount: cacheableRequests,
+      hitCount: compassAnswerRuntimeMetrics.cacheHitCount,
+      missCount: compassAnswerRuntimeMetrics.cacheMissCount,
+      bypassedRequestCount: compassAnswerRuntimeMetrics.bypassedRequestCount,
+      hitRatio: cacheableRequests > 0
+        ? Number((compassAnswerRuntimeMetrics.cacheHitCount / cacheableRequests).toFixed(4))
+        : null,
+      lastStatus: compassAnswerRuntimeMetrics.lastCacheStatus,
+    },
+    durations: {
+      avgProcessingTimeMs: resolveAverage(
+        compassAnswerRuntimeMetrics.processingTimeTotalMs,
+        compassAnswerRuntimeMetrics.processingTimeSampleCount,
+      ),
+      avgRetrievalDurationMs: resolveAverage(
+        compassAnswerRuntimeMetrics.retrievalDurationTotalMs,
+        compassAnswerRuntimeMetrics.retrievalDurationSampleCount,
+      ),
+      avgAnswerGenerationDurationMs: resolveAverage(
+        compassAnswerRuntimeMetrics.answerGenerationDurationTotalMs,
+        compassAnswerRuntimeMetrics.answerGenerationDurationSampleCount,
+      ),
+      lastProcessingTimeMs: compassAnswerRuntimeMetrics.lastProcessingTimeMs,
+      lastRetrievalDurationMs: compassAnswerRuntimeMetrics.lastRetrievalDurationMs,
+      lastAnswerGenerationDurationMs: compassAnswerRuntimeMetrics.lastAnswerGenerationDurationMs,
+      retrievalSampleCount: compassAnswerRuntimeMetrics.retrievalDurationSampleCount,
+      answerGenerationSampleCount: compassAnswerRuntimeMetrics.answerGenerationDurationSampleCount,
+    },
+    lastSlowestChannel: compassAnswerRuntimeMetrics.lastSlowestChannel,
+  };
+}
 
 function normalizeCompassAnswerCacheMessage(message: unknown): string {
   return String(message || '')
@@ -178,6 +310,19 @@ function markCompassAnswerCacheHit(body: Record<string, unknown>, processingTime
   };
 }
 
+function markCompassAnswerCacheMiss(body: Record<string, unknown>): Record<string, unknown> {
+  const response = (body as any).response;
+  if (response && typeof response === 'object') {
+    response.sourceDiagnostics = {
+      ...(response.sourceDiagnostics && typeof response.sourceDiagnostics === 'object'
+        ? response.sourceDiagnostics
+        : {}),
+      responseCacheHit: false,
+    };
+  }
+  return body;
+}
+
 function getCompassRagSearchService(): RAGSearchService {
   if (!compassRagSearchService) {
     compassRagSearchService = new RAGSearchService();
@@ -235,7 +380,7 @@ async function searchWithCompassRAG(
     
     if (!hasCompassEvidenceStore()) {
       console.warn('Compass evidence store is unavailable');
-      return { results: [], timedOut: false, channelTimedOut: false };
+      return { results: [], timedOut: false, channelTimedOut: false, channelTimings: [], durationMs: Date.now() - startedAt };
     }
 
     const ragService = getCompassRagSearchService();
@@ -248,14 +393,30 @@ async function searchWithCompassRAG(
     );
     const searchResults = retrievalResult.value;
     const channelTimeoutMetadata = getCompassRetrievalChannelTimeoutMetadata(searchResults);
+    const retrievalDurationMs = Date.now() - startedAt;
+    const slowestChannel = channelTimeoutMetadata.timings.length > 0
+      ? channelTimeoutMetadata.timings.reduce((slowest, current) => (
+        current.durationMs > slowest.durationMs ? current : slowest
+      ))
+      : null;
     
     console.log('Compass evidence retrieval completed', {
       resultCount: searchResults.length,
-      durationMs: Date.now() - startedAt,
+      durationMs: retrievalDurationMs,
       limit,
       timedOut: retrievalResult.timedOut,
       channelTimedOut: channelTimeoutMetadata.timedOut,
       timedOutChannelCount: channelTimeoutMetadata.channels.length,
+      channelTimingCount: channelTimeoutMetadata.timings.length,
+      slowestChannel: slowestChannel
+        ? {
+          label: slowestChannel.label,
+          durationMs: slowestChannel.durationMs,
+          resultCount: slowestChannel.resultCount,
+          timedOut: slowestChannel.timedOut,
+          failed: slowestChannel.failed === true,
+        }
+        : null,
     });
     
     return {
@@ -287,13 +448,15 @@ async function searchWithCompassRAG(
       })),
       timedOut: retrievalResult.timedOut,
       channelTimedOut: channelTimeoutMetadata.timedOut,
+      channelTimings: channelTimeoutMetadata.timings,
+      durationMs: retrievalDurationMs,
     };
     
   } catch (error) {
     console.error('Compass evidence retrieval failed', {
       errorName: error instanceof Error ? error.name : 'UnknownError',
     });
-    return { results: [], timedOut: false, channelTimedOut: false };
+    return { results: [], timedOut: false, channelTimedOut: false, channelTimings: [], durationMs: 0 };
   }
 }
 
@@ -3378,18 +3541,47 @@ function dedupePublicProductSources(
   limit = sources.length,
 ) {
   const seen = new Set<string>();
+  const indexByKey = new Map<string, number>();
   const deduped: ReturnType<typeof buildVerifiedSources> = [];
 
   for (const source of sources) {
-    if (deduped.length >= limit) break;
     const publicKey = getProductStructurePublicSourceKey(source);
     const key = publicKey || getProductStructureSourceKey(source);
-    if (seen.has(key)) continue;
+    if (seen.has(key)) {
+      const existingIndex = indexByKey.get(key);
+      if (
+        existingIndex !== undefined
+        && shouldPreferProductStructureDedupeSource(source, deduped[existingIndex])
+      ) {
+        deduped[existingIndex] = source;
+      }
+      continue;
+    }
+    if (deduped.length >= limit) continue;
     seen.add(key);
+    indexByKey.set(key, deduped.length);
     deduped.push(source);
   }
 
   return deduped;
+}
+
+function shouldPreferProductStructureDedupeSource(
+  next: ReturnType<typeof buildVerifiedSources>[number],
+  existing: ReturnType<typeof buildVerifiedSources>[number],
+) {
+  const priority = (source: ReturnType<typeof buildVerifiedSources>[number]) => {
+    if (isOfficialGuideGraphSource(source)) return 3;
+    if (isGraphVerifiedSource(source)) return 2;
+    return 1;
+  };
+  const nextPriority = priority(next);
+  const existingPriority = priority(existing);
+  if (nextPriority !== existingPriority) return nextPriority > existingPriority;
+
+  const nextScore = Number(next.hybridScore || next.score || next.similarity || 0);
+  const existingScore = Number(existing.hybridScore || existing.score || existing.similarity || 0);
+  return nextScore > existingScore;
 }
 
 function refineSpecificProductAnswerSources(
@@ -4743,13 +4935,13 @@ const PRODUCT_STRUCTURE_SELECTION_TERMS = [
 
 function sourceMatchesVendor(source: ReturnType<typeof buildVerifiedSources>[number], vendor?: VendorIntent) {
   if (!vendor) return true;
-  if (hasExplicitOtherVendorSignal(source, vendor)) return false;
   if (explicitGraphSourceMatchesVendor(source, vendor)) return true;
+  if (hasExplicitOtherVendorSignal(source, vendor)) return false;
   if (source.sourceVendor === vendor || Boolean(source.sourceVendors?.includes(vendor))) return true;
 
   const text = getSourceText(source);
   const vendorTerms: Record<VendorIntent, RegExp> = {
-    META: /meta|facebook|페이스북|instagram|인스타그램|릴스|reels|advantage\+|어드밴티지|메타\s*픽셀/,
+    META: /meta|메타|facebook|페이스북|instagram|인스타그램|릴스|reels|advantage\+|어드밴티지|메타\s*픽셀/,
     KAKAO: /kakao|카카오|카카오톡|톡채널|비즈보드|모먼트|카카오\s*디스플레이|카카오모먼트/,
     NAVER: /naver|네이버|검색광고|쇼핑검색|파워링크|브랜드검색|쇼핑블록|쇼핑파트너센터|상품\s*db|db\s*url|가격비교|사이트검색광고|네이버\s*da|네이버da|홈피드\s*da|홈피드|스마트채널|타임보드|롤링보드|성과형\s*디스플레이|디지털\s*옥외광고/,
     GOOGLE: /google|구글|youtube|유튜브|gdn|google ads|구글\s*애즈|구글\s*광고/,
@@ -4800,7 +4992,7 @@ function hasExplicitOtherVendorSignal(source: ReturnType<typeof buildVerifiedSou
   ].filter(Boolean).join(' ').toLowerCase();
   const text = primaryIdentityText.trim() || getSourceText(source);
   const vendorTerms: Record<VendorIntent, RegExp> = {
-    META: /meta|facebook|페이스북|instagram|인스타그램|릴스|reels/,
+    META: /meta|메타|facebook|페이스북|instagram|인스타그램|릴스|reels/,
     KAKAO: /kakao|카카오|카카오톡|톡채널|비즈보드|모먼트/,
     NAVER: /naver|네이버|검색광고|쇼핑검색|파워링크|브랜드검색/,
     GOOGLE: /google|구글|youtube|유튜브|gdn|google ads|구글\s*애즈|구글\s*광고/,
@@ -6903,6 +7095,27 @@ export async function buildCompassAnswerResponse(
     const retrievalLimited = retrievalTimedOut || retrievalChannelTimedOut;
     const supplementResultCount = searchResultGroups.slice(1).flatMap(group => group.results).length;
     const rawSearchResultCount = searchResultGroups.flatMap(group => group.results).length;
+    const retrievalQueryTimings = searchResultGroups.map((group, queryIndex) => ({
+      queryIndex,
+      queryRole: queryIndex === 0 ? 'primary' : 'supplement',
+      durationMs: group.durationMs,
+      resultCount: group.results.length,
+      timedOut: group.timedOut,
+      channelTimedOut: group.channelTimedOut,
+      queryLength: searchQueries[queryIndex]?.length || 0,
+    }));
+    const retrievalChannelTimings = searchResultGroups.flatMap((group, queryIndex) =>
+      group.channelTimings.map((timing) => ({
+        ...timing,
+        queryIndex,
+        queryRole: queryIndex === 0 ? 'primary' : 'supplement',
+      })),
+    );
+    const retrievalSlowestChannel = retrievalChannelTimings.length > 0
+      ? retrievalChannelTimings.reduce((slowest, current) => (
+        current.durationMs > slowest.durationMs ? current : slowest
+      ))
+      : null;
     let searchResults = searchResultGroups.flatMap(group => group.results);
 
     if (supplementQueries.length > 0) {
@@ -6922,6 +7135,16 @@ export async function buildCompassAnswerResponse(
       selectedSupplementQueryCount: selectedSupplementQueries.length,
       rawResultCount: rawSearchResultCount,
       mergedResultCount: searchResults.length,
+      slowestChannel: retrievalSlowestChannel
+        ? {
+          queryRole: retrievalSlowestChannel.queryRole,
+          label: retrievalSlowestChannel.label,
+          durationMs: retrievalSlowestChannel.durationMs,
+          resultCount: retrievalSlowestChannel.resultCount,
+          timedOut: retrievalSlowestChannel.timedOut,
+          failed: retrievalSlowestChannel.failed === true,
+        }
+        : null,
     });
     const verifiedSearchResults = searchResults.filter(isVerifiedGrounding);
     const verifiedResultKeys = new Set(verifiedSearchResults.map(result => getResultIdentityKey(result)));
@@ -6940,6 +7163,9 @@ export async function buildCompassAnswerResponse(
       searchQueryCount: searchQueries.length,
       selectedSupplementQueryCount: selectedSupplementQueries.length,
       supplementResultCount,
+      retrievalQueryTimings,
+      retrievalChannelTimings,
+      retrievalSlowestChannel,
     };
     emitPhase?.({
       phase: 'evidence-ready',
@@ -7608,32 +7834,52 @@ export async function buildCompassAnswerResponse(
   }
 }
 
+export async function buildCompassAnswerResponseWithRuntimeCache(
+  request: NextRequest,
+  emitPhase?: CompassAnswerPhaseEmitter,
+): Promise<{ result: CompassAnswerHandlerResult; cacheStatus: CompassAnswerCacheStatus }> {
+  const requestStartedAt = Date.now();
+  const cacheKey = await resolveCompassAnswerRequestCacheKey(request);
+  if (!cacheKey) {
+    compassAnswerRuntimeMetrics.bypassedRequestCount += 1;
+    const result = await buildCompassAnswerResponse(request, emitPhase);
+    recordCompassAnswerRuntimeResult(result, 'BYPASS');
+    return { result, cacheStatus: 'BYPASS' };
+  }
+
+  compassAnswerRuntimeMetrics.cacheableRequestCount += 1;
+  const cachedBody = getCachedCompassAnswerResponse(cacheKey);
+  if (cachedBody) {
+    compassAnswerRuntimeMetrics.cacheHitCount += 1;
+    const result = {
+      body: markCompassAnswerCacheHit(cachedBody, Date.now() - requestStartedAt),
+      status: 200,
+    };
+    recordCompassAnswerRuntimeResult(result, 'HIT');
+    return { result, cacheStatus: 'HIT' };
+  }
+
+  compassAnswerRuntimeMetrics.cacheMissCount += 1;
+  const result = await buildCompassAnswerResponse(request, emitPhase);
+  markCompassAnswerCacheMiss(result.body);
+  rememberCompassAnswerResponse(cacheKey, result);
+  recordCompassAnswerRuntimeResult(result, 'MISS');
+  return { result, cacheStatus: 'MISS' };
+}
+
 /**
  * Compass answer API handler.
  */
 export async function POST(request: NextRequest) {
-  const requestStartedAt = Date.now();
-  const cacheKey = await resolveCompassAnswerRequestCacheKey(request);
-  if (cacheKey) {
-    const cachedBody = getCachedCompassAnswerResponse(cacheKey);
-    if (cachedBody) {
-      return NextResponse.json(
-        markCompassAnswerCacheHit(cachedBody, Date.now() - requestStartedAt),
-        {
-          status: 200,
-          headers: { 'x-compass-answer-cache': 'HIT' },
-        },
-      );
-    }
-  }
-
-  const result = await buildCompassAnswerResponse(request);
-  if (cacheKey) {
-    rememberCompassAnswerResponse(cacheKey, result);
-  }
+  const { result, cacheStatus } = await buildCompassAnswerResponseWithRuntimeCache(request);
+  const cacheHeaders = cacheStatus === 'HIT'
+    ? { 'x-compass-answer-cache': 'HIT' }
+    : cacheStatus === 'MISS'
+      ? { 'x-compass-answer-cache': 'MISS' }
+      : undefined;
 
   return NextResponse.json(result.body, {
     status: result.status || 200,
-    headers: cacheKey ? { 'x-compass-answer-cache': 'MISS' } : undefined,
+    headers: cacheHeaders,
   });
 }

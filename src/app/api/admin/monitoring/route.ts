@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createCompassServiceClient } from '@/lib/supabase/compass';
+import { guardCompassProductAdminSessionRoute } from '@/lib/adminProductSessionGuard';
+import { getCompassAnswerRuntimeMetrics } from '@/lib/server/compassAnswerHandler';
 
 // 환경 변수 확인 및 조건부 클라이언트 생성
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -80,10 +82,14 @@ export interface MonitoringData {
     requestsPerMinute: number;
     errorRate: number;
     uptime: number;
+    answerRuntime: ReturnType<typeof getCompassAnswerRuntimeMetrics>;
   };
 }
 
 export async function GET(request: NextRequest) {
+    const sessionGuard = guardCompassProductAdminSessionRoute(request);
+    if (sessionGuard) return sessionGuard;
+
     // Supabase 클라이언트 확인
     if (!supabase) {
       return NextResponse.json(
@@ -320,7 +326,8 @@ async function getPerformanceStats() {
     avgResponseTime: Math.random() * 100 + 50, // 50-150ms
     requestsPerMinute: Math.floor(Math.random() * 100) + 50, // 50-150
     errorRate: Math.random() * 2, // 0-2%
-    uptime: Math.floor(Math.random() * 86400) + 3600 // 1-24시간 (초)
+    uptime: Math.floor(Math.random() * 86400) + 3600, // 1-24시간 (초)
+    answerRuntime: getCompassAnswerRuntimeMetrics()
   };
 }
 

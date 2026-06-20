@@ -510,6 +510,26 @@ export class CompassEvidenceGraphService {
       ...intent.adPolicyTerms,
       ...intent.vendors.flatMap((vendor) => this.vendorTerms(vendor)),
     ];
+    if (intent.topics.includes('product_structure') || intent.isProductStructureOverview) {
+      rawTerms.push(
+        '캠페인 목표',
+        '광고 관리자 목표',
+        '광고 형식',
+        '노출 위치',
+        '게재 위치',
+        '카탈로그',
+        '픽셀',
+        '전환',
+        '리드',
+        '앱 홍보',
+        'campaign objective',
+        'ad format',
+        'placement',
+        'catalog',
+        'lead',
+        'app promotion',
+      );
+    }
 
     const cleanedTerms = rawTerms
       .map((term) => this.cleanTerm(term))
@@ -559,6 +579,10 @@ export class CompassEvidenceGraphService {
 
     if (intent.isSpecificProductGuidance) {
       return hasSpecificDetailOverlap || (hasMeaningfulProductOverlap && hasProductSignal);
+    }
+
+    if (intent.isProductStructureOverview && intent.vendors.length > 0 && hasGraphTopicMatch) {
+      return true;
     }
 
     return hasProductSignal || (hasGraphTopicMatch && hasMeaningfulProductOverlap) || hasMeaningfulProductOverlap;

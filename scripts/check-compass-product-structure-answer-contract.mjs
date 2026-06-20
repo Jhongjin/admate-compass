@@ -44,8 +44,11 @@ for (const snippet of [
   'searchProductStructureAnchorTable',
   'isMetaOverviewPolicyNoiseText',
   'getCompassRetrievalChannelTimeoutMetadata',
+  'RetrievalChannelTiming',
   '__compassRetrievalTimedOut',
+  '__compassRetrievalChannelTimings',
   'timedOutChannels?.push(label)',
+  'channelTimings?.push',
   'withRetrievalTimeoutMetadata',
   'selectSupabaseKeywordSearchTerms',
   'getKeywordTableFetchLimit',
@@ -53,6 +56,8 @@ for (const snippet of [
   'getProductStructureAnchorFetchLimit',
   'usesVendorProductStructurePriority',
   'kakao_product_priority_keyword',
+  'naver_product_structure_priority_keyword',
+  'meta_product_overview_keyword',
   'mergeDuplicateCandidate',
   'evidenceDecisionReason',
   'Product structure fast 후보 수집 결과',
@@ -722,6 +727,22 @@ if (!/const retrievalTimedOut = searchResultGroups\.some\(group => group\.timedO
 
 if (!/const channelTimeoutMetadata = getCompassRetrievalChannelTimeoutMetadata\(searchResults\)[\s\S]*channelTimedOut: channelTimeoutMetadata\.timedOut/.test(answerHandler)) {
   fail('Compass answer handler must preserve per-channel retrieval timeout metadata');
+}
+
+if (!/type CompassRetrievalResult = \{[\s\S]*channelTimings: RetrievalChannelTiming\[\];[\s\S]*durationMs: number;[\s\S]*\}/.test(answerHandler)) {
+  fail('Compass answer retrieval must carry per-channel timing metadata alongside search results');
+}
+
+if (!/retrievalChannelTimings = searchResultGroups\.flatMap/.test(answerHandler)) {
+  fail('Compass answer handler must aggregate per-query retrieval channel timings');
+}
+
+if (!/retrievalSlowestChannel = retrievalChannelTimings\.length > 0/.test(answerHandler)) {
+  fail('Compass answer handler must expose the slowest retrieval channel for tuning');
+}
+
+if (!/retrievalQueryTimings,[\s\S]*retrievalChannelTimings,[\s\S]*retrievalSlowestChannel/.test(answerHandler)) {
+  fail('Compass source diagnostics must expose retrieval query and channel timing metrics');
 }
 
 if (!/const retrievalLimited = retrievalTimedOut \|\| retrievalChannelTimedOut/.test(answerHandler)) {

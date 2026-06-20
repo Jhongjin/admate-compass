@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createCompassServiceClient } from '@/lib/supabase/compass';
 import { getCompassAnswerRuntimeStatus } from '@/lib/services/CompassAnswerLlmService';
 import { resolveOllamaEndpoint } from '@/lib/services/ollamaEndpoint';
+import { getCompassAnswerRuntimeMetrics } from '@/lib/server/compassAnswerHandler';
 
 export async function GET(request: NextRequest) {
   const startTime = Date.now();
@@ -72,6 +73,24 @@ export async function GET(request: NextRequest) {
           reachable: false
         };
       }
+    }
+
+    try {
+      const answerMetrics = getCompassAnswerRuntimeMetrics();
+      health.services.compassAnswer = {
+        status: 'healthy',
+        completedRequestCount: answerMetrics.completedRequestCount,
+        cacheHitRatio: answerMetrics.cache.hitRatio,
+        cacheEntries: answerMetrics.cache.entries,
+        avgRetrievalDurationMs: answerMetrics.durations.avgRetrievalDurationMs,
+        avgAnswerGenerationDurationMs: answerMetrics.durations.avgAnswerGenerationDurationMs,
+        retrievalSampleCount: answerMetrics.durations.retrievalSampleCount,
+        answerGenerationSampleCount: answerMetrics.durations.answerGenerationSampleCount,
+      };
+    } catch {
+      health.services.compassAnswer = {
+        status: 'unhealthy',
+      };
     }
 
     // Supabase 연결 확인

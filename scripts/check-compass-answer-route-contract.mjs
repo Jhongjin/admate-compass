@@ -81,8 +81,13 @@ for (const requiredText of [
   "'compass-answer-grounded-product-structure-llm'",
   "'compass-answer'",
   'resolveCompassAnswerRequestCacheKey',
+  'buildCompassAnswerResponseWithRuntimeCache',
+  'getCompassAnswerRuntimeMetrics',
+  'recordCompassAnswerRuntimeResult',
+  'lastSlowestChannel',
   'conversationHistory',
   'responseCacheHit: true',
+  'responseCacheHit: false',
   "'x-compass-answer-cache': 'HIT'",
 ]) {
   if (!answerHandlerText.includes(requiredText)) fail(`neutral answer handler missing ${requiredText}`)

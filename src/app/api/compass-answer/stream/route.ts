@@ -1,5 +1,5 @@
 import { NextRequest } from 'next/server';
-import { buildCompassAnswerResponse, type CompassAnswerPhaseEmitter } from '@/lib/server/compassAnswerHandler';
+import { buildCompassAnswerResponseWithRuntimeCache, type CompassAnswerPhaseEmitter } from '@/lib/server/compassAnswerHandler';
 
 export const dynamic = 'force-dynamic';
 
@@ -56,7 +56,7 @@ export async function POST(request: NextRequest) {
       };
 
       try {
-        const result = await buildCompassAnswerResponse(request, (event) => {
+        const { result } = await buildCompassAnswerResponseWithRuntimeCache(request, (event) => {
           send({ type: 'phase', ...event });
         });
 
