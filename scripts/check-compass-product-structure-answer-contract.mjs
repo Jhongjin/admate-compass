@@ -812,6 +812,10 @@ if (!/getProductStructureAnchorFetchLimit[\s\S]*Math\.min\(Math\.max\(limit \* 3
   fail('broad product fast path anchor search must keep Supabase fetches small');
 }
 
+if (/search(?:ProductStructureAnchorTable|VendorMetadataTable|KeywordTable)[\s\S]{0,900}content, metadata, embedding/.test(rag)) {
+  fail('keyword/anchor product retrieval must not fetch embedding payloads when query embeddings are not used');
+}
+
 if (!/usesBroadProductStructureRetrieval[\s\S]*anchorVendors[\s\S]*\? \[intent\.vendors\[0\]\][\s\S]*anchorTerms[\s\S]*usesBroadProductStructureRetrieval \? 6 : 14/.test(rag)) {
   fail('broad product fast path anchor search must stay vendor-scoped with fewer generic anchors');
 }

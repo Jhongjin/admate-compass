@@ -3124,7 +3124,7 @@ export class RAGSearchService {
   ): Promise<Array<{ row: any; corpus: RetrievalCorpus; anchor: string }>> {
     try {
       const selectColumns = tableName === 'ollama_document_chunks'
-        ? 'chunk_id, document_id, content, metadata, embedding'
+        ? 'chunk_id, document_id, content, metadata'
         : 'id, document_id, chunk_id, content, metadata';
 
       let query = this.supabase
@@ -3176,7 +3176,7 @@ export class RAGSearchService {
   ): Promise<Array<{ row: any; corpus: RetrievalCorpus }>> {
     try {
       const selectColumns = tableName === 'ollama_document_chunks'
-        ? 'chunk_id, document_id, content, metadata, embedding'
+        ? 'chunk_id, document_id, content, metadata'
         : 'id, document_id, chunk_id, content, metadata';
       const searchTerms = this.selectSupabaseKeywordSearchTerms(keywords, intent, vendor);
       if (searchTerms.length === 0) return [];
@@ -3227,7 +3227,7 @@ export class RAGSearchService {
   ): Promise<Array<{ row: any; corpus: RetrievalCorpus }>> {
     try {
       const selectColumns = tableName === 'ollama_document_chunks'
-        ? 'chunk_id, document_id, content, metadata, embedding'
+        ? 'chunk_id, document_id, content, metadata'
         : 'id, document_id, chunk_id, content, metadata';
       const searchTerms = this.selectSupabaseKeywordSearchTerms(keywords, intent, vendor);
       if (searchTerms.length === 0) return [];
