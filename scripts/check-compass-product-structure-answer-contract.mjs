@@ -565,7 +565,7 @@ if (!/sourceIdentityLooksLikeGenericLegalOrAccountDoc[\s\S]*청구\|결제\|지�
   fail('answer source routing must demote payment/account support documents such as 지불 for product-structure answers');
 }
 
-if (!/COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v2-product-source-filter'[\s\S]*`compass-answer:\$\{COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION\}:\$\{message\}`/.test(answerHandler)) {
+if (!/COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v3-meta-news-source-filter'[\s\S]*`compass-answer:\$\{COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION\}:\$\{message\}`/.test(answerHandler)) {
   fail('answer response cache key must be versioned so stale durable cached answers are bypassed after source-quality fixes');
 }
 
@@ -575,6 +575,34 @@ if (answerHandler.includes('compass-answer:v1:${message}')) {
 
 if (!/sourceLooksLikeProductStructureSupportNoise[\s\S]*getSourceIdentityText\(source\)[\s\S]*세금\|tax\|vat\|청구\|결제\|지불[\s\S]*비즈쿠폰\|쿠폰[\s\S]*광고할\\s\*수\\s\*없는\\s\*경우[\s\S]*isUsableBroadProductStructureSource[\s\S]*sourceLooksLikeProductStructureSupportNoise\(source\)/.test(answerHandler)) {
   fail('broad product source selection must reject tax/coupon/support-noise documents before answer source selection');
+}
+
+if (!/sourceLooksLikeMetaBroadProductNewsNoise[\s\S]*facebook\\\.com\\\/business\\\/news[\s\S]*성과\\s\*증대[\s\S]*hasBroadOverviewStructure[\s\S]*isUsableBroadProductStructureSource[\s\S]*targetVendor === 'META' && sourceLooksLikeMetaBroadProductNewsNoise\(source\)/.test(answerHandler)) {
+  fail('Meta broad product source selection must reject business/news success-story sources before answer source selection');
+}
+
+const graphTitleBlock = extractBlock(
+  'answer graph product title signal',
+  answerHandler,
+  'function graphSourceHasAdProductTitle',
+  'function graphSourceLooksLikeBroadBusinessNewsTitle',
+);
+if (/광고\|ads\?\|ad\\s/.test(graphTitleBlock)) {
+  fail('graphSourceHasAdProductTitle must not treat bare 광고/ads/ad as product-structure title evidence');
+}
+
+if (!/selected\.length === 0[\s\S]*recoverableBroadSources[\s\S]*targetVendor === 'META' && sourceLooksLikeMetaBroadProductNewsNoise\(source\)[\s\S]*return null/.test(answerHandler)) {
+  fail('Meta broad product recoverable fallback must not reintroduce business/news success-story sources');
+}
+
+if (!/isMetaBroadProductNewsNoiseText[\s\S]*facebook\\\.com\\\/business\\\/news[\s\S]*성과\\s\*증대[\s\S]*hasMetaObjectiveProductStructureSignal/.test(rag)
+  || !/searchMetaProductOverviewPriorityCandidates[\s\S]*isMetaBroadProductNewsNoiseText\(sourceText\)[\s\S]*return null[\s\S]*queryWantsFormatPlacement[\s\S]*hasFormatPlacementSignal && !hasObjectiveSignal && !hasCommerceSignal && !queryWantsFormatPlacement[\s\S]*return null/.test(rag)
+) {
+  fail('Meta overview priority retrieval must reject business/news and format-only sources before boosting them');
+}
+
+if (!/calculateProductStructureGraphTitleAdjustment[\s\S]*hasMetaBusinessNewsUrl[\s\S]*meta_product_structure_news_url_penalty[\s\S]*isLowValueProductStructureGraphCandidate[\s\S]*intent\.vendors\[0\] === 'META'[\s\S]*isMetaBroadProductNewsNoiseText\(sourceText\)/.test(rag)) {
+  fail('Meta product-structure GraphRAG selection must penalize and reject weak business/news graph sources');
 }
 
 if (!/const sourceGuidedBroadProductSources = answerSources\.filter[\s\S]*sourceLooksLikeProductStructureSupportNoise\(source\)[\s\S]*buildLlmFailureGroundedFallbackAnswer\([\s\S]*sourceGuidedBroadProductSources[\s\S]*sources: sourceGuidedBroadProductSources[\s\S]*answerSourceCount: sourceGuidedBroadProductSources\.length/.test(answerHandler)) {

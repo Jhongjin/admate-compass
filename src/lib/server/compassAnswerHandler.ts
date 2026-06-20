@@ -114,7 +114,7 @@ const COMPASS_ANSWER_RESPONSE_CACHE_TTL_MS = Math.min(
   900000,
 );
 const COMPASS_ANSWER_RESPONSE_CACHE_MAX_ENTRIES = 64;
-const COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v2-product-source-filter';
+const COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v3-meta-news-source-filter';
 const compassAnswerResponseCache = new Map<string, CompassAnswerResponseCacheEntry>();
 const compassAnswerRuntimeMetrics = {
   startedAt: Date.now(),
@@ -5030,12 +5030,12 @@ function isLowValueProductStructureGraphSource(source: ReturnType<typeof buildVe
 
 function graphSourceHasAdProductTitle(source: ReturnType<typeof buildVerifiedSources>[number]) {
   const title = normalizeEvidenceText(source.title || '');
-  return /광고|ads?|ad\s|campaign|캠페인|instagram\s*광고|threads\s*광고|앱\s*광고|게재\s*위치|노출\s*위치|광고\s*관리자|상품\s*가이드|상품가이드|audience\s*network|messenger/.test(title);
+  return /광고\s*(관리자|상품|종류|유형|구조|목표|목적|가이드|사양)|캠페인\s*(목표|유형|목적)|campaign\s*objective|objectives?|instagram\s*광고\s*(가이드|관리자|상품|사양)|threads\s*광고\s*(가이드|관리자|상품|사양)|앱\s*(광고|캠페인|홍보)|게재\s*위치|노출\s*위치|advantage\+|어드밴티지|카탈로그|catalog|컬렉션\s*광고|리드\s*양식|lead\s*ads?|상품\s*가이드|상품가이드|audience\s*network|messenger/.test(title);
 }
 
 function graphSourceLooksLikeBroadBusinessNewsTitle(source: ReturnType<typeof buildVerifiedSources>[number]) {
   const title = normalizeEvidenceText(source.title || '');
-  return /뉴스|합류|혁신|spotlight|creator\s*method|cyber\s*5|성공\s*전략|트렌드|협업|크리에이터|manus/.test(title);
+  return /뉴스|합류|혁신|spotlight|creator\s*method|cyber\s*5|성공\s*전략|트렌드|협업|크리에이터|manus|성과\s*증대|도입\s*1주년|게이밍\s*광고주/.test(title);
 }
 
 function scoreProductStructureGraphSource(source: ReturnType<typeof buildVerifiedSources>[number], targetVendor?: VendorIntent) {
@@ -5599,12 +5599,32 @@ function sourceLooksLikeProductStructureSupportNoise(source: ReturnType<typeof b
   return !/상품\s*db|상품db|db\s*url|dburl|ep\s*\(=\s*db\s*url\)|쇼핑파트너센터|상품정보\s*수신|상품관리|가격비교|상품\s*등록|상품등록/.test(text);
 }
 
+function sourceLooksLikeMetaBroadProductNewsNoise(source: ReturnType<typeof buildVerifiedSources>[number]) {
+  if (!sourceMatchesVendor(source, 'META')) return false;
+
+  const identityText = normalizeEvidenceText(getSourceIdentityText(source));
+  const text = normalizeEvidenceText([
+    identityText,
+    getProductStructureVisibleSourceText(source),
+    getSourceText(source),
+  ].join(' '));
+  const isMetaNewsSource = /facebook\.com\/business\/news|\/business\/news|business\/news/.test(identityText)
+    || /도입\s*1주년|전\s*세계의\s*모든\s*사용자|성과\s*증대|게이밍\s*광고주|광고주의\s*성과|heroes\s*&?\s*dragons/i.test(text);
+  if (!isMetaNewsSource) return false;
+
+  const hasBroadOverviewStructure = /광고\s*관리자\s*목표|캠페인\s*(목표|목적|유형)|마케팅\s*목표|목표[\s\S]{0,120}(인지도|트래픽|참여|잠재\s*고객|앱\s*홍보|판매)|인지도[\s\S]{0,120}트래픽[\s\S]{0,120}참여[\s\S]{0,120}잠재\s*고객[\s\S]{0,120}앱\s*홍보[\s\S]{0,120}판매|광고\s*(상품|종류|유형|구조)|상품\s*구조|목적별|목표별|objective|objectives/i.test(text);
+  const looksLikeSingleNewsStory = /도입\s*1주년|전\s*세계의\s*모든\s*사용자|성과\s*증대|게이밍\s*광고주|광고주의\s*성과|heroes\s*&?\s*dragons|사용자\s*확보\s*투자/i.test(text);
+
+  return looksLikeSingleNewsStory || !hasBroadOverviewStructure;
+}
+
 function isUsableBroadProductStructureSource(
   source: ReturnType<typeof buildVerifiedSources>[number],
   targetVendor?: VendorIntent,
 ) {
   if (!sourceMatchesVendor(source, targetVendor)) return false;
   if (targetVendor && hasExplicitOtherVendorSignal(source, targetVendor)) return false;
+  if (targetVendor === 'META' && sourceLooksLikeMetaBroadProductNewsNoise(source)) return false;
   if (sourceIdentityLooksLikeGenericLegalOrAccountDoc(source)) return false;
   if (sourceLooksLikeProductStructureSupportNoise(source)) return false;
   if (isWeakProductStructureDisplaySource(source)) return false;
@@ -5701,6 +5721,8 @@ function selectProductStructureResponseSources(sources: ReturnType<typeof buildV
   if (selected.length === 0) {
     const recoverableBroadSources = labelledSources
       .map((source, index) => {
+        if (targetVendor === 'META' && sourceLooksLikeMetaBroadProductNewsNoise(source)) return null;
+
         const text = normalizeEvidenceText([
           getProductStructureVisibleSourceText(source),
           getSourceText(source),

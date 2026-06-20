@@ -2084,11 +2084,16 @@ export class RAGSearchService {
         const sourceText = this.buildCandidateEvidenceText(candidate.content, candidate.documentTitle, candidate.metadata);
         const normalizedSourceText = this.normalizeSearchText(sourceText);
         if (!this.hasMetaProductOverviewSignal(sourceText)) return null;
+        if (this.isMetaBroadProductNewsNoiseText(sourceText)) return null;
         if (this.isCreativeSpecOnlyText(normalizedSourceText)) return null;
 
         const hasObjectiveSignal = /캠페인\s*(목표|목적)|광고\s*관리자\s*목표|마케팅\s*목표|목표[\s\S]{0,120}(인지도|트래픽|참여|잠재\s*고객|앱\s*홍보|판매)|인지도[\s\S]{0,120}트래픽[\s\S]{0,120}참여[\s\S]{0,120}잠재\s*고객[\s\S]{0,120}앱\s*홍보[\s\S]{0,120}판매|objective|objectives/i.test(sourceText);
         const hasCommerceSignal = /advantage\+|어드밴티지|카탈로그|catalog|meta\s*pixel|메타\s*픽셀|픽셀\s*(이벤트|코드|설치|전환)|conversions?\s*api/i.test(sourceText);
         const hasFormatPlacementSignal = /노출\s*위치|게재\s*위치|placements|지면|이미지\s*광고|동영상\s*광고|슬라이드\s*광고|컬렉션\s*광고|릴스|스토리|피드|lead\s*ads|잠재고객\s*광고/i.test(sourceText);
+        const queryWantsFormatPlacement = /형식|소재|지면|노출\s*위치|게재\s*위치|placement|슬라이드|릴스|스토리|피드/i.test(intent.keywords.join(' '));
+        if (hasFormatPlacementSignal && !hasObjectiveSignal && !hasCommerceSignal && !queryWantsFormatPlacement) {
+          return null;
+        }
         if (this.isMetaOverviewPolicyNoiseText(normalizedSourceText) && !hasObjectiveSignal && !hasCommerceSignal && !hasFormatPlacementSignal) {
           return null;
         }
@@ -4234,10 +4239,12 @@ export class RAGSearchService {
     const contentText = this.normalizeSearchText(content);
     const reasons: string[] = [];
     let adjustment = 0;
-    const hasAdProductTitle = /광고|ads?|ad\s|campaign|캠페인|instagram\s*광고|threads\s*광고|앱\s*광고|게재\s*위치|노출\s*위치|광고\s*관리자|상품\s*가이드|상품가이드/.test(titleText);
+    const hasAdProductTitle = /광고\s*(관리자|상품|종류|유형|구조|목표|목적|가이드|사양)|캠페인\s*(목표|유형|목적)|campaign\s*objective|objectives?|instagram\s*광고\s*(가이드|관리자|상품|사양)|threads\s*광고\s*(가이드|관리자|상품|사양)|앱\s*(광고|캠페인|홍보)|게재\s*위치|노출\s*위치|advantage\+|어드밴티지|카탈로그|catalog|컬렉션\s*광고|리드\s*양식|lead\s*ads?|상품\s*가이드|상품가이드/.test(titleText);
     const hasOfficialGuideUrl = /\/business\/help|\/business\/ads-guide|\/business\/learn|adsmanager|support\.google|ads\.google|searchad\.naver|kakaobusiness\.gitbook/.test(urlText);
     const hasProductContentSignal = this.hasHighValueProductStructureSignal(contentText) || this.hasProductStructureSignal(contentText);
-    const hasBroadNewsTitle = /뉴스|합류|혁신|spotlight|creator\s*method|cyber\s*5|성공\s*전략|트렌드|협업|크리에이터|manus/.test(titleText);
+    const hasBroadNewsTitle = /뉴스|합류|혁신|spotlight|creator\s*method|cyber\s*5|성공\s*전략|트렌드|협업|크리에이터|manus|성과\s*증대|도입\s*1주년|게이밍\s*광고주/.test(titleText);
+    const hasMetaBusinessNewsUrl = intent.vendors.includes('META')
+      && /facebook\.com\/business\/news|\/business\/news|business\/news/.test(urlText);
 
     if (hasAdProductTitle) {
       adjustment += 0.12;
@@ -4252,6 +4259,11 @@ export class RAGSearchService {
     if (hasBroadNewsTitle && !hasAdProductTitle) {
       adjustment -= 0.28;
       reasons.push('product_structure_graph_news_title_penalty');
+    }
+
+    if (hasMetaBusinessNewsUrl && !this.hasMetaObjectiveProductStructureSignal(contentText)) {
+      adjustment -= 0.36;
+      reasons.push('meta_product_structure_news_url_penalty');
     }
 
     return { adjustment, reasons };
@@ -4292,6 +4304,16 @@ export class RAGSearchService {
     );
 
     const queryText = this.normalizeSearchText(intent.keywords.join(' '));
+    if (
+      intent.vendors.length === 1
+      && intent.vendors[0] === 'META'
+      && intent.isProductStructureOverview
+      && !intent.isSpecificProductGuidance
+      && this.isMetaBroadProductNewsNoiseText(sourceText)
+    ) {
+      return true;
+    }
+
     if (this.isOffAxisProductStructureGraphText(sourceText, queryText)) {
       return true;
     }
@@ -5520,11 +5542,27 @@ export class RAGSearchService {
     return /앱\s*(인스톨|설치|홍보|캠페인|이벤트|사전\s*등록|등록)|앱인스톨|앱설치|앱홍보|app\s*(install|promotion)|mobile\s*app|sdk|mmp|모바일\s*(앱|측정)|app\s*id|app\s*secret|앱\s*id|앱\s*시크릿|포스트백|postback|skadnetwork|skan/i.test(text);
   }
 
+  private hasMetaObjectiveProductStructureSignal(sourceText: string): boolean {
+    const text = this.normalizeSearchText(sourceText);
+    return /광고\s*관리자\s*목표|캠페인\s*(목표|목적|유형)|마케팅\s*목표|목표[\s\S]{0,120}(인지도|트래픽|참여|잠재\s*고객|앱\s*홍보|판매)|인지도[\s\S]{0,120}트래픽[\s\S]{0,120}참여[\s\S]{0,120}잠재\s*고객[\s\S]{0,120}앱\s*홍보[\s\S]{0,120}판매|광고\s*(상품|종류|유형|구조)|상품\s*구조|목적별|목표별|objective|objectives/i.test(text);
+  }
+
   private hasMetaProductOverviewSignal(sourceText: string): boolean {
     const text = this.normalizeSearchText(sourceText);
     const hasMetaIdentity = /meta|메타|facebook|페이스북|instagram|인스타그램|릴스|reels/.test(text);
     const hasProductSignal = /캠페인\s*(목표|목적)|광고\s*관리자\s*목표|마케팅\s*목표|목표[\s\S]{0,120}(인지도|트래픽|참여|잠재\s*고객|앱\s*홍보|판매)|인지도[\s\S]{0,120}트래픽[\s\S]{0,120}참여[\s\S]{0,120}잠재\s*고객[\s\S]{0,120}앱\s*홍보[\s\S]{0,120}판매|objective|objectives|advantage\+|어드밴티지|카탈로그|catalog|meta\s*pixel|메타\s*픽셀|픽셀\s*(이벤트|코드|설치|전환)|conversions?\s*api|노출\s*위치|게재\s*위치|placements|지면|이미지\s*광고|동영상\s*광고|슬라이드\s*광고|컬렉션\s*광고|릴스|스토리|피드|lead\s*ads|잠재고객\s*광고/i.test(text);
     return hasMetaIdentity && hasProductSignal;
+  }
+
+  private isMetaBroadProductNewsNoiseText(sourceText: string): boolean {
+    const text = this.normalizeSearchText(sourceText);
+    const hasMetaIdentity = /meta|메타|facebook|페이스북|instagram|인스타그램|릴스|reels/.test(text);
+    const isMetaNewsSource = /facebook\.com\/business\/news|\/business\/news|business\/news/.test(text)
+      || /도입\s*1주년|전\s*세계의\s*모든\s*사용자|성과\s*증대|게이밍\s*광고주|광고주의\s*성과|heroes\s*&?\s*dragons|사용자\s*확보\s*투자/i.test(text);
+    if (!hasMetaIdentity || !isMetaNewsSource) return false;
+
+    return !this.hasMetaObjectiveProductStructureSignal(text)
+      || /도입\s*1주년|전\s*세계의\s*모든\s*사용자|성과\s*증대|게이밍\s*광고주|광고주의\s*성과|heroes\s*&?\s*dragons|사용자\s*확보\s*투자/i.test(text);
   }
 
   private isMetaOverviewPolicyNoiseText(text: string): boolean {
