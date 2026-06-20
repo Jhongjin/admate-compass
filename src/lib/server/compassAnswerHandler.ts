@@ -6479,6 +6479,13 @@ function isNaverDisplaySpecificProductQuestion(message: string) {
   );
 }
 
+function isNaverShoppingCreativeSpecificProductQuestion(message: string) {
+  const normalized = normalizeProductIntentText(message);
+  return /쇼핑검색|쇼핑\s*검색|쇼핑몰\s*상품형|쇼핑\s*광고|쇼핑블록/.test(normalized)
+    && /소재|심사|검수|제작|가이드|대표이미지|상품명|이미지|랜딩|광고등록기준|주의|유의|제한|반려/.test(normalized)
+    && !/db\s*url|상품\s*db|상품db|상품\s*등록|상품등록|ep|쇼핑파트너센터|상품정보\s*수신\s*현황|등록요청/.test(normalized);
+}
+
 function isMetaAppInstallSpecificProductQuestion(message: string) {
   return /앱\s*(인스톨|설치|홍보|캠페인|이벤트|사전\s*등록)|앱인스톨|앱설치|앱홍보|app\s*(install|promotion)|mobile\s*app|sdk|mmp|모바일\s*측정\s*파트너|포스트백|postback/.test(
     normalizeProductIntentText(message),
@@ -6494,6 +6501,7 @@ function isGoogleLeadFormSpecificProductQuestion(message: string) {
 function getSpecificProductSupplementLimit(vendor?: VendorIntent, message = '') {
   if (vendor === 'KAKAO' && isKakaoDisplaySpecificProductQuestion(message)) return 0;
   if (vendor === 'NAVER' && isNaverDisplaySpecificProductQuestion(message)) return 0;
+  if (vendor === 'NAVER' && isNaverShoppingCreativeSpecificProductQuestion(message)) return 0;
   if (vendor === 'META' && isMetaAppInstallSpecificProductQuestion(message)) return 0;
   if (vendor === 'GOOGLE' && isGoogleLeadFormSpecificProductQuestion(message)) return 0;
   return vendor === 'KAKAO' ? 1 : 2;
@@ -7392,7 +7400,7 @@ function normalizeSourceTitle(title: string, sourceVendor: string, content: stri
     const metaAdsGuideTitle = normalizeMetaAdsGuideSourceTitle(title, content);
     if (metaAdsGuideTitle) return metaAdsGuideTitle;
     if (/collection\s*ads?|컬렉션\s*광고/.test(blob)) {
-      return 'Meta 비즈니스 지원 센터: 컬렉션 광고';
+      return 'Meta 비즈니스 지원 센터: 카탈로그/컬렉션 광고';
     }
     if (/slideshow|슬라이드쇼|슬라이드\s*광고/.test(blob)) {
       return 'Meta 비즈니스 지원 센터: 슬라이드쇼 광고';

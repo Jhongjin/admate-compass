@@ -1153,6 +1153,23 @@ if (!/maxPerTitle[\s\S]*isNaverShoppingDataIntent\(intent\) \|\| intent\.isSpeci
   fail('NAVER DB URL/product registration and specific product intents should allow detail chunks to survive same-title dedupe');
 }
 
+if (!/const usesNaverProductStructurePriority =[\s\S]*isNaverShoppingDataIntent\(intent\)[\s\S]*isNaverShoppingSearchCreativeIntent\(intent\)[\s\S]*isNaverDisplayAdIntent\(intent\)[\s\S]*intent\.isProductStructureOverview/.test(rag)) {
+  fail('NAVER shopping creative product questions must use priority direct retrieval before hybrid vector fan-out');
+}
+
+if (!/const shoppingSearchCreativeAnchors = \[[\s\S]*'쇼핑검색광고'[\s\S]*'대표이미지'[\s\S]*'광고등록기준'/.test(rag)
+  || !/usesShoppingSearchCreativeIntent[\s\S]*hasNaverShoppingSearchCreativeGuideSignal\(sourceText\)/.test(rag)) {
+  fail('NAVER shopping creative priority retrieval must stay narrowly anchored and evidence-gated');
+}
+
+if (!/function isNaverShoppingCreativeSpecificProductQuestion[\s\S]*쇼핑검색[\s\S]*소재[\s\S]*getSpecificProductSupplementLimit[\s\S]*isNaverShoppingCreativeSpecificProductQuestion\(message\)/.test(answerHandler)) {
+  fail('NAVER shopping creative structured answers must not launch slow supplement fan-out');
+}
+
+if (!answerHandler.includes("'Meta 비즈니스 지원 센터: 카탈로그/컬렉션 광고'")) {
+  fail('Meta catalog/collection sources must expose the Korean catalog term for source verification');
+}
+
 if (!/filter\(candidate => candidate\.hits > 0\)/.test(answerHandler)) {
   fail('topic source picker must not select unrelated sources when no topic term matches');
 }

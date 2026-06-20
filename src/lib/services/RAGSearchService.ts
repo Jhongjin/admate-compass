@@ -1184,7 +1184,12 @@ export class RAGSearchService {
         needsProductStructureRetrieval
         && intent.vendors.length === 1
         && intent.vendors[0] === 'NAVER'
-        && (this.isNaverShoppingDataIntent(intent) || this.isNaverDisplayAdIntent(intent) || intent.isProductStructureOverview);
+        && (
+          this.isNaverShoppingDataIntent(intent)
+          || this.isNaverShoppingSearchCreativeIntent(intent)
+          || this.isNaverDisplayAdIntent(intent)
+          || intent.isProductStructureOverview
+        );
       const usesNaverShoppingDataPriority =
         usesNaverProductStructurePriority
         && this.isNaverShoppingDataIntent(intent);
@@ -2425,6 +2430,7 @@ export class RAGSearchService {
       '쇼핑파트너센터',
     ];
     const usesDisplayAdIntent = this.isNaverDisplayAdIntent(intent);
+    const usesShoppingSearchCreativeIntent = this.isNaverShoppingSearchCreativeIntent(intent);
     const displayAnchors = [
       '네이버 DA',
       'DA 상품',
@@ -2440,10 +2446,26 @@ export class RAGSearchService {
       '배너 광고',
       'PC 헤드라인DA',
     ];
+    const shoppingSearchCreativeAnchors = [
+      '쇼핑검색광고',
+      '쇼핑검색',
+      '쇼핑 광고',
+      '쇼핑몰 상품형',
+      '상품명',
+      '대표이미지',
+      '소재',
+      '랜딩',
+      '심사',
+      '검수',
+      '광고등록기준',
+      '쇼핑블록',
+    ];
     const priorityAnchors = usesShoppingDataIntent
       ? Array.from(new Set(shoppingDataAnchors))
       : usesDisplayAdIntent
         ? Array.from(new Set(displayAnchors))
+      : usesShoppingSearchCreativeIntent
+        ? Array.from(new Set(shoppingSearchCreativeAnchors))
       : anchors.slice(0, intent.isSpecificProductGuidance ? 12 : 8);
     const results: Array<{ row: any; corpus: RetrievalCorpus; anchor: string }> = [];
     if (usesShoppingDataIntent) {
@@ -2488,14 +2510,18 @@ export class RAGSearchService {
         const sourceText = this.buildCandidateEvidenceText(candidate.content, candidate.documentTitle, candidate.metadata);
         if (!this.hasNaverProductStructureSignal(sourceText)) return null;
         if (usesDisplayAdIntent && !this.hasNaverDisplayProductGuideSignal(sourceText)) return null;
+        if (usesShoppingSearchCreativeIntent && !this.hasNaverShoppingSearchCreativeGuideSignal(sourceText)) return null;
 
         const isShoppingDataIntent = this.isNaverShoppingDataIntent(intent);
         const hasShoppingDataSignal = this.hasNaverShoppingDataSignal(sourceText);
         const hasStrongShoppingDataSignal = this.hasStrongNaverShoppingDataSignal(sourceText);
+        const hasShoppingSearchCreativeSignal = usesShoppingSearchCreativeIntent && this.hasNaverShoppingSearchCreativeGuideSignal(sourceText);
         const boostedScore = isShoppingDataIntent && hasStrongShoppingDataSignal
           ? Math.max(0.995, Math.min(1, (candidate.hybridScore || 0) + 0.75))
           : isShoppingDataIntent && hasShoppingDataSignal
             ? Math.max(0.9, Math.min(0.97, (candidate.hybridScore || 0) + 0.35))
+          : hasShoppingSearchCreativeSignal
+            ? Math.max(0.92, Math.min(0.98, (candidate.hybridScore || 0) + 0.34))
             : Math.min(0.88, (candidate.hybridScore || 0) + 0.22);
         candidate.hybridScore = boostedScore;
         candidate.score = boostedScore;
@@ -2512,6 +2538,7 @@ export class RAGSearchService {
           'naver_product_structure_priority',
           ...(isShoppingDataIntent && hasStrongShoppingDataSignal ? ['naver_shopping_data_strong_priority'] : []),
           ...(isShoppingDataIntent && hasShoppingDataSignal ? ['naver_shopping_data_priority'] : []),
+          ...(hasShoppingSearchCreativeSignal ? ['naver_shopping_search_creative_priority'] : []),
           'keyword_retrieval',
         ]));
         candidate.rankReason = Array.from(new Set([
@@ -2519,6 +2546,7 @@ export class RAGSearchService {
           `naver_product_structure_priority_${result.anchor}`,
           ...(isShoppingDataIntent && hasStrongShoppingDataSignal ? ['naver_shopping_data_strong_detail_priority'] : []),
           ...(isShoppingDataIntent && hasShoppingDataSignal ? ['naver_shopping_data_specific_priority'] : []),
+          ...(hasShoppingSearchCreativeSignal ? ['naver_shopping_search_creative_specific_priority'] : []),
         ]));
         candidate.sourceQuality = {
           ...candidate.sourceQuality,
@@ -2537,6 +2565,7 @@ export class RAGSearchService {
           productStructureAnchor: result.anchor,
           naverShoppingDataPriority: isShoppingDataIntent && hasShoppingDataSignal,
           naverShoppingDataStrongPriority: isShoppingDataIntent && hasStrongShoppingDataSignal,
+          naverShoppingSearchCreativePriority: hasShoppingSearchCreativeSignal,
           evidenceDecision: candidate.evidenceDecision,
           evidenceDecisionReason: candidate.evidenceDecisionReason,
           rankReason: candidate.rankReason,
@@ -2569,6 +2598,7 @@ export class RAGSearchService {
         );
         if (!this.hasNaverProductStructureSignal(sourceText)) return false;
         if (this.isNaverDisplayAdIntent(intent) && !this.hasNaverDisplayProductGuideSignal(sourceText)) return false;
+        if (this.isNaverShoppingSearchCreativeIntent(intent) && !this.hasNaverShoppingSearchCreativeGuideSignal(sourceText)) return false;
         if (this.isOffTopicSpecificProductEvidence(sourceText, intent)) return false;
         return true;
       })
@@ -6893,6 +6923,13 @@ export class RAGSearchService {
     return hasDisplayProductName && hasDisplayAnswerSignal;
   }
 
+  private hasNaverShoppingSearchCreativeGuideSignal(sourceText: string): boolean {
+    const text = this.normalizeSearchText(sourceText);
+    const hasShoppingSearchName = /쇼핑검색|쇼핑\s*검색|쇼핑검색광고|쇼핑몰\s*상품형|쇼핑\s*광고|쇼핑블록/.test(text);
+    const hasCreativeOrReviewSignal = /소재|심사|검수|제작|가이드|대표이미지|상품명|이미지|랜딩|가격|배송비|카테고리|광고등록기준|광고\s*등록\s*기준|주의|유의|제한|반려|상품\s*(정보|등록|관리)/.test(text);
+    return hasShoppingSearchName && hasCreativeOrReviewSignal;
+  }
+
   private isNaverShoppingDataIntent(intent: QueryIntent): boolean {
     if (intent.vendors[0] !== 'NAVER') return false;
     const text = this.normalizeSearchText([
@@ -6904,6 +6941,19 @@ export class RAGSearchService {
       /쇼핑검색|쇼핑\s*검색|쇼핑몰\s*상품형|쇼핑\s*광고/.test(text)
       && /db\s*url|상품\s*db|상품\s*등록|상품등록|ep|쇼핑파트너센터|입점\s*심사|카테고리\s*자동매칭|가격비교\s*(입점|연동|등록)|등록요청|상품관리|상품정보\s*수신\s*현황/.test(text)
     ) || /상품db|dburl|상품dburl|상품정보수신현황|쇼핑파트너센터|카테고리자동매칭/.test(compact);
+  }
+
+  private isNaverShoppingSearchCreativeIntent(intent: QueryIntent): boolean {
+    if (!intent.topics.includes('product_structure') || intent.vendors[0] !== 'NAVER') return false;
+    if (this.isNaverShoppingDataIntent(intent)) return false;
+    const text = this.normalizeSearchText([
+      ...intent.keywords,
+      ...intent.strictProductTerms,
+      ...intent.strictContextTerms,
+      ...intent.adPolicyTerms,
+    ].filter(Boolean).join(' '));
+    return /쇼핑검색|쇼핑\s*검색|쇼핑몰\s*상품형|쇼핑\s*광고|쇼핑블록/.test(text)
+      && /소재|심사|검수|제작|가이드|대표이미지|상품명|이미지|랜딩|광고등록기준|주의|유의|제한|반려/.test(text);
   }
 
   private isMetaAppInstallIntent(intent: QueryIntent): boolean {
