@@ -132,6 +132,12 @@ const COMPASS_SUPABASE_ROWS_CACHE_TTL_MS = Math.min(
 const COMPASS_SUPABASE_ROWS_CACHE_KEY_VERSION = 'v2-product-retrieval-paths';
 const compassSupabaseRowsCache = new Map<string, CompassSupabaseRowsCacheEntry>();
 
+const META_CATALOG_OFFICIAL_CHUNK_IDS = [
+  'doc_1773886203371_8rlmmdv_chunk_1',
+  'doc_1773886203371_8rlmmdv_chunk_0',
+  'doc_1773886203371_8rlmmdv_chunk_2',
+];
+
 export function getCompassSupabaseRowsCacheStatus() {
   const now = Date.now();
   let activeEntries = 0;
@@ -2931,6 +2937,18 @@ export class RAGSearchService {
       ...anchors,
     ]));
 
+    const officialChunkResults = await this.searchKnownOfficialDocumentChunks(
+      META_CATALOG_OFFICIAL_CHUNK_IDS,
+      3,
+      intent,
+      'META',
+      'meta_catalog_official_chunk',
+    );
+    const officialCandidates = this.normalizeMetaCatalogPriorityResults(officialChunkResults, keywords, intent);
+    if (officialCandidates.length > 0) {
+      return officialCandidates;
+    }
+
     const priorityAnchors = anchors.slice(0, 12);
     const keywordSearchOptions = { rawKeywordsOnly: true };
     const [
@@ -2957,6 +2975,14 @@ export class RAGSearchService {
       })),
     ];
 
+    return this.normalizeMetaCatalogPriorityResults(results, keywords, intent);
+  }
+
+  private normalizeMetaCatalogPriorityResults(
+    results: Array<{ row: any; corpus: RetrievalCorpus; anchor: string }>,
+    keywords: string[],
+    intent: QueryIntent,
+  ): SearchResult[] {
     return results
       .map((result) => {
         const candidate = this.normalizeCandidate(result.row, {
@@ -4949,6 +4975,66 @@ export class RAGSearchService {
       })
       .slice(0, limit)
       .map(item => item.item);
+  }
+
+  private async searchKnownOfficialDocumentChunks(
+    chunkIds: string[],
+    limit: number,
+    intent: QueryIntent,
+    vendor: VendorIntent,
+    anchor: string,
+  ): Promise<Array<{ row: any; corpus: RetrievalCorpus; anchor: string }>> {
+    try {
+      const uniqueChunkIds = Array.from(new Set(chunkIds.map(id => id.trim()).filter(Boolean)));
+      if (uniqueChunkIds.length === 0) return [];
+      const fetchLimit = Math.min(Math.max(limit, 1), uniqueChunkIds.length);
+      const cacheKey = this.buildSupabaseRowsCacheKey('known_official_document_chunks', {
+        tableName: 'document_chunks',
+        vendor,
+        anchor,
+        chunkIds: uniqueChunkIds,
+        fetchLimit,
+      });
+
+      const data = await this.loadCachedSupabaseRows(cacheKey, async () => {
+        const { data, error } = await this.supabase
+          .from('document_chunks')
+          .select('id, document_id, chunk_id, content, metadata')
+          .in('id', uniqueChunkIds)
+          .limit(fetchLimit);
+
+        if (error) {
+          console.warn('Known official document chunk lookup failed', {
+            vendor,
+            anchor,
+            errorName: error instanceof Error ? error.name : 'UnknownError',
+          });
+          return null;
+        }
+
+        return data || [];
+      });
+      if (data === null) return [];
+
+      const chunkOrder = new Map(uniqueChunkIds.map((chunkId, index) => [chunkId, index]));
+      return data
+        .map((row: any) => ({
+          row,
+          corpus: 'document_chunks' as RetrievalCorpus,
+          anchor,
+          order: chunkOrder.get(String(row?.id || '')) ?? Number.MAX_SAFE_INTEGER,
+        }))
+        .sort((a, b) => a.order - b.order)
+        .slice(0, limit)
+        .map(({ row, corpus, anchor }) => ({ row, corpus, anchor }));
+    } catch (error) {
+      console.warn('Known official document chunk lookup threw', {
+        vendor,
+        anchor,
+        errorName: error instanceof Error ? error.name : 'UnknownError',
+      });
+      return [];
+    }
   }
 
   private async searchProductStructureAnchorTable(

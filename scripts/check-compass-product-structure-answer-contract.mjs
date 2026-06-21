@@ -58,6 +58,9 @@ for (const snippet of [
   'readCompassRetrievalDurableCache',
   'writeCompassRetrievalDurableCache',
   "'supabase_rows'",
+  'META_CATALOG_OFFICIAL_CHUNK_IDS',
+  'searchKnownOfficialDocumentChunks',
+  'known_official_document_chunks',
   'durableHitCount',
   'compassSupabaseRowsCache',
   'getKeywordTableFetchLimit',
@@ -1188,6 +1191,16 @@ if (!/const usesMetaCatalogPriority =[\s\S]*isMetaCatalogIntent\(intent\)/.test(
   || !/specific_meta_catalog_priority_direct/.test(rag)
   || !/private async searchMetaCatalogPriorityCandidates[\s\S]*hasMetaCatalogSignal\(sourceText\)/.test(rag)) {
   fail('Meta catalog product questions must use narrow direct priority retrieval before hybrid anchor fan-out');
+}
+
+const metaCatalogPriorityBlock = extractBlock(
+  'Meta catalog priority retrieval',
+  rag,
+  'private async searchMetaCatalogPriorityCandidates',
+  'private async searchMetaProductOverviewPriorityCandidates',
+);
+if (!/searchKnownOfficialDocumentChunks\([\s\S]*META_CATALOG_OFFICIAL_CHUNK_IDS[\s\S]*'meta_catalog_official_chunk'[\s\S]*normalizeMetaCatalogPriorityResults\(officialChunkResults[\s\S]*officialCandidates\.length > 0/.test(metaCatalogPriorityBlock)) {
+  fail('Meta catalog priority retrieval must try known official chunk lookup before broad keyword fan-out');
 }
 
 if (!/function isMetaCatalogSpecificProductQuestion[\s\S]*카탈로그[\s\S]*getSpecificProductSupplementLimit[\s\S]*isMetaCatalogSpecificProductQuestion\(message\)/.test(answerHandler)) {
