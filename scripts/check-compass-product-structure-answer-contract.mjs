@@ -1044,7 +1044,7 @@ const metaAppInstallPriorityBlock = extractBlock(
   'private async searchMetaAppInstallPriorityCandidates',
   'private async searchMetaProductOverviewPriorityCandidates',
 );
-if (!/const priorityAnchors = anchors\.slice\(0, 12\)[\s\S]*searchKeywordTable\('document_chunks', priorityAnchors, 24[\s\S]*searchKeywordTable\('ollama_document_chunks', priorityAnchors, 8[\s\S]*searchVendorMetadataTable\('ollama_document_chunks', 'META', priorityAnchors, 6[\s\S]*Promise\.all\(\['MMP', '모바일 측정 파트너', 'Facebook SDK', '앱 이벤트'\]\.map\(anchor =>[\s\S]*searchProductStructureAnchorTable\('document_chunks', anchor, 6/.test(metaAppInstallPriorityBlock)) {
+if (!/const priorityAnchors = anchors\.slice\(0, 12\)[\s\S]*searchKeywordTable\('document_chunks', priorityAnchors, 16[\s\S]*searchKeywordTable\('ollama_document_chunks', priorityAnchors, 6[\s\S]*searchVendorMetadataTable\('ollama_document_chunks', 'META', priorityAnchors, 4[\s\S]*Promise\.all\(\['MMP', 'Facebook SDK'\]\.map\(anchor =>[\s\S]*searchProductStructureAnchorTable\('document_chunks', anchor, 4/.test(metaAppInstallPriorityBlock)) {
   fail('Meta app-install priority retrieval must use bounded batch keyword/metadata queries plus bounded parallel setup anchors instead of sequential per-anchor Supabase fan-out');
 }
 
