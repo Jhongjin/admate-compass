@@ -58,6 +58,7 @@ for (const snippet of [
   'readCompassRetrievalDurableCache',
   'writeCompassRetrievalDurableCache',
   "'supabase_rows'",
+  'META_APP_INSTALL_OFFICIAL_CHUNK_IDS',
   'META_CATALOG_OFFICIAL_CHUNK_IDS',
   'searchKnownOfficialDocumentChunks',
   'known_official_document_chunks',
@@ -1049,6 +1050,10 @@ const metaAppInstallPriorityBlock = extractBlock(
 );
 if (!/const priorityAnchors = anchors\.slice\(0, 12\)[\s\S]*searchKeywordTable\('document_chunks', priorityAnchors, 16[\s\S]*searchKeywordTable\('ollama_document_chunks', priorityAnchors, 6[\s\S]*searchVendorMetadataTable\('ollama_document_chunks', 'META', priorityAnchors, 4[\s\S]*Promise\.all\(\['MMP', 'Facebook SDK'\]\.map\(anchor =>[\s\S]*searchProductStructureAnchorTable\('document_chunks', anchor, 4/.test(metaAppInstallPriorityBlock)) {
   fail('Meta app-install priority retrieval must use bounded batch keyword/metadata queries plus bounded parallel setup anchors instead of sequential per-anchor Supabase fan-out');
+}
+
+if (!/searchKnownOfficialDocumentChunks\([\s\S]*META_APP_INSTALL_OFFICIAL_CHUNK_IDS[\s\S]*'meta_app_install_official_chunk'[\s\S]*normalizeMetaAppInstallPriorityResults\(officialChunkResults[\s\S]*officialCandidates\.length > 0/.test(metaAppInstallPriorityBlock)) {
+  fail('Meta app-install priority retrieval must try known official chunk lookup before broad keyword fan-out');
 }
 
 if (!/private getKeywordTableFetchLimit[\s\S]*isMetaAppInstallIntent\(intent\)[\s\S]*Math\.min\(Math\.max\(limit, 12\), 28\)[\s\S]*intent\.isSpecificProductGuidance[\s\S]*isKakaoBizboardDisplayProductIntent\(intent\)[\s\S]*Math\.min\(Math\.max\(limit \+ 4, 8\), 16\)/.test(rag)

@@ -132,6 +132,12 @@ const COMPASS_SUPABASE_ROWS_CACHE_TTL_MS = Math.min(
 const COMPASS_SUPABASE_ROWS_CACHE_KEY_VERSION = 'v2-product-retrieval-paths';
 const compassSupabaseRowsCache = new Map<string, CompassSupabaseRowsCacheEntry>();
 
+const META_APP_INSTALL_OFFICIAL_CHUNK_IDS = [
+  'doc_1773886683376_omws3g9_chunk_2',
+  'doc_1773886683376_omws3g9_chunk_0',
+  'doc_1773886683376_omws3g9_chunk_1',
+];
+
 const META_CATALOG_OFFICIAL_CHUNK_IDS = [
   'doc_1773886203371_8rlmmdv_chunk_1',
   'doc_1773886203371_8rlmmdv_chunk_0',
@@ -2794,6 +2800,18 @@ export class RAGSearchService {
       ...anchors,
     ]));
 
+    const officialChunkResults = await this.searchKnownOfficialDocumentChunks(
+      META_APP_INSTALL_OFFICIAL_CHUNK_IDS,
+      3,
+      intent,
+      'META',
+      'meta_app_install_official_chunk',
+    );
+    const officialCandidates = this.normalizeMetaAppInstallPriorityResults(officialChunkResults, keywords, intent);
+    if (officialCandidates.length > 0) {
+      return officialCandidates;
+    }
+
     const priorityAnchors = anchors.slice(0, 12);
     const keywordSearchOptions = { rawKeywordsOnly: true };
     const [
@@ -2829,6 +2847,14 @@ export class RAGSearchService {
       })),
     ];
 
+    return this.normalizeMetaAppInstallPriorityResults(results, keywords, intent);
+  }
+
+  private normalizeMetaAppInstallPriorityResults(
+    results: Array<{ row: any; corpus: RetrievalCorpus; anchor: string }>,
+    keywords: string[],
+    intent: QueryIntent,
+  ): SearchResult[] {
     return results
       .map((result) => {
         const candidate = this.normalizeCandidate(result.row, {
