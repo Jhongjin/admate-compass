@@ -63,6 +63,7 @@ for (const snippet of [
   'META_CREATIVE_SPEC_OFFICIAL_CHUNK_IDS',
   'GOOGLE_LEAD_FORM_OFFICIAL_CHUNK_IDS',
   'NAVER_VIDEO_OFFICIAL_CHUNK_IDS',
+  'NAVER_DISPLAY_AD_OFFICIAL_CHUNK_IDS',
   'KAKAO_BIZBOARD_DISPLAY_OFFICIAL_CHUNK_IDS',
   'KAKAO_RESTRICTED_INDUSTRY_OFFICIAL_CHUNK_IDS',
   'KAKAO_USER_DECEPTION_OFFICIAL_CHUNK_IDS',
@@ -71,6 +72,7 @@ for (const snippet of [
   'searchKnownOfficialDocumentChunks',
   'known_official_document_chunks',
   'naver_video_official_chunk',
+  'naver_display_ad_official_chunk',
   'kakao_product_official_chunk',
   'getKakaoFastPolicyOfficialChunkIds',
   'searchFastPolicySourceGuidedOfficialCandidates',
@@ -1202,6 +1204,10 @@ if (!/maxPerTitle[\s\S]*isNaverShoppingDataIntent\(intent\) \|\| intent\.isSpeci
 
 if (!/const usesNaverProductStructurePriority =[\s\S]*isNaverShoppingDataIntent\(intent\)[\s\S]*isNaverShoppingSearchCreativeIntent\(intent\)[\s\S]*isNaverDisplayAdIntent\(intent\)[\s\S]*intent\.isProductStructureOverview/.test(rag)) {
   fail('NAVER shopping creative product questions must use priority direct retrieval before hybrid vector fan-out');
+}
+
+if (!/NAVER_DISPLAY_AD_OFFICIAL_CHUNK_IDS[\s\S]*if \(usesDisplayAdIntent\) \{[\s\S]*searchKnownOfficialDocumentChunks\([\s\S]*NAVER_DISPLAY_AD_OFFICIAL_CHUNK_IDS[\s\S]*'naver_display_ad_official_chunk'[\s\S]*return officialChunkCandidates;[\s\S]*if \(usesVideoProductIntent\)/.test(rag)) {
+  fail('NAVER DA/display questions must try known display chunks before broad keyword fan-out');
 }
 
 if (!/const shoppingSearchCreativeAnchors = \[[\s\S]*'쇼핑검색광고'[\s\S]*'대표이미지'[\s\S]*'광고등록기준'/.test(rag)

@@ -163,6 +163,11 @@ const NAVER_VIDEO_OFFICIAL_CHUNK_IDS = [
   'doc_1764895606613_llkwwsf_doc_0',
 ];
 
+const NAVER_DISPLAY_AD_OFFICIAL_CHUNK_IDS = [
+  'doc_1764895606547_buwpoz4_sent_11',
+  'doc_1764922396107_b9w41zn_chunk_5',
+];
+
 const KAKAO_BIZBOARD_DISPLAY_OFFICIAL_CHUNK_IDS = [
   'doc_1774488483929_bigcm1d_chunk_2',
   'doc_1774488184369_r97sach_chunk_0',
@@ -2638,6 +2643,29 @@ export class RAGSearchService {
       : usesShoppingSearchCreativeIntent
         ? Array.from(new Set(shoppingSearchCreativeAnchors))
       : anchors.slice(0, intent.isSpecificProductGuidance ? 12 : 8);
+
+    if (usesDisplayAdIntent) {
+      const officialChunkResults = await this.searchKnownOfficialDocumentChunks(
+        NAVER_DISPLAY_AD_OFFICIAL_CHUNK_IDS,
+        2,
+        intent,
+        'NAVER',
+        'naver_display_ad_official_chunk',
+      );
+      const officialChunkCandidates = this.normalizeNaverProductStructurePriorityResults(
+        officialChunkResults,
+        keywords,
+        intent,
+        {
+          usesDisplayAdIntent,
+          usesVideoProductIntent,
+          usesShoppingSearchCreativeIntent,
+        },
+      );
+      if (officialChunkCandidates.length > 0) {
+        return officialChunkCandidates;
+      }
+    }
 
     if (usesVideoProductIntent) {
       const officialChunkResults = await this.searchKnownOfficialDocumentChunks(
