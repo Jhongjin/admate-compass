@@ -3034,6 +3034,34 @@ function buildPrimarySpecificProductEvidenceTerms(intent: QueryIntent) {
     add('리드 양식', '리드양식', 'Lead Form', 'Lead Ads', 'Lead Generation', '잠재고객 광고', '잠재 고객 광고', '잠재고객 양식', '잠재 고객 양식', '비즈니스 폼', '비즈니스폼', '양식 제출');
   }
 
+  if (
+    (intent.vendors.includes('META') || /메타|meta|페이스북|facebook|인스타그램|instagram/.test(queryText))
+    && /소재|사양|스펙|규격|비율|사이즈|크기|해상도|파일|이미지|동영상|비디오|카루셀|캐러셀|carousel|슬라이드|instagram|인스타그램/.test(queryText)
+  ) {
+    add(
+      '광고 사양',
+      '광고 가이드',
+      '소재 사양',
+      '이미지 광고',
+      '이미지 소재',
+      '동영상 광고',
+      '동영상 소재',
+      '비디오 광고',
+      '슬라이드 광고',
+      '카루셀',
+      '캐러셀',
+      'Carousel',
+      'Instagram',
+      '인스타그램',
+      'Facebook',
+      '페이스북',
+      '해상도',
+      '파일 형식',
+      '권장 비율',
+      '1080x1080',
+    );
+  }
+
   if (/db\s*url|상품\s*db|상품등록|ep|쇼핑파트너센터|가격비교/.test(queryText) || /상품db|dburl/.test(compactQueryText)) {
     add('DB URL', 'DBURL', '상품 DB', '상품DB', '상품 DB URL', '상품DB URL', 'EP', 'EP(=DB URL)', '상품등록', '상품 등록', '쇼핑파트너센터', '상품정보 수신 현황', '등록요청', '상품관리');
   }
@@ -3079,6 +3107,13 @@ function buildSpecificProductFamilyMatchers(intent: QueryIntent): RegExp[] {
 
   if (/리드\s*양식|lead\s*form|lead\s*generation|lead\s*ads?|잠재\s*고객\s*(양식|광고|확장|소재)|잠재고객\s*(양식|광고|확장|소재)|비즈니스\s*폼|비즈니스폼|양식\s*제출/.test(queryText)) {
     matchers.push(/리드\s*양식|리드양식|lead\s*form|lead\s*generation|lead\s*ads?|잠재\s*고객\s*(양식|광고|확장|소재)|잠재고객\s*(양식|광고|확장|소재)|비즈니스\s*폼|비즈니스폼|양식\s*제출/);
+  }
+
+  if (
+    (intent.vendors.includes('META') || /메타|meta|페이스북|facebook|인스타그램|instagram/.test(queryText))
+    && /소재|사양|스펙|규격|비율|사이즈|크기|해상도|파일|이미지|동영상|비디오|카루셀|캐러셀|carousel|슬라이드|instagram|인스타그램/.test(queryText)
+  ) {
+    matchers.push(/광고\s*사양|광고\s*가이드|소재\s*사양|이미지\s*(광고|소재)|동영상\s*(광고|소재)|비디오\s*광고|슬라이드\s*광고|카루셀|캐러셀|carousel|instagram|인스타그램|facebook|페이스북|해상도|파일\s*형식|권장\s*비율|1080x1080/);
   }
 
   if (/카탈로그|catalog|advantage\+|어드밴티지|컬렉션|performance\s*max|\bpmax\b|demand\s*gen/.test(queryText)) {
@@ -4005,6 +4040,7 @@ function buildStructuredSpecificProductScopeLimitedAnswer(
 ) {
   return (
     buildMetaAppInstallStructuredFallbackAnswer(sources, intent, message)
+    || buildMetaCreativeSpecStructuredFallbackAnswer(sources, intent, message)
     || buildNaverShoppingSearchCreativeGuideStructuredFallbackAnswer(sources, intent, message)
     || buildNaverShoppingDataStructuredFallbackAnswer(sources, intent, message)
     || buildNaverDisplayAdStructuredFallbackAnswer(sources, intent, message)
@@ -4100,6 +4136,7 @@ type FastNaverVideoProductAnswerFallback = 'naver_video_product_structured';
 type FastStructuredSpecificProductAnswerFallback =
   | 'meta_app_install_structured'
   | 'meta_catalog_structured'
+  | 'meta_creative_spec_structured'
   | 'naver_shopping_search_creative_structured'
   | 'naver_shopping_data_operational'
   | 'naver_shopping_data_structured'
@@ -4111,6 +4148,7 @@ type ProductAnswerFamily =
   | 'meta_app_install'
   | 'meta_lead'
   | 'meta_catalog'
+  | 'meta_creative_spec'
   | 'google_overview'
   | 'google_lead'
   | 'google_app'
@@ -4155,6 +4193,7 @@ function detectProductAnswerFamily(message: string, intent: QueryIntent): Produc
     if (/앱\s*(인스톨|설치|홍보|캠페인|사전\s*등록)|app\s*(install|promotion)/.test(normalized)) return 'meta_app_install';
     if (/리드\s*양식|잠재\s*고객|잠재고객|lead\s*(form|ads?|generation)|비즈니스\s*폼|비즈니스폼/.test(normalized)) return 'meta_lead';
     if (/카탈로그|catalog|컬렉션|collection|advantage\+|어드밴티지/.test(normalized)) return 'meta_catalog';
+    if (/소재|사양|스펙|규격|비율|사이즈|크기|해상도|파일|이미지|동영상|비디오|카루셀|캐러셀|carousel|슬라이드|instagram|인스타그램/.test(normalized)) return 'meta_creative_spec';
     return 'meta_overview';
   }
 
@@ -5032,6 +5071,68 @@ function buildMetaCatalogStructuredFallbackAnswer(
   return sections.join('\n');
 }
 
+function buildMetaCreativeSpecStructuredFallbackAnswer(
+  sources: ReturnType<typeof buildVerifiedSources>,
+  intent: QueryIntent,
+  message: string,
+) {
+  if (!intent.vendors.includes('META')) return null;
+  if (detectProductAnswerFamily(message, intent) !== 'meta_creative_spec') return null;
+
+  const used = new Set<number>();
+  const sections = [
+    'Meta 광고 소재 사양은 광고 형식과 노출 위치에 따라 달라지므로, 이미지·동영상·슬라이드 같은 형식별 요구사항을 먼저 나눠 확인하는 편이 안전합니다.',
+    '',
+    '1. **이미지·동영상 기본 사양 확인**',
+    '',
+  ];
+
+  addFallbackLine(
+    sections,
+    used,
+    sources,
+    'META',
+    /이미지[\s\S]{0,180}(jpg|png|비율|해상도|1080x1080|파일)|파일\s*형식:\s*jpg|이미지\s*파일\s*형식/i,
+    label => `- 이미지 소재는 JPG/PNG 같은 파일 형식, 권장 비율, 해상도, 최대 파일 크기를 지면별 원문에서 확인해야 합니다 ${label}.`,
+  );
+  addFallbackLine(
+    sections,
+    used,
+    sources,
+    'META',
+    /동영상[\s\S]{0,220}(mp4|mov|gif|h\.264|길이|4gb|프레임|오디오)|파일\s*형식:\s*mp4|동영상\s*파일\s*형식/i,
+    label => `- 동영상 소재는 MP4/MOV/GIF, 압축 설정, 길이, 최대 파일 크기처럼 이미지와 다른 기술 요구사항을 따로 봐야 합니다 ${label}.`,
+  );
+
+  sections.push('');
+  sections.push('2. **슬라이드/캐러셀과 노출 위치 조건 확인**');
+  sections.push('');
+  addFallbackLine(
+    sections,
+    used,
+    sources,
+    'META',
+    /슬라이드|카루셀|캐러셀|carousel|2~10개|최대\s*동영상\s*파일\s*크기|랜딩\s*페이지\s*URL/i,
+    label => `- 슬라이드/캐러셀 형식은 이미지 또는 동영상을 여러 장 쓰는 구조라 슬라이드 수, 랜딩 URL, 파일 크기 조건을 함께 확인해야 합니다 ${label}.`,
+  );
+  addFallbackLine(
+    sections,
+    used,
+    sources,
+    'META',
+    /facebook|instagram|페이스북|인스타그램|피드|검색\s*결과|탐색\s*홈|노출\s*위치|광고\s*정책/i,
+    label => `- 같은 형식이라도 Facebook 피드, 검색 결과, Instagram 탐색 홈처럼 노출 위치별 권장값과 정책 문구가 달라질 수 있습니다 ${label}.`,
+  );
+
+  if (used.size === 0) return null;
+
+  sections.push('');
+  sections.push('정리하면, Meta 소재 규격은 “이미지/동영상/슬라이드 중 무엇인지”와 “어느 노출 위치에 낼지”를 먼저 고른 뒤 해당 공식 가이드의 권장값을 대조하는 흐름이 가장 안전합니다.');
+  sections.push('');
+  sections.push(`근거: ${formatFallbackEvidenceLabels(used)}`);
+  return sections.join('\n');
+}
+
 function buildFastStructuredSpecificProductAnswer(
   message: string,
   intent: QueryIntent,
@@ -5078,6 +5179,13 @@ function buildFastStructuredSpecificProductAnswer(
       fastAnswerFallback: 'meta_catalog_structured',
       confidenceCap: 78,
       build: () => buildMetaCatalogStructuredFallbackAnswer(answerSources, intent, message),
+    },
+    {
+      vendor: 'META',
+      model: 'compass-answer-fast-meta-creative-spec-structured',
+      fastAnswerFallback: 'meta_creative_spec_structured',
+      confidenceCap: 78,
+      build: () => buildMetaCreativeSpecStructuredFallbackAnswer(answerSources, intent, message),
     },
     {
       vendor: 'NAVER',
@@ -6590,6 +6698,12 @@ function isMetaCatalogSpecificProductQuestion(message: string) {
     && !isProductCatalogOverviewQuestion(message);
 }
 
+function isMetaCreativeSpecSpecificProductQuestion(message: string) {
+  return /소재|사양|스펙|규격|비율|사이즈|크기|해상도|파일|이미지|동영상|비디오|카루셀|캐러셀|carousel|슬라이드|instagram|인스타그램/.test(
+    normalizeProductIntentText(message),
+  );
+}
+
 function isGoogleLeadFormSpecificProductQuestion(message: string) {
   return /리드\s*양식|리드양식|잠재\s*고객\s*(양식|광고)|잠재고객\s*(양식|광고)|비즈니스\s*폼|비즈니스폼|lead\s*(form|generation|gen|ads?)/.test(
     normalizeProductIntentText(message),
@@ -6603,6 +6717,7 @@ function getSpecificProductSupplementLimit(vendor?: VendorIntent, message = '') 
   if (vendor === 'NAVER' && isNaverVideoSpecificProductQuestion(message)) return 0;
   if (vendor === 'META' && isMetaAppInstallSpecificProductQuestion(message)) return 0;
   if (vendor === 'META' && isMetaCatalogSpecificProductQuestion(message)) return 0;
+  if (vendor === 'META' && isMetaCreativeSpecSpecificProductQuestion(message)) return 0;
   if (vendor === 'GOOGLE' && isGoogleLeadFormSpecificProductQuestion(message)) return 0;
   return vendor === 'KAKAO' ? 1 : 2;
 }
@@ -8200,6 +8315,49 @@ export async function buildCompassAnswerResponse(
             confidence: getDeterministicProductConfidence(confidence || 64, fastKakaoScopeRescueAnswer),
             processingTime: Date.now() - startTime,
             model: fastKakaoScopeRescueAnswer.model
+          }
+        };
+      }
+
+      const fastStructuredScopeRescueAnswer = buildFastStructuredSpecificProductAnswer(
+        message,
+        ragIntent,
+        specificProductScope,
+        sources,
+      );
+      if (fastStructuredScopeRescueAnswer) {
+        const showContactOption = Boolean(fastStructuredScopeRescueAnswer.showContactOption);
+        emitPhase?.({ phase: 'answer-ready', message: '공식 상품 근거를 기준으로 제한 범위 답변을 보강했습니다.' });
+        return {
+          body: {
+            response: {
+              message: fastStructuredScopeRescueAnswer.answer,
+              content: fastStructuredScopeRescueAnswer.answer,
+              sources: fastStructuredScopeRescueAnswer.sources,
+              noDataFound: false,
+              schema,
+              showContactOption,
+              sourceDiagnostics: {
+                ...sourceDiagnostics,
+                strictProductSourceCount: specificProductScope.strictProductSources.length,
+                answerSourceCount: fastStructuredScopeRescueAnswer.sources.length,
+                answerMode: diagnosticAnswerMode,
+                answerGenerationDurationMs: 0,
+                deterministicAnswerFamily: detectProductAnswerFamily(message, ragIntent),
+                fastAnswerFallback: fastStructuredScopeRescueAnswer.fastAnswerFallback,
+                scopeRescue: true,
+              },
+              reviewPipeline: buildReviewPipeline({
+                status: fastStructuredScopeRescueAnswer.reviewStatus || 'completed',
+                sourceCount: searchResults.length,
+                verifiedSourceCount: fastStructuredScopeRescueAnswer.sources.length,
+                contactRecommended: showContactOption,
+                retrievalChannelLimited: sourceDiagnostics.retrievalChannelTimedOut === true,
+              }),
+            },
+            confidence: getDeterministicProductConfidence(confidence || 64, fastStructuredScopeRescueAnswer),
+            processingTime: Date.now() - startTime,
+            model: fastStructuredScopeRescueAnswer.model
           }
         };
       }

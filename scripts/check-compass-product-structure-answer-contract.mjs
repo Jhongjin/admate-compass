@@ -60,6 +60,8 @@ for (const snippet of [
   "'supabase_rows'",
   'META_APP_INSTALL_OFFICIAL_CHUNK_IDS',
   'META_CATALOG_OFFICIAL_CHUNK_IDS',
+  'META_CREATIVE_SPEC_OFFICIAL_CHUNK_IDS',
+  'GOOGLE_LEAD_FORM_OFFICIAL_CHUNK_IDS',
   'NAVER_VIDEO_OFFICIAL_CHUNK_IDS',
   'KAKAO_BIZBOARD_DISPLAY_OFFICIAL_CHUNK_IDS',
   'KAKAO_RESTRICTED_INDUSTRY_OFFICIAL_CHUNK_IDS',
@@ -95,9 +97,12 @@ for (const snippet of [
   'meta_app_install_measurement_setup_priority',
   'specific_meta_creative_spec_priority_direct',
   'searchMetaCreativeSpecPriorityCandidates',
+  'meta_creative_spec_official_chunk',
   'meta_creative_spec_priority',
+  'meta_creative_spec_priority_rescue',
   'specific_google_lead_form_priority_direct',
   'searchGoogleLeadFormPriorityCandidates',
+  'google_lead_form_official_chunk',
   'google_lead_form_priority',
   'usesGoogleLeadFormPriority',
   'isMetaCreativeSpecIntent',
@@ -199,11 +204,13 @@ for (const snippet of [
   "'kakao_product_scope_rescue'",
   "'naver_video_product_structured'",
   "'meta_app_install_structured'",
+  "'meta_creative_spec_structured'",
   "'naver_shopping_data_operational'",
   "'google_lead_structured'",
   'compass-answer-fast-kakao-specific-product-source-guided',
   'compass-answer-fast-kakao-product-structured',
   "'compass-answer-fast-naver-video-product-structured'",
+  "'compass-answer-fast-meta-creative-spec-structured'",
   "'compass-answer-fast-naver-shopping-data-operational'",
   "'compass-answer-fast-google-lead-structured'",
   'sourceMatchesRequestedProductMode',
@@ -1107,10 +1114,23 @@ if (!/metaAppInstallPriorityCandidates,[\s\S]*graphCandidates[\s\S]*usesMetaAppI
   fail('Meta app-install product priority must keep its exact priority path while allowing official graph evidence');
 }
 
+if (!/private async searchMetaCreativeSpecPriorityCandidates[\s\S]*searchKnownOfficialDocumentChunks\([\s\S]*getMetaCreativeSpecOfficialChunkIds\(queryText\)[\s\S]*'meta_creative_spec_official_chunk'[\s\S]*normalizeMetaCreativeSpecPriorityResults\(officialChunkResults[\s\S]*officialCandidates\.length > 0/.test(rag)
+  || !/private getMetaCreativeSpecOfficialChunkIds[\s\S]*META_CREATIVE_SPEC_OFFICIAL_CHUNK_IDS[\s\S]*카루셀[\s\S]*동영상[\s\S]*이미지/.test(rag)) {
+  fail('Meta creative/spec priority retrieval must try known official ads-guide chunks before anchor fan-out');
+}
+
+if (!/if \(usesMetaCreativeSpecPriority && usesSpecificProductRetrieval\)[\s\S]*specific_meta_creative_spec_priority_direct[\s\S]*if \(rankedResults\.length > 0\)[\s\S]*return this\.withRetrievalTimeoutMetadata\(rankedResults, timedOutChannels, channelTimings\);[\s\S]*meta_creative_spec_priority_rescue[\s\S]*META creative spec priority candidates were rescued[\s\S]*return this\.withRetrievalTimeoutMetadata\(rescueResults, timedOutChannels, channelTimings\);/.test(rag)) {
+  fail('Meta creative/spec direct retrieval must rescue official candidates when strict ranking filters them all');
+}
+
 if (!/const usesGoogleLeadFormPriority =[\s\S]*this\.isGoogleLeadFormIntent\(intent\)/.test(rag)
   || !/usesPrioritySpecificProductRetrieval =[\s\S]*usesGoogleLeadFormPriority/.test(rag)
   || !/if \(usesGoogleLeadFormPriority && usesSpecificProductRetrieval\) \{[\s\S]*this\.searchGoogleLeadFormPriorityCandidates\(intent\)[\s\S]*'specific_google_lead_form_priority_direct'[\s\S]*return this\.withRetrievalTimeoutMetadata\(rankedResults, timedOutChannels, channelTimings\);[\s\S]*\n\s*\}\n\s*\}\n\s*\n\s*if \(usesKakaoProductPriority && usesSpecificProductRetrieval\)/.test(rag)) {
   fail('Google lead-form specific product retrieval must use a bounded priority direct path before embedding/vector/graph fan-out');
+}
+
+if (!/private async searchGoogleLeadFormPriorityCandidates[\s\S]*searchKnownOfficialDocumentChunks\([\s\S]*GOOGLE_LEAD_FORM_OFFICIAL_CHUNK_IDS[\s\S]*'google_lead_form_official_chunk'[\s\S]*normalizeGoogleLeadFormPriorityResults\(officialChunkResults[\s\S]*officialCandidates\.length > 0/.test(rag)) {
+  fail('Google lead-form priority retrieval must try known official chunks before keyword/vendor fan-out');
 }
 
 if (!/googleLeadFormPriorityCandidates,\s*\n\s*kakaoProductPriorityCandidates,\s*\n\s*graphCandidates/.test(rag)
@@ -1279,6 +1299,11 @@ if (!/function isGoogleLeadFormSpecificProductQuestion\(message: string\)[\s\S]*
   fail('specific product supplement fan-out must skip duplicate direct-path supplements for Kakao display, Naver DA, Meta app-install, and Google lead-form product questions');
 }
 
+if (!/function isMetaCreativeSpecSpecificProductQuestion\(message: string\)[\s\S]*카루셀[\s\S]*인스타그램/.test(answerHandler)
+  || !/function getSpecificProductSupplementLimit\(vendor\?: VendorIntent,\s*message = ''\)[\s\S]*vendor === 'META' && isMetaCreativeSpecSpecificProductQuestion\(message\)[\s\S]*return 0;/.test(answerHandler)) {
+  fail('specific product supplement fan-out must skip duplicate direct-path supplements for Meta creative/spec product questions');
+}
+
 if (!/const supplementQueryLimit = usesProductStructureFastPath\s*\?\s*getProductStructureFastPathSupplementLimit\(ragIntent\.vendors\[0\]\)/.test(answerHandler)) {
   fail('product structure fast path must use the bounded supplement limit helper');
 }
@@ -1303,6 +1328,10 @@ if (!/const fastKakaoScopeRescueAnswer = buildFastKakaoProductStructuredAnswer\(
   fail('Kakao scope-limited product answers must try structured official-source rescue before returning no-data');
 }
 
+if (!/const fastStructuredScopeRescueAnswer = buildFastStructuredSpecificProductAnswer\([\s\S]*specificProductScope,[\s\S]*sources,[\s\S]*fastAnswerFallback: fastStructuredScopeRescueAnswer\.fastAnswerFallback[\s\S]*scopeRescue: true,[\s\S]*const scopeLimitedAnswer/.test(answerHandler)) {
+  fail('single-vendor structured product answers must try fast official-source scope rescue before returning no-data');
+}
+
 if (!/const fastKakaoStructuredProductAnswer = buildFastKakaoProductStructuredAnswer\([\s\S]*answerSources\.length > 0 \? answerSources : sources[\s\S]*compass-answer-fast-kakao-product-structured[\s\S]*answerGenerationDurationMs: 0,[\s\S]*fastAnswerFallback: fastKakaoStructuredProductAnswer\.fastAnswerFallback[\s\S]*Compass specific product answer will use grounded LLM synthesis/.test(answerHandler)) {
   fail('Kakao single-vendor specific/comparison product answers must try structured fast answers before grounded LLM synthesis');
 }
@@ -1317,6 +1346,10 @@ if (!/const fastNaverVideoProductAnswer = buildFastNaverVideoProductAnswer\([\s\
 
 if (!/function buildFastStructuredSpecificProductAnswer\([\s\S]*COMPASS_DISABLE_FAST_STRUCTURED_SPECIFIC_PRODUCT_ANSWERS[\s\S]*intent\.vendors\.length !== 1 \|\| intent\.isComparative[\s\S]*buildNaverShoppingDataOperationalAnswer\(message, answerSources\)[\s\S]*buildGoogleLeadStructuredFallbackAnswer\(answerSources, intent, message\)[\s\S]*fastAnswerFallback: builder\.fastAnswerFallback/.test(answerHandler)) {
   fail('structured specific product fast answer must stay single-vendor gated and reuse existing official-source structured builders');
+}
+
+if (!/function buildMetaCreativeSpecStructuredFallbackAnswer[\s\S]*detectProductAnswerFamily\(message, intent\) !== 'meta_creative_spec'[\s\S]*addFallbackLine[\s\S]*이미지[\s\S]*addFallbackLine[\s\S]*동영상[\s\S]*addFallbackLine[\s\S]*슬라이드/.test(answerHandler)) {
+  fail('Meta creative/spec product questions must have a fast structured answer path');
 }
 
 if (!/const fastStructuredSpecificProductAnswer = buildFastStructuredSpecificProductAnswer\([\s\S]*answerSources\.length > 0 \? answerSources : sources[\s\S]*answerGenerationDurationMs: 0,[\s\S]*fastAnswerFallback: fastStructuredSpecificProductAnswer\.fastAnswerFallback[\s\S]*Compass specific product answer will use grounded LLM synthesis/.test(answerHandler)) {

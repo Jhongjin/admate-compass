@@ -144,6 +144,20 @@ const META_CATALOG_OFFICIAL_CHUNK_IDS = [
   'doc_1773886203371_8rlmmdv_chunk_2',
 ];
 
+const META_CREATIVE_SPEC_OFFICIAL_CHUNK_IDS = [
+  'doc_meta_ads_1773729341584_flikr_chunk_1',
+  'doc_meta_ads_1773729350143_b6ra4_chunk_1',
+  'doc_meta_ads_1773729358234_l7f34_chunk_1',
+  'doc_meta_ads_1773729345121_uvubb_chunk_1',
+  'doc_meta_ads_1773729359834_ijfm7_chunk_1',
+];
+
+const GOOGLE_LEAD_FORM_OFFICIAL_CHUNK_IDS = [
+  'doc_1773662526796_7rijhfq_chunk_1',
+  'doc_1773662526796_7rijhfq_chunk_2',
+  'doc_1773662526796_7rijhfq_chunk_3',
+];
+
 const NAVER_VIDEO_OFFICIAL_CHUNK_IDS = [
   'doc_1764895606613_llkwwsf_doc_0',
 ];
@@ -1486,6 +1500,25 @@ export class RAGSearchService {
           console.log(`✅ META creative spec 검색 완료: ${rankedResults.length}개 결과 (specific meta creative spec priority direct path)`);
           if (rankedResults.length > 0) {
             return this.withRetrievalTimeoutMetadata(rankedResults, timedOutChannels, channelTimings);
+          }
+          const rescueResults = metaCreativeSpecPriorityCandidates.slice(0, limit).map(candidate => ({
+            ...candidate,
+            retrievalMethod: 'keyword' as RetrievalMethod,
+            evidenceType: 'keyword' as EvidenceType,
+            metadata: {
+              ...(candidate.metadata || {}),
+              retrievalMethod: 'keyword',
+              evidenceType: 'keyword',
+              productStructureAnchor: candidate.metadata?.productStructureAnchor || 'meta_creative_spec_priority_rescue',
+              metaCreativeSpecPriorityRescue: true,
+            },
+          }));
+          if (rescueResults.length > 0) {
+            console.warn('META creative spec priority candidates were rescued after strict ranking filtered all candidates', {
+              priorityCandidateCount: metaCreativeSpecPriorityCandidates.length,
+              rescueCount: rescueResults.length,
+            });
+            return this.withRetrievalTimeoutMetadata(rescueResults, timedOutChannels, channelTimings);
           }
         }
       }
@@ -3224,20 +3257,83 @@ export class RAGSearchService {
       ...this.buildSpecificProductAnchorTerms(intent),
       ...anchors,
     ]));
+
+    const officialChunkResults = await this.searchKnownOfficialDocumentChunks(
+      this.getMetaCreativeSpecOfficialChunkIds(queryText),
+      5,
+      intent,
+      'META',
+      'meta_creative_spec_official_chunk',
+    );
+    const officialCandidates = this.normalizeMetaCreativeSpecPriorityResults(officialChunkResults, keywords, intent);
+    if (officialCandidates.length > 0) {
+      return officialCandidates;
+    }
+
     const anchorGroups = await Promise.all(anchors.slice(0, 8).map(anchor => Promise.all([
       this.searchProductStructureAnchorTable('document_chunks', anchor, 8, undefined, intent),
       this.searchProductStructureAnchorTable('ollama_document_chunks', anchor, 6, undefined, intent),
     ])));
     const results = anchorGroups.flat(2);
 
+    return this.normalizeMetaCreativeSpecPriorityResults(results, keywords, intent);
+  }
+
+  private getMetaCreativeSpecOfficialChunkIds(queryText: string): string[] {
+    const ids: string[] = [];
+    const push = (chunkIds: string[]) => {
+      for (const chunkId of chunkIds) {
+        if (!ids.includes(chunkId)) ids.push(chunkId);
+      }
+    };
+
+    const [
+      imageSpecChunk,
+      videoSpecChunk,
+      carouselSpecChunk,
+      instagramImageSpecChunk,
+      instagramCarouselSpecChunk,
+    ] = META_CREATIVE_SPEC_OFFICIAL_CHUNK_IDS;
+
+    if (/카루셀|캐러셀|carousel|슬라이드/.test(queryText)) {
+      push([carouselSpecChunk, instagramCarouselSpecChunk]);
+    }
+    if (/instagram|인스타그램|탐색|릴스|스토리/.test(queryText)) {
+      push([instagramImageSpecChunk, instagramCarouselSpecChunk]);
+    }
+    if (/동영상|비디오|video|mp4|mov/.test(queryText)) {
+      push([videoSpecChunk, carouselSpecChunk, instagramCarouselSpecChunk]);
+    }
+    if (/이미지|image|jpg|png|사진|소재|사양|스펙|규격/.test(queryText)) {
+      push([imageSpecChunk, instagramImageSpecChunk]);
+    }
+
+    push(META_CREATIVE_SPEC_OFFICIAL_CHUNK_IDS);
+    return ids.filter(Boolean);
+  }
+
+  private normalizeMetaCreativeSpecPriorityResults(
+    results: Array<{ row: any; corpus: RetrievalCorpus; anchor: string }>,
+    keywords: string[],
+    intent: QueryIntent,
+  ): SearchResult[] {
+    const queryText = this.normalizeSearchText([
+      ...intent.keywords,
+      ...intent.strictProductTerms,
+      ...intent.strictContextTerms,
+    ].join(' '));
+    const asksCarousel = /카루셀|캐러셀|carousel|슬라이드/.test(queryText);
+
     return results
       .map((result) => {
+        const retrievalMethod: RetrievalMethod = result.anchor.includes('official_chunk') ? 'keyword' : 'hybrid';
+        const evidenceType: EvidenceType = retrievalMethod === 'keyword' ? 'keyword' : 'hybrid';
         const candidate = this.normalizeCandidate(result.row, {
           keywords,
           intent,
-          retrievalMethod: 'hybrid',
+          retrievalMethod,
           corpus: result.corpus,
-          evidenceType: 'hybrid',
+          evidenceType,
         });
 
         if (!candidate) return null;
@@ -3255,18 +3351,23 @@ export class RAGSearchService {
         const titleText = this.normalizeSearchText(candidate.documentTitle || '');
         if (asksCarousel && /슬라이드쇼/.test(titleText)) return null;
         if (/광고\s*정책|ad\s*policy|policy/.test(titleText) && !/광고\s*가이드|ads?\s*guide|사양/.test(titleText)) return null;
-        if (!this.hasSpecificProductTermMatch(sourceText, intent) && this.scoreStrictProductCreativeSpecSignal(sourceText, intent) <= 0) return null;
+        const hasCreativeSpecOfficialSignal = this.hasMetaCreativeSpecOfficialSignal(sourceText, intent);
+        if (
+          !this.hasSpecificProductTermMatch(sourceText, intent)
+          && this.scoreStrictProductCreativeSpecSignal(sourceText, intent) <= 0
+          && !hasCreativeSpecOfficialSignal
+        ) return null;
         if (this.isBroadSpecificProductCatalogHit(sourceText, intent)) return null;
 
         const creativeSpecScore = this.scoreStrictProductCreativeSpecSignal(sourceText, intent);
         const boostedScore = Math.max(
           0.98,
-          Math.min(1, (candidate.hybridScore || 0) + 0.42 + creativeSpecScore),
+          Math.min(1, (candidate.hybridScore || 0) + 0.42 + creativeSpecScore + (hasCreativeSpecOfficialSignal ? 0.34 : 0)),
         );
         candidate.hybridScore = boostedScore;
         candidate.score = boostedScore;
-        candidate.retrievalMethod = 'hybrid';
-        candidate.evidenceType = 'hybrid';
+        candidate.retrievalMethod = retrievalMethod;
+        candidate.evidenceType = evidenceType;
         candidate.sourceVendor = 'META';
         candidate.sourceVendors = Array.from(new Set([
           ...(candidate.sourceVendors || []),
@@ -3279,12 +3380,14 @@ export class RAGSearchService {
           ...(candidate.evidenceDecisionReason || []),
           'meta_creative_spec_priority',
           ...(creativeSpecScore > 0 ? ['meta_creative_spec_signal'] : []),
-          'hybrid_retrieval',
+          ...(hasCreativeSpecOfficialSignal ? ['meta_creative_spec_official_signal'] : []),
+          `${retrievalMethod}_retrieval`,
         ]));
         candidate.rankReason = Array.from(new Set([
           ...(candidate.rankReason || []),
           `meta_creative_spec_priority_${result.anchor}`,
           ...(creativeSpecScore > 0 ? ['meta_creative_spec_detail_priority'] : []),
+          ...(hasCreativeSpecOfficialSignal ? ['meta_creative_spec_official_priority'] : []),
         ]));
         candidate.sourceQuality = {
           ...candidate.sourceQuality,
@@ -3293,15 +3396,16 @@ export class RAGSearchService {
           vendorMatch: true,
           vendorMismatch: false,
           sourceVendor: 'META',
-          qualityScore: Math.max(candidate.sourceQuality.qualityScore || 0, creativeSpecScore > 0 ? 0.98 : 0.9),
+          qualityScore: Math.max(candidate.sourceQuality.qualityScore || 0, creativeSpecScore > 0 || hasCreativeSpecOfficialSignal ? 0.98 : 0.9),
         };
         candidate.metadata = {
           ...(candidate.metadata || {}),
-          retrievalMethod: 'hybrid',
-          evidenceType: 'hybrid',
+          retrievalMethod,
+          evidenceType,
           source_vendor: 'META',
           sourceVendors: candidate.sourceVendors,
           metaCreativeSpecPriority: true,
+          metaCreativeSpecOfficialSignal: hasCreativeSpecOfficialSignal,
           productStructureAnchor: result.anchor,
           evidenceDecision: candidate.evidenceDecision,
           evidenceDecisionReason: candidate.evidenceDecisionReason,
@@ -3339,6 +3443,19 @@ export class RAGSearchService {
       ...PRODUCT_STRUCTURE_KEYWORD_EXPANSIONS,
       ...anchors,
     ]));
+
+    const officialChunkResults = await this.searchKnownOfficialDocumentChunks(
+      GOOGLE_LEAD_FORM_OFFICIAL_CHUNK_IDS,
+      3,
+      intent,
+      'GOOGLE',
+      'google_lead_form_official_chunk',
+    );
+    const officialCandidates = this.normalizeGoogleLeadFormPriorityResults(officialChunkResults, keywords, intent);
+    if (officialCandidates.length > 0) {
+      return officialCandidates;
+    }
+
     const keywordSearchOptions = { rawKeywordsOnly: true };
     const [
       documentKeywordResults,
@@ -3364,14 +3481,24 @@ export class RAGSearchService {
       })),
     ];
 
+    return this.normalizeGoogleLeadFormPriorityResults(results, keywords, intent);
+  }
+
+  private normalizeGoogleLeadFormPriorityResults(
+    results: Array<{ row: any; corpus: RetrievalCorpus; anchor: string }>,
+    keywords: string[],
+    intent: QueryIntent,
+  ): SearchResult[] {
     return results
       .map((result) => {
+        const retrievalMethod: RetrievalMethod = 'keyword';
+        const evidenceType: EvidenceType = 'keyword';
         const candidate = this.normalizeCandidate(result.row, {
           keywords,
           intent,
-          retrievalMethod: 'keyword',
+          retrievalMethod,
           corpus: result.corpus,
-          evidenceType: 'keyword',
+          evidenceType,
         });
 
         if (!candidate) return null;
@@ -3395,6 +3522,8 @@ export class RAGSearchService {
         );
         candidate.hybridScore = boostedScore;
         candidate.score = boostedScore;
+        candidate.retrievalMethod = retrievalMethod;
+        candidate.evidenceType = evidenceType;
         candidate.sourceVendor = 'GOOGLE';
         candidate.sourceVendors = Array.from(new Set([
           ...(candidate.sourceVendors || []),
@@ -3427,6 +3556,8 @@ export class RAGSearchService {
         };
         candidate.metadata = {
           ...(candidate.metadata || {}),
+          retrievalMethod,
+          evidenceType,
           source_vendor: 'GOOGLE',
           sourceVendors: candidate.sourceVendors,
           googleLeadFormPriority: true,
@@ -6557,6 +6688,17 @@ export class RAGSearchService {
     return candidate.hybridScore || candidate.score || candidate.similarity || 0;
   }
 
+  private hasMetaCreativeSpecOfficialSignal(sourceText: string, intent: QueryIntent): boolean {
+    if (!this.isMetaCreativeSpecIntent(intent)) return false;
+
+    const text = this.normalizeSearchText(sourceText);
+    const hasMetaGuideSignal = /meta|facebook|instagram|페이스북|인스타그램|광고\s*가이드|ads?\s*guide|business\/ads-guide/.test(text);
+    const hasCreativeFormatSignal = /이미지|동영상|비디오|슬라이드|카루셀|캐러셀|carousel|image|video|파일\s*형식|jpg|png|mp4|mov|gif/.test(text);
+    const hasSpecSignal = /사양|규격|스펙|디자인\s*(추천|권장)|기술\s*요구\s*사항|비율|해상도|1080x|1080픽셀|파일\s*(크기|형식)|동영상\s*길이|2\s*~\s*10|2~10/.test(text);
+
+    return hasMetaGuideSignal && hasCreativeFormatSignal && hasSpecSignal;
+  }
+
   private scoreStrictProductCreativeSpecSignal(sourceText: string, intent: QueryIntent): number {
     const text = this.normalizeSearchText(sourceText);
     const queryText = this.normalizeSearchText([
@@ -6566,9 +6708,12 @@ export class RAGSearchService {
     ].join(' '));
     const asksCreativeSpec = intent.topics.includes('spec')
       || /소재|스펙|사양|제작|규격|비율|사이즈|크기|카루셀|캐러셀|carousel|슬라이드/.test(queryText);
-    if (!asksCreativeSpec || !this.hasSpecificProductTermMatch(text, intent)) return 0;
+    const hasSpecificProductMatch = this.hasSpecificProductTermMatch(text, intent);
+    const hasOfficialCreativeSpecSignal = this.hasMetaCreativeSpecOfficialSignal(text, intent);
+    if (!asksCreativeSpec || (!hasSpecificProductMatch && !hasOfficialCreativeSpecSignal)) return 0;
 
     let score = 0;
+    if (hasOfficialCreativeSpecSignal) score += 0.36;
     if (/광고\s*사양|광고\s*형식\/사양|제작\s*가이드|디자인\s*추천|기술\s*요구\s*사항/.test(text)) score += 0.28;
     if (/1080x|1080\s*x|1080픽셀|해상도|비율|1:1|9:16|16:9/.test(text)) score += 0.34;
     if (/슬라이드\s*수|2\s*~\s*10|2~10|최대\s*10개|최대\s*(이미지|동영상|파일)|파일\s*(크기|형식)|jpg|png|mp4|mov/.test(text)) score += 0.22;
@@ -6851,6 +6996,10 @@ export class RAGSearchService {
         && this.isNaverVideoProductIntent(intent)
         && this.hasNaverVideoProductGuideSignal(sourceText)
       );
+      const allowedMetaCreativeSpecGuideEvidence = (
+        strictSpecificProductIntent
+        && this.hasMetaCreativeSpecOfficialSignal(sourceText, intent)
+      );
 
       if (
         strictSpecificProductIntent
@@ -6859,6 +7008,7 @@ export class RAGSearchService {
         && !allowedKakaoProductGuideEvidence
         && !allowedNaverDisplayProductGuideEvidence
         && !allowedNaverVideoProductGuideEvidence
+        && !allowedMetaCreativeSpecGuideEvidence
       ) {
         return false;
       }
@@ -6870,6 +7020,8 @@ export class RAGSearchService {
         && !allowedSpecificProductProcedureEvidence
         && !allowedKakaoProductGuideEvidence
         && !allowedNaverDisplayProductGuideEvidence
+        && !allowedNaverVideoProductGuideEvidence
+        && !allowedMetaCreativeSpecGuideEvidence
         && !isGraphEvidence
         && !this.hasSpecificProductAnswerableSignalForIntent(sourceText, intent)
       ) {
@@ -6920,6 +7072,8 @@ export class RAGSearchService {
         && !strictSpecificProductGroundingMatch
         && !allowedKakaoProductGuideEvidence
         && !allowedNaverDisplayProductGuideEvidence
+        && !allowedNaverVideoProductGuideEvidence
+        && !allowedMetaCreativeSpecGuideEvidence
         && !this.hasHighValueProductStructureSignal(sourceText)
       ) {
         return false;
@@ -6931,6 +7085,8 @@ export class RAGSearchService {
         && !strictSpecificProductGroundingMatch
         && !allowedKakaoProductGuideEvidence
         && !allowedNaverDisplayProductGuideEvidence
+        && !allowedNaverVideoProductGuideEvidence
+        && !allowedMetaCreativeSpecGuideEvidence
         && normalizedContent.length < 140
       ) {
         return false;
@@ -7829,6 +7985,7 @@ export class RAGSearchService {
   private isStrictProductMismatchCandidate(candidate: SearchResult, intent: QueryIntent): boolean {
     if (this.buildSpecificProductAnchorTerms(intent).length === 0) return false;
     const text = this.buildCandidateEvidenceText(candidate.content, candidate.documentTitle, candidate.metadata);
+    if (this.hasMetaCreativeSpecOfficialSignal(text, intent)) return false;
     return !this.hasSpecificProductTermMatch(text, intent);
   }
 
