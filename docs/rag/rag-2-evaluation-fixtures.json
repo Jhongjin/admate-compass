@@ -357,6 +357,7 @@
     "expectNoDataFound": false,
     "requireRetrievalMethods": [
       "vector",
+      "keyword",
       "hybrid"
     ],
     "requireSourceQuality": true,
@@ -398,6 +399,7 @@
     "expectNoDataFound": false,
     "requireRetrievalMethods": [
       "vector",
+      "keyword",
       "hybrid"
     ],
     "requireSourceQuality": true,
