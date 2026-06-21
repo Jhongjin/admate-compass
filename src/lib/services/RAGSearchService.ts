@@ -953,12 +953,14 @@ export class RAGSearchService {
         ? 14
         : 12;
 
-    const specificPriorityTermLimit = intent && (
-      this.isMetaAppInstallIntent(intent)
-      || this.isGoogleLeadFormIntent(intent)
-    )
-      ? 10
-      : maxTerms;
+    const specificPriorityTermLimit = intent && this.isNaverVideoProductIntent(intent)
+      ? 6
+      : intent && (
+        this.isMetaAppInstallIntent(intent)
+        || this.isGoogleLeadFormIntent(intent)
+      )
+        ? 10
+        : maxTerms;
 
     if (options.rawKeywordsOnly) {
       return Array.from(new Set(cleanedKeywords)).slice(0, specificPriorityTermLimit);
@@ -1007,6 +1009,9 @@ export class RAGSearchService {
     if (intent && this.isMetaAppInstallIntent(intent)) {
       return Math.min(Math.max(limit, 12), 28);
     }
+    if (intent && this.isNaverVideoProductIntent(intent)) {
+      return Math.min(Math.max(limit, 8), 18);
+    }
     if (intent && this.isGoogleLeadFormIntent(intent)) {
       return Math.min(Math.max(limit * 2, 12), 32);
     }
@@ -1043,6 +1048,9 @@ export class RAGSearchService {
   private getVendorMetadataFetchLimit(limit: number, intent?: QueryIntent): number {
     if (intent && this.isMetaAppInstallIntent(intent)) {
       return Math.min(Math.max(limit, 8), 18);
+    }
+    if (intent && this.isNaverVideoProductIntent(intent)) {
+      return Math.min(Math.max(limit, 6), 10);
     }
     if (intent && this.isGoogleLeadFormIntent(intent)) {
       return Math.min(Math.max(limit * 2, 10), 20);
@@ -2541,10 +2549,15 @@ export class RAGSearchService {
       const usesRawNaverGuideAnchors = usesDisplayAdIntent || usesVideoProductIntent;
       const keywordSearchOptions = usesRawNaverGuideAnchors ? { rawKeywordsOnly: true } : {};
       const keywordVendor = usesRawNaverGuideAnchors ? undefined : 'NAVER';
+      const documentKeywordLimit = usesVideoProductIntent ? 8 : 14;
+      const ollamaKeywordLimit = usesVideoProductIntent ? 6 : 12;
+      const metadataKeywordLimit = usesVideoProductIntent ? 0 : 8;
       const [documentKeywordResults, ollamaKeywordResults, ollamaMetadataResults] = await Promise.all([
-        this.searchKeywordTable('document_chunks', priorityAnchors, 14, intent, keywordVendor, keywordSearchOptions),
-        this.searchKeywordTable('ollama_document_chunks', priorityAnchors, 12, intent, keywordVendor, keywordSearchOptions),
-        this.searchVendorMetadataTable('ollama_document_chunks', 'NAVER', priorityAnchors, 8, intent),
+        this.searchKeywordTable('document_chunks', priorityAnchors, documentKeywordLimit, intent, keywordVendor, keywordSearchOptions),
+        this.searchKeywordTable('ollama_document_chunks', priorityAnchors, ollamaKeywordLimit, intent, keywordVendor, keywordSearchOptions),
+        metadataKeywordLimit > 0
+          ? this.searchVendorMetadataTable('ollama_document_chunks', 'NAVER', priorityAnchors, metadataKeywordLimit, intent)
+          : Promise.resolve([]),
       ]);
       results.push(
         ...documentKeywordResults.map((result) => ({ ...result, anchor: 'naver_product_structure_priority_keyword' })),

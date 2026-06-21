@@ -1170,6 +1170,12 @@ if (!/isNaverVideoProductIntent\(intent\)[\s\S]*specific_naver_priority_direct[\
   fail('NAVER video product questions must use narrow direct priority retrieval before hybrid vector fan-out');
 }
 
+if (!/getKeywordTableFetchLimit[\s\S]*isNaverVideoProductIntent\(intent\)[\s\S]*Math\.min\(Math\.max\(limit,\s*8\),\s*18\)/.test(rag)
+  || !/const documentKeywordLimit = usesVideoProductIntent \? 8 : 14/.test(rag)
+  || !/metadataKeywordLimit > 0[\s\S]*searchVendorMetadataTable[\s\S]*Promise\.resolve\(\[\]\)/.test(rag)) {
+  fail('NAVER video product direct retrieval must keep keyword fetch limits tight and skip metadata fan-out');
+}
+
 if (!/function isNaverVideoSpecificProductQuestion[\s\S]*동영상[\s\S]*getSpecificProductSupplementLimit[\s\S]*isNaverVideoSpecificProductQuestion\(message\)/.test(answerHandler)) {
   fail('NAVER video structured answers must not launch slow supplement fan-out');
 }
