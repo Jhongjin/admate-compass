@@ -4252,6 +4252,14 @@ export class RAGSearchService {
     if (this.isKakaoServiceProtectionPolicyIntent(intent)) {
       return /카카오|로고|디자인|서비스명|서비스|상표|저작물|모방|침해|무단|사용\s*불가|집행\s*불가/i;
     }
+    if (
+      intent.vendors.length === 1
+      && intent.vendors[0] === 'KAKAO'
+      && /카카오/.test(queryText)
+      && /업종|제한\s*업종|업종\s*제한|광고\s*가능\s*업종|등록\s*불가|집행\s*불가|금지\s*업종|허용\s*업종/.test(queryText)
+    ) {
+      return /카카오|업종|제한\s*업종|업종\s*제한|광고\s*가능\s*업종|등록\s*불가|집행\s*불가|금지|제한|허용|심사|가이드/i;
+    }
     if (/오인|기만|속이|혼란|허위|과장|오해/.test(queryText)) {
       return /오인|기만|속이|속임|혼란|허위|과장|오해|mislead|decept/i;
     }

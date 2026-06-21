@@ -181,6 +181,7 @@ for (const snippet of [
   "'policy_source_guided_price_discount'",
   "'policy_source_guided_user_deception'",
   "'policy_source_guided_event_material'",
+  "'policy_source_guided_kakao_restricted_industry'",
   "'policy_source_guided_kakao_service_protection'",
   "'kakao_product_structured'",
   "'kakao_product_scope_rescue'",
@@ -1111,7 +1112,7 @@ if (!/const usesFastPolicySourcePriority = this\.isFastPolicySourceGuidedPriorit
   fail('fast policy source-guided retrieval must try bounded keyword/service priority before vector/graph fan-out');
 }
 
-if (!/private getFastPolicySourceGuidedPriorityPattern\([\s\S]*isKakaoServiceProtectionPolicyIntent\(intent\)[\s\S]*오인[\s\S]*기만[\s\S]*가격[\s\S]*할인[\s\S]*이벤트[\s\S]*경품[\s\S]*private isFastPolicySourceGuidedPriorityIntent/.test(rag)
+if (!/private getFastPolicySourceGuidedPriorityPattern\([\s\S]*isKakaoServiceProtectionPolicyIntent\(intent\)[\s\S]*업종[\s\S]*제한[\s\S]*오인[\s\S]*기만[\s\S]*가격[\s\S]*할인[\s\S]*이벤트[\s\S]*경품[\s\S]*private isFastPolicySourceGuidedPriorityIntent/.test(rag)
   || !/private selectFastPolicySourceGuidedPriorityCandidates\([\s\S]*fast_policy_source_priority[\s\S]*fast_policy_source_priority_match/.test(rag)) {
   fail('fast policy source-guided retrieval must keep query-family and source-evidence filters');
 }

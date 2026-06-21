@@ -4085,12 +4085,14 @@ type FastPolicySourceGuidedAnswerFamily =
   | 'price_discount'
   | 'user_deception'
   | 'event_material'
+  | 'kakao_restricted_industry'
   | 'kakao_service_protection';
 
 type FastPolicySourceGuidedAnswerFallback =
   | 'policy_source_guided_price_discount'
   | 'policy_source_guided_user_deception'
   | 'policy_source_guided_event_material'
+  | 'policy_source_guided_kakao_restricted_industry'
   | 'policy_source_guided_kakao_service_protection';
 
 type FastNaverVideoProductAnswerFallback = 'naver_video_product_structured';
@@ -4760,6 +4762,15 @@ function detectFastPolicySourceGuidedAnswerFamily(
     return 'kakao_service_protection';
   }
 
+  if (
+    intent.vendors.length === 1
+    && intent.vendors[0] === 'KAKAO'
+    && /카카오/.test(queryText)
+    && /업종|제한\s*업종|업종\s*제한|광고\s*가능\s*업종|등록\s*불가|집행\s*불가|금지\s*업종|허용\s*업종/.test(queryText)
+  ) {
+    return 'kakao_restricted_industry';
+  }
+
   if (/오인|기만|속이|혼란|허위|과장|오해/.test(queryText)) return 'user_deception';
   if (/가격|할인|할인율|혜택|쿠폰|정가|판매가/.test(queryText)) return 'price_discount';
   if (/이벤트|경품|참여|프로모션|추첨/.test(queryText)) return 'event_material';
@@ -4775,6 +4786,8 @@ function getFastPolicySourcePattern(family: FastPolicySourceGuidedAnswerFamily):
       return /오인|기만|속이|속임|혼란|허위|과장|오해|mislead|decept/i;
     case 'event_material':
       return /이벤트|경품|참여|프로모션|추첨|당첨|기간|조건/i;
+    case 'kakao_restricted_industry':
+      return /카카오|업종|제한\s*업종|업종\s*제한|광고\s*가능\s*업종|등록\s*불가|집행\s*불가|금지|제한|허용|심사|가이드/i;
     case 'kakao_service_protection':
       return /카카오|로고|디자인|서비스명|서비스|상표|저작물|모방|침해|무단|사용\s*불가|집행\s*불가/i;
   }
@@ -4790,6 +4803,8 @@ function getFastPolicyAnswerFallback(
       return 'policy_source_guided_user_deception';
     case 'event_material':
       return 'policy_source_guided_event_material';
+    case 'kakao_restricted_industry':
+      return 'policy_source_guided_kakao_restricted_industry';
     case 'kakao_service_protection':
       return 'policy_source_guided_kakao_service_protection';
   }
@@ -4842,6 +4857,19 @@ function buildFastPolicyAnswerText(
         '',
         `근거: ${citations}`,
       ].join('\n');
+    case 'kakao_restricted_industry':
+      return [
+        '검증된 카카오 심사 가이드 근거 기준으로만 보면, 업종 제한은 “광고 가능 업종인지”와 “소재·랜딩이 등록 기준을 충족하는지”를 나누어 확인하는 편이 안전합니다.',
+        '',
+        '**확인 순서**',
+        `- 먼저 제한 업종, 등록 불가, 집행 불가처럼 업종 자체가 막히는 조건이 있는지 원문 기준으로 확인해야 합니다 ${cite(0)}.`,
+        `- 업종이 가능해 보이더라도 소재 표현, 랜딩, 고지·증빙 조건이 별도 심사 기준에 걸리지 않는지 함께 봐야 합니다 ${cite(1)}.`,
+        '',
+        '**실무 확인**',
+        `- 출처에 없는 예외나 승인 가능성을 단정하지 말고, 실제 업종·상품·소재·랜딩을 카카오 원문 가이드와 대조하세요 ${cite(0)}.`,
+        '',
+        `근거: ${citations}`,
+      ].join('\n');
     case 'kakao_service_protection':
       return [
         '검증된 카카오 정책 근거 기준으로만 보면, 카카오 로고나 서비스명·디자인 사용은 카카오 서비스 오인 가능성을 먼저 확인해야 합니다.',
@@ -4875,7 +4903,7 @@ function buildFastPolicySourceGuidedAnswer(
   if (!family) return null;
 
   const pattern = getFastPolicySourcePattern(family);
-  const requiredVendor = family === 'kakao_service_protection'
+  const requiredVendor = family === 'kakao_service_protection' || family === 'kakao_restricted_industry'
     ? 'KAKAO'
     : (intent.vendors.length === 1 ? intent.vendors[0] : undefined);
   const candidateSources = dedupePublicProductSources(
@@ -4906,7 +4934,7 @@ function buildFastPolicySourceGuidedAnswer(
     sources: candidateSources,
     model: `compass-answer-fast-policy-source-guided-${family.replace(/_/g, '-')}`,
     showContactOption: true,
-    confidenceCap: family === 'kakao_service_protection' ? 80 : 76,
+    confidenceCap: family === 'kakao_service_protection' || family === 'kakao_restricted_industry' ? 80 : 76,
     reviewStatus: 'completed',
     policyAnswerFamily: family,
     fastAnswerFallback: getFastPolicyAnswerFallback(family),
