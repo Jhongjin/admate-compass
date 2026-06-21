@@ -114,7 +114,7 @@ const COMPASS_ANSWER_RESPONSE_CACHE_TTL_MS = Math.min(
   900000,
 );
 const COMPASS_ANSWER_RESPONSE_CACHE_MAX_ENTRIES = 64;
-const COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v14-product-retrieval-paths';
+const COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v19-single-vendor-compare-planning';
 const compassAnswerResponseCache = new Map<string, CompassAnswerResponseCacheEntry>();
 const compassAnswerRuntimeMetrics = {
   startedAt: Date.now(),
@@ -1041,6 +1041,29 @@ function isProductSelectionQuestion(message: string): boolean {
   return /어떻게\s*(고르|선택|구분)|기준으로\s*(설명|구분|선택|정리)|선택\s*기준|고르는\s*기준|골라야|고르면|추천|목적별|목표별|상황별|어떤\s*(상품|유형|캠페인)|무엇을\s*(선택|고르)|뭘\s*(선택|고르)|목표\s*기준|광고\s*상품\s*(종류|유형|목록|구조|군)|광고상품\s*(종류|유형|목록|구조|군)|상품\s*(종류|유형|목록|구조|군)|광고\s*(종류|유형)/.test(normalized);
 }
 
+function isBroadMetaProductPlanningQuestion(message: string, intent?: QueryIntent): boolean {
+  const normalized = normalizeProductIntentText(message);
+  if (intent && intent.vendors.length > 1) return false;
+  const vendor = intent?.vendors.length === 1 ? intent.vendors[0] : undefined;
+  if (vendor && vendor !== 'META') return false;
+
+  const asksMeta = vendor === 'META'
+    || /meta|메타|facebook|페이스북|instagram|인스타그램/.test(normalized);
+  const asksProductTypes = /광고\s*(상품|유형|종류|구조)|광고상품|상품\s*(유형|종류|구조)|유형별|상품별/.test(normalized);
+  const asksPlanningAxes = /캠페인\s*목표|광고\s*형식|소재\s*형식|게재\s*위치|노출\s*위치|리드|잠재\s*고객|앱|카탈로그|활용\s*기준|실무/.test(normalized);
+  const namedAxisCount = [
+    /캠페인\s*(목표|목적)|광고\s*관리자\s*목표|인지도|트래픽|참여|판매/.test(normalized),
+    /광고\s*형식|소재\s*형식|이미지|동영상|카루셀|캐러셀|컬렉션|collection/.test(normalized),
+    /게재\s*위치|노출\s*위치|placements?|facebook|페이스북|instagram|인스타그램/.test(normalized),
+    /리드|잠재\s*고객|lead/.test(normalized),
+    /앱|app/.test(normalized),
+    /카탈로그|catalog|컬렉션|collection/.test(normalized),
+    /측정|픽셀|pixel|capi|conversions?\s*api/.test(normalized),
+  ].filter(Boolean).length;
+
+  return asksMeta && asksProductTypes && asksPlanningAxes && namedAxisCount >= 2;
+}
+
 function isWholeProductCatalogQuestionText(normalized: string): boolean {
   return /전체\s*(광고\s*)?(상품|목록|종류|유형|구조|군)|광고\s*상품\s*(전체|목록|종류|유형|구조|군)|광고상품\s*(전체|목록|종류|유형|구조|군)|상품\s*(전체|목록|종류|유형|구조|군)/.test(normalized);
 }
@@ -1058,6 +1081,8 @@ function hasSpecificProductActionOrPolicySignalQuestion(message: string): boolea
 function isProductCatalogOverviewQuestion(message: string): boolean {
   const normalized = normalizeProductIntentText(message);
   const asksWholeCatalog = isWholeProductCatalogQuestionText(normalized);
+
+  if (isBroadMetaProductPlanningQuestion(message)) return true;
 
   if (hasNamedSpecificProductQuestion(message) && !asksWholeCatalog) {
     return false;
@@ -1078,6 +1103,7 @@ function isProductCatalogOverviewQuestion(message: string): boolean {
 
 function isBroadProductStructureAnswerIntent(message: string, intent: QueryIntent): boolean {
   if (!intent.topics.includes('product_structure')) return false;
+  if (isBroadMetaProductPlanningQuestion(message, intent)) return true;
   if (intent.vendors.length !== 1 || intent.isComparative) return false;
   if (intent.isSpecificProductGuidance && !isExplicitWholeProductCatalogQuestion(message)) return false;
   if (hasNamedSpecificProductQuestion(message) && !isExplicitWholeProductCatalogQuestion(message)) return false;
@@ -1690,9 +1716,9 @@ function buildMetaProductOverviewStructuredFallbackAnswer(
 
   const used = new Set<number>();
   const sections = [
-    'Meta 광고는 캠페인 목표를 먼저 정하고, 그 목표에 맞는 노출 형식과 운영 기능을 조합해 설계하는 구조로 보는 것이 좋습니다.',
+    'Meta 광고 상품은 상품명 목록으로만 보면 부족합니다. 실무에서는 캠페인 구조, 목표, 형식/게재 위치, 운영 모듈, 측정을 같이 묶어 설계합니다.',
     '',
-    '1. **캠페인 목표부터 정하기**',
+    '1. **캠페인 구조와 목표 잡기**',
     '',
   ];
 
@@ -1701,8 +1727,16 @@ function buildMetaProductOverviewStructuredFallbackAnswer(
     used,
     sources,
     'META',
-    /인지도[\s\S]{0,120}트래픽[\s\S]{0,120}참여[\s\S]{0,120}잠재\s*고객[\s\S]{0,120}앱\s*홍보[\s\S]{0,120}판매|캠페인\s*목표|광고\s*관리자\s*목표|campaign[_\s-]*objective|objective/i,
-    label => `- Meta 광고 관리자에서는 인지도, 트래픽, 참여, 잠재 고객, 앱 홍보, 판매처럼 목적별 캠페인 목표를 먼저 고릅니다 ${label}.`,
+    /캠페인[\s\S]{0,80}광고\s*세트|광고\s*세트[\s\S]{0,80}광고\s*단위|campaign[\s\S]{0,80}ad\s*set|ad\s*level/i,
+    label => `- Meta 광고 관리자는 캠페인, 광고 세트, 광고 단위로 나뉘며 목표는 캠페인 단계에서 정하고 예산·일정·타겟·게재 위치는 광고 세트에서 조정합니다 ${label}.`,
+  );
+  addFallbackLine(
+    sections,
+    used,
+    sources,
+    'META',
+    /인지도[\s\S]{0,160}트래픽[\s\S]{0,160}참여[\s\S]{0,160}잠재\s*고객[\s\S]{0,160}앱\s*홍보[\s\S]{0,160}판매|캠페인\s*목표|광고\s*관리자\s*목표|campaign[_\s-]*objective|objective/i,
+    label => `- 캠페인 목표는 인지도, 트래픽, 참여, 잠재 고객, 앱 홍보, 판매처럼 원하는 결과를 기준으로 고릅니다 ${label}.`,
   );
 
   const formatLines: string[] = [];
@@ -1711,8 +1745,8 @@ function buildMetaProductOverviewStructuredFallbackAnswer(
     used,
     sources,
     'META',
-    /이미지[\s\S]{0,80}동영상[\s\S]{0,80}슬라이드|카루셀|carousel|collection|컬렉션|광고\s*형식|ad\s*format/i,
-    label => `- 광고 형식은 이미지, 동영상, 슬라이드/카루셀, 컬렉션처럼 메시지를 보여주는 방식에 따라 나누어 확인합니다 ${label}.`,
+    /이미지[\s\S]{0,120}동영상[\s\S]{0,120}(카루셀|캐러셀|슬라이드|컬렉션|인스턴트)|카루셀|carousel|collection|컬렉션|인스턴트\s*경험|광고\s*형식|ad\s*format/i,
+    label => `- 광고 형식은 이미지, 동영상, 카루셀, 컬렉션, 인스턴트 경험처럼 목표와 지면에 따라 사용할 수 있는 선택지가 달라집니다 ${label}.`,
   );
   addFallbackLine(
     formatLines,
@@ -1720,10 +1754,10 @@ function buildMetaProductOverviewStructuredFallbackAnswer(
     sources,
     'META',
     /facebook|instagram|messenger|audience\s*network|페이스북|인스타그램|게재\s*위치|노출\s*위치|placement/i,
-    label => `- Facebook, Instagram 등 노출 위치에 따라 사용할 수 있는 형식과 세부 사양이 달라질 수 있습니다 ${label}.`,
+    label => `- Facebook, Instagram 등 게재 위치별로 지원 형식과 권장 사양이 달라지므로 목표와 함께 확인해야 합니다 ${label}.`,
   );
   if (formatLines.length > 0) {
-    sections.push('', '2. **목표에 맞는 광고 형식과 노출 위치 확인하기**', '', ...formatLines);
+    sections.push('', '2. **형식과 게재 위치 확인하기**', '', ...formatLines);
   }
 
   const operationLines: string[] = [];
@@ -1732,33 +1766,33 @@ function buildMetaProductOverviewStructuredFallbackAnswer(
     used,
     sources,
     'META',
-    /앱\s*(홍보|설치|인스톨|캠페인)|app\s*(promotion|install)|앱\s*광고/i,
-    label => `- 앱 설치나 앱 내 행동을 늘리는 목적이면 앱 홍보/App Promotion 계열 목표와 앱 광고 조건을 확인합니다 ${label}.`,
+    /리드\s*양식|잠재\s*고객|lead\s*form|lead\s*generation|인스턴트\s*양식|메시지|전화/i,
+    label => `- 상담 신청이나 연락처 수집이 목표라면 리드 목적과 인스턴트 양식, 메시지, 전화 같은 전환 위치를 먼저 봅니다 ${label}.`,
   );
   addFallbackLine(
     operationLines,
     used,
     sources,
     'META',
-    /카탈로그|catalog|컬렉션|collection|advantage\+|어드밴티지/i,
-    label => `- 상품 카탈로그나 여러 상품을 묶어 보여주는 운영이라면 카탈로그, 컬렉션, Advantage+ 관련 조건을 별도로 확인합니다 ${label}.`,
+    /앱\s*(홍보|설치|인스톨|캠페인|이벤트)|app\s*(promotion|install|event)|앱\s*광고/i,
+    label => `- 앱 설치나 앱 내 행동을 늘리는 목적이면 앱 홍보 목표와 앱 이벤트 측정 조건을 함께 확인합니다 ${label}.`,
   );
   addFallbackLine(
     operationLines,
     used,
     sources,
     'META',
-    /리드\s*양식|잠재\s*고객|lead\s*form|lead\s*generation|비즈니스\s*폼/i,
-    label => `- 상담 신청이나 연락처 수집이 목적이면 잠재 고객/리드 양식 계열 조건을 확인합니다 ${label}.`,
+    /카탈로그|catalog|컬렉션|collection|advantage\+|어드밴티지|웹사이트\s*전환|conversions?\s*api|meta\s*pixel|메타\s*픽셀/i,
+    label => `- 판매·커머스 운영은 카탈로그, 컬렉션, Advantage+ 카탈로그, 픽셀/CAPI 같은 전환 측정을 묶어서 검토합니다 ${label}.`,
   );
   if (operationLines.length > 0) {
-    sections.push('', `${formatLines.length > 0 ? '3' : '2'}. **운영 기능이 필요한지 확인하기**`, '', ...operationLines);
+    sections.push('', `${formatLines.length > 0 ? '3' : '2'}. **운영 모듈과 측정 붙이기**`, '', ...operationLines);
   }
 
   if (used.size === 0) return null;
 
   sections.push('');
-  sections.push('정리하면, 먼저 캠페인 목표를 정하고, 그 목표에 맞는 광고 형식과 노출 위치를 고른 뒤 앱·카탈로그·리드 같은 운영 기능이 필요한지 확인하면 됩니다.');
+  sections.push('정리하면, 목표를 먼저 고르고 그 목표에서 지원되는 전환 위치, 게재 위치, 소재 형식, 리드·앱·카탈로그·측정 모듈을 순서대로 붙이면 됩니다.');
   sections.push('');
   sections.push(`근거: ${formatFallbackEvidenceLabels(used)}`);
 
@@ -2768,10 +2802,22 @@ function getProductStructureVisibleSourceText(source: ReturnType<typeof buildVer
 }
 
 function getStrictProductVisibleEvidenceText(source: ReturnType<typeof buildVerifiedSources>[number]) {
+  const sourceLike = source as any;
+  const metadata = sourceLike.metadata || {};
   return normalizeEvidenceText([
     source.title,
     source.originalTitle,
     source.excerpt,
+    source.matchText,
+    metadata.title,
+    metadata.source_title,
+    metadata.canonical_title,
+    metadata.productStructureAnchor,
+    metadata.sourceKind,
+    metadata.answerEvidenceRole,
+    metadata.answer_evidence_role,
+    Array.isArray(source.rankReason) ? source.rankReason.join(' ') : '',
+    Array.isArray(source.evidenceDecisionReason) ? source.evidenceDecisionReason.join(' ') : '',
   ].filter(Boolean).join(' '));
 }
 
@@ -3445,7 +3491,7 @@ function sourceIdentityLooksLikeGenericLegalOrAccountDoc(source: ReturnType<type
   if (!identityText) return false;
 
   const genericLegalOrAccountSignal = /이용약관|약관|운영\s*정책|서비스\s*이용|회원\s*가입|회원가입|계정\s*(생성|만들기|관리)|책임자|세금\s*계산서|세금계산서|청구|결제|지불|billing|payment|invoice|권한\s*관리|비즈니스\s*계정|클린센터|개인정보\s*처리방침/.test(identityText);
-  const productSpecificGuideSignal = /상품\s*가이드|상품가이드|상품\s*소개|상품소개|제작\s*가이드|제작가이드|광고\s*상품|광고상품|사이트검색광고|쇼핑검색광고|쇼핑블록|비즈보드|카탈로그|컬렉션|리드\s*양식|앱\s*(인스톨|설치|홍보)|동영상\s*광고|디스플레이\s*광고|성과형\s*디스플레이|홈피드|스마트채널|타임보드|롤링보드/.test(identityText);
+  const productSpecificGuideSignal = /상품\s*가이드|상품가이드|상품\s*소개|상품소개|제작\s*가이드|제작가이드|광고\s*상품|광고상품|캠페인\s*(목표|유형|목적)|광고\s*관리자|마케팅\s*목표|게재\s*위치|노출\s*위치|광고\s*형식|전환\s*위치|advertising\s*standards?|ad\s*standards?|사이트검색광고|쇼핑검색광고|쇼핑블록|비즈보드|카탈로그|컬렉션|리드\s*양식|앱\s*(인스톨|설치|홍보)|동영상\s*광고|디스플레이\s*광고|성과형\s*디스플레이|홈피드|스마트채널|타임보드|롤링보드/.test(identityText);
 
   return genericLegalOrAccountSignal && !productSpecificGuideSignal;
 }
@@ -4202,6 +4248,7 @@ function detectProductAnswerFamily(message: string, intent: QueryIntent): Produc
   const vendor = intent.vendors.length === 1 ? intent.vendors[0] : undefined;
 
   if (vendor === 'META') {
+    if (isBroadMetaProductPlanningQuestion(message, intent)) return 'meta_overview';
     if (/앱\s*(인스톨|설치|홍보|캠페인|사전\s*등록)|app\s*(install|promotion)/.test(normalized)) return 'meta_app_install';
     if (/리드\s*양식|잠재\s*고객|잠재고객|lead\s*(form|ads?|generation)|비즈니스\s*폼|비즈니스폼/.test(normalized)) return 'meta_lead';
     if (/카탈로그|catalog|컬렉션|collection|advantage\+|어드밴티지/.test(normalized)) return 'meta_catalog';
@@ -4633,32 +4680,38 @@ function getBroadProductAnswerProfile(family: ProductAnswerFamily): EvidenceBack
     case 'meta_overview':
       return {
         family,
-        intro: '제공된 Meta 근거 기준으로는 광고 형식, Shop/카탈로그형 커머스 흐름, Facebook·Instagram 노출 흐름을 중심으로 확인됩니다. 캠페인 목표나 자동화 기능은 해당 근거가 잡힌 경우에만 함께 대조해야 합니다.',
+        intro: 'Meta 광고 상품은 개별 상품명을 나열하기보다, 캠페인 구조와 목표, 게재 위치/형식, 운영 모듈을 조합해 설계하는 체계로 보는 편이 실무적입니다.',
         sections: [
           {
-            heading: '먼저 정할 것',
+            heading: '1. 캠페인 구조와 목표',
             bullets: [
-              { text: '캠페인 목표는 인지도, 트래픽, 참여, 잠재 고객, 앱 홍보처럼 달성하려는 결과를 기준으로 고릅니다.', terms: ['캠페인 목표', '광고 관리자 목표', '마케팅 목표', '인지도', '트래픽', '참여', '잠재 고객', '앱 홍보'] },
-              { text: '광고 형식은 컬렉션이나 슬라이드/캐러셀처럼 제품과 여러 이미지를 보여주는 방식이 확인됩니다.', terms: ['슬라이드 광고', '컬렉션 광고', '캐러셀', '카루셀', '컬렉션'] },
-              { text: '노출 위치는 Facebook, Instagram 등 지면별 사양과 함께 확인해야 합니다.', terms: ['노출 위치', '게재 위치', 'Facebook', 'Instagram'] },
-              { text: 'Shops나 Shop 광고는 Facebook·Instagram의 커머스 흐름과 상품 노출을 함께 볼 때 확인합니다.', terms: ['Shop', 'Shops', 'Shop 광고', 'Facebook 및 Instagram에서 Shop'] },
+              { text: '광고 관리자는 캠페인, 광고 세트, 광고 단위로 나뉘며 캠페인에서 목표를 정하고 광고 세트에서 예산·일정·타겟·게재 위치를 잡은 뒤 광고 단위에서 소재와 문구를 구성합니다.', terms: ['광고 관리자 구조', '광고 레벨', 'advertising levels'] },
+              { text: '캠페인 목표는 인지도, 트래픽, 참여, 잠재 고객, 앱 홍보, 판매처럼 비즈니스가 얻으려는 결과를 기준으로 선택합니다.', terms: ['인지도', '트래픽', '참여', '잠재 고객', '앱 홍보', '판매'] },
             ],
           },
           {
-            heading: '추가로 확인할 기능',
+            heading: '2. 형식과 노출 위치',
             bullets: [
-              { text: '카탈로그와 컬렉션은 상품 데이터와 구매 흐름을 함께 봅니다.', terms: ['카탈로그', 'Catalog', '컬렉션'] },
-              { text: 'Advantage+ 같은 자동화 기능은 해당 공식 근거가 확인될 때 별도로 대조합니다.', terms: ['Advantage+', '어드밴티지'] },
+              { text: '이미지, 동영상, 카루셀, 컬렉션, 인스턴트 경험 같은 광고 형식은 목표와 게재 위치에 따라 사용 가능 여부와 세부 사양이 달라집니다.', terms: ['광고 형식', '인스턴트 경험'] },
+              { text: 'Facebook, Instagram 등 노출 위치는 캠페인 목표와 함께 확인해야 하며, 같은 소재라도 지면별 권장 사양이 달라질 수 있습니다.', terms: ['목표별 게재 위치', '광고 형식'] },
+            ],
+          },
+          {
+            heading: '3. 운영 모듈',
+            bullets: [
+              { text: '상담 신청이나 연락처 수집이 목표라면 리드 목적과 인스턴트 양식, 메시지, 전화 같은 전환 위치를 먼저 검토합니다.', terms: ['인스턴트 양식', '메시지', '전화'] },
+              { text: '앱 설치나 앱 내 행동을 키우려면 앱 홍보 목표와 앱 이벤트 측정 조건을 함께 확인합니다.', terms: ['앱 이벤트 측정', '앱 이벤트'] },
+              { text: '상품 판매와 커머스 운영은 카탈로그, 컬렉션, Advantage+ 카탈로그, 웹사이트 전환 측정을 묶어서 봐야 합니다.', terms: ['Advantage+ 카탈로그', '웹사이트 전환 측정'] },
             ],
           },
         ],
-        summary: '정리하면, 이번 근거에서는 확인된 형식과 커머스 지면을 먼저 설명하고, 목표·자동화 같은 넓은 체계는 추가 공식 근거와 대조해야 합니다.',
+        summary: '정리하면, Meta 광고는 목표를 먼저 고르고, 그 목표에 맞는 전환 위치와 게재 위치/형식을 정한 뒤 리드·앱·카탈로그·측정 기능이 필요한지 붙이는 순서로 검토하면 됩니다.',
         model: 'compass-answer-deterministic-meta-overview',
-        minBullets: 3,
-        coverageNotice: '범위 제한: 현재 선별 출처가 Meta 목표·리드·앱·측정 축을 모두 직접 뒷받침하지 않으면, 전체 상품 목록이 아니라 확인된 상품 구조만 답변합니다.',
+        minBullets: 5,
+        coverageNotice: '실무 체크: 실제 캠페인 생성 전에는 선택한 목표에서 지원되는 전환 위치, 게재 위치, 소재 형식, 픽셀/CAPI 또는 앱 이벤트 같은 측정 조건을 같은 기준으로 대조해야 합니다.',
         showContactOption: true,
-        confidenceCap: 78,
-        reviewStatus: 'limited',
+        confidenceCap: 86,
+        reviewStatus: 'completed',
       };
 
     case 'google_overview':
@@ -4681,14 +4734,14 @@ function getBroadProductAnswerProfile(family: ProductAnswerFamily): EvidenceBack
         summary: '정리하면, Google Ads는 목적에 맞는 캠페인 유형을 먼저 고르고, 애셋·확장 소재·측정 조건을 함께 대조해야 합니다.',
         model: 'compass-answer-deterministic-google-overview',
         minBullets: 4,
-        coverageNotice: '범위 제한: PMax, Demand Gen, YouTube/동영상처럼 핵심 캠페인 축의 직접 근거가 없으면 해당 축은 확정 목록이 아니라 추가 확인 항목으로 남깁니다.',
+        coverageNotice: '추가 확인: PMax, Demand Gen, YouTube/동영상처럼 핵심 캠페인 축은 공식 근거가 함께 잡힌 경우에만 확정 상품군으로 분리하고, 계정·목표·애셋 조건을 원문 기준으로 다시 대조합니다.',
         confidenceCap: 86,
       };
 
     case 'naver_overview':
       return {
         family,
-        intro: '네이버 광고 상품은 검색 유입, 쇼핑 상품 노출, 주요 쇼핑/디스플레이 지면, 상품 DB 조건을 나눠 확인하는 편이 안전합니다.',
+        intro: '네이버 광고 상품은 검색 유입, 쇼핑 상품 노출, 디스플레이/동영상 지면, 상품 DB 조건을 나눠 확인하는 편이 안전합니다.',
         sections: [
           {
             heading: '대표 상품군',
@@ -4698,13 +4751,14 @@ function getBroadProductAnswerProfile(family: ProductAnswerFamily): EvidenceBack
               { text: '쇼핑검색광고는 쇼핑몰 상품형처럼 상품 노출과 유입을 함께 다룰 때 확인합니다.', terms: ['쇼핑검색광고', '쇼핑검색', '쇼핑몰 상품형'] },
               { text: '쇼핑블록이나 주요 쇼핑 지면은 쇼핑몰 유입 또는 브랜딩 목적을 검토할 때 확인합니다.', terms: ['쇼핑블록', '쇼핑 지면', 'PC 쇼핑블록', '모바일 쇼핑'] },
               { text: '성과형/보장형 디스플레이와 DA 지면은 검색형 상품과 분리해 홈피드, 스마트채널, 타임보드, 롤링보드, 헤드라인DA 같은 지면 조건을 확인합니다.', terms: ['성과형 디스플레이', '보장형', '네이버 DA', '헤드라인DA', '홈피드', '스마트채널', '타임보드', '롤링보드'] },
+              { text: '동영상 광고는 동영상 조회, 숏폼 아웃스트림, 네이버 클립처럼 영상 노출 방식과 소재 조건을 별도로 확인합니다.', terms: ['동영상 광고', '동영상 조회', '숏폼 아웃스트림', '네이버 클립', '아웃스트림'] },
               { text: '상품 DB URL, EP, 상품정보 수신 같은 조건은 쇼핑 상품 운영 전 함께 확인합니다.', terms: ['상품 DB', '상품DB', 'DB URL', 'EP', '상품정보 수신'] },
             ],
           },
         ],
-        summary: '정리하면, 네이버는 검색형 상품과 쇼핑형 상품, 쇼핑 지면, 상품 DB 조건을 분리해서 검토해야 합니다.',
+        summary: '정리하면, 네이버는 검색형 상품, 쇼핑형 상품, 디스플레이/동영상 지면, 상품 DB 조건을 분리해서 검토해야 합니다.',
         model: 'compass-answer-deterministic-naver-overview',
-        minBullets: 5,
+        minBullets: 4,
         confidenceCap: 88,
       };
 
@@ -4743,9 +4797,10 @@ function shouldUseDeterministicProductAnswerBeforeLlm() {
     || process.env.COMPASS_ENABLE_DETERMINISTIC_PRODUCT_ANSWERS === 'true';
 }
 
-function shouldUseFastBroadProductDeterministicAnswer(intent: QueryIntent) {
+function shouldUseFastBroadProductDeterministicAnswer(intent: QueryIntent, message?: string) {
   if (process.env.COMPASS_DISABLE_FAST_BROAD_PRODUCT_ANSWERS === 'true') return false;
   if (!intent.isProductStructureOverview || intent.isSpecificProductGuidance) return false;
+  if (message && isBroadMetaProductPlanningQuestion(message, intent)) return true;
   if (intent.vendors.length !== 1 || intent.isComparative) return false;
 
   return intent.vendors[0] === 'META'
@@ -5037,6 +5092,34 @@ function buildFastPolicyAnswerText(
         `근거: ${citations}`,
       ].join('\n');
     case 'review_standards':
+      if (intent.vendors.length === 1 && intent.vendors[0] === 'NAVER') {
+        return [
+          '검증된 네이버 광고 등록 기준 근거 기준으로만 보면, 광고 심사는 등록 가능 업종·표현 제한·법령 준수·이용자 오인 가능성을 함께 검토해야 합니다.',
+          '',
+          '**판단 기준**',
+          `- 광고 등록 기준은 소재와 랜딩이 네이버 원문 기준을 충족하는지 보는 흐름으로 접근해야 합니다 ${cite(0)}.`,
+          `- 법령 위반, 필수 고지 누락, 허위·과장 또는 이용자 오인 표현은 등록 제한이나 반려 사유가 될 수 있으므로 별도 확인해야 합니다 ${cite(1)}.`,
+          '',
+          '**실무 확인**',
+          `- 업종, 문구, 이미지·동영상, 랜딩의 실제 표시를 함께 놓고 원문 기준으로 최종 검토하세요 ${cite(0)}.`,
+          '',
+          `근거: ${citations}`,
+        ].join('\n');
+      }
+      if (intent.vendors.length === 1 && intent.vendors[0] === 'GOOGLE') {
+        return [
+          '검증된 Google Ads 정책 근거 기준으로만 보면, 정책 위반 여부는 소재 표현, 캠페인 설정, 랜딩 페이지를 함께 검토해야 합니다.',
+          '',
+          '**판단 기준**',
+          `- Google Ads 정책에서 제한하거나 금지하는 표현, 업종, 소재 요소가 있는지 먼저 확인해야 합니다 ${cite(0)}.`,
+          `- 정책 검토는 광고 문구만이 아니라 이미지·동영상 소재, 연결 URL, 랜딩 페이지의 실제 내용까지 함께 대조하는 편이 안전합니다 ${cite(1)}.`,
+          '',
+          '**실무 확인**',
+          `- 출처에 없는 승인 예외는 단정하지 말고 실제 소재와 랜딩을 Google 원문 정책 기준으로 최종 검토하세요 ${cite(0)}.`,
+          '',
+          `근거: ${citations}`,
+        ].join('\n');
+      }
       return [
         '검증된 정책/가이드 근거 기준으로만 보면, 광고 심사 기준은 소재 표현, 업종, 랜딩, 계정 설정을 함께 놓고 확인해야 합니다.',
         '',
@@ -5045,11 +5128,58 @@ function buildFastPolicyAnswerText(
         `- 집행 가능 여부는 업종 제한, 금지 표현, 필수 고지, 증빙 조건이 함께 걸릴 수 있으므로 확인 범위를 나눠 봐야 합니다 ${cite(1)}.`,
         '',
         '**실무 확인**',
-        `- 출처에 없는 자동 승인 가능성은 단정하지 말고 실제 소재·랜딩·업종을 원문 심사 기준과 대조하세요 ${cite(0)}.`,
+        `- 출처에 없는 자동 승인 가능성은 단정하지 말고 실제 소재·랜딩·업종을 원문 심사 기준과 대조한 뒤 최종 검토하세요 ${cite(0)}.`,
         '',
         `근거: ${citations}`,
       ].join('\n');
     case 'vendor_policy_general':
+      if (intent.vendors.length === 1 && intent.vendors[0] === 'META') {
+        return [
+          'Meta 광고 정책은 소재 문구만 보는 기준이 아니라, 광고 표준 위반 여부를 소재·타겟팅·연결 URL·랜딩 페이지까지 함께 검토하는 체계로 보는 편이 안전합니다.',
+          '',
+          '**핵심 기준**',
+          `- Meta 광고 표준은 광고에서 허용되는 콘텐츠와 금지되는 콘텐츠에 대한 세부 정책과 지침을 제공합니다 ${cite(0)}.`,
+          `- 광고 검토는 이미지, 동영상, 텍스트, 타겟팅, 연결 URL, 랜딩 페이지까지 포함할 수 있으므로 소재와 랜딩의 표현이 서로 맞는지 함께 봐야 합니다 ${cite(2)}.`,
+          `- 차별 관행 정책에서는 오디언스 선택 도구로 특정 그룹을 부당하게 포함하거나 제외하는 행위와 차별적 광고 콘텐츠를 금지합니다 ${cite(1)}.`,
+          `- 혐오 행동 광고는 인종, 민족, 국적, 장애, 종교, 계급, 성적 지향, 성별, 성 정체성, 심각한 질병 등 보호 특성을 근거로 타인을 공격하면 안 됩니다 ${cite(3)}.`,
+          '',
+          '**실무 체크**',
+          '- 타겟팅: 보호 특성 집단을 배제하거나 특정 집단만 부당하게 겨냥하는 조건이 없는지 확인합니다.',
+          '- 소재: 문구, 이미지, 영상에서 개인 특성 단정, 차별, 혐오, 과장·오인 가능성이 없는지 확인합니다.',
+          '- 랜딩: 광고에서 약속한 조건과 실제 랜딩의 가격, 혜택, 고지, 서비스 내용이 일치하는지 확인합니다.',
+          '- 승인 후 리스크: 광고가 게재되기 전 모든 정책을 완전히 검토하지 않을 수도 있으므로, 승인 이후에도 수정·제한 가능성을 염두에 둡니다.',
+          '',
+          `근거: ${citations}`,
+        ].join('\n');
+      }
+      if (intent.vendors.length === 1 && intent.vendors[0] === 'NAVER') {
+        return [
+          '검증된 네이버 광고 정책 근거 기준으로만 보면, 정책 위반 소재 판단은 광고 등록 기준, 법령 준수, 이용자 오인 가능성을 함께 검토해야 합니다.',
+          '',
+          '**판단 기준**',
+          `- 네이버 광고 등록 기준에서 금지하거나 제한하는 표현, 업종, 소재 요소가 있는지 먼저 확인해야 합니다 ${cite(0)}.`,
+          `- 법령 위반, 허위·과장, 이용자 오인 가능성은 문구와 랜딩의 실제 표시까지 함께 대조해야 합니다 ${cite(1)}.`,
+          '',
+          '**실무 확인**',
+          `- 출처에 없는 예외나 계정별 승인 가능성은 단정하지 말고 네이버 원문 정책과 실제 소재 기준으로 최종 검토하세요 ${cite(0)}.`,
+          '',
+          `근거: ${citations}`,
+        ].join('\n');
+      }
+      if (intent.vendors.length === 1 && intent.vendors[0] === 'GOOGLE') {
+        return [
+          '검증된 Google Ads 정책 근거 기준으로만 보면, 정책 위반 소재 판단은 원문 정책과 실제 광고·랜딩 맥락을 함께 검토해야 합니다.',
+          '',
+          '**판단 기준**',
+          `- Google Ads 정책에서 금지하거나 제한하는 표현, 업종, 소재 요소가 있는지 먼저 확인해야 합니다 ${cite(0)}.`,
+          `- 정책 위반 여부는 광고 문구만이 아니라 이미지, 동영상, 랜딩 페이지, 고지 조건까지 함께 대조하는 편이 안전합니다 ${cite(1)}.`,
+          '',
+          '**실무 확인**',
+          `- 출처에 없는 예외나 계정별 승인 가능성은 단정하지 말고 Google 원문 정책과 실제 소재 기준으로 최종 검토하세요 ${cite(0)}.`,
+          '',
+          `근거: ${citations}`,
+        ].join('\n');
+      }
       return [
         `검증된 ${vendorLabel} 광고 정책 근거 기준으로만 보면, 정책 위반 소재 판단은 원문 정책과 실제 광고·랜딩 맥락을 함께 확인해야 합니다.`,
         '',
@@ -5058,7 +5188,7 @@ function buildFastPolicyAnswerText(
         `- 정책 위반 여부는 광고 문구만이 아니라 이미지, 동영상, 랜딩 페이지, 고지 조건까지 함께 대조하는 편이 안전합니다 ${cite(1)}.`,
         '',
         '**실무 확인**',
-        `- 출처에 없는 예외나 계정별 승인 가능성은 단정하지 말고 ${vendorLabel} 원문 정책과 실제 소재 기준으로 최종 확인하세요 ${cite(0)}.`,
+        `- 출처에 없는 예외나 계정별 승인 가능성은 단정하지 말고 ${vendorLabel} 원문 정책과 실제 소재 기준으로 최종 검토하세요 ${cite(0)}.`,
         '',
         `근거: ${citations}`,
       ].join('\n');
@@ -6413,12 +6543,63 @@ function sourceLooksLikeMetaBroadProductNewsNoise(source: ReturnType<typeof buil
   return looksLikeSingleNewsStory || !hasBroadOverviewStructure;
 }
 
+function sourceIsOfficialMetaProductOverviewSnapshot(source: ReturnType<typeof buildVerifiedSources>[number]) {
+  if (!sourceMatchesVendor(source, 'META')) return false;
+  const sourceLike = source as any;
+  const metadata = sourceLike.metadata || {};
+  const identityText = normalizeEvidenceText([
+    getSourceIdentityText(source),
+    getProductStructureVisibleSourceText(source),
+    getSourceText(source),
+    metadata.sourceKind,
+    metadata.answerEvidenceRole,
+    metadata.answer_evidence_role,
+  ].filter(Boolean).join(' '));
+
+  return metadata.metaProductOverviewOfficialChunk === true
+    || metadata.officialProductOverviewSnapshot === true
+    || metadata.answerEvidenceRole === 'official_product_overview'
+    || metadata.answer_evidence_role === 'official_product_overview'
+    || /meta_product_overview_official_chunk|official_product_overview|meta_business_help_(ad_levels|objectives|formats_placements|operating_modules)_2026|facebook\.com\/business\/help\/(621956575422138|1438417719786914|279271845888065|2035196646663270)/.test(identityText);
+}
+
+function sourceIsOfficialProductOverviewSnapshot(
+  source: ReturnType<typeof buildVerifiedSources>[number],
+  targetVendor?: VendorIntent,
+) {
+  if (!sourceMatchesVendor(source, targetVendor)) return false;
+  if (targetVendor && hasExplicitOtherVendorSignal(source, targetVendor)) return false;
+  const sourceLike = source as any;
+  const metadata = sourceLike.metadata || {};
+  const identityText = normalizeEvidenceText([
+    getSourceIdentityText(source),
+    getProductStructureVisibleSourceText(source),
+    getSourceText(source),
+    metadata.sourceKind,
+    metadata.source_kind,
+    metadata.answerEvidenceRole,
+    metadata.answer_evidence_role,
+    metadata.productStructureAnchor,
+    Array.isArray(source.rankReason) ? source.rankReason.join(' ') : '',
+    Array.isArray(source.evidenceDecisionReason) ? source.evidenceDecisionReason.join(' ') : '',
+  ].filter(Boolean).join(' '));
+
+  return metadata.officialProductOverviewSnapshot === true
+    || metadata.metaProductOverviewOfficialChunk === true
+    || metadata.googleProductOverviewOfficialChunk === true
+    || metadata.answerEvidenceRole === 'official_product_overview'
+    || metadata.answer_evidence_role === 'official_product_overview'
+    || /official_product_overview|meta_product_overview_official_chunk|google_product_overview_official_chunk|naver_(video|shopping|display).*official_chunk|kakao_product_official_chunk/.test(identityText)
+    || /meta_business_help_(ad_levels|objectives|formats_placements|operating_modules)_2026|google_ads_(campaign_types|campaign_objectives|shopping_ads|app_campaigns)_2026/.test(identityText);
+}
+
 function isUsableBroadProductStructureSource(
   source: ReturnType<typeof buildVerifiedSources>[number],
   targetVendor?: VendorIntent,
 ) {
   if (!sourceMatchesVendor(source, targetVendor)) return false;
   if (targetVendor && hasExplicitOtherVendorSignal(source, targetVendor)) return false;
+  if (sourceIsOfficialProductOverviewSnapshot(source, targetVendor)) return true;
   if (targetVendor === 'META' && sourceLooksLikeMetaBroadProductNewsNoise(source)) return false;
   if (sourceIdentityLooksLikeGenericLegalOrAccountDoc(source)) return false;
   if (sourceLooksLikeProductStructureSupportNoise(source)) return false;
@@ -6445,6 +6626,7 @@ function scoreBroadProductStructureSource(
   score += Math.max(0, 0.45 - index * 0.025);
 
   if (sourceMatchesVendor(source, targetVendor)) score += 0.8;
+  if (sourceIsOfficialProductOverviewSnapshot(source, targetVendor)) score += 1.4;
   if (isOfficialGuideGraphSource(source)) score += 0.75;
   if (isGraphVerifiedSource(source)) score += 0.35;
   if (hasProductStructureGraphSourceSignal(source)) score += 0.9;
@@ -6477,8 +6659,19 @@ function selectProductStructureResponseSources(sources: ReturnType<typeof buildV
     .filter(source => !targetVendor || !sourceHasCrossVendorUrl(source, [targetVendor]))
     .filter(source => !(targetVendor === 'META' && graphSourceLooksLikeBroadBusinessNewsTitle(source) && !graphSourceHasAdProductTitle(source)))
     .filter(source => !sourceHasBlockingExtractionNoise(source));
-  const usableLabelledSources = labelledSources
+  const baseUsableLabelledSources = labelledSources
     .filter(source => isUsableBroadProductStructureSource(source, targetVendor));
+  const officialProductOverviewSources = labelledSources
+    .filter(source => sourceIsOfficialProductOverviewSnapshot(source, targetVendor));
+  const officialProductOverviewKeys = new Set(officialProductOverviewSources.map(getProductStructureSourceKey).filter(Boolean));
+  const usableLabelledSources = [
+    ...officialProductOverviewSources,
+    ...baseUsableLabelledSources.filter(source => {
+      if (officialProductOverviewSources.includes(source)) return false;
+      const key = getProductStructureSourceKey(source);
+      return !key || !officialProductOverviewKeys.has(key);
+    }),
+  ];
   const selected = usableLabelledSources
     .map((source, index) => ({
       source,
@@ -6495,7 +6688,7 @@ function selectProductStructureResponseSources(sources: ReturnType<typeof buildV
       const groupCount = selected.filter(item => (
         getBroadProductStructureEvidenceGroup(item, targetVendor) === sourceGroup
       )).length;
-      const perGroupLimit = sourceGroup === 'official_graph' ? 3 : 2;
+      const perGroupLimit = sourceGroup === 'official_product_overview' || sourceGroup === 'official_meta_overview' ? 4 : sourceGroup === 'official_graph' ? 3 : 2;
       if (groupCount >= perGroupLimit) return selected;
       const publicKey = getProductStructurePublicSourceKey(source);
       if (publicKey && selected.some(item => getProductStructurePublicSourceKey(item) === publicKey)) {
@@ -6526,8 +6719,10 @@ function selectProductStructureResponseSources(sources: ReturnType<typeof buildV
         const coverageHits = requestedCoverageTerms.filter(term => sourceCoversRequestedProductStructureTerm(source, term)).length;
         const focusHit = sourceMatchesRequestedProductFocus(source, requestedFocus);
         const hasAnswerSignal = hasBroadProductStructureAnswerSignal(source);
+        const isOfficialProductOverview = sourceIsOfficialProductOverviewSnapshot(source, targetVendor);
         const isRecoverable = (
-          hasAnswerSignal
+          isOfficialProductOverview
+          || hasAnswerSignal
           || queryHits > 0
           || coverageHits > 0
           || (requestedFocus?.isSpecificFamilyQuestion && focusHit)
@@ -6544,6 +6739,7 @@ function selectProductStructureResponseSources(sources: ReturnType<typeof buildV
           + coverageHits * 0.6
           + scoreRequestedProductFocus(source, requestedFocus)
           + (isOfficialGuideGraphSource(source) ? 0.45 : 0)
+          + (isOfficialProductOverview ? 1.1 : 0)
           + Math.max(0, 0.25 - index * 0.01);
         return { source, score, index };
       })
@@ -6588,6 +6784,8 @@ function getBroadProductStructureEvidenceGroup(
   source: ReturnType<typeof buildVerifiedSources>[number],
   targetVendor?: VendorIntent,
 ) {
+  if (sourceIsOfficialProductOverviewSnapshot(source, targetVendor)) return 'official_product_overview';
+  if (targetVendor === 'META' && sourceIsOfficialMetaProductOverviewSnapshot(source)) return 'official_meta_overview';
   if (isOfficialGuideGraphSource(source)) return 'official_graph';
 
   const text = normalizeEvidenceText([
@@ -7425,7 +7623,21 @@ function scoreVerifiedSourceForIntent(
   intent: QueryIntent,
   originalIndex: number
 ) {
+  const sourceLike = source as any;
+  const metadata = sourceLike.metadata || {};
   const text = `${source.title || ''} ${source.originalTitle || ''} ${source.excerpt || ''}`.toLowerCase();
+  const identityText = normalizeEvidenceText([
+    text,
+    source.url,
+    metadata.source_url,
+    metadata.document_url,
+    metadata.url,
+    metadata.sourceKind,
+    metadata.answerEvidenceRole,
+    metadata.answer_evidence_role,
+    Array.isArray(source.rankReason) ? source.rankReason.join(' ') : '',
+    Array.isArray(source.evidenceDecisionReason) ? source.evidenceDecisionReason.join(' ') : '',
+  ].filter(Boolean).join(' '));
   let score = 100 - originalIndex;
 
   if (source.sourceVendor && intent.vendors.includes(source.sourceVendor as VendorIntent)) score += 40;
@@ -7435,6 +7647,8 @@ function scoreVerifiedSourceForIntent(
   }
   if (source.vendorMismatch) score -= 35;
   if (source.evidenceDecision === 'verified') score += 20;
+  if (metadata.fastPolicyOfficialChunk === true || metadata.answerEvidenceRole === 'official_policy' || metadata.answer_evidence_role === 'official_policy') score += 70;
+  if (metadata.metaProductOverviewOfficialChunk === true || metadata.googleProductOverviewOfficialChunk === true || metadata.officialProductOverviewSnapshot === true || metadata.answerEvidenceRole === 'official_product_overview' || metadata.answer_evidence_role === 'official_product_overview') score += 70;
   if (isGraphVerifiedSource(source)) score += intent.topics.includes('product_structure') ? 55 : 18;
   if (source.retrievalMethod === 'hybrid') score += 8;
   if (source.retrievalMethod === 'keyword') score += 6;
@@ -7454,6 +7668,14 @@ function scoreVerifiedSourceForIntent(
 
     if (/건강|웰니스|헬스케어|의료|health|wellness|healthcare/.test(text)) score += 22;
     if (/광고 정책 2024|광고 콘텐츠 가이드라인/.test(text) && specificHitCount <= 1) score -= 18;
+  }
+
+  if (
+    intent.vendors.includes('META')
+    && /메타 광고 정책 2024|광고 콘텐츠 가이드라인/.test(text)
+    && !/facebook\.com|meta\.com|transparency\.meta\.com/.test(identityText)
+  ) {
+    score -= 95;
   }
 
   if (intent.topics.includes('review') && /심사|검수|승인|반려|등록기준|운영정책/.test(text)) score += 14;
@@ -7887,12 +8109,23 @@ function isVerifiedGrounding(result: SearchResult): boolean {
     ));
   const isOfficialGuideGraphEvidence = isGraphSearchResult(result)
     && (result.metadata?.sourceKind === 'official_doc' || result.metadata?.source_kind === 'official_doc');
+  const officialEvidenceRole = metadata.answerEvidenceRole || metadata.answer_evidence_role;
+  const isOfficialGuideEvidence = (
+    metadata.sourceKind === 'official_doc'
+    || metadata.source_kind === 'official_doc'
+    || metadata.fastPolicyOfficialChunk === true
+    || metadata.officialProductOverviewSnapshot === true
+    || metadata.metaProductOverviewOfficialChunk === true
+    || metadata.googleProductOverviewOfficialChunk === true
+    || officialEvidenceRole === 'official_policy'
+    || officialEvidenceRole === 'official_product_overview'
+  );
 
   if (!hasGrounding || isFallback || hasBlockingWarning) {
     return false;
   }
 
-  if (isOfficialGuideGraphEvidence) {
+  if (isOfficialGuideGraphEvidence || isOfficialGuideEvidence) {
     return true;
   }
 
@@ -8824,7 +9057,7 @@ export async function buildCompassAnswerResponse(
 
     if (isBroadProductStructureCatalogIntent) {
       const productStructureSources = selectProductStructureResponseSources(sources, ragIntent, message)
-        .filter(source => !sourceLooksLikeProductStructureSupportNoise(source));
+        .filter(source => sourceIsOfficialProductOverviewSnapshot(source, ragIntent.vendors[0]) || !sourceLooksLikeProductStructureSupportNoise(source));
       answerSources = productStructureSources;
       if (productStructureSources.length === 0) {
         const scopeLimitedAnswer = buildBroadProductStructureScopeLimitedAnswer(message, ragIntent);
@@ -8898,9 +9131,9 @@ export async function buildCompassAnswerResponse(
       }
       if (
         shouldUseDeterministicProductAnswerBeforeLlm()
-        || shouldUseFastBroadProductDeterministicAnswer(ragIntent)
+        || shouldUseFastBroadProductDeterministicAnswer(ragIntent, message)
       ) {
-        const shouldUseFastBroadAnswer = shouldUseFastBroadProductDeterministicAnswer(ragIntent);
+        const shouldUseFastBroadAnswer = shouldUseFastBroadProductDeterministicAnswer(ragIntent, message);
         const deterministicBroadProductAnswer = buildDeterministicBroadProductAnswer(
           message,
           ragIntent,

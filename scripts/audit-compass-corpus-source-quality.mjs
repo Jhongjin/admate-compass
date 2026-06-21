@@ -45,6 +45,35 @@ const VENDOR_TERMS = {
   GOOGLE: ["google", "구글", "youtube", "유튜브", "adspolicy"],
 };
 
+const VENDOR_SOURCE_POLICIES = {
+  META: {
+    officialHosts: ["facebook.com", "business.facebook.com", "transparency.meta.com"],
+    contentHints: ["meta", "facebook", "instagram", "메타", "페이스북", "인스타그램"],
+  },
+  KAKAO: {
+    officialHosts: ["kakaobusiness.gitbook.io", "business.kakao.com", "kakao.com"],
+    contentHints: ["kakao", "카카오", "카카오톡", "카카오모먼트", "비즈보드"],
+  },
+  NAVER: {
+    officialHosts: ["ads.naver.com", "searchad.naver.com", "saedu.naver.com", "naver.com"],
+    contentHints: ["naver", "네이버", "검색광고", "쇼핑검색", "파워링크", "브랜드검색"],
+  },
+  GOOGLE: {
+    officialHosts: ["support.google.com", "ads.google.com", "business.google.com", "google.com"],
+    contentHints: ["google", "구글", "google ads", "youtube", "유튜브"],
+  },
+};
+
+const OFFICIAL_HOSTS = new Set(Object.values(VENDOR_SOURCE_POLICIES).flatMap((policy) => policy.officialHosts));
+
+const STATIC_SEED_PATTERNS = [
+  /static[_\s-]?seed/i,
+  /synthetic[_\s-]?seed/i,
+  /manual[_\s-]?seed/i,
+  /seeded/i,
+  /fallback/i,
+];
+
 function getLimit() {
   const value = Number(process.env.COMPASS_CORPUS_AUDIT_LIMIT || DEFAULT_LIMIT);
   return Math.max(1, Math.min(Number.isFinite(value) ? value : DEFAULT_LIMIT, 1000));
@@ -98,6 +127,38 @@ function readSignalScore(metadata) {
   return Number.isFinite(numeric) ? numeric : null;
 }
 
+function normalizeVendor(value) {
+  const text = asText(value).toUpperCase();
+  if (["META", "KAKAO", "NAVER", "GOOGLE"].includes(text)) return text;
+  const inferred = inferVendor(text);
+  return inferred === "UNKNOWN" ? "" : inferred;
+}
+
+function readSourceVendor(metadata, parent = {}) {
+  return normalizeVendor(firstText(
+    metadata.source_vendor,
+    metadata.sourceVendor,
+    metadata.vendor,
+    metadata.platform,
+    parent.source_vendor,
+    parent.vendor,
+    parent.platform,
+  ));
+}
+
+function readSourceKind(metadata, parent = {}) {
+  return firstText(
+    metadata.source_kind,
+    metadata.sourceKind,
+    metadata.source_type,
+    metadata.sourceType,
+    metadata.kind,
+    parent.source_kind,
+    parent.sourceKind,
+    parent.type,
+  );
+}
+
 function normalizeFingerprintText(value) {
   return asText(value)
     .toLowerCase()
@@ -112,6 +173,21 @@ function hostFromUrl(value) {
   } catch {
     return "";
   }
+}
+
+function hostMatchesPolicy(host, policy) {
+  if (!host || !policy) return false;
+  const normalizedHost = host.toLowerCase();
+  return policy.officialHosts.some((allowedHost) => (
+    normalizedHost === allowedHost || normalizedHost.endsWith(`.${allowedHost}`)
+  ));
+}
+
+function vendorFromHost(host) {
+  for (const [vendor, policy] of Object.entries(VENDOR_SOURCE_POLICIES)) {
+    if (hostMatchesPolicy(host, policy)) return vendor;
+  }
+  return "UNKNOWN";
 }
 
 function inferVendor(text) {
@@ -146,6 +222,90 @@ function isPolicyTitle(value) {
   ].some((term) => normalized.includes(term));
 }
 
+function isStaticSeedLike(metadata, parent, sourceTitle, sourceUrl) {
+  const text = [
+    metadata.rag_gate,
+    metadata.source_kind,
+    metadata.sourceKind,
+    metadata.source,
+    metadata.canonical_title,
+    metadata.document_id,
+    parent.type,
+    parent.status,
+    sourceTitle,
+    sourceUrl,
+  ].map(asText).join(" ");
+  return STATIC_SEED_PATTERNS.some((pattern) => pattern.test(text));
+}
+
+function isFallbackLike(metadata, parent, content) {
+  const text = [
+    metadata.type,
+    metadata.source_kind,
+    metadata.sourceKind,
+    metadata.evidenceDecision,
+    metadata.retrievalMethod,
+    parent.type,
+    parent.status,
+    content.slice(0, 500),
+  ].map(asText).join(" ");
+  return /fallback|placeholder|no[_\s-]?data|not[_\s-]?available|수집할 수 없습니다|관리자가 별도로 처리/i.test(text);
+}
+
+function issueSeverity(issue) {
+  if ([
+    "likely_placeholder_url_content",
+    "source_vendor_mismatch",
+    "source_vendor_content_mismatch",
+    "host_vendor_mismatch",
+    "non_official_host",
+    "source_kind_fallback",
+  ].includes(issue)) return "high";
+  if ([
+    "missing_source_vendor",
+    "missing_source_kind",
+    "missing_source_url",
+    "possible_vendor_mismatch",
+    "source_kind_static_seed",
+    "duplicate_fingerprint",
+  ].includes(issue)) return "medium";
+  return "low";
+}
+
+function quarantineRecommendations(issues) {
+  const severityRank = { low: 1, medium: 2, high: 3 };
+  const severity = issues
+    .map(issueSeverity)
+    .sort((a, b) => severityRank[b] - severityRank[a])[0] || "none";
+
+  if (severity === "high") {
+    return {
+      severity,
+      quarantineReason: "retrieval_blocker",
+      recommendedAction: "quarantine_before_reindex",
+    };
+  }
+  if (severity === "medium") {
+    return {
+      severity,
+      quarantineReason: "metadata_repair_required",
+      recommendedAction: "repair_metadata_then_reaudit",
+    };
+  }
+  if (issues.length > 0) {
+    return {
+      severity,
+      quarantineReason: "quality_review",
+      recommendedAction: "review_sample",
+    };
+  }
+  return {
+    severity,
+    quarantineReason: "none",
+    recommendedAction: "keep",
+  };
+}
+
 function auditChunk(tableName, row, parentDocument, duplicateCount) {
   const metadata = toRecord(row.metadata);
   const content = asText(row.content);
@@ -154,12 +314,19 @@ function auditChunk(tableName, row, parentDocument, duplicateCount) {
   const sourceTitle = firstText(readSourceTitle(metadata), parent.title);
   const chunkingStrategy = readChunkingStrategy(metadata);
   const signalScore = readSignalScore(metadata);
-  const sourceVendor = inferVendor([sourceUrl, sourceTitle].join(" "));
+  const declaredVendor = readSourceVendor(metadata, parent);
+  const sourceKind = readSourceKind(metadata, parent);
+  const host = hostFromUrl(sourceUrl);
+  const hostVendor = vendorFromHost(host);
+  const inferredVendor = inferVendor([sourceUrl, sourceTitle, content.slice(0, 900)].join(" "));
+  const sourceVendor = declaredVendor || hostVendor || inferVendor([sourceUrl, sourceTitle].join(" "));
   const contentVendor = inferVendor(content.slice(0, 900));
   const issues = [];
 
   if (!sourceUrl) issues.push("missing_source_url");
   if (!sourceTitle) issues.push("missing_source_title");
+  if (!declaredVendor) issues.push("missing_source_vendor");
+  if (!sourceKind) issues.push("missing_source_kind");
   if (!chunkingStrategy) issues.push("missing_chunking_strategy");
   if (signalScore === null) issues.push("missing_signal_score");
   if (signalScore !== null && signalScore < LOW_SIGNAL_THRESHOLD) issues.push("low_signal_score");
@@ -170,23 +337,50 @@ function auditChunk(tableName, row, parentDocument, duplicateCount) {
     issues.push("likely_page_chrome");
   }
   if (sourceTitle && !isPolicyTitle(sourceTitle)) issues.push("weak_policy_title");
+  if (sourceTitle && !isPolicyTitle(sourceTitle) && /정책|심사|검수|등록|policy|review|standard/i.test([sourceKind, sourceTitle, content.slice(0, 500)].join(" "))) {
+    issues.push("suspicious_source_title");
+  }
+  if (declaredVendor && hostVendor !== "UNKNOWN" && declaredVendor !== hostVendor) {
+    issues.push("host_vendor_mismatch");
+  }
+  const declaredPolicy = declaredVendor ? VENDOR_SOURCE_POLICIES[declaredVendor] : null;
+  if (sourceUrl && declaredVendor && !hostMatchesPolicy(host, declaredPolicy)) {
+    issues.push("non_official_host");
+  }
+  if (declaredVendor && inferredVendor !== "UNKNOWN" && inferredVendor !== declaredVendor) {
+    issues.push("source_vendor_mismatch");
+  }
+  if (declaredVendor && contentVendor !== "UNKNOWN" && contentVendor !== declaredVendor) {
+    issues.push("source_vendor_content_mismatch");
+  }
   if (sourceVendor !== "UNKNOWN" && contentVendor !== "UNKNOWN" && sourceVendor !== contentVendor) {
     issues.push("possible_vendor_mismatch");
   }
+  if (isStaticSeedLike(metadata, parent, sourceTitle, sourceUrl)) issues.push("source_kind_static_seed");
+  if (isFallbackLike(metadata, parent, content)) issues.push("source_kind_fallback");
   if (duplicateCount > 1) issues.push("duplicate_fingerprint");
+  const recommendation = quarantineRecommendations(issues);
 
   return {
     tableName,
+    rowToken: hashToken(`${tableName}:${row.id || row.chunk_id || row.document_id}`),
     chunkToken: hashToken(row.chunk_id || row.id || row.document_id),
     documentToken: hashToken(row.document_id || ""),
     contentFingerprint: contentFingerprint(content),
-    host: hostFromUrl(sourceUrl),
+    host,
+    declaredVendor: declaredVendor || "UNKNOWN",
+    inferredVendor,
+    hostVendor,
+    sourceKind: sourceKind || "UNKNOWN",
     sourceVendor,
     parentStatus: asText(parent.status),
     parentType: asText(parent.type),
     signalScore,
     contentLengthBucket: bucketContentLength(content.length),
     issues,
+    severity: recommendation.severity,
+    quarantineReason: recommendation.quarantineReason,
+    recommendedAction: recommendation.recommendedAction,
   };
 }
 
@@ -211,17 +405,25 @@ function summarizeTable(tableName, rows, parentDocuments) {
     return auditChunk(tableName, row, parentById.get(String(row.document_id)), fingerprintCounts.get(fingerprint) || 0);
   });
   const issueCounts = {};
+  const vendorIssueCounts = {};
+  const quarantineActionCounts = {};
 
   for (const result of audited) {
+    const vendor = result.declaredVendor || result.inferredVendor || result.hostVendor || "UNKNOWN";
+    if (!vendorIssueCounts[vendor]) vendorIssueCounts[vendor] = {};
     for (const issue of result.issues) {
       issueCounts[issue] = (issueCounts[issue] || 0) + 1;
+      vendorIssueCounts[vendor][issue] = (vendorIssueCounts[vendor][issue] || 0) + 1;
     }
+    quarantineActionCounts[result.recommendedAction] = (quarantineActionCounts[result.recommendedAction] || 0) + 1;
   }
 
   return {
     tableName,
     sampledRows: rows.length,
     issueCounts,
+    vendorIssueCounts,
+    quarantineRecommendations: quarantineActionCounts,
     duplicateFingerprintGroups: Array.from(fingerprintCounts.values()).filter((count) => count > 1).length,
     issueSamples: audited
       .filter((result) => result.issues.length > 0)

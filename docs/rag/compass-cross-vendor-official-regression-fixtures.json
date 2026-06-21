@@ -1,0 +1,255 @@
+[
+  {
+    "id": "google-broad-product-overview-official-answer",
+    "question": "Google 광고 상품에 대해 정리해줘",
+    "expectedVendor": "GOOGLE",
+    "expectedSourceTitle": [
+      "Google",
+      "캠페인"
+    ],
+    "mustContain": [],
+    "mustNotContain": [
+      "메타 광고 정책 2024"
+    ],
+    "sourceMustContain": [
+      "Google"
+    ],
+    "sourceMustNotContain": [
+      "메타 광고 정책 2024",
+      "범위 제한"
+    ],
+    "generationMustContain": [
+      "캠페인",
+      "검색",
+      "디스플레이",
+      "쇼핑",
+      "앱"
+    ],
+    "generationMustNotContain": [
+      "메타 광고 정책 2024",
+      "출처는 없지만",
+      "범위 제한"
+    ],
+    "officialSourceHosts": [
+      "support.google.com",
+      "ads.google.com",
+      "google.com"
+    ],
+    "minOfficialSources": 2,
+    "minSources": 2,
+    "minConfidence": 40,
+    "expectNoDataFound": false,
+    "requireRetrievalMethods": [
+      "graph",
+      "hybrid",
+      "keyword"
+    ],
+    "requireSourceQuality": true,
+    "requireGenerationAssertions": true,
+    "minVerifiedEvidence": 1,
+    "maxDuplicateTitles": 4,
+    "minDistinctTitles": 1,
+    "category": "vendor-specific"
+  },
+  {
+    "id": "naver-broad-product-overview-official-answer",
+    "question": "네이버 광고 상품에 대해 정리해줘",
+    "expectedVendor": "NAVER",
+    "expectedSourceTitle": [
+      "네이버",
+      "광고"
+    ],
+    "mustContain": [],
+    "mustNotContain": [
+      "메타 광고 정책 2024"
+    ],
+    "sourceMustContain": [
+      "네이버"
+    ],
+    "sourceMustNotContain": [
+      "메타 광고 정책 2024",
+      "범위 제한"
+    ],
+    "generationMustContain": [
+      "검색",
+      "쇼핑",
+      "디스플레이",
+      "동영상"
+    ],
+    "generationMustNotContain": [
+      "메타 광고 정책 2024",
+      "출처는 없지만",
+      "범위 제한"
+    ],
+    "officialSourceHosts": [
+      "ads.naver.com",
+      "searchad.naver.com",
+      "naver.com"
+    ],
+    "minOfficialSources": 1,
+    "minSources": 2,
+    "minConfidence": 35,
+    "expectNoDataFound": false,
+    "requireRetrievalMethods": [
+      "graph",
+      "hybrid",
+      "keyword"
+    ],
+    "requireSourceQuality": true,
+    "requireGenerationAssertions": true,
+    "minVerifiedEvidence": 1,
+    "maxDuplicateTitles": 4,
+    "minDistinctTitles": 1,
+    "category": "vendor-specific"
+  },
+  {
+    "id": "kakao-broad-product-overview-official-answer",
+    "question": "카카오 광고 상품은 비즈보드와 디스플레이 기준으로 정리해줘",
+    "expectedVendor": "KAKAO",
+    "expectedSourceTitle": [
+      "카카오",
+      "광고"
+    ],
+    "mustContain": [],
+    "mustNotContain": [
+      "메타 광고 정책 2024"
+    ],
+    "sourceMustContain": [
+      "카카오"
+    ],
+    "sourceMustNotContain": [
+      "메타 광고 정책 2024",
+      "범위 제한"
+    ],
+    "generationMustContain": [
+      "비즈보드",
+      "디스플레이",
+      "소재",
+      "지면"
+    ],
+    "generationMustNotContain": [
+      "메타 광고 정책 2024",
+      "출처는 없지만",
+      "범위 제한"
+    ],
+    "officialSourceHosts": [
+      "kakaobusiness.gitbook.io",
+      "business.kakao.com",
+      "kakao.com"
+    ],
+    "minOfficialSources": 1,
+    "minSources": 1,
+    "minConfidence": 35,
+    "expectNoDataFound": false,
+    "requireRetrievalMethods": [
+      "graph",
+      "hybrid",
+      "keyword"
+    ],
+    "requireSourceQuality": true,
+    "requireGenerationAssertions": true,
+    "minVerifiedEvidence": 1,
+    "maxDuplicateTitles": 4,
+    "minDistinctTitles": 1,
+    "category": "vendor-specific"
+  },
+  {
+    "id": "naver-policy-official-answer",
+    "question": "네이버 광고 등록 기준에서 제한되는 경우 알려줘",
+    "expectedVendor": "NAVER",
+    "expectedSourceTitle": [
+      "네이버",
+      "광고"
+    ],
+    "mustContain": [],
+    "mustNotContain": [
+      "메타 광고 정책 2024"
+    ],
+    "sourceMustContain": [
+      "네이버"
+    ],
+    "sourceMustNotContain": [
+      "메타 광고 정책 2024"
+    ],
+    "generationMustContain": [
+      "등록",
+      "기준",
+      "제한",
+      "법령",
+      "오인"
+    ],
+    "generationMustNotContain": [
+      "메타 광고 정책 2024",
+      "출처는 없지만"
+    ],
+    "officialSourceHosts": [
+      "ads.naver.com",
+      "searchad.naver.com",
+      "naver.com"
+    ],
+    "minOfficialSources": 1,
+    "minSources": 1,
+    "minConfidence": 35,
+    "expectNoDataFound": false,
+    "requireRetrievalMethods": [
+      "graph",
+      "hybrid",
+      "keyword"
+    ],
+    "requireSourceQuality": true,
+    "requireGenerationAssertions": true,
+    "minVerifiedEvidence": 1,
+    "maxDuplicateTitles": 4,
+    "minDistinctTitles": 1,
+    "category": "vendor-specific"
+  },
+  {
+    "id": "google-policy-official-answer",
+    "question": "Google Ads 정책 위반 소재는 어떻게 처리돼?",
+    "expectedVendor": "GOOGLE",
+    "expectedSourceTitle": [
+      "Google",
+      "정책"
+    ],
+    "mustContain": [],
+    "mustNotContain": [
+      "메타 광고 정책 2024"
+    ],
+    "sourceMustContain": [
+      "Google"
+    ],
+    "sourceMustNotContain": [
+      "메타 광고 정책 2024"
+    ],
+    "generationMustContain": [
+      "정책",
+      "위반",
+      "검토",
+      "소재"
+    ],
+    "generationMustNotContain": [
+      "메타 광고 정책 2024",
+      "출처는 없지만"
+    ],
+    "officialSourceHosts": [
+      "support.google.com",
+      "ads.google.com",
+      "google.com"
+    ],
+    "minOfficialSources": 1,
+    "minSources": 1,
+    "minConfidence": 35,
+    "expectNoDataFound": false,
+    "requireRetrievalMethods": [
+      "graph",
+      "hybrid",
+      "keyword"
+    ],
+    "requireSourceQuality": true,
+    "requireGenerationAssertions": true,
+    "minVerifiedEvidence": 1,
+    "maxDuplicateTitles": 4,
+    "minDistinctTitles": 1,
+    "category": "vendor-specific"
+  }
+]

@@ -156,6 +156,27 @@ function validateFixtureSchema(fixtures) {
     if (fixture.minVerifiedEvidence !== undefined && (!Number.isFinite(Number(fixture.minVerifiedEvidence)) || Number(fixture.minVerifiedEvidence) < 0)) {
       fail(`${label}.minVerifiedEvidence must be a non-negative number when provided`);
     }
+
+    if (fixture.officialSourceHosts !== undefined) {
+      assertArray(fixture.officialSourceHosts, `${label}.officialSourceHosts`, 1);
+      for (const host of fixture.officialSourceHosts || []) {
+        if (typeof host !== "string" || normalizeHostname(host).length === 0) {
+          fail(`${label}.officialSourceHosts must contain non-empty host strings`);
+        }
+      }
+    }
+
+    if (fixture.minOfficialSources !== undefined && (!Number.isFinite(Number(fixture.minOfficialSources)) || Number(fixture.minOfficialSources) < 0)) {
+      fail(`${label}.minOfficialSources must be a non-negative number when provided`);
+    }
+
+    if (fixture.requireGenerationAssertions !== undefined && typeof fixture.requireGenerationAssertions !== "boolean") {
+      fail(`${label}.requireGenerationAssertions must be boolean when provided`);
+    }
+
+    if (fixture.requireGenerationAssertions === true && (!Array.isArray(fixture.generationMustContain) || fixture.generationMustContain.length === 0)) {
+      fail(`${label}.requireGenerationAssertions requires generationMustContain terms`);
+    }
   }
 }
 
@@ -173,13 +194,67 @@ function normalizeText(value) {
 function sourceBlob(sources) {
   return sources.map((source) => [
     source?.title,
+    source?.originalTitle,
     source?.excerpt,
     source?.documentId,
     source?.chunkId,
     source?.url,
+    source?.sourceUrl,
+    source?.sourceURL,
+    source?.sourceReference,
+    source?.sourceLabel,
     source?.corpus,
     source?.sourceType,
+    source?.metadata?.source,
+    source?.metadata?.source_title,
+    source?.metadata?.canonical_title,
+    source?.metadata?.source_url,
+    source?.metadata?.sourceUrl,
   ].filter(Boolean).join(" ")).join(" ");
+}
+
+function normalizeHostname(hostname) {
+  return String(hostname || "").trim().toLowerCase().replace(/\.$/, "");
+}
+
+function parseHttpUrl(value) {
+  try {
+    const parsed = new URL(String(value || ""));
+    if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return null;
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+function sourceUrlCandidates(source) {
+  return [
+    source?.url,
+    source?.sourceUrl,
+    source?.sourceURL,
+    source?.sourceReference,
+    source?.metadata?.url,
+    source?.metadata?.source_url,
+    source?.metadata?.sourceUrl,
+  ].filter((value) => typeof value === "string" && value.trim().length > 0);
+}
+
+function hostMatchesAllowed(hostname, allowedHosts) {
+  const host = normalizeHostname(hostname);
+  return allowedHosts.some((allowedHost) => {
+    const normalizedAllowedHost = normalizeHostname(allowedHost);
+    return host === normalizedAllowedHost || host.endsWith(`.${normalizedAllowedHost}`);
+  });
+}
+
+function countSourcesWithAllowedHosts(sources, allowedHosts) {
+  const normalizedAllowedHosts = allowedHosts.map(normalizeHostname).filter(Boolean);
+  if (normalizedAllowedHosts.length === 0) return 0;
+
+  return sources.filter((source) => sourceUrlCandidates(source).some((candidate) => {
+    const parsed = parseHttpUrl(candidate);
+    return parsed && hostMatchesAllowed(parsed.hostname, normalizedAllowedHosts);
+  })).length;
 }
 
 function countDuplicateTitles(sources) {
@@ -292,6 +367,14 @@ function collectResponseFailures(fixture, payload) {
 
   if (sources.length < fixture.minSources) {
     sourceFailures.push(`expected at least ${fixture.minSources} source(s), received ${sources.length}`);
+  }
+
+  if (fixture.officialSourceHosts) {
+    const minOfficialSources = Number(fixture.minOfficialSources ?? 1);
+    const officialSourceCount = countSourcesWithAllowedHosts(sources, fixture.officialSourceHosts);
+    if (officialSourceCount < minOfficialSources) {
+      sourceFailures.push(`official source count ${officialSourceCount} below minimum ${minOfficialSources} for hosts ${fixture.officialSourceHosts.join(", ")}`);
+    }
   }
 
   if (Number.isInteger(fixture.maxSources) && sources.length > fixture.maxSources) {
@@ -411,9 +494,21 @@ function collectResponseFailures(fixture, payload) {
 }
 
 function validateResponseAgainstFixture(fixture, payload) {
-  const { sourceFailures } = collectResponseFailures(fixture, payload);
+  const { sourceFailures, generationFailures } = collectResponseFailures(fixture, payload);
   for (const failure of sourceFailures) {
     fail(`${fixture.id}: ${failure}`);
+  }
+
+  if (fixture.requireGenerationAssertions === true) {
+    if (sourceOnly) {
+      fail(`${fixture.id}: generation assertions are required but --source-only was used`);
+    } else if (!shouldRunGenerationAssertions(payload)) {
+      fail(`${fixture.id}: generation assertions were skipped for model ${payload?.model || "(missing)"}`);
+    }
+
+    for (const failure of generationFailures) {
+      fail(`${fixture.id}: ${failure}`);
+    }
   }
 }
 
@@ -485,6 +580,7 @@ function buildDiagnostic(fixture, payload) {
     assertionTypes: {
       sourceOnly: true,
       generation: !sourceOnly && shouldRunGenerationAssertions(payload),
+      requiredGeneration: fixture.requireGenerationAssertions === true,
     },
     queryIntent,
     fixtureAmbiguity: expectedVendor !== "ANY"
@@ -538,7 +634,8 @@ if (!fs.existsSync(fixturePath)) {
 }
 
 const fixtures = JSON.parse(fs.readFileSync(fixturePath, "utf8"));
-if (!assertArray(fixtures, "fixtures", 20)) {
+const minimumFixtureCount = fixtureArg ? 1 : 20;
+if (!assertArray(fixtures, "fixtures", minimumFixtureCount)) {
   process.exit();
 }
 

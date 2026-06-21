@@ -61,10 +61,13 @@ for (const snippet of [
   "'supabase_rows'",
   'META_APP_INSTALL_OFFICIAL_CHUNK_IDS',
   'META_CATALOG_OFFICIAL_CHUNK_IDS',
+  'META_PRODUCT_OVERVIEW_OFFICIAL_CHUNK_IDS',
   'META_CREATIVE_SPEC_OFFICIAL_CHUNK_IDS',
   'GOOGLE_LEAD_FORM_OFFICIAL_CHUNK_IDS',
+  'GOOGLE_PRODUCT_OVERVIEW_OFFICIAL_CHUNK_IDS',
   'META_VENDOR_POLICY_GENERAL_OFFICIAL_CHUNK_IDS',
   'GOOGLE_VENDOR_POLICY_GENERAL_OFFICIAL_CHUNK_IDS',
+  'NAVER_VENDOR_POLICY_GENERAL_OFFICIAL_CHUNK_IDS',
   'NAVER_VIDEO_OFFICIAL_CHUNK_IDS',
   'NAVER_SHOPPING_DATA_OFFICIAL_CHUNK_IDS',
   'NAVER_SHOPPING_SEARCH_CREATIVE_OFFICIAL_CHUNK_IDS',
@@ -118,22 +121,30 @@ for (const snippet of [
   'meta_creative_spec_official_chunk',
   'meta_creative_spec_priority',
   'meta_creative_spec_priority_rescue',
+  'meta_product_overview_official_chunk',
+  'google_product_overview_official_chunk',
   'specific_google_lead_form_priority_direct',
+  'searchGoogleProductOverviewPriorityCandidates',
   'searchGoogleLeadFormPriorityCandidates',
   'google_lead_form_official_chunk',
   'google_lead_form_priority',
+  'googleProductOverviewOfficialChunk',
+  'usesGoogleProductOverviewPriority',
   'usesGoogleLeadFormPriority',
   'isMetaCreativeSpecIntent',
   'rawKeywordsOnly',
   'isKakaoBizboardDisplayComparisonIntent',
   'usesKakaoInternalProductComparison',
-  'skipsGraphForGoogleProductOverview',
   'specific kakao priority direct path',
   'naver_product_structure_priority_keyword',
   'meta_product_overview_keyword',
   'meta_app_install_priority_keyword',
   'meta_app_install_vendor_metadata',
   'usesMetaAppInstallPriority',
+  'product_fast_google_overview_priority',
+  'hybrid_google_overview_priority',
+  'getNaverFastPolicyOfficialChunkIds',
+  'isOfficialProductOverviewCandidate',
   'mergeDuplicateCandidate',
   'evidenceDecisionReason',
   'Product structure fast 후보 수집 결과',
@@ -175,6 +186,10 @@ for (const snippet of [
   if (!rag.includes(snippet)) fail(`RAG service missing product structure contract snippet: ${snippet}`);
 }
 
+if (rag.includes('skipsGraphForGoogleProductOverview')) {
+  fail('Google product overview must not skip graph/official coverage');
+}
+
 for (const snippet of [
   'COMPASS_OFFICIAL_CHUNK_SNAPSHOTS',
   'getCompassOfficialDocumentChunkSnapshotRows',
@@ -187,6 +202,19 @@ for (const snippet of [
   'facebook-ad-policy_chunk_0',
   'doc_1773886683376_omws3g9_chunk_2',
   'doc_1773886203371_8rlmmdv_chunk_1',
+  'meta_business_help_ad_levels_2026_chunk_0',
+  'meta_business_help_objectives_2026_chunk_0',
+  'meta_business_help_formats_placements_2026_chunk_0',
+  'meta_business_help_operating_modules_2026_chunk_0',
+  'google_ads_campaign_types_2026_chunk_0',
+  'google_ads_campaign_objectives_2026_chunk_0',
+  'google_ads_shopping_ads_2026_chunk_0',
+  'google_ads_app_campaigns_2026_chunk_0',
+  'naver_adguide_registration_standard_2026_chunk_0',
+  'naver_adguide_operating_policy_2026_chunk_0',
+  'meta_ad_standards_intro_2026_chunk_0',
+  'meta_ad_standards_discriminatory_practices_2026_chunk_0',
+  'meta_business_help_ad_review_2026_chunk_0',
   'doc_1773662526796_7rijhfq_chunk_2',
   'url_1770857834681_kyfp93bbk_chunk_9',
   'url_1773109915186_xnqeew2qd_chunk_4',
@@ -244,6 +272,11 @@ for (const snippet of [
   'buildFastPolicySourceGuidedAnswer',
   'buildFastNaverVideoProductAnswer',
   'buildFastStructuredSpecificProductAnswer',
+  'Meta 광고 상품은 상품명 목록으로만 보면 부족합니다',
+  '캠페인 구조와 목표 잡기',
+  '운영 모듈과 측정 붙이기',
+  'Meta 광고 정책은 소재 문구만 보는 기준이 아니라',
+  '오디언스 선택 도구로 특정 그룹을 부당하게 포함하거나 제외',
   'COMPASS_DISABLE_FAST_KAKAO_SPECIFIC_PRODUCT_ANSWERS',
   'COMPASS_DISABLE_FAST_KAKAO_STRUCTURED_PRODUCT_ANSWERS',
   'COMPASS_DISABLE_FAST_POLICY_SOURCE_GUIDED_ANSWERS',
@@ -281,6 +314,10 @@ for (const snippet of [
   "'compass-answer-grounded-specific-product-llm'",
   'sourceHasCrossVendorUrl',
   'sourceHasExtractionNoise',
+  'sourceIsOfficialProductOverviewSnapshot',
+  'googleProductOverviewOfficialChunk',
+  'official_product_overview',
+  'isOfficialGuideEvidence',
   'refineSpecificProductAnswerSources',
   'buildCompassGroundingOptions(message, ragIntent, specificProductScope, isBroadProductStructureLlmIntent)',
   'answerMode: options.answerMode',
@@ -706,7 +743,7 @@ if (!/sourceIdentityLooksLikeGenericLegalOrAccountDoc[\s\S]*청구\|결제\|지�
   fail('answer source routing must demote payment/account support documents such as 지불 for product-structure answers');
 }
 
-if (!/COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v14-product-retrieval-paths'[\s\S]*`compass-answer:\$\{COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION\}:\$\{message\}`/.test(answerHandler)) {
+if (!/COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v19-single-vendor-compare-planning'[\s\S]*`compass-answer:\$\{COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION\}:\$\{message\}`/.test(answerHandler)) {
   fail('answer response cache key must be versioned so stale durable cached answers are bypassed after source-quality fixes');
 }
 
@@ -766,7 +803,7 @@ if (!/selected\.length === 0[\s\S]*recoverableBroadSources[\s\S]*targetVendor ==
 }
 
 if (!/isMetaBroadProductNewsNoiseText[\s\S]*facebook\\\.com\\\/business\\\/news[\s\S]*성과\\s\*증대[\s\S]*크리에이티브\\s\*다각화[\s\S]*creative\\s\*diversification[\s\S]*manus[\s\S]*cyber\\s\*5[\s\S]*creator\\s\*method[\s\S]*hasMetaObjectiveProductStructureSignal/.test(rag)
-  || !/searchMetaProductOverviewPriorityCandidates[\s\S]*isMetaBroadProductNewsNoiseText\(sourceText\)[\s\S]*return null[\s\S]*queryWantsFormatPlacement[\s\S]*hasFormatPlacementSignal && !hasObjectiveSignal && !hasCommerceSignal && !queryWantsFormatPlacement[\s\S]*return null/.test(rag)
+  || !/searchMetaProductOverviewPriorityCandidates[\s\S]*isMetaBroadProductNewsNoiseText\(sourceText\)[\s\S]*return null[\s\S]*queryWantsFormatPlacement[\s\S]*hasFormatPlacementSignal && !hasLevelStructureSignal && !hasObjectiveSignal && !hasCommerceSignal && !queryWantsFormatPlacement[\s\S]*return null/.test(rag)
 ) {
   fail('Meta overview priority retrieval must reject business/news and format-only sources before boosting them');
 }
@@ -802,7 +839,7 @@ if (!/const sourceGuidedBroadProductSources = answerSources\.filter[\s\S]*source
   fail('fast broad product source-guided fallback must use support-noise-filtered sources');
 }
 
-if (!/const productStructureSources = selectProductStructureResponseSources\(sources, ragIntent, message\)[\s\S]*\.filter\(source => !sourceLooksLikeProductStructureSupportNoise\(source\)\)[\s\S]*if \(productStructureSources\.length === 0\)/.test(answerHandler)) {
+if (!/const productStructureSources = selectProductStructureResponseSources\(sources, ragIntent, message\)[\s\S]*\.filter\(source => sourceIsOfficialProductOverviewSnapshot\(source, ragIntent\.vendors\[0\]\) \|\| !sourceLooksLikeProductStructureSupportNoise\(source\)\)[\s\S]*if \(productStructureSources\.length === 0\)/.test(answerHandler)) {
   fail('broad product answer routing must remove support-noise sources before deciding whether evidence is sufficient');
 }
 
@@ -987,7 +1024,7 @@ if (!/recommendedSourceLimit[\s\S]*hasProductStructureIntent[\s\S]*\?\s*6/.test(
   fail('product structure intent should request broader verified source coverage');
 }
 
-if (!/needsProductStructureRetrieval[\s\S]*Math\.max\(limit,\s*intent\.vendors\.length \* 4,\s*needsProductStructureRetrieval \? 18 : 8\)/.test(rag)) {
+if (!/productStructureRetrievalIntent[\s\S]*Math\.max\(limit,\s*intent\.vendors\.length \* 4,\s*productStructureRetrievalIntent \? 18 : 8\)/.test(rag)) {
   fail('product structure intent should expand retrieval candidate pool for vendor queries');
 }
 
@@ -1159,7 +1196,7 @@ if (/skipsGraphForGoogleProductOverview\s*\n\s*\|\| usesMetaAppInstallPriority[\
   fail('Meta app-install product fast path must not skip official graph retrieval because app-install ads-guide assertions can ground the answer');
 }
 
-if (!/getKakaoProductGraphSoftBudgetMs[\s\S]*COMPASS_KAKAO_PRODUCT_GRAPH_SOFT_BUDGET_MS[\s\S]*skipsGraphForGoogleProductOverview[\s\S]*usesKakaoProductPriority[\s\S]*product_fast_graph[\s\S]*getKakaoProductGraphSoftBudgetMs\(\)/.test(rag)) {
+if (!/getKakaoProductGraphSoftBudgetMs[\s\S]*COMPASS_KAKAO_PRODUCT_GRAPH_SOFT_BUDGET_MS[\s\S]*usesKakaoProductPriority[\s\S]*withRetrievalChannelSoftBudget[\s\S]*product_fast_graph[\s\S]*getKakaoProductGraphSoftBudgetMs\(\)/.test(rag)) {
   fail('KAKAO product fast graph retrieval must use a non-blocking soft budget');
 }
 
@@ -1171,7 +1208,7 @@ if (!/private isKakaoBizboardDisplayComparisonIntent\([\s\S]*intent\.isComparati
   fail('KAKAO internal comparison soft-budget routing must stay scoped to Bizboard vs display comparison questions');
 }
 
-if (!/metaAppInstallPriorityCandidates,[\s\S]*graphCandidates[\s\S]*usesMetaAppInstallPriority[\s\S]*searchMetaAppInstallPriorityCandidates[\s\S]*skipsGraphForGoogleProductOverview[\s\S]*product_fast_graph/.test(rag)) {
+if (!/metaAppInstallPriorityCandidates,[\s\S]*graphCandidates[\s\S]*usesMetaAppInstallPriority[\s\S]*searchMetaAppInstallPriorityCandidates[\s\S]*product_fast_graph/.test(rag)) {
   fail('Meta app-install product priority must keep its exact priority path while allowing official graph evidence');
 }
 
@@ -1435,6 +1472,34 @@ if (!/const fastStructuredSpecificProductAnswer = buildFastStructuredSpecificPro
 
 if (!/function buildFastPolicySourceGuidedAnswer\([\s\S]*COMPASS_DISABLE_FAST_POLICY_SOURCE_GUIDED_ANSWERS[\s\S]*isBroadProductStructureLlmIntent \|\| intent\.isComparative[\s\S]*detectFastPolicySourceGuidedAnswerFamily\(message, intent\)[\s\S]*getFallbackSourceText\(source\)[\s\S]*if \(!pattern\.test\(sourceText\)\) return false;[\s\S]*sourceHasBlockingExtractionNoise\(source\)[\s\S]*buildFastPolicyAnswerText\(family, candidateSources, intent\)/.test(answerHandler)) {
   fail('fast policy source-guided answers must stay narrowly gated and require matching verified source evidence');
+}
+
+if (!/function sourceIsOfficialMetaProductOverviewSnapshot\([\s\S]*officialProductOverviewSnapshot[\s\S]*official_product_overview[\s\S]*meta_business_help_\(ad_levels\|objectives\|formats_placements\|operating_modules\)_2026/.test(answerHandler)) {
+  fail('Meta official product overview snapshots must have an explicit final-source allowlist marker');
+}
+
+if (!/sourceGroup === 'official_meta_overview' \? 4/.test(answerHandler)) {
+  fail('Meta official product overview snapshots must not be collapsed by generic per-group product source limits');
+}
+
+if (!/metadata\.fastPolicyOfficialChunk === true[\s\S]*score \+= 70/.test(answerHandler)
+  || !/메타 광고 정책 2024\|광고 콘텐츠 가이드라인[\s\S]*score -= 95/.test(answerHandler)) {
+  fail('official policy chunks must outrank synthetic Meta policy seed documents');
+}
+
+if (!/shouldIncludeFastPolicyOfficialHybridCandidates\(intent\)/.test(rag)
+  || !/hybrid_fast_policy_official_chunk/.test(rag)
+  || !/fastPolicyOfficial=\$\{fastPolicyOfficialCandidates\.length\}/.test(rag)) {
+  fail('official fast-policy chunks must be included in hybrid retrieval when direct policy routing is skipped');
+}
+
+if (!/metaProductOverviewOfficialChunk: isOfficialProductOverviewChunk[\s\S]*officialProductOverviewSnapshot: isOfficialProductOverviewChunk[\s\S]*answerEvidenceRole: isOfficialProductOverviewChunk \? 'official_product_overview'/.test(rag)) {
+  fail('Meta product overview official chunks must carry durable metadata through retrieval');
+}
+
+if (!/const hasLevelStructureSignal =[\s\S]*광고\\s\*관리자\\s\*구조[\s\S]*hasFormatPlacementSignal && !hasLevelStructureSignal/.test(rag)
+  || !/meta_level_structure_signal/.test(rag)) {
+  fail('Meta advertising-level official snapshot must not be filtered as a generic format/placement-only chunk');
 }
 
 if (!/const fastPolicySourceGuidedAnswer = buildFastPolicySourceGuidedAnswer\([\s\S]*message,[\s\S]*ragIntent,[\s\S]*sources,[\s\S]*answerGenerationDurationMs: 0,[\s\S]*policyAnswerFamily: fastPolicySourceGuidedAnswer\.policyAnswerFamily[\s\S]*fastAnswerFallback: fastPolicySourceGuidedAnswer\.fastAnswerFallback[\s\S]*Compass specific product answer will use grounded LLM synthesis/.test(answerHandler)) {

@@ -292,6 +292,142 @@ const COMPASS_OFFICIAL_CHUNK_SNAPSHOTS: Record<string, CompassOfficialChunkSnaps
       hierarchy_level: 'paragraph',
     },
   },
+  meta_business_help_ad_levels_2026_chunk_0: {
+    id: 'meta_business_help_ad_levels_2026_chunk_0',
+    document_id: 'meta_business_help_ad_levels_2026',
+    chunk_id: 0,
+    content: 'Meta 광고 관리자 구조는 캠페인, 광고 세트, 광고 단위로 나뉩니다. 캠페인 수준에서는 광고 목표를 선택하고, 광고 세트 수준에서는 예산, 일정, 타겟, 게재 위치 같은 노출 조건을 정하며, 광고 수준에서는 이미지, 동영상, 카루셀 같은 소재와 문구를 구성합니다.',
+    metadata: {
+      source: 'What are the advertising levels in Meta Ads Manager? | Meta Business Help Center',
+      source_title: 'Meta Ads Manager 광고 레벨',
+      canonical_title: 'Meta 광고 상품/구조',
+      source_url: 'https://www.facebook.com/business/help/621956575422138',
+      source_vendor: 'META',
+      keywords: ['Meta 광고 관리자', '캠페인 목표', '광고 세트', '게재 위치', '광고 소재'],
+      chunk_type: 'text',
+      chunk_index: 0,
+      hierarchy_level: 'paragraph',
+    },
+  },
+  meta_business_help_objectives_2026_chunk_0: {
+    id: 'meta_business_help_objectives_2026_chunk_0',
+    document_id: 'meta_business_help_objectives_2026',
+    chunk_id: 0,
+    content: 'Meta Ads Manager에서 캠페인 목표는 비즈니스 목표에 맞춰 선택합니다. 공식 도움말에서 확인되는 주요 목표 축은 인지도, 트래픽, 참여, 잠재 고객, 앱 홍보, 판매이며, 목표 선택에 따라 이후 전환 위치와 최적화 이벤트, 사용할 수 있는 설정이 달라집니다.',
+    metadata: {
+      source: 'How to choose the right ad objective in Meta Ads Manager | Meta Business Help Center',
+      source_title: 'Meta 광고 목표 선택',
+      canonical_title: 'Meta 광고 상품/구조',
+      source_url: 'https://www.facebook.com/business/help/1438417719786914',
+      source_vendor: 'META',
+      keywords: ['캠페인 목표', '인지도', '트래픽', '참여', '잠재 고객', '앱 홍보', '판매'],
+      chunk_type: 'text',
+      chunk_index: 0,
+      hierarchy_level: 'paragraph',
+    },
+  },
+  meta_business_help_formats_placements_2026_chunk_0: {
+    id: 'meta_business_help_formats_placements_2026_chunk_0',
+    document_id: 'meta_business_help_formats_placements_2026',
+    chunk_id: 0,
+    content: 'Meta는 캠페인 목표별로 사용할 수 있는 게재 위치와 광고 형식을 구분해 안내합니다. 이미지, 동영상, 카루셀, 컬렉션, 인스턴트 경험 같은 형식은 Facebook, Instagram 등 게재 위치와 목표에 따라 사용 가능 여부와 세부 사양을 확인해야 합니다.',
+    metadata: {
+      source: 'Available ad placements and ad formats by ad objectives in Meta Ads Manager | Meta Business Help Center',
+      source_title: 'Meta 목표별 게재 위치와 광고 형식',
+      canonical_title: 'Meta 광고 상품/구조',
+      source_url: 'https://www.facebook.com/business/help/279271845888065',
+      source_vendor: 'META',
+      keywords: ['광고 형식', '게재 위치', '이미지 광고', '동영상 광고', '카루셀', '컬렉션', '인스턴트 경험'],
+      chunk_type: 'text',
+      chunk_index: 0,
+      hierarchy_level: 'paragraph',
+    },
+  },
+  meta_business_help_operating_modules_2026_chunk_0: {
+    id: 'meta_business_help_operating_modules_2026_chunk_0',
+    document_id: 'meta_business_help_operating_modules_2026',
+    chunk_id: 0,
+    content: 'Meta 광고 운영에서는 목표와 함께 전환 위치 및 운영 모듈을 확인해야 합니다. 리드 목적은 인스턴트 양식, 메시지, 전화 같은 전환 위치를 검토하고, 앱 홍보는 앱 설치나 앱 이벤트 측정을, 판매와 커머스 목적은 카탈로그, 컬렉션, Advantage+ 카탈로그, 웹사이트 전환 측정을 함께 확인합니다.',
+    metadata: {
+      source: 'Available conversion locations and events by objective in Meta Ads Manager | Meta Business Help Center',
+      source_title: 'Meta 목표별 전환 위치와 운영 기능',
+      canonical_title: 'Meta 광고 상품/구조',
+      source_url: 'https://www.facebook.com/business/help/2035196646663270',
+      source_vendor: 'META',
+      keywords: ['전환 위치', '리드 양식', '잠재 고객', '앱 홍보', '앱 이벤트', '카탈로그', 'Advantage+'],
+      chunk_type: 'text',
+      chunk_index: 0,
+      hierarchy_level: 'paragraph',
+    },
+  },
+  google_ads_campaign_types_2026_chunk_0: {
+    id: 'google_ads_campaign_types_2026_chunk_0',
+    document_id: 'google_ads_campaign_types_2026',
+    chunk_id: 0,
+    content: 'Google Ads는 광고 목표와 운영 방식에 맞춰 캠페인 유형을 선택하는 구조입니다. 공식 도움말에서 확인되는 주요 축은 검색, 디스플레이, 동영상, 쇼핑, 앱, 실적 최대화 캠페인이며, 각 캠페인은 노출 지면, 광고 형식, 입찰과 애셋 요구사항이 다릅니다.',
+    metadata: {
+      source: 'Choose the right campaign type | Google Ads Help',
+      source_title: 'Google Ads 캠페인 유형',
+      canonical_title: 'Google Ads 광고 상품/구조',
+      source_url: 'https://support.google.com/google-ads/answer/2567043?hl=ko',
+      source_vendor: 'GOOGLE',
+      keywords: ['Google Ads', '캠페인 유형', '검색 캠페인', '디스플레이 캠페인', '동영상 캠페인', '쇼핑 캠페인', '앱 캠페인', '실적 최대화'],
+      chunk_type: 'text',
+      chunk_index: 0,
+      hierarchy_level: 'paragraph',
+    },
+  },
+  google_ads_campaign_objectives_2026_chunk_0: {
+    id: 'google_ads_campaign_objectives_2026_chunk_0',
+    document_id: 'google_ads_campaign_objectives_2026',
+    chunk_id: 0,
+    content: 'Google Ads 캠페인은 판매, 리드, 웹사이트 트래픽, 브랜드 인지도와 도달범위, 앱 홍보 같은 목표를 먼저 정하고, 그 목표에 맞는 캠페인 유형과 기능을 조합합니다. 목표 선택은 사용할 수 있는 캠페인 유형, 전환 설정, 입찰 전략과 후속 최적화 기준을 좌우합니다.',
+    metadata: {
+      source: 'About campaign objectives in Google Ads | Google Ads Help',
+      source_title: 'Google Ads 캠페인 목표',
+      canonical_title: 'Google Ads 광고 상품/구조',
+      source_url: 'https://support.google.com/google-ads/answer/7450050?hl=ko',
+      source_vendor: 'GOOGLE',
+      keywords: ['Google Ads', '캠페인 목표', '판매', '리드', '웹사이트 트래픽', '브랜드 인지도', '앱 홍보'],
+      chunk_type: 'text',
+      chunk_index: 0,
+      hierarchy_level: 'paragraph',
+    },
+  },
+  google_ads_shopping_ads_2026_chunk_0: {
+    id: 'google_ads_shopping_ads_2026_chunk_0',
+    document_id: 'google_ads_shopping_ads_2026',
+    chunk_id: 0,
+    content: 'Google 쇼핑 광고는 Merchant Center의 상품 데이터를 사용해 상품 이미지, 제목, 가격, 매장명 같은 정보를 노출하는 광고 형식입니다. 쇼핑 캠페인 또는 실적 최대화 캠페인에서 상품 피드와 전환 목표를 함께 점검해야 하며, 상품 데이터 품질과 정책 준수가 중요합니다.',
+    metadata: {
+      source: 'About Shopping ads | Google Ads Help',
+      source_title: 'Google 쇼핑 광고',
+      canonical_title: 'Google Ads 광고 상품/구조',
+      source_url: 'https://support.google.com/google-ads/answer/2454022?hl=ko',
+      source_vendor: 'GOOGLE',
+      keywords: ['쇼핑 광고', 'Merchant Center', '상품 데이터', '상품 피드', '쇼핑 캠페인', '실적 최대화'],
+      chunk_type: 'text',
+      chunk_index: 0,
+      hierarchy_level: 'paragraph',
+    },
+  },
+  google_ads_app_campaigns_2026_chunk_0: {
+    id: 'google_ads_app_campaigns_2026_chunk_0',
+    document_id: 'google_ads_app_campaigns_2026',
+    chunk_id: 0,
+    content: 'Google 앱 캠페인은 앱 설치와 앱 내 행동을 늘리기 위한 캠페인 유형입니다. 공식 도움말은 앱 캠페인이 Google 검색, Google Play, YouTube, Discover, Google 디스플레이 네트워크 전반에서 게재될 수 있으며, 텍스트와 이미지, 동영상 애셋, 입찰과 전환 추적 설정을 함께 사용한다고 설명합니다.',
+    metadata: {
+      source: 'About App campaigns | Google Ads Help',
+      source_title: 'Google 앱 캠페인',
+      canonical_title: 'Google Ads 광고 상품/구조',
+      source_url: 'https://support.google.com/google-ads/answer/6247380?hl=ko',
+      source_vendor: 'GOOGLE',
+      keywords: ['앱 캠페인', '앱 설치', '앱 내 행동', 'Google Play', 'YouTube', 'Discover', '디스플레이 네트워크'],
+      chunk_type: 'text',
+      chunk_index: 0,
+      hierarchy_level: 'paragraph',
+    },
+  },
   doc_meta_ads_1773729341584_flikr_chunk_1: {
     id: 'doc_meta_ads_1773729341584_flikr_chunk_1',
     document_id: 'doc_meta_ads_1773729341584_flikr',
@@ -447,6 +583,40 @@ const COMPASS_OFFICIAL_CHUNK_SNAPSHOTS: Record<string, CompassOfficialChunkSnaps
       canonical_title: '네이버 광고 가이드',
     },
   },
+  naver_adguide_registration_standard_2026_chunk_0: {
+    id: 'naver_adguide_registration_standard_2026_chunk_0',
+    document_id: 'naver_adguide_registration_standard_2026',
+    chunk_id: 0,
+    content: '네이버 광고등록기준은 법령 위반, 이용자 피해나 매체 신뢰도 저해, 광고 품질의 심각한 저하, 이용자를 오인하게 하는 허위 또는 과장 표현, 제3자 권리 침해 가능성이 있는 광고를 제한합니다. 정책 판단은 문구뿐 아니라 광고 대상, 소재, 랜딩 페이지와 업종 맥락을 함께 확인해야 합니다.',
+    metadata: {
+      source: '네이버 광고등록기준',
+      source_title: '네이버 광고등록기준',
+      canonical_title: '네이버 광고 정책',
+      source_url: 'https://ads.naver.com/adguide',
+      source_vendor: 'NAVER',
+      keywords: ['네이버 광고등록기준', '법령 위반', '이용자 피해', '허위', '과장', '오인', '권리 침해'],
+      chunk_type: 'text',
+      chunk_index: 0,
+      hierarchy_level: 'paragraph',
+    },
+  },
+  naver_adguide_operating_policy_2026_chunk_0: {
+    id: 'naver_adguide_operating_policy_2026_chunk_0',
+    document_id: 'naver_adguide_operating_policy_2026',
+    chunk_id: 0,
+    content: '네이버 광고 운영정책은 광고 계정, 광고 이용계약, 광고 대상과 권한, 서비스 제한 기준을 다룹니다. 광고주가 광고 대상에 대한 적법한 권한을 갖추지 못했거나 네이버 광고 서비스의 안정성과 신뢰를 해칠 우려가 있는 경우 광고 이용이 제한되거나 거부될 수 있습니다.',
+    metadata: {
+      source: '네이버 광고 운영정책',
+      source_title: '네이버 광고 운영정책',
+      canonical_title: '네이버 광고 정책',
+      source_url: 'https://ads.naver.com/adguide/policy',
+      source_vendor: 'NAVER',
+      keywords: ['네이버 운영정책', '광고 계정', '이용계약', '권한', '서비스 제한', '거부'],
+      chunk_type: 'text',
+      chunk_index: 0,
+      hierarchy_level: 'paragraph',
+    },
+  },
   url_1770857834681_kyfp93bbk_chunk_9: {
     id: 'url_1770857834681_kyfp93bbk_chunk_9',
     document_id: 'url_1770857834681_kyfp93bbk',
@@ -461,6 +631,57 @@ const COMPASS_OFFICIAL_CHUNK_SNAPSHOTS: Record<string, CompassOfficialChunkSnaps
       keywords: ['Meta 광고 정책', '차별', '타게팅', '혐오 행동', '금지 콘텐츠'],
       chunk_type: 'text',
       chunk_index: 9,
+      hierarchy_level: 'paragraph',
+    },
+  },
+  meta_ad_standards_intro_2026_chunk_0: {
+    id: 'meta_ad_standards_intro_2026_chunk_0',
+    document_id: 'meta_ad_standards_intro_2026',
+    chunk_id: 0,
+    content: 'Meta 광고 표준은 광고에서 허용되는 콘텐츠와 금지되는 콘텐츠에 대한 세부 정책과 지침을 제공합니다. 광고 검토는 광고 소재뿐 아니라 타겟팅, 연결 URL, 랜딩 페이지, 광고가 노출되는 맥락까지 함께 확인할 수 있으므로 정책 판단은 실제 소재와 랜딩을 같이 대조해야 합니다.',
+    metadata: {
+      source: 'Introduction to the Advertising Standards | Meta Transparency Center',
+      source_title: 'Meta Advertising Standards',
+      canonical_title: 'Meta 광고 정책',
+      source_url: 'https://transparency.meta.com/policies/ad-standards/',
+      source_vendor: 'META',
+      keywords: ['Meta 광고 표준', '광고 정책', '금지 콘텐츠', '광고 검토', '랜딩 페이지', '타겟팅'],
+      chunk_type: 'text',
+      chunk_index: 0,
+      hierarchy_level: 'paragraph',
+    },
+  },
+  meta_ad_standards_discriminatory_practices_2026_chunk_0: {
+    id: 'meta_ad_standards_discriminatory_practices_2026_chunk_0',
+    document_id: 'meta_ad_standards_discriminatory_practices_2026',
+    chunk_id: 0,
+    content: 'Meta의 차별 관행 정책은 광고주가 Meta 광고 제품을 사용해 사람들을 차별하는 것을 금지합니다. 광고주는 오디언스 선택 도구를 이용해 특정 그룹을 부당하게 포함하거나 제외해서는 안 되며, 광고 콘텐츠에도 차별적인 표현을 넣어서는 안 됩니다.',
+    metadata: {
+      source: 'Discriminatory Practices | Meta Transparency Center',
+      source_title: 'Meta 차별 관행 광고 정책',
+      canonical_title: 'Meta 광고 정책',
+      source_url: 'https://transparency.meta.com/policies/ad-standards/unacceptable-content/discriminatory-practices/',
+      source_vendor: 'META',
+      keywords: ['차별 관행', '차별', '타게팅', '오디언스 선택', '광고 콘텐츠'],
+      chunk_type: 'text',
+      chunk_index: 0,
+      hierarchy_level: 'paragraph',
+    },
+  },
+  meta_business_help_ad_review_2026_chunk_0: {
+    id: 'meta_business_help_ad_review_2026_chunk_0',
+    document_id: 'meta_business_help_ad_review_2026',
+    chunk_id: 0,
+    content: 'Meta 광고 검토 시스템은 광고 표준 위반 여부를 확인합니다. 검토 대상은 광고의 이미지, 동영상, 텍스트, 타겟팅, 연결 URL, 랜딩 페이지를 포함할 수 있으며, 광고가 게재되기 전에 모든 정책에 대해 완전히 검토되지 않을 수도 있으므로 승인 후에도 정책 리스크를 계속 확인해야 합니다.',
+    metadata: {
+      source: 'About Ads In Review | Meta Business Help Center',
+      source_title: 'Meta 광고 검토',
+      canonical_title: 'Meta 광고 정책',
+      source_url: 'https://www.facebook.com/business/help/204798856225114',
+      source_vendor: 'META',
+      keywords: ['광고 검토', '광고 표준', '이미지', '동영상', '텍스트', '타겟팅', '랜딩 페이지'],
+      chunk_type: 'text',
+      chunk_index: 0,
       hierarchy_level: 'paragraph',
     },
   },
@@ -531,12 +752,132 @@ const COMPASS_OFFICIAL_CHUNK_SNAPSHOTS: Record<string, CompassOfficialChunkSnaps
   },
 };
 
+const OFFICIAL_SNAPSHOT_DOCUMENT_DEFAULTS: Record<string, Record<string, unknown>> = {
+  doc_1774488207473_cjq6ve0: {
+    source_title: '카카오모먼트 집행 기준 및 준수사항',
+    canonical_title: '카카오 광고 정책',
+    source_url: 'https://kakaobusiness.gitbook.io/main/ad/moment/intro/ad-audit/standards',
+    answerEvidenceRole: 'official_policy',
+    answer_evidence_role: 'official_policy',
+  },
+  doc_1774491147517_yj1v810: {
+    source_title: '카카오 메시지 광고 집행 가이드',
+    canonical_title: '카카오 광고 정책',
+    source_url: 'https://kakaobusiness.gitbook.io/main/ad/moment/messagead/guide',
+    answerEvidenceRole: 'official_policy',
+    answer_evidence_role: 'official_policy',
+  },
+  url_1773203880202_q3y8fucqb: {
+    source_title: '카카오 광고 심사 등록 기준',
+    canonical_title: '카카오 광고 정책',
+    source_url: 'https://kakaobusiness.gitbook.io/main/ad/searchad/channelsearch/ad-audit/registration',
+    answerEvidenceRole: 'official_policy',
+    answer_evidence_role: 'official_policy',
+  },
+  url_1773109915186_xnqeew2qd: {
+    source_title: '카카오 광고 윤리 원칙',
+    canonical_title: '카카오 광고 정책',
+    source_url: 'https://kakaobusiness.gitbook.io/main/ad/ads-safety/ethics/principle',
+    answerEvidenceRole: 'official_policy',
+    answer_evidence_role: 'official_policy',
+  },
+  doc_1773662526796_7rijhfq: {
+    source_title: 'Google Ads 리드 양식 확장 소재',
+    canonical_title: 'Google Ads 광고 상품/구조',
+    source_url: 'https://support.google.com/google-ads/answer/9423234?hl=ko',
+    answerEvidenceRole: 'official_product_overview',
+    answer_evidence_role: 'official_product_overview',
+  },
+  doc_1764895606613_llkwwsf: {
+    source_title: '네이버 숏폼 아웃스트림 광고',
+    canonical_title: '네이버 광고 상품/구조',
+    source_url: 'https://ads.naver.com/sub/insight/adtips/90',
+    answerEvidenceRole: 'official_product_overview',
+    answer_evidence_role: 'official_product_overview',
+  },
+  doc_1764895606547_buwpoz4: {
+    source_title: '네이버 PC 헤드라인DA',
+    canonical_title: '네이버 광고 상품/구조',
+    source_url: 'https://ads.naver.com/sub/insight/adtips/89',
+    answerEvidenceRole: 'official_product_overview',
+    answer_evidence_role: 'official_product_overview',
+  },
+  doc_1764895552052_8xy5ad6: {
+    source_title: '네이버 쇼핑블록 광고',
+    canonical_title: '네이버 광고 상품/구조',
+    source_url: 'https://ads.naver.com/sub/shoppingBlock',
+    answerEvidenceRole: 'official_product_overview',
+    answer_evidence_role: 'official_product_overview',
+  },
+  doc_1773710116296_uawf5xm: {
+    source_title: '네이버 쇼핑검색광고 상품 DB',
+    canonical_title: '네이버 광고 상품/구조',
+    source_url: 'https://ads.naver.com/help/faq/875',
+    answerEvidenceRole: 'official_product_overview',
+    answer_evidence_role: 'official_product_overview',
+  },
+  doc_1764922396107_b9w41zn: {
+    source_title: '네이버 디스플레이 광고 상품 가이드',
+    canonical_title: '네이버 광고 상품/구조',
+    answerEvidenceRole: 'official_product_overview',
+    answer_evidence_role: 'official_product_overview',
+  },
+  doc_1774488483929_bigcm1d: {
+    source_title: '카카오 비즈보드 광고 상품 가이드',
+    canonical_title: '카카오 광고 상품/구조',
+    source_url: 'https://kakaobusiness.gitbook.io/main/ad/moment/performance/talkboard',
+    answerEvidenceRole: 'official_product_overview',
+    answer_evidence_role: 'official_product_overview',
+  },
+  doc_1774488184369_r97sach: {
+    source_title: '카카오 디스플레이 광고 상품 가이드',
+    canonical_title: '카카오 광고 상품/구조',
+    source_url: 'https://kakaobusiness.gitbook.io/main/ad/moment/performance/displayad',
+    answerEvidenceRole: 'official_product_overview',
+    answer_evidence_role: 'official_product_overview',
+  },
+};
+
+function assignMetadataDefault(metadata: Record<string, unknown>, key: string, value: unknown) {
+  if (value === undefined || value === null || value === '') return;
+  if (metadata[key] === undefined || metadata[key] === null || metadata[key] === '') {
+    metadata[key] = value;
+  }
+}
+
+function inferOfficialSnapshotAnswerRole(metadata: Record<string, unknown>) {
+  const signalText = [
+    metadata.source,
+    metadata.source_title,
+    metadata.canonical_title,
+    Array.isArray(metadata.keywords) ? metadata.keywords.join(' ') : metadata.keywords,
+  ].filter(Boolean).join(' ');
+
+  if (/상품|구조|캠페인|리드\s*양식|쇼핑|앱|동영상|디스플레이|비즈보드|카탈로그|objective|campaign|shopping|app/i.test(signalText)) {
+    return 'official_product_overview';
+  }
+  if (/정책|심사|검수|등록\s*기준|운영\s*정책|위반|금지|제한|policy|standard|review/i.test(signalText)) {
+    return 'official_policy';
+  }
+  return 'official_doc';
+}
+
 function cloneOfficialChunkSnapshotRow(row: CompassOfficialChunkSnapshotRow): CompassOfficialChunkSnapshotRow {
   const metadata = { ...row.metadata };
+  const defaults = OFFICIAL_SNAPSHOT_DOCUMENT_DEFAULTS[row.document_id] || {};
+  for (const [key, value] of Object.entries(defaults)) {
+    assignMetadataDefault(metadata, key, value);
+  }
+
   if (metadata.source_vendor === 'KAKAO') {
     metadata.source_title ||= '카카오 광고 정책';
     metadata.canonical_title ||= '카카오 광고 정책';
   }
+  assignMetadataDefault(metadata, 'sourceKind', metadata.source_kind || 'official_doc');
+  assignMetadataDefault(metadata, 'source_kind', metadata.sourceKind || 'official_doc');
+  const answerEvidenceRole = metadata.answerEvidenceRole || metadata.answer_evidence_role || inferOfficialSnapshotAnswerRole(metadata);
+  assignMetadataDefault(metadata, 'answerEvidenceRole', answerEvidenceRole);
+  assignMetadataDefault(metadata, 'answer_evidence_role', answerEvidenceRole);
 
   return {
     ...row,
@@ -563,4 +904,9 @@ export function getCompassOfficialDocumentChunkSnapshotRows(
   }
 
   return rows;
+}
+
+export function getCompassOfficialDocumentMetadataDefaults(documentId: string | null | undefined): Record<string, unknown> {
+  if (!documentId) return {};
+  return { ...(OFFICIAL_SNAPSHOT_DOCUMENT_DEFAULTS[documentId] || {}) };
 }
