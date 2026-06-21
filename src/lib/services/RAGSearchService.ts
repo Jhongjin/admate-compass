@@ -159,6 +159,26 @@ const KAKAO_RESTRICTED_INDUSTRY_OFFICIAL_CHUNK_IDS = [
   'doc_1774491147517_yj1v810_chunk_18',
 ];
 
+const KAKAO_USER_DECEPTION_OFFICIAL_CHUNK_IDS = [
+  'doc_1774488207473_cjq6ve0_chunk_10',
+  'doc_1774488207473_cjq6ve0_chunk_11',
+  'doc_1774488207473_cjq6ve0_chunk_19',
+  'doc_1774491147517_yj1v810_chunk_4',
+];
+
+const KAKAO_PRICE_DISCOUNT_OFFICIAL_CHUNK_IDS = [
+  'doc_1774488207473_cjq6ve0_chunk_12',
+  'doc_1774488207473_cjq6ve0_chunk_13',
+  'doc_1774491147517_yj1v810_chunk_8',
+  'doc_1774491147517_yj1v810_chunk_9',
+];
+
+const KAKAO_EVENT_MATERIAL_OFFICIAL_CHUNK_IDS = [
+  'doc_1774488207473_cjq6ve0_chunk_11',
+  'doc_1774488207473_cjq6ve0_chunk_12',
+  'doc_1774491147517_yj1v810_chunk_9',
+];
+
 export function getCompassSupabaseRowsCacheStatus() {
   const now = Date.now();
   let activeEntries = 0;
@@ -4394,10 +4414,33 @@ export class RAGSearchService {
     return this.getFastPolicySourceGuidedPriorityPattern(intent) !== null;
   }
 
+  private getKakaoFastPolicyOfficialChunkIds(intent: QueryIntent): string[] {
+    if (intent.vendors.length !== 1 || intent.vendors[0] !== 'KAKAO') return [];
+    const queryText = this.normalizeSearchText([
+      ...intent.keywords,
+      ...intent.topics,
+      ...intent.adPolicyTerms,
+      ...intent.strictContextTerms,
+    ].join(' '));
+
+    if (this.isKakaoRestrictedIndustryPolicyIntent(intent)) {
+      return KAKAO_RESTRICTED_INDUSTRY_OFFICIAL_CHUNK_IDS;
+    }
+    if (/오인|기만|속이|혼란|허위|과장|오해/.test(queryText)) {
+      return KAKAO_USER_DECEPTION_OFFICIAL_CHUNK_IDS;
+    }
+    if (/가격|할인|할인율|혜택|쿠폰|정가|판매가/.test(queryText)) {
+      return KAKAO_PRICE_DISCOUNT_OFFICIAL_CHUNK_IDS;
+    }
+    if (/이벤트|경품|참여|프로모션|추첨/.test(queryText)) {
+      return KAKAO_EVENT_MATERIAL_OFFICIAL_CHUNK_IDS;
+    }
+
+    return [];
+  }
+
   private async searchFastPolicySourceGuidedOfficialCandidates(intent: QueryIntent): Promise<SearchResult[]> {
-    const chunkIds = this.isKakaoRestrictedIndustryPolicyIntent(intent)
-      ? KAKAO_RESTRICTED_INDUSTRY_OFFICIAL_CHUNK_IDS
-      : [];
+    const chunkIds = this.getKakaoFastPolicyOfficialChunkIds(intent);
     if (chunkIds.length === 0) return [];
 
     const vendor: VendorIntent = intent.vendors.length === 1 ? intent.vendors[0] : 'KAKAO';
