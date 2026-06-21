@@ -5211,12 +5211,25 @@ function buildMetaCatalogStructuredFallbackAnswer(
   return sections.join('\n');
 }
 
+function isMetaCreativeSpecFastStructuredIntent(message: string, intent: QueryIntent): boolean {
+  if (intent.vendors.length !== 1 || intent.vendors[0] !== 'META' || intent.isComparative) return false;
+  const text = normalizeProductIntentText([
+    message,
+    ...intent.keywords,
+    ...intent.strictProductTerms,
+    ...intent.strictContextTerms,
+  ].filter(Boolean).join(' '));
+  return intent.topics.includes('spec')
+    || intent.topics.includes('product_structure')
+    || /소재|사양|스펙|규격|비율|사이즈|크기|해상도|파일|이미지|동영상|비디오|카루셀|캐러셀|carousel|슬라이드|instagram|인스타그램/.test(text);
+}
+
 function buildMetaCreativeSpecStructuredFallbackAnswer(
   sources: ReturnType<typeof buildVerifiedSources>,
   intent: QueryIntent,
   message: string,
 ) {
-  if (!intent.vendors.includes('META')) return null;
+  if (!isMetaCreativeSpecFastStructuredIntent(message, intent)) return null;
   if (detectProductAnswerFamily(message, intent) !== 'meta_creative_spec') return null;
 
   const used = new Set<number>();
@@ -5227,7 +5240,15 @@ function buildMetaCreativeSpecStructuredFallbackAnswer(
     '',
   ];
 
-  addFallbackLine(
+  const addedCanonicalImageSpec = addFallbackLine(
+    sections,
+    used,
+    sources,
+    'META',
+    /이미지[\s\S]{0,180}(1200\s*x\s*628|1200x628|1\.91:1)[\s\S]{0,180}(jpg|png|30mb|파일)|1200\s*x\s*628[\s\S]{0,180}(jpg|png|30mb|파일)/i,
+    label => `- Facebook 이미지 광고는 1200x628픽셀(1.91:1) 같은 지면별 권장 크기와 JPG/PNG, 최대 파일 크기 조건을 함께 확인해야 합니다 ${label}.`,
+  );
+  if (!addedCanonicalImageSpec) addFallbackLine(
     sections,
     used,
     sources,
@@ -5280,9 +5301,10 @@ function buildFastStructuredSpecificProductAnswer(
   fallbackSources: ReturnType<typeof buildVerifiedSources>,
 ): (DeterministicProductAnswer & { fastAnswerFallback: FastStructuredSpecificProductAnswerFallback }) | null {
   if (process.env.COMPASS_DISABLE_FAST_STRUCTURED_SPECIFIC_PRODUCT_ANSWERS === 'true') return null;
-  if (!intent.topics.includes('product_structure')) return null;
+  const isMetaCreativeSpecFastIntent = isMetaCreativeSpecFastStructuredIntent(message, intent);
+  if (!intent.topics.includes('product_structure') && !isMetaCreativeSpecFastIntent) return null;
   if (intent.vendors.length !== 1 || intent.isComparative) return null;
-  if (!intent.isSpecificProductGuidance && !hasNamedSpecificProductQuestion(message)) return null;
+  if (!isMetaCreativeSpecFastIntent && !intent.isSpecificProductGuidance && !hasNamedSpecificProductQuestion(message)) return null;
 
   const vendor = intent.vendors[0];
   const scopedSources = scope.answerSources.length > 0 ? scope.answerSources : scope.strictProductSources;

@@ -1125,7 +1125,7 @@ if (!/private async searchMetaCreativeSpecPriorityCandidates[\s\S]*searchKnownOf
   fail('Meta creative/spec priority retrieval must try known official ads-guide chunks before anchor fan-out');
 }
 
-if (!/if \(usesMetaCreativeSpecPriority && usesSpecificProductRetrieval\)[\s\S]*specific_meta_creative_spec_priority_direct[\s\S]*if \(rankedResults\.length > 0\)[\s\S]*return this\.withRetrievalTimeoutMetadata\(rankedResults, timedOutChannels, channelTimings\);[\s\S]*meta_creative_spec_priority_rescue[\s\S]*META creative spec priority candidates were rescued[\s\S]*return this\.withRetrievalTimeoutMetadata\(rescueResults, timedOutChannels, channelTimings\);/.test(rag)) {
+if (!/if \(usesMetaCreativeSpecPriority && \(usesSpecificProductRetrieval \|\| intent\.topics\.includes\('spec'\)\)\)[\s\S]*specific_meta_creative_spec_priority_direct[\s\S]*if \(rankedResults\.length > 0\)[\s\S]*return this\.withRetrievalTimeoutMetadata\(rankedResults, timedOutChannels, channelTimings\);[\s\S]*meta_creative_spec_priority_rescue[\s\S]*META creative spec priority candidates were rescued[\s\S]*return this\.withRetrievalTimeoutMetadata\(rescueResults, timedOutChannels, channelTimings\);/.test(rag)) {
   fail('Meta creative/spec direct retrieval must rescue official candidates when strict ranking filters them all');
 }
 

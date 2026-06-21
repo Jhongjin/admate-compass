@@ -150,6 +150,7 @@ const META_CREATIVE_SPEC_OFFICIAL_CHUNK_IDS = [
   'doc_meta_ads_1773729358234_l7f34_chunk_1',
   'doc_meta_ads_1773729345121_uvubb_chunk_1',
   'doc_meta_ads_1773729359834_ijfm7_chunk_1',
+  'facebook-ad-policy_chunk_0',
 ];
 
 const GOOGLE_LEAD_FORM_OFFICIAL_CHUNK_IDS = [
@@ -1274,8 +1275,7 @@ export class RAGSearchService {
         && intent.vendors[0] === 'META'
         && this.isMetaCatalogIntent(intent);
       const usesMetaCreativeSpecPriority =
-        needsProductStructureRetrieval
-        && intent.vendors.length === 1
+        intent.vendors.length === 1
         && intent.vendors[0] === 'META'
         && this.isMetaCreativeSpecIntent(intent);
       const usesGoogleLeadFormPriority =
@@ -1482,7 +1482,7 @@ export class RAGSearchService {
         }
       }
 
-      if (usesMetaCreativeSpecPriority && usesSpecificProductRetrieval) {
+      if (usesMetaCreativeSpecPriority && (usesSpecificProductRetrieval || intent.topics.includes('spec'))) {
         const metaCreativeSpecPriorityCandidates = await this.withRetrievalChannelTimeout(
           this.searchMetaCreativeSpecPriorityCandidates(intent),
           'specific_meta_creative_spec_priority_direct',
@@ -3293,6 +3293,7 @@ export class RAGSearchService {
       carouselSpecChunk,
       instagramImageSpecChunk,
       instagramCarouselSpecChunk,
+      facebookPolicyImageSpecChunk,
     ] = META_CREATIVE_SPEC_OFFICIAL_CHUNK_IDS;
 
     if (/카루셀|캐러셀|carousel|슬라이드/.test(queryText)) {
@@ -3305,7 +3306,7 @@ export class RAGSearchService {
       push([videoSpecChunk, carouselSpecChunk, instagramCarouselSpecChunk]);
     }
     if (/이미지|image|jpg|png|사진|소재|사양|스펙|규격/.test(queryText)) {
-      push([imageSpecChunk, instagramImageSpecChunk]);
+      push([imageSpecChunk, facebookPolicyImageSpecChunk, instagramImageSpecChunk]);
     }
 
     push(META_CREATIVE_SPEC_OFFICIAL_CHUNK_IDS);
@@ -7808,7 +7809,7 @@ export class RAGSearchService {
   }
 
   private isMetaCreativeSpecIntent(intent: QueryIntent): boolean {
-    if (!intent.topics.includes('product_structure') || intent.vendors[0] !== 'META') return false;
+    if (intent.vendors[0] !== 'META') return false;
     const text = this.normalizeSearchText([
       ...intent.keywords,
       ...intent.strictProductTerms,
