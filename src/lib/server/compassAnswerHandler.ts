@@ -9,6 +9,7 @@ import {
   type RetrievalChannelTiming,
   type VendorIntent,
 } from '@/lib/services/RAGSearchService';
+import { getCompassOfficialDocumentChunkSnapshotRows } from '@/lib/services/compassOfficialChunkSnapshots';
 import { generateCompassAnswer, type CompassGroundingSource } from '@/lib/services/CompassAnswerLlmService';
 import {
   getCompassAnswerDurableStoreStatus,
@@ -114,7 +115,7 @@ const COMPASS_ANSWER_RESPONSE_CACHE_TTL_MS = Math.min(
   900000,
 );
 const COMPASS_ANSWER_RESPONSE_CACHE_MAX_ENTRIES = 64;
-const COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v19-single-vendor-compare-planning';
+const COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v22-meta-product-planning-matrix-decision-table';
 const compassAnswerResponseCache = new Map<string, CompassAnswerResponseCacheEntry>();
 const compassAnswerRuntimeMetrics = {
   startedAt: Date.now(),
@@ -4344,6 +4345,224 @@ function buildEvidenceBackedAnswer(
   };
 }
 
+const META_PRODUCT_PLANNING_MATRIX_REQUIRED_CHUNK_IDS = [
+  'meta_business_help_ad_levels_2026_chunk_0',
+  'meta_business_help_objectives_2026_chunk_0',
+  'meta_business_help_formats_placements_2026_chunk_0',
+  'meta_business_help_operating_modules_2026_chunk_0',
+] as const;
+
+function buildOfficialProductOverviewSnapshotSearchResult(
+  row: ReturnType<typeof getCompassOfficialDocumentChunkSnapshotRows>[number],
+): SearchResult {
+  const metadata: Record<string, unknown> = {
+    ...row.metadata,
+    officialProductOverviewSnapshot: true,
+    metaProductOverviewOfficialChunk: true,
+    answerEvidenceRole: 'official_product_overview',
+    answer_evidence_role: 'official_product_overview',
+    sourceKind: 'official_doc',
+    source_kind: 'official_doc',
+    sourceVendor: 'META',
+    source_vendor: 'META',
+    sourceVendors: ['META'],
+    source_vendors: ['META'],
+    retrievalMethod: 'keyword',
+    evidenceType: 'official_product_overview',
+    evidenceDecision: 'verified',
+    corpus: 'document_chunks',
+  };
+  const documentTitle = String(metadata['source_title'] || metadata['canonical_title'] || metadata['source'] || 'Meta 광고 상품/구조');
+  const documentUrl = String(metadata['source_url'] || metadata['document_url'] || metadata['url'] || '');
+
+  return {
+    chunk_id: row.id,
+    content: row.content,
+    similarity: 1,
+    score: 1,
+    hybridScore: 1,
+    vectorScore: 1,
+    keywordScore: 1,
+    corpus: 'document_chunks',
+    evidenceType: 'official_product_overview',
+    evidenceDecision: 'verified',
+    evidenceDecisionReason: ['meta_product_planning_matrix_required_official_snapshot'],
+    rankReason: ['meta_product_planning_matrix_required_official_snapshot'],
+    lexicalOverlap: 1,
+    vendorMatch: true,
+    vendorMismatch: false,
+    sourceVendor: 'META',
+    sourceVendors: ['META'],
+    topicMatch: true,
+    retrievalMethod: 'keyword',
+    documentId: row.document_id,
+    documentTitle,
+    documentUrl,
+    sourceQuality: {
+      hasDocumentId: true,
+      hasTitle: Boolean(documentTitle),
+      hasUrl: Boolean(documentUrl),
+      hasExcerpt: Boolean(row.content),
+      isFallback: false,
+      warnings: [],
+      linkedToDocument: true,
+      qualityScore: 0.98,
+      corpus: 'document_chunks',
+      lexicalOverlap: 1,
+      vendorMatch: true,
+      vendorMismatch: false,
+      sourceVendor: 'META',
+    },
+    metadata,
+  };
+}
+
+function sourceHasExactMetaProductPlanningMatrixChunk(
+  source: ReturnType<typeof buildVerifiedSources>[number],
+  chunkId: string,
+) {
+  const metadata = (source as any).metadata || {};
+  const normalizedChunkId = normalizeEvidenceText(chunkId);
+  return [
+    source.id,
+    source.chunkId,
+    metadata.id,
+    metadata.chunkId,
+    metadata.chunk_id,
+    metadata.sourceChunkId,
+    metadata.source_chunk_id,
+  ].filter(Boolean).some(value => normalizeEvidenceText(String(value)) === normalizedChunkId);
+}
+
+function ensureMetaProductPlanningMatrixSources(
+  sources: ReturnType<typeof buildVerifiedSources>,
+): ReturnType<typeof buildVerifiedSources> {
+  const missingChunkIds = META_PRODUCT_PLANNING_MATRIX_REQUIRED_CHUNK_IDS
+    .filter(chunkId => !sources.some(source => sourceHasExactMetaProductPlanningMatrixChunk(source, chunkId)));
+
+  if (missingChunkIds.length === 0) return sources;
+
+  const supplementalSources = buildVerifiedSources(
+    getCompassOfficialDocumentChunkSnapshotRows([...missingChunkIds])
+      .map(buildOfficialProductOverviewSnapshotSearchResult),
+  );
+
+  if (supplementalSources.length === 0) return sources;
+  return [...sources, ...supplementalSources];
+}
+
+function getMetaProductPlanningMatrixRequiredSourceIndexes(
+  sources: ReturnType<typeof buildVerifiedSources>,
+) {
+  const indexes = META_PRODUCT_PLANNING_MATRIX_REQUIRED_CHUNK_IDS.map(chunkId => (
+    sources.findIndex(source => sourceHasExactMetaProductPlanningMatrixChunk(source, chunkId))
+  ));
+  if (indexes.some(index => index < 0)) return null;
+  if (new Set(indexes).size !== META_PRODUCT_PLANNING_MATRIX_REQUIRED_CHUNK_IDS.length) return null;
+
+  return {
+    levelsIndex: indexes[0],
+    objectivesIndex: indexes[1],
+    formatsIndex: indexes[2],
+    modulesIndex: indexes[3],
+  };
+}
+
+function buildMetaProductPlanningMatrixAnswer(
+  sources: ReturnType<typeof buildVerifiedSources>,
+): DeterministicProductAnswer | null {
+  const matrixSources = ensureMetaProductPlanningMatrixSources(sources);
+  const requiredSourceIndexes = getMetaProductPlanningMatrixRequiredSourceIndexes(matrixSources);
+  if (!requiredSourceIndexes) return null;
+
+  const {
+    levelsIndex,
+    objectivesIndex,
+    formatsIndex,
+    modulesIndex,
+  } = requiredSourceIndexes;
+
+  const used = new Set<number>([
+    objectivesIndex,
+    formatsIndex,
+    modulesIndex,
+    levelsIndex,
+  ]);
+
+  const citation = (index: number, fallbackIndex = objectivesIndex) => {
+    const usableIndex = index >= 0 ? index : fallbackIndex;
+    used.add(usableIndex);
+    return `[S${usableIndex + 1}]`;
+  };
+
+  const levelRef = citation(levelsIndex, objectivesIndex);
+  const objectiveRef = citation(objectivesIndex);
+  const formatRef = citation(formatsIndex);
+  const moduleRef = citation(modulesIndex);
+  const commerceRef = citation(modulesIndex);
+
+  const lines = [
+    'Meta 광고 상품은 “상품명 목록”이 아니라 **목표별 캠페인 유형 + 전환 위치 + 광고 형식/게재 위치 + 데이터·측정 모듈**을 조합해 고르는 구조로 보는 편이 실무적입니다.',
+    `광고 관리자는 캠페인에서 목표를 정하고, 광고 세트에서 예산·일정·타겟·게재 위치를 잡으며, 광고 단위에서 소재와 문구를 구성합니다 ${levelRef}.`,
+    '',
+    '**1. 유형별 비교**',
+    '',
+    '| 유형 | 캠페인 목표 | 주로 맞는 광고 형식 | 게재 위치 판단 | 리드/앱/카탈로그 활용 기준 | 실무 판단 포인트 |',
+    '|---|---|---|---|---|---|',
+    `| 인지도/도달 | 브랜드 인지, 도달, 기억률처럼 상단 퍼널 확대가 목표일 때 ${objectiveRef} | 이미지, 동영상, 카루셀처럼 빠르게 메시지를 전달하는 형식 ${formatRef} | 릴스·스토리·피드처럼 도달량과 반복 노출을 확보하기 쉬운 지면을 우선 보고, 빈도 피로도가 크면 지면을 넓힙니다 ${formatRef} | 리드·앱·카탈로그는 핵심 모듈이 아니라 후속 리타게팅/전환 캠페인으로 넘기는 편이 안전 | KPI는 전환수보다 도달, 빈도, ThruPlay/조회, 브랜드 리프트 성격으로 봅니다. |`,
+    `| 트래픽/방문 유도 | 웹사이트, 앱, 메시지 등 목적지로 사람을 보내는 것이 목표일 때 ${objectiveRef} | 이미지, 동영상, 카루셀, 링크형 소재를 목적지와 맞춰 사용 ${formatRef} | 피드·스토리·릴스·탐색처럼 클릭 후 랜딩 흐름이 끊기지 않는 지면을 고르고, 랜딩 속도가 느리면 모바일 지면을 보수적으로 봅니다 ${formatRef} | 앱 유입이면 앱 목적/앱 이벤트로 분리하고, 상품 탐색이면 카탈로그/커머스 구조와 연결 여부를 봅니다 ${moduleRef} | 랜딩 속도, URL, UTM, 픽셀/CAPI 이벤트 수집 여부를 집행 전 확인합니다. |`,
+    `| 참여/메시지 | 게시물 반응, 동영상 조회, 메시지 대화처럼 상호작용이 목표일 때 ${objectiveRef} | 동영상, 이미지, 카루셀 등 참여를 유도하기 쉬운 소재 ${formatRef} | 릴스·피드·스토리는 반응/조회에, 메시지 상담은 Messenger·Instagram DM 진입 흐름을 중심으로 검토합니다 ${formatRef} | 상담형이면 메시지 전환 위치를, 리드 수집형이면 잠재 고객 목표로 분리합니다 ${moduleRef} | “반응”과 “문의/전환”을 같은 캠페인에서 동시에 기대하지 않도록 KPI를 분리합니다. |`,
+    `| 리드 수집 | 상담 신청, 견적 요청, 연락처 확보처럼 잠재 고객 확보가 목표일 때 ${objectiveRef} | 이미지·동영상·카루셀 소재로 제안 가치를 설명하고, 인스턴트 양식/메시지/전화 같은 전환 위치와 연결 ${moduleRef} | 모바일 피드·스토리·릴스처럼 양식 제출 흐름이 짧은 지면을 우선 보고, 메시지 리드는 대화 진입 위치를 따로 검토합니다 ${formatRef} | **리드**가 핵심입니다. 인스턴트 양식은 CRM 연동, 질문 항목, 개인정보 고지, 후속 연락 프로세스까지 같이 설계합니다 ${moduleRef} | 리드 품질이 중요하면 양식 질문을 늘리고, 리드량이 중요하면 입력 장벽을 낮춥니다. |`,
+    `| 앱 성장 | 앱 설치, 앱 내 행동, 앱 이벤트 최적화가 목표일 때 ${objectiveRef} | 짧은 동영상, 이미지, 카루셀 등 모바일 앱 가치가 즉시 보이는 소재 ${formatRef} | 모바일 피드·스토리·릴스 중심으로 보되, 스토어 이동과 앱 이벤트 측정이 끊기지 않는 전환 위치를 먼저 확인합니다 ${moduleRef} | **앱**이 핵심입니다. SDK/MMP, 앱 이벤트, 설치 후 행동 이벤트가 준비되지 않으면 최적화 품질이 떨어집니다 ${moduleRef} | 설치 캠페인과 구매/가입 같은 앱 이벤트 캠페인을 분리해 학습 기준을 명확히 둡니다. |`,
+    `| 판매/커머스 | 구매, 장바구니, 웹사이트 전환, 상품 판매가 목표일 때 ${objectiveRef} | 이미지, 동영상, 카루셀, 컬렉션, 인스턴트 경험, Advantage+ 카탈로그 계열을 상품 수와 구매 흐름에 맞춰 선택 ${formatRef} | 피드·스토리·릴스는 발견/탐색, 카탈로그·컬렉션은 상품 비교, 리타게팅은 구매 이벤트가 잘 잡히는 지면을 우선합니다 ${formatRef} | **카탈로그**가 핵심입니다. 상품 피드, 상품 세트, 픽셀/CAPI, 웹사이트 전환 측정을 묶어서 봐야 합니다 ${commerceRef} | SKU가 많으면 카탈로그/동적 소재, SKU가 적거나 신제품이면 일반 판매 캠페인+수동 소재가 더 나을 수 있습니다. |`,
+    '',
+    '**2. 리드/앱/카탈로그 빠른 판별**',
+    '',
+    '| 모듈 | 선택해야 하는 상황 | 피하는 편이 나은 상황 | 준비 조건 |',
+    '|---|---|---|---|',
+    `| 리드/잠재 고객 | 상담, 견적, 예약, B2B 문의처럼 “연락처 확보 후 영업 처리”가 핵심일 때 ${objectiveRef} | 즉시 구매가 목표인데 후속 상담 조직이 없거나 리드 품질을 검수할 수 없을 때 | 인스턴트 양식/메시지/전화 전환 위치, 질문 항목, 개인정보 고지, CRM·알림·상담 SLA ${moduleRef} |`,
+    `| 앱 홍보 | 앱 설치, 가입, 구매, 구독처럼 앱 안 행동을 늘려야 할 때 ${objectiveRef} | 웹 전환만 측정하거나 앱 이벤트가 준비되지 않은 상태에서 설치 수만 늘리려 할 때 | SDK/MMP, 앱 이벤트, 스토어 연결, 설치 후 핵심 이벤트, 앱 이벤트 최적화 기준 ${moduleRef} |`,
+    `| 카탈로그/컬렉션/Advantage+ 카탈로그 | SKU가 많고 상품별 노출·리타게팅·동적 소재가 필요한 커머스일 때 ${commerceRef} | SKU가 적거나 가격/재고 동기화가 불안정해 상품 피드 품질을 보장하기 어려울 때 | 상품 피드, 상품 세트, 품절·가격 동기화, 픽셀/CAPI, 구매·장바구니 이벤트 ${commerceRef} |`,
+    `| 일반 목표형 캠페인 | 신제품 테스트, 브랜드 메시지, 소수 SKU, 이벤트 고지처럼 수동 소재로 메시지 통제가 중요할 때 ${objectiveRef} | 상품 수가 많아 소재 운영이 반복되거나 구매 이벤트 학습이 더 중요한 커머스 확장 단계 | 목표, 광고 세트 타겟·게재 위치, 이미지/동영상/카루셀 소재와 랜딩 경험 ${levelRef} ${formatRef} |`,
+    '',
+    '**3. 선택 순서**',
+    '',
+    `- 먼저 캠페인 목표를 고릅니다. Meta의 주요 목표 축은 인지도, 트래픽, 참여, 잠재 고객, 앱 홍보, 판매입니다 ${objectiveRef}.`,
+    `- 다음으로 전환 위치를 고릅니다. 리드는 인스턴트 양식/메시지/전화, 앱은 앱 설치·앱 이벤트, 판매는 카탈로그·웹사이트 전환 측정처럼 목표별 운영 모듈이 달라집니다 ${moduleRef}.`,
+    `- 마지막으로 해당 목표에서 지원되는 광고 형식과 게재 위치를 대조합니다. 이미지, 동영상, 카루셀, 컬렉션, 인스턴트 경험은 목표와 지면에 따라 사용 가능 여부와 권장 사양이 달라집니다 ${formatRef}.`,
+    '',
+    '**4. 실무 체크**',
+    '',
+    '- 리드 캠페인: 양식 질문 수, 개인정보 고지, CRM/알림 연동, 상담 SLA를 먼저 정합니다.',
+    '- 앱 캠페인: SDK/MMP, 앱 이벤트, 설치 후 핵심 행동 이벤트가 잡히는지 확인합니다.',
+    '- 카탈로그/판매 캠페인: 상품 피드 품질, 품절/가격 동기화, 픽셀/CAPI, 구매 이벤트를 확인합니다.',
+    '- 형식/지면: 같은 소재라도 피드, 스토리, 릴스, 검색/탐색 지면에서 비율과 사용 경험이 달라지므로 소재를 지면별로 나눠 봅니다.',
+    '',
+    '정리하면, “어떤 상품을 쓸까?”보다 **목표 → 전환 위치 → 형식/게재 위치 → 데이터·측정 조건** 순서로 좁히면 됩니다. 이 질문의 범위에서는 리드형, 앱형, 판매/카탈로그형을 별도 운영 유형으로 분리해 설계하는 것이 가장 안전합니다.',
+    '',
+    `근거: ${Array.from(used).sort((a, b) => a - b).map(index => `[S${index + 1}]`).join(', ')}`,
+  ];
+
+  const citedSourceIndexes = Array.from(used).sort((a, b) => a - b);
+  const citedSourceLabels = new Map(citedSourceIndexes.map((sourceIndex, citationIndex) => [
+    sourceIndex + 1,
+    citationIndex + 1,
+  ]));
+  const answer = lines.join('\n').replace(/\[S(\d+)\]/g, (label, sourceNumber) => {
+    const remappedLabel = citedSourceLabels.get(Number(sourceNumber));
+    return remappedLabel ? `[S${remappedLabel}]` : label;
+  });
+
+  return {
+    answer,
+    sources: citedSourceIndexes.map(index => matrixSources[index]),
+    model: 'compass-answer-deterministic-meta-product-planning-matrix',
+    showContactOption: false,
+    confidenceCap: 88,
+    reviewStatus: 'completed',
+  };
+}
+
 function countEvidenceBackedSupportedBullets(
   profile: EvidenceBackedAnswerProfile,
   sources: ReturnType<typeof buildVerifiedSources>,
@@ -4398,8 +4617,18 @@ function buildBroadProductGeneratedAnswerRepair(
   const profile = getBroadProductAnswerProfile(family);
   if (!profile) return null;
 
-  const deterministicAnswer = buildEvidenceBackedAnswer(profile, sources);
+  const deterministicAnswer = family === 'meta_overview' && isBroadMetaProductPlanningQuestion(message, intent)
+    ? buildMetaProductPlanningMatrixAnswer(sources)
+    : buildEvidenceBackedAnswer(profile, sources);
   if (!deterministicAnswer) return null;
+
+  if (family === 'meta_overview' && isBroadMetaProductPlanningQuestion(message, intent)) {
+    return {
+      ...deterministicAnswer,
+      model: `${deterministicAnswer.model}-quality-repair`,
+      reason: 'broad_product_quality_gap',
+    };
+  }
 
   const supportedBulletCount = countEvidenceBackedSupportedBullets(profile, sources);
   const answerHitCount = countEvidenceBackedAnswerHits(profile, rawGeneratedAnswer);
@@ -5616,6 +5845,10 @@ function buildDeterministicBroadProductAnswer(
   }
 
   const family = detectProductAnswerFamily(message, intent);
+  if (family === 'meta_overview' && isBroadMetaProductPlanningQuestion(message, intent)) {
+    return buildMetaProductPlanningMatrixAnswer(sources);
+  }
+
   const profile = getBroadProductAnswerProfile(family)
     || getSpecificProductAnswerProfile(family, 'product_detail');
   if (!profile) return null;

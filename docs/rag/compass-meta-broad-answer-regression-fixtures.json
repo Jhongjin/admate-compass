@@ -75,14 +75,42 @@
       "메타 광고 정책 2024",
       "범위 제한"
     ],
+    "requiredSourceChunkIds": [
+      "meta_business_help_ad_levels_2026_chunk_0",
+      "meta_business_help_objectives_2026_chunk_0",
+      "meta_business_help_formats_placements_2026_chunk_0",
+      "meta_business_help_operating_modules_2026_chunk_0"
+    ],
+    "requiredCitedSourceChunkIds": [
+      "meta_business_help_ad_levels_2026_chunk_0",
+      "meta_business_help_objectives_2026_chunk_0",
+      "meta_business_help_formats_placements_2026_chunk_0",
+      "meta_business_help_operating_modules_2026_chunk_0"
+    ],
     "generationMustContain": [
       "캠페인 목표",
       "광고 형식",
       "게재 위치",
+      "릴스",
+      "스토리",
+      "탐색",
+      "유형별 비교",
+      "인지도/도달",
+      "트래픽/방문 유도",
+      "참여/메시지",
+      "리드 수집",
+      "앱 성장",
+      "판매/커머스",
+      "리드/앱/카탈로그 빠른 판별",
+      "SDK/MMP",
       "리드",
       "앱",
       "카탈로그",
-      "측정"
+      "측정",
+      "인스턴트 양식",
+      "앱 이벤트",
+      "Advantage+ 카탈로그",
+      "픽셀/CAPI"
     ],
     "generationMustNotContain": [
       "Meta 카탈로그/컬렉션 계열",
@@ -96,8 +124,8 @@
       "transparency.meta.com",
       "meta.com"
     ],
-    "minOfficialSources": 2,
-    "minSources": 2,
+    "minOfficialSources": 4,
+    "minSources": 4,
     "minConfidence": 45,
     "expectNoDataFound": false,
     "requireRetrievalMethods": [
@@ -107,6 +135,7 @@
     ],
     "requireSourceQuality": true,
     "requireGenerationAssertions": true,
+    "requireCitationConsistency": true,
     "minVerifiedEvidence": 1,
     "maxDuplicateTitles": 4,
     "minDistinctTitles": 1,
@@ -131,14 +160,43 @@
       "메타 광고 정책 2024",
       "범위 제한"
     ],
+    "requiredSourceChunkIds": [
+      "meta_business_help_ad_levels_2026_chunk_0",
+      "meta_business_help_objectives_2026_chunk_0",
+      "meta_business_help_formats_placements_2026_chunk_0",
+      "meta_business_help_operating_modules_2026_chunk_0"
+    ],
+    "requiredCitedSourceChunkIds": [
+      "meta_business_help_ad_levels_2026_chunk_0",
+      "meta_business_help_objectives_2026_chunk_0",
+      "meta_business_help_formats_placements_2026_chunk_0",
+      "meta_business_help_operating_modules_2026_chunk_0"
+    ],
     "generationMustContain": [
       "캠페인 목표",
       "광고 형식",
       "게재 위치",
+      "릴스",
+      "스토리",
+      "탐색",
+      "유형별 비교",
+      "인지도/도달",
+      "트래픽/방문 유도",
+      "참여/메시지",
+      "리드 수집",
+      "앱 성장",
+      "판매/커머스",
+      "리드/앱/카탈로그 빠른 판별",
+      "SDK/MMP",
       "리드",
       "앱",
       "카탈로그",
-      "측정"
+      "측정",
+      "인스턴트 양식",
+      "앱 이벤트",
+      "Advantage+ 카탈로그",
+      "상품 피드",
+      "픽셀/CAPI"
     ],
     "generationMustNotContain": [
       "Meta Advantage+, 어드밴티지, 카탈로그, Catalog는",
@@ -154,8 +212,8 @@
       "transparency.meta.com",
       "meta.com"
     ],
-    "minOfficialSources": 2,
-    "minSources": 2,
+    "minOfficialSources": 4,
+    "minSources": 4,
     "minConfidence": 45,
     "expectNoDataFound": false,
     "requireRetrievalMethods": [
@@ -165,6 +223,7 @@
     ],
     "requireSourceQuality": true,
     "requireGenerationAssertions": true,
+    "requireCitationConsistency": true,
     "minVerifiedEvidence": 1,
     "maxDuplicateTitles": 4,
     "minDistinctTitles": 1,

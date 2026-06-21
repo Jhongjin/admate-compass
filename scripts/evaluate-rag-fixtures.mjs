@@ -107,6 +107,12 @@ function validateFixtureSchema(fixtures) {
     if (fixture.sourceMustNotContain !== undefined) {
       assertArray(fixture.sourceMustNotContain, `${label}.sourceMustNotContain`);
     }
+    if (fixture.requiredSourceChunkIds !== undefined) {
+      assertArray(fixture.requiredSourceChunkIds, `${label}.requiredSourceChunkIds`);
+    }
+    if (fixture.requiredCitedSourceChunkIds !== undefined) {
+      assertArray(fixture.requiredCitedSourceChunkIds, `${label}.requiredCitedSourceChunkIds`);
+    }
     if (fixture.generationMustContain !== undefined) {
       assertArray(fixture.generationMustContain, `${label}.generationMustContain`);
     }
@@ -174,6 +180,10 @@ function validateFixtureSchema(fixtures) {
       fail(`${label}.requireGenerationAssertions must be boolean when provided`);
     }
 
+    if (fixture.requireCitationConsistency !== undefined && typeof fixture.requireCitationConsistency !== "boolean") {
+      fail(`${label}.requireCitationConsistency must be boolean when provided`);
+    }
+
     if (fixture.requireGenerationAssertions === true && (!Array.isArray(fixture.generationMustContain) || fixture.generationMustContain.length === 0)) {
       fail(`${label}.requireGenerationAssertions requires generationMustContain terms`);
     }
@@ -193,6 +203,7 @@ function normalizeText(value) {
 
 function sourceBlob(sources) {
   return sources.map((source) => [
+    source?.id,
     source?.title,
     source?.originalTitle,
     source?.excerpt,
@@ -210,7 +221,45 @@ function sourceBlob(sources) {
     source?.metadata?.canonical_title,
     source?.metadata?.source_url,
     source?.metadata?.sourceUrl,
+    source?.metadata?.id,
+    source?.metadata?.chunkId,
+    source?.metadata?.chunk_id,
+    source?.metadata?.sourceChunkId,
+    source?.metadata?.source_chunk_id,
   ].filter(Boolean).join(" ")).join(" ");
+}
+
+function sourceChunkIdCandidates(source) {
+  return [
+    source?.id,
+    source?.chunkId,
+    source?.metadata?.id,
+    source?.metadata?.chunkId,
+    source?.metadata?.chunk_id,
+    source?.metadata?.sourceChunkId,
+    source?.metadata?.source_chunk_id,
+  ].filter((value) => typeof value === "string" && value.trim().length > 0);
+}
+
+function collectSourceChunkIds(sources) {
+  return new Set(sources.flatMap(sourceChunkIdCandidates).map(normalizeText));
+}
+
+function collectCitationNumbers(text) {
+  const citations = [];
+  const pattern = /\[S(\d+)\]/g;
+  let match;
+  while ((match = pattern.exec(String(text || ""))) !== null) {
+    citations.push(Number(match[1]));
+  }
+  return citations;
+}
+
+function findSourceIndexByChunkId(sources, chunkId) {
+  const normalizedChunkId = normalizeText(chunkId);
+  return sources.findIndex((source) => (
+    sourceChunkIdCandidates(source).some((candidate) => normalizeText(candidate) === normalizedChunkId)
+  ));
 }
 
 function normalizeHostname(hostname) {
@@ -402,6 +451,15 @@ function collectResponseFailures(fixture, payload) {
     }
   }
 
+  if (Array.isArray(fixture.requiredSourceChunkIds) && fixture.requiredSourceChunkIds.length > 0) {
+    const sourceChunkIds = collectSourceChunkIds(sources);
+    for (const chunkId of fixture.requiredSourceChunkIds) {
+      if (!sourceChunkIds.has(normalizeText(chunkId))) {
+        sourceFailures.push(`source missing required chunk id "${chunkId}"`);
+      }
+    }
+  }
+
   if (!hasExpectedTitle(sourceBlob(sources), fixture.expectedSourceTitle)) {
     sourceFailures.push("sources do not match expected title hints");
   }
@@ -486,6 +544,34 @@ function collectResponseFailures(fixture, payload) {
     for (const term of generationMustNotContain) {
       if (term && generationText.includes(normalizeText(term))) {
         generationFailures.push(`answer contains forbidden term "${term}"`);
+      }
+    }
+
+    if (fixture.requireCitationConsistency === true) {
+      const citations = collectCitationNumbers([
+        response.message,
+        response.content,
+      ].join(" "));
+      const citedSourceNumbers = new Set(citations);
+      if (citations.length === 0) {
+        generationFailures.push("answer must include source citations");
+      }
+      for (const citation of citations) {
+        if (!Number.isInteger(citation) || citation < 1 || citation > sources.length) {
+          generationFailures.push(`answer citation [S${citation}] is outside sources length ${sources.length}`);
+        }
+      }
+
+      for (const chunkId of fixture.requiredCitedSourceChunkIds || []) {
+        const sourceIndex = findSourceIndexByChunkId(sources, chunkId);
+        if (sourceIndex < 0) {
+          sourceFailures.push(`source missing required cited chunk id "${chunkId}"`);
+          continue;
+        }
+        const citationNumber = sourceIndex + 1;
+        if (!citedSourceNumbers.has(citationNumber)) {
+          generationFailures.push(`required chunk id "${chunkId}" must be cited as [S${citationNumber}]`);
+        }
       }
     }
   }
