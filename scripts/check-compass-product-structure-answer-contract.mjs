@@ -1166,6 +1166,14 @@ if (!/function isNaverShoppingCreativeSpecificProductQuestion[\s\S]*쇼핑검색
   fail('NAVER shopping creative structured answers must not launch slow supplement fan-out');
 }
 
+if (!/isNaverVideoProductIntent\(intent\)[\s\S]*specific_naver_priority_direct[\s\S]*private hasNaverVideoProductGuideSignal[\s\S]*동영상/.test(rag)) {
+  fail('NAVER video product questions must use narrow direct priority retrieval before hybrid vector fan-out');
+}
+
+if (!/function isNaverVideoSpecificProductQuestion[\s\S]*동영상[\s\S]*getSpecificProductSupplementLimit[\s\S]*isNaverVideoSpecificProductQuestion\(message\)/.test(answerHandler)) {
+  fail('NAVER video structured answers must not launch slow supplement fan-out');
+}
+
 if (!answerHandler.includes("'Meta 비즈니스 지원 센터: 카탈로그/컬렉션 광고'")) {
   fail('Meta catalog/collection sources must expose the Korean catalog term for source verification');
 }

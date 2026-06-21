@@ -1188,6 +1188,7 @@ export class RAGSearchService {
           this.isNaverShoppingDataIntent(intent)
           || this.isNaverShoppingSearchCreativeIntent(intent)
           || this.isNaverDisplayAdIntent(intent)
+          || this.isNaverVideoProductIntent(intent)
           || intent.isProductStructureOverview
         );
       const usesNaverShoppingDataPriority =
@@ -2471,6 +2472,7 @@ export class RAGSearchService {
     ];
     const usesDisplayAdIntent = this.isNaverDisplayAdIntent(intent);
     const usesShoppingSearchCreativeIntent = this.isNaverShoppingSearchCreativeIntent(intent);
+    const usesVideoProductIntent = this.isNaverVideoProductIntent(intent);
     const displayAnchors = [
       '네이버 DA',
       'DA 상품',
@@ -2500,10 +2502,26 @@ export class RAGSearchService {
       '광고등록기준',
       '쇼핑블록',
     ];
+    const videoProductAnchors = [
+      '동영상 광고',
+      '동영상조회광고',
+      '동영상 조회',
+      '동영상 소재',
+      '비디오 광고',
+      '숏폼 아웃스트림',
+      '숏폼 광고',
+      '아웃스트림 광고',
+      '인스트림 광고',
+      '네이버 클립',
+      '클립 서비스',
+      '성과형 디스플레이',
+    ];
     const priorityAnchors = usesShoppingDataIntent
       ? Array.from(new Set(shoppingDataAnchors))
       : usesDisplayAdIntent
         ? Array.from(new Set(displayAnchors))
+      : usesVideoProductIntent
+        ? Array.from(new Set(videoProductAnchors))
       : usesShoppingSearchCreativeIntent
         ? Array.from(new Set(shoppingSearchCreativeAnchors))
       : anchors.slice(0, intent.isSpecificProductGuidance ? 12 : 8);
@@ -2520,8 +2538,9 @@ export class RAGSearchService {
         ...ollamaMetadataResults.map((result) => ({ ...result, anchor: 'naver_shopping_data_metadata' })),
       );
     } else {
-      const keywordSearchOptions = usesDisplayAdIntent ? { rawKeywordsOnly: true } : {};
-      const keywordVendor = usesDisplayAdIntent ? undefined : 'NAVER';
+      const usesRawNaverGuideAnchors = usesDisplayAdIntent || usesVideoProductIntent;
+      const keywordSearchOptions = usesRawNaverGuideAnchors ? { rawKeywordsOnly: true } : {};
+      const keywordVendor = usesRawNaverGuideAnchors ? undefined : 'NAVER';
       const [documentKeywordResults, ollamaKeywordResults, ollamaMetadataResults] = await Promise.all([
         this.searchKeywordTable('document_chunks', priorityAnchors, 14, intent, keywordVendor, keywordSearchOptions),
         this.searchKeywordTable('ollama_document_chunks', priorityAnchors, 12, intent, keywordVendor, keywordSearchOptions),
@@ -2550,17 +2569,21 @@ export class RAGSearchService {
         const sourceText = this.buildCandidateEvidenceText(candidate.content, candidate.documentTitle, candidate.metadata);
         if (!this.hasNaverProductStructureSignal(sourceText)) return null;
         if (usesDisplayAdIntent && !this.hasNaverDisplayProductGuideSignal(sourceText)) return null;
+        if (usesVideoProductIntent && !this.hasNaverVideoProductGuideSignal(sourceText)) return null;
         if (usesShoppingSearchCreativeIntent && !this.hasNaverShoppingSearchCreativeGuideSignal(sourceText)) return null;
 
         const isShoppingDataIntent = this.isNaverShoppingDataIntent(intent);
         const hasShoppingDataSignal = this.hasNaverShoppingDataSignal(sourceText);
         const hasStrongShoppingDataSignal = this.hasStrongNaverShoppingDataSignal(sourceText);
         const hasShoppingSearchCreativeSignal = usesShoppingSearchCreativeIntent && this.hasNaverShoppingSearchCreativeGuideSignal(sourceText);
+        const hasVideoProductSignal = usesVideoProductIntent && this.hasNaverVideoProductGuideSignal(sourceText);
         const boostedScore = isShoppingDataIntent && hasStrongShoppingDataSignal
           ? Math.max(0.995, Math.min(1, (candidate.hybridScore || 0) + 0.75))
           : isShoppingDataIntent && hasShoppingDataSignal
             ? Math.max(0.9, Math.min(0.97, (candidate.hybridScore || 0) + 0.35))
           : hasShoppingSearchCreativeSignal
+            ? Math.max(0.92, Math.min(0.98, (candidate.hybridScore || 0) + 0.34))
+          : hasVideoProductSignal
             ? Math.max(0.92, Math.min(0.98, (candidate.hybridScore || 0) + 0.34))
             : Math.min(0.88, (candidate.hybridScore || 0) + 0.22);
         candidate.hybridScore = boostedScore;
@@ -2579,6 +2602,7 @@ export class RAGSearchService {
           ...(isShoppingDataIntent && hasStrongShoppingDataSignal ? ['naver_shopping_data_strong_priority'] : []),
           ...(isShoppingDataIntent && hasShoppingDataSignal ? ['naver_shopping_data_priority'] : []),
           ...(hasShoppingSearchCreativeSignal ? ['naver_shopping_search_creative_priority'] : []),
+          ...(hasVideoProductSignal ? ['naver_video_product_priority'] : []),
           'keyword_retrieval',
         ]));
         candidate.rankReason = Array.from(new Set([
@@ -2587,6 +2611,7 @@ export class RAGSearchService {
           ...(isShoppingDataIntent && hasStrongShoppingDataSignal ? ['naver_shopping_data_strong_detail_priority'] : []),
           ...(isShoppingDataIntent && hasShoppingDataSignal ? ['naver_shopping_data_specific_priority'] : []),
           ...(hasShoppingSearchCreativeSignal ? ['naver_shopping_search_creative_specific_priority'] : []),
+          ...(hasVideoProductSignal ? ['naver_video_product_specific_priority'] : []),
         ]));
         candidate.sourceQuality = {
           ...candidate.sourceQuality,
@@ -2606,6 +2631,7 @@ export class RAGSearchService {
           naverShoppingDataPriority: isShoppingDataIntent && hasShoppingDataSignal,
           naverShoppingDataStrongPriority: isShoppingDataIntent && hasStrongShoppingDataSignal,
           naverShoppingSearchCreativePriority: hasShoppingSearchCreativeSignal,
+          naverVideoProductPriority: hasVideoProductSignal,
           evidenceDecision: candidate.evidenceDecision,
           evidenceDecisionReason: candidate.evidenceDecisionReason,
           rankReason: candidate.rankReason,
@@ -2638,6 +2664,7 @@ export class RAGSearchService {
         );
         if (!this.hasNaverProductStructureSignal(sourceText)) return false;
         if (this.isNaverDisplayAdIntent(intent) && !this.hasNaverDisplayProductGuideSignal(sourceText)) return false;
+        if (this.isNaverVideoProductIntent(intent) && !this.hasNaverVideoProductGuideSignal(sourceText)) return false;
         if (this.isNaverShoppingSearchCreativeIntent(intent) && !this.hasNaverShoppingSearchCreativeGuideSignal(sourceText)) return false;
         if (this.isOffTopicSpecificProductEvidence(sourceText, intent)) return false;
         return true;
@@ -3708,6 +3735,7 @@ export class RAGSearchService {
           && !hasSpecificGroundingNearProduct
           && !this.hasSpecificProductAnswerableSignalForIntent(evidenceText, intent)
           && !(this.isNaverShoppingDataIntent(intent) && this.hasStrongNaverShoppingDataSignal(evidenceText))
+          && !(this.isNaverVideoProductIntent(intent) && this.hasNaverVideoProductGuideSignal(evidenceText))
           && !(this.isKakaoBizboardDisplayProductIntent(intent) && this.hasKakaoBizboardDisplaySignal(evidenceText))
         ) {
           return null;
@@ -3984,6 +4012,10 @@ export class RAGSearchService {
     }
 
     if (this.isNaverShoppingDataIntent(intent) && this.hasStrongNaverShoppingDataSignal(normalizedEvidenceText)) {
+      return true;
+    }
+
+    if (this.isNaverVideoProductIntent(intent) && this.hasNaverVideoProductGuideSignal(normalizedEvidenceText)) {
       return true;
     }
 
@@ -4378,6 +4410,17 @@ export class RAGSearchService {
     return /(^|[\s/])da($|[\s/]|도|상품|광고)|네이버\s*da|네이버da|da\s*상품|da상품|보장형\s*da|스마트채널|타임보드|롤링보드|디스플레이\s*광고|성과형\s*디스플레이|홈피드\s*da|홈피드|배너\s*광고/.test(queryText);
   }
 
+  private isNaverVideoProductIntent(intent: QueryIntent): boolean {
+    if (!intent.topics.includes('product_structure') || intent.vendors[0] !== 'NAVER') return false;
+    const queryText = this.normalizeSearchText([
+      ...intent.keywords,
+      ...intent.strictProductTerms,
+      ...intent.strictContextTerms,
+      ...intent.adPolicyTerms,
+    ].join(' '));
+    return /동영상\s*광고|동영상\s*조회|동영상\s*소재|동영상조회광고|비디오\s*광고|숏폼|쇼츠|아웃스트림|인스트림|네이버\s*클립|클립\s*(광고|서비스)|video\s*ads?/.test(queryText);
+  }
+
   private isKakaoBizboardDisplayProductIntent(intent: QueryIntent): boolean {
     if (!intent.vendors.includes('KAKAO')) return false;
     const queryText = this.normalizeSearchText([
@@ -4636,6 +4679,7 @@ export class RAGSearchService {
 
     if (this.isNaverShoppingDataIntent(intent) && this.hasStrongNaverShoppingDataSignal(text)) return true;
     if (this.isKakaoBizboardDisplayProductIntent(intent) && this.hasKakaoBizboardDisplaySignal(text)) return true;
+    if (this.isNaverVideoProductIntent(intent) && this.hasNaverVideoProductGuideSignal(text)) return true;
     if (this.isBroadProductStructureOnlyText(text, intent)) return false;
 
     const titleOrGuideSignal = /상품\s*가이드|상품가이드|제작\s*가이드|제작가이드|가이드|도움말|헬프|support|상품\s*소개|상품소개|광고\s*상품|광고상품|캠페인|지면|노출|게재|운영|설정|세팅|등록/.test(text);
@@ -6415,6 +6459,11 @@ export class RAGSearchService {
         && this.isNaverDisplayAdIntent(intent)
         && this.hasNaverDisplayProductGuideSignal(sourceText)
       );
+      const allowedNaverVideoProductGuideEvidence = (
+        strictSpecificProductIntent
+        && this.isNaverVideoProductIntent(intent)
+        && this.hasNaverVideoProductGuideSignal(sourceText)
+      );
 
       if (
         strictSpecificProductIntent
@@ -6422,6 +6471,7 @@ export class RAGSearchService {
         && !allowedSpecificProductProcedureEvidence
         && !allowedKakaoProductGuideEvidence
         && !allowedNaverDisplayProductGuideEvidence
+        && !allowedNaverVideoProductGuideEvidence
       ) {
         return false;
       }
@@ -7081,12 +7131,12 @@ export class RAGSearchService {
   }
 
   private hasProductStructureSignal(text: string): boolean {
-    return /캠페인 목표|광고 관리자 목표|마케팅 목표|objective|objectives|advantage\+|어드밴티지|카탈로그|catalog|메타\s*픽셀|meta\s*pixel|픽셀\s*(이벤트|코드|설치|전환)|conversions api|노출 위치|게재 위치|placements|지면|컬렉션|collection|리드|lead|앱\s*캠페인|앱\s*(인스톨|설치|홍보|이벤트)|app\s*(install|promotion)|sdk|mmp|쇼핑\s*광고|검색\s*캠페인|디스플레이\s*캠페인|반응형\s*디스플레이|리드\s*양식|검색광고|쇼핑검색|파워링크|브랜드검색|쇼핑블록|상품\s*db|db\s*url|가격비교|디지털\s*옥외광고|da($|[\s/]|도|상품|광고)|성과형\s*디스플레이|홈피드\s*da|홈피드|배너\s*광고|비즈보드|카카오모먼트|카카오비즈니스|브랜드이모티콘|상품\s*가이드|상품가이드|전환\s*최적화|conversion api|픽셀\s*&?\s*sdk|비즈니스폼/.test(text);
+    return /캠페인 목표|광고 관리자 목표|마케팅 목표|objective|objectives|advantage\+|어드밴티지|카탈로그|catalog|메타\s*픽셀|meta\s*pixel|픽셀\s*(이벤트|코드|설치|전환)|conversions api|노출 위치|게재 위치|placements|지면|컬렉션|collection|리드|lead|앱\s*캠페인|앱\s*(인스톨|설치|홍보|이벤트)|app\s*(install|promotion)|sdk|mmp|쇼핑\s*광고|검색\s*캠페인|디스플레이\s*캠페인|반응형\s*디스플레이|리드\s*양식|검색광고|쇼핑검색|파워링크|브랜드검색|쇼핑블록|상품\s*db|db\s*url|가격비교|디지털\s*옥외광고|da($|[\s/]|도|상품|광고)|성과형\s*디스플레이|홈피드\s*da|홈피드|배너\s*광고|동영상\s*광고|동영상\s*조회|동영상\s*소재|동영상조회광고|숏폼|아웃스트림|인스트림|네이버\s*클립|비즈보드|카카오모먼트|카카오비즈니스|브랜드이모티콘|상품\s*가이드|상품가이드|전환\s*최적화|conversion api|픽셀\s*&?\s*sdk|비즈니스폼/.test(text);
   }
 
   private hasNaverProductStructureSignal(sourceText: string): boolean {
     const text = this.normalizeSearchText(sourceText);
-    return /사이트검색광고|웹사이트\s*방문\s*목적|쇼핑검색|쇼핑검색광고|쇼핑몰\s*상품형|상품등록|상품\s*db|db\s*url|ep|상품정보\s*수신\s*현황|등록요청|입점\s*심사|카테고리\s*자동매칭|카테고리\s*매칭|쇼핑파트너센터|쇼핑블록|쇼핑\s*지면|pc\s*쇼핑블록|mo\s*쇼핑블록|모바일\s*쇼핑|가격비교|(^|[\s/])da($|[\s/]|도|상품|광고)|네이버\s*da|네이버da|da\s*상품|da상품|보장형\s*da|pc\s*헤드라인\s*da|성과형\s*디스플레이|디스플레이\s*광고|홈피드\s*da|홈피드|스마트채널|타임보드|롤링보드|배너\s*광고/.test(text);
+    return /사이트검색광고|웹사이트\s*방문\s*목적|쇼핑검색|쇼핑검색광고|쇼핑몰\s*상품형|상품등록|상품\s*db|db\s*url|ep|상품정보\s*수신\s*현황|등록요청|입점\s*심사|카테고리\s*자동매칭|카테고리\s*매칭|쇼핑파트너센터|쇼핑블록|쇼핑\s*지면|pc\s*쇼핑블록|mo\s*쇼핑블록|모바일\s*쇼핑|가격비교|(^|[\s/])da($|[\s/]|도|상품|광고)|네이버\s*da|네이버da|da\s*상품|da상품|보장형\s*da|pc\s*헤드라인\s*da|성과형\s*디스플레이|디스플레이\s*광고|홈피드\s*da|홈피드|스마트채널|타임보드|롤링보드|배너\s*광고|동영상\s*광고|동영상\s*조회|동영상\s*소재|동영상조회광고|비디오\s*광고|숏폼|아웃스트림|인스트림|네이버\s*클립/.test(text);
   }
 
   private hasNaverDisplayProductGuideSignal(sourceText: string): boolean {
@@ -7094,6 +7144,13 @@ export class RAGSearchService {
     const hasDisplayProductName = /(^|[\s/])da($|[\s/]|도|상품|광고)|네이버\s*da|네이버da|da\s*상품|da상품|보장형\s*da|pc\s*헤드라인\s*da|성과형\s*디스플레이|디스플레이\s*광고|홈피드\s*da|홈피드|스마트채널|타임보드|롤링보드|배너\s*광고/.test(text);
     const hasDisplayAnswerSignal = /상품\s*(소개|안내)|광고\s*(상품|유형|종류)|지면|노출|게재|소재|사이즈|크기|비율|구매|예약|과금|입찰|집행|등록|심사|검수|제작|브랜딩|유입|전환|조회|클릭|운영|목적/.test(text);
     return hasDisplayProductName && hasDisplayAnswerSignal;
+  }
+
+  private hasNaverVideoProductGuideSignal(sourceText: string): boolean {
+    const text = this.normalizeSearchText(sourceText);
+    const hasVideoProductName = /동영상\s*(광고|조회|소재)|동영상조회광고|비디오\s*광고|숏폼|쇼츠|아웃스트림|인스트림|네이버\s*클립|클립\s*(광고|서비스)|video\s*ads?/.test(text);
+    const hasVideoAnswerSignal = /상품\s*(소개|안내)|광고\s*(상품|유형|종류)|지면|노출|게재|소재|사이즈|크기|비율|길이|용량|파일|mp4|mov|재생|시청|조회|클릭|입찰|과금|집행|등록|저장|단계|심사|검수|제작|브랜딩|유입|전환|목적/.test(text);
+    return hasVideoProductName && hasVideoAnswerSignal;
   }
 
   private hasNaverShoppingSearchCreativeGuideSignal(sourceText: string): boolean {
@@ -7262,7 +7319,7 @@ export class RAGSearchService {
   private hasHighValueProductStructureSignal(text: string): boolean {
     const hasObjectiveList = /인지도[\s\S]{0,80}트래픽[\s\S]{0,80}참여[\s\S]{0,80}잠재 고객[\s\S]{0,80}앱 홍보[\s\S]{0,80}판매/.test(text);
     return hasObjectiveList
-      || /캠페인 목표|광고 관리자 목표|마케팅 목표|objective|objectives|advantage\+|어드밴티지|어드밴티지\+|카탈로그|catalog|메타\s*픽셀|meta\s*pixel|픽셀\s*(이벤트|코드|설치|전환)|conversions api|앱\s*(캠페인|인스톨|설치|홍보|이벤트)|app\s*(install|promotion)|sdk|mmp|사전\s*등록|쇼핑\s*광고|검색\s*캠페인|디스플레이\s*캠페인|반응형\s*디스플레이|리드\s*양식|검색광고|쇼핑검색|파워링크|브랜드검색|쇼핑블록|상품\s*db|db\s*url|가격비교|디지털\s*옥외광고|da($|[\s/]|도|상품|광고)|성과형\s*디스플레이|홈피드\s*da|홈피드|배너\s*광고|비즈보드|카카오모먼트|카카오비즈니스|브랜드이모티콘|상품\s*가이드|상품가이드|전환\s*최적화|conversion api|픽셀\s*&?\s*sdk|비즈니스폼|campaign_objective|commerce_measurement/.test(text)
+      || /캠페인 목표|광고 관리자 목표|마케팅 목표|objective|objectives|advantage\+|어드밴티지|어드밴티지\+|카탈로그|catalog|메타\s*픽셀|meta\s*pixel|픽셀\s*(이벤트|코드|설치|전환)|conversions api|앱\s*(캠페인|인스톨|설치|홍보|이벤트)|app\s*(install|promotion)|sdk|mmp|사전\s*등록|쇼핑\s*광고|검색\s*캠페인|디스플레이\s*캠페인|반응형\s*디스플레이|리드\s*양식|검색광고|쇼핑검색|파워링크|브랜드검색|쇼핑블록|상품\s*db|db\s*url|가격비교|디지털\s*옥외광고|da($|[\s/]|도|상품|광고)|성과형\s*디스플레이|홈피드\s*da|홈피드|배너\s*광고|동영상\s*광고|동영상\s*조회|동영상\s*소재|동영상조회광고|숏폼|아웃스트림|인스트림|네이버\s*클립|비즈보드|카카오모먼트|카카오비즈니스|브랜드이모티콘|상품\s*가이드|상품가이드|전환\s*최적화|conversion api|픽셀\s*&?\s*sdk|비즈니스폼|campaign_objective|commerce_measurement/.test(text)
       || /노출 위치|게재 위치|placements|지면/.test(text) && /캠페인 목표|광고 관리자 목표|마케팅 목표/.test(text);
   }
 
