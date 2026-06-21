@@ -153,6 +153,12 @@ const KAKAO_BIZBOARD_DISPLAY_OFFICIAL_CHUNK_IDS = [
   'doc_1774488184369_r97sach_chunk_0',
 ];
 
+const KAKAO_RESTRICTED_INDUSTRY_OFFICIAL_CHUNK_IDS = [
+  'doc_1774491147517_yj1v810_chunk_17',
+  'url_1773203880202_q3y8fucqb_chunk_5',
+  'doc_1774491147517_yj1v810_chunk_18',
+];
+
 export function getCompassSupabaseRowsCacheStatus() {
   const now = Date.now();
   let activeEntries = 0;
@@ -1529,6 +1535,31 @@ export class RAGSearchService {
       const usesFastPolicySourcePriority = this.isFastPolicySourceGuidedPriorityIntent(intent);
 
       if (usesFastPolicySourcePriority && !usesPrioritySpecificProductRetrieval) {
+        const fastPolicyOfficialCandidates = await this.withRetrievalChannelTimeout(
+          this.searchFastPolicySourceGuidedOfficialCandidates(intent),
+          'fast_policy_official_chunk_direct',
+          [],
+          timedOutChannels,
+          channelTimings,
+        );
+        if (fastPolicyOfficialCandidates.length > 0) {
+          const rankedOfficialResults = this.mergeDedupeAndRankCandidates(
+            fastPolicyOfficialCandidates,
+            limit,
+            intent,
+          );
+          if (rankedOfficialResults.length > 0) {
+            console.log(`✅ Fast policy official chunk 검색 완료: ${rankedOfficialResults.length}개 결과 (policy official chunk direct path)`);
+            return this.withRetrievalTimeoutMetadata(rankedOfficialResults, timedOutChannels, channelTimings);
+          }
+          const rescueResults = fastPolicyOfficialCandidates.slice(0, limit);
+          console.warn('Fast policy official chunk candidates were rescued after strict ranking filtered all candidates', {
+            priorityCandidateCount: fastPolicyOfficialCandidates.length,
+            rescueCount: rescueResults.length,
+          });
+          return this.withRetrievalTimeoutMetadata(rescueResults, timedOutChannels, channelTimings);
+        }
+
         const fastPolicyCandidates = await this.withRetrievalChannelTimeout(
           this.searchKeywordCandidates(query, Math.max(limit * 2, 12), intent),
           'fast_policy_keyword_direct',
@@ -4329,12 +4360,7 @@ export class RAGSearchService {
     if (this.isKakaoServiceProtectionPolicyIntent(intent)) {
       return /카카오|로고|디자인|서비스명|서비스|상표|저작물|모방|침해|무단|사용\s*불가|집행\s*불가/i;
     }
-    if (
-      intent.vendors.length === 1
-      && intent.vendors[0] === 'KAKAO'
-      && /카카오/.test(queryText)
-      && /업종|제한\s*업종|업종\s*제한|광고\s*가능\s*업종|등록\s*불가|집행\s*불가|금지\s*업종|허용\s*업종/.test(queryText)
-    ) {
+    if (this.isKakaoRestrictedIndustryPolicyIntent(intent)) {
       return /카카오|업종|제한\s*업종|업종\s*제한|광고\s*가능\s*업종|등록\s*불가|집행\s*불가|금지|제한|허용|심사|가이드/i;
     }
     if (/오인|기만|속이|혼란|허위|과장|오해/.test(queryText)) {
@@ -4350,8 +4376,116 @@ export class RAGSearchService {
     return null;
   }
 
+  private isKakaoRestrictedIndustryPolicyIntent(intent: QueryIntent): boolean {
+    const queryText = this.normalizeSearchText([
+      ...intent.keywords,
+      ...intent.topics,
+      ...intent.adPolicyTerms,
+      ...intent.strictContextTerms,
+    ].join(' '));
+
+    return intent.vendors.length === 1
+      && intent.vendors[0] === 'KAKAO'
+      && /카카오/.test(queryText)
+      && /업종|제한\s*업종|업종\s*제한|광고\s*가능\s*업종|등록\s*불가|집행\s*불가|금지\s*업종|허용\s*업종/.test(queryText);
+  }
+
   private isFastPolicySourceGuidedPriorityIntent(intent: QueryIntent): boolean {
     return this.getFastPolicySourceGuidedPriorityPattern(intent) !== null;
+  }
+
+  private async searchFastPolicySourceGuidedOfficialCandidates(intent: QueryIntent): Promise<SearchResult[]> {
+    const chunkIds = this.isKakaoRestrictedIndustryPolicyIntent(intent)
+      ? KAKAO_RESTRICTED_INDUSTRY_OFFICIAL_CHUNK_IDS
+      : [];
+    if (chunkIds.length === 0) return [];
+
+    const vendor: VendorIntent = intent.vendors.length === 1 ? intent.vendors[0] : 'KAKAO';
+    const officialChunkResults = await this.searchKnownOfficialDocumentChunks(
+      chunkIds,
+      Math.min(chunkIds.length, 4),
+      intent,
+      vendor,
+      'fast_policy_official_chunk',
+    );
+    const keywords = Array.from(new Set([
+      ...getCompassVendorTerms(vendor),
+      ...intent.keywords,
+      ...intent.adPolicyTerms,
+      ...intent.strictContextTerms,
+      '업종',
+      '제한 업종',
+      '등록불가 업종',
+      '광고 가능 업종',
+      '집행 불가',
+    ]));
+
+    const candidates = officialChunkResults
+      .map((result): SearchResult | null => {
+        const candidate = this.normalizeCandidate(result.row, {
+          keywords,
+          intent,
+          retrievalMethod: 'keyword',
+          corpus: result.corpus,
+          evidenceType: 'keyword',
+        });
+        if (!candidate) return null;
+        if (this.hasExplicitOtherVendorSignal(candidate, vendor)) return null;
+
+        const boostedScore = Math.max(0.98, Math.min(1, (candidate.hybridScore || candidate.score || 0) + 0.3));
+        candidate.hybridScore = boostedScore;
+        candidate.score = boostedScore;
+        candidate.sourceVendor = vendor;
+        candidate.sourceVendors = Array.from(new Set([
+          ...(candidate.sourceVendors || []),
+          vendor,
+        ]));
+        candidate.vendorMatch = true;
+        candidate.vendorMismatch = false;
+        candidate.topicMatch = true;
+        candidate.topicExactMatch = true;
+        candidate.policyTitleMatch = true;
+        candidate.evidenceDecision = 'verified';
+        candidate.evidenceDecisionReason = Array.from(new Set([
+          ...(candidate.evidenceDecisionReason || []),
+          'fast_policy_official_chunk',
+          'keyword_retrieval',
+        ]));
+        candidate.rankReason = Array.from(new Set([
+          ...(candidate.rankReason || []),
+          `fast_policy_official_chunk_${result.anchor}`,
+        ]));
+        candidate.sourceQuality = {
+          ...candidate.sourceQuality,
+          hasExcerpt: true,
+          isFallback: false,
+          vendorMatch: true,
+          vendorMismatch: false,
+          sourceVendor: vendor,
+          policyTitleMatch: true,
+          qualityScore: Math.max(candidate.sourceQuality.qualityScore || 0, 0.96),
+        };
+        candidate.metadata = {
+          ...(candidate.metadata || {}),
+          source_vendor: vendor,
+          sourceVendors: candidate.sourceVendors,
+          fastPolicyOfficialChunk: true,
+          policyAnchor: result.anchor,
+          evidenceDecision: candidate.evidenceDecision,
+          evidenceDecisionReason: candidate.evidenceDecisionReason,
+          rankReason: candidate.rankReason,
+          topicMatch: true,
+          topicExactMatch: true,
+          policyTitleMatch: true,
+          score: boostedScore,
+          hybridScore: boostedScore,
+        };
+
+        return candidate;
+      })
+      .filter((candidate: SearchResult | null): candidate is SearchResult => candidate !== null);
+
+    return this.selectFastPolicySourceGuidedPriorityCandidates(candidates, intent);
   }
 
   private selectFastPolicySourceGuidedPriorityCandidates(
