@@ -20,6 +20,7 @@ function read(relativePath) {
 }
 
 const rag = read('src/lib/services/RAGSearchService.ts');
+const officialChunkSnapshots = read('src/lib/services/compassOfficialChunkSnapshots.ts');
 const answerService = read('src/lib/services/CompassAnswerLlmService.ts');
 const answerHandler = read('src/lib/server/compassAnswerHandler.ts');
 const chatbotRoute = read('src/app/api/chatbot/route.ts');
@@ -62,19 +63,34 @@ for (const snippet of [
   'META_CATALOG_OFFICIAL_CHUNK_IDS',
   'META_CREATIVE_SPEC_OFFICIAL_CHUNK_IDS',
   'GOOGLE_LEAD_FORM_OFFICIAL_CHUNK_IDS',
+  'META_VENDOR_POLICY_GENERAL_OFFICIAL_CHUNK_IDS',
+  'GOOGLE_VENDOR_POLICY_GENERAL_OFFICIAL_CHUNK_IDS',
   'NAVER_VIDEO_OFFICIAL_CHUNK_IDS',
+  'NAVER_SHOPPING_DATA_OFFICIAL_CHUNK_IDS',
+  'NAVER_SHOPPING_SEARCH_CREATIVE_OFFICIAL_CHUNK_IDS',
   'NAVER_DISPLAY_AD_OFFICIAL_CHUNK_IDS',
   'KAKAO_BIZBOARD_DISPLAY_OFFICIAL_CHUNK_IDS',
   'KAKAO_RESTRICTED_INDUSTRY_OFFICIAL_CHUNK_IDS',
   'KAKAO_USER_DECEPTION_OFFICIAL_CHUNK_IDS',
+  'KAKAO_SERVICE_PROTECTION_OFFICIAL_CHUNK_IDS',
+  'KAKAO_YOUTH_HARMFUL_OFFICIAL_CHUNK_IDS',
+  'KAKAO_ADULT_CONTENT_OFFICIAL_CHUNK_IDS',
+  'KAKAO_HATE_DISCRIMINATION_OFFICIAL_CHUNK_IDS',
+  'KAKAO_RIGHTS_INFRINGEMENT_OFFICIAL_CHUNK_IDS',
+  'KAKAO_REVIEW_STANDARDS_OFFICIAL_CHUNK_IDS',
   'KAKAO_PRICE_DISCOUNT_OFFICIAL_CHUNK_IDS',
   'KAKAO_EVENT_MATERIAL_OFFICIAL_CHUNK_IDS',
+  'getCompassOfficialDocumentChunkSnapshotRows',
   'searchKnownOfficialDocumentChunks',
   'known_official_document_chunks',
+  'naver_shopping_data_official_chunk',
+  'naver_shopping_search_creative_official_chunk',
   'naver_video_official_chunk',
   'naver_display_ad_official_chunk',
+  'kakao_service_protection_official_chunk',
   'kakao_product_official_chunk',
   'getKakaoFastPolicyOfficialChunkIds',
+  'getFastPolicyOfficialChunkIdsForIntent',
   'searchFastPolicySourceGuidedOfficialCandidates',
   'fast_policy_official_chunk_direct',
   'fast_policy_official_chunk',
@@ -159,8 +175,45 @@ for (const snippet of [
   if (!rag.includes(snippet)) fail(`RAG service missing product structure contract snippet: ${snippet}`);
 }
 
+for (const snippet of [
+  'COMPASS_OFFICIAL_CHUNK_SNAPSHOTS',
+  'getCompassOfficialDocumentChunkSnapshotRows',
+  'doc_1773710116296_uawf5xm_chunk_2',
+  'doc_1774488207473_cjq6ve0_chunk_10',
+  'doc_1774488207473_cjq6ve0_chunk_19',
+  'doc_1774491147517_yj1v810_chunk_4',
+  'doc_1774491147517_yj1v810_chunk_17',
+  'url_1773203880202_q3y8fucqb_chunk_5',
+  'facebook-ad-policy_chunk_0',
+  'doc_1773886683376_omws3g9_chunk_2',
+  'doc_1773886203371_8rlmmdv_chunk_1',
+  'doc_1773662526796_7rijhfq_chunk_2',
+  'url_1770857834681_kyfp93bbk_chunk_9',
+  'url_1773109915186_xnqeew2qd_chunk_4',
+  'doc_1773663427417_g8z1v3y_chunk_2',
+  'url_1770093784959_btzm84yr7_chunk_13',
+  'doc_1764895606613_llkwwsf_doc_0',
+  'doc_1764895552052_8xy5ad6_para_2',
+]) {
+  if (!officialChunkSnapshots.includes(snippet)) {
+    fail(`official chunk snapshot store missing product/policy contract snippet: ${snippet}`);
+  }
+}
+
 if (!/allowedRetrievalMethods[\s\S]*"graph"/.test(ragFixtureEvaluator)) {
   fail('RAG fixture evaluator must allow GraphRAG retrieval methods for official graph-backed product/spec fixtures');
+}
+
+if (!/private async searchKnownOfficialDocumentChunks[\s\S]*getCompassOfficialDocumentChunkSnapshotRows\(uniqueChunkIds, fetchLimit\)[\s\S]*snapshotRows\.length >= fetchLimit[\s\S]*const cacheKey = this\.buildSupabaseRowsCacheKey\('known_official_document_chunks'/.test(rag)) {
+  fail('known official chunk retrieval must use local official snapshots before durable/Supabase lookup');
+}
+
+if (!/private getKakaoFastPolicyOfficialChunkIds[\s\S]*intent\.vendors\.length === 0[\s\S]*intent\.vendors\.length === 1 && intent\.vendors\[0\] === 'KAKAO'[\s\S]*KAKAO_YOUTH_HARMFUL_OFFICIAL_CHUNK_IDS[\s\S]*KAKAO_ADULT_CONTENT_OFFICIAL_CHUNK_IDS[\s\S]*KAKAO_HATE_DISCRIMINATION_OFFICIAL_CHUNK_IDS[\s\S]*KAKAO_RIGHTS_INFRINGEMENT_OFFICIAL_CHUNK_IDS[\s\S]*KAKAO_REVIEW_STANDARDS_OFFICIAL_CHUNK_IDS/.test(rag)) {
+  fail('KAKAO official policy chunk routing must cover generic policy families without forcing keyword fan-out');
+}
+
+if (!/private getFastPolicyOfficialChunkIdsForIntent[\s\S]*case 'META':[\s\S]*getMetaFastPolicyOfficialChunkIds\(intent\)[\s\S]*case 'GOOGLE':[\s\S]*getGoogleFastPolicyOfficialChunkIds\(intent\)[\s\S]*getKakaoFastPolicyOfficialChunkIds\(intent\)/.test(rag)) {
+  fail('fast policy official chunk routing must cover META and GOOGLE before keyword fan-out');
 }
 
 for (const snippet of [
@@ -1167,6 +1220,10 @@ if (!/specificKakaoFastPathAnchors[\s\S]*'비즈보드'[\s\S]*'카카오 비즈�
   fail('KAKAO specific product retrieval must try narrow keyword paths first, but Bizboard questions must require actual Bizboard evidence before returning');
 }
 
+if (!/usesKakaoServiceProtectionAssetIntent[\s\S]*KAKAO_SERVICE_PROTECTION_OFFICIAL_CHUNK_IDS[\s\S]*'kakao_service_protection_official_chunk'[\s\S]*hasKakaoServiceProtectionPolicySignal/.test(kakaoSpecificFastPathBlock)) {
+  fail('KAKAO service/logo protection product questions must use the known official chunk before keyword fan-out');
+}
+
 const kakaoExactSignalBlock = extractBlock(
   'KAKAO exact Bizboard/display signal',
   rag,
@@ -1204,6 +1261,14 @@ if (!/maxPerTitle[\s\S]*isNaverShoppingDataIntent\(intent\) \|\| intent\.isSpeci
 
 if (!/const usesNaverProductStructurePriority =[\s\S]*isNaverShoppingDataIntent\(intent\)[\s\S]*isNaverShoppingSearchCreativeIntent\(intent\)[\s\S]*isNaverDisplayAdIntent\(intent\)[\s\S]*intent\.isProductStructureOverview/.test(rag)) {
   fail('NAVER shopping creative product questions must use priority direct retrieval before hybrid vector fan-out');
+}
+
+if (!/NAVER_SHOPPING_DATA_OFFICIAL_CHUNK_IDS[\s\S]*if \(usesShoppingDataIntent\) \{[\s\S]*searchKnownOfficialDocumentChunks\([\s\S]*NAVER_SHOPPING_DATA_OFFICIAL_CHUNK_IDS[\s\S]*'naver_shopping_data_official_chunk'[\s\S]*return officialChunkCandidates;[\s\S]*if \(usesShoppingSearchCreativeIntent\)/.test(rag)) {
+  fail('NAVER shopping DB URL/product-registration questions must try known official chunks before keyword fan-out');
+}
+
+if (!/NAVER_SHOPPING_SEARCH_CREATIVE_OFFICIAL_CHUNK_IDS[\s\S]*if \(usesShoppingSearchCreativeIntent\) \{[\s\S]*searchKnownOfficialDocumentChunks\([\s\S]*NAVER_SHOPPING_SEARCH_CREATIVE_OFFICIAL_CHUNK_IDS[\s\S]*'naver_shopping_search_creative_official_chunk'[\s\S]*return officialChunkCandidates;[\s\S]*if \(usesDisplayAdIntent\)/.test(rag)) {
+  fail('NAVER shopping search creative questions must try known official chunks before keyword fan-out');
 }
 
 if (!/NAVER_DISPLAY_AD_OFFICIAL_CHUNK_IDS[\s\S]*if \(usesDisplayAdIntent\) \{[\s\S]*searchKnownOfficialDocumentChunks\([\s\S]*NAVER_DISPLAY_AD_OFFICIAL_CHUNK_IDS[\s\S]*'naver_display_ad_official_chunk'[\s\S]*return officialChunkCandidates;[\s\S]*if \(usesVideoProductIntent\)/.test(rag)) {

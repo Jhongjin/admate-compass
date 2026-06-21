@@ -1,0 +1,566 @@
+type CompassOfficialChunkSnapshotRow = {
+  id: string;
+  document_id: string;
+  chunk_id: number | string;
+  content: string;
+  metadata: Record<string, unknown>;
+};
+
+const COMPASS_OFFICIAL_CHUNK_SNAPSHOTS: Record<string, CompassOfficialChunkSnapshotRow> = {
+  doc_1774488207473_cjq6ve0_chunk_10: {
+    id: 'doc_1774488207473_cjq6ve0_chunk_10',
+    document_id: 'doc_1774488207473_cjq6ve0',
+    chunk_id: 10,
+    content: '. 법적 문제가 발생하는 경우 책임은 광고주에게 있습니다.국내에 널리 인식된 타인의 성명, 상호, 상표, 서비스표, 기타 타인의 상품 또는 영업임을 표시한 표지와 동일하거나 이와 유사한 것을 사용하여 타인의 상품 또는 영업과 혼동하게 하는 사이트는 광고 집행이 불가합니다.화폐도안을 사용하는 경우 한국은행의 한국은행권 및 주화의 도안 이용기준arrow-up-right 을 반드시 준수해야 합니다.1) 화폐도안에서 인물만 별도로 분리하여 이용하거나 또는 도안인물을 원래의 모습과 다르게 변형할 수 없습니다.2) 화폐의 품위와 신뢰성을 훼손할 우려가 있는 경우 광고 집행이 불가합니다.3) 이외 상세한 내용은 한국은행의 한국은행권 및 주화의 도안 이용기준을 따르며, 무단으로 사용하는 경우 법적 책임은 광고주에게 있습니다.hashtag 이용자(소비자)가 오인할 수 있는 표현성분, 재료, 함량, 규격, 효능 등에 있어 오만하게 하거나 기만하는 내용은 광고 집행이 불가합니다.부분적으로 사실이지만 전체적으로 인터넷 이용자가 오인할 우려가 있는 내용은 광고 집행이 불가합니다.객관적으로 인정받지 못하거나 확인할 수 없는 최상급의 표현은 광고 집행이 불가합니다.1) 최상급 표현은',
+    metadata: {
+      source: '집행 기준 및 준수사항',
+      keywords: ['타인의', '법적', '책임은', '한국은행의', '한국은행권'],
+      chunk_type: 'text',
+      chunk_index: 10,
+      hierarchy_level: 'paragraph',
+      source_vendor: 'KAKAO',
+    },
+  },
+  doc_1774488207473_cjq6ve0_chunk_11: {
+    id: 'doc_1774488207473_cjq6ve0_chunk_11',
+    document_id: 'doc_1774488207473_cjq6ve0',
+    chunk_id: 11,
+    content: '있는 내용은 광고 집행이 불가합니다.객관적으로 인정받지 못하거나 확인할 수 없는 최상급의 표현은 광고 집행이 불가합니다.1) 최상급 표현은 연결화면에서 확인할 수 있거나 객관적 증빙 자료를 제출한 경우에만 사용 가능2) 신고 혹은 모니터링의 과정에서 최상급 표현에 대한 소명 자료를 요청하거나 광고 집행을 중단할 수 있음난해한 전문용어 등을 사용하여 인터넷 이용자를 현혹하는 표현은 광고 집행이 불가합니다.제조국가 등에 있어서 인터넷 이용자가 오인할 우려가 있는 표현은 광고 집행이 불가합니다.영업망, 지점 등에서 광고를 진행하는 경우 본사에서 직접 진행하는 광고로 오인되는 표현은 광고 집행이 불가합니다.국가 또는 공공기관이나 기타 관련 단체가 직접 진행하거나 연관된 내용이 아님에도, 이용자를 오인시킬 우려가 있거나 정부의 서비스 및 정책 등을 활용하여 유인하는 경우 광고 집행이 불가합니다.특정 유명인(공인), 브랜드, 조직 등이 연관된 내용이 아님에도, 정당한 권한 없이 관련 이미지, 로고, 유사 명칭 등을 사용하거나 제휴, 지지 등을 사칭 또는 허위로 암시하여 이용자를 오인시킬 우려가 있는 경우 광고 집행이 불가합니다.hashtag 이벤트 소재 기준이벤트',
+    metadata: {
+      source: '집행 기준 및 준수사항',
+      keywords: ['표현은', '자료를', '진행하는', '직접', '연관된'],
+      chunk_type: 'text',
+      chunk_index: 11,
+      hierarchy_level: 'paragraph',
+      source_vendor: 'KAKAO',
+    },
+  },
+  doc_1774488207473_cjq6ve0_chunk_12: {
+    id: 'doc_1774488207473_cjq6ve0_chunk_12',
+    document_id: 'doc_1774488207473_cjq6ve0',
+    chunk_id: 12,
+    content: '제휴, 지지 등을 사칭 또는 허위로 암시하여 이용자를 오인시킬 우려가 있는 경우 광고 집행이 불가합니다.hashtag 이벤트 소재 기준이벤트 내용에 대한 중요한 정보를 생략하고 부분적인 사실을 강조하여 클릭을 유도하는 광고는 집행이 불가합니다.이벤트에 관한 광고 소재를 작성할 때에는 이미지나 홍보문구에 이벤트의 참여 방식, 경품의 선정 방식, 선정 인원, 경품 내용을 반드시 명시해야 합니다.hashtag 가격 표시 기준[전자상거래 등에서의 소비자 보호에 관한 법률] 및 공정거래위원회의 [부당한 표시광고행위의 유형 및 기준 지정고시]를 준수해야 하며, 다음과 같은 내용의 가격 표시는 광고 집행이 불가합니다.1) 허위의 종전 거래 가격을 자기의 판매 가격과 비교하여 표시, 광고하는 경우2) 할인율 등을 사실과 다르게 표시, 광고하는 경우3) 실제로 할인율이 높거나 가격이 낮은 상품은 일부에 불과한데도 대부분의 상품이 높은 할인율 또는 낮은 가격으로 판매하는 것처럼 과장하여 표시, 광고하는 경우4) 실제 거래 가격에는 변동이 없음에도 불구하고 일정 기간을 정하여 특정한 가격을 판매하는 것처럼 소비자를 오인시킬 우려가 있는 표현을 사용하는 경우광고 소재에 가격',
+    metadata: {
+      source: '집행 기준 및 준수사항',
+      keywords: ['가격', '광고하는', '방식', '할인율', '낮은'],
+      chunk_type: 'text',
+      chunk_index: 12,
+      hierarchy_level: 'paragraph',
+      source_vendor: 'KAKAO',
+    },
+  },
+  doc_1774488207473_cjq6ve0_chunk_13: {
+    id: 'doc_1774488207473_cjq6ve0_chunk_13',
+    document_id: 'doc_1774488207473_cjq6ve0',
+    chunk_id: 13,
+    content: '변동이 없음에도 불구하고 일정 기간을 정하여 특정한 가격을 판매하는 것처럼 소비자를 오인시킬 우려가 있는 표현을 사용하는 경우광고 소재에 가격 또는 할인율을 표시하는 경우에는 다음의 내용을 반드시 광고 내용에 표시하여야 합니다.1) 표시한 가격 또는 할인율이 어떠한 상품 기준으로 작성된 것인지를 반드시 표시2) 표시한 가격 또는 할인율이 어떠한 상품 기준으로 작성된 것인지 해당 상품을 이미지에 표시광고 소재에 가격 또는 할인율을 표시하는 경우에는 반드시 랜딩 URL의 리스팅 페이지 또는 해당 상품의 가격으로 표시해야 하며, 상세 상품의 일부이거나 옵션 선택가를 표시하는 경우 광고 집행이 불가합니다.1) 연결화면에서 모든 이용자에게 공통으로 적용되는 상품 및 서비스 가격만 기재할 수 있습니다.2) 일부 이용자들에게만 적용되는 가격이나 특정 쿠폰, 특정 카드의 할인 적용가와 같이 특정 이용자를 대상으로 한 할인가는 상품 판매가로 기재할 수 없습니다.3) 특정한 자격 조건 없이 모든 이용자에게 공통으로 적용되는 할인 가격의 경우에는 해당 할인 가격을 기재할 수 있습니다.4) 표시광고하는 연결화면에서 정당한 사유 없이 재화 등의 총금액이 아닌 일부 금액만',
+    metadata: {
+      source: '집행 기준 및 준수사항',
+      keywords: ['표시하는', '적용되는', '가격', '기재할', '경우에는'],
+      chunk_type: 'text',
+      chunk_index: 13,
+      hierarchy_level: 'paragraph',
+      source_vendor: 'KAKAO',
+    },
+  },
+  doc_1774488207473_cjq6ve0_chunk_19: {
+    id: 'doc_1774488207473_cjq6ve0_chunk_19',
+    document_id: 'doc_1774488207473_cjq6ve0',
+    chunk_id: 19,
+    content: '생성형 인공지능을 활용하여 소재를 제작하거나 생성한 경우, [인공지능기본법] 및 카카오모먼트 심사 가이드를 준수하여 내용을 구성해야 합니다.2. AI 생성물임을 표시하였음에도, AI로 생성된 가상의 인물이 전문적인 자격을 보유한 것처럼 인식될 수 있는 형태로 제품서비스에 신뢰를 부여하거나, 추천보장하여 이용자에게 혼동을 주거나, 실제 일어난 사실로 오인하게 하거나, 그 외에도 허위과장광고에 해당할 우려가 있는 경우 광고 집행이 제한될 수 있습니다.hashtag 카카오 서비스 보호카카오 서비스 및 디자인을 모방, 침해한 경우 광고 집행이 불가합니다.1) 카카오 서비스의 이미지를 손상시킬 수 있는 내용2) 카카오 서비스의 로고, 상표, 서비스명, 저작물 등을 무단으로 사용한 경우3) 카카오 서비스로 오인될 여지가 있는 내용(1) 카카오의 서비스 주조색을 포인트 컬러로 사용하여 카카오 서비스로 오인되는 경우(2) 카카오 서비스 로고와 유사한 오브젝트를 소재에 삽입하여 카카오에서 제공하는 광고로 오인되는 경우(3) 카카오 서비스와 유사한 비주얼을 사용하여 광고를 카카오 서비스 내 콘텐츠로 오인하게 하는 경우(4) 광고 이미지가 게재지면(노출 위치)의 UI 및 콘텐츠와 유사하여 광고가 서비스에서 제공하는 콘텐츠로 오인되는 경우업무 방해에 해당하는 경우 광고 집행이 불가합니다.1) 본인 또는 제3자를 광고하기 위해 카카오의 이용약관, 개별 서비스의 운영원칙/약관 등을 위반하거나 이를 유도하는 경우2) 관련 법령, 카카오의 이용약관, 개별 서비스의 운영원칙/약관 등을 위반하여 카카오 서비스에 부당하게 영향을 주는 행위를 하거나 이를 유도하는 경우circle-info다른 문의사항이 있으실까요?',
+    metadata: {
+      source: '집행 기준 및 준수사항',
+      keywords: ['카카오', '서비스의', '오인되는', '서비스로', '카카오의'],
+      chunk_type: 'text',
+      chunk_index: 19,
+      hierarchy_level: 'paragraph',
+      source_vendor: 'KAKAO',
+    },
+  },
+  doc_1774491147517_yj1v810_chunk_4: {
+    id: 'doc_1774491147517_yj1v810_chunk_4',
+    document_id: 'doc_1774491147517_yj1v810',
+    chunk_id: 4,
+    content: '내용이 사실과 다르거나 사실을 지나치게 부풀림으로 소비자의 합리적인 선택을 방해하는 경우 메시지 발송이 불가합니다.거짓되거나 확인되지 않은 내용을 사실인 것처럼 표현하는 내용의 메시지는 발송이 불가합니다.중요한 정보를 생략하거나 부분적인 사실을 강조하여 사람들을 잘못 오인하게 할 수 있는 내용의 메시지는 발송이 불가합니다.인터넷 이용자가 실제 발생한 사실로 오인할 수 있도록 하는 표현이 포함된 경우 메시지 발송이 불가합니다.광고주(업종) 및 광고 목적과 관련성이 낮은 내용을 통해 이용자를 유인하는 메시지는 발송이 불가합니다.hashtag 타인 권리 침해성별, 인종, 민족, 종교, 신념, 나이, 성적 정체성, 신체적 또는 정신적 질병 및 장애 등 개인적인 특성을 언급 혹은 암시하는 민감한 정보를 포함하여 직/간접적으로 타인을 암시함으로써 타인에 대한 명예훼손, 모욕 또는 수치심을 유발하는 등 타인의 권리를 침해할 수 있는 내용의 메시지는 발송이 불가합니다.1) 신체적 특징이나 현상(비만, 탈모, 무좀, 폐경/완경, 갱년기 등)에 대해서 강조하여 메시지에 표기하는 경우개인의 사생활 및 자유를 침해할 우려가 있는 내용의 메시지는 발송이 불가합니다.지식재산권(특허권, 실용신안권, 디자인권, 상표권, 저작권 등) 및 초상권 등 타인의 권리를 침해하는 경우 메시지 발송이 불가합니다.',
+    metadata: {
+      source: '집행 가이드',
+      keywords: ['신체적', '권리를', '침해할', '내용의', '사실을'],
+      chunk_type: 'text',
+      chunk_index: 4,
+      hierarchy_level: 'paragraph',
+      source_vendor: 'KAKAO',
+    },
+  },
+  doc_1774491147517_yj1v810_chunk_8: {
+    id: 'doc_1774491147517_yj1v810_chunk_8',
+    document_id: 'doc_1774491147517_yj1v810',
+    chunk_id: 8,
+    content: '이용자를 오인시킬 우려가 있는 경우 광고 집행이 불가합니다.생성형 AI를 통해 제작된 이미지/동영상 제작물이 포함된 경우, 이용자 혼선 방지를 위해 메시지 내 AI로 제작한 이미지/동영상입니다 등의 문구 기재를 권장합니다.hashtag 가격 표시 기준[전자상거래 등에서의 소비자 보호에 관한 법률] 및 공정거래위원회의 [부당한 표시광고 행위의 유형 및 기준 지정고시]를 준수해야 하며, 다음과 같은 내용의 가격 표시가 포함된 경우 메시지 발송이 불가합니다.1) 허위의 종전 거래 가격을 자기의 판매 가격과 비교하여 표시, 광고하는 경우2) 할인율 등을 사실과 다르게 표시, 광고하는 경우3) 실제로 할인율이 높거나 가격이 낮은 상품은 일부에 불과한데 대부분의 상품이 높은 할인율 또는 낮은 가격으로 판매하는 것처럼 과장하여 표시, 광고하는 경우4) 실제 거래 가격에는 변동이 없음에도 불구하고 일정 기간을 정하여 특정한 가격을 판매하는 것처럼 소비자를 오인 시킬 우려가 있는 표현을 사용하는 경우가격 또는 할인율을 표시하는 경우에는 다음의 내용을 반드시 메시지 내용에 표시가 필요합니다.1) 표시한 가격 또는 할인율이 어떠한 상품 기준으로 작성된 것인지를 반드시 표시2)',
+    metadata: {
+      source: '집행 가이드',
+      keywords: ['가격', '광고하는', '판매하는', '가격을', '할인율'],
+      chunk_type: 'text',
+      chunk_index: 8,
+      hierarchy_level: 'paragraph',
+      source_vendor: 'KAKAO',
+    },
+  },
+  doc_1774491147517_yj1v810_chunk_9: {
+    id: 'doc_1774491147517_yj1v810_chunk_9',
+    document_id: 'doc_1774491147517_yj1v810',
+    chunk_id: 9,
+    content: '다음의 내용을 반드시 메시지 내용에 표시가 필요합니다.1) 표시한 가격 또는 할인율이 어떠한 상품 기준으로 작성된 것인지를 반드시 표시2) 표시한 가격 또는 할인율이 어떠한 상품 기준으로 작성된 것인지 해당 상품을 메시지에 표시가격 또는 할인율을 표시하는 경우에는 반드시 해당 상품의 가격으로 표시해야 하며, 상세 상품의 일부이거나 옵션 선택가를 표시하는 경우 메시지 발송이 불가합니다.1) 모든 이용자에게 공통으로 적용되는 상품 및 서비스 가격만 기재 가능2) 일부 이용자들에게만 적용되는 가격이나 특정 쿠폰, 특정 카드의 할인 적용가와 같이 특정 이용자를 대상으로 한 할인가는 상품 판매가로 기재 불가3) 특정한 자격 조건 없이 모든 이용자에게 공통으로 적용되는 할인 가격의 경우에는 해당 할인 가격을 기재 가능4) 표시광고하는 연결화면에서 정당한 사유 없이 재화 등의 총금액이 아닌 일부 금액만 표시광고 불가hashtag 이벤트 내용 기준이벤트 내용에 대한 중요한 정보를 생략하고 부분적인 사실을 강조하여 이용자를 유인하는 메시지는 발송이 불가합니다.이벤트에 관한 메시지 내용을 작성할 때에는 이벤트의 참여 방식, 경품의 선정 방식, 선정 인원, 경품 내용을',
+    metadata: {
+      source: '집행 가이드',
+      keywords: ['적용되는', '기재', '할인', '상품의', '모든'],
+      chunk_type: 'text',
+      chunk_index: 9,
+      hierarchy_level: 'paragraph',
+      source_vendor: 'KAKAO',
+    },
+  },
+  doc_1774491147517_yj1v810_chunk_17: {
+    id: 'doc_1774491147517_yj1v810_chunk_17',
+    document_id: 'doc_1774491147517_yj1v810',
+    chunk_id: 17,
+    content: '개별 서비스의 운영원칙/약관 등을 위반하거나 이를 유도하는 경우2) 관련 법령, 카카오의 이용약관, 개별 서비스의 운영원칙/약관 등을 위반하여 카카오 서비스에 부당하게 영향을 주는 행위를 하거나 이를 유도하는 경우hashtag 제한 업종위법/부적절한 서비스1) 현행 법률(의료법, 학원법, 대부업법, 부가가치세법, 전자상거래등에서의 소비자 보호에 관한 법률, 간접투자자산운용업법 등)을 위반하는 경우 메시지 발송이 불가합니다.2) 카페, 클럽, 블로그 등 포털 사이트의 커뮤니티를 매매하는 내용은 메시지 발송이 불가합니다.3) 유틸리티, 멀티미디어 등 각종 프로그램이나 파일을 제공, 중개하는 공개 자료실은 메시지 발송이 불가합니다.4) 서비스 운영 및 판매 방식에 사행성이 가미되어 있거나 조장할 우려가 있는 경우 메시지 발송이 불가합니다.성인(성인방송, 성인커뮤니티, 성인용품 등)1) 성인 관련 서비스 및 이와 유사한 정보를 제공하는 서비스는 메시지 발송이 불가합니다.2) 성인 관련 서비스 및 이와 유사한 정보를 제공하는 서비스로의 접속을 유도하는 내용이 포함된 경우 메시지 발송이 불가합니다.관계 법령에 따라 인터넷 광고가 금지되거나 인터넷 판매, 유통 등이',
+    metadata: {
+      source: '집행 가이드',
+      keywords: ['유도하는', '제공하는', '성인', '개별', '운영원칙'],
+      chunk_type: 'text',
+      chunk_index: 17,
+      hierarchy_level: 'paragraph',
+      source_vendor: 'KAKAO',
+    },
+  },
+  doc_1774491147517_yj1v810_chunk_18: {
+    id: 'doc_1774491147517_yj1v810_chunk_18',
+    document_id: 'doc_1774491147517_yj1v810',
+    chunk_id: 18,
+    content: '서비스로의 접속을 유도하는 내용이 포함된 경우 메시지 발송이 불가합니다.관계 법령에 따라 인터넷 광고가 금지되거나 인터넷 판매, 유통 등이 불가한 상품1) 인터넷 광고가 금지된 상품은 메시지 발송이 불가합니다.예) 전문의약품 및 원료의약품, 담배, 도박 및 사행행위 관련 콘텐츠, 성매매, 불법도박 등2) 인터넷판매가 불가한 상품은 메시지 발송이 불가합니다.예) 의약품, 주류, 담배, 시력보정용 안경 및 콘텍트렌즈, 마약, 농약 등 (단, 주류의 경우 [주류의 통신판매에 관한 명령위임고시], 카카오톡 채널 서비스 운영정책 및 집행가이드 청소년보호에 따라 제한적으로 회사가 허용하는 범위 내에서 가능)3) 일반 유통이 불가하거나 불법적인 상품은 메시지 발송이 불가합니다.예) 혈액/혈액증서, 군복/군용장구, 야생 동식물, 음란물, 허가받지 않은 주방용 오물 분쇄기, 샘플화장품 등일부 금융 서비스1) 금융감독원에 미등록된 유사투자자문업, 주식투자자문업, 주식/증권 정보 제공업 등은 메시지 발송이 불가합니다.2) 금융감독원에 미등록 업체의 불법 대출 및 대부업법에 따른 중요 사항을 알리지 않는 등의 대부업법 위반 콘텐츠가 포함된 메시지는 발송이 불가합니다.3)',
+    metadata: {
+      source: '집행 가이드',
+      keywords: ['상품은', '불가한', '금융감독원에', '광고가', '담배'],
+      chunk_type: 'text',
+      chunk_index: 18,
+      hierarchy_level: 'paragraph',
+      source_vendor: 'KAKAO',
+    },
+  },
+  url_1773203880202_q3y8fucqb_chunk_5: {
+    id: 'url_1773203880202_q3y8fucqb_chunk_5',
+    document_id: 'url_1773203880202_q3y8fucqb',
+    chunk_id: 5,
+    content: '카카오톡 채널 서비스 운영정책 및 카카오톡 채널 가이드에 부합하더라도 톡채널검색 광고 심사가이드에 위반하는 내용의 광고 소재는 광고 집행이 제한될 수 있습니다. 연동한 사이트와 카카오톡 채널이 동일한 사업자 번호를 사용해야 합니다. hashtag 1-3. 등록불가 사이트 접속되지 않거나 정상적으로 서비스되지 않는 사이트 미완성 페이지 또는 정상적인 페이지라고 판단하기 어려운 사이트 청소년 유해매체물 또는 카카오(주)가 청소년에게 유해하다고 판단하는 콘텐츠가 확인되는 사이트 현행 법령 등 위반 업체 사이트 및 현행 법령 위반 콘텐츠가 확인되는 사이트 등록불가 업종 관련 콘텐츠가 확인되는 사이트 기타 카카오(주)의 검수기준에 부합하지 않는 사이트 상기 사이트 외에도 카카오(주)의 내부 검토 등을 통해 톡채널검색 광고에 부적합하다고 판단되는 경우 집행 불가 hashtag 2. 키워드 등록기준 hashtag 2-1.',
+    metadata: {
+      source: '등록 기준',
+      keywords: ['콘텐츠가', '확인되는', '카카오톡', '사이트', '등록불가'],
+      chunk_type: 'text',
+      chunk_index: 5,
+      hierarchy_level: 'paragraph',
+      source_vendor: 'KAKAO',
+    },
+  },
+  doc_1764895606547_buwpoz4_sent_11: {
+    id: 'doc_1764895606547_buwpoz4_sent_11',
+    document_id: 'doc_1764895606547_buwpoz4',
+    chunk_id: 11,
+    content: '확장단계 광고주 편5분주목도 높은피드형 광고, 홈피드DA상품소식북마크모바일 홈 하단에 노출!',
+    metadata: {
+      source: '눈에 띄는 PC 브랜딩 광고,\nPC 헤드라인DA 알아보기상품소식4분',
+      keywords: ['확장단계', '광고주', '편5분주목도', '높은피드형', '광고'],
+      chunk_type: 'text',
+      chunk_index: 11,
+      hierarchy_level: 'sentence',
+      section_title: '이전',
+      source_vendor: 'NAVER',
+    },
+  },
+  doc_1764922396107_b9w41zn_chunk_5: {
+    id: 'doc_1764922396107_b9w41zn_chunk_5',
+    document_id: 'doc_1764922396107_b9w41zn',
+    chunk_id: 5,
+    content: "적은 리소스로 쉽게 운영할 수 있어요.소재부터 타겟팅, 입찰까지 모두 AI에 기반해 자동으로 이루어지기 때문에, 집행에 드는 리소스를 최소화할 수 있습니다.성과형 디스플레이 광고 플랫폼에서 캠페인 목적을 'ADVoost 쇼핑'으로 선택하고, 비즈채널을 선택한 후 하루 예산만 세팅하면 누구나 쉽게 광고를 시작할 수 있어요.",
+    metadata: {
+      source: '66',
+      keywords: ['쉽게', '있어요', '적은', '리소스로', '운영할'],
+      chunk_type: 'text',
+      chunk_index: 5,
+      hierarchy_level: 'sentence',
+      section_title: '이전',
+      source_vendor: 'NAVER',
+    },
+  },
+  doc_1773710116296_uawf5xm_chunk_2: {
+    id: 'doc_1773710116296_uawf5xm_chunk_2',
+    document_id: 'doc_1773710116296_uawf5xm',
+    chunk_id: 2,
+    content: "EP(=DB URL)을 등록하면 영업일 기준 1~2일 정도 심사가 진행되며 카테고리 자동매칭의 경우, 심사 완료 시 통상 1~2일 지나면 상품이 자동으로 노출되게 됩니다.DB URL 작성 방법은 아래 가이드를 참조하세요. DB URL 작성요령 및 예제 [상품등록 절차][쇼핑파트너센터>상품관리>상품정보 수신 현황]에서 '등록요청' 버튼을 클릭하여 상품DB URL을 입력하세요.상품 DB URL 입력 후 심사(통상 1~2일 소요) 후 네이버 가격비교 업데이트 시간이 지나면 [쇼핑파트너센터>상품관리>상품현황 및 관리>미서비스 상품]에서 대분류 검색 후 쇼핑몰의 전체 상품 리스트가 보여지게 됩니다.카테고리 자동매칭을 설정한 경우 상품명을 기준으로 근접한 카테고리에 자동 매칭되고 카테고리 수정이 필요하시면 상품을 선택하신 후 카테고리 매칭을 선택하시어 각 상품을 네이버 가격비교 카테고리에 맞춰주시기 바랍니다.이렇게 등록된 상품은 네이버 가격비교 업데이트 이후 서비스 가능 상태가 되면 네이버 가격비교 노출 및 쇼핑검색광고 상품등록이 가능합니다.TIP.",
+    metadata: {
+      source: '광고주센터',
+      source_title: '광고주센터',
+      canonical_title: '네이버 광고 가이드',
+      source_url: 'https://ads.naver.com/help/faq/875',
+      source_vendor: 'NAVER',
+      keywords: ['업데이트', '카테고리에', '상품을', '2일', '등록하면'],
+      chunk_type: 'text',
+      chunk_index: 2,
+      hierarchy_level: 'paragraph',
+    },
+  },
+  doc_1773886683376_omws3g9_chunk_2: {
+    id: 'doc_1773886683376_omws3g9_chunk_2',
+    document_id: 'doc_1773886683376_omws3g9',
+    chunk_id: 2,
+    content: '앱 이벤트 설정하기. 앱 이벤트를 설정하는 데 사용할 수 있는 통합에는 여러 가지가 있습니다. 파트너 통합. 모바일 측정 파트너(MMP)를 이용하면 Meta에 파트너 계정을 손쉽게 연결하고 표준 및 맞춤 앱 이벤트를 구성할 수 있습니다. Android 또는 iOS용 Facebook SDK Facebook SDK를 설치하면 앱 이벤트 코드를 수동으로 설치하거나 앱 이벤트 추천, 코드 프리 이벤트 설정 도구를 사용할 수 있습니다. 전환 API는 마케팅 데이터와 시스템 간을 직접 연결해 광고 타게팅 최적화와 측정을 지원합니다.',
+    metadata: {
+      source: '앱 이벤트와 Facebook 및 Instagram의 광고 정보 | Meta 비즈니스 지원 센터',
+      source_vendor: 'META',
+      keywords: ['앱 이벤트', 'MMP', 'Facebook SDK', '전환 API', '이벤트 설정'],
+      chunk_type: 'text',
+      chunk_index: 2,
+      hierarchy_level: 'paragraph',
+    },
+  },
+  doc_1773886683376_omws3g9_chunk_0: {
+    id: 'doc_1773886683376_omws3g9_chunk_0',
+    document_id: 'doc_1773886683376_omws3g9',
+    chunk_id: 0,
+    content: '앱 이벤트는 사람들이 앱에서 하는 행동입니다. 앱 이벤트를 통해 Meta 광고 캠페인의 효과와 영향력을 높일 수 있으며 광고 타게팅, 최적화, 측정에 활용할 수 있습니다. 앱 이벤트를 설정하면 Meta 이벤트 관리자와 Meta 광고 관리자에서 앱 내 행동과 캠페인 결과를 확인할 수 있습니다.',
+    metadata: {
+      source: '앱 이벤트와 Facebook 및 Instagram의 광고 정보 | Meta 비즈니스 지원 센터',
+      source_vendor: 'META',
+      keywords: ['앱 이벤트', '광고 타게팅', '최적화', '측정', '이벤트 관리자'],
+      chunk_type: 'text',
+      chunk_index: 0,
+      hierarchy_level: 'paragraph',
+    },
+  },
+  doc_1773886683376_omws3g9_chunk_1: {
+    id: 'doc_1773886683376_omws3g9_chunk_1',
+    document_id: 'doc_1773886683376_omws3g9',
+    chunk_id: 1,
+    content: '앱 이벤트 유형에는 표준 이벤트, 맞춤 이벤트, 자동으로 기록된 이벤트가 있습니다. 맞춤 이벤트는 Meta 이벤트 관리자에서 비즈니스 출처와 Meta 비즈니스 도구 약관 준수 여부를 검토할 수 있습니다. 자동으로 기록된 이벤트는 Android 및 iOS용 Facebook SDK에서 자동 기록하는 앱 설치, 앱 실행, 앱 내 구매 같은 이벤트입니다.',
+    metadata: {
+      source: '앱 이벤트와 Facebook 및 Instagram의 광고 정보 | Meta 비즈니스 지원 센터',
+      source_vendor: 'META',
+      keywords: ['표준 이벤트', '맞춤 이벤트', '자동 기록 이벤트', 'Facebook SDK', '앱 설치'],
+      chunk_type: 'text',
+      chunk_index: 1,
+      hierarchy_level: 'paragraph',
+    },
+  },
+  doc_1773886203371_8rlmmdv_chunk_1: {
+    id: 'doc_1773886203371_8rlmmdv_chunk_1',
+    document_id: 'doc_1773886203371_8rlmmdv',
+    chunk_id: 1,
+    content: '컬렉션 광고는 큰 커버 이미지 또는 동영상과 카탈로그의 작은 제품 이미지를 표시하여 사람들이 제품을 발견하고 구매하도록 유도합니다. 컬렉션 광고의 커버 이미지 또는 동영상을 누르면 전체 화면 인스턴트 경험이 열리고, 작은 제품 이미지를 누르면 웹사이트의 제품 상세 정보 페이지로 이동합니다.',
+    metadata: {
+      source: '컬렉션 광고 정보 | Meta 비즈니스 지원 센터',
+      source_vendor: 'META',
+      keywords: ['컬렉션 광고', '카탈로그', '제품 이미지', '인스턴트 경험', '제품 상세 정보'],
+      chunk_type: 'text',
+      chunk_index: 1,
+      hierarchy_level: 'paragraph',
+    },
+  },
+  doc_1773886203371_8rlmmdv_chunk_0: {
+    id: 'doc_1773886203371_8rlmmdv_chunk_0',
+    document_id: 'doc_1773886203371_8rlmmdv',
+    chunk_id: 0,
+    content: '컬렉션 광고 정보. 2026년 3월부터 광고 설정에 컬렉션 형식이 더 이상 표시되지 않습니다. 형식 표시 옵션의 광고 크리에이티브에서 컬렉션을 선택할 수 있습니다. Facebook과 Instagram에서 광고 레이블이 지정되는 방식이 업데이트되었습니다.',
+    metadata: {
+      source: '컬렉션 광고 정보 | Meta 비즈니스 지원 센터',
+      source_vendor: 'META',
+      keywords: ['컬렉션 광고', '광고 설정', '광고 크리에이티브', 'Facebook', 'Instagram'],
+      chunk_type: 'text',
+      chunk_index: 0,
+      hierarchy_level: 'paragraph',
+    },
+  },
+  doc_1773886203371_8rlmmdv_chunk_2: {
+    id: 'doc_1773886203371_8rlmmdv_chunk_2',
+    document_id: 'doc_1773886203371_8rlmmdv',
+    chunk_id: 2,
+    content: '컬렉션 광고는 제품 발견 가능성 증가, 모바일 기기에서 원활한 탐색 경험 제공, 수요를 판매로 전환하는 데 도움이 됩니다. 어드밴티지+ 카탈로그를 이용하여 여러 제품 또는 서비스 이미지를 포함하고 고유한 제품을 소개하며 복수 구매를 유도할 수 있습니다.',
+    metadata: {
+      source: '컬렉션 광고 정보 | Meta 비즈니스 지원 센터',
+      source_vendor: 'META',
+      keywords: ['컬렉션 광고', '제품 발견', '모바일 탐색', '어드밴티지+ 카탈로그', '복수 구매'],
+      chunk_type: 'text',
+      chunk_index: 2,
+      hierarchy_level: 'paragraph',
+    },
+  },
+  doc_meta_ads_1773729341584_flikr_chunk_1: {
+    id: 'doc_meta_ads_1773729341584_flikr_chunk_1',
+    document_id: 'doc_meta_ads_1773729341584_flikr',
+    chunk_id: 1,
+    content: 'Facebook 검색 결과에서 이미지 형식을 사용하여 제품, 서비스 또는 브랜드를 선보일 수 있습니다. 디자인 추천 사항: 파일 형식 JPG 또는 PNG, 비율 1.91:1~1:1, 해상도 1080x1080픽셀 이상. 기술 요구 사항: 최대 파일 크기 30MB, 최소 너비 600픽셀, 최소 높이 600픽셀. 모든 광고는 Facebook 광고 정책을 준수해야 합니다.',
+    metadata: {
+      source: 'Facebook 검색 결과의 참여 이미지 광고 사양 | Facebook 광고 가이드',
+      source_vendor: 'META',
+      keywords: ['이미지 광고', 'JPG', 'PNG', '1.91:1', '1080x1080'],
+      chunk_type: 'text',
+      chunk_index: 1,
+      hierarchy_level: 'paragraph',
+    },
+  },
+  doc_meta_ads_1773729350143_b6ra4_chunk_1: {
+    id: 'doc_meta_ads_1773729350143_b6ra4_chunk_1',
+    document_id: 'doc_meta_ads_1773729350143_b6ra4',
+    chunk_id: 1,
+    content: 'Facebook 검색 결과에서 동영상 형식을 사용할 수 있습니다. 디자인 추천 사항: 파일 형식 MP4, MOV 또는 GIF, 비율 1:1, H.264 압축, 정사각형 픽셀, 고정 프레임 속도, 128kbps 이상의 스테레오 AAC 오디오. 해상도 1080x1080픽셀 이상, 동영상 길이 1초~241분, 최대 파일 크기 4GB.',
+    metadata: {
+      source: 'Facebook 검색 결과의 참여 동영상 광고 사양 | Facebook 광고 가이드',
+      source_vendor: 'META',
+      keywords: ['동영상 광고', 'MP4', 'MOV', 'GIF', '1:1'],
+      chunk_type: 'text',
+      chunk_index: 1,
+      hierarchy_level: 'paragraph',
+    },
+  },
+  doc_meta_ads_1773729358234_l7f34_chunk_1: {
+    id: 'doc_meta_ads_1773729358234_l7f34_chunk_1',
+    document_id: 'doc_meta_ads_1773729358234_l7f34',
+    chunk_id: 1,
+    content: 'Facebook 검색에서 슬라이드 형식을 사용하면 하나의 광고에 이미지 또는 동영상을 최대 10개까지 추가하고 슬라이드마다 별도의 링크를 포함할 수 있습니다. 디자인 추천 사항: 이미지 JPG 또는 PNG, 동영상 MP4, MOV 또는 GIF, 비율 1:1, 해상도 1080x1080픽셀 이상. 슬라이드 수 2~10개.',
+    metadata: {
+      source: 'Facebook 검색 결과의 참여 슬라이드 광고 사양 | Facebook 광고 가이드',
+      source_vendor: 'META',
+      keywords: ['슬라이드 광고', '카루셀', 'JPG', 'PNG', '2~10개'],
+      chunk_type: 'text',
+      chunk_index: 1,
+      hierarchy_level: 'paragraph',
+    },
+  },
+  doc_meta_ads_1773729345121_uvubb_chunk_1: {
+    id: 'doc_meta_ads_1773729345121_uvubb_chunk_1',
+    document_id: 'doc_meta_ads_1773729345121_uvubb',
+    chunk_id: 1,
+    content: 'Instagram 탐색 홈에서 단일 이미지 형식을 사용하여 제품, 서비스 또는 브랜드를 선보일 수 있습니다. 디자인 권장 사항: 이미지 파일 유형 JPG 또는 PNG, 비율 4:5, 해상도 1440x1800픽셀. 텍스트 권장 사항: 기본 문구 125자, 제목 40자, 최대 해시태그 수 30개. 최대 파일 크기 30MB.',
+    metadata: {
+      source: 'Instagram 탐색 홈의 참여 이미지 광고 사양 | Facebook 광고 가이드',
+      source_vendor: 'META',
+      keywords: ['Instagram', '이미지 광고', 'JPG', 'PNG', '4:5'],
+      chunk_type: 'text',
+      chunk_index: 1,
+      hierarchy_level: 'paragraph',
+    },
+  },
+  doc_meta_ads_1773729359834_ijfm7_chunk_1: {
+    id: 'doc_meta_ads_1773729359834_ijfm7_chunk_1',
+    document_id: 'doc_meta_ads_1773729359834_ijfm7',
+    chunk_id: 1,
+    content: 'Instagram 피드 슬라이드 광고 디자인 추천 사항: 이미지 파일 형식 JPG 또는 PNG, 동영상 파일 형식 MP4, MOV 또는 GIF, 화면 비율 4:5, 해상도 1080x1080픽셀 이상. 기술 요구 사항: 슬라이드 수 2~10개, 최대 이미지 파일 크기 30MB, 최대 동영상 파일 크기 4GB, 동영상 길이 1초~2분.',
+    metadata: {
+      source: 'Meta Ads Guide: carousel > instagram-feed > traffic',
+      source_vendor: 'META',
+      keywords: ['Instagram 피드', '슬라이드 광고', 'JPG', 'PNG', '4:5'],
+      chunk_type: 'text',
+      chunk_index: 1,
+      hierarchy_level: 'paragraph',
+    },
+  },
+  'facebook-ad-policy_chunk_0': {
+    id: 'facebook-ad-policy_chunk_0',
+    document_id: 'facebook-ad-policy',
+    chunk_id: 'facebook-ad-policy_chunk_0',
+    content: '페이스북 광고 정책. 이미지 광고: 크기 1200x628 픽셀(1.91:1 비율), 최대 파일 크기 30MB, 지원 형식 JPG, PNG. 동영상 광고: 크기 1280x720 픽셀(16:9 비율), 최대 파일 크기 4GB, 지원 형식 MP4, MOV, AVI. 카루셀 광고: 크기 1080x1080 픽셀(1:1 비율), 최대 파일 크기 30MB, 지원 형식 JPG, PNG, 최대 10개 이미지.',
+    metadata: {
+      source: '페이스북 광고 정책',
+      source_vendor: 'META',
+      keywords: ['1200x628', '1.91:1', 'JPG', 'PNG', '카루셀'],
+      chunk_type: 'text',
+      chunk_index: 0,
+      hierarchy_level: 'paragraph',
+    },
+  },
+  doc_1773662526796_7rijhfq_chunk_1: {
+    id: 'doc_1773662526796_7rijhfq_chunk_1',
+    document_id: 'doc_1773662526796_7rijhfq',
+    chunk_id: 1,
+    content: 'Google Ads에서 리드 양식을 만들고 캠페인에 추가합니다. 리드 양식은 검색, 동영상, 실적 최대화 및 디스플레이 캠페인에 추가할 수 있습니다. 사용자는 리드 양식을 열 때 이메일 주소, 전화번호, 기타 세부정보 등의 연락처 정보를 제출할 수 있습니다. 리드 양식을 사용하려면 양호한 정책 준수 내역 요건을 충족하는 Google Ads 계정이 필요합니다.',
+    metadata: {
+      source: '리드 양식 확장 소재에 대한 정보',
+      source_vendor: 'GOOGLE',
+      keywords: ['Google Ads', '리드 양식', '검색', '동영상', '실적 최대화'],
+      chunk_type: 'text',
+      chunk_index: 1,
+      hierarchy_level: 'paragraph',
+    },
+  },
+  doc_1773662526796_7rijhfq_chunk_2: {
+    id: 'doc_1773662526796_7rijhfq_chunk_2',
+    document_id: 'doc_1773662526796_7rijhfq',
+    chunk_id: 2,
+    content: '민감한 카테고리 또는 하위 카테고리(예: 성적인 콘텐츠)의 경우 리드 양식을 사용할 수 없습니다. Google Ads에서 리드 양식을 만들 때는 비즈니스의 개인정보처리방침으로 연결되는 링크를 제공해야 합니다. 동영상 캠페인이나 디스플레이 캠페인에 리드 양식을 추가하는 경우 지출 요건과 광고주 인증 프로그램 완료가 필요할 수 있습니다.',
+    metadata: {
+      source: '리드 양식 확장 소재에 대한 정보',
+      source_vendor: 'GOOGLE',
+      keywords: ['민감한 카테고리', '개인정보처리방침', '동영상 캠페인', '디스플레이 캠페인', '광고주 인증'],
+      chunk_type: 'text',
+      chunk_index: 2,
+      hierarchy_level: 'paragraph',
+    },
+  },
+  doc_1773662526796_7rijhfq_chunk_3: {
+    id: 'doc_1773662526796_7rijhfq_chunk_3',
+    document_id: 'doc_1773662526796_7rijhfq',
+    chunk_id: 3,
+    content: '리드 양식 광고 형식으로 게재하려면 캠페인에서 전환 중심의 입찰 전략을 사용해야 하고, 캠페인을 Google 리드 양식 전환 목표에 최적화해야 합니다. 반응형 검색 광고 관련 광고 소재를 게재할 수 있으며 확장 텍스트 광고는 사용할 수 없습니다. 리드 양식은 일부 국가에서만 게재할 수 있습니다.',
+    metadata: {
+      source: '리드 양식 확장 소재에 대한 정보',
+      source_vendor: 'GOOGLE',
+      keywords: ['전환 중심 입찰', '리드 양식 전환 목표', '반응형 검색 광고', '확장 텍스트 광고', '국가'],
+      chunk_type: 'text',
+      chunk_index: 3,
+      hierarchy_level: 'paragraph',
+    },
+  },
+  doc_1764895606613_llkwwsf_doc_0: {
+    id: 'doc_1764895606613_llkwwsf_doc_0',
+    document_id: 'doc_1764895606613_llkwwsf',
+    chunk_id: 0,
+    content: '짧고 강렬한 임팩트, 숏폼 아웃스트림 광고. 보장형디스플레이광고, 성과형디스플레이광고, 동영상광고, 동영상조회광고, 숏폼아웃스트림광고, 네이버클립. 숏폼 아웃스트림 광고는 클립 피드 사이사이에 짧은 광고 영상을 전면으로 노출하는 상품으로, 9:16 영상과 1:1 영상 중 선택해서 활용할 수 있습니다.',
+    metadata: {
+      source: '고객 시선을 사로잡는\n숏폼 광고 운영하기상품소식4분',
+      source_vendor: 'NAVER',
+      keywords: ['숏폼', '아웃스트림', '동영상광고', '네이버클립', '9:16'],
+      chunk_type: 'text',
+      chunk_index: 0,
+      hierarchy_level: 'document',
+    },
+  },
+  doc_1764895552052_8xy5ad6_para_2: {
+    id: 'doc_1764895552052_8xy5ad6_para_2',
+    document_id: 'doc_1764895552052_8xy5ad6',
+    chunk_id: 2,
+    content: '네이버 PC메인과 모바일 쇼핑 지면에 상품을 효과적으로 노출할 수 있습니다. PC 쇼핑블록 광고와 MO 쇼핑블록 광고는 쇼핑몰 유입과 브랜딩을 위한 주요 쇼핑 지면 상품입니다. PC 쇼핑블록에 노출되는 모든 광고는 선 검수를 통해 검수 승인된 소재가 노출됩니다. MO 쇼핑블록에 노출되는 모든 광고도 선 검수를 통해 검수 승인된 소재가 노출됩니다. 쇼핑파트너센터와 스마트스토어센터를 통해 구매 및 운영할 수 있습니다.',
+    metadata: {
+      source: '다양한 쇼핑 지면을 통해 고객 유입과 브랜딩을 극대화할 수 있는',
+      source_vendor: 'NAVER',
+      keywords: ['쇼핑블록', '쇼핑 지면', '선 검수', '검수 승인', '쇼핑파트너센터'],
+      chunk_type: 'text',
+      chunk_index: 2,
+      hierarchy_level: 'paragraph',
+      canonical_title: '네이버 광고 가이드',
+    },
+  },
+  url_1770857834681_kyfp93bbk_chunk_9: {
+    id: 'url_1770857834681_kyfp93bbk_chunk_9',
+    document_id: 'url_1770857834681_kyfp93bbk',
+    chunk_id: 9,
+    content: 'Meta 광고주는 타겟 선택 도구를 사용해 특정 그룹의 사람들에게 부당하게 광고를 타게팅하거나 광고 타겟에서 제외해서는 안 되며, 광고에 차별적인 콘텐츠를 포함해서는 안 됩니다. 또한 광고주는 차별을 금지하는 관련 법률을 준수해야 합니다. 혐오 행동 광고는 인종, 민족, 국적, 장애, 종교, 계급, 성적 지향, 성별, 성 정체성, 심각한 질병과 같이 보호받는 특성을 근거로 타인을 공격해서는 안 됩니다.',
+    metadata: {
+      source: 'Meta 광고 규정',
+      source_title: 'Meta 광고 규정',
+      canonical_title: 'Meta 광고 정책',
+      source_url: 'https://www.facebook.com/policies/ads',
+      source_vendor: 'META',
+      keywords: ['Meta 광고 정책', '차별', '타게팅', '혐오 행동', '금지 콘텐츠'],
+      chunk_type: 'text',
+      chunk_index: 9,
+      hierarchy_level: 'paragraph',
+    },
+  },
+  url_1773109915186_xnqeew2qd_chunk_4: {
+    id: 'url_1773109915186_xnqeew2qd_chunk_4',
+    document_id: 'url_1773109915186_xnqeew2qd',
+    chunk_id: 4,
+    content: '인종, 국가, 민족, 나이, 장애, 성, 종교, 직업, 질병 등을 이유로 특정 집단이나 그 구성원에 대하여 차별 또는 편견을 조장하거나 폭력을 선전선동하는 혐오표현을 포함한 내용, 타인에 대한 명예 훼손, 수치심을 유발하는 등 타인의 권리를 침해하고 인권 존중을 저해하는 내용은 광고 집행이 불가합니다. 아동과 청소년 보호 기준도 함께 확인해야 합니다.',
+    metadata: {
+      source: '윤리 원칙',
+      source_vendor: 'KAKAO',
+      keywords: ['혐오표현', '차별', '편견', '선전선동', '인권 존중'],
+      chunk_type: 'text',
+      chunk_index: 4,
+      hierarchy_level: 'paragraph',
+    },
+  },
+  doc_1773663427417_g8z1v3y_chunk_2: {
+    id: 'doc_1773663427417_g8z1v3y_chunk_2',
+    document_id: 'doc_1773663427417_g8z1v3y',
+    chunk_id: 2,
+    content: "비승인된 광고는 정책 위반사항을 수정하고 검토를 마친 후에 게재할 수 있습니다. 비승인 여부는 Google Ads의 '상태' 열에 표시됩니다. Google Ads 정책에 따라 타겟 지역에 특정 유형의 광고를 게재하는 것이 허용되지 않는 경우 광고가 운영 가능(모든 위치가 제한됨) 상태로 표시됩니다. Google Ads 정책 또는 이용약관을 위반한 것으로 확인되는 경우 계정이 정지될 수 있습니다.",
+    metadata: {
+      source: '정책 위반에 대한 결과',
+      source_title: '정책 위반에 대한 결과',
+      canonical_title: 'Google Ads 가이드',
+      source_url: 'https://support.google.com/google-ads/answer/7187501?hl=ko',
+      source_vendor: 'GOOGLE',
+      keywords: ['Google Ads 정책', '비승인', '정책 위반', '광고 게재 자격', '계정 정지'],
+      chunk_type: 'text',
+      chunk_index: 2,
+      hierarchy_level: 'paragraph',
+    },
+  },
+  doc_1773666139386_h2l7yll_chunk_11: {
+    id: 'doc_1773666139386_h2l7yll_chunk_11',
+    document_id: 'doc_1773666139386_h2l7yll',
+    chunk_id: 11,
+    content: 'Google 쇼핑 광고 정책은 홍보하려는 콘텐츠와 광고가 게재되는 국가에 따라 보건 관리, 정치 관련 콘텐츠, 상표권, 고지방/고당/고나트륨 식품 및 음료 같은 정책 요구사항을 적용합니다. 상표권의 경우 Google은 상표 사용이 제품의 출처에 대해 소비자에게 혼란을 유발할 수 있다는 상표 소유자의 주장이 있는 경우 이를 검토합니다.',
+    metadata: {
+      source: '쇼핑 광고 정책',
+      source_title: '쇼핑 광고 정책',
+      canonical_title: 'Google Ads 가이드',
+      source_url: 'https://support.google.com/google-ads/answer/6149970?hl=ko',
+      source_vendor: 'GOOGLE',
+      keywords: ['쇼핑 광고 정책', '보건 관리', '정치', '상표권', '정책 요구사항'],
+      chunk_type: 'text',
+      chunk_index: 11,
+      hierarchy_level: 'paragraph',
+    },
+  },
+  url_1770093784959_btzm84yr7_chunk_13: {
+    id: 'url_1770093784959_btzm84yr7_chunk_13',
+    document_id: 'url_1770093784959_btzm84yr7',
+    chunk_id: 13,
+    content: 'Google Ads 광고 정책은 일부 헬스케어 관련 콘텐츠를 전혀 광고할 수 없거나 Google 인증 및 승인된 지역 타겟팅 조건을 요구할 수 있습니다. 정치 광고는 타겟팅하는 모든 지역의 현지 캠페인 및 선거법을 준수해야 합니다. 금융 상품 및 서비스 정책은 사용자가 비용과 위험을 검토하는 데 필요한 정보를 제공하고 유해하거나 기만적인 행위로부터 사용자를 보호하기 위해 마련되었습니다.',
+    metadata: {
+      source: 'Google Ads 광고 정책',
+      source_title: 'Google Ads 광고 정책',
+      canonical_title: 'Google Ads 가이드',
+      source_url: 'https://support.google.com/adwordspolicy?hl=ko',
+      source_vendor: 'GOOGLE',
+      keywords: ['Google Ads 광고 정책', '헬스케어', '정치 광고', '금융 상품', '기만'],
+      chunk_type: 'text',
+      chunk_index: 13,
+      hierarchy_level: 'paragraph',
+    },
+  },
+};
+
+function cloneOfficialChunkSnapshotRow(row: CompassOfficialChunkSnapshotRow): CompassOfficialChunkSnapshotRow {
+  const metadata = { ...row.metadata };
+  if (metadata.source_vendor === 'KAKAO') {
+    metadata.source_title ||= '카카오 광고 정책';
+    metadata.canonical_title ||= '카카오 광고 정책';
+  }
+
+  return {
+    ...row,
+    metadata,
+  };
+}
+
+export function getCompassOfficialDocumentChunkSnapshotRows(
+  chunkIds: string[],
+  limit = chunkIds.length,
+): CompassOfficialChunkSnapshotRow[] {
+  const rows: CompassOfficialChunkSnapshotRow[] = [];
+  const seen = new Set<string>();
+
+  for (const chunkId of chunkIds) {
+    const normalizedId = String(chunkId || '').trim();
+    if (!normalizedId || seen.has(normalizedId)) continue;
+    seen.add(normalizedId);
+
+    const row = COMPASS_OFFICIAL_CHUNK_SNAPSHOTS[normalizedId];
+    if (!row) continue;
+    rows.push(cloneOfficialChunkSnapshotRow(row));
+    if (rows.length >= limit) break;
+  }
+
+  return rows;
+}

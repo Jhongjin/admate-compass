@@ -9,6 +9,7 @@ import {
   readCompassRetrievalDurableCache,
   writeCompassRetrievalDurableCache,
 } from '@/lib/server/compassRetrievalRuntimeStore';
+import { getCompassOfficialDocumentChunkSnapshotRows } from './compassOfficialChunkSnapshots';
 import { CompassEvidenceGraphService, type EvidenceGraphCandidate } from './CompassEvidenceGraphService';
 import { SimpleEmbeddingService } from './SimpleEmbeddingService';
 import { generateResponse } from './ollama';
@@ -159,8 +160,26 @@ const GOOGLE_LEAD_FORM_OFFICIAL_CHUNK_IDS = [
   'doc_1773662526796_7rijhfq_chunk_3',
 ];
 
+const META_VENDOR_POLICY_GENERAL_OFFICIAL_CHUNK_IDS = [
+  'url_1770857834681_kyfp93bbk_chunk_9',
+];
+
+const GOOGLE_VENDOR_POLICY_GENERAL_OFFICIAL_CHUNK_IDS = [
+  'doc_1773663427417_g8z1v3y_chunk_2',
+  'doc_1773666139386_h2l7yll_chunk_11',
+  'url_1770093784959_btzm84yr7_chunk_13',
+];
+
 const NAVER_VIDEO_OFFICIAL_CHUNK_IDS = [
   'doc_1764895606613_llkwwsf_doc_0',
+];
+
+const NAVER_SHOPPING_DATA_OFFICIAL_CHUNK_IDS = [
+  'doc_1773710116296_uawf5xm_chunk_2',
+];
+
+const NAVER_SHOPPING_SEARCH_CREATIVE_OFFICIAL_CHUNK_IDS = [
+  'doc_1764895552052_8xy5ad6_para_2',
 ];
 
 const NAVER_DISPLAY_AD_OFFICIAL_CHUNK_IDS = [
@@ -184,6 +203,38 @@ const KAKAO_USER_DECEPTION_OFFICIAL_CHUNK_IDS = [
   'doc_1774488207473_cjq6ve0_chunk_11',
   'doc_1774488207473_cjq6ve0_chunk_19',
   'doc_1774491147517_yj1v810_chunk_4',
+];
+
+const KAKAO_SERVICE_PROTECTION_OFFICIAL_CHUNK_IDS = [
+  'doc_1774488207473_cjq6ve0_chunk_19',
+];
+
+const KAKAO_YOUTH_HARMFUL_OFFICIAL_CHUNK_IDS = [
+  'url_1773203880202_q3y8fucqb_chunk_5',
+  'doc_1774491147517_yj1v810_chunk_17',
+  'doc_1774491147517_yj1v810_chunk_18',
+];
+
+const KAKAO_ADULT_CONTENT_OFFICIAL_CHUNK_IDS = [
+  'doc_1774491147517_yj1v810_chunk_17',
+  'doc_1774491147517_yj1v810_chunk_18',
+  'url_1773203880202_q3y8fucqb_chunk_5',
+];
+
+const KAKAO_HATE_DISCRIMINATION_OFFICIAL_CHUNK_IDS = [
+  'url_1773109915186_xnqeew2qd_chunk_4',
+];
+
+const KAKAO_RIGHTS_INFRINGEMENT_OFFICIAL_CHUNK_IDS = [
+  'doc_1774491147517_yj1v810_chunk_4',
+  'doc_1774488207473_cjq6ve0_chunk_10',
+  'doc_1774488207473_cjq6ve0_chunk_19',
+];
+
+const KAKAO_REVIEW_STANDARDS_OFFICIAL_CHUNK_IDS = [
+  'doc_1774488207473_cjq6ve0_chunk_11',
+  'doc_1774488207473_cjq6ve0_chunk_12',
+  'doc_1774491147517_yj1v810_chunk_17',
 ];
 
 const KAKAO_PRICE_DISCOUNT_OFFICIAL_CHUNK_IDS = [
@@ -2644,6 +2695,52 @@ export class RAGSearchService {
         ? Array.from(new Set(shoppingSearchCreativeAnchors))
       : anchors.slice(0, intent.isSpecificProductGuidance ? 12 : 8);
 
+    if (usesShoppingDataIntent) {
+      const officialChunkResults = await this.searchKnownOfficialDocumentChunks(
+        NAVER_SHOPPING_DATA_OFFICIAL_CHUNK_IDS,
+        1,
+        intent,
+        'NAVER',
+        'naver_shopping_data_official_chunk',
+      );
+      const officialChunkCandidates = this.normalizeNaverProductStructurePriorityResults(
+        officialChunkResults,
+        keywords,
+        intent,
+        {
+          usesDisplayAdIntent,
+          usesVideoProductIntent,
+          usesShoppingSearchCreativeIntent,
+        },
+      );
+      if (officialChunkCandidates.length > 0) {
+        return officialChunkCandidates;
+      }
+    }
+
+    if (usesShoppingSearchCreativeIntent) {
+      const officialChunkResults = await this.searchKnownOfficialDocumentChunks(
+        NAVER_SHOPPING_SEARCH_CREATIVE_OFFICIAL_CHUNK_IDS,
+        1,
+        intent,
+        'NAVER',
+        'naver_shopping_search_creative_official_chunk',
+      );
+      const officialChunkCandidates = this.normalizeNaverProductStructurePriorityResults(
+        officialChunkResults,
+        keywords,
+        intent,
+        {
+          usesDisplayAdIntent,
+          usesVideoProductIntent,
+          usesShoppingSearchCreativeIntent,
+        },
+      );
+      if (officialChunkCandidates.length > 0) {
+        return officialChunkCandidates;
+      }
+    }
+
     if (usesDisplayAdIntent) {
       const officialChunkResults = await this.searchKnownOfficialDocumentChunks(
         NAVER_DISPLAY_AD_OFFICIAL_CHUNK_IDS,
@@ -3816,12 +3913,35 @@ export class RAGSearchService {
 
     const usesSpecificKakaoOllamaFastPath = intent.isSpecificProductGuidance;
     const requiresKakaoBizboardEvidence = this.requiresKakaoBizboardEvidence(intent);
+    const usesKakaoServiceProtectionAssetIntent = this.isKakaoServiceProtectionAssetIntent(intent);
     const hasRequiredKakaoFastPathEvidence = (candidate: SearchResult): boolean => {
       const evidenceText = this.buildCandidateEvidenceText(candidate.content, candidate.documentTitle, candidate.metadata);
       return this.hasKakaoBizboardDisplayExactSignal(evidenceText)
         && (!requiresKakaoBizboardEvidence || this.hasKakaoBizboardProductSignal(evidenceText));
     };
     if (usesSpecificKakaoOllamaFastPath) {
+      if (usesKakaoServiceProtectionAssetIntent) {
+        const serviceProtectionChunkResults = await this.searchKnownOfficialDocumentChunks(
+          KAKAO_SERVICE_PROTECTION_OFFICIAL_CHUNK_IDS,
+          1,
+          intent,
+          'KAKAO',
+          'kakao_service_protection_official_chunk',
+        );
+        const serviceProtectionCandidates = this.normalizeKakaoProductStructurePriorityResults(
+          serviceProtectionChunkResults,
+          keywords,
+          intent,
+        );
+        if (serviceProtectionCandidates.some(candidate => (
+          this.hasKakaoServiceProtectionPolicySignal(
+            this.buildCandidateEvidenceText(candidate.content, candidate.documentTitle, candidate.metadata),
+          )
+        ))) {
+          return serviceProtectionCandidates;
+        }
+      }
+
       const officialChunkResults = await this.searchKnownOfficialDocumentChunks(
         KAKAO_BIZBOARD_DISPLAY_OFFICIAL_CHUNK_IDS,
         2,
@@ -4602,7 +4722,9 @@ export class RAGSearchService {
   }
 
   private getKakaoFastPolicyOfficialChunkIds(intent: QueryIntent): string[] {
-    if (intent.vendors.length !== 1 || intent.vendors[0] !== 'KAKAO') return [];
+    const canUseKakaoPolicySnapshots = intent.vendors.length === 0
+      || (intent.vendors.length === 1 && intent.vendors[0] === 'KAKAO');
+    if (!canUseKakaoPolicySnapshots) return [];
     const queryText = this.normalizeSearchText([
       ...intent.keywords,
       ...intent.topics,
@@ -4616,21 +4738,70 @@ export class RAGSearchService {
     if (/오인|기만|속이|혼란|허위|과장|오해/.test(queryText)) {
       return KAKAO_USER_DECEPTION_OFFICIAL_CHUNK_IDS;
     }
+    if (/로고|디자인|서비스명|서비스|상표|저작물|모방|무단|사용/.test(queryText)) {
+      return KAKAO_SERVICE_PROTECTION_OFFICIAL_CHUNK_IDS;
+    }
+    if (/청소년|유해|미성년|연령|보호/.test(queryText)) {
+      return KAKAO_YOUTH_HARMFUL_OFFICIAL_CHUNK_IDS;
+    }
+    if (/성인|선정|음란|노출|19세|19금/.test(queryText)) {
+      return KAKAO_ADULT_CONTENT_OFFICIAL_CHUNK_IDS;
+    }
+    if (/혐오|차별|비하|증오|모욕|선동/.test(queryText)) {
+      return KAKAO_HATE_DISCRIMINATION_OFFICIAL_CHUNK_IDS;
+    }
+    if (/상표|초상권|저작권|권리|침해|무단|지식재산|저작물/.test(queryText)) {
+      return KAKAO_RIGHTS_INFRINGEMENT_OFFICIAL_CHUNK_IDS;
+    }
     if (/가격|할인|할인율|혜택|쿠폰|정가|판매가/.test(queryText)) {
       return KAKAO_PRICE_DISCOUNT_OFFICIAL_CHUNK_IDS;
     }
     if (/이벤트|경품|참여|프로모션|추첨/.test(queryText)) {
       return KAKAO_EVENT_MATERIAL_OFFICIAL_CHUNK_IDS;
     }
+    if (/심사|검수|검토|기준|등록\s*기준|준수사항|가이드/.test(queryText)) {
+      return KAKAO_REVIEW_STANDARDS_OFFICIAL_CHUNK_IDS;
+    }
 
     return [];
   }
 
+  private getMetaFastPolicyOfficialChunkIds(intent: QueryIntent): string[] {
+    if (intent.vendors.length !== 1 || intent.vendors[0] !== 'META') return [];
+    return META_VENDOR_POLICY_GENERAL_OFFICIAL_CHUNK_IDS;
+  }
+
+  private getGoogleFastPolicyOfficialChunkIds(intent: QueryIntent): string[] {
+    if (intent.vendors.length !== 1 || intent.vendors[0] !== 'GOOGLE') return [];
+    const queryText = this.normalizeSearchText([
+      ...intent.keywords,
+      ...intent.topics,
+      ...intent.adPolicyTerms,
+      ...intent.strictContextTerms,
+    ].join(' '));
+    return /정책|위반|금지|소재|심사|검토|광고|콘텐츠/.test(queryText)
+      ? GOOGLE_VENDOR_POLICY_GENERAL_OFFICIAL_CHUNK_IDS
+      : [];
+  }
+
+  private getFastPolicyOfficialChunkIdsForIntent(intent: QueryIntent): { vendor: VendorIntent; chunkIds: string[] } {
+    const vendor: VendorIntent = intent.vendors.length === 1 ? intent.vendors[0] : 'KAKAO';
+    switch (vendor) {
+      case 'META':
+        return { vendor, chunkIds: this.getMetaFastPolicyOfficialChunkIds(intent) };
+      case 'GOOGLE':
+        return { vendor, chunkIds: this.getGoogleFastPolicyOfficialChunkIds(intent) };
+      case 'KAKAO':
+      case 'NAVER':
+      default:
+        return { vendor, chunkIds: this.getKakaoFastPolicyOfficialChunkIds(intent) };
+    }
+  }
+
   private async searchFastPolicySourceGuidedOfficialCandidates(intent: QueryIntent): Promise<SearchResult[]> {
-    const chunkIds = this.getKakaoFastPolicyOfficialChunkIds(intent);
+    const { vendor, chunkIds } = this.getFastPolicyOfficialChunkIdsForIntent(intent);
     if (chunkIds.length === 0) return [];
 
-    const vendor: VendorIntent = intent.vendors.length === 1 ? intent.vendors[0] : 'KAKAO';
     const officialChunkResults = await this.searchKnownOfficialDocumentChunks(
       chunkIds,
       Math.min(chunkIds.length, 4),
@@ -4714,6 +4885,10 @@ export class RAGSearchService {
         return candidate;
       })
       .filter((candidate: SearchResult | null): candidate is SearchResult => candidate !== null);
+
+    if (vendor === 'META' || vendor === 'GOOGLE') {
+      return candidates;
+    }
 
     return this.selectFastPolicySourceGuidedPriorityCandidates(candidates, intent);
   }
@@ -4988,9 +5163,15 @@ export class RAGSearchService {
   private isKakaoServiceProtectionPolicyIntent(intent: QueryIntent): boolean {
     if (!intent.vendors.includes('KAKAO')) return false;
     if (intent.isSpecificProductGuidance) return false;
+    return this.isKakaoServiceProtectionAssetIntent(intent);
+  }
+
+  private isKakaoServiceProtectionAssetIntent(intent: QueryIntent): boolean {
+    if (!intent.vendors.includes('KAKAO')) return false;
     const queryText = this.normalizeSearchText([
       ...intent.keywords,
       ...intent.adPolicyTerms,
+      ...intent.strictProductTerms,
       ...intent.strictContextTerms,
     ].join(' '));
     const hasServiceProtectionAsset = /로고|디자인|서비스명|상표|저작물|이미지|브랜드|명칭/.test(queryText);
@@ -5463,6 +5644,16 @@ export class RAGSearchService {
       const uniqueChunkIds = Array.from(new Set(chunkIds.map(id => id.trim()).filter(Boolean)));
       if (uniqueChunkIds.length === 0) return [];
       const fetchLimit = Math.min(Math.max(limit, 1), uniqueChunkIds.length);
+      const snapshotRows = getCompassOfficialDocumentChunkSnapshotRows(uniqueChunkIds, fetchLimit);
+      if (snapshotRows.length >= fetchLimit) {
+        return snapshotRows
+          .slice(0, fetchLimit)
+          .map((row) => ({
+            row,
+            corpus: 'document_chunks' as RetrievalCorpus,
+            anchor,
+          }));
+      }
       const cacheKey = this.buildSupabaseRowsCacheKey('known_official_document_chunks', {
         tableName: 'document_chunks',
         vendor,
