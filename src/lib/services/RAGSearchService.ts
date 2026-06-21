@@ -144,6 +144,15 @@ const META_CATALOG_OFFICIAL_CHUNK_IDS = [
   'doc_1773886203371_8rlmmdv_chunk_2',
 ];
 
+const NAVER_VIDEO_OFFICIAL_CHUNK_IDS = [
+  'doc_1764895606613_llkwwsf_doc_0',
+];
+
+const KAKAO_BIZBOARD_DISPLAY_OFFICIAL_CHUNK_IDS = [
+  'doc_1774488483929_bigcm1d_chunk_2',
+  'doc_1774488184369_r97sach_chunk_0',
+];
+
 export function getCompassSupabaseRowsCacheStatus() {
   const now = Date.now();
   let activeEntries = 0;
@@ -2545,6 +2554,30 @@ export class RAGSearchService {
       : usesShoppingSearchCreativeIntent
         ? Array.from(new Set(shoppingSearchCreativeAnchors))
       : anchors.slice(0, intent.isSpecificProductGuidance ? 12 : 8);
+
+    if (usesVideoProductIntent) {
+      const officialChunkResults = await this.searchKnownOfficialDocumentChunks(
+        NAVER_VIDEO_OFFICIAL_CHUNK_IDS,
+        1,
+        intent,
+        'NAVER',
+        'naver_video_official_chunk',
+      );
+      const officialChunkCandidates = this.normalizeNaverProductStructurePriorityResults(
+        officialChunkResults,
+        keywords,
+        intent,
+        {
+          usesDisplayAdIntent,
+          usesVideoProductIntent,
+          usesShoppingSearchCreativeIntent,
+        },
+      );
+      if (officialChunkCandidates.length > 0) {
+        return officialChunkCandidates;
+      }
+    }
+
     const results: Array<{ row: any; corpus: RetrievalCorpus; anchor: string }> = [];
     if (usesShoppingDataIntent) {
       const [documentKeywordResults, ollamaKeywordResults, ollamaMetadataResults] = await Promise.all([
@@ -2577,6 +2610,34 @@ export class RAGSearchService {
         ...ollamaMetadataResults.map((result) => ({ ...result, anchor: 'naver_product_structure_priority_metadata' })),
       );
     }
+
+    return this.normalizeNaverProductStructurePriorityResults(
+      results,
+      keywords,
+      intent,
+      {
+        usesDisplayAdIntent,
+        usesVideoProductIntent,
+        usesShoppingSearchCreativeIntent,
+      },
+    );
+  }
+
+  private normalizeNaverProductStructurePriorityResults(
+    results: Array<{ row: any; corpus: RetrievalCorpus; anchor: string }>,
+    keywords: string[],
+    intent: QueryIntent,
+    options: {
+      usesDisplayAdIntent: boolean;
+      usesVideoProductIntent: boolean;
+      usesShoppingSearchCreativeIntent: boolean;
+    },
+  ): SearchResult[] {
+    const {
+      usesDisplayAdIntent,
+      usesVideoProductIntent,
+      usesShoppingSearchCreativeIntent,
+    } = options;
 
     return results
       .map((result) => {
@@ -3550,6 +3611,22 @@ export class RAGSearchService {
         && (!requiresKakaoBizboardEvidence || this.hasKakaoBizboardProductSignal(evidenceText));
     };
     if (usesSpecificKakaoOllamaFastPath) {
+      const officialChunkResults = await this.searchKnownOfficialDocumentChunks(
+        KAKAO_BIZBOARD_DISPLAY_OFFICIAL_CHUNK_IDS,
+        2,
+        intent,
+        'KAKAO',
+        'kakao_product_official_chunk',
+      );
+      const officialChunkCandidates = this.normalizeKakaoProductStructurePriorityResults(
+        officialChunkResults,
+        keywords,
+        intent,
+      );
+      if (officialChunkCandidates.some(hasRequiredKakaoFastPathEvidence)) {
+        return officialChunkCandidates;
+      }
+
       const [documentFastResults, ollamaResults] = await Promise.all([
         this.searchKeywordTable('document_chunks', specificKakaoFastPathAnchors, 8, intent),
         this.searchKeywordTable('ollama_document_chunks', specificKakaoFastPathAnchors, 5, intent, 'KAKAO'),
