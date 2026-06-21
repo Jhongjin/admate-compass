@@ -4507,6 +4507,12 @@ export class RAGSearchService {
       ...intent.adPolicyTerms,
       ...intent.strictContextTerms,
     ].join(' '));
+    if (
+      /사이즈|크기|파일|형식|이미지|동영상|비율|해상도|사양|스펙|규격|카루셀|캐러셀|carousel/.test(queryText)
+      && !/정책|위반|금지|심사|검수|검토|반려|승인|가능\s*여부/.test(queryText)
+    ) {
+      return null;
+    }
 
     if (this.isKakaoServiceProtectionPolicyIntent(intent)) {
       return /카카오|로고|디자인|서비스명|서비스|상표|저작물|모방|침해|무단|사용\s*불가|집행\s*불가/i;
@@ -4522,6 +4528,27 @@ export class RAGSearchService {
     }
     if (/이벤트|경품|참여|프로모션|추첨/.test(queryText)) {
       return /이벤트|경품|참여|프로모션|추첨|당첨|기간|조건/i;
+    }
+    if (/청소년|유해/.test(queryText)) {
+      return /청소년|유해|미성년|연령|성인|보호/i;
+    }
+    if (/혐오|차별|비하|증오|모욕/.test(queryText)) {
+      return /혐오|차별|비하|증오|모욕|선동/i;
+    }
+    if (/성인|선정|음란|노출/.test(queryText)) {
+      return /성인|선정|음란|노출|유해|청소년|19세|19금/i;
+    }
+    if (/상표|초상권|저작권|권리|침해/.test(queryText)) {
+      return /상표|초상권|저작권|권리|침해|무단|지식재산|저작물/i;
+    }
+    if (/심사|검수|검토|등록\s*기준|광고\s*등록\s*기준|준수사항|가이드|기준/.test(queryText)) {
+      return /심사|검수|검토|기준|등록\s*기준|준수사항|가이드|관리\s*정책/i;
+    }
+    if (
+      intent.vendors.length === 1
+      && /정책|위반|금지|소재|판단|심사|검토|검수|광고/.test(queryText)
+    ) {
+      return /광고|정책|위반|금지|소재|심사|검토|가이드|기준/i;
     }
 
     return null;

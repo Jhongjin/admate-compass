@@ -4122,14 +4122,26 @@ type FastPolicySourceGuidedAnswerFamily =
   | 'user_deception'
   | 'event_material'
   | 'kakao_restricted_industry'
-  | 'kakao_service_protection';
+  | 'kakao_service_protection'
+  | 'youth_harmful'
+  | 'hate_discrimination'
+  | 'adult_content'
+  | 'rights_infringement'
+  | 'review_standards'
+  | 'vendor_policy_general';
 
 type FastPolicySourceGuidedAnswerFallback =
   | 'policy_source_guided_price_discount'
   | 'policy_source_guided_user_deception'
   | 'policy_source_guided_event_material'
   | 'policy_source_guided_kakao_restricted_industry'
-  | 'policy_source_guided_kakao_service_protection';
+  | 'policy_source_guided_kakao_service_protection'
+  | 'policy_source_guided_youth_harmful'
+  | 'policy_source_guided_hate_discrimination'
+  | 'policy_source_guided_adult_content'
+  | 'policy_source_guided_rights_infringement'
+  | 'policy_source_guided_review_standards'
+  | 'policy_source_guided_vendor_policy_general';
 
 type FastNaverVideoProductAnswerFallback = 'naver_video_product_structured';
 
@@ -4791,6 +4803,10 @@ function detectFastPolicySourceGuidedAnswerFamily(
     ...intent.adPolicyTerms,
     ...intent.strictContextTerms,
   ].join(' '));
+  const originalText = normalizeEvidenceText(message);
+  const looksLikeCreativeSpecQuestion = /사이즈|크기|파일|형식|이미지|동영상|비율|해상도|사양|스펙|규격|카루셀|캐러셀|carousel/.test(originalText);
+  const hasExplicitPolicyQuestionSignal = /정책|위반|금지|심사|검수|검토|반려|승인|가능\s*여부/.test(originalText);
+  if (looksLikeCreativeSpecQuestion && !hasExplicitPolicyQuestionSignal) return null;
 
   if (
     intent.vendors.length === 1
@@ -4813,6 +4829,24 @@ function detectFastPolicySourceGuidedAnswerFamily(
   if (/오인|기만|속이|혼란|허위|과장|오해/.test(queryText)) return 'user_deception';
   if (/가격|할인|할인율|혜택|쿠폰|정가|판매가/.test(queryText)) return 'price_discount';
   if (/이벤트|경품|참여|프로모션|추첨/.test(queryText)) return 'event_material';
+  if (/청소년|유해/.test(queryText)) return 'youth_harmful';
+  if (/혐오|차별|비하|증오|모욕/.test(queryText)) return 'hate_discrimination';
+  if (/성인|선정|음란|노출/.test(queryText)) return 'adult_content';
+  if (/상표|초상권|저작권|권리|침해/.test(queryText)) return 'rights_infringement';
+  if (
+    intent.vendors.length === 1
+    && /정책|위반|금지|소재|판단/.test(originalText)
+    && !/심사\s*기준|등록\s*기준|광고\s*등록\s*기준|준수사항|가이드/.test(originalText)
+  ) {
+    return 'vendor_policy_general';
+  }
+  if (/심사|검수|검토|등록\s*기준|광고\s*등록\s*기준|준수사항|가이드|기준/.test(queryText)) return 'review_standards';
+  if (
+    intent.vendors.length === 1
+    && /정책|위반|금지|소재|판단|심사|검토|검수|광고/.test(queryText)
+  ) {
+    return 'vendor_policy_general';
+  }
 
   return null;
 }
@@ -4829,6 +4863,18 @@ function getFastPolicySourcePattern(family: FastPolicySourceGuidedAnswerFamily):
       return /카카오|업종|제한\s*업종|업종\s*제한|광고\s*가능\s*업종|등록\s*불가|집행\s*불가|금지|제한|허용|심사|가이드/i;
     case 'kakao_service_protection':
       return /카카오|로고|디자인|서비스명|서비스|상표|저작물|모방|침해|무단|사용\s*불가|집행\s*불가/i;
+    case 'youth_harmful':
+      return /청소년|유해|미성년|연령|성인|보호/i;
+    case 'hate_discrimination':
+      return /혐오|차별|비하|증오|모욕|선동/i;
+    case 'adult_content':
+      return /성인|선정|음란|노출|유해|청소년|19세|19금/i;
+    case 'rights_infringement':
+      return /상표|초상권|저작권|권리|침해|무단|지식재산|저작물/i;
+    case 'review_standards':
+      return /심사|검수|검토|기준|등록\s*기준|준수사항|가이드|관리\s*정책/i;
+    case 'vendor_policy_general':
+      return /광고|정책|위반|금지|소재|심사|검토|가이드|기준/i;
   }
 }
 
@@ -4846,15 +4892,31 @@ function getFastPolicyAnswerFallback(
       return 'policy_source_guided_kakao_restricted_industry';
     case 'kakao_service_protection':
       return 'policy_source_guided_kakao_service_protection';
+    case 'youth_harmful':
+      return 'policy_source_guided_youth_harmful';
+    case 'hate_discrimination':
+      return 'policy_source_guided_hate_discrimination';
+    case 'adult_content':
+      return 'policy_source_guided_adult_content';
+    case 'rights_infringement':
+      return 'policy_source_guided_rights_infringement';
+    case 'review_standards':
+      return 'policy_source_guided_review_standards';
+    case 'vendor_policy_general':
+      return 'policy_source_guided_vendor_policy_general';
   }
 }
 
 function buildFastPolicyAnswerText(
   family: FastPolicySourceGuidedAnswerFamily,
   sources: ReturnType<typeof buildVerifiedSources>,
+  intent: QueryIntent,
 ) {
   const cite = (index: number) => `[S${Math.min(index, Math.max(0, sources.length - 1)) + 1}]`;
   const citations = sources.map((_, index) => `[S${index + 1}]`).join(', ');
+  const vendorLabel = intent.vendors.length === 1
+    ? (VENDOR_LABELS[intent.vendors[0]] || intent.vendors[0])
+    : '각 매체';
 
   switch (family) {
     case 'price_discount':
@@ -4922,6 +4984,84 @@ function buildFastPolicyAnswerText(
         '',
         `근거: ${citations}`,
       ].join('\n');
+    case 'youth_harmful':
+      return [
+        '검증된 정책/가이드 근거 기준으로만 보면, 청소년 유해 콘텐츠는 광고 집행 가능 여부를 보수적으로 확인해야 합니다.',
+        '',
+        '**판단 기준**',
+        `- 청소년에게 유해하거나 연령 보호가 필요한 표현, 상품, 랜딩 요소는 광고 심사에서 제한 또는 반려될 수 있습니다 ${cite(0)}.`,
+        `- 문구와 이미지만이 아니라 연결되는 페이지에서 청소년 유해 요소가 드러나는지도 함께 확인해야 합니다 ${cite(1)}.`,
+        '',
+        '**실무 확인**',
+        `- 출처에 없는 예외를 추정하지 말고 실제 소재, 업종, 랜딩을 원문 기준과 대조하세요 ${cite(0)}.`,
+        '',
+        `근거: ${citations}`,
+      ].join('\n');
+    case 'hate_discrimination':
+      return [
+        '검증된 정책/가이드 근거 기준으로만 보면, 혐오표현이나 차별 표현은 광고 집행 가능 여부를 보수적으로 봐야 합니다.',
+        '',
+        '**판단 기준**',
+        `- 특정 집단을 혐오, 차별, 비하하거나 공격하는 표현은 광고 정책상 제한 또는 반려 가능성이 있습니다 ${cite(0)}.`,
+        `- 풍자나 비교 표현처럼 보이더라도 사용자가 차별적 메시지로 받아들일 수 있는지 소재와 랜딩을 함께 확인해야 합니다 ${cite(1)}.`,
+        '',
+        '**실무 확인**',
+        `- 출처에 없는 맥락을 보태 승인 가능성을 단정하지 말고, 원문 정책과 실제 표현을 기준으로 검토하세요 ${cite(0)}.`,
+        '',
+        `근거: ${citations}`,
+      ].join('\n');
+    case 'adult_content':
+      return [
+        '검증된 정책/가이드 근거 기준으로만 보면, 성인 콘텐츠나 선정적인 표현은 광고 심사에서 제한될 가능성을 먼저 확인해야 합니다.',
+        '',
+        '**판단 기준**',
+        `- 성인, 선정, 음란, 노출처럼 청소년 유해 또는 부적절 표현으로 볼 수 있는 요소는 광고 정책상 제한 또는 반려 사유가 될 수 있습니다 ${cite(0)}.`,
+        `- 소재 문구, 이미지, 영상, 랜딩 페이지가 함께 심사 맥락이 되므로 표현 수위와 실제 연결 페이지를 같이 점검해야 합니다 ${cite(1)}.`,
+        '',
+        '**실무 확인**',
+        `- 업종별 허용 예외나 연령 타게팅 가능성을 출처 없이 단정하지 말고 원문 정책 기준으로 확인하세요 ${cite(0)}.`,
+        '',
+        `근거: ${citations}`,
+      ].join('\n');
+    case 'rights_infringement':
+      return [
+        '검증된 정책/가이드 근거 기준으로만 보면, 타인의 상표, 초상권, 저작권 같은 권리를 침해할 수 있는 광고는 집행 가능성을 보수적으로 봐야 합니다.',
+        '',
+        '**판단 기준**',
+        `- 상표, 초상권, 저작권, 지식재산 등 권리 침해 소지가 있는 표현이나 이미지는 광고 제한 또는 반려 사유가 될 수 있습니다 ${cite(0)}.`,
+        `- 권리자 허가, 사용 범위, 랜딩의 실제 표시가 확인되지 않으면 소재만 보고 가능하다고 단정하기 어렵습니다 ${cite(1)}.`,
+        '',
+        '**실무 확인**',
+        `- 출처에 없는 사용 허가나 예외를 보강하지 말고, 실제 권리 관계와 원문 정책을 함께 확인하세요 ${cite(0)}.`,
+        '',
+        `근거: ${citations}`,
+      ].join('\n');
+    case 'review_standards':
+      return [
+        '검증된 정책/가이드 근거 기준으로만 보면, 광고 심사 기준은 소재 표현, 업종, 랜딩, 계정 설정을 함께 놓고 확인해야 합니다.',
+        '',
+        '**판단 기준**',
+        `- 광고 심사나 등록 기준은 단일 문구만이 아니라 소재와 랜딩이 원문 기준을 충족하는지 보는 흐름으로 접근해야 합니다 ${cite(0)}.`,
+        `- 집행 가능 여부는 업종 제한, 금지 표현, 필수 고지, 증빙 조건이 함께 걸릴 수 있으므로 확인 범위를 나눠 봐야 합니다 ${cite(1)}.`,
+        '',
+        '**실무 확인**',
+        `- 출처에 없는 자동 승인 가능성은 단정하지 말고 실제 소재·랜딩·업종을 원문 심사 기준과 대조하세요 ${cite(0)}.`,
+        '',
+        `근거: ${citations}`,
+      ].join('\n');
+    case 'vendor_policy_general':
+      return [
+        `검증된 ${vendorLabel} 광고 정책 근거 기준으로만 보면, 정책 위반 소재 판단은 원문 정책과 실제 광고·랜딩 맥락을 함께 확인해야 합니다.`,
+        '',
+        '**판단 기준**',
+        `- ${vendorLabel} 광고 정책에서 금지하거나 제한하는 표현, 업종, 소재 요소가 있는지 먼저 확인해야 합니다 ${cite(0)}.`,
+        `- 정책 위반 여부는 광고 문구만이 아니라 이미지, 동영상, 랜딩 페이지, 고지 조건까지 함께 대조하는 편이 안전합니다 ${cite(1)}.`,
+        '',
+        '**실무 확인**',
+        `- 출처에 없는 예외나 계정별 승인 가능성은 단정하지 말고 ${vendorLabel} 원문 정책과 실제 소재 기준으로 최종 확인하세요 ${cite(0)}.`,
+        '',
+        `근거: ${citations}`,
+      ].join('\n');
   }
 }
 
@@ -4969,7 +5109,7 @@ function buildFastPolicySourceGuidedAnswer(
   if (candidateSources.length === 0) return null;
 
   return {
-    answer: buildFastPolicyAnswerText(family, candidateSources),
+    answer: buildFastPolicyAnswerText(family, candidateSources, intent),
     sources: candidateSources,
     model: `compass-answer-fast-policy-source-guided-${family.replace(/_/g, '-')}`,
     showContactOption: true,

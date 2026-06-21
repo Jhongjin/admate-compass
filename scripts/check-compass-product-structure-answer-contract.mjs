@@ -200,6 +200,12 @@ for (const snippet of [
   "'policy_source_guided_event_material'",
   "'policy_source_guided_kakao_restricted_industry'",
   "'policy_source_guided_kakao_service_protection'",
+  "'policy_source_guided_youth_harmful'",
+  "'policy_source_guided_hate_discrimination'",
+  "'policy_source_guided_adult_content'",
+  "'policy_source_guided_rights_infringement'",
+  "'policy_source_guided_review_standards'",
+  "'policy_source_guided_vendor_policy_general'",
   "'kakao_product_structured'",
   "'kakao_product_scope_rescue'",
   "'naver_video_product_structured'",
@@ -1356,7 +1362,7 @@ if (!/const fastStructuredSpecificProductAnswer = buildFastStructuredSpecificPro
   fail('structured specific product fast answer must run before grounded LLM synthesis and expose zero answer-generation diagnostics');
 }
 
-if (!/function buildFastPolicySourceGuidedAnswer\([\s\S]*COMPASS_DISABLE_FAST_POLICY_SOURCE_GUIDED_ANSWERS[\s\S]*isBroadProductStructureLlmIntent \|\| intent\.isComparative[\s\S]*detectFastPolicySourceGuidedAnswerFamily\(message, intent\)[\s\S]*getFallbackSourceText\(source\)[\s\S]*if \(!pattern\.test\(sourceText\)\) return false;[\s\S]*sourceHasBlockingExtractionNoise\(source\)[\s\S]*buildFastPolicyAnswerText\(family, candidateSources\)/.test(answerHandler)) {
+if (!/function buildFastPolicySourceGuidedAnswer\([\s\S]*COMPASS_DISABLE_FAST_POLICY_SOURCE_GUIDED_ANSWERS[\s\S]*isBroadProductStructureLlmIntent \|\| intent\.isComparative[\s\S]*detectFastPolicySourceGuidedAnswerFamily\(message, intent\)[\s\S]*getFallbackSourceText\(source\)[\s\S]*if \(!pattern\.test\(sourceText\)\) return false;[\s\S]*sourceHasBlockingExtractionNoise\(source\)[\s\S]*buildFastPolicyAnswerText\(family, candidateSources, intent\)/.test(answerHandler)) {
   fail('fast policy source-guided answers must stay narrowly gated and require matching verified source evidence');
 }
 
