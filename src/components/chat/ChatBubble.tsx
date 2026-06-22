@@ -1,7 +1,7 @@
 "use client";
 
 import { useId, useState } from "react";
-import { ThumbsUp, ThumbsDown, Calendar, FileText, User, Download, ExternalLink, Clock, Activity, CheckCircle2, ShieldCheck, ChevronDown, ChevronUp, Mail, Sparkles } from "lucide-react";
+import { ThumbsUp, ThumbsDown, Calendar, FileText, User, Download, ExternalLink, Clock, Activity, CheckCircle2, ShieldCheck, ChevronDown, ChevronUp, Mail, Sparkles, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
@@ -88,6 +88,7 @@ export default function ChatBubble({
   const retrievalLimited = model === 'compass-answer-retrieval-limited';
   const hasVerifiedSources = sources.length > 0 && !noDataFound;
   const [showSources, setShowSources] = useState(generationLimited && hasVerifiedSources);
+  const [copyState, setCopyState] = useState<"idle" | "copied">("idle");
   const sourcePanelId = useId();
   const confidenceValue = typeof confidence === 'number' ? Math.max(0, Math.min(100, Math.round(confidence))) : undefined;
 
@@ -184,6 +185,41 @@ export default function ChatBubble({
     }
   };
 
+  const handleCopyAnswer = async () => {
+    const answerText = content.trimEnd();
+
+    if (!answerText) return;
+
+    const markCopied = () => {
+      setCopyState("copied");
+      window.setTimeout(() => setCopyState("idle"), 1600);
+    };
+
+    try {
+      await navigator.clipboard.writeText(answerText);
+      markCopied();
+      return;
+    } catch (error) {
+      console.error('답변 복사 실패:', error);
+    }
+
+    const textarea = document.createElement('textarea');
+    textarea.value = answerText;
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'fixed';
+    textarea.style.left = '-9999px';
+    textarea.style.top = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+
+    try {
+      document.execCommand('copy');
+      markCopied();
+    } finally {
+      document.body.removeChild(textarea);
+    }
+  };
+
   return (
     <div className={`flex ${isUser ? "justify-end" : "justify-start"} mb-3 sm:mb-4`}>
       <div className={`${isUser ? "order-2 max-w-[92%]" : "order-1 max-w-[96%]"} sm:max-w-3xl`}>
@@ -214,40 +250,60 @@ export default function ChatBubble({
               
               <div className="flex-1 min-w-0">
                 <div className="rounded-lg border border-[#D6D8CD] bg-white p-3 text-[#111713] shadow-sm sm:p-4">
-                  <div className="mb-3 flex flex-wrap items-center gap-2 border-b border-[#EEF0E8] pb-3">
-                    <Badge variant="outline" className="rounded-md border-[#C6D9CB] bg-[#EDF7EF] px-2 py-0.5 text-[11px] font-medium text-[#1F7A4D]">
-                      Compass 답변
-                    </Badge>
-                    {hasVerifiedSources && (
-                      <Badge variant="outline" className="rounded-md border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
-                        출처 연결
+                  <div className="mb-3 flex flex-wrap items-center justify-between gap-2 border-b border-[#EEF0E8] pb-3">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant="outline" className="rounded-md border-[#C6D9CB] bg-[#EDF7EF] px-2 py-0.5 text-[11px] font-medium text-[#1F7A4D]">
+                        Compass 답변
                       </Badge>
-                    )}
-                    {reviewPipeline && (
-                      <Badge variant="outline" className="rounded-md border-[#C6D9CB] bg-[#FBFBF7] px-2 py-0.5 text-[11px] font-medium text-[#34423A]">
-                        <Sparkles className="mr-1 h-3 w-3 text-[#1F7A4D]" />
-                        {reviewPipeline.label}
-                      </Badge>
-                    )}
-                    {generationLimited && hasVerifiedSources && (
-                      <Badge variant="outline" className="rounded-md border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
-                        답변 생성 제한
-                      </Badge>
-                    )}
-                    {retrievalLimited && (
-                      <Badge variant="outline" className="rounded-md border-[#E9D59B] bg-[#FFF8E6] px-2 py-0.5 text-[11px] font-medium text-[#8A6418]">
-                        출처 검색 제한
-                      </Badge>
-                    )}
-                    {retrievalChannelTimedOut && hasVerifiedSources && (
-                      <Badge variant="outline" className="rounded-md border-[#E9D59B] bg-[#FFF8E6] px-2 py-0.5 text-[11px] font-medium text-[#8A6418]">
-                        일부 검색 제한
-                      </Badge>
-                    )}
-                    {noDataFound && (
-                      <Badge variant="outline" className="rounded-md border-[#E9D59B] bg-[#FFF8E6] px-2 py-0.5 text-[11px] font-medium text-[#8A6418]">
-                        출처 없음
-                      </Badge>
+                      {hasVerifiedSources && (
+                        <Badge variant="outline" className="rounded-md border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
+                          출처 연결
+                        </Badge>
+                      )}
+                      {reviewPipeline && (
+                        <Badge variant="outline" className="rounded-md border-[#C6D9CB] bg-[#FBFBF7] px-2 py-0.5 text-[11px] font-medium text-[#34423A]">
+                          <Sparkles className="mr-1 h-3 w-3 text-[#1F7A4D]" />
+                          {reviewPipeline.label}
+                        </Badge>
+                      )}
+                      {generationLimited && hasVerifiedSources && (
+                        <Badge variant="outline" className="rounded-md border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+                          답변 생성 제한
+                        </Badge>
+                      )}
+                      {retrievalLimited && (
+                        <Badge variant="outline" className="rounded-md border-[#E9D59B] bg-[#FFF8E6] px-2 py-0.5 text-[11px] font-medium text-[#8A6418]">
+                          출처 검색 제한
+                        </Badge>
+                      )}
+                      {retrievalChannelTimedOut && hasVerifiedSources && (
+                        <Badge variant="outline" className="rounded-md border-[#E9D59B] bg-[#FFF8E6] px-2 py-0.5 text-[11px] font-medium text-[#8A6418]">
+                          일부 검색 제한
+                        </Badge>
+                      )}
+                      {noDataFound && (
+                        <Badge variant="outline" className="rounded-md border-[#E9D59B] bg-[#FFF8E6] px-2 py-0.5 text-[11px] font-medium text-[#8A6418]">
+                          출처 없음
+                        </Badge>
+                      )}
+                    </div>
+                    {!isStreaming && content.trim() && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        onClick={handleCopyAnswer}
+                        className="h-7 rounded-md border border-[#D8DCCF] bg-white px-2 text-xs font-medium text-[#5F6C62] transition-colors hover:bg-[#EDF7EF] hover:text-[#1F7A4D]"
+                        title="답변 전체 원문 복사"
+                        aria-label="답변 전체 원문 복사"
+                      >
+                        {copyState === "copied" ? (
+                          <CheckCircle2 className="mr-1 h-3.5 w-3.5 text-[#1F7A4D]" />
+                        ) : (
+                          <Copy className="mr-1 h-3.5 w-3.5" />
+                        )}
+                        <span className="hidden sm:inline">{copyState === "copied" ? "복사됨" : "답변 복사"}</span>
+                      </Button>
                     )}
                   </div>
 
