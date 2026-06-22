@@ -115,7 +115,7 @@ const COMPASS_ANSWER_RESPONSE_CACHE_TTL_MS = Math.min(
   900000,
 );
 const COMPASS_ANSWER_RESPONSE_CACHE_MAX_ENTRIES = 64;
-const COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v26-lead-operating-intent-packs';
+const COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v30-lead-collection-kpi-guard';
 const compassAnswerResponseCache = new Map<string, CompassAnswerResponseCacheEntry>();
 const compassAnswerRuntimeMetrics = {
   startedAt: Date.now(),
@@ -547,7 +547,7 @@ function getResultVendor(result: SearchResult): string {
 
 const DIAGNOSTIC_VENDOR_PATTERNS: Record<VendorIntent, RegExp> = {
   META: /meta|facebook|페이스북|instagram|인스타그램|릴스|reels|advantage\+|어드밴티지|메타\s*픽셀|fb[_\s-]?ads/i,
-  KAKAO: /kakao|카카오|카카오톡|톡채널|비즈보드|모먼트|카카오모먼트|상품\s*가이드|상품가이드/i,
+  KAKAO: /kakao|카카오|카카오톡|톡채널|비즈보드|모먼트|카카오모먼트/i,
   NAVER: /naver|네이버|검색광고|쇼핑검색|파워링크|브랜드검색|쇼핑블록|쇼핑파트너센터|상품\s*db|db\s*url|가격비교|사이트검색광고|네이버\s*da|네이버da|홈피드|스마트채널|타임보드|롤링보드|성과형\s*디스플레이|디지털\s*옥외광고/i,
   GOOGLE: /google|구글|youtube|유튜브|gdn|google ads|구글\s*애즈|구글\s*광고|pmax|performance\s*max/i,
 };
@@ -1109,7 +1109,7 @@ function isLeadOperatingQuestion(message: string): boolean {
 
 function isLeadKpiFrameworkQuestion(message: string): boolean {
   const normalized = normalizeProductIntentText(message);
-  const hasKpiTerm = /kpi|cpl|유효\s*리드|mql|sql|계약률|계약\s*전환|상담\s*연결|품질\s*관리|최적화|운영\s*프레임워크|성과\s*보고|리드\s*수/.test(normalized);
+  const hasKpiTerm = /kpi|cpl|유효\s*리드|mql|sql|계약률|계약\s*전환|상담\s*연결|품질\s*관리|최적화|운영\s*프레임워크|성과\s*보고|리드\s*(수량|건수|개수)|리드\s*수(?!집)/.test(normalized);
   return hasKpiTerm && /리드|lead|잠재\s*고객/.test(normalized);
 }
 
@@ -1163,6 +1163,13 @@ function isProductCatalogOverviewQuestion(message: string): boolean {
     return false;
   }
 
+  if (
+    isProductSelectionQuestion(message)
+    && /광고\s*상품|광고상품|상품\s*(종류|유형|목록|구조|군)|유형별|상품별/.test(normalized)
+  ) {
+    return true;
+  }
+
   if (!asksWholeCatalog && hasSpecificProductActionOrPolicySignalQuestion(message)) {
     return false;
   }
@@ -1176,15 +1183,49 @@ function isProductCatalogOverviewQuestion(message: string): boolean {
   );
 }
 
+function getStrictExplicitVendorMention(message: string): VendorIntent | null {
+  const normalized = normalizeProductIntentText(message);
+  const matches: VendorIntent[] = [];
+
+  if (/meta|메타|facebook|페이스북|instagram|인스타그램/.test(normalized)) matches.push('META');
+  if (/google|구글|youtube|유튜브|google\s*ads|구글\s*애즈|pmax|performance\s*max/.test(normalized)) matches.push('GOOGLE');
+  if (/naver|네이버/.test(normalized)) matches.push('NAVER');
+  if (/kakao|카카오|카카오톡|톡채널|비즈보드|카카오모먼트/.test(normalized)) matches.push('KAKAO');
+
+  return matches.length === 1 ? matches[0] : null;
+}
+
+function getBroadProductDeterministicIntent(message: string, intent: QueryIntent): QueryIntent | null {
+  const explicitVendor = getStrictExplicitVendorMention(message);
+  const canScopeToExplicitVendor = Boolean(
+    explicitVendor
+    && (intent.vendors.includes(explicitVendor) || intent.topics.includes('product_structure')),
+  );
+  const scopedIntent: QueryIntent = canScopeToExplicitVendor
+    ? {
+      ...intent,
+      vendors: [explicitVendor as VendorIntent],
+      isComparative: false,
+      requiresVendorCoverage: false,
+      queryType: 'single-vendor',
+    }
+    : intent;
+
+  if (isBroadProductStructureAnswerIntent(message, scopedIntent) || isProductCatalogOverviewQuestion(message)) {
+    return scopedIntent;
+  }
+
+  return null;
+}
+
 function isBroadProductStructureAnswerIntent(message: string, intent: QueryIntent): boolean {
   if (!intent.topics.includes('product_structure')) return false;
   if (isBroadMetaProductPlanningQuestion(message, intent)) return true;
   if (intent.vendors.length !== 1 || intent.isComparative) return false;
-  if (intent.isSpecificProductGuidance && !isExplicitWholeProductCatalogQuestion(message)) return false;
-  if (hasNamedSpecificProductQuestion(message) && !isExplicitWholeProductCatalogQuestion(message)) return false;
-
   const explicitCatalogOverview = isProductCatalogOverviewQuestion(message);
   if (explicitCatalogOverview) return true;
+  if (intent.isSpecificProductGuidance && !isExplicitWholeProductCatalogQuestion(message)) return false;
+  if (hasNamedSpecificProductQuestion(message) && !isExplicitWholeProductCatalogQuestion(message)) return false;
 
   return intent.isProductStructureOverview && !hasNamedSpecificProductQuestion(message);
 }
@@ -6701,11 +6742,12 @@ function buildDeterministicBroadProductAnswer(
   intent: QueryIntent,
   sources: ReturnType<typeof buildVerifiedSources>,
 ): DeterministicProductAnswer | null {
-  if (!(isBroadProductStructureAnswerIntent(message, intent) || isProductCatalogOverviewQuestion(message)) || sources.length === 0) {
+  const scopedIntent = getBroadProductDeterministicIntent(message, intent);
+  if (!scopedIntent) {
     return null;
   }
 
-  const family = detectProductAnswerFamily(message, intent);
+  const family = detectProductAnswerFamily(message, scopedIntent);
   if (family === 'meta_overview') {
     return buildMetaProductPlanningMatrixAnswer(sources);
   }
@@ -9773,6 +9815,56 @@ export async function buildCompassAnswerResponse(
       };
     }
 
+    const preCoverageBroadProductIntent = ragIntent.requiresVendorCoverage
+      && sourceDiagnostics.missingVendorSlots.length > 0
+      ? getBroadProductDeterministicIntent(message, ragIntent)
+      : null;
+    const preCoverageBroadProductAnswer = preCoverageBroadProductIntent
+      ? buildDeterministicBroadProductAnswer(message, preCoverageBroadProductIntent, sources)
+      : null;
+    if (preCoverageBroadProductAnswer && preCoverageBroadProductIntent) {
+      const answerCoveredVendors = Array.from(new Set(
+        preCoverageBroadProductAnswer.sources.flatMap(source => [
+          ...(Array.isArray(source.sourceVendors) ? source.sourceVendors : []),
+          source.sourceVendor,
+        ]).filter(isVendorIntentValue),
+      ));
+      emitPhase?.({ phase: 'answer-ready', message: '공식 상품 구조 근거를 기준으로 답변을 정리했습니다.' });
+      return {
+        body: {
+          response: {
+            message: preCoverageBroadProductAnswer.answer,
+            content: preCoverageBroadProductAnswer.answer,
+            sources: preCoverageBroadProductAnswer.sources,
+            noDataFound: false,
+            schema,
+            showContactOption: false,
+            sourceDiagnostics: {
+              ...sourceDiagnostics,
+              queryType: preCoverageBroadProductIntent.queryType,
+              isComparative: preCoverageBroadProductIntent.isComparative,
+              requestedVendors: preCoverageBroadProductIntent.vendors,
+              coveredVendors: answerCoveredVendors.length > 0
+                ? answerCoveredVendors
+                : preCoverageBroadProductIntent.vendors,
+              missingVendorSlots: [],
+              answerSourceCount: preCoverageBroadProductAnswer.sources.length,
+              answerGenerationDurationMs: 0,
+              deterministicAnswerFamily: detectProductAnswerFamily(message, preCoverageBroadProductIntent),
+              vendorCoverageRescuedByExplicitProductIntent: true,
+            },
+            reviewPipeline: buildDeterministicProductReviewPipeline(
+              preCoverageBroadProductAnswer,
+              searchResults.length,
+            ),
+          },
+          confidence: getDeterministicProductConfidence(confidence, preCoverageBroadProductAnswer),
+          processingTime: Date.now() - startTime,
+          model: preCoverageBroadProductAnswer.model,
+        },
+      };
+    }
+
     if (ragIntent.requiresVendorCoverage && sourceDiagnostics.missingVendorSlots.length > 0) {
       console.warn('Compass answer generation skipped because requested vendor coverage is incomplete', {
         requestedVendors: sourceDiagnostics.requestedVendors,
@@ -9827,6 +9919,52 @@ export async function buildCompassAnswerResponse(
           processingTime: Date.now() - startTime,
           model: 'compass-answer-grounded-comparison'
         }
+      };
+    }
+
+    const earlyBroadProductIntent = getBroadProductDeterministicIntent(message, ragIntent);
+    const earlyBroadProductAnswer = earlyBroadProductIntent
+      ? buildDeterministicBroadProductAnswer(message, earlyBroadProductIntent, sources)
+      : null;
+    if (earlyBroadProductAnswer && earlyBroadProductIntent) {
+      const answerCoveredVendors = Array.from(new Set(
+        earlyBroadProductAnswer.sources.flatMap(source => [
+          ...(Array.isArray(source.sourceVendors) ? source.sourceVendors : []),
+          source.sourceVendor,
+        ]).filter(isVendorIntentValue),
+      ));
+      emitPhase?.({ phase: 'answer-ready', message: '공식 상품 구조 근거를 기준으로 답변을 정리했습니다.' });
+      return {
+        body: {
+          response: {
+            message: earlyBroadProductAnswer.answer,
+            content: earlyBroadProductAnswer.answer,
+            sources: earlyBroadProductAnswer.sources,
+            noDataFound: false,
+            schema,
+            showContactOption: false,
+            sourceDiagnostics: {
+              ...sourceDiagnostics,
+              queryType: earlyBroadProductIntent.queryType,
+              isComparative: earlyBroadProductIntent.isComparative,
+              requestedVendors: earlyBroadProductIntent.vendors,
+              coveredVendors: answerCoveredVendors.length > 0
+                ? answerCoveredVendors
+                : earlyBroadProductIntent.vendors,
+              missingVendorSlots: [],
+              answerSourceCount: earlyBroadProductAnswer.sources.length,
+              answerGenerationDurationMs: 0,
+              deterministicAnswerFamily: detectProductAnswerFamily(message, earlyBroadProductIntent),
+            },
+            reviewPipeline: buildDeterministicProductReviewPipeline(
+              earlyBroadProductAnswer,
+              searchResults.length,
+            ),
+          },
+          confidence: getDeterministicProductConfidence(confidence, earlyBroadProductAnswer),
+          processingTime: Date.now() - startTime,
+          model: earlyBroadProductAnswer.model,
+        },
       };
     }
 

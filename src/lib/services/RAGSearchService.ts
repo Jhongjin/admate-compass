@@ -332,7 +332,7 @@ export interface ChatResponse {
 
 const VENDOR_TERM_SPECS: Array<[VendorIntent, string[]]> = [
   ['META', ['meta', '메타', 'facebook', '페이스북', 'instagram', '인스타그램', '릴스', 'reels']],
-  ['KAKAO', ['kakao', '카카오', '카카오톡', '톡채널', '비즈보드', '모먼트', '카카오모먼트', '카카오비즈니스', '상품가이드', '상품 가이드']],
+  ['KAKAO', ['kakao', '카카오', '카카오톡', '톡채널', '비즈보드', '모먼트', '카카오모먼트', '카카오비즈니스']],
   ['NAVER', [
     'naver', '네이버', '검색광고', '쇼핑검색', '파워링크', '브랜드검색',
     '사이트검색', '쇼핑블록', '네이버da', '네이버 da', 'da상품', 'da 상품',

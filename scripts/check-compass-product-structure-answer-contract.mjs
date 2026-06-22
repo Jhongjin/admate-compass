@@ -802,8 +802,17 @@ if (!/sourceIdentityLooksLikeGenericLegalOrAccountDoc[\s\S]*청구\|결제\|지�
   fail('answer source routing must demote payment/account support documents such as 지불 for product-structure answers');
 }
 
-if (!/COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v26-lead-operating-intent-packs'[\s\S]*`compass-answer:\$\{COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION\}:\$\{message\}`/.test(answerHandler)) {
+if (!/COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v30-lead-collection-kpi-guard'[\s\S]*`compass-answer:\$\{COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION\}:\$\{message\}`/.test(answerHandler)) {
   fail('answer response cache key must be versioned so stale durable cached answers are bypassed after source-quality fixes');
+}
+
+if (/VENDOR_TERM_SPECS[\s\S]*\['KAKAO',[^\]]*(?:'상품가이드'|'상품 가이드')/.test(rag)
+  || /DIAGNOSTIC_VENDOR_PATTERNS[\s\S]*KAKAO:[^\n]*(?:상품\\s\*가이드|상품가이드)/.test(answerHandler)) {
+  fail('generic 상품 가이드 wording must not classify a query as KAKAO vendor intent');
+}
+
+if (!/function isLeadKpiFrameworkQuestion[\s\S]*리드\\s\*수\(\?!집\)/.test(answerHandler)) {
+  fail('lead KPI intent detection must not treat 리드 수집 as the KPI term 리드 수');
 }
 
 if (!/COMPASS_SUPABASE_ROWS_CACHE_KEY_VERSION = 'v2-product-retrieval-paths'[\s\S]*JSON\.stringify\(\{ version: COMPASS_SUPABASE_ROWS_CACHE_KEY_VERSION, kind, \.\.\.normalizedParams \}\)/.test(rag)) {
