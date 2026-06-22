@@ -115,7 +115,7 @@ const COMPASS_ANSWER_RESPONSE_CACHE_TTL_MS = Math.min(
   900000,
 );
 const COMPASS_ANSWER_RESPONSE_CACHE_MAX_ENTRIES = 64;
-const COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v30-lead-collection-kpi-guard';
+const COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v31-operational-product-scenario-routing';
 const compassAnswerResponseCache = new Map<string, CompassAnswerResponseCacheEntry>();
 const compassAnswerRuntimeMetrics = {
   startedAt: Date.now(),
@@ -1065,13 +1065,60 @@ function isBroadMetaProductPlanningQuestion(message: string, intent?: QueryInten
   return asksMeta && asksProductTypes && asksPlanningAxes && namedAxisCount >= 2;
 }
 
+function hasOnlyMetaGoogleVendors(intent: QueryIntent): boolean {
+  return intent.vendors.every(vendor => vendor === 'META' || vendor === 'GOOGLE');
+}
+
+function hasExplicitLeadCollectionSignal(normalized: string): boolean {
+  return /리드|잠재\s*고객|lead|리드\s*양식|lead\s*form|instant\s*form|인스턴트\s*(폼|양식)|crm|mql|sql|cpl|오프라인\s*전환|offline\s*conversion|webhook|전화\s*리드|메시지\s*리드|qualified\s*lead/.test(normalized);
+}
+
+function isCommerceProductFeedQuestion(message: string, intent?: QueryIntent): boolean {
+  const normalized = normalizeProductIntentText(message);
+  const hasCommerceSignal = /쇼핑몰|커머스|commerce|e-?commerce|쇼핑\s*광고|쇼핑검색|쇼핑\s*검색|상품\s*피드|product\s*feed|merchant\s*center|머천트\s*센터|상품\s*db|db\s*url|ep\b|sku|카탈로그|catalog|재고|품절|가격\s*동기화|상품\s*데이터|product\s*data/.test(normalized);
+  if (!hasCommerceSignal) return false;
+  const hasOperatingAxis = /소재|전환\s*추적|추적|재고|피드|데이터|카탈로그|비교|기준|운영|관리|상품\s*광고|쇼핑검색|google\s*쇼핑|메타\s*카탈로그|네이버\s*쇼핑|카카오\s*상품/.test(normalized);
+  return hasOperatingAxis || Boolean(intent?.topics.includes('product_structure'));
+}
+
+function isAcquisitionRetargetingBudgetQuestion(message: string, intent?: QueryIntent): boolean {
+  const normalized = normalizeProductIntentText(message);
+  const asksAcquisition = /신규\s*고객|고객\s*확보|신규\s*확보|획득|acquisition|prospecting|상단\s*퍼널/.test(normalized);
+  const asksRetargeting = /리타겟|리마케팅|retarget|remarket|재방문|재구매|장바구니|하단\s*퍼널/.test(normalized);
+  const asksBudgetKpi = /예산\s*배분|예산|budget|장단점|kpi|측정\s*kpi|성과\s*지표|비교/.test(normalized);
+  return asksBudgetKpi && (asksAcquisition || asksRetargeting || Boolean(intent?.vendors.length && intent.vendors.length >= 3));
+}
+
+function isPerformanceDropTroubleshootingQuestion(message: string): boolean {
+  const normalized = normalizeProductIntentText(message);
+  const dropSignal = /성과.{0,20}(떨어|하락|저하|급락|악화)|갑자기.{0,20}(떨어|하락|저하)|performance.{0,20}(drop|decline)/.test(normalized);
+  const troubleshootingSignal = /점검|체크리스트|순서|원인|진단|troubleshoot|debug/.test(normalized);
+  const axisCount = [
+    /예산|budget/.test(normalized),
+    /입찰|bid|bidding/.test(normalized),
+    /타겟|오디언스|audience|target/.test(normalized),
+    /소재|creative|asset/.test(normalized),
+    /전환\s*태그|태그|픽셀|pixel|capi|google\s*tag|ga|sdk|mmp/.test(normalized),
+    /정책|제한|심사|반려|policy|limited/.test(normalized),
+  ].filter(Boolean).length;
+  return (dropSignal || troubleshootingSignal) && axisCount >= 3;
+}
+
+function isAssetGuideProductQuestion(message: string): boolean {
+  const normalized = normalizeProductIntentText(message);
+  return /소재\s*(제작\s*)?가이드|제작\s*가이드|광고\s*상품\s*소재|상품\s*소재|소재\s*규격|소재\s*사양|creative\s*(guide|spec)|asset\s*(guide|spec)/.test(normalized)
+    && /광고\s*상품|광고상품|상품\s*(유형|종류|가이드)|product|캠페인\s*유형|종류/.test(normalized);
+}
+
 function isMetaGoogleLeadComparisonQuestion(message: string, intent: QueryIntent): boolean {
   const normalized = normalizeProductIntentText(message);
   if (isLeadKpiFrameworkQuestion(message)) return false;
+  if (!hasOnlyMetaGoogleVendors(intent)) return false;
+  if (isCommerceProductFeedQuestion(message, intent)) return false;
   const asksMeta = intent.vendors.includes('META') || /meta|메타|facebook|페이스북|instagram|인스타그램/.test(normalized);
   const asksGoogle = intent.vendors.includes('GOOGLE') || /google|구글|youtube|유튜브|google\s*ads/.test(normalized);
   if (!asksMeta || !asksGoogle) return false;
-  if (!/리드|잠재\s*고객|lead|양식|전환\s*추적/.test(normalized)) return false;
+  if (!hasExplicitLeadCollectionSignal(normalized)) return false;
 
   const comparisonSignal = intent.isComparative || /비교|차이|대조|vs|versus|와\s+google|과\s+google|meta와|meta\s*and\s*google/.test(normalized);
   const axisCount = [
@@ -1104,7 +1151,8 @@ function questionMentionsGoogle(message: string, intent: QueryIntent): boolean {
 
 function isLeadOperatingQuestion(message: string): boolean {
   const normalized = normalizeProductIntentText(message);
-  return /리드|잠재\s*고객|lead|양식|instant\s*form|인스턴트\s*폼|인스턴트\s*양식|crm|mql|sql|cpl|계약률|유효\s*리드|오프라인\s*전환|offline\s*conversion|webhook|전화\s*리드|메시지\s*리드|웹사이트\s*전환/.test(normalized);
+  return hasExplicitLeadCollectionSignal(normalized)
+    || /계약률|유효\s*리드|웹사이트\s*전환/.test(normalized);
 }
 
 function isLeadKpiFrameworkQuestion(message: string): boolean {
@@ -1116,12 +1164,14 @@ function isLeadKpiFrameworkQuestion(message: string): boolean {
 function detectLeadOperatingAnswerFamily(message: string, intent: QueryIntent): LeadOperatingAnswerFamily | null {
   if (!isLeadOperatingQuestion(message)) return null;
   if (isBroadMetaProductPlanningQuestion(message, intent)) return null;
+  if (isCommerceProductFeedQuestion(message, intent)) return null;
 
   const normalized = normalizeProductIntentText(message);
   const asksMeta = questionMentionsMeta(message, intent);
   const asksGoogle = questionMentionsGoogle(message, intent);
 
   if (asksMeta && asksGoogle) {
+    if (!hasOnlyMetaGoogleVendors(intent)) return null;
     if (isLeadKpiFrameworkQuestion(message)) return 'cross_vendor_lead_kpi_framework';
     return 'cross_vendor_lead_operations';
   }
@@ -4521,6 +4571,34 @@ const GOOGLE_PRODUCT_PLANNING_MATRIX_REQUIRED_CHUNK_IDS = [
   'google_ads_app_campaigns_2026_chunk_0',
 ] as const;
 
+const NAVER_PRODUCT_PLANNING_MATRIX_REQUIRED_CHUNK_IDS = [
+  'naver_searchad_overview_powerlink_brand_2026_chunk_0',
+  'naver_powerlink_product_overview_2026_chunk_0',
+  'naver_brandsearch_product_overview_2026_chunk_0',
+  'doc_1764895552052_8xy5ad6_para_2',
+  'doc_1773710116296_uawf5xm_chunk_2',
+  'doc_1764895606547_buwpoz4_sent_11',
+  'doc_1764895606613_llkwwsf_doc_0',
+  'naver_adguide_registration_standard_2026_chunk_0',
+  'naver_adguide_operating_policy_2026_chunk_0',
+] as const;
+
+const KAKAO_PRODUCT_PLANNING_MATRIX_REQUIRED_CHUNK_IDS = [
+  'kakao_moment_product_overview_2026_chunk_0',
+  'doc_1774488483929_bigcm1d_chunk_2',
+  'doc_1774488184369_r97sach_chunk_0',
+  'url_1773203880202_q3y8fucqb_chunk_5',
+  'doc_1774491147517_yj1v810_chunk_17',
+  'doc_1774488207473_cjq6ve0_chunk_19',
+] as const;
+
+const CROSS_VENDOR_PRODUCT_OPERATING_REQUIRED_CHUNK_IDS = [
+  ...META_PRODUCT_PLANNING_MATRIX_REQUIRED_CHUNK_IDS,
+  ...GOOGLE_PRODUCT_PLANNING_MATRIX_REQUIRED_CHUNK_IDS,
+  ...NAVER_PRODUCT_PLANNING_MATRIX_REQUIRED_CHUNK_IDS,
+  ...KAKAO_PRODUCT_PLANNING_MATRIX_REQUIRED_CHUNK_IDS,
+] as const;
+
 function buildOfficialProductOverviewSnapshotSearchResult(
   row: ReturnType<typeof getCompassOfficialDocumentChunkSnapshotRows>[number],
 ): SearchResult {
@@ -5461,6 +5539,549 @@ function buildGoogleProductPlanningMatrixAnswer(
     'compass-answer-deterministic-google-product-planning-matrix',
     88,
   );
+}
+
+function prepareOfficialSnapshotAnswerSources(
+  sources: ReturnType<typeof buildVerifiedSources>,
+  chunkIds: readonly string[],
+) {
+  const requiredChunkIds = uniqueOfficialChunkIds(chunkIds);
+  const scenarioSources = ensureOfficialSnapshotSources(sources, requiredChunkIds);
+  const indexes = getRequiredOfficialSnapshotIndexes(scenarioSources, requiredChunkIds);
+  if (!indexes) return null;
+
+  const sourceIndexByChunkId = new Map(requiredChunkIds.map((chunkId, index) => [
+    chunkId,
+    indexes[index],
+  ]));
+  const used = new Set<number>();
+  const cite = (chunkId: string) => {
+    const sourceIndex = sourceIndexByChunkId.get(chunkId);
+    if (sourceIndex === undefined) return '[S1]';
+    used.add(sourceIndex);
+    return `[S${sourceIndex + 1}]`;
+  };
+
+  return { sources: scenarioSources, used, cite };
+}
+
+function buildKakaoProductSelectionMatrixAnswer(
+  sources: ReturnType<typeof buildVerifiedSources>,
+): DeterministicProductAnswer | null {
+  const prepared = prepareOfficialSnapshotAnswerSources(sources, KAKAO_PRODUCT_PLANNING_MATRIX_REQUIRED_CHUNK_IDS);
+  if (!prepared) return null;
+  const { sources: scenarioSources, used, cite } = prepared;
+
+  const momentRef = cite('kakao_moment_product_overview_2026_chunk_0');
+  const bizboardRef = cite('doc_1774488483929_bigcm1d_chunk_2');
+  const displayRef = cite('doc_1774488184369_r97sach_chunk_0');
+  const channelRef = cite('url_1773203880202_q3y8fucqb_chunk_5');
+  const messageRef = cite('doc_1774491147517_yj1v810_chunk_17');
+  const policyRef = cite('doc_1774488207473_cjq6ve0_chunk_19');
+
+  const lines = [
+    '카카오 광고는 “톡채널, 카카오모먼트, 비즈보드, 메시지”를 같은 레벨의 버튼처럼 고르는 것이 아니라 **목적 → 지면/진입 방식 → 소재·심사 → 업종 제한** 순서로 나누어 보는 편이 안전합니다.',
+    `카카오모먼트는 비즈보드, 디스플레이, 동영상, 메시지 광고 등을 직접 집행하는 광고 플랫폼이며 카카오톡과 카카오 핵심 서비스 지면을 활용합니다 ${momentRef}.`,
+    '',
+    '**1. 상품 선택 기준**',
+    '',
+    '| 구분 | 우선 선택하는 상황 | 소재/지면 확인 | 업종·심사 체크 |',
+    '|---|---|---|---|',
+    `| 카카오 비즈보드 | 모바일 카카오톡 기반의 대량 도달, 신상품/프로모션 노출, 브랜드 인지와 랜딩 유입을 함께 노릴 때 | 카카오톡·카카오서비스 주요 지면, 소재 유형, 랜딩 옵션을 함께 봅니다 ${bizboardRef}. | 카카오 서비스처럼 오인되는 표현, 로고·UI 모방, AI 생성물 표시와 허위·과장 가능성을 확인합니다 ${policyRef}. |`,
+    `| 카카오모먼트 디스플레이 | 관심사/오디언스 기반으로 배너·이미지·동영상 소재를 노출하고 리타게팅 또는 퍼포먼스를 볼 때 | 노출 지면, 소재 형식, 제작 가이드와 심사 기준을 같이 확인합니다 ${displayRef}. | 지면 UI와 유사해 광고가 카카오 콘텐츠처럼 보이는지, 과도한 표현이 있는지 점검합니다 ${policyRef}. |`,
+    `| 메시지 광고 | 친구·채널 기반으로 쿠폰, 예약, 재구매, 이벤트 안내처럼 직접 도달이 중요한 업종에서 후보 | 메시지 내용, 가격·혜택 표시, 이벤트 조건, 랜딩 일치 여부를 같이 봅니다 ${messageRef}. | 관계 법령 위반, 성인·담배·도박·의약품 등 제한 업종은 메시지 발송이 불가하거나 제한될 수 있습니다 ${messageRef}. |`,
+    `| 톡채널/톡채널검색 | 카카오톡 채널로 상담, 예약, 재방문, 콘텐츠 구독을 모아야 할 때 | 채널과 연동 사이트의 사업자 정보, 소재와 랜딩의 일치 여부를 봅니다 ${channelRef}. | 톡채널검색 심사가이드 위반 소재, 미완성 사이트, 등록불가 업종 관련 콘텐츠는 집행 제한 대상입니다 ${channelRef}. |`,
+    '',
+    '**2. 업종별 빠른 판단**',
+    '',
+    '- **지역 매장/예약형**: 톡채널, 메시지, 비즈보드 랜딩을 후보로 두고 상담 가능 시간과 채널 응답 SLA를 먼저 잡습니다.',
+    '- **커머스/프로모션형**: 비즈보드나 디스플레이로 상품·혜택을 노출하되 가격, 할인율, 이벤트 조건이 랜딩과 일치하는지 먼저 봅니다.',
+    '- **금융·의료·성인·주류·담배 등 제한 가능 업종**: 소재부터 만들기 전에 제한 업종과 등록불가 조건을 원문 기준으로 확인합니다.',
+    '- **브랜드 인지/신제품 런칭**: 비즈보드와 디스플레이를 우선 검토하고 메시지는 리타게팅 또는 보유 고객 재접촉 용도로 분리합니다.',
+    '',
+    '**3. 런칭 전 체크리스트**',
+    '',
+    '- 상품명보다 먼저 KPI를 정합니다: 도달/빈도, 클릭, 채널 추가, 상담, 구매, 재방문을 분리합니다.',
+    '- 카카오톡 지면에서 광고처럼 명확히 보이는지 확인합니다. 카카오 UI·서비스를 모방하면 집행 제한 가능성이 있습니다.',
+    '- 가격, 이벤트, 혜택은 소재와 랜딩에서 같은 조건으로 확인되어야 합니다.',
+    '- 제한 업종은 상품별 기능 문제가 아니라 심사·정책 문제이므로 별도 체크리스트로 분리합니다.',
+    '',
+    `근거: ${Array.from(used).sort((a, b) => a - b).map(index => `[S${index + 1}]`).join(', ')}`,
+  ];
+
+  return finalizeOfficialSnapshotDeterministicAnswer(
+    lines,
+    scenarioSources,
+    used,
+    'compass-answer-deterministic-kakao-product-selection-matrix',
+    86,
+  );
+}
+
+function buildNaverSearchAdProductComparisonAnswer(
+  sources: ReturnType<typeof buildVerifiedSources>,
+): DeterministicProductAnswer | null {
+  const prepared = prepareOfficialSnapshotAnswerSources(sources, NAVER_PRODUCT_PLANNING_MATRIX_REQUIRED_CHUNK_IDS);
+  if (!prepared) return null;
+  const { sources: scenarioSources, used, cite } = prepared;
+
+  const overviewRef = cite('naver_searchad_overview_powerlink_brand_2026_chunk_0');
+  const powerlinkRef = cite('naver_powerlink_product_overview_2026_chunk_0');
+  const brandRef = cite('naver_brandsearch_product_overview_2026_chunk_0');
+  const shoppingBlockRef = cite('doc_1764895552052_8xy5ad6_para_2');
+  const shoppingDbRef = cite('doc_1773710116296_uawf5xm_chunk_2');
+  const policyRef = cite('naver_adguide_registration_standard_2026_chunk_0');
+
+  const lines = [
+    '네이버 검색광고는 **파워링크/사이트검색 → 쇼핑검색광고 → 브랜드검색**을 목적, 과금, 소재, 랜딩·전환 측정 기준으로 나눠 봐야 합니다.',
+    `네이버 검색광고는 파워링크, 쇼핑검색, 브랜드검색 등 검색어 기반 상품을 제공하며 예산 설정, 클릭당 과금, 보고서와 로그 분석으로 효과를 확인하는 구조입니다 ${overviewRef}.`,
+    '',
+    '**1. 핵심 비교표**',
+    '',
+    '| 상품 | 캠페인 목적 | 과금/운영 방식 | 소재 구성 | 랜딩·전환 측정 기준 |',
+    '|---|---|---|---|---|',
+    `| 파워링크/사이트검색 | 이미 검색 의도가 있는 사용자를 웹사이트, 상담, 예약, 구매 페이지로 보내는 기본 검색 유입 | CPC 중심으로 키워드, 광고문안, 입찰, 예산을 같이 봅니다 ${powerlinkRef}. | 제목, 설명, 표시 URL, 확장 소재, 키워드와 랜딩의 관련성을 점검합니다. | 검색어-광고문안-랜딩의 일치, 전환 스크립트/로그 분석, 문의·구매 전환 품질을 봅니다. |`,
+    `| 쇼핑검색광고 | 상품을 비교·구매하려는 사용자에게 상품 단위로 노출 | 상품 DB URL/EP 등록과 심사, 카테고리 매칭이 핵심입니다 ${shoppingDbRef}. | 상품명, 대표이미지, 가격, 배송비, 카테고리, 상품 상태가 검색 노출 품질에 영향을 줍니다. | 쇼핑파트너센터/스마트스토어, 상품 DB 수신, 품절·가격 동기화, 구매 전환을 함께 봅니다 ${shoppingBlockRef}. |`,
+    `| 브랜드검색 | 상호명, 상품명처럼 브랜드 키워드 검색 결과에서 브랜드 정보를 크게 보여줄 때 | 브랜드와 직접 연관된 키워드에 한해 집행할 수 있고 일반 키워드에는 집행할 수 없습니다 ${brandRef}. | 브랜드명, 대표 이미지/동영상, 주요 링크, 프로모션 문구와 템플릿을 활용합니다. | 브랜드 검색량, 클릭, 공식 채널 유입, 이벤트/랜딩 전환을 별도 KPI로 봅니다. |`,
+    '',
+    '**2. 운영 선택 기준**',
+    '',
+    '- **즉시 문의/예약/구매 유입**: 파워링크를 먼저 보고, 키워드 intent와 랜딩 품질을 함께 튜닝합니다.',
+    '- **상품 SKU 기반 커머스**: 쇼핑검색광고를 우선 검토하고 상품 DB, 카테고리, 가격·재고 동기화 품질을 먼저 QA합니다.',
+    '- **브랜드 방어/인지 강화**: 브랜드검색을 후보로 두되, 브랜드 키워드 자격과 소재 템플릿 조건을 먼저 확인합니다.',
+    '- **심사·정책 리스크**: 네이버 광고등록기준은 법령 위반, 허위·과장, 이용자 오인, 권리 침해 가능성을 소재·랜딩·업종 맥락과 함께 봅니다 ' + policyRef + '.',
+    '',
+    '**3. 런칭 전 체크포인트**',
+    '',
+    '- 키워드별 광고문안과 랜딩 URL이 같은 의도를 말하는지 확인합니다.',
+    '- 쇼핑검색은 DB URL, EP, 상품정보 수신, 카테고리 자동매칭, 미서비스 상품 여부를 먼저 봅니다.',
+    '- 브랜드검색은 브랜드 키워드 자격과 공식 랜딩, 프로모션 문구의 정확성을 확인합니다.',
+    '- 같은 CPC라도 파워링크는 검색어 품질, 쇼핑검색은 상품 데이터 품질, 브랜드검색은 브랜드 키워드 커버리지가 병목입니다.',
+    '',
+    `근거: ${Array.from(used).sort((a, b) => a - b).map(index => `[S${index + 1}]`).join(', ')}`,
+  ];
+
+  return finalizeOfficialSnapshotDeterministicAnswer(
+    lines,
+    scenarioSources,
+    used,
+    'compass-answer-deterministic-naver-search-product-comparison',
+    86,
+  );
+}
+
+function buildEcommerceProductFeedComparisonAnswer(
+  sources: ReturnType<typeof buildVerifiedSources>,
+): DeterministicProductAnswer | null {
+  const requiredChunkIds = uniqueOfficialChunkIds([
+    'doc_1773886203371_8rlmmdv_chunk_1',
+    'doc_1773886203371_8rlmmdv_chunk_2',
+    'google_ads_shopping_ads_2026_chunk_0',
+    'doc_1764895552052_8xy5ad6_para_2',
+    'doc_1773710116296_uawf5xm_chunk_2',
+    ...KAKAO_PRODUCT_PLANNING_MATRIX_REQUIRED_CHUNK_IDS,
+  ]);
+  const prepared = prepareOfficialSnapshotAnswerSources(sources, requiredChunkIds);
+  if (!prepared) return null;
+  const { sources: scenarioSources, used, cite } = prepared;
+
+  const metaCatalogRef = cite('doc_1773886203371_8rlmmdv_chunk_1');
+  const metaAdvantageRef = cite('doc_1773886203371_8rlmmdv_chunk_2');
+  const googleShoppingRef = cite('google_ads_shopping_ads_2026_chunk_0');
+  const naverShoppingRef = cite('doc_1764895552052_8xy5ad6_para_2');
+  const naverDbRef = cite('doc_1773710116296_uawf5xm_chunk_2');
+  const kakaoBizboardRef = cite('doc_1774488483929_bigcm1d_chunk_2');
+  const kakaoDisplayRef = cite('doc_1774488184369_r97sach_chunk_0');
+  const kakaoPolicyRef = cite('doc_1774491147517_yj1v810_chunk_17');
+
+  const lines = [
+    '쇼핑몰 광고는 매체별 이름보다 **상품 데이터 구조 → 소재 생성 방식 → 전환 추적 → 가격·재고 운영**을 먼저 맞춰야 합니다.',
+    '',
+    '**1. 매체별 비교**',
+    '',
+    '| 매체/상품 | 상품 피드·데이터 | 소재 운영 | 전환 추적 | 재고·가격 관리 포인트 |',
+    '|---|---|---|---|---|',
+    `| Google 쇼핑/PMax | Merchant Center 상품 데이터를 사용해 상품 이미지, 제목, 가격, 매장명 등을 노출합니다 ${googleShoppingRef}. | 상품 데이터 품질과 정책 준수, 쇼핑 캠페인 또는 PMax 전환 목표를 함께 봅니다 ${googleShoppingRef}. | 구매, 장바구니, 리드 등 Primary conversion action과 오프라인/향상된 전환 연결을 점검합니다. | 피드 불승인, 가격 불일치, 품절 반영 지연이 성과 급락 원인이 됩니다. |`,
+    `| Meta 카탈로그/컬렉션 | 카탈로그의 작은 제품 이미지와 커버 이미지/동영상을 함께 보여 구매 흐름으로 연결합니다 ${metaCatalogRef}. | 컬렉션, 카탈로그, Advantage+ 카탈로그를 SKU 수와 리타게팅 목적에 맞춰 선택합니다 ${metaAdvantageRef}. | Pixel/CAPI, 구매·장바구니 이벤트, 상품 세트와 웹사이트 전환 측정을 묶어 봅니다. | 상품 세트, 품절·가격 동기화, 이벤트 매칭 품질이 중요합니다. |`,
+    `| 네이버 쇼핑검색광고 | EP 또는 상품 DB URL 등록, 상품정보 수신, 카테고리 자동매칭이 핵심입니다 ${naverDbRef}. | 쇼핑블록/쇼핑검색은 상품 이미지, 상품명, 가격, 카테고리, 쇼핑 지면 검수 조건을 봅니다 ${naverShoppingRef}. | 스마트스토어/쇼핑파트너센터, 로그 분석, 구매 전환 또는 랜딩 전환을 함께 봅니다. | 상품 DB 수신 오류, 미서비스 상품, 카테고리 불일치, 가격비교 업데이트 지연을 점검합니다. |`,
+    `| 카카오 상품/커머스형 운영 | 현재 공식 근거 범위에서는 Google Merchant Center나 네이버 EP 같은 피드 시스템으로 단정하지 않습니다. 비즈보드·디스플레이·메시지 지면과 랜딩/상품 표현 기준을 따로 봅니다 ${kakaoBizboardRef} ${kakaoDisplayRef}. | 비즈보드/디스플레이 소재와 메시지의 가격·혜택·이벤트 문구가 랜딩과 일치해야 합니다. | 픽셀/CAPI 같은 계정별 추적 조건은 실제 세팅에서 확인하고, 카카오 출처에는 없는 피드 기능은 추정하지 않습니다. | 제한 업종, 가격 표시, 인터넷 판매 불가 상품은 메시지/소재 발송 제한과 연결될 수 있습니다 ${kakaoPolicyRef}. |`,
+    '',
+    '**2. 실행 순서**',
+    '',
+    '- 상품 수가 많고 가격·재고가 자주 바뀌면 Google 쇼핑, Meta 카탈로그, 네이버 쇼핑검색처럼 데이터 기반 상품부터 우선 검토합니다.',
+    '- SKU가 적거나 신제품 메시지가 중요하면 수동 소재형 캠페인과 랜딩 품질을 먼저 검증합니다.',
+    '- 구매 최적화 전에는 구매/장바구니/상세조회 이벤트가 상품 ID와 맞는지 확인합니다.',
+    '- 품절·가격 불일치, DB 수신 오류, 정책 불승인은 입찰보다 먼저 점검합니다.',
+    '',
+    '정리하면, 쇼핑몰 광고는 **Google = Merchant Center 상품 데이터, Meta = 카탈로그/컬렉션/Advantage+ 카탈로그, Naver = 상품 DB/EP와 쇼핑 지면, Kakao = 검증된 지면·소재·심사 범위**로 역할을 나누어 설계하는 것이 안전합니다.',
+    '',
+    `근거: ${Array.from(used).sort((a, b) => a - b).map(index => `[S${index + 1}]`).join(', ')}`,
+  ];
+
+  return finalizeOfficialSnapshotDeterministicAnswer(
+    lines,
+    scenarioSources,
+    used,
+    'compass-answer-deterministic-ecommerce-product-feed-comparison',
+    88,
+  );
+}
+
+function buildCrossVendorBudgetFrameworkAnswer(
+  sources: ReturnType<typeof buildVerifiedSources>,
+): DeterministicProductAnswer | null {
+  const prepared = prepareOfficialSnapshotAnswerSources(sources, CROSS_VENDOR_PRODUCT_OPERATING_REQUIRED_CHUNK_IDS);
+  if (!prepared) return null;
+  const { sources: scenarioSources, used, cite } = prepared;
+
+  const metaObjectiveRef = cite('meta_business_help_objectives_2026_chunk_0');
+  const metaFormatRef = cite('meta_business_help_formats_placements_2026_chunk_0');
+  const googleObjectiveRef = cite('google_ads_campaign_objectives_2026_chunk_0');
+  const googleTypesRef = cite('google_ads_campaign_types_2026_chunk_0');
+  const naverOverviewRef = cite('naver_searchad_overview_powerlink_brand_2026_chunk_0');
+  const naverShoppingRef = cite('doc_1773710116296_uawf5xm_chunk_2');
+  const kakaoMomentRef = cite('kakao_moment_product_overview_2026_chunk_0');
+  const kakaoBizboardRef = cite('doc_1774488483929_bigcm1d_chunk_2');
+
+  const lines = [
+    'Meta, Google Ads, 네이버, 카카오는 같은 “광고비”로 묶으면 안 됩니다. **신규 고객 확보와 리타겟팅 역할, 학습 데이터, 검색 의도, 소재 피로도, 측정 KPI**를 분리해 예산을 배분해야 합니다.',
+    '',
+    '**1. 역할별 예산 배분 프레임**',
+    '',
+    '| 매체 | 신규 고객 확보 역할 | 리타겟팅 역할 | 장점 | 주의점 | 핵심 KPI |',
+    '|---|---|---|---|---|---|',
+    `| Meta | 인지도, 트래픽, 참여, 잠재 고객, 앱 홍보, 판매 목표를 활용해 발견형 수요를 만듭니다 ${metaObjectiveRef}. | Pixel/CAPI, 카탈로그, 참여자·방문자 기반으로 재접촉합니다. | 피드·스토리·릴스 등 지면과 이미지/동영상/카루셀/컬렉션 형식 조합이 넓습니다 ${metaFormatRef}. | 소재 피로도와 낮은 의도 유입을 분리해 봐야 합니다. | 도달, 빈도, CTR, CPC, 리드 수, 구매, CPA, ROAS |`,
+    `| Google Ads | 검색, 디스플레이, 동영상, 쇼핑, 앱, PMax 등 캠페인 유형으로 의도형 수요와 확장 도달을 나눕니다 ${googleTypesRef}. | 검색 리마케팅, YouTube/디스플레이, PMax 신호, 오프라인/향상된 전환 피드백을 활용합니다. | 검색 의도와 전환 목표를 캠페인 유형에 직접 묶기 좋습니다 ${googleObjectiveRef}. | Primary conversion action을 잘못 잡으면 쉬운 전환에 최적화됩니다. | 검색 점유, 전환율, CPA, ROAS, 오프라인 전환율 |`,
+    `| 네이버 | 파워링크/쇼핑검색/브랜드검색으로 검색 의도와 상품 비교 수요를 포착합니다 ${naverOverviewRef}. | 브랜드검색, 재방문 검색어, 쇼핑 상품 DB 기반으로 하단 퍼널을 보강합니다. | 국내 검색·쇼핑 의도와 상품 DB/카테고리 매칭을 연결하기 좋습니다 ${naverShoppingRef}. | 상품 DB, 랜딩 품질, 가격·재고 반영이 병목입니다. | 검색어별 CVR, 쇼핑상품 클릭률, 구매율, 브랜드 검색량 |`,
+    `| 카카오 | 카카오모먼트, 비즈보드, 디스플레이, 메시지로 카카오톡 기반 도달과 상담·재방문 접점을 만듭니다 ${kakaoMomentRef}. | 메시지/채널/방문자 기반으로 쿠폰, 예약, 재구매 안내에 활용합니다. | 카카오톡 주요 지면과 모바일 발견 경험이 강합니다 ${kakaoBizboardRef}. | 업종 제한과 카카오 서비스 오인, 메시지 발송 정책을 먼저 봐야 합니다. | 도달, 클릭, 채널 추가, 상담, 쿠폰 사용, 재구매율 |`,
+    '',
+    '**2. 예산 운영 규칙**',
+    '',
+    '- 고정 비율보다 “신규/리타게팅/브랜드 방어/상품 판매” 역할별 예산 통을 나눕니다.',
+    '- 신규 확보는 Meta·Kakao의 발견형 도달과 Google·Naver의 검색 의도를 분리해 비교합니다.',
+    '- 리타겟팅은 전체 예산을 크게 먹기보다 전환 모수가 충분한 범위에서 빈도와 CPA를 관리합니다.',
+    '- SKU 커머스는 Google 쇼핑, Meta 카탈로그, Naver 쇼핑검색처럼 상품 데이터 품질이 있는 매체에 우선권을 줍니다.',
+    '- 상담/예약형은 Meta 리드/메시지, Kakao 채널/메시지, Google/Naver 검색 리드를 같은 CRM 단계로 묶어 유효 리드율을 봅니다.',
+    '',
+    '**3. KPI 분리**',
+    '',
+    '- 신규 고객: 신규 방문자 비중, 첫 구매 CPA, 신규 리드율, 브랜드 신규 검색량.',
+    '- 리타겟팅: 재방문 전환율, 장바구니 회수율, 빈도, 중복 노출, 리타게팅 CPA.',
+    '- 매출: ROAS, 구매 전환율, 객단가, 마진 반영 CPA.',
+    '- 품질: 유효 리드율, MQL/SQL, 상담 연결률, 반품/취소율, 오프라인 계약률.',
+    '',
+    '정리하면, 예산은 매체명이 아니라 **수요 창출, 의도 포착, 재접촉, 상품 판매, 브랜드 방어** 역할별로 배분하고, 매체별 KPI는 같은 CRM·매출 기준으로 다시 합쳐 평가해야 합니다.',
+    '',
+    `근거: ${Array.from(used).sort((a, b) => a - b).map(index => `[S${index + 1}]`).join(', ')}`,
+  ];
+
+  return finalizeOfficialSnapshotDeterministicAnswer(
+    lines,
+    scenarioSources,
+    used,
+    'compass-answer-deterministic-cross-vendor-budget-framework',
+    88,
+  );
+}
+
+function buildPerformanceDropTroubleshootingAnswer(
+  sources: ReturnType<typeof buildVerifiedSources>,
+): DeterministicProductAnswer | null {
+  const requiredChunkIds = uniqueOfficialChunkIds([
+    ...CROSS_VENDOR_PRODUCT_OPERATING_REQUIRED_CHUNK_IDS,
+    'doc_1773663427417_g8z1v3y_chunk_2',
+  ]);
+  const prepared = prepareOfficialSnapshotAnswerSources(sources, requiredChunkIds);
+  if (!prepared) return null;
+  const { sources: scenarioSources, used, cite } = prepared;
+
+  const metaLevelRef = cite('meta_business_help_ad_levels_2026_chunk_0');
+  const metaFormatRef = cite('meta_business_help_formats_placements_2026_chunk_0');
+  const googleObjectiveRef = cite('google_ads_campaign_objectives_2026_chunk_0');
+  const googlePolicyRef = cite('doc_1773663427417_g8z1v3y_chunk_2');
+  const naverPolicyRef = cite('naver_adguide_registration_standard_2026_chunk_0');
+  const naverDbRef = cite('doc_1773710116296_uawf5xm_chunk_2');
+  const kakaoPolicyRef = cite('doc_1774488207473_cjq6ve0_chunk_19');
+  const kakaoChannelRef = cite('url_1773203880202_q3y8fucqb_chunk_5');
+
+  const lines = [
+    '광고 성과가 갑자기 떨어지면 “소재가 별로다”부터 보면 늦습니다. **측정 이상 → 정책/심사 제한 → 예산·입찰 → 타겟/지면 → 소재 → 랜딩/피드/재고 → 최근 변경사항** 순서로 좁히는 편이 안전합니다.',
+    '',
+    '**1. 공통 점검 순서**',
+    '',
+    '| 순서 | 확인 항목 | 왜 먼저 보나 |',
+    '|---|---|---|',
+    '| 1 | 전환 태그/이벤트/CRM 수신 | 측정이 깨지면 실제 성과가 정상이어도 알고리즘과 보고서가 모두 흔들립니다. |',
+    `| 2 | 정책 제한/심사/계정 상태 | Google은 정책 위반 시 비승인, 위치 제한, 계정 정지까지 이어질 수 있습니다 ${googlePolicyRef}. 네이버와 카카오도 소재·랜딩·업종 맥락 심사가 중요합니다 ${naverPolicyRef} ${kakaoPolicyRef}. |`,
+    '| 3 | 예산/입찰/전환 목표 | 예산 소진, 입찰 제한, 잘못된 전환 목표는 노출과 학습을 동시에 줄입니다. |',
+    '| 4 | 타겟/지면/검색어 | 오디언스 축소, 검색어 변화, 지면 제외가 도달을 줄일 수 있습니다. |',
+    '| 5 | 소재 피로도 | CTR 하락, 빈도 상승, 댓글/반응 악화는 소재 교체 신호입니다. |',
+    '| 6 | 랜딩/상품 피드/재고 | 랜딩 속도, 상품 DB 오류, 가격·품절 반영 지연은 구매율을 떨어뜨립니다. |',
+    '',
+    '**2. 매체별 체크리스트**',
+    '',
+    `- **Meta**: 캠페인-광고 세트-광고 단위 구조에서 예산·일정·타겟·게재 위치가 어디에서 바뀌었는지 먼저 봅니다 ${metaLevelRef}. 이어서 피드/스토리/릴스별 소재 형식과 게재 위치가 목표와 맞는지 확인합니다 ${metaFormatRef}.`,
+    `- **Google Ads**: 캠페인 목표와 캠페인 유형, Primary conversion action이 바뀌었는지 봅니다 ${googleObjectiveRef}. 정책 비승인·제한 상태, 쇼핑/PMax 피드 품질, 오프라인 전환 업로드 누락도 확인합니다.`,
+    `- **네이버**: 검색어·키워드·입찰·랜딩을 먼저 보고, 쇼핑검색은 상품 DB URL, EP, 카테고리 매칭, 미서비스 상품, 가격비교 업데이트 상태를 점검합니다 ${naverDbRef}.`,
+    `- **카카오**: 비즈보드/디스플레이/메시지 지면에서 카카오 서비스 오인, 제한 업종, AI 생성물 표시, 소재·랜딩 불일치가 없는지 확인합니다 ${kakaoPolicyRef}. 톡채널검색은 채널과 사이트 사업자 정보, 등록불가 사이트 조건도 봅니다 ${kakaoChannelRef}.`,
+    '',
+    '**3. 실무 판단 규칙**',
+    '',
+    '- 전환수만 떨어지고 클릭·도달은 정상: 태그, 이벤트, CRM, 랜딩 완료 페이지를 먼저 봅니다.',
+    '- 도달과 클릭이 동시에 하락: 예산 소진, 입찰 제한, 정책 제한, 타겟/지면 축소를 먼저 봅니다.',
+    '- CTR만 하락: 소재 피로도, 메시지 반복, 지면별 소재 비율을 확인합니다.',
+    '- CVR만 하락: 랜딩 속도, 가격/재고, 상품 DB, 상담 응답 SLA를 확인합니다.',
+    '- 특정 매체만 하락: 해당 매체의 정책/심사, 계정 상태, 최근 자동화 변경을 먼저 봅니다.',
+    '',
+    `근거: ${Array.from(used).sort((a, b) => a - b).map(index => `[S${index + 1}]`).join(', ')}`,
+  ];
+
+  return finalizeOfficialSnapshotDeterministicAnswer(
+    lines,
+    scenarioSources,
+    used,
+    'compass-answer-deterministic-performance-drop-troubleshooting',
+    86,
+  );
+}
+
+function buildNaverKakaoAssetGuideComparisonAnswer(
+  sources: ReturnType<typeof buildVerifiedSources>,
+): DeterministicProductAnswer | null {
+  const requiredChunkIds = uniqueOfficialChunkIds([
+    ...NAVER_PRODUCT_PLANNING_MATRIX_REQUIRED_CHUNK_IDS,
+    ...KAKAO_PRODUCT_PLANNING_MATRIX_REQUIRED_CHUNK_IDS,
+  ]);
+  const prepared = prepareOfficialSnapshotAnswerSources(sources, requiredChunkIds);
+  if (!prepared) return null;
+  const { sources: scenarioSources, used, cite } = prepared;
+
+  const naverPowerlinkRef = cite('naver_powerlink_product_overview_2026_chunk_0');
+  const naverBrandRef = cite('naver_brandsearch_product_overview_2026_chunk_0');
+  const naverShoppingRef = cite('doc_1773710116296_uawf5xm_chunk_2');
+  const naverVideoRef = cite('doc_1764895606613_llkwwsf_doc_0');
+  const kakaoMomentRef = cite('kakao_moment_product_overview_2026_chunk_0');
+  const kakaoBizboardRef = cite('doc_1774488483929_bigcm1d_chunk_2');
+  const kakaoDisplayRef = cite('doc_1774488184369_r97sach_chunk_0');
+  const kakaoPolicyRef = cite('doc_1774488207473_cjq6ve0_chunk_19');
+
+  const lines = [
+    '네이버와 카카오 광고 상품·소재 가이드는 **검색 의도형 네이버**와 **카카오톡/카카오 지면형 카카오**로 나누어 보는 편이 실무적입니다.',
+    '',
+    '**1. 상품/소재 제작 기준 비교**',
+    '',
+    '| 매체 | 상품 유형 | 소재 제작에서 먼저 볼 것 | 심사·운영 체크 |',
+    '|---|---|---|---|',
+    `| 네이버 파워링크 | 검색어 기반 사이트 유입형 광고 | 키워드, 제목/설명, 표시 URL, 랜딩 관련성을 봅니다 ${naverPowerlinkRef}. | 검색어 intent와 랜딩 불일치, 허위·과장, 권리 침해 가능성을 점검합니다. |`,
+    `| 네이버 쇼핑검색 | 상품 DB/EP 기반 상품 노출 | 상품명, 대표이미지, 가격, 배송비, 카테고리, 상품 DB URL을 봅니다 ${naverShoppingRef}. | DB 수신, 카테고리 매칭, 미서비스 상품, 가격·재고 동기화를 확인합니다. |`,
+    `| 네이버 브랜드검색/DA/동영상 | 브랜드 키워드, DA, 동영상 지면 | 브랜드 키워드 자격, 브랜드 소재 템플릿, 숏폼/동영상 비율과 지면을 봅니다 ${naverBrandRef} ${naverVideoRef}. | 브랜드와 직접 연관된 키워드인지, 소재가 지면별 규격을 만족하는지 확인합니다. |`,
+    `| 카카오 비즈보드 | 카카오톡 기반 주요 지면 노출 | 카카오톡·다음·카카오서비스 지면, 소재 유형, 랜딩 옵션을 봅니다 ${kakaoBizboardRef}. | 카카오 서비스처럼 보이는 UI/로고/디자인 모방을 피해야 합니다 ${kakaoPolicyRef}. |`,
+    `| 카카오 디스플레이/카카오모먼트 | 카카오 핵심 서비스와 파트너 지면 노출 | 이미지/동영상 등 소재 유형, 노출 지면, 제작 가이드를 봅니다 ${kakaoDisplayRef} ${kakaoMomentRef}. | 업종 제한, 허위·과장, AI 생성물 표시, 랜딩 일치 여부를 확인합니다. |`,
+    '',
+    '**2. 제작 순서**',
+    '',
+    '- 네이버 검색형은 키워드와 랜딩 의도가 먼저이고, 쇼핑형은 상품 DB와 대표이미지/가격 품질이 먼저입니다.',
+    '- 카카오는 지면 경험이 먼저입니다. 같은 이미지라도 비즈보드, 디스플레이, 메시지에서 사용자 맥락과 심사 기준이 달라집니다.',
+    '- 두 매체 모두 소재 문구만 보지 말고 업종, 랜딩, 권리 침해, 허위·과장 표현을 함께 확인합니다.',
+    '',
+    '정리하면, 네이버는 **검색어/상품 DB/브랜드 키워드**, 카카오는 **카카오톡 지면/소재 유형/심사 기준**을 기준으로 소재 제작 가이드를 나누어야 합니다.',
+    '',
+    `근거: ${Array.from(used).sort((a, b) => a - b).map(index => `[S${index + 1}]`).join(', ')}`,
+  ];
+
+  return finalizeOfficialSnapshotDeterministicAnswer(
+    lines,
+    scenarioSources,
+    used,
+    'compass-answer-deterministic-naver-kakao-asset-guide-comparison',
+    86,
+  );
+}
+
+function buildCrossVendorProductAssetGuideAnswer(
+  sources: ReturnType<typeof buildVerifiedSources>,
+): DeterministicProductAnswer | null {
+  const requiredChunkIds = uniqueOfficialChunkIds([
+    'meta_business_help_objectives_2026_chunk_0',
+    'meta_business_help_formats_placements_2026_chunk_0',
+    'meta_business_help_operating_modules_2026_chunk_0',
+    'doc_1773886203371_8rlmmdv_chunk_1',
+    'google_ads_campaign_types_2026_chunk_0',
+    'google_ads_campaign_objectives_2026_chunk_0',
+    'google_ads_shopping_ads_2026_chunk_0',
+    'google_ads_app_campaigns_2026_chunk_0',
+    'naver_searchad_overview_powerlink_brand_2026_chunk_0',
+    'naver_powerlink_product_overview_2026_chunk_0',
+    'doc_1773710116296_uawf5xm_chunk_2',
+    'naver_brandsearch_product_overview_2026_chunk_0',
+    'kakao_moment_product_overview_2026_chunk_0',
+    'doc_1774488483929_bigcm1d_chunk_2',
+    'doc_1774488184369_r97sach_chunk_0',
+    'doc_1774488207473_cjq6ve0_chunk_19',
+  ]);
+  const prepared = prepareOfficialSnapshotAnswerSources(sources, requiredChunkIds);
+  if (!prepared) return null;
+  const { sources: scenarioSources, used, cite } = prepared;
+
+  const metaObjectiveRef = cite('meta_business_help_objectives_2026_chunk_0');
+  const metaFormatRef = cite('meta_business_help_formats_placements_2026_chunk_0');
+  const metaModuleRef = cite('meta_business_help_operating_modules_2026_chunk_0');
+  const metaCatalogRef = cite('doc_1773886203371_8rlmmdv_chunk_1');
+  const googleTypeRef = cite('google_ads_campaign_types_2026_chunk_0');
+  const googleObjectiveRef = cite('google_ads_campaign_objectives_2026_chunk_0');
+  const googleShoppingRef = cite('google_ads_shopping_ads_2026_chunk_0');
+  const googleAppRef = cite('google_ads_app_campaigns_2026_chunk_0');
+  const naverOverviewRef = cite('naver_searchad_overview_powerlink_brand_2026_chunk_0');
+  const naverPowerlinkRef = cite('naver_powerlink_product_overview_2026_chunk_0');
+  const naverShoppingRef = cite('doc_1773710116296_uawf5xm_chunk_2');
+  const naverBrandRef = cite('naver_brandsearch_product_overview_2026_chunk_0');
+  const kakaoMomentRef = cite('kakao_moment_product_overview_2026_chunk_0');
+  const kakaoBizboardRef = cite('doc_1774488483929_bigcm1d_chunk_2');
+  const kakaoDisplayRef = cite('doc_1774488184369_r97sach_chunk_0');
+  const kakaoPolicyRef = cite('doc_1774488207473_cjq6ve0_chunk_19');
+
+  const lines = [
+    '광고 상품과 소재 제작 가이드는 매체명을 나열하는 대신 **목표 → 상품/캠페인 유형 → 소재 형식 → 측정·심사 조건**으로 나누어 보면 실무에서 재사용하기 쉽습니다.',
+    '',
+    '**1. 매체별 상품/소재 기준**',
+    '',
+    '| 매체 | 상품/캠페인 축 | 소재 제작에서 먼저 볼 것 | 측정·심사 체크 |',
+    '|---|---|---|---|',
+    `| Meta | 인지도, 트래픽, 참여, 잠재 고객, 앱 홍보, 판매 같은 캠페인 목표를 먼저 정합니다 ${metaObjectiveRef}. | 이미지, 동영상, 카루셀, 컬렉션, 인스턴트 경험을 목표와 Facebook/Instagram 지면별로 나눕니다 ${metaFormatRef}. | 리드, 앱, 카탈로그는 전환 위치, Pixel/CAPI, 앱 이벤트, 카탈로그 피드까지 같이 봅니다 ${metaModuleRef} ${metaCatalogRef}. |`,
+    `| Google Ads | 판매, 리드, 웹사이트 트래픽, 브랜드 인지도와 도달범위, 앱 홍보 같은 목표와 검색/디스플레이/동영상/쇼핑/앱/PMax 유형을 연결합니다 ${googleObjectiveRef} ${googleTypeRef}. | 검색은 텍스트와 랜딩, 디스플레이/동영상은 이미지·영상 애셋, 쇼핑은 상품 피드, 앱은 앱 애셋을 봅니다. | 쇼핑은 Merchant Center 상품 데이터와 정책, 앱은 Google Play/YouTube/Discover 등 게재와 앱 이벤트를 함께 확인합니다 ${googleShoppingRef} ${googleAppRef}. |`,
+    `| 네이버 | 파워링크, 쇼핑검색, 브랜드검색 등 검색어 기반 상품을 목적별로 나눕니다 ${naverOverviewRef}. | 파워링크는 키워드·제목·설명·URL, 쇼핑검색은 상품명·이미지·가격·카테고리, 브랜드검색은 브랜드 템플릿을 봅니다 ${naverPowerlinkRef} ${naverShoppingRef} ${naverBrandRef}. | 검색어와 랜딩 일치, 상품 DB/EP 수신, 가격·재고 동기화, 브랜드 키워드 자격을 확인합니다. |`,
+    `| 카카오 | 카카오모먼트에서 비즈보드, 디스플레이, 동영상, 메시지 광고를 목적별로 집행합니다 ${kakaoMomentRef}. | 비즈보드는 카카오톡 주요 지면과 랜딩 옵션, 디스플레이는 소재 유형과 카카오 핵심 서비스 지면을 봅니다 ${kakaoBizboardRef} ${kakaoDisplayRef}. | 카카오 서비스 오인, UI/로고 모방, AI 생성물 표시, 제한 업종, 허위·과장 가능성을 심사 기준으로 봅니다 ${kakaoPolicyRef}. |`,
+    '',
+    '**2. 질문 유형별 빠른 분기**',
+    '',
+    '- **상품 종류를 묻는 질문**: 캠페인 목표와 상품/캠페인 유형을 먼저 정리합니다.',
+    '- **소재 제작을 묻는 질문**: 형식, 비율, 지면, 랜딩, 심사 표현을 함께 정리합니다.',
+    '- **성과/전환을 묻는 질문**: 전환 태그, Pixel/CAPI, Google tag/GA, 앱 SDK/MMP, 상품 피드, CRM 수신을 분리합니다.',
+    '- **커머스 질문**: Google Merchant Center, Meta 카탈로그, 네이버 상품 DB/EP, 카카오 상품·지면 조건을 가격·재고 동기화 기준으로 비교합니다.',
+    '',
+    '정리하면, 다매체 상품 가이드는 **Meta=목표·전환 위치·지면/형식**, **Google=목표·캠페인 유형·애셋/전환**, **네이버=검색어·상품 DB·브랜드 키워드**, **카카오=카카오톡 지면·소재 유형·심사 기준**으로 나누는 것이 안전합니다.',
+    '',
+    `근거: ${Array.from(used).sort((a, b) => a - b).map(index => `[S${index + 1}]`).join(', ')}`,
+  ];
+
+  return finalizeOfficialSnapshotDeterministicAnswer(
+    lines,
+    scenarioSources,
+    used,
+    'compass-answer-deterministic-cross-vendor-product-asset-guide',
+    88,
+  );
+}
+
+function buildMetaAssetGuideProductAnswer(
+  sources: ReturnType<typeof buildVerifiedSources>,
+): DeterministicProductAnswer | null {
+  const requiredChunkIds = uniqueOfficialChunkIds([
+    ...META_PRODUCT_PLANNING_MATRIX_REQUIRED_CHUNK_IDS,
+    'doc_1773886203371_8rlmmdv_chunk_1',
+    'doc_1773886203371_8rlmmdv_chunk_2',
+  ]);
+  const prepared = prepareOfficialSnapshotAnswerSources(sources, requiredChunkIds);
+  if (!prepared) return null;
+  const { sources: scenarioSources, used, cite } = prepared;
+
+  const objectiveRef = cite('meta_business_help_objectives_2026_chunk_0');
+  const formatRef = cite('meta_business_help_formats_placements_2026_chunk_0');
+  const moduleRef = cite('meta_business_help_operating_modules_2026_chunk_0');
+  const catalogRef = cite('doc_1773886203371_8rlmmdv_chunk_1');
+  const advantageRef = cite('doc_1773886203371_8rlmmdv_chunk_2');
+
+  const lines = [
+    'Meta 광고 상품과 소재 제작 가이드는 **캠페인 목표 → 전환 위치/운영 모듈 → 광고 형식 → 게재 위치별 사양** 순서로 봐야 합니다.',
+    '',
+    '**1. 상품 유형과 소재 축**',
+    '',
+    '| 유형 | 주 목적 | 주로 확인할 소재/형식 | 제작 체크 |',
+    '|---|---|---|---|',
+    `| 인지도/도달 | 브랜드 인지, 도달, 기억률 확대 ${objectiveRef} | 이미지, 동영상, 카루셀 | 첫 화면 메시지, 반복 노출 피로도, 피드/스토리/릴스 비율을 나눕니다 ${formatRef}. |`,
+    `| 트래픽/참여/메시지 | 웹사이트 방문, 게시물 반응, 메시지 대화 ${objectiveRef} | 링크형 이미지/동영상, 카루셀, 메시지 진입 소재 | 클릭 후 랜딩 속도, CTA, 메시지 상담 가능 시간을 확인합니다. |`,
+    `| 리드 수집 | 상담 신청, 견적 요청, 연락처 확보 ${objectiveRef} | 인스턴트 양식, 메시지, 전화 전환 위치와 연결되는 소재 ${moduleRef} | 양식 질문, 개인정보 고지, CRM 수신, 후속 상담 SLA를 소재 전부터 정합니다. |`,
+    `| 앱 홍보 | 앱 설치와 앱 이벤트 최적화 ${objectiveRef} | 모바일 짧은 동영상, 이미지, 스토어 이동 소재 | SDK/MMP, 앱 이벤트, 설치 후 핵심 행동 이벤트가 준비되어야 합니다 ${moduleRef}. |`,
+    `| 판매/카탈로그 | 구매, 장바구니, 상품 탐색 ${objectiveRef} | 컬렉션, 카탈로그, Advantage+ 카탈로그 | 컬렉션은 커버 이미지/동영상과 상품 이미지를 연결해 구매 흐름을 만듭니다 ${catalogRef}. Advantage+ 카탈로그와 상품 세트·이벤트 매칭도 확인합니다 ${advantageRef}. |`,
+    '',
+    '**2. 제작 전 체크리스트**',
+    '',
+    '- 목표에서 지원되는 형식과 게재 위치를 먼저 확인합니다. Meta는 목표별로 사용할 수 있는 게재 위치와 광고 형식을 구분합니다.',
+    '- 이미지, 동영상, 카루셀, 컬렉션, 인스턴트 경험은 같은 소재를 그대로 복붙하지 말고 지면별 비율과 CTA를 나눕니다.',
+    '- 리드/앱/카탈로그는 소재 문제가 아니라 측정·데이터 모듈 문제까지 포함합니다.',
+    '- 카탈로그형은 상품 피드, 상품 세트, 품절·가격 동기화, Pixel/CAPI 이벤트를 함께 점검합니다.',
+    '',
+    `근거: ${Array.from(used).sort((a, b) => a - b).map(index => `[S${index + 1}]`).join(', ')}`,
+  ];
+
+  return finalizeOfficialSnapshotDeterministicAnswer(
+    lines,
+    scenarioSources,
+    used,
+    'compass-answer-deterministic-meta-asset-guide-product-matrix',
+    88,
+  );
+}
+
+function buildOperationalScenarioDeterministicAnswer(
+  message: string,
+  intent: QueryIntent,
+  sources: ReturnType<typeof buildVerifiedSources>,
+): DeterministicProductAnswer | null {
+  const normalized = normalizeProductIntentText(message);
+
+  if (isPerformanceDropTroubleshootingQuestion(message)) {
+    return buildPerformanceDropTroubleshootingAnswer(sources);
+  }
+
+  if (isCommerceProductFeedQuestion(message, intent) && intent.vendors.length >= 2) {
+    return buildEcommerceProductFeedComparisonAnswer(sources);
+  }
+
+  if (isAcquisitionRetargetingBudgetQuestion(message, intent) && intent.vendors.length >= 2) {
+    return buildCrossVendorBudgetFrameworkAnswer(sources);
+  }
+
+  if (isAssetGuideProductQuestion(message)) {
+    if (intent.vendors.includes('NAVER') && intent.vendors.includes('KAKAO')) {
+      return buildNaverKakaoAssetGuideComparisonAnswer(sources);
+    }
+    if (intent.vendors.length === 1 && intent.vendors[0] === 'META') {
+      return buildMetaAssetGuideProductAnswer(sources);
+    }
+    if (intent.vendors.length === 1 && intent.vendors[0] === 'GOOGLE') {
+      return buildGoogleProductPlanningMatrixAnswer(sources);
+    }
+    if (intent.vendors.length >= 3) {
+      return buildCrossVendorProductAssetGuideAnswer(sources);
+    }
+  }
+
+  if (
+    intent.vendors.length === 1
+    && intent.vendors[0] === 'KAKAO'
+    && /톡채널|카카오모먼트|비즈보드|메시지|업종별|선택|언제|기준|상품\s*(종류|유형|가이드)/.test(normalized)
+  ) {
+    return buildKakaoProductSelectionMatrixAnswer(sources);
+  }
+
+  if (
+    intent.vendors.length === 1
+    && intent.vendors[0] === 'NAVER'
+    && /파워링크|쇼핑검색|브랜드검색|검색광고|과금|랜딩|전환\s*측정|캠페인\s*목적|소재\s*구성/.test(normalized)
+  ) {
+    return buildNaverSearchAdProductComparisonAnswer(sources);
+  }
+
+  if (
+    intent.vendors.includes('NAVER')
+    && intent.vendors.includes('KAKAO')
+    && /상품\s*(종류|유형|가이드)|광고\s*상품|소재/.test(normalized)
+  ) {
+    return buildNaverKakaoAssetGuideComparisonAnswer(sources);
+  }
+
+  return null;
 }
 
 function countEvidenceBackedSupportedBullets(
@@ -9680,6 +10301,52 @@ export async function buildCompassAnswerResponse(
       });
     }
 
+    const sources = orderVerifiedSourcesForIntent(buildVerifiedSources(verifiedSearchResults, ragIntent), ragIntent);
+    const confidence = calculateConfidence(verifiedSearchResults, ragIntent);
+    const schema = getCompassDbSchema();
+    const operationalScenarioAnswer = buildOperationalScenarioDeterministicAnswer(message, ragIntent, sources);
+    if (operationalScenarioAnswer) {
+      const answerCoveredVendors = Array.from(new Set(
+        operationalScenarioAnswer.sources.flatMap(source => [
+          ...(Array.isArray(source.sourceVendors) ? source.sourceVendors : []),
+          source.sourceVendor,
+        ]).filter(isVendorIntentValue),
+      ));
+      const deterministicBaseConfidence = Math.max(
+        confidence,
+        operationalScenarioAnswer.confidenceCap || confidence,
+      );
+      emitPhase?.({ phase: 'answer-ready', message: '공식 운영 시나리오 근거를 기준으로 답변을 정리했습니다.' });
+      return {
+        body: {
+          response: {
+            message: operationalScenarioAnswer.answer,
+            content: operationalScenarioAnswer.answer,
+            sources: operationalScenarioAnswer.sources,
+            noDataFound: false,
+            schema,
+            showContactOption: false,
+            sourceDiagnostics: {
+              ...sourceDiagnostics,
+              coveredVendors: answerCoveredVendors.length > 0 ? answerCoveredVendors : sourceDiagnostics.coveredVendors,
+              missingVendorSlots: [],
+              answerSourceCount: operationalScenarioAnswer.sources.length,
+              answerGenerationDurationMs: 0,
+              deterministicAnswerFamily: detectProductAnswerFamily(message, ragIntent),
+              operationalScenarioAnswer: true,
+            },
+            reviewPipeline: buildDeterministicProductReviewPipeline(
+              operationalScenarioAnswer,
+              searchResults.length,
+            ),
+          },
+          confidence: getDeterministicProductConfidence(deterministicBaseConfidence, operationalScenarioAnswer),
+          processingTime: Date.now() - startTime,
+          model: operationalScenarioAnswer.model,
+        },
+      };
+    }
+
     // 2. 검색 결과가 없으면 관련 내용 없음 응답
     if (verifiedSearchResults.length === 0 && retrievalLimited) {
       console.warn('Compass answer request completed with retrieval timeout and no grounded evidence');
@@ -9739,10 +10406,7 @@ export async function buildCompassAnswerResponse(
 
     // 3. 설정된 답변 LLM으로 생성. Retrieval/source contract remains provider-agnostic.
     console.log('Compass answer generation started');
-    
-    const sources = orderVerifiedSourcesForIntent(buildVerifiedSources(verifiedSearchResults, ragIntent), ragIntent);
-    const confidence = calculateConfidence(verifiedSearchResults, ragIntent);
-    const schema = getCompassDbSchema();
+
     const coverageNotice = buildCoverageNotice(sourceDiagnostics);
     const reviewPipeline = buildReviewPipeline({
       status: 'completed',
