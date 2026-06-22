@@ -115,7 +115,7 @@ const COMPASS_ANSWER_RESPONSE_CACHE_TTL_MS = Math.min(
   900000,
 );
 const COMPASS_ANSWER_RESPONSE_CACHE_MAX_ENTRIES = 64;
-const COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v25-meta-google-lead-capi-crm-webhook';
+const COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v26-lead-operating-intent-packs';
 const compassAnswerResponseCache = new Map<string, CompassAnswerResponseCacheEntry>();
 const compassAnswerRuntimeMetrics = {
   startedAt: Date.now(),
@@ -1067,6 +1067,7 @@ function isBroadMetaProductPlanningQuestion(message: string, intent?: QueryInten
 
 function isMetaGoogleLeadComparisonQuestion(message: string, intent: QueryIntent): boolean {
   const normalized = normalizeProductIntentText(message);
+  if (isLeadKpiFrameworkQuestion(message)) return false;
   const asksMeta = intent.vendors.includes('META') || /meta|메타|facebook|페이스북|instagram|인스타그램/.test(normalized);
   const asksGoogle = intent.vendors.includes('GOOGLE') || /google|구글|youtube|유튜브|google\s*ads/.test(normalized);
   if (!asksMeta || !asksGoogle) return false;
@@ -1083,6 +1084,59 @@ function isMetaGoogleLeadComparisonQuestion(message: string, intent: QueryIntent
   ].filter(Boolean).length;
 
   return comparisonSignal && axisCount >= 2;
+}
+
+type LeadOperatingAnswerFamily =
+  | 'meta_lead_methods'
+  | 'google_lead_methods'
+  | 'cross_vendor_lead_operations'
+  | 'cross_vendor_lead_kpi_framework';
+
+function questionMentionsMeta(message: string, intent: QueryIntent): boolean {
+  const normalized = normalizeProductIntentText(message);
+  return intent.vendors.includes('META') || /meta|메타|facebook|페이스북|instagram|인스타그램/.test(normalized);
+}
+
+function questionMentionsGoogle(message: string, intent: QueryIntent): boolean {
+  const normalized = normalizeProductIntentText(message);
+  return intent.vendors.includes('GOOGLE') || /google|구글|youtube|유튜브|google\s*ads|구글\s*광고/.test(normalized);
+}
+
+function isLeadOperatingQuestion(message: string): boolean {
+  const normalized = normalizeProductIntentText(message);
+  return /리드|잠재\s*고객|lead|양식|instant\s*form|인스턴트\s*폼|인스턴트\s*양식|crm|mql|sql|cpl|계약률|유효\s*리드|오프라인\s*전환|offline\s*conversion|webhook|전화\s*리드|메시지\s*리드|웹사이트\s*전환/.test(normalized);
+}
+
+function isLeadKpiFrameworkQuestion(message: string): boolean {
+  const normalized = normalizeProductIntentText(message);
+  const hasKpiTerm = /kpi|cpl|유효\s*리드|mql|sql|계약률|계약\s*전환|상담\s*연결|품질\s*관리|최적화|운영\s*프레임워크|성과\s*보고|리드\s*수/.test(normalized);
+  return hasKpiTerm && /리드|lead|잠재\s*고객/.test(normalized);
+}
+
+function detectLeadOperatingAnswerFamily(message: string, intent: QueryIntent): LeadOperatingAnswerFamily | null {
+  if (!isLeadOperatingQuestion(message)) return null;
+  if (isBroadMetaProductPlanningQuestion(message, intent)) return null;
+
+  const normalized = normalizeProductIntentText(message);
+  const asksMeta = questionMentionsMeta(message, intent);
+  const asksGoogle = questionMentionsGoogle(message, intent);
+
+  if (asksMeta && asksGoogle) {
+    if (isLeadKpiFrameworkQuestion(message)) return 'cross_vendor_lead_kpi_framework';
+    return 'cross_vendor_lead_operations';
+  }
+
+  if (asksMeta) {
+    const asksLeadMethod = /instant\s*form|인스턴트\s*(폼|양식)|웹사이트\s*전환|website\s*conversion|메시지|messag|전화|phone|crm|품질|추적|pixel|픽셀|capi|conversions?\s*api|리드\s*(캠페인|양식|광고|품질|수집|관리)/.test(normalized);
+    return asksLeadMethod ? 'meta_lead_methods' : null;
+  }
+
+  if (asksGoogle) {
+    const asksLeadMethod = /검색\s*리드|리드\s*양식|lead\s*form|웹사이트\s*전환|website\s*conversion|pmax|실적\s*최대화|동영상|디스플레이|오프라인\s*전환|향상된\s*전환|webhook|api|qa|체크리스트|crm|품질|추적|전환\s*(목표|액션|가져오기)/.test(normalized);
+    return asksLeadMethod ? 'google_lead_methods' : null;
+  }
+
+  return null;
 }
 
 function isWholeProductCatalogQuestionText(normalized: string): boolean {
@@ -4392,6 +4446,40 @@ const META_GOOGLE_LEAD_COMPARISON_REQUIRED_CHUNK_IDS = [
   'google_ads_lead_form_export_crm_api_2026_chunk_0',
 ] as const;
 
+const META_LEAD_OPERATING_REQUIRED_CHUNK_IDS = [
+  'meta_business_help_ad_levels_2026_chunk_0',
+  'meta_business_help_objectives_2026_chunk_0',
+  'meta_business_help_formats_placements_2026_chunk_0',
+  'meta_business_help_operating_modules_2026_chunk_0',
+  'meta_business_help_lead_ads_instant_forms_2026_chunk_0',
+  'meta_business_help_lead_data_crm_2026_chunk_0',
+  'meta_business_help_pixel_capi_leads_2026_chunk_0',
+  'meta_business_help_capi_crm_quality_leads_2026_chunk_0',
+] as const;
+
+const GOOGLE_LEAD_OPERATING_REQUIRED_CHUNK_IDS = [
+  'google_ads_campaign_objectives_2026_chunk_0',
+  'google_ads_campaign_types_2026_chunk_0',
+  'doc_1773662526796_7rijhfq_chunk_1',
+  'doc_1773662526796_7rijhfq_chunk_2',
+  'doc_1773662526796_7rijhfq_chunk_3',
+  'google_ads_conversion_goals_leads_2026_chunk_0',
+  'google_ads_web_conversion_measurement_2026_chunk_0',
+  'google_ads_offline_enhanced_conversions_leads_2026_chunk_0',
+  'google_ads_lead_form_export_crm_api_2026_chunk_0',
+] as const;
+
+const GOOGLE_PRODUCT_PLANNING_MATRIX_REQUIRED_CHUNK_IDS = [
+  'google_ads_campaign_objectives_2026_chunk_0',
+  'google_ads_campaign_types_2026_chunk_0',
+  'doc_1773662526796_7rijhfq_chunk_1',
+  'google_ads_conversion_goals_leads_2026_chunk_0',
+  'google_ads_web_conversion_measurement_2026_chunk_0',
+  'google_ads_offline_enhanced_conversions_leads_2026_chunk_0',
+  'google_ads_shopping_ads_2026_chunk_0',
+  'google_ads_app_campaigns_2026_chunk_0',
+] as const;
+
 function buildOfficialProductOverviewSnapshotSearchResult(
   row: ReturnType<typeof getCompassOfficialDocumentChunkSnapshotRows>[number],
 ): SearchResult {
@@ -4498,6 +4586,63 @@ function sourceHasExactMetaProductPlanningMatrixChunk(
   return sourceHasExactOfficialSnapshotChunk(source, chunkId);
 }
 
+function uniqueOfficialChunkIds(chunkIds: readonly string[]): string[] {
+  return Array.from(new Set(chunkIds));
+}
+
+function getLeadOperatingRequiredChunkIds(message: string, intent: QueryIntent): string[] {
+  const family = detectLeadOperatingAnswerFamily(message, intent);
+  if (!family) return [];
+
+  if (family === 'meta_lead_methods') return uniqueOfficialChunkIds(META_LEAD_OPERATING_REQUIRED_CHUNK_IDS);
+  if (family === 'google_lead_methods') return uniqueOfficialChunkIds(GOOGLE_LEAD_OPERATING_REQUIRED_CHUNK_IDS);
+
+  return uniqueOfficialChunkIds([
+    ...META_LEAD_OPERATING_REQUIRED_CHUNK_IDS,
+    ...GOOGLE_LEAD_OPERATING_REQUIRED_CHUNK_IDS,
+  ]);
+}
+
+function buildOfficialSnapshotSupplementalSearchResults(
+  requiredChunkIds: readonly string[],
+  existingResults: SearchResult[],
+): SearchResult[] {
+  const missingChunkIds = requiredChunkIds
+    .filter(chunkId => !existingResults.some(result => searchResultHasExactOfficialSnapshotChunk(result, chunkId)));
+  if (missingChunkIds.length === 0) return [];
+
+  return getCompassOfficialDocumentChunkSnapshotRows(uniqueOfficialChunkIds(missingChunkIds))
+    .map(buildOfficialProductOverviewSnapshotSearchResult);
+}
+
+function buildLeadOperatingSupplementalSearchResults(
+  message: string,
+  intent: QueryIntent,
+  existingResults: SearchResult[],
+): SearchResult[] {
+  const requiredChunkIds = getLeadOperatingRequiredChunkIds(message, intent);
+  if (requiredChunkIds.length === 0) return [];
+  return buildOfficialSnapshotSupplementalSearchResults(requiredChunkIds, existingResults);
+}
+
+function ensureOfficialSnapshotSources(
+  sources: ReturnType<typeof buildVerifiedSources>,
+  requiredChunkIds: readonly string[],
+): ReturnType<typeof buildVerifiedSources> {
+  const missingChunkIds = requiredChunkIds
+    .filter(chunkId => !sources.some(source => sourceHasExactOfficialSnapshotChunk(source, chunkId)));
+
+  if (missingChunkIds.length === 0) return sources;
+
+  const supplementalSources = buildVerifiedSources(
+    getCompassOfficialDocumentChunkSnapshotRows(uniqueOfficialChunkIds(missingChunkIds))
+      .map(buildOfficialProductOverviewSnapshotSearchResult),
+  );
+
+  if (supplementalSources.length === 0) return sources;
+  return [...sources, ...supplementalSources];
+}
+
 function ensureMetaProductPlanningMatrixSources(
   sources: ReturnType<typeof buildVerifiedSources>,
 ): ReturnType<typeof buildVerifiedSources> {
@@ -4537,29 +4682,26 @@ function buildMetaGoogleLeadComparisonSupplementalSearchResults(
 ): SearchResult[] {
   if (!isMetaGoogleLeadComparisonQuestion(message, intent)) return [];
 
-  const missingChunkIds = META_GOOGLE_LEAD_COMPARISON_REQUIRED_CHUNK_IDS
-    .filter(chunkId => !existingResults.some(result => searchResultHasExactOfficialSnapshotChunk(result, chunkId)));
-  if (missingChunkIds.length === 0) return [];
-
-  return getCompassOfficialDocumentChunkSnapshotRows([...missingChunkIds])
-    .map(buildOfficialProductOverviewSnapshotSearchResult);
+  return buildOfficialSnapshotSupplementalSearchResults(
+    META_GOOGLE_LEAD_COMPARISON_REQUIRED_CHUNK_IDS,
+    existingResults,
+  );
 }
 
 function ensureMetaGoogleLeadComparisonSources(
   sources: ReturnType<typeof buildVerifiedSources>,
 ): ReturnType<typeof buildVerifiedSources> {
-  const missingChunkIds = META_GOOGLE_LEAD_COMPARISON_REQUIRED_CHUNK_IDS
-    .filter(chunkId => !sources.some(source => sourceHasExactOfficialSnapshotChunk(source, chunkId)));
+  return ensureOfficialSnapshotSources(sources, META_GOOGLE_LEAD_COMPARISON_REQUIRED_CHUNK_IDS);
+}
 
-  if (missingChunkIds.length === 0) return sources;
-
-  const supplementalSources = buildVerifiedSources(
-    getCompassOfficialDocumentChunkSnapshotRows([...missingChunkIds])
-      .map(buildOfficialProductOverviewSnapshotSearchResult),
-  );
-
-  if (supplementalSources.length === 0) return sources;
-  return [...sources, ...supplementalSources];
+function ensureLeadOperatingSources(
+  message: string,
+  intent: QueryIntent,
+  sources: ReturnType<typeof buildVerifiedSources>,
+): ReturnType<typeof buildVerifiedSources> {
+  const requiredChunkIds = getLeadOperatingRequiredChunkIds(message, intent);
+  if (requiredChunkIds.length === 0) return sources;
+  return ensureOfficialSnapshotSources(sources, requiredChunkIds);
 }
 
 function getMetaProductPlanningMatrixRequiredSourceIndexes(
@@ -4609,12 +4751,74 @@ function getMetaGoogleLeadComparisonRequiredSourceIndexes(
   };
 }
 
+function getGoogleProductPlanningMatrixRequiredSourceIndexes(
+  sources: ReturnType<typeof buildVerifiedSources>,
+) {
+  const indexes = GOOGLE_PRODUCT_PLANNING_MATRIX_REQUIRED_CHUNK_IDS.map(chunkId => (
+    sources.findIndex(source => sourceHasExactOfficialSnapshotChunk(source, chunkId))
+  ));
+  if (indexes.some(index => index < 0)) return null;
+  if (new Set(indexes).size !== GOOGLE_PRODUCT_PLANNING_MATRIX_REQUIRED_CHUNK_IDS.length) return null;
+
+  return {
+    googleObjectivesIndex: indexes[0],
+    googleTypesIndex: indexes[1],
+    googleLeadAvailabilityIndex: indexes[2],
+    googleConversionGoalsIndex: indexes[3],
+    googleWebConversionIndex: indexes[4],
+    googleOfflineEnhancedIndex: indexes[5],
+    googleShoppingIndex: indexes[6],
+    googleAppIndex: indexes[7],
+  };
+}
+
+function finalizeOfficialSnapshotDeterministicAnswer(
+  lines: string[],
+  sources: ReturnType<typeof buildVerifiedSources>,
+  used: Set<number>,
+  model: string,
+  confidenceCap = 88,
+): DeterministicProductAnswer {
+  const citedSourceIndexes = Array.from(used).sort((a, b) => a - b);
+  const citedSourceLabels = new Map(citedSourceIndexes.map((sourceIndex, citationIndex) => [
+    sourceIndex + 1,
+    citationIndex + 1,
+  ]));
+  const answer = lines.join('\n').replace(/\[S(\d+)\]/g, (label, sourceNumber) => {
+    const remappedLabel = citedSourceLabels.get(Number(sourceNumber));
+    return remappedLabel ? `[S${remappedLabel}]` : label;
+  });
+
+  return {
+    answer,
+    sources: citedSourceIndexes.map(index => sources[index]),
+    model,
+    showContactOption: false,
+    confidenceCap,
+    reviewStatus: 'completed',
+  };
+}
+
+function getRequiredOfficialSnapshotIndexes(
+  sources: ReturnType<typeof buildVerifiedSources>,
+  chunkIds: readonly string[],
+) {
+  const indexes = chunkIds.map(chunkId => (
+    sources.findIndex(source => sourceHasExactOfficialSnapshotChunk(source, chunkId))
+  ));
+  if (indexes.some(index => index < 0)) return null;
+  return indexes;
+}
+
 function buildMetaGoogleLeadComparisonAnswer(
   message: string,
   intent: QueryIntent,
   sources: ReturnType<typeof buildVerifiedSources>,
 ): DeterministicProductAnswer | null {
-  if (!isMetaGoogleLeadComparisonQuestion(message, intent)) return null;
+  if (
+    !isMetaGoogleLeadComparisonQuestion(message, intent)
+    && detectLeadOperatingAnswerFamily(message, intent) !== 'cross_vendor_lead_operations'
+  ) return null;
 
   const comparisonSources = ensureMetaGoogleLeadComparisonSources(sources);
   const requiredSourceIndexes = getMetaGoogleLeadComparisonRequiredSourceIndexes(comparisonSources);
@@ -4767,6 +4971,285 @@ function buildMetaGoogleLeadComparisonAnswer(
   };
 }
 
+function buildMetaLeadOperatingAnswer(
+  message: string,
+  intent: QueryIntent,
+  sources: ReturnType<typeof buildVerifiedSources>,
+): DeterministicProductAnswer | null {
+  if (detectLeadOperatingAnswerFamily(message, intent) !== 'meta_lead_methods') return null;
+
+  const leadSources = ensureLeadOperatingSources(message, intent, sources);
+  const indexes = getRequiredOfficialSnapshotIndexes(leadSources, META_LEAD_OPERATING_REQUIRED_CHUNK_IDS);
+  if (!indexes) return null;
+
+  const [
+    metaLevelsIndex,
+    metaObjectivesIndex,
+    metaFormatsIndex,
+    metaModulesIndex,
+    metaLeadInstantFormIndex,
+    metaLeadCrmIndex,
+    metaPixelCapiIndex,
+    metaCapiCrmQualityIndex,
+  ] = indexes;
+  const used = new Set<number>();
+  const citation = (index: number) => {
+    used.add(index);
+    return `[S${index + 1}]`;
+  };
+
+  const metaLevelRef = citation(metaLevelsIndex);
+  const metaObjectiveRef = citation(metaObjectivesIndex);
+  const metaFormatRef = citation(metaFormatsIndex);
+  const metaLeadRef = citation(metaModulesIndex);
+  const metaInstantRef = citation(metaLeadInstantFormIndex);
+  const metaCrmRef = citation(metaLeadCrmIndex);
+  const metaPixelRef = citation(metaPixelCapiIndex);
+  const metaQualityRef = citation(metaCapiCrmQualityIndex);
+
+  const lines = [
+    'Meta 리드 캠페인은 “리드 상품 하나”를 고르는 문제가 아니라, **잠재 고객 목표 + 전환 위치 + 양식/메시지/전화/웹사이트 흐름 + Pixel/CAPI + CRM 품질 신호**를 조합해 설계하는 문제로 보는 편이 안전합니다.',
+    '아래 내용은 공식 기능 조건을 바탕으로 한 운영 해석입니다. 실제 집행 전에는 업종, 개인정보처리방침, 계정 권한, CRM 수신 상태를 계정 화면에서 다시 확인해야 합니다.',
+    '',
+    '**1. 선택 기준 비교**',
+    '',
+    '| 리드 방식 | 언제 우선 선택하나 | 추적/최적화 | CRM·품질 관리 |',
+    '|---|---|---|---|',
+    `| Instant Form / 인스턴트 양식 | 랜딩 이동 없이 빠르게 상담, 견적, 가입 정보를 받고 싶을 때 우선 검토합니다. 인스턴트 양식은 연락처와 맞춤 질문으로 리드를 생성·검증하는 구조입니다 ${metaInstantRef}. | 잠재 고객 목표와 전환 위치를 함께 보고, 캠페인-광고 세트-광고 단위 구조에서 목표·예산·게재 위치·소재를 나눠 세팅합니다 ${metaObjectiveRef} ${metaLevelRef}. | 제출 리드는 Ads Manager, 인스턴트 양식 페이지, Meta Business Suite, CSV/CRM 연결로 후속 처리하고 Qualified leads 기준을 맞춥니다 ${metaCrmRef}. 질문 수를 늘리면 리드량은 줄 수 있지만 의도 필터링에는 유리합니다. |`,
+    `| 웹사이트 전환 리드 | 랜딩에서 상세 설명, 가격/자격 조건, 신청 완료, 상담 예약, 견적 제출 등 하위 행동을 검증해야 할 때 선택합니다. | Meta Pixel, Conversions API, 웹사이트 이벤트로 웹 행동을 측정하고 최적화 신호를 보강합니다 ${metaPixelRef}. | CRM의 상담·계약 결과를 다시 묶으려면 Conversions API for CRM과 lead quality 흐름을 검토합니다 ${metaQualityRef}. |`,
+    `| 메시지 리드 | 즉시 대화, 상담사 연결, 챗 기반 상담 SLA가 중요한 경우 후보입니다. Meta의 리드 운영 모듈은 인스턴트 양식뿐 아니라 메시지, 전화 같은 전환 위치를 같이 검토하게 합니다 ${metaLeadRef}. | 메시지 전환 위치를 목표와 맞추고, 광고 형식과 Facebook/Instagram 지면별 소재 조건을 확인합니다 ${metaFormatRef}. | 상담 응답 시간, 대화 후 CRM 등록, 중복 문의 처리, 상담 결과 태깅을 운영 KPI로 둬야 합니다. |`,
+    `| 전화 리드 | 콜센터 연결, 예약 전화, 고관여 상담처럼 통화 자체가 1차 전환일 때 후보입니다. 전화 역시 리드 전환 위치 후보로 함께 검토합니다 ${metaLeadRef}. | 전화 연결 가능 시간, 지역/기기 조건, 지면별 소재 경험을 함께 봅니다 ${metaFormatRef}. | 통화 연결률, 부재/중복, 상담 품질, CRM 후속 상태를 리드 품질 KPI로 분리해야 합니다. |`,
+    '',
+    '**2. 운영 설계 순서**',
+    '',
+    `1. **캠페인 목표 먼저 확정**: Meta 목표 축에서 잠재 고객을 선택하고, 실제로 받을 전환 위치가 양식·메시지·전화·웹사이트 중 무엇인지 정합니다 ${metaObjectiveRef} ${metaLeadRef}.`,
+    `2. **광고 세트에서 운영 변수 분리**: 예산, 일정, 타겟, 게재 위치는 광고 세트에서 다루고, 소재와 문구는 광고 단위에서 관리합니다 ${metaLevelRef}.`,
+    `3. **지면/소재 호환성 확인**: 이미지, 동영상, 카루셀, 컬렉션, 인스턴트 경험 등 형식은 Facebook/Instagram 게재 위치와 목표에 따라 사용 조건이 달라질 수 있습니다 ${metaFormatRef}.`,
+    `4. **측정 체계 확정**: 웹사이트 리드는 Pixel/CAPI/웹 이벤트, 양식 리드는 CSV/CRM/Qualified leads, 하위 퍼널 품질은 Conversions API for CRM으로 이어지는지 봅니다 ${metaPixelRef} ${metaCrmRef} ${metaQualityRef}.`,
+    '',
+    '**3. 런칭 전 QA 체크리스트**',
+    '',
+    `- Instant Form: 질문 수, 개인정보처리방침 URL, 리드 광고 약관/보안 조건, 제출 완료 화면, CRM 필드 매핑을 확인합니다 ${metaInstantRef} ${metaCrmRef}.`,
+    `- 웹사이트 전환: Pixel 설치, Conversions API 이벤트, 신청 완료 이벤트명, 중복 이벤트, 테스트 이벤트 수신 여부를 확인합니다 ${metaPixelRef}.`,
+    '- 메시지/전화: 상담 가능 시간, 응답 SLA, 부재 처리, CRM 등록 규칙, 상담 결과 태깅 기준을 정합니다.',
+    `- 품질 피드백: Qualified leads 기준을 영업팀과 맞추고, lead quality 목표와 Conversions API for CRM 적용 가능성을 검토합니다 ${metaQualityRef}.`,
+    '',
+    '**4. 빠른 선택 기준**',
+    '',
+    '- **빠른 문의량**이 목표면 Instant Form, 메시지, 전화부터 검토합니다.',
+    '- **리드 품질과 자격 검증**이 중요하면 웹사이트 전환 또는 질문 수가 충분한 Instant Form을 우선 검토합니다.',
+    '- **영업 후속 성과**가 핵심이면 CRM 수신, Qualified leads, Conversions API for CRM을 먼저 준비한 뒤 예산을 키우는 편이 안전합니다.',
+    '',
+    `정리하면, Meta 리드 운영은 **전환 위치 선택 → 소재/지면 확인 → Pixel/CAPI 또는 CRM 연결 → Qualified leads/계약까지 품질 신호 회수** 순서로 설계해야 합니다.`,
+    '',
+    `근거: ${Array.from(used).sort((a, b) => a - b).map(index => `[S${index + 1}]`).join(', ')}`,
+  ];
+
+  return finalizeOfficialSnapshotDeterministicAnswer(
+    lines,
+    leadSources,
+    used,
+    'compass-answer-deterministic-meta-lead-operating-matrix',
+    88,
+  );
+}
+
+function buildGoogleLeadOperatingAnswer(
+  message: string,
+  intent: QueryIntent,
+  sources: ReturnType<typeof buildVerifiedSources>,
+): DeterministicProductAnswer | null {
+  if (detectLeadOperatingAnswerFamily(message, intent) !== 'google_lead_methods') return null;
+
+  const leadSources = ensureLeadOperatingSources(message, intent, sources);
+  const indexes = getRequiredOfficialSnapshotIndexes(leadSources, GOOGLE_LEAD_OPERATING_REQUIRED_CHUNK_IDS);
+  if (!indexes) return null;
+
+  const [
+    googleObjectivesIndex,
+    googleTypesIndex,
+    googleLeadAvailabilityIndex,
+    googleLeadPolicyIndex,
+    googleLeadConversionIndex,
+    googleConversionGoalsIndex,
+    googleWebConversionIndex,
+    googleOfflineEnhancedIndex,
+    googleLeadExportCrmApiIndex,
+  ] = indexes;
+  const used = new Set<number>();
+  const citation = (index: number) => {
+    used.add(index);
+    return `[S${index + 1}]`;
+  };
+
+  const googleObjectiveRef = citation(googleObjectivesIndex);
+  const googleTypeRef = citation(googleTypesIndex);
+  const googleLeadAvailabilityRef = citation(googleLeadAvailabilityIndex);
+  const googleLeadPolicyRef = citation(googleLeadPolicyIndex);
+  const googleLeadConversionRef = citation(googleLeadConversionIndex);
+  const googleConversionGoalsRef = citation(googleConversionGoalsIndex);
+  const googleWebConversionRef = citation(googleWebConversionIndex);
+  const googleOfflineEnhancedRef = citation(googleOfflineEnhancedIndex);
+  const googleLeadExportCrmApiRef = citation(googleLeadExportCrmApiIndex);
+
+  const lines = [
+    'Google Ads 리드 운영은 **리드 목표 + 캠페인 유형 + 리드 양식 애셋/웹사이트 전환 + 전환 목표와 Primary action + CRM/API/webhook + 오프라인·향상된 전환**을 같이 맞추는 구조로 봐야 합니다.',
+    '아래의 운영 판단은 공식 기능 조건을 바탕으로 한 실무 해석입니다. 실제 계정에서는 국가, 정책 준수 내역, 광고주 인증, 개인정보처리방침, 태그/CRM 권한을 다시 확인해야 합니다.',
+    '',
+    '**1. 리드 방식 비교**',
+    '',
+    '| 방식 | 언제 쓰나 | 세팅 핵심 | QA/주의점 |',
+    '|---|---|---|---|',
+    `| 검색 리드 양식 | 검색 수요가 이미 있고, 광고 클릭 후 바로 연락처를 제출받고 싶을 때 후보입니다. 리드 양식은 검색, 동영상, 실적 최대화, 디스플레이 캠페인에 추가할 수 있습니다 ${googleLeadAvailabilityRef}. | 캠페인 목표를 리드로 잡고, 캠페인 유형과 전환 중심 입찰을 맞춥니다 ${googleObjectiveRef} ${googleLeadConversionRef}. | 개인정보처리방침 링크, 정책 준수 내역, 민감 카테고리 제한을 확인합니다 ${googleLeadPolicyRef}. |`,
+    `| 웹사이트 전환 | 랜딩 콘텐츠, 가격/자격 조건, 폼 검증, 상담 예약 완료처럼 사이트 내 행동 품질을 보고 싶을 때 선택합니다. | Google tag 또는 Google Analytics 연결 상태를 확인하고 웹사이트 전환 액션을 생성해 리드 완료를 측정합니다 ${googleWebConversionRef}. | 태그 firing, 중복 전환, 완료 페이지/이벤트 조건, Primary/Secondary 분류를 확인합니다 ${googleConversionGoalsRef}. |`,
+    `| PMax/동영상/디스플레이 리드 | 검색 외 지면에서 확장 도달과 자동화를 쓰되 리드 제출까지 받고 싶을 때 후보입니다. Google Ads 캠페인 유형은 검색, 디스플레이, 동영상, 쇼핑, 앱, 실적 최대화 등으로 나뉩니다 ${googleTypeRef}. | 리드 양식 애셋 지원 여부와 전환 중심 입찰 조건을 확인합니다 ${googleLeadAvailabilityRef} ${googleLeadConversionRef}. | 동영상/디스플레이 리드 양식은 지출 요건과 광고주 인증이 필요할 수 있습니다 ${googleLeadPolicyRef}. |`,
+    `| 오프라인 전환 가져오기/향상된 전환 리드 | 광고 클릭 또는 전화 이후 상담, 계약, 구매 같은 후속 결과를 다시 Google Ads에 반영해야 할 때 사용합니다. | 오프라인 전환 가져오기는 오프라인에서 발생한 상담, 계약, 구매 결과를 측정하고, 향상된 전환 리드는 해시 처리된 1st-party 데이터를 활용합니다 ${googleOfflineEnhancedRef}. | GCLID/해시 데이터, 업로드 진단, 전환 시점, 중복 제거, CRM 상태값 매핑을 확인합니다. |`,
+    '',
+    '**2. 전환 목표와 입찰 기준**',
+    '',
+    `- Google Ads는 판매, 리드, 웹사이트 트래픽 등 목표를 먼저 정하고 목표에 맞는 캠페인 유형과 기능을 조합합니다 ${googleObjectiveRef}.`,
+    `- Submit lead forms 같은 전환 액션은 관련 전환 목표로 묶이고, Primary conversion action은 보고와 입찰 최적화에 사용됩니다 ${googleConversionGoalsRef}.`,
+    `- 리드 양식 광고 형식으로 게재하려면 전환 중심 입찰 전략과 Google 리드 양식 전환 목표 최적화가 필요합니다 ${googleLeadConversionRef}.`,
+    '',
+    '**3. CRM·수신 구조**',
+    '',
+    `- 리드 양식 데이터는 CSV, 이메일, webhook, 서드파티 연동, Google Ads API로 받을 수 있고, API는 최대 60일치 리드와 거의 실시간 신규 리드 검색을 지원합니다 ${googleLeadExportCrmApiRef}.`,
+    '- CRM에는 원본 캠페인, 키워드/자산, lead_id, 제출 시간, 동의 URL, 상담 상태, MQL/SQL/계약 상태를 함께 저장하는 편이 안전합니다.',
+    '- webhook/API 수신 리드는 lead_id 기준 중복 제거와 실패 재시도 로그가 필요합니다.',
+    '',
+    '**4. 런칭 전 QA 체크리스트**',
+    '',
+    `- 캠페인 목표가 리드이고, 캠페인 유형이 검색/동영상/PMax/디스플레이 중 리드 양식 애셋을 지원하는지 확인합니다 ${googleObjectiveRef} ${googleLeadAvailabilityRef}.`,
+    `- 리드 양식 전환 목표, 전환 중심 입찰, Primary/Secondary conversion action 분류를 확인합니다 ${googleLeadConversionRef} ${googleConversionGoalsRef}.`,
+    `- 웹사이트 전환이면 Google tag/GA 연결, 웹사이트 도메인, 리드 완료 전환 액션, 태그 firing을 확인합니다 ${googleWebConversionRef}.`,
+    `- webhook을 쓰면 Send test data, 수신 필드, CRM 필드 매핑, lead_id dedupe, 60일 데이터 제한과 API 권한을 확인합니다 ${googleLeadExportCrmApiRef}.`,
+    `- 오프라인/향상된 전환은 GCLID 또는 해시 처리된 1st-party 데이터, 업로드 진단, 상담·계약 상태값 매핑을 확인합니다 ${googleOfflineEnhancedRef}.`,
+    '',
+    '**5. 빠른 선택 기준**',
+    '',
+    '- **검색 의도형 리드**는 검색 캠페인 + 리드 양식 또는 웹사이트 전환을 먼저 비교합니다.',
+    '- **랜딩 검증이 중요한 리드**는 웹사이트 전환을 우선하고 태그/전환 액션 품질을 QA합니다.',
+    '- **확장 도달**은 PMax/동영상/디스플레이 리드 양식을 검토하되, 쉬운 제출 중심 학습을 막으려면 오프라인·향상된 전환 피드백을 준비합니다.',
+    '',
+    '정리하면, Google Ads 리드 운영은 리드 양식을 붙이는 것에서 끝나지 않고, 전환 목표/Primary action, CRM 수신, webhook/API, 오프라인·향상된 전환으로 “좋은 리드” 신호를 되돌리는 구조까지 같이 잡아야 합니다.',
+    '',
+    `근거: ${Array.from(used).sort((a, b) => a - b).map(index => `[S${index + 1}]`).join(', ')}`,
+  ];
+
+  return finalizeOfficialSnapshotDeterministicAnswer(
+    lines,
+    leadSources,
+    used,
+    'compass-answer-deterministic-google-lead-operating-matrix',
+    88,
+  );
+}
+
+function buildCrossVendorLeadKpiFrameworkAnswer(
+  message: string,
+  intent: QueryIntent,
+  sources: ReturnType<typeof buildVerifiedSources>,
+): DeterministicProductAnswer | null {
+  if (detectLeadOperatingAnswerFamily(message, intent) !== 'cross_vendor_lead_kpi_framework') return null;
+
+  const leadSources = ensureLeadOperatingSources(message, intent, sources);
+  const requiredSourceIndexes = getMetaGoogleLeadComparisonRequiredSourceIndexes(leadSources);
+  if (!requiredSourceIndexes) return null;
+
+  const used = new Set<number>();
+  const citation = (index: number) => {
+    used.add(index);
+    return `[S${index + 1}]`;
+  };
+
+  const metaObjectiveRef = citation(requiredSourceIndexes.metaObjectivesIndex);
+  const metaLeadRef = citation(requiredSourceIndexes.metaModulesIndex);
+  const metaInstantRef = citation(requiredSourceIndexes.metaLeadInstantFormIndex);
+  const metaCrmRef = citation(requiredSourceIndexes.metaLeadCrmIndex);
+  const metaPixelRef = citation(requiredSourceIndexes.metaPixelCapiIndex);
+  const metaQualityRef = citation(requiredSourceIndexes.metaCapiCrmQualityIndex);
+  const googleObjectiveRef = citation(requiredSourceIndexes.googleObjectivesIndex);
+  const googleTypeRef = citation(requiredSourceIndexes.googleTypesIndex);
+  const googleLeadAvailabilityRef = citation(requiredSourceIndexes.googleLeadAvailabilityIndex);
+  const googleConversionGoalsRef = citation(requiredSourceIndexes.googleConversionGoalsIndex);
+  const googleWebConversionRef = citation(requiredSourceIndexes.googleWebConversionIndex);
+  const googleOfflineEnhancedRef = citation(requiredSourceIndexes.googleOfflineEnhancedIndex);
+  const googleLeadExportCrmApiRef = citation(requiredSourceIndexes.googleLeadExportCrmApiIndex);
+
+  const lines = [
+    'Meta와 Google Ads 리드 캠페인을 동시에 운영할 때는 **CPL 하나로 승패를 판단하면 안 됩니다.** 두 매체의 역할이 다르므로, 리드 수 → 유효 리드율 → MQL → SQL → 계약률을 같은 CRM 기준으로 묶되 매체별 역할과 최적화 신호는 분리해야 합니다.',
+    '아래 프레임워크는 공식 기능 조건을 바탕으로 한 운영 해석입니다. KPI 정의, CRM 단계, 영업 SLA, 오프라인 전환 업로드 가능 여부는 계정과 내부 프로세스 기준으로 확정해야 합니다.',
+    '',
+    '**1. KPI 계층 구조**',
+    '',
+    '| 계층 | 공통 정의 | Meta 운영 해석 | Google Ads 운영 해석 |',
+    '|---|---|---|---|',
+    `| 리드 수 | 양식 제출, 메시지/전화 문의, 웹사이트 신청 완료처럼 1차 리드 발생 건수입니다. | Meta는 잠재 고객 목표와 인스턴트 양식·메시지·전화 전환 위치로 진입 장벽을 낮출 수 있습니다 ${metaObjectiveRef} ${metaLeadRef} ${metaInstantRef}. | Google은 리드 목표와 검색/동영상/PMax/디스플레이 리드 양식 또는 웹사이트 전환을 조합합니다 ${googleObjectiveRef} ${googleTypeRef} ${googleLeadAvailabilityRef}. |`,
+    '| CPL | 광고비 / 리드 수입니다. 단, CPL은 “싼 제출”인지 “영업 가능한 리드”인지 구분하지 못합니다. | 발견형 수요에서 CPL이 낮아도 상담 연결률과 중복/허위 리드를 같이 봅니다. | 검색 의도형 리드는 CPL이 높아도 MQL/SQL/계약률이 높으면 예산을 유지할 수 있습니다. |',
+    `| 유효 리드율 | 중복, 허위, 연락 불가, 조건 미충족을 제외한 비율입니다. | 인스턴트 양식 질문 수와 개인정보/필드 구성을 조정하고, CRM/Qualified leads 기준으로 품질을 맞춥니다 ${metaInstantRef} ${metaCrmRef}. | 리드 양식 수신은 CSV, 이메일, webhook, 서드파티, Google Ads API로 가져오고 lead_id 기준 중복 제거가 필요합니다 ${googleLeadExportCrmApiRef}. |`,
+    `| MQL | 마케팅 기준으로 자격이 있는 리드입니다. | Meta는 Pixel/CAPI, 웹사이트 이벤트, Conversions API for CRM으로 하위 퍼널 품질 신호를 보강합니다 ${metaPixelRef} ${metaQualityRef}. | Google은 Primary conversion action과 웹사이트 전환 액션을 잘 잡아 보고/입찰 최적화가 “좋은 리드”에 맞게 작동해야 합니다 ${googleConversionGoalsRef} ${googleWebConversionRef}. |`,
+    `| SQL | 영업팀이 실제 상담·견적·제안 대상으로 인정한 리드입니다. | Qualified leads 기준을 영업팀과 합의하고, 상담 결과를 CRM에 남겨야 합니다 ${metaCrmRef} ${metaQualityRef}. | 상담, 계약, 구매 같은 후속 결과를 오프라인 전환 가져오기 또는 향상된 전환 리드로 되돌리는 구조가 필요합니다 ${googleOfflineEnhancedRef}. |`,
+    '| 계약률 | 계약/구매 건수 ÷ SQL 또는 전체 리드입니다. 최종 예산 배분은 계약률과 매출 기준으로 봐야 합니다. | 상단 퍼널 생성과 리타게팅 풀을 만드는 역할을 평가합니다. | 의도형 검색과 오프라인 성과 피드백으로 계약 가능성이 높은 쿼리·캠페인을 키웁니다. |',
+    '',
+    '**2. 대시보드 분리 방식**',
+    '',
+    '- **매체별 1차 지표**: 노출, 클릭, CTR, CPC, 리드 수, CPL을 Meta와 Google로 나눕니다.',
+    '- **품질 지표**: 유효 리드율, 중복/허위 리드율, 연락 성공률, 상담 예약률, MQL 전환율, SQL 전환율을 CRM 기준으로 통일합니다.',
+    '- **영업 지표**: 견적 발송률, 제안 진행률, 계약률, 계약 CPA, 매출/ROAS를 매체별·캠페인별로 다시 연결합니다.',
+    '- **시간 지표**: 리드 발생 후 첫 응답 시간, 24시간 내 연락률, 상담 완료까지 걸린 시간을 같이 봅니다. 빠른 리드는 SLA가 무너지면 품질이 급락합니다.',
+    '',
+    '**3. 최적화 의사결정 규칙**',
+    '',
+    '- **CPL 낮고 유효 리드율 낮음**: 양식 질문, 필수 필드, 랜딩 자격 조건을 강화합니다. Meta는 Instant Form 질문/CRM 기준을 조정하고, Google은 리드 양식 전환 목표와 Primary action을 재점검합니다.',
+    '- **CPL 높고 SQL/계약률 높음**: 단순 CPL만 보고 중단하지 않습니다. Google 검색 또는 고의도 캠페인은 예산을 유지하고, Meta는 리타게팅/유사 관심군 확장 역할을 봅니다.',
+    '- **리드 수 많고 상담 연결률 낮음**: 콜센터/영업 SLA, 중복 처리, CRM 라우팅을 먼저 고칩니다. 매체 세팅 문제가 아니라 후속 처리 병목일 수 있습니다.',
+    '- **MQL은 많은데 SQL이 낮음**: 광고 문구와 양식 질문이 실제 자격 조건을 충분히 거르고 있는지 봅니다. 약속 없는 “무료 상담”식 소재는 품질을 낮출 수 있습니다.',
+    '- **계약률은 좋은데 전환 학습이 약함**: Meta는 Conversions API for CRM/Qualified leads, Google은 오프라인 전환 가져오기/향상된 전환 리드로 하위 퍼널 신호를 되돌립니다.',
+    '',
+    '**4. 운영 주기**',
+    '',
+    '- **매일**: 리드 수, CPL, 수신 실패, webhook/API 오류, CRM 누락, 상담 SLA를 봅니다.',
+    '- **주 2-3회**: 캠페인/소재/검색어 또는 자산별 유효 리드율과 MQL 전환율을 봅니다.',
+    '- **주간**: SQL, 계약률, 계약 CPA, 매출 기여를 기준으로 예산을 재배분합니다.',
+    '- **월간**: Meta는 발견형 수요 생성과 리타게팅 풀 기여, Google은 의도형 리드와 오프라인 성과 회수 기여를 분리 평가합니다.',
+    '',
+    '**5. 실무 결론**',
+    '',
+    'Meta는 빠른 리드 생성과 관심군 확장에 강하고, Google Ads는 검색 의도와 전환 목표/오프라인 피드백을 통한 하위 퍼널 최적화에 강합니다. 그래서 두 매체를 함께 운영할 때는 **같은 CRM 단계 정의로 품질을 비교하되, 최적화 신호와 역할은 분리**해야 합니다.',
+    '',
+    `근거: ${Array.from(used).sort((a, b) => a - b).map(index => `[S${index + 1}]`).join(', ')}`,
+  ];
+
+  return finalizeOfficialSnapshotDeterministicAnswer(
+    lines,
+    leadSources,
+    used,
+    'compass-answer-deterministic-meta-google-lead-kpi-framework',
+    88,
+  );
+}
+
+function buildLeadOperatingDeterministicAnswer(
+  message: string,
+  intent: QueryIntent,
+  sources: ReturnType<typeof buildVerifiedSources>,
+): DeterministicProductAnswer | null {
+  const family = detectLeadOperatingAnswerFamily(message, intent);
+  if (!family) return null;
+
+  if (family === 'cross_vendor_lead_kpi_framework') {
+    return buildCrossVendorLeadKpiFrameworkAnswer(message, intent, sources);
+  }
+  if (family === 'meta_lead_methods') {
+    return buildMetaLeadOperatingAnswer(message, intent, sources);
+  }
+  if (family === 'google_lead_methods') {
+    return buildGoogleLeadOperatingAnswer(message, intent, sources);
+  }
+
+  return null;
+}
+
 function buildMetaProductPlanningMatrixAnswer(
   sources: ReturnType<typeof buildVerifiedSources>,
 ): DeterministicProductAnswer | null {
@@ -4862,6 +5345,83 @@ function buildMetaProductPlanningMatrixAnswer(
   };
 }
 
+function buildGoogleProductPlanningMatrixAnswer(
+  sources: ReturnType<typeof buildVerifiedSources>,
+): DeterministicProductAnswer | null {
+  const matrixSources = ensureOfficialSnapshotSources(sources, GOOGLE_PRODUCT_PLANNING_MATRIX_REQUIRED_CHUNK_IDS);
+  const requiredSourceIndexes = getGoogleProductPlanningMatrixRequiredSourceIndexes(matrixSources);
+  if (!requiredSourceIndexes) return null;
+
+  const {
+    googleObjectivesIndex,
+    googleTypesIndex,
+    googleLeadAvailabilityIndex,
+    googleConversionGoalsIndex,
+    googleWebConversionIndex,
+    googleOfflineEnhancedIndex,
+    googleShoppingIndex,
+    googleAppIndex,
+  } = requiredSourceIndexes;
+  const used = new Set<number>();
+  const citation = (index: number) => {
+    used.add(index);
+    return `[S${index + 1}]`;
+  };
+
+  const objectiveRef = citation(googleObjectivesIndex);
+  const typesRef = citation(googleTypesIndex);
+  const leadRef = citation(googleLeadAvailabilityIndex);
+  const conversionGoalRef = citation(googleConversionGoalsIndex);
+  const webConversionRef = citation(googleWebConversionIndex);
+  const offlineRef = citation(googleOfflineEnhancedIndex);
+  const shoppingRef = citation(googleShoppingIndex);
+  const appRef = citation(googleAppIndex);
+
+  const lines = [
+    'Google Ads 상품은 개별 이름을 외우기보다 **캠페인 목표 → 캠페인 유형 → 광고/애셋 → 전환 측정** 순서로 보는 편이 실무적입니다.',
+    '공식 도움말 기준의 주요 축은 검색, 디스플레이, 동영상, 쇼핑, 앱, 실적 최대화 캠페인이며, 리드 양식·상품 피드·앱 애셋·전환 목표가 목적에 따라 붙습니다.',
+    '',
+    '**1. 캠페인 유형별 구조**',
+    '',
+    '| 유형 | 주 목적 | 실무에서 확인할 것 |',
+    '|---|---|---|',
+    `| 검색 캠페인 | 이미 검색 의도가 있는 수요를 포착합니다. | 키워드/검색어, 광고 문구, 랜딩, 전환 목표를 함께 봅니다. Google Ads는 목표를 먼저 정하고 목표에 맞는 캠페인 유형과 기능을 조합합니다 ${objectiveRef}. |`,
+    `| 디스플레이 캠페인 | 이미지·텍스트 조합으로 넓은 지면에 노출합니다. | 지면, 소재 애셋, 리마케팅/관심 기반 도달, 전환 측정을 분리해 봅니다. 캠페인 유형마다 노출 지면, 광고 형식, 입찰과 애셋 요구사항이 달라집니다 ${typesRef}. |`,
+    `| 동영상/YouTube 캠페인 | 영상 시청, 브랜드 도달, 리드 확장에 활용합니다. | 동영상 애셋, YouTube 지면, 리드 양식 가능 여부, 전환 중심 입찰 조건을 확인합니다 ${typesRef} ${leadRef}. |`,
+    `| 실적 최대화 / PMax | 여러 Google 지면을 자동화로 묶어 전환을 키울 때 후보입니다. | 애셋 그룹, 전환 목표, 오프라인/향상된 전환 피드백이 있어야 품질 좋은 학습이 가능합니다 ${typesRef} ${conversionGoalRef} ${offlineRef}. |`,
+    `| 쇼핑 광고 | 상품 이미지, 제목, 가격, 매장명 같은 상품 정보를 노출합니다. | Merchant Center 상품 데이터, 상품 피드 품질, 정책 준수, 쇼핑/PMax 전환 목표를 함께 점검합니다 ${shoppingRef}. |`,
+    `| 앱 캠페인 | 앱 설치와 앱 내 행동을 늘립니다. | Google 검색, Google Play, YouTube, Discover, 디스플레이 네트워크 전반 게재와 텍스트·이미지·동영상 애셋, 입찰, 전환 추적을 함께 확인합니다 ${appRef}. |`,
+    `| 리드 양식 애셋 | 검색, 동영상, 실적 최대화, 디스플레이에서 잠재 고객 정보를 받을 때 붙입니다. | 개인정보처리방침, 정책 준수 내역, 리드 양식 전환 목표, 전환 중심 입찰, CRM 수신 구조를 확인합니다 ${leadRef} ${conversionGoalRef}. |`,
+    '',
+    '**2. 목표별 빠른 선택 기준**',
+    '',
+    `- **문의/상담 리드**: 리드 목표를 잡고 검색 캠페인, 리드 양식, 웹사이트 전환, PMax/동영상 리드 확장을 비교합니다 ${objectiveRef} ${leadRef}.`,
+    `- **웹사이트 신청/구매 행동**: Google tag 또는 Google Analytics 연결을 확인하고 웹사이트 전환 액션을 만들어 리드 완료나 구매 행동을 측정합니다 ${webConversionRef}.`,
+    `- **오프라인 상담/계약 성과**: 광고 클릭이나 전화 후 발생한 상담, 계약, 구매를 오프라인 전환 가져오기 또는 향상된 전환 리드로 되돌립니다 ${offlineRef}.`,
+    `- **상품 판매**: 쇼핑 광고 또는 PMax에서 Merchant Center 상품 데이터와 전환 목표를 함께 봅니다 ${shoppingRef}.`,
+    `- **앱 성장**: 앱 캠페인에서 앱 설치, 앱 내 행동, 애셋, 입찰과 전환 추적 설정을 함께 봅니다 ${appRef}.`,
+    '',
+    '**3. 런칭 전 공통 체크포인트**',
+    '',
+    '- 캠페인 목표가 실제 비즈니스 목표와 맞는지 먼저 확인합니다.',
+    `- 캠페인 유형별로 필요한 광고 형식, 애셋, 입찰, 노출 지면이 다르므로 검색/디스플레이/동영상/쇼핑/앱/PMax를 한 묶음으로 보지 않습니다 ${typesRef}.`,
+    `- 전환 목표는 전환 액션을 묶어 최적화하는 단위이고, Primary conversion action은 보고와 입찰 최적화에 쓰이므로 리드/구매/앱 행동을 잘못 Primary로 잡지 않도록 확인합니다 ${conversionGoalRef}.`,
+    `- 리드나 계약 품질이 중요하면 웹사이트 전환, 오프라인 전환 가져오기, 향상된 전환 리드까지 연결해야 합니다 ${webConversionRef} ${offlineRef}.`,
+    '',
+    '정리하면, Google Ads는 **검색/디스플레이/동영상/PMax/쇼핑/앱**이라는 캠페인 유형 위에 **리드 양식, 상품 피드, 앱 애셋, 전환 목표, 오프라인·향상된 전환**을 붙여 운영하는 구조로 정리하면 됩니다.',
+    '',
+    `근거: ${Array.from(used).sort((a, b) => a - b).map(index => `[S${index + 1}]`).join(', ')}`,
+  ];
+
+  return finalizeOfficialSnapshotDeterministicAnswer(
+    lines,
+    matrixSources,
+    used,
+    'compass-answer-deterministic-google-product-planning-matrix',
+    88,
+  );
+}
+
 function countEvidenceBackedSupportedBullets(
   profile: EvidenceBackedAnswerProfile,
   sources: ReturnType<typeof buildVerifiedSources>,
@@ -4916,12 +5476,14 @@ function buildBroadProductGeneratedAnswerRepair(
   const profile = getBroadProductAnswerProfile(family);
   if (!profile) return null;
 
-  const deterministicAnswer = family === 'meta_overview' && isBroadMetaProductPlanningQuestion(message, intent)
+  const deterministicAnswer = family === 'meta_overview'
     ? buildMetaProductPlanningMatrixAnswer(sources)
-    : buildEvidenceBackedAnswer(profile, sources);
+    : family === 'google_overview'
+      ? buildGoogleProductPlanningMatrixAnswer(sources)
+      : buildEvidenceBackedAnswer(profile, sources);
   if (!deterministicAnswer) return null;
 
-  if (family === 'meta_overview' && isBroadMetaProductPlanningQuestion(message, intent)) {
+  if (family === 'meta_overview' || family === 'google_overview') {
     return {
       ...deterministicAnswer,
       model: `${deterministicAnswer.model}-quality-repair`,
@@ -6144,8 +6706,11 @@ function buildDeterministicBroadProductAnswer(
   }
 
   const family = detectProductAnswerFamily(message, intent);
-  if (family === 'meta_overview' && isBroadMetaProductPlanningQuestion(message, intent)) {
+  if (family === 'meta_overview') {
     return buildMetaProductPlanningMatrixAnswer(sources);
+  }
+  if (family === 'google_overview') {
+    return buildGoogleProductPlanningMatrixAnswer(sources);
   }
 
   const profile = getBroadProductAnswerProfile(family)
@@ -9018,6 +9583,22 @@ export async function buildCompassAnswerResponse(
         mergedResultCount: searchResults.length,
       });
     }
+    const leadOperatingSupplementalResults = buildLeadOperatingSupplementalSearchResults(
+      message,
+      ragIntent,
+      searchResults,
+    );
+    if (leadOperatingSupplementalResults.length > 0) {
+      searchResults = mergeSearchResultsByIdentity([
+        ...searchResults,
+        ...leadOperatingSupplementalResults,
+      ]);
+      console.log('Compass lead operating official evidence supplemented', {
+        supplementalResultCount: leadOperatingSupplementalResults.length,
+        leadOperatingFamily: detectLeadOperatingAnswerFamily(message, ragIntent),
+        mergedResultCount: searchResults.length,
+      });
+    }
     const verifiedSearchResults = searchResults.filter(isVerifiedGrounding);
     const verifiedResultKeys = new Set(verifiedSearchResults.map(result => getResultIdentityKey(result)));
     const productStructureRescueResults = searchResults.filter(result => (
@@ -9135,6 +9716,37 @@ export async function buildCompassAnswerResponse(
       sourceCount: searchResults.length,
       verifiedSourceCount: verifiedSearchResults.length,
     });
+
+    const leadOperatingAnswer = buildLeadOperatingDeterministicAnswer(message, ragIntent, sources);
+    if (leadOperatingAnswer) {
+      emitPhase?.({ phase: 'answer-ready', message: '리드 운영 근거를 기준으로 답변을 정리했습니다.' });
+      return {
+        body: {
+          response: {
+            message: leadOperatingAnswer.answer,
+            content: leadOperatingAnswer.answer,
+            sources: leadOperatingAnswer.sources,
+            noDataFound: false,
+            schema,
+            showContactOption: false,
+            sourceDiagnostics: {
+              ...sourceDiagnostics,
+              answerSourceCount: leadOperatingAnswer.sources.length,
+              answerGenerationDurationMs: 0,
+              deterministicAnswerFamily: detectProductAnswerFamily(message, ragIntent),
+              leadOperatingAnswerFamily: detectLeadOperatingAnswerFamily(message, ragIntent),
+            },
+            reviewPipeline: buildDeterministicProductReviewPipeline(
+              leadOperatingAnswer,
+              searchResults.length,
+            ),
+          },
+          confidence: getDeterministicProductConfidence(confidence, leadOperatingAnswer),
+          processingTime: Date.now() - startTime,
+          model: leadOperatingAnswer.model,
+        },
+      };
+    }
 
     const metaGoogleLeadComparisonAnswer = buildMetaGoogleLeadComparisonAnswer(message, ragIntent, sources);
     if (metaGoogleLeadComparisonAnswer) {
