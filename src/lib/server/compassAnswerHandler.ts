@@ -115,7 +115,7 @@ const COMPASS_ANSWER_RESPONSE_CACHE_TTL_MS = Math.min(
   900000,
 );
 const COMPASS_ANSWER_RESPONSE_CACHE_MAX_ENTRIES = 64;
-const COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v35-contextual-product-guide-routing';
+const COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v36-naver-kakao-product-name-routing';
 const COMPASS_CONVERSATION_HISTORY_MAX_ITEMS = 25;
 const compassAnswerResponseCache = new Map<string, CompassAnswerResponseCacheEntry>();
 const compassAnswerRuntimeMetrics = {
@@ -4696,6 +4696,9 @@ const NAVER_PRODUCT_PLANNING_MATRIX_REQUIRED_CHUNK_IDS = [
   'naver_brandsearch_product_overview_2026_chunk_0',
   'doc_1764895552052_8xy5ad6_para_2',
   'doc_1773710116296_uawf5xm_chunk_2',
+  'doc_1764922396107_b9w41zn_chunk_5',
+  'naver_display_product_catalog_2026_chunk_0',
+  'naver_chzzk_product_catalog_2026_chunk_0',
   'doc_1764895606547_buwpoz4_sent_11',
   'doc_1764895606613_llkwwsf_doc_0',
   'naver_adguide_registration_standard_2026_chunk_0',
@@ -4706,6 +4709,11 @@ const KAKAO_PRODUCT_PLANNING_MATRIX_REQUIRED_CHUNK_IDS = [
   'kakao_moment_product_overview_2026_chunk_0',
   'doc_1774488483929_bigcm1d_chunk_2',
   'doc_1774488184369_r97sach_chunk_0',
+  'kakao_product_catalog_2026_chunk_0',
+  'kakao_guaranteed_cpt_2026_chunk_0',
+  'kakao_searchad_product_catalog_2026_chunk_0',
+  'kakao_brandsearch_content_guide_2026_chunk_0',
+  'kakao_channelsearch_content_guide_2026_chunk_0',
   'url_1773203880202_q3y8fucqb_chunk_5',
   'doc_1774491147517_yj1v810_chunk_17',
   'doc_1774488207473_cjq6ve0_chunk_19',
@@ -5702,36 +5710,47 @@ function buildKakaoProductSelectionMatrixAnswer(
   const momentRef = cite('kakao_moment_product_overview_2026_chunk_0');
   const bizboardRef = cite('doc_1774488483929_bigcm1d_chunk_2');
   const displayRef = cite('doc_1774488184369_r97sach_chunk_0');
+  const catalogRef = cite('kakao_product_catalog_2026_chunk_0');
+  const guaranteedRef = cite('kakao_guaranteed_cpt_2026_chunk_0');
+  const searchRef = cite('kakao_searchad_product_catalog_2026_chunk_0');
+  const brandGuideRef = cite('kakao_brandsearch_content_guide_2026_chunk_0');
+  const channelGuideRef = cite('kakao_channelsearch_content_guide_2026_chunk_0');
   const channelRef = cite('url_1773203880202_q3y8fucqb_chunk_5');
   const messageRef = cite('doc_1774491147517_yj1v810_chunk_17');
   const policyRef = cite('doc_1774488207473_cjq6ve0_chunk_19');
 
   const lines = [
-    '카카오 광고는 “톡채널, 카카오모먼트, 비즈보드, 메시지”를 같은 레벨의 버튼처럼 고르는 것이 아니라 **목적 → 지면/진입 방식 → 소재·심사 → 업종 제한** 순서로 나누어 보는 편이 안전합니다.',
-    `카카오모먼트는 비즈보드, 디스플레이, 동영상, 메시지 광고 등을 직접 집행하는 광고 플랫폼이며 카카오톡과 카카오 핵심 서비스 지면을 활용합니다 ${momentRef}.`,
+    '카카오 광고는 “카카오모먼트 하나”로 뭉뚱그리기보다 **성과형/보장형/검색형/메시지형/상품 카탈로그형**으로 나누어 봐야 합니다.',
+    `카카오모먼트는 비즈보드, 디스플레이, 동영상, 메시지 광고, 상품 카탈로그 광고처럼 카카오 핵심 서비스 지면을 활용하는 상품 축을 포함합니다 ${momentRef} ${catalogRef}. 검색 광고 쪽은 키워드광고, 브랜드검색, 톡채널검색으로 따로 봐야 합니다 ${searchRef}.`,
     '',
-    '**1. 상품 선택 기준**',
+    '**1. 상품명 기준 비교**',
     '',
-    '| 구분 | 우선 선택하는 상황 | 소재/지면 확인 | 업종·심사 체크 |',
+    '| 상품 | 언제 우선 검토하나 | 소재/지면 확인 | 실무 체크 |',
     '|---|---|---|---|',
-    `| 카카오 비즈보드 | 모바일 카카오톡 기반의 대량 도달, 신상품/프로모션 노출, 브랜드 인지와 랜딩 유입을 함께 노릴 때 | 카카오톡·카카오서비스 주요 지면, 소재 유형, 랜딩 옵션을 함께 봅니다 ${bizboardRef}. | 카카오 서비스처럼 오인되는 표현, 로고·UI 모방, AI 생성물 표시와 허위·과장 가능성을 확인합니다 ${policyRef}. |`,
-    `| 카카오모먼트 디스플레이 | 관심사/오디언스 기반으로 배너·이미지·동영상 소재를 노출하고 리타게팅 또는 퍼포먼스를 볼 때 | 노출 지면, 소재 형식, 제작 가이드와 심사 기준을 같이 확인합니다 ${displayRef}. | 지면 UI와 유사해 광고가 카카오 콘텐츠처럼 보이는지, 과도한 표현이 있는지 점검합니다 ${policyRef}. |`,
-    `| 메시지 광고 | 친구·채널 기반으로 쿠폰, 예약, 재구매, 이벤트 안내처럼 직접 도달이 중요한 업종에서 후보 | 메시지 내용, 가격·혜택 표시, 이벤트 조건, 랜딩 일치 여부를 같이 봅니다 ${messageRef}. | 관계 법령 위반, 성인·담배·도박·의약품 등 제한 업종은 메시지 발송이 불가하거나 제한될 수 있습니다 ${messageRef}. |`,
-    `| 톡채널/톡채널검색 | 카카오톡 채널로 상담, 예약, 재방문, 콘텐츠 구독을 모아야 할 때 | 채널과 연동 사이트의 사업자 정보, 소재와 랜딩의 일치 여부를 봅니다 ${channelRef}. | 톡채널검색 심사가이드 위반 소재, 미완성 사이트, 등록불가 업종 관련 콘텐츠는 집행 제한 대상입니다 ${channelRef}. |`,
+    `| 카카오 비즈보드 | 카카오톡 기반 대량 도달, 신상품/프로모션, 브랜드 인지와 랜딩 유입을 함께 노릴 때 | 카카오톡·카카오서비스 주요 지면, 소재 유형, 랜딩 옵션을 봅니다 ${bizboardRef}. | 카카오 서비스처럼 오인되는 UI·로고·디자인 모방과 허위·과장 표현을 피합니다 ${policyRef}. |`,
+    `| 디스플레이 광고 | 관심사/오디언스 기반 배너·이미지·동영상 노출, 리타게팅, 퍼포먼스 확장이 필요할 때 | 카카오 핵심 서비스와 파트너 지면, 이미지/동영상 소재 유형과 제작 가이드를 봅니다 ${displayRef}. | 지면 UI와 유사한 오인 표현, 업종 제한, 랜딩 불일치를 먼저 점검합니다 ${policyRef}. |`,
+    `| 동영상 광고 | 영상 시청, 브랜드 임팩트, 짧은 영상 소재 반응을 보고 싶을 때 | 카카오모먼트 안에서 동영상 소재와 노출 지면을 목적별로 분리합니다 ${momentRef}. | 조회 KPI와 클릭/전환 KPI를 한 캠페인에서 섞지 않고, 랜딩 또는 채널 전환을 별도 확인합니다. |`,
+    `| 상품 카탈로그 광고 | 상품 연동 기반으로 구매 가능성이 높은 사용자에게 리타게팅·추천 광고를 노출하고 싶을 때 | 상품 연동, 다이내믹 광고, 구매 전환 목적, CPC 과금 구조를 봅니다 ${catalogRef}. | 상품 정보, 가격·혜택, 랜딩 상품 정보가 일치하는지 확인하고 전환 이벤트 품질을 봅니다. |`,
+    `| 카카오톡 채널 메시지/메시지 광고 | 보유 고객, 친구, 채널 기반으로 쿠폰, 예약, 재구매, 이벤트 안내를 직접 보내야 할 때 | 메시지 내용, 가격·혜택 표시, 이벤트 조건, 랜딩 일치 여부를 봅니다 ${messageRef}. | 관계 법령 위반, 성인·담배·도박·의약품 등 제한 업종은 발송 불가 또는 제한 가능성이 있습니다 ${messageRef}. |`,
+    `| 키워드광고 | 카카오 검색 지면에서 검색 의도 기반 유입을 확보하고 싶을 때 | 키워드, 광고문안, 랜딩, 사업자 정보와 검색어 의도를 맞춥니다 ${searchRef}. | 검색어-소재-랜딩 불일치와 허위·과장 표현을 먼저 봅니다. |`,
+    `| 브랜드검색 광고 | 브랜드 키워드 또는 브랜드 연관 키워드 검색 시 상단 정보성 콘텐츠를 보여주고 싶을 때 | 모바일 라이트, 모바일 오토플레이형, PC 베이직 등 템플릿별 이미지·동영상·CTA·랜딩URL을 봅니다 ${searchRef} ${brandGuideRef}. | 검토 완료 소재로만 집행하고, 브랜드와 직접 관련 없는 키워드 확장은 조심합니다. |`,
+    `| 톡채널검색 | 카카오톡 검색에서 채널 발견, 상담, 예약, 재방문, 콘텐츠 구독을 모아야 할 때 | 추천소재/맞춤소재, 채널명, 썸네일, 홍보문구, 행동유도버튼, 랜딩URL을 확인합니다 ${channelGuideRef}. | 채널과 연동 사이트의 사업자 정보, 소재와 랜딩의 일치, 등록불가 사이트 조건을 봅니다 ${channelRef}. |`,
+    `| 보장형 광고/카카오비즈보드 CPT | 특정 시간대 대형 지면 점유, 대규모 브랜딩 임팩트와 도달 보장이 필요할 때 | 카카오톡 친구탭의 주목도 높은 영역을 일정 시간 단독 점유하는 CPT 구조를 봅니다 ${guaranteedRef}. | 성과형 CPC 캠페인과 KPI를 섞지 말고 도달, 점유 시간, 이벤트 유입을 별도로 봅니다. |`,
     '',
     '**2. 업종별 빠른 판단**',
     '',
-    '- **지역 매장/예약형**: 톡채널, 메시지, 비즈보드 랜딩을 후보로 두고 상담 가능 시간과 채널 응답 SLA를 먼저 잡습니다.',
-    '- **커머스/프로모션형**: 비즈보드나 디스플레이로 상품·혜택을 노출하되 가격, 할인율, 이벤트 조건이 랜딩과 일치하는지 먼저 봅니다.',
+    '- **지역 매장/예약형**: 톡채널검색, 채널 메시지, 비즈보드 랜딩을 후보로 두고 상담 가능 시간과 채널 응답 SLA를 먼저 잡습니다.',
+    '- **커머스/프로모션형**: 상품 카탈로그 광고, 비즈보드, 디스플레이를 후보로 두고 가격, 할인율, 이벤트 조건이 랜딩과 일치하는지 먼저 봅니다.',
     '- **금융·의료·성인·주류·담배 등 제한 가능 업종**: 소재부터 만들기 전에 제한 업종과 등록불가 조건을 원문 기준으로 확인합니다.',
-    '- **브랜드 인지/신제품 런칭**: 비즈보드와 디스플레이를 우선 검토하고 메시지는 리타게팅 또는 보유 고객 재접촉 용도로 분리합니다.',
+    '- **브랜드 인지/신제품 런칭**: 카카오비즈보드 CPT, 비즈보드, 브랜드검색, 디스플레이를 우선 검토하고 메시지는 리타게팅 또는 보유 고객 재접촉 용도로 분리합니다.',
     '',
     '**3. 런칭 전 체크리스트**',
     '',
     '- 상품명보다 먼저 KPI를 정합니다: 도달/빈도, 클릭, 채널 추가, 상담, 구매, 재방문을 분리합니다.',
     '- 카카오톡 지면에서 광고처럼 명확히 보이는지 확인합니다. 카카오 UI·서비스를 모방하면 집행 제한 가능성이 있습니다.',
     '- 가격, 이벤트, 혜택은 소재와 랜딩에서 같은 조건으로 확인되어야 합니다.',
-    '- 제한 업종은 상품별 기능 문제가 아니라 심사·정책 문제이므로 별도 체크리스트로 분리합니다.',
+    '- 상품 카탈로그형은 상품 연동과 구매 전환, 검색형은 키워드·템플릿·랜딩, 메시지형은 발송 가능 업종과 수신자 맥락을 별도 체크합니다.',
+    '- 제한 업종은 상품 기능 문제가 아니라 심사·정책 문제이므로 별도 체크리스트로 분리합니다.',
     '',
     `근거: ${Array.from(used).sort((a, b) => a - b).map(index => `[S${index + 1}]`).join(', ')}`,
   ];
@@ -5757,33 +5776,52 @@ function buildNaverSearchAdProductComparisonAnswer(
   const brandRef = cite('naver_brandsearch_product_overview_2026_chunk_0');
   const shoppingBlockRef = cite('doc_1764895552052_8xy5ad6_para_2');
   const shoppingDbRef = cite('doc_1773710116296_uawf5xm_chunk_2');
+  const advoostRef = cite('doc_1764922396107_b9w41zn_chunk_5');
+  const displayProductRef = cite('naver_display_product_catalog_2026_chunk_0');
+  const chzzkRef = cite('naver_chzzk_product_catalog_2026_chunk_0');
+  const headlineDaRef = cite('doc_1764895606547_buwpoz4_sent_11');
+  const shortformRef = cite('doc_1764895606613_llkwwsf_doc_0');
   const policyRef = cite('naver_adguide_registration_standard_2026_chunk_0');
 
   const lines = [
-    '네이버 검색광고는 **파워링크/사이트검색 → 쇼핑검색광고 → 브랜드검색**을 목적, 과금, 소재, 랜딩·전환 측정 기준으로 나눠 봐야 합니다.',
-    `네이버 검색광고는 파워링크, 쇼핑검색, 브랜드검색 등 검색어 기반 상품을 제공하며 예산 설정, 클릭당 과금, 보고서와 로그 분석으로 효과를 확인하는 구조입니다 ${overviewRef}.`,
+    '네이버 광고 상품은 “검색광고 몇 개”로만 보면 빠집니다. 실무에서는 **검색광고 상품군 + 쇼핑/상품 DB 상품군 + 성과형 디스플레이 상품군 + 영상/신규 지면 상품군**으로 나누어 봐야 합니다.',
+    `네이버 검색광고 축에는 파워링크, 쇼핑검색광고, 파워컨텐츠, 브랜드검색광고, 신제품검색광고, 플레이스검색광고, 지역소상공인광고, 서칭뷰가 포함됩니다 ${overviewRef}. 디스플레이 축에는 ADVoost 쇼핑, 인지도 및 트래픽 광고, 웹사이트 전환 광고, 앱 전환 광고, 카탈로그 판매, 쇼핑 프로모션, 동영상 조회 광고, 커뮤니케이션 애드가 포함됩니다 ${displayProductRef}.`,
     '',
-    '**1. 핵심 비교표**',
+    '**1. 상품명 기준 비교**',
     '',
-    '| 상품 | 캠페인 목적 | 과금/운영 방식 | 소재 구성 | 랜딩·전환 측정 기준 |',
-    '|---|---|---|---|---|',
-    `| 파워링크/사이트검색 | 이미 검색 의도가 있는 사용자를 웹사이트, 상담, 예약, 구매 페이지로 보내는 기본 검색 유입 | CPC 중심으로 키워드, 광고문안, 입찰, 예산을 같이 봅니다 ${powerlinkRef}. | 제목, 설명, 표시 URL, 확장 소재, 키워드와 랜딩의 관련성을 점검합니다. | 검색어-광고문안-랜딩의 일치, 전환 스크립트/로그 분석, 문의·구매 전환 품질을 봅니다. |`,
-    `| 쇼핑검색광고 | 상품을 비교·구매하려는 사용자에게 상품 단위로 노출 | 상품 DB URL/EP 등록과 심사, 카테고리 매칭이 핵심입니다 ${shoppingDbRef}. | 상품명, 대표이미지, 가격, 배송비, 카테고리, 상품 상태가 검색 노출 품질에 영향을 줍니다. | 쇼핑파트너센터/스마트스토어, 상품 DB 수신, 품절·가격 동기화, 구매 전환을 함께 봅니다 ${shoppingBlockRef}. |`,
-    `| 브랜드검색 | 상호명, 상품명처럼 브랜드 키워드 검색 결과에서 브랜드 정보를 크게 보여줄 때 | 브랜드와 직접 연관된 키워드에 한해 집행할 수 있고 일반 키워드에는 집행할 수 없습니다 ${brandRef}. | 브랜드명, 대표 이미지/동영상, 주요 링크, 프로모션 문구와 템플릿을 활용합니다. | 브랜드 검색량, 클릭, 공식 채널 유입, 이벤트/랜딩 전환을 별도 KPI로 봅니다. |`,
+    '| 상품 | 언제 우선 검토하나 | 소재/데이터에서 먼저 볼 것 | 운영·측정 체크 |',
+    '|---|---|---|---|',
+    `| 파워링크/사이트검색 | 검색 의도가 있는 사용자를 웹사이트, 상담, 예약, 구매 페이지로 보내는 기본 검색 유입 | 키워드, 제목, 설명, 표시 URL, 확장 소재, 랜딩 관련성을 봅니다 ${powerlinkRef}. | CPC, 입찰, 예산, 검색어-광고문안-랜딩 일치, 전환 스크립트/로그 분석을 봅니다. |`,
+    `| 쇼핑검색광고 | 상품 비교·구매 의도가 있는 사용자에게 상품 단위 노출이 필요할 때 | 상품명, 대표이미지, 가격, 배송비, 카테고리, 상품 DB URL/EP를 봅니다 ${shoppingDbRef}. | 상품 DB 수신, 카테고리 매칭, 미서비스 상품, 가격·재고 동기화, 구매 전환을 함께 봅니다. |`,
+    `| 쇼핑블록 | 네이버 쇼핑 지면에서 상품형 노출과 구매 흐름을 강화할 때 | 쇼핑 지면, 상품 이미지, 상품명, 가격, 카테고리 검수 조건을 확인합니다 ${shoppingBlockRef}. | 쇼핑검색/쇼핑블록은 상품 DB 품질과 가격비교 반영 지연이 병목이 될 수 있습니다. |`,
+    `| 브랜드검색광고 | 상호명, 상품명처럼 브랜드 키워드 검색 결과에서 브랜드 정보를 크게 보여줄 때 | 브랜드명, 대표 이미지/동영상, 주요 링크, 프로모션 문구와 템플릿을 활용합니다 ${brandRef}. | 브랜드와 직접 연관된 키워드인지, 공식 랜딩과 프로모션 문구가 정확한지 확인합니다. |`,
+    `| 파워컨텐츠 | 정보 탐색형 검색 수요에 콘텐츠형 소재로 설명과 신뢰를 먼저 전달해야 할 때 | 검색어 intent, 콘텐츠 제목·설명, 랜딩 콘텐츠 품질을 봅니다 ${overviewRef}. | 단순 구매 문구보다 정보성 콘텐츠와 랜딩 신뢰도가 중요합니다. |`,
+    `| 신제품검색광고 | 신제품 출시, 신규 카테고리 인지, 초기 검색 수요 확보가 필요할 때 | 신제품명, 대표 이미지, 출시 메시지, 랜딩 정보를 확인합니다 ${overviewRef}. | 브랜드/제품명 검색량과 공식 정보 일치, 허위·과장 가능성을 봅니다 ${policyRef}. |`,
+    `| 플레이스검색광고/지역소상공인광고 | 지역 매장, 병원, 학원, 예약형 업종처럼 위치 기반 문의가 중요할 때 | 상호, 위치, 영업정보, 예약·전화 랜딩, 지도/플레이스 정보를 봅니다 ${overviewRef}. | 지역 타겟, 영업시간, 전화·예약 전환, 플레이스 정보 최신성을 확인합니다. |`,
+    `| 서칭뷰 | 검색 과정에서 더 시각적인 탐색 경험과 브랜드/상품 발견을 강화하고 싶을 때 | 검색 지면 내 노출 맥락, 이미지·영상형 소재, 랜딩을 확인합니다 ${overviewRef}. | 검색 의도와 소재 경험이 맞지 않으면 클릭 후 이탈이 커질 수 있습니다. |`,
+    `| ADVoost 쇼핑 | 쇼핑 광고를 AI 기반으로 쉽게 시작하고 자동 최적화하고 싶을 때 | 비즈채널 선택, 하루 예산, 상품/전환 조건, AI 자동 최적화 구조를 봅니다 ${advoostRef}. | 쉬운 세팅만 믿지 말고 상품 DB 품질, 전환 추적, 가격·재고 품질을 같이 봅니다. |`,
+    `| 인지도 및 트래픽/웹사이트 전환/앱 전환 | 디스플레이 지면에서 도달, 방문, 전환, 앱 행동을 목적별로 분리하고 싶을 때 | 배너, 동영상, 이미지 소재와 타겟팅, 실시간 입찰 방식을 봅니다 ${displayProductRef}. | 목적별 전환 태그, 랜딩 속도, 앱 이벤트, 지면별 소재 피로도를 분리합니다. |`,
+    `| 카탈로그 판매/쇼핑 프로모션 | 상품 수가 많고 상품 데이터 기반 커머스 확장이 필요할 때 | 상품 데이터, 상품군, 프로모션 문구, 가격·재고 반영을 봅니다 ${displayProductRef}. | 구매/장바구니/상품조회 이벤트와 상품 데이터 매칭 품질을 봅니다. |`,
+    `| 동영상 조회 광고/숏폼 아웃스트림/네이버 클립 | 영상 조회, 브랜드 관심, 숏폼 소재 반응을 확보하고 싶을 때 | 숏폼/동영상 비율, 네이버 클립·아웃스트림 지면, 첫 화면 메시지를 봅니다 ${shortformRef}. | 조회 KPI와 전환 KPI를 섞지 말고, 랜딩 연결은 별도 전환으로 봅니다. |`,
+    `| 커뮤니케이션 애드 | 상담, 채팅, 문의처럼 대화형 접점과 사용자 반응을 유도해야 할 때 | 메시지/문의 진입, CTA, 상담 가능 시간, 응답 SLA를 봅니다 ${displayProductRef}. | 리드 품질, 상담 연결률, 중복 문의, 후속 CRM 등록을 KPI로 봅니다. |`,
+    `| 치지직 전용 광고 | 게임·라이브·1030 타겟처럼 치지직 지면의 라이브/VOD 맥락을 활용할 때 | 인스트림 동영상 광고, 치지직 배너 광고, 치지직 프리미엄 라이브(beta)를 구분합니다 ${chzzkRef}. | 라이브/VOD/PC·모바일 홈/영상엔드/추천 라이브 영역별 노출 맥락과 게임 타겟 적합성을 봅니다. |`,
+    `| 보장형 DA/헤드라인DA | 특정 지면 점유와 대형 노출로 브랜드 임팩트가 필요할 때 | PC 헤드라인DA, 홈피드, 스마트채널, 타임보드, 롤링보드 같은 지면과 소재 규격을 봅니다 ${headlineDaRef}. | 성과형 CPC와 보장형 노출 KPI를 섞지 말고 도달, 점유, 브랜드 검색량을 따로 봅니다. |`,
     '',
     '**2. 운영 선택 기준**',
     '',
-    '- **즉시 문의/예약/구매 유입**: 파워링크를 먼저 보고, 키워드 intent와 랜딩 품질을 함께 튜닝합니다.',
-    '- **상품 SKU 기반 커머스**: 쇼핑검색광고를 우선 검토하고 상품 DB, 카테고리, 가격·재고 동기화 품질을 먼저 QA합니다.',
-    '- **브랜드 방어/인지 강화**: 브랜드검색을 후보로 두되, 브랜드 키워드 자격과 소재 템플릿 조건을 먼저 확인합니다.',
+    '- **즉시 문의/예약/구매 유입**: 파워링크, 플레이스검색광고, 커뮤니케이션 애드를 목적에 맞춰 비교합니다.',
+    '- **SKU 기반 커머스**: 쇼핑검색광고, 쇼핑블록, ADVoost 쇼핑, 카탈로그 판매, 쇼핑 프로모션을 상품 DB·가격·재고 품질 기준으로 봅니다.',
+    '- **브랜드 방어/인지 강화**: 브랜드검색광고, 신제품검색광고, 보장형 DA, 헤드라인DA, 동영상 조회 광고를 후보로 둡니다.',
+    '- **영상/게임/라이브 맥락**: 치지직 전용 광고, 숏폼 아웃스트림, 네이버 클립 지면을 별도 후보로 봅니다.',
     '- **심사·정책 리스크**: 네이버 광고등록기준은 법령 위반, 허위·과장, 이용자 오인, 권리 침해 가능성을 소재·랜딩·업종 맥락과 함께 봅니다 ' + policyRef + '.',
     '',
     '**3. 런칭 전 체크포인트**',
     '',
     '- 키워드별 광고문안과 랜딩 URL이 같은 의도를 말하는지 확인합니다.',
     '- 쇼핑검색은 DB URL, EP, 상품정보 수신, 카테고리 자동매칭, 미서비스 상품 여부를 먼저 봅니다.',
-    '- 브랜드검색은 브랜드 키워드 자격과 공식 랜딩, 프로모션 문구의 정확성을 확인합니다.',
-    '- 같은 CPC라도 파워링크는 검색어 품질, 쇼핑검색은 상품 데이터 품질, 브랜드검색은 브랜드 키워드 커버리지가 병목입니다.',
+    '- 디스플레이·성과형 상품은 목적별 전환 태그와 소재 피로도, 지면별 노출 맥락을 분리합니다.',
+    '- 치지직/숏폼/클립처럼 신규 지면 성격이 강한 상품은 도달·조회와 전환을 따로 평가합니다.',
+    '- 같은 CPC라도 파워링크는 검색어 품질, 쇼핑검색은 상품 데이터 품질, 브랜드검색은 브랜드 키워드 커버리지, ADVoost 쇼핑은 데이터·전환 품질이 병목입니다.',
     '',
     `근거: ${Array.from(used).sort((a, b) => a - b).map(index => `[S${index + 1}]`).join(', ')}`,
   ];
@@ -5819,6 +5857,7 @@ function buildEcommerceProductFeedComparisonAnswer(
   const naverDbRef = cite('doc_1773710116296_uawf5xm_chunk_2');
   const kakaoBizboardRef = cite('doc_1774488483929_bigcm1d_chunk_2');
   const kakaoDisplayRef = cite('doc_1774488184369_r97sach_chunk_0');
+  const kakaoCatalogRef = cite('kakao_product_catalog_2026_chunk_0');
   const kakaoPolicyRef = cite('doc_1774491147517_yj1v810_chunk_17');
 
   const lines = [
@@ -5831,7 +5870,7 @@ function buildEcommerceProductFeedComparisonAnswer(
     `| Google 쇼핑/PMax | Merchant Center 상품 데이터를 사용해 상품 이미지, 제목, 가격, 매장명 등을 노출합니다 ${googleShoppingRef}. | 상품 데이터 품질과 정책 준수, 쇼핑 캠페인 또는 PMax 전환 목표를 함께 봅니다 ${googleShoppingRef}. | 구매, 장바구니, 리드 등 Primary conversion action과 오프라인/향상된 전환 연결을 점검합니다. | 피드 불승인, 가격 불일치, 품절 반영 지연이 성과 급락 원인이 됩니다. |`,
     `| Meta 카탈로그/컬렉션 | 카탈로그의 작은 제품 이미지와 커버 이미지/동영상을 함께 보여 구매 흐름으로 연결합니다 ${metaCatalogRef}. | 컬렉션, 카탈로그, Advantage+ 카탈로그를 SKU 수와 리타게팅 목적에 맞춰 선택합니다 ${metaAdvantageRef}. | Pixel/CAPI, 구매·장바구니 이벤트, 상품 세트와 웹사이트 전환 측정을 묶어 봅니다. | 상품 세트, 품절·가격 동기화, 이벤트 매칭 품질이 중요합니다. |`,
     `| 네이버 쇼핑검색광고 | EP 또는 상품 DB URL 등록, 상품정보 수신, 카테고리 자동매칭이 핵심입니다 ${naverDbRef}. | 쇼핑블록/쇼핑검색은 상품 이미지, 상품명, 가격, 카테고리, 쇼핑 지면 검수 조건을 봅니다 ${naverShoppingRef}. | 스마트스토어/쇼핑파트너센터, 로그 분석, 구매 전환 또는 랜딩 전환을 함께 봅니다. | 상품 DB 수신 오류, 미서비스 상품, 카테고리 불일치, 가격비교 업데이트 지연을 점검합니다. |`,
-    `| 카카오 상품/커머스형 운영 | 현재 공식 근거 범위에서는 Google Merchant Center나 네이버 EP 같은 피드 시스템으로 단정하지 않습니다. 비즈보드·디스플레이·메시지 지면과 랜딩/상품 표현 기준을 따로 봅니다 ${kakaoBizboardRef} ${kakaoDisplayRef}. | 비즈보드/디스플레이 소재와 메시지의 가격·혜택·이벤트 문구가 랜딩과 일치해야 합니다. | 픽셀/CAPI 같은 계정별 추적 조건은 실제 세팅에서 확인하고, 카카오 출처에는 없는 피드 기능은 추정하지 않습니다. | 제한 업종, 가격 표시, 인터넷 판매 불가 상품은 메시지/소재 발송 제한과 연결될 수 있습니다 ${kakaoPolicyRef}. |`,
+    `| 카카오 상품 카탈로그/커머스형 운영 | 카카오 상품 카탈로그 광고는 상품 연동을 통해 구매 전환 가능성이 높은 사용자에게 리타게팅·추천 광고를 노출하는 다이내믹 광고입니다 ${kakaoCatalogRef}. Google Merchant Center나 네이버 EP와 같은 운영 화면으로 동일시하지 말고 카카오 상품 연동 구조로 봅니다. | 비즈보드/디스플레이/메시지 소재의 가격·혜택·이벤트 문구가 랜딩과 일치해야 합니다 ${kakaoBizboardRef} ${kakaoDisplayRef}. | 구매 전환 목적, CPC 과금, 리타게팅/추천 노출, 전환 이벤트 품질을 함께 확인합니다 ${kakaoCatalogRef}. | 제한 업종, 가격 표시, 인터넷 판매 불가 상품은 메시지/소재 발송 제한과 연결될 수 있습니다 ${kakaoPolicyRef}. |`,
     '',
     '**2. 실행 순서**',
     '',
@@ -5840,7 +5879,7 @@ function buildEcommerceProductFeedComparisonAnswer(
     '- 구매 최적화 전에는 구매/장바구니/상세조회 이벤트가 상품 ID와 맞는지 확인합니다.',
     '- 품절·가격 불일치, DB 수신 오류, 정책 불승인은 입찰보다 먼저 점검합니다.',
     '',
-    '정리하면, 쇼핑몰 광고는 **Google = Merchant Center 상품 데이터, Meta = 카탈로그/컬렉션/Advantage+ 카탈로그, Naver = 상품 DB/EP와 쇼핑 지면, Kakao = 검증된 지면·소재·심사 범위**로 역할을 나누어 설계하는 것이 안전합니다.',
+    '정리하면, 쇼핑몰 광고는 **Google = Merchant Center 상품 데이터, Meta = 카탈로그/컬렉션/Advantage+ 카탈로그, Naver = 상품 DB/EP와 쇼핑 지면, Kakao = 상품 카탈로그 광고/카카오 지면·소재·심사 범위**로 역할을 나누어 설계하는 것이 안전합니다.',
     '',
     `근거: ${Array.from(used).sort((a, b) => a - b).map(index => `[S${index + 1}]`).join(', ')}`,
   ];
@@ -5986,32 +6025,58 @@ function buildNaverKakaoAssetGuideComparisonAnswer(
   const naverPowerlinkRef = cite('naver_powerlink_product_overview_2026_chunk_0');
   const naverBrandRef = cite('naver_brandsearch_product_overview_2026_chunk_0');
   const naverShoppingRef = cite('doc_1773710116296_uawf5xm_chunk_2');
+  const naverDisplayCatalogRef = cite('naver_display_product_catalog_2026_chunk_0');
+  const naverAdvoostRef = cite('doc_1764922396107_b9w41zn_chunk_5');
+  const naverChzzkRef = cite('naver_chzzk_product_catalog_2026_chunk_0');
   const naverVideoRef = cite('doc_1764895606613_llkwwsf_doc_0');
   const kakaoMomentRef = cite('kakao_moment_product_overview_2026_chunk_0');
   const kakaoBizboardRef = cite('doc_1774488483929_bigcm1d_chunk_2');
   const kakaoDisplayRef = cite('doc_1774488184369_r97sach_chunk_0');
+  const kakaoCatalogRef = cite('kakao_product_catalog_2026_chunk_0');
+  const kakaoGuaranteedRef = cite('kakao_guaranteed_cpt_2026_chunk_0');
+  const kakaoSearchRef = cite('kakao_searchad_product_catalog_2026_chunk_0');
+  const kakaoBrandGuideRef = cite('kakao_brandsearch_content_guide_2026_chunk_0');
+  const kakaoChannelGuideRef = cite('kakao_channelsearch_content_guide_2026_chunk_0');
+  const kakaoMessageRef = cite('doc_1774491147517_yj1v810_chunk_17');
   const kakaoPolicyRef = cite('doc_1774488207473_cjq6ve0_chunk_19');
 
   const lines = [
-    '네이버와 카카오 광고 상품·소재 가이드는 **검색 의도형 네이버**와 **카카오톡/카카오 지면형 카카오**로 나누어 보는 편이 실무적입니다.',
+    '네이버와 카카오 광고 상품·소재 가이드는 대분류만 말하면 부족합니다. 실무에서는 **실제 상품명 → 목적/지면 → 소재 제작 요소 → 심사·측정 체크** 순서로 정리해야 재사용할 수 있습니다.',
     '',
-    '**1. 상품/소재 제작 기준 비교**',
+    '**1. 네이버 상품명 기준**',
     '',
-    '| 매체 | 상품 유형 | 소재 제작에서 먼저 볼 것 | 심사·운영 체크 |',
+    '| 상품 | 언제 쓰나 | 소재 제작에서 먼저 볼 것 | 심사·운영 체크 |',
     '|---|---|---|---|',
-    `| 네이버 파워링크 | 검색어 기반 사이트 유입형 광고 | 키워드, 제목/설명, 표시 URL, 랜딩 관련성을 봅니다 ${naverPowerlinkRef}. | 검색어 intent와 랜딩 불일치, 허위·과장, 권리 침해 가능성을 점검합니다. |`,
-    `| 네이버 쇼핑검색 | 상품 DB/EP 기반 상품 노출 | 상품명, 대표이미지, 가격, 배송비, 카테고리, 상품 DB URL을 봅니다 ${naverShoppingRef}. | DB 수신, 카테고리 매칭, 미서비스 상품, 가격·재고 동기화를 확인합니다. |`,
-    `| 네이버 브랜드검색/DA/동영상 | 브랜드 키워드, DA, 동영상 지면 | 브랜드 키워드 자격, 브랜드 소재 템플릿, 숏폼/동영상 비율과 지면을 봅니다 ${naverBrandRef} ${naverVideoRef}. | 브랜드와 직접 연관된 키워드인지, 소재가 지면별 규격을 만족하는지 확인합니다. |`,
-    `| 카카오 비즈보드 | 카카오톡 기반 주요 지면 노출 | 카카오톡·다음·카카오서비스 지면, 소재 유형, 랜딩 옵션을 봅니다 ${kakaoBizboardRef}. | 카카오 서비스처럼 보이는 UI/로고/디자인 모방을 피해야 합니다 ${kakaoPolicyRef}. |`,
-    `| 카카오 디스플레이/카카오모먼트 | 카카오 핵심 서비스와 파트너 지면 노출 | 이미지/동영상 등 소재 유형, 노출 지면, 제작 가이드를 봅니다 ${kakaoDisplayRef} ${kakaoMomentRef}. | 업종 제한, 허위·과장, AI 생성물 표시, 랜딩 일치 여부를 확인합니다. |`,
+    `| 파워링크/사이트검색 | 검색 의도 기반 웹사이트 유입, 상담, 예약, 구매 전환을 받을 때 | 키워드, 제목/설명, 표시 URL, 확장 소재, 랜딩 관련성을 봅니다 ${naverPowerlinkRef}. | 검색어 intent와 랜딩 불일치, 허위·과장, 권리 침해 가능성을 점검합니다. |`,
+    `| 쇼핑검색광고/쇼핑블록 | 상품 비교·구매 수요를 상품 단위로 받을 때 | 상품명, 대표이미지, 가격, 배송비, 카테고리, 상품 DB URL/EP를 봅니다 ${naverShoppingRef}. | DB 수신, 카테고리 매칭, 미서비스 상품, 가격·재고 동기화를 확인합니다. |`,
+    `| 브랜드검색광고 | 브랜드 키워드 검색 결과에서 공식 브랜드 정보를 크게 보여줄 때 | 브랜드 키워드 자격, 브랜드 소재 템플릿, 이미지·동영상, 공식 랜딩을 봅니다 ${naverBrandRef}. | 브랜드와 직접 연관된 키워드인지, 소재가 지면별 규격을 만족하는지 확인합니다. |`,
+    `| 파워컨텐츠/신제품검색광고/플레이스검색광고/지역소상공인광고/서칭뷰 | 정보 탐색, 신제품 노출, 지역 매장 유입, 검색 중 시각적 발견이 필요할 때 | 검색어 intent, 콘텐츠·상품·장소 정보, 랜딩 품질을 먼저 봅니다. 네이버 검색광고 상품 축에 함께 포함됩니다 ${cite('naver_searchad_overview_powerlink_brand_2026_chunk_0')}. | 정보성 콘텐츠, 신제품 주장, 지역 정보 최신성, 예약·전화 연결을 따로 점검합니다. |`,
+    `| ADVoost 쇼핑 | 쇼핑 성과형 광고를 AI 기반 자동 최적화로 쉽게 시작하고 싶을 때 | 비즈채널, 하루 예산, 상품 데이터, 전환 조건, 자동 최적화 구조를 봅니다 ${naverAdvoostRef}. | 상품 DB·가격·재고·전환 추적 품질이 낮으면 자동화가 좋은 신호를 학습하기 어렵습니다. |`,
+    `| 인지도 및 트래픽/웹사이트 전환/앱 전환/카탈로그 판매/쇼핑 프로모션/동영상 조회/커뮤니케이션 애드 | 디스플레이·성과형 지면에서 목적별 캠페인을 분리해야 할 때 | 배너, 동영상, 이미지 소재와 세밀한 타겟팅, 실시간 입찰, 목적별 전환 태그를 봅니다 ${naverDisplayCatalogRef}. | 커뮤니케이션 애드는 상담 SLA, 카탈로그/쇼핑형은 상품 데이터, 동영상 조회는 조회 KPI를 분리합니다. |`,
+    `| 치지직 전용 광고 | 게임·라이브·1030 타겟, 치지직 라이브/VOD 맥락을 활용할 때 | 인스트림 동영상 광고, 치지직 배너 광고, 치지직 프리미엄 라이브(beta)를 구분합니다 ${naverChzzkRef}. | 라이브/VOD/PC·모바일 홈/영상엔드/추천 라이브 영역별 노출 맥락과 타겟 적합성을 봅니다. |`,
+    `| 숏폼 아웃스트림/네이버 클립/헤드라인DA | 영상·숏폼·대형 지면으로 브랜드 관심과 도달을 키울 때 | 숏폼/동영상 비율, 클립/아웃스트림 지면, PC 헤드라인DA 같은 보장형 지면을 확인합니다 ${naverVideoRef}. | 조회·도달 KPI와 랜딩 전환 KPI를 섞지 않고 따로 봅니다. |`,
     '',
-    '**2. 제작 순서**',
+    '**2. 카카오 상품명 기준**',
+    '',
+    '| 상품 | 언제 쓰나 | 소재 제작에서 먼저 볼 것 | 심사·운영 체크 |',
+    '|---|---|---|---|',
+    `| 카카오 비즈보드 | 카카오톡 기반 대량 도달, 프로모션, 브랜드 인지와 랜딩 유입을 함께 노릴 때 | 카카오톡·카카오서비스 주요 지면, 소재 유형, 랜딩 옵션을 봅니다 ${kakaoBizboardRef}. | 카카오 서비스처럼 보이는 UI/로고/디자인 모방을 피해야 합니다 ${kakaoPolicyRef}. |`,
+    `| 디스플레이 광고/동영상 광고 | 카카오 핵심 서비스와 파트너 지면에서 이미지·동영상 소재를 운영할 때 | 이미지/동영상 등 소재 유형, 노출 지면, 제작 가이드를 봅니다 ${kakaoDisplayRef} ${kakaoMomentRef}. | 업종 제한, 허위·과장, AI 생성물 표시, 랜딩 일치 여부를 확인합니다. |`,
+    `| 상품 카탈로그 광고 | 상품 연동 기반 리타게팅·추천 광고로 구매 전환을 유도할 때 | 상품 연동, 다이내믹 광고, 구매 전환 목적, CPC 과금 구조를 확인합니다 ${kakaoCatalogRef}. | 상품 정보, 가격·혜택, 랜딩 상품 정보와 전환 이벤트 품질을 봅니다. |`,
+    `| 카카오톡 채널 메시지/메시지 광고 | 쿠폰, 예약, 재구매, 이벤트 안내처럼 보유 고객 직접 도달이 중요할 때 | 메시지 내용, 가격·혜택 표시, 이벤트 조건, 랜딩 일치 여부를 봅니다 ${kakaoMessageRef}. | 제한 업종과 발송 가능 여부, 관계 법령 위반 가능성을 먼저 봅니다 ${kakaoMessageRef}. |`,
+    `| 키워드광고 | 카카오 검색 지면에서 검색 의도 기반 유입을 확보할 때 | 키워드, 광고문안, 랜딩, 사업자 정보와 검색어 의도를 맞춥니다 ${kakaoSearchRef}. | 검색어-소재-랜딩 불일치와 허위·과장 표현을 확인합니다. |`,
+    `| 브랜드검색 광고 | 브랜드 키워드 또는 브랜드 연관 키워드 검색 시 상단 정보성 콘텐츠를 보여줄 때 | 모바일 라이트, 모바일 오토플레이형, PC 베이직 등 템플릿별 이미지·동영상·행동유도버튼·랜딩URL을 봅니다 ${kakaoBrandGuideRef}. | 검토 완료 소재로만 집행하고 템플릿별 사양을 맞춥니다. |`,
+    `| 톡채널검색 | 카카오톡 검색에서 채널 발견, 상담, 예약, 재방문을 모아야 할 때 | 추천소재/맞춤소재, 채널명, 썸네일, 홍보문구, 행동유도버튼, 랜딩URL을 봅니다 ${kakaoChannelGuideRef}. | 채널과 연동 사이트의 사업자 정보, 소재와 랜딩 일치, 등록불가 업종 조건을 확인합니다. |`,
+    `| 보장형 광고/카카오비즈보드 CPT | 특정 시간대 대형 지면 점유와 브랜딩 임팩트가 필요할 때 | 카카오톡 친구탭의 주목도 높은 영역을 일정 시간 단독 점유하는 CPT 구조를 확인합니다 ${kakaoGuaranteedRef}. | CPC 성과형 캠페인과 KPI를 섞지 말고 도달, 점유, 이벤트 유입을 따로 봅니다. |`,
+    '',
+    '**3. 제작 순서**',
     '',
     '- 네이버 검색형은 키워드와 랜딩 의도가 먼저이고, 쇼핑형은 상품 DB와 대표이미지/가격 품질이 먼저입니다.',
-    '- 카카오는 지면 경험이 먼저입니다. 같은 이미지라도 비즈보드, 디스플레이, 메시지에서 사용자 맥락과 심사 기준이 달라집니다.',
-    '- 두 매체 모두 소재 문구만 보지 말고 업종, 랜딩, 권리 침해, 허위·과장 표현을 함께 확인합니다.',
+    '- 네이버 성과형/영상형은 ADVoost 쇼핑, 커뮤니케이션 애드, 동영상 조회, 치지직처럼 지면과 목적이 갈리므로 대카테고리 “DA”로 뭉치면 안 됩니다.',
+    '- 카카오는 지면 경험과 심사 맥락이 먼저입니다. 같은 이미지라도 비즈보드, 디스플레이, 메시지, 브랜드검색, 톡채널검색에서 사용자 맥락과 제작 사양이 달라집니다.',
+    '- 두 매체 모두 소재 문구만 보지 말고 업종, 랜딩, 권리 침해, 허위·과장 표현, 상품 데이터·전환 측정을 함께 확인합니다.',
     '',
-    '정리하면, 네이버는 **검색어/상품 DB/브랜드 키워드**, 카카오는 **카카오톡 지면/소재 유형/심사 기준**을 기준으로 소재 제작 가이드를 나누어야 합니다.',
+    '정리하면, 네이버는 **검색광고 상품명 + 쇼핑/상품 DB + ADVoost·커뮤니케이션 애드·치지직 같은 성과형/신규 지면**, 카카오는 **비즈보드·디스플레이·동영상·상품 카탈로그·메시지·브랜드검색·톡채널검색·보장형/CPT** 기준으로 소재 제작 가이드를 나누어야 합니다.',
     '',
     `근거: ${Array.from(used).sort((a, b) => a - b).map(index => `[S${index + 1}]`).join(', ')}`,
   ];
@@ -6041,9 +6106,18 @@ function buildCrossVendorProductAssetGuideAnswer(
     'naver_powerlink_product_overview_2026_chunk_0',
     'doc_1773710116296_uawf5xm_chunk_2',
     'naver_brandsearch_product_overview_2026_chunk_0',
+    'doc_1764922396107_b9w41zn_chunk_5',
+    'naver_display_product_catalog_2026_chunk_0',
+    'naver_chzzk_product_catalog_2026_chunk_0',
     'kakao_moment_product_overview_2026_chunk_0',
     'doc_1774488483929_bigcm1d_chunk_2',
     'doc_1774488184369_r97sach_chunk_0',
+    'kakao_product_catalog_2026_chunk_0',
+    'kakao_guaranteed_cpt_2026_chunk_0',
+    'kakao_searchad_product_catalog_2026_chunk_0',
+    'kakao_brandsearch_content_guide_2026_chunk_0',
+    'kakao_channelsearch_content_guide_2026_chunk_0',
+    'doc_1774491147517_yj1v810_chunk_17',
     'doc_1774488207473_cjq6ve0_chunk_19',
   ]);
   const prepared = prepareOfficialSnapshotAnswerSources(sources, requiredChunkIds);
@@ -6062,9 +6136,18 @@ function buildCrossVendorProductAssetGuideAnswer(
   const naverPowerlinkRef = cite('naver_powerlink_product_overview_2026_chunk_0');
   const naverShoppingRef = cite('doc_1773710116296_uawf5xm_chunk_2');
   const naverBrandRef = cite('naver_brandsearch_product_overview_2026_chunk_0');
+  const naverAdvoostRef = cite('doc_1764922396107_b9w41zn_chunk_5');
+  const naverDisplayRef = cite('naver_display_product_catalog_2026_chunk_0');
+  const naverChzzkRef = cite('naver_chzzk_product_catalog_2026_chunk_0');
   const kakaoMomentRef = cite('kakao_moment_product_overview_2026_chunk_0');
   const kakaoBizboardRef = cite('doc_1774488483929_bigcm1d_chunk_2');
   const kakaoDisplayRef = cite('doc_1774488184369_r97sach_chunk_0');
+  const kakaoCatalogRef = cite('kakao_product_catalog_2026_chunk_0');
+  const kakaoGuaranteedRef = cite('kakao_guaranteed_cpt_2026_chunk_0');
+  const kakaoSearchRef = cite('kakao_searchad_product_catalog_2026_chunk_0');
+  const kakaoBrandGuideRef = cite('kakao_brandsearch_content_guide_2026_chunk_0');
+  const kakaoChannelGuideRef = cite('kakao_channelsearch_content_guide_2026_chunk_0');
+  const kakaoMessageRef = cite('doc_1774491147517_yj1v810_chunk_17');
   const kakaoPolicyRef = cite('doc_1774488207473_cjq6ve0_chunk_19');
 
   const lines = [
@@ -6076,8 +6159,8 @@ function buildCrossVendorProductAssetGuideAnswer(
     '|---|---|---|---|',
     `| Meta | 인지도, 트래픽, 참여, 잠재 고객, 앱 홍보, 판매 같은 캠페인 목표를 먼저 정합니다 ${metaObjectiveRef}. | 이미지, 동영상, 카루셀, 컬렉션, 인스턴트 경험을 목표와 Facebook/Instagram 지면별로 나눕니다 ${metaFormatRef}. | 리드, 앱, 카탈로그는 전환 위치, Pixel/CAPI, 앱 이벤트, 카탈로그 피드까지 같이 봅니다 ${metaModuleRef} ${metaCatalogRef}. |`,
     `| Google Ads | 판매, 리드, 웹사이트 트래픽, 브랜드 인지도와 도달범위, 앱 홍보 같은 목표와 검색/디스플레이/동영상/쇼핑/앱/PMax 유형을 연결합니다 ${googleObjectiveRef} ${googleTypeRef}. | 검색은 텍스트와 랜딩, 디스플레이/동영상은 이미지·영상 애셋, 쇼핑은 상품 피드, 앱은 앱 애셋을 봅니다. | 쇼핑은 Merchant Center 상품 데이터와 정책, 앱은 Google Play/YouTube/Discover 등 게재와 앱 이벤트를 함께 확인합니다 ${googleShoppingRef} ${googleAppRef}. |`,
-    `| 네이버 | 파워링크, 쇼핑검색, 브랜드검색 등 검색어 기반 상품을 목적별로 나눕니다 ${naverOverviewRef}. | 파워링크는 키워드·제목·설명·URL, 쇼핑검색은 상품명·이미지·가격·카테고리, 브랜드검색은 브랜드 템플릿을 봅니다 ${naverPowerlinkRef} ${naverShoppingRef} ${naverBrandRef}. | 검색어와 랜딩 일치, 상품 DB/EP 수신, 가격·재고 동기화, 브랜드 키워드 자격을 확인합니다. |`,
-    `| 카카오 | 카카오모먼트에서 비즈보드, 디스플레이, 동영상, 메시지 광고를 목적별로 집행합니다 ${kakaoMomentRef}. | 비즈보드는 카카오톡 주요 지면과 랜딩 옵션, 디스플레이는 소재 유형과 카카오 핵심 서비스 지면을 봅니다 ${kakaoBizboardRef} ${kakaoDisplayRef}. | 카카오 서비스 오인, UI/로고 모방, AI 생성물 표시, 제한 업종, 허위·과장 가능성을 심사 기준으로 봅니다 ${kakaoPolicyRef}. |`,
+    `| 네이버 | 검색광고 축은 파워링크, 쇼핑검색광고, 파워컨텐츠, 브랜드검색광고, 신제품검색광고, 플레이스검색광고, 지역소상공인광고, 서칭뷰로 봅니다 ${naverOverviewRef}. 디스플레이 축은 ADVoost 쇼핑, 인지도 및 트래픽, 웹사이트 전환, 앱 전환, 카탈로그 판매, 쇼핑 프로모션, 동영상 조회, 커뮤니케이션 애드로 봅니다 ${naverDisplayRef}. | 파워링크는 키워드·문안·랜딩, 쇼핑검색은 상품 DB/EP·이미지·가격, 브랜드검색은 템플릿, ADVoost 쇼핑은 자동 최적화와 상품·전환 조건, 치지직은 인스트림/배너/프리미엄 라이브 지면을 봅니다 ${naverPowerlinkRef} ${naverShoppingRef} ${naverBrandRef} ${naverAdvoostRef} ${naverChzzkRef}. | 검색어와 랜딩 일치, 상품 DB/EP 수신, 가격·재고 동기화, 브랜드 키워드 자격, 커뮤니케이션 애드 상담 SLA, 치지직 지면 적합성을 확인합니다. |`,
+    `| 카카오 | 카카오모먼트 축은 비즈보드, 디스플레이, 동영상, 메시지, 상품 카탈로그 광고를 봅니다 ${kakaoMomentRef} ${kakaoCatalogRef}. 검색 광고 축은 키워드광고, 브랜드검색, 톡채널검색으로 분리하고, 보장형 광고/카카오비즈보드 CPT는 별도 브랜딩 상품으로 봅니다 ${kakaoSearchRef} ${kakaoGuaranteedRef}. | 비즈보드는 카카오톡 주요 지면, 디스플레이/동영상은 소재 유형과 노출 지면, 상품 카탈로그는 상품 연동과 구매 전환, 메시지는 발송 내용, 브랜드검색/톡채널검색은 템플릿·행동유도버튼·랜딩URL을 봅니다 ${kakaoBizboardRef} ${kakaoDisplayRef} ${kakaoMessageRef} ${kakaoBrandGuideRef} ${kakaoChannelGuideRef}. | 카카오 서비스 오인, UI/로고 모방, AI 생성물 표시, 제한 업종, 허위·과장, 상품 정보와 랜딩 일치, 발송 가능 업종을 심사 기준으로 봅니다 ${kakaoPolicyRef}. |`,
     '',
     '**2. 질문 유형별 빠른 분기**',
     '',
@@ -6086,7 +6169,7 @@ function buildCrossVendorProductAssetGuideAnswer(
     '- **성과/전환을 묻는 질문**: 전환 태그, Pixel/CAPI, Google tag/GA, 앱 SDK/MMP, 상품 피드, CRM 수신을 분리합니다.',
     '- **커머스 질문**: Google Merchant Center, Meta 카탈로그, 네이버 상품 DB/EP, 카카오 상품·지면 조건을 가격·재고 동기화 기준으로 비교합니다.',
     '',
-    '정리하면, 다매체 상품 가이드는 **Meta=목표·전환 위치·지면/형식**, **Google=목표·캠페인 유형·애셋/전환**, **네이버=검색어·상품 DB·브랜드 키워드**, **카카오=카카오톡 지면·소재 유형·심사 기준**으로 나누는 것이 안전합니다.',
+    '정리하면, 다매체 상품 가이드는 **Meta=목표·전환 위치·지면/형식**, **Google=목표·캠페인 유형·애셋/전환**, **네이버=검색광고 상품명·상품 DB·ADVoost/커뮤니케이션 애드/치지직**, **카카오=비즈보드·상품 카탈로그·메시지·브랜드검색·톡채널검색·보장형/CPT**로 나누는 것이 안전합니다.',
     '',
     `근거: ${Array.from(used).sort((a, b) => a - b).map(index => `[S${index + 1}]`).join(', ')}`,
   ];
