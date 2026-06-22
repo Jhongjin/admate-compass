@@ -119,6 +119,22 @@ function validateFixtureSchema(fixtures) {
     if (fixture.generationMustNotContain !== undefined) {
       assertArray(fixture.generationMustNotContain, `${label}.generationMustNotContain`);
     }
+    if (fixture.conversationHistory !== undefined) {
+      assertArray(fixture.conversationHistory, `${label}.conversationHistory`);
+      for (const [historyIndex, historyItem] of fixture.conversationHistory.entries()) {
+        const historyLabel = `${label}.conversationHistory[${historyIndex}]`;
+        if (!historyItem || typeof historyItem !== "object" || Array.isArray(historyItem)) {
+          fail(`${historyLabel} must be an object`);
+          continue;
+        }
+        if (historyItem.role !== undefined && typeof historyItem.role !== "string") {
+          fail(`${historyLabel}.role must be a string when provided`);
+        }
+        if (historyItem.content !== undefined && typeof historyItem.content !== "string") {
+          fail(`${historyLabel}.content must be a string when provided`);
+        }
+      }
+    }
     assertArray(fixture.requireRetrievalMethods, `${label}.requireRetrievalMethods`);
 
     for (const method of fixture.requireRetrievalMethods || []) {
@@ -695,7 +711,7 @@ async function callCompassAnswerEndpoint(fixture) {
     },
     body: JSON.stringify({
       message: fixture.question,
-      conversationHistory: [],
+      conversationHistory: Array.isArray(fixture.conversationHistory) ? fixture.conversationHistory : [],
     }),
   });
 

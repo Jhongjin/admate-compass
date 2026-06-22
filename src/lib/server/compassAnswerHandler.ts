@@ -115,7 +115,7 @@ const COMPASS_ANSWER_RESPONSE_CACHE_TTL_MS = Math.min(
   900000,
 );
 const COMPASS_ANSWER_RESPONSE_CACHE_MAX_ENTRIES = 64;
-const COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v33-cross-vendor-product-asset-routing';
+const COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v35-contextual-product-guide-routing';
 const COMPASS_CONVERSATION_HISTORY_MAX_ITEMS = 25;
 const compassAnswerResponseCache = new Map<string, CompassAnswerResponseCacheEntry>();
 const compassAnswerRuntimeMetrics = {
@@ -1035,6 +1035,119 @@ function normalizeProductIntentText(message: string): string {
   return message.toLowerCase().replace(/\s+/g, ' ').trim();
 }
 
+type CompassConversationHistoryItem = {
+  role?: unknown;
+  content?: unknown;
+  message?: unknown;
+  text?: unknown;
+  parts?: unknown;
+};
+
+const CONTEXTUAL_PRODUCT_VENDOR_LABELS: Record<VendorIntent, string> = {
+  META: 'Meta',
+  GOOGLE: 'Google Ads',
+  NAVER: '네이버',
+  KAKAO: '카카오',
+};
+
+function getConversationHistoryItemText(item: unknown): string {
+  if (!item || typeof item !== 'object' || Array.isArray(item)) return '';
+  const record = item as CompassConversationHistoryItem;
+  const directText = [record.content, record.message, record.text]
+    .filter((value): value is string => typeof value === 'string')
+    .join(' ')
+    .trim();
+  if (directText) return directText;
+
+  if (!Array.isArray(record.parts)) return '';
+  return record.parts
+    .map((part) => {
+      if (typeof part === 'string') return part;
+      if (!part || typeof part !== 'object' || Array.isArray(part)) return '';
+      const partRecord = part as Record<string, unknown>;
+      return [partRecord.text, partRecord.content]
+        .filter((value): value is string => typeof value === 'string')
+        .join(' ');
+    })
+    .join(' ')
+    .trim();
+}
+
+function detectContextualVendorMentions(text: string): VendorIntent[] {
+  const normalized = normalizeProductIntentText(text);
+  const vendors: VendorIntent[] = [];
+  const addVendor = (vendor: VendorIntent) => {
+    if (!vendors.includes(vendor)) vendors.push(vendor);
+  };
+
+  if (/meta|메타|facebook|페이스북|instagram|인스타그램/.test(normalized)) addVendor('META');
+  if (/google|구글|youtube|유튜브|google\s*ads|구글\s*애즈|pmax|performance\s*max/.test(normalized)) addVendor('GOOGLE');
+  if (/naver|네이버/.test(normalized)) addVendor('NAVER');
+  if (/kakao|카카오|카카오톡|톡채널|비즈보드|카카오모먼트/.test(normalized)) addVendor('KAKAO');
+
+  return vendors;
+}
+
+function isContextualProductGuideFollowup(message: string): boolean {
+  const normalized = normalizeProductIntentText(message);
+  if (detectContextualVendorMentions(normalized).length > 0) return false;
+
+  const hasFollowupSignal = /상품\s*별|상품별|제작\s*가이드|소재\s*(가이드|제작|사양|규격)|상품\s*(가이드|유형|종류|목록)|가이드|상세|자세|모두|추가|더|도\s*알려|알려줘|정리/.test(normalized);
+  const hasStandaloneScope = /광고\s*상품|광고상품|광고\s*(유형|종류|목록)|캠페인\s*(유형|목표|목적)|비교|매체별/.test(normalized);
+
+  return hasFollowupSignal && !hasStandaloneScope;
+}
+
+function buildContextualCompassProductQuestion(
+  message: string,
+  conversationHistory: unknown,
+): { message: string; contextualized: boolean; historyItemCount: number; vendors: VendorIntent[] } {
+  const history = Array.isArray(conversationHistory)
+    ? conversationHistory.slice(-COMPASS_CONVERSATION_HISTORY_MAX_ITEMS)
+    : [];
+  const currentVendors = detectContextualVendorMentions(message);
+  const shouldUseHistory = isContextualProductGuideFollowup(message);
+  if (!shouldUseHistory || currentVendors.length > 0 || history.length === 0) {
+    return {
+      message,
+      contextualized: false,
+      historyItemCount: history.length,
+      vendors: currentVendors,
+    };
+  }
+
+  const contextualVendors: VendorIntent[] = [];
+  for (const item of [...history].reverse()) {
+    const text = getConversationHistoryItemText(item);
+    if (!text) continue;
+    for (const vendor of detectContextualVendorMentions(text)) {
+      if (!contextualVendors.includes(vendor)) contextualVendors.push(vendor);
+    }
+    if (contextualVendors.length >= 4) break;
+  }
+
+  if (contextualVendors.length === 0) {
+    return {
+      message,
+      contextualized: false,
+      historyItemCount: history.length,
+      vendors: [],
+    };
+  }
+
+  const vendorLabel = contextualVendors
+    .map(vendor => CONTEXTUAL_PRODUCT_VENDOR_LABELS[vendor])
+    .join(', ');
+  const contextualPrefix = `${vendorLabel} 광고 상품 유형과 상품별 소재 제작 가이드 기준으로`;
+
+  return {
+    message: `${contextualPrefix} ${message}`,
+    contextualized: true,
+    historyItemCount: history.length,
+    vendors: contextualVendors,
+  };
+}
+
 function hasNamedSpecificProductQuestion(message: string): boolean {
   const normalized = normalizeProductIntentText(message);
   return /(^|[\s/])da($|[\s/]|도|상품|광고)|네이버\s*da|네이버da|da\s*상품|da상품|보장형\s*da|스마트채널|타임보드|롤링보드|디스플레이\s*광고|성과형\s*디스플레이|홈피드\s*da|홈피드|배너\s*광고|동영상\s*광고|비디오\s*광고|youtube\s*shorts|shorts\s*광고|video\s*action\s*campaign|\bvac\b|앱\s*인스톨|앱\s*설치|앱\s*홍보|앱\s*사전\s*등록|app\s*install|app\s*promotion|리드\s*양식|잠재\s*고객\s*광고|잠재고객\s*광고|잠재고객광고|비즈니스\s*폼|비즈니스폼|lead\s*form|lead\s*generation|lead\s*ads?|db\s*url|상품\s*db|상품등록|ep|카탈로그|catalog|advantage\+|어드밴티지|performance\s*max|\bpmax\b|demand\s*gen|쇼핑검색|사이트검색|파워링크|브랜드검색|쇼핑블록|비즈보드/.test(normalized);
@@ -1054,7 +1167,7 @@ function isBroadMetaProductPlanningQuestion(message: string, intent?: QueryInten
   const asksMeta = vendor === 'META'
     || /meta|메타|facebook|페이스북|instagram|인스타그램/.test(normalized);
   const asksProductTypes = /광고\s*(상품|유형|종류|구조)|광고상품|상품\s*(유형|종류|구조)|유형별|상품별/.test(normalized);
-  const asksPlanningAxes = /캠페인\s*목표|광고\s*형식|소재\s*형식|게재\s*위치|노출\s*위치|리드|잠재\s*고객|앱|카탈로그|활용\s*기준|실무/.test(normalized);
+  const asksPlanningAxes = /캠페인\s*목표|광고\s*형식|소재\s*형식|게재\s*위치|노출\s*위치|리드|잠재\s*고객|앱|카탈로그|활용\s*기준|실무|제작\s*가이드|소재|사양|규격|비율|사이즈/.test(normalized);
   const namedAxisCount = [
     /캠페인\s*(목표|목적)|광고\s*관리자\s*목표|인지도|트래픽|참여|판매/.test(normalized),
     /광고\s*형식|소재\s*형식|이미지|동영상|카루셀|캐러셀|컬렉션|collection/.test(normalized),
@@ -1109,8 +1222,9 @@ function isPerformanceDropTroubleshootingQuestion(message: string): boolean {
 
 function isAssetGuideProductQuestion(message: string): boolean {
   const normalized = normalizeProductIntentText(message);
-  return /소재\s*(제작\s*)?가이드|제작\s*가이드|광고\s*상품\s*소재|상품\s*소재|소재\s*규격|소재\s*사양|creative\s*(guide|spec)|asset\s*(guide|spec)/.test(normalized)
-    && /광고\s*상품|광고상품|상품\s*(유형|종류|가이드)|product|캠페인\s*유형|종류/.test(normalized);
+  const hasAssetGuideSignal = /상품\s*별\s*(소재\s*)?(제작\s*)?가이드|상품별\s*(소재\s*)?(제작\s*)?가이드|소재\s*(제작\s*)?가이드|제작\s*가이드|광고\s*상품\s*소재|상품\s*소재|소재\s*규격|소재\s*사양|creative\s*(guide|spec)|asset\s*(guide|spec)/.test(normalized);
+  const hasProductScopeSignal = /광고\s*상품|광고상품|상품\s*(유형|종류|가이드|별)|상품별|product|캠페인\s*유형|종류|광고\s*(유형|종류)/.test(normalized);
+  return hasAssetGuideSignal && hasProductScopeSignal;
 }
 
 function isMetaGoogleLeadComparisonQuestion(message: string, intent: QueryIntent): boolean {
@@ -4518,6 +4632,8 @@ const META_PRODUCT_PLANNING_MATRIX_REQUIRED_CHUNK_IDS = [
   'meta_business_help_objectives_2026_chunk_0',
   'meta_business_help_formats_placements_2026_chunk_0',
   'meta_business_help_operating_modules_2026_chunk_0',
+  'doc_1773886203371_8rlmmdv_chunk_1',
+  'doc_1773886203371_8rlmmdv_chunk_2',
 ] as const;
 
 const META_GOOGLE_LEAD_COMPARISON_REQUIRED_CHUNK_IDS = [
@@ -4840,6 +4956,8 @@ function getMetaProductPlanningMatrixRequiredSourceIndexes(
     objectivesIndex: indexes[1],
     formatsIndex: indexes[2],
     modulesIndex: indexes[3],
+    catalogIndex: indexes[4],
+    advantageIndex: indexes[5],
   };
 }
 
@@ -5384,6 +5502,8 @@ function buildMetaProductPlanningMatrixAnswer(
     objectivesIndex,
     formatsIndex,
     modulesIndex,
+    catalogIndex,
+    advantageIndex,
   } = requiredSourceIndexes;
 
   const used = new Set<number>([
@@ -5391,6 +5511,8 @@ function buildMetaProductPlanningMatrixAnswer(
     formatsIndex,
     modulesIndex,
     levelsIndex,
+    catalogIndex,
+    advantageIndex,
   ]);
 
   const citation = (index: number, fallbackIndex = objectivesIndex) => {
@@ -5403,7 +5525,9 @@ function buildMetaProductPlanningMatrixAnswer(
   const objectiveRef = citation(objectivesIndex);
   const formatRef = citation(formatsIndex);
   const moduleRef = citation(modulesIndex);
-  const commerceRef = citation(modulesIndex);
+  const catalogRef = citation(catalogIndex);
+  const advantageRef = citation(advantageIndex);
+  const commerceRef = `${catalogRef} ${advantageRef}`;
 
   const lines = [
     'Meta 광고 상품은 “상품명 목록”이 아니라 **목표별 캠페인 유형 + 전환 위치 + 광고 형식/게재 위치 + 데이터·측정 모듈**을 조합해 고르는 구조로 보는 편이 실무적입니다.',
@@ -5418,7 +5542,7 @@ function buildMetaProductPlanningMatrixAnswer(
     `| 참여/메시지 | 게시물 반응, 동영상 조회, 메시지 대화처럼 상호작용이 목표일 때 ${objectiveRef} | 동영상, 이미지, 카루셀 등 참여를 유도하기 쉬운 소재 ${formatRef} | 릴스·피드·스토리는 반응/조회에, 메시지 상담은 Messenger·Instagram DM 진입 흐름을 중심으로 검토합니다 ${formatRef} | 상담형이면 메시지 전환 위치를, 리드 수집형이면 잠재 고객 목표로 분리합니다 ${moduleRef} | “반응”과 “문의/전환”을 같은 캠페인에서 동시에 기대하지 않도록 KPI를 분리합니다. |`,
     `| 리드 수집 | 상담 신청, 견적 요청, 연락처 확보처럼 잠재 고객 확보가 목표일 때 ${objectiveRef} | 이미지·동영상·카루셀 소재로 제안 가치를 설명하고, 인스턴트 양식/메시지/전화 같은 전환 위치와 연결 ${moduleRef} | 모바일 피드·스토리·릴스처럼 양식 제출 흐름이 짧은 지면을 우선 보고, 메시지 리드는 대화 진입 위치를 따로 검토합니다 ${formatRef} | **리드**가 핵심입니다. 인스턴트 양식은 CRM 연동, 질문 항목, 개인정보 고지, 후속 연락 프로세스까지 같이 설계합니다 ${moduleRef} | 리드 품질이 중요하면 양식 질문을 늘리고, 리드량이 중요하면 입력 장벽을 낮춥니다. |`,
     `| 앱 성장 | 앱 설치, 앱 내 행동, 앱 이벤트 최적화가 목표일 때 ${objectiveRef} | 짧은 동영상, 이미지, 카루셀 등 모바일 앱 가치가 즉시 보이는 소재 ${formatRef} | 모바일 피드·스토리·릴스 중심으로 보되, 스토어 이동과 앱 이벤트 측정이 끊기지 않는 전환 위치를 먼저 확인합니다 ${moduleRef} | **앱**이 핵심입니다. SDK/MMP, 앱 이벤트, 설치 후 행동 이벤트가 준비되지 않으면 최적화 품질이 떨어집니다 ${moduleRef} | 설치 캠페인과 구매/가입 같은 앱 이벤트 캠페인을 분리해 학습 기준을 명확히 둡니다. |`,
-    `| 판매/커머스 | 구매, 장바구니, 웹사이트 전환, 상품 판매가 목표일 때 ${objectiveRef} | 이미지, 동영상, 카루셀, 컬렉션, 인스턴트 경험, Advantage+ 카탈로그 계열을 상품 수와 구매 흐름에 맞춰 선택 ${formatRef} | 피드·스토리·릴스는 발견/탐색, 카탈로그·컬렉션은 상품 비교, 리타게팅은 구매 이벤트가 잘 잡히는 지면을 우선합니다 ${formatRef} | **카탈로그**가 핵심입니다. 상품 피드, 상품 세트, 픽셀/CAPI, 웹사이트 전환 측정을 묶어서 봐야 합니다 ${commerceRef} | SKU가 많으면 카탈로그/동적 소재, SKU가 적거나 신제품이면 일반 판매 캠페인+수동 소재가 더 나을 수 있습니다. |`,
+    `| 판매/커머스 | 구매, 장바구니, 웹사이트 전환, 상품 판매가 목표일 때 ${objectiveRef} | 이미지, 동영상, 카루셀, 컬렉션, 인스턴트 경험, Advantage+ 카탈로그 계열을 상품 수와 구매 흐름에 맞춰 선택 ${formatRef} ${advantageRef} | 피드·스토리·릴스는 발견/탐색, 카탈로그·컬렉션은 상품 비교, 리타게팅은 구매 이벤트가 잘 잡히는 지면을 우선합니다 ${formatRef} | **카탈로그**가 핵심입니다. 상품 피드, 상품 세트, 픽셀/CAPI, 웹사이트 전환 측정을 묶어서 봐야 합니다 ${commerceRef} | SKU가 많으면 카탈로그/동적 소재, SKU가 적거나 신제품이면 일반 판매 캠페인+수동 소재가 더 나을 수 있습니다. |`,
     '',
     '**2. 리드/앱/카탈로그 빠른 판별**',
     '',
@@ -5426,7 +5550,7 @@ function buildMetaProductPlanningMatrixAnswer(
     '|---|---|---|---|',
     `| 리드/잠재 고객 | 상담, 견적, 예약, B2B 문의처럼 “연락처 확보 후 영업 처리”가 핵심일 때 ${objectiveRef} | 즉시 구매가 목표인데 후속 상담 조직이 없거나 리드 품질을 검수할 수 없을 때 | 인스턴트 양식/메시지/전화 전환 위치, 질문 항목, 개인정보 고지, CRM·알림·상담 SLA ${moduleRef} |`,
     `| 앱 홍보 | 앱 설치, 가입, 구매, 구독처럼 앱 안 행동을 늘려야 할 때 ${objectiveRef} | 웹 전환만 측정하거나 앱 이벤트가 준비되지 않은 상태에서 설치 수만 늘리려 할 때 | SDK/MMP, 앱 이벤트, 스토어 연결, 설치 후 핵심 이벤트, 앱 이벤트 최적화 기준 ${moduleRef} |`,
-    `| 카탈로그/컬렉션/Advantage+ 카탈로그 | SKU가 많고 상품별 노출·리타게팅·동적 소재가 필요한 커머스일 때 ${commerceRef} | SKU가 적거나 가격/재고 동기화가 불안정해 상품 피드 품질을 보장하기 어려울 때 | 상품 피드, 상품 세트, 품절·가격 동기화, 픽셀/CAPI, 구매·장바구니 이벤트 ${commerceRef} |`,
+    `| 카탈로그/컬렉션/Advantage+ 카탈로그 | SKU가 많고 상품별 노출·리타게팅·동적 소재가 필요한 커머스일 때 ${commerceRef} | SKU가 적거나 가격/재고 동기화가 불안정해 상품 피드 품질을 보장하기 어려울 때 | 상품 피드, 상품 세트, 품절·가격 동기화, 픽셀/CAPI, 구매·장바구니 이벤트 ${catalogRef} ${advantageRef} |`,
     `| 일반 목표형 캠페인 | 신제품 테스트, 브랜드 메시지, 소수 SKU, 이벤트 고지처럼 수동 소재로 메시지 통제가 중요할 때 ${objectiveRef} | 상품 수가 많아 소재 운영이 반복되거나 구매 이벤트 학습이 더 중요한 커머스 확장 단계 | 목표, 광고 세트 타겟·게재 위치, 이미지/동영상/카루셀 소재와 랜딩 경험 ${levelRef} ${formatRef} |`,
     '',
     '**3. 선택 순서**',
@@ -5439,7 +5563,7 @@ function buildMetaProductPlanningMatrixAnswer(
     '',
     '- 리드 캠페인: 양식 질문 수, 개인정보 고지, CRM/알림 연동, 상담 SLA를 먼저 정합니다.',
     '- 앱 캠페인: SDK/MMP, 앱 이벤트, 설치 후 핵심 행동 이벤트가 잡히는지 확인합니다.',
-    '- 카탈로그/판매 캠페인: 상품 피드 품질, 품절/가격 동기화, 픽셀/CAPI, 구매 이벤트를 확인합니다.',
+    `- 카탈로그/판매 캠페인: 상품 피드 품질, 품절/가격 동기화, 픽셀/CAPI, 구매 이벤트, Advantage+ 카탈로그와 상품 세트 매칭을 확인합니다 ${catalogRef} ${advantageRef}.`,
     '- 형식/지면: 같은 소재라도 피드, 스토리, 릴스, 검색/탐색 지면에서 비율과 사용 경험이 달라지므로 소재를 지면별로 나눠 봅니다.',
     '',
     '정리하면, “어떤 상품을 쓸까?”보다 **목표 → 전환 위치 → 형식/게재 위치 → 데이터·측정 조건** 순서로 좁히면 됩니다. 이 질문의 범위에서는 리드형, 앱형, 판매/카탈로그형을 별도 운영 유형으로 분리해 설계하는 것이 가장 안전합니다.',
@@ -6125,17 +6249,23 @@ function buildOperationalScenarioDeterministicAnswer(
       return buildMetaGoogleProductAssetGuideAnswer(sources);
     }
     if (intent.vendors.length === 1 && intent.vendors[0] === 'META') {
-      return buildMetaAssetGuideProductAnswer(sources);
+      return buildMetaProductPlanningMatrixAnswer(sources) ?? buildMetaAssetGuideProductAnswer(sources);
     }
     if (intent.vendors.length === 1 && intent.vendors[0] === 'GOOGLE') {
       return buildGoogleProductPlanningMatrixAnswer(sources);
+    }
+    if (intent.vendors.length === 1 && intent.vendors[0] === 'KAKAO') {
+      return buildKakaoProductSelectionMatrixAnswer(sources);
+    }
+    if (intent.vendors.length === 1 && intent.vendors[0] === 'NAVER') {
+      return buildNaverSearchAdProductComparisonAnswer(sources);
     }
   }
 
   if (
     intent.vendors.length === 1
     && intent.vendors[0] === 'KAKAO'
-    && /톡채널|카카오모먼트|비즈보드|메시지|업종별|선택|언제|기준|상품\s*(종류|유형|가이드)/.test(normalized)
+    && /톡채널|카카오모먼트|비즈보드|메시지|업종별|선택|언제|기준|상품\s*(종류|유형|가이드|별)|상품별|제작\s*가이드|소재/.test(normalized)
   ) {
     return buildKakaoProductSelectionMatrixAnswer(sources);
   }
@@ -6143,7 +6273,7 @@ function buildOperationalScenarioDeterministicAnswer(
   if (
     intent.vendors.length === 1
     && intent.vendors[0] === 'NAVER'
-    && /파워링크|쇼핑검색|브랜드검색|검색광고|과금|랜딩|전환\s*측정|캠페인\s*목적|소재\s*구성/.test(normalized)
+    && /파워링크|쇼핑검색|브랜드검색|검색광고|과금|랜딩|전환\s*측정|캠페인\s*목적|소재\s*구성|상품\s*(종류|유형|가이드|별)|상품별|제작\s*가이드|소재/.test(normalized)
   ) {
     return buildNaverSearchAdProductComparisonAnswer(sources);
   }
@@ -6151,7 +6281,7 @@ function buildOperationalScenarioDeterministicAnswer(
   if (
     intent.vendors.includes('NAVER')
     && intent.vendors.includes('KAKAO')
-    && /상품\s*(종류|유형|가이드)|광고\s*상품|소재/.test(normalized)
+    && /상품\s*(종류|유형|가이드|별)|상품별|광고\s*상품|소재|제작\s*가이드/.test(normalized)
   ) {
     return buildNaverKakaoAssetGuideComparisonAnswer(sources);
   }
@@ -8856,7 +8986,7 @@ function getProductStructureFastPathSupplementLimit(vendor?: VendorIntent) {
 }
 
 function isKakaoDisplaySpecificProductQuestion(message: string) {
-  return /비즈보드|디스플레이\s*광고|카카오모먼트|톡채널|브랜드이모티콘|상품\s*가이드|상품가이드/.test(
+  return /비즈보드|디스플레이\s*광고|카카오모먼트|톡채널|브랜드이모티콘|상품\s*가이드|상품가이드|상품\s*별|상품별|제작\s*가이드|소재/.test(
     normalizeProductIntentText(message),
   );
 }
@@ -8926,11 +9056,11 @@ function buildProductStructureSupplementQueries(intent: QueryIntent, originalMes
 
   if (intent.isSpecificProductGuidance || hasNamedSpecificProductQuestion(originalMessage)) {
     const asksNaverDa = vendor === 'NAVER' && /(^|[\s/])da($|[\s/]|도|상품|광고)|디스플레이\s*광고|성과형\s*디스플레이|홈피드\s*da|홈피드|배너\s*광고/.test(normalized);
-    const asksKakaoDisplay = vendor === 'KAKAO' && /비즈보드|디스플레이\s*광고|카카오모먼트|톡채널|브랜드이모티콘|상품\s*가이드|상품가이드/.test(normalized);
+    const asksKakaoDisplay = vendor === 'KAKAO' && /비즈보드|디스플레이\s*광고|카카오모먼트|톡채널|브랜드이모티콘|상품\s*가이드|상품가이드|상품\s*별|상품별|제작\s*가이드|소재/.test(normalized);
     const asksNaverShoppingBlock = vendor === 'NAVER' && /쇼핑\s*블록|쇼핑블록|주요\s*쇼핑\s*지면|pc\s*쇼핑블록|mo\s*쇼핑블록|모바일\s*쇼핑/.test(normalized);
     const asksNaverProductOverview = vendor === 'NAVER'
-      && isProductCatalogOverviewQuestion(originalMessage)
-      && /광고\s*(상품|종류|유형)|상품\s*(종류|유형)/.test(normalized);
+      && (isProductCatalogOverviewQuestion(originalMessage) || isAssetGuideProductQuestion(originalMessage))
+      && /광고\s*(상품|종류|유형)|상품\s*(종류|유형|가이드|별)|상품별|제작\s*가이드|소재/.test(normalized);
     const asksNaverShoppingCreativeGuide = vendor === 'NAVER'
       && /쇼핑검색|쇼핑\s*검색|쇼핑몰\s*상품형|쇼핑\s*광고/.test(normalized)
       && /제작|가이드|소재|이미지|문구|카피|랜딩|심사|검수|사양|스펙|규격|비율|대표이미지|상품명/.test(normalized);
@@ -10164,13 +10294,24 @@ export async function buildCompassAnswerResponse(
       };
     }
     
-    const { message, conversationHistory } = requestBody;
+    const { message: rawMessage, conversationHistory } = requestBody;
     
-    if (!message || typeof message !== 'string') {
+    if (!rawMessage || typeof rawMessage !== 'string') {
       return {
         body: { error: '메시지가 필요합니다.' },
         status: 400,
       };
+    }
+
+    const contextualQuestion = buildContextualCompassProductQuestion(rawMessage, conversationHistory);
+    const message = contextualQuestion.message;
+    if (contextualQuestion.contextualized) {
+      console.log('Compass answer contextualized follow-up question', {
+        historyItemCount: contextualQuestion.historyItemCount,
+        vendors: contextualQuestion.vendors,
+        originalLength: rawMessage.length,
+        contextualLength: message.length,
+      });
     }
 
     emitPhase?.({ phase: 'accepted', message: '질문을 접수했습니다.' });

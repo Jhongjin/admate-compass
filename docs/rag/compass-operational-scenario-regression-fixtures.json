@@ -357,5 +357,136 @@
     "maxDuplicateTitles": 12,
     "minDistinctTitles": 8,
     "category": "generic-policy"
+  },
+  {
+    "id": "meta-product-asset-guide-simple-query",
+    "question": "메타 광고상품 모두 알려주고, 각 상품 제작가이드도 정리해줘",
+    "expectedVendor": "META",
+    "expectedSourceTitle": ["Meta"],
+    "mustContain": [],
+    "mustNotContain": [],
+    "sourceMustContain": ["Meta"],
+    "sourceMustNotContain": ["Google", "네이버", "카카오"],
+    "requiredSourceChunkIds": [
+      "meta_business_help_objectives_2026_chunk_0",
+      "meta_business_help_formats_placements_2026_chunk_0",
+      "meta_business_help_operating_modules_2026_chunk_0",
+      "doc_1773886203371_8rlmmdv_chunk_1",
+      "doc_1773886203371_8rlmmdv_chunk_2"
+    ],
+    "requiredCitedSourceChunkIds": [
+      "meta_business_help_objectives_2026_chunk_0",
+      "meta_business_help_formats_placements_2026_chunk_0",
+      "meta_business_help_operating_modules_2026_chunk_0",
+      "doc_1773886203371_8rlmmdv_chunk_1",
+      "doc_1773886203371_8rlmmdv_chunk_2"
+    ],
+    "generationMustContain": ["상품명 목록", "유형별 비교", "캠페인 목표", "게재 위치", "리드", "앱", "카탈로그", "Advantage+ 카탈로그", "실무 체크"],
+    "generationMustNotContain": ["현재 검증 출처가 부족", "확인된 범위", "Meta 광고 상품과 소재 제작 가이드는 **캠페인 목표"],
+    "officialSourceHosts": ["facebook.com"],
+    "minOfficialSources": 5,
+    "minSources": 5,
+    "minConfidence": 45,
+    "expectNoDataFound": false,
+    "requireRetrievalMethods": ["keyword"],
+    "requireSourceQuality": true,
+    "requireGenerationAssertions": true,
+    "requireCitationConsistency": true,
+    "minVerifiedEvidence": 1,
+    "maxDuplicateTitles": 6,
+    "minDistinctTitles": 4,
+    "category": "vendor-specific"
+  },
+  {
+    "id": "kakao-product-asset-guide-simple-query",
+    "question": "카카오 상품별 제작가이드를 알려줘",
+    "expectedVendor": "KAKAO",
+    "expectedSourceTitle": ["카카오"],
+    "mustContain": [],
+    "mustNotContain": [],
+    "sourceMustContain": ["카카오"],
+    "sourceMustNotContain": ["Meta와 Google", "네이버와 카카오 광고 상품·소재 가이드"],
+    "requiredSourceChunkIds": [
+      "kakao_moment_product_overview_2026_chunk_0",
+      "doc_1774488483929_bigcm1d_chunk_2",
+      "doc_1774488184369_r97sach_chunk_0",
+      "url_1773203880202_q3y8fucqb_chunk_5",
+      "doc_1774491147517_yj1v810_chunk_17",
+      "doc_1774488207473_cjq6ve0_chunk_19"
+    ],
+    "requiredCitedSourceChunkIds": [
+      "kakao_moment_product_overview_2026_chunk_0",
+      "doc_1774488483929_bigcm1d_chunk_2",
+      "doc_1774488184369_r97sach_chunk_0",
+      "url_1773203880202_q3y8fucqb_chunk_5",
+      "doc_1774491147517_yj1v810_chunk_17",
+      "doc_1774488207473_cjq6ve0_chunk_19"
+    ],
+    "generationMustContain": ["카카오모먼트", "비즈보드", "디스플레이", "메시지", "톡채널", "소재", "심사", "업종", "런칭 전 체크리스트"],
+    "generationMustNotContain": ["검증된 정책/가이드 근거 기준으로만 보면", "현재 검증 출처가 부족", "상품가이드에서 상품별 집행 조건과 노출 지면을 먼저 확인합니다"],
+    "officialSourceHosts": ["kakaobusiness.gitbook.io"],
+    "minOfficialSources": 5,
+    "minSources": 5,
+    "minConfidence": 45,
+    "expectNoDataFound": false,
+    "requireRetrievalMethods": ["keyword"],
+    "requireSourceQuality": true,
+    "requireGenerationAssertions": true,
+    "requireCitationConsistency": true,
+    "minVerifiedEvidence": 1,
+    "maxDuplicateTitles": 6,
+    "minDistinctTitles": 4,
+    "category": "vendor-specific"
+  },
+  {
+    "id": "contextual-kakao-product-asset-guide-followup",
+    "question": "상품별 제작가이드도 알려줘",
+    "conversationHistory": [
+      {
+        "role": "user",
+        "content": "카카오 광고 상품 유형에 대해 상세히 알려줘"
+      },
+      {
+        "role": "assistant",
+        "content": "카카오 광고는 비즈보드, 카카오모먼트, 메시지 광고, 톡채널을 목적과 지면 기준으로 나눠 볼 수 있습니다."
+      }
+    ],
+    "expectedVendor": "KAKAO",
+    "expectedSourceTitle": ["카카오"],
+    "mustContain": [],
+    "mustNotContain": [],
+    "sourceMustContain": ["카카오"],
+    "sourceMustNotContain": ["Meta와 Google", "네이버와 카카오 광고 상품·소재 가이드"],
+    "requiredSourceChunkIds": [
+      "kakao_moment_product_overview_2026_chunk_0",
+      "doc_1774488483929_bigcm1d_chunk_2",
+      "doc_1774488184369_r97sach_chunk_0",
+      "url_1773203880202_q3y8fucqb_chunk_5",
+      "doc_1774491147517_yj1v810_chunk_17",
+      "doc_1774488207473_cjq6ve0_chunk_19"
+    ],
+    "requiredCitedSourceChunkIds": [
+      "kakao_moment_product_overview_2026_chunk_0",
+      "doc_1774488483929_bigcm1d_chunk_2",
+      "doc_1774488184369_r97sach_chunk_0",
+      "url_1773203880202_q3y8fucqb_chunk_5",
+      "doc_1774491147517_yj1v810_chunk_17",
+      "doc_1774488207473_cjq6ve0_chunk_19"
+    ],
+    "generationMustContain": ["카카오모먼트", "비즈보드", "디스플레이", "메시지", "톡채널", "소재", "심사", "업종", "런칭 전 체크리스트"],
+    "generationMustNotContain": ["검증된 정책/가이드 근거 기준으로만 보면", "현재 검증 출처가 부족", "상품가이드에서 상품별 집행 조건과 노출 지면을 먼저 확인합니다"],
+    "officialSourceHosts": ["kakaobusiness.gitbook.io"],
+    "minOfficialSources": 5,
+    "minSources": 5,
+    "minConfidence": 45,
+    "expectNoDataFound": false,
+    "requireRetrievalMethods": ["keyword"],
+    "requireSourceQuality": true,
+    "requireGenerationAssertions": true,
+    "requireCitationConsistency": true,
+    "minVerifiedEvidence": 1,
+    "maxDuplicateTitles": 6,
+    "minDistinctTitles": 4,
+    "category": "vendor-specific"
   }
 ]

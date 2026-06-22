@@ -243,7 +243,8 @@ if (!/allowedRetrievalMethods[\s\S]*"graph"/.test(ragFixtureEvaluator)) {
 if (!/requiredSourceChunkIds/.test(ragFixtureEvaluator)
   || !/requiredCitedSourceChunkIds/.test(ragFixtureEvaluator)
   || !/requireCitationConsistency/.test(ragFixtureEvaluator)
-  || !/collectCitationNumbers/.test(ragFixtureEvaluator)) {
+  || !/collectCitationNumbers/.test(ragFixtureEvaluator)
+  || !/conversationHistory/.test(ragFixtureEvaluator)) {
   fail('RAG fixture evaluator must assert required source chunk ids and citation consistency for deterministic product answers');
 }
 
@@ -275,6 +276,9 @@ for (const snippet of [
   'const fallbackEpIndex = registrationIndex < 0',
   'const epIndex = epDetailIndex >= 0 ? epDetailIndex : fallbackEpIndex',
   'selectProductStructureResponseSources',
+  'buildContextualCompassProductQuestion',
+  'contextualized follow-up question',
+  'COMPASS_CONVERSATION_HISTORY_MAX_ITEMS',
   'pickTopicSources',
   'buildProductStructureSupplementQueries',
   'getProductStructureFastPathSupplementLimit',
@@ -802,7 +806,7 @@ if (!/sourceIdentityLooksLikeGenericLegalOrAccountDoc[\s\S]*청구\|결제\|지�
   fail('answer source routing must demote payment/account support documents such as 지불 for product-structure answers');
 }
 
-if (!/COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v33-cross-vendor-product-asset-routing'[\s\S]*`compass-answer:\$\{COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION\}:\$\{message\}`/.test(answerHandler)) {
+if (!/COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v35-contextual-product-guide-routing'[\s\S]*`compass-answer:\$\{COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION\}:\$\{message\}`/.test(answerHandler)) {
   fail('answer response cache key must be versioned so stale durable cached answers are bypassed after source-quality fixes');
 }
 

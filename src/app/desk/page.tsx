@@ -101,6 +101,14 @@ const STREAM_CHUNK_DELAY_MS = 18;
 const STREAM_CHUNK_SIZE = 18;
 const COMPASS_CONVERSATION_CONTEXT_LIMIT = 25;
 
+const trimConversationMessages = (conversationMessages: Message[]) => {
+  if (conversationMessages.length <= COMPASS_CONVERSATION_CONTEXT_LIMIT) {
+    return conversationMessages;
+  }
+
+  return conversationMessages.slice(-COMPASS_CONVERSATION_CONTEXT_LIMIT);
+};
+
 const getInitialMessage = (): Message => ({
   id: "1",
   type: "assistant",
@@ -321,6 +329,11 @@ function ChatPageContent() {
   });
 
   useEffect(() => {
+    if (messages.length <= COMPASS_CONVERSATION_CONTEXT_LIMIT) return;
+    setMessages((current) => trimConversationMessages(current));
+  }, [messages.length]);
+
+  useEffect(() => {
     let isUnmounting = false;
     
     const saveConversationOnUnmount = async () => {
@@ -471,7 +484,7 @@ function ChatPageContent() {
       isStreaming: true,
     };
 
-    setMessages(prev => [...prev, streamingMessage]);
+    setMessages(prev => trimConversationMessages([...prev, streamingMessage]));
 
     let cursor = 0;
     while (cursor < finalContent.length) {
@@ -636,7 +649,7 @@ function ChatPageContent() {
     if (!streamState.streamMessageId) {
       const streamMessageId = `stream_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
       streamState.streamMessageId = streamMessageId;
-      setMessages(prev => [
+      setMessages(prev => trimConversationMessages([
         ...prev,
         {
           id: streamMessageId,
@@ -650,7 +663,7 @@ function ChatPageContent() {
           feedback: { helpful: null, count: 0 },
           isStreaming: true,
         },
-      ]);
+      ]));
       await waitForStreamFrame();
       return;
     }
@@ -814,7 +827,7 @@ function ChatPageContent() {
     setLastSubmittedQuestion(question.trim());
 
     // 현재 메시지 상태를 기반으로 API 호출
-    const currentMessages = [...messages, userMessage];
+    const currentMessages = trimConversationMessages([...messages, userMessage]);
     setMessages(currentMessages);
 
     try {
@@ -834,7 +847,7 @@ function ChatPageContent() {
     } catch (error) {
       console.error('채팅 API 오류:', error);
       setError(ERROR_MESSAGE);
-      setMessages(prev => [...prev, buildErrorMessage()]);
+      setMessages(prev => trimConversationMessages([...prev, buildErrorMessage()]));
       
       toast({
         title: "오류 발생",
@@ -885,7 +898,7 @@ function ChatPageContent() {
     setLastSubmittedQuestion(currentInput);
 
     // 현재 메시지 상태를 기반으로 API 호출
-    const currentMessages = [...messages, userMessage];
+    const currentMessages = trimConversationMessages([...messages, userMessage]);
     setMessages(currentMessages);
 
     try {
@@ -905,7 +918,7 @@ function ChatPageContent() {
     } catch (error) {
       console.error('채팅 API 오류:', error);
       setError(ERROR_MESSAGE);
-      setMessages(prev => [...prev, buildErrorMessage()]);
+      setMessages(prev => trimConversationMessages([...prev, buildErrorMessage()]));
       
       toast({
         title: "오류 발생",
