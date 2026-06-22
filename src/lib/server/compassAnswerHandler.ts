@@ -115,7 +115,7 @@ const COMPASS_ANSWER_RESPONSE_CACHE_TTL_MS = Math.min(
   900000,
 );
 const COMPASS_ANSWER_RESPONSE_CACHE_MAX_ENTRIES = 64;
-const COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v32-simple-product-asset-history-limit';
+const COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v33-cross-vendor-product-asset-routing';
 const COMPASS_CONVERSATION_HISTORY_MAX_ITEMS = 25;
 const compassAnswerResponseCache = new Map<string, CompassAnswerResponseCacheEntry>();
 const compassAnswerRuntimeMetrics = {
@@ -5944,7 +5944,7 @@ function buildCrossVendorProductAssetGuideAnswer(
   const kakaoPolicyRef = cite('doc_1774488207473_cjq6ve0_chunk_19');
 
   const lines = [
-    '광고 상품과 소재 제작 가이드는 매체명을 나열하는 대신 **목표 → 상품/캠페인 유형 → 소재 형식 → 측정·심사 조건**으로 나누어 보면 실무에서 재사용하기 쉽습니다.',
+    '광고 상품과 소재 제작 가이드는 매체명을 나열하는 대신 **목표 → 상품/캠페인 유형 → 광고 형식/소재 형식 → 측정·심사 조건**으로 나누어 보면 실무에서 재사용하기 쉽습니다.',
     '',
     '**1. 매체별 상품/소재 기준**',
     '',
@@ -6111,6 +6111,9 @@ function buildOperationalScenarioDeterministicAnswer(
   }
 
   if (isAssetGuideProductQuestion(message)) {
+    if (intent.vendors.length >= 3) {
+      return buildCrossVendorProductAssetGuideAnswer(sources);
+    }
     if (intent.vendors.includes('NAVER') && intent.vendors.includes('KAKAO')) {
       return buildNaverKakaoAssetGuideComparisonAnswer(sources);
     }
@@ -6126,9 +6129,6 @@ function buildOperationalScenarioDeterministicAnswer(
     }
     if (intent.vendors.length === 1 && intent.vendors[0] === 'GOOGLE') {
       return buildGoogleProductPlanningMatrixAnswer(sources);
-    }
-    if (intent.vendors.length >= 3) {
-      return buildCrossVendorProductAssetGuideAnswer(sources);
     }
   }
 
