@@ -9,6 +9,8 @@ let supabase: any = null;
 let historyBucketReady = false;
 
 const HISTORY_STORAGE_BUCKET = process.env.COMPASS_HISTORY_STORAGE_BUCKET || 'compass-conversation-history';
+const COMPASS_CONVERSATION_HISTORY_LIMIT = 25;
+const HISTORY_STORAGE_LIST_LIMIT = 100;
 
 type StoredConversation = {
   id: string;
@@ -118,7 +120,7 @@ async function readHistoryFromStorage(client: any, ownerSubject: string, limit: 
   const { data: objects, error } = await client.storage
     .from(HISTORY_STORAGE_BUCKET)
     .list(prefix, {
-      limit: Math.min(Math.max(limit + offset, 1), 100),
+      limit: Math.min(Math.max(limit + offset, 1), HISTORY_STORAGE_LIST_LIMIT),
       offset: 0,
       sortBy: { column: 'created_at', order: 'desc' },
     });
@@ -158,10 +160,83 @@ async function readHistoryFromStorage(client: any, ownerSubject: string, limit: 
   return {
     success: true,
     conversations,
-    total: objects?.length || conversations.length,
+    total: Math.min(objects?.length || conversations.length, COMPASS_CONVERSATION_HISTORY_LIMIT),
     persistence: 'storage-fallback' as const,
     message: buildHistoryMigrationMessage(),
   };
+}
+
+async function pruneHistoryStorage(client: any, ownerSubject: string) {
+  const bucketReady = await ensureHistoryStorageBucket(client);
+  if (!bucketReady) return;
+
+  const prefix = storageOwnerPrefix(ownerSubject);
+
+  while (true) {
+    const { data: objects, error } = await client.storage
+      .from(HISTORY_STORAGE_BUCKET)
+      .list(prefix, {
+        limit: HISTORY_STORAGE_LIST_LIMIT,
+        offset: 0,
+        sortBy: { column: 'created_at', order: 'desc' },
+      });
+
+    if (error) {
+      console.warn('히스토리 Storage 정리 조회 실패:', error.message);
+      return;
+    }
+
+    const stalePaths = (objects || [])
+      .filter((object: any) => typeof object.name === 'string' && object.name.endsWith('.json'))
+      .slice(COMPASS_CONVERSATION_HISTORY_LIMIT)
+      .map((object: any) => `${prefix}/${object.name}`);
+
+    if (stalePaths.length === 0) return;
+
+    const { error: removeError } = await client.storage
+      .from(HISTORY_STORAGE_BUCKET)
+      .remove(stalePaths);
+
+    if (removeError) {
+      console.warn('히스토리 Storage 초과분 삭제 실패:', removeError.message);
+      return;
+    }
+  }
+}
+
+async function pruneDatabaseHistory(client: any, ownerSubject: string) {
+  while (true) {
+    const { data: staleRows, error } = await client
+      .from('conversations')
+      .select('id')
+      .eq('owner_subject', ownerSubject)
+      .order('created_at', { ascending: false })
+      .range(COMPASS_CONVERSATION_HISTORY_LIMIT, 1000);
+
+    if (error) {
+      if (!isMissingConversationTable(error) && !isMissingOwnerSubjectColumn(error)) {
+        console.warn('대화 히스토리 초과분 조회 실패:', error.message);
+      }
+      return;
+    }
+
+    const staleIds = (staleRows || [])
+      .map((row: any) => row?.id)
+      .filter((id: unknown): id is string => typeof id === 'string' && id.length > 0);
+
+    if (staleIds.length === 0) return;
+
+    const { error: deleteError } = await client
+      .from('conversations')
+      .delete()
+      .eq('owner_subject', ownerSubject)
+      .in('id', staleIds);
+
+    if (deleteError) {
+      console.warn('대화 히스토리 초과분 삭제 실패:', deleteError.message);
+      return;
+    }
+  }
 }
 
 async function saveHistoryToStorage(
@@ -202,6 +277,8 @@ async function saveHistoryToStorage(
     console.warn('히스토리 Storage 저장 실패:', error.message);
     return { success: false, conversation: null, message: '히스토리 Storage fallback 저장에 실패했습니다.' };
   }
+
+  await pruneHistoryStorage(client, ownerSubject);
 
   return {
     success: true,
@@ -247,7 +324,12 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url);
     const owner = await resolveCompassApiOwner(request, searchParams.get('userId'));
-    const limit = clampPagination(searchParams.get('limit'), 50, 1, 100);
+    const limit = clampPagination(
+      searchParams.get('limit'),
+      COMPASS_CONVERSATION_HISTORY_LIMIT,
+      1,
+      COMPASS_CONVERSATION_HISTORY_LIMIT,
+    );
     const offset = clampPagination(searchParams.get('offset'), 0, 0, 10000);
 
     if (!owner) {
@@ -356,6 +438,7 @@ export async function POST(request: NextRequest) {
 
     if (existingConversation) {
       console.log('이미 존재하는 대화입니다. 중복 저장을 건너뜁니다.');
+      await pruneDatabaseHistory(supabase, owner.ownerSubject);
       return NextResponse.json({
         success: false,
         conversation: existingConversation,
@@ -411,6 +494,8 @@ export async function POST(request: NextRequest) {
         { status: 500 }
       );
     }
+
+    await pruneDatabaseHistory(supabase, owner.ownerSubject);
 
     return NextResponse.json({
       success: true,

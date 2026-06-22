@@ -115,7 +115,8 @@ const COMPASS_ANSWER_RESPONSE_CACHE_TTL_MS = Math.min(
   900000,
 );
 const COMPASS_ANSWER_RESPONSE_CACHE_MAX_ENTRIES = 64;
-const COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v31-operational-product-scenario-routing';
+const COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v32-simple-product-asset-history-limit';
+const COMPASS_CONVERSATION_HISTORY_MAX_ITEMS = 25;
 const compassAnswerResponseCache = new Map<string, CompassAnswerResponseCacheEntry>();
 const compassAnswerRuntimeMetrics = {
   startedAt: Date.now(),
@@ -257,7 +258,9 @@ function resolveCompassAnswerCacheKey(body: any): string | null {
   const message = normalizeCompassAnswerCacheMessage(body?.message);
   if (!message || message.length > 500) return null;
 
-  const history = Array.isArray(body?.conversationHistory) ? body.conversationHistory : [];
+  const history = Array.isArray(body?.conversationHistory)
+    ? body.conversationHistory.slice(-COMPASS_CONVERSATION_HISTORY_MAX_ITEMS)
+    : [];
   if (history.length > 0) return null;
 
   return `compass-answer:${COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION}:${message}`;
@@ -5973,6 +5976,71 @@ function buildCrossVendorProductAssetGuideAnswer(
   );
 }
 
+function buildMetaGoogleProductAssetGuideAnswer(
+  sources: ReturnType<typeof buildVerifiedSources>,
+): DeterministicProductAnswer | null {
+  const requiredChunkIds = uniqueOfficialChunkIds([
+    'meta_business_help_objectives_2026_chunk_0',
+    'meta_business_help_formats_placements_2026_chunk_0',
+    'meta_business_help_operating_modules_2026_chunk_0',
+    'doc_1773886203371_8rlmmdv_chunk_1',
+    'google_ads_campaign_types_2026_chunk_0',
+    'google_ads_campaign_objectives_2026_chunk_0',
+    'google_ads_shopping_ads_2026_chunk_0',
+    'google_ads_app_campaigns_2026_chunk_0',
+    'google_ads_web_conversion_measurement_2026_chunk_0',
+  ]);
+  const prepared = prepareOfficialSnapshotAnswerSources(sources, requiredChunkIds);
+  if (!prepared) return null;
+  const { sources: scenarioSources, used, cite } = prepared;
+
+  const metaObjectiveRef = cite('meta_business_help_objectives_2026_chunk_0');
+  const metaFormatRef = cite('meta_business_help_formats_placements_2026_chunk_0');
+  const metaModuleRef = cite('meta_business_help_operating_modules_2026_chunk_0');
+  const metaCatalogRef = cite('doc_1773886203371_8rlmmdv_chunk_1');
+  const googleTypeRef = cite('google_ads_campaign_types_2026_chunk_0');
+  const googleObjectiveRef = cite('google_ads_campaign_objectives_2026_chunk_0');
+  const googleShoppingRef = cite('google_ads_shopping_ads_2026_chunk_0');
+  const googleAppRef = cite('google_ads_app_campaigns_2026_chunk_0');
+  const googleConversionRef = cite('google_ads_web_conversion_measurement_2026_chunk_0');
+
+  const lines = [
+    'Meta와 Google Ads 상품·소재 가이드는 **상품명을 외우는 방식**보다 **캠페인 목표 → 광고 형식/캠페인 유형 → 게재 위치/애셋 → 전환 측정** 순서로 정리해야 실무에서 바로 쓸 수 있습니다.',
+    '',
+    '**1. 상품/소재 제작 기준 비교**',
+    '',
+    '| 매체 | 상품/캠페인 종류 | 소재 제작에서 먼저 볼 것 | 측정·운영 체크 |',
+    '|---|---|---|---|',
+    `| Meta | 인지도, 트래픽, 참여, 잠재 고객, 앱 홍보, 판매 같은 캠페인 목표를 먼저 고릅니다 ${metaObjectiveRef}. | 이미지, 동영상, 카루셀, 컬렉션, 인스턴트 경험 같은 광고 형식을 Facebook/Instagram 피드·스토리·릴스 등 게재 위치와 함께 봅니다 ${metaFormatRef}. | 리드는 인스턴트 양식·메시지·전화, 앱은 앱 이벤트, 판매/카탈로그는 상품 피드와 Pixel/CAPI 흐름을 함께 확인합니다 ${metaModuleRef} ${metaCatalogRef}. |`,
+    `| Google Ads | 판매, 리드, 웹사이트 트래픽, 브랜드 인지도, 앱 홍보 같은 목표를 정하고 검색, 디스플레이, 동영상, 쇼핑, 앱, PMax 유형을 연결합니다 ${googleObjectiveRef} ${googleTypeRef}. | 검색은 키워드·광고문·랜딩, 디스플레이/동영상은 이미지·영상 애셋, 쇼핑은 Merchant Center 상품 데이터, 앱은 앱 애셋을 먼저 봅니다. | 웹사이트 전환은 Google tag/GA와 전환 액션, 쇼핑은 상품 피드 품질, 앱은 Google Play·YouTube·Discover 등 게재와 앱 이벤트를 점검합니다 ${googleConversionRef} ${googleShoppingRef} ${googleAppRef}. |`,
+    '',
+    '**2. 소재 제작 순서**',
+    '',
+    '- **Meta**: 캠페인 목표를 고른 뒤 전환 위치가 리드/웹사이트/앱/메시지/전화/카탈로그 중 무엇인지 정하고, 그다음 이미지·동영상·카루셀·컬렉션·인스턴트 경험을 지면별로 나눕니다.',
+    '- **Google Ads**: 목표를 고른 뒤 검색/디스플레이/동영상/쇼핑/앱/PMax 중 캠페인 유형을 정하고, 캠페인 유형별로 필요한 광고문, 이미지·영상 애셋, 상품 피드, 앱 애셋, 랜딩을 준비합니다.',
+    '- **공통**: 소재 문구만 보지 말고 랜딩 속도, 개인정보 고지, 정책 제한, 전환 태그, 상품 피드 품질, CRM 수신까지 같은 체크리스트에 묶어야 합니다.',
+    '',
+    '**3. 빠른 선택 기준**',
+    '',
+    '- 상담·견적·예약 리드는 Meta의 인스턴트 양식/메시지/전화와 Google의 리드 양식/웹사이트 전환을 함께 비교합니다.',
+    '- 검색 의도가 강하면 Google 검색·쇼핑을 먼저 보고, 발견형 수요와 리타겟팅 풀을 넓혀야 하면 Meta 피드·스토리·릴스와 카탈로그를 봅니다.',
+    '- 앱 성장은 Meta 앱 홍보와 Google 앱 캠페인을 분리해 앱 이벤트, SDK/MMP, 설치 후 핵심 행동 이벤트가 학습되는지 확인합니다.',
+    '- 상품 수가 많으면 Meta 카탈로그/컬렉션과 Google 쇼핑/PMax를 우선 검토하고, 상품명·가격·재고·이미지 동기화 문제를 소재 제작 전 단계에서 잡습니다.',
+    '',
+    '정리하면, **Meta = 캠페인 목표 + 전환 위치 + 광고 형식/게재 위치 + Pixel/CAPI·카탈로그**, **Google Ads = 목표 + 캠페인 유형 + 애셋/상품 피드 + Primary conversion action·Google tag/GA** 기준으로 나누면 됩니다.',
+    '',
+    `근거: ${Array.from(used).sort((a, b) => a - b).map(index => `[S${index + 1}]`).join(', ')}`,
+  ];
+
+  return finalizeOfficialSnapshotDeterministicAnswer(
+    lines,
+    scenarioSources,
+    used,
+    'compass-answer-deterministic-meta-google-product-asset-guide',
+    88,
+  );
+}
+
 function buildMetaAssetGuideProductAnswer(
   sources: ReturnType<typeof buildVerifiedSources>,
 ): DeterministicProductAnswer | null {
@@ -6045,6 +6113,13 @@ function buildOperationalScenarioDeterministicAnswer(
   if (isAssetGuideProductQuestion(message)) {
     if (intent.vendors.includes('NAVER') && intent.vendors.includes('KAKAO')) {
       return buildNaverKakaoAssetGuideComparisonAnswer(sources);
+    }
+    if (
+      intent.vendors.length === 2
+      && intent.vendors.includes('META')
+      && intent.vendors.includes('GOOGLE')
+    ) {
+      return buildMetaGoogleProductAssetGuideAnswer(sources);
     }
     if (intent.vendors.length === 1 && intent.vendors[0] === 'META') {
       return buildMetaAssetGuideProductAnswer(sources);

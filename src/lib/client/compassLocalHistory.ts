@@ -11,7 +11,7 @@ export type CompassLocalConversation = {
   localOnly: true;
 };
 
-const HISTORY_LIMIT = 100;
+export const COMPASS_CONVERSATION_HISTORY_LIMIT = 25;
 
 function getStorageKey(userId: string) {
   return `admate-compass:conversation-history:${userId}`;
@@ -40,7 +40,7 @@ export function loadCompassLocalConversations(userId: string): CompassLocalConve
         && typeof item.ai_response === "string"
       ))
       .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-      .slice(0, HISTORY_LIMIT);
+      .slice(0, COMPASS_CONVERSATION_HISTORY_LIMIT);
   } catch (error) {
     console.warn("로컬 Compass 히스토리를 읽지 못했습니다.", error);
     return [];
@@ -75,7 +75,7 @@ export function saveCompassLocalConversation(
     const next = [
       nextItem,
       ...current.filter(item => item.conversation_id !== input.conversationId),
-    ].slice(0, HISTORY_LIMIT);
+    ].slice(0, COMPASS_CONVERSATION_HISTORY_LIMIT);
 
     window.localStorage.setItem(getStorageKey(userId), JSON.stringify(next));
     return true;

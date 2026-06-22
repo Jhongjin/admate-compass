@@ -9,6 +9,7 @@ import { formatDistanceToNow } from "date-fns";
 import { ko } from "date-fns/locale";
 import { motion, AnimatePresence } from "framer-motion";
 import {
+  COMPASS_CONVERSATION_HISTORY_LIMIT,
   deleteCompassLocalConversation,
   loadCompassLocalConversations,
 } from "@/lib/client/compassLocalHistory";
@@ -67,7 +68,7 @@ export default function HistoryPanel({
     setError(null);
     
     try {
-      const response = await fetch('/api/conversations?limit=50');
+      const response = await fetch(`/api/conversations?limit=${COMPASS_CONVERSATION_HISTORY_LIMIT}`);
       if (!response.ok) {
         throw new Error('대화 히스토리를 불러올 수 없습니다.');
       }
@@ -108,7 +109,8 @@ export default function HistoryPanel({
           seenIds.add(key);
           return true;
         })
-        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+        .slice(0, COMPASS_CONVERSATION_HISTORY_LIMIT);
 
       setConversations(merged);
     } catch (err) {
@@ -124,7 +126,7 @@ export default function HistoryPanel({
         sources: conv.sources || [],
         conversation_id: conv.conversation_id || conv.id,
       }));
-      setConversations(localConversations);
+      setConversations(localConversations.slice(0, COMPASS_CONVERSATION_HISTORY_LIMIT));
       setError(localConversations.length > 0 ? null : err instanceof Error ? err.message : '알 수 없는 오류가 발생했습니다.');
     } finally {
       setIsLoading(false);

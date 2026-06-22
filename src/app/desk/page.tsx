@@ -99,6 +99,7 @@ const GENERATION_LIMITED_MESSAGE = "답변 생성이 일시적으로 제한되�
 const ERROR_MESSAGE = "일시적인 서비스 오류로 답변을 만들지 못했습니다. 잠시 후 다시 시도해 주세요.";
 const STREAM_CHUNK_DELAY_MS = 18;
 const STREAM_CHUNK_SIZE = 18;
+const COMPASS_CONVERSATION_CONTEXT_LIMIT = 25;
 
 const getInitialMessage = (): Message => ({
   id: "1",
@@ -819,7 +820,7 @@ function ChatPageContent() {
     try {
       const answerResult = await fetchCompassAnswer(
         question.trim(),
-        messages.slice(-10)
+        messages.slice(-COMPASS_CONVERSATION_CONTEXT_LIMIT)
       );
 
       const completedAiResponse = await completeAssistantResponse(answerResult);
@@ -890,7 +891,7 @@ function ChatPageContent() {
     try {
       const answerResult = await fetchCompassAnswer(
         currentInput,
-        messages.slice(-10)
+        messages.slice(-COMPASS_CONVERSATION_CONTEXT_LIMIT)
       );
 
       const completedAiResponse = await completeAssistantResponse(answerResult);
