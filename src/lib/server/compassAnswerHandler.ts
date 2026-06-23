@@ -115,7 +115,7 @@ const COMPASS_ANSWER_RESPONSE_CACHE_TTL_MS = Math.min(
   900000,
 );
 const COMPASS_ANSWER_RESPONSE_CACHE_MAX_ENTRIES = 64;
-const COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v36-naver-kakao-product-name-routing';
+const COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v37-kakao-product-matrix-preflight';
 const COMPASS_CONVERSATION_HISTORY_MAX_ITEMS = 25;
 const compassAnswerResponseCache = new Map<string, CompassAnswerResponseCacheEntry>();
 const compassAnswerRuntimeMetrics = {
@@ -5764,6 +5764,50 @@ function buildKakaoProductSelectionMatrixAnswer(
   );
 }
 
+function isKakaoProductSelectionMatrixFastIntent(message: string, intent: QueryIntent): boolean {
+  if (intent.vendors.length !== 1 || intent.vendors[0] !== 'KAKAO') return false;
+
+  const normalized = normalizeProductIntentText(message);
+  const compact = normalized.replace(/\s+/g, '');
+  const hasProductQuestionShape = (
+    intent.topics.includes('product_structure')
+    || /광고\s*상품|상품\s*(유형|종류|구분|가이드|별)|상품별|상품명|상품군|기준으로\s*(비교|정리|구분)|비교\s*정리|선택\s*기준/.test(normalized)
+  );
+  if (!hasProductQuestionShape) return false;
+
+  const productSignals = [
+    /비즈보드|카카오\s*비즈보드|카카오비즈보드|톡보드/.test(normalized),
+    /디스플레이|카카오모먼트|모먼트/.test(normalized),
+    /동영상|비디오|video/.test(normalized),
+    /상품\s*카탈로그|상품카탈로그|catalog|카탈로그/.test(normalized),
+    /메시지|친구톡|알림톡|채널\s*메시지/.test(normalized),
+    /키워드\s*광고|키워드광고/.test(normalized),
+    /브랜드\s*검색|브랜드검색/.test(normalized),
+    /톡\s*채널\s*검색|톡채널검색|채널검색/.test(normalized),
+    /보장형|cpt|guarantee/.test(normalized),
+  ];
+  const signalCount = productSignals.filter(Boolean).length;
+
+  return signalCount >= 2
+    || (
+      /카카오/.test(normalized)
+      && /상품별|상품\s*(유형|종류|가이드|명)|광고\s*상품/.test(normalized)
+      && /제작|소재|가이드|비교|기준|정리|알려/.test(normalized)
+    )
+    || /비즈보드.*디스플레이|디스플레이.*비즈보드|톡채널검색|브랜드검색|키워드광고|상품카탈로그|보장형|cpt/.test(compact);
+}
+
+function buildPreRetrievalDeterministicProductAnswer(
+  message: string,
+  intent: QueryIntent,
+): DeterministicProductAnswer | null {
+  if (isKakaoProductSelectionMatrixFastIntent(message, intent)) {
+    return buildKakaoProductSelectionMatrixAnswer([]);
+  }
+
+  return null;
+}
+
 function buildNaverSearchAdProductComparisonAnswer(
   sources: ReturnType<typeof buildVerifiedSources>,
 ): DeterministicProductAnswer | null {
@@ -10408,6 +10452,63 @@ export async function buildCompassAnswerResponse(
         unavailablePolicyTargetReason: ragIntent.unavailablePolicyTargetReason,
       });
       return buildAuthoritativeNoDataResponse(ragIntent, startTime, emitPhase);
+    }
+
+    const preRetrievalDeterministicAnswer = buildPreRetrievalDeterministicProductAnswer(message, ragIntent);
+    if (preRetrievalDeterministicAnswer) {
+      const schema = getCompassDbSchema();
+      const answerCoveredVendors = Array.from(new Set(
+        preRetrievalDeterministicAnswer.sources.flatMap(source => [
+          ...(Array.isArray(source.sourceVendors) ? source.sourceVendors : []),
+          source.sourceVendor,
+        ]).filter(isVendorIntentValue),
+      ));
+      emitPhase?.({
+        phase: 'evidence-started',
+        message: '공식 스냅샷 출처를 기준으로 상품 구조를 확인합니다.',
+        queryType: ragIntent.queryType,
+      });
+      emitPhase?.({
+        phase: 'evidence-ready',
+        message: '확인 가능한 출처를 선별했습니다.',
+        queryType: ragIntent.queryType,
+        sourceCount: preRetrievalDeterministicAnswer.sources.length,
+        verifiedSourceCount: preRetrievalDeterministicAnswer.sources.length,
+      });
+      emitPhase?.({ phase: 'answer-ready', message: '공식 운영 시나리오 근거를 기준으로 답변을 정리했습니다.' });
+
+      return {
+        body: {
+          response: {
+            message: preRetrievalDeterministicAnswer.answer,
+            content: preRetrievalDeterministicAnswer.answer,
+            sources: preRetrievalDeterministicAnswer.sources,
+            noDataFound: false,
+            schema,
+            showContactOption: false,
+            sourceDiagnostics: {
+              ...buildSourceDiagnostics(ragIntent, []),
+              coveredVendors: answerCoveredVendors.length > 0 ? answerCoveredVendors : ragIntent.vendors,
+              missingVendorSlots: [],
+              answerSourceCount: preRetrievalDeterministicAnswer.sources.length,
+              answerGenerationDurationMs: 0,
+              deterministicAnswerFamily: detectProductAnswerFamily(message, ragIntent),
+              operationalScenarioAnswer: true,
+              preRetrievalDeterministicAnswer: true,
+            },
+            reviewPipeline: buildDeterministicProductReviewPipeline(
+              preRetrievalDeterministicAnswer,
+              preRetrievalDeterministicAnswer.sources.length,
+            ),
+          },
+          confidence: getDeterministicProductConfidence(
+            preRetrievalDeterministicAnswer.confidenceCap || 86,
+            preRetrievalDeterministicAnswer,
+          ),
+          processingTime: Date.now() - startTime,
+          model: preRetrievalDeterministicAnswer.model,
+        },
+      };
     }
 
     // 1. Compass RAG 검색
