@@ -87,7 +87,8 @@ function buildCoverageAwareRelatedQuestions(message: string): string[] {
   const buckets: string[][] = [];
   const isOperationsQuestion = mentionsAny(normalized, ['성과', '떨어', '급락', '예산', '리타겟', 'kpi', '입찰', '점검']);
   const isLeadQuestion = mentionsAny(normalized, ['리드', '상담', 'crm', 'mql', 'sql', '계약', '오프라인 전환']);
-  const isCommerceQuestion = mentionsAny(normalized, ['쇼핑몰', '커머스', '상품', '카탈로그', '피드', '재고', '가격', '구매']);
+  const isCommerceQuestion = mentionsAny(normalized, ['쇼핑몰', '커머스', '상품 db', '카탈로그', '피드', '재고', '가격', '구매', '쇼핑검색', '쇼핑']);
+  const isProductGuideQuestion = mentionsAny(normalized, ['소재', '제작', '가이드', '상품 유형', '상품 종류', '상품명']);
 
   if (isOperationsQuestion) {
     buckets.push(OPERATIONS_QUESTIONS, LEAD_QUESTIONS, COMMERCE_QUESTIONS);
@@ -99,6 +100,16 @@ function buildCoverageAwareRelatedQuestions(message: string): string[] {
 
   if (isCommerceQuestion) {
     buckets.push(COMMERCE_QUESTIONS, DEFAULT_PRODUCT_GUIDE_QUESTIONS);
+  }
+
+  if (isProductGuideQuestion) {
+    if (mentionsAny(normalized, ['카카오', 'kakao', '비즈보드', '톡채널', '브랜드검색', '키워드광고', 'cpt', '네이버', 'naver', '파워링크', '쇼핑검색', 'advoost', '치지직', '커뮤니케이션'])) {
+      buckets.push(NAVER_KAKAO_QUESTIONS, DEFAULT_PRODUCT_GUIDE_QUESTIONS, COMMERCE_QUESTIONS);
+    } else if (mentionsAny(normalized, ['meta', '메타', 'facebook', 'instagram', '인스타', '페이스북', 'google', '구글', 'pmax', 'youtube'])) {
+      buckets.push(META_GOOGLE_QUESTIONS, DEFAULT_PRODUCT_GUIDE_QUESTIONS, COMMERCE_QUESTIONS);
+    } else {
+      buckets.push(DEFAULT_PRODUCT_GUIDE_QUESTIONS, NAVER_KAKAO_QUESTIONS, META_GOOGLE_QUESTIONS);
+    }
   }
 
   if (mentionsAny(normalized, ['카카오', 'kakao', '비즈보드', '톡채널', '브랜드검색', '키워드광고', 'cpt'])) {
@@ -115,10 +126,6 @@ function buildCoverageAwareRelatedQuestions(message: string): string[] {
 
   if (mentionsAny(normalized, ['google', '구글', 'pmax', '검색', '쇼핑', 'youtube', 'lead form', '리드 양식'])) {
     buckets.push(META_GOOGLE_QUESTIONS, LEAD_QUESTIONS, COMMERCE_QUESTIONS);
-  }
-
-  if (mentionsAny(normalized, ['소재', '제작', '가이드', '상품 유형', '상품 종류', '상품명'])) {
-    buckets.push(DEFAULT_PRODUCT_GUIDE_QUESTIONS, NAVER_KAKAO_QUESTIONS, META_GOOGLE_QUESTIONS);
   }
 
   if (buckets.length === 0) {
