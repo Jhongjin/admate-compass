@@ -115,7 +115,7 @@ const COMPASS_ANSWER_RESPONSE_CACHE_TTL_MS = Math.min(
   900000,
 );
 const COMPASS_ANSWER_RESPONSE_CACHE_MAX_ENTRIES = 64;
-const COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v42-coverage-aware-related-questions';
+const COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v43-medical-landing-policy-answer';
 const COMPASS_CONVERSATION_HISTORY_MAX_ITEMS = 25;
 const compassAnswerResponseCache = new Map<string, CompassAnswerResponseCacheEntry>();
 const compassAnswerRuntimeMetrics = {
@@ -4450,6 +4450,7 @@ type FastPolicySourceGuidedAnswerFamily =
   | 'price_discount'
   | 'user_deception'
   | 'event_material'
+  | 'medical_hospital_landing_review'
   | 'kakao_restricted_industry'
   | 'kakao_service_protection'
   | 'youth_harmful'
@@ -4463,6 +4464,7 @@ type FastPolicySourceGuidedAnswerFallback =
   | 'policy_source_guided_price_discount'
   | 'policy_source_guided_user_deception'
   | 'policy_source_guided_event_material'
+  | 'policy_source_guided_medical_hospital_landing_review'
   | 'policy_source_guided_kakao_restricted_industry'
   | 'policy_source_guided_kakao_service_protection'
   | 'policy_source_guided_youth_harmful'
@@ -7048,6 +7050,13 @@ function detectFastPolicySourceGuidedAnswerFamily(
   if (looksLikeCreativeSpecQuestion && !hasExplicitPolicyQuestionSignal) return null;
 
   if (
+    /병원|의료|의료법|의원|치과|한의원|성형|피부과|시술|진료|환자/.test(queryText)
+    && /광고|문안|소재|랜딩|페이지|심사|검수|검토|반려|승인|주의|유의|기준|정책|가능/.test(queryText)
+  ) {
+    return 'medical_hospital_landing_review';
+  }
+
+  if (
     intent.vendors.length === 1
     && intent.vendors[0] === 'KAKAO'
     && /카카오/.test(queryText)
@@ -7098,6 +7107,8 @@ function getFastPolicySourcePattern(family: FastPolicySourceGuidedAnswerFamily):
       return /오인|기만|속이|속임|혼란|허위|과장|오해|mislead|decept/i;
     case 'event_material':
       return /이벤트|경품|참여|프로모션|추첨|당첨|기간|조건/i;
+    case 'medical_hospital_landing_review':
+      return /의료|의료법|병원|의원|치과|한의원|성형|피부과|시술|진료|환자|관계\s*법령|인터넷\s*광고|랜딩|심사|가이드/i;
     case 'kakao_restricted_industry':
       return /카카오|업종|제한\s*업종|업종\s*제한|광고\s*가능\s*업종|등록\s*불가|집행\s*불가|금지|제한|허용|심사|가이드/i;
     case 'kakao_service_protection':
@@ -7127,6 +7138,8 @@ function getFastPolicyAnswerFallback(
       return 'policy_source_guided_user_deception';
     case 'event_material':
       return 'policy_source_guided_event_material';
+    case 'medical_hospital_landing_review':
+      return 'policy_source_guided_medical_hospital_landing_review';
     case 'kakao_restricted_industry':
       return 'policy_source_guided_kakao_restricted_industry';
     case 'kakao_service_protection':
@@ -7194,6 +7207,25 @@ function buildFastPolicyAnswerText(
         '',
         '**실무 확인**',
         `- 출처에 없는 세부 운영 방식은 임의로 보강하지 말고 원문 정책과 실제 이벤트 페이지 기준으로 검토하세요 ${cite(0)}.`,
+        '',
+        `근거: ${citations}`,
+      ].join('\n');
+    case 'medical_hospital_landing_review':
+      return [
+        '검증된 정책/가이드 근거 기준으로만 보면, 병원/의료 광고는 일반 상품 광고처럼 보지 말고 **의료법 등 관계 법령 위반 여부 → 광고 문안 표현 → 랜딩페이지 표시 정보 → 상담/예약 흐름** 순서로 확인해야 합니다.',
+        '',
+        '**판단 기준**',
+        `- 의료법 등 현행 법률을 위반하는 경우 광고·메시지 집행이 제한될 수 있으므로, 병원·의료 서비스는 먼저 관련 법령 준수 여부를 확인해야 합니다 ${cite(0)}.`,
+        `- 관계 법령에 따라 인터넷 광고가 금지되거나 인터넷 판매·유통 등이 제한되는 항목은 광고 문안뿐 아니라 연결 페이지와 상담 흐름까지 보수적으로 봐야 합니다 ${cite(0)}.`,
+        `- 출처에 직접 확인되지 않은 매체별 예외나 자동 승인 가능성은 단정하지 말고, 실제 진료과·시술명·광고 문안·랜딩 URL을 원문 심사 기준과 대조해야 합니다 ${cite(1)}.`,
+        '',
+        '**랜딩 체크**',
+        '- 광고 문안의 진료/시술 범위, 가격·혜택·이벤트 조건, 상담/예약 안내가 랜딩페이지에서 같은 조건으로 확인되는지 봅니다.',
+        '- 전후사진, 후기, “최고/보장/무조건”처럼 효과를 단정하거나 과장·오인될 수 있는 표현은 별도 심사 리스크로 분리합니다.',
+        '- 상담 신청 폼이나 예약 폼을 쓰는 경우 수집 항목, 동의, 후속 연락 안내도 추가 확인 대상으로 둡니다.',
+        '',
+        '**실무 확인**',
+        `- 현재 확인된 출처 범위만으로 모든 매체의 병원 광고 허용/금지 기준을 확정하지 말고, 매체명과 실제 소재·랜딩을 원문 기준으로 다시 대조하세요 ${cite(0)}.`,
         '',
         `근거: ${citations}`,
       ].join('\n');
@@ -7389,11 +7421,12 @@ function buildFastPolicySourceGuidedAnswer(
   fastAnswerFallback: FastPolicySourceGuidedAnswerFallback;
 }) | null {
   if (process.env.COMPASS_DISABLE_FAST_POLICY_SOURCE_GUIDED_ANSWERS === 'true') return null;
-  if (isBroadProductStructureLlmIntent || intent.isComparative) return null;
+  if (isBroadProductStructureLlmIntent) return null;
   if (intent.isOutOfScope || intent.unavailablePolicyTarget) return null;
 
   const family = detectFastPolicySourceGuidedAnswerFamily(message, intent);
   if (!family) return null;
+  if (intent.isComparative && family !== 'medical_hospital_landing_review') return null;
 
   const pattern = getFastPolicySourcePattern(family);
   const requiredVendor = family === 'kakao_service_protection' || family === 'kakao_restricted_industry'

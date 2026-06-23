@@ -340,6 +340,14 @@ for (const snippet of [
   '캠페인 구조와 목표 잡기',
   '운영 모듈과 측정 붙이기',
   'Meta 광고 정책은 소재 문구만 보는 기준이 아니라',
+  "'medical_hospital_landing_review'",
+  "'policy_source_guided_medical_hospital_landing_review'",
+  '병원/의료 광고',
+  '의료법 등 관계 법령',
+  '랜딩페이지 표시 정보',
+  '전후사진',
+  '상담 신청 폼',
+  "family !== 'medical_hospital_landing_review'",
   '오디언스 선택 도구로 특정 그룹을 부당하게 포함하거나 제외',
   'COMPASS_DISABLE_FAST_KAKAO_SPECIFIC_PRODUCT_ANSWERS',
   'COMPASS_DISABLE_FAST_KAKAO_STRUCTURED_PRODUCT_ANSWERS',
@@ -350,6 +358,7 @@ for (const snippet of [
   "'policy_source_guided_price_discount'",
   "'policy_source_guided_user_deception'",
   "'policy_source_guided_event_material'",
+  "'policy_source_guided_medical_hospital_landing_review'",
   "'policy_source_guided_kakao_restricted_industry'",
   "'policy_source_guided_kakao_service_protection'",
   "'policy_source_guided_youth_harmful'",
@@ -807,7 +816,7 @@ if (!/sourceIdentityLooksLikeGenericLegalOrAccountDoc[\s\S]*청구\|결제\|지�
   fail('answer source routing must demote payment/account support documents such as 지불 for product-structure answers');
 }
 
-if (!/COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v42-coverage-aware-related-questions'[\s\S]*`compass-answer:\$\{COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION\}:\$\{message\}`/.test(answerHandler)) {
+if (!/COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v43-medical-landing-policy-answer'[\s\S]*`compass-answer:\$\{COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION\}:\$\{message\}`/.test(answerHandler)) {
   fail('answer response cache key must be versioned so stale durable cached answers are bypassed after source-quality fixes');
 }
 
@@ -1640,7 +1649,7 @@ if (!/const fastStructuredSpecificProductAnswer = buildFastStructuredSpecificPro
   fail('structured specific product fast answer must run before grounded LLM synthesis and expose zero answer-generation diagnostics');
 }
 
-if (!/function buildFastPolicySourceGuidedAnswer\([\s\S]*COMPASS_DISABLE_FAST_POLICY_SOURCE_GUIDED_ANSWERS[\s\S]*isBroadProductStructureLlmIntent \|\| intent\.isComparative[\s\S]*detectFastPolicySourceGuidedAnswerFamily\(message, intent\)[\s\S]*getFallbackSourceText\(source\)[\s\S]*if \(!pattern\.test\(sourceText\)\) return false;[\s\S]*sourceHasBlockingExtractionNoise\(source\)[\s\S]*buildFastPolicyAnswerText\(family, candidateSources, intent\)/.test(answerHandler)) {
+if (!/function buildFastPolicySourceGuidedAnswer\([\s\S]*COMPASS_DISABLE_FAST_POLICY_SOURCE_GUIDED_ANSWERS[\s\S]*if \(isBroadProductStructureLlmIntent\) return null;[\s\S]*detectFastPolicySourceGuidedAnswerFamily\(message, intent\)[\s\S]*intent\.isComparative && family !== 'medical_hospital_landing_review'[\s\S]*getFallbackSourceText\(source\)[\s\S]*if \(!pattern\.test\(sourceText\)\) return false;[\s\S]*sourceHasBlockingExtractionNoise\(source\)[\s\S]*buildFastPolicyAnswerText\(family, candidateSources, intent\)/.test(answerHandler)) {
   fail('fast policy source-guided answers must stay narrowly gated and require matching verified source evidence');
 }
 
