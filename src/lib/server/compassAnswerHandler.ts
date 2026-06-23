@@ -115,7 +115,7 @@ const COMPASS_ANSWER_RESPONSE_CACHE_TTL_MS = Math.min(
   900000,
 );
 const COMPASS_ANSWER_RESPONSE_CACHE_MAX_ENTRIES = 64;
-const COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v38-kakao-product-matrix-brandsearch-collision';
+const COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v39-kakao-product-matrix-mixed-vendor-guard';
 const COMPASS_CONVERSATION_HISTORY_MAX_ITEMS = 25;
 const compassAnswerResponseCache = new Map<string, CompassAnswerResponseCacheEntry>();
 const compassAnswerRuntimeMetrics = {
@@ -5774,7 +5774,7 @@ function isKakaoProductSelectionMatrixFastIntent(message: string, intent: QueryI
   if (!hasKakaoAnchor) return false;
 
   const namesExplicitOtherVendor = /메타|meta|구글|google|네이버|naver/.test(normalized);
-  const startsAsKakaoProductQuestion = /^(카카오|kakao)\s*(광고|ads?)?\s*(상품|광고\s*상품)|카카오\s*광고\s*상품/.test(normalized);
+  const startsAsKakaoProductQuestion = /^(?:카카오|kakao)\s*(?:광고|ads?)?\s*(?:상품|광고\s*상품)/.test(normalized);
   if (namesExplicitOtherVendor && !startsAsKakaoProductQuestion) return false;
 
   const hasProductQuestionShape = (

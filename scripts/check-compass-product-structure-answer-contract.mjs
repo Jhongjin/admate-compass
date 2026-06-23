@@ -806,7 +806,7 @@ if (!/sourceIdentityLooksLikeGenericLegalOrAccountDoc[\s\S]*청구\|결제\|지�
   fail('answer source routing must demote payment/account support documents such as 지불 for product-structure answers');
 }
 
-if (!/COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v38-kakao-product-matrix-brandsearch-collision'[\s\S]*`compass-answer:\$\{COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION\}:\$\{message\}`/.test(answerHandler)) {
+if (!/COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v39-kakao-product-matrix-mixed-vendor-guard'[\s\S]*`compass-answer:\$\{COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION\}:\$\{message\}`/.test(answerHandler)) {
   fail('answer response cache key must be versioned so stale durable cached answers are bypassed after source-quality fixes');
 }
 
@@ -819,7 +819,9 @@ const kakaoProductSelectionMatrixFastIntentBlock = extractBlock(
 if (!kakaoProductSelectionMatrixFastIntentBlock.includes('const hasKakaoAnchor =')
   || !kakaoProductSelectionMatrixFastIntentBlock.includes('intent.vendors.includes(\'KAKAO\')')
   || !kakaoProductSelectionMatrixFastIntentBlock.includes('const namesExplicitOtherVendor =')
+  || !kakaoProductSelectionMatrixFastIntentBlock.includes('^(?:카카오|kakao)')
   || kakaoProductSelectionMatrixFastIntentBlock.includes("intent.vendors.length !== 1 || intent.vendors[0] !== 'KAKAO'")
+  || kakaoProductSelectionMatrixFastIntentBlock.includes('|카카오\\s*광고\\s*상품/.test')
   || !kakaoProductSelectionMatrixFastIntentBlock.includes('상품\\s*카탈로그')
   || !kakaoProductSelectionMatrixFastIntentBlock.includes('톡\\s*채널\\s*검색')
   || !kakaoProductSelectionMatrixFastIntentBlock.includes('보장형|cpt')
