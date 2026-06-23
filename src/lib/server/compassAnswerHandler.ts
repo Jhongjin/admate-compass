@@ -7207,6 +7207,63 @@ function getFastPolicyAnswerFallback(
   }
 }
 
+function buildMultiVendorUserDeceptionPolicyAnswer(
+  sources: ReturnType<typeof buildVerifiedSources>,
+  intent: QueryIntent,
+) {
+  const requestedVendors = intent.vendors.length > 0
+    ? intent.vendors
+    : (['META', 'GOOGLE', 'NAVER', 'KAKAO'] as VendorIntent[]);
+  const uniqueRequestedVendors = Array.from(new Set(requestedVendors));
+  if (uniqueRequestedVendors.length < 2) return null;
+
+  const sourceIndexForVendor = (vendor: VendorIntent) => sources.findIndex(source => sourceMatchesVendor(source, vendor));
+  const labelForIndex = (index: number) => `[S${index + 1}]`;
+  const cited = new Set<number>();
+  const rowForVendor = (vendor: VendorIntent) => {
+    const sourceIndex = sourceIndexForVendor(vendor);
+    const label = sourceIndex >= 0 ? labelForIndex(sourceIndex) : '';
+    if (sourceIndex >= 0) cited.add(sourceIndex);
+    const missingText = '현재 검색 결과에서 직접 검증 출처가 부족해 세부 기준은 단정하지 않습니다.';
+    const withLabel = (text: string) => (label ? `${text} ${label}` : missingText);
+
+    switch (vendor) {
+      case 'META':
+        return `| Meta | ${withLabel('광고 표준과 검토 기준에서 금지·제한 콘텐츠, 오인 가능성, 연결 URL/랜딩 맥락을 함께 확인합니다.')} | 광고에서 약속한 혜택·조건·서비스 내용이 랜딩에서 같은 조건으로 확인되는지 봅니다. | 출처가 부족하면 자동 승인 가능성이나 매체별 예외를 추정하지 않습니다. |`;
+      case 'GOOGLE':
+        return `| Google Ads | ${withLabel('Google Ads 정책에서 오해 소지가 있는 표현, 제한 콘텐츠, 광고와 목적지의 정책 준수 여부를 먼저 봅니다.')} | 최종 URL, 랜딩 페이지, 고지 조건, 가격·혜택 표현이 광고 문구와 충돌하지 않는지 확인합니다. | Primary 전환이나 입찰 문제로 보기 전에 정책 제한·목적지 불일치를 먼저 배제합니다. |`;
+      case 'NAVER':
+        return `| 네이버 | ${withLabel('네이버 광고 등록 기준/가이드에서 허위·과장, 이용자 오인, 법령 위반, 권리 침해 가능성을 봅니다.')} | 검색어, 광고문안, 표시 URL, 랜딩의 실제 상품·서비스 정보가 같은 의도를 말하는지 확인합니다. | 검색광고·쇼핑·플레이스처럼 상품별 등록 기준이 다르므로 공통 기준과 상품별 기준을 나눕니다. |`;
+      case 'KAKAO':
+        return `| 카카오 | ${withLabel('카카오 집행 기준에서 허위·과장, 카카오 서비스 오인, 업종 제한, 소재·랜딩 불일치를 확인합니다.')} | 가격·혜택·이벤트·상담 조건이 소재와 랜딩/채널/메시지에서 같은 조건으로 표시되는지 봅니다. | 비즈보드·디스플레이·메시지·검색형은 지면과 수신 맥락이 달라 심사 리스크를 분리합니다. |`;
+    }
+  };
+
+  const citedLabels = Array.from(cited)
+    .sort((a, b) => a - b)
+    .map(labelForIndex)
+    .join(', ');
+
+  return [
+    '검증된 정책 근거 기준으로만 보면, 허위·과장 표현과 랜딩페이지 불일치는 **소재 문구 → 랜딩 실제 표시 → 업종/상품 제한 → 필수 고지·증빙**을 함께 확인해야 합니다.',
+    '',
+    '**1. 매체별 점검 기준**',
+    '',
+    '| 매체 | 정책·심사에서 먼저 볼 것 | 랜딩페이지 체크 | 운영 판단 |',
+    '|---|---|---|---|',
+    ...uniqueRequestedVendors.map(rowForVendor),
+    '',
+    '**2. 공통 점검 순서**',
+    '',
+    '- 먼저 광고 문구의 효과, 가격, 혜택, 기간, 대상, 주체가 사실과 다르게 이해될 여지가 있는지 봅니다.',
+    '- 다음으로 랜딩에서 같은 조건이 즉시 확인되는지 봅니다. 소재에는 “무료/보장/최고/한정”이라고 쓰고 랜딩에서 조건이 숨겨져 있으면 위험합니다.',
+    '- 업종 제한, 필수 고지, 증빙 자료, 권리 침해 가능성을 매체별 원문 기준으로 따로 확인합니다.',
+    '- 출처가 부족한 매체는 다른 매체 기준을 섞어 추정하지 말고, 실제 문안·랜딩 URL·업종을 기준으로 원문 정책을 추가 대조합니다.',
+    '',
+    `근거: ${citedLabels || sources.map((_, index) => labelForIndex(index)).join(', ')}`,
+  ].join('\n');
+}
+
 function buildFastPolicyAnswerText(
   family: FastPolicySourceGuidedAnswerFamily,
   sources: ReturnType<typeof buildVerifiedSources>,
@@ -7233,6 +7290,10 @@ function buildFastPolicyAnswerText(
         `근거: ${citations}`,
       ].join('\n');
     case 'user_deception':
+      {
+        const multiVendorAnswer = buildMultiVendorUserDeceptionPolicyAnswer(sources, intent);
+        if (multiVendorAnswer) return multiVendorAnswer;
+      }
       return [
         '검증된 정책 근거 기준으로만 보면, 이용자를 오인하게 하거나 기만할 수 있는 표현은 집행 가능 여부를 보수적으로 봐야 합니다.',
         '',

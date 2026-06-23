@@ -355,6 +355,9 @@ for (const snippet of [
   'partialCoverageSourceGuided',
   'isPolicyReviewCheckQuestion',
   'shouldDeferToPolicyReviewAnswer',
+  'buildMultiVendorUserDeceptionPolicyAnswer',
+  '허위·과장 표현과 랜딩페이지 불일치',
+  '| 매체 | 정책·심사에서 먼저 볼 것 | 랜딩페이지 체크 | 운영 판단 |',
   '오디언스 선택 도구로 특정 그룹을 부당하게 포함하거나 제외',
   'COMPASS_DISABLE_FAST_KAKAO_SPECIFIC_PRODUCT_ANSWERS',
   'COMPASS_DISABLE_FAST_KAKAO_STRUCTURED_PRODUCT_ANSWERS',
@@ -829,6 +832,10 @@ if (!/COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v45-source-guided-partial-cov
 
 if (!/function isPolicyReviewCheckQuestion\([\s\S]*허위\|과장\|오인\|기만\|불일치\|랜딩[\s\S]*const shouldDeferToPolicyReviewAnswer = isPolicyReviewCheckQuestion\(message\)[\s\S]*!shouldDeferToPolicyReviewAnswer && isAssetGuideProductQuestion\(message\)[\s\S]*intent\.vendors\.includes\('NAVER'\)[\s\S]*!shouldDeferToPolicyReviewAnswer[\s\S]*buildNaverKakaoAssetGuideComparisonAnswer\(sources\)/.test(answerHandler)) {
   fail('policy/review checklist questions must bypass product asset-guide deterministic answers');
+}
+
+if (!/function buildMultiVendorUserDeceptionPolicyAnswer\([\s\S]*uniqueRequestedVendors\.length < 2[\s\S]*\| 매체 \| 정책·심사에서 먼저 볼 것 \| 랜딩페이지 체크 \| 운영 판단 \|[\s\S]*case 'user_deception':[\s\S]*buildMultiVendorUserDeceptionPolicyAnswer\(sources, intent\)/.test(answerHandler)) {
+  fail('multi-vendor deception/review policy questions must produce media-specific checklist answers instead of generic policy blurbs');
 }
 
 for (const snippet of [
