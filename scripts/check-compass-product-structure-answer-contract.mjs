@@ -353,6 +353,8 @@ for (const snippet of [
   'hasSourceGuidedProductOrPolicyIntent',
   'const coveredRequestedVendors = diagnostics.coveredVendors.filter',
   'partialCoverageSourceGuided',
+  'isPolicyReviewCheckQuestion',
+  'shouldDeferToPolicyReviewAnswer',
   '오디언스 선택 도구로 특정 그룹을 부당하게 포함하거나 제외',
   'COMPASS_DISABLE_FAST_KAKAO_SPECIFIC_PRODUCT_ANSWERS',
   'COMPASS_DISABLE_FAST_KAKAO_STRUCTURED_PRODUCT_ANSWERS',
@@ -823,6 +825,10 @@ if (!/sourceIdentityLooksLikeGenericLegalOrAccountDoc[\s\S]*청구\|결제\|지�
 
 if (!/COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v45-source-guided-partial-coverage'[\s\S]*`compass-answer:\$\{COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION\}:\$\{message\}`/.test(answerHandler)) {
   fail('answer response cache key must be versioned so stale durable cached answers are bypassed after source-quality fixes');
+}
+
+if (!/function isPolicyReviewCheckQuestion\([\s\S]*허위\|과장\|오인\|기만\|불일치\|랜딩[\s\S]*const shouldDeferToPolicyReviewAnswer = isPolicyReviewCheckQuestion\(message\)[\s\S]*!shouldDeferToPolicyReviewAnswer && isAssetGuideProductQuestion\(message\)[\s\S]*intent\.vendors\.includes\('NAVER'\)[\s\S]*!shouldDeferToPolicyReviewAnswer[\s\S]*buildNaverKakaoAssetGuideComparisonAnswer\(sources\)/.test(answerHandler)) {
+  fail('policy/review checklist questions must bypass product asset-guide deterministic answers');
 }
 
 for (const snippet of [

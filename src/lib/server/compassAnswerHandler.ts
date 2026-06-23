@@ -1254,6 +1254,16 @@ function isPerformanceDropTroubleshootingQuestion(message: string): boolean {
   return (dropSignal || troubleshootingSignal) && axisCount >= 3;
 }
 
+function isPolicyReviewCheckQuestion(message: string): boolean {
+  const normalized = normalizeProductIntentText(message);
+  const hasPolicyOrReviewRisk = /정책|심사|검수|검토|승인|반려|위반|제한|금지|허위|과장|오인|기만|불일치|랜딩\s*페이지|랜딩|등록\s*기준|광고\s*등록\s*기준/.test(normalized);
+  const asksForReviewAction = /점검|체크|체크리스트|주의|유의|기준|판단|확인|순서|리스크|문제|해야\s*하|알려|정리/.test(normalized);
+  const asksForProductAssetGuide = /상품\s*별\s*(소재\s*)?(제작\s*)?가이드|상품별\s*(소재\s*)?(제작\s*)?가이드|소재\s*(제작\s*)?가이드|제작\s*가이드|광고\s*상품\s*소재|상품\s*소재|소재\s*규격|소재\s*사양|creative\s*(guide|spec)|asset\s*(guide|spec)/.test(normalized)
+    && /광고\s*상품|광고상품|상품\s*(유형|종류|가이드|별)|상품별|product|캠페인\s*유형|종류|광고\s*(유형|종류)/.test(normalized);
+
+  return hasPolicyOrReviewRisk && asksForReviewAction && !asksForProductAssetGuide;
+}
+
 function isAssetGuideProductQuestion(message: string): boolean {
   const normalized = normalizeProductIntentText(message);
   const hasAssetGuideSignal = /상품\s*별\s*(소재\s*)?(제작\s*)?가이드|상품별\s*(소재\s*)?(제작\s*)?가이드|소재\s*(제작\s*)?가이드|제작\s*가이드|광고\s*상품\s*소재|상품\s*소재|소재\s*규격|소재\s*사양|creative\s*(guide|spec)|asset\s*(guide|spec)/.test(normalized);
@@ -6484,6 +6494,7 @@ function buildOperationalScenarioDeterministicAnswer(
   sources: ReturnType<typeof buildVerifiedSources>,
 ): DeterministicProductAnswer | null {
   const normalized = normalizeProductIntentText(message);
+  const shouldDeferToPolicyReviewAnswer = isPolicyReviewCheckQuestion(message);
 
   if (isPerformanceDropTroubleshootingQuestion(message)) {
     return buildPerformanceDropTroubleshootingAnswer(sources);
@@ -6497,7 +6508,7 @@ function buildOperationalScenarioDeterministicAnswer(
     return buildCrossVendorBudgetFrameworkAnswer(sources);
   }
 
-  if (isAssetGuideProductQuestion(message)) {
+  if (!shouldDeferToPolicyReviewAnswer && isAssetGuideProductQuestion(message)) {
     if (intent.vendors.length >= 3) {
       return buildCrossVendorProductAssetGuideAnswer(sources);
     }
@@ -6528,6 +6539,7 @@ function buildOperationalScenarioDeterministicAnswer(
   if (
     intent.vendors.length === 1
     && intent.vendors[0] === 'KAKAO'
+    && !shouldDeferToPolicyReviewAnswer
     && /톡채널|카카오모먼트|비즈보드|메시지|업종별|선택|언제|기준|상품\s*(종류|유형|가이드|별)|상품별|제작\s*가이드|소재/.test(normalized)
   ) {
     return buildKakaoProductSelectionMatrixAnswer(sources);
@@ -6536,6 +6548,7 @@ function buildOperationalScenarioDeterministicAnswer(
   if (
     intent.vendors.length === 1
     && intent.vendors[0] === 'NAVER'
+    && !shouldDeferToPolicyReviewAnswer
     && /파워링크|쇼핑검색|브랜드검색|검색광고|과금|랜딩|전환\s*측정|캠페인\s*목적|소재\s*구성|상품\s*(종류|유형|가이드|별)|상품별|제작\s*가이드|소재/.test(normalized)
   ) {
     return buildNaverSearchAdProductComparisonAnswer(sources);
@@ -6544,6 +6557,7 @@ function buildOperationalScenarioDeterministicAnswer(
   if (
     intent.vendors.includes('NAVER')
     && intent.vendors.includes('KAKAO')
+    && !shouldDeferToPolicyReviewAnswer
     && /상품\s*(종류|유형|가이드|별)|상품별|광고\s*상품|소재|제작\s*가이드/.test(normalized)
   ) {
     return buildNaverKakaoAssetGuideComparisonAnswer(sources);
