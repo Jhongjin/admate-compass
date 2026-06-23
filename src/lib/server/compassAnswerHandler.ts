@@ -115,7 +115,7 @@ const COMPASS_ANSWER_RESPONSE_CACHE_TTL_MS = Math.min(
   900000,
 );
 const COMPASS_ANSWER_RESPONSE_CACHE_MAX_ENTRIES = 64;
-const COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v37-kakao-product-matrix-preflight';
+const COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v38-kakao-product-matrix-brandsearch-collision';
 const COMPASS_CONVERSATION_HISTORY_MAX_ITEMS = 25;
 const compassAnswerResponseCache = new Map<string, CompassAnswerResponseCacheEntry>();
 const compassAnswerRuntimeMetrics = {
@@ -5765,10 +5765,18 @@ function buildKakaoProductSelectionMatrixAnswer(
 }
 
 function isKakaoProductSelectionMatrixFastIntent(message: string, intent: QueryIntent): boolean {
-  if (intent.vendors.length !== 1 || intent.vendors[0] !== 'KAKAO') return false;
-
   const normalized = normalizeProductIntentText(message);
   const compact = normalized.replace(/\s+/g, '');
+  const hasKakaoAnchor = (
+    intent.vendors.includes('KAKAO')
+    || /카카오|kakao|카카오톡|카카오비즈니스|비즈보드|톡채널검색|카카오모먼트/.test(normalized)
+  );
+  if (!hasKakaoAnchor) return false;
+
+  const namesExplicitOtherVendor = /메타|meta|구글|google|네이버|naver/.test(normalized);
+  const startsAsKakaoProductQuestion = /^(카카오|kakao)\s*(광고|ads?)?\s*(상품|광고\s*상품)|카카오\s*광고\s*상품/.test(normalized);
+  if (namesExplicitOtherVendor && !startsAsKakaoProductQuestion) return false;
+
   const hasProductQuestionShape = (
     intent.topics.includes('product_structure')
     || /광고\s*상품|상품\s*(유형|종류|구분|가이드|별)|상품별|상품명|상품군|기준으로\s*(비교|정리|구분)|비교\s*정리|선택\s*기준/.test(normalized)
