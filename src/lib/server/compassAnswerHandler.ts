@@ -115,7 +115,7 @@ const COMPASS_ANSWER_RESPONSE_CACHE_TTL_MS = Math.min(
   900000,
 );
 const COMPASS_ANSWER_RESPONSE_CACHE_MAX_ENTRIES = 64;
-const COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v39-kakao-product-matrix-mixed-vendor-guard';
+const COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v40-naver-kakao-product-asset-preflight';
 const COMPASS_CONVERSATION_HISTORY_MAX_ITEMS = 25;
 const compassAnswerResponseCache = new Map<string, CompassAnswerResponseCacheEntry>();
 const compassAnswerRuntimeMetrics = {
@@ -5811,6 +5811,14 @@ function buildPreRetrievalDeterministicProductAnswer(
 ): DeterministicProductAnswer | null {
   if (isKakaoProductSelectionMatrixFastIntent(message, intent)) {
     return buildKakaoProductSelectionMatrixAnswer([]);
+  }
+  if (
+    isAssetGuideProductQuestion(message)
+    && intent.vendors.length === 2
+    && intent.vendors.includes('NAVER')
+    && intent.vendors.includes('KAKAO')
+  ) {
+    return buildNaverKakaoAssetGuideComparisonAnswer([]);
   }
 
   return null;

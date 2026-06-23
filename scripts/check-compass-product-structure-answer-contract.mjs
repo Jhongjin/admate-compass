@@ -806,7 +806,7 @@ if (!/sourceIdentityLooksLikeGenericLegalOrAccountDoc[\s\S]*청구\|결제\|지�
   fail('answer source routing must demote payment/account support documents such as 지불 for product-structure answers');
 }
 
-if (!/COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v39-kakao-product-matrix-mixed-vendor-guard'[\s\S]*`compass-answer:\$\{COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION\}:\$\{message\}`/.test(answerHandler)) {
+if (!/COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v40-naver-kakao-product-asset-preflight'[\s\S]*`compass-answer:\$\{COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION\}:\$\{message\}`/.test(answerHandler)) {
   fail('answer response cache key must be versioned so stale durable cached answers are bypassed after source-quality fixes');
 }
 
@@ -827,6 +827,7 @@ if (!kakaoProductSelectionMatrixFastIntentBlock.includes('const hasKakaoAnchor =
   || !kakaoProductSelectionMatrixFastIntentBlock.includes('보장형|cpt')
   || !answerHandler.includes('function buildPreRetrievalDeterministicProductAnswer')
   || !answerHandler.includes('buildKakaoProductSelectionMatrixAnswer([])')
+  || !answerHandler.includes('buildNaverKakaoAssetGuideComparisonAnswer([])')
   || !answerHandler.includes('const preRetrievalDeterministicAnswer = buildPreRetrievalDeterministicProductAnswer(message, ragIntent)')
   || !answerHandler.includes('preRetrievalDeterministicAnswer: true')) {
   fail('Kakao named-product matrix questions must use a pre-retrieval deterministic answer before slow RAG fan-out');
