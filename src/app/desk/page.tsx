@@ -109,6 +109,12 @@ const trimConversationMessages = (conversationMessages: Message[]) => {
   return conversationMessages.slice(-COMPASS_CONVERSATION_CONTEXT_LIMIT);
 };
 
+const buildConversationHistoryForAnswer = (conversationMessages: Message[]) => (
+  trimConversationMessages(conversationMessages)
+    .slice(0, -1)
+    .slice(-COMPASS_CONVERSATION_CONTEXT_LIMIT)
+);
+
 const getInitialMessage = (): Message => ({
   id: "1",
   type: "assistant",
@@ -795,16 +801,6 @@ function ChatPageContent() {
   const handleSendMessageWithQuestion = async (question: string) => {
     if (!question.trim() || isLoading) return;
 
-    // 이미 같은 질문이 있는지 확인
-    const existingUserMessage = messages.find(msg => 
-      msg.type === 'user' && msg.content.trim() === question.trim()
-    );
-    
-    if (existingUserMessage) {
-      console.log('이미 같은 질문이 있습니다. 중복을 방지합니다.');
-      return;
-    }
-
     const userMessage: Message = {
       id: Date.now().toString(),
       type: "user",
@@ -828,12 +824,13 @@ function ChatPageContent() {
 
     // 현재 메시지 상태를 기반으로 API 호출
     const currentMessages = trimConversationMessages([...messages, userMessage]);
+    const conversationHistory = buildConversationHistoryForAnswer(currentMessages);
     setMessages(currentMessages);
 
     try {
       const answerResult = await fetchCompassAnswer(
         question.trim(),
-        messages.slice(-COMPASS_CONVERSATION_CONTEXT_LIMIT)
+        conversationHistory
       );
 
       const completedAiResponse = await completeAssistantResponse(answerResult);
@@ -864,16 +861,6 @@ function ChatPageContent() {
   const handleSendMessage = async () => {
     if (!inputValue.trim() || isLoading) return;
 
-    // 이미 같은 질문이 있는지 확인
-    const existingUserMessage = messages.find(msg => 
-      msg.type === 'user' && msg.content.trim() === inputValue.trim()
-    );
-    
-    if (existingUserMessage) {
-      console.log('이미 같은 질문이 있습니다. 중복을 방지합니다.');
-      return;
-    }
-
     const userMessage: Message = {
       id: Date.now().toString(),
       type: "user",
@@ -899,12 +886,13 @@ function ChatPageContent() {
 
     // 현재 메시지 상태를 기반으로 API 호출
     const currentMessages = trimConversationMessages([...messages, userMessage]);
+    const conversationHistory = buildConversationHistoryForAnswer(currentMessages);
     setMessages(currentMessages);
 
     try {
       const answerResult = await fetchCompassAnswer(
         currentInput,
-        messages.slice(-COMPASS_CONVERSATION_CONTEXT_LIMIT)
+        conversationHistory
       );
 
       const completedAiResponse = await completeAssistantResponse(answerResult);

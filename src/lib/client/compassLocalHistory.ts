@@ -21,6 +21,25 @@ function canUseLocalStorage() {
   return typeof window !== "undefined" && typeof window.localStorage !== "undefined";
 }
 
+function isCompassLocalConversation(item: unknown): item is CompassLocalConversation {
+  return Boolean(
+    item
+    && typeof item === "object"
+    && typeof (item as CompassLocalConversation).conversation_id === "string"
+    && typeof (item as CompassLocalConversation).user_message === "string"
+    && typeof (item as CompassLocalConversation).ai_response === "string"
+  );
+}
+
+function normalizeCompassLocalConversations(input: unknown): CompassLocalConversation[] {
+  if (!Array.isArray(input)) return [];
+
+  return input
+    .filter(isCompassLocalConversation)
+    .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
+    .slice(0, COMPASS_CONVERSATION_HISTORY_LIMIT);
+}
+
 export function loadCompassLocalConversations(userId: string): CompassLocalConversation[] {
   if (!userId || !canUseLocalStorage()) return [];
 
@@ -29,18 +48,13 @@ export function loadCompassLocalConversations(userId: string): CompassLocalConve
     if (!raw) return [];
 
     const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed)) return [];
+    const normalized = normalizeCompassLocalConversations(parsed);
 
-    return parsed
-      .filter((item): item is CompassLocalConversation => (
-        item
-        && typeof item === "object"
-        && typeof item.conversation_id === "string"
-        && typeof item.user_message === "string"
-        && typeof item.ai_response === "string"
-      ))
-      .sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime())
-      .slice(0, COMPASS_CONVERSATION_HISTORY_LIMIT);
+    if (!Array.isArray(parsed) || normalized.length !== parsed.length || normalized.some((item, index) => item !== parsed[index])) {
+      window.localStorage.setItem(getStorageKey(userId), JSON.stringify(normalized));
+    }
+
+    return normalized;
   } catch (error) {
     console.warn("로컬 Compass 히스토리를 읽지 못했습니다.", error);
     return [];
