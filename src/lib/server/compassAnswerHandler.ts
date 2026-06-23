@@ -115,7 +115,7 @@ const COMPASS_ANSWER_RESPONSE_CACHE_TTL_MS = Math.min(
   900000,
 );
 const COMPASS_ANSWER_RESPONSE_CACHE_MAX_ENTRIES = 64;
-const COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v40-naver-kakao-product-asset-preflight';
+const COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v41-meta-google-product-asset-preflight';
 const COMPASS_CONVERSATION_HISTORY_MAX_ITEMS = 25;
 const compassAnswerResponseCache = new Map<string, CompassAnswerResponseCacheEntry>();
 const compassAnswerRuntimeMetrics = {
@@ -5812,6 +5812,9 @@ function buildPreRetrievalDeterministicProductAnswer(
   if (isKakaoProductSelectionMatrixFastIntent(message, intent)) {
     return buildKakaoProductSelectionMatrixAnswer([]);
   }
+  if (isAssetGuideProductQuestion(message) && intent.vendors.length >= 3) {
+    return buildCrossVendorProductAssetGuideAnswer([]);
+  }
   if (
     isAssetGuideProductQuestion(message)
     && intent.vendors.length === 2
@@ -5819,6 +5822,20 @@ function buildPreRetrievalDeterministicProductAnswer(
     && intent.vendors.includes('KAKAO')
   ) {
     return buildNaverKakaoAssetGuideComparisonAnswer([]);
+  }
+  if (
+    isAssetGuideProductQuestion(message)
+    && intent.vendors.length === 2
+    && intent.vendors.includes('META')
+    && intent.vendors.includes('GOOGLE')
+  ) {
+    return buildMetaGoogleProductAssetGuideAnswer([]);
+  }
+  if (isAssetGuideProductQuestion(message) && intent.vendors.length === 1 && intent.vendors[0] === 'META') {
+    return buildMetaAssetGuideProductAnswer([]);
+  }
+  if (isAssetGuideProductQuestion(message) && intent.vendors.length === 1 && intent.vendors[0] === 'GOOGLE') {
+    return buildGoogleAssetGuideProductAnswer([]);
   }
 
   return null;
@@ -6358,6 +6375,73 @@ function buildMetaAssetGuideProductAnswer(
   );
 }
 
+function buildGoogleAssetGuideProductAnswer(
+  sources: ReturnType<typeof buildVerifiedSources>,
+): DeterministicProductAnswer | null {
+  const requiredChunkIds = uniqueOfficialChunkIds([
+    ...GOOGLE_PRODUCT_PLANNING_MATRIX_REQUIRED_CHUNK_IDS,
+    'google_ads_lead_form_export_crm_api_2026_chunk_0',
+  ]);
+  const prepared = prepareOfficialSnapshotAnswerSources(sources, requiredChunkIds);
+  if (!prepared) return null;
+  const { sources: scenarioSources, used, cite } = prepared;
+
+  const objectiveRef = cite('google_ads_campaign_objectives_2026_chunk_0');
+  const typeRef = cite('google_ads_campaign_types_2026_chunk_0');
+  const leadFormRef = cite('doc_1773662526796_7rijhfq_chunk_1');
+  const conversionGoalRef = cite('google_ads_conversion_goals_leads_2026_chunk_0');
+  const webConversionRef = cite('google_ads_web_conversion_measurement_2026_chunk_0');
+  const offlineRef = cite('google_ads_offline_enhanced_conversions_leads_2026_chunk_0');
+  const leadExportRef = cite('google_ads_lead_form_export_crm_api_2026_chunk_0');
+  const shoppingRef = cite('google_ads_shopping_ads_2026_chunk_0');
+  const appRef = cite('google_ads_app_campaigns_2026_chunk_0');
+
+  const lines = [
+    'Google Ads 상품과 소재 제작 가이드는 **목표 → 캠페인 유형 → 애셋/광고 형식 → 전환 측정** 순서로 나누어야 합니다. 검색, 디스플레이, 동영상, 쇼핑, 앱, 실적 최대화/PMax는 노출 지면과 필요한 애셋이 다르므로 같은 “구글 광고 소재”로 묶으면 실무에서 빠지는 항목이 생깁니다.',
+    '',
+    '**1. 캠페인 유형별 소재 제작 기준**',
+    '',
+    '| 유형 | 언제 우선 검토하나 | 소재/애셋에서 먼저 볼 것 | 측정·운영 체크 |',
+    '|---|---|---|---|',
+    `| 검색 캠페인 | 검색 의도가 이미 있는 사용자를 랜딩, 상담, 구매 페이지로 보내야 할 때 ${objectiveRef} | 키워드, 검색어 의도, 광고 제목/설명, 표시 URL, 확장 애셋, 랜딩 메시지 일치를 봅니다. | 전환 목표와 캠페인 유형을 먼저 맞추고, 리드/구매 같은 전환 액션이 보고·입찰에 맞게 잡혔는지 확인합니다 ${objectiveRef} ${conversionGoalRef}. |`,
+    `| 디스플레이 캠페인 | 이미지·텍스트 조합으로 넓은 지면에서 도달, 리마케팅, 전환 확장을 해야 할 때 | 반응형 디스플레이용 이미지, 로고, 짧은/긴 제목, 설명, CTA, 랜딩 URL을 지면별로 준비합니다. 캠페인 유형마다 노출 지면, 광고 형식, 입찰과 애셋 요구사항이 달라집니다 ${typeRef}. | 소재 피로도, 지면 품질, 리마케팅/오디언스, 전환 태그와 랜딩 속도를 함께 봅니다. |`,
+    `| 동영상/YouTube 캠페인 | 영상 시청, 브랜드 도달, 리드 확장, 검색 외 지면 확장이 필요할 때 | 영상 첫 화면 메시지, CTA, 썸네일/컴패니언 요소, YouTube 지면, 리드 양식 가능 여부를 확인합니다 ${typeRef} ${leadFormRef}. | 조회 KPI와 전환 KPI를 분리하고, 리드 양식을 붙일 때는 전환 중심 입찰 조건과 리드 양식 전환 목표를 확인합니다 ${conversionGoalRef}. |`,
+    `| 실적 최대화/PMax | 여러 Google 지면을 자동화로 묶어 전환을 키워야 할 때 | 애셋 그룹 단위로 텍스트, 이미지, 로고, 동영상, 랜딩 URL, 상품 피드 또는 앱/리드 애셋을 묶어 준비합니다 ${typeRef}. | 좋은 학습을 위해 Primary conversion action, 오프라인 전환 가져오기, 향상된 전환 리드 같은 후속 품질 신호를 같이 설계합니다 ${conversionGoalRef} ${offlineRef}. |`,
+    `| 쇼핑 광고 | 상품 이미지, 제목, 가격, 매장명 같은 상품 정보를 검색·쇼핑 지면에 노출해야 할 때 | Merchant Center 상품 데이터, 상품명, 대표 이미지, 가격, 재고, 상품 카테고리, 랜딩 상품 정보를 먼저 봅니다 ${shoppingRef}. | 피드 불승인, 가격·재고 불일치, 정책 제한, 쇼핑/PMax 전환 목표를 함께 점검합니다 ${shoppingRef}. |`,
+    `| 앱 캠페인 | 앱 설치와 앱 내 행동을 늘려야 할 때 | 텍스트, 이미지, 동영상 애셋과 Google 검색, Google Play, YouTube, Discover, 디스플레이 네트워크 게재를 함께 봅니다 ${appRef}. | 앱 설치와 앱 내 핵심 행동 이벤트, 입찰, 전환 추적 설정이 준비되어야 합니다 ${appRef}. |`,
+    `| 리드 양식 애셋 | 검색, 동영상, PMax, 디스플레이에서 바로 연락처를 받을 때 | 개인정보처리방침, 질문/필드, 제출 후 안내, CRM 수신 필드와 webhook/API 연동을 봅니다 ${leadFormRef} ${leadExportRef}. | CSV·이메일·webhook·서드파티·Google Ads API 수신 방식, 중복 제거, 후속 상담 상태, Primary/Secondary 전환 분류를 확인합니다 ${leadExportRef} ${conversionGoalRef}. |`,
+    '',
+    '**2. 소재 제작 순서**',
+    '',
+    `- 먼저 목표를 정합니다. Google Ads는 판매, 리드, 웹사이트 트래픽, 브랜드 인지도와 도달범위, 앱 홍보 같은 목표를 캠페인 유형과 기능에 연결합니다 ${objectiveRef}.`,
+    `- 다음으로 캠페인 유형을 고릅니다. 검색/디스플레이/동영상/쇼핑/앱/PMax는 필요한 광고 형식, 애셋, 입찰, 노출 지면이 다릅니다 ${typeRef}.`,
+    `- 웹사이트 전환형이면 Google tag 또는 Google Analytics 연결과 전환 액션을 먼저 확인합니다 ${webConversionRef}.`,
+    `- 리드·계약 품질이 중요하면 오프라인 전환 가져오기나 향상된 전환 리드로 상담, 계약, 구매 같은 후속 결과를 되돌릴 구조를 잡습니다 ${offlineRef}.`,
+    '',
+    '**3. 런칭 전 체크리스트**',
+    '',
+    '- 검색: 키워드/검색어, 광고문, 표시 URL, 랜딩 제목, 전환 액션이 같은 의도를 말하는지 봅니다.',
+    '- 디스플레이: 이미지·로고·제목·설명 조합, 지면별 잘림, 랜딩 속도, 리마케팅 오디언스 품질을 봅니다.',
+    '- 동영상: 첫 3~5초 메시지, CTA, YouTube 지면, 조회 목표와 전환 목표 분리를 봅니다.',
+    '- PMax: 애셋 그룹, 최종 URL, 상품 피드, 전환 목표, 오프라인/향상된 전환 피드백을 함께 봅니다.',
+    '- 쇼핑: Merchant Center 상품 피드, 가격·재고 동기화, 이미지 품질, 정책 승인, 구매 전환을 먼저 봅니다.',
+    '- 앱: 스토어 연결, 앱 이벤트, SDK/MMP, 설치 후 핵심 행동 이벤트, 텍스트·이미지·동영상 애셋을 봅니다.',
+    '- 리드 양식: 개인정보처리방침, 필드/질문, 제출 후 화면, CRM 수신, webhook/API 테스트, lead_id 중복 제거를 봅니다.',
+    '',
+    '정리하면, Google Ads 소재 제작가이드는 **검색=광고문·키워드·랜딩**, **디스플레이=이미지/로고/문구 애셋**, **동영상=영상·CTA·YouTube 지면**, **PMax=애셋 그룹+전환 목표**, **쇼핑=Merchant Center 상품 피드**, **앱=앱 애셋+앱 이벤트**, **리드 양식=필드·개인정보·CRM 수신**으로 나누어야 합니다.',
+    '',
+    `근거: ${Array.from(used).sort((a, b) => a - b).map(index => `[S${index + 1}]`).join(', ')}`,
+  ];
+
+  return finalizeOfficialSnapshotDeterministicAnswer(
+    lines,
+    scenarioSources,
+    used,
+    'compass-answer-deterministic-google-asset-guide-product-matrix',
+    88,
+  );
+}
+
 function buildOperationalScenarioDeterministicAnswer(
   message: string,
   intent: QueryIntent,
@@ -6392,10 +6476,10 @@ function buildOperationalScenarioDeterministicAnswer(
       return buildMetaGoogleProductAssetGuideAnswer(sources);
     }
     if (intent.vendors.length === 1 && intent.vendors[0] === 'META') {
-      return buildMetaProductPlanningMatrixAnswer(sources) ?? buildMetaAssetGuideProductAnswer(sources);
+      return buildMetaAssetGuideProductAnswer(sources) ?? buildMetaProductPlanningMatrixAnswer(sources);
     }
     if (intent.vendors.length === 1 && intent.vendors[0] === 'GOOGLE') {
-      return buildGoogleProductPlanningMatrixAnswer(sources);
+      return buildGoogleAssetGuideProductAnswer(sources) ?? buildGoogleProductPlanningMatrixAnswer(sources);
     }
     if (intent.vendors.length === 1 && intent.vendors[0] === 'KAKAO') {
       return buildKakaoProductSelectionMatrixAnswer(sources);
