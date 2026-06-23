@@ -347,6 +347,7 @@ for (const snippet of [
   '랜딩페이지 표시 정보',
   '전후사진',
   '상담 신청 폼',
+  'shouldDeferMedicalHospitalLandingPolicyAnswer',
   "family !== 'medical_hospital_landing_review'",
   '오디언스 선택 도구로 특정 그룹을 부당하게 포함하거나 제외',
   'COMPASS_DISABLE_FAST_KAKAO_SPECIFIC_PRODUCT_ANSWERS',

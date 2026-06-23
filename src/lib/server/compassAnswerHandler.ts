@@ -11062,7 +11062,14 @@ export async function buildCompassAnswerResponse(
       };
     }
 
-    if (ragIntent.requiresVendorCoverage && sourceDiagnostics.missingVendorSlots.length > 0) {
+    const shouldDeferMedicalHospitalLandingPolicyAnswer =
+      detectFastPolicySourceGuidedAnswerFamily(message, ragIntent) === 'medical_hospital_landing_review';
+
+    if (
+      ragIntent.requiresVendorCoverage
+      && sourceDiagnostics.missingVendorSlots.length > 0
+      && !shouldDeferMedicalHospitalLandingPolicyAnswer
+    ) {
       console.warn('Compass answer generation skipped because requested vendor coverage is incomplete', {
         requestedVendors: sourceDiagnostics.requestedVendors,
         coveredVendors: sourceDiagnostics.coveredVendors,
@@ -11096,7 +11103,11 @@ export async function buildCompassAnswerResponse(
       };
     }
 
-    if (ragIntent.isComparative && ragIntent.vendors.length >= 2) {
+    if (
+      ragIntent.isComparative
+      && ragIntent.vendors.length >= 2
+      && !shouldDeferMedicalHospitalLandingPolicyAnswer
+    ) {
       const groundedComparisonAnswer = buildGroundedComparisonAnswer(ragIntent, sources);
 
       emitPhase?.({ phase: 'answer-ready', message: '비교 답변을 출처 기준으로 정리했습니다.' });
