@@ -347,8 +347,12 @@ for (const snippet of [
   '랜딩페이지 표시 정보',
   '전후사진',
   '상담 신청 폼',
-  'shouldDeferMedicalHospitalLandingPolicyAnswer',
-  "family !== 'medical_hospital_landing_review'",
+  'v45-source-guided-partial-coverage',
+  'applyCoverageNoticeToAnswer',
+  'shouldUseSourceGuidedAnswerWithPartialCoverage',
+  'hasSourceGuidedProductOrPolicyIntent',
+  'const coveredRequestedVendors = diagnostics.coveredVendors.filter',
+  'partialCoverageSourceGuided',
   '오디언스 선택 도구로 특정 그룹을 부당하게 포함하거나 제외',
   'COMPASS_DISABLE_FAST_KAKAO_SPECIFIC_PRODUCT_ANSWERS',
   'COMPASS_DISABLE_FAST_KAKAO_STRUCTURED_PRODUCT_ANSWERS',
@@ -817,7 +821,7 @@ if (!/sourceIdentityLooksLikeGenericLegalOrAccountDoc[\s\S]*청구\|결제\|지�
   fail('answer source routing must demote payment/account support documents such as 지불 for product-structure answers');
 }
 
-if (!/COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v44-medical-policy-coverage-gate'[\s\S]*`compass-answer:\$\{COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION\}:\$\{message\}`/.test(answerHandler)) {
+if (!/COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v45-source-guided-partial-coverage'[\s\S]*`compass-answer:\$\{COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION\}:\$\{message\}`/.test(answerHandler)) {
   fail('answer response cache key must be versioned so stale durable cached answers are bypassed after source-quality fixes');
 }
 
@@ -1650,7 +1654,7 @@ if (!/const fastStructuredSpecificProductAnswer = buildFastStructuredSpecificPro
   fail('structured specific product fast answer must run before grounded LLM synthesis and expose zero answer-generation diagnostics');
 }
 
-if (!/function buildFastPolicySourceGuidedAnswer\([\s\S]*COMPASS_DISABLE_FAST_POLICY_SOURCE_GUIDED_ANSWERS[\s\S]*if \(isBroadProductStructureLlmIntent\) return null;[\s\S]*detectFastPolicySourceGuidedAnswerFamily\(message, intent\)[\s\S]*intent\.isComparative && family !== 'medical_hospital_landing_review'[\s\S]*getFallbackSourceText\(source\)[\s\S]*if \(!pattern\.test\(sourceText\)\) return false;[\s\S]*sourceHasBlockingExtractionNoise\(source\)[\s\S]*buildFastPolicyAnswerText\(family, candidateSources, intent\)/.test(answerHandler)) {
+if (!/function buildFastPolicySourceGuidedAnswer\([\s\S]*COMPASS_DISABLE_FAST_POLICY_SOURCE_GUIDED_ANSWERS[\s\S]*if \(isBroadProductStructureLlmIntent\) return null;[\s\S]*detectFastPolicySourceGuidedAnswerFamily\(message, intent\)[\s\S]*const pattern = getFastPolicySourcePattern\(family\)[\s\S]*getFallbackSourceText\(source\)[\s\S]*if \(!pattern\.test\(sourceText\)\) return false;[\s\S]*sourceHasBlockingExtractionNoise\(source\)[\s\S]*buildFastPolicyAnswerText\(family, candidateSources, intent\)/.test(answerHandler)) {
   fail('fast policy source-guided answers must stay narrowly gated and require matching verified source evidence');
 }
 

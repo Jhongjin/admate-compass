@@ -115,7 +115,7 @@ const COMPASS_ANSWER_RESPONSE_CACHE_TTL_MS = Math.min(
   900000,
 );
 const COMPASS_ANSWER_RESPONSE_CACHE_MAX_ENTRIES = 64;
-const COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v44-medical-policy-coverage-gate';
+const COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v45-source-guided-partial-coverage';
 const COMPASS_CONVERSATION_HISTORY_MAX_ITEMS = 25;
 const compassAnswerResponseCache = new Map<string, CompassAnswerResponseCacheEntry>();
 const compassAnswerRuntimeMetrics = {
@@ -682,6 +682,16 @@ function buildCoverageLimitedAnswer(diagnostics: ReturnType<typeof buildSourceDi
   ].join('\n');
 }
 
+function applyCoverageNoticeToAnswer(answer: string, diagnostics: ReturnType<typeof buildSourceDiagnostics>) {
+  const notice = buildCoverageNotice(diagnostics);
+  const normalizedAnswer = answer.trim();
+  if (!notice) return normalizedAnswer;
+  if (!normalizedAnswer) return notice;
+  if (normalizedAnswer.includes(notice)) return normalizedAnswer;
+
+  return `${notice}\n\n${normalizedAnswer}`;
+}
+
 function buildReviewPipeline({
   status,
   sourceCount,
@@ -1029,6 +1039,30 @@ function isPolicyJudgmentAnswerIntent(intent: QueryIntent): boolean {
   return intent.keywords.some(keyword => (
     ['주의', '제한', '금지', '반려', '심사', '검수', '정책', '운영정책', '등록기준', '광고등록기준'].includes(keyword)
   ));
+}
+
+function hasSourceGuidedProductOrPolicyIntent(message: string, intent: QueryIntent): boolean {
+  if (detectFastPolicySourceGuidedAnswerFamily(message, intent)) return true;
+  if (isPolicyJudgmentAnswerIntent(intent)) return true;
+  if (intent.topics.includes('product_structure')) return true;
+  if (intent.isProductStructureOverview || intent.isSpecificProductGuidance) return true;
+  if (hasNamedSpecificProductQuestion(message)) return true;
+
+  return false;
+}
+
+function shouldUseSourceGuidedAnswerWithPartialCoverage(
+  message: string,
+  intent: QueryIntent,
+  diagnostics: ReturnType<typeof buildSourceDiagnostics>,
+): boolean {
+  if (intent.isOutOfScope || intent.unavailablePolicyTarget) return false;
+  if (diagnostics.missingVendorSlots.length === 0) return false;
+
+  const coveredRequestedVendors = diagnostics.coveredVendors.filter((vendor) => intent.vendors.includes(vendor));
+  if (coveredRequestedVendors.length === 0) return false;
+
+  return hasSourceGuidedProductOrPolicyIntent(message, intent);
 }
 
 function normalizeProductIntentText(message: string): string {
@@ -7426,7 +7460,6 @@ function buildFastPolicySourceGuidedAnswer(
 
   const family = detectFastPolicySourceGuidedAnswerFamily(message, intent);
   if (!family) return null;
-  if (intent.isComparative && family !== 'medical_hospital_landing_review') return null;
 
   const pattern = getFastPolicySourcePattern(family);
   const requiredVendor = family === 'kakao_service_protection' || family === 'kakao_restricted_industry'
@@ -11062,13 +11095,13 @@ export async function buildCompassAnswerResponse(
       };
     }
 
-    const shouldDeferMedicalHospitalLandingPolicyAnswer =
-      detectFastPolicySourceGuidedAnswerFamily(message, ragIntent) === 'medical_hospital_landing_review';
+    const shouldUseSourceGuidedPartialCoverageAnswer =
+      shouldUseSourceGuidedAnswerWithPartialCoverage(message, ragIntent, sourceDiagnostics);
 
     if (
       ragIntent.requiresVendorCoverage
       && sourceDiagnostics.missingVendorSlots.length > 0
-      && !shouldDeferMedicalHospitalLandingPolicyAnswer
+      && !shouldUseSourceGuidedPartialCoverageAnswer
     ) {
       console.warn('Compass answer generation skipped because requested vendor coverage is incomplete', {
         requestedVendors: sourceDiagnostics.requestedVendors,
@@ -11106,7 +11139,7 @@ export async function buildCompassAnswerResponse(
     if (
       ragIntent.isComparative
       && ragIntent.vendors.length >= 2
-      && !shouldDeferMedicalHospitalLandingPolicyAnswer
+      && !shouldUseSourceGuidedPartialCoverageAnswer
     ) {
       const groundedComparisonAnswer = buildGroundedComparisonAnswer(ragIntent, sources);
 
@@ -11194,7 +11227,7 @@ export async function buildCompassAnswerResponse(
       isBroadProductStructureLlmIntent,
     );
 
-    if (specificProductScope.shouldLimit) {
+    if (specificProductScope.shouldLimit && !(shouldUseSourceGuidedPartialCoverageAnswer && isPolicyJudgmentAnswerIntent(ragIntent))) {
       console.warn('Compass answer generation limited by strict product answer scope', {
         strictProductTerms: ragIntent.strictProductTerms,
         mode: specificProductScope.mode,
@@ -11541,12 +11574,16 @@ export async function buildCompassAnswerResponse(
     );
     if (fastPolicySourceGuidedAnswer) {
       const showContactOption = Boolean(fastPolicySourceGuidedAnswer.showContactOption);
+      const fastPolicySourceGuidedAnswerContent = applyCoverageNoticeToAnswer(
+        fastPolicySourceGuidedAnswer.answer,
+        sourceDiagnostics,
+      );
       emitPhase?.({ phase: 'answer-ready', message: '검증된 정책 근거를 기준으로 답변을 정리했습니다.' });
       return {
         body: {
           response: {
-            message: fastPolicySourceGuidedAnswer.answer,
-            content: fastPolicySourceGuidedAnswer.answer,
+            message: fastPolicySourceGuidedAnswerContent,
+            content: fastPolicySourceGuidedAnswerContent,
             sources: fastPolicySourceGuidedAnswer.sources,
             noDataFound: false,
             schema,
@@ -11559,6 +11596,7 @@ export async function buildCompassAnswerResponse(
               answerGenerationDurationMs: 0,
               policyAnswerFamily: fastPolicySourceGuidedAnswer.policyAnswerFamily,
               fastAnswerFallback: fastPolicySourceGuidedAnswer.fastAnswerFallback,
+              partialCoverageSourceGuided: shouldUseSourceGuidedPartialCoverageAnswer,
             },
             reviewPipeline: buildReviewPipeline({
               status: fastPolicySourceGuidedAnswer.reviewStatus || 'completed',
@@ -12015,6 +12053,7 @@ export async function buildCompassAnswerResponse(
                 fallbackReason: 'generated_no_data_repaired',
                 answerRepairReason: answerRepair?.reason,
                 broadAnswerRepairReason: broadAnswerRepair?.reason,
+                partialCoverageSourceGuided: shouldUseSourceGuidedPartialCoverageAnswer,
               },
               reviewPipeline: buildReviewPipeline({
                 status: 'limited',
@@ -12051,6 +12090,7 @@ export async function buildCompassAnswerResponse(
             answerGenerationDurationMs,
             answerRepairReason: answerRepair?.reason,
             broadAnswerRepairReason: broadAnswerRepair?.reason,
+            partialCoverageSourceGuided: shouldUseSourceGuidedPartialCoverageAnswer,
           },
             reviewPipeline: answerRepair
             ? buildReviewPipeline({
