@@ -24,6 +24,7 @@ const officialChunkSnapshots = read('src/lib/services/compassOfficialChunkSnapsh
 const answerService = read('src/lib/services/CompassAnswerLlmService.ts');
 const answerHandler = read('src/lib/server/compassAnswerHandler.ts');
 const chatbotRoute = read('src/app/api/chatbot/route.ts');
+const relatedQuestionsRoute = read('src/app/api/related-questions/route.ts');
 const ragFixtureEvaluator = read('scripts/evaluate-rag-fixtures.mjs');
 
 for (const snippet of [
@@ -806,8 +807,58 @@ if (!/sourceIdentityLooksLikeGenericLegalOrAccountDoc[\s\S]*청구\|결제\|지�
   fail('answer source routing must demote payment/account support documents such as 지불 for product-structure answers');
 }
 
-if (!/COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v41-meta-google-product-asset-preflight'[\s\S]*`compass-answer:\$\{COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION\}:\$\{message\}`/.test(answerHandler)) {
+if (!/COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v42-coverage-aware-related-questions'[\s\S]*`compass-answer:\$\{COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION\}:\$\{message\}`/.test(answerHandler)) {
   fail('answer response cache key must be versioned so stale durable cached answers are bypassed after source-quality fixes');
+}
+
+for (const snippet of [
+  'buildCoverageAwareRelatedQuestions',
+  'RELATED_QUESTION_LIMIT = 4',
+  'DEFAULT_PRODUCT_GUIDE_QUESTIONS',
+  'NAVER_KAKAO_QUESTIONS',
+  'META_GOOGLE_QUESTIONS',
+  'COMMERCE_QUESTIONS',
+  'OPERATIONS_QUESTIONS',
+  'LEAD_QUESTIONS',
+  'const isOperationsQuestion',
+  'if (isOperationsQuestion)',
+  'REGULATED_SCOPE_HINTS',
+  'isUnsafeDefaultRecommendation',
+  'ADVoost 쇼핑',
+  '치지직 전용 광고',
+  '커뮤니케이션 애드',
+  '비즈보드, 디스플레이, 동영상, 상품 카탈로그, 메시지, 키워드광고, 브랜드검색, 톡채널검색, 보장형/CPT',
+  'Google 쇼핑, Meta 카탈로그, 네이버 쇼핑검색광고, 카카오 상품 카탈로그',
+  'Instant Form/리드 양식',
+]) {
+  if (!relatedQuestionsRoute.includes(snippet)) {
+    fail(`related question route missing coverage-aware product recommendation snippet: ${snippet}`);
+  }
+}
+
+for (const rejected of [
+  '.from(\'document_chunks\')',
+  '.from("document_chunks")',
+  'questionPatterns',
+  '(.*?)에 대해',
+  'calculateSimilarity',
+  'content.ilike',
+]) {
+  if (relatedQuestionsRoute.includes(rejected)) {
+    fail(`related question route must not fall back to naive chunk/question extraction: ${rejected}`);
+  }
+}
+
+const defaultRelatedQuestionBlock = relatedQuestionsRoute.match(/const DEFAULT_PRODUCT_GUIDE_QUESTIONS = \[([\s\S]*?)\];/)?.[1] || '';
+if (!defaultRelatedQuestionBlock.includes('Meta 광고 상품 유형')
+  || !defaultRelatedQuestionBlock.includes('Google Ads 광고 상품 유형')
+  || !defaultRelatedQuestionBlock.includes('네이버 광고 상품 유형')
+  || !defaultRelatedQuestionBlock.includes('카카오 광고 상품을 비즈보드')) {
+  fail('default related product questions must cover all four vendors with product-specific prompts');
+}
+
+if (/병원\s*광고를\s*Meta,\s*Google Ads,\s*네이버,\s*카카오/.test(relatedQuestionsRoute)) {
+  fail('default related questions must not recommend broad regulated multi-vendor hospital comparisons');
 }
 
 const kakaoProductSelectionMatrixFastIntentBlock = extractBlock(
