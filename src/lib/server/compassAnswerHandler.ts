@@ -115,7 +115,7 @@ const COMPASS_ANSWER_RESPONSE_CACHE_TTL_MS = Math.min(
   900000,
 );
 const COMPASS_ANSWER_RESPONSE_CACHE_MAX_ENTRIES = 64;
-const COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v46-multi-vendor-policy-review';
+const COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v47-policy-context-router-priority';
 const COMPASS_CONVERSATION_HISTORY_MAX_ITEMS = 25;
 const compassAnswerResponseCache = new Map<string, CompassAnswerResponseCacheEntry>();
 const compassAnswerRuntimeMetrics = {
@@ -1262,6 +1262,32 @@ function isPolicyReviewCheckQuestion(message: string): boolean {
     && /광고\s*상품|광고상품|상품\s*(유형|종류|가이드|별)|상품별|product|캠페인\s*유형|종류|광고\s*(유형|종류)/.test(normalized);
 
   return hasPolicyOrReviewRisk && asksForReviewAction && !asksForProductAssetGuide;
+}
+
+function isPolicyOrRegulatedDomainQuestion(message: string): boolean {
+  const normalized = normalizeProductIntentText(message);
+  const hasRegulatedDomain = /병원|의료|의료법|의원|치과|한의원|성형|피부과|시술|진료|환자/.test(normalized);
+  const hasPolicyOrReviewRisk = /정책|심사|검수|검토|승인|반려|위반|제한|금지|허위|과장|오인|기만|불일치|랜딩\s*페이지|랜딩|등록\s*기준|광고\s*등록\s*기준|전후\s*사진|전후사진/.test(normalized);
+  const asksForReviewAction = /점검|체크|체크리스트|주의|유의|기준|판단|확인|순서|리스크|문제|해야\s*하|알려|정리|비교/.test(normalized);
+  const asksForProductAssetGuide = /상품\s*별\s*(소재\s*)?(제작\s*)?가이드|상품별\s*(소재\s*)?(제작\s*)?가이드|소재\s*(제작\s*)?가이드|제작\s*가이드|광고\s*상품\s*소재|상품\s*소재|소재\s*규격|소재\s*사양|creative\s*(guide|spec)|asset\s*(guide|spec)/.test(normalized)
+    && /광고\s*상품|광고상품|상품\s*(유형|종류|가이드|별)|상품별|product|캠페인\s*유형|종류|광고\s*(유형|종류)/.test(normalized);
+
+  return (hasRegulatedDomain || hasPolicyOrReviewRisk) && asksForReviewAction && !asksForProductAssetGuide;
+}
+
+function isBroadReviewTroubleshootingQuestion(message: string): boolean {
+  const normalized = normalizeProductIntentText(message);
+  const hasReviewOutcome = /반려|비승인|승인|심사|검수|검토|등록\s*기준|광고\s*등록\s*기준/.test(normalized);
+  const asksTroubleshooting = /점검|체크|체크리스트|순서|원인|진단|무엇부터|어떤\s*순서|확인/.test(normalized);
+  const axisCount = [
+    /소재|문안|이미지|동영상|creative|asset/.test(normalized),
+    /랜딩|url|페이지|목적지|destination/.test(normalized),
+    /업종|제한|금지|정책|심사/.test(normalized),
+    /가격|혜택|할인|쿠폰|이벤트/.test(normalized),
+    /계정|비즈니스|사업자|인증|설정/.test(normalized),
+  ].filter(Boolean).length;
+
+  return hasReviewOutcome && asksTroubleshooting && axisCount >= 2;
 }
 
 function isAssetGuideProductQuestion(message: string): boolean {
@@ -6495,16 +6521,25 @@ function buildOperationalScenarioDeterministicAnswer(
 ): DeterministicProductAnswer | null {
   const normalized = normalizeProductIntentText(message);
   const shouldDeferToPolicyReviewAnswer = isPolicyReviewCheckQuestion(message);
+  const shouldDeferToPolicyOrRegulatedDomainAnswer = isPolicyOrRegulatedDomainQuestion(message);
 
   if (isPerformanceDropTroubleshootingQuestion(message)) {
     return buildPerformanceDropTroubleshootingAnswer(sources);
   }
 
-  if (isCommerceProductFeedQuestion(message, intent) && intent.vendors.length >= 2) {
+  if (
+    !shouldDeferToPolicyOrRegulatedDomainAnswer
+    && isCommerceProductFeedQuestion(message, intent)
+    && intent.vendors.length >= 2
+  ) {
     return buildEcommerceProductFeedComparisonAnswer(sources);
   }
 
-  if (isAcquisitionRetargetingBudgetQuestion(message, intent) && intent.vendors.length >= 2) {
+  if (
+    !shouldDeferToPolicyOrRegulatedDomainAnswer
+    && isAcquisitionRetargetingBudgetQuestion(message, intent)
+    && intent.vendors.length >= 2
+  ) {
     return buildCrossVendorBudgetFrameworkAnswer(sources);
   }
 
@@ -6540,6 +6575,7 @@ function buildOperationalScenarioDeterministicAnswer(
     intent.vendors.length === 1
     && intent.vendors[0] === 'KAKAO'
     && !shouldDeferToPolicyReviewAnswer
+    && !shouldDeferToPolicyOrRegulatedDomainAnswer
     && /톡채널|카카오모먼트|비즈보드|메시지|업종별|선택|언제|기준|상품\s*(종류|유형|가이드|별)|상품별|제작\s*가이드|소재/.test(normalized)
   ) {
     return buildKakaoProductSelectionMatrixAnswer(sources);
@@ -6549,6 +6585,7 @@ function buildOperationalScenarioDeterministicAnswer(
     intent.vendors.length === 1
     && intent.vendors[0] === 'NAVER'
     && !shouldDeferToPolicyReviewAnswer
+    && !shouldDeferToPolicyOrRegulatedDomainAnswer
     && /파워링크|쇼핑검색|브랜드검색|검색광고|과금|랜딩|전환\s*측정|캠페인\s*목적|소재\s*구성|상품\s*(종류|유형|가이드|별)|상품별|제작\s*가이드|소재/.test(normalized)
   ) {
     return buildNaverSearchAdProductComparisonAnswer(sources);
@@ -6558,6 +6595,7 @@ function buildOperationalScenarioDeterministicAnswer(
     intent.vendors.includes('NAVER')
     && intent.vendors.includes('KAKAO')
     && !shouldDeferToPolicyReviewAnswer
+    && !shouldDeferToPolicyOrRegulatedDomainAnswer
     && /상품\s*(종류|유형|가이드|별)|상품별|광고\s*상품|소재|제작\s*가이드/.test(normalized)
   ) {
     return buildNaverKakaoAssetGuideComparisonAnswer(sources);
@@ -7122,6 +7160,7 @@ function detectFastPolicySourceGuidedAnswerFamily(
     return 'kakao_restricted_industry';
   }
 
+  if (isBroadReviewTroubleshootingQuestion(message)) return 'review_standards';
   if (/오인|기만|속이|혼란|허위|과장|오해/.test(queryText)) return 'user_deception';
   if (/가격|할인|할인율|혜택|쿠폰|정가|판매가/.test(queryText)) return 'price_discount';
   if (/이벤트|경품|참여|프로모션|추첨/.test(queryText)) return 'event_material';
@@ -7259,6 +7298,63 @@ function buildMultiVendorUserDeceptionPolicyAnswer(
     '- 다음으로 랜딩에서 같은 조건이 즉시 확인되는지 봅니다. 소재에는 “무료/보장/최고/한정”이라고 쓰고 랜딩에서 조건이 숨겨져 있으면 위험합니다.',
     '- 업종 제한, 필수 고지, 증빙 자료, 권리 침해 가능성을 매체별 원문 기준으로 따로 확인합니다.',
     '- 출처가 부족한 매체는 다른 매체 기준을 섞어 추정하지 말고, 실제 문안·랜딩 URL·업종을 기준으로 원문 정책을 추가 대조합니다.',
+    '',
+    `근거: ${citedLabels || sources.map((_, index) => labelForIndex(index)).join(', ')}`,
+  ].join('\n');
+}
+
+function buildMultiVendorReviewStandardsPolicyAnswer(
+  sources: ReturnType<typeof buildVerifiedSources>,
+  intent: QueryIntent,
+) {
+  const requestedVendors = intent.vendors.length > 0
+    ? intent.vendors
+    : (['META', 'GOOGLE', 'NAVER', 'KAKAO'] as VendorIntent[]);
+  const uniqueRequestedVendors = Array.from(new Set(requestedVendors));
+  if (uniqueRequestedVendors.length < 2) return null;
+
+  const sourceIndexForVendor = (vendor: VendorIntent) => sources.findIndex(source => sourceMatchesVendor(source, vendor));
+  const labelForIndex = (index: number) => `[S${index + 1}]`;
+  const cited = new Set<number>();
+  const rowForVendor = (vendor: VendorIntent) => {
+    const sourceIndex = sourceIndexForVendor(vendor);
+    const label = sourceIndex >= 0 ? labelForIndex(sourceIndex) : '';
+    if (sourceIndex >= 0) cited.add(sourceIndex);
+    const missingText = '현재 검색 결과에서 직접 검증 출처가 부족해 세부 기준은 단정하지 않습니다.';
+    const withLabel = (text: string) => (label ? `${text} ${label}` : missingText);
+
+    switch (vendor) {
+      case 'META':
+        return `| Meta | ${withLabel('광고 표준, 광고 검토, 금지·제한 콘텐츠, 연결 URL과 랜딩 맥락을 먼저 봅니다.')} | 소재 문구와 랜딩의 가격·혜택·상담 조건이 같은지 확인합니다. | 타겟팅, 전환 위치, 픽셀/CAPI 이벤트 문제와 정책 반려를 분리해 봅니다. |`;
+      case 'GOOGLE':
+        return `| Google Ads | ${withLabel('정책 위반, 제한 콘텐츠, 광고 소재와 목적지의 정책 준수 여부를 함께 봅니다.')} | 최종 URL, 목적지, 고지, 가격·혜택 조건이 광고문과 충돌하지 않는지 확인합니다. | 정책 제한·목적지 불일치 확인 후 전환 목표, Primary action, 입찰 설정을 점검합니다. |`;
+      case 'NAVER':
+        return `| 네이버 | ${withLabel('광고 등록 기준에서 법령 위반, 허위·과장, 이용자 오인, 권리 침해 가능성을 봅니다.')} | 검색어, 광고문안, 표시 URL, 랜딩의 상품·서비스 정보가 같은 의도를 말하는지 확인합니다. | 검색광고, 쇼핑검색, 플레이스, 디스플레이처럼 상품별 등록 기준을 나누어 봅니다. |`;
+      case 'KAKAO':
+        return `| 카카오 | ${withLabel('카카오 심사 기준에서 업종 제한, 허위·과장, 카카오 서비스 오인, 소재·랜딩 불일치를 확인합니다.')} | 가격·혜택·이벤트·상담 조건이 소재, 랜딩, 채널, 메시지에서 같은 조건인지 봅니다. | 비즈보드, 디스플레이, 메시지, 검색형은 지면과 수신 맥락이 달라 따로 점검합니다. |`;
+    }
+  };
+
+  const citedLabels = Array.from(cited)
+    .sort((a, b) => a - b)
+    .map(labelForIndex)
+    .join(', ');
+
+  return [
+    '검증된 정책/가이드 근거 기준으로만 보면, 광고 반려나 심사 이슈는 **정책·업종 제한 → 랜딩/목적지 → 소재 표현 → 계정·측정 설정** 순서로 좁히는 편이 안전합니다.',
+    '',
+    '**1. 매체별 점검 기준**',
+    '',
+    '| 매체 | 심사에서 먼저 볼 것 | 랜딩/목적지 체크 | 운영 점검 |',
+    '|---|---|---|---|',
+    ...uniqueRequestedVendors.map(rowForVendor),
+    '',
+    '**2. 공통 점검 순서**',
+    '',
+    '- 먼저 업종 자체가 제한되거나 추가 서류·고지·인증이 필요한지 확인합니다.',
+    '- 다음으로 광고 문안, 이미지·동영상, 가격·혜택·이벤트 조건이 랜딩에서 같은 조건으로 확인되는지 봅니다.',
+    '- 소재가 문제인지, 랜딩/목적지 문제인지, 계정·상품 데이터·전환 설정 문제인지 분리합니다.',
+    '- 출처가 부족한 매체는 다른 매체 기준을 섞어 추정하지 말고 실제 문안·랜딩 URL·업종을 기준으로 원문 정책을 추가 대조합니다.',
     '',
     `근거: ${citedLabels || sources.map((_, index) => labelForIndex(index)).join(', ')}`,
   ].join('\n');
@@ -7417,6 +7513,10 @@ function buildFastPolicyAnswerText(
         `근거: ${citations}`,
       ].join('\n');
     case 'review_standards':
+      {
+        const multiVendorAnswer = buildMultiVendorReviewStandardsPolicyAnswer(sources, intent);
+        if (multiVendorAnswer) return multiVendorAnswer;
+      }
       if (intent.vendors.length === 1 && intent.vendors[0] === 'NAVER') {
         return [
           '검증된 네이버 광고 등록 기준 근거 기준으로만 보면, 광고 심사는 등록 가능 업종·표현 제한·법령 준수·이용자 오인 가능성을 함께 검토해야 합니다.',
