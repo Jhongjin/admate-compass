@@ -115,7 +115,7 @@ const COMPASS_ANSWER_RESPONSE_CACHE_TTL_MS = Math.min(
   900000,
 );
 const COMPASS_ANSWER_RESPONSE_CACHE_MAX_ENTRIES = 64;
-const COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v48-answer-style-polish';
+const COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v49-specific-product-routing';
 const COMPASS_CONVERSATION_HISTORY_MAX_ITEMS = 25;
 const compassAnswerResponseCache = new Map<string, CompassAnswerResponseCacheEntry>();
 const compassAnswerRuntimeMetrics = {
@@ -1140,8 +1140,9 @@ function buildContextualCompassProductQuestion(
     ? conversationHistory.slice(-COMPASS_CONVERSATION_HISTORY_MAX_ITEMS)
     : [];
   const currentVendors = detectContextualVendorMentions(message);
+  const hasCurrentNamedProduct = hasNamedSpecificProductQuestion(message);
   const shouldUseHistory = isContextualProductGuideFollowup(message);
-  if (!shouldUseHistory || currentVendors.length > 0 || history.length === 0) {
+  if (!shouldUseHistory || currentVendors.length > 0 || hasCurrentNamedProduct || history.length === 0) {
     return {
       message,
       contextualized: false,
@@ -5867,6 +5868,11 @@ function isKakaoProductSelectionMatrixFastIntent(message: string, intent: QueryI
     /보장형|cpt|guarantee/.test(normalized),
   ];
   const signalCount = productSignals.filter(Boolean).length;
+  const singleNamedProductQuestion = hasNamedSpecificProductQuestion(message)
+    && !isExplicitWholeProductCatalogQuestion(message)
+    && signalCount <= 1
+    && !/비교|차이|구분|나눠|나누|목록|종류|유형|전체|상품별|기준으로\s*(비교|정리|구분|설명)|비즈보드.*디스플레이|디스플레이.*비즈보드/.test(normalized);
+  if (singleNamedProductQuestion) return false;
 
   return signalCount >= 2
     || (

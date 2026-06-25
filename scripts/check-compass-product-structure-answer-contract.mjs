@@ -347,7 +347,7 @@ for (const snippet of [
   '랜딩페이지 표시 정보',
   '전후사진',
   '상담 신청 폼',
-  'v47-policy-context-router-priority',
+  'v49-specific-product-routing',
   'applyCoverageNoticeToAnswer',
   'shouldUseSourceGuidedAnswerWithPartialCoverage',
   'hasSourceGuidedProductOrPolicyIntent',
@@ -845,7 +845,7 @@ if (!/sourceIdentityLooksLikeGenericLegalOrAccountDoc[\s\S]*청구\|결제\|지�
   fail('answer source routing must demote payment/account support documents such as 지불 for product-structure answers');
 }
 
-if (!/COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v47-policy-context-router-priority'[\s\S]*`compass-answer:\$\{COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION\}:\$\{message\}`/.test(answerHandler)) {
+if (!/COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v49-specific-product-routing'[\s\S]*`compass-answer:\$\{COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION\}:\$\{message\}`/.test(answerHandler)) {
   fail('answer response cache key must be versioned so stale durable cached answers are bypassed after source-quality fixes');
 }
 
@@ -1644,6 +1644,14 @@ if (!/usesSpecificProductSupplementPath\s*\?\s*getSpecificProductSupplementLimit
 
 if (!/function buildFastKakaoSpecificProductAnswer\([\s\S]*COMPASS_DISABLE_FAST_KAKAO_SPECIFIC_PRODUCT_ANSWERS[\s\S]*intent\.vendors\.length !== 1 \|\| intent\.vendors\[0\] !== 'KAKAO' \|\| intent\.isComparative[\s\S]*family !== 'kakao_bizboard' && family !== 'kakao_creative'[\s\S]*buildDeterministicSpecificProductAnswer[\s\S]*buildStructuredSpecificProductScopeLimitedAnswer/.test(answerHandler)) {
   fail('Kakao specific product fast answer must stay gated to single-vendor Kakao bizboard/creative questions with source-guided evidence');
+}
+
+if (!/function buildContextualCompassProductQuestion\([\s\S]*hasCurrentNamedProduct[\s\S]*currentVendors\.length > 0 \|\| hasCurrentNamedProduct/.test(answerHandler)) {
+  fail('contextual product follow-up rewriting must not broaden named single-product questions');
+}
+
+if (!/function isKakaoProductSelectionMatrixFastIntent\([\s\S]*singleNamedProductQuestion[\s\S]*signalCount <= 1[\s\S]*if \(singleNamedProductQuestion\) return false;[\s\S]*return signalCount >= 2/.test(answerHandler)) {
+  fail('Kakao product matrix fast path must not capture a single named Bizboard-style product question');
 }
 
 if (!/const fastKakaoSpecificProductAnswer = buildFastKakaoSpecificProductAnswer\([\s\S]*answerGenerationDurationMs: 0,[\s\S]*fastAnswerFallback: fastKakaoSpecificProductAnswer\.fastAnswerFallback/.test(answerHandler)) {
