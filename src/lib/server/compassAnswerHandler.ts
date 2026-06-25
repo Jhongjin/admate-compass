@@ -115,7 +115,7 @@ const COMPASS_ANSWER_RESPONSE_CACHE_TTL_MS = Math.min(
   900000,
 );
 const COMPASS_ANSWER_RESPONSE_CACHE_MAX_ENTRIES = 64;
-const COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v47-policy-context-router-priority';
+const COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v48-answer-style-polish';
 const COMPASS_CONVERSATION_HISTORY_MAX_ITEMS = 25;
 const compassAnswerResponseCache = new Map<string, CompassAnswerResponseCacheEntry>();
 const compassAnswerRuntimeMetrics = {
