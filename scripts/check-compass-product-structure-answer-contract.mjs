@@ -347,7 +347,7 @@ for (const snippet of [
   '랜딩페이지 표시 정보',
   '전후사진',
   '상담 신청 폼',
-  'v49-specific-product-routing',
+  'v50-single-product-matrix-bypass',
   'applyCoverageNoticeToAnswer',
   'shouldUseSourceGuidedAnswerWithPartialCoverage',
   'hasSourceGuidedProductOrPolicyIntent',
@@ -845,7 +845,7 @@ if (!/sourceIdentityLooksLikeGenericLegalOrAccountDoc[\s\S]*청구\|결제\|지�
   fail('answer source routing must demote payment/account support documents such as 지불 for product-structure answers');
 }
 
-if (!/COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v49-specific-product-routing'[\s\S]*`compass-answer:\$\{COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION\}:\$\{message\}`/.test(answerHandler)) {
+if (!/COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v50-single-product-matrix-bypass'[\s\S]*`compass-answer:\$\{COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION\}:\$\{message\}`/.test(answerHandler)) {
   fail('answer response cache key must be versioned so stale durable cached answers are bypassed after source-quality fixes');
 }
 
@@ -1650,8 +1650,15 @@ if (!/function buildContextualCompassProductQuestion\([\s\S]*hasCurrentNamedProd
   fail('contextual product follow-up rewriting must not broaden named single-product questions');
 }
 
-if (!/function isKakaoProductSelectionMatrixFastIntent\([\s\S]*singleNamedProductQuestion[\s\S]*signalCount <= 1[\s\S]*if \(singleNamedProductQuestion\) return false;[\s\S]*return signalCount >= 2/.test(answerHandler)) {
+if (!/function isSingleNamedKakaoProductQuestion\([\s\S]*productSignals[\s\S]*productSignals\.filter\(Boolean\)\.length <= 1[\s\S]*!isMultiProductMatrixQuestionText\(normalized\)/.test(answerHandler)
+  || !/function isKakaoProductSelectionMatrixFastIntent\([\s\S]*if \(isSingleNamedKakaoProductQuestion\(message\)\) return false;[\s\S]*return signalCount >= 2/.test(answerHandler)
+  || !/function buildOperationalScenarioDeterministicAnswer\([\s\S]*!isSingleNamedKakaoProductQuestion\(message\)[\s\S]*buildKakaoProductSelectionMatrixAnswer\(sources\)/.test(answerHandler)) {
   fail('Kakao product matrix fast path must not capture a single named Bizboard-style product question');
+}
+
+if (!/function isSingleNamedNaverProductQuestion\([\s\S]*productSignals[\s\S]*productSignals\.filter\(Boolean\)\.length <= 1[\s\S]*파워링크\.\*쇼핑검색/.test(answerHandler)
+  || !/function buildOperationalScenarioDeterministicAnswer\([\s\S]*!isSingleNamedNaverProductQuestion\(message\)[\s\S]*buildNaverSearchAdProductComparisonAnswer\(sources\)/.test(answerHandler)) {
+  fail('Naver product matrix path must not capture a single named Shopping Search-style product question');
 }
 
 if (!/const fastKakaoSpecificProductAnswer = buildFastKakaoSpecificProductAnswer\([\s\S]*answerGenerationDurationMs: 0,[\s\S]*fastAnswerFallback: fastKakaoSpecificProductAnswer\.fastAnswerFallback/.test(answerHandler)) {

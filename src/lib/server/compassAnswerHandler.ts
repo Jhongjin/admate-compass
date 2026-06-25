@@ -115,7 +115,7 @@ const COMPASS_ANSWER_RESPONSE_CACHE_TTL_MS = Math.min(
   900000,
 );
 const COMPASS_ANSWER_RESPONSE_CACHE_MAX_ENTRIES = 64;
-const COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v49-specific-product-routing';
+const COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v50-single-product-matrix-bypass';
 const COMPASS_CONVERSATION_HISTORY_MAX_ITEMS = 25;
 const compassAnswerResponseCache = new Map<string, CompassAnswerResponseCacheEntry>();
 const compassAnswerRuntimeMetrics = {
@@ -5837,6 +5837,48 @@ function buildKakaoProductSelectionMatrixAnswer(
   );
 }
 
+function isMultiProductMatrixQuestionText(normalized: string): boolean {
+  return /비교|차이|구분|나눠|나누|목록|종류|유형|전체|상품별|기준으로\s*(비교|정리|구분|설명)|비즈보드.*디스플레이|디스플레이.*비즈보드/.test(normalized);
+}
+
+function isSingleNamedKakaoProductQuestion(message: string): boolean {
+  const normalized = normalizeProductIntentText(message);
+  const productSignals = [
+    /비즈보드|카카오\s*비즈보드|카카오비즈보드|톡보드/.test(normalized),
+    /디스플레이|카카오모먼트|모먼트/.test(normalized),
+    /동영상|비디오|video/.test(normalized),
+    /상품\s*카탈로그|상품카탈로그|catalog|카탈로그/.test(normalized),
+    /메시지|친구톡|알림톡|채널\s*메시지/.test(normalized),
+    /키워드\s*광고|키워드광고/.test(normalized),
+    /브랜드\s*검색|브랜드검색/.test(normalized),
+    /톡\s*채널\s*검색|톡채널검색|채널검색/.test(normalized),
+    /보장형|cpt|guarantee/.test(normalized),
+  ];
+
+  return hasNamedSpecificProductQuestion(message)
+    && !isExplicitWholeProductCatalogQuestion(message)
+    && productSignals.filter(Boolean).length <= 1
+    && !isMultiProductMatrixQuestionText(normalized);
+}
+
+function isSingleNamedNaverProductQuestion(message: string): boolean {
+  const normalized = normalizeProductIntentText(message);
+  const productSignals = [
+    /파워링크|사이트검색/.test(normalized),
+    /쇼핑검색|쇼핑\s*검색/.test(normalized),
+    /브랜드검색|브랜드\s*검색/.test(normalized),
+    /쇼핑블록|쇼핑\s*블록/.test(normalized),
+    /advoost|애드부스트|커뮤니케이션\s*애드|치지직/.test(normalized),
+    /(^|[\s/])da($|[\s/]|도|상품|광고)|디스플레이|성과형\s*디스플레이|홈피드|스마트채널|타임보드|롤링보드/.test(normalized),
+    /동영상|비디오|숏폼|아웃스트림|클립/.test(normalized),
+  ];
+
+  return hasNamedSpecificProductQuestion(message)
+    && !isExplicitWholeProductCatalogQuestion(message)
+    && productSignals.filter(Boolean).length <= 1
+    && !/비교|차이|구분|나눠|나누|목록|종류|유형|전체|상품별|기준으로\s*(비교|정리|구분|설명)|파워링크.*쇼핑검색|쇼핑검색.*브랜드검색|브랜드검색.*파워링크/.test(normalized);
+}
+
 function isKakaoProductSelectionMatrixFastIntent(message: string, intent: QueryIntent): boolean {
   const normalized = normalizeProductIntentText(message);
   const compact = normalized.replace(/\s+/g, '');
@@ -5868,11 +5910,7 @@ function isKakaoProductSelectionMatrixFastIntent(message: string, intent: QueryI
     /보장형|cpt|guarantee/.test(normalized),
   ];
   const signalCount = productSignals.filter(Boolean).length;
-  const singleNamedProductQuestion = hasNamedSpecificProductQuestion(message)
-    && !isExplicitWholeProductCatalogQuestion(message)
-    && signalCount <= 1
-    && !/비교|차이|구분|나눠|나누|목록|종류|유형|전체|상품별|기준으로\s*(비교|정리|구분|설명)|비즈보드.*디스플레이|디스플레이.*비즈보드/.test(normalized);
-  if (singleNamedProductQuestion) return false;
+  if (isSingleNamedKakaoProductQuestion(message)) return false;
 
   return signalCount >= 2
     || (
@@ -6582,6 +6620,7 @@ function buildOperationalScenarioDeterministicAnswer(
     && intent.vendors[0] === 'KAKAO'
     && !shouldDeferToPolicyReviewAnswer
     && !shouldDeferToPolicyOrRegulatedDomainAnswer
+    && !isSingleNamedKakaoProductQuestion(message)
     && /톡채널|카카오모먼트|비즈보드|메시지|업종별|선택|언제|기준|상품\s*(종류|유형|가이드|별)|상품별|제작\s*가이드|소재/.test(normalized)
   ) {
     return buildKakaoProductSelectionMatrixAnswer(sources);
@@ -6592,6 +6631,7 @@ function buildOperationalScenarioDeterministicAnswer(
     && intent.vendors[0] === 'NAVER'
     && !shouldDeferToPolicyReviewAnswer
     && !shouldDeferToPolicyOrRegulatedDomainAnswer
+    && !isSingleNamedNaverProductQuestion(message)
     && /파워링크|쇼핑검색|브랜드검색|검색광고|과금|랜딩|전환\s*측정|캠페인\s*목적|소재\s*구성|상품\s*(종류|유형|가이드|별)|상품별|제작\s*가이드|소재/.test(normalized)
   ) {
     return buildNaverSearchAdProductComparisonAnswer(sources);
