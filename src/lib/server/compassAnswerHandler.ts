@@ -118,6 +118,23 @@ const COMPASS_ANSWER_RESPONSE_CACHE_MAX_ENTRIES = 64;
 const COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v51-specific-product-policy-bypass';
 const COMPASS_CONVERSATION_HISTORY_MAX_ITEMS = 25;
 const compassAnswerResponseCache = new Map<string, CompassAnswerResponseCacheEntry>();
+
+type DeterministicGateClass = 'always' | 'policy' | 'product';
+type DeterministicAnswerScope = 'full' | 'policy_only' | 'off';
+
+function resolveDeterministicAnswerScope(): DeterministicAnswerScope {
+  const value = String(process.env.COMPASS_DETERMINISTIC_ANSWER_SCOPE || 'full').toLowerCase();
+  return value === 'policy_only' || value === 'off' ? value : 'full';
+}
+
+function isDeterministicGateEnabled(gate: DeterministicGateClass): boolean {
+  if (gate === 'always') return true;
+  const scope = resolveDeterministicAnswerScope();
+  if (scope === 'full') return true;
+  if (scope === 'off') return false;
+  return gate === 'policy';
+}
+
 const compassAnswerRuntimeMetrics = {
   startedAt: Date.now(),
   updatedAt: Date.now(),
@@ -6567,9 +6584,11 @@ function buildOperationalScenarioDeterministicAnswer(
   const shouldDeferToPolicyReviewAnswer = isPolicyReviewCheckQuestion(message);
   const shouldDeferToPolicyOrRegulatedDomainAnswer = isPolicyOrRegulatedDomainQuestion(message);
 
-  if (isPerformanceDropTroubleshootingQuestion(message)) {
+  if (isDeterministicGateEnabled('policy') && isPerformanceDropTroubleshootingQuestion(message)) {
     return buildPerformanceDropTroubleshootingAnswer(sources);
   }
+
+  if (!isDeterministicGateEnabled('product')) return null;
 
   if (
     !shouldDeferToPolicyOrRegulatedDomainAnswer
@@ -10863,7 +10882,9 @@ export async function buildCompassAnswerResponse(
       return buildAuthoritativeNoDataResponse(ragIntent, startTime, emitPhase);
     }
 
-    const preRetrievalDeterministicAnswer = buildPreRetrievalDeterministicProductAnswer(message, ragIntent);
+    const preRetrievalDeterministicAnswer = isDeterministicGateEnabled('product')
+      ? buildPreRetrievalDeterministicProductAnswer(message, ragIntent)
+      : null;
     if (preRetrievalDeterministicAnswer) {
       const schema = getCompassDbSchema();
       const answerCoveredVendors = Array.from(new Set(
@@ -11232,7 +11253,9 @@ export async function buildCompassAnswerResponse(
       verifiedSourceCount: verifiedSearchResults.length,
     });
 
-    const leadOperatingAnswer = buildLeadOperatingDeterministicAnswer(message, ragIntent, sources);
+    const leadOperatingAnswer = isDeterministicGateEnabled('product')
+      ? buildLeadOperatingDeterministicAnswer(message, ragIntent, sources)
+      : null;
     if (leadOperatingAnswer) {
       emitPhase?.({ phase: 'answer-ready', message: '리드 운영 근거를 기준으로 답변을 정리했습니다.' });
       return {
@@ -11263,7 +11286,9 @@ export async function buildCompassAnswerResponse(
       };
     }
 
-    const metaGoogleLeadComparisonAnswer = buildMetaGoogleLeadComparisonAnswer(message, ragIntent, sources);
+    const metaGoogleLeadComparisonAnswer = isDeterministicGateEnabled('product')
+      ? buildMetaGoogleLeadComparisonAnswer(message, ragIntent, sources)
+      : null;
     if (metaGoogleLeadComparisonAnswer) {
       emitPhase?.({ phase: 'answer-ready', message: 'Meta와 Google 리드 캠페인 비교 답변을 정리했습니다.' });
       return {
@@ -11288,7 +11313,7 @@ export async function buildCompassAnswerResponse(
       };
     }
 
-    const preCoverageBroadProductIntent = ragIntent.requiresVendorCoverage
+    const preCoverageBroadProductIntent = isDeterministicGateEnabled('product') && ragIntent.requiresVendorCoverage
       && sourceDiagnostics.missingVendorSlots.length > 0
       ? getBroadProductDeterministicIntent(message, ragIntent)
       : null;
@@ -11383,6 +11408,9 @@ export async function buildCompassAnswerResponse(
       ragIntent.isComparative
       && ragIntent.vendors.length >= 2
       && !shouldUseSourceGuidedPartialCoverageAnswer
+      && (ragIntent.topics.includes('false_claim')
+        ? isDeterministicGateEnabled('policy')
+        : isDeterministicGateEnabled('product'))
     ) {
       const groundedComparisonAnswer = buildGroundedComparisonAnswer(ragIntent, sources);
 
@@ -11406,7 +11434,9 @@ export async function buildCompassAnswerResponse(
       };
     }
 
-    const earlyBroadProductIntent = getBroadProductDeterministicIntent(message, ragIntent);
+    const earlyBroadProductIntent = isDeterministicGateEnabled('product')
+      ? getBroadProductDeterministicIntent(message, ragIntent)
+      : null;
     const earlyBroadProductAnswer = earlyBroadProductIntent
       ? buildDeterministicBroadProductAnswer(message, earlyBroadProductIntent, sources)
       : null;
@@ -11470,7 +11500,10 @@ export async function buildCompassAnswerResponse(
       isBroadProductStructureLlmIntent,
     );
 
-    if (specificProductScope.shouldLimit && !(shouldUseSourceGuidedPartialCoverageAnswer && isPolicyJudgmentAnswerIntent(ragIntent))) {
+    if (
+      specificProductScope.shouldLimit
+      && !(shouldUseSourceGuidedPartialCoverageAnswer && isPolicyJudgmentAnswerIntent(ragIntent))
+    ) {
       console.warn('Compass answer generation limited by strict product answer scope', {
         strictProductTerms: ragIntent.strictProductTerms,
         mode: specificProductScope.mode,
@@ -11478,13 +11511,15 @@ export async function buildCompassAnswerResponse(
         answerSourceCount: specificProductScope.answerSources.length,
       });
 
-      const fastKakaoScopeRescueAnswer = buildFastKakaoProductStructuredAnswer(
-        message,
-        ragIntent,
-        sources,
-        'compass-answer-fast-kakao-product-structured-scope-rescue',
-        'kakao_product_scope_rescue',
-      );
+      const fastKakaoScopeRescueAnswer = isDeterministicGateEnabled('product')
+        ? buildFastKakaoProductStructuredAnswer(
+          message,
+          ragIntent,
+          sources,
+          'compass-answer-fast-kakao-product-structured-scope-rescue',
+          'kakao_product_scope_rescue',
+        )
+        : null;
       if (fastKakaoScopeRescueAnswer) {
         emitPhase?.({ phase: 'answer-ready', message: '카카오 공식 근거를 기준으로 제한 범위 답변을 보강했습니다.' });
         return {
@@ -11520,12 +11555,14 @@ export async function buildCompassAnswerResponse(
         };
       }
 
-      const fastStructuredScopeRescueAnswer = buildFastStructuredSpecificProductAnswer(
-        message,
-        ragIntent,
-        specificProductScope,
-        sources,
-      );
+      const fastStructuredScopeRescueAnswer = isDeterministicGateEnabled('product')
+        ? buildFastStructuredSpecificProductAnswer(
+          message,
+          ragIntent,
+          specificProductScope,
+          sources,
+        )
+        : null;
       if (fastStructuredScopeRescueAnswer) {
         const showContactOption = Boolean(fastStructuredScopeRescueAnswer.showContactOption);
         emitPhase?.({ phase: 'answer-ready', message: '공식 상품 근거를 기준으로 제한 범위 답변을 보강했습니다.' });
@@ -11594,7 +11631,7 @@ export async function buildCompassAnswerResponse(
       };
     }
 
-    if (shouldUseDeterministicProductAnswerBeforeLlm() && !isBroadProductStructureCatalogIntent) {
+    if (isDeterministicGateEnabled('product') && shouldUseDeterministicProductAnswerBeforeLlm() && !isBroadProductStructureCatalogIntent) {
       const deterministicSpecificProductAnswer = buildDeterministicSpecificProductAnswer(
         message,
         ragIntent,
@@ -11637,11 +11674,13 @@ export async function buildCompassAnswerResponse(
       }
     }
 
-    const fastKakaoSpecificProductAnswer = buildFastKakaoSpecificProductAnswer(
-      message,
-      ragIntent,
-      specificProductScope,
-    );
+    const fastKakaoSpecificProductAnswer = isDeterministicGateEnabled('product')
+      ? buildFastKakaoSpecificProductAnswer(
+        message,
+        ragIntent,
+        specificProductScope,
+      )
+      : null;
     if (fastKakaoSpecificProductAnswer) {
       const showContactOption = Boolean(fastKakaoSpecificProductAnswer.showContactOption);
       emitPhase?.({
@@ -11681,7 +11720,12 @@ export async function buildCompassAnswerResponse(
       };
     }
 
-    if (!isBroadProductStructureCatalogIntent && ragIntent.vendors.length === 1 && ragIntent.vendors[0] === 'KAKAO') {
+    if (
+      isDeterministicGateEnabled('product')
+      && !isBroadProductStructureCatalogIntent
+      && ragIntent.vendors.length === 1
+      && ragIntent.vendors[0] === 'KAKAO'
+    ) {
       const fastKakaoStructuredProductAnswer = buildFastKakaoProductStructuredAnswer(
         message,
         ragIntent,
@@ -11725,12 +11769,14 @@ export async function buildCompassAnswerResponse(
       }
     }
 
-    const fastNaverVideoProductAnswer = buildFastNaverVideoProductAnswer(
-      message,
-      ragIntent,
-      specificProductScope,
-      answerSources.length > 0 ? answerSources : sources,
-    );
+    const fastNaverVideoProductAnswer = isDeterministicGateEnabled('product')
+      ? buildFastNaverVideoProductAnswer(
+        message,
+        ragIntent,
+        specificProductScope,
+        answerSources.length > 0 ? answerSources : sources,
+      )
+      : null;
     if (fastNaverVideoProductAnswer) {
       const showContactOption = Boolean(fastNaverVideoProductAnswer.showContactOption);
       emitPhase?.({ phase: 'answer-ready', message: '네이버 동영상 상품 근거를 기준으로 답변을 정리했습니다.' });
@@ -11767,12 +11813,14 @@ export async function buildCompassAnswerResponse(
       };
     }
 
-    const fastStructuredSpecificProductAnswer = buildFastStructuredSpecificProductAnswer(
-      message,
-      ragIntent,
-      specificProductScope,
-      answerSources.length > 0 ? answerSources : sources,
-    );
+    const fastStructuredSpecificProductAnswer = isDeterministicGateEnabled('product')
+      ? buildFastStructuredSpecificProductAnswer(
+        message,
+        ragIntent,
+        specificProductScope,
+        answerSources.length > 0 ? answerSources : sources,
+      )
+      : null;
     if (fastStructuredSpecificProductAnswer) {
       const showContactOption = Boolean(fastStructuredSpecificProductAnswer.showContactOption);
       emitPhase?.({ phase: 'answer-ready', message: '공식 상품 근거를 기준으로 답변을 정리했습니다.' });
@@ -11809,12 +11857,14 @@ export async function buildCompassAnswerResponse(
       };
     }
 
-    const fastPolicySourceGuidedAnswer = buildFastPolicySourceGuidedAnswer(
-      message,
-      ragIntent,
-      sources,
-      isBroadProductStructureLlmIntent,
-    );
+    const fastPolicySourceGuidedAnswer = isDeterministicGateEnabled('policy')
+      ? buildFastPolicySourceGuidedAnswer(
+        message,
+        ragIntent,
+        sources,
+        isBroadProductStructureLlmIntent,
+      )
+      : null;
     if (fastPolicySourceGuidedAnswer) {
       const showContactOption = Boolean(fastPolicySourceGuidedAnswer.showContactOption);
       const fastPolicySourceGuidedAnswerContent = applyCoverageNoticeToAnswer(
@@ -11900,13 +11950,15 @@ export async function buildCompassAnswerResponse(
           }
         };
       }
-      const fastKakaoBroadProductAnswer = buildFastKakaoProductStructuredAnswer(
-        message,
-        ragIntent,
-        productStructureSources,
-        'compass-answer-fast-kakao-product-structured',
-        'kakao_product_structured',
-      );
+      const fastKakaoBroadProductAnswer = isDeterministicGateEnabled('product')
+        ? buildFastKakaoProductStructuredAnswer(
+          message,
+          ragIntent,
+          productStructureSources,
+          'compass-answer-fast-kakao-product-structured',
+          'kakao_product_structured',
+        )
+        : null;
       if (fastKakaoBroadProductAnswer) {
         emitPhase?.({ phase: 'answer-ready', message: '카카오 상품 구조 근거를 기준으로 답변을 정리했습니다.' });
         return {
@@ -11941,8 +11993,11 @@ export async function buildCompassAnswerResponse(
         };
       }
       if (
-        shouldUseDeterministicProductAnswerBeforeLlm()
-        || shouldUseFastBroadProductDeterministicAnswer(ragIntent, message)
+        isDeterministicGateEnabled('product')
+        && (
+          shouldUseDeterministicProductAnswerBeforeLlm()
+          || shouldUseFastBroadProductDeterministicAnswer(ragIntent, message)
+        )
       ) {
         const shouldUseFastBroadAnswer = shouldUseFastBroadProductDeterministicAnswer(ragIntent, message);
         const deterministicBroadProductAnswer = buildDeterministicBroadProductAnswer(

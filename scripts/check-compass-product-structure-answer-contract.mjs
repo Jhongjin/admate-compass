@@ -849,6 +849,13 @@ if (!/COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v51-specific-product-policy-b
   fail('answer response cache key must be versioned so stale durable cached answers are bypassed after source-quality fixes');
 }
 
+if (!/type DeterministicGateClass = 'always' \| 'policy' \| 'product'/.test(answerHandler)
+  || !/type DeterministicAnswerScope = 'full' \| 'policy_only' \| 'off'/.test(answerHandler)
+  || !/function resolveDeterministicAnswerScope\(\): DeterministicAnswerScope[\s\S]*COMPASS_DETERMINISTIC_ANSWER_SCOPE \|\| 'full'[\s\S]*return value === 'policy_only' \|\| value === 'off' \? value : 'full';/.test(answerHandler)
+  || !/function isDeterministicGateEnabled\(gate: DeterministicGateClass\): boolean[\s\S]*if \(gate === 'always'\) return true;[\s\S]*if \(scope === 'full'\) return true;[\s\S]*if \(scope === 'off'\) return false;[\s\S]*return gate === 'policy';/.test(answerHandler)) {
+  fail('deterministic answer scope must default to full while allowing policy_only/off scoped gate experiments');
+}
+
 if (!/function isPolicyReviewCheckQuestion\([\s\S]*허위\|과장\|오인\|기만\|불일치\|랜딩[\s\S]*const shouldDeferToPolicyReviewAnswer = isPolicyReviewCheckQuestion\(message\)[\s\S]*!shouldDeferToPolicyReviewAnswer && isAssetGuideProductQuestion\(message\)[\s\S]*intent\.vendors\.includes\('NAVER'\)[\s\S]*!shouldDeferToPolicyReviewAnswer[\s\S]*buildNaverKakaoAssetGuideComparisonAnswer\(sources\)/.test(answerHandler)) {
   fail('policy/review checklist questions must bypass product asset-guide deterministic answers');
 }
@@ -939,7 +946,7 @@ if (!kakaoProductSelectionMatrixFastIntentBlock.includes('const hasKakaoAnchor =
   || !answerHandler.includes('buildMetaGoogleProductAssetGuideAnswer([])')
   || !answerHandler.includes('buildMetaAssetGuideProductAnswer([])')
   || !answerHandler.includes('buildGoogleAssetGuideProductAnswer([])')
-  || !answerHandler.includes('const preRetrievalDeterministicAnswer = buildPreRetrievalDeterministicProductAnswer(message, ragIntent)')
+  || !/const preRetrievalDeterministicAnswer = isDeterministicGateEnabled\('product'\)[\s\S]*buildPreRetrievalDeterministicProductAnswer\(message, ragIntent\)/.test(answerHandler)
   || !answerHandler.includes('preRetrievalDeterministicAnswer: true')) {
   fail('Kakao named-product matrix questions must use a pre-retrieval deterministic answer before slow RAG fan-out');
 }
@@ -1669,7 +1676,7 @@ if (!/function isSingleNamedNaverProductQuestion\([\s\S]*productSignals[\s\S]*pr
   fail('Naver product matrix path must not capture a single named Shopping Search-style product question');
 }
 
-if (!/const fastKakaoSpecificProductAnswer = buildFastKakaoSpecificProductAnswer\([\s\S]*answerGenerationDurationMs: 0,[\s\S]*fastAnswerFallback: fastKakaoSpecificProductAnswer\.fastAnswerFallback/.test(answerHandler)) {
+if (!/const fastKakaoSpecificProductAnswer = isDeterministicGateEnabled\('product'\)[\s\S]*buildFastKakaoSpecificProductAnswer\([\s\S]*answerGenerationDurationMs: 0,[\s\S]*fastAnswerFallback: fastKakaoSpecificProductAnswer\.fastAnswerFallback/.test(answerHandler)) {
   fail('Kakao specific product fast answer must expose zero answer-generation duration and fast-answer diagnostics');
 }
 
@@ -1677,11 +1684,11 @@ if (!/function buildFastKakaoProductStructuredAnswer\([\s\S]*COMPASS_DISABLE_FAS
   fail('Kakao structured product fast answer must stay gated to single-vendor Kakao evidence and reuse the official-source structured fallback before LLM');
 }
 
-if (!/const fastKakaoScopeRescueAnswer = buildFastKakaoProductStructuredAnswer\([\s\S]*compass-answer-fast-kakao-product-structured-scope-rescue[\s\S]*answerGenerationDurationMs: 0,[\s\S]*fastAnswerFallback: fastKakaoScopeRescueAnswer\.fastAnswerFallback[\s\S]*const scopeLimitedAnswer/.test(answerHandler)) {
+if (!/const fastKakaoScopeRescueAnswer = isDeterministicGateEnabled\('product'\)[\s\S]*buildFastKakaoProductStructuredAnswer\([\s\S]*compass-answer-fast-kakao-product-structured-scope-rescue[\s\S]*answerGenerationDurationMs: 0,[\s\S]*fastAnswerFallback: fastKakaoScopeRescueAnswer\.fastAnswerFallback[\s\S]*const scopeLimitedAnswer/.test(answerHandler)) {
   fail('Kakao scope-limited product answers must try structured official-source rescue before returning no-data');
 }
 
-if (!/const fastStructuredScopeRescueAnswer = buildFastStructuredSpecificProductAnswer\([\s\S]*specificProductScope,[\s\S]*sources,[\s\S]*fastAnswerFallback: fastStructuredScopeRescueAnswer\.fastAnswerFallback[\s\S]*scopeRescue: true,[\s\S]*const scopeLimitedAnswer/.test(answerHandler)) {
+if (!/const fastStructuredScopeRescueAnswer = isDeterministicGateEnabled\('product'\)[\s\S]*buildFastStructuredSpecificProductAnswer\([\s\S]*specificProductScope,[\s\S]*sources,[\s\S]*fastAnswerFallback: fastStructuredScopeRescueAnswer\.fastAnswerFallback[\s\S]*scopeRescue: true,[\s\S]*const scopeLimitedAnswer/.test(answerHandler)) {
   fail('single-vendor structured product answers must try fast official-source scope rescue before returning no-data');
 }
 
@@ -1693,7 +1700,7 @@ if (!/function buildFastNaverVideoProductAnswer\([\s\S]*COMPASS_DISABLE_FAST_NAV
   fail('Naver video product fast answer must stay gated to single-vendor Naver video questions and reuse official-source structured fallback');
 }
 
-if (!/const fastNaverVideoProductAnswer = buildFastNaverVideoProductAnswer\([\s\S]*answerSources\.length > 0 \? answerSources : sources[\s\S]*answerGenerationDurationMs: 0,[\s\S]*fastAnswerFallback: fastNaverVideoProductAnswer\.fastAnswerFallback[\s\S]*Compass specific product answer will use grounded LLM synthesis/.test(answerHandler)) {
+if (!/const fastNaverVideoProductAnswer = isDeterministicGateEnabled\('product'\)[\s\S]*buildFastNaverVideoProductAnswer\([\s\S]*answerSources\.length > 0 \? answerSources : sources[\s\S]*answerGenerationDurationMs: 0,[\s\S]*fastAnswerFallback: fastNaverVideoProductAnswer\.fastAnswerFallback[\s\S]*Compass specific product answer will use grounded LLM synthesis/.test(answerHandler)) {
   fail('Naver video product fast answer must run before grounded LLM synthesis and expose zero answer-generation diagnostics');
 }
 
@@ -1705,7 +1712,7 @@ if (!/function buildMetaCreativeSpecStructuredFallbackAnswer[\s\S]*detectProduct
   fail('Meta creative/spec product questions must have a fast structured answer path');
 }
 
-if (!/const fastStructuredSpecificProductAnswer = buildFastStructuredSpecificProductAnswer\([\s\S]*answerSources\.length > 0 \? answerSources : sources[\s\S]*answerGenerationDurationMs: 0,[\s\S]*fastAnswerFallback: fastStructuredSpecificProductAnswer\.fastAnswerFallback[\s\S]*Compass specific product answer will use grounded LLM synthesis/.test(answerHandler)) {
+if (!/const fastStructuredSpecificProductAnswer = isDeterministicGateEnabled\('product'\)[\s\S]*buildFastStructuredSpecificProductAnswer\([\s\S]*answerSources\.length > 0 \? answerSources : sources[\s\S]*answerGenerationDurationMs: 0,[\s\S]*fastAnswerFallback: fastStructuredSpecificProductAnswer\.fastAnswerFallback[\s\S]*Compass specific product answer will use grounded LLM synthesis/.test(answerHandler)) {
   fail('structured specific product fast answer must run before grounded LLM synthesis and expose zero answer-generation diagnostics');
 }
 
@@ -1746,11 +1753,11 @@ if (!/const hasLevelStructureSignal =[\s\S]*광고\\s\*관리자\\s\*구조[\s\S
   fail('Meta advertising-level official snapshot must not be filtered as a generic format/placement-only chunk');
 }
 
-if (!/const fastPolicySourceGuidedAnswer = buildFastPolicySourceGuidedAnswer\([\s\S]*message,[\s\S]*ragIntent,[\s\S]*sources,[\s\S]*answerGenerationDurationMs: 0,[\s\S]*policyAnswerFamily: fastPolicySourceGuidedAnswer\.policyAnswerFamily[\s\S]*fastAnswerFallback: fastPolicySourceGuidedAnswer\.fastAnswerFallback[\s\S]*Compass specific product answer will use grounded LLM synthesis/.test(answerHandler)) {
+if (!/const fastPolicySourceGuidedAnswer = isDeterministicGateEnabled\('policy'\)[\s\S]*buildFastPolicySourceGuidedAnswer\([\s\S]*message,[\s\S]*ragIntent,[\s\S]*sources,[\s\S]*answerGenerationDurationMs: 0,[\s\S]*policyAnswerFamily: fastPolicySourceGuidedAnswer\.policyAnswerFamily[\s\S]*fastAnswerFallback: fastPolicySourceGuidedAnswer\.fastAnswerFallback[\s\S]*Compass specific product answer will use grounded LLM synthesis/.test(answerHandler)) {
   fail('fast policy source-guided answers must run before grounded LLM synthesis and expose zero answer-generation diagnostics');
 }
 
-if (!/const fastKakaoBroadProductAnswer = buildFastKakaoProductStructuredAnswer\([\s\S]*productStructureSources[\s\S]*compass-answer-fast-kakao-product-structured[\s\S]*answerGenerationDurationMs: 0,[\s\S]*fastAnswerFallback: fastKakaoBroadProductAnswer\.fastAnswerFallback[\s\S]*Compass product structure broad answer will use grounded LLM synthesis/.test(answerHandler)) {
+if (!/const fastKakaoBroadProductAnswer = isDeterministicGateEnabled\('product'\)[\s\S]*buildFastKakaoProductStructuredAnswer\([\s\S]*productStructureSources[\s\S]*compass-answer-fast-kakao-product-structured[\s\S]*answerGenerationDurationMs: 0,[\s\S]*fastAnswerFallback: fastKakaoBroadProductAnswer\.fastAnswerFallback[\s\S]*Compass product structure broad answer will use grounded LLM synthesis/.test(answerHandler)) {
   fail('Kakao broad product structure answers must try structured fast answers before grounded LLM synthesis');
 }
 
