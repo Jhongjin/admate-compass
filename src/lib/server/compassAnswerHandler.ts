@@ -115,7 +115,7 @@ const COMPASS_ANSWER_RESPONSE_CACHE_TTL_MS = Math.min(
   900000,
 );
 const COMPASS_ANSWER_RESPONSE_CACHE_MAX_ENTRIES = 64;
-const COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v50-single-product-matrix-bypass';
+const COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v51-specific-product-policy-bypass';
 const COMPASS_CONVERSATION_HISTORY_MAX_ITEMS = 25;
 const compassAnswerResponseCache = new Map<string, CompassAnswerResponseCacheEntry>();
 const compassAnswerRuntimeMetrics = {
@@ -7232,6 +7232,27 @@ function detectFastPolicySourceGuidedAnswerFamily(
   return null;
 }
 
+function shouldBypassFastPolicySourceGuidedForSpecificProductQuestion(
+  message: string,
+  intent: QueryIntent,
+) {
+  if (!intent.topics.includes('product_structure')) return false;
+  if (!intent.isSpecificProductGuidance && !hasNamedSpecificProductQuestion(message)) return false;
+  if (isPolicyReviewCheckQuestion(message) || isPolicyOrRegulatedDomainQuestion(message) || isBroadReviewTroubleshootingQuestion(message)) {
+    return false;
+  }
+
+  const originalText = normalizeEvidenceText(message);
+  const hasExplicitPolicyReviewSignal = /정책|위반|금지|심사|검수|검토|반려|승인|가능\s*여부|등록\s*기준|광고\s*등록\s*기준|준수|주의|유의|오인|기만|허위|과장|법령|제한|불가|거절|reject|disapprove/.test(originalText);
+  if (hasExplicitPolicyReviewSignal) return false;
+
+  const hasPolicyFamilySignal = /가격|할인|할인율|혜택|쿠폰|정가|판매가|무료배송|카드할인|이벤트|경품|프로모션|청소년|유해|혐오|차별|비하|성인|선정|음란|상표|저작권|초상권|권리|침해|업종/.test(originalText);
+  const connectsPolicyFamilyToReview = /문구|소재|랜딩|표시|기재|가능|되나|돼|심사|검수|정책|주의|유의|기준|반려|승인|위반|금지|불가/.test(originalText);
+  if (hasPolicyFamilySignal && connectsPolicyFamilyToReview) return false;
+
+  return true;
+}
+
 function getFastPolicySourcePattern(family: FastPolicySourceGuidedAnswerFamily): RegExp {
   switch (family) {
     case 'price_discount':
@@ -7678,6 +7699,7 @@ function buildFastPolicySourceGuidedAnswer(
   if (process.env.COMPASS_DISABLE_FAST_POLICY_SOURCE_GUIDED_ANSWERS === 'true') return null;
   if (isBroadProductStructureLlmIntent) return null;
   if (intent.isOutOfScope || intent.unavailablePolicyTarget) return null;
+  if (shouldBypassFastPolicySourceGuidedForSpecificProductQuestion(message, intent)) return null;
 
   const family = detectFastPolicySourceGuidedAnswerFamily(message, intent);
   if (!family) return null;

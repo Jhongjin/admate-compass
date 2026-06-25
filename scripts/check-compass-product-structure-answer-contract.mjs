@@ -347,7 +347,7 @@ for (const snippet of [
   '랜딩페이지 표시 정보',
   '전후사진',
   '상담 신청 폼',
-  'v50-single-product-matrix-bypass',
+  'v51-specific-product-policy-bypass',
   'applyCoverageNoticeToAnswer',
   'shouldUseSourceGuidedAnswerWithPartialCoverage',
   'hasSourceGuidedProductOrPolicyIntent',
@@ -845,7 +845,7 @@ if (!/sourceIdentityLooksLikeGenericLegalOrAccountDoc[\s\S]*청구\|결제\|지�
   fail('answer source routing must demote payment/account support documents such as 지불 for product-structure answers');
 }
 
-if (!/COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v50-single-product-matrix-bypass'[\s\S]*`compass-answer:\$\{COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION\}:\$\{message\}`/.test(answerHandler)) {
+if (!/COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v51-specific-product-policy-bypass'[\s\S]*`compass-answer:\$\{COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION\}:\$\{message\}`/.test(answerHandler)) {
   fail('answer response cache key must be versioned so stale durable cached answers are bypassed after source-quality fixes');
 }
 
@@ -1703,6 +1703,11 @@ if (!/const fastStructuredSpecificProductAnswer = buildFastStructuredSpecificPro
 
 if (!/function buildFastPolicySourceGuidedAnswer\([\s\S]*COMPASS_DISABLE_FAST_POLICY_SOURCE_GUIDED_ANSWERS[\s\S]*if \(isBroadProductStructureLlmIntent\) return null;[\s\S]*detectFastPolicySourceGuidedAnswerFamily\(message, intent\)[\s\S]*const pattern = getFastPolicySourcePattern\(family\)[\s\S]*getFallbackSourceText\(source\)[\s\S]*if \(!pattern\.test\(sourceText\)\) return false;[\s\S]*sourceHasBlockingExtractionNoise\(source\)[\s\S]*buildFastPolicyAnswerText\(family, candidateSources, intent\)/.test(answerHandler)) {
   fail('fast policy source-guided answers must stay narrowly gated and require matching verified source evidence');
+}
+
+if (!/function shouldBypassFastPolicySourceGuidedForSpecificProductQuestion\([\s\S]*intent\.topics\.includes\('product_structure'\)[\s\S]*hasNamedSpecificProductQuestion\(message\)[\s\S]*isPolicyReviewCheckQuestion\(message\)[\s\S]*hasExplicitPolicyReviewSignal[\s\S]*hasPolicyFamilySignal[\s\S]*connectsPolicyFamilyToReview[\s\S]*return true;[\s\S]*function getFastPolicySourcePattern/.test(answerHandler)
+  || !/function buildFastPolicySourceGuidedAnswer\([\s\S]*if \(shouldBypassFastPolicySourceGuidedForSpecificProductQuestion\(message, intent\)\) return null;[\s\S]*detectFastPolicySourceGuidedAnswerFamily\(message, intent\)/.test(answerHandler)) {
+  fail('fast policy source-guided answers must not capture plain named single-product explanation questions');
 }
 
 if (!/function sourceIsOfficialMetaProductOverviewSnapshot\([\s\S]*officialProductOverviewSnapshot[\s\S]*official_product_overview[\s\S]*meta_business_help_\(ad_levels\|objectives\|formats_placements\|operating_modules\)_2026/.test(answerHandler)) {
