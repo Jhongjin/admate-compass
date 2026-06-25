@@ -862,6 +862,8 @@ for (const snippet of [
   'RELATED_QUESTION_LIMIT = 4',
   'DEFAULT_PRODUCT_GUIDE_QUESTIONS',
   'NAVER_KAKAO_QUESTIONS',
+  'KAKAO_PRODUCT_QUESTIONS',
+  'NAVER_PRODUCT_QUESTIONS',
   'META_GOOGLE_QUESTIONS',
   'COMMERCE_QUESTIONS',
   'OPERATIONS_QUESTIONS',
@@ -872,12 +874,11 @@ for (const snippet of [
   'if (isProductGuideQuestion)',
   'REGULATED_SCOPE_HINTS',
   'isUnsafeDefaultRecommendation',
-  'ADVoost 쇼핑',
-  '치지직 전용 광고',
-  '커뮤니케이션 애드',
-  '비즈보드, 디스플레이, 동영상, 상품 카탈로그, 메시지, 키워드광고, 브랜드검색, 톡채널검색, 보장형/CPT',
-  'Google 쇼핑, Meta 카탈로그, 네이버 쇼핑검색광고, 카카오 상품 카탈로그',
-  'Instant Form/리드 양식',
+  'isOverBroadRecommendation',
+  'countVendorMentions',
+  '쇼핑검색광고 등록 전에 상품 DB에서 뭘 확인해야 해?',
+  '카카오 비즈보드는 어떤 상황에서 쓰는 게 좋아?',
+  'Meta Instant Form은 어떤 상황에서 쓰는 게 좋아?',
 ]) {
   if (!relatedQuestionsRoute.includes(snippet)) {
     fail(`related question route missing coverage-aware product recommendation snippet: ${snippet}`);
@@ -898,15 +899,22 @@ for (const rejected of [
 }
 
 const defaultRelatedQuestionBlock = relatedQuestionsRoute.match(/const DEFAULT_PRODUCT_GUIDE_QUESTIONS = \[([\s\S]*?)\];/)?.[1] || '';
-if (!defaultRelatedQuestionBlock.includes('Meta 광고 상품 유형')
-  || !defaultRelatedQuestionBlock.includes('Google Ads 광고 상품 유형')
-  || !defaultRelatedQuestionBlock.includes('네이버 광고 상품 유형')
-  || !defaultRelatedQuestionBlock.includes('카카오 광고 상품을 비즈보드')) {
+if (!defaultRelatedQuestionBlock.includes('Meta 광고 상품은 어떤 기준으로 고르면 돼?')
+  || !defaultRelatedQuestionBlock.includes('Google Ads 검색광고는 어떤 상황에서 먼저 쓰는 게 좋아?')
+  || !defaultRelatedQuestionBlock.includes('네이버 쇼핑검색광고는 어떤 상황에서 쓰는 게 좋아?')
+  || !defaultRelatedQuestionBlock.includes('카카오 비즈보드는 어떤 상황에서 쓰는 게 좋아?')) {
   fail('default related product questions must cover all four vendors with product-specific prompts');
 }
 
-if (/병원\s*광고를\s*Meta,\s*Google Ads,\s*네이버,\s*카카오/.test(relatedQuestionsRoute)) {
-  fail('default related questions must not recommend broad regulated multi-vendor hospital comparisons');
+for (const overBroad of [
+  /병원\s*광고를\s*Meta,\s*Google Ads,\s*네이버,\s*카카오/,
+  /광고\s*성과가\s*갑자기\s*떨어졌을\s*때\s*Meta,\s*Google Ads,\s*네이버,\s*카카오별/,
+  /Google\s*쇼핑,\s*Meta\s*카탈로그,\s*네이버\s*쇼핑검색광고,\s*카카오\s*상품\s*카탈로그/,
+  /비즈보드,\s*디스플레이,\s*동영상,\s*상품\s*카탈로그,\s*메시지,\s*키워드광고,\s*브랜드검색,\s*톡채널검색,\s*보장형\/CPT/,
+]) {
+  if (overBroad.test(relatedQuestionsRoute)) {
+    fail('default related questions must not recommend over-broad multi-vendor or multi-product comparison prompts');
+  }
 }
 
 const kakaoProductSelectionMatrixFastIntentBlock = extractBlock(
