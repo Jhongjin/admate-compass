@@ -36,6 +36,15 @@ const requiredFragments = [
   ["톡채널검색", "Kakao talk channel search product name must be preserved when grounded"],
   ["보장형/CPT", "Kakao guaranteed/CPT product name must be preserved when grounded"],
   ["근거에 없는 이름은 추가하지 마세요", "detailed product names must stay inside verified evidence"],
+  ["고정 대비형 서두", "answers must avoid canned contrast openings"],
+  ['"확인 항목", "준비 항목", "운영 기준", "주의사항"', "table headings must use operational nouns instead of vague view labels"],
+  ['"...봅니다"/"...봐야 합니다"', "answers must avoid repeated hesitant view predicates"],
+  ["확인합니다, 점검합니다, 사용합니다, 준비합니다, 비교합니다, 분리합니다, 선택합니다", "answers must use context-specific action verbs"],
+  ["소재/데이터 확인 항목", "style polish must rewrite the repeated material/data table heading"],
+  ["심사 확인 항목", "style polish must rewrite vague review table heading"],
+  ["CANNED_CONTRAST_OPENING_PATTERN", "generated answers must strip canned contrast openings"],
+  ["ACTION_VERB_REPLACEMENTS", "generated answers must normalize repeated view predicates"],
+  ["polishCompassAnswerStyle(answer)", "all generated answer providers must apply the style polish"],
 ];
 
 for (const [fragment, description] of requiredFragments) {
@@ -50,6 +59,11 @@ if (!source.includes("If the user question is under-specified, answer the confir
 
 if (!source.includes("insufficient collected/indexed data")) {
   fail("system prompt must distinguish insufficient collected/indexed data from ordinary retrieval gaps");
+}
+
+const stylePolishCalls = [...source.matchAll(/polishCompassAnswerStyle\(answer\)/g)].length;
+if (stylePolishCalls < 3) {
+  fail("style polish must run for OpenRouter, OpenAI, and Ollama answer providers");
 }
 
 if (process.exitCode) {

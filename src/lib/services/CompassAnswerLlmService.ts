@@ -217,6 +217,34 @@ function compactEvidenceText(content: string, maxLength: number): string {
   return normalized.length > maxLength ? normalized.slice(0, maxLength).trim() : normalized;
 }
 
+const CANNED_CONTRAST_OPENING_PATTERN = /^(?:[^\n.?!。]{0,140}(?:몇\s*개|하나|한\s*가지|대분류|뭉뚱그리)[^\n.?!。]{0,140}(?:빠집니다|놓칩니다|나누어\s*(?:봐야|보는)|구분해야|분리해야)[^\n.?!。]*[.?!。]\s*)/u;
+
+const ACTION_VERB_REPLACEMENTS: Array<[RegExp, string]> = [
+  [/소재\/데이터에서 먼저 볼 것/g, '소재/데이터 확인 항목'],
+  [/심사에서 먼저 볼 것/g, '심사 확인 항목'],
+  [/랜딩\/목적지 체크/g, '랜딩/목적지 확인'],
+  [/운영 점검/g, '운영 확인'],
+  [/먼저 볼 것/g, '확인 항목'],
+  [/분리해 봅니다/g, '분리합니다'],
+  [/나누어 봅니다/g, '나눕니다'],
+  [/비교해 봅니다/g, '비교합니다'],
+  [/구분해 봅니다/g, '구분합니다'],
+  [/함께 봅니다/g, '함께 확인합니다'],
+  [/먼저 봅니다/g, '먼저 확인합니다'],
+  [/봐야 합니다/g, '확인해야 합니다'],
+  [/([가-힣A-Za-z0-9)\]\s]+)(을|를) 봅니다/g, '$1$2 확인합니다'],
+];
+
+function polishCompassAnswerStyle(answer: string): string {
+  let polished = answer.replace(CANNED_CONTRAST_OPENING_PATTERN, '').trimStart();
+
+  for (const [pattern, replacement] of ACTION_VERB_REPLACEMENTS) {
+    polished = polished.replace(pattern, replacement);
+  }
+
+  return polished.trim();
+}
+
 export function getCompassAnswerRuntimeStatus() {
   const provider = resolveProvider();
   const openrouterModels = resolveOpenRouterModels();
@@ -311,6 +339,8 @@ function buildSystemPrompt(): string {
     'For comparison questions, separate the answer by vendor first, then summarize the practical difference.',
     'Cite the supporting evidence labels like [S1] or [S2] inside the answer.',
     'Do not reuse a canned overview when the user asks about a specific ad product, setup step, creative guide, registration rule, or policy check.',
+    'Do not start with a canned contrast opening such as "X is not just Y" or "X should not be treated as only a few products." Tailor the first sentence to the user question and evidence.',
+    'Vary Korean predicates. Do not end many bullets or table cells with "봅니다" or "봐야 합니다"; choose action verbs such as 확인합니다, 점검합니다, 사용합니다, 준비합니다, 비교합니다, 분리합니다, or 선택합니다.',
     'Keep the answer operational and specific enough for campaign decision support.',
   ].join('\n');
 }
@@ -392,6 +422,9 @@ function buildEvidencePrompt(message: string, searchResults: CompassGroundingSou
     '- product_detail, execution_guide, setup_procedure, policy_screening, operational_issue 질문에는 product_overview 구조를 반복하지 마세요. 특히 캠페인 목표 목록을 기본 답변으로 되풀이하지 마세요.',
     '- 섹션 제목은 답변 모드와 사용자가 물은 상품/절차를 반영해 새로 붙이세요. 특정 상품 질문에서 "광고 목적과 노출 지면", "운영 전 확인", "상황별 빠른 선택 기준" 같은 넓은 개요 제목을 반복하지 마세요.',
     '- 특정 상품 질문의 첫 문장은 반드시 사용자가 물은 상품명/지면/절차를 직접 언급해야 합니다. 예: "네이버 DA는...", "Meta 앱 인스톨 광고는...", "Google 리드 양식은..."처럼 시작하세요.',
+    '- 첫 문장을 고정 대비형 서두로 시작하지 마세요. "A는 B 하나로/몇 개로 보면..."처럼 문제를 일반화하지 말고, 질문한 상품/상황에 대한 결론으로 시작하세요.',
+    '- 표 머리글은 "볼 것"보다 "확인 항목", "준비 항목", "운영 기준", "주의사항"처럼 업무 명사로 쓰세요.',
+    '- 불릿과 표 셀을 "...봅니다"/"...봐야 합니다"로 반복하지 마세요. 맥락에 따라 확인합니다, 점검합니다, 사용합니다, 준비합니다, 비교합니다, 분리합니다, 선택합니다를 쓰세요.',
     '- 특정 상품 질문에서 근거가 부족하면 다른 상품군의 일반 개요로 대체하지 마세요. 확인된 근거와 부족한 범위를 분리하고, 관련 없는 캠페인 목표/상품군 목록은 쓰지 마세요.',
     '- product_detail은 "무엇인지 / 어디에 노출되는지 / 언제 쓰는지 / 운영 전 확인할 조건" 순서로 답하세요. 소재 규격이나 정책만 근거에 있으면 그 한계를 명시하세요.',
     '- setup_procedure는 "준비 항목 / 설정 또는 연동 순서 / 담당자나 원문 확인이 필요한 범위" 순서로 답하세요. 앱·카탈로그·DB URL·EP·MMP·SDK 질문은 이 규칙을 우선 적용하세요.',
@@ -476,6 +509,8 @@ function buildCompactRemoteEvidencePrompt(
     '- product_overview는 근거에서 확인되는 상품군, 지면, 캠페인 유형을 짧게 나누어 설명하세요.',
     '- product_selection은 목표를 정하고, 맞는 상품군/지면을 고르고, 운영 전 조건을 확인하는 순서로 정리하세요.',
     '- 상품/소재 질문은 상품명 또는 상품군, 언제 쓰는지, 소재·데이터·규격 확인, 측정·운영 주의점 순서로 답하세요.',
+    '- 첫 문장은 고정 대비형 서두가 아니라 질문한 상품/상황의 결론으로 시작하세요. 표 머리글은 "볼 것" 대신 "확인 항목", "준비 항목", "운영 기준", "주의사항"처럼 쓰세요.',
+    '- 불릿과 표 셀을 "...봅니다"/"...봐야 합니다"로 반복하지 말고 확인합니다, 점검합니다, 사용합니다, 준비합니다, 비교합니다, 분리합니다, 선택합니다를 맥락에 맞춰 쓰세요.',
     '- 네이버·카카오는 근거에 상품명이 있으면 대분류만 쓰지 말고 ADVoost 쇼핑, 커뮤니케이션 애드, 치지직, 비즈보드, 상품 카탈로그, 키워드광고, 브랜드검색, 톡채널검색, 보장형/CPT 같은 이름을 근거 범위 안에서 사용하세요.',
     '- 특정 상품/절차가 질문에 들어 있으면 첫 문장부터 그 상품명/절차를 직접 언급하고 넓은 개요로 돌리지 마세요.',
     '- 핵심 문장에는 [S1], [S2]처럼 출처 라벨을 붙이세요.',
@@ -491,6 +526,7 @@ function buildCompactOllamaSystemPrompt(): string {
     'Start with the exact product, platform, or procedure asked by the user.',
     'Use section headings that name the requested product or procedure. Do not reuse broad overview headings for specific questions.',
     'Give practical bullets with [S1], [S2] evidence labels. If evidence is narrow, say the confirmed scope clearly.',
+    'Avoid canned contrast openings and repeated Korean endings like "봅니다" or "봐야 합니다".',
   ].join('\n');
 }
 
@@ -538,6 +574,7 @@ function buildCompactOllamaEvidencePrompt(message: string, searchResults: Compas
     '- 근거에 있는 항목만 답하고, 부족한 범위는 별도로 말하세요.',
     '- 질문이 짧거나 모호하면 확인된 핵심부터 답하고, 필요한 경우 마지막에 추가 확인 질문 1~3개만 쓰세요.',
     '- 네이버·카카오 상품 질문은 근거에 있는 상품명을 대분류로 뭉개지 말고 근거 범위 안에서 직접 나열하세요.',
+    '- 고정 대비형 서두를 쓰지 말고, "...봅니다"/"...봐야 합니다" 반복 대신 확인합니다, 점검합니다, 사용합니다, 준비합니다, 비교합니다, 분리합니다를 쓰세요.',
     '- 3~5개 섹션 또는 짧은 불릿으로 답하세요.',
     '- 마지막 줄에 "근거: [S1], [S2]"를 포함하세요.',
   ].join('\n');
@@ -603,7 +640,7 @@ async function generateOpenRouterAnswer(
   }
 
   return {
-    answer,
+    answer: polishCompassAnswerStyle(answer),
     provider: 'openrouter',
     model: data.model || models[0],
   };
@@ -695,7 +732,7 @@ async function requestOpenAIAnswer({
   }
 
   return {
-    answer,
+    answer: polishCompassAnswerStyle(answer),
     provider: 'openai',
     model: `openai/${data.model || model}`,
   };
@@ -743,7 +780,7 @@ async function generateOllamaAnswer(
   }
 
   return {
-    answer,
+    answer: polishCompassAnswerStyle(answer),
     provider: 'ollama',
     model: `ollama/${model}`,
   };
