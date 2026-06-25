@@ -5,6 +5,7 @@ import path from "node:path";
 
 const root = process.cwd();
 const servicePath = path.join(root, "src/lib/services/CompassAnswerLlmService.ts");
+const handlerPath = path.join(root, "src/lib/server/compassAnswerHandler.ts");
 
 function fail(message) {
   console.error(`[check-compass-answer-style-benchmark-contract] ${message}`);
@@ -17,6 +18,7 @@ if (!fs.existsSync(servicePath)) {
 }
 
 const source = fs.readFileSync(servicePath, "utf8");
+const handlerSource = fs.existsSync(handlerPath) ? fs.readFileSync(handlerPath, "utf8") : "";
 
 const requiredFragments = [
   ["확인된 핵심부터 답변", "ambiguous questions must answer the confirmed core first"],
@@ -64,6 +66,20 @@ if (!source.includes("insufficient collected/indexed data")) {
 const stylePolishCalls = [...source.matchAll(/polishCompassAnswerStyle\(answer\)/g)].length;
 if (stylePolishCalls < 3) {
   fail("style polish must run for OpenRouter, OpenAI, and Ollama answer providers");
+}
+
+if (!handlerSource.includes("polishCompassAnswerStyle")) {
+  fail("deterministic answer handler must reuse the same style polish");
+}
+
+for (const banned of [
+  "네이버 광고 상품은 “검색광고 몇 개”로만 보면 빠집니다",
+  "카카오 광고는 “카카오모먼트 하나”로 뭉뚱그리기보다",
+  "소재/데이터에서 먼저 볼 것",
+]) {
+  if (handlerSource.includes(banned)) {
+    fail(`deterministic answer template must not include old canned wording: ${banned}`);
+  }
 }
 
 if (process.exitCode) {

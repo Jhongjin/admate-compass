@@ -10,7 +10,7 @@ import {
   type VendorIntent,
 } from '@/lib/services/RAGSearchService';
 import { getCompassOfficialDocumentChunkSnapshotRows } from '@/lib/services/compassOfficialChunkSnapshots';
-import { generateCompassAnswer, type CompassGroundingSource } from '@/lib/services/CompassAnswerLlmService';
+import { generateCompassAnswer, polishCompassAnswerStyle, type CompassGroundingSource } from '@/lib/services/CompassAnswerLlmService';
 import {
   getCompassAnswerDurableStoreStatus,
   readCompassAnswerDurableCache,
@@ -4690,7 +4690,7 @@ function buildEvidenceBackedAnswer(
   });
 
   return {
-    answer,
+    answer: polishCompassAnswerStyle(answer),
     sources: citedSourceIndexes.map(index => sources[index]),
     model: profile.model,
     showContactOption: profile.showContactOption,
@@ -5110,7 +5110,7 @@ function finalizeOfficialSnapshotDeterministicAnswer(
   });
 
   return {
-    answer,
+    answer: polishCompassAnswerStyle(answer),
     sources: citedSourceIndexes.map(index => sources[index]),
     model,
     showContactOption: false,
@@ -5792,12 +5792,12 @@ function buildKakaoProductSelectionMatrixAnswer(
   const policyRef = cite('doc_1774488207473_cjq6ve0_chunk_19');
 
   const lines = [
-    '카카오 광고는 “카카오모먼트 하나”로 뭉뚱그리기보다 **성과형/보장형/검색형/메시지형/상품 카탈로그형**으로 나누어 봐야 합니다.',
+    '카카오 광고 상품은 목적과 접점에 따라 **성과형/보장형/검색형/메시지형/상품 카탈로그형**으로 구분해 선택합니다.',
     `카카오모먼트는 비즈보드, 디스플레이, 동영상, 메시지 광고, 상품 카탈로그 광고처럼 카카오 핵심 서비스 지면을 활용하는 상품 축을 포함합니다 ${momentRef} ${catalogRef}. 검색 광고 쪽은 키워드광고, 브랜드검색, 톡채널검색으로 따로 봐야 합니다 ${searchRef}.`,
     '',
     '**1. 상품명 기준 비교**',
     '',
-    '| 상품 | 언제 우선 검토하나 | 소재/지면 확인 | 실무 체크 |',
+    '| 상품 | 우선 검토 상황 | 소재/지면 확인 항목 | 운영 기준 |',
     '|---|---|---|---|',
     `| 카카오 비즈보드 | 카카오톡 기반 대량 도달, 신상품/프로모션, 브랜드 인지와 랜딩 유입을 함께 노릴 때 | 카카오톡·카카오서비스 주요 지면, 소재 유형, 랜딩 옵션을 봅니다 ${bizboardRef}. | 카카오 서비스처럼 오인되는 UI·로고·디자인 모방과 허위·과장 표현을 피합니다 ${policyRef}. |`,
     `| 디스플레이 광고 | 관심사/오디언스 기반 배너·이미지·동영상 노출, 리타게팅, 퍼포먼스 확장이 필요할 때 | 카카오 핵심 서비스와 파트너 지면, 이미지/동영상 소재 유형과 제작 가이드를 봅니다 ${displayRef}. | 지면 UI와 유사한 오인 표현, 업종 제한, 랜딩 불일치를 먼저 점검합니다 ${policyRef}. |`,
@@ -5933,12 +5933,12 @@ function buildNaverSearchAdProductComparisonAnswer(
   const policyRef = cite('naver_adguide_registration_standard_2026_chunk_0');
 
   const lines = [
-    '네이버 광고 상품은 “검색광고 몇 개”로만 보면 빠집니다. 실무에서는 **검색광고 상품군 + 쇼핑/상품 DB 상품군 + 성과형 디스플레이 상품군 + 영상/신규 지면 상품군**으로 나누어 봐야 합니다.',
+    '네이버 광고 상품은 검색 유입, 쇼핑/상품 DB, 성과형 디스플레이, 영상/신규 지면으로 나눠 목적별로 선택합니다.',
     `네이버 검색광고 축에는 파워링크, 쇼핑검색광고, 파워컨텐츠, 브랜드검색광고, 신제품검색광고, 플레이스검색광고, 지역소상공인광고, 서칭뷰가 포함됩니다 ${overviewRef}. 디스플레이 축에는 ADVoost 쇼핑, 인지도 및 트래픽 광고, 웹사이트 전환 광고, 앱 전환 광고, 카탈로그 판매, 쇼핑 프로모션, 동영상 조회 광고, 커뮤니케이션 애드가 포함됩니다 ${displayProductRef}.`,
     '',
     '**1. 상품명 기준 비교**',
     '',
-    '| 상품 | 언제 우선 검토하나 | 소재/데이터에서 먼저 볼 것 | 운영·측정 체크 |',
+    '| 상품 | 우선 검토 상황 | 소재/데이터 확인 항목 | 운영·측정 기준 |',
     '|---|---|---|---|',
     `| 파워링크/사이트검색 | 검색 의도가 있는 사용자를 웹사이트, 상담, 예약, 구매 페이지로 보내는 기본 검색 유입 | 키워드, 제목, 설명, 표시 URL, 확장 소재, 랜딩 관련성을 봅니다 ${powerlinkRef}. | CPC, 입찰, 예산, 검색어-광고문안-랜딩 일치, 전환 스크립트/로그 분석을 봅니다. |`,
     `| 쇼핑검색광고 | 상품 비교·구매 의도가 있는 사용자에게 상품 단위 노출이 필요할 때 | 상품명, 대표이미지, 가격, 배송비, 카테고리, 상품 DB URL/EP를 봅니다 ${shoppingDbRef}. | 상품 DB 수신, 카테고리 매칭, 미서비스 상품, 가격·재고 동기화, 구매 전환을 함께 봅니다. |`,
@@ -6717,7 +6717,7 @@ function buildDeterministicScopeNoticeAnswer(
   }
 
   return {
-    answer: lines.join('\n'),
+    answer: polishCompassAnswerStyle(lines.join('\n')),
     sources: visibleSources,
     model,
     showContactOption: true,
@@ -7109,7 +7109,7 @@ function buildFastKakaoProductStructuredAnswer(
   if (!structuredAnswer) return null;
 
   return {
-    answer: structuredAnswer,
+    answer: polishCompassAnswerStyle(structuredAnswer),
     sources: candidateSources,
     model,
     showContactOption: true,
@@ -7664,7 +7664,7 @@ function buildFastPolicySourceGuidedAnswer(
   if (candidateSources.length === 0) return null;
 
   return {
-    answer: buildFastPolicyAnswerText(family, candidateSources, intent),
+    answer: polishCompassAnswerStyle(buildFastPolicyAnswerText(family, candidateSources, intent)),
     sources: candidateSources,
     model: `compass-answer-fast-policy-source-guided-${family.replace(/_/g, '-')}`,
     showContactOption: true,
@@ -7707,7 +7707,7 @@ function buildFastNaverVideoProductAnswer(
   if (!structuredAnswer) return null;
 
   return {
-    answer: structuredAnswer,
+    answer: polishCompassAnswerStyle(structuredAnswer),
     sources: answerSources,
     model: 'compass-answer-fast-naver-video-product-structured',
     showContactOption: true,
@@ -7946,7 +7946,7 @@ function buildFastStructuredSpecificProductAnswer(
     const structuredAnswer = builder.build();
     if (!structuredAnswer) continue;
     return {
-      answer: structuredAnswer,
+      answer: polishCompassAnswerStyle(structuredAnswer),
       sources: answerSources,
       model: builder.model,
       showContactOption: true,
@@ -7988,7 +7988,7 @@ function buildFastKakaoSpecificProductAnswer(
   if (!structuredAnswer) return null;
 
   return {
-    answer: structuredAnswer,
+    answer: polishCompassAnswerStyle(structuredAnswer),
     sources: candidateSources.slice(0, 6),
     model: 'compass-answer-fast-kakao-specific-product-source-guided',
     showContactOption: true,

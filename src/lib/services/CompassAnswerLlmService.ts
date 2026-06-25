@@ -225,6 +225,10 @@ const ACTION_VERB_REPLACEMENTS: Array<[RegExp, string]> = [
   [/랜딩\/목적지 체크/g, '랜딩/목적지 확인'],
   [/운영 점검/g, '운영 확인'],
   [/먼저 볼 것/g, '확인 항목'],
+  [/따로 봅니다/g, '따로 확인합니다'],
+  [/별도로 봅니다/g, '별도로 확인합니다'],
+  [/기준으로 봅니다/g, '기준으로 확인합니다'],
+  [/후보로 봅니다/g, '후보로 둡니다'],
   [/분리해 봅니다/g, '분리합니다'],
   [/나누어 봅니다/g, '나눕니다'],
   [/비교해 봅니다/g, '비교합니다'],
@@ -235,7 +239,7 @@ const ACTION_VERB_REPLACEMENTS: Array<[RegExp, string]> = [
   [/([가-힣A-Za-z0-9)\]\s]+)(을|를) 봅니다/g, '$1$2 확인합니다'],
 ];
 
-function polishCompassAnswerStyle(answer: string): string {
+export function polishCompassAnswerStyle(answer: string): string {
   let polished = answer.replace(CANNED_CONTRAST_OPENING_PATTERN, '').trimStart();
 
   for (const [pattern, replacement] of ACTION_VERB_REPLACEMENTS) {
