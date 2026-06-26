@@ -1355,8 +1355,12 @@ if (!/const keywordVendor = this\.isBroadProductStructureRetrievalIntent\(intent
   fail('broad product fast path keyword search must be scoped to the requested vendor');
 }
 
-if (!/if \(vendor\) \{[\s\S]*request = request\.eq\('metadata->>source_vendor', vendor\);[\s\S]*\}/.test(rag)) {
-  fail('keyword table search must apply vendor metadata filtering when a vendor is supplied');
+if (!/private shouldApplyStrictMetadataVendorFilter\([\s\S]*tableName === 'ollama_document_chunks' \|\| getCompassSearchSource\(\) !== 'document_chunks'/.test(rag)) {
+  fail('document_chunks mode must relax strict metadata vendor filters while preserving ollama/default filtering');
+}
+
+if (!/if \(vendor && this\.shouldApplyStrictMetadataVendorFilter\(tableName\)\) \{[\s\S]*request = request\.eq\('metadata->>source_vendor', vendor\);[\s\S]*\}/.test(rag)) {
+  fail('keyword table search must apply vendor metadata filtering unless document_chunks mode deliberately relaxes it');
 }
 
 if (!/isBroadProductStructureRetrievalIntent[\s\S]*getVendorMetadataFetchLimit[\s\S]*Math\.min\(Math\.max\(limit \* 2, 16\), 36\)/.test(rag)) {

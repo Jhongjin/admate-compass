@@ -4225,6 +4225,16 @@ function pushUniqueSpecificProductSource(
   target.push(withSpecificProductEvidenceRole(source, role));
 }
 
+function isKakaoBizboardSpecificProductIntent(intent: QueryIntent) {
+  if (intent.vendors.length !== 1 || intent.vendors[0] !== 'KAKAO') return false;
+  const queryText = normalizeEvidenceText([
+    ...intent.keywords,
+    ...intent.strictProductTerms,
+    ...intent.strictContextTerms,
+  ].join(' '));
+  return /비즈보드|카카오\s*비즈보드|카카오비즈보드|톡보드|bizboard|talkboard|디스플레이\s*광고|디스플레이광고|카카오모먼트/.test(queryText);
+}
+
 function selectSpecificProductAnswerSources(
   strictProductSources: ReturnType<typeof buildVerifiedSources>,
   modeMatchedSources: ReturnType<typeof buildVerifiedSources>,
@@ -4283,8 +4293,9 @@ function selectSpecificProductAnswerSources(
     )
     && !sourceIsBroadProductStructureOnly(source, intent)
   ));
+  const productDetailContextLimit = isKakaoBizboardSpecificProductIntent(intent) ? 2 : 0;
   const productContextLimit = mode === 'product_detail'
-    ? 0
+    ? productDetailContextLimit
     : (modeDetailSources.length > 0 || modeSources.length > 0 || officialGraphSources.length > 0 ? 1 : 2);
 
   modeDetailSources.slice(0, 3).forEach(source => {
@@ -4664,6 +4675,10 @@ function buildEvidenceBackedAnswer(
   sources: ReturnType<typeof buildVerifiedSources>,
 ): DeterministicProductAnswer | null {
   const usedSourceIndexes = new Set<number>();
+  const shouldDiversifyCitedSources = (
+    process.env.COMPASS_SEARCH_SOURCE === 'document_chunks'
+    && (profile.family === 'kakao_bizboard' || profile.family === 'kakao_creative')
+  );
   const lines: string[] = [profile.intro, ''];
   let supportedBulletCount = 0;
 
@@ -4671,7 +4686,13 @@ function buildEvidenceBackedAnswer(
     const sectionLines: string[] = [];
 
     section.bullets.forEach((bullet) => {
-      const sourceIndex = sources.findIndex(source => sourceHasEvidenceTerm(source, bullet.terms));
+      const matchingSourceIndexes = sources
+        .map((source, index) => ({ source, index }))
+        .filter(({ source }) => sourceHasEvidenceTerm(source, bullet.terms))
+        .map(({ index }) => index);
+      const sourceIndex = shouldDiversifyCitedSources
+        ? (matchingSourceIndexes.find(index => !usedSourceIndexes.has(index)) ?? matchingSourceIndexes[0] ?? -1)
+        : (matchingSourceIndexes[0] ?? -1);
       if (sourceIndex < 0) return;
 
       supportedBulletCount += 1;

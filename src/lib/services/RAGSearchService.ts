@@ -1372,6 +1372,7 @@ export class RAGSearchService {
         return [];
       }
 
+      const usesDocumentChunksSearchSource = getCompassSearchSource() === 'document_chunks';
       const needsVendorAwareRetrieval = intent.vendors.length > 0;
       const needsProductStructureRetrieval = intent.topics.includes('product_structure');
       const productStructureRetrievalIntent = needsProductStructureRetrieval
@@ -1556,21 +1557,31 @@ export class RAGSearchService {
             limit,
             intent,
           );
+          let continueHybrid = false;
           console.log(`✅ NAVER specific product 검색 완료: ${rankedResults.length}개 결과 (specific naver priority direct path)`);
           if (rankedResults.length > 0) {
-            return this.withRetrievalTimeoutMetadata(rankedResults, timedOutChannels, channelTimings);
-          }
-          const rescueResults = this.selectNaverProductPriorityRescueCandidates(
-            naverProductPriorityCandidates,
-            limit,
-            intent,
-          );
-          if (rescueResults.length > 0) {
-            console.warn('NAVER specific product priority candidates were rescued after strict ranking filtered all candidates', {
-              priorityCandidateCount: naverProductPriorityCandidates.length,
-              rescueCount: rescueResults.length,
+            continueHybrid = this.shouldContinueHybridAfterSpecificPriority(rankedResults, limit);
+            if (!continueHybrid) {
+              return this.withRetrievalTimeoutMetadata(rankedResults, timedOutChannels, channelTimings);
+            }
+            console.log('NAVER specific product priority result is sparse in document_chunks mode; continuing to hybrid retrieval', {
+              rankedCount: rankedResults.length,
+              limit,
             });
-            return this.withRetrievalTimeoutMetadata(rescueResults, timedOutChannels, channelTimings);
+          }
+          if (!continueHybrid) {
+            const rescueResults = this.selectNaverProductPriorityRescueCandidates(
+              naverProductPriorityCandidates,
+              limit,
+              intent,
+            );
+            if (rescueResults.length > 0) {
+              console.warn('NAVER specific product priority candidates were rescued after strict ranking filtered all candidates', {
+                priorityCandidateCount: naverProductPriorityCandidates.length,
+                rescueCount: rescueResults.length,
+              });
+              return this.withRetrievalTimeoutMetadata(rescueResults, timedOutChannels, channelTimings);
+            }
           }
           console.warn('NAVER specific product priority candidates were all filtered; continuing to hybrid retrieval', {
             priorityCandidateCount: naverProductPriorityCandidates.length,
@@ -1700,21 +1711,31 @@ export class RAGSearchService {
             limit,
             intent,
           );
+        let continueHybrid = false;
         console.log(`✅ KAKAO specific product 검색 완료: ${rankedResults.length}개 결과 (specific kakao priority direct path)`);
         if (rankedResults.length > 0) {
-          return this.withRetrievalTimeoutMetadata(rankedResults, timedOutChannels, channelTimings);
-        }
-        const rescueResults = this.selectKakaoProductPriorityRescueCandidates(
-          kakaoProductPriorityCandidates,
-          limit,
-          intent,
-        );
-        if (rescueResults.length > 0) {
-          console.warn('KAKAO specific product priority candidates were rescued after strict ranking filtered all candidates', {
-            priorityCandidateCount: kakaoProductPriorityCandidates.length,
-            rescueCount: rescueResults.length,
+          continueHybrid = this.shouldContinueHybridAfterSpecificPriority(rankedResults, limit);
+          if (!continueHybrid) {
+            return this.withRetrievalTimeoutMetadata(rankedResults, timedOutChannels, channelTimings);
+          }
+          console.log('KAKAO specific product priority result is sparse in document_chunks mode; continuing to hybrid retrieval', {
+            rankedCount: rankedResults.length,
+            limit,
           });
-          return this.withRetrievalTimeoutMetadata(rescueResults, timedOutChannels, channelTimings);
+        }
+        if (!continueHybrid) {
+          const rescueResults = this.selectKakaoProductPriorityRescueCandidates(
+            kakaoProductPriorityCandidates,
+            limit,
+            intent,
+          );
+          if (rescueResults.length > 0) {
+            console.warn('KAKAO specific product priority candidates were rescued after strict ranking filtered all candidates', {
+              priorityCandidateCount: kakaoProductPriorityCandidates.length,
+              rescueCount: rescueResults.length,
+            });
+            return this.withRetrievalTimeoutMetadata(rescueResults, timedOutChannels, channelTimings);
+          }
         }
         console.warn('KAKAO specific product priority candidates were all filtered; continuing to hybrid retrieval', {
           priorityCandidateCount: kakaoProductPriorityCandidates.length,
@@ -1806,7 +1827,7 @@ export class RAGSearchService {
         graphCandidates
       ] = await Promise.all([
         this.withRetrievalChannelTimeout(this.searchVectorCandidates(queryEmbedding, candidateLimit, intent), 'hybrid_vector', [], timedOutChannels, channelTimings),
-        usesKakaoProductPriority
+        usesKakaoProductPriority && !usesDocumentChunksSearchSource
           ? Promise.resolve([])
           : this.withRetrievalChannelTimeout(this.searchKeywordCandidates(query, candidateLimit, intent), 'hybrid_keyword', [], timedOutChannels, channelTimings),
         usesGenericRightsPolicyPriority
@@ -1821,12 +1842,12 @@ export class RAGSearchService {
         usesFastPolicyOfficialHybridCoverage
           ? this.withRetrievalChannelTimeout(this.searchFastPolicySourceGuidedOfficialCandidates(intent), 'hybrid_fast_policy_official_chunk', [], timedOutChannels, channelTimings)
           : Promise.resolve([]),
-        usesKakaoProductPriority
+        usesKakaoProductPriority && !usesDocumentChunksSearchSource
           ? Promise.resolve([])
           : usesSpecificProductRetrieval
           ? this.withRetrievalChannelTimeout(this.searchVendorCoverageCandidates(query, Math.max(limit, 8), intent), 'hybrid_vendor_coverage_specific', [], timedOutChannels, channelTimings)
           : this.withRetrievalChannelTimeout(this.searchVendorCoverageCandidates(query, candidateLimit, intent), 'hybrid_vendor_coverage', [], timedOutChannels, channelTimings),
-        usesPrioritySpecificProductRetrieval
+        usesPrioritySpecificProductRetrieval && !usesDocumentChunksSearchSource
           ? Promise.resolve([])
           : this.withRetrievalChannelTimeout(this.searchProductStructureCandidates(candidateLimit, intent), 'hybrid_product_structure_anchor', [], timedOutChannels, channelTimings),
         usesNaverProductStructurePriority
@@ -2145,7 +2166,10 @@ export class RAGSearchService {
       const rpcName = searchSource === 'document_chunks' ? 'search_documents' : 'search_ollama_documents';
       const corpus: RetrievalCorpus = searchSource === 'document_chunks' ? 'document_chunks' : 'ollama_document_chunks';
       console.log('🔍 벡터 검색 RPC 함수 호출 시도', { searchSource, rpcName });
-      const { data, error } = await this.supabase.rpc(rpcName, {
+      const rpcClient = searchSource === 'document_chunks'
+        ? this.supabase.schema('compass')
+        : this.supabase;
+      const { data, error } = await rpcClient.rpc(rpcName, {
         query_embedding: queryEmbedding,
         match_threshold: 0.001,
         match_count: limit * 3
@@ -4231,6 +4255,7 @@ export class RAGSearchService {
     ];
 
     const usesSpecificKakaoOllamaFastPath = intent.isSpecificProductGuidance;
+    const usesDocumentChunksSearchSource = getCompassSearchSource() === 'document_chunks';
     const requiresKakaoBizboardEvidence = this.requiresKakaoBizboardEvidence(intent);
     const usesKakaoServiceProtectionAssetIntent = this.isKakaoServiceProtectionAssetIntent(intent);
     const hasRequiredKakaoFastPathEvidence = (candidate: SearchResult): boolean => {
@@ -4238,6 +4263,7 @@ export class RAGSearchService {
       return this.hasKakaoBizboardDisplayExactSignal(evidenceText)
         && (!requiresKakaoBizboardEvidence || this.hasKakaoBizboardProductSignal(evidenceText));
     };
+    const documentChunksFastPathCandidates: SearchResult[] = [];
     if (usesSpecificKakaoOllamaFastPath) {
       if (usesKakaoServiceProtectionAssetIntent) {
         const serviceProtectionChunkResults = await this.searchKnownOfficialDocumentChunks(
@@ -4274,7 +4300,10 @@ export class RAGSearchService {
         intent,
       );
       if (officialChunkCandidates.some(hasRequiredKakaoFastPathEvidence)) {
-        return officialChunkCandidates;
+        if (!usesDocumentChunksSearchSource) {
+          return officialChunkCandidates;
+        }
+        documentChunksFastPathCandidates.push(...officialChunkCandidates);
       }
 
       const [documentFastResults, ollamaResults] = await Promise.all([
@@ -4290,7 +4319,10 @@ export class RAGSearchService {
         intent,
       );
       if (keywordFastCandidates.some(hasRequiredKakaoFastPathEvidence)) {
-        return keywordFastCandidates;
+        if (!usesDocumentChunksSearchSource) {
+          return keywordFastCandidates;
+        }
+        documentChunksFastPathCandidates.push(...keywordFastCandidates);
       }
 
       const exactFastAnchorResults = await Promise.all([
@@ -4308,7 +4340,21 @@ export class RAGSearchService {
         intent,
       );
       if (anchorFastCandidates.some(hasRequiredKakaoFastPathEvidence)) {
-        return anchorFastCandidates;
+        if (!usesDocumentChunksSearchSource) {
+          return anchorFastCandidates;
+        }
+        documentChunksFastPathCandidates.push(...anchorFastCandidates);
+      }
+
+      if (usesDocumentChunksSearchSource && documentChunksFastPathCandidates.length > 0) {
+        const rescueCandidates = this.selectKakaoProductPriorityRescueCandidates(
+          documentChunksFastPathCandidates,
+          Math.max(6, intent.recommendedSourceLimit),
+          intent,
+        );
+        return rescueCandidates.length > 0
+          ? rescueCandidates
+          : documentChunksFastPathCandidates.slice(0, Math.max(6, intent.recommendedSourceLimit));
       }
     }
 
@@ -6074,8 +6120,7 @@ export class RAGSearchService {
       });
 
       const data = await this.loadCachedSupabaseRows(cacheKey, async () => {
-        const { data, error } = await this.supabase
-          .from('document_chunks')
+        const { data, error } = await this.fromSearchTable('document_chunks')
           .select('id, document_id, chunk_id, content, metadata')
           .in('id', uniqueChunkIds)
           .limit(fetchLimit);
@@ -6118,6 +6163,22 @@ export class RAGSearchService {
     return getCompassSearchSource() === 'document_chunks' && tableName === 'ollama_document_chunks';
   }
 
+  private shouldContinueHybridAfterSpecificPriority(rankedResults: SearchResult[], limit: number): boolean {
+    return getCompassSearchSource() === 'document_chunks'
+      && rankedResults.length > 0
+      && rankedResults.length < Math.min(Math.max(limit, 1), 3);
+  }
+
+  private shouldApplyStrictMetadataVendorFilter(tableName: 'ollama_document_chunks' | 'document_chunks'): boolean {
+    return tableName === 'ollama_document_chunks' || getCompassSearchSource() !== 'document_chunks';
+  }
+
+  private fromSearchTable(tableName: 'ollama_document_chunks' | 'document_chunks') {
+    return tableName === 'document_chunks'
+      ? this.supabase.schema('compass').from(tableName)
+      : this.supabase.from(tableName);
+  }
+
   private async searchProductStructureAnchorTable(
     tableName: 'ollama_document_chunks' | 'document_chunks',
     anchor: string,
@@ -6140,12 +6201,11 @@ export class RAGSearchService {
       });
 
       const data = await this.loadCachedSupabaseRows(cacheKey, async () => {
-        let query = this.supabase
-          .from(tableName)
+        let query = this.fromSearchTable(tableName)
           .select(selectColumns)
           .ilike('content', `%${anchor}%`);
 
-        if (vendor) {
+        if (vendor && this.shouldApplyStrictMetadataVendorFilter(tableName)) {
           query = query.eq('metadata->>source_vendor', vendor);
         }
 
@@ -6208,12 +6268,13 @@ export class RAGSearchService {
       });
 
       const data = await this.loadCachedSupabaseRows(cacheKey, async () => {
-        const { data, error } = await this.supabase
-          .from(tableName)
+        let query = this.fromSearchTable(tableName)
           .select(selectColumns)
-          .eq('metadata->>source_vendor', vendor)
           .or(keywordConditions.join(','))
-          .limit(fetchLimit);
+        if (this.shouldApplyStrictMetadataVendorFilter(tableName)) {
+          query = query.eq('metadata->>source_vendor', vendor);
+        }
+        const { data, error } = await query.limit(fetchLimit);
 
         if (error) {
           console.warn('Vendor metadata keyword search failed', {
@@ -6275,11 +6336,10 @@ export class RAGSearchService {
       });
 
       const data = await this.loadCachedSupabaseRows(cacheKey, async () => {
-        let request = this.supabase
-          .from(tableName)
+        let request = this.fromSearchTable(tableName)
           .select(selectColumns)
           .or(keywordConditions.join(','));
-        if (vendor) {
+        if (vendor && this.shouldApplyStrictMetadataVendorFilter(tableName)) {
           request = request.eq('metadata->>source_vendor', vendor);
         }
         const { data, error } = await request.limit(fetchLimit);
