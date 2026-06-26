@@ -4676,7 +4676,7 @@ function buildEvidenceBackedAnswer(
 ): DeterministicProductAnswer | null {
   const usedSourceIndexes = new Set<number>();
   const shouldDiversifyCitedSources = (
-    process.env.COMPASS_SEARCH_SOURCE === 'document_chunks'
+    process.env.COMPASS_SEARCH_SOURCE?.trim() === 'document_chunks'
     && (profile.family === 'kakao_bizboard' || profile.family === 'kakao_creative')
   );
   const lines: string[] = [profile.intro, ''];

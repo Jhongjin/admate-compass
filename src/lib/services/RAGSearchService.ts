@@ -138,7 +138,7 @@ const COMPASS_SUPABASE_ROWS_CACHE_KEY_VERSION = 'v2-product-retrieval-paths';
 const compassSupabaseRowsCache = new Map<string, CompassSupabaseRowsCacheEntry>();
 
 function getCompassSearchSource(): CompassSearchSource {
-  return process.env.COMPASS_SEARCH_SOURCE === 'document_chunks' ? 'document_chunks' : 'ollama';
+  return process.env.COMPASS_SEARCH_SOURCE?.trim() === 'document_chunks' ? 'document_chunks' : 'ollama';
 }
 
 const META_APP_INSTALL_OFFICIAL_CHUNK_IDS = [
