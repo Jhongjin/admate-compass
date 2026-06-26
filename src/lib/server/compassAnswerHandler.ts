@@ -374,6 +374,148 @@ function markCompassAnswerCacheMiss(body: Record<string, unknown>): Record<strin
   return body;
 }
 
+function extractCompassAnswerCitationIndexes(answer: string) {
+  const indexes = new Set<number>();
+  for (const match of answer.matchAll(/\[S(\d+)\]/g)) {
+    const index = Number(match[1]);
+    if (Number.isFinite(index) && index > 0) indexes.add(index);
+  }
+  return Array.from(indexes).sort((a, b) => a - b);
+}
+
+function buildCompassAnswerSelfAssessment(body: Record<string, unknown>) {
+  const response = (body as any).response;
+  if (!response || typeof response !== 'object') return null;
+
+  const answer = String(response.message || response.content || '').trim();
+  if (!answer) return null;
+
+  const diagnostics = response.sourceDiagnostics && typeof response.sourceDiagnostics === 'object'
+    ? response.sourceDiagnostics
+    : {};
+  const sources = Array.isArray(response.sources) ? response.sources : [];
+  const model = String((body as any).model || '');
+  const citedSourceIndexes = extractCompassAnswerCitationIndexes(answer);
+  const citedInRangeIndexes = citedSourceIndexes.filter(index => index <= sources.length);
+  const answerSourceCount = Number.isFinite(Number(diagnostics.answerSourceCount))
+    ? Number(diagnostics.answerSourceCount)
+    : sources.length;
+  const searchSourceCount = Number.isFinite(Number(diagnostics.sourceCount))
+    ? Number(diagnostics.sourceCount)
+    : sources.length;
+  const fastAnswerFallback = typeof diagnostics.fastAnswerFallback === 'string'
+    ? diagnostics.fastAnswerFallback
+    : undefined;
+  const isDeterministicOrFastPath = (
+    /(?:deterministic|fast-|source-guided|structured)/.test(model)
+    || Boolean(fastAnswerFallback)
+    || diagnostics.preRetrievalDeterministicAnswer === true
+  );
+  const penalties: Array<{ code: string; points: number; reason: string }> = [];
+  let score = 100;
+  const addPenalty = (code: string, points: number, reason: string) => {
+    penalties.push({ code, points, reason });
+    score -= points;
+  };
+
+  if (response.noDataFound === true) {
+    addPenalty('no_data_answer', 35, '답변이 no-data 경로에서 생성됐습니다.');
+  }
+  if (searchSourceCount === 0) {
+    addPenalty('no_search_sources', 35, '검색된 출처가 없습니다.');
+  }
+  if (sources.length === 0 && response.noDataFound !== true) {
+    addPenalty('no_answer_sources', 30, '답변에 연결된 출처가 없습니다.');
+  }
+  if (citedSourceIndexes.length === 0 && sources.length > 0) {
+    addPenalty('no_inline_citations', 35, '본문에 실제 [S] 인용이 없습니다.');
+  }
+  if (citedSourceIndexes.length !== citedInRangeIndexes.length) {
+    addPenalty('citation_out_of_range', 25, '본문 인용 번호가 응답 sources 범위를 벗어났습니다.');
+  }
+  if (answerSourceCount >= 3 && citedInRangeIndexes.length <= 1) {
+    addPenalty('single_citation_with_multiple_sources', 18, '여러 답변 출처가 있는데 본문 인용은 한 출처에 치우쳤습니다.');
+  } else if (answerSourceCount >= 2 && citedInRangeIndexes.length < Math.min(answerSourceCount, 2)) {
+    addPenalty('citation_underuse', 12, '답변 출처 대비 실제 본문 인용 수가 부족합니다.');
+  }
+  if (answerSourceCount <= 1 && sources.length <= 1 && response.noDataFound !== true) {
+    addPenalty('single_source_basis', 10, '단일 출처 기반 답변이므로 충분한 교차 근거로 보지 않습니다.');
+  }
+  if (sources.length > 0 && citedInRangeIndexes.length > 0 && citedInRangeIndexes.length < Math.min(sources.length, 2)) {
+    addPenalty('source_list_underused', 8, '응답 source 목록보다 본문에 반영된 출처가 적습니다.');
+  }
+  if (isDeterministicOrFastPath) {
+    addPenalty('deterministic_or_fast_path_review', 12, 'LLM 합성 대신 결정론/fast 경로를 사용했으므로 과점수를 제한합니다.');
+  }
+  if (diagnostics.scopeRescue === true) {
+    addPenalty('scope_rescue_path', 8, '스코프 보강/구제 경로에서 생성된 답변입니다.');
+  }
+  if (diagnostics.retrievalTimedOut === true || diagnostics.retrievalChannelTimedOut === true) {
+    addPenalty('retrieval_limited', 12, '검색 채널 제한 또는 타임아웃이 있었습니다.');
+  }
+  if (Array.isArray(diagnostics.missingVendorSlots) && diagnostics.missingVendorSlots.length > 0) {
+    addPenalty('missing_vendor_coverage', 14, '요청 매체 중 일부 출처 커버리지가 부족합니다.');
+  }
+  if (/추가\s*확인\s*질문/.test(answer) && /product_detail|상품 상세/.test(String(diagnostics.answerMode || 'product_detail'))) {
+    addPenalty('generic_followup_questions', 8, '상품 설명 답변에 일반적인 추가 질문 블록이 포함됐습니다.');
+  }
+
+  const deterministicScoreCap = isDeterministicOrFastPath ? 82 : null;
+  const cappedScore = deterministicScoreCap == null ? score : Math.min(score, deterministicScoreCap);
+  const finalScore = Math.max(0, Math.min(100, Math.round(cappedScore)));
+  const grade = finalScore >= 85
+    ? 'strong'
+    : finalScore >= 70
+      ? 'usable'
+      : finalScore >= 55
+        ? 'limited'
+        : 'weak';
+
+  return {
+    score: finalScore,
+    grade,
+    citedSourceCount: citedInRangeIndexes.length,
+    citedSourceLabels: citedInRangeIndexes.map(index => `[S${index}]`),
+    answerSourceCount,
+    responseSourceCount: sources.length,
+    searchSourceCount,
+    citationUseRate: answerSourceCount > 0
+      ? Number((citedInRangeIndexes.length / answerSourceCount).toFixed(2))
+      : 0,
+    deterministicOrFastPath: isDeterministicOrFastPath,
+    deterministicScoreCap,
+    fastAnswerFallback,
+    confidenceCapApplied: true,
+    penalties,
+  };
+}
+
+function applyCompassAnswerSelfAssessment(result: CompassAnswerHandlerResult): CompassAnswerHandlerResult {
+  const body = result.body;
+  const response = (body as any).response;
+  if (!response || typeof response !== 'object') return result;
+
+  const assessment = buildCompassAnswerSelfAssessment(body);
+  if (!assessment) return result;
+
+  response.sourceDiagnostics = {
+    ...(response.sourceDiagnostics && typeof response.sourceDiagnostics === 'object'
+      ? response.sourceDiagnostics
+      : {}),
+    answerSelfAssessment: assessment,
+  };
+
+  const currentConfidence = Number((body as any).confidence);
+  if (Number.isFinite(currentConfidence)) {
+    const adjustedConfidence = Math.min(currentConfidence, assessment.score);
+    (body as any).confidenceBeforeSelfAssessment = currentConfidence;
+    (body as any).confidence = adjustedConfidence;
+    (body as any).confidenceCappedBySelfAssessment = adjustedConfidence < currentConfidence;
+  }
+
+  return result;
+}
+
 function countCompassGraphLikeSources(sources: unknown): number | null {
   if (!Array.isArray(sources)) return null;
   return sources.filter((source: any) => (
@@ -12595,7 +12737,7 @@ export async function buildCompassAnswerResponseWithRuntimeCache(
   const requestStartedAt = Date.now();
   if (shouldBypassCompassAnswerRuntimeCache(request)) {
     compassAnswerRuntimeMetrics.bypassedRequestCount += 1;
-    const result = await buildCompassAnswerResponse(request, emitPhase);
+    const result = applyCompassAnswerSelfAssessment(await buildCompassAnswerResponse(request, emitPhase));
     recordCompassAnswerRuntimeResult(result, 'BYPASS');
     await recordCompassAnswerDurableRuntimeEvent(
       buildCompassAnswerDurableRuntimeEvent(result, 'BYPASS', null),
@@ -12606,7 +12748,7 @@ export async function buildCompassAnswerResponseWithRuntimeCache(
   const cacheKey = await resolveCompassAnswerRequestCacheKey(request);
   if (!cacheKey) {
     compassAnswerRuntimeMetrics.bypassedRequestCount += 1;
-    const result = await buildCompassAnswerResponse(request, emitPhase);
+    const result = applyCompassAnswerSelfAssessment(await buildCompassAnswerResponse(request, emitPhase));
     recordCompassAnswerRuntimeResult(result, 'BYPASS');
     await recordCompassAnswerDurableRuntimeEvent(
       buildCompassAnswerDurableRuntimeEvent(result, 'BYPASS', null),
@@ -12622,6 +12764,7 @@ export async function buildCompassAnswerResponseWithRuntimeCache(
       body: markCompassAnswerCacheHit(cachedBody, Date.now() - requestStartedAt, 'memory'),
       status: 200,
     };
+    applyCompassAnswerSelfAssessment(result);
     recordCompassAnswerRuntimeResult(result, 'HIT');
     await recordCompassAnswerDurableRuntimeEvent(
       buildCompassAnswerDurableRuntimeEvent(result, 'HIT', cacheKey),
@@ -12641,6 +12784,7 @@ export async function buildCompassAnswerResponseWithRuntimeCache(
       body: markCompassAnswerCacheHit(cachedResult.body, Date.now() - requestStartedAt, 'durable'),
       status: durableCachedEntry.status,
     };
+    applyCompassAnswerSelfAssessment(result);
     recordCompassAnswerRuntimeResult(result, 'HIT');
     await recordCompassAnswerDurableRuntimeEvent(
       buildCompassAnswerDurableRuntimeEvent(result, 'HIT', cacheKey),
@@ -12649,7 +12793,7 @@ export async function buildCompassAnswerResponseWithRuntimeCache(
   }
 
   compassAnswerRuntimeMetrics.cacheMissCount += 1;
-  const result = await buildCompassAnswerResponse(request, emitPhase);
+  const result = applyCompassAnswerSelfAssessment(await buildCompassAnswerResponse(request, emitPhase));
   markCompassAnswerCacheMiss(result.body);
   const expiresAt = rememberCompassAnswerResponse(cacheKey, result);
   recordCompassAnswerRuntimeResult(result, 'MISS');

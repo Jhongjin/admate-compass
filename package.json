@@ -17,6 +17,7 @@
     "check:compass-sentinel-evidence-manifest": "node scripts/check-compass-sentinel-evidence-manifest-contract.mjs",
     "check:compass-answer-route-contract": "node scripts/check-compass-answer-route-contract.mjs",
     "check:compass-answer-stream-route-contract": "node scripts/check-compass-answer-stream-route-contract.mjs",
+    "check:compass-answer-self-assessment-contract": "node scripts/check-compass-answer-self-assessment-contract.mjs",
     "check:compass-product-structure-answer-contract": "node scripts/check-compass-product-structure-answer-contract.mjs",
     "check:compass-answer-style-benchmark-contract": "node scripts/check-compass-answer-style-benchmark-contract.mjs",
     "check:compass-evidence-graph-contract": "node scripts/check-compass-evidence-graph-contract.mjs",
