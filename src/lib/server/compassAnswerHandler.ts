@@ -11384,6 +11384,10 @@ export async function buildCompassAnswerResponse(
     }
     const sourceDiagnostics = {
       ...buildSourceDiagnostics(ragIntent, verifiedSearchResults),
+      rawSearchResultCount,
+      mergedSearchResultCount: searchResults.length,
+      verifiedSourceCount: verifiedSearchResults.length,
+      productStructureRescueCount: productStructureRescueResults.length,
       retrievalTimedOut,
       retrievalChannelTimedOut,
       retrievalDurationMs,
