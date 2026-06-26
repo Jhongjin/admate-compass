@@ -1681,6 +1681,75 @@ function buildNaverShoppingDataStructuredFallbackAnswer(
   return sections.join('\n');
 }
 
+function buildNaverShoppingSearchOverviewStructuredAnswer(
+  sources: ReturnType<typeof buildVerifiedSources>,
+  intent: QueryIntent,
+  originalMessage: string,
+) {
+  if (!intent.vendors.includes('NAVER')) return null;
+
+  const queryText = normalizeProductIntentText(originalMessage);
+  const compactQueryText = queryText.replace(/\s+/g, '');
+  const asksShoppingSearch = /쇼핑검색|쇼핑\s*검색|쇼핑몰\s*상품형|쇼핑\s*광고/.test(queryText);
+  const asksDataSetup = /db\s*url|dburl|상품\s*db|상품db|ep|상품\s*등록|상품등록|상품정보\s*수신|쇼핑파트너센터|카테고리\s*(자동)?매칭|입점\s*심사|피드|feed/.test(queryText)
+    || /dburl|상품db/.test(compactQueryText);
+  const asksCreativeGuide = /제작|소재|가이드|사양|스펙|규격|이미지|문구|카피|랜딩|심사|검수|등록\s*기준/.test(queryText);
+  if (!asksShoppingSearch || asksDataSetup || asksCreativeGuide) return null;
+
+  const used = new Set<number>();
+  const sections = [
+    '네이버 쇼핑검색광고는 네이버 쇼핑/가격비교에 등록된 상품을 검색·쇼핑 맥락에서 상품 단위로 노출하는 광고입니다. 일반 검색광고처럼 문안만 등록하는 방식보다, 상품 데이터와 노출 가능 상태가 더 중요합니다.',
+    '',
+    '**어떤 상황에 쓰나**',
+  ];
+
+  addFallbackLine(
+    sections,
+    used,
+    sources,
+    'NAVER',
+    /쇼핑검색광고|쇼핑\s*검색광고|쇼핑몰\s*상품형|가격비교\s*카테고리|네이버\s*가격비교|상품등록\s*가능|서비스\s*가능\s*상태/,
+    label => `- 상품명, 이미지, 가격처럼 상품 자체가 비교·탐색 대상일 때 검토합니다. 가격비교 카테고리와 서비스 가능 상태가 맞아야 광고 등록과 노출을 판단할 수 있습니다 ${label}.`,
+  );
+  addFallbackLine(
+    sections,
+    used,
+    sources,
+    'NAVER',
+    /상품명|대표이미지|상품\s*이미지|가격|배송비|카테고리|상품\s*정보|광고\s*노출용|상품정보/,
+    label => `- 노출 품질은 상품명, 대표이미지, 가격, 배송비, 카테고리 같은 상품 정보 품질에 영향을 받으므로 광고 세팅 전 상품 정보부터 확인해야 합니다 ${label}.`,
+  );
+
+  sections.push('');
+  sections.push('**운영 전에 볼 것**');
+
+  addFallbackLine(
+    sections,
+    used,
+    sources,
+    'NAVER',
+    /상품\s*db|상품db|db\s*url|dburl|ep\s*\(=\s*db\s*url\)|ep|상품정보\s*수신\s*현황|등록\s*요청|등록요청|상품관리|카테고리\s*(자동)?매칭/,
+    label => `- 쇼핑검색광고는 상품 DB/EP 수신, 카테고리 매칭, 상품등록 가능 여부를 먼저 봐야 합니다. 이 단계가 맞지 않으면 캠페인 생성 화면에서 바로 해결되지 않을 수 있습니다 ${label}.`,
+  );
+  addFallbackLine(
+    sections,
+    used,
+    sources,
+    'NAVER',
+    /광고등록기준|광고\s*등록\s*기준|심사|등록\s*기준|제한|모조품|상표권|인[\-/]?허가|신고|법령/,
+    label => `- 상품 데이터가 정상이어도 업종, 인허가, 권리 침해, 허위·과장 같은 등록 기준에 걸리면 노출이 제한될 수 있어 심사 기준을 별도로 확인해야 합니다 ${label}.`,
+  );
+
+  if (used.size === 0) return null;
+
+  sections.push('');
+  sections.push('정리하면, 쇼핑검색광고는 “검색어에 문안을 붙이는 광고”라기보다 **상품 DB에 등록된 상품을 쇼핑 탐색 지면에 노출시키는 광고**로 보는 편이 맞습니다. 집행 전에는 상품 데이터 수신, 카테고리, 가격·이미지, 서비스 가능 상태를 먼저 점검하세요.');
+  sections.push('');
+  sections.push(`근거: ${formatFallbackEvidenceLabels(used)}`);
+
+  return sections.join('\n');
+}
+
 function buildNaverShoppingSearchCreativeGuideStructuredFallbackAnswer(
   sources: ReturnType<typeof buildVerifiedSources>,
   intent: QueryIntent,
@@ -4579,6 +4648,7 @@ type FastStructuredSpecificProductAnswerFallback =
   | 'meta_app_install_structured'
   | 'meta_catalog_structured'
   | 'meta_creative_spec_structured'
+  | 'naver_shopping_search_overview_structured'
   | 'naver_shopping_search_creative_structured'
   | 'naver_shopping_data_operational'
   | 'naver_shopping_data_structured'
@@ -6814,7 +6884,7 @@ function buildDeterministicScopeNoticeAnswer(
 
 function getSpecificProductAnswerProfile(
   family: ProductAnswerFamily,
-  _mode: SpecificProductAnswerMode,
+  mode: SpecificProductAnswerMode,
 ): EvidenceBackedAnswerProfile | null {
   switch (family) {
     case 'meta_app_install':
@@ -6966,48 +7036,72 @@ function getSpecificProductAnswerProfile(
     case 'naver_shopping':
       return {
         family,
-        intro: '네이버 쇼핑검색/쇼핑 지면은 상품 노출 목적과 상품 DB·등록 조건을 함께 확인해야 합니다.',
+        intro: '네이버 쇼핑검색광고는 쇼핑/가격비교에 등록된 상품을 검색·쇼핑 맥락에서 상품 단위로 노출하는 광고입니다.',
         sections: [
           {
-            heading: '상품/지면',
+            heading: '상품 성격',
             bullets: [
-              { text: '사이트검색광고는 키워드 검색 기반으로 웹사이트 방문을 늘릴 때 검토합니다.', terms: ['사이트검색광고', '웹사이트 방문'] },
-              { text: '쇼핑검색광고는 쇼핑몰 상품형처럼 상품 노출과 유입을 함께 다룰 때 확인합니다.', terms: ['쇼핑검색광고', '쇼핑검색', '쇼핑몰 상품형'] },
-              { text: '쇼핑블록이나 주요 쇼핑 지면은 PC·모바일 쇼핑 지면의 노출 목적을 따로 확인합니다.', terms: ['쇼핑블록', '쇼핑 지면', 'PC 쇼핑블록', '모바일 쇼핑'] },
+              { text: '쇼핑검색광고는 쇼핑몰 상품형처럼 상품 자체의 노출과 유입을 함께 다룰 때 확인합니다.', terms: ['쇼핑검색광고', '쇼핑검색', '쇼핑몰 상품형'] },
+              { text: '가격비교 카테고리, 서비스 가능 상태, 상품등록 가능 여부가 광고 노출 판단의 기본 조건입니다.', terms: ['가격비교', '카테고리', '서비스 가능 상태', '상품등록 가능'] },
             ],
           },
           {
             heading: '운영 전 확인',
             bullets: [
               { text: '상품 DB URL, EP, 상품정보 수신, 카테고리 매칭 같은 등록 조건을 함께 확인해야 합니다.', terms: ['상품 DB', '상품DB', 'DB URL', 'EP', '상품정보 수신', '카테고리 매칭'] },
+              { text: '상품명, 대표이미지, 가격, 배송비처럼 사용자가 보는 상품 정보 품질도 노출 전 점검 대상입니다.', terms: ['상품명', '대표이미지', '가격', '배송비', '상품 정보'] },
             ],
           },
         ],
-        summary: '정리하면, 목적에 맞는 검색·쇼핑 지면을 고른 뒤 상품 DB와 등록 기준을 함께 대조하는 흐름이 안전합니다.',
+        summary: '정리하면, 쇼핑검색광고는 문안 중심 검색광고보다 상품 데이터 기반 광고에 가깝고, 집행 전 상품 DB와 가격비교 노출 가능 상태를 먼저 확인해야 합니다.',
         model: 'compass-answer-naver-shopping-data-operational',
       };
 
     case 'kakao_bizboard':
+      if (mode === 'creative_guide' || mode === 'execution_guide' || mode === 'policy_screening') {
+        return {
+          family,
+          intro: '카카오 비즈보드 소재는 먼저 비즈보드 지면과 구성 조건을 확인하고, 그다음 제작 가이드와 심사 기준으로 이미지·문구·랜딩을 맞추는 순서가 안전합니다.',
+          sections: [
+            {
+              heading: '제작 전 확인',
+              bullets: [
+                { text: '비즈보드는 카카오 주요 지면에 노출되는 상품이므로, 소재를 만들기 전에 해당 상품가이드에서 노출 지면과 집행 조건을 먼저 확인합니다.', terms: ['비즈보드', '카카오모먼트', '상품가이드', '상품 가이드', '노출 지면', '집행 조건'] },
+                { text: '제작가이드에서는 이미지 비율, 텍스트 영역, 소재 크기, 버튼/랜딩 구성처럼 실제 소재 제작 조건을 확인합니다.', terms: ['제작가이드', '제작 가이드', '이미지', '비율', '텍스트', '소재', '랜딩'] },
+                { text: '심사가이드에서는 카카오 서비스로 오인될 수 있는 UI·로고 모방, 허위·과장 표현, 업종 제한, 랜딩 불일치를 별도 체크해야 합니다.', terms: ['심사가이드', '심사 가이드', '오인', '허위', '과장', '업종 제한', '랜딩'] },
+              ],
+            },
+          ],
+          summary: '정리하면, 비즈보드 소재는 “지면/상품 조건 → 제작 규격 → 심사 리스크 → 랜딩 일치” 순서로 점검해야 반려 가능성을 줄일 수 있습니다.',
+          model: 'compass-answer-deterministic-kakao-bizboard-creative',
+          minBullets: 3,
+          confidenceCap: 82,
+        };
+      }
+
       return {
         family,
-        intro: '카카오 비즈보드는 카카오 주요 지면 노출 목적과 소재·심사 기준을 함께 확인해야 하는 디스플레이 계열 상품입니다.',
+        intro: '카카오 비즈보드는 카카오톡과 카카오 주요 서비스 지면에서 브랜드·프로모션 메시지를 크게 노출하고 랜딩 유입까지 연결할 때 검토하는 대표 디스플레이형 광고 상품입니다.',
         sections: [
           {
-            heading: '상품/지면',
+            heading: '어떤 상품인가',
             bullets: [
-              { text: '비즈보드 또는 디스플레이 광고는 카카오 주요 지면에서 브랜드 노출을 검토할 때 확인합니다.', terms: ['비즈보드', '디스플레이 광고', '카카오모먼트'] },
-              { text: '상품가이드는 상품별 집행 조건을 확인하되, 업종 제한은 일반 상품 기능이 아니라 별도 심사 체크로 분리합니다.', terms: ['상품가이드', '상품 가이드', '업종 제한'] },
+              { text: '비즈보드는 카카오 주요 지면에서 브랜드 인지, 프로모션, 대량 도달, 랜딩 유입을 함께 노릴 때 우선 검토합니다.', terms: ['비즈보드', '디스플레이 광고', '카카오모먼트', '카카오톡', '노출 지면'] },
+              { text: '상품가이드에서는 비즈보드가 노출되는 지면, 집행 방식, 랜딩 연결 같은 상품 조건을 먼저 확인합니다.', terms: ['상품가이드', '상품 가이드', '비즈보드', '노출 지면', '랜딩', '집행 조건'] },
             ],
           },
           {
-            heading: '소재/심사',
+            heading: '운영 전 확인',
             bullets: [
-              { text: '제작 가이드와 심사 가이드에서 이미지 비율, 텍스트 영역, 제한 업종을 함께 확인해야 합니다.', terms: ['제작 가이드', '심사 가이드', '이미지', '비율', '텍스트'] },
+              { text: '소재를 만들 때는 제작가이드에서 이미지 비율, 텍스트 영역, 소재 구성 조건을 확인해야 합니다.', terms: ['제작가이드', '제작 가이드', '이미지', '비율', '텍스트', '소재'] },
+              { text: '심사 단계에서는 업종 제한, 카카오 서비스 오인 표현, 허위·과장 문구, 소재와 랜딩의 불일치를 별도 체크합니다.', terms: ['심사가이드', '심사 가이드', '업종 제한', '오인', '허위', '과장', '랜딩'] },
             ],
           },
         ],
-        summary: '정리하면, 비즈보드는 지면 노출 목적과 제작·심사 기준을 함께 대조해야 합니다.',
+        summary: '정리하면, 비즈보드는 카카오톡 기반 대량 노출과 유입을 만들 때 쓰는 상품이고, 집행 전에는 지면 조건과 소재·심사·랜딩 일치를 함께 대조해야 합니다.',
         model: 'compass-answer-deterministic-kakao-bizboard',
+        minBullets: 3,
+        confidenceCap: 82,
       };
 
     case 'kakao_creative':
@@ -8011,6 +8105,13 @@ function buildFastStructuredSpecificProductAnswer(
       fastAnswerFallback: 'meta_creative_spec_structured',
       confidenceCap: 78,
       build: () => buildMetaCreativeSpecStructuredFallbackAnswer(answerSources, intent, message),
+    },
+    {
+      vendor: 'NAVER',
+      model: 'compass-answer-fast-naver-shopping-search-overview-structured',
+      fastAnswerFallback: 'naver_shopping_search_overview_structured',
+      confidenceCap: 80,
+      build: () => buildNaverShoppingSearchOverviewStructuredAnswer(answerSources, intent, message),
     },
     {
       vendor: 'NAVER',
