@@ -1000,11 +1000,14 @@ if (!/sourceLooksLikeMetaBroadProductNewsNoise[\s\S]*facebook\\\.com\\\/business
   fail('Meta broad product source selection must reject business/news success-story sources before answer source selection');
 }
 
+const fallbackSourceRejectsBlockingNoise = /findFallbackSource(?:CandidateIndexes|Index)[\s\S]*!sourceHasBlockingExtractionNoise\(source\)/.test(answerHandler);
+
 if (!answerHandler.includes('sourceHasRecoverableMetaAdsGuideObjectiveGraphEvidence')
   || !answerHandler.includes('facebook\\.com\\/business\\/ads-guide')
   || !answerHandler.includes('campaign[_\\s-]*objective')
   || !answerHandler.includes('sourceHasBlockingExtractionNoise')
-  || !/findFallbackSourceIndex[\s\S]*!sourceHasBlockingExtractionNoise\(source\)[\s\S]*selectProductStructureResponseSources[\s\S]*!sourceHasBlockingExtractionNoise\(source\)/.test(answerHandler)
+  || !fallbackSourceRejectsBlockingNoise
+  || !/selectProductStructureResponseSources[\s\S]*!sourceHasBlockingExtractionNoise\(source\)/.test(answerHandler)
 ) {
   fail('Meta Ads Guide objective graph evidence must survive HTML extraction-noise filtering for broad product answers');
 }

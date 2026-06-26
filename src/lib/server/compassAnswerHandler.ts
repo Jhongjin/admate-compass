@@ -1662,7 +1662,7 @@ function getFallbackSourceText(source: ReturnType<typeof buildVerifiedSources>[n
   ].filter(Boolean).join(' '));
 }
 
-function findFallbackSourceIndex(
+function findFallbackSourceCandidateIndexes(
   sources: ReturnType<typeof buildVerifiedSources>,
   vendor: VendorIntent | undefined,
   pattern: RegExp,
@@ -1679,7 +1679,23 @@ function findFallbackSourceIndex(
   const titleMatch = matches.find(({ source }) => (
     pattern.test(normalizeEvidenceText(`${source.title || ''} ${source.originalTitle || ''}`))
   ));
-  return titleMatch?.index ?? matches[0]?.index ?? -1;
+  const orderedIndexes = [
+    ...(titleMatch ? [titleMatch.index] : []),
+    ...matches.map(match => match.index),
+  ];
+  return Array.from(new Set(orderedIndexes));
+}
+
+function findFallbackSourceIndex(
+  sources: ReturnType<typeof buildVerifiedSources>,
+  vendor: VendorIntent | undefined,
+  pattern: RegExp,
+  used?: Set<number>,
+) {
+  const candidateIndexes = findFallbackSourceCandidateIndexes(sources, vendor, pattern);
+  return candidateIndexes.find(index => !used?.has(index))
+    ?? candidateIndexes[0]
+    ?? -1;
 }
 
 function formatFallbackEvidenceLabels(used: Set<number>) {
@@ -1697,7 +1713,7 @@ function addFallbackLine(
   pattern: RegExp,
   line: (label: string) => string,
 ) {
-  const index = findFallbackSourceIndex(sources, vendor, pattern);
+  const index = findFallbackSourceIndex(sources, vendor, pattern, used);
   if (index < 0) return false;
   used.add(index);
   lines.push(line(`[S${index + 1}]`));
@@ -1735,8 +1751,12 @@ function buildNaverShoppingDataStructuredFallbackAnswer(
         return sourceHasNaverShoppingDataEvidence(source) && pattern.test(searchableText);
       })
       .sort((a, b) => scoreNaverShoppingDataEvidence(b.source) - scoreNaverShoppingDataEvidence(a.source));
-    if (indexedMatches.length > 0) return indexedMatches[0].index;
-    return allowBestFallback ? bestIndex : -1;
+    if (indexedMatches.length > 0) {
+      return indexedMatches.find(({ index }) => !used.has(index))?.index
+        ?? indexedMatches[0].index;
+    }
+    if (!allowBestFallback) return -1;
+    return candidateIndexes.find(index => !used.has(index)) ?? bestIndex;
   };
   const addProcedureLine = (
     lines: string[],
@@ -4887,10 +4907,7 @@ function buildEvidenceBackedAnswer(
   sources: ReturnType<typeof buildVerifiedSources>,
 ): DeterministicProductAnswer | null {
   const usedSourceIndexes = new Set<number>();
-  const shouldDiversifyCitedSources = (
-    process.env.COMPASS_SEARCH_SOURCE?.trim() === 'document_chunks'
-    && (profile.family === 'kakao_bizboard' || profile.family === 'kakao_creative')
-  );
+  const shouldDiversifyCitedSources = sources.length > 1;
   const lines: string[] = [profile.intro, ''];
   let supportedBulletCount = 0;
 
