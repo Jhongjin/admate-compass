@@ -4466,6 +4466,30 @@ function isKakaoBizboardSpecificProductIntent(intent: QueryIntent) {
   return /비즈보드|카카오\s*비즈보드|카카오비즈보드|톡보드|bizboard|talkboard|디스플레이\s*광고|디스플레이광고|카카오모먼트/.test(queryText);
 }
 
+function getAnswerSourceRelaxationMode() {
+  const rawValue = String(process.env.COMPASS_ANSWER_SOURCE_RELAXATION || 'off')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '_');
+
+  if (!rawValue || rawValue === 'false' || rawValue === '0') return 'off';
+  if (rawValue === 'bucket') return 'bucket_1';
+  if (rawValue === 'medium_bucket') return 'medium_bucket_1';
+  return rawValue;
+}
+
+function shouldIncludeMediumNaverShoppingDataAnswerSources() {
+  const mode = getAnswerSourceRelaxationMode();
+  return /(^|_)medium($|_)/.test(mode) || /strong\+medium/.test(mode);
+}
+
+function getSpecificProductAnswerSourceBucketExtra() {
+  const mode = getAnswerSourceRelaxationMode();
+  if (/bucket_?2|plus_?2/.test(mode)) return 2;
+  if (/bucket_?1|plus_?1/.test(mode)) return 1;
+  return 0;
+}
+
 function selectSpecificProductAnswerSources(
   strictProductSources: ReturnType<typeof buildVerifiedSources>,
   modeMatchedSources: ReturnType<typeof buildVerifiedSources>,
@@ -4475,8 +4499,19 @@ function selectSpecificProductAnswerSources(
 ) {
   if (mode === 'db_setup' && isNaverShoppingDataIntent(intent)) {
     const strongNaverShoppingDataAnswerSources = rankedAnswerSources.filter(source => sourceHasStrongNaverShoppingDataEvidence(source));
+    const mediumNaverShoppingDataAnswerSources = rankedAnswerSources.filter(source => (
+      sourceHasNaverShoppingDataEvidence(source)
+      && !sourceHasStrongNaverShoppingDataEvidence(source)
+    ));
     const naverShoppingDataAnswerSources = strongNaverShoppingDataAnswerSources.length > 0
-      ? strongNaverShoppingDataAnswerSources
+      ? (
+        shouldIncludeMediumNaverShoppingDataAnswerSources()
+          ? dedupePublicProductSources([
+            ...strongNaverShoppingDataAnswerSources,
+            ...mediumNaverShoppingDataAnswerSources,
+          ], 4)
+          : strongNaverShoppingDataAnswerSources
+      )
       : rankedAnswerSources.filter(source => sourceHasNaverShoppingDataEvidence(source));
     const dataFocusedSources = naverShoppingDataAnswerSources.length > 0
       ? naverShoppingDataAnswerSources
@@ -4524,7 +4559,9 @@ function selectSpecificProductAnswerSources(
     )
     && !sourceIsBroadProductStructureOnly(source, intent)
   ));
-  const productDetailContextLimit = isKakaoBizboardSpecificProductIntent(intent) ? 2 : 0;
+  const productDetailContextLimit = isKakaoBizboardSpecificProductIntent(intent)
+    ? 2 + getSpecificProductAnswerSourceBucketExtra()
+    : getSpecificProductAnswerSourceBucketExtra();
   const productContextLimit = mode === 'product_detail'
     ? productDetailContextLimit
     : (modeDetailSources.length > 0 || modeSources.length > 0 || officialGraphSources.length > 0 ? 1 : 2);
@@ -11388,6 +11425,9 @@ export async function buildCompassAnswerResponse(
       mergedSearchResultCount: searchResults.length,
       verifiedSourceCount: verifiedSearchResults.length,
       productStructureRescueCount: productStructureRescueResults.length,
+      answerSourceRelaxationMode: getAnswerSourceRelaxationMode(),
+      answerSourceBucketExtra: getSpecificProductAnswerSourceBucketExtra(),
+      answerSourceIncludesMediumDbEvidence: shouldIncludeMediumNaverShoppingDataAnswerSources(),
       retrievalTimedOut,
       retrievalChannelTimedOut,
       retrievalDurationMs,
