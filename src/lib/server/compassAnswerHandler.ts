@@ -1806,8 +1806,8 @@ function buildNaverShoppingDataStructuredFallbackAnswer(
   const dataQualityLines: string[] = [];
   const addedDataQuality = addProcedureLine(
     dataQualityLines,
-    /상품\s*가격|가격대|배송비|쿠폰|할인|대표이미지|색상\s*필터|혜택\s*필터|데이터\s*피드|feed/,
-    label => `- 가격, 배송비, 쿠폰/할인, 대표이미지처럼 EP에 들어가는 상품 데이터는 필터나 노출 조건에 영향을 줄 수 있으므로 최신 상태로 관리해야 합니다 ${label}.`,
+    /상품\s*가격|가격\s*정보|가격정보|가격대|배송비|배송\s*정보|배송정보|쿠폰|할인|대표이미지|광고\s*노출용\s*상품명|광고\s*노출용[\s\S]{0,80}이미지|상품\s*정보\s*수정|상품정보\s*수정|ep\s*정보\s*수정|ep정보\s*수정|색상\s*필터|혜택\s*필터|데이터\s*피드|feed/,
+    label => `- 광고 노출용 상품명·이미지, 가격정보, 배송정보, EP 정보 수정처럼 노출에 쓰이는 상품 데이터는 최신 상태로 관리해야 합니다 ${label}.`,
   );
   if (addedDataQuality) {
     sections.push('');
@@ -1819,7 +1819,7 @@ function buildNaverShoppingDataStructuredFallbackAnswer(
   const operationLines: string[] = [];
   addProcedureLine(
     operationLines,
-    /cpc|cps|쇼핑파트너센터|네이버\s*쇼핑에\s*등록|쇼핑몰.*연동|전환\s*추적/,
+    /cpc|cps|네이버\s*쇼핑에\s*등록|전환\s*추적/,
     label => `- CPC/CPS 입점 방식, 쇼핑몰 연동, 전환 추적처럼 계정이나 쇼핑몰 상태에 따라 달라지는 항목은 광고 집행 전 별도로 확인하는 것이 좋습니다 ${label}.`,
   );
   if (operationLines.length > 0) {
@@ -3548,7 +3548,18 @@ function sourceHasStrongNaverShoppingDataEvidence(source: ReturnType<typeof buil
   const hasOnlyGeneralShoppingSignal = /쇼핑블록|주요\s*쇼핑\s*지면|사이트검색광고|디지털\s*옥외광고|필터|혜택|색상|가격대/.test(text)
     && !hasDirectDataProcedure;
 
-  return hasNaverShoppingContext && hasDirectDataProcedure && !hasOnlyGeneralShoppingSignal;
+  return hasNaverShoppingContext
+    && hasDirectDataProcedure
+    && !hasOnlyGeneralShoppingSignal
+    && !sourceLooksLikeLowPriorityNaverShoppingUtilityEvidence(source);
+}
+
+function sourceLooksLikeLowPriorityNaverShoppingUtilityEvidence(source: ReturnType<typeof buildVerifiedSources>[number]) {
+  const text = getSpecificProductEvidenceText(source);
+  const looksLikeItemSetUtility = /아이템\s*세트|상품\s*id|상품id|필터링/.test(text);
+  const hasDbSetupOrProductUpdateSignal = /상품정보\s*수신\s*현황|등록\s*요청|등록요청|상품\s*db\s*url|상품db\s*url|db\s*url|dburl|ep\s*정보\s*수정|ep정보\s*수정|상품\s*정보\s*수정|상품정보\s*수정|광고\s*노출용\s*상품명|광고\s*노출용[\s\S]{0,80}이미지|가격\s*정보|가격정보|배송\s*정보|배송정보|cpc|cps/.test(text);
+
+  return looksLikeItemSetUtility && !hasDbSetupOrProductUpdateSignal;
 }
 
 function scoreNaverShoppingDataEvidence(source: ReturnType<typeof buildVerifiedSources>[number]) {
@@ -4503,12 +4514,16 @@ function selectSpecificProductAnswerSources(
       sourceHasNaverShoppingDataEvidence(source)
       && !sourceHasStrongNaverShoppingDataEvidence(source)
     ));
+    const prioritizedMediumNaverShoppingDataAnswerSources = [
+      ...mediumNaverShoppingDataAnswerSources.filter(source => !sourceLooksLikeLowPriorityNaverShoppingUtilityEvidence(source)),
+      ...mediumNaverShoppingDataAnswerSources.filter(source => sourceLooksLikeLowPriorityNaverShoppingUtilityEvidence(source)),
+    ];
     const naverShoppingDataAnswerSources = strongNaverShoppingDataAnswerSources.length > 0
       ? (
         shouldIncludeMediumNaverShoppingDataAnswerSources()
           ? dedupePublicProductSources([
             ...strongNaverShoppingDataAnswerSources,
-            ...mediumNaverShoppingDataAnswerSources,
+            ...prioritizedMediumNaverShoppingDataAnswerSources,
           ], 4)
           : strongNaverShoppingDataAnswerSources
       )
