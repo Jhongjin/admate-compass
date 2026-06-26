@@ -62,6 +62,14 @@ if (!ragService.includes("search_ollama_documents")) {
   fail("RAG service no longer calls search_ollama_documents");
 }
 
+if (!ragService.includes("COMPASS_SEARCH_SOURCE")) {
+  fail("RAG service must expose COMPASS_SEARCH_SOURCE for guarded corpus switching");
+}
+
+if (!ragService.includes("search_documents")) {
+  fail("RAG service must be able to call search_documents for document_chunks vector search");
+}
+
 if (!ragService.includes("ollama_document_chunks")) {
   fail("RAG fallback path no longer references ollama_document_chunks");
 }

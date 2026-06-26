@@ -25,6 +25,7 @@ export type EvidenceDecision = 'verified' | 'weak' | 'rejected';
 export type VendorIntent = 'META' | 'KAKAO' | 'NAVER' | 'GOOGLE';
 export type TopicIntent = 'review' | 'youth' | 'false_claim' | 'price' | 'event' | 'rights' | 'hate' | 'gambling' | 'spec' | 'product_structure';
 export type QueryType = 'single-vendor' | 'multi-vendor' | 'generic-policy' | 'exploratory';
+type CompassSearchSource = 'ollama' | 'document_chunks';
 
 export interface QueryIntent {
   vendors: VendorIntent[];
@@ -135,6 +136,10 @@ const COMPASS_SUPABASE_ROWS_CACHE_TTL_MS = Math.min(
 );
 const COMPASS_SUPABASE_ROWS_CACHE_KEY_VERSION = 'v2-product-retrieval-paths';
 const compassSupabaseRowsCache = new Map<string, CompassSupabaseRowsCacheEntry>();
+
+function getCompassSearchSource(): CompassSearchSource {
+  return process.env.COMPASS_SEARCH_SOURCE === 'document_chunks' ? 'document_chunks' : 'ollama';
+}
 
 const META_APP_INSTALL_OFFICIAL_CHUNK_IDS = [
   'doc_1773886683376_omws3g9_chunk_2',
@@ -2136,8 +2141,11 @@ export class RAGSearchService {
 
   private async searchVectorCandidates(queryEmbedding: number[], limit: number, intent: QueryIntent): Promise<SearchResult[]> {
     try {
-      console.log('🔍 벡터 검색 RPC 함수 호출 시도');
-      const { data, error } = await this.supabase.rpc('search_ollama_documents', {
+      const searchSource = getCompassSearchSource();
+      const rpcName = searchSource === 'document_chunks' ? 'search_documents' : 'search_ollama_documents';
+      const corpus: RetrievalCorpus = searchSource === 'document_chunks' ? 'document_chunks' : 'ollama_document_chunks';
+      console.log('🔍 벡터 검색 RPC 함수 호출 시도', { searchSource, rpcName });
+      const { data, error } = await this.supabase.rpc(rpcName, {
         query_embedding: queryEmbedding,
         match_threshold: 0.001,
         match_count: limit * 3
@@ -2156,7 +2164,7 @@ export class RAGSearchService {
           queryEmbedding,
           intent,
           retrievalMethod: 'vector',
-          corpus: 'ollama_document_chunks',
+          corpus,
           evidenceType: 'vector',
         }))
         .filter((result: SearchResult | null): result is SearchResult => result !== null);
@@ -6106,6 +6114,10 @@ export class RAGSearchService {
     }
   }
 
+  private shouldSkipOllamaTableForConfiguredSearchSource(tableName: 'ollama_document_chunks' | 'document_chunks'): boolean {
+    return getCompassSearchSource() === 'document_chunks' && tableName === 'ollama_document_chunks';
+  }
+
   private async searchProductStructureAnchorTable(
     tableName: 'ollama_document_chunks' | 'document_chunks',
     anchor: string,
@@ -6114,6 +6126,8 @@ export class RAGSearchService {
     intent?: QueryIntent
   ): Promise<Array<{ row: any; corpus: RetrievalCorpus; anchor: string }>> {
     try {
+      if (this.shouldSkipOllamaTableForConfiguredSearchSource(tableName)) return [];
+
       const selectColumns = tableName === 'ollama_document_chunks'
         ? 'chunk_id, document_id, content, metadata'
         : 'id, document_id, chunk_id, content, metadata';
@@ -6177,6 +6191,8 @@ export class RAGSearchService {
     intent: QueryIntent
   ): Promise<Array<{ row: any; corpus: RetrievalCorpus }>> {
     try {
+      if (this.shouldSkipOllamaTableForConfiguredSearchSource(tableName)) return [];
+
       const selectColumns = tableName === 'ollama_document_chunks'
         ? 'chunk_id, document_id, content, metadata'
         : 'id, document_id, chunk_id, content, metadata';
@@ -6241,6 +6257,8 @@ export class RAGSearchService {
     options: { rawKeywordsOnly?: boolean } = {},
   ): Promise<Array<{ row: any; corpus: RetrievalCorpus }>> {
     try {
+      if (this.shouldSkipOllamaTableForConfiguredSearchSource(tableName)) return [];
+
       const selectColumns = tableName === 'ollama_document_chunks'
         ? 'chunk_id, document_id, content, metadata'
         : 'id, document_id, chunk_id, content, metadata';
