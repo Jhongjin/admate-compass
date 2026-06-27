@@ -117,6 +117,12 @@ const COMPASS_ANSWER_RESPONSE_CACHE_TTL_MS = Math.min(
 const COMPASS_ANSWER_RESPONSE_CACHE_MAX_ENTRIES = 64;
 const COMPASS_ANSWER_RESPONSE_CACHE_KEY_VERSION = 'v51-specific-product-policy-bypass';
 const COMPASS_CONVERSATION_HISTORY_MAX_ITEMS = 25;
+const NAVER_SHOPPING_DATA_PROCEDURE_ALTERNATE_CHUNK_ID_LIST = [
+  'doc_1774317605538_kkuzirx_chunk_3',
+] as const;
+const NAVER_SHOPPING_DATA_PROCEDURE_ALTERNATE_CHUNK_IDS = new Set<string>(
+  NAVER_SHOPPING_DATA_PROCEDURE_ALTERNATE_CHUNK_ID_LIST,
+);
 const compassAnswerResponseCache = new Map<string, CompassAnswerResponseCacheEntry>();
 
 type DeterministicGateClass = 'always' | 'policy' | 'product';
@@ -1742,15 +1748,37 @@ function buildNaverShoppingDataStructuredFallbackAnswer(
     used.add(index);
     return `[S${index + 1}]`;
   };
-  const findProcedureSourceIndex = (pattern: RegExp, allowBestFallback = false) => {
+  const findProcedureSourceIndex = (
+    pattern: RegExp,
+    allowBestFallback = false,
+    options: { preferProcedureAlternate?: boolean } = {},
+  ) => {
     const indexedMatches = sources
       .map((source, index) => ({ source, index }))
       .filter(({ source }) => {
         if (!sourceMatchesVendor(source, 'NAVER')) return false;
         const searchableText = getFallbackSourceText(source);
-        return sourceHasNaverShoppingDataEvidence(source) && pattern.test(searchableText);
+        const isProcedureAlternate = sourceHasNaverShoppingDataProcedureAlternateEvidence(source);
+        if (
+          options.preferProcedureAlternate
+          && !isProcedureAlternate
+          && sourceLooksLikeShoppingBlockOrCreativeNaverShoppingUtilityEvidence(source)
+        ) {
+          return false;
+        }
+        return (sourceHasNaverShoppingDataEvidence(source) || isProcedureAlternate)
+          && pattern.test(searchableText);
       })
-      .sort((a, b) => scoreNaverShoppingDataEvidence(b.source) - scoreNaverShoppingDataEvidence(a.source));
+      .sort((a, b) => {
+        if (options.preferProcedureAlternate) {
+          const alternateScore = (source: ReturnType<typeof buildVerifiedSources>[number]) => (
+            sourceHasNaverShoppingDataProcedureAlternateEvidence(source) ? 1 : 0
+          );
+          const alternateDiff = alternateScore(b.source) - alternateScore(a.source);
+          if (alternateDiff !== 0) return alternateDiff;
+        }
+        return scoreNaverShoppingDataEvidence(b.source) - scoreNaverShoppingDataEvidence(a.source);
+      });
     if (indexedMatches.length > 0) {
       return indexedMatches.find(({ index }) => !used.has(index))?.index
         ?? indexedMatches[0].index;
@@ -1763,8 +1791,9 @@ function buildNaverShoppingDataStructuredFallbackAnswer(
     pattern: RegExp,
     line: (label: string) => string,
     allowBestFallback = false,
+    options: { preferProcedureAlternate?: boolean } = {},
   ) => {
-    const index = findProcedureSourceIndex(pattern, allowBestFallback);
+    const index = findProcedureSourceIndex(pattern, allowBestFallback, options);
     if (index < 0) return false;
     lines.push(line(cite(index)));
     return true;
@@ -1784,13 +1813,17 @@ function buildNaverShoppingDataStructuredFallbackAnswer(
   );
   addProcedureLine(
     sections,
-    /영업일\s*기준\s*1\s*[-~]?\s*2일|통상\s*1\s*[-~]?\s*2일|입점\s*심사|심사/,
+    /영업일\s*기준\s*1\s*[-~]?\s*2일|통상\s*1\s*[-~]?\s*2일|1\s*[-~]?\s*2\s*영업일|입점\s*심사|심사|검수/,
     label => `- DB URL/EP 등록 후에는 통상 영업일 기준 1~2일 수준의 심사가 걸릴 수 있으니, 바로 노출된다고 전제하지 않는 것이 안전합니다 ${label}.`,
+    false,
+    { preferProcedureAlternate: true },
   );
   addProcedureLine(
     sections,
     /상품\s*현황\s*및\s*관리|미서비스\s*상품|대분류\s*검색|상품\s*리스트|상품리스트/,
     label => `- 심사나 업데이트가 끝난 뒤에는 **상품현황 및 관리 > 미서비스 상품**에서 대분류 검색으로 상품 리스트가 들어왔는지 확인하세요 ${label}.`,
+    false,
+    { preferProcedureAlternate: true },
   );
   addProcedureLine(
     sections,
@@ -3538,19 +3571,20 @@ function isGenericStandaloneProductEvidenceTerm(term: string) {
 function sourceHasNaverShoppingDataEvidence(source: ReturnType<typeof buildVerifiedSources>[number]) {
   const text = getSpecificProductEvidenceText(source);
 
-  return /naver_shopping_data|ep\s*\(=\s*db\s*url\)|db\s*url|dburl|상품\s*db|상품db|상품\s*db\s*url|상품db\s*url|상품정보\s*수신\s*현황|등록\s*요청|등록요청|상품관리|쇼핑파트너센터|카테고리\s*(자동)?매칭|입점\s*심사|영업일\s*기준\s*1\s*[-~]?\s*2일|cpc|cps|상품\s*등록|상품등록|데이터\s*피드|feed/.test(text);
+  return /naver_shopping_data|ep\s*\(=\s*db\s*url\)|db\s*url|dburl|상품\s*db|상품db|상품\s*db\s*url|상품db\s*url|상품정보\s*수신\s*현황|등록\s*요청|등록요청|상품관리|상품현황\s*및\s*관리|미서비스\s*상품|검수|서비스\s*가능|서비스\s*시작|쇼핑파트너센터|카테고리\s*(자동)?매칭|입점\s*심사|영업일\s*기준\s*1\s*[-~]?\s*2일|1\s*[-~]?\s*2\s*영업일|cpc|cps|상품\s*등록|상품등록|데이터\s*피드|feed/.test(text);
 }
 
 function sourceHasStrongNaverShoppingDataEvidence(source: ReturnType<typeof buildVerifiedSources>[number]) {
   const text = getSpecificProductEvidenceText(source);
   const hasNaverShoppingContext = /네이버|naver|쇼핑검색|쇼핑\s*검색|쇼핑몰\s*상품형|쇼핑파트너센터|shopping/.test(text);
-  const hasDirectDataProcedure = /ep\s*\(=\s*db\s*url\)|db\s*url|dburl|상품\s*db|상품db|상품\s*db\s*url|상품db\s*url|상품정보\s*수신\s*현황|등록\s*요청|등록요청|상품관리|카테고리\s*(자동)?매칭|입점\s*심사|영업일\s*기준\s*1\s*[-~]?\s*2일|데이터\s*피드|feed/.test(text);
+  const hasDirectDataProcedure = /ep\s*\(=\s*db\s*url\)|db\s*url|dburl|상품\s*db|상품db|상품\s*db\s*url|상품db\s*url|상품정보\s*수신\s*현황|등록\s*요청|등록요청|상품관리|상품현황\s*및\s*관리|미서비스\s*상품|검수|서비스\s*가능|서비스\s*시작|카테고리\s*(자동)?매칭|입점\s*심사|영업일\s*기준\s*1\s*[-~]?\s*2일|1\s*[-~]?\s*2\s*영업일|데이터\s*피드|feed/.test(text);
   const hasOnlyGeneralShoppingSignal = /쇼핑블록|주요\s*쇼핑\s*지면|사이트검색광고|디지털\s*옥외광고|필터|혜택|색상|가격대/.test(text)
     && !hasDirectDataProcedure;
 
   return hasNaverShoppingContext
     && hasDirectDataProcedure
     && !hasOnlyGeneralShoppingSignal
+    && !sourceLooksLikeShoppingBlockOrCreativeNaverShoppingUtilityEvidence(source)
     && !sourceLooksLikeLowPriorityNaverShoppingUtilityEvidence(source);
 }
 
@@ -3562,14 +3596,79 @@ function sourceLooksLikeLowPriorityNaverShoppingUtilityEvidence(source: ReturnTy
   return looksLikeItemSetUtility && !hasDbSetupOrProductUpdateSignal;
 }
 
+function sourceHasAuditedNaverShoppingDataProcedureAlternateIdentity(source: ReturnType<typeof buildVerifiedSources>[number]) {
+  const sourceLike = source as any;
+  const metadata = sourceLike.metadata || {};
+  const sourceIds = [
+    source.id,
+    source.chunkId,
+    source.documentId,
+    sourceLike.chunk_id,
+    metadata.id,
+    metadata.chunkId,
+    metadata.chunk_id,
+    metadata.documentId,
+    metadata.document_id,
+  ].filter(Boolean).map(String);
+  return sourceIds.some(id => NAVER_SHOPPING_DATA_PROCEDURE_ALTERNATE_CHUNK_IDS.has(id))
+    || metadata.naverShoppingDataProcedureAlternatePriority === true
+    || metadata.naver_shopping_data_procedure_alternate_priority === true
+    || source.rankReason?.includes('naver_shopping_data_procedure_alternate_detail_priority') === true
+    || source.evidenceDecisionReason?.includes('naver_shopping_data_procedure_alternate_priority') === true;
+}
+
+function sourceLooksLikeShoppingBlockOrCreativeNaverShoppingUtilityEvidence(source: ReturnType<typeof buildVerifiedSources>[number]) {
+  if (sourceHasAuditedNaverShoppingDataProcedureAlternateIdentity(source)) return false;
+  const text = getSpecificProductEvidenceText(source);
+  const looksLikeShoppingBlockOrCreative = /쇼핑블록|pc\s*쇼핑블록|mo\s*쇼핑블록|모바일\s*쇼핑|소재|광고\s*소재|소재가\s*검토|검토\s*절차|검토에\s*통과|소재\s*상태|on\/off|삭제/.test(text);
+  const hasCoreDbSetupProcedure = /상품정보\s*수신\s*현황|등록\s*요청|등록요청|상품현황\s*및\s*관리|미서비스\s*상품|카테고리\s*(자동)?매칭|영업일\s*기준\s*1\s*[-~]?\s*2일|1\s*[-~]?\s*2\s*영업일|입점\s*심사/.test(text);
+  return looksLikeShoppingBlockOrCreative && !hasCoreDbSetupProcedure;
+}
+
+function sourceHasNaverShoppingDataProcedureAlternateEvidence(source: ReturnType<typeof buildVerifiedSources>[number]) {
+  const text = getSpecificProductEvidenceText(source);
+  if (sourceHasAuditedNaverShoppingDataProcedureAlternateIdentity(source)) {
+    return true;
+  }
+  if (!sourceHasNaverShoppingDataEvidence(source)) return false;
+  if (!/네이버|naver|쇼핑검색|쇼핑\s*검색|쇼핑파트너센터|shopping/.test(text)) return false;
+  if (sourceLooksLikeShoppingBlockOrCreativeNaverShoppingUtilityEvidence(source)) return false;
+
+  const looksLikeAllInOneRegistrationProcedure = (
+    /상품정보\s*수신\s*현황|등록\s*요청|등록요청/.test(text)
+    && /미서비스\s*상품|상품현황\s*및\s*관리/.test(text)
+    && /카테고리\s*(자동)?매칭|카테고리\s*매칭/.test(text)
+    && /서비스\s*가능|가격비교\s*노출|쇼핑검색광고\s*상품등록\s*가능/.test(text)
+  );
+  if (looksLikeAllInOneRegistrationProcedure) return false;
+
+  const hasDbInspectionAndUnservedList = (
+    /상품\s*db\s*url\s*검수|db\s*url\s*검수|검수는\s*1\s*[-~]?\s*2\s*영업일|검수가?\s*완료/.test(text)
+    && /미서비스\s*상품|상품현황\s*및\s*관리/.test(text)
+  );
+  const hasCategoryAndProductListProcedure = (
+    /카테고리\s*(자동)?매칭|카테고리\s*매칭|수동으로\s*다시\s*매칭/.test(text)
+    && /미서비스\s*상품|서비스\s*상품|상품현황\s*및\s*관리/.test(text)
+  );
+  const hasServiceReadyProcedure = (
+    /상품\s*db\s*url|db\s*url|검수|상품등록|상품\s*등록/.test(text)
+    && /서비스\s*시작|서비스\s*가능|가격비교\s*노출|쇼핑검색광고를\s*이용/.test(text)
+  );
+
+  return hasDbInspectionAndUnservedList
+    || hasCategoryAndProductListProcedure
+    || hasServiceReadyProcedure;
+}
+
 function scoreNaverShoppingDataEvidence(source: ReturnType<typeof buildVerifiedSources>[number]) {
   const text = getSpecificProductEvidenceText(source);
   let score = Number(source.hybridScore || source.score || 0);
 
   if (sourceHasStrongNaverShoppingDataEvidence(source)) score += 24;
+  if (sourceHasNaverShoppingDataProcedureAlternateEvidence(source)) score += 10;
   if (/상품정보\s*수신\s*현황|등록\s*요청|등록요청|상품관리/.test(text)) score += 14;
   if (/ep\s*\(=\s*db\s*url\)|상품\s*db\s*url|상품db\s*url|db\s*url|dburl/.test(text)) score += 12;
-  if (/카테고리\s*자동매칭|카테고리\s*매칭|입점\s*심사|영업일\s*기준\s*1\s*[-~]?\s*2일/.test(text)) score += 11;
+  if (/상품현황\s*및\s*관리|미서비스\s*상품|검수|카테고리\s*자동매칭|카테고리\s*매칭|입점\s*심사|영업일\s*기준\s*1\s*[-~]?\s*2일|1\s*[-~]?\s*2\s*영업일|서비스\s*가능|서비스\s*시작/.test(text)) score += 11;
   if (/쇼핑파트너센터|상품\s*등록|상품등록|cpc|cps|가격비교/.test(text)) score += 7;
   if (/상품\s*가격|가격대|배송비|쿠폰|할인|대표이미지|색상\s*필터|혜택\s*필터/.test(text)) score += 2;
   if (/쇼핑블록|주요\s*쇼핑\s*지면|사이트검색광고|디지털\s*옥외광고/.test(text) && !sourceHasNaverShoppingDataEvidence(source)) score -= 6;
@@ -4510,6 +4609,14 @@ function selectSpecificProductAnswerSources(
 ) {
   if (mode === 'db_setup' && isNaverShoppingDataIntent(intent)) {
     const strongNaverShoppingDataAnswerSources = rankedAnswerSources.filter(source => sourceHasStrongNaverShoppingDataEvidence(source));
+    const procedureAlternateNaverShoppingDataAnswerSources = rankedAnswerSources.filter(source => (
+      sourceHasNaverShoppingDataProcedureAlternateEvidence(source)
+    ));
+    const primaryStrongNaverShoppingDataAnswerSources = strongNaverShoppingDataAnswerSources.filter(source => (
+      !sourceHasNaverShoppingDataProcedureAlternateEvidence(source)
+    ));
+    const primaryStrongLeadNaverShoppingDataAnswerSources = primaryStrongNaverShoppingDataAnswerSources.slice(0, 1);
+    const primaryStrongRemainderNaverShoppingDataAnswerSources = primaryStrongNaverShoppingDataAnswerSources.slice(1);
     const mediumNaverShoppingDataAnswerSources = rankedAnswerSources.filter(source => (
       sourceHasNaverShoppingDataEvidence(source)
       && !sourceHasStrongNaverShoppingDataEvidence(source)
@@ -4522,7 +4629,9 @@ function selectSpecificProductAnswerSources(
       ? (
         shouldIncludeMediumNaverShoppingDataAnswerSources()
           ? dedupePublicProductSources([
-            ...strongNaverShoppingDataAnswerSources,
+            ...primaryStrongLeadNaverShoppingDataAnswerSources,
+            ...procedureAlternateNaverShoppingDataAnswerSources,
+            ...primaryStrongRemainderNaverShoppingDataAnswerSources,
             ...prioritizedMediumNaverShoppingDataAnswerSources,
           ], 4)
           : strongNaverShoppingDataAnswerSources
@@ -4659,21 +4768,22 @@ function buildSpecificProductAnswerScope(
   }
 
   const requestedFocus = buildRequestedProductFocus(message, intent);
+  const productScopeSources = ensureNaverShoppingDataProcedureAlternateSources(sources, intent, mode);
   const focusMatchedSources = requestedFocus?.isSpecificFamilyQuestion
     ? refineSpecificProductAnswerSources(
-      sources.filter(source => sourceMatchesRequestedProductFocus(source, requestedFocus)),
+      productScopeSources.filter(source => sourceMatchesRequestedProductFocus(source, requestedFocus)),
       intent,
       mode,
     )
     : [];
   const naverShoppingDataSources = mode === 'db_setup' && isNaverShoppingDataIntent(intent)
-    ? sources.filter(source => sourceMatchesVendor(source, 'NAVER') && sourceHasNaverShoppingDataEvidence(source))
+    ? productScopeSources.filter(source => sourceMatchesVendor(source, 'NAVER') && sourceHasNaverShoppingDataEvidence(source))
     : [];
   const strictMatchedSources = refineSpecificProductAnswerSources(
     [
       ...naverShoppingDataSources,
       ...focusMatchedSources,
-      ...sources.filter(source => sourceMatchesStrictProductIntent(source, intent)),
+      ...productScopeSources.filter(source => sourceMatchesStrictProductIntent(source, intent)),
     ],
     intent,
     mode,
@@ -4681,13 +4791,13 @@ function buildSpecificProductAnswerScope(
   const relaxedMatchedSources = strictMatchedSources.length > 0
     ? []
     : refineSpecificProductAnswerSources(
-      sources.filter(source => sourceMatchesRelaxedSpecificProductIntent(source, intent, mode)),
+      productScopeSources.filter(source => sourceMatchesRelaxedSpecificProductIntent(source, intent, mode)),
       intent,
       mode,
     );
   const familyFallbackSources = strictMatchedSources.length === 0 && relaxedMatchedSources.length === 0
     ? refineSpecificProductAnswerSources(
-      sources.filter(source => sourceMatchesProductFamilyFallbackCandidate(source, intent, mode)),
+      productScopeSources.filter(source => sourceMatchesProductFamilyFallbackCandidate(source, intent, mode)),
       intent,
       mode,
     )
@@ -5279,6 +5389,15 @@ function ensureOfficialSnapshotSources(
 
   if (supplementalSources.length === 0) return sources;
   return [...sources, ...supplementalSources];
+}
+
+function ensureNaverShoppingDataProcedureAlternateSources(
+  sources: ReturnType<typeof buildVerifiedSources>,
+  intent: QueryIntent,
+  mode: SpecificProductAnswerMode,
+): ReturnType<typeof buildVerifiedSources> {
+  if (mode !== 'db_setup' || !isNaverShoppingDataIntent(intent)) return sources;
+  return ensureOfficialSnapshotSources(sources, NAVER_SHOPPING_DATA_PROCEDURE_ALTERNATE_CHUNK_ID_LIST);
 }
 
 function ensureMetaProductPlanningMatrixSources(
@@ -8276,7 +8395,20 @@ function buildFastStructuredSpecificProductAnswer(
 
   const vendor = intent.vendors[0];
   const scopedSources = scope.answerSources.length > 0 ? scope.answerSources : scope.strictProductSources;
-  const candidateSources = scopedSources.length > 0 ? scopedSources : fallbackSources;
+  const supplementedCandidateSources = ensureNaverShoppingDataProcedureAlternateSources(
+    scopedSources.length > 0 ? scopedSources : fallbackSources,
+    intent,
+    scope.mode,
+  );
+  const candidateSources = scope.mode === 'db_setup' && isNaverShoppingDataIntent(intent)
+    ? selectSpecificProductAnswerSources(
+      supplementedCandidateSources,
+      supplementedCandidateSources,
+      refineSpecificProductAnswerSources(supplementedCandidateSources, intent, scope.mode),
+      intent,
+      scope.mode,
+    )
+    : supplementedCandidateSources;
   const vendorSources = candidateSources.filter(source => (
     sourceMatchesVendor(source, vendor)
     && !sourceHasCrossVendorUrl(source, [vendor])
@@ -10394,6 +10526,7 @@ function calculateConfidence(searchResults: SearchResult[], intent?: QueryIntent
 
 function buildVerifiedSources(searchResults: SearchResult[], intent?: QueryIntent) {
   return searchResults.map(result => {
+    const resultLike = result as SearchResult & { id?: string; chunk_id?: string };
     const sourceVendor = result.sourceVendor || result.metadata?.sourceVendor || result.metadata?.source_vendor || result.sourceQuality?.sourceVendor || 'UNKNOWN';
     const fallbackTitleVendor = sourceVendor && sourceVendor !== 'UNKNOWN'
       ? VENDOR_LABELS[sourceVendor as VendorIntent] || String(sourceVendor)
@@ -10430,7 +10563,7 @@ function buildVerifiedSources(searchResults: SearchResult[], intent?: QueryInten
     ].filter(Boolean).join(' ').slice(0, 6000).toLowerCase();
 
     return {
-      id: result.chunk_id,
+      id: resultLike.chunk_id || resultLike.id,
       title: displayTitle,
       originalTitle,
       url: result.documentUrl || result.metadata?.source_url || result.metadata?.document_url || result.metadata?.url || '',
@@ -10463,7 +10596,7 @@ function buildVerifiedSources(searchResults: SearchResult[], intent?: QueryInten
         warnings: [],
       },
       documentId: result.documentId || result.metadata?.documentId || result.metadata?.document_id,
-      chunkId: result.chunk_id,
+      chunkId: resultLike.chunk_id || resultLike.id,
       sourceType: result.metadata?.type || 'document',
       documentType: result.metadata?.documentType || 'policy',
       metadata: result.metadata || {}

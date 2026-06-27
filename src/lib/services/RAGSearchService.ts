@@ -208,6 +208,10 @@ const NAVER_SHOPPING_DATA_OFFICIAL_CHUNK_IDS = [
   'doc_1773710116296_uawf5xm_chunk_2',
 ];
 
+const NAVER_SHOPPING_DATA_PROCEDURE_ALTERNATE_CHUNK_IDS = [
+  'doc_1774317605538_kkuzirx_chunk_3',
+];
+
 const NAVER_SHOPPING_SEARCH_CREATIVE_OFFICIAL_CHUNK_IDS = [
   'doc_1764895552052_8xy5ad6_para_2',
 ];
@@ -2653,7 +2657,10 @@ export class RAGSearchService {
           }
           if (
               !this.hasSpecificProductAnswerableSignalForIntent(evidenceText, intent)
-              && !(this.isNaverShoppingDataIntent(intent) && this.hasStrongNaverShoppingDataSignal(evidenceText))
+              && !(this.isNaverShoppingDataIntent(intent) && (
+                this.hasStrongNaverShoppingDataSignal(evidenceText)
+                || this.isNaverShoppingDataProcedureAlternateCandidate(candidate)
+              ))
               && !(this.isKakaoBizboardDisplayProductIntent(intent) && this.hasKakaoBizboardDisplaySignal(evidenceText))
             ) {
               return null;
@@ -2757,10 +2764,17 @@ export class RAGSearchService {
       '상품DB URL',
       '상품정보 수신 현황',
       '등록요청',
+      'DB URL 검수',
+      '검수',
       '입점심사',
       '카테고리 자동매칭',
+      '카테고리 매칭',
+      '미서비스 상품',
+      '상품현황 및 관리',
       '신규상품 등록',
       '네이버 가격비교',
+      '서비스 가능',
+      '서비스 시작',
       '상품관리',
       '쇼핑파트너센터',
     ];
@@ -2849,15 +2863,27 @@ export class RAGSearchService {
     }
 
     if (usesShoppingDataIntent) {
-      const officialChunkResults = await this.searchKnownOfficialDocumentChunks(
-        NAVER_SHOPPING_DATA_OFFICIAL_CHUNK_IDS,
-        1,
-        intent,
-        'NAVER',
-        'naver_shopping_data_official_chunk',
-      );
+      const [officialChunkResults, procedureAlternateChunkResults] = await Promise.all([
+        this.searchKnownOfficialDocumentChunks(
+          NAVER_SHOPPING_DATA_OFFICIAL_CHUNK_IDS,
+          1,
+          intent,
+          'NAVER',
+          'naver_shopping_data_official_chunk',
+        ),
+        this.searchKnownOfficialDocumentChunks(
+          NAVER_SHOPPING_DATA_PROCEDURE_ALTERNATE_CHUNK_IDS,
+          1,
+          intent,
+          'NAVER',
+          'naver_shopping_data_procedure_alternate_official_chunk',
+        ),
+      ]);
       const officialChunkCandidates = this.normalizeNaverProductStructurePriorityResults(
-        officialChunkResults,
+        [
+          ...officialChunkResults,
+          ...procedureAlternateChunkResults,
+        ],
         keywords,
         intent,
         {
@@ -3023,9 +3049,15 @@ export class RAGSearchService {
         const isShoppingDataIntent = this.isNaverShoppingDataIntent(intent);
         const hasShoppingDataSignal = this.hasNaverShoppingDataSignal(sourceText);
         const hasStrongShoppingDataSignal = this.hasStrongNaverShoppingDataSignal(sourceText);
+        const hasShoppingDataProcedureAlternatePriority = (
+          isShoppingDataIntent
+          && result.anchor === 'naver_shopping_data_procedure_alternate_official_chunk'
+        );
         const hasShoppingSearchCreativeSignal = usesShoppingSearchCreativeIntent && this.hasNaverShoppingSearchCreativeGuideSignal(sourceText);
         const hasVideoProductSignal = usesVideoProductIntent && this.hasNaverVideoProductGuideSignal(sourceText);
-        const boostedScore = isShoppingDataIntent && hasStrongShoppingDataSignal
+        const boostedScore = hasShoppingDataProcedureAlternatePriority
+          ? Math.max(0.999, Math.min(1, (candidate.hybridScore || 0) + 0.82))
+          : isShoppingDataIntent && hasStrongShoppingDataSignal
           ? Math.max(0.995, Math.min(1, (candidate.hybridScore || 0) + 0.75))
           : isShoppingDataIntent && hasShoppingDataSignal
             ? Math.max(0.9, Math.min(0.97, (candidate.hybridScore || 0) + 0.35))
@@ -3049,6 +3081,7 @@ export class RAGSearchService {
           'naver_product_structure_priority',
           ...(isShoppingDataIntent && hasStrongShoppingDataSignal ? ['naver_shopping_data_strong_priority'] : []),
           ...(isShoppingDataIntent && hasShoppingDataSignal ? ['naver_shopping_data_priority'] : []),
+          ...(hasShoppingDataProcedureAlternatePriority ? ['naver_shopping_data_procedure_alternate_priority'] : []),
           ...(hasShoppingSearchCreativeSignal ? ['naver_shopping_search_creative_priority'] : []),
           ...(hasVideoProductSignal ? ['naver_video_product_priority'] : []),
           'keyword_retrieval',
@@ -3058,6 +3091,7 @@ export class RAGSearchService {
           `naver_product_structure_priority_${result.anchor}`,
           ...(isShoppingDataIntent && hasStrongShoppingDataSignal ? ['naver_shopping_data_strong_detail_priority'] : []),
           ...(isShoppingDataIntent && hasShoppingDataSignal ? ['naver_shopping_data_specific_priority'] : []),
+          ...(hasShoppingDataProcedureAlternatePriority ? ['naver_shopping_data_procedure_alternate_detail_priority'] : []),
           ...(hasShoppingSearchCreativeSignal ? ['naver_shopping_search_creative_specific_priority'] : []),
           ...(hasVideoProductSignal ? ['naver_video_product_specific_priority'] : []),
         ]));
@@ -3078,6 +3112,7 @@ export class RAGSearchService {
           productStructureAnchor: result.anchor,
           naverShoppingDataPriority: isShoppingDataIntent && hasShoppingDataSignal,
           naverShoppingDataStrongPriority: isShoppingDataIntent && hasStrongShoppingDataSignal,
+          naverShoppingDataProcedureAlternatePriority: hasShoppingDataProcedureAlternatePriority,
           naverShoppingSearchCreativePriority: hasShoppingSearchCreativeSignal,
           naverVideoProductPriority: hasVideoProductSignal,
           evidenceDecision: candidate.evidenceDecision,
@@ -4591,7 +4626,10 @@ export class RAGSearchService {
           intent.isSpecificProductGuidance
           && !hasSpecificGroundingNearProduct
           && !this.hasSpecificProductAnswerableSignalForIntent(evidenceText, intent)
-          && !(this.isNaverShoppingDataIntent(intent) && this.hasStrongNaverShoppingDataSignal(evidenceText))
+          && !(this.isNaverShoppingDataIntent(intent) && (
+            this.hasStrongNaverShoppingDataSignal(evidenceText)
+            || this.isNaverShoppingDataProcedureAlternateCandidate(candidate)
+          ))
           && !(this.isNaverVideoProductIntent(intent) && this.hasNaverVideoProductGuideSignal(evidenceText))
           && !(this.isKakaoBizboardDisplayProductIntent(intent) && this.hasKakaoBizboardDisplaySignal(evidenceText))
         ) {
@@ -4711,7 +4749,7 @@ export class RAGSearchService {
     const requiredGroups = usesNaverShoppingDataIntent
       ? [
         ['쇼핑검색', '쇼핑검색광고', '쇼핑몰 상품형'],
-        ['상품정보 수신 현황', '등록요청', '상품 db url', '상품db url', 'ep(=db url)', 'db url', '입점 심사', '카테고리 자동매칭', '카테고리 매칭', '상품관리'],
+        ['상품정보 수신 현황', '등록요청', '상품 db url', '상품db url', 'ep(=db url)', 'db url', 'db url 검수', '검수', '미서비스 상품', '상품현황 및 관리', '입점 심사', '카테고리 자동매칭', '카테고리 매칭', '서비스 가능', '서비스 시작', '상품관리'],
       ]
       : requiredGroupsByVendor[vendor];
     const coverageReasonByVendor: Record<VendorIntent, string> = {
@@ -4730,6 +4768,37 @@ export class RAGSearchService {
     const protectedKeys = new Set<string>();
 
     if (usesNaverShoppingDataIntent) {
+      const procedureAlternateCandidate = candidates
+        .filter(item => this.isNaverShoppingDataProcedureAlternateCandidate(item))
+        .filter(item => !selectedKeys.has(this.buildCandidateDedupeKey(item)))
+        .sort((a, b) => this.scoreNaverShoppingDataCandidate(b, intent) - this.scoreNaverShoppingDataCandidate(a, intent))[0];
+      if (procedureAlternateCandidate) {
+        procedureAlternateCandidate.sourceVendor = 'NAVER';
+        procedureAlternateCandidate.sourceVendors = Array.from(new Set([
+          ...(procedureAlternateCandidate.sourceVendors || []),
+          'NAVER',
+        ]));
+        procedureAlternateCandidate.rankReason = Array.from(new Set([
+          ...(procedureAlternateCandidate.rankReason || []),
+          'naver_shopping_data_procedure_alternate_coverage',
+        ]));
+        procedureAlternateCandidate.evidenceDecisionReason = Array.from(new Set([
+          ...(procedureAlternateCandidate.evidenceDecisionReason || []),
+          'naver_shopping_data_procedure_alternate_coverage',
+        ]));
+        procedureAlternateCandidate.metadata = {
+          ...(procedureAlternateCandidate.metadata || {}),
+          coverageRole: 'naver_shopping_data_procedure_alternate_coverage',
+          naverShoppingDataProcedureAlternatePriority: true,
+          rankReason: procedureAlternateCandidate.rankReason,
+          evidenceDecisionReason: procedureAlternateCandidate.evidenceDecisionReason,
+        };
+        const key = this.buildCandidateDedupeKey(procedureAlternateCandidate);
+        selectedKeys.add(key);
+        protectedKeys.add(key);
+        next.push(procedureAlternateCandidate);
+      }
+
       const hasSelectedShoppingData = next.some(candidate => this.hasStrongNaverShoppingDataSignal(
         this.buildCandidateEvidenceText(candidate.content, candidate.documentTitle, candidate.metadata)
       ));
@@ -5470,10 +5539,15 @@ export class RAGSearchService {
     if (/db\s*url|상품\s*db|상품등록|ep|쇼핑파트너센터|가격비교/.test(queryText) || /상품db|dburl/.test(compactQueryText)) {
       add(
         'DB URL',
-        'DBURL',
-        'EP',
-        'EP(=DB URL)',
+        'DB URL 검수',
+        '미서비스 상품',
+        '상품현황 및 관리',
         '상품 DB',
+        'EP',
+        '카테고리 매칭',
+        '서비스 가능',
+        'DBURL',
+        'EP(=DB URL)',
         '상품DB',
         '상품 DB URL',
         '상품DB URL',
@@ -5483,12 +5557,13 @@ export class RAGSearchService {
         '쇼핑파트너센터',
         '상품정보 수신 현황',
         '등록요청',
+        '검수',
         '입점심사',
         '입점 심사',
         '카테고리 자동매칭',
-        '카테고리 매칭',
         '가격비교',
         '네이버 가격비교',
+        '서비스 시작',
         '상품관리'
       );
     }
@@ -7729,7 +7804,10 @@ export class RAGSearchService {
       const allowedSpecificProductProcedureEvidence = (
         strictSpecificProductIntent
         && this.isNaverShoppingDataIntent(intent)
-        && this.hasNaverShoppingDataSignal(sourceText)
+        && (
+          this.hasNaverShoppingDataSignal(sourceText)
+          || this.isNaverShoppingDataProcedureAlternateCandidate(candidate)
+        )
       );
       const allowedKakaoProductGuideEvidence = (
         strictSpecificProductIntent
@@ -7820,6 +7898,7 @@ export class RAGSearchService {
         && !graphHasProductSignal
         && !graphSpecificProductDetailSignal
         && !strictSpecificProductGroundingMatch
+        && !allowedSpecificProductProcedureEvidence
         && !allowedKakaoProductGuideEvidence
         && !allowedNaverDisplayProductGuideEvidence
         && !allowedNaverVideoProductGuideEvidence
@@ -7833,6 +7912,7 @@ export class RAGSearchService {
         && !graphHasProductSignal
         && !graphSpecificProductDetailSignal
         && !strictSpecificProductGroundingMatch
+        && !allowedSpecificProductProcedureEvidence
         && !allowedKakaoProductGuideEvidence
         && !allowedNaverDisplayProductGuideEvidence
         && !allowedNaverVideoProductGuideEvidence
@@ -8429,7 +8509,7 @@ export class RAGSearchService {
 
   private hasNaverProductStructureSignal(sourceText: string): boolean {
     const text = this.normalizeSearchText(sourceText);
-    return /사이트검색광고|웹사이트\s*방문\s*목적|쇼핑검색|쇼핑검색광고|쇼핑몰\s*상품형|상품등록|상품\s*db|db\s*url|ep|상품정보\s*수신\s*현황|등록요청|입점\s*심사|카테고리\s*자동매칭|카테고리\s*매칭|쇼핑파트너센터|쇼핑블록|쇼핑\s*지면|pc\s*쇼핑블록|mo\s*쇼핑블록|모바일\s*쇼핑|가격비교|(^|[\s/])da($|[\s/]|도|상품|광고)|네이버\s*da|네이버da|da\s*상품|da상품|보장형\s*da|pc\s*헤드라인\s*da|성과형\s*디스플레이|디스플레이\s*광고|홈피드\s*da|홈피드|스마트채널|타임보드|롤링보드|배너\s*광고|동영상\s*광고|동영상\s*조회|동영상\s*소재|동영상조회광고|비디오\s*광고|숏폼|아웃스트림|인스트림|네이버\s*클립/.test(text);
+    return /사이트검색광고|웹사이트\s*방문\s*목적|쇼핑검색|쇼핑검색광고|쇼핑몰\s*상품형|상품등록|상품\s*db|db\s*url|ep|상품정보\s*수신\s*현황|등록요청|상품현황\s*및\s*관리|미서비스\s*상품|검수|서비스\s*가능|서비스\s*시작|입점\s*심사|카테고리\s*자동매칭|카테고리\s*매칭|쇼핑파트너센터|쇼핑블록|쇼핑\s*지면|pc\s*쇼핑블록|mo\s*쇼핑블록|모바일\s*쇼핑|가격비교|(^|[\s/])da($|[\s/]|도|상품|광고)|네이버\s*da|네이버da|da\s*상품|da상품|보장형\s*da|pc\s*헤드라인\s*da|성과형\s*디스플레이|디스플레이\s*광고|홈피드\s*da|홈피드|스마트채널|타임보드|롤링보드|배너\s*광고|동영상\s*광고|동영상\s*조회|동영상\s*소재|동영상조회광고|비디오\s*광고|숏폼|아웃스트림|인스트림|네이버\s*클립/.test(text);
   }
 
   private hasNaverDisplayProductGuideSignal(sourceText: string): boolean {
@@ -8590,8 +8670,8 @@ export class RAGSearchService {
     const compact = text.replace(/\s+/g, '');
     const hasShoppingContext = /쇼핑검색|쇼핑\s*검색|쇼핑몰\s*상품형|쇼핑파트너센터|가격비교|네이버\s*쇼핑/.test(text);
     const hasExactProcedureSignal =
-      /상품정보\s*수신\s*현황|등록\s*요청|등록요청|상품관리|입점\s*심사|영업일\s*기준\s*1\s*[-~]?\s*2일|카테고리\s*자동매칭|카테고리\s*매칭/.test(text)
-      || /상품정보수신현황|등록요청|상품관리|입점심사|카테고리자동매칭|카테고리매칭/.test(compact);
+      /상품정보\s*수신\s*현황|등록\s*요청|등록요청|상품관리|상품현황\s*및\s*관리|미서비스\s*상품|검수|입점\s*심사|영업일\s*기준\s*1\s*[-~]?\s*2일|1\s*[-~]?\s*2\s*영업일|카테고리\s*자동매칭|카테고리\s*매칭|서비스\s*가능|서비스\s*시작/.test(text)
+      || /상품정보수신현황|등록요청|상품관리|상품현황및관리|미서비스상품|입점심사|카테고리자동매칭|카테고리매칭|서비스가능|서비스시작/.test(compact);
     const hasExactDbUrlSignal =
       /ep\s*\(=\s*db\s*url\)|상품\s*db\s*url|상품db\s*url|db\s*url/.test(text)
       || /ep\(=dburl\)|상품dburl|dburl/.test(compact);
@@ -8604,17 +8684,40 @@ export class RAGSearchService {
     const text = this.buildCandidateEvidenceText(candidate.content, candidate.documentTitle, candidate.metadata);
     let score = this.scoreVendorSlotCandidate(candidate, intent);
 
+    if (this.isNaverShoppingDataProcedureAlternateCandidate(candidate)) score += 80;
     if (this.hasStrongNaverShoppingDataSignal(text)) score += 100;
     else if (this.hasNaverShoppingDataSignal(text)) score += 10;
 
     const normalized = this.normalizeSearchText(text);
     if (/상품정보\s*수신\s*현황|등록\s*요청|등록요청|상품관리/.test(normalized)) score += 35;
     if (/ep\s*\(=\s*db\s*url\)|상품\s*db\s*url|상품db\s*url|db\s*url/.test(normalized)) score += 30;
-    if (/카테고리\s*자동매칭|카테고리\s*매칭|입점\s*심사|영업일\s*기준\s*1\s*[-~]?\s*2일/.test(normalized)) score += 25;
+    if (/상품현황\s*및\s*관리|미서비스\s*상품|검수|카테고리\s*자동매칭|카테고리\s*매칭|입점\s*심사|영업일\s*기준\s*1\s*[-~]?\s*2일|1\s*[-~]?\s*2\s*영업일|서비스\s*가능|서비스\s*시작/.test(normalized)) score += 25;
     if (/상품\s*가격|가격대|배송비|쿠폰|할인|대표이미지|색상\s*필터|혜택\s*필터/.test(normalized)) score -= 8;
     if (/쇼핑블록|주요\s*쇼핑\s*지면|사이트검색광고|디지털\s*옥외광고/.test(normalized)) score -= 12;
 
     return score;
+  }
+
+  private isNaverShoppingDataProcedureAlternateCandidate(candidate: SearchResult): boolean {
+    const metadata = candidate.metadata || {};
+    const sourceIds = [
+      candidate.id,
+      candidate.documentId,
+      (candidate as any).chunk_id,
+      metadata.id,
+      metadata.chunkId,
+      metadata.chunk_id,
+      metadata.documentId,
+      metadata.document_id,
+    ].filter(Boolean).map(String);
+
+    return sourceIds.some(id => NAVER_SHOPPING_DATA_PROCEDURE_ALTERNATE_CHUNK_IDS.includes(id))
+      || metadata.naverShoppingDataProcedureAlternatePriority === true
+      || metadata.naver_shopping_data_procedure_alternate_priority === true
+      || candidate.rankReason?.includes('naver_shopping_data_procedure_alternate_detail_priority') === true
+      || candidate.rankReason?.includes('naver_shopping_data_procedure_alternate_coverage') === true
+      || candidate.evidenceDecisionReason?.includes('naver_shopping_data_procedure_alternate_priority') === true
+      || candidate.evidenceDecisionReason?.includes('naver_shopping_data_procedure_alternate_coverage') === true;
   }
 
   private hasHighValueProductStructureSignal(text: string): boolean {
