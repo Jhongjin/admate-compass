@@ -102,6 +102,13 @@ for (const row of [
   '| 네이버 쇼핑검색광고는 어떤 상품이야? | 24 | 14 | 7 | 4 | 4 | document_chunks |',
   '| 카카오 비즈보드는 어떤 상품이야? | 4 | 4 | 2 | 2 | 2 | document_chunks |',
   '| 카카오 비즈보드 소재 만들 때 뭘 확인해야 해? | 3 | 3 | 3 | 3 | 3 | document_chunks |',
+  '`COMPASS_ANSWER_SOURCE_RELAXATION=medium` is approved for production as a conditional post-hoc ratification.',
+  'Future production flag changes must follow this order: preview measurement, commander/audit approval, then production change.',
+  '| 쇼핑검색광고 등록 전에 상품 DB에서 뭘 확인해야 해? | 4 | 3 | 7 | S1 | 5 | 71.4% | yes | yes |',
+  '| 네이버 쇼핑검색광고는 어떤 상품이야? | 4 | 4 | 4 | S1 | 1 | 25.0% | no | no |',
+  '| 카카오 비즈보드는 어떤 상품이야? | 2 | 2 | 4 | S1 | 3 | 75.0% | yes | no, source-limited |',
+  '| 카카오 비즈보드 소재 만들 때 뭘 확인해야 해? | 3 | 3 | 3 | S1 | 1 | 33.3% | no | no |',
+  'one true penalty candidate remains: the Naver shopping DB setup answer at 71.4% S1 share',
 ]) {
   if (!report.includes(row)) {
     fail(`source-diversity report must keep the measured regression row: ${row}`);
@@ -113,4 +120,3 @@ if (process.exitCode) {
 }
 
 console.log('[check-compass-answer-source-diversity-regression] ok');
-
