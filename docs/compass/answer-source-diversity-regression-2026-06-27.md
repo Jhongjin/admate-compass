@@ -57,3 +57,19 @@ Threshold: flag questions where the top cited source exceeds 70% of citation-bea
 | 카카오 비즈보드 소재 만들 때 뭘 확인해야 해? | 3 | 3 | 3 | S1 | 1 | 33.3% | no | no |
 
 Conclusion: one true penalty candidate remains: the Naver shopping DB setup answer at 71.4% S1 share. Do not add a global dominance penalty yet; discuss a targeted design for DB structured answers first.
+
+## Shopping DB Procedure Evidence Investigation
+
+Question: can the five S1 procedure bullets be distributed to other real corpus chunks, or must they be compressed because S1 is the only source?
+
+Finding: distribution is possible, but it should be targeted. The same original FAQ has adjacent chunks (`doc_1773710116296_uawf5xm_chunk_0`, `doc_1773710116296_uawf5xm_chunk_1`) that cover parts of the procedure, but those are the same public source as S1 (`https://ads.naver.com/help/faq/875`) and should not be used just to create cosmetic diversity. Separate FAQ chunks exist for several procedure steps.
+
+| Signal | S1 currently covers | Separate corpus candidates | Design implication |
+|---|---|---|---|
+| registration / DB URL or EP input | yes | `doc_1774317605538_kkuzirx_chunk_3`, `doc_1774317545866_m90zzej_chunk_5` | Keep S1 or cite a separate setup/inspection FAQ when selected. |
+| review time / inspection delay | yes | `doc_1774317605538_kkuzirx_chunk_3` | Good distribution candidate for the review-time bullet. |
+| unserved product list | yes | `doc_1774317605538_kkuzirx_chunk_3`, `doc_1774317605315_4oetjya_chunk_1` | Good distribution candidate for the post-review product-list bullet. |
+| category matching | yes | `doc_1774317605315_4oetjya_chunk_1` | Good distribution candidate for category matching if selected. |
+| service ready / price-comparison exposure | yes | `doc_1774317545866_m90zzej_chunk_5` | Good distribution candidate for service-ready / shopping-search usability. |
+
+Recommended next design: do not add a global source-dominance penalty. For the Naver shopping DB structured path, prefer one useful procedure alternate source over an unused duplicate data-quality source when `answerSources` is capped at four. The lowest-risk first target is `doc_1774317605538_kkuzirx_chunk_3`, because it can take the review-time and unserved-product-list bullets that currently repeat S1. If four sources are still too tight, use light compression for the remaining S1 procedure steps rather than increasing every product bucket.
