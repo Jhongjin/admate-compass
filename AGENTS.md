@@ -5,6 +5,20 @@
 
 ---
 
+## 0. Compass Session Entry
+
+이 repo에서 새 에이전트 세션을 시작할 때는 먼저 아래 파일을 확인한다.
+
+```text
+D:\Projects\AdMate\WORKSPACE.md
+D:\Projects\AdMate\admate-compass\AGENTS.md
+D:\Projects\AdMate\admate-compass\docs\compass\current-status.md
+```
+
+`AGENTS.md`는 안정적인 역할/범위/원칙을 담고, `docs\compass\current-status.md`는 최근 작업 상태, 동결 항목, 백로그처럼 변할 수 있는 내용을 담는다. 현재 상태를 프롬프트에 길게 복사하지 말고 이 파일을 갱신한다.
+
+---
+
 ## 1. 최상위 정의
 
 AdMate는 나스미디어 데이터분석팀이 구축하는 **AI Agent 기반 광고 운영 자동화 플랫폼**이다.
