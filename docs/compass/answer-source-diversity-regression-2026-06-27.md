@@ -77,3 +77,11 @@ Finding: distribution is possible, but it should be targeted. The same original 
 | service ready / price-comparison exposure | yes | `doc_1774317545866_m90zzej_chunk_5` | Good distribution candidate for service-ready / shopping-search usability. |
 
 Implemented design: do not add a global source-dominance penalty. For the Naver shopping DB structured path, prefer one useful procedure alternate source over an unused duplicate data-quality source when `answerSources` is capped at four. The first target is `doc_1774317605538_kkuzirx_chunk_3`, which now appears as a cited source and carries the registration/unserved-list procedure bullets. The remaining S1 procedure bullets stay on S1 because they are still source-supported and the top-source share is below the 70% threshold.
+
+## Backlog
+
+- Dominance track status: closed. Shopping DB dominance was locally resolved (`S1` share `71.4%` -> `42.9%`), `doc_1774317605538_kkuzirx_chunk_3` is cited as `S2`, `answerSources=4` is preserved, and `citationUseRate=1.0`.
+- Global source-dominance penalty: do not implement. The remaining measured high-share case is the two-source Kakao Bizboard explanation, which is source-limited and should not be penalized.
+- New backlog item: the shopping DB score of `76` is a byproduct of the existing `retrieval_limited` self-assessment penalty. Because the answer had rich verified evidence (`verified=17`) and used all four answer sources, the retrieval-limited scoring rule may need a future review after the `document_chunks` search transition.
+- Do not change the `retrieval_limited` rule in this phase. Record only; discuss any self-assessment scoring adjustment separately.
+- Still on hold without separate approval: `ollama_document_chunks` removal, `COMPASS_SEARCH_SOURCE` default switching, and fixture rewriting.

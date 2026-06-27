@@ -207,6 +207,10 @@ for (const row of [
   '| 카카오 비즈보드 소재 만들 때 뭘 확인해야 해? | 3 | 3 | 3 | S1 | 1 | 33.3% | no | no |',
   'no true global dominance penalty candidate remains',
   'doc_1774317605538_kkuzirx_chunk_3`, which now appears as a cited source',
+  'Dominance track status: closed.',
+  'the shopping DB score of `76` is a byproduct of the existing `retrieval_limited` self-assessment penalty',
+  'Do not change the `retrieval_limited` rule in this phase. Record only',
+  'Still on hold without separate approval: `ollama_document_chunks` removal, `COMPASS_SEARCH_SOURCE` default switching, and fixture rewriting.',
 ]) {
   if (!report.includes(row)) {
     fail(`source-diversity report must keep the measured regression row: ${row}`);
